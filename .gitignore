@@ -1,6 +1,9 @@
 node_modules/
 .env
 coverage/
-dist/
+/dist/
+.pi-mesh/
+*.db
+*.db-shm
+*.db-wal
 *.log
-

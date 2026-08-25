@@ -3,6 +3,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { MeshClient } from "./client.ts";
 import type { DeliveryMode, HubEvent, MessageRecord } from "./protocol.ts";
+import type { ImprovementArea, JournalCategory, WorkflowCheckpointStatus } from "./workflow.ts";
 
 function result(value: unknown) {
   return {
@@ -79,11 +80,11 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     const model = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
     client = new MeshClient({
       serverUrl,
-      authToken: process.env.PI_MESH_AUTH_TOKEN,
       name,
       purpose,
       project,
-      model,
+      ...(process.env.PI_MESH_AUTH_TOKEN ? { authToken: process.env.PI_MESH_AUTH_TOKEN } : {}),
+      ...(model ? { model } : {}),
     });
     try {
       const agent = await client.start(receive);
@@ -108,6 +109,26 @@ export default function piMeshExtension(pi: ExtensionAPI) {
   pi.on("agent_end", (event) => {
     if (!activeInbound) return;
     activeReply = assistantText(event.messages as unknown[]) ?? activeReply;
+  });
+
+  pi.on("tool_result", async (event) => {
+    if (!activeInbound?.correlationId?.startsWith("run_") || !client) return;
+    const resultEvent = event as { toolName?: string; toolCallId?: string; isError?: boolean };
+    if (!resultEvent.isError) return;
+    try {
+      await client.recordWorkflowEntry(activeInbound.correlationId, {
+        category: "error",
+        area: "implementation",
+        severity: "error",
+        summary: `Tool ${resultEvent.toolName ?? "unknown"} failed during workflow execution`,
+        evidence: [
+          `tool:${resultEvent.toolName ?? "unknown"}`,
+          ...(resultEvent.toolCallId ? [`tool-call:${resultEvent.toolCallId}`] : []),
+        ],
+      });
+    } catch {
+      // A workflow may already be terminal or the hub may be reconnecting; agent execution should continue.
+    }
   });
 
   pi.on("agent_settled", async () => {
@@ -154,13 +175,17 @@ export default function piMeshExtension(pi: ExtensionAPI) {
         Type.Literal("nextTurn"),
       ], { description: "followUp is the safe default; use steer only for active blockers" })),
       correlationId: Type.Optional(Type.String({ description: "Optional workflow or task ID" })),
+      idempotencyKey: Type.Optional(Type.String({ description: "Retry-safe key unique to this request" })),
+      ttlMs: Type.Optional(Type.Number({ minimum: 1_000, maximum: 604_800_000 })),
     }),
     async execute(_toolCallId, params) {
       const message = await requireClient().send({
         target: params.target,
         content: params.content,
-        delivery: params.delivery as DeliveryMode | undefined,
-        correlationId: params.correlationId,
+        ...(params.delivery ? { delivery: params.delivery as DeliveryMode } : {}),
+        ...(params.correlationId ? { correlationId: params.correlationId } : {}),
+        ...(params.idempotencyKey ? { idempotencyKey: params.idempotencyKey } : {}),
+        ...(params.ttlMs ? { ttlMs: params.ttlMs } : {}),
       });
       return result({ messageId: message.id, status: message.status, target: message.toName });
     },
@@ -169,10 +194,34 @@ export default function piMeshExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "mesh_get",
     label: "Get peer response",
-    description: "Check a peer request without blocking. Returns queued, delivered, replied, or error.",
+    description: "Check a peer request without blocking. Returns its current status and optional reply.",
     parameters: Type.Object({ messageId: Type.String() }),
     async execute(_toolCallId, params) {
       return result(await requireClient().getMessage(params.messageId));
+    },
+  });
+
+  pi.registerTool({
+    name: "mesh_fanout",
+    label: "Ask planning panel",
+    description: "Send the same independent request to one through three peers and return all replies for comparison and synthesis.",
+    parameters: Type.Object({
+      targets: Type.Array(Type.String(), { minItems: 1, maxItems: 3 }),
+      content: Type.String(),
+      correlationId: Type.Optional(Type.String()),
+      idempotencyKeyPrefix: Type.Optional(Type.String()),
+      ttlMs: Type.Optional(Type.Number({ minimum: 1_000, maximum: 604_800_000 })),
+      timeoutMs: Type.Optional(Type.Number({ minimum: 100, maximum: 1_800_000 })),
+    }),
+    async execute(_toolCallId, params) {
+      return result({ responses: await requireClient().fanout({
+        targets: params.targets,
+        content: params.content,
+        ...(params.correlationId ? { correlationId: params.correlationId } : {}),
+        ...(params.idempotencyKeyPrefix ? { idempotencyKeyPrefix: params.idempotencyKeyPrefix } : {}),
+        ...(params.ttlMs ? { ttlMs: params.ttlMs } : {}),
+        ...(params.timeoutMs ? { timeoutMs: params.timeoutMs } : {}),
+      }) });
     },
   });
 
@@ -189,6 +238,112 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     },
   });
 
+  pi.registerTool({
+    name: "mesh_cancel",
+    label: "Cancel peer request",
+    description: "Cancel a queued or delivered request that this agent sent.",
+    parameters: Type.Object({ messageId: Type.String() }),
+    async execute(_toolCallId, params) {
+      return result(await requireClient().cancel(params.messageId));
+    },
+  });
+
+  pi.registerTool({
+    name: "mesh_workflow_list",
+    label: "List workflow runs",
+    description: "List durable webhook workflow runs assigned to this long-lived agent.",
+    parameters: Type.Object({}),
+    async execute() {
+      return result({ runs: await requireClient().listWorkflows() });
+    },
+  });
+
+  pi.registerTool({
+    name: "mesh_workflow_get",
+    label: "Get workflow run",
+    description: "Get a workflow's stages and journal of plans, decisions, contradictions, errors, and lessons.",
+    parameters: Type.Object({ runId: Type.String() }),
+    async execute(_toolCallId, params) {
+      return result(await requireClient().getWorkflow(params.runId));
+    },
+  });
+
+  pi.registerTool({
+    name: "mesh_workflow_checkpoint",
+    label: "Checkpoint workflow stage",
+    description: "Record a stage result. Warnings and failures require another attempt until passed or exhausted.",
+    parameters: Type.Object({
+      runId: Type.String(),
+      stageId: Type.String(),
+      status: Type.Union([Type.Literal("passed"), Type.Literal("warning"), Type.Literal("failed")]),
+      summary: Type.String(),
+      evidence: Type.Optional(Type.Array(Type.String(), { maxItems: 32 })),
+    }),
+    async execute(_toolCallId, params) {
+      return result(await requireClient().checkpointWorkflow(params.runId, {
+        stageId: params.stageId,
+        status: params.status as WorkflowCheckpointStatus,
+        summary: params.summary,
+        ...(params.evidence ? { evidence: params.evidence } : {}),
+      }));
+    },
+  });
+
+  pi.registerTool({
+    name: "mesh_workflow_record",
+    label: "Record workflow knowledge",
+    description: "Capture a plan, decision, contradiction, error, or lesson as evidence for workflow improvement.",
+    parameters: Type.Object({
+      runId: Type.String(),
+      category: Type.Union([
+        Type.Literal("plan"),
+        Type.Literal("decision"),
+        Type.Literal("contradiction"),
+        Type.Literal("error"),
+        Type.Literal("lesson"),
+      ]),
+      area: Type.Union([
+        Type.Literal("harness"),
+        Type.Literal("gates"),
+        Type.Literal("implementation"),
+        Type.Literal("workflow"),
+        Type.Literal("documentation"),
+        Type.Literal("security"),
+        Type.Literal("other"),
+      ]),
+      severity: Type.Optional(Type.Union([
+        Type.Literal("info"),
+        Type.Literal("warning"),
+        Type.Literal("error"),
+      ])),
+      summary: Type.String(),
+      details: Type.Optional(Type.String()),
+      evidence: Type.Optional(Type.Array(Type.String(), { maxItems: 32 })),
+      relatedEntryIds: Type.Optional(Type.Array(Type.String(), { maxItems: 16 })),
+    }),
+    async execute(_toolCallId, params) {
+      return result(await requireClient().recordWorkflowEntry(params.runId, {
+        category: params.category as JournalCategory,
+        area: params.area as ImprovementArea,
+        ...(params.severity ? { severity: params.severity as "info" | "warning" | "error" } : {}),
+        summary: params.summary,
+        ...(params.details ? { details: params.details } : {}),
+        ...(params.evidence ? { evidence: params.evidence } : {}),
+        ...(params.relatedEntryIds ? { relatedEntryIds: params.relatedEntryIds } : {}),
+      }));
+    },
+  });
+
+  pi.registerTool({
+    name: "mesh_improvement_report",
+    label: "Review workflow improvements",
+    description: "Summarize recorded errors, contradictions, and lessons by improvement area across this project.",
+    parameters: Type.Object({}),
+    async execute() {
+      return result(await requireClient().improvementReport());
+    },
+  });
+
   pi.registerCommand("mesh-status", {
     description: "Show pi-mesh connection and peer status",
     handler: async (_args, ctx) => {
@@ -201,4 +356,3 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     },
   });
 }
-

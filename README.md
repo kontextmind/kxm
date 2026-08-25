@@ -1,48 +1,54 @@
-# pi-mesh-comms
+# KontextMind Pi Extensions
 
-A small HTTP/SSE communication network for running Pi agents. It provides the same core shape as `coms-net`:
+[![CI](https://github.com/kontextmind/pi-extensions/actions/workflows/ci.yml/badge.svg)](https://github.com/kontextmind/pi-extensions/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Node.js 22+](https://img.shields.io/badge/node-%3E%3D22.6-339933.svg)](https://nodejs.org/)
 
-- discover online agents;
-- send a request and receive a message ID;
-- poll or await the response;
-- push inbound work into the receiving Pi session;
-- automatically return the receiving agent's settled final response.
+Give running coding agents a small, dependable communication plane.
 
-The hub uses only Node.js built-ins. The Pi extension uses Pi's normal `typebox` tool schemas.
+**Pi Mesh Comms** lets Pi and Claude Code agents discover one another, send focused requests, continue working independently, and collect replies without sharing an oversized conversation. It provides communication primitives—not an autonomous swarm manager—so each agent keeps its own context and safety controls.
 
-## Architecture
+> **Project status:** Production candidate (`0.3.x`) for a single hub serving local or trusted-team agents. Durable delivery, signed webhook workflows, security controls, observability, and recovery are tested. It is not a horizontally scaled or multi-tenant orchestration service. See [Production boundaries](#production-boundaries).
 
-```text
-Pi planner ──HTTP──┐
-                   ├── pi-mesh hub ──SSE──> inbound Pi turns
-Pi builder ──HTTP──┤       │
-                   │       └── presence, heartbeats, request state
-Pi reviewer ─HTTP──┘
-```
+## Why use it?
 
-The hub is deliberately a transport, not a shared-memory brain. Each agent keeps its own context. Messages are bounded, project-scoped, authenticated, and addressed to an agent name or ID.
+- **Delegate deliberately.** Route a bounded task to a peer selected by name and purpose.
+- **Stay productive.** Poll for a result or wait only when the reply blocks progress.
+- **Mix harnesses.** Connect native Pi sessions and Claude Code through the same hub.
+- **Keep control.** Authentication, project isolation, message limits, and normal agent approval rules remain in place.
+- **Install using native formats.** One repository packages a Pi extension, an Agent Skill, and a Claude Code marketplace plugin.
+- **Start from real events.** Signed Jira, GitHub, or generic webhooks can prompt durable, long-lived coordinators.
+- **Learn from every run.** Capture plans, decisions, contradictions, errors, and lessons without turning unreviewed opinions into policy.
 
-## Requirements
+## Quick start: two Pi agents
 
-- Node.js 22.6 or newer
-- Pi with extension support
-
-## Quick start
+You need Node.js 22.6 or newer, Pi, Git, and two terminal windows.
 
 ### 1. Start the hub
 
-PowerShell:
-
 ```powershell
+git clone https://github.com/kontextmind/pi-extensions.git
+cd pi-extensions
+npm ci
 $env:PI_MESH_AUTH_TOKEN = "replace-with-a-long-random-token"
 npm run hub
 ```
 
-The hub binds to `127.0.0.1:7331` by default. It refuses non-loopback binding unless an authentication token is configured.
+The hub listens on `http://127.0.0.1:7331`. Keep this terminal running.
 
-### 2. Start two Pi agents
+### 2. Install the Pi package
 
-Terminal one:
+Run once:
+
+```text
+pi install git:github.com/kontextmind/pi-extensions
+```
+
+If the repository is private, Git must already be authenticated for an account that has access.
+
+### 3. Start each agent
+
+Set the same server, token, and project in both agent terminals. Give each agent a unique name and a useful purpose.
 
 ```powershell
 $env:PI_MESH_SERVER_URL = "http://127.0.0.1:7331"
@@ -50,81 +56,133 @@ $env:PI_MESH_AUTH_TOKEN = "replace-with-a-long-random-token"
 $env:PI_MESH_PROJECT = "demo"
 $env:PI_MESH_AGENT_NAME = "planner"
 $env:PI_MESH_AGENT_PURPOSE = "Plans work and coordinates handoffs"
-pi -e ./src/extension.ts
+pi
 ```
 
-Terminal two:
+Start the second terminal as `reviewer`, `builder`, or another role. In Pi, run `/mesh-status` to confirm the connection.
 
-```powershell
-$env:PI_MESH_SERVER_URL = "http://127.0.0.1:7331"
-$env:PI_MESH_AUTH_TOKEN = "replace-with-a-long-random-token"
-$env:PI_MESH_PROJECT = "demo"
-$env:PI_MESH_AGENT_NAME = "builder"
-$env:PI_MESH_AGENT_PURPOSE = "Implements scoped coding tasks"
-pi -e ./src/extension.ts
-```
-
-Then ask either agent:
+### 4. Delegate a task
 
 ```text
-List the mesh peers. Ask builder to inspect the repository and recommend the
-first implementation step, then wait for its response.
+Use the pi-mesh-comms skill. List the available peers, ask the reviewer to
+inspect this plan for correctness risks, continue any independent work, and
+collect the review before finalizing.
 ```
 
-## Pi tools
+For a Pi-to-Claude setup, follow [Getting started](docs/getting-started.md#connect-claude-code).
 
-| Tool | Purpose |
+## What is included?
+
+| Component | What it does | Packaging |
+|---|---|---|
+| Mesh hub | Persists presence and routes authenticated HTTP/SSE messages | Node.js executable + SQLite |
+| Pi extension | Adds communication, workflow, journal, and improvement tools | `pi.extensions` |
+| Agent Skill | Teaches agents a safe, efficient coordination workflow | `pi.skills` and `SKILL.md` |
+| Claude bridge | Exposes the same workflow plane through MCP and optional channel events | Claude Code plugin |
+| Marketplace | Makes the Claude plugin installable from this repository | Claude marketplace catalog |
+
+## How it works
+
+```text
+Pi planner ──HTTP──┐
+                   ├── Mesh hub ──SSE──> addressed inbound requests
+Pi reviewer ─HTTP──┤      │
+                   │      └── presence, heartbeats, message state
+Claude Code ─MCP───┘
+```
+
+The hub routes messages; it does not merge contexts, choose tasks, or bypass tool permissions. A typical request moves through `queued` → `delivered` → `replied`. It may instead end as `cancelled`, `expired`, or `error`. The sender can check it with `mesh_get`, wait with `mesh_await`, or stop pending work with `mesh_cancel`.
+
+## Documentation
+
+| If you want to… | Read |
 |---|---|
-| `mesh_list` | List online agents in the current project |
-| `mesh_send` | Send a focused request; returns a message ID |
-| `mesh_get` | Non-blocking status check |
-| `mesh_await` | Wait for a settled peer response |
+| Complete a Pi-to-Pi or Pi-to-Claude setup | [Getting started](docs/getting-started.md) |
+| Configure the hub or an agent | [Configuration reference](docs/configuration.md) |
+| Understand components and message flow | [Architecture](docs/architecture.md) |
+| Run the hub responsibly | [Operations guide](docs/operations.md) |
+| Fix connection or delivery problems | [Troubleshooting](docs/troubleshooting.md) |
+| See which behaviors and examples are verified | [Test matrix](docs/test-matrix.md) |
+| Start work from Jira or another webhook | [Webhook workflows](docs/webhook-workflows.md) |
+| Improve the harness and delivery process from evidence | [Continuous improvement](docs/continuous-improvement.md) |
+| Develop or submit a change | [Contributing](CONTRIBUTING.md) |
+| Report a vulnerability | [Security policy](SECURITY.md) |
+| Review user-facing changes | [Changelog](CHANGELOG.md) |
 
-`followUp` is the default delivery mode. It lets the receiver finish its current work before handling the peer request. Use `steer` only for an active blocker; `nextTurn` queues information without triggering work.
+The [documentation index](docs/README.md) describes the intended audience and scope of each guide.
 
-## HTTP protocol
+## Claude Code installation
 
-The MVP exposes:
+Inside Claude Code:
 
 ```text
-GET    /health
-POST   /v1/agents/register
-GET    /v1/agents
-POST   /v1/agents/:id/heartbeat
-DELETE /v1/agents/:id
-GET    /v1/events?agentId=...       # SSE
-POST   /v1/messages
-POST   /v1/messages/:id/ack
-POST   /v1/messages/:id/reply
-GET    /v1/messages/:id
+/plugin marketplace add kontextmind/pi-extensions
+/plugin install pi-mesh-comms@kontextmind-pi-extensions
+/reload-plugins
 ```
 
-The shared bearer token authenticates access to the hub. Registration returns an ephemeral per-agent key; agent-specific routes require that key and the agent ID.
+The plugin provides peer messaging plus workflow listing, checkpoints, structured journal capture, and project improvement reports. See the [plugin tool table](plugins/pi-mesh-comms/README.md#tools).
 
-## Safety and scaling boundaries
+Pushed Claude channel delivery is a research-preview feature. Community channels currently require an explicit development-channel launch:
 
-- The hub never sends prompt bodies to its logs.
-- Messages default to a five-hop limit.
-- Content is limited to 32,000 characters.
-- Agents become stale after 30 seconds without a heartbeat.
-- Names are unique among live agents in a project.
-- State is in memory; restarting the hub starts a fresh pool.
-- This does not prevent filesystem write conflicts. Use one writer, path ownership, or separate Git worktrees.
-- Put TLS in front of the hub before using it across an untrusted network.
+```text
+claude --dangerously-load-development-channels plugin:pi-mesh-comms@kontextmind-pi-extensions
+```
 
-## Verify
+Without channel mode, ordinary MCP tools still work; use `mesh_inbox` and `mesh_reply` for inbound requests. See [Getting started](docs/getting-started.md#connect-claude-code) for the complete flow.
+
+## Production boundaries
+
+The codebase is structured, typed, persisted, tested, packaged, and CI-gated. The current hub is suitable for production use on one workstation or a controlled trusted-team host, with these deliberate limits:
+
+- One process owns one SQLite database; there is no clustering, leader election, or shared-state failover.
+- Project tokens isolate hub access by project, but there are no per-user roles or external identity provider.
+- Delivery is durable and retry-safe when callers supply an idempotency key, but it is not exactly-once execution.
+- Rate-limit counters reset after restart, and capacity depends on the host and SQLite workload.
+- The hub does not coordinate filesystem ownership; use separate worktrees or a single-writer rule.
+- A non-loopback deployment requires authentication, TLS termination, process supervision, and network access controls.
+
+The [operations guide](docs/operations.md) explains backup, recovery, monitoring, upgrade, and the safe deployment envelope.
+
+## Package standards
+
+This repository follows the native package structures for:
+
+- [Pi package discovery](https://pi.dev/docs/latest/packages) through the `pi-package` keyword and `pi.extensions` / `pi.skills` manifests;
+- portable [Pi Agent Skills](https://pi.dev/docs/latest/skills) using `<skill-name>/SKILL.md`;
+- [Claude Code plugins](https://code.claude.com/docs/en/plugins-reference) through `.claude-plugin/plugin.json`;
+- [Claude marketplaces](https://code.claude.com/docs/en/plugin-marketplaces) through `.claude-plugin/marketplace.json`;
+- standard MCP stdio tools and the optional [Claude channel](https://code.claude.com/docs/en/channels-reference) capability.
+
+## Development
 
 ```powershell
-npm test
+npm ci
+npm run test:coverage
 npm run check
+npm run validate:claude
+npm pack --dry-run
 ```
 
-## Next production steps
+Run the complete local gate with `npm run validate`. See [Contributing](CONTRIBUTING.md) before changing the protocol or generated MCP bundle.
 
-1. Add durable SQLite storage for messages and resumable agent identity.
-2. Add message expiration, cancellation, and idempotency keys.
-3. Add per-project authorization rather than one hub-wide token.
-4. Add OpenTelemetry metrics and redacted audit events.
-5. Add an MCP bridge for Claude Code, Codex, and other harnesses.
-6. Add a task ledger above the transport instead of encoding workflow state in chat messages.
+## Repository layout
 
+```text
+.claude-plugin/                 Claude marketplace catalog
+.github/                        CI and contribution templates
+docs/                           User, operator, and architecture guides
+plugins/pi-mesh-comms/
+├── .claude-plugin/             Claude plugin manifest
+├── dist/                       Generated self-contained MCP runtime
+├── skills/                     Portable Agent Skill
+└── src/                        Pi extension, hub, client, and MCP source
+scripts/                        Build and consistency helpers
+test/                           Integration tests
+examples/                       Executable scenarios and agent prompts
+scripts/pi-mesh-worker.mjs      Restarting headless Pi RPC worker
+```
+
+## License
+
+[MIT](LICENSE) © KontextMind contributors.

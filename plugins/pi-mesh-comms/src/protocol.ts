@@ -3,11 +3,18 @@ import { randomUUID } from "node:crypto";
 export const DEFAULT_PORT = 7331;
 export const DEFAULT_STALE_AFTER_MS = 30_000;
 export const DEFAULT_MAX_HOPS = 5;
+export const DEFAULT_MESSAGE_TTL_MS = 24 * 60 * 60_000;
+export const MIN_MESSAGE_TTL_MS = 1_000;
+export const MAX_MESSAGE_TTL_MS = 7 * 24 * 60 * 60_000;
+export const DEFAULT_MESSAGE_RETENTION_MS = 7 * 24 * 60 * 60_000;
+export const MIN_MESSAGE_RETENTION_MS = 1_000;
+export const DEFAULT_RATE_LIMIT_MAX = 600;
+export const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
 export const MAX_BODY_BYTES = 256 * 1024;
 export const MAX_CONTENT_CHARS = 32_000;
 
 export type DeliveryMode = "steer" | "followUp" | "nextTurn";
-export type MessageStatus = "queued" | "delivered" | "replied" | "error";
+export type MessageStatus = "queued" | "delivered" | "replied" | "cancelled" | "expired" | "error";
 
 export interface AgentRecord {
   id: string;
@@ -38,9 +45,12 @@ export interface MessageRecord {
   maxHops: number;
   correlationId?: string;
   replyTo?: string;
+  idempotencyKey?: string;
   createdAt: string;
+  expiresAt: string;
   deliveredAt?: string;
   repliedAt?: string;
+  cancelledAt?: string;
   status: MessageStatus;
   reply?: MessageReply;
   error?: string;
@@ -49,15 +59,19 @@ export interface MessageRecord {
 export type HubEvent =
   | { type: "message"; message: MessageRecord }
   | { type: "reply"; message: MessageRecord }
+  | { type: "cancelled"; message: MessageRecord }
+  | { type: "expired"; message: MessageRecord }
   | { type: "presence"; agent: AgentRecord };
 
 export class ProtocolError extends Error {
   readonly statusCode: number;
+  readonly code: string;
 
-  constructor(statusCode: number, message: string) {
+  constructor(statusCode: number, message: string, code = "protocol_error") {
     super(message);
     this.name = "ProtocolError";
     this.statusCode = statusCode;
+    this.code = code;
   }
 }
 
@@ -111,4 +125,3 @@ export function parseBoundedInteger(
   }
   return value as number;
 }
-

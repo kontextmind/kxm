@@ -1,0 +1,115 @@
+[
+  {
+    "id": "jira-development",
+    "source": "jira",
+    "project": "product",
+    "target": "coordinator",
+    "secretEnv": "JIRA_WEBHOOK_SECRET",
+    "event": "jira:issue_updated",
+    "filter": {
+      "path": "issue.fields.status.name",
+      "equals": "In Progress"
+    },
+    "delivery": "followUp",
+    "ttlMs": 604800000,
+    "promptTemplate": "Take ownership of Jira issue {{issue.key}} — {{issue.fields.summary}}.\n\nDescription:\n{{issue.fields.description}}\n\nIssue URL: {{issue.self}}\n\nUse the pi-mesh-comms workflow tools as the durable record. Preserve Jira issue {{issue.key}} as the correlation key. Only perform push, merge, or Jira mutations when the current harness permissions and repository policy authorize them.",
+    "stages": [
+      {
+        "id": "intake",
+        "area": "workflow",
+        "label": "Intake and ownership",
+        "instructions": "Validate the webhook context, repository, scope, permissions, and acceptance criteria. Confirm that the issue is actually In Progress.",
+        "requiredEvidence": ["issue key", "acceptance criteria", "repository and branch", "authorization boundary"],
+        "maxAttempts": 2
+      },
+      {
+        "id": "reproduce",
+        "area": "implementation",
+        "label": "Reproduce the issue",
+        "instructions": "Reproduce the defect before changing production code. Prefer a deterministic failing automated test and capture environment details.",
+        "requiredEvidence": ["reproduction steps", "observed failure", "expected behavior", "failing test or diagnostic artifact"],
+        "maxAttempts": 3
+      },
+      {
+        "id": "plan-moa",
+        "area": "workflow",
+        "label": "Plan with single-agent or three-agent mixture of agents",
+        "instructions": "For simple work, produce one plan. For ambiguous or high-risk work, ask three strong planning peers independently, compare assumptions and tradeoffs, record contradictions, and synthesize the best evidence-backed plan.",
+        "requiredEvidence": ["candidate plans", "contradictions and resolutions", "selected plan", "ownership boundaries"],
+        "maxAttempts": 3
+      },
+      {
+        "id": "plan-review",
+        "area": "workflow",
+        "label": "Review the plan",
+        "instructions": "Have an independent reviewer challenge correctness, security, migration, test, and rollback assumptions. Revise the plan when findings are material.",
+        "requiredEvidence": ["review findings", "accepted and rejected feedback", "revised plan"],
+        "maxAttempts": 3
+      },
+      {
+        "id": "implementation",
+        "area": "implementation",
+        "label": "Implementation",
+        "instructions": "Implement the reviewed plan with explicit file ownership. Keep changes focused and preserve unrelated user work.",
+        "requiredEvidence": ["changed paths", "implementation decisions", "tests added or updated"],
+        "maxAttempts": 3
+      },
+      {
+        "id": "local-gates",
+        "area": "gates",
+        "label": "Local code checks",
+        "instructions": "Run the repository-defined lint, build/typecheck, security scan, and Playwright suite. A warning or failure must be recorded, corrected, and rerun; do not downgrade a gate silently.",
+        "requiredEvidence": ["lint result", "build or typecheck result", "security result", "Playwright result"],
+        "maxAttempts": 5
+      },
+      {
+        "id": "repository-gates",
+        "area": "gates",
+        "label": "Repository and CodeRabbit gates",
+        "instructions": "Reproduce required repository checks locally where possible. Address CodeRabbit or equivalent review findings by evidence and rerun affected gates.",
+        "requiredEvidence": ["repository gate results", "review findings", "resolutions or justified dismissals"],
+        "maxAttempts": 5
+      },
+      {
+        "id": "documentation",
+        "area": "documentation",
+        "label": "Documentation",
+        "instructions": "Update user, operator, architecture, changelog, and test-matrix material affected by the change.",
+        "requiredEvidence": ["documentation paths", "behavior and operational changes", "examples updated"],
+        "maxAttempts": 3
+      },
+      {
+        "id": "push-watch",
+        "area": "gates",
+        "label": "Push, open review, and watch",
+        "instructions": "When authorized, push the branch and open or update the review. Watch CI and review checks. Record every warning or failure, fix it, push again, and continue watching until required checks pass.",
+        "requiredEvidence": ["commit", "pull request", "required check results", "resolved warnings and failures"],
+        "maxAttempts": 10
+      },
+      {
+        "id": "merge",
+        "area": "security",
+        "label": "Merge",
+        "instructions": "Merge only when approvals, required checks, branch policy, and user authorization permit it. Capture the resulting merge commit.",
+        "requiredEvidence": ["approval state", "required checks", "merge commit"],
+        "maxAttempts": 3
+      },
+      {
+        "id": "jira-update",
+        "area": "workflow",
+        "label": "Update Jira",
+        "instructions": "Update the Jira issue through an authorized integration with the outcome, implementation and test evidence, pull request, merge commit, and any follow-up risk. Transition it according to team policy.",
+        "requiredEvidence": ["Jira transition", "Jira comment or fields", "links to pull request and merge"],
+        "maxAttempts": 3
+      },
+      {
+        "id": "retrospective",
+        "area": "workflow",
+        "label": "Continuous-improvement retrospective",
+        "instructions": "Review the run journal. Turn recurring errors, contradictions, delays, flaky gates, and harness friction into an evidence-linked improvement backlog. Do not apply policy changes automatically.",
+        "requiredEvidence": ["lessons by area", "prioritized improvements", "owner or next action", "success measure"],
+        "maxAttempts": 3
+      }
+    ]
+  }
+]
