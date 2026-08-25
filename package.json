@@ -1,0 +1,30 @@
+{
+  "name": "pi-mesh-comms",
+  "version": "0.1.0",
+  "description": "HTTP/SSE peer communication hub and extension for Pi agents",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "hub": "node --experimental-strip-types src/server.ts",
+    "test": "node --experimental-strip-types test/hub.test.ts",
+    "check": "node --experimental-strip-types --check src/server.ts && node --experimental-strip-types --check src/client.ts && node --experimental-strip-types --check src/extension.ts"
+  },
+  "pi": {
+    "extensions": [
+      "./src/extension.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.80.0",
+    "typebox": ">=1.0.0"
+  },
+  "files": [
+    "src",
+    "README.md",
+    ".env.example"
+  ],
+  "license": "MIT"
+}
