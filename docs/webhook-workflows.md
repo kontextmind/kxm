@@ -42,7 +42,7 @@ Load it without storing its secret in the JSON file:
 $env:JIRA_WEBHOOK_SECRET = "replace-with-a-high-entropy-secret"
 $env:WORKFLOW_SIGNAL_SECRET = "replace-with-a-separate-callback-secret"
 $env:PI_MESH_WEBHOOK_WORKFLOWS_FILE = ".kxm/config/workflows/jira-development.json"
-npm run hub
+pi-mesh hub
 ```
 
 Configure Jira to send `jira:issue_updated` to:
@@ -66,7 +66,7 @@ $env:PI_MESH_PROJECT = "product"
 $env:PI_MESH_AGENT_NAME = "coordinator"
 $env:PI_MESH_AGENT_PURPOSE = "Coordinates Jira development workflows and quality gates"
 $env:PI_MESH_WORKDIR = "D:\work\product-repository"
-npm run worker
+pi-mesh worker
 ```
 
 The worker launches Pi in headless RPC mode, keeps stdin open, preserves its session by default, and restarts with bounded exponential backoff. Run the worker itself under the operating system's service manager for boot startup, resource limits, log collection, and crash policy. Set `PI_MESH_WORKER_CONTINUE=false` only when every process restart should create a fresh Pi session.
@@ -126,6 +126,12 @@ Sign the exact body bytes with SHA-256 HMAC. Supply the signature in `X-Hub-Sign
 
 Use `signalSecretEnv` so CI and merge reporters do not need the secret that creates new workflows. If it is omitted, callbacks fall back to `secretEnv` for compatibility. A valid callback can checkpoint only the named run's current wait and must match its signal key.
 
+Context evidence is optional. When a callback supplies `workflow.run`,
+`workflow.stage`, or `workflow.signal`, each value must exactly match the route
+run, active waiting stage, or route signal key respectively. A mismatch returns
+HTTP 409 without advancing the run or recording a delivery receipt. Adapters
+that do not need these diagnostic keys may omit them.
+
 `passed` applies the normal evidence rule and advances or completes the run. `warning` or `failed` consumes an attempt, records an error, and queues a correction prompt when attempts remain. The run, signal receipt, optional journal entry, and optional resume message commit in one SQLite transaction before delivery. A terminal result does not create another prompt. Only the validated summary and evidence are retained; the complete callback body is not stored.
 
 Callback responses deliberately expose only status, stage, retry, completion, resumption, and duplicate metadata. They never return the workflow record, coordinator prompt, message routing, journal, or evidence. Those remain behind project and agent authentication.
@@ -150,7 +156,7 @@ To watch GitHub checks and post that same signal, use the command-first adapter:
 $env:PI_MESH_WORKFLOW_ID = "jira-development"
 $env:PI_MESH_WORKFLOW_SIGNAL_SECRET = "replace-with-the-callback-secret"
 $env:GITHUB_TOKEN = "replace-with-a-checks-read-token"
-npx pi-mesh github watch --run-id run_123 --stage-id watch --signal-key github-pr-42-checks --repo org/repo --pr 42 --required ci --timeout-ms 3600000
+pi-mesh github watch --run-id run_123 --stage-id watch --signal-key github-pr-42-checks --repo org/repo --pr 42 --required ci --timeout-ms 3600000
 ```
 
 The watcher binds every result to the exact run, stage, and signal key, requests

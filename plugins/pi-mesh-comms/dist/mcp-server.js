@@ -16067,7 +16067,7 @@ var MeshClient = class {
 };
 
 // plugins/pi-mesh-comms/src/mcp-server.ts
-var VERSION = "0.4.0";
+var VERSION = "0.4.1";
 var inbox = /* @__PURE__ */ new Map();
 var meshClient;
 var starting;

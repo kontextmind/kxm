@@ -222,6 +222,29 @@ function boundedWorkflowEvidence(value: unknown, field = "evidence", maxItems = 
   return Object.fromEntries(evidence);
 }
 
+function validateWorkflowSignalContext(
+  evidence: WorkflowEvidenceInput,
+  runId: string,
+  stageId: string,
+  signalKey: string,
+): void {
+  const expectedContext: Record<string, string> = {
+    "workflow.run": runId,
+    "workflow.stage": stageId,
+    "workflow.signal": signalKey,
+  };
+  for (const [contextKey, expectedValue] of Object.entries(expectedContext)) {
+    const suppliedValue = evidence[contextKey];
+    if (suppliedValue === undefined || suppliedValue === expectedValue) continue;
+    throw new ProtocolError(
+      409,
+      `evidence ${contextKey} does not match the workflow signal route and active wait`,
+      "workflow_signal_context_mismatch",
+      { contextKey },
+    );
+  }
+}
+
 function workflowSignalKey(value: unknown): string {
   const key = requireString(value, "signalKey", { max: 128 });
   if (!/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(key)) {
@@ -784,6 +807,14 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         const evidence = boundedWorkflowEvidence(body.evidence);
         const receivedAt = nowIso();
         const transition = structuredClone(workflowRuns.get(runId)!);
+        if (transition.status === "waiting" && transition.waiting) {
+          validateWorkflowSignalContext(
+            evidence,
+            runId,
+            transition.waiting.stageId,
+            signalKey,
+          );
+        }
         const result = resumeWorkflowFromSignal(transition, signalKey, status, summary, evidence, receivedAt);
         const receipt: WorkflowSignalReceipt = {
           deliveryId,

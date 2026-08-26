@@ -5,6 +5,7 @@ async function json(path) {
 }
 
 const root = await json("package.json");
+const lock = await json("package-lock.json");
 const pluginPackage = await json("plugins/pi-mesh-comms/package.json");
 const pluginManifest = await json("plugins/pi-mesh-comms/.claude-plugin/plugin.json");
 const marketplace = await json(".claude-plugin/marketplace.json");
@@ -14,6 +15,8 @@ const marketplaceEntry = marketplace.plugins?.find((plugin) => plugin.name === "
 
 const versions = new Map([
   ["root package", root.version],
+  ["package lock", lock.version],
+  ["package lock root", lock.packages?.[""]?.version],
   ["plugin package", pluginPackage.version],
   ["Claude plugin manifest", pluginManifest.version],
   ["Claude marketplace entry", marketplaceEntry?.version],

@@ -46,6 +46,8 @@ pi install git:github.com/kontextmind/pi-extensions
 ```
 
 If the repository is private, Git must already be authenticated for an account that has access.
+This Pi package install supplies the extension and Agent Skill to Pi; it does
+not place the `pi-mesh` operator command on `PATH`.
 
 ### 3. Start each agent
 
@@ -76,17 +78,37 @@ For a Pi-to-Claude setup, follow [Getting started](docs/getting-started.md#conne
 
 The `pi-mesh` entry point manages one workspace consistently. Runtime configuration, logs, durable state, and generated retrospectives stay under `.kxm` unless `--workspace` selects another root.
 
+Install the packed release asset before using the command. GitHub CLI keeps
+this flow compatible with private repositories; run `gh auth login` first when
+the current account is not authenticated.
+
 ```powershell
-npx pi-mesh init
-npx pi-mesh validate --file .kxm/config/workflows/jira-development.json
-npx pi-mesh hub
-npx pi-mesh worker --name coordinator --project product --model xai/grok-4.6
-npx pi-mesh workflow start jira-development --payload '@ticket.json'
-npx pi-mesh workflow list
-npx pi-mesh workflow get run_123
-npx pi-mesh github watch --run-id run_123 --stage-id watch --signal-key pr-42-checks --repo org/repo --pr 42 --required ci
-npx pi-mesh retrospective export run_123
-npx pi-mesh stop
+$version = "0.4.1"
+$asset = "kontextmind-pi-extensions-$version.tgz"
+$releaseDir = Join-Path $PWD ".pi-mesh-release"
+New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
+gh release download "v$version" --repo kontextmind/pi-extensions --pattern $asset --dir $releaseDir --clobber
+npm install --global --omit=peer (Join-Path $releaseDir $asset)
+pi-mesh help
+```
+
+To operate from a clone instead, run `npm ci` in the clone and replace
+`pi-mesh` below with `node scripts/pi-mesh.mjs`. Do not use
+`npm install --global git+https://github.com/kontextmind/pi-extensions.git` as
+the operator install path; the supported global install is the versioned release
+tarball.
+
+```powershell
+pi-mesh init
+pi-mesh validate --file .kxm/config/workflows/jira-development.json
+pi-mesh hub
+pi-mesh worker --name coordinator --project product --model xai/grok-4.6
+pi-mesh workflow start jira-development --payload '@ticket.json'
+pi-mesh workflow list
+pi-mesh workflow get run_123
+pi-mesh github watch --run-id run_123 --stage-id watch --signal-key pr-42-checks --repo org/repo --pr 42 --required ci
+pi-mesh retrospective export run_123
+pi-mesh stop
 ```
 
 Start hub and workers in separate supervised terminals. Use `--dry-run --json` to inspect mutation plans without exposing configured token or secret values. Terminal workflows export proposed Markdown and JSON retrospectives automatically; review them before adopting any improvement as policy.

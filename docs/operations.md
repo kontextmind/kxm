@@ -14,8 +14,12 @@ It is not a clustered or multi-tenant control plane. Run one writer for each dat
 $env:PI_MESH_HOST = "127.0.0.1"
 $env:PI_MESH_AUTH_TOKEN = "replace-with-a-long-random-token"
 $env:PI_MESH_WORKSPACE_DIR = "D:\work\product\.kxm"
-npm run hub
+pi-mesh hub
 ```
+
+These operator commands assume the packed release CLI installation from
+[Getting started](getting-started.md#install-the-operator-command). From a
+source clone, use `npm run hub` instead.
 
 Stop with `Ctrl+C` or `SIGTERM`. The hub stops accepting connections, closes SSE streams, waits for active HTTP connections, and closes SQLite.
 
