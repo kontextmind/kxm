@@ -4,7 +4,12 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { MeshClient } from "./client.ts";
 import type { DeliveryMode, HubEvent, MessageRecord } from "./protocol.ts";
-import type { ImprovementArea, JournalCategory, WorkflowCheckpointStatus } from "./workflow.ts";
+import type {
+  ImprovementArea,
+  JournalCategory,
+  WorkflowCheckpointStatus,
+  WorkflowEvidenceInput,
+} from "./workflow.ts";
 
 const VERSION = "0.4.0";
 const inbox = new Map<string, MessageRecord>();
@@ -212,7 +217,7 @@ const tools = [
   },
   {
     name: "mesh_workflow_checkpoint",
-    description: "Checkpoint the active workflow stage; warnings and failures must be retried.",
+    description: "Checkpoint the active workflow stage with evidence keyed by required evidence identity; unrelated keys never satisfy requirements. Warnings and failures must be retried.",
     inputSchema: {
       type: "object",
       properties: {
@@ -220,7 +225,7 @@ const tools = [
         stageId: { type: "string" },
         status: { type: "string", enum: ["passed", "warning", "failed"] },
         summary: { type: "string" },
-        evidence: { type: "array", items: { type: "string" }, maxItems: 32 },
+        evidence: { type: "object", additionalProperties: { type: "string" }, maxProperties: 64 },
       },
       required: ["runId", "stageId", "status", "summary"],
       additionalProperties: false,
@@ -250,7 +255,7 @@ const tools = [
   },
   {
     name: "mesh_workflow_wait",
-    description: "Pause the active stage until a signed external callback checkpoints it and resumes the coordinator.",
+    description: "Pause the active stage until a signed external callback checkpoints it and resumes the coordinator. Already-verified keyed evidence is accumulated with callback evidence.",
     inputSchema: {
       type: "object",
       properties: {
@@ -258,6 +263,7 @@ const tools = [
         stageId: { type: "string" },
         signalKey: { type: "string", description: "Stable callback key, such as github-pr-42-checks" },
         summary: { type: "string", description: "What is running externally and what result is expected" },
+        evidence: { type: "object", additionalProperties: { type: "string" }, maxProperties: 64 },
         timeoutMs: { type: "number", minimum: 1_000, maximum: 2_592_000_000 },
       },
       required: ["runId", "stageId", "signalKey", "summary"],
@@ -331,13 +337,18 @@ mcp.setRequestHandler(CallToolRequestSchema, async (request) => {
           stageId: requiredString(args.stageId, "stageId"),
           status: requiredString(args.status, "status") as WorkflowCheckpointStatus,
           summary: requiredString(args.summary, "summary"),
-          ...(Array.isArray(args.evidence) ? { evidence: args.evidence as string[] } : {}),
+          ...(args.evidence && typeof args.evidence === "object" && !Array.isArray(args.evidence)
+            ? { evidence: args.evidence as WorkflowEvidenceInput }
+            : {}),
         }));
       case "mesh_workflow_wait":
         return textResult(await client.waitForWorkflowSignal(requiredString(args.runId, "runId"), {
           stageId: requiredString(args.stageId, "stageId"),
           signalKey: requiredString(args.signalKey, "signalKey"),
           summary: requiredString(args.summary, "summary"),
+          ...(args.evidence && typeof args.evidence === "object" && !Array.isArray(args.evidence)
+            ? { evidence: args.evidence as WorkflowEvidenceInput }
+            : {}),
           ...(typeof args.timeoutMs === "number" ? { timeoutMs: args.timeoutMs } : {}),
         }));
       case "mesh_workflow_record":

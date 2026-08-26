@@ -83,8 +83,8 @@
         "id": "push-watch",
         "area": "gates",
         "label": "Push, open review, and watch",
-        "instructions": "When authorized, push the branch and open or update the review. Watch required GitHub checks with `pi-mesh github watch --run-id <id> --stage-id <stage> --signal-key <key> --repo <owner/name> --pr <n>` so the durable wait receives an exact signed signal for success, failure, cancellation, or timeout. Record every warning or failure, fix it, push again, and continue watching until required checks pass.",
-        "requiredEvidence": ["commit", "pull request", "required check results", "resolved warnings and failures"],
+        "instructions": "When authorized, push the branch and open or update the review. Call mesh_workflow_wait with commit, pull-request, and resolved-warning evidence, then watch the example `ci` check with `pi-mesh github watch --run-id <id> --stage-id push-watch --signal-key <key> --repo <owner/name> --pr <n> --required ci` so the durable wait receives exact `github.check:ci` evidence. Replace `ci` in this template and command with the repository's real required check names. Record every warning or failure, fix it, push again, and continue watching until required checks pass.",
+        "requiredEvidence": ["commit", "pull request", "resolved warnings and failures", "github.check:ci"],
         "maxAttempts": 10
       },
       {

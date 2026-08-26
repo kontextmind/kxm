@@ -430,7 +430,7 @@ export async function runRealSmoke(options = {}) {
           method: "POST",
           authToken,
           identity: resumedOperator,
-          body: { stageId: "verify", status: "passed", summary: "All real Pi smoke assertions passed", evidence: ["real Pi evidence"] },
+          body: { stageId: "verify", status: "passed", summary: "All real Pi smoke assertions passed", evidence: { "real Pi evidence": "discovery, request/reply, fanout, and post-restart request/reply passed" } },
         });
         if (!checkpoint.completed) throw new Error("workflow checkpoint did not complete");
         const recorded = await api(baseUrl, `/v1/workflows/${encodeURIComponent(started.run.id)}`, { authToken, identity: resumedOperator });

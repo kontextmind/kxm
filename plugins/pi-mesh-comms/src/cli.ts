@@ -4,11 +4,11 @@ import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
-import { parseWorkflowDefinitions } from "./workflow.ts";
+import { canonicalWorkflowEvidenceKey, parseWorkflowDefinitions } from "./workflow.ts";
 import { postWorkflowSignal, watchGithubChecks } from "./github-watch.ts";
 import { buildRetrospective, writeRetrospective } from "./retrospective.ts";
 import { redactSecrets } from "./redact.ts";
-import type { WorkflowJournalEntry, WorkflowRun } from "./workflow.ts";
+import type { WorkflowEvidenceInput, WorkflowJournalEntry, WorkflowRun } from "./workflow.ts";
 
 export interface CliIo {
   stdout: (text: string) => void;
@@ -78,6 +78,22 @@ function usage(): string {
     "          workflow list | workflow get <runId> | workflow start <definitionId> --payload <JSON|@file>",
     "          signal | github watch | retrospective export <runId> | smoke",
   ].join("\n");
+}
+
+function parseEvidencePairs(values: string[]): WorkflowEvidenceInput {
+  const evidence = new Map<string, string>();
+  for (const value of values) {
+    const separator = value.indexOf("=");
+    if (separator <= 0 || separator === value.length - 1) {
+      throw new Error("evidence must use <required-key>=<evidence> syntax");
+    }
+    const requirement = canonicalWorkflowEvidenceKey(value.slice(0, separator));
+    const proof = value.slice(separator + 1).trim();
+    if (!requirement || !proof) throw new Error("evidence must use <required-key>=<evidence> syntax");
+    if (evidence.has(requirement)) throw new Error(`duplicate normalized evidence key: ${requirement}`);
+    evidence.set(requirement, proof);
+  }
+  return Object.fromEntries(evidence);
 }
 
 function print(io: CliIo, jsonMode: boolean, payload: Record<string, unknown>, text: string): void {
@@ -334,13 +350,20 @@ export async function runCli(
   }
 
   if (command === "signal") {
-    const [runId, signalKey, status, summary, ...evidence] = parsed.rest.slice(1);
+    const [runId, signalKey, status, summary, ...evidenceArgs] = parsed.rest.slice(1);
     if (!runId || !signalKey || !status || !summary) {
-      io.stderr("Usage: pi-mesh signal <runId> <signalKey> <passed|warning|failed> <summary> [evidence...]\n");
+      io.stderr("Usage: pi-mesh signal <runId> <signalKey> <passed|warning|failed> <summary> [<required-key>=<evidence> ...]\n");
       return 2;
     }
     if (status !== "passed" && status !== "warning" && status !== "failed") {
       io.stderr("status must be passed, warning, or failed\n");
+      return 2;
+    }
+    let evidence: WorkflowEvidenceInput;
+    try {
+      evidence = parseEvidencePairs(evidenceArgs);
+    } catch (error) {
+      io.stderr(`${error instanceof Error ? error.message : "invalid evidence"}\n`);
       return 2;
     }
     const definitionId = env.PI_MESH_WORKFLOW_ID?.trim();
@@ -353,6 +376,7 @@ export async function runCli(
       print(io, parsed.json, { ok: true, command: "signal", runId, signalKey, status, summary, evidence }, "would post signed signal");
       return 0;
     }
+    const deliveryId = String(parsed.flags["delivery-id"] || `cli-signal:${randomUUID()}`);
     try {
       const posted = await postWorkflowSignal({
         serverUrl,
@@ -363,13 +387,13 @@ export async function runCli(
         status,
         summary,
         evidence,
-        deliveryId: String(parsed.flags["delivery-id"] || `cli-signal:${runId}:${signalKey}`),
+        deliveryId,
         fetchImpl,
       });
-      print(io, parsed.json, { ok: true, command: "signal", duplicate: posted.duplicate }, "posted signed signal");
+      print(io, parsed.json, { ok: true, command: "signal", duplicate: posted.duplicate, deliveryId }, "posted signed signal");
       return 0;
     } catch {
-      print(io, parsed.json, { ok: false, command: "signal", error: "signal_failed" }, "signed signal failed");
+      print(io, parsed.json, { ok: false, command: "signal", error: "signal_failed", deliveryId }, "signed signal failed");
       return 1;
     }
   }
@@ -405,6 +429,7 @@ export async function runCli(
         : [],
       timeoutMs: Number(parsed.flags["timeout-ms"] || 1_800_000),
       intervalMs: Number(parsed.flags["interval-ms"] || 15_000),
+      ...(typeof parsed.flags["delivery-id"] === "string" ? { deliveryId: parsed.flags["delivery-id"] } : {}),
       ...(token ? { token } : {}),
       dryRun: parsed.dryRun,
       fetchImpl,
@@ -418,6 +443,7 @@ export async function runCli(
       status: result.status,
       summary: result.summary,
       evidence: result.evidence,
+      deliveryId: result.deliveryId,
       skipped: result.skipped,
     };
     if (JSON.stringify(payload).includes(token ?? "___never___") || Object.keys(env).some((key) => maskEnvName(key) && JSON.stringify(payload).includes(String(env[key])))) {

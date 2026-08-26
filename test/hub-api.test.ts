@@ -528,7 +528,7 @@ test("signed Jira webhooks start durable workflows, deduplicate retries, journal
     stageId: "reproduce",
     status: "warning",
     summary: "Reproduction is not deterministic",
-    evidence: ["trace:first"],
+    evidence: { trace: "first" },
   });
   assert.equal(retry.retry, true);
   assert.match(retry.instruction, /Correct/);
@@ -536,14 +536,19 @@ test("signed Jira webhooks start durable workflows, deduplicate retries, journal
     stageId: "reproduce",
     status: "passed",
     summary: "Reproduced with a failing test",
-    evidence: ["test:checkout.spec.ts"],
+    evidence: { "failing test": "test:checkout.spec.ts" },
   });
   assert.equal(advance.run.currentStage, "quality");
   const complete = await coordinator.checkpointWorkflow(runId, {
     stageId: "quality",
     status: "passed",
     summary: "All repository gates passed",
-    evidence: ["lint:pass", "build:pass", "security:pass", "playwright:pass"],
+    evidence: {
+      lint: "pass",
+      build: "pass",
+      security: "pass",
+      playwright: "pass",
+    },
   });
   assert.equal(complete.completed, true);
   assert.equal((await coordinator.getWorkflow(runId)).run.status, "completed");
@@ -639,7 +644,7 @@ test("a coordinator that settles before passing checkpoints fails the run and re
     stageId: "gate",
     status: "passed",
     summary: "too late",
-    evidence: ["result"],
+    evidence: { result: "too late" },
   }), /workflow is failed/);
 });
 
@@ -656,7 +661,7 @@ test("signed external signals resume, retry, deduplicate, and complete a settled
     delivery: "followUp",
     promptTemplate: "Handle PR {{pull_request.number}}",
     stages: [
-      { id: "checks", label: "CI checks", instructions: "Wait for CI", requiredEvidence: ["check URL"], maxAttempts: 2 },
+      { id: "checks", label: "CI checks", instructions: "Wait for CI", requiredEvidence: ["local review", "github.check:ci"], maxAttempts: 2 },
       { id: "merge", label: "Merge", instructions: "Wait for merge", requiredEvidence: ["merge URL"], maxAttempts: 2 },
     ],
   };
@@ -687,6 +692,7 @@ test("signed external signals resume, retry, deduplicate, and complete a settled
     stageId: "checks",
     signalKey: "github-pr-42-checks",
     summary: "GitHub Actions is running",
+    evidence: { "local review": "review.md" },
     timeoutMs: 60_000,
   });
   assert.equal(wait.run.status, "waiting");
@@ -709,7 +715,7 @@ test("signed external signals resume, retry, deduplicate, and complete a settled
   const passedChecks = JSON.stringify({
     status: "passed",
     summary: "CI passed",
-    evidence: ["https://ci.example/pr/42"],
+    evidence: { "github.check:ci": "https://ci.example/pr/42" },
   });
   assert.equal((await signal("github-pr-42-checks", "bad-signature", passedChecks, "sha256=bad")).status, 401);
   assert.equal((await signal(
@@ -719,6 +725,24 @@ test("signed external signals resume, retry, deduplicate, and complete a settled
     `sha256=${createHmac("sha256", secret).update(passedChecks).digest("hex")}`,
   )).status, 401);
   assert.equal((await signal("wrong-key", "wrong-key", passedChecks)).status, 409);
+  const unrelatedVolume = JSON.stringify({
+    status: "passed",
+    summary: "Context and check volume cannot replace named evidence",
+    evidence: {
+      "workflow.run": runId,
+      "workflow.stage": "checks",
+      "workflow.signal": "github-pr-42-checks",
+      "github.check:build": "pass",
+      "github.check:lint": "pass",
+      "github.check:test": "pass",
+    },
+  });
+  const incomplete = await signal("github-pr-42-checks", "unrelated-volume", unrelatedVolume);
+  assert.equal(incomplete.status, 400);
+  const incompleteBody = await responseJson(incomplete) as { code?: string; missingRequirements?: string[] };
+  assert.equal(incompleteBody.code, "workflow_evidence_incomplete");
+  assert.deepEqual(incompleteBody.missingRequirements, ["github.check:ci"]);
+  assert.equal((await coordinator.getWorkflow(runId)).run.status, "waiting");
   const resumed = await signal("github-pr-42-checks", "checks-passed", passedChecks);
   assert.equal(resumed.status, 202);
   const resumedPayload = await resumed.json() as Record<string, unknown>;
@@ -741,7 +765,7 @@ test("signed external signals resume, retry, deduplicate, and complete a settled
   const conflictingDelivery = JSON.stringify({
     status: "failed",
     summary: "Conflicting reuse",
-    evidence: ["https://ci.example/pr/42/conflict"],
+    evidence: { "github.check:ci": "https://ci.example/pr/42/conflict" },
   });
   assert.equal((await signal("github-pr-42-checks", "checks-passed", conflictingDelivery)).status, 409);
 
@@ -754,7 +778,7 @@ test("signed external signals resume, retry, deduplicate, and complete a settled
   const failedMerge = JSON.stringify({
     status: "failed",
     summary: "Branch protection rejected the merge",
-    evidence: ["https://github.example/pr/42#protection"],
+    evidence: { "merge URL": "https://github.example/pr/42#protection" },
   });
   const retry = await signal("github-pr-42-merge", "merge-failed", failedMerge);
   assert.equal(retry.status, 202);
@@ -773,7 +797,7 @@ test("signed external signals resume, retry, deduplicate, and complete a settled
   const passedMerge = JSON.stringify({
     status: "passed",
     summary: "PR merged",
-    evidence: ["https://github.example/pr/42/merge"],
+    evidence: { "merge URL": "https://github.example/pr/42/merge" },
   });
   const completed = await signal("github-pr-42-merge-rerun", "merge-passed", passedMerge);
   assert.equal(completed.status, 200);

@@ -99,6 +99,7 @@ A coordinator should not hold an agent turn open while an external system runs f
 - the run and active stage IDs;
 - a stable `signalKey`, such as `github-pr-42-checks`;
 - a concise description of the expected result;
+- optional local evidence keyed by its declared requirement identity;
 - an optional timeout from one second through 30 days; the default is 24 hours.
 
 The hub changes the run and stage to `waiting`. The coordinator may then settle its current prompt without triggering the premature-settlement failure. If the deadline passes first, the run fails and records a harness error.
@@ -115,7 +116,9 @@ The JSON body is:
 {
   "status": "passed",
   "summary": "All required GitHub checks passed",
-  "evidence": ["https://github.example/org/repo/actions/runs/123"]
+  "evidence": {
+    "github.check:ci": "conclusion:success url:https://github.example/org/repo/actions/runs/123"
+  }
 }
 ```
 
@@ -136,7 +139,7 @@ $env:PI_MESH_WORKFLOW_SIGNAL_SECRET = "replace-with-the-callback-secret"
 $env:PI_MESH_SIGNAL_DELIVERY_ID = "github-check-run-123-attempt-1"
 node --experimental-strip-types examples/workflow-signal.ts `
   run_123 github-pr-42-checks passed "All required checks passed" `
-  "https://github.example/org/repo/actions/runs/123"
+  "github.check:ci=https://github.example/org/repo/actions/runs/123"
 ```
 
 In a real integration, store the `runId` and `signalKey` in Jira, pull-request metadata, or the external job's inputs when the coordinator starts the wait. Treat them as routing identifiers rather than secrets.
@@ -150,13 +153,44 @@ $env:GITHUB_TOKEN = "replace-with-a-checks-read-token"
 npx pi-mesh github watch --run-id run_123 --stage-id watch --signal-key github-pr-42-checks --repo org/repo --pr 42 --required ci --timeout-ms 3600000
 ```
 
-The watcher binds every result to the exact run, stage, and signal key. On timeout it posts a signed `failed` signal with summary `github_watch_timeout`, then exits `4`; it never invents a `passed` result. Retries reuse a stable `x-mesh-delivery-id`, including the pull request head SHA when GitHub returned one.
+The watcher binds every result to the exact run, stage, and signal key, requests
+up to 100 check runs per GitHub page, and follows every reported page. Each
+check is reported as `github.check:<check-name>`; diagnostic context such as
+`workflow.run` never satisfies an unrelated requirement. GitHub
+`startup_failure` is a failed result. On timeout the watcher posts a signed
+`failed` signal with summary `github_watch_timeout`, then exits `4`; it never
+invents a `passed` result.
+
+Each watcher invocation creates a new bounded delivery generation and includes
+the pull-request head SHA when GitHub returned one. Transport retries within
+that invocation reuse the exact `x-mesh-delivery-id`. After a failed or timed
+out result, start a new watcher for the new workflow wait; do not reuse the old
+generated ID. Supply `--delivery-id` only when an external supervisor must
+retry the same callback attempt with a stable provider identifier. The standalone
+`pi-mesh signal` command follows the same rule.
 
 ## Checkpoint contract
 
-Only the assigned coordinator can read, journal, checkpoint, or wait a run. A passing checkpoint must provide at least as many evidence items as the stage declares. `warning` and `failed` results remain on the active stage and return a correction instruction. Reaching `maxAttempts` fails the run. Settling the coordinator prompt before all stages pass also fails the run and records a workflow error unless the coordinator deliberately placed the active stage in `waiting` first.
+Only the assigned coordinator can read, journal, checkpoint, or wait a run. A
+passing checkpoint must provide a non-empty value for every exact
+`requiredEvidence` identity. Evidence is a JSON object rather than a list, so
+extra GitHub checks or generic context cannot replace an unrelated review,
+artifact, or retrospective requirement. Identities are normalized by trimming,
+collapsing repeated whitespace, and case-folding; normalized aliases in one
+submission are rejected as duplicates.
 
-The hub enforces stage order and evidence count; agents remain responsible for the truth of submitted evidence. Repository rules, human approvals, and harness permissions remain authoritative for push, merge, Jira mutation, and other external effects.
+Evidence supplied when entering `waiting` is accumulated with a later passing
+callback. `warning` and `failed` evidence is retained in the journal for
+diagnosis but intentionally does not satisfy a later passing attempt. Those
+results remain on the active stage and return a correction instruction.
+Reaching `maxAttempts` fails the run. Settling the coordinator prompt before all
+stages pass also fails the run and records a workflow error unless the
+coordinator deliberately placed the active stage in `waiting` first.
+
+The hub enforces stage order and requirement identity; agents remain responsible
+for the truth of submitted evidence. Repository rules, human approvals, and
+harness permissions remain authoritative for push, merge, Jira mutation, and
+other external effects.
 
 ## Platform references
 

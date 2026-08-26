@@ -217,7 +217,7 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
     stageId: "work",
     status: "passed",
     summary: "Work and test complete",
-    evidence: ["test:pass"],
+    evidence: { test: "pass" },
   });
   assert.equal((checkpoint.details as { completed: boolean }).completed, true);
   assert.match(JSON.stringify((await fake.tools.get("mesh_improvement_report")!.execute("improvements", {})).details), /implementation/);

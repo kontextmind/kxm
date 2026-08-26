@@ -11,6 +11,15 @@ export type WorkflowStageStatus = "pending" | "in_progress" | "waiting" | Workfl
 export type JournalCategory = "plan" | "decision" | "contradiction" | "error" | "lesson";
 export type ImprovementArea = "harness" | "gates" | "implementation" | "workflow" | "documentation" | "security" | "other";
 
+/** Evidence submitted for one checkpoint or external signal, keyed by a
+ * requirement from WorkflowStageDefinition.requiredEvidence. */
+export type WorkflowEvidenceInput = Record<string, string>;
+
+/** Durable evidence accumulated across local work, retries, and an external
+ * signal. A legacy string array can still be read from pre-0.4 databases, but
+ * it never satisfies a keyed requirement. */
+export type WorkflowEvidence = Record<string, string[]>;
+
 export interface WorkflowStageDefinition {
   id: string;
   label: string;
@@ -39,7 +48,7 @@ export interface WorkflowStageState extends WorkflowStageDefinition {
   status: WorkflowStageStatus;
   attempts: number;
   summary?: string;
-  evidence: string[];
+  evidence: WorkflowEvidence | string[];
   startedAt?: string;
   completedAt?: string;
   updatedAt?: string;
@@ -147,6 +156,82 @@ function stringArray(value: unknown, name: string): string[] {
   return value.map((item) => (item as string).trim());
 }
 
+/** Canonical requirement identity used for matching and durable storage. */
+export function canonicalWorkflowEvidenceKey(value: string): string {
+  return value.trim().replace(/\s+/gu, " ").toLowerCase();
+}
+
+export function normalizeWorkflowEvidence(value: unknown): WorkflowEvidence {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const normalized = new Map<string, string[]>();
+  for (const [requirement, candidate] of Object.entries(value as Record<string, unknown>)) {
+    const key = canonicalWorkflowEvidenceKey(requirement);
+    if (!key) continue;
+    const values = Array.isArray(candidate) ? candidate : [candidate];
+    const safeValues = values
+      .filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
+      .map((item) => item.trim());
+    if (safeValues.length > 0) {
+      normalized.set(key, [...new Set([...(normalized.get(key) ?? []), ...safeValues])]);
+    }
+  }
+  return Object.fromEntries(normalized);
+}
+
+export function mergeWorkflowEvidence(
+  current: WorkflowEvidence | string[] | undefined,
+  incoming: WorkflowEvidenceInput = {},
+): WorkflowEvidence {
+  const merged = new Map(Object.entries(normalizeWorkflowEvidence(current)));
+  const seen = new Set<string>();
+  for (const [rawRequirement, rawValue] of Object.entries(incoming)) {
+    const requirement = canonicalWorkflowEvidenceKey(rawRequirement);
+    if (!requirement || typeof rawValue !== "string" || !rawValue.trim()) {
+      throw new ProtocolError(400, "evidence must contain non-empty keyed string values", "invalid_workflow_evidence");
+    }
+    if (seen.has(requirement)) {
+      throw new ProtocolError(
+        400,
+        `evidence contains duplicate normalized requirement identity: ${requirement}`,
+        "invalid_workflow_evidence",
+      );
+    }
+    seen.add(requirement);
+    const value = rawValue.trim();
+    const values = merged.get(requirement) ?? [];
+    if (!values.includes(value)) values.push(value);
+    merged.set(requirement, values);
+  }
+  return Object.fromEntries(merged);
+}
+
+export function missingWorkflowEvidence(required: string[], evidence: WorkflowEvidence): string[] {
+  return required
+    .map(canonicalWorkflowEvidenceKey)
+    .filter((requirement) => !evidence[requirement]?.length);
+}
+
+export function workflowEvidenceStrings(evidence: WorkflowEvidenceInput | WorkflowEvidence): string[] {
+  return Object.entries(evidence).flatMap(([requirement, candidate]) => {
+    const values = Array.isArray(candidate) ? candidate : [candidate];
+    return values.map((value) => `${requirement}: ${value}`);
+  });
+}
+
+function requireCompleteEvidence(
+  stage: WorkflowStageState,
+  evidence: WorkflowEvidence,
+): void {
+  const missing = missingWorkflowEvidence(stage.requiredEvidence, evidence);
+  if (missing.length === 0) return;
+  throw new ProtocolError(
+    400,
+    `stage ${stage.id} is missing required evidence: ${missing.join(", ")}`,
+    "workflow_evidence_incomplete",
+    { missingRequirements: missing, providedRequirements: Object.keys(evidence) },
+  );
+}
+
 export function parseWorkflowDefinitions(
   raw: string | undefined,
   environment: Record<string, string | undefined> = process.env,
@@ -209,11 +294,19 @@ export function parseWorkflowDefinitions(
       if (area && !["harness", "gates", "implementation", "workflow", "documentation", "security", "other"].includes(area)) {
         throw new Error(`stage ${stageId} area is invalid`);
       }
+      const requiredEvidence = stringArray(stage.requiredEvidence ?? [], "stage.requiredEvidence")
+        .map((requirement, requirementIndex) => canonicalWorkflowEvidenceKey(
+          requireString(requirement, `stage.requiredEvidence[${requirementIndex}]`, { max: 128 }),
+        ));
+      if (requiredEvidence.length > 32) throw new Error(`stage ${stageId} may require at most 32 evidence keys`);
+      if (new Set(requiredEvidence).size !== requiredEvidence.length) {
+        throw new Error(`stage ${stageId} requiredEvidence keys must be unique`);
+      }
       return {
         id: stageId,
         label: requireString(stage.label ?? stageId, "stage.label", { max: 128 }),
         instructions: requireString(stage.instructions, "stage.instructions", { max: 4_000 }),
-        requiredEvidence: stringArray(stage.requiredEvidence ?? [], "stage.requiredEvidence"),
+        requiredEvidence,
         maxAttempts: maxAttempts as number,
         ...(area ? { area } : {}),
       };
@@ -273,7 +366,7 @@ export function checkpointRun(
   stageId: string,
   status: WorkflowCheckpointStatus,
   summary: string,
-  evidence: string[],
+  evidence: WorkflowEvidenceInput,
   timestamp: string,
 ): { retry: boolean; completed: boolean; run: WorkflowRun } {
   if (run.status !== "running") throw new ProtocolError(409, `workflow is ${run.status}`, "workflow_terminal");
@@ -282,16 +375,13 @@ export function checkpointRun(
   if (stage.id !== run.currentStage || stage.status !== "in_progress") {
     throw new ProtocolError(409, `stage ${stageId} is not currently active`, "workflow_stage_out_of_order");
   }
-  if (status === "passed" && evidence.length < stage.requiredEvidence.length) {
-    throw new ProtocolError(
-      400,
-      `stage ${stageId} requires at least ${stage.requiredEvidence.length} evidence items`,
-      "workflow_evidence_incomplete",
-    );
-  }
+  const accumulatedEvidence = mergeWorkflowEvidence(stage.evidence, evidence);
+  if (status === "passed") requireCompleteEvidence(stage, accumulatedEvidence);
   stage.attempts += 1;
   stage.summary = summary;
-  stage.evidence = evidence;
+  // Failed or warning evidence remains available in the journal, but it is
+  // intentionally not trusted to satisfy a later passing attempt.
+  if (status === "passed") stage.evidence = accumulatedEvidence;
   stage.updatedAt = timestamp;
   run.updatedAt = timestamp;
   if (status !== "passed") {
@@ -328,6 +418,7 @@ export function waitForWorkflowSignal(
   summary: string,
   timestamp: string,
   expiresAt: string,
+  evidence: WorkflowEvidenceInput = {},
 ): WorkflowRun {
   if (run.status !== "running") throw new ProtocolError(409, `workflow is ${run.status}`, "workflow_not_running");
   const stage = run.stages.find((candidate) => candidate.id === stageId);
@@ -338,6 +429,7 @@ export function waitForWorkflowSignal(
   if (Date.parse(expiresAt) <= Date.parse(timestamp)) {
     throw new ProtocolError(400, "workflow signal expiry must be in the future", "workflow_wait_invalid");
   }
+  stage.evidence = mergeWorkflowEvidence(stage.evidence, evidence);
   stage.status = "waiting";
   stage.updatedAt = timestamp;
   run.status = "waiting";
@@ -351,7 +443,7 @@ export function resumeWorkflowFromSignal(
   signalKey: string,
   status: WorkflowCheckpointStatus,
   summary: string,
-  evidence: string[],
+  evidence: WorkflowEvidenceInput,
   timestamp: string,
 ): { retry: boolean; completed: boolean; run: WorkflowRun; stageId: string } {
   if (run.status !== "waiting" || !run.waiting) {
@@ -365,13 +457,8 @@ export function resumeWorkflowFromSignal(
   if (!stage || stage.id !== run.currentStage || stage.status !== "waiting") {
     throw new ProtocolError(409, "workflow wait state is inconsistent", "workflow_wait_inconsistent");
   }
-  if (status === "passed" && evidence.length < stage.requiredEvidence.length) {
-    throw new ProtocolError(
-      400,
-      `stage ${stageId} requires at least ${stage.requiredEvidence.length} evidence items`,
-      "workflow_evidence_incomplete",
-    );
-  }
+  const accumulatedEvidence = mergeWorkflowEvidence(stage.evidence, evidence);
+  if (status === "passed") requireCompleteEvidence(stage, accumulatedEvidence);
   run.status = "running";
   stage.status = "in_progress";
   delete run.waiting;

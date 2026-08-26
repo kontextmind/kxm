@@ -32,7 +32,7 @@ Claude MCP ─── HTTP/SSE ───┘    ├── SQLite WAL
 
 The hub validates and authenticates requests, stores agents and messages, pushes addressed work over SSE, expires stale work, and purges terminal records after the configured retention window. SQLite is the source of restart recovery; in-memory maps are the live working set.
 
-Signed webhook workflows add a durable run and coordinator message in one request. The stable provider delivery ID prevents duplicate Jira or GitHub retries. Ordered checkpoints enforce attempt limits and evidence counts. A coordinator can deliberately pause the active stage in a durable `waiting` state; a separately signed and deduplicated external result applies the same checkpoint rules and queues a new coordinator prompt when work remains. A separate journal preserves plans, decisions, contradictions, errors, and lessons for reviewed continuous improvement.
+Signed webhook workflows add a durable run and coordinator message in one request. The stable provider delivery ID prevents duplicate Jira or GitHub retries. Ordered checkpoints enforce attempt limits and exact keyed evidence requirements. Local evidence can be accumulated when a coordinator enters a durable `waiting` state; a separately signed and deduplicated external result must complete the remaining named requirements before it can advance the stage. A separate journal preserves plans, decisions, contradictions, errors, and lessons for reviewed continuous improvement.
 
 ## Workflow lifecycle
 
@@ -90,6 +90,8 @@ The administrative token manages administrative routes and acts as the project t
 | `src/github-watch.ts` | GitHub check polling to signed signals |
 | `src/retrospective.ts` | Bounded Markdown/JSON export |
 | `src/recovery.ts` | Worker recovery envelope consume |
+| `dist/cli.js` | Generated self-contained operator CLI runtime |
+| `dist/server.js` | Generated self-contained hub runtime |
 | `dist/mcp-server.js` | Generated self-contained Claude runtime |
 
-The MCP bundle is committed because marketplace installation does not run a dependency-install step. Edit the source, run `npm run build:mcp`, and commit both source and bundle.
+The generated runtimes are committed because installed packages must work without a development toolchain or runtime TypeScript stripping. Edit the source, run `npm run build`, and commit the source and corresponding files under `dist/`.

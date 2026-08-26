@@ -5,6 +5,7 @@ import type {
   ImprovementAreaReport,
   JournalCategory,
   WorkflowCheckpointStatus,
+  WorkflowEvidenceInput,
   WorkflowJournalEntry,
   WorkflowRun,
 } from "./workflow.ts";
@@ -211,7 +212,7 @@ export class MeshClient {
 
   async checkpointWorkflow(
     runId: string,
-    input: { stageId: string; status: WorkflowCheckpointStatus; summary: string; evidence?: string[] },
+    input: { stageId: string; status: WorkflowCheckpointStatus; summary: string; evidence?: WorkflowEvidenceInput },
   ): Promise<{ run: WorkflowRun; retry: boolean; completed: boolean; instruction: string }> {
     return await this.request(`/v1/workflows/${encodeURIComponent(runId)}/checkpoints`, {
       method: "POST",
@@ -221,7 +222,13 @@ export class MeshClient {
 
   async waitForWorkflowSignal(
     runId: string,
-    input: { stageId: string; signalKey: string; summary: string; timeoutMs?: number },
+    input: {
+      stageId: string;
+      signalKey: string;
+      summary: string;
+      evidence?: WorkflowEvidenceInput;
+      timeoutMs?: number;
+    },
   ): Promise<{ run: WorkflowRun; instruction: string }> {
     return await this.request(`/v1/workflows/${encodeURIComponent(runId)}/waits`, {
       method: "POST",

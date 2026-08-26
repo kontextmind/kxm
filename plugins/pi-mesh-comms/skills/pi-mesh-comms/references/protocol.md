@@ -19,13 +19,20 @@ Operational routes are `GET /health`, `GET /ready`, and authenticated `GET /metr
 - `POST /v1/webhooks/:definitionId` accepts a configured signed provider webhook.
 - `GET /v1/workflows` lists runs assigned to the authenticated coordinator.
 - `GET /v1/workflows/:runId` returns stages and journal entries.
-- `POST /v1/workflows/:runId/checkpoints` records `passed`, `warning`, or `failed` evidence for the active stage.
-- `POST /v1/workflows/:runId/waits` pauses the active stage for a named external signal and bounded deadline.
+- `POST /v1/workflows/:runId/checkpoints` records `passed`, `warning`, or `failed` evidence keyed by required identity for the active stage.
+- `POST /v1/workflows/:runId/waits` pauses the active stage for a named external signal and bounded deadline, optionally accumulating verified local keyed evidence.
 - `POST /v1/webhooks/:definitionId/runs/:runId/signals/:signalKey` accepts a signed, retry-deduplicated external checkpoint result.
 - `POST /v1/workflows/:runId/journal` records a plan, decision, contradiction, error, or lesson.
 - `GET /v1/improvements` groups project journal evidence by improvement area.
 
 Webhook and signal bodies require SHA-256 HMAC validation and a stable provider delivery ID. Workflow routes require both project authentication and the assigned coordinator identity. Signal routes use `signalSecretEnv` when configured and otherwise use the workflow-start secret.
+
+Workflow evidence is a JSON object whose keys identify requirements. Keys are
+trimmed, repeated whitespace is collapsed, and matching is case-insensitive;
+canonical keys are retained in durable state. A passing transition requires a
+non-empty value for every stage requirement. Unrelated keys never substitute
+for missing ones, and warning/failed-attempt evidence remains diagnostic rather
+than satisfying a later pass.
 
 ## Request states
 

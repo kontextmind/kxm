@@ -23,7 +23,7 @@ Run the main checks:
 ```powershell
 npm run test:coverage
 npm run check
-npm run build:mcp
+npm run check:generated
 npm run validate:claude
 npm pack --dry-run
 ```
@@ -41,15 +41,19 @@ npm pack --dry-run
 
 ## Source and generated files
 
-Edit `plugins/pi-mesh-comms/src/mcp-server.ts`, then run:
+When changing the CLI, hub, MCP server, or one of their shared modules, run:
 
 ```powershell
-npm run build:mcp
+npm run build
 ```
 
-Commit the generated `plugins/pi-mesh-comms/dist/mcp-server.js` with its source change. Claude marketplace installations use this self-contained artifact and do not install development dependencies.
+Commit the corresponding files under `plugins/pi-mesh-comms/dist/` with the source change. npm and Claude marketplace installations use these self-contained artifacts and must not require development dependencies or runtime TypeScript stripping.
 
-Do not edit the generated bundle by hand.
+After committing the generated files, run `npm run check:generated`. It rebuilds
+the runtimes and fails if any required artifact is missing, untracked, or
+changed by the build.
+
+Do not edit generated runtime files by hand.
 
 Repository-local runtime conventions belong under `.kxm`: reviewable configuration in `config`, intentional workflow artifacts in `assets`, ignored logs in `logs`, and ignored recovery state in `state`. Never commit live logs, SQLite files, generated assets, or secret values.
 

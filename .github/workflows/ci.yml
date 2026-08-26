@@ -35,6 +35,6 @@ jobs:
       - name: Test, type-check, and inspect package
         run: npm run validate:ci
 
-      - name: Verify generated MCP bundle is current
+      - name: Verify generated runtime bundles are current
         if: runner.os == 'Linux' && matrix.node == 24
-        run: git diff --exit-code -- plugins/pi-mesh-comms/dist/mcp-server.js
+        run: npm run check:generated
