@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/kontextmind/pi-extensions/security/advisories/new
+    about: Report security issues privately

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { MeshClient } from "../src/client.ts";
-import { createMeshHub, type MeshHub } from "../src/hub.ts";
+import { MeshClient } from "../plugins/pi-mesh-comms/src/client.ts";
+import { createMeshHub, type MeshHub } from "../plugins/pi-mesh-comms/src/hub.ts";
 
 const resources: Array<{ hub: MeshHub; clients: MeshClient[] }> = [];
 
@@ -15,7 +15,7 @@ afterEach(async () => {
 
 async function setup() {
   const token = "test-token";
-  const hub = createMeshHub({ port: 0, authToken: token });
+  const hub = createMeshHub({ port: 0, authToken: token, shutdownGraceMs: 50 });
   const address = await hub.start();
   const clients: MeshClient[] = [];
   resources.push({ hub, clients });
@@ -28,6 +28,7 @@ async function setup() {
       project: "test-project",
       heartbeatMs: 100,
       reconnectMs: 20,
+      requestTimeoutMs: 1_000,
     });
     clients.push(client);
     return client;
@@ -73,4 +74,3 @@ test("duplicate live names are rejected within a project", async () => {
   await first.start(() => undefined);
   await assert.rejects(() => duplicate.start(() => undefined), /already active/);
 });
-

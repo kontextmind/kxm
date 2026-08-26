@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "pi-mesh-comms",
+  "displayName": "Pi Mesh Comms",
+  "version": "0.3.0",
+  "description": "Durable peer communication, webhook workflows, and learning journals for Pi and Claude Code agents",
+  "author": {
+    "name": "KontextMind",
+    "url": "https://github.com/kontextmind"
+  },
+  "homepage": "https://github.com/kontextmind/pi-extensions",
+  "repository": "https://github.com/kontextmind/pi-extensions",
+  "license": "MIT",
+  "keywords": ["multi-agent", "communication", "workflows", "webhooks", "mcp", "pi"],
+  "mcpServers": "./.mcp.json",
+  "channels": [
+    {
+      "server": "pi-mesh"
+    }
+  ],
+  "userConfig": {
+    "server_url": {
+      "type": "string",
+      "title": "Mesh server URL",
+      "description": "URL of the running pi-mesh hub",
+      "default": "http://127.0.0.1:7331",
+      "required": true
+    },
+    "auth_token": {
+      "type": "string",
+      "title": "Mesh authentication token",
+      "description": "Shared bearer token configured on the pi-mesh hub",
+      "sensitive": true,
+      "required": false
+    },
+    "agent_name": {
+      "type": "string",
+      "title": "Agent name",
+      "description": "Unique name shown to other agents in the project",
+      "default": "claude-code",
+      "required": true
+    },
+    "agent_purpose": {
+      "type": "string",
+      "title": "Agent purpose",
+      "description": "Short description used by peers when routing work",
+      "default": "Claude Code implementation and review agent",
+      "required": true
+    },
+    "project": {
+      "type": "string",
+      "title": "Mesh project",
+      "description": "Optional project namespace; defaults to the current project directory name",
+      "required": false
+    }
+  }
+}

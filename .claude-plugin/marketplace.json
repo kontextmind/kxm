@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "kontextmind-pi-extensions",
+  "description": "KontextMind extensions for Pi, Claude Code, and multi-agent workflows",
+  "owner": {
+    "name": "KontextMind",
+    "url": "https://github.com/kontextmind"
+  },
+  "plugins": [
+    {
+      "name": "pi-mesh-comms",
+      "source": "./plugins/pi-mesh-comms",
+      "description": "Durable peer communication and signed webhook workflows for Pi and Claude Code agents",
+      "version": "0.3.0",
+      "category": "development",
+      "tags": ["multi-agent", "communication", "workflows", "webhooks", "mcp", "pi"]
+    }
+  ]
+}

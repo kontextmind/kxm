@@ -1,0 +1,20 @@
+{
+  "config": {
+    "MD013": false,
+    "MD060": false,
+    "MD024": {
+      "siblings_only": true
+    }
+  },
+  "globs": [
+    "*.md",
+    ".kxm/**/*.md",
+    "docs/**/*.md",
+    "plugins/**/*.md",
+    ".github/**/*.md"
+  ],
+  "ignores": [
+    "node_modules/**",
+    "plugins/**/node_modules/**"
+  ]
+}
