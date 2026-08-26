@@ -28,8 +28,10 @@ npm run validate
 | Claude MCP catalog, outbound and inbound tools, channel delivery | `test/mcp.test.ts` |
 | Signed Jira webhook verification, filtering, dispatch, and retry deduplication | `test/hub-api.test.ts` |
 | Ordered workflow checkpoints, evidence gates, warning/failure retry | `test/hub-api.test.ts`, `test/workflow.test.ts` |
+| Durable external waits, safe settlement, minimal signed responses, retry/conflict deduplication, separate secrets, and timeout notification | `test/hub-api.test.ts`, `test/workflow.test.ts` |
 | Plans, decisions, contradictions, errors, lessons, and improvement reports | `test/hub-api.test.ts`, `test/workflow.test.ts` |
 | Durable workflow and journal recovery | `test/store.test.ts` |
+| Atomic workflow transition commit and rollback | `test/store.test.ts` |
 | Pi and Claude workflow/journal tools | `test/extension.test.ts`, `test/mcp.test.ts` |
 | Package and marketplace version consistency | `scripts/check-versions.mjs` |
 
@@ -47,8 +49,10 @@ The CI minimums are 95% lines, 80% branches, and 90% functions across `client.ts
 | Non-blocking delegation | `examples/README.md` | Uses send, independent work, and get |
 | Obsolete-work cancellation | `examples/README.md` | Uses cancel and states rollback boundary |
 | Safe network retry | `examples/README.md` | Uses stable idempotency keys |
-| Jira issue-to-merge workflow | `examples/workflows/jira-development.json` | Parsed, type-checked through workflow tests, and exercised end to end with representative configuration |
-| Long-lived headless coordinator | `scripts/pi-mesh-worker.mjs` | Configuration and process behavior documented; real Pi smoke check remains manual |
+| Jira issue-to-merge workflow | `.kxm/config/workflows/jira-development.json` | Parsed, type-checked through workflow tests, and exercised end to end with representative configuration |
+| `.kxm` workspace defaults and persisted hub/worker logs | `.kxm/`, `test/server.test.ts`, `test/worker.test.ts` | Executed with isolated temporary workspaces |
+| Signed external result callback | `examples/workflow-signal.ts` | Type-checked; equivalent signed callback path is exercised end to end in `test/hub-api.test.ts` |
+| Long-lived headless coordinator | `scripts/pi-mesh-worker.mjs` | Restart limits and spawn-failure handling are automated in `test/worker.test.ts`; real Pi smoke check remains manual |
 
 ## Manual release checks
 

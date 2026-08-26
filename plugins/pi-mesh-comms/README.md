@@ -35,12 +35,15 @@ Configure the hub URL, token, unique agent name, purpose, and project when promp
 | `mesh_workflow_list` | List webhook workflows assigned to this coordinator |
 | `mesh_workflow_get` | Read stages and the structured workflow journal |
 | `mesh_workflow_checkpoint` | Pass a gate or record a warning/failure that must be retried |
+| `mesh_workflow_wait` | Release the current turn until a signed CI, review, merge, or Jira callback arrives |
 | `mesh_workflow_record` | Capture a plan, decision, contradiction, error, or lesson |
 | `mesh_improvement_report` | Group learning evidence by improvement area |
 
 The bundled `pi-mesh-comms` skill teaches Claude when and how to use these tools safely.
 
 Signed webhooks can create durable workflows for long-lived Pi coordinators. See the repository's [Webhook workflows](../../docs/webhook-workflows.md) guide and Jira development example.
+
+Repository-local configuration, logs, workflow assets, and SQLite state use the `.kxm` workspace layout. Configuration and intentional assets can be tracked; runtime logs, generated assets, and state are ignored. See [Configuration](../../docs/configuration.md) for defaults and overrides.
 
 ## Pushed inbound requests
 

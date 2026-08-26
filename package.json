@@ -66,6 +66,7 @@
     "typescript": "7.0.2"
   },
   "files": [
+    ".kxm",
     ".claude-plugin",
     "plugins/pi-mesh-comms/.claude-plugin",
     "plugins/pi-mesh-comms/.mcp.json",
@@ -80,8 +81,7 @@
     "README.md",
     "CHANGELOG.md",
     "LICENSE",
-    "SECURITY.md",
-    ".env.example"
+    "SECURITY.md"
   ],
   "license": "MIT"
 }

@@ -95,6 +95,17 @@ Inspect the structured `worker_process_error` and `worker_exited` events. Confir
 
 Call `mesh_workflow_get` and use only `currentStage`. A passing checkpoint needs the declared number of evidence items. Warnings and failures remain active until corrected. If attempts are exhausted or the coordinator settles early, the run becomes failed and its journal records the reason; start a new provider delivery only after deciding whether repeating external effects is safe.
 
+### External workflow callback is rejected or does not resume
+
+- HTTP 401 means the callback signature does not match the exact raw body. Use `signalSecretEnv` when configured; the workflow-start secret will not work in that case.
+- HTTP 404 means the workflow definition or run ID does not match this hub.
+- HTTP 409 with `workflow_not_waiting` means the coordinator did not successfully call `mesh_workflow_wait`, the deadline already failed the run, or a prior signal advanced it.
+- HTTP 409 with `workflow_signal_mismatch` means the URL's signal key differs from the active wait. Read the run and use its exact `waiting.signalKey`.
+- HTTP 400 with `workflow_evidence_incomplete` means a passing callback supplied fewer evidence items than the stage requires.
+- HTTP 200 with `duplicate: true` is expected after retrying the same provider delivery ID. Do not generate a new ID for the same callback attempt.
+
+Inspect `workflow_wait_started`, `workflow_signal_received`, and `workflow_wait_timed_out` logs without copying secrets or full callback bodies. If a run timed out, review whether the external action completed before starting a replacement workflow.
+
 ## Collecting a useful bug report
 
 Include:

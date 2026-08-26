@@ -105,6 +105,7 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
     "mesh_workflow_list",
     "mesh_workflow_get",
     "mesh_workflow_checkpoint",
+    "mesh_workflow_wait",
     "mesh_workflow_record",
     "mesh_improvement_report",
   ]);
@@ -193,6 +194,12 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
     area: "implementation",
     summary: "Use the smallest safe change",
   });
+  await assert.rejects(() => fake.tools.get("mesh_workflow_wait")!.execute("workflow-wait-invalid", {
+    runId: workflowRunId,
+    stageId: "missing",
+    signalKey: "external-check",
+    summary: "Wait for external check",
+  }), /not found/);
   const checkpoint = await fake.tools.get("mesh_workflow_checkpoint")!.execute("workflow-checkpoint", {
     runId: workflowRunId,
     stageId: "work",

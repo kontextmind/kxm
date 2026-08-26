@@ -98,6 +98,36 @@ export class MeshStore {
     `).run(entry.id, entry.runId, entry.category, entry.area, JSON.stringify(entry));
   }
 
+  saveWorkflowTransition(
+    run: WorkflowRun,
+    message?: MessageRecord,
+    entry?: WorkflowJournalEntry,
+  ): void {
+    if (this.database) {
+      this.database.transaction(() => {
+        if (message) {
+          this.database!.prepare(`
+            INSERT INTO messages (id, record) VALUES (?, ?)
+            ON CONFLICT(id) DO UPDATE SET record = excluded.record
+          `).run(message.id, JSON.stringify(message));
+        }
+        if (entry) {
+          this.database!.prepare(`
+            INSERT INTO workflow_journal (id, run_id, category, area, record) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET record = excluded.record
+          `).run(entry.id, entry.runId, entry.category, entry.area, JSON.stringify(entry));
+        }
+        this.database!.prepare(`
+          INSERT INTO workflow_runs (id, definition_id, delivery_id, record) VALUES (?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET record = excluded.record
+        `).run(run.id, run.definitionId, run.deliveryId, JSON.stringify(run));
+      })();
+    }
+    if (message) this.messages.set(message.id, message);
+    if (entry) this.journal.set(entry.id, entry);
+    this.workflowRuns.set(run.id, run);
+  }
+
   healthy(): boolean {
     if (!this.database) return true;
     return this.database.prepare("SELECT 1 AS ok").get() !== undefined;

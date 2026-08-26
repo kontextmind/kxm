@@ -30,13 +30,16 @@ import {
   checkpointRun,
   improvementReport,
   renderWorkflowPrompt,
+  resumeWorkflowFromSignal,
   valueAtPath,
+  waitForWorkflowSignal,
   type ImprovementArea,
   type JournalCategory,
   type WebhookWorkflowDefinition,
   type WorkflowCheckpointStatus,
   type WorkflowJournalEntry,
   type WorkflowRun,
+  type WorkflowSignalReceipt,
 } from "./workflow.ts";
 
 export interface RateLimitOptions {
@@ -75,6 +78,10 @@ export interface MeshHub {
 
 type SseClient = { response: ServerResponse; heartbeat: NodeJS.Timeout };
 type RateBucket = { startedAt: number; count: number };
+
+const DEFAULT_WORKFLOW_WAIT_TIMEOUT_MS = 24 * 60 * 60_000;
+const MIN_WORKFLOW_WAIT_TIMEOUT_MS = 1_000;
+const MAX_WORKFLOW_WAIT_TIMEOUT_MS = 30 * 24 * 60 * 60_000;
 
 function isLoopback(host: string): boolean {
   if (host === "localhost" || host === "::1") return true;
@@ -183,6 +190,14 @@ function boundedStringList(value: unknown, field: string, maxItems = 32): string
   return value.map((item, index) => requireString(item, `${field}[${index}]`, { max: 1_000 }));
 }
 
+function workflowSignalKey(value: unknown): string {
+  const key = requireString(value, "signalKey", { max: 128 });
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(key)) {
+    throw new ProtocolError(400, "signalKey may contain letters, numbers, dot, underscore, colon, and hyphen", "invalid_signal_key");
+  }
+  return key;
+}
+
 export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
   const host = options.host ?? "127.0.0.1";
   const port = options.port ?? 7331;
@@ -221,6 +236,9 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
     messagesPurged: 0,
     webhooksAccepted: 0,
     workflowCheckpoints: 0,
+    workflowWaits: 0,
+    workflowSignals: 0,
+    workflowWaitTimeouts: 0,
     journalEntries: 0,
   };
   let cleanupTimer: NodeJS.Timeout | undefined;
@@ -396,10 +414,144 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
       stageList,
       "",
       "At every stage, record material plans, decisions, contradictions, errors, and lessons with mesh_workflow_record.",
+      "Keep repository-local configuration in .kxm/config, logs in .kxm/logs, and durable workflow artifacts in .kxm/assets; never commit runtime logs, state, or secrets.",
       "Complete each stage with mesh_workflow_checkpoint. A warning or failure must be corrected and checkpointed again until it passes or the attempt limit is reached.",
+      "When an external system must finish asynchronously, call mesh_workflow_wait with a stable signal key; then settle the turn so a signed callback can resume this workflow.",
       "For multi-agent planning, delegate to the requested peers, compare their proposals, record contradictions, and synthesize the strongest evidence-backed plan.",
       "Do not claim the workflow is complete until the checkpoint response reports completed=true.",
     ].join("\n");
+  }
+
+  function createWorkflowResumeMessage(
+    run: WorkflowRun,
+    definition: WebhookWorkflowDefinition,
+    deliveryId: string,
+    signalKey: string,
+    status: WorkflowCheckpointStatus,
+    summary: string,
+    evidence: string[],
+    retry: boolean,
+  ): MessageRecord {
+    const createdAt = nowIso();
+    const ttlMs = parseBoundedInteger(
+      definition.ttlMs,
+      "workflow.ttlMs",
+      defaultMessageTtlMs,
+      MIN_MESSAGE_TTL_MS,
+      MAX_MESSAGE_TTL_MS,
+    );
+    const nextInstruction = retry
+      ? `Correct the ${status} result, rerun the external check, then wait for a new signal or checkpoint the stage.`
+      : `Continue with stage ${run.currentStage}.`;
+    const content = requireString([
+      `Resume durable workflow run: ${run.id}`,
+      `Workflow: ${definition.id}`,
+      `External signal: ${signalKey}`,
+      `Result: ${status}`,
+      `Summary: ${summary}`,
+      `Evidence: ${evidence.join(", ") || "none supplied"}`,
+      "",
+      nextInstruction,
+      "Review the run with mesh_workflow_get and keep recording material plans, decisions, contradictions, errors, and lessons.",
+      "Do not claim the workflow is complete until the checkpoint response reports completed=true.",
+    ].join("\n"), "workflow resume prompt", { max: MAX_CONTENT_CHARS });
+    const message: MessageRecord = {
+      id: newId("msg"),
+      project: run.project,
+      from: `workflow:${run.id}`,
+      fromName: `signal:${definition.id}`,
+      to: run.targetAgentId,
+      toName: run.targetAgentName,
+      content,
+      delivery: definition.delivery,
+      hops: 0,
+      maxHops: DEFAULT_MAX_HOPS,
+      correlationId: run.id,
+      idempotencyKey: `${definition.id}:signal:${deliveryId}`,
+      createdAt,
+      expiresAt: new Date(Date.parse(createdAt) + ttlMs).toISOString(),
+      status: "queued",
+    };
+    run.messageId = message.id;
+    run.updatedAt = createdAt;
+    return message;
+  }
+
+  function expireWorkflowWaits(): void {
+    const timestamp = nowIso();
+    const now = Date.parse(timestamp);
+    for (const run of workflowRuns.values()) {
+      if (run.status !== "waiting" || !run.waiting || Date.parse(run.waiting.expiresAt) > now) continue;
+      const transition = structuredClone(run);
+      const waiting = transition.waiting!;
+      const stage = transition.stages.find((candidate) => candidate.id === waiting.stageId);
+      if (stage) {
+        stage.status = "failed";
+        stage.summary = `Timed out waiting for external signal ${waiting.signalKey}`;
+        stage.updatedAt = timestamp;
+      }
+      transition.status = "failed";
+      delete transition.currentStage;
+      delete transition.waiting;
+      transition.updatedAt = timestamp;
+      const entry: WorkflowJournalEntry = {
+        id: newId("journal"),
+        runId: transition.id,
+        agentId: transition.targetAgentId,
+        category: "error",
+        area: stage?.area ?? "harness",
+        severity: "error",
+        summary: `External workflow signal timed out: ${waiting.signalKey}`,
+        evidence: [`wait-created:${waiting.createdAt}`, `wait-expired:${waiting.expiresAt}`],
+        relatedEntryIds: [],
+        createdAt: timestamp,
+      };
+      const definition = webhookWorkflows.get(transition.definitionId);
+      const ttlMs = parseBoundedInteger(
+        definition?.ttlMs,
+        "workflow.ttlMs",
+        defaultMessageTtlMs,
+        MIN_MESSAGE_TTL_MS,
+        MAX_MESSAGE_TTL_MS,
+      );
+      const message: MessageRecord = {
+        id: newId("msg"),
+        project: transition.project,
+        from: `workflow:${transition.id}`,
+        fromName: `timeout:${transition.definitionId}`,
+        to: transition.targetAgentId,
+        toName: transition.targetAgentName,
+        content: [
+          `Durable workflow run ${transition.id} failed while waiting for external signal ${waiting.signalKey}.`,
+          `Stage: ${waiting.stageId}`,
+          `Expected: ${waiting.summary}`,
+          `Deadline: ${waiting.expiresAt}`,
+          "Review whether the external action completed, record any follow-up outside this terminal run, and escalate or start a new retry-safe workflow only when appropriate.",
+        ].join("\n"),
+        delivery: definition?.delivery ?? "followUp",
+        hops: 0,
+        maxHops: DEFAULT_MAX_HOPS,
+        correlationId: transition.id,
+        idempotencyKey: `${transition.definitionId}:timeout:${waiting.signalKey}:${waiting.expiresAt}`,
+        createdAt: timestamp,
+        expiresAt: new Date(Date.parse(timestamp) + ttlMs).toISOString(),
+        status: "queued",
+      };
+      transition.messageId = message.id;
+      store.saveWorkflowTransition(transition, message, entry);
+      if (agents.get(transition.targetAgentId)?.online) {
+        publish(transition.targetAgentId, { type: "message", message });
+      }
+      counters.workflowWaitTimeouts += 1;
+      counters.journalEntries += 1;
+      logger({
+        event: "workflow_wait_timed_out",
+        workflowRunId: transition.id,
+        stageId: waiting.stageId,
+        signalKey: waiting.signalKey,
+        messageId: message.id,
+      });
+    }
   }
 
   function flushPending(agentId: string): void {
@@ -494,6 +646,12 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
       `pi_mesh_webhooks_accepted_total ${counters.webhooksAccepted}`,
       "# TYPE pi_mesh_workflow_checkpoints_total counter",
       `pi_mesh_workflow_checkpoints_total ${counters.workflowCheckpoints}`,
+      "# TYPE pi_mesh_workflow_waits_total counter",
+      `pi_mesh_workflow_waits_total ${counters.workflowWaits}`,
+      "# TYPE pi_mesh_workflow_signals_total counter",
+      `pi_mesh_workflow_signals_total ${counters.workflowSignals}`,
+      "# TYPE pi_mesh_workflow_wait_timeouts_total counter",
+      `pi_mesh_workflow_wait_timeouts_total ${counters.workflowWaitTimeouts}`,
       "# TYPE pi_mesh_workflow_journal_entries_total counter",
       `pi_mesh_workflow_journal_entries_total ${counters.journalEntries}`,
       "",
@@ -523,6 +681,123 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
       }
 
       checkRateLimit(request, response);
+
+      const signalMatch = url.pathname.match(/^\/v1\/webhooks\/([^/]+)\/runs\/([^/]+)\/signals\/([^/]+)$/);
+      if (method === "POST" && signalMatch) {
+        const definitionId = decodeURIComponent(signalMatch[1]!);
+        const runId = decodeURIComponent(signalMatch[2]!);
+        const signalKey = workflowSignalKey(decodeURIComponent(signalMatch[3]!));
+        const definition = webhookWorkflows.get(definitionId);
+        if (!definition) throw new ProtocolError(404, "webhook workflow not found", "webhook_not_found");
+        const rawBody = await readBody(request);
+        verifyWebhookSignature(request, rawBody, definition.signalSecret ?? definition.secret);
+        const body = parseJsonBody(rawBody);
+        const run = workflowRuns.get(runId);
+        if (!run || run.definitionId !== definition.id) {
+          throw new ProtocolError(404, "workflow run not found", "workflow_not_found");
+        }
+        const deliveryHeader = request.headers["x-atlassian-webhook-identifier"]
+          ?? request.headers["x-github-delivery"]
+          ?? request.headers["x-mesh-delivery-id"];
+        const deliveryId = requireString(deliveryHeader, "webhook delivery identifier", { max: 128 });
+        const payloadHash = createHash("sha256").update(rawBody).digest("hex");
+        const existingReceipt = run.signalReceipts?.find((receipt) => receipt.deliveryId === deliveryId);
+        if (existingReceipt) {
+          if (existingReceipt.signalKey !== signalKey || existingReceipt.payloadHash !== payloadHash) {
+            throw new ProtocolError(
+              409,
+              "webhook delivery identifier was already used for a different signal",
+              "workflow_signal_delivery_conflict",
+            );
+          }
+          json(response, 200, {
+            duplicate: true,
+            status: existingReceipt.status,
+            stageId: existingReceipt.stageId,
+            signalKey: existingReceipt.signalKey,
+            receivedAt: existingReceipt.receivedAt,
+            resumed: Boolean(existingReceipt.messageId),
+          });
+          return;
+        }
+        expireWorkflowWaits();
+        const status = requireString(body.status, "status", { max: 16 }) as WorkflowCheckpointStatus;
+        if (status !== "passed" && status !== "warning" && status !== "failed") {
+          throw new ProtocolError(400, "status must be passed, warning, or failed", "invalid_checkpoint_status");
+        }
+        const summary = requireString(body.summary, "summary", { max: 4_000 });
+        const evidence = boundedStringList(body.evidence, "evidence");
+        const receivedAt = nowIso();
+        const transition = structuredClone(workflowRuns.get(runId)!);
+        const result = resumeWorkflowFromSignal(transition, signalKey, status, summary, evidence, receivedAt);
+        const receipt: WorkflowSignalReceipt = {
+          deliveryId,
+          payloadHash,
+          signalKey,
+          stageId: result.stageId,
+          status,
+          receivedAt,
+        };
+        (transition.signalReceipts ??= []).push(receipt);
+        let message: MessageRecord | undefined;
+        let entry: WorkflowJournalEntry | undefined;
+        if (status !== "passed") {
+          const stage = transition.stages.find((candidate) => candidate.id === result.stageId)!;
+          entry = {
+            id: newId("journal"),
+            runId: transition.id,
+            agentId: transition.targetAgentId,
+            category: "error",
+            area: stage.area ?? "gates",
+            severity: status === "failed" ? "error" : "warning",
+            summary: `${stage.label}: ${summary}`,
+            evidence,
+            relatedEntryIds: [],
+            createdAt: receivedAt,
+          };
+        }
+        if (transition.status === "running") {
+          message = createWorkflowResumeMessage(
+            transition,
+            definition,
+            deliveryId,
+            signalKey,
+            status,
+            summary,
+            evidence,
+            result.retry,
+          );
+          receipt.messageId = message.id;
+        }
+        store.saveWorkflowTransition(transition, message, entry);
+        if (entry) counters.journalEntries += 1;
+        if (message && agents.get(transition.targetAgentId)?.online) {
+          publish(transition.targetAgentId, { type: "message", message });
+        }
+        counters.workflowSignals += 1;
+        counters.workflowCheckpoints += 1;
+        logger({
+          event: "workflow_signal_received",
+          workflowRunId: transition.id,
+          deliveryId,
+          signalKey,
+          stageId: result.stageId,
+          status,
+          retry: result.retry,
+          completed: result.completed,
+          ...(message ? { messageId: message.id } : {}),
+        });
+        json(response, message ? 202 : 200, {
+          duplicate: false,
+          status,
+          stageId: result.stageId,
+          signalKey,
+          retry: result.retry,
+          completed: result.completed,
+          resumed: Boolean(message),
+        });
+        return;
+      }
 
       const webhookMatch = url.pathname.match(/^\/v1\/webhooks\/([^/]+)$/);
       if (method === "POST" && webhookMatch) {
@@ -629,6 +904,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
       }
 
       if (method === "GET" && url.pathname === "/v1/workflows") {
+        expireWorkflowWaits();
         const agent = requireAgent(request);
         requireProjectAuth(request, agent.project);
         const runs = [...workflowRuns.values()].filter(
@@ -640,6 +916,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
 
       const workflowMatch = url.pathname.match(/^\/v1\/workflows\/([^/]+)$/);
       if (method === "GET" && workflowMatch) {
+        expireWorkflowWaits();
         const agent = requireAgent(request);
         requireProjectAuth(request, agent.project);
         const run = workflowRuns.get(decodeURIComponent(workflowMatch[1]!));
@@ -649,6 +926,52 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         }
         const entries = [...journal.values()].filter((entry) => entry.runId === run.id);
         json(response, 200, { run, journal: entries });
+        return;
+      }
+
+      const waitMatch = url.pathname.match(/^\/v1\/workflows\/([^/]+)\/waits$/);
+      if (method === "POST" && waitMatch) {
+        expireWorkflowWaits();
+        const agent = requireAgent(request);
+        requireProjectAuth(request, agent.project);
+        const run = workflowRuns.get(decodeURIComponent(waitMatch[1]!));
+        if (!run) throw new ProtocolError(404, "workflow run not found", "workflow_not_found");
+        if (run.project !== agent.project || run.targetAgentId !== agent.id) {
+          throw new ProtocolError(403, "only the assigned coordinator can wait this workflow", "workflow_forbidden");
+        }
+        const body = await readJson(request);
+        const stageId = requireString(body.stageId, "stageId", { max: 64 });
+        const signalKey = workflowSignalKey(body.signalKey);
+        const summary = requireString(body.summary, "summary", { max: 4_000 });
+        const timeoutMs = parseBoundedInteger(
+          body.timeoutMs,
+          "timeoutMs",
+          DEFAULT_WORKFLOW_WAIT_TIMEOUT_MS,
+          MIN_WORKFLOW_WAIT_TIMEOUT_MS,
+          MAX_WORKFLOW_WAIT_TIMEOUT_MS,
+        );
+        const createdAt = nowIso();
+        waitForWorkflowSignal(
+          run,
+          stageId,
+          signalKey,
+          summary,
+          createdAt,
+          new Date(Date.parse(createdAt) + timeoutMs).toISOString(),
+        );
+        store.saveWorkflowRun(run);
+        counters.workflowWaits += 1;
+        logger({
+          event: "workflow_wait_started",
+          workflowRunId: run.id,
+          stageId,
+          signalKey,
+          expiresAt: run.waiting?.expiresAt,
+        });
+        json(response, 202, {
+          run,
+          instruction: "The agent may now settle this turn. A signed external signal will checkpoint the stage and resume the coordinator when more work is required.",
+        });
         return;
       }
 
@@ -964,6 +1287,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         requireProjectAuth(request, receiver.project);
         await readJson(request);
         expireMessages();
+        expireWorkflowWaits();
         purgeTerminalMessages();
         const message = messages.get(decodeURIComponent(ackMatch[1]!));
         if (!message) throw new ProtocolError(404, "message not found", "message_not_found");
@@ -1111,6 +1435,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           }
         }
         expireMessages();
+        expireWorkflowWaits();
         purgeTerminalMessages();
         const rateCutoff = Date.now() - (rateLimit?.windowMs ?? 0);
         for (const [key, bucket] of rateBuckets) {

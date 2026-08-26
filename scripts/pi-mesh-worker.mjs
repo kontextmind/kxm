@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
+import { createWriteStream, mkdirSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 
 const name = process.env.PI_MESH_AGENT_NAME?.trim();
 const project = process.env.PI_MESH_PROJECT?.trim();
@@ -8,7 +10,20 @@ if (!name || !project) {
 }
 
 const command = process.env.PI_MESH_PI_COMMAND?.trim() || (process.platform === "win32" ? "pi.cmd" : "pi");
-const workdir = process.env.PI_MESH_WORKDIR?.trim() || process.cwd();
+const workdir = resolve(process.env.PI_MESH_WORKDIR?.trim() || process.cwd());
+const workspaceDir = resolve(workdir, process.env.PI_MESH_WORKSPACE_DIR?.trim() || ".kxm");
+const configDir = resolve(workdir, process.env.PI_MESH_CONFIG_DIR?.trim() || join(workspaceDir, "config"));
+const logsDir = resolve(workdir, process.env.PI_MESH_LOGS_DIR?.trim() || join(workspaceDir, "logs"));
+const assetsDir = resolve(workdir, process.env.PI_MESH_ASSETS_DIR?.trim() || join(workspaceDir, "assets"));
+const stateDir = resolve(workdir, process.env.PI_MESH_STATE_DIR?.trim() || join(workspaceDir, "state"));
+const safeName = name.replace(/[^A-Za-z0-9_.-]/g, "_");
+const logPath = resolve(workdir, process.env.PI_MESH_WORKER_LOG_PATH?.trim() || join(logsDir, `pi-mesh-worker-${safeName}.jsonl`));
+const agentLogPath = resolve(workdir, process.env.PI_MESH_AGENT_LOG_PATH?.trim() || join(logsDir, `pi-agent-${safeName}.log`));
+for (const directory of [configDir, logsDir, assetsDir, stateDir, dirname(logPath), dirname(agentLogPath)]) {
+  mkdirSync(directory, { recursive: true });
+}
+const logStream = createWriteStream(logPath, { flags: "a", mode: 0o600 });
+const agentLogStream = createWriteStream(agentLogPath, { flags: "a", mode: 0o600 });
 const minBackoffMs = 1_000;
 const maxBackoffMs = 30_000;
 const maxRestartsRaw = process.env.PI_MESH_WORKER_MAX_RESTARTS?.trim();
@@ -20,33 +35,55 @@ let backoffMs = minBackoffMs;
 let restartCount = 0;
 let child;
 let stopping = false;
+let logsClosed = false;
 
 function log(event, details = {}) {
-  process.stdout.write(`${JSON.stringify({ timestamp: new Date().toISOString(), event, worker: name, project, ...details })}\n`);
+  const line = `${JSON.stringify({ timestamp: new Date().toISOString(), event, worker: name, project, ...details })}\n`;
+  logStream.write(line);
+  process.stdout.write(line);
+}
+
+function closeLogs() {
+  if (logsClosed) return;
+  logsClosed = true;
+  logStream.end();
+  agentLogStream.end();
 }
 
 function start() {
   const args = ["--mode", "rpc", "--name", name];
   if (process.env.PI_MESH_WORKER_CONTINUE !== "false") args.push("--continue");
   if (process.env.PI_MESH_WORKER_MODEL?.trim()) args.push("--model", process.env.PI_MESH_WORKER_MODEL.trim());
-  log("worker_starting", { command, workdir });
+  log("worker_starting", { command, workdir, workspaceDir, configDir, logsDir, assetsDir, stateDir, logPath, agentLogPath });
   const startedAt = Date.now();
   child = spawn(command, args, {
     cwd: workdir,
-    env: process.env,
+    env: {
+      ...process.env,
+      PI_MESH_WORKSPACE_DIR: workspaceDir,
+      PI_MESH_CONFIG_DIR: configDir,
+      PI_MESH_LOGS_DIR: logsDir,
+      PI_MESH_ASSETS_DIR: assetsDir,
+      PI_MESH_STATE_DIR: stateDir,
+    },
     stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true,
   });
-  child.stdout.on("data", (chunk) => process.stdout.write(chunk));
-  child.stderr.on("data", (chunk) => process.stderr.write(chunk));
-  child.once("error", (error) => log("worker_process_error", { message: error.message }));
-  child.once("exit", (code, signal) => {
+  let completed = false;
+  const complete = (code, signal, error) => {
+    if (completed) return;
+    completed = true;
     child = undefined;
-    log("worker_exited", { code, signal, uptimeMs: Date.now() - startedAt });
-    if (stopping) return;
+    if (error) log("worker_process_error", { message: error.message, code: error.code });
+    log("worker_exited", { code, signal, ...(error ? { error: error.message } : {}), uptimeMs: Date.now() - startedAt });
+    if (stopping) {
+      closeLogs();
+      return;
+    }
     if (restartCount >= maxRestarts) {
       log("worker_restart_limit_reached", { restartCount });
       process.exitCode = code || 1;
+      closeLogs();
       return;
     }
     restartCount += 1;
@@ -55,14 +92,27 @@ function start() {
     backoffMs = Math.min(maxBackoffMs, backoffMs * 2);
     log("worker_restart_scheduled", { delayMs: delay, restartCount });
     setTimeout(start, delay);
+  };
+  child.stdout.on("data", (chunk) => {
+    agentLogStream.write(chunk);
+    process.stdout.write(chunk);
   });
+  child.stderr.on("data", (chunk) => {
+    agentLogStream.write(chunk);
+    process.stderr.write(chunk);
+  });
+  child.once("error", (error) => complete(null, null, error));
+  child.once("exit", (code, signal) => complete(code, signal));
 }
 
 function shutdown(signal) {
   if (stopping) return;
   stopping = true;
   log("worker_stopping", { signal });
-  if (!child) return;
+  if (!child) {
+    closeLogs();
+    return;
+  }
   child.kill("SIGTERM");
   const force = setTimeout(() => child?.kill("SIGKILL"), 10_000);
   force.unref();

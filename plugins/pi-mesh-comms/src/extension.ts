@@ -290,6 +290,27 @@ export default function piMeshExtension(pi: ExtensionAPI) {
   });
 
   pi.registerTool({
+    name: "mesh_workflow_wait",
+    label: "Wait for workflow signal",
+    description: "Pause the active workflow stage until a signed external callback reports its result. The current agent turn may settle after this succeeds.",
+    parameters: Type.Object({
+      runId: Type.String(),
+      stageId: Type.String(),
+      signalKey: Type.String({ description: "Stable callback key, such as github-pr-42-checks" }),
+      summary: Type.String({ description: "What is running externally and what result is expected" }),
+      timeoutMs: Type.Optional(Type.Integer({ minimum: 1_000, maximum: 2_592_000_000 })),
+    }),
+    async execute(_toolCallId, params) {
+      return result(await requireClient().waitForWorkflowSignal(params.runId, {
+        stageId: params.stageId,
+        signalKey: params.signalKey,
+        summary: params.summary,
+        ...(params.timeoutMs ? { timeoutMs: params.timeoutMs } : {}),
+      }));
+    },
+  });
+
+  pi.registerTool({
     name: "mesh_workflow_record",
     label: "Record workflow knowledge",
     description: "Capture a plan, decision, contradiction, error, or lesson as evidence for workflow improvement.",

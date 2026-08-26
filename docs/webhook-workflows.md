@@ -11,7 +11,8 @@ Jira webhook ── HMAC + delivery ID ──> Hub ── durable workflow + mes
                                                    ├── peer planning/review
                                                    ├── checkpoints and retries
                                                    ├── evidence journal
-                                                   └── final result
+                                                   ├── external wait ── signed result ──┐
+                                                   └── final result <── resumed prompt ─┘
 ```
 
 The coordinator must register at least once before a webhook can target it. An unknown target returns HTTP 409, which causes Jira Cloud to retry. A known but offline target retains the queued workflow until it reconnects.
@@ -20,7 +21,7 @@ The hub stores a SHA-256 payload hash and the rendered coordinator prompt, not t
 
 ## Configure the Jira example
 
-The included [`jira-development.json`](../examples/workflows/jira-development.json) models this path:
+The included [`jira-development.json`](../.kxm/config/workflows/jira-development.json) workspace configuration models this path:
 
 1. Jira issue enters **In Progress**.
 2. Reproduce the defect and create deterministic evidence.
@@ -39,7 +40,8 @@ Load it without storing its secret in the JSON file:
 
 ```powershell
 $env:JIRA_WEBHOOK_SECRET = "replace-with-a-high-entropy-secret"
-$env:PI_MESH_WEBHOOK_WORKFLOWS_FILE = "examples/workflows/jira-development.json"
+$env:WORKFLOW_SIGNAL_SECRET = "replace-with-a-separate-callback-secret"
+$env:PI_MESH_WEBHOOK_WORKFLOWS_FILE = ".kxm/config/workflows/jira-development.json"
 npm run hub
 ```
 
@@ -78,6 +80,7 @@ The worker launches Pi in headless RPC mode, keeps stdin open, preserves its ses
 | `project` | Mesh project containing the coordinator |
 | `target` | Stable coordinator name or durable agent ID |
 | `secretEnv` | Environment variable containing the HMAC secret |
+| `signalSecretEnv` | Optional separate HMAC secret for external result callbacks |
 | `event` | Optional provider event filter |
 | `filter.path` / `filter.equals` | Optional exact JSON-path value filter |
 | `delivery` | `followUp` or `steer` |
@@ -89,9 +92,58 @@ Each stage may set `area` to route automatic warnings and failures into `harness
 
 Use `PI_MESH_WEBHOOK_WORKFLOWS` for inline JSON or `PI_MESH_WEBHOOK_WORKFLOWS_FILE` for a file, never both. Prefer `secretEnv` over a literal `secret`.
 
+## Pause for CI, review, merge, or Jira
+
+A coordinator should not hold an agent turn open while an external system runs for minutes or hours. On the active stage, call `mesh_workflow_wait` with:
+
+- the run and active stage IDs;
+- a stable `signalKey`, such as `github-pr-42-checks`;
+- a concise description of the expected result;
+- an optional timeout from one second through 30 days; the default is 24 hours.
+
+The hub changes the run and stage to `waiting`. The coordinator may then settle its current prompt without triggering the premature-settlement failure. If the deadline passes first, the run fails and records a harness error.
+
+The external system reports its result to:
+
+```text
+POST /v1/webhooks/:definitionId/runs/:runId/signals/:signalKey
+```
+
+The JSON body is:
+
+```json
+{
+  "status": "passed",
+  "summary": "All required GitHub checks passed",
+  "evidence": ["https://github.example/org/repo/actions/runs/123"]
+}
+```
+
+Sign the exact body bytes with SHA-256 HMAC. Supply the signature in `X-Hub-Signature-256` and a stable retry identifier in `X-GitHub-Delivery`, `X-Atlassian-Webhook-Identifier`, or `X-Mesh-Delivery-ID`. Repeating the same delivery ID and body returns minimal receipt metadata instead of checkpointing twice. Reusing a delivery ID for a different signal or body returns HTTP 409.
+
+Use `signalSecretEnv` so CI and merge reporters do not need the secret that creates new workflows. If it is omitted, callbacks fall back to `secretEnv` for compatibility. A valid callback can checkpoint only the named run's current wait and must match its signal key.
+
+`passed` applies the normal evidence rule and advances or completes the run. `warning` or `failed` consumes an attempt, records an error, and queues a correction prompt when attempts remain. The run, signal receipt, optional journal entry, and optional resume message commit in one SQLite transaction before delivery. A terminal result does not create another prompt. Only the validated summary and evidence are retained; the complete callback body is not stored.
+
+Callback responses deliberately expose only status, stage, retry, completion, resumption, and duplicate metadata. They never return the workflow record, coordinator prompt, message routing, journal, or evidence. Those remain behind project and agent authentication.
+
+The repository includes a small callback sender for smoke tests and automation adapters:
+
+```powershell
+$env:PI_MESH_SERVER_URL = "https://your-mesh-host.example"
+$env:PI_MESH_WORKFLOW_ID = "jira-development"
+$env:PI_MESH_WORKFLOW_SIGNAL_SECRET = "replace-with-the-callback-secret"
+$env:PI_MESH_SIGNAL_DELIVERY_ID = "github-check-run-123-attempt-1"
+node --experimental-strip-types examples/workflow-signal.ts `
+  run_123 github-pr-42-checks passed "All required checks passed" `
+  "https://github.example/org/repo/actions/runs/123"
+```
+
+In a real integration, store the `runId` and `signalKey` in Jira, pull-request metadata, or the external job's inputs when the coordinator starts the wait. Treat them as routing identifiers rather than secrets.
+
 ## Checkpoint contract
 
-Only the assigned coordinator can read, journal, or checkpoint a run. A passing checkpoint must provide at least as many evidence items as the stage declares. `warning` and `failed` results remain on the active stage and return a correction instruction. Reaching `maxAttempts` fails the run. Settling the coordinator prompt before all stages pass also fails the run and records a workflow error.
+Only the assigned coordinator can read, journal, checkpoint, or wait a run. A passing checkpoint must provide at least as many evidence items as the stage declares. `warning` and `failed` results remain on the active stage and return a correction instruction. Reaching `maxAttempts` fails the run. Settling the coordinator prompt before all stages pass also fails the run and records a workflow error unless the coordinator deliberately placed the active stage in `waiting` first.
 
 The hub enforces stage order and evidence count; agents remain responsible for the truth of submitted evidence. Repository rules, human approvals, and harness permissions remain authoritative for push, merge, Jira mutation, and other external effects.
 

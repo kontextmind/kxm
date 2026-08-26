@@ -4,6 +4,19 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ## Unreleased
 
+### Added
+
+- Durable external workflow waits that safely release coordinator turns and resume from signed CI, review, merge, or Jira result callbacks.
+- Retry-deduplicated signal receipts, bounded wait deadlines, timeout journaling, and optional least-privilege callback secrets.
+- Atomic signal transitions, minimal callback-secret responses, and durable timeout notifications to the coordinator.
+- `mesh_workflow_wait` for Pi and Claude plus an executable signed callback example.
+- Canonical `.kxm` workspace directories for tracked configuration and assets, ignored logs and state, and persisted hub/worker log files.
+- Retry and nonzero failure handling when a long-lived worker cannot spawn Pi.
+
+### Changed
+
+- Expanded Pi to twelve tools and Claude MCP to fourteen tools.
+
 ## 0.3.0 - 2026-08-25
 
 ### Added

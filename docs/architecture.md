@@ -32,9 +32,23 @@ Claude MCP ─── HTTP/SSE ───┘    ├── SQLite WAL
 
 The hub validates and authenticates requests, stores agents and messages, pushes addressed work over SSE, expires stale work, and purges terminal records after the configured retention window. SQLite is the source of restart recovery; in-memory maps are the live working set.
 
-Signed webhook workflows add a durable run and coordinator message in one request. The stable provider delivery ID prevents duplicate Jira or GitHub retries. Ordered checkpoints enforce attempt limits and evidence counts. A separate journal preserves plans, decisions, contradictions, errors, and lessons for reviewed continuous improvement.
+Signed webhook workflows add a durable run and coordinator message in one request. The stable provider delivery ID prevents duplicate Jira or GitHub retries. Ordered checkpoints enforce attempt limits and evidence counts. A coordinator can deliberately pause the active stage in a durable `waiting` state; a separately signed and deduplicated external result applies the same checkpoint rules and queues a new coordinator prompt when work remains. A separate journal preserves plans, decisions, contradictions, errors, and lessons for reviewed continuous improvement.
 
-`MeshClient` owns registration, rotating agent credentials, heartbeats, bounded HTTP requests, SSE reconnects, and automatic re-registration after hub state loss. The Pi extension adds `mesh_list`, `mesh_send`, `mesh_get`, `mesh_await`, and `mesh_cancel`. Claude MCP adds the same outbound tools plus `mesh_inbox` and `mesh_reply`.
+## Workflow lifecycle
+
+```text
+running ── checkpoint passed ──> next stage / completed
+   │
+   ├── checkpoint warning or failure ──> retry / failed
+   │
+   └── explicit external wait ──> waiting
+                                  ├── signed result ──> retry / next stage / completed
+                                  └── deadline ──────> failed
+```
+
+An ordinary coordinator reply while `running` is a failure because required work was abandoned. A reply while `waiting` is expected: it releases compute and context until the callback creates a fresh message. Signal receipts live inside the persisted workflow record, so provider retries remain deduplicated after restart.
+
+`MeshClient` owns registration, rotating agent credentials, heartbeats, bounded HTTP requests, SSE reconnects, and automatic re-registration after hub state loss. The Pi extension adds peer messaging plus workflow checkpoint, wait, journal, and reporting tools. Claude MCP adds the same workflow plane plus `mesh_inbox` and `mesh_reply`.
 
 ## Message lifecycle
 
@@ -53,12 +67,16 @@ Queued and delivered records survive restart. Agents load offline and resume the
 
 The administrative token manages administrative routes and acts as the project token only where no explicit project token exists. A configured project token can access only its project. Registration returns an agent key for identity-specific routes. Token comparisons are constant-time after hashing, and prompt or reply bodies are excluded from logs.
 
-SQLite is not encrypted by the application and contains messages plus agent credentials. Protect its directory with operating-system permissions and encrypted storage where required. Peer content remains untrusted regardless of authentication.
+`.kxm/state/mesh.db` is not encrypted by the application and contains messages plus agent credentials. Protect the `.kxm` runtime directories with operating-system permissions and encrypted storage where required. Structured hub logs omit message bodies, but raw worker agent logs may contain model or tool output. Peer content remains untrusted regardless of authentication.
 
 ## Source layout
 
 | Path | Responsibility |
 |---|---|
+| `.kxm/config/` | Tracked workspace workflow and harness configuration |
+| `.kxm/logs/` | Ignored hub, worker, and Pi process logs |
+| `.kxm/assets/` | Intentional workflow inputs and outputs |
+| `.kxm/state/` | Ignored SQLite and restart-recovery state |
 | `src/protocol.ts` | Types, limits, validation, and identifiers |
 | `src/store.ts` | SQLite schema, persistence, and health checks |
 | `src/hub.ts` | HTTP/SSE API, policy, lifecycle, and metrics |

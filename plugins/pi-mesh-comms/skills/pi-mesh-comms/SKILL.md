@@ -44,8 +44,17 @@ When an inbound request names a durable workflow run:
 3. Tag entries by `harness`, `gates`, `implementation`, `workflow`, `documentation`, `security`, or `other` and include durable evidence links.
 4. Call `mesh_workflow_checkpoint` with the active stage, result, summary, and required evidence. Correct and repeat any warning or failure.
 5. For a mixture-of-agents planning stage, use `mesh_fanout` with one to three capable peers. Collect independent plans before showing agents one another's answers, record disagreements, then synthesize the strongest compatible recommendations.
-6. Do not settle the coordinator turn until every required checkpoint passes or the run reaches a terminal failure.
-7. In the retrospective, use `mesh_improvement_report` to propose measurable improvements. Never weaken gates or change policy automatically.
+6. When an external system must finish asynchronously, call `mesh_workflow_wait` with the active stage, a stable signal key, expected result, and bounded timeout. After the hub reports `waiting`, settle the turn. Do not fabricate a callback result or keep the turn open merely to poll.
+7. Otherwise, do not settle the coordinator turn until every required checkpoint passes or the run reaches a terminal failure.
+8. In the retrospective, use `mesh_improvement_report` to propose measurable improvements. Never weaken gates or change policy automatically.
+
+## Workspace files
+
+- Keep repository-local harness and workflow configuration under `.kxm/config`.
+- Keep logs under `.kxm/logs`; do not commit runtime logs or copy sensitive agent output into the journal.
+- Keep durable workflow inputs and outputs under `.kxm/assets`. Put transient generated artifacts in `.kxm/assets/generated`.
+- Keep restart-recovery state under `.kxm/state`; never edit or commit the live SQLite database.
+- Prefer the absolute `PI_MESH_CONFIG_DIR`, `PI_MESH_LOGS_DIR`, `PI_MESH_ASSETS_DIR`, and `PI_MESH_STATE_DIR` values when the long-lived worker supplies them.
 
 ## Coordination rules
 

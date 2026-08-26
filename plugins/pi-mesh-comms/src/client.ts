@@ -201,6 +201,16 @@ export class MeshClient {
     });
   }
 
+  async waitForWorkflowSignal(
+    runId: string,
+    input: { stageId: string; signalKey: string; summary: string; timeoutMs?: number },
+  ): Promise<{ run: WorkflowRun; instruction: string }> {
+    return await this.request(`/v1/workflows/${encodeURIComponent(runId)}/waits`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  }
+
   async recordWorkflowEntry(
     runId: string,
     input: {

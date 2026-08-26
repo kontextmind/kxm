@@ -84,6 +84,7 @@ test("bundled MCP server initializes and publishes the mesh tool catalog", async
       "mesh_workflow_get",
       "mesh_workflow_checkpoint",
       "mesh_workflow_record",
+      "mesh_workflow_wait",
       "mesh_improvement_report",
     ],
   );
@@ -233,6 +234,14 @@ test("bundled MCP tools cover outbound, inbound, reply, cancellation, and channe
     evidence: ["MCP-9"],
   }));
   assert.equal(recorded.category, "lesson");
+  const invalidWait = await tool("mesh_workflow_wait", {
+    runId: workflow.run.id,
+    stageId: "missing",
+    signalKey: "external-check",
+    summary: "Wait for external check",
+  });
+  assert.equal(invalidWait.result?.isError, true);
+  assert.match(JSON.stringify(invalidWait.result), /not found/);
   const checkpoint = toolValue(await tool("mesh_workflow_checkpoint", {
     runId: workflow.run.id,
     stageId: "work",

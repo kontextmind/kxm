@@ -29,7 +29,7 @@ The current hub provides:
 - per-agent request rate limiting and stable request IDs;
 - security response headers and generic public responses for internal errors;
 - SHA-256 HMAC verification and stable-delivery deduplication for webhook workflows;
-- structured logs that omit prompt and reply bodies.
+- structured hub logs that omit prompt and reply bodies.
 
 It does not currently provide:
 
@@ -47,7 +47,9 @@ Authentication does not make a mesh message trustworthy. Agents must retain thei
 - Keep the hub on loopback whenever possible.
 - Use a long random token and load it from a secret manager or protected environment.
 - Use distinct project tokens when different teams share one hub.
-- Protect and back up the SQLite database because it contains messages and agent credentials.
+- Protect and back up `.kxm/state/mesh.db` because it contains messages and agent credentials.
+- Protect `.kxm/logs`; raw long-lived Pi process logs can contain model output, tool output, paths, and other sensitive operational data.
+- Keep secrets out of tracked `.kxm/config` and `.kxm/assets`; runtime logs, generated assets, and state must remain uncommitted.
 - Store webhook secrets in dedicated environment variables through `secretEnv`; do not commit them in workflow JSON.
 - Restrict webhook ingress by TLS, network policy, and provider configuration even when signatures are enabled.
 - Put TLS and network access controls in front of any non-loopback deployment.

@@ -5,6 +5,7 @@
     "project": "product",
     "target": "coordinator",
     "secretEnv": "JIRA_WEBHOOK_SECRET",
+    "signalSecretEnv": "WORKFLOW_SIGNAL_SECRET",
     "event": "jira:issue_updated",
     "filter": {
       "path": "issue.fields.status.name",

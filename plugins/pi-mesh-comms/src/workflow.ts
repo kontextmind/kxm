@@ -6,8 +6,8 @@ import {
 } from "./protocol.ts";
 
 export type WorkflowCheckpointStatus = "passed" | "warning" | "failed";
-export type WorkflowRunStatus = "running" | "completed" | "failed";
-export type WorkflowStageStatus = "pending" | "in_progress" | WorkflowCheckpointStatus;
+export type WorkflowRunStatus = "running" | "waiting" | "completed" | "failed";
+export type WorkflowStageStatus = "pending" | "in_progress" | "waiting" | WorkflowCheckpointStatus;
 export type JournalCategory = "plan" | "decision" | "contradiction" | "error" | "lesson";
 export type ImprovementArea = "harness" | "gates" | "implementation" | "workflow" | "documentation" | "security" | "other";
 
@@ -26,6 +26,7 @@ export interface WebhookWorkflowDefinition {
   project: string;
   target: string;
   secret: string;
+  signalSecret?: string;
   event?: string;
   filter?: { path: string; equals: string };
   delivery: "steer" | "followUp";
@@ -42,6 +43,24 @@ export interface WorkflowStageState extends WorkflowStageDefinition {
   updatedAt?: string;
 }
 
+export interface WorkflowWaitState {
+  stageId: string;
+  signalKey: string;
+  summary: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
+export interface WorkflowSignalReceipt {
+  deliveryId: string;
+  payloadHash: string;
+  signalKey: string;
+  stageId: string;
+  status: WorkflowCheckpointStatus;
+  messageId?: string;
+  receivedAt: string;
+}
+
 export interface WorkflowRun {
   id: string;
   definitionId: string;
@@ -55,6 +74,8 @@ export interface WorkflowRun {
   messageId: string;
   status: WorkflowRunStatus;
   currentStage?: string;
+  waiting?: WorkflowWaitState;
+  signalReceipts?: WorkflowSignalReceipt[];
   stages: WorkflowStageState[];
   createdAt: string;
   updatedAt: string;
@@ -153,6 +174,20 @@ export function parseWorkflowDefinitions(
     }
     const secret = requireString(secretEnv ? environment[secretEnv] : value.secret, "workflow.secret", { max: 512 });
     if (secret.length < 16) throw new Error(`workflow ${id} secret must contain at least 16 characters`);
+    const signalSecretEnv = value.signalSecretEnv === undefined
+      ? undefined
+      : requireString(value.signalSecretEnv, "workflow.signalSecretEnv", { max: 128 });
+    if (value.signalSecret !== undefined && signalSecretEnv) {
+      throw new Error(`workflow ${id} must configure only one of signalSecret or signalSecretEnv`);
+    }
+    const signalSecret = signalSecretEnv
+      ? requireString(environment[signalSecretEnv], "workflow.signalSecret", { max: 512 })
+      : value.signalSecret === undefined
+        ? undefined
+        : requireString(value.signalSecret, "workflow.signalSecret", { max: 512 });
+    if (signalSecret && signalSecret.length < 16) {
+      throw new Error(`workflow ${id} signalSecret must contain at least 16 characters`);
+    }
     if (!Array.isArray(value.stages) || value.stages.length === 0 || value.stages.length > 32) {
       throw new Error(`workflow ${id} must define between 1 and 32 stages`);
     }
@@ -203,6 +238,7 @@ export function parseWorkflowDefinitions(
       project: requireString(value.project, "workflow.project", { max: 128 }),
       target: requireString(value.target, "workflow.target", { max: 80 }),
       secret,
+      ...(signalSecret ? { signalSecret } : {}),
       ...(value.event ? { event: requireString(value.event, "workflow.event", { max: 128 }) } : {}),
       ...(filter ? { filter } : {}),
       delivery,
@@ -278,4 +314,62 @@ export function checkpointRun(
   delete run.currentStage;
   run.completedAt = timestamp;
   return { retry: false, completed: true, run };
+}
+
+export function waitForWorkflowSignal(
+  run: WorkflowRun,
+  stageId: string,
+  signalKey: string,
+  summary: string,
+  timestamp: string,
+  expiresAt: string,
+): WorkflowRun {
+  if (run.status !== "running") throw new ProtocolError(409, `workflow is ${run.status}`, "workflow_not_running");
+  const stage = run.stages.find((candidate) => candidate.id === stageId);
+  if (!stage) throw new ProtocolError(404, `workflow stage not found: ${stageId}`, "workflow_stage_not_found");
+  if (stage.id !== run.currentStage || stage.status !== "in_progress") {
+    throw new ProtocolError(409, `stage ${stageId} is not currently active`, "workflow_stage_out_of_order");
+  }
+  if (Date.parse(expiresAt) <= Date.parse(timestamp)) {
+    throw new ProtocolError(400, "workflow signal expiry must be in the future", "workflow_wait_invalid");
+  }
+  stage.status = "waiting";
+  stage.updatedAt = timestamp;
+  run.status = "waiting";
+  run.waiting = { stageId, signalKey, summary, createdAt: timestamp, expiresAt };
+  run.updatedAt = timestamp;
+  return run;
+}
+
+export function resumeWorkflowFromSignal(
+  run: WorkflowRun,
+  signalKey: string,
+  status: WorkflowCheckpointStatus,
+  summary: string,
+  evidence: string[],
+  timestamp: string,
+): { retry: boolean; completed: boolean; run: WorkflowRun; stageId: string } {
+  if (run.status !== "waiting" || !run.waiting) {
+    throw new ProtocolError(409, `workflow is ${run.status}`, "workflow_not_waiting");
+  }
+  if (run.waiting.signalKey !== signalKey) {
+    throw new ProtocolError(409, `workflow is waiting for ${run.waiting.signalKey}`, "workflow_signal_mismatch");
+  }
+  const stageId = run.waiting.stageId;
+  const stage = run.stages.find((candidate) => candidate.id === stageId);
+  if (!stage || stage.id !== run.currentStage || stage.status !== "waiting") {
+    throw new ProtocolError(409, "workflow wait state is inconsistent", "workflow_wait_inconsistent");
+  }
+  if (status === "passed" && evidence.length < stage.requiredEvidence.length) {
+    throw new ProtocolError(
+      400,
+      `stage ${stageId} requires at least ${stage.requiredEvidence.length} evidence items`,
+      "workflow_evidence_incomplete",
+    );
+  }
+  run.status = "running";
+  stage.status = "in_progress";
+  delete run.waiting;
+  const result = checkpointRun(run, stageId, status, summary, evidence, timestamp);
+  return { ...result, stageId };
 }

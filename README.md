@@ -18,6 +18,7 @@ Give running coding agents a small, dependable communication plane.
 - **Keep control.** Authentication, project isolation, message limits, and normal agent approval rules remain in place.
 - **Install using native formats.** One repository packages a Pi extension, an Agent Skill, and a Claude Code marketplace plugin.
 - **Start from real events.** Signed Jira, GitHub, or generic webhooks can prompt durable, long-lived coordinators.
+- **Release idle turns.** Coordinators can wait durably for signed CI, review, merge, or Jira callbacks and resume only when work remains.
 - **Learn from every run.** Capture plans, decisions, contradictions, errors, and lessons without turning unreviewed opinions into policy.
 
 ## Quick start: two Pi agents
@@ -169,6 +170,7 @@ Run the complete local gate with `npm run validate`. See [Contributing](CONTRIBU
 ## Repository layout
 
 ```text
+.kxm/                          Workspace configuration, logs, assets, and state
 .claude-plugin/                 Claude marketplace catalog
 .github/                        CI and contribution templates
 docs/                           User, operator, and architecture guides
@@ -179,7 +181,7 @@ plugins/pi-mesh-comms/
 └── src/                        Pi extension, hub, client, and MCP source
 scripts/                        Build and consistency helpers
 test/                           Integration tests
-examples/                       Executable scenarios and agent prompts
+examples/                       Executable transport scenarios and callback sender
 scripts/pi-mesh-worker.mjs      Restarting headless Pi RPC worker
 ```
 

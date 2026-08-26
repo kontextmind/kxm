@@ -8,6 +8,7 @@
   },
   "globs": [
     "*.md",
+    ".kxm/**/*.md",
     "docs/**/*.md",
     "plugins/**/*.md",
     ".github/**/*.md"

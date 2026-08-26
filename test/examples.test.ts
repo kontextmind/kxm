@@ -20,9 +20,13 @@ test("self-contained roundtrip example executes successfully", async () => {
 });
 
 test("Jira development workflow example is valid and covers the complete lifecycle", () => {
-  const raw = readFileSync("examples/workflows/jira-development.json", "utf8");
-  const [workflow] = parseWorkflowDefinitions(raw, { JIRA_WEBHOOK_SECRET: "example-test-secret-value" });
+  const raw = readFileSync(".kxm/config/workflows/jira-development.json", "utf8");
+  const [workflow] = parseWorkflowDefinitions(raw, {
+    JIRA_WEBHOOK_SECRET: "example-test-secret-value",
+    WORKFLOW_SIGNAL_SECRET: "example-signal-secret-value",
+  });
   assert.equal(workflow!.source, "jira");
+  assert.equal(workflow!.signalSecret, "example-signal-secret-value");
   assert.deepEqual(workflow!.stages.map((stage) => stage.id), [
     "intake",
     "reproduce",

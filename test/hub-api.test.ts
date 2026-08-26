@@ -564,6 +564,198 @@ test("a coordinator that settles before passing checkpoints fails the run and re
   assert.ok(result.journal.some((entry) => entry.category === "error" && entry.area === "workflow"));
 });
 
+test("signed external signals resume, retry, deduplicate, and complete a settled workflow", async (context) => {
+  const secret = "external-signal-secret-with-entropy";
+  const signalSecret = "separate-callback-secret-with-entropy";
+  const definition: WebhookWorkflowDefinition = {
+    id: "external-signals",
+    source: "github",
+    project: "test-project",
+    target: "coordinator",
+    secret,
+    signalSecret,
+    delivery: "followUp",
+    promptTemplate: "Handle PR {{pull_request.number}}",
+    stages: [
+      { id: "checks", label: "CI checks", instructions: "Wait for CI", requiredEvidence: ["check URL"], maxAttempts: 2 },
+      { id: "merge", label: "Merge", instructions: "Wait for merge", requiredEvidence: ["merge URL"], maxAttempts: 2 },
+    ],
+  };
+  const mesh = await createTestMesh(context, { webhookWorkflows: [definition] });
+  const messages: string[] = [];
+  const messageIds: string[] = [];
+  const coordinator = mesh.makeClient("coordinator");
+  await coordinator.start(async (event) => {
+    if (event.type !== "message") return;
+    messages.push(event.message.content);
+    messageIds.push(event.message.id);
+    await coordinator.acknowledge(event.message.id);
+  });
+  const startBody = JSON.stringify({ pull_request: { number: 42 } });
+  const started = await fetch(`${mesh.address.url}/v1/webhooks/external-signals`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-github-delivery": "workflow-start-42",
+      "x-hub-signature-256": `sha256=${createHmac("sha256", secret).update(startBody).digest("hex")}`,
+    },
+    body: startBody,
+  });
+  const startedBody = await started.json() as { run: { id: string; messageId: string } };
+  const runId = startedBody.run.id;
+  await waitFor(() => messageIds.length === 1);
+  const wait = await coordinator.waitForWorkflowSignal(runId, {
+    stageId: "checks",
+    signalKey: "github-pr-42-checks",
+    summary: "GitHub Actions is running",
+    timeoutMs: 60_000,
+  });
+  assert.equal(wait.run.status, "waiting");
+  await coordinator.reply(startedBody.run.messageId, "Waiting for CI callback");
+  assert.equal((await coordinator.getWorkflow(runId)).run.status, "waiting");
+
+  const signal = (signalKey: string, deliveryId: string, body: string, signature?: string) => fetch(
+    `${mesh.address.url}/v1/webhooks/external-signals/runs/${runId}/signals/${signalKey}`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-github-delivery": deliveryId,
+        "x-hub-signature-256": signature
+          ?? `sha256=${createHmac("sha256", signalSecret).update(body).digest("hex")}`,
+      },
+      body,
+    },
+  );
+  const passedChecks = JSON.stringify({
+    status: "passed",
+    summary: "CI passed",
+    evidence: ["https://ci.example/pr/42"],
+  });
+  assert.equal((await signal("github-pr-42-checks", "bad-signature", passedChecks, "sha256=bad")).status, 401);
+  assert.equal((await signal(
+    "github-pr-42-checks",
+    "start-secret-cannot-signal",
+    passedChecks,
+    `sha256=${createHmac("sha256", secret).update(passedChecks).digest("hex")}`,
+  )).status, 401);
+  assert.equal((await signal("wrong-key", "wrong-key", passedChecks)).status, 409);
+  const resumed = await signal("github-pr-42-checks", "checks-passed", passedChecks);
+  assert.equal(resumed.status, 202);
+  const resumedPayload = await resumed.json() as Record<string, unknown>;
+  assert.equal(resumedPayload.resumed, true);
+  assert.equal("run" in resumedPayload, false);
+  assert.equal("message" in resumedPayload, false);
+  assert.equal("receipt" in resumedPayload, false);
+  await waitFor(() => messageIds.length === 2);
+  assert.match(messages[1]!, /CI passed/);
+  let current = await coordinator.getWorkflow(runId);
+  assert.equal(current.run.status, "running");
+  assert.equal(current.run.currentStage, "merge");
+  const duplicate = await signal("github-pr-42-checks", "checks-passed", passedChecks);
+  assert.equal(duplicate.status, 200);
+  const duplicatePayload = await duplicate.json() as Record<string, unknown>;
+  assert.equal(duplicatePayload.duplicate, true);
+  assert.equal("run" in duplicatePayload, false);
+  assert.equal("message" in duplicatePayload, false);
+  assert.equal(messageIds.length, 2);
+  const conflictingDelivery = JSON.stringify({
+    status: "failed",
+    summary: "Conflicting reuse",
+    evidence: ["https://ci.example/pr/42/conflict"],
+  });
+  assert.equal((await signal("github-pr-42-checks", "checks-passed", conflictingDelivery)).status, 409);
+
+  await coordinator.waitForWorkflowSignal(runId, {
+    stageId: "merge",
+    signalKey: "github-pr-42-merge",
+    summary: "Merge queue is running",
+  });
+  await coordinator.reply(messageIds[1]!, "Waiting for merge queue");
+  const failedMerge = JSON.stringify({
+    status: "failed",
+    summary: "Branch protection rejected the merge",
+    evidence: ["https://github.example/pr/42#protection"],
+  });
+  const retry = await signal("github-pr-42-merge", "merge-failed", failedMerge);
+  assert.equal(retry.status, 202);
+  await waitFor(() => messageIds.length === 3);
+  current = await coordinator.getWorkflow(runId);
+  assert.equal(current.run.status, "running");
+  assert.equal(current.run.stages[1]!.attempts, 1);
+  assert.ok(current.journal.some((entry) => entry.summary.includes("Branch protection")));
+
+  await coordinator.waitForWorkflowSignal(runId, {
+    stageId: "merge",
+    signalKey: "github-pr-42-merge-rerun",
+    summary: "Merge queue retry is running",
+  });
+  await coordinator.reply(messageIds[2]!, "Waiting for merge retry");
+  const passedMerge = JSON.stringify({
+    status: "passed",
+    summary: "PR merged",
+    evidence: ["https://github.example/pr/42/merge"],
+  });
+  const completed = await signal("github-pr-42-merge-rerun", "merge-passed", passedMerge);
+  assert.equal(completed.status, 200);
+  current = await coordinator.getWorkflow(runId);
+  assert.equal(current.run.status, "completed");
+  assert.equal(current.run.signalReceipts?.length, 3);
+});
+
+test("an expired external signal wait fails durably and records the timeout", async (context) => {
+  const secret = "external-timeout-secret-value";
+  const mesh = await createTestMesh(context, {
+    cleanupIntervalMs: 20,
+    webhookWorkflows: [{
+      id: "external-timeout",
+      source: "generic",
+      project: "test-project",
+      target: "coordinator",
+      secret,
+      delivery: "followUp",
+      promptTemplate: "Wait for {{task}}",
+      stages: [{ id: "gate", label: "External gate", instructions: "Wait", requiredEvidence: [], maxAttempts: 1 }],
+    }],
+  });
+  const messageIds: string[] = [];
+  const messages: string[] = [];
+  const coordinator = mesh.makeClient("coordinator");
+  await coordinator.start(async (event) => {
+    if (event.type !== "message") return;
+    messageIds.push(event.message.id);
+    messages.push(event.message.content);
+    await coordinator.acknowledge(event.message.id);
+  });
+  const payload = JSON.stringify({ task: "slow-check" });
+  const response = await fetch(`${mesh.address.url}/v1/webhooks/external-timeout`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-mesh-delivery-id": "timeout-start",
+      "x-hub-signature": `sha256=${createHmac("sha256", secret).update(payload).digest("hex")}`,
+    },
+    body: payload,
+  });
+  const started = await response.json() as { run: { id: string } };
+  await waitFor(() => messageIds.length === 1);
+  await coordinator.waitForWorkflowSignal(started.run.id, {
+    stageId: "gate",
+    signalKey: "slow-check",
+    summary: "Waiting for a bounded external check",
+    timeoutMs: 1_000,
+  });
+  await coordinator.reply(messageIds[0]!, "Waiting for callback");
+  await waitFor(() => mesh.hub.state.workflowRuns.get(started.run.id)?.status === "failed", 2_500);
+  await waitFor(() => messageIds.length === 2);
+  const result = await coordinator.getWorkflow(started.run.id);
+  assert.equal(result.run.waiting, undefined);
+  assert.equal(result.run.stages[0]!.status, "failed");
+  assert.ok(result.journal.some((entry) => entry.summary.includes("timed out")));
+  assert.equal(result.run.messageId, messageIds[1]);
+  assert.match(messages[1]!, /failed while waiting for external signal slow-check/);
+});
+
 test("webhook prompts queue for a known offline coordinator and deliver after identity resumption", async (context) => {
   const secret = "offline-coordinator-secret";
   const mesh = await createTestMesh(context, {

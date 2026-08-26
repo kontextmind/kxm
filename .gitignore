@@ -3,6 +3,11 @@ node_modules/
 coverage/
 /dist/
 .pi-mesh/
+.kxm/logs/*
+!.kxm/logs/README.md
+.kxm/state/*
+!.kxm/state/README.md
+.kxm/assets/generated/
 *.db
 *.db-shm
 *.db-wal

@@ -36,7 +36,7 @@ npm run hub
 A successful start prints:
 
 ```text
-pi-mesh hub listening at http://127.0.0.1:7331; storage=.pi-mesh/mesh.db
+pi-mesh hub listening at http://127.0.0.1:7331; storage=<workspace>/.kxm/state/mesh.db
 ```
 
 In another terminal, verify the health endpoint:

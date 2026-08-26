@@ -5,7 +5,9 @@ import {
   improvementReport,
   parseWorkflowDefinitions,
   renderWorkflowPrompt,
+  resumeWorkflowFromSignal,
   valueAtPath,
+  waitForWorkflowSignal,
   type WorkflowJournalEntry,
   type WorkflowRun,
 } from "../plugins/pi-mesh-comms/src/workflow.ts";
@@ -51,11 +53,33 @@ test("workflow definitions, path lookup, and prompt templates are validated", ()
     parseWorkflowDefinitions(JSON.stringify([fromEnvironment]), { TEST_WEBHOOK_SECRET: "environment-secret-value" })[0]!.secret,
     "environment-secret-value",
   );
+  fromEnvironment.signalSecretEnv = "TEST_SIGNAL_SECRET";
+  assert.equal(
+    parseWorkflowDefinitions(JSON.stringify([fromEnvironment]), {
+      TEST_WEBHOOK_SECRET: "environment-secret-value",
+      TEST_SIGNAL_SECRET: "separate-signal-secret-value",
+    })[0]!.signalSecret,
+    "separate-signal-secret-value",
+  );
+  assert.throws(
+    () => parseWorkflowDefinitions(JSON.stringify([fromEnvironment]), {
+      TEST_WEBHOOK_SECRET: "environment-secret-value",
+    }),
+    /workflow.signalSecret must be a string/,
+  );
   assert.throws(
     () => parseWorkflowDefinitions(JSON.stringify([{ ...fromEnvironment, secret: "also-a-literal-secret" }]), {
       TEST_WEBHOOK_SECRET: "environment-secret-value",
+      TEST_SIGNAL_SECRET: "separate-signal-secret-value",
     }),
     /only one of secret or secretEnv/,
+  );
+  assert.throws(
+    () => parseWorkflowDefinitions(JSON.stringify([{ ...fromEnvironment, signalSecret: "also-a-signal-secret" }]), {
+      TEST_WEBHOOK_SECRET: "environment-secret-value",
+      TEST_SIGNAL_SECRET: "separate-signal-secret-value",
+    }),
+    /only one of signalSecret or signalSecretEnv/,
   );
   assert.throws(
     () => parseWorkflowDefinitions(JSON.stringify([{ ...JSON.parse(definitionJson())[0], ttlMs: 10 }])),
@@ -131,6 +155,82 @@ test("workflow checkpoints reject incomplete evidence and fail after exhausted r
   assert.equal(exhausted.retry, false);
   assert.equal(run.status, "failed");
   assert.equal(run.currentStage, undefined);
+});
+
+test("workflow signal waits preserve stage order and resume through normal checkpoint rules", () => {
+  const run: WorkflowRun = {
+    id: "run-signal",
+    definitionId: "definition",
+    source: "github",
+    deliveryId: "delivery",
+    payloadHash: "hash",
+    project: "product",
+    targetAgentId: "agent",
+    targetAgentName: "coordinator",
+    messageId: "message",
+    status: "running",
+    currentStage: "checks",
+    stages: [{
+      id: "checks",
+      label: "Checks",
+      instructions: "Wait for CI",
+      requiredEvidence: ["check URL"],
+      maxAttempts: 2,
+      status: "in_progress",
+      attempts: 0,
+      evidence: [],
+    }],
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+  waitForWorkflowSignal(
+    run,
+    "checks",
+    "github-pr-42-checks",
+    "GitHub Actions is running",
+    "2026-01-01T00:01:00.000Z",
+    "2026-01-02T00:01:00.000Z",
+  );
+  assert.equal(run.status, "waiting");
+  assert.equal(run.stages[0]!.status, "waiting");
+  assert.throws(
+    () => resumeWorkflowFromSignal(run, "wrong-key", "passed", "done", ["url"], "2026-01-01T00:02:00.000Z"),
+    /waiting for github-pr-42-checks/,
+  );
+  assert.throws(
+    () => resumeWorkflowFromSignal(run, "github-pr-42-checks", "passed", "done", [], "2026-01-01T00:02:00.000Z"),
+    /requires at least 1 evidence item/,
+  );
+  assert.equal(run.status, "waiting");
+  const retry = resumeWorkflowFromSignal(
+    run,
+    "github-pr-42-checks",
+    "failed",
+    "test failed",
+    ["https://ci.example/failure"],
+    "2026-01-01T00:02:00.000Z",
+  );
+  assert.equal(retry.retry, true);
+  assert.equal(run.status, "running");
+  assert.equal(run.waiting, undefined);
+  waitForWorkflowSignal(
+    run,
+    "checks",
+    "github-pr-42-checks-rerun",
+    "CI rerun",
+    "2026-01-01T00:03:00.000Z",
+    "2026-01-02T00:03:00.000Z",
+  );
+  const completed = resumeWorkflowFromSignal(
+    run,
+    "github-pr-42-checks-rerun",
+    "passed",
+    "all checks passed",
+    ["https://ci.example/success"],
+    "2026-01-01T00:04:00.000Z",
+  );
+  assert.equal(completed.completed, true);
+  assert.equal(run.status, "completed");
 });
 
 test("improvement reports group and prioritize learning evidence", () => {

@@ -23,6 +23,7 @@ const mcp = new Server(
       "Handle the request using normal safety rules, then call mesh_reply with message_id and the final response.",
       "Use mesh_inbox as a fallback when channel delivery is not enabled.",
       "For durable workflow requests, call mesh_workflow_get, record material plans/decisions/contradictions/errors/lessons, and pass every checkpoint before replying.",
+      "If work is running in an external system, call mesh_workflow_wait and then mesh_reply so a signed callback can resume the workflow later.",
     ].join(" "),
   },
 );
@@ -248,6 +249,22 @@ const tools = [
     },
   },
   {
+    name: "mesh_workflow_wait",
+    description: "Pause the active stage until a signed external callback checkpoints it and resumes the coordinator.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        runId: { type: "string" },
+        stageId: { type: "string" },
+        signalKey: { type: "string", description: "Stable callback key, such as github-pr-42-checks" },
+        summary: { type: "string", description: "What is running externally and what result is expected" },
+        timeoutMs: { type: "number", minimum: 1_000, maximum: 2_592_000_000 },
+      },
+      required: ["runId", "stageId", "signalKey", "summary"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "mesh_improvement_report",
     description: "Summarize workflow errors, contradictions, and lessons by improvement area.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
@@ -315,6 +332,13 @@ mcp.setRequestHandler(CallToolRequestSchema, async (request) => {
           status: requiredString(args.status, "status") as WorkflowCheckpointStatus,
           summary: requiredString(args.summary, "summary"),
           ...(Array.isArray(args.evidence) ? { evidence: args.evidence as string[] } : {}),
+        }));
+      case "mesh_workflow_wait":
+        return textResult(await client.waitForWorkflowSignal(requiredString(args.runId, "runId"), {
+          stageId: requiredString(args.stageId, "stageId"),
+          signalKey: requiredString(args.signalKey, "signalKey"),
+          summary: requiredString(args.summary, "summary"),
+          ...(typeof args.timeoutMs === "number" ? { timeoutMs: args.timeoutMs } : {}),
         }));
       case "mesh_workflow_record":
         return textResult(await client.recordWorkflowEntry(requiredString(args.runId, "runId"), {

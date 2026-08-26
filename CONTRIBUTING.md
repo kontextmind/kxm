@@ -51,6 +51,8 @@ Commit the generated `plugins/pi-mesh-comms/dist/mcp-server.js` with its source 
 
 Do not edit the generated bundle by hand.
 
+Repository-local runtime conventions belong under `.kxm`: reviewable configuration in `config`, intentional workflow artifacts in `assets`, ignored logs in `logs`, and ignored recovery state in `state`. Never commit live logs, SQLite files, generated assets, or secret values.
+
 ## Protocol changes
 
 Changes to routes, request fields, status transitions, delivery modes, limits, or authentication require:
