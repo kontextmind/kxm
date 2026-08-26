@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -139,12 +139,17 @@ test("long-lived worker launches command scripts through ComSpec on Windows", {
 
 test("long-lived worker falls back from an unresumable --continue start", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "pi-mesh-worker-fallback-"));
+  const failure = join(workdir, process.platform === "win32" ? "unresumable.cmd" : "unresumable.sh");
   try {
+    writeFileSync(failure, process.platform === "win32"
+      ? "@echo invalid_request_error: missing_tool_result for tool_use id 1>&2\r\n@exit /b 9\r\n"
+      : "#!/bin/sh\necho 'invalid_request_error: missing_tool_result for tool_use id' >&2\nexit 9\n");
+    if (process.platform !== "win32") chmodSync(failure, 0o700);
     const result = await runWorker({
       ...process.env,
       PI_MESH_AGENT_NAME: "coordinator",
       PI_MESH_PROJECT: "product",
-      PI_MESH_PI_COMMAND: process.execPath,
+      PI_MESH_PI_COMMAND: failure,
       PI_MESH_WORKER_MAX_RESTARTS: "0",
       PI_MESH_WORKDIR: workdir,
     });
@@ -175,6 +180,7 @@ test("long-lived worker drains SIGTERM before SIGKILL", async () => {
       ? `@echo off\r\n"${process.execPath}" "${hang}" %*\r\n`
       : `#!/bin/sh\nexec "${process.execPath}" "${hang}" "$@"\n`,
   );
+  if (process.platform !== "win32") chmodSync(command, 0o755);
   try {
     const child = spawn(process.execPath, ["scripts/pi-mesh-worker.mjs"], {
       cwd: process.cwd(),
@@ -183,6 +189,7 @@ test("long-lived worker drains SIGTERM before SIGKILL", async () => {
         PI_MESH_PROJECT: "product",
         PI_MESH_PI_COMMAND: command,
         PI_MESH_WORKER_MAX_RESTARTS: "0",
+        PI_MESH_WORKER_CONTINUE: "false",
         PI_MESH_WORKER_DRAIN_MS: "200",
         PI_MESH_WORKER_STOP_AFTER_MS: "150",
         PI_MESH_WORKDIR: workdir,
