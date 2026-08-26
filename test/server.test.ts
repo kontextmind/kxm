@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
-test("hub server keeps workspace configuration, logs, assets, and state under .kxm", async () => {
+test("hub wrapper uses an idempotent graceful stop and keeps workspace state under .kxm", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "pi-mesh-server-"));
   const environment = { ...process.env };
   for (const key of [
@@ -24,11 +24,7 @@ test("hub server keeps workspace configuration, logs, assets, and state under .k
     PI_MESH_PORT: "0",
     PI_MESH_AUTH_TOKEN: "server-workspace-test-token",
   });
-  const child = spawn(process.execPath, [
-    "--disable-warning=ExperimentalWarning",
-    "--experimental-strip-types",
-    resolve("plugins/pi-mesh-comms/src/server.ts"),
-  ], {
+  const child = spawn(process.execPath, [resolve("scripts/pi-mesh-hub.mjs")], {
     cwd: workdir,
     env: environment,
     stdio: ["ignore", "pipe", "pipe"],
@@ -54,9 +50,11 @@ test("hub server keeps workspace configuration, logs, assets, and state under .k
       });
     });
     assert.equal((await fetch(`${url}/ready`)).status, 200);
-    child.kill("SIGTERM");
+    const stateDir = join(workdir, ".kxm", "state");
+    const record = JSON.parse(readFileSync(join(stateDir, "hub.pid"), "utf8")) as { startedAt: string };
+    writeFileSync(join(stateDir, "hub.stop"), JSON.stringify({ startedAt: record.startedAt, requestedAt: new Date().toISOString() }));
     const exitCode = await exit;
-    assert.equal(exitCode, process.platform === "win32" ? null : 0);
+    assert.equal(exitCode, 0);
     const root = join(workdir, ".kxm");
     assert.equal(existsSync(join(root, "config")), true);
     assert.equal(existsSync(join(root, "assets")), true);
@@ -65,7 +63,7 @@ test("hub server keeps workspace configuration, logs, assets, and state under .k
     assert.equal(existsSync(logPath), true);
     const logs = readFileSync(logPath, "utf8");
     assert.match(logs, /"event":"hub_started"/);
-    if (process.platform !== "win32") assert.match(logs, /"event":"hub_stopping"/);
+    assert.equal((logs.match(/"event":"hub_stopping"/g) ?? []).length, 1);
     assert.equal(stderr, "");
   } finally {
     if (child.exitCode === null) child.kill("SIGKILL");

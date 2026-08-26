@@ -26,6 +26,7 @@ import {
   type MessageRecord,
 } from "./protocol.ts";
 import { workflowScopeExtras } from "./diagnostics.ts";
+import { buildRetrospective, writeRetrospective } from "./retrospective.ts";
 import { MeshStore, type StoredAgent } from "./store.ts";
 import {
   checkpointRun,
@@ -54,6 +55,7 @@ export interface MeshHubOptions {
   authToken?: string;
   projectTokens?: Record<string, string>;
   dataPath?: string;
+  assetsDir?: string;
   staleAfterMs?: number;
   messageTtlMs?: number;
   messageRetentionMs?: number;
@@ -219,6 +221,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
       };
   const webhookWorkflows = new Map((options.webhookWorkflows ?? []).map((workflow) => [workflow.id, workflow]));
   const logger = options.logger ?? (() => undefined);
+  const assetsDir = options.assetsDir;
   const store = new MeshStore(options.dataPath);
   const agents = store.agents;
   const messages = store.messages;
@@ -244,6 +247,17 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
   };
   let cleanupTimer: NodeJS.Timeout | undefined;
   let closed = false;
+
+  function exportTerminalRetrospective(run: WorkflowRun): void {
+    if (!assetsDir || (run.status !== "completed" && run.status !== "failed")) return;
+    try {
+      const entries = [...journal.values()].filter((entry) => entry.runId === run.id);
+      const files = writeRetrospective(`${assetsDir}${process.platform === "win32" ? "\\" : "/"}retrospectives`, buildRetrospective(run, entries, run.updatedAt));
+      logger({ event: "workflow_retrospective_exported", workflowRunId: run.id, jsonPath: files.jsonPath, markdownPath: files.mdPath });
+    } catch (error) {
+      logger({ event: "workflow_retrospective_export_failed", workflowRunId: run.id, error: error instanceof Error ? error.message : "retrospective_export_failed" });
+    }
+  }
 
   if (!isLoopback(host) && !authToken) {
     store.close();
@@ -549,6 +563,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
       };
       transition.messageId = message.id;
       store.saveWorkflowTransition(transition, message, entry);
+      exportTerminalRetrospective(transition);
       if (agents.get(transition.targetAgentId)?.online) {
         publish(transition.targetAgentId, { type: "message", message });
       }
@@ -606,6 +621,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           };
           store.saveJournalEntry(entry);
           counters.journalEntries += 1;
+          exportTerminalRetrospective(run);
         }
       }
     }
@@ -780,6 +796,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           receipt.messageId = message.id;
         }
         store.saveWorkflowTransition(transition, message, entry);
+        exportTerminalRetrospective(transition);
         if (entry) counters.journalEntries += 1;
         if (message && agents.get(transition.targetAgentId)?.online) {
           publish(transition.targetAgentId, { type: "message", message });
@@ -872,7 +889,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           status: index === 0 ? "in_progress" as const : "pending" as const,
           attempts: 0,
           evidence: [],
-          ...(index === 0 ? { updatedAt: createdAt } : {}),
+          ...(index === 0 ? { startedAt: createdAt, updatedAt: createdAt } : {}),
         }));
         const run: WorkflowRun = {
           id: runId,
@@ -1037,6 +1054,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           store.saveJournalEntry(entry);
           counters.journalEntries += 1;
         }
+        exportTerminalRetrospective(run);
         logger({
           event: "workflow_checkpoint",
           workflowRunId: run.id,
@@ -1380,6 +1398,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           };
           store.saveJournalEntry(entry);
           counters.journalEntries += 1;
+          exportTerminalRetrospective(workflowRun);
         }
         publish(message.from, { type: "reply", message });
         counters.messagesReplied += 1;

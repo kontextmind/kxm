@@ -20,7 +20,7 @@ If a worker was stopped during `mesh_await`, `--continue` may leave a `tool_use`
 
 ### GitHub checks passed but the workflow is still waiting
 
-The hub does not poll GitHub. Run `pi-mesh github watch` with the same `runId` and `signalKey`. A watcher timeout exits `4` and does not invent `passed`. The durable wait deadline remains the hub timeout.
+The hub does not poll GitHub. Run `pi-mesh github watch` with the same `runId`, `stageId`, and `signalKey`. A watcher timeout posts the exact signed `failed` signal, retains bounded check evidence, and exits `4`; it never invents `passed`.
 
 ### The hub refuses to start
 

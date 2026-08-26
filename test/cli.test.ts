@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { parseArgs, runCli } from "../plugins/pi-mesh-comms/src/cli.ts";
 
@@ -81,11 +82,16 @@ test("stop, signal, status, and help cover the remaining command contract", asyn
     assert.equal(await runCli(["--json", "validate", "--file", join(cwd, "missing.json")], {}, missing, cwd), 1);
     const stopDry = capture();
     assert.equal(await runCli(["--json", "--dry-run", "stop"], {}, stopDry, cwd), 0);
-    writeFileSync(join(cwd, "hub.pid"), "1\n");
     mkdirSync(join(cwd, "state"), { recursive: true });
-    writeFileSync(join(cwd, "state", "hub.pid"), "1\n");
+    const startedAt = "2026-08-26T00:00:00.000Z";
+    const pidPath = join(cwd, "state", "hub.pid");
+    writeFileSync(pidPath, JSON.stringify({ version: 1, pid: process.pid, role: "hub", startedAt, controlFile: "hub.stop" }));
     const stop = capture();
-    assert.equal(await runCli(["--json", "--workspace", cwd, "stop"], {}, stop, cwd), 0);
+    assert.equal(await runCli(["--json", "--workspace", cwd, "stop"], {}, {
+      ...stop,
+      sleep: async () => { rmSync(pidPath, { force: true }); },
+    }, cwd), 0);
+    assert.match(stop.read().stdout, /"stopped":\["hub.pid"\]/);
     const status = capture();
     assert.equal(await runCli(["--json", "status"], {}, {
       ...status,
@@ -109,16 +115,26 @@ test("stop, signal, status, and help cover the remaining command contract", asyn
       cwd,
     ), 0);
     const list = capture();
-    assert.equal(await runCli(["--json", "workflow", "list"], {}, list, cwd), 3);
+    assert.equal(await runCli(["--json", "workflow", "list"], {}, list, cwd), 1);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
 });
 
-test("live workflow start is rejected and smoke skips without opt-in", async () => {
+test("live workflow start is signed and smoke skips without opt-in", async () => {
   const start = capture();
-  assert.equal(await runCli(["--json", "workflow", "start"], {}, start), 2);
-  assert.match(start.read().stdout, /live_start_rejected/);
+  let signature = "";
+  assert.equal(await runCli(["--json", "workflow", "start", "wf", "--payload", "{\"task\":\"TASK-1\"}", "--delivery-id", "cli-1"], {
+    PI_MESH_WORKFLOW_SECRET: "workflow-secret-16chars",
+  }, {
+    ...start,
+    fetchImpl: async (_input, init) => {
+      signature = new Headers(init?.headers).get("x-hub-signature-256") ?? "";
+      return new Response(JSON.stringify({ run: { id: "run_cli" }, duplicate: false }), { status: 202 });
+    },
+  }), 0);
+  assert.match(start.read().stdout, /"runId":"run_cli"/);
+  assert.match(signature, /^sha256=[a-f0-9]{64}$/);
   const smoke = capture();
   assert.equal(await runCli(["--json", "smoke"], {}, smoke), 0);
   assert.match(smoke.read().stdout, /"skipped":true/);
@@ -127,7 +143,7 @@ test("live workflow start is rejected and smoke skips without opt-in", async () 
 test("github watch dry-run does not leak tokens", async () => {
   const io = capture();
   const code = await runCli(
-    ["--json", "--dry-run", "github", "watch", "--run-id", "run_1", "--signal-key", "k", "--repo", "acme/app", "--pr", "1"],
+    ["--json", "--dry-run", "github", "watch", "--run-id", "run_1", "--stage-id", "review", "--signal-key", "k", "--repo", "acme/app", "--pr", "1"],
     {
       PI_MESH_WORKFLOW_ID: "wf",
       PI_MESH_WORKFLOW_SIGNAL_SECRET: "signal-secret-16chars",
@@ -180,9 +196,65 @@ test("retrospective export writes proposed artifacts", async () => {
     const input = join(cwd, "snapshot.json");
     writeFileSync(input, JSON.stringify(snapshot));
     const io = capture();
-    const code = await runCli(["--json", "retrospective", "export", "run_cli", "--input", input, "--out-dir", join(cwd, "out")], {}, io, cwd);
+    const workspace = join(cwd, ".kxm");
+    const code = await runCli(["--json", "--workspace", workspace, "retrospective", "export", "run_cli", "--input", input, "--out-dir", join(workspace, "assets", "retrospectives")], {}, io, cwd);
     assert.equal(code, 0, io.read().stdout);
     assert.match(io.read().stdout, /"reviewDecision":"proposed"/);
+    const outside = capture();
+    assert.equal(await runCli(["--json", "--workspace", workspace, "retrospective", "export", "run_cli", "--input", input, "--out-dir", join(cwd, "outside")], {}, outside, cwd), 2);
+    assert.match(outside.read().stdout, /output_outside_workspace_assets/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("workflow list/get use local SQLite state and redact configured secret values", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "pi-mesh-cli-state-"));
+  const stateDir = join(cwd, ".kxm", "state");
+  const dataPath = join(stateDir, "mesh.db");
+  try {
+    mkdirSync(stateDir, { recursive: true });
+    const database = new DatabaseSync(dataPath);
+    database.exec("CREATE TABLE workflow_runs (id TEXT PRIMARY KEY, record TEXT NOT NULL); CREATE TABLE workflow_journal (run_id TEXT NOT NULL, record TEXT NOT NULL);");
+    database.prepare("INSERT INTO workflow_runs (id, record) VALUES (?, ?)").run("run_local", JSON.stringify({ id: "run_local", status: "running", summary: "exact-secret-value" }));
+    database.prepare("INSERT INTO workflow_journal (run_id, record) VALUES (?, ?)").run("run_local", JSON.stringify({ id: "journal_1", runId: "run_local", summary: "safe evidence" }));
+    database.close();
+    const env = { PI_MESH_DATA_PATH: dataPath, PI_MESH_TEST_SECRET: "exact-secret-value" };
+    const list = capture();
+    assert.equal(await runCli(["--json", "workflow", "list"], env, list, cwd), 0);
+    assert.match(list.read().stdout, /run_local/);
+    assert.doesNotMatch(list.read().stdout, /exact-secret-value/);
+    assert.match(list.read().stdout, /\[redacted\]/);
+    const get = capture();
+    assert.equal(await runCli(["--json", "workflow", "get", "run_local"], env, get, cwd), 0);
+    assert.match(get.read().stdout, /journal_1/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("invalid and unavailable operator commands fail safely with stable exit codes", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "pi-mesh-cli-errors-"));
+  try {
+    assert.equal(await runCli([], {}, capture(), cwd), 2);
+    assert.equal(await runCli(["--json", "validate", "--file", join(cwd, "missing.json")], {}, capture(), cwd), 1);
+    const invalidWorkflow = join(cwd, "invalid-workflow.json");
+    writeFileSync(invalidWorkflow, "{");
+    assert.equal(await runCli(["--json", "validate", "--file", invalidWorkflow], {}, capture(), cwd), 1);
+    assert.equal(await runCli(["--json", "worker"], {}, capture(), cwd), 2);
+    assert.equal(await runCli(["--json", "stop"], {}, capture(), cwd), 1);
+    assert.equal(await runCli(["--json", "workflow", "get"], {}, capture(), cwd), 2);
+    assert.equal(await runCli(["--json", "workflow", "start", "wf", "--payload", "[]"], { PI_MESH_WORKFLOW_SECRET: "workflow-secret-16chars" }, capture(), cwd), 2);
+    assert.equal(await runCli(["--json", "--dry-run", "workflow", "start", "wf", "--payload", "{}"], { PI_MESH_WORKFLOW_SECRET: "workflow-secret-16chars" }, capture(), cwd), 0);
+    assert.equal(await runCli(["--json", "signal"], {}, capture(), cwd), 2);
+    assert.equal(await runCli(["--json", "signal", "run_1", "key", "invalid", "summary"], {}, capture(), cwd), 2);
+    assert.equal(await runCli(["--json", "signal", "run_1", "key", "passed", "summary"], {}, capture(), cwd), 2);
+    assert.equal(await runCli(["--json", "github", "nope"], {}, capture(), cwd), 2);
+    assert.equal(await runCli(["--json", "github", "watch"], {}, capture(), cwd), 2);
+    assert.equal(await runCli(["--json", "retrospective", "nope"], {}, capture(), cwd), 2);
+    assert.equal(await runCli(["--json", "retrospective", "export"], {}, capture(), cwd), 2);
+    assert.equal(await runCli(["--json", "retrospective", "export", "run_missing", "--input", join(cwd, "missing.json")], {}, capture(), cwd), 1);
+    assert.equal(await runCli(["--json", "not-a-command"], {}, capture(), cwd), 2);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

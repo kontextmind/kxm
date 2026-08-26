@@ -15,6 +15,7 @@ export interface WorkerRecoveryEnvelope {
   runId?: string | null;
   stageId?: string | null;
   pendingMessageIds?: string[];
+  artifactPointers?: string[];
 }
 
 export function recoveryEnvelopePath(stateDir: string, agentName: string): string {
@@ -33,9 +34,9 @@ export function readWorkerRecoveryEnvelope(stateDir: string, agentName: string):
   }
 }
 
-export async function consumeWorkerRecoveryEnvelope(client: MeshClient, stateDir: string, agentName: string): Promise<void> {
+export async function consumeWorkerRecoveryEnvelope(client: MeshClient, stateDir: string, agentName: string): Promise<WorkerRecoveryEnvelope | undefined> {
   const envelope = readWorkerRecoveryEnvelope(stateDir, agentName);
-  if (!envelope) return;
+  if (!envelope) return undefined;
   const path = recoveryEnvelopePath(stateDir, agentName);
   let runId = envelope.runId ?? undefined;
   let stageId = envelope.stageId ?? undefined;
@@ -50,7 +51,7 @@ export async function consumeWorkerRecoveryEnvelope(client: MeshClient, stateDir
       // Assigned-run lookup is optional for the envelope.
     }
   }
-  if (!runId) return;
+  if (!runId) return undefined;
   const diagnostic = classifyFailure({
     toolName: "mesh_await",
     code: "unresumable_session",
@@ -68,10 +69,13 @@ export async function consumeWorkerRecoveryEnvelope(client: MeshClient, stateDir
         `reason:${envelope.reason}`,
         ...(stageId ? [`stage:${stageId}`] : []),
         ...(envelope.pendingMessageIds ?? []).slice(0, 8).map((id) => `message:${id}`),
+        ...(envelope.artifactPointers ?? []).slice(0, 16).map((pointer) => pointer.startsWith("artifact:") ? pointer : `artifact:${pointer}`),
       ],
     });
     rmSync(path, { force: true });
+    return { ...envelope, runId, ...(stageId ? { stageId } : {}) };
   } catch {
     // Keep the envelope if journaling failed so the next session can retry.
+    return undefined;
   }
 }

@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import piMeshExtension from "../plugins/pi-mesh-comms/src/extension.ts";
+import { recoveryEnvelopePath } from "../plugins/pi-mesh-comms/src/recovery.ts";
 import { createTestMesh, waitFor } from "./helpers.ts";
 
 type EventHandler = (...args: unknown[]) => unknown | Promise<unknown>;
@@ -261,4 +265,81 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
   await fake.commands.get("mesh-status")!.handler("", { ui });
   assert.ok(notices.some((notice) => notice.message === "pi-mesh is offline" && notice.type === "warning"));
   await assert.rejects(() => fake.tools.get("mesh_list")!.execute("offline", {}), /not connected/);
+});
+
+test("fresh Pi session receives a durable workflow recovery turn", async (context) => {
+  const secret = "recovery-webhook-secret-value";
+  const mesh = await createTestMesh(context, {
+    webhookWorkflows: [{
+      id: "recovery-workflow",
+      source: "generic",
+      project: "recovery-project",
+      target: "recovering-agent",
+      secret,
+      delivery: "followUp",
+      promptTemplate: "Recover {{task}}",
+      stages: [{ id: "implement", label: "Implement", instructions: "Continue safely", requiredEvidence: ["test"], maxAttempts: 2 }],
+    }],
+  });
+  const bootstrap = mesh.makeClient("recovering-agent", {
+    purpose: "durable recovery target",
+    project: "recovery-project",
+  });
+  await bootstrap.start(() => undefined);
+  await bootstrap.stop();
+  const body = JSON.stringify({ task: "REC-1" });
+  const started = await fetch(`${mesh.address.url}/v1/webhooks/recovery-workflow`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-mesh-delivery-id": "recovery-delivery-1",
+      "x-hub-signature": `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`,
+    },
+    body,
+  });
+  const runId = ((await started.json()) as { run: { id: string } }).run.id;
+  const stateDir = mkdtempSync(join(tmpdir(), "pi-mesh-extension-recovery-"));
+  context.after(() => rmSync(stateDir, { recursive: true, force: true }));
+  const envelopePath = recoveryEnvelopePath(stateDir, "recovering-agent");
+  writeFileSync(envelopePath, JSON.stringify({
+    version: 1,
+    reason: "unresumable_session",
+    agentName: "recovering-agent",
+    project: "recovery-project",
+    previousContinue: true,
+    freshSession: true,
+    createdAt: "2026-08-26T00:00:00.000Z",
+    runId,
+    stageId: "implement",
+    pendingMessageIds: ["msg_previous"],
+  }));
+  const keys = ["PI_MESH_SERVER_URL", "PI_MESH_AUTH_TOKEN", "PI_MESH_PROJECT", "PI_MESH_AGENT_NAME", "PI_MESH_STATE_DIR"] as const;
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  Object.assign(process.env, {
+    PI_MESH_SERVER_URL: mesh.address.url,
+    PI_MESH_AUTH_TOKEN: mesh.token,
+    PI_MESH_PROJECT: "recovery-project",
+    PI_MESH_AGENT_NAME: "recovering-agent",
+    PI_MESH_STATE_DIR: stateDir,
+  });
+  context.after(() => {
+    for (const key of keys) {
+      const value = previous[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+  const fake = fakePi();
+  piMeshExtension(fake.api);
+  const ui = { setStatus() {}, notify() {} };
+  await fake.emit("session_start", {}, { cwd: process.cwd(), model: { provider: "test", id: "model" }, ui });
+  await waitFor(() => fake.sent.some(({ message }) => message.customType === "pi-mesh-recovery"));
+  const recovered = fake.sent.find(({ message }) => message.customType === "pi-mesh-recovery")!;
+  assert.match(String(recovered.message.content), new RegExp(runId));
+  assert.match(String(recovered.message.content), /Last recorded stage: implement/);
+  assert.equal(recovered.options.triggerTurn, true);
+  assert.equal(existsSync(envelopePath), false);
+  const workflow = await fake.tools.get("mesh_workflow_get")!.execute("recovered-run", { runId });
+  assert.match(JSON.stringify(workflow.details), /Worker recovered with unresumable_session/);
+  await fake.emit("session_shutdown");
 });

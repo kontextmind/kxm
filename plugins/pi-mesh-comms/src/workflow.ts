@@ -40,6 +40,8 @@ export interface WorkflowStageState extends WorkflowStageDefinition {
   attempts: number;
   summary?: string;
   evidence: string[];
+  startedAt?: string;
+  completedAt?: string;
   updatedAt?: string;
 }
 
@@ -295,6 +297,7 @@ export function checkpointRun(
   if (status !== "passed") {
     stage.status = status;
     if (stage.attempts >= stage.maxAttempts) {
+      stage.completedAt = timestamp;
       run.status = "failed";
       delete run.currentStage;
       return { retry: false, completed: false, run };
@@ -303,9 +306,11 @@ export function checkpointRun(
     return { retry: true, completed: false, run };
   }
   stage.status = "passed";
+  stage.completedAt = timestamp;
   const next = run.stages.find((candidate) => candidate.status === "pending");
   if (next) {
     next.status = "in_progress";
+    next.startedAt = timestamp;
     next.updatedAt = timestamp;
     run.currentStage = next.id;
     return { retry: false, completed: false, run };

@@ -16,6 +16,7 @@ export interface GithubWatchInput {
   definitionId: string;
   signalSecret: string;
   runId: string;
+  stageId: string;
   signalKey: string;
   repo: string;
   pr: number;
@@ -40,6 +41,16 @@ export interface GithubWatchResult {
   skipped?: boolean;
 }
 
+async function fetchWithTimeout(fetchImpl: typeof fetch, input: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), Math.max(1, timeoutMs));
+  try {
+    return await fetchImpl(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function requiredToken(token: string | undefined): string | undefined {
   const value = token?.trim();
   return value || undefined;
@@ -56,7 +67,7 @@ export function mapCheckConclusion(runs: GithubCheckRun[], required: string[] = 
     const conclusion = run?.conclusion ?? run?.status ?? "missing";
     const url = run?.html_url ? ` url:${run.html_url}` : "";
     const completed = run?.completed_at ? ` at:${run.completed_at}` : "";
-    return redactSecrets(`conclusion:${name}=${conclusion}${url}${completed}`);
+    return redactSecrets(`conclusion:${name}=${conclusion}${url}${completed}`).slice(0, 500);
   });
   if (names.length === 0 || interesting.some((run) => !run || run.status !== "completed")) {
     return { status: "pending", evidence };
@@ -80,6 +91,7 @@ export async function postWorkflowSignal(input: {
   summary: string;
   evidence: string[];
   deliveryId: string;
+  timeoutMs?: number;
   fetchImpl?: typeof fetch;
 }): Promise<{ httpStatus: number; duplicate: boolean }> {
   const body = JSON.stringify({ status: input.status, summary: input.summary, evidence: input.evidence });
@@ -93,7 +105,7 @@ export async function postWorkflowSignal(input: {
     "signals",
     encodeURIComponent(input.signalKey),
   ].join("/");
-  const response = await (input.fetchImpl ?? fetch)(endpoint, {
+  const response = await fetchWithTimeout(input.fetchImpl ?? fetch, endpoint, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -101,7 +113,7 @@ export async function postWorkflowSignal(input: {
       "x-mesh-delivery-id": input.deliveryId,
     },
     body,
-  });
+  }, input.timeoutMs ?? 15_000);
   const text = await response.text();
   let duplicate = false;
   try {
@@ -130,7 +142,42 @@ export async function watchGithubChecks(input: GithubWatchInput): Promise<Github
     accept: "application/vnd.github+json",
     "user-agent": "pi-mesh-github-watch",
   };
-  const prResponse = await fetchImpl(`https://api.github.com/repos/${input.repo}/pulls/${input.pr}`, { headers });
+  const contextEvidence = [`run:${input.runId}`, `stage:${input.stageId}`, `signal:${input.signalKey}`];
+  let deliveryId = `github-watch:${input.runId}:${input.stageId}:${input.signalKey}:${input.pr}`;
+  const deliver = async (status: WatchStatus, summary: string, evidence: string[]): Promise<GithubWatchResult> => {
+    const boundedEvidence = [...contextEvidence, ...evidence].slice(0, 35);
+    if (input.dryRun) return { exitCode: status === "failed" && summary === "github_watch_timeout" ? 4 : 0, posted: false, status, summary, evidence: boundedEvidence, deliveryId };
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        const posted = await postWorkflowSignal({ serverUrl: input.serverUrl, definitionId: input.definitionId, signalSecret: input.signalSecret, runId: input.runId, signalKey: input.signalKey, status, summary, evidence: boundedEvidence, deliveryId, timeoutMs: Math.min(15_000, Math.max(1_000, input.intervalMs)), fetchImpl });
+        return { exitCode: status === "failed" && summary === "github_watch_timeout" ? 4 : 0, posted: true, duplicate: posted.duplicate, status, summary, evidence: boundedEvidence, deliveryId };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "signal_failed";
+        if (/signal_http_(404|409)\b/.test(message)) return { exitCode: 1, posted: false, summary: "workflow_not_waiting", evidence: boundedEvidence, deliveryId };
+        const transient = /signal_http_(429|5\d\d)\b/.test(message) || message === "signal_failed" || /abort|timeout|fetch/i.test(message);
+        if (!transient || attempt === 3) return { exitCode: 1, posted: false, summary: "signal_failed", evidence: boundedEvidence, deliveryId };
+        await sleep(Math.min(250 * (2 ** (attempt - 1)), 1_000));
+      }
+    }
+    return { exitCode: 1, posted: false, summary: "signal_failed", evidence: boundedEvidence, deliveryId };
+  };
+  const githubGet = async (url: string): Promise<Response | undefined> => {
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const remaining = deadline - now();
+      if (remaining <= 0) return undefined;
+      try {
+        const response = await fetchWithTimeout(fetchImpl, url, { headers }, Math.min(15_000, remaining));
+        if (response.status !== 429 && response.status < 500) return response;
+        if (attempt === 3) return response;
+      } catch {
+        if (attempt === 3 || now() >= deadline) return undefined;
+      }
+      await sleep(Math.min(250 * (2 ** (attempt - 1)), Math.max(1, deadline - now())));
+    }
+    return undefined;
+  };
+  const prResponse = await githubGet(`https://api.github.com/repos/${input.repo}/pulls/${input.pr}`);
+  if (!prResponse) return deliver("failed", "github_watch_timeout", []);
   if (!prResponse.ok) {
     return { exitCode: 1, posted: false, summary: "github_pr_unavailable", evidence: [`http:${prResponse.status}`] };
   }
@@ -139,12 +186,11 @@ export async function watchGithubChecks(input: GithubWatchInput): Promise<Github
   if (!headSha) {
     return { exitCode: 1, posted: false, summary: "github_head_unavailable", evidence: [] };
   }
+  deliveryId = `${deliveryId}:${headSha}`;
   let lastEvidence: string[] = [];
   while (now() <= deadline) {
-    const checksResponse = await fetchImpl(
-      `https://api.github.com/repos/${input.repo}/commits/${headSha}/check-runs`,
-      { headers },
-    );
+    const checksResponse = await githubGet(`https://api.github.com/repos/${input.repo}/commits/${headSha}/check-runs`);
+    if (!checksResponse) return deliver("failed", "github_watch_timeout", lastEvidence);
     if (!checksResponse.ok) {
       return { exitCode: 1, posted: false, summary: "github_checks_unavailable", evidence: [`http:${checksResponse.status}`] };
     }
@@ -152,41 +198,11 @@ export async function watchGithubChecks(input: GithubWatchInput): Promise<Github
     const mapped = mapCheckConclusion(payload.check_runs ?? [], input.required ?? []);
     lastEvidence = mapped.evidence;
     if (mapped.status !== "pending") {
-      const deliveryId = `github-watch:${input.runId}:${input.signalKey}:${input.pr}:${headSha}`;
       const summary = mapped.status === "passed" ? "required GitHub checks passed" : "required GitHub checks failed";
-      if (input.dryRun) {
-        return { exitCode: 0, posted: false, status: mapped.status, summary, evidence: mapped.evidence, deliveryId };
-      }
-      try {
-        const posted = await postWorkflowSignal({
-          serverUrl: input.serverUrl,
-          definitionId: input.definitionId,
-          signalSecret: input.signalSecret,
-          runId: input.runId,
-          signalKey: input.signalKey,
-          status: mapped.status,
-          summary,
-          evidence: mapped.evidence,
-          deliveryId,
-          fetchImpl,
-        });
-        return {
-          exitCode: 0,
-          posted: true,
-          duplicate: posted.duplicate,
-          status: mapped.status,
-          summary,
-          evidence: mapped.evidence,
-          deliveryId,
-        };
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "signal_failed";
-        const stale = message.includes("409") || message.includes("404") || /signal_http_409|signal_http_404/.test(message);
-        return { exitCode: 1, posted: false, summary: stale ? "workflow_not_waiting" : "signal_failed", evidence: mapped.evidence };
-      }
+      return deliver(mapped.status, summary, mapped.evidence);
     }
     if (now() + input.intervalMs > deadline) break;
     await sleep(input.intervalMs);
   }
-  return { exitCode: 4, posted: false, summary: "github_watch_timeout", evidence: lastEvidence };
+  return deliver("failed", "github_watch_timeout", lastEvidence);
 }

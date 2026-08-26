@@ -10,10 +10,10 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 - Additive `pi-mesh` operator CLI for workspace init, validation, status, dry-run workflow planning, GitHub check watching, and retrospective export.
 - Allowlisted diagnostic classification for failed workflow tools and 401/403 identity-scope errors, including bounded `operation`, `nextAction`, and assigned coordinator name.
-- Command-first GitHub check watcher that posts the existing signed workflow signal and exits 4 without posting on adapter timeout.
+- Command-first GitHub check watcher that posts the existing signed workflow signal, binds evidence to the exact run/stage/signal key, and posts `github_watch_timeout` as failed before exiting 4.
 - Worker drain, `--continue` fallback, and a redacted recovery envelope under `.kxm/state`.
 - Atomic Markdown/JSON retrospective export under `.kxm/assets/retrospectives` with `reviewDecision=proposed`.
-- Opt-in real multi-Pi smoke entry point that probes for `pi` and skips cleanly when the binary or model credentials are unavailable.
+- Opt-in real multi-Pi release harness that launches two authenticated Pi RPC workers in an isolated `.kxm`, verifies discovery, request/reply, fanout, durable restart/resume, journal, and checkpoint flows, and skips only when Pi or model credentials are unavailable.
 
 ### Changed
 

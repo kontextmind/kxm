@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { spawn } from "node:child_process";
-import { createWriteStream, mkdirSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { createWriteStream, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
 const name = process.env.PI_MESH_AGENT_NAME?.trim();
@@ -40,8 +40,31 @@ let stopping = false;
 let logsClosed = false;
 let continueThisStart = continueEnabled;
 let continueFallbackUsed = false;
+let abortRequestId;
 const pidPath = join(stateDir, `worker-${safeName}.pid`);
-writeFileSync(pidPath, `${process.pid}\n`, { encoding: "utf8", mode: 0o600 });
+const workerStartedAt = new Date().toISOString();
+const controlFile = `worker-${safeName}.stop`;
+const controlPath = join(stateDir, controlFile);
+rmSync(controlPath, { force: true });
+writeFileSync(pidPath, `${JSON.stringify({
+  version: 1,
+  pid: process.pid,
+  role: "worker",
+  agentName: name,
+  project,
+  startedAt: workerStartedAt,
+  controlFile,
+})}\n`, { encoding: "utf8", mode: 0o600 });
+
+function cleanupPid() {
+  try {
+    const record = JSON.parse(readFileSync(pidPath, "utf8"));
+    if (record.pid === process.pid) rmSync(pidPath, { force: true });
+  } catch {
+    // The record may already be removed or replaced by a newer worker.
+  }
+}
+process.once("exit", cleanupPid);
 
 function quoteWindowsCommandArgument(value, label) {
   if (/[\0\r\n"%!]/.test(value)) {
@@ -64,6 +87,24 @@ function closeLogs() {
 }
 
 function writeRecoveryEnvelope(details) {
+  let persistedContext = {};
+  try {
+    const candidate = JSON.parse(readFileSync(join(stateDir, `worker-context-${safeName}.json`), "utf8"));
+    if (candidate?.version === 1 && candidate.agentName === name && candidate.project === project) {
+      persistedContext = {
+        runId: typeof candidate.runId === "string" ? candidate.runId : null,
+        stageId: typeof candidate.stageId === "string" ? candidate.stageId : null,
+        pendingMessageIds: Array.isArray(candidate.pendingMessageIds)
+          ? candidate.pendingMessageIds.filter((value) => typeof value === "string")
+          : [],
+        artifactPointers: Array.isArray(candidate.artifactPointers)
+          ? candidate.artifactPointers.filter((value) => typeof value === "string")
+          : [],
+      };
+    }
+  } catch {
+    // A worker without persisted workflow context still gets a valid envelope.
+  }
   const envelope = {
     version: 1,
     reason: details.reason,
@@ -75,6 +116,8 @@ function writeRecoveryEnvelope(details) {
     runId: null,
     stageId: null,
     pendingMessageIds: [],
+    artifactPointers: [],
+    ...persistedContext,
     ...(details.signal ? { signal: details.signal } : {}),
   };
   writeFileSync(join(stateDir, `worker-recovery-${safeName}.json`), `${JSON.stringify(envelope)}\n`, {
@@ -106,6 +149,15 @@ function start() {
     agentLogPath,
   });
   const startedAt = Date.now();
+  let continuationUnresumable = false;
+  let providerErrorBuffer = "";
+  let rpcLineBuffer = "";
+  const observeProviderOutput = (text) => {
+    providerErrorBuffer = `${providerErrorBuffer}${text}`.slice(-8_192);
+    if (/invalid_request_error|missing_tool_result|tool_use[\s\S]{0,256}tool_result/i.test(providerErrorBuffer)) {
+      continuationUnresumable = true;
+    }
+  };
   let completed = false;
   const complete = (code, signal, error) => {
     if (completed) return;
@@ -119,7 +171,7 @@ function start() {
       process.exit(0);
       return;
     }
-    if (continueThisStart && !continueFallbackUsed && uptimeMs < 8_000 && (code || 0) !== 0) {
+    if (continueThisStart && !continueFallbackUsed && continuationUnresumable && (code || 0) !== 0) {
       continueFallbackUsed = true;
       continueThisStart = false;
       writeRecoveryEnvelope({ reason: "unresumable_session", freshSession: true });
@@ -166,10 +218,30 @@ function start() {
   child.stdout.on("data", (chunk) => {
     agentLogStream.write(chunk);
     process.stdout.write(chunk);
+    const text = chunk.toString("utf8");
+    rpcLineBuffer = `${rpcLineBuffer}${text}`.slice(-16_384);
+    observeProviderOutput(text);
+    let newline;
+    while ((newline = rpcLineBuffer.indexOf("\n")) >= 0) {
+      const line = rpcLineBuffer.slice(0, newline).trim();
+      rpcLineBuffer = rpcLineBuffer.slice(newline + 1);
+      if (!stopping || !abortRequestId || !line) continue;
+      try {
+        const response = JSON.parse(line);
+        if (response?.id === abortRequestId && response.type === "response" && response.command === "abort" && response.success === true) {
+          abortRequestId = undefined;
+          log("worker_drain_confirmed");
+          child?.stdin.end();
+        }
+      } catch {
+        // Pi RPC output is newline-delimited JSON; unrelated output is only logged.
+      }
+    }
   });
   child.stderr.on("data", (chunk) => {
     agentLogStream.write(chunk);
     process.stderr.write(chunk);
+    observeProviderOutput(chunk.toString("utf8"));
   });
   child.once("error", (error) => complete(null, null, error));
   child.once("exit", (code, signal) => complete(code, signal));
@@ -186,16 +258,38 @@ function shutdown(signal) {
     return;
   }
   log("worker_drain_wait", { timeoutMs: Number.isFinite(drainTimeoutMs) ? drainTimeoutMs : 15_000 });
-  child.kill("SIGTERM");
+  try {
+    abortRequestId = `worker-abort-${process.pid}-${Date.now()}`;
+    child.stdin.write(`${JSON.stringify({ id: abortRequestId, type: "abort" })}\n`);
+    log("worker_abort_requested", { requestId: abortRequestId });
+  } catch (error) {
+    log("worker_abort_failed", { message: error instanceof Error ? error.message : String(error) });
+  }
   const force = setTimeout(() => {
+    if (!child || child.exitCode !== null || child.signalCode !== null) return;
     log("worker_killed", { signal: "SIGKILL" });
-    child?.kill("SIGKILL");
+    if (process.platform === "win32" && child.pid) {
+      spawnSync("taskkill.exe", ["/pid", String(child.pid), "/t", "/f"], { windowsHide: true, stdio: "ignore" });
+    } else {
+      child.kill("SIGKILL");
+    }
   }, Number.isFinite(drainTimeoutMs) ? drainTimeoutMs : 15_000);
   force.unref();
 }
 
 process.once("SIGINT", () => shutdown("SIGINT"));
 process.once("SIGTERM", () => shutdown("SIGTERM"));
+const controlTimer = setInterval(() => {
+  try {
+    const request = JSON.parse(readFileSync(controlPath, "utf8"));
+    if (request.startedAt !== workerStartedAt) return;
+    rmSync(controlPath, { force: true });
+    shutdown("operator");
+  } catch {
+    // No stop request is waiting.
+  }
+}, 250);
+controlTimer.unref();
 const stopAfterMs = Number(process.env.PI_MESH_WORKER_STOP_AFTER_MS?.trim() || 0);
 if (Number.isInteger(stopAfterMs) && stopAfterMs > 0) {
   setTimeout(() => shutdown("timeout"), stopAfterMs).unref();

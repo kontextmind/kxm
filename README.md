@@ -72,6 +72,25 @@ collect the review before finalizing.
 
 For a Pi-to-Claude setup, follow [Getting started](docs/getting-started.md#connect-claude-code).
 
+## Command-first operation
+
+The `pi-mesh` entry point manages one workspace consistently. Runtime configuration, logs, durable state, and generated retrospectives stay under `.kxm` unless `--workspace` selects another root.
+
+```powershell
+npx pi-mesh init
+npx pi-mesh validate --file .kxm/config/workflows/jira-development.json
+npx pi-mesh hub
+npx pi-mesh worker --name coordinator --project product --model xai/grok-4.6
+npx pi-mesh workflow start jira-development --payload '@ticket.json'
+npx pi-mesh workflow list
+npx pi-mesh workflow get run_123
+npx pi-mesh github watch --run-id run_123 --stage-id watch --signal-key pr-42-checks --repo org/repo --pr 42 --required ci
+npx pi-mesh retrospective export run_123
+npx pi-mesh stop
+```
+
+Start hub and workers in separate supervised terminals. Use `--dry-run --json` to inspect mutation plans without exposing configured token or secret values. Terminal workflows export proposed Markdown and JSON retrospectives automatically; review them before adopting any improvement as policy.
+
 ## What is included?
 
 | Component | What it does | Packaging |

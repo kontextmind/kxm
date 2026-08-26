@@ -83,7 +83,7 @@
         "id": "push-watch",
         "area": "gates",
         "label": "Push, open review, and watch",
-        "instructions": "When authorized, push the branch and open or update the review. Watch required GitHub checks with `pi-mesh github watch --run-id <id> --signal-key <key> --repo <owner/name> --pr <n>` so the durable wait receives a signed signal. Record every warning or failure, fix it, push again, and continue watching until required checks pass.",
+        "instructions": "When authorized, push the branch and open or update the review. Watch required GitHub checks with `pi-mesh github watch --run-id <id> --stage-id <stage> --signal-key <key> --repo <owner/name> --pr <n>` so the durable wait receives an exact signed signal for success, failure, cancellation, or timeout. Record every warning or failure, fix it, push again, and continue watching until required checks pass.",
         "requiredEvidence": ["commit", "pull request", "required check results", "resolved warnings and failures"],
         "maxAttempts": 10
       },
