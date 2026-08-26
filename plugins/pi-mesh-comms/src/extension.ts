@@ -342,13 +342,13 @@ export default function piMeshExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "mesh_workflow_checkpoint",
     label: "Checkpoint workflow stage",
-    description: "Record a stage result. Warnings and failures require another attempt until passed or exhausted.",
+    description: "Record a stage result with evidence keyed by the stage's required evidence identities. Unrelated keys do not satisfy requirements. Warnings and failures require another attempt until passed or exhausted.",
     parameters: Type.Object({
       runId: Type.String(),
       stageId: Type.String(),
       status: Type.Union([Type.Literal("passed"), Type.Literal("warning"), Type.Literal("failed")]),
       summary: Type.String(),
-      evidence: Type.Optional(Type.Array(Type.String(), { maxItems: 32 })),
+      evidence: Type.Optional(Type.Record(Type.String(), Type.String(), { maxProperties: 64 })),
     }),
     async execute(_toolCallId, params) {
       return result(await workflowCall(() => requireClient().checkpointWorkflow(params.runId, {
@@ -363,12 +363,13 @@ export default function piMeshExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "mesh_workflow_wait",
     label: "Wait for workflow signal",
-    description: "Pause the active workflow stage until a signed external callback reports its result. The current agent turn may settle after this succeeds.",
+    description: "Pause the active workflow stage until a signed external callback reports its result. Supply already-verified evidence keyed by requirement; it is accumulated with callback evidence. The current agent turn may settle after this succeeds.",
     parameters: Type.Object({
       runId: Type.String(),
       stageId: Type.String(),
       signalKey: Type.String({ description: "Stable callback key, such as github-pr-42-checks" }),
       summary: Type.String({ description: "What is running externally and what result is expected" }),
+      evidence: Type.Optional(Type.Record(Type.String(), Type.String(), { maxProperties: 64 })),
       timeoutMs: Type.Optional(Type.Integer({ minimum: 1_000, maximum: 2_592_000_000 })),
     }),
     async execute(_toolCallId, params) {
@@ -376,6 +377,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
         stageId: params.stageId,
         signalKey: params.signalKey,
         summary: params.summary,
+        ...(params.evidence ? { evidence: params.evidence } : {}),
         ...(params.timeoutMs ? { timeoutMs: params.timeoutMs } : {}),
       })));
     },

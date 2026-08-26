@@ -19,10 +19,16 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 - Failed-tool journal summaries now include an allowlisted diagnostic class instead of a generic "tool failed" sentence.
 - Long-lived workers wait longer for a graceful SIGTERM drain and retry once without `--continue` after a fast failure.
+- The npm artifact now ships self-contained JavaScript runtimes for `pi-mesh` and `pi-mesh-hub`, so installed commands do not depend on Node stripping TypeScript inside `node_modules`.
+- Workflow gates now accumulate evidence by normalized requirement identity across local waits and passing callbacks; unrelated check or context volume cannot satisfy a missing review, artifact, or retrospective requirement.
+- Generated-runtime CI now rejects missing, untracked, or stale CLI, hub, and MCP artifacts after rebuilding them.
+- GitHub watching requests complete 100-item check-run pages, treats `startup_failure` as failed, and uses a new delivery generation for each watcher invocation while preserving one ID across its transport retries.
+- Default `pi-mesh signal` delivery IDs are unique per command invocation so a corrected callback after re-waiting cannot conflict with the prior failed attempt.
 
 ### Upgrade note
 
 - Extra 401/403 JSON fields are additive. 0.3.1 clients ignore them. Coordinator journal writes after a failed run remain allowed; checkpoints and waits still require a running or waiting run.
+- Workflow checkpoint, wait, callback, and `pi-mesh signal` evidence changed from string arrays to keyed string objects. Use the canonical `requiredEvidence` value as each key. Pre-0.4 array evidence remains readable for history but does not satisfy a new keyed gate.
 
 ## 0.3.1 - 2026-08-26
 

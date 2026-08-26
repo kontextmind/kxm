@@ -180,11 +180,12 @@ This repository follows the native package structures for:
 npm ci
 npm run test:coverage
 npm run check
+npm run check:generated
 npm run validate:claude
 npm pack --dry-run
 ```
 
-Run the complete local gate with `npm run validate`. See [Contributing](CONTRIBUTING.md) before changing the protocol or generated MCP bundle.
+Run the complete local gate with `npm run validate`. See [Contributing](CONTRIBUTING.md) before changing the protocol or generated runtimes.
 
 ## Repository layout
 
@@ -195,7 +196,7 @@ Run the complete local gate with `npm run validate`. See [Contributing](CONTRIBU
 docs/                           User, operator, and architecture guides
 plugins/pi-mesh-comms/
 ├── .claude-plugin/             Claude plugin manifest
-├── dist/                       Generated self-contained MCP runtime
+├── dist/                       Generated self-contained CLI, hub, and MCP runtimes
 ├── skills/                     Portable Agent Skill
 └── src/                        Pi extension, hub, client, and MCP source
 scripts/                        Build and consistency helpers

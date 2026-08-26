@@ -13,7 +13,7 @@ Describe the user or maintainer problem and the solution.
 
 - [ ] `npm test`
 - [ ] `npm run check`
-- [ ] `npm run build:mcp` and generated bundle committed when MCP source changed
+- [ ] `npm run check:generated` after generated runtimes are committed
 - [ ] `npm run validate:claude` when packaging changed
 - [ ] `npm pack --dry-run`
 

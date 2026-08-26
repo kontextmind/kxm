@@ -1,13 +1,14 @@
 import { createHmac, randomUUID } from "node:crypto";
+import { canonicalWorkflowEvidenceKey } from "../plugins/pi-mesh-comms/src/workflow.ts";
 
-const [runId, signalKey, status, summary, ...evidence] = process.argv.slice(2);
+const [runId, signalKey, status, summary, ...evidenceArgs] = process.argv.slice(2);
 const serverUrl = process.env.PI_MESH_SERVER_URL?.trim() || "http://127.0.0.1:7331";
 const definitionId = process.env.PI_MESH_WORKFLOW_ID?.trim();
 const secret = process.env.PI_MESH_WORKFLOW_SIGNAL_SECRET?.trim();
 
 if (!runId || !signalKey || !status || !summary || !definitionId || !secret) {
   console.error([
-    "Usage: workflow-signal <runId> <signalKey> <passed|warning|failed> <summary> [evidence ...]",
+    "Usage: workflow-signal <runId> <signalKey> <passed|warning|failed> <summary> [<required-key>=<evidence> ...]",
     "Required environment: PI_MESH_WORKFLOW_ID, PI_MESH_WORKFLOW_SIGNAL_SECRET",
     "Optional environment: PI_MESH_SERVER_URL, PI_MESH_SIGNAL_DELIVERY_ID",
   ].join("\n"));
@@ -16,6 +17,19 @@ if (!runId || !signalKey || !status || !summary || !definitionId || !secret) {
   console.error("status must be passed, warning, or failed");
   process.exitCode = 2;
 } else {
+  const evidenceEntries = new Map<string, string>();
+  for (const value of evidenceArgs) {
+    const separator = value.indexOf("=");
+    if (separator <= 0 || separator === value.length - 1) {
+      throw new Error("evidence must use <required-key>=<evidence> syntax");
+    }
+    const key = canonicalWorkflowEvidenceKey(value.slice(0, separator));
+    const proof = value.slice(separator + 1).trim();
+    if (!key || !proof) throw new Error("evidence must use <required-key>=<evidence> syntax");
+    if (evidenceEntries.has(key)) throw new Error(`duplicate normalized evidence key: ${key}`);
+    evidenceEntries.set(key, proof);
+  }
+  const evidence = Object.fromEntries(evidenceEntries);
   const body = JSON.stringify({ status, summary, evidence });
   const signature = `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
   const deliveryId = process.env.PI_MESH_SIGNAL_DELIVERY_ID?.trim() || `example-${randomUUID()}`;

@@ -105,15 +105,39 @@ test("stop, signal, status, and help cover the remaining command contract", asyn
       cwd,
     ), 0);
     const signalLive = capture();
+    let signalBody = "";
+    const signalDeliveryIds: string[] = [];
     assert.equal(await runCli(
-      ["--json", "signal", "run_1", "key", "passed", "ok"],
+      ["--json", "signal", "run_1", "key", "passed", "ok", " Local   Review =artifact.md", "GitHub.Check:CI=https://ci.example/1"],
       { PI_MESH_WORKFLOW_ID: "wf", PI_MESH_WORKFLOW_SIGNAL_SECRET: "signal-secret-16chars" },
       {
         ...signalLive,
-        fetchImpl: async () => new Response(JSON.stringify({ duplicate: false }), { status: 202 }),
+        fetchImpl: async (_input, init) => {
+          signalBody = String(init?.body ?? "");
+          signalDeliveryIds.push(new Headers(init?.headers).get("x-mesh-delivery-id") ?? "");
+          return new Response(JSON.stringify({ duplicate: false }), { status: 202 });
+        },
       },
       cwd,
     ), 0);
+    assert.deepEqual(JSON.parse(signalBody).evidence, {
+      "local review": "artifact.md",
+      "github.check:ci": "https://ci.example/1",
+    });
+    assert.equal(await runCli(
+      ["--json", "signal", "run_1", "key", "failed", "retry required"],
+      { PI_MESH_WORKFLOW_ID: "wf", PI_MESH_WORKFLOW_SIGNAL_SECRET: "signal-secret-16chars" },
+      {
+        ...capture(),
+        fetchImpl: async (_input, init) => {
+          signalDeliveryIds.push(new Headers(init?.headers).get("x-mesh-delivery-id") ?? "");
+          return new Response(JSON.stringify({ duplicate: false }), { status: 202 });
+        },
+      },
+      cwd,
+    ), 0);
+    assert.equal(new Set(signalDeliveryIds).size, 2);
+    assert.ok(signalDeliveryIds.every((deliveryId) => /^cli-signal:[0-9a-f-]{36}$/.test(deliveryId)));
     const list = capture();
     assert.equal(await runCli(["--json", "workflow", "list"], {}, list, cwd), 1);
   } finally {
@@ -249,6 +273,12 @@ test("invalid and unavailable operator commands fail safely with stable exit cod
     assert.equal(await runCli(["--json", "signal"], {}, capture(), cwd), 2);
     assert.equal(await runCli(["--json", "signal", "run_1", "key", "invalid", "summary"], {}, capture(), cwd), 2);
     assert.equal(await runCli(["--json", "signal", "run_1", "key", "passed", "summary"], {}, capture(), cwd), 2);
+    assert.equal(await runCli(
+      ["--json", "signal", "run_1", "key", "passed", "summary", "Review=one", " review =two"],
+      { PI_MESH_WORKFLOW_ID: "wf", PI_MESH_WORKFLOW_SIGNAL_SECRET: "signal-secret-16chars" },
+      capture(),
+      cwd,
+    ), 2);
     assert.equal(await runCli(["--json", "github", "nope"], {}, capture(), cwd), 2);
     assert.equal(await runCli(["--json", "github", "watch"], {}, capture(), cwd), 2);
     assert.equal(await runCli(["--json", "retrospective", "nope"], {}, capture(), cwd), 2);

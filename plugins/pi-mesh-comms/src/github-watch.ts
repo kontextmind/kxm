@@ -1,5 +1,6 @@
-import { createHmac } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { redactSecrets } from "./redact.ts";
+import type { WorkflowEvidenceInput } from "./workflow.ts";
 
 export type WatchStatus = "passed" | "failed" | "warning";
 
@@ -24,6 +25,7 @@ export interface GithubWatchInput {
   timeoutMs: number;
   intervalMs: number;
   token?: string;
+  deliveryId?: string;
   dryRun?: boolean;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
@@ -36,7 +38,7 @@ export interface GithubWatchResult {
   duplicate?: boolean;
   status?: WatchStatus;
   summary: string;
-  evidence: string[];
+  evidence: WorkflowEvidenceInput;
   deliveryId?: string;
   skipped?: boolean;
 }
@@ -56,19 +58,31 @@ function requiredToken(token: string | undefined): string | undefined {
   return value || undefined;
 }
 
-const FAILED_CONCLUSIONS = new Set(["failure", "cancelled", "timed_out", "action_required", "stale"]);
+const FAILED_CONCLUSIONS = new Set([
+  "failure",
+  "cancelled",
+  "timed_out",
+  "action_required",
+  "stale",
+  "startup_failure",
+]);
 const SUCCESS_CONCLUSIONS = new Set(["success"]);
+const CHECK_RUNS_PER_PAGE = 100;
+const MAX_CHECK_RUN_PAGES = 100;
 
-export function mapCheckConclusion(runs: GithubCheckRun[], required: string[] = []): { status: WatchStatus | "pending"; evidence: string[] } {
+export function mapCheckConclusion(
+  runs: GithubCheckRun[],
+  required: string[] = [],
+): { status: WatchStatus | "pending"; evidence: WorkflowEvidenceInput } {
   const names = required.length > 0 ? required : [...new Set(runs.map((run) => run.name))];
   const interesting = names.map((name) => runs.find((run) => run.name === name));
-  const evidence = interesting.slice(0, 32).map((run, index) => {
+  const evidence = Object.fromEntries(interesting.slice(0, 32).map((run, index) => {
     const name = names[index] ?? "unknown";
     const conclusion = run?.conclusion ?? run?.status ?? "missing";
     const url = run?.html_url ? ` url:${run.html_url}` : "";
     const completed = run?.completed_at ? ` at:${run.completed_at}` : "";
-    return redactSecrets(`conclusion:${name}=${conclusion}${url}${completed}`).slice(0, 500);
-  });
+    return [`github.check:${name}`, redactSecrets(`conclusion:${conclusion}${url}${completed}`).slice(0, 500)];
+  }));
   if (names.length === 0 || interesting.some((run) => !run || run.status !== "completed")) {
     return { status: "pending", evidence };
   }
@@ -89,7 +103,7 @@ export async function postWorkflowSignal(input: {
   signalKey: string;
   status: WatchStatus;
   summary: string;
-  evidence: string[];
+  evidence: WorkflowEvidenceInput;
   deliveryId: string;
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
@@ -131,7 +145,7 @@ export async function postWorkflowSignal(input: {
 export async function watchGithubChecks(input: GithubWatchInput): Promise<GithubWatchResult> {
   const token = requiredToken(input.token);
   if (!token) {
-    return { exitCode: 1, posted: false, skipped: true, summary: "github_auth_unavailable", evidence: [] };
+    return { exitCode: 1, posted: false, skipped: true, summary: "github_auth_unavailable", evidence: {} };
   }
   const fetchImpl = input.fetchImpl ?? fetch;
   const now = input.now ?? Date.now;
@@ -142,10 +156,20 @@ export async function watchGithubChecks(input: GithubWatchInput): Promise<Github
     accept: "application/vnd.github+json",
     "user-agent": "pi-mesh-github-watch",
   };
-  const contextEvidence = [`run:${input.runId}`, `stage:${input.stageId}`, `signal:${input.signalKey}`];
-  let deliveryId = `github-watch:${input.runId}:${input.stageId}:${input.signalKey}:${input.pr}`;
-  const deliver = async (status: WatchStatus, summary: string, evidence: string[]): Promise<GithubWatchResult> => {
-    const boundedEvidence = [...contextEvidence, ...evidence].slice(0, 35);
+  const contextEvidence: WorkflowEvidenceInput = {
+    "workflow.run": input.runId,
+    "workflow.stage": input.stageId,
+    "workflow.signal": input.signalKey,
+  };
+  const explicitDeliveryId = input.deliveryId?.trim();
+  const deliveryGeneration = randomUUID();
+  let deliveryId = explicitDeliveryId || `github-watch:${deliveryGeneration}:pr-${input.pr}`;
+  const deliver = async (
+    status: WatchStatus,
+    summary: string,
+    evidence: WorkflowEvidenceInput,
+  ): Promise<GithubWatchResult> => {
+    const boundedEvidence = Object.fromEntries(Object.entries({ ...contextEvidence, ...evidence }).slice(0, 64));
     if (input.dryRun) return { exitCode: status === "failed" && summary === "github_watch_timeout" ? 4 : 0, posted: false, status, summary, evidence: boundedEvidence, deliveryId };
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       try {
@@ -177,25 +201,48 @@ export async function watchGithubChecks(input: GithubWatchInput): Promise<Github
     return undefined;
   };
   const prResponse = await githubGet(`https://api.github.com/repos/${input.repo}/pulls/${input.pr}`);
-  if (!prResponse) return deliver("failed", "github_watch_timeout", []);
+  if (!prResponse) return deliver("failed", "github_watch_timeout", {});
   if (!prResponse.ok) {
-    return { exitCode: 1, posted: false, summary: "github_pr_unavailable", evidence: [`http:${prResponse.status}`] };
+    return { exitCode: 1, posted: false, summary: "github_pr_unavailable", evidence: { "github.http": String(prResponse.status) } };
   }
   const pull = await prResponse.json() as { head?: { sha?: string } };
   const headSha = pull.head?.sha;
   if (!headSha) {
-    return { exitCode: 1, posted: false, summary: "github_head_unavailable", evidence: [] };
+    return { exitCode: 1, posted: false, summary: "github_head_unavailable", evidence: {} };
   }
-  deliveryId = `${deliveryId}:${headSha}`;
-  let lastEvidence: string[] = [];
+  if (!explicitDeliveryId) deliveryId = `github-watch:${deliveryGeneration}:${headSha.slice(0, 40)}`;
+  let lastEvidence: WorkflowEvidenceInput = {};
   while (now() <= deadline) {
-    const checksResponse = await githubGet(`https://api.github.com/repos/${input.repo}/commits/${headSha}/check-runs`);
-    if (!checksResponse) return deliver("failed", "github_watch_timeout", lastEvidence);
-    if (!checksResponse.ok) {
-      return { exitCode: 1, posted: false, summary: "github_checks_unavailable", evidence: [`http:${checksResponse.status}`] };
+    const checkRuns: GithubCheckRun[] = [];
+    for (let page = 1; page <= MAX_CHECK_RUN_PAGES; page += 1) {
+      const checksUrl = new URL(`https://api.github.com/repos/${input.repo}/commits/${headSha}/check-runs`);
+      checksUrl.searchParams.set("per_page", String(CHECK_RUNS_PER_PAGE));
+      checksUrl.searchParams.set("page", String(page));
+      const checksResponse = await githubGet(checksUrl.toString());
+      if (!checksResponse) return deliver("failed", "github_watch_timeout", lastEvidence);
+      if (!checksResponse.ok) {
+        return { exitCode: 1, posted: false, summary: "github_checks_unavailable", evidence: { "github.http": String(checksResponse.status) } };
+      }
+      const payload = await checksResponse.json() as { total_count?: number; check_runs?: GithubCheckRun[] };
+      const pageRuns = Array.isArray(payload.check_runs) ? payload.check_runs : [];
+      checkRuns.push(...pageRuns);
+      const totalCount = Number.isInteger(payload.total_count) && payload.total_count! >= 0
+        ? payload.total_count!
+        : undefined;
+      const complete = totalCount === undefined
+        ? pageRuns.length < CHECK_RUNS_PER_PAGE
+        : checkRuns.length >= totalCount;
+      if (complete) break;
+      if (pageRuns.length === 0 || page === MAX_CHECK_RUN_PAGES) {
+        return {
+          exitCode: 1,
+          posted: false,
+          summary: "github_checks_unavailable",
+          evidence: { "github.pagination": pageRuns.length === 0 ? "incomplete" : "limit_exceeded" },
+        };
+      }
     }
-    const payload = await checksResponse.json() as { check_runs?: GithubCheckRun[] };
-    const mapped = mapCheckConclusion(payload.check_runs ?? [], input.required ?? []);
+    const mapped = mapCheckConclusion(checkRuns, input.required ?? []);
     lastEvidence = mapped.evidence;
     if (mapped.status !== "pending") {
       const summary = mapped.status === "passed" ? "required GitHub checks passed" : "required GitHub checks failed";

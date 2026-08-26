@@ -5,7 +5,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const server = fileURLToPath(new URL("../plugins/pi-mesh-comms/src/server.ts", import.meta.url));
+const server = fileURLToPath(new URL("../plugins/pi-mesh-comms/dist/server.js", import.meta.url));
 const workdir = resolve(process.env.PI_MESH_WORKDIR?.trim() || process.cwd());
 const workspaceDir = resolve(workdir, process.env.PI_MESH_WORKSPACE_DIR?.trim() || ".kxm");
 const stateDir = resolve(workdir, process.env.PI_MESH_STATE_DIR?.trim() || join(workspaceDir, "state"));
@@ -20,7 +20,6 @@ function cleanupPid() { try { const record = JSON.parse(readFileSync(pidPath, "u
 process.once("exit", cleanupPid);
 const child = spawn(process.execPath, [
   "--disable-warning=ExperimentalWarning",
-  "--experimental-strip-types",
   server,
   ...process.argv.slice(2),
 ], {

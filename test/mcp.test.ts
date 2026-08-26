@@ -247,7 +247,7 @@ test("bundled MCP tools cover outbound, inbound, reply, cancellation, and channe
     stageId: "work",
     status: "passed",
     summary: "Completed with checks",
-    evidence: ["checks:pass"],
+    evidence: { checks: "pass" },
   }));
   assert.equal(checkpoint.completed, true);
   assert.match(JSON.stringify(toolValue(await tool("mesh_improvement_report"))), /harness/);

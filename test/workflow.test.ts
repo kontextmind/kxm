@@ -43,6 +43,17 @@ test("workflow definitions, path lookup, and prompt templates are validated", ()
   assert.equal(valueAtPath(payload, "issue.key"), "ABC-12");
   assert.equal(valueAtPath(payload, "issue.missing"), undefined);
   assert.equal(renderWorkflowPrompt(definition!.promptTemplate, payload), "Work ABC-12: Broken login");
+  const normalizedRequirements = JSON.parse(definitionJson())[0];
+  normalizedRequirements.stages[0].requiredEvidence = ["  Local   Review ", "GitHub.Check:CI"];
+  assert.deepEqual(
+    parseWorkflowDefinitions(JSON.stringify([normalizedRequirements]))[0]!.stages[0]!.requiredEvidence,
+    ["local review", "github.check:ci"],
+  );
+  normalizedRequirements.stages[0].requiredEvidence = ["Review", " review "];
+  assert.throws(
+    () => parseWorkflowDefinitions(JSON.stringify([normalizedRequirements])),
+    /requiredEvidence keys must be unique/,
+  );
   assert.throws(() => parseWorkflowDefinitions("{}"), /JSON array/);
   assert.throws(() => parseWorkflowDefinitions(JSON.stringify([{ ...JSON.parse(definitionJson())[0], secret: "short" }])), /16 characters/);
   assert.equal(parseWorkflowDefinitions(undefined).length, 0);
@@ -108,15 +119,18 @@ test("workflow checkpoints enforce order, retries, attempt limits, and completio
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
-  assert.throws(() => checkpointRun(run, "implement", "passed", "early", [], "2026-01-01T00:01:00.000Z"), /not currently active/);
-  const retry = checkpointRun(run, "reproduce", "warning", "flaky reproduction", ["log"], "2026-01-01T00:01:00.000Z");
+  assert.throws(() => checkpointRun(run, "implement", "passed", "early", {}, "2026-01-01T00:01:00.000Z"), /not currently active/);
+  const retry = checkpointRun(run, "reproduce", "warning", "flaky reproduction", { log: "first attempt" }, "2026-01-01T00:01:00.000Z");
   assert.equal(retry.retry, true);
-  const advanced = checkpointRun(run, "reproduce", "passed", "stable reproduction", ["test"], "2026-01-01T00:02:00.000Z");
+  const advanced = checkpointRun(run, "reproduce", "passed", "stable reproduction", {
+    steps: "documented reproduction steps",
+    "failing test": "test/reproduction.test.ts",
+  }, "2026-01-01T00:02:00.000Z");
   assert.equal(advanced.run.currentStage, "implement");
-  const completed = checkpointRun(run, "implement", "passed", "implemented", ["commit"], "2026-01-01T00:03:00.000Z");
+  const completed = checkpointRun(run, "implement", "passed", "implemented", {}, "2026-01-01T00:03:00.000Z");
   assert.equal(completed.completed, true);
   assert.equal(run.status, "completed");
-  assert.throws(() => checkpointRun(run, "implement", "passed", "again", [], "2026-01-01T00:04:00.000Z"), /workflow is completed/);
+  assert.throws(() => checkpointRun(run, "implement", "passed", "again", {}, "2026-01-01T00:04:00.000Z"), /workflow is completed/);
 });
 
 test("workflow checkpoints reject incomplete evidence and fail after exhausted retries", () => {
@@ -146,12 +160,24 @@ test("workflow checkpoints reject incomplete evidence and fail after exhausted r
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
   assert.throws(
-    () => checkpointRun(run, "gate", "passed", "not enough", ["lint"], "2026-01-01T00:01:00.000Z"),
-    /requires at least 2 evidence items/,
+    () => checkpointRun(run, "gate", "passed", "unrelated volume", {
+      one: "lint passed",
+      two: "build passed",
+      three: "extra evidence",
+    }, "2026-01-01T00:01:00.000Z"),
+    /missing required evidence: lint, build/,
+  );
+  assert.throws(
+    () => checkpointRun(run, "gate", "passed", "duplicate aliases", {
+      Lint: "first",
+      " lint ": "second",
+      build: "pass",
+    }, "2026-01-01T00:01:00.000Z"),
+    /duplicate normalized requirement identity: lint/,
   );
   assert.equal(run.stages[0]!.attempts, 0);
-  assert.equal(checkpointRun(run, "gate", "failed", "first", ["log"], "2026-01-01T00:01:00.000Z").retry, true);
-  const exhausted = checkpointRun(run, "gate", "failed", "second", ["log"], "2026-01-01T00:02:00.000Z");
+  assert.equal(checkpointRun(run, "gate", "failed", "first", { log: "failure" }, "2026-01-01T00:01:00.000Z").retry, true);
+  const exhausted = checkpointRun(run, "gate", "failed", "second", { log: "failure" }, "2026-01-01T00:02:00.000Z");
   assert.equal(exhausted.retry, false);
   assert.equal(run.status, "failed");
   assert.equal(run.currentStage, undefined);
@@ -174,7 +200,7 @@ test("workflow signal waits preserve stage order and resume through normal check
       id: "checks",
       label: "Checks",
       instructions: "Wait for CI",
-      requiredEvidence: ["check URL"],
+      requiredEvidence: ["local-review", "github.check:ci"],
       maxAttempts: 2,
       status: "in_progress",
       attempts: 0,
@@ -190,16 +216,23 @@ test("workflow signal waits preserve stage order and resume through normal check
     "GitHub Actions is running",
     "2026-01-01T00:01:00.000Z",
     "2026-01-02T00:01:00.000Z",
+    { " Local-Review ": "review artifact" },
   );
   assert.equal(run.status, "waiting");
   assert.equal(run.stages[0]!.status, "waiting");
   assert.throws(
-    () => resumeWorkflowFromSignal(run, "wrong-key", "passed", "done", ["url"], "2026-01-01T00:02:00.000Z"),
+    () => resumeWorkflowFromSignal(run, "wrong-key", "passed", "done", { "github.check:ci": "url" }, "2026-01-01T00:02:00.000Z"),
     /waiting for github-pr-42-checks/,
   );
   assert.throws(
-    () => resumeWorkflowFromSignal(run, "github-pr-42-checks", "passed", "done", [], "2026-01-01T00:02:00.000Z"),
-    /requires at least 1 evidence item/,
+    () => resumeWorkflowFromSignal(run, "github-pr-42-checks", "passed", "done", {
+      "workflow.run": "run-signal",
+      "workflow.stage": "checks",
+      "workflow.signal": "github-pr-42-checks",
+      "unrelated-1": "a",
+      "unrelated-2": "b",
+    }, "2026-01-01T00:02:00.000Z"),
+    /missing required evidence: github\.check:ci/,
   );
   assert.equal(run.status, "waiting");
   const retry = resumeWorkflowFromSignal(
@@ -207,12 +240,15 @@ test("workflow signal waits preserve stage order and resume through normal check
     "github-pr-42-checks",
     "failed",
     "test failed",
-    ["https://ci.example/failure"],
+    { "github.check:ci": "https://ci.example/failure" },
     "2026-01-01T00:02:00.000Z",
   );
   assert.equal(retry.retry, true);
   assert.equal(run.status, "running");
   assert.equal(run.waiting, undefined);
+  assert.deepEqual(run.stages[0]!.evidence, {
+    "local-review": ["review artifact"],
+  });
   waitForWorkflowSignal(
     run,
     "checks",
@@ -226,11 +262,15 @@ test("workflow signal waits preserve stage order and resume through normal check
     "github-pr-42-checks-rerun",
     "passed",
     "all checks passed",
-    ["https://ci.example/success"],
+    { " GitHub.Check:CI ": "https://ci.example/success" },
     "2026-01-01T00:04:00.000Z",
   );
   assert.equal(completed.completed, true);
   assert.equal(run.status, "completed");
+  assert.deepEqual(run.stages[0]!.evidence, {
+    "local-review": ["review artifact"],
+    "github.check:ci": ["https://ci.example/success"],
+  });
 });
 
 test("improvement reports group and prioritize learning evidence", () => {

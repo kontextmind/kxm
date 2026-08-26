@@ -34,8 +34,8 @@ Configure the hub URL, token, unique agent name, purpose, and project when promp
 | `mesh_reply` | Return a final response to an inbound request |
 | `mesh_workflow_list` | List webhook workflows assigned to this coordinator |
 | `mesh_workflow_get` | Read stages and the structured workflow journal |
-| `mesh_workflow_checkpoint` | Pass a gate or record a warning/failure that must be retried |
-| `mesh_workflow_wait` | Release the current turn until a signed CI, review, merge, or Jira callback arrives |
+| `mesh_workflow_checkpoint` | Pass a gate with exact keyed evidence, or record a warning/failure that must be retried |
+| `mesh_workflow_wait` | Preserve keyed local evidence and release the turn until a signed CI, review, merge, or Jira callback arrives |
 | `mesh_workflow_record` | Capture a plan, decision, contradiction, error, or lesson |
 | `mesh_improvement_report` | Group learning evidence by improvement area |
 
