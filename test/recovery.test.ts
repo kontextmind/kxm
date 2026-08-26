@@ -30,8 +30,12 @@ test("recovery envelope is journaled without prompt bodies and then deleted", as
     freshSession: true,
     createdAt: "2026-08-26T00:00:00.000Z",
     pendingMessageIds: ["msg_1"],
+    artifactPointers: [".kxm/assets/reproduction.md"],
   }));
-  await consumeWorkerRecoveryEnvelope(fake, directory, "coordinator");
+  const recovered = await consumeWorkerRecoveryEnvelope(fake, directory, "coordinator");
+  assert.equal(recovered?.runId, "run_rec");
+  assert.equal(recovered?.stageId, "research");
+  assert.equal(recovered?.freshSession, true);
   assert.equal(recorded.length, 1);
   assert.deepEqual(recorded[0], {
     runId: "run_rec",
@@ -50,6 +54,7 @@ test("recovery envelope is journaled without prompt bodies and then deleted", as
         "reason:unresumable_session",
         "stage:research",
         "message:msg_1",
+        "artifact:.kxm/assets/reproduction.md",
       ],
     },
   });

@@ -19,7 +19,7 @@ test("classifies workflow scope and identity failures without copying raw output
   assert.equal(forbidden.class, "workflow_scope");
   assert.equal(forbidden.operation, "get");
   assert.equal(forbidden.nextAction, "use_assigned_coordinator");
-  assert.equal(diagnosticSummary(forbidden), "Tool mesh_workflow_get failed: workflow_scope");
+  assert.equal(diagnosticSummary(forbidden), "Tool mesh_workflow_get failed: workflow_scope; assigned coordinator: coordinator; next action: use_assigned_coordinator");
   assert.deepEqual(diagnosticEvidence(forbidden, "call-1"), [
     "tool:mesh_workflow_get",
     "tool-call:call-1",
@@ -27,6 +27,7 @@ test("classifies workflow scope and identity failures without copying raw output
     "operation:get",
     "code:workflow_forbidden",
     "nextAction:use_assigned_coordinator",
+    "assignedCoordinator:coordinator",
   ]);
   assert.doesNotMatch(JSON.stringify(forbidden), /sk-secretvalue/);
 });
@@ -41,6 +42,17 @@ test("maps token classes from bounded failure text", () => {
   assert.equal(classifyFailure({ code: "invalid_auth" }).nextAction, "check_project_token");
   assert.equal(classifyFailure({ code: "workflow_not_waiting", toolName: "mesh_workflow_checkpoint" }).class, "not_waiting");
   assert.equal(operationForTool("mesh_workflow_record"), "journal");
+});
+
+test("parses coordinator and recovery guidance from bounded extension errors", () => {
+  const diagnostic = classifyFailure({
+    toolName: "mesh_workflow_checkpoint",
+    code: "workflow_forbidden",
+    message: "not visible [assignedCoordinator=lead-agent nextAction=use_assigned_coordinator]",
+  });
+  assert.equal(diagnostic.assignedCoordinatorName, "lead-agent");
+  assert.equal(diagnostic.nextAction, "use_assigned_coordinator");
+  assert.match(diagnosticSummary(diagnostic), /lead-agent/);
 });
 
 test("redacts tokens and long hex dumps", () => {

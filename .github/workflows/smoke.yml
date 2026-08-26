@@ -2,6 +2,11 @@ name: Real Pi smoke
 
 on:
   workflow_dispatch:
+    inputs:
+      models:
+        description: "Two authenticated Pi model IDs, separated by a comma"
+        required: false
+        type: string
 
 jobs:
   smoke:
@@ -18,3 +23,4 @@ jobs:
       - run: node scripts/smoke-multi-pi.mjs
         env:
           PI_MESH_SMOKE: "1"
+          PI_MESH_SMOKE_MODELS: ${{ inputs.models || vars.PI_MESH_SMOKE_MODELS }}

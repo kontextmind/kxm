@@ -78,6 +78,7 @@ const hub = createMeshHub({
   host,
   port,
   dataPath,
+  assetsDir,
   messageTtlMs,
   messageRetentionMs,
   rateLimit: { maxRequests: rateLimitMax, windowMs: rateLimitWindowMs },
@@ -91,12 +92,23 @@ const address = await hub.start();
 structuredLog({ event: "hub_started", url: address.url, workspaceDir, configDir, logsDir, assetsDir, stateDir, dataPath, logPath });
 process.stdout.write(`pi-mesh hub listening at ${address.url}; storage=${dataPath}\n`);
 
-async function shutdown(signal: string): Promise<void> {
-  structuredLog({ event: "hub_stopping", signal });
-  await hub.close();
-  await new Promise<void>((resolveLog) => logStream.end(resolveLog));
-  process.exit(0);
+let shutdownPromise: Promise<void> | undefined;
+function shutdown(signal: string): Promise<void> {
+  if (shutdownPromise) return shutdownPromise;
+  shutdownPromise = (async () => {
+    structuredLog({ event: "hub_stopping", signal });
+    await hub.close();
+    await new Promise<void>((resolveLog) => logStream.end(resolveLog));
+    process.exit(0);
+  })();
+  return shutdownPromise;
 }
 
 process.once("SIGINT", () => void shutdown("SIGINT"));
 process.once("SIGTERM", () => void shutdown("SIGTERM"));
+process.once("message", (message: unknown) => {
+  if (message && typeof message === "object" && (message as { type?: string }).type === "shutdown") {
+    const signal = (message as { signal?: unknown }).signal;
+    void shutdown(typeof signal === "string" ? signal : "parent");
+  }
+});

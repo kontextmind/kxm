@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -432,6 +432,8 @@ test("structured logs never include prompt or reply bodies", async (context) => 
 });
 
 test("signed Jira webhooks start durable workflows, deduplicate retries, journal learning, and enforce gates", async (context) => {
+  const assetsDir = mkdtempSync(join(tmpdir(), "pi-mesh-retrospectives-"));
+  context.after(() => rmSync(assetsDir, { recursive: true, force: true }));
   const secret = "jira-webhook-secret-with-entropy";
   const definition: WebhookWorkflowDefinition = {
     id: "jira-development",
@@ -448,7 +450,7 @@ test("signed Jira webhooks start durable workflows, deduplicate retries, journal
       { id: "quality", label: "Quality gates", instructions: "Run gates", requiredEvidence: ["lint", "build", "security", "playwright"], maxAttempts: 2 },
     ],
   };
-  const mesh = await createTestMesh(context, { webhookWorkflows: [definition] });
+  const mesh = await createTestMesh(context, { webhookWorkflows: [definition], assetsDir });
   let inbound: string | undefined;
   const coordinator = mesh.makeClient("coordinator");
   const observer = mesh.makeClient("observer");
@@ -545,6 +547,11 @@ test("signed Jira webhooks start durable workflows, deduplicate retries, journal
   });
   assert.equal(complete.completed, true);
   assert.equal((await coordinator.getWorkflow(runId)).run.status, "completed");
+  const retrospectiveJson = join(assetsDir, "retrospectives", `${runId}.json`);
+  const retrospectiveMarkdown = join(assetsDir, "retrospectives", `${runId}.md`);
+  assert.equal(existsSync(retrospectiveJson), true);
+  assert.equal(existsSync(retrospectiveMarkdown), true);
+  assert.match(readFileSync(retrospectiveJson, "utf8"), /"reviewDecision": "proposed"/);
   const report = await coordinator.improvementReport();
   assert.equal(report.entries, 3);
   assert.equal(report.reports.find((item) => item.area === "gates")?.contradictions, 1);

@@ -26,6 +26,7 @@ test("watch posts passed and treats duplicate delivery as success", async () => 
     definitionId: "wf",
     signalSecret: "signal-secret-16chars",
     runId: "run_1",
+    stageId: "review",
     signalKey: "pr-1-checks",
     repo: "acme/app",
     pr: 1,
@@ -51,7 +52,7 @@ test("watch posts passed and treats duplicate delivery as success", async () => 
   assert.doesNotMatch(JSON.stringify(result), /ghs_test_token_not_logged/);
 });
 
-test("watch timeout does not post a signal", async () => {
+test("watch timeout posts an exact failed workflow signal", async () => {
   let now = 0;
   let posts = 0;
   const result = await watchGithubChecks({
@@ -59,6 +60,7 @@ test("watch timeout does not post a signal", async () => {
     definitionId: "wf",
     signalSecret: "signal-secret-16chars",
     runId: "run_1",
+    stageId: "review",
     signalKey: "pr-1-checks",
     repo: "acme/app",
     pr: 1,
@@ -78,9 +80,11 @@ test("watch timeout does not post a signal", async () => {
     },
   });
   assert.equal(result.exitCode, 4);
-  assert.equal(result.posted, false);
-  assert.equal(posts, 0);
+  assert.equal(result.posted, true);
+  assert.equal(posts, 1);
+  assert.equal(result.status, "failed");
   assert.equal(result.summary, "github_watch_timeout");
+  assert.deepEqual(result.evidence.slice(0, 3), ["run:run_1", "stage:review", "signal:pr-1-checks"]);
 });
 
 test("missing GitHub auth does not print a token", async () => {
@@ -89,6 +93,7 @@ test("missing GitHub auth does not print a token", async () => {
     definitionId: "wf",
     signalSecret: "signal-secret-16chars",
     runId: "run_1",
+    stageId: "review",
     signalKey: "pr-1-checks",
     repo: "acme/app",
     pr: 1,
@@ -106,6 +111,7 @@ test("stale workflow signal is a terminal adapter error", async () => {
     definitionId: "wf",
     signalSecret: "signal-secret-16chars",
     runId: "run_1",
+    stageId: "review",
     signalKey: "pr-1-checks",
     repo: "acme/app",
     pr: 1,
@@ -124,4 +130,66 @@ test("stale workflow signal is a terminal adapter error", async () => {
   assert.equal(result.exitCode, 1);
   assert.equal(result.posted, false);
   assert.equal(result.summary, "workflow_not_waiting");
+});
+
+test("signal delivery retries transient hub failures with a stable delivery id", async () => {
+  const deliveries: string[] = [];
+  let posts = 0;
+  const result = await watchGithubChecks({
+    serverUrl: "http://127.0.0.1:9",
+    definitionId: "wf",
+    signalSecret: "signal-secret-16chars",
+    runId: "run_retry",
+    stageId: "review",
+    signalKey: "pr-2-checks",
+    repo: "acme/app",
+    pr: 2,
+    timeoutMs: 1_000,
+    intervalMs: 10,
+    token: "ghs_test_token_not_logged",
+    sleep: async () => {},
+    fetchImpl: async (input, init) => {
+      const url = String(input);
+      if (url.includes("/pulls/2")) return jsonResponse(200, { head: { sha: "def456" } });
+      if (url.includes("/check-runs")) return jsonResponse(200, { check_runs: [{ name: "ci", status: "completed", conclusion: "success" }] });
+      posts += 1;
+      deliveries.push(new Headers(init?.headers).get("x-mesh-delivery-id") ?? "");
+      return posts === 1 ? jsonResponse(503, {}) : jsonResponse(202, { duplicate: false });
+    },
+  });
+  assert.equal(result.exitCode, 0);
+  assert.equal(posts, 2);
+  assert.equal(new Set(deliveries).size, 1);
+  assert.match(deliveries[0]!, /run_retry:review:pr-2-checks:2:def456/);
+});
+
+test("a stalled GitHub request is aborted and posts the required timeout signal", async () => {
+  let postedBody = "";
+  const result = await watchGithubChecks({
+    serverUrl: "http://127.0.0.1:9",
+    definitionId: "wf",
+    signalSecret: "signal-secret-16chars",
+    runId: "run_stalled",
+    stageId: "review",
+    signalKey: "pr-3-checks",
+    repo: "acme/app",
+    pr: 3,
+    timeoutMs: 25,
+    intervalMs: 10,
+    token: "ghs_test_token_not_logged",
+    fetchImpl: async (input, init) => {
+      if (!String(input).startsWith("https://api.github.com/")) {
+        postedBody = String(init?.body ?? "");
+        return jsonResponse(202, { duplicate: false });
+      }
+      return await new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
+      });
+    },
+  });
+  assert.equal(result.exitCode, 4);
+  assert.equal(result.posted, true);
+  assert.equal(result.summary, "github_watch_timeout");
+  assert.match(postedBody, /"status":"failed"/);
+  assert.match(postedBody, /github_watch_timeout/);
 });

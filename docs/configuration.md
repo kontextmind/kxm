@@ -97,6 +97,9 @@ When a Pi peer produces more than 32,000 characters, the extension returns a bou
 | `PI_MESH_WORKER_MODEL` | Pi default | Optional model selector passed to Pi |
 | `PI_MESH_WORKER_MAX_RESTARTS` | Unlimited | Non-negative process restart limit; service managers may set their own policy |
 | `PI_MESH_SMOKE` | unset | Set to `1` to enable the opt-in real multi-Pi smoke command |
+| `PI_MESH_SMOKE_MODELS` | unset | Two distinct comma-separated model IDs for the real-Pi release smoke |
+| `PI_MESH_SMOKE_TIMEOUT_MS` | `120000` | Per-phase real-Pi smoke timeout (`30000`–`600000`) |
+| `PI_MESH_SMOKE_PI_COMMAND` | discovered `pi` | Optional explicit Pi executable for a self-hosted runner |
 
 `PI_MESH_AGENT_NAME` and `PI_MESH_PROJECT` are required by `npm run worker`. The remaining agent settings are inherited by the spawned Pi RPC process. The worker resolves `.kxm` inside `PI_MESH_WORKDIR`, creates the standard directories, and passes their absolute paths to Pi. A fast `--continue` failure writes `.kxm/state/worker-recovery-<agent>.json` and retries once without `--continue`.
 
@@ -110,10 +113,10 @@ When a Pi peer produces more than 32,000 characters, the extension returns a bou
 | `pi-mesh validate` | Parse workflow definitions using env names, not printed secrets |
 | `pi-mesh status` | Check `/health` and `/ready` |
 | `pi-mesh github watch` | Poll required GitHub checks and post the existing signed signal |
-| `pi-mesh retrospective export` | Write proposed Markdown/JSON under `.kxm/assets/retrospectives` |
-| `pi-mesh smoke` | Opt-in real-Pi harness; skips unless `PI_MESH_SMOKE=1` |
+| `pi-mesh retrospective export <runId>` | Export proposed Markdown/JSON from local durable state under `.kxm/assets/retrospectives` |
+| `pi-mesh smoke` | Opt-in two-worker real-Pi release harness; verifies transport, fanout, restart/resume, journal, and checkpoint |
 
-Global flags: `--json`, `--dry-run`, `--workspace`. Live `workflow start` is rejected so signed webhook ingress remains the authority for creating runs. GitHub watch timeout exits `4` and does not post a signal.
+Global flags: `--json`, `--dry-run`, `--workspace`. `workflow start <definitionId> --payload <JSON|@file>` creates a signed webhook delivery using `PI_MESH_WORKFLOW_SECRET`. `worker --name <name> --project <project> [--model <provider/model>]` and `hub` honor the same workspace flag. GitHub watch posts an exact signed `failed` signal on timeout and exits `4`, preserving the distinction from a successful gate.
 
 ## Webhook workflow settings
 

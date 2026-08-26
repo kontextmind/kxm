@@ -147,10 +147,10 @@ To watch GitHub checks and post that same signal, use the command-first adapter:
 $env:PI_MESH_WORKFLOW_ID = "jira-development"
 $env:PI_MESH_WORKFLOW_SIGNAL_SECRET = "replace-with-the-callback-secret"
 $env:GITHUB_TOKEN = "replace-with-a-checks-read-token"
-npx pi-mesh github watch --run-id run_123 --signal-key github-pr-42-checks --repo org/repo --pr 42 --required ci --timeout-ms 3600000
+npx pi-mesh github watch --run-id run_123 --stage-id watch --signal-key github-pr-42-checks --repo org/repo --pr 42 --required ci --timeout-ms 3600000
 ```
 
-The watcher never invents a hub `passed` result on timeout; it exits `4` with no POST. Duplicate deliveries reuse a stable `x-mesh-delivery-id`.
+The watcher binds every result to the exact run, stage, and signal key. On timeout it posts a signed `failed` signal with summary `github_watch_timeout`, then exits `4`; it never invents a `passed` result. Retries reuse a stable `x-mesh-delivery-id`, including the pull request head SHA when GitHub returned one.
 
 ## Checkpoint contract
 

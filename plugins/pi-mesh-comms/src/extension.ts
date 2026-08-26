@@ -1,7 +1,8 @@
-import { basename } from "node:path";
+import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { MeshClient } from "./client.ts";
+import { MeshClient, MeshHttpError } from "./client.ts";
 import { areaForTool, classifyFailure, diagnosticEvidence, diagnosticSummary } from "./diagnostics.ts";
 import { MAX_CONTENT_CHARS, type DeliveryMode, type HubEvent, type MessageRecord } from "./protocol.ts";
 import type { ImprovementArea, JournalCategory, WorkflowCheckpointStatus } from "./workflow.ts";
@@ -45,6 +46,38 @@ export default function piMeshExtension(pi: ExtensionAPI) {
   let awaitingActivation: MessageRecord | undefined;
   let activeInbound: MessageRecord | undefined;
   let activeReply: string | undefined;
+  let stateDir = process.env.PI_MESH_STATE_DIR ?? "";
+  let agentName = process.env.PI_MESH_AGENT_NAME ?? "";
+  let projectName = process.env.PI_MESH_PROJECT ?? "";
+  let recoveryStageId: string | undefined;
+  let recoveryArtifacts: string[] = [];
+
+  function recoveryContextPath(): string | undefined {
+    if (!stateDir || !agentName) return undefined;
+    return join(stateDir, `worker-context-${agentName.replace(/[^A-Za-z0-9_.-]/g, "_")}.json`);
+  }
+
+  function persistRecoveryContext(): void {
+    const path = recoveryContextPath();
+    if (!path) return;
+    const runId = activeInbound?.correlationId?.startsWith("run_") ? activeInbound.correlationId : undefined;
+    const pendingMessageIds = [activeInbound?.id, awaitingActivation?.id, ...pending.map((message) => message.id)].filter((id): id is string => Boolean(id)).slice(0, 16);
+    if (!runId && pendingMessageIds.length === 0) { rmSync(path, { force: true }); return; }
+    mkdirSync(dirname(path), { recursive: true });
+    const tmp = `${path}.${process.pid}.tmp`;
+    writeFileSync(tmp, `${JSON.stringify({ version: 1, agentName, project: projectName, runId: runId ?? null, stageId: recoveryStageId ?? null, pendingMessageIds, artifactPointers: recoveryArtifacts.slice(0, 16), updatedAt: new Date().toISOString() })}\n`, { encoding: "utf8", mode: 0o600 });
+    renameSync(tmp, path);
+  }
+
+  async function workflowCall<T>(operation: () => Promise<T>): Promise<T> {
+    try { return await operation(); } catch (error) {
+      if (!(error instanceof MeshHttpError)) throw error;
+      const assigned = typeof error.extras?.assignedCoordinatorName === "string" ? ` assignedCoordinator=${error.extras.assignedCoordinatorName}` : "";
+      const nextAction = typeof error.extras?.nextAction === "string" ? ` nextAction=${error.extras.nextAction}` : "";
+      const operationName = typeof error.extras?.operation === "string" ? ` operation=${error.extras.operation}` : "";
+      throw new Error(`${error.message} [code=${error.code ?? "http_error"}${operationName}${assigned}${nextAction}]`);
+    }
+  }
 
   function requireClient(): MeshClient {
     if (!client?.agent) throw new Error("pi-mesh is not connected; check PI_MESH_SERVER_URL and /mesh-status");
@@ -55,6 +88,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     if (!client || awaitingActivation || activeInbound || pending.length === 0) return;
     const message = pending.shift()!;
     awaitingActivation = message;
+    persistRecoveryContext();
     pi.sendMessage({
       customType: "pi-mesh-inbound",
       content: [
@@ -74,8 +108,10 @@ export default function piMeshExtension(pi: ExtensionAPI) {
 
   async function receive(event: HubEvent): Promise<void> {
     if (event.type === "message") {
-      await client?.acknowledge(event.message.id);
+      if (activeInbound?.id === event.message.id || awaitingActivation?.id === event.message.id || pending.some((message) => message.id === event.message.id)) return;
       pending.push(event.message);
+      persistRecoveryContext();
+      await client?.acknowledge(event.message.id);
       activateNext();
     }
   }
@@ -84,6 +120,9 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     const serverUrl = process.env.PI_MESH_SERVER_URL ?? "http://127.0.0.1:7331";
     const project = process.env.PI_MESH_PROJECT ?? basename(ctx.cwd);
     const name = process.env.PI_MESH_AGENT_NAME ?? pi.getSessionName() ?? `pi-${process.pid}`;
+    agentName = name;
+    projectName = project;
+    stateDir = process.env.PI_MESH_STATE_DIR ?? stateDir;
     const purpose = process.env.PI_MESH_AGENT_PURPOSE ?? "General-purpose coding agent";
     const model = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
     client = new MeshClient({
@@ -98,8 +137,10 @@ export default function piMeshExtension(pi: ExtensionAPI) {
       const agent = await client.start(receive);
       ctx.ui.setStatus("pi-mesh", `mesh:${agent.name}`);
       ctx.ui.notify(`Connected to pi-mesh as ${agent.name}`, "info");
-      const stateDir = process.env.PI_MESH_STATE_DIR ?? "";
-      if (stateDir) await consumeWorkerRecoveryEnvelope(client, stateDir, agent.name);
+      const recovered = stateDir ? await consumeWorkerRecoveryEnvelope(client, stateDir, agent.name) : undefined;
+      if (recovered?.freshSession && recovered.runId) {
+        pi.sendMessage({ customType: "pi-mesh-recovery", content: [`Resume durable workflow run ${recovered.runId} after an unresumable Pi session.`, recovered.stageId ? `Last recorded stage: ${recovered.stageId}.` : "Resolve the current stage from mesh_workflow_get.", `Recovery reason: ${recovered.reason}.`, "Call mesh_workflow_get, inspect its journal and stage evidence, then continue the current stage without repeating completed work.", "Record the recovery decision and checkpoint only after the required evidence is satisfied."].join("\n"), display: true, details: { runId: recovered.runId, stageId: recovered.stageId, reason: recovered.reason } }, { triggerTurn: true, deliverAs: "followUp" });
+      }
     } catch (error) {
       client = undefined;
       ctx.ui.setStatus("pi-mesh", "mesh:offline");
@@ -114,6 +155,9 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     activeInbound = awaitingActivation;
     awaitingActivation = undefined;
     activeReply = undefined;
+    recoveryStageId = undefined;
+    recoveryArtifacts = [];
+    persistRecoveryContext();
   });
 
   pi.on("agent_end", (event) => {
@@ -131,7 +175,13 @@ export default function piMeshExtension(pi: ExtensionAPI) {
       error?: string;
       code?: string;
       statusCode?: number;
+      details?: unknown;
     };
+    const serializedDetails = JSON.stringify(resultEvent.details ?? {});
+    const stageMatch = serializedDetails.match(/"(?:currentStage|stageId)"\s*:\s*"([A-Za-z0-9_.-]{1,64})"/);
+    if (stageMatch?.[1]) recoveryStageId = stageMatch[1];
+    recoveryArtifacts = [...new Set([...recoveryArtifacts, ...(serializedDetails.match(/(?:artifact:|\.kxm[\\/]assets[\\/])[A-Za-z0-9_./\\:-]{1,240}/g) ?? [])])].slice(0, 16);
+    persistRecoveryContext();
     if (!resultEvent.isError) return;
     const diagnostic = classifyFailure({
       ...(resultEvent.toolName ? { toolName: resultEvent.toolName } : {}),
@@ -156,19 +206,19 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     if (!activeInbound || !client) return;
     const message = activeInbound;
     const reply = activeReply ?? "The peer agent completed without a textual response.";
-    activeInbound = undefined;
-    activeReply = undefined;
     try {
       await client.reply(message.id, boundedPeerReply(reply));
-    } finally {
+      activeInbound = undefined;
+      activeReply = undefined;
+      recoveryStageId = undefined;
+      recoveryArtifacts = [];
+      persistRecoveryContext();
       activateNext();
-    }
+    } catch { persistRecoveryContext(); }
   });
 
   pi.on("session_shutdown", async () => {
-    pending = [];
-    awaitingActivation = undefined;
-    activeInbound = undefined;
+    persistRecoveryContext();
     await client?.stop();
     client = undefined;
   });
@@ -275,7 +325,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     description: "List durable webhook workflow runs assigned to this long-lived agent.",
     parameters: Type.Object({}),
     async execute() {
-      return result({ runs: await requireClient().listWorkflows() });
+      return result({ runs: await workflowCall(() => requireClient().listWorkflows()) });
     },
   });
 
@@ -285,7 +335,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     description: "Get a workflow's stages and journal of plans, decisions, contradictions, errors, and lessons.",
     parameters: Type.Object({ runId: Type.String() }),
     async execute(_toolCallId, params) {
-      return result(await requireClient().getWorkflow(params.runId));
+      return result(await workflowCall(() => requireClient().getWorkflow(params.runId)));
     },
   });
 
@@ -301,12 +351,12 @@ export default function piMeshExtension(pi: ExtensionAPI) {
       evidence: Type.Optional(Type.Array(Type.String(), { maxItems: 32 })),
     }),
     async execute(_toolCallId, params) {
-      return result(await requireClient().checkpointWorkflow(params.runId, {
+      return result(await workflowCall(() => requireClient().checkpointWorkflow(params.runId, {
         stageId: params.stageId,
         status: params.status as WorkflowCheckpointStatus,
         summary: params.summary,
         ...(params.evidence ? { evidence: params.evidence } : {}),
-      }));
+      })));
     },
   });
 
@@ -322,12 +372,12 @@ export default function piMeshExtension(pi: ExtensionAPI) {
       timeoutMs: Type.Optional(Type.Integer({ minimum: 1_000, maximum: 2_592_000_000 })),
     }),
     async execute(_toolCallId, params) {
-      return result(await requireClient().waitForWorkflowSignal(params.runId, {
+      return result(await workflowCall(() => requireClient().waitForWorkflowSignal(params.runId, {
         stageId: params.stageId,
         signalKey: params.signalKey,
         summary: params.summary,
         ...(params.timeoutMs ? { timeoutMs: params.timeoutMs } : {}),
-      }));
+      })));
     },
   });
 
@@ -364,7 +414,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
       relatedEntryIds: Type.Optional(Type.Array(Type.String(), { maxItems: 16 })),
     }),
     async execute(_toolCallId, params) {
-      return result(await requireClient().recordWorkflowEntry(params.runId, {
+      return result(await workflowCall(() => requireClient().recordWorkflowEntry(params.runId, {
         category: params.category as JournalCategory,
         area: params.area as ImprovementArea,
         ...(params.severity ? { severity: params.severity as "info" | "warning" | "error" } : {}),
@@ -372,7 +422,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
         ...(params.details ? { details: params.details } : {}),
         ...(params.evidence ? { evidence: params.evidence } : {}),
         ...(params.relatedEntryIds ? { relatedEntryIds: params.relatedEntryIds } : {}),
-      }));
+      })));
     },
   });
 
@@ -382,7 +432,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     description: "Summarize recorded errors, contradictions, and lessons by improvement area across this project.",
     parameters: Type.Object({}),
     async execute() {
-      return result(await requireClient().improvementReport());
+      return result(await workflowCall(() => requireClient().improvementReport()));
     },
   });
 

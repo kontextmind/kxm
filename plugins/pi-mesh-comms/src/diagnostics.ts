@@ -132,14 +132,18 @@ export function classifyFailure(input: ClassifyFailureInput): Diagnostic {
   const fromCode = input.code ? CODE_TO_CLASS[input.code] : undefined;
   const fromTokens = input.message ? classFromTokens(input.message) : undefined;
   const diagnosticClass = fromCode ?? fromTokens ?? "unknown";
-  const nextAction = input.nextAction ?? nextActionForCode(input.code, operation);
+  const messageCoordinator = input.message?.match(/assignedCoordinator=([A-Za-z0-9_.-]{1,64})/)?.[1];
+  const messageAction = input.message?.match(/nextAction=([a-z_]{1,64})/)?.[1];
+  const parsedAction = NEXT_ACTIONS.includes(messageAction as NextAction) ? messageAction as NextAction : undefined;
+  const nextAction = input.nextAction ?? parsedAction ?? nextActionForCode(input.code, operation);
+  const assignedCoordinatorName = input.assignedCoordinatorName ?? messageCoordinator;
   return {
     class: diagnosticClass,
     tool,
     operation,
     ...(input.statusCode !== undefined ? { httpStatus: input.statusCode } : {}),
     ...(input.code ? { code: input.code } : {}),
-    ...(input.assignedCoordinatorName ? { assignedCoordinatorName: input.assignedCoordinatorName } : {}),
+    ...(assignedCoordinatorName ? { assignedCoordinatorName } : {}),
     ...(nextAction ? { nextAction } : {}),
     ...(input.exitCode !== undefined ? { exitCode: input.exitCode } : {}),
     ...(input.durationMs !== undefined ? { durationMs: input.durationMs } : {}),
@@ -154,11 +158,14 @@ export function diagnosticEvidence(diagnostic: Diagnostic, toolCallId?: string):
     `operation:${diagnostic.operation}`,
     ...(diagnostic.code ? [`code:${diagnostic.code}`] : []),
     ...(diagnostic.nextAction ? [`nextAction:${diagnostic.nextAction}`] : []),
+    ...(diagnostic.assignedCoordinatorName ? [`assignedCoordinator:${diagnostic.assignedCoordinatorName}`] : []),
   ];
 }
 
 export function diagnosticSummary(diagnostic: Diagnostic): string {
-  return `Tool ${diagnostic.tool} failed: ${diagnostic.class}`;
+  const coordinator = diagnostic.assignedCoordinatorName ? `; assigned coordinator: ${diagnostic.assignedCoordinatorName}` : "";
+  const next = diagnostic.nextAction ? `; next action: ${diagnostic.nextAction}` : "";
+  return `Tool ${diagnostic.tool} failed: ${diagnostic.class}${coordinator}${next}`;
 }
 
 export function workflowScopeExtras(operation: DiagnosticOperation, assignedCoordinatorName: string) {

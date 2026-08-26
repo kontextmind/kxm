@@ -21,9 +21,29 @@ Stop with `Ctrl+C` or `SIGTERM`. The hub stops accepting connections, closes SSE
 
 For unattended service, use a supervisor that sets a stable working directory, injects secrets, captures stdout, restarts after failure, and allows at least five seconds for graceful shutdown.
 
-Run each long-lived coordinator with `npm run worker` under a separate service-manager unit. Use stable agent names, distinct worktrees for concurrent writers, explicit CPU and memory limits, and restart throttling outside the built-in bounded backoff. The worker launches Pi RPC mode and retains the most recent session unless configured otherwise. A graceful stop sends SIGTERM, waits for in-flight tools, then SIGKILL. If `--continue` dies immediately, the worker retries once with a fresh session and writes a redacted recovery envelope. Do not copy `pi-agent-*.log` into journals or retrospectives.
+Run each long-lived coordinator with `pi-mesh worker --name <stable-name> --project <project> [--model <provider/model>]` under a separate service-manager unit. Use distinct worktrees for concurrent writers, explicit CPU and memory limits, and restart throttling outside the built-in bounded backoff. The worker launches Pi RPC mode and retains the most recent session unless configured otherwise. `pi-mesh stop` writes a generation-matched control request; the worker asks Pi RPC to abort, waits for confirmation and state flush, and only force-stops the process tree after the bounded drain deadline. If `--continue` reports an invalid tool-result session, the worker retries once fresh, journals a redacted recovery envelope, and injects a bounded resume instruction for the durable run and stage. Do not copy `pi-agent-*.log` into journals or retrospectives.
 
-For GitHub-backed waits, run `pi-mesh github watch` as a separate command. The hub does not poll GitHub. Watcher timeout is not a hub `passed` signal; the durable wait deadline remains authoritative.
+For GitHub-backed waits, run `pi-mesh github watch` as a separate command. The hub does not poll GitHub. Success, failure, cancellation, and timeout produce the exact signed signal for the waiting run/stage/key; timeout exits `4` after posting `failed`.
+
+## Real multi-Pi release smoke
+
+The opt-in release smoke requires two distinct models that already pass `pi auth check`. It creates a temporary workspace, launches two real Pi RPC workers, and verifies discovery, request/reply, fanout, durable identity plus a post-restart exchange, journal persistence, checkpoint completion, and cleanup.
+
+PowerShell:
+
+```powershell
+$env:PI_MESH_SMOKE = "1"
+$env:PI_MESH_SMOKE_MODELS = "xai/grok-4.6,anthropic/claude-sonnet-4-5"
+node scripts/smoke-multi-pi.mjs
+```
+
+POSIX shell:
+
+```bash
+PI_MESH_SMOKE=1 PI_MESH_SMOKE_MODELS='xai/grok-4.6,anthropic/claude-sonnet-4-5' node scripts/smoke-multi-pi.mjs
+```
+
+For GitHub Actions, configure `PI_MESH_SMOKE_RUNNER` with the self-hosted runner label and `PI_MESH_SMOKE_MODELS` with the two model IDs as repository variables. A manual dispatch can override the model variable with its `models` input. Model credentials stay on the runner and are never workflow inputs.
 
 ## Health, readiness, and metrics
 
