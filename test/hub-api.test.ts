@@ -298,6 +298,57 @@ test("fanout gathers one to three independent planning responses and preserves p
   });
   assert.deepEqual(results.map((result) => result.status), ["replied", "replied", "replied"]);
   assert.deepEqual(results.map((result) => result.reply), ["planner-a proposal", "planner-b proposal", "planner-c proposal"]);
+  const exactRetry = await coordinator.fanout({
+    targets: ["planner-a", "planner-b", "planner-c"],
+    content: "Propose an independent fix plan",
+    correlationId: "PROD-42",
+    idempotencyKeyPrefix: "PROD-42:planning",
+    timeoutMs: 2_000,
+  });
+  assert.deepEqual(
+    exactRetry.map((result) => result.messageId),
+    results.map((result) => result.messageId),
+  );
+  const nextWorkflow = await coordinator.fanout({
+    targets: ["planner-a", "planner-b", "planner-c"],
+    content: "Propose an independent follow-up plan",
+    correlationId: "PROD-43",
+    idempotencyKeyPrefix: "PROD-42:planning",
+    timeoutMs: 2_000,
+  });
+  assert.deepEqual(nextWorkflow.map((result) => result.status), ["replied", "replied", "replied"]);
+  assert.ok(nextWorkflow.every((result, index) => result.messageId !== results[index]!.messageId));
+  const normalizedDuplicate = await coordinator.fanout({
+    targets: [" planner-a ", "Planner-A"],
+    content: "Normalize panel identities",
+    correlationId: "PROD-44",
+    idempotencyKeyPrefix: "PROD-44:planning",
+    timeoutMs: 2_000,
+  });
+  assert.equal(normalizedDuplicate.length, 1);
+  assert.equal(normalizedDuplicate[0]!.target, "planner-a");
+  assert.equal(normalizedDuplicate[0]!.status, "replied");
+  const messageCountBeforeConflict = mesh.hub.state.messages.size;
+  const changedContent = await coordinator.fanout({
+    targets: ["planner-a"],
+    content: "Changed content under the same durable scope",
+    correlationId: "PROD-44",
+    idempotencyKeyPrefix: "PROD-44:planning",
+    timeoutMs: 2_000,
+  });
+  assert.equal(changedContent[0]!.status, "error");
+  assert.match(changedContent[0]!.error ?? "", /idempotency key was already used/);
+  assert.equal(mesh.hub.state.messages.size, messageCountBeforeConflict);
+  const longPrefix = await coordinator.fanout({
+    targets: ["planner-b"],
+    content: "Bound the derived retry key",
+    correlationId: "PROD-45",
+    idempotencyKeyPrefix: "stage:" + "x".repeat(500),
+    timeoutMs: 2_000,
+  });
+  const storedLongPrefixMessage = mesh.hub.state.messages.get(longPrefix[0]!.messageId!);
+  assert.equal(storedLongPrefixMessage?.idempotencyKey?.length, 71);
+  assert.match(storedLongPrefixMessage?.idempotencyKey ?? "", /^fanout:[a-f0-9]{64}$/);
   const partial = await coordinator.fanout({ targets: ["planner-a", "missing"], content: "Compare", timeoutMs: 2_000 });
   assert.equal(partial[0]!.status, "replied");
   assert.equal(partial[1]!.status, "error");

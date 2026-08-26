@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { AgentRecord, DeliveryMode, HubEvent, MessageRecord } from "./protocol.ts";
 import type {
   ImprovementArea,
@@ -38,6 +39,11 @@ export interface FanoutResult {
   status: "replied" | "cancelled" | "expired" | "error";
   reply?: string;
   error?: string;
+}
+
+function fanoutIdempotencyKey(prefix: string, target: string, correlationId?: string): string {
+  const scope = JSON.stringify({ prefix, correlationId: correlationId ?? null, target: target.toLowerCase() });
+  return `fanout:${createHash("sha256").update(scope).digest("hex")}`;
 }
 
 export class MeshHttpError extends Error {
@@ -125,7 +131,7 @@ export class MeshClient {
     ttlMs?: number;
     timeoutMs?: number;
   }): Promise<FanoutResult[]> {
-    const targets = [...new Set(options.targets.map((target) => target.trim()).filter(Boolean))];
+    const targets = [...new Set(options.targets.map((target) => target.trim().toLowerCase()).filter(Boolean))];
     if (targets.length < 1 || targets.length > 3) throw new Error("fanout requires between one and three unique targets");
     return await Promise.all(targets.map(async (target): Promise<FanoutResult> => {
       try {
@@ -135,7 +141,11 @@ export class MeshClient {
           delivery: "followUp",
           ...(options.correlationId ? { correlationId: options.correlationId } : {}),
           ...(options.idempotencyKeyPrefix ? {
-            idempotencyKey: `${options.idempotencyKeyPrefix}:${target.toLowerCase()}`,
+            idempotencyKey: fanoutIdempotencyKey(
+              options.idempotencyKeyPrefix,
+              target,
+              options.correlationId,
+            ),
           } : {}),
           ...(options.ttlMs ? { ttlMs: options.ttlMs } : {}),
         });

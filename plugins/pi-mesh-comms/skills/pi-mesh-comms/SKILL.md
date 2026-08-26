@@ -43,7 +43,7 @@ When an inbound request names a durable workflow run:
    - `lesson` for an evidence-supported reusable conclusion.
 3. Tag entries by `harness`, `gates`, `implementation`, `workflow`, `documentation`, `security`, or `other` and include durable evidence links.
 4. Call `mesh_workflow_checkpoint` with the active stage, result, summary, and required evidence. Correct and repeat any warning or failure.
-5. For a mixture-of-agents planning stage, use `mesh_fanout` with one to three capable peers. Collect independent plans before showing agents one another's answers, record disagreements, then synthesize the strongest compatible recommendations.
+5. For a mixture-of-agents planning stage, use `mesh_fanout` with one to three capable peers. In a durable workflow, pass the workflow run ID as `correlationId` and a stable, stage-specific `idempotencyKeyPrefix` such as `planning-v1`. Collect independent plans before showing agents one another's answers, record disagreements, then synthesize the strongest compatible recommendations.
 6. When an external system must finish asynchronously, call `mesh_workflow_wait` with the active stage, a stable signal key, expected result, and bounded timeout. After the hub reports `waiting`, settle the turn. Do not fabricate a callback result or keep the turn open merely to poll.
 7. Otherwise, do not settle the coordinator turn until every required checkpoint passes or the run reaches a terminal failure.
 8. In the retrospective, use `mesh_improvement_report` to propose measurable improvements. Never weaken gates or change policy automatically.

@@ -15757,6 +15757,11 @@ var StdioServerTransport = class {
 };
 
 // plugins/pi-mesh-comms/src/client.ts
+import { createHash } from "node:crypto";
+function fanoutIdempotencyKey(prefix, target, correlationId) {
+  const scope = JSON.stringify({ prefix, correlationId: correlationId ?? null, target: target.toLowerCase() });
+  return `fanout:${createHash("sha256").update(scope).digest("hex")}`;
+}
 var MeshHttpError = class extends Error {
   statusCode;
   code;
@@ -15826,7 +15831,7 @@ var MeshClient = class {
     return result.message;
   }
   async fanout(options) {
-    const targets = [...new Set(options.targets.map((target) => target.trim()).filter(Boolean))];
+    const targets = [...new Set(options.targets.map((target) => target.trim().toLowerCase()).filter(Boolean))];
     if (targets.length < 1 || targets.length > 3) throw new Error("fanout requires between one and three unique targets");
     return await Promise.all(targets.map(async (target) => {
       try {
@@ -15836,7 +15841,11 @@ var MeshClient = class {
           delivery: "followUp",
           ...options.correlationId ? { correlationId: options.correlationId } : {},
           ...options.idempotencyKeyPrefix ? {
-            idempotencyKey: `${options.idempotencyKeyPrefix}:${target.toLowerCase()}`
+            idempotencyKey: fanoutIdempotencyKey(
+              options.idempotencyKeyPrefix,
+              target,
+              options.correlationId
+            )
           } : {},
           ...options.ttlMs ? { ttlMs: options.ttlMs } : {}
         });
@@ -16051,7 +16060,7 @@ var MeshClient = class {
 };
 
 // plugins/pi-mesh-comms/src/mcp-server.ts
-var VERSION = "0.3.0";
+var VERSION = "0.3.1";
 var inbox = /* @__PURE__ */ new Map();
 var meshClient;
 var starting;
@@ -16174,14 +16183,14 @@ var tools = [
   },
   {
     name: "mesh_fanout",
-    description: "Ask one through three peers independently and return all replies for comparison and synthesis.",
+    description: "Ask one through three peers independently and return all replies for comparison and synthesis. In durable workflows, use the run ID as correlationId and a stage-specific idempotencyKeyPrefix.",
     inputSchema: {
       type: "object",
       properties: {
         targets: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 3 },
         content: { type: "string" },
-        correlationId: { type: "string" },
-        idempotencyKeyPrefix: { type: "string" },
+        correlationId: { type: "string", description: "Workflow run ID or other stable request scope" },
+        idempotencyKeyPrefix: { type: "string", description: "Stable stage-specific retry key prefix" },
         ttlMs: { type: "number", minimum: 1e3, maximum: 6048e5 },
         timeoutMs: { type: "number", minimum: 100, maximum: 18e5 }
       },

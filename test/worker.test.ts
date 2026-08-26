@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -72,6 +72,47 @@ test("long-lived worker treats spawn failures as retryable nonzero exits", async
     assert.match(result.stdout, /"event":"worker_restart_limit_reached"/);
     const logPath = join(workdir, ".kxm", "logs", "pi-mesh-worker-missing-pi.jsonl");
     assert.match(readFileSync(logPath, "utf8"), /ENOENT/);
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("long-lived worker launches command scripts through ComSpec on Windows", {
+  skip: process.platform !== "win32",
+}, async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "pi-mesh-worker-cmd-"));
+  const commandDirectory = join(workdir, "command scripts");
+  const command = join(commandDirectory, "fake pi.cmd");
+  const receivedArguments = join(workdir, "received-arguments.txt");
+  try {
+    mkdirSync(commandDirectory, { recursive: true });
+    writeFileSync(command, `@echo off\r\necho %* > "${receivedArguments}"\r\nexit /b 7\r\n`, "utf8");
+    const result = await runWorker({
+      ...process.env,
+      PI_MESH_AGENT_NAME: "windows coordinator &(safe)",
+      PI_MESH_PROJECT: "product",
+      PI_MESH_PI_COMMAND: command,
+      PI_MESH_WORKER_MODEL: "vendor/model:latest",
+      PI_MESH_WORKER_MAX_RESTARTS: "0",
+      PI_MESH_WORKDIR: workdir,
+    });
+    assert.equal(result.code, 7, `${result.stderr}\n${result.stdout}`);
+    assert.doesNotMatch(result.stdout, /worker_process_error/);
+    assert.match(result.stdout, /"launcher":".*cmd\.exe"/i);
+    assert.match(result.stdout, /"event":"worker_exited","worker":"windows coordinator &\(safe\)".*"code":7/);
+    const args = readFileSync(receivedArguments, "utf8");
+    assert.match(args, /"--name" "windows coordinator &\(safe\)"/);
+    assert.match(args, /"--model" "vendor\/model:latest"/);
+    const rejected = await runWorker({
+      ...process.env,
+      PI_MESH_AGENT_NAME: "unsafe%PATH%",
+      PI_MESH_PROJECT: "product",
+      PI_MESH_PI_COMMAND: command,
+      PI_MESH_WORKER_MAX_RESTARTS: "0",
+      PI_MESH_WORKDIR: workdir,
+    });
+    assert.notEqual(rejected.code, 0);
+    assert.match(rejected.stderr, /cannot be passed safely to a Windows command script/);
   } finally {
     rmSync(workdir, { recursive: true, force: true });
   }

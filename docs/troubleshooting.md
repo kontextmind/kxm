@@ -66,7 +66,7 @@ Terminal records are removed after seven days by default. Increase `PI_MESH_MESS
 1. Confirm the marketplace and plugin are installed.
 2. Run `/reload-plugins` or restart Claude Code.
 3. Inspect `/mcp` and verify the `pi-mesh` server connected.
-4. Confirm Node.js 22.6 or newer is on the `PATH` used by Claude Code.
+4. Confirm Node.js 22.13 or newer on the 22.x line, or Node.js 24 or newer, is on the `PATH` used by Claude Code.
 5. Reinstall or update the marketplace if the cached plugin predates the `dist/mcp-server.js` bundle.
 
 ### Claude does not receive pushed requests

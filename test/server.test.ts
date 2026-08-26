@@ -25,6 +25,7 @@ test("hub server keeps workspace configuration, logs, assets, and state under .k
     PI_MESH_AUTH_TOKEN: "server-workspace-test-token",
   });
   const child = spawn(process.execPath, [
+    "--disable-warning=ExperimentalWarning",
     "--experimental-strip-types",
     resolve("plugins/pi-mesh-comms/src/server.ts"),
   ], {

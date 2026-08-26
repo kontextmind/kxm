@@ -37,6 +37,13 @@ let child;
 let stopping = false;
 let logsClosed = false;
 
+function quoteWindowsCommandArgument(value, label) {
+  if (/[\0\r\n"%!]/.test(value)) {
+    throw new Error(`${label} contains characters that cannot be passed safely to a Windows command script`);
+  }
+  return `"${value}"`;
+}
+
 function log(event, details = {}) {
   const line = `${JSON.stringify({ timestamp: new Date().toISOString(), event, worker: name, project, ...details })}\n`;
   logStream.write(line);
@@ -54,21 +61,25 @@ function start() {
   const args = ["--mode", "rpc", "--name", name];
   if (process.env.PI_MESH_WORKER_CONTINUE !== "false") args.push("--continue");
   if (process.env.PI_MESH_WORKER_MODEL?.trim()) args.push("--model", process.env.PI_MESH_WORKER_MODEL.trim());
-  log("worker_starting", { command, workdir, workspaceDir, configDir, logsDir, assetsDir, stateDir, logPath, agentLogPath });
-  const startedAt = Date.now();
-  child = spawn(command, args, {
-    cwd: workdir,
-    env: {
-      ...process.env,
-      PI_MESH_WORKSPACE_DIR: workspaceDir,
-      PI_MESH_CONFIG_DIR: configDir,
-      PI_MESH_LOGS_DIR: logsDir,
-      PI_MESH_ASSETS_DIR: assetsDir,
-      PI_MESH_STATE_DIR: stateDir,
-    },
-    stdio: ["pipe", "pipe", "pipe"],
-    windowsHide: true,
+  const windowsCommandScript = process.platform === "win32" && /\.(?:cmd|bat)$/i.test(command);
+  const launchCommand = windowsCommandScript ? process.env.ComSpec?.trim() || "cmd.exe" : command;
+  const windowsCommandLine = windowsCommandScript
+    ? `"${[command, ...args].map((value, index) => quoteWindowsCommandArgument(value, index === 0 ? "PI_MESH_PI_COMMAND" : "Pi argument")).join(" ")}"`
+    : undefined;
+  const launchArgs = windowsCommandLine ? ["/d", "/s", "/v:off", "/c", windowsCommandLine] : args;
+  log("worker_starting", {
+    command,
+    launcher: launchCommand,
+    workdir,
+    workspaceDir,
+    configDir,
+    logsDir,
+    assetsDir,
+    stateDir,
+    logPath,
+    agentLogPath,
   });
+  const startedAt = Date.now();
   let completed = false;
   const complete = (code, signal, error) => {
     if (completed) return;
@@ -93,6 +104,25 @@ function start() {
     log("worker_restart_scheduled", { delayMs: delay, restartCount });
     setTimeout(start, delay);
   };
+  try {
+    child = spawn(launchCommand, launchArgs, {
+      cwd: workdir,
+      env: {
+        ...process.env,
+        PI_MESH_WORKSPACE_DIR: workspaceDir,
+        PI_MESH_CONFIG_DIR: configDir,
+        PI_MESH_LOGS_DIR: logsDir,
+        PI_MESH_ASSETS_DIR: assetsDir,
+        PI_MESH_STATE_DIR: stateDir,
+      },
+      stdio: ["pipe", "pipe", "pipe"],
+      windowsHide: true,
+      windowsVerbatimArguments: windowsCommandScript,
+    });
+  } catch (error) {
+    complete(null, null, error instanceof Error ? error : new Error(String(error)));
+    return;
+  }
   child.stdout.on("data", (chunk) => {
     agentLogStream.write(chunk);
     process.stdout.write(chunk);

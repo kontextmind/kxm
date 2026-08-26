@@ -2,8 +2,14 @@ import { basename } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { MeshClient } from "./client.ts";
-import type { DeliveryMode, HubEvent, MessageRecord } from "./protocol.ts";
+import { MAX_CONTENT_CHARS, type DeliveryMode, type HubEvent, type MessageRecord } from "./protocol.ts";
 import type { ImprovementArea, JournalCategory, WorkflowCheckpointStatus } from "./workflow.ts";
+
+function boundedPeerReply(reply: string): string {
+  if (reply.length <= MAX_CONTENT_CHARS) return reply;
+  const suffix = `\n\n[pi-mesh: response truncated from ${reply.length} characters to fit the message limit; the full output may remain in the replying agent's local session or worker log]`;
+  return reply.slice(0, MAX_CONTENT_CHARS - suffix.length) + suffix;
+}
 
 function result(value: unknown) {
   return {
@@ -138,7 +144,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     activeInbound = undefined;
     activeReply = undefined;
     try {
-      await client.reply(message.id, reply);
+      await client.reply(message.id, boundedPeerReply(reply));
     } finally {
       activateNext();
     }
@@ -204,12 +210,12 @@ export default function piMeshExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "mesh_fanout",
     label: "Ask planning panel",
-    description: "Send the same independent request to one through three peers and return all replies for comparison and synthesis.",
+    description: "Send the same independent request to one through three peers and return all replies for comparison and synthesis. In durable workflows, use the run ID as correlationId and a stage-specific idempotencyKeyPrefix.",
     parameters: Type.Object({
       targets: Type.Array(Type.String(), { minItems: 1, maxItems: 3 }),
       content: Type.String(),
-      correlationId: Type.Optional(Type.String()),
-      idempotencyKeyPrefix: Type.Optional(Type.String()),
+      correlationId: Type.Optional(Type.String({ description: "Workflow run ID or other stable request scope" })),
+      idempotencyKeyPrefix: Type.Optional(Type.String({ description: "Stable stage-specific retry key prefix" })),
       ttlMs: Type.Optional(Type.Number({ minimum: 1_000, maximum: 604_800_000 })),
       timeoutMs: Type.Optional(Type.Number({ minimum: 100, maximum: 1_800_000 })),
     }),

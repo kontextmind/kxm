@@ -212,6 +212,32 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
   await fake.emit("agent_end", { messages: [{ role: "assistant", content: "workflow complete" }] });
   await fake.emit("agent_settled");
 
+  const exactLimitInbound = await peer.send({
+    target: "pi-under-test",
+    content: "return an exact-limit response",
+    delivery: "followUp",
+  });
+  await waitFor(() => fake.sent.length === 4);
+  await fake.emit("message_start", { message: fake.sent[3]!.message });
+  const exactLimitReply = "x".repeat(32_000);
+  await fake.emit("agent_end", { messages: [{ role: "assistant", content: exactLimitReply }] });
+  await fake.emit("agent_settled");
+  assert.equal((await peer.awaitResponse(exactLimitInbound.id, 2_000)).reply?.content, exactLimitReply);
+
+  const oversizedInbound = await peer.send({
+    target: "pi-under-test",
+    content: "return an oversized response",
+    delivery: "followUp",
+  });
+  await waitFor(() => fake.sent.length === 5);
+  await fake.emit("message_start", { message: fake.sent[4]!.message });
+  const oversizedReply = "x".repeat(32_001);
+  await fake.emit("agent_end", { messages: [{ role: "assistant", content: oversizedReply }] });
+  await fake.emit("agent_settled");
+  const boundedReply = (await peer.awaitResponse(oversizedInbound.id, 2_000)).reply?.content ?? "";
+  assert.equal(boundedReply.length, 32_000);
+  assert.match(boundedReply, /response truncated from 32001 characters to fit the message limit/);
+
   const cancellable = await fake.tools.get("mesh_send")!.execute("call-send-cancel", {
     target: "reviewer",
     content: "do not complete",

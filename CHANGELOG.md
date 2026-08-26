@@ -4,6 +4,8 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ## Unreleased
 
+## 0.3.1 - 2026-08-26
+
 ### Added
 
 - Durable external workflow waits that safely release coordinator turns and resume from signed CI, review, merge, or Jira result callbacks.
@@ -12,10 +14,19 @@ All notable user-facing changes are documented here. The project follows [Semant
 - `mesh_workflow_wait` for Pi and Claude plus an executable signed callback example.
 - Canonical `.kxm` workspace directories for tracked configuration and assets, ignored logs and state, and persisted hub/worker log files.
 - Retry and nonzero failure handling when a long-lived worker cannot spawn Pi.
+- Windows-safe long-lived worker launch through `ComSpec` for Pi command scripts.
+- Cross-platform CI at the exact Node 22.13 floor and current Node 24 release.
+- Bounded peer replies that return a terminal truncated response instead of leaving the sender blocked when model output exceeds the message limit.
 
 ### Changed
 
 - Expanded Pi to twelve tools and Claude MCP to fourteen tools.
+- Replaced the native `better-sqlite3` dependency with Node's built-in SQLite runtime so Pi package installation does not require a C++ toolchain; the supported runtime is Node 22.13+ on the 22.x line or Node 24+.
+- Scoped `mesh_fanout` idempotency to the caller prefix, correlation ID, and normalized target so retained messages from an earlier workflow cannot block a later run.
+
+### Upgrade note
+
+- Fanout retry keys created before 0.3.1 used a different format. Finish or inspect outstanding fanouts before upgrading; an exact retry that crosses the upgrade can dispatch a new peer request and does not provide cross-version exactly-once behavior.
 
 ## 0.3.0 - 2026-08-25
 
