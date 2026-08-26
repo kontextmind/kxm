@@ -2,8 +2,10 @@ import { basename } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { MeshClient } from "./client.ts";
+import { areaForTool, classifyFailure, diagnosticEvidence, diagnosticSummary } from "./diagnostics.ts";
 import { MAX_CONTENT_CHARS, type DeliveryMode, type HubEvent, type MessageRecord } from "./protocol.ts";
 import type { ImprovementArea, JournalCategory, WorkflowCheckpointStatus } from "./workflow.ts";
+import { consumeWorkerRecoveryEnvelope } from "./recovery.ts";
 
 function boundedPeerReply(reply: string): string {
   if (reply.length <= MAX_CONTENT_CHARS) return reply;
@@ -96,6 +98,8 @@ export default function piMeshExtension(pi: ExtensionAPI) {
       const agent = await client.start(receive);
       ctx.ui.setStatus("pi-mesh", `mesh:${agent.name}`);
       ctx.ui.notify(`Connected to pi-mesh as ${agent.name}`, "info");
+      const stateDir = process.env.PI_MESH_STATE_DIR ?? "";
+      if (stateDir) await consumeWorkerRecoveryEnvelope(client, stateDir, agent.name);
     } catch (error) {
       client = undefined;
       ctx.ui.setStatus("pi-mesh", "mesh:offline");
@@ -119,18 +123,29 @@ export default function piMeshExtension(pi: ExtensionAPI) {
 
   pi.on("tool_result", async (event) => {
     if (!activeInbound?.correlationId?.startsWith("run_") || !client) return;
-    const resultEvent = event as { toolName?: string; toolCallId?: string; isError?: boolean };
+    const resultEvent = event as {
+      toolName?: string;
+      toolCallId?: string;
+      isError?: boolean;
+      text?: string;
+      error?: string;
+      code?: string;
+      statusCode?: number;
+    };
     if (!resultEvent.isError) return;
+    const diagnostic = classifyFailure({
+      ...(resultEvent.toolName ? { toolName: resultEvent.toolName } : {}),
+      ...((resultEvent.error ?? resultEvent.text) ? { message: resultEvent.error ?? resultEvent.text } : {}),
+      ...(resultEvent.code ? { code: resultEvent.code } : {}),
+      ...(resultEvent.statusCode !== undefined ? { statusCode: resultEvent.statusCode } : {}),
+    });
     try {
       await client.recordWorkflowEntry(activeInbound.correlationId, {
         category: "error",
-        area: "implementation",
+        area: areaForTool(resultEvent.toolName),
         severity: "error",
-        summary: `Tool ${resultEvent.toolName ?? "unknown"} failed during workflow execution`,
-        evidence: [
-          `tool:${resultEvent.toolName ?? "unknown"}`,
-          ...(resultEvent.toolCallId ? [`tool-call:${resultEvent.toolCallId}`] : []),
-        ],
+        summary: diagnosticSummary(diagnostic),
+        evidence: diagnosticEvidence(diagnostic, resultEvent.toolCallId),
       });
     } catch {
       // A workflow may already be terminal or the hub may be reconnecting; agent execution should continue.

@@ -1,0 +1,20 @@
+name: Real Pi smoke
+
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    if: ${{ vars.PI_MESH_SMOKE_RUNNER != '' }}
+    runs-on: ${{ vars.PI_MESH_SMOKE_RUNNER }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.13.0"
+          cache: npm
+      - run: npm ci
+      - run: node scripts/smoke-multi-pi.mjs
+        env:
+          PI_MESH_SMOKE: "1"

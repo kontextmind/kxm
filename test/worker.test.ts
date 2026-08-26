@@ -1,15 +1,34 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+
+const inheritedWorkspaceKeys = [
+  "PI_MESH_WORKSPACE_DIR",
+  "PI_MESH_CONFIG_DIR",
+  "PI_MESH_LOGS_DIR",
+  "PI_MESH_ASSETS_DIR",
+  "PI_MESH_STATE_DIR",
+  "PI_MESH_WORKER_LOG_PATH",
+  "PI_MESH_AGENT_LOG_PATH",
+  "PI_MESH_WORKER_CONTINUE",
+] as const;
+
+function isolatedWorkerEnv(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const env = { ...process.env, ...environment };
+  for (const key of inheritedWorkspaceKeys) {
+    if (environment[key] === undefined || environment[key] === process.env[key]) delete env[key];
+  }
+  return env;
+}
 
 function runWorker(environment: NodeJS.ProcessEnv): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, ["scripts/pi-mesh-worker.mjs"], {
       cwd: process.cwd(),
-      env: environment,
+      env: isolatedWorkerEnv(environment),
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
@@ -115,5 +134,86 @@ test("long-lived worker launches command scripts through ComSpec on Windows", {
     assert.match(rejected.stderr, /cannot be passed safely to a Windows command script/);
   } finally {
     rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("long-lived worker falls back from an unresumable --continue start", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "pi-mesh-worker-fallback-"));
+  const failure = join(workdir, process.platform === "win32" ? "unresumable.cmd" : "unresumable.sh");
+  try {
+    writeFileSync(failure, process.platform === "win32"
+      ? "@echo invalid_request_error: missing_tool_result for tool_use id 1>&2\r\n@exit /b 9\r\n"
+      : "#!/bin/sh\necho 'invalid_request_error: missing_tool_result for tool_use id' >&2\nexit 9\n");
+    if (process.platform !== "win32") chmodSync(failure, 0o700);
+    const result = await runWorker({
+      ...process.env,
+      PI_MESH_AGENT_NAME: "coordinator",
+      PI_MESH_PROJECT: "product",
+      PI_MESH_PI_COMMAND: failure,
+      PI_MESH_WORKER_MAX_RESTARTS: "0",
+      PI_MESH_WORKDIR: workdir,
+    });
+    assert.notEqual(result.code, 0);
+    assert.match(result.stdout, /"event":"worker_continue_fallback"/);
+    const envelope = JSON.parse(readFileSync(join(workdir, ".kxm", "state", "worker-recovery-coordinator.json"), "utf8")) as {
+      version: number;
+      reason: string;
+      agentName: string;
+    };
+    assert.equal(envelope.version, 1);
+    assert.equal(envelope.reason, "unresumable_session");
+    assert.equal(envelope.agentName, "coordinator");
+    assert.doesNotMatch(JSON.stringify(envelope), /prompt|sk-|ghp_/);
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("long-lived worker drains SIGTERM before SIGKILL", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "pi-mesh-worker-drain-"));
+  const hang = join(workdir, "hang.cjs");
+  writeFileSync(hang, "setInterval(() => {}, 1000);\n");
+  const command = process.platform === "win32" ? join(workdir, "hang.cmd") : join(workdir, "hang.sh");
+  writeFileSync(
+    command,
+    process.platform === "win32"
+      ? `@echo off\r\n"${process.execPath}" "${hang}" %*\r\n`
+      : `#!/bin/sh\nexec "${process.execPath}" "${hang}" "$@"\n`,
+  );
+  if (process.platform !== "win32") chmodSync(command, 0o755);
+  try {
+    const child = spawn(process.execPath, ["scripts/pi-mesh-worker.mjs"], {
+      cwd: process.cwd(),
+      env: isolatedWorkerEnv({
+        PI_MESH_AGENT_NAME: "drainer",
+        PI_MESH_PROJECT: "product",
+        PI_MESH_PI_COMMAND: command,
+        PI_MESH_WORKER_MAX_RESTARTS: "0",
+        PI_MESH_WORKER_CONTINUE: "false",
+        PI_MESH_WORKER_DRAIN_MS: "200",
+        PI_MESH_WORKER_STOP_AFTER_MS: "150",
+        PI_MESH_WORKDIR: workdir,
+      }),
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    child.stdout.setEncoding("utf8").on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    await new Promise((resolve) => child.once("exit", resolve));
+    assert.match(stdout, /"event":"worker_drain_wait"/);
+    assert.match(stdout, /"event":"worker_stopping"/);
+  } finally {
+    try {
+      rmSync(workdir, { recursive: true, force: true });
+    } catch {
+      setTimeout(() => {
+        try {
+          rmSync(workdir, { recursive: true, force: true });
+        } catch {
+          // Windows may keep a short lock on a just-killed child directory.
+        }
+      }, 250).unref();
+    }
   }
 });

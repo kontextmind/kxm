@@ -85,6 +85,11 @@ The administrative token manages administrative routes and acts as the project t
 | `src/mcp-server.ts` | Claude MCP and channel integration |
 | `src/server.ts` | Hub executable and environment configuration |
 | `src/workflow.ts` | Workflow definitions, checkpoints, prompt rendering, and improvement reports |
+| `src/diagnostics.ts` | Allowlisted failure classes and 403 hints |
+| `src/cli.ts` | Command-first operator surface |
+| `src/github-watch.ts` | GitHub check polling to signed signals |
+| `src/retrospective.ts` | Bounded Markdown/JSON export |
+| `src/recovery.ts` | Worker recovery envelope consume |
 | `dist/mcp-server.js` | Generated self-contained Claude runtime |
 
 The MCP bundle is committed because marketplace installation does not run a dependency-install step. Edit the source, run `npm run build:mcp`, and commit both source and bundle.

@@ -15766,12 +15766,14 @@ var MeshHttpError = class extends Error {
   statusCode;
   code;
   requestId;
-  constructor(statusCode, message, code, requestId) {
+  extras;
+  constructor(statusCode, message, code, requestId, extras) {
     super(message);
     this.name = "MeshHttpError";
     this.statusCode = statusCode;
     if (code) this.code = code;
     if (requestId) this.requestId = requestId;
+    if (extras) this.extras = extras;
   }
 };
 var MeshClient = class {
@@ -16048,11 +16050,16 @@ var MeshClient = class {
       }
     }
     if (!response.ok) {
+      const extras = {};
+      for (const key of ["operation", "nextAction", "assignedCoordinatorName"]) {
+        if (typeof body[key] === "string") extras[key] = body[key];
+      }
       throw new MeshHttpError(
         response.status,
         String(body.error ?? `HTTP ${response.status}`),
         typeof body.code === "string" ? body.code : void 0,
-        response.headers.get("x-request-id") ?? void 0
+        response.headers.get("x-request-id") ?? void 0,
+        Object.keys(extras).length > 0 ? extras : void 0
       );
     }
     return body;
@@ -16060,7 +16067,7 @@ var MeshClient = class {
 };
 
 // plugins/pi-mesh-comms/src/mcp-server.ts
-var VERSION = "0.3.1";
+var VERSION = "0.4.0";
 var inbox = /* @__PURE__ */ new Map();
 var meshClient;
 var starting;

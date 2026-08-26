@@ -66,12 +66,14 @@ export type HubEvent =
 export class ProtocolError extends Error {
   readonly statusCode: number;
   readonly code: string;
+  readonly extras?: Record<string, unknown>;
 
-  constructor(statusCode: number, message: string, code = "protocol_error") {
+  constructor(statusCode: number, message: string, code = "protocol_error", extras?: Record<string, unknown>) {
     super(message);
     this.name = "ProtocolError";
     this.statusCode = statusCode;
     this.code = code;
+    if (extras) this.extras = extras;
   }
 }
 

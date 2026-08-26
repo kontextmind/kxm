@@ -1,0 +1,72 @@
+[
+  {
+    "id": "pi-extensions-v04",
+    "source": "generic",
+    "project": "pi-extensions-v04",
+    "target": "coordinator",
+    "secretEnv": "PI_MESH_V04_WORKFLOW_SECRET",
+    "signalSecretEnv": "PI_MESH_V04_SIGNAL_SECRET",
+    "event": "extension.v04_requested",
+    "delivery": "followUp",
+    "ttlMs": 604800000,
+    "promptTemplate": "Deliver the dogfood-driven v0.4 increment for {{repository}}.\n\nIssues: {{issues}}\nProject board: {{projectBoard}}\n\nYou are the sole code writer. Use grok-researcher and gemini-reviewer for independent research, planning, and review. Use the mesh workflow tools as the durable execution record. Record plans, decisions, contradictions, errors, and lessons. Keep GitHub issues and the project board current. The user authorizes branch creation, commits, pushes, pull requests, CI monitoring, and merge only after required checks pass. Never expose credentials, raw private prompts, or unrestricted model output. Preserve explicit authorization boundaries for third-party mutations performed by future workflows.",
+    "stages": [
+      {
+        "id": "research",
+        "area": "workflow",
+        "label": "Research",
+        "instructions": "Ask both peers independently to analyze issues 5, 6, 10, 11, 12, and 13. Inspect the existing implementation and dogfood logs. Identify root causes, portability and security risks, compatible CLI patterns, recovery semantics, GitHub signal behavior, retrospective redaction, and a practical real-Pi smoke topology. Record disagreements and write a research synthesis under .kxm/assets.",
+        "requiredEvidence": ["independent Grok research", "independent Gemini research", "dogfood evidence", "contradictions and resolutions", "acceptance criteria"],
+        "maxAttempts": 3
+      },
+      {
+        "id": "plan",
+        "area": "workflow",
+        "label": "Plan",
+        "instructions": "Ask both peers for independent production plans, then synthesize one architecture and rollout plan. Keep scope bounded and backward compatible. Define command contracts, safe diagnostic taxonomy, interrupted-tool recovery envelope, retrospective schemas, GitHub watcher semantics, cross-platform process behavior, tests, documentation, migrations, and rollback. Update all six issues with the selected plan.",
+        "requiredEvidence": ["independent plans", "selected architecture", "security boundaries", "file ownership", "test and rollout plan"],
+        "maxAttempts": 3
+      },
+      {
+        "id": "implement",
+        "area": "implementation",
+        "label": "Implement",
+        "instructions": "Implement the reviewed plan as the sole writer. Prefer composable commands over hidden automation. Keep all workspace material under .kxm, produce bounded machine-readable output, preserve secret redaction, and require explicit authority for external mutations. Add deterministic tests for every command, diagnostic, recovery transition, export, and GitHub signal state. Add an opt-in real-Pi smoke harness without making model downloads or credentials part of ordinary CI.",
+        "requiredEvidence": ["changed paths", "command examples", "security tests", "recovery tests", "GitHub adapter tests", "retrospective snapshots", "multi-Pi smoke harness"],
+        "maxAttempts": 6
+      },
+      {
+        "id": "local-gates",
+        "area": "gates",
+        "label": "Local gates",
+        "instructions": "Run npm ci and the complete repository validation gate, including coverage thresholds, strict typecheck, documentation lint, version consistency, package inspection, and Claude manifest validation. Run command examples in isolated temporary workspaces. Record and fix every warning or failure, then rerun affected gates.",
+        "requiredEvidence": ["clean install", "test and coverage results", "typecheck", "documentation lint", "package dry-run", "manifest validation", "isolated command smoke"],
+        "maxAttempts": 5
+      },
+      {
+        "id": "review",
+        "area": "gates",
+        "label": "Independent review",
+        "instructions": "Have Grok and Gemini independently review the actual diff for correctness, security, portability, recovery durability, command usability, GitHub idempotency, redaction, test quality, documentation, and upgrade compatibility. Resolve every material finding and rerun affected gates.",
+        "requiredEvidence": ["independent Grok review", "independent Gemini review", "accepted and rejected findings", "resolved findings", "rerun gates"],
+        "maxAttempts": 5
+      },
+      {
+        "id": "delivery",
+        "area": "gates",
+        "label": "Deliver and watch",
+        "instructions": "Commit and push the reviewed increment, open a pull request that links all six issues, and watch required GitHub checks. Use the GitHub signal adapter when available. Merge only when required checks are green, update project status, and leave infrastructure-dependent smoke work open if no labeled real-Pi runner is configured.",
+        "requiredEvidence": ["commit", "pull request", "green required checks", "merge or explicit blocker", "project status"],
+        "maxAttempts": 5
+      },
+      {
+        "id": "retrospective",
+        "area": "workflow",
+        "label": "Retrospective",
+        "instructions": "Export and review the durable run retrospective. Record recurring errors, unresolved contradictions, manual interventions, timing, and measurable follow-up actions. Do not silently turn proposed improvements into policy.",
+        "requiredEvidence": ["retrospective Markdown", "retrospective JSON", "review decision", "remaining backlog"],
+        "maxAttempts": 3
+      }
+    ]
+  }
+]

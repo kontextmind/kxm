@@ -50,13 +50,21 @@ export class MeshHttpError extends Error {
   readonly statusCode: number;
   readonly code?: string;
   readonly requestId?: string;
+  readonly extras?: Record<string, unknown>;
 
-  constructor(statusCode: number, message: string, code?: string, requestId?: string) {
+  constructor(
+    statusCode: number,
+    message: string,
+    code?: string,
+    requestId?: string,
+    extras?: Record<string, unknown>,
+  ) {
     super(message);
     this.name = "MeshHttpError";
     this.statusCode = statusCode;
     if (code) this.code = code;
     if (requestId) this.requestId = requestId;
+    if (extras) this.extras = extras;
   }
 }
 
@@ -386,11 +394,16 @@ export class MeshClient {
       }
     }
     if (!response.ok) {
+      const extras: Record<string, unknown> = {};
+      for (const key of ["operation", "nextAction", "assignedCoordinatorName"]) {
+        if (typeof body[key] === "string") extras[key] = body[key];
+      }
       throw new MeshHttpError(
         response.status,
         String(body.error ?? `HTTP ${response.status}`),
         typeof body.code === "string" ? body.code : undefined,
         response.headers.get("x-request-id") ?? undefined,
+        Object.keys(extras).length > 0 ? extras : undefined,
       );
     }
     return body as T;

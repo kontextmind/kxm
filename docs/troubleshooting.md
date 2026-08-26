@@ -10,8 +10,17 @@ Start with the smallest boundary: hub health, authentication, registration, peer
 4. Confirm every agent has a unique name.
 5. Run `/mesh-status` in Pi or call `mesh_list` in Claude.
 6. Inspect hub logs for registration, stale-agent, or server-error events.
+7. If a workflow tool returns `workflow_forbidden`, read `operation`, `assignedCoordinatorName`, and `nextAction`. Do not retry as a peer.
 
 ## Common problems
+
+### A continued Pi session rejects every turn
+
+If a worker was stopped during `mesh_await`, `--continue` may leave a `tool_use` without `tool_result`. The worker retries once without `--continue` and writes `.kxm/state/worker-recovery-<agent>.json`. Do not paste agent logs into the journal. Keep the same agent name so the hub identity resumes.
+
+### GitHub checks passed but the workflow is still waiting
+
+The hub does not poll GitHub. Run `pi-mesh github watch` with the same `runId` and `signalKey`. A watcher timeout exits `4` and does not invent `passed`. The durable wait deadline remains the hub timeout.
 
 ### The hub refuses to start
 

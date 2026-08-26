@@ -1,0 +1,24 @@
+{
+  "project": "pi-extensions-v04",
+  "agents": [
+    {
+      "name": "coordinator",
+      "model": "antigravity/claude-opus-4-6",
+      "purpose": "Owns the v0.4 workflow, synthesizes peer evidence, and is the sole code writer"
+    },
+    {
+      "name": "grok-researcher",
+      "model": "xai/grok-4.6",
+      "purpose": "Independently researches operator CLI, recovery, GitHub automation, and multi-agent reliability"
+    },
+    {
+      "name": "gemini-reviewer",
+      "model": "antigravity/gemini-3.1-pro",
+      "purpose": "Independently reviews architecture, security, portability, tests, and operator experience"
+    }
+  ],
+  "ownership": {
+    "writeAgent": "coordinator",
+    "peerAgents": ["grok-researcher", "gemini-reviewer"]
+  }
+}

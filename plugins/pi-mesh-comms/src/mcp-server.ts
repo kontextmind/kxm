@@ -6,7 +6,7 @@ import { MeshClient } from "./client.ts";
 import type { DeliveryMode, HubEvent, MessageRecord } from "./protocol.ts";
 import type { ImprovementArea, JournalCategory, WorkflowCheckpointStatus } from "./workflow.ts";
 
-const VERSION = "0.3.1";
+const VERSION = "0.4.0";
 const inbox = new Map<string, MessageRecord>();
 let meshClient: MeshClient | undefined;
 let starting: Promise<MeshClient> | undefined;
