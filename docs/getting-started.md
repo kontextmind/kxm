@@ -8,30 +8,52 @@ You need:
 
 - Node.js 22.13 or newer on the 22.x line, or Node.js 24 or newer;
 - Git;
+- GitHub CLI for the command-first release install;
 - Pi for Pi agents;
 - Claude Code only if you want a mixed Pi/Claude pool;
 - access to `kontextmind/pi-extensions` while the repository is private.
 
 All agents in one pool must use the same hub URL, authentication token, and project name. Every active agent in that project must have a unique name.
 
-## Start the hub
+## Install the operator command
 
-Clone the repository and install the locked dependencies:
+Pi's Git package installation supplies the extension and Agent Skill but does
+not add `pi-mesh` to `PATH`. For command-first operation, download the packed
+release through an authenticated GitHub CLI session and install that local
+tarball. Run `gh auth login` first if necessary.
 
 ```powershell
-git clone https://github.com/kontextmind/pi-extensions.git
-cd pi-extensions
-npm ci
+$version = "0.4.1"
+$asset = "kontextmind-pi-extensions-$version.tgz"
+$releaseDir = Join-Path $PWD ".pi-mesh-release"
+New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
+gh release download "v$version" --repo kontextmind/pi-extensions --pattern $asset --dir $releaseDir --clobber
+npm install --global --omit=peer (Join-Path $releaseDir $asset)
+pi-mesh help
+```
+
+Do not substitute a global `git+https` npm install; the supported global
+operator package is the versioned release tarball. To run from source instead,
+clone the repository, run `npm ci`, and use `node scripts/pi-mesh.mjs` in place
+of `pi-mesh`.
+
+## Start the hub
+
+With the packed operator command installed:
+
+```powershell
 $env:PI_MESH_AUTH_TOKEN = "replace-with-a-long-random-token"
-npm run hub
+pi-mesh hub
 ```
 
 On macOS or Linux, use:
 
 ```bash
 export PI_MESH_AUTH_TOKEN="replace-with-a-long-random-token"
-npm run hub
+pi-mesh hub
 ```
+
+For the source alternative, start the clone with `npm run hub`.
 
 A successful start prints:
 
@@ -50,9 +72,9 @@ The response should contain `ok: true`. Check `/ready` as well when validating s
 The additive `pi-mesh` command can initialize a workspace and validate workflow files without printing secrets:
 
 ```powershell
-npx pi-mesh --json init
-npx pi-mesh --json validate --file .kxm/config/workflows/v04-dogfood.json
-npx pi-mesh --json status
+pi-mesh --json init
+pi-mesh --json validate --file .kxm/config/workflows/v04-dogfood.json
+pi-mesh --json status
 ```
 
 ## Connect Pi agents
@@ -64,6 +86,8 @@ pi install git:github.com/kontextmind/pi-extensions
 ```
 
 If the repository is private, authenticate Git before running the install.
+This step configures Pi only; it does not install the operator command described
+above.
 
 Set an identity and start the first agent:
 

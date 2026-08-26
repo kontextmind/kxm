@@ -32,7 +32,7 @@ npm run validate
 | Plans, decisions, contradictions, errors, lessons, and improvement reports | `test/hub-api.test.ts`, `test/workflow.test.ts` |
 | Safe diagnostic classification and redaction | `test/diagnostics.test.ts`, `test/extension.test.ts`, `test/hub-api.test.ts` |
 | Operator CLI init/validate/export/watch | `test/cli.test.ts`, `test/github-watch.test.ts` |
-| Installed npm CLI and hub runtimes | `test/package-install.test.ts` |
+| Local and isolated-global packed npm CLI plus hub runtimes | `test/package-install.test.ts` |
 | Required generated runtimes are present, tracked, and unchanged after build | `scripts/check-generated.mjs`, `test/generated-artifacts.test.ts` |
 | Retrospective export snapshots | `test/retrospective.test.ts` |
 | Interrupted-worker continue fallback | `test/worker.test.ts`, `test/recovery.test.ts` |
@@ -61,11 +61,17 @@ The CI minimums are 95% lines, 80% branches, and 90% functions across the measur
 | Signed external result callback | `examples/workflow-signal.ts` | Type-checked; equivalent signed callback path is exercised end to end in `test/hub-api.test.ts` |
 | Long-lived headless coordinator | `scripts/pi-mesh-worker.mjs` | Restart limits, spawn failure, split-stream recovery, bounded drain, and `--continue` fallback are automated; the opt-in real-Pi gate verifies two workers, discovery, request/reply, fanout, durable restart/resume, journal, and checkpoint |
 | GitHub check signal adapter | `plugins/pi-mesh-comms/src/github-watch.ts` | Deterministic pagination, conclusion, retry, and per-wait delivery-generation states in `test/github-watch.test.ts` |
-| Operator CLI | `scripts/pi-mesh.mjs` | Isolated workspace commands in `test/cli.test.ts`; the packed artifact is installed and executed by `test/package-install.test.ts` |
+| Operator CLI | `scripts/pi-mesh.mjs` | Isolated workspace commands in `test/cli.test.ts`; the packed artifact is installed locally and with the documented global `--omit=peer` path by `test/package-install.test.ts` |
 | Native-free package install and Windows `pi.cmd` worker launch | `package.json`, `test/store.test.ts`, `test/worker.test.ts` | CI runs on Ubuntu and Windows at Node 22.13 and Node 24; the Windows test executes a command-script fixture through `ComSpec` |
 
 ## Manual release checks
 
 Automation cannot prove that a third-party harness UI renders perfectly. Before a release, connect two current Pi sessions, run `/mesh-status`, complete one inbound round trip, install the marketplace plugin in a clean Claude Code profile, and verify `mesh_list`. Exercise preview channel delivery only when the target Claude Code version supports community channels.
+
+Create the versioned tarball with `npm pack`, attach it to the matching GitHub
+release, and verify the authenticated `gh release download` plus
+`npm install --global --omit=peer <local-tarball>` path before publishing the
+operator installation instructions. For version 0.4.1, the required asset is
+`kontextmind-pi-extensions-0.4.1.tgz`.
 
 When adding a feature, add executable coverage and update this matrix in the same change. If a behavior can only be verified manually, state why and add it to the release checklist instead of implying automated coverage.

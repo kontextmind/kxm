@@ -1,6 +1,6 @@
 {
   "name": "@kontextmind/pi-extensions",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Pi extensions and Agent Skills for multi-agent communication",
   "type": "module",
   "author": "KontextMind",

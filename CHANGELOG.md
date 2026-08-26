@@ -4,6 +4,13 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ## Unreleased
 
+## 0.4.1 - 2026-08-26
+
+### Fixed
+
+- Signed workflow callbacks now reject any supplied `workflow.run`, `workflow.stage`, or `workflow.signal` evidence that disagrees with the callback route or active wait, without advancing or recording the rejected delivery.
+- Operator installation guidance now distinguishes Pi's extension-and-skill Git install from the PATH CLI and uses the authenticated packed release asset for command-first setup.
+
 ## 0.4.0 - 2026-08-26
 
 ### Added

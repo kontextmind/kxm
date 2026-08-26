@@ -15,14 +15,36 @@ function runNpm(args: string[], cwd: string) {
   });
 }
 
-test("packed npm artifact runs the operator CLI and hub outside the repository", { timeout: 30_000 }, async () => {
+function runOperatorBin(command: string, args: string[], cwd: string) {
+  if (process.platform !== "win32") {
+    return spawnSync(command, args, { cwd, encoding: "utf8" });
+  }
+  const quote = (value: string) => `"${value.replaceAll('"', '""')}"`;
+  const commandLine = `"${[command, ...args].map(quote).join(" ")}"`;
+  return spawnSync(process.env.ComSpec?.trim() || "cmd.exe", [
+    "/d",
+    "/s",
+    "/v:off",
+    "/c",
+    commandLine,
+  ], {
+    cwd,
+    encoding: "utf8",
+    windowsHide: true,
+    windowsVerbatimArguments: true,
+  });
+}
+
+test("packed npm artifact runs the operator CLI and hub outside the repository", { timeout: 90_000 }, async () => {
   const repository = process.cwd();
   const root = mkdtempSync(join(tmpdir(), "pi-mesh-package-install-"));
   const packDirectory = join(root, "pack");
   const consumer = join(root, "consumer");
+  const globalPrefix = join(root, "global-prefix");
   const runtime = join(root, "runtime");
   mkdirSync(packDirectory);
   mkdirSync(consumer);
+  mkdirSync(globalPrefix);
   mkdirSync(runtime);
 
   let hub: ReturnType<typeof spawn> | undefined;
@@ -59,6 +81,25 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
     const installedBin = runNpm(["exec", "--offline", "--", "pi-mesh", "help"], consumer);
     assert.equal(installedBin.status, 0, `${installedBin.stderr}\n${installedBin.stdout}`);
     assert.match(installedBin.stdout, /Usage: pi-mesh/);
+
+    const globalInstall = runNpm([
+      "install",
+      "--global",
+      "--omit=peer",
+      "--no-audit",
+      "--no-fund",
+      "--prefix",
+      globalPrefix,
+      tarball,
+    ], consumer);
+    assert.equal(globalInstall.status, 0, `${globalInstall.stderr}\n${globalInstall.stdout}`);
+    const operatorBin = process.platform === "win32"
+      ? join(globalPrefix, "pi-mesh.cmd")
+      : join(globalPrefix, "bin", "pi-mesh");
+    assert.equal(existsSync(operatorBin), true);
+    const globalCli = runOperatorBin(operatorBin, ["help"], consumer);
+    assert.equal(globalCli.status, 0, `${globalCli.stderr}\n${globalCli.stdout}`);
+    assert.match(globalCli.stdout, /Usage: pi-mesh/);
 
     const dryRun = spawnSync(process.execPath, [
       join(packageRoot, "scripts", "pi-mesh.mjs"),

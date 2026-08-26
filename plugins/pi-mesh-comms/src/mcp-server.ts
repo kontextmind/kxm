@@ -11,7 +11,7 @@ import type {
   WorkflowEvidenceInput,
 } from "./workflow.ts";
 
-const VERSION = "0.4.0";
+const VERSION = "0.4.1";
 const inbox = new Map<string, MessageRecord>();
 let meshClient: MeshClient | undefined;
 let starting: Promise<MeshClient> | undefined;

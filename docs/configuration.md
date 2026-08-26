@@ -34,7 +34,7 @@ PowerShell example:
 $env:PI_MESH_AUTH_TOKEN = "replace-with-an-admin-token"
 $env:PI_MESH_PROJECT_TOKENS = '{"web":"web-token","api":"api-token"}'
 $env:PI_MESH_WORKSPACE_DIR = "D:\work\product\.kxm"
-npm run hub
+pi-mesh hub
 ```
 
 The four derived directories stay together when only `PI_MESH_WORKSPACE_DIR` is set. Specific directory and file overrides exist for operator-managed volumes, but a normal repository should keep its configuration, logs, assets, and state under `.kxm`. Runtime logs and state are ignored by Git; configuration and intentional reusable assets may be reviewed and committed. Secrets remain in environment variables or a secret manager.
@@ -101,7 +101,7 @@ When a Pi peer produces more than 32,000 characters, the extension returns a bou
 | `PI_MESH_SMOKE_TIMEOUT_MS` | `120000` | Per-phase real-Pi smoke timeout (`30000`–`600000`) |
 | `PI_MESH_SMOKE_PI_COMMAND` | discovered `pi` | Optional explicit Pi executable for a self-hosted runner |
 
-`PI_MESH_AGENT_NAME` and `PI_MESH_PROJECT` are required by `npm run worker`. The remaining agent settings are inherited by the spawned Pi RPC process. The worker resolves `.kxm` inside `PI_MESH_WORKDIR`, creates the standard directories, and passes their absolute paths to Pi. A fast `--continue` failure writes `.kxm/state/worker-recovery-<agent>.json` and retries once without `--continue`.
+`PI_MESH_AGENT_NAME` and `PI_MESH_PROJECT` are required by `pi-mesh worker`. The remaining agent settings are inherited by the spawned Pi RPC process. The worker resolves `.kxm` inside `PI_MESH_WORKDIR`, creates the standard directories, and passes their absolute paths to Pi. A fast `--continue` failure writes `.kxm/state/worker-recovery-<agent>.json` and retries once without `--continue`.
 
 ## Operator CLI
 

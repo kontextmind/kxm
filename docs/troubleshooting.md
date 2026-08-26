@@ -48,6 +48,15 @@ Another process owns the port. Stop that process or choose another port, then up
 - Restart Pi after changing environment variables.
 - For development loading, confirm the path: `pi -e ./plugins/pi-mesh-comms/src/extension.ts`.
 
+### `pi-mesh` is not recognized
+
+`pi install git:github.com/kontextmind/pi-extensions` installs the Pi extension
+and Agent Skill, not a global operator command. Install the versioned `.tgz`
+release asset through the authenticated `gh release download` flow in
+[Getting started](getting-started.md#install-the-operator-command), or run
+`node scripts/pi-mesh.mjs` from a clone after `npm ci`. `npx pi-mesh` and a
+global `git+https` npm install are not supported installation paths.
+
 ### An expected peer is missing
 
 The two agents usually have different `PI_MESH_PROJECT` values or one stopped sending heartbeats. Compare settings and check for an `agent_stale` event. Names and projects are case-sensitive for display; live-name uniqueness is case-insensitive.
@@ -116,6 +125,7 @@ only after deciding whether repeating external effects is safe.
 - HTTP 404 means the workflow definition or run ID does not match this hub.
 - HTTP 409 with `workflow_not_waiting` means the coordinator did not successfully call `mesh_workflow_wait`, the deadline already failed the run, or a prior signal advanced it.
 - HTTP 409 with `workflow_signal_mismatch` means the URL's signal key differs from the active wait. Read the run and use its exact `waiting.signalKey`.
+- HTTP 409 with `workflow_signal_context_mismatch` means a supplied `workflow.run`, `workflow.stage`, or `workflow.signal` evidence value disagrees with the route or active wait. Correct it or omit optional context evidence.
 - HTTP 400 with `workflow_evidence_incomplete` means a passing callback omitted one or more named requirements. Read `missingRequirements`; extra checks and context fields cannot substitute for them.
 - HTTP 400 with `invalid_workflow_evidence` means evidence was not a keyed string object or contained duplicate keys after case/whitespace normalization.
 - HTTP 200 with `duplicate: true` is expected after retrying the same provider delivery ID. Do not generate a new ID for the same callback attempt.

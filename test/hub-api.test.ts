@@ -725,6 +725,33 @@ test("signed external signals resume, retry, deduplicate, and complete a settled
     `sha256=${createHmac("sha256", secret).update(passedChecks).digest("hex")}`,
   )).status, 401);
   assert.equal((await signal("wrong-key", "wrong-key", passedChecks)).status, 409);
+  for (const [contextKey, invalidValue] of [
+    ["workflow.run", "run_wrong"],
+    ["workflow.stage", "merge"],
+    ["workflow.signal", "github-pr-42-other"],
+  ] as const) {
+    const mismatchedContext = JSON.stringify({
+      status: "passed",
+      summary: `Reject mismatched ${contextKey}`,
+      evidence: {
+        "github.check:ci": "https://ci.example/pr/42",
+        [contextKey]: invalidValue,
+      },
+    });
+    const rejected = await signal(
+      "github-pr-42-checks",
+      `mismatched-${contextKey}`,
+      mismatchedContext,
+    );
+    assert.equal(rejected.status, 409);
+    const rejectedBody = await responseJson(rejected) as { code?: string; contextKey?: string };
+    assert.equal(rejectedBody.code, "workflow_signal_context_mismatch");
+    assert.equal(rejectedBody.contextKey, contextKey);
+    const unchanged = await coordinator.getWorkflow(runId);
+    assert.equal(unchanged.run.status, "waiting");
+    assert.equal(unchanged.run.currentStage, "checks");
+    assert.equal(unchanged.run.signalReceipts?.length ?? 0, 0);
+  }
   const unrelatedVolume = JSON.stringify({
     status: "passed",
     summary: "Context and check volume cannot replace named evidence",
