@@ -37,9 +37,35 @@ export interface SendOptions {
 export interface FanoutResult {
   target: string;
   messageId?: string;
-  status: "replied" | "cancelled" | "expired" | "error";
+  status: "pending" | "replied" | "cancelled" | "expired" | "error";
+  messageStatus?: "queued" | "delivered";
+  expiresAt?: string;
+  waitStatus?: "timed_out" | "aborted";
   reply?: string;
   error?: string;
+}
+
+class MeshWaitError extends Error {
+  readonly waitStatus: "timed_out" | "aborted";
+
+  constructor(waitStatus: "timed_out" | "aborted", messageId: string) {
+    super(waitStatus === "aborted" ? "await cancelled" : `timed out waiting for ${messageId}`);
+    this.name = "MeshWaitError";
+    this.waitStatus = waitStatus;
+  }
+}
+
+function completedFanoutResult(target: string, message: MessageRecord): FanoutResult {
+  if (message.status === "queued" || message.status === "delivered") {
+    throw new Error(`message ${message.id} is not complete`);
+  }
+  return {
+    target,
+    messageId: message.id,
+    status: message.status,
+    ...(message.reply ? { reply: message.reply.content } : {}),
+    ...(message.error ? { error: message.error } : {}),
+  };
 }
 
 function fanoutIdempotencyKey(prefix: string, target: string, correlationId?: string): string {
@@ -139,12 +165,14 @@ export class MeshClient {
     idempotencyKeyPrefix?: string;
     ttlMs?: number;
     timeoutMs?: number;
+    signal?: AbortSignal;
   }): Promise<FanoutResult[]> {
     const targets = [...new Set(options.targets.map((target) => target.trim().toLowerCase()).filter(Boolean))];
     if (targets.length < 1 || targets.length > 3) throw new Error("fanout requires between one and three unique targets");
     return await Promise.all(targets.map(async (target): Promise<FanoutResult> => {
+      let message: MessageRecord | undefined;
       try {
-        const message = await this.send({
+        message = await this.send({
           target,
           content: options.content,
           delivery: "followUp",
@@ -158,16 +186,42 @@ export class MeshClient {
           } : {}),
           ...(options.ttlMs ? { ttlMs: options.ttlMs } : {}),
         });
-        const completed = await this.awaitResponse(message.id, options.timeoutMs ?? 30 * 60_000);
+        const completed = await this.awaitResponse(
+          message.id,
+          options.timeoutMs ?? 30 * 60_000,
+          options.signal,
+        );
+        return completedFanoutResult(target, completed);
+      } catch (error) {
+        if (message && error instanceof MeshWaitError) {
+          try {
+            const current = await this.getMessage(message.id);
+            if (current.status === "queued" || current.status === "delivered") {
+              return {
+                target,
+                messageId: current.id,
+                status: "pending",
+                messageStatus: current.status,
+                expiresAt: current.expiresAt,
+                waitStatus: error.waitStatus,
+              };
+            }
+            return completedFanoutResult(target, current);
+          } catch (finalError) {
+            return {
+              target,
+              messageId: message.id,
+              status: "error",
+              error: finalError instanceof Error ? finalError.message : String(finalError),
+            };
+          }
+        }
         return {
           target,
-          messageId: completed.id,
-          status: completed.status === "delivered" || completed.status === "queued" ? "error" : completed.status,
-          ...(completed.reply ? { reply: completed.reply.content } : {}),
-          ...(completed.error ? { error: completed.error } : {}),
+          ...(message ? { messageId: message.id } : {}),
+          status: "error",
+          error: error instanceof Error ? error.message : String(error),
         };
-      } catch (error) {
-        return { target, status: "error", error: error instanceof Error ? error.message : String(error) };
       }
     }));
   }
@@ -262,23 +316,25 @@ export class MeshClient {
   async awaitResponse(messageId: string, timeoutMs = 30 * 60_000, signal?: AbortSignal): Promise<MessageRecord> {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
-      if (signal?.aborted) throw new Error("await cancelled");
+      if (signal?.aborted) throw new MeshWaitError("aborted", messageId);
       const message = await this.getMessage(messageId);
       if (["replied", "cancelled", "expired", "error"].includes(message.status)) return message;
       await new Promise<void>((resolve, reject) => {
         const onAbort = () => {
+          signal?.removeEventListener("abort", onAbort);
           clearTimeout(timer);
-          reject(new Error("await cancelled"));
+          reject(new MeshWaitError("aborted", messageId));
         };
         const timer = setTimeout(() => {
           signal?.removeEventListener("abort", onAbort);
           resolve();
-        }, 500);
+        }, Math.min(500, Math.max(1, deadline - Date.now())));
         signal?.addEventListener("abort", onAbort, { once: true });
+        if (signal?.aborted) onAbort();
         timer.unref();
       });
     }
-    throw new Error(`timed out waiting for ${messageId}`);
+    throw new MeshWaitError("timed_out", messageId);
   }
 
   private async heartbeat(): Promise<void> {

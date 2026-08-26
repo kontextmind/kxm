@@ -74,13 +74,16 @@ Names are case-insensitively unique among online agents in one project. A clean 
 | Agent heartbeat interval | 10 seconds |
 | Agent stale threshold | 30 seconds |
 | Client request timeout | 15 seconds |
+| Default message TTL | 24 hours |
 | Default `mesh_await` timeout | 30 minutes |
 | Default workflow signal wait | 24 hours |
 | Workflow signal wait range | 1 second to 30 days |
 
-The `ttlMs` field can override the default TTL per message. Automated senders should set a stable `idempotencyKey` so an exact retry returns the original message instead of creating a duplicate. Reusing the key with different content returns a conflict.
+The `ttlMs` field controls how long a request remains valid from the moment it is sent, including time queued behind other work. It is independent of `mesh_fanout.timeoutMs`, which only bounds how long the caller waits locally. Normally omit `ttlMs` for model work and keep the 24-hour default. A local wait timeout returns `status: pending`, the durable `messageId`, current message status, expiry, and `waitStatus`; it does not cancel or fail the request.
 
-`mesh_fanout` derives a bounded idempotency key from `idempotencyKeyPrefix`, the correlation ID when supplied, and the normalized target name. Reuse the same prefix and correlation ID for an exact retry of one workflow run. A later workflow may safely reuse the human-readable prefix with a different correlation ID without colliding with retained peer messages.
+Automated senders should set a stable `idempotencyKey` so an exact retry returns the original message instead of creating a duplicate. Reusing the key with different content returns a conflict. Do not create a new key while the original request is pending: use `mesh_get`, or repeat the exact fanout with the same correlation ID and idempotency prefix.
+
+`mesh_fanout` derives a bounded idempotency key from `idempotencyKeyPrefix`, the correlation ID when supplied, and the normalized target name. Reuse the same prefix and correlation ID for an exact retry of one workflow run. A later workflow may safely reuse the human-readable prefix with a different correlation ID without colliding with retained peer messages. Pending panel members have not supplied evidence and cannot satisfy a multi-agent workflow checkpoint.
 
 When a Pi peer produces more than 32,000 characters, the extension returns a bounded truncated reply instead of leaving the request pending. The full output may remain in the replying agent's local Pi session or `.kxm/logs/pi-agent-<name>.log` when the long-lived worker is used.
 

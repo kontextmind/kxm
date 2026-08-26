@@ -1,6 +1,6 @@
 {
   "name": "@kontextmind/pi-extensions",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Pi extensions and Agent Skills for multi-agent communication",
   "type": "module",
   "author": "KontextMind",
@@ -32,7 +32,7 @@
     "build": "npm run build:mcp && npm run build:runtime",
     "check:generated": "npm run build && node scripts/check-generated.mjs",
     "test": "npm run build && node --disable-warning=ExperimentalWarning --experimental-strip-types --test test/*.test.ts",
-    "test:coverage": "npm run build && node --disable-warning=ExperimentalWarning --experimental-strip-types --test --experimental-test-coverage --test-coverage-lines=95 --test-coverage-branches=80 --test-coverage-functions=90 --test-coverage-include=plugins/pi-mesh-comms/src/client.ts --test-coverage-include=plugins/pi-mesh-comms/src/extension.ts --test-coverage-include=plugins/pi-mesh-comms/src/hub.ts --test-coverage-include=plugins/pi-mesh-comms/src/protocol.ts --test-coverage-include=plugins/pi-mesh-comms/src/store.ts --test-coverage-include=plugins/pi-mesh-comms/src/workflow.ts --test-coverage-include=plugins/pi-mesh-comms/src/diagnostics.ts --test-coverage-include=plugins/pi-mesh-comms/src/redact.ts --test-coverage-include=plugins/pi-mesh-comms/src/cli.ts --test-coverage-include=plugins/pi-mesh-comms/src/github-watch.ts --test-coverage-include=plugins/pi-mesh-comms/src/retrospective.ts --test-coverage-include=plugins/pi-mesh-comms/src/recovery.ts test/*.test.ts",
+    "test:coverage": "npm run build && node --disable-warning=ExperimentalWarning --experimental-strip-types --test --experimental-test-coverage --test-coverage-lines=95 --test-coverage-branches=80 --test-coverage-functions=90 --test-coverage-include=plugins/pi-mesh-comms/src/client.ts --test-coverage-include=plugins/pi-mesh-comms/src/extension.ts --test-coverage-include=plugins/pi-mesh-comms/src/hub.ts --test-coverage-include=plugins/pi-mesh-comms/src/inbox.ts --test-coverage-include=plugins/pi-mesh-comms/src/protocol.ts --test-coverage-include=plugins/pi-mesh-comms/src/store.ts --test-coverage-include=plugins/pi-mesh-comms/src/workflow.ts --test-coverage-include=plugins/pi-mesh-comms/src/diagnostics.ts --test-coverage-include=plugins/pi-mesh-comms/src/redact.ts --test-coverage-include=plugins/pi-mesh-comms/src/cli.ts --test-coverage-include=plugins/pi-mesh-comms/src/github-watch.ts --test-coverage-include=plugins/pi-mesh-comms/src/retrospective.ts --test-coverage-include=plugins/pi-mesh-comms/src/recovery.ts test/*.test.ts",
     "typecheck": "tsc --noEmit",
     "lint:docs": "markdownlint-cli2",
     "check:versions": "node scripts/check-versions.mjs",

@@ -1136,7 +1136,7 @@ data: ${JSON.stringify(event)}
   function flushPending(agentId) {
     expireMessages();
     for (const message of messages.values()) {
-      if (message.to === agentId && message.status === "queued") {
+      if (message.to === agentId && (message.status === "queued" || message.status === "delivered")) {
         publish(agentId, { type: "message", message });
       }
     }

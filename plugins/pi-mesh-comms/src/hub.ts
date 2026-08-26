@@ -634,7 +634,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
   function flushPending(agentId: string): void {
     expireMessages();
     for (const message of messages.values()) {
-      if (message.to === agentId && message.status === "queued") {
+      if (message.to === agentId && (message.status === "queued" || message.status === "delivered")) {
         publish(agentId, { type: "message", message });
       }
     }
