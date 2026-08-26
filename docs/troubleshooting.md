@@ -109,6 +109,10 @@ Accept the trust prompt and check the channel startup notice. Organization polic
 
 Inspect the structured `worker_process_error` and `worker_exited` events. Confirm Pi is installed on the service account's `PATH`, the working directory exists, model credentials are available, the package is enabled, and non-interactive project trust was configured intentionally. Set `PI_MESH_PI_COMMAND` to an explicit executable path when service-manager environments have a reduced `PATH`.
 
+### Fanout returns pending before a model replies
+
+`mesh_fanout.timeoutMs` is a local wait, not the message lifetime. A pending result includes the durable `messageId`, current message status, expiry, and whether the wait timed out or was aborted. Use `mesh_get` to inspect that ID, or repeat the exact fanout with the same correlation ID, idempotency prefix, targets, and content. Do not send a replacement with a new prefix while the original remains pending. Normally omit `ttlMs` for model work so time spent queued behind another request does not prematurely expire it. A pending peer has not contributed review or planning evidence and must not be counted toward a workflow checkpoint.
+
 ### Workflow cannot advance
 
 Call `mesh_workflow_get` and use only `currentStage`. A passing checkpoint needs

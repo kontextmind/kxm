@@ -4,6 +4,25 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ## Unreleased
 
+## 0.4.2 - 2026-08-26
+
+### Fixed
+
+- Fan-out local wait deadlines and caller aborts now return recoverable `pending` results with the durable message ID, current hub status, expiry, and wait outcome instead of a terminal-looking error that encouraged duplicate work.
+- Fan-out performs a final status read at the wait boundary, preserves request handles after a successful send, and accepts Pi or Claude MCP cancellation signals without cancelling the durable request.
+- Pi workers now reconcile expired or cancelled active requests, skip terminal queued work, automatically retry transient settlement failures with capped backoff, and always release terminal settlement state so the next valid request can run.
+- Claude MCP inboxes now reconcile missed terminal events, evict expired and cancelled requests, survive reconnect/restart through delivered-message replay, and remove terminal reply races instead of presenting stale work.
+- The real multi-Pi smoke harness no longer shortens message TTL to its local phase timeout.
+
+### Changed
+
+- Operator guidance now distinguishes message TTL from local wait duration, recommends the 24-hour default for model work, and requires `mesh_get` or an exact idempotent retry while a peer remains pending.
+- Pending peers explicitly do not count as planning, review, or workflow-checkpoint evidence.
+
+### Upgrade note
+
+- `mesh_fanout` adds the nonterminal `pending` result state and the optional `messageStatus`, `expiresAt`, and `waitStatus` fields. Consumers that exhaustively switch on result status should handle `pending` by inspecting the returned message ID rather than dispatching a replacement request.
+
 ## 0.4.1 - 2026-08-26
 
 ### Fixed

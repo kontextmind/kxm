@@ -112,7 +112,7 @@ The service uses one Node.js process, long-lived SSE connections, and one SQLite
 |---|---|---|
 | Agent exits | Marked offline after the stale threshold | Restart with the same name to resume its ID |
 | SSE drops | Client reconnects while heartbeats continue | Check network and proxy buffering if repeated |
-| Hub exits | SQLite keeps agents and messages | Restart; agents reconnect and queued work resumes |
+| Hub or worker exits | SQLite keeps agents and messages | Restart; agents reconnect and queued or delivered work replays by the same message ID |
 | Token rotates | Requests fail authentication | Restart agents with the new project token |
 | Disk unavailable | Readiness or writes fail | Restore storage, then verify database integrity and readiness |
 | Duplicate live name | Registration returns HTTP 409 | Stop the old session or choose another name |

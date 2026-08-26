@@ -15758,6 +15758,26 @@ var StdioServerTransport = class {
 
 // plugins/pi-mesh-comms/src/client.ts
 import { createHash } from "node:crypto";
+var MeshWaitError = class extends Error {
+  waitStatus;
+  constructor(waitStatus, messageId) {
+    super(waitStatus === "aborted" ? "await cancelled" : `timed out waiting for ${messageId}`);
+    this.name = "MeshWaitError";
+    this.waitStatus = waitStatus;
+  }
+};
+function completedFanoutResult(target, message) {
+  if (message.status === "queued" || message.status === "delivered") {
+    throw new Error(`message ${message.id} is not complete`);
+  }
+  return {
+    target,
+    messageId: message.id,
+    status: message.status,
+    ...message.reply ? { reply: message.reply.content } : {},
+    ...message.error ? { error: message.error } : {}
+  };
+}
 function fanoutIdempotencyKey(prefix, target, correlationId) {
   const scope = JSON.stringify({ prefix, correlationId: correlationId ?? null, target: target.toLowerCase() });
   return `fanout:${createHash("sha256").update(scope).digest("hex")}`;
@@ -15836,8 +15856,9 @@ var MeshClient = class {
     const targets = [...new Set(options.targets.map((target) => target.trim().toLowerCase()).filter(Boolean))];
     if (targets.length < 1 || targets.length > 3) throw new Error("fanout requires between one and three unique targets");
     return await Promise.all(targets.map(async (target) => {
+      let message;
       try {
-        const message = await this.send({
+        message = await this.send({
           target,
           content: options.content,
           delivery: "followUp",
@@ -15851,16 +15872,42 @@ var MeshClient = class {
           } : {},
           ...options.ttlMs ? { ttlMs: options.ttlMs } : {}
         });
-        const completed = await this.awaitResponse(message.id, options.timeoutMs ?? 30 * 6e4);
+        const completed = await this.awaitResponse(
+          message.id,
+          options.timeoutMs ?? 30 * 6e4,
+          options.signal
+        );
+        return completedFanoutResult(target, completed);
+      } catch (error2) {
+        if (message && error2 instanceof MeshWaitError) {
+          try {
+            const current = await this.getMessage(message.id);
+            if (current.status === "queued" || current.status === "delivered") {
+              return {
+                target,
+                messageId: current.id,
+                status: "pending",
+                messageStatus: current.status,
+                expiresAt: current.expiresAt,
+                waitStatus: error2.waitStatus
+              };
+            }
+            return completedFanoutResult(target, current);
+          } catch (finalError) {
+            return {
+              target,
+              messageId: message.id,
+              status: "error",
+              error: finalError instanceof Error ? finalError.message : String(finalError)
+            };
+          }
+        }
         return {
           target,
-          messageId: completed.id,
-          status: completed.status === "delivered" || completed.status === "queued" ? "error" : completed.status,
-          ...completed.reply ? { reply: completed.reply.content } : {},
-          ...completed.error ? { error: completed.error } : {}
+          ...message ? { messageId: message.id } : {},
+          status: "error",
+          error: error2 instanceof Error ? error2.message : String(error2)
         };
-      } catch (error2) {
-        return { target, status: "error", error: error2 instanceof Error ? error2.message : String(error2) };
       }
     }));
   }
@@ -15921,23 +15968,25 @@ var MeshClient = class {
   async awaitResponse(messageId, timeoutMs = 30 * 6e4, signal) {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
-      if (signal?.aborted) throw new Error("await cancelled");
+      if (signal?.aborted) throw new MeshWaitError("aborted", messageId);
       const message = await this.getMessage(messageId);
       if (["replied", "cancelled", "expired", "error"].includes(message.status)) return message;
       await new Promise((resolve, reject) => {
         const onAbort = () => {
+          signal?.removeEventListener("abort", onAbort);
           clearTimeout(timer);
-          reject(new Error("await cancelled"));
+          reject(new MeshWaitError("aborted", messageId));
         };
         const timer = setTimeout(() => {
           signal?.removeEventListener("abort", onAbort);
           resolve();
-        }, 500);
+        }, Math.min(500, Math.max(1, deadline - Date.now())));
         signal?.addEventListener("abort", onAbort, { once: true });
+        if (signal?.aborted) onAbort();
         timer.unref();
       });
     }
-    throw new Error(`timed out waiting for ${messageId}`);
+    throw new MeshWaitError("timed_out", messageId);
   }
   async heartbeat() {
     if (this.stopped || !this.agent) return;
@@ -16066,9 +16115,18 @@ var MeshClient = class {
   }
 };
 
+// plugins/pi-mesh-comms/src/inbox.ts
+async function deliverInboxNotification(messageId, delivered, notify) {
+  if (delivered.has(messageId)) return false;
+  await notify();
+  delivered.add(messageId);
+  return true;
+}
+
 // plugins/pi-mesh-comms/src/mcp-server.ts
-var VERSION = "0.4.1";
+var VERSION = "0.4.2";
 var inbox = /* @__PURE__ */ new Map();
+var notifiedInbox = /* @__PURE__ */ new Set();
 var meshClient;
 var starting;
 var mcp = new Server(
@@ -16100,11 +16158,40 @@ function optionalString(value) {
 function asRecord(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
+function isTerminalMessageError(error2) {
+  return error2 instanceof MeshHttpError && (error2.statusCode === 409 || error2.statusCode === 404 && error2.code === "message_not_found");
+}
+function isTerminalMessage(message) {
+  return message.status === "replied" || message.status === "cancelled" || message.status === "expired" || message.status === "error";
+}
+async function reconcileInbox(client) {
+  await Promise.all([...inbox.keys()].map(async (messageId) => {
+    try {
+      const current = await client.getMessage(messageId);
+      if (isTerminalMessage(current)) {
+        inbox.delete(messageId);
+        notifiedInbox.delete(messageId);
+      } else inbox.set(messageId, current);
+    } catch (error2) {
+      if (isTerminalMessageError(error2)) {
+        inbox.delete(messageId);
+        notifiedInbox.delete(messageId);
+        return;
+      }
+      throw error2;
+    }
+  }));
+}
 async function onHubEvent(event) {
+  if (event.type === "cancelled" || event.type === "expired") {
+    inbox.delete(event.message.id);
+    notifiedInbox.delete(event.message.id);
+    return;
+  }
   if (event.type !== "message") return;
   const client = meshClient;
   if (!client) return;
-  await client.acknowledge(event.message.id);
+  if (event.message.status === "queued") await client.acknowledge(event.message.id);
   inbox.set(event.message.id, event.message);
   const meta2 = {
     message_id: event.message.id,
@@ -16112,18 +16199,20 @@ async function onHubEvent(event) {
     delivery: event.message.delivery
   };
   if (event.message.correlationId) meta2.correlation_id = event.message.correlationId;
-  await mcp.notification({
-    method: "notifications/claude/channel",
-    params: {
-      content: [
-        `Peer request from ${event.message.fromName}:`,
-        "",
-        event.message.content,
-        "",
-        `When complete, call mesh_reply with messageId ${event.message.id}.`
-      ].join("\n"),
-      meta: meta2
-    }
+  await deliverInboxNotification(event.message.id, notifiedInbox, async () => {
+    await mcp.notification({
+      method: "notifications/claude/channel",
+      params: {
+        content: [
+          `Peer request from ${event.message.fromName}:`,
+          "",
+          event.message.content,
+          "",
+          `When complete, call mesh_reply with messageId ${event.message.id}.`
+        ].join("\n"),
+        meta: meta2
+      }
+    });
   });
 }
 async function ensureClient() {
@@ -16190,7 +16279,7 @@ var tools = [
   },
   {
     name: "mesh_fanout",
-    description: "Ask one through three peers independently and return all replies for comparison and synthesis. In durable workflows, use the run ID as correlationId and a stage-specific idempotencyKeyPrefix.",
+    description: "Ask one through three peers independently and return replies for comparison and synthesis. A local timeout or request cancellation returns a pending response with a durable messageId for mesh_get or an exact retry. In durable workflows, use the run ID as correlationId and a stage-specific idempotencyKeyPrefix.",
     inputSchema: {
       type: "object",
       properties: {
@@ -16323,7 +16412,7 @@ var tools = [
   }
 ];
 mcp.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
-mcp.setRequestHandler(CallToolRequestSchema, async (request) => {
+mcp.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
   try {
     const client = await ensureClient();
     const args = asRecord(request.params.arguments);
@@ -16355,7 +16444,8 @@ mcp.setRequestHandler(CallToolRequestSchema, async (request) => {
             idempotencyKeyPrefix: optionalString(args.idempotencyKeyPrefix)
           } : {},
           ...typeof args.ttlMs === "number" ? { ttlMs: args.ttlMs } : {},
-          ...typeof args.timeoutMs === "number" ? { timeoutMs: args.timeoutMs } : {}
+          ...typeof args.timeoutMs === "number" ? { timeoutMs: args.timeoutMs } : {},
+          signal: extra.signal
         }) });
       case "mesh_await":
         return textResult(await client.awaitResponse(
@@ -16365,12 +16455,22 @@ mcp.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "mesh_cancel":
         return textResult(await client.cancel(requiredString(args.messageId, "messageId")));
       case "mesh_inbox":
+        await reconcileInbox(client);
         return textResult({ messages: [...inbox.values()] });
       case "mesh_reply": {
         const messageId = requiredString(args.messageId, "messageId");
-        const message = await client.reply(messageId, requiredString(args.content, "content"));
-        inbox.delete(messageId);
-        return textResult({ messageId, status: message.status, recipient: message.fromName });
+        try {
+          const message = await client.reply(messageId, requiredString(args.content, "content"));
+          inbox.delete(messageId);
+          notifiedInbox.delete(messageId);
+          return textResult({ messageId, status: message.status, recipient: message.fromName });
+        } catch (error2) {
+          if (isTerminalMessageError(error2)) {
+            inbox.delete(messageId);
+            notifiedInbox.delete(messageId);
+          }
+          throw error2;
+        }
       }
       case "mesh_workflow_list":
         return textResult({ runs: await client.listWorkflows() });

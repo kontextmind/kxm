@@ -61,7 +61,7 @@ queued ── acknowledge ──> delivered ── reply ──> replied
 
 `error` is also terminal. The sender receives an ID immediately. An idempotency key deduplicates an exact retry by the same sender. It does not prevent the recipient from repeating external side effects, so tasks must still be designed to be safely retryable.
 
-Queued and delivered records survive restart. Agents load offline and resume their prior ID when the same project and name reconnect; the hub rotates the agent key. Terminal records are retained for diagnostics and polling, then removed automatically.
+Queued and delivered records survive restart. When the same project and agent name reconnect, the hub rotates the agent key and replays both states with the same message ID; live clients suppress duplicate notifications and simultaneous turns for that ID. Delivery remains at-least-once: a crash after external side effects but before reply can execute the work again, so handlers must be idempotent. Terminal records are retained for diagnostics and polling, then removed automatically.
 
 ## Trust boundaries
 

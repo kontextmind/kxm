@@ -18,8 +18,10 @@ npm run validate
 | SQLite persistence, restart recovery, schema compatibility | `test/hub-api.test.ts`, `test/store.test.ts` |
 | All delivery modes, message fields, hop limits, and validation | `test/hub-api.test.ts`, `test/protocol.test.ts` |
 | Queue, acknowledgement, visibility, reply, and authorization | `test/hub-api.test.ts`, `test/hub.test.ts` |
-| One-to-three-peer planning fanout and partial-error collection | `test/hub-api.test.ts`, `test/extension.test.ts`, `test/mcp.test.ts` |
+| Queued/delivered replay after recipient restart reuses one message record | `test/hub.test.ts`, `test/extension.test.ts`, `test/mcp.test.ts` |
+| One-to-three-peer fanout, recoverable local timeouts/aborts, exact retries, and partial-error collection | `test/client.test.ts`, `test/hub-api.test.ts`, `test/extension.test.ts`, `test/mcp.test.ts` |
 | TTL expiry, sender cancellation, and terminal retention | `test/hub-api.test.ts` |
+| Terminal inbound cleanup and next-request activation | `test/extension.test.ts`, `test/mcp.test.ts` |
 | Exact-retry idempotency and conflicting-key rejection | `test/hub-api.test.ts` |
 | Rate limiting and retry guidance | `test/hub-api.test.ts` |
 | Redacted structured logs | `test/hub-api.test.ts` |
@@ -71,7 +73,7 @@ Automation cannot prove that a third-party harness UI renders perfectly. Before 
 Create the versioned tarball with `npm pack`, attach it to the matching GitHub
 release, and verify the authenticated `gh release download` plus
 `npm install --global --omit=peer <local-tarball>` path before publishing the
-operator installation instructions. For version 0.4.1, the required asset is
-`kontextmind-pi-extensions-0.4.1.tgz`.
+operator installation instructions. For version 0.4.2, the required asset is
+`kontextmind-pi-extensions-0.4.2.tgz`.
 
 When adding a feature, add executable coverage and update this matrix in the same change. If a behavior can only be verified manually, state why and add it to the release checklist instead of implying automated coverage.

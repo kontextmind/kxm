@@ -83,7 +83,7 @@ this flow compatible with private repositories; run `gh auth login` first when
 the current account is not authenticated.
 
 ```powershell
-$version = "0.4.1"
+$version = "0.4.2"
 $asset = "kontextmind-pi-extensions-$version.tgz"
 $releaseDir = Join-Path $PWD ".pi-mesh-release"
 New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
@@ -133,7 +133,7 @@ Pi reviewer ─HTTP──┤      │
 Claude Code ─MCP───┘
 ```
 
-The hub routes messages; it does not merge contexts, choose tasks, or bypass tool permissions. A typical request moves through `queued` → `delivered` → `replied`. It may instead end as `cancelled`, `expired`, or `error`. The sender can check it with `mesh_get`, wait with `mesh_await`, or stop pending work with `mesh_cancel`.
+The hub routes messages; it does not merge contexts, choose tasks, or bypass tool permissions. A typical request moves through `queued` → `delivered` → `replied`. It may instead end as `cancelled`, `expired`, or `error`. The sender can check it with `mesh_get`, wait with `mesh_await`, or stop pending work with `mesh_cancel`. A local `mesh_fanout` wait ending is nonterminal: it returns a durable pending handle that can be checked with `mesh_get` or retried with the same correlation and idempotency prefix.
 
 ## Documentation
 

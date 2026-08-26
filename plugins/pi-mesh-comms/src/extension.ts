@@ -8,10 +8,26 @@ import { MAX_CONTENT_CHARS, type DeliveryMode, type HubEvent, type MessageRecord
 import type { ImprovementArea, JournalCategory, WorkflowCheckpointStatus } from "./workflow.ts";
 import { consumeWorkerRecoveryEnvelope } from "./recovery.ts";
 
+const SETTLEMENT_RETRY_BASE_MS = 250;
+const SETTLEMENT_RETRY_MAX_MS = 30_000;
+
 function boundedPeerReply(reply: string): string {
   if (reply.length <= MAX_CONTENT_CHARS) return reply;
   const suffix = `\n\n[pi-mesh: response truncated from ${reply.length} characters to fit the message limit; the full output may remain in the replying agent's local session or worker log]`;
   return reply.slice(0, MAX_CONTENT_CHARS - suffix.length) + suffix;
+}
+
+function isTerminalMessage(message: MessageRecord): boolean {
+  return message.status === "replied"
+    || message.status === "cancelled"
+    || message.status === "expired"
+    || message.status === "error";
+}
+
+function isTerminalMessageError(error: unknown): boolean {
+  return error instanceof MeshHttpError
+    && (error.statusCode === 409
+      || (error.statusCode === 404 && error.code === "message_not_found"));
 }
 
 function result(value: unknown) {
@@ -46,6 +62,13 @@ export default function piMeshExtension(pi: ExtensionAPI) {
   let awaitingActivation: MessageRecord | undefined;
   let activeInbound: MessageRecord | undefined;
   let activeReply: string | undefined;
+  let settlementReply: string | undefined;
+  let activeTurnSettled = false;
+  let settlementInProgress = false;
+  let settlementRetryAttempt = 0;
+  let settlementRetryTimer: ReturnType<typeof setTimeout> | undefined;
+  let shuttingDown = false;
+  let notify: ((message: string, type: "error") => void) | undefined;
   let stateDir = process.env.PI_MESH_STATE_DIR ?? "";
   let agentName = process.env.PI_MESH_AGENT_NAME ?? "";
   let projectName = process.env.PI_MESH_PROJECT ?? "";
@@ -60,7 +83,9 @@ export default function piMeshExtension(pi: ExtensionAPI) {
   function persistRecoveryContext(): void {
     const path = recoveryContextPath();
     if (!path) return;
-    const runId = activeInbound?.correlationId?.startsWith("run_") ? activeInbound.correlationId : undefined;
+    const recoveryMessage = [activeInbound, awaitingActivation, ...pending]
+      .find((message) => message?.correlationId?.startsWith("run_"));
+    const runId = recoveryMessage?.correlationId;
     const pendingMessageIds = [activeInbound?.id, awaitingActivation?.id, ...pending.map((message) => message.id)].filter((id): id is string => Boolean(id)).slice(0, 16);
     if (!runId && pendingMessageIds.length === 0) { rmSync(path, { force: true }); return; }
     mkdirSync(dirname(path), { recursive: true });
@@ -85,8 +110,15 @@ export default function piMeshExtension(pi: ExtensionAPI) {
   }
 
   function activateNext(): void {
-    if (!client || awaitingActivation || activeInbound || pending.length === 0) return;
-    const message = pending.shift()!;
+    if (shuttingDown || !client || awaitingActivation || activeInbound) return;
+    let message = pending.shift();
+    while (message && (isTerminalMessage(message) || Date.parse(message.expiresAt) <= Date.now())) {
+      message = pending.shift();
+    }
+    if (!message) {
+      persistRecoveryContext();
+      return;
+    }
     awaitingActivation = message;
     persistRecoveryContext();
     pi.sendMessage({
@@ -107,16 +139,122 @@ export default function piMeshExtension(pi: ExtensionAPI) {
   }
 
   async function receive(event: HubEvent): Promise<void> {
+    if (shuttingDown) return;
     if (event.type === "message") {
-      if (activeInbound?.id === event.message.id || awaitingActivation?.id === event.message.id || pending.some((message) => message.id === event.message.id)) return;
+      if (activeInbound?.id === event.message.id || awaitingActivation?.id === event.message.id) return;
+      if (pending.some((message) => message.id === event.message.id)) {
+        activateNext();
+        return;
+      }
+      if (isTerminalMessage(event.message) || Date.parse(event.message.expiresAt) <= Date.now()) return;
+      if (event.message.status === "queued") {
+        try {
+          await client?.acknowledge(event.message.id);
+        } catch (error) {
+          if (isTerminalMessageError(error)) return;
+          throw error;
+        }
+      }
+      if (shuttingDown) return;
       pending.push(event.message);
       persistRecoveryContext();
-      await client?.acknowledge(event.message.id);
       activateNext();
+      return;
+    }
+
+    if (event.type !== "cancelled" && event.type !== "expired" && event.type !== "reply") return;
+    const messageId = event.message.id;
+    const pendingLength = pending.length;
+    pending = pending.filter((message) => message.id !== messageId);
+    let changed = pending.length !== pendingLength;
+    if (awaitingActivation?.id === messageId) {
+      awaitingActivation = undefined;
+      changed = true;
+    }
+    if (activeInbound?.id === messageId) {
+      activeInbound = event.message;
+      changed = true;
+    }
+    if (!changed) return;
+    persistRecoveryContext();
+    if (activeInbound?.id === messageId && activeTurnSettled && !settlementInProgress) {
+      finishActiveInbound(messageId);
+      return;
+    }
+    activateNext();
+  }
+
+  function finishActiveInbound(messageId: string): void {
+    if (activeInbound?.id !== messageId) return;
+    if (settlementRetryTimer) clearTimeout(settlementRetryTimer);
+    settlementRetryTimer = undefined;
+    settlementRetryAttempt = 0;
+    activeInbound = undefined;
+    activeReply = undefined;
+    settlementReply = undefined;
+    activeTurnSettled = false;
+    recoveryStageId = undefined;
+    recoveryArtifacts = [];
+    persistRecoveryContext();
+    if (!shuttingDown) activateNext();
+  }
+
+  function scheduleSettlementRetry(messageId: string, error: unknown): void {
+    if (shuttingDown || !client || activeInbound?.id !== messageId || settlementRetryTimer) return;
+    const delayMs = Math.min(
+      SETTLEMENT_RETRY_BASE_MS * (2 ** Math.min(settlementRetryAttempt, 7)),
+      SETTLEMENT_RETRY_MAX_MS,
+    );
+    settlementRetryAttempt += 1;
+    persistRecoveryContext();
+    notify?.(
+      `pi-mesh could not return reply for ${messageId}; recovery state was retained and settlement will retry in ${delayMs}ms: ${error instanceof Error ? error.message : String(error)}`,
+      "error",
+    );
+    settlementRetryTimer = setTimeout(() => {
+      settlementRetryTimer = undefined;
+      void settleActiveInbound(messageId);
+    }, delayMs);
+    settlementRetryTimer.unref?.();
+  }
+
+  async function settleActiveInbound(messageId: string): Promise<void> {
+    if (!activeInbound || activeInbound.id !== messageId || !client || settlementInProgress) return;
+    settlementInProgress = true;
+    const message = activeInbound;
+    const activeClient = client;
+    const reply = settlementReply
+      ?? boundedPeerReply(activeReply ?? "The peer agent completed without a textual response.");
+    try {
+      let current: MessageRecord;
+      try {
+        current = await activeClient.getMessage(message.id);
+      } catch (error) {
+        if (isTerminalMessageError(error)) {
+          finishActiveInbound(message.id);
+          return;
+        }
+        throw error;
+      }
+      if (isTerminalMessage(current)) {
+        finishActiveInbound(message.id);
+        return;
+      }
+      await activeClient.reply(message.id, reply);
+      finishActiveInbound(message.id);
+    } catch (error) {
+      if (isTerminalMessageError(error)) {
+        finishActiveInbound(message.id);
+        return;
+      }
+      scheduleSettlementRetry(message.id, error);
+    } finally {
+      settlementInProgress = false;
     }
   }
 
   pi.on("session_start", async (_event, ctx) => {
+    shuttingDown = false;
     const serverUrl = process.env.PI_MESH_SERVER_URL ?? "http://127.0.0.1:7331";
     const project = process.env.PI_MESH_PROJECT ?? basename(ctx.cwd);
     const name = process.env.PI_MESH_AGENT_NAME ?? pi.getSessionName() ?? `pi-${process.pid}`;
@@ -135,6 +273,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     });
     try {
       const agent = await client.start(receive);
+      notify = (message, type) => ctx.ui.notify(message, type);
       ctx.ui.setStatus("pi-mesh", `mesh:${agent.name}`);
       ctx.ui.notify(`Connected to pi-mesh as ${agent.name}`, "info");
       const recovered = stateDir ? await consumeWorkerRecoveryEnvelope(client, stateDir, agent.name) : undefined;
@@ -155,13 +294,16 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     activeInbound = awaitingActivation;
     awaitingActivation = undefined;
     activeReply = undefined;
+    settlementReply = undefined;
+    activeTurnSettled = false;
+    settlementRetryAttempt = 0;
     recoveryStageId = undefined;
     recoveryArtifacts = [];
     persistRecoveryContext();
   });
 
   pi.on("agent_end", (event) => {
-    if (!activeInbound) return;
+    if (!activeInbound || activeTurnSettled) return;
     activeReply = assistantText(event.messages as unknown[]) ?? activeReply;
   });
 
@@ -203,24 +345,24 @@ export default function piMeshExtension(pi: ExtensionAPI) {
   });
 
   pi.on("agent_settled", async () => {
-    if (!activeInbound || !client) return;
-    const message = activeInbound;
-    const reply = activeReply ?? "The peer agent completed without a textual response.";
-    try {
-      await client.reply(message.id, boundedPeerReply(reply));
-      activeInbound = undefined;
-      activeReply = undefined;
-      recoveryStageId = undefined;
-      recoveryArtifacts = [];
-      persistRecoveryContext();
-      activateNext();
-    } catch { persistRecoveryContext(); }
+    if (!activeInbound || !client || settlementInProgress) return;
+    if (!activeTurnSettled) {
+      settlementReply = boundedPeerReply(
+        activeReply ?? "The peer agent completed without a textual response.",
+      );
+    }
+    activeTurnSettled = true;
+    await settleActiveInbound(activeInbound.id);
   });
 
   pi.on("session_shutdown", async () => {
+    shuttingDown = true;
     persistRecoveryContext();
+    if (settlementRetryTimer) clearTimeout(settlementRetryTimer);
+    settlementRetryTimer = undefined;
     await client?.stop();
     client = undefined;
+    notify = undefined;
   });
 
   pi.registerTool({
@@ -275,7 +417,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "mesh_fanout",
     label: "Ask planning panel",
-    description: "Send the same independent request to one through three peers and return all replies for comparison and synthesis. In durable workflows, use the run ID as correlationId and a stage-specific idempotencyKeyPrefix.",
+    description: "Send the same independent request to one through three peers and return replies for comparison and synthesis. A local timeout or prompt interruption returns a pending response with a durable messageId for mesh_get or an exact retry. In durable workflows, use the run ID as correlationId and a stage-specific idempotencyKeyPrefix.",
     parameters: Type.Object({
       targets: Type.Array(Type.String(), { minItems: 1, maxItems: 3 }),
       content: Type.String(),
@@ -284,7 +426,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
       ttlMs: Type.Optional(Type.Number({ minimum: 1_000, maximum: 604_800_000 })),
       timeoutMs: Type.Optional(Type.Number({ minimum: 100, maximum: 1_800_000 })),
     }),
-    async execute(_toolCallId, params) {
+    async execute(_toolCallId, params, signal) {
       return result({ responses: await requireClient().fanout({
         targets: params.targets,
         content: params.content,
@@ -292,6 +434,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
         ...(params.idempotencyKeyPrefix ? { idempotencyKeyPrefix: params.idempotencyKeyPrefix } : {}),
         ...(params.ttlMs ? { ttlMs: params.ttlMs } : {}),
         ...(params.timeoutMs ? { timeoutMs: params.timeoutMs } : {}),
+        ...(signal ? { signal } : {}),
       }) });
     },
   });

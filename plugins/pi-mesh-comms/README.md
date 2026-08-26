@@ -26,11 +26,11 @@ Configure the hub URL, token, unique agent name, purpose, and project when promp
 |---|---|
 | `mesh_list` | Discover online peers and their purposes |
 | `mesh_send` | Send one focused request and receive a message ID |
-| `mesh_fanout` | Ask one to three peers independently for comparison and synthesis |
+| `mesh_fanout` | Ask one to three peers independently; local wait expiry returns recoverable pending handles |
 | `mesh_get` | Check a request without blocking |
 | `mesh_await` | Wait when the reply blocks progress |
 | `mesh_cancel` | Cancel pending work owned by this sender |
-| `mesh_inbox` | List inbound requests when pushed channel delivery is unavailable |
+| `mesh_inbox` | List and reconcile durable inbound requests when pushed channel delivery is unavailable |
 | `mesh_reply` | Return a final response to an inbound request |
 | `mesh_workflow_list` | List webhook workflows assigned to this coordinator |
 | `mesh_workflow_get` | Read stages and the structured workflow journal |

@@ -2,7 +2,8 @@ import { basename } from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import { MeshClient } from "./client.ts";
+import { MeshClient, MeshHttpError } from "./client.ts";
+import { deliverInboxNotification } from "./inbox.ts";
 import type { DeliveryMode, HubEvent, MessageRecord } from "./protocol.ts";
 import type {
   ImprovementArea,
@@ -11,8 +12,9 @@ import type {
   WorkflowEvidenceInput,
 } from "./workflow.ts";
 
-const VERSION = "0.4.1";
+const VERSION = "0.4.2";
 const inbox = new Map<string, MessageRecord>();
+const notifiedInbox = new Set<string>();
 let meshClient: MeshClient | undefined;
 let starting: Promise<MeshClient> | undefined;
 
@@ -52,11 +54,48 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function isTerminalMessageError(error: unknown): boolean {
+  return error instanceof MeshHttpError
+    && (error.statusCode === 409
+      || (error.statusCode === 404 && error.code === "message_not_found"));
+}
+
+function isTerminalMessage(message: MessageRecord): boolean {
+  return message.status === "replied"
+    || message.status === "cancelled"
+    || message.status === "expired"
+    || message.status === "error";
+}
+
+async function reconcileInbox(client: MeshClient): Promise<void> {
+  await Promise.all([...inbox.keys()].map(async (messageId) => {
+    try {
+      const current = await client.getMessage(messageId);
+      if (isTerminalMessage(current)) {
+        inbox.delete(messageId);
+        notifiedInbox.delete(messageId);
+      } else inbox.set(messageId, current);
+    } catch (error) {
+      if (isTerminalMessageError(error)) {
+        inbox.delete(messageId);
+        notifiedInbox.delete(messageId);
+        return;
+      }
+      throw error;
+    }
+  }));
+}
+
 async function onHubEvent(event: HubEvent): Promise<void> {
+  if (event.type === "cancelled" || event.type === "expired") {
+    inbox.delete(event.message.id);
+    notifiedInbox.delete(event.message.id);
+    return;
+  }
   if (event.type !== "message") return;
   const client = meshClient;
   if (!client) return;
-  await client.acknowledge(event.message.id);
+  if (event.message.status === "queued") await client.acknowledge(event.message.id);
   inbox.set(event.message.id, event.message);
   const meta: Record<string, string> = {
     message_id: event.message.id,
@@ -64,18 +103,20 @@ async function onHubEvent(event: HubEvent): Promise<void> {
     delivery: event.message.delivery,
   };
   if (event.message.correlationId) meta.correlation_id = event.message.correlationId;
-  await mcp.notification({
-    method: "notifications/claude/channel",
-    params: {
-      content: [
-        `Peer request from ${event.message.fromName}:`,
-        "",
-        event.message.content,
-        "",
-        `When complete, call mesh_reply with messageId ${event.message.id}.`,
-      ].join("\n"),
-      meta,
-    },
+  await deliverInboxNotification(event.message.id, notifiedInbox, async () => {
+    await mcp.notification({
+      method: "notifications/claude/channel",
+      params: {
+        content: [
+          `Peer request from ${event.message.fromName}:`,
+          "",
+          event.message.content,
+          "",
+          `When complete, call mesh_reply with messageId ${event.message.id}.`,
+        ].join("\n"),
+        meta,
+      },
+    });
   });
 }
 
@@ -144,7 +185,7 @@ const tools = [
   },
   {
     name: "mesh_fanout",
-    description: "Ask one through three peers independently and return all replies for comparison and synthesis. In durable workflows, use the run ID as correlationId and a stage-specific idempotencyKeyPrefix.",
+    description: "Ask one through three peers independently and return replies for comparison and synthesis. A local timeout or request cancellation returns a pending response with a durable messageId for mesh_get or an exact retry. In durable workflows, use the run ID as correlationId and a stage-specific idempotencyKeyPrefix.",
     inputSchema: {
       type: "object",
       properties: {
@@ -279,7 +320,7 @@ const tools = [
 
 mcp.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
 
-mcp.setRequestHandler(CallToolRequestSchema, async (request) => {
+mcp.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
   try {
     const client = await ensureClient();
     const args = asRecord(request.params.arguments);
@@ -312,6 +353,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (request) => {
           } : {}),
           ...(typeof args.ttlMs === "number" ? { ttlMs: args.ttlMs } : {}),
           ...(typeof args.timeoutMs === "number" ? { timeoutMs: args.timeoutMs } : {}),
+          signal: extra.signal,
         }) });
       case "mesh_await":
         return textResult(await client.awaitResponse(
@@ -321,12 +363,22 @@ mcp.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "mesh_cancel":
         return textResult(await client.cancel(requiredString(args.messageId, "messageId")));
       case "mesh_inbox":
+        await reconcileInbox(client);
         return textResult({ messages: [...inbox.values()] });
       case "mesh_reply": {
         const messageId = requiredString(args.messageId, "messageId");
-        const message = await client.reply(messageId, requiredString(args.content, "content"));
-        inbox.delete(messageId);
-        return textResult({ messageId, status: message.status, recipient: message.fromName });
+        try {
+          const message = await client.reply(messageId, requiredString(args.content, "content"));
+          inbox.delete(messageId);
+          notifiedInbox.delete(messageId);
+          return textResult({ messageId, status: message.status, recipient: message.fromName });
+        } catch (error) {
+          if (isTerminalMessageError(error)) {
+            inbox.delete(messageId);
+            notifiedInbox.delete(messageId);
+          }
+          throw error;
+        }
       }
       case "mesh_workflow_list":
         return textResult({ runs: await client.listWorkflows() });

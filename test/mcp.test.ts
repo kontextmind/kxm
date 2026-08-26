@@ -194,6 +194,20 @@ test("bundled MCP tools cover outbound, inbound, reply, cancellation, and channe
     timeoutMs: 2_000,
   }));
   assert.match(JSON.stringify(panel), /review complete/);
+  const pendingPanel = toolValue(await tool("mesh_fanout", {
+    targets: ["reviewer"],
+    content: "review after the local wait ends",
+    correlationId: "mcp-panel-timeout",
+    idempotencyKeyPrefix: "mcp-panel-timeout",
+    ttlMs: 5_000,
+    timeoutMs: 100,
+  }));
+  const [pendingResponse] = pendingPanel.responses as Array<Record<string, unknown>>;
+  assert.equal(pendingResponse?.status, "pending");
+  assert.equal(pendingResponse?.waitStatus, "timed_out");
+  assert.ok(pendingResponse?.messageId);
+  assert.ok(pendingResponse?.expiresAt);
+  assert.ok(pendingResponse?.messageStatus === "queued" || pendingResponse?.messageStatus === "delivered");
 
   const cancellable = toolValue(await tool("mesh_send", { target: "reviewer", content: "cancel this" }));
   const cancelled = toolValue(await tool("mesh_cancel", { messageId: cancellable.messageId }));
@@ -210,6 +224,28 @@ test("bundled MCP tools cover outbound, inbound, reply, cancellation, and channe
   assert.equal(replied.status, "replied");
   assert.equal((await peer.awaitResponse(inbound.id, 2_000)).reply?.content, "inbound complete");
   assert.doesNotMatch(JSON.stringify(toolValue(await tool("mesh_inbox"))), new RegExp(inbound.id));
+
+  const cancelledInbound = await peer.send({ target: "claude-under-test", content: "cancel incoming work" });
+  await waitFor(async () => JSON.stringify(toolValue(await tool("mesh_inbox"))).includes(cancelledInbound.id));
+  assert.equal((await peer.cancel(cancelledInbound.id)).status, "cancelled");
+  await waitFor(async () => !JSON.stringify(toolValue(await tool("mesh_inbox"))).includes(cancelledInbound.id));
+
+  const missedTerminalEvent = await peer.send({ target: "claude-under-test", content: "reconcile missed cancellation" });
+  await waitFor(async () => JSON.stringify(toolValue(await tool("mesh_inbox"))).includes(missedTerminalEvent.id));
+  const missedRecord = mesh.hub.state.messages.get(missedTerminalEvent.id)!;
+  missedRecord.status = "cancelled";
+  missedRecord.cancelledAt = new Date().toISOString();
+  await waitFor(async () => !JSON.stringify(toolValue(await tool("mesh_inbox"))).includes(missedTerminalEvent.id));
+
+  const expiredInbound = await peer.send({
+    target: "claude-under-test",
+    content: "expire incoming work",
+    ttlMs: 1_000,
+  });
+  await waitFor(async () => JSON.stringify(toolValue(await tool("mesh_inbox"))).includes(expiredInbound.id));
+  await new Promise((resolve) => setTimeout(resolve, 1_050));
+  assert.equal((await peer.getMessage(expiredInbound.id)).status, "expired");
+  await waitFor(async () => !JSON.stringify(toolValue(await tool("mesh_inbox"))).includes(expiredInbound.id));
 
   const workflowPayload = JSON.stringify({ event: "task", task: { id: "MCP-9" } });
   const webhook = await fetch(`${mesh.address.url}/v1/webhooks/mcp-workflow`, {
@@ -260,4 +296,118 @@ test("bundled MCP tools cover outbound, inbound, reply, cancellation, and channe
   assert.equal(invalid.result?.isError, true);
   assert.match(JSON.stringify(invalid.result), /target is required/);
   assert.equal(stderr, "");
+});
+
+test("MCP inbox rehydrates one delivered message record after process restart", async (context) => {
+  const mesh = await createTestMesh(context);
+  const peer = mesh.makeClient("restart-sender");
+  await peer.start(() => undefined);
+  const activeProcesses: Array<{ stop(): Promise<void> }> = [];
+  context.after(async () => {
+    await Promise.allSettled(activeProcesses.map((process) => process.stop()));
+  });
+
+  async function startMcp() {
+    const child = spawn(process.execPath, ["plugins/pi-mesh-comms/dist/mcp-server.js"], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        PI_MESH_SERVER_URL: mesh.address.url,
+        PI_MESH_AUTH_TOKEN: mesh.token,
+        PI_MESH_AGENT_NAME: "claude-restart-test",
+        PI_MESH_AGENT_PURPOSE: "MCP restart integration test",
+        PI_MESH_PROJECT: "test-project",
+      },
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const lines = createInterface({ input: child.stdout });
+    const notifications: Array<Record<string, unknown>> = [];
+    const pending = new Map<number, { resolve(value: RpcResponse): void; reject(error: Error): void }>();
+    let nextId = 1;
+    let stderr = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk: string) => { stderr += chunk; });
+    lines.on("line", (line) => {
+      const message = JSON.parse(line) as RpcResponse & { method?: string };
+      if (typeof message.id !== "number") {
+        notifications.push(message as Record<string, unknown>);
+        return;
+      }
+      const waiter = pending.get(message.id);
+      if (!waiter) return;
+      pending.delete(message.id);
+      if (message.error) waiter.reject(new Error(message.error.message));
+      else waiter.resolve(message);
+    });
+    child.once("exit", (code) => {
+      for (const waiter of pending.values()) {
+        waiter.reject(new Error(`MCP restart test process exited with ${String(code)}: ${stderr}`));
+      }
+      pending.clear();
+    });
+
+    function request(method: string, params: Record<string, unknown>): Promise<RpcResponse> {
+      const id = nextId++;
+      const response = new Promise<RpcResponse>((resolve, reject) => pending.set(id, { resolve, reject }));
+      child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+      return response;
+    }
+
+    function tool(name: string, args: Record<string, unknown> = {}): Promise<RpcResponse> {
+      return request("tools/call", { name, arguments: args });
+    }
+
+    function value(response: RpcResponse): Record<string, unknown> {
+      const content = response.result?.content as Array<{ text: string }>;
+      return JSON.parse(content[0]!.text) as Record<string, unknown>;
+    }
+
+    await request("initialize", {
+      protocolVersion: "2025-06-18",
+      capabilities: {},
+      clientInfo: { name: "restart-test", version: "1.0.0" },
+    });
+    child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
+
+    let stopped = false;
+    const processHandle = {
+      async stop(): Promise<void> {
+        if (stopped) return;
+        stopped = true;
+        lines.close();
+        if (child.exitCode !== null) return;
+        const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+        child.kill();
+        await exited;
+      },
+    };
+    activeProcesses.push(processHandle);
+    return { notifications, tool, value, stop: processHandle.stop };
+  }
+
+  const first = await startMcp();
+  await first.tool("mesh_list");
+  await waitFor(async () => (await peer.listAgents()).some((agent) => agent.name === "claude-restart-test"));
+  const inbound = await peer.send({ target: "claude-restart-test", content: "resume this delivered request" });
+  await waitFor(() => first.notifications.some((notification) => JSON.stringify(notification).includes(inbound.id)));
+  assert.match(JSON.stringify(first.value(await first.tool("mesh_inbox"))), new RegExp(inbound.id));
+  assert.equal((await peer.getMessage(inbound.id)).status, "delivered");
+  await first.stop();
+
+  const durableAgent = [...mesh.hub.state.agents.values()].find((agent) => agent.name === "claude-restart-test")!;
+  durableAgent.online = false;
+  const second = await startMcp();
+  await second.tool("mesh_list");
+  await waitFor(() => second.notifications.some((notification) => JSON.stringify(notification).includes(inbound.id)));
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(second.notifications.filter((notification) => JSON.stringify(notification).includes(inbound.id)).length, 1);
+  assert.match(JSON.stringify(second.value(await second.tool("mesh_inbox"))), new RegExp(inbound.id));
+  const reply = second.value(await second.tool("mesh_reply", {
+    messageId: inbound.id,
+    content: "restart reply complete",
+  }));
+  assert.equal(reply.status, "replied");
+  assert.equal((await peer.awaitResponse(inbound.id, 2_000)).reply?.content, "restart reply complete");
+  assert.equal([...mesh.hub.state.messages.values()].filter((message) => message.id === inbound.id).length, 1);
+  await second.stop();
 });

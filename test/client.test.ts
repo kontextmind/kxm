@@ -27,6 +27,93 @@ test("awaitResponse supports cancellation and timeout", async (context) => {
   await assert.rejects(() => sender.awaitResponse(message.id, 100), /timed out/);
 });
 
+test("fanout timeouts return durable pending handles and exact retries reuse the request", async (context) => {
+  const mesh = await createTestMesh(context);
+  const sender = mesh.makeClient("fanout-sender");
+  const receiver = mesh.makeClient("fanout-receiver");
+  await receiver.start(async (event) => {
+    if (event.type === "message") await receiver.acknowledge(event.message.id);
+  });
+  await sender.start(() => undefined);
+
+  const options = {
+    targets: ["fanout-receiver"],
+    content: "Review this asynchronously",
+    correlationId: "durable-timeout",
+    idempotencyKeyPrefix: "durable-timeout:review",
+    ttlMs: 5_000,
+    timeoutMs: 50,
+  };
+  const [pending] = await sender.fanout(options);
+  assert.ok(pending);
+  assert.equal(pending.status, "pending");
+  assert.ok(pending.messageStatus === "queued" || pending.messageStatus === "delivered");
+  assert.equal(pending.waitStatus, "timed_out");
+  assert.ok(pending.messageId);
+  assert.ok(pending.expiresAt && Date.parse(pending.expiresAt) > Date.now());
+  assert.equal(mesh.hub.state.messages.size, 1);
+
+  await receiver.reply(pending.messageId, "late review complete");
+  const [retried] = await sender.fanout(options);
+  assert.ok(retried);
+  assert.equal(retried.messageId, pending.messageId);
+  assert.equal(retried.status, "replied");
+  assert.equal(retried.reply, "late review complete");
+  assert.equal(mesh.hub.state.messages.size, 1);
+});
+
+test("fanout performs a final read at the timeout boundary", async (context) => {
+  const mesh = await createTestMesh(context);
+  const sender = mesh.makeClient("race-sender");
+  const receiver = mesh.makeClient("race-receiver");
+  await Promise.all([sender.start(() => undefined), receiver.start(() => undefined)]);
+  const originalGetMessage = sender.getMessage.bind(sender);
+  let reads = 0;
+  sender.getMessage = async (messageId) => {
+    reads += 1;
+    if (reads === 2) await receiver.reply(messageId, "reply at deadline");
+    return await originalGetMessage(messageId);
+  };
+
+  const [result] = await sender.fanout({
+    targets: ["race-receiver"],
+    content: "Race the local deadline",
+    timeoutMs: 20,
+  });
+  assert.ok(result);
+  assert.equal(reads, 2);
+  assert.equal(result.status, "replied");
+  assert.equal(result.reply, "reply at deadline");
+});
+
+test("fanout abort returns promptly while preserving every sent message handle", async (context) => {
+  const mesh = await createTestMesh(context);
+  const sender = mesh.makeClient("abort-sender");
+  const receiver = mesh.makeClient("abort-receiver");
+  await receiver.start(async (event) => {
+    if (event.type === "message") await receiver.acknowledge(event.message.id);
+  });
+  await sender.start(() => undefined);
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), 30).unref();
+
+  const startedAt = Date.now();
+  const [pending] = await sender.fanout({
+    targets: ["abort-receiver"],
+    content: "Keep this request durable",
+    timeoutMs: 2_000,
+    signal: controller.signal,
+  });
+  assert.ok(pending);
+  assert.equal(pending.status, "pending");
+  assert.equal(pending.waitStatus, "aborted");
+  assert.ok(pending.messageId);
+  assert.ok(pending.messageStatus === "queued" || pending.messageStatus === "delivered");
+  assert.ok(pending.expiresAt);
+  assert.ok(Date.now() - startedAt < 1_000);
+  assert.equal(mesh.hub.state.messages.size, 1);
+});
+
 test("client registration fails with a bounded request timeout", async (context) => {
   const server = createServer(() => undefined);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));

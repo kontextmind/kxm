@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import test from "node:test";
 // The production harness is JavaScript so it can run directly on a bare Pi runner.
 // @ts-expect-error The harness intentionally has no separate declaration artifact.
-import { boundedSafeMessage, parseSmokeModels, runSmokePhases } from "../scripts/smoke-multi-pi.mjs";
+import { boundedSafeMessage, buildSmokeRequest, parseSmokeModels, runSmokePhases } from "../scripts/smoke-multi-pi.mjs";
 
 const script = resolve("scripts/smoke-multi-pi.mjs");
 
@@ -43,6 +43,16 @@ test("smoke model parsing is stable and output sanitization is bounded", () => {
   assert.ok(safe.length <= 500);
   assert.doesNotMatch(safe, /test-secret-value/);
   assert.doesNotMatch(safe, /sk-live/);
+});
+
+test("real Pi smoke does not couple message TTL to its local phase timeout", () => {
+  assert.deepEqual(buildSmokeRequest("reviewer", "Review this", "review-1"), {
+    target: "reviewer",
+    content: "Review this",
+    delivery: "followUp",
+    idempotencyKey: "review-1",
+  });
+  assert.equal("ttlMs" in buildSmokeRequest("reviewer", "Review this", "review-1"), false);
 });
 
 test("smoke phases run in order, pass prior results, and always clean up on failure", async () => {

@@ -174,12 +174,16 @@ async function agents(baseUrl, authToken, operator) {
   return result.agents;
 }
 
+export function buildSmokeRequest(target, content, idempotencyKey) {
+  return { target, content, delivery: "followUp", idempotencyKey };
+}
+
 async function sendAndAwait(baseUrl, authToken, operator, target, content, timeoutMs, idempotencyKey) {
   const sent = await api(baseUrl, "/v1/messages", {
     method: "POST",
     authToken,
     identity: operator,
-    body: { target, content, delivery: "followUp", ttlMs: timeoutMs, idempotencyKey },
+    body: buildSmokeRequest(target, content, idempotencyKey),
   });
   return await waitFor(async () => {
     const result = await api(baseUrl, `/v1/messages/${encodeURIComponent(sent.message.id)}`, {
