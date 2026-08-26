@@ -32,6 +32,17 @@ export interface MessageReply {
   createdAt: string;
 }
 
+/** Hub-authorized scope for a peer request that may later be cited as
+ * workflow evidence. Callers request this scope, but the hub validates it
+ * against the active run and persists the canonical value. */
+export interface WorkflowMessageContext {
+  schema: "pi-mesh.workflow-message-context.v1";
+  runId: string;
+  stageId: string;
+  requirementKey: string;
+  attempt: number;
+}
+
 export interface MessageRecord {
   id: string;
   project: string;
@@ -46,6 +57,7 @@ export interface MessageRecord {
   correlationId?: string;
   replyTo?: string;
   idempotencyKey?: string;
+  workflowContext?: WorkflowMessageContext;
   createdAt: string;
   expiresAt: string;
   deliveredAt?: string;

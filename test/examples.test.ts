@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 import { parseWorkflowDefinitions } from "../plugins/pi-mesh-comms/src/workflow.ts";
@@ -43,4 +44,33 @@ test("Jira development workflow example is valid and covers the complete lifecyc
     "retrospective",
   ]);
   assert.equal(workflow!.stages.find((stage) => stage.id === "local-gates")?.area, "gates");
+});
+
+test("provenance example and command-first guide share one runnable topology", () => {
+  const raw = readFileSync("examples/provenance-workflow.json", "utf8");
+  const [workflow] = parseWorkflowDefinitions(raw, {
+    PI_MESH_WORKFLOW_SECRET: "example-provenance-secret-value",
+  });
+  assert.equal(workflow!.id, "provenance-review");
+  assert.equal(workflow!.project, "provenance-demo");
+  assert.equal(workflow!.target, "coordinator");
+
+  const policy = workflow!.stages[0]!.evidencePolicies?.["independent peer reviews"];
+  assert.equal(policy?.kind, "peer-reply");
+  assert.equal(policy?.minProducers, 2);
+  assert.deepEqual(policy?.eligibleAgents, ["reviewer-claude", "reviewer-grok"]);
+  assert.equal(policy?.degradation?.minProducers, 1);
+
+  const guide = readFileSync("docs/provenance-gates.md", "utf8");
+  assert.match(guide, /\{"provenance-demo":"replace-with-the-project-token"\}/);
+  assert.match(guide, /--name coordinator --project provenance-demo/);
+  assert.match(guide, /--name reviewer-claude --project provenance-demo/);
+  assert.match(guide, /--name reviewer-grok --project provenance-demo/);
+
+  const launcher = readFileSync(join(process.cwd(), ".kxm", "assets", "run-provenance-workflow.ps1"), "utf8");
+  assert.match(launcher, /\$projectName = "provenance-demo"/);
+  assert.match(launcher, /Name = "coordinator"/);
+  assert.match(launcher, /Name = "reviewer-claude"/);
+  assert.match(launcher, /Name = "reviewer-grok"/);
+  assert.doesNotMatch(launcher, /Name = "reviewer-gemini"/);
 });

@@ -34,6 +34,17 @@ The hub validates and authenticates requests, stores agents and messages, pushes
 
 Signed webhook workflows add a durable run and coordinator message in one request. The stable provider delivery ID prevents duplicate Jira or GitHub retries. Ordered checkpoints enforce attempt limits and exact keyed evidence requirements. Local evidence can be accumulated when a coordinator enters a durable `waiting` state; a separately signed and deduplicated external result must complete the remaining named requirements before it can advance the stage. A separate journal preserves plans, decisions, contradictions, errors, and lessons for reviewed continuous improvement.
 
+Peer-policy requirements add an evidence plane beside caller-authored strings.
+At run creation, configured eligible agent selectors resolve to stable producer
+IDs and are snapshotted into the run. The coordinator can create countable peer
+work only for the current stage and attempt; the hub stamps immutable workflow
+context on each authorized message. At checkpoint or wait, cited message IDs
+are verified from durable state and converted into metadata-only snapshots with
+producer identity, context, lifecycle timestamps, and request/reply hashes.
+Quorum counts unique producers per requirement. The verified snapshot survives
+normal terminal-message purging without retaining prompt or reply bodies in the
+workflow record.
+
 ## Workflow lifecycle
 
 ```text
@@ -67,6 +78,16 @@ Queued and delivered records survive restart. When the same project and agent na
 
 The administrative token manages administrative routes and acts as the project token only where no explicit project token exists. A configured project token can access only its project. Registration returns an agent key for identity-specific routes. Token comparisons are constant-time after hashing, and prompt or reply bodies are excluded from logs.
 
+Provenance is bounded by those credentials. A project-token holder can register
+a new agent or reclaim an offline agent name and its durable ID in that project,
+so all holders of one project credential form a fully trusted provenance
+domain. A verified peer reply proves the hub-observed durable producer and
+context, not organizational or person independence, model identity,
+non-collusion, correctness, or human approval. Deployments that use provenance
+gates should reserve a distinct administrative token, issue explicit project
+tokens per trust domain, protect network and state access, and keep
+consequential repository or human gates authoritative.
+
 `.kxm/state/mesh.db` is not encrypted by the application and contains messages plus agent credentials. Protect the `.kxm` runtime directories with operating-system permissions and encrypted storage where required. Structured hub logs omit message bodies, but raw worker agent logs may contain model or tool output. Peer content remains untrusted regardless of authentication.
 
 ## Source layout
@@ -95,3 +116,9 @@ The administrative token manages administrative routes and acts as the project t
 | `dist/mcp-server.js` | Generated self-contained Claude runtime |
 
 The generated runtimes are committed because installed packages must work without a development toolchain or runtime TypeScript stripping. Edit the source, run `npm run build`, and commit the source and corresponding files under `dist/`.
+
+Peer-policy fields are additive to SQLite schema version 2 because agents,
+messages, and workflow runs are stored as JSON records. Existing schema-v2
+databases and legacy workflow history remain readable; legacy evidence cannot
+satisfy a newly declared peer policy. Back up the database before upgrading as
+described in [Operations](operations.md).

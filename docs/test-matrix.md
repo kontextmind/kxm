@@ -30,18 +30,23 @@ npm run validate
 | Claude MCP catalog, outbound and inbound tools, channel delivery | `test/mcp.test.ts` |
 | Signed Jira webhook verification, filtering, dispatch, and retry deduplication | `test/hub-api.test.ts` |
 | Ordered workflow checkpoints, normalized keyed evidence gates, unrelated-volume rejection, and warning/failure retry | `test/hub-api.test.ts`, `test/workflow.test.ts` |
-| Durable external waits, local/callback evidence accumulation, safe settlement, minimal signed responses, retry/conflict deduplication, separate secrets, and timeout notification | `test/hub-api.test.ts`, `test/workflow.test.ts` |
+| Run-start eligible-producer resolution, immutable workflow context, per-requirement message-reference verification, unique-producer quorum, and replay/cross-context rejection | `test/workflow-provenance.test.ts`, `test/workflow.test.ts`, `test/hub-api.test.ts`, `test/client.test.ts`, `test/store.test.ts` |
+| Explicit current-attempt admin degradation, configured lower minimum, audit journal, idempotency, and forbidden or stale approvals | `test/workflow-provenance.test.ts`, `test/cli.test.ts` |
+| Durable external waits, local/callback evidence accumulation, safe settlement, checkpoint/expiry race rejection, minimal signed responses, retry/conflict deduplication, separate secrets, and timeout notification | `test/hub-api.test.ts`, `test/workflow.test.ts`, `test/workflow-provenance.test.ts` |
 | Plans, decisions, contradictions, errors, lessons, and improvement reports | `test/hub-api.test.ts`, `test/workflow.test.ts` |
 | Safe diagnostic classification and redaction | `test/diagnostics.test.ts`, `test/extension.test.ts`, `test/hub-api.test.ts` |
 | Operator CLI init/validate/export/watch | `test/cli.test.ts`, `test/github-watch.test.ts` |
 | Local and isolated-global packed npm CLI plus hub runtimes | `test/package-install.test.ts` |
 | Required generated runtimes are present, tracked, and unchanged after build | `scripts/check-generated.mjs`, `test/generated-artifacts.test.ts` |
-| Retrospective export snapshots | `test/retrospective.test.ts` |
-| Interrupted-worker continue fallback | `test/worker.test.ts`, `test/recovery.test.ts` |
+| Retrospective export snapshots, metadata-only provenance audit, body allowlisting, degradation records, and v1 compatibility | `test/retrospective.test.ts` |
+| Interrupted-worker continue fallback, exact run-bound recovery, unbound telemetry isolation, and one-turn durable replay | `test/worker.test.ts`, `test/recovery.test.ts`, `test/extension.test.ts` |
+| Final provider-error retention, built-in retry ordering, metadata-only journaling, bounded fallback exhaustion, oversized-frame classification, and session-preserving restart | `test/extension.test.ts`, `test/worker.test.ts`, `test/diagnostics.test.ts`, `test/cli.test.ts` |
+| Tool capability allowlist, watchdog grace, bounded hung-tool recovery, oversized completed-tool cancellation, and race-safe hub/worker ownership claims | `test/worker.test.ts`, `test/cli.test.ts`, `test/server.test.ts` |
+| Exact worker extension/skill sets, discovery isolation, path preflight, multi-path ordering, and Windows argument safety | `test/worker.test.ts` |
 | Opt-in real-Pi smoke contract and safe skip paths | `test/smoke-real-pi.test.ts`, `test/smoke.test.ts` |
 | Durable workflow and journal recovery | `test/store.test.ts` |
 | Atomic workflow transition commit and rollback | `test/store.test.ts` |
-| Pi and Claude workflow/journal tools | `test/extension.test.ts`, `test/mcp.test.ts` |
+| Pi and Claude workflow/journal tools, workflow-context sends, and peer-reference checkpoints/waits | `test/extension.test.ts`, `test/mcp.test.ts` |
 | Package and marketplace version consistency | `scripts/check-versions.mjs` |
 
 The CI minimums are 95% lines, 80% branches, and 90% functions across the measured core sources. The generated MCP runtime is exercised as a child process, while the packed CLI and hub are installed in a clean consumer and exercised from `node_modules`.
@@ -61,7 +66,8 @@ The CI minimums are 95% lines, 80% branches, and 90% functions across the measur
 | Jira issue-to-merge workflow | `.kxm/config/workflows/jira-development.json` | Parsed, type-checked through workflow tests, and exercised end to end with representative configuration |
 | `.kxm` workspace defaults and persisted hub/worker logs | `.kxm/`, `test/server.test.ts`, `test/worker.test.ts` | Executed with isolated temporary workspaces |
 | Signed external result callback | `examples/workflow-signal.ts` | Type-checked; equivalent signed callback path is exercised end to end in `test/hub-api.test.ts` |
-| Long-lived headless coordinator | `scripts/pi-mesh-worker.mjs` | Restart limits, spawn failure, split-stream recovery, bounded drain, and `--continue` fallback are automated; the opt-in real-Pi gate verifies two workers, discovery, request/reply, fanout, durable restart/resume, journal, and checkpoint |
+| Peer provenance and optional explicit degradation | `examples/provenance-workflow.json`, `docs/provenance-gates.md` | Definition is checked with `pi-mesh validate`; adversarial behavior is automated in `test/workflow-provenance.test.ts` |
+| Long-lived headless coordinator | `scripts/pi-mesh-worker.mjs` | Restart limits, spawn failure, collision-resistant ownership, exact resource and tool loading, raw-output isolation, bounded RPC framing, bounded drain, hung-tool recovery, provider/model fallback, and `--continue` fallback are automated; the opt-in real-Pi gate verifies two workers, discovery, request/reply, fanout, durable restart/resume, journal, and checkpoint |
 | GitHub check signal adapter | `plugins/pi-mesh-comms/src/github-watch.ts` | Deterministic pagination, conclusion, retry, and per-wait delivery-generation states in `test/github-watch.test.ts` |
 | Operator CLI | `scripts/pi-mesh.mjs` | Isolated workspace commands in `test/cli.test.ts`; the packed artifact is installed locally and with the documented global `--omit=peer` path by `test/package-install.test.ts` |
 | Native-free package install and Windows `pi.cmd` worker launch | `package.json`, `test/store.test.ts`, `test/worker.test.ts` | CI runs on Ubuntu and Windows at Node 22.13 and Node 24; the Windows test executes a command-script fixture through `ComSpec` |
@@ -73,7 +79,7 @@ Automation cannot prove that a third-party harness UI renders perfectly. Before 
 Create the versioned tarball with `npm pack`, attach it to the matching GitHub
 release, and verify the authenticated `gh release download` plus
 `npm install --global --omit=peer <local-tarball>` path before publishing the
-operator installation instructions. For version 0.4.2, the required asset is
-`kontextmind-pi-extensions-0.4.2.tgz`.
+operator installation instructions. For version 0.4.3, the required asset is
+`kontextmind-pi-extensions-0.4.3.tgz`.
 
 When adding a feature, add executable coverage and update this matrix in the same change. If a behavior can only be verified manually, state why and add it to the release checklist instead of implying automated coverage.

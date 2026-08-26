@@ -41,6 +41,8 @@ test("maps token classes from bounded failure text", () => {
   assert.equal(classifyFailure({ code: "invalid_agent_identity" }).class, "invalid_identity");
   assert.equal(classifyFailure({ code: "invalid_auth" }).nextAction, "check_project_token");
   assert.equal(classifyFailure({ code: "workflow_not_waiting", toolName: "mesh_workflow_checkpoint" }).class, "not_waiting");
+  assert.equal(classifyFailure({ toolName: "provider", message: "Quota reached. Please wait." }).class, "quota");
+  assert.equal(classifyFailure({ toolName: "provider", code: "provider_error" }).nextAction, "switch_model_or_retry");
   assert.equal(operationForTool("mesh_workflow_record"), "journal");
 });
 

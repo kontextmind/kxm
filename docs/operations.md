@@ -25,7 +25,7 @@ Stop with `Ctrl+C` or `SIGTERM`. The hub stops accepting connections, closes SSE
 
 For unattended service, use a supervisor that sets a stable working directory, injects secrets, captures stdout, restarts after failure, and allows at least five seconds for graceful shutdown.
 
-Run each long-lived coordinator with `pi-mesh worker --name <stable-name> --project <project> [--model <provider/model>]` under a separate service-manager unit. Use distinct worktrees for concurrent writers, explicit CPU and memory limits, and restart throttling outside the built-in bounded backoff. The worker launches Pi RPC mode and retains the most recent session unless configured otherwise. `pi-mesh stop` writes a generation-matched control request; the worker asks Pi RPC to abort, waits for confirmation and state flush, and only force-stops the process tree after the bounded drain deadline. If `--continue` reports an invalid tool-result session, the worker retries once fresh, journals a redacted recovery envelope, and injects a bounded resume instruction for the durable run and stage. Do not copy `pi-agent-*.log` into journals or retrospectives.
+Run each long-lived coordinator with `pi-mesh worker --name <stable-name> --project <project> [--model <provider/model>] [--fallback-models <provider/model,...>] [--tools <name,...>]` under a separate service-manager unit. Use distinct worktrees for concurrent writers, explicit CPU and memory limits, and restart throttling outside the built-in bounded backoff. Enforce role ownership with the Pi tool allowlist: omit `bash`, `edit`, and `write` from read-only reviewers, even if their prompt also says not to edit. The worker launches Pi RPC mode and retains the most recent session unless configured otherwise. Use `--fresh-start` for a clean first session that may still resume after a later provider failure; reserve `--no-continue` for a worker that must never resume. For release verification, configure the [exact extension and skill sets](configuration.md#long-lived-worker-settings), including every required provider extension; configured categories disable discovery and fail closed on invalid paths. `pi-mesh stop` writes a generation-matched control request; the worker asks Pi RPC to abort, waits for confirmation and state flush, and only force-stops the process tree after the bounded drain deadline. A final provider error leaves the inbound hub message delivered, gracefully restarts Pi, rotates to an unused fallback model, and preserves the session; Pi's own automatic retries always finish first. A tool that exceeds `PI_MESH_WORKER_TOOL_TIMEOUT_MS` follows the same durable restart path without changing models. If `--continue` reports an invalid tool-result session, the worker retries once fresh, journals a redacted recovery envelope, and injects a bounded resume instruction for the durable run and stage. Do not copy `pi-agent-*.log` into journals or retrospectives.
 
 For GitHub-backed waits, run `pi-mesh github watch` as a separate command. The hub does not poll GitHub. Success, failure, cancellation, and timeout produce the exact signed signal for the waiting run/stage/key; timeout exits `4` after posting `failed`.
 
@@ -57,9 +57,9 @@ For GitHub Actions, configure `PI_MESH_SMOKE_RUNNER` with the self-hosted runner
 | `GET /ready` | None | Storage responds and the hub is ready for traffic |
 | `GET /metrics` | Administrative token outside loopback | Prometheus text metrics |
 
-Use `/ready` for service traffic and `/health` for liveness. Metrics include online agents, retained messages, requests, errors, registrations, sends, replies, cancellations, expiries, purges, workflow waits, external signals, and wait timeouts.
+Use `/ready` for service traffic and `/health` for liveness. Metrics include online agents, retained messages, requests, errors, registrations, sends, replies, cancellations, expiries, purges, workflow waits, external signals, wait timeouts, and explicit workflow quorum degradations.
 
-Structured JSON logs are written to `.kxm/logs/pi-mesh-hub.jsonl` and mirrored to stdout. They include request IDs and event metadata but omit prompt and reply bodies. Worker lifecycle events use `.kxm/logs/pi-mesh-worker-<agent>.jsonl`; raw headless Pi stdout and stderr use `.kxm/logs/pi-agent-<agent>.log` and may contain sensitive model or tool output. Useful hub events include `agent_registered`, `agent_resumed`, `agent_stale`, `message_sent`, `message_replied`, `message_cancelled`, `message_expired`, `message_purged`, `webhook_workflow_started`, `workflow_checkpoint`, `workflow_wait_started`, `workflow_signal_received`, `workflow_wait_timed_out`, `workflow_journal_recorded`, and `request_error`.
+Structured JSON logs are written to `.kxm/logs/pi-mesh-hub.jsonl` and mirrored to stdout. They include request IDs and event metadata but omit prompt and reply bodies. Worker lifecycle events use `.kxm/logs/pi-mesh-worker-<project>-<agent>-<identity>.jsonl`; raw headless Pi stdout and stderr use `.kxm/logs/pi-agent-<project>-<agent>-<identity>.log` and may contain sensitive model or tool output. The collision-resistant suffix separates exact project/agent owners even when display names sanitize identically. Useful hub events include `agent_registered`, `agent_resumed`, `agent_stale`, `message_sent`, `message_replied`, `message_cancelled`, `message_expired`, `message_purged`, `webhook_workflow_started`, `workflow_checkpoint`, `workflow_degradation_approved`, `workflow_wait_started`, `workflow_signal_received`, `workflow_wait_timed_out`, `workflow_journal_recorded`, and `request_error`.
 
 Runtime logs are ignored by Git. Ship them to an approved collector, restrict file access, and apply retention or rotation outside the process before unattended use. Never commit them as workflow evidence; reference a protected log location or sanitized asset instead.
 
@@ -72,6 +72,7 @@ Recommended alerts:
 - free disk space approaches the database's expected growth margin.
 - webhook signature rejections, repeated provider retries, premature workflow settlement, or attempt exhaustion increase.
 - waiting-run count or workflow wait timeouts rise beyond the expected external-system latency.
+- quorum degradation approvals occur outside a declared incident or change window.
 
 ## Backup and restore
 
@@ -97,6 +98,13 @@ Test restoration periodically. A backup that has never been restored is not a ve
 5. Restart agents only if their clients do not reconnect automatically.
 
 For rollback, stop the new version and restore both the earlier application and its pre-upgrade database backup. Do not open a newer-schema database with an older runtime.
+
+Peer provenance fields do not bump the current SQLite schema version 2; they are
+additive fields in existing JSON records. That avoids a destructive migration,
+but it does not replace the backup and rollback steps above. Verified
+metadata-only snapshots remain in workflow runs after their source messages are
+purged by terminal retention, so include workflow data in retention and privacy
+reviews.
 
 ## Network and secret security
 

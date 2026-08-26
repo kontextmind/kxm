@@ -24,27 +24,33 @@ import {
   type DeliveryMode,
   type HubEvent,
   type MessageRecord,
+  type WorkflowMessageContext,
 } from "./protocol.ts";
 import { workflowScopeExtras } from "./diagnostics.ts";
 import { buildRetrospective, writeRetrospective } from "./retrospective.ts";
 import { MeshStore, type StoredAgent } from "./store.ts";
 import {
   canonicalWorkflowEvidenceKey,
+  approveWorkflowDegradation,
   checkpointRun,
   improvementReport,
   renderWorkflowPrompt,
   resumeWorkflowFromSignal,
   valueAtPath,
   waitForWorkflowSignal,
+  verifyWorkflowEvidenceReferences,
   workflowEvidenceStrings,
   type ImprovementArea,
   type JournalCategory,
   type WebhookWorkflowDefinition,
   type WorkflowCheckpointStatus,
   type WorkflowEvidenceInput,
+  type WorkflowEvidenceReferenceInput,
   type WorkflowJournalEntry,
   type WorkflowRun,
   type WorkflowSignalReceipt,
+  type WorkflowStageState,
+  type WorkflowVerifiedEvidence,
 } from "./workflow.ts";
 
 export interface RateLimitOptions {
@@ -167,6 +173,18 @@ async function readJson(request: IncomingMessage): Promise<Record<string, unknow
   return parseJsonBody(await readBody(request));
 }
 
+function sameWorkflowMessageContext(
+  left: WorkflowMessageContext | undefined,
+  right: WorkflowMessageContext | undefined,
+): boolean {
+  if (!left || !right) return left === right;
+  return left.schema === right.schema
+    && left.runId === right.runId
+    && left.stageId === right.stageId
+    && left.requirementKey === right.requirementKey
+    && left.attempt === right.attempt;
+}
+
 function sameIdempotentRequest(
   message: MessageRecord,
   target: string,
@@ -177,6 +195,7 @@ function sameIdempotentRequest(
   hops: number,
   maxHops: number,
   ttlMs: number,
+  workflowContext: WorkflowMessageContext | undefined,
 ): boolean {
   return (message.to === target || message.toName.toLowerCase() === target.toLowerCase())
     && message.content === content
@@ -185,6 +204,7 @@ function sameIdempotentRequest(
     && message.replyTo === replyTo
     && message.hops === hops
     && message.maxHops === maxHops
+    && sameWorkflowMessageContext(message.workflowContext, workflowContext)
     && Date.parse(message.expiresAt) - Date.parse(message.createdAt) === ttlMs;
 }
 
@@ -220,6 +240,82 @@ function boundedWorkflowEvidence(value: unknown, field = "evidence", maxItems = 
     evidence.set(requirement, requireString(rawEvidence, `${field}.${requirement}`, { max: 1_000 }));
   }
   return Object.fromEntries(evidence);
+}
+
+function boundedWorkflowEvidenceReferences(
+  value: unknown,
+  field = "evidenceRefs",
+  maxItems = 32,
+): WorkflowEvidenceReferenceInput {
+  if (value === undefined) return {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new ProtocolError(400, `${field} must be an object keyed by required evidence identity`, "invalid_workflow_evidence_refs");
+  }
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length > maxItems) {
+    throw new ProtocolError(400, `${field} must contain at most ${maxItems} requirements`, "invalid_workflow_evidence_refs");
+  }
+  const references = new Map<string, { messageIds: string[] }>();
+  for (const [rawRequirement, rawReference] of entries) {
+    const requirement = canonicalWorkflowEvidenceKey(
+      requireString(rawRequirement, `${field} requirement`, { max: 128 }),
+    );
+    if (references.has(requirement)) {
+      throw new ProtocolError(
+        400,
+        `${field} contains duplicate normalized requirement identity: ${requirement}`,
+        "invalid_workflow_evidence_refs",
+      );
+    }
+    if (!rawReference || typeof rawReference !== "object" || Array.isArray(rawReference)) {
+      throw new ProtocolError(400, `${field}.${requirement} must be an object`, "invalid_workflow_evidence_refs");
+    }
+    const referenceObject = rawReference as Record<string, unknown>;
+    if (Object.keys(referenceObject).some((key) => key !== "messageIds")) {
+      throw new ProtocolError(
+        400,
+        `${field}.${requirement} may contain only messageIds; provenance is hub-derived`,
+        "invalid_workflow_evidence_refs",
+      );
+    }
+    const rawIds = referenceObject.messageIds;
+    if (!Array.isArray(rawIds) || rawIds.length < 1 || rawIds.length > 16) {
+      throw new ProtocolError(
+        400,
+        `${field}.${requirement}.messageIds must contain between 1 and 16 IDs`,
+        "invalid_workflow_evidence_refs",
+      );
+    }
+    const messageIds = rawIds.map((candidate, index) =>
+      requireString(candidate, `${field}.${requirement}.messageIds[${index}]`, { max: 80 }));
+    if (new Set(messageIds).size !== messageIds.length) {
+      throw new ProtocolError(400, `${field}.${requirement}.messageIds must be unique`, "invalid_workflow_evidence_refs");
+    }
+    references.set(requirement, { messageIds });
+  }
+  return Object.fromEntries(references);
+}
+
+function requestedWorkflowMessageContext(value: unknown): Omit<WorkflowMessageContext, "schema"> | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new ProtocolError(400, "workflowContext must be an object", "invalid_workflow_context");
+  }
+  const context = value as Record<string, unknown>;
+  if (Object.keys(context).some((key) => !["runId", "stageId", "requirementKey", "attempt"].includes(key))) {
+    throw new ProtocolError(400, "workflowContext contains unsupported fields", "invalid_workflow_context");
+  }
+  if (context.attempt === undefined) {
+    throw new ProtocolError(400, "workflowContext.attempt is required", "invalid_workflow_context");
+  }
+  return {
+    runId: requireString(context.runId, "workflowContext.runId", { max: 80 }),
+    stageId: requireString(context.stageId, "workflowContext.stageId", { max: 64 }),
+    requirementKey: canonicalWorkflowEvidenceKey(
+      requireString(context.requirementKey, "workflowContext.requirementKey", { max: 128 }),
+    ),
+    attempt: parseBoundedInteger(context.attempt, "workflowContext.attempt", 1, 1, 20),
+  };
 }
 
 function validateWorkflowSignalContext(
@@ -295,6 +391,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
     workflowWaits: 0,
     workflowSignals: 0,
     workflowWaitTimeouts: 0,
+    workflowDegradations: 0,
     journalEntries: 0,
   };
   let cleanupTimer: NodeJS.Timeout | undefined;
@@ -368,6 +465,17 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         nextAction: "check_project_token",
       });
     }
+  }
+
+  function requireConfiguredAdminAuth(request: IncomingMessage): void {
+    if (!authToken) {
+      throw new ProtocolError(
+        503,
+        "PI_MESH_AUTH_TOKEN must be configured for workflow degradation approval",
+        "admin_auth_not_configured",
+      );
+    }
+    requireAdminAuth(request);
   }
 
   function requireAgent(request: IncomingMessage, expectedId?: string): StoredAgent {
@@ -446,6 +554,93 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
     return byName;
   }
 
+  function resolveStageEvidencePolicies(
+    stage: WebhookWorkflowDefinition["stages"][number],
+    project: string,
+    coordinator: StoredAgent,
+  ): WorkflowStageState["resolvedEvidencePolicies"] {
+    if (!stage.evidencePolicies) return undefined;
+    const resolved = new Map<string, NonNullable<WorkflowStageState["resolvedEvidencePolicies"]>[string]>();
+    for (const [requirementKey, policy] of Object.entries(stage.evidencePolicies)) {
+      const eligible = new Map<string, { id: string; name: string }>();
+      for (const selector of policy.eligibleAgents) {
+        const agent = findKnownTarget(project, selector);
+        if (agent.id === coordinator.id) {
+          throw new ProtocolError(
+            409,
+            `workflow evidence policy ${stage.id}/${requirementKey} cannot include the coordinator`,
+            "workflow_evidence_policy_invalid",
+          );
+        }
+        eligible.set(agent.id, { id: agent.id, name: agent.name });
+      }
+      if (eligible.size < policy.minProducers) {
+        throw new ProtocolError(
+          409,
+          `workflow evidence policy ${stage.id}/${requirementKey} resolves to ${eligible.size} unique producers but requires ${policy.minProducers}`,
+          "workflow_evidence_policy_unresolvable",
+        );
+      }
+      resolved.set(requirementKey, {
+        kind: "peer-reply",
+        minProducers: policy.minProducers,
+        eligibleProducers: [...eligible.values()],
+        acceptedStatuses: ["replied"],
+        ...(policy.degradation ? { degradation: { ...policy.degradation } } : {}),
+      });
+    }
+    return Object.fromEntries(resolved);
+  }
+
+  function authorizeWorkflowMessageContext(
+    sender: StoredAgent,
+    targetInput: string,
+    requested: Omit<WorkflowMessageContext, "schema">,
+  ): WorkflowMessageContext {
+    const run = workflowRuns.get(requested.runId);
+    if (!run || run.project !== sender.project || run.targetAgentId !== sender.id) {
+      throw new ProtocolError(403, "workflow context is not assigned to this coordinator", "workflow_context_forbidden");
+    }
+    const stage = run.stages.find((candidate) => candidate.id === requested.stageId);
+    if (!stage || run.currentStage !== stage.id || run.status !== "running" || stage.status !== "in_progress") {
+      throw new ProtocolError(409, "workflow context does not reference the active stage", "workflow_context_inactive");
+    }
+    const requirementKey = canonicalWorkflowEvidenceKey(requested.requirementKey);
+    const policy = stage.resolvedEvidencePolicies?.[requirementKey];
+    if (!policy) {
+      throw new ProtocolError(
+        400,
+        `workflow requirement ${requirementKey} does not accept peer evidence`,
+        "workflow_evidence_policy_missing",
+      );
+    }
+    if (requested.attempt !== stage.attempts + 1) {
+      throw new ProtocolError(
+        409,
+        `workflow context attempt ${requested.attempt} does not match active attempt ${stage.attempts + 1}`,
+        "workflow_context_attempt_mismatch",
+      );
+    }
+    const normalizedTarget = targetInput.toLowerCase();
+    const eligible = policy.eligibleProducers.find(
+      (producer) => producer.id === targetInput || producer.name.toLowerCase() === normalizedTarget,
+    );
+    if (!eligible) {
+      throw new ProtocolError(
+        403,
+        `target ${targetInput} is not eligible for workflow evidence ${requirementKey}`,
+        "workflow_evidence_producer_forbidden",
+      );
+    }
+    return {
+      schema: "pi-mesh.workflow-message-context.v1",
+      runId: run.id,
+      stageId: stage.id,
+      requirementKey,
+      attempt: requested.attempt,
+    };
+  }
+
   function webhookEvent(request: IncomingMessage, payload: Record<string, unknown>): string | undefined {
     const header = request.headers["x-github-event"];
     if (typeof header === "string" && header.trim()) return header.trim();
@@ -475,11 +670,16 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
     payload: Record<string, unknown>,
   ): string {
     const rendered = renderWorkflowPrompt(definition.promptTemplate, payload);
-    const stageList = definition.stages.map((stage, index) => [
-      `${index + 1}. ${stage.label} (stageId: ${stage.id}, maxAttempts: ${stage.maxAttempts})`,
-      `   ${stage.instructions}`,
-      `   Required evidence keys: ${stage.requiredEvidence.join(", ") || "none"}`,
-    ].join("\n")).join("\n");
+    const stageList = definition.stages.map((stage, index) => {
+      const peerPolicies = Object.entries(stage.evidencePolicies ?? {}).map(([requirement, policy]) =>
+        `   Peer evidence ${requirement}: ${policy.minProducers} unique replied producer(s) from ${policy.eligibleAgents.join(", ")}`);
+      return [
+        `${index + 1}. ${stage.label} (stageId: ${stage.id}, maxAttempts: ${stage.maxAttempts})`,
+        `   ${stage.instructions}`,
+        `   Required evidence keys: ${stage.requiredEvidence.join(", ") || "none"}`,
+        ...peerPolicies,
+      ].join("\n");
+    }).join("\n");
     return [
       `Durable workflow run: ${runId}`,
       `Workflow: ${definition.id}`,
@@ -492,6 +692,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
       "At every stage, record material plans, decisions, contradictions, errors, and lessons with mesh_workflow_record.",
       "Keep repository-local configuration in .kxm/config, logs in .kxm/logs, and durable workflow artifacts in .kxm/assets; never commit runtime logs, state, or secrets.",
       "Complete each stage with mesh_workflow_checkpoint. Supply evidence as an object whose keys exactly match the stage's required evidence keys. Unrelated keys never satisfy a requirement. A warning or failure must be corrected and checkpointed again until it passes or the attempt limit is reached.",
+      "For a peer-evidence requirement, send or fan out with workflowContext containing this run ID, the exact stage ID, requirement key, and current 1-based attempt. At checkpoint, cite only the returned message IDs under evidenceRefs; the hub derives producer and reply provenance.",
       "When an external system must finish asynchronously, call mesh_workflow_wait with a stable signal key and any already-verified keyed evidence. That evidence is accumulated with the signed callback before the stage can pass; then settle the turn.",
       "For multi-agent planning, delegate to the requested peers, compare their proposals, record contradictions, and synthesize the strongest evidence-backed plan.",
       "Do not claim the workflow is complete until the checkpoint response reports completed=true.",
@@ -730,6 +931,8 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
       `pi_mesh_workflow_signals_total ${counters.workflowSignals}`,
       "# TYPE pi_mesh_workflow_wait_timeouts_total counter",
       `pi_mesh_workflow_wait_timeouts_total ${counters.workflowWaitTimeouts}`,
+      "# TYPE pi_mesh_workflow_degradations_total counter",
+      `pi_mesh_workflow_degradations_total ${counters.workflowDegradations}`,
       "# TYPE pi_mesh_workflow_journal_entries_total counter",
       `pi_mesh_workflow_journal_entries_total ${counters.journalEntries}`,
       "",
@@ -794,6 +997,8 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
             stageId: existingReceipt.stageId,
             signalKey: existingReceipt.signalKey,
             receivedAt: existingReceipt.receivedAt,
+            degraded: existingReceipt.degraded === true,
+            degradedRequirements: existingReceipt.degradedRequirements ?? [],
             resumed: Boolean(existingReceipt.messageId),
           });
           return;
@@ -824,6 +1029,11 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           status,
           receivedAt,
         };
+        if (result.degraded) {
+          const degradedStage = transition.stages.find((candidate) => candidate.id === result.stageId)!;
+          receipt.degraded = true;
+          receipt.degradedRequirements = [...(degradedStage.degradedRequirements ?? [])];
+        }
         (transition.signalReceipts ??= []).push(receipt);
         let message: MessageRecord | undefined;
         let entry: WorkflowJournalEntry | undefined;
@@ -838,6 +1048,23 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
             severity: status === "failed" ? "error" : "warning",
             summary: `${stage.label}: ${summary}`,
             evidence: workflowEvidenceStrings(evidence),
+            relatedEntryIds: [],
+            createdAt: receivedAt,
+          };
+        } else if (result.degraded) {
+          const stage = transition.stages.find((candidate) => candidate.id === result.stageId)!;
+          entry = {
+            id: newId("journal"),
+            runId: transition.id,
+            agentId: transition.targetAgentId,
+            category: "decision",
+            area: stage.area ?? "security",
+            severity: "warning",
+            summary: `${stage.label} passed from a signed callback using a previously approved degraded peer quorum`,
+            evidence: [
+              "class:workflow_quorum_degradation_used",
+              ...(stage.degradedRequirements ?? []).map((requirement) => `requirement:${requirement}`),
+            ],
             relatedEntryIds: [],
             createdAt: receivedAt,
           };
@@ -881,6 +1108,8 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           signalKey,
           retry: result.retry,
           completed: result.completed,
+          degraded: result.degraded === true,
+          degradedRequirements: receipt.degradedRequirements ?? [],
           resumed: Boolean(message),
         });
         return;
@@ -944,13 +1173,17 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           expiresAt: new Date(Date.parse(createdAt) + ttlMs).toISOString(),
           status: "queued",
         };
-        const stages = definition.stages.map((stage, index) => ({
-          ...stage,
-          status: index === 0 ? "in_progress" as const : "pending" as const,
-          attempts: 0,
-          evidence: {},
-          ...(index === 0 ? { startedAt: createdAt, updatedAt: createdAt } : {}),
-        }));
+        const stages = definition.stages.map((stage, index) => {
+          const resolvedEvidencePolicies = resolveStageEvidencePolicies(stage, definition.project, target);
+          return {
+            ...stage,
+            ...(resolvedEvidencePolicies ? { resolvedEvidencePolicies } : {}),
+            status: index === 0 ? "in_progress" as const : "pending" as const,
+            attempts: 0,
+            evidence: {},
+            ...(index === 0 ? { startedAt: createdAt, updatedAt: createdAt } : {}),
+          };
+        });
         const run: WorkflowRun = {
           id: runId,
           definitionId: definition.id,
@@ -1021,11 +1254,78 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         return;
       }
 
+      const degradationMatch = url.pathname.match(/^\/v1\/workflows\/([^/]+)\/degradations$/);
+      if (method === "POST" && degradationMatch) {
+        requireConfiguredAdminAuth(request);
+        const body = await readJson(request);
+        // Resolve the mutable run only after the final await. Concurrent exact
+        // retries then observe the first committed approval and remain
+        // idempotent instead of cloning the same stale pre-approval state.
+        const run = workflowRuns.get(decodeURIComponent(degradationMatch[1]!));
+        if (!run) throw new ProtocolError(404, "workflow run not found", "workflow_not_found");
+        const stageId = requireString(body.stageId, "stageId", { max: 64 });
+        const requirementKey = canonicalWorkflowEvidenceKey(
+          requireString(body.requirementKey, "requirementKey", { max: 128 }),
+        );
+        const reason = requireString(body.reason, "reason", { max: 1_000 });
+        const timestamp = nowIso();
+        const transition = structuredClone(run);
+        const result = approveWorkflowDegradation(
+          transition,
+          stageId,
+          requirementKey,
+          reason,
+          newId("approval"),
+          timestamp,
+        );
+        if (result.created) {
+          const stage = transition.stages.find((candidate) => candidate.id === stageId)!;
+          const entry: WorkflowJournalEntry = {
+            id: newId("journal"),
+            runId: transition.id,
+            agentId: "mesh-admin",
+            category: "decision",
+            area: stage.area ?? "security",
+            severity: "warning",
+            summary: `Approved degraded peer quorum for ${stageId}/${requirementKey} attempt ${result.approval.attempt}`,
+            details: reason,
+            evidence: [
+              "class:workflow_quorum_degradation_approved",
+              `approval:${result.approval.id}`,
+              `policy-min:${result.approval.policyMinProducers}`,
+              `approved-min:${result.approval.approvedMinProducers}`,
+            ],
+            relatedEntryIds: [],
+            createdAt: timestamp,
+          };
+          store.saveWorkflowTransition(transition, undefined, entry);
+          counters.workflowDegradations += 1;
+          counters.journalEntries += 1;
+          logger({
+            event: "workflow_degradation_approved",
+            workflowRunId: transition.id,
+            stageId,
+            requirementKey,
+            attempt: result.approval.attempt,
+            approvalId: result.approval.id,
+          });
+        }
+        json(response, result.created ? 201 : 200, {
+          run: result.created ? transition : run,
+          approval: result.approval,
+          duplicate: !result.created,
+        });
+        return;
+      }
+
       const waitMatch = url.pathname.match(/^\/v1\/workflows\/([^/]+)\/waits$/);
       if (method === "POST" && waitMatch) {
         expireWorkflowWaits();
         const agent = requireAgent(request);
         requireProjectAuth(request, agent.project);
+        const body = await readJson(request);
+        // Do not retain a workflow object across body I/O; another request may
+        // have advanced this run while the body was still arriving.
         const run = workflowRuns.get(decodeURIComponent(waitMatch[1]!));
         if (!run) throw new ProtocolError(404, "workflow run not found", "workflow_not_found");
         if (run.project !== agent.project || run.targetAgentId !== agent.id) {
@@ -1036,11 +1336,11 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
             workflowScopeExtras("wait", run.targetAgentName),
           );
         }
-        const body = await readJson(request);
         const stageId = requireString(body.stageId, "stageId", { max: 64 });
         const signalKey = workflowSignalKey(body.signalKey);
         const summary = requireString(body.summary, "summary", { max: 4_000 });
         const evidence = boundedWorkflowEvidence(body.evidence);
+        const evidenceRefs = boundedWorkflowEvidenceReferences(body.evidenceRefs);
         const timeoutMs = parseBoundedInteger(
           body.timeoutMs,
           "timeoutMs",
@@ -1049,26 +1349,38 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           MAX_WORKFLOW_WAIT_TIMEOUT_MS,
         );
         const createdAt = nowIso();
+        const transition = structuredClone(run);
+        const stage = transition.stages.find((candidate) => candidate.id === stageId);
+        const verifiedEvidence: WorkflowVerifiedEvidence = stage && Object.keys(evidenceRefs).length
+          ? verifyWorkflowEvidenceReferences(
+              transition,
+              stage,
+              evidenceRefs,
+              { getMessage: (messageId) => messages.get(messageId) },
+              createdAt,
+            )
+          : {};
         waitForWorkflowSignal(
-          run,
+          transition,
           stageId,
           signalKey,
           summary,
           createdAt,
           new Date(Date.parse(createdAt) + timeoutMs).toISOString(),
           evidence,
+          verifiedEvidence,
         );
-        store.saveWorkflowRun(run);
+        store.saveWorkflowTransition(transition);
         counters.workflowWaits += 1;
         logger({
           event: "workflow_wait_started",
-          workflowRunId: run.id,
+          workflowRunId: transition.id,
           stageId,
           signalKey,
-          expiresAt: run.waiting?.expiresAt,
+          expiresAt: transition.waiting?.expiresAt,
         });
         json(response, 202, {
-          run,
+          run: transition,
           instruction: "The agent may now settle this turn. A signed external signal will checkpoint the stage and resume the coordinator when more work is required.",
         });
         return;
@@ -1078,6 +1390,9 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
       if (method === "POST" && checkpointMatch) {
         const agent = requireAgent(request);
         requireProjectAuth(request, agent.project);
+        const body = await readJson(request);
+        // Re-read authoritative state after body I/O so concurrent attempts
+        // cannot checkpoint from the same stale run snapshot.
         const run = workflowRuns.get(decodeURIComponent(checkpointMatch[1]!));
         if (!run) throw new ProtocolError(404, "workflow run not found", "workflow_not_found");
         if (run.project !== agent.project || run.targetAgentId !== agent.id) {
@@ -1088,7 +1403,6 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
             workflowScopeExtras("checkpoint", run.targetAgentName),
           );
         }
-        const body = await readJson(request);
         const stageId = requireString(body.stageId, "stageId", { max: 64 });
         const status = requireString(body.status, "status", { max: 16 }) as WorkflowCheckpointStatus;
         if (status !== "passed" && status !== "warning" && status !== "failed") {
@@ -1096,45 +1410,89 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         }
         const summary = requireString(body.summary, "summary", { max: 4_000 });
         const evidence = boundedWorkflowEvidence(body.evidence);
-        const result = checkpointRun(run, stageId, status, summary, evidence, nowIso());
-        store.saveWorkflowRun(run);
-        counters.workflowCheckpoints += 1;
-        if (status !== "passed") {
-          const stage = run.stages.find((candidate) => candidate.id === stageId)!;
-          const entry: WorkflowJournalEntry = {
-            id: newId("journal"),
-            runId: run.id,
-            agentId: agent.id,
-            category: "error",
-            area: stage.area ?? "workflow",
-            severity: status === "failed" ? "error" : "warning",
-            summary: `${stage.label}: ${summary}`,
-            evidence: workflowEvidenceStrings(evidence),
-            relatedEntryIds: [],
-            createdAt: run.updatedAt,
-          };
-          store.saveJournalEntry(entry);
-          counters.journalEntries += 1;
+        const evidenceRefs = boundedWorkflowEvidenceReferences(body.evidenceRefs);
+        if (status !== "passed" && Object.keys(evidenceRefs).length) {
+          throw new ProtocolError(
+            400,
+            "evidenceRefs are accepted only for a passing checkpoint or workflow wait",
+            "invalid_workflow_evidence_refs",
+          );
         }
-        exportTerminalRetrospective(run);
-        logger({
-          event: "workflow_checkpoint",
-          workflowRunId: run.id,
+        const timestamp = nowIso();
+        const transition = structuredClone(run);
+        const stage = transition.stages.find((candidate) => candidate.id === stageId);
+        const verifiedEvidence: WorkflowVerifiedEvidence = stage && Object.keys(evidenceRefs).length
+          ? verifyWorkflowEvidenceReferences(
+              transition,
+              stage,
+              evidenceRefs,
+              { getMessage: (messageId) => messages.get(messageId) },
+              timestamp,
+            )
+          : {};
+        const result = checkpointRun(
+          transition,
           stageId,
           status,
-          attempt: run.stages.find((stage) => stage.id === stageId)?.attempts,
+          summary,
+          evidence,
+          timestamp,
+          verifiedEvidence,
+        );
+        const checkpointStage = transition.stages.find((candidate) => candidate.id === stageId)!;
+        let entry: WorkflowJournalEntry | undefined;
+        if (status !== "passed") {
+          entry = {
+            id: newId("journal"),
+            runId: transition.id,
+            agentId: agent.id,
+            category: "error",
+            area: checkpointStage.area ?? "workflow",
+            severity: status === "failed" ? "error" : "warning",
+            summary: `${checkpointStage.label}: ${summary}`,
+            evidence: workflowEvidenceStrings(evidence),
+            relatedEntryIds: [],
+            createdAt: transition.updatedAt,
+          };
+        } else if (result.degraded) {
+          entry = {
+            id: newId("journal"),
+            runId: transition.id,
+            agentId: agent.id,
+            category: "decision",
+            area: checkpointStage.area ?? "security",
+            severity: "warning",
+            summary: `${checkpointStage.label} passed using an explicitly approved degraded peer quorum`,
+            evidence: [
+              "class:workflow_quorum_degradation_used",
+              ...(checkpointStage.degradedRequirements ?? []).map((requirement) => `requirement:${requirement}`),
+            ],
+            relatedEntryIds: [],
+            createdAt: transition.updatedAt,
+          };
+        }
+        store.saveWorkflowTransition(transition, undefined, entry);
+        counters.workflowCheckpoints += 1;
+        if (entry) counters.journalEntries += 1;
+        exportTerminalRetrospective(transition);
+        logger({
+          event: "workflow_checkpoint",
+          workflowRunId: transition.id,
+          stageId,
+          status,
+          attempt: transition.stages.find((candidate) => candidate.id === stageId)?.attempts,
           retry: result.retry,
           completed: result.completed,
         });
         json(response, 200, {
-          run,
+          run: transition,
           retry: result.retry,
           completed: result.completed,
           instruction: result.retry
             ? "Correct the warning or failure, record what changed, rerun the relevant checks, and checkpoint this stage again."
             : result.completed
               ? "Workflow checkpoints are complete. Return the final outcome with links and evidence."
-              : `Continue with stage ${run.currentStage}.`,
+              : `Continue with stage ${transition.currentStage}.`,
         });
         return;
       }
@@ -1143,6 +1501,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
       if (method === "POST" && journalMatch) {
         const agent = requireAgent(request);
         requireProjectAuth(request, agent.project);
+        const body = await readJson(request);
         const run = workflowRuns.get(decodeURIComponent(journalMatch[1]!));
         if (!run) throw new ProtocolError(404, "workflow run not found", "workflow_not_found");
         if (run.project !== agent.project || run.targetAgentId !== agent.id) {
@@ -1153,7 +1512,6 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
             workflowScopeExtras("journal", run.targetAgentName),
           );
         }
-        const body = await readJson(request);
         const category = requireString(body.category, "category", { max: 24 }) as JournalCategory;
         if (!["plan", "decision", "contradiction", "error", "lesson"].includes(category)) {
           throw new ProtocolError(400, "invalid journal category", "invalid_journal_category");
@@ -1323,7 +1681,19 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         const targetInput = requireString(body.target, "target", { max: 80 });
         const content = requireString(body.content, "content", { max: MAX_CONTENT_CHARS });
         const delivery = parseDeliveryMode(body.delivery);
-        const correlationId = optionalString(body.correlationId, "correlationId", 128);
+        const requestedContext = requestedWorkflowMessageContext(body.workflowContext);
+        const workflowContext = requestedContext
+          ? authorizeWorkflowMessageContext(sender, targetInput, requestedContext)
+          : undefined;
+        const callerCorrelationId = optionalString(body.correlationId, "correlationId", 128);
+        if (workflowContext && callerCorrelationId && callerCorrelationId !== workflowContext.runId) {
+          throw new ProtocolError(
+            409,
+            "correlationId must match workflowContext.runId",
+            "workflow_context_correlation_mismatch",
+          );
+        }
+        const correlationId = workflowContext?.runId ?? callerCorrelationId;
         const replyTo = optionalString(body.replyTo, "replyTo", 80);
         const hops = parseBoundedInteger(body.hops, "hops", 0, 0, 100);
         const maxHops = parseBoundedInteger(body.maxHops, "maxHops", DEFAULT_MAX_HOPS, 1, 20);
@@ -1353,6 +1723,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
               hops,
               maxHops,
               ttlMs,
+              workflowContext,
             )) {
               throw new ProtocolError(409, "idempotency key was already used for another request", "idempotency_conflict");
             }
@@ -1379,6 +1750,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           ...(correlationId ? { correlationId } : {}),
           ...(replyTo ? { replyTo } : {}),
           ...(idempotencyKey ? { idempotencyKey } : {}),
+          ...(workflowContext ? { workflowContext } : {}),
           createdAt,
           expiresAt: new Date(Date.parse(createdAt) + ttlMs).toISOString(),
           status: "queued",

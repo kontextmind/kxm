@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn, spawnSync } from "node:child_process";
-import { createHmac, randomBytes, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -240,12 +240,16 @@ function readPidRecord(path) {
   }
 }
 
-function requestGracefulStop(stateDir, role, name) {
-  const safeName = name?.replace(/[^A-Za-z0-9_.-]/g, "_");
-  const pidPath = join(stateDir, role === "hub" ? "hub.pid" : `worker-${safeName}.pid`);
+function requestGracefulStop(stateDir, role, name, project) {
+  const safeName = name?.replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 32) || "agent";
+  const safeProject = project?.replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 24) || "project";
+  const digest = name && project
+    ? createHash("sha256").update(JSON.stringify({ project, agentName: name })).digest("hex").slice(0, 24)
+    : undefined;
+  const pidPath = join(stateDir, role === "hub" ? "hub.pid" : `worker-${safeProject}-${safeName}-${digest}.pid`);
   const record = readPidRecord(pidPath);
   if (!record) return false;
-  writeFileSync(join(stateDir, record.controlFile), `${JSON.stringify({ version: 1, startedAt: record.startedAt, requestedAt: new Date().toISOString() })}\n`, {
+  writeFileSync(join(stateDir, record.controlFile), `${JSON.stringify({ version: 1, startedAt: record.startedAt, ...(record.generation ? { generation: record.generation } : {}), requestedAt: new Date().toISOString() })}\n`, {
     encoding: "utf8",
     mode: 0o600,
   });
@@ -269,9 +273,9 @@ function forceTreeStop(child) {
   }
 }
 
-async function stopRecord(processRecord, stateDir, role, name) {
+async function stopRecord(processRecord, stateDir, role, name, project) {
   if (!processRecord || processRecord.capture.exit) return;
-  requestGracefulStop(stateDir, role, name);
+  requestGracefulStop(stateDir, role, name, project);
   try {
     await waitForExit(processRecord, 20_000);
   } catch {
@@ -395,7 +399,7 @@ export async function runRealSmoke(options = {}) {
       ["durable-restart-resume", async (values) => {
         stage = "durable-restart-resume";
         const { originalIds } = values.discovery;
-        await stopRecord(processes.workers.get(workerNames[0]), stateDir, "worker", workerNames[0]);
+        await stopRecord(processes.workers.get(workerNames[0]), stateDir, "worker", workerNames[0], project);
         await stopRecord(processes.hub, stateDir, "hub");
         startHub();
         await waitFor(async () => {
@@ -445,7 +449,7 @@ export async function runRealSmoke(options = {}) {
         }
       }],
     ], async () => {
-      for (const [name, record] of processes.workers) await stopRecord(record, stateDir, "worker", name);
+      for (const [name, record] of processes.workers) await stopRecord(record, stateDir, "worker", name, project);
       await stopRecord(processes.hub, stateDir, "hub");
       for (const record of processes.workers.values()) forceTreeStop(record.child);
       forceTreeStop(processes.hub?.child);

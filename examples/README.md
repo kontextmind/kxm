@@ -6,6 +6,15 @@ The [`.kxm/config/workflows/jira-development.json`](../.kxm/config/workflows/jir
 
 The [`workflow-signal.ts`](workflow-signal.ts) sender demonstrates the signed callback that resumes a coordinator after CI, review, merge, or Jira work completes. The webhook guide documents its required environment and arguments.
 
+The [`provenance-workflow.json`](provenance-workflow.json) definition is a
+minimal command-first quorum example. It requires two eligible peer replies for
+one exact run, stage, requirement, and attempt, while demonstrating an optional
+admin-approved one-peer degradation. Its tested topology is project
+`provenance-demo`, coordinator `coordinator`, and reviewers `reviewer-claude`
+and `reviewer-grok`. Follow
+[Peer provenance and quorum gates](../docs/provenance-gates.md) for the complete
+runbook and trust boundary.
+
 ## Self-contained round trip
 
 Start an in-memory hub, connect a planner and reviewer, send an idempotent request, and print the reply:

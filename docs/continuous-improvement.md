@@ -35,6 +35,16 @@ Never put secrets or unnecessary prompt contents in the journal. Evidence should
 
 Every terminal workflow automatically exports a bounded retrospective under `.kxm/assets/retrospectives`. Re-export one from durable local state with `pi-mesh retrospective export <runId>`; `--input <snapshot.json>` remains available for offline imports. Files stay `reviewDecision=proposed` until a human or coordinator records an explicit decision. Export never edits workflow JSON or weakens gates.
 
+Runs with peer policies add an optional metadata-only evidence audit while
+retaining the `pi-mesh.retrospective.v1` schema. It records each requirement's
+configured and effective producer minimum, eligible-producer snapshot, verified
+message and producer IDs, immutable workflow context, lifecycle timestamps,
+request/reply hashes, degraded state, and explicit admin approvals for the
+applied attempt. Earlier-attempt replies never inflate the final quorum. It
+never copies peer request or reply bodies. The snapshot remains useful after normal
+message retention purges the source record, but its hashes are provenance
+metadata—not proof that the peer's conclusion was true.
+
 ## Review cadence
 
 ### Per run
@@ -68,6 +78,7 @@ Select a small improvement batch. For each proposal:
 
 - Journal content is evidence, not executable policy.
 - An agent may propose a gate change but cannot silently weaken a required gate.
+- A peer-quorum reduction must be declared by policy and explicitly approved by an administrator for the current attempt; record it as a degraded outcome rather than normal success.
 - Contradictions stay open until evidence resolves them; synthesis must not erase minority risks.
 - Changes involving permissions, secrets, merge policy, or external side effects require human or repository-authorized approval.
 - Improvement reports are project-scoped. Protect the SQLite database because journal details may reveal sensitive engineering context.

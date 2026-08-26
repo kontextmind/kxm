@@ -4,15 +4,16 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { MeshClient, MeshHttpError } from "./client.ts";
 import { deliverInboxNotification } from "./inbox.ts";
-import type { DeliveryMode, HubEvent, MessageRecord } from "./protocol.ts";
+import type { DeliveryMode, HubEvent, MessageRecord, WorkflowMessageContext } from "./protocol.ts";
 import type {
   ImprovementArea,
   JournalCategory,
   WorkflowCheckpointStatus,
   WorkflowEvidenceInput,
+  WorkflowEvidenceReferenceInput,
 } from "./workflow.ts";
 
-const VERSION = "0.4.2";
+const VERSION = "0.4.3";
 const inbox = new Map<string, MessageRecord>();
 const notifiedInbox = new Set<string>();
 let meshClient: MeshClient | undefined;
@@ -52,6 +53,28 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {};
+}
+
+function optionalWorkflowContext(
+  value: unknown,
+): Omit<WorkflowMessageContext, "schema"> | undefined {
+  if (value === undefined) return undefined;
+  const context = asRecord(value);
+  if (!Number.isInteger(context.attempt) || (context.attempt as number) < 1 || (context.attempt as number) > 20) {
+    throw new Error("workflowContext.attempt must be an integer between 1 and 20");
+  }
+  return {
+    runId: requiredString(context.runId, "workflowContext.runId"),
+    stageId: requiredString(context.stageId, "workflowContext.stageId"),
+    requirementKey: requiredString(context.requirementKey, "workflowContext.requirementKey"),
+    attempt: context.attempt as number,
+  };
+}
+
+function optionalEvidenceRefs(value: unknown): WorkflowEvidenceReferenceInput | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as WorkflowEvidenceReferenceInput
+    : undefined;
 }
 
 function isTerminalMessageError(error: unknown): boolean {
@@ -158,15 +181,27 @@ const tools = [
   },
   {
     name: "mesh_send",
-    description: "Send a focused request to a peer. Returns a message ID for mesh_get or mesh_await.",
+    description: "Send a focused request to a peer. Returns a message ID for mesh_get or mesh_await. For durable peer evidence, workflowContext is the hub-authorized provenance scope; correlation and idempotency are transport concerns and do not establish evidence provenance.",
     inputSchema: {
       type: "object",
       properties: {
         target: { type: "string", description: "Peer name or agent ID" },
         content: { type: "string", description: "Focused request and expected result" },
         delivery: { type: "string", enum: ["steer", "followUp", "nextTurn"], default: "followUp" },
-        correlationId: { type: "string", description: "Optional workflow or task ID" },
-        idempotencyKey: { type: "string", description: "Retry-safe key unique to this request" },
+        correlationId: { type: "string", description: "Optional task grouping; the hub binds it to runId when workflowContext is supplied" },
+        idempotencyKey: { type: "string", description: "Retry/deduplication key only; not a workflow security or evidence binding" },
+        workflowContext: {
+          type: "object",
+          description: "Requested provenance scope; the hub authorizes and persists the canonical binding",
+          properties: {
+            runId: { type: "string", description: "Active durable workflow run ID" },
+            stageId: { type: "string", description: "Active workflow stage ID" },
+            requirementKey: { type: "string", description: "Required evidence identity this peer reply may satisfy" },
+            attempt: { type: "integer", minimum: 1, maximum: 20, description: "Current one-based stage attempt" },
+          },
+          required: ["runId", "stageId", "requirementKey", "attempt"],
+          additionalProperties: false,
+        },
         ttlMs: { type: "number", minimum: 1_000, maximum: 604_800_000 },
       },
       required: ["target", "content"],
@@ -185,14 +220,26 @@ const tools = [
   },
   {
     name: "mesh_fanout",
-    description: "Ask one through three peers independently and return replies for comparison and synthesis. A local timeout or request cancellation returns a pending response with a durable messageId for mesh_get or an exact retry. In durable workflows, use the run ID as correlationId and a stage-specific idempotencyKeyPrefix.",
+    description: "Ask one through three peers independently and return replies for comparison and synthesis. A local timeout or request cancellation returns a pending response with a durable messageId for mesh_get or an exact retry. For durable peer evidence, supply workflowContext; correlation and idempotency are transport concerns and do not establish evidence provenance.",
     inputSchema: {
       type: "object",
       properties: {
         targets: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 3 },
         content: { type: "string" },
-        correlationId: { type: "string", description: "Workflow run ID or other stable request scope" },
-        idempotencyKeyPrefix: { type: "string", description: "Stable stage-specific retry key prefix" },
+        correlationId: { type: "string", description: "Optional task grouping; the hub binds it to runId when workflowContext is supplied" },
+        idempotencyKeyPrefix: { type: "string", description: "Stable retry/deduplication prefix only; not a workflow security or evidence binding" },
+        workflowContext: {
+          type: "object",
+          description: "Requested provenance scope shared by each request; the hub authorizes and persists the canonical binding",
+          properties: {
+            runId: { type: "string", description: "Active durable workflow run ID" },
+            stageId: { type: "string", description: "Active workflow stage ID" },
+            requirementKey: { type: "string", description: "Required evidence identity these peer replies may satisfy" },
+            attempt: { type: "integer", minimum: 1, maximum: 20, description: "Current one-based stage attempt" },
+          },
+          required: ["runId", "stageId", "requirementKey", "attempt"],
+          additionalProperties: false,
+        },
         ttlMs: { type: "number", minimum: 1_000, maximum: 604_800_000 },
         timeoutMs: { type: "number", minimum: 100, maximum: 1_800_000 },
       },
@@ -258,7 +305,7 @@ const tools = [
   },
   {
     name: "mesh_workflow_checkpoint",
-    description: "Checkpoint the active workflow stage with evidence keyed by required evidence identity; unrelated keys never satisfy requirements. Warnings and failures must be retried.",
+    description: "Checkpoint the active workflow stage with evidence keyed by required evidence identity. Cite peer-reply requirements through evidenceRefs so the hub can verify provenance and quorum; caller-authored evidence strings cannot satisfy those policies. Warnings and failures must be retried.",
     inputSchema: {
       type: "object",
       properties: {
@@ -267,6 +314,19 @@ const tools = [
         status: { type: "string", enum: ["passed", "warning", "failed"] },
         summary: { type: "string" },
         evidence: { type: "object", additionalProperties: { type: "string" }, maxProperties: 64 },
+        evidenceRefs: {
+          type: "object",
+          description: "Peer evidence references keyed by required evidence identity; the hub verifies messages and derives producer metadata",
+          additionalProperties: {
+            type: "object",
+            properties: {
+              messageIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 16 },
+            },
+            required: ["messageIds"],
+            additionalProperties: false,
+          },
+          maxProperties: 32,
+        },
       },
       required: ["runId", "stageId", "status", "summary"],
       additionalProperties: false,
@@ -296,7 +356,7 @@ const tools = [
   },
   {
     name: "mesh_workflow_wait",
-    description: "Pause the active stage until a signed external callback checkpoints it and resumes the coordinator. Already-verified keyed evidence is accumulated with callback evidence.",
+    description: "Pause the active stage until a signed external callback checkpoints it and resumes the coordinator. Cite peer-reply requirements through evidenceRefs so the hub can verify provenance and quorum; verified evidence is accumulated with callback evidence.",
     inputSchema: {
       type: "object",
       properties: {
@@ -305,6 +365,19 @@ const tools = [
         signalKey: { type: "string", description: "Stable callback key, such as github-pr-42-checks" },
         summary: { type: "string", description: "What is running externally and what result is expected" },
         evidence: { type: "object", additionalProperties: { type: "string" }, maxProperties: 64 },
+        evidenceRefs: {
+          type: "object",
+          description: "Peer evidence references keyed by required evidence identity; the hub verifies messages and derives producer metadata",
+          additionalProperties: {
+            type: "object",
+            properties: {
+              messageIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 16 },
+            },
+            required: ["messageIds"],
+            additionalProperties: false,
+          },
+          maxProperties: 32,
+        },
         timeoutMs: { type: "number", minimum: 1_000, maximum: 2_592_000_000 },
       },
       required: ["runId", "stageId", "signalKey", "summary"],
@@ -331,12 +404,14 @@ mcp.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         const delivery = optionalString(args.delivery) as DeliveryMode | undefined;
         const correlationId = optionalString(args.correlationId);
         const idempotencyKey = optionalString(args.idempotencyKey);
+        const workflowContext = optionalWorkflowContext(args.workflowContext);
         const message = await client.send({
           target: requiredString(args.target, "target"),
           content: requiredString(args.content, "content"),
           ...(delivery ? { delivery } : {}),
           ...(correlationId ? { correlationId } : {}),
           ...(idempotencyKey ? { idempotencyKey } : {}),
+          ...(workflowContext ? { workflowContext } : {}),
           ...(typeof args.ttlMs === "number" ? { ttlMs: args.ttlMs } : {}),
         });
         return textResult({ messageId: message.id, status: message.status, target: message.toName });
@@ -350,6 +425,9 @@ mcp.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
           ...(optionalString(args.correlationId) ? { correlationId: optionalString(args.correlationId)! } : {}),
           ...(optionalString(args.idempotencyKeyPrefix) ? {
             idempotencyKeyPrefix: optionalString(args.idempotencyKeyPrefix)!,
+          } : {}),
+          ...(optionalWorkflowContext(args.workflowContext) ? {
+            workflowContext: optionalWorkflowContext(args.workflowContext)!,
           } : {}),
           ...(typeof args.ttlMs === "number" ? { ttlMs: args.ttlMs } : {}),
           ...(typeof args.timeoutMs === "number" ? { timeoutMs: args.timeoutMs } : {}),
@@ -392,6 +470,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
           ...(args.evidence && typeof args.evidence === "object" && !Array.isArray(args.evidence)
             ? { evidence: args.evidence as WorkflowEvidenceInput }
             : {}),
+          ...(optionalEvidenceRefs(args.evidenceRefs) ? { evidenceRefs: optionalEvidenceRefs(args.evidenceRefs)! } : {}),
         }));
       case "mesh_workflow_wait":
         return textResult(await client.waitForWorkflowSignal(requiredString(args.runId, "runId"), {
@@ -401,6 +480,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
           ...(args.evidence && typeof args.evidence === "object" && !Array.isArray(args.evidence)
             ? { evidence: args.evidence as WorkflowEvidenceInput }
             : {}),
+          ...(optionalEvidenceRefs(args.evidenceRefs) ? { evidenceRefs: optionalEvidenceRefs(args.evidenceRefs)! } : {}),
           ...(typeof args.timeoutMs === "number" ? { timeoutMs: args.timeoutMs } : {}),
         }));
       case "mesh_workflow_record":

@@ -87,8 +87,18 @@ The worker launches Pi in headless RPC mode, keeps stdin open, preserves its ses
 | `ttlMs` | Time allowed for the coordinator prompt |
 | `promptTemplate` | Prompt with `{{nested.payload.path}}` substitutions |
 | `stages` | Ordered gates with instructions, evidence requirements, and attempt limits |
+| `stages[].evidencePolicies` | Optional per-requirement peer provenance and quorum rules |
 
 Each stage may set `area` to route automatic warnings and failures into `harness`, `gates`, `implementation`, `workflow`, `documentation`, `security`, or `other`. It defaults to `workflow`.
+
+An `evidencePolicies` key must match one canonical `requiredEvidence` identity.
+A `peer-reply` policy declares a `minProducers`, one or more
+`eligibleAgents`, and `acceptedStatuses: ["replied"]`. Eligible names or IDs
+must already be known in the workflow project. The hub resolves them to stable
+producer IDs when the run starts and fails closed if the coordinator is
+included or the unique resolved set cannot satisfy the configured minimum.
+See [Peer provenance and quorum gates](provenance-gates.md) for the complete
+schema and command-first example.
 
 Use `PI_MESH_WEBHOOK_WORKFLOWS` for inline JSON or `PI_MESH_WEBHOOK_WORKFLOWS_FILE` for a file, never both. Prefer `secretEnv` over a literal `secret`.
 
@@ -185,6 +195,16 @@ artifact, or retrospective requirement. Identities are normalized by trimming,
 collapsing repeated whitespace, and case-folding; normalized aliases in one
 submission are rejected as duplicates.
 
+When a requirement has a peer policy, caller-authored evidence text cannot
+satisfy it. The coordinator must create peer messages with an authorized,
+immutable `workflowContext` for the exact run, active stage, canonical
+requirement, and current 1-based attempt. A passing checkpoint or wait cites the
+resulting durable message IDs in `evidenceRefs`. The hub verifies project,
+direction, eligible target, context, correlation, non-empty replied status,
+and coherent timestamps, then counts unique producer IDs. Old, pending,
+duplicate-producer, coordinator-authored, or cross-context messages do not
+count.
+
 Evidence supplied when entering `waiting` is accumulated with a later passing
 callback. `warning` and `failed` evidence is retained in the journal for
 diagnosis but intentionally does not satisfy a later passing attempt. Those
@@ -193,10 +213,22 @@ Reaching `maxAttempts` fails the run. Settling the coordinator prompt before all
 stages pass also fails the run and records a workflow error unless the
 coordinator deliberately placed the active stage in `waiting` first.
 
+If a policy declares `degradation.minProducers`, an operator may use
+`pi-mesh workflow degrade` with the administrative token to approve that exact
+lower minimum for only the current stage attempt. The coordinator, peer agents,
+and callback secret cannot authorize degradation. Approval alone never passes
+the stage; the coordinator must still provide the required verified references.
+The reason, policy minimum, approved minimum, attempt, and any eventual degraded
+pass are retained for audit.
+
 The hub enforces stage order and requirement identity; agents remain responsible
 for the truth of submitted evidence. Repository rules, human approvals, and
 harness permissions remain authoritative for push, merge, Jira mutation, and
 other external effects.
+
+Peer quorum proves provenance inside the mesh project credential boundary. It
+does not prove answer quality, truth, distinct underlying models, independent
+inference, non-collusion, or human approval.
 
 ## Platform references
 
