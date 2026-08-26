@@ -1,12 +1,12 @@
-import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { MeshClient, MeshHttpError } from "./client.ts";
-import { areaForTool, classifyFailure, diagnosticEvidence, diagnosticSummary } from "./diagnostics.ts";
+import { areaForTool, classifyFailure, diagnosticEvidence, diagnosticSummary, type Diagnostic } from "./diagnostics.ts";
 import { MAX_CONTENT_CHARS, type DeliveryMode, type HubEvent, type MessageRecord } from "./protocol.ts";
 import type { ImprovementArea, JournalCategory, WorkflowCheckpointStatus } from "./workflow.ts";
-import { consumeWorkerRecoveryEnvelope } from "./recovery.ts";
+import { consumeWorkerRecoveryEnvelope, workerStateKey } from "./recovery.ts";
 
 const SETTLEMENT_RETRY_BASE_MS = 250;
 const SETTLEMENT_RETRY_MAX_MS = 30_000;
@@ -37,23 +37,50 @@ function result(value: unknown) {
   };
 }
 
-function assistantText(messages: unknown[]): string | undefined {
+function latestAssistantMessage(messages: unknown[]): {
+  content?: unknown;
+  errorMessage?: unknown;
+  role?: unknown;
+  stopReason?: unknown;
+} | undefined {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index] as { role?: string; content?: unknown };
-    if (message?.role !== "assistant") continue;
-    if (typeof message.content === "string") return message.content.trim();
-    if (Array.isArray(message.content)) {
-      const text = message.content
-        .map((item) => {
-          const part = item as { type?: string; text?: string };
-          return part.type === "text" ? part.text ?? "" : "";
-        })
-        .join("")
-        .trim();
-      if (text) return text;
-    }
+    const message = messages[index] as { role?: unknown };
+    if (message?.role === "assistant") return messages[index] as ReturnType<typeof latestAssistantMessage>;
   }
   return undefined;
+}
+
+function assistantText(messages: unknown[]): string | undefined {
+  const message = latestAssistantMessage(messages);
+  if (!message) return undefined;
+  if (typeof message.content === "string") return message.content.trim();
+  if (!Array.isArray(message.content)) return undefined;
+  const text = message.content
+    .map((item) => {
+      const part = item as { type?: string; text?: string };
+      return part.type === "text" ? part.text ?? "" : "";
+    })
+    .join("")
+    .trim();
+  return text || undefined;
+}
+
+function assistantFailure(messages: unknown[]): Diagnostic | undefined {
+  const message = latestAssistantMessage(messages);
+  if (!message || (message.stopReason !== "error" && message.stopReason !== "aborted")) return undefined;
+  if (message.stopReason === "aborted") {
+    return classifyFailure({
+      toolName: "provider",
+      message: "cancelled",
+    });
+  }
+  const failureMessage = typeof message.errorMessage === "string" ? message.errorMessage : "provider error";
+  const quota = /\b(quota reached|quota exceeded|rate limit(?:ed)?|too many requests|resource exhausted|http 429)\b/i.test(failureMessage);
+  return classifyFailure({
+    toolName: "provider",
+    code: quota ? "provider_quota" : "provider_error",
+    message: failureMessage,
+  });
 }
 
 export default function piMeshExtension(pi: ExtensionAPI) {
@@ -67,6 +94,8 @@ export default function piMeshExtension(pi: ExtensionAPI) {
   let settlementInProgress = false;
   let settlementRetryAttempt = 0;
   let settlementRetryTimer: ReturnType<typeof setTimeout> | undefined;
+  let activeFailure: Diagnostic | undefined;
+  let activeFailureRecorded = false;
   let shuttingDown = false;
   let notify: ((message: string, type: "error") => void) | undefined;
   let stateDir = process.env.PI_MESH_STATE_DIR ?? "";
@@ -76,8 +105,22 @@ export default function piMeshExtension(pi: ExtensionAPI) {
   let recoveryArtifacts: string[] = [];
 
   function recoveryContextPath(): string | undefined {
-    if (!stateDir || !agentName) return undefined;
-    return join(stateDir, `worker-context-${agentName.replace(/[^A-Za-z0-9_.-]/g, "_")}.json`);
+    if (!stateDir || !agentName || !projectName) return undefined;
+    return join(stateDir, `worker-context-${workerStateKey(projectName, agentName)}.json`);
+  }
+
+  function removeMatchingLegacyRecoveryContext(): void {
+    if (!stateDir || !agentName || !projectName) return;
+    const legacy = join(stateDir, `worker-context-${agentName.replace(/[^A-Za-z0-9_.-]/g, "_")}.json`);
+    if (legacy === recoveryContextPath()) return;
+    try {
+      const candidate = JSON.parse(readFileSync(legacy, "utf8")) as { version?: number; agentName?: string; project?: string };
+      if (candidate.version === 1 && candidate.agentName === agentName && candidate.project === projectName) {
+        rmSync(legacy, { force: true });
+      }
+    } catch {
+      // A missing, malformed, or differently-owned legacy context is not ours.
+    }
   }
 
   function persistRecoveryContext(): void {
@@ -87,11 +130,16 @@ export default function piMeshExtension(pi: ExtensionAPI) {
       .find((message) => message?.correlationId?.startsWith("run_"));
     const runId = recoveryMessage?.correlationId;
     const pendingMessageIds = [activeInbound?.id, awaitingActivation?.id, ...pending.map((message) => message.id)].filter((id): id is string => Boolean(id)).slice(0, 16);
-    if (!runId && pendingMessageIds.length === 0) { rmSync(path, { force: true }); return; }
+    if (!runId && pendingMessageIds.length === 0) {
+      rmSync(path, { force: true });
+      removeMatchingLegacyRecoveryContext();
+      return;
+    }
     mkdirSync(dirname(path), { recursive: true });
     const tmp = `${path}.${process.pid}.tmp`;
     writeFileSync(tmp, `${JSON.stringify({ version: 1, agentName, project: projectName, runId: runId ?? null, stageId: recoveryStageId ?? null, pendingMessageIds, artifactPointers: recoveryArtifacts.slice(0, 16), updatedAt: new Date().toISOString() })}\n`, { encoding: "utf8", mode: 0o600 });
     renameSync(tmp, path);
+    removeMatchingLegacyRecoveryContext();
   }
 
   async function workflowCall<T>(operation: () => Promise<T>): Promise<T> {
@@ -193,6 +241,8 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     activeReply = undefined;
     settlementReply = undefined;
     activeTurnSettled = false;
+    activeFailure = undefined;
+    activeFailureRecorded = false;
     recoveryStageId = undefined;
     recoveryArtifacts = [];
     persistRecoveryContext();
@@ -261,6 +311,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     agentName = name;
     projectName = project;
     stateDir = process.env.PI_MESH_STATE_DIR ?? stateDir;
+    removeMatchingLegacyRecoveryContext();
     const purpose = process.env.PI_MESH_AGENT_PURPOSE ?? "General-purpose coding agent";
     const model = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
     client = new MeshClient({
@@ -276,9 +327,12 @@ export default function piMeshExtension(pi: ExtensionAPI) {
       notify = (message, type) => ctx.ui.notify(message, type);
       ctx.ui.setStatus("pi-mesh", `mesh:${agent.name}`);
       ctx.ui.notify(`Connected to pi-mesh as ${agent.name}`, "info");
-      const recovered = stateDir ? await consumeWorkerRecoveryEnvelope(client, stateDir, agent.name) : undefined;
-      if (recovered?.freshSession && recovered.runId) {
-        pi.sendMessage({ customType: "pi-mesh-recovery", content: [`Resume durable workflow run ${recovered.runId} after an unresumable Pi session.`, recovered.stageId ? `Last recorded stage: ${recovered.stageId}.` : "Resolve the current stage from mesh_workflow_get.", `Recovery reason: ${recovered.reason}.`, "Call mesh_workflow_get, inspect its journal and stage evidence, then continue the current stage without repeating completed work.", "Record the recovery decision and checkpoint only after the required evidence is satisfied."].join("\n"), display: true, details: { runId: recovered.runId, stageId: recovered.stageId, reason: recovered.reason } }, { triggerTurn: true, deliverAs: "followUp" });
+      const recovered = stateDir ? await consumeWorkerRecoveryEnvelope(client, stateDir, agent.name, project) : undefined;
+      const durableInboundWillReplay = recovered !== undefined
+        && (recovered.reason === "provider_error" || recovered.reason === "tool_timeout")
+        && (recovered.pendingMessageIds?.length ?? 0) > 0;
+      if (recovered?.freshSession && recovered.runId && !durableInboundWillReplay) {
+        pi.sendMessage({ customType: "pi-mesh-recovery", content: [`Resume durable workflow run ${recovered.runId} after a fresh-session worker recovery.`, recovered.stageId ? `Last recorded stage: ${recovered.stageId}.` : "Resolve the current stage from mesh_workflow_get.", `Recovery reason: ${recovered.reason}.`, "Call mesh_workflow_get, inspect its journal and stage evidence, then continue the current stage without repeating completed work.", "Record the recovery decision and checkpoint only after the required evidence is satisfied."].join("\n"), display: true, details: { runId: recovered.runId, stageId: recovered.stageId, reason: recovered.reason } }, { triggerTurn: true, deliverAs: "followUp" });
       }
     } catch (error) {
       client = undefined;
@@ -296,6 +350,8 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     activeReply = undefined;
     settlementReply = undefined;
     activeTurnSettled = false;
+    activeFailure = undefined;
+    activeFailureRecorded = false;
     settlementRetryAttempt = 0;
     recoveryStageId = undefined;
     recoveryArtifacts = [];
@@ -304,6 +360,18 @@ export default function piMeshExtension(pi: ExtensionAPI) {
 
   pi.on("agent_end", (event) => {
     if (!activeInbound || activeTurnSettled) return;
+    const latest = latestAssistantMessage(event.messages as unknown[]);
+    if (!latest) return;
+    const failure = assistantFailure(event.messages as unknown[]);
+    if (failure) {
+      activeFailure = failure;
+      activeFailureRecorded = false;
+      activeReply = undefined;
+      persistRecoveryContext();
+      return;
+    }
+    activeFailure = undefined;
+    activeFailureRecorded = false;
     activeReply = assistantText(event.messages as unknown[]) ?? activeReply;
   });
 
@@ -346,6 +414,30 @@ export default function piMeshExtension(pi: ExtensionAPI) {
 
   pi.on("agent_settled", async () => {
     if (!activeInbound || !client || settlementInProgress) return;
+    if (activeFailure) {
+      persistRecoveryContext();
+      if (!activeFailureRecorded) {
+        try {
+          if (activeInbound.correlationId?.startsWith("run_")) {
+            await client.recordWorkflowEntry(activeInbound.correlationId, {
+              category: "error",
+              area: "harness",
+              severity: "error",
+              summary: diagnosticSummary(activeFailure),
+              evidence: diagnosticEvidence(activeFailure),
+            });
+          }
+          activeFailureRecorded = true;
+        } catch {
+          // Preserve the message and retry metadata journaling after recovery.
+        }
+      }
+      notify?.(
+        `pi-mesh retained ${activeInbound.id} after ${activeFailure.class}; switch the model or let the supervised worker recover it`,
+        "error",
+      );
+      return;
+    }
     if (!activeTurnSettled) {
       settlementReply = boundedPeerReply(
         activeReply ?? "The peer agent completed without a textual response.",
@@ -378,7 +470,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "mesh_send",
     label: "Send peer request",
-    description: "Send a focused request to a peer agent. Returns a message ID for mesh_get or mesh_await.",
+    description: "Send a focused request to a peer agent. Returns a message ID for mesh_get or mesh_await. For durable peer evidence, workflowContext is the hub-authorized provenance scope; correlation and idempotency are transport concerns and do not establish evidence provenance.",
     parameters: Type.Object({
       target: Type.String({ description: "Peer name or agent ID" }),
       content: Type.String({ description: "Focused request with the expected response or artifact" }),
@@ -387,8 +479,17 @@ export default function piMeshExtension(pi: ExtensionAPI) {
         Type.Literal("followUp"),
         Type.Literal("nextTurn"),
       ], { description: "followUp is the safe default; use steer only for active blockers" })),
-      correlationId: Type.Optional(Type.String({ description: "Optional workflow or task ID" })),
-      idempotencyKey: Type.Optional(Type.String({ description: "Retry-safe key unique to this request" })),
+      correlationId: Type.Optional(Type.String({ description: "Optional task grouping; the hub binds it to runId when workflowContext is supplied" })),
+      idempotencyKey: Type.Optional(Type.String({ description: "Retry/deduplication key only; not a workflow security or evidence binding" })),
+      workflowContext: Type.Optional(Type.Object({
+        runId: Type.String({ description: "Active durable workflow run ID" }),
+        stageId: Type.String({ description: "Active workflow stage ID" }),
+        requirementKey: Type.String({ description: "Required evidence identity this peer reply may satisfy" }),
+        attempt: Type.Integer({ minimum: 1, maximum: 20, description: "Current one-based stage attempt" }),
+      }, {
+        additionalProperties: false,
+        description: "Requested provenance scope; the hub authorizes and persists the canonical binding",
+      })),
       ttlMs: Type.Optional(Type.Number({ minimum: 1_000, maximum: 604_800_000 })),
     }),
     async execute(_toolCallId, params) {
@@ -398,6 +499,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
         ...(params.delivery ? { delivery: params.delivery as DeliveryMode } : {}),
         ...(params.correlationId ? { correlationId: params.correlationId } : {}),
         ...(params.idempotencyKey ? { idempotencyKey: params.idempotencyKey } : {}),
+        ...(params.workflowContext ? { workflowContext: params.workflowContext } : {}),
         ...(params.ttlMs ? { ttlMs: params.ttlMs } : {}),
       });
       return result({ messageId: message.id, status: message.status, target: message.toName });
@@ -417,12 +519,21 @@ export default function piMeshExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "mesh_fanout",
     label: "Ask planning panel",
-    description: "Send the same independent request to one through three peers and return replies for comparison and synthesis. A local timeout or prompt interruption returns a pending response with a durable messageId for mesh_get or an exact retry. In durable workflows, use the run ID as correlationId and a stage-specific idempotencyKeyPrefix.",
+    description: "Send the same independent request to one through three peers and return replies for comparison and synthesis. A local timeout or prompt interruption returns a pending response with a durable messageId for mesh_get or an exact retry. For durable peer evidence, supply workflowContext; correlation and idempotency are transport concerns and do not establish evidence provenance.",
     parameters: Type.Object({
       targets: Type.Array(Type.String(), { minItems: 1, maxItems: 3 }),
       content: Type.String(),
-      correlationId: Type.Optional(Type.String({ description: "Workflow run ID or other stable request scope" })),
-      idempotencyKeyPrefix: Type.Optional(Type.String({ description: "Stable stage-specific retry key prefix" })),
+      correlationId: Type.Optional(Type.String({ description: "Optional task grouping; the hub binds it to runId when workflowContext is supplied" })),
+      idempotencyKeyPrefix: Type.Optional(Type.String({ description: "Stable retry/deduplication prefix only; not a workflow security or evidence binding" })),
+      workflowContext: Type.Optional(Type.Object({
+        runId: Type.String({ description: "Active durable workflow run ID" }),
+        stageId: Type.String({ description: "Active workflow stage ID" }),
+        requirementKey: Type.String({ description: "Required evidence identity these peer replies may satisfy" }),
+        attempt: Type.Integer({ minimum: 1, maximum: 20, description: "Current one-based stage attempt" }),
+      }, {
+        additionalProperties: false,
+        description: "Requested provenance scope shared by each request; the hub authorizes and persists the canonical binding",
+      })),
       ttlMs: Type.Optional(Type.Number({ minimum: 1_000, maximum: 604_800_000 })),
       timeoutMs: Type.Optional(Type.Number({ minimum: 100, maximum: 1_800_000 })),
     }),
@@ -432,6 +543,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
         content: params.content,
         ...(params.correlationId ? { correlationId: params.correlationId } : {}),
         ...(params.idempotencyKeyPrefix ? { idempotencyKeyPrefix: params.idempotencyKeyPrefix } : {}),
+        ...(params.workflowContext ? { workflowContext: params.workflowContext } : {}),
         ...(params.ttlMs ? { ttlMs: params.ttlMs } : {}),
         ...(params.timeoutMs ? { timeoutMs: params.timeoutMs } : {}),
         ...(signal ? { signal } : {}),
@@ -485,13 +597,23 @@ export default function piMeshExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "mesh_workflow_checkpoint",
     label: "Checkpoint workflow stage",
-    description: "Record a stage result with evidence keyed by the stage's required evidence identities. Unrelated keys do not satisfy requirements. Warnings and failures require another attempt until passed or exhausted.",
+    description: "Record a stage result with evidence keyed by the stage's required evidence identities. Cite peer-reply requirements through evidenceRefs so the hub can verify provenance and quorum; caller-authored evidence strings cannot satisfy those policies. Warnings and failures require another attempt until passed or exhausted.",
     parameters: Type.Object({
       runId: Type.String(),
       stageId: Type.String(),
       status: Type.Union([Type.Literal("passed"), Type.Literal("warning"), Type.Literal("failed")]),
       summary: Type.String(),
       evidence: Type.Optional(Type.Record(Type.String(), Type.String(), { maxProperties: 64 })),
+      evidenceRefs: Type.Optional(Type.Record(
+        Type.String(),
+        Type.Object({
+          messageIds: Type.Array(Type.String(), { minItems: 1, maxItems: 16 }),
+        }, { additionalProperties: false }),
+        {
+          maxProperties: 32,
+          description: "Peer evidence references keyed by required evidence identity; the hub verifies messages and derives producer metadata",
+        },
+      )),
     }),
     async execute(_toolCallId, params) {
       return result(await workflowCall(() => requireClient().checkpointWorkflow(params.runId, {
@@ -499,6 +621,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
         status: params.status as WorkflowCheckpointStatus,
         summary: params.summary,
         ...(params.evidence ? { evidence: params.evidence } : {}),
+        ...(params.evidenceRefs ? { evidenceRefs: params.evidenceRefs } : {}),
       })));
     },
   });
@@ -506,13 +629,23 @@ export default function piMeshExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "mesh_workflow_wait",
     label: "Wait for workflow signal",
-    description: "Pause the active workflow stage until a signed external callback reports its result. Supply already-verified evidence keyed by requirement; it is accumulated with callback evidence. The current agent turn may settle after this succeeds.",
+    description: "Pause the active workflow stage until a signed external callback reports its result. Supply caller-authored evidence by key and cite peer-reply requirements through evidenceRefs so the hub can verify provenance and quorum. Verified evidence is accumulated with callback evidence. The current agent turn may settle after this succeeds.",
     parameters: Type.Object({
       runId: Type.String(),
       stageId: Type.String(),
       signalKey: Type.String({ description: "Stable callback key, such as github-pr-42-checks" }),
       summary: Type.String({ description: "What is running externally and what result is expected" }),
       evidence: Type.Optional(Type.Record(Type.String(), Type.String(), { maxProperties: 64 })),
+      evidenceRefs: Type.Optional(Type.Record(
+        Type.String(),
+        Type.Object({
+          messageIds: Type.Array(Type.String(), { minItems: 1, maxItems: 16 }),
+        }, { additionalProperties: false }),
+        {
+          maxProperties: 32,
+          description: "Peer evidence references keyed by required evidence identity; the hub verifies messages and derives producer metadata",
+        },
+      )),
       timeoutMs: Type.Optional(Type.Integer({ minimum: 1_000, maximum: 2_592_000_000 })),
     }),
     async execute(_toolCallId, params) {
@@ -521,6 +654,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
         signalKey: params.signalKey,
         summary: params.summary,
         ...(params.evidence ? { evidence: params.evidence } : {}),
+        ...(params.evidenceRefs ? { evidenceRefs: params.evidenceRefs } : {}),
         ...(params.timeoutMs ? { timeoutMs: params.timeoutMs } : {}),
       })));
     },

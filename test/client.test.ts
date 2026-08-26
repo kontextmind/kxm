@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import test from "node:test";
 import { MeshClient } from "../plugins/pi-mesh-comms/src/client.ts";
@@ -52,6 +53,16 @@ test("fanout timeouts return durable pending handles and exact retries reuse the
   assert.ok(pending.messageId);
   assert.ok(pending.expiresAt && Date.parse(pending.expiresAt) > Date.now());
   assert.equal(mesh.hub.state.messages.size, 1);
+  const [durableMessage] = [...mesh.hub.state.messages.values()];
+  const legacyScope = JSON.stringify({
+    prefix: options.idempotencyKeyPrefix,
+    correlationId: options.correlationId,
+    target: options.targets[0],
+  });
+  assert.equal(
+    durableMessage!.idempotencyKey,
+    `fanout:${createHash("sha256").update(legacyScope).digest("hex")}`,
+  );
 
   await receiver.reply(pending.messageId, "late review complete");
   const [retried] = await sender.fanout(options);

@@ -2,7 +2,41 @@
 
 All notable user-facing changes are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 0.4.3 - 2026-08-26
+
+### Added
+
+- Per-requirement `peer-reply` evidence policies with run-start eligible-producer snapshots, immutable run/stage/requirement/attempt message context, hub-verified message references, and quorum by unique stable producer ID.
+- Explicit admin-only, policy-declared, current-attempt quorum degradation through `pi-mesh workflow degrade`, including durable approval and degraded-stage audit records.
+- Optional metadata-only peer-evidence audit fields in `pi-mesh.retrospective.v1`, preserving producer/context/timestamp/hash provenance and degradation approvals without prompt or reply bodies.
+- Command-first provenance workflow example plus security, operations, protocol, troubleshooting, and trust-boundary guidance.
+
+### Changed
+
+- Pi extension and Claude MCP send/fanout tools accept `workflowContext`; checkpoint and wait tools accept `evidenceRefs` with matching behavior across both harnesses.
+- Caller-authored evidence strings, correlation IDs, and idempotency keys cannot satisfy a declared peer policy. Only exact durable replied messages for the active workflow context count.
+- Long-lived workers can opt into path-delimited exact extension and skill sets. Each configured category disables discovery, validates resource types before supervision, and leaves default discovery unchanged when unset.
+- Final provider failures no longer settle durable inbound work as a successful peer reply. The Pi extension retains the message and records metadata-only diagnostics; supervised workers restart after graceful RPC shutdown and can rotate through bounded fallback models while preserving session context.
+- Long-lived workers support an explicit Pi tool allowlist and a bounded tool-execution watchdog. This lets read-only review peers operate without shell/write capabilities and recovers delivered work when an enabled tool never returns. The default watchdog includes one minute of supervisor grace beyond the longest local mesh wait.
+- Worker-owned PID, control, recovery, context, and default log paths use a collision-resistant identity derived from the exact project and agent name; legacy name-only recovery files migrate only when their embedded owner matches exactly.
+
+### Fixed
+
+- Workflow-context retries canonicalize field order and requirement-key spelling before hashing and compare hub state field-by-field, so semantically identical objects reuse one durable request while context-free retries retain their pre-0.4.3 hash.
+- Typed workflow definitions may omit `acceptedStatuses`, matching the JSON parser and documented default of `["replied"]`.
+- Supervised Pi restarts revalidate every exact extension and skill path and stop on static resource drift instead of silently restarting without a required skill.
+- The release dogfood launcher separates administrative and worker project credentials, withholds webhook secrets from agents, and proves exact coordinator/reviewer readiness before starting a run.
+- `--fresh-start` skips only the initial session resume, while later supervised recovery can use `--continue`; final quota/provider errors wait for Pi's own retries, preserve durable work, and use a configurable provider retry delay when no fallback remains.
+- Hub and worker wrappers claim their PID files exclusively, refuse unverifiable stale claims, and clean up only their own recorded generation, so duplicate starts and sanitized-name collisions cannot orphan the process managed by `pi-mesh stop`.
+- RPC supervision handles oversized provider and tool frames with bounded streaming metadata extraction. Raw RPC bytes stay only in the protected agent log and are never forwarded to supervisor stdout or structured lifecycle logs.
+- Structurally unresumable settled sessions take the fresh-session path before provider rotation, while completed oversized tool results still cancel their watchdog.
+- Recovery telemetry is attached only to its exact persisted workflow run. Unbound worker events are consumed without guessing an active workflow, and fresh provider/tool-timeout recovery relies on one durable inbound replay instead of injecting a duplicate turn.
+- The release launcher reuses one delivery ID across workflow-start retries and requires a deterministic run/stage/attempt fanout key with a local wait below the supervisor watchdog.
+
+### Upgrade note
+
+- Provenance fields are additive inside existing SQLite schema-v2 JSON records; no destructive database migration is required and existing history remains readable. Legacy evidence continues to work for ordinary requirements but never satisfies a declared peer policy.
+- Peer quorum proves durable provenance within the shared project-credential boundary. It does not prove truth, model identity, independent inference, non-collusion, or human approval.
 
 ## 0.4.2 - 2026-08-26
 

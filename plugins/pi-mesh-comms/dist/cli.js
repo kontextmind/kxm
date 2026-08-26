@@ -54,6 +54,109 @@ function stringArray(value, name) {
 function canonicalWorkflowEvidenceKey(value) {
   return value.trim().replace(/\s+/gu, " ").toLowerCase();
 }
+function normalizeVerifiedWorkflowEvidence(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const result = /* @__PURE__ */ new Map();
+  for (const [rawRequirement, rawSnapshots] of Object.entries(value)) {
+    const requirement = canonicalWorkflowEvidenceKey(rawRequirement);
+    if (!requirement || !Array.isArray(rawSnapshots)) continue;
+    const snapshots = rawSnapshots.filter((candidate) => {
+      if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return false;
+      const snapshot = candidate;
+      return snapshot.schema === "pi-mesh.verified-peer-evidence.v1" && typeof snapshot.messageId === "string" && typeof snapshot.producerId === "string" && typeof snapshot.producerName === "string" && snapshot.status === "replied" && typeof snapshot.requestSha256 === "string" && typeof snapshot.replySha256 === "string" && typeof snapshot.createdAt === "string" && typeof snapshot.replyCreatedAt === "string" && typeof snapshot.repliedAt === "string" && typeof snapshot.verifiedAt === "string" && snapshot.context?.schema === "pi-mesh.workflow-message-context.v1";
+    });
+    if (snapshots.length) result.set(requirement, snapshots);
+  }
+  return Object.fromEntries(result);
+}
+function parseWorkflowEvidencePolicies(value, stageId, requiredEvidence) {
+  if (value === void 0) return void 0;
+  const rawPolicies = object(value, `stage ${stageId} evidencePolicies`);
+  const policies = /* @__PURE__ */ new Map();
+  for (const [rawRequirement, rawPolicy] of Object.entries(rawPolicies)) {
+    const requirementKey = canonicalWorkflowEvidenceKey(
+      requireString(rawRequirement, `stage ${stageId} evidencePolicies requirement`, { max: 128 })
+    );
+    if (!requiredEvidence.includes(requirementKey)) {
+      throw new Error(`stage ${stageId} evidence policy ${requirementKey} must match requiredEvidence`);
+    }
+    if (policies.has(requirementKey)) {
+      throw new Error(`stage ${stageId} evidencePolicies keys must be unique after normalization`);
+    }
+    const policy = object(rawPolicy, `stage ${stageId} evidencePolicies.${requirementKey}`);
+    const supportedPolicyFields = /* @__PURE__ */ new Set([
+      "kind",
+      "minProducers",
+      "eligibleAgents",
+      "acceptedStatuses",
+      "degradation"
+    ]);
+    const unsupportedPolicyFields = Object.keys(policy).filter((field) => !supportedPolicyFields.has(field));
+    if (unsupportedPolicyFields.length) {
+      throw new Error(
+        `stage ${stageId} evidencePolicies.${requirementKey} contains unsupported fields: ${unsupportedPolicyFields.join(", ")}`
+      );
+    }
+    if (policy.kind !== "peer-reply") {
+      throw new Error(`stage ${stageId} evidencePolicies.${requirementKey}.kind must be peer-reply`);
+    }
+    const minProducers = policy.minProducers;
+    if (!Number.isInteger(minProducers) || minProducers < 1 || minProducers > 8) {
+      throw new Error(`stage ${stageId} evidencePolicies.${requirementKey}.minProducers must be an integer between 1 and 8`);
+    }
+    const eligibleAgents = stringArray(
+      policy.eligibleAgents,
+      `stage ${stageId} evidencePolicies.${requirementKey}.eligibleAgents`
+    );
+    if (eligibleAgents.length < 1 || eligibleAgents.length > 16) {
+      throw new Error(`stage ${stageId} evidencePolicies.${requirementKey}.eligibleAgents must contain between 1 and 16 selectors`);
+    }
+    const normalizedSelectors = eligibleAgents.map((selector) => selector.toLowerCase());
+    if (new Set(normalizedSelectors).size !== normalizedSelectors.length) {
+      throw new Error(`stage ${stageId} evidencePolicies.${requirementKey}.eligibleAgents must be unique`);
+    }
+    if (minProducers > eligibleAgents.length) {
+      throw new Error(`stage ${stageId} evidencePolicies.${requirementKey}.minProducers exceeds eligibleAgents`);
+    }
+    if (policy.acceptedStatuses !== void 0) {
+      const statuses = stringArray(
+        policy.acceptedStatuses,
+        `stage ${stageId} evidencePolicies.${requirementKey}.acceptedStatuses`
+      );
+      if (statuses.length !== 1 || statuses[0] !== "replied") {
+        throw new Error(`stage ${stageId} evidencePolicies.${requirementKey}.acceptedStatuses must be ["replied"]`);
+      }
+    }
+    let degradation;
+    if (policy.degradation !== void 0) {
+      const rawDegradation = object(
+        policy.degradation,
+        `stage ${stageId} evidencePolicies.${requirementKey}.degradation`
+      );
+      const unsupportedDegradationFields = Object.keys(rawDegradation).filter((field) => field !== "minProducers");
+      if (unsupportedDegradationFields.length) {
+        throw new Error(
+          `stage ${stageId} evidencePolicies.${requirementKey}.degradation contains unsupported fields: ${unsupportedDegradationFields.join(", ")}`
+        );
+      }
+      const degradedMin = rawDegradation.minProducers;
+      if (!Number.isInteger(degradedMin) || degradedMin < 1 || degradedMin >= minProducers) {
+        throw new Error(
+          `stage ${stageId} evidencePolicies.${requirementKey}.degradation.minProducers must be at least 1 and lower than minProducers`
+        );
+      }
+      degradation = { minProducers: degradedMin };
+    }
+    policies.set(requirementKey, {
+      kind: "peer-reply",
+      minProducers,
+      eligibleAgents,
+      acceptedStatuses: ["replied"],
+      ...degradation ? { degradation } : {}
+    });
+  }
+  return policies.size ? Object.fromEntries(policies) : void 0;
+}
 function parseWorkflowDefinitions(raw, environment = process.env) {
   if (!raw?.trim()) return [];
   const parsed = JSON.parse(raw);
@@ -110,13 +213,15 @@ function parseWorkflowDefinitions(raw, environment = process.env) {
       if (new Set(requiredEvidence).size !== requiredEvidence.length) {
         throw new Error(`stage ${stageId} requiredEvidence keys must be unique`);
       }
+      const evidencePolicies = parseWorkflowEvidencePolicies(stage.evidencePolicies, stageId, requiredEvidence);
       return {
         id: stageId,
         label: requireString(stage.label ?? stageId, "stage.label", { max: 128 }),
         instructions: requireString(stage.instructions, "stage.instructions", { max: 4e3 }),
         requiredEvidence,
         maxAttempts,
-        ...area ? { area } : {}
+        ...area ? { area } : {},
+        ...evidencePolicies ? { evidencePolicies } : {}
       };
     });
     let filter;
@@ -372,6 +477,74 @@ function classFromEvidence(evidence) {
   const match = evidence.find((item) => item.startsWith("class:"));
   return match?.slice("class:".length) || "unknown";
 }
+function buildEvidenceAudit(run) {
+  const audit = [];
+  for (const stage of run.stages) {
+    const verifiedEvidence = normalizeVerifiedWorkflowEvidence(stage.verifiedEvidence);
+    const degradedRequirements = new Set(
+      (stage.degradedRequirements ?? []).map(canonicalWorkflowEvidenceKey)
+    );
+    const policies = Object.entries(stage.resolvedEvidencePolicies ?? {}).sort(([left], [right]) => left.localeCompare(right));
+    for (const [rawRequirement, policy] of policies) {
+      const requirementKey = canonicalWorkflowEvidenceKey(rawRequirement);
+      const attempt = stage.status === "passed" || stage.status === "failed" ? Math.max(1, stage.attempts) : stage.attempts + 1;
+      const verifiedMessages = [...verifiedEvidence[requirementKey] ?? []].filter((snapshot) => snapshot.context.runId === run.id && snapshot.context.stageId === stage.id && snapshot.context.requirementKey === requirementKey && snapshot.context.attempt === attempt).sort((left, right) => left.messageId.localeCompare(right.messageId)).map((snapshot) => ({
+        schema: snapshot.schema,
+        messageId: snapshot.messageId,
+        producerId: snapshot.producerId,
+        producerName: snapshot.producerName,
+        context: {
+          schema: snapshot.context.schema,
+          runId: snapshot.context.runId,
+          stageId: snapshot.context.stageId,
+          requirementKey: snapshot.context.requirementKey,
+          attempt: snapshot.context.attempt
+        },
+        status: snapshot.status,
+        hashes: {
+          requestSha256: snapshot.requestSha256,
+          replySha256: snapshot.replySha256
+        },
+        timestamps: {
+          createdAt: snapshot.createdAt,
+          replyCreatedAt: snapshot.replyCreatedAt,
+          repliedAt: snapshot.repliedAt,
+          verifiedAt: snapshot.verifiedAt
+        }
+      }));
+      const degradationApprovals = (stage.degradationApprovals ?? []).filter((approval) => approval.schema === "pi-mesh.workflow-degradation-approval.v1" && approval.requirementKey === requirementKey && approval.attempt === attempt).sort((left, right) => left.attempt - right.attempt || left.approvedAt.localeCompare(right.approvedAt) || left.id.localeCompare(right.id)).map((approval) => ({
+        schema: approval.schema,
+        id: approval.id,
+        requirementKey: approval.requirementKey,
+        attempt: approval.attempt,
+        policyMinProducers: approval.policyMinProducers,
+        approvedMinProducers: approval.approvedMinProducers,
+        approvedBy: approval.approvedBy,
+        reason: redactSecrets(approval.reason).replace(/\s+/gu, " ").trim(),
+        approvedAt: approval.approvedAt
+      }));
+      const degraded = Boolean(stage.degraded && degradedRequirements.has(requirementKey));
+      const appliedApproval = degradationApprovals.at(-1);
+      audit.push({
+        stageId: stage.id,
+        requirementKey,
+        attempt,
+        policy: {
+          kind: policy.kind,
+          minProducers: policy.minProducers,
+          effectiveMinProducers: appliedApproval?.approvedMinProducers ?? policy.minProducers,
+          acceptedStatuses: ["replied"]
+        },
+        eligibleProducers: [...policy.eligibleProducers].sort((left, right) => left.id.localeCompare(right.id) || left.name.localeCompare(right.name)).map((producer) => ({ id: producer.id, name: producer.name })),
+        verifiedProducerIds: [...new Set(verifiedMessages.map((snapshot) => snapshot.producerId))].sort(),
+        verifiedMessages,
+        degraded,
+        degradationApprovals
+      });
+    }
+  }
+  return audit;
+}
 function buildRetrospective(run, journal, exportedAt = (/* @__PURE__ */ new Date()).toISOString()) {
   if (!SAFE_RUN_ID.test(run.id)) throw new Error("invalid retrospective run id");
   const entries = journal.filter((entry) => entry.runId === run.id).sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id)).slice(-MAX_RETROSPECTIVE_ENTRIES).map((entry) => ({
@@ -402,6 +575,8 @@ function buildRetrospective(run, journal, exportedAt = (/* @__PURE__ */ new Date
     successMeasure: "reduce recurrence of this class in the next comparable run",
     status: "proposed"
   }));
+  const evidenceAudit = buildEvidenceAudit(run);
+  const degradedStageIds = run.stages.filter((stage) => stage.degraded).map((stage) => stage.id);
   return {
     schema: "pi-mesh.retrospective.v1",
     runId: run.id,
@@ -418,7 +593,9 @@ function buildRetrospective(run, journal, exportedAt = (/* @__PURE__ */ new Date
     decisions,
     recurringErrorClasses,
     entries,
-    proposedImprovements
+    proposedImprovements,
+    ...evidenceAudit.length ? { evidenceAudit } : {},
+    ...degradedStageIds.length ? { degradedStageIds } : {}
   };
 }
 function renderRetrospectiveMarkdown(doc) {
@@ -431,6 +608,17 @@ function renderRetrospectiveMarkdown(doc) {
     const evidence = entry.evidence.length > 0 ? `; evidence: ${entry.evidence.join(", ")}` : "";
     return `- ${entry.id} [${entry.category}/${entry.area}/${entry.severity}]: ${entry.summary}${related}${evidence}`;
   }).join("\n") || "- none";
+  const evidenceAuditRows = (doc.evidenceAudit ?? []).flatMap((audit) => {
+    const producerNames = audit.eligibleProducers.map((producer) => `${producer.name} (${producer.id})`).join(", ") || "none";
+    const verified = audit.verifiedMessages.length ? audit.verifiedMessages.map((snapshot) => `  - ${snapshot.messageId}: producer ${snapshot.producerName} (${snapshot.producerId}), attempt ${snapshot.context.attempt}, request ${snapshot.hashes.requestSha256}, reply ${snapshot.hashes.replySha256}, replied ${snapshot.timestamps.repliedAt}, verified ${snapshot.timestamps.verifiedAt}`) : ["  - no verified messages"];
+    const approvals = audit.degradationApprovals.map((approval) => `  - approval ${approval.id}: attempt ${approval.attempt}, ${approval.policyMinProducers} -> ${approval.approvedMinProducers} producers, ${approval.approvedBy}, ${approval.approvedAt}; reason: ${approval.reason}`);
+    return [
+      `- ${audit.stageId} / ${audit.requirementKey} / attempt ${audit.attempt}: ${audit.verifiedProducerIds.length}/${audit.policy.effectiveMinProducers} verified producers; policy minimum ${audit.policy.minProducers}; degraded: ${audit.degraded}`,
+      `  - eligible: ${producerNames}`,
+      ...verified,
+      ...approvals.length ? ["  - degradation approvals:", ...approvals] : []
+    ];
+  });
   return [
     `# Workflow retrospective ${doc.runId}`,
     "",
@@ -461,6 +649,14 @@ function renderRetrospectiveMarkdown(doc) {
     "",
     entryRows,
     "",
+    ...doc.evidenceAudit?.length ? [
+      "## Peer-evidence audit",
+      "",
+      "This section contains immutable provenance metadata and content hashes only; prompt and reply bodies are excluded.",
+      "",
+      ...evidenceAuditRows,
+      ""
+    ] : [],
     "## Proposed improvements",
     "",
     ...doc.proposedImprovements.map((item) => `- [${item.status}] (${item.area}) ${item.summary}`),
@@ -530,8 +726,10 @@ function parseArgs(argv) {
 function usage() {
   return [
     "Usage: pi-mesh [--json] [--dry-run] [--workspace <dir>] <command>",
-    "Commands: init | validate | status | hub | worker --name <name> --project <project> [--model <id>] | stop",
+    "Commands: init | validate | status | hub | worker --name <name> --project <project>",
+    "          [--model <id>] [--fallback-models <id,...>] [--tools <name,...>] [--fresh-start] | stop",
     "          workflow list | workflow get <runId> | workflow start <definitionId> --payload <JSON|@file>",
+    "          workflow degrade <runId> <stageId> --requirement <key> --reason <text>",
     "          signal | github watch | retrospective export <runId> | smoke"
   ].join("\n");
 }
@@ -551,10 +749,23 @@ function parseEvidencePairs(values) {
   return Object.fromEntries(evidence);
 }
 function print(io, jsonMode, payload, text) {
-  const safePayload = redactSecrets(JSON.stringify(payload));
+  const safePayload = JSON.stringify(redactCliValue(payload));
   io.stdout(jsonMode ? `${safePayload}
 ` : `${redactSecrets(text)}
 `);
+}
+function redactCliValue(value, field = "") {
+  if (typeof value === "string") {
+    if ((field === "requestSha256" || field === "replySha256") && /^[a-f0-9]{64}$/.test(value)) return value;
+    return redactSecrets(value);
+  }
+  if (Array.isArray(value)) return value.map((candidate) => redactCliValue(candidate));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, candidate]) => [key, redactCliValue(candidate, key)])
+    );
+  }
+  return value;
 }
 function workspaceDirs(cwd, workspaceFlag, env) {
   const workdir = resolve2(env.PI_MESH_WORKDIR?.trim() || cwd);
@@ -577,6 +788,12 @@ function redactConfiguredValues(text, env) {
   for (const [name, value] of Object.entries(env)) {
     if (!maskEnvName(name) || !value || value.length < 4) continue;
     safe = safe.replaceAll(value, "[redacted]");
+  }
+  const trailingNewline = safe.endsWith("\n") ? "\n" : "";
+  try {
+    const parsed = JSON.parse(safe);
+    return `${JSON.stringify(redactCliValue(parsed))}${trailingNewline}`;
+  } catch {
   }
   return redactSecrets(safe);
 }
@@ -631,6 +848,35 @@ async function postWorkflowStart(input) {
   }
   if (!response.ok) throw new Error(`workflow_start_http_${response.status}`);
   return { status: response.status, ...parsed.run?.id ? { runId: parsed.run.id } : {}, duplicate: parsed.duplicate === true };
+}
+async function postWorkflowDegradation(input) {
+  const response = await input.fetchImpl(
+    `${input.serverUrl.replace(/\/$/, "")}/v1/workflows/${encodeURIComponent(input.runId)}/degradations`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${input.authToken}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        stageId: input.stageId,
+        requirementKey: input.requirementKey,
+        reason: input.reason
+      })
+    }
+  );
+  const text = (await response.text()).slice(0, 8e3);
+  let parsed = {};
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+  }
+  if (!response.ok) throw new Error(`workflow_degradation_http_${response.status}`);
+  return {
+    status: response.status,
+    duplicate: parsed.duplicate === true,
+    ...parsed.approval?.id ? { approvalId: parsed.approval.id } : {}
+  };
 }
 async function runCli(argv, env = process.env, io = { stdout: (text) => process.stdout.write(text), stderr: (text) => process.stderr.write(text) }, cwd = process.cwd()) {
   const originalStdout = io.stdout;
@@ -701,9 +947,11 @@ async function runCli(argv, env = process.env, io = { stdout: (text) => process.
     const name = typeof parsed.flags.name === "string" ? parsed.flags.name.trim() : env.PI_MESH_AGENT_NAME?.trim();
     const project = typeof parsed.flags.project === "string" ? parsed.flags.project.trim() : env.PI_MESH_PROJECT?.trim();
     const model = typeof parsed.flags.model === "string" ? parsed.flags.model.trim() : env.PI_MESH_WORKER_MODEL?.trim();
-    const extraEnv = { PI_MESH_WORKDIR: dirs.workdir, PI_MESH_WORKSPACE_DIR: dirs.workspace, PI_MESH_CONFIG_DIR: dirs.config, PI_MESH_LOGS_DIR: dirs.logs, PI_MESH_ASSETS_DIR: dirs.assets, PI_MESH_STATE_DIR: dirs.state, ...name ? { PI_MESH_AGENT_NAME: name } : {}, ...project ? { PI_MESH_PROJECT: project } : {}, ...model ? { PI_MESH_WORKER_MODEL: model } : {}, ...parsed.flags["no-continue"] ? { PI_MESH_WORKER_CONTINUE: "false" } : {} };
+    const fallbackModels = typeof parsed.flags["fallback-models"] === "string" ? parsed.flags["fallback-models"].trim() : env.PI_MESH_WORKER_FALLBACK_MODELS?.trim();
+    const tools = typeof parsed.flags.tools === "string" ? parsed.flags.tools.trim() : env.PI_MESH_WORKER_TOOLS?.trim();
+    const extraEnv = { PI_MESH_WORKDIR: dirs.workdir, PI_MESH_WORKSPACE_DIR: dirs.workspace, PI_MESH_CONFIG_DIR: dirs.config, PI_MESH_LOGS_DIR: dirs.logs, PI_MESH_ASSETS_DIR: dirs.assets, PI_MESH_STATE_DIR: dirs.state, ...name ? { PI_MESH_AGENT_NAME: name } : {}, ...project ? { PI_MESH_PROJECT: project } : {}, ...model ? { PI_MESH_WORKER_MODEL: model } : {}, ...fallbackModels ? { PI_MESH_WORKER_FALLBACK_MODELS: fallbackModels } : {}, ...tools ? { PI_MESH_WORKER_TOOLS: tools } : {}, ...parsed.flags["no-continue"] ? { PI_MESH_WORKER_CONTINUE: "false" } : {}, ...parsed.flags["fresh-start"] ? { PI_MESH_WORKER_INITIAL_CONTINUE: "false" } : {} };
     if (parsed.dryRun) {
-      print(io, parsed.json, { ok: true, command: "worker", dryRun: true, workspace: dirs.workspace, name: name || "required", project: project || "required", model: model || "provider default", continue: parsed.flags["no-continue"] ? false : true }, "would start worker");
+      print(io, parsed.json, { ok: true, command: "worker", dryRun: true, workspace: dirs.workspace, name: name || "required", project: project || "required", model: model || "provider default", fallbackModels: fallbackModels || "none", tools: tools || "Pi defaults", continue: parsed.flags["no-continue"] ? false : true, freshStart: Boolean(parsed.flags["fresh-start"]) }, "would start worker");
       return 0;
     }
     if (!name || !project) {
@@ -734,10 +982,10 @@ async function runCli(argv, env = process.env, io = { stdout: (text) => process.
           ignored.push(file);
           continue;
         }
-        writeFileSync2(join(dirs.state, record.controlFile), `${JSON.stringify({ startedAt: record.startedAt, requestedAt: (/* @__PURE__ */ new Date()).toISOString() })}
+        writeFileSync2(join(dirs.state, record.controlFile), `${JSON.stringify({ startedAt: record.startedAt, ...record.generation ? { generation: record.generation } : {}, requestedAt: (/* @__PURE__ */ new Date()).toISOString() })}
 `, { encoding: "utf8", mode: 384 });
         requested.push(file);
-        records.set(file, { pid: record.pid, startedAt: record.startedAt });
+        records.set(file, { pid: record.pid, startedAt: record.startedAt, ...record.generation ? { generation: record.generation } : {} });
       } catch {
         ignored.push(file);
       }
@@ -753,7 +1001,7 @@ async function runCli(argv, env = process.env, io = { stdout: (text) => process.
       for (const [file, record] of records) {
         try {
           const current = JSON.parse(readFileSync(join(dirs.state, file), "utf8"));
-          if (current.pid !== record.pid || current.startedAt !== record.startedAt || !processExists(record.pid)) stopped.add(file);
+          if (current.pid !== record.pid || current.startedAt !== record.startedAt || current.generation !== record.generation || !processExists(record.pid)) stopped.add(file);
         } catch {
           stopped.add(file);
         }
@@ -797,6 +1045,52 @@ async function runCli(argv, env = process.env, io = { stdout: (text) => process.
         return 0;
       } catch {
         print(io, parsed.json, { ok: false, command: "workflow start", error: "workflow_start_failed" }, "signed workflow start failed");
+        return 1;
+      }
+    }
+    if (action === "degrade") {
+      const runId = parsed.rest[2];
+      const stageId = parsed.rest[3];
+      const requirementKey = typeof parsed.flags.requirement === "string" ? parsed.flags.requirement.trim() : "";
+      const reason = typeof parsed.flags.reason === "string" ? parsed.flags.reason.trim() : "";
+      const adminToken = env.PI_MESH_AUTH_TOKEN?.trim();
+      if (!runId || !stageId || !requirementKey || !reason || !adminToken) {
+        io.stderr("workflow degrade requires <runId> <stageId>, --requirement, --reason, and PI_MESH_AUTH_TOKEN\n");
+        return 2;
+      }
+      if (parsed.dryRun) {
+        print(
+          io,
+          parsed.json,
+          { ok: true, command: "workflow degrade", dryRun: true, runId, stageId, requirementKey },
+          `would approve configured degraded quorum for ${runId}/${stageId}/${requirementKey}`
+        );
+        return 0;
+      }
+      try {
+        const result = await postWorkflowDegradation({
+          serverUrl,
+          authToken: adminToken,
+          runId,
+          stageId,
+          requirementKey,
+          reason,
+          fetchImpl
+        });
+        print(
+          io,
+          parsed.json,
+          { ok: true, command: "workflow degrade", runId, stageId, requirementKey, ...result },
+          result.duplicate ? "degraded quorum was already approved" : "approved configured degraded quorum"
+        );
+        return 0;
+      } catch {
+        print(
+          io,
+          parsed.json,
+          { ok: false, command: "workflow degrade", error: "workflow_degradation_failed", runId, stageId, requirementKey },
+          "workflow degradation approval failed"
+        );
         return 1;
       }
     }

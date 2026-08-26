@@ -12,6 +12,8 @@ export const DIAGNOSTIC_CLASSES = [
   "network",
   "parse_error",
   "unresumable_session",
+  "quota",
+  "provider_error",
   "unknown",
 ] as const;
 
@@ -38,6 +40,7 @@ export const NEXT_ACTIONS = [
   "export_retrospective",
   "post_signal",
   "restart_fresh_session",
+  "switch_model_or_retry",
 ] as const;
 
 export type NextAction = (typeof NEXT_ACTIONS)[number];
@@ -74,6 +77,8 @@ const CODE_TO_CLASS: Record<string, DiagnosticClass> = {
   workflow_terminal: "not_waiting",
   workflow_not_running: "not_waiting",
   unresumable_session: "unresumable_session",
+  provider_quota: "quota",
+  provider_error: "provider_error",
 };
 
 export function operationForTool(toolName: string | undefined): DiagnosticOperation {
@@ -109,6 +114,7 @@ export function nextActionForCode(code: string | undefined, operation: Diagnosti
   }
   if (code === "workflow_signal_mismatch") return "post_signal";
   if (code === "unresumable_session") return "restart_fresh_session";
+  if (code === "provider_quota" || code === "provider_error") return "switch_model_or_retry";
   return undefined;
 }
 
@@ -122,6 +128,7 @@ function classFromTokens(text: string): DiagnosticClass | undefined {
   if (/\b(econnrefused|enotfound|fetch failed|network)\b/.test(value)) return "network";
   if (/\b(invalid json|unexpected token|parse error)\b/.test(value)) return "parse_error";
   if (/\b(invalid_request_error|missing_tool_result|unresumable)\b/.test(value)) return "unresumable_session";
+  if (/\b(quota reached|quota exceeded|rate limit(?:ed)?|too many requests|resource exhausted|http 429)\b/.test(value)) return "quota";
   if (/\b(not visible|only the assigned coordinator)\b/.test(value)) return "workflow_scope";
   return undefined;
 }

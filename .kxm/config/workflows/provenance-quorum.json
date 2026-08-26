@@ -1,0 +1,150 @@
+[
+  {
+    "id": "pi-extensions-provenance",
+    "source": "generic",
+    "project": "pi-extensions-provenance",
+    "target": "provenance-coordinator",
+    "secretEnv": "PI_MESH_V04_WORKFLOW_SECRET",
+    "signalSecretEnv": "PI_MESH_V04_SIGNAL_SECRET",
+    "event": "extension.provenance_requested",
+    "delivery": "followUp",
+    "ttlMs": 604800000,
+    "promptTemplate": "Deliver issue {{issue}} for {{repository}}: provenance-bound peer evidence and quorum workflow gates.\n\nIssue URL: {{issueUrl}}\nProject board: {{projectBoard}}\n\nYou are the sole code writer. Ask provenance-grok and provenance-gemini independently for research, plans, and final review through pi-mesh. Bind every claimed peer result to its durable message ID in the run record. Record plans, decisions, contradictions, errors, and lessons under .kxm. Keep the issue and project board current. The user authorizes branch-local implementation, tests, documentation, commits, pushes, pull requests, CI monitoring, and merge only after all required checks and independent review pass. Preserve backward compatibility and never claim exactly-once execution.",
+    "stages": [
+      {
+        "id": "research",
+        "area": "workflow",
+        "label": "Independent research",
+        "instructions": "Ask provenance-grok and provenance-gemini independently to analyze issue 22 and the current workflow, message, persistence, CLI, MCP, retrospective, and migration contracts. Send each request with workflowContext for this run, research stage, the matching required-evidence key, and the current one-based attempt. At checkpoint, cite the replied message IDs through evidenceRefs. Capture agreements, contradictions, threat cases, and acceptance criteria in a research synthesis under .kxm/assets.",
+        "requiredEvidence": [
+          "Grok message ID and replied result",
+          "Gemini message ID and replied result",
+          "current-state trace",
+          "contradictions and resolutions",
+          "acceptance criteria"
+        ],
+        "evidencePolicies": {
+          "Grok message ID and replied result": {
+            "kind": "peer-reply",
+            "minProducers": 1,
+            "eligibleAgents": ["provenance-grok"],
+            "acceptedStatuses": ["replied"]
+          },
+          "Gemini message ID and replied result": {
+            "kind": "peer-reply",
+            "minProducers": 1,
+            "eligibleAgents": ["provenance-gemini"],
+            "acceptedStatuses": ["replied"]
+          }
+        },
+        "maxAttempts": 3
+      },
+      {
+        "id": "plan",
+        "area": "workflow",
+        "label": "Reviewed architecture plan",
+        "instructions": "Ask both peers for independent implementation plans using one shared workflowContext bound to this run, plan stage, the independent-plan-message-IDs requirement, and the current attempt. Synthesize a backward-compatible schema for evidence type, producer identity or role, quorum, terminal state, message binding, and explicit degraded policy. Define persistence and migration, validation boundaries, all affected interfaces, tests, documentation, rollout, and rollback. Cite both replied message IDs through evidenceRefs.",
+        "requiredEvidence": [
+          "independent plan message IDs",
+          "selected schema and invariants",
+          "migration and compatibility",
+          "security boundaries",
+          "test and rollout plan"
+        ],
+        "evidencePolicies": {
+          "independent plan message IDs": {
+            "kind": "peer-reply",
+            "minProducers": 2,
+            "eligibleAgents": ["provenance-grok", "provenance-gemini"],
+            "acceptedStatuses": ["replied"]
+          }
+        },
+        "maxAttempts": 3
+      },
+      {
+        "id": "implement",
+        "area": "implementation",
+        "label": "Implementation",
+        "instructions": "Implement the reviewed plan as the sole writer. Verify peer evidence against durable hub state and unique producers. Pending, expired, cancelled, duplicated, wrong-run, wrong-stage, or coordinator-authored substitute evidence must not satisfy a peer quorum. Permit degradation only through an explicit journaled policy branch. Preserve readable legacy string evidence and keep Pi, MCP, webhook, CLI, retrospective, documentation, and generated bundles aligned.",
+        "requiredEvidence": [
+          "changed paths",
+          "schema and migration",
+          "verification logic",
+          "interface parity",
+          "tests and documentation"
+        ],
+        "maxAttempts": 6
+      },
+      {
+        "id": "local-gates",
+        "area": "gates",
+        "label": "Complete local gates",
+        "instructions": "Run the complete repository validation gate, generated-artifact check, strict Claude marketplace validation, package inspection, and isolated packed CLI/hub smoke on supported Node engines. Record and resolve every warning or failure.",
+        "requiredEvidence": [
+          "test and coverage results",
+          "typecheck and docs lint",
+          "generated artifacts",
+          "Claude validation",
+          "package and engine smoke"
+        ],
+        "maxAttempts": 5
+      },
+      {
+        "id": "review",
+        "area": "gates",
+        "label": "Independent implementation review",
+        "instructions": "Give Grok and Gemini the actual diff and ask them independently to review provenance integrity, authorization, uniqueness, correlation, migration, degradation visibility, interface parity, tests, portability, and documentation. Send each request with workflowContext bound to this run, review stage, its matching review requirement, and the current attempt; cite both replied message IDs through evidenceRefs. Resolve every material finding and rerun affected gates.",
+        "requiredEvidence": [
+          "Grok review message ID",
+          "Gemini review message ID",
+          "accepted and rejected findings",
+          "resolved findings",
+          "rerun gates"
+        ],
+        "evidencePolicies": {
+          "Grok review message ID": {
+            "kind": "peer-reply",
+            "minProducers": 1,
+            "eligibleAgents": ["provenance-grok"],
+            "acceptedStatuses": ["replied"]
+          },
+          "Gemini review message ID": {
+            "kind": "peer-reply",
+            "minProducers": 1,
+            "eligibleAgents": ["provenance-gemini"],
+            "acceptedStatuses": ["replied"]
+          }
+        },
+        "maxAttempts": 5
+      },
+      {
+        "id": "delivery",
+        "area": "gates",
+        "label": "Deliver and watch",
+        "instructions": "Commit and push the reviewed increment, open a pull request closing issue 22, add it to Project 3, and watch every required GitHub check. Merge only when all required checks pass and the evidence verifier confirms the independent-review quorum.",
+        "requiredEvidence": [
+          "commit",
+          "pull request",
+          "green required checks",
+          "verified peer quorum",
+          "merge and project status"
+        ],
+        "maxAttempts": 5
+      },
+      {
+        "id": "retrospective",
+        "area": "workflow",
+        "label": "Continuous-improvement retrospective",
+        "instructions": "Export and review the durable retrospective. Record timing, contradictions, errors, degraded paths, manual interventions, and measurable follow-ups. Separate verified peer evidence from coordinator synthesis and do not silently promote proposed policy.",
+        "requiredEvidence": [
+          "retrospective Markdown",
+          "retrospective JSON",
+          "evidence provenance audit",
+          "review decision",
+          "remaining backlog"
+        ],
+        "maxAttempts": 3
+      }
+    ]
+  }
+]

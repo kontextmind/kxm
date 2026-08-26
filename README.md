@@ -19,6 +19,7 @@ Give running coding agents a small, dependable communication plane.
 - **Install using native formats.** One repository packages a Pi extension, an Agent Skill, and a Claude Code marketplace plugin.
 - **Start from real events.** Signed Jira, GitHub, or generic webhooks can prompt durable, long-lived coordinators.
 - **Release idle turns.** Coordinators can wait durably for signed CI, review, merge, or Jira callbacks and resume only when work remains.
+- **Verify peer provenance.** Per-requirement quorum gates count unique eligible producers from immutable, attempt-bound replied messages rather than coordinator-authored claims.
 - **Learn from every run.** Capture plans, decisions, contradictions, errors, and lessons without turning unreviewed opinions into policy.
 
 ## Quick start: two Pi agents
@@ -83,7 +84,7 @@ this flow compatible with private repositories; run `gh auth login` first when
 the current account is not authenticated.
 
 ```powershell
-$version = "0.4.2"
+$version = "0.4.3"
 $asset = "kontextmind-pi-extensions-$version.tgz"
 $releaseDir = Join-Path $PWD ".pi-mesh-release"
 New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
@@ -98,20 +99,62 @@ To operate from a clone instead, run `npm ci` in the clone and replace
 the operator install path; the supported global install is the versioned release
 tarball.
 
+In the hub terminal, initialize the workspace and load the Jira definition with
+distinct administrative, project, workflow-start, and callback credentials:
+
 ```powershell
 pi-mesh init
+$env:PI_MESH_AUTH_TOKEN = "replace-with-the-admin-token"
+$env:PI_MESH_PROJECT_TOKENS = '{"product":"replace-with-the-project-token"}'
+$env:JIRA_WEBHOOK_SECRET = "replace-with-the-workflow-start-secret"
+$env:WORKFLOW_SIGNAL_SECRET = "replace-with-the-callback-secret"
+$env:PI_MESH_WEBHOOK_WORKFLOWS_FILE = ".kxm/config/workflows/jira-development.json"
 pi-mesh validate --file .kxm/config/workflows/jira-development.json
 pi-mesh hub
-pi-mesh worker --name coordinator --project product --model xai/grok-4.6
+```
+
+In a separately supervised coordinator terminal, give the single writer only
+the project credential and the tools required by the full Jira lifecycle. This
+PowerShell example uses the Windows shell tool; replace `powershell` with `bash`
+on macOS or Linux.
+
+```powershell
+$env:PI_MESH_AUTH_TOKEN = "replace-with-the-project-token"
+$coordinatorTools = @(
+  "read", "powershell", "edit", "write", "grep", "find", "ls",
+  "mesh_list", "mesh_send", "mesh_fanout", "mesh_get", "mesh_await",
+  "mesh_workflow_get", "mesh_workflow_checkpoint", "mesh_workflow_wait",
+  "mesh_workflow_record", "mesh_improvement_report"
+) -join ","
+pi-mesh worker --name coordinator --project product --model xai/grok-4.6 `
+  --fallback-models antigravity/gemini-3.1-pro --tools $coordinatorTools `
+  --fresh-start
+```
+
+Give review-only peers `read,grep,find,ls`; do not copy the coordinator's shell
+or write capabilities to them. In an operator terminal, start and inspect work,
+then run external watchers with the separate callback secret:
+
+```powershell
+$env:PI_MESH_WORKFLOW_SECRET = "replace-with-the-workflow-start-secret"
+$env:PI_MESH_WORKFLOW_ID = "jira-development"
+$env:PI_MESH_WORKFLOW_SIGNAL_SECRET = "replace-with-the-callback-secret"
+$env:GITHUB_TOKEN = "replace-with-a-checks-read-token"
 pi-mesh workflow start jira-development --payload '@ticket.json'
 pi-mesh workflow list
 pi-mesh workflow get run_123
-pi-mesh github watch --run-id run_123 --stage-id watch --signal-key pr-42-checks --repo org/repo --pr 42 --required ci
+pi-mesh github watch --run-id run_123 --stage-id push-watch `
+  --signal-key pr-42-checks --repo org/repo --pr 42 --required ci
 pi-mesh retrospective export run_123
 pi-mesh stop
 ```
 
-Start hub and workers in separate supervised terminals. Use `--dry-run --json` to inspect mutation plans without exposing configured token or secret values. Terminal workflows export proposed Markdown and JSON retrospectives automatically; review them before adopting any improvement as policy.
+Use `--dry-run --json` to inspect mutation plans without exposing configured
+token or secret values. Terminal workflows export proposed Markdown and JSON
+retrospectives automatically; review them before adopting any improvement as
+policy. Provenance quorum degradation is a separate admin-only operation; use
+the [provenance runbook](docs/provenance-gates.md#degrade-only-through-an-explicit-admin-decision)
+only for a workflow whose evidence policy declares a lower minimum.
 
 ## What is included?
 
@@ -146,6 +189,7 @@ The hub routes messages; it does not merge contexts, choose tasks, or bypass too
 | Fix connection or delivery problems | [Troubleshooting](docs/troubleshooting.md) |
 | See which behaviors and examples are verified | [Test matrix](docs/test-matrix.md) |
 | Start work from Jira or another webhook | [Webhook workflows](docs/webhook-workflows.md) |
+| Require verified replies from eligible peers | [Peer provenance and quorum gates](docs/provenance-gates.md) |
 | Improve the harness and delivery process from evidence | [Continuous improvement](docs/continuous-improvement.md) |
 | Develop or submit a change | [Contributing](CONTRIBUTING.md) |
 | Report a vulnerability | [Security policy](SECURITY.md) |
@@ -179,6 +223,7 @@ The codebase is structured, typed, persisted, tested, packaged, and CI-gated. Th
 
 - One process owns one SQLite database; there is no clustering, leader election, or shared-state failover.
 - Project tokens isolate hub access by project, but there are no per-user roles or external identity provider.
+- Peer quorum proves durable message provenance only within the shared project-credential boundary; it does not prove truth, model independence, non-collusion, or human approval.
 - Delivery is durable and retry-safe when callers supply an idempotency key, but it is not exactly-once execution.
 - Rate-limit counters reset after restart, and capacity depends on the host and SQLite workload.
 - The hub does not coordinate filesystem ownership; use separate worktrees or a single-writer rule.

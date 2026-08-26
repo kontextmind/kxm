@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { parseArgs, runCli } from "../plugins/pi-mesh-comms/src/cli.ts";
@@ -69,6 +69,34 @@ test("hub and worker dry-run do not spawn, and live hub uses the injected spawne
   });
   assert.equal(code, 0);
   assert.equal(spawned, true);
+
+  const worker = capture();
+  let workerEnv: NodeJS.ProcessEnv | undefined;
+  assert.equal(await runCli([
+    "--json",
+    "worker",
+    "--name",
+    "coordinator",
+    "--project",
+    "product",
+    "--model",
+    "vendor/primary",
+    "--fallback-models",
+    "vendor/secondary,vendor/tertiary",
+    "--fresh-start",
+    "--tools",
+    "read,grep,mesh_fanout",
+  ], {}, {
+    ...worker,
+    spawnWorker: (environment) => {
+      workerEnv = environment;
+      return 0;
+    },
+  }), 0);
+  assert.equal(workerEnv?.PI_MESH_WORKER_MODEL, "vendor/primary");
+  assert.equal(workerEnv?.PI_MESH_WORKER_FALLBACK_MODELS, "vendor/secondary,vendor/tertiary");
+  assert.equal(workerEnv?.PI_MESH_WORKER_INITIAL_CONTINUE, "false");
+  assert.equal(workerEnv?.PI_MESH_WORKER_TOOLS, "read,grep,mesh_fanout");
 });
 
 test("stop, signal, status, and help cover the remaining command contract", async () => {
@@ -164,6 +192,69 @@ test("live workflow start is signed and smoke skips without opt-in", async () =>
   assert.match(smoke.read().stdout, /"skipped":true/);
 });
 
+test("release workflow retries reuse one explicit delivery identifier", () => {
+  const launcher = readFileSync(resolve(".kxm/assets/run-provenance-workflow.ps1"), "utf8");
+  assert.match(launcher, /\$startDeliveryId\s*=\s*"provenance-release-\$\(\[Guid\]::NewGuid\(\)\.ToString\('N'\)\)"/);
+  assert.match(launcher, /workflow start provenance-review[\s\S]*?--delivery-id \$startDeliveryId/);
+  assert.equal((launcher.match(/--delivery-id \$startDeliveryId/g) ?? []).length, 1);
+
+  const definitions = JSON.parse(readFileSync(resolve("examples/provenance-workflow.json"), "utf8")) as Array<{
+    stages: Array<{ id: string; instructions: string }>;
+  }>;
+  const review = definitions[0]?.stages.find((stage) => stage.id === "review");
+  assert.ok(review);
+  assert.match(review.instructions, /timeoutMs to 120000/);
+  assert.match(review.instructions, /provenance-review:<runId>:review:<attempt>/);
+  assert.match(review.instructions, /Treat every returned messageId as the durable handle/);
+  assert.match(review.instructions, /mesh_get to verify each stored message has the exact run, stage, requirement, and attempt binding/);
+  assert.match(review.instructions, /mesh_await with that messageId and timeoutMs 120000/);
+  assert.match(review.instructions, /repeat the exact fanout parameters/);
+  assert.match(launcher, /toolTimeoutMs = 180000/);
+  assert.match(launcher, /fanoutTimeoutMs = 120000/);
+});
+
+test("workflow degradation approval is an explicit admin command", async () => {
+  const io = capture();
+  let requestedUrl = "";
+  let authorization = "";
+  let body = "";
+  const code = await runCli([
+    "--json",
+    "workflow",
+    "degrade",
+    "run_1",
+    "review",
+    "--requirement",
+    "Independent Review",
+    "--reason",
+    "one configured peer is unavailable",
+  ], {
+    PI_MESH_AUTH_TOKEN: "admin-secret-token",
+    PI_MESH_SERVER_URL: "http://127.0.0.1:7331",
+  }, {
+    ...io,
+    fetchImpl: async (input, init) => {
+      requestedUrl = String(input);
+      authorization = new Headers(init?.headers).get("authorization") ?? "";
+      body = String(init?.body ?? "");
+      return new Response(JSON.stringify({
+        duplicate: false,
+        approval: { id: "approval_1" },
+      }), { status: 201 });
+    },
+  });
+  assert.equal(code, 0, io.read().stdout);
+  assert.match(requestedUrl, /\/v1\/workflows\/run_1\/degradations$/);
+  assert.equal(authorization, "Bearer admin-secret-token");
+  assert.deepEqual(JSON.parse(body), {
+    stageId: "review",
+    requirementKey: "Independent Review",
+    reason: "one configured peer is unavailable",
+  });
+  assert.match(io.read().stdout, /"approvalId":"approval_1"/);
+  assert.doesNotMatch(io.read().stdout, /admin-secret-token/);
+});
+
 test("github watch dry-run does not leak tokens", async () => {
   const io = capture();
   const code = await runCli(
@@ -240,7 +331,19 @@ test("workflow list/get use local SQLite state and redact configured secret valu
     mkdirSync(stateDir, { recursive: true });
     const database = new DatabaseSync(dataPath);
     database.exec("CREATE TABLE workflow_runs (id TEXT PRIMARY KEY, record TEXT NOT NULL); CREATE TABLE workflow_journal (run_id TEXT NOT NULL, record TEXT NOT NULL);");
-    database.prepare("INSERT INTO workflow_runs (id, record) VALUES (?, ?)").run("run_local", JSON.stringify({ id: "run_local", status: "running", summary: "exact-secret-value" }));
+    const requestSha256 = "a".repeat(64);
+    const replySha256 = "b".repeat(64);
+    database.prepare("INSERT INTO workflow_runs (id, record) VALUES (?, ?)").run("run_local", JSON.stringify({
+      id: "run_local",
+      status: "running",
+      summary: "exact-secret-value",
+      untrustedDigest: "c".repeat(64),
+      stages: [{
+        verifiedEvidence: {
+          review: [{ requestSha256, replySha256 }],
+        },
+      }],
+    }));
     database.prepare("INSERT INTO workflow_journal (run_id, record) VALUES (?, ?)").run("run_local", JSON.stringify({ id: "journal_1", runId: "run_local", summary: "safe evidence" }));
     database.close();
     const env = { PI_MESH_DATA_PATH: dataPath, PI_MESH_TEST_SECRET: "exact-secret-value" };
@@ -252,6 +355,9 @@ test("workflow list/get use local SQLite state and redact configured secret valu
     const get = capture();
     assert.equal(await runCli(["--json", "workflow", "get", "run_local"], env, get, cwd), 0);
     assert.match(get.read().stdout, /journal_1/);
+    assert.match(get.read().stdout, new RegExp(requestSha256));
+    assert.match(get.read().stdout, new RegExp(replySha256));
+    assert.doesNotMatch(get.read().stdout, /c{64}/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -268,6 +374,7 @@ test("invalid and unavailable operator commands fail safely with stable exit cod
     assert.equal(await runCli(["--json", "worker"], {}, capture(), cwd), 2);
     assert.equal(await runCli(["--json", "stop"], {}, capture(), cwd), 1);
     assert.equal(await runCli(["--json", "workflow", "get"], {}, capture(), cwd), 2);
+    assert.equal(await runCli(["--json", "workflow", "degrade", "run_1", "review"], {}, capture(), cwd), 2);
     assert.equal(await runCli(["--json", "workflow", "start", "wf", "--payload", "[]"], { PI_MESH_WORKFLOW_SECRET: "workflow-secret-16chars" }, capture(), cwd), 2);
     assert.equal(await runCli(["--json", "--dry-run", "workflow", "start", "wf", "--payload", "{}"], { PI_MESH_WORKFLOW_SECRET: "workflow-secret-16chars" }, capture(), cwd), 0);
     assert.equal(await runCli(["--json", "signal"], {}, capture(), cwd), 2);

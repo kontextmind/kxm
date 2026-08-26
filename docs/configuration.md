@@ -26,7 +26,7 @@ Pi Mesh Comms uses environment variables for the hub and Pi extension. The Claud
 
 The hub refuses a non-loopback bind without `PI_MESH_AUTH_TOKEN`. Use a long random administrative token even when project tokens are configured, because administrative endpoints such as `/metrics` require it outside loopback.
 
-Project tokens are an authorization boundary. A project-specific token can register only in its mapped project and see only that project's agents and messages. The administrative token remains a fallback for projects without an explicit entry.
+Project tokens are an authorization boundary. A project-specific token can register only in its mapped project and see only that project's agents and messages. The administrative token remains a fallback for projects without an explicit entry. For provenance-gated workflows, configure an explicit project token and give workers only that token; reserve a distinct administrative token for operations such as quorum degradation approval.
 
 PowerShell example:
 
@@ -85,26 +85,66 @@ Automated senders should set a stable `idempotencyKey` so an exact retry returns
 
 `mesh_fanout` derives a bounded idempotency key from `idempotencyKeyPrefix`, the correlation ID when supplied, and the normalized target name. Reuse the same prefix and correlation ID for an exact retry of one workflow run. A later workflow may safely reuse the human-readable prefix with a different correlation ID without colliding with retained peer messages. Pending panel members have not supplied evidence and cannot satisfy a multi-agent workflow checkpoint.
 
-When a Pi peer produces more than 32,000 characters, the extension returns a bounded truncated reply instead of leaving the request pending. The full output may remain in the replying agent's local Pi session or `.kxm/logs/pi-agent-<name>.log` when the long-lived worker is used.
+For a peer-policy requirement, transport correlation and idempotency do not
+establish provenance. Supply `workflowContext` with the exact run, stage,
+requirement, and active 1-based attempt. The hub authorizes and stores that
+context, and a checkpoint or wait cites the replied message IDs through
+`evidenceRefs`. Each reference set accepts 1–16 message IDs; quorum counts unique
+eligible stable producer IDs.
+
+When a Pi peer produces more than 32,000 characters, the extension returns a bounded truncated reply instead of leaving the request pending. The full output may remain in the replying agent's local Pi session or `.kxm/logs/pi-agent-<project>-<agent>-<identity>.log` when the long-lived worker is used.
 
 ## Long-lived worker settings
 
 | Variable | Default | Description |
 |---|---|---|
 | `PI_MESH_WORKDIR` | Current directory | Repository used by the headless Pi worker |
-| `PI_MESH_WORKER_LOG_PATH` | `.kxm/logs/pi-mesh-worker-<agent>.jsonl` | Structured worker lifecycle log |
-| `PI_MESH_AGENT_LOG_PATH` | `.kxm/logs/pi-agent-<agent>.log` | Captured headless Pi stdout and stderr |
+| `PI_MESH_WORKER_LOG_PATH` | `.kxm/logs/pi-mesh-worker-<project>-<agent>-<identity>.jsonl` | Structured worker lifecycle log |
+| `PI_MESH_AGENT_LOG_PATH` | `.kxm/logs/pi-agent-<project>-<agent>-<identity>.log` | Captured headless Pi stdout and stderr |
 | `PI_MESH_PI_COMMAND` | `pi` or `pi.cmd` | Explicit Pi executable path when it is not on `PATH` |
 | `PI_MESH_WORKER_CONTINUE` | `true` | Resume the most recent Pi session after a restart |
+| `PI_MESH_WORKER_INITIAL_CONTINUE` | same as `PI_MESH_WORKER_CONTINUE` | Set `false` to start this supervisor generation fresh but still resume later recoveries |
 | `PI_MESH_WORKER_DRAIN_MS` | `15000` | Graceful SIGTERM wait before SIGKILL |
 | `PI_MESH_WORKER_MODEL` | Pi default | Optional model selector passed to Pi |
+| `PI_MESH_WORKER_FALLBACK_MODELS` | unset | Up to eight comma-separated model selectors, tried in order after a final provider failure; requires a primary model |
+| `PI_MESH_WORKER_PROVIDER_RETRY_MS` | `60000` | Retry delay (`1000`–`3600000`) after a final provider failure when no unused fallback remains |
+| `PI_MESH_WORKER_TOOL_TIMEOUT_MS` | `1860000` | Maximum runtime for one Pi tool call (`1000`–`86400000`); the default leaves a one-minute supervisor grace above the longest 30-minute mesh wait, and `0` disables the watchdog |
+| `PI_MESH_WORKER_TOOLS` | Pi defaults | Optional comma-separated allowlist passed to Pi; use it to enforce read-only or single-writer roles |
+| `PI_MESH_WORKER_EXTENSION_PATHS` | unset | Optional extension files separated by the platform path delimiter (`;` on Windows, `:` elsewhere); relative paths resolve inside `PI_MESH_WORKDIR` |
+| `PI_MESH_WORKER_SKILL_PATHS` | unset | Optional skill files or directories using the same delimiter and relative-path base |
 | `PI_MESH_WORKER_MAX_RESTARTS` | Unlimited | Non-negative process restart limit; service managers may set their own policy |
 | `PI_MESH_SMOKE` | unset | Set to `1` to enable the opt-in real multi-Pi smoke command |
 | `PI_MESH_SMOKE_MODELS` | unset | Two distinct comma-separated model IDs for the real-Pi release smoke |
 | `PI_MESH_SMOKE_TIMEOUT_MS` | `120000` | Per-phase real-Pi smoke timeout (`30000`–`600000`) |
 | `PI_MESH_SMOKE_PI_COMMAND` | discovered `pi` | Optional explicit Pi executable for a self-hosted runner |
 
-`PI_MESH_AGENT_NAME` and `PI_MESH_PROJECT` are required by `pi-mesh worker`. The remaining agent settings are inherited by the spawned Pi RPC process. The worker resolves `.kxm` inside `PI_MESH_WORKDIR`, creates the standard directories, and passes their absolute paths to Pi. A fast `--continue` failure writes `.kxm/state/worker-recovery-<agent>.json` and retries once without `--continue`.
+`PI_MESH_AGENT_NAME` and `PI_MESH_PROJECT` are required by `pi-mesh worker`. The remaining agent settings are inherited by the spawned Pi RPC process. The worker resolves `.kxm` and explicit package paths inside `PI_MESH_WORKDIR`, creates the standard directories, and passes absolute paths to Pi. When either resource-path variable is set, the worker disables discovery for that resource category and loads only the listed files or directories; setting just one category leaves discovery unchanged for the other. Missing paths and extension directories fail before the restart loop. A skill may be a `SKILL.md` file or a directory Pi scans for skills. Restart the worker after changing any resource or path.
+
+Use exact paths for release verification or an uninstalled worktree. Include every provider extension the selected models require because extension discovery is isolated:
+
+```powershell
+$separator = [IO.Path]::PathSeparator
+$env:PI_MESH_WORKER_EXTENSION_PATHS = @(
+  "plugins/pi-mesh-comms/src/extension.ts"
+  "$env:USERPROFILE/.pi/agent/npm/node_modules/pi-antigravity/src/index.ts"
+) -join $separator
+$env:PI_MESH_WORKER_SKILL_PATHS = "plugins/pi-mesh-comms/skills/pi-mesh-comms"
+$coordinatorTools = @(
+  "read", "powershell", "edit", "write", "grep", "find", "ls",
+  "mesh_list", "mesh_send", "mesh_fanout", "mesh_get", "mesh_await",
+  "mesh_workflow_get", "mesh_workflow_checkpoint", "mesh_workflow_wait",
+  "mesh_workflow_record", "mesh_improvement_report"
+) -join ","
+pi-mesh worker --name coordinator --project product `
+  --model antigravity/claude-sonnet-4-6 `
+  --fallback-models xai/grok-4.6 --tools $coordinatorTools --fresh-start
+```
+
+Explicit extension code runs with the worker's repository, network, and model credentials, and skills supply privileged instructions. These are trusted service-administrator settings: never derive them from a webhook or workflow payload. Absolute and parent-relative paths outside `PI_MESH_WORKDIR` are intentionally supported for reviewed provider extensions. Review and protect every configured resource like an executable dependency. A fast `--continue` failure writes a collision-safe `.kxm/state/worker-recovery-<project>-<agent>-<identity>.json` envelope and retries once without `--continue`; the reader can consume an exact-name legacy envelope during migration.
+
+Pi performs its own transient retries before emitting the final settled event. If the final assistant outcome is still a provider error, the extension leaves the durable inbound message delivered instead of replying with an error. The supervisor closes the RPC session gracefully, records only an allowlisted diagnostic class in its structured log, selects the next configured fallback, and resumes the current Pi session so completed tool and peer results remain available. If continuation is structurally invalid, the existing fresh-session recovery path takes over. Raw provider output remains only in the protected `pi-agent-*.log` stream; even oversized or malformed RPC frames are reduced to bounded metadata in supervisor memory and lifecycle logs.
+
+The tool allowlist is a capability boundary inside Pi, not a prompt suggestion. A review-only worker can use `read,grep,find,ls`; a coordinator should add only the mesh and mutation tools required by its workflow. The example above is a full-lifecycle, single-writer PowerShell coordinator; replace `powershell` with `bash` on macOS or Linux. Omit both platform shell tools, `edit`, and `write` from peers that must not mutate a shared checkout. Durable coordinators need `mesh_workflow_checkpoint`, and workflows that pause for external gates or capture learning also need `mesh_workflow_wait`, `mesh_workflow_record`, and `mesh_improvement_report`. If an enabled tool exceeds the watchdog duration, the worker preserves recovery metadata, closes or force-stops the RPC process tree within the drain deadline, and resumes the delivered request. Choose a timeout above the longest expected build or browser test and keep an external service-manager limit as a second boundary.
 
 ## Operator CLI
 
@@ -116,16 +156,17 @@ When a Pi peer produces more than 32,000 characters, the extension returns a bou
 | `pi-mesh validate` | Parse workflow definitions using env names, not printed secrets |
 | `pi-mesh status` | Check `/health` and `/ready` |
 | `pi-mesh github watch` | Poll required GitHub checks and post the existing signed signal |
+| `pi-mesh workflow degrade <runId> <stageId> --requirement <key> --reason <text>` | Use the administrative token to approve a policy-declared lower peer minimum for the current attempt |
 | `pi-mesh retrospective export <runId>` | Export proposed Markdown/JSON from local durable state under `.kxm/assets/retrospectives` |
 | `pi-mesh smoke` | Opt-in two-worker real-Pi release harness; verifies transport, fanout, restart/resume, journal, and checkpoint |
 
-Global flags: `--json`, `--dry-run`, `--workspace`. `workflow start <definitionId> --payload <JSON|@file>` creates a signed webhook delivery using `PI_MESH_WORKFLOW_SECRET`. `worker --name <name> --project <project> [--model <provider/model>]` and `hub` honor the same workspace flag. GitHub watch posts an exact signed `failed` signal on timeout and exits `4`, preserving the distinction from a successful gate.
+Global flags: `--json`, `--dry-run`, `--workspace`. `workflow start <definitionId> --payload <JSON|@file>` creates a signed webhook delivery using `PI_MESH_WORKFLOW_SECRET`. `workflow degrade` requires `PI_MESH_AUTH_TOKEN` to contain the administrative token; use `--dry-run --json` first and never put a secret in its reason. `worker --name <name> --project <project> [--model <provider/model>] [--fallback-models <provider/model,...>] [--tools <name,...>] [--fresh-start]` and `hub` honor the same workspace flag. `--no-continue` disables every session resume; `--fresh-start` skips only the initial resume. GitHub watch posts an exact signed `failed` signal on timeout and exits `4`, preserving the distinction from a successful gate.
 
 ## Webhook workflow settings
 
 Configure either `PI_MESH_WEBHOOK_WORKFLOWS` or `PI_MESH_WEBHOOK_WORKFLOWS_FILE`, never both. A definition selects a provider source, project, coordinator, event and payload filters, prompt template, and ordered stages. Use `secretEnv` to resolve the workflow-start HMAC secret from another environment variable. Use the optional `signalSecretEnv` for a separate callback secret; otherwise external signals use the workflow-start secret. Do not store either secret in JSON.
 
-See [Webhook workflows](webhook-workflows.md) for the schema and the complete Jira configuration under `.kxm/config/workflows`.
+See [Webhook workflows](webhook-workflows.md) for the base schema and the complete Jira configuration under `.kxm/config/workflows`. See [Peer provenance and quorum gates](provenance-gates.md) for `evidencePolicies`, `workflowContext`, `evidenceRefs`, and explicit degradation.
 
 ## Delivery modes
 

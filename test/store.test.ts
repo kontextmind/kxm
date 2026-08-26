@@ -82,6 +82,134 @@ test("store persists workflow checkpoints and learning journal entries", () => {
   }
 });
 
+test("verified peer evidence survives restart and source-message retention without a schema bump", () => {
+  const directory = mkdtempSync(join(tmpdir(), "pi-mesh-provenance-store-"));
+  const path = join(directory, "mesh.db");
+  let first: MeshStore | undefined;
+  let second: MeshStore | undefined;
+  let third: MeshStore | undefined;
+  const context = {
+    schema: "pi-mesh.workflow-message-context.v1" as const,
+    runId: "run-provenance",
+    stageId: "review",
+    requirementKey: "peer review",
+    attempt: 1,
+  };
+  const sourceMessage: MessageRecord = {
+    id: "message-peer-review",
+    project: "product",
+    from: "agent-coordinator",
+    fromName: "coordinator",
+    to: "agent-peer",
+    toName: "peer",
+    content: "Review the implementation",
+    delivery: "followUp",
+    hops: 0,
+    maxHops: 5,
+    correlationId: "run-provenance",
+    workflowContext: context,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    deliveredAt: "2026-01-01T00:00:01.000Z",
+    repliedAt: "2026-01-01T00:00:03.000Z",
+    expiresAt: "2026-01-02T00:00:00.000Z",
+    status: "replied",
+    reply: { content: "Approved", createdAt: "2026-01-01T00:00:02.000Z" },
+  };
+  const run: WorkflowRun = {
+    id: "run-provenance",
+    definitionId: "provenance",
+    source: "generic",
+    deliveryId: "delivery-provenance",
+    payloadHash: "hash",
+    project: "product",
+    targetAgentId: "agent-coordinator",
+    targetAgentName: "coordinator",
+    messageId: "workflow-prompt",
+    status: "completed",
+    stages: [{
+      id: "review",
+      label: "Review",
+      instructions: "Obtain peer review",
+      requiredEvidence: ["peer review"],
+      maxAttempts: 1,
+      status: "passed",
+      attempts: 1,
+      evidence: {},
+      resolvedEvidencePolicies: {
+        "peer review": {
+          kind: "peer-reply",
+          minProducers: 1,
+          eligibleProducers: [{ id: "agent-peer", name: "peer" }],
+          acceptedStatuses: ["replied"],
+        },
+      },
+      verifiedEvidence: {
+        "peer review": [{
+          schema: "pi-mesh.verified-peer-evidence.v1",
+          messageId: sourceMessage.id,
+          producerId: "agent-peer",
+          producerName: "peer",
+          context,
+          status: "replied",
+          requestSha256: "a".repeat(64),
+          replySha256: "b".repeat(64),
+          createdAt: sourceMessage.createdAt,
+          replyCreatedAt: sourceMessage.reply!.createdAt,
+          repliedAt: sourceMessage.repliedAt!,
+          verifiedAt: "2026-01-01T00:00:04.000Z",
+        }],
+      },
+      startedAt: "2026-01-01T00:00:00.000Z",
+      completedAt: "2026-01-01T00:00:04.000Z",
+      updatedAt: "2026-01-01T00:00:04.000Z",
+    }],
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:04.000Z",
+    completedAt: "2026-01-01T00:00:04.000Z",
+  };
+  try {
+    first = new MeshStore(path);
+    const firstDatabase = (first as unknown as { database: DatabaseSync }).database;
+    const firstVersion = firstDatabase.prepare("PRAGMA user_version").get() as { user_version: number };
+    assert.equal(firstVersion.user_version, 2);
+    first.saveMessage(sourceMessage);
+    first.saveWorkflowRun(run);
+    first.close();
+    first = undefined;
+
+    second = new MeshStore(path);
+    assert.equal(second.messages.has(sourceMessage.id), true);
+    assert.equal(
+      second.workflowRuns.get(run.id)?.stages[0]?.verifiedEvidence?.["peer review"]?.[0]?.messageId,
+      sourceMessage.id,
+    );
+    second.deleteMessage(sourceMessage.id);
+    second.close();
+    second = undefined;
+
+    third = new MeshStore(path);
+    const thirdDatabase = (third as unknown as { database: DatabaseSync }).database;
+    const thirdVersion = thirdDatabase.prepare("PRAGMA user_version").get() as { user_version: number };
+    assert.equal(thirdVersion.user_version, 2);
+    assert.equal(third.messages.has(sourceMessage.id), false);
+    assert.equal(
+      third.workflowRuns.get(run.id)?.stages[0]?.verifiedEvidence?.["peer review"]?.[0]?.replySha256,
+      "b".repeat(64),
+    );
+    third.close();
+    third = undefined;
+  } finally {
+    for (const store of [first, second, third]) {
+      try {
+        store?.close();
+      } catch {
+        // The store may already be closed after the assertion under test.
+      }
+    }
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("workflow transitions commit run, message, and journal atomically and roll back on failure", () => {
   const directory = mkdtempSync(join(tmpdir(), "pi-mesh-transition-store-"));
   const path = join(directory, "mesh.db");

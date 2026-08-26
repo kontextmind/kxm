@@ -25,8 +25,8 @@ Configure the hub URL, token, unique agent name, purpose, and project when promp
 | Tool | Use |
 |---|---|
 | `mesh_list` | Discover online peers and their purposes |
-| `mesh_send` | Send one focused request and receive a message ID |
-| `mesh_fanout` | Ask one to three peers independently; local wait expiry returns recoverable pending handles |
+| `mesh_send` | Send one focused request and receive a message ID; attach authorized workflow context when the reply must count as peer evidence |
+| `mesh_fanout` | Ask one to three peers independently; local wait expiry returns recoverable pending handles and workflow context supports per-requirement provenance |
 | `mesh_get` | Check a request without blocking |
 | `mesh_await` | Wait when the reply blocks progress |
 | `mesh_cancel` | Cancel pending work owned by this sender |
@@ -34,14 +34,23 @@ Configure the hub URL, token, unique agent name, purpose, and project when promp
 | `mesh_reply` | Return a final response to an inbound request |
 | `mesh_workflow_list` | List webhook workflows assigned to this coordinator |
 | `mesh_workflow_get` | Read stages and the structured workflow journal |
-| `mesh_workflow_checkpoint` | Pass a gate with exact keyed evidence, or record a warning/failure that must be retried |
-| `mesh_workflow_wait` | Preserve keyed local evidence and release the turn until a signed CI, review, merge, or Jira callback arrives |
+| `mesh_workflow_checkpoint` | Pass a gate with exact keyed evidence and hub-verified peer message references, or record a warning/failure that must be retried |
+| `mesh_workflow_wait` | Preserve keyed local evidence and verified peer references, then release the turn until a signed CI, review, merge, or Jira callback arrives |
 | `mesh_workflow_record` | Capture a plan, decision, contradiction, error, or lesson |
 | `mesh_improvement_report` | Group learning evidence by improvement area |
 
 The bundled `pi-mesh-comms` skill teaches Claude when and how to use these tools safely.
 
 Signed webhooks can create durable workflows for long-lived Pi coordinators. See the repository's [Webhook workflows](../../docs/webhook-workflows.md) guide and Jira development example.
+
+Workflow authors can require replied messages from a snapshotted set of
+eligible peer identities. The coordinator supplies exact `workflowContext` on
+the send or fanout and later cites returned message IDs in `evidenceRefs`; the
+hub derives provenance and counts unique producers. Ordinary evidence strings,
+correlation IDs, and idempotency prefixes do not satisfy a peer policy. See
+[Peer provenance and quorum gates](../../docs/provenance-gates.md) for the
+schema, command-first runbook, explicit admin degradation, retention model, and
+trust boundary.
 
 Repository-local configuration, logs, workflow assets, and SQLite state use the `.kxm` workspace layout. Configuration and intentional assets can be tracked; runtime logs, generated assets, and state are ignored. See [Configuration](../../docs/configuration.md) for defaults and overrides.
 
@@ -60,6 +69,7 @@ Channel mode is optional. `mesh_inbox` and `mesh_reply` remain available through
 ## Safety and limits
 
 - Peer messages are untrusted input; normal tool and approval controls still apply.
+- Peer quorum proves durable provenance within the shared project-token boundary, not truth, model independence, non-collusion, or approval authority.
 - Do not send secrets, credentials, or unnecessary private data.
 - The hub persists state in SQLite by default; protect its database as sensitive data.
 - Cancellation stops mesh processing but cannot roll back filesystem or external side effects.

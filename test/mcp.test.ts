@@ -68,7 +68,11 @@ test("bundled MCP server initializes and publishes the mesh tool catalog", async
 
   child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
   const listed = await request("tools/list", {});
-  const tools = listed.result?.tools as Array<{ name: string }>;
+  const tools = listed.result?.tools as Array<{
+    name: string;
+    description: string;
+    inputSchema: { properties: Record<string, Record<string, unknown>> };
+  }>;
   assert.deepEqual(
     tools.map((tool) => tool.name),
     [
@@ -88,6 +92,20 @@ test("bundled MCP server initializes and publishes the mesh tool catalog", async
       "mesh_improvement_report",
     ],
   );
+  const sendTool = tools.find((tool) => tool.name === "mesh_send")!;
+  assert.deepEqual(
+    (sendTool.inputSchema.properties.workflowContext!.required as string[]),
+    ["runId", "stageId", "requirementKey", "attempt"],
+  );
+  assert.match(
+    String(sendTool.inputSchema.properties.idempotencyKey!.description),
+    /not a workflow security or evidence binding/,
+  );
+  const checkpointTool = tools.find((tool) => tool.name === "mesh_workflow_checkpoint")!;
+  const evidenceRefValue = checkpointTool.inputSchema.properties.evidenceRefs!.additionalProperties as {
+    properties: { messageIds: { maxItems: number } };
+  };
+  assert.equal(evidenceRefValue.properties.messageIds.maxItems, 16);
   assert.equal(stderr, "");
 });
 
@@ -102,14 +120,34 @@ test("bundled MCP tools cover outbound, inbound, reply, cancellation, and channe
       secret: webhookSecret,
       delivery: "followUp",
       promptTemplate: "Handle {{task.id}}",
-      stages: [{ id: "work", label: "Work", instructions: "Do the work", requiredEvidence: ["checks"], maxAttempts: 2 }],
+      stages: [{
+        id: "work",
+        label: "Work",
+        instructions: "Do the work",
+        requiredEvidence: ["checks"],
+        maxAttempts: 2,
+        evidencePolicies: {
+          checks: {
+            kind: "peer-reply",
+            minProducers: 1,
+            eligibleAgents: ["reviewer"],
+            acceptedStatuses: ["replied"],
+          },
+        },
+      }],
     }],
   });
   const peer = mesh.makeClient("reviewer");
   await peer.start(async (event) => {
     if (event.type !== "message") return;
     await peer.acknowledge(event.message.id);
-    if (event.message.content === "review this") await peer.reply(event.message.id, "review complete");
+    if (
+      event.message.content === "review this"
+      || event.message.content === "workflow provenance send"
+      || event.message.content === "workflow provenance fanout"
+    ) {
+      await peer.reply(event.message.id, "review complete");
+    }
   });
 
   const child = spawn(process.execPath, ["plugins/pi-mesh-comms/dist/mcp-server.js"], {
@@ -261,6 +299,42 @@ test("bundled MCP tools cover outbound, inbound, reply, cancellation, and channe
   await waitFor(async () => JSON.stringify(toolValue(await tool("mesh_inbox"))).includes(workflow.run.messageId));
   assert.match(JSON.stringify(toolValue(await tool("mesh_workflow_list"))), /mcp-workflow/);
   assert.match(JSON.stringify(toolValue(await tool("mesh_workflow_get", { runId: workflow.run.id }))), /in_progress/);
+  const provenanceContext = {
+    runId: workflow.run.id,
+    stageId: "work",
+    requirementKey: "checks",
+    attempt: 1,
+  };
+  const provenanceSend = toolValue(await tool("mesh_send", {
+    target: "reviewer",
+    content: "workflow provenance send",
+    correlationId: workflow.run.id,
+    idempotencyKey: "mcp-workflow-provenance-send-1",
+    workflowContext: provenanceContext,
+  }));
+  const provenanceSendId = String(provenanceSend.messageId);
+  await tool("mesh_await", { messageId: provenanceSendId, timeoutMs: 2_000 });
+  const provenanceMessage = toolValue(await tool("mesh_get", { messageId: provenanceSendId }));
+  assert.deepEqual(provenanceMessage.workflowContext, {
+    schema: "pi-mesh.workflow-message-context.v1",
+    ...provenanceContext,
+  });
+  const provenanceFanout = toolValue(await tool("mesh_fanout", {
+    targets: ["reviewer"],
+    content: "workflow provenance fanout",
+    correlationId: workflow.run.id,
+    idempotencyKeyPrefix: "mcp-workflow-provenance-fanout",
+    workflowContext: provenanceContext,
+    timeoutMs: 2_000,
+  }));
+  const [provenanceFanoutResult] = provenanceFanout.responses as Array<{ messageId: string }>;
+  const provenanceFanoutMessage = toolValue(await tool("mesh_get", {
+    messageId: provenanceFanoutResult!.messageId,
+  }));
+  assert.deepEqual(provenanceFanoutMessage.workflowContext, {
+    schema: "pi-mesh.workflow-message-context.v1",
+    ...provenanceContext,
+  });
   const recorded = toolValue(await tool("mesh_workflow_record", {
     runId: workflow.run.id,
     category: "lesson",
@@ -272,18 +346,19 @@ test("bundled MCP tools cover outbound, inbound, reply, cancellation, and channe
   assert.equal(recorded.category, "lesson");
   const invalidWait = await tool("mesh_workflow_wait", {
     runId: workflow.run.id,
-    stageId: "missing",
+    stageId: "work",
     signalKey: "external-check",
     summary: "Wait for external check",
+    evidenceRefs: { checks: { messageIds: ["msg_missing_surface_reference"] } },
   });
   assert.equal(invalidWait.result?.isError, true);
-  assert.match(JSON.stringify(invalidWait.result), /not found/);
+  assert.match(JSON.stringify(invalidWait.result), /peer evidence message not found/);
   const checkpoint = toolValue(await tool("mesh_workflow_checkpoint", {
     runId: workflow.run.id,
     stageId: "work",
     status: "passed",
     summary: "Completed with checks",
-    evidence: { checks: "pass" },
+    evidenceRefs: { checks: { messageIds: [provenanceSendId] } },
   }));
   assert.equal(checkpoint.completed, true);
   assert.match(JSON.stringify(toolValue(await tool("mesh_improvement_report"))), /harness/);

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -14,8 +14,52 @@ const pidPath = join(stateDir, "hub.pid");
 const startedAt = new Date().toISOString();
 const controlFile = "hub.stop";
 const controlPath = join(stateDir, controlFile);
+
+function processExists(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === "EPERM";
+  }
+}
+
+function claimPidFile() {
+  const record = { version: 1, pid: process.pid, role: "hub", startedAt, controlFile };
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    let descriptor;
+    try {
+      descriptor = openSync(pidPath, "wx", 0o600);
+      writeFileSync(descriptor, `${JSON.stringify(record)}\n`, "utf8");
+      closeSync(descriptor);
+      descriptor = undefined;
+      return;
+    } catch (error) {
+      if (descriptor !== undefined) closeSync(descriptor);
+      if (error?.code !== "EEXIST") throw error;
+      let existing;
+      try {
+        existing = JSON.parse(readFileSync(pidPath, "utf8"));
+      } catch (existingError) {
+        if (existingError?.code === "ENOENT") continue;
+        throw new Error(
+          `pi-mesh hub PID claim is invalid at ${pidPath}; remove it only after verifying no hub process is running`,
+          { cause: existingError },
+        );
+      }
+      if (existing?.version === 1 && existing.role === "hub" && Number.isInteger(existing.pid) && processExists(existing.pid)) {
+        throw new Error(`pi-mesh hub is already managed by PID ${existing.pid}`);
+      }
+      throw new Error(
+        `pi-mesh hub PID claim is stale at ${pidPath}; remove it only after verifying no hub process is running`,
+      );
+    }
+  }
+  throw new Error("could not claim the pi-mesh hub PID file");
+}
+
+claimPidFile();
 rmSync(controlPath, { force: true });
-writeFileSync(pidPath, `${JSON.stringify({ version: 1, pid: process.pid, role: "hub", startedAt, controlFile })}\n`, { encoding: "utf8", mode: 0o600 });
 function cleanupPid() { try { const record = JSON.parse(readFileSync(pidPath, "utf8")); if (record.pid === process.pid) rmSync(pidPath, { force: true }); } catch { /* replaced */ } }
 process.once("exit", cleanupPid);
 const child = spawn(process.execPath, [

@@ -4,6 +4,7 @@ test/
 *.tgz
 .kxm/logs/
 .kxm/state/
+.kxm/config/workflows/provenance-quorum.json
 .kxm/assets/generated/
 .kxm/assets/retrospectives/*.json
 .kxm/assets/retrospectives/*.md

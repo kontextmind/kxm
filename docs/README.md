@@ -11,6 +11,7 @@ This documentation is organized by task. Start with the guide that matches what 
 | [Troubleshooting](troubleshooting.md) | Everyone | Diagnose common installation and delivery failures |
 | [Test matrix](test-matrix.md) | Users and maintainers | Map features and use cases to automated evidence |
 | [Webhook workflows](webhook-workflows.md) | Automation owners | Start durable work from Jira or another signed webhook |
+| [Peer provenance and quorum gates](provenance-gates.md) | Workflow authors and security reviewers | Require durable replies from eligible peer identities without overstating the trust guarantee |
 | [Continuous improvement](continuous-improvement.md) | Product and engineering leads | Turn run evidence into reviewed workflow improvements |
 
 Project-level policies live at the repository root:

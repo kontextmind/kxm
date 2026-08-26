@@ -23,7 +23,7 @@ release through an authenticated GitHub CLI session and install that local
 tarball. Run `gh auth login` first if necessary.
 
 ```powershell
-$version = "0.4.2"
+$version = "0.4.3"
 $asset = "kontextmind-pi-extensions-$version.tgz"
 $releaseDir = Join-Path $PWD ".pi-mesh-release"
 New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null

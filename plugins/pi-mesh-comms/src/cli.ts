@@ -74,8 +74,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
 function usage(): string {
   return [
     "Usage: pi-mesh [--json] [--dry-run] [--workspace <dir>] <command>",
-    "Commands: init | validate | status | hub | worker --name <name> --project <project> [--model <id>] | stop",
+    "Commands: init | validate | status | hub | worker --name <name> --project <project>",
+    "          [--model <id>] [--fallback-models <id,...>] [--tools <name,...>] [--fresh-start] | stop",
     "          workflow list | workflow get <runId> | workflow start <definitionId> --payload <JSON|@file>",
+    "          workflow degrade <runId> <stageId> --requirement <key> --reason <text>",
     "          signal | github watch | retrospective export <runId> | smoke",
   ].join("\n");
 }
@@ -97,8 +99,29 @@ function parseEvidencePairs(values: string[]): WorkflowEvidenceInput {
 }
 
 function print(io: CliIo, jsonMode: boolean, payload: Record<string, unknown>, text: string): void {
-  const safePayload = redactSecrets(JSON.stringify(payload));
+  const safePayload = JSON.stringify(redactCliValue(payload));
   io.stdout(jsonMode ? `${safePayload}\n` : `${redactSecrets(text)}\n`);
+}
+
+function redactCliValue(value: unknown, field = ""): unknown {
+  if (typeof value === "string") {
+    // These two fields are public audit digests, not credentials. Preserve
+    // them only by exact field name and shape; every other 64-hex value keeps
+    // the conservative generic redaction behavior.
+    if (
+      (field === "requestSha256" || field === "replySha256")
+      && /^[a-f0-9]{64}$/.test(value)
+    ) return value;
+    return redactSecrets(value);
+  }
+  if (Array.isArray(value)) return value.map((candidate) => redactCliValue(candidate));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .map(([key, candidate]) => [key, redactCliValue(candidate, key)]),
+    );
+  }
+  return value;
 }
 
 function workspaceDirs(cwd: string, workspaceFlag: string | undefined, env: NodeJS.ProcessEnv) {
@@ -124,6 +147,14 @@ function redactConfiguredValues(text: string, env: NodeJS.ProcessEnv): string {
   for (const [name, value] of Object.entries(env)) {
     if (!maskEnvName(name) || !value || value.length < 4) continue;
     safe = safe.replaceAll(value, "[redacted]");
+  }
+  const trailingNewline = safe.endsWith("\n") ? "\n" : "";
+  try {
+    const parsed = JSON.parse(safe) as unknown;
+    return `${JSON.stringify(redactCliValue(parsed))}${trailingNewline}`;
+  } catch {
+    // Human-readable output and diagnostics keep conservative generic
+    // redaction, including opaque 64-hex values.
   }
   return redactSecrets(safe);
 }
@@ -177,6 +208,41 @@ async function postWorkflowStart(input: { serverUrl: string; definitionId: strin
   try { parsed = JSON.parse(responseText) as typeof parsed; } catch { /* bounded adapter error */ }
   if (!response.ok) throw new Error(`workflow_start_http_${response.status}`);
   return { status: response.status, ...(parsed.run?.id ? { runId: parsed.run.id } : {}), duplicate: parsed.duplicate === true };
+}
+
+async function postWorkflowDegradation(input: {
+  serverUrl: string;
+  authToken: string;
+  runId: string;
+  stageId: string;
+  requirementKey: string;
+  reason: string;
+  fetchImpl: typeof fetch;
+}): Promise<{ status: number; duplicate: boolean; approvalId?: string }> {
+  const response = await input.fetchImpl(
+    `${input.serverUrl.replace(/\/$/, "")}/v1/workflows/${encodeURIComponent(input.runId)}/degradations`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${input.authToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        stageId: input.stageId,
+        requirementKey: input.requirementKey,
+        reason: input.reason,
+      }),
+    },
+  );
+  const text = (await response.text()).slice(0, 8_000);
+  let parsed: { duplicate?: boolean; approval?: { id?: string } } = {};
+  try { parsed = JSON.parse(text) as typeof parsed; } catch { /* bounded adapter error */ }
+  if (!response.ok) throw new Error(`workflow_degradation_http_${response.status}`);
+  return {
+    status: response.status,
+    duplicate: parsed.duplicate === true,
+    ...(parsed.approval?.id ? { approvalId: parsed.approval.id } : {}),
+  };
 }
 
 export async function runCli(
@@ -257,9 +323,13 @@ export async function runCli(
     const name = typeof parsed.flags.name === "string" ? parsed.flags.name.trim() : env.PI_MESH_AGENT_NAME?.trim();
     const project = typeof parsed.flags.project === "string" ? parsed.flags.project.trim() : env.PI_MESH_PROJECT?.trim();
     const model = typeof parsed.flags.model === "string" ? parsed.flags.model.trim() : env.PI_MESH_WORKER_MODEL?.trim();
-    const extraEnv = { PI_MESH_WORKDIR: dirs.workdir, PI_MESH_WORKSPACE_DIR: dirs.workspace, PI_MESH_CONFIG_DIR: dirs.config, PI_MESH_LOGS_DIR: dirs.logs, PI_MESH_ASSETS_DIR: dirs.assets, PI_MESH_STATE_DIR: dirs.state, ...(name ? { PI_MESH_AGENT_NAME: name } : {}), ...(project ? { PI_MESH_PROJECT: project } : {}), ...(model ? { PI_MESH_WORKER_MODEL: model } : {}), ...(parsed.flags["no-continue"] ? { PI_MESH_WORKER_CONTINUE: "false" } : {}) };
+    const fallbackModels = typeof parsed.flags["fallback-models"] === "string"
+      ? parsed.flags["fallback-models"].trim()
+      : env.PI_MESH_WORKER_FALLBACK_MODELS?.trim();
+    const tools = typeof parsed.flags.tools === "string" ? parsed.flags.tools.trim() : env.PI_MESH_WORKER_TOOLS?.trim();
+    const extraEnv = { PI_MESH_WORKDIR: dirs.workdir, PI_MESH_WORKSPACE_DIR: dirs.workspace, PI_MESH_CONFIG_DIR: dirs.config, PI_MESH_LOGS_DIR: dirs.logs, PI_MESH_ASSETS_DIR: dirs.assets, PI_MESH_STATE_DIR: dirs.state, ...(name ? { PI_MESH_AGENT_NAME: name } : {}), ...(project ? { PI_MESH_PROJECT: project } : {}), ...(model ? { PI_MESH_WORKER_MODEL: model } : {}), ...(fallbackModels ? { PI_MESH_WORKER_FALLBACK_MODELS: fallbackModels } : {}), ...(tools ? { PI_MESH_WORKER_TOOLS: tools } : {}), ...(parsed.flags["no-continue"] ? { PI_MESH_WORKER_CONTINUE: "false" } : {}), ...(parsed.flags["fresh-start"] ? { PI_MESH_WORKER_INITIAL_CONTINUE: "false" } : {}) };
     if (parsed.dryRun) {
-      print(io, parsed.json, { ok: true, command: "worker", dryRun: true, workspace: dirs.workspace, name: name || "required", project: project || "required", model: model || "provider default", continue: parsed.flags["no-continue"] ? false : true }, "would start worker");
+      print(io, parsed.json, { ok: true, command: "worker", dryRun: true, workspace: dirs.workspace, name: name || "required", project: project || "required", model: model || "provider default", fallbackModels: fallbackModels || "none", tools: tools || "Pi defaults", continue: parsed.flags["no-continue"] ? false : true, freshStart: Boolean(parsed.flags["fresh-start"]) }, "would start worker");
       return 0;
     }
     if (!name || !project) { io.stderr("worker requires --name and --project (or PI_MESH_AGENT_NAME and PI_MESH_PROJECT)\n"); return 2; }
@@ -280,15 +350,15 @@ export async function runCli(
     }
     const requested: string[] = [];
     const ignored: string[] = [];
-    const records = new Map<string, { pid: number; startedAt: string }>();
+    const records = new Map<string, { pid: number; startedAt: string; generation?: string }>();
     for (const file of pids) {
       try {
-        const record = JSON.parse(readFileSync(join(dirs.state, file), "utf8")) as { version?: number; pid?: number; role?: string; startedAt?: string; controlFile?: string };
+        const record = JSON.parse(readFileSync(join(dirs.state, file), "utf8")) as { version?: number; pid?: number; role?: string; startedAt?: string; generation?: string; controlFile?: string };
         const expectedControl = file === "hub.pid" ? "hub.stop" : file.startsWith("worker-") ? `${file.slice(0, -4)}.stop` : undefined;
         const expectedRole = file === "hub.pid" ? "hub" : file.startsWith("worker-") ? "worker" : undefined;
         if (record.version !== 1 || !Number.isInteger(record.pid) || record.pid! <= 0 || !record.startedAt || !expectedControl || record.controlFile !== expectedControl || record.role !== expectedRole || !processExists(record.pid!)) { ignored.push(file); continue; }
-        writeFileSync(join(dirs.state, record.controlFile), `${JSON.stringify({ startedAt: record.startedAt, requestedAt: new Date().toISOString() })}\n`, { encoding: "utf8", mode: 0o600 });
-        requested.push(file); records.set(file, { pid: record.pid!, startedAt: record.startedAt });
+        writeFileSync(join(dirs.state, record.controlFile), `${JSON.stringify({ startedAt: record.startedAt, ...(record.generation ? { generation: record.generation } : {}), requestedAt: new Date().toISOString() })}\n`, { encoding: "utf8", mode: 0o600 });
+        requested.push(file); records.set(file, { pid: record.pid!, startedAt: record.startedAt, ...(record.generation ? { generation: record.generation } : {}) });
       } catch { ignored.push(file); }
     }
     if (requested.length === 0) { print(io, parsed.json, { ok: false, command: "stop", requested, ignored }, "no current managed processes found"); return 1; }
@@ -298,8 +368,8 @@ export async function runCli(
     while (Date.now() <= deadline && stopped.size < requested.length) {
       for (const [file, record] of records) {
         try {
-          const current = JSON.parse(readFileSync(join(dirs.state, file), "utf8")) as { pid?: number; startedAt?: string };
-          if (current.pid !== record.pid || current.startedAt !== record.startedAt || !processExists(record.pid)) stopped.add(file);
+          const current = JSON.parse(readFileSync(join(dirs.state, file), "utf8")) as { pid?: number; startedAt?: string; generation?: string };
+          if (current.pid !== record.pid || current.startedAt !== record.startedAt || current.generation !== record.generation || !processExists(record.pid)) stopped.add(file);
         } catch { stopped.add(file); }
       }
       if (stopped.size < requested.length) await (io.sleep ?? ((ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms))))(100);
@@ -332,6 +402,52 @@ export async function runCli(
         print(io, parsed.json, { ok: true, command: "workflow start", definitionId, deliveryId, ...response }, `started workflow ${response.runId ?? "accepted"}`);
         return 0;
       } catch { print(io, parsed.json, { ok: false, command: "workflow start", error: "workflow_start_failed" }, "signed workflow start failed"); return 1; }
+    }
+    if (action === "degrade") {
+      const runId = parsed.rest[2];
+      const stageId = parsed.rest[3];
+      const requirementKey = typeof parsed.flags.requirement === "string" ? parsed.flags.requirement.trim() : "";
+      const reason = typeof parsed.flags.reason === "string" ? parsed.flags.reason.trim() : "";
+      const adminToken = env.PI_MESH_AUTH_TOKEN?.trim();
+      if (!runId || !stageId || !requirementKey || !reason || !adminToken) {
+        io.stderr("workflow degrade requires <runId> <stageId>, --requirement, --reason, and PI_MESH_AUTH_TOKEN\n");
+        return 2;
+      }
+      if (parsed.dryRun) {
+        print(
+          io,
+          parsed.json,
+          { ok: true, command: "workflow degrade", dryRun: true, runId, stageId, requirementKey },
+          `would approve configured degraded quorum for ${runId}/${stageId}/${requirementKey}`,
+        );
+        return 0;
+      }
+      try {
+        const result = await postWorkflowDegradation({
+          serverUrl,
+          authToken: adminToken,
+          runId,
+          stageId,
+          requirementKey,
+          reason,
+          fetchImpl,
+        });
+        print(
+          io,
+          parsed.json,
+          { ok: true, command: "workflow degrade", runId, stageId, requirementKey, ...result },
+          result.duplicate ? "degraded quorum was already approved" : "approved configured degraded quorum",
+        );
+        return 0;
+      } catch {
+        print(
+          io,
+          parsed.json,
+          { ok: false, command: "workflow degrade", error: "workflow_degradation_failed", runId, stageId, requirementKey },
+          "workflow degradation approval failed",
+        );
+        return 1;
+      }
     }
     if (action === "list" || action === "get") {
       const dataPath = resolve(dirs.workdir, env.PI_MESH_DATA_PATH?.trim() || join(dirs.state, "mesh.db"));

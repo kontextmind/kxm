@@ -6,12 +6,14 @@ import { join } from "node:path";
 import test from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import piMeshExtension from "../plugins/pi-mesh-comms/src/extension.ts";
-import { recoveryEnvelopePath } from "../plugins/pi-mesh-comms/src/recovery.ts";
+import { recoveryEnvelopePath, workerStateKey } from "../plugins/pi-mesh-comms/src/recovery.ts";
 import { createTestMesh, waitFor } from "./helpers.ts";
 
 type EventHandler = (...args: unknown[]) => unknown | Promise<unknown>;
 type Tool = {
   name: string;
+  description?: string;
+  parameters?: Record<string, unknown>;
   execute: (...args: unknown[]) => Promise<{ details: unknown }>;
 };
 type Command = {
@@ -60,14 +62,34 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
       secret: webhookSecret,
       delivery: "followUp",
       promptTemplate: "Handle {{task.id}}",
-      stages: [{ id: "work", label: "Work", instructions: "Do the work", requiredEvidence: ["test"], maxAttempts: 2 }],
+      stages: [{
+        id: "work",
+        label: "Work",
+        instructions: "Do the work",
+        requiredEvidence: ["test"],
+        maxAttempts: 2,
+        evidencePolicies: {
+          test: {
+            kind: "peer-reply",
+            minProducers: 1,
+            eligibleAgents: ["reviewer"],
+            acceptedStatuses: ["replied"],
+          },
+        },
+      }],
     }],
   });
   const peer = mesh.makeClient("reviewer");
   await peer.start(async (event) => {
     if (event.type !== "message") return;
     await peer.acknowledge(event.message.id);
-    if (event.message.content === "outbound review") await peer.reply(event.message.id, "outbound approved");
+    if (
+      event.message.content === "outbound review"
+      || event.message.content === "workflow provenance send"
+      || event.message.content === "workflow provenance fanout"
+    ) {
+      await peer.reply(event.message.id, "outbound approved");
+    }
   });
 
   const previous = {
@@ -113,6 +135,23 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
     "mesh_workflow_record",
     "mesh_improvement_report",
   ]);
+  const sendTool = fake.tools.get("mesh_send")!;
+  const sendProperties = (sendTool.parameters as {
+    properties: Record<string, Record<string, unknown>>;
+  }).properties;
+  assert.deepEqual(
+    (sendProperties.workflowContext!.required as string[]),
+    ["runId", "stageId", "requirementKey", "attempt"],
+  );
+  assert.match(String(sendProperties.idempotencyKey!.description), /not a workflow security or evidence binding/);
+  const checkpointProperties = (fake.tools.get("mesh_workflow_checkpoint")!.parameters as {
+    properties: Record<string, Record<string, unknown>>;
+  }).properties;
+  const evidenceRefValue = checkpointProperties.evidenceRefs!.patternProperties as Record<
+    string,
+    { properties: { messageIds: { maxItems: number } } }
+  >;
+  assert.equal(Object.values(evidenceRefValue)[0]!.properties.messageIds.maxItems, 16);
   assert.ok(fake.commands.has("mesh-status"));
 
   const statuses: string[] = [];
@@ -217,6 +256,53 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
   assert.doesNotMatch(JSON.stringify(afterToolFailure.details), /sk-|ghp_|Bearer |prompt body|stdout dump/);
   assert.match(JSON.stringify((await fake.tools.get("mesh_workflow_list")!.execute("workflow-list", {})).details), /TASK|extension-workflow/);
   assert.match(JSON.stringify((await fake.tools.get("mesh_workflow_get")!.execute("workflow-get", { runId: workflowRunId })).details), /in_progress/);
+  const provenanceContext = {
+    runId: workflowRunId,
+    stageId: "work",
+    requirementKey: "test",
+    attempt: 1,
+  };
+  const provenanceSend = await fake.tools.get("mesh_send")!.execute("workflow-provenance-send", {
+    target: "reviewer",
+    content: "workflow provenance send",
+    correlationId: workflowRunId,
+    idempotencyKey: "workflow-provenance-send-1",
+    workflowContext: provenanceContext,
+  });
+  const provenanceSendId = (provenanceSend.details as { messageId: string }).messageId;
+  await fake.tools.get("mesh_await")!.execute("workflow-provenance-send-await", {
+    messageId: provenanceSendId,
+    timeoutMs: 2_000,
+  });
+  const provenanceMessage = await fake.tools.get("mesh_get")!.execute("workflow-provenance-send-get", {
+    messageId: provenanceSendId,
+  });
+  assert.deepEqual((provenanceMessage.details as {
+    workflowContext: Record<string, unknown>;
+  }).workflowContext, {
+    schema: "pi-mesh.workflow-message-context.v1",
+    ...provenanceContext,
+  });
+  const provenanceFanout = await fake.tools.get("mesh_fanout")!.execute("workflow-provenance-fanout", {
+    targets: ["reviewer"],
+    content: "workflow provenance fanout",
+    correlationId: workflowRunId,
+    idempotencyKeyPrefix: "workflow-provenance-fanout",
+    workflowContext: provenanceContext,
+    timeoutMs: 2_000,
+  });
+  const [provenanceFanoutResult] = (provenanceFanout.details as {
+    responses: Array<{ messageId: string }>;
+  }).responses;
+  const provenanceFanoutMessage = await fake.tools.get("mesh_get")!.execute("workflow-provenance-fanout-get", {
+    messageId: provenanceFanoutResult!.messageId,
+  });
+  assert.deepEqual((provenanceFanoutMessage.details as {
+    workflowContext: Record<string, unknown>;
+  }).workflowContext, {
+    schema: "pi-mesh.workflow-message-context.v1",
+    ...provenanceContext,
+  });
   await fake.tools.get("mesh_workflow_record")!.execute("workflow-record", {
     runId: workflowRunId,
     category: "decision",
@@ -225,16 +311,17 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
   });
   await assert.rejects(() => fake.tools.get("mesh_workflow_wait")!.execute("workflow-wait-invalid", {
     runId: workflowRunId,
-    stageId: "missing",
+    stageId: "work",
     signalKey: "external-check",
     summary: "Wait for external check",
-  }), /not found/);
+    evidenceRefs: { test: { messageIds: ["msg_missing_surface_reference"] } },
+  }), /peer evidence message not found/);
   const checkpoint = await fake.tools.get("mesh_workflow_checkpoint")!.execute("workflow-checkpoint", {
     runId: workflowRunId,
     stageId: "work",
     status: "passed",
     summary: "Work and test complete",
-    evidence: { test: "pass" },
+    evidenceRefs: { test: { messageIds: [provenanceSendId] } },
   });
   assert.equal((checkpoint.details as { completed: boolean }).completed, true);
   assert.match(JSON.stringify((await fake.tools.get("mesh_improvement_report")!.execute("improvements", {})).details), /implementation/);
@@ -361,6 +448,206 @@ test("fresh Pi session receives a durable workflow recovery turn", async (contex
   await fake.emit("session_shutdown");
 });
 
+test("fresh tool-timeout recovery relies on one durable inbound replay", async (context) => {
+  const secret = "tool-timeout-recovery-secret";
+  const mesh = await createTestMesh(context, {
+    webhookWorkflows: [{
+      id: "tool-timeout-recovery-workflow",
+      source: "generic",
+      project: "tool-timeout-recovery-project",
+      target: "tool-timeout-agent",
+      secret,
+      delivery: "followUp",
+      promptTemplate: "Recover {{task}}",
+      stages: [{ id: "review", label: "Review", instructions: "Continue safely", requiredEvidence: [], maxAttempts: 2 }],
+    }],
+  });
+  const bootstrap = mesh.makeClient("tool-timeout-agent", {
+    purpose: "durable timeout recovery target",
+    project: "tool-timeout-recovery-project",
+  });
+  await bootstrap.start(() => undefined);
+  await bootstrap.stop();
+
+  const body = JSON.stringify({ task: "TIMEOUT-1" });
+  const started = await fetch(`${mesh.address.url}/v1/webhooks/tool-timeout-recovery-workflow`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-mesh-delivery-id": "tool-timeout-recovery-delivery-1",
+      "x-hub-signature": `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`,
+    },
+    body,
+  });
+  assert.equal(started.status, 202);
+  const run = ((await started.json()) as { run: { id: string; messageId: string } }).run;
+
+  const stateDir = mkdtempSync(join(tmpdir(), "pi-mesh-tool-timeout-recovery-"));
+  context.after(() => rmSync(stateDir, { recursive: true, force: true }));
+  const envelopePath = recoveryEnvelopePath(stateDir, "tool-timeout-agent");
+  writeFileSync(envelopePath, JSON.stringify({
+    version: 1,
+    reason: "tool_timeout",
+    agentName: "tool-timeout-agent",
+    project: "tool-timeout-recovery-project",
+    previousContinue: false,
+    freshSession: true,
+    failureClass: "timeout",
+    createdAt: "2026-08-26T00:00:00.000Z",
+    runId: run.id,
+    stageId: "review",
+    pendingMessageIds: [run.messageId],
+  }));
+
+  const keys = ["PI_MESH_SERVER_URL", "PI_MESH_AUTH_TOKEN", "PI_MESH_PROJECT", "PI_MESH_AGENT_NAME", "PI_MESH_STATE_DIR"] as const;
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  Object.assign(process.env, {
+    PI_MESH_SERVER_URL: mesh.address.url,
+    PI_MESH_AUTH_TOKEN: mesh.token,
+    PI_MESH_PROJECT: "tool-timeout-recovery-project",
+    PI_MESH_AGENT_NAME: "tool-timeout-agent",
+    PI_MESH_STATE_DIR: stateDir,
+  });
+  context.after(() => {
+    for (const key of keys) {
+      const value = previous[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  const fake = fakePi();
+  piMeshExtension(fake.api);
+  const ui = { setStatus() {}, notify() {} };
+  await fake.emit("session_start", {}, { cwd: process.cwd(), model: { provider: "test", id: "model" }, ui });
+  await waitFor(() => fake.sent.some(({ message }) => message.customType === "pi-mesh-inbound"));
+  assert.equal(fake.sent.filter(({ message }) => message.customType === "pi-mesh-inbound").length, 1);
+  assert.equal(fake.sent.some(({ message }) => message.customType === "pi-mesh-recovery"), false);
+  assert.equal(
+    (fake.sent.find(({ message }) => message.customType === "pi-mesh-inbound")?.message.details as { messageId?: string } | undefined)?.messageId,
+    run.messageId,
+  );
+  assert.equal(existsSync(envelopePath), false);
+  const workflow = await fake.tools.get("mesh_workflow_get")!.execute("tool-timeout-recovered-run", { runId: run.id });
+  assert.match(JSON.stringify(workflow.details), /Worker recovered with tool_timeout/);
+  await fake.emit("session_shutdown");
+});
+
+test("Pi extension preserves workflow work after a settled provider error and allows retry", async (context) => {
+  const secret = "provider-recovery-webhook-secret";
+  const mesh = await createTestMesh(context, {
+    webhookWorkflows: [{
+      id: "provider-recovery-workflow",
+      source: "generic",
+      project: "provider-recovery-project",
+      target: "provider-recovery-agent",
+      secret,
+      delivery: "followUp",
+      promptTemplate: "Recover {{task}}",
+      stages: [{
+        id: "review",
+        label: "Review",
+        instructions: "Complete the review",
+        requiredEvidence: [],
+        maxAttempts: 2,
+      }],
+    }],
+  });
+  const stateDir = mkdtempSync(join(tmpdir(), "pi-mesh-provider-recovery-"));
+  const legacyContextPath = join(stateDir, "worker-context-provider-recovery-agent.json");
+  writeFileSync(legacyContextPath, JSON.stringify({
+    version: 1,
+    agentName: "provider-recovery-agent",
+    project: "provider-recovery-project",
+    runId: "run_stale_legacy",
+  }));
+  context.after(() => rmSync(stateDir, { recursive: true, force: true }));
+  const keys = ["PI_MESH_SERVER_URL", "PI_MESH_AUTH_TOKEN", "PI_MESH_PROJECT", "PI_MESH_AGENT_NAME", "PI_MESH_STATE_DIR"] as const;
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  Object.assign(process.env, {
+    PI_MESH_SERVER_URL: mesh.address.url,
+    PI_MESH_AUTH_TOKEN: mesh.token,
+    PI_MESH_PROJECT: "provider-recovery-project",
+    PI_MESH_AGENT_NAME: "provider-recovery-agent",
+    PI_MESH_STATE_DIR: stateDir,
+  });
+  context.after(() => {
+    for (const key of keys) {
+      const value = previous[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  const fake = fakePi();
+  piMeshExtension(fake.api);
+  const notices: Array<{ message: string; type: string }> = [];
+  await fake.emit("session_start", {}, {
+    cwd: process.cwd(),
+    model: { provider: "test", id: "model" },
+    ui: {
+      setStatus() {},
+      notify(message: string, type: string) { notices.push({ message, type }); },
+    },
+  });
+  const body = JSON.stringify({ task: "RECOVER-QUOTA" });
+  const started = await fetch(`${mesh.address.url}/v1/webhooks/provider-recovery-workflow`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-mesh-delivery-id": "provider-recovery-delivery-1",
+      "x-hub-signature": `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`,
+    },
+    body,
+  });
+  assert.equal(started.status, 202);
+  const runId = ((await started.json()) as { run: { id: string } }).run.id;
+  await waitFor(() => fake.sent.length === 1);
+  await fake.emit("message_start", { message: fake.sent[0]!.message });
+  await fake.emit("agent_end", {
+    messages: [{
+      role: "assistant",
+      content: [],
+      stopReason: "error",
+      errorMessage: "Quota reached. Secret provider body sk-must-not-be-journaled.",
+    }],
+  });
+  await fake.emit("agent_settled");
+
+  const run = mesh.hub.state.workflowRuns.get(runId)!;
+  const message = mesh.hub.state.messages.get(run.messageId)!;
+  assert.equal(message.status, "delivered");
+  assert.equal(run.status, "running");
+  const recoveryContext = JSON.parse(readFileSync(join(stateDir, `worker-context-${workerStateKey("provider-recovery-project", "provider-recovery-agent")}.json`), "utf8")) as {
+    pendingMessageIds: string[];
+  };
+  assert.ok(recoveryContext.pendingMessageIds.includes(message.id));
+  assert.equal(existsSync(legacyContextPath), false);
+  const afterFailure = await fake.tools.get("mesh_workflow_get")!.execute("provider-error-run", { runId });
+  const serialized = JSON.stringify(afterFailure.details);
+  assert.match(serialized, /Tool provider failed: quota/);
+  assert.match(serialized, /nextAction:switch_model_or_retry/);
+  assert.doesNotMatch(serialized, /Secret provider body|sk-must-not-be-journaled/);
+  assert.ok(notices.some((notice) => notice.type === "error" && notice.message.includes("retained") && notice.message.includes("quota")));
+
+  // A successful retry before settlement must overwrite the failed outcome so
+  // Pi's own retries and an operator-initiated retry can complete normally.
+  await fake.emit("agent_end", {
+    messages: [{ role: "assistant", content: "recovered response", stopReason: "stop" }],
+  });
+  await fake.tools.get("mesh_workflow_checkpoint")!.execute("provider-recovery-checkpoint", {
+    runId,
+    stageId: "review",
+    status: "passed",
+    summary: "Provider fallback completed the review",
+  });
+  await fake.emit("agent_settled");
+  await waitFor(() => mesh.hub.state.messages.get(message.id)?.status === "replied");
+  assert.equal(mesh.hub.state.messages.get(message.id)?.reply?.content, "recovered response");
+  assert.equal(mesh.hub.state.workflowRuns.get(runId)?.status, "completed");
+  await fake.emit("session_shutdown");
+});
+
 test("Pi extension drops terminal work, advances its queue, and exposes transient reply failures", async (context) => {
   const mesh = await createTestMesh(context, { messageRetentionMs: 1_000, cleanupIntervalMs: 25 });
   const peer = mesh.makeClient("queue-sender");
@@ -401,7 +688,7 @@ test("Pi extension drops terminal work, advances its queue, and exposes transien
   await fake.emit("message_start", { message: fake.sent[0]!.message });
   const expiring = await peer.send({ target: "queue-worker", content: "must never run", ttlMs: 1_000 });
   const next = await peer.send({ target: "queue-worker", content: "run after the first" });
-  const contextPath = join(stateDir, "worker-context-queue-worker.json");
+  const contextPath = join(stateDir, `worker-context-${workerStateKey("test-project", "queue-worker")}.json`);
   await waitFor(() => {
     if (!existsSync(contextPath)) return false;
     const envelope = JSON.parse(readFileSync(contextPath, "utf8")) as { pendingMessageIds: string[] };

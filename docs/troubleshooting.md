@@ -16,7 +16,19 @@ Start with the smallest boundary: hub health, authentication, registration, peer
 
 ### A continued Pi session rejects every turn
 
-If a worker was stopped during `mesh_await`, `--continue` may leave a `tool_use` without `tool_result`. The worker retries once without `--continue` and writes `.kxm/state/worker-recovery-<agent>.json`. Do not paste agent logs into the journal. Keep the same agent name so the hub identity resumes.
+If a worker was stopped during `mesh_await`, `--continue` may leave a `tool_use` without `tool_result`. The worker retries once without `--continue` and writes a project-and-agent identity-keyed recovery envelope under `.kxm/state`. Do not paste agent logs into the journal. Keep the same project and agent name so the hub identity and recovery key resume.
+
+### A model quota or provider error settles the agent
+
+Pi Mesh waits until Pi has exhausted its own automatic retries. It then keeps the inbound message in `delivered` state, records an allowlisted `quota` or `provider_error` diagnostic without the provider body, and restarts the RPC child. Configure `PI_MESH_WORKER_FALLBACK_MODELS` (or `--fallback-models`) to rotate immediately; otherwise the worker retries after `PI_MESH_WORKER_PROVIDER_RETRY_MS`. Keep continuation enabled so finished peer calls and tool results survive the model switch. Use `--fresh-start`, not `--no-continue`, when only the first launch must avoid old session state.
+
+### A worker heartbeat is healthy but one tool never finishes
+
+Set `PI_MESH_WORKER_TOOL_TIMEOUT_MS` above the longest legitimate tool call. Its 31-minute default intentionally gives a 30-minute `mesh_await` or `mesh_fanout` time to return durable pending handles before supervision intervenes. When that bound is exceeded, the structured worker log records `worker_tool_timeout` with only the allowlisted tool name and diagnostic class, the delivered mesh request stays recoverable, and the RPC process is restarted. If the stuck worker was supposed to be read-only, also set `PI_MESH_WORKER_TOOLS=read,grep,find,ls`; prompt wording alone does not remove shell or write capabilities.
+
+### A hub or worker PID claim is stale
+
+Version 0.4.3 prevents a second wrapper from replacing a live hub or worker claim. `pi-mesh stop` ignores an invalid, non-running, or ownership-mismatched record rather than guessing. If a crash or pre-0.4.3 process left one behind, inspect the exact `.pid` JSON and verify that its recorded PID is no longer running; for a hub, also verify the configured port has no listener. Then remove only that exact `.pid` and its recorded `.stop` control file before relaunching once. Worker filenames include a project/agent identity digest and their records include the exact names and generation, so do not substitute a similarly sanitized filename. Never delete the `.kxm/state` directory or SQLite database to clear a claim.
 
 ### GitHub checks passed but the workflow is still waiting
 
@@ -46,7 +58,8 @@ Another process owns the port. Stop that process or choose another port, then up
 - Verify `PI_MESH_AUTH_TOKEN` exactly matches the hub token.
 - Check whether a live agent already uses the same name in the same project.
 - Restart Pi after changing environment variables.
-- For development loading, confirm the path: `pi -e ./plugins/pi-mesh-comms/src/extension.ts`.
+- For an exact development load, use `pi --no-extensions -e ./plugins/pi-mesh-comms/src/extension.ts`. Add every required provider extension with another `-e`; otherwise Pi discovery is intentionally disabled.
+- For long-lived workers, set the reviewed `PI_MESH_WORKER_EXTENSION_PATHS` and `PI_MESH_WORKER_SKILL_PATHS` described in [Configuration](configuration.md#long-lived-worker-settings). Invalid paths fail before supervision instead of entering a restart loop.
 
 ### `pi-mesh` is not recognized
 
@@ -122,6 +135,50 @@ corrected, and their evidence is journaled but does not satisfy a later passing
 attempt. If attempts are exhausted or the coordinator settles early, the run
 becomes failed and its journal records the reason; start a new provider delivery
 only after deciding whether repeating external effects is safe.
+
+For a requirement with `kind: peer-reply`, inspect
+`resolvedEvidencePolicies`, `verifiedEvidence`, and the current attempt. An
+ordinary evidence string cannot satisfy it. Every eligible agent must have
+registered in the workflow project before the run starts, and a passing
+checkpoint must cite durable replied message IDs in `evidenceRefs` before those
+source messages reach terminal retention.
+
+Common provenance failures are:
+
+- `workflow_context_forbidden`: the sender is not the run's assigned coordinator;
+- `workflow_context_inactive`: the run or stage is not currently running;
+- `workflow_context_attempt_mismatch`: use `stage.attempts + 1` and send fresh work after a retry;
+- `workflow_evidence_producer_forbidden`: the target is not in the run's snapshotted eligible set;
+- `workflow_evidence_policy_missing` or `workflow_evidence_policy_unresolved`: the requirement has no usable resolved peer policy;
+- `workflow_provenance_invalid`: a cited message is missing, pending, ineligible, wrong-direction, or bound to another project, run, stage, requirement, or attempt;
+- `workflow_evidence_incomplete`: there are fewer unique verified producers than the effective minimum.
+
+Multiple replied messages from one peer count once. Correlation IDs and
+idempotency prefixes are retry controls, not provenance. Do not replace a
+rejected reference with an unscoped send.
+
+If policy declares a lower `degradation.minProducers`, an operator can inspect
+and approve it with `pi-mesh --dry-run --json workflow degrade ...` followed by
+the same command without `--dry-run`, using the administrative token. Approval
+must target the current stage and attempt and does not advance the workflow;
+the coordinator must still checkpoint with enough verified references. A
+callback, project token, or peer cannot approve degradation.
+
+### `workflow degrade` returns HTTP 503 `admin_auth_not_configured`
+
+The hub started without a non-empty `PI_MESH_AUTH_TOKEN`, so no administrative
+credential exists for the degradation route. Project tokens deliberately cannot
+substitute for it, even when the operator holds every project credential. The
+route fails closed and does not create an approval.
+
+Stop the hub gracefully, set a new high-entropy `PI_MESH_AUTH_TOKEN` in the hub
+service, retain the explicit `PI_MESH_PROJECT_TOKENS` mapping for workers, and
+restart against the same `.kxm/state/mesh.db`. Give the administrative token
+only to the operator terminal, never to agents or callbacks. Read the run again
+because the current attempt may have changed, run the exact degradation command
+with `--dry-run --json`, and then approve the current stage, requirement, and
+attempt without `--dry-run`. A restart does not make an earlier-attempt approval
+valid for the new attempt.
 
 ### External workflow callback is rejected or does not resume
 

@@ -1,13 +1,15 @@
 import { createHash } from "node:crypto";
-import type { AgentRecord, DeliveryMode, HubEvent, MessageRecord } from "./protocol.ts";
-import type {
-  ImprovementArea,
-  ImprovementAreaReport,
-  JournalCategory,
-  WorkflowCheckpointStatus,
-  WorkflowEvidenceInput,
-  WorkflowJournalEntry,
-  WorkflowRun,
+import type { AgentRecord, DeliveryMode, HubEvent, MessageRecord, WorkflowMessageContext } from "./protocol.ts";
+import {
+  canonicalWorkflowEvidenceKey,
+  type ImprovementArea,
+  type ImprovementAreaReport,
+  type JournalCategory,
+  type WorkflowCheckpointStatus,
+  type WorkflowEvidenceInput,
+  type WorkflowEvidenceReferenceInput,
+  type WorkflowJournalEntry,
+  type WorkflowRun,
 } from "./workflow.ts";
 
 export interface MeshClientOptions {
@@ -31,6 +33,7 @@ export interface SendOptions {
   correlationId?: string;
   replyTo?: string;
   idempotencyKey?: string;
+  workflowContext?: Omit<WorkflowMessageContext, "schema">;
   ttlMs?: number;
 }
 
@@ -68,8 +71,32 @@ function completedFanoutResult(target: string, message: MessageRecord): FanoutRe
   };
 }
 
-function fanoutIdempotencyKey(prefix: string, target: string, correlationId?: string): string {
-  const scope = JSON.stringify({ prefix, correlationId: correlationId ?? null, target: target.toLowerCase() });
+function fanoutIdempotencyKey(
+  prefix: string,
+  target: string,
+  correlationId?: string,
+  workflowContext?: Omit<WorkflowMessageContext, "schema">,
+): string {
+  // Preserve the exact pre-0.4.3 hash input when no workflow provenance is
+  // requested. A pending fanout created before upgrade must remain an exact
+  // idempotent retry instead of dispatching duplicate work.
+  const scope = JSON.stringify(workflowContext
+    ? {
+        prefix,
+        correlationId: correlationId ?? null,
+        target: target.toLowerCase(),
+        workflowContext: {
+          runId: workflowContext.runId,
+          stageId: workflowContext.stageId,
+          requirementKey: canonicalWorkflowEvidenceKey(workflowContext.requirementKey),
+          attempt: workflowContext.attempt,
+        },
+      }
+    : {
+        prefix,
+        correlationId: correlationId ?? null,
+        target: target.toLowerCase(),
+      });
   return `fanout:${createHash("sha256").update(scope).digest("hex")}`;
 }
 
@@ -163,6 +190,7 @@ export class MeshClient {
     content: string;
     correlationId?: string;
     idempotencyKeyPrefix?: string;
+    workflowContext?: Omit<WorkflowMessageContext, "schema">;
     ttlMs?: number;
     timeoutMs?: number;
     signal?: AbortSignal;
@@ -177,11 +205,13 @@ export class MeshClient {
           content: options.content,
           delivery: "followUp",
           ...(options.correlationId ? { correlationId: options.correlationId } : {}),
+          ...(options.workflowContext ? { workflowContext: options.workflowContext } : {}),
           ...(options.idempotencyKeyPrefix ? {
             idempotencyKey: fanoutIdempotencyKey(
               options.idempotencyKeyPrefix,
               target,
               options.correlationId,
+              options.workflowContext,
             ),
           } : {}),
           ...(options.ttlMs ? { ttlMs: options.ttlMs } : {}),
@@ -266,7 +296,13 @@ export class MeshClient {
 
   async checkpointWorkflow(
     runId: string,
-    input: { stageId: string; status: WorkflowCheckpointStatus; summary: string; evidence?: WorkflowEvidenceInput },
+    input: {
+      stageId: string;
+      status: WorkflowCheckpointStatus;
+      summary: string;
+      evidence?: WorkflowEvidenceInput;
+      evidenceRefs?: WorkflowEvidenceReferenceInput;
+    },
   ): Promise<{ run: WorkflowRun; retry: boolean; completed: boolean; instruction: string }> {
     return await this.request(`/v1/workflows/${encodeURIComponent(runId)}/checkpoints`, {
       method: "POST",
@@ -281,6 +317,7 @@ export class MeshClient {
       signalKey: string;
       summary: string;
       evidence?: WorkflowEvidenceInput;
+      evidenceRefs?: WorkflowEvidenceReferenceInput;
       timeoutMs?: number;
     },
   ): Promise<{ run: WorkflowRun; instruction: string }> {
