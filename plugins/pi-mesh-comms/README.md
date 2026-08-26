@@ -6,7 +6,7 @@ This directory is both a Claude Code plugin and the source of the repository's P
 
 ## Requirements
 
-- Node.js 22.6 or newer;
+- Node.js 22.13 or newer on the 22.x line, or Node.js 24 or newer;
 - a running Pi Mesh hub;
 - the same authentication token and project name used by the other agents.
 

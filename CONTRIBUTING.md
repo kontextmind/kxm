@@ -6,7 +6,7 @@ Thank you for improving KontextMind Pi Extensions. This project favors small, te
 
 Requirements:
 
-- Node.js 22.6 or newer;
+- Node.js 22.13 or newer on the 22.x line, or Node.js 24 or newer;
 - npm;
 - Git;
 - Pi for extension smoke testing;

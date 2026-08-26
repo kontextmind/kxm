@@ -9,6 +9,7 @@ const execFileAsync = promisify(execFile);
 
 test("self-contained roundtrip example executes successfully", async () => {
   const { stdout, stderr } = await execFileAsync(process.execPath, [
+    "--disable-warning=ExperimentalWarning",
     "--experimental-strip-types",
     "examples/roundtrip.ts",
   ], { cwd: process.cwd(), timeout: 5_000 });

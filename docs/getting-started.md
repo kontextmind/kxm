@@ -6,7 +6,7 @@ This guide takes you from a clean machine to a successful peer request. Allow ab
 
 You need:
 
-- Node.js 22.6 or newer;
+- Node.js 22.13 or newer on the 22.x line, or Node.js 24 or newer;
 - Git;
 - Pi for Pi agents;
 - Claude Code only if you want a mixed Pi/Claude pool;

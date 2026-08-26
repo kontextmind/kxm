@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/kontextmind/pi-extensions/actions/workflows/ci.yml/badge.svg)](https://github.com/kontextmind/pi-extensions/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Node.js 22+](https://img.shields.io/badge/node-%3E%3D22.6-339933.svg)](https://nodejs.org/)
+[![Node.js 22.13+ or 24+](https://img.shields.io/badge/node-22.13%2B%20%7C%2024%2B-339933.svg)](https://nodejs.org/)
 
 Give running coding agents a small, dependable communication plane.
 
@@ -23,7 +23,7 @@ Give running coding agents a small, dependable communication plane.
 
 ## Quick start: two Pi agents
 
-You need Node.js 22.6 or newer, Pi, Git, and two terminal windows.
+You need Node.js 22.13 or newer on the 22.x line, or Node.js 24 or newer, plus Pi, Git, and two terminal windows.
 
 ### 1. Start the hub
 

@@ -204,12 +204,12 @@ export default function piMeshExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "mesh_fanout",
     label: "Ask planning panel",
-    description: "Send the same independent request to one through three peers and return all replies for comparison and synthesis.",
+    description: "Send the same independent request to one through three peers and return all replies for comparison and synthesis. In durable workflows, use the run ID as correlationId and a stage-specific idempotencyKeyPrefix.",
     parameters: Type.Object({
       targets: Type.Array(Type.String(), { minItems: 1, maxItems: 3 }),
       content: Type.String(),
-      correlationId: Type.Optional(Type.String()),
-      idempotencyKeyPrefix: Type.Optional(Type.String()),
+      correlationId: Type.Optional(Type.String({ description: "Workflow run ID or other stable request scope" })),
+      idempotencyKeyPrefix: Type.Optional(Type.String({ description: "Stable stage-specific retry key prefix" })),
       ttlMs: Type.Optional(Type.Number({ minimum: 1_000, maximum: 604_800_000 })),
       timeoutMs: Type.Optional(Type.Number({ minimum: 100, maximum: 1_800_000 })),
     }),

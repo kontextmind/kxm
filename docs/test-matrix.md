@@ -53,6 +53,7 @@ The CI minimums are 95% lines, 80% branches, and 90% functions across `client.ts
 | `.kxm` workspace defaults and persisted hub/worker logs | `.kxm/`, `test/server.test.ts`, `test/worker.test.ts` | Executed with isolated temporary workspaces |
 | Signed external result callback | `examples/workflow-signal.ts` | Type-checked; equivalent signed callback path is exercised end to end in `test/hub-api.test.ts` |
 | Long-lived headless coordinator | `scripts/pi-mesh-worker.mjs` | Restart limits and spawn-failure handling are automated in `test/worker.test.ts`; real Pi smoke check remains manual |
+| Native-free package install and Windows `pi.cmd` worker launch | `package.json`, `test/store.test.ts`, `test/worker.test.ts` | CI runs on Ubuntu and Windows at Node 22.13 and Node 24; the Windows test executes a command-script fixture through `ComSpec` |
 
 ## Manual release checks
 

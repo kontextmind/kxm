@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import Database from "better-sqlite3";
 import { MeshStore } from "../plugins/pi-mesh-comms/src/store.ts";
 import type { MessageRecord } from "../plugins/pi-mesh-comms/src/protocol.ts";
 import type { WorkflowJournalEntry, WorkflowRun } from "../plugins/pi-mesh-comms/src/workflow.ts";
@@ -16,12 +16,20 @@ test("store supports memory mode and health checks", () => {
   store.close();
 });
 
+test("store preserves the five-second SQLite busy timeout", () => {
+  const store = new MeshStore(":memory:");
+  const database = (store as unknown as { database: DatabaseSync }).database;
+  const row = database.prepare("PRAGMA busy_timeout").get() as { timeout: number };
+  assert.equal(row.timeout, 5_000);
+  store.close();
+});
+
 test("store rejects databases created by a newer schema", () => {
   const directory = mkdtempSync(join(tmpdir(), "pi-mesh-schema-"));
   const path = join(directory, "mesh.db");
   try {
-    const database = new Database(path);
-    database.pragma("user_version = 3");
+    const database = new DatabaseSync(path);
+    database.exec("PRAGMA user_version = 3");
     database.close();
     assert.throws(() => new MeshStore(path), /newer than this runtime supports/);
   } finally {

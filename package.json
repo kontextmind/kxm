@@ -1,6 +1,6 @@
 {
   "name": "@kontextmind/pi-extensions",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Pi extensions and Agent Skills for multi-agent communication",
   "type": "module",
   "author": "KontextMind",
@@ -21,15 +21,15 @@
     "mcp"
   ],
   "engines": {
-    "node": ">=22.6"
+    "node": "^22.13.0 || >=24.0.0"
   },
   "scripts": {
-    "hub": "node --experimental-strip-types plugins/pi-mesh-comms/src/server.ts",
+    "hub": "node --disable-warning=ExperimentalWarning --experimental-strip-types plugins/pi-mesh-comms/src/server.ts",
     "worker": "node scripts/pi-mesh-worker.mjs",
-    "example": "node --experimental-strip-types examples/roundtrip.ts",
+    "example": "node --disable-warning=ExperimentalWarning --experimental-strip-types examples/roundtrip.ts",
     "build:mcp": "esbuild plugins/pi-mesh-comms/src/mcp-server.ts --bundle --platform=node --format=esm --target=node22 --alias:@modelcontextprotocol/sdk/server/index.js=./node_modules/@modelcontextprotocol/sdk/dist/esm/server/index.js --alias:@modelcontextprotocol/sdk/server/stdio.js=./node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js --alias:@modelcontextprotocol/sdk/types.js=./node_modules/@modelcontextprotocol/sdk/dist/esm/types.js --outfile=plugins/pi-mesh-comms/dist/mcp-server.js --banner:js=\"#!/usr/bin/env node\"",
-    "test": "npm run build:mcp && node --experimental-strip-types --test test/*.test.ts",
-    "test:coverage": "npm run build:mcp && node --experimental-strip-types --test --experimental-test-coverage --test-coverage-lines=95 --test-coverage-branches=80 --test-coverage-functions=90 --test-coverage-include=plugins/pi-mesh-comms/src/client.ts --test-coverage-include=plugins/pi-mesh-comms/src/extension.ts --test-coverage-include=plugins/pi-mesh-comms/src/hub.ts --test-coverage-include=plugins/pi-mesh-comms/src/protocol.ts --test-coverage-include=plugins/pi-mesh-comms/src/store.ts --test-coverage-include=plugins/pi-mesh-comms/src/workflow.ts test/*.test.ts",
+    "test": "npm run build:mcp && node --disable-warning=ExperimentalWarning --experimental-strip-types --test test/*.test.ts",
+    "test:coverage": "npm run build:mcp && node --disable-warning=ExperimentalWarning --experimental-strip-types --test --experimental-test-coverage --test-coverage-lines=95 --test-coverage-branches=80 --test-coverage-functions=90 --test-coverage-include=plugins/pi-mesh-comms/src/client.ts --test-coverage-include=plugins/pi-mesh-comms/src/extension.ts --test-coverage-include=plugins/pi-mesh-comms/src/hub.ts --test-coverage-include=plugins/pi-mesh-comms/src/protocol.ts --test-coverage-include=plugins/pi-mesh-comms/src/store.ts --test-coverage-include=plugins/pi-mesh-comms/src/workflow.ts test/*.test.ts",
     "typecheck": "tsc --noEmit",
     "lint:docs": "markdownlint-cli2",
     "check:versions": "node scripts/check-versions.mjs",
@@ -54,13 +54,9 @@
     "@earendil-works/pi-coding-agent": "*",
     "typebox": "*"
   },
-  "dependencies": {
-    "better-sqlite3": "13.0.3"
-  },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
     "@types/node": "22.20.1",
-    "@types/better-sqlite3": "9.6.0",
     "esbuild": "0.28.2",
     "markdownlint-cli2": "0.23.2",
     "typescript": "7.0.2"

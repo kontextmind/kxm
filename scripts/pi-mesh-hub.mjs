@@ -4,7 +4,12 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const server = fileURLToPath(new URL("../plugins/pi-mesh-comms/src/server.ts", import.meta.url));
-const child = spawn(process.execPath, ["--experimental-strip-types", server, ...process.argv.slice(2)], {
+const child = spawn(process.execPath, [
+  "--disable-warning=ExperimentalWarning",
+  "--experimental-strip-types",
+  server,
+  ...process.argv.slice(2),
+], {
   stdio: "inherit",
   env: process.env,
 });
@@ -21,4 +26,3 @@ child.once("exit", (code, signal) => {
   }
   process.exitCode = code ?? 1;
 });
-

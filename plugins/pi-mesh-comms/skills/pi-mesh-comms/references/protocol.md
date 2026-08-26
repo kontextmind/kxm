@@ -36,7 +36,7 @@ Webhook and signal bodies require SHA-256 HMAC validation and a stable provider 
 - `expired`: the request exceeded its TTL before a reply.
 - `error`: terminal failure.
 
-Messages use a 24-hour default TTL and terminal records are retained for seven days by default. A stable `idempotencyKey` deduplicates an exact retry from the same sender. State is persisted in SQLite by the standard hub executable.
+Messages use a 24-hour default TTL and terminal records are retained for seven days by default. A stable `idempotencyKey` deduplicates an exact retry from the same sender. Durable `mesh_fanout` calls should use the workflow run ID as `correlationId` and a stage-specific `idempotencyKeyPrefix`; the client scopes the resulting key by correlation and normalized target. State is persisted in SQLite by the standard hub executable.
 
 ## Delivery modes
 

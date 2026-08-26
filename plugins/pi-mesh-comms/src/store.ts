@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import Database from "better-sqlite3";
+import { DatabaseSync } from "node:sqlite";
 import type { AgentRecord, MessageRecord } from "./protocol.ts";
 import type { WorkflowJournalEntry, WorkflowRun } from "./workflow.ts";
 
@@ -14,14 +14,16 @@ export class MeshStore {
   readonly workflowRuns = new Map<string, WorkflowRun>();
   readonly journal = new Map<string, WorkflowJournalEntry>();
   readonly path?: string;
-  private readonly database?: Database.Database;
+  private readonly database?: DatabaseSync;
 
   constructor(path?: string) {
     if (!path) return;
     this.path = path === ":memory:" ? path : resolve(path);
     if (this.path !== ":memory:") mkdirSync(dirname(this.path), { recursive: true });
-    this.database = new Database(this.path);
-    const schemaVersion = this.database.pragma("user_version", { simple: true }) as number;
+    this.database = new DatabaseSync(this.path);
+    this.database.exec("PRAGMA busy_timeout = 5000");
+    const schemaRow = this.database.prepare("PRAGMA user_version").get() as { user_version: number } | undefined;
+    const schemaVersion = schemaRow?.user_version ?? 0;
     if (schemaVersion > 2) {
       this.database.close();
       throw new Error(`mesh database schema ${schemaVersion} is newer than this runtime supports`);
@@ -104,7 +106,8 @@ export class MeshStore {
     entry?: WorkflowJournalEntry,
   ): void {
     if (this.database) {
-      this.database.transaction(() => {
+      this.database.exec("BEGIN IMMEDIATE");
+      try {
         if (message) {
           this.database!.prepare(`
             INSERT INTO messages (id, record) VALUES (?, ?)
@@ -121,7 +124,11 @@ export class MeshStore {
           INSERT INTO workflow_runs (id, definition_id, delivery_id, record) VALUES (?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET record = excluded.record
         `).run(run.id, run.definitionId, run.deliveryId, JSON.stringify(run));
-      })();
+        this.database.exec("COMMIT");
+      } catch (error) {
+        this.database.exec("ROLLBACK");
+        throw error;
+      }
     }
     if (message) this.messages.set(message.id, message);
     if (entry) this.journal.set(entry.id, entry);

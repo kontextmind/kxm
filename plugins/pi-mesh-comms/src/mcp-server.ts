@@ -6,7 +6,7 @@ import { MeshClient } from "./client.ts";
 import type { DeliveryMode, HubEvent, MessageRecord } from "./protocol.ts";
 import type { ImprovementArea, JournalCategory, WorkflowCheckpointStatus } from "./workflow.ts";
 
-const VERSION = "0.3.0";
+const VERSION = "0.3.1";
 const inbox = new Map<string, MessageRecord>();
 let meshClient: MeshClient | undefined;
 let starting: Promise<MeshClient> | undefined;
@@ -139,14 +139,14 @@ const tools = [
   },
   {
     name: "mesh_fanout",
-    description: "Ask one through three peers independently and return all replies for comparison and synthesis.",
+    description: "Ask one through three peers independently and return all replies for comparison and synthesis. In durable workflows, use the run ID as correlationId and a stage-specific idempotencyKeyPrefix.",
     inputSchema: {
       type: "object",
       properties: {
         targets: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 3 },
         content: { type: "string" },
-        correlationId: { type: "string" },
-        idempotencyKeyPrefix: { type: "string" },
+        correlationId: { type: "string", description: "Workflow run ID or other stable request scope" },
+        idempotencyKeyPrefix: { type: "string", description: "Stable stage-specific retry key prefix" },
         ttlMs: { type: "number", minimum: 1_000, maximum: 604_800_000 },
         timeoutMs: { type: "number", minimum: 100, maximum: 1_800_000 },
       },

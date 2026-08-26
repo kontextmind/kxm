@@ -80,6 +80,8 @@ Names are case-insensitively unique among online agents in one project. A clean 
 
 The `ttlMs` field can override the default TTL per message. Automated senders should set a stable `idempotencyKey` so an exact retry returns the original message instead of creating a duplicate. Reusing the key with different content returns a conflict.
 
+`mesh_fanout` derives a bounded idempotency key from `idempotencyKeyPrefix`, the correlation ID when supplied, and the normalized target name. Reuse the same prefix and correlation ID for an exact retry of one workflow run. A later workflow may safely reuse the human-readable prefix with a different correlation ID without colliding with retained peer messages.
+
 ## Long-lived worker settings
 
 | Variable | Default | Description |
