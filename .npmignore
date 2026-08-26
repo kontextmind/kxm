@@ -2,3 +2,9 @@
 test/
 .github/
 *.tgz
+.kxm/logs/
+.kxm/state/
+.kxm/assets/generated/
+.kxm/assets/retrospectives/*.json
+.kxm/assets/retrospectives/*.md
+!.kxm/assets/retrospectives/README.md

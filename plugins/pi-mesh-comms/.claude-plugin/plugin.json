@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "pi-mesh-comms",
   "displayName": "Pi Mesh Comms",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Durable peer communication, webhook workflows, and learning journals for Pi and Claude Code agents",
   "author": {
     "name": "KontextMind",

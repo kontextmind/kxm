@@ -8,7 +8,7 @@ Give running coding agents a small, dependable communication plane.
 
 **Pi Mesh Comms** lets Pi and Claude Code agents discover one another, send focused requests, continue working independently, and collect replies without sharing an oversized conversation. It provides communication primitives—not an autonomous swarm manager—so each agent keeps its own context and safety controls.
 
-> **Project status:** Production candidate (`0.3.x`) for a single hub serving local or trusted-team agents. Durable delivery, signed webhook workflows, security controls, observability, and recovery are tested. It is not a horizontally scaled or multi-tenant orchestration service. See [Production boundaries](#production-boundaries).
+> **Project status:** Production candidate (`0.4.x`) for a single hub serving local or trusted-team agents. Durable delivery, signed webhook workflows, operator CLI, security controls, observability, and recovery are tested. It is not a horizontally scaled or multi-tenant orchestration service. See [Production boundaries](#production-boundaries).
 
 ## Why use it?
 

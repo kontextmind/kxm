@@ -491,7 +491,16 @@ test("signed Jira webhooks start durable workflows, deduplicate retries, journal
   assert.match(inbound!, /mesh_workflow_record/);
   assert.equal((await sendWebhook("jira-delivery-42")).status, 200);
   assert.equal((await coordinator.listWorkflows()).length, 1);
-  await assert.rejects(() => observer.getWorkflow(runId), /not visible/);
+  await assert.rejects(() => observer.getWorkflow(runId), (error: unknown) => {
+    assert.ok(error instanceof MeshHttpError);
+    assert.equal(error.statusCode, 403);
+    assert.equal(error.code, "workflow_forbidden");
+    assert.equal(error.extras?.operation, "get");
+    assert.equal(error.extras?.nextAction, "use_assigned_coordinator");
+    assert.equal(error.extras?.assignedCoordinatorName, "coordinator");
+    assert.match(error.message, /not visible/);
+    return true;
+  });
 
   const plan = await coordinator.recordWorkflowEntry(runId, {
     category: "plan",
@@ -613,6 +622,18 @@ test("a coordinator that settles before passing checkpoints fails the run and re
   const result = await coordinator.getWorkflow(accepted.run.id);
   assert.equal(result.run.status, "failed");
   assert.ok(result.journal.some((entry) => entry.category === "error" && entry.area === "workflow"));
+  const lateJournal = await coordinator.recordWorkflowEntry(accepted.run.id, {
+    category: "lesson",
+    area: "workflow",
+    summary: "Journal remains available after premature settlement",
+  });
+  assert.equal(lateJournal.category, "lesson");
+  await assert.rejects(() => coordinator.checkpointWorkflow(accepted.run.id, {
+    stageId: "gate",
+    status: "passed",
+    summary: "too late",
+    evidence: ["result"],
+  }), /workflow is failed/);
 });
 
 test("signed external signals resume, retry, deduplicate, and complete a settled workflow", async (context) => {

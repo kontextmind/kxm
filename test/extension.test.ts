@@ -185,7 +185,15 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
   await waitFor(() => fake.sent.length === 3);
   const workflowRunId = workflowBody.run.id;
   await fake.emit("message_start", { message: fake.sent[2]!.message });
-  await fake.emit("tool_result", { toolName: "bash", toolCallId: "tool-failure-1", isError: true });
+  await fake.emit("tool_result", {
+    toolName: "bash",
+    toolCallId: "tool-failure-1",
+    isError: true,
+    text: "ENOENT command not found",
+  });
+  const afterToolFailure = await fake.tools.get("mesh_workflow_get")!.execute("workflow-get-after-tool", { runId: workflowRunId });
+  assert.match(JSON.stringify(afterToolFailure.details), /Tool bash failed: command_not_found/);
+  assert.doesNotMatch(JSON.stringify(afterToolFailure.details), /sk-|ghp_|Bearer |prompt body|stdout dump/);
   assert.match(JSON.stringify((await fake.tools.get("mesh_workflow_list")!.execute("workflow-list", {})).details), /TASK|extension-workflow/);
   assert.match(JSON.stringify((await fake.tools.get("mesh_workflow_get")!.execute("workflow-get", { runId: workflowRunId })).details), /in_progress/);
   await fake.tools.get("mesh_workflow_record")!.execute("workflow-record", {

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { createWriteStream, mkdirSync } from "node:fs";
+import { createWriteStream, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
 const name = process.env.PI_MESH_AGENT_NAME?.trim();
@@ -31,11 +31,17 @@ const maxRestarts = maxRestartsRaw === undefined ? Number.POSITIVE_INFINITY : Nu
 if ((!Number.isInteger(maxRestarts) && maxRestarts !== Number.POSITIVE_INFINITY) || maxRestarts < 0) {
   throw new Error("PI_MESH_WORKER_MAX_RESTARTS must be a non-negative integer");
 }
+const continueEnabled = process.env.PI_MESH_WORKER_CONTINUE !== "false";
+const drainTimeoutMs = Number(process.env.PI_MESH_WORKER_DRAIN_MS?.trim() || 15_000);
 let backoffMs = minBackoffMs;
 let restartCount = 0;
 let child;
 let stopping = false;
 let logsClosed = false;
+let continueThisStart = continueEnabled;
+let continueFallbackUsed = false;
+const pidPath = join(stateDir, `worker-${safeName}.pid`);
+writeFileSync(pidPath, `${process.pid}\n`, { encoding: "utf8", mode: 0o600 });
 
 function quoteWindowsCommandArgument(value, label) {
   if (/[\0\r\n"%!]/.test(value)) {
@@ -57,9 +63,29 @@ function closeLogs() {
   agentLogStream.end();
 }
 
+function writeRecoveryEnvelope(details) {
+  const envelope = {
+    version: 1,
+    reason: details.reason,
+    agentName: name,
+    project,
+    previousContinue: continueEnabled,
+    freshSession: details.freshSession === true,
+    createdAt: new Date().toISOString(),
+    runId: null,
+    stageId: null,
+    pendingMessageIds: [],
+    ...(details.signal ? { signal: details.signal } : {}),
+  };
+  writeFileSync(join(stateDir, `worker-recovery-${safeName}.json`), `${JSON.stringify(envelope)}\n`, {
+    encoding: "utf8",
+    mode: 0o600,
+  });
+}
+
 function start() {
   const args = ["--mode", "rpc", "--name", name];
-  if (process.env.PI_MESH_WORKER_CONTINUE !== "false") args.push("--continue");
+  if (continueThisStart) args.push("--continue");
   if (process.env.PI_MESH_WORKER_MODEL?.trim()) args.push("--model", process.env.PI_MESH_WORKER_MODEL.trim());
   const windowsCommandScript = process.platform === "win32" && /\.(?:cmd|bat)$/i.test(command);
   const launchCommand = windowsCommandScript ? process.env.ComSpec?.trim() || "cmd.exe" : command;
@@ -86,10 +112,24 @@ function start() {
     completed = true;
     child = undefined;
     if (error) log("worker_process_error", { message: error.message, code: error.code });
-    log("worker_exited", { code, signal, ...(error ? { error: error.message } : {}), uptimeMs: Date.now() - startedAt });
+    const uptimeMs = Date.now() - startedAt;
+    log("worker_exited", { code, signal, ...(error ? { error: error.message } : {}), uptimeMs });
     if (stopping) {
       closeLogs();
+      process.exit(0);
       return;
+    }
+    if (continueThisStart && !continueFallbackUsed && uptimeMs < 8_000 && (code || 0) !== 0) {
+      continueFallbackUsed = true;
+      continueThisStart = false;
+      writeRecoveryEnvelope({ reason: "unresumable_session", freshSession: true });
+      log("worker_continue_fallback", { reason: "unresumable_session", uptimeMs });
+      start();
+      return;
+    }
+    if (uptimeMs > 60_000) {
+      continueThisStart = continueEnabled;
+      continueFallbackUsed = false;
     }
     if (restartCount >= maxRestarts) {
       log("worker_restart_limit_reached", { restartCount });
@@ -138,16 +178,26 @@ function start() {
 function shutdown(signal) {
   if (stopping) return;
   stopping = true;
+  writeRecoveryEnvelope({ reason: "worker_signal", signal, freshSession: false });
   log("worker_stopping", { signal });
   if (!child) {
     closeLogs();
+    process.exit(0);
     return;
   }
+  log("worker_drain_wait", { timeoutMs: Number.isFinite(drainTimeoutMs) ? drainTimeoutMs : 15_000 });
   child.kill("SIGTERM");
-  const force = setTimeout(() => child?.kill("SIGKILL"), 10_000);
+  const force = setTimeout(() => {
+    log("worker_killed", { signal: "SIGKILL" });
+    child?.kill("SIGKILL");
+  }, Number.isFinite(drainTimeoutMs) ? drainTimeoutMs : 15_000);
   force.unref();
 }
 
 process.once("SIGINT", () => shutdown("SIGINT"));
 process.once("SIGTERM", () => shutdown("SIGTERM"));
+const stopAfterMs = Number(process.env.PI_MESH_WORKER_STOP_AFTER_MS?.trim() || 0);
+if (Number.isInteger(stopAfterMs) && stopAfterMs > 0) {
+  setTimeout(() => shutdown("timeout"), stopAfterMs).unref();
+}
 start();

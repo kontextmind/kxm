@@ -47,6 +47,14 @@ Invoke-RestMethod http://127.0.0.1:7331/health
 
 The response should contain `ok: true`. Check `/ready` as well when validating storage readiness. The default database survives hub restarts and is ignored by Git.
 
+The additive `pi-mesh` command can initialize a workspace and validate workflow files without printing secrets:
+
+```powershell
+npx pi-mesh --json init
+npx pi-mesh --json validate --file .kxm/config/workflows/v04-dogfood.json
+npx pi-mesh --json status
+```
+
 ## Connect Pi agents
 
 Install the package once:

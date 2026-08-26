@@ -25,6 +25,7 @@ import {
   type HubEvent,
   type MessageRecord,
 } from "./protocol.ts";
+import { workflowScopeExtras } from "./diagnostics.ts";
 import { MeshStore, type StoredAgent } from "./store.ts";
 import {
   checkpointRun,
@@ -286,14 +287,20 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
     const expected = expectedProjectToken(project);
     if (!expected) return;
     if (!safeTokenEqual(bearerToken(request), expected)) {
-      throw new ProtocolError(401, "invalid project authentication token", "invalid_auth");
+      throw new ProtocolError(401, "invalid project authentication token", "invalid_auth", {
+        operation: "other",
+        nextAction: "check_project_token",
+      });
     }
   }
 
   function requireAdminAuth(request: IncomingMessage): void {
     if (!authToken && isLoopback(host)) return;
     if (!authToken || !safeTokenEqual(bearerToken(request), authToken)) {
-      throw new ProtocolError(401, "invalid administrative authentication token", "invalid_auth");
+      throw new ProtocolError(401, "invalid administrative authentication token", "invalid_auth", {
+        operation: "other",
+        nextAction: "check_project_token",
+      });
     }
   }
 
@@ -302,7 +309,10 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
     const agentKey = String(request.headers["x-mesh-agent-key"] ?? "");
     const agent = agents.get(agentId);
     if (!agent || !agentKey || !safeTokenEqual(agentKey, agent.key)) {
-      throw new ProtocolError(401, "invalid agent identity", "invalid_agent_identity");
+      throw new ProtocolError(401, "invalid agent identity", "invalid_agent_identity", {
+        operation: "other",
+        nextAction: "reconnect_with_current_agent_key",
+      });
     }
     const wasOffline = !agent.online;
     agent.lastSeenAt = nowIso();
@@ -922,7 +932,12 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         const run = workflowRuns.get(decodeURIComponent(workflowMatch[1]!));
         if (!run) throw new ProtocolError(404, "workflow run not found", "workflow_not_found");
         if (run.project !== agent.project || run.targetAgentId !== agent.id) {
-          throw new ProtocolError(403, "workflow run is not visible to this agent", "workflow_forbidden");
+          throw new ProtocolError(
+            403,
+            "workflow run is not visible to this agent",
+            "workflow_forbidden",
+            workflowScopeExtras("get", run.targetAgentName),
+          );
         }
         const entries = [...journal.values()].filter((entry) => entry.runId === run.id);
         json(response, 200, { run, journal: entries });
@@ -937,7 +952,12 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         const run = workflowRuns.get(decodeURIComponent(waitMatch[1]!));
         if (!run) throw new ProtocolError(404, "workflow run not found", "workflow_not_found");
         if (run.project !== agent.project || run.targetAgentId !== agent.id) {
-          throw new ProtocolError(403, "only the assigned coordinator can wait this workflow", "workflow_forbidden");
+          throw new ProtocolError(
+            403,
+            "only the assigned coordinator can wait this workflow",
+            "workflow_forbidden",
+            workflowScopeExtras("wait", run.targetAgentName),
+          );
         }
         const body = await readJson(request);
         const stageId = requireString(body.stageId, "stageId", { max: 64 });
@@ -982,7 +1002,12 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         const run = workflowRuns.get(decodeURIComponent(checkpointMatch[1]!));
         if (!run) throw new ProtocolError(404, "workflow run not found", "workflow_not_found");
         if (run.project !== agent.project || run.targetAgentId !== agent.id) {
-          throw new ProtocolError(403, "only the assigned coordinator can checkpoint this workflow", "workflow_forbidden");
+          throw new ProtocolError(
+            403,
+            "only the assigned coordinator can checkpoint this workflow",
+            "workflow_forbidden",
+            workflowScopeExtras("checkpoint", run.targetAgentName),
+          );
         }
         const body = await readJson(request);
         const stageId = requireString(body.stageId, "stageId", { max: 64 });
@@ -1041,7 +1066,12 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         const run = workflowRuns.get(decodeURIComponent(journalMatch[1]!));
         if (!run) throw new ProtocolError(404, "workflow run not found", "workflow_not_found");
         if (run.project !== agent.project || run.targetAgentId !== agent.id) {
-          throw new ProtocolError(403, "only the assigned coordinator can journal this workflow", "workflow_forbidden");
+          throw new ProtocolError(
+            403,
+            "only the assigned coordinator can journal this workflow",
+            "workflow_forbidden",
+            workflowScopeExtras("journal", run.targetAgentName),
+          );
         }
         const body = await readJson(request);
         const category = requireString(body.category, "category", { max: 24 }) as JournalCategory;
@@ -1407,7 +1437,14 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
       const publicMessage = statusCode >= 500 ? "internal server error" : internalMessage;
       counters.errors += 1;
       logger({ event: "request_error", requestId, statusCode, code, ...(statusCode >= 500 ? { message: internalMessage } : {}) });
-      if (!response.headersSent) json(response, statusCode, { error: publicMessage, code, requestId });
+      if (!response.headersSent) {
+        json(response, statusCode, {
+          error: publicMessage,
+          code,
+          requestId,
+          ...(error instanceof ProtocolError && error.extras ? error.extras : {}),
+        });
+      }
       else response.end();
     }
   });

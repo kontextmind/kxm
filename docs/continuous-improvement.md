@@ -31,7 +31,9 @@ Use `mesh_workflow_record` during the run, not only in a final retrospective:
 
 The native Pi extension automatically records failed tool results while a webhook workflow is active. The hub also records stage warnings/failures, prompt expiry, and premature coordinator settlement. Agents must still record semantic errors such as a false assumption, rejected design, flaky result, or external integration mismatch.
 
-Never put secrets or unnecessary prompt contents in the journal. Evidence should be durable references such as test names, logs, commits, pull requests, Jira issues, check runs, or documentation paths.
+Never put secrets or unnecessary prompt contents in the journal. Evidence should be durable references such as test names, logs, commits, pull requests, Jira issues, check runs, or documentation paths. Failed tools record an allowlisted diagnostic class, not stdout.
+
+Export a bounded retrospective with `pi-mesh retrospective export --input <snapshot.json>`. The files under `.kxm/assets/retrospectives` stay `reviewDecision=proposed` until a human or coordinator records an explicit decision. The exporter must not edit workflow JSON or weaken gates.
 
 ## Review cadence
 

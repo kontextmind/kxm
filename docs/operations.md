@@ -4,7 +4,7 @@ This guide covers the production envelope for one Pi Mesh Comms hub and one SQLi
 
 ## Deployment classification
 
-Version `0.3.x` is designed for local workstations and controlled trusted-team hosts. It provides durable restart recovery, project authentication, signed webhook workflows, traffic limits, health signals, metrics, structured logs, and graceful shutdown.
+Version `0.4.x` is designed for local workstations and controlled trusted-team hosts. It provides durable restart recovery, project authentication, signed webhook workflows, traffic limits, health signals, metrics, structured logs, and graceful shutdown.
 
 It is not a clustered or multi-tenant control plane. Run one writer for each database. Do not place a load balancer across independent hubs and expect shared presence or delivery.
 
@@ -21,7 +21,9 @@ Stop with `Ctrl+C` or `SIGTERM`. The hub stops accepting connections, closes SSE
 
 For unattended service, use a supervisor that sets a stable working directory, injects secrets, captures stdout, restarts after failure, and allows at least five seconds for graceful shutdown.
 
-Run each long-lived coordinator with `npm run worker` under a separate service-manager unit. Use stable agent names, distinct worktrees for concurrent writers, explicit CPU and memory limits, and restart throttling outside the built-in bounded backoff. The worker launches Pi RPC mode and retains the most recent session unless configured otherwise.
+Run each long-lived coordinator with `npm run worker` under a separate service-manager unit. Use stable agent names, distinct worktrees for concurrent writers, explicit CPU and memory limits, and restart throttling outside the built-in bounded backoff. The worker launches Pi RPC mode and retains the most recent session unless configured otherwise. A graceful stop sends SIGTERM, waits for in-flight tools, then SIGKILL. If `--continue` dies immediately, the worker retries once with a fresh session and writes a redacted recovery envelope. Do not copy `pi-agent-*.log` into journals or retrospectives.
+
+For GitHub-backed waits, run `pi-mesh github watch` as a separate command. The hub does not poll GitHub. Watcher timeout is not a hub `passed` signal; the durable wait deadline remains authoritative.
 
 ## Health, readiness, and metrics
 

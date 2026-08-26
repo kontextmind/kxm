@@ -31,7 +31,7 @@ The included [`jira-development.json`](../.kxm/config/workflows/jira-development
 6. Run lint, build/typecheck, security, and Playwright gates.
 7. Reproduce repository and CodeRabbit-style review gates.
 8. Update documentation.
-9. Push and watch required checks; warnings and failures loop back for correction.
+9. Push and watch required checks with `pi-mesh github watch`; warnings and failures loop back for correction.
 10. Merge only when policy and authorization allow it.
 11. Update Jira with links and evidence.
 12. Produce an evidence-backed improvement backlog.
@@ -140,6 +140,17 @@ node --experimental-strip-types examples/workflow-signal.ts `
 ```
 
 In a real integration, store the `runId` and `signalKey` in Jira, pull-request metadata, or the external job's inputs when the coordinator starts the wait. Treat them as routing identifiers rather than secrets.
+
+To watch GitHub checks and post that same signal, use the command-first adapter:
+
+```powershell
+$env:PI_MESH_WORKFLOW_ID = "jira-development"
+$env:PI_MESH_WORKFLOW_SIGNAL_SECRET = "replace-with-the-callback-secret"
+$env:GITHUB_TOKEN = "replace-with-a-checks-read-token"
+npx pi-mesh github watch --run-id run_123 --signal-key github-pr-42-checks --repo org/repo --pr 42 --required ci --timeout-ms 3600000
+```
+
+The watcher never invents a hub `passed` result on timeout; it exits `4` with no POST. Duplicate deliveries reuse a stable `x-mesh-delivery-id`.
 
 ## Checkpoint contract
 

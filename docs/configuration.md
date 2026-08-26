@@ -93,10 +93,27 @@ When a Pi peer produces more than 32,000 characters, the extension returns a bou
 | `PI_MESH_AGENT_LOG_PATH` | `.kxm/logs/pi-agent-<agent>.log` | Captured headless Pi stdout and stderr |
 | `PI_MESH_PI_COMMAND` | `pi` or `pi.cmd` | Explicit Pi executable path when it is not on `PATH` |
 | `PI_MESH_WORKER_CONTINUE` | `true` | Resume the most recent Pi session after a restart |
+| `PI_MESH_WORKER_DRAIN_MS` | `15000` | Graceful SIGTERM wait before SIGKILL |
 | `PI_MESH_WORKER_MODEL` | Pi default | Optional model selector passed to Pi |
 | `PI_MESH_WORKER_MAX_RESTARTS` | Unlimited | Non-negative process restart limit; service managers may set their own policy |
+| `PI_MESH_SMOKE` | unset | Set to `1` to enable the opt-in real multi-Pi smoke command |
 
-`PI_MESH_AGENT_NAME` and `PI_MESH_PROJECT` are required by `npm run worker`. The remaining agent settings are inherited by the spawned Pi RPC process. The worker resolves `.kxm` inside `PI_MESH_WORKDIR`, creates the standard directories, and passes their absolute paths to Pi.
+`PI_MESH_AGENT_NAME` and `PI_MESH_PROJECT` are required by `npm run worker`. The remaining agent settings are inherited by the spawned Pi RPC process. The worker resolves `.kxm` inside `PI_MESH_WORKDIR`, creates the standard directories, and passes their absolute paths to Pi. A fast `--continue` failure writes `.kxm/state/worker-recovery-<agent>.json` and retries once without `--continue`.
+
+## Operator CLI
+
+`pi-mesh` is additive and does not replace `pi-mesh-hub` or `pi-mesh-worker`.
+
+| Command | Purpose |
+|---|---|
+| `pi-mesh init` | Create `.kxm` directories |
+| `pi-mesh validate` | Parse workflow definitions using env names, not printed secrets |
+| `pi-mesh status` | Check `/health` and `/ready` |
+| `pi-mesh github watch` | Poll required GitHub checks and post the existing signed signal |
+| `pi-mesh retrospective export` | Write proposed Markdown/JSON under `.kxm/assets/retrospectives` |
+| `pi-mesh smoke` | Opt-in real-Pi harness; skips unless `PI_MESH_SMOKE=1` |
+
+Global flags: `--json`, `--dry-run`, `--workspace`. Live `workflow start` is rejected so signed webhook ingress remains the authority for creating runs. GitHub watch timeout exits `4` and does not post a signal.
 
 ## Webhook workflow settings
 

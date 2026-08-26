@@ -4,6 +4,26 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ## Unreleased
 
+## 0.4.0 - 2026-08-26
+
+### Added
+
+- Additive `pi-mesh` operator CLI for workspace init, validation, status, dry-run workflow planning, GitHub check watching, and retrospective export.
+- Allowlisted diagnostic classification for failed workflow tools and 401/403 identity-scope errors, including bounded `operation`, `nextAction`, and assigned coordinator name.
+- Command-first GitHub check watcher that posts the existing signed workflow signal and exits 4 without posting on adapter timeout.
+- Worker drain, `--continue` fallback, and a redacted recovery envelope under `.kxm/state`.
+- Atomic Markdown/JSON retrospective export under `.kxm/assets/retrospectives` with `reviewDecision=proposed`.
+- Opt-in real multi-Pi smoke entry point that probes for `pi` and skips cleanly when the binary or model credentials are unavailable.
+
+### Changed
+
+- Failed-tool journal summaries now include an allowlisted diagnostic class instead of a generic "tool failed" sentence.
+- Long-lived workers wait longer for a graceful SIGTERM drain and retry once without `--continue` after a fast failure.
+
+### Upgrade note
+
+- Extra 401/403 JSON fields are additive. 0.3.1 clients ignore them. Coordinator journal writes after a failed run remain allowed; checkpoints and waits still require a running or waiting run.
+
 ## 0.3.1 - 2026-08-26
 
 ### Added
