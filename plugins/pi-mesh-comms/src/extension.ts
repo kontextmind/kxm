@@ -2,8 +2,14 @@ import { basename } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { MeshClient } from "./client.ts";
-import type { DeliveryMode, HubEvent, MessageRecord } from "./protocol.ts";
+import { MAX_CONTENT_CHARS, type DeliveryMode, type HubEvent, type MessageRecord } from "./protocol.ts";
 import type { ImprovementArea, JournalCategory, WorkflowCheckpointStatus } from "./workflow.ts";
+
+function boundedPeerReply(reply: string): string {
+  if (reply.length <= MAX_CONTENT_CHARS) return reply;
+  const suffix = `\n\n[pi-mesh: response truncated from ${reply.length} characters to fit the message limit; the full output may remain in the replying agent's local session or worker log]`;
+  return reply.slice(0, MAX_CONTENT_CHARS - suffix.length) + suffix;
+}
 
 function result(value: unknown) {
   return {
@@ -138,7 +144,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     activeInbound = undefined;
     activeReply = undefined;
     try {
-      await client.reply(message.id, reply);
+      await client.reply(message.id, boundedPeerReply(reply));
     } finally {
       activateNext();
     }

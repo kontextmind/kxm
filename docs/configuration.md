@@ -82,6 +82,8 @@ The `ttlMs` field can override the default TTL per message. Automated senders sh
 
 `mesh_fanout` derives a bounded idempotency key from `idempotencyKeyPrefix`, the correlation ID when supplied, and the normalized target name. Reuse the same prefix and correlation ID for an exact retry of one workflow run. A later workflow may safely reuse the human-readable prefix with a different correlation ID without colliding with retained peer messages.
 
+When a Pi peer produces more than 32,000 characters, the extension returns a bounded truncated reply instead of leaving the request pending. The full output may remain in the replying agent's local Pi session or `.kxm/logs/pi-agent-<name>.log` when the long-lived worker is used.
+
 ## Long-lived worker settings
 
 | Variable | Default | Description |

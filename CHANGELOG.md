@@ -16,6 +16,7 @@ All notable user-facing changes are documented here. The project follows [Semant
 - Retry and nonzero failure handling when a long-lived worker cannot spawn Pi.
 - Windows-safe long-lived worker launch through `ComSpec` for Pi command scripts.
 - Cross-platform CI at the exact Node 22.13 floor and current Node 24 release.
+- Bounded peer replies that return a terminal truncated response instead of leaving the sender blocked when model output exceeds the message limit.
 
 ### Changed
 
