@@ -949,3 +949,125 @@ test("Pi extension defers post-ack activation during shutdown and replays the me
   assert.equal((await peer.getMessage(stuck.id)).status, "delivered", "watchdog restart must preserve the active durable claim");
   await restarted.emit("session_shutdown");
 });
+
+
+test("Pi extension retries activation when sendMessage throws", async (context) => {
+  const mesh = await createTestMesh(context);
+  const peer = mesh.makeClient("activation-retry-sender");
+  await peer.start(() => undefined);
+  const stateDir = mkdtempSync(join(tmpdir(), "pi-mesh-extension-send-retry-"));
+  context.after(() => rmSync(stateDir, { recursive: true, force: true }));
+  const keys = ["PI_MESH_SERVER_URL", "PI_MESH_AUTH_TOKEN", "PI_MESH_PROJECT", "PI_MESH_AGENT_NAME", "PI_MESH_STATE_DIR"] as const;
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  Object.assign(process.env, {
+    PI_MESH_SERVER_URL: mesh.address.url,
+    PI_MESH_AUTH_TOKEN: mesh.token,
+    PI_MESH_PROJECT: "test-project",
+    PI_MESH_AGENT_NAME: "send-retry-worker",
+    PI_MESH_STATE_DIR: stateDir,
+  });
+  context.after(() => {
+    for (const key of keys) {
+      const value = previous[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  const fake = fakePi();
+  let sendAttempts = 0;
+  const piApi = fake.api as unknown as {
+    sendMessage: (message: Record<string, unknown>, options: Record<string, unknown>) => void;
+  };
+  const originalSend = piApi.sendMessage.bind(piApi);
+  piApi.sendMessage = (message, options) => {
+    sendAttempts += 1;
+    if (sendAttempts === 1) throw new Error("simulated sendMessage failure");
+    originalSend(message, options);
+  };
+  piMeshExtension(fake.api);
+  const notices: Array<{ message: string; type: string }> = [];
+  await fake.emit("session_start", {}, {
+    cwd: process.cwd(),
+    model: { provider: "test", id: "model" },
+    ui: {
+      setStatus() {},
+      notify(message: string, type: string) { notices.push({ message, type }); },
+    },
+  });
+
+  const inbound = await peer.send({ target: "send-retry-worker", content: "retry after sendMessage throws" });
+  await waitFor(() => notices.some((notice) => notice.type === "error" && notice.message.includes("activation will retry")));
+  assert.equal(fake.sent.length, 0);
+  await waitFor(() => fake.sent.length === 1, 3_000);
+  assert.equal(sendAttempts, 2);
+  assert.match(String(fake.sent[0]!.message.content), /retry after sendMessage throws/);
+  await fake.emit("message_start", { message: fake.sent[0]!.message });
+  await fake.emit("agent_end", { messages: [{ role: "assistant", content: "send retry complete" }] });
+  await fake.emit("agent_settled");
+  assert.equal((await peer.awaitResponse(inbound.id, 2_000)).reply?.content, "send retry complete");
+  await fake.emit("session_shutdown");
+});
+
+test("Pi extension drops a message when acknowledgement is already terminal", async (context) => {
+  const mesh = await createTestMesh(context);
+  const peer = mesh.makeClient("terminal-ack-sender");
+  await peer.start(() => undefined);
+  const stateDir = mkdtempSync(join(tmpdir(), "pi-mesh-extension-terminal-ack-"));
+  context.after(() => rmSync(stateDir, { recursive: true, force: true }));
+  const keys = ["PI_MESH_SERVER_URL", "PI_MESH_AUTH_TOKEN", "PI_MESH_PROJECT", "PI_MESH_AGENT_NAME", "PI_MESH_STATE_DIR"] as const;
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  Object.assign(process.env, {
+    PI_MESH_SERVER_URL: mesh.address.url,
+    PI_MESH_AUTH_TOKEN: mesh.token,
+    PI_MESH_PROJECT: "test-project",
+    PI_MESH_AGENT_NAME: "terminal-ack-worker",
+    PI_MESH_STATE_DIR: stateDir,
+  });
+  context.after(() => {
+    for (const key of keys) {
+      const value = previous[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  const fake = fakePi();
+  piMeshExtension(fake.api);
+  await fake.emit("session_start", {}, {
+    cwd: process.cwd(),
+    model: { provider: "test", id: "model" },
+    ui: { setStatus() {}, notify() {} },
+  });
+
+  const originalFetch = globalThis.fetch;
+  let terminalAck = false;
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    if (!terminalAck && url.includes("/ack") && init?.method === "POST") {
+      terminalAck = true;
+      return new Response(JSON.stringify({
+        error: "cannot acknowledge a replied message",
+        code: "invalid_message_state",
+      }), { status: 409, headers: { "content-type": "application/json" } });
+    }
+    return await originalFetch(input, init);
+  };
+  try {
+    await peer.send({ target: "terminal-ack-worker", content: "must not activate after terminal ack" });
+    await waitFor(() => terminalAck);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(fake.sent.length, 0);
+    const next = await peer.send({ target: "terminal-ack-worker", content: "activate after terminal ack skip" });
+    await waitFor(() => fake.sent.length === 1);
+    assert.match(String(fake.sent[0]!.message.content), /activate after terminal ack skip/);
+    assert.doesNotMatch(String(fake.sent[0]!.message.content), /must not activate after terminal ack/);
+    await fake.emit("message_start", { message: fake.sent[0]!.message });
+    await fake.emit("agent_end", { messages: [{ role: "assistant", content: "terminal ack skip complete" }] });
+    await fake.emit("agent_settled");
+    assert.equal((await peer.awaitResponse(next.id, 2_000)).reply?.content, "terminal ack skip complete");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  await fake.emit("session_shutdown");
+});
