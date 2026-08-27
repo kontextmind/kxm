@@ -4,8 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import type { Terminal } from "@earendil-works/pi-tui";
 import { runCli } from "../plugins/kxm-mesh/src/cli.ts";
-import { applyMeshTuiKey, defaultMeshTuiView, loadLocalMeshSnapshot, MeshDashboard, renderMeshTui, type MeshTuiSnapshot } from "../plugins/kxm-mesh/src/tui.ts";
+import { applyMeshTuiKey, defaultMeshTuiView, loadLocalMeshSnapshot, MeshDashboard, renderMeshTui, runMeshTui, type MeshTuiSnapshot } from "../plugins/kxm-mesh/src/tui.ts";
 
 function capture() {
   let stdout = "";
@@ -28,6 +29,223 @@ test("mesh tui dry-run does not open SSE", async () => {
   assert.equal(payload.command, "tui");
   assert.equal(payload.dryRun, true);
   assert.equal(payload.transport, "sse");
+});
+
+test("non-TTY dashboard prefers the authenticated metadata-only ops snapshot", async () => {
+  const root = mkdtempSync(join(tmpdir(), "kxm-tui-ops-"));
+  const requested: string[] = [];
+  let output = "";
+  const agent = {
+    id: "agt_tui",
+    name: "kxm-tui-test",
+    purpose: "Read-only mesh observer TUI",
+    project: "test-project",
+    model: "kxm-tui",
+    connectedAt: "2026-08-27T13:59:00.000Z",
+    lastSeenAt: "2026-08-27T13:59:00.000Z",
+    online: true,
+  };
+  const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    requested.push(url);
+    if (url.endsWith("/health")) return new Response(JSON.stringify({ ok: true, agents: 1 }));
+    if (url.endsWith("/ready")) return new Response(JSON.stringify({ ok: true, storage: "sqlite" }));
+    if (url.includes("/v1/ops/snapshot")) {
+      assert.equal(new Headers(init?.headers).get("authorization"), "Bearer admin-token");
+      return new Response(JSON.stringify({
+        project: "test-project",
+        fetchedAt: "2026-08-27T14:00:00.000Z",
+        agents: [{ ...agent, id: "agt_worker", name: "worker", model: "model", purpose: "reviewer" }],
+        openMessages: [{
+          id: "msg_ops_live",
+          status: "delivered",
+          fromName: "sender",
+          toName: "worker",
+          delivery: "followUp",
+          createdAt: "2026-08-27T13:59:00.000Z",
+        }],
+        openMessageTotal: 1,
+        runs: [{ id: "run_ops_live", status: "running", definitionId: "review", project: "test-project" }],
+        runTotal: 1,
+      }));
+    }
+    if (url.endsWith("/v1/agents/register")) {
+      return new Response(JSON.stringify({ agent, agentKey: "agent-key" }));
+    }
+    if (url.includes("/v1/agents/agt_tui") && init?.method === "DELETE") return new Response(null, { status: 204 });
+    throw new Error(`unexpected request: ${url}`);
+  }) as typeof fetch;
+  try {
+    const code = await runMeshTui({
+      serverUrl: "http://hub.test",
+      dataPath: join(root, "missing.db"),
+      stateDir: join(root, "state"),
+      project: "test-project",
+      authToken: "admin-token",
+      fetchImpl,
+      stdout: (text) => { output += text; },
+      isTty: false,
+      now: () => new Date("2026-08-27T14:00:00.000Z"),
+    });
+    assert.equal(code, 0);
+    assert.match(output, /msg_ops_live/);
+    assert.match(output, /worker/);
+    assert.doesNotMatch(output, /message body|password/i);
+    assert.ok(requested.some((url) => url.includes("/v1/ops/snapshot")));
+    assert.equal(requested.some((url) => url.endsWith("/v1/agents/register")), false, "admin ops mode must not register a synthetic observer agent");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("dashboard falls back to the legacy presence stream when ops auth is unavailable", async () => {
+  const root = mkdtempSync(join(tmpdir(), "kxm-tui-legacy-"));
+  const agent = {
+    id: "agt_legacy",
+    name: "legacy-worker",
+    purpose: "reviewer",
+    project: "test-project",
+    model: "model",
+    connectedAt: "2026-08-27T13:59:00.000Z",
+    lastSeenAt: "2026-08-27T13:59:00.000Z",
+    online: true,
+  };
+  const observer = { ...agent, id: "agt_observer", name: "kxm-tui-test", model: "kxm-tui" };
+  let registered = false;
+  let unregistered = false;
+  let output = "";
+  const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/health")) return new Response(JSON.stringify({ ok: true, agents: 1 }));
+    if (url.endsWith("/ready")) return new Response(JSON.stringify({ ok: true, storage: "sqlite" }));
+    if (url.includes("/v1/ops/snapshot")) return new Response(JSON.stringify({ error: "admin token required" }), { status: 503 });
+    if (url.endsWith("/v1/agents/register")) {
+      registered = true;
+      return new Response(JSON.stringify({ agent: observer, agentKey: "agent-key" }));
+    }
+    if (url.endsWith("/v1/agents")) return new Response(JSON.stringify({ agents: [agent, observer] }));
+    if (url.includes("/v1/agents/agt_observer") && init?.method === "DELETE") {
+      unregistered = true;
+      return new Response(null, { status: 204 });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  }) as typeof fetch;
+  try {
+    assert.equal(await runMeshTui({
+      serverUrl: "http://hub.test",
+      dataPath: join(root, "missing.db"),
+      stateDir: join(root, "state"),
+      project: "test-project",
+      fetchImpl,
+      stdout: (text) => { output += text; },
+      isTty: false,
+      now: () => new Date("2026-08-27T14:00:00.000Z"),
+    }), 0);
+    assert.equal(registered, true);
+    assert.equal(unregistered, true);
+    assert.match(output, /legacy-worker/);
+    assert.doesNotMatch(output, /kxm-tui-test/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("interactive dashboard registers a legacy observer when ops access is lost mid-session", async () => {
+  const root = mkdtempSync(join(tmpdir(), "kxm-tui-transition-"));
+  const abort = new AbortController();
+  const encoder = new TextEncoder();
+  let opsEventCalls = 0;
+  let registered = false;
+  let legacyOpened = false;
+  const agent = {
+    id: "agt_transition",
+    name: "worker",
+    purpose: "reviewer",
+    project: "test-project",
+    model: "model",
+    connectedAt: "2026-08-27T13:59:00.000Z",
+    lastSeenAt: "2026-08-27T13:59:00.000Z",
+    online: true,
+  };
+  const observer = { ...agent, id: "agt_transition_observer", name: "kxm-tui-transition", model: "kxm-tui" };
+  const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/health")) return new Response(JSON.stringify({ ok: true, agents: 1 }));
+    if (url.endsWith("/ready")) return new Response(JSON.stringify({ ok: true, storage: "sqlite" }));
+    if (url.includes("/v1/ops/snapshot")) return new Response(JSON.stringify({
+      project: "test-project",
+      fetchedAt: "2026-08-27T14:00:00.000Z",
+      agents: [agent],
+      openMessages: [],
+      openMessageTotal: 0,
+      runs: [],
+      runTotal: 0,
+    }));
+    if (url.includes("/v1/ops/events")) {
+      opsEventCalls += 1;
+      if (opsEventCalls === 1) {
+        return new Response(`event: ready\ndata: ${JSON.stringify({ type: "ops", project: "test-project", topic: "agents", at: "2026-08-27T14:00:00.000Z" })}\n\n`, {
+          headers: { "content-type": "text/event-stream" },
+        });
+      }
+      return new Response(JSON.stringify({ error: "rotated" }), { status: 403 });
+    }
+    if (url.endsWith("/v1/agents/register")) {
+      registered = true;
+      return new Response(JSON.stringify({ agent: observer, agentKey: "agent-key" }));
+    }
+    if (url.endsWith("/v1/agents")) return new Response(JSON.stringify({ agents: [agent, observer] }));
+    if (url.includes("/v1/events?")) {
+      legacyOpened = true;
+      queueMicrotask(() => abort.abort());
+      return new Response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode(": heartbeat\n\n"));
+        },
+      }), { headers: { "content-type": "text/event-stream" } });
+    }
+    if (url.includes("/v1/agents/agt_transition_observer") && init?.method === "DELETE") return new Response(null, { status: 204 });
+    throw new Error(`unexpected request: ${url}`);
+  }) as typeof fetch;
+  const terminal: Terminal = {
+    columns: 100,
+    rows: 30,
+    kittyProtocolActive: false,
+    start() {},
+    stop() {},
+    async drainInput() {},
+    write() {},
+    moveBy() {},
+    hideCursor() {},
+    showCursor() {},
+    clearLine() {},
+    clearFromCursor() {},
+    clearScreen() {},
+    setTitle() {},
+    setProgress() {},
+  };
+  try {
+    assert.equal(await runMeshTui({
+      serverUrl: "http://hub.test",
+      dataPath: join(root, "missing.db"),
+      stateDir: join(root, "state"),
+      project: "test-project",
+      authToken: "rotating-token",
+      fetchImpl,
+      stdout: () => undefined,
+      isTty: true,
+      terminal,
+      abort: abort.signal,
+      reconnectMs: 1,
+      now: () => new Date("2026-08-27T14:00:00.000Z"),
+    }), 0);
+    assert.ok(opsEventCalls >= 2);
+    assert.equal(registered, true);
+    assert.equal(legacyOpened, true);
+  } finally {
+    abort.abort();
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 const snapshot: MeshTuiSnapshot = {

@@ -12630,7 +12630,7 @@ var MeshDashboard = class {
     const ready = this.snapshot.readyOk ? theme.success("\u25CF ready") : theme.error("\u2717 not ready");
     const agents = visibleAgents(this.snapshot);
     const online = agents.filter((agent) => agent.online).length;
-    const transport = this.snapshot.transport === "sse" ? "live" : "snapshot";
+    const transport = this.snapshot.transport === "snapshot" ? "snapshot" : this.snapshot.metadataMode === "ops" ? "live ops" : this.snapshot.metadataMode === "legacy" ? "presence/local" : "live";
     const updated = this.snapshot.fetchedAt.slice(11, 19);
     const status = new TruncatedText(
       `${hub}  ${ready}  ${transport}  ${online}/${agents.length} online  ${theme.dim(`updated ${updated} UTC \xB7 ${this.snapshot.serverUrl}`)}`,
@@ -12666,7 +12666,7 @@ var MeshDashboard = class {
       help.addChild(new Text(`${theme.accent("HELP")}
 \u2191\u2193 select panels \xB7 enter/space toggle \xB7 1\u20134 reveal \xB7 PgUp/PgDn or Ctrl-U/D scroll \xB7 h hide help \xB7 q quit
 On narrow screens \u2191\u2193 scrolls content. Esc closes help before quitting.
-Read-only observer: message bodies are never rendered.`, 0, 0));
+Authorized ops SSE keeps agent, message, and workflow metadata live. Message bodies are never loaded or rendered.`, 0, 0));
       content.addChild(help);
     }
     for (const panel of MESH_TUI_PANELS) {
@@ -12685,8 +12685,9 @@ Read-only observer: message bodies are never rendered.`, 0, 0));
       { component: this.scrollView, grow: 1, shrink: 1, minSize: 28 }
     ], { gap: 1 });
     const error = this.snapshot.error ? `  ${theme.error(`ERROR ${this.snapshot.error}`)}` : "";
-    const wideFooter = new TruncatedText(`${theme.dim("\u2191\u2193 panels \xB7 enter/space toggle \xB7 PgUp/PgDn scroll \xB7 1\u20134 reveal \xB7 h help \xB7 q quit \xB7 live presence")}${error}`, 1, 0);
-    const narrowFooter = new TruncatedText(`${theme.dim("1\u20134 reveal \xB7 \u2191\u2193 scroll \xB7 h help \xB7 q quit \xB7 live presence")}${error}`, 1, 0);
+    const feed = this.snapshot.metadataMode === "legacy" ? "presence + local snapshots" : "live metadata";
+    const wideFooter = new TruncatedText(`${theme.dim(`\u2191\u2193 panels \xB7 enter/space toggle \xB7 PgUp/PgDn scroll \xB7 1\u20134 reveal \xB7 h help \xB7 q quit \xB7 ${feed}`)}${error}`, 1, 0);
+    const narrowFooter = new TruncatedText(`${theme.dim(`1\u20134 reveal \xB7 \u2191\u2193 scroll \xB7 h help \xB7 q quit \xB7 ${feed}`)}${error}`, 1, 0);
     const compactPanels = new TruncatedText(
       MESH_TUI_PANELS.map((panel, index) => `${index + 1} ${panel}:${this.view.open[panel] ? "on" : "off"}`).join("  "),
       1,
@@ -12765,6 +12766,7 @@ async function runMeshTui(input) {
   });
   const tty = input.isTty ?? Boolean(input.stdin?.isTTY && process.stdout.isTTY);
   let identity;
+  let useOpsStream = true;
   let interactive;
   const name = `kxm-tui-${process.pid}`;
   const view = defaultMeshTuiView();
@@ -12799,7 +12801,31 @@ async function runMeshTui(input) {
       error = error ?? "hub_unreachable";
     }
     let local = loadLocalMeshSnapshot(input.dataPath, input.stateDir);
-    if (identity) {
+    if (useOpsStream) {
+      try {
+        const ops = await input.fetchImpl(`${base}/v1/ops/snapshot?project=${encodeURIComponent(input.project)}`, {
+          headers: headers()
+        });
+        if (ops.ok) {
+          const body = await readJson(ops);
+          local = {
+            ...local,
+            agents: body.agents,
+            openMessages: body.openMessages,
+            openMessageTotal: body.openMessageTotal,
+            runs: body.runs,
+            runTotal: body.runTotal
+          };
+        } else if (ops.status === 401 || ops.status === 403 || ops.status === 404 || ops.status === 503) {
+          useOpsStream = false;
+        } else {
+          error = error ?? `ops_snapshot_http_${ops.status}`;
+        }
+      } catch {
+        error = error ?? "ops_snapshot_unreachable";
+      }
+    }
+    if (!useOpsStream && identity) {
       try {
         const listed = await input.fetchImpl(`${base}/v1/agents`, { headers: headers(identity) });
         if (listed.ok) {
@@ -12822,11 +12848,28 @@ async function runMeshTui(input) {
       ...storage ? { storage } : {},
       onlineCount,
       transport,
+      metadataMode: useOpsStream ? "ops" : "legacy",
       fetchedAt,
       ...error ? { error } : {},
       ...local,
       ...extra
     };
+  };
+  const registerObserver = async () => {
+    if (identity) return;
+    const registration = await input.fetchImpl(`${base}/v1/agents/register`, {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify({
+        name,
+        purpose: "Read-only mesh observer TUI",
+        project: input.project,
+        model: "kxm-tui"
+      })
+    });
+    if (!registration.ok) throw new Error(`observer registration failed with HTTP ${registration.status}`);
+    const registered = await readJson(registration);
+    identity = { id: registered.agent.id, key: registered.agentKey };
   };
   const unregister = async () => {
     if (!identity) return;
@@ -12838,24 +12881,19 @@ async function runMeshTui(input) {
     }).catch(() => void 0);
   };
   try {
-    const registration = await input.fetchImpl(`${base}/v1/agents/register`, {
-      method: "POST",
-      headers: headers(),
-      body: JSON.stringify({
-        name,
-        purpose: "Read-only mesh observer TUI",
-        project: input.project,
-        model: "kxm-tui"
-      })
-    });
-    if (!registration.ok) {
-      const failed = await snapshotFromHub("snapshot", { error: `register_http_${registration.status}` });
-      paint(failed);
-      return 1;
-    }
-    const registered = await readJson(registration);
-    identity = { id: registered.agent.id, key: registered.agentKey };
     let snapshot = await snapshotFromHub("sse");
+    if (!useOpsStream) {
+      try {
+        await registerObserver();
+      } catch (error) {
+        const failed = await snapshotFromHub("snapshot", {
+          error: error instanceof Error ? error.message : "observer registration failed"
+        });
+        paint(failed);
+        return 1;
+      }
+      snapshot = await snapshotFromHub("sse");
+    }
     if (!tty) {
       paint(snapshot);
       return snapshot.healthOk ? 0 : 1;
@@ -12894,21 +12932,40 @@ async function runMeshTui(input) {
       while (!abort.signal.aborted) {
         let events;
         try {
-          events = await input.fetchImpl(`${base}/v1/events?agentId=${encodeURIComponent(identity.id)}`, {
-            headers: { ...headers(identity), accept: "text/event-stream" },
+          if (!useOpsStream && !identity) throw new Error("legacy SSE requires an observer identity");
+          const eventUrl = useOpsStream ? `${base}/v1/ops/events?project=${encodeURIComponent(input.project)}` : `${base}/v1/events?agentId=${encodeURIComponent(identity.id)}`;
+          events = await input.fetchImpl(eventUrl, {
+            headers: { ...headers(useOpsStream ? void 0 : identity), accept: "text/event-stream" },
             signal: abort.signal
           });
         } catch (error) {
           if (abort.signal.aborted) break;
           snapshot = await snapshotFromHub("snapshot", { error: error instanceof Error ? `sse_${error.message}` : "sse_unreachable" });
           paint(snapshot);
-          await waitForReconnect(abort.signal);
+          await waitForReconnect(abort.signal, input.reconnectMs);
+          continue;
+        }
+        if (useOpsStream && (events.status === 401 || events.status === 403 || events.status === 404 || events.status === 503)) {
+          useOpsStream = false;
+          try {
+            await registerObserver();
+          } catch {
+            snapshot = await snapshotFromHub("snapshot", {
+              error: "live metadata access was lost and legacy observer registration failed"
+            });
+            paint(snapshot);
+            break;
+          }
+          snapshot = await snapshotFromHub("snapshot", {
+            error: "admin metadata stream unavailable; using legacy presence and local snapshots"
+          });
+          paint(snapshot);
           continue;
         }
         if (!events.ok || !events.body) {
           snapshot = await snapshotFromHub("snapshot", { error: `sse_http_${events.status}` });
           paint(snapshot);
-          await waitForReconnect(abort.signal);
+          await waitForReconnect(abort.signal, input.reconnectMs);
           continue;
         }
         if (snapshot.error || snapshot.transport !== "sse") {
@@ -12939,7 +12996,10 @@ async function runMeshTui(input) {
             } catch {
               continue;
             }
-            if ("type" in parsed && parsed.type === "presence") {
+            if ("type" in parsed && parsed.type === "ops") {
+              snapshot = await snapshotFromHub("sse");
+              paint(snapshot);
+            } else if ("type" in parsed && parsed.type === "presence") {
               applyPresence(parsed.agent);
               const local = loadLocalMeshSnapshot(input.dataPath, input.stateDir);
               snapshot = {
@@ -12971,7 +13031,7 @@ async function runMeshTui(input) {
         if (!abort.signal.aborted) {
           snapshot = await snapshotFromHub("snapshot", { error: "sse_reconnecting" });
           paint(snapshot);
-          await waitForReconnect(abort.signal);
+          await waitForReconnect(abort.signal, input.reconnectMs);
         }
       }
     } catch (error) {
