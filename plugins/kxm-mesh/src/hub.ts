@@ -90,6 +90,8 @@ export interface MeshHub {
 }
 
 type SseClient = { response: ServerResponse; heartbeat: NodeJS.Timeout };
+type OpsSseClient = SseClient & { project: string };
+type OpsTopic = "agents" | "messages" | "workflows";
 type RateBucket = { startedAt: number; count: number };
 
 const DEFAULT_WORKFLOW_WAIT_TIMEOUT_MS = 24 * 60 * 60_000;
@@ -395,6 +397,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
   const workflowRuns = store.workflowRuns;
   const journal = store.journal;
   const streams = new Map<string, Set<SseClient>>();
+  const opsStreams = new Set<OpsSseClient>();
   const rateBuckets = new Map<string, RateBucket>();
   const counters = {
     requests: 0,
@@ -486,11 +489,11 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
     }
   }
 
-  function requireConfiguredAdminAuth(request: IncomingMessage): void {
+  function requireConfiguredAdminAuth(request: IncomingMessage, purpose = "workflow degradation approval"): void {
     if (!authToken) {
       throw new ProtocolError(
         503,
-        "PI_MESH_AUTH_TOKEN must be configured for workflow degradation approval",
+        `PI_MESH_AUTH_TOKEN must be configured for ${purpose}`,
         "admin_auth_not_configured",
       );
     }
@@ -543,12 +546,55 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
     return true;
   }
 
+  function publishOps(project: string, topic: OpsTopic): void {
+    const frame = `event: ops\ndata: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}\n\n`;
+    for (const client of opsStreams) {
+      if (client.project === project) client.response.write(frame);
+    }
+  }
+
+  function opsSnapshot(project: string) {
+    const projectAgents = [...agents.values()]
+      .filter((agent) => agent.project === project)
+      .map(publicAgent)
+      .sort((left, right) => Number(right.online) - Number(left.online) || left.name.localeCompare(right.name));
+    const open = [...messages.values()]
+      .filter((message) => message.project === project && (message.status === "queued" || message.status === "delivered"))
+      .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
+    const projectRuns = [...workflowRuns.values()]
+      .filter((run) => run.project === project)
+      .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
+    return {
+      project,
+      fetchedAt: nowIso(),
+      agents: projectAgents,
+      openMessages: open.slice(0, 16).map((message) => ({
+        id: message.id,
+        status: message.status,
+        fromName: message.fromName,
+        toName: message.toName,
+        delivery: message.delivery,
+        createdAt: message.createdAt,
+        ...(message.correlationId ? { correlationId: message.correlationId } : {}),
+      })),
+      openMessageTotal: open.length,
+      runs: projectRuns.slice(0, 8).map((run) => ({
+        id: run.id,
+        status: run.status,
+        definitionId: run.definitionId,
+        project: run.project,
+      })),
+      runTotal: projectRuns.length,
+    };
+  }
+
   function broadcastPresence(agent: StoredAgent): void {
     for (const candidate of agents.values()) {
       if (candidate.project === agent.project && candidate.id !== agent.id && candidate.online) {
         publish(candidate.id, { type: "presence", agent: publicAgent(agent) });
       }
     }
+    publishOps(agent.project, "agents");
   }
 
   function findTarget(project: string, target: string): StoredAgent {
@@ -835,6 +881,8 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
       };
       transition.messageId = message.id;
       store.saveWorkflowTransition(transition, message, entry);
+      publishOps(transition.project, "workflows");
+      publishOps(transition.project, "messages");
       exportTerminalRetrospective(transition);
       if (agents.get(transition.targetAgentId)?.online) {
         publish(transition.targetAgentId, { type: "message", message });
@@ -867,6 +915,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         message.status = "expired";
         message.error = "message expired before a reply was received";
         store.saveMessage(message);
+        publishOps(message.project, "messages");
         publish(message.from, { type: "expired", message });
         publish(message.to, { type: "expired", message });
         counters.messagesExpired += 1;
@@ -879,6 +928,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           delete run.currentStage;
           run.updatedAt = nowIso();
           store.saveWorkflowRun(run);
+          publishOps(run.project, "workflows");
           const entry: WorkflowJournalEntry = {
             id: newId("journal"),
             runId: run.id,
@@ -910,6 +960,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
       const terminalAt = message.repliedAt ?? message.cancelledAt ?? message.expiresAt ?? message.createdAt;
       if (Date.parse(terminalAt) > cutoff) continue;
       store.deleteMessage(message.id);
+      publishOps(message.project, "messages");
       counters.messagesPurged += 1;
       logger({ event: "message_purged", messageId: message.id, ...messageLog(message, message.from, message.fromName, message.to, message.toName) });
     }
@@ -1102,6 +1153,8 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           receipt.messageId = message.id;
         }
         store.saveWorkflowTransition(transition, message, entry);
+        publishOps(transition.project, "workflows");
+        if (message) publishOps(transition.project, "messages");
         exportTerminalRetrospective(transition);
         if (entry) counters.journalEntries += 1;
         if (message && agents.get(transition.targetAgentId)?.online) {
@@ -1223,6 +1276,8 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         };
         store.saveMessage(message);
         store.saveWorkflowRun(run);
+        publishOps(run.project, "messages");
+        publishOps(run.project, "workflows");
         if (target.online) publish(target.id, { type: "message", message });
         counters.webhooksAccepted += 1;
         logger({
@@ -1240,6 +1295,41 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
       if (method === "GET" && url.pathname === "/metrics") {
         requireAdminAuth(request);
         text(response, 200, metricsBody(), "text/plain; version=0.0.4; charset=utf-8");
+        return;
+      }
+
+      if (method === "GET" && url.pathname === "/v1/ops/snapshot") {
+        requireConfiguredAdminAuth(request, "operations metadata");
+        const project = requireString(url.searchParams.get("project"), "project", { max: 128 });
+        expireMessages();
+        expireWorkflowWaits();
+        purgeTerminalMessages();
+        json(response, 200, opsSnapshot(project));
+        return;
+      }
+
+      if (method === "GET" && url.pathname === "/v1/ops/events") {
+        requireConfiguredAdminAuth(request, "operations metadata");
+        const project = requireString(url.searchParams.get("project"), "project", { max: 128 });
+        response.writeHead(200, {
+          "content-type": "text/event-stream",
+          "cache-control": "no-cache, no-transform",
+          connection: "keep-alive",
+          "x-accel-buffering": "no",
+          "x-content-type-options": "nosniff",
+        });
+        response.write(`event: ready\ndata: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}\n\n`);
+        const client: OpsSseClient = {
+          project,
+          response,
+          heartbeat: setInterval(() => response.write(": heartbeat\n\n"), 15_000),
+        };
+        client.heartbeat.unref();
+        opsStreams.add(client);
+        request.on("close", () => {
+          clearInterval(client.heartbeat);
+          opsStreams.delete(client);
+        });
         return;
       }
 
@@ -1319,6 +1409,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
             createdAt: timestamp,
           };
           store.saveWorkflowTransition(transition, undefined, entry);
+          publishOps(transition.project, "workflows");
           counters.workflowDegradations += 1;
           counters.journalEntries += 1;
           logger({
@@ -1391,6 +1482,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           verifiedEvidence,
         );
         store.saveWorkflowTransition(transition);
+        publishOps(transition.project, "workflows");
         counters.workflowWaits += 1;
         logger({
           event: "workflow_wait_started",
@@ -1492,6 +1584,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           };
         }
         store.saveWorkflowTransition(transition, undefined, entry);
+        publishOps(transition.project, "workflows");
         counters.workflowCheckpoints += 1;
         if (entry) counters.journalEntries += 1;
         exportTerminalRetrospective(transition);
@@ -1776,6 +1869,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           status: "queued",
         };
         store.saveMessage(message);
+        publishOps(message.project, "messages");
         publish(target.id, { type: "message", message });
         counters.messagesSent += 1;
         logger({ event: "message_sent", messageId: message.id, hops, ...messageLog(message, sender.id, sender.name, target.id, target.name) });
@@ -1803,6 +1897,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           message.status = "delivered";
           message.deliveredAt = nowIso();
           store.saveMessage(message);
+          publishOps(message.project, "messages");
         }
         json(response, 200, { message });
         return;
@@ -1832,12 +1927,14 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         message.repliedAt = message.reply.createdAt;
         message.status = "replied";
         store.saveMessage(message);
+        publishOps(message.project, "messages");
         const workflowRun = [...workflowRuns.values()].find((run) => run.messageId === message.id);
         if (workflowRun?.status === "running") {
           workflowRun.status = "failed";
           delete workflowRun.currentStage;
           workflowRun.updatedAt = message.repliedAt;
           store.saveWorkflowRun(workflowRun);
+          publishOps(workflowRun.project, "workflows");
           const entry: WorkflowJournalEntry = {
             id: newId("journal"),
             runId: workflowRun.id,
@@ -1882,6 +1979,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         message.cancelledAt = nowIso();
         message.error = "message cancelled by sender";
         store.saveMessage(message);
+        publishOps(message.project, "messages");
         publish(message.to, { type: "cancelled", message });
         counters.messagesCancelled += 1;
         logger({ event: "message_cancelled", messageId: message.id, ...messageLog(message, current.id, current.name, message.to, message.toName) });
@@ -1973,6 +2071,11 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         }
       }
       streams.clear();
+      for (const client of opsStreams) {
+        clearInterval(client.heartbeat);
+        client.response.end();
+      }
+      opsStreams.clear();
       server.closeIdleConnections();
       try {
         await serverClosed;

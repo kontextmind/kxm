@@ -60,7 +60,7 @@ Claude MCP ─── HTTP/SSE ───┘    ├── SQLite WAL
                                 └── operations + learning journal
 ```
 
-The hub validates and authenticates requests, stores agents and messages, pushes addressed work over SSE, expires stale work, and purges terminal records after the configured retention window. SQLite is the source of restart recovery; in-memory maps are the live working set.
+The hub validates and authenticates requests, stores agents and messages, pushes addressed work over SSE, and exposes a separate administrative metadata-only operations SSE stream for dashboards. Operations wakeups and snapshots are project-scoped and never include request or reply bodies. The hub expires stale work and purges terminal records after the configured retention window. SQLite is the source of restart recovery; in-memory maps are the live working set.
 
 **Source of truth.** Semantics are defined by the protocol and schema types (`src/protocol.ts`, `src/workflow.ts`), the hub's durable state (`.kxm/state/mesh.db`: agents, messages, workflow runs, journal), and reviewed workspace configuration in git (`.kxm/config`). The `kxm` CLI, the Pi extension, and the Claude MCP server are **clients** of that state. When a client's behaviour differs from the hub's or a definition's contract, the contract is authoritative and the client is the defect. One deliberate locality limitation remains: `kxm workflow list` / `get` read the local SQLite file rather than the configured hub, so they only describe runs when the operator is on the hub host. Start, signal, and GitHub watch now resolve credentials from the selected active definition and use the start secret as the documented callback fallback.
 

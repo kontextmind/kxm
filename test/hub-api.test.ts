@@ -39,6 +39,35 @@ function identityHeaders(identity: RawIdentity, token: string): Record<string, s
   };
 }
 
+function sseData(response: Response): { next: () => Promise<Record<string, unknown>>; close: () => Promise<void> } {
+  assert.ok(response.body);
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const frames: string[] = [];
+  return {
+    async next() {
+      while (true) {
+        const frame = frames.shift();
+        if (frame !== undefined) {
+          const data = frame.split("\n").filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart()).join("\n");
+          if (data) return JSON.parse(data) as Record<string, unknown>;
+          continue;
+        }
+        const result = await reader.read();
+        if (result.done) throw new Error("SSE stream ended before the next data frame");
+        buffer += decoder.decode(result.value, { stream: true }).replaceAll("\r\n", "\n");
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() ?? "";
+        frames.push(...parts);
+      }
+    },
+    async close() {
+      await reader.cancel();
+    },
+  };
+}
+
 test("health, readiness, metrics, request IDs, and security headers are operational", async (context) => {
   const { address, token } = await createTestMesh(context);
   const health = await fetch(`${address.url}/health`, { headers: { "x-request-id": "health-check-1" } });
@@ -415,6 +444,75 @@ test("unsafe hub configuration is rejected", () => {
   assert.throws(() => createMeshHub({ messageTtlMs: 10 }), /below supported minimums/);
   assert.throws(() => createMeshHub({ messageRetentionMs: 10 }), /below supported minimums/);
   assert.throws(() => createMeshHub({ rateLimit: { maxRequests: 0 } }), /rate limit settings/);
+});
+
+test("admin ops SSE publishes project-scoped metadata without message bodies", async (context) => {
+  const mesh = await createTestMesh(context);
+  const sender = mesh.makeClient("ops-sender");
+  const receiver = mesh.makeClient("ops-receiver");
+  await sender.start(() => undefined);
+  await receiver.start(() => undefined);
+
+  const unauthorized = await fetch(`${mesh.address.url}/v1/ops/snapshot?project=test-project`, {
+    headers: { authorization: "Bearer wrong-token" },
+  });
+  assert.equal(unauthorized.status, 401);
+
+  const headers = { authorization: `Bearer ${mesh.token}` };
+  const eventsResponse = await fetch(`${mesh.address.url}/v1/ops/events?project=test-project`, { headers });
+  assert.equal(eventsResponse.status, 200);
+  assert.match(eventsResponse.headers.get("content-type") ?? "", /text\/event-stream/);
+  const events = sseData(eventsResponse);
+  context.after(() => events.close());
+  const ready = await events.next();
+  assert.deepEqual({ type: ready.type, project: ready.project, topic: ready.topic }, {
+    type: "ops",
+    project: "test-project",
+    topic: "agents",
+  });
+
+  const bodyMarker = "BODY_MUST_NEVER_ENTER_OPS_OUTPUT";
+  const sent = await sender.send({ target: "ops-receiver", content: bodyMarker, delivery: "followUp" });
+  const queuedEvent = await events.next();
+  assert.equal(queuedEvent.topic, "messages");
+  assert.doesNotMatch(JSON.stringify(queuedEvent), new RegExp(bodyMarker));
+
+  const queuedSnapshotResponse = await fetch(`${mesh.address.url}/v1/ops/snapshot?project=test-project`, { headers });
+  assert.equal(queuedSnapshotResponse.status, 200);
+  const queuedSnapshot = await responseJson(queuedSnapshotResponse) as unknown as {
+    project: string;
+    agents: Array<{ name: string }>;
+    openMessages: Array<Record<string, unknown>>;
+    openMessageTotal: number;
+    runs: unknown[];
+    runTotal: number;
+  };
+  assert.equal(queuedSnapshot.project, "test-project");
+  assert.deepEqual(queuedSnapshot.agents.map((agent) => agent.name).sort(), ["ops-receiver", "ops-sender"]);
+  assert.equal(queuedSnapshot.openMessageTotal, 1);
+  assert.equal(queuedSnapshot.openMessages[0]?.id, sent.id);
+  assert.equal(queuedSnapshot.openMessages[0]?.status, "queued");
+  assert.equal("content" in queuedSnapshot.openMessages[0]!, false);
+  assert.equal("reply" in queuedSnapshot.openMessages[0]!, false);
+  assert.doesNotMatch(JSON.stringify(queuedSnapshot), new RegExp(bodyMarker));
+
+  await receiver.acknowledge(sent.id);
+  assert.equal((await events.next()).topic, "messages");
+  await receiver.reply(sent.id, "REPLY_BODY_MUST_NOT_APPEAR");
+  assert.equal((await events.next()).topic, "messages");
+  const terminalSnapshot = await responseJson(await fetch(
+    `${mesh.address.url}/v1/ops/snapshot?project=test-project`,
+    { headers },
+  )) as { openMessageTotal?: number };
+  assert.equal(terminalSnapshot.openMessageTotal, 0);
+  assert.doesNotMatch(JSON.stringify(terminalSnapshot), /BODY_MUST_NEVER|REPLY_BODY_MUST_NOT/);
+});
+
+test("operations metadata requires a configured admin credential even on loopback", async (context) => {
+  const mesh = await createTestMesh(context, { authToken: "" });
+  const response = await fetch(`${mesh.address.url}/v1/ops/snapshot?project=test-project`);
+  assert.equal(response.status, 503);
+  assert.equal((await responseJson(response)).code, "admin_auth_not_configured");
 });
 
 test("structured logs never include prompt or reply bodies", async (context) => {

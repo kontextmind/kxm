@@ -37,11 +37,7 @@ Run the read-only dashboard against the active workspace:
 kxm --workspace D:\work\product\.kxm mesh tui
 ```
 
-The dashboard uses Pi's `@earendil-works/pi-tui` renderer. It keeps agent
-presence live over SSE and refreshes message, workflow, and local process
-metadata on hub events. It never renders message bodies; the SQLite snapshot
-projects only the metadata columns used by the screen. Observer registrations
-are excluded from the agent table and counts.
+The dashboard uses Pi's `@earendil-works/pi-tui` renderer. With the administrative `PI_MESH_AUTH_TOKEN`, it subscribes to `/v1/ops/events` and refreshes the project-scoped `/v1/ops/snapshot` on each SSE wakeup, keeping agent, open-message, and workflow metadata live without timer polling. Both endpoints omit request/reply bodies. Local process claims remain a local read-only snapshot. If the operations endpoints are unavailable or the supplied credential is project-scoped rather than administrative, the dashboard falls back to the legacy agent-presence stream plus local SQLite metadata. Observer registrations are excluded from the agent table and counts.
 
 | Key | Action |
 |---|---|
@@ -83,6 +79,8 @@ For GitHub Actions, configure `PI_MESH_SMOKE_RUNNER` with the self-hosted runner
 | `GET /health` | None | Process is accepting HTTP and reports online agents |
 | `GET /ready` | None | Storage responds and the hub is ready for traffic |
 | `GET /metrics` | Administrative token outside loopback | Prometheus text metrics |
+| `GET /v1/ops/snapshot?project=<name>` | Administrative token | Project-scoped agent, open-message, and workflow metadata; no bodies |
+| `GET /v1/ops/events?project=<name>` | Administrative token | Metadata-only SSE wakeups for live dashboard refresh |
 
 Use `/ready` for service traffic and `/health` for liveness. Metrics include online agents, retained messages, requests, errors, registrations, sends, replies, cancellations, expiries, purges, workflow waits, external signals, wait timeouts, and explicit workflow quorum degradations.
 
