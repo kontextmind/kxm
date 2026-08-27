@@ -39,6 +39,7 @@ import {
   valueAtPath,
   waitForWorkflowSignal,
   verifyWorkflowEvidenceReferences,
+  workflowDefinitionHash,
   workflowEvidenceStrings,
   type ImprovementArea,
   type JournalCategory,
@@ -373,6 +374,24 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
   const store = new MeshStore(options.dataPath);
   const agents = store.agents;
   const messages = store.messages;
+  function agentLogSide(id: string, fallbackName: string, side: "from" | "to") {
+    const agent = agents.get(id);
+    return {
+      [side]: id,
+      [`${side}Name`]: agent?.name ?? fallbackName,
+      [`${side}Online`]: Boolean(agent?.online),
+      ...(agent?.model ? { [`${side}Model`]: agent.model } : {}),
+    };
+  }
+  function messageLog(message: MessageRecord, fromId: string, fromName: string, toId: string, toName: string) {
+    return {
+      project: message.project,
+      status: message.status,
+      delivery: message.delivery,
+      ...agentLogSide(fromId, fromName, "from"),
+      ...agentLogSide(toId, toName, "to"),
+    };
+  }
   const workflowRuns = store.workflowRuns;
   const journal = store.journal;
   const streams = new Map<string, Set<SseClient>>();
@@ -851,7 +870,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         publish(message.from, { type: "expired", message });
         publish(message.to, { type: "expired", message });
         counters.messagesExpired += 1;
-        logger({ event: "message_expired", messageId: message.id, project: message.project });
+        logger({ event: "message_expired", messageId: message.id, ...messageLog(message, message.from, message.fromName, message.to, message.toName) });
         const run = [...workflowRuns.values()].find(
           (candidate) => candidate.messageId === message.id && candidate.status === "running",
         );
@@ -892,7 +911,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
       if (Date.parse(terminalAt) > cutoff) continue;
       store.deleteMessage(message.id);
       counters.messagesPurged += 1;
-      logger({ event: "message_purged", messageId: message.id, project: message.project });
+      logger({ event: "message_purged", messageId: message.id, ...messageLog(message, message.from, message.fromName, message.to, message.toName) });
     }
   }
 
@@ -1190,6 +1209,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           source: definition.source,
           deliveryId,
           payloadHash: createHash("sha256").update(rawBody).digest("hex"),
+          definitionHash: workflowDefinitionHash(definition),
           ...(event ? { event } : {}),
           project: definition.project,
           targetAgentId: target.id,
@@ -1758,7 +1778,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         store.saveMessage(message);
         publish(target.id, { type: "message", message });
         counters.messagesSent += 1;
-        logger({ event: "message_sent", messageId: message.id, from: sender.id, to: target.id, hops });
+        logger({ event: "message_sent", messageId: message.id, hops, ...messageLog(message, sender.id, sender.name, target.id, target.name) });
         json(response, 202, { message, idempotent: false });
         return;
       }
@@ -1836,7 +1856,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         }
         publish(message.from, { type: "reply", message });
         counters.messagesReplied += 1;
-        logger({ event: "message_replied", messageId: message.id, from: receiver.id, to: message.from });
+        logger({ event: "message_replied", messageId: message.id, ...messageLog(message, receiver.id, receiver.name, message.from, message.fromName) });
         json(response, 200, { message });
         return;
       }
@@ -1864,7 +1884,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         store.saveMessage(message);
         publish(message.to, { type: "cancelled", message });
         counters.messagesCancelled += 1;
-        logger({ event: "message_cancelled", messageId: message.id, from: current.id, to: message.to });
+        logger({ event: "message_cancelled", messageId: message.id, ...messageLog(message, current.id, current.name, message.to, message.toName) });
         json(response, 200, { message });
         return;
       }

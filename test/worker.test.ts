@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 import test from "node:test";
-import { recoveryEnvelopePath, workerStateKey } from "../plugins/pi-mesh-comms/src/recovery.ts";
+import { recoveryEnvelopePath, workerStateKey } from "../plugins/kxm-mesh/src/recovery.ts";
 
 const inheritedWorkspaceKeys = [
   "PI_MESH_WORKSPACE_DIR",

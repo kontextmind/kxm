@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { createHash, createHmac } from "node:crypto";
 import { request as httpRequest, type ClientRequest } from "node:http";
 import test, { type TestContext } from "node:test";
-import type { MeshClient } from "../plugins/pi-mesh-comms/src/client.ts";
-import { MeshHttpError } from "../plugins/pi-mesh-comms/src/client.ts";
-import type { MeshHubOptions } from "../plugins/pi-mesh-comms/src/hub.ts";
-import type { MessageRecord, WorkflowMessageContext } from "../plugins/pi-mesh-comms/src/protocol.ts";
+import type { MeshClient } from "../plugins/kxm-mesh/src/client.ts";
+import { MeshHttpError } from "../plugins/kxm-mesh/src/client.ts";
+import type { MeshHubOptions } from "../plugins/kxm-mesh/src/hub.ts";
+import type { MessageRecord, WorkflowMessageContext } from "../plugins/kxm-mesh/src/protocol.ts";
 import {
   checkpointRun,
   parseWorkflowDefinitions,
@@ -14,7 +14,7 @@ import {
   type WorkflowRun,
   type WorkflowStageState,
   type WorkflowVerifiedEvidence,
-} from "../plugins/pi-mesh-comms/src/workflow.ts";
+} from "../plugins/kxm-mesh/src/workflow.ts";
 import { createTestMesh, responseJson, waitFor, type TestMesh } from "./helpers.ts";
 
 const START_SECRET = "provenance-start-secret-with-entropy";

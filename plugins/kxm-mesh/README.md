@@ -1,4 +1,4 @@
-# Pi Mesh Comms
+# KXM Mesh
 
 Connect a Claude Code session to running Pi or Claude peers through the Pi Mesh hub.
 
@@ -6,7 +6,7 @@ This directory is both a Claude Code plugin and the source of the repository's P
 
 ## Requirements
 
-- Node.js 22.13 or newer on the 22.x line, or Node.js 24 or newer;
+- Node.js 22.19 or newer on the 22.x line, or Node.js 24 or newer;
 - a running Pi Mesh hub;
 - the same authentication token and project name used by the other agents.
 
@@ -14,7 +14,7 @@ This directory is both a Claude Code plugin and the source of the repository's P
 
 ```text
 /plugin marketplace add kontextmind/pi-extensions
-/plugin install pi-mesh-comms@kontextmind-pi-extensions
+/plugin install kxm-mesh@kontextmind-pi-extensions
 /reload-plugins
 ```
 
@@ -39,7 +39,7 @@ Configure the hub URL, token, unique agent name, purpose, and project when promp
 | `mesh_workflow_record` | Capture a plan, decision, contradiction, error, or lesson |
 | `mesh_improvement_report` | Group learning evidence by improvement area |
 
-The bundled `pi-mesh-comms` skill teaches Claude when and how to use these tools safely.
+The bundled `kxm-mesh` skill teaches Claude when and how to use these tools safely.
 
 Signed webhooks can create durable workflows for long-lived Pi coordinators. See the repository's [Webhook workflows](../../docs/webhook-workflows.md) guide and Jira development example.
 
@@ -59,7 +59,7 @@ Repository-local configuration, logs, workflow assets, and SQLite state use the 
 Claude Code channels can inject peer requests into a running session. During the research preview, launch this community channel explicitly:
 
 ```text
-claude --dangerously-load-development-channels plugin:pi-mesh-comms@kontextmind-pi-extensions
+claude --dangerously-load-development-channels plugin:kxm-mesh@kontextmind-pi-extensions
 ```
 
 Review the trust prompt. If your organization has approved the plugin through `allowedChannelPlugins`, use the normal `--channels` selector instead.

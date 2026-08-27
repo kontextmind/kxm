@@ -4,10 +4,10 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { MeshClient, MeshHttpError } from "../plugins/pi-mesh-comms/src/client.ts";
-import { createMeshHub } from "../plugins/pi-mesh-comms/src/hub.ts";
-import { MAX_BODY_BYTES } from "../plugins/pi-mesh-comms/src/protocol.ts";
-import type { WebhookWorkflowDefinition } from "../plugins/pi-mesh-comms/src/workflow.ts";
+import { MeshClient, MeshHttpError } from "../plugins/kxm-mesh/src/client.ts";
+import { createMeshHub } from "../plugins/kxm-mesh/src/hub.ts";
+import { MAX_BODY_BYTES } from "../plugins/kxm-mesh/src/protocol.ts";
+import type { WebhookWorkflowDefinition } from "../plugins/kxm-mesh/src/workflow.ts";
 import { createTestMesh, responseJson, waitFor } from "./helpers.ts";
 
 interface RawIdentity {
@@ -427,8 +427,16 @@ test("structured logs never include prompt or reply bodies", async (context) => 
   await receiver.reply(message.id, "SECRET_REPLY_BODY");
   const logs = JSON.stringify(entries);
   assert.doesNotMatch(logs, /SECRET_PROMPT_BODY|SECRET_REPLY_BODY/);
-  assert.match(logs, /message_sent/);
-  assert.match(logs, /message_replied/);
+  const sent = entries.find((entry) => entry.event === "message_sent");
+  const replied = entries.find((entry) => entry.event === "message_replied");
+  assert.equal(sent?.fromName, "sender");
+  assert.equal(sent?.toName, "receiver");
+  assert.equal(sent?.status, "queued");
+  assert.equal(sent?.fromOnline, true);
+  assert.equal(sent?.toOnline, true);
+  assert.equal(replied?.fromName, "receiver");
+  assert.equal(replied?.toName, "sender");
+  assert.equal(replied?.status, "replied");
 });
 
 test("signed Jira webhooks start durable workflows, deduplicate retries, journal learning, and enforce gates", async (context) => {

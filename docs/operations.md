@@ -14,7 +14,7 @@ It is not a clustered or multi-tenant control plane. Run one writer for each dat
 $env:PI_MESH_HOST = "127.0.0.1"
 $env:PI_MESH_AUTH_TOKEN = "replace-with-a-long-random-token"
 $env:PI_MESH_WORKSPACE_DIR = "D:\work\product\.kxm"
-pi-mesh hub
+kxm mesh hub
 ```
 
 These operator commands assume the packed release CLI installation from
@@ -25,9 +25,36 @@ Stop with `Ctrl+C` or `SIGTERM`. The hub stops accepting connections, closes SSE
 
 For unattended service, use a supervisor that sets a stable working directory, injects secrets, captures stdout, restarts after failure, and allows at least five seconds for graceful shutdown.
 
-Run each long-lived coordinator with `pi-mesh worker --name <stable-name> --project <project> [--model <provider/model>] [--fallback-models <provider/model,...>] [--tools <name,...>]` under a separate service-manager unit. Use distinct worktrees for concurrent writers, explicit CPU and memory limits, and restart throttling outside the built-in bounded backoff. Enforce role ownership with the Pi tool allowlist: omit `bash`, `edit`, and `write` from read-only reviewers, even if their prompt also says not to edit. The worker launches Pi RPC mode and retains the most recent session unless configured otherwise. Use `--fresh-start` for a clean first session that may still resume after a later provider failure; reserve `--no-continue` for a worker that must never resume. For release verification, configure the [exact extension and skill sets](configuration.md#long-lived-worker-settings), including every required provider extension; configured categories disable discovery and fail closed on invalid paths. `pi-mesh stop` writes a generation-matched control request; the worker asks Pi RPC to abort, waits for confirmation and state flush, and only force-stops the process tree after the bounded drain deadline. A final provider error leaves the inbound hub message delivered, gracefully restarts Pi, rotates to an unused fallback model, and preserves the session; Pi's own automatic retries always finish first. A tool that exceeds `PI_MESH_WORKER_TOOL_TIMEOUT_MS` follows the same durable restart path without changing models. If `--continue` reports an invalid tool-result session, the worker retries once fresh, journals a redacted recovery envelope, and injects a bounded resume instruction for the durable run and stage. Do not copy `pi-agent-*.log` into journals or retrospectives.
+Run each long-lived coordinator with `kxm agent worker --name <stable-name> --project <project> [--model <provider/model>] [--fallback-models <provider/model,...>] [--tools <name,...>]` under a separate service-manager unit. Use distinct worktrees for concurrent writers, explicit CPU and memory limits, and restart throttling outside the built-in bounded backoff. Enforce role ownership with the Pi tool allowlist: omit `bash`, `edit`, and `write` from read-only reviewers, even if their prompt also says not to edit. The worker launches Pi RPC mode and retains the most recent session unless configured otherwise. Use `--fresh-start` for a clean first session that may still resume after a later provider failure; reserve `--no-continue` for a worker that must never resume. For release verification, configure the [exact extension and skill sets](configuration.md#long-lived-worker-settings), including every required provider extension; configured categories disable discovery and fail closed on invalid paths. `kxm mesh stop` writes a generation-matched control request; the worker asks Pi RPC to abort, waits for confirmation and state flush, and only force-stops the process tree after the bounded drain deadline. A final provider error leaves the inbound hub message delivered, gracefully restarts Pi, rotates to an unused fallback model, and preserves the session; Pi's own automatic retries always finish first. A tool that exceeds `PI_MESH_WORKER_TOOL_TIMEOUT_MS` follows the same durable restart path without changing models. If `--continue` reports an invalid tool-result session, the worker retries once fresh, journals a redacted recovery envelope, and injects a bounded resume instruction for the durable run and stage. Do not copy `pi-agent-*.log` into journals or retrospectives.
 
-For GitHub-backed waits, run `pi-mesh github watch` as a separate command. The hub does not poll GitHub. Success, failure, cancellation, and timeout produce the exact signed signal for the waiting run/stage/key; timeout exits `4` after posting `failed`.
+For GitHub-backed waits, run `kxm gate github watch` as a separate command. The hub does not poll GitHub. Success, failure, cancellation, and timeout produce the exact signed signal for the waiting run/stage/key; timeout exits `4` after posting `failed`.
+
+## Live observer dashboard
+
+Run the read-only dashboard against the active workspace:
+
+```powershell
+kxm --workspace D:\work\product\.kxm mesh tui
+```
+
+The dashboard uses Pi's `@earendil-works/pi-tui` renderer. It keeps agent
+presence live over SSE and refreshes message, workflow, and local process
+metadata on hub events. It never renders message bodies; the SQLite snapshot
+projects only the metadata columns used by the screen. Observer registrations
+are excluded from the agent table and counts.
+
+| Key | Action |
+|---|---|
+| `Up` / `Down` | Select a panel; on narrow terminals, scroll content |
+| `Enter` / `Space` | Toggle the selected panel |
+| `1`–`4` | Reveal Agents, Messages, Runs, or PIDs |
+| `PgUp` / `PgDn`, `Ctrl+U` / `Ctrl+D` | Scroll visible panel content |
+| `h` / `?` | Toggle help |
+| `Esc` | Close help, then quit |
+| `q` / `Ctrl+C` | Quit |
+
+In a non-interactive shell, `mesh tui` prints one ANSI-free snapshot and exits.
+Use `mesh status --json` instead when a machine-readable result is required.
 
 ## Real multi-Pi release smoke
 

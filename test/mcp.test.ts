@@ -12,7 +12,7 @@ type RpcResponse = {
 };
 
 test("bundled MCP server initializes and publishes the mesh tool catalog", async (context) => {
-  const child = spawn(process.execPath, ["plugins/pi-mesh-comms/dist/mcp-server.js"], {
+  const child = spawn(process.execPath, ["plugins/kxm-mesh/dist/mcp-server.js"], {
     cwd: process.cwd(),
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -150,7 +150,7 @@ test("bundled MCP tools cover outbound, inbound, reply, cancellation, and channe
     }
   });
 
-  const child = spawn(process.execPath, ["plugins/pi-mesh-comms/dist/mcp-server.js"], {
+  const child = spawn(process.execPath, ["plugins/kxm-mesh/dist/mcp-server.js"], {
     cwd: process.cwd(),
     env: {
       ...process.env,
@@ -383,7 +383,7 @@ test("MCP inbox rehydrates one delivered message record after process restart", 
   });
 
   async function startMcp() {
-    const child = spawn(process.execPath, ["plugins/pi-mesh-comms/dist/mcp-server.js"], {
+    const child = spawn(process.execPath, ["plugins/kxm-mesh/dist/mcp-server.js"], {
       cwd: process.cwd(),
       env: {
         ...process.env,

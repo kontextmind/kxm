@@ -13,7 +13,7 @@
     },
     "delivery": "followUp",
     "ttlMs": 604800000,
-    "promptTemplate": "Take ownership of Jira issue {{issue.key}} — {{issue.fields.summary}}.\n\nDescription:\n{{issue.fields.description}}\n\nIssue URL: {{issue.self}}\n\nUse the pi-mesh-comms workflow tools as the durable record. Preserve Jira issue {{issue.key}} as the correlation key. Only perform push, merge, or Jira mutations when the current harness permissions and repository policy authorize them.",
+    "promptTemplate": "Take ownership of Jira issue {{issue.key}} — {{issue.fields.summary}}.\n\nDescription:\n{{issue.fields.description}}\n\nIssue URL: {{issue.self}}\n\nUse the kxm-mesh workflow tools as the durable record. Preserve Jira issue {{issue.key}} as the correlation key. Only perform push, merge, or Jira mutations when the current harness permissions and repository policy authorize them.",
     "stages": [
       {
         "id": "intake",
@@ -83,7 +83,7 @@
         "id": "push-watch",
         "area": "gates",
         "label": "Push, open review, and watch",
-        "instructions": "When authorized, push the branch and open or update the review. Call mesh_workflow_wait with commit, pull-request, and resolved-warning evidence, then watch the example `ci` check with `pi-mesh github watch --run-id <id> --stage-id push-watch --signal-key <key> --repo <owner/name> --pr <n> --required ci` so the durable wait receives exact `github.check:ci` evidence. Replace `ci` in this template and command with the repository's real required check names. Record every warning or failure, fix it, push again, and continue watching until required checks pass.",
+        "instructions": "When authorized, push the branch and open or update the review. Call mesh_workflow_wait with commit, pull-request, and resolved-warning evidence, then watch the example `ci` check with `kxm gate github watch --run-id <id> --stage-id push-watch --signal-key <key> --repo <owner/name> --pr <n> --required ci` so the durable wait receives exact `github.check:ci` evidence. Replace `ci` in this template and command with the repository's real required check names. Record every warning or failure, fix it, push again, and continue watching until required checks pass.",
         "requiredEvidence": ["commit", "pull request", "resolved warnings and failures", "github.check:ci"],
         "maxAttempts": 10
       },

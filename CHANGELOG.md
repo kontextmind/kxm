@@ -2,6 +2,20 @@
 
 All notable user-facing changes are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Changed
+
+- Renamed the operator CLI from `pi-mesh` to `kxm` and rebuilt it on Commander.
+- `kxm` now has first-class tools: `agent`, `session`, `workflow`, `gate`, and `mesh`.
+- Examples: `kxm agent worker`, `kxm session status`, `kxm workflow start`, `kxm gate validate`, `kxm mesh hub`.
+- Agents (AI-driven) and gates (code-driven) share `kxm.worker.v1` and emit `kxm.worker-result.v1`.
+- Source equivalent is `node scripts/kxm.mjs`. Hub startup output is `kxm mesh hub listening`.
+- Added a live `@earendil-works/pi-tui` mesh dashboard with responsive toggle panels; the Node 22 minimum is now 22.19 to match the TUI runtime.
+- Long-lived Pi workers now leave waiting work queued in the hub, activate one message at a time, prioritize safe steering, normalize autonomous `nextTurn`, and restart when a delivered message never starts.
+- Workflow validation mirrors the hub's file/inline XOR source contract; active definitions supply start/callback credentials, with the start secret as callback fallback.
+- Added the runnable `artifacts-exist` gate, fail-closed roster/session parsing, secret-free workflow definition hashes, and dry-run telemetry suppression.
+
 ## 0.4.3 - 2026-08-26
 
 ### Added

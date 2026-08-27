@@ -38,7 +38,7 @@ test("hub wrapper uses an idempotent graceful stop and keeps workspace state und
     const url = await new Promise<string>((resolveUrl, reject) => {
       const timeout = setTimeout(() => reject(new Error(`hub did not start: ${stdout}\n${stderr}`)), 5_000);
       const inspect = () => {
-        const match = stdout.match(/pi-mesh hub listening at (http:\/\/[^;]+);/);
+        const match = stdout.match(/kxm mesh hub listening at (http:\/\/[^;]+);/);
         if (!match) return;
         clearTimeout(timeout);
         resolveUrl(match[1]!);

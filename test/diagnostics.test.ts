@@ -5,8 +5,8 @@ import {
   diagnosticEvidence,
   diagnosticSummary,
   operationForTool,
-} from "../plugins/pi-mesh-comms/src/diagnostics.ts";
-import { looksLikeSecret, redactSecrets } from "../plugins/pi-mesh-comms/src/redact.ts";
+} from "../plugins/kxm-mesh/src/diagnostics.ts";
+import { looksLikeSecret, redactSecrets } from "../plugins/kxm-mesh/src/redact.ts";
 
 test("classifies workflow scope and identity failures without copying raw output", () => {
   const forbidden = classifyFailure({

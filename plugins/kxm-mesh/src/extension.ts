@@ -86,8 +86,15 @@ function assistantFailure(messages: unknown[]): Diagnostic | undefined {
 export default function piMeshExtension(pi: ExtensionAPI) {
   let client: MeshClient | undefined;
   let pending: MessageRecord[] = [];
+  let activatingInbound: MessageRecord | undefined;
   let awaitingActivation: MessageRecord | undefined;
   let activeInbound: MessageRecord | undefined;
+  let activationInProgress = false;
+  let activationPromise: Promise<void> | undefined;
+  let activationRetryTimer: ReturnType<typeof setTimeout> | undefined;
+  let activationStartTimer: ReturnType<typeof setTimeout> | undefined;
+  let activationStartMessageId: string | undefined;
+  let requestWorkerRestart: (() => void) | undefined;
   let activeReply: string | undefined;
   let settlementReply: string | undefined;
   let activeTurnSettled = false;
@@ -126,10 +133,10 @@ export default function piMeshExtension(pi: ExtensionAPI) {
   function persistRecoveryContext(): void {
     const path = recoveryContextPath();
     if (!path) return;
-    const recoveryMessage = [activeInbound, awaitingActivation, ...pending]
+    const recoveryMessage = [activeInbound, awaitingActivation, activatingInbound, ...pending]
       .find((message) => message?.correlationId?.startsWith("run_"));
     const runId = recoveryMessage?.correlationId;
-    const pendingMessageIds = [activeInbound?.id, awaitingActivation?.id, ...pending.map((message) => message.id)].filter((id): id is string => Boolean(id)).slice(0, 16);
+    const pendingMessageIds = [activeInbound?.id, awaitingActivation?.id, activatingInbound?.id, ...pending.map((message) => message.id)].filter((id): id is string => Boolean(id)).slice(0, 16);
     if (!runId && pendingMessageIds.length === 0) {
       rmSync(path, { force: true });
       removeMatchingLegacyRecoveryContext();
@@ -157,56 +164,170 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     return client;
   }
 
-  function activateNext(): void {
-    if (shuttingDown || !client || awaitingActivation || activeInbound) return;
-    let message = pending.shift();
-    while (message && (isTerminalMessage(message) || Date.parse(message.expiresAt) <= Date.now())) {
-      message = pending.shift();
-    }
-    if (!message) {
+  function clearActivationWatchdog(messageId?: string): void {
+    if (messageId && activationStartMessageId !== messageId) return;
+    if (activationStartTimer) clearTimeout(activationStartTimer);
+    activationStartTimer = undefined;
+    activationStartMessageId = undefined;
+  }
+
+  function startActivationWatchdog(messageId: string): void {
+    clearActivationWatchdog();
+    if (!process.env.PI_MESH_WORKER_IDENTITY_KEY) return;
+    const configured = Number(process.env.PI_MESH_WORKER_ACTIVATION_TIMEOUT_MS?.trim() || 60_000);
+    const timeoutMs = Number.isInteger(configured) && configured >= 1_000 && configured <= 600_000
+      ? configured
+      : 60_000;
+    activationStartMessageId = messageId;
+    activationStartTimer = setTimeout(() => {
+      activationStartTimer = undefined;
+      if (shuttingDown || activeInbound || awaitingActivation?.id !== messageId) return;
+      notify?.(
+        `pi-mesh worker is stuck: delivered message ${messageId} did not start a model turn within ${timeoutMs}ms; requesting supervised restart`,
+        "error",
+      );
       persistRecoveryContext();
+      requestWorkerRestart?.();
+    }, timeoutMs);
+    activationStartTimer.unref?.();
+  }
+
+  function enqueue(message: MessageRecord, front = false): void {
+    if (front) {
+      pending.unshift(message);
       return;
     }
-    awaitingActivation = message;
-    persistRecoveryContext();
-    pi.sendMessage({
-      customType: "pi-mesh-inbound",
-      content: [
-        `Peer request from ${message.fromName} (message ${message.id}):`,
-        "",
-        message.content,
-        "",
-        "Respond directly to the peer request. Your settled final response will be returned automatically.",
-      ].join("\n"),
-      display: true,
-      details: { messageId: message.id, from: message.fromName },
-    }, {
-      triggerTurn: message.delivery !== "nextTurn",
-      deliverAs: message.delivery,
+    const priority = (delivery: DeliveryMode): number => delivery === "steer" ? 0 : delivery === "followUp" ? 1 : 2;
+    const messagePriority = priority(message.delivery);
+    const firstLowerPriority = pending.findIndex((candidate) => priority(candidate.delivery) > messagePriority);
+    if (firstLowerPriority < 0) pending.push(message);
+    else pending.splice(firstLowerPriority, 0, message);
+  }
+
+  function requestActivation(): void {
+    if (activationPromise || shuttingDown) return;
+    const task = activateNext();
+    activationPromise = task;
+    void task.finally(() => {
+      if (activationPromise === task) activationPromise = undefined;
+      if (
+        !shuttingDown
+        && !activationRetryTimer
+        && !activatingInbound
+        && !awaitingActivation
+        && !activeInbound
+        && pending.length > 0
+      ) requestActivation();
     });
+  }
+
+  function scheduleActivationRetry(error: unknown): void {
+    if (shuttingDown || activationRetryTimer) return;
+    notify?.(
+      `pi-mesh could not activate the next hub message; it remains durable and activation will retry: ${error instanceof Error ? error.message : String(error)}`,
+      "error",
+    );
+    activationRetryTimer = setTimeout(() => {
+      activationRetryTimer = undefined;
+      requestActivation();
+    }, SETTLEMENT_RETRY_BASE_MS);
+    activationRetryTimer.unref?.();
+  }
+
+  async function activateNext(): Promise<void> {
+    if (
+      shuttingDown
+      || !client
+      || activationInProgress
+      || activationRetryTimer
+      || activatingInbound
+      || awaitingActivation
+      || activeInbound
+    ) return;
+    activationInProgress = true;
+    try {
+      let message = pending.shift();
+      while (message && (isTerminalMessage(message) || Date.parse(message.expiresAt) <= Date.now())) {
+        message = pending.shift();
+      }
+      if (!message) {
+        persistRecoveryContext();
+        return;
+      }
+      activatingInbound = message;
+      persistRecoveryContext();
+      let acknowledged: MessageRecord;
+      try {
+        acknowledged = await client.acknowledge(message.id);
+      } catch (error) {
+        if (isTerminalMessageError(error)) {
+          activatingInbound = undefined;
+          persistRecoveryContext();
+          return;
+        }
+        if (activatingInbound?.id === message.id) {
+          activatingInbound = undefined;
+          enqueue(message, true);
+          persistRecoveryContext();
+        }
+        scheduleActivationRetry(error);
+        return;
+      }
+      if (activatingInbound?.id !== message.id || shuttingDown) return;
+      activatingInbound = undefined;
+      awaitingActivation = acknowledged;
+      persistRecoveryContext();
+      startActivationWatchdog(acknowledged.id);
+      try {
+        pi.sendMessage({
+          customType: "pi-mesh-inbound",
+          content: [
+            `Peer request from ${acknowledged.fromName} (message ${acknowledged.id}):`,
+            "",
+            acknowledged.content,
+            "",
+            "Respond directly to the peer request. Your settled final response will be returned automatically.",
+          ].join("\n"),
+          display: true,
+          details: { messageId: acknowledged.id, from: acknowledged.fromName },
+        }, {
+          // Pi's nextTurn mode deliberately waits for a future human prompt. An
+          // autonomous worker has no such prompt, so its durable next item is
+          // normalized to an immediately-triggered follow-up turn.
+          triggerTurn: true,
+          deliverAs: acknowledged.delivery === "nextTurn" ? "followUp" : acknowledged.delivery,
+        });
+      } catch (error) {
+        clearActivationWatchdog(acknowledged.id);
+        awaitingActivation = undefined;
+        enqueue(acknowledged, true);
+        persistRecoveryContext();
+        scheduleActivationRetry(error);
+      }
+    } finally {
+      activationInProgress = false;
+    }
   }
 
   async function receive(event: HubEvent): Promise<void> {
     if (shuttingDown) return;
     if (event.type === "message") {
-      if (activeInbound?.id === event.message.id || awaitingActivation?.id === event.message.id) return;
+      if (
+        activeInbound?.id === event.message.id
+        || awaitingActivation?.id === event.message.id
+        || activatingInbound?.id === event.message.id
+      ) return;
       if (pending.some((message) => message.id === event.message.id)) {
-        activateNext();
+        requestActivation();
         return;
       }
       if (isTerminalMessage(event.message) || Date.parse(event.message.expiresAt) <= Date.now()) return;
-      if (event.message.status === "queued") {
-        try {
-          await client?.acknowledge(event.message.id);
-        } catch (error) {
-          if (isTerminalMessageError(error)) return;
-          throw error;
-        }
-      }
       if (shuttingDown) return;
-      pending.push(event.message);
+      // The hub remains the durable queue. Waiting messages stay queued there;
+      // only activateNext acknowledges the single item entering a model turn.
+      enqueue(event.message);
       persistRecoveryContext();
-      activateNext();
+      requestActivation();
       return;
     }
 
@@ -215,7 +336,12 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     const pendingLength = pending.length;
     pending = pending.filter((message) => message.id !== messageId);
     let changed = pending.length !== pendingLength;
+    if (activatingInbound?.id === messageId) {
+      activatingInbound = undefined;
+      changed = true;
+    }
     if (awaitingActivation?.id === messageId) {
+      clearActivationWatchdog(messageId);
       awaitingActivation = undefined;
       changed = true;
     }
@@ -229,7 +355,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
       finishActiveInbound(messageId);
       return;
     }
-    activateNext();
+    requestActivation();
   }
 
   function finishActiveInbound(messageId: string): void {
@@ -237,6 +363,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     if (settlementRetryTimer) clearTimeout(settlementRetryTimer);
     settlementRetryTimer = undefined;
     settlementRetryAttempt = 0;
+    clearActivationWatchdog(messageId);
     activeInbound = undefined;
     activeReply = undefined;
     settlementReply = undefined;
@@ -246,7 +373,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     recoveryStageId = undefined;
     recoveryArtifacts = [];
     persistRecoveryContext();
-    if (!shuttingDown) activateNext();
+    if (!shuttingDown) requestActivation();
   }
 
   function scheduleSettlementRetry(messageId: string, error: unknown): void {
@@ -325,6 +452,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     try {
       const agent = await client.start(receive);
       notify = (message, type) => ctx.ui.notify(message, type);
+      requestWorkerRestart = () => { void ctx.shutdown(); };
       ctx.ui.setStatus("pi-mesh", `mesh:${agent.name}`);
       ctx.ui.notify(`Connected to pi-mesh as ${agent.name}`, "info");
       const recovered = stateDir ? await consumeWorkerRecoveryEnvelope(client, stateDir, agent.name, project) : undefined;
@@ -345,6 +473,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     const message = event.message as { customType?: string; details?: { messageId?: string } };
     if (message.customType !== "pi-mesh-inbound" || !awaitingActivation) return;
     if (message.details?.messageId !== awaitingActivation.id) return;
+    clearActivationWatchdog(awaitingActivation.id);
     activeInbound = awaitingActivation;
     awaitingActivation = undefined;
     activeReply = undefined;
@@ -449,12 +578,17 @@ export default function piMeshExtension(pi: ExtensionAPI) {
 
   pi.on("session_shutdown", async () => {
     shuttingDown = true;
+    clearActivationWatchdog();
     persistRecoveryContext();
+    if (activationRetryTimer) clearTimeout(activationRetryTimer);
+    activationRetryTimer = undefined;
+    await activationPromise?.catch(() => undefined);
     if (settlementRetryTimer) clearTimeout(settlementRetryTimer);
     settlementRetryTimer = undefined;
     await client?.stop();
     client = undefined;
     notify = undefined;
+    requestWorkerRestart = undefined;
   });
 
   pi.registerTool({

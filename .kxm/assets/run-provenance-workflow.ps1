@@ -24,9 +24,9 @@ $env:PI_MESH_WORKFLOW_ID = "provenance-review"
 
 $nodeCommand = (Get-Command node).Source
 $workdir = (Get-Location).Path
-$piMeshScript = Join-Path $workdir "scripts\pi-mesh.mjs"
-$meshExtension = Join-Path $workdir "plugins\pi-mesh-comms\src\extension.ts"
-$meshSkill = Join-Path $workdir "plugins\pi-mesh-comms\skills\pi-mesh-comms"
+$kxmScript = Join-Path $workdir "scripts\kxm.mjs"
+$meshExtension = Join-Path $workdir "plugins\kxm-mesh\src\extension.ts"
+$meshSkill = Join-Path $workdir "plugins\kxm-mesh\skills\kxm-mesh"
 $piAgentDirectory = if ($env:PI_CODING_AGENT_DIR) {
   $env:PI_CODING_AGENT_DIR
 } else {
@@ -39,7 +39,7 @@ $env:PI_MESH_WORKER_SKILL_PATHS = $meshSkill
 $env:PI_MESH_WORKER_TOOL_TIMEOUT_MS = "180000"
 Remove-Item Env:PI_MESH_WEBHOOK_WORKFLOWS -ErrorAction SilentlyContinue
 
-foreach ($requiredFile in @($piMeshScript, $meshExtension, $providerExtension)) {
+foreach ($requiredFile in @($kxmScript, $meshExtension, $providerExtension)) {
   if (-not (Test-Path -LiteralPath $requiredFile -PathType Leaf)) {
     throw "Required release-workflow file not found: $requiredFile"
   }
@@ -53,15 +53,15 @@ $workers = @()
 try {
   $hub = Start-Process `
     -FilePath $nodeCommand `
-    -ArgumentList @($piMeshScript, "--json", "--workspace", ".kxm", "hub") `
+    -ArgumentList @($kxmScript, "--json", "--workspace", ".kxm", "mesh", "hub") `
     -WorkingDirectory $workdir `
     -WindowStyle Hidden `
     -PassThru
 
   Start-Sleep -Seconds 4
-  & $nodeCommand $piMeshScript --json --workspace .kxm validate
+  & $nodeCommand $kxmScript --json --workspace .kxm gate validate
   if ($LASTEXITCODE -ne 0) { throw "Workflow validation failed" }
-  & $nodeCommand $piMeshScript --json --workspace .kxm status
+  & $nodeCommand $kxmScript --json --workspace .kxm mesh status
   if ($LASTEXITCODE -ne 0) { throw "Hub did not become ready" }
 
   # Workers receive only the project credential. They cannot call the
@@ -76,10 +76,11 @@ try {
     @{ Name = "reviewer-grok"; Model = "xai/grok-4.6"; FallbackModels = "antigravity/gemini-3.1-pro"; Tools = "read,grep,find,ls" }
   ) | ForEach-Object {
     $workerArguments = @(
-      $piMeshScript,
+      $kxmScript,
       "--json",
       "--workspace",
       ".kxm",
+      "agent",
       "worker",
       "--name",
       $_.Name,
@@ -114,7 +115,7 @@ try {
     if ($exitedWorkers.Count -gt 0) {
       throw "A release-review worker exited before registration: $($exitedWorkers.Id -join ', ')"
     }
-    $statusOutput = & $nodeCommand $piMeshScript --json --workspace .kxm status
+    $statusOutput = & $nodeCommand $kxmScript --json --workspace .kxm mesh status
     if ($LASTEXITCODE -eq 0) {
       $status = $statusOutput | ConvertFrom-Json
       $ready = $status.health.ok -eq $true -and $status.health.agents -eq 3
@@ -136,7 +137,7 @@ $payload = [ordered]@{
   $startDeliveryId = "provenance-release-$([Guid]::NewGuid().ToString('N'))"
   $startDeadline = (Get-Date).AddSeconds(30)
   do {
-    $startResult = & $nodeCommand $piMeshScript `
+    $startResult = & $nodeCommand $kxmScript `
       --json `
       --workspace .kxm `
       workflow start provenance-review `
@@ -151,7 +152,7 @@ $payload = [ordered]@{
   [pscustomobject]@{
     hubPid = $hub.Id
     workerPids = @($workers | ForEach-Object Id)
-    piMeshScript = $piMeshScript
+    kxmScript = $kxmScript
     project = $projectName
     credentialBoundary = "split-admin-project"
     providerRecovery = "settled-error-retain-and-fallback"
@@ -163,7 +164,7 @@ $payload = [ordered]@{
   } | ConvertTo-Json -Compress
 } catch {
   if ($hub) {
-    & $nodeCommand $piMeshScript --json --workspace .kxm stop | Out-Null
+    & $nodeCommand $kxmScript --json --workspace .kxm mesh stop | Out-Null
   }
   throw
 }

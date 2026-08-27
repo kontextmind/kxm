@@ -6,9 +6,9 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 export const GENERATED_ARTIFACTS = [
-  "plugins/pi-mesh-comms/dist/cli.js",
-  "plugins/pi-mesh-comms/dist/server.js",
-  "plugins/pi-mesh-comms/dist/mcp-server.js",
+  "plugins/kxm-mesh/dist/cli.js",
+  "plugins/kxm-mesh/dist/server.js",
+  "plugins/kxm-mesh/dist/mcp-server.js",
 ];
 
 function runGit(repository, args, allowFailure = false) {

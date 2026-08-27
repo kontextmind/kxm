@@ -13,5 +13,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["plugins/pi-mesh-comms/src/**/*.ts", "test/**/*.ts", "examples/**/*.ts"]
+  "include": ["plugins/kxm-mesh/src/**/*.ts", "test/**/*.ts", "examples/**/*.ts"]
 }

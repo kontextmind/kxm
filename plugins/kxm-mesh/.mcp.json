@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "pi-mesh": {
+    "kxm-mesh": {
       "type": "stdio",
       "command": "node",
       "args": [

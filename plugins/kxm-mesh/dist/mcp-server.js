@@ -7187,7 +7187,7 @@ var require_dist = __commonJS({
   }
 });
 
-// plugins/pi-mesh-comms/src/mcp-server.ts
+// plugins/kxm-mesh/src/mcp-server.ts
 import { basename } from "node:path";
 
 // node_modules/zod/v4/core/core.js
@@ -15756,21 +15756,21 @@ var StdioServerTransport = class {
   }
 };
 
-// plugins/pi-mesh-comms/src/client.ts
+// plugins/kxm-mesh/src/client.ts
 import { createHash } from "node:crypto";
 
-// plugins/pi-mesh-comms/src/protocol.ts
+// plugins/kxm-mesh/src/protocol.ts
 var DEFAULT_MESSAGE_TTL_MS = 24 * 60 * 6e4;
 var MAX_MESSAGE_TTL_MS = 7 * 24 * 60 * 6e4;
 var DEFAULT_MESSAGE_RETENTION_MS = 7 * 24 * 60 * 6e4;
 var MAX_BODY_BYTES = 256 * 1024;
 
-// plugins/pi-mesh-comms/src/workflow.ts
+// plugins/kxm-mesh/src/workflow.ts
 function canonicalWorkflowEvidenceKey(value) {
   return value.trim().replace(/\s+/gu, " ").toLowerCase();
 }
 
-// plugins/pi-mesh-comms/src/client.ts
+// plugins/kxm-mesh/src/client.ts
 var MeshWaitError = class extends Error {
   waitStatus;
   constructor(waitStatus, messageId) {
@@ -16144,7 +16144,7 @@ var MeshClient = class {
   }
 };
 
-// plugins/pi-mesh-comms/src/inbox.ts
+// plugins/kxm-mesh/src/inbox.ts
 async function deliverInboxNotification(messageId, delivered, notify) {
   if (delivered.has(messageId)) return false;
   await notify();
@@ -16152,21 +16152,21 @@ async function deliverInboxNotification(messageId, delivered, notify) {
   return true;
 }
 
-// plugins/pi-mesh-comms/src/mcp-server.ts
+// plugins/kxm-mesh/src/mcp-server.ts
 var VERSION = "0.4.3";
 var inbox = /* @__PURE__ */ new Map();
 var notifiedInbox = /* @__PURE__ */ new Set();
 var meshClient;
 var starting;
 var mcp = new Server(
-  { name: "pi-mesh", version: VERSION },
+  { name: "kxm-mesh", version: VERSION },
   {
     capabilities: {
       experimental: { "claude/channel": {} },
       tools: {}
     },
     instructions: [
-      'Pi mesh peer requests can arrive as <channel source="pi-mesh" message_id="..."> events.',
+      'KXM Mesh peer requests can arrive as <channel source="kxm-mesh" message_id="..."> events.',
       "Handle the request using normal safety rules, then call mesh_reply with message_id and the final response.",
       "Use mesh_inbox as a fallback when channel delivery is not enabled.",
       "For durable workflow requests, call mesh_workflow_get, record material plans/decisions/contradictions/errors/lessons, and pass every checkpoint before replying.",

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
-  "name": "pi-mesh-comms",
-  "displayName": "Pi Mesh Comms",
+  "name": "kxm-mesh",
+  "displayName": "KXM Mesh",
   "version": "0.4.3",
   "description": "Durable peer communication, webhook workflows, and learning journals for Pi and Claude Code agents",
   "author": {
@@ -15,7 +15,7 @@
   "mcpServers": "./.mcp.json",
   "channels": [
     {
-      "server": "pi-mesh"
+      "server": "kxm-mesh"
     }
   ],
   "userConfig": {

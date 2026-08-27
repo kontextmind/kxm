@@ -90,7 +90,7 @@ const hub = createMeshHub({
 
 const address = await hub.start();
 structuredLog({ event: "hub_started", url: address.url, workspaceDir, configDir, logsDir, assetsDir, stateDir, dataPath, logPath });
-process.stdout.write(`pi-mesh hub listening at ${address.url}; storage=${dataPath}\n`);
+process.stdout.write(`kxm mesh hub listening at ${address.url}; storage=${dataPath}\n`);
 
 let shutdownPromise: Promise<void> | undefined;
 function shutdown(signal: string): Promise<void> {

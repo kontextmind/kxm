@@ -3,7 +3,7 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const cli = fileURLToPath(new URL("../plugins/pi-mesh-comms/dist/cli.js", import.meta.url));
+const cli = fileURLToPath(new URL("../plugins/kxm-mesh/dist/cli.js", import.meta.url));
 const child = spawn(process.execPath, [
   "--disable-warning=ExperimentalWarning",
   cli,

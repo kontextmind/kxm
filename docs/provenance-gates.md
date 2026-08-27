@@ -129,7 +129,7 @@ Start with separate project and administrative credentials:
 $env:PI_MESH_AUTH_TOKEN = "replace-with-the-admin-token"
 $env:PI_MESH_PROJECT_TOKENS = '{"provenance-demo":"replace-with-the-project-token"}'
 $env:PI_MESH_WEBHOOK_WORKFLOWS_FILE = "examples/provenance-workflow.json"
-pi-mesh hub
+kxm mesh hub
 ```
 
 Give the coordinator and peer workers only the project token. Start all three
@@ -137,18 +137,18 @@ before starting the workflow:
 
 ```powershell
 $env:PI_MESH_AUTH_TOKEN = "replace-with-the-project-token"
-pi-mesh worker --name coordinator --project provenance-demo
-pi-mesh worker --name reviewer-claude --project provenance-demo --model anthropic/claude-opus-4-6
-pi-mesh worker --name reviewer-grok --project provenance-demo --model xai/grok-4.6
+kxm agent worker --name coordinator --project provenance-demo
+kxm agent worker --name reviewer-claude --project provenance-demo --model anthropic/claude-opus-4-6
+kxm agent worker --name reviewer-grok --project provenance-demo --model xai/grok-4.6
 ```
 
 In an operator terminal, supply the workflow-start secret and create a run:
 
 ```powershell
 $env:PI_MESH_WORKFLOW_SECRET = "replace-with-the-workflow-start-secret"
-pi-mesh validate --file examples/provenance-workflow.json
-pi-mesh workflow start provenance-review --payload '{"task":{"id":"DEMO-1","summary":"Review the proposed change"}}'
-pi-mesh workflow list
+kxm gate validate --file examples/provenance-workflow.json
+kxm workflow start provenance-review --payload '{"task":{"id":"DEMO-1","summary":"Review the proposed change"}}'
+kxm workflow list
 ```
 
 The coordinator gets the run ID in its durable prompt. It should read the run,
@@ -207,10 +207,10 @@ Inspect the requested action, then approve it with a non-secret reason:
 
 ```powershell
 $env:PI_MESH_AUTH_TOKEN = "replace-with-the-admin-token"
-pi-mesh --dry-run --json workflow degrade run_123 review `
+kxm gate --dry-run --json degrade run_123 review `
   --requirement "independent peer reviews" `
   --reason "reviewer-grok provider outage incident-482"
-pi-mesh workflow degrade run_123 review `
+kxm gate degrade run_123 review `
   --requirement "independent peer reviews" `
   --reason "reviewer-grok provider outage incident-482"
 ```
@@ -225,7 +225,7 @@ configured and effective minima, eligible-producer snapshot, verified message
 metadata, hashes, timestamps, and the explicit admin approval. Export it with:
 
 ```powershell
-pi-mesh retrospective export run_123
+kxm workflow export run_123
 ```
 
 The JSON keeps the existing `pi-mesh.retrospective.v1` schema and adds optional

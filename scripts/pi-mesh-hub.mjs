@@ -5,7 +5,7 @@ import { closeSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } f
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const server = fileURLToPath(new URL("../plugins/pi-mesh-comms/dist/server.js", import.meta.url));
+const server = fileURLToPath(new URL("../plugins/kxm-mesh/dist/server.js", import.meta.url));
 const workdir = resolve(process.env.PI_MESH_WORKDIR?.trim() || process.cwd());
 const workspaceDir = resolve(workdir, process.env.PI_MESH_WORKSPACE_DIR?.trim() || ".kxm");
 const stateDir = resolve(workdir, process.env.PI_MESH_STATE_DIR?.trim() || join(workspaceDir, "state"));

@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/kontextmind/pi-extensions/actions/workflows/ci.yml/badge.svg)](https://github.com/kontextmind/pi-extensions/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Node.js 22.13+ or 24+](https://img.shields.io/badge/node-22.13%2B%20%7C%2024%2B-339933.svg)](https://nodejs.org/)
+[![Node.js 22.19+ or 24+](https://img.shields.io/badge/node-22.19%2B%20%7C%2024%2B-339933.svg)](https://nodejs.org/)
 
 Give running coding agents a small, dependable communication plane.
 
@@ -24,7 +24,7 @@ Give running coding agents a small, dependable communication plane.
 
 ## Quick start: two Pi agents
 
-You need Node.js 22.13 or newer on the 22.x line, or Node.js 24 or newer, plus Pi, Git, and two terminal windows.
+You need Node.js 22.19 or newer on the 22.x line, or Node.js 24 or newer, plus Pi, Git, and two terminal windows.
 
 ### 1. Start the hub
 
@@ -68,7 +68,7 @@ Start the second terminal as `reviewer`, `builder`, or another role. In Pi, run 
 ### 4. Delegate a task
 
 ```text
-Use the pi-mesh-comms skill. List the available peers, ask the reviewer to
+Use the kxm-mesh skill. List the available peers, ask the reviewer to
 inspect this plan for correctness risks, continue any independent work, and
 collect the review before finalizing.
 ```
@@ -77,7 +77,7 @@ For a Pi-to-Claude setup, follow [Getting started](docs/getting-started.md#conne
 
 ## Command-first operation
 
-The `pi-mesh` entry point manages one workspace consistently. Runtime configuration, logs, durable state, and generated retrospectives stay under `.kxm` unless `--workspace` selects another root.
+The `kxm` entry point manages one workspace consistently. Tools are `agent`, `session`, `workflow`, `gate`, and `mesh`. Runtime configuration, logs, durable state, and generated retrospectives stay under `.kxm` unless `--workspace` selects another root.
 
 Install the packed release asset before using the command. GitHub CLI keeps
 this flow compatible with private repositories; run `gh auth login` first when
@@ -90,11 +90,11 @@ $releaseDir = Join-Path $PWD ".pi-mesh-release"
 New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
 gh release download "v$version" --repo kontextmind/pi-extensions --pattern $asset --dir $releaseDir --clobber
 npm install --global --omit=peer (Join-Path $releaseDir $asset)
-pi-mesh help
+kxm mesh help
 ```
 
 To operate from a clone instead, run `npm ci` in the clone and replace
-`pi-mesh` below with `node scripts/pi-mesh.mjs`. Do not use
+`kxm` below with `node scripts/kxm.mjs`. Do not use
 `npm install --global git+https://github.com/kontextmind/pi-extensions.git` as
 the operator install path; the supported global install is the versioned release
 tarball.
@@ -103,14 +103,14 @@ In the hub terminal, initialize the workspace and load the Jira definition with
 distinct administrative, project, workflow-start, and callback credentials:
 
 ```powershell
-pi-mesh init
+kxm mesh init
 $env:PI_MESH_AUTH_TOKEN = "replace-with-the-admin-token"
 $env:PI_MESH_PROJECT_TOKENS = '{"product":"replace-with-the-project-token"}'
 $env:JIRA_WEBHOOK_SECRET = "replace-with-the-workflow-start-secret"
 $env:WORKFLOW_SIGNAL_SECRET = "replace-with-the-callback-secret"
 $env:PI_MESH_WEBHOOK_WORKFLOWS_FILE = ".kxm/config/workflows/jira-development.json"
-pi-mesh validate --file .kxm/config/workflows/jira-development.json
-pi-mesh hub
+kxm gate validate --file .kxm/config/workflows/jira-development.json
+kxm mesh hub
 ```
 
 In a separately supervised coordinator terminal, give the single writer only
@@ -126,7 +126,7 @@ $coordinatorTools = @(
   "mesh_workflow_get", "mesh_workflow_checkpoint", "mesh_workflow_wait",
   "mesh_workflow_record", "mesh_improvement_report"
 ) -join ","
-pi-mesh worker --name coordinator --project product --model xai/grok-4.6 `
+kxm agent worker --name coordinator --project product --model xai/grok-4.6 `
   --fallback-models antigravity/gemini-3.1-pro --tools $coordinatorTools `
   --fresh-start
 ```
@@ -140,13 +140,13 @@ $env:PI_MESH_WORKFLOW_SECRET = "replace-with-the-workflow-start-secret"
 $env:PI_MESH_WORKFLOW_ID = "jira-development"
 $env:PI_MESH_WORKFLOW_SIGNAL_SECRET = "replace-with-the-callback-secret"
 $env:GITHUB_TOKEN = "replace-with-a-checks-read-token"
-pi-mesh workflow start jira-development --payload '@ticket.json'
-pi-mesh workflow list
-pi-mesh workflow get run_123
-pi-mesh github watch --run-id run_123 --stage-id push-watch `
+kxm workflow start jira-development --payload '@ticket.json'
+kxm workflow list
+kxm workflow get run_123
+kxm gate github watch --run-id run_123 --stage-id push-watch `
   --signal-key pr-42-checks --repo org/repo --pr 42 --required ci
-pi-mesh retrospective export run_123
-pi-mesh stop
+kxm workflow export run_123
+kxm mesh stop
 ```
 
 Use `--dry-run --json` to inspect mutation plans without exposing configured
@@ -203,16 +203,16 @@ Inside Claude Code:
 
 ```text
 /plugin marketplace add kontextmind/pi-extensions
-/plugin install pi-mesh-comms@kontextmind-pi-extensions
+/plugin install kxm-mesh@kontextmind-pi-extensions
 /reload-plugins
 ```
 
-The plugin provides peer messaging plus workflow listing, checkpoints, structured journal capture, and project improvement reports. See the [plugin tool table](plugins/pi-mesh-comms/README.md#tools).
+The plugin provides peer messaging plus workflow listing, checkpoints, structured journal capture, and project improvement reports. See the [plugin tool table](plugins/kxm-mesh/README.md#tools).
 
 Pushed Claude channel delivery is a research-preview feature. Community channels currently require an explicit development-channel launch:
 
 ```text
-claude --dangerously-load-development-channels plugin:pi-mesh-comms@kontextmind-pi-extensions
+claude --dangerously-load-development-channels plugin:kxm-mesh@kontextmind-pi-extensions
 ```
 
 Without channel mode, ordinary MCP tools still work; use `mesh_inbox` and `mesh_reply` for inbound requests. See [Getting started](docs/getting-started.md#connect-claude-code) for the complete flow.
@@ -261,7 +261,7 @@ Run the complete local gate with `npm run validate`. See [Contributing](CONTRIBU
 .claude-plugin/                 Claude marketplace catalog
 .github/                        CI and contribution templates
 docs/                           User, operator, and architecture guides
-plugins/pi-mesh-comms/
+plugins/kxm-mesh/
 ├── .claude-plugin/             Claude plugin manifest
 ├── dist/                       Generated self-contained CLI, hub, and MCP runtimes
 ├── skills/                     Portable Agent Skill

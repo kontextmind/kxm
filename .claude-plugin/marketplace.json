@@ -8,8 +8,8 @@
   },
   "plugins": [
     {
-      "name": "pi-mesh-comms",
-      "source": "./plugins/pi-mesh-comms",
+      "name": "kxm-mesh",
+      "source": "./plugins/kxm-mesh",
       "description": "Durable peer communication and signed webhook workflows for Pi and Claude Code agents",
       "version": "0.4.3",
       "category": "development",

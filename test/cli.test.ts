@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { parseArgs, runCli } from "../plugins/pi-mesh-comms/src/cli.ts";
+import { runCli } from "../plugins/kxm-mesh/src/cli.ts";
 
 function capture() {
   let stdout = "";
@@ -20,12 +20,60 @@ function capture() {
   };
 }
 
-test("parseArgs captures global flags", () => {
-  const parsed = parseArgs(["--json", "--dry-run", "--workspace", ".kxm", "init"]);
-  assert.equal(parsed.json, true);
-  assert.equal(parsed.dryRun, true);
-  assert.equal(parsed.workspace, ".kxm");
-  assert.equal(parsed.rest[0], "init");
+test("kxm routes agent, session, workflow, and gate tooling", async () => {
+  const help = capture();
+  assert.equal(await runCli(["help"], {}, help), 0);
+  assert.match(help.read().stdout, /Usage: kxm/);
+  assert.match(help.read().stdout, /\bagent\b/);
+  assert.match(help.read().stdout, /\bsession\b/);
+  assert.match(help.read().stdout, /\bworkflow\b/);
+  assert.match(help.read().stdout, /\bgate\b/);
+  const agentHelp = capture();
+  assert.equal(await runCli(["agent", "help"], {}, agentHelp), 0);
+  assert.match(agentHelp.read().stdout, /Usage: kxm agent/);
+  const sessionHelp = capture();
+  assert.equal(await runCli(["session", "help"], {}, sessionHelp), 0);
+  assert.match(sessionHelp.read().stdout, /Usage: kxm session/);
+  const unknownTool = capture();
+  assert.equal(await runCli(["nope"], {}, unknownTool), 2);
+  const unknownCommand = capture();
+  assert.equal(await runCli(["agent", "nope"], {}, unknownCommand), 2);
+});
+
+test("agent and gate CLI results share the worker envelope", async () => {
+  const agentIo = capture();
+  assert.equal(await runCli([
+    "agent", "--json", "--dry-run", "worker", "--name", "coordinator", "--project", "demo",
+  ], {}, agentIo), 0);
+  const agent = JSON.parse(agentIo.read().stdout) as {
+    schema: string;
+    worker: { schema: string; kind: string; driver: string; name: string };
+    command: string;
+    outcome: string;
+  };
+  assert.equal(agent.schema, "kxm.worker-result.v1");
+  assert.equal(agent.worker.schema, "kxm.worker.v1");
+  assert.equal(agent.worker.kind, "agent");
+  assert.equal(agent.worker.driver, "ai");
+  assert.equal(agent.command, "worker");
+  assert.equal(agent.outcome, "passed");
+
+  const gateIo = capture();
+  assert.equal(await runCli([
+    "gate", "--json", "validate", "--file", join(tmpdir(), "kxm-missing-workflow.json"),
+  ], {}, gateIo), 1);
+  const gate = JSON.parse(gateIo.read().stdout) as {
+    schema: string;
+    worker: { schema: string; kind: string; driver: string; name: string };
+    command: string;
+    outcome: string;
+  };
+  assert.equal(gate.schema, "kxm.worker-result.v1");
+  assert.equal(gate.worker.schema, "kxm.worker.v1");
+  assert.equal(gate.worker.kind, "gate");
+  assert.equal(gate.worker.driver, "code");
+  assert.equal(gate.command, "validate");
+  assert.equal(gate.outcome, "failed");
 });
 
 test("init and validate work in an isolated workspace", async () => {
@@ -33,7 +81,7 @@ test("init and validate work in an isolated workspace", async () => {
   try {
     const io = capture();
     const isolated = join(cwd, "ws");
-    const initCode = await runCli(["--json", "--workspace", isolated, "init"], {
+    const initCode = await runCli(["mesh", "--json", "--workspace", isolated, "init"], {
       PI_MESH_CONFIG_DIR: join(cwd, "should-not-use"),
     }, io, cwd);
     assert.equal(initCode, 0);
@@ -46,7 +94,7 @@ test("init and validate work in an isolated workspace", async () => {
     };
     const file = join(process.cwd(), ".kxm/config/workflows/v04-dogfood.json");
     const validate = capture();
-    const code = await runCli(["--json", "validate", "--file", file], env, validate, cwd);
+    const code = await runCli(["gate", "--json", "validate", "--file", file], env, validate, cwd);
     assert.equal(code, 0, validate.read().stdout);
     assert.match(validate.read().stdout, /"ok":true/);
   } finally {
@@ -54,13 +102,68 @@ test("init and validate work in an isolated workspace", async () => {
   }
 });
 
+test("gate validate mirrors the hub workflow source XOR", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "kxm-validate-source-"));
+  try {
+    const file = join(process.cwd(), ".kxm/config/workflows/v04-dogfood.json");
+    const inline = readFileSync(file, "utf8");
+    const secrets = {
+      PI_MESH_V04_WORKFLOW_SECRET: "0123456789abcdef",
+      PI_MESH_V04_SIGNAL_SECRET: "0123456789abcdef",
+    };
+
+    const missing = capture();
+    assert.equal(await runCli(["gate", "--json", "validate"], {
+      ...secrets,
+      PI_MESH_WEBHOOK_WORKFLOWS: "",
+      PI_MESH_WEBHOOK_WORKFLOWS_FILE: "",
+    }, missing, cwd), 2);
+    assert.match(missing.read().stdout, /workflow_source_required/);
+
+    const ambiguous = capture();
+    assert.equal(await runCli(["gate", "--json", "validate"], {
+      ...secrets,
+      PI_MESH_WEBHOOK_WORKFLOWS: inline,
+      PI_MESH_WEBHOOK_WORKFLOWS_FILE: file,
+    }, ambiguous, cwd), 2);
+    assert.match(ambiguous.read().stdout, /ambiguous_workflow_source/);
+
+    const inlineOnly = capture();
+    assert.equal(await runCli(["gate", "--json", "validate"], {
+      ...secrets,
+      PI_MESH_WEBHOOK_WORKFLOWS: inline,
+      PI_MESH_WEBHOOK_WORKFLOWS_FILE: "",
+    }, inlineOnly, cwd), 0, inlineOnly.read().stdout);
+    assert.match(inlineOnly.read().stdout, /"source":"inline"/);
+    assert.doesNotMatch(inlineOnly.read().stdout, /0123456789abcdef/);
+
+    const configuredFile = capture();
+    assert.equal(await runCli(["gate", "--json", "validate"], {
+      ...secrets,
+      PI_MESH_WEBHOOK_WORKFLOWS: "",
+      PI_MESH_WEBHOOK_WORKFLOWS_FILE: file,
+    }, configuredFile, cwd), 0, configuredFile.read().stdout);
+    assert.match(configuredFile.read().stdout, /"source":"file"/);
+
+    const explicitWins = capture();
+    assert.equal(await runCli(["gate", "--json", "validate", "--file", file], {
+      ...secrets,
+      PI_MESH_WEBHOOK_WORKFLOWS: "not-json",
+      PI_MESH_WEBHOOK_WORKFLOWS_FILE: join(cwd, "also-ignored.json"),
+    }, explicitWins, cwd), 0, explicitWins.read().stdout);
+    assert.match(explicitWins.read().stdout, /"source":"file"/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("hub and worker dry-run do not spawn, and live hub uses the injected spawner", async () => {
   const dry = capture();
-  assert.equal(await runCli(["--json", "--dry-run", "hub"], {}, dry), 0);
+  assert.equal(await runCli(["mesh", "--json", "--dry-run", "hub"], {}, dry), 0);
   assert.match(dry.read().stdout, /"dryRun":true/);
   const live = capture();
   let spawned = false;
-  const code = await runCli(["--json", "hub"], {}, {
+  const code = await runCli(["mesh", "--json", "hub"], {}, {
     ...live,
     spawnHub: () => {
       spawned = true;
@@ -73,6 +176,7 @@ test("hub and worker dry-run do not spawn, and live hub uses the injected spawne
   const worker = capture();
   let workerEnv: NodeJS.ProcessEnv | undefined;
   assert.equal(await runCli([
+    "agent",
     "--json",
     "worker",
     "--name",
@@ -107,27 +211,43 @@ test("stop, signal, status, and help cover the remaining command contract", asyn
     const unknown = capture();
     assert.equal(await runCli(["nope"], {}, unknown, cwd), 2);
     const missing = capture();
-    assert.equal(await runCli(["--json", "validate", "--file", join(cwd, "missing.json")], {}, missing, cwd), 1);
+    assert.equal(await runCli(["gate", "--json", "validate", "--file", join(cwd, "missing.json")], {}, missing, cwd), 1);
     const stopDry = capture();
-    assert.equal(await runCli(["--json", "--dry-run", "stop"], {}, stopDry, cwd), 0);
+    assert.equal(await runCli(["mesh", "--json", "--dry-run", "stop"], {}, stopDry, cwd), 0);
     mkdirSync(join(cwd, "state"), { recursive: true });
     const startedAt = "2026-08-26T00:00:00.000Z";
     const pidPath = join(cwd, "state", "hub.pid");
     writeFileSync(pidPath, JSON.stringify({ version: 1, pid: process.pid, role: "hub", startedAt, controlFile: "hub.stop" }));
+    writeFileSync(join(cwd, "state", "worker-recovery-demo.json"), JSON.stringify({
+      version: 1,
+      reason: "provider_error",
+      agentName: "coordinator",
+      project: "product",
+      createdAt: startedAt,
+      freshSession: false,
+    }));
+    const sessionStatus = capture();
+    assert.equal(await runCli(["session", "--json", "--workspace", cwd, "status"], {}, sessionStatus, cwd), 0);
+    assert.match(sessionStatus.read().stdout, /"command":"session status"/);
+    assert.match(sessionStatus.read().stdout, /hub.pid/);
+    assert.match(sessionStatus.read().stdout, /provider_error/);
+    const sessionStopDry = capture();
+    assert.equal(await runCli(["session", "--json", "--dry-run", "--workspace", cwd, "stop"], {}, sessionStopDry, cwd), 0);
+    assert.match(sessionStopDry.read().stdout, /"dryRun":true/);
     const stop = capture();
-    assert.equal(await runCli(["--json", "--workspace", cwd, "stop"], {}, {
+    assert.equal(await runCli(["mesh", "--json", "--workspace", cwd, "stop"], {}, {
       ...stop,
       sleep: async () => { rmSync(pidPath, { force: true }); },
     }, cwd), 0);
     assert.match(stop.read().stdout, /"stopped":\["hub.pid"\]/);
     const status = capture();
-    assert.equal(await runCli(["--json", "status"], {}, {
+    assert.equal(await runCli(["mesh", "--json", "status"], {}, {
       ...status,
       fetchImpl: async () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
     }, cwd), 0);
     const signalDry = capture();
     assert.equal(await runCli(
-      ["--json", "--dry-run", "signal", "run_1", "key", "passed", "ok"],
+      ["gate", "--json", "--dry-run", "signal", "run_1", "key", "passed", "ok"],
       { PI_MESH_WORKFLOW_ID: "wf", PI_MESH_WORKFLOW_SIGNAL_SECRET: "signal-secret-16chars" },
       signalDry,
       cwd,
@@ -136,7 +256,7 @@ test("stop, signal, status, and help cover the remaining command contract", asyn
     let signalBody = "";
     const signalDeliveryIds: string[] = [];
     assert.equal(await runCli(
-      ["--json", "signal", "run_1", "key", "passed", "ok", " Local   Review =artifact.md", "GitHub.Check:CI=https://ci.example/1"],
+      ["gate", "--json", "signal", "run_1", "key", "passed", "ok", " Local   Review =artifact.md", "GitHub.Check:CI=https://ci.example/1"],
       { PI_MESH_WORKFLOW_ID: "wf", PI_MESH_WORKFLOW_SIGNAL_SECRET: "signal-secret-16chars" },
       {
         ...signalLive,
@@ -153,7 +273,7 @@ test("stop, signal, status, and help cover the remaining command contract", asyn
       "github.check:ci": "https://ci.example/1",
     });
     assert.equal(await runCli(
-      ["--json", "signal", "run_1", "key", "failed", "retry required"],
+      ["gate", "--json", "signal", "run_1", "key", "failed", "retry required"],
       { PI_MESH_WORKFLOW_ID: "wf", PI_MESH_WORKFLOW_SIGNAL_SECRET: "signal-secret-16chars" },
       {
         ...capture(),
@@ -167,7 +287,7 @@ test("stop, signal, status, and help cover the remaining command contract", asyn
     assert.equal(new Set(signalDeliveryIds).size, 2);
     assert.ok(signalDeliveryIds.every((deliveryId) => /^cli-signal:[0-9a-f-]{36}$/.test(deliveryId)));
     const list = capture();
-    assert.equal(await runCli(["--json", "workflow", "list"], {}, list, cwd), 1);
+    assert.equal(await runCli(["workflow", "--json", "list"], {}, list, cwd), 1);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -176,7 +296,7 @@ test("stop, signal, status, and help cover the remaining command contract", asyn
 test("live workflow start is signed and smoke skips without opt-in", async () => {
   const start = capture();
   let signature = "";
-  assert.equal(await runCli(["--json", "workflow", "start", "wf", "--payload", "{\"task\":\"TASK-1\"}", "--delivery-id", "cli-1"], {
+  assert.equal(await runCli(["workflow", "--json", "start", "wf", "--payload", "{\"task\":\"TASK-1\"}", "--delivery-id", "cli-1"], {
     PI_MESH_WORKFLOW_SECRET: "workflow-secret-16chars",
   }, {
     ...start,
@@ -188,7 +308,7 @@ test("live workflow start is signed and smoke skips without opt-in", async () =>
   assert.match(start.read().stdout, /"runId":"run_cli"/);
   assert.match(signature, /^sha256=[a-f0-9]{64}$/);
   const smoke = capture();
-  assert.equal(await runCli(["--json", "smoke"], {}, smoke), 0);
+  assert.equal(await runCli(["mesh", "--json", "smoke"], {}, smoke), 0);
   assert.match(smoke.read().stdout, /"skipped":true/);
 });
 
@@ -219,8 +339,8 @@ test("workflow degradation approval is an explicit admin command", async () => {
   let authorization = "";
   let body = "";
   const code = await runCli([
+    "gate",
     "--json",
-    "workflow",
     "degrade",
     "run_1",
     "review",
@@ -258,7 +378,7 @@ test("workflow degradation approval is an explicit admin command", async () => {
 test("github watch dry-run does not leak tokens", async () => {
   const io = capture();
   const code = await runCli(
-    ["--json", "--dry-run", "github", "watch", "--run-id", "run_1", "--stage-id", "review", "--signal-key", "k", "--repo", "acme/app", "--pr", "1"],
+    ["gate", "--json", "--dry-run", "github", "watch", "--run-id", "run_1", "--stage-id", "review", "--signal-key", "k", "--repo", "acme/app", "--pr", "1"],
     {
       PI_MESH_WORKFLOW_ID: "wf",
       PI_MESH_WORKFLOW_SIGNAL_SECRET: "signal-secret-16chars",
@@ -312,11 +432,11 @@ test("retrospective export writes proposed artifacts", async () => {
     writeFileSync(input, JSON.stringify(snapshot));
     const io = capture();
     const workspace = join(cwd, ".kxm");
-    const code = await runCli(["--json", "--workspace", workspace, "retrospective", "export", "run_cli", "--input", input, "--out-dir", join(workspace, "assets", "retrospectives")], {}, io, cwd);
+    const code = await runCli(["workflow", "--json", "--workspace", workspace, "export", "run_cli", "--input", input, "--out-dir", join(workspace, "assets", "retrospectives")], {}, io, cwd);
     assert.equal(code, 0, io.read().stdout);
     assert.match(io.read().stdout, /"reviewDecision":"proposed"/);
     const outside = capture();
-    assert.equal(await runCli(["--json", "--workspace", workspace, "retrospective", "export", "run_cli", "--input", input, "--out-dir", join(cwd, "outside")], {}, outside, cwd), 2);
+    assert.equal(await runCli(["workflow", "--json", "--workspace", workspace, "export", "run_cli", "--input", input, "--out-dir", join(cwd, "outside")], {}, outside, cwd), 2);
     assert.match(outside.read().stdout, /output_outside_workspace_assets/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
@@ -348,12 +468,12 @@ test("workflow list/get use local SQLite state and redact configured secret valu
     database.close();
     const env = { PI_MESH_DATA_PATH: dataPath, PI_MESH_TEST_SECRET: "exact-secret-value" };
     const list = capture();
-    assert.equal(await runCli(["--json", "workflow", "list"], env, list, cwd), 0);
+    assert.equal(await runCli(["workflow", "--json", "list"], env, list, cwd), 0);
     assert.match(list.read().stdout, /run_local/);
     assert.doesNotMatch(list.read().stdout, /exact-secret-value/);
     assert.match(list.read().stdout, /\[redacted\]/);
     const get = capture();
-    assert.equal(await runCli(["--json", "workflow", "get", "run_local"], env, get, cwd), 0);
+    assert.equal(await runCli(["workflow", "--json", "get", "run_local"], env, get, cwd), 0);
     assert.match(get.read().stdout, /journal_1/);
     assert.match(get.read().stdout, new RegExp(requestSha256));
     assert.match(get.read().stdout, new RegExp(replySha256));
@@ -367,31 +487,31 @@ test("invalid and unavailable operator commands fail safely with stable exit cod
   const cwd = mkdtempSync(join(tmpdir(), "pi-mesh-cli-errors-"));
   try {
     assert.equal(await runCli([], {}, capture(), cwd), 2);
-    assert.equal(await runCli(["--json", "validate", "--file", join(cwd, "missing.json")], {}, capture(), cwd), 1);
+    assert.equal(await runCli(["gate", "--json", "validate", "--file", join(cwd, "missing.json")], {}, capture(), cwd), 1);
     const invalidWorkflow = join(cwd, "invalid-workflow.json");
     writeFileSync(invalidWorkflow, "{");
-    assert.equal(await runCli(["--json", "validate", "--file", invalidWorkflow], {}, capture(), cwd), 1);
-    assert.equal(await runCli(["--json", "worker"], {}, capture(), cwd), 2);
-    assert.equal(await runCli(["--json", "stop"], {}, capture(), cwd), 1);
-    assert.equal(await runCli(["--json", "workflow", "get"], {}, capture(), cwd), 2);
-    assert.equal(await runCli(["--json", "workflow", "degrade", "run_1", "review"], {}, capture(), cwd), 2);
-    assert.equal(await runCli(["--json", "workflow", "start", "wf", "--payload", "[]"], { PI_MESH_WORKFLOW_SECRET: "workflow-secret-16chars" }, capture(), cwd), 2);
-    assert.equal(await runCli(["--json", "--dry-run", "workflow", "start", "wf", "--payload", "{}"], { PI_MESH_WORKFLOW_SECRET: "workflow-secret-16chars" }, capture(), cwd), 0);
-    assert.equal(await runCli(["--json", "signal"], {}, capture(), cwd), 2);
-    assert.equal(await runCli(["--json", "signal", "run_1", "key", "invalid", "summary"], {}, capture(), cwd), 2);
-    assert.equal(await runCli(["--json", "signal", "run_1", "key", "passed", "summary"], {}, capture(), cwd), 2);
+    assert.equal(await runCli(["gate", "--json", "validate", "--file", invalidWorkflow], {}, capture(), cwd), 1);
+    assert.equal(await runCli(["agent", "--json", "worker"], {}, capture(), cwd), 2);
+    assert.equal(await runCli(["mesh", "--json", "stop"], {}, capture(), cwd), 1);
+    assert.equal(await runCli(["workflow", "--json", "get"], {}, capture(), cwd), 2);
+    assert.equal(await runCli(["gate", "--json", "degrade", "run_1", "review"], {}, capture(), cwd), 2);
+    assert.equal(await runCli(["workflow", "--json", "start", "wf", "--payload", "[]"], { PI_MESH_WORKFLOW_SECRET: "workflow-secret-16chars" }, capture(), cwd), 2);
+    assert.equal(await runCli(["workflow", "--json", "--dry-run", "start", "wf", "--payload", "{}"], { PI_MESH_WORKFLOW_SECRET: "workflow-secret-16chars" }, capture(), cwd), 0);
+    assert.equal(await runCli(["gate", "--json", "signal"], {}, capture(), cwd), 2);
+    assert.equal(await runCli(["gate", "--json", "signal", "run_1", "key", "invalid", "summary"], {}, capture(), cwd), 2);
+    assert.equal(await runCli(["gate", "--json", "signal", "run_1", "key", "passed", "summary"], {}, capture(), cwd), 2);
     assert.equal(await runCli(
-      ["--json", "signal", "run_1", "key", "passed", "summary", "Review=one", " review =two"],
+      ["gate", "--json", "signal", "run_1", "key", "passed", "summary", "Review=one", " review =two"],
       { PI_MESH_WORKFLOW_ID: "wf", PI_MESH_WORKFLOW_SIGNAL_SECRET: "signal-secret-16chars" },
       capture(),
       cwd,
     ), 2);
-    assert.equal(await runCli(["--json", "github", "nope"], {}, capture(), cwd), 2);
-    assert.equal(await runCli(["--json", "github", "watch"], {}, capture(), cwd), 2);
-    assert.equal(await runCli(["--json", "retrospective", "nope"], {}, capture(), cwd), 2);
-    assert.equal(await runCli(["--json", "retrospective", "export"], {}, capture(), cwd), 2);
-    assert.equal(await runCli(["--json", "retrospective", "export", "run_missing", "--input", join(cwd, "missing.json")], {}, capture(), cwd), 1);
-    assert.equal(await runCli(["--json", "not-a-command"], {}, capture(), cwd), 2);
+    assert.equal(await runCli(["gate", "--json", "github", "nope"], {}, capture(), cwd), 2);
+    assert.equal(await runCli(["gate", "--json", "github", "watch"], {}, capture(), cwd), 2);
+    assert.equal(await runCli(["workflow", "--json", "nope"], {}, capture(), cwd), 2);
+    assert.equal(await runCli(["workflow", "--json", "export"], {}, capture(), cwd), 2);
+    assert.equal(await runCli(["workflow", "--json", "export", "run_missing", "--input", join(cwd, "missing.json")], {}, capture(), cwd), 1);
+    assert.equal(await runCli(["mesh", "--json", "not-a-command"], {}, capture(), cwd), 2);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

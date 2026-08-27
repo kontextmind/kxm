@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { MeshClient } from "../plugins/pi-mesh-comms/src/client.ts";
-import { createMeshHub, type MeshHub } from "../plugins/pi-mesh-comms/src/hub.ts";
+import { MeshClient } from "../plugins/kxm-mesh/src/client.ts";
+import { createMeshHub, type MeshHub } from "../plugins/kxm-mesh/src/hub.ts";
 
 const resources: Array<{ hub: MeshHub; clients: MeshClient[] }> = [];
 

@@ -6,7 +6,7 @@ This guide takes you from a clean machine to a successful peer request. Allow ab
 
 You need:
 
-- Node.js 22.13 or newer on the 22.x line, or Node.js 24 or newer;
+- Node.js 22.19 or newer on the 22.x line, or Node.js 24 or newer;
 - Git;
 - GitHub CLI for the command-first release install;
 - Pi for Pi agents;
@@ -29,12 +29,12 @@ $releaseDir = Join-Path $PWD ".pi-mesh-release"
 New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
 gh release download "v$version" --repo kontextmind/pi-extensions --pattern $asset --dir $releaseDir --clobber
 npm install --global --omit=peer (Join-Path $releaseDir $asset)
-pi-mesh help
+kxm mesh help
 ```
 
 Do not substitute a global `git+https` npm install; the supported global
 operator package is the versioned release tarball. To run from source instead,
-clone the repository, run `npm ci`, and use `node scripts/pi-mesh.mjs` in place
+clone the repository, run `npm ci`, and use `node scripts/kxm.mjs` in place
 of `pi-mesh`.
 
 ## Start the hub
@@ -43,14 +43,14 @@ With the packed operator command installed:
 
 ```powershell
 $env:PI_MESH_AUTH_TOKEN = "replace-with-a-long-random-token"
-pi-mesh hub
+kxm mesh hub
 ```
 
 On macOS or Linux, use:
 
 ```bash
 export PI_MESH_AUTH_TOKEN="replace-with-a-long-random-token"
-pi-mesh hub
+kxm mesh hub
 ```
 
 For the source alternative, start the clone with `npm run hub`.
@@ -58,7 +58,7 @@ For the source alternative, start the clone with `npm run hub`.
 A successful start prints:
 
 ```text
-pi-mesh hub listening at http://127.0.0.1:7331; storage=<workspace>/.kxm/state/mesh.db
+kxm mesh hub listening at http://127.0.0.1:7331; storage=<workspace>/.kxm/state/mesh.db
 ```
 
 In another terminal, verify the health endpoint:
@@ -69,12 +69,12 @@ Invoke-RestMethod http://127.0.0.1:7331/health
 
 The response should contain `ok: true`. Check `/ready` as well when validating storage readiness. The default database survives hub restarts and is ignored by Git.
 
-The additive `pi-mesh` command can initialize a workspace and validate workflow files without printing secrets:
+The additive `kxm` command can initialize a workspace and validate workflow files without printing secrets:
 
 ```powershell
-pi-mesh --json init
-pi-mesh --json validate --file .kxm/config/workflows/v04-dogfood.json
-pi-mesh --json status
+kxm mesh --json init
+kxm gate --json validate --file .kxm/config/workflows/v04-dogfood.json
+kxm mesh --json status
 ```
 
 ## Connect Pi agents
@@ -113,7 +113,7 @@ Run `/mesh-status` in either session. It should show the connected identity and 
 Ask the planner:
 
 ```text
-Use the pi-mesh-comms skill. List peers, ask reviewer to examine the current
+Use the kxm-mesh skill. List peers, ask reviewer to examine the current
 plan for its three highest correctness risks, and wait for the response.
 ```
 
@@ -127,7 +127,7 @@ Keep the same hub running. Inside Claude Code, add the marketplace and install t
 
 ```text
 /plugin marketplace add kontextmind/pi-extensions
-/plugin install pi-mesh-comms@kontextmind-pi-extensions
+/plugin install kxm-mesh@kontextmind-pi-extensions
 /reload-plugins
 ```
 
@@ -148,13 +148,13 @@ Restart Claude Code after configuration. Ask it to use `mesh_list`; the connecte
 Claude channels can inject an inbound request into a running session. They are currently a research-preview feature, and a community channel must be explicitly trusted at launch:
 
 ```text
-claude --dangerously-load-development-channels plugin:pi-mesh-comms@kontextmind-pi-extensions
+claude --dangerously-load-development-channels plugin:kxm-mesh@kontextmind-pi-extensions
 ```
 
 Review the trust prompt before accepting it. If an organization administrator has approved the plugin through `allowedChannelPlugins`, use:
 
 ```text
-claude --channels plugin:pi-mesh-comms@kontextmind-pi-extensions
+claude --channels plugin:kxm-mesh@kontextmind-pi-extensions
 ```
 
 Without channel mode, Claude can still send requests and receive them by calling `mesh_inbox`, then answer with `mesh_reply`.

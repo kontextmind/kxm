@@ -3,8 +3,8 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { buildRetrospective, renderRetrospectiveMarkdown, writeRetrospective } from "../plugins/pi-mesh-comms/src/retrospective.ts";
-import type { WorkflowJournalEntry, WorkflowRun } from "../plugins/pi-mesh-comms/src/workflow.ts";
+import { buildRetrospective, renderRetrospectiveMarkdown, writeRetrospective } from "../plugins/kxm-mesh/src/retrospective.ts";
+import type { WorkflowJournalEntry, WorkflowRun } from "../plugins/kxm-mesh/src/workflow.ts";
 
 function sample(runStatus: WorkflowRun["status"] = "failed"): { run: WorkflowRun; journal: WorkflowJournalEntry[] } {
   const run: WorkflowRun = {
