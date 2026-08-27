@@ -66,11 +66,13 @@ The CI minimums are 95% lines, 80% branches, and 90% functions across the measur
 | Jira issue-to-merge workflow | `.kxm/config/workflows/jira-development.json` | Parsed, type-checked through workflow tests, and exercised end to end with representative configuration |
 | `.kxm` workspace defaults and persisted hub/worker logs | `.kxm/`, `test/server.test.ts`, `test/worker.test.ts` | Executed with isolated temporary workspaces |
 | Signed external result callback | `examples/workflow-signal.ts` | Type-checked; equivalent signed callback path is exercised end to end in `test/hub-api.test.ts` |
-| Peer provenance and optional explicit degradation | `examples/provenance-workflow.json`, `docs/provenance-gates.md` | Definition is checked with `pi-mesh validate`; adversarial behavior is automated in `test/workflow-provenance.test.ts` |
+| Peer provenance and optional explicit degradation | `examples/provenance-workflow.json`, `.kxm/config/workflows/provenance-quorum.json`, `docs/provenance-gates.md` | Both definitions are parser-checked in `test/examples.test.ts`; adversarial evidence and degradation behavior is automated in `test/workflow-provenance.test.ts` |
+| Quorum parser boundaries and definition identity | `plugins/kxm-mesh/src/workflow.ts`, `test/workflow-quorum.test.ts`, `test/workflow-definition-hash.test.ts` | Rejects impossible peer pools, verifies degradation bounds, and proves secret-free semantic hash stamping plus credential-rotation invariance |
+| Artifact existence and containment gate | `plugins/kxm-mesh/src/artifacts-exist.ts`, `test/artifacts-exist.test.ts` | Non-empty regular files pass; missing, empty, non-file, lexical escape, and real-path escape cases fail closed (host-permitted symlink coverage) |
 | Long-lived headless coordinator | `scripts/pi-mesh-worker.mjs` | Restart limits, spawn failure, collision-resistant ownership, exact resource and tool loading, raw-output isolation, bounded RPC framing, bounded drain, hung-tool recovery, provider/model fallback, and `--continue` fallback are automated; the opt-in real-Pi gate verifies two workers, discovery, request/reply, fanout, durable restart/resume, journal, and checkpoint |
-| GitHub check signal adapter | `plugins/pi-mesh-comms/src/github-watch.ts` | Deterministic pagination, conclusion, retry, and per-wait delivery-generation states in `test/github-watch.test.ts` |
-| Operator CLI | `scripts/pi-mesh.mjs` | Isolated workspace commands in `test/cli.test.ts`; the packed artifact is installed locally and with the documented global `--omit=peer` path by `test/package-install.test.ts` |
-| Native-free package install and Windows `pi.cmd` worker launch | `package.json`, `test/store.test.ts`, `test/worker.test.ts` | CI runs on Ubuntu and Windows at Node 22.13 and Node 24; the Windows test executes a command-script fixture through `ComSpec` |
+| GitHub check signal adapter | `plugins/kxm-mesh/src/github-watch.ts` | Deterministic pagination, conclusion, retry, and per-wait delivery-generation states in `test/github-watch.test.ts` |
+| Operator CLI | `scripts/kxm.mjs` | Isolated workspace commands in `test/cli.test.ts`; the packed artifact is installed locally and with the documented global `--omit=peer` path by `test/package-install.test.ts` |
+| Native-free package install and Windows `pi.cmd` worker launch | `package.json`, `test/store.test.ts`, `test/worker.test.ts` | CI runs on Ubuntu and Windows at Node 22.19 and Node 24; the Windows test executes a command-script fixture through `ComSpec` |
 
 ## Manual release checks
 

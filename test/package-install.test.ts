@@ -70,17 +70,17 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
     assert.equal(installed.status, 0, `${installed.stderr}\n${installed.stdout}`);
 
     const packageRoot = join(consumer, "node_modules", "@kontextmind", "pi-extensions");
-    const cli = spawnSync(process.execPath, [join(packageRoot, "scripts", "pi-mesh.mjs"), "help"], {
+    const cli = spawnSync(process.execPath, [join(packageRoot, "scripts", "kxm.mjs"), "mesh", "help"], {
       cwd: consumer,
       encoding: "utf8",
     });
     assert.equal(cli.status, 0, `${cli.stderr}\n${cli.stdout}`);
-    assert.match(cli.stdout, /Usage: pi-mesh/);
+    assert.match(cli.stdout, /Usage: kxm mesh/);
     assert.doesNotMatch(cli.stderr, /ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING/);
 
-    const installedBin = runNpm(["exec", "--offline", "--", "pi-mesh", "help"], consumer);
+    const installedBin = runNpm(["exec", "--offline", "--", "kxm", "mesh", "help"], consumer);
     assert.equal(installedBin.status, 0, `${installedBin.stderr}\n${installedBin.stdout}`);
-    assert.match(installedBin.stdout, /Usage: pi-mesh/);
+    assert.match(installedBin.stdout, /Usage: kxm mesh/);
 
     const globalInstall = runNpm([
       "install",
@@ -94,17 +94,18 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
     ], consumer);
     assert.equal(globalInstall.status, 0, `${globalInstall.stderr}\n${globalInstall.stdout}`);
     const operatorBin = process.platform === "win32"
-      ? join(globalPrefix, "pi-mesh.cmd")
-      : join(globalPrefix, "bin", "pi-mesh");
+      ? join(globalPrefix, "kxm.cmd")
+      : join(globalPrefix, "bin", "kxm");
     assert.equal(existsSync(operatorBin), true);
-    const globalCli = runOperatorBin(operatorBin, ["help"], consumer);
+    const globalCli = runOperatorBin(operatorBin, ["mesh", "help"], consumer);
     assert.equal(globalCli.status, 0, `${globalCli.stderr}\n${globalCli.stdout}`);
-    assert.match(globalCli.stdout, /Usage: pi-mesh/);
+    assert.match(globalCli.stdout, /Usage: kxm mesh/);
 
     const dryRun = spawnSync(process.execPath, [
-      join(packageRoot, "scripts", "pi-mesh.mjs"),
+      join(packageRoot, "scripts", "kxm.mjs"),
       "--dry-run",
       "--json",
+      "mesh",
       "init",
     ], { cwd: consumer, encoding: "utf8" });
     assert.equal(dryRun.status, 0, `${dryRun.stderr}\n${dryRun.stdout}`);
@@ -123,6 +124,10 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
         join(consumer, ".kxm", "assets"),
         join(consumer, ".kxm", "state"),
         join(consumer, ".kxm", "assets", "retrospectives"),
+        join(consumer, ".kxm", "assets", "workflows"),
+        join(consumer, ".kxm", "assets", "sessions"),
+        join(consumer, ".kxm", "assets", "improvements"),
+        join(consumer, ".kxm", "assets", "generated"),
       ],
       templates: true,
     });
@@ -157,7 +162,7 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
     const url = await new Promise<string>((resolveUrl, reject) => {
       const timeout = setTimeout(() => reject(new Error(`packed hub did not start: ${stdout}\n${stderr}`)), 10_000);
       const inspect = () => {
-        const match = stdout.match(/pi-mesh hub listening at (http:\/\/[^;]+);/);
+        const match = stdout.match(/kxm mesh hub listening at (http:\/\/[^;]+);/);
         if (!match) return;
         clearTimeout(timeout);
         resolveUrl(match[1]!);

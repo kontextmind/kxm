@@ -3,8 +3,8 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { consumeWorkerRecoveryEnvelope, recoveryEnvelopePath } from "../plugins/pi-mesh-comms/src/recovery.ts";
-import type { MeshClient } from "../plugins/pi-mesh-comms/src/client.ts";
+import { consumeWorkerRecoveryEnvelope, recoveryEnvelopePath } from "../plugins/kxm-mesh/src/recovery.ts";
+import type { MeshClient } from "../plugins/kxm-mesh/src/client.ts";
 
 test("recovery envelope is journaled without prompt bodies and then deleted", async () => {
   const directory = mkdtempSync(join(tmpdir(), "pi-mesh-recovery-"));

@@ -33,7 +33,7 @@ The native Pi extension automatically records failed tool results while a webhoo
 
 Never put secrets or unnecessary prompt contents in the journal. Evidence should be durable references such as test names, logs, commits, pull requests, Jira issues, check runs, or documentation paths. Failed tools record an allowlisted diagnostic class, not stdout.
 
-Every terminal workflow automatically exports a bounded retrospective under `.kxm/assets/retrospectives`. Re-export one from durable local state with `pi-mesh retrospective export <runId>`; `--input <snapshot.json>` remains available for offline imports. Files stay `reviewDecision=proposed` until a human or coordinator records an explicit decision. Export never edits workflow JSON or weakens gates.
+Every terminal workflow automatically exports a bounded retrospective under `.kxm/assets/retrospectives`. Re-export one from durable local state with `kxm workflow export <runId>`; `--input <snapshot.json>` remains available for offline imports. Files stay `reviewDecision=proposed` until a human or coordinator records an explicit decision. Export never edits workflow JSON or weakens gates.
 
 Runs with peer policies add an optional metadata-only evidence audit while
 retaining the `pi-mesh.retrospective.v1` schema. It records each requirement's

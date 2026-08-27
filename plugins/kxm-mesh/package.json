@@ -1,10 +1,10 @@
 {
-  "name": "pi-mesh-comms-claude-plugin",
+  "name": "kxm-mesh-claude-plugin",
   "version": "0.4.3",
   "private": true,
   "type": "module",
   "engines": {
-    "node": "^22.13.0 || >=24.0.0"
+    "node": "^22.19.0 || >=24.0.0"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "1.30.0"

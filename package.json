@@ -21,37 +21,37 @@
     "mcp"
   ],
   "engines": {
-    "node": "^22.13.0 || >=24.0.0"
+    "node": "^22.19.0 || >=24.0.0"
   },
   "scripts": {
     "hub": "node scripts/pi-mesh-hub.mjs",
     "worker": "node scripts/pi-mesh-worker.mjs",
     "example": "node --disable-warning=ExperimentalWarning --experimental-strip-types examples/roundtrip.ts",
-    "build:mcp": "esbuild plugins/pi-mesh-comms/src/mcp-server.ts --bundle --platform=node --format=esm --target=node22 --alias:@modelcontextprotocol/sdk/server/index.js=./node_modules/@modelcontextprotocol/sdk/dist/esm/server/index.js --alias:@modelcontextprotocol/sdk/server/stdio.js=./node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js --alias:@modelcontextprotocol/sdk/types.js=./node_modules/@modelcontextprotocol/sdk/dist/esm/types.js --outfile=plugins/pi-mesh-comms/dist/mcp-server.js --banner:js=\"#!/usr/bin/env node\"",
-    "build:runtime": "esbuild plugins/pi-mesh-comms/src/cli.ts plugins/pi-mesh-comms/src/server.ts --bundle --platform=node --format=esm --target=node22 --outdir=plugins/pi-mesh-comms/dist --entry-names=[name] --banner:js=\"#!/usr/bin/env node\"",
+    "build:mcp": "esbuild plugins/kxm-mesh/src/mcp-server.ts --bundle --platform=node --format=esm --target=node22 --alias:@modelcontextprotocol/sdk/server/index.js=./node_modules/@modelcontextprotocol/sdk/dist/esm/server/index.js --alias:@modelcontextprotocol/sdk/server/stdio.js=./node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js --alias:@modelcontextprotocol/sdk/types.js=./node_modules/@modelcontextprotocol/sdk/dist/esm/types.js --outfile=plugins/kxm-mesh/dist/mcp-server.js --banner:js=\"#!/usr/bin/env node\"",
+    "build:runtime": "esbuild plugins/kxm-mesh/src/cli.ts plugins/kxm-mesh/src/server.ts --bundle --platform=node --format=esm --target=node22 --outdir=plugins/kxm-mesh/dist --entry-names=[name] --banner:js=\"#!/usr/bin/env node\"",
     "build": "npm run build:mcp && npm run build:runtime",
     "check:generated": "npm run build && node scripts/check-generated.mjs",
     "test": "npm run build && node --disable-warning=ExperimentalWarning --experimental-strip-types --test test/*.test.ts",
-    "test:coverage": "npm run build && node --disable-warning=ExperimentalWarning --experimental-strip-types --test --experimental-test-coverage --test-coverage-lines=95 --test-coverage-branches=80 --test-coverage-functions=90 --test-coverage-include=plugins/pi-mesh-comms/src/client.ts --test-coverage-include=plugins/pi-mesh-comms/src/extension.ts --test-coverage-include=plugins/pi-mesh-comms/src/hub.ts --test-coverage-include=plugins/pi-mesh-comms/src/inbox.ts --test-coverage-include=plugins/pi-mesh-comms/src/protocol.ts --test-coverage-include=plugins/pi-mesh-comms/src/store.ts --test-coverage-include=plugins/pi-mesh-comms/src/workflow.ts --test-coverage-include=plugins/pi-mesh-comms/src/diagnostics.ts --test-coverage-include=plugins/pi-mesh-comms/src/redact.ts --test-coverage-include=plugins/pi-mesh-comms/src/cli.ts --test-coverage-include=plugins/pi-mesh-comms/src/github-watch.ts --test-coverage-include=plugins/pi-mesh-comms/src/retrospective.ts --test-coverage-include=plugins/pi-mesh-comms/src/recovery.ts test/*.test.ts",
+    "test:coverage": "npm run build && node --disable-warning=ExperimentalWarning --experimental-strip-types --test --experimental-test-coverage --test-coverage-lines=95 --test-coverage-branches=80 --test-coverage-functions=90 --test-coverage-include=plugins/kxm-mesh/src/client.ts --test-coverage-include=plugins/kxm-mesh/src/extension.ts --test-coverage-include=plugins/kxm-mesh/src/hub.ts --test-coverage-include=plugins/kxm-mesh/src/inbox.ts --test-coverage-include=plugins/kxm-mesh/src/protocol.ts --test-coverage-include=plugins/kxm-mesh/src/store.ts --test-coverage-include=plugins/kxm-mesh/src/workflow.ts --test-coverage-include=plugins/kxm-mesh/src/diagnostics.ts --test-coverage-include=plugins/kxm-mesh/src/redact.ts --test-coverage-include=plugins/kxm-mesh/src/cli.ts --test-coverage-include=plugins/kxm-mesh/src/github-watch.ts --test-coverage-include=plugins/kxm-mesh/src/retrospective.ts --test-coverage-include=plugins/kxm-mesh/src/recovery.ts test/*.test.ts",
     "typecheck": "tsc --noEmit",
     "lint:docs": "markdownlint-cli2",
     "check:versions": "node scripts/check-versions.mjs",
     "check": "npm run typecheck && npm run lint:docs && npm run check:versions",
-    "validate:claude": "claude plugin validate . --strict && claude plugin validate plugins/pi-mesh-comms --strict",
+    "validate:claude": "claude plugin validate . --strict && claude plugin validate plugins/kxm-mesh --strict",
     "validate:ci": "npm run test:coverage && npm run check && npm pack --dry-run",
     "validate": "npm run validate:ci && npm run validate:claude"
   },
   "bin": {
-    "pi-mesh": "./scripts/pi-mesh.mjs",
+    "kxm": "./scripts/kxm.mjs",
     "pi-mesh-hub": "./scripts/pi-mesh-hub.mjs",
     "pi-mesh-worker": "./scripts/pi-mesh-worker.mjs"
   },
   "pi": {
     "extensions": [
-      "./plugins/pi-mesh-comms/src/extension.ts"
+      "./plugins/kxm-mesh/src/extension.ts"
     ],
     "skills": [
-      "./plugins/pi-mesh-comms/skills"
+      "./plugins/kxm-mesh/skills"
     ]
   },
   "peerDependencies": {
@@ -61,6 +61,7 @@
   "devDependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
     "@types/node": "26.2.0",
+    "commander": "15.0.0",
     "esbuild": "0.28.2",
     "markdownlint-cli2": "0.23.2",
     "typescript": "7.0.2"
@@ -75,13 +76,13 @@
     ".kxm/config/workflows/jira-development.json",
     ".kxm/config/workflows/v04-dogfood.json",
     ".claude-plugin",
-    "plugins/pi-mesh-comms/.claude-plugin",
-    "plugins/pi-mesh-comms/.mcp.json",
-    "plugins/pi-mesh-comms/package.json",
-    "plugins/pi-mesh-comms/README.md",
-    "plugins/pi-mesh-comms/dist",
-    "plugins/pi-mesh-comms/skills",
-    "plugins/pi-mesh-comms/src",
+    "plugins/kxm-mesh/.claude-plugin",
+    "plugins/kxm-mesh/.mcp.json",
+    "plugins/kxm-mesh/package.json",
+    "plugins/kxm-mesh/README.md",
+    "plugins/kxm-mesh/dist",
+    "plugins/kxm-mesh/skills",
+    "plugins/kxm-mesh/src",
     "scripts",
     "docs",
     "examples",
@@ -90,5 +91,8 @@
     "LICENSE",
     "SECURITY.md"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "@earendil-works/pi-tui": "0.84.3"
+  }
 }

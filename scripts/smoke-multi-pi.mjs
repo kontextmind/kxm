@@ -11,7 +11,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const hubScript = join(root, "scripts", "pi-mesh-hub.mjs");
 const workerScript = join(root, "scripts", "pi-mesh-worker.mjs");
-const extensionPath = join(root, "plugins", "pi-mesh-comms", "src", "extension.ts");
+const extensionPath = join(root, "plugins", "kxm-mesh", "src", "extension.ts");
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_CAPTURE_CHARS = 32_768;
 

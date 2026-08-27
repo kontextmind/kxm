@@ -156,6 +156,10 @@ export interface WorkflowRun {
   source: WebhookWorkflowDefinition["source"];
   deliveryId: string;
   payloadHash: string;
+  /** sha256 of the canonical workflow definition JSON, stamped at run
+   * creation. Optional on read: runs persisted before this field existed
+   * still load, they simply have no hash to compare. */
+  definitionHash?: string;
   event?: string;
   project: string;
   targetAgentId: string;
@@ -579,6 +583,9 @@ function parseWorkflowEvidencePolicies(
   value: unknown,
   stageId: string,
   requiredEvidence: string[],
+  workflowId: string,
+  targetName: string,
+  warn: (message: string) => void,
 ): WorkflowEvidencePolicies | undefined {
   if (value === undefined) return undefined;
   const rawPolicies = object(value, `stage ${stageId} evidencePolicies`);
@@ -625,7 +632,17 @@ function parseWorkflowEvidencePolicies(
     if (new Set(normalizedSelectors).size !== normalizedSelectors.length) {
       throw new Error(`stage ${stageId} evidencePolicies.${requirementKey}.eligibleAgents must be unique`);
     }
-    if ((minProducers as number) > eligibleAgents.length) {
+    // The workflow target can never produce peer evidence for its own run:
+    // the hub requires evidence messages from the target to a peer that is
+    // not the target, so a coordinator in its own quorum is structurally
+    // unable to produce. Reject the configuration instead of shipping a
+    // stage that can only pass via degradation.
+    if (normalizedSelectors.includes(targetName)) {
+      throw new Error(
+        `workflow ${workflowId} stage ${stageId} evidencePolicies.${requirementKey}.eligibleAgents must not include the workflow target ${targetName}: the target cannot produce peer evidence for its own run`,
+      );
+    }
+    if ((minProducers as number) > normalizedSelectors.length) {
       throw new Error(`stage ${stageId} evidencePolicies.${requirementKey}.minProducers exceeds eligibleAgents`);
     }
     if (policy.acceptedStatuses !== undefined) {
@@ -661,6 +678,14 @@ function parseWorkflowEvidencePolicies(
         );
       }
       degradation = { minProducers: degradedMin as number };
+      if (degradation.minProducers < 2) {
+        // Warning, not a hard failure: a floor of 1 is legal for
+        // non-independent requirements, but operators should see that one
+        // producer can satisfy this degraded peer-reply quorum.
+        warn(
+          `workflow ${workflowId} stage ${stageId} evidence policy ${requirementKey}: degradation.minProducers is ${degradation.minProducers} (< 2); a single producer can satisfy the degraded peer-reply quorum`,
+        );
+      }
     }
     policies.set(requirementKey, {
       kind: "peer-reply",
@@ -676,10 +701,12 @@ function parseWorkflowEvidencePolicies(
 export function parseWorkflowDefinitions(
   raw: string | undefined,
   environment: Record<string, string | undefined> = process.env,
+  onWarning?: (warning: string) => void,
 ): WebhookWorkflowDefinition[] {
   if (!raw?.trim()) return [];
   const parsed = JSON.parse(raw) as unknown;
   if (!Array.isArray(parsed)) throw new Error("PI_MESH_WEBHOOK_WORKFLOWS must be a JSON array");
+  const warn = (message: string): void => { onWarning?.(message); };
   const ids = new Set<string>();
   return parsed.map((entry, definitionIndex) => {
     const value = object(entry, `workflow ${definitionIndex}`);
@@ -716,6 +743,8 @@ export function parseWorkflowDefinitions(
     if (signalSecret && signalSecret.length < 16) {
       throw new Error(`workflow ${id} signalSecret must contain at least 16 characters`);
     }
+    const target = requireString(value.target, "workflow.target", { max: 80 });
+    const targetName = target.toLowerCase();
     if (!Array.isArray(value.stages) || value.stages.length === 0 || value.stages.length > 32) {
       throw new Error(`workflow ${id} must define between 1 and 32 stages`);
     }
@@ -743,7 +772,14 @@ export function parseWorkflowDefinitions(
       if (new Set(requiredEvidence).size !== requiredEvidence.length) {
         throw new Error(`stage ${stageId} requiredEvidence keys must be unique`);
       }
-      const evidencePolicies = parseWorkflowEvidencePolicies(stage.evidencePolicies, stageId, requiredEvidence);
+      const evidencePolicies = parseWorkflowEvidencePolicies(
+        stage.evidencePolicies,
+        stageId,
+        requiredEvidence,
+        id,
+        targetName,
+        warn,
+      );
       return {
         id: stageId,
         label: requireString(stage.label ?? stageId, "stage.label", { max: 128 }),
@@ -774,7 +810,7 @@ export function parseWorkflowDefinitions(
       id,
       source,
       project: requireString(value.project, "workflow.project", { max: 128 }),
-      target: requireString(value.target, "workflow.target", { max: 80 }),
+      target,
       secret,
       ...(signalSecret ? { signalSecret } : {}),
       ...(value.event ? { event: requireString(value.event, "workflow.event", { max: 128 }) } : {}),
@@ -802,6 +838,34 @@ export function renderWorkflowPrompt(template: string, payload: unknown): string
     if (value === undefined || value === null) return "";
     return typeof value === "object" ? JSON.stringify(value) : String(value);
   });
+}
+
+function canonicalizeForHash(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalizeForHash);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([, candidate]) => candidate !== undefined)
+        .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+        .map(([key, candidate]) => [key, canonicalizeForHash(candidate)]),
+    );
+  }
+  return value;
+}
+
+/** Stable, secret-free JSON serialization of a workflow definition. Object
+ * keys are sorted recursively and undefined fields are dropped, so hash
+ * equality is semantic and credential rotation does not create false drift. */
+export function canonicalWorkflowDefinitionJson(definition: WebhookWorkflowDefinition): string {
+  const { secret: _secret, signalSecret: _signalSecret, ...publicDefinition } = definition;
+  return JSON.stringify(canonicalizeForHash(publicDefinition));
+}
+
+/** sha256 of the canonical workflow definition JSON. Stamped on runs at
+ * creation so a later resume or audit can detect that the definition changed
+ * underneath the run. */
+export function workflowDefinitionHash(definition: WebhookWorkflowDefinition): string {
+  return createHash("sha256").update(canonicalWorkflowDefinitionJson(definition), "utf8").digest("hex");
 }
 
 export function checkpointRun(

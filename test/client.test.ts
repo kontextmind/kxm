@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import test from "node:test";
-import { MeshClient } from "../plugins/pi-mesh-comms/src/client.ts";
-import { createMeshHub } from "../plugins/pi-mesh-comms/src/hub.ts";
+import { MeshClient } from "../plugins/kxm-mesh/src/client.ts";
+import { createMeshHub } from "../plugins/kxm-mesh/src/hub.ts";
 import { createTestMesh, waitFor } from "./helpers.ts";
 
 test("client lifecycle prevents double start and makes stop idempotent", async (context) => {

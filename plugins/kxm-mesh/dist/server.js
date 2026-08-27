@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
-// plugins/pi-mesh-comms/src/hub.ts
+// plugins/kxm-mesh/src/hub.ts
 import { createHash as createHash2, createHmac, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import { isIP } from "node:net";
 
-// plugins/pi-mesh-comms/src/protocol.ts
+// plugins/kxm-mesh/src/protocol.ts
 import { randomUUID } from "node:crypto";
 var DEFAULT_PORT = 7331;
 var DEFAULT_STALE_AFTER_MS = 3e4;
@@ -67,7 +67,7 @@ function parseBoundedInteger(value, field, fallback, min, max) {
   return value;
 }
 
-// plugins/pi-mesh-comms/src/diagnostics.ts
+// plugins/kxm-mesh/src/diagnostics.ts
 function workflowScopeExtras(operation, assignedCoordinatorName) {
   return {
     operation,
@@ -76,11 +76,11 @@ function workflowScopeExtras(operation, assignedCoordinatorName) {
   };
 }
 
-// plugins/pi-mesh-comms/src/retrospective.ts
+// plugins/kxm-mesh/src/retrospective.ts
 import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-// plugins/pi-mesh-comms/src/redact.ts
+// plugins/kxm-mesh/src/redact.ts
 var SECRET_PATTERNS = [
   /\bsk-[A-Za-z0-9_-]{8,}\b/g,
   /\bghp_[A-Za-z0-9_]{20,}\b/g,
@@ -102,7 +102,7 @@ function redactStringList(values, maxItems = 32) {
   return values.slice(0, maxItems).map((value) => redactSecrets(value).slice(0, 500));
 }
 
-// plugins/pi-mesh-comms/src/workflow.ts
+// plugins/kxm-mesh/src/workflow.ts
 import { createHash } from "node:crypto";
 function improvementReport(entries) {
   const areas = [
@@ -380,7 +380,7 @@ function requireCompleteEvidence(stage, evidence, verifiedEvidence, runId) {
     }
   );
 }
-function parseWorkflowEvidencePolicies(value, stageId, requiredEvidence) {
+function parseWorkflowEvidencePolicies(value, stageId, requiredEvidence, workflowId, targetName, warn) {
   if (value === void 0) return void 0;
   const rawPolicies = object(value, `stage ${stageId} evidencePolicies`);
   const policies = /* @__PURE__ */ new Map();
@@ -426,7 +426,12 @@ function parseWorkflowEvidencePolicies(value, stageId, requiredEvidence) {
     if (new Set(normalizedSelectors).size !== normalizedSelectors.length) {
       throw new Error(`stage ${stageId} evidencePolicies.${requirementKey}.eligibleAgents must be unique`);
     }
-    if (minProducers > eligibleAgents.length) {
+    if (normalizedSelectors.includes(targetName)) {
+      throw new Error(
+        `workflow ${workflowId} stage ${stageId} evidencePolicies.${requirementKey}.eligibleAgents must not include the workflow target ${targetName}: the target cannot produce peer evidence for its own run`
+      );
+    }
+    if (minProducers > normalizedSelectors.length) {
       throw new Error(`stage ${stageId} evidencePolicies.${requirementKey}.minProducers exceeds eligibleAgents`);
     }
     if (policy.acceptedStatuses !== void 0) {
@@ -457,6 +462,11 @@ function parseWorkflowEvidencePolicies(value, stageId, requiredEvidence) {
         );
       }
       degradation = { minProducers: degradedMin };
+      if (degradation.minProducers < 2) {
+        warn(
+          `workflow ${workflowId} stage ${stageId} evidence policy ${requirementKey}: degradation.minProducers is ${degradation.minProducers} (< 2); a single producer can satisfy the degraded peer-reply quorum`
+        );
+      }
     }
     policies.set(requirementKey, {
       kind: "peer-reply",
@@ -468,10 +478,13 @@ function parseWorkflowEvidencePolicies(value, stageId, requiredEvidence) {
   }
   return policies.size ? Object.fromEntries(policies) : void 0;
 }
-function parseWorkflowDefinitions(raw, environment = process.env) {
+function parseWorkflowDefinitions(raw, environment = process.env, onWarning) {
   if (!raw?.trim()) return [];
   const parsed = JSON.parse(raw);
   if (!Array.isArray(parsed)) throw new Error("PI_MESH_WEBHOOK_WORKFLOWS must be a JSON array");
+  const warn = (message) => {
+    onWarning?.(message);
+  };
   const ids = /* @__PURE__ */ new Set();
   return parsed.map((entry, definitionIndex) => {
     const value = object(entry, `workflow ${definitionIndex}`);
@@ -500,6 +513,8 @@ function parseWorkflowDefinitions(raw, environment = process.env) {
     if (signalSecret && signalSecret.length < 16) {
       throw new Error(`workflow ${id} signalSecret must contain at least 16 characters`);
     }
+    const target = requireString(value.target, "workflow.target", { max: 80 });
+    const targetName = target.toLowerCase();
     if (!Array.isArray(value.stages) || value.stages.length === 0 || value.stages.length > 32) {
       throw new Error(`workflow ${id} must define between 1 and 32 stages`);
     }
@@ -524,7 +539,14 @@ function parseWorkflowDefinitions(raw, environment = process.env) {
       if (new Set(requiredEvidence).size !== requiredEvidence.length) {
         throw new Error(`stage ${stageId} requiredEvidence keys must be unique`);
       }
-      const evidencePolicies = parseWorkflowEvidencePolicies(stage.evidencePolicies, stageId, requiredEvidence);
+      const evidencePolicies = parseWorkflowEvidencePolicies(
+        stage.evidencePolicies,
+        stageId,
+        requiredEvidence,
+        id,
+        targetName,
+        warn
+      );
       return {
         id: stageId,
         label: requireString(stage.label ?? stageId, "stage.label", { max: 128 }),
@@ -550,7 +572,7 @@ function parseWorkflowDefinitions(raw, environment = process.env) {
       id,
       source,
       project: requireString(value.project, "workflow.project", { max: 128 }),
-      target: requireString(value.target, "workflow.target", { max: 80 }),
+      target,
       secret,
       ...signalSecret ? { signalSecret } : {},
       ...value.event ? { event: requireString(value.event, "workflow.event", { max: 128 }) } : {},
@@ -576,6 +598,22 @@ function renderWorkflowPrompt(template, payload) {
     if (value === void 0 || value === null) return "";
     return typeof value === "object" ? JSON.stringify(value) : String(value);
   });
+}
+function canonicalizeForHash(value) {
+  if (Array.isArray(value)) return value.map(canonicalizeForHash);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).filter(([, candidate]) => candidate !== void 0).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0).map(([key, candidate]) => [key, canonicalizeForHash(candidate)])
+    );
+  }
+  return value;
+}
+function canonicalWorkflowDefinitionJson(definition) {
+  const { secret: _secret, signalSecret: _signalSecret, ...publicDefinition } = definition;
+  return JSON.stringify(canonicalizeForHash(publicDefinition));
+}
+function workflowDefinitionHash(definition) {
+  return createHash("sha256").update(canonicalWorkflowDefinitionJson(definition), "utf8").digest("hex");
 }
 function checkpointRun(run, stageId, status, summary, evidence, timestamp, verifiedEvidence = {}) {
   if (run.status !== "running") throw new ProtocolError(409, `workflow is ${run.status}`, "workflow_terminal");
@@ -732,7 +770,7 @@ function approveWorkflowDegradation(run, stageId, requirement, reason, approvalI
   return { run, approval, created: true };
 }
 
-// plugins/pi-mesh-comms/src/retrospective.ts
+// plugins/kxm-mesh/src/retrospective.ts
 var MAX_RETROSPECTIVE_ENTRIES = 500;
 var SAFE_RUN_ID = /^run_[A-Za-z0-9_-]{1,120}$/;
 function durationMs(startedAt, completedAt) {
@@ -953,7 +991,7 @@ function writeRetrospective(outDir, doc) {
   return { jsonPath, mdPath };
 }
 
-// plugins/pi-mesh-comms/src/store.ts
+// plugins/kxm-mesh/src/store.ts
 import { mkdirSync as mkdirSync2 } from "node:fs";
 import { dirname, resolve as resolve2 } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -1103,7 +1141,7 @@ var MeshStore = class {
   }
 };
 
-// plugins/pi-mesh-comms/src/hub.ts
+// plugins/kxm-mesh/src/hub.ts
 var DEFAULT_WORKFLOW_WAIT_TIMEOUT_MS = 24 * 60 * 6e4;
 var MIN_WORKFLOW_WAIT_TIMEOUT_MS = 1e3;
 var MAX_WORKFLOW_WAIT_TIMEOUT_MS = 30 * 24 * 60 * 6e4;
@@ -1330,6 +1368,24 @@ function createMeshHub(options = {}) {
   const store = new MeshStore(options.dataPath);
   const agents = store.agents;
   const messages = store.messages;
+  function agentLogSide(id, fallbackName, side) {
+    const agent = agents.get(id);
+    return {
+      [side]: id,
+      [`${side}Name`]: agent?.name ?? fallbackName,
+      [`${side}Online`]: Boolean(agent?.online),
+      ...agent?.model ? { [`${side}Model`]: agent.model } : {}
+    };
+  }
+  function messageLog(message, fromId, fromName, toId, toName) {
+    return {
+      project: message.project,
+      status: message.status,
+      delivery: message.delivery,
+      ...agentLogSide(fromId, fromName, "from"),
+      ...agentLogSide(toId, toName, "to")
+    };
+  }
   const workflowRuns = store.workflowRuns;
   const journal = store.journal;
   const streams = /* @__PURE__ */ new Map();
@@ -1758,7 +1814,7 @@ data: ${JSON.stringify(event)}
         publish(message.from, { type: "expired", message });
         publish(message.to, { type: "expired", message });
         counters.messagesExpired += 1;
-        logger({ event: "message_expired", messageId: message.id, project: message.project });
+        logger({ event: "message_expired", messageId: message.id, ...messageLog(message, message.from, message.fromName, message.to, message.toName) });
         const run = [...workflowRuns.values()].find(
           (candidate) => candidate.messageId === message.id && candidate.status === "running"
         );
@@ -1795,7 +1851,7 @@ data: ${JSON.stringify(event)}
       if (Date.parse(terminalAt) > cutoff) continue;
       store.deleteMessage(message.id);
       counters.messagesPurged += 1;
-      logger({ event: "message_purged", messageId: message.id, project: message.project });
+      logger({ event: "message_purged", messageId: message.id, ...messageLog(message, message.from, message.fromName, message.to, message.toName) });
     }
   }
   function metricsBody() {
@@ -2081,6 +2137,7 @@ data: ${JSON.stringify(event)}
           source: definition.source,
           deliveryId,
           payloadHash: createHash2("sha256").update(rawBody).digest("hex"),
+          definitionHash: workflowDefinitionHash(definition),
           ...event ? { event } : {},
           project: definition.project,
           targetAgentId: target.id,
@@ -2617,7 +2674,7 @@ data: ${JSON.stringify({ agent: publicAgent(current) })}
         store.saveMessage(message);
         publish(target.id, { type: "message", message });
         counters.messagesSent += 1;
-        logger({ event: "message_sent", messageId: message.id, from: sender.id, to: target.id, hops });
+        logger({ event: "message_sent", messageId: message.id, hops, ...messageLog(message, sender.id, sender.name, target.id, target.name) });
         json(response, 202, { message, idempotent: false });
         return;
       }
@@ -2693,7 +2750,7 @@ data: ${JSON.stringify({ agent: publicAgent(current) })}
         }
         publish(message.from, { type: "reply", message });
         counters.messagesReplied += 1;
-        logger({ event: "message_replied", messageId: message.id, from: receiver.id, to: message.from });
+        logger({ event: "message_replied", messageId: message.id, ...messageLog(message, receiver.id, receiver.name, message.from, message.fromName) });
         json(response, 200, { message });
         return;
       }
@@ -2720,7 +2777,7 @@ data: ${JSON.stringify({ agent: publicAgent(current) })}
         store.saveMessage(message);
         publish(message.to, { type: "cancelled", message });
         counters.messagesCancelled += 1;
-        logger({ event: "message_cancelled", messageId: message.id, from: current.id, to: message.to });
+        logger({ event: "message_cancelled", messageId: message.id, ...messageLog(message, current.id, current.name, message.to, message.toName) });
         json(response, 200, { message });
         return;
       }
@@ -2814,7 +2871,7 @@ data: ${JSON.stringify({ agent: publicAgent(current) })}
   };
 }
 
-// plugins/pi-mesh-comms/src/server.ts
+// plugins/kxm-mesh/src/server.ts
 import { createWriteStream, mkdirSync as mkdirSync3, readFileSync } from "node:fs";
 import { dirname as dirname2, join, resolve as resolve3 } from "node:path";
 var host = process.env.PI_MESH_HOST ?? "127.0.0.1";
@@ -2891,7 +2948,7 @@ var hub = createMeshHub({
 });
 var address = await hub.start();
 structuredLog({ event: "hub_started", url: address.url, workspaceDir, configDir, logsDir, assetsDir, stateDir, dataPath, logPath });
-process.stdout.write(`pi-mesh hub listening at ${address.url}; storage=${dataPath}
+process.stdout.write(`kxm mesh hub listening at ${address.url}; storage=${dataPath}
 `);
 var shutdownPromise;
 function shutdown(signal) {

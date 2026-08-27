@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import piMeshExtension from "../plugins/pi-mesh-comms/src/extension.ts";
-import { recoveryEnvelopePath, workerStateKey } from "../plugins/pi-mesh-comms/src/recovery.ts";
+import piMeshExtension from "../plugins/kxm-mesh/src/extension.ts";
+import { recoveryEnvelopePath, workerStateKey } from "../plugins/kxm-mesh/src/recovery.ts";
 import { createTestMesh, waitFor } from "./helpers.ts";
 
 type EventHandler = (...args: unknown[]) => unknown | Promise<unknown>;
@@ -218,6 +218,8 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
   await waitFor(() => fake.sent.length === 1);
   assert.equal(fake.sent[0]!.options.triggerTurn, true);
   assert.equal(fake.sent[0]!.options.deliverAs, "followUp");
+  assert.equal((await peer.getMessage(firstInbound.id)).status, "delivered");
+  assert.equal((await peer.getMessage(secondInbound.id)).status, "queued", "waiting work must remain durable in the hub queue");
   await fake.emit("message_start", { message: fake.sent[0]!.message });
   await fake.emit("agent_end", {
     messages: [{ role: "assistant", content: [{ type: "text", text: "first result" }] }],
@@ -225,11 +227,33 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
   await fake.emit("agent_settled");
   assert.equal((await peer.awaitResponse(firstInbound.id, 2_000)).reply?.content, "first result");
   await waitFor(() => fake.sent.length === 2);
-  assert.equal(fake.sent[1]!.options.triggerTurn, false);
+  assert.equal(fake.sent[1]!.options.triggerTurn, true, "an idle autonomous worker must start its next turn");
+  assert.equal(fake.sent[1]!.options.deliverAs, "followUp", "hub nextTurn is normalized because workers have no future human prompt");
+  assert.equal((await peer.getMessage(secondInbound.id)).status, "delivered");
   await fake.emit("message_start", { message: fake.sent[1]!.message });
+  const normalQueued = await peer.send({ target: "pi-under-test", content: "normal queued work", delivery: "followUp" });
+  const steeringQueued = await peer.send({ target: "pi-under-test", content: "priority course correction", delivery: "steer" });
+  assert.equal((await peer.getMessage(normalQueued.id)).status, "queued");
+  assert.equal((await peer.getMessage(steeringQueued.id)).status, "queued");
   await fake.emit("agent_end", { messages: [{ role: "assistant", content: "second result" }] });
   await fake.emit("agent_settled");
   assert.equal((await peer.awaitResponse(secondInbound.id, 2_000)).reply?.content, "second result");
+
+  await waitFor(() => fake.sent.length === 3);
+  assert.equal(fake.sent[2]!.options.deliverAs, "steer");
+  assert.match(String(fake.sent[2]!.message.content), /priority course correction/);
+  assert.equal((await peer.getMessage(normalQueued.id)).status, "queued");
+  await fake.emit("message_start", { message: fake.sent[2]!.message });
+  await fake.emit("agent_end", { messages: [{ role: "assistant", content: "course corrected" }] });
+  await fake.emit("agent_settled");
+  assert.equal((await peer.awaitResponse(steeringQueued.id, 2_000)).reply?.content, "course corrected");
+
+  await waitFor(() => fake.sent.length === 4);
+  assert.match(String(fake.sent[3]!.message.content), /normal queued work/);
+  await fake.emit("message_start", { message: fake.sent[3]!.message });
+  await fake.emit("agent_end", { messages: [{ role: "assistant", content: "normal work complete" }] });
+  await fake.emit("agent_settled");
+  assert.equal((await peer.awaitResponse(normalQueued.id, 2_000)).reply?.content, "normal work complete");
 
   const workflowPayload = JSON.stringify({ event: "task", task: { id: "TASK-7" } });
   const workflowResponse = await fetch(`${mesh.address.url}/v1/webhooks/extension-workflow`, {
@@ -242,9 +266,9 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
     body: workflowPayload,
   });
   const workflowBody = await workflowResponse.json() as { run: { id: string } };
-  await waitFor(() => fake.sent.length === 3);
+  await waitFor(() => fake.sent.length === 5);
   const workflowRunId = workflowBody.run.id;
-  await fake.emit("message_start", { message: fake.sent[2]!.message });
+  await fake.emit("message_start", { message: fake.sent[4]!.message });
   await fake.emit("tool_result", {
     toolName: "bash",
     toolCallId: "tool-failure-1",
@@ -333,8 +357,8 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
     content: "return an exact-limit response",
     delivery: "followUp",
   });
-  await waitFor(() => fake.sent.length === 4);
-  await fake.emit("message_start", { message: fake.sent[3]!.message });
+  await waitFor(() => fake.sent.length === 6);
+  await fake.emit("message_start", { message: fake.sent[5]!.message });
   const exactLimitReply = "x".repeat(32_000);
   await fake.emit("agent_end", { messages: [{ role: "assistant", content: exactLimitReply }] });
   await fake.emit("agent_settled");
@@ -345,8 +369,8 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
     content: "return an oversized response",
     delivery: "followUp",
   });
-  await waitFor(() => fake.sent.length === 5);
-  await fake.emit("message_start", { message: fake.sent[4]!.message });
+  await waitFor(() => fake.sent.length === 7);
+  await fake.emit("message_start", { message: fake.sent[6]!.message });
   const oversizedReply = "x".repeat(32_001);
   await fake.emit("agent_end", { messages: [{ role: "assistant", content: oversizedReply }] });
   await fake.emit("agent_settled");
@@ -840,7 +864,15 @@ test("Pi extension defers post-ack activation during shutdown and replays the me
   await peer.start(() => undefined);
   const stateDir = mkdtempSync(join(tmpdir(), "pi-mesh-extension-shutdown-ack-"));
   context.after(() => rmSync(stateDir, { recursive: true, force: true }));
-  const keys = ["PI_MESH_SERVER_URL", "PI_MESH_AUTH_TOKEN", "PI_MESH_PROJECT", "PI_MESH_AGENT_NAME", "PI_MESH_STATE_DIR"] as const;
+  const keys = [
+    "PI_MESH_SERVER_URL",
+    "PI_MESH_AUTH_TOKEN",
+    "PI_MESH_PROJECT",
+    "PI_MESH_AGENT_NAME",
+    "PI_MESH_STATE_DIR",
+    "PI_MESH_WORKER_IDENTITY_KEY",
+    "PI_MESH_WORKER_ACTIVATION_TIMEOUT_MS",
+  ] as const;
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   Object.assign(process.env, {
     PI_MESH_SERVER_URL: mesh.address.url,
@@ -848,6 +880,8 @@ test("Pi extension defers post-ack activation during shutdown and replays the me
     PI_MESH_PROJECT: "test-project",
     PI_MESH_AGENT_NAME: "shutdown-ack-worker",
     PI_MESH_STATE_DIR: stateDir,
+    PI_MESH_WORKER_IDENTITY_KEY: "shutdown-ack-test-worker",
+    PI_MESH_WORKER_ACTIVATION_TIMEOUT_MS: "1000",
   });
   context.after(() => {
     for (const key of keys) {
@@ -860,11 +894,14 @@ test("Pi extension defers post-ack activation during shutdown and replays the me
   const first = fakePi();
   piMeshExtension(first.api);
   const ui = { setStatus() {}, notify() {} };
-  await first.emit("session_start", {}, {
+  let watchdogRestarts = 0;
+  const sessionContext = {
     cwd: process.cwd(),
     model: { provider: "test", id: "model" },
     ui,
-  });
+    shutdown() { watchdogRestarts += 1; },
+  };
+  await first.emit("session_start", {}, sessionContext);
 
   let releaseAck!: () => void;
   const ackGate = new Promise<void>((resolve) => { releaseAck = resolve; });
@@ -897,16 +934,18 @@ test("Pi extension defers post-ack activation during shutdown and replays the me
 
   const restarted = fakePi();
   piMeshExtension(restarted.api);
-  await restarted.emit("session_start", {}, {
-    cwd: process.cwd(),
-    model: { provider: "test", id: "model" },
-    ui,
-  });
-  await waitFor(() => restarted.sent.length === 1);
+  await restarted.emit("session_start", {}, sessionContext);
+  await waitFor(() => restarted.sent.length === 1, 5_000);
   assert.match(String(restarted.sent[0]!.message.content), /replay after shutdown/);
   await restarted.emit("message_start", { message: restarted.sent[0]!.message });
   await restarted.emit("agent_end", { messages: [{ role: "assistant", content: "replayed safely" }] });
   await restarted.emit("agent_settled");
   assert.equal((await peer.awaitResponse(message!.id, 2_000)).reply?.content, "replayed safely");
+
+  const stuck = await peer.send({ target: "shutdown-ack-worker", content: "detect missing model activation" });
+  await waitFor(() => restarted.sent.length === 2);
+  assert.equal((await peer.getMessage(stuck.id)).status, "delivered");
+  await waitFor(() => watchdogRestarts === 1, 2_000);
+  assert.equal((await peer.getMessage(stuck.id)).status, "delivered", "watchdog restart must preserve the active durable claim");
   await restarted.emit("session_shutdown");
 });

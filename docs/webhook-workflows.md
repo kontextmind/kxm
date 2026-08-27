@@ -31,7 +31,7 @@ The included [`jira-development.json`](../.kxm/config/workflows/jira-development
 6. Run lint, build/typecheck, security, and Playwright gates.
 7. Reproduce repository and CodeRabbit-style review gates.
 8. Update documentation.
-9. Push and watch required checks with `pi-mesh github watch`; warnings and failures loop back for correction.
+9. Push and watch required checks with `kxm gate github watch`; warnings and failures loop back for correction.
 10. Merge only when policy and authorization allow it.
 11. Update Jira with links and evidence.
 12. Produce an evidence-backed improvement backlog.
@@ -42,7 +42,7 @@ Load it without storing its secret in the JSON file:
 $env:JIRA_WEBHOOK_SECRET = "replace-with-a-high-entropy-secret"
 $env:WORKFLOW_SIGNAL_SECRET = "replace-with-a-separate-callback-secret"
 $env:PI_MESH_WEBHOOK_WORKFLOWS_FILE = ".kxm/config/workflows/jira-development.json"
-pi-mesh hub
+kxm mesh hub
 ```
 
 Configure Jira to send `jira:issue_updated` to:
@@ -66,7 +66,7 @@ $env:PI_MESH_PROJECT = "product"
 $env:PI_MESH_AGENT_NAME = "coordinator"
 $env:PI_MESH_AGENT_PURPOSE = "Coordinates Jira development workflows and quality gates"
 $env:PI_MESH_WORKDIR = "D:\work\product-repository"
-pi-mesh worker
+kxm agent worker
 ```
 
 The worker launches Pi in headless RPC mode, keeps stdin open, preserves its session by default, and restarts with bounded exponential backoff. Run the worker itself under the operating system's service manager for boot startup, resource limits, log collection, and crash policy. Set `PI_MESH_WORKER_CONTINUE=false` only when every process restart should create a fresh Pi session.
@@ -166,7 +166,7 @@ To watch GitHub checks and post that same signal, use the command-first adapter:
 $env:PI_MESH_WORKFLOW_ID = "jira-development"
 $env:PI_MESH_WORKFLOW_SIGNAL_SECRET = "replace-with-the-callback-secret"
 $env:GITHUB_TOKEN = "replace-with-a-checks-read-token"
-pi-mesh github watch --run-id run_123 --stage-id watch --signal-key github-pr-42-checks --repo org/repo --pr 42 --required ci --timeout-ms 3600000
+kxm gate github watch --run-id run_123 --stage-id watch --signal-key github-pr-42-checks --repo org/repo --pr 42 --required ci --timeout-ms 3600000
 ```
 
 The watcher binds every result to the exact run, stage, and signal key, requests
@@ -183,7 +183,7 @@ that invocation reuse the exact `x-mesh-delivery-id`. After a failed or timed
 out result, start a new watcher for the new workflow wait; do not reuse the old
 generated ID. Supply `--delivery-id` only when an external supervisor must
 retry the same callback attempt with a stable provider identifier. The standalone
-`pi-mesh signal` command follows the same rule.
+`kxm gate signal` command follows the same rule.
 
 ## Checkpoint contract
 
@@ -214,7 +214,7 @@ stages pass also fails the run and records a workflow error unless the
 coordinator deliberately placed the active stage in `waiting` first.
 
 If a policy declares `degradation.minProducers`, an operator may use
-`pi-mesh workflow degrade` with the administrative token to approve that exact
+`kxm gate degrade` with the administrative token to approve that exact
 lower minimum for only the current stage attempt. The coordinator, peer agents,
 and callback secret cannot authorize degradation. Approval alone never passes
 the stage; the coordinator must still provide the required verified references.

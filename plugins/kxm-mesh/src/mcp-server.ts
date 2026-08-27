@@ -20,14 +20,14 @@ let meshClient: MeshClient | undefined;
 let starting: Promise<MeshClient> | undefined;
 
 const mcp = new Server(
-  { name: "pi-mesh", version: VERSION },
+  { name: "kxm-mesh", version: VERSION },
   {
     capabilities: {
       experimental: { "claude/channel": {} },
       tools: {},
     },
     instructions: [
-      "Pi mesh peer requests can arrive as <channel source=\"pi-mesh\" message_id=\"...\"> events.",
+      "KXM Mesh peer requests can arrive as <channel source=\"kxm-mesh\" message_id=\"...\"> events.",
       "Handle the request using normal safety rules, then call mesh_reply with message_id and the final response.",
       "Use mesh_inbox as a fallback when channel delivery is not enabled.",
       "For durable workflow requests, call mesh_workflow_get, record material plans/decisions/contradictions/errors/lessons, and pass every checkpoint before replying.",

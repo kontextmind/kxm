@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { deliverInboxNotification } from "../plugins/pi-mesh-comms/src/inbox.ts";
+import { deliverInboxNotification } from "../plugins/kxm-mesh/src/inbox.ts";
 
 test("failed MCP inbox notifications remain retryable and successful delivery deduplicates", async () => {
   const delivered = new Set<string>();

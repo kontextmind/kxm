@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mapCheckConclusion, watchGithubChecks } from "../plugins/pi-mesh-comms/src/github-watch.ts";
+import { mapCheckConclusion, watchGithubChecks } from "../plugins/kxm-mesh/src/github-watch.ts";
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });

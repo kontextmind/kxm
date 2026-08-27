@@ -4,9 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { MeshStore } from "../plugins/pi-mesh-comms/src/store.ts";
-import type { MessageRecord } from "../plugins/pi-mesh-comms/src/protocol.ts";
-import type { WorkflowJournalEntry, WorkflowRun } from "../plugins/pi-mesh-comms/src/workflow.ts";
+import { MeshStore } from "../plugins/kxm-mesh/src/store.ts";
+import type { MessageRecord } from "../plugins/kxm-mesh/src/protocol.ts";
+import type { WorkflowJournalEntry, WorkflowRun } from "../plugins/kxm-mesh/src/workflow.ts";
 
 test("store supports memory mode and health checks", () => {
   const store = new MeshStore();

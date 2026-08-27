@@ -7,9 +7,9 @@ import test from "node:test";
 
 const checker = resolve("scripts/check-generated.mjs");
 const artifacts = [
-  "plugins/pi-mesh-comms/dist/cli.js",
-  "plugins/pi-mesh-comms/dist/server.js",
-  "plugins/pi-mesh-comms/dist/mcp-server.js",
+  "plugins/kxm-mesh/dist/cli.js",
+  "plugins/kxm-mesh/dist/server.js",
+  "plugins/kxm-mesh/dist/mcp-server.js",
 ];
 
 function run(cwd: string, command: string, args: string[]) {

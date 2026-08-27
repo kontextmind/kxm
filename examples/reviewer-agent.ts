@@ -1,4 +1,4 @@
-import { MeshClient } from "../plugins/pi-mesh-comms/src/client.ts";
+import { MeshClient } from "../plugins/kxm-mesh/src/client.ts";
 
 const serverUrl = process.env.PI_MESH_SERVER_URL ?? "http://127.0.0.1:7331";
 const authToken = process.env.PI_MESH_AUTH_TOKEN;

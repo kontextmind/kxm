@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
-import { parseWorkflowDefinitions } from "../plugins/pi-mesh-comms/src/workflow.ts";
+import { parseWorkflowDefinitions } from "../plugins/kxm-mesh/src/workflow.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -44,6 +44,20 @@ test("Jira development workflow example is valid and covers the complete lifecyc
     "retrospective",
   ]);
   assert.equal(workflow!.stages.find((stage) => stage.id === "local-gates")?.area, "gates");
+});
+
+test("repository provenance quorum workflow parses with its declared peer policies", () => {
+  const raw = readFileSync(".kxm/config/workflows/provenance-quorum.json", "utf8");
+  const [workflow] = parseWorkflowDefinitions(raw, {
+    PI_MESH_V04_WORKFLOW_SECRET: "repository-provenance-start-secret",
+    PI_MESH_V04_SIGNAL_SECRET: "repository-provenance-signal-secret",
+  });
+  assert.equal(workflow!.id, "pi-extensions-provenance");
+  assert.equal(workflow!.target, "provenance-coordinator");
+  assert.equal(workflow!.stages.find((stage) => stage.id === "plan")!
+    .evidencePolicies?.["independent plan message ids"]?.minProducers, 2);
+  assert.deepEqual(workflow!.stages.find((stage) => stage.id === "plan")!
+    .evidencePolicies?.["independent plan message ids"]?.eligibleAgents, ["provenance-grok", "provenance-gemini"]);
 });
 
 test("provenance example and command-first guide share one runnable topology", () => {

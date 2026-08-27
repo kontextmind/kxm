@@ -1,5 +1,5 @@
 import { createHmac, randomUUID } from "node:crypto";
-import { canonicalWorkflowEvidenceKey } from "../plugins/pi-mesh-comms/src/workflow.ts";
+import { canonicalWorkflowEvidenceKey } from "../plugins/kxm-mesh/src/workflow.ts";
 
 const [runId, signalKey, status, summary, ...evidenceArgs] = process.argv.slice(2);
 const serverUrl = process.env.PI_MESH_SERVER_URL?.trim() || "http://127.0.0.1:7331";

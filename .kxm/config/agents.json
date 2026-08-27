@@ -1,24 +1,43 @@
 {
+  "schema": "kxm.agents.v1",
   "project": "pi-extensions-v04",
+  "host": "local",
   "agents": [
     {
-      "name": "coordinator",
-      "model": "antigravity/claude-opus-4-6",
-      "purpose": "Owns the v0.4 workflow, synthesizes peer evidence, and is the sole code writer"
-    },
-    {
-      "name": "grok-researcher",
+      "name": "grok",
+      "kind": "agent",
+      "driver": "ai",
       "model": "xai/grok-4.6",
-      "purpose": "Independently researches operator CLI, recovery, GitHub automation, and multi-agent reliability"
+      "thinking": "xhigh",
+      "purpose": "Sole writer; independent critic of kxm CLI and envelopes"
     },
     {
-      "name": "gemini-reviewer",
-      "model": "antigravity/gemini-3.1-pro",
-      "purpose": "Independently reviews architecture, security, portability, tests, and operator experience"
+      "name": "fable",
+      "kind": "agent",
+      "driver": "ai",
+      "model": "anthropic/claude-fable-5",
+      "thinking": "xhigh",
+      "purpose": "Independent critic: architecture and permissions"
+    },
+    {
+      "name": "gpt-sol",
+      "kind": "agent",
+      "driver": "ai",
+      "model": "openai-codex/gpt-5.6-sol",
+      "thinking": "xhigh",
+      "purpose": "Independent critic: CLI contracts and documentation"
+    },
+    {
+      "name": "kimi",
+      "kind": "agent",
+      "driver": "ai",
+      "model": "kimi-coding/kimi-for-coding",
+      "thinking": "max",
+      "purpose": "Independent critic: mapping gaps and portability"
     }
   ],
   "ownership": {
-    "writeAgent": "coordinator",
-    "peerAgents": ["grok-researcher", "gemini-reviewer"]
+    "writeAgent": "grok",
+    "peerAgents": ["fable", "gpt-sol", "kimi"]
   }
 }

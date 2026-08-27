@@ -63,7 +63,7 @@ node --experimental-strip-types examples/requester.ts example-reviewer "Check th
 ### Plan then review
 
 ```text
-Use pi-mesh-comms. Ask planner to produce a bounded implementation plan, then
+Use kxm-mesh. Ask planner to produce a bounded implementation plan, then
 ask reviewer to identify correctness and security risks. Verify both responses
 before making changes.
 ```
@@ -71,7 +71,7 @@ before making changes.
 ### Implement with separate ownership
 
 ```text
-Use pi-mesh-comms. Give api-builder ownership of src/api only and ui-builder
+Use kxm-mesh. Give api-builder ownership of src/api only and ui-builder
 ownership of src/ui only. Ask each for changed paths and test results. Do not
 let either agent edit shared configuration.
 ```

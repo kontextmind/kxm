@@ -4,7 +4,7 @@ Start with the smallest boundary: hub health, authentication, registration, peer
 
 ## Quick diagnostic sequence
 
-1. Confirm the hub terminal still shows `pi-mesh hub listening`.
+1. Confirm the hub terminal still shows `kxm mesh hub listening`.
 2. Request `/health`, then `/ready` to confirm storage access.
 3. Compare the hub URL, token, and project on both agents.
 4. Confirm every agent has a unique name.
@@ -28,11 +28,11 @@ Set `PI_MESH_WORKER_TOOL_TIMEOUT_MS` above the longest legitimate tool call. Its
 
 ### A hub or worker PID claim is stale
 
-Version 0.4.3 prevents a second wrapper from replacing a live hub or worker claim. `pi-mesh stop` ignores an invalid, non-running, or ownership-mismatched record rather than guessing. If a crash or pre-0.4.3 process left one behind, inspect the exact `.pid` JSON and verify that its recorded PID is no longer running; for a hub, also verify the configured port has no listener. Then remove only that exact `.pid` and its recorded `.stop` control file before relaunching once. Worker filenames include a project/agent identity digest and their records include the exact names and generation, so do not substitute a similarly sanitized filename. Never delete the `.kxm/state` directory or SQLite database to clear a claim.
+Version 0.4.3 prevents a second wrapper from replacing a live hub or worker claim. `kxm mesh stop` ignores an invalid, non-running, or ownership-mismatched record rather than guessing. If a crash or pre-0.4.3 process left one behind, inspect the exact `.pid` JSON and verify that its recorded PID is no longer running; for a hub, also verify the configured port has no listener. Then remove only that exact `.pid` and its recorded `.stop` control file before relaunching once. Worker filenames include a project/agent identity digest and their records include the exact names and generation, so do not substitute a similarly sanitized filename. Never delete the `.kxm/state` directory or SQLite database to clear a claim.
 
 ### GitHub checks passed but the workflow is still waiting
 
-The hub does not poll GitHub. Run `pi-mesh github watch` with the same `runId`, `stageId`, and `signalKey`. A watcher timeout posts the exact signed `failed` signal, retains bounded check evidence, and exits `4`; it never invents `passed`.
+The hub does not poll GitHub. Run `kxm gate github watch` with the same `runId`, `stageId`, and `signalKey`. A watcher timeout posts the exact signed `failed` signal, retains bounded check evidence, and exits `4`; it never invents `passed`.
 
 ### The hub refuses to start
 
@@ -58,16 +58,16 @@ Another process owns the port. Stop that process or choose another port, then up
 - Verify `PI_MESH_AUTH_TOKEN` exactly matches the hub token.
 - Check whether a live agent already uses the same name in the same project.
 - Restart Pi after changing environment variables.
-- For an exact development load, use `pi --no-extensions -e ./plugins/pi-mesh-comms/src/extension.ts`. Add every required provider extension with another `-e`; otherwise Pi discovery is intentionally disabled.
+- For an exact development load, use `pi --no-extensions -e ./plugins/kxm-mesh/src/extension.ts`. Add every required provider extension with another `-e`; otherwise Pi discovery is intentionally disabled.
 - For long-lived workers, set the reviewed `PI_MESH_WORKER_EXTENSION_PATHS` and `PI_MESH_WORKER_SKILL_PATHS` described in [Configuration](configuration.md#long-lived-worker-settings). Invalid paths fail before supervision instead of entering a restart loop.
 
-### `pi-mesh` is not recognized
+### `kxm` is not recognized
 
 `pi install git:github.com/kontextmind/pi-extensions` installs the Pi extension
 and Agent Skill, not a global operator command. Install the versioned `.tgz`
 release asset through the authenticated `gh release download` flow in
 [Getting started](getting-started.md#install-the-operator-command), or run
-`node scripts/pi-mesh.mjs` from a clone after `npm ci`. `npx pi-mesh` and a
+`node scripts/kxm.mjs` from a clone after `npm ci`. `npx kxm` and a
 global `git+https` npm install are not supported installation paths.
 
 ### An expected peer is missing
@@ -97,7 +97,7 @@ Terminal records are removed after seven days by default. Increase `PI_MESH_MESS
 1. Confirm the marketplace and plugin are installed.
 2. Run `/reload-plugins` or restart Claude Code.
 3. Inspect `/mcp` and verify the `pi-mesh` server connected.
-4. Confirm Node.js 22.13 or newer on the 22.x line, or Node.js 24 or newer, is on the `PATH` used by Claude Code.
+4. Confirm Node.js 22.19 or newer on the 22.x line, or Node.js 24 or newer, is on the `PATH` used by Claude Code.
 5. Reinstall or update the marketplace if the cached plugin predates the `dist/mcp-server.js` bundle.
 
 ### Claude does not receive pushed requests
@@ -105,7 +105,7 @@ Terminal records are removed after seven days by default. Increase `PI_MESH_MESS
 Ordinary MCP tools and channel delivery are separate. During the research preview, start the community channel explicitly:
 
 ```text
-claude --dangerously-load-development-channels plugin:pi-mesh-comms@kontextmind-pi-extensions
+claude --dangerously-load-development-channels plugin:kxm-mesh@kontextmind-pi-extensions
 ```
 
 Accept the trust prompt and check the channel startup notice. Organization policy can still block channels. If pushed delivery remains unavailable, use `mesh_inbox` and `mesh_reply`.
@@ -158,7 +158,7 @@ idempotency prefixes are retry controls, not provenance. Do not replace a
 rejected reference with an unscoped send.
 
 If policy declares a lower `degradation.minProducers`, an operator can inspect
-and approve it with `pi-mesh --dry-run --json workflow degrade ...` followed by
+and approve it with `kxm gate --dry-run --json degrade ...` followed by
 the same command without `--dry-run`, using the administrative token. Approval
 must target the current stage and attempt and does not advance the workflow;
 the coordinator must still checkpoint with enough verified references. A

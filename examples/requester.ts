@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { MeshClient } from "../plugins/pi-mesh-comms/src/client.ts";
+import { MeshClient } from "../plugins/kxm-mesh/src/client.ts";
 
 const [target, ...contentParts] = process.argv.slice(2);
 if (!target || contentParts.length === 0) {
