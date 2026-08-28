@@ -315,6 +315,7 @@ test("bundled MCP tools cover outbound, inbound, reply, cancellation, and channe
   const provenanceSendId = String(provenanceSend.messageId);
   await tool("mesh_await", { messageId: provenanceSendId, timeoutMs: 2_000 });
   const provenanceMessage = toolValue(await tool("mesh_get", { messageId: provenanceSendId }));
+  assert.equal(provenanceMessage.workflowRunId, workflow.run.id);
   assert.deepEqual(provenanceMessage.workflowContext, {
     schema: "pi-mesh.workflow-message-context.v1",
     ...provenanceContext,
@@ -331,6 +332,7 @@ test("bundled MCP tools cover outbound, inbound, reply, cancellation, and channe
   const provenanceFanoutMessage = toolValue(await tool("mesh_get", {
     messageId: provenanceFanoutResult!.messageId,
   }));
+  assert.equal(provenanceFanoutMessage.workflowRunId, workflow.run.id);
   assert.deepEqual(provenanceFanoutMessage.workflowContext, {
     schema: "pi-mesh.workflow-message-context.v1",
     ...provenanceContext,

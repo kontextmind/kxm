@@ -4,7 +4,16 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { runCli } from "../plugins/kxm-mesh/src/cli.ts";
+import { runCli as runCliImplementation, type CliIo } from "../plugins/kxm-mesh/src/cli.ts";
+
+async function runCli(argv: string[], env: NodeJS.ProcessEnv, io: CliIo, cwd = process.cwd()): Promise<number> {
+  const isolatedLogs = mkdtempSync(join(tmpdir(), "kxm-cli-telemetry-"));
+  try {
+    return await runCliImplementation(argv, { PI_MESH_LOGS_DIR: isolatedLogs, ...env }, io, cwd);
+  } finally {
+    rmSync(isolatedLogs, { recursive: true, force: true });
+  }
+}
 
 function capture() {
   let stdout = "";
@@ -88,6 +97,23 @@ test("init and validate work in an isolated workspace", async () => {
     assert.match(io.read().stdout, /"command":"init"/);
     assert.equal(existsSync(join(isolated, "config")), true);
     assert.equal(existsSync(join(cwd, "should-not-use")), false);
+    assert.equal(existsSync(join(isolated, "config", "agents.json")), false, "consumer init must not copy the package dogfood roster");
+
+    writeFileSync(join(isolated, "config", "agents.json"), JSON.stringify({
+      schema: "kxm.agents.v1",
+      agents: [{ name: "planner", kind: "agent", driver: "ai", purpose: "plans" }],
+    }));
+    writeFileSync(join(isolated, "config", "gates.json"), JSON.stringify({
+      schema: "kxm.gates.v1",
+      gates: [{ name: "validate", kind: "gate", driver: "code", purpose: "validates" }],
+    }));
+    const sessionIo = capture();
+    assert.equal(await runCli([
+      "session", "--json", "--workspace", isolated, "start", "--id", "review-1", "--mix", "planner,validate",
+    ], {}, sessionIo, cwd), 0);
+    assert.match(sessionIo.read().stdout, /"schema":"kxm.session.v1"/);
+    assert.equal(existsSync(join(isolated, "assets", "sessions", "review-1", "session.json")), true);
+
     const env = {
       PI_MESH_V04_WORKFLOW_SECRET: "0123456789abcdef",
       PI_MESH_V04_SIGNAL_SECRET: "0123456789abcdef",
@@ -190,6 +216,8 @@ test("hub and worker dry-run do not spawn, and live hub uses the injected spawne
     "--fresh-start",
     "--tools",
     "read,grep,mesh_fanout",
+    "--session-isolation",
+    "workflow",
   ], {}, {
     ...worker,
     spawnWorker: (environment) => {
@@ -201,6 +229,64 @@ test("hub and worker dry-run do not spawn, and live hub uses the injected spawne
   assert.equal(workerEnv?.PI_MESH_WORKER_FALLBACK_MODELS, "vendor/secondary,vendor/tertiary");
   assert.equal(workerEnv?.PI_MESH_WORKER_INITIAL_CONTINUE, "false");
   assert.equal(workerEnv?.PI_MESH_WORKER_TOOLS, "read,grep,mesh_fanout");
+  assert.equal(workerEnv?.PI_MESH_WORKER_SESSION_ISOLATION, "workflow");
+
+  let compatibilityEnv: NodeJS.ProcessEnv | undefined;
+  assert.equal(await runCli([
+    "agent", "worker", "--name", "legacy", "--project", "product",
+  ], { PI_MESH_WORKER_SESSION_ISOLATION: "off" }, {
+    ...capture(),
+    spawnWorker: (environment) => {
+      compatibilityEnv = environment;
+      return 0;
+    },
+  }), 0);
+  assert.equal(compatibilityEnv?.PI_MESH_WORKER_SESSION_ISOLATION, "off");
+
+  let defaultEnv: NodeJS.ProcessEnv | undefined;
+  assert.equal(await runCli([
+    "agent", "worker", "--name", "default-mode", "--project", "product",
+  ], {}, {
+    ...capture(),
+    spawnWorker: (environment) => {
+      defaultEnv = environment;
+      return 0;
+    },
+  }), 0);
+  assert.equal(defaultEnv?.PI_MESH_WORKER_SESSION_ISOLATION, "off");
+
+  const invalidIsolation = capture();
+  assert.equal(await runCli([
+    "agent", "worker", "--name", "coordinator", "--project", "product", "--session-isolation", "shared",
+  ], {}, invalidIsolation), 2);
+  assert.match(invalidIsolation.read().stderr, /must be workflow or off/);
+});
+
+test("mesh tui defaults to the current project instead of a vendor-specific project", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "generic-product-"));
+  const requested: string[] = [];
+  try {
+    const io = capture();
+    assert.equal(await runCli(["mesh", "tui"], {}, {
+      ...io,
+      fetchImpl: async (input) => {
+        const url = String(input);
+        requested.push(url);
+        if (url.endsWith("/health")) return new Response(JSON.stringify({ ok: true, agents: 0 }));
+        if (url.endsWith("/ready")) return new Response(JSON.stringify({ ok: true, storage: "sqlite" }));
+        if (url.includes("/v1/ops/snapshot")) return new Response(JSON.stringify({
+          project: cwd.split(/[\\/]/).at(-1),
+          fetchedAt: "2026-08-28T00:00:00.000Z",
+          agents: [], openMessages: [], openMessageTotal: 0, runs: [], runTotal: 0,
+        }));
+        throw new Error(`unexpected URL ${url}`);
+      },
+    }, cwd), 0);
+    assert.ok(requested.some((url) => url.includes(`project=${encodeURIComponent(cwd.split(/[\\/]/).at(-1)!)}`)));
+    assert.ok(requested.every((url) => !url.includes("project=payk12")));
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });
 
 test("stop, signal, status, and help cover the remaining command contract", async () => {
@@ -214,6 +300,12 @@ test("stop, signal, status, and help cover the remaining command contract", asyn
     assert.equal(await runCli(["gate", "--json", "validate", "--file", join(cwd, "missing.json")], {}, missing, cwd), 1);
     const stopDry = capture();
     assert.equal(await runCli(["mesh", "--json", "--dry-run", "stop"], {}, stopDry, cwd), 0);
+    const improve = capture();
+    assert.equal(await runCli(["improve", "--json", "--workspace", cwd, "--target", "project"], {}, improve, cwd), 0);
+    const improveResult = JSON.parse(improve.read().stdout) as { command: string; path: string; events: number };
+    assert.equal(improveResult.command, "improve");
+    assert.equal(improveResult.events, 0);
+    assert.equal(existsSync(improveResult.path), true);
     mkdirSync(join(cwd, "state"), { recursive: true });
     const startedAt = "2026-08-26T00:00:00.000Z";
     const pidPath = join(cwd, "state", "hub.pid");
@@ -224,6 +316,7 @@ test("stop, signal, status, and help cover the remaining command contract", asyn
       agentName: "coordinator",
       project: "product",
       createdAt: startedAt,
+      previousContinue: true,
       freshSession: false,
     }));
     const sessionStatus = capture();

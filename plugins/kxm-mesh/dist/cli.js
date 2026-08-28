@@ -3,8 +3,8 @@
 // plugins/kxm-mesh/src/cli.ts
 import { spawn } from "node:child_process";
 import { createHmac as createHmac2, randomUUID as randomUUID2 } from "node:crypto";
-import { cpSync, existsSync as existsSync3, mkdirSync as mkdirSync5, readFileSync as readFileSync4, readdirSync as readdirSync2, writeFileSync as writeFileSync4 } from "node:fs";
-import { join as join9, resolve as resolve3 } from "node:path";
+import { existsSync as existsSync3, mkdirSync as mkdirSync5, readFileSync as readFileSync4, readdirSync as readdirSync2, writeFileSync as writeFileSync4 } from "node:fs";
+import { basename, join as join9, resolve as resolve3 } from "node:path";
 import { DatabaseSync as DatabaseSync2 } from "node:sqlite";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
@@ -4168,10 +4168,9 @@ var TELEMETRY_SCHEMA = "kxm.telemetry.v1";
 function inferImprovementTarget(input) {
   const explicit = input.env?.KXM_IMPROVE_TARGET?.trim();
   if (explicit === "cli" || explicit === "project") return explicit;
-  const project = (input.project ?? input.env?.PI_MESH_PROJECT ?? "").toLowerCase();
-  const workflowId = (input.workflowId ?? "").toLowerCase();
-  if (project === "payk12" || workflowId.startsWith("factory-")) return "project";
-  return "cli";
+  const project = (input.project ?? input.env?.PI_MESH_PROJECT ?? "").trim();
+  const workflowId = (input.workflowId ?? "").trim();
+  return project || workflowId ? "project" : "cli";
 }
 function appendTelemetry(path5, event) {
   mkdirSync2(dirname(path5), { recursive: true });
@@ -12933,7 +12932,7 @@ async function runMeshTui(input) {
         let events;
         try {
           if (!useOpsStream && !identity) throw new Error("legacy SSE requires an observer identity");
-          const eventUrl = useOpsStream ? `${base}/v1/ops/events?project=${encodeURIComponent(input.project)}` : `${base}/v1/events?agentId=${encodeURIComponent(identity.id)}`;
+          const eventUrl = useOpsStream ? `${base}/v1/ops/events?project=${encodeURIComponent(input.project)}` : `${base}/v1/events?agentId=${encodeURIComponent(identity.id)}&presenceOnly=true`;
           events = await input.fetchImpl(eventUrl, {
             headers: { ...headers(useOpsStream ? void 0 : identity), accept: "text/event-stream" },
             signal: abort.signal
@@ -12962,6 +12961,14 @@ async function runMeshTui(input) {
           paint(snapshot);
           continue;
         }
+        if (!useOpsStream && events.ok && events.headers.get("x-mesh-events-mode") !== "presence") {
+          await events.body?.cancel();
+          snapshot = await snapshotFromHub("snapshot", {
+            error: "hub does not support metadata-only presence SSE; live fallback disabled"
+          });
+          paint(snapshot);
+          break;
+        }
         if (!events.ok || !events.body) {
           snapshot = await snapshotFromHub("snapshot", { error: `sse_http_${events.status}` });
           paint(snapshot);
@@ -12988,7 +12995,10 @@ async function runMeshTui(input) {
           pending = parts.pop() ?? "";
           for (const part of parts) {
             if (part.startsWith(":")) continue;
-            const dataLine = part.split("\n").find((line) => line.startsWith("data:"));
+            const lines = part.split("\n");
+            const eventLine = lines.find((line) => line.startsWith("event:"));
+            if (!useOpsStream && eventLine?.slice(6).trim() !== "presence") continue;
+            const dataLine = lines.find((line) => line.startsWith("data:"));
             if (!dataLine) continue;
             let parsed;
             try {
@@ -12999,25 +13009,11 @@ async function runMeshTui(input) {
             if ("type" in parsed && parsed.type === "ops") {
               snapshot = await snapshotFromHub("sse");
               paint(snapshot);
-            } else if ("type" in parsed && parsed.type === "presence") {
+            } else if ("type" in parsed && parsed.type === "presence" && parsed.agent) {
               applyPresence(parsed.agent);
               const local = loadLocalMeshSnapshot(input.dataPath, input.stateDir);
               snapshot = {
                 ...snapshot,
-                openMessages: local.openMessages,
-                openMessageTotal: local.openMessageTotal,
-                runs: local.runs,
-                runTotal: local.runTotal,
-                pids: local.pids
-              };
-              paint(snapshot);
-            } else if ("type" in parsed && (parsed.type === "message" || parsed.type === "reply" || parsed.type === "cancelled" || parsed.type === "expired")) {
-              const local = loadLocalMeshSnapshot(input.dataPath, input.stateDir);
-              const { error: _staleError, ...healthySnapshot } = snapshot;
-              snapshot = {
-                ...healthySnapshot,
-                transport: "sse",
-                fetchedAt: (input.now?.() ?? /* @__PURE__ */ new Date()).toISOString(),
                 openMessages: local.openMessages,
                 openMessageTotal: local.openMessageTotal,
                 runs: local.runs,
@@ -13326,9 +13322,7 @@ async function cmdInit(runtime) {
       created.push(directory);
     }
   }
-  const templateConfig = join9(repoRoot, ".kxm", "config");
-  if (!runtime.dryRun && existsSync3(templateConfig)) cpSync(templateConfig, runtime.dirs.config, { recursive: true, force: false, errorOnExist: false });
-  print(runtime.io, runtime.json, { ok: true, command: "init", created, templates: existsSync3(templateConfig) }, `initialized ${runtime.dirs.workspace}`);
+  print(runtime.io, runtime.json, { ok: true, command: "init", created, templates: false }, `initialized ${runtime.dirs.workspace}`);
   return 0;
 }
 async function cmdValidate(runtime, fileFlag) {
@@ -13427,7 +13421,7 @@ async function cmdMeshTui(runtime) {
     runtime.io.stderr("mesh tui does not support --json; use mesh status\n");
     return 2;
   }
-  const project = runtime.env.PI_MESH_PROJECT?.trim() || "payk12";
+  const project = runtime.env.PI_MESH_PROJECT?.trim() || basename(runtime.dirs.workdir) || "project";
   const authToken = runtime.env.PI_MESH_AUTH_TOKEN?.trim();
   return await runMeshTui({
     serverUrl: runtime.serverUrl,
@@ -13455,6 +13449,11 @@ async function cmdWorker(runtime, options) {
   const model = options.model?.trim() || runtime.env.PI_MESH_WORKER_MODEL?.trim();
   const fallbackModels = options.fallbackModels?.trim() || runtime.env.PI_MESH_WORKER_FALLBACK_MODELS?.trim();
   const tools = options.tools?.trim() || runtime.env.PI_MESH_WORKER_TOOLS?.trim();
+  const sessionIsolation = options.sessionIsolation?.trim() || runtime.env.PI_MESH_WORKER_SESSION_ISOLATION?.trim() || "off";
+  if (sessionIsolation !== "workflow" && sessionIsolation !== "off") {
+    runtime.io.stderr("worker --session-isolation must be workflow or off\n");
+    return 2;
+  }
   const extraEnv = {
     ...workspaceEnv(runtime),
     ...name ? { PI_MESH_AGENT_NAME: name } : {},
@@ -13462,6 +13461,7 @@ async function cmdWorker(runtime, options) {
     ...model ? { PI_MESH_WORKER_MODEL: model } : {},
     ...fallbackModels ? { PI_MESH_WORKER_FALLBACK_MODELS: fallbackModels } : {},
     ...tools ? { PI_MESH_WORKER_TOOLS: tools } : {},
+    PI_MESH_WORKER_SESSION_ISOLATION: sessionIsolation,
     ...options.continue === false ? { PI_MESH_WORKER_CONTINUE: "false" } : {},
     ...options.freshStart ? { PI_MESH_WORKER_INITIAL_CONTINUE: "false" } : {}
   };
@@ -13480,6 +13480,7 @@ async function cmdWorker(runtime, options) {
       model: model || "provider default",
       fallbackModels: fallbackModels || "none",
       tools: tools || "Pi defaults",
+      sessionIsolation,
       continue: options.continue !== false,
       freshStart: Boolean(options.freshStart)
     }, "would start worker");
@@ -13944,13 +13945,13 @@ function createProgram(ctx, result) {
   addGlobalOptions(program2);
   const agent = addGlobalOptions(program2.command("agent").description("Run and supervise agents"));
   agent.helpCommand("help", "Show agent help");
-  addGlobalOptions(agent.command("worker").description("Start a long-lived Pi worker")).option("--name <name>", "Agent name").option("--project <project>", "Mesh project").option("--model <id>", "Primary model").option("--fallback-models <ids>", "Comma-separated fallback models").option("--tools <names>", "Comma-separated Pi tool allowlist").option("--no-continue", "Disable every session resume").option("--fresh-start", "Skip only the initial session resume").action(async function workerAction(options) {
+  addGlobalOptions(agent.command("worker").description("Start a long-lived Pi worker")).option("--name <name>", "Agent name").option("--project <project>", "Mesh project").option("--model <id>", "Primary model").option("--fallback-models <ids>", "Comma-separated fallback models").option("--tools <names>", "Comma-separated Pi tool allowlist").option("--session-isolation <mode>", "Pi session isolation: workflow or off (default: off for upgrade compatibility)").option("--no-continue", "Disable every session resume").option("--fresh-start", "Skip only the initial session resume").action(async function workerAction(options) {
     result.code = await cmdWorker(runtimeFrom(ctx, this), options);
   });
-  const session = addGlobalOptions(program2.command("session").description("Inspect and drain Pi worker sessions"));
+  const session = addGlobalOptions(program2.command("session").description("Create manifests and inspect or drain Pi worker sessions"));
   session.helpCommand("help", "Show session help");
   addGlobalOptions(session.command("status").description("Show session claims and recovery envelopes")).action(bind(cmdSessionStatus));
-  addGlobalOptions(session.command("start").description("Start a mix of agents and gates, or a workflow session")).option("--id <id>", "Session id").option("--workflow <id>", "Workflow definition id").option("--mix <names>", "Comma-separated agent and gate names").action(async function sessionStartAction(options) {
+  addGlobalOptions(session.command("start").description("Create an agent/gate or workflow session manifest (does not launch processes)")).option("--id <id>", "Session id").option("--workflow <id>", "Workflow definition id").option("--mix <names>", "Comma-separated agent and gate names").action(async function sessionStartAction(options) {
     result.code = await cmdSessionStart(runtimeFrom(ctx, this), options);
   });
   addGlobalOptions(session.command("stop").description("Request managed hub and worker session shutdown")).option("--wait-ms <ms>", "How long to wait for PID files to clear").action(async function sessionStopAction(options) {

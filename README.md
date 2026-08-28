@@ -32,7 +32,8 @@ You need Node.js 22.19 or newer on the 22.x line, or Node.js 24 or newer, plus P
 git clone https://github.com/kontextmind/pi-extensions.git
 cd pi-extensions
 npm ci
-$env:PI_MESH_AUTH_TOKEN = "replace-with-a-long-random-token"
+$env:PI_MESH_AUTH_TOKEN = "replace-with-an-admin-token"
+$env:PI_MESH_PROJECT_TOKENS = '{"demo":"replace-with-a-demo-project-token"}'
 npm run hub
 ```
 
@@ -48,15 +49,15 @@ pi install git:github.com/kontextmind/pi-extensions
 
 If the repository is private, Git must already be authenticated for an account that has access.
 This Pi package install supplies the extension and Agent Skill to Pi; it does
-not place the `pi-mesh` operator command on `PATH`.
+not place the `kxm` operator command on `PATH`.
 
 ### 3. Start each agent
 
-Set the same server, token, and project in both agent terminals. Give each agent a unique name and a useful purpose.
+Set the same server, `demo` project token, and project in both agent terminals; do not give agents the administrative token. Give each agent a unique name and a useful purpose.
 
 ```powershell
 $env:PI_MESH_SERVER_URL = "http://127.0.0.1:7331"
-$env:PI_MESH_AUTH_TOKEN = "replace-with-a-long-random-token"
+$env:PI_MESH_AUTH_TOKEN = "replace-with-a-demo-project-token"
 $env:PI_MESH_PROJECT = "demo"
 $env:PI_MESH_AGENT_NAME = "planner"
 $env:PI_MESH_AGENT_PURPOSE = "Plans work and coordinates handoffs"
@@ -84,9 +85,9 @@ this flow compatible with private repositories; run `gh auth login` first when
 the current account is not authenticated.
 
 ```powershell
-$version = "0.4.3"
+$version = "<release-version>"
 $asset = "kontextmind-pi-extensions-$version.tgz"
-$releaseDir = Join-Path $PWD ".pi-mesh-release"
+$releaseDir = Join-Path $PWD ".kxm-release"
 New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
 gh release download "v$version" --repo kontextmind/pi-extensions --pattern $asset --dir $releaseDir --clobber
 npm install --global --omit=peer (Join-Path $releaseDir $asset)
@@ -104,6 +105,7 @@ distinct administrative, project, workflow-start, and callback credentials:
 
 ```powershell
 kxm mesh init
+# Create or copy a reviewed definition to .kxm/config/workflows/jira-development.json.
 $env:PI_MESH_AUTH_TOKEN = "replace-with-the-admin-token"
 $env:PI_MESH_PROJECT_TOKENS = '{"product":"replace-with-the-project-token"}'
 $env:JIRA_WEBHOOK_SECRET = "replace-with-the-workflow-start-secret"
@@ -128,7 +130,7 @@ $coordinatorTools = @(
 ) -join ","
 kxm agent worker --name coordinator --project product --model xai/grok-4.6 `
   --fallback-models antigravity/gemini-3.1-pro --tools $coordinatorTools `
-  --fresh-start
+  --session-isolation workflow --fresh-start
 ```
 
 Give review-only peers `read,grep,find,ls`; do not copy the coordinator's shell
@@ -182,6 +184,7 @@ The hub routes messages; it does not merge contexts, choose tasks, or bypass too
 
 | If you want to… | Read |
 |---|---|
+| Install, configure, and use every KXM surface | [KXM Handbook](docs/kxm-handbook.md) |
 | Complete a Pi-to-Pi or Pi-to-Claude setup | [Getting started](docs/getting-started.md) |
 | Configure the hub or an agent | [Configuration reference](docs/configuration.md) |
 | Understand components and message flow | [Architecture](docs/architecture.md) |

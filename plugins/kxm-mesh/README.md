@@ -87,4 +87,4 @@ npm run validate:claude
 
 Commit `dist/mcp-server.js` with the corresponding source change. The bundle includes the official MCP SDK so marketplace users do not need a post-install dependency step.
 
-For complete setup and operating guidance, read the repository's [Getting started](../../docs/getting-started.md) and [Operations](../../docs/operations.md) guides.
+For installation, configuration, every CLI command, Pi session isolation, Claude channel/pull modes, workflows, gates, and recovery, read the wiki-ready [KXM Handbook](../../docs/kxm-handbook.md). The shorter [Getting started](../../docs/getting-started.md) and [Operations](../../docs/operations.md) guides remain task-focused references.

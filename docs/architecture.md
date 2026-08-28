@@ -32,6 +32,34 @@ Envelope parity is a **shape** guarantee, not a **trust** guarantee. An agent-au
 
 Treat `session.json` as a manifest for humans and dashboards. The effective execution primitives are `kxm mesh hub` (one hub process), `kxm agent worker` (one worker process), and `kxm workflow start` (one signed run).
 
+### Pi model-context isolation
+
+A KXM session manifest, a durable workflow run, and a Pi conversation session are different objects:
+
+| Object | Durable location | Purpose |
+|---|---|---|
+| KXM session manifest | `.kxm/assets/sessions/<id>/session.json` | Human-reviewed roster/asset plan; never launches a process |
+| Workflow run | `.kxm/state/mesh.db` | Hub-owned stage machine, evidence, journal, messages, and callbacks |
+| Pi session | `.kxm/state/pi-sessions/<workerKey>/.../*.jsonl` | Model conversation history for one exact worker context binding |
+
+`kxm agent worker --session-isolation workflow` enables scoped isolation. It remains opt-in for the first upgrade-compatible release so existing shared Pi histories are not silently abandoned. Ordinary messages then bind to a stable `default/` Pi session. Hub-authorized workflow work binds to `runs/<runId>/`, producing one durable Pi history for each `{project, agent, workflowRunId}`. The hub owns the canonical `workflowRunId`; a caller-controlled correlation ID cannot create affinity.
+
+```text
+hub message queued
+       │
+       ├─ binding already active ── acknowledge ── one model turn ── reply
+       │
+       └─ different binding ── leave queued ── atomic route request
+                                             └─ current Pi child closes
+                                                └─ supervisor starts one child
+                                                   with target --session-dir
+                                                   └─ queued message replays
+```
+
+The extension requests a change only while there is no active, awaiting, or settling inbound turn. The supervisor applies it only from the child's `close` handler, so two Pi processes never write the same session JSONL. Provider, tool-timeout, supervisor, and machine restarts resume only the active binding when that directory contains history. Route requests are bound to the exact worker identity and supervisor generation; manifests and canonical run IDs are bounded and validated. At most `PI_MESH_WORKER_MAX_RUN_SESSIONS` run histories are retained, with inactive least-recently-used histories evicted. An invalid manifest is renamed with a `.corrupt-<timestamp>` suffix and the worker fails safely back to the stable default scope; unrelated session directories are never selected by inference.
+
+The upgrade-compatible default `--session-isolation off` retains the former single shared Pi history. Enabling `workflow` creates new scoped storage and therefore begins a fresh default history unless the worker already used that scope; authoritative facts must remain in workflow state, assets, and Git.
+
 ## Design goals
 
 - Discover peers by declared purpose.
@@ -108,7 +136,7 @@ queued ── acknowledge ──> delivered ── reply ──> replied
 
 `error` is also terminal. The sender receives an ID immediately. An idempotency key deduplicates an exact retry by the same sender. It does not prevent the recipient from repeating external side effects, so tasks must still be designed to be safely retryable.
 
-Queued and delivered records survive restart. When the same project and agent name reconnect, the hub rotates the agent key and replays both states with the same message ID; live clients suppress duplicate notifications and simultaneous turns for that ID. Delivery remains at-least-once: a crash after external side effects but before reply can execute the work again, so handlers must be idempotent. Terminal records are retained for diagnostics and polling, then removed automatically.
+Queued and delivered records survive restart. When the same project and agent name reconnect, the hub rotates the agent key and replays both states with the same message ID; live clients suppress duplicate notifications and simultaneous turns for that ID. During a Pi session route change, the candidate stays `queued` until the destination child registers and acknowledges it, so a workflow prompt never briefly enters the default model context. Delivery remains at-least-once: a crash after external side effects but before reply can execute the work again, so handlers must be idempotent. Terminal records are retained for diagnostics and polling, then removed automatically.
 
 ## Trust boundaries
 
@@ -127,6 +155,8 @@ consequential repository or human gates authoritative.
 `.kxm/state/mesh.db` is not encrypted by the application and contains messages plus agent credentials — message bodies are stored as sent, not redacted. Protect the `.kxm` runtime directories with operating-system permissions and encrypted storage where required. Structured hub logs omit message bodies, but raw worker agent logs (`pi-agent-*.log`) capture the Pi process's stdout and stderr verbatim and may contain model or tool output, including anything a tool printed. Peer content remains untrusted regardless of authentication.
 
 **Filesystem write boundaries are not enforced.** The worker launcher's `PI_MESH_WORKER_TOOLS` allowlist restricts which Pi tools a worker may call (for example omitting `write`, `edit`, and the platform shell); it does not restrict paths. Any worker that has a write-capable tool can modify any file its OS user can reach, in any repository under its working directory. Workspace roster fields such as `ownership.writeAgent` and `roles` in `agents.json`, and `mode` or `notes` in `host.json`, are **not read by the hub, the CLI, or the launcher** (host mode is inferred from the `PI_MESH_SERVER_URL` hostname). They document intent for humans and prompts. Deployments that need a real boundary should give non-writer workers a tool allowlist without write tools and/or a separate read-only Git worktree, and review changed paths against the plan.
+
+Workflow session isolation is a context-routing and accidental-cross-run safety mechanism, not a security sandbox against a malicious process running as the same OS user. A shell-capable model can reach any state or session file its account can reach and inherits the worker routing environment. The supervisor rejects linked/aliased session directories and validates route identity, generation, source binding, and bounds to contain stale or malformed state, but OS separation is required against a deliberately hostile worker. Keep `.kxm/state` ACL-restricted, withhold shell/write tools from untrusted peers, or run them under separate accounts/containers.
 
 ## Source layout
 

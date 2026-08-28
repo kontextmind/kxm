@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import piMeshExtension from "../plugins/kxm-mesh/src/extension.ts";
+import piMeshExtension, { bindingForMessage, workflowRunIdForMessage } from "../plugins/kxm-mesh/src/extension.ts";
 import { recoveryEnvelopePath, workerStateKey } from "../plugins/kxm-mesh/src/recovery.ts";
 import { createTestMesh, waitFor } from "./helpers.ts";
 
@@ -50,6 +50,25 @@ function fakePi() {
   }
   return { api, tools, commands, sent, emit };
 }
+
+test("workflow session affinity accepts only hub-owned or legacy-internal run bindings", () => {
+  const runId = `run_${"a".repeat(32)}`;
+  assert.equal(workflowRunIdForMessage({ workflowRunId: runId, from: "peer", correlationId: "unrelated" }), runId);
+  assert.equal(workflowRunIdForMessage({
+    workflowContext: { schema: "pi-mesh.workflow-message-context.v1", runId, stageId: "review", requirementKey: "approval", attempt: 1 },
+    from: "peer",
+  }), runId);
+  assert.equal(workflowRunIdForMessage({ from: `workflow:${runId}`, correlationId: runId }), runId);
+  assert.equal(workflowRunIdForMessage({ from: "peer", correlationId: runId }), undefined);
+  const malformed = { workflowRunId: "run_../escape", from: `workflow:${runId}`, correlationId: runId };
+  assert.equal(workflowRunIdForMessage(malformed), undefined);
+  assert.throws(() => bindingForMessage(malformed), /malformed or conflicts/);
+  assert.throws(() => bindingForMessage({
+    workflowRunId: runId,
+    workflowContext: { schema: "pi-mesh.workflow-message-context.v1", runId: `run_${"b".repeat(32)}`, stageId: "review", requirementKey: "approval", attempt: 1 },
+    from: "peer",
+  }), /malformed or conflicts/);
+});
 
 test("Pi extension registers tools, exchanges work, queues inbound turns, and reports status", async (context) => {
   const webhookSecret = "extension-webhook-secret-value";
@@ -301,9 +320,12 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
   const provenanceMessage = await fake.tools.get("mesh_get")!.execute("workflow-provenance-send-get", {
     messageId: provenanceSendId,
   });
-  assert.deepEqual((provenanceMessage.details as {
+  const provenanceMessageDetails = provenanceMessage.details as {
+    workflowRunId?: string;
     workflowContext: Record<string, unknown>;
-  }).workflowContext, {
+  };
+  assert.equal(provenanceMessageDetails.workflowRunId, workflowRunId);
+  assert.deepEqual(provenanceMessageDetails.workflowContext, {
     schema: "pi-mesh.workflow-message-context.v1",
     ...provenanceContext,
   });
@@ -321,9 +343,12 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
   const provenanceFanoutMessage = await fake.tools.get("mesh_get")!.execute("workflow-provenance-fanout-get", {
     messageId: provenanceFanoutResult!.messageId,
   });
-  assert.deepEqual((provenanceFanoutMessage.details as {
+  const provenanceFanoutDetails = provenanceFanoutMessage.details as {
+    workflowRunId?: string;
     workflowContext: Record<string, unknown>;
-  }).workflowContext, {
+  };
+  assert.equal(provenanceFanoutDetails.workflowRunId, workflowRunId);
+  assert.deepEqual(provenanceFanoutDetails.workflowContext, {
     schema: "pi-mesh.workflow-message-context.v1",
     ...provenanceContext,
   });
@@ -439,7 +464,7 @@ test("fresh Pi session receives a durable workflow recovery turn", async (contex
     createdAt: "2026-08-26T00:00:00.000Z",
     runId,
     stageId: "implement",
-    pendingMessageIds: ["msg_previous"],
+    pendingMessageIds: [],
   }));
   const keys = ["PI_MESH_SERVER_URL", "PI_MESH_AUTH_TOKEN", "PI_MESH_PROJECT", "PI_MESH_AGENT_NAME", "PI_MESH_STATE_DIR"] as const;
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
@@ -856,6 +881,155 @@ test("Pi extension drops terminal work, advances its queue, and exposes transien
   await fake.emit("session_shutdown");
   await new Promise((resolve) => setTimeout(resolve, 350));
   assert.equal(fake.sent.length, 9);
+});
+
+test("supervised Pi routes a workflow prompt before acknowledgement and replays it in the run session", async (context) => {
+  const secret = "session-isolation-webhook-secret";
+  const mesh = await createTestMesh(context, {
+    webhookWorkflows: [{
+      id: "session-isolation",
+      source: "generic",
+      project: "test-project",
+      target: "isolation-worker",
+      secret,
+      delivery: "followUp",
+      promptTemplate: "Isolate {{task}}",
+      stages: [{
+        id: "work",
+        label: "Work",
+        instructions: "Complete isolated work",
+        requiredEvidence: ["result"],
+        maxAttempts: 2,
+      }],
+    }],
+  });
+  const stateDir = mkdtempSync(join(tmpdir(), "pi-mesh-extension-session-route-"));
+  context.after(() => rmSync(stateDir, { recursive: true, force: true }));
+  const keys = [
+    "PI_MESH_SERVER_URL",
+    "PI_MESH_AUTH_TOKEN",
+    "PI_MESH_PROJECT",
+    "PI_MESH_AGENT_NAME",
+    "PI_MESH_STATE_DIR",
+    "PI_MESH_WORKER_IDENTITY_KEY",
+    "PI_MESH_WORKER_GENERATION",
+    "PI_MESH_WORKER_CHILD_INCARCATION",
+    "PI_MESH_WORKER_SESSION_ISOLATION",
+    "PI_MESH_WORKER_SESSION_SCOPE",
+  ] as const;
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  const identityKey = workerStateKey("test-project", "isolation-worker");
+  Object.assign(process.env, {
+    PI_MESH_SERVER_URL: mesh.address.url,
+    PI_MESH_AUTH_TOKEN: mesh.token,
+    PI_MESH_PROJECT: "test-project",
+    PI_MESH_AGENT_NAME: "isolation-worker",
+    PI_MESH_STATE_DIR: stateDir,
+    PI_MESH_WORKER_IDENTITY_KEY: identityKey,
+    PI_MESH_WORKER_GENERATION: "generation-one",
+    PI_MESH_WORKER_CHILD_INCARCATION: "1",
+    PI_MESH_WORKER_SESSION_ISOLATION: "workflow",
+    PI_MESH_WORKER_SESSION_SCOPE: "default",
+  });
+  context.after(() => {
+    for (const key of keys) {
+      const value = previous[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  const first = fakePi();
+  piMeshExtension(first.api);
+  let shutdowns = 0;
+  const ui = { setStatus() {}, notify() {} };
+  await first.emit("session_start", {}, {
+    cwd: process.cwd(),
+    model: { provider: "test", id: "model" },
+    sessionManager: { getSessionId: () => "11111111-1111-4111-8111-111111111111" },
+    ui,
+    shutdown() { shutdowns += 1; },
+  });
+  const body = JSON.stringify({ task: "workflow context" });
+  const response = await fetch(`${mesh.address.url}/v1/webhooks/session-isolation`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-mesh-delivery-id": "session-isolation-delivery",
+      "x-hub-signature": `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`,
+    },
+    body,
+  });
+  assert.equal(response.status, 202);
+  const started = await response.json() as { run: { id: string; messageId: string } };
+  const requestPath = join(stateDir, `worker-session-request-${identityKey}.json`);
+  await waitFor(() => existsSync(requestPath) && shutdowns === 1);
+  assert.equal(first.sent.length, 0, "the source session must never activate workflow work");
+  assert.equal(mesh.hub.state.messages.get(started.run.messageId)?.status, "queued");
+  const request = JSON.parse(readFileSync(requestPath, "utf8"));
+  assert.deepEqual(request.from, { kind: "default" });
+  assert.deepEqual(request.to, { kind: "workflow", runId: started.run.id });
+  assert.equal(request.messageId, started.run.messageId);
+  assert.equal("content" in request, false);
+  await first.emit("session_shutdown");
+
+  rmSync(requestPath, { force: true });
+  process.env.PI_MESH_WORKER_SESSION_SCOPE = `workflow:${started.run.id}`;
+  const replacement = fakePi();
+  piMeshExtension(replacement.api);
+  await replacement.emit("session_start", {}, {
+    cwd: process.cwd(),
+    model: { provider: "test", id: "model" },
+    sessionManager: { getSessionId: () => "22222222-2222-4222-8222-222222222222" },
+    ui,
+    shutdown() { shutdowns += 1; },
+  });
+  await waitFor(() => replacement.sent.length === 1);
+  assert.equal(mesh.hub.state.messages.get(started.run.messageId)?.status, "delivered");
+  assert.match(String(replacement.sent[0]!.message.content), /Isolate workflow context/);
+
+  const generalSender = mesh.makeClient("general-sender", { project: "test-project" });
+  await generalSender.start(() => undefined);
+  const general = await generalSender.send({ target: "isolation-worker", content: "ordinary non-workflow work" });
+  const contextPath = join(stateDir, `worker-context-${workerStateKey("test-project", "isolation-worker")}.json`);
+  await waitFor(() => existsSync(contextPath) && readFileSync(contextPath, "utf8").includes(general.id));
+  assert.equal(existsSync(requestPath), false, "a different binding must not route during an awaiting/active turn");
+  assert.equal(mesh.hub.state.messages.get(general.id)?.status, "queued");
+
+  await replacement.emit("message_start", { message: replacement.sent[0]!.message });
+  await replacement.emit("agent_end", { messages: [{ role: "assistant", content: "isolated result" }] });
+  await replacement.emit("agent_settled");
+  const terminal = mesh.hub.state.messages.get(started.run.messageId);
+  assert.equal(terminal?.status, "replied");
+  assert.equal(terminal?.reply?.content, "isolated result");
+  await waitFor(() => existsSync(requestPath) && shutdowns === 2);
+  assert.equal(replacement.sent.length, 1, "ordinary work must not activate inside the workflow session");
+  assert.equal(mesh.hub.state.messages.get(general.id)?.status, "queued");
+  const returnRequest = JSON.parse(readFileSync(requestPath, "utf8"));
+  assert.deepEqual(returnRequest.from, { kind: "workflow", runId: started.run.id });
+  assert.deepEqual(returnRequest.to, { kind: "default" });
+  await replacement.emit("session_shutdown");
+
+  rmSync(requestPath, { force: true });
+  process.env.PI_MESH_WORKER_SESSION_SCOPE = "default";
+  const defaultReplacement = fakePi();
+  piMeshExtension(defaultReplacement.api);
+  await defaultReplacement.emit("session_start", {}, {
+    cwd: process.cwd(),
+    model: { provider: "test", id: "model" },
+    sessionManager: { getSessionId: () => "33333333-3333-4333-8333-333333333333" },
+    ui,
+    shutdown() { shutdowns += 1; },
+  });
+  await waitFor(() => defaultReplacement.sent.length === 1);
+  assert.match(String(defaultReplacement.sent[0]!.message.content), /ordinary non-workflow work/);
+  assert.equal(mesh.hub.state.messages.get(general.id)?.status, "delivered");
+  await defaultReplacement.emit("message_start", { message: defaultReplacement.sent[0]!.message });
+  await defaultReplacement.emit("agent_end", { messages: [{ role: "assistant", content: "default result" }] });
+  await defaultReplacement.emit("agent_settled");
+  assert.equal(mesh.hub.state.messages.get(general.id)?.reply?.content, "default result");
+  await defaultReplacement.emit("session_shutdown");
+  await generalSender.stop();
 });
 
 test("Pi extension defers post-ack activation during shutdown and replays the message after restart", async (context) => {

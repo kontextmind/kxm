@@ -4,6 +4,7 @@ This documentation is organized by task. Start with the guide that matches what 
 
 | Guide | Audience | Purpose |
 |---|---|---|
+| [KXM Handbook](kxm-handbook.md) | Operators, Pi users, and Claude Code users | Wiki-ready installation, configuration, and complete feature guide |
 | [Getting started](getting-started.md) | Pi and Claude Code users | Complete the first successful multi-agent exchange |
 | [Configuration](configuration.md) | Users and operators | Understand every supported setting and default |
 | [Architecture](architecture.md) | Maintainers and integrators | Learn the component boundaries and message lifecycle |

@@ -359,6 +359,7 @@ export async function runRealSmoke(options = {}) {
         PI_MESH_PI_COMMAND: shim,
         PI_MESH_WORKER_DRAIN_MS: "10000",
         PI_MESH_WORKER_MAX_RESTARTS: "2",
+        PI_MESH_WORKER_SESSION_ISOLATION: "workflow",
       }, name);
       processes.workers.set(name, record);
       return record;

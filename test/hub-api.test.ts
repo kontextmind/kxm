@@ -213,6 +213,12 @@ test("message fields, delivery modes, hop limits, TTLs, and target rules are val
     assert.ok(Date.parse(message.expiresAt) > Date.parse(message.createdAt));
   }
 
+  const spoofedAffinity = await sender.send({
+    target: receiver.agent!.id,
+    content: "caller affinity must be ignored",
+    workflowRunId: `run_${"a".repeat(32)}`,
+  } as Parameters<typeof sender.send>[0]);
+  assert.equal(spoofedAffinity.workflowRunId, undefined);
   await assert.rejects(() => sender.send({ target: "sender", content: "self" }), /cannot send/);
   await assert.rejects(() => sender.send({ target: "missing", content: "none" }), /not found/);
   await assert.rejects(() => sender.send({ target: "receiver", content: "hop", hops: 5, maxHops: 5 }), /hop limit/);
@@ -508,6 +514,39 @@ test("admin ops SSE publishes project-scoped metadata without message bodies", a
   assert.doesNotMatch(JSON.stringify(terminalSnapshot), /BODY_MUST_NEVER|REPLY_BODY_MUST_NOT/);
 });
 
+test("legacy TUI fallback receives presence-only SSE and never queued message bodies", async (context) => {
+  const mesh = await createTestMesh(context);
+  const sender = mesh.makeClient("presence-sender");
+  await sender.start(() => undefined);
+  const observerRegistration = await registerRaw(mesh.address.url, mesh.token, {
+    name: "presence-observer",
+    purpose: "metadata observer",
+    project: "test-project",
+    model: "kxm-tui",
+  });
+  assert.equal(observerRegistration.response.status, 201);
+  const observer = observerRegistration.identity!;
+  const eventsResponse = await fetch(
+    `${mesh.address.url}/v1/events?agentId=${encodeURIComponent(observer.agent.id)}&presenceOnly=true`,
+    { headers: identityHeaders(observer, mesh.token) },
+  );
+  assert.equal(eventsResponse.status, 200);
+  assert.equal(eventsResponse.headers.get("x-mesh-events-mode"), "presence");
+  const events = sseData(eventsResponse);
+  context.after(() => events.close());
+  await events.next(); // ready
+
+  const bodyMarker = "PRESENCE_STREAM_MUST_NOT_LOAD_THIS_BODY";
+  const queued = await sender.send({ target: observer.agent.id, content: bodyMarker });
+  const newcomer = mesh.makeClient("presence-newcomer");
+  await newcomer.start(() => undefined);
+  const presence = await events.next();
+  assert.equal(presence.type, "presence");
+  assert.equal((presence.agent as { name?: string }).name, "presence-newcomer");
+  assert.doesNotMatch(JSON.stringify(presence), new RegExp(bodyMarker));
+  assert.equal(mesh.hub.state.messages.get(queued.id)?.status, "queued");
+});
+
 test("operations metadata requires a configured admin credential even on loopback", async (context) => {
   const mesh = await createTestMesh(context, { authToken: "" });
   const response = await fetch(`${mesh.address.url}/v1/ops/snapshot?project=test-project`);
@@ -595,6 +634,7 @@ test("signed Jira webhooks start durable workflows, deduplicate retries, journal
   assert.equal(accepted.status, 202);
   const acceptedBody = await responseJson(accepted) as unknown as { run: { id: string; messageId: string } };
   const runId = acceptedBody.run.id;
+  assert.equal(mesh.hub.state.messages.get(acceptedBody.run.messageId)?.workflowRunId, runId);
   await waitFor(() => inbound?.includes("PROD-42") ?? false);
   assert.match(inbound!, /mesh_workflow_record/);
   assert.equal((await sendWebhook("jira-delivery-42")).status, 200);
@@ -884,6 +924,7 @@ test("signed external signals resume, retry, deduplicate, and complete a settled
   assert.equal("message" in resumedPayload, false);
   assert.equal("receipt" in resumedPayload, false);
   await waitFor(() => messageIds.length === 2);
+  assert.equal(mesh.hub.state.messages.get(messageIds[1]!)?.workflowRunId, runId);
   assert.match(messages[1]!, /CI passed/);
   let current = await coordinator.getWorkflow(runId);
   assert.equal(current.run.status, "running");

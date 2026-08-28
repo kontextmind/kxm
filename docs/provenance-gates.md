@@ -137,9 +137,9 @@ before starting the workflow:
 
 ```powershell
 $env:PI_MESH_AUTH_TOKEN = "replace-with-the-project-token"
-kxm agent worker --name coordinator --project provenance-demo
-kxm agent worker --name reviewer-claude --project provenance-demo --model anthropic/claude-opus-4-6
-kxm agent worker --name reviewer-grok --project provenance-demo --model xai/grok-4.6
+kxm agent worker --name coordinator --project provenance-demo --session-isolation workflow
+kxm agent worker --name reviewer-claude --project provenance-demo --model anthropic/claude-opus-4-6 --session-isolation workflow
+kxm agent worker --name reviewer-grok --project provenance-demo --model xai/grok-4.6 --session-isolation workflow
 ```
 
 In an operator terminal, supply the workflow-start secret and create a run:
