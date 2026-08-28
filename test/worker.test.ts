@@ -514,7 +514,7 @@ test("worker refuses stale claims and never deletes a replacement generation dur
     await exited;
     assert.equal(readFileSync(ownedPath, "utf8"), `${JSON.stringify(replacement)}\n`);
   } finally {
-    rmSync(workdir, { recursive: true, force: true });
+    rmSync(workdir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });
 
