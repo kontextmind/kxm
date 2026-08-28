@@ -21,7 +21,7 @@ import {
   type Terminal,
   type TUI,
 } from "@earendil-works/pi-tui";
-import type { AgentRecord, HubEvent, MessageRecord } from "./protocol.ts";
+import type { AgentRecord, MessageRecord } from "./protocol.ts";
 import type { WorkflowRun } from "./workflow.ts";
 
 export interface MeshTuiPidClaim {
@@ -710,7 +710,7 @@ export async function runMeshTui(input: {
           if (!useOpsStream && !identity) throw new Error("legacy SSE requires an observer identity");
           const eventUrl = useOpsStream
             ? `${base}/v1/ops/events?project=${encodeURIComponent(input.project)}`
-            : `${base}/v1/events?agentId=${encodeURIComponent(identity!.id)}`;
+            : `${base}/v1/events?agentId=${encodeURIComponent(identity!.id)}&presenceOnly=true`;
           events = await input.fetchImpl(eventUrl, {
             headers: { ...headers(useOpsStream ? undefined : identity!), accept: "text/event-stream" },
             signal: abort.signal,
@@ -739,6 +739,14 @@ export async function runMeshTui(input: {
           paint(snapshot);
           continue;
         }
+        if (!useOpsStream && events.ok && events.headers.get("x-mesh-events-mode") !== "presence") {
+          await events.body?.cancel();
+          snapshot = await snapshotFromHub("snapshot", {
+            error: "hub does not support metadata-only presence SSE; live fallback disabled",
+          });
+          paint(snapshot);
+          break;
+        }
         if (!events.ok || !events.body) {
           snapshot = await snapshotFromHub("snapshot", { error: `sse_http_${events.status}` });
           paint(snapshot);
@@ -765,36 +773,25 @@ export async function runMeshTui(input: {
           pending = parts.pop() ?? "";
           for (const part of parts) {
             if (part.startsWith(":")) continue;
-            const dataLine = part.split("\n").find((line) => line.startsWith("data:"));
+            const lines = part.split("\n");
+            const eventLine = lines.find((line) => line.startsWith("event:"));
+            if (!useOpsStream && eventLine?.slice(6).trim() !== "presence") continue;
+            const dataLine = lines.find((line) => line.startsWith("data:"));
             if (!dataLine) continue;
-            let parsed: HubEvent | { agent?: AgentRecord } | { type: "ops"; project: string; topic: string; at: string };
+            let parsed: { type?: "ops" | "presence"; agent?: AgentRecord; project?: string; topic?: string; at?: string };
             try {
-              parsed = JSON.parse(dataLine.slice(5).trim()) as HubEvent | { agent?: AgentRecord } | { type: "ops"; project: string; topic: string; at: string };
+              parsed = JSON.parse(dataLine.slice(5).trim()) as typeof parsed;
             } catch {
               continue;
             }
             if ("type" in parsed && parsed.type === "ops") {
               snapshot = await snapshotFromHub("sse");
               paint(snapshot);
-            } else if ("type" in parsed && parsed.type === "presence") {
+            } else if ("type" in parsed && parsed.type === "presence" && parsed.agent) {
               applyPresence(parsed.agent);
               const local = loadLocalMeshSnapshot(input.dataPath, input.stateDir);
               snapshot = {
                 ...snapshot,
-                openMessages: local.openMessages,
-                openMessageTotal: local.openMessageTotal,
-                runs: local.runs,
-                runTotal: local.runTotal,
-                pids: local.pids,
-              };
-              paint(snapshot);
-            } else if ("type" in parsed && (parsed.type === "message" || parsed.type === "reply" || parsed.type === "cancelled" || parsed.type === "expired")) {
-              const local = loadLocalMeshSnapshot(input.dataPath, input.stateDir);
-              const { error: _staleError, ...healthySnapshot } = snapshot;
-              snapshot = {
-                ...healthySnapshot,
-                transport: "sse",
-                fetchedAt: (input.now?.() ?? new Date()).toISOString(),
                 openMessages: local.openMessages,
                 openMessageTotal: local.openMessageTotal,
                 runs: local.runs,

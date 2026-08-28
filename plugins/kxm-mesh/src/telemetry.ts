@@ -23,10 +23,9 @@ export function inferImprovementTarget(input: {
 }): ImprovementTarget {
   const explicit = input.env?.KXM_IMPROVE_TARGET?.trim();
   if (explicit === "cli" || explicit === "project") return explicit;
-  const project = (input.project ?? input.env?.PI_MESH_PROJECT ?? "").toLowerCase();
-  const workflowId = (input.workflowId ?? "").toLowerCase();
-  if (project === "payk12" || workflowId.startsWith("factory-")) return "project";
-  return "cli";
+  const project = (input.project ?? input.env?.PI_MESH_PROJECT ?? "").trim();
+  const workflowId = (input.workflowId ?? "").trim();
+  return project || workflowId ? "project" : "cli";
 }
 
 export function appendTelemetry(path: string, event: TelemetryEvent): void {

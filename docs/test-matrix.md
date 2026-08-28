@@ -28,6 +28,9 @@ npm run validate
 | Client lifecycle, aborts, timeouts, invalid responses, reconnection | `test/client.test.ts` |
 | Pi tools, inbound turns, automatic replies, status command | `test/extension.test.ts` |
 | Claude MCP catalog, outbound and inbound tools, channel delivery | `test/mcp.test.ts` |
+| Responsive metadata-only TUI, authenticated ops mode, presence-only fallback, observer filtering, key controls, and local body-free projection | `test/tui.test.ts`, `test/hub-api.test.ts` |
+| Session manifest creation, fail-closed rosters, shared worker/result envelopes, and hub-owned envelope fields | `test/session.test.ts`, `test/cli.test.ts`, `test/envelope.test.ts`, `test/envelope-contract.test.ts` |
+| Generic CLI/project telemetry classification, JSONL recovery, and proposed `kxm improve` output | `test/telemetry.test.ts`, `test/cli.test.ts` |
 | Signed Jira webhook verification, filtering, dispatch, and retry deduplication | `test/hub-api.test.ts` |
 | Ordered workflow checkpoints, normalized keyed evidence gates, unrelated-volume rejection, and warning/failure retry | `test/hub-api.test.ts`, `test/workflow.test.ts` |
 | Run-start eligible-producer resolution, immutable workflow context, per-requirement message-reference verification, unique-producer quorum, and replay/cross-context rejection | `test/workflow-provenance.test.ts`, `test/workflow.test.ts`, `test/hub-api.test.ts`, `test/client.test.ts`, `test/store.test.ts` |
@@ -40,6 +43,7 @@ npm run validate
 | Required generated runtimes are present, tracked, and unchanged after build | `scripts/check-generated.mjs`, `test/generated-artifacts.test.ts` |
 | Retrospective export snapshots, metadata-only provenance audit, body allowlisting, degradation records, and v1 compatibility | `test/retrospective.test.ts` |
 | Interrupted-worker continue fallback, exact run-bound recovery, unbound telemetry isolation, and one-turn durable replay | `test/worker.test.ts`, `test/recovery.test.ts`, `test/extension.test.ts` |
+| Hub-owned workflow affinity; integrated hub→extension→supervisor→replacement replay; pre-ack default/run/cross-run routing; one-child session-dir swapping; stable ordinary context; LRU retention; and corrupt-state/link containment | `test/hub-api.test.ts`, `test/extension.test.ts`, `test/worker.test.ts`, `test/cli.test.ts` |
 | Final provider-error retention, built-in retry ordering, metadata-only journaling, bounded fallback exhaustion, oversized-frame classification, and session-preserving restart | `test/extension.test.ts`, `test/worker.test.ts`, `test/diagnostics.test.ts`, `test/cli.test.ts` |
 | Tool capability allowlist, watchdog grace, bounded hung-tool recovery, oversized completed-tool cancellation, and race-safe hub/worker ownership claims | `test/worker.test.ts`, `test/cli.test.ts`, `test/server.test.ts` |
 | Exact worker extension/skill sets, discovery isolation, path preflight, multi-path ordering, and Windows argument safety | `test/worker.test.ts` |
@@ -49,7 +53,7 @@ npm run validate
 | Pi and Claude workflow/journal tools, workflow-context sends, and peer-reference checkpoints/waits | `test/extension.test.ts`, `test/mcp.test.ts` |
 | Package and marketplace version consistency | `scripts/check-versions.mjs` |
 
-The CI minimums are 95% lines, 80% branches, and 90% functions across the measured core sources. The generated MCP runtime is exercised as a child process, while the packed CLI and hub are installed in a clean consumer and exercised from `node_modules`.
+The CI minimums are 95% lines, 80% branches, and 90% functions across the measured transport/workflow core sources explicitly listed in `package.json`. TUI rendering, session/roster helpers, envelope construction, telemetry, and proposed-report formatting have executable feature tests but are intentionally outside that aggregate percentage; their generated or packed entry points remain exercised by integration tests. The generated MCP runtime is exercised as a child process, while the packed CLI and hub are installed in a clean consumer and exercised from `node_modules`.
 
 ## Executable examples and use cases
 
@@ -81,7 +85,7 @@ Automation cannot prove that a third-party harness UI renders perfectly. Before 
 Create the versioned tarball with `npm pack`, attach it to the matching GitHub
 release, and verify the authenticated `gh release download` plus
 `npm install --global --omit=peer <local-tarball>` path before publishing the
-operator installation instructions. For version 0.4.3, the required asset is
-`kontextmind-pi-extensions-0.4.3.tgz`.
+operator installation instructions. For version `<release-version>`, the required asset is
+`kontextmind-pi-extensions-<release-version>.tgz`.
 
 When adding a feature, add executable coverage and update this matrix in the same change. If a behavior can only be verified manually, state why and add it to the release checklist instead of implying automated coverage.

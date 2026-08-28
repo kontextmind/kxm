@@ -57,6 +57,10 @@ export interface MessageRecord {
   correlationId?: string;
   replyTo?: string;
   idempotencyKey?: string;
+  /** Hub-owned durable workflow affinity. Callers cannot establish this field
+   * directly; the hub derives it from an authorized workflow context or an
+   * internally-created workflow prompt. */
+  workflowRunId?: string;
   workflowContext?: WorkflowMessageContext;
   createdAt: string;
   expiresAt: string;

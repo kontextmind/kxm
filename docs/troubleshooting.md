@@ -122,6 +122,28 @@ Accept the trust prompt and check the channel startup notice. Organization polic
 
 Inspect the structured `worker_process_error` and `worker_exited` events. Confirm Pi is installed on the service account's `PATH`, the working directory exists, model credentials are available, the package is enabled, and non-interactive project trust was configured intentionally. Set `PI_MESH_PI_COMMAND` to an explicit executable path when service-manager environments have a reduced `PATH`.
 
+### A workflow message stays queued while the worker restarts once
+
+This is normally the safe session-routing handshake. With `--session-isolation workflow`, a message for a different run is deliberately not acknowledged in the current Pi context. Look for `worker_session_routed`; the old child must close before one replacement starts with the run-specific `--session-dir`, after which the same message ID replays and advances to `delivered`.
+
+If it repeats, inspect `worker_session_request_rejected` and verify:
+
+- the worker was started through `kxm agent worker` with a valid state directory;
+- `PI_MESH_WORKER_SESSION_SCOPE` was not manually set (the supervisor owns it);
+- the state directory is writable by only the service account;
+- the hub and worker are from the same release; and
+- the message has a canonical hub-owned `workflowRunId`, not only a correlation ID.
+
+Do not manually acknowledge the message, edit the route request, copy a run JSONL into `default`, or launch a second worker with the same identity. Those actions defeat context isolation.
+
+### `worker_session_state_recovered` appears
+
+The binding manifest did not match its bounded schema or exact worker owner. The supervisor renamed it to `worker-session-binding-<workerKey>.json.corrupt-<timestamp>` and started the stable default binding rather than guessing a workflow. Read `mesh_workflow_get` for unfinished stages and inspect queued/delivered message IDs. Preserve the quarantined manifest for diagnosis, then re-drive unfinished work from the hub. Repeated corruption suggests disk, antivirus, concurrent-service, or permission problems; confirm only one supervisor owns the exact project/agent PID claim.
+
+### A workflow seems to remember another run
+
+Confirm the worker log says `"sessionIsolation":"workflow"` and the Pi child has a `runs/<exact-runId>` session directory. Isolation is opt-in for upgrade compatibility, and both the CLI and raw supervisor default to `off`. Restart cleanly with `kxm agent worker ... --session-isolation workflow`. The first isolated start intentionally uses fresh scoped storage because KXM cannot safely infer which session in the former shared Pi directory belonged to this worker. Existing content created in a formerly shared Pi session cannot be automatically separated retroactively; treat authoritative workflow journal/assets as the recovery source and start a fresh run-specific history.
+
 ### Fanout returns pending before a model replies
 
 `mesh_fanout.timeoutMs` is a local wait, not the message lifetime. A pending result includes the durable `messageId`, current message status, expiry, and whether the wait timed out or was aborted. Use `mesh_get` to inspect that ID, or repeat the exact fanout with the same correlation ID, idempotency prefix, targets, and content. Do not send a replacement with a new prefix while the original remains pending. Normally omit `ttlMs` for model work so time spent queued behind another request does not prematurely expire it. A pending peer has not contributed review or planning evidence and must not be counted toward a workflow checkpoint.
@@ -164,7 +186,7 @@ must target the current stage and attempt and does not advance the workflow;
 the coordinator must still checkpoint with enough verified references. A
 callback, project token, or peer cannot approve degradation.
 
-### `workflow degrade` returns HTTP 503 `admin_auth_not_configured`
+### `kxm gate degrade` returns HTTP 503 `admin_auth_not_configured`
 
 The hub started without a non-empty `PI_MESH_AUTH_TOKEN`, so no administrative
 credential exists for the degradation route. Project tokens deliberately cannot

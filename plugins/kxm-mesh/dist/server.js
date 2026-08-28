@@ -1516,12 +1516,18 @@ function createMeshHub(options = {}) {
   function publish(agentId, event) {
     const clients = streams.get(agentId);
     if (!clients || clients.size === 0) return false;
-    const frame = `event: ${event.type}
+    let frame;
+    let published = false;
+    for (const client of clients) {
+      if (client.presenceOnly && event.type !== "presence") continue;
+      frame ??= `event: ${event.type}
 data: ${JSON.stringify(event)}
 
 `;
-    for (const client of clients) client.response.write(frame);
-    return true;
+      client.response.write(frame);
+      published = true;
+    }
+    return published;
   }
   function publishOps(project, topic) {
     const frame = `event: ops
@@ -1748,6 +1754,7 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
       hops: 0,
       maxHops: DEFAULT_MAX_HOPS,
       correlationId: run.id,
+      workflowRunId: run.id,
       idempotencyKey: `${definition.id}:signal:${deliveryId}`,
       createdAt,
       expiresAt: new Date(Date.parse(createdAt) + ttlMs).toISOString(),
@@ -1812,6 +1819,7 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
         hops: 0,
         maxHops: DEFAULT_MAX_HOPS,
         correlationId: transition.id,
+        workflowRunId: transition.id,
         idempotencyKey: `${transition.definitionId}:timeout:${waiting.signalKey}:${waiting.expiresAt}`,
         createdAt: timestamp,
         expiresAt: new Date(Date.parse(timestamp) + ttlMs).toISOString(),
@@ -2160,6 +2168,7 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
           hops: 0,
           maxHops: DEFAULT_MAX_HOPS,
           correlationId: runId,
+          workflowRunId: runId,
           idempotencyKey: `${definition.id}:${deliveryId}`,
           createdAt,
           expiresAt: new Date(Date.parse(createdAt) + ttlMs).toISOString(),
@@ -2651,12 +2660,17 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
         const agentId = requireString(url.searchParams.get("agentId"), "agentId", { max: 80 });
         const current = requireAgent(request, agentId);
         requireProjectAuth(request, current.project);
+        const presenceOnly = url.searchParams.get("presenceOnly") === "true";
+        if (presenceOnly && current.model !== "kxm-tui") {
+          throw new ProtocolError(403, "presence-only streams are reserved for metadata observers", "presence_stream_forbidden");
+        }
         response.writeHead(200, {
           "content-type": "text/event-stream",
           "cache-control": "no-cache, no-transform",
           connection: "keep-alive",
           "x-accel-buffering": "no",
-          "x-content-type-options": "nosniff"
+          "x-content-type-options": "nosniff",
+          ...presenceOnly ? { "x-mesh-events-mode": "presence" } : {}
         });
         response.write(`event: ready
 data: ${JSON.stringify({ agent: publicAgent(current) })}
@@ -2664,13 +2678,14 @@ data: ${JSON.stringify({ agent: publicAgent(current) })}
 `);
         const client = {
           response,
-          heartbeat: setInterval(() => response.write(": heartbeat\n\n"), 15e3)
+          heartbeat: setInterval(() => response.write(": heartbeat\n\n"), 15e3),
+          ...presenceOnly ? { presenceOnly: true } : {}
         };
         client.heartbeat.unref();
         const clients = streams.get(agentId) ?? /* @__PURE__ */ new Set();
         clients.add(client);
         streams.set(agentId, clients);
-        flushPending(agentId);
+        if (!presenceOnly) flushPending(agentId);
         request.on("close", () => {
           clearInterval(client.heartbeat);
           clients.delete(client);
@@ -2752,7 +2767,7 @@ data: ${JSON.stringify({ agent: publicAgent(current) })}
           ...correlationId ? { correlationId } : {},
           ...replyTo ? { replyTo } : {},
           ...idempotencyKey ? { idempotencyKey } : {},
-          ...workflowContext ? { workflowContext } : {},
+          ...workflowContext ? { workflowRunId: workflowContext.runId, workflowContext } : {},
           createdAt,
           expiresAt: new Date(Date.parse(createdAt) + ttlMs).toISOString(),
           status: "queued"

@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { createHmac, randomUUID } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { basename, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { Command, CommanderError } from "commander";
@@ -358,9 +358,9 @@ async function cmdInit(runtime: Runtime): Promise<number> {
       created.push(directory);
     }
   }
-  const templateConfig = join(repoRoot, ".kxm", "config");
-  if (!runtime.dryRun && existsSync(templateConfig)) cpSync(templateConfig, runtime.dirs.config, { recursive: true, force: false, errorOnExist: false });
-  print(runtime.io, runtime.json, { ok: true, command: "init", created, templates: existsSync(templateConfig) }, `initialized ${runtime.dirs.workspace}`);
+  // Workspace configuration is project-owned. Never seed a consumer with the
+  // package repository's provider-specific dogfood roster or workflows.
+  print(runtime.io, runtime.json, { ok: true, command: "init", created, templates: false }, `initialized ${runtime.dirs.workspace}`);
   return 0;
 }
 
@@ -464,7 +464,7 @@ async function cmdMeshTui(runtime: Runtime): Promise<number> {
     runtime.io.stderr("mesh tui does not support --json; use mesh status\n");
     return 2;
   }
-  const project = runtime.env.PI_MESH_PROJECT?.trim() || "payk12";
+  const project = runtime.env.PI_MESH_PROJECT?.trim() || basename(runtime.dirs.workdir) || "project";
   const authToken = runtime.env.PI_MESH_AUTH_TOKEN?.trim();
   return await runMeshTui({
     serverUrl: runtime.serverUrl,
@@ -494,6 +494,7 @@ async function cmdWorker(runtime: Runtime, options: {
   model?: string;
   fallbackModels?: string;
   tools?: string;
+  sessionIsolation?: string;
   continue?: boolean;
   freshStart?: boolean;
 }): Promise<number> {
@@ -502,6 +503,11 @@ async function cmdWorker(runtime: Runtime, options: {
   const model = options.model?.trim() || runtime.env.PI_MESH_WORKER_MODEL?.trim();
   const fallbackModels = options.fallbackModels?.trim() || runtime.env.PI_MESH_WORKER_FALLBACK_MODELS?.trim();
   const tools = options.tools?.trim() || runtime.env.PI_MESH_WORKER_TOOLS?.trim();
+  const sessionIsolation = options.sessionIsolation?.trim() || runtime.env.PI_MESH_WORKER_SESSION_ISOLATION?.trim() || "off";
+  if (sessionIsolation !== "workflow" && sessionIsolation !== "off") {
+    runtime.io.stderr("worker --session-isolation must be workflow or off\n");
+    return 2;
+  }
   const extraEnv = {
     ...workspaceEnv(runtime),
     ...(name ? { PI_MESH_AGENT_NAME: name } : {}),
@@ -509,6 +515,7 @@ async function cmdWorker(runtime: Runtime, options: {
     ...(model ? { PI_MESH_WORKER_MODEL: model } : {}),
     ...(fallbackModels ? { PI_MESH_WORKER_FALLBACK_MODELS: fallbackModels } : {}),
     ...(tools ? { PI_MESH_WORKER_TOOLS: tools } : {}),
+    PI_MESH_WORKER_SESSION_ISOLATION: sessionIsolation,
     ...(options.continue === false ? { PI_MESH_WORKER_CONTINUE: "false" } : {}),
     ...(options.freshStart ? { PI_MESH_WORKER_INITIAL_CONTINUE: "false" } : {}),
   };
@@ -527,6 +534,7 @@ async function cmdWorker(runtime: Runtime, options: {
       model: model || "provider default",
       fallbackModels: fallbackModels || "none",
       tools: tools || "Pi defaults",
+      sessionIsolation,
       continue: options.continue !== false,
       freshStart: Boolean(options.freshStart),
     }, "would start worker");
@@ -1028,6 +1036,7 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .option("--model <id>", "Primary model")
     .option("--fallback-models <ids>", "Comma-separated fallback models")
     .option("--tools <names>", "Comma-separated Pi tool allowlist")
+    .option("--session-isolation <mode>", "Pi session isolation: workflow or off (default: off for upgrade compatibility)")
     .option("--no-continue", "Disable every session resume")
     .option("--fresh-start", "Skip only the initial session resume")
     .action(async function workerAction(this: Command, options: {
@@ -1036,16 +1045,17 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
       model?: string;
       fallbackModels?: string;
       tools?: string;
+      sessionIsolation?: string;
       continue?: boolean;
       freshStart?: boolean;
     }) {
       result.code = await cmdWorker(runtimeFrom(ctx, this), options);
     });
 
-  const session = addGlobalOptions(program.command("session").description("Inspect and drain Pi worker sessions"));
+  const session = addGlobalOptions(program.command("session").description("Create manifests and inspect or drain Pi worker sessions"));
   session.helpCommand("help", "Show session help");
   addGlobalOptions(session.command("status").description("Show session claims and recovery envelopes")).action(bind(cmdSessionStatus));
-  addGlobalOptions(session.command("start").description("Start a mix of agents and gates, or a workflow session"))
+  addGlobalOptions(session.command("start").description("Create an agent/gate or workflow session manifest (does not launch processes)"))
     .option("--id <id>", "Session id")
     .option("--workflow <id>", "Workflow definition id")
     .option("--mix <names>", "Comma-separated agent and gate names")

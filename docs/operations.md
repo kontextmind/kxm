@@ -27,6 +27,18 @@ For unattended service, use a supervisor that sets a stable working directory, i
 
 Run each long-lived coordinator with `kxm agent worker --name <stable-name> --project <project> [--model <provider/model>] [--fallback-models <provider/model,...>] [--tools <name,...>]` under a separate service-manager unit. Use distinct worktrees for concurrent writers, explicit CPU and memory limits, and restart throttling outside the built-in bounded backoff. Enforce role ownership with the Pi tool allowlist: omit `bash`, `edit`, and `write` from read-only reviewers, even if their prompt also says not to edit. The worker launches Pi RPC mode and retains the most recent session unless configured otherwise. Use `--fresh-start` for a clean first session that may still resume after a later provider failure; reserve `--no-continue` for a worker that must never resume. For release verification, configure the [exact extension and skill sets](configuration.md#long-lived-worker-settings), including every required provider extension; configured categories disable discovery and fail closed on invalid paths. `kxm mesh stop` writes a generation-matched control request; the worker asks Pi RPC to abort, waits for confirmation and state flush, and only force-stops the process tree after the bounded drain deadline. A final provider error leaves the inbound hub message delivered, gracefully restarts Pi, rotates to an unused fallback model, and preserves the session; Pi's own automatic retries always finish first. A tool that exceeds `PI_MESH_WORKER_TOOL_TIMEOUT_MS` follows the same durable restart path without changing models. If `--continue` reports an invalid tool-result session, the worker retries once fresh, journals a redacted recovery envelope, and injects a bounded resume instruction for the durable run and stage. Do not copy `pi-agent-*.log` into journals or retrospectives.
 
+### Workflow-specific Pi sessions
+
+Workflow isolation is opt-in during the upgrade-compatible release because the new scoped default directory cannot safely infer which pre-upgrade shared Pi session belonged to a worker. Enable it explicitly for coordinators and peers that may receive durable workflow work:
+
+```powershell
+kxm agent worker --name coordinator --project product --session-isolation workflow
+```
+
+Ordinary peer and operator messages reuse the worker's stable `default` Pi history. Each canonical workflow run uses `.kxm/state/pi-sessions/<workerKey>/runs/<runId>/`; only one Pi RPC child exists at a time. A route-change lifecycle event (`worker_session_routed`) is expected and does not consume restart budget or apply crash backoff. `worker_session_evicted` records bounded LRU cleanup. `worker_session_state_recovered` means a malformed binding manifest was quarantined and routing restarted safely at `default`; inspect the protected `.corrupt-*` file and workflow journal before deleting it. `worker_session_request_rejected` indicates a stale, malformed, mismatched-generation, or mismatched-source request and should be investigated if it repeats.
+
+Back up workflow model histories only if local Pi context is part of your recovery policy; authoritative workflow stages, evidence, and decisions remain in `mesh.db`, assets, and Git. Never use a Pi JSONL as the sole system of record. The first isolated launch starts fresh scoped storage; the previous shared Pi history remains available only in `off` mode and is not copied because a shared directory may contain several agents' sessions. To disable isolation temporarily, stop the exact worker cleanly and restart it with `--session-isolation off`; do not run isolated and shared supervisors concurrently under the same agent identity. Returning to `workflow` resumes the binding recorded in the manifest, subject to the configured retention bound.
+
 For GitHub-backed waits, run `kxm gate github watch` as a separate command. The hub does not poll GitHub. Success, failure, cancellation, and timeout produce the exact signed signal for the waiting run/stage/key; timeout exits `4` after posting `failed`.
 
 ## Live observer dashboard
@@ -37,7 +49,7 @@ Run the read-only dashboard against the active workspace:
 kxm --workspace D:\work\product\.kxm mesh tui
 ```
 
-The dashboard uses Pi's `@earendil-works/pi-tui` renderer. With the administrative `PI_MESH_AUTH_TOKEN`, it subscribes to `/v1/ops/events` and refreshes the project-scoped `/v1/ops/snapshot` on each SSE wakeup, keeping agent, open-message, and workflow metadata live without timer polling. Both endpoints omit request/reply bodies. Local process claims remain a local read-only snapshot. If the operations endpoints are unavailable or the supplied credential is project-scoped rather than administrative, the dashboard falls back to the legacy agent-presence stream plus local SQLite metadata. Observer registrations are excluded from the agent table and counts.
+The dashboard uses Pi's `@earendil-works/pi-tui` renderer. With the administrative `PI_MESH_AUTH_TOKEN`, it subscribes to `/v1/ops/events` and refreshes the project-scoped `/v1/ops/snapshot` on each SSE wakeup, keeping agent, open-message, and workflow metadata live without timer polling. Both endpoints omit request/reply bodies. Local process claims remain a local read-only snapshot. If the operations endpoints are unavailable or the supplied credential is project-scoped rather than administrative, the dashboard requests a hub-enforced presence-only agent SSE stream plus local SQLite metadata. It refuses an older/unmarked stream that cannot guarantee this metadata-only mode. Observer registrations are excluded from the dashboard's displayed agent table and counts; they remain ordinary authenticated hub identities while connected.
 
 | Key | Action |
 |---|---|
@@ -145,13 +157,15 @@ The service uses one Node.js process, long-lived SSE connections, and one SQLite
 |---|---|---|
 | Agent exits | Marked offline after the stale threshold | Restart with the same name to resume its ID |
 | SSE drops | Client reconnects while heartbeats continue | Check network and proxy buffering if repeated |
-| Hub or worker exits | SQLite keeps agents and messages | Restart; agents reconnect and queued or delivered work replays by the same message ID |
+| Hub or worker exits | SQLite keeps agents and messages; session binding manifests keep the active Pi scope | Restart; agents reconnect and queued or delivered work replays by the same message ID in the bound Pi session |
 | Token rotates | Requests fail authentication | Restart agents with the new project token |
 | Disk unavailable | Readiness or writes fail | Restore storage, then verify database integrity and readiness |
 | Duplicate live name | Registration returns HTTP 409 | Stop the old session or choose another name |
 | External callback is lost | Run stays `waiting` until its deadline | Retry with the same delivery ID or investigate the provider before timeout |
 | External wait expires | Run and active stage fail; journal records the timeout and the coordinator receives a terminal notification | Fix delivery/routing, review side effects, then start a new safe workflow delivery |
 | Pi executable cannot spawn | Worker records the process error and applies its normal restart/backoff limit | Repair `PATH` or `PI_MESH_PI_COMMAND`; confirm the worker exits nonzero when retries are exhausted |
+| Session binding manifest is corrupt | Worker quarantines it and starts the stable default binding without trusting a guessed run | Inspect `worker_session_state_recovered`, the `.corrupt-*` manifest, `mesh.db`, and workflow journal; re-drive unfinished work from durable message IDs |
+| Session route request is rejected | Candidate remains queued; wrong-scope acknowledgement never occurs | Check worker generation, active scope, canonical run ID, state-directory permissions, and repeated `worker_session_request_rejected` logs |
 
 Durable transport does not make peer execution exactly once. Use idempotent tasks and stable message idempotency keys, and store important artifacts in Git or another system of record.
 

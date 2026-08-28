@@ -129,7 +129,7 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
         join(consumer, ".kxm", "assets", "improvements"),
         join(consumer, ".kxm", "assets", "generated"),
       ],
-      templates: true,
+      templates: false,
     });
 
     const environment = { ...process.env };

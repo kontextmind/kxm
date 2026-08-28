@@ -89,7 +89,7 @@ export interface MeshHub {
   close(): Promise<void>;
 }
 
-type SseClient = { response: ServerResponse; heartbeat: NodeJS.Timeout };
+type SseClient = { response: ServerResponse; heartbeat: NodeJS.Timeout; presenceOnly?: boolean };
 type OpsSseClient = SseClient & { project: string };
 type OpsTopic = "agents" | "messages" | "workflows";
 type RateBucket = { startedAt: number; count: number };
@@ -541,9 +541,15 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
   function publish(agentId: string, event: HubEvent): boolean {
     const clients = streams.get(agentId);
     if (!clients || clients.size === 0) return false;
-    const frame = `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
-    for (const client of clients) client.response.write(frame);
-    return true;
+    let frame: string | undefined;
+    let published = false;
+    for (const client of clients) {
+      if (client.presenceOnly && event.type !== "presence") continue;
+      frame ??= `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
+      client.response.write(frame);
+      published = true;
+    }
+    return published;
   }
 
   function publishOps(project: string, topic: OpsTopic): void {
@@ -809,6 +815,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
       hops: 0,
       maxHops: DEFAULT_MAX_HOPS,
       correlationId: run.id,
+      workflowRunId: run.id,
       idempotencyKey: `${definition.id}:signal:${deliveryId}`,
       createdAt,
       expiresAt: new Date(Date.parse(createdAt) + ttlMs).toISOString(),
@@ -874,6 +881,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         hops: 0,
         maxHops: DEFAULT_MAX_HOPS,
         correlationId: transition.id,
+        workflowRunId: transition.id,
         idempotencyKey: `${transition.definitionId}:timeout:${waiting.signalKey}:${waiting.expiresAt}`,
         createdAt: timestamp,
         expiresAt: new Date(Date.parse(timestamp) + ttlMs).toISOString(),
@@ -1240,6 +1248,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           hops: 0,
           maxHops: DEFAULT_MAX_HOPS,
           correlationId: runId,
+          workflowRunId: runId,
           idempotencyKey: `${definition.id}:${deliveryId}`,
           createdAt,
           expiresAt: new Date(Date.parse(createdAt) + ttlMs).toISOString(),
@@ -1762,23 +1771,29 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         const agentId = requireString(url.searchParams.get("agentId"), "agentId", { max: 80 });
         const current = requireAgent(request, agentId);
         requireProjectAuth(request, current.project);
+        const presenceOnly = url.searchParams.get("presenceOnly") === "true";
+        if (presenceOnly && current.model !== "kxm-tui") {
+          throw new ProtocolError(403, "presence-only streams are reserved for metadata observers", "presence_stream_forbidden");
+        }
         response.writeHead(200, {
           "content-type": "text/event-stream",
           "cache-control": "no-cache, no-transform",
           connection: "keep-alive",
           "x-accel-buffering": "no",
           "x-content-type-options": "nosniff",
+          ...(presenceOnly ? { "x-mesh-events-mode": "presence" } : {}),
         });
         response.write(`event: ready\ndata: ${JSON.stringify({ agent: publicAgent(current) })}\n\n`);
         const client: SseClient = {
           response,
           heartbeat: setInterval(() => response.write(": heartbeat\n\n"), 15_000),
+          ...(presenceOnly ? { presenceOnly: true } : {}),
         };
         client.heartbeat.unref();
         const clients = streams.get(agentId) ?? new Set<SseClient>();
         clients.add(client);
         streams.set(agentId, clients);
-        flushPending(agentId);
+        if (!presenceOnly) flushPending(agentId);
         request.on("close", () => {
           clearInterval(client.heartbeat);
           clients.delete(client);
@@ -1863,7 +1878,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           ...(correlationId ? { correlationId } : {}),
           ...(replyTo ? { replyTo } : {}),
           ...(idempotencyKey ? { idempotencyKey } : {}),
-          ...(workflowContext ? { workflowContext } : {}),
+          ...(workflowContext ? { workflowRunId: workflowContext.runId, workflowContext } : {}),
           createdAt,
           expiresAt: new Date(Date.parse(createdAt) + ttlMs).toISOString(),
           status: "queued",

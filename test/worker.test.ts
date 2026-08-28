@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHmac } from "node:crypto";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 import { recoveryEnvelopePath, workerStateKey } from "../plugins/kxm-mesh/src/recovery.ts";
+import { createTestMesh, waitFor } from "./helpers.ts";
 
 const inheritedWorkspaceKeys = [
   "PI_MESH_WORKSPACE_DIR",
@@ -22,6 +25,9 @@ const inheritedWorkspaceKeys = [
   "PI_MESH_WORKER_PROVIDER_RETRY_MS",
   "PI_MESH_WORKER_TOOL_TIMEOUT_MS",
   "PI_MESH_WORKER_TOOLS",
+  "PI_MESH_WORKER_SESSION_ISOLATION",
+  "PI_MESH_WORKER_CHILD_INCARCATION",
+  "PI_MESH_WORKER_MAX_RUN_SESSIONS",
 ] as const;
 
 function isolatedWorkerEnv(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -47,13 +53,15 @@ function runWorker(environment: NodeJS.ProcessEnv): Promise<{ code: number | nul
   });
 }
 
-function workerFile(workdir: string, project: string, name: string, kind: "structured-log" | "agent-log" | "pid" | "control" | "context" | "recovery"): string {
+function workerFile(workdir: string, project: string, name: string, kind: "structured-log" | "agent-log" | "pid" | "control" | "context" | "recovery" | "session-binding" | "session-request"): string {
   const key = workerStateKey(project, name);
   if (kind === "structured-log") return join(workdir, ".kxm", "logs", `pi-mesh-worker-${key}.jsonl`);
   if (kind === "agent-log") return join(workdir, ".kxm", "logs", `pi-agent-${key}.log`);
   if (kind === "pid") return join(workdir, ".kxm", "state", `worker-${key}.pid`);
   if (kind === "control") return join(workdir, ".kxm", "state", `worker-${key}.stop`);
   if (kind === "context") return join(workdir, ".kxm", "state", `worker-context-${key}.json`);
+  if (kind === "session-binding") return join(workdir, ".kxm", "state", `worker-session-binding-${key}.json`);
+  if (kind === "session-request") return join(workdir, ".kxm", "state", `worker-session-request-${key}.json`);
   return recoveryEnvelopePath(join(workdir, ".kxm", "state"), name, project);
 }
 
@@ -102,6 +110,285 @@ test("long-lived worker supervises Pi and honors the restart limit", async () =>
     assert.equal(existsSync(join(workdir, ".kxm", "state")), true);
   } finally {
     rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("workflow isolation serially swaps one child across bounded run-specific Pi sessions", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "pi-mesh-worker-session-route-"));
+  const fixture = join(workdir, "route-session.cjs");
+  const invocations = join(workdir, "invocations.jsonl");
+  const command = join(workdir, process.platform === "win32" ? "route-session.cmd" : "route-session.sh");
+  const runId = `run_${"a".repeat(32)}`;
+  const secondRunId = `run_${"c".repeat(32)}`;
+  const messageId = `msg_${"b".repeat(32)}`;
+  const secondMessageId = `msg_${"d".repeat(32)}`;
+  try {
+    writeFileSync(fixture, [
+      "const fs = require('node:fs');",
+      "const path = require('node:path');",
+      `const output = ${JSON.stringify(invocations)};`,
+      "const args = process.argv.slice(2);",
+      "const scope = process.env.PI_MESH_WORKER_SESSION_SCOPE;",
+      "fs.appendFileSync(output, JSON.stringify({ scope, args, generation: process.env.PI_MESH_WORKER_GENERATION, childIncarnation: Number(process.env.PI_MESH_WORKER_CHILD_INCARCATION) }) + '\\n');",
+      "function route(from, toRunId, messageId) {",
+      `  const requestPath = path.join(process.env.PI_MESH_STATE_DIR, 'worker-session-request-' + process.env.PI_MESH_WORKER_IDENTITY_KEY + '.json');`,
+      "  const request = { version: 1, agentName: 'coordinator', project: 'product', workerKey: process.env.PI_MESH_WORKER_IDENTITY_KEY, generation: process.env.PI_MESH_WORKER_GENERATION, childIncarnation: Number(process.env.PI_MESH_WORKER_CHILD_INCARCATION), from, to: { kind: 'workflow', runId: toRunId }, sourceSessionId: '11111111-1111-4111-8111-111111111111', messageId, createdAt: new Date().toISOString() };",
+      "  fs.writeFileSync(requestPath + '.tmp', JSON.stringify(request) + '\\n');",
+      "  fs.renameSync(requestPath + '.tmp', requestPath);",
+      "}",
+      `if (scope === 'default') { const target = path.join(process.env.PI_MESH_STATE_DIR, 'pi-sessions', process.env.PI_MESH_WORKER_IDENTITY_KEY, 'runs', ${JSON.stringify(runId)}); fs.mkdirSync(target, { recursive: true }); fs.writeFileSync(path.join(target, 'history.jsonl'), '{}\\n'); route({ kind: 'default' }, ${JSON.stringify(runId)}, ${JSON.stringify(messageId)}); process.exit(0); }`,
+      `if (scope === ${JSON.stringify(`workflow:${runId}`)}) { route({ kind: 'workflow', runId: ${JSON.stringify(runId)} }, ${JSON.stringify(secondRunId)}, ${JSON.stringify(secondMessageId)}); process.exit(0); }`,
+      "process.exit(7);",
+      "",
+    ].join("\n"));
+    writeFileSync(command, process.platform === "win32"
+      ? `@echo off\r\n"${process.execPath}" "${fixture}" %*\r\n`
+      : `#!/bin/sh\nexec "${process.execPath}" "${fixture}" "$@"\n`);
+    if (process.platform !== "win32") chmodSync(command, 0o700);
+    const result = await runWorker({
+      PI_MESH_AGENT_NAME: "coordinator",
+      PI_MESH_PROJECT: "product",
+      PI_MESH_PI_COMMAND: command,
+      PI_MESH_WORKER_SESSION_ISOLATION: "workflow",
+      PI_MESH_WORKER_MAX_RUN_SESSIONS: "1",
+      PI_MESH_WORKER_INITIAL_CONTINUE: "false",
+      PI_MESH_WORKER_MAX_RESTARTS: "0",
+      PI_MESH_WORKDIR: workdir,
+    });
+    assert.equal(result.code, 7, `${result.stderr}\n${result.stdout}`);
+    const calls = readFileSync(invocations, "utf8").trim().split("\n").map((line) => JSON.parse(line)) as Array<{
+      scope: string;
+      args: string[];
+      generation: string;
+      childIncarnation: number;
+    }>;
+    assert.equal(calls.length, 3);
+    assert.deepEqual(calls.map((call) => call.scope), ["default", `workflow:${runId}`, `workflow:${secondRunId}`]);
+    assert.ok(calls.every((call) => call.generation === calls[0]!.generation));
+    assert.deepEqual(calls.map((call) => call.childIncarnation), [1, 2, 3]);
+    assert.ok(calls[0]!.args.includes("coordinator@default"));
+    assert.ok(calls[1]!.args.includes("coordinator@aaaaaaaa"));
+    assert.ok(calls[2]!.args.includes("coordinator@cccccccc"));
+    assert.equal(calls[0]!.args.includes("--continue"), false);
+    assert.equal(calls[1]!.args.includes("--continue"), true, "only the target binding with history should resume");
+    assert.equal(calls[2]!.args.includes("--continue"), false);
+    const firstSessionDir = calls[0]!.args[calls[0]!.args.indexOf("--session-dir") + 1]!;
+    const firstRunSessionDir = calls[1]!.args[calls[1]!.args.indexOf("--session-dir") + 1]!;
+    const secondRunSessionDir = calls[2]!.args[calls[2]!.args.indexOf("--session-dir") + 1]!;
+    assert.match(firstSessionDir, /[\\/]default$/);
+    assert.equal(firstRunSessionDir, join(workdir, ".kxm", "state", "pi-sessions", workerStateKey("product", "coordinator"), "runs", runId));
+    assert.equal(secondRunSessionDir, join(workdir, ".kxm", "state", "pi-sessions", workerStateKey("product", "coordinator"), "runs", secondRunId));
+    assert.equal(existsSync(firstSessionDir), true);
+    assert.equal(existsSync(firstRunSessionDir), false, "least-recently-used run session should be evicted at the configured bound");
+    assert.equal(existsSync(secondRunSessionDir), true);
+    const manifest = JSON.parse(readFileSync(workerFile(workdir, "product", "coordinator", "session-binding"), "utf8"));
+    assert.deepEqual(manifest.active, { kind: "workflow", runId: secondRunId });
+    assert.equal(manifest.runs[runId], undefined);
+    assert.ok(manifest.runs[secondRunId]);
+    assert.equal(existsSync(workerFile(workdir, "product", "coordinator", "session-request")), false);
+    assert.match(result.stdout, /"event":"worker_session_routed"/);
+    assert.doesNotMatch(result.stdout, /worker_restart_scheduled/);
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("hub, extension, and supervisor complete the real pre-ack route and destination replay chain", async (context) => {
+  const secret = "integrated-session-routing-secret";
+  const mesh = await createTestMesh(context, {
+    webhookWorkflows: [{
+      id: "integrated-session-route",
+      source: "generic",
+      project: "integrated-project",
+      target: "integrated-worker",
+      secret,
+      delivery: "followUp",
+      promptTemplate: "Route {{task}}",
+      stages: [{ id: "work", label: "Work", instructions: "Reply from the isolated scope", requiredEvidence: [], maxAttempts: 1 }],
+    }],
+  });
+  const workdir = mkdtempSync(join(tmpdir(), "pi-mesh-worker-integrated-route-"));
+  const fixture = join(workdir, "integrated-child.mjs");
+  const invocations = join(workdir, "integrated-invocations.jsonl");
+  const command = join(workdir, process.platform === "win32" ? "integrated-child.cmd" : "integrated-child.sh");
+  const extensionUrl = pathToFileURL(resolve("plugins/kxm-mesh/src/extension.ts")).href;
+  try {
+    writeFileSync(fixture, [
+      "import fs from 'node:fs';",
+      `import piMeshExtension from ${JSON.stringify(extensionUrl)};`,
+      `const invocations = ${JSON.stringify(invocations)};`,
+      "const handlers = new Map();",
+      "const emit = async (name, event = {}, ctx) => { for (const handler of handlers.get(name) ?? []) await handler(event, ctx); };",
+      "let finishing = false;",
+      "const api = {",
+      "  on(name, handler) { const list = handlers.get(name) ?? []; list.push(handler); handlers.set(name, list); },",
+      "  registerTool() {}, registerCommand() {},",
+      "  getSessionName() { return process.env.PI_MESH_AGENT_NAME; },",
+      "  sendMessage(message) {",
+      "    if (message.customType !== 'pi-mesh-inbound' || finishing) return;",
+      "    finishing = true;",
+      "    queueMicrotask(async () => {",
+      "      await emit('message_start', { message });",
+      "      await emit('agent_end', { messages: [{ role: 'assistant', content: 'integrated isolated reply' }] });",
+      "      await emit('agent_settled');",
+      "      setTimeout(() => process.exit(7), 25);",
+      "    });",
+      "  },",
+      "};",
+      "piMeshExtension(api);",
+      "const scope = process.env.PI_MESH_WORKER_SESSION_SCOPE;",
+      "const sessionId = scope === 'default' ? '44444444-4444-4444-8444-444444444444' : '55555555-5555-4555-8555-555555555555';",
+      "const ui = { setStatus() {}, notify() {} };",
+      "let shuttingDown = false;",
+      "const ctx = { cwd: process.cwd(), model: { provider: 'test', id: 'integrated' }, sessionManager: { getSessionId: () => sessionId }, ui, async shutdown() { if (shuttingDown) return; shuttingDown = true; await emit('session_shutdown'); process.exit(0); } };",
+      "await emit('session_start', {}, ctx);",
+      "fs.appendFileSync(invocations, JSON.stringify({ scope, args: process.argv.slice(2) }) + '\\n');",
+      "setInterval(() => {}, 1000);",
+      "",
+    ].join("\n"));
+    writeFileSync(command, process.platform === "win32"
+      ? `@echo off\r\n"${process.execPath}" --disable-warning=ExperimentalWarning --experimental-strip-types "${fixture}" %*\r\n`
+      : `#!/bin/sh\nexec "${process.execPath}" --disable-warning=ExperimentalWarning --experimental-strip-types "${fixture}" "$@"\n`);
+    if (process.platform !== "win32") chmodSync(command, 0o700);
+    const workerResult = runWorker({
+      PI_MESH_AGENT_NAME: "integrated-worker",
+      PI_MESH_AGENT_PURPOSE: "integrated route test",
+      PI_MESH_PROJECT: "integrated-project",
+      PI_MESH_SERVER_URL: mesh.address.url,
+      PI_MESH_AUTH_TOKEN: mesh.token,
+      PI_MESH_PI_COMMAND: command,
+      PI_MESH_WORKER_SESSION_ISOLATION: "workflow",
+      PI_MESH_WORKER_INITIAL_CONTINUE: "false",
+      PI_MESH_WORKER_MAX_RESTARTS: "0",
+      PI_MESH_WORKDIR: workdir,
+    });
+    await waitFor(() => [...mesh.hub.state.agents.values()].some((agent) => agent.name === "integrated-worker" && agent.online), 5_000);
+    const body = JSON.stringify({ task: "this workflow" });
+    const response = await fetch(`${mesh.address.url}/v1/webhooks/integrated-session-route`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-mesh-delivery-id": "integrated-session-route-delivery",
+        "x-hub-signature": `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`,
+      },
+      body,
+    });
+    assert.equal(response.status, 202);
+    const started = await response.json() as { run: { id: string; messageId: string } };
+    const result = await workerResult;
+    assert.equal(result.code, 7, `${result.stderr}\n${result.stdout}`);
+    assert.equal(mesh.hub.state.messages.get(started.run.messageId)?.reply?.content, "integrated isolated reply");
+    const calls = readFileSync(invocations, "utf8").trim().split("\n").map((line) => JSON.parse(line)) as Array<{ scope: string; args: string[] }>;
+    assert.deepEqual(calls.map((call) => call.scope), ["default", `workflow:${started.run.id}`]);
+    assert.match(result.stdout, /"event":"worker_session_routed"/);
+    assert.equal(existsSync(workerFile(workdir, "integrated-project", "integrated-worker", "session-request")), false);
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("workflow isolation rejects a current-generation route whose source is not active", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "pi-mesh-worker-invalid-route-"));
+  const fixture = join(workdir, "invalid-route.cjs");
+  const command = join(workdir, process.platform === "win32" ? "invalid-route.cmd" : "invalid-route.sh");
+  const wrongRun = `run_${"e".repeat(32)}`;
+  const targetRun = `run_${"f".repeat(32)}`;
+  try {
+    writeFileSync(fixture, [
+      "const fs = require('node:fs');",
+      "const path = require('node:path');",
+      "const requestPath = path.join(process.env.PI_MESH_STATE_DIR, 'worker-session-request-' + process.env.PI_MESH_WORKER_IDENTITY_KEY + '.json');",
+      `const request = { version: 1, agentName: 'coordinator', project: 'product', workerKey: process.env.PI_MESH_WORKER_IDENTITY_KEY, generation: process.env.PI_MESH_WORKER_GENERATION, childIncarnation: Number(process.env.PI_MESH_WORKER_CHILD_INCARCATION), from: { kind: 'workflow', runId: ${JSON.stringify(wrongRun)} }, to: { kind: 'workflow', runId: ${JSON.stringify(targetRun)} }, sourceSessionId: '11111111-1111-4111-8111-111111111111', messageId: 'msg_${"1".repeat(32)}', createdAt: new Date().toISOString() };`,
+      "fs.writeFileSync(requestPath, JSON.stringify(request) + '\\n');",
+      "process.exit(7);",
+      "",
+    ].join("\n"));
+    writeFileSync(command, process.platform === "win32"
+      ? `@echo off\r\n"${process.execPath}" "${fixture}" %*\r\n`
+      : `#!/bin/sh\nexec "${process.execPath}" "${fixture}" "$@"\n`);
+    if (process.platform !== "win32") chmodSync(command, 0o700);
+    const result = await runWorker({
+      PI_MESH_AGENT_NAME: "coordinator",
+      PI_MESH_PROJECT: "product",
+      PI_MESH_PI_COMMAND: command,
+      PI_MESH_WORKER_SESSION_ISOLATION: "workflow",
+      PI_MESH_WORKER_INITIAL_CONTINUE: "false",
+      PI_MESH_WORKER_MAX_RESTARTS: "0",
+      PI_MESH_WORKDIR: workdir,
+    });
+    assert.equal(result.code, 7, `${result.stderr}\n${result.stdout}`);
+    assert.match(result.stdout, /"event":"worker_session_request_rejected"/);
+    assert.match(result.stdout, /source does not match the active binding/);
+    const manifest = JSON.parse(readFileSync(workerFile(workdir, "product", "coordinator", "session-binding"), "utf8"));
+    assert.deepEqual(manifest.active, { kind: "default" });
+    assert.equal(manifest.runs[targetRun], undefined);
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("workflow isolation quarantines corrupt bindings and safely recovers the stable default session", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "pi-mesh-worker-corrupt-session-"));
+  const fixture = join(workdir, "exit.cjs");
+  const command = join(workdir, process.platform === "win32" ? "exit.cmd" : "exit.sh");
+  try {
+    mkdirSync(join(workdir, ".kxm", "state"), { recursive: true });
+    const retainedRunId = `run_${"9".repeat(32)}`;
+    const retainedRunDir = join(workdir, ".kxm", "state", "pi-sessions", workerStateKey("product", "coordinator"), "runs", retainedRunId);
+    mkdirSync(retainedRunDir, { recursive: true });
+    writeFileSync(join(retainedRunDir, "history.jsonl"), "{}\n");
+    const manifestPath = workerFile(workdir, "product", "coordinator", "session-binding");
+    writeFileSync(manifestPath, "{ definitely not valid json");
+    writeFileSync(fixture, "process.exit(7);\n");
+    writeFileSync(command, process.platform === "win32"
+      ? `@echo off\r\n"${process.execPath}" "${fixture}" %*\r\n`
+      : `#!/bin/sh\nexec "${process.execPath}" "${fixture}" "$@"\n`);
+    if (process.platform !== "win32") chmodSync(command, 0o700);
+    const result = await runWorker({
+      PI_MESH_AGENT_NAME: "coordinator",
+      PI_MESH_PROJECT: "product",
+      PI_MESH_PI_COMMAND: command,
+      PI_MESH_WORKER_SESSION_ISOLATION: "workflow",
+      PI_MESH_WORKER_INITIAL_CONTINUE: "false",
+      PI_MESH_WORKER_MAX_RESTARTS: "0",
+      PI_MESH_WORKDIR: workdir,
+    });
+    assert.equal(result.code, 7, `${result.stderr}\n${result.stdout}`);
+    const stateFiles = readdirSync(join(workdir, ".kxm", "state"));
+    assert.ok(stateFiles.some((name) => name.startsWith(`${manifestPath.split(/[\\/]/).at(-1)}.corrupt-`)));
+    const recovered = JSON.parse(readFileSync(manifestPath, "utf8"));
+    assert.deepEqual(recovered.active, { kind: "default" });
+    assert.ok(recovered.runs[retainedRunId], "bounded canonical histories should be retained after manifest recovery");
+    assert.equal(existsSync(retainedRunDir), true);
+    assert.match(result.stdout, /"event":"worker_session_state_recovered"/);
+    assert.match(result.stdout, /"event":"worker_session_orphans_adopted"/);
+    assert.match(result.stdout, /"sessionScope":"default"/);
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("workflow isolation rejects linked session roots before Pi can write an aliased history", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "pi-mesh-worker-linked-session-"));
+  const external = mkdtempSync(join(tmpdir(), "pi-mesh-worker-linked-target-"));
+  try {
+    const root = join(workdir, ".kxm", "state", "pi-sessions", workerStateKey("product", "coordinator"));
+    mkdirSync(join(root, ".."), { recursive: true });
+    symlinkSync(external, root, process.platform === "win32" ? "junction" : "dir");
+    const result = await runWorker({
+      PI_MESH_AGENT_NAME: "coordinator",
+      PI_MESH_PROJECT: "product",
+      PI_MESH_WORKER_SESSION_ISOLATION: "workflow",
+      PI_MESH_WORKER_INITIAL_CONTINUE: "false",
+      PI_MESH_WORKER_MAX_RESTARTS: "0",
+      PI_MESH_WORKDIR: workdir,
+    });
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /session root is not a safe real directory|session root must be a real directory/);
+    assert.deepEqual(readdirSync(external), []);
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+    rmSync(external, { recursive: true, force: true });
   }
 });
 
@@ -796,9 +1083,9 @@ test("long-lived worker falls back from an unresumable --continue start", async 
       version: 1,
       agentName: "coordinator",
       project: "product",
-      runId: "run_durable",
+      runId: "run_77777777777777777777777777777777",
       stageId: "implementation",
-      pendingMessageIds: ["msg_pending"],
+      pendingMessageIds: ["msg_88888888888888888888888888888888"],
       artifactPointers: [".kxm/assets/implementation.md"],
     }));
     writeFileSync(fixture, "process.stderr.write('invalid_request_error: missing_tool_'); setTimeout(() => { process.stderr.write('result for tool_use id'); process.exit(9); }, 10);\n");
@@ -828,9 +1115,9 @@ test("long-lived worker falls back from an unresumable --continue start", async 
     assert.equal(envelope.version, 1);
     assert.equal(envelope.reason, "unresumable_session");
     assert.equal(envelope.agentName, "coordinator");
-    assert.equal(envelope.runId, "run_durable");
+    assert.equal(envelope.runId, "run_77777777777777777777777777777777");
     assert.equal(envelope.stageId, "implementation");
-    assert.deepEqual(envelope.pendingMessageIds, ["msg_pending"]);
+    assert.deepEqual(envelope.pendingMessageIds, ["msg_88888888888888888888888888888888"]);
     assert.deepEqual(envelope.artifactPointers, [".kxm/assets/implementation.md"]);
     assert.doesNotMatch(JSON.stringify(envelope), /prompt|sk-|ghp_/);
   } finally {

@@ -7,12 +7,17 @@ All notable user-facing changes are documented here. The project follows [Semant
 ### Changed
 
 - Renamed the operator CLI from `pi-mesh` to `kxm` and rebuilt it on Commander.
-- `kxm` now has first-class tools: `agent`, `session`, `workflow`, `gate`, and `mesh`.
+- `kxm` now has first-class tools: `agent`, `session`, `workflow`, `gate`, `mesh`, and `improve`.
 - Examples: `kxm agent worker`, `kxm session status`, `kxm workflow start`, `kxm gate validate`, `kxm mesh hub`.
 - Agents (AI-driven) and gates (code-driven) share `kxm.worker.v1` and emit `kxm.worker-result.v1`.
 - Source equivalent is `node scripts/kxm.mjs`. Hub startup output is `kxm mesh hub listening`.
 - Added a live `@earendil-works/pi-tui` mesh dashboard with responsive toggle panels and authenticated metadata-only operations SSE for real-time agent/message/workflow state; the Node 22 minimum is now 22.19 to match the TUI runtime.
 - Long-lived Pi workers now leave waiting work queued in the hub, activate one message at a time, prioritize safe steering, normalize autonomous `nextTurn`, and restart when a delivered message never starts.
+- Long-lived Pi workers can isolate model context by durable workflow run: `--session-isolation workflow` keeps ordinary work in a stable default session, gives every hub-authorized run a bounded run-specific session, and uses pre-ack child swapping to preserve one JSONL writer and durable replay. The upgrade-compatible default remains `off` so existing shared Pi histories are not silently abandoned.
+- Added the wiki-ready `docs/kxm-handbook.md` covering installation, configuration, the complete CLI, Pi, Claude Code, workflows, gates, observability, security, and recovery.
+- Improvement telemetry now classifies any named project/workflow generically instead of hardcoding one consumer; `KXM_IMPROVE_TARGET` remains an explicit `cli`/`project` override.
+- `kxm mesh init` now creates empty project-owned workspace directories instead of copying the package repository's provider-specific dogfood configuration.
+- The TUI's project-token fallback now negotiates a presence-only SSE stream and refuses unmarked legacy streams, preserving the no-message-bodies observer contract when admin operations access is unavailable.
 - Workflow validation mirrors the hub's file/inline XOR source contract; active definitions supply start/callback credentials, with the start secret as callback fallback.
 - Added the runnable `artifacts-exist` gate, fail-closed roster/session parsing, secret-free workflow definition hashes, and dry-run telemetry suppression.
 

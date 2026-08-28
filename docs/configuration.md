@@ -102,8 +102,10 @@ When a Pi peer produces more than 32,000 characters, the extension returns a bou
 | `PI_MESH_WORKER_LOG_PATH` | `.kxm/logs/pi-mesh-worker-<project>-<agent>-<identity>.jsonl` | Structured worker lifecycle log |
 | `PI_MESH_AGENT_LOG_PATH` | `.kxm/logs/pi-agent-<project>-<agent>-<identity>.log` | Captured headless Pi stdout and stderr |
 | `PI_MESH_PI_COMMAND` | `pi` or `pi.cmd` | Explicit Pi executable path when it is not on `PATH` |
-| `PI_MESH_WORKER_CONTINUE` | `true` | Resume the most recent Pi session after a restart |
+| `PI_MESH_WORKER_CONTINUE` | `true` | Resume the active binding's most recent Pi session after a restart |
 | `PI_MESH_WORKER_INITIAL_CONTINUE` | same as `PI_MESH_WORKER_CONTINUE` | Set `false` to start this supervisor generation fresh but still resume later recoveries |
+| `PI_MESH_WORKER_SESSION_ISOLATION` | `off` for upgrade compatibility | `workflow` keeps ordinary work in one stable default Pi session and gives each durable workflow run a separate Pi session directory; `off` preserves the pre-isolation shared session |
+| `PI_MESH_WORKER_MAX_RUN_SESSIONS` | `128` | Maximum retained workflow-specific Pi sessions per exact project/agent worker; integer `1`â€“`1024`, with least-recently-used inactive runs evicted |
 | `PI_MESH_WORKER_DRAIN_MS` | `15000` | Graceful SIGTERM wait before SIGKILL |
 | `PI_MESH_WORKER_MODEL` | Pi default | Optional model selector passed to Pi |
 | `PI_MESH_WORKER_FALLBACK_MODELS` | unset | Up to eight comma-separated model selectors, tried in order after a final provider failure; requires a primary model |
@@ -119,7 +121,7 @@ When a Pi peer produces more than 32,000 characters, the extension returns a bou
 | `PI_MESH_SMOKE_TIMEOUT_MS` | `120000` | Per-phase real-Pi smoke timeout (`30000`â€“`600000`) |
 | `PI_MESH_SMOKE_PI_COMMAND` | discovered `pi` | Optional explicit Pi executable for a self-hosted runner |
 
-`PI_MESH_AGENT_NAME` and `PI_MESH_PROJECT` are required by `kxm agent worker`. The remaining agent settings are inherited by the spawned Pi RPC process. The worker resolves `.kxm` and explicit package paths inside `PI_MESH_WORKDIR`, creates the standard directories, and passes absolute paths to Pi. When either resource-path variable is set, the worker disables discovery for that resource category and loads only the listed files or directories; setting just one category leaves discovery unchanged for the other. Missing paths and extension directories fail before the restart loop. A skill may be a `SKILL.md` file or a directory Pi scans for skills. Restart the worker after changing any resource or path.
+`PI_MESH_AGENT_NAME` and `PI_MESH_PROJECT` are required by `kxm agent worker`. Session isolation is opt-in for upgrade compatibility: pass `--session-isolation workflow` or set the environment variable to `workflow` after reviewing the fresh scoped-session behavior. Both the CLI and direct `scripts/pi-mesh-worker.mjs` default to `off`, so existing shared `--continue` histories are not silently abandoned. The remaining agent settings are inherited by the spawned Pi RPC process. The worker resolves `.kxm` and explicit package paths inside `PI_MESH_WORKDIR`, creates the standard directories, and passes absolute paths to Pi. When either resource-path variable is set, the worker disables discovery for that resource category and loads only the listed files or directories; setting just one category leaves discovery unchanged for the other. Missing paths and extension directories fail before the restart loop. A skill may be a `SKILL.md` file or a directory Pi scans for skills. Restart the worker after changing any resource or path.
 
 Use exact paths for release verification or an uninstalled worktree. Include every provider extension the selected models require because extension discovery is isolated:
 
@@ -138,8 +140,11 @@ $coordinatorTools = @(
 ) -join ","
 kxm agent worker --name coordinator --project product `
   --model antigravity/claude-sonnet-4-6 `
-  --fallback-models xai/grok-4.6 --tools $coordinatorTools --fresh-start
+  --fallback-models xai/grok-4.6 --tools $coordinatorTools `
+  --session-isolation workflow --fresh-start
 ```
+
+With workflow isolation enabled, the hub stamps every internal workflow prompt, callback resume, timeout notification, and authorized peer-evidence request with a canonical `workflowRunId`. Before acknowledging a queued message, the Pi extension compares that hub-owned binding with the active worker scope. A mismatch is left `queued`; the extension atomically requests a route change and shuts down cleanly. Only after the child closes does the supervisor start one replacement Pi RPC child with `--session-dir .kxm/state/pi-sessions/<workerKey>/default` or `.../runs/<runId>`. This gives the stable default work and each `{agent, workflowRunId}` an independent Pi JSONL history without concurrent writers. Correlation IDs alone never select a workflow session. Binding manifests and requests are identity-, supervisor-generation-, child-incarnation-, timestamp-, and schema-checked, and malformed manifests are quarantined before a safe default binding is created.
 
 Explicit extension code runs with the worker's repository, network, and model credentials, and skills supply privileged instructions. These are trusted service-administrator settings: never derive them from a webhook or workflow payload. Absolute and parent-relative paths outside `PI_MESH_WORKDIR` are intentionally supported for reviewed provider extensions. Review and protect every configured resource like an executable dependency. A fast `--continue` failure writes a collision-safe `.kxm/state/worker-recovery-<project>-<agent>-<identity>.json` envelope and retries once without `--continue`; the reader can consume an exact-name legacy envelope during migration.
 
@@ -153,7 +158,7 @@ The tool allowlist is a capability boundary inside Pi, not a prompt suggestion â
 
 | Command | Purpose |
 |---|---|
-| `kxm agent worker` | Start a long-lived Pi worker. Does not read a workspace `agents.json`; pass `--model`, `--tools`, and related flags explicitly |
+| `kxm agent worker` | Start a long-lived Pi worker. Use `--session-isolation workflow` to enable per-workflow Pi contexts; the upgrade-compatible default is `off`. Does not read a workspace `agents.json`; pass `--model`, `--tools`, and related flags explicitly |
 | `kxm session start --id <id> (--mix a,b \| --workflow <definitionId>)` | Write a `kxm.session.v1` manifest under `.kxm/assets/sessions/<id>/` and create asset directories. **Does not start any process.** `--workflow` records the whole roster, not the definition's participants |
 | `kxm session status` | Show PID claim files and recovery envelopes under `.kxm/state`; does not read `session.json` |
 | `kxm session stop` | Request shutdown of **every** managed hub and worker process in the workspace â€” the same operation as `kxm mesh stop`; not scoped to a session |
@@ -163,7 +168,7 @@ The tool allowlist is a capability boundary inside Pi, not a prompt suggestion â
 | `kxm gate degrade <runId> <stageId> --requirement <key> --reason <text>` | Use the administrative token to approve a policy-declared lower peer minimum for the current attempt |
 | `kxm gate signal` | Post a signed workflow callback |
 | `kxm gate github watch` | Poll required GitHub checks and post the existing signed signal |
-| `kxm mesh init` | Create `.kxm` directories |
+| `kxm mesh init` | Create empty `.kxm` directories; configuration remains project-owned and no package dogfood templates are copied |
 | `kxm mesh status` | Check `/health` and `/ready` |
 | `kxm mesh tui` | Open the read-only SSE observer dashboard; non-TTY output is one ANSI-free snapshot |
 | `kxm mesh hub` | Start the mesh hub |
@@ -171,9 +176,11 @@ The tool allowlist is a capability boundary inside Pi, not a prompt suggestion â
 | `kxm mesh smoke` | Opt-in two-worker real-Pi release harness |
 | `kxm improve` | Bucket `.kxm/logs/telemetry.jsonl` events into a proposed-only improvement report; does not read the workflow journal |
 
+Improvement telemetry is classified as `project` whenever a project or workflow identity is present, and as `cli` for unscoped operator behavior. Set `KXM_IMPROVE_TARGET=cli` or `KXM_IMPROVE_TARGET=project` only when an operator needs to override that generic classification; this changes report bucketing, not workflow state.
+
 The gate group contains exactly the five implemented gates listed above. Names declared in a workspace `gates.json` that do not map to one of them (for example `quality`, `git-commit`, `jira-fetch`) are records with no runner; there is no `kxm gate run <name>`.
 
-Global flags: `--json`, `--dry-run`, `--workspace`. `kxm workflow start <definitionId> --payload <JSON|@file>` creates a signed webhook delivery. With an active definition source, start, signal, and GitHub watch resolve that definition's `secretEnv` / `signalSecretEnv`; when no separate signal secret is declared, callbacks use the workflow-start secret, matching the hub. Generic credential variables are used only when no active definition source is configured. `--dry-run` never appends telemetry. Non-dry-run gate evidence and summaries are written to the protected telemetry JSONL after configured-value redaction; do not place unnecessary sensitive text in evidence. `kxm gate degrade` requires `PI_MESH_AUTH_TOKEN` to contain the administrative token; use `--dry-run --json` first and never put a secret in its reason. `kxm agent worker --name <name> --project <project>` and `kxm mesh hub` honor the same workspace flag. `--no-continue` disables every session resume; `--fresh-start` skips only the initial resume. GitHub watch posts an exact signed `failed` signal on timeout and exits `4`, preserving the distinction from a successful gate.
+Global flags: `--json`, `--dry-run`, `--workspace`. `kxm workflow start <definitionId> --payload <JSON|@file>` creates a signed webhook delivery. With an active definition source, start, signal, and GitHub watch resolve that definition's `secretEnv` / `signalSecretEnv`; when no separate signal secret is declared, callbacks use the workflow-start secret, matching the hub. Generic credential variables are used only when no active definition source is configured. `--dry-run` never appends telemetry. Non-dry-run gate evidence and summaries are written to the protected telemetry JSONL after configured-value redaction; do not place unnecessary sensitive text in evidence. `kxm gate degrade` requires `PI_MESH_AUTH_TOKEN` to contain the administrative token; use `--dry-run --json` first and never put a secret in its reason. `kxm agent worker --name <name> --project <project>` and `kxm mesh hub` honor the same workspace flag. `--no-continue` disables every session resume; `--fresh-start` skips only the initial resume. `--session-isolation workflow` enables isolated contexts and starts a fresh scoped default history on first use; `--session-isolation off` is the upgrade-compatible default and keeps the former shared Pi history. GitHub watch posts an exact signed `failed` signal on timeout and exits `4`, preserving the distinction from a successful gate.
 
 ## Webhook workflow settings
 

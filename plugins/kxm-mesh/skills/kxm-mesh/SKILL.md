@@ -13,9 +13,9 @@ This skill is the **agent-side tool protocol**. It teaches the `mesh_*` tools av
 
 | Surface | Who uses it | What it does | Where documented |
 |---|---|---|---|
-| `mesh_*` tools (`mesh_list`, `mesh_send`, `mesh_fanout`, `mesh_get`, `mesh_await`, `mesh_cancel`, `mesh_inbox`, `mesh_reply`, `mesh_workflow_get` / `record` / `checkpoint` / `wait`, `mesh_improvement_report`) | a running agent | peer messaging; durable-workflow checkpoints, waits, and journal | this file |
-| `kxm` CLI (`agent worker`; `session status` / `start` / `stop`; `workflow list` / `get` / `start` / `export`; `gate validate` / `degrade` / `signal` / `github watch`; `improve`; `mesh init` / `status` / `hub` / `stop` / `smoke`) | a human operator in a shell | process lifecycle, signed webhook start, signed callbacks, local inspection, exports | `docs/architecture.md`, `docs/configuration.md`, `kxm --help` |
-| `kxm.worker-result.v1` envelope | emitted by some CLI commands (`gate validate`, `gate degrade`, `gate signal`, `gate github watch`, `agent worker --dry-run`) | a self-described result record appended to `.kxm/logs/telemetry.jsonl` | `docs/architecture.md` |
+| `mesh_*` tools (`mesh_list`, `mesh_send`, `mesh_fanout`, `mesh_get`, `mesh_await`, `mesh_cancel`, `mesh_inbox`, `mesh_reply`, `mesh_workflow_list` / `get` / `record` / `checkpoint` / `wait`, `mesh_improvement_report`) | a running agent | peer messaging; durable-workflow checkpoints, waits, and journal | this file |
+| `kxm` CLI (`agent worker`; `session status` / `start` / `stop`; `workflow list` / `get` / `start` / `export`; `gate validate` / `artifacts-exist` / `degrade` / `signal` / `github watch`; `improve`; `mesh init` / `status` / `tui` / `hub` / `stop` / `smoke`) | a human operator in a shell | process lifecycle, signed webhook start, signed callbacks, local inspection, exports | `docs/architecture.md`, `docs/configuration.md`, `kxm --help` |
+| `kxm.worker-result.v1` envelope | emitted by some CLI commands (`gate validate`, `gate artifacts-exist`, `gate degrade`, `gate signal`, `gate github watch`, `agent worker --dry-run`) | a self-described result record appended to `.kxm/logs/telemetry.jsonl` | `docs/architecture.md` |
 
 Consequences for agents:
 
@@ -49,6 +49,7 @@ Long-lived workers **never finish the mesh**, but every individual model turn mu
 - In Claude Code channel mode, inbound requests arrive as `<channel source="kxm-mesh" ...>` events. Respond, `mesh_reply`, then keep the session open for the next event.
 - Claude Code without channel mode is degraded pull mode: call `mesh_inbox` after every reply and use bounded backoff while empty. Reply with `mesh_reply`. Do not advertise pull-only mode as push-driven liveness.
 - A supervised Pi worker whose delivered custom message does not start a turn within the activation timeout requests a restart; the delivered hub claim is preserved for replay. Idle with no queued work is healthy. Idle with old delivered work is stuck.
+- When the operator explicitly enables `--session-isolation workflow` / `PI_MESH_WORKER_SESSION_ISOLATION=workflow`, supervised Pi workers use a stable default model session for ordinary messages and one session per hub-authorized workflow run. The upgrade-compatible default is `off`, which retains one shared history. In workflow mode, a candidate for another scope stays `queued` while the extension requests a clean child swap; it is acknowledged only after replay in the destination scope. Do not call Pi session commands, edit `.kxm/state/worker-session-*`, infer affinity from a correlation ID, or manually restart during this handshake. The hub-owned `workflowRunId` and supervisor own routing.
 
 ## Durable webhook workflows
 

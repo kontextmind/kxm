@@ -13,19 +13,19 @@ You need:
 - Claude Code only if you want a mixed Pi/Claude pool;
 - access to `kontextmind/pi-extensions` while the repository is private.
 
-All agents in one pool must use the same hub URL, authentication token, and project name. Every active agent in that project must have a unique name.
+All agents in one pool must use the same hub URL, project token, and project name. Keep the hub/operator administrative token separate. Every active agent in that project must have a unique name.
 
 ## Install the operator command
 
 Pi's Git package installation supplies the extension and Agent Skill but does
-not add `pi-mesh` to `PATH`. For command-first operation, download the packed
+not add `kxm` to `PATH`. For command-first operation, download the packed
 release through an authenticated GitHub CLI session and install that local
 tarball. Run `gh auth login` first if necessary.
 
 ```powershell
-$version = "0.4.3"
+$version = "<release-version>"
 $asset = "kontextmind-pi-extensions-$version.tgz"
-$releaseDir = Join-Path $PWD ".pi-mesh-release"
+$releaseDir = Join-Path $PWD ".kxm-release"
 New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
 gh release download "v$version" --repo kontextmind/pi-extensions --pattern $asset --dir $releaseDir --clobber
 npm install --global --omit=peer (Join-Path $releaseDir $asset)
@@ -35,21 +35,23 @@ kxm mesh help
 Do not substitute a global `git+https` npm install; the supported global
 operator package is the versioned release tarball. To run from source instead,
 clone the repository, run `npm ci`, and use `node scripts/kxm.mjs` in place
-of `pi-mesh`.
+of `kxm`.
 
 ## Start the hub
 
 With the packed operator command installed:
 
 ```powershell
-$env:PI_MESH_AUTH_TOKEN = "replace-with-a-long-random-token"
+$env:PI_MESH_AUTH_TOKEN = "replace-with-an-admin-token"
+$env:PI_MESH_PROJECT_TOKENS = '{"demo":"replace-with-a-demo-project-token"}'
 kxm mesh hub
 ```
 
 On macOS or Linux, use:
 
 ```bash
-export PI_MESH_AUTH_TOKEN="replace-with-a-long-random-token"
+export PI_MESH_AUTH_TOKEN="replace-with-an-admin-token"
+export PI_MESH_PROJECT_TOKENS='{"demo":"replace-with-a-demo-project-token"}'
 kxm mesh hub
 ```
 
@@ -69,13 +71,15 @@ Invoke-RestMethod http://127.0.0.1:7331/health
 
 The response should contain `ok: true`. Check `/ready` as well when validating storage readiness. The default database survives hub restarts and is ignored by Git.
 
-The additive `kxm` command can initialize a workspace and validate workflow files without printing secrets:
+The additive `kxm` command initializes empty project-owned workspace directories. After adding your reviewed workflow file, validate it without printing secrets:
 
 ```powershell
 kxm mesh --json init
-kxm gate --json validate --file .kxm/config/workflows/v04-dogfood.json
+kxm gate --json validate --file .kxm/config/workflows/product.json
 kxm mesh --json status
 ```
+
+`mesh init` never copies the package repository's dogfood roster or workflows into a consumer workspace.
 
 ## Connect Pi agents
 
@@ -93,7 +97,7 @@ Set an identity and start the first agent:
 
 ```powershell
 $env:PI_MESH_SERVER_URL = "http://127.0.0.1:7331"
-$env:PI_MESH_AUTH_TOKEN = "replace-with-a-long-random-token"
+$env:PI_MESH_AUTH_TOKEN = "replace-with-a-demo-project-token"
 $env:PI_MESH_PROJECT = "demo"
 $env:PI_MESH_AGENT_NAME = "planner"
 $env:PI_MESH_AGENT_PURPOSE = "Plans work and coordinates handoffs"
@@ -136,7 +140,7 @@ Configure these values when prompted:
 | Setting | Example |
 |---|---|
 | Mesh server URL | `http://127.0.0.1:7331` |
-| Authentication token | The same token used by the hub |
+| Authentication token | The `demo` project token, not the administrative token |
 | Agent name | `claude-reviewer` |
 | Agent purpose | `Reviews implementation and tests` |
 | Project | `demo` |
@@ -173,6 +177,7 @@ Avoid assigning two agents to edit the same files in one checkout. Use separate 
 
 ## Next steps
 
+- Use the wiki-ready [KXM Handbook](kxm-handbook.md) for the complete CLI, Pi, Claude, workflow, gate, and recovery reference.
 - Adjust names, project isolation, and network settings in [Configuration](configuration.md).
 - Learn the request lifecycle in [Architecture](architecture.md).
 - Read [Operations](operations.md) before binding beyond localhost.

@@ -196,13 +196,14 @@ test("interactive dashboard registers a legacy observer when ops access is lost 
     }
     if (url.endsWith("/v1/agents")) return new Response(JSON.stringify({ agents: [agent, observer] }));
     if (url.includes("/v1/events?")) {
+      assert.match(url, /presenceOnly=true/);
       legacyOpened = true;
       queueMicrotask(() => abort.abort());
       return new Response(new ReadableStream({
         start(controller) {
           controller.enqueue(encoder.encode(": heartbeat\n\n"));
         },
-      }), { headers: { "content-type": "text/event-stream" } });
+      }), { headers: { "content-type": "text/event-stream", "x-mesh-events-mode": "presence" } });
     }
     if (url.includes("/v1/agents/agt_transition_observer") && init?.method === "DELETE") return new Response(null, { status: 204 });
     throw new Error(`unexpected request: ${url}`);

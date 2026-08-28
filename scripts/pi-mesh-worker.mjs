@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { closeSync, createWriteStream, mkdirSync, openSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { delimiter, dirname, join, resolve } from "node:path";
+import { closeSync, createWriteStream, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 
 const name = process.env.PI_MESH_AGENT_NAME?.trim();
@@ -117,6 +117,16 @@ const continueEnabled = process.env.PI_MESH_WORKER_CONTINUE !== "false";
 const initialContinue = process.env.PI_MESH_WORKER_INITIAL_CONTINUE === undefined
   ? continueEnabled
   : process.env.PI_MESH_WORKER_INITIAL_CONTINUE !== "false";
+// Upgrade compatibility keeps the historical shared Pi session unless the
+// operator explicitly enables workflow-scoped isolation.
+const sessionIsolation = process.env.PI_MESH_WORKER_SESSION_ISOLATION?.trim() || "off";
+if (sessionIsolation !== "workflow" && sessionIsolation !== "off") {
+  throw new Error("PI_MESH_WORKER_SESSION_ISOLATION must be workflow or off");
+}
+const maxRunSessions = Number(process.env.PI_MESH_WORKER_MAX_RUN_SESSIONS?.trim() || 128);
+if (!Number.isInteger(maxRunSessions) || maxRunSessions < 1 || maxRunSessions > 1_024) {
+  throw new Error("PI_MESH_WORKER_MAX_RUN_SESSIONS must be an integer between 1 and 1024");
+}
 const drainTimeoutMs = Number(process.env.PI_MESH_WORKER_DRAIN_MS?.trim() || 15_000);
 const providerRetryMs = Number(process.env.PI_MESH_WORKER_PROVIDER_RETRY_MS?.trim() || 60_000);
 if (!Number.isInteger(providerRetryMs) || providerRetryMs < 1_000 || providerRetryMs > 3_600_000) {
@@ -137,8 +147,12 @@ let continueThisStart = initialContinue;
 let continueFallbackUsed = false;
 let abortRequestId;
 const pidPath = join(stateDir, `worker-${workerKey}.pid`);
+const sessionBindingPath = join(stateDir, `worker-session-binding-${workerKey}.json`);
+const sessionRequestPath = join(stateDir, `worker-session-request-${workerKey}.json`);
+const workerSessionRoot = join(stateDir, "pi-sessions", workerKey);
 const workerStartedAt = new Date().toISOString();
 const workerGeneration = randomUUID();
+let childIncarnation = 0;
 const controlFile = `worker-${workerKey}.stop`;
 const controlPath = join(stateDir, controlFile);
 
@@ -209,6 +223,310 @@ process.once("exit", cleanupPid);
 rmSync(controlPath, { force: true });
 const logStream = createWriteStream(logPath, { flags: "a", mode: 0o600 });
 const agentLogStream = createWriteStream(agentLogPath, { flags: "a", mode: 0o600 });
+const workflowRunIdPattern = /^run_[a-f0-9]{32}$/;
+const piSessionIdPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+let sessionManifest = {
+  version: 1,
+  agentName: name,
+  project,
+  workerKey,
+  active: { kind: "default" },
+  runs: {},
+  updatedAt: workerStartedAt,
+};
+let activeSessionBinding = sessionManifest.active;
+let recoveredCorruptManifest = false;
+
+function bindingScope(binding) {
+  return binding.kind === "workflow" ? `workflow:${binding.runId}` : "default";
+}
+
+function sameBinding(left, right) {
+  return left.kind === right.kind && (left.kind === "default" || left.runId === right.runId);
+}
+
+function parseSessionBinding(value, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
+  if (value.kind === "default" && Object.keys(value).every((key) => key === "kind")) return { kind: "default" };
+  if (
+    value.kind === "workflow"
+    && typeof value.runId === "string"
+    && workflowRunIdPattern.test(value.runId)
+    && Object.keys(value).every((key) => key === "kind" || key === "runId")
+  ) return { kind: "workflow", runId: value.runId };
+  throw new Error(`${label} is not a valid default or workflow binding`);
+}
+
+function sessionDirForBinding(binding) {
+  return binding.kind === "workflow"
+    ? join(workerSessionRoot, "runs", binding.runId)
+    : join(workerSessionRoot, "default");
+}
+
+function ensureSessionDirectory(binding) {
+  mkdirSync(workerSessionRoot, { recursive: true, mode: 0o700 });
+  const rootStats = lstatSync(workerSessionRoot);
+  if (!rootStats.isDirectory() || rootStats.isSymbolicLink()) {
+    throw new Error("worker Pi session root must be a real directory, not a link");
+  }
+  if (binding.kind === "workflow") {
+    const runsRoot = join(workerSessionRoot, "runs");
+    mkdirSync(runsRoot, { recursive: true, mode: 0o700 });
+    const runsStats = lstatSync(runsRoot);
+    if (!runsStats.isDirectory() || runsStats.isSymbolicLink()) {
+      throw new Error("worker Pi workflow session root must be a real directory, not a link");
+    }
+  }
+  const directory = sessionDirForBinding(binding);
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  const targetStats = lstatSync(directory);
+  if (!targetStats.isDirectory() || targetStats.isSymbolicLink()) {
+    throw new Error("worker Pi session directory must be a real directory, not a link");
+  }
+  const canonicalRoot = realpathSync.native(workerSessionRoot);
+  const canonicalTarget = realpathSync.native(directory);
+  const descendant = relative(canonicalRoot, canonicalTarget);
+  if (!descendant || descendant === ".." || descendant.startsWith(`..${sep}`) || isAbsolute(descendant)) {
+    throw new Error("worker Pi session directory escapes or aliases its isolated root");
+  }
+  return directory;
+}
+
+function hasSessionHistory(directory, depth = 0) {
+  try {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (entry.isFile() && entry.name.endsWith(".jsonl")) return true;
+      if (entry.isDirectory() && depth < 2 && hasSessionHistory(join(directory, entry.name), depth + 1)) return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+function persistSessionManifest() {
+  if (sessionIsolation === "off") return;
+  sessionManifest.active = activeSessionBinding;
+  sessionManifest.updatedAt = new Date().toISOString();
+  mkdirSync(dirname(sessionBindingPath), { recursive: true, mode: 0o700 });
+  const tmp = `${sessionBindingPath}.${process.pid}.tmp`;
+  writeFileSync(tmp, `${JSON.stringify(sessionManifest)}\n`, { encoding: "utf8", mode: 0o600 });
+  renameSync(tmp, sessionBindingPath);
+}
+
+function loadSessionManifest() {
+  if (sessionIsolation === "off") return;
+  try {
+    const stats = statSync(sessionBindingPath);
+    if (!stats.isFile() || stats.size > 128 * 1024) throw new Error("session binding manifest is not a bounded regular file");
+    const parsed = JSON.parse(readFileSync(sessionBindingPath, "utf8"));
+    if (
+      parsed?.version !== 1
+      || parsed.agentName !== name
+      || parsed.project !== project
+      || parsed.workerKey !== workerKey
+      || !parsed.runs
+      || typeof parsed.runs !== "object"
+      || Array.isArray(parsed.runs)
+    ) throw new Error("session binding manifest identity or schema is invalid");
+    const active = parseSessionBinding(parsed.active, "session binding manifest active value");
+    const runs = {};
+    const entries = Object.entries(parsed.runs);
+    if (entries.length > maxRunSessions) throw new Error("session binding manifest exceeds the configured run limit");
+    for (const [runId, value] of entries) {
+      if (!workflowRunIdPattern.test(runId) || !value || typeof value !== "object" || Array.isArray(value)) {
+        throw new Error("session binding manifest contains an invalid run entry");
+      }
+      const createdAt = typeof value.createdAt === "string" && Number.isFinite(Date.parse(value.createdAt)) ? value.createdAt : undefined;
+      const lastUsedAt = typeof value.lastUsedAt === "string" && Number.isFinite(Date.parse(value.lastUsedAt)) ? value.lastUsedAt : undefined;
+      if (!createdAt || !lastUsedAt) throw new Error("session binding manifest contains invalid timestamps");
+      runs[runId] = { createdAt, lastUsedAt };
+    }
+    if (active.kind === "workflow" && !runs[active.runId]) {
+      throw new Error("active workflow binding is absent from the session manifest");
+    }
+    sessionManifest = { version: 1, agentName: name, project, workerKey, active, runs, updatedAt: parsed.updatedAt };
+    activeSessionBinding = active;
+  } catch (error) {
+    if (error?.code === "ENOENT") return;
+    const quarantinedPath = `${sessionBindingPath}.corrupt-${Date.now()}`;
+    // Preserve the invalid state for diagnosis, but never route from it.
+    // If quarantine itself fails (for example due to unsafe permissions),
+    // initialization fails closed instead of starting with ambiguous scope.
+    renameSync(sessionBindingPath, quarantinedPath);
+    activeSessionBinding = { kind: "default" };
+    recoveredCorruptManifest = true;
+    sessionManifest = {
+      version: 1,
+      agentName: name,
+      project,
+      workerKey,
+      active: activeSessionBinding,
+      runs: {},
+      updatedAt: new Date().toISOString(),
+    };
+    log("worker_session_state_recovered", {
+      reason: "corrupt_manifest",
+      quarantinedPath,
+      error: error instanceof Error ? error.message.slice(0, 512) : String(error).slice(0, 512),
+    });
+  }
+}
+
+function touchSessionBinding(binding) {
+  if (binding.kind !== "workflow") return;
+  const timestamp = new Date().toISOString();
+  if (!sessionManifest.runs[binding.runId]) {
+    sessionManifest.runs[binding.runId] = { createdAt: timestamp, lastUsedAt: timestamp };
+  } else {
+    sessionManifest.runs[binding.runId].lastUsedAt = timestamp;
+  }
+  const candidates = Object.entries(sessionManifest.runs)
+    .filter(([runId]) => runId !== binding.runId)
+    .sort((left, right) => left[1].lastUsedAt.localeCompare(right[1].lastUsedAt) || left[0].localeCompare(right[0]));
+  while (Object.keys(sessionManifest.runs).length > maxRunSessions) {
+    const oldest = candidates.shift();
+    if (!oldest) throw new Error("no inactive workflow session is available for bounded eviction");
+    delete sessionManifest.runs[oldest[0]];
+    // Commit the tombstone before deleting history. If the process stops
+    // between these operations, startup reconciliation removes the orphan.
+    persistSessionManifest();
+    rmSync(sessionDirForBinding({ kind: "workflow", runId: oldest[0] }), { recursive: true, force: true });
+    log("worker_session_evicted", { runId: oldest[0], maxRunSessions });
+  }
+}
+
+function reconcileSessionDirectories() {
+  const runsRoot = join(workerSessionRoot, "runs");
+  let removed = 0;
+  try {
+    const rootStats = lstatSync(workerSessionRoot);
+    if (!rootStats.isDirectory() || rootStats.isSymbolicLink()) {
+      throw new Error("worker Pi session root is not a safe real directory");
+    }
+    const runsStats = lstatSync(runsRoot);
+    if (!runsStats.isDirectory() || runsStats.isSymbolicLink()) {
+      rmSync(runsRoot, { recursive: true, force: true });
+      log("worker_session_orphans_removed", { count: 1, reason: "unsafe_runs_root" });
+      return;
+    }
+    const entries = readdirSync(runsRoot, { withFileTypes: true });
+    if (recoveredCorruptManifest) {
+      const recoverable = [];
+      for (const entry of entries) {
+        const entryPath = join(runsRoot, entry.name);
+        if (!workflowRunIdPattern.test(entry.name) || !entry.isDirectory() || entry.isSymbolicLink()) {
+          rmSync(entryPath, { recursive: true, force: true });
+          removed += 1;
+          continue;
+        }
+        const stats = lstatSync(entryPath);
+        recoverable.push({ runId: entry.name, timestamp: stats.mtime.toISOString() });
+      }
+      recoverable.sort((left, right) => right.timestamp.localeCompare(left.timestamp) || left.runId.localeCompare(right.runId));
+      for (const item of recoverable.slice(0, maxRunSessions)) {
+        sessionManifest.runs[item.runId] = { createdAt: item.timestamp, lastUsedAt: item.timestamp };
+      }
+      for (const item of recoverable.slice(maxRunSessions)) {
+        rmSync(join(runsRoot, item.runId), { recursive: true, force: true });
+        removed += 1;
+      }
+      if (recoverable.length > 0) {
+        log("worker_session_orphans_adopted", { count: Math.min(recoverable.length, maxRunSessions) });
+      }
+    } else {
+      for (const entry of entries) {
+        if (!workflowRunIdPattern.test(entry.name) || !sessionManifest.runs[entry.name] || entry.isSymbolicLink()) {
+          rmSync(join(runsRoot, entry.name), { recursive: true, force: true });
+          removed += 1;
+        }
+      }
+    }
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  if (removed > 0) log("worker_session_orphans_removed", { count: removed });
+}
+
+function initializeSessionRouting() {
+  if (sessionIsolation === "off") return;
+  loadSessionManifest();
+  reconcileSessionDirectories();
+  touchSessionBinding(activeSessionBinding);
+  ensureSessionDirectory(activeSessionBinding);
+  persistSessionManifest();
+  continueThisStart = initialContinue && hasSessionHistory(sessionDirForBinding(activeSessionBinding));
+  try {
+    const stale = JSON.parse(readFileSync(sessionRequestPath, "utf8"));
+    if (stale?.generation !== workerGeneration) {
+      rmSync(sessionRequestPath, { force: true });
+      log("worker_session_request_discarded", { reason: "stale_generation" });
+    }
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      rmSync(sessionRequestPath, { force: true });
+      log("worker_session_request_discarded", { reason: "malformed_startup_request" });
+    }
+  }
+}
+
+function consumeSessionRouteRequest() {
+  if (sessionIsolation === "off") return undefined;
+  let request;
+  try {
+    const stats = statSync(sessionRequestPath);
+    if (!stats.isFile() || stats.size > 16 * 1024) throw new Error("session route request is not a bounded regular file");
+    request = JSON.parse(readFileSync(sessionRequestPath, "utf8"));
+    const from = parseSessionBinding(request.from, "session route source");
+    const to = parseSessionBinding(request.to, "session route target");
+    const createdAt = Date.parse(request.createdAt);
+    if (
+      request.version !== 1
+      || request.agentName !== name
+      || request.project !== project
+      || request.workerKey !== workerKey
+      || request.generation !== workerGeneration
+      || !Number.isInteger(request.childIncarnation)
+      || request.childIncarnation !== childIncarnation
+      || typeof request.messageId !== "string"
+      || !/^msg_[a-f0-9]{32}$/.test(request.messageId)
+      || typeof request.sourceSessionId !== "string"
+      || !piSessionIdPattern.test(request.sourceSessionId)
+      || !Number.isFinite(createdAt)
+      || createdAt < Date.now() - 10 * 60_000
+      || createdAt > Date.now() + 60_000
+    ) throw new Error("session route request identity, generation, or bounds are invalid");
+    if (!sameBinding(from, activeSessionBinding)) {
+      if (sameBinding(to, activeSessionBinding)) {
+        rmSync(sessionRequestPath, { force: true });
+        log("worker_session_request_discarded", { reason: "already_applied", messageId: request.messageId });
+        return undefined;
+      }
+      throw new Error("session route source does not match the active binding");
+    }
+    const previous = activeSessionBinding;
+    touchSessionBinding(previous);
+    activeSessionBinding = to;
+    touchSessionBinding(activeSessionBinding);
+    ensureSessionDirectory(activeSessionBinding);
+    persistSessionManifest();
+    rmSync(sessionRequestPath, { force: true });
+    continueThisStart = continueEnabled && hasSessionHistory(sessionDirForBinding(activeSessionBinding));
+    continueFallbackUsed = false;
+    log("worker_session_routed", {
+      from: bindingScope(previous),
+      to: bindingScope(activeSessionBinding),
+      messageId: request.messageId,
+      routeLatencyMs: Date.now() - createdAt,
+    });
+    return { from: previous, to: activeSessionBinding, messageId: request.messageId };
+  } catch (error) {
+    if (error?.code === "ENOENT") return undefined;
+    rmSync(sessionRequestPath, { force: true });
+    log("worker_session_request_rejected", { reason: error instanceof Error ? error.message : "invalid_request" });
+    return undefined;
+  }
+}
 
 function quoteWindowsCommandArgument(value, label) {
   if (/[\0\r\n"%!]/.test(value)) {
@@ -218,10 +536,19 @@ function quoteWindowsCommandArgument(value, label) {
 }
 
 function log(event, details = {}) {
-  const line = `${JSON.stringify({ timestamp: new Date().toISOString(), event, worker: name, project, ...details })}\n`;
+  const line = `${JSON.stringify({
+    timestamp: new Date().toISOString(),
+    event,
+    worker: name,
+    project,
+    sessionScope: sessionIsolation === "workflow" ? bindingScope(activeSessionBinding) : "legacy",
+    ...details,
+  })}\n`;
   logStream.write(line);
   process.stdout.write(line);
 }
+
+initializeSessionRouting();
 
 function closeLogs() {
   if (logsClosed) return;
@@ -240,19 +567,34 @@ function writeRecoveryEnvelope(details) {
       const candidate = JSON.parse(readFileSync(contextPath, "utf8"));
       if (candidate?.version === 1 && candidate.agentName === name && candidate.project === project) {
         persistedContext = {
-          runId: typeof candidate.runId === "string" ? candidate.runId : null,
-          stageId: typeof candidate.stageId === "string" ? candidate.stageId : null,
+          runId: typeof candidate.runId === "string" && workflowRunIdPattern.test(candidate.runId) ? candidate.runId : null,
+          stageId: typeof candidate.stageId === "string" && /^[A-Za-z0-9_.-]{1,128}$/.test(candidate.stageId) ? candidate.stageId : null,
+          activeMessageIds: Array.isArray(candidate.activeMessageIds)
+            ? candidate.activeMessageIds.filter((value) => typeof value === "string" && /^msg_[a-f0-9]{32}$/.test(value)).slice(0, 3)
+            : [],
           pendingMessageIds: Array.isArray(candidate.pendingMessageIds)
-            ? candidate.pendingMessageIds.filter((value) => typeof value === "string")
+            ? candidate.pendingMessageIds.filter((value) => typeof value === "string" && /^msg_[a-f0-9]{32}$/.test(value)).slice(0, 16)
             : [],
           artifactPointers: Array.isArray(candidate.artifactPointers)
-            ? candidate.artifactPointers.filter((value) => typeof value === "string")
+            ? candidate.artifactPointers.filter((value) => typeof value === "string" && value.length > 0 && value.length <= 2_048 && !/[\0\r\n]/.test(value)).slice(0, 16)
             : [],
         };
         break;
       }
     } catch {
       // Try the legacy name-only context after the collision-safe path.
+    }
+  }
+  if (sessionIsolation === "workflow") {
+    const boundRunId = activeSessionBinding.kind === "workflow" ? activeSessionBinding.runId : null;
+    if (persistedContext.runId !== boundRunId) {
+      persistedContext = {
+        runId: null,
+        stageId: null,
+        activeMessageIds: persistedContext.activeMessageIds ?? [],
+        pendingMessageIds: persistedContext.pendingMessageIds ?? [],
+        artifactPointers: [],
+      };
     }
   }
   const envelope = {
@@ -264,9 +606,11 @@ function writeRecoveryEnvelope(details) {
     generation: workerGeneration,
     previousContinue: continueEnabled,
     freshSession: details.freshSession === true,
+    sessionBinding: sessionIsolation === "workflow" ? activeSessionBinding : undefined,
     createdAt: new Date().toISOString(),
     runId: null,
     stageId: null,
+    activeMessageIds: [],
     pendingMessageIds: [],
     artifactPointers: [],
     ...persistedContext,
@@ -280,6 +624,8 @@ function writeRecoveryEnvelope(details) {
 }
 
 function start() {
+  childIncarnation += 1;
+  const thisChildIncarnation = childIncarnation;
   try {
     for (const extensionPath of extensionPaths) {
       validateResourcePath("PI_MESH_WORKER_EXTENSION_PATHS", "extension", extensionPath);
@@ -296,7 +642,12 @@ function start() {
     return;
   }
   const selectedModel = modelCandidates[modelIndex];
-  const args = ["--mode", "rpc", "--name", name];
+  const activeSessionDir = sessionIsolation === "workflow" ? ensureSessionDirectory(activeSessionBinding) : undefined;
+  const sessionDisplayName = sessionIsolation === "workflow"
+    ? `${name}@${activeSessionBinding.kind === "workflow" ? activeSessionBinding.runId.slice(4, 12) : "default"}`
+    : name;
+  const args = ["--mode", "rpc", "--name", sessionDisplayName];
+  if (activeSessionDir) args.push("--session-dir", activeSessionDir);
   if (continueThisStart) args.push("--continue");
   if (selectedModel) args.push("--model", selectedModel);
   if (toolAllowlist.length) args.push("--tools", toolAllowlist.join(","));
@@ -327,6 +678,9 @@ function start() {
     agentLogPath,
     workerKey,
     toolTimeoutMs,
+    sessionIsolation,
+    childIncarnation: thisChildIncarnation,
+    ...(activeSessionDir ? { sessionDir: activeSessionDir } : {}),
     ...(selectedModel ? { model: selectedModel, modelCandidate: modelIndex + 1, modelCandidateCount: modelCandidates.length } : {}),
     explicitToolCount: toolAllowlist.length,
     explicitExtensionCount: extensionPaths.length,
@@ -397,6 +751,12 @@ function start() {
       setTimeout(start, delay);
       return;
     }
+    const routedSession = consumeSessionRouteRequest();
+    if (routedSession) {
+      backoffMs = minBackoffMs;
+      start();
+      return;
+    }
     if (continueThisStart && !continueFallbackUsed && continuationUnresumable && (code || 0) !== 0) {
       continueFallbackUsed = true;
       continueThisStart = false;
@@ -415,7 +775,8 @@ function start() {
       return;
     }
     restartCount += 1;
-    continueThisStart = continueEnabled;
+    continueThisStart = continueEnabled
+      && (sessionIsolation === "off" || hasSessionHistory(sessionDirForBinding(activeSessionBinding)));
     if (Date.now() - startedAt > 60_000) backoffMs = minBackoffMs;
     const delay = backoffMs;
     backoffMs = Math.min(maxBackoffMs, backoffMs * 2);
@@ -489,6 +850,13 @@ function start() {
   function requestRecoveryRestart({ reason, failureClass, rotateModel, toolName }) {
     if (stopping || completed || recoveryRestartRequested || !child) return;
     clearToolTimers();
+    try {
+      statSync(sessionRequestPath);
+      rmSync(sessionRequestPath, { force: true });
+      log("worker_session_request_discarded", { reason: "active_turn_recovery" });
+    } catch {
+      // A missing route request is the normal active-turn recovery case.
+    }
     const unresumableFallback = reason === "unresumable_session";
     const fallbackSelected = Boolean(!unresumableFallback && rotateModel && modelIndex + 1 < modelCandidates.length);
     if (fallbackSelected) modelIndex += 1;
@@ -501,7 +869,8 @@ function start() {
       writeRecoveryEnvelope({ reason, freshSession: true });
       log("worker_continue_fallback", { reason, settledError: true, uptimeMs: Date.now() - startedAt });
     } else {
-      continueThisStart = continueEnabled;
+      continueThisStart = continueEnabled
+        && (sessionIsolation === "off" || hasSessionHistory(sessionDirForBinding(activeSessionBinding)));
       continueFallbackUsed = false;
       writeRecoveryEnvelope({ reason, freshSession: !continueEnabled, failureClass });
       log(reason === "provider_error" ? "worker_provider_failure" : "worker_tool_timeout", {
@@ -674,6 +1043,10 @@ function start() {
         PI_MESH_ASSETS_DIR: assetsDir,
         PI_MESH_STATE_DIR: stateDir,
         PI_MESH_WORKER_IDENTITY_KEY: workerKey,
+        PI_MESH_WORKER_GENERATION: workerGeneration,
+        PI_MESH_WORKER_CHILD_INCARCATION: String(thisChildIncarnation),
+        PI_MESH_WORKER_SESSION_ISOLATION: sessionIsolation,
+        PI_MESH_WORKER_SESSION_SCOPE: sessionIsolation === "workflow" ? bindingScope(activeSessionBinding) : "legacy",
       },
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,

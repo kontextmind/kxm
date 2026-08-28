@@ -31,7 +31,7 @@ The included [`jira-development.json`](../.kxm/config/workflows/jira-development
 6. Run lint, build/typecheck, security, and Playwright gates.
 7. Reproduce repository and CodeRabbit-style review gates.
 8. Update documentation.
-9. Push and watch required checks with `kxm gate github watch`; warnings and failures loop back for correction.
+9. Push and watch required checks with `kxm gate github watch`; warnings and failures retry the same stage for correction until its attempt limit is exhausted.
 10. Merge only when policy and authorization allow it.
 11. Update Jira with links and evidence.
 12. Produce an evidence-backed improvement backlog.
@@ -66,10 +66,10 @@ $env:PI_MESH_PROJECT = "product"
 $env:PI_MESH_AGENT_NAME = "coordinator"
 $env:PI_MESH_AGENT_PURPOSE = "Coordinates Jira development workflows and quality gates"
 $env:PI_MESH_WORKDIR = "D:\work\product-repository"
-kxm agent worker
+kxm agent worker --session-isolation workflow
 ```
 
-The worker launches Pi in headless RPC mode, keeps stdin open, preserves its session by default, and restarts with bounded exponential backoff. Run the worker itself under the operating system's service manager for boot startup, resource limits, log collection, and crash policy. Set `PI_MESH_WORKER_CONTINUE=false` only when every process restart should create a fresh Pi session.
+Workflow isolation is explicit during the upgrade-compatible release and begins fresh scoped storage on first use. The worker launches Pi in headless RPC mode, keeps stdin open, preserves its active bound session by default, and restarts with bounded exponential backoff. Run the worker itself under the operating system's service manager for boot startup, resource limits, log collection, and crash policy. Set `PI_MESH_WORKER_CONTINUE=false` only when every process restart should create a fresh Pi session.
 
 ## Workflow definition fields
 

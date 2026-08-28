@@ -30,6 +30,58 @@ function isTerminalMessageError(error: unknown): boolean {
       || (error.statusCode === 404 && error.code === "message_not_found"));
 }
 
+const WORKFLOW_RUN_ID = /^run_[a-f0-9]{32}$/;
+const PI_SESSION_ID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+
+type WorkerSessionBinding = { kind: "default" } | { kind: "workflow"; runId: string };
+
+/** Return only hub-authorized workflow affinity. The legacy internal-message
+ * fallback supports durable messages created before workflowRunId was added;
+ * caller-controlled correlation IDs alone never establish affinity. */
+export function workflowRunIdForMessage(message: Pick<MessageRecord, "workflowRunId" | "workflowContext" | "correlationId" | "from">): string | undefined {
+  if (message.workflowRunId !== undefined) {
+    if (!WORKFLOW_RUN_ID.test(message.workflowRunId)) return undefined;
+    if (message.workflowContext?.runId && message.workflowContext.runId !== message.workflowRunId) return undefined;
+    return message.workflowRunId;
+  }
+  if (message.workflowContext?.runId && WORKFLOW_RUN_ID.test(message.workflowContext.runId)) {
+    return message.workflowContext.runId;
+  }
+  if (
+    message.correlationId
+    && WORKFLOW_RUN_ID.test(message.correlationId)
+    && message.from === `workflow:${message.correlationId}`
+  ) return message.correlationId;
+  return undefined;
+}
+
+export function bindingForMessage(message: Pick<MessageRecord, "workflowRunId" | "workflowContext" | "correlationId" | "from">): WorkerSessionBinding {
+  const runId = workflowRunIdForMessage(message);
+  if (message.workflowRunId !== undefined && !runId) {
+    throw new Error("hub workflow affinity is malformed or conflicts with workflow context");
+  }
+  if (message.workflowContext?.runId && !WORKFLOW_RUN_ID.test(message.workflowContext.runId)) {
+    throw new Error("hub workflow context contains a malformed run identity");
+  }
+  return runId ? { kind: "workflow", runId } : { kind: "default" };
+}
+
+function bindingFromEnvironment(): WorkerSessionBinding {
+  if (process.env.PI_MESH_WORKER_SESSION_ISOLATION !== "workflow") return { kind: "default" };
+  const scope = process.env.PI_MESH_WORKER_SESSION_SCOPE?.trim();
+  if (scope === "default") return { kind: "default" };
+  if (scope?.startsWith("workflow:")) {
+    const runId = scope.slice("workflow:".length);
+    if (WORKFLOW_RUN_ID.test(runId)) return { kind: "workflow", runId };
+  }
+  throw new Error("PI_MESH_WORKER_SESSION_SCOPE must be default or workflow:<canonical-run-id>");
+}
+
+function sameBinding(left: WorkerSessionBinding, right: WorkerSessionBinding): boolean {
+  return left.kind === right.kind
+    && (left.kind === "default" || (right.kind === "workflow" && left.runId === right.runId));
+}
+
 function result(value: unknown) {
   return {
     content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }],
@@ -92,6 +144,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
   let activationInProgress = false;
   let activationPromise: Promise<void> | undefined;
   let activationRetryTimer: ReturnType<typeof setTimeout> | undefined;
+  let activationRetryAttempt = 0;
   let activationStartTimer: ReturnType<typeof setTimeout> | undefined;
   let activationStartMessageId: string | undefined;
   let requestWorkerRestart: (() => void) | undefined;
@@ -110,10 +163,49 @@ export default function piMeshExtension(pi: ExtensionAPI) {
   let projectName = process.env.PI_MESH_PROJECT ?? "";
   let recoveryStageId: string | undefined;
   let recoveryArtifacts: string[] = [];
+  let currentPiSessionId: string | undefined;
+  let currentSessionBinding: WorkerSessionBinding = { kind: "default" };
 
   function recoveryContextPath(): string | undefined {
     if (!stateDir || !agentName || !projectName) return undefined;
     return join(stateDir, `worker-context-${workerStateKey(projectName, agentName)}.json`);
+  }
+
+  function sessionRouteRequestPath(): string | undefined {
+    const workerKey = process.env.PI_MESH_WORKER_IDENTITY_KEY?.trim();
+    if (!stateDir || !workerKey) return undefined;
+    return join(stateDir, `worker-session-request-${workerKey}.json`);
+  }
+
+  function requestSessionRoute(message: MessageRecord, target: WorkerSessionBinding): boolean {
+    if (process.env.PI_MESH_WORKER_SESSION_ISOLATION !== "workflow" || sameBinding(currentSessionBinding, target)) {
+      return false;
+    }
+    const path = sessionRouteRequestPath();
+    const workerKey = process.env.PI_MESH_WORKER_IDENTITY_KEY?.trim();
+    const generation = process.env.PI_MESH_WORKER_GENERATION?.trim();
+    const childIncarnation = Number(process.env.PI_MESH_WORKER_CHILD_INCARCATION);
+    if (!path || !workerKey || !generation || !Number.isInteger(childIncarnation) || childIncarnation < 1 || !currentPiSessionId || !PI_SESSION_ID.test(currentPiSessionId)) {
+      throw new Error("supervised workflow session routing is missing a valid worker generation, child incarnation, or Pi session identity");
+    }
+    const request = {
+      version: 1,
+      agentName,
+      project: projectName,
+      workerKey,
+      generation,
+      childIncarnation,
+      from: currentSessionBinding,
+      to: target,
+      sourceSessionId: currentPiSessionId,
+      messageId: message.id,
+      createdAt: new Date().toISOString(),
+    };
+    mkdirSync(dirname(path), { recursive: true });
+    const tmp = `${path}.${process.pid}.tmp`;
+    writeFileSync(tmp, `${JSON.stringify(request)}\n`, { encoding: "utf8", mode: 0o600 });
+    renameSync(tmp, path);
+    return true;
   }
 
   function removeMatchingLegacyRecoveryContext(): void {
@@ -133,10 +225,16 @@ export default function piMeshExtension(pi: ExtensionAPI) {
   function persistRecoveryContext(): void {
     const path = recoveryContextPath();
     if (!path) return;
-    const recoveryMessage = [activeInbound, awaitingActivation, activatingInbound, ...pending]
-      .find((message) => message?.correlationId?.startsWith("run_"));
-    const runId = recoveryMessage?.correlationId;
-    const pendingMessageIds = [activeInbound?.id, awaitingActivation?.id, activatingInbound?.id, ...pending.map((message) => message.id)].filter((id): id is string => Boolean(id)).slice(0, 16);
+    // Bind recovery only to work that entered activation in this Pi scope.
+    // Merely queued future workflow work must not receive a failure from the
+    // current ordinary or sibling-run turn.
+    const recoveryMessage = [activeInbound, awaitingActivation, activatingInbound]
+      .find((message) => message && workflowRunIdForMessage(message));
+    const runId = recoveryMessage ? workflowRunIdForMessage(recoveryMessage) : undefined;
+    const activeMessageIds = [activeInbound?.id, awaitingActivation?.id, activatingInbound?.id]
+      .filter((id): id is string => Boolean(id)).slice(0, 3);
+    const pendingMessageIds = [...activeMessageIds, ...pending.map((message) => message.id)]
+      .filter((id, index, values): id is string => Boolean(id) && values.indexOf(id) === index).slice(0, 16);
     if (!runId && pendingMessageIds.length === 0) {
       rmSync(path, { force: true });
       removeMatchingLegacyRecoveryContext();
@@ -144,7 +242,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     }
     mkdirSync(dirname(path), { recursive: true });
     const tmp = `${path}.${process.pid}.tmp`;
-    writeFileSync(tmp, `${JSON.stringify({ version: 1, agentName, project: projectName, runId: runId ?? null, stageId: recoveryStageId ?? null, pendingMessageIds, artifactPointers: recoveryArtifacts.slice(0, 16), updatedAt: new Date().toISOString() })}\n`, { encoding: "utf8", mode: 0o600 });
+    writeFileSync(tmp, `${JSON.stringify({ version: 1, agentName, project: projectName, runId: runId ?? null, stageId: recoveryStageId ?? null, activeMessageIds, pendingMessageIds, artifactPointers: recoveryArtifacts.slice(0, 16), updatedAt: new Date().toISOString() })}\n`, { encoding: "utf8", mode: 0o600 });
     renameSync(tmp, path);
     removeMatchingLegacyRecoveryContext();
   }
@@ -223,14 +321,19 @@ export default function piMeshExtension(pi: ExtensionAPI) {
 
   function scheduleActivationRetry(error: unknown): void {
     if (shuttingDown || activationRetryTimer) return;
+    const delayMs = Math.min(
+      SETTLEMENT_RETRY_BASE_MS * (2 ** Math.min(activationRetryAttempt, 7)),
+      SETTLEMENT_RETRY_MAX_MS,
+    );
+    activationRetryAttempt += 1;
     notify?.(
-      `pi-mesh could not activate the next hub message; it remains durable and activation will retry: ${error instanceof Error ? error.message : String(error)}`,
+      `pi-mesh could not activate the next hub message; it remains durable and activation will retry in ${delayMs}ms: ${error instanceof Error ? error.message : String(error)}`,
       "error",
     );
     activationRetryTimer = setTimeout(() => {
       activationRetryTimer = undefined;
       requestActivation();
-    }, SETTLEMENT_RETRY_BASE_MS);
+    }, delayMs);
     activationRetryTimer.unref?.();
   }
 
@@ -254,6 +357,25 @@ export default function piMeshExtension(pi: ExtensionAPI) {
         persistRecoveryContext();
         return;
       }
+      try {
+        const targetBinding = bindingForMessage(message);
+        if (requestSessionRoute(message, targetBinding)) {
+          // The hub remains authoritative: do not acknowledge before the
+          // destination Pi session is active. The replacement extension will
+          // receive this still-queued message after the supervisor swaps the
+          // single child process.
+          enqueue(message, true);
+          persistRecoveryContext();
+          shuttingDown = true;
+          queueMicrotask(() => requestWorkerRestart?.());
+          return;
+        }
+      } catch (error) {
+        enqueue(message, true);
+        persistRecoveryContext();
+        scheduleActivationRetry(error);
+        return;
+      }
       activatingInbound = message;
       persistRecoveryContext();
       let acknowledged: MessageRecord;
@@ -262,6 +384,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
       } catch (error) {
         if (isTerminalMessageError(error)) {
           activatingInbound = undefined;
+          activationRetryAttempt = 0;
           persistRecoveryContext();
           return;
         }
@@ -274,6 +397,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
         return;
       }
       if (activatingInbound?.id !== message.id || shuttingDown) return;
+      activationRetryAttempt = 0;
       activatingInbound = undefined;
       awaitingActivation = acknowledged;
       persistRecoveryContext();
@@ -432,6 +556,15 @@ export default function piMeshExtension(pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     shuttingDown = false;
+    try {
+      currentSessionBinding = bindingFromEnvironment();
+    } catch (error) {
+      ctx.ui.setStatus("pi-mesh", "mesh:offline");
+      ctx.ui.notify(`pi-mesh session routing configuration failed: ${error instanceof Error ? error.message : String(error)}`, "error");
+      void ctx.shutdown();
+      return;
+    }
+    currentPiSessionId = ctx.sessionManager?.getSessionId();
     const serverUrl = process.env.PI_MESH_SERVER_URL ?? "http://127.0.0.1:7331";
     const project = process.env.PI_MESH_PROJECT ?? basename(ctx.cwd);
     const name = process.env.PI_MESH_AGENT_NAME ?? pi.getSessionName() ?? `pi-${process.pid}`;
@@ -449,17 +582,26 @@ export default function piMeshExtension(pi: ExtensionAPI) {
       ...(process.env.PI_MESH_AUTH_TOKEN ? { authToken: process.env.PI_MESH_AUTH_TOKEN } : {}),
       ...(model ? { model } : {}),
     });
+    notify = (message, type) => ctx.ui.notify(message, type);
+    requestWorkerRestart = () => { void ctx.shutdown(); };
     try {
       const agent = await client.start(receive);
-      notify = (message, type) => ctx.ui.notify(message, type);
-      requestWorkerRestart = () => { void ctx.shutdown(); };
       ctx.ui.setStatus("pi-mesh", `mesh:${agent.name}`);
       ctx.ui.notify(`Connected to pi-mesh as ${agent.name}`, "info");
       const recovered = stateDir ? await consumeWorkerRecoveryEnvelope(client, stateDir, agent.name, project) : undefined;
-      const durableInboundWillReplay = recovered !== undefined
-        && (recovered.reason === "provider_error" || recovered.reason === "tool_timeout")
-        && (recovered.pendingMessageIds?.length ?? 0) > 0;
-      if (recovered?.freshSession && recovered.runId && !durableInboundWillReplay) {
+      const recoveryReplayIds = recovered?.activeMessageIds ?? recovered?.pendingMessageIds ?? [];
+      const replayCandidates = await Promise.all(recoveryReplayIds.slice(0, 16).map(async (messageId) => {
+        try {
+          const message = await client!.getMessage(messageId);
+          return message.status === "queued" || message.status === "delivered";
+        } catch {
+          return false;
+        }
+      }));
+      const durableInboundWillReplay = replayCandidates.some(Boolean);
+      const recoveryMatchesSession = process.env.PI_MESH_WORKER_SESSION_ISOLATION !== "workflow"
+        || (currentSessionBinding.kind === "workflow" && recovered?.runId === currentSessionBinding.runId);
+      if (recovered?.freshSession && recovered.runId && !recovered.peerLocal && recoveryMatchesSession && !durableInboundWillReplay) {
         pi.sendMessage({ customType: "pi-mesh-recovery", content: [`Resume durable workflow run ${recovered.runId} after a fresh-session worker recovery.`, recovered.stageId ? `Last recorded stage: ${recovered.stageId}.` : "Resolve the current stage from mesh_workflow_get.", `Recovery reason: ${recovered.reason}.`, "Call mesh_workflow_get, inspect its journal and stage evidence, then continue the current stage without repeating completed work.", "Record the recovery decision and checkpoint only after the required evidence is satisfied."].join("\n"), display: true, details: { runId: recovered.runId, stageId: recovered.stageId, reason: recovered.reason } }, { triggerTurn: true, deliverAs: "followUp" });
       }
     } catch (error) {
@@ -505,7 +647,8 @@ export default function piMeshExtension(pi: ExtensionAPI) {
   });
 
   pi.on("tool_result", async (event) => {
-    if (!activeInbound?.correlationId?.startsWith("run_") || !client) return;
+    const activeRunId = activeInbound ? workflowRunIdForMessage(activeInbound) : undefined;
+    if (!activeRunId || !client) return;
     const resultEvent = event as {
       toolName?: string;
       toolCallId?: string;
@@ -529,7 +672,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
       ...(resultEvent.statusCode !== undefined ? { statusCode: resultEvent.statusCode } : {}),
     });
     try {
-      await client.recordWorkflowEntry(activeInbound.correlationId, {
+      await client.recordWorkflowEntry(activeRunId, {
         category: "error",
         area: areaForTool(resultEvent.toolName),
         severity: "error",
@@ -547,8 +690,9 @@ export default function piMeshExtension(pi: ExtensionAPI) {
       persistRecoveryContext();
       if (!activeFailureRecorded) {
         try {
-          if (activeInbound.correlationId?.startsWith("run_")) {
-            await client.recordWorkflowEntry(activeInbound.correlationId, {
+          const activeRunId = workflowRunIdForMessage(activeInbound);
+          if (activeRunId) {
+            await client.recordWorkflowEntry(activeRunId, {
               category: "error",
               area: "harness",
               severity: "error",
@@ -582,6 +726,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     persistRecoveryContext();
     if (activationRetryTimer) clearTimeout(activationRetryTimer);
     activationRetryTimer = undefined;
+    activationRetryAttempt = 0;
     await activationPromise?.catch(() => undefined);
     if (settlementRetryTimer) clearTimeout(settlementRetryTimer);
     settlementRetryTimer = undefined;
