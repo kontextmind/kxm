@@ -89,3 +89,20 @@ operator installation instructions. For version `<release-version>`, the require
 `kontextmind-pi-extensions-<release-version>.tgz`.
 
 When adding a feature, add executable coverage and update this matrix in the same change. If a behavior can only be verified manually, state why and add it to the release checklist instead of implying automated coverage.
+
+## v0.5 context suites
+
+| Suite | Covers |
+|---|---|
+| `test/context.test.ts` | Context schema round-trips, hostile input, cross-project fail-closed, storage upgrade |
+| `test/state.test.ts` | Temporal state lifecycle, asOf queries, supersession, contradictions, restart durability |
+| `test/context-authority.test.ts` | Authority grant floor, reserialization escalation, lineage bounds, control-plane smuggling |
+| `test/arbiter.test.ts` | Role-aware packet assembly, budgets, contradiction routing, journal conversion, hub surfaces |
+| `test/context-surfaces.test.ts` | CLI and Pi tool parity for the context API |
+| `test/journal-evolution.test.ts` | New journal categories, evidence requirements, governed promotion |
+| `test/wiki.test.ts` | Wiki compilation determinism, lifecycle preservation, contradiction visibility, lint |
+| `test/workflow-transitions.test.ts` | Typed back-edges, budgets, bypass protection, restart recovery |
+| `test/fix-workflow.test.ts` | /fix end-to-end, immutable oracle, plan-hash gating, exhaustion |
+| `test/skills.test.ts` | Skill candidate lifecycle, quarantine, immutability, CLI |
+| `test/routing.test.ts` | Behavioral hash, record parsing, comparisons, routing report |
+| `test/migration.test.ts` | v0.4 → v0.5 database upgrade fixture |

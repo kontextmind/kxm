@@ -172,3 +172,25 @@ Durable transport does not make peer execution exactly once. Use idempotent task
 ## Remaining scale boundaries
 
 Broader deployments need shared state and coordination, external identity and fine-grained authorization, distributed traffic controls, defined service-level objectives, load and chaos testing, and a formal long-term schema migration strategy.
+
+## v0.5 context/state storage
+
+The mesh database (schema version 3) carries `context_items` alongside
+agents, messages, workflow runs, and the journal. Temporal state, knowledge
+records, and their audit trails live in the same SQLite file and upgrade in
+place from v0.4 databases.
+
+- **Backup and restore**: include the mesh database file and, if used, the
+  `.kxm/skills/` and `.kxm/knowledge/` trees. The wiki is a compiled view and
+  can be regenerated (`kxm context wiki-compile`); skills history and state
+  records are authoritative and must be backed up.
+- **Recovery after restart**: runs, journal entries, transitions, captured
+  oracles, and plan hashes reload from SQLite; temporal `asOf` queries are
+  deterministic against the restored validity windows.
+- **Project isolation**: context/state/skill operations are project-scoped.
+  Agents authenticate to their own project; administrative operations require
+  the hub token. Cross-project context requests fail closed
+  (`context_isolation_violation`).
+- **Rollback**: schema downgrades are not supported (a newer database refuses
+  to open on an older runtime). Restore a database backup taken before the
+  upgrade instead.
