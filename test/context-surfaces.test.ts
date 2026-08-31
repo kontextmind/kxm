@@ -75,6 +75,8 @@ test("kxm context CLI commands call the hub context API with parity", async () =
   assert.equal(await runCli(["context", "state", "test-project", "ci.pipeline", "--as-of", "2026-01-01T00:00:00.000Z"], {}, { ...capture(), fetchImpl: sharedFetch }), 0);
   assert.equal(await runCli(["context", "episode", "test-project", "--run", "run_1"], {}, { ...capture(), fetchImpl: sharedFetch }), 0);
   assert.equal(await runCli(["context", "explain", "test-project", "ctx_1"], {}, { ...capture(), fetchImpl: sharedFetch }), 0);
+  assert.equal(await runCli(["context", "wiki-compile", "test-project"], {}, { ...capture(), fetchImpl: sharedFetch }), 0);
+  assert.equal(await runCli(["context", "wiki-lint", "test-project"], {}, { ...capture(), fetchImpl: sharedFetch }), 0);
   assert.equal(await runCli(["context", "promote", "test-project", "ctx_prop1", "--evidence", "eval:1,eval:2"], {}, {
     ...capture(),
     fetchImpl: async (input, init) => {
