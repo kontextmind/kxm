@@ -3,6 +3,7 @@ import {
   MAX_MESSAGE_TTL_MS,
   MIN_MESSAGE_TTL_MS,
   ProtocolError,
+  newId,
   requireString,
   type MessageRecord,
   type WorkflowMessageContext,
@@ -164,6 +165,52 @@ export interface WorkflowStageDefinition {
   maxAttempts: number;
   area?: ImprovementArea;
   evidencePolicies?: WorkflowEvidencePolicies;
+  /** Typed outcome map (v0.5). Keys are outcome identities ("passed",
+   * "failed", or declared custom outcomes); values are stage IDs or
+   * "$terminal". Only declared keys create transitions; undeclared outcomes
+   * keep the v0.4 default edges (forward-next, attempt-bounded retry). */
+  on?: WorkflowOutcomeMap;
+  /** Per-stage budget on transitions taken from this stage. */
+  maxTransitions?: number;
+}
+
+/** A declared transition: a target stage ID, "$terminal", or a rule with a
+ * per-edge budget. */
+export interface WorkflowTransitionRule {
+  target: string;
+  maxTransitions?: number;
+}
+
+export type WorkflowOutcomeValue = string | WorkflowTransitionRule;
+export type WorkflowOutcomeMap = Record<string, WorkflowOutcomeValue>;
+
+export const WORKFLOW_TERMINAL_TARGET = "$terminal";
+
+/** One durably journaled typed transition. */
+export interface WorkflowTransitionRecord {
+  id: string;
+  fromStage: string;
+  toStage: string;
+  outcome: string;
+  attempt: number;
+  evidenceKeys: string[];
+  at: string;
+}
+
+export function normalizeOutcomeValue(value: WorkflowOutcomeValue, field: string): WorkflowTransitionRule {
+  if (typeof value === "string") return { target: value };
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${field} must be a stage ID, "$terminal", or a { target, maxTransitions } rule`);
+  }
+  const rule = value as Partial<WorkflowTransitionRule>;
+  if (typeof rule.target !== "string" || !rule.target.trim()) {
+    throw new Error(`${field}.target must be a non-empty stage ID or "$terminal"`);
+  }
+  if (rule.maxTransitions !== undefined
+    && (!Number.isInteger(rule.maxTransitions) || (rule.maxTransitions as number) < 1 || (rule.maxTransitions as number) > 100)) {
+    throw new Error(`${field}.maxTransitions must be an integer between 1 and 100`);
+  }
+  return { target: rule.target, ...(rule.maxTransitions !== undefined ? { maxTransitions: rule.maxTransitions } : {}) };
 }
 
 export interface WebhookWorkflowDefinition {
@@ -179,6 +226,9 @@ export interface WebhookWorkflowDefinition {
   ttlMs?: number;
   promptTemplate: string;
   stages: WorkflowStageDefinition[];
+  /** Global budget on typed transitions per run. Required whenever any stage
+   * declares a back-edge (a cycle without a budget is rejected at load). */
+  maxTransitions?: number;
 }
 
 export interface WorkflowStageState extends WorkflowStageDefinition {
@@ -236,6 +286,11 @@ export interface WorkflowRun {
   waiting?: WorkflowWaitState;
   signalReceipts?: WorkflowSignalReceipt[];
   stages: WorkflowStageState[];
+  /** Durable typed-transition journal (v0.5), oldest first, bounded by the
+   * definition's maxTransitions. Absent on v0.4 runs. */
+  transitions?: WorkflowTransitionRecord[];
+  /** Global transition budget copied from the definition at run creation. */
+  maxTransitions?: number;
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
@@ -921,6 +976,12 @@ export function parseWorkflowDefinitions(
         targetName,
         warn,
       );
+      const on = parseOutcomeMap(stageId, stage.on);
+      const stageMaxTransitions = stage.maxTransitions;
+      if (stageMaxTransitions !== undefined
+        && (!Number.isInteger(stageMaxTransitions) || (stageMaxTransitions as number) < 1 || (stageMaxTransitions as number) > 100)) {
+        throw new Error(`stage ${stageId} maxTransitions must be an integer between 1 and 100`);
+      }
       return {
         id: stageId,
         label: requireString(stage.label ?? stageId, "stage.label", { max: 128 }),
@@ -929,8 +990,13 @@ export function parseWorkflowDefinitions(
         maxAttempts: maxAttempts as number,
         ...(area ? { area } : {}),
         ...(evidencePolicies ? { evidencePolicies } : {}),
+        ...(on ? { on } : {}),
+        ...(stageMaxTransitions !== undefined ? { maxTransitions: stageMaxTransitions as number } : {}),
       };
     });
+    const definitionMaxTransitions = value.maxTransitions as number | undefined;
+    if (definitionMaxTransitions !== undefined) validateWorkflowTransitions({ id, stages: stages as WorkflowStageDefinition[], maxTransitions: definitionMaxTransitions });
+    else validateWorkflowTransitions({ id, stages: stages as WorkflowStageDefinition[] });
     let filter: WebhookWorkflowDefinition["filter"];
     if (value.filter !== undefined) {
       const candidate = object(value.filter, `workflow ${id} filter`);
@@ -958,10 +1024,58 @@ export function parseWorkflowDefinitions(
       ...(filter ? { filter } : {}),
       delivery,
       ...(value.ttlMs !== undefined ? { ttlMs: value.ttlMs as number } : {}),
+      ...(value.maxTransitions !== undefined ? { maxTransitions: value.maxTransitions as number } : {}),
       promptTemplate: requireString(value.promptTemplate, "workflow.promptTemplate", { max: 20_000 }),
       stages,
     };
   });
+}
+
+/** Validate typed transitions at definition load: targets must exist,
+ * forward transitions may never skip an intermediate stage (approvals and
+ * gates cannot be bypassed), and back-edges require global and bounded
+ * budgets. */
+export function validateWorkflowTransitions(definition: Pick<WebhookWorkflowDefinition, "id" | "stages"> & { maxTransitions?: number }): void {
+  const stageIndex = new Map(definition.stages.map((stage, index) => [stage.id, index]));
+  let hasBackEdge = false;
+  for (const stage of definition.stages) {
+    if (!stage.on) continue;
+    for (const [outcome, rawValue] of Object.entries(stage.on)) {
+      if (!outcome.trim()) throw new Error(`stage ${stage.id} declares an empty outcome key`);
+      const rule = normalizeOutcomeValue(rawValue, `stage ${stage.id} on.${outcome}`);
+      if (rule.target === WORKFLOW_TERMINAL_TARGET) continue;
+      const targetIndex = stageIndex.get(rule.target);
+      if (targetIndex === undefined) {
+        throw new Error(`stage ${stage.id} on.${outcome} targets unknown stage ${rule.target}`);
+      }
+      const sourceIndex = stageIndex.get(stage.id)!;
+      if (targetIndex > sourceIndex + 1) {
+        throw new Error(
+          `stage ${stage.id} on.${outcome} skips intermediate stages by targeting ${rule.target}; forward transitions must target the next stage so approvals and gates cannot be bypassed`,
+        );
+      }
+      if (targetIndex <= sourceIndex) hasBackEdge = true;
+    }
+  }
+  if (definition.maxTransitions !== undefined
+    && (!Number.isInteger(definition.maxTransitions) || (definition.maxTransitions as number) < 1 || (definition.maxTransitions as number) > 200)) {
+    throw new Error(`workflow ${definition.id} maxTransitions must be an integer between 1 and 200`);
+  }
+  if (hasBackEdge && (definition.maxTransitions === undefined || definition.maxTransitions < 1)) {
+    throw new Error(`workflow ${definition.id} declares a back-edge but no maxTransitions budget; cycles without budgets are rejected`);
+  }
+}
+
+function parseOutcomeMap(stageId: string, raw: unknown): WorkflowOutcomeMap | undefined {
+  if (raw === undefined) return undefined;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error(`stage ${stageId} on must be an object`);
+  }
+  const map: WorkflowOutcomeMap = {};
+  for (const [outcome, value] of Object.entries(raw as Record<string, unknown>)) {
+    map[outcome] = normalizeOutcomeValue(value as WorkflowOutcomeValue, `stage ${stageId} on.${outcome}`);
+  }
+  return map;
 }
 
 export function valueAtPath(payload: unknown, path: string): unknown {
@@ -1009,6 +1123,118 @@ export function workflowDefinitionHash(definition: WebhookWorkflowDefinition): s
   return createHash("sha256").update(canonicalWorkflowDefinitionJson(definition), "utf8").digest("hex");
 }
 
+/** Resolve a declared transition rule for a stage outcome, or undefined when
+ * the outcome keeps the v0.4 default edges. */
+function resolveOutcomeRule(stage: WorkflowStageState, outcomeKey: string): WorkflowTransitionRule | undefined {
+  const raw = stage.on?.[outcomeKey];
+  return raw === undefined ? undefined : normalizeOutcomeValue(raw, `stage ${stage.id} on.${outcomeKey}`);
+}
+
+/** Transition budgets are derived from the durable journal: global count is
+ * the record count, per-stage counts filter by source stage, per-edge counts
+ * filter by source+outcome+target. Restart-safe with no extra state. */
+function transitionCounts(
+  run: WorkflowRun,
+  fromStage: string,
+  outcome: string,
+  target: string,
+): { total: number; fromStage: number; forEdge: number } {
+  const records = run.transitions ?? [];
+  return {
+    total: records.length,
+    fromStage: records.filter((record) => record.fromStage === fromStage).length,
+    forEdge: records.filter((record) => record.fromStage === fromStage && record.outcome === outcome && record.toStage === target).length,
+  };
+}
+
+function recordTransition(
+  run: WorkflowRun,
+  fromStage: string,
+  rule: WorkflowTransitionRule,
+  outcome: string,
+  attempt: number,
+  evidenceKeys: string[],
+  timestamp: string,
+): WorkflowTransitionRecord {
+  const record: WorkflowTransitionRecord = {
+    id: newId("trans"),
+    fromStage,
+    toStage: rule.target,
+    outcome,
+    attempt,
+    evidenceKeys,
+    at: timestamp,
+  };
+  run.transitions = [...(run.transitions ?? []), record];
+  return record;
+}
+
+/** Enter (or re-enter) a stage with attempt-bound state: previous evidence
+ * never satisfies a later attempt unless policy explicitly allows it. */
+function enterStage(run: WorkflowRun, stage: WorkflowStageState, timestamp: string): void {
+  stage.status = "in_progress";
+  stage.attempts = 0;
+  stage.evidence = {};
+  stage.verifiedEvidence = {};
+  stage.startedAt = timestamp;
+  stage.updatedAt = timestamp;
+  delete stage.summary;
+  run.currentStage = stage.id;
+  run.updatedAt = timestamp;
+}
+
+/** Execute a declared transition with global/per-stage/per-edge budgets.
+ * Budget exhaustion fails safely: the run fails with actionable retrospective
+ * evidence rather than looping unbounded. */
+function takeDeclaredTransition(
+  run: WorkflowRun,
+  stage: WorkflowStageState,
+  rule: WorkflowTransitionRule,
+  outcome: string,
+  summary: string,
+  attempt: number,
+  timestamp: string,
+  evidenceKeys: string[],
+): { retry: boolean; completed: boolean; run: WorkflowRun; transition?: WorkflowTransitionRecord; exhausted?: boolean } {
+  const definitionBudget = run.maxTransitions;
+  const counts = transitionCounts(run, stage.id, outcome, rule.target);
+  const edgeExhausted = rule.maxTransitions !== undefined && counts.forEdge >= rule.maxTransitions;
+  const stageExhausted = stage.maxTransitions !== undefined && counts.fromStage >= stage.maxTransitions;
+  const globalExhausted = definitionBudget !== undefined && counts.total >= definitionBudget;
+  if (edgeExhausted || stageExhausted || globalExhausted) {
+    stage.completedAt = timestamp;
+    run.status = "failed";
+    delete run.currentStage;
+    run.updatedAt = timestamp;
+    return {
+      retry: false,
+      completed: false,
+      run,
+      exhausted: true,
+    };
+  }
+  const record = recordTransition(run, stage.id, rule, outcome, attempt, evidenceKeys.slice(0, 32), timestamp);
+  if (rule.target === WORKFLOW_TERMINAL_TARGET) {
+    stage.completedAt = timestamp;
+    run.status = "completed";
+    delete run.currentStage;
+    run.completedAt = timestamp;
+    run.updatedAt = timestamp;
+    return { retry: false, completed: true, run, transition: record };
+  }
+  const target = run.stages.find((candidate) => candidate.id === rule.target);
+  if (!target) {
+    // Definition validation prevents this; fail closed anyway.
+    run.status = "failed";
+    delete run.currentStage;
+    return { retry: false, completed: false, run, exhausted: true };
+  }
+  stage.summary = summary;
+  enterStage(run, target, timestamp);
+  return { retry: false, completed: false, run, transition: record };
+}
+
+
 export function checkpointRun(
   run: WorkflowRun,
   stageId: string,
@@ -1017,7 +1243,8 @@ export function checkpointRun(
   evidence: WorkflowEvidenceInput,
   timestamp: string,
   verifiedEvidence: WorkflowVerifiedEvidence = {},
-): { retry: boolean; completed: boolean; run: WorkflowRun; degraded?: boolean } {
+  outcome?: string,
+): { retry: boolean; completed: boolean; run: WorkflowRun; degraded?: boolean; transition?: WorkflowTransitionRecord; exhausted?: boolean } {
   if (run.status !== "running") throw new ProtocolError(409, `workflow is ${run.status}`, "workflow_terminal");
   const stage = run.stages.find((candidate) => candidate.id === stageId);
   if (!stage) throw new ProtocolError(404, `workflow stage not found: ${stageId}`, "workflow_stage_not_found");
@@ -1052,11 +1279,28 @@ export function checkpointRun(
       delete run.currentStage;
       return { retry: false, completed: false, run };
     }
+    // Declared failure outcomes create typed transitions (bounded); the
+    // outcome identity defaults to the checkpoint status.
+    const outcomeKey = outcome ?? status;
+    const rule = resolveOutcomeRule(stage, outcomeKey);
+    if (rule && stage.attempts < stage.maxAttempts) {
+      const result = takeDeclaredTransition(run, stage, rule, outcomeKey, summary, stage.attempts, timestamp, Object.keys(accumulatedEvidence));
+      // Re-arm the source stage for future re-entry (the durable journal
+      // already captured the failed attempt). Self-edges stay in_progress.
+      if (result.transition !== undefined && !result.completed && rule.target !== stage.id) {
+        stage.status = "pending";
+      }
+      return result;
+    }
     stage.status = "in_progress";
     return { retry: true, completed: false, run };
   }
   stage.status = "passed";
   stage.completedAt = timestamp;
+  const passedRule = resolveOutcomeRule(stage, outcome ?? "passed");
+  if (passedRule) {
+    return takeDeclaredTransition(run, stage, passedRule, outcome ?? "passed", summary, stage.attempts, timestamp, Object.keys(accumulatedEvidence));
+  }
   const next = run.stages.find((candidate) => candidate.status === "pending");
   if (next) {
     next.status = "in_progress";

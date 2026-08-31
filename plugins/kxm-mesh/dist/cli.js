@@ -3455,6 +3455,21 @@ function requireString(value, field, options = {}) {
 
 // plugins/kxm-mesh/src/workflow.ts
 var PROMOTABLE_JOURNAL_CATEGORIES = ["skill-candidate", "hypothesis", "experiment"];
+var WORKFLOW_TERMINAL_TARGET = "$terminal";
+function normalizeOutcomeValue(value, field) {
+  if (typeof value === "string") return { target: value };
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${field} must be a stage ID, "$terminal", or a { target, maxTransitions } rule`);
+  }
+  const rule = value;
+  if (typeof rule.target !== "string" || !rule.target.trim()) {
+    throw new Error(`${field}.target must be a non-empty stage ID or "$terminal"`);
+  }
+  if (rule.maxTransitions !== void 0 && (!Number.isInteger(rule.maxTransitions) || rule.maxTransitions < 1 || rule.maxTransitions > 100)) {
+    throw new Error(`${field}.maxTransitions must be an integer between 1 and 100`);
+  }
+  return { target: rule.target, ...rule.maxTransitions !== void 0 ? { maxTransitions: rule.maxTransitions } : {} };
+}
 function journalPromotionState(entry) {
   if (!PROMOTABLE_JOURNAL_CATEGORIES.includes(entry.category)) return void 0;
   const records = entry.promotion ?? [];
@@ -3655,6 +3670,11 @@ function parseWorkflowDefinitions(raw, environment = process.env, onWarning) {
         targetName,
         warn
       );
+      const on = parseOutcomeMap(stageId, stage.on);
+      const stageMaxTransitions = stage.maxTransitions;
+      if (stageMaxTransitions !== void 0 && (!Number.isInteger(stageMaxTransitions) || stageMaxTransitions < 1 || stageMaxTransitions > 100)) {
+        throw new Error(`stage ${stageId} maxTransitions must be an integer between 1 and 100`);
+      }
       return {
         id: stageId,
         label: requireString(stage.label ?? stageId, "stage.label", { max: 128 }),
@@ -3662,9 +3682,14 @@ function parseWorkflowDefinitions(raw, environment = process.env, onWarning) {
         requiredEvidence,
         maxAttempts,
         ...area ? { area } : {},
-        ...evidencePolicies ? { evidencePolicies } : {}
+        ...evidencePolicies ? { evidencePolicies } : {},
+        ...on ? { on } : {},
+        ...stageMaxTransitions !== void 0 ? { maxTransitions: stageMaxTransitions } : {}
       };
     });
+    const definitionMaxTransitions = value.maxTransitions;
+    if (definitionMaxTransitions !== void 0) validateWorkflowTransitions({ id, stages, maxTransitions: definitionMaxTransitions });
+    else validateWorkflowTransitions({ id, stages });
     let filter;
     if (value.filter !== void 0) {
       const candidate = object(value.filter, `workflow ${id} filter`);
@@ -3687,10 +3712,51 @@ function parseWorkflowDefinitions(raw, environment = process.env, onWarning) {
       ...filter ? { filter } : {},
       delivery,
       ...value.ttlMs !== void 0 ? { ttlMs: value.ttlMs } : {},
+      ...value.maxTransitions !== void 0 ? { maxTransitions: value.maxTransitions } : {},
       promptTemplate: requireString(value.promptTemplate, "workflow.promptTemplate", { max: 2e4 }),
       stages
     };
   });
+}
+function validateWorkflowTransitions(definition) {
+  const stageIndex = new Map(definition.stages.map((stage, index) => [stage.id, index]));
+  let hasBackEdge = false;
+  for (const stage of definition.stages) {
+    if (!stage.on) continue;
+    for (const [outcome, rawValue] of Object.entries(stage.on)) {
+      if (!outcome.trim()) throw new Error(`stage ${stage.id} declares an empty outcome key`);
+      const rule = normalizeOutcomeValue(rawValue, `stage ${stage.id} on.${outcome}`);
+      if (rule.target === WORKFLOW_TERMINAL_TARGET) continue;
+      const targetIndex = stageIndex.get(rule.target);
+      if (targetIndex === void 0) {
+        throw new Error(`stage ${stage.id} on.${outcome} targets unknown stage ${rule.target}`);
+      }
+      const sourceIndex = stageIndex.get(stage.id);
+      if (targetIndex > sourceIndex + 1) {
+        throw new Error(
+          `stage ${stage.id} on.${outcome} skips intermediate stages by targeting ${rule.target}; forward transitions must target the next stage so approvals and gates cannot be bypassed`
+        );
+      }
+      if (targetIndex <= sourceIndex) hasBackEdge = true;
+    }
+  }
+  if (definition.maxTransitions !== void 0 && (!Number.isInteger(definition.maxTransitions) || definition.maxTransitions < 1 || definition.maxTransitions > 200)) {
+    throw new Error(`workflow ${definition.id} maxTransitions must be an integer between 1 and 200`);
+  }
+  if (hasBackEdge && (definition.maxTransitions === void 0 || definition.maxTransitions < 1)) {
+    throw new Error(`workflow ${definition.id} declares a back-edge but no maxTransitions budget; cycles without budgets are rejected`);
+  }
+}
+function parseOutcomeMap(stageId, raw) {
+  if (raw === void 0) return void 0;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error(`stage ${stageId} on must be an object`);
+  }
+  const map = {};
+  for (const [outcome, value] of Object.entries(raw)) {
+    map[outcome] = normalizeOutcomeValue(value, `stage ${stageId} on.${outcome}`);
+  }
+  return map;
 }
 
 // plugins/kxm-mesh/src/github-watch.ts

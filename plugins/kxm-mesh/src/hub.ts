@@ -1322,6 +1322,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           status: "running",
           currentStage: stages[0]!.id,
           stages,
+          ...(definition.maxTransitions !== undefined ? { maxTransitions: definition.maxTransitions } : {}),
           createdAt,
           updatedAt: createdAt,
         };
@@ -1840,8 +1841,43 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           evidence,
           timestamp,
           verifiedEvidence,
+          typeof body.outcome === "string" && body.outcome.trim()
+            ? requireString(body.outcome, "outcome", { max: 64 })
+            : undefined,
         );
         const checkpointStage = transition.stages.find((candidate) => candidate.id === stageId)!;
+        if (result.transition) {
+          const transitionEntry: WorkflowJournalEntry = {
+            id: newId("journal"),
+            runId: transition.id,
+            agentId: agent.id,
+            category: "state-change",
+            area: checkpointStage?.area ?? "workflow",
+            severity: "info",
+            summary: `typed transition ${result.transition.fromStage} -> ${result.transition.toStage} (${result.transition.outcome})`,
+            evidence: result.transition.evidenceKeys.map((key) => `requirement:${key}`),
+            relatedEntryIds: [],
+            createdAt: timestamp,
+          };
+          store.saveWorkflowTransition(transition, undefined, transitionEntry);
+          counters.journalEntries += 1;
+        }
+        if (result.exhausted) {
+          const exhaustEntry: WorkflowJournalEntry = {
+            id: newId("journal"),
+            runId: transition.id,
+            agentId: agent.id,
+            category: "error",
+            area: checkpointStage?.area ?? "workflow",
+            severity: "error",
+            summary: `transition budget exhausted at ${stageId} (outcome ${body.outcome ?? status}); run failed safely`,
+            evidence: [`class:transition_budget_exhausted`, `stage:${stageId}`],
+            relatedEntryIds: [],
+            createdAt: timestamp,
+          };
+          store.saveWorkflowTransition(transition, undefined, exhaustEntry);
+          counters.journalEntries += 1;
+        }
         let entry: WorkflowJournalEntry | undefined;
         if (status !== "passed") {
           entry = {

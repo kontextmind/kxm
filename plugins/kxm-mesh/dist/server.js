@@ -1022,6 +1022,21 @@ function parseJournalCategory(value) {
 function journalEvidenceRequired(category) {
   return EVIDENCE_REQUIRED_JOURNAL_CATEGORIES.includes(category);
 }
+var WORKFLOW_TERMINAL_TARGET = "$terminal";
+function normalizeOutcomeValue(value, field) {
+  if (typeof value === "string") return { target: value };
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${field} must be a stage ID, "$terminal", or a { target, maxTransitions } rule`);
+  }
+  const rule = value;
+  if (typeof rule.target !== "string" || !rule.target.trim()) {
+    throw new Error(`${field}.target must be a non-empty stage ID or "$terminal"`);
+  }
+  if (rule.maxTransitions !== void 0 && (!Number.isInteger(rule.maxTransitions) || rule.maxTransitions < 1 || rule.maxTransitions > 100)) {
+    throw new Error(`${field}.maxTransitions must be an integer between 1 and 100`);
+  }
+  return { target: rule.target, ...rule.maxTransitions !== void 0 ? { maxTransitions: rule.maxTransitions } : {} };
+}
 function journalPromotionState(entry) {
   if (!PROMOTABLE_JOURNAL_CATEGORIES.includes(entry.category)) return void 0;
   const records = entry.promotion ?? [];
@@ -1511,6 +1526,11 @@ function parseWorkflowDefinitions(raw, environment = process.env, onWarning) {
         targetName,
         warn
       );
+      const on = parseOutcomeMap(stageId, stage.on);
+      const stageMaxTransitions = stage.maxTransitions;
+      if (stageMaxTransitions !== void 0 && (!Number.isInteger(stageMaxTransitions) || stageMaxTransitions < 1 || stageMaxTransitions > 100)) {
+        throw new Error(`stage ${stageId} maxTransitions must be an integer between 1 and 100`);
+      }
       return {
         id: stageId,
         label: requireString(stage.label ?? stageId, "stage.label", { max: 128 }),
@@ -1518,9 +1538,14 @@ function parseWorkflowDefinitions(raw, environment = process.env, onWarning) {
         requiredEvidence,
         maxAttempts,
         ...area ? { area } : {},
-        ...evidencePolicies ? { evidencePolicies } : {}
+        ...evidencePolicies ? { evidencePolicies } : {},
+        ...on ? { on } : {},
+        ...stageMaxTransitions !== void 0 ? { maxTransitions: stageMaxTransitions } : {}
       };
     });
+    const definitionMaxTransitions = value.maxTransitions;
+    if (definitionMaxTransitions !== void 0) validateWorkflowTransitions({ id, stages, maxTransitions: definitionMaxTransitions });
+    else validateWorkflowTransitions({ id, stages });
     let filter;
     if (value.filter !== void 0) {
       const candidate = object(value.filter, `workflow ${id} filter`);
@@ -1543,10 +1568,51 @@ function parseWorkflowDefinitions(raw, environment = process.env, onWarning) {
       ...filter ? { filter } : {},
       delivery,
       ...value.ttlMs !== void 0 ? { ttlMs: value.ttlMs } : {},
+      ...value.maxTransitions !== void 0 ? { maxTransitions: value.maxTransitions } : {},
       promptTemplate: requireString(value.promptTemplate, "workflow.promptTemplate", { max: 2e4 }),
       stages
     };
   });
+}
+function validateWorkflowTransitions(definition) {
+  const stageIndex = new Map(definition.stages.map((stage, index) => [stage.id, index]));
+  let hasBackEdge = false;
+  for (const stage of definition.stages) {
+    if (!stage.on) continue;
+    for (const [outcome, rawValue] of Object.entries(stage.on)) {
+      if (!outcome.trim()) throw new Error(`stage ${stage.id} declares an empty outcome key`);
+      const rule = normalizeOutcomeValue(rawValue, `stage ${stage.id} on.${outcome}`);
+      if (rule.target === WORKFLOW_TERMINAL_TARGET) continue;
+      const targetIndex = stageIndex.get(rule.target);
+      if (targetIndex === void 0) {
+        throw new Error(`stage ${stage.id} on.${outcome} targets unknown stage ${rule.target}`);
+      }
+      const sourceIndex = stageIndex.get(stage.id);
+      if (targetIndex > sourceIndex + 1) {
+        throw new Error(
+          `stage ${stage.id} on.${outcome} skips intermediate stages by targeting ${rule.target}; forward transitions must target the next stage so approvals and gates cannot be bypassed`
+        );
+      }
+      if (targetIndex <= sourceIndex) hasBackEdge = true;
+    }
+  }
+  if (definition.maxTransitions !== void 0 && (!Number.isInteger(definition.maxTransitions) || definition.maxTransitions < 1 || definition.maxTransitions > 200)) {
+    throw new Error(`workflow ${definition.id} maxTransitions must be an integer between 1 and 200`);
+  }
+  if (hasBackEdge && (definition.maxTransitions === void 0 || definition.maxTransitions < 1)) {
+    throw new Error(`workflow ${definition.id} declares a back-edge but no maxTransitions budget; cycles without budgets are rejected`);
+  }
+}
+function parseOutcomeMap(stageId, raw) {
+  if (raw === void 0) return void 0;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error(`stage ${stageId} on must be an object`);
+  }
+  const map = {};
+  for (const [outcome, value] of Object.entries(raw)) {
+    map[outcome] = normalizeOutcomeValue(value, `stage ${stageId} on.${outcome}`);
+  }
+  return map;
 }
 function valueAtPath(payload, path) {
   let current = payload;
@@ -1579,7 +1645,80 @@ function canonicalWorkflowDefinitionJson(definition) {
 function workflowDefinitionHash(definition) {
   return createHash("sha256").update(canonicalWorkflowDefinitionJson(definition), "utf8").digest("hex");
 }
-function checkpointRun(run, stageId, status, summary, evidence, timestamp, verifiedEvidence = {}) {
+function resolveOutcomeRule(stage, outcomeKey) {
+  const raw = stage.on?.[outcomeKey];
+  return raw === void 0 ? void 0 : normalizeOutcomeValue(raw, `stage ${stage.id} on.${outcomeKey}`);
+}
+function transitionCounts(run, fromStage, outcome, target) {
+  const records = run.transitions ?? [];
+  return {
+    total: records.length,
+    fromStage: records.filter((record) => record.fromStage === fromStage).length,
+    forEdge: records.filter((record) => record.fromStage === fromStage && record.outcome === outcome && record.toStage === target).length
+  };
+}
+function recordTransition(run, fromStage, rule, outcome, attempt, evidenceKeys, timestamp) {
+  const record = {
+    id: newId("trans"),
+    fromStage,
+    toStage: rule.target,
+    outcome,
+    attempt,
+    evidenceKeys,
+    at: timestamp
+  };
+  run.transitions = [...run.transitions ?? [], record];
+  return record;
+}
+function enterStage(run, stage, timestamp) {
+  stage.status = "in_progress";
+  stage.attempts = 0;
+  stage.evidence = {};
+  stage.verifiedEvidence = {};
+  stage.startedAt = timestamp;
+  stage.updatedAt = timestamp;
+  delete stage.summary;
+  run.currentStage = stage.id;
+  run.updatedAt = timestamp;
+}
+function takeDeclaredTransition(run, stage, rule, outcome, summary, attempt, timestamp, evidenceKeys) {
+  const definitionBudget = run.maxTransitions;
+  const counts = transitionCounts(run, stage.id, outcome, rule.target);
+  const edgeExhausted = rule.maxTransitions !== void 0 && counts.forEdge >= rule.maxTransitions;
+  const stageExhausted = stage.maxTransitions !== void 0 && counts.fromStage >= stage.maxTransitions;
+  const globalExhausted = definitionBudget !== void 0 && counts.total >= definitionBudget;
+  if (edgeExhausted || stageExhausted || globalExhausted) {
+    stage.completedAt = timestamp;
+    run.status = "failed";
+    delete run.currentStage;
+    run.updatedAt = timestamp;
+    return {
+      retry: false,
+      completed: false,
+      run,
+      exhausted: true
+    };
+  }
+  const record = recordTransition(run, stage.id, rule, outcome, attempt, evidenceKeys.slice(0, 32), timestamp);
+  if (rule.target === WORKFLOW_TERMINAL_TARGET) {
+    stage.completedAt = timestamp;
+    run.status = "completed";
+    delete run.currentStage;
+    run.completedAt = timestamp;
+    run.updatedAt = timestamp;
+    return { retry: false, completed: true, run, transition: record };
+  }
+  const target = run.stages.find((candidate) => candidate.id === rule.target);
+  if (!target) {
+    run.status = "failed";
+    delete run.currentStage;
+    return { retry: false, completed: false, run, exhausted: true };
+  }
+  stage.summary = summary;
+  enterStage(run, target, timestamp);
+  return { retry: false, completed: false, run, transition: record };
+}
+function checkpointRun(run, stageId, status, summary, evidence, timestamp, verifiedEvidence = {}, outcome) {
   if (run.status !== "running") throw new ProtocolError(409, `workflow is ${run.status}`, "workflow_terminal");
   const stage = run.stages.find((candidate) => candidate.id === stageId);
   if (!stage) throw new ProtocolError(404, `workflow stage not found: ${stageId}`, "workflow_stage_not_found");
@@ -1610,11 +1749,24 @@ function checkpointRun(run, stageId, status, summary, evidence, timestamp, verif
       delete run.currentStage;
       return { retry: false, completed: false, run };
     }
+    const outcomeKey = outcome ?? status;
+    const rule = resolveOutcomeRule(stage, outcomeKey);
+    if (rule && stage.attempts < stage.maxAttempts) {
+      const result = takeDeclaredTransition(run, stage, rule, outcomeKey, summary, stage.attempts, timestamp, Object.keys(accumulatedEvidence));
+      if (result.transition !== void 0 && !result.completed && rule.target !== stage.id) {
+        stage.status = "pending";
+      }
+      return result;
+    }
     stage.status = "in_progress";
     return { retry: true, completed: false, run };
   }
   stage.status = "passed";
   stage.completedAt = timestamp;
+  const passedRule = resolveOutcomeRule(stage, outcome ?? "passed");
+  if (passedRule) {
+    return takeDeclaredTransition(run, stage, passedRule, outcome ?? "passed", summary, stage.attempts, timestamp, Object.keys(accumulatedEvidence));
+  }
   const next = run.stages.find((candidate) => candidate.status === "pending");
   if (next) {
     next.status = "in_progress";
@@ -3267,6 +3419,7 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
           status: "running",
           currentStage: stages[0].id,
           stages,
+          ...definition.maxTransitions !== void 0 ? { maxTransitions: definition.maxTransitions } : {},
           createdAt,
           updatedAt: createdAt
         };
@@ -3696,9 +3849,42 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
           summary,
           evidence,
           timestamp,
-          verifiedEvidence
+          verifiedEvidence,
+          typeof body.outcome === "string" && body.outcome.trim() ? requireString(body.outcome, "outcome", { max: 64 }) : void 0
         );
         const checkpointStage = transition.stages.find((candidate) => candidate.id === stageId);
+        if (result.transition) {
+          const transitionEntry = {
+            id: newId("journal"),
+            runId: transition.id,
+            agentId: agent.id,
+            category: "state-change",
+            area: checkpointStage?.area ?? "workflow",
+            severity: "info",
+            summary: `typed transition ${result.transition.fromStage} -> ${result.transition.toStage} (${result.transition.outcome})`,
+            evidence: result.transition.evidenceKeys.map((key) => `requirement:${key}`),
+            relatedEntryIds: [],
+            createdAt: timestamp
+          };
+          store.saveWorkflowTransition(transition, void 0, transitionEntry);
+          counters.journalEntries += 1;
+        }
+        if (result.exhausted) {
+          const exhaustEntry = {
+            id: newId("journal"),
+            runId: transition.id,
+            agentId: agent.id,
+            category: "error",
+            area: checkpointStage?.area ?? "workflow",
+            severity: "error",
+            summary: `transition budget exhausted at ${stageId} (outcome ${body.outcome ?? status}); run failed safely`,
+            evidence: [`class:transition_budget_exhausted`, `stage:${stageId}`],
+            relatedEntryIds: [],
+            createdAt: timestamp
+          };
+          store.saveWorkflowTransition(transition, void 0, exhaustEntry);
+          counters.journalEntries += 1;
+        }
         let entry;
         if (status !== "passed") {
           entry = {
