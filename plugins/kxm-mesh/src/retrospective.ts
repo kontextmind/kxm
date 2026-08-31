@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { redactSecrets, redactStringList } from "./redact.ts";
 import {
   canonicalWorkflowEvidenceKey,
+  journalPromotionState,
   normalizeVerifiedWorkflowEvidence,
   type WorkflowJournalEntry,
   type WorkflowRun,
@@ -93,6 +94,11 @@ export interface RetrospectiveV1 {
     evidence: string[];
     relatedEntryIds: string[];
     createdAt: string;
+    stageId?: string;
+    attempt?: number;
+    /** Governed promotion lifecycle state for promotable categories.
+     * Absent on v0.4 records and non-promotable categories. */
+    promotionState?: string;
   }>;
   proposedImprovements: Array<{ area: string; summary: string; successMeasure: string; status: "proposed" }>;
   /** Additive metadata-only provenance audit. Optional for v1 consumers and
@@ -222,16 +228,23 @@ export function buildRetrospective(
     .filter((entry) => entry.runId === run.id)
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id))
     .slice(-MAX_RETROSPECTIVE_ENTRIES)
-    .map((entry) => ({
-      id: entry.id,
-      category: entry.category,
-      area: entry.area,
-      severity: entry.severity,
-      summary: redactSecrets(entry.summary),
-      evidence: redactStringList(entry.evidence),
-      relatedEntryIds: entry.relatedEntryIds.slice(0, 16),
-      createdAt: entry.createdAt,
-    }));
+    .map((entry) => {
+      const promotionState = journalPromotionState(entry);
+      const exported: RetrospectiveV1["entries"][number] = {
+        id: entry.id,
+        category: entry.category,
+        area: entry.area,
+        severity: entry.severity,
+        summary: redactSecrets(entry.summary),
+        evidence: redactStringList(entry.evidence),
+        relatedEntryIds: entry.relatedEntryIds.slice(0, 16),
+        createdAt: entry.createdAt,
+      };
+      if (entry.stageId !== undefined) exported.stageId = entry.stageId;
+      if (entry.attempt !== undefined) exported.attempt = entry.attempt;
+      if (promotionState !== undefined) exported.promotionState = promotionState;
+      return exported;
+    });
   const byCategory: Record<string, number> = {};
   const byArea: Record<string, number> = {};
   const byClass: Record<string, number> = {};

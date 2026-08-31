@@ -784,6 +784,7 @@ test("a coordinator that settles before passing checkpoints fails the run and re
     category: "lesson",
     area: "workflow",
     summary: "Journal remains available after premature settlement",
+    evidence: ["class:premature_settlement"],
   });
   assert.equal(lateJournal.category, "lesson");
   await assert.rejects(() => coordinator.checkpointWorkflow(accepted.run.id, {

@@ -34,6 +34,9 @@ import {
   approveWorkflowDegradation,
   checkpointRun,
   improvementReport,
+  applyJournalPromotion,
+  journalEvidenceRequired,
+  parseJournalCategory,
   renderWorkflowPrompt,
   resumeWorkflowFromSignal,
   valueAtPath,
@@ -1438,6 +1441,50 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         return;
       }
 
+      const journalPromotionMatch = url.pathname.match(/^\/v1\/journal\/([^/]+)\/promotion$/);
+      if (method === "POST" && journalPromotionMatch) {
+        // Governed promotion is a control-plane decision. Only mesh admins
+        // may decide it, and the deciding principal can never be the entry
+        // author. Journal entries remain evidence: this endpoint changes a
+        // learning lifecycle state, never gates, workflow policy, or
+        // permissions.
+        requireAdminAuth(request);
+        const body = await readJson(request);
+        const entryId = decodeURIComponent(journalPromotionMatch[1]!);
+        const entry = journal.get(entryId);
+        if (!entry) throw new ProtocolError(404, "journal entry not found", "journal_not_found");
+        const to = requireString(body.to, "to", { max: 24 });
+        if (to !== "approved" && to !== "rejected" && to !== "quarantined") {
+          throw new ProtocolError(
+            400,
+            "journal promotion target must be approved, rejected, or quarantined",
+            "invalid_journal_promotion",
+          );
+        }
+        const evidenceRefs = boundedStringList(body.evidenceRefs, "evidenceRefs", 32);
+        const updated = applyJournalPromotion(
+          entry,
+          {
+            to,
+            evidenceRefs,
+            decidedBy: "mesh-admin",
+            reason: requireString(body.reason, "reason", { max: 1_000 }),
+          },
+          nowIso(),
+        );
+        store.saveJournalEntry(updated);
+        publishOps(entry.runId, "workflows");
+        logger({
+          event: "journal_promotion_recorded",
+          journalEntryId: entry.id,
+          workflowRunId: entry.runId,
+          category: entry.category,
+          to,
+        });
+        json(response, 200, { entry: updated });
+        return;
+      }
+
       const waitMatch = url.pathname.match(/^\/v1\/workflows\/([^/]+)\/waits$/);
       if (method === "POST" && waitMatch) {
         expireWorkflowWaits();
@@ -1634,10 +1681,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
             workflowScopeExtras("journal", run.targetAgentName),
           );
         }
-        const category = requireString(body.category, "category", { max: 24 }) as JournalCategory;
-        if (!["plan", "decision", "contradiction", "error", "lesson"].includes(category)) {
-          throw new ProtocolError(400, "invalid journal category", "invalid_journal_category");
-        }
+        const category = parseJournalCategory(body.category);
         const area = requireString(body.area, "area", { max: 24 }) as ImprovementArea;
         if (!["harness", "gates", "implementation", "workflow", "documentation", "security", "other"].includes(area)) {
           throw new ProtocolError(400, "invalid improvement area", "invalid_improvement_area");
@@ -1654,6 +1698,24 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
             "invalid_journal_relation",
           );
         }
+        const evidence = boundedStringList(body.evidence, "evidence");
+        if (journalEvidenceRequired(category) && evidence.length < 1) {
+          throw new ProtocolError(
+            400,
+            `journal category ${category} requires at least one durable evidence reference`,
+            "journal_evidence_required",
+          );
+        }
+        let stageId: string | undefined;
+        let attempt: number | undefined;
+        if (body.stageId !== undefined && body.stageId !== null) {
+          stageId = requireString(body.stageId, "stageId", { max: 128 });
+          const stage = run.stages.find((candidate) => candidate.id === stageId);
+          if (!stage) {
+            throw new ProtocolError(400, `stageId ${stageId} is not part of this workflow run`, "invalid_journal_relation");
+          }
+          attempt = stage.attempts + 1;
+        }
         const entry: WorkflowJournalEntry = {
           id: newId("journal"),
           runId: run.id,
@@ -1663,9 +1725,11 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           severity,
           summary: requireString(body.summary, "summary", { max: 1_000 }),
           ...(body.details ? { details: requireString(body.details, "details", { max: 8_000 }) } : {}),
-          evidence: boundedStringList(body.evidence, "evidence"),
+          evidence,
           relatedEntryIds,
           createdAt: nowIso(),
+          ...(stageId !== undefined ? { stageId } : {}),
+          ...(attempt !== undefined ? { attempt } : {}),
         };
         store.saveJournalEntry(entry);
         counters.journalEntries += 1;

@@ -337,6 +337,8 @@ export class MeshClient {
       details?: string;
       evidence?: string[];
       relatedEntryIds?: string[];
+      /** Stage the entry is recorded against; binds run/stage/attempt provenance. */
+      stageId?: string;
     },
   ): Promise<WorkflowJournalEntry> {
     const result = await this.request<{ entry: WorkflowJournalEntry }>(

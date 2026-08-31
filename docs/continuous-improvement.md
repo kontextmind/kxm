@@ -3,9 +3,9 @@
 Every workflow run produces two distinct records:
 
 - operational events for service health and delivery;
-- a structured journal for plans, decisions, contradictions, errors, and lessons.
+- a structured journal for plans, decisions, contradictions, errors, lessons, observations, hypotheses, experiments, state changes, and skill candidates.
 
-Journal entries carry an improvement area, severity, evidence links, and relationships to other entries. The design preserves disagreement instead of flattening it into a single final answer.
+Journal entries carry an improvement area, severity, evidence links, relationships to other entries, and (when stage-bound) run/stage/attempt provenance. The design preserves disagreement instead of flattening it into a single final answer.
 
 ## Improvement areas
 
@@ -27,7 +27,16 @@ Use `mesh_workflow_record` during the run, not only in a final retrospective:
 - record a `decision` with alternatives and why one was chosen;
 - record a `contradiction` when agents, tests, documentation, or observed behavior disagree;
 - record an `error` when a stage, tool, gate, integration, or assumption fails;
-- record a `lesson` only after evidence supports a reusable conclusion.
+- record a `lesson` only after evidence supports a reusable conclusion (evidence references are mandatory);
+- record an `observation` for notable behavior without a causal claim;
+- record a `hypothesis` as a falsifiable claim, and keep it when rejected — a disproven hypothesis is durable learning;
+- record an `experiment` with its outcome, including failures;
+- record a `state-change` when an authoritative project fact changes;
+- record a `skill-candidate` only with verified run/receipt evidence; candidates never become promoted skills without a protected evaluation.
+
+## Governed promotion
+
+`skill-candidate`, `hypothesis`, and `experiment` entries participate in a governed lifecycle: `proposed` → `approved` | `rejected` | `quarantined`. Promotion is an append-only, admin-controlled decision (`POST /v1/journal/:id/promotion`) that requires durable evidence references; the author of an entry can never decide its promotion, and terminal states never re-open. Promotion changes the learning lifecycle of an entry — never gates, workflow policy, or permissions.
 
 The native Pi extension automatically records failed tool results while a webhook workflow is active. The hub also records stage warnings/failures, prompt expiry, and premature coordinator settlement. Agents must still record semantic errors such as a false assumption, rejected design, flaky result, or external integration mismatch.
 
