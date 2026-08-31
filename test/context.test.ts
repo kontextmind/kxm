@@ -47,7 +47,8 @@ function item(overrides: Record<string, unknown> = {}): ContextItem {
 test("parseContextItem round-trips every item kind with stable schema", () => {
   const kinds = ["evidence", "state", "episode", "knowledge", "skill"] as const;
   for (const kind of kinds) {
-    const parsed = item({ id: `ctx_${kind}`, kind });
+    const stateExtras = kind === "state" ? { stateKey: "ci.pipeline", status: "current" } : {};
+    const parsed = item({ id: `ctx_${kind}`, kind, ...stateExtras });
     assert.equal(parsed.kind, kind);
     assert.equal(parsed.project, "kxm");
     assert.equal(parsed.provenance.sourceType, "workflow");

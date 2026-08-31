@@ -67,6 +67,9 @@ export interface ContextItem {
   provenance: ContextProvenance;
   authority: ContextAuthority;
   confidence: ContextConfidence;
+  /** Key this item is authoritative for. Required for `state` items; the
+   * temporal state layer (state.ts) resolves one current value per key. */
+  stateKey?: string;
   observedAt?: string;
   validFrom?: string;
   validUntil?: string;
@@ -184,6 +187,16 @@ export function parseContextItem(value: unknown): ContextItem {
   }
   const evidenceRefs = idRefs(input.evidenceRefs, "context item evidenceRefs");
   if (evidenceRefs !== undefined) item.evidenceRefs = evidenceRefs;
+  const stateKey = input.stateKey === undefined || input.stateKey === null
+    ? undefined
+    : requireString(input.stateKey, "context item stateKey", { max: 200 });
+  if (stateKey !== undefined) item.stateKey = stateKey;
+  if (item.kind === "state" && item.stateKey === undefined) {
+    throw new ProtocolError(400, "state items require a stateKey", "invalid_context_item");
+  }
+  if (item.kind === "state" && item.status === undefined) {
+    throw new ProtocolError(400, "state items require an explicit lifecycle status", "invalid_context_item");
+  }
   return item;
 }
 
