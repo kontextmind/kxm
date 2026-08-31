@@ -3454,6 +3454,12 @@ function requireString(value, field, options = {}) {
 }
 
 // plugins/kxm-mesh/src/workflow.ts
+var PROMOTABLE_JOURNAL_CATEGORIES = ["skill-candidate", "hypothesis", "experiment"];
+function journalPromotionState(entry) {
+  if (!PROMOTABLE_JOURNAL_CATEGORIES.includes(entry.category)) return void 0;
+  const records = entry.promotion ?? [];
+  return records.length === 0 ? "proposed" : records[records.length - 1]?.to;
+}
 function object(value, name) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${name} must be an object`);
   return value;
@@ -3982,16 +3988,23 @@ function buildEvidenceAudit(run) {
 }
 function buildRetrospective(run, journal, exportedAt = (/* @__PURE__ */ new Date()).toISOString()) {
   if (!SAFE_RUN_ID.test(run.id)) throw new Error("invalid retrospective run id");
-  const entries = journal.filter((entry) => entry.runId === run.id).sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id)).slice(-MAX_RETROSPECTIVE_ENTRIES).map((entry) => ({
-    id: entry.id,
-    category: entry.category,
-    area: entry.area,
-    severity: entry.severity,
-    summary: redactSecrets(entry.summary),
-    evidence: redactStringList(entry.evidence),
-    relatedEntryIds: entry.relatedEntryIds.slice(0, 16),
-    createdAt: entry.createdAt
-  }));
+  const entries = journal.filter((entry) => entry.runId === run.id).sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id)).slice(-MAX_RETROSPECTIVE_ENTRIES).map((entry) => {
+    const promotionState = journalPromotionState(entry);
+    const exported = {
+      id: entry.id,
+      category: entry.category,
+      area: entry.area,
+      severity: entry.severity,
+      summary: redactSecrets(entry.summary),
+      evidence: redactStringList(entry.evidence),
+      relatedEntryIds: entry.relatedEntryIds.slice(0, 16),
+      createdAt: entry.createdAt
+    };
+    if (entry.stageId !== void 0) exported.stageId = entry.stageId;
+    if (entry.attempt !== void 0) exported.attempt = entry.attempt;
+    if (promotionState !== void 0) exported.promotionState = promotionState;
+    return exported;
+  });
   const byCategory = {};
   const byArea = {};
   const byClass = {};

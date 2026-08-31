@@ -104,6 +104,79 @@ function redactStringList(values, maxItems = 32) {
 
 // plugins/kxm-mesh/src/workflow.ts
 import { createHash } from "node:crypto";
+var JOURNAL_CATEGORIES = [
+  "plan",
+  "decision",
+  "contradiction",
+  "error",
+  "lesson",
+  "observation",
+  "hypothesis",
+  "experiment",
+  "state-change",
+  "skill-candidate"
+];
+var EVIDENCE_REQUIRED_JOURNAL_CATEGORIES = ["lesson", "skill-candidate"];
+var PROMOTABLE_JOURNAL_CATEGORIES = ["skill-candidate", "hypothesis", "experiment"];
+function parseJournalCategory(value) {
+  if (typeof value !== "string" || !JOURNAL_CATEGORIES.includes(value)) {
+    throw new ProtocolError(
+      400,
+      `invalid journal category: must be one of ${JOURNAL_CATEGORIES.join(", ")}`,
+      "invalid_journal_category"
+    );
+  }
+  return value;
+}
+function journalEvidenceRequired(category) {
+  return EVIDENCE_REQUIRED_JOURNAL_CATEGORIES.includes(category);
+}
+function journalPromotionState(entry) {
+  if (!PROMOTABLE_JOURNAL_CATEGORIES.includes(entry.category)) return void 0;
+  const records = entry.promotion ?? [];
+  return records.length === 0 ? "proposed" : records[records.length - 1]?.to;
+}
+function applyJournalPromotion(entry, decision, decidedAt) {
+  if (!PROMOTABLE_JOURNAL_CATEGORIES.includes(entry.category)) {
+    throw new ProtocolError(
+      400,
+      `journal entries of category ${entry.category} do not participate in promotion`,
+      "journal_promotion_invalid"
+    );
+  }
+  if (decision.decidedBy === entry.agentId) {
+    throw new ProtocolError(
+      400,
+      "the author of a journal entry cannot decide its promotion",
+      "journal_promotion_invalid"
+    );
+  }
+  if (!Array.isArray(decision.evidenceRefs) || decision.evidenceRefs.length < 1 || decision.evidenceRefs.some((ref) => typeof ref !== "string" || !ref.trim())) {
+    throw new ProtocolError(
+      400,
+      "journal promotion requires at least one durable evidence reference",
+      "journal_promotion_invalid"
+    );
+  }
+  const current = journalPromotionState(entry);
+  if (current !== "proposed") {
+    throw new ProtocolError(
+      400,
+      `journal entry promotion already reached terminal state ${current}`,
+      "journal_promotion_invalid"
+    );
+  }
+  const record = {
+    schema: "kxm.journal-promotion.v1",
+    from: "proposed",
+    to: decision.to,
+    evidenceRefs: decision.evidenceRefs.map((ref) => ref.trim()),
+    decidedBy: decision.decidedBy,
+    reason: decision.reason,
+    decidedAt
+  };
+  return { ...entry, promotion: [...entry.promotion ?? [], record] };
+}
 function improvementReport(entries) {
   const areas = [
     "harness",
@@ -117,7 +190,7 @@ function improvementReport(entries) {
   const severityWeight = { error: 3, warning: 2, info: 1 };
   return areas.map((area) => {
     const matching = entries.filter((entry) => entry.area === area);
-    const priorities = [...matching].filter((entry) => entry.category === "error" || entry.category === "contradiction" || entry.category === "lesson").sort((left, right) => severityWeight[right.severity] - severityWeight[left.severity]).slice(0, 10);
+    const priorities = [...matching].filter((entry) => entry.category === "error" || entry.category === "contradiction" || entry.category === "lesson" || entry.category === "skill-candidate").sort((left, right) => severityWeight[right.severity] - severityWeight[left.severity]).slice(0, 10);
     return {
       area,
       total: matching.length,
@@ -855,16 +928,23 @@ function buildEvidenceAudit(run) {
 }
 function buildRetrospective(run, journal, exportedAt = (/* @__PURE__ */ new Date()).toISOString()) {
   if (!SAFE_RUN_ID.test(run.id)) throw new Error("invalid retrospective run id");
-  const entries = journal.filter((entry) => entry.runId === run.id).sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id)).slice(-MAX_RETROSPECTIVE_ENTRIES).map((entry) => ({
-    id: entry.id,
-    category: entry.category,
-    area: entry.area,
-    severity: entry.severity,
-    summary: redactSecrets(entry.summary),
-    evidence: redactStringList(entry.evidence),
-    relatedEntryIds: entry.relatedEntryIds.slice(0, 16),
-    createdAt: entry.createdAt
-  }));
+  const entries = journal.filter((entry) => entry.runId === run.id).sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id)).slice(-MAX_RETROSPECTIVE_ENTRIES).map((entry) => {
+    const promotionState = journalPromotionState(entry);
+    const exported = {
+      id: entry.id,
+      category: entry.category,
+      area: entry.area,
+      severity: entry.severity,
+      summary: redactSecrets(entry.summary),
+      evidence: redactStringList(entry.evidence),
+      relatedEntryIds: entry.relatedEntryIds.slice(0, 16),
+      createdAt: entry.createdAt
+    };
+    if (entry.stageId !== void 0) exported.stageId = entry.stageId;
+    if (entry.attempt !== void 0) exported.attempt = entry.attempt;
+    if (promotionState !== void 0) exported.promotionState = promotionState;
+    return exported;
+  });
   const byCategory = {};
   const byArea = {};
   const byClass = {};
@@ -2387,6 +2467,44 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
         });
         return;
       }
+      const journalPromotionMatch = url.pathname.match(/^\/v1\/journal\/([^/]+)\/promotion$/);
+      if (method === "POST" && journalPromotionMatch) {
+        requireAdminAuth(request);
+        const body = await readJson(request);
+        const entryId = decodeURIComponent(journalPromotionMatch[1]);
+        const entry = journal.get(entryId);
+        if (!entry) throw new ProtocolError(404, "journal entry not found", "journal_not_found");
+        const to = requireString(body.to, "to", { max: 24 });
+        if (to !== "approved" && to !== "rejected" && to !== "quarantined") {
+          throw new ProtocolError(
+            400,
+            "journal promotion target must be approved, rejected, or quarantined",
+            "invalid_journal_promotion"
+          );
+        }
+        const evidenceRefs = boundedStringList(body.evidenceRefs, "evidenceRefs", 32);
+        const updated = applyJournalPromotion(
+          entry,
+          {
+            to,
+            evidenceRefs,
+            decidedBy: "mesh-admin",
+            reason: requireString(body.reason, "reason", { max: 1e3 })
+          },
+          nowIso()
+        );
+        store.saveJournalEntry(updated);
+        publishOps(entry.runId, "workflows");
+        logger({
+          event: "journal_promotion_recorded",
+          journalEntryId: entry.id,
+          workflowRunId: entry.runId,
+          category: entry.category,
+          to
+        });
+        json(response, 200, { entry: updated });
+        return;
+      }
       const waitMatch = url.pathname.match(/^\/v1\/workflows\/([^/]+)\/waits$/);
       if (method === "POST" && waitMatch) {
         expireWorkflowWaits();
@@ -2569,10 +2687,7 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
             workflowScopeExtras("journal", run.targetAgentName)
           );
         }
-        const category = requireString(body.category, "category", { max: 24 });
-        if (!["plan", "decision", "contradiction", "error", "lesson"].includes(category)) {
-          throw new ProtocolError(400, "invalid journal category", "invalid_journal_category");
-        }
+        const category = parseJournalCategory(body.category);
         const area = requireString(body.area, "area", { max: 24 });
         if (!["harness", "gates", "implementation", "workflow", "documentation", "security", "other"].includes(area)) {
           throw new ProtocolError(400, "invalid improvement area", "invalid_improvement_area");
@@ -2589,6 +2704,24 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
             "invalid_journal_relation"
           );
         }
+        const evidence = boundedStringList(body.evidence, "evidence");
+        if (journalEvidenceRequired(category) && evidence.length < 1) {
+          throw new ProtocolError(
+            400,
+            `journal category ${category} requires at least one durable evidence reference`,
+            "journal_evidence_required"
+          );
+        }
+        let stageId;
+        let attempt;
+        if (body.stageId !== void 0 && body.stageId !== null) {
+          stageId = requireString(body.stageId, "stageId", { max: 128 });
+          const stage = run.stages.find((candidate) => candidate.id === stageId);
+          if (!stage) {
+            throw new ProtocolError(400, `stageId ${stageId} is not part of this workflow run`, "invalid_journal_relation");
+          }
+          attempt = stage.attempts + 1;
+        }
         const entry = {
           id: newId("journal"),
           runId: run.id,
@@ -2598,9 +2731,11 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
           severity,
           summary: requireString(body.summary, "summary", { max: 1e3 }),
           ...body.details ? { details: requireString(body.details, "details", { max: 8e3 }) } : {},
-          evidence: boundedStringList(body.evidence, "evidence"),
+          evidence,
           relatedEntryIds,
-          createdAt: nowIso()
+          createdAt: nowIso(),
+          ...stageId !== void 0 ? { stageId } : {},
+          ...attempt !== void 0 ? { attempt } : {}
         };
         store.saveJournalEntry(entry);
         counters.journalEntries += 1;

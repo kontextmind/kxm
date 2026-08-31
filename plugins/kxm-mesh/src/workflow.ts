@@ -11,7 +11,73 @@ import {
 export type WorkflowCheckpointStatus = "passed" | "warning" | "failed";
 export type WorkflowRunStatus = "running" | "waiting" | "completed" | "failed";
 export type WorkflowStageStatus = "pending" | "in_progress" | "waiting" | WorkflowCheckpointStatus;
-export type JournalCategory = "plan" | "decision" | "contradiction" | "error" | "lesson";
+export type JournalCategory =
+  | "plan"
+  | "decision"
+  | "contradiction"
+  | "error"
+  | "lesson"
+  | "observation"
+  | "hypothesis"
+  | "experiment"
+  | "state-change"
+  | "skill-candidate";
+
+/** Every journal category this runtime accepts. v0.4 records only use the
+ * first five; the v0.5 additions turn the journal into the canonical episode
+ * and learning substrate. */
+export const JOURNAL_CATEGORIES: readonly JournalCategory[] = [
+  "plan",
+  "decision",
+  "contradiction",
+  "error",
+  "lesson",
+  "observation",
+  "hypothesis",
+  "experiment",
+  "state-change",
+  "skill-candidate",
+];
+
+/** Categories that must cite durable evidence references. A lesson without
+ * evidence is an opinion; a skill-candidate without verified receipts is a
+ * wish. Both fail closed at the hub. */
+export const EVIDENCE_REQUIRED_JOURNAL_CATEGORIES: readonly JournalCategory[] = ["lesson", "skill-candidate"];
+
+/** Categories that participate in the governed promotion lifecycle. */
+export const PROMOTABLE_JOURNAL_CATEGORIES: readonly JournalCategory[] = ["skill-candidate", "hypothesis", "experiment"];
+
+export function parseJournalCategory(value: unknown): JournalCategory {
+  if (typeof value !== "string" || !JOURNAL_CATEGORIES.includes(value as JournalCategory)) {
+    throw new ProtocolError(
+      400,
+      `invalid journal category: must be one of ${JOURNAL_CATEGORIES.join(", ")}`,
+      "invalid_journal_category",
+    );
+  }
+  return value as JournalCategory;
+}
+
+export function journalEvidenceRequired(category: JournalCategory): boolean {
+  return EVIDENCE_REQUIRED_JOURNAL_CATEGORIES.includes(category);
+}
+
+export type JournalPromotionState = "proposed" | "approved" | "rejected" | "quarantined";
+export const JOURNAL_PROMOTION_STATES: readonly JournalPromotionState[] = ["proposed", "approved", "rejected", "quarantined"];
+const JOURNAL_PROMOTION_TERMINAL: readonly JournalPromotionState[] = ["approved", "rejected", "quarantined"];
+
+/** Durable, append-only promotion decision for a journal entry. Journals are
+ * evidence, never executable policy: a promotion record changes the learning
+ * lifecycle of an entry, and nothing else. */
+export interface JournalPromotionRecord {
+  schema: "kxm.journal-promotion.v1";
+  from: JournalPromotionState;
+  to: JournalPromotionState;
+  evidenceRefs: string[];
+  decidedBy: string;
+  reason: string;
+  decidedAt: string;
+}
 export type ImprovementArea = "harness" | "gates" | "implementation" | "workflow" | "documentation" | "security" | "other";
 
 /** Evidence submitted for one checkpoint or external signal, keyed by a
@@ -187,6 +253,81 @@ export interface WorkflowJournalEntry {
   evidence: string[];
   relatedEntryIds: string[];
   createdAt: string;
+  /** Stage the entry was recorded against. Optional: v0.4 entries and
+n   * run-level entries have no stage binding. */
+  stageId?: string;
+  /** Attempt the entry was recorded against, when stage-bound. */
+  attempt?: number;
+  /** Governed promotion history. Absent on v0.4 records and on entries that
+   * never entered the promotion lifecycle. */
+  promotion?: JournalPromotionRecord[];
+}
+
+/** Current promotion lifecycle state of an entry. Entries without promotion
+ * records are implicitly `proposed` when they belong to a promotable
+ * category. */
+export function journalPromotionState(entry: WorkflowJournalEntry): JournalPromotionState | undefined {
+  if (!PROMOTABLE_JOURNAL_CATEGORIES.includes(entry.category)) return undefined;
+  const records = entry.promotion ?? [];
+  return records.length === 0 ? "proposed" : records[records.length - 1]?.to;
+}
+
+export interface JournalPromotionDecision {
+  to: Exclude<JournalPromotionState, "proposed">;
+  evidenceRefs: string[];
+  decidedBy: string;
+  reason: string;
+}
+
+/** Apply a governed promotion transition. Returns a new entry; never mutates
+ * in place. Rules: only promotable categories; `proposed` is the only
+ * non-terminal state; the author of an entry can never decide its promotion;
+ * evidence references are required. */
+export function applyJournalPromotion(
+  entry: WorkflowJournalEntry,
+  decision: JournalPromotionDecision,
+  decidedAt: string,
+): WorkflowJournalEntry {
+  if (!PROMOTABLE_JOURNAL_CATEGORIES.includes(entry.category)) {
+    throw new ProtocolError(
+      400,
+      `journal entries of category ${entry.category} do not participate in promotion`,
+      "journal_promotion_invalid",
+    );
+  }
+  if (decision.decidedBy === entry.agentId) {
+    throw new ProtocolError(
+      400,
+      "the author of a journal entry cannot decide its promotion",
+      "journal_promotion_invalid",
+    );
+  }
+  if (!Array.isArray(decision.evidenceRefs) || decision.evidenceRefs.length < 1
+    || decision.evidenceRefs.some((ref) => typeof ref !== "string" || !ref.trim())) {
+    throw new ProtocolError(
+      400,
+      "journal promotion requires at least one durable evidence reference",
+      "journal_promotion_invalid",
+    );
+  }
+  const current = journalPromotionState(entry);
+  if (current !== "proposed") {
+    throw new ProtocolError(
+      400,
+      `journal entry promotion already reached terminal state ${current}`,
+      "journal_promotion_invalid",
+    );
+  }
+  const record: JournalPromotionRecord = {
+    schema: "kxm.journal-promotion.v1",
+    from: "proposed",
+    to: decision.to,
+    evidenceRefs: decision.evidenceRefs.map((ref) => ref.trim()),
+    decidedBy: decision.decidedBy,
+    reason: decision.reason,
+    decidedAt,
+  };
+  return { ...entry, promotion: [...(entry.promotion ?? []), record] };
 }
 
 export interface ImprovementAreaReport {
@@ -212,7 +353,7 @@ export function improvementReport(entries: WorkflowJournalEntry[]): ImprovementA
   return areas.map((area) => {
     const matching = entries.filter((entry) => entry.area === area);
     const priorities = [...matching]
-      .filter((entry) => entry.category === "error" || entry.category === "contradiction" || entry.category === "lesson")
+      .filter((entry) => entry.category === "error" || entry.category === "contradiction" || entry.category === "lesson" || entry.category === "skill-candidate")
       .sort((left, right) => severityWeight[right.severity] - severityWeight[left.severity])
       .slice(0, 10);
     return {
