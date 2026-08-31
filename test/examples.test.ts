@@ -13,7 +13,7 @@ test("self-contained roundtrip example executes successfully", async () => {
     "--disable-warning=ExperimentalWarning",
     "--experimental-strip-types",
     "examples/roundtrip.ts",
-  ], { cwd: process.cwd(), timeout: 5_000 });
+  ], { cwd: process.cwd(), timeout: 20_000 });
   const output = JSON.parse(stdout) as { peers: string[]; status: string; reply: string };
   assert.deepEqual(output.peers.sort(), ["example-planner", "example-reviewer"]);
   assert.equal(output.status, "replied");

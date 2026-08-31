@@ -23,7 +23,9 @@ function proposal(overrides: Partial<StateChangeProposal> = {}): StateChangeProp
     project: "kxm",
     key: "ci.pipeline",
     summary: "CI pipeline runs on gitlab runner fleet 2",
-    authority: "instruction",
+    // Peer proposals can only ever claim evidence authority (issue #36
+    // grant floor); humans could propose instruction/policy authority.
+    authority: "evidence",
     confidence: "verified",
     evidenceRefs: ["journal_journal_1", "receipt:run_1/verify"],
     proposedBy: "agent_implementer",

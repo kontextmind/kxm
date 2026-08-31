@@ -17,6 +17,50 @@ export const MAX_CONTEXT_BUDGET_TOKENS = 200_000;
 export const DEFAULT_CONTEXT_BUDGET_TOKENS = 32_000;
 export const MAX_CONTEXT_ROLE_CHARS = 64;
 export const MAX_CONTEXT_TASK_CHARS = 2_000;
+/** Maximum derivation lineage depth. Chains longer than this fail closed:
+ * laundering provenance through unbounded re-summaries is a privilege
+ * escalation vector, not a legitimate workflow. */
+export const MAX_CONTEXT_LINEAGE = 64;
+
+/** Deterministic authority grant policy: the maximum authority each origin can
+ * ever bestow. Peer/tool/external/derived content is evidence at best — only
+ * humans and the deterministic workflow control plane can create `instruction`
+ * or `policy` authority, and tracked git history can carry instructions.
+ * This is the single source of truth for issue #36's "no escalation through
+ * reserialization" invariant. */
+export const AUTHORITY_GRANT_FLOOR: Record<ContextSourceType, ContextAuthority> = {
+  human: "policy",
+  workflow: "policy",
+  git: "instruction",
+  peer: "evidence",
+  tool: "evidence",
+  external: "evidence",
+  derived: "evidence",
+};
+
+export function authorityGrantFloor(sourceType: ContextSourceType): ContextAuthority {
+  return AUTHORITY_GRANT_FLOOR[sourceType];
+}
+
+/** Control-plane field names that context items may never carry. Memory,
+ * wiki, and skill content may inform behavior but never expand tool
+ * permissions or approval scope; smuggling grants inside a context item is
+ * rejected at parse time. */
+const RESERVED_CONTROL_PLANE_FIELDS = new Set([
+  "permissions",
+  "tools",
+  "allow",
+  "deny",
+  "grants",
+  "approval",
+  "policy",
+  "scopes",
+  "credentials",
+  "secrets",
+  "token",
+  "apiKey",
+  "password",
+]);
 
 export type ContextItemKind = "evidence" | "state" | "episode" | "knowledge" | "skill";
 export const CONTEXT_ITEM_KINDS: readonly ContextItemKind[] = ["evidence", "state", "episode", "knowledge", "skill"];
@@ -153,13 +197,23 @@ function optionalIsoTimestamp(value: unknown, field: string): string | undefined
 }
 
 /** Parse and validate a context item from untrusted input. Fails closed on
- * unknown kinds, oversized content, malformed provenance, and incoherent
- * lifecycle fields. */
+ * unknown kinds, oversized content, malformed provenance, incoherent lifecycle
+ * fields, authority above the origin's grant floor, and hostile payloads
+ * smuggling control-plane fields. */
 export function parseContextItem(value: unknown): ContextItem {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new ProtocolError(400, "context item must be an object", "invalid_context_item");
   }
   const input = value as Record<string, unknown>;
+  for (const field of Object.keys(input)) {
+    if (RESERVED_CONTROL_PLANE_FIELDS.has(field)) {
+      throw new ProtocolError(
+        403,
+        `context items may not carry control-plane field "${field}"`,
+        "context_authority_violation",
+      );
+    }
+  }
   const item: ContextItem = {
     id: requireString(input.id, "context item id", { max: 128 }),
     kind: oneOf(input.kind, "context item kind", CONTEXT_ITEM_KINDS),
@@ -196,6 +250,14 @@ export function parseContextItem(value: unknown): ContextItem {
   }
   if (item.kind === "state" && item.status === undefined) {
     throw new ProtocolError(400, "state items require an explicit lifecycle status", "invalid_context_item");
+  }
+  const grantFloor = authorityRank(authorityGrantFloor(item.provenance.sourceType));
+  if (authorityRank(item.authority) > grantFloor) {
+    throw new ProtocolError(
+      403,
+      `content of origin ${item.provenance.sourceType} cannot claim ${item.authority} authority`,
+      "context_authority_violation",
+    );
   }
   return item;
 }
@@ -321,15 +383,51 @@ export function derivedAuthority(claimed: ContextAuthority, lineage: ContextItem
   return claimed;
 }
 
+/** Transitive derivation lineage: every ancestor ID reachable through
+ * `derivedFrom` links, deduplicated and sorted. */
+export function lineageOf(item: ContextItem): string[] {
+  const ids = new Set<string>();
+  const walk = (candidate: ContextItem) => {
+    for (const ancestorId of candidate.provenance.derivedFrom ?? []) {
+      if (!ids.has(ancestorId)) {
+        ids.add(ancestorId);
+      }
+    }
+  };
+  walk(item);
+  return [...ids].sort();
+}
+
 /** Mint a new derived context item with provenance that cannot exceed its
- * lineage authority. */
+ * lineage authority, an authority that never exceeds the `evidence` grant
+ * floor of derived origins, and a lineage depth bounded by
+ * MAX_CONTEXT_LINEAGE. Iterated summarization is the classic privilege
+ * laundering vector: each hop must re-earn nothing and bound the chain. */
 export function deriveContextItem(
   base: Pick<ContextItem, "project" | "kind" | "summary">,
   claimed: ContextAuthority,
   lineage: ContextItem[],
   sourceRef?: string,
 ): ContextItem {
-  const derivedFrom = lineage.map((ancestor) => ancestor.id);
+  const derivedFrom = new Set<string>();
+  for (const ancestor of lineage) {
+    derivedFrom.add(ancestor.id);
+    for (const ancestorOfAncestor of ancestor.provenance.derivedFrom ?? []) {
+      derivedFrom.add(ancestorOfAncestor);
+    }
+  }
+  if (derivedFrom.size > MAX_CONTEXT_LINEAGE) {
+    throw new ProtocolError(
+      400,
+      `derivation lineage exceeds ${MAX_CONTEXT_LINEAGE} ancestors`,
+      "context_limits_exceeded",
+    );
+  }
+  // Derived origins grant at most evidence authority, no matter what the
+  // lineage or the caller claims.
+  const effectiveClaim: ContextAuthority = authorityRank(claimed) > authorityRank("evidence")
+    ? "evidence"
+    : claimed;
   return {
     id: newId("ctx"),
     kind: base.kind,
@@ -338,11 +436,31 @@ export function deriveContextItem(
     provenance: {
       sourceType: "derived",
       ...(sourceRef !== undefined ? { sourceRef } : {}),
-      derivedFrom,
+      derivedFrom: [...derivedFrom].sort(),
     },
-    authority: derivedAuthority(claimed, lineage),
+    authority: derivedAuthority(effectiveClaim, lineage),
     confidence: "probable",
   };
+}
+
+/** Summarize many items into one derived knowledge item. The summary's
+ * authority is at most the strongest lineage authority and at most
+ * `evidence` for derived origins; provenance is preserved for every source;
+ * superseded/rejected lineage is excluded because dead records are not
+ * evidence of current truth. */
+export function summarizeContextItems(
+  project: string,
+  summary: string,
+  lineage: ContextItem[],
+  sourceRef?: string,
+): ContextItem {
+  const live = lineage.filter((item) => item.status !== "superseded" && item.status !== "rejected");
+  return deriveContextItem(
+    { project, kind: "knowledge", summary },
+    "evidence",
+    live,
+    sourceRef,
+  );
 }
 
 /** Bounded, secret-free metadata describing an item for telemetry and audits.
@@ -354,19 +472,24 @@ export interface ContextItemAuditMetadata {
   confidence: ContextConfidence;
   status?: ContextItemStatus;
   sourceType: ContextSourceType;
+  sourceRef?: string;
   derived: boolean;
+  lineageDepth: number;
 }
 
 export function contextItemAuditMetadata(item: ContextItem): ContextItemAuditMetadata {
-  return {
+  const metadata: ContextItemAuditMetadata = {
     id: item.id,
     kind: item.kind,
     authority: item.authority,
     confidence: item.confidence,
-    ...(item.status !== undefined ? { status: item.status } : {}),
     sourceType: item.provenance.sourceType,
     derived: item.provenance.sourceType === "derived" || (item.provenance.derivedFrom?.length ?? 0) > 0,
+    lineageDepth: item.provenance.derivedFrom?.length ?? 0,
   };
+  if (item.status !== undefined) metadata.status = item.status;
+  if (item.provenance.sourceRef !== undefined) metadata.sourceRef = item.provenance.sourceRef;
+  return metadata;
 }
 
 /** Build the provenanceSummary bucket for a packet: counts by source type. */

@@ -267,3 +267,25 @@ Legacy string or keyed evidence remains valid for requirements without a peer
 policy. It deliberately cannot satisfy a declared peer policy. Back up
 `.kxm/state/mesh.db` before every upgrade, finish or inspect active runs, and
 validate workflow definitions before restarting the hub.
+
+## Context authority lattice (v0.5)
+
+Context items carry an explicit authority class — `policy`, `instruction`, `evidence`, or `hypothesis` — granted by a deterministic origin floor:
+
+| Origin | Maximum authority |
+|---|---|
+| human | policy |
+| workflow control plane | policy |
+| git history | instruction |
+| peer | evidence |
+| tool | evidence |
+| external | evidence |
+| derived | evidence |
+
+Enforcement is structural, not advisory:
+
+- Parsing rejects any item whose claimed authority exceeds its origin's floor (`context_authority_violation`).
+- Derived and summarized content is `evidence` at best, regardless of lineage; authority never increases through any number of handoffs or re-summaries.
+- Derivation lineage is transitive, bounded (`MAX_CONTEXT_LINEAGE`), and preserved verbatim; unbounded re-summaries fail closed instead of laundering provenance.
+- Context items may never carry control-plane fields (`permissions`, `tools`, `approval`, credentials, …); memory, wiki, and skill content can inform behavior but never expand tool permissions or approval scope.
+- Superseded and rejected records are excluded from summarization lineage: dead records are not evidence of current truth.
