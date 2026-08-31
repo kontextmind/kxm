@@ -15994,6 +15994,28 @@ var MeshClient = class {
   async improvementReport() {
     return await this.request("/v1/improvements");
   }
+  // ----- Context operating-system API (v0.5, issue #34) -----
+  async contextGet(input) {
+    return await this.request("/v1/context/get", { method: "POST", body: JSON.stringify(input) });
+  }
+  async contextRecall(input) {
+    return await this.request("/v1/context/recall", { method: "POST", body: JSON.stringify(input) });
+  }
+  async contextState(input) {
+    return await this.request("/v1/context/state", { method: "POST", body: JSON.stringify(input) });
+  }
+  async contextStatePropose(input) {
+    return await this.request("/v1/context/state/propose", { method: "POST", body: JSON.stringify(input) });
+  }
+  async contextStatePromote(input) {
+    return await this.request("/v1/context/state/promote", { method: "POST", body: JSON.stringify(input) });
+  }
+  async contextEpisode(input) {
+    return await this.request("/v1/context/episode", { method: "POST", body: JSON.stringify(input) });
+  }
+  async contextExplain(input) {
+    return await this.request("/v1/context/explain", { method: "POST", body: JSON.stringify(input) });
+  }
   async awaitResponse(messageId, timeoutMs = 30 * 6e4, signal) {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
@@ -16504,6 +16526,83 @@ var tools = [
     name: "mesh_improvement_report",
     description: "Summarize workflow errors, contradictions, and lessons by improvement area.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false }
+  },
+  {
+    name: "kxm_context",
+    description: "Normal entry point for KXM context. Assembles a token-budgeted role-aware context packet from durable journal evidence, temporal state, knowledge, episodes, and skills. Superseded and rejected records are excluded. Use KXM context tools instead of provider-specific memory APIs.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Project scope (must be the client's project)" },
+        role: { type: "string", description: "Requesting role: repro, planner, critic, implementer, verifier, or custom" },
+        task: { type: "string", description: "What the role is trying to accomplish" },
+        workflowRunId: { type: "string", description: "Workflow run scope" },
+        stageId: { type: "string", description: "Workflow stage scope" },
+        budgetTokens: { type: "integer", description: "Token budget; defaults to the role policy" },
+        includeKinds: { type: "array", items: { type: "string", enum: ["evidence", "state", "episode", "knowledge", "skill"] }, description: "Restrict packet to these item kinds" }
+      },
+      required: ["project", "role", "task"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "kxm_recall",
+    description: "Search durable context records for a project by query; returns bounded metadata only.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: { type: "string" },
+        query: { type: "string" },
+        kinds: { type: "array", items: { type: "string" } },
+        limit: { type: "integer", minimum: 1, maximum: 100 }
+      },
+      required: ["project"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "kxm_state",
+    description: "Current value for one temporal state key, optionally as of a historical timestamp.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: { type: "string" },
+        key: { type: "string" },
+        asOf: { type: "string", description: "ISO-8601 timestamp for historical queries" }
+      },
+      required: ["project", "key"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "kxm_episode",
+    description: "Episodic learning from workflow journals: errors, lessons, observations, experiments for a project, optionally scoped to one run.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: { type: "string" },
+        workflowRunId: { type: "string" }
+      },
+      required: ["project"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "kxm_promote",
+    description: "Propose a change to one authoritative state key. Proposing changes nothing: promotion requires durable evidence and an authorized control-plane decision.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: { type: "string" },
+        key: { type: "string" },
+        summary: { type: "string" },
+        authority: { type: "string", enum: ["policy", "instruction", "evidence", "hypothesis"] },
+        confidence: { type: "string", enum: ["verified", "probable", "uncertain"] },
+        evidenceRefs: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 32 }
+      },
+      required: ["project", "key", "summary", "authority", "confidence", "evidenceRefs"],
+      additionalProperties: false
+    }
   }
 ];
 mcp.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
@@ -16607,6 +16706,16 @@ mcp.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         }));
       case "mesh_improvement_report":
         return textResult(await client.improvementReport());
+      case "kxm_context":
+        return textResult(await client.contextGet(asRecord(args)));
+      case "kxm_recall":
+        return textResult(await client.contextRecall(asRecord(args)));
+      case "kxm_state":
+        return textResult(await client.contextState(asRecord(args)));
+      case "kxm_episode":
+        return textResult(await client.contextEpisode(asRecord(args)));
+      case "kxm_promote":
+        return textResult(await client.contextStatePropose(asRecord(args)));
       default:
         throw new Error(`unknown tool: ${request.params.name}`);
     }

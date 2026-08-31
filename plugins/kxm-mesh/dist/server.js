@@ -76,6 +76,695 @@ function workflowScopeExtras(operation, assignedCoordinatorName) {
   };
 }
 
+// plugins/kxm-mesh/src/context.ts
+var MAX_CONTEXT_SUMMARY_CHARS = 4e3;
+var MAX_CONTEXT_ID_REFS = 64;
+var MAX_CONTEXT_ITEMS = 256;
+var MIN_CONTEXT_BUDGET_TOKENS = 512;
+var MAX_CONTEXT_BUDGET_TOKENS = 2e5;
+var DEFAULT_CONTEXT_BUDGET_TOKENS = 32e3;
+var MAX_CONTEXT_ROLE_CHARS = 64;
+var MAX_CONTEXT_TASK_CHARS = 2e3;
+var AUTHORITY_GRANT_FLOOR = {
+  human: "policy",
+  workflow: "policy",
+  git: "instruction",
+  peer: "evidence",
+  tool: "evidence",
+  external: "evidence",
+  derived: "evidence"
+};
+function authorityGrantFloor(sourceType) {
+  return AUTHORITY_GRANT_FLOOR[sourceType];
+}
+var RESERVED_CONTROL_PLANE_FIELDS = /* @__PURE__ */ new Set([
+  "permissions",
+  "tools",
+  "allow",
+  "deny",
+  "grants",
+  "approval",
+  "policy",
+  "scopes",
+  "credentials",
+  "secrets",
+  "token",
+  "apiKey",
+  "password"
+]);
+var CONTEXT_ITEM_KINDS = ["evidence", "state", "episode", "knowledge", "skill"];
+var CONTEXT_SOURCE_TYPES = [
+  "human",
+  "git",
+  "workflow",
+  "tool",
+  "peer",
+  "external",
+  "derived"
+];
+var CONTEXT_AUTHORITIES = ["policy", "instruction", "evidence", "hypothesis"];
+var CONTEXT_CONFIDENCES = ["verified", "probable", "uncertain"];
+function oneOf(value, field, allowed) {
+  if (typeof value !== "string" || !allowed.includes(value)) {
+    throw new ProtocolError(400, `${field} must be one of ${allowed.join(", ")}`, "invalid_context_field");
+  }
+  return value;
+}
+function idRefs(value, field, required = false) {
+  if (value === void 0 || value === null) return required ? [] : void 0;
+  if (!Array.isArray(value)) {
+    throw new ProtocolError(400, `${field} must be an array of identifiers`, "invalid_context_field");
+  }
+  if (value.length > MAX_CONTEXT_ID_REFS) {
+    throw new ProtocolError(
+      400,
+      `${field} exceeds ${MAX_CONTEXT_ID_REFS} references`,
+      "context_limits_exceeded"
+    );
+  }
+  const seen = /* @__PURE__ */ new Set();
+  const refs = [];
+  for (const candidate of value) {
+    if (typeof candidate !== "string" || !candidate.trim()) {
+      throw new ProtocolError(400, `${field} must contain non-empty identifiers`, "invalid_context_field");
+    }
+    const ref = candidate.trim();
+    if (seen.has(ref)) {
+      throw new ProtocolError(400, `${field} contains duplicate reference ${ref}`, "invalid_context_field");
+    }
+    seen.add(ref);
+    refs.push(ref);
+  }
+  return refs;
+}
+function optionalIsoTimestamp(value, field) {
+  if (value === void 0 || value === null) return void 0;
+  if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) {
+    throw new ProtocolError(400, `${field} must be an ISO-8601 timestamp`, "invalid_context_field");
+  }
+  return value;
+}
+function parseContextItem(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new ProtocolError(400, "context item must be an object", "invalid_context_item");
+  }
+  const input = value;
+  for (const field of Object.keys(input)) {
+    if (RESERVED_CONTROL_PLANE_FIELDS.has(field)) {
+      throw new ProtocolError(
+        403,
+        `context items may not carry control-plane field "${field}"`,
+        "context_authority_violation"
+      );
+    }
+  }
+  const item = {
+    id: requireString(input.id, "context item id", { max: 128 }),
+    kind: oneOf(input.kind, "context item kind", CONTEXT_ITEM_KINDS),
+    project: requireString(input.project, "context item project", { max: 200 }),
+    summary: requireString(input.summary, "context item summary", { max: MAX_CONTEXT_SUMMARY_CHARS }),
+    provenance: parseContextProvenance(input.provenance),
+    authority: oneOf(input.authority, "context item authority", CONTEXT_AUTHORITIES),
+    confidence: oneOf(input.confidence, "context item confidence", CONTEXT_CONFIDENCES)
+  };
+  const observedAt = optionalIsoTimestamp(input.observedAt, "context item observedAt");
+  const validFrom = optionalIsoTimestamp(input.validFrom, "context item validFrom");
+  const validUntil = optionalIsoTimestamp(input.validUntil, "context item validUntil");
+  if (observedAt !== void 0) item.observedAt = observedAt;
+  if (validFrom !== void 0) item.validFrom = validFrom;
+  if (validUntil !== void 0) item.validUntil = validUntil;
+  if (input.status !== void 0 && input.status !== null) {
+    item.status = oneOf(input.status, "context item status", ["current", "superseded", "proposed", "rejected"]);
+  }
+  const supersedes = idRefs(input.supersedes, "context item supersedes");
+  if (supersedes !== void 0) {
+    if (supersedes.includes(item.id)) {
+      throw new ProtocolError(400, "context item cannot supersede itself", "invalid_context_item");
+    }
+    item.supersedes = supersedes;
+  }
+  const evidenceRefs = idRefs(input.evidenceRefs, "context item evidenceRefs");
+  if (evidenceRefs !== void 0) item.evidenceRefs = evidenceRefs;
+  const stateKey = input.stateKey === void 0 || input.stateKey === null ? void 0 : requireString(input.stateKey, "context item stateKey", { max: 200 });
+  if (stateKey !== void 0) item.stateKey = stateKey;
+  if (item.kind === "state" && item.stateKey === void 0) {
+    throw new ProtocolError(400, "state items require a stateKey", "invalid_context_item");
+  }
+  if (item.kind === "state" && item.status === void 0) {
+    throw new ProtocolError(400, "state items require an explicit lifecycle status", "invalid_context_item");
+  }
+  const grantFloor = authorityRank(authorityGrantFloor(item.provenance.sourceType));
+  if (authorityRank(item.authority) > grantFloor) {
+    throw new ProtocolError(
+      403,
+      `content of origin ${item.provenance.sourceType} cannot claim ${item.authority} authority`,
+      "context_authority_violation"
+    );
+  }
+  return item;
+}
+function parseContextProvenance(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new ProtocolError(400, "context provenance must be an object", "invalid_context_item");
+  }
+  const input = value;
+  const provenance = {
+    sourceType: oneOf(input.sourceType, "context provenance sourceType", CONTEXT_SOURCE_TYPES)
+  };
+  const sourceRef = input.sourceRef === void 0 || input.sourceRef === null ? void 0 : requireString(input.sourceRef, "context provenance sourceRef", { max: 512 });
+  if (sourceRef !== void 0) provenance.sourceRef = sourceRef;
+  const derivedFrom = idRefs(input.derivedFrom, "context provenance derivedFrom");
+  if (derivedFrom !== void 0) provenance.derivedFrom = derivedFrom;
+  return provenance;
+}
+function parseContextRequest(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new ProtocolError(400, "context request must be an object", "invalid_context_request");
+  }
+  const input = value;
+  const request = {
+    project: requireString(input.project, "context request project", { max: 200 }),
+    role: requireString(input.role, "context request role", { max: MAX_CONTEXT_ROLE_CHARS }),
+    task: requireString(input.task, "context request task", { max: MAX_CONTEXT_TASK_CHARS })
+  };
+  const workflowRunId = input.workflowRunId === void 0 || input.workflowRunId === null ? void 0 : requireString(input.workflowRunId, "context request workflowRunId", { max: 128 });
+  if (workflowRunId !== void 0) request.workflowRunId = workflowRunId;
+  const stageId = input.stageId === void 0 || input.stageId === null ? void 0 : requireString(input.stageId, "context request stageId", { max: 128 });
+  if (stageId !== void 0) request.stageId = stageId;
+  if (input.budgetTokens !== void 0 && input.budgetTokens !== null) {
+    const budget = input.budgetTokens;
+    if (!Number.isInteger(budget) || budget < MIN_CONTEXT_BUDGET_TOKENS || budget > MAX_CONTEXT_BUDGET_TOKENS) {
+      throw new ProtocolError(
+        400,
+        `context request budgetTokens must be an integer between ${MIN_CONTEXT_BUDGET_TOKENS} and ${MAX_CONTEXT_BUDGET_TOKENS}`,
+        "invalid_context_request"
+      );
+    }
+    request.budgetTokens = budget;
+  }
+  if (input.includeKinds !== void 0 && input.includeKinds !== null) {
+    if (!Array.isArray(input.includeKinds) || input.includeKinds.length < 1 || input.includeKinds.length > CONTEXT_ITEM_KINDS.length) {
+      throw new ProtocolError(
+        400,
+        "context request includeKinds must be a non-empty array of item kinds",
+        "invalid_context_request"
+      );
+    }
+    request.includeKinds = input.includeKinds.map((kind) => oneOf(kind, "context request includeKinds", CONTEXT_ITEM_KINDS));
+  }
+  return request;
+}
+function validateContextPacketContents(request, packet) {
+  const items = [...packet.currentState, ...packet.knowledge, ...packet.episodes, ...packet.skills, ...packet.contradictions];
+  if (items.length > MAX_CONTEXT_ITEMS) {
+    throw new ProtocolError(400, `context packet exceeds ${MAX_CONTEXT_ITEMS} items`, "context_limits_exceeded");
+  }
+  const allowed = request.includeKinds ? new Set(request.includeKinds) : void 0;
+  for (const item of items) {
+    if (item.project !== request.project) {
+      throw new ProtocolError(
+        400,
+        `context packet contains cross-project item ${item.id}`,
+        "context_isolation_violation"
+      );
+    }
+    if (allowed && !allowed.has(item.kind)) {
+      throw new ProtocolError(
+        400,
+        `context packet contains item ${item.id} of unrequested kind ${item.kind}`,
+        "context_isolation_violation"
+      );
+    }
+  }
+}
+function estimateContextTokens(items) {
+  let characters = 0;
+  for (const item of items) {
+    characters += item.summary.length + item.id.length + item.kind.length;
+    if (item.provenance.sourceRef) characters += item.provenance.sourceRef.length;
+  }
+  return Math.ceil(characters / 4);
+}
+function authorityRank(authority) {
+  switch (authority) {
+    case "policy":
+      return 3;
+    case "instruction":
+      return 2;
+    case "evidence":
+      return 1;
+    case "hypothesis":
+      return 0;
+  }
+}
+function contextItemAuditMetadata(item) {
+  const metadata = {
+    id: item.id,
+    kind: item.kind,
+    authority: item.authority,
+    confidence: item.confidence,
+    sourceType: item.provenance.sourceType,
+    derived: item.provenance.sourceType === "derived" || (item.provenance.derivedFrom?.length ?? 0) > 0,
+    lineageDepth: item.provenance.derivedFrom?.length ?? 0
+  };
+  if (item.status !== void 0) metadata.status = item.status;
+  if (item.provenance.sourceRef !== void 0) metadata.sourceRef = item.provenance.sourceRef;
+  return metadata;
+}
+function provenanceSummaryOf(items) {
+  const summary = {};
+  for (const item of items) {
+    summary[item.provenance.sourceType] = (summary[item.provenance.sourceType] ?? 0) + 1;
+  }
+  for (const key of Object.keys(summary).sort()) {
+    if (summary[key] === 0) delete summary[key];
+  }
+  return summary;
+}
+
+// plugins/kxm-mesh/src/arbiter.ts
+var ROLE_POLICIES = [
+  {
+    role: "repro",
+    label: "Reproduction specialist",
+    kinds: ["episode", "knowledge"],
+    journalCategories: ["error", "lesson", "observation", "contradiction"],
+    budgetTokens: 8e3
+  },
+  {
+    role: "planner",
+    label: "Planner",
+    kinds: ["state", "knowledge", "evidence"],
+    journalCategories: ["plan", "decision", "contradiction", "observation", "hypothesis", "experiment"],
+    budgetTokens: 16e3
+  },
+  {
+    role: "critic",
+    label: "Independent critic",
+    kinds: ["knowledge", "evidence", "episode"],
+    journalCategories: ["contradiction", "error", "lesson", "experiment"],
+    budgetTokens: 12e3
+  },
+  {
+    role: "implementer",
+    label: "Implementer",
+    kinds: ["knowledge", "state", "skill", "episode"],
+    journalCategories: ["plan", "decision", "lesson", "state-change"],
+    budgetTokens: 16e3
+  },
+  {
+    role: "verifier",
+    label: "Verifier",
+    kinds: ["evidence", "knowledge", "episode"],
+    journalCategories: ["plan", "error", "lesson", "contradiction"],
+    budgetTokens: 8e3
+  }
+];
+function rolePolicy(role) {
+  return ROLE_POLICIES.find((policy) => policy.role === role) ?? {
+    role,
+    label: role,
+    kinds: ["knowledge", "evidence"],
+    journalCategories: ["lesson", "observation"],
+    budgetTokens: DEFAULT_CONTEXT_BUDGET_TOKENS
+  };
+}
+var CONFIDENCE_RANK = { verified: 3, probable: 2, uncertain: 1 };
+var AUTHORITY_WEIGHT = { policy: 3, instruction: 2, evidence: 1, hypothesis: 0 };
+function arbitrate(requestInput, pool, options = {}) {
+  const request = parseContextRequest(requestInput);
+  const policy = rolePolicy(request.role);
+  const budget = request.budgetTokens ?? policy.budgetTokens;
+  const contradictions = new Set(options.contradictionIds ?? []);
+  const candidates = [];
+  let excludedSuperseded = 0;
+  for (const candidate of pool) {
+    if (candidate.project !== request.project) {
+      throw new ProtocolError(
+        403,
+        `context pool contains cross-project item ${candidate.id}`,
+        "context_isolation_violation"
+      );
+    }
+    if (candidate.status === "superseded" || candidate.status === "rejected") {
+      excludedSuperseded += 1;
+      continue;
+    }
+    candidates.push(candidate);
+  }
+  const kindRank = /* @__PURE__ */ new Map();
+  const requestedKinds = request.includeKinds ?? policy.kinds;
+  requestedKinds.forEach((kind, index) => kindRank.set(kind, index));
+  const kindPreference = (item) => {
+    const rank = kindRank.get(item.kind);
+    return rank === void 0 ? requestedKinds.length : rank;
+  };
+  const ordered = [...candidates].sort(
+    (left, right) => (contradictions.has(right.id) ? 1 : 0) - (contradictions.has(left.id) ? 1 : 0) || kindPreference(left) - kindPreference(right) || CONFIDENCE_RANK[right.confidence] - CONFIDENCE_RANK[left.confidence] || AUTHORITY_WEIGHT[right.authority] - AUTHORITY_WEIGHT[left.authority] || left.id.localeCompare(right.id)
+  );
+  const kindAllowed = (item) => (request.includeKinds ?? policy.kinds).includes(item.kind) || contradictions.has(item.id);
+  const selected = [];
+  const unresolvedGaps = [];
+  for (const item of ordered) {
+    if (selected.length >= MAX_CONTEXT_ITEMS) {
+      unresolvedGaps.push("context item limit reached; refine the task or kinds");
+      break;
+    }
+    if (!kindAllowed(item)) continue;
+    const nextTokens = estimateContextTokens([...selected, item]);
+    if (nextTokens > budget) {
+      if (selected.length === 0) {
+        unresolvedGaps.push(`budget of ${budget} tokens cannot fit any selected context`);
+        break;
+      }
+      unresolvedGaps.push(`budget of ${budget} tokens reached; ${ordered.length - selected.length} candidates deferred`);
+      break;
+    }
+    selected.push(item);
+  }
+  if (candidates.length === 0) {
+    unresolvedGaps.push("no context records exist for this project yet");
+  }
+  const bySection = (kind) => selected.filter((item) => item.kind === kind && !contradictions.has(item.id));
+  const packet = {
+    workingState: options.workingState ?? {},
+    currentState: bySection("state").filter((item) => item.status === "current" || item.status === void 0),
+    knowledge: bySection("knowledge"),
+    episodes: bySection("episode"),
+    skills: bySection("skill"),
+    contradictions: selected.filter((item) => contradictions.has(item.id)),
+    unresolvedGaps,
+    provenanceSummary: provenanceSummaryOf(selected),
+    estimatedTokens: estimateContextTokens(selected)
+  };
+  validateContextPacketContents(request, packet);
+  return {
+    packet,
+    audit: {
+      request: {
+        project: request.project,
+        role: request.role,
+        task: request.task,
+        ...request.workflowRunId !== void 0 ? { workflowRunId: request.workflowRunId } : {},
+        ...request.stageId !== void 0 ? { stageId: request.stageId } : {}
+      },
+      selectedIds: selected.map((item) => item.id),
+      provenanceSummary: packet.provenanceSummary,
+      estimatedTokens: packet.estimatedTokens,
+      budgetTokens: budget,
+      candidateCount: candidates.length,
+      excludedSuperseded,
+      unresolvedGaps
+    }
+  };
+}
+function journalEntryToContextItem(entry, project) {
+  const kind = entry.category === "plan" || entry.category === "decision" || entry.category === "lesson" ? "knowledge" : entry.category === "skill-candidate" ? "skill" : "evidence";
+  const item = {
+    id: `journal_${entry.id}`,
+    kind,
+    project,
+    summary: entry.summary,
+    provenance: {
+      sourceType: "workflow",
+      sourceRef: `journal:${entry.id}`
+    },
+    authority: entry.category === "decision" || entry.category === "plan" ? "evidence" : "evidence",
+    confidence: entry.severity === "error" ? "probable" : "probable",
+    ...entry.stageId !== void 0 ? { observedAt: entry.createdAt } : {},
+    evidenceRefs: entry.evidence.filter((ref) => ref.length > 0 && ref.length <= 200).slice(0, 16)
+  };
+  if (entry.stageId !== void 0) item.observedAt = entry.createdAt;
+  if (kind === "skill") item.status = "proposed";
+  return parseContextItem(item);
+}
+function explainContextItem(id, pool) {
+  const byId = new Map(pool.map((item2) => [item2.id, item2]));
+  const item = byId.get(id);
+  if (!item) return { item: void 0, lineage: [], evidenceRefs: [], sources: [] };
+  const lineage = [];
+  const queue = [...item.provenance.derivedFrom ?? []];
+  const seen = /* @__PURE__ */ new Set();
+  while (queue.length > 0) {
+    const ancestorId = queue.shift();
+    if (seen.has(ancestorId)) continue;
+    seen.add(ancestorId);
+    lineage.push(ancestorId);
+    const ancestor = byId.get(ancestorId);
+    for (const older of ancestor?.provenance.derivedFrom ?? []) queue.push(older);
+  }
+  lineage.sort();
+  const sources = [item, ...lineage.map((ancestorId) => byId.get(ancestorId))].filter((candidate) => candidate !== void 0).map((candidate) => ({
+    id: candidate.id,
+    sourceType: candidate.provenance.sourceType,
+    ...candidate.provenance.sourceRef !== void 0 ? { sourceRef: candidate.provenance.sourceRef } : {}
+  }));
+  return {
+    item,
+    lineage,
+    evidenceRefs: item.evidenceRefs ?? [],
+    sources
+  };
+}
+
+// plugins/kxm-mesh/src/state.ts
+var MAX_STATE_EVIDENCE_REFS = 32;
+function timestampMs(value) {
+  if (value === void 0) return Number.NEGATIVE_INFINITY;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+}
+function stateActiveAt(item, atMs) {
+  if (item.kind !== "state") return false;
+  if (item.status !== "current" && item.status !== "superseded") return false;
+  const from = timestampMs(item.validFrom);
+  const until = item.validUntil === void 0 ? Number.POSITIVE_INFINITY : timestampMs(item.validUntil);
+  return from <= atMs && atMs < until;
+}
+function latestActive(items) {
+  let best;
+  for (const item of items) {
+    if (best === void 0 || timestampMs(item.validFrom) > timestampMs(best.validFrom) || timestampMs(item.validFrom) === timestampMs(best.validFrom) && item.id > best.id) {
+      best = item;
+    }
+  }
+  return best;
+}
+function findSuperseder(items, id) {
+  return items.find((item) => (item.supersedes ?? []).includes(id));
+}
+function detectStateContradictions(project, items, setValuedKeys = /* @__PURE__ */ new Set()) {
+  const byKey = /* @__PURE__ */ new Map();
+  for (const item of items) {
+    if (item.kind !== "state" || item.project !== project) continue;
+    const key = item.stateKey ?? "";
+    const bucket = byKey.get(key) ?? [];
+    bucket.push(item);
+    byKey.set(key, bucket);
+  }
+  const contradictions = [];
+  for (const [stateKey, bucket] of [...byKey.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+    if (setValuedKeys.has(stateKey)) continue;
+    const competingCurrentIds = bucket.filter((item) => item.status === "current").map((item) => item.id).sort();
+    const competingProposalIds = bucket.filter((item) => item.status === "proposed").map((item) => item.id).sort();
+    if (competingCurrentIds.length > 1 || competingProposalIds.length > 1) {
+      contradictions.push({ project, stateKey, competingCurrentIds, competingProposalIds });
+    }
+  }
+  return contradictions;
+}
+function parseStateItem(value) {
+  const item = parseContextItem(value);
+  if (item.kind !== "state") {
+    throw new ProtocolError(400, "state layer accepts only state items", "invalid_state_item");
+  }
+  return item;
+}
+var NativeStateProvider = class {
+  name = "native-sqlite";
+  store;
+  now;
+  setValuedKeys;
+  constructor(store, options = {}) {
+    this.store = store;
+    this.now = options.now ?? nowIso;
+    this.setValuedKeys = options.setValuedKeys ?? /* @__PURE__ */ new Set();
+  }
+  projectState(project) {
+    return this.store.listContextItems(project, ["state"]);
+  }
+  itemsForKey(project, key) {
+    return this.projectState(project).filter((item) => item.stateKey === key);
+  }
+  /** Current value for a key at a point in time. Superseded values never
+   * appear as current: historical queries return the item that *was* current
+   * at `asOf` via its validity window. Fails closed when a single-valued key
+   * holds competing current items. */
+  async get(project, key, asOf) {
+    const scopedProject = requireNonEmpty(project, "project");
+    const scopedKey = requireNonEmpty(key, "key");
+    if (this.setValuedKeys.has(scopedKey)) {
+      throw new ProtocolError(
+        400,
+        `state key ${scopedKey} is set-valued; use currentSet`,
+        "state_key_set_valued"
+      );
+    }
+    const atMs = asOf === void 0 ? Date.parse(this.now()) : requireIso(asOf, "asOf");
+    const active = this.itemsForKey(scopedProject, scopedKey).filter((item) => stateActiveAt(item, atMs));
+    const currents = active.filter((item) => item.status === "current");
+    if (currents.length > 1) {
+      throw new ProtocolError(
+        409,
+        `state key ${scopedKey} has competing current items; resolve the contradiction first`,
+        "state_contradiction"
+      );
+    }
+    const winner = currents.length === 1 ? currents[0] : latestActive(active);
+    return winner ?? null;
+  }
+  /** All current items for a set-valued key. */
+  async currentSet(project, key) {
+    const scopedProject = requireNonEmpty(project, "project");
+    const scopedKey = requireNonEmpty(key, "key");
+    if (!this.setValuedKeys.has(scopedKey)) {
+      throw new ProtocolError(400, `state key ${scopedKey} is single-valued`, "state_key_single_valued");
+    }
+    return this.itemsForKey(scopedProject, scopedKey).filter((item) => item.status === "current").sort((left, right) => left.id.localeCompare(right.id));
+  }
+  /** Record a proposal. Proposing changes nothing until an authorized,
+   * evidence-bound promotion runs. Returns the durable proposal item ID. */
+  async propose(change) {
+    if (change?.schema !== "kxm.state-change-proposal.v1") {
+      throw new ProtocolError(400, "invalid state change proposal schema", "invalid_state_proposal");
+    }
+    const project = requireNonEmpty(change.project, "proposal project");
+    const key = requireNonEmpty(change.key, "proposal key");
+    const evidenceRefs = boundedRefs(change.evidenceRefs, "proposal evidenceRefs");
+    const proposal = parseStateItem({
+      id: newId("ctx"),
+      kind: "state",
+      project,
+      summary: change.summary,
+      provenance: {
+        sourceType: change.proposedBy.startsWith("agent_") ? "peer" : "human",
+        sourceRef: `proposed-by:${change.proposedBy}`
+      },
+      authority: change.authority,
+      confidence: change.confidence,
+      stateKey: key,
+      status: "proposed",
+      validFrom: this.now(),
+      evidenceRefs,
+      ...change.supersedes ? { supersedes: boundedRefs(change.supersedes, "proposal supersedes") } : {}
+    });
+    this.store.saveContextItem(proposal);
+    return proposal.id;
+  }
+  /** Promote a proposal to current with durable evidence. The promoter must
+   * differ from the proposal author (agents may propose but never silently
+   * promote). Superseded previous values get an explicit validity window so
+   * historical queries stay deterministic. */
+  async promote(proposalId, evidence, promotedBy) {
+    const id = requireNonEmpty(proposalId, "proposalId");
+    const promoter = requireNonEmpty(promotedBy, "promotedBy");
+    const evidenceRefs = boundedRefs(evidence, "promotion evidence");
+    const proposal = this.store.getContextItem(id);
+    if (!proposal || proposal.kind !== "state") {
+      throw new ProtocolError(404, `state proposal ${id} not found`, "state_proposal_not_found");
+    }
+    if (proposal.status !== "proposed") {
+      throw new ProtocolError(
+        400,
+        `state proposal ${id} already reached lifecycle state ${proposal.status}`,
+        "state_proposal_not_promotable"
+      );
+    }
+    const proposedBy = proposal.provenance.sourceRef?.startsWith("proposed-by:") ? proposal.provenance.sourceRef.slice("proposed-by:".length) : void 0;
+    if (proposedBy === promoter) {
+      throw new ProtocolError(
+        400,
+        "the author of a state proposal cannot promote it",
+        "state_promotion_invalid"
+      );
+    }
+    const now = this.now();
+    const key = proposal.stateKey ?? "";
+    if (!key) {
+      throw new ProtocolError(400, "state proposal has no stateKey", "state_promotion_invalid");
+    }
+    let supersededIds = [];
+    if (!this.setValuedKeys.has(key)) {
+      const atMs = Date.parse(now);
+      const supersededItems = this.itemsForKey(proposal.project, key).filter((item) => item.status === "current" && stateActiveAt(item, atMs));
+      supersededIds = supersededItems.map((item) => item.id);
+      for (const item of supersededItems) {
+        this.store.saveContextItem({
+          ...item,
+          status: "superseded",
+          validUntil: now
+        });
+      }
+    }
+    const promoted = parseStateItem({
+      ...proposal,
+      id: newId("ctx"),
+      status: "current",
+      validFrom: now,
+      validUntil: void 0,
+      supersedes: [.../* @__PURE__ */ new Set([...proposal.supersedes ?? [], ...supersededIds])].sort(),
+      evidenceRefs: [.../* @__PURE__ */ new Set([...proposal.evidenceRefs ?? [], ...evidenceRefs])].sort(),
+      provenance: {
+        ...proposal.provenance,
+        sourceRef: `promoted-by:${promoter}`
+      }
+    });
+    this.store.saveContextItem({ ...proposal, status: "rejected", validUntil: now });
+    this.store.saveContextItem(promoted);
+    return promoted;
+  }
+  /** Which item superseded `id`, if any. */
+  async supersededBy(project, id) {
+    const scopedProject = requireNonEmpty(project, "project");
+    const superseder = findSuperseder(this.projectState(scopedProject), id);
+    return superseder ?? null;
+  }
+  /** Audit trail for one key: proposals, promotions, and supersessions in
+   * deterministic order. */
+  stateHistory(project, key) {
+    return this.itemsForKey(project, key).sort(
+      (left, right) => timestampMs(left.validFrom) - timestampMs(right.validFrom) || left.id.localeCompare(right.id)
+    );
+  }
+  contradictions() {
+    const projects = [...new Set([...this.store.contextItems.values()].map((item) => item.project))];
+    return projects.flatMap((project) => detectStateContradictions(project, this.projectState(project), this.setValuedKeys));
+  }
+};
+function requireNonEmpty(value, field) {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new ProtocolError(400, `${field} cannot be empty`, "invalid_state_request");
+  }
+  return value.trim();
+}
+function requireIso(value, field) {
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) {
+    throw new ProtocolError(400, `${field} must be an ISO-8601 timestamp`, "invalid_state_request");
+  }
+  return parsed;
+}
+function boundedRefs(value, field) {
+  if (!Array.isArray(value) || value.length < 1 || value.length > MAX_STATE_EVIDENCE_REFS) {
+    throw new ProtocolError(
+      400,
+      `${field} must contain between 1 and ${MAX_STATE_EVIDENCE_REFS} references`,
+      "state_promotion_invalid"
+    );
+  }
+  return value.map((ref) => requireNonEmpty(ref, `${field} entry`));
+}
+
 // plugins/kxm-mesh/src/retrospective.ts
 import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -1337,6 +2026,18 @@ function sameWorkflowMessageContext(left, right) {
 function sameIdempotentRequest(message, target, content, delivery, correlationId, replyTo, hops, maxHops, ttlMs, workflowContext) {
   return (message.to === target || message.toName.toLowerCase() === target.toLowerCase()) && message.content === content && message.delivery === delivery && message.correlationId === correlationId && message.replyTo === replyTo && message.hops === hops && message.maxHops === maxHops && sameWorkflowMessageContext(message.workflowContext, workflowContext) && Date.parse(message.expiresAt) - Date.parse(message.createdAt) === ttlMs;
 }
+function parseContextAuthority(value) {
+  if (typeof value !== "string" || !CONTEXT_AUTHORITIES.includes(value)) {
+    throw new ProtocolError(400, "authority must be one of policy, instruction, evidence, hypothesis", "invalid_context_request");
+  }
+  return value;
+}
+function parseContextConfidence(value) {
+  if (typeof value !== "string" || !CONTEXT_CONFIDENCES.includes(value)) {
+    throw new ProtocolError(400, "confidence must be one of verified, probable, uncertain", "invalid_context_request");
+  }
+  return value;
+}
 function boundedStringList(value, field, maxItems = 32) {
   if (value === void 0) return [];
   if (!Array.isArray(value) || value.length > maxItems) {
@@ -1504,6 +2205,7 @@ function createMeshHub(options = {}) {
   }
   const workflowRuns = store.workflowRuns;
   const journal = store.journal;
+  const stateProvider = new NativeStateProvider(store);
   const streams = /* @__PURE__ */ new Map();
   const opsStreams = /* @__PURE__ */ new Set();
   const rateBuckets = /* @__PURE__ */ new Map();
@@ -1522,7 +2224,8 @@ function createMeshHub(options = {}) {
     workflowSignals: 0,
     workflowWaitTimeouts: 0,
     workflowDegradations: 0,
-    journalEntries: 0
+    journalEntries: 0,
+    contextRequests: 0
   };
   let cleanupTimer;
   let closed = false;
@@ -1575,6 +2278,20 @@ function createMeshHub(options = {}) {
         nextAction: "check_project_token"
       });
     }
+  }
+  function contextCallerProject(request, requested) {
+    const project = requireString(requested, "project", { max: 200 });
+    const agentHeader = request.headers["x-mesh-agent-id"];
+    if (typeof agentHeader === "string" && agentHeader.trim()) {
+      const agent = requireAgent(request);
+      requireProjectAuth(request, agent.project);
+      if (agent.project !== project) {
+        throw new ProtocolError(403, "context requests are limited to the agent's project", "context_isolation_violation");
+      }
+      return { project, caller: agent.id };
+    }
+    requireAdminAuth(request);
+    return { project, caller: "mesh-admin" };
   }
   function requireAdminAuth(request) {
     if (!authToken2 && isLoopback(host2)) return;
@@ -2070,6 +2787,26 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
     response.setHeader("referrer-policy", "no-referrer");
     counters.requests += 1;
     try {
+      let projectContextPool2 = function(project, journalCategories) {
+        const pool = store.listContextItems(project);
+        const categoryFilter = journalCategories ? new Set(journalCategories) : void 0;
+        const runIds = new Set(
+          [...workflowRuns.values()].filter((run) => run.project === project).map((run) => run.id)
+        );
+        const contradictionIds = [];
+        for (const entry of journal.values()) {
+          if (!runIds.has(entry.runId)) continue;
+          if (categoryFilter && !categoryFilter.has(entry.category)) continue;
+          pool.push(journalEntryToContextItem(entry, project));
+          if (entry.category === "contradiction") contradictionIds.push(`journal_${entry.id}`);
+        }
+        for (const contradiction of stateProvider.contradictions()) {
+          if (contradiction.project !== project) continue;
+          contradictionIds.push(...contradiction.competingCurrentIds, ...contradiction.competingProposalIds);
+        }
+        return { pool, contradictionIds };
+      };
+      var projectContextPool = projectContextPool2;
       const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
       const method = request.method ?? "GET";
       if (method === "GET" && url.pathname === "/health") {
@@ -2464,6 +3201,115 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
           run: result.created ? transition : run,
           approval: result.approval,
           duplicate: !result.created
+        });
+        return;
+      }
+      const contextGetMatch = url.pathname.match(/^\/v1\/context\/get$/);
+      if (method === "POST" && contextGetMatch) {
+        const body = await readJson(request);
+        const { project: callerProject, caller: callerId } = contextCallerProject(request, body.project);
+        const policy = rolePolicy(typeof body.role === "string" ? body.role : "");
+        const { pool, contradictionIds } = projectContextPool2(callerProject, policy.journalCategories);
+        const outcome = arbitrate(body, pool, { contradictionIds });
+        counters.contextRequests += 1;
+        logger({
+          event: "context_packet_assembled",
+          ...outcome.audit.request,
+          selectedIds: outcome.audit.selectedIds,
+          provenanceSummary: outcome.audit.provenanceSummary,
+          estimatedTokens: outcome.audit.estimatedTokens,
+          budgetTokens: outcome.audit.budgetTokens,
+          candidateCount: outcome.audit.candidateCount,
+          excludedSuperseded: outcome.audit.excludedSuperseded
+        });
+        json(response, 200, { packet: outcome.packet, audit: outcome.audit });
+        return;
+      }
+      const contextRecallMatch = url.pathname.match(/^\/v1\/context\/recall$/);
+      if (method === "POST" && contextRecallMatch) {
+        const body = await readJson(request);
+        const { project: callerProject, caller: callerId } = contextCallerProject(request, body.project);
+        const query = requireString(body.query ?? "", "query", { max: 500, allowEmpty: true }).toLowerCase();
+        const kinds = Array.isArray(body.kinds) ? body.kinds.filter((kind) => typeof kind === "string") : void 0;
+        const limit = parseBoundedInteger(body.limit, "limit", 25, 1, 100);
+        const { pool } = projectContextPool2(callerProject);
+        const recalled = pool.filter((item) => item.status !== "superseded" && item.status !== "rejected").filter((item) => kinds === void 0 || kinds.includes(item.kind)).filter((item) => query === "" || item.summary.toLowerCase().includes(query) || (item.stateKey ?? "").toLowerCase().includes(query)).sort((left, right) => left.id.localeCompare(right.id)).slice(0, limit);
+        counters.contextRequests += 1;
+        logger({ event: "context_recall", project: callerProject, query, limit, results: recalled.length });
+        json(response, 200, { items: recalled.map(contextItemAuditMetadata), unresolvedGaps: recalled.length === 0 ? ["no matching context records"] : [] });
+        return;
+      }
+      const contextStateMatch = url.pathname.match(/^\/v1\/context\/state$/);
+      if (method === "POST" && contextStateMatch) {
+        const body = await readJson(request);
+        const { project: callerProject, caller: callerId } = contextCallerProject(request, body.project);
+        const key = requireString(body.key, "key", { max: 200 });
+        const asOf = body.asOf === void 0 || body.asOf === null ? void 0 : requireString(body.asOf, "asOf", { max: 64 });
+        const current = await stateProvider.get(callerProject, key, asOf);
+        counters.contextRequests += 1;
+        json(response, 200, { state: current, key });
+        return;
+      }
+      const contextStateProposeMatch = url.pathname.match(/^\/v1\/context\/state\/propose$/);
+      if (method === "POST" && contextStateProposeMatch) {
+        const body = await readJson(request);
+        const { project: callerProject, caller: callerId } = contextCallerProject(request, body.project);
+        const proposalId = await stateProvider.propose({
+          schema: "kxm.state-change-proposal.v1",
+          project: callerProject,
+          key: requireString(body.key, "key", { max: 200 }),
+          summary: requireString(body.summary, "summary", { max: 4e3 }),
+          authority: parseContextAuthority(body.authority),
+          confidence: parseContextConfidence(body.confidence),
+          evidenceRefs: boundedStringList(body.evidenceRefs, "evidenceRefs", 32),
+          proposedBy: callerId
+        });
+        counters.contextRequests += 1;
+        publishOps(callerProject, "workflows");
+        logger({ event: "context_state_proposed", project: callerProject, proposalId, proposedBy: callerId });
+        json(response, 201, { proposalId });
+        return;
+      }
+      const contextStatePromoteMatch = url.pathname.match(/^\/v1\/context\/state\/promote$/);
+      if (method === "POST" && contextStatePromoteMatch) {
+        requireAdminAuth(request);
+        const body = await readJson(request);
+        const proposalId = requireString(body.proposalId, "proposalId", { max: 128 });
+        const project = requireString(body.project, "project", { max: 200 });
+        const evidence = boundedStringList(body.evidence, "evidence", 32);
+        const promoted = await stateProvider.promote(proposalId, evidence, "mesh-admin");
+        counters.contextRequests += 1;
+        publishOps(project, "workflows");
+        logger({ event: "context_state_promoted", project, proposalId, promotedId: promoted.id, stateKey: promoted.stateKey });
+        json(response, 200, { state: promoted });
+        return;
+      }
+      const contextEpisodeMatch = url.pathname.match(/^\/v1\/context\/episode$/);
+      if (method === "POST" && contextEpisodeMatch) {
+        const body = await readJson(request);
+        const { project: callerProject, caller: callerId } = contextCallerProject(request, body.project);
+        const runId = body.workflowRunId === void 0 || body.workflowRunId === null ? void 0 : requireString(body.workflowRunId, "workflowRunId", { max: 128 });
+        const runIds = new Set(
+          [...workflowRuns.values()].filter((run) => run.project === callerProject && (runId === void 0 || run.id === runId)).map((run) => run.id)
+        );
+        const episodes = [...journal.values()].filter((entry) => runIds.has(entry.runId)).filter((entry) => entry.category === "error" || entry.category === "lesson" || entry.category === "observation" || entry.category === "experiment").sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id)).map((entry) => journalEntryToContextItem(entry, callerProject)).slice(0, 50);
+        counters.contextRequests += 1;
+        json(response, 200, { episodes });
+        return;
+      }
+      const contextExplainMatch = url.pathname.match(/^\/v1\/context\/explain$/);
+      if (method === "POST" && contextExplainMatch) {
+        const body = await readJson(request);
+        const { project: callerProject, caller: callerId } = contextCallerProject(request, body.project);
+        const id = requireString(body.id, "id", { max: 128 });
+        const { pool } = projectContextPool2(callerProject);
+        const explanation = explainContextItem(id, pool);
+        counters.contextRequests += 1;
+        json(response, 200, {
+          found: explanation.item !== void 0,
+          lineage: explanation.lineage,
+          evidenceRefs: explanation.evidenceRefs,
+          sources: explanation.sources
         });
         return;
       }

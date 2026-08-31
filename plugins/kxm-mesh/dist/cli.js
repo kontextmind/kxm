@@ -13197,6 +13197,23 @@ function processExists2(pid) {
     return error.code === "EPERM";
   }
 }
+async function hubContextPost(input) {
+  const response = await input.fetchImpl(`${input.serverUrl.replace(/\/$/, "")}${input.path}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...input.authToken ? { authorization: `Bearer ${input.authToken}` } : {}
+    },
+    body: JSON.stringify(input.body)
+  });
+  const text = redactSecrets((await response.text()).slice(0, 64e3));
+  let body = text;
+  try {
+    body = JSON.parse(text);
+  } catch {
+  }
+  return { ok: response.ok, status: response.status, body };
+}
 async function hubGet(url, fetchImpl) {
   try {
     const response = await fetchImpl(url);
@@ -13668,6 +13685,105 @@ async function cmdImprove(runtime, targetFlag) {
   }, `proposed ${report.proposals.length} improvement(s) from ${report.events} event(s)`);
   return 0;
 }
+function parseContextKinds(value) {
+  if (!value) return void 0;
+  return value.split(",").map((kind) => kind.trim()).filter((kind) => kind.length > 0);
+}
+async function cmdContextGet(runtime, project, options) {
+  const budget = options.budget === void 0 ? void 0 : Number(options.budget);
+  if (options.budget !== void 0 && (!Number.isInteger(budget) || budget < 512 || budget > 2e5)) {
+    runtime.io.stderr("context get --budget must be an integer between 512 and 200000\n");
+    return 2;
+  }
+  const body = {
+    project,
+    role: options.role,
+    task: options.task
+  };
+  if (options.run) body.workflowRunId = options.run;
+  if (options.stage) body.stageId = options.stage;
+  if (budget !== void 0) body.budgetTokens = budget;
+  const kinds = parseContextKinds(options.kinds);
+  if (kinds) body.includeKinds = kinds;
+  const response = await hubContextPost({
+    serverUrl: runtime.serverUrl,
+    path: "/v1/context/get",
+    body,
+    ...runtime.env.PI_MESH_AUTH_TOKEN?.trim() ? { authToken: runtime.env.PI_MESH_AUTH_TOKEN.trim() } : {},
+    fetchImpl: runtime.fetchImpl
+  });
+  print(runtime.io, runtime.json, { ok: response.ok, command: "context get", status: response.status, ...response.body }, `context get ${response.ok ? "assembled" : `failed (${response.status})`}`);
+  return response.ok ? 0 : 1;
+}
+async function cmdContextRecall(runtime, project, options) {
+  const body = { project };
+  if (options.query) body.query = options.query;
+  const kinds = parseContextKinds(options.kinds);
+  if (kinds) body.kinds = kinds;
+  if (options.limit) body.limit = Number(options.limit);
+  const response = await hubContextPost({
+    serverUrl: runtime.serverUrl,
+    path: "/v1/context/recall",
+    body,
+    ...runtime.env.PI_MESH_AUTH_TOKEN?.trim() ? { authToken: runtime.env.PI_MESH_AUTH_TOKEN.trim() } : {},
+    fetchImpl: runtime.fetchImpl
+  });
+  print(runtime.io, runtime.json, { ok: response.ok, command: "context recall", status: response.status, ...response.body }, `context recall ${response.ok ? "complete" : `failed (${response.status})`}`);
+  return response.ok ? 0 : 1;
+}
+async function cmdContextState(runtime, project, key, options) {
+  const body = { project, key };
+  if (options.asOf) body.asOf = options.asOf;
+  const response = await hubContextPost({
+    serverUrl: runtime.serverUrl,
+    path: "/v1/context/state",
+    body,
+    ...runtime.env.PI_MESH_AUTH_TOKEN?.trim() ? { authToken: runtime.env.PI_MESH_AUTH_TOKEN.trim() } : {},
+    fetchImpl: runtime.fetchImpl
+  });
+  print(runtime.io, runtime.json, { ok: response.ok, command: "context state", status: response.status, ...response.body }, `context state ${response.ok ? "resolved" : `failed (${response.status})`}`);
+  return response.ok ? 0 : 1;
+}
+async function cmdContextEpisode(runtime, project, options) {
+  const body = { project };
+  if (options.run) body.workflowRunId = options.run;
+  const response = await hubContextPost({
+    serverUrl: runtime.serverUrl,
+    path: "/v1/context/episode",
+    body,
+    ...runtime.env.PI_MESH_AUTH_TOKEN?.trim() ? { authToken: runtime.env.PI_MESH_AUTH_TOKEN.trim() } : {},
+    fetchImpl: runtime.fetchImpl
+  });
+  print(runtime.io, runtime.json, { ok: response.ok, command: "context episode", status: response.status, ...response.body }, `context episode ${response.ok ? "complete" : `failed (${response.status})`}`);
+  return response.ok ? 0 : 1;
+}
+async function cmdContextPromote(runtime, project, proposalId, options) {
+  const evidence = options.evidence.split(",").map((ref) => ref.trim()).filter((ref) => ref.length > 0);
+  if (evidence.length === 0) {
+    runtime.io.stderr("context promote --evidence must contain at least one durable evidence reference\n");
+    return 2;
+  }
+  const response = await hubContextPost({
+    serverUrl: runtime.serverUrl,
+    path: "/v1/context/state/promote",
+    body: { project, proposalId, evidence },
+    ...runtime.env.PI_MESH_AUTH_TOKEN?.trim() ? { authToken: runtime.env.PI_MESH_AUTH_TOKEN.trim() } : {},
+    fetchImpl: runtime.fetchImpl
+  });
+  print(runtime.io, runtime.json, { ok: response.ok, command: "context promote", status: response.status, ...response.body }, `context promote ${response.ok ? "recorded" : `failed (${response.status})`}`);
+  return response.ok ? 0 : 1;
+}
+async function cmdContextExplain(runtime, project, itemId) {
+  const response = await hubContextPost({
+    serverUrl: runtime.serverUrl,
+    path: "/v1/context/explain",
+    body: { project, id: itemId },
+    ...runtime.env.PI_MESH_AUTH_TOKEN?.trim() ? { authToken: runtime.env.PI_MESH_AUTH_TOKEN.trim() } : {},
+    fetchImpl: runtime.fetchImpl
+  });
+  print(runtime.io, runtime.json, { ok: response.ok, command: "context explain", status: response.status, ...response.body }, `context explain ${response.ok ? "complete" : `failed (${response.status})`}`);
+  return response.ok ? 0 : 1;
+}
 async function cmdWorkflowStart(runtime, definitionIdArg, options) {
   const definitionId = definitionIdArg || runtime.env.PI_MESH_WORKFLOW_ID?.trim();
   const deliveryId = String(options.deliveryId || `cli-${randomUUID2()}`);
@@ -14006,6 +14122,26 @@ function createProgram(ctx, result) {
   addGlobalOptions(program2.command("improve").description("Propose CLI or project improvements from telemetry JSONL")).option("--target <cli|project>", "Limit proposals to cli or project").action(async function improveAction(options) {
     result.code = await cmdImprove(runtimeFrom(ctx, this), options.target);
   });
+  const context = addGlobalOptions(program2.command("context").description("KXM context operating-system queries"));
+  context.helpCommand("help", "Show context help");
+  addGlobalOptions(context.command("get").description("Assemble a role-aware context packet")).argument("<project>", "Project scope").requiredOption("--role <role>", "Requesting role (repro, planner, critic, implementer, verifier, or custom)").requiredOption("--task <task>", "What the role is trying to do").option("--run <runId>", "Workflow run scope").option("--stage <stageId>", "Workflow stage scope").option("--budget <tokens>", "Token budget for the packet").option("--kinds <kinds>", "Comma-separated item kinds to include").action(async function contextGetAction(project, options) {
+    result.code = await cmdContextGet(runtimeFrom(ctx, this), project, options);
+  });
+  addGlobalOptions(context.command("recall").description("Search durable context records (metadata only)")).argument("<project>", "Project scope").option("--query <text>", "Substring query against summaries and state keys").option("--kinds <kinds>", "Comma-separated item kinds to include").option("--limit <n>", "Maximum results (1-100)").action(async function contextRecallAction(project, options) {
+    result.code = await cmdContextRecall(runtimeFrom(ctx, this), project, options);
+  });
+  addGlobalOptions(context.command("state").description("Current or historical value for one state key")).argument("<project>", "Project scope").argument("<key>", "State key").option("--as-of <iso>", "Historical timestamp query").action(async function contextStateAction(project, key, options) {
+    result.code = await cmdContextState(runtimeFrom(ctx, this), project, key, options);
+  });
+  addGlobalOptions(context.command("episode").description("Episodic learning records from workflow journals")).argument("<project>", "Project scope").option("--run <runId>", "Limit to one workflow run").action(async function contextEpisodeAction(project, options) {
+    result.code = await cmdContextEpisode(runtimeFrom(ctx, this), project, options);
+  });
+  addGlobalOptions(context.command("promote").description("Promote an approved state proposal (control plane)")).argument("<project>", "Project scope").argument("<proposalId>", "State proposal ID").requiredOption("--evidence <refs>", "Comma-separated durable evidence references").action(async function contextPromoteAction(project, proposalId, options) {
+    result.code = await cmdContextPromote(runtimeFrom(ctx, this), project, proposalId, options);
+  });
+  addGlobalOptions(context.command("explain").description("Explain which evidence and lineage back a context item")).argument("<project>", "Project scope").argument("<itemId>", "Context item ID").action(async function contextExplainAction(project, itemId) {
+    result.code = await cmdContextExplain(runtimeFrom(ctx, this), project, itemId);
+  });
   const mesh = addGlobalOptions(program2.command("mesh").description("Local and multi-machine mesh hub"));
   mesh.helpCommand("help", "Show mesh help");
   addGlobalOptions(mesh.command("init").description("Create .kxm directories")).action(bind(cmdInit));
@@ -14044,5 +14180,6 @@ if (process.argv[1] && resolve3(process.argv[1]) === fileURLToPath2(import.meta.
   process.exitCode = code;
 }
 export {
+  hubContextPost,
   runCli
 };
