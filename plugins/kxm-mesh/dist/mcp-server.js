@@ -16016,6 +16016,9 @@ var MeshClient = class {
   async contextExplain(input) {
     return await this.request("/v1/context/explain", { method: "POST", body: JSON.stringify(input) });
   }
+  async contextWikiCompile(input) {
+    return await this.request("/v1/context/wiki/compile", { method: "POST", body: JSON.stringify(input) });
+  }
   async awaitResponse(messageId, timeoutMs = 30 * 6e4, signal) {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {

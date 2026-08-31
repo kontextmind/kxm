@@ -33,6 +33,18 @@ export interface ContextExplanation {
   sources: { id: string; sourceType: string; sourceRef?: string }[];
 }
 
+export interface ContextWikiCompilation {
+  audit: {
+    project: string;
+    pages: string[];
+    stateItems: number;
+    contextItems: number;
+    contradictions: number;
+    compiledAt: string;
+  };
+  pages: { path: string; content: string }[];
+}
+
 export interface MeshClientOptions {
   serverUrl: string;
   authToken?: string;
@@ -435,6 +447,10 @@ export class MeshClient {
     id: string;
   }): Promise<ContextExplanation> {
     return await this.request("/v1/context/explain", { method: "POST", body: JSON.stringify(input) });
+  }
+
+  async contextWikiCompile(input: { project: string }): Promise<ContextWikiCompilation> {
+    return await this.request("/v1/context/wiki/compile", { method: "POST", body: JSON.stringify(input) });
   }
 
   async awaitResponse(messageId: string, timeoutMs = 30 * 60_000, signal?: AbortSignal): Promise<MessageRecord> {

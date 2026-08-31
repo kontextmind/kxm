@@ -30,6 +30,7 @@ import { workflowScopeExtras } from "./diagnostics.ts";
 import { arbitrate, explainContextItem, journalEntryToContextItem, rolePolicy } from "./arbiter.ts";
 import { contextItemAuditMetadata, CONTEXT_AUTHORITIES, CONTEXT_CONFIDENCES, type ContextAuthority, type ContextConfidence, type ContextItem } from "./context.ts";
 import { NativeStateProvider } from "./state.ts";
+import { compileKnowledgeWiki, lintKnowledgeWiki, type WikiSourcePool } from "./wiki.ts";
 import { buildRetrospective, writeRetrospective } from "./retrospective.ts";
 import { MeshStore, type StoredAgent } from "./store.ts";
 import {
@@ -1503,6 +1504,22 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         return { pool, contradictionIds };
       }
 
+      /** Full source pool for wiki compilation: every journal-derived item
+       * (unfiltered) plus the authoritative state layer. */
+      function contextWikiPool(project: string, compiledAt: string): WikiSourcePool {
+        const { pool, contradictionIds } = projectContextPool(project);
+        const stateItems = store.listContextItems(project, ["state"]);
+        const contradictions = stateProvider.contradictions().filter((entry) => entry.project === project);
+        return {
+          project,
+          stateItems,
+          contextItems: pool,
+          contradictions,
+          openContradictionItemIds: contradictionIds,
+          compiledAt,
+        };
+      }
+
       const contextGetMatch = url.pathname.match(/^\/v1\/context\/get$/);
       if (method === "POST" && contextGetMatch) {
         const body = await readJson(request);
@@ -1633,6 +1650,27 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           lineage: explanation.lineage,
           evidenceRefs: explanation.evidenceRefs,
           sources: explanation.sources,
+        });
+        return;
+      }
+
+      const contextWikiCompileMatch = url.pathname.match(/^\/v1\/context\/wiki\/compile$/);
+      if (method === "POST" && contextWikiCompileMatch) {
+        const body = await readJson(request);
+        const { project: callerProject } = contextCallerProject(request, body.project);
+        const wikiPool = contextWikiPool(callerProject, nowIso());
+        const wiki = compileKnowledgeWiki(wikiPool);
+        counters.contextRequests += 1;
+        logger({
+          event: "context_wiki_compiled",
+          project: callerProject,
+          pages: wiki.audit.pages.length,
+          contradictions: wiki.audit.contradictions,
+        });
+        json(response, 200, {
+          audit: wiki.audit,
+          lint: lintKnowledgeWiki(wiki.pages, wikiPool),
+          pages: [...wiki.pages].sort(([left], [right]) => left.localeCompare(right)).map(([path, content]) => ({ path, content })),
         });
         return;
       }
