@@ -29,7 +29,7 @@ test("store rejects databases created by a newer schema", () => {
   const path = join(directory, "mesh.db");
   try {
     const database = new DatabaseSync(path);
-    database.exec("PRAGMA user_version = 3");
+    database.exec("PRAGMA user_version = 4");
     database.close();
     assert.throws(() => new MeshStore(path), /newer than this runtime supports/);
   } finally {
@@ -171,7 +171,7 @@ test("verified peer evidence survives restart and source-message retention witho
     first = new MeshStore(path);
     const firstDatabase = (first as unknown as { database: DatabaseSync }).database;
     const firstVersion = firstDatabase.prepare("PRAGMA user_version").get() as { user_version: number };
-    assert.equal(firstVersion.user_version, 2);
+    assert.equal(firstVersion.user_version, 3);
     first.saveMessage(sourceMessage);
     first.saveWorkflowRun(run);
     first.close();
@@ -190,7 +190,7 @@ test("verified peer evidence survives restart and source-message retention witho
     third = new MeshStore(path);
     const thirdDatabase = (third as unknown as { database: DatabaseSync }).database;
     const thirdVersion = thirdDatabase.prepare("PRAGMA user_version").get() as { user_version: number };
-    assert.equal(thirdVersion.user_version, 2);
+    assert.equal(thirdVersion.user_version, 3);
     assert.equal(third.messages.has(sourceMessage.id), false);
     assert.equal(
       third.workflowRuns.get(run.id)?.stages[0]?.verifiedEvidence?.["peer review"]?.[0]?.replySha256,
