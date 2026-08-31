@@ -4530,6 +4530,174 @@ function writeCompiledWiki(root, wiki) {
   return written;
 }
 
+// plugins/kxm-mesh/src/routing.ts
+var ROUTING_RECORD_SCHEMA = "kxm.routing-record.v1";
+var BEHAVIORAL_HASH_VERSION = 1;
+var MAX_CONTEXT_ITEM_IDS = 256;
+var MAX_SKILL_REFS = 32;
+var MAX_PROVIDER_METADATA_FIELDS = 32;
+function normalizeModel(value) {
+  if (value === void 0) return void 0;
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, "-");
+  return normalized === "" ? void 0 : normalized;
+}
+function boundedInt(value, field) {
+  if (value === void 0 || value === null) return void 0;
+  if (!Number.isInteger(value) || value < 0 || value > 1e6) {
+    throw new Error(`${field} must be an integer between 0 and 1000000`);
+  }
+  return value;
+}
+function boundedString(value, field, max) {
+  if (value === void 0 || value === null) return void 0;
+  if (typeof value !== "string" || value.length > max) {
+    throw new Error(`${field} must be a string of at most ${max} characters`);
+  }
+  return value;
+}
+function parseRoutingRecord(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("routing record must be an object");
+  }
+  const input = value;
+  if (input.schema !== ROUTING_RECORD_SCHEMA) {
+    throw new Error(`routing record schema must be ${ROUTING_RECORD_SCHEMA}`);
+  }
+  const skills = input.skills === void 0 || input.skills === null ? [] : (() => {
+    if (!Array.isArray(input.skills) || input.skills.length > MAX_SKILL_REFS) {
+      throw new Error(`routing skills must be an array of at most ${MAX_SKILL_REFS} refs`);
+    }
+    return input.skills.map((skill) => {
+      const ref = skill;
+      if (typeof ref?.id !== "string" || !ref.id.trim() || ref.id.length > 200 || typeof ref?.contentSha256 !== "string" || !/^[a-f0-9]{64}$/.test(ref.contentSha256)) {
+        throw new Error("routing skill refs must carry an id and a sha256 content hash");
+      }
+      return { id: ref.id.trim(), contentSha256: ref.contentSha256 };
+    });
+  })();
+  const contextItemIds = input.contextItemIds === void 0 || input.contextItemIds === null ? [] : (() => {
+    if (!Array.isArray(input.contextItemIds) || input.contextItemIds.length > MAX_CONTEXT_ITEM_IDS) {
+      throw new Error(`routing contextItemIds must be an array of at most ${MAX_CONTEXT_ITEM_IDS} ids`);
+    }
+    return input.contextItemIds.map((id) => {
+      if (typeof id !== "string" || !id.trim() || id.length > 200) {
+        throw new Error("routing contextItemIds must be bounded non-empty strings");
+      }
+      return id.trim();
+    });
+  })();
+  const providerMetadata = input.providerMetadata === void 0 || input.providerMetadata === null ? void 0 : (() => {
+    if (!input.providerMetadata || typeof input.providerMetadata !== "object" || Array.isArray(input.providerMetadata)) {
+      throw new Error("routing providerMetadata must be an object");
+    }
+    const entries = Object.entries(input.providerMetadata);
+    if (entries.length > MAX_PROVIDER_METADATA_FIELDS) {
+      throw new Error(`routing providerMetadata may carry at most ${MAX_PROVIDER_METADATA_FIELDS} fields`);
+    }
+    const normalized = {};
+    for (const [key, field] of entries) {
+      if (typeof key !== "string" || key.length > 64 || /prompt|body|content|message/i.test(key) || typeof field !== "string" && typeof field !== "number" && typeof field !== "boolean") {
+        throw new Error("routing providerMetadata values must be bounded strings, numbers, or booleans; raw bodies are rejected");
+      }
+      normalized[key] = typeof field === "string" ? field.slice(0, 200) : field;
+    }
+    return normalized;
+  })();
+  const verifierOutcome = input.verifierOutcome === void 0 || input.verifierOutcome === null ? void 0 : (() => {
+    if (input.verifierOutcome !== "passed" && input.verifierOutcome !== "warning" && input.verifierOutcome !== "failed") {
+      throw new Error("routing verifierOutcome must be passed, warning, or failed");
+    }
+    return input.verifierOutcome;
+  })();
+  const finalOutcome = input.finalOutcome === void 0 || input.finalOutcome === null ? void 0 : (() => {
+    if (input.finalOutcome !== "accepted" && input.finalOutcome !== "blocked" && input.finalOutcome !== "failed" && input.finalOutcome !== "pending") {
+      throw new Error("routing finalOutcome must be accepted, blocked, failed, or pending");
+    }
+    return input.finalOutcome;
+  })();
+  const costUsd = input.costUsd === void 0 || input.costUsd === null ? void 0 : (() => {
+    if (typeof input.costUsd !== "number" || !Number.isFinite(input.costUsd) || input.costUsd < 0 || input.costUsd > 1e6) {
+      throw new Error("routing costUsd must be a non-negative finite number");
+    }
+    return input.costUsd;
+  })();
+  const behavioralSha256 = boundedString(input.behavioralSha256, "behavioralSha256", 64) ?? "";
+  if (!/^[a-f0-9]{64}$/.test(behavioralSha256)) {
+    throw new Error("routing behavioralSha256 must be a sha256 hex digest");
+  }
+  const record = {
+    schema: ROUTING_RECORD_SCHEMA,
+    behavioralHashVersion: BEHAVIORAL_HASH_VERSION,
+    behavioralSha256,
+    skills,
+    contextItemIds,
+    retries: boundedInt(input.retries, "retries") ?? 0,
+    transitions: boundedInt(input.transitions, "transitions") ?? 0,
+    humanInterventions: boundedInt(input.humanInterventions, "humanInterventions") ?? 0
+  };
+  const strings = [
+    ["workflowRunId", boundedString(input.workflowRunId, "workflowRunId", 128)],
+    ["stageId", boundedString(input.stageId, "stageId", 128)],
+    ["requestedModel", normalizeModel(boundedString(input.requestedModel, "requestedModel", 200))],
+    ["effectiveModel", normalizeModel(boundedString(input.effectiveModel, "effectiveModel", 200))],
+    ["reasoningEffort", boundedString(input.reasoningEffort, "reasoningEffort", 64)],
+    ["agentRole", boundedString(input.agentRole, "agentRole", 64)],
+    ["rolePromptSha256", boundedString(input.rolePromptSha256, "rolePromptSha256", 64)],
+    ["contextPolicyVersion", boundedString(input.contextPolicyVersion, "contextPolicyVersion", 64)],
+    ["toolPolicyVersion", boundedString(input.toolPolicyVersion, "toolPolicyVersion", 64)],
+    ["workflowDefinitionSha256", boundedString(input.workflowDefinitionSha256, "workflowDefinitionSha256", 64)],
+    ["verifierConfigSha256", boundedString(input.verifierConfigSha256, "verifierConfigSha256", 64)]
+  ];
+  for (const [key, value2] of strings) {
+    if (value2 !== void 0) record[key] = value2;
+  }
+  for (const [key, value2] of [["attempt", boundedInt(input.attempt, "attempt")], ["tokensIn", boundedInt(input.tokensIn, "tokensIn")], ["tokensOut", boundedInt(input.tokensOut, "tokensOut")], ["cacheReadTokens", boundedInt(input.cacheReadTokens, "cacheReadTokens")]]) {
+    if (value2 !== void 0) record[key] = value2;
+  }
+  if (costUsd !== void 0) record.costUsd = costUsd;
+  if (verifierOutcome !== void 0) record.verifierOutcome = verifierOutcome;
+  if (finalOutcome !== void 0) record.finalOutcome = finalOutcome;
+  if (providerMetadata !== void 0) record.providerMetadata = providerMetadata;
+  return record;
+}
+function compareRoutingRecords(records) {
+  if (records.length === 0) {
+    throw new Error("compareRoutingRecords requires at least one record");
+  }
+  const behavioralSha256 = records[0].behavioralSha256;
+  for (const record of records) {
+    if (record.behavioralSha256 !== behavioralSha256) {
+      throw new Error("compareRoutingRecords requires records with identical behavioral hashes");
+    }
+  }
+  const settled = records.filter((record) => record.finalOutcome !== void 0 && record.finalOutcome !== "pending");
+  const accepted = settled.filter((record) => record.finalOutcome === "accepted").length;
+  const blocked = settled.filter((record) => record.finalOutcome === "blocked").length;
+  const failed = settled.filter((record) => record.finalOutcome === "failed").length;
+  const reworked = records.filter((record) => record.retries > 0 || record.transitions > 0).length;
+  return {
+    behavioralSha256,
+    runs: records.length,
+    verifiedCompletions: accepted,
+    blocked,
+    failed,
+    reworkRate: records.length === 0 ? 0 : Math.round(reworked / records.length * 100) / 100,
+    totalCostUsd: Math.round(records.reduce((sum, record) => sum + (record.costUsd ?? 0), 0) * 1e4) / 1e4,
+    totalTokensIn: records.reduce((sum, record) => sum + (record.tokensIn ?? 0), 0),
+    totalTokensOut: records.reduce((sum, record) => sum + (record.tokensOut ?? 0), 0),
+    totalHumanInterventions: records.reduce((sum, record) => sum + record.humanInterventions, 0)
+  };
+}
+function groupByBehavior(records) {
+  const groups = /* @__PURE__ */ new Map();
+  for (const record of records) {
+    const bucket = groups.get(record.behavioralSha256) ?? [];
+    bucket.push(record);
+    groups.set(record.behavioralSha256, bucket);
+  }
+  return groups;
+}
+
 // plugins/kxm-mesh/src/envelope.ts
 var WORKER_SCHEMA = "kxm.worker.v1";
 var WORKER_RESULT_SCHEMA = "kxm.worker-result.v1";
@@ -4562,6 +4730,9 @@ function workerResult(worker, payload) {
   }
   if (outcome === "failed" && payload.ok === true) {
     throw new Error('workerResult outcome contradicts ok: "failed" requires ok: false');
+  }
+  if (rest.routing !== void 0) {
+    parseRoutingRecord(rest.routing);
   }
   return {
     ...rest,
@@ -4618,6 +4789,14 @@ function makeTelemetryEvent(input) {
     envelope: input.envelope,
     ...input.sessionId ? { sessionId: input.sessionId } : {}
   };
+}
+function readRoutingRecords(path5) {
+  const records = [];
+  for (const event of readTelemetry(path5)) {
+    const routing = event.envelope.routing;
+    if (routing) records.push({ recordedAt: event.recordedAt, routing });
+  }
+  return records;
 }
 
 // plugins/kxm-mesh/src/session.ts
@@ -13547,7 +13726,7 @@ function gateOf(runtime, name) {
 }
 function redactCliValue(value, field = "") {
   if (typeof value === "string") {
-    if ((field === "requestSha256" || field === "replySha256") && /^[a-f0-9]{64}$/.test(value)) return value;
+    if ((field === "requestSha256" || field === "replySha256" || field === "behavioralSha256" || field === "workflowDefinitionSha256" || field === "verifierConfigSha256" || field === "rolePromptSha256" || field === "contentSha256") && /^[a-f0-9]{64}$/.test(value)) return value;
     return redactSecrets(value);
   }
   if (Array.isArray(value)) return value.map((candidate) => redactCliValue(candidate));
@@ -14346,6 +14525,17 @@ async function cmdSkillsVerify(runtime, skillId, options) {
     return 1;
   }
 }
+async function cmdRoutingReport(runtime, options) {
+  const file = options.file ?? telemetryPath(runtime.dirs.logs);
+  const records = readRoutingRecords(file).map((entry) => entry.routing);
+  if (records.length === 0) {
+    print(runtime.io, runtime.json, { ok: true, command: "routing report", file, configurations: [] }, "no routing records in telemetry");
+    return 0;
+  }
+  const configurations = [...groupByBehavior(records).entries()].map(([hash, group]) => ({ ...compareRoutingRecords(group), behavioralSha256: hash })).sort((left, right) => right.runs - left.runs || left.behavioralSha256.localeCompare(right.behavioralSha256));
+  print(runtime.io, runtime.json, { ok: true, command: "routing report", file, configurations }, `${configurations.length} behavioral configuration(s) across ${records.length} routing record(s)`);
+  return 0;
+}
 async function cmdWorkflowStart(runtime, definitionIdArg, options) {
   const definitionId = definitionIdArg || runtime.env.PI_MESH_WORKFLOW_ID?.trim();
   const deliveryId = String(options.deliveryId || `cli-${randomUUID2()}`);
@@ -14729,6 +14919,11 @@ function createProgram(ctx, result) {
   });
   addGlobalOptions(skills.command("verify").description("Verify a stored skill against its pinned content hash")).argument("<skillId>", "Skill ID").option("--state <state>", "candidate, promoted, quarantined, or rejected", "promoted").action(async function skillsVerifyAction(skillId, options) {
     result.code = await cmdSkillsVerify(runtimeFrom(ctx, this), skillId, options);
+  });
+  const routing = addGlobalOptions(program2.command("routing").description("Model/harness routing telemetry and behavioral comparisons"));
+  routing.helpCommand("help", "Show routing help");
+  addGlobalOptions(routing.command("report").description("Compare verified completion, cost, and rework per behavioral configuration")).option("--file <path>", "Telemetry JSONL file (default: workspace telemetry)").action(async function routingReportAction(options) {
+    result.code = await cmdRoutingReport(runtimeFrom(ctx, this), options);
   });
   const mesh = addGlobalOptions(program2.command("mesh").description("Local and multi-machine mesh hub"));
   mesh.helpCommand("help", "Show mesh help");

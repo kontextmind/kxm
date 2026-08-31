@@ -71,3 +71,13 @@ export function makeTelemetryEvent(input: {
     ...(input.sessionId ? { sessionId: input.sessionId } : {}),
   };
 }
+
+/** Routing records carried additively on result envelopes (v0.5). */
+export function readRoutingRecords(path: string): Array<{ recordedAt: string; routing: import("./routing.ts").RoutingRecord }> {
+  const records: Array<{ recordedAt: string; routing: import("./routing.ts").RoutingRecord }> = [];
+  for (const event of readTelemetry(path)) {
+    const routing = (event.envelope as { routing?: import("./routing.ts").RoutingRecord }).routing;
+    if (routing) records.push({ recordedAt: event.recordedAt, routing });
+  }
+  return records;
+}
