@@ -90,6 +90,11 @@ test("bundled MCP server initializes and publishes the mesh tool catalog", async
       "mesh_workflow_record",
       "mesh_workflow_wait",
       "mesh_improvement_report",
+      "kxm_context",
+      "kxm_recall",
+      "kxm_state",
+      "kxm_episode",
+      "kxm_promote",
     ],
   );
   const sendTool = tools.find((tool) => tool.name === "mesh_send")!;

@@ -10,6 +10,7 @@ import { canonicalWorkflowEvidenceKey, parseWorkflowDefinitions } from "./workfl
 import { postWorkflowSignal, watchGithubChecks } from "./github-watch.ts";
 import { buildRetrospective, writeRetrospective } from "./retrospective.ts";
 import { redactSecrets } from "./redact.ts";
+import { writeCompiledWiki } from "./wiki.ts";
 import { agentWorker, gateWorker, workerResult, type Worker, type WorkerOutcome } from "./envelope.ts";
 import { appendTelemetry, inferImprovementTarget, makeTelemetryEvent, readTelemetry, telemetryPath } from "./telemetry.ts";
 import { createSession, loadNamedWorkers, rosterNames, sessionAssetDirs, standardAssetDirs, workflowAssetDirs, writeSession } from "./session.ts";
@@ -199,6 +200,33 @@ function redactConfiguredValues(text: string, env: NodeJS.ProcessEnv): string {
 
 function processExists(pid: number): boolean {
   try { process.kill(pid, 0); return true; } catch (error) { return (error as NodeJS.ErrnoException).code === "EPERM"; }
+}
+
+/** Authenticated hub POST for context operations. The CLI operates as the
+ * control plane: the administrative token scopes one project per request. */
+export async function hubContextPost(input: {
+  serverUrl: string;
+  path: string;
+  body: Record<string, unknown>;
+  authToken?: string;
+  fetchImpl: typeof fetch;
+}): Promise<{ ok: boolean; status: number; body: unknown }> {
+  const response = await input.fetchImpl(`${input.serverUrl.replace(/\/$/, "")}${input.path}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(input.authToken ? { authorization: `Bearer ${input.authToken}` } : {}),
+    },
+    body: JSON.stringify(input.body),
+  });
+  const text = redactSecrets((await response.text()).slice(0, 64_000));
+  let body: unknown = text;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    // Keep text for diagnostics without treating it as a secret.
+  }
+  return { ok: response.ok, status: response.status, body };
 }
 
 async function hubGet(url: string, fetchImpl: typeof fetch): Promise<{ ok: boolean; status: number; body: unknown }> {
@@ -715,6 +743,155 @@ async function cmdImprove(runtime: Runtime, targetFlag?: string): Promise<number
   return 0;
 }
 
+function parseContextKinds(value: string | undefined): string[] | undefined {
+  if (!value) return undefined;
+  return value.split(",").map((kind) => kind.trim()).filter((kind) => kind.length > 0);
+}
+
+async function cmdContextGet(runtime: Runtime, project: string, options: { role: string; task: string; run?: string; stage?: string; budget?: string; kinds?: string }): Promise<number> {
+  const budget = options.budget === undefined ? undefined : Number(options.budget);
+  if (options.budget !== undefined && (!Number.isInteger(budget) || (budget as number) < 512 || (budget as number) > 200_000)) {
+    runtime.io.stderr("context get --budget must be an integer between 512 and 200000\n");
+    return 2;
+  }
+  const body: Record<string, unknown> = {
+    project,
+    role: options.role,
+    task: options.task,
+  };
+  if (options.run) body.workflowRunId = options.run;
+  if (options.stage) body.stageId = options.stage;
+  if (budget !== undefined) body.budgetTokens = budget;
+  const kinds = parseContextKinds(options.kinds);
+  if (kinds) body.includeKinds = kinds;
+  const response = await hubContextPost({
+    serverUrl: runtime.serverUrl,
+    path: "/v1/context/get",
+    body,
+    ...(runtime.env.PI_MESH_AUTH_TOKEN?.trim() ? { authToken: runtime.env.PI_MESH_AUTH_TOKEN.trim() } : {}),
+    fetchImpl: runtime.fetchImpl,
+  });
+  print(runtime.io, runtime.json, { ok: response.ok, command: "context get", status: response.status, ...(response.body as object) }, `context get ${response.ok ? "assembled" : `failed (${response.status})`}`);
+  return response.ok ? 0 : 1;
+}
+
+async function cmdContextRecall(runtime: Runtime, project: string, options: { query?: string; kinds?: string; limit?: string }): Promise<number> {
+  const body: Record<string, unknown> = { project };
+  if (options.query) body.query = options.query;
+  const kinds = parseContextKinds(options.kinds);
+  if (kinds) body.kinds = kinds;
+  if (options.limit) body.limit = Number(options.limit);
+  const response = await hubContextPost({
+    serverUrl: runtime.serverUrl,
+    path: "/v1/context/recall",
+    body,
+    ...(runtime.env.PI_MESH_AUTH_TOKEN?.trim() ? { authToken: runtime.env.PI_MESH_AUTH_TOKEN.trim() } : {}),
+    fetchImpl: runtime.fetchImpl,
+  });
+  print(runtime.io, runtime.json, { ok: response.ok, command: "context recall", status: response.status, ...(response.body as object) }, `context recall ${response.ok ? "complete" : `failed (${response.status})`}`);
+  return response.ok ? 0 : 1;
+}
+
+async function cmdContextState(runtime: Runtime, project: string, key: string, options: { asOf?: string }): Promise<number> {
+  const body: Record<string, unknown> = { project, key };
+  if (options.asOf) body.asOf = options.asOf;
+  const response = await hubContextPost({
+    serverUrl: runtime.serverUrl,
+    path: "/v1/context/state",
+    body,
+    ...(runtime.env.PI_MESH_AUTH_TOKEN?.trim() ? { authToken: runtime.env.PI_MESH_AUTH_TOKEN.trim() } : {}),
+    fetchImpl: runtime.fetchImpl,
+  });
+  print(runtime.io, runtime.json, { ok: response.ok, command: "context state", status: response.status, ...(response.body as object) }, `context state ${response.ok ? "resolved" : `failed (${response.status})`}`);
+  return response.ok ? 0 : 1;
+}
+
+async function cmdContextEpisode(runtime: Runtime, project: string, options: { run?: string }): Promise<number> {
+  const body: Record<string, unknown> = { project };
+  if (options.run) body.workflowRunId = options.run;
+  const response = await hubContextPost({
+    serverUrl: runtime.serverUrl,
+    path: "/v1/context/episode",
+    body,
+    ...(runtime.env.PI_MESH_AUTH_TOKEN?.trim() ? { authToken: runtime.env.PI_MESH_AUTH_TOKEN.trim() } : {}),
+    fetchImpl: runtime.fetchImpl,
+  });
+  print(runtime.io, runtime.json, { ok: response.ok, command: "context episode", status: response.status, ...(response.body as object) }, `context episode ${response.ok ? "complete" : `failed (${response.status})`}`);
+  return response.ok ? 0 : 1;
+}
+
+async function cmdContextPromote(runtime: Runtime, project: string, proposalId: string, options: { evidence: string }): Promise<number> {
+  const evidence = options.evidence.split(",").map((ref) => ref.trim()).filter((ref) => ref.length > 0);
+  if (evidence.length === 0) {
+    runtime.io.stderr("context promote --evidence must contain at least one durable evidence reference\n");
+    return 2;
+  }
+  const response = await hubContextPost({
+    serverUrl: runtime.serverUrl,
+    path: "/v1/context/state/promote",
+    body: { project, proposalId, evidence },
+    ...(runtime.env.PI_MESH_AUTH_TOKEN?.trim() ? { authToken: runtime.env.PI_MESH_AUTH_TOKEN.trim() } : {}),
+    fetchImpl: runtime.fetchImpl,
+  });
+  print(runtime.io, runtime.json, { ok: response.ok, command: "context promote", status: response.status, ...(response.body as object) }, `context promote ${response.ok ? "recorded" : `failed (${response.status})`}`);
+  return response.ok ? 0 : 1;
+}
+
+async function cmdContextExplain(runtime: Runtime, project: string, itemId: string): Promise<number> {
+  const response = await hubContextPost({
+    serverUrl: runtime.serverUrl,
+    path: "/v1/context/explain",
+    body: { project, id: itemId },
+    ...(runtime.env.PI_MESH_AUTH_TOKEN?.trim() ? { authToken: runtime.env.PI_MESH_AUTH_TOKEN.trim() } : {}),
+    fetchImpl: runtime.fetchImpl,
+  });
+  print(runtime.io, runtime.json, { ok: response.ok, command: "context explain", status: response.status, ...(response.body as object) }, `context explain ${response.ok ? "complete" : `failed (${response.status})`}`);
+  return response.ok ? 0 : 1;
+}
+
+async function cmdContextWikiCompile(runtime: Runtime, project: string, options: { out?: string }): Promise<number> {
+  const response = await hubContextPost({
+    serverUrl: runtime.serverUrl,
+    path: "/v1/context/wiki/compile",
+    body: { project },
+    ...(runtime.env.PI_MESH_AUTH_TOKEN?.trim() ? { authToken: runtime.env.PI_MESH_AUTH_TOKEN.trim() } : {}),
+    fetchImpl: runtime.fetchImpl,
+  });
+  if (!response.ok) {
+    print(runtime.io, runtime.json, { ok: false, command: "context wiki-compile", status: response.status, body: response.body }, `wiki compile failed (${response.status})`);
+    return 1;
+  }
+  const compiled = response.body as { audit: { pages: string[]; contradictions: number }; pages: { path: string; content: string }[] };
+  let written: string[] = [];
+  if (options.out) {
+    const pages = new Map(compiled.pages.map((page) => [page.path, page.content]));
+    written = writeCompiledWiki(options.out, { pages, index: pages.get(".kxm/knowledge/wiki/index.md") ?? "", audit: { project, pages: compiled.audit.pages, stateItems: 0, contextItems: 0, contradictions: compiled.audit.contradictions, compiledAt: "" } });
+  }
+  print(runtime.io, runtime.json, { ok: true, command: "context wiki-compile", project, pages: compiled.audit.pages, openContradictions: compiled.audit.contradictions, ...(written.length > 0 ? { written: written.length, outDir: options.out } : { dryRun: true }) }, `compiled ${compiled.audit.pages.length} wiki page(s)${written.length > 0 ? ` to ${options.out}` : " (dry-run)"}`);
+  return 0;
+}
+
+async function cmdContextWikiLint(runtime: Runtime, project: string): Promise<number> {
+  const response = await hubContextPost({
+    serverUrl: runtime.serverUrl,
+    path: "/v1/context/wiki/compile",
+    body: { project },
+    ...(runtime.env.PI_MESH_AUTH_TOKEN?.trim() ? { authToken: runtime.env.PI_MESH_AUTH_TOKEN.trim() } : {}),
+    fetchImpl: runtime.fetchImpl,
+  });
+  if (!response.ok) {
+    print(runtime.io, runtime.json, { ok: false, command: "context wiki-lint", status: response.status, body: response.body }, `wiki lint failed (${response.status})`);
+    return 1;
+  }
+  const compiled = response.body as {
+    audit: { stateItems: number; contextItems: number; contradictions: number; compiledAt: string };
+    lint: { severity: string; rule: string; path: string; message: string }[];
+  };
+  const issues = compiled.lint;
+  print(runtime.io, runtime.json, { ok: issues.length === 0, command: "context wiki-lint", project, issues, audit: compiled.audit }, issues.length === 0 ? "wiki lint clean" : `wiki lint found ${issues.length} issue(s)`);
+  return issues.every((issue) => issue.severity !== "error") ? 0 : 1;
+}
+
 async function cmdWorkflowStart(runtime: Runtime, definitionIdArg: string | undefined, options: { payload?: string; deliveryId?: string; event?: string }): Promise<number> {
   const definitionId = definitionIdArg || runtime.env.PI_MESH_WORKFLOW_ID?.trim();
   const deliveryId = String(options.deliveryId || `cli-${randomUUID()}`);
@@ -1154,6 +1331,66 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .option("--target <cli|project>", "Limit proposals to cli or project")
     .action(async function improveAction(this: Command, options: { target?: string }) {
       result.code = await cmdImprove(runtimeFrom(ctx, this), options.target);
+    });
+
+  const context = addGlobalOptions(program.command("context").description("KXM context operating-system queries"));
+  context.helpCommand("help", "Show context help");
+  addGlobalOptions(context.command("get").description("Assemble a role-aware context packet"))
+    .argument("<project>", "Project scope")
+    .requiredOption("--role <role>", "Requesting role (repro, planner, critic, implementer, verifier, or custom)")
+    .requiredOption("--task <task>", "What the role is trying to do")
+    .option("--run <runId>", "Workflow run scope")
+    .option("--stage <stageId>", "Workflow stage scope")
+    .option("--budget <tokens>", "Token budget for the packet")
+    .option("--kinds <kinds>", "Comma-separated item kinds to include")
+    .action(async function contextGetAction(this: Command, project: string, options: { role: string; task: string; run?: string; stage?: string; budget?: string; kinds?: string }) {
+      result.code = await cmdContextGet(runtimeFrom(ctx, this), project, options);
+    });
+  addGlobalOptions(context.command("recall").description("Search durable context records (metadata only)"))
+    .argument("<project>", "Project scope")
+    .option("--query <text>", "Substring query against summaries and state keys")
+    .option("--kinds <kinds>", "Comma-separated item kinds to include")
+    .option("--limit <n>", "Maximum results (1-100)")
+    .action(async function contextRecallAction(this: Command, project: string, options: { query?: string; kinds?: string; limit?: string }) {
+      result.code = await cmdContextRecall(runtimeFrom(ctx, this), project, options);
+    });
+  addGlobalOptions(context.command("state").description("Current or historical value for one state key"))
+    .argument("<project>", "Project scope")
+    .argument("<key>", "State key")
+    .option("--as-of <iso>", "Historical timestamp query")
+    .action(async function contextStateAction(this: Command, project: string, key: string, options: { asOf?: string }) {
+      result.code = await cmdContextState(runtimeFrom(ctx, this), project, key, options);
+    });
+  addGlobalOptions(context.command("episode").description("Episodic learning records from workflow journals"))
+    .argument("<project>", "Project scope")
+    .option("--run <runId>", "Limit to one workflow run")
+    .action(async function contextEpisodeAction(this: Command, project: string, options: { run?: string }) {
+      result.code = await cmdContextEpisode(runtimeFrom(ctx, this), project, options);
+    });
+  addGlobalOptions(context.command("promote").description("Promote an approved state proposal (control plane)"))
+    .argument("<project>", "Project scope")
+    .argument("<proposalId>", "State proposal ID")
+    .requiredOption("--evidence <refs>", "Comma-separated durable evidence references")
+    .action(async function contextPromoteAction(this: Command, project: string, proposalId: string, options: { evidence: string }) {
+      result.code = await cmdContextPromote(runtimeFrom(ctx, this), project, proposalId, options);
+    });
+  addGlobalOptions(context.command("explain").description("Explain which evidence and lineage back a context item"))
+    .argument("<project>", "Project scope")
+    .argument("<itemId>", "Context item ID")
+    .action(async function contextExplainAction(this: Command, project: string, itemId: string) {
+      result.code = await cmdContextExplain(runtimeFrom(ctx, this), project, itemId);
+    });
+
+  addGlobalOptions(context.command("wiki-compile").description("Compile the Karpathy-style knowledge wiki for review"))
+    .argument("<project>", "Project scope")
+    .option("--out <dir>", "Workspace root to write .kxm/knowledge/wiki into (default: dry-run output only)")
+    .action(async function contextWikiCompileAction(this: Command, project: string, options: { out?: string }) {
+      result.code = await cmdContextWikiCompile(runtimeFrom(ctx, this), project, options);
+    });
+  addGlobalOptions(context.command("wiki-lint").description("Lint a compiled wiki for broken refs, orphans, and stale state"))
+    .argument("<project>", "Project scope")
+    .action(async function contextWikiLintAction(this: Command, project: string) {
+      result.code = await cmdContextWikiLint(runtimeFrom(ctx, this), project);
     });
 
   const mesh = addGlobalOptions(program.command("mesh").description("Local and multi-machine mesh hub"));

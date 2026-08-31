@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { AgentRecord, DeliveryMode, HubEvent, MessageRecord, WorkflowMessageContext } from "./protocol.ts";
+import type { ContextAuthority, ContextConfidence, ContextItem, ContextItemAuditMetadata, ContextItemKind, ContextPacket } from "./context.ts";
 import {
   canonicalWorkflowEvidenceKey,
   type ImprovementArea,
@@ -11,6 +12,38 @@ import {
   type WorkflowJournalEntry,
   type WorkflowRun,
 } from "./workflow.ts";
+
+/** Metadata-only audit of an assembled context packet. Never contains raw
+ * item bodies. */
+export interface ContextRequestAudit {
+  request: { project: string; role: string; task: string; workflowRunId?: string; stageId?: string };
+  selectedIds: string[];
+  provenanceSummary: Record<string, number>;
+  estimatedTokens: number;
+  budgetTokens: number;
+  candidateCount: number;
+  excludedSuperseded: number;
+  unresolvedGaps: string[];
+}
+
+export interface ContextExplanation {
+  found: boolean;
+  lineage: string[];
+  evidenceRefs: string[];
+  sources: { id: string; sourceType: string; sourceRef?: string }[];
+}
+
+export interface ContextWikiCompilation {
+  audit: {
+    project: string;
+    pages: string[];
+    stateItems: number;
+    contextItems: number;
+    contradictions: number;
+    compiledAt: string;
+  };
+  pages: { path: string; content: string }[];
+}
 
 export interface MeshClientOptions {
   serverUrl: string;
@@ -350,6 +383,74 @@ export class MeshClient {
 
   async improvementReport(): Promise<{ reports: ImprovementAreaReport[]; entries: number }> {
     return await this.request("/v1/improvements");
+  }
+
+  // ----- Context operating-system API (v0.5, issue #34) -----
+
+  async contextGet(input: {
+    project: string;
+    role: string;
+    task: string;
+    workflowRunId?: string;
+    stageId?: string;
+    budgetTokens?: number;
+    includeKinds?: ContextItemKind[];
+  }): Promise<{ packet: ContextPacket; audit: ContextRequestAudit }> {
+    return await this.request("/v1/context/get", { method: "POST", body: JSON.stringify(input) });
+  }
+
+  async contextRecall(input: {
+    project: string;
+    query?: string;
+    kinds?: ContextItemKind[];
+    limit?: number;
+  }): Promise<{ items: ContextItemAuditMetadata[]; unresolvedGaps: string[] }> {
+    return await this.request("/v1/context/recall", { method: "POST", body: JSON.stringify(input) });
+  }
+
+  async contextState(input: {
+    project: string;
+    key: string;
+    asOf?: string;
+  }): Promise<{ state: ContextItem | null; key: string }> {
+    return await this.request("/v1/context/state", { method: "POST", body: JSON.stringify(input) });
+  }
+
+  async contextStatePropose(input: {
+    project: string;
+    key: string;
+    summary: string;
+    authority: ContextAuthority;
+    confidence: ContextConfidence;
+    evidenceRefs: string[];
+  }): Promise<{ proposalId: string }> {
+    return await this.request("/v1/context/state/propose", { method: "POST", body: JSON.stringify(input) });
+  }
+
+  async contextStatePromote(input: {
+    project: string;
+    proposalId: string;
+    evidence: string[];
+  }): Promise<{ state: ContextItem }> {
+    return await this.request("/v1/context/state/promote", { method: "POST", body: JSON.stringify(input) });
+  }
+
+  async contextEpisode(input: {
+    project: string;
+    workflowRunId?: string;
+  }): Promise<{ episodes: ContextItem[] }> {
+    return await this.request("/v1/context/episode", { method: "POST", body: JSON.stringify(input) });
+  }
+
+  async contextExplain(input: {
+    project: string;
+    id: string;
+  }): Promise<ContextExplanation> {
+    return await this.request("/v1/context/explain", { method: "POST", body: JSON.stringify(input) });
+  }
+
+  async contextWikiCompile(input: { project: string }): Promise<ContextWikiCompilation> {
+    return await this.request("/v1/context/wiki/compile", { method: "POST", body: JSON.stringify(input) });
   }
 
   async awaitResponse(messageId: string, timeoutMs = 30 * 60_000, signal?: AbortSignal): Promise<MessageRecord> {

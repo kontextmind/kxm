@@ -187,7 +187,9 @@ test("audit metadata and token estimation never expose raw bodies", () => {
     authority: "evidence",
     confidence: "verified",
     sourceType: "workflow",
+    sourceRef: "run_1/stage/repro",
     derived: false,
+    lineageDepth: 0,
   });
   assert.equal("summary" in metadata, false);
   assert.equal(JSON.stringify(metadata).includes("repro test failed"), false);

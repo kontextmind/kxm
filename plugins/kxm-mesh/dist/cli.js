@@ -3,8 +3,8 @@
 // plugins/kxm-mesh/src/cli.ts
 import { spawn } from "node:child_process";
 import { createHmac as createHmac2, randomUUID as randomUUID2 } from "node:crypto";
-import { existsSync as existsSync3, mkdirSync as mkdirSync5, readFileSync as readFileSync4, readdirSync as readdirSync2, writeFileSync as writeFileSync4 } from "node:fs";
-import { basename, join as join9, resolve as resolve3 } from "node:path";
+import { existsSync as existsSync3, mkdirSync as mkdirSync6, readFileSync as readFileSync4, readdirSync as readdirSync2, writeFileSync as writeFileSync5 } from "node:fs";
+import { basename, join as join10, resolve as resolve3 } from "node:path";
 import { DatabaseSync as DatabaseSync2 } from "node:sqlite";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
@@ -3455,6 +3455,21 @@ function requireString(value, field, options = {}) {
 
 // plugins/kxm-mesh/src/workflow.ts
 var PROMOTABLE_JOURNAL_CATEGORIES = ["skill-candidate", "hypothesis", "experiment"];
+var WORKFLOW_TERMINAL_TARGET = "$terminal";
+function normalizeOutcomeValue(value, field) {
+  if (typeof value === "string") return { target: value };
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${field} must be a stage ID, "$terminal", or a { target, maxTransitions } rule`);
+  }
+  const rule = value;
+  if (typeof rule.target !== "string" || !rule.target.trim()) {
+    throw new Error(`${field}.target must be a non-empty stage ID or "$terminal"`);
+  }
+  if (rule.maxTransitions !== void 0 && (!Number.isInteger(rule.maxTransitions) || rule.maxTransitions < 1 || rule.maxTransitions > 100)) {
+    throw new Error(`${field}.maxTransitions must be an integer between 1 and 100`);
+  }
+  return { target: rule.target, ...rule.maxTransitions !== void 0 ? { maxTransitions: rule.maxTransitions } : {} };
+}
 function journalPromotionState(entry) {
   if (!PROMOTABLE_JOURNAL_CATEGORIES.includes(entry.category)) return void 0;
   const records = entry.promotion ?? [];
@@ -3655,6 +3670,11 @@ function parseWorkflowDefinitions(raw, environment = process.env, onWarning) {
         targetName,
         warn
       );
+      const on = parseOutcomeMap(stageId, stage.on);
+      const stageMaxTransitions = stage.maxTransitions;
+      if (stageMaxTransitions !== void 0 && (!Number.isInteger(stageMaxTransitions) || stageMaxTransitions < 1 || stageMaxTransitions > 100)) {
+        throw new Error(`stage ${stageId} maxTransitions must be an integer between 1 and 100`);
+      }
       return {
         id: stageId,
         label: requireString(stage.label ?? stageId, "stage.label", { max: 128 }),
@@ -3662,9 +3682,14 @@ function parseWorkflowDefinitions(raw, environment = process.env, onWarning) {
         requiredEvidence,
         maxAttempts,
         ...area ? { area } : {},
-        ...evidencePolicies ? { evidencePolicies } : {}
+        ...evidencePolicies ? { evidencePolicies } : {},
+        ...on ? { on } : {},
+        ...stageMaxTransitions !== void 0 ? { maxTransitions: stageMaxTransitions } : {}
       };
     });
+    const definitionMaxTransitions = value.maxTransitions;
+    if (definitionMaxTransitions !== void 0) validateWorkflowTransitions({ id, stages, maxTransitions: definitionMaxTransitions });
+    else validateWorkflowTransitions({ id, stages });
     let filter;
     if (value.filter !== void 0) {
       const candidate = object(value.filter, `workflow ${id} filter`);
@@ -3687,10 +3712,51 @@ function parseWorkflowDefinitions(raw, environment = process.env, onWarning) {
       ...filter ? { filter } : {},
       delivery,
       ...value.ttlMs !== void 0 ? { ttlMs: value.ttlMs } : {},
+      ...value.maxTransitions !== void 0 ? { maxTransitions: value.maxTransitions } : {},
       promptTemplate: requireString(value.promptTemplate, "workflow.promptTemplate", { max: 2e4 }),
       stages
     };
   });
+}
+function validateWorkflowTransitions(definition) {
+  const stageIndex = new Map(definition.stages.map((stage, index) => [stage.id, index]));
+  let hasBackEdge = false;
+  for (const stage of definition.stages) {
+    if (!stage.on) continue;
+    for (const [outcome, rawValue] of Object.entries(stage.on)) {
+      if (!outcome.trim()) throw new Error(`stage ${stage.id} declares an empty outcome key`);
+      const rule = normalizeOutcomeValue(rawValue, `stage ${stage.id} on.${outcome}`);
+      if (rule.target === WORKFLOW_TERMINAL_TARGET) continue;
+      const targetIndex = stageIndex.get(rule.target);
+      if (targetIndex === void 0) {
+        throw new Error(`stage ${stage.id} on.${outcome} targets unknown stage ${rule.target}`);
+      }
+      const sourceIndex = stageIndex.get(stage.id);
+      if (targetIndex > sourceIndex + 1) {
+        throw new Error(
+          `stage ${stage.id} on.${outcome} skips intermediate stages by targeting ${rule.target}; forward transitions must target the next stage so approvals and gates cannot be bypassed`
+        );
+      }
+      if (targetIndex <= sourceIndex) hasBackEdge = true;
+    }
+  }
+  if (definition.maxTransitions !== void 0 && (!Number.isInteger(definition.maxTransitions) || definition.maxTransitions < 1 || definition.maxTransitions > 200)) {
+    throw new Error(`workflow ${definition.id} maxTransitions must be an integer between 1 and 200`);
+  }
+  if (hasBackEdge && (definition.maxTransitions === void 0 || definition.maxTransitions < 1)) {
+    throw new Error(`workflow ${definition.id} declares a back-edge but no maxTransitions budget; cycles without budgets are rejected`);
+  }
+}
+function parseOutcomeMap(stageId, raw) {
+  if (raw === void 0) return void 0;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error(`stage ${stageId} on must be an object`);
+  }
+  const map = {};
+  for (const [outcome, value] of Object.entries(raw)) {
+    map[outcome] = normalizeOutcomeValue(value, `stage ${stageId} on.${outcome}`);
+  }
+  return map;
 }
 
 // plugins/kxm-mesh/src/github-watch.ts
@@ -4131,6 +4197,20 @@ function writeRetrospective(outDir, doc) {
   return { jsonPath, mdPath };
 }
 
+// plugins/kxm-mesh/src/wiki.ts
+import { mkdirSync as mkdirSync2, writeFileSync as writeFileSync2 } from "node:fs";
+import { join } from "node:path";
+function writeCompiledWiki(root, wiki) {
+  const written = [];
+  for (const [relativePath, content] of [...wiki.pages].sort(([left], [right]) => left.localeCompare(right))) {
+    const absolute = join(root, relativePath);
+    mkdirSync2(absolute.slice(0, absolute.lastIndexOf("/")), { recursive: true });
+    writeFileSync2(absolute, content);
+    written.push(relativePath);
+  }
+  return written;
+}
+
 // plugins/kxm-mesh/src/envelope.ts
 var WORKER_SCHEMA = "kxm.worker.v1";
 var WORKER_RESULT_SCHEMA = "kxm.worker-result.v1";
@@ -4175,8 +4255,8 @@ function workerResult(worker, payload) {
 }
 
 // plugins/kxm-mesh/src/telemetry.ts
-import { appendFileSync, mkdirSync as mkdirSync2, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { appendFileSync, mkdirSync as mkdirSync3, readFileSync } from "node:fs";
+import { dirname, join as join2 } from "node:path";
 var TELEMETRY_SCHEMA = "kxm.telemetry.v1";
 function inferImprovementTarget(input) {
   const explicit = input.env?.KXM_IMPROVE_TARGET?.trim();
@@ -4186,7 +4266,7 @@ function inferImprovementTarget(input) {
   return project || workflowId ? "project" : "cli";
 }
 function appendTelemetry(path5, event) {
-  mkdirSync2(dirname(path5), { recursive: true });
+  mkdirSync3(dirname(path5), { recursive: true });
   appendFileSync(path5, `${JSON.stringify(event)}
 `, { encoding: "utf8", mode: 384 });
 }
@@ -4208,7 +4288,7 @@ function readTelemetry(path5) {
   }
 }
 function telemetryPath(logsDir) {
-  return join(logsDir, "telemetry.jsonl");
+  return join2(logsDir, "telemetry.jsonl");
 }
 function makeTelemetryEvent(input) {
   return {
@@ -4222,8 +4302,8 @@ function makeTelemetryEvent(input) {
 }
 
 // plugins/kxm-mesh/src/session.ts
-import { existsSync, mkdirSync as mkdirSync3, readFileSync as readFileSync2, writeFileSync as writeFileSync2 } from "node:fs";
-import { join as join2 } from "node:path";
+import { existsSync, mkdirSync as mkdirSync4, readFileSync as readFileSync2, writeFileSync as writeFileSync3 } from "node:fs";
+import { join as join3 } from "node:path";
 var SESSION_SCHEMA = "kxm.session.v1";
 var SessionConfigError = class extends Error {
   code = "session_config_invalid";
@@ -4233,20 +4313,20 @@ var SessionConfigError = class extends Error {
   }
 };
 function workflowAssetDirs(assetsDir, workflowId) {
-  const root = join2(assetsDir, "workflows", workflowId);
-  return [root, join2(root, "inputs"), join2(root, "outputs"), join2(root, "generated")];
+  const root = join3(assetsDir, "workflows", workflowId);
+  return [root, join3(root, "inputs"), join3(root, "outputs"), join3(root, "generated")];
 }
 function sessionAssetDirs(assetsDir, sessionId) {
-  const root = join2(assetsDir, "sessions", sessionId);
-  return [root, join2(root, "inputs"), join2(root, "outputs")];
+  const root = join3(assetsDir, "sessions", sessionId);
+  return [root, join3(root, "inputs"), join3(root, "outputs")];
 }
 function standardAssetDirs(assetsDir) {
   return [
-    join2(assetsDir, "retrospectives"),
-    join2(assetsDir, "workflows"),
-    join2(assetsDir, "sessions"),
-    join2(assetsDir, "improvements"),
-    join2(assetsDir, "generated")
+    join3(assetsDir, "retrospectives"),
+    join3(assetsDir, "workflows"),
+    join3(assetsDir, "sessions"),
+    join3(assetsDir, "improvements"),
+    join3(assetsDir, "generated")
   ];
 }
 function rosterNames(configDir) {
@@ -4297,7 +4377,7 @@ function workerFromRosterRow(name, row, project) {
 function loadRosterMap(configDir) {
   const byName = /* @__PURE__ */ new Map();
   for (const [file, key] of [["agents.json", "agents"], ["gates.json", "gates"]]) {
-    const path5 = join2(configDir, file);
+    const path5 = join3(configDir, file);
     for (const row of loadRoster(path5, key)) {
       const name = String(row.name).trim();
       const lowered = name.toLowerCase();
@@ -4339,7 +4419,7 @@ function loadRoster(path5, key) {
   });
 }
 function createSession(input) {
-  const assetDir = input.mode === "workflow" && input.workflowId ? join2("assets", "workflows", input.workflowId) : join2("assets", "sessions", input.id);
+  const assetDir = input.mode === "workflow" && input.workflowId ? join3("assets", "workflows", input.workflowId) : join3("assets", "sessions", input.id);
   return {
     schema: SESSION_SCHEMA,
     id: input.id,
@@ -4352,19 +4432,19 @@ function createSession(input) {
   };
 }
 function writeSession(assetsDir, session, dryRun = false) {
-  const dir = join2(assetsDir, "sessions", session.id);
-  const path5 = join2(dir, "session.json");
+  const dir = join3(assetsDir, "sessions", session.id);
+  const path5 = join3(dir, "session.json");
   if (!dryRun) {
-    mkdirSync3(dir, { recursive: true });
-    writeFileSync2(path5, `${JSON.stringify(session, null, 2)}
+    mkdirSync4(dir, { recursive: true });
+    writeFileSync3(path5, `${JSON.stringify(session, null, 2)}
 `, { encoding: "utf8" });
   }
   return path5;
 }
 
 // plugins/kxm-mesh/src/improve.ts
-import { mkdirSync as mkdirSync4, writeFileSync as writeFileSync3 } from "node:fs";
-import { join as join3 } from "node:path";
+import { mkdirSync as mkdirSync5, writeFileSync as writeFileSync4 } from "node:fs";
+import { join as join4 } from "node:path";
 var IMPROVEMENT_REPORT_SCHEMA = "kxm.improvement-report.v1";
 function buildImprovementReport(events, targets) {
   const selected = events.filter((event) => targets.includes(event.target));
@@ -4399,10 +4479,10 @@ function buildImprovementReport(events, targets) {
 }
 function writeImprovementReport(improvementsDir, report, dryRun = false) {
   const stamp = report.createdAt.replace(/[:.]/g, "-");
-  const path5 = join3(improvementsDir, `${stamp}.json`);
+  const path5 = join4(improvementsDir, `${stamp}.json`);
   if (!dryRun) {
-    mkdirSync4(improvementsDir, { recursive: true });
-    writeFileSync3(path5, `${JSON.stringify(report, null, 2)}
+    mkdirSync5(improvementsDir, { recursive: true });
+    writeFileSync4(path5, `${JSON.stringify(report, null, 2)}
 `, { encoding: "utf8" });
   }
   return path5;
@@ -4410,7 +4490,7 @@ function writeImprovementReport(improvementsDir, report, dryRun = false) {
 
 // plugins/kxm-mesh/src/tui.ts
 import { existsSync as existsSync2, readdirSync, readFileSync as readFileSync3 } from "node:fs";
-import { join as join8 } from "node:path";
+import { join as join9 } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 // node_modules/marked/lib/marked.esm.js
@@ -10408,7 +10488,7 @@ import * as path3 from "node:path";
 
 // node_modules/@earendil-works/pi-tui/dist/native-module-path.js
 import { createRequire } from "node:module";
-import { dirname as dirname2, join as join5 } from "node:path";
+import { dirname as dirname2, join as join6 } from "node:path";
 import { fileURLToPath } from "node:url";
 var moduleRequire = createRequire(import.meta.url);
 var TUI_PACKAGE_NAME = "@earendil-works/pi-tui";
@@ -10417,10 +10497,10 @@ function getNativeModuleCandidates(nativePath, options = {}) {
   const candidates = [];
   try {
     const packageEntry = (options.resolvePackage ?? moduleRequire.resolve)(TUI_PACKAGE_NAME);
-    candidates.push(join5(dirname2(packageEntry), "..", nativePath));
+    candidates.push(join6(dirname2(packageEntry), "..", nativePath));
   } catch {
   }
-  candidates.push(join5(moduleDir, "..", nativePath), join5(moduleDir, nativePath), join5(dirname2(options.execPath ?? process.execPath), nativePath));
+  candidates.push(join6(moduleDir, "..", nativePath), join6(moduleDir, nativePath), join6(dirname2(options.execPath ?? process.execPath), nativePath));
   return Array.from(new Set(candidates));
 }
 
@@ -12505,7 +12585,7 @@ function loadLocalMeshSnapshot(dataPath, stateDir) {
   if (existsSync2(stateDir)) {
     for (const file of readdirSync(stateDir).filter((name) => name.endsWith(".pid"))) {
       try {
-        const record = JSON.parse(readFileSync3(join8(stateDir, file), "utf8"));
+        const record = JSON.parse(readFileSync3(join9(stateDir, file), "utf8"));
         pids.push({
           file,
           ...record.role ? { role: record.role } : {},
@@ -13080,7 +13160,7 @@ var USAGE_ERROR_CODES = /* @__PURE__ */ new Set([
 ]);
 function spawnScript(scriptName, extraEnv = {}) {
   return new Promise((resolveExit) => {
-    const child = spawn(process.execPath, [join9(repoRoot, "scripts", scriptName)], {
+    const child = spawn(process.execPath, [join10(repoRoot, "scripts", scriptName)], {
       stdio: "inherit",
       env: { ...process.env, ...extraEnv }
     });
@@ -13166,10 +13246,10 @@ function workspaceDirs(cwd, workspaceFlag, env) {
   return {
     workdir,
     workspace,
-    config: derive ? join9(workspace, "config") : resolve3(workdir, env.PI_MESH_CONFIG_DIR?.trim() || join9(workspace, "config")),
-    logs: derive ? join9(workspace, "logs") : resolve3(workdir, env.PI_MESH_LOGS_DIR?.trim() || join9(workspace, "logs")),
-    assets: derive ? join9(workspace, "assets") : resolve3(workdir, env.PI_MESH_ASSETS_DIR?.trim() || join9(workspace, "assets")),
-    state: derive ? join9(workspace, "state") : resolve3(workdir, env.PI_MESH_STATE_DIR?.trim() || join9(workspace, "state"))
+    config: derive ? join10(workspace, "config") : resolve3(workdir, env.PI_MESH_CONFIG_DIR?.trim() || join10(workspace, "config")),
+    logs: derive ? join10(workspace, "logs") : resolve3(workdir, env.PI_MESH_LOGS_DIR?.trim() || join10(workspace, "logs")),
+    assets: derive ? join10(workspace, "assets") : resolve3(workdir, env.PI_MESH_ASSETS_DIR?.trim() || join10(workspace, "assets")),
+    state: derive ? join10(workspace, "state") : resolve3(workdir, env.PI_MESH_STATE_DIR?.trim() || join10(workspace, "state"))
   };
 }
 function maskEnvName(name) {
@@ -13196,6 +13276,23 @@ function processExists2(pid) {
   } catch (error) {
     return error.code === "EPERM";
   }
+}
+async function hubContextPost(input) {
+  const response = await input.fetchImpl(`${input.serverUrl.replace(/\/$/, "")}${input.path}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...input.authToken ? { authorization: `Bearer ${input.authToken}` } : {}
+    },
+    body: JSON.stringify(input.body)
+  });
+  const text = redactSecrets((await response.text()).slice(0, 64e3));
+  let body = text;
+  try {
+    body = JSON.parse(text);
+  } catch {
+  }
+  return { ok: response.ok, status: response.status, body };
 }
 async function hubGet(url, fetchImpl) {
   try {
@@ -13331,7 +13428,7 @@ async function cmdInit(runtime) {
   for (const directory of [runtime.dirs.config, runtime.dirs.logs, runtime.dirs.assets, runtime.dirs.state, ...standardAssetDirs(runtime.dirs.assets)]) {
     if (runtime.dryRun) created.push(directory);
     else {
-      mkdirSync5(directory, { recursive: true });
+      mkdirSync6(directory, { recursive: true });
       created.push(directory);
     }
   }
@@ -13419,7 +13516,7 @@ async function cmdStatus(runtime) {
   return payload.ok ? 0 : 1;
 }
 async function cmdMeshTui(runtime) {
-  const dataPath = resolve3(runtime.dirs.workdir, runtime.env.PI_MESH_DATA_PATH?.trim() || join9(runtime.dirs.state, "mesh.db"));
+  const dataPath = resolve3(runtime.dirs.workdir, runtime.env.PI_MESH_DATA_PATH?.trim() || join10(runtime.dirs.state, "mesh.db"));
   if (runtime.dryRun) {
     print(runtime.io, runtime.json, {
       ok: true,
@@ -13520,14 +13617,14 @@ async function cmdStop(runtime, waitMsFlag) {
   const records = /* @__PURE__ */ new Map();
   for (const file of pids) {
     try {
-      const record = JSON.parse(readFileSync4(join9(runtime.dirs.state, file), "utf8"));
+      const record = JSON.parse(readFileSync4(join10(runtime.dirs.state, file), "utf8"));
       const expectedControl = file === "hub.pid" ? "hub.stop" : file.startsWith("worker-") ? `${file.slice(0, -4)}.stop` : void 0;
       const expectedRole = file === "hub.pid" ? "hub" : file.startsWith("worker-") ? "worker" : void 0;
       if (record.version !== 1 || !Number.isInteger(record.pid) || record.pid <= 0 || !record.startedAt || !expectedControl || record.controlFile !== expectedControl || record.role !== expectedRole || !processExists2(record.pid)) {
         ignored.push(file);
         continue;
       }
-      writeFileSync4(join9(runtime.dirs.state, record.controlFile), `${JSON.stringify({ startedAt: record.startedAt, ...record.generation ? { generation: record.generation } : {}, requestedAt: (/* @__PURE__ */ new Date()).toISOString() })}
+      writeFileSync5(join10(runtime.dirs.state, record.controlFile), `${JSON.stringify({ startedAt: record.startedAt, ...record.generation ? { generation: record.generation } : {}, requestedAt: (/* @__PURE__ */ new Date()).toISOString() })}
 `, { encoding: "utf8", mode: 384 });
       requested.push(file);
       records.set(file, { pid: record.pid, startedAt: record.startedAt, ...record.generation ? { generation: record.generation } : {} });
@@ -13545,7 +13642,7 @@ async function cmdStop(runtime, waitMsFlag) {
   while (Date.now() <= deadline && stopped.size < requested.length) {
     for (const [file, record] of records) {
       try {
-        const current = JSON.parse(readFileSync4(join9(runtime.dirs.state, file), "utf8"));
+        const current = JSON.parse(readFileSync4(join10(runtime.dirs.state, file), "utf8"));
         if (current.pid !== record.pid || current.startedAt !== record.startedAt || current.generation !== record.generation || !processExists2(record.pid)) stopped.add(file);
       } catch {
         stopped.add(file);
@@ -13564,7 +13661,7 @@ async function cmdSessionStatus(runtime) {
   const claims = [];
   for (const file of names.filter((name) => name.endsWith(".pid"))) {
     try {
-      const record = JSON.parse(readFileSync4(join9(stateDir, file), "utf8"));
+      const record = JSON.parse(readFileSync4(join10(stateDir, file), "utf8"));
       claims.push({
         file,
         role: record.role,
@@ -13579,7 +13676,7 @@ async function cmdSessionStatus(runtime) {
   const recoveries = [];
   for (const file of names.filter((name) => name.startsWith("worker-recovery-") && name.endsWith(".json"))) {
     try {
-      const envelope = JSON.parse(readFileSync4(join9(stateDir, file), "utf8"));
+      const envelope = JSON.parse(readFileSync4(join10(stateDir, file), "utf8"));
       recoveries.push({
         file,
         reason: envelope.reason,
@@ -13640,7 +13737,7 @@ async function cmdSessionStart(runtime, options) {
     ...workflowId ? workflowAssetDirs(runtime.dirs.assets, workflowId) : []
   ];
   if (!runtime.dryRun) {
-    for (const directory of created) mkdirSync5(directory, { recursive: true });
+    for (const directory of created) mkdirSync6(directory, { recursive: true });
     writeSession(runtime.dirs.assets, session);
   }
   print(runtime.io, runtime.json, {
@@ -13656,7 +13753,7 @@ async function cmdImprove(runtime, targetFlag) {
   const targets = targetFlag === "cli" || targetFlag === "project" ? [targetFlag] : ["cli", "project"];
   const events = readTelemetry(telemetryPath(runtime.dirs.logs));
   const report = buildImprovementReport(events, targets);
-  const path5 = writeImprovementReport(join9(runtime.dirs.assets, "improvements"), report, runtime.dryRun);
+  const path5 = writeImprovementReport(join10(runtime.dirs.assets, "improvements"), report, runtime.dryRun);
   print(runtime.io, runtime.json, {
     ok: true,
     command: "improve",
@@ -13667,6 +13764,143 @@ async function cmdImprove(runtime, targetFlag) {
     report
   }, `proposed ${report.proposals.length} improvement(s) from ${report.events} event(s)`);
   return 0;
+}
+function parseContextKinds(value) {
+  if (!value) return void 0;
+  return value.split(",").map((kind) => kind.trim()).filter((kind) => kind.length > 0);
+}
+async function cmdContextGet(runtime, project, options) {
+  const budget = options.budget === void 0 ? void 0 : Number(options.budget);
+  if (options.budget !== void 0 && (!Number.isInteger(budget) || budget < 512 || budget > 2e5)) {
+    runtime.io.stderr("context get --budget must be an integer between 512 and 200000\n");
+    return 2;
+  }
+  const body = {
+    project,
+    role: options.role,
+    task: options.task
+  };
+  if (options.run) body.workflowRunId = options.run;
+  if (options.stage) body.stageId = options.stage;
+  if (budget !== void 0) body.budgetTokens = budget;
+  const kinds = parseContextKinds(options.kinds);
+  if (kinds) body.includeKinds = kinds;
+  const response = await hubContextPost({
+    serverUrl: runtime.serverUrl,
+    path: "/v1/context/get",
+    body,
+    ...runtime.env.PI_MESH_AUTH_TOKEN?.trim() ? { authToken: runtime.env.PI_MESH_AUTH_TOKEN.trim() } : {},
+    fetchImpl: runtime.fetchImpl
+  });
+  print(runtime.io, runtime.json, { ok: response.ok, command: "context get", status: response.status, ...response.body }, `context get ${response.ok ? "assembled" : `failed (${response.status})`}`);
+  return response.ok ? 0 : 1;
+}
+async function cmdContextRecall(runtime, project, options) {
+  const body = { project };
+  if (options.query) body.query = options.query;
+  const kinds = parseContextKinds(options.kinds);
+  if (kinds) body.kinds = kinds;
+  if (options.limit) body.limit = Number(options.limit);
+  const response = await hubContextPost({
+    serverUrl: runtime.serverUrl,
+    path: "/v1/context/recall",
+    body,
+    ...runtime.env.PI_MESH_AUTH_TOKEN?.trim() ? { authToken: runtime.env.PI_MESH_AUTH_TOKEN.trim() } : {},
+    fetchImpl: runtime.fetchImpl
+  });
+  print(runtime.io, runtime.json, { ok: response.ok, command: "context recall", status: response.status, ...response.body }, `context recall ${response.ok ? "complete" : `failed (${response.status})`}`);
+  return response.ok ? 0 : 1;
+}
+async function cmdContextState(runtime, project, key, options) {
+  const body = { project, key };
+  if (options.asOf) body.asOf = options.asOf;
+  const response = await hubContextPost({
+    serverUrl: runtime.serverUrl,
+    path: "/v1/context/state",
+    body,
+    ...runtime.env.PI_MESH_AUTH_TOKEN?.trim() ? { authToken: runtime.env.PI_MESH_AUTH_TOKEN.trim() } : {},
+    fetchImpl: runtime.fetchImpl
+  });
+  print(runtime.io, runtime.json, { ok: response.ok, command: "context state", status: response.status, ...response.body }, `context state ${response.ok ? "resolved" : `failed (${response.status})`}`);
+  return response.ok ? 0 : 1;
+}
+async function cmdContextEpisode(runtime, project, options) {
+  const body = { project };
+  if (options.run) body.workflowRunId = options.run;
+  const response = await hubContextPost({
+    serverUrl: runtime.serverUrl,
+    path: "/v1/context/episode",
+    body,
+    ...runtime.env.PI_MESH_AUTH_TOKEN?.trim() ? { authToken: runtime.env.PI_MESH_AUTH_TOKEN.trim() } : {},
+    fetchImpl: runtime.fetchImpl
+  });
+  print(runtime.io, runtime.json, { ok: response.ok, command: "context episode", status: response.status, ...response.body }, `context episode ${response.ok ? "complete" : `failed (${response.status})`}`);
+  return response.ok ? 0 : 1;
+}
+async function cmdContextPromote(runtime, project, proposalId, options) {
+  const evidence = options.evidence.split(",").map((ref) => ref.trim()).filter((ref) => ref.length > 0);
+  if (evidence.length === 0) {
+    runtime.io.stderr("context promote --evidence must contain at least one durable evidence reference\n");
+    return 2;
+  }
+  const response = await hubContextPost({
+    serverUrl: runtime.serverUrl,
+    path: "/v1/context/state/promote",
+    body: { project, proposalId, evidence },
+    ...runtime.env.PI_MESH_AUTH_TOKEN?.trim() ? { authToken: runtime.env.PI_MESH_AUTH_TOKEN.trim() } : {},
+    fetchImpl: runtime.fetchImpl
+  });
+  print(runtime.io, runtime.json, { ok: response.ok, command: "context promote", status: response.status, ...response.body }, `context promote ${response.ok ? "recorded" : `failed (${response.status})`}`);
+  return response.ok ? 0 : 1;
+}
+async function cmdContextExplain(runtime, project, itemId) {
+  const response = await hubContextPost({
+    serverUrl: runtime.serverUrl,
+    path: "/v1/context/explain",
+    body: { project, id: itemId },
+    ...runtime.env.PI_MESH_AUTH_TOKEN?.trim() ? { authToken: runtime.env.PI_MESH_AUTH_TOKEN.trim() } : {},
+    fetchImpl: runtime.fetchImpl
+  });
+  print(runtime.io, runtime.json, { ok: response.ok, command: "context explain", status: response.status, ...response.body }, `context explain ${response.ok ? "complete" : `failed (${response.status})`}`);
+  return response.ok ? 0 : 1;
+}
+async function cmdContextWikiCompile(runtime, project, options) {
+  const response = await hubContextPost({
+    serverUrl: runtime.serverUrl,
+    path: "/v1/context/wiki/compile",
+    body: { project },
+    ...runtime.env.PI_MESH_AUTH_TOKEN?.trim() ? { authToken: runtime.env.PI_MESH_AUTH_TOKEN.trim() } : {},
+    fetchImpl: runtime.fetchImpl
+  });
+  if (!response.ok) {
+    print(runtime.io, runtime.json, { ok: false, command: "context wiki-compile", status: response.status, body: response.body }, `wiki compile failed (${response.status})`);
+    return 1;
+  }
+  const compiled = response.body;
+  let written = [];
+  if (options.out) {
+    const pages = new Map(compiled.pages.map((page) => [page.path, page.content]));
+    written = writeCompiledWiki(options.out, { pages, index: pages.get(".kxm/knowledge/wiki/index.md") ?? "", audit: { project, pages: compiled.audit.pages, stateItems: 0, contextItems: 0, contradictions: compiled.audit.contradictions, compiledAt: "" } });
+  }
+  print(runtime.io, runtime.json, { ok: true, command: "context wiki-compile", project, pages: compiled.audit.pages, openContradictions: compiled.audit.contradictions, ...written.length > 0 ? { written: written.length, outDir: options.out } : { dryRun: true } }, `compiled ${compiled.audit.pages.length} wiki page(s)${written.length > 0 ? ` to ${options.out}` : " (dry-run)"}`);
+  return 0;
+}
+async function cmdContextWikiLint(runtime, project) {
+  const response = await hubContextPost({
+    serverUrl: runtime.serverUrl,
+    path: "/v1/context/wiki/compile",
+    body: { project },
+    ...runtime.env.PI_MESH_AUTH_TOKEN?.trim() ? { authToken: runtime.env.PI_MESH_AUTH_TOKEN.trim() } : {},
+    fetchImpl: runtime.fetchImpl
+  });
+  if (!response.ok) {
+    print(runtime.io, runtime.json, { ok: false, command: "context wiki-lint", status: response.status, body: response.body }, `wiki lint failed (${response.status})`);
+    return 1;
+  }
+  const compiled = response.body;
+  const issues = compiled.lint;
+  print(runtime.io, runtime.json, { ok: issues.length === 0, command: "context wiki-lint", project, issues, audit: compiled.audit }, issues.length === 0 ? "wiki lint clean" : `wiki lint found ${issues.length} issue(s)`);
+  return issues.every((issue) => issue.severity !== "error") ? 0 : 1;
 }
 async function cmdWorkflowStart(runtime, definitionIdArg, options) {
   const definitionId = definitionIdArg || runtime.env.PI_MESH_WORKFLOW_ID?.trim();
@@ -13756,7 +13990,7 @@ async function cmdWorkflowDegrade(runtime, runId, stageId, options) {
   }
 }
 async function cmdWorkflowInspect(runtime, action, runId) {
-  const dataPath = resolve3(runtime.dirs.workdir, runtime.env.PI_MESH_DATA_PATH?.trim() || join9(runtime.dirs.state, "mesh.db"));
+  const dataPath = resolve3(runtime.dirs.workdir, runtime.env.PI_MESH_DATA_PATH?.trim() || join10(runtime.dirs.state, "mesh.db"));
   if (action === "get" && !runId) {
     runtime.io.stderr(`Usage: ${CLI_NAME} workflow get <runId>
 `);
@@ -13909,7 +14143,7 @@ async function cmdRetrospectiveExport(runtime, runId, options) {
       if (!existsSync3(snapshotPath)) throw new Error("snapshot_missing");
       snapshot = JSON.parse(readFileSync4(snapshotPath, "utf8"));
     } else {
-      const dataPath = resolve3(runtime.dirs.workdir, runtime.env.PI_MESH_DATA_PATH?.trim() || join9(runtime.dirs.state, "mesh.db"));
+      const dataPath = resolve3(runtime.dirs.workdir, runtime.env.PI_MESH_DATA_PATH?.trim() || join10(runtime.dirs.state, "mesh.db"));
       const local = localWorkflowSnapshot(dataPath, runId);
       if (!local.runs[0]) throw new Error("workflow_not_found");
       snapshot = { run: local.runs[0], journal: local.journal };
@@ -13921,7 +14155,7 @@ async function cmdRetrospectiveExport(runtime, runId, options) {
     return 1;
   }
   const doc = buildRetrospective(snapshot.run, snapshot.journal);
-  const outDir = resolve3(runtime.cwd, String(options.outDir || join9(runtime.dirs.assets, "retrospectives")));
+  const outDir = resolve3(runtime.cwd, String(options.outDir || join10(runtime.dirs.assets, "retrospectives")));
   const assetsRoot = resolve3(runtime.dirs.assets);
   const assetsPrefix = `${assetsRoot}${process.platform === "win32" ? "\\" : "/"}`;
   if (outDir !== assetsRoot && !outDir.startsWith(assetsPrefix)) {
@@ -14006,6 +14240,32 @@ function createProgram(ctx, result) {
   addGlobalOptions(program2.command("improve").description("Propose CLI or project improvements from telemetry JSONL")).option("--target <cli|project>", "Limit proposals to cli or project").action(async function improveAction(options) {
     result.code = await cmdImprove(runtimeFrom(ctx, this), options.target);
   });
+  const context = addGlobalOptions(program2.command("context").description("KXM context operating-system queries"));
+  context.helpCommand("help", "Show context help");
+  addGlobalOptions(context.command("get").description("Assemble a role-aware context packet")).argument("<project>", "Project scope").requiredOption("--role <role>", "Requesting role (repro, planner, critic, implementer, verifier, or custom)").requiredOption("--task <task>", "What the role is trying to do").option("--run <runId>", "Workflow run scope").option("--stage <stageId>", "Workflow stage scope").option("--budget <tokens>", "Token budget for the packet").option("--kinds <kinds>", "Comma-separated item kinds to include").action(async function contextGetAction(project, options) {
+    result.code = await cmdContextGet(runtimeFrom(ctx, this), project, options);
+  });
+  addGlobalOptions(context.command("recall").description("Search durable context records (metadata only)")).argument("<project>", "Project scope").option("--query <text>", "Substring query against summaries and state keys").option("--kinds <kinds>", "Comma-separated item kinds to include").option("--limit <n>", "Maximum results (1-100)").action(async function contextRecallAction(project, options) {
+    result.code = await cmdContextRecall(runtimeFrom(ctx, this), project, options);
+  });
+  addGlobalOptions(context.command("state").description("Current or historical value for one state key")).argument("<project>", "Project scope").argument("<key>", "State key").option("--as-of <iso>", "Historical timestamp query").action(async function contextStateAction(project, key, options) {
+    result.code = await cmdContextState(runtimeFrom(ctx, this), project, key, options);
+  });
+  addGlobalOptions(context.command("episode").description("Episodic learning records from workflow journals")).argument("<project>", "Project scope").option("--run <runId>", "Limit to one workflow run").action(async function contextEpisodeAction(project, options) {
+    result.code = await cmdContextEpisode(runtimeFrom(ctx, this), project, options);
+  });
+  addGlobalOptions(context.command("promote").description("Promote an approved state proposal (control plane)")).argument("<project>", "Project scope").argument("<proposalId>", "State proposal ID").requiredOption("--evidence <refs>", "Comma-separated durable evidence references").action(async function contextPromoteAction(project, proposalId, options) {
+    result.code = await cmdContextPromote(runtimeFrom(ctx, this), project, proposalId, options);
+  });
+  addGlobalOptions(context.command("explain").description("Explain which evidence and lineage back a context item")).argument("<project>", "Project scope").argument("<itemId>", "Context item ID").action(async function contextExplainAction(project, itemId) {
+    result.code = await cmdContextExplain(runtimeFrom(ctx, this), project, itemId);
+  });
+  addGlobalOptions(context.command("wiki-compile").description("Compile the Karpathy-style knowledge wiki for review")).argument("<project>", "Project scope").option("--out <dir>", "Workspace root to write .kxm/knowledge/wiki into (default: dry-run output only)").action(async function contextWikiCompileAction(project, options) {
+    result.code = await cmdContextWikiCompile(runtimeFrom(ctx, this), project, options);
+  });
+  addGlobalOptions(context.command("wiki-lint").description("Lint a compiled wiki for broken refs, orphans, and stale state")).argument("<project>", "Project scope").action(async function contextWikiLintAction(project) {
+    result.code = await cmdContextWikiLint(runtimeFrom(ctx, this), project);
+  });
   const mesh = addGlobalOptions(program2.command("mesh").description("Local and multi-machine mesh hub"));
   mesh.helpCommand("help", "Show mesh help");
   addGlobalOptions(mesh.command("init").description("Create .kxm directories")).action(bind(cmdInit));
@@ -14044,5 +14304,6 @@ if (process.argv[1] && resolve3(process.argv[1]) === fileURLToPath2(import.meta.
   process.exitCode = code;
 }
 export {
+  hubContextPost,
   runCli
 };

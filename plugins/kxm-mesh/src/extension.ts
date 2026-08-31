@@ -5,6 +5,7 @@ import { Type } from "typebox";
 import { MeshClient, MeshHttpError } from "./client.ts";
 import { areaForTool, classifyFailure, diagnosticEvidence, diagnosticSummary, type Diagnostic } from "./diagnostics.ts";
 import { MAX_CONTENT_CHARS, type DeliveryMode, type HubEvent, type MessageRecord } from "./protocol.ts";
+import type { ContextItemKind } from "./context.ts";
 import type { ImprovementArea, JournalCategory, WorkflowCheckpointStatus } from "./workflow.ts";
 import { consumeWorkerRecoveryEnvelope, workerStateKey } from "./recovery.ts";
 
@@ -991,6 +992,127 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     parameters: Type.Object({}),
     async execute() {
       return result(await workflowCall(() => requireClient().improvementReport()));
+    },
+  });
+
+  // ----- KXM context operating system (v0.5) -----
+
+  pi.registerTool({
+    name: "kxm_context",
+    label: "Assemble role-aware context packet",
+    description: "Normal entry point for KXM context. Assembles a token-budgeted context packet for your role and task from durable journal evidence, temporal state, knowledge, episodes, and skills. Superseded and rejected records are excluded. Do not query memory providers directly; use KXM context tools.",
+    parameters: Type.Object({
+      role: Type.String({ description: "Your role for this task: repro, planner, critic, implementer, verifier, or a custom role" }),
+      task: Type.String({ description: "What you are trying to accomplish" }),
+      workflowRunId: Type.Optional(Type.String({ description: "Workflow run scope, when working a run" })),
+      stageId: Type.Optional(Type.String({ description: "Workflow stage scope" })),
+      budgetTokens: Type.Optional(Type.Integer({ description: "Token budget; defaults to the role policy" })),
+      includeKinds: Type.Optional(Type.Array(Type.Union([
+        Type.Literal("evidence"),
+        Type.Literal("state"),
+        Type.Literal("episode"),
+        Type.Literal("knowledge"),
+        Type.Literal("skill"),
+      ]), { description: "Restrict packet to these item kinds" })),
+    }),
+    async execute(_toolCallId, params) {
+      const client = requireClient();
+      return result(await workflowCall(() => client.contextGet({
+        project: client.agent!.project,
+        role: params.role,
+        task: params.task,
+        ...(params.workflowRunId ? { workflowRunId: params.workflowRunId } : {}),
+        ...(params.stageId ? { stageId: params.stageId } : {}),
+        ...(params.budgetTokens !== undefined ? { budgetTokens: params.budgetTokens } : {}),
+        ...(params.includeKinds ? { includeKinds: params.includeKinds } : {}),
+      })));
+    },
+  });
+
+  pi.registerTool({
+    name: "kxm_recall",
+    label: "Recall durable context records",
+    description: "Search durable context records for this project by query. Returns bounded metadata only; use kxm_context for role-aware packets.",
+    parameters: Type.Object({
+      query: Type.Optional(Type.String({ description: "Substring query against summaries and state keys" })),
+      kinds: Type.Optional(Type.Array(Type.String(), { description: "Item kinds to include" })),
+      limit: Type.Optional(Type.Integer({ description: "Maximum results (1-100)" })),
+    }),
+    async execute(_toolCallId, params) {
+      const client = requireClient();
+      return result(await workflowCall(() => client.contextRecall({
+        project: client.agent!.project,
+        ...(params.query ? { query: params.query } : {}),
+        ...(params.kinds ? { kinds: params.kinds as ContextItemKind[] } : {}),
+        ...(params.limit !== undefined ? { limit: params.limit } : {}),
+      })));
+    },
+  });
+
+  pi.registerTool({
+    name: "kxm_state",
+    label: "Query authoritative project state",
+    description: "Current value for one temporal state key, optionally as of a historical timestamp. Superseded values never appear as current.",
+    parameters: Type.Object({
+      key: Type.String({ description: "State key" }),
+      asOf: Type.Optional(Type.String({ description: "ISO-8601 timestamp for historical queries" })),
+    }),
+    async execute(_toolCallId, params) {
+      const client = requireClient();
+      return result(await workflowCall(() => client.contextState({
+        project: client.agent!.project,
+        key: params.key,
+        ...(params.asOf ? { asOf: params.asOf } : {}),
+      })));
+    },
+  });
+
+  pi.registerTool({
+    name: "kxm_episode",
+    label: "Recall episodic learning records",
+    description: "Episodic learning from workflow journals: errors, lessons, observations, and experiments for this project, optionally scoped to one run.",
+    parameters: Type.Object({
+      workflowRunId: Type.Optional(Type.String({ description: "Limit to one workflow run" })),
+    }),
+    async execute(_toolCallId, params) {
+      const client = requireClient();
+      return result(await workflowCall(() => client.contextEpisode({
+        project: client.agent!.project,
+        ...(params.workflowRunId ? { workflowRunId: params.workflowRunId } : {}),
+      })));
+    },
+  });
+
+  pi.registerTool({
+    name: "kxm_promote",
+    label: "Propose temporal state change",
+    description: "Propose a change to one authoritative state key. Proposing changes nothing: promotion requires durable evidence and an authorized control-plane decision. Peers can claim evidence authority at most.",
+    parameters: Type.Object({
+      key: Type.String({ description: "State key to propose a change for" }),
+      summary: Type.String({ description: "Proposed value and rationale" }),
+      authority: Type.Union([
+        Type.Literal("policy"),
+        Type.Literal("instruction"),
+        Type.Literal("evidence"),
+        Type.Literal("hypothesis"),
+      ]),
+      confidence: Type.Union([
+        Type.Literal("verified"),
+        Type.Literal("probable"),
+        Type.Literal("uncertain"),
+      ]),
+      evidenceRefs: Type.Array(Type.String(), { minItems: 1, maxItems: 32, description: "Durable references backing the proposal" }),
+    }),
+    async execute(_toolCallId, params) {
+      const client = requireClient();
+      return result(await workflowCall(() => client.contextStatePropose({
+        project: client.agent!.project,
+        key: params.key,
+        summary: params.summary,
+        authority: params.authority,
+        confidence: params.confidence,
+        evidenceRefs: params.evidenceRefs,
+      })));
     },
   });
 

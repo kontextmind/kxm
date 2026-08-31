@@ -76,9 +76,694 @@ function workflowScopeExtras(operation, assignedCoordinatorName) {
   };
 }
 
-// plugins/kxm-mesh/src/retrospective.ts
-import { mkdirSync, renameSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+// plugins/kxm-mesh/src/context.ts
+var MAX_CONTEXT_SUMMARY_CHARS = 4e3;
+var MAX_CONTEXT_ID_REFS = 64;
+var MAX_CONTEXT_ITEMS = 256;
+var MIN_CONTEXT_BUDGET_TOKENS = 512;
+var MAX_CONTEXT_BUDGET_TOKENS = 2e5;
+var DEFAULT_CONTEXT_BUDGET_TOKENS = 32e3;
+var MAX_CONTEXT_ROLE_CHARS = 64;
+var MAX_CONTEXT_TASK_CHARS = 2e3;
+var AUTHORITY_GRANT_FLOOR = {
+  human: "policy",
+  workflow: "policy",
+  git: "instruction",
+  peer: "evidence",
+  tool: "evidence",
+  external: "evidence",
+  derived: "evidence"
+};
+function authorityGrantFloor(sourceType) {
+  return AUTHORITY_GRANT_FLOOR[sourceType];
+}
+var RESERVED_CONTROL_PLANE_FIELDS = /* @__PURE__ */ new Set([
+  "permissions",
+  "tools",
+  "allow",
+  "deny",
+  "grants",
+  "approval",
+  "policy",
+  "scopes",
+  "credentials",
+  "secrets",
+  "token",
+  "apiKey",
+  "password"
+]);
+var CONTEXT_ITEM_KINDS = ["evidence", "state", "episode", "knowledge", "skill"];
+var CONTEXT_SOURCE_TYPES = [
+  "human",
+  "git",
+  "workflow",
+  "tool",
+  "peer",
+  "external",
+  "derived"
+];
+var CONTEXT_AUTHORITIES = ["policy", "instruction", "evidence", "hypothesis"];
+var CONTEXT_CONFIDENCES = ["verified", "probable", "uncertain"];
+function oneOf(value, field, allowed) {
+  if (typeof value !== "string" || !allowed.includes(value)) {
+    throw new ProtocolError(400, `${field} must be one of ${allowed.join(", ")}`, "invalid_context_field");
+  }
+  return value;
+}
+function idRefs(value, field, required = false) {
+  if (value === void 0 || value === null) return required ? [] : void 0;
+  if (!Array.isArray(value)) {
+    throw new ProtocolError(400, `${field} must be an array of identifiers`, "invalid_context_field");
+  }
+  if (value.length > MAX_CONTEXT_ID_REFS) {
+    throw new ProtocolError(
+      400,
+      `${field} exceeds ${MAX_CONTEXT_ID_REFS} references`,
+      "context_limits_exceeded"
+    );
+  }
+  const seen = /* @__PURE__ */ new Set();
+  const refs = [];
+  for (const candidate of value) {
+    if (typeof candidate !== "string" || !candidate.trim()) {
+      throw new ProtocolError(400, `${field} must contain non-empty identifiers`, "invalid_context_field");
+    }
+    const ref = candidate.trim();
+    if (seen.has(ref)) {
+      throw new ProtocolError(400, `${field} contains duplicate reference ${ref}`, "invalid_context_field");
+    }
+    seen.add(ref);
+    refs.push(ref);
+  }
+  return refs;
+}
+function optionalIsoTimestamp(value, field) {
+  if (value === void 0 || value === null) return void 0;
+  if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) {
+    throw new ProtocolError(400, `${field} must be an ISO-8601 timestamp`, "invalid_context_field");
+  }
+  return value;
+}
+function parseContextItem(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new ProtocolError(400, "context item must be an object", "invalid_context_item");
+  }
+  const input = value;
+  for (const field of Object.keys(input)) {
+    if (RESERVED_CONTROL_PLANE_FIELDS.has(field)) {
+      throw new ProtocolError(
+        403,
+        `context items may not carry control-plane field "${field}"`,
+        "context_authority_violation"
+      );
+    }
+  }
+  const item = {
+    id: requireString(input.id, "context item id", { max: 128 }),
+    kind: oneOf(input.kind, "context item kind", CONTEXT_ITEM_KINDS),
+    project: requireString(input.project, "context item project", { max: 200 }),
+    summary: requireString(input.summary, "context item summary", { max: MAX_CONTEXT_SUMMARY_CHARS }),
+    provenance: parseContextProvenance(input.provenance),
+    authority: oneOf(input.authority, "context item authority", CONTEXT_AUTHORITIES),
+    confidence: oneOf(input.confidence, "context item confidence", CONTEXT_CONFIDENCES)
+  };
+  const observedAt = optionalIsoTimestamp(input.observedAt, "context item observedAt");
+  const validFrom = optionalIsoTimestamp(input.validFrom, "context item validFrom");
+  const validUntil = optionalIsoTimestamp(input.validUntil, "context item validUntil");
+  if (observedAt !== void 0) item.observedAt = observedAt;
+  if (validFrom !== void 0) item.validFrom = validFrom;
+  if (validUntil !== void 0) item.validUntil = validUntil;
+  if (input.status !== void 0 && input.status !== null) {
+    item.status = oneOf(input.status, "context item status", ["current", "superseded", "proposed", "rejected"]);
+  }
+  const supersedes = idRefs(input.supersedes, "context item supersedes");
+  if (supersedes !== void 0) {
+    if (supersedes.includes(item.id)) {
+      throw new ProtocolError(400, "context item cannot supersede itself", "invalid_context_item");
+    }
+    item.supersedes = supersedes;
+  }
+  const evidenceRefs = idRefs(input.evidenceRefs, "context item evidenceRefs");
+  if (evidenceRefs !== void 0) item.evidenceRefs = evidenceRefs;
+  const stateKey = input.stateKey === void 0 || input.stateKey === null ? void 0 : requireString(input.stateKey, "context item stateKey", { max: 200 });
+  if (stateKey !== void 0) item.stateKey = stateKey;
+  if (item.kind === "state" && item.stateKey === void 0) {
+    throw new ProtocolError(400, "state items require a stateKey", "invalid_context_item");
+  }
+  if (item.kind === "state" && item.status === void 0) {
+    throw new ProtocolError(400, "state items require an explicit lifecycle status", "invalid_context_item");
+  }
+  const grantFloor = authorityRank(authorityGrantFloor(item.provenance.sourceType));
+  if (authorityRank(item.authority) > grantFloor) {
+    throw new ProtocolError(
+      403,
+      `content of origin ${item.provenance.sourceType} cannot claim ${item.authority} authority`,
+      "context_authority_violation"
+    );
+  }
+  return item;
+}
+function parseContextProvenance(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new ProtocolError(400, "context provenance must be an object", "invalid_context_item");
+  }
+  const input = value;
+  const provenance = {
+    sourceType: oneOf(input.sourceType, "context provenance sourceType", CONTEXT_SOURCE_TYPES)
+  };
+  const sourceRef = input.sourceRef === void 0 || input.sourceRef === null ? void 0 : requireString(input.sourceRef, "context provenance sourceRef", { max: 512 });
+  if (sourceRef !== void 0) provenance.sourceRef = sourceRef;
+  const derivedFrom = idRefs(input.derivedFrom, "context provenance derivedFrom");
+  if (derivedFrom !== void 0) provenance.derivedFrom = derivedFrom;
+  return provenance;
+}
+function parseContextRequest(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new ProtocolError(400, "context request must be an object", "invalid_context_request");
+  }
+  const input = value;
+  const request = {
+    project: requireString(input.project, "context request project", { max: 200 }),
+    role: requireString(input.role, "context request role", { max: MAX_CONTEXT_ROLE_CHARS }),
+    task: requireString(input.task, "context request task", { max: MAX_CONTEXT_TASK_CHARS })
+  };
+  const workflowRunId = input.workflowRunId === void 0 || input.workflowRunId === null ? void 0 : requireString(input.workflowRunId, "context request workflowRunId", { max: 128 });
+  if (workflowRunId !== void 0) request.workflowRunId = workflowRunId;
+  const stageId = input.stageId === void 0 || input.stageId === null ? void 0 : requireString(input.stageId, "context request stageId", { max: 128 });
+  if (stageId !== void 0) request.stageId = stageId;
+  if (input.budgetTokens !== void 0 && input.budgetTokens !== null) {
+    const budget = input.budgetTokens;
+    if (!Number.isInteger(budget) || budget < MIN_CONTEXT_BUDGET_TOKENS || budget > MAX_CONTEXT_BUDGET_TOKENS) {
+      throw new ProtocolError(
+        400,
+        `context request budgetTokens must be an integer between ${MIN_CONTEXT_BUDGET_TOKENS} and ${MAX_CONTEXT_BUDGET_TOKENS}`,
+        "invalid_context_request"
+      );
+    }
+    request.budgetTokens = budget;
+  }
+  if (input.includeKinds !== void 0 && input.includeKinds !== null) {
+    if (!Array.isArray(input.includeKinds) || input.includeKinds.length < 1 || input.includeKinds.length > CONTEXT_ITEM_KINDS.length) {
+      throw new ProtocolError(
+        400,
+        "context request includeKinds must be a non-empty array of item kinds",
+        "invalid_context_request"
+      );
+    }
+    request.includeKinds = input.includeKinds.map((kind) => oneOf(kind, "context request includeKinds", CONTEXT_ITEM_KINDS));
+  }
+  return request;
+}
+function validateContextPacketContents(request, packet) {
+  const items = [...packet.currentState, ...packet.knowledge, ...packet.episodes, ...packet.skills, ...packet.contradictions];
+  if (items.length > MAX_CONTEXT_ITEMS) {
+    throw new ProtocolError(400, `context packet exceeds ${MAX_CONTEXT_ITEMS} items`, "context_limits_exceeded");
+  }
+  const allowed = request.includeKinds ? new Set(request.includeKinds) : void 0;
+  for (const item of items) {
+    if (item.project !== request.project) {
+      throw new ProtocolError(
+        400,
+        `context packet contains cross-project item ${item.id}`,
+        "context_isolation_violation"
+      );
+    }
+    if (allowed && !allowed.has(item.kind)) {
+      throw new ProtocolError(
+        400,
+        `context packet contains item ${item.id} of unrequested kind ${item.kind}`,
+        "context_isolation_violation"
+      );
+    }
+  }
+}
+function estimateContextTokens(items) {
+  let characters = 0;
+  for (const item of items) {
+    characters += item.summary.length + item.id.length + item.kind.length;
+    if (item.provenance.sourceRef) characters += item.provenance.sourceRef.length;
+  }
+  return Math.ceil(characters / 4);
+}
+function authorityRank(authority) {
+  switch (authority) {
+    case "policy":
+      return 3;
+    case "instruction":
+      return 2;
+    case "evidence":
+      return 1;
+    case "hypothesis":
+      return 0;
+  }
+}
+function contextItemAuditMetadata(item) {
+  const metadata = {
+    id: item.id,
+    kind: item.kind,
+    authority: item.authority,
+    confidence: item.confidence,
+    sourceType: item.provenance.sourceType,
+    derived: item.provenance.sourceType === "derived" || (item.provenance.derivedFrom?.length ?? 0) > 0,
+    lineageDepth: item.provenance.derivedFrom?.length ?? 0
+  };
+  if (item.status !== void 0) metadata.status = item.status;
+  if (item.provenance.sourceRef !== void 0) metadata.sourceRef = item.provenance.sourceRef;
+  return metadata;
+}
+function provenanceSummaryOf(items) {
+  const summary = {};
+  for (const item of items) {
+    summary[item.provenance.sourceType] = (summary[item.provenance.sourceType] ?? 0) + 1;
+  }
+  for (const key of Object.keys(summary).sort()) {
+    if (summary[key] === 0) delete summary[key];
+  }
+  return summary;
+}
+
+// plugins/kxm-mesh/src/arbiter.ts
+var ROLE_POLICIES = [
+  {
+    role: "repro",
+    label: "Reproduction specialist",
+    kinds: ["episode", "knowledge"],
+    journalCategories: ["error", "lesson", "observation", "contradiction"],
+    budgetTokens: 8e3
+  },
+  {
+    role: "planner",
+    label: "Planner",
+    kinds: ["state", "knowledge", "evidence"],
+    journalCategories: ["plan", "decision", "contradiction", "observation", "hypothesis", "experiment"],
+    budgetTokens: 16e3
+  },
+  {
+    role: "critic",
+    label: "Independent critic",
+    kinds: ["knowledge", "evidence", "episode"],
+    journalCategories: ["contradiction", "error", "lesson", "experiment"],
+    budgetTokens: 12e3
+  },
+  {
+    role: "implementer",
+    label: "Implementer",
+    kinds: ["knowledge", "state", "skill", "episode"],
+    journalCategories: ["plan", "decision", "lesson", "state-change"],
+    budgetTokens: 16e3
+  },
+  {
+    role: "verifier",
+    label: "Verifier",
+    kinds: ["evidence", "knowledge", "episode"],
+    journalCategories: ["plan", "error", "lesson", "contradiction"],
+    budgetTokens: 8e3
+  }
+];
+function rolePolicy(role) {
+  return ROLE_POLICIES.find((policy) => policy.role === role) ?? {
+    role,
+    label: role,
+    kinds: ["knowledge", "evidence"],
+    journalCategories: ["lesson", "observation"],
+    budgetTokens: DEFAULT_CONTEXT_BUDGET_TOKENS
+  };
+}
+var CONFIDENCE_RANK = { verified: 3, probable: 2, uncertain: 1 };
+var AUTHORITY_WEIGHT = { policy: 3, instruction: 2, evidence: 1, hypothesis: 0 };
+function arbitrate(requestInput, pool, options = {}) {
+  const request = parseContextRequest(requestInput);
+  const policy = rolePolicy(request.role);
+  const budget = request.budgetTokens ?? policy.budgetTokens;
+  const contradictions = new Set(options.contradictionIds ?? []);
+  const candidates = [];
+  let excludedSuperseded = 0;
+  for (const candidate of pool) {
+    if (candidate.project !== request.project) {
+      throw new ProtocolError(
+        403,
+        `context pool contains cross-project item ${candidate.id}`,
+        "context_isolation_violation"
+      );
+    }
+    if (candidate.status === "superseded" || candidate.status === "rejected") {
+      excludedSuperseded += 1;
+      continue;
+    }
+    candidates.push(candidate);
+  }
+  const kindRank = /* @__PURE__ */ new Map();
+  const requestedKinds = request.includeKinds ?? policy.kinds;
+  requestedKinds.forEach((kind, index) => kindRank.set(kind, index));
+  const kindPreference = (item) => {
+    const rank = kindRank.get(item.kind);
+    return rank === void 0 ? requestedKinds.length : rank;
+  };
+  const ordered = [...candidates].sort(
+    (left, right) => (contradictions.has(right.id) ? 1 : 0) - (contradictions.has(left.id) ? 1 : 0) || kindPreference(left) - kindPreference(right) || CONFIDENCE_RANK[right.confidence] - CONFIDENCE_RANK[left.confidence] || AUTHORITY_WEIGHT[right.authority] - AUTHORITY_WEIGHT[left.authority] || left.id.localeCompare(right.id)
+  );
+  const kindAllowed = (item) => (request.includeKinds ?? policy.kinds).includes(item.kind) || contradictions.has(item.id);
+  const selected = [];
+  const unresolvedGaps = [];
+  for (const item of ordered) {
+    if (selected.length >= MAX_CONTEXT_ITEMS) {
+      unresolvedGaps.push("context item limit reached; refine the task or kinds");
+      break;
+    }
+    if (!kindAllowed(item)) continue;
+    const nextTokens = estimateContextTokens([...selected, item]);
+    if (nextTokens > budget) {
+      if (selected.length === 0) {
+        unresolvedGaps.push(`budget of ${budget} tokens cannot fit any selected context`);
+        break;
+      }
+      unresolvedGaps.push(`budget of ${budget} tokens reached; ${ordered.length - selected.length} candidates deferred`);
+      break;
+    }
+    selected.push(item);
+  }
+  if (candidates.length === 0) {
+    unresolvedGaps.push("no context records exist for this project yet");
+  }
+  const bySection = (kind) => selected.filter((item) => item.kind === kind && !contradictions.has(item.id));
+  const packet = {
+    workingState: options.workingState ?? {},
+    currentState: bySection("state").filter((item) => item.status === "current" || item.status === void 0),
+    knowledge: bySection("knowledge"),
+    episodes: bySection("episode"),
+    skills: bySection("skill"),
+    contradictions: selected.filter((item) => contradictions.has(item.id)),
+    unresolvedGaps,
+    provenanceSummary: provenanceSummaryOf(selected),
+    estimatedTokens: estimateContextTokens(selected)
+  };
+  validateContextPacketContents(request, packet);
+  return {
+    packet,
+    audit: {
+      request: {
+        project: request.project,
+        role: request.role,
+        task: request.task,
+        ...request.workflowRunId !== void 0 ? { workflowRunId: request.workflowRunId } : {},
+        ...request.stageId !== void 0 ? { stageId: request.stageId } : {}
+      },
+      selectedIds: selected.map((item) => item.id),
+      provenanceSummary: packet.provenanceSummary,
+      estimatedTokens: packet.estimatedTokens,
+      budgetTokens: budget,
+      candidateCount: candidates.length,
+      excludedSuperseded,
+      unresolvedGaps
+    }
+  };
+}
+function journalEntryToContextItem(entry, project) {
+  const kind = entry.category === "plan" || entry.category === "decision" || entry.category === "lesson" ? "knowledge" : entry.category === "skill-candidate" ? "skill" : "evidence";
+  const item = {
+    id: `journal_${entry.id}`,
+    kind,
+    project,
+    summary: entry.summary,
+    provenance: {
+      sourceType: "workflow",
+      sourceRef: `journal:${entry.id}`
+    },
+    authority: entry.category === "decision" || entry.category === "plan" ? "evidence" : "evidence",
+    confidence: entry.severity === "error" ? "probable" : "probable",
+    ...entry.stageId !== void 0 ? { observedAt: entry.createdAt } : {},
+    evidenceRefs: entry.evidence.filter((ref) => ref.length > 0 && ref.length <= 200).slice(0, 16)
+  };
+  if (entry.stageId !== void 0) item.observedAt = entry.createdAt;
+  if (kind === "skill") item.status = "proposed";
+  return parseContextItem(item);
+}
+function explainContextItem(id, pool) {
+  const byId = new Map(pool.map((item2) => [item2.id, item2]));
+  const item = byId.get(id);
+  if (!item) return { item: void 0, lineage: [], evidenceRefs: [], sources: [] };
+  const lineage = [];
+  const queue = [...item.provenance.derivedFrom ?? []];
+  const seen = /* @__PURE__ */ new Set();
+  while (queue.length > 0) {
+    const ancestorId = queue.shift();
+    if (seen.has(ancestorId)) continue;
+    seen.add(ancestorId);
+    lineage.push(ancestorId);
+    const ancestor = byId.get(ancestorId);
+    for (const older of ancestor?.provenance.derivedFrom ?? []) queue.push(older);
+  }
+  lineage.sort();
+  const sources = [item, ...lineage.map((ancestorId) => byId.get(ancestorId))].filter((candidate) => candidate !== void 0).map((candidate) => ({
+    id: candidate.id,
+    sourceType: candidate.provenance.sourceType,
+    ...candidate.provenance.sourceRef !== void 0 ? { sourceRef: candidate.provenance.sourceRef } : {}
+  }));
+  return {
+    item,
+    lineage,
+    evidenceRefs: item.evidenceRefs ?? [],
+    sources
+  };
+}
+
+// plugins/kxm-mesh/src/state.ts
+var MAX_STATE_EVIDENCE_REFS = 32;
+function timestampMs(value) {
+  if (value === void 0) return Number.NEGATIVE_INFINITY;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+}
+function stateActiveAt(item, atMs) {
+  if (item.kind !== "state") return false;
+  if (item.status !== "current" && item.status !== "superseded") return false;
+  const from = timestampMs(item.validFrom);
+  const until = item.validUntil === void 0 ? Number.POSITIVE_INFINITY : timestampMs(item.validUntil);
+  return from <= atMs && atMs < until;
+}
+function latestActive(items) {
+  let best;
+  for (const item of items) {
+    if (best === void 0 || timestampMs(item.validFrom) > timestampMs(best.validFrom) || timestampMs(item.validFrom) === timestampMs(best.validFrom) && item.id > best.id) {
+      best = item;
+    }
+  }
+  return best;
+}
+function findSuperseder(items, id) {
+  return items.find((item) => (item.supersedes ?? []).includes(id));
+}
+function detectStateContradictions(project, items, setValuedKeys = /* @__PURE__ */ new Set()) {
+  const byKey = /* @__PURE__ */ new Map();
+  for (const item of items) {
+    if (item.kind !== "state" || item.project !== project) continue;
+    const key = item.stateKey ?? "";
+    const bucket = byKey.get(key) ?? [];
+    bucket.push(item);
+    byKey.set(key, bucket);
+  }
+  const contradictions = [];
+  for (const [stateKey, bucket] of [...byKey.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+    if (setValuedKeys.has(stateKey)) continue;
+    const competingCurrentIds = bucket.filter((item) => item.status === "current").map((item) => item.id).sort();
+    const competingProposalIds = bucket.filter((item) => item.status === "proposed").map((item) => item.id).sort();
+    if (competingCurrentIds.length > 1 || competingProposalIds.length > 1) {
+      contradictions.push({ project, stateKey, competingCurrentIds, competingProposalIds });
+    }
+  }
+  return contradictions;
+}
+function parseStateItem(value) {
+  const item = parseContextItem(value);
+  if (item.kind !== "state") {
+    throw new ProtocolError(400, "state layer accepts only state items", "invalid_state_item");
+  }
+  return item;
+}
+var NativeStateProvider = class {
+  name = "native-sqlite";
+  store;
+  now;
+  setValuedKeys;
+  constructor(store, options = {}) {
+    this.store = store;
+    this.now = options.now ?? nowIso;
+    this.setValuedKeys = options.setValuedKeys ?? /* @__PURE__ */ new Set();
+  }
+  projectState(project) {
+    return this.store.listContextItems(project, ["state"]);
+  }
+  itemsForKey(project, key) {
+    return this.projectState(project).filter((item) => item.stateKey === key);
+  }
+  /** Current value for a key at a point in time. Superseded values never
+   * appear as current: historical queries return the item that *was* current
+   * at `asOf` via its validity window. Fails closed when a single-valued key
+   * holds competing current items. */
+  async get(project, key, asOf) {
+    const scopedProject = requireNonEmpty(project, "project");
+    const scopedKey = requireNonEmpty(key, "key");
+    if (this.setValuedKeys.has(scopedKey)) {
+      throw new ProtocolError(
+        400,
+        `state key ${scopedKey} is set-valued; use currentSet`,
+        "state_key_set_valued"
+      );
+    }
+    const atMs = asOf === void 0 ? Date.parse(this.now()) : requireIso(asOf, "asOf");
+    const active = this.itemsForKey(scopedProject, scopedKey).filter((item) => stateActiveAt(item, atMs));
+    const currents = active.filter((item) => item.status === "current");
+    if (currents.length > 1) {
+      throw new ProtocolError(
+        409,
+        `state key ${scopedKey} has competing current items; resolve the contradiction first`,
+        "state_contradiction"
+      );
+    }
+    const winner = currents.length === 1 ? currents[0] : latestActive(active);
+    return winner ?? null;
+  }
+  /** All current items for a set-valued key. */
+  async currentSet(project, key) {
+    const scopedProject = requireNonEmpty(project, "project");
+    const scopedKey = requireNonEmpty(key, "key");
+    if (!this.setValuedKeys.has(scopedKey)) {
+      throw new ProtocolError(400, `state key ${scopedKey} is single-valued`, "state_key_single_valued");
+    }
+    return this.itemsForKey(scopedProject, scopedKey).filter((item) => item.status === "current").sort((left, right) => left.id.localeCompare(right.id));
+  }
+  /** Record a proposal. Proposing changes nothing until an authorized,
+   * evidence-bound promotion runs. Returns the durable proposal item ID. */
+  async propose(change) {
+    if (change?.schema !== "kxm.state-change-proposal.v1") {
+      throw new ProtocolError(400, "invalid state change proposal schema", "invalid_state_proposal");
+    }
+    const project = requireNonEmpty(change.project, "proposal project");
+    const key = requireNonEmpty(change.key, "proposal key");
+    const evidenceRefs = boundedRefs(change.evidenceRefs, "proposal evidenceRefs");
+    const proposal = parseStateItem({
+      id: newId("ctx"),
+      kind: "state",
+      project,
+      summary: change.summary,
+      provenance: {
+        sourceType: change.proposedBy.startsWith("agent_") ? "peer" : "human",
+        sourceRef: `proposed-by:${change.proposedBy}`
+      },
+      authority: change.authority,
+      confidence: change.confidence,
+      stateKey: key,
+      status: "proposed",
+      validFrom: this.now(),
+      evidenceRefs,
+      ...change.supersedes ? { supersedes: boundedRefs(change.supersedes, "proposal supersedes") } : {}
+    });
+    this.store.saveContextItem(proposal);
+    return proposal.id;
+  }
+  /** Promote a proposal to current with durable evidence. The promoter must
+   * differ from the proposal author (agents may propose but never silently
+   * promote). Superseded previous values get an explicit validity window so
+   * historical queries stay deterministic. */
+  async promote(proposalId, evidence, promotedBy) {
+    const id = requireNonEmpty(proposalId, "proposalId");
+    const promoter = requireNonEmpty(promotedBy, "promotedBy");
+    const evidenceRefs = boundedRefs(evidence, "promotion evidence");
+    const proposal = this.store.getContextItem(id);
+    if (!proposal || proposal.kind !== "state") {
+      throw new ProtocolError(404, `state proposal ${id} not found`, "state_proposal_not_found");
+    }
+    if (proposal.status !== "proposed") {
+      throw new ProtocolError(
+        400,
+        `state proposal ${id} already reached lifecycle state ${proposal.status}`,
+        "state_proposal_not_promotable"
+      );
+    }
+    const proposedBy = proposal.provenance.sourceRef?.startsWith("proposed-by:") ? proposal.provenance.sourceRef.slice("proposed-by:".length) : void 0;
+    if (proposedBy === promoter) {
+      throw new ProtocolError(
+        400,
+        "the author of a state proposal cannot promote it",
+        "state_promotion_invalid"
+      );
+    }
+    const now = this.now();
+    const key = proposal.stateKey ?? "";
+    if (!key) {
+      throw new ProtocolError(400, "state proposal has no stateKey", "state_promotion_invalid");
+    }
+    let supersededIds = [];
+    if (!this.setValuedKeys.has(key)) {
+      const atMs = Date.parse(now);
+      const supersededItems = this.itemsForKey(proposal.project, key).filter((item) => item.status === "current" && stateActiveAt(item, atMs));
+      supersededIds = supersededItems.map((item) => item.id);
+      for (const item of supersededItems) {
+        this.store.saveContextItem({
+          ...item,
+          status: "superseded",
+          validUntil: now
+        });
+      }
+    }
+    const promoted = parseStateItem({
+      ...proposal,
+      id: newId("ctx"),
+      status: "current",
+      validFrom: now,
+      validUntil: void 0,
+      supersedes: [.../* @__PURE__ */ new Set([...proposal.supersedes ?? [], ...supersededIds])].sort(),
+      evidenceRefs: [.../* @__PURE__ */ new Set([...proposal.evidenceRefs ?? [], ...evidenceRefs])].sort(),
+      provenance: {
+        ...proposal.provenance,
+        sourceRef: `promoted-by:${promoter}`
+      }
+    });
+    this.store.saveContextItem({ ...proposal, status: "rejected", validUntil: now });
+    this.store.saveContextItem(promoted);
+    return promoted;
+  }
+  /** Which item superseded `id`, if any. */
+  async supersededBy(project, id) {
+    const scopedProject = requireNonEmpty(project, "project");
+    const superseder = findSuperseder(this.projectState(scopedProject), id);
+    return superseder ?? null;
+  }
+  /** Audit trail for one key: proposals, promotions, and supersessions in
+   * deterministic order. */
+  stateHistory(project, key) {
+    return this.itemsForKey(project, key).sort(
+      (left, right) => timestampMs(left.validFrom) - timestampMs(right.validFrom) || left.id.localeCompare(right.id)
+    );
+  }
+  contradictions() {
+    const projects = [...new Set([...this.store.contextItems.values()].map((item) => item.project))];
+    return projects.flatMap((project) => detectStateContradictions(project, this.projectState(project), this.setValuedKeys));
+  }
+};
+function requireNonEmpty(value, field) {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new ProtocolError(400, `${field} cannot be empty`, "invalid_state_request");
+  }
+  return value.trim();
+}
+function requireIso(value, field) {
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) {
+    throw new ProtocolError(400, `${field} must be an ISO-8601 timestamp`, "invalid_state_request");
+  }
+  return parsed;
+}
+function boundedRefs(value, field) {
+  if (!Array.isArray(value) || value.length < 1 || value.length > MAX_STATE_EVIDENCE_REFS) {
+    throw new ProtocolError(
+      400,
+      `${field} must contain between 1 and ${MAX_STATE_EVIDENCE_REFS} references`,
+      "state_promotion_invalid"
+    );
+  }
+  return value.map((ref) => requireNonEmpty(ref, `${field} entry`));
+}
 
 // plugins/kxm-mesh/src/redact.ts
 var SECRET_PATTERNS = [
@@ -101,6 +786,212 @@ function redactSecrets(value) {
 function redactStringList(values, maxItems = 32) {
   return values.slice(0, maxItems).map((value) => redactSecrets(value).slice(0, 500));
 }
+
+// plugins/kxm-mesh/src/wiki.ts
+var WIKI_ROOT = ".kxm/knowledge/wiki";
+var SECTION_BY_KIND = {
+  knowledge: "architecture",
+  decision: "decisions",
+  episode: "incidents",
+  skill: "patterns"
+};
+function wikiSectionFor(item) {
+  if (SECTION_BY_KIND[item.kind]) return SECTION_BY_KIND[item.kind];
+  if (item.provenance.sourceRef?.startsWith("journal:")) {
+    return "incidents";
+  }
+  return "patterns";
+}
+function claimLine(item) {
+  const refs = [`\`${item.id}\``];
+  if (item.provenance.sourceRef) refs.push(`source: \`${item.provenance.sourceRef}\``);
+  const lineage = item.provenance.derivedFrom ?? [];
+  if (lineage.length > 0) refs.push(`derived from: ${lineage.map((id) => `\`${id}\``).join(", ")}`);
+  const authority = item.authority === "policy" || item.authority === "instruction" ? ` (${item.authority})` : "";
+  return `- ${redactSecrets(item.summary)}${authority} \u2014 ${refs.join(" \xB7 ")}`;
+}
+function page(title, heading, claims, footer) {
+  const lines = [
+    `# ${title}`,
+    "",
+    heading,
+    "",
+    ...claims.length > 0 ? claims.map(claimLine) : ["_No reviewed records yet._"],
+    "",
+    footer
+  ];
+  return `${lines.join("\n")}
+`;
+}
+var GENERATED_FOOTER = "<!-- generated by kxm context wiki-compile; the wiki is a compiled view, not the authoritative database -->";
+function compileKnowledgeWiki(pool) {
+  const pages = /* @__PURE__ */ new Map();
+  const live = pool.contextItems.filter(
+    (item) => item.status !== "superseded" && item.status !== "rejected"
+  );
+  const superseded = pool.contextItems.filter((item) => item.status === "superseded");
+  const sections = /* @__PURE__ */ new Map();
+  for (const item of live) {
+    const section = wikiSectionFor(item);
+    const bucket = sections.get(section) ?? [];
+    bucket.push(item);
+    sections.set(section, bucket);
+  }
+  const indexLines = [
+    `# ${pool.project} knowledge wiki`,
+    "",
+    "Compiled synthesis of durable journal evidence, temporal state, and governed records. Every claim links back to its evidence; open contradictions are listed, never silently resolved.",
+    ""
+  ];
+  for (const section of [...sections.keys()].sort()) {
+    const items = sections.get(section).sort((left, right) => left.id.localeCompare(right.id));
+    const path = `${WIKI_ROOT}/${section}/${pool.project}.md`;
+    pages.set(
+      path,
+      page(
+        `${pool.project} \u2014 ${section}`,
+        `Claims below are compiled from reviewed records. Each line links the record ID and source.`,
+        items,
+        GENERATED_FOOTER
+      )
+    );
+    indexLines.push(`- [${section}](${section}/${pool.project}.md) \u2014 ${items.length} claim(s)`);
+  }
+  const currentState = pool.stateItems.filter((item) => item.status === "current");
+  const supersededState = pool.stateItems.filter((item) => item.status === "superseded");
+  const statePath = `${WIKI_ROOT}/architecture/${pool.project}-state.md`;
+  const stateLines = [
+    `# ${pool.project} \u2014 temporal state`,
+    "",
+    "Rendered from the authoritative state layer. Current values are live; superseded values are kept visible with their validity window and successor link.",
+    "",
+    "## Current",
+    "",
+    ...currentState.length > 0 ? currentState.sort((left, right) => (left.stateKey ?? "").localeCompare(right.stateKey ?? "")).map((item) => claimLine(item)) : ["_No current state records._"],
+    "",
+    "## Superseded",
+    "",
+    ...supersededState.length > 0 ? supersededState.sort((left, right) => (left.stateKey ?? "").localeCompare(right.stateKey ?? "")).map((item) => claimLine(item)) : ["_No superseded state records._"],
+    "",
+    GENERATED_FOOTER
+  ];
+  pages.set(statePath, `${stateLines.join("\n")}
+`);
+  indexLines.push(`- [temporal state](${pool.project}-state.md) \u2014 ${currentState.length} current, ${supersededState.length} superseded`);
+  const decisions = live.filter((item) => item.kind === "knowledge" && item.provenance.sourceRef?.startsWith("journal:") === false);
+  if (decisions.length > 0) {
+    pages.set(
+      `${WIKI_ROOT}/decisions/${pool.project}.md`,
+      page(
+        `${pool.project} \u2014 decisions`,
+        "Decision records with their evidence links.",
+        decisions.sort((left, right) => left.id.localeCompare(right.id)),
+        GENERATED_FOOTER
+      )
+    );
+    indexLines.push(`- [decisions (tracked records)](decisions/${pool.project}.md) \u2014 ${decisions.length}`);
+  }
+  const contradictionLines = [
+    `# ${pool.project} \u2014 open contradictions`,
+    "",
+    "These remain unresolved by compilation. Resolution happens through evidence-backed state promotion or journal decisions, never through re-generating this page.",
+    ""
+  ];
+  let contradictionCount = 0;
+  for (const contradiction of [...pool.contradictions].sort((left, right) => left.stateKey.localeCompare(right.stateKey))) {
+    contradictionCount += 1;
+    contradictionLines.push(
+      `## \`${contradiction.stateKey}\``,
+      "",
+      `- Competing current records: ${contradiction.competingCurrentIds.map((id) => `\`${id}\``).join(", ") || "none"}`,
+      `- Competing proposals: ${contradiction.competingProposalIds.map((id) => `\`${id}\``).join(", ") || "none"}`,
+      ""
+    );
+  }
+  for (const id of [...pool.openContradictionItemIds].sort()) {
+    contradictionCount += 1;
+    contradictionLines.push(`- Unresolved journal contradiction: \`${id}\``);
+  }
+  if (contradictionCount === 0) contradictionLines.push("_No open contradictions._");
+  contradictionLines.push("", GENERATED_FOOTER);
+  pages.set(`${WIKI_ROOT}/contradictions/${pool.project}.md`, `${contradictionLines.join("\n")}
+`);
+  indexLines.push(`- [contradictions](contradictions/${pool.project}.md) \u2014 ${contradictionCount} open`);
+  if (superseded.length > 0) {
+    pages.set(
+      `${WIKI_ROOT}/incidents/${pool.project}-history.md`,
+      page(
+        `${pool.project} \u2014 superseded knowledge history`,
+        "Superseded records retained for learning. Never presented as current truth.",
+        superseded.sort((left, right) => left.id.localeCompare(right.id)),
+        GENERATED_FOOTER
+      )
+    );
+    indexLines.push(`- [superseded history](incidents/${pool.project}-history.md) \u2014 ${superseded.length}`);
+  }
+  indexLines.push("", GENERATED_FOOTER);
+  const index = `${indexLines.join("\n")}
+`;
+  pages.set(`${WIKI_ROOT}/index.md`, index);
+  return {
+    pages,
+    index,
+    audit: {
+      project: pool.project,
+      pages: [...pages.keys()].sort(),
+      stateItems: pool.stateItems.length,
+      contextItems: pool.contextItems.length,
+      contradictions: contradictionCount,
+      compiledAt: pool.compiledAt
+    }
+  };
+}
+function lintKnowledgeWiki(pages, pool) {
+  const issues = [];
+  const knownIds = /* @__PURE__ */ new Set([
+    ...pool.stateItems.map((item) => item.id),
+    ...pool.contextItems.map((item) => item.id)
+  ]);
+  const index = pages.get(`${WIKI_ROOT}/index.md`);
+  for (const [path, content] of pages) {
+    if (path.endsWith("index.md")) continue;
+    for (const match of content.matchAll(/`((?:ctx|journal)_[A-Za-z0-9_]+)`/g)) {
+      const id = match[1];
+      if (!knownIds.has(id)) {
+        issues.push({ severity: "error", rule: "broken_ref", path, message: `references unknown record ${id}` });
+      }
+    }
+    if (index && !index.includes(path.split("/").pop())) {
+      issues.push({ severity: "warning", rule: "orphan_page", path, message: "not linked from index.md" });
+    }
+    for (const item of pool.stateItems) {
+      if (item.status !== "superseded" || !item.stateKey) continue;
+      const claimPattern = new RegExp(`Current[\\s\\S]{0,400}\`${item.id}\``, "u");
+      if (claimPattern.test(content)) {
+        issues.push({
+          severity: "error",
+          rule: "stale_state_link",
+          path,
+          message: `renders superseded state item ${item.id} (key ${item.stateKey}) as current`
+        });
+      }
+    }
+  }
+  const hasContradictions = pool.contradictions.length > 0 || pool.openContradictionItemIds.length > 0;
+  if (hasContradictions && index && !index.includes("contradictions")) {
+    issues.push({
+      severity: "error",
+      rule: "unresolved_contradiction",
+      path: `${WIKI_ROOT}/index.md`,
+      message: "open contradictions exist but the index does not surface them"
+    });
+  }
+  return issues.sort((left, right) => left.path.localeCompare(right.path) || left.message.localeCompare(right.message));
+}
+
+// plugins/kxm-mesh/src/retrospective.ts
+import { mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 // plugins/kxm-mesh/src/workflow.ts
 import { createHash } from "node:crypto";
@@ -130,6 +1021,21 @@ function parseJournalCategory(value) {
 }
 function journalEvidenceRequired(category) {
   return EVIDENCE_REQUIRED_JOURNAL_CATEGORIES.includes(category);
+}
+var WORKFLOW_TERMINAL_TARGET = "$terminal";
+function normalizeOutcomeValue(value, field) {
+  if (typeof value === "string") return { target: value };
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${field} must be a stage ID, "$terminal", or a { target, maxTransitions } rule`);
+  }
+  const rule = value;
+  if (typeof rule.target !== "string" || !rule.target.trim()) {
+    throw new Error(`${field}.target must be a non-empty stage ID or "$terminal"`);
+  }
+  if (rule.maxTransitions !== void 0 && (!Number.isInteger(rule.maxTransitions) || rule.maxTransitions < 1 || rule.maxTransitions > 100)) {
+    throw new Error(`${field}.maxTransitions must be an integer between 1 and 100`);
+  }
+  return { target: rule.target, ...rule.maxTransitions !== void 0 ? { maxTransitions: rule.maxTransitions } : {} };
 }
 function journalPromotionState(entry) {
   if (!PROMOTABLE_JOURNAL_CATEGORIES.includes(entry.category)) return void 0;
@@ -620,6 +1526,11 @@ function parseWorkflowDefinitions(raw, environment = process.env, onWarning) {
         targetName,
         warn
       );
+      const on = parseOutcomeMap(stageId, stage.on);
+      const stageMaxTransitions = stage.maxTransitions;
+      if (stageMaxTransitions !== void 0 && (!Number.isInteger(stageMaxTransitions) || stageMaxTransitions < 1 || stageMaxTransitions > 100)) {
+        throw new Error(`stage ${stageId} maxTransitions must be an integer between 1 and 100`);
+      }
       return {
         id: stageId,
         label: requireString(stage.label ?? stageId, "stage.label", { max: 128 }),
@@ -627,9 +1538,14 @@ function parseWorkflowDefinitions(raw, environment = process.env, onWarning) {
         requiredEvidence,
         maxAttempts,
         ...area ? { area } : {},
-        ...evidencePolicies ? { evidencePolicies } : {}
+        ...evidencePolicies ? { evidencePolicies } : {},
+        ...on ? { on } : {},
+        ...stageMaxTransitions !== void 0 ? { maxTransitions: stageMaxTransitions } : {}
       };
     });
+    const definitionMaxTransitions = value.maxTransitions;
+    if (definitionMaxTransitions !== void 0) validateWorkflowTransitions({ id, stages, maxTransitions: definitionMaxTransitions });
+    else validateWorkflowTransitions({ id, stages });
     let filter;
     if (value.filter !== void 0) {
       const candidate = object(value.filter, `workflow ${id} filter`);
@@ -652,10 +1568,51 @@ function parseWorkflowDefinitions(raw, environment = process.env, onWarning) {
       ...filter ? { filter } : {},
       delivery,
       ...value.ttlMs !== void 0 ? { ttlMs: value.ttlMs } : {},
+      ...value.maxTransitions !== void 0 ? { maxTransitions: value.maxTransitions } : {},
       promptTemplate: requireString(value.promptTemplate, "workflow.promptTemplate", { max: 2e4 }),
       stages
     };
   });
+}
+function validateWorkflowTransitions(definition) {
+  const stageIndex = new Map(definition.stages.map((stage, index) => [stage.id, index]));
+  let hasBackEdge = false;
+  for (const stage of definition.stages) {
+    if (!stage.on) continue;
+    for (const [outcome, rawValue] of Object.entries(stage.on)) {
+      if (!outcome.trim()) throw new Error(`stage ${stage.id} declares an empty outcome key`);
+      const rule = normalizeOutcomeValue(rawValue, `stage ${stage.id} on.${outcome}`);
+      if (rule.target === WORKFLOW_TERMINAL_TARGET) continue;
+      const targetIndex = stageIndex.get(rule.target);
+      if (targetIndex === void 0) {
+        throw new Error(`stage ${stage.id} on.${outcome} targets unknown stage ${rule.target}`);
+      }
+      const sourceIndex = stageIndex.get(stage.id);
+      if (targetIndex > sourceIndex + 1) {
+        throw new Error(
+          `stage ${stage.id} on.${outcome} skips intermediate stages by targeting ${rule.target}; forward transitions must target the next stage so approvals and gates cannot be bypassed`
+        );
+      }
+      if (targetIndex <= sourceIndex) hasBackEdge = true;
+    }
+  }
+  if (definition.maxTransitions !== void 0 && (!Number.isInteger(definition.maxTransitions) || definition.maxTransitions < 1 || definition.maxTransitions > 200)) {
+    throw new Error(`workflow ${definition.id} maxTransitions must be an integer between 1 and 200`);
+  }
+  if (hasBackEdge && (definition.maxTransitions === void 0 || definition.maxTransitions < 1)) {
+    throw new Error(`workflow ${definition.id} declares a back-edge but no maxTransitions budget; cycles without budgets are rejected`);
+  }
+}
+function parseOutcomeMap(stageId, raw) {
+  if (raw === void 0) return void 0;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error(`stage ${stageId} on must be an object`);
+  }
+  const map = {};
+  for (const [outcome, value] of Object.entries(raw)) {
+    map[outcome] = normalizeOutcomeValue(value, `stage ${stageId} on.${outcome}`);
+  }
+  return map;
 }
 function valueAtPath(payload, path) {
   let current = payload;
@@ -688,7 +1645,80 @@ function canonicalWorkflowDefinitionJson(definition) {
 function workflowDefinitionHash(definition) {
   return createHash("sha256").update(canonicalWorkflowDefinitionJson(definition), "utf8").digest("hex");
 }
-function checkpointRun(run, stageId, status, summary, evidence, timestamp, verifiedEvidence = {}) {
+function resolveOutcomeRule(stage, outcomeKey) {
+  const raw = stage.on?.[outcomeKey];
+  return raw === void 0 ? void 0 : normalizeOutcomeValue(raw, `stage ${stage.id} on.${outcomeKey}`);
+}
+function transitionCounts(run, fromStage, outcome, target) {
+  const records = run.transitions ?? [];
+  return {
+    total: records.length,
+    fromStage: records.filter((record) => record.fromStage === fromStage).length,
+    forEdge: records.filter((record) => record.fromStage === fromStage && record.outcome === outcome && record.toStage === target).length
+  };
+}
+function recordTransition(run, fromStage, rule, outcome, attempt, evidenceKeys, timestamp) {
+  const record = {
+    id: newId("trans"),
+    fromStage,
+    toStage: rule.target,
+    outcome,
+    attempt,
+    evidenceKeys,
+    at: timestamp
+  };
+  run.transitions = [...run.transitions ?? [], record];
+  return record;
+}
+function enterStage(run, stage, timestamp) {
+  stage.status = "in_progress";
+  stage.attempts = 0;
+  stage.evidence = {};
+  stage.verifiedEvidence = {};
+  stage.startedAt = timestamp;
+  stage.updatedAt = timestamp;
+  delete stage.summary;
+  run.currentStage = stage.id;
+  run.updatedAt = timestamp;
+}
+function takeDeclaredTransition(run, stage, rule, outcome, summary, attempt, timestamp, evidenceKeys) {
+  const definitionBudget = run.maxTransitions;
+  const counts = transitionCounts(run, stage.id, outcome, rule.target);
+  const edgeExhausted = rule.maxTransitions !== void 0 && counts.forEdge >= rule.maxTransitions;
+  const stageExhausted = stage.maxTransitions !== void 0 && counts.fromStage >= stage.maxTransitions;
+  const globalExhausted = definitionBudget !== void 0 && counts.total >= definitionBudget;
+  if (edgeExhausted || stageExhausted || globalExhausted) {
+    stage.completedAt = timestamp;
+    run.status = "failed";
+    delete run.currentStage;
+    run.updatedAt = timestamp;
+    return {
+      retry: false,
+      completed: false,
+      run,
+      exhausted: true
+    };
+  }
+  const record = recordTransition(run, stage.id, rule, outcome, attempt, evidenceKeys.slice(0, 32), timestamp);
+  if (rule.target === WORKFLOW_TERMINAL_TARGET) {
+    stage.completedAt = timestamp;
+    run.status = "completed";
+    delete run.currentStage;
+    run.completedAt = timestamp;
+    run.updatedAt = timestamp;
+    return { retry: false, completed: true, run, transition: record };
+  }
+  const target = run.stages.find((candidate) => candidate.id === rule.target);
+  if (!target) {
+    run.status = "failed";
+    delete run.currentStage;
+    return { retry: false, completed: false, run, exhausted: true };
+  }
+  stage.summary = summary;
+  enterStage(run, target, timestamp);
+  return { retry: false, completed: false, run, transition: record };
+}
+function checkpointRun(run, stageId, status, summary, evidence, timestamp, verifiedEvidence = {}, outcome) {
   if (run.status !== "running") throw new ProtocolError(409, `workflow is ${run.status}`, "workflow_terminal");
   const stage = run.stages.find((candidate) => candidate.id === stageId);
   if (!stage) throw new ProtocolError(404, `workflow stage not found: ${stageId}`, "workflow_stage_not_found");
@@ -719,11 +1749,24 @@ function checkpointRun(run, stageId, status, summary, evidence, timestamp, verif
       delete run.currentStage;
       return { retry: false, completed: false, run };
     }
+    const outcomeKey = outcome ?? status;
+    const rule = resolveOutcomeRule(stage, outcomeKey);
+    if (rule && stage.attempts < stage.maxAttempts) {
+      const result = takeDeclaredTransition(run, stage, rule, outcomeKey, summary, stage.attempts, timestamp, Object.keys(accumulatedEvidence));
+      if (result.transition !== void 0 && !result.completed && rule.target !== stage.id) {
+        stage.status = "pending";
+      }
+      return result;
+    }
     stage.status = "in_progress";
     return { retry: true, completed: false, run };
   }
   stage.status = "passed";
   stage.completedAt = timestamp;
+  const passedRule = resolveOutcomeRule(stage, outcome ?? "passed");
+  if (passedRule) {
+    return takeDeclaredTransition(run, stage, passedRule, outcome ?? "passed", summary, stage.attempts, timestamp, Object.keys(accumulatedEvidence));
+  }
   const next = run.stages.find((candidate) => candidate.status === "pending");
   if (next) {
     next.status = "in_progress";
@@ -1337,6 +2380,18 @@ function sameWorkflowMessageContext(left, right) {
 function sameIdempotentRequest(message, target, content, delivery, correlationId, replyTo, hops, maxHops, ttlMs, workflowContext) {
   return (message.to === target || message.toName.toLowerCase() === target.toLowerCase()) && message.content === content && message.delivery === delivery && message.correlationId === correlationId && message.replyTo === replyTo && message.hops === hops && message.maxHops === maxHops && sameWorkflowMessageContext(message.workflowContext, workflowContext) && Date.parse(message.expiresAt) - Date.parse(message.createdAt) === ttlMs;
 }
+function parseContextAuthority(value) {
+  if (typeof value !== "string" || !CONTEXT_AUTHORITIES.includes(value)) {
+    throw new ProtocolError(400, "authority must be one of policy, instruction, evidence, hypothesis", "invalid_context_request");
+  }
+  return value;
+}
+function parseContextConfidence(value) {
+  if (typeof value !== "string" || !CONTEXT_CONFIDENCES.includes(value)) {
+    throw new ProtocolError(400, "confidence must be one of verified, probable, uncertain", "invalid_context_request");
+  }
+  return value;
+}
 function boundedStringList(value, field, maxItems = 32) {
   if (value === void 0) return [];
   if (!Array.isArray(value) || value.length > maxItems) {
@@ -1504,6 +2559,7 @@ function createMeshHub(options = {}) {
   }
   const workflowRuns = store.workflowRuns;
   const journal = store.journal;
+  const stateProvider = new NativeStateProvider(store);
   const streams = /* @__PURE__ */ new Map();
   const opsStreams = /* @__PURE__ */ new Set();
   const rateBuckets = /* @__PURE__ */ new Map();
@@ -1522,7 +2578,8 @@ function createMeshHub(options = {}) {
     workflowSignals: 0,
     workflowWaitTimeouts: 0,
     workflowDegradations: 0,
-    journalEntries: 0
+    journalEntries: 0,
+    contextRequests: 0
   };
   let cleanupTimer;
   let closed = false;
@@ -1575,6 +2632,20 @@ function createMeshHub(options = {}) {
         nextAction: "check_project_token"
       });
     }
+  }
+  function contextCallerProject(request, requested) {
+    const project = requireString(requested, "project", { max: 200 });
+    const agentHeader = request.headers["x-mesh-agent-id"];
+    if (typeof agentHeader === "string" && agentHeader.trim()) {
+      const agent = requireAgent(request);
+      requireProjectAuth(request, agent.project);
+      if (agent.project !== project) {
+        throw new ProtocolError(403, "context requests are limited to the agent's project", "context_isolation_violation");
+      }
+      return { project, caller: agent.id };
+    }
+    requireAdminAuth(request);
+    return { project, caller: "mesh-admin" };
   }
   function requireAdminAuth(request) {
     if (!authToken2 && isLoopback(host2)) return;
@@ -2070,6 +3141,38 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
     response.setHeader("referrer-policy", "no-referrer");
     counters.requests += 1;
     try {
+      let projectContextPool2 = function(project, journalCategories) {
+        const pool = store.listContextItems(project);
+        const categoryFilter = journalCategories ? new Set(journalCategories) : void 0;
+        const runIds = new Set(
+          [...workflowRuns.values()].filter((run) => run.project === project).map((run) => run.id)
+        );
+        const contradictionIds = [];
+        for (const entry of journal.values()) {
+          if (!runIds.has(entry.runId)) continue;
+          if (categoryFilter && !categoryFilter.has(entry.category)) continue;
+          pool.push(journalEntryToContextItem(entry, project));
+          if (entry.category === "contradiction") contradictionIds.push(`journal_${entry.id}`);
+        }
+        for (const contradiction of stateProvider.contradictions()) {
+          if (contradiction.project !== project) continue;
+          contradictionIds.push(...contradiction.competingCurrentIds, ...contradiction.competingProposalIds);
+        }
+        return { pool, contradictionIds };
+      }, contextWikiPool2 = function(project, compiledAt) {
+        const { pool, contradictionIds } = projectContextPool2(project);
+        const stateItems = store.listContextItems(project, ["state"]);
+        const contradictions = stateProvider.contradictions().filter((entry) => entry.project === project);
+        return {
+          project,
+          stateItems,
+          contextItems: pool,
+          contradictions,
+          openContradictionItemIds: contradictionIds,
+          compiledAt
+        };
+      };
+      var projectContextPool = projectContextPool2, contextWikiPool = contextWikiPool2;
       const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
       const method = request.method ?? "GET";
       if (method === "GET" && url.pathname === "/health") {
@@ -2316,6 +3419,7 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
           status: "running",
           currentStage: stages[0].id,
           stages,
+          ...definition.maxTransitions !== void 0 ? { maxTransitions: definition.maxTransitions } : {},
           createdAt,
           updatedAt: createdAt
         };
@@ -2464,6 +3568,135 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
           run: result.created ? transition : run,
           approval: result.approval,
           duplicate: !result.created
+        });
+        return;
+      }
+      const contextGetMatch = url.pathname.match(/^\/v1\/context\/get$/);
+      if (method === "POST" && contextGetMatch) {
+        const body = await readJson(request);
+        const { project: callerProject, caller: callerId } = contextCallerProject(request, body.project);
+        const policy = rolePolicy(typeof body.role === "string" ? body.role : "");
+        const { pool, contradictionIds } = projectContextPool2(callerProject, policy.journalCategories);
+        const outcome = arbitrate(body, pool, { contradictionIds });
+        counters.contextRequests += 1;
+        logger({
+          event: "context_packet_assembled",
+          ...outcome.audit.request,
+          selectedIds: outcome.audit.selectedIds,
+          provenanceSummary: outcome.audit.provenanceSummary,
+          estimatedTokens: outcome.audit.estimatedTokens,
+          budgetTokens: outcome.audit.budgetTokens,
+          candidateCount: outcome.audit.candidateCount,
+          excludedSuperseded: outcome.audit.excludedSuperseded
+        });
+        json(response, 200, { packet: outcome.packet, audit: outcome.audit });
+        return;
+      }
+      const contextRecallMatch = url.pathname.match(/^\/v1\/context\/recall$/);
+      if (method === "POST" && contextRecallMatch) {
+        const body = await readJson(request);
+        const { project: callerProject, caller: callerId } = contextCallerProject(request, body.project);
+        const query = requireString(body.query ?? "", "query", { max: 500, allowEmpty: true }).toLowerCase();
+        const kinds = Array.isArray(body.kinds) ? body.kinds.filter((kind) => typeof kind === "string") : void 0;
+        const limit = parseBoundedInteger(body.limit, "limit", 25, 1, 100);
+        const { pool } = projectContextPool2(callerProject);
+        const recalled = pool.filter((item) => item.status !== "superseded" && item.status !== "rejected").filter((item) => kinds === void 0 || kinds.includes(item.kind)).filter((item) => query === "" || item.summary.toLowerCase().includes(query) || (item.stateKey ?? "").toLowerCase().includes(query)).sort((left, right) => left.id.localeCompare(right.id)).slice(0, limit);
+        counters.contextRequests += 1;
+        logger({ event: "context_recall", project: callerProject, query, limit, results: recalled.length });
+        json(response, 200, { items: recalled.map(contextItemAuditMetadata), unresolvedGaps: recalled.length === 0 ? ["no matching context records"] : [] });
+        return;
+      }
+      const contextStateMatch = url.pathname.match(/^\/v1\/context\/state$/);
+      if (method === "POST" && contextStateMatch) {
+        const body = await readJson(request);
+        const { project: callerProject, caller: callerId } = contextCallerProject(request, body.project);
+        const key = requireString(body.key, "key", { max: 200 });
+        const asOf = body.asOf === void 0 || body.asOf === null ? void 0 : requireString(body.asOf, "asOf", { max: 64 });
+        const current = await stateProvider.get(callerProject, key, asOf);
+        counters.contextRequests += 1;
+        json(response, 200, { state: current, key });
+        return;
+      }
+      const contextStateProposeMatch = url.pathname.match(/^\/v1\/context\/state\/propose$/);
+      if (method === "POST" && contextStateProposeMatch) {
+        const body = await readJson(request);
+        const { project: callerProject, caller: callerId } = contextCallerProject(request, body.project);
+        const proposalId = await stateProvider.propose({
+          schema: "kxm.state-change-proposal.v1",
+          project: callerProject,
+          key: requireString(body.key, "key", { max: 200 }),
+          summary: requireString(body.summary, "summary", { max: 4e3 }),
+          authority: parseContextAuthority(body.authority),
+          confidence: parseContextConfidence(body.confidence),
+          evidenceRefs: boundedStringList(body.evidenceRefs, "evidenceRefs", 32),
+          proposedBy: callerId
+        });
+        counters.contextRequests += 1;
+        publishOps(callerProject, "workflows");
+        logger({ event: "context_state_proposed", project: callerProject, proposalId, proposedBy: callerId });
+        json(response, 201, { proposalId });
+        return;
+      }
+      const contextStatePromoteMatch = url.pathname.match(/^\/v1\/context\/state\/promote$/);
+      if (method === "POST" && contextStatePromoteMatch) {
+        requireAdminAuth(request);
+        const body = await readJson(request);
+        const proposalId = requireString(body.proposalId, "proposalId", { max: 128 });
+        const project = requireString(body.project, "project", { max: 200 });
+        const evidence = boundedStringList(body.evidence, "evidence", 32);
+        const promoted = await stateProvider.promote(proposalId, evidence, "mesh-admin");
+        counters.contextRequests += 1;
+        publishOps(project, "workflows");
+        logger({ event: "context_state_promoted", project, proposalId, promotedId: promoted.id, stateKey: promoted.stateKey });
+        json(response, 200, { state: promoted });
+        return;
+      }
+      const contextEpisodeMatch = url.pathname.match(/^\/v1\/context\/episode$/);
+      if (method === "POST" && contextEpisodeMatch) {
+        const body = await readJson(request);
+        const { project: callerProject, caller: callerId } = contextCallerProject(request, body.project);
+        const runId = body.workflowRunId === void 0 || body.workflowRunId === null ? void 0 : requireString(body.workflowRunId, "workflowRunId", { max: 128 });
+        const runIds = new Set(
+          [...workflowRuns.values()].filter((run) => run.project === callerProject && (runId === void 0 || run.id === runId)).map((run) => run.id)
+        );
+        const episodes = [...journal.values()].filter((entry) => runIds.has(entry.runId)).filter((entry) => entry.category === "error" || entry.category === "lesson" || entry.category === "observation" || entry.category === "experiment").sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id)).map((entry) => journalEntryToContextItem(entry, callerProject)).slice(0, 50);
+        counters.contextRequests += 1;
+        json(response, 200, { episodes });
+        return;
+      }
+      const contextExplainMatch = url.pathname.match(/^\/v1\/context\/explain$/);
+      if (method === "POST" && contextExplainMatch) {
+        const body = await readJson(request);
+        const { project: callerProject, caller: callerId } = contextCallerProject(request, body.project);
+        const id = requireString(body.id, "id", { max: 128 });
+        const { pool } = projectContextPool2(callerProject);
+        const explanation = explainContextItem(id, pool);
+        counters.contextRequests += 1;
+        json(response, 200, {
+          found: explanation.item !== void 0,
+          lineage: explanation.lineage,
+          evidenceRefs: explanation.evidenceRefs,
+          sources: explanation.sources
+        });
+        return;
+      }
+      const contextWikiCompileMatch = url.pathname.match(/^\/v1\/context\/wiki\/compile$/);
+      if (method === "POST" && contextWikiCompileMatch) {
+        const body = await readJson(request);
+        const { project: callerProject } = contextCallerProject(request, body.project);
+        const wikiPool = contextWikiPool2(callerProject, nowIso());
+        const wiki = compileKnowledgeWiki(wikiPool);
+        counters.contextRequests += 1;
+        logger({
+          event: "context_wiki_compiled",
+          project: callerProject,
+          pages: wiki.audit.pages.length,
+          contradictions: wiki.audit.contradictions
+        });
+        json(response, 200, {
+          audit: wiki.audit,
+          lint: lintKnowledgeWiki(wiki.pages, wikiPool),
+          pages: [...wiki.pages].sort(([left], [right]) => left.localeCompare(right)).map(([path, content]) => ({ path, content }))
         });
         return;
       }
@@ -2616,9 +3849,42 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
           summary,
           evidence,
           timestamp,
-          verifiedEvidence
+          verifiedEvidence,
+          typeof body.outcome === "string" && body.outcome.trim() ? requireString(body.outcome, "outcome", { max: 64 }) : void 0
         );
         const checkpointStage = transition.stages.find((candidate) => candidate.id === stageId);
+        if (result.transition) {
+          const transitionEntry = {
+            id: newId("journal"),
+            runId: transition.id,
+            agentId: agent.id,
+            category: "state-change",
+            area: checkpointStage?.area ?? "workflow",
+            severity: "info",
+            summary: `typed transition ${result.transition.fromStage} -> ${result.transition.toStage} (${result.transition.outcome})`,
+            evidence: result.transition.evidenceKeys.map((key) => `requirement:${key}`),
+            relatedEntryIds: [],
+            createdAt: timestamp
+          };
+          store.saveWorkflowTransition(transition, void 0, transitionEntry);
+          counters.journalEntries += 1;
+        }
+        if (result.exhausted) {
+          const exhaustEntry = {
+            id: newId("journal"),
+            runId: transition.id,
+            agentId: agent.id,
+            category: "error",
+            area: checkpointStage?.area ?? "workflow",
+            severity: "error",
+            summary: `transition budget exhausted at ${stageId} (outcome ${body.outcome ?? status}); run failed safely`,
+            evidence: [`class:transition_budget_exhausted`, `stage:${stageId}`],
+            relatedEntryIds: [],
+            createdAt: timestamp
+          };
+          store.saveWorkflowTransition(transition, void 0, exhaustEntry);
+          counters.journalEntries += 1;
+        }
         let entry;
         if (status !== "passed") {
           entry = {

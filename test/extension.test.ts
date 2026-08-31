@@ -153,6 +153,11 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
     "mesh_workflow_wait",
     "mesh_workflow_record",
     "mesh_improvement_report",
+    "kxm_context",
+    "kxm_recall",
+    "kxm_state",
+    "kxm_episode",
+    "kxm_promote",
   ]);
   const sendTool = fake.tools.get("mesh_send")!;
   const sendProperties = (sendTool.parameters as {
