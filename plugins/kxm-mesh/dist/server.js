@@ -1000,6 +1000,7 @@ var MeshStore = class {
   messages = /* @__PURE__ */ new Map();
   workflowRuns = /* @__PURE__ */ new Map();
   journal = /* @__PURE__ */ new Map();
+  contextItems = /* @__PURE__ */ new Map();
   path;
   database;
   constructor(path) {
@@ -1010,7 +1011,7 @@ var MeshStore = class {
     this.database.exec("PRAGMA busy_timeout = 5000");
     const schemaRow = this.database.prepare("PRAGMA user_version").get();
     const schemaVersion = schemaRow?.user_version ?? 0;
-    if (schemaVersion > 2) {
+    if (schemaVersion > 3) {
       this.database.close();
       throw new Error(`mesh database schema ${schemaVersion} is newer than this runtime supports`);
     }
@@ -1040,7 +1041,14 @@ var MeshStore = class {
         record TEXT NOT NULL
       ) STRICT;
       CREATE INDEX IF NOT EXISTS workflow_journal_run_id ON workflow_journal(run_id);
-      PRAGMA user_version = 2;
+      CREATE TABLE IF NOT EXISTS context_items (
+        id TEXT PRIMARY KEY,
+        project TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        record TEXT NOT NULL
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS context_items_project ON context_items(project);
+      PRAGMA user_version = 3;
     `);
     this.load();
   }
@@ -1078,6 +1086,29 @@ var MeshStore = class {
       INSERT INTO workflow_journal (id, run_id, category, area, record) VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET record = excluded.record
     `).run(entry.id, entry.runId, entry.category, entry.area, JSON.stringify(entry));
+  }
+  /** Persist a context item. Items are immutable by convention: saving an
+   * existing ID replaces the record, and lifecycle corrections must mint a
+   * new item with a `supersedes` link rather than rewriting provenance. */
+  saveContextItem(item) {
+    this.contextItems.set(item.id, item);
+    this.database?.prepare(`
+      INSERT INTO context_items (id, project, kind, record) VALUES (?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET record = excluded.record
+    `).run(item.id, item.project, item.kind, JSON.stringify(item));
+  }
+  getContextItem(id, project) {
+    const item = this.contextItems.get(id);
+    if (!item) return void 0;
+    if (project !== void 0 && item.project !== project) return void 0;
+    return item;
+  }
+  /** Project-scoped listing. Never returns items from other projects; the
+   * optional project filter fails closed to an empty result rather than
+   * leaking cross-project context. */
+  listContextItems(project, kinds) {
+    const wanted = kinds ? new Set(kinds) : void 0;
+    return [...this.contextItems.values()].filter((item) => item.project === project).filter((item) => wanted === void 0 || wanted.has(item.kind)).sort((left, right) => left.id.localeCompare(right.id));
   }
   saveWorkflowTransition(run, message, entry) {
     if (this.database) {
@@ -1122,6 +1153,7 @@ var MeshStore = class {
     const messageRows = this.database.prepare("SELECT record FROM messages").all();
     const workflowRows = this.database.prepare("SELECT record FROM workflow_runs").all();
     const journalRows = this.database.prepare("SELECT record FROM workflow_journal").all();
+    const contextRows = this.database.prepare("SELECT record FROM context_items").all();
     for (const row of agentRows) {
       const agent = JSON.parse(row.record);
       this.agents.set(agent.id, agent);
@@ -1137,6 +1169,10 @@ var MeshStore = class {
     for (const row of journalRows) {
       const entry = JSON.parse(row.record);
       this.journal.set(entry.id, entry);
+    }
+    for (const row of contextRows) {
+      const item = JSON.parse(row.record);
+      this.contextItems.set(item.id, item);
     }
   }
 };

@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { AgentRecord, MessageRecord } from "./protocol.ts";
+import type { ContextItem } from "./context.ts";
 import type { WorkflowJournalEntry, WorkflowRun } from "./workflow.ts";
 
 export interface StoredAgent extends AgentRecord {
@@ -13,6 +14,7 @@ export class MeshStore {
   readonly messages = new Map<string, MessageRecord>();
   readonly workflowRuns = new Map<string, WorkflowRun>();
   readonly journal = new Map<string, WorkflowJournalEntry>();
+  readonly contextItems = new Map<string, ContextItem>();
   readonly path?: string;
   private readonly database?: DatabaseSync;
 
@@ -24,7 +26,7 @@ export class MeshStore {
     this.database.exec("PRAGMA busy_timeout = 5000");
     const schemaRow = this.database.prepare("PRAGMA user_version").get() as { user_version: number } | undefined;
     const schemaVersion = schemaRow?.user_version ?? 0;
-    if (schemaVersion > 2) {
+    if (schemaVersion > 3) {
       this.database.close();
       throw new Error(`mesh database schema ${schemaVersion} is newer than this runtime supports`);
     }
@@ -54,7 +56,14 @@ export class MeshStore {
         record TEXT NOT NULL
       ) STRICT;
       CREATE INDEX IF NOT EXISTS workflow_journal_run_id ON workflow_journal(run_id);
-      PRAGMA user_version = 2;
+      CREATE TABLE IF NOT EXISTS context_items (
+        id TEXT PRIMARY KEY,
+        project TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        record TEXT NOT NULL
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS context_items_project ON context_items(project);
+      PRAGMA user_version = 3;
     `);
     this.load();
   }
@@ -98,6 +107,35 @@ export class MeshStore {
       INSERT INTO workflow_journal (id, run_id, category, area, record) VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET record = excluded.record
     `).run(entry.id, entry.runId, entry.category, entry.area, JSON.stringify(entry));
+  }
+
+  /** Persist a context item. Items are immutable by convention: saving an
+   * existing ID replaces the record, and lifecycle corrections must mint a
+   * new item with a `supersedes` link rather than rewriting provenance. */
+  saveContextItem(item: ContextItem): void {
+    this.contextItems.set(item.id, item);
+    this.database?.prepare(`
+      INSERT INTO context_items (id, project, kind, record) VALUES (?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET record = excluded.record
+    `).run(item.id, item.project, item.kind, JSON.stringify(item));
+  }
+
+  getContextItem(id: string, project?: string): ContextItem | undefined {
+    const item = this.contextItems.get(id);
+    if (!item) return undefined;
+    if (project !== undefined && item.project !== project) return undefined;
+    return item;
+  }
+
+  /** Project-scoped listing. Never returns items from other projects; the
+   * optional project filter fails closed to an empty result rather than
+   * leaking cross-project context. */
+  listContextItems(project: string, kinds?: ContextItem["kind"][]): ContextItem[] {
+    const wanted = kinds ? new Set(kinds) : undefined;
+    return [...this.contextItems.values()]
+      .filter((item) => item.project === project)
+      .filter((item) => wanted === undefined || wanted.has(item.kind))
+      .sort((left, right) => left.id.localeCompare(right.id));
   }
 
   saveWorkflowTransition(
@@ -150,6 +188,7 @@ export class MeshStore {
     const messageRows = this.database.prepare("SELECT record FROM messages").all() as Array<{ record: string }>;
     const workflowRows = this.database.prepare("SELECT record FROM workflow_runs").all() as Array<{ record: string }>;
     const journalRows = this.database.prepare("SELECT record FROM workflow_journal").all() as Array<{ record: string }>;
+    const contextRows = this.database.prepare("SELECT record FROM context_items").all() as Array<{ record: string }>;
     for (const row of agentRows) {
       const agent = JSON.parse(row.record) as StoredAgent;
       this.agents.set(agent.id, agent);
@@ -165,6 +204,10 @@ export class MeshStore {
     for (const row of journalRows) {
       const entry = JSON.parse(row.record) as WorkflowJournalEntry;
       this.journal.set(entry.id, entry);
+    }
+    for (const row of contextRows) {
+      const item = JSON.parse(row.record) as ContextItem;
+      this.contextItems.set(item.id, item);
     }
   }
 }
