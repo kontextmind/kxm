@@ -2,7 +2,23 @@
 
 All notable user-facing changes are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 0.5.0 - 2026-08-31
+
+KXM v0.5 extends the durable multi-agent communication/workflow plane into a **context operating system**. Everything is additive: existing v0.4 workflows, gates, telemetry, and CLI behavior are unchanged unless new context/transition features are enabled.
+
+### Added
+
+- **Context schemas** (`kxm.context-item.v1`/`request`/`packet`): fail-closed validation, immutable provenance, explicit authority/confidence dimensions, lifecycle status, project isolation, deterministic token estimation. Storage in SQLite with a v2→v3 schema upgrade.
+- **Temporal project state** (`kxm state`): one current value per key (or explicitly set-valued), `asOf` historical queries, supersession graph queries, contradiction detection, evidence-bound admin-only promotion. Agents may propose; only the control plane promotes.
+- **Role-aware context arbiter**: deterministic packet assembly per role (repro/planner/critic/implementer/verifier or custom) with fixed token budgets; superseded/rejected records excluded by default; unresolved gaps reported. Surfaces: `kxm context get/recall/state/episode/promote/explain/wiki-compile/wiki-lint`, Pi tools `kxm_context/kxm_recall/kxm_state/kxm_episode/kxm_promote`, and the same five MCP tools.
+- **Authority lattice** (issue #36): deterministic grant floor per origin — human/workflow → `policy`, git → `instruction`, peer/tool/external/derived → `evidence`. Reserialization privilege escalation fails closed; derived/summarized content is evidence at best with bounded transitive lineage; control-plane fields cannot be smuggled inside context items.
+- **Compiled knowledge wiki** under `.kxm/knowledge/wiki/`: deterministic source-linked generation, current/superseded state preserved, open contradictions rendered explicitly, secrets redacted, and lint gates for broken refs, orphan pages, stale state links, and unsurfaced contradictions.
+- **Typed workflow back-edges**: per-stage `on` outcome maps with `$terminal`, global/per-stage/per-edge budgets, durable transition journal, attempt-bound evidence on re-entry, and definition-load validation that rejects unknown targets, forward skips over approval/gate stages, and budgetless cycles.
+- **Reference `/fix` workflow** (`.kxm/config/workflows/fix.json`): two-phase reproduction (read-only explore → tests-only write), immutable reproduction oracle (`weakened_reproduction`), approved plan-hash gating, human-approval security gate, bounded rework via back-edges, and a ready-for-human-acceptance final state with no auto-merge.
+- **Governed skill lifecycle** under `.kxm/skills/` (`kxm skills create/evaluate/promote/reject/list/verify`): content-addressed candidates, four protected evaluations gating promotion, automatic quarantine on functional/safety failure, hash-pinned immutable promoted skills, explicit cross-model compatibility, and a gated skillopt hook. See `docs/skills.md`.
+- **Routing telemetry** (`kxm.routing-record.v1`): behavioral configuration hash over model route + role prompt + skills + tool/context policy + workflow + verifier config; `kxm routing report` computes verified completion/cost/rework comparisons without reading raw prompts.
+- **Governed journal promotion** (issue #32): new journal categories (`observation`, `hypothesis`, `experiment`, `state-change`, `skill-candidate`), mandatory evidence for lessons and skill candidates, and an admin-only, append-only promotion lifecycle (`POST /v1/journal/:id/promotion`).
+- Journal entries can carry stage/attempt provenance; client supports `stageId`.
 
 ### Changed
 
@@ -180,3 +196,17 @@ All notable user-facing changes are documented here. The project follows [Semant
 - Claude Code MCP tools and optional channel delivery.
 - Portable `pi-mesh-comms` Agent Skill.
 - Pi package and Claude marketplace manifests.
+- Mesh store schema version is now 3 (`context_items` table); v0.4 databases upgrade in place.
+- `npm pack` ships the `/fix` workflow definition.
+- Package version surfaces aligned at 0.5.0.
+
+### Security
+
+- Authority grant floors are enforced at parse time (`context_authority_violation`, HTTP 403).
+- Weak or edited reproductions against a `/fix` run are rejected (`weakened_reproduction`).
+- Promotion of temporal state and journal entries requires authorized, evidence-bound control-plane decisions; authors can never self-promote.
+- The authority lattice is documented in `docs/provenance-gates.md`; the skill lifecycle in `docs/skills.md`.
+
+## Unreleased
+
+- Nothing yet.

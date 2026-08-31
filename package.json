@@ -1,6 +1,6 @@
 {
   "name": "@kontextmind/pi-extensions",
-  "version": "0.4.3",
+  "version": "0.5.0",
   "description": "Pi extensions and Agent Skills for multi-agent communication",
   "type": "module",
   "author": "KontextMind",
@@ -75,6 +75,7 @@
     ".kxm/config/agents.json",
     ".kxm/config/workflows/jira-development.json",
     ".kxm/config/workflows/v04-dogfood.json",
+    ".kxm/config/workflows/fix.json",
     ".claude-plugin",
     "plugins/kxm-mesh/.claude-plugin",
     "plugins/kxm-mesh/.mcp.json",

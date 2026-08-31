@@ -200,3 +200,33 @@ messages, and workflow runs are stored as JSON records. Existing schema-v2
 databases and legacy workflow history remain readable; legacy evidence cannot
 satisfy a newly declared peer policy. Back up the database before upgrading as
 described in [Operations](operations.md).
+
+## Context operating system (v0.5)
+
+Above the durable workflow/journal plane sits the KXM context engine:
+
+```text
+workflow state / journal / provenance  →  context engine
+  ├─ temporal state (current/superseded, asOf queries)
+  ├─ episodes (journal-derived learning records)
+  ├─ knowledge wiki (compiled, source-linked view)
+  ├─ skill lifecycle (candidates → protected eval → promote/quarantine)
+  └─ role-aware arbiter (per-role packets under token budgets)
+```
+
+Key invariants:
+
+- **Workflow state remains authoritative.** Journal entries are evidence, not policy.
+- **Authority never increases through derivation.** A deterministic grant floor per origin (human/workflow → policy, git → instruction, peer/tool/external/derived → evidence) is enforced at parse time.
+- **Project isolation.** Every context request is project-scoped; cross-project content fails closed.
+- **Promotion is control-plane work.** Agents may propose state and skill candidates; only authorized, evidence-bound decisions promote them.
+
+### Provider boundary
+
+Optional context backends (a temporal-graph adapter such as Graphiti, or an
+experimental retrieval provider) plug into the internal `ContextProvider` /
+`StateProvider` seams in `plugins/kxm-mesh/src/context/providers.ts`. The
+native SQLite implementation (`plugins/kxm-mesh/src/state.ts`) is the default
+and the reference. Providers are internal: agents interact only with the
+`kxm context` CLI and the `kxm_*` Pi/MCP tools, and provider failures fail
+closed to smaller context, never broader authority.

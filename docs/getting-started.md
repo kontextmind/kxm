@@ -184,3 +184,44 @@ Avoid assigning two agents to edit the same files in one checkout. Use separate 
 - Review the [Test matrix](test-matrix.md) for verified features and example coverage.
 - Start a long-lived coordinator from Jira with [Webhook workflows](webhook-workflows.md).
 - Use [Troubleshooting](troubleshooting.md) if an agent does not appear or a request does not arrive.
+
+## Try the v0.5 context features
+
+With a hub running (`kxm mesh hub`):
+
+```bash
+# Role-aware context packet for the current project
+kxm context get my-project --role planner --task "plan the CI migration" --budget 8192
+
+# Search durable context records (metadata only)
+kxm context recall my-project --query "flaky"
+
+# Authoritative temporal state (and historical queries)
+kxm context state my-project ci.pipeline
+kxm context state my-project ci.pipeline --as-of 2026-01-15T00:00:00.000Z
+
+# Episodic learning from workflow journals
+kxm context episode my-project
+
+# Compile and lint the knowledge wiki
+kxm context wiki-compile my-project
+kxm context wiki-lint my-project
+
+# Routing telemetry per behavioral configuration
+kxm routing report
+```
+
+State changes follow a propose-then-promote flow: agents propose through the
+`kxm_promote` Pi/MCP tool (or the context API), and an operator promotes with
+durable evidence:
+
+```bash
+kxm context promote my-project ctx_prop_abc123 --evidence "receipt:run_9/verify"
+```
+
+Role-aware packets differ by role: repro agents see prior reproductions and
+incidents; planners see current state and decisions; critics see
+contradictions; implementers see the approved plan and skills; verifiers see
+acceptance evidence. The same requests through Pi (`kxm_context`) or Claude
+Code (MCP) return the same packets — agents never talk to a memory backend
+directly.

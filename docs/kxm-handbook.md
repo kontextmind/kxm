@@ -843,6 +843,55 @@ may contain model output and must be protected accordingly.
 
 ---
 
+## Context operating system (v0.5)
+
+The `kxm context` command group exposes KXM's context operating system:
+role-aware packets, temporal project state, episodic learning, a compiled
+knowledge wiki, and a governed skill lifecycle. Agents use the same features
+through `kxm_context`, `kxm_recall`, `kxm_state`, `kxm_episode`, and
+`kxm_promote` (Pi and MCP); provider-specific memory APIs are never exposed.
+
+### Role-aware packets
+
+`kxm context get <project> --role <role> --task <task>` assembles a
+token-budgeted packet. Roles shape selection: repro agents get prior
+reproductions and incidents; planners get state and decisions; critics get
+contradictions and failed approaches; implementers get the approved plan and
+skills; verifiers get acceptance evidence. Superseded and rejected records
+are excluded by default, and every packet is project-isolated.
+
+### Temporal state and promotion
+
+State keys follow a `proposed → current → superseded` lifecycle with
+deterministic historical queries (`--as-of`). Agents may propose changes;
+promotion requires durable evidence and an authorized control-plane decision:
+
+```bash
+kxm context promote <project> <proposalId> --evidence "receipt:run_9/verify"
+```
+
+### Compiled knowledge wiki
+
+`kxm context wiki-compile` renders `.kxm/knowledge/wiki/` from reviewed
+records; every claim links its evidence, superseded state stays visible, and
+open contradictions are never silently resolved. `kxm context wiki-lint`
+checks broken refs, orphan pages, stale state links, and unsurfaced
+contradictions.
+
+### Governed skills
+
+`kxm skills` turns verified episodes into candidates, gates them behind
+static, sandbox, functional, and safety evaluations, and pins promoted skills
+with content hashes. See `docs/skills.md` for the full lifecycle.
+
+### Reference /fix workflow
+
+`.kxm/config/workflows/fix.json` implements the reference bug-fix flow:
+read-only exploration, a tests-only reproduction that becomes an immutable
+oracle, plan review by independent critics, a human approval gate, bounded
+rework through typed transitions, and a ready-for-human-acceptance end state.
+Delivery never auto-merges.
+
 ## Reliability, privacy, and security
 
 ### Delivery guarantees
