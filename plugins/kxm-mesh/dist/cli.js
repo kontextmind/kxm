@@ -3,8 +3,8 @@
 // plugins/kxm-mesh/src/cli.ts
 import { spawn } from "node:child_process";
 import { createHmac as createHmac2, randomUUID as randomUUID2 } from "node:crypto";
-import { existsSync as existsSync3, mkdirSync as mkdirSync6, readFileSync as readFileSync4, readdirSync as readdirSync2, writeFileSync as writeFileSync5 } from "node:fs";
-import { basename, join as join10, resolve as resolve3 } from "node:path";
+import { existsSync as existsSync4, mkdirSync as mkdirSync7, readFileSync as readFileSync5, readdirSync as readdirSync3, writeFileSync as writeFileSync6 } from "node:fs";
+import { basename, join as join11, resolve as resolve3 } from "node:path";
 import { DatabaseSync as DatabaseSync2 } from "node:sqlite";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
@@ -4223,15 +4223,308 @@ function writeRetrospective(outDir, doc) {
   return { jsonPath, mdPath };
 }
 
-// plugins/kxm-mesh/src/wiki.ts
-import { mkdirSync as mkdirSync2, writeFileSync as writeFileSync2 } from "node:fs";
+// plugins/kxm-mesh/src/skills.ts
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync as mkdirSync2, readdirSync, readFileSync, renameSync as renameSync2, rmSync, statSync as statSync2, writeFileSync as writeFileSync2 } from "node:fs";
 import { join } from "node:path";
+var SKILL_CANDIDATE_SCHEMA = "kxm.skill-candidate.v1";
+var SKILL_EVALUATION_SCHEMA = "kxm.skill-evaluation.v1";
+var SKILL_DECISION_SCHEMA = "kxm.skill-decision.v1";
+var MAX_SKILL_NAME_CHARS = 64;
+var MAX_SKILL_CONTENT_CHARS = 32e3;
+var MAX_SKILL_EVIDENCE_REFS = 32;
+var MAX_SKILL_MODELS = 16;
+var PROMOTION_REQUIRED_EVALUATIONS = [
+  "static-review",
+  "sandbox",
+  "functional",
+  "safety"
+];
+var SkillLifecycleError = class extends Error {
+  code;
+  constructor(code, message) {
+    super(message);
+    this.name = "SkillLifecycleError";
+    this.code = code;
+  }
+};
+function skillContentSha256(content) {
+  return createHash("sha256").update(content, "utf8").digest("hex");
+}
+function skillIdFor(name, contentSha256) {
+  const slug = name.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+  if (!slug) throw new SkillLifecycleError("invalid_skill_name", "skill name must contain alphanumeric characters");
+  return `${slug}.${contentSha256.slice(0, 12)}`;
+}
+var SkillLifecycle = class {
+  root;
+  now;
+  allowOptimizationEvals;
+  constructor(root, options = {}) {
+    this.root = root;
+    this.now = options.now ?? (() => (/* @__PURE__ */ new Date()).toISOString());
+    this.allowOptimizationEvals = options.allowOptimizationEvals === true;
+  }
+  dir(state) {
+    return join(this.root, state === "candidate" ? "candidates" : `${state}s`.replace("rejecteds", "rejected").replace("promoteds", "promoted"));
+  }
+  historyFile(id) {
+    return join(this.root, "history", `${id}.jsonl`);
+  }
+  paths(state, id) {
+    const dir = join(this.dir(state), id);
+    return { dir, metadata: join(dir, "metadata.json"), skill: join(dir, "SKILL.md") };
+  }
+  appendHistory(id, record) {
+    mkdirSync2(join(this.root, "history"), { recursive: true });
+    const line = `${JSON.stringify(record)}
+`;
+    if (existsSync(this.historyFile(id))) {
+      const existing = readFileSync(this.historyFile(id), "utf8");
+      const lines = existing.split("\n").filter((entry) => entry.trim());
+      writeFileSync2(this.historyFile(id), [...lines.slice(-499), line.trim()].join("\n") + "\n");
+    } else {
+      writeFileSync2(this.historyFile(id), line);
+    }
+  }
+  history(id) {
+    const file = this.historyFile(id);
+    if (!existsSync(file)) return [];
+    return readFileSync(file, "utf8").split("\n").filter((line) => line.trim()).map((line) => JSON.parse(line));
+  }
+  readMetadata(state, id) {
+    const { metadata } = this.paths(state, id);
+    if (!existsSync(metadata)) {
+      throw new SkillLifecycleError("skill_not_found", `skill ${id} not found in ${state}`);
+    }
+    return JSON.parse(readFileSync(metadata, "utf8"));
+  }
+  move(from, to, id) {
+    const fromDir = join(this.dir(from), id);
+    const toDir = join(this.dir(to), id);
+    if (!existsSync(fromDir)) {
+      throw new SkillLifecycleError("skill_not_found", `skill ${id} not found in ${from}`);
+    }
+    mkdirSync2(this.dir(to), { recursive: true });
+    if (existsSync(toDir)) rmSync(toDir, { recursive: true, force: true });
+    renameSync2(fromDir, toDir);
+  }
+  /** Submit a new skill candidate. Content is redacted of secret material at
+   * creation; the ID is derived from name + content hash. */
+  create(input) {
+    const name = input.name?.trim();
+    if (!name || name.length > MAX_SKILL_NAME_CHARS) {
+      throw new SkillLifecycleError("invalid_skill_name", `skill name must be 1-${MAX_SKILL_NAME_CHARS} characters`);
+    }
+    const content = redactSecrets(input.content ?? "");
+    if (!content.trim() || content.length > MAX_SKILL_CONTENT_CHARS) {
+      throw new SkillLifecycleError("invalid_skill_content", `skill content must be 1-${MAX_SKILL_CONTENT_CHARS} characters`);
+    }
+    const description = redactSecrets(input.description?.trim() ?? "");
+    const sources = {
+      runIds: boundedList(input.sources?.runIds, "runIds"),
+      journalEntryIds: boundedList(input.sources?.journalEntryIds, "journalEntryIds"),
+      evidenceReceipts: boundedList(input.sources?.evidenceReceipts, "evidenceReceipts")
+    };
+    if (sources.runIds.length === 0 && sources.journalEntryIds.length === 0 && sources.evidenceReceipts.length === 0) {
+      throw new SkillLifecycleError(
+        "skill_sources_required",
+        "a skill candidate must reference at least one source run, journal entry, or evidence receipt"
+      );
+    }
+    const createdBy = input.createdBy?.trim();
+    if (!createdBy) throw new SkillLifecycleError("invalid_skill_author", "createdBy is required");
+    const models = boundedList(input.compatibility?.models, "compatibility.models");
+    if (models.length === 0 || models.length > MAX_SKILL_MODELS) {
+      throw new SkillLifecycleError("invalid_skill_compatibility", `compatibility.models must list 1-${MAX_SKILL_MODELS} models`);
+    }
+    const harness = input.compatibility?.harness?.trim();
+    if (!harness) throw new SkillLifecycleError("invalid_skill_compatibility", "compatibility.harness is required");
+    const contentSha256 = skillContentSha256(content);
+    const id = skillIdFor(name, contentSha256);
+    const { dir, metadata, skill } = this.paths("candidate", id);
+    if (existsSync(metadata)) {
+      throw new SkillLifecycleError(
+        "skill_candidate_exists",
+        `identical candidate ${id} already exists; changed behavior requires changed content`
+      );
+    }
+    const record = {
+      schema: SKILL_CANDIDATE_SCHEMA,
+      id,
+      name,
+      description,
+      contentSha256,
+      version: input.version ?? 1,
+      sources,
+      compatibility: { harness, models },
+      createdBy,
+      createdAt: this.now(),
+      ...input.supersedes ? { supersedes: input.supersedes } : {}
+    };
+    mkdirSync2(dir, { recursive: true });
+    writeFileSync2(skill, content);
+    writeFileSync2(metadata, `${JSON.stringify(record, null, 2)}
+`);
+    this.appendHistory(id, { schema: "kxm.skill-history-event.v1", event: "candidate_created", by: createdBy, supersedes: input.supersedes, at: record.createdAt });
+    return record;
+  }
+  /** Record a protected evaluation. A failed functional or safety evaluation
+   * deterministically quarantines the candidate. */
+  evaluate(candidateId, input) {
+    if (input.kind === "optimization" && !this.allowOptimizationEvals) {
+      throw new SkillLifecycleError(
+        "skill_optimization_disabled",
+        "optimization evaluations are disabled; enable them explicitly behind protected evals"
+      );
+    }
+    const metadata = this.readMetadata("candidate", candidateId);
+    const evaluatorVersion = input.evaluatorVersion?.trim();
+    if (!evaluatorVersion) throw new SkillLifecycleError("invalid_skill_evaluation", "evaluatorVersion is required");
+    const evaluation = {
+      schema: SKILL_EVALUATION_SCHEMA,
+      candidateId,
+      kind: input.kind,
+      evaluatorVersion,
+      passed: input.passed === true,
+      ...input.score !== void 0 ? { score: input.score } : {},
+      ...input.details ? { details: redactSecrets(input.details.slice(0, 2e3)) } : {},
+      evaluatedAt: this.now()
+    };
+    this.appendHistory(candidateId, evaluation);
+    let quarantined = false;
+    if (!evaluation.passed && (input.kind === "functional" || input.kind === "safety")) {
+      const decision = {
+        schema: SKILL_DECISION_SCHEMA,
+        candidateId,
+        decision: "quarantined",
+        decidedBy: input.evaluatedBy?.trim() || `evaluator:${evaluatorVersion}`,
+        reason: `automatic quarantine: ${input.kind} evaluation failed (${evaluatorVersion})`,
+        evidenceRefs: [`evaluation:${input.kind}:${evaluatorVersion}`],
+        decidedAt: this.now()
+      };
+      this.move("candidate", "quarantined", candidateId);
+      this.appendHistory(candidateId, decision);
+      quarantined = true;
+    }
+    return { evaluation, quarantined };
+  }
+  evaluationsFor(candidateId) {
+    return this.history(candidateId).filter(
+      (record) => record.schema === SKILL_EVALUATION_SCHEMA
+    );
+  }
+  /** Promote a candidate that passed every protected evaluation. The
+   * promoter must differ from the author, cite durable evidence, and the
+   * promoted content is hash-pinned and immutable. */
+  promote(candidateId, decision) {
+    const metadata = this.readMetadata("candidate", candidateId);
+    const decidedBy = decision.decidedBy?.trim();
+    if (!decidedBy) throw new SkillLifecycleError("invalid_skill_decision", "decidedBy is required");
+    if (decidedBy === metadata.createdBy) {
+      throw new SkillLifecycleError("skill_promotion_invalid", "the author of a skill candidate cannot promote it");
+    }
+    const evidenceRefs = boundedList(decision.evidenceRefs, "evidenceRefs");
+    if (evidenceRefs.length === 0) {
+      throw new SkillLifecycleError("skill_promotion_invalid", "promotion requires durable evidence references");
+    }
+    const evaluations = this.evaluationsFor(candidateId);
+    const missing = [];
+    for (const kind of PROMOTION_REQUIRED_EVALUATIONS) {
+      const latest = [...evaluations].reverse().find((record2) => record2.kind === kind);
+      if (!latest || !latest.passed) missing.push(kind);
+    }
+    if (missing.length > 0) {
+      throw new SkillLifecycleError(
+        "skill_evaluations_incomplete",
+        `promotion requires passing ${missing.join(", ")} evaluations`
+      );
+    }
+    this.verify("candidate", candidateId);
+    const record = {
+      schema: SKILL_DECISION_SCHEMA,
+      candidateId,
+      decision: "promoted",
+      decidedBy,
+      reason: decision.reason?.trim() || "passed protected evaluation",
+      evidenceRefs,
+      decidedAt: this.now()
+    };
+    this.move("candidate", "promoted", candidateId);
+    this.appendHistory(candidateId, record);
+    return metadata;
+  }
+  reject(candidateId, decision) {
+    const metadata = this.readMetadata("candidate", candidateId);
+    const record = {
+      schema: SKILL_DECISION_SCHEMA,
+      candidateId,
+      decision: "rejected",
+      decidedBy: decision.decidedBy?.trim() || "mesh-admin",
+      reason: decision.reason?.trim() || "rejected",
+      evidenceRefs: [],
+      decidedAt: this.now()
+    };
+    this.move("candidate", "rejected", candidateId);
+    this.appendHistory(candidateId, record);
+    return metadata;
+  }
+  /** Verify content integrity of a stored skill (any state). Detects
+   * out-of-band edits to promoted skills. */
+  verify(state, id) {
+    const metadata = this.readMetadata(state, id);
+    const { skill } = this.paths(state, id);
+    const content = readFileSync(skill, "utf8");
+    if (skillContentSha256(content) !== metadata.contentSha256) {
+      throw new SkillLifecycleError(
+        "skill_integrity_violation",
+        `skill ${id} content does not match its pinned hash; promoted skills are immutable and require a new candidate/eval cycle`
+      );
+    }
+    return metadata;
+  }
+  list(state) {
+    const dir = this.dir(state);
+    if (!existsSync(dir)) return [];
+    const ids = readdirSorted(dir);
+    return ids.map((id) => {
+      try {
+        return this.readMetadata(state, id);
+      } catch {
+        return void 0;
+      }
+    }).filter((metadata) => metadata !== void 0);
+  }
+  read(state, id) {
+    const metadata = this.readMetadata(state, id);
+    const { skill } = this.paths(state, id);
+    return { metadata, content: readFileSync(skill, "utf8") };
+  }
+};
+function boundedList(value, field) {
+  if (value === void 0) return [];
+  if (!Array.isArray(value)) {
+    throw new SkillLifecycleError("invalid_skill_input", `${field} must be an array of strings`);
+  }
+  const refs = value.map((ref) => String(ref).trim()).filter((ref) => ref.length > 0);
+  if (refs.length > MAX_SKILL_EVIDENCE_REFS) {
+    throw new SkillLifecycleError("invalid_skill_input", `${field} exceeds ${MAX_SKILL_EVIDENCE_REFS} references`);
+  }
+  return [...new Set(refs)];
+}
+function readdirSorted(dir) {
+  return readdirSync(dir).filter((entry) => statSync2(join(dir, entry)).isDirectory()).sort();
+}
+
+// plugins/kxm-mesh/src/wiki.ts
+import { mkdirSync as mkdirSync3, writeFileSync as writeFileSync3 } from "node:fs";
+import { join as join2 } from "node:path";
 function writeCompiledWiki(root, wiki) {
   const written = [];
   for (const [relativePath, content] of [...wiki.pages].sort(([left], [right]) => left.localeCompare(right))) {
-    const absolute = join(root, relativePath);
-    mkdirSync2(absolute.slice(0, absolute.lastIndexOf("/")), { recursive: true });
-    writeFileSync2(absolute, content);
+    const absolute = join2(root, relativePath);
+    mkdirSync3(absolute.slice(0, absolute.lastIndexOf("/")), { recursive: true });
+    writeFileSync3(absolute, content);
     written.push(relativePath);
   }
   return written;
@@ -4281,8 +4574,8 @@ function workerResult(worker, payload) {
 }
 
 // plugins/kxm-mesh/src/telemetry.ts
-import { appendFileSync, mkdirSync as mkdirSync3, readFileSync } from "node:fs";
-import { dirname, join as join2 } from "node:path";
+import { appendFileSync, mkdirSync as mkdirSync4, readFileSync as readFileSync2 } from "node:fs";
+import { dirname, join as join3 } from "node:path";
 var TELEMETRY_SCHEMA = "kxm.telemetry.v1";
 function inferImprovementTarget(input) {
   const explicit = input.env?.KXM_IMPROVE_TARGET?.trim();
@@ -4292,13 +4585,13 @@ function inferImprovementTarget(input) {
   return project || workflowId ? "project" : "cli";
 }
 function appendTelemetry(path5, event) {
-  mkdirSync3(dirname(path5), { recursive: true });
+  mkdirSync4(dirname(path5), { recursive: true });
   appendFileSync(path5, `${JSON.stringify(event)}
 `, { encoding: "utf8", mode: 384 });
 }
 function readTelemetry(path5) {
   try {
-    const raw = readFileSync(path5, "utf8");
+    const raw = readFileSync2(path5, "utf8");
     const events = [];
     for (const line of raw.split(/\r?\n/)) {
       if (!line.trim()) continue;
@@ -4314,7 +4607,7 @@ function readTelemetry(path5) {
   }
 }
 function telemetryPath(logsDir) {
-  return join2(logsDir, "telemetry.jsonl");
+  return join3(logsDir, "telemetry.jsonl");
 }
 function makeTelemetryEvent(input) {
   return {
@@ -4328,8 +4621,8 @@ function makeTelemetryEvent(input) {
 }
 
 // plugins/kxm-mesh/src/session.ts
-import { existsSync, mkdirSync as mkdirSync4, readFileSync as readFileSync2, writeFileSync as writeFileSync3 } from "node:fs";
-import { join as join3 } from "node:path";
+import { existsSync as existsSync2, mkdirSync as mkdirSync5, readFileSync as readFileSync3, writeFileSync as writeFileSync4 } from "node:fs";
+import { join as join4 } from "node:path";
 var SESSION_SCHEMA = "kxm.session.v1";
 var SessionConfigError = class extends Error {
   code = "session_config_invalid";
@@ -4339,20 +4632,20 @@ var SessionConfigError = class extends Error {
   }
 };
 function workflowAssetDirs(assetsDir, workflowId) {
-  const root = join3(assetsDir, "workflows", workflowId);
-  return [root, join3(root, "inputs"), join3(root, "outputs"), join3(root, "generated")];
+  const root = join4(assetsDir, "workflows", workflowId);
+  return [root, join4(root, "inputs"), join4(root, "outputs"), join4(root, "generated")];
 }
 function sessionAssetDirs(assetsDir, sessionId) {
-  const root = join3(assetsDir, "sessions", sessionId);
-  return [root, join3(root, "inputs"), join3(root, "outputs")];
+  const root = join4(assetsDir, "sessions", sessionId);
+  return [root, join4(root, "inputs"), join4(root, "outputs")];
 }
 function standardAssetDirs(assetsDir) {
   return [
-    join3(assetsDir, "retrospectives"),
-    join3(assetsDir, "workflows"),
-    join3(assetsDir, "sessions"),
-    join3(assetsDir, "improvements"),
-    join3(assetsDir, "generated")
+    join4(assetsDir, "retrospectives"),
+    join4(assetsDir, "workflows"),
+    join4(assetsDir, "sessions"),
+    join4(assetsDir, "improvements"),
+    join4(assetsDir, "generated")
   ];
 }
 function rosterNames(configDir) {
@@ -4403,7 +4696,7 @@ function workerFromRosterRow(name, row, project) {
 function loadRosterMap(configDir) {
   const byName = /* @__PURE__ */ new Map();
   for (const [file, key] of [["agents.json", "agents"], ["gates.json", "gates"]]) {
-    const path5 = join3(configDir, file);
+    const path5 = join4(configDir, file);
     for (const row of loadRoster(path5, key)) {
       const name = String(row.name).trim();
       const lowered = name.toLowerCase();
@@ -4417,10 +4710,10 @@ function loadRosterMap(configDir) {
   return byName;
 }
 function loadRoster(path5, key) {
-  if (!existsSync(path5)) return [];
+  if (!existsSync2(path5)) return [];
   let parsed;
   try {
-    parsed = JSON.parse(readFileSync2(path5, "utf8"));
+    parsed = JSON.parse(readFileSync3(path5, "utf8"));
   } catch (error) {
     throw new SessionConfigError(
       `${key} roster at ${path5} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`
@@ -4445,7 +4738,7 @@ function loadRoster(path5, key) {
   });
 }
 function createSession(input) {
-  const assetDir = input.mode === "workflow" && input.workflowId ? join3("assets", "workflows", input.workflowId) : join3("assets", "sessions", input.id);
+  const assetDir = input.mode === "workflow" && input.workflowId ? join4("assets", "workflows", input.workflowId) : join4("assets", "sessions", input.id);
   return {
     schema: SESSION_SCHEMA,
     id: input.id,
@@ -4458,19 +4751,19 @@ function createSession(input) {
   };
 }
 function writeSession(assetsDir, session, dryRun = false) {
-  const dir = join3(assetsDir, "sessions", session.id);
-  const path5 = join3(dir, "session.json");
+  const dir = join4(assetsDir, "sessions", session.id);
+  const path5 = join4(dir, "session.json");
   if (!dryRun) {
-    mkdirSync4(dir, { recursive: true });
-    writeFileSync3(path5, `${JSON.stringify(session, null, 2)}
+    mkdirSync5(dir, { recursive: true });
+    writeFileSync4(path5, `${JSON.stringify(session, null, 2)}
 `, { encoding: "utf8" });
   }
   return path5;
 }
 
 // plugins/kxm-mesh/src/improve.ts
-import { mkdirSync as mkdirSync5, writeFileSync as writeFileSync4 } from "node:fs";
-import { join as join4 } from "node:path";
+import { mkdirSync as mkdirSync6, writeFileSync as writeFileSync5 } from "node:fs";
+import { join as join5 } from "node:path";
 var IMPROVEMENT_REPORT_SCHEMA = "kxm.improvement-report.v1";
 function buildImprovementReport(events, targets) {
   const selected = events.filter((event) => targets.includes(event.target));
@@ -4505,18 +4798,18 @@ function buildImprovementReport(events, targets) {
 }
 function writeImprovementReport(improvementsDir, report, dryRun = false) {
   const stamp = report.createdAt.replace(/[:.]/g, "-");
-  const path5 = join4(improvementsDir, `${stamp}.json`);
+  const path5 = join5(improvementsDir, `${stamp}.json`);
   if (!dryRun) {
-    mkdirSync5(improvementsDir, { recursive: true });
-    writeFileSync4(path5, `${JSON.stringify(report, null, 2)}
+    mkdirSync6(improvementsDir, { recursive: true });
+    writeFileSync5(path5, `${JSON.stringify(report, null, 2)}
 `, { encoding: "utf8" });
   }
   return path5;
 }
 
 // plugins/kxm-mesh/src/tui.ts
-import { existsSync as existsSync2, readdirSync, readFileSync as readFileSync3 } from "node:fs";
-import { join as join9 } from "node:path";
+import { existsSync as existsSync3, readdirSync as readdirSync2, readFileSync as readFileSync4 } from "node:fs";
+import { join as join10 } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 // node_modules/marked/lib/marked.esm.js
@@ -10514,7 +10807,7 @@ import * as path3 from "node:path";
 
 // node_modules/@earendil-works/pi-tui/dist/native-module-path.js
 import { createRequire } from "node:module";
-import { dirname as dirname2, join as join6 } from "node:path";
+import { dirname as dirname2, join as join7 } from "node:path";
 import { fileURLToPath } from "node:url";
 var moduleRequire = createRequire(import.meta.url);
 var TUI_PACKAGE_NAME = "@earendil-works/pi-tui";
@@ -10523,10 +10816,10 @@ function getNativeModuleCandidates(nativePath, options = {}) {
   const candidates = [];
   try {
     const packageEntry = (options.resolvePackage ?? moduleRequire.resolve)(TUI_PACKAGE_NAME);
-    candidates.push(join6(dirname2(packageEntry), "..", nativePath));
+    candidates.push(join7(dirname2(packageEntry), "..", nativePath));
   } catch {
   }
-  candidates.push(join6(moduleDir, "..", nativePath), join6(moduleDir, nativePath), join6(dirname2(options.execPath ?? process.execPath), nativePath));
+  candidates.push(join7(moduleDir, "..", nativePath), join7(moduleDir, nativePath), join7(dirname2(options.execPath ?? process.execPath), nativePath));
   return Array.from(new Set(candidates));
 }
 
@@ -12595,7 +12888,7 @@ function loadLocalMeshSnapshot(dataPath, stateDir) {
   let openMessageTotal = 0;
   let runs = [];
   let runTotal = 0;
-  if (existsSync2(dataPath)) {
+  if (existsSync3(dataPath)) {
     const database = new DatabaseSync(dataPath, { readOnly: true });
     try {
       agents = readJsonRows(database, "SELECT record FROM agents");
@@ -12608,10 +12901,10 @@ function loadLocalMeshSnapshot(dataPath, stateDir) {
     }
   }
   const pids = [];
-  if (existsSync2(stateDir)) {
-    for (const file of readdirSync(stateDir).filter((name) => name.endsWith(".pid"))) {
+  if (existsSync3(stateDir)) {
+    for (const file of readdirSync2(stateDir).filter((name) => name.endsWith(".pid"))) {
       try {
-        const record = JSON.parse(readFileSync3(join9(stateDir, file), "utf8"));
+        const record = JSON.parse(readFileSync4(join10(stateDir, file), "utf8"));
         pids.push({
           file,
           ...record.role ? { role: record.role } : {},
@@ -13186,7 +13479,7 @@ var USAGE_ERROR_CODES = /* @__PURE__ */ new Set([
 ]);
 function spawnScript(scriptName, extraEnv = {}) {
   return new Promise((resolveExit) => {
-    const child = spawn(process.execPath, [join10(repoRoot, "scripts", scriptName)], {
+    const child = spawn(process.execPath, [join11(repoRoot, "scripts", scriptName)], {
       stdio: "inherit",
       env: { ...process.env, ...extraEnv }
     });
@@ -13272,10 +13565,10 @@ function workspaceDirs(cwd, workspaceFlag, env) {
   return {
     workdir,
     workspace,
-    config: derive ? join10(workspace, "config") : resolve3(workdir, env.PI_MESH_CONFIG_DIR?.trim() || join10(workspace, "config")),
-    logs: derive ? join10(workspace, "logs") : resolve3(workdir, env.PI_MESH_LOGS_DIR?.trim() || join10(workspace, "logs")),
-    assets: derive ? join10(workspace, "assets") : resolve3(workdir, env.PI_MESH_ASSETS_DIR?.trim() || join10(workspace, "assets")),
-    state: derive ? join10(workspace, "state") : resolve3(workdir, env.PI_MESH_STATE_DIR?.trim() || join10(workspace, "state"))
+    config: derive ? join11(workspace, "config") : resolve3(workdir, env.PI_MESH_CONFIG_DIR?.trim() || join11(workspace, "config")),
+    logs: derive ? join11(workspace, "logs") : resolve3(workdir, env.PI_MESH_LOGS_DIR?.trim() || join11(workspace, "logs")),
+    assets: derive ? join11(workspace, "assets") : resolve3(workdir, env.PI_MESH_ASSETS_DIR?.trim() || join11(workspace, "assets")),
+    state: derive ? join11(workspace, "state") : resolve3(workdir, env.PI_MESH_STATE_DIR?.trim() || join11(workspace, "state"))
   };
 }
 function maskEnvName(name) {
@@ -13335,7 +13628,7 @@ async function hubGet(url, fetchImpl) {
   }
 }
 function localWorkflowSnapshot(dataPath, runId) {
-  if (!existsSync3(dataPath)) throw new Error("state_database_not_found");
+  if (!existsSync4(dataPath)) throw new Error("state_database_not_found");
   const database = new DatabaseSync2(dataPath, { readOnly: true });
   try {
     const rows = runId ? database.prepare("SELECT record FROM workflow_runs WHERE id = ?").all(runId) : database.prepare("SELECT record FROM workflow_runs ORDER BY rowid DESC LIMIT 200").all();
@@ -13427,7 +13720,7 @@ function activeWorkflowDefinition(runtime, definitionId) {
   let raw;
   if (file) {
     try {
-      raw = readFileSync4(resolve3(runtime.cwd, file), "utf8");
+      raw = readFileSync5(resolve3(runtime.cwd, file), "utf8");
     } catch {
       throw new Error("workflow definition file is unavailable");
     }
@@ -13454,7 +13747,7 @@ async function cmdInit(runtime) {
   for (const directory of [runtime.dirs.config, runtime.dirs.logs, runtime.dirs.assets, runtime.dirs.state, ...standardAssetDirs(runtime.dirs.assets)]) {
     if (runtime.dryRun) created.push(directory);
     else {
-      mkdirSync6(directory, { recursive: true });
+      mkdirSync7(directory, { recursive: true });
       created.push(directory);
     }
   }
@@ -13486,12 +13779,12 @@ async function cmdValidate(runtime, fileFlag) {
   }
   const selectedFile = explicitFile || configuredFile;
   const file = selectedFile ? resolve3(runtime.cwd, selectedFile) : void 0;
-  if (file && !existsSync3(file)) {
+  if (file && !existsSync4(file)) {
     printWorker(runtime, worker, { ok: false, command: "validate", error: "file_not_found", file }, `workflow file not found: ${file}`);
     return 1;
   }
   try {
-    const raw = file ? readFileSync4(file, "utf8") : inline;
+    const raw = file ? readFileSync5(file, "utf8") : inline;
     const warnings = [];
     const definitions = parseWorkflowDefinitions(raw, runtime.env, (message) => warnings.push(message));
     const secretEnvs = definitions.map((definition) => ({
@@ -13542,7 +13835,7 @@ async function cmdStatus(runtime) {
   return payload.ok ? 0 : 1;
 }
 async function cmdMeshTui(runtime) {
-  const dataPath = resolve3(runtime.dirs.workdir, runtime.env.PI_MESH_DATA_PATH?.trim() || join10(runtime.dirs.state, "mesh.db"));
+  const dataPath = resolve3(runtime.dirs.workdir, runtime.env.PI_MESH_DATA_PATH?.trim() || join11(runtime.dirs.state, "mesh.db"));
   if (runtime.dryRun) {
     print(runtime.io, runtime.json, {
       ok: true,
@@ -13629,7 +13922,7 @@ async function cmdWorker(runtime, options) {
   return await (runtime.io.spawnWorker ?? ((launchEnv) => spawnScript("pi-mesh-worker.mjs", launchEnv)))(extraEnv);
 }
 async function cmdStop(runtime, waitMsFlag) {
-  const pids = existsSync3(runtime.dirs.state) ? readdirSync2(runtime.dirs.state).filter((name) => name.endsWith(".pid")) : [];
+  const pids = existsSync4(runtime.dirs.state) ? readdirSync3(runtime.dirs.state).filter((name) => name.endsWith(".pid")) : [];
   if (runtime.dryRun) {
     print(runtime.io, runtime.json, { ok: true, command: "stop", dryRun: true, pidFiles: pids }, "would signal pid files");
     return 0;
@@ -13643,14 +13936,14 @@ async function cmdStop(runtime, waitMsFlag) {
   const records = /* @__PURE__ */ new Map();
   for (const file of pids) {
     try {
-      const record = JSON.parse(readFileSync4(join10(runtime.dirs.state, file), "utf8"));
+      const record = JSON.parse(readFileSync5(join11(runtime.dirs.state, file), "utf8"));
       const expectedControl = file === "hub.pid" ? "hub.stop" : file.startsWith("worker-") ? `${file.slice(0, -4)}.stop` : void 0;
       const expectedRole = file === "hub.pid" ? "hub" : file.startsWith("worker-") ? "worker" : void 0;
       if (record.version !== 1 || !Number.isInteger(record.pid) || record.pid <= 0 || !record.startedAt || !expectedControl || record.controlFile !== expectedControl || record.role !== expectedRole || !processExists2(record.pid)) {
         ignored.push(file);
         continue;
       }
-      writeFileSync5(join10(runtime.dirs.state, record.controlFile), `${JSON.stringify({ startedAt: record.startedAt, ...record.generation ? { generation: record.generation } : {}, requestedAt: (/* @__PURE__ */ new Date()).toISOString() })}
+      writeFileSync6(join11(runtime.dirs.state, record.controlFile), `${JSON.stringify({ startedAt: record.startedAt, ...record.generation ? { generation: record.generation } : {}, requestedAt: (/* @__PURE__ */ new Date()).toISOString() })}
 `, { encoding: "utf8", mode: 384 });
       requested.push(file);
       records.set(file, { pid: record.pid, startedAt: record.startedAt, ...record.generation ? { generation: record.generation } : {} });
@@ -13668,7 +13961,7 @@ async function cmdStop(runtime, waitMsFlag) {
   while (Date.now() <= deadline && stopped.size < requested.length) {
     for (const [file, record] of records) {
       try {
-        const current = JSON.parse(readFileSync4(join10(runtime.dirs.state, file), "utf8"));
+        const current = JSON.parse(readFileSync5(join11(runtime.dirs.state, file), "utf8"));
         if (current.pid !== record.pid || current.startedAt !== record.startedAt || current.generation !== record.generation || !processExists2(record.pid)) stopped.add(file);
       } catch {
         stopped.add(file);
@@ -13683,11 +13976,11 @@ async function cmdStop(runtime, waitMsFlag) {
 }
 async function cmdSessionStatus(runtime) {
   const stateDir = runtime.dirs.state;
-  const names = existsSync3(stateDir) ? readdirSync2(stateDir) : [];
+  const names = existsSync4(stateDir) ? readdirSync3(stateDir) : [];
   const claims = [];
   for (const file of names.filter((name) => name.endsWith(".pid"))) {
     try {
-      const record = JSON.parse(readFileSync4(join10(stateDir, file), "utf8"));
+      const record = JSON.parse(readFileSync5(join11(stateDir, file), "utf8"));
       claims.push({
         file,
         role: record.role,
@@ -13702,7 +13995,7 @@ async function cmdSessionStatus(runtime) {
   const recoveries = [];
   for (const file of names.filter((name) => name.startsWith("worker-recovery-") && name.endsWith(".json"))) {
     try {
-      const envelope = JSON.parse(readFileSync4(join10(stateDir, file), "utf8"));
+      const envelope = JSON.parse(readFileSync5(join11(stateDir, file), "utf8"));
       recoveries.push({
         file,
         reason: envelope.reason,
@@ -13763,7 +14056,7 @@ async function cmdSessionStart(runtime, options) {
     ...workflowId ? workflowAssetDirs(runtime.dirs.assets, workflowId) : []
   ];
   if (!runtime.dryRun) {
-    for (const directory of created) mkdirSync6(directory, { recursive: true });
+    for (const directory of created) mkdirSync7(directory, { recursive: true });
     writeSession(runtime.dirs.assets, session);
   }
   print(runtime.io, runtime.json, {
@@ -13779,7 +14072,7 @@ async function cmdImprove(runtime, targetFlag) {
   const targets = targetFlag === "cli" || targetFlag === "project" ? [targetFlag] : ["cli", "project"];
   const events = readTelemetry(telemetryPath(runtime.dirs.logs));
   const report = buildImprovementReport(events, targets);
-  const path5 = writeImprovementReport(join10(runtime.dirs.assets, "improvements"), report, runtime.dryRun);
+  const path5 = writeImprovementReport(join11(runtime.dirs.assets, "improvements"), report, runtime.dryRun);
   print(runtime.io, runtime.json, {
     ok: true,
     command: "improve",
@@ -13928,6 +14221,131 @@ async function cmdContextWikiLint(runtime, project) {
   print(runtime.io, runtime.json, { ok: issues.length === 0, command: "context wiki-lint", project, issues, audit: compiled.audit }, issues.length === 0 ? "wiki lint clean" : `wiki lint found ${issues.length} issue(s)`);
   return issues.every((issue) => issue.severity !== "error") ? 0 : 1;
 }
+function skillStateFromFlag(value) {
+  if (value === "candidate" || value === "promoted" || value === "quarantined" || value === "rejected") return value;
+  throw new Error(`invalid skill state ${value}`);
+}
+function skillsRoot(runtime) {
+  return join11(runtime.dirs.workdir, ".kxm", "skills");
+}
+function csv(value) {
+  if (!value) return void 0;
+  const items = value.split(",").map((entry) => entry.trim()).filter((entry) => entry.length > 0);
+  return items.length > 0 ? items : void 0;
+}
+async function cmdSkillsCreate(runtime, options) {
+  if (runtime.dryRun) {
+    print(runtime.io, runtime.json, { ok: true, command: "skills create", dryRun: true, name: options.name }, "would create skill candidate");
+    return 0;
+  }
+  const lifecycle = new SkillLifecycle(skillsRoot(runtime));
+  try {
+    const metadata = lifecycle.create({
+      name: options.name,
+      description: options.description ?? "",
+      content: readFileSync5(options.file, "utf8"),
+      createdBy: options.createdBy,
+      sources: {
+        runIds: csv(options.run) ?? [],
+        journalEntryIds: csv(options.journal) ?? [],
+        evidenceReceipts: csv(options.receipt) ?? []
+      },
+      compatibility: { harness: options.harness, models: csv(options.models) ?? [] },
+      ...options.supersedes ? { supersedes: options.supersedes } : {}
+    });
+    print(runtime.io, runtime.json, { ok: true, command: "skills create", metadata }, `created skill candidate ${metadata.id}`);
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.io.stderr(`skills create failed: ${message}
+`);
+    return 1;
+  }
+}
+async function cmdSkillsEvaluate(runtime, skillId, options) {
+  const lifecycle = new SkillLifecycle(skillsRoot(runtime));
+  try {
+    const outcome = lifecycle.evaluate(skillId, {
+      kind: options.kind,
+      evaluatorVersion: options.evaluator,
+      passed: options.fail !== true,
+      ...options.score !== void 0 ? { score: Number(options.score) } : {},
+      ...options.details ? { details: options.details } : {}
+    });
+    print(runtime.io, runtime.json, { ok: true, command: "skills evaluate", skillId, quarantined: outcome.quarantined, evaluation: outcome.evaluation }, `recorded ${options.kind} evaluation${outcome.quarantined ? " (candidate quarantined)" : ""}`);
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.io.stderr(`skills evaluate failed: ${message}
+`);
+    return 1;
+  }
+}
+async function cmdSkillsPromote(runtime, skillId, options) {
+  const lifecycle = new SkillLifecycle(skillsRoot(runtime));
+  try {
+    const metadata = lifecycle.promote(skillId, {
+      decidedBy: options.decidedBy,
+      reason: options.reason ?? "passed protected evaluation",
+      evidenceRefs: csv(options.evidence) ?? []
+    });
+    print(runtime.io, runtime.json, { ok: true, command: "skills promote", skillId, metadata }, `promoted skill ${skillId}`);
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.io.stderr(`skills promote failed: ${message}
+`);
+    return 1;
+  }
+}
+async function cmdSkillsReject(runtime, skillId, options) {
+  const lifecycle = new SkillLifecycle(skillsRoot(runtime));
+  try {
+    const metadata = lifecycle.reject(skillId, { decidedBy: options.decidedBy, reason: options.reason ?? "rejected" });
+    print(runtime.io, runtime.json, { ok: true, command: "skills reject", skillId, metadata }, `rejected skill ${skillId} (history retained)`);
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.io.stderr(`skills reject failed: ${message}
+`);
+    return 1;
+  }
+}
+async function cmdSkillsList(runtime, options) {
+  try {
+    const lifecycle = new SkillLifecycle(skillsRoot(runtime));
+    const state = skillStateFromFlag(options.state);
+    const items = lifecycle.list(state).map((metadata) => ({
+      id: metadata.id,
+      name: metadata.name,
+      version: metadata.version,
+      createdBy: metadata.createdBy,
+      createdAt: metadata.createdAt,
+      models: metadata.compatibility.models
+    }));
+    print(runtime.io, runtime.json, { ok: true, command: "skills list", state: options.state, skills: items }, `${items.length} ${state} skill(s)`);
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.io.stderr(`skills list failed: ${message}
+`);
+    return 1;
+  }
+}
+async function cmdSkillsVerify(runtime, skillId, options) {
+  try {
+    const lifecycle = new SkillLifecycle(skillsRoot(runtime));
+    const state = skillStateFromFlag(options.state);
+    const metadata = lifecycle.verify(state, skillId);
+    print(runtime.io, runtime.json, { ok: true, command: "skills verify", skillId, state: options.state, contentSha256: metadata.contentSha256 }, `skill ${skillId} integrity verified`);
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.io.stderr(`skills verify failed: ${message}
+`);
+    return 1;
+  }
+}
 async function cmdWorkflowStart(runtime, definitionIdArg, options) {
   const definitionId = definitionIdArg || runtime.env.PI_MESH_WORKFLOW_ID?.trim();
   const deliveryId = String(options.deliveryId || `cli-${randomUUID2()}`);
@@ -13949,7 +14367,7 @@ async function cmdWorkflowStart(runtime, definitionIdArg, options) {
   }
   let payload;
   try {
-    const raw = payloadFlag.startsWith("@") ? readFileSync4(resolve3(runtime.cwd, payloadFlag.slice(1)), "utf8") : payloadFlag;
+    const raw = payloadFlag.startsWith("@") ? readFileSync5(resolve3(runtime.cwd, payloadFlag.slice(1)), "utf8") : payloadFlag;
     const value = JSON.parse(raw);
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("object required");
     payload = value;
@@ -14016,7 +14434,7 @@ async function cmdWorkflowDegrade(runtime, runId, stageId, options) {
   }
 }
 async function cmdWorkflowInspect(runtime, action, runId) {
-  const dataPath = resolve3(runtime.dirs.workdir, runtime.env.PI_MESH_DATA_PATH?.trim() || join10(runtime.dirs.state, "mesh.db"));
+  const dataPath = resolve3(runtime.dirs.workdir, runtime.env.PI_MESH_DATA_PATH?.trim() || join11(runtime.dirs.state, "mesh.db"));
   if (action === "get" && !runId) {
     runtime.io.stderr(`Usage: ${CLI_NAME} workflow get <runId>
 `);
@@ -14166,10 +14584,10 @@ async function cmdRetrospectiveExport(runtime, runId, options) {
   let snapshot;
   try {
     if (snapshotPath) {
-      if (!existsSync3(snapshotPath)) throw new Error("snapshot_missing");
-      snapshot = JSON.parse(readFileSync4(snapshotPath, "utf8"));
+      if (!existsSync4(snapshotPath)) throw new Error("snapshot_missing");
+      snapshot = JSON.parse(readFileSync5(snapshotPath, "utf8"));
     } else {
-      const dataPath = resolve3(runtime.dirs.workdir, runtime.env.PI_MESH_DATA_PATH?.trim() || join10(runtime.dirs.state, "mesh.db"));
+      const dataPath = resolve3(runtime.dirs.workdir, runtime.env.PI_MESH_DATA_PATH?.trim() || join11(runtime.dirs.state, "mesh.db"));
       const local = localWorkflowSnapshot(dataPath, runId);
       if (!local.runs[0]) throw new Error("workflow_not_found");
       snapshot = { run: local.runs[0], journal: local.journal };
@@ -14181,7 +14599,7 @@ async function cmdRetrospectiveExport(runtime, runId, options) {
     return 1;
   }
   const doc = buildRetrospective(snapshot.run, snapshot.journal);
-  const outDir = resolve3(runtime.cwd, String(options.outDir || join10(runtime.dirs.assets, "retrospectives")));
+  const outDir = resolve3(runtime.cwd, String(options.outDir || join11(runtime.dirs.assets, "retrospectives")));
   const assetsRoot = resolve3(runtime.dirs.assets);
   const assetsPrefix = `${assetsRoot}${process.platform === "win32" ? "\\" : "/"}`;
   if (outDir !== assetsRoot && !outDir.startsWith(assetsPrefix)) {
@@ -14291,6 +14709,26 @@ function createProgram(ctx, result) {
   });
   addGlobalOptions(context.command("wiki-lint").description("Lint a compiled wiki for broken refs, orphans, and stale state")).argument("<project>", "Project scope").action(async function contextWikiLintAction(project) {
     result.code = await cmdContextWikiLint(runtimeFrom(ctx, this), project);
+  });
+  const skills = addGlobalOptions(program2.command("skills").description("Governed skill candidate lifecycle"));
+  skills.helpCommand("help", "Show skills help");
+  addGlobalOptions(skills.command("create").description("Submit a skill candidate from verified episodes")).requiredOption("--file <path>", "SKILL.md content file").requiredOption("--name <name>", "Skill name").option("--description <text>", "Short description").requiredOption("--created-by <id>", "Author identity").option("--run <ids>", "Comma-separated source run IDs").option("--journal <ids>", "Comma-separated source journal entry IDs").option("--receipt <refs>", "Comma-separated evidence receipts").requiredOption("--harness <name>", "Harness compatibility (pi, claude-code, ...)").requiredOption("--models <models>", "Comma-separated compatible models").option("--supersedes <id>", "Prior skill this candidate supersedes").action(async function skillsCreateAction(options) {
+    result.code = await cmdSkillsCreate(runtimeFrom(ctx, this), options);
+  });
+  addGlobalOptions(skills.command("evaluate").description("Record a protected evaluation for a candidate")).argument("<skillId>", "Skill candidate ID").requiredOption("--kind <kind>", "static-review, sandbox, functional, safety, or optimization").requiredOption("--evaluator <version>", "Evaluator version").option("--fail", "Record a failed evaluation").option("--score <n>", "Numeric score").option("--details <text>", "Bounded evaluation details").action(async function skillsEvaluateAction(skillId, options) {
+    result.code = await cmdSkillsEvaluate(runtimeFrom(ctx, this), skillId, options);
+  });
+  addGlobalOptions(skills.command("promote").description("Promote a candidate that passed all protected evaluations")).argument("<skillId>", "Skill candidate ID").requiredOption("--decided-by <id>", "Promoter identity (must differ from the author)").requiredOption("--evidence <refs>", "Comma-separated durable evidence references").option("--reason <text>", "Decision reason").action(async function skillsPromoteAction(skillId, options) {
+    result.code = await cmdSkillsPromote(runtimeFrom(ctx, this), skillId, options);
+  });
+  addGlobalOptions(skills.command("reject").description("Reject a candidate; history is retained for learning")).argument("<skillId>", "Skill candidate ID").requiredOption("--decided-by <id>", "Decider identity").option("--reason <text>", "Decision reason").action(async function skillsRejectAction(skillId, options) {
+    result.code = await cmdSkillsReject(runtimeFrom(ctx, this), skillId, options);
+  });
+  addGlobalOptions(skills.command("list").description("List skills by state")).option("--state <state>", "candidate, promoted, quarantined, or rejected", "promoted").action(async function skillsListAction(options) {
+    result.code = await cmdSkillsList(runtimeFrom(ctx, this), options);
+  });
+  addGlobalOptions(skills.command("verify").description("Verify a stored skill against its pinned content hash")).argument("<skillId>", "Skill ID").option("--state <state>", "candidate, promoted, quarantined, or rejected", "promoted").action(async function skillsVerifyAction(skillId, options) {
+    result.code = await cmdSkillsVerify(runtimeFrom(ctx, this), skillId, options);
   });
   const mesh = addGlobalOptions(program2.command("mesh").description("Local and multi-machine mesh hub"));
   mesh.helpCommand("help", "Show mesh help");

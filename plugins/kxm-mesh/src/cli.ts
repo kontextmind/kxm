@@ -10,6 +10,7 @@ import { canonicalWorkflowEvidenceKey, parseWorkflowDefinitions } from "./workfl
 import { postWorkflowSignal, watchGithubChecks } from "./github-watch.ts";
 import { buildRetrospective, writeRetrospective } from "./retrospective.ts";
 import { redactSecrets } from "./redact.ts";
+import { SkillLifecycle, type SkillEvaluationKind, type SkillState } from "./skills.ts";
 import { writeCompiledWiki } from "./wiki.ts";
 import { agentWorker, gateWorker, workerResult, type Worker, type WorkerOutcome } from "./envelope.ts";
 import { appendTelemetry, inferImprovementTarget, makeTelemetryEvent, readTelemetry, telemetryPath } from "./telemetry.ts";
@@ -892,6 +893,134 @@ async function cmdContextWikiLint(runtime: Runtime, project: string): Promise<nu
   return issues.every((issue) => issue.severity !== "error") ? 0 : 1;
 }
 
+function skillStateFromFlag(value: string): SkillState {
+  if (value === "candidate" || value === "promoted" || value === "quarantined" || value === "rejected") return value;
+  throw new Error(`invalid skill state ${value}`);
+}
+
+function skillsRoot(runtime: Runtime): string {
+  return join(runtime.dirs.workdir, ".kxm", "skills");
+}
+
+function csv(value: string | undefined): string[] | undefined {
+  if (!value) return undefined;
+  const items = value.split(",").map((entry) => entry.trim()).filter((entry) => entry.length > 0);
+  return items.length > 0 ? items : undefined;
+}
+
+async function cmdSkillsCreate(runtime: Runtime, options: { file: string; name: string; description?: string; createdBy: string; run?: string; journal?: string; receipt?: string; harness: string; models: string; supersedes?: string }): Promise<number> {
+  if (runtime.dryRun) {
+    print(runtime.io, runtime.json, { ok: true, command: "skills create", dryRun: true, name: options.name }, "would create skill candidate");
+    return 0;
+  }
+  const lifecycle = new SkillLifecycle(skillsRoot(runtime));
+  try {
+    const metadata = lifecycle.create({
+      name: options.name,
+      description: options.description ?? "",
+      content: readFileSync(options.file, "utf8"),
+      createdBy: options.createdBy,
+      sources: {
+        runIds: csv(options.run) ?? [],
+        journalEntryIds: csv(options.journal) ?? [],
+        evidenceReceipts: csv(options.receipt) ?? [],
+      },
+      compatibility: { harness: options.harness, models: csv(options.models) ?? [] },
+      ...(options.supersedes ? { supersedes: options.supersedes } : {}),
+    });
+    print(runtime.io, runtime.json, { ok: true, command: "skills create", metadata }, `created skill candidate ${metadata.id}`);
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.io.stderr(`skills create failed: ${message}\n`);
+    return 1;
+  }
+}
+
+async function cmdSkillsEvaluate(runtime: Runtime, skillId: string, options: { kind: string; evaluator: string; fail?: boolean; score?: string; details?: string }): Promise<number> {
+  const lifecycle = new SkillLifecycle(skillsRoot(runtime));
+  try {
+    const outcome = lifecycle.evaluate(skillId, {
+      kind: options.kind as SkillEvaluationKind,
+      evaluatorVersion: options.evaluator,
+      passed: options.fail !== true,
+      ...(options.score !== undefined ? { score: Number(options.score) } : {}),
+      ...(options.details ? { details: options.details } : {}),
+    });
+    print(runtime.io, runtime.json, { ok: true, command: "skills evaluate", skillId, quarantined: outcome.quarantined, evaluation: outcome.evaluation }, `recorded ${options.kind} evaluation${outcome.quarantined ? " (candidate quarantined)" : ""}`);
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.io.stderr(`skills evaluate failed: ${message}\n`);
+    return 1;
+  }
+}
+
+async function cmdSkillsPromote(runtime: Runtime, skillId: string, options: { decidedBy: string; evidence: string; reason?: string }): Promise<number> {
+  const lifecycle = new SkillLifecycle(skillsRoot(runtime));
+  try {
+    const metadata = lifecycle.promote(skillId, {
+      decidedBy: options.decidedBy,
+      reason: options.reason ?? "passed protected evaluation",
+      evidenceRefs: csv(options.evidence) ?? [],
+    });
+    print(runtime.io, runtime.json, { ok: true, command: "skills promote", skillId, metadata }, `promoted skill ${skillId}`);
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.io.stderr(`skills promote failed: ${message}\n`);
+    return 1;
+  }
+}
+
+async function cmdSkillsReject(runtime: Runtime, skillId: string, options: { decidedBy: string; reason?: string }): Promise<number> {
+  const lifecycle = new SkillLifecycle(skillsRoot(runtime));
+  try {
+    const metadata = lifecycle.reject(skillId, { decidedBy: options.decidedBy, reason: options.reason ?? "rejected" });
+    print(runtime.io, runtime.json, { ok: true, command: "skills reject", skillId, metadata }, `rejected skill ${skillId} (history retained)`);
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.io.stderr(`skills reject failed: ${message}\n`);
+    return 1;
+  }
+}
+
+async function cmdSkillsList(runtime: Runtime, options: { state: string }): Promise<number> {
+  try {
+    const lifecycle = new SkillLifecycle(skillsRoot(runtime));
+    const state = skillStateFromFlag(options.state);
+    const items = lifecycle.list(state).map((metadata) => ({
+      id: metadata.id,
+      name: metadata.name,
+      version: metadata.version,
+      createdBy: metadata.createdBy,
+      createdAt: metadata.createdAt,
+      models: metadata.compatibility.models,
+    }));
+    print(runtime.io, runtime.json, { ok: true, command: "skills list", state: options.state, skills: items }, `${items.length} ${state} skill(s)`);
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.io.stderr(`skills list failed: ${message}\n`);
+    return 1;
+  }
+}
+
+async function cmdSkillsVerify(runtime: Runtime, skillId: string, options: { state: string }): Promise<number> {
+  try {
+    const lifecycle = new SkillLifecycle(skillsRoot(runtime));
+    const state = skillStateFromFlag(options.state);
+    const metadata = lifecycle.verify(state, skillId);
+    print(runtime.io, runtime.json, { ok: true, command: "skills verify", skillId, state: options.state, contentSha256: metadata.contentSha256 }, `skill ${skillId} integrity verified`);
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.io.stderr(`skills verify failed: ${message}\n`);
+    return 1;
+  }
+}
+
 async function cmdWorkflowStart(runtime: Runtime, definitionIdArg: string | undefined, options: { payload?: string; deliveryId?: string; event?: string }): Promise<number> {
   const definitionId = definitionIdArg || runtime.env.PI_MESH_WORKFLOW_ID?.trim();
   const deliveryId = String(options.deliveryId || `cli-${randomUUID()}`);
@@ -1391,6 +1520,59 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .argument("<project>", "Project scope")
     .action(async function contextWikiLintAction(this: Command, project: string) {
       result.code = await cmdContextWikiLint(runtimeFrom(ctx, this), project);
+    });
+
+  const skills = addGlobalOptions(program.command("skills").description("Governed skill candidate lifecycle"));
+  skills.helpCommand("help", "Show skills help");
+  addGlobalOptions(skills.command("create").description("Submit a skill candidate from verified episodes"))
+    .requiredOption("--file <path>", "SKILL.md content file")
+    .requiredOption("--name <name>", "Skill name")
+    .option("--description <text>", "Short description")
+    .requiredOption("--created-by <id>", "Author identity")
+    .option("--run <ids>", "Comma-separated source run IDs")
+    .option("--journal <ids>", "Comma-separated source journal entry IDs")
+    .option("--receipt <refs>", "Comma-separated evidence receipts")
+    .requiredOption("--harness <name>", "Harness compatibility (pi, claude-code, ...)" )
+    .requiredOption("--models <models>", "Comma-separated compatible models")
+    .option("--supersedes <id>", "Prior skill this candidate supersedes")
+    .action(async function skillsCreateAction(this: Command, options: { file: string; name: string; description?: string; createdBy: string; run?: string; journal?: string; receipt?: string; harness: string; models: string; supersedes?: string }) {
+      result.code = await cmdSkillsCreate(runtimeFrom(ctx, this), options);
+    });
+  addGlobalOptions(skills.command("evaluate").description("Record a protected evaluation for a candidate"))
+    .argument("<skillId>", "Skill candidate ID")
+    .requiredOption("--kind <kind>", "static-review, sandbox, functional, safety, or optimization")
+    .requiredOption("--evaluator <version>", "Evaluator version")
+    .option("--fail", "Record a failed evaluation")
+    .option("--score <n>", "Numeric score")
+    .option("--details <text>", "Bounded evaluation details")
+    .action(async function skillsEvaluateAction(this: Command, skillId: string, options: { kind: string; evaluator: string; fail?: boolean; score?: string; details?: string }) {
+      result.code = await cmdSkillsEvaluate(runtimeFrom(ctx, this), skillId, options);
+    });
+  addGlobalOptions(skills.command("promote").description("Promote a candidate that passed all protected evaluations"))
+    .argument("<skillId>", "Skill candidate ID")
+    .requiredOption("--decided-by <id>", "Promoter identity (must differ from the author)")
+    .requiredOption("--evidence <refs>", "Comma-separated durable evidence references")
+    .option("--reason <text>", "Decision reason")
+    .action(async function skillsPromoteAction(this: Command, skillId: string, options: { decidedBy: string; evidence: string; reason?: string }) {
+      result.code = await cmdSkillsPromote(runtimeFrom(ctx, this), skillId, options);
+    });
+  addGlobalOptions(skills.command("reject").description("Reject a candidate; history is retained for learning"))
+    .argument("<skillId>", "Skill candidate ID")
+    .requiredOption("--decided-by <id>", "Decider identity")
+    .option("--reason <text>", "Decision reason")
+    .action(async function skillsRejectAction(this: Command, skillId: string, options: { decidedBy: string; reason?: string }) {
+      result.code = await cmdSkillsReject(runtimeFrom(ctx, this), skillId, options);
+    });
+  addGlobalOptions(skills.command("list").description("List skills by state"))
+    .option("--state <state>", "candidate, promoted, quarantined, or rejected", "promoted")
+    .action(async function skillsListAction(this: Command, options: { state: string }) {
+      result.code = await cmdSkillsList(runtimeFrom(ctx, this), options);
+    });
+  addGlobalOptions(skills.command("verify").description("Verify a stored skill against its pinned content hash"))
+    .argument("<skillId>", "Skill ID")
+    .option("--state <state>", "candidate, promoted, quarantined, or rejected", "promoted")
+    .action(async function skillsVerifyAction(this: Command, skillId: string, options: { state: string }) {
+      result.code = await cmdSkillsVerify(runtimeFrom(ctx, this), skillId, options);
     });
 
   const mesh = addGlobalOptions(program.command("mesh").description("Local and multi-machine mesh hub"));
