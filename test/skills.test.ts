@@ -289,11 +289,10 @@ test("kxm skills CLI drives the lifecycle end to end", async () => {
     assert.match(tampered.read().stderr, /immutable/);
 
     // Reject path retains history.
-    const rejectId = (JSON.parse((await (async () => {
-      const io = capture();
-      await runCli(["--json", "skills", "create", "--file", skillFile, "--name", "cli-reject", "--created-by", "agent_b", "--harness", "pi", "--models", "m", "--journal", "journal_1"], io);
-      return io.read().stdout;
-    })()) as { metadata: { id: string } }).metadata.id);
+    const rejectIo = capture();
+    assert.equal(await runCli(["--json", "skills", "create", "--file", skillFile, "--name", "cli-reject", "--created-by", "agent_b", "--harness", "pi", "--models", "m", "--journal", "journal_1"], rejectIo), 0);
+    const rejectCreated = JSON.parse(rejectIo.read().stdout) as { metadata: { id: string } };
+    const rejectId = rejectCreated.metadata.id;
     const rejected = capture();
     assert.equal(await runCli(["skills", "reject", rejectId, "--decided-by", "mesh-admin", "--reason", "duplicate"], rejected), 0);
     assert.match(rejected.read().stdout, /history retained/);
