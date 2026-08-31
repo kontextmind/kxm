@@ -2,6 +2,7 @@ import { nowIso } from "./protocol.ts";
 
 export const WORKER_SCHEMA = "kxm.worker.v1" as const;
 export const WORKER_RESULT_SCHEMA = "kxm.worker-result.v1" as const;
+import { parseRoutingRecord } from "./routing.ts";
 
 export type WorkerKind = "agent" | "gate";
 export type WorkerDriver = "ai" | "code";
@@ -100,6 +101,11 @@ export function workerResult<T extends Worker, P extends Record<string, unknown>
   }
   if (outcome === "failed" && payload.ok === true) {
     throw new Error("workerResult outcome contradicts ok: \"failed\" requires ok: false");
+  }
+  // Routing records are validated, not trusted: a malformed or body-bearing
+  // routing payload fails closed instead of polluting telemetry.
+  if (rest.routing !== undefined) {
+    parseRoutingRecord(rest.routing);
   }
   return {
     ...rest,

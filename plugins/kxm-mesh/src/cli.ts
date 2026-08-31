@@ -13,7 +13,8 @@ import { redactSecrets } from "./redact.ts";
 import { SkillLifecycle, type SkillEvaluationKind, type SkillState } from "./skills.ts";
 import { writeCompiledWiki } from "./wiki.ts";
 import { agentWorker, gateWorker, workerResult, type Worker, type WorkerOutcome } from "./envelope.ts";
-import { appendTelemetry, inferImprovementTarget, makeTelemetryEvent, readTelemetry, telemetryPath } from "./telemetry.ts";
+import { appendTelemetry, inferImprovementTarget, makeTelemetryEvent, readTelemetry, readRoutingRecords, telemetryPath } from "./telemetry.ts";
+import { behavioralConfigHash, compareRoutingRecords, groupByBehavior } from "./routing.ts";
 import { createSession, loadNamedWorkers, rosterNames, sessionAssetDirs, standardAssetDirs, workflowAssetDirs, writeSession } from "./session.ts";
 import { buildImprovementReport, writeImprovementReport } from "./improve.ts";
 import { runMeshTui } from "./tui.ts";
@@ -145,11 +146,17 @@ function gateOf(runtime: Runtime, name: string): ReturnType<typeof gateWorker> {
 
 function redactCliValue(value: unknown, field = ""): unknown {
   if (typeof value === "string") {
-    // These two fields are public audit digests, not credentials. Preserve
+    // These fields are public audit digests, not credentials. Preserve
     // them only by exact field name and shape; every other 64-hex value keeps
     // the conservative generic redaction behavior.
     if (
-      (field === "requestSha256" || field === "replySha256")
+      (field === "requestSha256"
+        || field === "replySha256"
+        || field === "behavioralSha256"
+        || field === "workflowDefinitionSha256"
+        || field === "verifierConfigSha256"
+        || field === "rolePromptSha256"
+        || field === "contentSha256")
       && /^[a-f0-9]{64}$/.test(value)
     ) return value;
     return redactSecrets(value);
@@ -1021,6 +1028,20 @@ async function cmdSkillsVerify(runtime: Runtime, skillId: string, options: { sta
   }
 }
 
+async function cmdRoutingReport(runtime: Runtime, options: { file?: string }): Promise<number> {
+  const file = options.file ?? telemetryPath(runtime.dirs.logs);
+  const records = readRoutingRecords(file).map((entry) => entry.routing);
+  if (records.length === 0) {
+    print(runtime.io, runtime.json, { ok: true, command: "routing report", file, configurations: [] }, "no routing records in telemetry");
+    return 0;
+  }
+  const configurations = [...groupByBehavior(records).entries()]
+    .map(([hash, group]) => ({ ...compareRoutingRecords(group), behavioralSha256: hash }))
+    .sort((left, right) => right.runs - left.runs || left.behavioralSha256.localeCompare(right.behavioralSha256));
+  print(runtime.io, runtime.json, { ok: true, command: "routing report", file, configurations }, `${configurations.length} behavioral configuration(s) across ${records.length} routing record(s)`);
+  return 0;
+}
+
 async function cmdWorkflowStart(runtime: Runtime, definitionIdArg: string | undefined, options: { payload?: string; deliveryId?: string; event?: string }): Promise<number> {
   const definitionId = definitionIdArg || runtime.env.PI_MESH_WORKFLOW_ID?.trim();
   const deliveryId = String(options.deliveryId || `cli-${randomUUID()}`);
@@ -1573,6 +1594,14 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .option("--state <state>", "candidate, promoted, quarantined, or rejected", "promoted")
     .action(async function skillsVerifyAction(this: Command, skillId: string, options: { state: string }) {
       result.code = await cmdSkillsVerify(runtimeFrom(ctx, this), skillId, options);
+    });
+
+  const routing = addGlobalOptions(program.command("routing").description("Model/harness routing telemetry and behavioral comparisons"));
+  routing.helpCommand("help", "Show routing help");
+  addGlobalOptions(routing.command("report").description("Compare verified completion, cost, and rework per behavioral configuration"))
+    .option("--file <path>", "Telemetry JSONL file (default: workspace telemetry)")
+    .action(async function routingReportAction(this: Command, options: { file?: string }) {
+      result.code = await cmdRoutingReport(runtimeFrom(ctx, this), options);
     });
 
   const mesh = addGlobalOptions(program.command("mesh").description("Local and multi-machine mesh hub"));
