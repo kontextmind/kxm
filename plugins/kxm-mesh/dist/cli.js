@@ -3690,6 +3690,29 @@ function parseWorkflowDefinitions(raw, environment = process.env, onWarning) {
     const definitionMaxTransitions = value.maxTransitions;
     if (definitionMaxTransitions !== void 0) validateWorkflowTransitions({ id, stages, maxTransitions: definitionMaxTransitions });
     else validateWorkflowTransitions({ id, stages });
+    const stageIdSet = new Set(stages.map((stage) => stage.id));
+    const parseOracleConfig = (raw2, field) => {
+      if (raw2 === void 0) return void 0;
+      const candidate = object(raw2, `workflow ${id} ${field}`);
+      const stageId = requireString(candidate.stageId, `workflow ${id} ${field}.stageId`, { max: 64 });
+      if (!stageIdSet.has(stageId)) {
+        throw new Error(`workflow ${id} ${field}.stageId references unknown stage ${stageId}`);
+      }
+      const evidenceKey = canonicalWorkflowEvidenceKey(requireString(candidate.evidenceKey, `workflow ${id} ${field}.evidenceKey`, { max: 128 }));
+      return { stageId, evidenceKey };
+    };
+    const reproOracle = parseOracleConfig(value.reproOracle, "reproOracle");
+    const planHash = parseOracleConfig(value.planHash, "planHash");
+    let requirePlanHash;
+    if (value.requirePlanHash !== void 0) {
+      const required = stringArray(value.requirePlanHash, `workflow ${id} requirePlanHash`);
+      for (const stageId of required) {
+        if (!stageIdSet.has(stageId)) {
+          throw new Error(`workflow ${id} requirePlanHash references unknown stage ${stageId}`);
+        }
+      }
+      requirePlanHash = [...new Set(required)].sort();
+    }
     let filter;
     if (value.filter !== void 0) {
       const candidate = object(value.filter, `workflow ${id} filter`);
@@ -3713,6 +3736,9 @@ function parseWorkflowDefinitions(raw, environment = process.env, onWarning) {
       delivery,
       ...value.ttlMs !== void 0 ? { ttlMs: value.ttlMs } : {},
       ...value.maxTransitions !== void 0 ? { maxTransitions: value.maxTransitions } : {},
+      ...reproOracle ? { reproOracle } : {},
+      ...planHash ? { planHash } : {},
+      ...requirePlanHash ? { requirePlanHash } : {},
       promptTemplate: requireString(value.promptTemplate, "workflow.promptTemplate", { max: 2e4 }),
       stages
     };

@@ -229,6 +229,22 @@ export interface WebhookWorkflowDefinition {
   /** Global budget on typed transitions per run. Required whenever any stage
    * declares a back-edge (a cycle without a budget is rejected at load). */
   maxTransitions?: number;
+  /** Immutable reproduction oracle (v0.5 /fix): when `stageId` passes, the
+   * sha256 of `evidenceKey`'s value is captured on the run. Any later
+   * checkpoint citing the same evidence key with different values is
+   * rejected — a confirmed reproduction may not be weakened to make the
+   * fix pass. */
+  reproOracle?: WorkflowOracleConfig;
+  /** Approved-plan hash: when `stageId` passes, the sha256 of `evidenceKey`'s
+   * value is captured on the run. */
+  planHash?: WorkflowOracleConfig;
+  /** Stages that cannot checkpoint until the plan hash is captured. */
+  requirePlanHash?: string[];
+}
+
+export interface WorkflowOracleConfig {
+  stageId: string;
+  evidenceKey: string;
 }
 
 export interface WorkflowStageState extends WorkflowStageDefinition {
@@ -244,6 +260,12 @@ export interface WorkflowStageState extends WorkflowStageDefinition {
   startedAt?: string;
   completedAt?: string;
   updatedAt?: string;
+}
+
+export interface CapturedOracle {
+  evidenceKey: string;
+  sha256: string;
+  capturedAt: string;
 }
 
 export interface WorkflowWaitState {
@@ -291,6 +313,15 @@ export interface WorkflowRun {
   transitions?: WorkflowTransitionRecord[];
   /** Global transition budget copied from the definition at run creation. */
   maxTransitions?: number;
+  /** Captured immutable reproduction oracle (sha256 of the repro evidence). */
+  oracle?: CapturedOracle;
+  /** Captured approved-plan hash. */
+  planHash?: CapturedOracle;
+  /** Stages that require the plan hash before checkpointing. */
+  requirePlanHash?: string[];
+  /** Oracle config copied from the definition at run creation. */
+  reproOracle?: WorkflowOracleConfig;
+  planHashConfig?: WorkflowOracleConfig;
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
@@ -997,6 +1028,29 @@ export function parseWorkflowDefinitions(
     const definitionMaxTransitions = value.maxTransitions as number | undefined;
     if (definitionMaxTransitions !== undefined) validateWorkflowTransitions({ id, stages: stages as WorkflowStageDefinition[], maxTransitions: definitionMaxTransitions });
     else validateWorkflowTransitions({ id, stages: stages as WorkflowStageDefinition[] });
+    const stageIdSet = new Set(stages.map((stage) => stage.id));
+    const parseOracleConfig = (raw: unknown, field: string): WorkflowOracleConfig | undefined => {
+      if (raw === undefined) return undefined;
+      const candidate = object(raw, `workflow ${id} ${field}`);
+      const stageId = requireString(candidate.stageId, `workflow ${id} ${field}.stageId`, { max: 64 });
+      if (!stageIdSet.has(stageId)) {
+        throw new Error(`workflow ${id} ${field}.stageId references unknown stage ${stageId}`);
+      }
+      const evidenceKey = canonicalWorkflowEvidenceKey(requireString(candidate.evidenceKey, `workflow ${id} ${field}.evidenceKey`, { max: 128 }));
+      return { stageId, evidenceKey };
+    };
+    const reproOracle = parseOracleConfig(value.reproOracle, "reproOracle");
+    const planHash = parseOracleConfig(value.planHash, "planHash");
+    let requirePlanHash: string[] | undefined;
+    if (value.requirePlanHash !== undefined) {
+      const required = stringArray(value.requirePlanHash, `workflow ${id} requirePlanHash`);
+      for (const stageId of required) {
+        if (!stageIdSet.has(stageId)) {
+          throw new Error(`workflow ${id} requirePlanHash references unknown stage ${stageId}`);
+        }
+      }
+      requirePlanHash = [...new Set(required)].sort();
+    }
     let filter: WebhookWorkflowDefinition["filter"];
     if (value.filter !== undefined) {
       const candidate = object(value.filter, `workflow ${id} filter`);
@@ -1025,6 +1079,9 @@ export function parseWorkflowDefinitions(
       delivery,
       ...(value.ttlMs !== undefined ? { ttlMs: value.ttlMs as number } : {}),
       ...(value.maxTransitions !== undefined ? { maxTransitions: value.maxTransitions as number } : {}),
+      ...(reproOracle ? { reproOracle } : {}),
+      ...(planHash ? { planHash } : {}),
+      ...(requirePlanHash ? { requirePlanHash } : {}),
       promptTemplate: requireString(value.promptTemplate, "workflow.promptTemplate", { max: 20_000 }),
       stages,
     };
@@ -1235,6 +1292,55 @@ function takeDeclaredTransition(
 }
 
 
+/** sha256 over the canonical values of one evidence key. */
+export function evidenceValueSha256(evidence: WorkflowEvidence | WorkflowEvidenceInput, key: string): string | undefined {
+  const values = evidence[canonicalWorkflowEvidenceKey(key)];
+  if (!values || values.length === 0) return undefined;
+  return createHash("sha256").update([...values].sort().join("\n"), "utf8").digest("hex");
+}
+
+/** Enforce the immutable reproduction oracle and plan-hash prerequisites.
+ * Called before a checkpoint mutates the run. */
+function enforceOracles(
+  run: WorkflowRun,
+  stageId: string,
+  evidence: WorkflowEvidence,
+): void {
+  if (run.oracle) {
+    const presented = evidenceValueSha256(evidence, run.oracle.evidenceKey);
+    if (presented !== undefined && presented !== run.oracle.sha256) {
+      throw new ProtocolError(
+        400,
+        `evidence ${run.oracle.evidenceKey} does not match the immutable reproduction oracle captured at ${run.oracle.capturedAt}; the confirmed reproduction may not be weakened`,
+        "weakened_reproduction",
+      );
+    }
+  }
+  if (run.requirePlanHash?.includes(stageId) && !run.planHash) {
+    throw new ProtocolError(
+      400,
+      `stage ${stageId} requires an approved plan hash before it can checkpoint`,
+      "plan_hash_required",
+    );
+  }
+}
+
+/** Capture oracle/plan-hash snapshots when their defining stage passes. */
+function captureOracles(run: WorkflowRun, stageId: string, evidence: WorkflowEvidence, timestamp: string): void {
+  if (run.reproOracle?.stageId === stageId) {
+    const sha256 = evidenceValueSha256(evidence, run.reproOracle.evidenceKey);
+    if (sha256 !== undefined) {
+      run.oracle = { evidenceKey: run.reproOracle.evidenceKey, sha256, capturedAt: timestamp };
+    }
+  }
+  if (run.planHashConfig?.stageId === stageId) {
+    const sha256 = evidenceValueSha256(evidence, run.planHashConfig.evidenceKey);
+    if (sha256 !== undefined) {
+      run.planHash = { evidenceKey: run.planHashConfig.evidenceKey, sha256, capturedAt: timestamp };
+    }
+  }
+}
+
 export function checkpointRun(
   run: WorkflowRun,
   stageId: string,
@@ -1253,6 +1359,7 @@ export function checkpointRun(
   }
   const accumulatedEvidence = mergeWorkflowEvidence(stage.evidence, evidence);
   const accumulatedVerifiedEvidence = mergeVerifiedWorkflowEvidence(stage.verifiedEvidence, verifiedEvidence);
+  enforceOracles(run, stageId, accumulatedEvidence);
   const peerStatuses = status === "passed"
     ? requireCompleteEvidence(stage, accumulatedEvidence, accumulatedVerifiedEvidence, run.id)
     : [];
@@ -1264,6 +1371,7 @@ export function checkpointRun(
   if (status === "passed") {
     stage.evidence = accumulatedEvidence;
     if (Object.keys(accumulatedVerifiedEvidence).length) stage.verifiedEvidence = accumulatedVerifiedEvidence;
+    captureOracles(run, stageId, accumulatedEvidence, timestamp);
     if (degradedRequirements.length) {
       stage.degraded = true;
       stage.degradedRequirements = degradedRequirements.map((peerStatus) => peerStatus.requirementKey);

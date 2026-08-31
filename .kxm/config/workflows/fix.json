@@ -1,0 +1,143 @@
+[
+  {
+    "id": "fix",
+    "source": "generic",
+    "project": "kxm",
+    "target": "coordinator",
+    "secretEnv": "FIX_WEBHOOK_SECRET",
+    "signalSecretEnv": "WORKFLOW_SIGNAL_SECRET",
+    "delivery": "followUp",
+    "maxTransitions": 24,
+    "reproOracle": { "stageId": "repro-write", "evidenceKey": "repro" },
+    "planHash": { "stageId": "final-plan", "evidenceKey": "plan" },
+    "requirePlanHash": ["implement", "local-verify", "delivery"],
+    "promptTemplate": "Bug report: {{task}}\n\nRun the /fix workflow: two-phase reproduction before any production edit, approved plan before implementation, bounded rework on failure. The confirmed reproduction is an immutable oracle.",
+    "stages": [
+      {
+        "id": "intake",
+        "label": "Intake",
+        "area": "workflow",
+        "instructions": "Classify the bug report: expected vs actual behavior, affected surface, severity, and reproduction hints. Record a journal 'plan' entry with the classification. If the report is not actionable, checkpoint with outcome 'blocked'.",
+        "requiredEvidence": ["classification"],
+        "maxAttempts": 2,
+        "on": { "passed": "repro-explore", "blocked": "$terminal" }
+      },
+      {
+        "id": "repro-explore",
+        "label": "Repro explore (read-only)",
+        "area": "implementation",
+        "instructions": "Read and search only: locate the bug, note prior reproductions, test conventions, and similar incidents via kxm context. No source or test edits. Produce a diagnosis: bug location, root-cause hypothesis, expected/actual behavior, reproduction strategy, reference tests, and target assertions. Record the diagnosis with journal category 'hypothesis'.",
+        "requiredEvidence": ["diagnosis"],
+        "maxAttempts": 3,
+        "on": { "passed": "repro-write", "blocked": "$terminal" }
+      },
+      {
+        "id": "repro-write",
+        "label": "Repro write (tests only)",
+        "area": "implementation",
+        "instructions": "Write the failing reproduction. Tests and helpers only — production code stays read-only. The reproduction must fail for the reported reason. Cite evidence key 'repro' as '<test-file>:<sha256 of test content>'. Once this stage passes, the reproduction becomes an immutable oracle: later stages must cite the same value and a weakened reproduction is rejected.",
+        "requiredEvidence": ["repro"],
+        "maxAttempts": 3,
+        "on": { "passed": "plan", "blocked": "$terminal" }
+      },
+      {
+        "id": "plan",
+        "label": "Plan",
+        "area": "workflow",
+        "instructions": "Using the diagnosis and the confirmed reproduction, write the implementation plan: changed files, approach, risks, and how the reproduction proves the fix. Cite evidence key 'plan' with the plan artifact path and content hash.",
+        "requiredEvidence": ["plan"],
+        "maxAttempts": 3,
+        "on": { "passed": "critics", "blocked": "$terminal" }
+      },
+      {
+        "id": "critics",
+        "label": "Independent critics",
+        "area": "gates",
+        "instructions": "Two independent critics review the plan for correctness, scope creep, and risk. Both must reply through the mesh; caller-authored evidence cannot satisfy this policy. If the plan is invalidated, checkpoint with outcome 'plan_invalidated'.",
+        "requiredEvidence": ["critique"],
+        "maxAttempts": 3,
+        "evidencePolicies": {
+          "critique": {
+            "kind": "peer-reply",
+            "minProducers": 2,
+            "eligibleAgents": ["critic-1", "critic-2"],
+            "acceptedStatuses": ["replied"]
+          }
+        },
+        "on": { "passed": "final-plan", "plan_invalidated": "plan", "blocked": "$terminal" }
+      },
+      {
+        "id": "final-plan",
+        "label": "Final plan",
+        "area": "workflow",
+        "instructions": "Fold critic feedback into the final plan. Re-cite evidence key 'plan' with the final artifact path and content hash. The hash of this stage's plan evidence becomes the approved plan hash required by implementation.",
+        "requiredEvidence": ["plan"],
+        "maxAttempts": 2,
+        "on": { "passed": "approval", "plan_invalidated": "plan", "blocked": "$terminal" }
+      },
+      {
+        "id": "approval",
+        "label": "Human approval",
+        "area": "security",
+        "instructions": "Human operator approves the plan. Cite evidence key 'signoff' with the approver identity and approval reference. A 'rejected' outcome routes back to planning; this stage cannot be bypassed by any transition.",
+        "requiredEvidence": ["signoff"],
+        "maxAttempts": 8,
+        "on": { "passed": "implement", "rejected": "plan", "blocked": "$terminal" }
+      },
+      {
+        "id": "implement",
+        "label": "Implement",
+        "area": "implementation",
+        "instructions": "Implement the approved plan. The reproduction oracle is immutable: local verification must fail before the fix and pass after it. Cite evidence keys 'diff' and 'repro' (same value as the oracle).",
+        "requiredEvidence": ["diff"],
+        "maxAttempts": 4,
+        "on": { "passed": "local-verify", "blocked": "$terminal" }
+      },
+      {
+        "id": "local-verify",
+        "label": "Local verify",
+        "area": "gates",
+        "instructions": "Run the repo-defined gates: unit, lint, typecheck, build, and the confirmed reproduction test. Cite evidence key 'gates' with per-gate results. 'implementation_failure' reworks implementation; 'plan_invalidated' routes back to planning rather than expanding scope.",
+        "requiredEvidence": ["gates"],
+        "maxAttempts": 4,
+        "on": {
+          "passed": "delivery",
+          "implementation_failure": "implement",
+          "plan_invalidated": "plan",
+          "blocked": "$terminal"
+        }
+      },
+      {
+        "id": "delivery",
+        "label": "Delivery",
+        "area": "workflow",
+        "instructions": "Create and push the branch and merge request with the reproduction, plan, and diff references. Delivery never auto-merges: CI and review outcomes are watched in the next stage.",
+        "requiredEvidence": ["mr"],
+        "maxAttempts": 2,
+        "on": { "passed": "ci-watch", "blocked": "$terminal" }
+      },
+      {
+        "id": "ci-watch",
+        "label": "CI and review watch",
+        "area": "gates",
+        "instructions": "Watch required CI checks and review status. On failure, checkpoint with outcome 'failure' to rework through bounded transitions. On success, continue to human acceptance.",
+        "requiredEvidence": ["ci"],
+        "maxAttempts": 6,
+        "on": {
+          "passed": "ready-for-human-acceptance",
+          "failure": "implement",
+          "blocked": "$terminal"
+        }
+      },
+      {
+        "id": "ready-for-human-acceptance",
+        "label": "Ready for human acceptance",
+        "area": "workflow",
+        "instructions": "Summarize the fix: reproduction (immutable oracle), approved plan hash, diff, gate results, CI outcome, and the full claim-to-evidence trail from the run journal. Checkpoint 'passed' to complete the run; a human performs final acceptance outside the workflow.",
+        "requiredEvidence": ["summary"],
+        "maxAttempts": 2,
+        "on": { "passed": "$terminal", "blocked": "$terminal" }
+      }
+    ]
+  }
+]

@@ -1323,6 +1323,9 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           currentStage: stages[0]!.id,
           stages,
           ...(definition.maxTransitions !== undefined ? { maxTransitions: definition.maxTransitions } : {}),
+          ...(definition.reproOracle ? { reproOracle: definition.reproOracle } : {}),
+          ...(definition.planHash ? { planHashConfig: definition.planHash } : {}),
+          ...(definition.requirePlanHash ? { requirePlanHash: definition.requirePlanHash } : {}),
           createdAt,
           updatedAt: createdAt,
         };
