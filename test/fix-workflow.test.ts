@@ -128,11 +128,12 @@ function captureOracle(testRun: WorkflowRun, step: () => string, prefix = "oracl
   pass(testRun, "intake", { classification: "x" }, step());
   pass(testRun, "repro-explore", { diagnosis: "d" }, step());
   const draft = pass(testRun, "repro-write", { repro: REPRO }, step());
-  assert.equal(testRun.oracle, undefined);
+  assert.equal(testRun.oracle == null, true);
   assert.equal(draft.transition?.toStage, "repro-review");
   const reviewed = pass(testRun, "repro-review", { repro: REPRO }, step(), reviewEvidence(testRun, prefix));
-  assert.equal(testRun.oracle?.evidenceKey, "repro");
-  assert.equal(testRun.oracle?.sha256, createHash("sha256").update(REPRO).digest("hex"));
+  assert.ok(testRun.oracle);
+  assert.equal(testRun.oracle.evidenceKey, "repro");
+  assert.equal(testRun.oracle.sha256, createHash("sha256").update(REPRO).digest("hex"));
   assert.equal(reviewed.transition?.toStage, "plan");
 }
 
@@ -239,7 +240,7 @@ test("a wrong-seam draft is invalidated and failed retries stay on repro-write",
   pass(testRun, "intake", { classification: "x" }, step());
   pass(testRun, "repro-explore", { diagnosis: "legacy GetProductsBySchool" }, step());
   pass(testRun, "repro-write", { repro: REPRO }, step());
-  assert.equal(testRun.oracle, undefined);
+  assert.equal(testRun.oracle == null, true);
   const invalidated = checkpointRun(
     testRun,
     "repro-review",
@@ -252,7 +253,7 @@ test("a wrong-seam draft is invalidated and failed retries stay on repro-write",
   );
   assert.equal(invalidated.transition?.toStage, "repro-write");
   assert.equal(testRun.currentStage, "repro-write");
-  assert.equal(testRun.oracle, undefined);
+  assert.equal(testRun.oracle == null, true);
 
   const retry = checkpointRun(testRun, "repro-write", "failed", "rewrite against named seam", { repro: "draft-incomplete" }, step(), {}, "failed");
   assert.equal(retry.transition?.toStage, "repro-write");
@@ -261,7 +262,8 @@ test("a wrong-seam draft is invalidated and failed retries stay on repro-write",
 
   pass(testRun, "repro-write", { repro: REPRO }, step());
   pass(testRun, "repro-review", { repro: REPRO }, step(), reviewEvidence(testRun, "valid"));
-  assert.equal(testRun.oracle?.sha256, createHash("sha256").update(REPRO).digest("hex"));
+  assert.ok(testRun.oracle);
+  assert.equal(testRun.oracle.sha256, createHash("sha256").update(REPRO).digest("hex"));
   assert.equal(testRun.currentStage, "plan");
 });
 
