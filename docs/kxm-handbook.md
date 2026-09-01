@@ -887,10 +887,12 @@ with content hashes. See `docs/skills.md` for the full lifecycle.
 ### Reference /fix workflow
 
 `.kxm/config/workflows/fix.json` implements the reference bug-fix flow:
-read-only exploration, a tests-only reproduction that becomes an immutable
-oracle, plan review by independent critics, a human approval gate, bounded
-rework through typed transitions, and a ready-for-human-acceptance end state.
-Delivery never auto-merges.
+read-only exploration, a tests-only reproduction draft, independent two-critic
+`repro-review` that captures the immutable oracle (a sibling API is invalid),
+plan review by independent critics, a human approval gate, bounded rework
+through typed transitions, and a ready-for-human-acceptance end state.
+Delivery never auto-merges. After `repro_invalidated`, rewrite against the
+named seam; `new DbContext()` is not grounds for `blocked`.
 
 ## Reliability, privacy, and security
 

@@ -102,7 +102,7 @@ When adding a feature, add executable coverage and update this matrix in the sam
 | `test/journal-evolution.test.ts` | New journal categories, evidence requirements, governed promotion |
 | `test/wiki.test.ts` | Wiki compilation determinism, lifecycle preservation, contradiction visibility, lint |
 | `test/workflow-transitions.test.ts` | Typed back-edges, budgets, bypass protection, restart recovery |
-| `test/fix-workflow.test.ts` | /fix end-to-end, immutable oracle, plan-hash gating, exhaustion |
+| `test/fix-workflow.test.ts` | /fix end-to-end, independent repro-review oracle, wrong-seam invalidation, failed self-retry, plan-hash gating, exhaustion |
 | `test/skills.test.ts` | Skill candidate lifecycle, quarantine, immutability, CLI |
 | `test/routing.test.ts` | Behavioral hash, record parsing, comparisons, routing report |
 | `test/migration.test.ts` | v0.4 → v0.5 database upgrade fixture |
