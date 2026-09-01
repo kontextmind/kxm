@@ -13,7 +13,7 @@ import type {
   WorkflowEvidenceReferenceInput,
 } from "./workflow.ts";
 
-const VERSION = "0.5.0";
+const VERSION = "0.5.1";
 const inbox = new Map<string, MessageRecord>();
 const notifiedInbox = new Set<string>();
 let meshClient: MeshClient | undefined;
