@@ -240,7 +240,9 @@ intake
 repro-explore
   ↓ typed diagnosis/test-plan artifact
 repro-write
-  ↓ verified failing Playwright test
+  ↓ failing production-coupled draft (diagnosis-named seam only)
+repro-review
+  ↓ two independent critics; sibling APIs invalid; oracle captured here
 plan
   ↓
 independent critics

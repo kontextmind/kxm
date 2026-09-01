@@ -2,6 +2,12 @@
 
 All notable user-facing changes are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Changed
+
+- `/fix` captures the immutable reproduction oracle only after independent two-critic `repro-review`. A sibling-API or newer-stack draft is invalid even if it fails. `repro-write` retries on `failed` instead of treating a wrong seam or `new DbContext()` as `blocked`.
+
 ## 0.5.0 - 2026-08-31
 
 KXM v0.5 extends the durable multi-agent communication/workflow plane into a **context operating system**. Everything is additive: existing v0.4 workflows, gates, telemetry, and CLI behavior are unchanged unless new context/transition features are enabled.
@@ -206,7 +212,3 @@ KXM v0.5 extends the durable multi-agent communication/workflow plane into a **c
 - Weak or edited reproductions against a `/fix` run are rejected (`weakened_reproduction`).
 - Promotion of temporal state and journal entries requires authorized, evidence-bound control-plane decisions; authors can never self-promote.
 - The authority lattice is documented in `docs/provenance-gates.md`; the skill lifecycle in `docs/skills.md`.
-
-## Unreleased
-
-- Nothing yet.

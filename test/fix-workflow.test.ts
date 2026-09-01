@@ -59,7 +59,7 @@ function pass(run_: WorkflowRun, stageId: string, evidence: Record<string, strin
   return checkpointRun(run_, stageId, "passed", `${stageId} ok`, evidence, at, verifiedEvidence);
 }
 
-/** Mirror the hub's run-creation policy resolution for the critics stage. */
+/** Mirror the hub's run-creation policy resolution for peer-reply stages. */
 function resolvePolicies(run_: WorkflowRun): WorkflowRun {
   for (const stage of run_.stages) {
     if (stage.evidencePolicies) {
@@ -76,7 +76,13 @@ function resolvePolicies(run_: WorkflowRun): WorkflowRun {
   return run_;
 }
 
-function peerSnapshot(run_: WorkflowRun, messageId: string, producer: string): NonNullable<Parameters<typeof checkpointRun>[6]>["critique"][number] {
+function peerSnapshot(
+  run_: WorkflowRun,
+  messageId: string,
+  producer: string,
+  stageId = "critics",
+  requirementKey = "critique",
+): NonNullable<Parameters<typeof checkpointRun>[6]>["critique"][number] {
   const at = "2026-01-01T00:10:00.000Z";
   return {
     schema: "pi-mesh.verified-peer-evidence.v1",
@@ -86,9 +92,9 @@ function peerSnapshot(run_: WorkflowRun, messageId: string, producer: string): N
     context: {
       schema: "pi-mesh.workflow-message-context.v1",
       runId: run_.id,
-      stageId: "critics",
-      requirementKey: "critique",
-      attempt: run_.stages.find((candidate) => candidate.id === "critics")!.attempts + 1,
+      stageId,
+      requirementKey,
+      attempt: run_.stages.find((candidate) => candidate.id === stageId)!.attempts + 1,
     },
     status: "replied" as const,
     requestSha256: createHash("sha256").update(`request-${messageId}`).digest("hex"),
@@ -100,12 +106,43 @@ function peerSnapshot(run_: WorkflowRun, messageId: string, producer: string): N
   } as never;
 }
 
+function reviewEvidence(run_: WorkflowRun, prefix: string) {
+  return {
+    review: [
+      peerSnapshot(run_, `${prefix}-c1`, "critic-1", "repro-review", "review"),
+      peerSnapshot(run_, `${prefix}-c2`, "critic-2", "repro-review", "review"),
+    ],
+  };
+}
+
+function critiqueEvidence(run_: WorkflowRun, prefix: string) {
+  return {
+    critique: [
+      peerSnapshot(run_, `${prefix}-c1`, "critic-1"),
+      peerSnapshot(run_, `${prefix}-c2`, "critic-2"),
+    ],
+  };
+}
+
+function captureOracle(testRun: WorkflowRun, step: () => string, prefix = "oracle") {
+  pass(testRun, "intake", { classification: "x" }, step());
+  pass(testRun, "repro-explore", { diagnosis: "d" }, step());
+  const draft = pass(testRun, "repro-write", { repro: REPRO }, step());
+  assert.equal(testRun.oracle, undefined);
+  assert.equal(draft.transition?.toStage, "repro-review");
+  const reviewed = pass(testRun, "repro-review", { repro: REPRO }, step(), reviewEvidence(testRun, prefix));
+  assert.equal(testRun.oracle?.evidenceKey, "repro");
+  assert.equal(testRun.oracle?.sha256, createHash("sha256").update(REPRO).digest("hex"));
+  assert.equal(reviewed.transition?.toStage, "plan");
+}
+
 test("the /fix definition encodes the full two-phase lifecycle with bounded rework", () => {
   const workflow = fixDefinition();
   assert.deepEqual(workflow.stages.map((stage) => stage.id), [
     "intake",
     "repro-explore",
     "repro-write",
+    "repro-review",
     "plan",
     "critics",
     "final-plan",
@@ -116,68 +153,58 @@ test("the /fix definition encodes the full two-phase lifecycle with bounded rewo
     "ci-watch",
     "ready-for-human-acceptance",
   ]);
-  assert.equal(workflow.maxTransitions, 24);
-  assert.deepEqual(workflow.reproOracle, { stageId: "repro-write", evidenceKey: "repro" });
+  assert.equal(workflow.maxTransitions, 28);
+  assert.deepEqual(workflow.reproOracle, { stageId: "repro-review", evidenceKey: "repro" });
   assert.deepEqual(workflow.planHash, { stageId: "final-plan", evidenceKey: "plan" });
   assert.deepEqual(workflow.requirePlanHash, ["delivery", "implement", "local-verify"]);
-  // Human approval is a security-area stage with a signoff requirement and
-  // no transitions may skip it (forward transitions target the next stage).
   const approval = workflow.stages.find((stage) => stage.id === "approval")!;
   assert.equal(approval.area, "security");
   assert.deepEqual(approval.requiredEvidence, ["signoff"]);
-  // Rework edges are declared and budgeted.
   const localVerify = workflow.stages.find((stage) => stage.id === "local-verify")!;
   assert.deepEqual(localVerify.on?.implementation_failure, { target: "implement" });
   assert.deepEqual(localVerify.on?.plan_invalidated, { target: "plan" });
   const ciWatch = workflow.stages.find((stage) => stage.id === "ci-watch")!;
   assert.deepEqual(ciWatch.on?.failure, { target: "implement" });
-  // Independent critics require two distinct producers.
+  const reproWrite = workflow.stages.find((stage) => stage.id === "repro-write")!;
+  assert.deepEqual(reproWrite.on?.failed, { target: "repro-write" });
+  assert.match(reproWrite.instructions, /diagnosis-named/);
+  assert.match(reproWrite.instructions, /blocked is only when the ticket is not a code defect/);
+  const reproReview = workflow.stages.find((stage) => stage.id === "repro-review")!;
+  assert.equal(reproReview.evidencePolicies?.review?.kind, "peer-reply");
+  assert.equal(reproReview.evidencePolicies?.review?.minProducers, 2);
+  assert.deepEqual(reproReview.on?.repro_invalidated, { target: "repro-write" });
   const critics = workflow.stages.find((stage) => stage.id === "critics")!;
   assert.equal(critics.evidencePolicies?.critique?.kind, "peer-reply");
   assert.equal(critics.evidencePolicies?.critique?.minProducers, 2);
+  assert.match(workflow.promptTemplate ?? "", /sibling API or newer stack is invalid/);
 });
 
-test("end-to-end fixture: reproduce, plan, approve, implement, verify, deliver, watch", () => {
+test("end-to-end fixture: reproduce, review, plan, approve, implement, verify, deliver, watch", () => {
   const testRun = run();
   let at = 0;
   const step = (): string => new Date(1_700_000_000_000 + (at += 60_000)).toISOString();
 
-  pass(testRun, "intake", { classification: "flaky CI worker cleanup" }, step());
-  pass(testRun, "repro-explore", { diagnosis: "worker rmSync races with child shutdown" }, step());
-  const reproWrite = pass(testRun, "repro-write", { repro: REPRO }, step());
-  // The oracle is captured when repro-write passes.
-  assert.equal(testRun.oracle?.evidenceKey, "repro");
-  assert.equal(testRun.oracle?.sha256, createHash("sha256").update(REPRO).digest("hex"));
-  assert.equal(reproWrite.transition?.toStage, "plan");
+  captureOracle(testRun, step, "e2e");
 
   pass(testRun, "plan", { plan: "initial plan" }, step());
-  // Critics require two distinct eligible producers; the engine verifies the
-  // hub-verified peer snapshots (quorum policy declared on the stage).
-  pass(testRun, "critics", {}, step(), { critique: [peerSnapshot(testRun, "msg_c1", "critic-1"), peerSnapshot(testRun, "msg_c2", "critic-2")] });
+  pass(testRun, "critics", {}, step(), critiqueEvidence(testRun, "e2e-plan"));
   const finalPlan = pass(testRun, "final-plan", { plan: PLAN }, step());
   assert.equal(testRun.planHash?.sha256, createHash("sha256").update(PLAN).digest("hex"));
   assert.equal(finalPlan.transition?.toStage, "approval");
-
-  // Implementation is blocked without the approved plan hash.
-  const testRun2 = run();
-  // (checked in the dedicated plan-hash test below)
 
   pass(testRun, "approval", { signoff: "human:eddie:ticket-42" }, step());
   pass(testRun, "implement", { diff: "worker cleanup retry", repro: REPRO }, step());
   assert.equal(testRun.currentStage, "local-verify");
 
-  // Local verify fails with implementation_failure -> bounded rework to implement.
   const rework = checkpointRun(testRun, "local-verify", "failed", "typecheck failed", { gates: "typecheck:failed" }, step(), {}, "implementation_failure");
   assert.equal(rework.transition?.toStage, "implement");
-  // Every declared edge is journaled: eight forward passes plus the rework.
-  assert.equal(testRun.transitions?.length, 9);
+  assert.equal(testRun.transitions?.length, 10);
   assert.deepEqual(
     testRun.transitions?.slice(-1).map((record) => `${record.fromStage}->${record.toStage}:${record.outcome}`),
     ["local-verify->implement:implementation_failure"],
   );
   assert.equal(testRun.stages.find((stage) => stage.id === "implement")!.status, "in_progress");
 
-  // Implement again (self-retry via default failure path is not needed; pass).
   pass(testRun, "implement", { diff: "worker cleanup retry v2", repro: REPRO }, step());
   pass(testRun, "local-verify", { gates: "unit:passed,lint:passed,typecheck:passed,build:passed,repro:passed" }, step());
   assert.equal(testRun.currentStage, "delivery");
@@ -185,7 +212,6 @@ test("end-to-end fixture: reproduce, plan, approve, implement, verify, deliver, 
   pass(testRun, "delivery", { mr: "mr!123" }, step());
   assert.equal(testRun.currentStage, "ci-watch");
 
-  // CI failure reworks through the bounded back-edge.
   const ciFailure = checkpointRun(testRun, "ci-watch", "failed", "windows CI red", { ci: "windows:failed" }, step(), {}, "failure");
   assert.equal(ciFailure.transition?.toStage, "implement");
   pass(testRun, "implement", { diff: "windows cleanup retry", repro: REPRO }, step());
@@ -198,30 +224,57 @@ test("end-to-end fixture: reproduce, plan, approve, implement, verify, deliver, 
   assert.equal(final.completed, true);
   assert.equal(final.transition?.toStage, "$terminal");
   assert.equal(testRun.status, "completed");
-  // Claim-to-evidence receipt: the run journal carries the oracle, plan hash,
-  // and every transition with source stage, attempt, and outcome. The two
-  // back-edges appear in the durable journal among the forward passes.
   assert.equal(testRun.oracle?.evidenceKey, "repro");
   assert.equal(testRun.planHash?.sha256, createHash("sha256").update(PLAN).digest("hex"));
   const backEdges = testRun.transitions?.filter((record) => record.outcome === "implementation_failure" || record.outcome === "failure")
     .map((record) => `${record.fromStage}->${record.toStage}:${record.outcome}`);
   assert.deepEqual(backEdges, ["local-verify->implement:implementation_failure", "ci-watch->implement:failure"]);
-  assert.equal(testRun.transitions?.length, 18);
+  assert.equal(testRun.transitions?.length, 19);
+});
+
+test("a wrong-seam draft is invalidated and failed retries stay on repro-write", () => {
+  const testRun = run();
+  let at = 0;
+  const step = (): string => new Date(1_700_000_000_000 + (at += 60_000)).toISOString();
+  pass(testRun, "intake", { classification: "x" }, step());
+  pass(testRun, "repro-explore", { diagnosis: "legacy GetProductsBySchool" }, step());
+  pass(testRun, "repro-write", { repro: REPRO }, step());
+  assert.equal(testRun.oracle, undefined);
+  const invalidated = checkpointRun(
+    testRun,
+    "repro-review",
+    "failed",
+    "sibling API is not the reporter path",
+    { repro: REPRO, review: "invalid" },
+    step(),
+    reviewEvidence(testRun, "invalid"),
+    "repro_invalidated",
+  );
+  assert.equal(invalidated.transition?.toStage, "repro-write");
+  assert.equal(testRun.currentStage, "repro-write");
+  assert.equal(testRun.oracle, undefined);
+
+  const retry = checkpointRun(testRun, "repro-write", "failed", "rewrite against named seam", { repro: "draft-incomplete" }, step(), {}, "failed");
+  assert.equal(retry.transition?.toStage, "repro-write");
+  assert.equal(testRun.currentStage, "repro-write");
+  assert.equal(testRun.status, "running");
+
+  pass(testRun, "repro-write", { repro: REPRO }, step());
+  pass(testRun, "repro-review", { repro: REPRO }, step(), reviewEvidence(testRun, "valid"));
+  assert.equal(testRun.oracle?.sha256, createHash("sha256").update(REPRO).digest("hex"));
+  assert.equal(testRun.currentStage, "plan");
 });
 
 test("a weakened or edited original reproduction is rejected", () => {
   const testRun = run();
   let at = 0;
   const step = (): string => new Date(1_700_000_000_000 + (at += 60_000)).toISOString();
-  pass(testRun, "intake", { classification: "x" }, step());
-  pass(testRun, "repro-explore", { diagnosis: "d" }, step());
-  pass(testRun, "repro-write", { repro: REPRO }, step());
+  captureOracle(testRun, step, "weak");
   pass(testRun, "plan", { plan: "p" }, step());
-  pass(testRun, "critics", {}, step(), { critique: [peerSnapshot(testRun, "msg_w1", "critic-1"), peerSnapshot(testRun, "msg_w2", "critic-2")] });
+  pass(testRun, "critics", {}, step(), critiqueEvidence(testRun, "weak"));
   pass(testRun, "final-plan", { plan: PLAN }, step());
   pass(testRun, "approval", { signoff: "human:eddie" }, step());
 
-  // Implementing against a weakened reproduction fails closed.
   assert.throws(
     () => checkpointRun(testRun, "implement", "passed", "cheat", { diff: "d", repro: REPRO_WEAKENED }, step()),
     (error: unknown) => {
@@ -230,9 +283,6 @@ test("a weakened or edited original reproduction is rejected", () => {
       return true;
     },
   );
-  // Omitting the repro key entirely also fails: implementation requires the
-  // plan hash AND the run's oracle is only satisfiable by the same value.
-  // The honest path still works.
   pass(testRun, "implement", { diff: "real fix", repro: REPRO }, step());
   assert.equal(testRun.currentStage, "local-verify");
 });
@@ -241,12 +291,9 @@ test("implementation requires an approved plan hash", () => {
   const testRun = run();
   let at = 0;
   const step = (): string => new Date(1_700_000_000_000 + (at += 60_000)).toISOString();
-  pass(testRun, "intake", { classification: "x" }, step());
-  pass(testRun, "repro-explore", { diagnosis: "d" }, step());
-  pass(testRun, "repro-write", { repro: REPRO }, step());
+  captureOracle(testRun, step, "hash");
   pass(testRun, "plan", { plan: "p" }, step());
-  pass(testRun, "critics", {}, step(), { critique: [peerSnapshot(testRun, "msg_h1", "critic-1"), peerSnapshot(testRun, "msg_h2", "critic-2")] });
-  // final-plan has NOT passed: no approved plan hash exists.
+  pass(testRun, "critics", {}, step(), critiqueEvidence(testRun, "hash"));
   assert.equal(testRun.planHash, undefined);
   assert.throws(
     () => checkpointRun(testRun, "approval", "passed", "premature", { signoff: "human" }, step()),
@@ -255,9 +302,6 @@ test("implementation requires an approved plan hash", () => {
       return true;
     },
   );
-  // approval itself is not in requirePlanHash; the gate applies to
-  // implement/local-verify/delivery. Drive to approval properly and confirm
-  // implement is blocked before final-plan.
   pass(testRun, "final-plan", { plan: PLAN }, step());
   pass(testRun, "approval", { signoff: "human:eddie" }, step());
   assert.ok(testRun.planHash);
@@ -268,21 +312,17 @@ test("plan-invalidating discoveries route back to planning, not scope creep", ()
   const testRun = run();
   let at = 0;
   const step = (): string => new Date(1_700_000_000_000 + (at += 60_000)).toISOString();
-  pass(testRun, "intake", { classification: "x" }, step());
-  pass(testRun, "repro-explore", { diagnosis: "d" }, step());
-  pass(testRun, "repro-write", { repro: REPRO }, step());
+  captureOracle(testRun, step, "inv");
   pass(testRun, "plan", { plan: "p1" }, step());
-  pass(testRun, "critics", {}, step(), { critique: [peerSnapshot(testRun, "msg_i1", "critic-1"), peerSnapshot(testRun, "msg_i2", "critic-2")] });
+  pass(testRun, "critics", {}, step(), critiqueEvidence(testRun, "inv1"));
   pass(testRun, "final-plan", { plan: PLAN }, step());
   pass(testRun, "approval", { signoff: "human:eddie" }, step());
   pass(testRun, "implement", { diff: "fix", repro: REPRO }, step());
-  // local-verify discovers the plan was invalidated.
   const invalidated = checkpointRun(testRun, "local-verify", "failed", "plan was wrong", { gates: "repro:passed,scope:violated" }, step(), {}, "plan_invalidated");
   assert.equal(invalidated.transition?.toStage, "plan");
   assert.equal(testRun.currentStage, "plan");
-  // Re-planning and re-approval are required before implementation again.
   pass(testRun, "plan", { plan: "p2" }, step());
-  pass(testRun, "critics", {}, step(), { critique: [peerSnapshot(testRun, "msg_j1", "critic-1"), peerSnapshot(testRun, "msg_j2", "critic-2")] });
+  pass(testRun, "critics", {}, step(), critiqueEvidence(testRun, "inv2"));
   pass(testRun, "final-plan", { plan: PLAN }, step());
   pass(testRun, "approval", { signoff: "human:eddie:again" }, step());
   assert.equal(testRun.currentStage, "implement");
@@ -292,31 +332,25 @@ test("max-transition exhaustion fails the run safely with retrospective evidence
   const testRun = run();
   let at = 0;
   const step = (): string => new Date(1_700_000_000_000 + (at += 60_000)).toISOString();
-  pass(testRun, "intake", { classification: "x" }, step());
-  pass(testRun, "repro-explore", { diagnosis: "d" }, step());
-  pass(testRun, "repro-write", { repro: REPRO }, step());
+  captureOracle(testRun, step, "exh");
   pass(testRun, "plan", { plan: "p" }, step());
-  pass(testRun, "critics", {}, step(), { critique: [peerSnapshot(testRun, "msg_r1", "critic-1"), peerSnapshot(testRun, "msg_r2", "critic-2")] });
+  pass(testRun, "critics", {}, step(), critiqueEvidence(testRun, "exh"));
   pass(testRun, "final-plan", { plan: PLAN }, step());
   pass(testRun, "approval", { signoff: "human:eddie" }, step());
-  // Nine full rework cycles consume the entire global budget (24
-  // transitions: 6 forward passes to reach implement, then
-  // implement->local-verify and the implementation_failure back-edge per
-  // cycle).
-  for (let cycle = 0; cycle < 9; cycle += 1) {
+  // Eight forward passes reach implement (intake → approval, including repro-review).
+  // Each implement→local-verify plus implementation_failure back-edge consumes 2.
+  // 8 + 10*2 = 28 recorded transitions; the next implement pass hits the budget.
+  for (let cycle = 0; cycle < 10; cycle += 1) {
     pass(testRun, "implement", { diff: `fix v${cycle}`, repro: REPRO }, step());
     const attempt = checkpointRun(testRun, "local-verify", "failed", "still red", { gates: "typecheck:failed" }, step(), {}, "implementation_failure");
-    if (cycle < 8) {
-      assert.equal(attempt.exhausted, undefined);
-    } else {
-      // The budget-bound back-edge exhausts: the run fails safely instead of
-      // looping unbounded.
-      assert.equal(attempt.exhausted, true);
-    }
+    assert.equal(attempt.exhausted, undefined);
   }
+  assert.equal(testRun.transitions?.length, 28);
+  const exhausted = checkpointRun(testRun, "implement", "passed", "over budget", { diff: "fix v10", repro: REPRO }, step());
+  assert.equal(exhausted.exhausted, true);
   assert.equal(testRun.status, "failed");
   assert.equal(testRun.currentStage, undefined);
-  assert.equal(testRun.transitions?.length, 24);
+  assert.equal(testRun.transitions?.length, 28);
 });
 
 test("oracle and plan hash survive restart durability", async () => {
@@ -330,11 +364,9 @@ test("oracle and plan hash survive restart durability", async () => {
     const testRun = run();
     let at = 0;
     const step = (): string => new Date(1_700_000_000_000 + (at += 60_000)).toISOString();
-    pass(testRun, "intake", { classification: "x" }, step());
-    pass(testRun, "repro-explore", { diagnosis: "d" }, step());
-    pass(testRun, "repro-write", { repro: REPRO }, step());
+    captureOracle(testRun, step, "store");
     pass(testRun, "plan", { plan: "p" }, step());
-    pass(testRun, "critics", {}, step(), { critique: [peerSnapshot(testRun, "msg_s1", "critic-1"), peerSnapshot(testRun, "msg_s2", "critic-2")] });
+    pass(testRun, "critics", {}, step(), critiqueEvidence(testRun, "store"));
     pass(testRun, "final-plan", { plan: PLAN }, step());
     const first = new MeshStore(path);
     first.saveWorkflowRun(testRun);
