@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { runCli as runCliImplementation, type CliIo } from "../plugins/kxm-mesh/src/cli.ts";
+import { vnextLocalBindingFile } from "../plugins/kxm-mesh/src/vnext-bindings.ts";
 
 async function runCli(argv: string[], env: NodeJS.ProcessEnv, io: CliIo, cwd = process.cwd()): Promise<number> {
   const isolatedLogs = mkdtempSync(join(tmpdir(), "kxm-cli-telemetry-"));
@@ -150,6 +151,53 @@ test("vNext init creates and revalidates project configuration without legacy en
     assert.match(legacyIo.read().stdout, /"plannedOnly":true/);
   } finally {
     for (const root of [cwd, dryCwd, legacyCwd]) rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("vNext init joins with repeated CLI member bindings stored outside Git", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "kxm-vnext-cli-join-"));
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-vnext-cli-state-"));
+  try {
+    cpSync(resolve("examples/vnext"), cwd, { recursive: true });
+    makeGitRoot(cwd);
+    makeGitRoot(join(cwd, "repositories", "api"));
+    makeGitRoot(join(cwd, "repositories", "web"));
+    const projectFile = join(cwd, ".kxm", "project.yaml");
+    const project = readFileSync(projectFile, "utf8").replace("    pathHint: repositories/api\n", "");
+    writeFileSync(projectFile, project);
+    const api = join(cwd, "repositories", "api");
+    const env = { KXM_STATE_HOME: stateRoot };
+
+    const malformed = capture();
+    assert.equal(await runCli(["init", "--json", "--repository", "api"], env, malformed, cwd), 1);
+    assert.match(malformed.read().stdout, /repository_binding_argument_invalid/);
+    const duplicate = capture();
+    assert.equal(await runCli([
+      "init", "--json", "--repository", `api=${api}`, "--repository", `api=${api}`,
+    ], env, duplicate, cwd), 1);
+    assert.match(duplicate.read().stdout, /repository_binding_argument_duplicate/);
+
+    const joinedIo = capture();
+    assert.equal(await runCli(["init", "--json", "--repository", `api=${api}`], env, joinedIo, cwd), 0);
+    const joined = JSON.parse(joinedIo.read().stdout) as {
+      action: string;
+      localBindingFile: string;
+      bindingsChanged: boolean;
+    };
+    assert.equal(joined.action, "joined");
+    assert.equal(joined.bindingsChanged, true);
+    assert.match(joined.localBindingFile, /repository-bindings\.json$/);
+    assert.equal(existsSync(vnextLocalBindingFile(cwd, { stateRoot })), true);
+    assert.equal(readFileSync(projectFile, "utf8"), project, "join must not rewrite Git configuration");
+
+    const repeatedIo = capture();
+    assert.equal(await runCli(["init", "--json"], env, repeatedIo, cwd), 0);
+    const repeated = JSON.parse(repeatedIo.read().stdout) as { action: string; localBindingFile: string };
+    assert.equal(repeated.action, "validated");
+    assert.equal(repeated.localBindingFile, joined.localBindingFile);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(stateRoot, { recursive: true, force: true });
   }
 });
 

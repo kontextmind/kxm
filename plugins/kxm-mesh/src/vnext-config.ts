@@ -245,6 +245,7 @@ export class VnextSchemaRegistry {
   readonly schemasDir: string;
   readonly ajv: Ajv2020;
   readonly validators = new Map<VnextResourceKind, ValidateFunction>();
+  readonly localBindingsValidator: ValidateFunction;
 
   constructor(schemasDir = DEFAULT_SCHEMA_DIR) {
     this.schemasDir = resolve(schemasDir);
@@ -254,11 +255,16 @@ export class VnextSchemaRegistry {
     for (const definition of Object.values(RESOURCE_SCHEMA)) {
       this.ajv.addSchema(readJsonObject(join(this.schemasDir, definition.file)));
     }
+    const localBindingsFile = "local-repository-bindings.schema.json";
+    this.ajv.addSchema(readJsonObject(join(this.schemasDir, localBindingsFile)));
     for (const [kind, definition] of Object.entries(RESOURCE_SCHEMA) as [VnextResourceKind, { identity: string; file: string }][]) {
       const validator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${definition.file}`);
       if (!validator) throw new Error(`schema did not compile: ${definition.file}`);
       this.validators.set(kind, validator);
     }
+    const localBindingsValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${localBindingsFile}`);
+    if (!localBindingsValidator) throw new Error(`schema did not compile: ${localBindingsFile}`);
+    this.localBindingsValidator = localBindingsValidator;
   }
 
   validate(kind: VnextResourceKind, value: JsonObject, file: string): VnextConfigIssue[] {
@@ -270,6 +276,14 @@ export class VnextSchemaRegistry {
     if (!validator) throw new Error(`missing vNext validator for ${kind}`);
     if (validator(value)) return [];
     return (validator.errors ?? []).map((error) => schemaIssue(file, error));
+  }
+
+  validateLocalBindings(value: JsonObject, file: string): VnextConfigIssue[] {
+    if (value.schema !== "kxm.local-repository-bindings.v1") {
+      return [issue("schema", "schema_identity_mismatch", file, `expected kxm.local-repository-bindings.v1, received ${String(value.schema)}`)];
+    }
+    if (this.localBindingsValidator(value)) return [];
+    return (this.localBindingsValidator.errors ?? []).map((error) => schemaIssue(file, error));
   }
 }
 
@@ -1010,6 +1024,16 @@ export function loadVnextProject(projectRoot: string, options: VnextConfigOption
   const project = readResource(registry, root, join(root, ".kxm", "project.yaml"), ".kxm/project.yaml", "project");
   const earlyIssues: VnextConfigIssue[] = [];
   validatePortablePaths(project, earlyIssues);
+  const declaredRepositoryIds = new Set(valuesOf(project.value, "repositories")
+    .map((candidate) => stringValue(objectValue(candidate)?.id))
+    .filter((candidate): candidate is string => candidate !== undefined));
+  for (const repositoryId of Object.keys(options.repositoryBindings ?? {}).sort(compareCodeUnits)) {
+    if (!resourceIdentifier(repositoryId)) {
+      earlyIssues.push(issue("path", "repository_binding_id_invalid", ".kxm/project.yaml", `host-local binding identity ${repositoryId} is invalid`));
+    } else if (!declaredRepositoryIds.has(repositoryId)) {
+      earlyIssues.push(issue("reference", "repository_binding_unknown", ".kxm/project.yaml", `host-local binding references unknown repository ${repositoryId}`));
+    }
+  }
   if (earlyIssues.length > 0) throw new VnextConfigError(earlyIssues);
 
   const agents = listNamedResources(registry, root, join(root, ".kxm", "agents"), ".kxm/agents", "agent");
@@ -1034,8 +1058,9 @@ export function loadVnextProject(projectRoot: string, options: VnextConfigOption
     const required = entry?.required !== false;
     if (!repositoryId) continue;
 
+    const hasLocalBinding = Object.hasOwn(options.repositoryBindings ?? {}, repositoryId);
     const localBinding = options.repositoryBindings?.[repositoryId];
-    if (localBinding && !isAbsolute(localBinding)) {
+    if (hasLocalBinding && (!localBinding || !isAbsolute(localBinding))) {
       loadIssues.push(issue("path", "repository_binding_not_absolute", ".kxm/project.yaml", `host-local binding for ${repositoryId} must be absolute`));
       continue;
     }
@@ -1047,14 +1072,14 @@ export function loadVnextProject(projectRoot: string, options: VnextConfigOption
       loadIssues.push(issue("path", "control_repository_path_invalid", ".kxm/project.yaml", `control repository ${repositoryId} must use pathHint .`));
       continue;
     }
-    if (!localBinding && role !== "control" && pathHint && portablePath(pathHint)) {
+    if (!hasLocalBinding && role !== "control" && pathHint && portablePath(pathHint)) {
       const pathIssue = portableBindingIssue(root, pathHint, repositoryId);
       if (pathIssue) {
         loadIssues.push(pathIssue);
         continue;
       }
     }
-    const binding = localBinding
+    const binding = hasLocalBinding && localBinding
       ? resolve(localBinding)
       : role === "control"
         ? root
@@ -1066,7 +1091,7 @@ export function loadVnextProject(projectRoot: string, options: VnextConfigOption
       continue;
     }
     if (!existsSync(binding)) {
-      if (required) loadIssues.push(issue("discovery", "repository_binding_unavailable", ".kxm/project.yaml", `required repository binding ${repositoryId} is unavailable`));
+      if (required || hasLocalBinding) loadIssues.push(issue("discovery", "repository_binding_unavailable", ".kxm/project.yaml", `${hasLocalBinding ? "explicit" : "required"} repository binding ${repositoryId} is unavailable`));
       continue;
     }
     const bindingStat = lstatSync(binding);
@@ -1103,8 +1128,8 @@ export function loadVnextProject(projectRoot: string, options: VnextConfigOption
         if (error instanceof VnextConfigError) loadIssues.push(...error.issues);
         else throw error;
       }
-    } else if (required) {
-      loadIssues.push(issue("discovery", "repository_definition_missing", `.kxm/repositories/${repositoryId}/repo.yaml`, `required repository ${repositoryId} has no repo.yaml`));
+    } else if (required || hasLocalBinding) {
+      loadIssues.push(issue("discovery", "repository_definition_missing", `.kxm/repositories/${repositoryId}/repo.yaml`, `${hasLocalBinding ? "explicit" : "required"} repository ${repositoryId} has no repo.yaml`));
     }
     const environmentFile = join(binding, ".kxm", "repo", "env.yaml");
     if (existsSync(environmentFile)) {

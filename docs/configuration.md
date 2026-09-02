@@ -2,6 +2,29 @@
 
 Pi Mesh Comms uses environment variables for the hub and Pi extension. The Claude Code plugin maps its settings to the same client values.
 
+## vNext local project settings
+
+Root `kxm init` discovers the control Git worktree and does not use legacy
+`PI_MESH_*` workspace overrides. A cloned multi-repository project can bind a
+member repository with a repeatable host-local argument:
+
+```text
+kxm init --repository api=/absolute/path/to/api
+```
+
+KXM validates the entire project and exact member Git identity before writing a
+bounded `kxm.local-repository-bindings.v1` record outside the project. The
+default record location is:
+
+- Windows: `%LOCALAPPDATA%\KXM\projects\<control-root-hash>\repository-bindings.json`;
+- macOS: `~/Library/Application Support/KXM/projects/<control-root-hash>/repository-bindings.json`;
+- Linux: `$XDG_STATE_HOME/kxm/projects/<control-root-hash>/repository-bindings.json`, falling back to `~/.local/state/kxm`.
+
+`KXM_STATE_HOME` may override the KXM state root with an absolute path for
+managed installations and tests. Relative overrides fail closed. Absolute
+repository paths never enter Git configuration, and `--dry-run` validates and
+reports whether bindings would change without creating local state.
+
 ## Hub settings
 
 | Variable | Default | Description |
@@ -158,7 +181,7 @@ The tool allowlist is a capability boundary inside Pi, not a prompt suggestion â
 
 | Command | Purpose |
 |---|---|
-| `kxm init` | In an uninitialized Git worktree, atomically create the minimal vNext `project`, `repository`, `agent`, and `default` workflow YAML resources after full validation. Repeated use validates without rewriting. `--dry-run` classifies state and validates new-project inputs without writing. Legacy, mixed legacy/vNext, or invalid partial state is reported without conversion or overwrite. This configuration slice does **not** activate a vNext Runtime |
+| `kxm init` | Atomically create a minimal vNext project, validate it without rewriting, or join an existing clone with repeatable `--repository <id=absolute-path>` member bindings stored outside Git. `--dry-run` performs no writes. Legacy, mixed, and invalid partial state remains planning-only. These configuration slices do **not** activate a vNext Runtime |
 | `kxm agent worker` | Start a long-lived Pi worker. Use `--session-isolation workflow` to enable per-workflow Pi contexts; the upgrade-compatible default is `off`. Does not read a workspace `agents.json`; pass `--model`, `--tools`, and related flags explicitly |
 | `kxm session start --id <id> (--mix a,b \| --workflow <definitionId>)` | Write a `kxm.session.v1` manifest under `.kxm/assets/sessions/<id>/` and create asset directories. **Does not start any process.** `--workflow` records the whole roster, not the definition's participants |
 | `kxm session status` | Show PID claim files and recovery envelopes under `.kxm/state`; does not read `session.json` |
@@ -181,7 +204,7 @@ Improvement telemetry is classified as `project` whenever a project or workflow 
 
 The gate group contains exactly the five implemented gates listed above. Names declared in a workspace `gates.json` that do not map to one of them (for example `quality`, `git-commit`, `jira-fetch`) are records with no runner; there is no `kxm gate run <name>`.
 
-Global flags: `--json`, `--dry-run`, `--workspace`. Project-root `kxm init` discovers from the current directory, rejects `--workspace`, and intentionally ignores legacy `PI_MESH_*` workspace overrides; `--workspace` continues to scope current hub commands. `kxm workflow start <definitionId> --payload <JSON|@file>` creates a signed webhook delivery. With an active definition source, start, signal, and GitHub watch resolve that definition's `secretEnv` / `signalSecretEnv`; when no separate signal secret is declared, callbacks use the workflow-start secret, matching the hub. Generic credential variables are used only when no active definition source is configured. `--dry-run` never appends telemetry. Non-dry-run gate evidence and summaries are written to the protected telemetry JSONL after configured-value redaction; do not place unnecessary sensitive text in evidence. `kxm gate degrade` requires `PI_MESH_AUTH_TOKEN` to contain the administrative token; use `--dry-run --json` first and never put a secret in its reason. `kxm agent worker --name <name> --project <project>` and `kxm mesh hub` honor the same workspace flag. `--no-continue` disables every session resume; `--fresh-start` skips only the initial resume. `--session-isolation workflow` enables isolated contexts and starts a fresh scoped default history on first use; `--session-isolation off` is the upgrade-compatible default and keeps the former shared Pi history. GitHub watch posts an exact signed `failed` signal on timeout and exits `4`, preserving the distinction from a successful gate.
+Global flags: `--json`, `--dry-run`, `--workspace`. Project-root `kxm init` discovers from the current directory, rejects `--workspace`, and intentionally ignores legacy `PI_MESH_*` workspace overrides; `--workspace` continues to scope current hub commands. Root init accepts repeated `--repository <id=absolute-path>` member bindings and uses the platform-local state root described above. `kxm workflow start <definitionId> --payload <JSON|@file>` creates a signed webhook delivery. With an active definition source, start, signal, and GitHub watch resolve that definition's `secretEnv` / `signalSecretEnv`; when no separate signal secret is declared, callbacks use the workflow-start secret, matching the hub. Generic credential variables are used only when no active definition source is configured. `--dry-run` never appends telemetry. Non-dry-run gate evidence and summaries are written to the protected telemetry JSONL after configured-value redaction; do not place unnecessary sensitive text in evidence. `kxm gate degrade` requires `PI_MESH_AUTH_TOKEN` to contain the administrative token; use `--dry-run --json` first and never put a secret in its reason. `kxm agent worker --name <name> --project <project>` and `kxm mesh hub` honor the same workspace flag. `--no-continue` disables every session resume; `--fresh-start` skips only the initial resume. `--session-isolation workflow` enables isolated contexts and starts a fresh scoped default history on first use; `--session-isolation off` is the upgrade-compatible default and keeps the former shared Pi history. GitHub watch posts an exact signed `failed` signal on timeout and exits `4`, preserving the distinction from a successful gate.
 
 ## Webhook workflow settings
 

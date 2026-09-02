@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -130,6 +130,41 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
     ], { cwd: invalidDryRun, encoding: "utf8" });
     assert.equal(invalidProvisioning.status, 1, `${invalidProvisioning.stderr}\n${invalidProvisioning.stdout}`);
     assert.match(invalidProvisioning.stdout, /project_id_invalid/);
+
+    const packedMember = join(consumer, "packed-api");
+    const packedState = join(consumer, "kxm-state");
+    mkdirSync(packedMember);
+    makeGitRoot(packedMember);
+    mkdirSync(join(packedMember, ".kxm", "repo"), { recursive: true });
+    writeFileSync(join(packedMember, ".kxm", "repo", "repo.yaml"), [
+      "schema: kxm.repository.v1",
+      "projectId: prj_01JPACKEDPROJECT00000000000",
+      "repositoryId: api",
+      "defaultAccess: write",
+      "",
+    ].join("\n"));
+    const joinProjectYaml = packedProjectYaml.replace(
+      "    pathHint: .\n",
+      "    pathHint: .\n  - id: api\n    role: member\n    required: true\n",
+    );
+    writeFileSync(packedProjectFile, joinProjectYaml);
+    const joinEnvironment = { ...process.env, KXM_STATE_HOME: packedState };
+    const packedJoin = spawnSync(process.execPath, [
+      join(packageRoot, "scripts", "kxm.mjs"), "init", "--json", "--repository", `api=${packedMember}`,
+    ], { cwd: vnextProject, encoding: "utf8", env: joinEnvironment });
+    assert.equal(packedJoin.status, 0, `${packedJoin.stderr}\n${packedJoin.stdout}`);
+    const packedJoinPayload = JSON.parse(packedJoin.stdout) as { action: string; localBindingFile: string };
+    assert.equal(packedJoinPayload.action, "joined");
+    assert.match(packedJoinPayload.localBindingFile, /repository-bindings\.json$/);
+    const packedProjectStateDirs = readdirSync(join(packedState, "projects"));
+    assert.equal(packedProjectStateDirs.length, 1);
+    assert.equal(existsSync(join(packedState, "projects", packedProjectStateDirs[0]!, "repository-bindings.json")), true);
+    assert.equal(readFileSync(packedProjectFile, "utf8"), joinProjectYaml);
+    const packedJoinRepeated = spawnSync(process.execPath, [
+      join(packageRoot, "scripts", "kxm.mjs"), "init", "--json",
+    ], { cwd: vnextProject, encoding: "utf8", env: joinEnvironment });
+    assert.equal(packedJoinRepeated.status, 0, `${packedJoinRepeated.stderr}\n${packedJoinRepeated.stdout}`);
+    assert.match(packedJoinRepeated.stdout, /"action":"validated"/);
 
     const globalInstall = runNpm([
       "install",
