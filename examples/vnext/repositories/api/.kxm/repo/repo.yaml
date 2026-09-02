@@ -1,0 +1,8 @@
+schema: kxm.repository.v1
+projectId: prj_01JPROJECT00000000000000000
+repositoryId: api
+description: Payments API and background workers.
+ecosystems:
+  - dotnet
+classification: sensitive
+defaultAccess: read

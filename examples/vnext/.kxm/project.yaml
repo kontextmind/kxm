@@ -1,0 +1,31 @@
+schema: kxm.project.v1
+id: prj_01JPROJECT00000000000000000
+name: Payments Platform
+description: Example control project with API and web member repositories.
+defaultWorkflow: default
+defaultExecutor: local
+repositories:
+  - id: control
+    role: control
+    required: true
+    pathHint: .
+  - id: api
+    role: member
+    required: true
+    remoteIdentity: ssh://git.example.test/payments/api.git
+    pathHint: repositories/api
+  - id: web
+    role: member
+    required: true
+    remoteIdentity: ssh://git.example.test/payments/web.git
+    pathHint: repositories/web
+workspace:
+  dirtySnapshot:
+    untracked: bounded
+    maxUntrackedFileBytes: 26214400
+    maxUntrackedTotalBytes: 262144000
+    dirtySubmodules: fail
+limits:
+  maxConcurrentRuns: 4
+  maxRunDurationMs: 28800000
+  maxAgentTimeMs: 57600000

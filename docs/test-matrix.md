@@ -52,6 +52,8 @@ npm run validate
 | Atomic workflow transition commit and rollback | `test/store.test.ts` |
 | Pi and Claude workflow/journal tools, workflow-context sends, and peer-reference checkpoints/waits | `test/extension.test.ts`, `test/mcp.test.ts` |
 | Package and marketplace version consistency | `scripts/check-versions.mjs` |
+| Planned vNext schemas, restricted YAML fixtures, cross-resource semantics, and sync-safe rejection | `test/contracts-vnext.test.ts` |
+| Production vNext restricted loader, deterministic bundle hashing, discovery, fail-closed semantics, init classification, atomic creation, CLI isolation, and idempotence | `test/vnext-config.test.ts`, `test/cli.test.ts` |
 
 The CI minimums are 95% lines, 80% branches, and 90% functions across the measured transport/workflow core sources explicitly listed in `package.json`. TUI rendering, session/roster helpers, envelope construction, telemetry, and proposed-report formatting have executable feature tests but are intentionally outside that aggregate percentage; their generated or packed entry points remain exercised by integration tests. The generated MCP runtime is exercised as a child process, while the packed CLI and hub are installed in a clean consumer and exercised from `node_modules`.
 

@@ -18,6 +18,8 @@ import { behavioralConfigHash, compareRoutingRecords, groupByBehavior } from "./
 import { createSession, loadNamedWorkers, rosterNames, sessionAssetDirs, standardAssetDirs, workflowAssetDirs, writeSession } from "./session.ts";
 import { buildImprovementReport, writeImprovementReport } from "./improve.ts";
 import { runMeshTui } from "./tui.ts";
+import { VnextConfigError, type VnextInitializationPlan } from "./vnext-config.ts";
+import { initializeVnextProject } from "./vnext-init.ts";
 import type { WorkflowEvidenceInput, WorkflowJournalEntry, WorkflowRun } from "./workflow.ts";
 
 export interface CliIo {
@@ -59,6 +61,7 @@ interface GlobalOpts {
 }
 
 interface Runtime extends CliContext, Required<Pick<GlobalOpts, "json" | "dryRun">> {
+  workspaceFlag?: string;
   dirs: ReturnType<typeof workspaceDirs>;
   serverUrl: string;
   fetchImpl: typeof fetch;
@@ -156,8 +159,9 @@ function redactCliValue(value: unknown, field = ""): unknown {
         || field === "workflowDefinitionSha256"
         || field === "verifierConfigSha256"
         || field === "rolePromptSha256"
-        || field === "contentSha256")
-      && /^[a-f0-9]{64}$/.test(value)
+        || field === "contentSha256"
+        || field === "configRevision")
+      && /^(?:sha256:)?[a-f0-9]{64}$/.test(value)
     ) return value;
     return redactSecrets(value);
   }
@@ -332,6 +336,7 @@ function runtimeFrom(ctx: CliContext, command: Command): Runtime {
     ...ctx,
     json: Boolean(opts.json),
     dryRun: Boolean(opts.dryRun),
+    ...(opts.workspace === undefined ? {} : { workspaceFlag: opts.workspace }),
     dirs: workspaceDirs(ctx.cwd, opts.workspace, ctx.env),
     serverUrl: ctx.env.PI_MESH_SERVER_URL?.trim() || "http://127.0.0.1:7331",
     fetchImpl: ctx.io.fetchImpl ?? fetch,
@@ -383,6 +388,79 @@ function reportWorkflowConfigError(runtime: Runtime, error: unknown): number {
   const message = error instanceof Error ? redactSecrets(error.message) : "invalid workflow configuration";
   runtime.io.stderr(`${message}\n`);
   return 2;
+}
+
+function initPlanPayload(plan: VnextInitializationPlan): Record<string, unknown> {
+  return {
+    mode: plan.mode,
+    inspectedFrom: plan.inspectedFrom,
+    ...(plan.projectRoot ? { projectRoot: plan.projectRoot } : {}),
+    ...(plan.legacyRoot ? { legacyRoot: plan.legacyRoot } : {}),
+    changesRequired: plan.changesRequired,
+    legacyInputs: plan.legacyInputs,
+    issues: plan.issues,
+    ...(plan.configRevision ? { configRevision: plan.configRevision } : {}),
+  };
+}
+
+async function cmdVnextInit(runtime: Runtime, options: { name?: string; projectId?: string }): Promise<number> {
+  if (runtime.workspaceFlag !== undefined) {
+    print(runtime.io, runtime.json, {
+      ok: false,
+      command: "init",
+      error: "workspace_option_unsupported",
+    }, "kxm init discovers the authoritative Git root from the current directory; --workspace is not supported");
+    return 2;
+  }
+  try {
+    const initialized = initializeVnextProject(runtime.cwd, {
+      ...(options.name?.trim() ? { projectName: options.name.trim() } : {}),
+      ...(options.projectId?.trim() ? { projectId: options.projectId.trim() } : {}),
+      dryRun: runtime.dryRun,
+    });
+    const payload = {
+      ok: initialized.action !== "planned" || runtime.dryRun,
+      command: "init",
+      action: initialized.action,
+      ...initPlanPayload(initialized.plan),
+      files: initialized.files,
+      ...(initialized.configRevision ? { configRevision: initialized.configRevision } : {}),
+      plannedOnly: initialized.action === "planned",
+    };
+    if (initialized.action === "created") {
+      print(runtime.io, runtime.json, payload, `initialized vNext project at ${initialized.projectRoot ?? runtime.cwd}`);
+      return 0;
+    }
+    if (initialized.action === "validated") {
+      print(runtime.io, runtime.json, payload, `validated vNext project at ${initialized.projectRoot ?? runtime.cwd}`);
+      return 0;
+    }
+    if (runtime.dryRun) {
+      print(runtime.io, runtime.json, payload, `init plan: ${initialized.plan.mode}`);
+      return 0;
+    }
+    const next = initialized.plan.mode === "migrate"
+      ? "legacy state requires reviewed migration; conversion is not available in this implementation slice"
+      : "partial or invalid vNext state requires repair; no files were overwritten";
+    print(runtime.io, runtime.json, payload, next);
+    return 1;
+  } catch (error) {
+    if (error instanceof VnextConfigError) {
+      print(runtime.io, runtime.json, {
+        ok: false,
+        command: "init",
+        error: "vnext_initialization_failed",
+        issues: error.issues,
+      }, `vNext initialization failed: ${error.message}`);
+      return 1;
+    }
+    print(runtime.io, runtime.json, {
+      ok: false,
+      command: "init",
+      error: "vnext_initialization_io_failed",
+    }, "vNext initialization failed because a local filesystem operation did not complete");
+    return 1;
+  }
 }
 
 async function cmdInit(runtime: Runtime): Promise<number> {
@@ -1346,7 +1424,7 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
 
   const program = new Command(CLI_NAME);
   program
-    .description("KontextMind operator CLI (agent, session, workflow, gate, mesh, improve)")
+    .description("KontextMind local-first orchestration and mesh CLI")
     .exitOverride()
     .configureOutput({
       writeOut: (text) => ctx.io.stdout(text),
@@ -1354,6 +1432,15 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     })
     .helpCommand("help", "Show help");
   addGlobalOptions(program);
+
+  program.command("init").description("Create, validate, or plan migration of a vNext project")
+    .option("--json", "Print machine-readable JSON")
+    .option("--dry-run", "Plan without making changes")
+    .option("--name <name>", "Project display name for a new project")
+    .option("--project-id <id>", "Stable project ID for controlled provisioning")
+    .action(async function initAction(this: Command, options: { name?: string; projectId?: string }) {
+      result.code = await cmdVnextInit(runtimeFrom(ctx, this), options);
+    });
 
   const agent = addGlobalOptions(program.command("agent").description("Run and supervise agents"));
   agent.helpCommand("help", "Show agent help");

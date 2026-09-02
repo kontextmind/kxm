@@ -1,0 +1,66 @@
+{
+  "schema": "kxm.delivery-manifest.v1",
+  "projectId": "prj_01JPROJECT00000000000000000",
+  "runId": "run_01JRUN00000000000000000000",
+  "createdAt": "2026-09-01T22:30:00.000Z",
+  "updatedAt": "2026-09-01T22:31:00.000Z",
+  "configRevision": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "atomic": false,
+  "status": "completed",
+  "repositories": [
+    {
+      "repositoryId": "api",
+      "baseCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "contentSnapshotHash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "outputCommit": "cccccccccccccccccccccccccccccccccccccccc",
+      "status": "delivered",
+      "effect": {
+        "class": "workspace-mutation",
+        "sharedMutable": false
+      },
+      "target": {
+        "kind": "local-commit",
+        "ref": "cccccccccccccccccccccccccccccccccccccccc"
+      },
+      "receipts": [
+        {
+          "provider": "git",
+          "kind": "local-commit",
+          "id": "cccccccccccccccccccccccccccccccccccccccc",
+          "observedAt": "2026-09-01T22:30:30.000Z"
+        }
+      ]
+    },
+    {
+      "repositoryId": "web",
+      "baseCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "contentSnapshotHash": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "outputCommit": "dddddddddddddddddddddddddddddddddddddddd",
+      "status": "delivered",
+      "effect": {
+        "class": "workspace-mutation",
+        "sharedMutable": false
+      },
+      "target": {
+        "kind": "local-commit",
+        "ref": "dddddddddddddddddddddddddddddddddddddddd"
+      },
+      "receipts": [
+        {
+          "provider": "git",
+          "kind": "local-commit",
+          "id": "dddddddddddddddddddddddddddddddddddddddd",
+          "observedAt": "2026-09-01T22:30:45.000Z"
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "before": "api",
+      "after": "web",
+      "reason": "The web change consumes the new API response field."
+    }
+  ],
+  "summary": "Prepared two local commits; no shared branch, merge, or deployment was performed."
+}

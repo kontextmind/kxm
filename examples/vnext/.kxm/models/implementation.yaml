@@ -1,0 +1,14 @@
+schema: kxm.model.v1
+provider: anthropic
+model: claude-sonnet-4-6
+thinking: high
+tags:
+  - implementation
+capabilities:
+  - tools
+  - structured-output
+priority: 100
+limits:
+  contextTokens: 200000
+  outputTokens: 32000
+  timeoutMs: 1800000

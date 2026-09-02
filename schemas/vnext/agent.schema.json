@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.kxm.dev/vnext/agent.schema.json",
+  "title": "KXM agent definition",
+  "description": "The filename determines the agent identity.",
+  "type": "object",
+  "required": ["schema", "purpose"],
+  "properties": {
+    "schema": { "const": "kxm.agent.v1" },
+    "purpose": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "instructions": { "type": "string", "maxLength": 16000 },
+    "model": { "$ref": "common.schema.json#/$defs/modelSelector" },
+    "executor": { "$ref": "common.schema.json#/$defs/identifier" },
+    "tools": { "$ref": "common.schema.json#/$defs/toolPolicy" },
+    "defaultRepositoryAccess": { "$ref": "common.schema.json#/$defs/repositoryAccess" },
+    "repositories": {
+      "type": "object",
+      "propertyNames": { "$ref": "common.schema.json#/$defs/identifier" },
+      "additionalProperties": { "$ref": "common.schema.json#/$defs/repositoryAccess" },
+      "maxProperties": 64
+    },
+    "secrets": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/secretGrant" },
+      "maxItems": 64
+    },
+    "network": { "enum": ["none", "provider-only", "restricted", "host"] },
+    "resultSchema": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "session": {
+      "type": "object",
+      "properties": {
+        "reuse": { "const": "compatible-run-scope" },
+        "maxIdleMs": { "$ref": "common.schema.json#/$defs/durationMs" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

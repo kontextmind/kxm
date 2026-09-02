@@ -14,6 +14,7 @@ This documentation is organized by task. Start with the guide that matches what 
 | [Webhook workflows](webhook-workflows.md) | Automation owners | Start durable work from Jira or another signed webhook |
 | [Peer provenance and quorum gates](provenance-gates.md) | Workflow authors and security reviewers | Require durable replies from eligible peer identities without overstating the trust guarantee |
 | [Continuous improvement](continuous-improvement.md) | Product and engineering leads | Turn run evidence into reviewed workflow improvements |
+| [vNext contract package](vnext/README.md) | Maintainers and reviewers | Review the accepted local-first target architecture and implementation contracts |
 
 Project-level policies live at the repository root:
 
@@ -25,6 +26,6 @@ Project-level policies live at the repository root:
 
 - Put the shortest successful path before optional details.
 - Use the product terms **hub**, **agent**, **peer**, **project**, **request**, and **reply** consistently.
-- Distinguish verified behavior from planned behavior.
+- Distinguish verified behavior from planned behavior; `docs/vnext` is a planned normative target until activation.
 - Distinguish durable single-node delivery from clustering and exactly-once execution.
 - Update the relevant guide in the same change that modifies user-visible behavior.

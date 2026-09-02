@@ -5,6 +5,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+function makeGitRoot(root: string): void {
+  const initialized = spawnSync("git", ["-c", "init.defaultBranch=main", "init", "--quiet", root], { encoding: "utf8", windowsHide: true });
+  assert.equal(initialized.status, 0, initialized.stderr);
+}
+
 function runNpm(args: string[], cwd: string) {
   const npmCli = process.env.npm_execpath;
   assert.ok(npmCli, "npm_execpath is required for the packed-consumer smoke");
@@ -81,6 +86,50 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
     const installedBin = runNpm(["exec", "--offline", "--", "kxm", "mesh", "help"], consumer);
     assert.equal(installedBin.status, 0, `${installedBin.stderr}\n${installedBin.stdout}`);
     assert.match(installedBin.stdout, /Usage: kxm mesh/);
+
+    const vnextProject = join(consumer, "vnext-project");
+    mkdirSync(vnextProject);
+    makeGitRoot(vnextProject);
+    const vnextInit = spawnSync(process.execPath, [
+      join(packageRoot, "scripts", "kxm.mjs"),
+      "init",
+      "--json",
+      "--name",
+      "Packed Project",
+      "--project-id",
+      "prj_01JPACKEDPROJECT00000000000",
+    ], { cwd: vnextProject, encoding: "utf8" });
+    assert.equal(vnextInit.status, 0, `${vnextInit.stderr}\n${vnextInit.stdout}`);
+    const vnextPayload = JSON.parse(vnextInit.stdout) as { action: string; configRevision: string };
+    assert.equal(vnextPayload.action, "created");
+    assert.match(vnextPayload.configRevision, /^sha256:[a-f0-9]{64}$/);
+    const packedProjectFile = join(vnextProject, ".kxm", "project.yaml");
+    assert.equal(existsSync(packedProjectFile), true);
+    assert.equal(existsSync(join(packageRoot, "schemas", "vnext", "project.schema.json")), true);
+
+    const unsupportedWorkspace = spawnSync(process.execPath, [
+      join(packageRoot, "scripts", "kxm.mjs"), "--workspace", join(vnextProject, "wrong"), "init", "--json",
+    ], { cwd: vnextProject, encoding: "utf8" });
+    assert.equal(unsupportedWorkspace.status, 2, `${unsupportedWorkspace.stderr}\n${unsupportedWorkspace.stdout}`);
+    assert.match(unsupportedWorkspace.stdout, /workspace_option_unsupported/);
+
+    const packedProjectYaml = readFileSync(packedProjectFile, "utf8");
+    writeFileSync(packedProjectFile, packedProjectYaml.replace("pathHint: .", "pathHint: COM¹"));
+    const invalidPortablePath = spawnSync(process.execPath, [
+      join(packageRoot, "scripts", "kxm.mjs"), "init", "--json",
+    ], { cwd: vnextProject, encoding: "utf8" });
+    assert.equal(invalidPortablePath.status, 1, `${invalidPortablePath.stderr}\n${invalidPortablePath.stdout}`);
+    assert.match(invalidPortablePath.stdout, /schema_pattern/);
+    writeFileSync(packedProjectFile, packedProjectYaml);
+
+    const invalidDryRun = join(consumer, "invalid-vnext-project");
+    mkdirSync(invalidDryRun);
+    makeGitRoot(invalidDryRun);
+    const invalidProvisioning = spawnSync(process.execPath, [
+      join(packageRoot, "scripts", "kxm.mjs"), "init", "--json", "--dry-run", "--project-id", "invalid",
+    ], { cwd: invalidDryRun, encoding: "utf8" });
+    assert.equal(invalidProvisioning.status, 1, `${invalidProvisioning.stderr}\n${invalidProvisioning.stdout}`);
+    assert.match(invalidProvisioning.stdout, /project_id_invalid/);
 
     const globalInstall = runNpm([
       "install",

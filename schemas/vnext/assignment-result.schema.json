@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.kxm.dev/vnext/assignment-result.schema.json",
+  "title": "KXM structured assignment result",
+  "type": "object",
+  "required": [
+    "schema",
+    "projectId",
+    "runId",
+    "stepId",
+    "stepAttempt",
+    "assignmentId",
+    "attemptId",
+    "status",
+    "outcome",
+    "summary",
+    "timing"
+  ],
+  "properties": {
+    "schema": { "const": "kxm.assignment-result.v1" },
+    "projectId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "runId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "stepId": { "$ref": "common.schema.json#/$defs/identifier" },
+    "stepAttempt": { "type": "integer", "minimum": 1 },
+    "assignmentId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "attemptId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "status": { "enum": ["passed", "failed", "blocked_uncertain", "cancelled"] },
+    "outcome": { "$ref": "common.schema.json#/$defs/identifier" },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "evidenceRefs": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/evidenceRef" },
+      "maxItems": 64
+    },
+    "artifacts": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/artifactRef" },
+      "maxItems": 64
+    },
+    "repositoryOutputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["repositoryId", "baseCommit", "contentSnapshotHash"],
+        "properties": {
+          "repositoryId": { "$ref": "common.schema.json#/$defs/identifier" },
+          "baseCommit": { "$ref": "common.schema.json#/$defs/gitCommit" },
+          "contentSnapshotHash": { "$ref": "common.schema.json#/$defs/sha256" },
+          "outputCommit": { "$ref": "common.schema.json#/$defs/gitCommit" },
+          "changes": { "$ref": "common.schema.json#/$defs/fileChanges" }
+        },
+        "additionalProperties": false
+      },
+      "maxItems": 64
+    },
+    "receipts": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/receipt" },
+      "maxItems": 64
+    },
+    "timing": { "$ref": "common.schema.json#/$defs/timing" },
+    "usage": { "$ref": "common.schema.json#/$defs/usage" },
+    "error": { "$ref": "common.schema.json#/$defs/errorSummary" }
+  },
+  "additionalProperties": false
+}

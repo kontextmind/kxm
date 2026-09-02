@@ -28,7 +28,7 @@
     "worker": "node scripts/pi-mesh-worker.mjs",
     "example": "node --disable-warning=ExperimentalWarning --experimental-strip-types examples/roundtrip.ts",
     "build:mcp": "esbuild plugins/kxm-mesh/src/mcp-server.ts --bundle --platform=node --format=esm --target=node22 --alias:@modelcontextprotocol/sdk/server/index.js=./node_modules/@modelcontextprotocol/sdk/dist/esm/server/index.js --alias:@modelcontextprotocol/sdk/server/stdio.js=./node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js --alias:@modelcontextprotocol/sdk/types.js=./node_modules/@modelcontextprotocol/sdk/dist/esm/types.js --outfile=plugins/kxm-mesh/dist/mcp-server.js --banner:js=\"#!/usr/bin/env node\"",
-    "build:runtime": "esbuild plugins/kxm-mesh/src/cli.ts plugins/kxm-mesh/src/server.ts --bundle --platform=node --format=esm --target=node22 --outdir=plugins/kxm-mesh/dist --entry-names=[name] --banner:js=\"#!/usr/bin/env node\"",
+    "build:runtime": "node scripts/build-runtime.mjs",
     "build": "npm run build:mcp && npm run build:runtime",
     "check:generated": "npm run build && node scripts/check-generated.mjs",
     "test": "npm run build && node --disable-warning=ExperimentalWarning --experimental-strip-types --test test/*.test.ts",
@@ -61,10 +61,12 @@
   "devDependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
     "@types/node": "26.2.0",
+    "ajv": "8.20.0",
     "commander": "15.0.0",
     "esbuild": "0.28.2",
     "markdownlint-cli2": "0.23.2",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "yaml": "2.8.2"
   },
   "files": [
     ".kxm/README.md",
@@ -87,6 +89,7 @@
     "scripts",
     "docs",
     "examples",
+    "schemas",
     "README.md",
     "CHANGELOG.md",
     "LICENSE",

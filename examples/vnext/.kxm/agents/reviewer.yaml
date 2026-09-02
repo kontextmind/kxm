@@ -1,0 +1,15 @@
+schema: kxm.agent.v1
+purpose: Independently review correctness, security, regression risk, and evidence.
+model:
+  tag: critic
+tools:
+  preset: read-only
+defaultRepositoryAccess: read
+repositories:
+  control: read
+  api: read
+  web: read
+network: provider-only
+resultSchema: kxm.assignment-result.v1
+session:
+  reuse: compatible-run-scope

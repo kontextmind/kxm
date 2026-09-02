@@ -1,0 +1,11 @@
+schema: kxm.model.v1
+provider: google
+model: gemini-3.1-pro-preview
+tags:
+  - critic
+capabilities:
+  - tools
+  - structured-output
+priority: 80
+limits:
+  timeoutMs: 1800000

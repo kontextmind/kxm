@@ -1,0 +1,65 @@
+{
+  "schema": "kxm.sync-event.v1",
+  "sourceEventId": "evt_01JRESULT00000000000000000",
+  "eventType": "assignment.result_recorded",
+  "projectId": "prj_01JPROJECT00000000000000000",
+  "runId": "run_01JRUN00000000000000000000",
+  "homeRuntimeId": "runtime_01JRUNTIME000000000000000",
+  "sequence": 24,
+  "occurredAt": "2026-09-01T22:12:10.000Z",
+  "configRevision": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "memoryRevision": "ctxrev_01JMEMORY0000000000000000",
+  "executorPolicyRevision": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+  "toolPolicyRevision": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+  "syncPolicyRevision": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+  "redaction": {
+    "version": "redactor-v1",
+    "fieldsOmitted": ["full-result", "raw-tool-log", "diff"],
+    "valuesReplaced": 0
+  },
+  "payload": {
+    "workflowId": "fix",
+    "displayTitle": "Fix concurrent token refresh",
+    "status": "result_recorded",
+    "outcome": "implemented",
+    "summary": "Added single-flight token refresh and regression coverage.",
+    "stepId": "implement",
+    "stepAttempt": 1,
+    "assignmentId": "assignment_01JASSIGNMENT00000000000",
+    "attemptId": "attempt_01JATTEMPT0000000000000",
+    "agentId": "implementer",
+    "instanceNo": 1,
+    "scopeEpoch": 1,
+    "executor": {
+      "id": "local",
+      "kind": "local",
+      "executorVersion": "1.0.0",
+      "harness": "pi",
+      "harnessVersion": "0.84.4"
+    },
+    "model": {
+      "profile": "implementation",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "tags": ["implementation"]
+    },
+    "timing": {
+      "durationMs": 730000,
+      "agentMs": 730000
+    },
+    "usage": {
+      "inputTokens": 18200,
+      "outputTokens": 3400,
+      "cost": 1.42,
+      "currency": "USD",
+      "costKind": "estimated"
+    },
+    "fileChanges": [
+      {
+        "repositoryId": "api",
+        "added": ["test/Auth/RefreshConcurrencyTest.cs"],
+        "modified": ["src/Auth/RefreshService.cs"]
+      }
+    ]
+  }
+}

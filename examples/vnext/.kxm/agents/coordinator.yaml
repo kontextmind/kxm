@@ -1,0 +1,16 @@
+schema: kxm.agent.v1
+purpose: Coordinate the pinned workflow and emit only schema-validated commands.
+model:
+  profile: primary
+tools:
+  preset: coordinator
+defaultRepositoryAccess: read
+repositories:
+  control: read
+  api: read
+  web: read
+network: restricted
+resultSchema: kxm.assignment-result.v1
+session:
+  reuse: compatible-run-scope
+  maxIdleMs: 1800000

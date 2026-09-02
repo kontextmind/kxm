@@ -1,0 +1,13 @@
+schema: kxm.agent.v1
+purpose: Produce an implementation plan grounded in the pinned repositories and evidence.
+model:
+  tag: planning
+tools:
+  preset: read-only
+defaultRepositoryAccess: read
+repositories:
+  control: read
+  api: read
+  web: read
+network: provider-only
+resultSchema: kxm.assignment-result.v1

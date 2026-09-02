@@ -1,0 +1,52 @@
+{
+  "schema": "kxm.run-event.v1",
+  "eventId": "evt_01JEVENT000000000000000000",
+  "eventType": "run.created",
+  "projectId": "prj_01JPROJECT00000000000000000",
+  "runId": "run_01JRUN00000000000000000000",
+  "homeRuntimeId": "runtime_01JRUNTIME000000000000000",
+  "sequence": 1,
+  "commandId": "cmd_01JCOMMAND0000000000000000",
+  "occurredAt": "2026-09-01T21:50:34.000Z",
+  "recordedAt": "2026-09-01T21:50:34.003Z",
+  "monotonicNs": "4812234000000",
+  "configRevision": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "memoryRevision": "ctxrev_01JMEMORY0000000000000000",
+  "executorPolicyRevision": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+  "toolPolicyRevision": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+  "payload": {
+    "workflowId": "fix",
+    "displayTitle": "Fix concurrent token refresh",
+    "promptHash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "status": "created",
+    "executors": [
+      {
+        "id": "local",
+        "kind": "local",
+        "executorVersion": "1.0.0",
+        "harness": "pi",
+        "harnessVersion": "0.84.4"
+      }
+    ],
+    "repositories": [
+      {
+        "repositoryId": "control",
+        "baseCommit": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "contentSnapshotHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sourceState": "dirty-snapshot"
+      },
+      {
+        "repositoryId": "api",
+        "baseCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "contentSnapshotHash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "sourceState": "dirty-snapshot"
+      },
+      {
+        "repositoryId": "web",
+        "baseCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "contentSnapshotHash": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+        "sourceState": "clean"
+      }
+    ]
+  }
+}

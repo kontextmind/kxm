@@ -1,0 +1,67 @@
+{
+  "schema": "kxm.sync-event.v1",
+  "sourceEventId": "evt_01JUNCERTAINTY000000000000",
+  "eventType": "effect.uncertainty_resolved",
+  "projectId": "prj_01JPROJECT00000000000000000",
+  "runId": "run_01JRUN00000000000000000000",
+  "homeRuntimeId": "runtime_01JRUNTIME000000000000000",
+  "sequence": 30,
+  "occurredAt": "2026-09-01T22:20:00.000Z",
+  "configRevision": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "memoryRevision": "ctxrev_01JMEMORY0000000000000000",
+  "executorPolicyRevision": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+  "toolPolicyRevision": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+  "syncPolicyRevision": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+  "redaction": {
+    "version": "redactor-v1",
+    "fieldsOmitted": ["raw-tool-log"],
+    "valuesReplaced": 0
+  },
+  "payload": {
+    "workflowId": "fix",
+    "previousStatus": "blocked_uncertain",
+    "status": "running",
+    "outcome": "receipt-reconciled",
+    "summary": "An authoritative deployment receipt confirmed the prior operation completed.",
+    "reason": "Deployment API returned the assignment-scoped receipt.",
+    "stepId": "delivery",
+    "stepAttempt": 1,
+    "assignmentId": "assignment_01JDELIVERY000000000000",
+    "attemptId": "attempt_01JDELIVERY0000000000000",
+    "effect": {
+      "id": "effect_01JEFFECT000000000000000",
+      "policy": {
+        "class": "external-non-idempotent",
+        "sharedMutable": true
+      }
+    },
+    "lease": {
+      "id": "lease_01JLEASE0000000000000000",
+      "fencingToken": "fence-42",
+      "acquiredAt": "2026-09-01T22:00:00.000Z",
+      "expiresAt": "2026-09-01T22:05:00.000Z",
+      "operation": "deployment"
+    },
+    "resolvedBy": {
+      "kind": "human",
+      "id": "operator:onesm"
+    },
+    "resolutionAction": "mark-completed",
+    "suppliedRefs": [
+      {
+        "id": "evidence_01JDEPLOYMENT0000000000",
+        "kind": "deployment-receipt",
+        "hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "status": "verified"
+      }
+    ],
+    "receipts": [
+      {
+        "provider": "deployment-api",
+        "kind": "deployment",
+        "id": "deploy-241",
+        "observedAt": "2026-09-01T22:19:59.000Z"
+      }
+    ]
+  }
+}

@@ -1,0 +1,17 @@
+schema: kxm.model.v1
+provider: xai
+model: grok-4.6
+thinking: high
+tags:
+  - primary
+  - planning
+capabilities:
+  - tools
+  - structured-output
+priority: 100
+fallbacks:
+  - profile: implementation
+limits:
+  contextTokens: 200000
+  outputTokens: 32000
+  timeoutMs: 1800000
