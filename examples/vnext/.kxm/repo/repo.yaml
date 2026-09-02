@@ -1,0 +1,8 @@
+schema: kxm.repository.v1
+projectId: prj_01JPROJECT00000000000000000
+repositoryId: control
+description: Authoritative project configuration and optional application code.
+ecosystems:
+  - node
+classification: internal
+defaultAccess: read

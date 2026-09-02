@@ -1,0 +1,376 @@
+schema: kxm.workflow.v1
+description: Prove, plan, implement, independently review, verify, and prepare a local fix delivery.
+coordinator: coordinator
+limits:
+  maxTransitions: 28
+  maxRunDurationMs: 43200000
+  maxAgentTimeMs: 86400000
+  maxModelCost: 40
+  currency: USD
+reproOracle:
+  stageId: repro-review
+  evidenceKey: repro
+planHash:
+  stageId: final-plan
+  evidenceKey: plan
+requirePlanHash:
+  - implement
+  - local-verify
+  - delivery
+steps:
+  - id: intake
+    kind: agent
+    agent: planner
+    maxAttempts: 2
+    description: Classify expected and actual behavior, affected surfaces, and reproduction hints.
+    repositories:
+      control: read
+      api: read
+      web: read
+    requiredEvidence:
+      - key: classification
+        kind: assignment-result
+    timeoutMs: 900000
+    on:
+      passed: repro-explore
+      blocked:
+        target: $terminal
+        terminalStatus: failed
+
+  - id: repro-explore
+    kind: agent
+    agent: planner
+    maxAttempts: 3
+    description: Identify the reporter-path production callable and design a production-coupled reproduction.
+    repositories:
+      control: read
+      api: read
+      web: read
+    requiredEvidence:
+      - key: diagnosis
+        kind: assignment-result
+    timeoutMs: 1800000
+    on:
+      passed: repro-write
+      blocked:
+        target: $terminal
+        terminalStatus: failed
+
+  - id: repro-write
+    kind: agent
+    agent: reproducer
+    maxAttempts: 3
+    description: Write a failing test against the diagnosis-named production seam; production files remain unchanged.
+    repositories:
+      control: read
+      api: write
+      web: write
+    assignments:
+      allowedAgents:
+        - reproducer
+      minimum: 1
+      target: 1
+      maximum: 1
+      maxParallel: 1
+      maxAttemptsPerAssignment: 2
+      maxWriteRepositories: 1
+    requiredEvidence:
+      - key: repro
+        kind: artifact
+    timeoutMs: 3600000
+    on:
+      passed: repro-review
+      failed:
+        target: repro-write
+        maxTransitions: 2
+      blocked:
+        target: $terminal
+        terminalStatus: failed
+
+  - id: repro-review
+    kind: moa
+    agent: critic-1
+    maxAttempts: 3
+    description: Verify reporter-path coupling, failure causality, expected behavior, and absence of production edits.
+    model:
+      tag: critic
+      capabilities:
+        - structured-output
+    repositories:
+      control: read
+      api: read
+      web: read
+    assignments:
+      allowedAgents:
+        - critic-1
+        - critic-2
+        - critic-3
+      minimum: 2
+      target: 3
+      maximum: 3
+      maxParallel: 3
+      maxAttemptsPerAssignment: 2
+      distinctBy:
+        - provider
+    join:
+      strategy: all-settled
+      minimumPassed: 2
+      cancelRemaining: false
+    requiredEvidence:
+      - key: repro
+        kind: artifact
+      - key: review
+        kind: assignment-result
+        producerPolicy:
+          minimumProducers: 2
+          eligibleAgents:
+            - critic-1
+            - critic-2
+          acceptedStatuses:
+            - passed
+    timeoutMs: 1800000
+    on:
+      passed: plan
+      repro_invalidated:
+        target: repro-write
+        maxTransitions: 3
+      quorum-not-met:
+        target: $terminal
+        terminalStatus: failed
+      blocked:
+        target: $terminal
+        terminalStatus: failed
+
+  - id: plan
+    kind: agent
+    agent: planner
+    maxAttempts: 3
+    description: Plan the smallest change that makes the immutable reproduction pass.
+    repositories:
+      control: read
+      api: read
+      web: read
+    requiredEvidence:
+      - key: plan
+        kind: artifact
+    timeoutMs: 1800000
+    on:
+      passed: critics
+      blocked:
+        target: $terminal
+        terminalStatus: failed
+
+  - id: critics
+    kind: moa
+    agent: critic-1
+    maxAttempts: 3
+    description: Independently review the plan for correctness, scope, security, and regression risk.
+    model:
+      tag: critic
+      capabilities:
+        - structured-output
+    repositories:
+      control: read
+      api: read
+      web: read
+    assignments:
+      allowedAgents:
+        - critic-1
+        - critic-2
+        - critic-3
+      minimum: 2
+      target: 3
+      maximum: 3
+      maxParallel: 3
+      maxAttemptsPerAssignment: 2
+      distinctBy:
+        - provider
+    join:
+      strategy: all-settled
+      minimumPassed: 2
+      cancelRemaining: false
+    requiredEvidence:
+      - key: critique
+        kind: assignment-result
+        producerPolicy:
+          minimumProducers: 2
+          eligibleAgents:
+            - critic-1
+            - critic-2
+          acceptedStatuses:
+            - passed
+    timeoutMs: 1800000
+    on:
+      passed: final-plan
+      plan_invalidated:
+        target: plan
+        maxTransitions: 3
+      quorum-not-met:
+        target: $terminal
+        terminalStatus: failed
+      blocked:
+        target: $terminal
+        terminalStatus: failed
+
+  - id: final-plan
+    kind: agent
+    agent: planner
+    maxAttempts: 2
+    description: Incorporate critique and capture the final immutable plan hash.
+    repositories:
+      control: read
+      api: read
+      web: read
+    requiredEvidence:
+      - key: plan
+        kind: artifact
+    timeoutMs: 1200000
+    on:
+      passed: approval
+      plan_invalidated:
+        target: plan
+        maxTransitions: 2
+      blocked:
+        target: $terminal
+        terminalStatus: failed
+
+  - id: approval
+    kind: approval
+    maxAttempts: 8
+    description: A human approves the hashed plan before implementation.
+    requiredEvidence:
+      - key: signoff
+        kind: approval
+    timeoutMs: 86400000
+    on:
+      passed: implement
+      rejected:
+        target: plan
+        maxTransitions: 3
+      cancelled:
+        target: $terminal
+        terminalStatus: cancelled
+      blocked:
+        target: $terminal
+        terminalStatus: failed
+
+  - id: implement
+    kind: agent
+    agent: implementer
+    maxAttempts: 4
+    description: Implement only the approved plan while preserving the reproduction oracle.
+    repositories:
+      control: read
+      api: write
+      web: write
+    assignments:
+      allowedAgents:
+        - implementer
+      minimum: 1
+      target: 1
+      maximum: 2
+      maxParallel: 1
+      maxAttemptsPerAssignment: 2
+      maxWriteRepositories: 1
+    requiredEvidence:
+      - key: diff
+        kind: artifact
+      - key: repro
+        kind: artifact
+        reusableAcrossAttempts: true
+    timeoutMs: 3600000
+    on:
+      passed: local-verify
+      blocked:
+        target: $terminal
+        terminalStatus: failed
+
+  - id: local-verify
+    kind: gate
+    gate: test
+    maxAttempts: 4
+    description: Run repository-defined gates and the unchanged reproduction oracle.
+    repositories:
+      api: write
+      web: write
+    requiredEvidence:
+      - key: gates
+        kind: gate
+      - key: repro
+        kind: artifact
+        reusableAcrossAttempts: true
+    timeoutMs: 3600000
+    on:
+      passed: delivery
+      implementation_failure:
+        target: implement
+        maxTransitions: 4
+      plan_invalidated:
+        target: plan
+        maxTransitions: 2
+      blocked:
+        target: $terminal
+        terminalStatus: failed
+
+  - id: delivery
+    kind: gate
+    gate: scm-delivery
+    maxAttempts: 2
+    description: Create a unique run branch and pull request plus the non-atomic repository delivery manifest; never merge automatically.
+    repositories:
+      control: read
+      api: write
+      web: write
+    requiredEvidence:
+      - key: delivery-manifest
+        kind: artifact
+      - key: mr
+        kind: receipt
+    timeoutMs: 1800000
+    on:
+      passed: ci-watch
+      failed:
+        target: $terminal
+        terminalStatus: failed
+      blocked:
+        target: $terminal
+        terminalStatus: failed
+
+  - id: ci-watch
+    kind: wait
+    signal: ci-review
+    maxAttempts: 6
+    description: Wait for required CI and review state using a receipt-queryable adapter.
+    requiredEvidence:
+      - key: ci
+        kind: receipt
+    timeoutMs: 86400000
+    on:
+      passed: ready-for-human-acceptance
+      failure:
+        target: implement
+        maxTransitions: 4
+      blocked:
+        target: $terminal
+        terminalStatus: failed
+
+  - id: ready-for-human-acceptance
+    kind: agent
+    agent: planner
+    maxAttempts: 2
+    description: Summarize the oracle, approved plan hash, diff, gates, CI, and delivery receipts for final human acceptance.
+    repositories:
+      control: read
+      api: read
+      web: read
+    requiredEvidence:
+      - key: summary
+        kind: assignment-result
+    timeoutMs: 900000
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      blocked:
+        target: $terminal
+        terminalStatus: failed

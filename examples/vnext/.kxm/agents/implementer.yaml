@@ -1,0 +1,15 @@
+schema: kxm.agent.v1
+purpose: Implement the approved plan in the assignment-owned repository worktree.
+model:
+  tag: implementation
+tools:
+  preset: workspace-writer
+defaultRepositoryAccess: none
+repositories:
+  control: read
+  api: write
+  web: write
+network: provider-only
+resultSchema: kxm.assignment-result.v1
+session:
+  reuse: compatible-run-scope

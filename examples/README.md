@@ -15,6 +15,10 @@ and `reviewer-grok`. Follow
 [Peer provenance and quorum gates](../docs/provenance-gates.md) for the complete
 runbook and trust boundary.
 
+The [`vnext`](vnext/README.md) directory is a machine-validated planned-contract
+fixture for the local-first KXM vNext architecture. Production configuration
+loader tests consume it, but no current Runtime executes its workflows.
+
 ## Self-contained round trip
 
 Start an in-memory hub, connect a planner and reviewer, send an idempotent request, and print the reply:

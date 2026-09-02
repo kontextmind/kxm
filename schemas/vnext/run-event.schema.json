@@ -1,0 +1,247 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.kxm.dev/vnext/run-event.schema.json",
+  "title": "KXM local run event",
+  "type": "object",
+  "required": [
+    "schema",
+    "eventId",
+    "eventType",
+    "projectId",
+    "runId",
+    "homeRuntimeId",
+    "sequence",
+    "occurredAt",
+    "recordedAt",
+    "monotonicNs",
+    "configRevision",
+    "memoryRevision",
+    "executorPolicyRevision",
+    "toolPolicyRevision",
+    "payload"
+  ],
+  "properties": {
+    "schema": { "const": "kxm.run-event.v1" },
+    "eventId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "eventType": { "$ref": "common.schema.json#/$defs/runEventType" },
+    "projectId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "runId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "homeRuntimeId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "commandId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "occurredAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "recordedAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "monotonicNs": { "$ref": "common.schema.json#/$defs/monotonicNs" },
+    "configRevision": { "$ref": "common.schema.json#/$defs/sha256" },
+    "memoryRevision": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "executorPolicyRevision": { "$ref": "common.schema.json#/$defs/sha256" },
+    "toolPolicyRevision": { "$ref": "common.schema.json#/$defs/sha256" },
+    "payload": { "$ref": "#/$defs/payload" },
+    "protectedPayload": {
+      "type": "object",
+      "required": ["id", "classification", "hash"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/opaqueId" },
+        "classification": { "enum": ["project", "sensitive", "secret"] },
+        "hash": { "$ref": "common.schema.json#/$defs/sha256" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "eventType": { "const": "run.created" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["workflowId", "status", "repositories", "executors"] }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "eventType": {
+            "enum": [
+              "effect.intent_recorded",
+              "effect.dispatched",
+              "effect.observed",
+              "effect.receipt_recorded",
+              "effect.settled",
+              "effect.blocked_uncertain",
+              "effect.uncertainty_resolved"
+            ]
+          }
+        },
+        "required": ["eventType"]
+      },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["effect"] }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "eventType": { "enum": ["effect.intent_recorded", "effect.dispatched"] },
+          "payload": {
+            "type": "object",
+            "properties": {
+              "effect": {
+                "type": "object",
+                "properties": {
+                  "policy": {
+                    "type": "object",
+                    "properties": { "sharedMutable": { "const": true } },
+                    "required": ["sharedMutable"]
+                  }
+                },
+                "required": ["policy"]
+              }
+            },
+            "required": ["effect"]
+          }
+        },
+        "required": ["eventType", "payload"]
+      },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["lease"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "effect.uncertainty_resolved" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["effect", "resolvedBy", "resolutionAction", "reason", "suppliedRefs"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "approval.recorded" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["actor", "outcome", "suppliedRefs"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "enum": ["lease.acquired", "lease.released", "lease.lost"] } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["lease"] }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "repositorySnapshot": {
+      "type": "object",
+      "required": ["repositoryId", "baseCommit", "contentSnapshotHash"],
+      "properties": {
+        "repositoryId": { "$ref": "common.schema.json#/$defs/identifier" },
+        "baseCommit": { "$ref": "common.schema.json#/$defs/gitCommit" },
+        "contentSnapshotHash": { "$ref": "common.schema.json#/$defs/sha256" },
+        "sourceState": { "enum": ["clean", "dirty-snapshot"] }
+      },
+      "additionalProperties": false
+    },
+    "effect": {
+      "type": "object",
+      "required": ["id", "policy"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/opaqueId" },
+        "policy": { "$ref": "common.schema.json#/$defs/effectPolicy" },
+        "idempotencyKeyHash": { "$ref": "common.schema.json#/$defs/sha256" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "policy": {
+                "type": "object",
+                "properties": { "class": { "const": "external-idempotent" } },
+                "required": ["class"]
+              }
+            },
+            "required": ["policy"]
+          },
+          "then": { "required": ["idempotencyKeyHash"] }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "workflowId": { "$ref": "common.schema.json#/$defs/identifier" },
+        "displayTitle": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "promptHash": { "$ref": "common.schema.json#/$defs/sha256" },
+        "status": { "$ref": "common.schema.json#/$defs/lifecycleStatus" },
+        "previousStatus": { "$ref": "common.schema.json#/$defs/lifecycleStatus" },
+        "outcome": { "$ref": "common.schema.json#/$defs/identifier" },
+        "summary": { "type": "string", "maxLength": 32000 },
+        "reason": { "type": "string", "maxLength": 4000 },
+        "resolution": { "type": "string", "maxLength": 4000 },
+        "stepId": { "$ref": "common.schema.json#/$defs/identifier" },
+        "stepAttempt": { "type": "integer", "minimum": 1 },
+        "fromStepId": { "$ref": "common.schema.json#/$defs/identifier" },
+        "toStepId": { "$ref": "common.schema.json#/$defs/identifier" },
+        "assignmentId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+        "attemptId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+        "agentId": { "$ref": "common.schema.json#/$defs/identifier" },
+        "instanceNo": { "type": "integer", "minimum": 1, "maximum": 64 },
+        "scopeEpoch": { "type": "integer", "minimum": 1 },
+        "executor": { "$ref": "common.schema.json#/$defs/executorResolution" },
+        "executors": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/executorResolution" },
+          "minItems": 1,
+          "maxItems": 16
+        },
+        "model": { "$ref": "common.schema.json#/$defs/modelResolution" },
+        "repositories": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/repositorySnapshot" },
+          "maxItems": 64
+        },
+        "effect": { "$ref": "#/$defs/effect" },
+        "receipt": { "$ref": "common.schema.json#/$defs/receipt" },
+        "evidenceRefs": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/evidenceRef" },
+          "maxItems": 64
+        },
+        "artifacts": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/artifactRef" },
+          "maxItems": 64
+        },
+        "timing": { "$ref": "common.schema.json#/$defs/timing" },
+        "usage": { "$ref": "common.schema.json#/$defs/usage" },
+        "error": { "$ref": "common.schema.json#/$defs/errorSummary" },
+        "actor": { "$ref": "common.schema.json#/$defs/actor" },
+        "resolvedBy": { "$ref": "common.schema.json#/$defs/actor" },
+        "resolutionAction": {
+          "enum": ["mark-completed", "confirm-absent-and-retry", "compensate-and-retry", "mark-failed", "cancel"]
+        },
+        "suppliedRefs": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/evidenceRef" },
+          "maxItems": 64
+        },
+        "lease": { "$ref": "common.schema.json#/$defs/lease" },
+        "candidateId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+        "counts": {
+          "type": "object",
+          "propertyNames": { "$ref": "common.schema.json#/$defs/identifier" },
+          "additionalProperties": { "type": "integer", "minimum": 0 },
+          "maxProperties": 32
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

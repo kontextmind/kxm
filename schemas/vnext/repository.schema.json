@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.kxm.dev/vnext/repository.schema.json",
+  "title": "KXM repository-scoped definition",
+  "type": "object",
+  "required": ["schema", "projectId", "repositoryId"],
+  "properties": {
+    "schema": { "const": "kxm.repository.v1" },
+    "projectId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "repositoryId": { "$ref": "common.schema.json#/$defs/identifier" },
+    "description": { "type": "string", "maxLength": 2000 },
+    "ecosystems": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/identifier" },
+      "uniqueItems": true,
+      "maxItems": 16
+    },
+    "classification": {
+      "enum": ["public", "internal", "sensitive"]
+    },
+    "defaultAccess": { "$ref": "common.schema.json#/$defs/repositoryAccess" }
+  },
+  "additionalProperties": false
+}

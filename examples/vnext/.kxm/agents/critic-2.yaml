@@ -1,0 +1,15 @@
+schema: kxm.agent.v1
+purpose: Second fixed-identity critic for migrated strict producer policies.
+model:
+  profile: critic-grok
+tools:
+  preset: read-only
+defaultRepositoryAccess: read
+repositories:
+  control: read
+  api: read
+  web: read
+network: provider-only
+resultSchema: kxm.assignment-result.v1
+session:
+  reuse: compatible-run-scope

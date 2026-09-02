@@ -1,0 +1,12 @@
+schema: kxm.model.v1
+provider: xai
+model: grok-4.6
+thinking: high
+tags:
+  - critic
+capabilities:
+  - tools
+  - structured-output
+priority: 90
+limits:
+  timeoutMs: 1800000

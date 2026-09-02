@@ -1,0 +1,42 @@
+{
+  "schema": "kxm.context-candidate.v1",
+  "id": "candidate_01JCANDIDATE0000000000",
+  "projectId": "prj_01JPROJECT00000000000000000",
+  "sourceRunId": "run_01JRUN00000000000000000000",
+  "sourceConfigRevision": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "sourceMemoryRevision": "ctxrev_01JMEMORY0000000000000000",
+  "type": "skill",
+  "scope": {
+    "kind": "repository",
+    "repositoryId": "api"
+  },
+  "summary": "When refreshing OAuth tokens, use single-flight coordination and retain a production-coupled concurrency reproduction.",
+  "authority": "evidence",
+  "confidence": "probable",
+  "status": "review-required",
+  "activation": "review-required",
+  "targetPath": ".kxm/repo/skills/oauth-refresh/SKILL.md",
+  "proposedChange": {
+    "id": "artifact_01JARTIFACT00000000000",
+    "kind": "candidate-patch",
+    "hash": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+    "size": 1842,
+    "classification": "project",
+    "availability": "local"
+  },
+  "evidenceRefs": [
+    {
+      "id": "evidence_01JEVIDENCE000000000000",
+      "kind": "test-result",
+      "hash": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "status": "passed"
+    }
+  ],
+  "evaluation": {
+    "status": "not-started",
+    "metric": "refresh-regression-rate",
+    "expectedDirection": "decrease",
+    "evidenceRefs": []
+  },
+  "createdAt": "2026-09-01T22:40:00.000Z"
+}

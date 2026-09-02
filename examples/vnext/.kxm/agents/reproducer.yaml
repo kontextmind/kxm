@@ -1,0 +1,15 @@
+schema: kxm.agent.v1
+purpose: Create and execute a production-coupled failing reproduction without changing production code.
+model:
+  tag: implementation
+tools:
+  preset: tests-writer
+defaultRepositoryAccess: none
+repositories:
+  control: read
+  api: write
+  web: write
+network: provider-only
+resultSchema: kxm.assignment-result.v1
+session:
+  reuse: compatible-run-scope

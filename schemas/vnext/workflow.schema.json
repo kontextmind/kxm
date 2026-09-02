@@ -1,0 +1,243 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.kxm.dev/vnext/workflow.schema.json",
+  "title": "KXM ordered workflow definition",
+  "description": "The filename determines the workflow identity.",
+  "type": "object",
+  "required": ["schema", "steps"],
+  "properties": {
+    "schema": { "const": "kxm.workflow.v1" },
+    "description": { "type": "string", "maxLength": 4000 },
+    "coordinator": { "$ref": "common.schema.json#/$defs/identifier" },
+    "limits": { "$ref": "#/$defs/workflowLimits" },
+    "reproOracle": { "$ref": "#/$defs/oracle" },
+    "planHash": { "$ref": "#/$defs/oracle" },
+    "requirePlanHash": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/identifier" },
+      "uniqueItems": true,
+      "maxItems": 128
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "items": { "$ref": "#/$defs/step" }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "workflowLimits": {
+      "type": "object",
+      "properties": {
+        "maxTransitions": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "maxRunDurationMs": { "$ref": "common.schema.json#/$defs/durationMs" },
+        "maxAgentTimeMs": { "$ref": "common.schema.json#/$defs/durationMs" },
+        "maxModelCost": { "type": "number", "exclusiveMinimum": 0 },
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" }
+      },
+      "additionalProperties": false
+    },
+    "assignmentPolicy": {
+      "type": "object",
+      "properties": {
+        "allowedAgents": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/identifier" },
+          "uniqueItems": true,
+          "minItems": 1,
+          "maxItems": 32
+        },
+        "minimum": { "type": "integer", "minimum": 1, "maximum": 64 },
+        "target": { "type": "integer", "minimum": 1, "maximum": 64 },
+        "maximum": { "type": "integer", "minimum": 1, "maximum": 64 },
+        "maxParallel": { "type": "integer", "minimum": 1, "maximum": 64 },
+        "maxAttemptsPerAssignment": { "type": "integer", "minimum": 1, "maximum": 20, "default": 1 },
+        "maxWriteRepositories": { "type": "integer", "minimum": 1, "maximum": 64 },
+        "distinctBy": {
+          "type": "array",
+          "items": { "enum": ["provider", "model", "profile"] },
+          "uniqueItems": true,
+          "maxItems": 3
+        }
+      },
+      "additionalProperties": false
+    },
+    "joinPolicy": {
+      "type": "object",
+      "required": ["strategy"],
+      "properties": {
+        "strategy": { "enum": ["all", "all-settled", "quorum", "first-success"] },
+        "minimumPassed": { "type": "integer", "minimum": 1, "maximum": 64 },
+        "cancelRemaining": { "type": "boolean" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "strategy": { "const": "quorum" } }, "required": ["strategy"] },
+          "then": { "required": ["minimumPassed"] }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "oracle": {
+      "type": "object",
+      "required": ["stageId", "evidenceKey"],
+      "properties": {
+        "stageId": { "$ref": "common.schema.json#/$defs/identifier" },
+        "evidenceKey": { "$ref": "common.schema.json#/$defs/identifier" }
+      },
+      "additionalProperties": false
+    },
+    "producerPolicy": {
+      "type": "object",
+      "required": ["minimumProducers", "eligibleAgents", "acceptedStatuses"],
+      "properties": {
+        "minimumProducers": { "type": "integer", "minimum": 1, "maximum": 16 },
+        "eligibleAgents": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/identifier" },
+          "uniqueItems": true,
+          "minItems": 1,
+          "maxItems": 32
+        },
+        "acceptedStatuses": {
+          "type": "array",
+          "items": { "const": "passed" },
+          "minItems": 1,
+          "maxItems": 1
+        },
+        "degradation": {
+          "type": "object",
+          "required": ["minimumProducers"],
+          "properties": {
+            "minimumProducers": { "type": "integer", "minimum": 1, "maximum": 15 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "evidenceRequirement": {
+      "type": "object",
+      "required": ["key", "kind"],
+      "properties": {
+        "key": { "$ref": "common.schema.json#/$defs/identifier" },
+        "kind": { "enum": ["assignment-result", "gate", "receipt", "approval", "artifact"] },
+        "minimum": { "type": "integer", "minimum": 1, "maximum": 16 },
+        "producerPolicy": { "$ref": "#/$defs/producerPolicy" },
+        "reusableAcrossAttempts": { "type": "boolean", "default": false }
+      },
+      "allOf": [
+        {
+          "if": { "required": ["producerPolicy"] },
+          "then": { "properties": { "kind": { "const": "assignment-result" } } }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "transitionTarget": {
+      "type": "string",
+      "pattern": "^(?:\\$terminal|[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*)$",
+      "maxLength": 64
+    },
+    "transition": {
+      "oneOf": [
+        { "$ref": "common.schema.json#/$defs/identifier" },
+        {
+          "type": "object",
+          "required": ["target"],
+          "properties": {
+            "target": { "$ref": "#/$defs/transitionTarget" },
+            "maxTransitions": { "type": "integer", "minimum": 1, "maximum": 100 },
+            "terminalStatus": { "enum": ["completed", "failed", "cancelled"] }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": { "target": { "const": "$terminal" } },
+                "required": ["target"]
+              },
+              "then": { "required": ["terminalStatus"] },
+              "else": { "not": { "required": ["terminalStatus"] } }
+            }
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "step": {
+      "type": "object",
+      "required": ["id", "kind"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/identifier" },
+        "kind": { "enum": ["agent", "moa", "gate", "approval", "wait"] },
+        "description": { "type": "string", "maxLength": 2000 },
+        "maxAttempts": { "type": "integer", "minimum": 1, "maximum": 20, "default": 1 },
+        "instructions": { "type": "string", "maxLength": 16000 },
+        "agent": { "$ref": "common.schema.json#/$defs/identifier" },
+        "gate": { "$ref": "common.schema.json#/$defs/identifier" },
+        "signal": { "$ref": "common.schema.json#/$defs/identifier" },
+        "model": { "$ref": "common.schema.json#/$defs/modelSelector" },
+        "repositories": {
+          "type": "object",
+          "propertyNames": { "$ref": "common.schema.json#/$defs/identifier" },
+          "additionalProperties": { "$ref": "common.schema.json#/$defs/repositoryAccess" },
+          "maxProperties": 64
+        },
+        "tools": { "$ref": "common.schema.json#/$defs/toolPolicy" },
+        "secrets": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/secretGrant" },
+          "maxItems": 64
+        },
+        "assignments": { "$ref": "#/$defs/assignmentPolicy" },
+        "join": { "$ref": "#/$defs/joinPolicy" },
+        "requiredEvidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/evidenceRequirement" },
+          "maxItems": 64
+        },
+        "timeoutMs": { "$ref": "common.schema.json#/$defs/durationMs" },
+        "safeSpeculation": { "type": "boolean", "default": false },
+        "on": {
+          "type": "object",
+          "propertyNames": { "$ref": "common.schema.json#/$defs/identifier" },
+          "additionalProperties": { "$ref": "#/$defs/transition" },
+          "minProperties": 1,
+          "maxProperties": 32
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "enum": ["agent", "moa"] } }, "required": ["kind"] },
+          "then": { "required": ["agent"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "gate" } }, "required": ["kind"] },
+          "then": { "required": ["gate"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "wait" } }, "required": ["kind"] },
+          "then": { "required": ["signal"] }
+        },
+        {
+          "if": {
+            "properties": {
+              "join": {
+                "type": "object",
+                "properties": { "strategy": { "const": "first-success" } },
+                "required": ["strategy"]
+              }
+            },
+            "required": ["join"]
+          },
+          "then": {
+            "properties": { "safeSpeculation": { "const": true } },
+            "required": ["safeSpeculation"]
+          }
+        }
+      ],
+      "additionalProperties": false
+    }
+  }
+}

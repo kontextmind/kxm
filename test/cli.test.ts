@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -13,6 +14,11 @@ async function runCli(argv: string[], env: NodeJS.ProcessEnv, io: CliIo, cwd = p
   } finally {
     rmSync(isolatedLogs, { recursive: true, force: true });
   }
+}
+
+function makeGitRoot(root: string): void {
+  const initialized = spawnSync("git", ["-c", "init.defaultBranch=main", "init", "--quiet", root], { encoding: "utf8", windowsHide: true });
+  assert.equal(initialized.status, 0, initialized.stderr);
 }
 
 function capture() {
@@ -83,6 +89,68 @@ test("agent and gate CLI results share the worker envelope", async () => {
   assert.equal(gate.worker.driver, "code");
   assert.equal(gate.command, "validate");
   assert.equal(gate.outcome, "failed");
+});
+
+test("vNext init creates and revalidates project configuration without legacy environment overrides", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "kxm-vnext-cli-init-"));
+  const dryCwd = mkdtempSync(join(tmpdir(), "kxm-vnext-cli-dry-"));
+  const legacyCwd = mkdtempSync(join(tmpdir(), "kxm-vnext-cli-legacy-"));
+  try {
+    makeGitRoot(cwd);
+    makeGitRoot(dryCwd);
+    const unsupportedWorkspace = capture();
+    assert.equal(await runCli(["--workspace", join(cwd, "wrong"), "init", "--json"], {}, unsupportedWorkspace, cwd), 2);
+    assert.match(unsupportedWorkspace.read().stdout, /"error":"workspace_option_unsupported"/);
+    assert.equal(existsSync(join(cwd, ".kxm")), false);
+
+    const createdIo = capture();
+    assert.equal(await runCli([
+      "init", "--json", "--name", "CLI Project", "--project-id", "prj_01JCLIPROJECT0000000000000",
+    ], {
+      PI_MESH_WORKDIR: join(cwd, "must-not-use"),
+      PI_MESH_CONFIG_DIR: join(cwd, "also-must-not-use"),
+    }, createdIo, cwd), 0);
+    const created = JSON.parse(createdIo.read().stdout) as { action: string; mode: string; configRevision: string; files: string[] };
+    assert.equal(created.action, "created");
+    assert.equal(created.mode, "ready");
+    assert.match(created.configRevision, /^sha256:[a-f0-9]{64}$/);
+    assert.equal(created.files.length, 5);
+    assert.equal(existsSync(join(cwd, ".kxm", "project.yaml")), true);
+    assert.equal(existsSync(join(cwd, "must-not-use")), false);
+
+    const repeatedIo = capture();
+    assert.equal(await runCli(["init", "--json"], {}, repeatedIo, cwd), 0);
+    const repeated = JSON.parse(repeatedIo.read().stdout) as { action: string; configRevision: string };
+    assert.equal(repeated.action, "validated");
+    assert.equal(repeated.configRevision, created.configRevision);
+
+    const dryIo = capture();
+    assert.equal(await runCli(["init", "--json", "--dry-run"], {}, dryIo, dryCwd), 0);
+    assert.match(dryIo.read().stdout, /"action":"planned"/);
+    assert.equal(existsSync(join(dryCwd, ".kxm")), false);
+    const invalidIo = capture();
+    assert.equal(await runCli(["init", "--json", "--dry-run", "--project-id", "not-a-project-id"], {}, invalidIo, dryCwd), 1);
+    assert.match(invalidIo.read().stdout, /"error":"vnext_initialization_failed"/);
+    assert.equal(existsSync(join(dryCwd, ".kxm")), false);
+
+    const noGitIo = capture();
+    assert.equal(await runCli(["init", "--json", "--dry-run"], {}, noGitIo, legacyCwd), 1);
+    assert.match(noGitIo.read().stdout, /git_root_required/);
+
+    makeGitRoot(legacyCwd);
+    mkdirSync(join(legacyCwd, ".kxm", "config"), { recursive: true });
+    writeFileSync(join(legacyCwd, ".kxm", "config", "agents.json"), "[]\n");
+    const invalidMigrationIo = capture();
+    assert.equal(await runCli(["init", "--json", "--dry-run", "--project-id", "invalid"], {}, invalidMigrationIo, legacyCwd), 1);
+    assert.match(invalidMigrationIo.read().stdout, /project_id_invalid/);
+    const legacyIo = capture();
+    assert.equal(await runCli(["init", "--json"], {}, legacyIo, legacyCwd), 1);
+    assert.match(legacyIo.read().stdout, /"mode":"migrate"/);
+    assert.match(legacyIo.read().stdout, /\.kxm\/config\/agents\.json/);
+    assert.match(legacyIo.read().stdout, /"plannedOnly":true/);
+  } finally {
+    for (const root of [cwd, dryCwd, legacyCwd]) rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("init and validate work in an isolated workspace", async () => {

@@ -1,0 +1,92 @@
+schema: kxm.workflow.v1
+description: Minimal local plan, implement, verify, and summarize workflow.
+coordinator: coordinator
+limits:
+  maxTransitions: 8
+  maxRunDurationMs: 14400000
+  maxAgentTimeMs: 21600000
+steps:
+  - id: plan
+    kind: agent
+    agent: planner
+    maxAttempts: 2
+    repositories:
+      control: read
+      api: read
+      web: read
+    requiredEvidence:
+      - key: plan
+        kind: artifact
+    timeoutMs: 1200000
+    on:
+      passed: implement
+      blocked:
+        target: $terminal
+        terminalStatus: failed
+
+  - id: implement
+    kind: agent
+    agent: implementer
+    maxAttempts: 3
+    repositories:
+      control: read
+      api: write
+      web: write
+    assignments:
+      allowedAgents:
+        - implementer
+      minimum: 1
+      target: 1
+      maximum: 2
+      maxParallel: 1
+      maxAttemptsPerAssignment: 2
+      maxWriteRepositories: 1
+    requiredEvidence:
+      - key: implementation-diff
+        kind: artifact
+    timeoutMs: 3600000
+    on:
+      passed: verify
+      failed:
+        target: $terminal
+        terminalStatus: failed
+
+  - id: verify
+    kind: gate
+    gate: test
+    maxAttempts: 3
+    repositories:
+      api: write
+      web: write
+    requiredEvidence:
+      - key: local-gates
+        kind: gate
+    timeoutMs: 3600000
+    on:
+      passed: ready
+      implementation-failure:
+        target: implement
+        maxTransitions: 3
+      failed:
+        target: $terminal
+        terminalStatus: failed
+
+  - id: ready
+    kind: agent
+    agent: planner
+    maxAttempts: 2
+    repositories:
+      control: read
+      api: read
+      web: read
+    requiredEvidence:
+      - key: summary
+        kind: assignment-result
+    timeoutMs: 900000
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      blocked:
+        target: $terminal
+        terminalStatus: failed

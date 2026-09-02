@@ -1,0 +1,8 @@
+schema: kxm.repository.v1
+projectId: prj_01JPROJECT00000000000000000
+repositoryId: web
+description: Customer-facing web application.
+ecosystems:
+  - node
+classification: internal
+defaultAccess: read
