@@ -18,12 +18,13 @@ Implement restricted YAML loading, project/repository discovery, resource
 resolution, templates, three-way reconciliation, and idempotent `kxm init`.
 Support create, join, repair, resume, and legacy JSON migration.
 
-**Current slice:** restricted parsing, exact-schema and semantic bundle
+**Implemented slices:** restricted parsing, exact-schema and semantic bundle
 validation, path-derived discovery, deterministic configuration hashing, init
-state classification, atomic minimal creation, and rewrite-free revalidation
-are implemented. Repair reconciliation, local binding persistence, resumable
-init, migration conversion/receipts, and permission-diff trust remain pending;
-therefore the Phase 1 gate is not yet passed.
+state classification, atomic minimal creation, rewrite-free revalidation,
+explicit join, and bounded Runtime-local member-repository binding persistence.
+Repair reconciliation, resumable init, migration conversion/receipts, and
+permission-diff trust remain pending; therefore the Phase 1 gate is not yet
+passed.
 
 **Gate:** a project can be reproduced from Git on a second machine without a
 hub and without overwriting edited files.

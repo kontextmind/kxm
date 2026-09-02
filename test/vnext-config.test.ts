@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import {
   VnextConfigError,
@@ -12,6 +12,7 @@ import {
   parseRestrictedYaml,
   planVnextInitialization,
 } from "../plugins/kxm-mesh/src/vnext-config.ts";
+import { readVnextLocalBindings, vnextLocalBindingFile, withVnextLocalBindingLock } from "../plugins/kxm-mesh/src/vnext-bindings.ts";
 import { initializeVnextProject } from "../plugins/kxm-mesh/src/vnext-init.ts";
 
 const fixture = resolve("examples/vnext");
@@ -133,6 +134,40 @@ test("vNext loader requires exact repository bindings and supports explicit host
   }
 });
 
+test("vNext init never persists an unverified explicit optional member binding", () => {
+  const root = temporaryFixture("kxm-vnext-optional-binding-");
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-vnext-optional-state-"));
+  const emptyMember = mkdtempSync(join(tmpdir(), "kxm-vnext-empty-member-"));
+  try {
+    const projectFile = join(root, ".kxm", "project.yaml");
+    const project = readFileSync(projectFile, "utf8")
+      .replace("    pathHint: repositories/api\n", "")
+      .replace("  - id: api\n    role: member\n    required: true", "  - id: api\n    role: member\n    required: false");
+    writeFileSync(projectFile, project);
+    const bindingFile = vnextLocalBindingFile(root, { stateRoot });
+    const unavailable = initializeVnextProject(root, {
+      repositoryBindings: { api: join(emptyMember, "missing") },
+      localStateRoot: stateRoot,
+    });
+    assert.equal(unavailable.action, "planned");
+    assert(unavailable.plan.issues.some((candidate) => candidate.code === "repository_binding_unavailable"));
+    assert.equal(existsSync(bindingFile), false);
+
+    makeGitRoot(emptyMember);
+    const undefinedRepository = initializeVnextProject(root, {
+      repositoryBindings: { api: emptyMember },
+      localStateRoot: stateRoot,
+    });
+    assert.equal(undefinedRepository.action, "planned");
+    assert(undefinedRepository.plan.issues.some((candidate) => candidate.code === "repository_definition_missing"));
+    assert.equal(existsSync(bindingFile), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(stateRoot, { recursive: true, force: true });
+    rmSync(emptyMember, { recursive: true, force: true });
+  }
+});
+
 test("vNext loader rejects portable member bindings through linked path components", () => {
   const root = temporaryFixture("kxm-vnext-linked-binding-");
   const external = mkdtempSync(join(tmpdir(), "kxm-vnext-linked-target-"));
@@ -212,6 +247,100 @@ test("vNext init atomically creates a minimal project and is idempotent", () => 
   } finally {
     rmSync(root, { recursive: true, force: true });
     rmSync(dryRoot, { recursive: true, force: true });
+  }
+});
+
+test("vNext init joins with atomic Runtime-local member bindings and reuses them idempotently", () => {
+  const root = temporaryFixture("kxm-vnext-join-");
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-vnext-local-state-"));
+  const linkedTarget = mkdtempSync(join(tmpdir(), "kxm-vnext-linked-state-"));
+  try {
+    const projectFile = join(root, ".kxm", "project.yaml");
+    writeFileSync(projectFile, readFileSync(projectFile, "utf8").replace("    pathHint: repositories/api\n", ""));
+    const api = join(root, "repositories", "api");
+    const bindingFile = vnextLocalBindingFile(root, { stateRoot });
+
+    const unknown = initializeVnextProject(root, {
+      repositoryBindings: { unknown: api },
+      localStateRoot: stateRoot,
+    });
+    assert.equal(unknown.action, "planned");
+    assert(unknown.plan.issues.some((candidate) => candidate.code === "repository_binding_unknown"));
+    assert.equal(existsSync(bindingFile), false);
+    assert.throws(
+      () => initializeVnextProject(root, { repositoryBindings: { api }, localStateRoot: "relative-state" }),
+      (error) => issueCodes(error).includes("local_state_root_not_absolute"),
+    );
+    withVnextLocalBindingLock(root, { stateRoot }, (lock) => {
+      assert.throws(
+        () => initializeVnextProject(root, { repositoryBindings: { api }, localStateRoot: stateRoot }),
+        (error) => issueCodes(error).includes("local_binding_lock_busy"),
+      );
+      assert.equal(existsSync(lock.file), true, "a contender must not remove the lock it did not acquire");
+      assert.equal(existsSync(bindingFile), false);
+    });
+    assert.throws(
+      () => initializeVnextProject(root, { repositoryBindings: { api, control: root }, localStateRoot: stateRoot }),
+      (error) => issueCodes(error).includes("local_binding_repository_invalid"),
+    );
+
+    const dry = initializeVnextProject(root, {
+      repositoryBindings: { api },
+      localStateRoot: stateRoot,
+      dryRun: true,
+    });
+    assert.equal(dry.action, "planned");
+    assert.equal(dry.bindingsChanged, true);
+    assert.equal(dry.localBindingFile, bindingFile);
+    assert.equal(existsSync(bindingFile), false);
+
+    const joined = initializeVnextProject(root, {
+      repositoryBindings: { api },
+      localStateRoot: stateRoot,
+    });
+    assert.equal(joined.action, "joined");
+    assert.equal(joined.bindingsChanged, true);
+    assert.equal(joined.localBindingFile, bindingFile);
+    assert.equal(existsSync(bindingFile), true);
+    assert.equal(readFileSync(projectFile, "utf8").includes(realpathSync.native(api)), false, "absolute bindings must not enter Git configuration");
+    const record = readVnextLocalBindings(root, { stateRoot });
+    assert.equal(record?.projectId, "prj_01JPROJECT00000000000000000");
+    assert.deepEqual(record?.repositories, { api: realpathSync.native(api) });
+
+    const repeated = initializeVnextProject(root, { localStateRoot: stateRoot });
+    assert.equal(repeated.action, "validated");
+    assert.equal(repeated.configRevision, joined.configRevision);
+    const unchanged = initializeVnextProject(root, { repositoryBindings: { api }, localStateRoot: stateRoot });
+    assert.equal(unchanged.action, "validated");
+    assert.equal(unchanged.bindingsChanged, false);
+
+    const validRecordText = readFileSync(bindingFile, "utf8");
+    const invalidRecord = JSON.parse(validRecordText) as Record<string, unknown>;
+    invalidRecord.unexpected = true;
+    writeFileSync(bindingFile, `${JSON.stringify(invalidRecord)}\n`);
+    assert.throws(
+      () => initializeVnextProject(root, { localStateRoot: stateRoot }),
+      (error) => issueCodes(error).includes("schema_additionalProperties"),
+    );
+    delete invalidRecord.unexpected;
+    invalidRecord.projectId = "prj_01JOTHERPROJECT000000000000";
+    writeFileSync(bindingFile, `${JSON.stringify(invalidRecord)}\n`);
+    assert.throws(
+      () => initializeVnextProject(root, { localStateRoot: stateRoot }),
+      (error) => issueCodes(error).includes("local_binding_project_id_mismatch"),
+    );
+
+    writeFileSync(join(linkedTarget, "repository-bindings.json"), validRecordText);
+    rmSync(dirname(bindingFile), { recursive: true, force: true });
+    symlinkSync(linkedTarget, dirname(bindingFile), process.platform === "win32" ? "junction" : "dir");
+    assert.throws(
+      () => initializeVnextProject(root, { localStateRoot: stateRoot }),
+      (error) => issueCodes(error).includes("local_binding_directory_invalid"),
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(stateRoot, { recursive: true, force: true });
+    rmSync(linkedTarget, { recursive: true, force: true });
   }
 });
 

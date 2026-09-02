@@ -12,18 +12,29 @@ import {
   type VnextConfigOptions,
   type VnextInitializationPlan,
 } from "./vnext-config.ts";
+import {
+  planVnextLocalBindings,
+  readVnextLocalBindings,
+  withVnextLocalBindingLock,
+  writeVnextLocalBindings,
+  type VnextLocalBindingLock,
+  type VnextLocalBindingStoreOptions,
+} from "./vnext-bindings.ts";
 
 export interface VnextInitOptions extends VnextConfigOptions {
   projectId?: string;
   projectName?: string;
   dryRun?: boolean;
+  localStateRoot?: string;
 }
 
 export interface VnextInitResult {
-  action: "planned" | "created" | "validated";
+  action: "planned" | "created" | "joined" | "validated";
   plan: VnextInitializationPlan;
   projectRoot?: string;
   configRevision?: string;
+  localBindingFile?: string;
+  bindingsChanged?: boolean;
   files: readonly string[];
 }
 
@@ -170,30 +181,103 @@ function writeTemplate(stagingRoot: string, resources: ReadonlyMap<string, JsonO
   }
 }
 
+function configOptions(options: VnextInitOptions, repositoryBindings: Readonly<Record<string, string>>): VnextConfigOptions {
+  return {
+    ...(options.schemasDir === undefined ? {} : { schemasDir: options.schemasDir }),
+    repositoryBindings,
+    ...(options.registeredExecutors === undefined ? {} : { registeredExecutors: options.registeredExecutors }),
+    ...(options.registeredGates === undefined ? {} : { registeredGates: options.registeredGates }),
+    ...(options.registeredToolPresets === undefined ? {} : { registeredToolPresets: options.registeredToolPresets }),
+  };
+}
+
+function bindingStoreOptions(options: VnextInitOptions): VnextLocalBindingStoreOptions {
+  return {
+    ...(options.localStateRoot === undefined ? {} : { stateRoot: options.localStateRoot }),
+    ...(options.schemasDir === undefined ? {} : { schemasDir: options.schemasDir }),
+  };
+}
+
+function memberRepositoryIds(project: JsonObject): Set<string> {
+  const repositories = Array.isArray(project.repositories) ? project.repositories : [];
+  return new Set(repositories.flatMap((candidate) => {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return [];
+    const record = candidate as JsonObject;
+    return record.role === "member" && typeof record.id === "string" ? [record.id] : [];
+  }));
+}
+
 /**
- * Idempotent first slice of unified init: validate an existing vNext project,
- * produce a non-mutating migration/repair plan, or atomically create the
- * minimal Git-tracked project configuration in an otherwise uninitialized
- * Git root. Existing files are never overwritten.
+ * Unified init slice: validate an existing vNext project, join it with explicit
+ * Runtime-local member bindings, produce a non-mutating migration/repair plan,
+ * or atomically create minimal Git-tracked configuration. Existing project
+ * resources are never overwritten and host paths are never written into Git.
  */
-export function initializeVnextProject(start = process.cwd(), options: VnextInitOptions = {}): VnextInitResult {
-  const plan = planVnextInitialization(start, options);
-  const gitRoot = discoverGitRoot(start);
-  if (!gitRoot) {
-    throw new VnextConfigError([initIssue("git_root_required", ".", "kxm init must run inside the authoritative Git worktree")]);
-  }
-  if (options.projectId !== undefined) generatedProjectId(options.projectId);
-  if (options.projectName !== undefined) normalizedProjectName(gitRoot, options.projectName);
+function initializeVnextProjectAtGitRoot(
+  start: string,
+  gitRoot: string,
+  options: VnextInitOptions,
+  bindingLock?: VnextLocalBindingLock,
+): VnextInitResult {
+  const storeOptions = bindingStoreOptions(options);
+  const persisted = existsSync(join(gitRoot, ".kxm", "project.yaml"))
+    ? readVnextLocalBindings(gitRoot, storeOptions)
+    : undefined;
+  const repositoryBindings = Object.fromEntries([
+    ...Object.entries(persisted?.repositories ?? {}),
+    ...Object.entries(options.repositoryBindings ?? {}),
+  ]);
+  const loaderOptions = configOptions(options, repositoryBindings);
+  const plan = planVnextInitialization(start, loaderOptions);
   if (plan.mode === "migrate" || plan.mode === "repair") {
     return { action: "planned", plan, ...(plan.projectRoot ? { projectRoot: plan.projectRoot } : {}), files: [] };
   }
   if (plan.mode === "ready") {
-    if (options.dryRun) return { action: "planned", plan, ...(plan.projectRoot ? { projectRoot: plan.projectRoot } : {}), files: [] };
+    const projectRoot = plan.projectRoot ?? gitRoot;
+    const bundle = loadVnextProject(projectRoot, loaderOptions);
+    const projectId = String(bundle.project.value.id);
+    if (persisted && persisted.projectId !== projectId) {
+      throw new VnextConfigError([initIssue("local_binding_project_id_mismatch", "Runtime-local repository bindings", "binding record belongs to a different project identity")]);
+    }
+    const memberIds = memberRepositoryIds(bundle.project.value);
+    for (const repositoryId of Object.keys(persisted?.repositories ?? {})) {
+      if (!memberIds.has(repositoryId)) {
+        throw new VnextConfigError([initIssue("local_binding_repository_invalid", "Runtime-local repository bindings", `persisted binding ${repositoryId} is not a member repository`)]);
+      }
+    }
+    for (const repositoryId of Object.keys(options.repositoryBindings ?? {})) {
+      if (!memberIds.has(repositoryId)) {
+        throw new VnextConfigError([initIssue("local_binding_repository_invalid", "Runtime-local repository bindings", `explicit binding ${repositoryId} is not a member repository`)]);
+      }
+    }
+    const explicitMemberBindings = Object.fromEntries(Object.entries(repositoryBindings)
+      .filter(([repositoryId]) => memberIds.has(repositoryId)));
+    const shouldPersist = Object.keys(options.repositoryBindings ?? {}).length > 0;
+    const bindingPlan = shouldPersist
+      ? planVnextLocalBindings(projectRoot, projectId, explicitMemberBindings, storeOptions)
+      : undefined;
+    const localBindingFile = persisted?.file ?? bindingPlan?.file;
+    if (options.dryRun) {
+      return {
+        action: "planned",
+        plan,
+        projectRoot,
+        configRevision: bundle.configRevision,
+        ...(localBindingFile === undefined ? {} : { localBindingFile }),
+        ...(bindingPlan ? { bindingsChanged: bindingPlan.written } : {}),
+        files: [],
+      };
+    }
+    const written = bindingPlan?.written
+      ? writeVnextLocalBindings(projectRoot, projectId, explicitMemberBindings, storeOptions, bindingLock)
+      : bindingPlan;
     return {
-      action: "validated",
+      action: written?.written ? "joined" : "validated",
       plan,
-      ...(plan.projectRoot ? { projectRoot: plan.projectRoot } : {}),
-      ...(plan.configRevision ? { configRevision: plan.configRevision } : {}),
+      projectRoot,
+      configRevision: bundle.configRevision,
+      ...(localBindingFile === undefined ? {} : { localBindingFile }),
+      ...(written ? { bindingsChanged: written.written } : {}),
       files: [],
     };
   }
@@ -211,7 +295,7 @@ export function initializeVnextProject(start = process.cwd(), options: VnextInit
   const staging = mkdtempSync(join(gitRoot, ".kxm-init-"));
   try {
     writeTemplate(staging, resources);
-    const stagedBundle = loadVnextProject(staging, options);
+    const stagedBundle = loadVnextProject(staging, loaderOptions);
     if (existsSync(join(gitRoot, ".kxm"))) {
       throw new VnextConfigError([initIssue("workspace_changed", ".kxm", "workspace changed during validation; existing state was not overwritten")]);
     }
@@ -224,11 +308,11 @@ export function initializeVnextProject(start = process.cwd(), options: VnextInit
       }
       throw error;
     }
-    const installedBundle = loadVnextProject(gitRoot, options);
+    const installedBundle = loadVnextProject(gitRoot, loaderOptions);
     if (installedBundle.configRevision !== stagedBundle.configRevision) {
       throw new VnextConfigError([initIssue("install_verification_failed", ".kxm", "installed configuration does not match the validated staging bundle")]);
     }
-    const completedPlan = planVnextInitialization(gitRoot, options);
+    const completedPlan = planVnextInitialization(gitRoot, loaderOptions);
     return {
       action: "created",
       plan: completedPlan,
@@ -242,4 +326,19 @@ export function initializeVnextProject(start = process.cwd(), options: VnextInit
     // configuration in place for deterministic repair rather than deleting
     // an installation another process may already have observed.
   }
+}
+
+export function initializeVnextProject(start = process.cwd(), options: VnextInitOptions = {}): VnextInitResult {
+  const gitRoot = discoverGitRoot(start);
+  if (!gitRoot) {
+    throw new VnextConfigError([initIssue("git_root_required", ".", "kxm init must run inside the authoritative Git worktree")]);
+  }
+  if (options.projectId !== undefined) generatedProjectId(options.projectId);
+  if (options.projectName !== undefined) normalizedProjectName(gitRoot, options.projectName);
+  const explicitBindingUpdate = Object.keys(options.repositoryBindings ?? {}).length > 0
+    && !options.dryRun
+    && existsSync(join(gitRoot, ".kxm", "project.yaml"));
+  if (!explicitBindingUpdate) return initializeVnextProjectAtGitRoot(start, gitRoot, options);
+  const storeOptions = bindingStoreOptions(options);
+  return withVnextLocalBindingLock(gitRoot, storeOptions, (lock) => initializeVnextProjectAtGitRoot(start, gitRoot, options, lock));
 }

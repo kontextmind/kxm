@@ -19,6 +19,7 @@ import { createSession, loadNamedWorkers, rosterNames, sessionAssetDirs, standar
 import { buildImprovementReport, writeImprovementReport } from "./improve.ts";
 import { runMeshTui } from "./tui.ts";
 import { VnextConfigError, type VnextInitializationPlan } from "./vnext-config.ts";
+import { vnextUserStateRoot } from "./vnext-bindings.ts";
 import { initializeVnextProject } from "./vnext-init.ts";
 import type { WorkflowEvidenceInput, WorkflowJournalEntry, WorkflowRun } from "./workflow.ts";
 
@@ -403,7 +404,34 @@ function initPlanPayload(plan: VnextInitializationPlan): Record<string, unknown>
   };
 }
 
-async function cmdVnextInit(runtime: Runtime, options: { name?: string; projectId?: string }): Promise<number> {
+function explicitRepositoryBindings(values: readonly string[]): Readonly<Record<string, string>> {
+  const result: Record<string, string> = Object.create(null) as Record<string, string>;
+  for (const value of values) {
+    const separator = value.indexOf("=");
+    const repositoryId = separator < 0 ? "" : value.slice(0, separator).trim();
+    const path = separator < 0 ? "" : value.slice(separator + 1).trim();
+    if (!repositoryId || !path) {
+      throw new VnextConfigError([{
+        phase: "discovery",
+        code: "repository_binding_argument_invalid",
+        file: "--repository",
+        message: "repository bindings must use <id=absolute-path>",
+      }]);
+    }
+    if (Object.hasOwn(result, repositoryId)) {
+      throw new VnextConfigError([{
+        phase: "discovery",
+        code: "repository_binding_argument_duplicate",
+        file: "--repository",
+        message: `repository binding ${repositoryId} was supplied more than once`,
+      }]);
+    }
+    result[repositoryId] = path;
+  }
+  return result;
+}
+
+async function cmdVnextInit(runtime: Runtime, options: { name?: string; projectId?: string; repository?: string[] }): Promise<number> {
   if (runtime.workspaceFlag !== undefined) {
     print(runtime.io, runtime.json, {
       ok: false,
@@ -416,6 +444,8 @@ async function cmdVnextInit(runtime: Runtime, options: { name?: string; projectI
     const initialized = initializeVnextProject(runtime.cwd, {
       ...(options.name?.trim() ? { projectName: options.name.trim() } : {}),
       ...(options.projectId?.trim() ? { projectId: options.projectId.trim() } : {}),
+      repositoryBindings: explicitRepositoryBindings(options.repository ?? []),
+      localStateRoot: vnextUserStateRoot({ env: runtime.env }),
       dryRun: runtime.dryRun,
     });
     const payload = {
@@ -425,10 +455,16 @@ async function cmdVnextInit(runtime: Runtime, options: { name?: string; projectI
       ...initPlanPayload(initialized.plan),
       files: initialized.files,
       ...(initialized.configRevision ? { configRevision: initialized.configRevision } : {}),
+      ...(initialized.localBindingFile ? { localBindingFile: initialized.localBindingFile } : {}),
+      ...(initialized.bindingsChanged === undefined ? {} : { bindingsChanged: initialized.bindingsChanged }),
       plannedOnly: initialized.action === "planned",
     };
     if (initialized.action === "created") {
       print(runtime.io, runtime.json, payload, `initialized vNext project at ${initialized.projectRoot ?? runtime.cwd}`);
+      return 0;
+    }
+    if (initialized.action === "joined") {
+      print(runtime.io, runtime.json, payload, `joined vNext project at ${initialized.projectRoot ?? runtime.cwd}`);
       return 0;
     }
     if (initialized.action === "validated") {
@@ -1438,7 +1474,8 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .option("--dry-run", "Plan without making changes")
     .option("--name <name>", "Project display name for a new project")
     .option("--project-id <id>", "Stable project ID for controlled provisioning")
-    .action(async function initAction(this: Command, options: { name?: string; projectId?: string }) {
+    .option("--repository <id=absolute-path>", "Bind a member repository outside Git configuration", (value, previous: string[]) => [...previous, value], [])
+    .action(async function initAction(this: Command, options: { name?: string; projectId?: string; repository?: string[] }) {
       result.code = await cmdVnextInit(runtimeFrom(ctx, this), options);
     });
 

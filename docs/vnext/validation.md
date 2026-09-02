@@ -50,7 +50,10 @@ are rejected unless a schema explicitly defines an extension map.
 - reject portable `pathHint` values whose existing components traverse a
   symlink/junction or whose real path escapes the control project root;
 - treat out-of-tree member bindings as absolute Runtime-local input, never
-  portable YAML, while the control binding is always the project root.
+  portable YAML, while the control binding is always the project root;
+- persist explicit member bindings only after complete bundle validation in an
+  exact, bounded host record keyed by the canonical control-root path; reject
+  corrupt, linked, unknown, control-rebinding, or project-mismatched records.
 
 ### 4. Cross-reference validation
 
