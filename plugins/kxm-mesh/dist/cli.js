@@ -2987,7 +2987,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve6.call(this, root, ref);
+      let _sch = resolve7.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a = root.localRefs) === null || _a === void 0 ? void 0 : _a[ref];
         const { schemaId } = this.opts;
@@ -3014,7 +3014,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve6(root, ref) {
+    function resolve7(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3835,11 +3835,11 @@ var require_fast_uri = __commonJS({
         normalizeString(uri, options);
       } else if (typeof uri === "object") {
         uri = /** @type {T} */
-        parse(serialize(uri, options), options);
+        parse2(serialize(uri, options), options);
       }
       return uri;
     }
-    function resolve6(baseURI, relativeURI, options) {
+    function resolve7(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const {
         parsed: baseParsed,
@@ -3872,49 +3872,49 @@ var require_fast_uri = __commonJS({
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
-    function resolveComponent(base, relative3, options, skipNormalization) {
+    function resolveComponent(base, relative5, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
-        base = parse(serialize(base, options), options);
-        relative3 = parse(serialize(relative3, options), options);
+        base = parse2(serialize(base, options), options);
+        relative5 = parse2(serialize(relative5, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative3.scheme) {
-        target.scheme = relative3.scheme;
-        target.userinfo = relative3.userinfo;
-        target.host = relative3.host;
-        target.port = relative3.port;
-        target.path = removeDotSegments(relative3.path || "");
-        target.query = relative3.query;
+      if (!options.tolerant && relative5.scheme) {
+        target.scheme = relative5.scheme;
+        target.userinfo = relative5.userinfo;
+        target.host = relative5.host;
+        target.port = relative5.port;
+        target.path = removeDotSegments(relative5.path || "");
+        target.query = relative5.query;
       } else {
-        if (relative3.userinfo !== void 0 || relative3.host !== void 0 || relative3.port !== void 0) {
-          target.userinfo = relative3.userinfo;
-          target.host = relative3.host;
-          target.port = relative3.port;
-          target.path = removeDotSegments(relative3.path || "");
-          target.query = relative3.query;
+        if (relative5.userinfo !== void 0 || relative5.host !== void 0 || relative5.port !== void 0) {
+          target.userinfo = relative5.userinfo;
+          target.host = relative5.host;
+          target.port = relative5.port;
+          target.path = removeDotSegments(relative5.path || "");
+          target.query = relative5.query;
         } else {
-          if (!relative3.path) {
+          if (!relative5.path) {
             target.path = base.path;
-            if (relative3.query !== void 0) {
-              target.query = relative3.query;
+            if (relative5.query !== void 0) {
+              target.query = relative5.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative3.path[0] === "/") {
-              target.path = removeDotSegments(relative3.path);
+            if (relative5.path[0] === "/") {
+              target.path = removeDotSegments(relative5.path);
             } else {
               if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) {
-                target.path = "/" + relative3.path;
+                target.path = "/" + relative5.path;
               } else if (!base.path) {
-                target.path = relative3.path;
+                target.path = relative5.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative3.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative5.path;
               }
               target.path = removeDotSegments(target.path);
             }
-            target.query = relative3.query;
+            target.query = relative5.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -3922,7 +3922,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative3.fragment;
+      target.fragment = relative5.fragment;
       return target;
     }
     function equal(uriA, uriB, options) {
@@ -4168,7 +4168,7 @@ var require_fast_uri = __commonJS({
       }
       return { parsed, malformedAuthorityOrPort, malformedPercentEncoding, malformedSchemeSpecific, malformedHost, malformedScheme };
     }
-    function parse(uri, opts) {
+    function parse2(uri, opts) {
       return parseWithStatus(uri, opts).parsed;
     }
     function normalizeString(uri, opts) {
@@ -4201,11 +4201,11 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve: resolve6,
+      resolve: resolve7,
       resolveComponent,
       equal,
       serialize,
-      parse
+      parse: parse2
     };
     module.exports = fastUri;
     module.exports.default = fastUri;
@@ -11396,10 +11396,10 @@ var require_resolve_block_map = __commonJS({
       let offset = bm.offset;
       let commentEnd = null;
       for (const collItem of bm.items) {
-        const { start, key, sep: sep2, value } = collItem;
+        const { start, key, sep: sep3, value } = collItem;
         const keyProps = resolveProps.resolveProps(start, {
           indicator: "explicit-key-ind",
-          next: key ?? sep2?.[0],
+          next: key ?? sep3?.[0],
           offset,
           onError,
           parentIndent: bm.indent,
@@ -11413,7 +11413,7 @@ var require_resolve_block_map = __commonJS({
             else if ("indent" in key && key.indent !== bm.indent)
               onError(offset, "BAD_INDENT", startColMsg);
           }
-          if (!keyProps.anchor && !keyProps.tag && !sep2) {
+          if (!keyProps.anchor && !keyProps.tag && !sep3) {
             commentEnd = keyProps.end;
             if (keyProps.comment) {
               if (map.comment)
@@ -11437,7 +11437,7 @@ var require_resolve_block_map = __commonJS({
         ctx.atKey = false;
         if (utilMapIncludes.mapIncludes(ctx, map.items, keyNode))
           onError(keyStart, "DUPLICATE_KEY", "Map keys must be unique");
-        const valueProps = resolveProps.resolveProps(sep2 ?? [], {
+        const valueProps = resolveProps.resolveProps(sep3 ?? [], {
           indicator: "map-value-ind",
           next: value,
           offset: keyNode.range[2],
@@ -11453,7 +11453,7 @@ var require_resolve_block_map = __commonJS({
             if (ctx.options.strict && keyProps.start < valueProps.found.offset - 1024)
               onError(keyNode.range, "KEY_OVER_1024_CHARS", "The : indicator must be at most 1024 chars after the start of an implicit block mapping key");
           }
-          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : composeEmptyNode(ctx, offset, sep2, null, valueProps, onError);
+          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : composeEmptyNode(ctx, offset, sep3, null, valueProps, onError);
           if (ctx.schema.compat)
             utilFlowIndentCheck.flowIndentCheck(bm.indent, value, onError);
           offset = valueNode.range[2];
@@ -11544,7 +11544,7 @@ var require_resolve_end = __commonJS({
       let comment = "";
       if (end) {
         let hasSpace = false;
-        let sep2 = "";
+        let sep3 = "";
         for (const token of end) {
           const { source, type } = token;
           switch (type) {
@@ -11558,13 +11558,13 @@ var require_resolve_end = __commonJS({
               if (!comment)
                 comment = cb;
               else
-                comment += sep2 + cb;
-              sep2 = "";
+                comment += sep3 + cb;
+              sep3 = "";
               break;
             }
             case "newline":
               if (comment)
-                sep2 += source;
+                sep3 += source;
               hasSpace = true;
               break;
             default:
@@ -11607,18 +11607,18 @@ var require_resolve_flow_collection = __commonJS({
       let offset = fc.offset + fc.start.source.length;
       for (let i = 0; i < fc.items.length; ++i) {
         const collItem = fc.items[i];
-        const { start, key, sep: sep2, value } = collItem;
+        const { start, key, sep: sep3, value } = collItem;
         const props = resolveProps.resolveProps(start, {
           flow: fcName,
           indicator: "explicit-key-ind",
-          next: key ?? sep2?.[0],
+          next: key ?? sep3?.[0],
           offset,
           onError,
           parentIndent: fc.indent,
           startOnNewline: false
         });
         if (!props.found) {
-          if (!props.anchor && !props.tag && !sep2 && !value) {
+          if (!props.anchor && !props.tag && !sep3 && !value) {
             if (i === 0 && props.comma)
               onError(props.comma, "UNEXPECTED_TOKEN", `Unexpected , in ${fcName}`);
             else if (i < fc.items.length - 1)
@@ -11672,8 +11672,8 @@ var require_resolve_flow_collection = __commonJS({
             }
           }
         }
-        if (!isMap2 && !sep2 && !props.found) {
-          const valueNode = value ? composeNode(ctx, value, props, onError) : composeEmptyNode(ctx, props.end, sep2, null, props, onError);
+        if (!isMap2 && !sep3 && !props.found) {
+          const valueNode = value ? composeNode(ctx, value, props, onError) : composeEmptyNode(ctx, props.end, sep3, null, props, onError);
           coll.items.push(valueNode);
           offset = valueNode.range[2];
           if (isBlock(value))
@@ -11685,7 +11685,7 @@ var require_resolve_flow_collection = __commonJS({
           if (isBlock(key))
             onError(keyNode.range, "BLOCK_IN_FLOW", blockMsg);
           ctx.atKey = false;
-          const valueProps = resolveProps.resolveProps(sep2 ?? [], {
+          const valueProps = resolveProps.resolveProps(sep3 ?? [], {
             flow: fcName,
             indicator: "map-value-ind",
             next: value,
@@ -11696,8 +11696,8 @@ var require_resolve_flow_collection = __commonJS({
           });
           if (valueProps.found) {
             if (!isMap2 && !props.found && ctx.options.strict) {
-              if (sep2)
-                for (const st2 of sep2) {
+              if (sep3)
+                for (const st2 of sep3) {
                   if (st2 === valueProps.found)
                     break;
                   if (st2.type === "newline") {
@@ -11714,7 +11714,7 @@ var require_resolve_flow_collection = __commonJS({
             else
               onError(valueProps.start, "MISSING_CHAR", `Missing , or : between ${fcName} items`);
           }
-          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : valueProps.found ? composeEmptyNode(ctx, valueProps.end, sep2, null, valueProps, onError) : null;
+          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : valueProps.found ? composeEmptyNode(ctx, valueProps.end, sep3, null, valueProps, onError) : null;
           if (valueNode) {
             if (isBlock(value))
               onError(valueNode.range, "BLOCK_IN_FLOW", blockMsg);
@@ -11894,7 +11894,7 @@ var require_resolve_block_scalar = __commonJS({
           chompStart = i + 1;
       }
       let value = "";
-      let sep2 = "";
+      let sep3 = "";
       let prevMoreIndented = false;
       for (let i = 0; i < contentStart; ++i)
         value += lines[i][0].slice(trimIndent) + "\n";
@@ -11911,24 +11911,24 @@ var require_resolve_block_scalar = __commonJS({
           indent = "";
         }
         if (type === Scalar.Scalar.BLOCK_LITERAL) {
-          value += sep2 + indent.slice(trimIndent) + content;
-          sep2 = "\n";
+          value += sep3 + indent.slice(trimIndent) + content;
+          sep3 = "\n";
         } else if (indent.length > trimIndent || content[0] === "	") {
-          if (sep2 === " ")
-            sep2 = "\n";
-          else if (!prevMoreIndented && sep2 === "\n")
-            sep2 = "\n\n";
-          value += sep2 + indent.slice(trimIndent) + content;
-          sep2 = "\n";
+          if (sep3 === " ")
+            sep3 = "\n";
+          else if (!prevMoreIndented && sep3 === "\n")
+            sep3 = "\n\n";
+          value += sep3 + indent.slice(trimIndent) + content;
+          sep3 = "\n";
           prevMoreIndented = true;
         } else if (content === "") {
-          if (sep2 === "\n")
+          if (sep3 === "\n")
             value += "\n";
           else
-            sep2 = "\n";
+            sep3 = "\n";
         } else {
-          value += sep2 + content;
-          sep2 = " ";
+          value += sep3 + content;
+          sep3 = " ";
           prevMoreIndented = false;
         }
       }
@@ -12110,25 +12110,25 @@ var require_resolve_flow_scalar = __commonJS({
       if (!match)
         return source;
       let res = match[1];
-      let sep2 = " ";
+      let sep3 = " ";
       let pos = first.lastIndex;
       line.lastIndex = pos;
       while (match = line.exec(source)) {
         if (match[1] === "") {
-          if (sep2 === "\n")
-            res += sep2;
+          if (sep3 === "\n")
+            res += sep3;
           else
-            sep2 = "\n";
+            sep3 = "\n";
         } else {
-          res += sep2 + match[1];
-          sep2 = " ";
+          res += sep3 + match[1];
+          sep3 = " ";
         }
         pos = line.lastIndex;
       }
       const last = /[ \t]*(.*)/sy;
       last.lastIndex = pos;
       match = last.exec(source);
-      return res + sep2 + (match?.[1] ?? "");
+      return res + sep3 + (match?.[1] ?? "");
     }
     function doubleQuotedValue(source, onError) {
       let res = "";
@@ -12930,14 +12930,14 @@ var require_cst_stringify = __commonJS({
         }
       }
     }
-    function stringifyItem({ start, key, sep: sep2, value }) {
+    function stringifyItem({ start, key, sep: sep3, value }) {
       let res = "";
       for (const st2 of start)
         res += st2.source;
       if (key)
         res += stringifyToken(key);
-      if (sep2)
-        for (const st2 of sep2)
+      if (sep3)
+        for (const st2 of sep3)
           res += st2.source;
       if (value)
         res += stringifyToken(value);
@@ -14087,18 +14087,18 @@ var require_parser = __commonJS({
         if (this.type === "map-value-ind") {
           const prev = getPrevProps(this.peek(2));
           const start = getFirstKeyStartProps(prev);
-          let sep2;
+          let sep3;
           if (scalar.end) {
-            sep2 = scalar.end;
-            sep2.push(this.sourceToken);
+            sep3 = scalar.end;
+            sep3.push(this.sourceToken);
             delete scalar.end;
           } else
-            sep2 = [this.sourceToken];
+            sep3 = [this.sourceToken];
           const map = {
             type: "block-map",
             offset: scalar.offset,
             indent: scalar.indent,
-            items: [{ start, key: scalar, sep: sep2 }]
+            items: [{ start, key: scalar, sep: sep3 }]
           };
           this.onKeyLine = true;
           this.stack[this.stack.length - 1] = map;
@@ -14251,15 +14251,15 @@ var require_parser = __commonJS({
                 } else if (isFlowToken(it.key) && !includesToken(it.sep, "newline")) {
                   const start2 = getFirstKeyStartProps(it.start);
                   const key = it.key;
-                  const sep2 = it.sep;
-                  sep2.push(this.sourceToken);
+                  const sep3 = it.sep;
+                  sep3.push(this.sourceToken);
                   delete it.key;
                   delete it.sep;
                   this.stack.push({
                     type: "block-map",
                     offset: this.offset,
                     indent: this.indent,
-                    items: [{ start: start2, key, sep: sep2 }]
+                    items: [{ start: start2, key, sep: sep3 }]
                   });
                 } else if (start.length > 0) {
                   it.sep = it.sep.concat(start, this.sourceToken);
@@ -14453,13 +14453,13 @@ var require_parser = __commonJS({
             const prev = getPrevProps(parent);
             const start = getFirstKeyStartProps(prev);
             fixFlowSeqItems(fc);
-            const sep2 = fc.end.splice(1, fc.end.length);
-            sep2.push(this.sourceToken);
+            const sep3 = fc.end.splice(1, fc.end.length);
+            sep3.push(this.sourceToken);
             const map = {
               type: "block-map",
               offset: fc.offset,
               indent: fc.indent,
-              items: [{ start, key: fc, sep: sep2 }]
+              items: [{ start, key: fc, sep: sep3 }]
             };
             this.onKeyLine = true;
             this.stack[this.stack.length - 1] = map;
@@ -14637,7 +14637,7 @@ var require_public_api = __commonJS({
       }
       return doc;
     }
-    function parse(src, reviver, options) {
+    function parse2(src, reviver, options) {
       let _reviver = void 0;
       if (typeof reviver === "function") {
         _reviver = reviver;
@@ -14678,7 +14678,7 @@ var require_public_api = __commonJS({
         return value.toString(options);
       return new Document.Document(value, _replacer, options).toString(options);
     }
-    exports.parse = parse;
+    exports.parse = parse2;
     exports.parseAllDocuments = parseAllDocuments;
     exports.parseDocument = parseDocument2;
     exports.stringify = stringify2;
@@ -14739,10 +14739,10 @@ var require_dist = __commonJS({
 
 // plugins/kxm-mesh/src/cli.ts
 import { spawn } from "node:child_process";
-import { createHmac as createHmac2, randomUUID as randomUUID4 } from "node:crypto";
-import { existsSync as existsSync7, mkdirSync as mkdirSync9, readFileSync as readFileSync7, readdirSync as readdirSync4, writeFileSync as writeFileSync8 } from "node:fs";
-import { basename as basename3, join as join14, resolve as resolve5 } from "node:path";
-import { DatabaseSync as DatabaseSync2 } from "node:sqlite";
+import { createHmac as createHmac2, randomUUID as randomUUID5 } from "node:crypto";
+import { existsSync as existsSync8, mkdirSync as mkdirSync9, readFileSync as readFileSync8, readdirSync as readdirSync5, writeFileSync as writeFileSync8 } from "node:fs";
+import { basename as basename3, join as join15, resolve as resolve6 } from "node:path";
+import { DatabaseSync as DatabaseSync3 } from "node:sqlite";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 
 // node_modules/commander/lib/error.js
@@ -18633,7 +18633,7 @@ async function watchGithubChecks(input) {
   }
   const fetchImpl = input.fetchImpl ?? fetch;
   const now = input.now ?? Date.now;
-  const sleep = input.sleep ?? ((ms) => new Promise((resolve6) => setTimeout(resolve6, ms)));
+  const sleep = input.sleep ?? ((ms) => new Promise((resolve7) => setTimeout(resolve7, ms)));
   const deadline = now() + input.timeoutMs;
   const headers = {
     authorization: `Bearer ${token}`,
@@ -24281,10 +24281,10 @@ var TuiBase = class _TuiBase extends Container {
    * @returns Promise containing the parsed RGB color, or undefined if it times out or fails to parse.
    */
   queryTerminalBackgroundColor({ timeoutMs }) {
-    return new Promise((resolve6) => {
+    return new Promise((resolve7) => {
       const query = {
         settled: false,
-        resolve: resolve6,
+        resolve: resolve7,
         timer: void 0
       };
       query.timer = setTimeout(() => {
@@ -24307,7 +24307,7 @@ var TuiBase = class _TuiBase extends Container {
    * `CSI ? 997 ; 1 n` for dark or `CSI ? 997 ; 2 n` for light.
    */
   queryTerminalColorScheme({ timeoutMs }) {
-    return new Promise((resolve6) => {
+    return new Promise((resolve7) => {
       let settled = false;
       let timer;
       let unsubscribe = () => {
@@ -24321,7 +24321,7 @@ var TuiBase = class _TuiBase extends Container {
           timer = void 0;
         }
         unsubscribe();
-        resolve6(scheme);
+        resolve7(scheme);
       };
       unsubscribe = this.onTerminalColorSchemeChange(settle);
       timer = setTimeout(() => settle(void 0), timeoutMs);
@@ -26070,7 +26070,7 @@ var ProcessTerminal = class {
           break;
         if (now - lastDataTime >= idleMs)
           break;
-        await new Promise((resolve6) => setTimeout(resolve6, Math.min(idleMs, timeLeft)));
+        await new Promise((resolve7) => setTimeout(resolve7, Math.min(idleMs, timeLeft)));
       }
     } finally {
       process.stdin.removeListener("data", onData);
@@ -28073,11 +28073,11 @@ async function readJson(response) {
 }
 async function waitForReconnect(signal, milliseconds = 1e3) {
   if (signal.aborted) return;
-  await new Promise((resolve6) => {
+  await new Promise((resolve7) => {
     const done = () => {
       clearTimeout(timer);
       signal.removeEventListener("abort", done);
-      resolve6();
+      resolve7();
     };
     const timer = setTimeout(done, milliseconds);
     timer.unref();
@@ -28379,12 +28379,205 @@ async function runMeshTui(input) {
 
 // plugins/kxm-mesh/src/vnext-config.ts
 var import__ = __toESM(require__(), 1);
-var import_yaml = __toESM(require_dist(), 1);
+var import_yaml2 = __toESM(require_dist(), 1);
 import { spawnSync } from "node:child_process";
-import { createHash as createHash2 } from "node:crypto";
+import { createHash as createHash3 } from "node:crypto";
 import { existsSync as existsSync4, lstatSync as lstatSync2, readFileSync as readFileSync5, readdirSync as readdirSync3, realpathSync as realpathSync2 } from "node:fs";
 import { basename, dirname as dirname3, extname, isAbsolute as isAbsolute2, join as join11, relative as relative2, resolve as resolve3, sep } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
+
+// plugins/kxm-mesh/src/vnext-template.ts
+var import_yaml = __toESM(require_dist(), 1);
+import { createHash as createHash2 } from "node:crypto";
+var VNEXT_TEMPLATE_ID = "builtin-minimal";
+var VNEXT_TEMPLATE_PROVENANCE_PATH = ".kxm/template-provenance.yaml";
+var CURRENT_VNEXT_TEMPLATE_VARIANT = "v1";
+var SUPPORTED_VNEXT_TEMPLATE_VARIANTS = ["v1", "v2", "v3-policy"];
+function compareCodeUnits(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+function canonicalJson(value) {
+  if (value === null || typeof value === "boolean" || typeof value === "number" || typeof value === "string") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) return `[${value.map((candidate) => canonicalJson(candidate)).join(",")}]`;
+  return `{${Object.keys(value).sort(compareCodeUnits).map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+}
+function vnextContentSha256(input) {
+  return `sha256:${createHash2("sha256").update(input).digest("hex")}`;
+}
+function authorityProjection(value) {
+  const projected = structuredClone(value);
+  if (projected.schema === "kxm.project.v1") delete projected.name;
+  if (projected.schema === "kxm.repository.v1") delete projected.description;
+  if (projected.schema === "kxm.agent.v1") delete projected.purpose;
+  if (projected.schema === "kxm.workflow.v1") delete projected.description;
+  return projected;
+}
+function vnextAuthoritySha256(value) {
+  return vnextContentSha256(canonicalJson(authorityProjection(value)));
+}
+function coreTemplate(projectId, projectName, variant) {
+  return /* @__PURE__ */ new Map([
+    [".kxm/project.yaml", {
+      schema: "kxm.project.v1",
+      id: projectId,
+      name: projectName,
+      defaultWorkflow: "default",
+      defaultExecutor: "local",
+      repositories: [{ id: "control", role: "control", required: true, pathHint: "." }],
+      workspace: {
+        dirtySnapshot: {
+          untracked: "ask",
+          dirtySubmodules: "fail"
+        }
+      }
+    }],
+    [".kxm/repo/repo.yaml", {
+      schema: "kxm.repository.v1",
+      projectId,
+      repositoryId: "control",
+      description: "Authoritative project configuration and repository content.",
+      defaultAccess: "write"
+    }],
+    [".kxm/agents/coordinator.yaml", {
+      schema: "kxm.agent.v1",
+      purpose: variant === "v1" ? "Coordinate the pinned workflow and emit schema-validated commands." : "Coordinate the pinned workflow and emit validated, reviewable commands.",
+      tools: { preset: "coordinator" },
+      defaultRepositoryAccess: "read",
+      repositories: { control: variant === "v3-policy" ? "write" : "read" },
+      network: "provider-only",
+      resultSchema: "kxm.assignment-result.v1"
+    }],
+    [".kxm/agents/implementer.yaml", {
+      schema: "kxm.agent.v1",
+      purpose: "Implement the approved change within the declared repository scope.",
+      tools: { preset: "workspace-writer" },
+      defaultRepositoryAccess: "none",
+      repositories: { control: "write" },
+      network: "provider-only",
+      resultSchema: "kxm.assignment-result.v1"
+    }],
+    [".kxm/workflows/default.yaml", {
+      schema: "kxm.workflow.v1",
+      description: "Plan, implement, and verify a local change.",
+      coordinator: "coordinator",
+      limits: {
+        maxTransitions: 8,
+        maxRunDurationMs: 144e5,
+        maxAgentTimeMs: 216e5
+      },
+      steps: [
+        {
+          id: "plan",
+          kind: "agent",
+          agent: "coordinator",
+          maxAttempts: 2,
+          repositories: { control: "read" },
+          requiredEvidence: [{ key: "plan", kind: "artifact" }],
+          timeoutMs: 12e5,
+          on: {
+            passed: "implement",
+            blocked: { target: "$terminal", terminalStatus: "failed" }
+          }
+        },
+        {
+          id: "implement",
+          kind: "agent",
+          agent: "implementer",
+          maxAttempts: 3,
+          repositories: { control: "write" },
+          assignments: {
+            allowedAgents: ["implementer"],
+            minimum: 1,
+            target: 1,
+            maximum: 1,
+            maxParallel: 1,
+            maxAttemptsPerAssignment: 2,
+            maxWriteRepositories: 1
+          },
+          requiredEvidence: [{ key: "implementation-diff", kind: "artifact" }],
+          timeoutMs: 36e5,
+          on: {
+            passed: "verify",
+            failed: { target: "$terminal", terminalStatus: "failed" },
+            blocked: { target: "$terminal", terminalStatus: "failed" }
+          }
+        },
+        {
+          id: "verify",
+          kind: "gate",
+          gate: "test",
+          maxAttempts: 3,
+          repositories: { control: "write" },
+          requiredEvidence: [{ key: "local-gates", kind: "gate" }],
+          timeoutMs: 36e5,
+          on: {
+            passed: { target: "$terminal", terminalStatus: "completed" },
+            "implementation-failure": { target: "implement", maxTransitions: 3 },
+            failed: { target: "$terminal", terminalStatus: "failed" }
+          }
+        }
+      ]
+    }]
+  ]);
+}
+function provenanceRevision(files) {
+  return vnextContentSha256(canonicalJson(files.map((file) => ({
+    path: file.path,
+    sha256: file.sha256,
+    authoritySha256: file.authoritySha256,
+    bytes: file.bytes
+  }))));
+}
+function renderVnextTemplate(projectId, projectName, variant = CURRENT_VNEXT_TEMPLATE_VARIANT) {
+  const values = coreTemplate(projectId, projectName, variant);
+  const coreFiles = /* @__PURE__ */ new Map();
+  const records = [...values.entries()].map(([path5, value]) => {
+    const bytes = Buffer.from((0, import_yaml.stringify)(value, { lineWidth: 0 }), "utf8");
+    coreFiles.set(path5, bytes);
+    return {
+      path: path5,
+      sha256: vnextContentSha256(bytes),
+      authoritySha256: vnextAuthoritySha256(value),
+      bytes: bytes.byteLength
+    };
+  }).sort((left, right) => compareCodeUnits(left.path, right.path));
+  const templateRevision = provenanceRevision(records);
+  const provenance = {
+    schema: "kxm.template-provenance.v1",
+    templateId: VNEXT_TEMPLATE_ID,
+    templateRevision,
+    inputs: { projectId, projectName },
+    files: records
+  };
+  const fileEntries = [...coreFiles.entries()];
+  fileEntries.push([
+    VNEXT_TEMPLATE_PROVENANCE_PATH,
+    Buffer.from((0, import_yaml.stringify)(provenance, { lineWidth: 0 }), "utf8")
+  ]);
+  fileEntries.sort(([left], [right]) => compareCodeUnits(left, right));
+  const files = new Map(fileEntries);
+  return { projectId, projectName, templateRevision, provenance, files, values };
+}
+function validatedTemplateProvenance(value) {
+  if (value.schema !== "kxm.template-provenance.v1" || value.templateId !== VNEXT_TEMPLATE_ID) return void 0;
+  const candidate = value;
+  return provenanceRevision(candidate.files) === candidate.templateRevision ? candidate : void 0;
+}
+function resolveVnextTemplateBaseline(value) {
+  const candidate = validatedTemplateProvenance(value);
+  if (!candidate) return void 0;
+  for (const variant of SUPPORTED_VNEXT_TEMPLATE_VARIANTS) {
+    const known = renderVnextTemplate(candidate.inputs.projectId, candidate.inputs.projectName, variant).provenance;
+    if (known.templateRevision === candidate.templateRevision && canonicalJson(known) === canonicalJson(candidate)) {
+      return candidate;
+    }
+  }
+  return void 0;
+}
+
+// plugins/kxm-mesh/src/vnext-config.ts
 var VNEXT_YAML_LIMITS = Object.freeze({
   maxDocumentBytes: 256 * 1024,
   maxDepth: 32,
@@ -28434,11 +28627,11 @@ var ALLOWED_YAML_TAGS = /* @__PURE__ */ new Set([
   "tag:yaml.org,2002:int",
   "tag:yaml.org,2002:float"
 ]);
-function compareCodeUnits(left, right) {
+function compareCodeUnits2(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 function sortIssues(issues) {
-  return [...issues].sort((left, right) => compareCodeUnits(left.file, right.file) || compareCodeUnits(left.phase, right.phase) || compareCodeUnits(left.code, right.code) || compareCodeUnits(left.message, right.message));
+  return [...issues].sort((left, right) => compareCodeUnits2(left.file, right.file) || compareCodeUnits2(left.phase, right.phase) || compareCodeUnits2(left.code, right.code) || compareCodeUnits2(left.message, right.message));
 }
 function issue(phase, code, file, message) {
   return { phase, code, file, message };
@@ -28483,7 +28676,7 @@ function parseRestrictedYaml(input, label = "<yaml>", limits = VNEXT_YAML_LIMITS
     fail("parse", "document_too_large", label, `document exceeds ${limits.maxDocumentBytes} bytes`);
   }
   const text = decodeUtf8(input, label);
-  const document = (0, import_yaml.parseDocument)(text, {
+  const document = (0, import_yaml2.parseDocument)(text, {
     customTags: [],
     strict: true,
     uniqueKeys: true
@@ -28496,27 +28689,27 @@ function parseRestrictedYaml(input, label = "<yaml>", limits = VNEXT_YAML_LIMITS
   }
   let nodes = 0;
   let keys = 0;
-  (0, import_yaml.visit)(document, (_key, node, path5) => {
+  (0, import_yaml2.visit)(document, (_key, node, path5) => {
     nodes += 1;
     if (nodes > limits.maxTotalNodes) fail("parse", "node_limit", label, `document exceeds ${limits.maxTotalNodes} nodes`);
     if (path5.length > limits.maxDepth) fail("parse", "depth_limit", label, `document exceeds nesting depth ${limits.maxDepth}`);
-    if ((0, import_yaml.isAlias)(node)) fail("parse", "alias_forbidden", label, "aliases are forbidden");
+    if ((0, import_yaml2.isAlias)(node)) fail("parse", "alias_forbidden", label, "aliases are forbidden");
     if (node && typeof node === "object" && "anchor" in node && typeof node.anchor === "string") {
       fail("parse", "anchor_forbidden", label, "anchors are forbidden");
     }
-    if ((0, import_yaml.isCollection)(node) && node.items.length > limits.maxCollectionItems) {
+    if ((0, import_yaml2.isCollection)(node) && node.items.length > limits.maxCollectionItems) {
       fail("parse", "collection_limit", label, `collection exceeds ${limits.maxCollectionItems} items`);
     }
-    if ((0, import_yaml.isMap)(node)) {
+    if ((0, import_yaml2.isMap)(node)) {
       keys += node.items.length;
       if (keys > limits.maxKeys) fail("parse", "key_limit", label, `document exceeds ${limits.maxKeys} mapping keys`);
       for (const pair of node.items) {
-        if (!(0, import_yaml.isScalar)(pair.key) || typeof pair.key.value !== "string") {
+        if (!(0, import_yaml2.isScalar)(pair.key) || typeof pair.key.value !== "string") {
           fail("parse", "non_string_key", label, "mapping keys must be strings");
         }
       }
     }
-    if ((0, import_yaml.isScalar)(node) && typeof node.value === "string" && Buffer.byteLength(node.value, "utf8") > limits.maxScalarBytes) {
+    if ((0, import_yaml2.isScalar)(node) && typeof node.value === "string" && Buffer.byteLength(node.value, "utf8") > limits.maxScalarBytes) {
       fail("parse", "scalar_limit", label, `scalar exceeds ${limits.maxScalarBytes} bytes`);
     }
     if (node && typeof node === "object" && "tag" in node && typeof node.tag === "string" && !ALLOWED_YAML_TAGS.has(node.tag)) {
@@ -28538,6 +28731,8 @@ var VnextSchemaRegistry = class {
   ajv;
   validators = /* @__PURE__ */ new Map();
   localBindingsValidator;
+  templateProvenanceValidator;
+  initOperationValidator;
   constructor(schemasDir = DEFAULT_SCHEMA_DIR) {
     this.schemasDir = resolve3(schemasDir);
     this.ajv = new import__.Ajv2020({ allErrors: true, strict: true, strictRequired: false });
@@ -28547,15 +28742,25 @@ var VnextSchemaRegistry = class {
       this.ajv.addSchema(readJsonObject(join11(this.schemasDir, definition.file)));
     }
     const localBindingsFile = "local-repository-bindings.schema.json";
+    const templateProvenanceFile = "template-provenance.schema.json";
+    const initOperationFile = "init-operation.schema.json";
     this.ajv.addSchema(readJsonObject(join11(this.schemasDir, localBindingsFile)));
+    this.ajv.addSchema(readJsonObject(join11(this.schemasDir, templateProvenanceFile)));
+    this.ajv.addSchema(readJsonObject(join11(this.schemasDir, initOperationFile)));
     for (const [kind, definition] of Object.entries(RESOURCE_SCHEMA)) {
       const validator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${definition.file}`);
       if (!validator) throw new Error(`schema did not compile: ${definition.file}`);
       this.validators.set(kind, validator);
     }
     const localBindingsValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${localBindingsFile}`);
+    const templateProvenanceValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${templateProvenanceFile}`);
+    const initOperationValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${initOperationFile}`);
     if (!localBindingsValidator) throw new Error(`schema did not compile: ${localBindingsFile}`);
+    if (!templateProvenanceValidator) throw new Error(`schema did not compile: ${templateProvenanceFile}`);
+    if (!initOperationValidator) throw new Error(`schema did not compile: ${initOperationFile}`);
     this.localBindingsValidator = localBindingsValidator;
+    this.templateProvenanceValidator = templateProvenanceValidator;
+    this.initOperationValidator = initOperationValidator;
   }
   validate(kind, value, file) {
     const definition = RESOURCE_SCHEMA[kind];
@@ -28568,11 +28773,20 @@ var VnextSchemaRegistry = class {
     return (validator.errors ?? []).map((error) => schemaIssue(file, error));
   }
   validateLocalBindings(value, file) {
-    if (value.schema !== "kxm.local-repository-bindings.v1") {
-      return [issue("schema", "schema_identity_mismatch", file, `expected kxm.local-repository-bindings.v1, received ${String(value.schema)}`)];
+    return this.validateAuxiliary(value, file, "kxm.local-repository-bindings.v1", this.localBindingsValidator);
+  }
+  validateTemplateProvenance(value, file) {
+    return this.validateAuxiliary(value, file, "kxm.template-provenance.v1", this.templateProvenanceValidator);
+  }
+  validateInitOperation(value, file) {
+    return this.validateAuxiliary(value, file, "kxm.init-operation.v1", this.initOperationValidator);
+  }
+  validateAuxiliary(value, file, identity, validator) {
+    if (value.schema !== identity) {
+      return [issue("schema", "schema_identity_mismatch", file, `expected ${identity}, received ${String(value.schema)}`)];
     }
-    if (this.localBindingsValidator(value)) return [];
-    return (this.localBindingsValidator.errors ?? []).map((error) => schemaIssue(file, error));
+    if (validator(value)) return [];
+    return (validator.errors ?? []).map((error) => schemaIssue(file, error));
   }
 };
 function schemaIssue(file, error) {
@@ -28658,6 +28872,53 @@ function readResource(registry, root, file, logicalPath, kind, id, containmentRo
   if (issues.length > 0) throw new VnextConfigError(issues);
   return { kind, ...id === void 0 ? {} : { id }, file, logicalPath, value };
 }
+function readTemplateProvenance(registry, root) {
+  const file = join11(root, ".kxm", "template-provenance.yaml");
+  if (!existsSync4(file)) return void 0;
+  const label = ".kxm/template-provenance.yaml";
+  const stat = lstatSync2(file);
+  if (stat.isSymbolicLink() || !stat.isFile()) {
+    fail("path", "resource_not_file", label, "template provenance must be a regular file, not a link or directory");
+  }
+  const configRoot = join11(root, ".kxm");
+  let parent = dirname3(file);
+  while (parent !== root) {
+    const parentStat = lstatSync2(parent);
+    if (parentStat.isSymbolicLink() || !parentStat.isDirectory()) {
+      fail("path", "resource_parent_symlink", label, "template provenance parents must be regular directories");
+    }
+    if (parent === configRoot) break;
+    parent = dirname3(parent);
+  }
+  const value = parseRestrictedYaml(readFileSync5(file), label);
+  const issues = registry.validateTemplateProvenance(value, label);
+  if (issues.length > 0) throw new VnextConfigError(issues);
+  if (!resolveVnextTemplateBaseline(value)) {
+    fail("semantic", "template_provenance_revision_invalid", label, "template provenance does not exactly match a supported built-in baseline");
+  }
+  const files = Array.isArray(value.files) ? value.files : [];
+  const seen = /* @__PURE__ */ new Set();
+  let prior = "";
+  let managedBytes = 0;
+  for (const candidate of files) {
+    const record = objectValue(candidate);
+    const path5 = record && stringValue(record.path);
+    if (!path5) continue;
+    managedBytes += typeof record.bytes === "number" ? record.bytes : 0;
+    const folded = path5.toLocaleLowerCase("en-US");
+    if (!path5.startsWith(".kxm/") || path5 === label || !portablePath(path5)) {
+      fail("path", "template_provenance_path_invalid", label, `managed path ${path5} is not a portable project-configuration path`);
+    }
+    if (seen.has(folded)) fail("path", "template_provenance_path_collision", label, `managed path ${path5} collides after case folding`);
+    if (prior && compareCodeUnits2(prior, path5) >= 0) fail("semantic", "template_provenance_order_invalid", label, "managed file entries must use strict code-unit order");
+    seen.add(folded);
+    prior = path5;
+  }
+  if (managedBytes > 8 * 1024 * 1024) {
+    fail("parse", "template_provenance_bounds_exceeded", label, "managed template manifest exceeds 8388608 bytes");
+  }
+  return value;
+}
 function listNamedResources(registry, root, directory, logicalDirectory, kind) {
   const resources = /* @__PURE__ */ new Map();
   if (!existsSync4(directory)) return resources;
@@ -28666,7 +28927,7 @@ function listNamedResources(registry, root, directory, logicalDirectory, kind) {
     fail("path", "resource_directory_invalid", displayPath(root, directory), "resource directory must be a regular directory");
   }
   const issues = [];
-  const entries = readdirSync3(directory, { withFileTypes: true }).sort((left, right) => compareCodeUnits(left.name, right.name));
+  const entries = readdirSync3(directory, { withFileTypes: true }).sort((left, right) => compareCodeUnits2(left.name, right.name));
   for (const entry of entries) {
     if (entry.isDirectory()) {
       issues.push(issue("path", "nested_resource_directory", displayPath(root, join11(directory, entry.name)), "nested resource directories are not allowed"));
@@ -28971,8 +29232,8 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
       const writable = Object.values(objectValue(step.repositories) ?? {}).filter((access) => access === "write").length;
       if (maxWriteRepositories > writable) issues.push(issue("semantic", "write_repository_bound_invalid", file, `${stepId} maxWriteRepositories exceeds writable repository scope`));
     }
-    const join15 = objectValue(step.join);
-    const minimumPassed = join15 && typeof join15.minimumPassed === "number" ? join15.minimumPassed : void 0;
+    const join16 = objectValue(step.join);
+    const minimumPassed = join16 && typeof join16.minimumPassed === "number" ? join16.minimumPassed : void 0;
     if (minimumPassed !== void 0 && minimumPassed > maximum) issues.push(issue("semantic", "join_impossible", file, `${stepId} minimumPassed exceeds assignment maximum`));
     const distinctBy = names(assignment?.distinctBy);
     if (distinctBy.length > 0) {
@@ -29157,8 +29418,8 @@ function canonicalize(value) {
   return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalize(value[key])}`).join(",")}}`;
 }
 function bundleRevision(resources) {
-  const hash = createHash2("sha256");
-  for (const resource of [...resources].sort((left, right) => compareCodeUnits(left.logicalPath, right.logicalPath))) {
+  const hash = createHash3("sha256");
+  for (const resource of [...resources].sort((left, right) => compareCodeUnits2(left.logicalPath, right.logicalPath))) {
     hash.update(resource.logicalPath, "utf8");
     hash.update("\0", "utf8");
     hash.update(canonicalize(resource.value), "utf8");
@@ -29196,8 +29457,15 @@ function loadVnextProject(projectRoot, options = {}) {
   const project = readResource(registry, root, join11(root, ".kxm", "project.yaml"), ".kxm/project.yaml", "project");
   const earlyIssues = [];
   validatePortablePaths(project, earlyIssues);
+  const templateProvenance = readTemplateProvenance(registry, root);
+  if (templateProvenance && templateProvenance.inputs && typeof templateProvenance.inputs === "object" && !Array.isArray(templateProvenance.inputs)) {
+    const provenanceProjectId = stringValue(templateProvenance.inputs.projectId);
+    if (provenanceProjectId !== stringValue(project.value.id)) {
+      earlyIssues.push(issue("semantic", "template_provenance_project_mismatch", ".kxm/template-provenance.yaml", "template provenance belongs to a different project identity"));
+    }
+  }
   const declaredRepositoryIds = new Set(valuesOf(project.value, "repositories").map((candidate) => stringValue(objectValue(candidate)?.id)).filter((candidate) => candidate !== void 0));
-  for (const repositoryId of Object.keys(options.repositoryBindings ?? {}).sort(compareCodeUnits)) {
+  for (const repositoryId of Object.keys(options.repositoryBindings ?? {}).sort(compareCodeUnits2)) {
     if (!resourceIdentifier(repositoryId)) {
       earlyIssues.push(issue("path", "repository_binding_id_invalid", ".kxm/project.yaml", `host-local binding identity ${repositoryId} is invalid`));
     } else if (!declaredRepositoryIds.has(repositoryId)) {
@@ -29312,7 +29580,7 @@ function loadVnextProject(projectRoot, options = {}) {
   if (loadIssues.length > 0) throw new VnextConfigError(loadIssues);
   const issues = validateBundle(project, repositories, agents, models, workflows, environments, options);
   if (issues.length > 0) throw new VnextConfigError(issues);
-  const resources = [project, ...repositories.values(), ...agents.values(), ...models.values(), ...workflows.values(), ...environments].sort((left, right) => compareCodeUnits(left.logicalPath, right.logicalPath));
+  const resources = [project, ...repositories.values(), ...agents.values(), ...models.values(), ...workflows.values(), ...environments].sort((left, right) => compareCodeUnits2(left.logicalPath, right.logicalPath));
   return {
     projectRoot: root,
     project,
@@ -29321,6 +29589,7 @@ function loadVnextProject(projectRoot, options = {}) {
     models,
     workflows,
     environments,
+    ...templateProvenance === void 0 ? {} : { templateProvenance },
     resources,
     configRevision: bundleRevision(resources)
   };
@@ -29377,8 +29646,10 @@ function planVnextInitialization(start = process.cwd(), options = {}) {
 }
 
 // plugins/kxm-mesh/src/vnext-bindings.ts
-import { createHash as createHash3, randomUUID as randomUUID2 } from "node:crypto";
+import { spawnSync as spawnSync2 } from "node:child_process";
+import { createHash as createHash4, randomUUID as randomUUID2 } from "node:crypto";
 import {
+  chmodSync,
   closeSync,
   existsSync as existsSync5,
   fsyncSync,
@@ -29392,7 +29663,8 @@ import {
   writeFileSync as writeFileSync6
 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
-import { dirname as dirname4, isAbsolute as isAbsolute3, join as join12, resolve as resolve4 } from "node:path";
+import { DatabaseSync as DatabaseSync2 } from "node:sqlite";
+import { dirname as dirname4, isAbsolute as isAbsolute3, join as join12, parse, relative as relative3, resolve as resolve4, sep as sep2 } from "node:path";
 var MAX_BINDING_RECORD_BYTES = 256 * 1024;
 var BINDING_LABEL = "Runtime-local repository bindings";
 var activeLocks = /* @__PURE__ */ new WeakSet();
@@ -29437,7 +29709,7 @@ function vnextUserStateRoot(options = {}) {
 function projectBindingKey(projectRoot, platform = process.platform) {
   const canonical = canonicalHostPath2(projectRoot);
   const keyInput = platform === "win32" ? canonical.toLocaleLowerCase("en-US") : canonical;
-  return createHash3("sha256").update(keyInput, "utf8").digest("hex");
+  return createHash4("sha256").update(keyInput, "utf8").digest("hex");
 }
 function vnextLocalBindingFile(projectRoot, options = {}) {
   const stateRoot = vnextUserStateRoot(options);
@@ -29514,17 +29786,47 @@ function recordsEqual(left, right) {
     return other?.[0] === id && sameHostPath2(path5, other[1]);
   });
 }
+function syncDirectory(path5) {
+  let descriptor;
+  try {
+    descriptor = openSync(path5, "r");
+    fsyncSync(descriptor);
+  } catch (error) {
+    const code = error.code;
+    if (process.platform !== "win32" && code !== "EINVAL" && code !== "ENOTSUP" && code !== "EISDIR") throw error;
+  } finally {
+    if (descriptor !== void 0) closeSync(descriptor);
+  }
+}
 function createDirectoryIfMissing(path5) {
   if (existsSync5(path5)) return;
   try {
     mkdirSync7(path5, { mode: 448 });
+    syncDirectory(dirname4(path5));
   } catch (error) {
     if (error.code !== "EEXIST") throw error;
   }
 }
+function ensureDurableDirectory(path5, description) {
+  const missing = [];
+  let current = resolve4(path5);
+  while (!existsSync5(current)) {
+    missing.push(current);
+    const parent = dirname4(current);
+    if (parent === current) bindingError("path", "local_binding_directory_invalid", `${description} has no existing filesystem ancestor`);
+    current = parent;
+  }
+  checkedDirectory(current, `${description} ancestor`);
+  for (const directory of missing.reverse()) {
+    mkdirSync7(directory, { mode: 448 });
+    checkedDirectory(directory, description);
+    syncDirectory(dirname4(directory));
+  }
+}
 function ensureBindingDirectory(file, stateRoot) {
-  mkdirSync7(stateRoot, { recursive: true, mode: 448 });
+  ensureDurableDirectory(stateRoot, "local state root");
   checkedDirectory(stateRoot, "local state root");
+  syncDirectory(stateRoot);
   const projects = join12(stateRoot, "projects");
   createDirectoryIfMissing(projects);
   checkedDirectory(projects, "local projects directory");
@@ -29532,37 +29834,84 @@ function ensureBindingDirectory(file, stateRoot) {
   createDirectoryIfMissing(project);
   checkedDirectory(project, "local project binding directory");
 }
+function assertNoLinkedDirectoryComponents(path5, description) {
+  const absolute = resolve4(path5);
+  const filesystemRoot = parse(absolute).root;
+  let current = filesystemRoot;
+  const remainder = relative3(filesystemRoot, absolute);
+  for (const segment of remainder.split(sep2).filter(Boolean)) {
+    current = join12(current, segment);
+    const stat = lstatSync3(current);
+    if (stat.isSymbolicLink() || !stat.isDirectory()) {
+      bindingError("path", "project_operation_lock_parent_invalid", `${description} contains a linked or non-directory component`);
+    }
+  }
+}
+function projectOperationLockFile(projectRoot) {
+  const env = { ...process.env };
+  for (const key of Object.keys(env)) {
+    if (key.toLocaleUpperCase("en-US").startsWith("GIT_")) delete env[key];
+  }
+  const result = spawnSync2("git", ["-C", projectRoot, "rev-parse", "--absolute-git-dir"], {
+    encoding: "utf8",
+    env,
+    timeout: 5e3,
+    windowsHide: true
+  });
+  if (result.status !== 0 || result.error || !result.stdout.trim()) {
+    bindingError("discovery", "project_operation_lock_unavailable", "cannot resolve the authoritative Git metadata path for project locking");
+  }
+  const gitDirectory = resolve4(result.stdout.trim());
+  assertNoLinkedDirectoryComponents(gitDirectory, "authoritative Git metadata path");
+  const gitStat = lstatSync3(gitDirectory);
+  if (gitStat.isSymbolicLink() || !gitStat.isDirectory()) {
+    bindingError("path", "project_operation_lock_parent_invalid", "authoritative Git metadata must resolve to a regular directory");
+  }
+  const lockDirectory = join12(gitDirectory, "kxm");
+  if (existsSync5(lockDirectory)) {
+    const stat = lstatSync3(lockDirectory);
+    if (stat.isSymbolicLink() || !stat.isDirectory()) {
+      bindingError("path", "project_operation_lock_parent_invalid", "Git-local KXM lock directory must be regular, not a link or file");
+    }
+  } else {
+    mkdirSync7(lockDirectory, { mode: 448 });
+    syncDirectory(gitDirectory);
+  }
+  return join12(lockDirectory, "project-operation-lock.sqlite");
+}
 function withVnextLocalBindingLock(projectRoot, options, callback) {
   const root = resolve4(projectRoot);
-  const stateRoot = vnextUserStateRoot(options);
-  const bindingFile = vnextLocalBindingFile(root, options);
-  ensureBindingDirectory(bindingFile, stateRoot);
-  const file = join12(dirname4(bindingFile), ".repository-bindings.lock");
-  let descriptor;
-  let acquired = false;
+  const file = projectOperationLockFile(root);
+  if (existsSync5(file)) {
+    const stat = lstatSync3(file);
+    if (stat.isSymbolicLink() || !stat.isFile()) {
+      bindingError("path", "local_binding_lock_invalid", "project-operation lock must be a regular file, not a link or directory");
+    }
+  }
+  const database = new DatabaseSync2(file);
+  try {
+    chmodSync(file, 384);
+  } catch {
+  }
   try {
     try {
-      descriptor = openSync(file, "wx", 384);
-      acquired = true;
+      database.exec("PRAGMA busy_timeout = 0; BEGIN IMMEDIATE");
     } catch (error) {
-      if (error.code === "EEXIST") {
-        bindingError("semantic", "local_binding_lock_busy", "another join or binding update is active or requires stale-lock recovery");
+      if (/busy|locked/i.test(error instanceof Error ? error.message : String(error))) {
+        bindingError("semantic", "local_binding_lock_busy", "another project initialization or binding update is active");
       }
       throw error;
     }
-    writeFileSync6(descriptor, `${JSON.stringify({ pid: process.pid })}
-`, "utf8");
-    fsyncSync(descriptor);
     const lock = Object.freeze({ projectRoot: canonicalHostPath2(root), file });
     activeLocks.add(lock);
     try {
       return callback(lock);
     } finally {
       activeLocks.delete(lock);
+      database.exec("ROLLBACK");
     }
   } finally {
-    if (descriptor !== void 0) closeSync(descriptor);
-    if (acquired) rmSync2(file, { force: true });
+    database.close();
   }
 }
 function planVnextLocalBindings(projectRoot, projectId, repositories, options = {}) {
@@ -29586,6 +29935,7 @@ function writeVnextLocalBindings(projectRoot, projectId, repositories, options =
   const planned = planVnextLocalBindings(root, projectId, repositories, options);
   const { file, record } = planned;
   if (!planned.written) return planned;
+  ensureBindingDirectory(file, vnextUserStateRoot(options));
   const temporary = join12(dirname4(file), `.repository-bindings-${process.pid}-${randomUUID2()}.tmp`);
   let descriptor;
   try {
@@ -29596,6 +29946,7 @@ function writeVnextLocalBindings(projectRoot, projectId, repositories, options =
     closeSync(descriptor);
     descriptor = void 0;
     renameSync3(temporary, file);
+    syncDirectory(dirname4(file));
   } finally {
     if (descriptor !== void 0) closeSync(descriptor);
     rmSync2(temporary, { force: true });
@@ -29608,18 +29959,887 @@ function writeVnextLocalBindings(projectRoot, projectId, repositories, options =
 }
 
 // plugins/kxm-mesh/src/vnext-init.ts
-var import_yaml2 = __toESM(require_dist(), 1);
+import { randomUUID as randomUUID4 } from "node:crypto";
+import { existsSync as existsSync7 } from "node:fs";
+import { basename as basename2, join as join14 } from "node:path";
+
+// plugins/kxm-mesh/src/vnext-repair.ts
 import { randomUUID as randomUUID3 } from "node:crypto";
-import { existsSync as existsSync6, mkdirSync as mkdirSync8, mkdtempSync, renameSync as renameSync4, rmSync as rmSync3, writeFileSync as writeFileSync7 } from "node:fs";
-import { basename as basename2, dirname as dirname5, join as join13 } from "node:path";
+import {
+  chmodSync as chmodSync2,
+  closeSync as closeSync2,
+  existsSync as existsSync6,
+  fsyncSync as fsyncSync2,
+  linkSync,
+  lstatSync as lstatSync4,
+  mkdirSync as mkdirSync8,
+  openSync as openSync2,
+  readFileSync as readFileSync7,
+  readdirSync as readdirSync4,
+  renameSync as renameSync4,
+  rmSync as rmSync3,
+  writeFileSync as writeFileSync7
+} from "node:fs";
+import { dirname as dirname5, isAbsolute as isAbsolute4, join as join13, relative as relative4, resolve as resolve5 } from "node:path";
+var TRANSACTION_NAME = ".kxm-init-transaction";
+var OPERATION_FILE = "operation.json";
+var MAX_MANAGED_FILES = 128;
+var MAX_MANAGED_FILE_BYTES = 256 * 1024;
+var MAX_MANAGED_TOTAL_BYTES = 8 * 1024 * 1024;
+var PORTABLE_PATH = /^(?:\.|(?!.*(?:^|\/)\.{1,2}(?:\/|$))(?!.*\/\/)(?!.*[. ](?:\/|$))[^/\\\u0000-\u001F]+(?:\/[^/\\\u0000-\u001F]+)*)$/;
+function compareCodeUnits3(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+function repairIssue(code, file, message, phase = "semantic") {
+  return { phase, code, file, message };
+}
+function fail2(code, file, message, phase = "semantic") {
+  throw new VnextConfigError([repairIssue(code, file, message, phase)]);
+}
+function syncDirectory2(path5) {
+  let descriptor;
+  try {
+    descriptor = openSync2(path5, "r");
+    fsyncSync2(descriptor);
+  } catch (error) {
+    const code = error.code;
+    if (process.platform !== "win32" && code !== "EINVAL" && code !== "ENOTSUP" && code !== "EISDIR") throw error;
+  } finally {
+    if (descriptor !== void 0) closeSync2(descriptor);
+  }
+}
+function writeDurableNew(file, bytes, mode) {
+  let descriptor;
+  try {
+    descriptor = openSync2(file, "wx", mode);
+    writeFileSync7(descriptor, bytes);
+    fsyncSync2(descriptor);
+    closeSync2(descriptor);
+    descriptor = void 0;
+    try {
+      chmodSync2(file, mode);
+    } catch {
+    }
+  } finally {
+    if (descriptor !== void 0) closeSync2(descriptor);
+  }
+  syncDirectory2(dirname5(file));
+}
+function writeDurable(file, bytes, mode) {
+  let descriptor;
+  try {
+    descriptor = openSync2(file, "w", mode);
+    writeFileSync7(descriptor, bytes);
+    fsyncSync2(descriptor);
+    closeSync2(descriptor);
+    descriptor = void 0;
+    try {
+      chmodSync2(file, mode);
+    } catch {
+    }
+  } finally {
+    if (descriptor !== void 0) closeSync2(descriptor);
+  }
+  syncDirectory2(dirname5(file));
+}
+function sameHostPath3(left, right) {
+  const first = resolve5(left);
+  const second = resolve5(right);
+  return process.platform === "win32" ? first.toLocaleLowerCase("en-US") === second.toLocaleLowerCase("en-US") : first === second;
+}
+function transactionRoot(projectRoot) {
+  return join13(resolve5(projectRoot), TRANSACTION_NAME);
+}
+function operationFile(projectRoot) {
+  return join13(transactionRoot(projectRoot), OPERATION_FILE);
+}
+function targetFile(projectRoot, portablePath2) {
+  return join13(transactionRoot(projectRoot), "targets", ...portablePath2.split("/"));
+}
+function shadowRoot(projectRoot) {
+  return join13(transactionRoot(projectRoot), "shadow");
+}
+function backupFile(projectRoot, portablePath2) {
+  return join13(transactionRoot(projectRoot), "backups", ...portablePath2.split("/"));
+}
+function portableManagedPath(path5) {
+  return path5.startsWith(".kxm/") && path5 !== VNEXT_TEMPLATE_PROVENANCE_PATH && path5.length <= 1024 && !path5.includes("\\") && !isAbsolute4(path5) && PORTABLE_PATH.test(path5) && !/[<>:"|?*]/.test(path5);
+}
+function readRegularBounded(file, label) {
+  const stat = lstatSync4(file);
+  if (stat.isSymbolicLink() || !stat.isFile()) fail2("repair_file_invalid", label, "managed file must be a regular file, not a link or directory", "path");
+  if (stat.size > MAX_MANAGED_FILE_BYTES) fail2("repair_file_too_large", label, `managed file exceeds ${MAX_MANAGED_FILE_BYTES} bytes`, "parse");
+  return readFileSync7(file);
+}
+function readOptionalManaged(projectRoot, path5) {
+  const file = join13(projectRoot, ...path5.split("/"));
+  if (!existsSync6(file)) return void 0;
+  let parent = dirname5(file);
+  const boundary = resolve5(projectRoot);
+  while (parent !== boundary) {
+    const stat = lstatSync4(parent);
+    if (stat.isSymbolicLink() || !stat.isDirectory()) fail2("repair_parent_invalid", path5, "managed file parents must be regular directories", "path");
+    parent = dirname5(parent);
+  }
+  return readRegularBounded(file, path5);
+}
+function readProjectAndProvenance(projectRoot, schemasDir) {
+  const projectFile = join13(projectRoot, ".kxm", "project.yaml");
+  const provenanceFile = join13(projectRoot, ...VNEXT_TEMPLATE_PROVENANCE_PATH.split("/"));
+  if (!existsSync6(projectFile) || !existsSync6(provenanceFile)) return void 0;
+  const projectBytes = readOptionalManaged(projectRoot, ".kxm/project.yaml");
+  const provenanceBytes = readOptionalManaged(projectRoot, VNEXT_TEMPLATE_PROVENANCE_PATH);
+  if (!projectBytes || !provenanceBytes) return void 0;
+  const project = parseRestrictedYaml(projectBytes, ".kxm/project.yaml");
+  const provenanceValue = parseRestrictedYaml(provenanceBytes, VNEXT_TEMPLATE_PROVENANCE_PATH);
+  const registry = new VnextSchemaRegistry(schemasDir);
+  const issues = [
+    ...registry.validate("project", project, ".kxm/project.yaml"),
+    ...registry.validateTemplateProvenance(provenanceValue, VNEXT_TEMPLATE_PROVENANCE_PATH)
+  ];
+  if (issues.length > 0) throw new VnextConfigError(issues);
+  const provenance = resolveVnextTemplateBaseline(provenanceValue);
+  if (!provenance) fail2("template_provenance_revision_invalid", VNEXT_TEMPLATE_PROVENANCE_PATH, "template provenance does not exactly match a supported built-in baseline");
+  if (project.id !== provenance.inputs.projectId) {
+    fail2("template_provenance_project_mismatch", VNEXT_TEMPLATE_PROVENANCE_PATH, "template provenance belongs to a different project identity");
+  }
+  const seen = /* @__PURE__ */ new Set();
+  let prior = "";
+  let totalBytes = 0;
+  for (const record of provenance.files) {
+    if (!portableManagedPath(record.path)) fail2("template_provenance_path_invalid", VNEXT_TEMPLATE_PROVENANCE_PATH, `managed path ${record.path} is invalid`, "path");
+    const folded = record.path.toLocaleLowerCase("en-US");
+    if (seen.has(folded)) fail2("template_provenance_path_collision", VNEXT_TEMPLATE_PROVENANCE_PATH, `managed path ${record.path} collides after case folding`, "path");
+    if (prior && compareCodeUnits3(prior, record.path) >= 0) fail2("template_provenance_order_invalid", VNEXT_TEMPLATE_PROVENANCE_PATH, "managed files are not in strict code-unit order");
+    totalBytes += record.bytes;
+    seen.add(folded);
+    prior = record.path;
+  }
+  if (provenance.files.length > MAX_MANAGED_FILES || totalBytes > MAX_MANAGED_TOTAL_BYTES) {
+    fail2("template_provenance_bounds_exceeded", VNEXT_TEMPLATE_PROVENANCE_PATH, "managed template manifest exceeds bounded file or byte limits", "parse");
+  }
+  return { project, provenance, provenanceBytes };
+}
+function planVnextTemplateRepair(projectRoot, options = {}) {
+  const root = resolve5(projectRoot);
+  const source = readProjectAndProvenance(root, options.schemasDir);
+  if (!source) return void 0;
+  const target = renderVnextTemplate(
+    source.provenance.inputs.projectId,
+    source.provenance.inputs.projectName,
+    options.templateVariant ?? CURRENT_VNEXT_TEMPLATE_VARIANT
+  );
+  const baseByPath = new Map(source.provenance.files.map((record) => [record.path, record]));
+  const targetByPath = new Map(target.provenance.files.map((record) => [record.path, record]));
+  const paths = [.../* @__PURE__ */ new Set([...baseByPath.keys(), ...targetByPath.keys()])].sort(compareCodeUnits3);
+  const sourceRenderer = SUPPORTED_VNEXT_TEMPLATE_VARIANTS.map((variant) => renderVnextTemplate(source.provenance.inputs.projectId, source.provenance.inputs.projectName, variant)).find((candidate) => candidate.templateRevision === source.provenance.templateRevision);
+  const expectedProvenance = sourceRenderer?.files.get(VNEXT_TEMPLATE_PROVENANCE_PATH);
+  const issues = [];
+  if (!expectedProvenance || vnextContentSha256(source.provenanceBytes) !== vnextContentSha256(expectedProvenance)) {
+    issues.push(repairIssue(
+      "template_provenance_user_modified",
+      VNEXT_TEMPLATE_PROVENANCE_PATH,
+      "template provenance formatting or bytes differ from the supported baseline and require review"
+    ));
+  }
+  const changes = paths.map((path5) => {
+    const base = baseByPath.get(path5);
+    const targetRecord = targetByPath.get(path5);
+    const local = readOptionalManaged(root, path5);
+    const localSha256 = local && vnextContentSha256(local);
+    const baseSha256 = base?.sha256;
+    if (base && localSha256 === base.sha256 && local?.byteLength !== base.bytes) {
+      fail2("template_provenance_bytes_invalid", VNEXT_TEMPLATE_PROVENANCE_PATH, `recorded byte count for ${path5} does not match its baseline content`);
+    }
+    const targetSha256 = targetRecord?.sha256;
+    if (baseSha256 === localSha256 && localSha256 === targetSha256) {
+      return {
+        path: path5,
+        classification: "unchanged",
+        ...baseSha256 ? { baseSha256 } : {},
+        ...localSha256 ? { localSha256 } : {},
+        ...targetSha256 ? { targetSha256 } : {},
+        action: "none",
+        policyReviewRequired: false
+      };
+    }
+    if (localSha256 !== void 0 && localSha256 === targetSha256) {
+      return { path: path5, classification: "converged", ...baseSha256 ? { baseSha256 } : {}, localSha256, targetSha256, action: "none", policyReviewRequired: false };
+    }
+    if (localSha256 === baseSha256 && targetRecord) {
+      const authorityChanged = base?.authoritySha256 !== targetRecord.authoritySha256;
+      if (authorityChanged || !base) {
+        issues.push(repairIssue("template_policy_review_required", path5, "template change alters or introduces an authority-bearing resource and requires reviewed permission-diff trust"));
+        return {
+          path: path5,
+          classification: "conflict",
+          ...baseSha256 ? { baseSha256 } : {},
+          ...localSha256 ? { localSha256 } : {},
+          ...targetSha256 ? { targetSha256 } : {},
+          action: "none",
+          policyReviewRequired: true,
+          reason: "authority projection changed"
+        };
+      }
+      return {
+        path: path5,
+        classification: "template-only",
+        baseSha256,
+        ...localSha256 ? { localSha256 } : {},
+        targetSha256,
+        action: localSha256 === void 0 ? "create" : "replace",
+        policyReviewRequired: false
+      };
+    }
+    if (targetSha256 === baseSha256) {
+      return {
+        path: path5,
+        classification: "user-only",
+        ...baseSha256 ? { baseSha256 } : {},
+        ...localSha256 ? { localSha256 } : {},
+        ...targetSha256 ? { targetSha256 } : {},
+        action: "none",
+        policyReviewRequired: false
+      };
+    }
+    issues.push(repairIssue("template_repair_conflict", path5, "both the user and template changed this managed file; local bytes were preserved"));
+    return {
+      path: path5,
+      classification: "conflict",
+      ...baseSha256 ? { baseSha256 } : {},
+      ...localSha256 ? { localSha256 } : {},
+      ...targetSha256 ? { targetSha256 } : {},
+      action: "none",
+      policyReviewRequired: false,
+      reason: targetRecord ? "user and template changes overlap" : "template deletion requires explicit review"
+    };
+  });
+  const changesRequired = source.provenance.templateRevision !== target.templateRevision;
+  return {
+    projectRoot: root,
+    projectId: source.provenance.inputs.projectId,
+    projectName: source.provenance.inputs.projectName,
+    sourceTemplateRevision: source.provenance.templateRevision,
+    targetTemplateRevision: target.templateRevision,
+    changesRequired,
+    canApply: changesRequired && issues.length === 0,
+    changes,
+    issues
+  };
+}
+function operationPlanSha(operation) {
+  return vnextContentSha256(JSON.stringify({
+    kind: operation.kind,
+    projectRoot: operation.projectRoot,
+    projectId: operation.projectId,
+    projectName: operation.projectName,
+    templateId: operation.templateId,
+    sourceTemplateRevision: operation.sourceTemplateRevision,
+    targetTemplateRevision: operation.targetTemplateRevision,
+    files: operation.files
+  }));
+}
+function writeOperation(projectRoot, operation) {
+  const root = transactionRoot(projectRoot);
+  const file = operationFile(projectRoot);
+  const temporary = join13(root, `.operation-${operation.operationId}-${randomUUID3()}.tmp`);
+  try {
+    writeDurableNew(temporary, Buffer.from(`${JSON.stringify(operation, null, 2)}
+`, "utf8"), 384);
+    renameSync4(temporary, file);
+    syncDirectory2(root);
+  } finally {
+    rmSync3(temporary, { force: true });
+  }
+}
+function updatePhase(projectRoot, operation, phase) {
+  const updated = { ...operation, phase };
+  writeOperation(projectRoot, updated);
+  return updated;
+}
+function readOperation(projectRoot, schemasDir) {
+  const root = transactionRoot(projectRoot);
+  if (!existsSync6(root)) return void 0;
+  const stat = lstatSync4(root);
+  if (stat.isSymbolicLink() || !stat.isDirectory()) fail2("init_transaction_invalid", TRANSACTION_NAME, "initialization transaction must be a regular directory", "path");
+  const file = operationFile(projectRoot);
+  if (!existsSync6(file)) {
+    const entries = readdirSync4(root, { withFileTypes: true });
+    const recoverable = entries.every((entry) => entry.isFile() && /^\.operation-op_[a-f0-9]{32}-[a-f0-9-]{36}\.tmp$/.test(entry.name));
+    if (recoverable) return void 0;
+    fail2("init_transaction_record_missing", TRANSACTION_NAME, "initialization transaction without an operation record contains unrecognized state");
+  }
+  const value = parseRestrictedYaml(readRegularBounded(file, `${TRANSACTION_NAME}/${OPERATION_FILE}`), `${TRANSACTION_NAME}/${OPERATION_FILE}`);
+  const registry = new VnextSchemaRegistry(schemasDir);
+  const issues = registry.validateInitOperation(value, `${TRANSACTION_NAME}/${OPERATION_FILE}`);
+  if (issues.length > 0) throw new VnextConfigError(issues);
+  const operation = value;
+  if (!sameHostPath3(operation.projectRoot, projectRoot)) fail2("init_transaction_project_mismatch", TRANSACTION_NAME, "operation belongs to a different project root");
+  const expectedPlanSha = operationPlanSha(operation);
+  if (operation.planSha256 !== expectedPlanSha) fail2("init_transaction_plan_hash_invalid", TRANSACTION_NAME, "operation plan hash does not match its immutable intent");
+  let prior = "";
+  const seen = /* @__PURE__ */ new Set();
+  for (const entry of operation.files) {
+    if (!entry.path.startsWith(".kxm/") || !PORTABLE_PATH.test(entry.path)) fail2("init_transaction_path_invalid", TRANSACTION_NAME, `operation path ${entry.path} is invalid`, "path");
+    const folded = entry.path.toLocaleLowerCase("en-US");
+    if (seen.has(folded) || prior && compareCodeUnits3(prior, entry.path) >= 0) fail2("init_transaction_order_invalid", TRANSACTION_NAME, "operation paths must be unique and use strict code-unit order", "path");
+    seen.add(folded);
+    prior = entry.path;
+  }
+  if (!isAbsolute4(operation.projectRoot)) fail2("init_transaction_project_root_invalid", TRANSACTION_NAME, "operation project root must be absolute", "path");
+  validateOperationIntent(projectRoot, operation);
+  return operation;
+}
+function hasVnextInitTransaction(projectRoot) {
+  return existsSync6(transactionRoot(projectRoot));
+}
+function readTarget(projectRoot, path5) {
+  return readOptionalManaged(join13(transactionRoot(projectRoot), "targets"), path5);
+}
+function writeTarget(projectRoot, path5, bytes) {
+  if (bytes.byteLength > MAX_MANAGED_FILE_BYTES) fail2("template_target_too_large", path5, `target exceeds ${MAX_MANAGED_FILE_BYTES} bytes`);
+  const file = targetFile(projectRoot, path5);
+  mkdirSync8(dirname5(file), { recursive: true, mode: 448 });
+  writeDurableNew(file, bytes, 384);
+}
+function writeAndVerifyBackups(projectRoot, operation) {
+  if (operation.kind !== "repair") return;
+  for (const entry of operation.files) {
+    if (entry.observedSha256 === null) continue;
+    const current = readOptionalManaged(projectRoot, entry.path);
+    if (!current || vnextContentSha256(current) !== entry.observedSha256) {
+      fail2("repair_preimage_changed", entry.path, "destination changed before transaction preparation; local bytes were preserved");
+    }
+    const file = backupFile(projectRoot, entry.path);
+    mkdirSync8(dirname5(file), { recursive: true, mode: 448 });
+    writeDurableNew(file, current, 384);
+  }
+}
+function writeKnownBackups(projectRoot, operation) {
+  if (operation.kind !== "repair" || !operation.sourceTemplateRevision) return;
+  const source = rendererForRevision(operation, operation.sourceTemplateRevision);
+  if (!source) fail2("init_transaction_source_unknown", TRANSACTION_NAME, "operation source is not a supported built-in template");
+  for (const entry of operation.files) {
+    if (entry.observedSha256 === null) continue;
+    const bytes = source.files.get(entry.path);
+    if (!bytes || vnextContentSha256(bytes) !== entry.observedSha256) {
+      fail2("init_transaction_backup_source_invalid", entry.path, "supported source template cannot reproduce the pinned preimage");
+    }
+    const file = backupFile(projectRoot, entry.path);
+    mkdirSync8(dirname5(file), { recursive: true, mode: 448 });
+    writeDurableNew(file, bytes, 384);
+  }
+}
+function verifyBackups(projectRoot, operation) {
+  if (operation.kind !== "repair") return;
+  for (const entry of operation.files) {
+    if (entry.observedSha256 === null) continue;
+    const bytes = readOptionalManaged(join13(transactionRoot(projectRoot), "backups"), entry.path);
+    if (!bytes || vnextContentSha256(bytes) !== entry.observedSha256) {
+      fail2("init_transaction_backup_invalid", entry.path, "pinned preimage backup is missing or corrupt");
+    }
+  }
+}
+function verifyTargetArtifacts(projectRoot, operation) {
+  let total = 0;
+  for (const entry of operation.files) {
+    const bytes = readTarget(projectRoot, entry.path);
+    if (!bytes) fail2("init_transaction_target_missing", entry.path, "pinned target artifact is missing");
+    total += bytes.byteLength;
+    if (vnextContentSha256(bytes) !== entry.targetSha256) fail2("init_transaction_target_mismatch", entry.path, "pinned target artifact hash does not match the operation");
+  }
+  if (operation.files.length > MAX_MANAGED_FILES || total > MAX_MANAGED_TOTAL_BYTES) fail2("init_transaction_bounds_exceeded", TRANSACTION_NAME, "operation exceeds bounded file or byte limits", "parse");
+}
+function loaderOptions(options) {
+  return {
+    ...options.schemasDir === void 0 ? {} : { schemasDir: options.schemasDir },
+    ...options.repositoryBindings === void 0 ? {} : { repositoryBindings: options.repositoryBindings },
+    ...options.registeredExecutors === void 0 ? {} : { registeredExecutors: options.registeredExecutors },
+    ...options.registeredGates === void 0 ? {} : { registeredGates: options.registeredGates },
+    ...options.registeredToolPresets === void 0 ? {} : { registeredToolPresets: options.registeredToolPresets }
+  };
+}
+function sourceConfigFiles(projectRoot) {
+  const fixed = [
+    ".kxm/project.yaml",
+    VNEXT_TEMPLATE_PROVENANCE_PATH,
+    ".kxm/project/env.yaml",
+    ".kxm/repo/repo.yaml",
+    ".kxm/repo/env.yaml"
+  ];
+  const files = fixed.filter((path5) => existsSync6(join13(projectRoot, ...path5.split("/"))));
+  for (const directory of ["agents", "models", "workflows"]) {
+    const absolute = join13(projectRoot, ".kxm", directory);
+    if (!existsSync6(absolute)) continue;
+    const stat = lstatSync4(absolute);
+    if (stat.isSymbolicLink() || !stat.isDirectory()) fail2("repair_directory_invalid", `.kxm/${directory}`, "configuration directory must be regular", "path");
+    for (const entry of readdirSync4(absolute, { withFileTypes: true })) {
+      if (entry.isDirectory()) fail2("repair_nested_directory", `.kxm/${directory}/${entry.name}`, "nested configuration directories are not repairable", "path");
+      const lower = entry.name.toLocaleLowerCase("en-US");
+      if (lower.endsWith(".yaml") || lower.endsWith(".yml")) files.push(`.kxm/${directory}/${entry.name}`);
+    }
+  }
+  const ordered = [...new Set(files)].sort(compareCodeUnits3);
+  if (ordered.length > MAX_MANAGED_FILES) fail2("repair_snapshot_too_many_files", ".kxm", `configuration snapshot exceeds ${MAX_MANAGED_FILES} files`, "parse");
+  return ordered;
+}
+function absoluteMemberBindings(projectRoot, project, explicit = {}) {
+  const bindings = { ...explicit };
+  const repositories = Array.isArray(project.repositories) ? project.repositories : [];
+  for (const candidate of repositories) {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) continue;
+    const repository = candidate;
+    if (repository.role !== "member" || typeof repository.id !== "string" || Object.hasOwn(bindings, repository.id)) continue;
+    if (typeof repository.pathHint === "string") {
+      const candidate2 = resolve5(projectRoot, ...repository.pathHint.split("/"));
+      if (existsSync6(candidate2)) bindings[repository.id] = candidate2;
+    }
+  }
+  return bindings;
+}
+function prepareShadow(projectRoot, operation, options) {
+  const shadow = shadowRoot(projectRoot);
+  mkdirSync8(shadow, { recursive: true, mode: 448 });
+  let total = 0;
+  if (operation.kind === "repair") {
+    for (const path5 of sourceConfigFiles(projectRoot)) {
+      const bytes = readOptionalManaged(projectRoot, path5);
+      if (!bytes) fail2("repair_snapshot_file_missing", path5, "configuration changed during shadow preparation");
+      total += bytes.byteLength;
+      const source = join13(projectRoot, ...path5.split("/"));
+      const destination = join13(shadow, ...path5.split("/"));
+      mkdirSync8(dirname5(destination), { recursive: true, mode: 448 });
+      writeDurableNew(destination, bytes, lstatSync4(source).mode & 511);
+      if (total > MAX_MANAGED_TOTAL_BYTES) fail2("repair_snapshot_too_large", ".kxm", `configuration snapshot exceeds ${MAX_MANAGED_TOTAL_BYTES} bytes`, "parse");
+    }
+  }
+  for (const entry of operation.files) {
+    const bytes = readTarget(projectRoot, entry.path);
+    if (!bytes) fail2("init_transaction_target_missing", entry.path, "pinned target artifact is missing");
+    const destination = join13(shadow, ...entry.path.split("/"));
+    mkdirSync8(dirname5(destination), { recursive: true, mode: 448 });
+    const mode = existsSync6(destination) ? lstatSync4(destination).mode & 511 : 420;
+    writeDurable(destination, bytes, mode);
+  }
+  const project = parseRestrictedYaml(readFileSync7(join13(shadow, ".kxm", "project.yaml")), ".kxm/project.yaml");
+  const bound = absoluteMemberBindings(projectRoot, project, options.repositoryBindings);
+  loadVnextProject(shadow, { ...loaderOptions(options), repositoryBindings: bound });
+  const provenance = readProjectAndProvenance(shadow, options.schemasDir)?.provenance;
+  if (!provenance || provenance.templateRevision !== operation.targetTemplateRevision) {
+    fail2("repair_shadow_provenance_invalid", VNEXT_TEMPLATE_PROVENANCE_PATH, "prospective template provenance does not match the pinned target");
+  }
+}
+function createOperation(projectRoot, kind, rendered, files, sourceTemplateRevision) {
+  const root = resolve5(projectRoot);
+  const operationWithoutHash = {
+    schema: "kxm.init-operation.v1",
+    operationId: `op_${randomUUID3().replaceAll("-", "")}`,
+    kind,
+    projectRoot: root,
+    projectId: rendered.projectId,
+    projectName: rendered.projectName,
+    templateId: VNEXT_TEMPLATE_ID,
+    sourceTemplateRevision,
+    targetTemplateRevision: rendered.templateRevision,
+    files: [...files].sort((left, right) => compareCodeUnits3(left.path, right.path))
+  };
+  return {
+    ...operationWithoutHash,
+    phase: "preparing",
+    planSha256: operationPlanSha(operationWithoutHash)
+  };
+}
+function validateOperationRecord(operation, schemasDir) {
+  const label = `${TRANSACTION_NAME}/${OPERATION_FILE}`;
+  const value = parseRestrictedYaml(Buffer.from(JSON.stringify(operation), "utf8"), label);
+  const issues = new VnextSchemaRegistry(schemasDir).validateInitOperation(value, label);
+  if (issues.length > 0) throw new VnextConfigError(issues);
+}
+function prepareOperation(projectRoot, operation, rendered, options) {
+  const transaction = transactionRoot(projectRoot);
+  validateOperationRecord(operation, options.schemasDir);
+  validateOperationIntent(projectRoot, operation);
+  if (existsSync6(transaction)) fail2("init_transaction_exists", TRANSACTION_NAME, "an initialization transaction already exists and must be resumed");
+  mkdirSync8(transaction, { mode: 448 });
+  syncDirectory2(projectRoot);
+  writeOperation(projectRoot, operation);
+  try {
+    for (const entry of operation.files) {
+      const bytes = rendered.files.get(entry.path);
+      if (!bytes || vnextContentSha256(bytes) !== entry.targetSha256) fail2("template_target_unavailable", entry.path, "renderer cannot reproduce the pinned target bytes");
+      writeTarget(projectRoot, entry.path, bytes);
+    }
+    writeAndVerifyBackups(projectRoot, operation);
+    verifyTargetArtifacts(projectRoot, operation);
+    verifyBackups(projectRoot, operation);
+    prepareShadow(projectRoot, operation, options);
+    syncTreeDirectories(transaction);
+    return updatePhase(projectRoot, operation, "prepared");
+  } catch (error) {
+    rmSync3(transaction, { recursive: true, force: true });
+    throw error;
+  }
+}
+function ensureDestinationParents(projectRoot, path5) {
+  const boundary = resolve5(projectRoot);
+  const segments = path5.split("/").slice(0, -1);
+  let current = boundary;
+  for (const segment of segments) {
+    current = join13(current, segment);
+    if (!existsSync6(current)) mkdirSync8(current, { mode: 448 });
+    const stat = lstatSync4(current);
+    if (stat.isSymbolicLink() || !stat.isDirectory()) fail2("repair_destination_parent_invalid", path5, "destination parent must be a regular directory", "path");
+  }
+}
+function destinationSha(projectRoot, path5) {
+  const file = join13(projectRoot, ...path5.split("/"));
+  if (!existsSync6(file)) return void 0;
+  return vnextContentSha256(readRegularBounded(file, path5));
+}
+function requireConditionalLinkSupport(directory, operationId, path5) {
+  const nonce = randomUUID3();
+  const source = join13(directory, `.kxm-repair-${operationId}-${nonce}.link-source`);
+  const target = join13(directory, `.kxm-repair-${operationId}-${nonce}.link-target`);
+  try {
+    writeDurableNew(source, Buffer.from("kxm-link-probe\n", "utf8"), 384);
+    try {
+      linkSync(source, target);
+    } catch {
+      fail2("repair_hard_link_unsupported", path5, "filesystem does not support the conditional hard-link install required for safe repair");
+    }
+  } finally {
+    rmSync3(target, { force: true });
+    rmSync3(source, { force: true });
+    syncDirectory2(directory);
+  }
+}
+function atomicInstallTarget(projectRoot, operation, entry) {
+  const destination = join13(projectRoot, ...entry.path.split("/"));
+  ensureDestinationParents(projectRoot, entry.path);
+  const directory = dirname5(destination);
+  const temporaryPrefix = `.kxm-repair-${operation.operationId}-`;
+  const pathKey = vnextContentSha256(entry.path).slice("sha256:".length, "sha256:".length + 16);
+  const displaced = join13(directory, `${temporaryPrefix}${pathKey}.preimage`);
+  if (existsSync6(displaced)) {
+    const stat = lstatSync4(displaced);
+    if (stat.isSymbolicLink() || !stat.isFile()) fail2("repair_preimage_temporary_invalid", entry.path, "stale displaced preimage is not a regular file", "path");
+    if (entry.observedSha256 === null || vnextContentSha256(readFileSync7(displaced)) !== entry.observedSha256) {
+      fail2("repair_preimage_temporary_mismatch", entry.path, "stale displaced preimage does not match the pinned operation");
+    }
+    if (!existsSync6(destination)) {
+      try {
+        linkSync(displaced, destination);
+      } catch {
+        fail2("repair_preimage_restore_blocked", entry.path, "could not conditionally restore a displaced preimage");
+      }
+      syncDirectory2(directory);
+    }
+    rmSync3(displaced, { force: true });
+    syncDirectory2(directory);
+  }
+  for (const candidate of readdirSync4(directory, { withFileTypes: true })) {
+    const owned = candidate.name.startsWith(temporaryPrefix) && (candidate.name.endsWith(".tmp") || candidate.name.endsWith(".link-source") || candidate.name.endsWith(".link-target"));
+    if (!owned) continue;
+    if (!candidate.isFile()) fail2("repair_temporary_invalid", entry.path, "stale operation temporary is not a regular file", "path");
+    rmSync3(join13(directory, candidate.name), { force: true });
+  }
+  const current = destinationSha(projectRoot, entry.path);
+  if (current === entry.targetSha256) return;
+  if (current !== (entry.observedSha256 ?? void 0)) {
+    fail2("repair_preimage_changed", entry.path, "destination changed after planning; pinned target was not installed");
+  }
+  requireConditionalLinkSupport(directory, operation.operationId, entry.path);
+  const bytes = readTarget(projectRoot, entry.path);
+  if (!bytes) fail2("init_transaction_target_missing", entry.path, "pinned target artifact is missing");
+  const temporary = join13(directory, `${temporaryPrefix}${randomUUID3()}.tmp`);
+  const mode = existsSync6(destination) ? lstatSync4(destination).mode & 511 : 420;
+  try {
+    writeDurableNew(temporary, bytes, mode);
+    if (entry.observedSha256 !== null) {
+      renameSync4(destination, displaced);
+      syncDirectory2(directory);
+      if (vnextContentSha256(readFileSync7(displaced)) !== entry.observedSha256) {
+        if (!existsSync6(destination)) {
+          try {
+            linkSync(displaced, destination);
+          } catch {
+            fail2("repair_preimage_restore_blocked", entry.path, "changed destination was displaced but could not be conditionally restored; its bytes remain in the operation preimage file");
+          }
+          syncDirectory2(directory);
+          rmSync3(displaced, { force: true });
+          syncDirectory2(directory);
+        }
+        fail2("repair_preimage_changed", entry.path, "destination changed at replacement time; concurrent bytes were preserved at the destination or in the operation preimage file");
+      }
+    }
+    try {
+      linkSync(temporary, destination);
+    } catch {
+      if (!existsSync6(destination) && existsSync6(displaced)) {
+        try {
+          linkSync(displaced, destination);
+        } catch {
+          fail2("repair_preimage_restore_blocked", entry.path, "target install failed and the displaced preimage could not be conditionally restored");
+        }
+        syncDirectory2(directory);
+      }
+      rmSync3(displaced, { force: true });
+      syncDirectory2(directory);
+      fail2("repair_destination_recreated", entry.path, "destination was recreated concurrently or conditional install is unsupported; pinned target was not installed");
+    }
+    syncDirectory2(directory);
+    rmSync3(temporary, { force: true });
+    rmSync3(displaced, { force: true });
+    syncDirectory2(directory);
+  } finally {
+    rmSync3(temporary, { force: true });
+  }
+  if (destinationSha(projectRoot, entry.path) !== entry.targetSha256) fail2("repair_install_verification_failed", entry.path, "installed target hash does not match the pinned operation");
+}
+function installedCreateMatches(projectRoot, operation) {
+  const configRoot = join13(projectRoot, ".kxm");
+  if (!existsSync6(configRoot)) return false;
+  const actual = [];
+  const visit2 = (directory) => {
+    for (const entry of readdirSync4(directory, { withFileTypes: true })) {
+      const absolute = join13(directory, entry.name);
+      if (entry.isSymbolicLink()) fail2("create_resume_link", relativeConfigPath(projectRoot, absolute), "created configuration must not contain links", "path");
+      if (entry.isDirectory()) visit2(absolute);
+      else if (entry.isFile()) actual.push(relativeConfigPath(projectRoot, absolute));
+      else fail2("create_resume_file_invalid", relativeConfigPath(projectRoot, absolute), "created configuration contains a non-regular entry", "path");
+    }
+  };
+  visit2(configRoot);
+  actual.sort(compareCodeUnits3);
+  const expected = operation.files.map((entry) => entry.path).sort(compareCodeUnits3);
+  return actual.length === expected.length && actual.every((path5, index) => path5 === expected[index]) && operation.files.every((entry) => destinationSha(projectRoot, entry.path) === entry.targetSha256);
+}
+function relativeConfigPath(projectRoot, file) {
+  return relative4(resolve5(projectRoot), file).replaceAll("\\", "/");
+}
+function syncTreeDirectories(root) {
+  if (!existsSync6(root)) return;
+  const directories = [];
+  const visit2 = (directory) => {
+    directories.push(directory);
+    for (const entry of readdirSync4(directory, { withFileTypes: true })) {
+      if (entry.isDirectory()) visit2(join13(directory, entry.name));
+    }
+  };
+  visit2(root);
+  for (const directory of directories.reverse()) syncDirectory2(directory);
+}
+function rebuildCreateShadow(projectRoot, operation, options) {
+  const shadow = shadowRoot(projectRoot);
+  rmSync3(shadow, { recursive: true, force: true });
+  prepareShadow(projectRoot, operation, options);
+  const stat = lstatSync4(shadow);
+  if (stat.isSymbolicLink() || !stat.isDirectory() || !installedCreateMatches(shadow, operation)) {
+    fail2("create_shadow_invalid", TRANSACTION_NAME, "reconstructed create shadow does not exactly match pinned target files", "path");
+  }
+  syncTreeDirectories(join13(shadow, ".kxm"));
+}
+function applyOperation(projectRoot, original, options, resumed) {
+  let operation = original;
+  const effectiveOptions = options;
+  verifyTargetArtifacts(projectRoot, operation);
+  verifyBackups(projectRoot, operation);
+  operation = updatePhase(projectRoot, operation, "applying");
+  if (operation.kind === "create") {
+    const destination = join13(projectRoot, ".kxm");
+    if (!existsSync6(destination)) {
+      rebuildCreateShadow(projectRoot, operation, effectiveOptions);
+      renameSync4(join13(shadowRoot(projectRoot), ".kxm"), destination);
+      syncDirectory2(projectRoot);
+    } else if (!installedCreateMatches(projectRoot, operation)) {
+      fail2("create_resume_conflict", ".kxm", "existing project configuration does not match the pinned create operation");
+    }
+  } else {
+    const resources = operation.files.filter((entry) => entry.path !== VNEXT_TEMPLATE_PROVENANCE_PATH && entry.action !== "none");
+    let installed = 0;
+    for (const entry of resources) {
+      atomicInstallTarget(projectRoot, operation, entry);
+      installed += 1;
+      if (installed === 1 && options.testFaultAt === "first-resource") throw new Error("injected init fault after first resource");
+    }
+    loadVnextProject(projectRoot, loaderOptions(effectiveOptions));
+    const provenance = operation.files.find((entry) => entry.path === VNEXT_TEMPLATE_PROVENANCE_PATH);
+    if (!provenance) fail2("repair_provenance_target_missing", TRANSACTION_NAME, "repair operation has no final provenance target");
+    atomicInstallTarget(projectRoot, operation, provenance);
+    if (options.testFaultAt === "provenance") throw new Error("injected init fault after provenance");
+  }
+  const bundle = loadVnextProject(projectRoot, loaderOptions(effectiveOptions));
+  const source = readProjectAndProvenance(projectRoot, effectiveOptions.schemasDir);
+  if (!source || source.provenance.templateRevision !== operation.targetTemplateRevision) {
+    fail2("init_operation_verification_failed", VNEXT_TEMPLATE_PROVENANCE_PATH, "installed provenance does not match the pinned transaction");
+  }
+  operation = updatePhase(projectRoot, operation, "verified");
+  if (options.testFaultAt === "verified") throw new Error("injected init fault after verification");
+  const files = operation.files.map((entry) => entry.path);
+  syncTreeDirectories(join13(projectRoot, ".kxm"));
+  return { kind: operation.kind, resumed, bundle, files };
+}
+function prepareAndApplyVnextCreate(projectRoot, rendered, options = {}) {
+  const files = [...rendered.files.entries()].map(([path5, bytes]) => ({
+    path: path5,
+    observedSha256: null,
+    targetSha256: vnextContentSha256(bytes),
+    classification: "template-only",
+    action: "create"
+  }));
+  const operation = createOperation(projectRoot, "create", rendered, files, null);
+  const prepared = prepareOperation(projectRoot, operation, rendered, options);
+  if (options.testFaultAt === "prepared") throw new Error("injected init fault after prepare");
+  return applyOperation(projectRoot, prepared, options, false);
+}
+function prepareAndApplyVnextRepair(plan, options = {}) {
+  if (!plan.canApply) fail2("template_repair_not_applicable", ".kxm", "template repair has conflicts, policy changes, or no safe template-only update");
+  const rendered = renderVnextTemplate(plan.projectId, plan.projectName, options.templateVariant ?? CURRENT_VNEXT_TEMPLATE_VARIANT);
+  if (rendered.templateRevision !== plan.targetTemplateRevision) fail2("template_repair_target_changed", ".kxm", "template target changed after planning");
+  const actionable = plan.changes.filter((change) => change.classification === "template-only");
+  const provenanceBytes = rendered.files.get(VNEXT_TEMPLATE_PROVENANCE_PATH);
+  if (!provenanceBytes) fail2("template_provenance_target_missing", VNEXT_TEMPLATE_PROVENANCE_PATH, "renderer did not produce provenance");
+  const sourceProvenance = readOptionalManaged(plan.projectRoot, VNEXT_TEMPLATE_PROVENANCE_PATH);
+  if (!sourceProvenance) fail2("template_provenance_missing", VNEXT_TEMPLATE_PROVENANCE_PATH, "repair requires recorded provenance");
+  const files = actionable.map((change) => ({
+    path: change.path,
+    observedSha256: change.localSha256 ?? null,
+    targetSha256: change.targetSha256,
+    classification: "template-only",
+    action: change.action
+  }));
+  files.push({
+    path: VNEXT_TEMPLATE_PROVENANCE_PATH,
+    observedSha256: vnextContentSha256(sourceProvenance),
+    targetSha256: vnextContentSha256(provenanceBytes),
+    classification: "template-only",
+    action: "replace"
+  });
+  const operation = createOperation(plan.projectRoot, "repair", rendered, files, plan.sourceTemplateRevision);
+  const prepared = prepareOperation(plan.projectRoot, operation, rendered, options);
+  if (options.testFaultAt === "prepared") throw new Error("injected init fault after prepare");
+  return applyOperation(plan.projectRoot, prepared, options, false);
+}
+function rendererForRevision(operation, revision) {
+  for (const variant of SUPPORTED_VNEXT_TEMPLATE_VARIANTS) {
+    const rendered = renderVnextTemplate(operation.projectId, operation.projectName, variant);
+    if (rendered.templateRevision === revision) return rendered;
+  }
+  return void 0;
+}
+function rendererForOperation(operation) {
+  return rendererForRevision(operation, operation.targetTemplateRevision);
+}
+function validateOperationIntent(projectRoot, operation) {
+  const target = rendererForOperation(operation);
+  if (!target) fail2("init_transaction_target_unknown", TRANSACTION_NAME, "operation target is not a supported built-in template");
+  const entries = new Map(operation.files.map((entry) => [entry.path, entry]));
+  if (operation.kind === "create") {
+    if (operation.sourceTemplateRevision !== null) {
+      fail2("init_transaction_create_invalid", TRANSACTION_NAME, "create operation has a source revision");
+    }
+    if (entries.size !== target.files.size) fail2("init_transaction_create_files_invalid", TRANSACTION_NAME, "create operation does not contain the exact built-in target file set");
+    for (const [path5, bytes] of target.files) {
+      const entry = entries.get(path5);
+      if (!entry || entry.observedSha256 !== null || entry.targetSha256 !== vnextContentSha256(bytes) || entry.classification !== "template-only" || entry.action !== "create") {
+        fail2("init_transaction_create_file_invalid", path5, "create operation file does not match its built-in target");
+      }
+    }
+    return;
+  }
+  if (!operation.sourceTemplateRevision || operation.sourceTemplateRevision === operation.targetTemplateRevision) {
+    fail2("init_transaction_repair_revision_invalid", TRANSACTION_NAME, "repair operation requires distinct supported source and target revisions");
+  }
+  const source = rendererForRevision(operation, operation.sourceTemplateRevision);
+  if (!source) fail2("init_transaction_source_unknown", TRANSACTION_NAME, "operation source is not a supported built-in template");
+  const sourceRecords = new Map(source.provenance.files.map((record) => [record.path, record]));
+  const targetRecords = new Map(target.provenance.files.map((record) => [record.path, record]));
+  if (sourceRecords.size !== targetRecords.size || [...sourceRecords.keys()].some((path5) => !targetRecords.has(path5))) {
+    fail2("init_transaction_template_shape_changed", TRANSACTION_NAME, "automatic repair cannot add or delete managed template paths");
+  }
+  const safeChangedPaths = [];
+  for (const [path5, base] of sourceRecords) {
+    const next = targetRecords.get(path5);
+    if (base.authoritySha256 !== next.authoritySha256) {
+      fail2("init_transaction_authority_change", path5, "automatic repair operation changes an authority projection");
+    }
+    if (base.sha256 !== next.sha256) safeChangedPaths.push(path5);
+  }
+  const provenanceEntry = entries.get(VNEXT_TEMPLATE_PROVENANCE_PATH);
+  const sourceProvenanceBytes = source.files.get(VNEXT_TEMPLATE_PROVENANCE_PATH);
+  const targetProvenanceBytes = target.files.get(VNEXT_TEMPLATE_PROVENANCE_PATH);
+  if (!provenanceEntry || provenanceEntry.observedSha256 !== vnextContentSha256(sourceProvenanceBytes) || provenanceEntry.targetSha256 !== vnextContentSha256(targetProvenanceBytes) || provenanceEntry.classification !== "template-only" || provenanceEntry.action !== "replace") {
+    fail2("init_transaction_provenance_intent_invalid", VNEXT_TEMPLATE_PROVENANCE_PATH, "repair provenance action does not match supported source and target templates");
+  }
+  for (const [path5, entry] of entries) {
+    if (path5 === VNEXT_TEMPLATE_PROVENANCE_PATH) continue;
+    const base = sourceRecords.get(path5);
+    const next = targetRecords.get(path5);
+    if (!base || !next || base.sha256 === next.sha256 || entry.observedSha256 !== base.sha256 || entry.targetSha256 !== next.sha256 || entry.classification !== "template-only" || entry.action !== "replace") {
+      fail2("init_transaction_repair_file_invalid", path5, "repair operation file is not a safe built-in template-only replacement");
+    }
+  }
+  for (const path5 of safeChangedPaths) {
+    if (!entries.has(path5) && destinationSha(projectRoot, path5) !== targetRecords.get(path5)?.sha256) {
+      fail2("init_transaction_repair_file_missing", path5, "repair operation omitted a changed file that has not converged to the target");
+    }
+  }
+}
+function finishPreparingOperation(projectRoot, operation, options) {
+  const rendered = rendererForOperation(operation);
+  if (!rendered) fail2("init_transaction_renderer_unavailable", TRANSACTION_NAME, "this binary cannot reproduce the pinned pre-application target");
+  for (const directory of ["targets", "backups", "shadow"]) {
+    rmSync3(join13(transactionRoot(projectRoot), directory), { recursive: true, force: true });
+  }
+  for (const entry of operation.files) {
+    const bytes = rendered.files.get(entry.path);
+    if (!bytes || vnextContentSha256(bytes) !== entry.targetSha256) fail2("template_target_unavailable", entry.path, "renderer cannot reproduce the pinned target bytes");
+    writeTarget(projectRoot, entry.path, bytes);
+  }
+  writeKnownBackups(projectRoot, operation);
+  verifyTargetArtifacts(projectRoot, operation);
+  verifyBackups(projectRoot, operation);
+  prepareShadow(projectRoot, operation, options);
+  syncTreeDirectories(transactionRoot(projectRoot));
+  return updatePhase(projectRoot, operation, "prepared");
+}
+function resumeVnextInitTransaction(projectRoot, options = {}) {
+  let operation = readOperation(projectRoot, options.schemasDir);
+  if (!operation) {
+    const root = transactionRoot(projectRoot);
+    if (existsSync6(root)) {
+      rmSync3(root, { recursive: true, force: true });
+      syncDirectory2(projectRoot);
+    }
+    return void 0;
+  }
+  if (operation.phase === "preparing") operation = finishPreparingOperation(projectRoot, operation, options);
+  verifyTargetArtifacts(projectRoot, operation);
+  return applyOperation(projectRoot, operation, options, true);
+}
+function commitVnextInitTransaction(projectRoot, schemasDir) {
+  const operation = readOperation(projectRoot, schemasDir);
+  if (!operation || operation.phase !== "verified") {
+    fail2("init_transaction_not_verified", TRANSACTION_NAME, "initialization transaction cannot commit before installed state is verified");
+  }
+  const transaction = transactionRoot(projectRoot);
+  const retired = join13(projectRoot, `${TRANSACTION_NAME}-cleanup-${operation.operationId}-${randomUUID3()}`);
+  renameSync4(transaction, retired);
+  syncDirectory2(projectRoot);
+  rmSync3(retired, { recursive: true, force: true });
+  syncDirectory2(projectRoot);
+}
+function inspectVnextInitTransaction(projectRoot, schemasDir) {
+  const operation = readOperation(projectRoot, schemasDir);
+  if (operation && operation.phase !== "preparing") {
+    verifyTargetArtifacts(projectRoot, operation);
+    verifyBackups(projectRoot, operation);
+  }
+  return operation;
+}
+
+// plugins/kxm-mesh/src/vnext-init.ts
 var PROJECT_ID = /^prj_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$/;
-var TEMPLATE_FILES = [
-  ".kxm/agents/coordinator.yaml",
-  ".kxm/agents/implementer.yaml",
-  ".kxm/project.yaml",
-  ".kxm/repo/repo.yaml",
-  ".kxm/workflows/default.yaml"
-];
 function initIssue(code, file, message) {
   return { phase: "discovery", code, file, message };
 }
@@ -29631,123 +30851,11 @@ function normalizedProjectName(root, requested) {
   return name;
 }
 function generatedProjectId(requested) {
-  const id = requested?.trim() || `prj_${randomUUID3().replaceAll("-", "")}`;
+  const id = requested?.trim() || `prj_${randomUUID4().replaceAll("-", "")}`;
   if (!PROJECT_ID.test(id) || id.length > 144) {
     throw new VnextConfigError([initIssue("project_id_invalid", ".kxm/project.yaml", "project ID must satisfy the kxm.project.v1 opaque ID grammar and use the prj_ prefix")]);
   }
   return id;
-}
-function template(projectId, projectName) {
-  return /* @__PURE__ */ new Map([
-    [".kxm/project.yaml", {
-      schema: "kxm.project.v1",
-      id: projectId,
-      name: projectName,
-      defaultWorkflow: "default",
-      defaultExecutor: "local",
-      repositories: [{ id: "control", role: "control", required: true, pathHint: "." }],
-      workspace: {
-        dirtySnapshot: {
-          untracked: "ask",
-          dirtySubmodules: "fail"
-        }
-      }
-    }],
-    [".kxm/repo/repo.yaml", {
-      schema: "kxm.repository.v1",
-      projectId,
-      repositoryId: "control",
-      description: "Authoritative project configuration and repository content.",
-      defaultAccess: "write"
-    }],
-    [".kxm/agents/coordinator.yaml", {
-      schema: "kxm.agent.v1",
-      purpose: "Coordinate the pinned workflow and emit schema-validated commands.",
-      tools: { preset: "coordinator" },
-      defaultRepositoryAccess: "read",
-      repositories: { control: "read" },
-      network: "provider-only",
-      resultSchema: "kxm.assignment-result.v1"
-    }],
-    [".kxm/agents/implementer.yaml", {
-      schema: "kxm.agent.v1",
-      purpose: "Implement the approved change within the declared repository scope.",
-      tools: { preset: "workspace-writer" },
-      defaultRepositoryAccess: "none",
-      repositories: { control: "write" },
-      network: "provider-only",
-      resultSchema: "kxm.assignment-result.v1"
-    }],
-    [".kxm/workflows/default.yaml", {
-      schema: "kxm.workflow.v1",
-      description: "Plan, implement, and verify a local change.",
-      coordinator: "coordinator",
-      limits: {
-        maxTransitions: 8,
-        maxRunDurationMs: 144e5,
-        maxAgentTimeMs: 216e5
-      },
-      steps: [
-        {
-          id: "plan",
-          kind: "agent",
-          agent: "coordinator",
-          maxAttempts: 2,
-          repositories: { control: "read" },
-          requiredEvidence: [{ key: "plan", kind: "artifact" }],
-          timeoutMs: 12e5,
-          on: {
-            passed: "implement",
-            blocked: { target: "$terminal", terminalStatus: "failed" }
-          }
-        },
-        {
-          id: "implement",
-          kind: "agent",
-          agent: "implementer",
-          maxAttempts: 3,
-          repositories: { control: "write" },
-          assignments: {
-            allowedAgents: ["implementer"],
-            minimum: 1,
-            target: 1,
-            maximum: 1,
-            maxParallel: 1,
-            maxAttemptsPerAssignment: 2,
-            maxWriteRepositories: 1
-          },
-          requiredEvidence: [{ key: "implementation-diff", kind: "artifact" }],
-          timeoutMs: 36e5,
-          on: {
-            passed: "verify",
-            failed: { target: "$terminal", terminalStatus: "failed" },
-            blocked: { target: "$terminal", terminalStatus: "failed" }
-          }
-        },
-        {
-          id: "verify",
-          kind: "gate",
-          gate: "test",
-          maxAttempts: 3,
-          repositories: { control: "write" },
-          requiredEvidence: [{ key: "local-gates", kind: "gate" }],
-          timeoutMs: 36e5,
-          on: {
-            passed: { target: "$terminal", terminalStatus: "completed" },
-            "implementation-failure": { target: "implement", maxTransitions: 3 },
-            failed: { target: "$terminal", terminalStatus: "failed" }
-          }
-        }
-      ]
-    }]
-  ]);
-}
-function writeTemplate(stagingRoot, resources) {
-  for (const [portablePath2, value] of resources) {
-    const file = join13(stagingRoot, ...portablePath2.split("/"));
-    mkdirSync8(dirname5(file), { recursive: true });
-    writeFileSync7(file, (0, import_yaml2.stringify)(value, { lineWidth: 0 }), { encoding: "utf8", flag: "wx" });
-  }
 }
 function configOptions(options, repositoryBindings) {
   return {
@@ -29756,6 +30864,13 @@ function configOptions(options, repositoryBindings) {
     ...options.registeredExecutors === void 0 ? {} : { registeredExecutors: options.registeredExecutors },
     ...options.registeredGates === void 0 ? {} : { registeredGates: options.registeredGates },
     ...options.registeredToolPresets === void 0 ? {} : { registeredToolPresets: options.registeredToolPresets }
+  };
+}
+function repairOptions(options, repositoryBindings) {
+  return {
+    ...configOptions(options, repositoryBindings),
+    templateVariant: options.templateVariant ?? CURRENT_VNEXT_TEMPLATE_VARIANT,
+    ...options.testFaultAt === void 0 ? {} : { testFaultAt: options.testFaultAt }
   };
 }
 function bindingStoreOptions(options) {
@@ -29772,59 +30887,228 @@ function memberRepositoryIds(project) {
     return record.role === "member" && typeof record.id === "string" ? [record.id] : [];
   }));
 }
-function initializeVnextProjectAtGitRoot(start, gitRoot, options, bindingLock) {
+function completedPlan(projectRoot, options) {
+  return planVnextInitialization(projectRoot, options);
+}
+function finalizeBindingUpdate(bundle, persisted, allBindings, explicitBindings, storeOptions, mutationLock, dryRun) {
+  const memberIds = validateBindingIdentities(bundle, persisted, explicitBindings);
+  if (Object.keys(explicitBindings).length === 0) {
+    return persisted ? { localBindingFile: persisted.file } : {};
+  }
+  const memberBindings = Object.fromEntries(Object.entries(allBindings).filter(([repositoryId]) => memberIds.has(repositoryId)));
+  const projectId = String(bundle.project.value.id);
+  const bindingPlan = planVnextLocalBindings(bundle.projectRoot, projectId, memberBindings, storeOptions);
+  if (dryRun) return { localBindingFile: bindingPlan.file, bindingsChanged: bindingPlan.written };
+  if (bindingPlan.written && !mutationLock) throw new Error("project mutation lock is required to persist repository bindings");
+  const result = bindingPlan.written ? writeVnextLocalBindings(bundle.projectRoot, projectId, memberBindings, storeOptions, mutationLock) : bindingPlan;
+  return { localBindingFile: result.file, bindingsChanged: result.written };
+}
+function plannedRepairResult(plan, projectRoot, repairPlan) {
+  return {
+    action: "planned",
+    plan,
+    projectRoot,
+    ...repairPlan === void 0 ? {} : { repairPlan },
+    files: []
+  };
+}
+function validateBindingIdentities(bundle, persisted, explicit) {
+  const projectId = String(bundle.project.value.id);
+  if (persisted && persisted.projectId !== projectId) {
+    throw new VnextConfigError([initIssue("local_binding_project_id_mismatch", "Runtime-local repository bindings", "binding record belongs to a different project identity")]);
+  }
+  const memberIds = memberRepositoryIds(bundle.project.value);
+  for (const repositoryId of Object.keys(persisted?.repositories ?? {})) {
+    if (!memberIds.has(repositoryId)) {
+      throw new VnextConfigError([initIssue("local_binding_repository_invalid", "Runtime-local repository bindings", `persisted binding ${repositoryId} is not a member repository`)]);
+    }
+  }
+  for (const repositoryId of Object.keys(explicit)) {
+    if (!memberIds.has(repositoryId)) {
+      throw new VnextConfigError([initIssue("local_binding_repository_invalid", "Runtime-local repository bindings", `explicit binding ${repositoryId} is not a member repository`)]);
+    }
+  }
+  return memberIds;
+}
+function initializeVnextProjectAtGitRoot(start, gitRoot, options, mutationLock) {
   const storeOptions = bindingStoreOptions(options);
-  const persisted = existsSync6(join13(gitRoot, ".kxm", "project.yaml")) ? readVnextLocalBindings(gitRoot, storeOptions) : void 0;
+  const persisted = existsSync7(join14(gitRoot, ".kxm", "project.yaml")) ? readVnextLocalBindings(gitRoot, storeOptions) : void 0;
   const repositoryBindings = Object.fromEntries([
     ...Object.entries(persisted?.repositories ?? {}),
     ...Object.entries(options.repositoryBindings ?? {})
   ]);
-  const loaderOptions = configOptions(options, repositoryBindings);
-  const plan = planVnextInitialization(start, loaderOptions);
-  if (plan.mode === "migrate" || plan.mode === "repair") {
+  const loaderOptions2 = configOptions(options, repositoryBindings);
+  const transactionOptions = repairOptions(options, repositoryBindings);
+  if (hasVnextInitTransaction(gitRoot)) {
+    const operation = inspectVnextInitTransaction(gitRoot, options.schemasDir);
+    const plan2 = planVnextInitialization(start, loaderOptions2);
+    if (!operation) {
+      if (options.dryRun) return { action: "planned", plan: plan2, projectRoot: gitRoot, resumePending: true, files: [] };
+      if (!mutationLock) throw new Error("project mutation lock is required to clean an empty transaction");
+      resumeVnextInitTransaction(gitRoot, transactionOptions);
+    } else if (options.dryRun) {
+      return {
+        action: "planned",
+        plan: plan2,
+        projectRoot: gitRoot,
+        resumePending: true,
+        transactionKind: operation.kind,
+        files: operation.files.map((file) => file.path)
+      };
+    } else {
+      if (!mutationLock) throw new Error("project mutation lock is required to resume initialization");
+      if (options.projectId !== void 0 && options.projectId !== operation.projectId) {
+        throw new VnextConfigError([initIssue("resume_project_id_mismatch", "--project-id", "requested project ID differs from the pinned initialization transaction")]);
+      }
+      if (options.projectName !== void 0 && options.projectName !== operation.projectName) {
+        throw new VnextConfigError([initIssue("resume_project_name_mismatch", "--name", "requested project name differs from the pinned initialization transaction")]);
+      }
+      if (operation.kind === "repair" && Object.keys(options.repositoryBindings ?? {}).length > 0) {
+        const currentBundle = loadVnextProject(gitRoot, loaderOptions2);
+        finalizeBindingUpdate(
+          currentBundle,
+          persisted,
+          repositoryBindings,
+          options.repositoryBindings ?? {},
+          storeOptions,
+          mutationLock,
+          false
+        );
+      }
+      const result = resumeVnextInitTransaction(gitRoot, transactionOptions);
+      if (!result) throw new Error("initialization transaction disappeared while holding the project lock");
+      const bindingResult = finalizeBindingUpdate(
+        result.bundle,
+        persisted,
+        repositoryBindings,
+        options.repositoryBindings ?? {},
+        storeOptions,
+        mutationLock,
+        false
+      );
+      commitVnextInitTransaction(gitRoot, options.schemasDir);
+      return {
+        action: "resumed",
+        plan: completedPlan(gitRoot, loaderOptions2),
+        projectRoot: gitRoot,
+        configRevision: result.bundle.configRevision,
+        transactionKind: result.kind,
+        ...bindingResult,
+        files: result.files
+      };
+    }
+  }
+  const plan = planVnextInitialization(start, loaderOptions2);
+  if (plan.mode === "migrate") {
     return { action: "planned", plan, ...plan.projectRoot ? { projectRoot: plan.projectRoot } : {}, files: [] };
+  }
+  if (plan.mode === "repair") {
+    const projectRoot = plan.projectRoot ?? gitRoot;
+    let templateRepair;
+    try {
+      templateRepair = planVnextTemplateRepair(projectRoot, transactionOptions);
+    } catch (error) {
+      if (!(error instanceof VnextConfigError)) throw error;
+      return plannedRepairResult({ ...plan, issues: [...plan.issues, ...error.issues] }, projectRoot);
+    }
+    if (!templateRepair?.canApply) return plannedRepairResult(plan, projectRoot, templateRepair);
+    if (options.dryRun) return plannedRepairResult(plan, projectRoot, templateRepair);
+    if (Object.keys(options.repositoryBindings ?? {}).length > 0) {
+      const blockedRepair = {
+        ...templateRepair,
+        canApply: false,
+        issues: [...templateRepair.issues, initIssue(
+          "repair_binding_requires_ready_project",
+          "--repository",
+          "a first-time binding update cannot be combined with repair of an invalid project; establish a valid project or existing binding first"
+        )]
+      };
+      return plannedRepairResult(plan, projectRoot, blockedRepair);
+    }
+    if (!mutationLock) throw new Error("project mutation lock is required to apply template repair");
+    const repaired = prepareAndApplyVnextRepair(templateRepair, transactionOptions);
+    const bindingResult = finalizeBindingUpdate(
+      repaired.bundle,
+      persisted,
+      repositoryBindings,
+      options.repositoryBindings ?? {},
+      storeOptions,
+      mutationLock,
+      false
+    );
+    commitVnextInitTransaction(projectRoot, options.schemasDir);
+    return {
+      action: "repaired",
+      plan: completedPlan(projectRoot, loaderOptions2),
+      projectRoot,
+      configRevision: repaired.bundle.configRevision,
+      repairPlan: templateRepair,
+      ...bindingResult,
+      files: repaired.files
+    };
   }
   if (plan.mode === "ready") {
     const projectRoot = plan.projectRoot ?? gitRoot;
-    const bundle = loadVnextProject(projectRoot, loaderOptions);
-    const projectId2 = String(bundle.project.value.id);
-    if (persisted && persisted.projectId !== projectId2) {
-      throw new VnextConfigError([initIssue("local_binding_project_id_mismatch", "Runtime-local repository bindings", "binding record belongs to a different project identity")]);
+    const bundle = loadVnextProject(projectRoot, loaderOptions2);
+    const templateRepair = planVnextTemplateRepair(projectRoot, transactionOptions);
+    if (templateRepair?.changesRequired) {
+      if (!templateRepair.canApply || options.dryRun) return plannedRepairResult(plan, projectRoot, templateRepair);
+      if (!mutationLock) throw new Error("project mutation lock is required to apply template repair");
+      const bindingResult2 = finalizeBindingUpdate(
+        bundle,
+        persisted,
+        repositoryBindings,
+        options.repositoryBindings ?? {},
+        storeOptions,
+        mutationLock,
+        false
+      );
+      const repaired = prepareAndApplyVnextRepair(templateRepair, transactionOptions);
+      finalizeBindingUpdate(
+        repaired.bundle,
+        persisted,
+        repositoryBindings,
+        options.repositoryBindings ?? {},
+        storeOptions,
+        mutationLock,
+        false
+      );
+      commitVnextInitTransaction(projectRoot, options.schemasDir);
+      return {
+        action: "repaired",
+        plan: completedPlan(projectRoot, loaderOptions2),
+        projectRoot,
+        configRevision: repaired.bundle.configRevision,
+        repairPlan: templateRepair,
+        ...bindingResult2,
+        files: repaired.files
+      };
     }
-    const memberIds = memberRepositoryIds(bundle.project.value);
-    for (const repositoryId of Object.keys(persisted?.repositories ?? {})) {
-      if (!memberIds.has(repositoryId)) {
-        throw new VnextConfigError([initIssue("local_binding_repository_invalid", "Runtime-local repository bindings", `persisted binding ${repositoryId} is not a member repository`)]);
-      }
-    }
-    for (const repositoryId of Object.keys(options.repositoryBindings ?? {})) {
-      if (!memberIds.has(repositoryId)) {
-        throw new VnextConfigError([initIssue("local_binding_repository_invalid", "Runtime-local repository bindings", `explicit binding ${repositoryId} is not a member repository`)]);
-      }
-    }
-    const explicitMemberBindings = Object.fromEntries(Object.entries(repositoryBindings).filter(([repositoryId]) => memberIds.has(repositoryId)));
-    const shouldPersist = Object.keys(options.repositoryBindings ?? {}).length > 0;
-    const bindingPlan = shouldPersist ? planVnextLocalBindings(projectRoot, projectId2, explicitMemberBindings, storeOptions) : void 0;
-    const localBindingFile = persisted?.file ?? bindingPlan?.file;
+    const bindingResult = finalizeBindingUpdate(
+      bundle,
+      persisted,
+      repositoryBindings,
+      options.repositoryBindings ?? {},
+      storeOptions,
+      mutationLock,
+      options.dryRun === true
+    );
     if (options.dryRun) {
       return {
         action: "planned",
         plan,
         projectRoot,
         configRevision: bundle.configRevision,
-        ...localBindingFile === void 0 ? {} : { localBindingFile },
-        ...bindingPlan ? { bindingsChanged: bindingPlan.written } : {},
+        ...bindingResult,
         files: []
       };
     }
-    const written = bindingPlan?.written ? writeVnextLocalBindings(projectRoot, projectId2, explicitMemberBindings, storeOptions, bindingLock) : bindingPlan;
     return {
-      action: written?.written ? "joined" : "validated",
+      action: bindingResult.bindingsChanged ? "joined" : "validated",
       plan,
       projectRoot,
       configRevision: bundle.configRevision,
-      ...localBindingFile === void 0 ? {} : { localBindingFile },
-      ...written ? { bindingsChanged: written.written } : {},
+      ...bindingResult,
       files: []
     };
   }
@@ -29833,42 +31117,22 @@ function initializeVnextProjectAtGitRoot(start, gitRoot, options, bindingLock) {
   }
   const projectId = generatedProjectId(options.projectId);
   const projectName = normalizedProjectName(gitRoot, options.projectName);
-  const resources = template(projectId, projectName);
-  if (options.dryRun) return { action: "planned", plan, projectRoot: gitRoot, files: TEMPLATE_FILES };
-  if (existsSync6(join13(gitRoot, ".kxm"))) {
+  const rendered = renderVnextTemplate(projectId, projectName, options.templateVariant ?? CURRENT_VNEXT_TEMPLATE_VARIANT);
+  const files = [...rendered.files.keys()];
+  if (options.dryRun) return { action: "planned", plan, projectRoot: gitRoot, files };
+  if (!mutationLock) throw new Error("project mutation lock is required to create configuration");
+  if (existsSync7(join14(gitRoot, ".kxm"))) {
     throw new VnextConfigError([initIssue("workspace_changed", ".kxm", "workspace changed after planning; existing .kxm state was not overwritten")]);
   }
-  const staging = mkdtempSync(join13(gitRoot, ".kxm-init-"));
-  try {
-    writeTemplate(staging, resources);
-    const stagedBundle = loadVnextProject(staging, loaderOptions);
-    if (existsSync6(join13(gitRoot, ".kxm"))) {
-      throw new VnextConfigError([initIssue("workspace_changed", ".kxm", "workspace changed during validation; existing state was not overwritten")]);
-    }
-    try {
-      renameSync4(join13(staging, ".kxm"), join13(gitRoot, ".kxm"));
-    } catch (error) {
-      const code = error.code;
-      if (code === "EEXIST" || code === "ENOTEMPTY") {
-        throw new VnextConfigError([initIssue("workspace_changed", ".kxm", "workspace changed during installation; existing state was not overwritten")]);
-      }
-      throw error;
-    }
-    const installedBundle = loadVnextProject(gitRoot, loaderOptions);
-    if (installedBundle.configRevision !== stagedBundle.configRevision) {
-      throw new VnextConfigError([initIssue("install_verification_failed", ".kxm", "installed configuration does not match the validated staging bundle")]);
-    }
-    const completedPlan = planVnextInitialization(gitRoot, loaderOptions);
-    return {
-      action: "created",
-      plan: completedPlan,
-      projectRoot: gitRoot,
-      configRevision: installedBundle.configRevision,
-      files: TEMPLATE_FILES
-    };
-  } finally {
-    rmSync3(staging, { recursive: true, force: true });
-  }
+  const created = prepareAndApplyVnextCreate(gitRoot, rendered, transactionOptions);
+  commitVnextInitTransaction(gitRoot, options.schemasDir);
+  return {
+    action: "created",
+    plan: completedPlan(gitRoot, loaderOptions2),
+    projectRoot: gitRoot,
+    configRevision: created.bundle.configRevision,
+    files: created.files
+  };
 }
 function initializeVnextProject(start = process.cwd(), options = {}) {
   const gitRoot = discoverGitRoot(start);
@@ -29877,15 +31141,17 @@ function initializeVnextProject(start = process.cwd(), options = {}) {
   }
   if (options.projectId !== void 0) generatedProjectId(options.projectId);
   if (options.projectName !== void 0) normalizedProjectName(gitRoot, options.projectName);
-  const explicitBindingUpdate = Object.keys(options.repositoryBindings ?? {}).length > 0 && !options.dryRun && existsSync6(join13(gitRoot, ".kxm", "project.yaml"));
-  if (!explicitBindingUpdate) return initializeVnextProjectAtGitRoot(start, gitRoot, options);
+  if (options.dryRun) return initializeVnextProjectAtGitRoot(start, gitRoot, options);
+  const preflight = initializeVnextProjectAtGitRoot(start, gitRoot, { ...options, dryRun: true });
+  const mutationRequired = preflight.resumePending === true || preflight.plan.mode === "create" || preflight.repairPlan?.canApply === true && !(preflight.plan.mode === "repair" && Object.keys(options.repositoryBindings ?? {}).length > 0) || Object.keys(options.repositoryBindings ?? {}).length > 0 && preflight.plan.mode === "ready";
+  if (!mutationRequired) return initializeVnextProjectAtGitRoot(start, gitRoot, options);
   const storeOptions = bindingStoreOptions(options);
   return withVnextLocalBindingLock(gitRoot, storeOptions, (lock) => initializeVnextProjectAtGitRoot(start, gitRoot, options, lock));
 }
 
 // plugins/kxm-mesh/src/cli.ts
 var CLI_NAME = "kxm";
-var repoRoot = resolve5(fileURLToPath3(new URL("../../../", import.meta.url)));
+var repoRoot = resolve6(fileURLToPath3(new URL("../../../", import.meta.url)));
 var USAGE_ERROR_CODES = /* @__PURE__ */ new Set([
   "commander.help",
   "commander.helpDisplayed",
@@ -29901,7 +31167,7 @@ var USAGE_ERROR_CODES = /* @__PURE__ */ new Set([
 ]);
 function spawnScript(scriptName, extraEnv = {}) {
   return new Promise((resolveExit) => {
-    const child = spawn(process.execPath, [join14(repoRoot, "scripts", scriptName)], {
+    const child = spawn(process.execPath, [join15(repoRoot, "scripts", scriptName)], {
       stdio: "inherit",
       env: { ...process.env, ...extraEnv }
     });
@@ -29969,7 +31235,7 @@ function gateOf(runtime, name) {
 }
 function redactCliValue(value, field = "") {
   if (typeof value === "string") {
-    if ((field === "requestSha256" || field === "replySha256" || field === "behavioralSha256" || field === "workflowDefinitionSha256" || field === "verifierConfigSha256" || field === "rolePromptSha256" || field === "contentSha256" || field === "configRevision") && /^(?:sha256:)?[a-f0-9]{64}$/.test(value)) return value;
+    if ((field === "requestSha256" || field === "replySha256" || field === "behavioralSha256" || field === "workflowDefinitionSha256" || field === "verifierConfigSha256" || field === "rolePromptSha256" || field === "contentSha256" || field === "configRevision" || field === "baseSha256" || field === "localSha256" || field === "targetSha256" || field === "sourceTemplateRevision" || field === "targetTemplateRevision") && /^(?:sha256:)?[a-f0-9]{64}$/.test(value)) return value;
     return redactSecrets(value);
   }
   if (Array.isArray(value)) return value.map((candidate) => redactCliValue(candidate));
@@ -29981,16 +31247,16 @@ function redactCliValue(value, field = "") {
   return value;
 }
 function workspaceDirs(cwd, workspaceFlag, env) {
-  const workdir = resolve5(env.PI_MESH_WORKDIR?.trim() || cwd);
-  const workspace = resolve5(workdir, workspaceFlag || env.PI_MESH_WORKSPACE_DIR?.trim() || ".kxm");
+  const workdir = resolve6(env.PI_MESH_WORKDIR?.trim() || cwd);
+  const workspace = resolve6(workdir, workspaceFlag || env.PI_MESH_WORKSPACE_DIR?.trim() || ".kxm");
   const derive = workspaceFlag !== void 0;
   return {
     workdir,
     workspace,
-    config: derive ? join14(workspace, "config") : resolve5(workdir, env.PI_MESH_CONFIG_DIR?.trim() || join14(workspace, "config")),
-    logs: derive ? join14(workspace, "logs") : resolve5(workdir, env.PI_MESH_LOGS_DIR?.trim() || join14(workspace, "logs")),
-    assets: derive ? join14(workspace, "assets") : resolve5(workdir, env.PI_MESH_ASSETS_DIR?.trim() || join14(workspace, "assets")),
-    state: derive ? join14(workspace, "state") : resolve5(workdir, env.PI_MESH_STATE_DIR?.trim() || join14(workspace, "state"))
+    config: derive ? join15(workspace, "config") : resolve6(workdir, env.PI_MESH_CONFIG_DIR?.trim() || join15(workspace, "config")),
+    logs: derive ? join15(workspace, "logs") : resolve6(workdir, env.PI_MESH_LOGS_DIR?.trim() || join15(workspace, "logs")),
+    assets: derive ? join15(workspace, "assets") : resolve6(workdir, env.PI_MESH_ASSETS_DIR?.trim() || join15(workspace, "assets")),
+    state: derive ? join15(workspace, "state") : resolve6(workdir, env.PI_MESH_STATE_DIR?.trim() || join15(workspace, "state"))
   };
 }
 function maskEnvName(name) {
@@ -30050,8 +31316,8 @@ async function hubGet(url, fetchImpl) {
   }
 }
 function localWorkflowSnapshot(dataPath, runId) {
-  if (!existsSync7(dataPath)) throw new Error("state_database_not_found");
-  const database = new DatabaseSync2(dataPath, { readOnly: true });
+  if (!existsSync8(dataPath)) throw new Error("state_database_not_found");
+  const database = new DatabaseSync3(dataPath, { readOnly: true });
   try {
     const rows = runId ? database.prepare("SELECT record FROM workflow_runs WHERE id = ?").all(runId) : database.prepare("SELECT record FROM workflow_runs ORDER BY rowid DESC LIMIT 200").all();
     const runs = rows.map((row) => JSON.parse(row.record));
@@ -30143,7 +31409,7 @@ function activeWorkflowDefinition(runtime, definitionId) {
   let raw;
   if (file) {
     try {
-      raw = readFileSync7(resolve5(runtime.cwd, file), "utf8");
+      raw = readFileSync8(resolve6(runtime.cwd, file), "utf8");
     } catch {
       throw new Error("workflow definition file is unavailable");
     }
@@ -30229,6 +31495,9 @@ async function cmdVnextInit(runtime, options) {
       ...initialized.configRevision ? { configRevision: initialized.configRevision } : {},
       ...initialized.localBindingFile ? { localBindingFile: initialized.localBindingFile } : {},
       ...initialized.bindingsChanged === void 0 ? {} : { bindingsChanged: initialized.bindingsChanged },
+      ...initialized.repairPlan === void 0 ? {} : { repairPlan: initialized.repairPlan },
+      ...initialized.resumePending === void 0 ? {} : { resumePending: initialized.resumePending },
+      ...initialized.transactionKind === void 0 ? {} : { transactionKind: initialized.transactionKind },
       plannedOnly: initialized.action === "planned"
     };
     if (initialized.action === "created") {
@@ -30239,6 +31508,14 @@ async function cmdVnextInit(runtime, options) {
       print(runtime.io, runtime.json, payload, `joined vNext project at ${initialized.projectRoot ?? runtime.cwd}`);
       return 0;
     }
+    if (initialized.action === "repaired") {
+      print(runtime.io, runtime.json, payload, `repaired vNext project at ${initialized.projectRoot ?? runtime.cwd}`);
+      return 0;
+    }
+    if (initialized.action === "resumed") {
+      print(runtime.io, runtime.json, payload, `resumed vNext ${initialized.transactionKind ?? "initialization"} at ${initialized.projectRoot ?? runtime.cwd}`);
+      return 0;
+    }
     if (initialized.action === "validated") {
       print(runtime.io, runtime.json, payload, `validated vNext project at ${initialized.projectRoot ?? runtime.cwd}`);
       return 0;
@@ -30247,7 +31524,7 @@ async function cmdVnextInit(runtime, options) {
       print(runtime.io, runtime.json, payload, `init plan: ${initialized.plan.mode}`);
       return 0;
     }
-    const next = initialized.plan.mode === "migrate" ? "legacy state requires reviewed migration; conversion is not available in this implementation slice" : "partial or invalid vNext state requires repair; no files were overwritten";
+    const next = initialized.plan.mode === "migrate" ? "legacy state requires reviewed migration; conversion is not available in this implementation slice" : initialized.repairPlan?.issues.length ? "managed-template repair is blocked by conflicts or authority changes; local files were preserved" : "partial or provenance-free vNext state requires explicit repair; no files were overwritten";
     print(runtime.io, runtime.json, payload, next);
     return 1;
   } catch (error) {
@@ -30304,13 +31581,13 @@ async function cmdValidate(runtime, fileFlag) {
     return 2;
   }
   const selectedFile = explicitFile || configuredFile;
-  const file = selectedFile ? resolve5(runtime.cwd, selectedFile) : void 0;
-  if (file && !existsSync7(file)) {
+  const file = selectedFile ? resolve6(runtime.cwd, selectedFile) : void 0;
+  if (file && !existsSync8(file)) {
     printWorker(runtime, worker, { ok: false, command: "validate", error: "file_not_found", file }, `workflow file not found: ${file}`);
     return 1;
   }
   try {
-    const raw = file ? readFileSync7(file, "utf8") : inline;
+    const raw = file ? readFileSync8(file, "utf8") : inline;
     const warnings = [];
     const definitions = parseWorkflowDefinitions(raw, runtime.env, (message) => warnings.push(message));
     const secretEnvs = definitions.map((definition) => ({
@@ -30335,7 +31612,7 @@ async function cmdValidate(runtime, fileFlag) {
 }
 async function cmdArtifactsExist(runtime, pathFlag) {
   const worker = gateOf(runtime, "artifacts-exist");
-  const checked = verifyArtifactExists(runtime.dirs.assets, resolve5(runtime.cwd, pathFlag));
+  const checked = verifyArtifactExists(runtime.dirs.assets, resolve6(runtime.cwd, pathFlag));
   if (!checked.ok) {
     printWorker(
       runtime,
@@ -30361,7 +31638,7 @@ async function cmdStatus(runtime) {
   return payload.ok ? 0 : 1;
 }
 async function cmdMeshTui(runtime) {
-  const dataPath = resolve5(runtime.dirs.workdir, runtime.env.PI_MESH_DATA_PATH?.trim() || join14(runtime.dirs.state, "mesh.db"));
+  const dataPath = resolve6(runtime.dirs.workdir, runtime.env.PI_MESH_DATA_PATH?.trim() || join15(runtime.dirs.state, "mesh.db"));
   if (runtime.dryRun) {
     print(runtime.io, runtime.json, {
       ok: true,
@@ -30448,7 +31725,7 @@ async function cmdWorker(runtime, options) {
   return await (runtime.io.spawnWorker ?? ((launchEnv) => spawnScript("pi-mesh-worker.mjs", launchEnv)))(extraEnv);
 }
 async function cmdStop(runtime, waitMsFlag) {
-  const pids = existsSync7(runtime.dirs.state) ? readdirSync4(runtime.dirs.state).filter((name) => name.endsWith(".pid")) : [];
+  const pids = existsSync8(runtime.dirs.state) ? readdirSync5(runtime.dirs.state).filter((name) => name.endsWith(".pid")) : [];
   if (runtime.dryRun) {
     print(runtime.io, runtime.json, { ok: true, command: "stop", dryRun: true, pidFiles: pids }, "would signal pid files");
     return 0;
@@ -30462,14 +31739,14 @@ async function cmdStop(runtime, waitMsFlag) {
   const records = /* @__PURE__ */ new Map();
   for (const file of pids) {
     try {
-      const record = JSON.parse(readFileSync7(join14(runtime.dirs.state, file), "utf8"));
+      const record = JSON.parse(readFileSync8(join15(runtime.dirs.state, file), "utf8"));
       const expectedControl = file === "hub.pid" ? "hub.stop" : file.startsWith("worker-") ? `${file.slice(0, -4)}.stop` : void 0;
       const expectedRole = file === "hub.pid" ? "hub" : file.startsWith("worker-") ? "worker" : void 0;
       if (record.version !== 1 || !Number.isInteger(record.pid) || record.pid <= 0 || !record.startedAt || !expectedControl || record.controlFile !== expectedControl || record.role !== expectedRole || !processExists2(record.pid)) {
         ignored.push(file);
         continue;
       }
-      writeFileSync8(join14(runtime.dirs.state, record.controlFile), `${JSON.stringify({ startedAt: record.startedAt, ...record.generation ? { generation: record.generation } : {}, requestedAt: (/* @__PURE__ */ new Date()).toISOString() })}
+      writeFileSync8(join15(runtime.dirs.state, record.controlFile), `${JSON.stringify({ startedAt: record.startedAt, ...record.generation ? { generation: record.generation } : {}, requestedAt: (/* @__PURE__ */ new Date()).toISOString() })}
 `, { encoding: "utf8", mode: 384 });
       requested.push(file);
       records.set(file, { pid: record.pid, startedAt: record.startedAt, ...record.generation ? { generation: record.generation } : {} });
@@ -30487,7 +31764,7 @@ async function cmdStop(runtime, waitMsFlag) {
   while (Date.now() <= deadline && stopped.size < requested.length) {
     for (const [file, record] of records) {
       try {
-        const current = JSON.parse(readFileSync7(join14(runtime.dirs.state, file), "utf8"));
+        const current = JSON.parse(readFileSync8(join15(runtime.dirs.state, file), "utf8"));
         if (current.pid !== record.pid || current.startedAt !== record.startedAt || current.generation !== record.generation || !processExists2(record.pid)) stopped.add(file);
       } catch {
         stopped.add(file);
@@ -30502,11 +31779,11 @@ async function cmdStop(runtime, waitMsFlag) {
 }
 async function cmdSessionStatus(runtime) {
   const stateDir = runtime.dirs.state;
-  const names2 = existsSync7(stateDir) ? readdirSync4(stateDir) : [];
+  const names2 = existsSync8(stateDir) ? readdirSync5(stateDir) : [];
   const claims = [];
   for (const file of names2.filter((name) => name.endsWith(".pid"))) {
     try {
-      const record = JSON.parse(readFileSync7(join14(stateDir, file), "utf8"));
+      const record = JSON.parse(readFileSync8(join15(stateDir, file), "utf8"));
       claims.push({
         file,
         role: record.role,
@@ -30521,7 +31798,7 @@ async function cmdSessionStatus(runtime) {
   const recoveries = [];
   for (const file of names2.filter((name) => name.startsWith("worker-recovery-") && name.endsWith(".json"))) {
     try {
-      const envelope = JSON.parse(readFileSync7(join14(stateDir, file), "utf8"));
+      const envelope = JSON.parse(readFileSync8(join15(stateDir, file), "utf8"));
       recoveries.push({
         file,
         reason: envelope.reason,
@@ -30545,7 +31822,7 @@ async function cmdSessionStatus(runtime) {
   return 0;
 }
 async function cmdSessionStart(runtime, options) {
-  const id = options.id?.trim() || `session_${randomUUID4().replaceAll("-", "").slice(0, 12)}`;
+  const id = options.id?.trim() || `session_${randomUUID5().replaceAll("-", "").slice(0, 12)}`;
   const workflowId = options.workflow?.trim();
   const mix = options.mix?.trim();
   if (workflowId && mix) {
@@ -30598,7 +31875,7 @@ async function cmdImprove(runtime, targetFlag) {
   const targets = targetFlag === "cli" || targetFlag === "project" ? [targetFlag] : ["cli", "project"];
   const events = readTelemetry(telemetryPath(runtime.dirs.logs));
   const report = buildImprovementReport(events, targets);
-  const path5 = writeImprovementReport(join14(runtime.dirs.assets, "improvements"), report, runtime.dryRun);
+  const path5 = writeImprovementReport(join15(runtime.dirs.assets, "improvements"), report, runtime.dryRun);
   print(runtime.io, runtime.json, {
     ok: true,
     command: "improve",
@@ -30752,7 +32029,7 @@ function skillStateFromFlag(value) {
   throw new Error(`invalid skill state ${value}`);
 }
 function skillsRoot(runtime) {
-  return join14(runtime.dirs.workdir, ".kxm", "skills");
+  return join15(runtime.dirs.workdir, ".kxm", "skills");
 }
 function csv(value) {
   if (!value) return void 0;
@@ -30769,7 +32046,7 @@ async function cmdSkillsCreate(runtime, options) {
     const metadata = lifecycle.create({
       name: options.name,
       description: options.description ?? "",
-      content: readFileSync7(options.file, "utf8"),
+      content: readFileSync8(options.file, "utf8"),
       createdBy: options.createdBy,
       sources: {
         runIds: csv(options.run) ?? [],
@@ -30885,7 +32162,7 @@ async function cmdRoutingReport(runtime, options) {
 }
 async function cmdWorkflowStart(runtime, definitionIdArg, options) {
   const definitionId = definitionIdArg || runtime.env.PI_MESH_WORKFLOW_ID?.trim();
-  const deliveryId = String(options.deliveryId || `cli-${randomUUID4()}`);
+  const deliveryId = String(options.deliveryId || `cli-${randomUUID5()}`);
   const event = options.event;
   const payloadFlag = options.payload ?? "{}";
   if (!definitionId) {
@@ -30904,7 +32181,7 @@ async function cmdWorkflowStart(runtime, definitionIdArg, options) {
   }
   let payload;
   try {
-    const raw = payloadFlag.startsWith("@") ? readFileSync7(resolve5(runtime.cwd, payloadFlag.slice(1)), "utf8") : payloadFlag;
+    const raw = payloadFlag.startsWith("@") ? readFileSync8(resolve6(runtime.cwd, payloadFlag.slice(1)), "utf8") : payloadFlag;
     const value = JSON.parse(raw);
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("object required");
     payload = value;
@@ -30971,7 +32248,7 @@ async function cmdWorkflowDegrade(runtime, runId, stageId, options) {
   }
 }
 async function cmdWorkflowInspect(runtime, action, runId) {
-  const dataPath = resolve5(runtime.dirs.workdir, runtime.env.PI_MESH_DATA_PATH?.trim() || join14(runtime.dirs.state, "mesh.db"));
+  const dataPath = resolve6(runtime.dirs.workdir, runtime.env.PI_MESH_DATA_PATH?.trim() || join15(runtime.dirs.state, "mesh.db"));
   if (action === "get" && !runId) {
     runtime.io.stderr(`Usage: ${CLI_NAME} workflow get <runId>
 `);
@@ -31029,7 +32306,7 @@ async function cmdSignal(runtime, runId, signalKey, status, summary, evidenceArg
     printWorker(runtime, worker, { ok: true, command: "signal", runId, signalKey, status, summary, evidence }, "would post signed signal");
     return 0;
   }
-  const deliveryId = String(deliveryIdFlag || `cli-signal:${randomUUID4()}`);
+  const deliveryId = String(deliveryIdFlag || `cli-signal:${randomUUID5()}`);
   try {
     const posted = await postWorkflowSignal({
       serverUrl: runtime.serverUrl,
@@ -31117,14 +32394,14 @@ async function cmdRetrospectiveExport(runtime, runId, options) {
     return 2;
   }
   const snapshotFlag = String(options.input || "");
-  const snapshotPath = snapshotFlag ? resolve5(runtime.cwd, snapshotFlag) : "";
+  const snapshotPath = snapshotFlag ? resolve6(runtime.cwd, snapshotFlag) : "";
   let snapshot;
   try {
     if (snapshotPath) {
-      if (!existsSync7(snapshotPath)) throw new Error("snapshot_missing");
-      snapshot = JSON.parse(readFileSync7(snapshotPath, "utf8"));
+      if (!existsSync8(snapshotPath)) throw new Error("snapshot_missing");
+      snapshot = JSON.parse(readFileSync8(snapshotPath, "utf8"));
     } else {
-      const dataPath = resolve5(runtime.dirs.workdir, runtime.env.PI_MESH_DATA_PATH?.trim() || join14(runtime.dirs.state, "mesh.db"));
+      const dataPath = resolve6(runtime.dirs.workdir, runtime.env.PI_MESH_DATA_PATH?.trim() || join15(runtime.dirs.state, "mesh.db"));
       const local = localWorkflowSnapshot(dataPath, runId);
       if (!local.runs[0]) throw new Error("workflow_not_found");
       snapshot = { run: local.runs[0], journal: local.journal };
@@ -31136,8 +32413,8 @@ async function cmdRetrospectiveExport(runtime, runId, options) {
     return 1;
   }
   const doc = buildRetrospective(snapshot.run, snapshot.journal);
-  const outDir = resolve5(runtime.cwd, String(options.outDir || join14(runtime.dirs.assets, "retrospectives")));
-  const assetsRoot = resolve5(runtime.dirs.assets);
+  const outDir = resolve6(runtime.cwd, String(options.outDir || join15(runtime.dirs.assets, "retrospectives")));
+  const assetsRoot = resolve6(runtime.dirs.assets);
   const assetsPrefix = `${assetsRoot}${process.platform === "win32" ? "\\" : "/"}`;
   if (outDir !== assetsRoot && !outDir.startsWith(assetsPrefix)) {
     print(runtime.io, runtime.json, { ok: false, command: "retrospective export", error: "output_outside_workspace_assets" }, "retrospectives must stay under the workspace assets directory");
@@ -31308,7 +32585,7 @@ async function runCli(argv, env = process.env, io = { stdout: (text) => process.
     throw error;
   }
 }
-if (process.argv[1] && resolve5(process.argv[1]) === fileURLToPath3(import.meta.url)) {
+if (process.argv[1] && resolve6(process.argv[1]) === fileURLToPath3(import.meta.url)) {
   const code = await runCli(process.argv.slice(2));
   process.exitCode = code;
 }

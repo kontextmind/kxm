@@ -1,5 +1,7 @@
+import { spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
+  chmodSync,
   closeSync,
   existsSync,
   fsyncSync,
@@ -13,7 +15,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import {
   VnextConfigError,
   VnextSchemaRegistry,
@@ -206,18 +209,50 @@ function recordsEqual(left: VnextLocalBindingRecord, right: VnextLocalBindingRec
   });
 }
 
+function syncDirectory(path: string): void {
+  let descriptor: number | undefined;
+  try {
+    descriptor = openSync(path, "r");
+    fsyncSync(descriptor);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (process.platform !== "win32" && code !== "EINVAL" && code !== "ENOTSUP" && code !== "EISDIR") throw error;
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
+  }
+}
+
 function createDirectoryIfMissing(path: string): void {
   if (existsSync(path)) return;
   try {
     mkdirSync(path, { mode: 0o700 });
+    syncDirectory(dirname(path));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
   }
 }
 
+function ensureDurableDirectory(path: string, description: string): void {
+  const missing: string[] = [];
+  let current = resolve(path);
+  while (!existsSync(current)) {
+    missing.push(current);
+    const parent = dirname(current);
+    if (parent === current) bindingError("path", "local_binding_directory_invalid", `${description} has no existing filesystem ancestor`);
+    current = parent;
+  }
+  checkedDirectory(current, `${description} ancestor`);
+  for (const directory of missing.reverse()) {
+    mkdirSync(directory, { mode: 0o700 });
+    checkedDirectory(directory, description);
+    syncDirectory(dirname(directory));
+  }
+}
+
 function ensureBindingDirectory(file: string, stateRoot: string): void {
-  mkdirSync(stateRoot, { recursive: true, mode: 0o700 });
+  ensureDurableDirectory(stateRoot, "local state root");
   checkedDirectory(stateRoot, "local state root");
+  syncDirectory(stateRoot);
   const projects = join(stateRoot, "projects");
   createDirectoryIfMissing(projects);
   checkedDirectory(projects, "local projects directory");
@@ -226,41 +261,88 @@ function ensureBindingDirectory(file: string, stateRoot: string): void {
   checkedDirectory(project, "local project binding directory");
 }
 
-/** Serialize one complete join transaction; stale locks fail closed for explicit recovery. */
+function assertNoLinkedDirectoryComponents(path: string, description: string): void {
+  const absolute = resolve(path);
+  const filesystemRoot = parse(absolute).root;
+  let current = filesystemRoot;
+  const remainder = relative(filesystemRoot, absolute);
+  for (const segment of remainder.split(sep).filter(Boolean)) {
+    current = join(current, segment);
+    const stat = lstatSync(current);
+    if (stat.isSymbolicLink() || !stat.isDirectory()) {
+      bindingError("path", "project_operation_lock_parent_invalid", `${description} contains a linked or non-directory component`);
+    }
+  }
+}
+
+function projectOperationLockFile(projectRoot: string): string {
+  const env = { ...process.env };
+  for (const key of Object.keys(env)) {
+    if (key.toLocaleUpperCase("en-US").startsWith("GIT_")) delete env[key];
+  }
+  const result = spawnSync("git", ["-C", projectRoot, "rev-parse", "--absolute-git-dir"], {
+    encoding: "utf8",
+    env,
+    timeout: 5000,
+    windowsHide: true,
+  });
+  if (result.status !== 0 || result.error || !result.stdout.trim()) {
+    bindingError("discovery", "project_operation_lock_unavailable", "cannot resolve the authoritative Git metadata path for project locking");
+  }
+  const gitDirectory = resolve(result.stdout.trim());
+  assertNoLinkedDirectoryComponents(gitDirectory, "authoritative Git metadata path");
+  const gitStat = lstatSync(gitDirectory);
+  if (gitStat.isSymbolicLink() || !gitStat.isDirectory()) {
+    bindingError("path", "project_operation_lock_parent_invalid", "authoritative Git metadata must resolve to a regular directory");
+  }
+  const lockDirectory = join(gitDirectory, "kxm");
+  if (existsSync(lockDirectory)) {
+    const stat = lstatSync(lockDirectory);
+    if (stat.isSymbolicLink() || !stat.isDirectory()) {
+      bindingError("path", "project_operation_lock_parent_invalid", "Git-local KXM lock directory must be regular, not a link or file");
+    }
+  } else {
+    mkdirSync(lockDirectory, { mode: 0o700 });
+    syncDirectory(gitDirectory);
+  }
+  return join(lockDirectory, "project-operation-lock.sqlite");
+}
+
+/** Serialize one project mutation with a process-death-released SQLite write lock. */
 export function withVnextLocalBindingLock<T>(
   projectRoot: string,
   options: VnextLocalBindingStoreOptions,
   callback: (lock: VnextLocalBindingLock) => T,
 ): T {
   const root = resolve(projectRoot);
-  const stateRoot = vnextUserStateRoot(options);
-  const bindingFile = vnextLocalBindingFile(root, options);
-  ensureBindingDirectory(bindingFile, stateRoot);
-  const file = join(dirname(bindingFile), ".repository-bindings.lock");
-  let descriptor: number | undefined;
-  let acquired = false;
+  const file = projectOperationLockFile(root);
+  if (existsSync(file)) {
+    const stat = lstatSync(file);
+    if (stat.isSymbolicLink() || !stat.isFile()) {
+      bindingError("path", "local_binding_lock_invalid", "project-operation lock must be a regular file, not a link or directory");
+    }
+  }
+  const database = new DatabaseSync(file);
+  try { chmodSync(file, 0o600); } catch { /* Windows and restrictive filesystems may ignore POSIX modes. */ }
   try {
     try {
-      descriptor = openSync(file, "wx", 0o600);
-      acquired = true;
+      database.exec("PRAGMA busy_timeout = 0; BEGIN IMMEDIATE");
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-        bindingError("semantic", "local_binding_lock_busy", "another join or binding update is active or requires stale-lock recovery");
+      if (/busy|locked/i.test(error instanceof Error ? error.message : String(error))) {
+        bindingError("semantic", "local_binding_lock_busy", "another project initialization or binding update is active");
       }
       throw error;
     }
-    writeFileSync(descriptor, `${JSON.stringify({ pid: process.pid })}\n`, "utf8");
-    fsyncSync(descriptor);
     const lock: VnextLocalBindingLock = Object.freeze({ projectRoot: canonicalHostPath(root), file });
     activeLocks.add(lock);
     try {
       return callback(lock);
     } finally {
       activeLocks.delete(lock);
+      database.exec("ROLLBACK");
     }
   } finally {
-    if (descriptor !== undefined) closeSync(descriptor);
-    if (acquired) rmSync(file, { force: true });
+    database.close();
   }
 }
 
@@ -298,6 +380,7 @@ export function writeVnextLocalBindings(
   const planned = planVnextLocalBindings(root, projectId, repositories, options);
   const { file, record } = planned;
   if (!planned.written) return planned;
+  ensureBindingDirectory(file, vnextUserStateRoot(options));
   const temporary = join(dirname(file), `.repository-bindings-${process.pid}-${randomUUID()}.tmp`);
   let descriptor: number | undefined;
   try {
@@ -307,6 +390,7 @@ export function writeVnextLocalBindings(
     closeSync(descriptor);
     descriptor = undefined;
     renameSync(temporary, file);
+    syncDirectory(dirname(file));
   } finally {
     if (descriptor !== undefined) closeSync(descriptor);
     rmSync(temporary, { force: true });

@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
-import { stringify } from "yaml";
+import { existsSync } from "node:fs";
+import { basename, join } from "node:path";
 import {
   VnextConfigError,
   discoverGitRoot,
@@ -20,32 +19,48 @@ import {
   type VnextLocalBindingLock,
   type VnextLocalBindingStoreOptions,
 } from "./vnext-bindings.ts";
+import {
+  commitVnextInitTransaction,
+  hasVnextInitTransaction,
+  inspectVnextInitTransaction,
+  planVnextTemplateRepair,
+  prepareAndApplyVnextCreate,
+  prepareAndApplyVnextRepair,
+  resumeVnextInitTransaction,
+  type VnextRepairRuntimeOptions,
+  type VnextTemplateRepairPlan,
+} from "./vnext-repair.ts";
+import {
+  CURRENT_VNEXT_TEMPLATE_VARIANT,
+  renderVnextTemplate,
+  type VnextTemplateVariant,
+} from "./vnext-template.ts";
 
 export interface VnextInitOptions extends VnextConfigOptions {
   projectId?: string;
   projectName?: string;
   dryRun?: boolean;
   localStateRoot?: string;
+  /** Test/future-template injection; the CLI always uses the current built-in variant. */
+  templateVariant?: VnextTemplateVariant;
+  /** Fault injection used by crash-recovery tests. */
+  testFaultAt?: "prepared" | "first-resource" | "provenance" | "verified";
 }
 
 export interface VnextInitResult {
-  action: "planned" | "created" | "joined" | "validated";
+  action: "planned" | "created" | "joined" | "repaired" | "resumed" | "validated";
   plan: VnextInitializationPlan;
   projectRoot?: string;
   configRevision?: string;
   localBindingFile?: string;
   bindingsChanged?: boolean;
+  repairPlan?: VnextTemplateRepairPlan;
+  resumePending?: boolean;
+  transactionKind?: "create" | "repair";
   files: readonly string[];
 }
 
 const PROJECT_ID = /^prj_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$/;
-const TEMPLATE_FILES = [
-  ".kxm/agents/coordinator.yaml",
-  ".kxm/agents/implementer.yaml",
-  ".kxm/project.yaml",
-  ".kxm/repo/repo.yaml",
-  ".kxm/workflows/default.yaml",
-] as const;
 
 function initIssue(code: string, file: string, message: string): VnextConfigIssue {
   return { phase: "discovery", code, file, message };
@@ -67,120 +82,6 @@ function generatedProjectId(requested?: string): string {
   return id;
 }
 
-function template(projectId: string, projectName: string): ReadonlyMap<string, JsonObject> {
-  return new Map<string, JsonObject>([
-    [".kxm/project.yaml", {
-      schema: "kxm.project.v1",
-      id: projectId,
-      name: projectName,
-      defaultWorkflow: "default",
-      defaultExecutor: "local",
-      repositories: [{ id: "control", role: "control", required: true, pathHint: "." }],
-      workspace: {
-        dirtySnapshot: {
-          untracked: "ask",
-          dirtySubmodules: "fail",
-        },
-      },
-    }],
-    [".kxm/repo/repo.yaml", {
-      schema: "kxm.repository.v1",
-      projectId,
-      repositoryId: "control",
-      description: "Authoritative project configuration and repository content.",
-      defaultAccess: "write",
-    }],
-    [".kxm/agents/coordinator.yaml", {
-      schema: "kxm.agent.v1",
-      purpose: "Coordinate the pinned workflow and emit schema-validated commands.",
-      tools: { preset: "coordinator" },
-      defaultRepositoryAccess: "read",
-      repositories: { control: "read" },
-      network: "provider-only",
-      resultSchema: "kxm.assignment-result.v1",
-    }],
-    [".kxm/agents/implementer.yaml", {
-      schema: "kxm.agent.v1",
-      purpose: "Implement the approved change within the declared repository scope.",
-      tools: { preset: "workspace-writer" },
-      defaultRepositoryAccess: "none",
-      repositories: { control: "write" },
-      network: "provider-only",
-      resultSchema: "kxm.assignment-result.v1",
-    }],
-    [".kxm/workflows/default.yaml", {
-      schema: "kxm.workflow.v1",
-      description: "Plan, implement, and verify a local change.",
-      coordinator: "coordinator",
-      limits: {
-        maxTransitions: 8,
-        maxRunDurationMs: 14_400_000,
-        maxAgentTimeMs: 21_600_000,
-      },
-      steps: [
-        {
-          id: "plan",
-          kind: "agent",
-          agent: "coordinator",
-          maxAttempts: 2,
-          repositories: { control: "read" },
-          requiredEvidence: [{ key: "plan", kind: "artifact" }],
-          timeoutMs: 1_200_000,
-          on: {
-            passed: "implement",
-            blocked: { target: "$terminal", terminalStatus: "failed" },
-          },
-        },
-        {
-          id: "implement",
-          kind: "agent",
-          agent: "implementer",
-          maxAttempts: 3,
-          repositories: { control: "write" },
-          assignments: {
-            allowedAgents: ["implementer"],
-            minimum: 1,
-            target: 1,
-            maximum: 1,
-            maxParallel: 1,
-            maxAttemptsPerAssignment: 2,
-            maxWriteRepositories: 1,
-          },
-          requiredEvidence: [{ key: "implementation-diff", kind: "artifact" }],
-          timeoutMs: 3_600_000,
-          on: {
-            passed: "verify",
-            failed: { target: "$terminal", terminalStatus: "failed" },
-            blocked: { target: "$terminal", terminalStatus: "failed" },
-          },
-        },
-        {
-          id: "verify",
-          kind: "gate",
-          gate: "test",
-          maxAttempts: 3,
-          repositories: { control: "write" },
-          requiredEvidence: [{ key: "local-gates", kind: "gate" }],
-          timeoutMs: 3_600_000,
-          on: {
-            passed: { target: "$terminal", terminalStatus: "completed" },
-            "implementation-failure": { target: "implement", maxTransitions: 3 },
-            failed: { target: "$terminal", terminalStatus: "failed" },
-          },
-        },
-      ],
-    }],
-  ]);
-}
-
-function writeTemplate(stagingRoot: string, resources: ReadonlyMap<string, JsonObject>): void {
-  for (const [portablePath, value] of resources) {
-    const file = join(stagingRoot, ...portablePath.split("/"));
-    mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(file, stringify(value, { lineWidth: 0 }), { encoding: "utf8", flag: "wx" });
-  }
-}
-
 function configOptions(options: VnextInitOptions, repositoryBindings: Readonly<Record<string, string>>): VnextConfigOptions {
   return {
     ...(options.schemasDir === undefined ? {} : { schemasDir: options.schemasDir }),
@@ -191,6 +92,17 @@ function configOptions(options: VnextInitOptions, repositoryBindings: Readonly<R
   };
 }
 
+function repairOptions(
+  options: VnextInitOptions,
+  repositoryBindings: Readonly<Record<string, string>>,
+): VnextRepairRuntimeOptions {
+  return {
+    ...configOptions(options, repositoryBindings),
+    templateVariant: options.templateVariant ?? CURRENT_VNEXT_TEMPLATE_VARIANT,
+    ...(options.testFaultAt === undefined ? {} : { testFaultAt: options.testFaultAt }),
+  };
+}
+
 function bindingStoreOptions(options: VnextInitOptions): VnextLocalBindingStoreOptions {
   return {
     ...(options.localStateRoot === undefined ? {} : { stateRoot: options.localStateRoot }),
@@ -198,8 +110,7 @@ function bindingStoreOptions(options: VnextInitOptions): VnextLocalBindingStoreO
   };
 }
 
-function memberRepositoryIds(project: JsonObject): Set<string> {
-  const repositories = Array.isArray(project.repositories) ? project.repositories : [];
+function memberRepositoryIds(project: JsonObject): Set<string> {  const repositories = Array.isArray(project.repositories) ? project.repositories : [];
   return new Set(repositories.flatMap((candidate) => {
     if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return [];
     const record = candidate as JsonObject;
@@ -207,17 +118,82 @@ function memberRepositoryIds(project: JsonObject): Set<string> {
   }));
 }
 
+function completedPlan(projectRoot: string, options: VnextConfigOptions): VnextInitializationPlan {
+  return planVnextInitialization(projectRoot, options);
+}
+
+function finalizeBindingUpdate(
+  bundle: ReturnType<typeof loadVnextProject>,
+  persisted: ReturnType<typeof readVnextLocalBindings>,
+  allBindings: Readonly<Record<string, string>>,
+  explicitBindings: Readonly<Record<string, string>>,
+  storeOptions: VnextLocalBindingStoreOptions,
+  mutationLock: VnextLocalBindingLock | undefined,
+  dryRun: boolean,
+): { localBindingFile?: string; bindingsChanged?: boolean } {
+  const memberIds = validateBindingIdentities(bundle, persisted, explicitBindings);
+  if (Object.keys(explicitBindings).length === 0) {
+    return persisted ? { localBindingFile: persisted.file } : {};
+  }
+  const memberBindings = Object.fromEntries(Object.entries(allBindings)
+    .filter(([repositoryId]) => memberIds.has(repositoryId)));
+  const projectId = String(bundle.project.value.id);
+  const bindingPlan = planVnextLocalBindings(bundle.projectRoot, projectId, memberBindings, storeOptions);
+  if (dryRun) return { localBindingFile: bindingPlan.file, bindingsChanged: bindingPlan.written };
+  if (bindingPlan.written && !mutationLock) throw new Error("project mutation lock is required to persist repository bindings");
+  const result = bindingPlan.written
+    ? writeVnextLocalBindings(bundle.projectRoot, projectId, memberBindings, storeOptions, mutationLock)
+    : bindingPlan;
+  return { localBindingFile: result.file, bindingsChanged: result.written };
+}
+
+function plannedRepairResult(
+  plan: VnextInitializationPlan,
+  projectRoot: string,
+  repairPlan?: VnextTemplateRepairPlan,
+): VnextInitResult {
+  return {
+    action: "planned",
+    plan,
+    projectRoot,
+    ...(repairPlan === undefined ? {} : { repairPlan }),
+    files: [],
+  };
+}
+
+function validateBindingIdentities(
+  bundle: ReturnType<typeof loadVnextProject>,
+  persisted: ReturnType<typeof readVnextLocalBindings>,
+  explicit: Readonly<Record<string, string>>,
+): Set<string> {
+  const projectId = String(bundle.project.value.id);
+  if (persisted && persisted.projectId !== projectId) {
+    throw new VnextConfigError([initIssue("local_binding_project_id_mismatch", "Runtime-local repository bindings", "binding record belongs to a different project identity")]);
+  }
+  const memberIds = memberRepositoryIds(bundle.project.value);
+  for (const repositoryId of Object.keys(persisted?.repositories ?? {})) {
+    if (!memberIds.has(repositoryId)) {
+      throw new VnextConfigError([initIssue("local_binding_repository_invalid", "Runtime-local repository bindings", `persisted binding ${repositoryId} is not a member repository`)]);
+    }
+  }
+  for (const repositoryId of Object.keys(explicit)) {
+    if (!memberIds.has(repositoryId)) {
+      throw new VnextConfigError([initIssue("local_binding_repository_invalid", "Runtime-local repository bindings", `explicit binding ${repositoryId} is not a member repository`)]);
+    }
+  }
+  return memberIds;
+}
+
 /**
- * Unified init slice: validate an existing vNext project, join it with explicit
- * Runtime-local member bindings, produce a non-mutating migration/repair plan,
- * or atomically create minimal Git-tracked configuration. Existing project
- * resources are never overwritten and host paths are never written into Git.
+ * Unified initialization: create, resume a pinned operation, apply a
+ * provenance-backed conflict-free template repair, join with local member
+ * bindings, or return a non-mutating migration/conflict plan.
  */
 function initializeVnextProjectAtGitRoot(
   start: string,
   gitRoot: string,
   options: VnextInitOptions,
-  bindingLock?: VnextLocalBindingLock,
+  mutationLock?: VnextLocalBindingLock,
 ): VnextInitResult {
   const storeOptions = bindingStoreOptions(options);
   const persisted = existsSync(join(gitRoot, ".kxm", "project.yaml"))
@@ -228,56 +204,182 @@ function initializeVnextProjectAtGitRoot(
     ...Object.entries(options.repositoryBindings ?? {}),
   ]);
   const loaderOptions = configOptions(options, repositoryBindings);
+  const transactionOptions = repairOptions(options, repositoryBindings);
+
+  if (hasVnextInitTransaction(gitRoot)) {
+    const operation = inspectVnextInitTransaction(gitRoot, options.schemasDir);
+    const plan = planVnextInitialization(start, loaderOptions);
+    if (!operation) {
+      if (options.dryRun) return { action: "planned", plan, projectRoot: gitRoot, resumePending: true, files: [] };
+      if (!mutationLock) throw new Error("project mutation lock is required to clean an empty transaction");
+      resumeVnextInitTransaction(gitRoot, transactionOptions);
+    } else if (options.dryRun) {
+      return {
+        action: "planned",
+        plan,
+        projectRoot: gitRoot,
+        resumePending: true,
+        transactionKind: operation.kind,
+        files: operation.files.map((file) => file.path),
+      };
+    } else {
+      if (!mutationLock) throw new Error("project mutation lock is required to resume initialization");
+      if (options.projectId !== undefined && options.projectId !== operation.projectId) {
+        throw new VnextConfigError([initIssue("resume_project_id_mismatch", "--project-id", "requested project ID differs from the pinned initialization transaction")]);
+      }
+      if (options.projectName !== undefined && options.projectName !== operation.projectName) {
+        throw new VnextConfigError([initIssue("resume_project_name_mismatch", "--name", "requested project name differs from the pinned initialization transaction")]);
+      }
+      if (operation.kind === "repair" && Object.keys(options.repositoryBindings ?? {}).length > 0) {
+        const currentBundle = loadVnextProject(gitRoot, loaderOptions);
+        finalizeBindingUpdate(
+          currentBundle,
+          persisted,
+          repositoryBindings,
+          options.repositoryBindings ?? {},
+          storeOptions,
+          mutationLock,
+          false,
+        );
+      }
+      const result = resumeVnextInitTransaction(gitRoot, transactionOptions);
+      if (!result) throw new Error("initialization transaction disappeared while holding the project lock");
+      const bindingResult = finalizeBindingUpdate(
+        result.bundle,
+        persisted,
+        repositoryBindings,
+        options.repositoryBindings ?? {},
+        storeOptions,
+        mutationLock,
+        false,
+      );
+      commitVnextInitTransaction(gitRoot, options.schemasDir);
+      return {
+        action: "resumed",
+        plan: completedPlan(gitRoot, loaderOptions),
+        projectRoot: gitRoot,
+        configRevision: result.bundle.configRevision,
+        transactionKind: result.kind,
+        ...bindingResult,
+        files: result.files,
+      };
+    }
+  }
+
   const plan = planVnextInitialization(start, loaderOptions);
-  if (plan.mode === "migrate" || plan.mode === "repair") {
+  if (plan.mode === "migrate") {
     return { action: "planned", plan, ...(plan.projectRoot ? { projectRoot: plan.projectRoot } : {}), files: [] };
   }
+
+  if (plan.mode === "repair") {
+    const projectRoot = plan.projectRoot ?? gitRoot;
+    let templateRepair: VnextTemplateRepairPlan | undefined;
+    try {
+      templateRepair = planVnextTemplateRepair(projectRoot, transactionOptions);
+    } catch (error) {
+      if (!(error instanceof VnextConfigError)) throw error;
+      return plannedRepairResult({ ...plan, issues: [...plan.issues, ...error.issues] }, projectRoot);
+    }
+    if (!templateRepair?.canApply) return plannedRepairResult(plan, projectRoot, templateRepair);
+    if (options.dryRun) return plannedRepairResult(plan, projectRoot, templateRepair);
+    if (Object.keys(options.repositoryBindings ?? {}).length > 0) {
+      const blockedRepair: VnextTemplateRepairPlan = {
+        ...templateRepair,
+        canApply: false,
+        issues: [...templateRepair.issues, initIssue(
+          "repair_binding_requires_ready_project",
+          "--repository",
+          "a first-time binding update cannot be combined with repair of an invalid project; establish a valid project or existing binding first",
+        )],
+      };
+      return plannedRepairResult(plan, projectRoot, blockedRepair);
+    }
+    if (!mutationLock) throw new Error("project mutation lock is required to apply template repair");
+    const repaired = prepareAndApplyVnextRepair(templateRepair, transactionOptions);
+    const bindingResult = finalizeBindingUpdate(
+      repaired.bundle,
+      persisted,
+      repositoryBindings,
+      options.repositoryBindings ?? {},
+      storeOptions,
+      mutationLock,
+      false,
+    );
+    commitVnextInitTransaction(projectRoot, options.schemasDir);
+    return {
+      action: "repaired",
+      plan: completedPlan(projectRoot, loaderOptions),
+      projectRoot,
+      configRevision: repaired.bundle.configRevision,
+      repairPlan: templateRepair,
+      ...bindingResult,
+      files: repaired.files,
+    };
+  }
+
   if (plan.mode === "ready") {
     const projectRoot = plan.projectRoot ?? gitRoot;
     const bundle = loadVnextProject(projectRoot, loaderOptions);
-    const projectId = String(bundle.project.value.id);
-    if (persisted && persisted.projectId !== projectId) {
-      throw new VnextConfigError([initIssue("local_binding_project_id_mismatch", "Runtime-local repository bindings", "binding record belongs to a different project identity")]);
+    const templateRepair = planVnextTemplateRepair(projectRoot, transactionOptions);
+    if (templateRepair?.changesRequired) {
+      if (!templateRepair.canApply || options.dryRun) return plannedRepairResult(plan, projectRoot, templateRepair);
+      if (!mutationLock) throw new Error("project mutation lock is required to apply template repair");
+      const bindingResult = finalizeBindingUpdate(
+        bundle,
+        persisted,
+        repositoryBindings,
+        options.repositoryBindings ?? {},
+        storeOptions,
+        mutationLock,
+        false,
+      );
+      const repaired = prepareAndApplyVnextRepair(templateRepair, transactionOptions);
+      finalizeBindingUpdate(
+        repaired.bundle,
+        persisted,
+        repositoryBindings,
+        options.repositoryBindings ?? {},
+        storeOptions,
+        mutationLock,
+        false,
+      );
+      commitVnextInitTransaction(projectRoot, options.schemasDir);
+      return {
+        action: "repaired",
+        plan: completedPlan(projectRoot, loaderOptions),
+        projectRoot,
+        configRevision: repaired.bundle.configRevision,
+        repairPlan: templateRepair,
+        ...bindingResult,
+        files: repaired.files,
+      };
     }
-    const memberIds = memberRepositoryIds(bundle.project.value);
-    for (const repositoryId of Object.keys(persisted?.repositories ?? {})) {
-      if (!memberIds.has(repositoryId)) {
-        throw new VnextConfigError([initIssue("local_binding_repository_invalid", "Runtime-local repository bindings", `persisted binding ${repositoryId} is not a member repository`)]);
-      }
-    }
-    for (const repositoryId of Object.keys(options.repositoryBindings ?? {})) {
-      if (!memberIds.has(repositoryId)) {
-        throw new VnextConfigError([initIssue("local_binding_repository_invalid", "Runtime-local repository bindings", `explicit binding ${repositoryId} is not a member repository`)]);
-      }
-    }
-    const explicitMemberBindings = Object.fromEntries(Object.entries(repositoryBindings)
-      .filter(([repositoryId]) => memberIds.has(repositoryId)));
-    const shouldPersist = Object.keys(options.repositoryBindings ?? {}).length > 0;
-    const bindingPlan = shouldPersist
-      ? planVnextLocalBindings(projectRoot, projectId, explicitMemberBindings, storeOptions)
-      : undefined;
-    const localBindingFile = persisted?.file ?? bindingPlan?.file;
+
+    const bindingResult = finalizeBindingUpdate(
+      bundle,
+      persisted,
+      repositoryBindings,
+      options.repositoryBindings ?? {},
+      storeOptions,
+      mutationLock,
+      options.dryRun === true,
+    );
     if (options.dryRun) {
       return {
         action: "planned",
         plan,
         projectRoot,
         configRevision: bundle.configRevision,
-        ...(localBindingFile === undefined ? {} : { localBindingFile }),
-        ...(bindingPlan ? { bindingsChanged: bindingPlan.written } : {}),
+        ...bindingResult,
         files: [],
       };
     }
-    const written = bindingPlan?.written
-      ? writeVnextLocalBindings(projectRoot, projectId, explicitMemberBindings, storeOptions, bindingLock)
-      : bindingPlan;
     return {
-      action: written?.written ? "joined" : "validated",
+      action: bindingResult.bindingsChanged ? "joined" : "validated",
       plan,
       projectRoot,
       configRevision: bundle.configRevision,
-      ...(localBindingFile === undefined ? {} : { localBindingFile }),
-      ...(written ? { bindingsChanged: written.written } : {}),
+      ...bindingResult,
       files: [],
     };
   }
@@ -287,45 +389,22 @@ function initializeVnextProjectAtGitRoot(
   }
   const projectId = generatedProjectId(options.projectId);
   const projectName = normalizedProjectName(gitRoot, options.projectName);
-  const resources = template(projectId, projectName);
-  if (options.dryRun) return { action: "planned", plan, projectRoot: gitRoot, files: TEMPLATE_FILES };
+  const rendered = renderVnextTemplate(projectId, projectName, options.templateVariant ?? CURRENT_VNEXT_TEMPLATE_VARIANT);
+  const files = [...rendered.files.keys()];
+  if (options.dryRun) return { action: "planned", plan, projectRoot: gitRoot, files };
+  if (!mutationLock) throw new Error("project mutation lock is required to create configuration");
   if (existsSync(join(gitRoot, ".kxm"))) {
     throw new VnextConfigError([initIssue("workspace_changed", ".kxm", "workspace changed after planning; existing .kxm state was not overwritten")]);
   }
-  const staging = mkdtempSync(join(gitRoot, ".kxm-init-"));
-  try {
-    writeTemplate(staging, resources);
-    const stagedBundle = loadVnextProject(staging, loaderOptions);
-    if (existsSync(join(gitRoot, ".kxm"))) {
-      throw new VnextConfigError([initIssue("workspace_changed", ".kxm", "workspace changed during validation; existing state was not overwritten")]);
-    }
-    try {
-      renameSync(join(staging, ".kxm"), join(gitRoot, ".kxm"));
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code === "EEXIST" || code === "ENOTEMPTY") {
-        throw new VnextConfigError([initIssue("workspace_changed", ".kxm", "workspace changed during installation; existing state was not overwritten")]);
-      }
-      throw error;
-    }
-    const installedBundle = loadVnextProject(gitRoot, loaderOptions);
-    if (installedBundle.configRevision !== stagedBundle.configRevision) {
-      throw new VnextConfigError([initIssue("install_verification_failed", ".kxm", "installed configuration does not match the validated staging bundle")]);
-    }
-    const completedPlan = planVnextInitialization(gitRoot, loaderOptions);
-    return {
-      action: "created",
-      plan: completedPlan,
-      projectRoot: gitRoot,
-      configRevision: installedBundle.configRevision,
-      files: TEMPLATE_FILES,
-    };
-  } finally {
-    rmSync(staging, { recursive: true, force: true });
-    // Once the atomic rename succeeds, validation errors leave the complete
-    // configuration in place for deterministic repair rather than deleting
-    // an installation another process may already have observed.
-  }
+  const created = prepareAndApplyVnextCreate(gitRoot, rendered, transactionOptions);
+  commitVnextInitTransaction(gitRoot, options.schemasDir);
+  return {
+    action: "created",
+    plan: completedPlan(gitRoot, loaderOptions),
+    projectRoot: gitRoot,
+    configRevision: created.bundle.configRevision,
+    files: created.files,
+  };
 }
 
 export function initializeVnextProject(start = process.cwd(), options: VnextInitOptions = {}): VnextInitResult {
@@ -335,10 +414,15 @@ export function initializeVnextProject(start = process.cwd(), options: VnextInit
   }
   if (options.projectId !== undefined) generatedProjectId(options.projectId);
   if (options.projectName !== undefined) normalizedProjectName(gitRoot, options.projectName);
-  const explicitBindingUpdate = Object.keys(options.repositoryBindings ?? {}).length > 0
-    && !options.dryRun
-    && existsSync(join(gitRoot, ".kxm", "project.yaml"));
-  if (!explicitBindingUpdate) return initializeVnextProjectAtGitRoot(start, gitRoot, options);
+  if (options.dryRun) return initializeVnextProjectAtGitRoot(start, gitRoot, options);
+
+  const preflight = initializeVnextProjectAtGitRoot(start, gitRoot, { ...options, dryRun: true });
+  const mutationRequired = preflight.resumePending === true
+    || preflight.plan.mode === "create"
+    || (preflight.repairPlan?.canApply === true
+      && !(preflight.plan.mode === "repair" && Object.keys(options.repositoryBindings ?? {}).length > 0))
+    || (Object.keys(options.repositoryBindings ?? {}).length > 0 && preflight.plan.mode === "ready");
+  if (!mutationRequired) return initializeVnextProjectAtGitRoot(start, gitRoot, options);
   const storeOptions = bindingStoreOptions(options);
   return withVnextLocalBindingLock(gitRoot, storeOptions, (lock) => initializeVnextProjectAtGitRoot(start, gitRoot, options, lock));
 }
