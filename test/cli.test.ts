@@ -7,6 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { runCli as runCliImplementation, type CliIo } from "../plugins/kxm-mesh/src/cli.ts";
 import { vnextLocalBindingFile } from "../plugins/kxm-mesh/src/vnext-bindings.ts";
+import { initializeVnextProject } from "../plugins/kxm-mesh/src/vnext-init.ts";
 
 async function runCli(argv: string[], env: NodeJS.ProcessEnv, io: CliIo, cwd = process.cwd()): Promise<number> {
   const isolatedLogs = mkdtempSync(join(tmpdir(), "kxm-cli-telemetry-"));
@@ -96,6 +97,8 @@ test("vNext init creates and revalidates project configuration without legacy en
   const cwd = mkdtempSync(join(tmpdir(), "kxm-vnext-cli-init-"));
   const dryCwd = mkdtempSync(join(tmpdir(), "kxm-vnext-cli-dry-"));
   const legacyCwd = mkdtempSync(join(tmpdir(), "kxm-vnext-cli-legacy-"));
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-vnext-cli-init-state-"));
+  const stateEnv = { KXM_STATE_HOME: stateRoot };
   try {
     makeGitRoot(cwd);
     makeGitRoot(dryCwd);
@@ -108,6 +111,7 @@ test("vNext init creates and revalidates project configuration without legacy en
     assert.equal(await runCli([
       "init", "--json", "--name", "CLI Project", "--project-id", "prj_01JCLIPROJECT0000000000000",
     ], {
+      ...stateEnv,
       PI_MESH_WORKDIR: join(cwd, "must-not-use"),
       PI_MESH_CONFIG_DIR: join(cwd, "also-must-not-use"),
     }, createdIo, cwd), 0);
@@ -115,42 +119,68 @@ test("vNext init creates and revalidates project configuration without legacy en
     assert.equal(created.action, "created");
     assert.equal(created.mode, "ready");
     assert.match(created.configRevision, /^sha256:[a-f0-9]{64}$/);
-    assert.equal(created.files.length, 5);
+    assert.equal(created.files.length, 6);
     assert.equal(existsSync(join(cwd, ".kxm", "project.yaml")), true);
     assert.equal(existsSync(join(cwd, "must-not-use")), false);
 
     const repeatedIo = capture();
-    assert.equal(await runCli(["init", "--json"], {}, repeatedIo, cwd), 0);
+    assert.equal(await runCli(["init", "--json"], stateEnv, repeatedIo, cwd), 0);
     const repeated = JSON.parse(repeatedIo.read().stdout) as { action: string; configRevision: string };
     assert.equal(repeated.action, "validated");
     assert.equal(repeated.configRevision, created.configRevision);
 
     const dryIo = capture();
-    assert.equal(await runCli(["init", "--json", "--dry-run"], {}, dryIo, dryCwd), 0);
+    assert.equal(await runCli(["init", "--json", "--dry-run"], stateEnv, dryIo, dryCwd), 0);
     assert.match(dryIo.read().stdout, /"action":"planned"/);
     assert.equal(existsSync(join(dryCwd, ".kxm")), false);
     const invalidIo = capture();
-    assert.equal(await runCli(["init", "--json", "--dry-run", "--project-id", "not-a-project-id"], {}, invalidIo, dryCwd), 1);
+    assert.equal(await runCli(["init", "--json", "--dry-run", "--project-id", "not-a-project-id"], stateEnv, invalidIo, dryCwd), 1);
     assert.match(invalidIo.read().stdout, /"error":"vnext_initialization_failed"/);
     assert.equal(existsSync(join(dryCwd, ".kxm")), false);
 
     const noGitIo = capture();
-    assert.equal(await runCli(["init", "--json", "--dry-run"], {}, noGitIo, legacyCwd), 1);
+    assert.equal(await runCli(["init", "--json", "--dry-run"], stateEnv, noGitIo, legacyCwd), 1);
     assert.match(noGitIo.read().stdout, /git_root_required/);
 
     makeGitRoot(legacyCwd);
     mkdirSync(join(legacyCwd, ".kxm", "config"), { recursive: true });
     writeFileSync(join(legacyCwd, ".kxm", "config", "agents.json"), "[]\n");
     const invalidMigrationIo = capture();
-    assert.equal(await runCli(["init", "--json", "--dry-run", "--project-id", "invalid"], {}, invalidMigrationIo, legacyCwd), 1);
+    assert.equal(await runCli(["init", "--json", "--dry-run", "--project-id", "invalid"], stateEnv, invalidMigrationIo, legacyCwd), 1);
     assert.match(invalidMigrationIo.read().stdout, /project_id_invalid/);
     const legacyIo = capture();
-    assert.equal(await runCli(["init", "--json"], {}, legacyIo, legacyCwd), 1);
+    assert.equal(await runCli(["init", "--json"], stateEnv, legacyIo, legacyCwd), 1);
     assert.match(legacyIo.read().stdout, /"mode":"migrate"/);
     assert.match(legacyIo.read().stdout, /\.kxm\/config\/agents\.json/);
     assert.match(legacyIo.read().stdout, /"plannedOnly":true/);
   } finally {
-    for (const root of [cwd, dryCwd, legacyCwd]) rmSync(root, { recursive: true, force: true });
+    for (const root of [cwd, dryCwd, legacyCwd, stateRoot]) rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("vNext init CLI resumes a pinned interrupted create", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "kxm-vnext-cli-resume-"));
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-vnext-cli-resume-state-"));
+  try {
+    makeGitRoot(cwd);
+    assert.throws(
+      () => initializeVnextProject(cwd, {
+        projectId: "prj_01JCLIRESUME0000000000000",
+        projectName: "CLI Resume",
+        localStateRoot: stateRoot,
+        testFaultAt: "prepared",
+      }),
+      /injected init fault/,
+    );
+    const output = capture();
+    assert.equal(await runCli(["init", "--json"], { KXM_STATE_HOME: stateRoot }, output, cwd), 0);
+    const resumed = JSON.parse(output.read().stdout) as { action: string; transactionKind: string; plannedOnly: boolean };
+    assert.equal(resumed.action, "resumed");
+    assert.equal(resumed.transactionKind, "create");
+    assert.equal(resumed.plannedOnly, false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(stateRoot, { recursive: true, force: true });
   }
 });
 

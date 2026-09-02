@@ -120,7 +120,8 @@ The converter:
 - preserves `reproOracle`, `planHash`, `requirePlanHash`, and peer/producer
   evidence policies before accepting a same-identity workflow;
 - reports prose-only transitions that the current engine could not execute;
-- records template provenance;
+- records template provenance only for files whose exact generated baseline is
+  known; existing files are never retroactively adopted from similarity;
 - validates the entire target project before installation;
 - shows the Git diff.
 

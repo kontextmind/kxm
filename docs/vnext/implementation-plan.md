@@ -20,11 +20,15 @@ Support create, join, repair, resume, and legacy JSON migration.
 
 **Implemented slices:** restricted parsing, exact-schema and semantic bundle
 validation, path-derived discovery, deterministic configuration hashing, init
-state classification, atomic minimal creation, rewrite-free revalidation,
-explicit join, and bounded Runtime-local member-repository binding persistence.
-Repair reconciliation, resumable init, migration conversion/receipts, and
-permission-diff trust remain pending; therefore the Phase 1 gate is not yet
-passed.
+state classification, provenance-tracked atomic creation, rewrite-free
+revalidation, explicit join, bounded Runtime-local member-repository binding
+persistence, process-death-released mutation locking, resumable pinned create
+and repair operations, and exact whole-file three-way template reconciliation.
+Automatic repair is limited to conflict-free changes whose conservative
+authority projection is unchanged; provenance-free files, overlapping edits,
+template deletions, and authority changes remain non-mutating plans. Legacy
+migration conversion/receipts and the complete permission-diff trust workflow
+remain pending; therefore the Phase 1 gate is not yet passed.
 
 **Gate:** a project can be reproduced from Git on a second machine without a
 hub and without overwriting edited files.

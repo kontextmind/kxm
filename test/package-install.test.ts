@@ -88,6 +88,7 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
     assert.match(installedBin.stdout, /Usage: kxm mesh/);
 
     const vnextProject = join(consumer, "vnext-project");
+    const packedState = join(consumer, "kxm-state");
     mkdirSync(vnextProject);
     makeGitRoot(vnextProject);
     const vnextInit = spawnSync(process.execPath, [
@@ -98,14 +99,17 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
       "Packed Project",
       "--project-id",
       "prj_01JPACKEDPROJECT00000000000",
-    ], { cwd: vnextProject, encoding: "utf8" });
+    ], { cwd: vnextProject, encoding: "utf8", env: { ...process.env, KXM_STATE_HOME: packedState } });
     assert.equal(vnextInit.status, 0, `${vnextInit.stderr}\n${vnextInit.stdout}`);
     const vnextPayload = JSON.parse(vnextInit.stdout) as { action: string; configRevision: string };
     assert.equal(vnextPayload.action, "created");
     assert.match(vnextPayload.configRevision, /^sha256:[a-f0-9]{64}$/);
     const packedProjectFile = join(vnextProject, ".kxm", "project.yaml");
     assert.equal(existsSync(packedProjectFile), true);
+    assert.equal(existsSync(join(vnextProject, ".kxm", "template-provenance.yaml")), true);
     assert.equal(existsSync(join(packageRoot, "schemas", "vnext", "project.schema.json")), true);
+    assert.equal(existsSync(join(packageRoot, "schemas", "vnext", "template-provenance.schema.json")), true);
+    assert.equal(existsSync(join(packageRoot, "schemas", "vnext", "init-operation.schema.json")), true);
 
     const unsupportedWorkspace = spawnSync(process.execPath, [
       join(packageRoot, "scripts", "kxm.mjs"), "--workspace", join(vnextProject, "wrong"), "init", "--json",
@@ -132,7 +136,6 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
     assert.match(invalidProvisioning.stdout, /project_id_invalid/);
 
     const packedMember = join(consumer, "packed-api");
-    const packedState = join(consumer, "kxm-state");
     mkdirSync(packedMember);
     makeGitRoot(packedMember);
     mkdirSync(join(packedMember, ".kxm", "repo"), { recursive: true });

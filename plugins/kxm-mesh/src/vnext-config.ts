@@ -5,6 +5,7 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } 
 import { fileURLToPath } from "node:url";
 import { Ajv2020, type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
 import { isAlias, isCollection, isMap, isScalar, parseDocument, visit } from "yaml";
+import { resolveVnextTemplateBaseline } from "./vnext-template.ts";
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 export type JsonObject = { [key: string]: JsonValue };
@@ -65,6 +66,7 @@ export interface VnextProjectBundle {
   models: ReadonlyMap<string, VnextResource>;
   workflows: ReadonlyMap<string, VnextResource>;
   environments: readonly VnextResource[];
+  templateProvenance?: JsonObject;
   resources: readonly VnextResource[];
   configRevision: string;
 }
@@ -246,6 +248,8 @@ export class VnextSchemaRegistry {
   readonly ajv: Ajv2020;
   readonly validators = new Map<VnextResourceKind, ValidateFunction>();
   readonly localBindingsValidator: ValidateFunction;
+  readonly templateProvenanceValidator: ValidateFunction;
+  readonly initOperationValidator: ValidateFunction;
 
   constructor(schemasDir = DEFAULT_SCHEMA_DIR) {
     this.schemasDir = resolve(schemasDir);
@@ -256,15 +260,25 @@ export class VnextSchemaRegistry {
       this.ajv.addSchema(readJsonObject(join(this.schemasDir, definition.file)));
     }
     const localBindingsFile = "local-repository-bindings.schema.json";
+    const templateProvenanceFile = "template-provenance.schema.json";
+    const initOperationFile = "init-operation.schema.json";
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, localBindingsFile)));
+    this.ajv.addSchema(readJsonObject(join(this.schemasDir, templateProvenanceFile)));
+    this.ajv.addSchema(readJsonObject(join(this.schemasDir, initOperationFile)));
     for (const [kind, definition] of Object.entries(RESOURCE_SCHEMA) as [VnextResourceKind, { identity: string; file: string }][]) {
       const validator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${definition.file}`);
       if (!validator) throw new Error(`schema did not compile: ${definition.file}`);
       this.validators.set(kind, validator);
     }
     const localBindingsValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${localBindingsFile}`);
+    const templateProvenanceValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${templateProvenanceFile}`);
+    const initOperationValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${initOperationFile}`);
     if (!localBindingsValidator) throw new Error(`schema did not compile: ${localBindingsFile}`);
+    if (!templateProvenanceValidator) throw new Error(`schema did not compile: ${templateProvenanceFile}`);
+    if (!initOperationValidator) throw new Error(`schema did not compile: ${initOperationFile}`);
     this.localBindingsValidator = localBindingsValidator;
+    this.templateProvenanceValidator = templateProvenanceValidator;
+    this.initOperationValidator = initOperationValidator;
   }
 
   validate(kind: VnextResourceKind, value: JsonObject, file: string): VnextConfigIssue[] {
@@ -279,11 +293,23 @@ export class VnextSchemaRegistry {
   }
 
   validateLocalBindings(value: JsonObject, file: string): VnextConfigIssue[] {
-    if (value.schema !== "kxm.local-repository-bindings.v1") {
-      return [issue("schema", "schema_identity_mismatch", file, `expected kxm.local-repository-bindings.v1, received ${String(value.schema)}`)];
+    return this.validateAuxiliary(value, file, "kxm.local-repository-bindings.v1", this.localBindingsValidator);
+  }
+
+  validateTemplateProvenance(value: JsonObject, file: string): VnextConfigIssue[] {
+    return this.validateAuxiliary(value, file, "kxm.template-provenance.v1", this.templateProvenanceValidator);
+  }
+
+  validateInitOperation(value: JsonObject, file: string): VnextConfigIssue[] {
+    return this.validateAuxiliary(value, file, "kxm.init-operation.v1", this.initOperationValidator);
+  }
+
+  private validateAuxiliary(value: JsonObject, file: string, identity: string, validator: ValidateFunction): VnextConfigIssue[] {
+    if (value.schema !== identity) {
+      return [issue("schema", "schema_identity_mismatch", file, `expected ${identity}, received ${String(value.schema)}`)];
     }
-    if (this.localBindingsValidator(value)) return [];
-    return (this.localBindingsValidator.errors ?? []).map((error) => schemaIssue(file, error));
+    if (validator(value)) return [];
+    return (validator.errors ?? []).map((error) => schemaIssue(file, error));
   }
 }
 
@@ -392,6 +418,54 @@ function readResource(
   const issues = registry.validate(kind, value, label);
   if (issues.length > 0) throw new VnextConfigError(issues);
   return { kind, ...(id === undefined ? {} : { id }), file, logicalPath, value };
+}
+
+function readTemplateProvenance(registry: VnextSchemaRegistry, root: string): JsonObject | undefined {
+  const file = join(root, ".kxm", "template-provenance.yaml");
+  if (!existsSync(file)) return undefined;
+  const label = ".kxm/template-provenance.yaml";
+  const stat = lstatSync(file);
+  if (stat.isSymbolicLink() || !stat.isFile()) {
+    fail("path", "resource_not_file", label, "template provenance must be a regular file, not a link or directory");
+  }
+  const configRoot = join(root, ".kxm");
+  let parent = dirname(file);
+  while (parent !== root) {
+    const parentStat = lstatSync(parent);
+    if (parentStat.isSymbolicLink() || !parentStat.isDirectory()) {
+      fail("path", "resource_parent_symlink", label, "template provenance parents must be regular directories");
+    }
+    if (parent === configRoot) break;
+    parent = dirname(parent);
+  }
+  const value = parseRestrictedYaml(readFileSync(file), label);
+  const issues = registry.validateTemplateProvenance(value, label);
+  if (issues.length > 0) throw new VnextConfigError(issues);
+  if (!resolveVnextTemplateBaseline(value)) {
+    fail("semantic", "template_provenance_revision_invalid", label, "template provenance does not exactly match a supported built-in baseline");
+  }
+  const files = Array.isArray(value.files) ? value.files : [];
+  const seen = new Set<string>();
+  let prior = "";
+  let managedBytes = 0;
+  for (const candidate of files) {
+    const record = objectValue(candidate);
+    const path = record && stringValue(record.path);
+    if (!path) continue;
+    managedBytes += typeof record.bytes === "number" ? record.bytes : 0;
+    const folded = path.toLocaleLowerCase("en-US");
+    if (!path.startsWith(".kxm/") || path === label || !portablePath(path)) {
+      fail("path", "template_provenance_path_invalid", label, `managed path ${path} is not a portable project-configuration path`);
+    }
+    if (seen.has(folded)) fail("path", "template_provenance_path_collision", label, `managed path ${path} collides after case folding`);
+    if (prior && compareCodeUnits(prior, path) >= 0) fail("semantic", "template_provenance_order_invalid", label, "managed file entries must use strict code-unit order");
+    seen.add(folded);
+    prior = path;
+  }
+  if (managedBytes > 8 * 1024 * 1024) {
+    fail("parse", "template_provenance_bounds_exceeded", label, "managed template manifest exceeds 8388608 bytes");
+  }
+  return value;
 }
 
 function listNamedResources(
@@ -1024,6 +1098,13 @@ export function loadVnextProject(projectRoot: string, options: VnextConfigOption
   const project = readResource(registry, root, join(root, ".kxm", "project.yaml"), ".kxm/project.yaml", "project");
   const earlyIssues: VnextConfigIssue[] = [];
   validatePortablePaths(project, earlyIssues);
+  const templateProvenance = readTemplateProvenance(registry, root);
+  if (templateProvenance && templateProvenance.inputs && typeof templateProvenance.inputs === "object" && !Array.isArray(templateProvenance.inputs)) {
+    const provenanceProjectId = stringValue((templateProvenance.inputs as JsonObject).projectId);
+    if (provenanceProjectId !== stringValue(project.value.id)) {
+      earlyIssues.push(issue("semantic", "template_provenance_project_mismatch", ".kxm/template-provenance.yaml", "template provenance belongs to a different project identity"));
+    }
+  }
   const declaredRepositoryIds = new Set(valuesOf(project.value, "repositories")
     .map((candidate) => stringValue(objectValue(candidate)?.id))
     .filter((candidate): candidate is string => candidate !== undefined));
@@ -1155,6 +1236,7 @@ export function loadVnextProject(projectRoot: string, options: VnextConfigOption
     models,
     workflows,
     environments,
+    ...(templateProvenance === undefined ? {} : { templateProvenance }),
     resources,
     configRevision: bundleRevision(resources),
   };

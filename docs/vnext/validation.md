@@ -55,6 +55,55 @@ are rejected unless a schema explicitly defines an extension map.
   exact, bounded host record keyed by the canonical control-root path; reject
   corrupt, linked, unknown, control-rebinding, or project-mismatched records.
 
+#### Managed-template reconciliation
+
+A project created by the built-in initializer records an exact, bounded
+`kxm.template-provenance.v1` manifest. SHA-256 covers the UTF-8/LF file bytes;
+comments and formatting therefore count as user edits. The separate authority
+hash excludes only names/descriptions/purpose prose and conservatively includes
+repository access, tools, network, secrets, executors, gates, assignment
+ceilings, synchronization, and other executable policy.
+
+For every managed path, three-way classification compares recorded baseline
+`B`, current local bytes `L`, and pinned target bytes `T`, with absence as a
+first-class value:
+
+| Condition | Class | Automatic action |
+|---|---|---|
+| `B = L = T` | `unchanged` | None |
+| `L = T`, while `B` differs | `converged` | None |
+| `L = B`, while `T` differs | `template-only` | Replace only when the authority hash is unchanged |
+| `T = B`, while `L` differs | `user-only` | Preserve exact local bytes |
+| Otherwise | `conflict` | Preserve and report |
+
+A new managed path or deletion requires review in this slice. Provenance-free
+projects remain valid when their resources are valid, but KXM MUST NOT infer a
+baseline or adopt their files automatically.
+
+Before repair changes any project file, it constructs and validates a bounded
+shadow bundle containing user-only bytes plus the proposed safe replacements.
+The fixed sibling transaction then pins an exact plan and target artifacts; it
+backs up every replacement preimage, checks each preimage again immediately
+before atomic file replacement, and installs provenance last. It carries no
+repository-binding authority: an explicit binding is validated and made durable
+in Runtime-local state before repair mutates Git resources. The reader
+re-derives every operation file, action, source, and target from the immutable
+supported-template registry, rather than trusting a self-hash. Recovery derives
+truth from destination hashes rather than trusting the recorded phase. A target
+already present is complete, a matching preimage is pending, and any third
+value blocks without overwrite. Repair moves a verified preimage aside and uses
+a same-directory hard link as a conditional no-replace install; a path recreated
+by a non-KXM writer is preserved and blocks repair. A filesystem without local
+hard-link support fails safely. Create keeps its same-volume directory rename.
+A newer process must finish the pinned transaction before planning another
+template revision.
+
+`--dry-run` may parse and classify a transaction but MUST NOT create the writer
+mutex, state directories, staging, backups, temporary files, or cleanup. Live
+mutations use a SQLite immediate transaction so process death releases the
+writer lock; the durable initialization operation, not a PID/age heuristic,
+drives recovery.
+
 ### 4. Cross-reference validation
 
 Resolve:

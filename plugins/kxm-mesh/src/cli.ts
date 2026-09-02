@@ -161,7 +161,12 @@ function redactCliValue(value: unknown, field = ""): unknown {
         || field === "verifierConfigSha256"
         || field === "rolePromptSha256"
         || field === "contentSha256"
-        || field === "configRevision")
+        || field === "configRevision"
+        || field === "baseSha256"
+        || field === "localSha256"
+        || field === "targetSha256"
+        || field === "sourceTemplateRevision"
+        || field === "targetTemplateRevision")
       && /^(?:sha256:)?[a-f0-9]{64}$/.test(value)
     ) return value;
     return redactSecrets(value);
@@ -457,6 +462,9 @@ async function cmdVnextInit(runtime: Runtime, options: { name?: string; projectI
       ...(initialized.configRevision ? { configRevision: initialized.configRevision } : {}),
       ...(initialized.localBindingFile ? { localBindingFile: initialized.localBindingFile } : {}),
       ...(initialized.bindingsChanged === undefined ? {} : { bindingsChanged: initialized.bindingsChanged }),
+      ...(initialized.repairPlan === undefined ? {} : { repairPlan: initialized.repairPlan }),
+      ...(initialized.resumePending === undefined ? {} : { resumePending: initialized.resumePending }),
+      ...(initialized.transactionKind === undefined ? {} : { transactionKind: initialized.transactionKind }),
       plannedOnly: initialized.action === "planned",
     };
     if (initialized.action === "created") {
@@ -465,6 +473,14 @@ async function cmdVnextInit(runtime: Runtime, options: { name?: string; projectI
     }
     if (initialized.action === "joined") {
       print(runtime.io, runtime.json, payload, `joined vNext project at ${initialized.projectRoot ?? runtime.cwd}`);
+      return 0;
+    }
+    if (initialized.action === "repaired") {
+      print(runtime.io, runtime.json, payload, `repaired vNext project at ${initialized.projectRoot ?? runtime.cwd}`);
+      return 0;
+    }
+    if (initialized.action === "resumed") {
+      print(runtime.io, runtime.json, payload, `resumed vNext ${initialized.transactionKind ?? "initialization"} at ${initialized.projectRoot ?? runtime.cwd}`);
       return 0;
     }
     if (initialized.action === "validated") {
@@ -477,7 +493,9 @@ async function cmdVnextInit(runtime: Runtime, options: { name?: string; projectI
     }
     const next = initialized.plan.mode === "migrate"
       ? "legacy state requires reviewed migration; conversion is not available in this implementation slice"
-      : "partial or invalid vNext state requires repair; no files were overwritten";
+      : initialized.repairPlan?.issues.length
+        ? "managed-template repair is blocked by conflicts or authority changes; local files were preserved"
+        : "partial or provenance-free vNext state requires explicit repair; no files were overwritten";
     print(runtime.io, runtime.json, payload, next);
     return 1;
   } catch (error) {

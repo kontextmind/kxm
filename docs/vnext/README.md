@@ -3,9 +3,11 @@
 > **Status: planned normative contract.** This directory describes the target
 > architecture accepted for KXM vNext. The commands and storage contracts are
 > not all implemented yet. The implemented Phase 1 slices provide restricted
-> YAML loading, atomic create/validate behavior, and explicit join with
-> Runtime-local repository bindings for `kxm init`; they do not activate a
-> Runtime, repair edited resources, or convert legacy state. For current v0.5 execution
+> YAML loading, provenance-backed atomic create/validate, resumable create and
+> repair transactions, conflict-free non-authority template reconciliation, and
+> explicit join with Runtime-local repository bindings for `kxm init`. They do
+> not activate a Runtime, infer ownership for provenance-free files, approve
+> permission expansion, or convert legacy state. For current v0.5 execution
 > behavior, use [Architecture](../architecture.md) and
 > [Configuration](../configuration.md).
 

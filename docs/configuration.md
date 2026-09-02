@@ -21,9 +21,33 @@ default record location is:
 - Linux: `$XDG_STATE_HOME/kxm/projects/<control-root-hash>/repository-bindings.json`, falling back to `~/.local/state/kxm`.
 
 `KXM_STATE_HOME` may override the KXM state root with an absolute path for
-managed installations and tests. Relative overrides fail closed. Absolute
-repository paths never enter Git configuration, and `--dry-run` validates and
-reports whether bindings would change without creating local state.
+managed installations and tests. Relative overrides fail closed. A persistent
+SQLite file under the authoritative worktree's private Git metadata supplies a
+process-death-released writer mutex for create, repair, resume, and binding
+updates; choosing another `KXM_STATE_HOME` cannot bypass it. Absolute repository
+paths never enter Git configuration, and `--dry-run` validates and
+reports whether bindings would change without creating or updating local state.
+
+Newly created projects include `.kxm/template-provenance.yaml`. It records
+bounded exact-byte hashes and conservative authority-projection hashes for the
+built-in files, but does not make user files disposable. When the built-in
+template changes, `kxm init` performs whole-file three-way classification:
+`unchanged`, `user-only`, `template-only`, `converged`, or `conflict`. It applies
+only conflict-free template-only description/purpose changes after validating a
+complete shadow project. Any authority change, overlapping edit, template
+deletion, invalid shadow, or missing provenance remains planning-only.
+
+A live create or repair uses the fixed `.kxm-init-transaction` sibling at the
+Git root. Its exact operation record pins target hashes; repair preimages are
+backed up there, each destination is checked immediately before atomic
+replacement, and template provenance is installed last. The complete record is
+re-derived from supported built-in source and target templates before every
+resume. The transaction never grants repository bindings: an explicit binding
+is fully validated and persisted in Runtime-local state before project repair
+begins. If the process stops,
+the next `kxm init` verifies and resumes that exact operation. Do not commit the
+transaction directory. A dry-run may inspect it but never resumes, cleans, or
+rewrites it.
 
 ## Hub settings
 
@@ -181,7 +205,7 @@ The tool allowlist is a capability boundary inside Pi, not a prompt suggestion â
 
 | Command | Purpose |
 |---|---|
-| `kxm init` | Atomically create a minimal vNext project, validate it without rewriting, or join an existing clone with repeatable `--repository <id=absolute-path>` member bindings stored outside Git. `--dry-run` performs no writes. Legacy, mixed, and invalid partial state remains planning-only. These configuration slices do **not** activate a vNext Runtime |
+| `kxm init` | Atomically create a provenance-tracked minimal vNext project, validate it without rewriting, resume a pinned interrupted create/repair, apply conflict-free non-authority template updates, or join an existing clone with repeatable `--repository <id=absolute-path>` member bindings stored outside Git. `--dry-run` performs no writes. Provenance-free/ambiguous repair, legacy conversion, and permission-expanding changes remain planning-only. These configuration slices do **not** activate a vNext Runtime |
 | `kxm agent worker` | Start a long-lived Pi worker. Use `--session-isolation workflow` to enable per-workflow Pi contexts; the upgrade-compatible default is `off`. Does not read a workspace `agents.json`; pass `--model`, `--tools`, and related flags explicitly |
 | `kxm session start --id <id> (--mix a,b \| --workflow <definitionId>)` | Write a `kxm.session.v1` manifest under `.kxm/assets/sessions/<id>/` and create asset directories. **Does not start any process.** `--workflow` records the whole roster, not the definition's participants |
 | `kxm session status` | Show PID claim files and recovery envelopes under `.kxm/state`; does not read `session.json` |
