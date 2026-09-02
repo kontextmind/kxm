@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -193,7 +193,7 @@ test("vNext init atomically creates a minimal project and is idempotent", () => 
     mkdirSync(nested, { recursive: true });
     const dry = initializeVnextProject(nested, { dryRun: true, projectName: "Ignored until apply" });
     assert.equal(dry.action, "planned");
-    assert.equal(dry.plan.projectRoot, dryRoot);
+    assert.equal(dry.plan.projectRoot, realpathSync.native(dryRoot));
     assert.equal(discoverVnextProjectRoot(dryRoot), undefined);
 
     const created = initializeVnextProject(root, {
@@ -252,7 +252,7 @@ test("vNext initialization planning is read-only and classifies create, migrate,
     const nestedRepository = join(readyRoot, "nested-independent-repository");
     makeGitRoot(nestedRepository);
     assert.equal(discoverVnextProjectRoot(nestedRepository), undefined, "discovery must stop at the nested Git boundary");
-    assert.equal(planVnextInitialization(nestedRepository).projectRoot, nestedRepository);
+    assert.equal(planVnextInitialization(nestedRepository).projectRoot, realpathSync.native(nestedRepository));
 
     mkdirSync(join(readyRoot, ".kxm", "config"), { recursive: true });
     writeFileSync(join(readyRoot, ".kxm", "config", "agents.json"), "[]\n");
