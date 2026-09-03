@@ -9,6 +9,7 @@ export const GENERATED_ARTIFACTS = [
   "plugins/kxm-mesh/dist/cli.js",
   "plugins/kxm-mesh/dist/server.js",
   "plugins/kxm-mesh/dist/mcp-server.js",
+  "plugins/kxm-mesh/dist/vnext-runtime-supervisor.js",
 ];
 
 function runGit(repository, args, allowFailure = false) {

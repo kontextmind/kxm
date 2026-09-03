@@ -340,6 +340,146 @@ test("kxm migrate plans, applies with reviewed decisions, and verifies the recei
   }
 });
 
+test("kxm run creates, lists, shows, and cancels a run offline with an auto-started supervisor", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "kxm-run-cli-"));
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-run-cli-state-"));
+  const env = { KXM_STATE_HOME: stateRoot };
+  try {
+    makeGitRoot(cwd);
+    initializeVnextProject(cwd, { projectId: "prj_01JRUNCLI000000000000000", projectName: "Run CLI" });
+    spawnSync("git", ["-C", cwd, "add", "-A"], { windowsHide: true });
+    spawnSync("git", ["-C", cwd, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "init"], { windowsHide: true });
+
+    const dryIo = capture();
+    assert.equal(await runCli(["run", "default", "--json", "--dry-run", "fix it"], env, dryIo, cwd), 0);
+    assert.match(dryIo.read().stdout, /"dryRun":true/);
+
+    const noWorkflowIo = capture();
+    assert.equal(await runCli(["run", "missing", "--json"], env, noWorkflowIo, cwd), 1);
+    assert.match(noWorkflowIo.read().stdout, /run_workflow_unknown/);
+
+    const runIo = capture();
+    assert.equal(await runCli(["run", "default", "--json", "fix the flaky gate"], env, runIo, cwd), 0);
+    const created = JSON.parse(runIo.read().stdout) as {
+      run: { runId: string; status: string; homeRuntimeId: string; configRevision: string };
+      idempotent: boolean;
+      supervisor: { runtimeId: string; port: number; started: boolean };
+    };
+    assert.equal(created.run.status, "created");
+    assert.equal(created.supervisor.started, true);
+    assert(!runIo.read().stdout.includes("flaky gate"), "prompt content never appears in output");
+
+    const listIo = capture();
+    assert.equal(await runCli(["runs", "list", "--json"], env, listIo, cwd), 0);
+    const list = JSON.parse(listIo.read().stdout) as { runs: Array<{ runId: string; status: string }> };
+    assert.equal(list.runs.length, 1);
+    assert.equal(list.runs[0]!.runId, created.run.runId);
+
+    const statusIo = capture();
+    assert.equal(await runCli(["runs", "status", created.run.runId, "--json"], env, statusIo, cwd), 0);
+    const status = JSON.parse(statusIo.read().stdout) as { run: { status: string; updatedAt: string } };
+    assert.equal(status.run.status, "created");
+
+    const cancelDryIo = capture();
+    assert.equal(await runCli(["runs", "cancel", created.run.runId, "--json", "--dry-run"], env, cancelDryIo, cwd), 0);
+    const stillCreatedIo = capture();
+    assert.equal(await runCli(["runs", "status", created.run.runId, "--json"], env, stillCreatedIo, cwd), 0);
+    assert.equal((JSON.parse(stillCreatedIo.read().stdout) as { run: { status: string } }).run.status, "created", "dry-run cancel writes nothing");
+
+    const cancelIo = capture();
+    assert.equal(await runCli(["runs", "cancel", created.run.runId, "--json"], env, cancelIo, cwd), 0);
+    const cancelled = JSON.parse(cancelIo.read().stdout) as { run: { status: string }; idempotent: boolean };
+    assert.equal(cancelled.run.status, "cancelled");
+    assert.equal(cancelled.idempotent, false);
+
+    const againIo = capture();
+    assert.equal(await runCli(["runs", "cancel", created.run.runId, "--json"], env, againIo, cwd), 0);
+    assert.equal((JSON.parse(againIo.read().stdout) as { idempotent: boolean }).idempotent, true, "repeated cancel on a terminal run is idempotent");
+
+    const runtimeStatusIo = capture();
+    assert.equal(await runCli(["runtime", "status", "--json"], env, runtimeStatusIo, cwd), 0);
+    assert.match(runtimeStatusIo.read().stdout, /"running":true/);
+
+    const stopIo = capture();
+    assert.equal(await runCli(["runtime", "stop", "--json"], env, stopIo, cwd), 0);
+    await new Promise((resolveWait) => setTimeout(resolveWait, 500));
+    const stoppedIo = capture();
+    assert.equal(await runCli(["runtime", "status", "--json"], env, stoppedIo, cwd), 1);
+  } finally {
+    try { await runCli(["runtime", "stop", "--json"], env, capture(), cwd); } catch { /* best effort */ }
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(stateRoot, { recursive: true, force: true });
+  }
+});
+
+test("kxm run and runtime commands cover workspace, project, and dry-run branches", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "kxm-run-cli-branches-"));
+  const noProject = mkdtempSync(join(tmpdir(), "kxm-run-cli-noproject-"));
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-run-cli-branches-state-"));
+  const env = { KXM_STATE_HOME: stateRoot };
+  try {
+    makeGitRoot(noProject);
+    const workspaceIo = capture();
+    assert.equal(await runCli(["--workspace", cwd, "run", "default", "--json"], env, workspaceIo, cwd), 2);
+    assert.match(workspaceIo.read().stdout, /workspace_option_unsupported/);
+
+    for (const [args, command] of [
+      [["run", "default", "--json"], "run"],
+      [["runs", "status", "run_x", "--json"], "run status"],
+      [["runs", "cancel", "run_x", "--json"], "run cancel"],
+      [["runs", "list", "--json"], "run list"],
+    ] as const) {
+      const io = capture();
+      assert.equal(await runCli([...args], env, io, noProject), 1, command);
+      assert.match(io.read().stdout, /project_required/, command);
+    }
+
+    makeGitRoot(cwd);
+    initializeVnextProject(cwd, { projectId: "prj_01JRUNBRANCH000000000000", projectName: "Run Branches" });
+    spawnSync("git", ["-C", cwd, "add", "-A"], { windowsHide: true });
+    spawnSync("git", ["-C", cwd, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "init"], { windowsHide: true });
+
+    const startDryIo = capture();
+    assert.equal(await runCli(["runtime", "start", "--json", "--dry-run"], env, startDryIo, cwd), 0);
+    assert.match(startDryIo.read().stdout, /"dryRun":true/);
+
+    const stopDryIo = capture();
+    assert.equal(await runCli(["runtime", "stop", "--json", "--dry-run"], env, stopDryIo, cwd), 0);
+
+    const stoppedStatusIo = capture();
+    assert.equal(await runCli(["runtime", "status", "--json"], env, stoppedStatusIo, cwd), 1);
+
+    const stopNotRunningIo = capture();
+    assert.equal(await runCli(["runtime", "stop", "--json"], env, stopNotRunningIo, cwd), 0);
+    assert.match(stopNotRunningIo.read().stdout, /"stopped":false/);
+
+    // Exercise the VnextConfigError catch branches on each run command.
+    const missingRunIo = capture();
+    assert.equal(await runCli(["runs", "cancel", "run_00000000000000000000000000000000", "--json"], env, missingRunIo, cwd), 1);
+    assert.match(missingRunIo.read().stdout, /run_unknown|run_cancel_failed/);
+
+    const missingStatusIo = capture();
+    assert.equal(await runCli(["runs", "status", "run_00000000000000000000000000000000", "--json"], env, missingStatusIo, cwd), 1);
+    assert.match(missingStatusIo.read().stdout, /run_unknown|run_status_failed/);
+
+    const projectFile = join(cwd, ".kxm", "project.yaml");
+    const projectYaml = readFileSync(projectFile, "utf8");
+    writeFileSync(projectFile, "schema: kxm.project.v1\n", "utf8");
+    const brokenRunIo = capture();
+    assert.equal(await runCli(["run", "default", "--json"], env, brokenRunIo, cwd), 1);
+    assert.match(brokenRunIo.read().stdout, /run_failed|schema_/);
+    const brokenListIo = capture();
+    assert.equal(await runCli(["runs", "list", "--json"], env, brokenListIo, cwd), 1);
+    assert.match(brokenListIo.read().stdout, /run_list_failed|schema_/);
+    writeFileSync(projectFile, projectYaml, "utf8");
+  } finally {
+    try { await runCli(["runtime", "stop", "--json"], env, capture(), cwd); } catch { /* best effort */ }
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(noProject, { recursive: true, force: true });
+    rmSync(stateRoot, { recursive: true, force: true });
+  }
+});
+
 test("kxm trust diff and check classify expansions against HEAD", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "kxm-trust-cli-"));
   const stateRoot = mkdtempSync(join(tmpdir(), "kxm-trust-cli-state-"));

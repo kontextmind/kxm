@@ -24,6 +24,13 @@ import { initializeVnextProject } from "./vnext-init.ts";
 import { applyVnextMigration, planVnextMigration, verifyVnextMigration } from "./vnext-migrate.ts";
 import { diffVnextProjectAgainstRevision, formatVnextPermissionDiff } from "./vnext-permission.ts";
 import { readVnextLocalBindings } from "./vnext-bindings.ts";
+import { loadVnextProject } from "./vnext-config.ts";
+import {
+  ensureVnextSupervisor,
+  vnextRuntimeRequest,
+  vnextSupervisorStatus,
+} from "./vnext-runtime-supervisor.ts";
+import { vnextRuntimePaths } from "./vnext-runtime-store.ts";
 import type { WorkflowEvidenceInput, WorkflowJournalEntry, WorkflowRun } from "./workflow.ts";
 
 export interface CliIo {
@@ -701,6 +708,203 @@ async function cmdVnextTrust(runtime: Runtime, check: boolean, options: { base?:
       return 1;
     }
     print(runtime.io, runtime.json, { ok: false, command, error: "trust_diff_io_failed" }, "permission diff failed because a local filesystem or Git operation did not complete");
+    return 1;
+  }
+}
+
+async function cmdVnextRun(runtime: Runtime, workflow: string | undefined, promptParts: string[]): Promise<number> {
+  if (runtime.workspaceFlag !== undefined) {
+    print(runtime.io, runtime.json, {
+      ok: false,
+      command: "run",
+      error: "workspace_option_unsupported",
+    }, "kxm run discovers the authoritative project from the current directory; --workspace is not supported");
+    return 2;
+  }
+  if (!workflow) {
+    print(runtime.io, runtime.json, { ok: false, command: "run", error: "workflow_required" }, "usage: kxm run <workflow> [prompt]");
+    return 2;
+  }
+  try {
+    const projectRoot = discoverVnextProjectRoot(runtime.cwd);
+    if (!projectRoot) {
+      print(runtime.io, runtime.json, { ok: false, command: "run", error: "project_required" }, "kxm run requires a vNext project (run kxm init first)");
+      return 1;
+    }
+    const bundle = loadVnextProject(projectRoot, {});
+    if (!bundle.workflows.has(workflow)) {
+      print(runtime.io, runtime.json, { ok: false, command: "run", error: "run_workflow_unknown", workflow }, `workflow ${workflow} does not exist in this project`);
+      return 1;
+    }
+    if (runtime.dryRun) {
+      print(runtime.io, runtime.json, {
+        ok: true,
+        command: "run",
+        dryRun: true,
+        projectRoot,
+        workflowId: workflow,
+        configRevision: bundle.configRevision,
+      }, `run plan: workflow ${workflow} at ${bundle.configRevision.slice(0, 19)}… (no run created)`);
+      return 0;
+    }
+    const supervisor = await ensureVnextSupervisor({ env: runtime.env });
+    const prompt = promptParts.join(" ").trim();
+    const acceptance = await vnextRuntimeRequest(supervisor, "POST", "/v1/runs", {
+      projectRoot,
+      workflowId: workflow,
+      prompt,
+    });
+    const run = acceptance.run as { runId: string; homeRuntimeId: string; status: string; configRevision: string };
+    print(runtime.io, runtime.json, {
+      ok: true,
+      command: "run",
+      idempotent: acceptance.idempotent === true,
+      run,
+      supervisor: { runtimeId: supervisor.runtimeId, port: supervisor.port, started: supervisor.started },
+    }, `run ${run.status}: ${run.runId} (home ${run.homeRuntimeId.slice(0, 12)}…, config ${run.configRevision.slice(0, 19)}…)`);
+    return 0;
+  } catch (error) {
+    if (error instanceof VnextConfigError) {
+      print(runtime.io, runtime.json, { ok: false, command: "run", error: "run_failed", issues: error.issues }, `run failed: ${error.message}`);
+      return 1;
+    }
+    print(runtime.io, runtime.json, { ok: false, command: "run", error: "run_io_failed" }, "run failed because a local operation did not complete");
+    return 1;
+  }
+}
+
+async function cmdVnextRunStatus(runtime: Runtime, runId: string): Promise<number> {
+  try {
+    const projectRoot = discoverVnextProjectRoot(runtime.cwd);
+    if (!projectRoot) {
+      print(runtime.io, runtime.json, { ok: false, command: "run status", error: "project_required" }, "kxm run status requires a vNext project");
+      return 1;
+    }
+    const supervisor = await ensureVnextSupervisor({ env: runtime.env });
+    const result = await vnextRuntimeRequest(supervisor, "GET", `/v1/runs/${encodeURIComponent(runId)}?projectRoot=${encodeURIComponent(projectRoot)}`);
+    const run = result.run as { runId: string; status: string; workflowId: string; configRevision: string; updatedAt: string };
+    print(runtime.io, runtime.json, { ok: true, command: "run status", run }, `run ${run.runId}: ${run.status} (workflow ${run.workflowId}, updated ${run.updatedAt})`);
+    return 0;
+  } catch (error) {
+    if (error instanceof VnextConfigError) {
+      print(runtime.io, runtime.json, { ok: false, command: "run status", error: "run_status_failed", issues: error.issues }, `run status failed: ${error.message}`);
+      return 1;
+    }
+    print(runtime.io, runtime.json, { ok: false, command: "run status", error: "run_status_io_failed" }, "run status failed because a local operation did not complete");
+    return 1;
+  }
+}
+
+async function cmdVnextRunCancel(runtime: Runtime, runId: string): Promise<number> {
+  try {
+    const projectRoot = discoverVnextProjectRoot(runtime.cwd);
+    if (!projectRoot) {
+      print(runtime.io, runtime.json, { ok: false, command: "run cancel", error: "project_required" }, "kxm run cancel requires a vNext project");
+      return 1;
+    }
+    if (runtime.dryRun) {
+      print(runtime.io, runtime.json, { ok: true, command: "run cancel", dryRun: true, runId }, `cancel plan: run ${runId} (no events written)`);
+      return 0;
+    }
+    const supervisor = await ensureVnextSupervisor({ env: runtime.env });
+    const result = await vnextRuntimeRequest(supervisor, "POST", `/v1/runs/${encodeURIComponent(runId)}/cancel?projectRoot=${encodeURIComponent(projectRoot)}`, {});
+    const run = result.run as { runId: string; status: string };
+    print(runtime.io, runtime.json, {
+      ok: true,
+      command: "run cancel",
+      idempotent: result.idempotent === true,
+      run,
+    }, `run ${run.runId}: ${run.status}`);
+    return 0;
+  } catch (error) {
+    if (error instanceof VnextConfigError) {
+      print(runtime.io, runtime.json, { ok: false, command: "run cancel", error: "run_cancel_failed", issues: error.issues }, `run cancel failed: ${error.message}`);
+      return 1;
+    }
+    print(runtime.io, runtime.json, { ok: false, command: "run cancel", error: "run_cancel_io_failed" }, "run cancel failed because a local operation did not complete");
+    return 1;
+  }
+}
+
+async function cmdVnextRunList(runtime: Runtime): Promise<number> {
+  try {
+    const projectRoot = discoverVnextProjectRoot(runtime.cwd);
+    if (!projectRoot) {
+      print(runtime.io, runtime.json, { ok: false, command: "run list", error: "project_required" }, "kxm run list requires a vNext project");
+      return 1;
+    }
+    const bundle = loadVnextProject(projectRoot, {});
+    const projectId = String(bundle.project.value.id);
+    const supervisor = await ensureVnextSupervisor({ env: runtime.env });
+    const result = await vnextRuntimeRequest(supervisor, "GET", `/v1/projects/${encodeURIComponent(projectId)}/runs?projectRoot=${encodeURIComponent(projectRoot)}`);
+    const runs = (result.runs ?? []) as Array<{ runId: string; status: string; workflowId: string; createdAt: string }>;
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: true, command: "run list", runs },
+      runs.length === 0 ? "no runs" : runs.map((run) => `${run.runId}  ${run.status}  ${run.workflowId}  ${run.createdAt}`).join("\n"),
+    );
+    return 0;
+  } catch (error) {
+    if (error instanceof VnextConfigError) {
+      print(runtime.io, runtime.json, { ok: false, command: "run list", error: "run_list_failed", issues: error.issues }, `run list failed: ${error.message}`);
+      return 1;
+    }
+    print(runtime.io, runtime.json, { ok: false, command: "run list", error: "run_list_io_failed" }, "run list failed because a local operation did not complete");
+    return 1;
+  }
+}
+
+async function cmdVnextRuntime(runtime: Runtime, action: string): Promise<number> {
+  const paths = vnextRuntimePaths({ env: runtime.env });
+  try {
+    if (action === "start") {
+      if (runtime.dryRun) {
+        print(runtime.io, runtime.json, { ok: true, command: "runtime start", dryRun: true }, "runtime supervisor would auto-start");
+        return 0;
+      }
+      const supervisor = await ensureVnextSupervisor({ env: runtime.env });
+      print(runtime.io, runtime.json, {
+        ok: true,
+        command: "runtime start",
+        runtimeId: supervisor.runtimeId,
+        port: supervisor.port,
+        started: supervisor.started,
+      }, `runtime supervisor ${supervisor.started ? "started" : "already running"}: ${supervisor.runtimeId} on 127.0.0.1:${supervisor.port}`);
+      return 0;
+    }
+    if (action === "status") {
+      const status = vnextSupervisorStatus(paths);
+      print(runtime.io, runtime.json, { ok: true, command: "runtime status", ...status }, status.running
+        ? `runtime supervisor running: ${status.runtimeId} pid ${status.pid} on 127.0.0.1:${status.port}`
+        : "runtime supervisor is not running");
+      return status.running ? 0 : 1;
+    }
+    if (action === "stop") {
+      const status = vnextSupervisorStatus(paths);
+      if (!status.running || !status.port) {
+        print(runtime.io, runtime.json, { ok: true, command: "runtime stop", stopped: false }, "runtime supervisor is not running");
+        return 0;
+      }
+      if (runtime.dryRun) {
+        print(runtime.io, runtime.json, { ok: true, command: "runtime stop", dryRun: true }, `would stop runtime supervisor pid ${status.pid}`);
+        return 0;
+      }
+      // The stop request posts a bearer token, so prove the listener is the
+      // real supervisor (keyed healthz challenge) before sending it.
+      const supervisor = await ensureVnextSupervisor({ env: runtime.env });
+      await vnextRuntimeRequest(supervisor, "POST", "/v1/shutdown", {});
+      print(runtime.io, runtime.json, { ok: true, command: "runtime stop", stopped: true }, `runtime supervisor ${status.runtimeId} stopping`);
+      return 0;
+    }
+    print(runtime.io, runtime.json, { ok: false, command: "runtime", error: "unknown_action" }, `unknown runtime action: ${action}`);
+    return 2;
+  } catch (error) {
+    if (error instanceof VnextConfigError) {
+      print(runtime.io, runtime.json, { ok: false, command: "runtime", error: "runtime_failed", issues: error.issues }, `runtime failed: ${error.message}`);
+      return 1;
+    }
+    print(runtime.io, runtime.json, { ok: false, command: "runtime", error: "runtime_io_failed" }, "runtime failed because a local operation did not complete");
     return 1;
   }
 }
@@ -1700,6 +1904,44 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
   addGlobalOptions(migrate.command("verify").description("Verify a migration receipt against current sources and target bundle"))
     .action(async function migrateVerifyAction(this: Command) {
       result.code = await cmdVnextMigrateVerify(runtimeFrom(ctx, this));
+    });
+
+  addGlobalOptions(program.command("run").description("Create and manage vNext runs (offline-first)")
+    .argument("[workflow]", "Workflow id to run")
+    .argument("[prompt...]", "Run prompt (hashed, never stored raw)")
+    .action(async function runAction(this: Command, workflow: string | undefined, promptParts: string[]) {
+      result.code = await cmdVnextRun(runtimeFrom(ctx, this), workflow, promptParts);
+    }));
+  const runCmd = addGlobalOptions(program.command("runs").description("Inspect vNext runs"));
+  runCmd.helpCommand("help", "Show runs help");
+  addGlobalOptions(runCmd.command("status").description("Show the projected status of a run"))
+    .argument("<runId>", "Run id")
+    .action(async function runStatusAction(this: Command, runId: string) {
+      result.code = await cmdVnextRunStatus(runtimeFrom(ctx, this), runId);
+    });
+  addGlobalOptions(runCmd.command("cancel").description("Durably request cancellation of a run"))
+    .argument("<runId>", "Run id")
+    .action(async function runCancelAction(this: Command, runId: string) {
+      result.code = await cmdVnextRunCancel(runtimeFrom(ctx, this), runId);
+    });
+  addGlobalOptions(runCmd.command("list").description("List recent runs for the current project"))
+    .action(async function runListAction(this: Command) {
+      result.code = await cmdVnextRunList(runtimeFrom(ctx, this));
+    });
+
+  const runtimeCmd = addGlobalOptions(program.command("runtime").description("Manage the vNext Runtime supervisor"));
+  runtimeCmd.helpCommand("help", "Show runtime help");
+  addGlobalOptions(runtimeCmd.command("start").description("Start the Runtime supervisor if not running"))
+    .action(async function runtimeStartAction(this: Command) {
+      result.code = await cmdVnextRuntime(runtimeFrom(ctx, this), "start");
+    });
+  addGlobalOptions(runtimeCmd.command("status").description("Show Runtime supervisor liveness"))
+    .action(async function runtimeStatusAction(this: Command) {
+      result.code = await cmdVnextRuntime(runtimeFrom(ctx, this), "status");
+    });
+  addGlobalOptions(runtimeCmd.command("stop").description("Gracefully stop the Runtime supervisor"))
+    .action(async function runtimeStopAction(this: Command) {
+      result.code = await cmdVnextRuntime(runtimeFrom(ctx, this), "stop");
     });
 
   const trust = addGlobalOptions(program.command("trust").description("Permission-diff trust review for vNext configuration"));

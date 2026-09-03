@@ -2987,7 +2987,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve9.call(this, root, ref);
+      let _sch = resolve11.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a = root.localRefs) === null || _a === void 0 ? void 0 : _a[ref];
         const { schemaId } = this.opts;
@@ -3014,7 +3014,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve9(root, ref) {
+    function resolve11(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3839,7 +3839,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve9(baseURI, relativeURI, options) {
+    function resolve11(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const {
         parsed: baseParsed,
@@ -4201,7 +4201,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve: resolve9,
+      resolve: resolve11,
       resolveComponent,
       equal,
       serialize,
@@ -14776,12 +14776,12 @@ var require_dist = __commonJS({
 });
 
 // plugins/kxm-mesh/src/cli.ts
-import { spawn } from "node:child_process";
-import { createHmac as createHmac2, randomUUID as randomUUID5 } from "node:crypto";
-import { existsSync as existsSync10, mkdirSync as mkdirSync11, readFileSync as readFileSync10, readdirSync as readdirSync5, writeFileSync as writeFileSync10 } from "node:fs";
-import { basename as basename3, join as join17, resolve as resolve8 } from "node:path";
-import { DatabaseSync as DatabaseSync3 } from "node:sqlite";
-import { fileURLToPath as fileURLToPath3 } from "node:url";
+import { spawn as spawn2 } from "node:child_process";
+import { createHmac as createHmac3, randomUUID as randomUUID6 } from "node:crypto";
+import { existsSync as existsSync12, mkdirSync as mkdirSync13, readFileSync as readFileSync11, readdirSync as readdirSync5, writeFileSync as writeFileSync11 } from "node:fs";
+import { basename as basename3, join as join19, resolve as resolve10 } from "node:path";
+import { DatabaseSync as DatabaseSync4 } from "node:sqlite";
+import { fileURLToPath as fileURLToPath4 } from "node:url";
 
 // node_modules/commander/lib/error.js
 var CommanderError = class extends Error {
@@ -18671,7 +18671,7 @@ async function watchGithubChecks(input) {
   }
   const fetchImpl = input.fetchImpl ?? fetch;
   const now = input.now ?? Date.now;
-  const sleep = input.sleep ?? ((ms) => new Promise((resolve9) => setTimeout(resolve9, ms)));
+  const sleep = input.sleep ?? ((ms) => new Promise((resolve11) => setTimeout(resolve11, ms)));
   const deadline = now() + input.timeoutMs;
   const headers = {
     authorization: `Bearer ${token}`,
@@ -24340,10 +24340,10 @@ var TuiBase = class _TuiBase extends Container {
    * @returns Promise containing the parsed RGB color, or undefined if it times out or fails to parse.
    */
   queryTerminalBackgroundColor({ timeoutMs }) {
-    return new Promise((resolve9) => {
+    return new Promise((resolve11) => {
       const query = {
         settled: false,
-        resolve: resolve9,
+        resolve: resolve11,
         timer: void 0
       };
       query.timer = setTimeout(() => {
@@ -24366,7 +24366,7 @@ var TuiBase = class _TuiBase extends Container {
    * `CSI ? 997 ; 1 n` for dark or `CSI ? 997 ; 2 n` for light.
    */
   queryTerminalColorScheme({ timeoutMs }) {
-    return new Promise((resolve9) => {
+    return new Promise((resolve11) => {
       let settled = false;
       let timer;
       let unsubscribe = () => {
@@ -24380,7 +24380,7 @@ var TuiBase = class _TuiBase extends Container {
           timer = void 0;
         }
         unsubscribe();
-        resolve9(scheme);
+        resolve11(scheme);
       };
       unsubscribe = this.onTerminalColorSchemeChange(settle);
       timer = setTimeout(() => settle(void 0), timeoutMs);
@@ -26129,7 +26129,7 @@ var ProcessTerminal = class {
           break;
         if (now - lastDataTime >= idleMs)
           break;
-        await new Promise((resolve9) => setTimeout(resolve9, Math.min(idleMs, timeLeft)));
+        await new Promise((resolve11) => setTimeout(resolve11, Math.min(idleMs, timeLeft)));
       }
     } finally {
       process.stdin.removeListener("data", onData);
@@ -28176,11 +28176,11 @@ async function readJson(response) {
 }
 async function waitForReconnect(signal, milliseconds = 1e3) {
   if (signal.aborted) return;
-  await new Promise((resolve9) => {
+  await new Promise((resolve11) => {
     const done = () => {
       clearTimeout(timer);
       signal.removeEventListener("abort", done);
-      resolve9();
+      resolve11();
     };
     const timer = setTimeout(done, milliseconds);
     timer.unref();
@@ -29403,8 +29403,8 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
       const writable = Object.values(objectValue(step.repositories) ?? {}).filter((access) => access === "write").length;
       if (maxWriteRepositories > writable) issues.push(issue("semantic", "write_repository_bound_invalid", file, `${stepId} maxWriteRepositories exceeds writable repository scope`));
     }
-    const join18 = objectValue(step.join);
-    const minimumPassed = join18 && typeof join18.minimumPassed === "number" ? join18.minimumPassed : void 0;
+    const join20 = objectValue(step.join);
+    const minimumPassed = join20 && typeof join20.minimumPassed === "number" ? join20.minimumPassed : void 0;
     if (minimumPassed !== void 0 && minimumPassed > maximum) issues.push(issue("semantic", "join_impossible", file, `${stepId} minimumPassed exceeds assignment maximum`));
     const distinctBy = names(assignment?.distinctBy);
     if (distinctBy.length > 0) {
@@ -33660,9 +33660,420 @@ function verifyVnextMigration(projectRoot, options = {}) {
   }
 }
 
+// plugins/kxm-mesh/src/vnext-runtime-supervisor.ts
+import { spawn } from "node:child_process";
+import { createHash as createHash8, createHmac as createHmac2, randomBytes, timingSafeEqual } from "node:crypto";
+import { chmodSync as chmodSync4, existsSync as existsSync11, lstatSync as lstatSync7, mkdirSync as mkdirSync12, readFileSync as readFileSync10, renameSync as renameSync6, rmSync as rmSync6, writeFileSync as writeFileSync10 } from "node:fs";
+import { dirname as dirname8, isAbsolute as isAbsolute5, join as join18, resolve as resolve9 } from "node:path";
+import { fileURLToPath as fileURLToPath3 } from "node:url";
+
+// plugins/kxm-mesh/src/vnext-runtime-store.ts
+import { createHash as createHash7, randomUUID as randomUUID5 } from "node:crypto";
+import { existsSync as existsSync10, lstatSync as lstatSync6, mkdirSync as mkdirSync11, realpathSync as realpathSync4 } from "node:fs";
+import { dirname as dirname7, join as join17, resolve as resolve8 } from "node:path";
+import { DatabaseSync as DatabaseSync3 } from "node:sqlite";
+function vnextRuntimePaths(options = {}) {
+  const stateRoot = options.stateRoot ? resolve8(options.stateRoot) : vnextUserStateRoot({ ...options.env ? { env: options.env } : {}, ...options.homeDir ? { homeDir: options.homeDir } : {} });
+  const runtimeDir = join17(stateRoot, "runtime");
+  return {
+    stateRoot,
+    runtimeDir,
+    registryDb: join17(runtimeDir, "registry.db"),
+    projectsDir: join17(runtimeDir, "projects")
+  };
+}
+function runtimeIssue(phase, code, file, message) {
+  return { phase, code, file, message };
+}
+function runtimeError(code, file, message) {
+  return new VnextConfigError([runtimeIssue("semantic", code, file, message)]);
+}
+function projectRuntimeKey(projectRoot) {
+  let canonical2;
+  try {
+    canonical2 = realpathSync4.native(resolve8(projectRoot));
+  } catch {
+    canonical2 = resolve8(projectRoot);
+  }
+  const folded = process.platform === "win32" ? canonical2.toLocaleLowerCase("en-US") : canonical2;
+  return createHash7("sha256").update(folded, "utf8").digest("hex").slice(0, 24);
+}
+function checkedParent(path5, description) {
+  const parent = dirname7(path5);
+  if (!existsSync10(parent)) mkdirSync11(parent, { recursive: true, mode: 448 });
+  const stat = lstatSync6(parent);
+  if (stat.isSymbolicLink() || !stat.isDirectory()) {
+    throw runtimeError("runtime_path_invalid", description, `${description} parent must be a regular directory, not a link`);
+  }
+}
+function openDatabase(file, description, schema) {
+  checkedParent(file, description);
+  if (existsSync10(file)) {
+    const stat = lstatSync6(file);
+    if (stat.isSymbolicLink() || !stat.isFile()) {
+      throw runtimeError("runtime_path_invalid", description, `${description} must be a regular file, not a link or directory`);
+    }
+  }
+  for (const sidecar of [`${file}-wal`, `${file}-shm`]) {
+    if (existsSync10(sidecar) && lstatSync6(sidecar).isSymbolicLink()) {
+      throw runtimeError("runtime_path_invalid", description, `${description} sidecar must not be a link`);
+    }
+  }
+  const database = new DatabaseSync3(file);
+  database.exec("PRAGMA busy_timeout = 5000");
+  const row = database.prepare("PRAGMA user_version").get();
+  const version = row?.user_version ?? 0;
+  if (version > 1) {
+    database.close();
+    throw runtimeError("runtime_schema_newer", description, `${description} schema version ${version} is newer than this runtime supports`);
+  }
+  database.exec("PRAGMA journal_mode = WAL");
+  database.exec("PRAGMA synchronous = NORMAL");
+  database.exec(schema);
+  return database;
+}
+var REGISTRY_SCHEMA = `
+CREATE TABLE IF NOT EXISTS supervisor (
+  singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+  runtime_id TEXT NOT NULL,
+  pid INTEGER NOT NULL,
+  port INTEGER NOT NULL,
+  token_hash TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  heartbeat_at TEXT NOT NULL,
+  state TEXT NOT NULL
+) STRICT;
+CREATE TABLE IF NOT EXISTS projects (
+  project_id TEXT PRIMARY KEY,
+  project_root TEXT NOT NULL,
+  project_key TEXT NOT NULL UNIQUE,
+  home_runtime_id TEXT NOT NULL,
+  config_revision TEXT,
+  registered_at TEXT NOT NULL
+) STRICT;
+PRAGMA user_version = 1;
+`;
+var VnextRuntimeRegistry = class {
+  path;
+  database;
+  constructor(path5) {
+    this.path = resolve8(path5);
+    this.database = openDatabase(this.path, "runtime registry", REGISTRY_SCHEMA);
+  }
+  close() {
+    this.database.close();
+  }
+  /** Atomically claim or refresh the supervisor singleton. Returns the record that now owns it. */
+  claimSupervisor(record) {
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      const existing = this.readSupervisorRow();
+      if (!existing) {
+        this.database.prepare(`
+          INSERT INTO supervisor (singleton_id, runtime_id, pid, port, token_hash, started_at, heartbeat_at, state)
+          VALUES (1, ?, ?, ?, ?, ?, ?, 'running')
+        `).run(record.runtimeId, record.pid, record.port, record.tokenHash, record.now, record.now);
+        this.database.exec("COMMIT");
+        return { claimed: true, record: this.supervisor() };
+      }
+      if (existing.runtimeId === record.runtimeId && existing.pid === record.pid) {
+        this.database.prepare("UPDATE supervisor SET heartbeat_at = ?, state = 'running' WHERE singleton_id = 1").run(record.now);
+        this.database.exec("COMMIT");
+        return { claimed: true, record: this.supervisor() };
+      }
+      this.database.exec("ROLLBACK");
+      return { claimed: false, record: existing };
+    } catch (error) {
+      try {
+        this.database.exec("ROLLBACK");
+      } catch {
+      }
+      throw error;
+    }
+  }
+  /** Take over a dead supervisor's singleton, preserving its logical runtime identity and project home bindings. */
+  takeoverSupervisor(record) {
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      const existing = this.readSupervisorRow();
+      const runtimeId = existing?.runtimeId ?? record.runtimeId;
+      const updated = this.database.prepare(`
+        UPDATE supervisor
+        SET runtime_id = ?, pid = ?, port = ?, token_hash = ?, started_at = ?, heartbeat_at = ?, state = 'running'
+        WHERE singleton_id = 1 AND pid = ? AND heartbeat_at = ?
+      `).run(runtimeId, record.pid, record.port, record.tokenHash, record.now, record.now, record.observedDeadPid, record.observedHeartbeatAt);
+      if (updated.changes !== 1) {
+        this.database.exec("ROLLBACK");
+        throw runtimeError("runtime_supervisor_conflict", "supervisor", "another process claimed the supervisor singleton first");
+      }
+      this.database.exec("COMMIT");
+      return this.supervisor();
+    } catch (error) {
+      try {
+        this.database.exec("ROLLBACK");
+      } catch {
+      }
+      throw error;
+    }
+  }
+  markStopping(pid, now) {
+    this.database.prepare("UPDATE supervisor SET state = 'stopping', heartbeat_at = ? WHERE singleton_id = 1 AND pid = ?").run(now, pid);
+  }
+  markStopped(pid, now) {
+    this.database.prepare("UPDATE supervisor SET state = 'stopped', heartbeat_at = ? WHERE singleton_id = 1 AND pid = ?").run(now, pid);
+  }
+  heartbeat(pid, now) {
+    const result = this.database.prepare("UPDATE supervisor SET heartbeat_at = ? WHERE singleton_id = 1 AND pid = ?").run(now, pid);
+    return Number(result.changes);
+  }
+  readSupervisorRow() {
+    const row = this.database.prepare("SELECT runtime_id, pid, port, token_hash, started_at, heartbeat_at, state FROM supervisor WHERE singleton_id = 1").get();
+    return row ? {
+      runtimeId: row.runtime_id,
+      pid: row.pid,
+      port: row.port,
+      tokenHash: row.token_hash,
+      startedAt: row.started_at,
+      heartbeatAt: row.heartbeat_at,
+      state: row.state
+    } : void 0;
+  }
+  supervisor() {
+    return this.readSupervisorRow();
+  }
+  /** Register or revalidate a project's home binding. Home Runtime is immutable. */
+  registerProject(registration) {
+    const projectRoot = resolve8(registration.projectRoot);
+    const projectKey = projectRuntimeKey(projectRoot);
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      const byId = this.database.prepare("SELECT project_id, project_root, project_key, home_runtime_id, config_revision, registered_at FROM projects WHERE project_id = ?").get(registration.projectId);
+      const byKey = this.database.prepare("SELECT project_id, project_root, project_key, home_runtime_id, config_revision, registered_at FROM projects WHERE project_key = ?").get(projectKey);
+      const existing = byId ?? byKey;
+      if (existing) {
+        const problems = [];
+        if (byId && byId.project_key !== projectKey) problems.push(`project ${registration.projectId} is already bound to a different control root`);
+        if (byKey && byKey.project_id !== registration.projectId) problems.push(`control root is already bound to a different project id ${byKey.project_id}`);
+        if (existing.home_runtime_id !== registration.homeRuntimeId) problems.push(`project ${registration.projectId} home runtime is immutable and cannot be rebound`);
+        if (problems.length > 0) {
+          this.database.exec("ROLLBACK");
+          throw runtimeError("project_home_conflict", ".kxm/project.yaml", problems.join("; "));
+        }
+        const result = {
+          projectId: existing.project_id,
+          projectRoot: existing.project_root,
+          projectKey: existing.project_key,
+          homeRuntimeId: existing.home_runtime_id,
+          ...existing.config_revision !== null ? { configRevision: existing.config_revision } : {},
+          registeredAt: existing.registered_at
+        };
+        this.database.exec("COMMIT");
+        return result;
+      }
+      this.database.prepare(`
+        INSERT INTO projects (project_id, project_root, project_key, home_runtime_id, config_revision, registered_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(registration.projectId, projectRoot, projectKey, registration.homeRuntimeId, registration.configRevision ?? null, registration.now);
+      this.database.exec("COMMIT");
+      return {
+        projectId: registration.projectId,
+        projectRoot,
+        projectKey,
+        homeRuntimeId: registration.homeRuntimeId,
+        ...registration.configRevision !== void 0 ? { configRevision: registration.configRevision } : {},
+        registeredAt: registration.now
+      };
+    } catch (error) {
+      try {
+        this.database.exec("ROLLBACK");
+      } catch {
+      }
+      throw error;
+    }
+  }
+  project(projectId) {
+    const row = this.database.prepare("SELECT project_id, project_root, project_key, home_runtime_id, config_revision, registered_at FROM projects WHERE project_id = ?").get(projectId);
+    return row ? {
+      projectId: row.project_id,
+      projectRoot: row.project_root,
+      projectKey: row.project_key,
+      homeRuntimeId: row.home_runtime_id,
+      ...row.config_revision !== null ? { configRevision: row.config_revision } : {},
+      registeredAt: row.registered_at
+    } : void 0;
+  }
+  projectByRoot(projectRoot) {
+    const key = projectRuntimeKey(projectRoot);
+    const row = this.database.prepare("SELECT project_id, project_root, project_key, home_runtime_id, config_revision, registered_at FROM projects WHERE project_key = ?").get(key);
+    return row ? {
+      projectId: row.project_id,
+      projectRoot: row.project_root,
+      projectKey: row.project_key,
+      homeRuntimeId: row.home_runtime_id,
+      ...row.config_revision !== null ? { configRevision: row.config_revision } : {},
+      registeredAt: row.registered_at
+    } : void 0;
+  }
+};
+
+// plugins/kxm-mesh/src/vnext-runtime.ts
+var RUNTIME_EPOCH_NS = process.hrtime.bigint();
+
+// plugins/kxm-mesh/src/vnext-runtime-supervisor.ts
+var repoRoot = resolve9(fileURLToPath3(new URL("../../../", import.meta.url)));
+function vnextSupervisorTokenFile(paths) {
+  return join18(paths.runtimeDir, "supervisor.token");
+}
+function readVnextSupervisorToken(paths) {
+  const file = vnextSupervisorTokenFile(paths);
+  if (!existsSync11(file)) return void 0;
+  const stat = lstatSync7(file);
+  if (stat.isSymbolicLink() || !stat.isFile()) {
+    throw runtimeError("runtime_path_invalid", file, "supervisor token file must be a regular file, not a link");
+  }
+  const token = readFileSync10(file, "utf8").trim();
+  return token.length >= 32 ? token : void 0;
+}
+function processAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code === "EPERM";
+  }
+}
+var HEARTBEAT_STALE_MS = 15e3;
+var SUPERVISOR_ERROR_MAX_AGE_MS = 3e4;
+function supervisorErrorFile(paths) {
+  return join18(paths.runtimeDir, "supervisor.error");
+}
+function clearSupervisorError(paths) {
+  const file = supervisorErrorFile(paths);
+  if (existsSync11(file)) rmSync6(file, { force: true });
+}
+function readRecentSupervisorError(paths) {
+  const file = supervisorErrorFile(paths);
+  if (!existsSync11(file)) return void 0;
+  const ageMs = Date.now() - lstatSync7(file).mtimeMs;
+  if (ageMs > SUPERVISOR_ERROR_MAX_AGE_MS) return void 0;
+  return readFileSync10(file, "utf8").trim();
+}
+function vnextSupervisorStatus(paths) {
+  if (!existsSync11(paths.registryDb)) return { running: false };
+  const registry = new VnextRuntimeRegistry(paths.registryDb);
+  try {
+    const record = registry.supervisor();
+    if (!record) return { running: false };
+    const heartbeatAgeMs = Date.now() - Date.parse(record.heartbeatAt);
+    const fresh = Number.isFinite(heartbeatAgeMs) && heartbeatAgeMs < HEARTBEAT_STALE_MS;
+    const alive = record.state === "running" && fresh && processAlive(record.pid);
+    return {
+      running: alive,
+      runtimeId: record.runtimeId,
+      pid: record.pid,
+      port: record.port,
+      state: alive ? record.state : "dead",
+      heartbeatAt: record.heartbeatAt,
+      startedAt: record.startedAt
+    };
+  } finally {
+    registry.close();
+  }
+}
+async function probeSupervisorWithRetry(port, expectedRuntimeId, token) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (await probeSupervisor(port, expectedRuntimeId, token)) return true;
+    if (attempt < 2) await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+  }
+  return false;
+}
+async function probeSupervisor(port, expectedRuntimeId, token, timeoutMs = 750) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const nonce = randomBytes(16).toString("hex");
+    const response = await fetch(`http://127.0.0.1:${port}/healthz?nonce=${nonce}`, { signal: controller.signal });
+    if (!response.ok) return false;
+    const payload = await response.json();
+    const expectedProof = hashVnextTokenProof(token, nonce);
+    return payload.runtimeId === expectedRuntimeId && payload.tokenProof === expectedProof;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+function hashVnextTokenProof(token, nonce) {
+  return createHmac2("sha256", token).update(`kxm-runtime-token-proof\0${nonce}`, "utf8").digest("hex");
+}
+async function ensureVnextSupervisor(options = {}) {
+  const paths = vnextRuntimePaths(options.stateRoot !== void 0 ? { stateRoot: options.stateRoot } : { ...options.env ? { env: options.env } : {} });
+  const status = vnextSupervisorStatus(paths);
+  if (status.running && status.port) {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const token = readVnextSupervisorToken(paths);
+      if (token && await probeSupervisorWithRetry(status.port, status.runtimeId, token)) {
+        return { runtimeId: status.runtimeId, port: status.port, token, started: false };
+      }
+      if (attempt < 2) await new Promise((resolveWait) => setTimeout(resolveWait, 150));
+    }
+    throw runtimeError("runtime_supervisor_unreachable", paths.registryDb, `runtime supervisor pid ${status.pid} is registered as running but cannot be probed`);
+  }
+  clearSupervisorError(paths);
+  const scriptPath = join18(repoRoot, "scripts", "kxm-runtime-supervisor.mjs");
+  const spawnImpl = options.spawnImpl ?? ((script, env) => {
+    const child = spawn(process.execPath, [script], {
+      detached: true,
+      stdio: "ignore",
+      env,
+      windowsHide: true
+    });
+    child.unref();
+    if (child.pid === void 0) throw runtimeError("runtime_supervisor_spawn_failed", script, "could not spawn the runtime supervisor");
+    return child.pid;
+  });
+  const pid = spawnImpl(scriptPath, {
+    ...process.env,
+    KXM_STATE_HOME: paths.stateRoot
+  });
+  const deadline = Date.now() + 1e4;
+  while (Date.now() < deadline) {
+    await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+    const next = vnextSupervisorStatus(paths);
+    if (next.running && next.port) {
+      const token = readVnextSupervisorToken(paths);
+      if (token && await probeSupervisor(next.port, next.runtimeId, token)) {
+        return { runtimeId: next.runtimeId, port: next.port, token, started: true };
+      }
+    }
+    const errorDetail = readRecentSupervisorError(paths);
+    if (errorDetail) {
+      throw runtimeError("runtime_supervisor_start_failed", scriptPath, `runtime supervisor failed at startup: ${errorDetail}`);
+    }
+  }
+  throw runtimeError("runtime_supervisor_start_failed", scriptPath, `runtime supervisor (pid ${pid}) did not become ready in time`);
+}
+async function vnextRuntimeRequest(handle, method, path5, body) {
+  const response = await fetch(`http://127.0.0.1:${handle.port}${path5}`, {
+    method,
+    headers: {
+      authorization: `Bearer ${handle.token}`,
+      ...body !== void 0 ? { "content-type": "application/json" } : {}
+    },
+    ...body !== void 0 ? { body: JSON.stringify(body) } : {}
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    const code = typeof payload.error === "string" ? payload.error : "runtime_request_failed";
+    const message = typeof payload.message === "string" ? payload.message : `runtime request failed with HTTP ${response.status}`;
+    throw runtimeError(code, path5, message);
+  }
+  return payload;
+}
+
 // plugins/kxm-mesh/src/cli.ts
 var CLI_NAME = "kxm";
-var repoRoot = resolve8(fileURLToPath3(new URL("../../../", import.meta.url)));
+var repoRoot2 = resolve10(fileURLToPath4(new URL("../../../", import.meta.url)));
 var USAGE_ERROR_CODES = /* @__PURE__ */ new Set([
   "commander.help",
   "commander.helpDisplayed",
@@ -33678,7 +34089,7 @@ var USAGE_ERROR_CODES = /* @__PURE__ */ new Set([
 ]);
 function spawnScript(scriptName, extraEnv = {}) {
   return new Promise((resolveExit) => {
-    const child = spawn(process.execPath, [join17(repoRoot, "scripts", scriptName)], {
+    const child = spawn2(process.execPath, [join19(repoRoot2, "scripts", scriptName)], {
       stdio: "inherit",
       env: { ...process.env, ...extraEnv }
     });
@@ -33758,16 +34169,16 @@ function redactCliValue(value, field = "") {
   return value;
 }
 function workspaceDirs(cwd, workspaceFlag, env) {
-  const workdir = resolve8(env.PI_MESH_WORKDIR?.trim() || cwd);
-  const workspace = resolve8(workdir, workspaceFlag || env.PI_MESH_WORKSPACE_DIR?.trim() || ".kxm");
+  const workdir = resolve10(env.PI_MESH_WORKDIR?.trim() || cwd);
+  const workspace = resolve10(workdir, workspaceFlag || env.PI_MESH_WORKSPACE_DIR?.trim() || ".kxm");
   const derive = workspaceFlag !== void 0;
   return {
     workdir,
     workspace,
-    config: derive ? join17(workspace, "config") : resolve8(workdir, env.PI_MESH_CONFIG_DIR?.trim() || join17(workspace, "config")),
-    logs: derive ? join17(workspace, "logs") : resolve8(workdir, env.PI_MESH_LOGS_DIR?.trim() || join17(workspace, "logs")),
-    assets: derive ? join17(workspace, "assets") : resolve8(workdir, env.PI_MESH_ASSETS_DIR?.trim() || join17(workspace, "assets")),
-    state: derive ? join17(workspace, "state") : resolve8(workdir, env.PI_MESH_STATE_DIR?.trim() || join17(workspace, "state"))
+    config: derive ? join19(workspace, "config") : resolve10(workdir, env.PI_MESH_CONFIG_DIR?.trim() || join19(workspace, "config")),
+    logs: derive ? join19(workspace, "logs") : resolve10(workdir, env.PI_MESH_LOGS_DIR?.trim() || join19(workspace, "logs")),
+    assets: derive ? join19(workspace, "assets") : resolve10(workdir, env.PI_MESH_ASSETS_DIR?.trim() || join19(workspace, "assets")),
+    state: derive ? join19(workspace, "state") : resolve10(workdir, env.PI_MESH_STATE_DIR?.trim() || join19(workspace, "state"))
   };
 }
 function maskEnvName(name) {
@@ -33827,8 +34238,8 @@ async function hubGet(url, fetchImpl) {
   }
 }
 function localWorkflowSnapshot(dataPath, runId) {
-  if (!existsSync10(dataPath)) throw new Error("state_database_not_found");
-  const database = new DatabaseSync3(dataPath, { readOnly: true });
+  if (!existsSync12(dataPath)) throw new Error("state_database_not_found");
+  const database = new DatabaseSync4(dataPath, { readOnly: true });
   try {
     const rows = runId ? database.prepare("SELECT record FROM workflow_runs WHERE id = ?").all(runId) : database.prepare("SELECT record FROM workflow_runs ORDER BY rowid DESC LIMIT 200").all();
     const runs = rows.map((row) => JSON.parse(row.record));
@@ -33841,7 +34252,7 @@ function localWorkflowSnapshot(dataPath, runId) {
 async function postWorkflowStart(input) {
   const payload = input.event && input.payload.event === void 0 ? { ...input.payload, event: input.event } : input.payload;
   const body = JSON.stringify(payload);
-  const signature = `sha256=${createHmac2("sha256", input.secret).update(body).digest("hex")}`;
+  const signature = `sha256=${createHmac3("sha256", input.secret).update(body).digest("hex")}`;
   const response = await input.fetchImpl(`${input.serverUrl.replace(/\/$/, "")}/v1/webhooks/${encodeURIComponent(input.definitionId)}`, {
     method: "POST",
     headers: { "content-type": "application/json", "x-hub-signature-256": signature, "x-mesh-delivery-id": input.deliveryId, ...input.event ? { "x-github-event": input.event } : {} },
@@ -33920,7 +34331,7 @@ function activeWorkflowDefinition(runtime, definitionId) {
   let raw;
   if (file) {
     try {
-      raw = readFileSync10(resolve8(runtime.cwd, file), "utf8");
+      raw = readFileSync11(resolve10(runtime.cwd, file), "utf8");
     } catch {
       throw new Error("workflow definition file is unavailable");
     }
@@ -34230,12 +34641,200 @@ trust check failed: review every expansion above before merging`);
     return 1;
   }
 }
+async function cmdVnextRun(runtime, workflow, promptParts) {
+  if (runtime.workspaceFlag !== void 0) {
+    print(runtime.io, runtime.json, {
+      ok: false,
+      command: "run",
+      error: "workspace_option_unsupported"
+    }, "kxm run discovers the authoritative project from the current directory; --workspace is not supported");
+    return 2;
+  }
+  if (!workflow) {
+    print(runtime.io, runtime.json, { ok: false, command: "run", error: "workflow_required" }, "usage: kxm run <workflow> [prompt]");
+    return 2;
+  }
+  try {
+    const projectRoot = discoverVnextProjectRoot(runtime.cwd);
+    if (!projectRoot) {
+      print(runtime.io, runtime.json, { ok: false, command: "run", error: "project_required" }, "kxm run requires a vNext project (run kxm init first)");
+      return 1;
+    }
+    const bundle = loadVnextProject(projectRoot, {});
+    if (!bundle.workflows.has(workflow)) {
+      print(runtime.io, runtime.json, { ok: false, command: "run", error: "run_workflow_unknown", workflow }, `workflow ${workflow} does not exist in this project`);
+      return 1;
+    }
+    if (runtime.dryRun) {
+      print(runtime.io, runtime.json, {
+        ok: true,
+        command: "run",
+        dryRun: true,
+        projectRoot,
+        workflowId: workflow,
+        configRevision: bundle.configRevision
+      }, `run plan: workflow ${workflow} at ${bundle.configRevision.slice(0, 19)}\u2026 (no run created)`);
+      return 0;
+    }
+    const supervisor = await ensureVnextSupervisor({ env: runtime.env });
+    const prompt = promptParts.join(" ").trim();
+    const acceptance = await vnextRuntimeRequest(supervisor, "POST", "/v1/runs", {
+      projectRoot,
+      workflowId: workflow,
+      prompt
+    });
+    const run = acceptance.run;
+    print(runtime.io, runtime.json, {
+      ok: true,
+      command: "run",
+      idempotent: acceptance.idempotent === true,
+      run,
+      supervisor: { runtimeId: supervisor.runtimeId, port: supervisor.port, started: supervisor.started }
+    }, `run ${run.status}: ${run.runId} (home ${run.homeRuntimeId.slice(0, 12)}\u2026, config ${run.configRevision.slice(0, 19)}\u2026)`);
+    return 0;
+  } catch (error) {
+    if (error instanceof VnextConfigError) {
+      print(runtime.io, runtime.json, { ok: false, command: "run", error: "run_failed", issues: error.issues }, `run failed: ${error.message}`);
+      return 1;
+    }
+    print(runtime.io, runtime.json, { ok: false, command: "run", error: "run_io_failed" }, "run failed because a local operation did not complete");
+    return 1;
+  }
+}
+async function cmdVnextRunStatus(runtime, runId) {
+  try {
+    const projectRoot = discoverVnextProjectRoot(runtime.cwd);
+    if (!projectRoot) {
+      print(runtime.io, runtime.json, { ok: false, command: "run status", error: "project_required" }, "kxm run status requires a vNext project");
+      return 1;
+    }
+    const supervisor = await ensureVnextSupervisor({ env: runtime.env });
+    const result = await vnextRuntimeRequest(supervisor, "GET", `/v1/runs/${encodeURIComponent(runId)}?projectRoot=${encodeURIComponent(projectRoot)}`);
+    const run = result.run;
+    print(runtime.io, runtime.json, { ok: true, command: "run status", run }, `run ${run.runId}: ${run.status} (workflow ${run.workflowId}, updated ${run.updatedAt})`);
+    return 0;
+  } catch (error) {
+    if (error instanceof VnextConfigError) {
+      print(runtime.io, runtime.json, { ok: false, command: "run status", error: "run_status_failed", issues: error.issues }, `run status failed: ${error.message}`);
+      return 1;
+    }
+    print(runtime.io, runtime.json, { ok: false, command: "run status", error: "run_status_io_failed" }, "run status failed because a local operation did not complete");
+    return 1;
+  }
+}
+async function cmdVnextRunCancel(runtime, runId) {
+  try {
+    const projectRoot = discoverVnextProjectRoot(runtime.cwd);
+    if (!projectRoot) {
+      print(runtime.io, runtime.json, { ok: false, command: "run cancel", error: "project_required" }, "kxm run cancel requires a vNext project");
+      return 1;
+    }
+    if (runtime.dryRun) {
+      print(runtime.io, runtime.json, { ok: true, command: "run cancel", dryRun: true, runId }, `cancel plan: run ${runId} (no events written)`);
+      return 0;
+    }
+    const supervisor = await ensureVnextSupervisor({ env: runtime.env });
+    const result = await vnextRuntimeRequest(supervisor, "POST", `/v1/runs/${encodeURIComponent(runId)}/cancel?projectRoot=${encodeURIComponent(projectRoot)}`, {});
+    const run = result.run;
+    print(runtime.io, runtime.json, {
+      ok: true,
+      command: "run cancel",
+      idempotent: result.idempotent === true,
+      run
+    }, `run ${run.runId}: ${run.status}`);
+    return 0;
+  } catch (error) {
+    if (error instanceof VnextConfigError) {
+      print(runtime.io, runtime.json, { ok: false, command: "run cancel", error: "run_cancel_failed", issues: error.issues }, `run cancel failed: ${error.message}`);
+      return 1;
+    }
+    print(runtime.io, runtime.json, { ok: false, command: "run cancel", error: "run_cancel_io_failed" }, "run cancel failed because a local operation did not complete");
+    return 1;
+  }
+}
+async function cmdVnextRunList(runtime) {
+  try {
+    const projectRoot = discoverVnextProjectRoot(runtime.cwd);
+    if (!projectRoot) {
+      print(runtime.io, runtime.json, { ok: false, command: "run list", error: "project_required" }, "kxm run list requires a vNext project");
+      return 1;
+    }
+    const bundle = loadVnextProject(projectRoot, {});
+    const projectId = String(bundle.project.value.id);
+    const supervisor = await ensureVnextSupervisor({ env: runtime.env });
+    const result = await vnextRuntimeRequest(supervisor, "GET", `/v1/projects/${encodeURIComponent(projectId)}/runs?projectRoot=${encodeURIComponent(projectRoot)}`);
+    const runs = result.runs ?? [];
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: true, command: "run list", runs },
+      runs.length === 0 ? "no runs" : runs.map((run) => `${run.runId}  ${run.status}  ${run.workflowId}  ${run.createdAt}`).join("\n")
+    );
+    return 0;
+  } catch (error) {
+    if (error instanceof VnextConfigError) {
+      print(runtime.io, runtime.json, { ok: false, command: "run list", error: "run_list_failed", issues: error.issues }, `run list failed: ${error.message}`);
+      return 1;
+    }
+    print(runtime.io, runtime.json, { ok: false, command: "run list", error: "run_list_io_failed" }, "run list failed because a local operation did not complete");
+    return 1;
+  }
+}
+async function cmdVnextRuntime(runtime, action) {
+  const paths = vnextRuntimePaths({ env: runtime.env });
+  try {
+    if (action === "start") {
+      if (runtime.dryRun) {
+        print(runtime.io, runtime.json, { ok: true, command: "runtime start", dryRun: true }, "runtime supervisor would auto-start");
+        return 0;
+      }
+      const supervisor = await ensureVnextSupervisor({ env: runtime.env });
+      print(runtime.io, runtime.json, {
+        ok: true,
+        command: "runtime start",
+        runtimeId: supervisor.runtimeId,
+        port: supervisor.port,
+        started: supervisor.started
+      }, `runtime supervisor ${supervisor.started ? "started" : "already running"}: ${supervisor.runtimeId} on 127.0.0.1:${supervisor.port}`);
+      return 0;
+    }
+    if (action === "status") {
+      const status = vnextSupervisorStatus(paths);
+      print(runtime.io, runtime.json, { ok: true, command: "runtime status", ...status }, status.running ? `runtime supervisor running: ${status.runtimeId} pid ${status.pid} on 127.0.0.1:${status.port}` : "runtime supervisor is not running");
+      return status.running ? 0 : 1;
+    }
+    if (action === "stop") {
+      const status = vnextSupervisorStatus(paths);
+      if (!status.running || !status.port) {
+        print(runtime.io, runtime.json, { ok: true, command: "runtime stop", stopped: false }, "runtime supervisor is not running");
+        return 0;
+      }
+      if (runtime.dryRun) {
+        print(runtime.io, runtime.json, { ok: true, command: "runtime stop", dryRun: true }, `would stop runtime supervisor pid ${status.pid}`);
+        return 0;
+      }
+      const supervisor = await ensureVnextSupervisor({ env: runtime.env });
+      await vnextRuntimeRequest(supervisor, "POST", "/v1/shutdown", {});
+      print(runtime.io, runtime.json, { ok: true, command: "runtime stop", stopped: true }, `runtime supervisor ${status.runtimeId} stopping`);
+      return 0;
+    }
+    print(runtime.io, runtime.json, { ok: false, command: "runtime", error: "unknown_action" }, `unknown runtime action: ${action}`);
+    return 2;
+  } catch (error) {
+    if (error instanceof VnextConfigError) {
+      print(runtime.io, runtime.json, { ok: false, command: "runtime", error: "runtime_failed", issues: error.issues }, `runtime failed: ${error.message}`);
+      return 1;
+    }
+    print(runtime.io, runtime.json, { ok: false, command: "runtime", error: "runtime_io_failed" }, "runtime failed because a local operation did not complete");
+    return 1;
+  }
+}
 async function cmdInit(runtime) {
   const created = [];
   for (const directory of [runtime.dirs.config, runtime.dirs.logs, runtime.dirs.assets, runtime.dirs.state, ...standardAssetDirs(runtime.dirs.assets)]) {
     if (runtime.dryRun) created.push(directory);
     else {
-      mkdirSync11(directory, { recursive: true });
+      mkdirSync13(directory, { recursive: true });
       created.push(directory);
     }
   }
@@ -34266,13 +34865,13 @@ async function cmdValidate(runtime, fileFlag) {
     return 2;
   }
   const selectedFile = explicitFile || configuredFile;
-  const file = selectedFile ? resolve8(runtime.cwd, selectedFile) : void 0;
-  if (file && !existsSync10(file)) {
+  const file = selectedFile ? resolve10(runtime.cwd, selectedFile) : void 0;
+  if (file && !existsSync12(file)) {
     printWorker(runtime, worker, { ok: false, command: "validate", error: "file_not_found", file }, `workflow file not found: ${file}`);
     return 1;
   }
   try {
-    const raw = file ? readFileSync10(file, "utf8") : inline;
+    const raw = file ? readFileSync11(file, "utf8") : inline;
     const warnings = [];
     const definitions = parseWorkflowDefinitions(raw, runtime.env, (message) => warnings.push(message));
     const secretEnvs = definitions.map((definition) => ({
@@ -34297,7 +34896,7 @@ async function cmdValidate(runtime, fileFlag) {
 }
 async function cmdArtifactsExist(runtime, pathFlag) {
   const worker = gateOf(runtime, "artifacts-exist");
-  const checked = verifyArtifactExists(runtime.dirs.assets, resolve8(runtime.cwd, pathFlag));
+  const checked = verifyArtifactExists(runtime.dirs.assets, resolve10(runtime.cwd, pathFlag));
   if (!checked.ok) {
     printWorker(
       runtime,
@@ -34323,7 +34922,7 @@ async function cmdStatus(runtime) {
   return payload.ok ? 0 : 1;
 }
 async function cmdMeshTui(runtime) {
-  const dataPath = resolve8(runtime.dirs.workdir, runtime.env.PI_MESH_DATA_PATH?.trim() || join17(runtime.dirs.state, "mesh.db"));
+  const dataPath = resolve10(runtime.dirs.workdir, runtime.env.PI_MESH_DATA_PATH?.trim() || join19(runtime.dirs.state, "mesh.db"));
   if (runtime.dryRun) {
     print(runtime.io, runtime.json, {
       ok: true,
@@ -34410,7 +35009,7 @@ async function cmdWorker(runtime, options) {
   return await (runtime.io.spawnWorker ?? ((launchEnv) => spawnScript("pi-mesh-worker.mjs", launchEnv)))(extraEnv);
 }
 async function cmdStop(runtime, waitMsFlag) {
-  const pids = existsSync10(runtime.dirs.state) ? readdirSync5(runtime.dirs.state).filter((name) => name.endsWith(".pid")) : [];
+  const pids = existsSync12(runtime.dirs.state) ? readdirSync5(runtime.dirs.state).filter((name) => name.endsWith(".pid")) : [];
   if (runtime.dryRun) {
     print(runtime.io, runtime.json, { ok: true, command: "stop", dryRun: true, pidFiles: pids }, "would signal pid files");
     return 0;
@@ -34424,14 +35023,14 @@ async function cmdStop(runtime, waitMsFlag) {
   const records = /* @__PURE__ */ new Map();
   for (const file of pids) {
     try {
-      const record = JSON.parse(readFileSync10(join17(runtime.dirs.state, file), "utf8"));
+      const record = JSON.parse(readFileSync11(join19(runtime.dirs.state, file), "utf8"));
       const expectedControl = file === "hub.pid" ? "hub.stop" : file.startsWith("worker-") ? `${file.slice(0, -4)}.stop` : void 0;
       const expectedRole = file === "hub.pid" ? "hub" : file.startsWith("worker-") ? "worker" : void 0;
       if (record.version !== 1 || !Number.isInteger(record.pid) || record.pid <= 0 || !record.startedAt || !expectedControl || record.controlFile !== expectedControl || record.role !== expectedRole || !processExists2(record.pid)) {
         ignored.push(file);
         continue;
       }
-      writeFileSync10(join17(runtime.dirs.state, record.controlFile), `${JSON.stringify({ startedAt: record.startedAt, ...record.generation ? { generation: record.generation } : {}, requestedAt: (/* @__PURE__ */ new Date()).toISOString() })}
+      writeFileSync11(join19(runtime.dirs.state, record.controlFile), `${JSON.stringify({ startedAt: record.startedAt, ...record.generation ? { generation: record.generation } : {}, requestedAt: (/* @__PURE__ */ new Date()).toISOString() })}
 `, { encoding: "utf8", mode: 384 });
       requested.push(file);
       records.set(file, { pid: record.pid, startedAt: record.startedAt, ...record.generation ? { generation: record.generation } : {} });
@@ -34449,7 +35048,7 @@ async function cmdStop(runtime, waitMsFlag) {
   while (Date.now() <= deadline && stopped.size < requested.length) {
     for (const [file, record] of records) {
       try {
-        const current = JSON.parse(readFileSync10(join17(runtime.dirs.state, file), "utf8"));
+        const current = JSON.parse(readFileSync11(join19(runtime.dirs.state, file), "utf8"));
         if (current.pid !== record.pid || current.startedAt !== record.startedAt || current.generation !== record.generation || !processExists2(record.pid)) stopped.add(file);
       } catch {
         stopped.add(file);
@@ -34464,11 +35063,11 @@ async function cmdStop(runtime, waitMsFlag) {
 }
 async function cmdSessionStatus(runtime) {
   const stateDir = runtime.dirs.state;
-  const names2 = existsSync10(stateDir) ? readdirSync5(stateDir) : [];
+  const names2 = existsSync12(stateDir) ? readdirSync5(stateDir) : [];
   const claims = [];
   for (const file of names2.filter((name) => name.endsWith(".pid"))) {
     try {
-      const record = JSON.parse(readFileSync10(join17(stateDir, file), "utf8"));
+      const record = JSON.parse(readFileSync11(join19(stateDir, file), "utf8"));
       claims.push({
         file,
         role: record.role,
@@ -34483,7 +35082,7 @@ async function cmdSessionStatus(runtime) {
   const recoveries = [];
   for (const file of names2.filter((name) => name.startsWith("worker-recovery-") && name.endsWith(".json"))) {
     try {
-      const envelope = JSON.parse(readFileSync10(join17(stateDir, file), "utf8"));
+      const envelope = JSON.parse(readFileSync11(join19(stateDir, file), "utf8"));
       recoveries.push({
         file,
         reason: envelope.reason,
@@ -34507,7 +35106,7 @@ async function cmdSessionStatus(runtime) {
   return 0;
 }
 async function cmdSessionStart(runtime, options) {
-  const id = options.id?.trim() || `session_${randomUUID5().replaceAll("-", "").slice(0, 12)}`;
+  const id = options.id?.trim() || `session_${randomUUID6().replaceAll("-", "").slice(0, 12)}`;
   const workflowId = options.workflow?.trim();
   const mix = options.mix?.trim();
   if (workflowId && mix) {
@@ -34544,7 +35143,7 @@ async function cmdSessionStart(runtime, options) {
     ...workflowId ? workflowAssetDirs(runtime.dirs.assets, workflowId) : []
   ];
   if (!runtime.dryRun) {
-    for (const directory of created) mkdirSync11(directory, { recursive: true });
+    for (const directory of created) mkdirSync13(directory, { recursive: true });
     writeSession(runtime.dirs.assets, session);
   }
   print(runtime.io, runtime.json, {
@@ -34560,7 +35159,7 @@ async function cmdImprove(runtime, targetFlag) {
   const targets = targetFlag === "cli" || targetFlag === "project" ? [targetFlag] : ["cli", "project"];
   const events = readTelemetry(telemetryPath(runtime.dirs.logs));
   const report = buildImprovementReport(events, targets);
-  const path5 = writeImprovementReport(join17(runtime.dirs.assets, "improvements"), report, runtime.dryRun);
+  const path5 = writeImprovementReport(join19(runtime.dirs.assets, "improvements"), report, runtime.dryRun);
   print(runtime.io, runtime.json, {
     ok: true,
     command: "improve",
@@ -34714,7 +35313,7 @@ function skillStateFromFlag(value) {
   throw new Error(`invalid skill state ${value}`);
 }
 function skillsRoot(runtime) {
-  return join17(runtime.dirs.workdir, ".kxm", "skills");
+  return join19(runtime.dirs.workdir, ".kxm", "skills");
 }
 function csv(value) {
   if (!value) return void 0;
@@ -34731,7 +35330,7 @@ async function cmdSkillsCreate(runtime, options) {
     const metadata = lifecycle.create({
       name: options.name,
       description: options.description ?? "",
-      content: readFileSync10(options.file, "utf8"),
+      content: readFileSync11(options.file, "utf8"),
       createdBy: options.createdBy,
       sources: {
         runIds: csv(options.run) ?? [],
@@ -34847,7 +35446,7 @@ async function cmdRoutingReport(runtime, options) {
 }
 async function cmdWorkflowStart(runtime, definitionIdArg, options) {
   const definitionId = definitionIdArg || runtime.env.PI_MESH_WORKFLOW_ID?.trim();
-  const deliveryId = String(options.deliveryId || `cli-${randomUUID5()}`);
+  const deliveryId = String(options.deliveryId || `cli-${randomUUID6()}`);
   const event = options.event;
   const payloadFlag = options.payload ?? "{}";
   if (!definitionId) {
@@ -34866,7 +35465,7 @@ async function cmdWorkflowStart(runtime, definitionIdArg, options) {
   }
   let payload;
   try {
-    const raw = payloadFlag.startsWith("@") ? readFileSync10(resolve8(runtime.cwd, payloadFlag.slice(1)), "utf8") : payloadFlag;
+    const raw = payloadFlag.startsWith("@") ? readFileSync11(resolve10(runtime.cwd, payloadFlag.slice(1)), "utf8") : payloadFlag;
     const value = JSON.parse(raw);
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("object required");
     payload = value;
@@ -34933,7 +35532,7 @@ async function cmdWorkflowDegrade(runtime, runId, stageId, options) {
   }
 }
 async function cmdWorkflowInspect(runtime, action, runId) {
-  const dataPath = resolve8(runtime.dirs.workdir, runtime.env.PI_MESH_DATA_PATH?.trim() || join17(runtime.dirs.state, "mesh.db"));
+  const dataPath = resolve10(runtime.dirs.workdir, runtime.env.PI_MESH_DATA_PATH?.trim() || join19(runtime.dirs.state, "mesh.db"));
   if (action === "get" && !runId) {
     runtime.io.stderr(`Usage: ${CLI_NAME} workflow get <runId>
 `);
@@ -34991,7 +35590,7 @@ async function cmdSignal(runtime, runId, signalKey, status, summary, evidenceArg
     printWorker(runtime, worker, { ok: true, command: "signal", runId, signalKey, status, summary, evidence }, "would post signed signal");
     return 0;
   }
-  const deliveryId = String(deliveryIdFlag || `cli-signal:${randomUUID5()}`);
+  const deliveryId = String(deliveryIdFlag || `cli-signal:${randomUUID6()}`);
   try {
     const posted = await postWorkflowSignal({
       serverUrl: runtime.serverUrl,
@@ -35079,14 +35678,14 @@ async function cmdRetrospectiveExport(runtime, runId, options) {
     return 2;
   }
   const snapshotFlag = String(options.input || "");
-  const snapshotPath = snapshotFlag ? resolve8(runtime.cwd, snapshotFlag) : "";
+  const snapshotPath = snapshotFlag ? resolve10(runtime.cwd, snapshotFlag) : "";
   let snapshot;
   try {
     if (snapshotPath) {
-      if (!existsSync10(snapshotPath)) throw new Error("snapshot_missing");
-      snapshot = JSON.parse(readFileSync10(snapshotPath, "utf8"));
+      if (!existsSync12(snapshotPath)) throw new Error("snapshot_missing");
+      snapshot = JSON.parse(readFileSync11(snapshotPath, "utf8"));
     } else {
-      const dataPath = resolve8(runtime.dirs.workdir, runtime.env.PI_MESH_DATA_PATH?.trim() || join17(runtime.dirs.state, "mesh.db"));
+      const dataPath = resolve10(runtime.dirs.workdir, runtime.env.PI_MESH_DATA_PATH?.trim() || join19(runtime.dirs.state, "mesh.db"));
       const local = localWorkflowSnapshot(dataPath, runId);
       if (!local.runs[0]) throw new Error("workflow_not_found");
       snapshot = { run: local.runs[0], journal: local.journal };
@@ -35098,8 +35697,8 @@ async function cmdRetrospectiveExport(runtime, runId, options) {
     return 1;
   }
   const doc = buildRetrospective(snapshot.run, snapshot.journal);
-  const outDir = resolve8(runtime.cwd, String(options.outDir || join17(runtime.dirs.assets, "retrospectives")));
-  const assetsRoot = resolve8(runtime.dirs.assets);
+  const outDir = resolve10(runtime.cwd, String(options.outDir || join19(runtime.dirs.assets, "retrospectives")));
+  const assetsRoot = resolve10(runtime.dirs.assets);
   const assetsPrefix = `${assetsRoot}${process.platform === "win32" ? "\\" : "/"}`;
   if (outDir !== assetsRoot && !outDir.startsWith(assetsPrefix)) {
     print(runtime.io, runtime.json, { ok: false, command: "retrospective export", error: "output_outside_workspace_assets" }, "retrospectives must stay under the workspace assets directory");
@@ -35146,6 +35745,31 @@ function createProgram(ctx, result) {
   });
   addGlobalOptions(migrate.command("verify").description("Verify a migration receipt against current sources and target bundle")).action(async function migrateVerifyAction() {
     result.code = await cmdVnextMigrateVerify(runtimeFrom(ctx, this));
+  });
+  addGlobalOptions(program2.command("run").description("Create and manage vNext runs (offline-first)").argument("[workflow]", "Workflow id to run").argument("[prompt...]", "Run prompt (hashed, never stored raw)").action(async function runAction(workflow2, promptParts) {
+    result.code = await cmdVnextRun(runtimeFrom(ctx, this), workflow2, promptParts);
+  }));
+  const runCmd = addGlobalOptions(program2.command("runs").description("Inspect vNext runs"));
+  runCmd.helpCommand("help", "Show runs help");
+  addGlobalOptions(runCmd.command("status").description("Show the projected status of a run")).argument("<runId>", "Run id").action(async function runStatusAction(runId) {
+    result.code = await cmdVnextRunStatus(runtimeFrom(ctx, this), runId);
+  });
+  addGlobalOptions(runCmd.command("cancel").description("Durably request cancellation of a run")).argument("<runId>", "Run id").action(async function runCancelAction(runId) {
+    result.code = await cmdVnextRunCancel(runtimeFrom(ctx, this), runId);
+  });
+  addGlobalOptions(runCmd.command("list").description("List recent runs for the current project")).action(async function runListAction() {
+    result.code = await cmdVnextRunList(runtimeFrom(ctx, this));
+  });
+  const runtimeCmd = addGlobalOptions(program2.command("runtime").description("Manage the vNext Runtime supervisor"));
+  runtimeCmd.helpCommand("help", "Show runtime help");
+  addGlobalOptions(runtimeCmd.command("start").description("Start the Runtime supervisor if not running")).action(async function runtimeStartAction() {
+    result.code = await cmdVnextRuntime(runtimeFrom(ctx, this), "start");
+  });
+  addGlobalOptions(runtimeCmd.command("status").description("Show Runtime supervisor liveness")).action(async function runtimeStatusAction() {
+    result.code = await cmdVnextRuntime(runtimeFrom(ctx, this), "status");
+  });
+  addGlobalOptions(runtimeCmd.command("stop").description("Gracefully stop the Runtime supervisor")).action(async function runtimeStopAction() {
+    result.code = await cmdVnextRuntime(runtimeFrom(ctx, this), "stop");
   });
   const trust = addGlobalOptions(program2.command("trust").description("Permission-diff trust review for vNext configuration"));
   trust.helpCommand("help", "Show trust help");
@@ -35289,7 +35913,7 @@ async function runCli(argv, env = process.env, io = { stdout: (text) => process.
     throw error;
   }
 }
-if (process.argv[1] && resolve8(process.argv[1]) === fileURLToPath3(import.meta.url)) {
+if (process.argv[1] && resolve10(process.argv[1]) === fileURLToPath4(import.meta.url)) {
   const code = await runCli(process.argv.slice(2));
   process.exitCode = code;
 }
