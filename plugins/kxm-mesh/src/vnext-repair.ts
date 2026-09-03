@@ -37,7 +37,18 @@ import {
   type VnextTemplateProvenance,
   type VnextTemplateVariant,
 } from "./vnext-template.ts";
+import { computeVnextResourcePermissionDiff } from "./vnext-permission.ts";
+import type { VnextResourceKind } from "./vnext-config.ts";
 
+/** Map a managed template path to its resource kind for permission diffing. */
+function resourceKindForTemplatePath(path: string): VnextResourceKind {
+  if (path === ".kxm/project.yaml") return "project";
+  if (path.endsWith("repo.yaml")) return "repository";
+  if (path.startsWith(".kxm/agents/")) return "agent";
+  if (path.startsWith(".kxm/models/")) return "model";
+  if (path.startsWith(".kxm/workflows/")) return "workflow";
+  return "environment";
+}
 const TRANSACTION_NAME = ".kxm-init-transaction";
 const OPERATION_FILE = "operation.json";
 const MAX_MANAGED_FILES = 128;
@@ -320,7 +331,18 @@ export function planVnextTemplateRepair(
     if (localSha256 === baseSha256 && targetRecord) {
       const authorityChanged = base?.authoritySha256 !== targetRecord.authoritySha256;
       if (authorityChanged || !base) {
-        issues.push(repairIssue("template_policy_review_required", path, "template change alters or introduces an authority-bearing resource and requires reviewed permission-diff trust"));
+        const baseValue = base ? sourceRenderer?.values.get(path) : undefined;
+        const targetValue = target.values.get(path);
+        const detail = baseValue && targetValue
+          ? computeVnextResourcePermissionDiff(resourceKindForTemplatePath(path), path, baseValue, targetValue)
+              .map((change) => `${change.path} ${change.field} ${change.direction}`)
+              .join("; ")
+          : "";
+        issues.push(repairIssue(
+          "template_policy_review_required",
+          path,
+          `template change alters or introduces an authority-bearing resource and requires reviewed permission-diff trust${detail ? `: ${detail}` : ""}`,
+        ));
         return {
           path,
           classification: "conflict",

@@ -340,6 +340,58 @@ test("kxm migrate plans, applies with reviewed decisions, and verifies the recei
   }
 });
 
+test("kxm trust diff and check classify expansions against HEAD", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "kxm-trust-cli-"));
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-trust-cli-state-"));
+  const env = { KXM_STATE_HOME: stateRoot };
+  try {
+    makeGitRoot(cwd);
+    initializeVnextProject(cwd, { projectId: "prj_01JTRUSTCLI00000000000000", projectName: "Trust CLI" });
+    spawnSync("git", ["-C", cwd, "add", "-A"], { windowsHide: true });
+    const commit = spawnSync("git", ["-C", cwd, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "init"], { windowsHide: true });
+    assert.equal(commit.status, 0, commit.stderr as unknown as string);
+
+    const workspaceIo = capture();
+    assert.equal(await runCli(["--workspace", cwd, "trust", "check", "--json"], env, workspaceIo, cwd), 2);
+
+    const cleanIo = capture();
+    assert.equal(await runCli(["trust", "check", "--json"], env, cleanIo, cwd), 0);
+    const clean = JSON.parse(cleanIo.read().stdout) as { ok: boolean; requiresReview: boolean; expansions: number };
+    assert.equal(clean.ok, true);
+    assert.equal(clean.requiresReview, false);
+    assert.equal(clean.expansions, 0);
+
+    const cleanDiffIo = capture();
+    assert.equal(await runCli(["trust", "diff", "--json"], env, cleanDiffIo, cwd), 0);
+    assert.equal((JSON.parse(cleanDiffIo.read().stdout) as { changes: unknown[] }).changes.length, 0);
+
+    const agentFile = join(cwd, ".kxm", "agents", "coordinator.yaml");
+    writeFileSync(agentFile, readFileSync(agentFile, "utf8").replace("network: provider-only", "network: host"), "utf8");
+    const expandedIo = capture();
+    assert.equal(await runCli(["trust", "check", "--json"], env, expandedIo, cwd), 1);
+    const expanded = JSON.parse(expandedIo.read().stdout) as {
+      ok: boolean;
+      requiresReview: boolean;
+      changes: Array<{ field: string; direction: string; resource: string }>;
+    };
+    assert.equal(expanded.ok, false);
+    assert.equal(expanded.requiresReview, true);
+    assert(expanded.changes.some((change) => change.field === "network" && change.direction === "expansion" && change.resource === ".kxm/agents/coordinator.yaml"));
+
+    const expandedTextIo = capture();
+    assert.equal(await runCli(["trust", "check"], env, expandedTextIo, cwd), 1);
+    assert.match(expandedTextIo.read().stdout, /EXPANSION/);
+    assert.match(expandedTextIo.read().stdout, /trust check failed/);
+
+    const invalidBaseIo = capture();
+    assert.equal(await runCli(["trust", "check", "--json", "--base", "nope; rm -rf /"], env, invalidBaseIo, cwd), 1);
+    assert.match(invalidBaseIo.read().stdout, /git_revision_invalid/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(stateRoot, { recursive: true, force: true });
+  }
+});
+
 test("kxm migrate covers error paths and text output modes", async () => {
   const emptyCwd = mkdtempSync(join(tmpdir(), "kxm-migrate-cli-empty-"));
   const cwd = mkdtempSync(join(tmpdir(), "kxm-migrate-cli-text-"));

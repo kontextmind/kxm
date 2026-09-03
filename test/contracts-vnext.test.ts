@@ -665,4 +665,43 @@ test("migration plan, decision, and receipt contracts validate and fail closed",
     mutate(invalid);
     assert.equal(validateReceipt(invalid), false, "invalid migration receipt unexpectedly validated");
   }
+
+  const permissionDiff = {
+    schema: "kxm.permission-diff.v1",
+    baseRevision: `sha256:${"a".repeat(64)}`,
+    candidateRevision: `sha256:${"b".repeat(64)}`,
+    changes: [{
+      resource: ".kxm/agents/coordinator.yaml",
+      path: "/network",
+      field: "network",
+      direction: "expansion",
+      summary: "network changed provider-only -> host",
+      baseValueSha256: `sha256:${"c".repeat(64)}`,
+      candidateValueSha256: `sha256:${"d".repeat(64)}`,
+    }],
+    expansions: [{
+      resource: ".kxm/agents/coordinator.yaml",
+      path: "/network",
+      field: "network",
+      direction: "expansion",
+      summary: "network changed provider-only -> host",
+    }],
+    narrowings: [],
+    neutralChanges: [],
+    requiresReview: true,
+  };
+  const validatePermissionDiff = ajv.getSchema("https://schemas.kxm.dev/vnext/permission-diff.schema.json");
+  assert(validatePermissionDiff);
+  assert(validatePermissionDiff(permissionDiff), ajv.errorsText(validatePermissionDiff.errors));
+  for (const mutate of [
+    (value: JsonObject): void => { value.schema = "kxm.permission-diff.v2"; },
+    (value: JsonObject): void => { (value.changes as JsonObject[])[0]!.field = "invented"; },
+    (value: JsonObject): void => { (value.changes as JsonObject[])[0]!.direction = "sideways"; },
+    (value: JsonObject): void => { (value.changes as JsonObject[])[0]!.path = "not-a-pointer"; },
+    (value: JsonObject): void => { value.extra = true; },
+  ]) {
+    const invalid = structuredClone(permissionDiff);
+    mutate(invalid);
+    assert.equal(validatePermissionDiff(invalid), false, "invalid permission diff unexpectedly validated");
+  }
 });

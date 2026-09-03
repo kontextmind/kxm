@@ -256,6 +256,7 @@ export class VnextSchemaRegistry {
   readonly migrationPlanValidator: ValidateFunction;
   readonly migrationDecisionValidator: ValidateFunction;
   readonly migrationReceiptValidator: ValidateFunction;
+  readonly permissionDiffValidator: ValidateFunction;
 
   constructor(schemasDir = DEFAULT_SCHEMA_DIR) {
     this.schemasDir = resolve(schemasDir);
@@ -271,12 +272,14 @@ export class VnextSchemaRegistry {
     const migrationPlanFile = "migration-plan.schema.json";
     const migrationDecisionFile = "migration-decision.schema.json";
     const migrationReceiptFile = "migration-receipt.schema.json";
+    const permissionDiffFile = "permission-diff.schema.json";
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, localBindingsFile)));
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, templateProvenanceFile)));
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, initOperationFile)));
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, migrationPlanFile)));
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, migrationDecisionFile)));
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, migrationReceiptFile)));
+    this.ajv.addSchema(readJsonObject(join(this.schemasDir, permissionDiffFile)));
     for (const [kind, definition] of Object.entries(RESOURCE_SCHEMA) as [VnextResourceKind, { identity: string; file: string }][]) {
       const validator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${definition.file}`);
       if (!validator) throw new Error(`schema did not compile: ${definition.file}`);
@@ -288,18 +291,21 @@ export class VnextSchemaRegistry {
     const migrationPlanValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${migrationPlanFile}`);
     const migrationDecisionValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${migrationDecisionFile}`);
     const migrationReceiptValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${migrationReceiptFile}`);
+    const permissionDiffValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${permissionDiffFile}`);
     if (!localBindingsValidator) throw new Error(`schema did not compile: ${localBindingsFile}`);
     if (!templateProvenanceValidator) throw new Error(`schema did not compile: ${templateProvenanceFile}`);
     if (!initOperationValidator) throw new Error(`schema did not compile: ${initOperationFile}`);
     if (!migrationPlanValidator) throw new Error(`schema did not compile: ${migrationPlanFile}`);
     if (!migrationDecisionValidator) throw new Error(`schema did not compile: ${migrationDecisionFile}`);
     if (!migrationReceiptValidator) throw new Error(`schema did not compile: ${migrationReceiptFile}`);
+    if (!permissionDiffValidator) throw new Error(`schema did not compile: ${permissionDiffFile}`);
     this.localBindingsValidator = localBindingsValidator;
     this.templateProvenanceValidator = templateProvenanceValidator;
     this.initOperationValidator = initOperationValidator;
     this.migrationPlanValidator = migrationPlanValidator;
     this.migrationDecisionValidator = migrationDecisionValidator;
     this.migrationReceiptValidator = migrationReceiptValidator;
+    this.permissionDiffValidator = permissionDiffValidator;
   }
 
   validate(kind: VnextResourceKind, value: JsonObject, file: string): VnextConfigIssue[] {
@@ -335,6 +341,10 @@ export class VnextSchemaRegistry {
 
   validateMigrationReceipt(value: JsonObject, file: string): VnextConfigIssue[] {
     return this.validateAuxiliary(value, file, "kxm.migration-receipt.v1", this.migrationReceiptValidator);
+  }
+
+  validatePermissionDiff(value: JsonObject, file: string): VnextConfigIssue[] {
+    return this.validateAuxiliary(value, file, "kxm.permission-diff.v1", this.permissionDiffValidator);
   }
 
   private validateAuxiliary(value: JsonObject, file: string, identity: string, validator: ValidateFunction): VnextConfigIssue[] {
@@ -397,6 +407,11 @@ function portableBindingIssue(root: string, pathHint: string, repositoryId: stri
   return undefined;
 }
 
+/** The portable relative-path rule every project-owned pathHint must satisfy. */
+export function vnextPortablePath(path: string): boolean {
+  return portablePath(path);
+}
+
 function portablePath(path: string): boolean {
   if (path === ".") return true;
   if (path.includes("\\") || path.startsWith("/") || /^[A-Za-z]:/.test(path) || /[<>:"|?*\u0000-\u001F]/.test(path)) return false;
@@ -410,8 +425,13 @@ function portablePath(path: string): boolean {
     && !segment.includes(":"));
 }
 
-function resourceIdentifier(id: string): boolean {
+/** The identifier rule every path-derived resource identity must satisfy. */
+export function vnextResourceIdentifier(id: string): boolean {
   return id.length <= 64 && IDENTIFIER.test(id) && !WINDOWS_RESERVED.test(id);
+}
+
+function resourceIdentifier(id: string): boolean {
+  return vnextResourceIdentifier(id);
 }
 
 function displayPath(root: string, file: string): string {

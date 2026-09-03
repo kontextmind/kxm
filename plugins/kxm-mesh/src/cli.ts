@@ -18,10 +18,12 @@ import { behavioralConfigHash, compareRoutingRecords, groupByBehavior } from "./
 import { createSession, loadNamedWorkers, rosterNames, sessionAssetDirs, standardAssetDirs, workflowAssetDirs, writeSession } from "./session.ts";
 import { buildImprovementReport, writeImprovementReport } from "./improve.ts";
 import { runMeshTui } from "./tui.ts";
-import { VnextConfigError, type VnextInitializationPlan } from "./vnext-config.ts";
+import { VnextConfigError, discoverVnextProjectRoot, type VnextInitializationPlan } from "./vnext-config.ts";
 import { vnextUserStateRoot } from "./vnext-bindings.ts";
 import { initializeVnextProject } from "./vnext-init.ts";
 import { applyVnextMigration, planVnextMigration, verifyVnextMigration } from "./vnext-migrate.ts";
+import { diffVnextProjectAgainstRevision, formatVnextPermissionDiff } from "./vnext-permission.ts";
+import { readVnextLocalBindings } from "./vnext-bindings.ts";
 import type { WorkflowEvidenceInput, WorkflowJournalEntry, WorkflowRun } from "./workflow.ts";
 
 export interface CliIo {
@@ -172,7 +174,11 @@ function redactCliValue(value: unknown, field = ""): unknown {
         || field === "decisionDigest"
         || field === "receiptSha256"
         || field === "sha256"
-        || field === "valueSha256")
+        || field === "valueSha256"
+        || field === "baseRevision"
+        || field === "candidateRevision"
+        || field === "baseValueSha256"
+        || field === "candidateValueSha256")
       && /^(?:sha256:)?[a-f0-9]{64}$/.test(value)
     ) return value;
     return redactSecrets(value);
@@ -651,6 +657,52 @@ async function cmdVnextMigrateVerify(runtime: Runtime): Promise<number> {
   }
   print(runtime.io, runtime.json, payload, `migration verification failed:\n${result.issues.map((issue) => `  - ${issue.file}: ${issue.code}: ${issue.message}`).join("\n")}`);
   return 1;
+}
+
+async function cmdVnextTrust(runtime: Runtime, check: boolean, options: { base?: string }): Promise<number> {
+  if (runtime.workspaceFlag !== undefined) {
+    print(runtime.io, runtime.json, {
+      ok: false,
+      command: check ? "trust check" : "trust diff",
+      error: "workspace_option_unsupported",
+    }, "kxm trust discovers the authoritative Git root from the current directory; --workspace is not supported");
+    return 2;
+  }
+  const command = check ? "trust check" : "trust diff";
+  try {
+    // Host-local member bindings travel with the user state, not Git; pass
+    // them so member repositories diff with the same identities on both sides.
+    const projectRoot = discoverVnextProjectRoot(runtime.cwd) ?? runtime.cwd;
+    const bindings = readVnextLocalBindings(projectRoot, { stateRoot: vnextUserStateRoot({ env: runtime.env }) });
+    const diff = diffVnextProjectAgainstRevision(projectRoot, options.base?.trim() || "HEAD", {
+      repositoryBindings: bindings?.repositories ?? {},
+    });
+    const payload = {
+      ok: !check || !diff.requiresReview,
+      command,
+      baseRevision: diff.baseRevision,
+      candidateRevision: diff.candidateRevision,
+      requiresReview: diff.requiresReview,
+      expansions: diff.expansions.length,
+      narrowings: diff.narrowings.length,
+      neutralChanges: diff.neutralChanges.length,
+      changes: diff.changes,
+    };
+    const text = formatVnextPermissionDiff(diff);
+    if (check && diff.requiresReview) {
+      print(runtime.io, runtime.json, payload, `${text}\ntrust check failed: review every expansion above before merging`);
+      return 1;
+    }
+    print(runtime.io, runtime.json, payload, text);
+    return 0;
+  } catch (error) {
+    if (error instanceof VnextConfigError) {
+      print(runtime.io, runtime.json, { ok: false, command, error: "trust_diff_failed", issues: error.issues }, `permission diff failed: ${error.message}`);
+      return 1;
+    }
+    print(runtime.io, runtime.json, { ok: false, command, error: "trust_diff_io_failed" }, "permission diff failed because a local filesystem or Git operation did not complete");
+    return 1;
+  }
 }
 
 async function cmdInit(runtime: Runtime): Promise<number> {
@@ -1633,8 +1685,7 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
       result.code = await cmdVnextInit(runtimeFrom(ctx, this), options);
     });
 
-  const migrate = addGlobalOptions(program.command("migrate").description("Plan, apply, and verify legacy JSON configuration migration"));
-  migrate.helpCommand("help", "Show migrate help");
+  const migrate = addGlobalOptions(program.command("migrate").description("Plan, apply, and verify legacy JSON configuration migration"));  migrate.helpCommand("help", "Show migrate help");
   addGlobalOptions(migrate.command("plan").description("Compute the deterministic legacy-to-vNext migration plan without writes"))
     .action(async function migratePlanAction(this: Command) {
       result.code = await cmdVnextMigratePlan(runtimeFrom(ctx, this));
@@ -1649,6 +1700,19 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
   addGlobalOptions(migrate.command("verify").description("Verify a migration receipt against current sources and target bundle"))
     .action(async function migrateVerifyAction(this: Command) {
       result.code = await cmdVnextMigrateVerify(runtimeFrom(ctx, this));
+    });
+
+  const trust = addGlobalOptions(program.command("trust").description("Permission-diff trust review for vNext configuration"));
+  trust.helpCommand("help", "Show trust help");
+  addGlobalOptions(trust.command("diff").description("Show the structured permission diff against a base Git revision"))
+    .option("--base <revision>", "Base Git revision (default: HEAD)")
+    .action(async function trustDiffAction(this: Command, options: { base?: string }) {
+      result.code = await cmdVnextTrust(runtimeFrom(ctx, this), false, options);
+    });
+  addGlobalOptions(trust.command("check").description("Exit non-zero when the working tree expands permissions against the base revision"))
+    .option("--base <revision>", "Base Git revision (default: HEAD)")
+    .action(async function trustCheckAction(this: Command, options: { base?: string }) {
+      result.code = await cmdVnextTrust(runtimeFrom(ctx, this), true, options);
     });
 
   const agent = addGlobalOptions(program.command("agent").description("Run and supervise agents"));

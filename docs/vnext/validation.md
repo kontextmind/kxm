@@ -210,6 +210,41 @@ Compare the new resolved bundle with the trusted revision. Flag increases in:
 Permission expansion requires an explicit reviewed trust action. Formatting or
 description-only changes do not.
 
+#### Structured projections and the `kxm trust` gate
+
+The implemented workflow projects every resource into deterministic,
+field-addressed authority entries (`vnextAuthorityEntries`) covering the
+categories above, then diffs two complete bundles into a
+`kxm.permission-diff.v1` report. Every change is classified conservatively:
+
+- ordered lattices: repository access (`none` < `read` < `write`), network
+  (`none` < `provider-only` < `restricted` < `host`), snapshot untracked
+  content (`tracked-only` < `ask` < `bounded`);
+- budgets: raising any numeric limit expands; lowering narrows; mixed
+  directions expand;
+- evidence quorums: lowering `minimumProducers`, removing an eligible
+  producer, or introducing/lowering a degradation floor expands; raising the
+  quorum narrows; adding a producer without touching the floor is neutral;
+- secret grants: a new grant expands; removal narrows; making a grant
+  optional narrows, requiring one expands; any other grant change expands;
+- transitions, tools, executors, models, sync policy, gates, delivery, and
+  resource shape have no conservative order: any change expands and requires
+  review;
+- resource additions expand; removals narrow; prose-only changes
+  (name/description/purpose/instructions) surface as neutral and never
+  require review.
+
+`kxm trust diff [--base <rev>]` prints the report; `kxm trust check`
+(--base defaults to `HEAD`) exits non-zero when any expansion exists, so an
+authority-bearing change cannot merge without a reviewed Git change. Base
+revisions are pinned to their tree SHA once, materialized from Git into a
+temporary shadow with a sanitized environment (every member repository is
+resolved at the same revision in its own history; a member that does not
+resolve it fails closed with `trust_scope_unsupported`), and every Git tree
+entry is segment-validated and containment-checked before any write. Template
+repair blocks authority-bearing template updates and now enriches the
+`template_policy_review_required` issue with the exact field-level diff.
+
 ### 8. Snapshot validation
 
 For every run:

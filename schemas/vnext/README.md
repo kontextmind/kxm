@@ -17,6 +17,7 @@ Runtime-local records, and JSON events/results for the planned vNext contract.
 | `migration-plan.schema.json` | `kxm.migration-plan.v1` |
 | `migration-decision.schema.json` | `kxm.migration-decision.v1` |
 | `migration-receipt.schema.json` | `kxm.migration-receipt.v1` |
+| `permission-diff.schema.json` | `kxm.permission-diff.v1` |
 | `run-event.schema.json` | `kxm.run-event.v1` |
 | `sync-event.schema.json` | `kxm.sync-event.v1` |
 | `assignment-result.schema.json` | `kxm.assignment-result.v1` |
