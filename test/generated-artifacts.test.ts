@@ -10,6 +10,7 @@ const artifacts = [
   "plugins/kxm-mesh/dist/cli.js",
   "plugins/kxm-mesh/dist/server.js",
   "plugins/kxm-mesh/dist/mcp-server.js",
+  "plugins/kxm-mesh/dist/vnext-runtime-supervisor.js",
 ];
 
 function run(cwd: string, command: string, args: string[]) {
@@ -50,7 +51,7 @@ test("generated artifact check requires every bundle to exist and be tracked and
     roots.push(clean);
     const accepted = run(clean, process.execPath, [checker]);
     assert.equal(accepted.status, 0, `${accepted.stderr}\n${accepted.stdout}`);
-    assert.match(accepted.stdout, /tracked and current \(3\)/);
+    assert.match(accepted.stdout, /tracked and current \(4\)/);
 
     const missing = repository();
     roots.push(missing);

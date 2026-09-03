@@ -250,6 +250,31 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
     assert.match(trustCommitted.stdout, /"requiresReview":false/);
     assert.equal(existsSync(join(packageRoot, "schemas", "vnext", "permission-diff.schema.json")), true);
 
+    // Packed consumer: vNext run lifecycle with an auto-started supervisor.
+    const packedRun = spawnSync(process.execPath, [
+      join(packageRoot, "scripts", "kxm.mjs"), "run", "fix", "--json", "smoke the runtime",
+    ], { cwd: legacyConsumer, encoding: "utf8", env: joinEnvironment, timeout: 120_000 });
+    assert.equal(packedRun.status, 0, `${packedRun.stderr}\n${packedRun.stdout}`);
+    const packedRunPayload = JSON.parse(packedRun.stdout) as { run: { runId: string; status: string }; supervisor: { started: boolean } };
+    assert.equal(packedRunPayload.run.status, "created");
+    assert.equal(packedRunPayload.supervisor.started, true);
+    assert(!packedRun.stdout.includes("smoke the runtime"), "prompt content never appears in output");
+    const packedRunsList = spawnSync(process.execPath, [
+      join(packageRoot, "scripts", "kxm.mjs"), "runs", "list", "--json",
+    ], { cwd: legacyConsumer, encoding: "utf8", env: joinEnvironment, timeout: 60_000 });
+    assert.equal(packedRunsList.status, 0, `${packedRunsList.stderr}\n${packedRunsList.stdout}`);
+    assert.match(packedRunsList.stdout, new RegExp(packedRunPayload.run.runId));
+    const packedCancel = spawnSync(process.execPath, [
+      join(packageRoot, "scripts", "kxm.mjs"), "runs", "cancel", packedRunPayload.run.runId, "--json",
+    ], { cwd: legacyConsumer, encoding: "utf8", env: joinEnvironment, timeout: 60_000 });
+    assert.equal(packedCancel.status, 0, `${packedCancel.stderr}\n${packedCancel.stdout}`);
+    assert.match(packedCancel.stdout, /"status":"cancelled"/);
+    const packedStop = spawnSync(process.execPath, [
+      join(packageRoot, "scripts", "kxm.mjs"), "runtime", "stop", "--json",
+    ], { cwd: legacyConsumer, encoding: "utf8", env: joinEnvironment, timeout: 60_000 });
+    assert.equal(packedStop.status, 0, `${packedStop.stderr}\n${packedStop.stdout}`);
+    assert.equal(existsSync(join(packageRoot, "plugins", "kxm-mesh", "dist", "vnext-runtime-supervisor.js")), true);
+
     const globalInstall = runNpm([
       "install",
       "--global",

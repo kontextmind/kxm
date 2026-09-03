@@ -211,6 +211,11 @@ The tool allowlist is a capability boundary inside Pi, not a prompt suggestion â
 | `kxm migrate verify` | Re-check the migration receipt against current legacy sources and the target bundle (self-hash, source hashes, configuration revision, resource bytes). Performs no writes |
 | `kxm trust diff [--base <rev>]` | Print the structured `kxm.permission-diff.v1` report between a base Git revision (default `HEAD`, materialized into a temporary shadow with a sanitized environment) and the working tree: every authority-bearing field change classified as expansion, narrowing, or neutral with per-field hashes. Performs no project writes |
 | `kxm trust check [--base <rev>]` | Exit non-zero when any expansion exists, so an authority-bearing change cannot merge without a reviewed Git change. Formatting/description-only changes never require review |
+| `kxm run <workflow> [prompt]` | Auto-start the vNext Runtime supervisor if needed, then create an immutable run offline: pins `homeRuntimeId` plus config/executor/tool policy revisions and stores only the prompt hash. `--dry-run` prints the plan without creating anything |
+| `kxm runs status <runId>` | Show the projected status of a run from its event sequence |
+| `kxm runs cancel <runId>` | Durably request cancellation (ordered `run.cancel_requested` then `run.status_changed` events; idempotent, terminal runs are no-ops). `--dry-run` writes nothing |
+| `kxm runs list` | List recent runs for the current project |
+| `kxm runtime start \| status \| stop` | Manage the detached vNext Runtime supervisor: auto-start with liveness probe, token-authenticated 127.0.0.1 API, crash recovery with a stable logical runtime identity |
 | `kxm agent worker` | Start a long-lived Pi worker. Use `--session-isolation workflow` to enable per-workflow Pi contexts; the upgrade-compatible default is `off`. Does not read a workspace `agents.json`; pass `--model`, `--tools`, and related flags explicitly |
 | `kxm session start --id <id> (--mix a,b \| --workflow <definitionId>)` | Write a `kxm.session.v1` manifest under `.kxm/assets/sessions/<id>/` and create asset directories. **Does not start any process.** `--workflow` records the whole roster, not the definition's participants |
 | `kxm session status` | Show PID claim files and recovery envelopes under `.kxm/state`; does not read `session.json` |
