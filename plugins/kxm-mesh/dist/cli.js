@@ -23328,6 +23328,7 @@ function parseTerminalColorSchemeReport(data) {
 // node_modules/@earendil-works/pi-tui/dist/terminal-image.js
 import { execSync } from "node:child_process";
 var cachedCapabilities = null;
+var capabilityOverrides = {};
 var cellDimensions = { widthPx: 9, heightPx: 18 };
 function setCellDimensions(dims) {
   cellDimensions = dims;
@@ -23344,7 +23345,7 @@ function probeTmuxHyperlinks() {
     return false;
   }
 }
-function detectCapabilities(tmuxForwardsHyperlink = probeTmuxHyperlinks) {
+function detectCapabilitiesFromEnvironment(tmuxForwardsHyperlink) {
   const termProgram = process.env.TERM_PROGRAM?.toLowerCase() || "";
   const terminalEmulator = process.env.TERMINAL_EMULATOR?.toLowerCase() || "";
   const term = process.env.TERM?.toLowerCase() || "";
@@ -23389,9 +23390,29 @@ function detectCapabilities(tmuxForwardsHyperlink = probeTmuxHyperlinks) {
   }
   return { images: null, trueColor: hasTrueColorHint, hyperlinks: false };
 }
+function parseBooleanCapabilityOverride(value) {
+  return value === "1" ? true : value === "0" ? false : void 0;
+}
+function detectCapabilities(tmuxForwardsHyperlink = probeTmuxHyperlinks) {
+  const hyperlinks = parseBooleanCapabilityOverride(process.env.PI_HYPERLINKS);
+  const detected = detectCapabilitiesFromEnvironment(hyperlinks === void 0 ? tmuxForwardsHyperlink : () => hyperlinks);
+  const imageProtocol = process.env.PI_IMAGE_PROTOCOL?.toLowerCase();
+  const images = imageProtocol === "kitty" || imageProtocol === "iterm2" ? imageProtocol : imageProtocol === "none" || imageProtocol === "0" ? null : void 0;
+  const trueColor = parseBooleanCapabilityOverride(process.env.PI_TRUE_COLOR);
+  return {
+    ...detected,
+    ...images !== void 0 ? { images } : {},
+    ...trueColor !== void 0 ? { trueColor } : {},
+    ...hyperlinks !== void 0 ? { hyperlinks } : {}
+  };
+}
 function getCapabilities() {
   if (!cachedCapabilities) {
-    cachedCapabilities = detectCapabilities();
+    const hyperlinks = capabilityOverrides.hyperlinks;
+    cachedCapabilities = {
+      ...detectCapabilities(hyperlinks === void 0 ? void 0 : () => hyperlinks),
+      ...capabilityOverrides
+    };
   }
   return cachedCapabilities;
 }
@@ -26651,6 +26672,7 @@ var MAX_CACHED_OFFSCREEN_KITTY_IMAGES = 16;
 var MAX_CACHED_OFFSCREEN_KITTY_TRANSMISSION_BYTES = 32 * 1024 * 1024;
 var MAX_CACHED_OFFSCREEN_KITTY_DECODED_BYTES = 64 * 1024 * 1024;
 var DOUBLE_CLICK_INTERVAL_MS = 500;
+var TERMINAL_WORD_SELECTION_JOINERS = /* @__PURE__ */ new Set(["/", "-"]);
 var wordSegmenter4 = getWordSegmenter();
 var TuiAltScreen = class extends TuiBase {
   mode = "fullscreen";
@@ -26688,6 +26710,7 @@ var TuiAltScreen = class extends TuiBase {
   searchCurrentMatchStyle;
   openUrl;
   onRightClickPaste;
+  copyOnSelect;
   copySelection;
   constructor(terminal, showHardwareCursor, logDirectory, options = {}) {
     super(terminal, showHardwareCursor, logDirectory);
@@ -26706,6 +26729,7 @@ var TuiAltScreen = class extends TuiBase {
     this.searchCurrentMatchStyle = options.searchCurrentMatchStyle ?? ((text) => `\x1B[1;7m${text}\x1B[22;27m`);
     this.openUrl = options.openUrl;
     this.onRightClickPaste = options.onRightClickPaste;
+    this.copyOnSelect = options.copyOnSelect ?? true;
     this.copySelection = options.copySelection;
     this.addInputListener((data) => this.handleViewportInput(data));
   }
@@ -26714,6 +26738,23 @@ var TuiAltScreen = class extends TuiBase {
   }
   get isFollowingOutput() {
     return this.getPrimaryScrollView().isFollowingEnd;
+  }
+  getCopyOnSelect() {
+    return this.copyOnSelect;
+  }
+  setCopyOnSelect(enabled) {
+    this.copyOnSelect = enabled;
+  }
+  /** Whether the fullscreen viewport has a non-empty active text selection. */
+  hasActiveSelection() {
+    return this.getActiveSelectionText() !== void 0;
+  }
+  /** Copy the active fullscreen text selection, if any, using the configured selection clipboard path. */
+  async copyActiveSelectionToClipboard() {
+    const text = this.getActiveSelectionText();
+    if (!text)
+      return false;
+    return this.copyTextToClipboard(text);
   }
   setLayoutRoot(component) {
     if (this.layoutRoot === component)
@@ -27278,18 +27319,30 @@ var TuiAltScreen = class extends TuiBase {
   }
   getWordSelection(point) {
     const line = stripTerminalSequences(this.getSelectionSourceLine(point));
+    const segments = [];
     let start = 0;
     for (const segment of wordSegmenter4.segment(line)) {
       const end = start + visibleWidth(segment.segment);
-      if (point.col >= start && point.col < end) {
-        return {
-          start: { ...point, col: start },
-          end: { ...point, col: end, boundary: true }
-        };
-      }
+      const joiner = TERMINAL_WORD_SELECTION_JOINERS.has(segment.segment);
+      segments.push({ start, end, selectable: segment.isWordLike === true || joiner, joiner });
       start = end;
     }
-    return void 0;
+    const clickedSegmentIndex = segments.findIndex((segment) => point.col >= segment.start && point.col < segment.end);
+    if (clickedSegmentIndex < 0)
+      return void 0;
+    const canJoin = (left, right) => left.selectable && right.selectable && (left.joiner || right.joiner);
+    let selectionStart = segments[clickedSegmentIndex].start;
+    let selectionEnd = segments[clickedSegmentIndex].end;
+    for (let index = clickedSegmentIndex; index > 0 && canJoin(segments[index - 1], segments[index]); index--) {
+      selectionStart = segments[index - 1].start;
+    }
+    for (let index = clickedSegmentIndex; index < segments.length - 1 && canJoin(segments[index], segments[index + 1]); index++) {
+      selectionEnd = segments[index + 1].end;
+    }
+    return {
+      start: { ...point, col: selectionStart },
+      end: { ...point, col: selectionEnd, boundary: true }
+    };
   }
   getLineSelection(point) {
     return {
@@ -27405,7 +27458,8 @@ var TuiAltScreen = class extends TuiBase {
         this.requestRender();
         return;
       }
-      void this.copySelectionToClipboard();
+      if (this.copyOnSelect)
+        void this.copySelectionToClipboard();
       this.requestRender();
       return;
     }
@@ -27458,17 +27512,17 @@ var TuiAltScreen = class extends TuiBase {
     }
     return { start: Math.max(minColumn, start), end: Math.min(maxColumn, end) };
   }
-  async copySelectionToClipboard() {
+  getActiveSelectionText() {
     const selection = this.getSelectionBounds();
     if (!selection)
-      return;
+      return void 0;
     let sourceLines = this.previousScreen;
     if (selection.start.scrollView) {
       if (!this.currentLayout)
-        return;
+        return void 0;
       const box = getScrollViewBox(this.currentLayout, selection.start.scrollView);
       if (!box?.scrollContentLines)
-        return;
+        return void 0;
       sourceLines = box.scrollContentLines;
     }
     const lines = [];
@@ -27478,15 +27532,23 @@ var TuiAltScreen = class extends TuiBase {
       lines.push(stripTerminalSequences(sliceByColumn(line, columns.start, Math.max(0, columns.end - columns.start), true)).trimEnd());
     }
     const text = lines.join("\n");
-    if (text.length === 0)
-      return;
+    return text.length === 0 ? void 0 : text;
+  }
+  async copySelectionToClipboard() {
+    const text = this.getActiveSelectionText();
+    if (!text)
+      return false;
+    return this.copyTextToClipboard(text);
+  }
+  async copyTextToClipboard(text) {
     if (this.copySelection) {
       const ok = await this.copySelection(text);
       this.flash(ok ? "Copied!" : "Copy failed");
-      return;
+      return ok;
     }
     this.terminal.write(`\x1B]52;c;${Buffer.from(text).toString("base64")}\x07`);
     this.flash("Copied!");
+    return true;
   }
   applySearchTextHighlight(text, current) {
     const style = current ? this.searchCurrentMatchStyle : this.searchMatchStyle;
@@ -27698,6 +27760,9 @@ var TuiAltScreen = class extends TuiBase {
     this.currentLayout = nextLayout;
   }
 };
+
+// node_modules/@earendil-works/pi-tui/dist/tui-main-screen.js
+var MAX_RENDER_WRITE_CHARS = 1024 * 1024;
 
 // plugins/kxm-mesh/src/tui.ts
 var MESH_TUI_PANELS = ["agents", "messages", "runs", "pids"];
