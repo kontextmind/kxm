@@ -407,6 +407,7 @@ test("kxm run creates, lists, shows, and cancels a run offline with an auto-star
     assert.equal(await runCli(["runtime", "status", "--json"], env, stoppedIo, cwd), 1);
   } finally {
     try { await runCli(["runtime", "stop", "--json"], env, capture(), cwd); } catch { /* best effort */ }
+    await waitForSupervisorExit(env);
     rmSync(cwd, { recursive: true, force: true });
     rmSync(stateRoot, { recursive: true, force: true });
   }
@@ -474,11 +475,24 @@ test("kxm run and runtime commands cover workspace, project, and dry-run branche
     writeFileSync(projectFile, projectYaml, "utf8");
   } finally {
     try { await runCli(["runtime", "stop", "--json"], env, capture(), cwd); } catch { /* best effort */ }
+    await waitForSupervisorExit(env);
     rmSync(cwd, { recursive: true, force: true });
     rmSync(noProject, { recursive: true, force: true });
     rmSync(stateRoot, { recursive: true, force: true });
   }
 });
+
+import { vnextSupervisorStatus } from "../plugins/kxm-mesh/src/vnext-runtime-supervisor.ts";
+import { vnextRuntimePaths } from "../plugins/kxm-mesh/src/vnext-runtime-store.ts";
+
+async function waitForSupervisorExit(env: NodeJS.ProcessEnv): Promise<void> {
+  const paths = vnextRuntimePaths({ env });
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    if (!vnextSupervisorStatus(paths).running) return;
+    await new Promise((resolveWait) => setTimeout(resolveWait, 150));
+  }
+}
 
 test("kxm trust diff and check classify expansions against HEAD", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "kxm-trust-cli-"));
