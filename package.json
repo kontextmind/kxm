@@ -60,7 +60,7 @@
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
-    "@types/node": "26.2.0",
+    "@types/node": "26.4.0",
     "ajv": "8.20.0",
     "commander": "15.0.0",
     "esbuild": "0.28.2",
