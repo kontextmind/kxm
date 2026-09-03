@@ -222,6 +222,34 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
     assert.equal(migrateVerify.status, 0, `${migrateVerify.stderr}\n${migrateVerify.stdout}`);
     assert.match(migrateVerify.stdout, /"ok":true/);
 
+    // Packed consumer: trust diff/check against HEAD on the migrated project.
+    // Commit the migrated tree first so HEAD is a loadable vNext base, then
+    // expand a permission and observe the check fail until committed.
+    spawnSync("git", ["-C", legacyConsumer, "add", "-A"], { windowsHide: true });
+    const migratedCommit = spawnSync("git", ["-C", legacyConsumer, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "migrated"], { windowsHide: true });
+    assert.equal(migratedCommit.status, 0, migratedCommit.stderr as unknown as string);
+    const trustClean = spawnSync(process.execPath, [
+      join(packageRoot, "scripts", "kxm.mjs"), "trust", "check", "--json",
+    ], { cwd: legacyConsumer, encoding: "utf8", env: joinEnvironment });
+    assert.equal(trustClean.status, 0, `${trustClean.stderr}\n${trustClean.stdout}`);
+    assert.match(trustClean.stdout, /"requiresReview":false/);
+    const trustAgentFile = join(legacyConsumer, ".kxm", "agents", "writer.yaml");
+    writeFileSync(trustAgentFile, readFileSync(trustAgentFile, "utf8").replace("network: provider-only", "network: host"), "utf8");
+    const trustExpanded = spawnSync(process.execPath, [
+      join(packageRoot, "scripts", "kxm.mjs"), "trust", "check", "--json",
+    ], { cwd: legacyConsumer, encoding: "utf8", env: joinEnvironment });
+    assert.equal(trustExpanded.status, 1, `${trustExpanded.stderr}\n${trustExpanded.stdout}`);
+    assert.match(trustExpanded.stdout, /"requiresReview":true/);
+    spawnSync("git", ["-C", legacyConsumer, "add", "-A"], { windowsHide: true });
+    const trustCommit = spawnSync("git", ["-C", legacyConsumer, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "grant host network"], { windowsHide: true });
+    assert.equal(trustCommit.status, 0, trustCommit.stderr as unknown as string);
+    const trustCommitted = spawnSync(process.execPath, [
+      join(packageRoot, "scripts", "kxm.mjs"), "trust", "check", "--json",
+    ], { cwd: legacyConsumer, encoding: "utf8", env: joinEnvironment });
+    assert.equal(trustCommitted.status, 0, `${trustCommitted.stderr}\n${trustCommitted.stdout}`);
+    assert.match(trustCommitted.stdout, /"requiresReview":false/);
+    assert.equal(existsSync(join(packageRoot, "schemas", "vnext", "permission-diff.schema.json")), true);
+
     const globalInstall = runNpm([
       "install",
       "--global",

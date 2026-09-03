@@ -33,9 +33,15 @@ validated vNext resources with explicit operator decisions for terminal
 status, transition budgets, evidence-policy strengthening, secret-reference
 drops, narrowed permission ceilings, and identity mapping, then installs
 atomically with a hash-linked `kxm.migration-receipt.v1` that keeps legacy
-inputs read-only. Database/WAL migration, active-run cutover, and the
-complete permission-diff trust workflow remain pending; therefore the Phase 1
-gate is not yet passed.
+inputs read-only. The permission-diff trust workflow is implemented:
+structured field-addressed authority projections per resource kind, a
+deterministic `kxm.permission-diff.v1` report classifying every change as
+expansion, narrowing, or neutral across conservative lattices (repository
+access, network, budgets, quorums, snapshots, secrets) with everything else
+fail-closed to expansion, `kxm trust diff|check` against a base Git revision,
+and template repair blocking issues enriched with the exact field-level diff.
+Database/WAL migration and active-run cutover remain later-phase work; the
+Phase 1 gate passes for configuration and initialization.
 
 **Gate:** a project can be reproduced from Git on a second machine without a
 hub and without overwriting edited files.
