@@ -21,6 +21,7 @@ import { runMeshTui } from "./tui.ts";
 import { VnextConfigError, type VnextInitializationPlan } from "./vnext-config.ts";
 import { vnextUserStateRoot } from "./vnext-bindings.ts";
 import { initializeVnextProject } from "./vnext-init.ts";
+import { applyVnextMigration, planVnextMigration, verifyVnextMigration } from "./vnext-migrate.ts";
 import type { WorkflowEvidenceInput, WorkflowJournalEntry, WorkflowRun } from "./workflow.ts";
 
 export interface CliIo {
@@ -166,7 +167,12 @@ function redactCliValue(value: unknown, field = ""): unknown {
         || field === "localSha256"
         || field === "targetSha256"
         || field === "sourceTemplateRevision"
-        || field === "targetTemplateRevision")
+        || field === "targetTemplateRevision"
+        || field === "sourceDigest"
+        || field === "decisionDigest"
+        || field === "receiptSha256"
+        || field === "sha256"
+        || field === "valueSha256")
       && /^(?:sha256:)?[a-f0-9]{64}$/.test(value)
     ) return value;
     return redactSecrets(value);
@@ -515,6 +521,136 @@ async function cmdVnextInit(runtime: Runtime, options: { name?: string; projectI
     }, "vNext initialization failed because a local filesystem operation did not complete");
     return 1;
   }
+}
+
+async function cmdVnextMigratePlan(runtime: Runtime): Promise<number> {
+  if (runtime.workspaceFlag !== undefined) {
+    print(runtime.io, runtime.json, {
+      ok: false,
+      command: "migrate plan",
+      error: "workspace_option_unsupported",
+    }, "kxm migrate discovers the authoritative Git root from the current directory; --workspace is not supported");
+    return 2;
+  }
+  try {
+    const result = planVnextMigration(runtime.cwd, {});
+    const ambiguities = (result.plan.ambiguities as Array<{ key: string; message: string }> | undefined) ?? [];
+    const unmapped = (result.plan.unmapped as unknown[] | undefined) ?? [];
+    const payload = {
+      ok: result.plan.canApply === true,
+      command: "migrate plan",
+      plan: result.plan,
+      plannedOnly: result.plan.canApply !== true,
+    };
+    if (result.plan.canApply === true) {
+      print(runtime.io, runtime.json, payload, `migration plan: ${ambiguities.length} ambiguities, ${unmapped.length} preserved fields; ready to apply`);
+      return 0;
+    }
+    print(
+      runtime.io,
+      runtime.json,
+      payload,
+      `migration plan requires ${ambiguities.length} reviewed decision(s):\n${ambiguities.map((candidate) => `  - ${candidate.key}: ${candidate.message}`).join("\n")}`,
+    );
+    return 1;
+  } catch (error) {
+    if (error instanceof VnextConfigError) {
+      print(runtime.io, runtime.json, { ok: false, command: "migrate plan", error: "migration_plan_failed", issues: error.issues }, `migration plan failed: ${error.message}`);
+      return 1;
+    }
+    print(runtime.io, runtime.json, { ok: false, command: "migrate plan", error: "migration_plan_io_failed" }, "migration plan failed because a local filesystem operation did not complete");
+    return 1;
+  }
+}
+
+async function cmdVnextMigrateApply(runtime: Runtime, options: { decisions?: string; projectId?: string; name?: string }): Promise<number> {
+  if (runtime.workspaceFlag !== undefined) {
+    print(runtime.io, runtime.json, {
+      ok: false,
+      command: "migrate apply",
+      error: "workspace_option_unsupported",
+    }, "kxm migrate discovers the authoritative Git root from the current directory; --workspace is not supported");
+    return 2;
+  }
+  try {
+    const result = applyVnextMigration(runtime.cwd, {
+      ...(options.decisions?.trim() ? { decisionsFile: options.decisions.trim() } : {}),
+      ...(options.projectId?.trim() ? { projectId: options.projectId.trim() } : {}),
+      ...(options.name?.trim() ? { projectName: options.name.trim() } : {}),
+      localStateRoot: vnextUserStateRoot({ env: runtime.env }),
+      dryRun: runtime.dryRun,
+    });
+    const payload = {
+      ok: result.action !== "planned" || (runtime.dryRun === true && result.plan?.canApply === true),
+      command: "migrate apply",
+      action: result.action,
+      files: result.files,
+      ...(result.configRevision ? { configRevision: result.configRevision } : {}),
+      ...(result.receiptPath ? { receiptPath: result.receiptPath } : {}),
+      plannedOnly: result.action === "planned",
+    };
+    if (result.action === "applied") {
+      print(runtime.io, runtime.json, payload, `migration applied: ${result.files.length} resources installed, receipt at ${result.receiptPath ?? ""}`);
+      return 0;
+    }
+    if (result.action === "already-migrated") {
+      print(runtime.io, runtime.json, payload, "migration receipt already exists; nothing to apply");
+      return 0;
+    }
+    if (runtime.dryRun && result.plan?.canApply === true) {
+      print(runtime.io, runtime.json, payload, `migration dry run: ${result.files.length} resources would be installed`);
+      return 0;
+    }
+    const ambiguities = (result.plan?.ambiguities as Array<{ key: string; message: string }> | undefined) ?? [];
+    print(
+      runtime.io,
+      runtime.json,
+      { ...payload, plan: result.plan },
+      `migration blocked by ${ambiguities.length} unresolved decision(s); review 'kxm migrate plan' and pass --decisions:\n${ambiguities.map((candidate) => `  - ${candidate.key}: ${candidate.message}`).join("\n")}`,
+    );
+    return 1;
+  } catch (error) {
+    if (error instanceof VnextConfigError) {
+      print(runtime.io, runtime.json, { ok: false, command: "migrate apply", error: "migration_apply_failed", issues: error.issues }, `migration apply failed: ${error.message}`);
+      return 1;
+    }
+    print(runtime.io, runtime.json, { ok: false, command: "migrate apply", error: "migration_apply_io_failed" }, "migration apply failed because a local filesystem operation did not complete");
+    return 1;
+  }
+}
+
+async function cmdVnextMigrateVerify(runtime: Runtime): Promise<number> {
+  if (runtime.workspaceFlag !== undefined) {
+    print(runtime.io, runtime.json, {
+      ok: false,
+      command: "migrate verify",
+      error: "workspace_option_unsupported",
+    }, "kxm migrate discovers the authoritative Git root from the current directory; --workspace is not supported");
+    return 2;
+  }
+  let result: ReturnType<typeof verifyVnextMigration>;
+  try {
+    result = verifyVnextMigration(runtime.cwd, {});
+  } catch (error) {
+    if (error instanceof VnextConfigError) {
+      print(runtime.io, runtime.json, { ok: false, command: "migrate verify", error: "migration_verify_failed", issues: error.issues }, `migration verification failed: ${error.message}`);
+      return 1;
+    }
+    print(runtime.io, runtime.json, { ok: false, command: "migrate verify", error: "migration_verify_io_failed" }, "migration verification failed because a local filesystem operation did not complete");
+    return 1;
+  }
+  const payload = {
+    ok: result.ok,
+    command: "migrate verify",
+    ...(result.configRevision ? { configRevision: result.configRevision } : {}),
+    issues: result.issues,
+  };
+  if (result.ok) {
+    print(runtime.io, runtime.json, payload, `migration receipt verified: legacy sources unchanged, target bundle matches ${result.configRevision ?? ""}`);
+    return 0;
+  }
+  print(runtime.io, runtime.json, payload, `migration verification failed:\n${result.issues.map((issue) => `  - ${issue.file}: ${issue.code}: ${issue.message}`).join("\n")}`);
+  return 1;
 }
 
 async function cmdInit(runtime: Runtime): Promise<number> {
@@ -1495,6 +1631,24 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .option("--repository <id=absolute-path>", "Bind a member repository outside Git configuration", (value, previous: string[]) => [...previous, value], [])
     .action(async function initAction(this: Command, options: { name?: string; projectId?: string; repository?: string[] }) {
       result.code = await cmdVnextInit(runtimeFrom(ctx, this), options);
+    });
+
+  const migrate = addGlobalOptions(program.command("migrate").description("Plan, apply, and verify legacy JSON configuration migration"));
+  migrate.helpCommand("help", "Show migrate help");
+  addGlobalOptions(migrate.command("plan").description("Compute the deterministic legacy-to-vNext migration plan without writes"))
+    .action(async function migratePlanAction(this: Command) {
+      result.code = await cmdVnextMigratePlan(runtimeFrom(ctx, this));
+    });
+  addGlobalOptions(migrate.command("apply").description("Install a reviewed migration with a hash-linked receipt"))
+    .option("--decisions <file>", "Reviewed kxm.migration-decision.v1 YAML file")
+    .option("--project-id <id>", "Stable project ID for controlled provisioning")
+    .option("--name <name>", "Project display name")
+    .action(async function migrateApplyAction(this: Command, options: { decisions?: string; projectId?: string; name?: string }) {
+      result.code = await cmdVnextMigrateApply(runtimeFrom(ctx, this), options);
+    });
+  addGlobalOptions(migrate.command("verify").description("Verify a migration receipt against current sources and target bundle"))
+    .action(async function migrateVerifyAction(this: Command) {
+      result.code = await cmdVnextMigrateVerify(runtimeFrom(ctx, this));
     });
 
   const agent = addGlobalOptions(program.command("agent").description("Run and supervise agents"));

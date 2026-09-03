@@ -26,9 +26,16 @@ persistence, process-death-released mutation locking, resumable pinned create
 and repair operations, and exact whole-file three-way template reconciliation.
 Automatic repair is limited to conflict-free changes whose conservative
 authority projection is unchanged; provenance-free files, overlapping edits,
-template deletions, and authority changes remain non-mutating plans. Legacy
-migration conversion/receipts and the complete permission-diff trust workflow
-remain pending; therefore the Phase 1 gate is not yet passed.
+template deletions, and authority changes remain non-mutating plans. Bounded
+legacy JSON conversion is implemented: `kxm migrate plan|apply|verify`
+converts `agents.json`, `gates.json`, and workflow-definition JSON into
+validated vNext resources with explicit operator decisions for terminal
+status, transition budgets, evidence-policy strengthening, secret-reference
+drops, narrowed permission ceilings, and identity mapping, then installs
+atomically with a hash-linked `kxm.migration-receipt.v1` that keeps legacy
+inputs read-only. Database/WAL migration, active-run cutover, and the
+complete permission-diff trust workflow remain pending; therefore the Phase 1
+gate is not yet passed.
 
 **Gate:** a project can be reproduced from Git on a second machine without a
 hub and without overwriting edited files.
