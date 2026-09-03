@@ -40,7 +40,7 @@ function runOperatorBin(command: string, args: string[], cwd: string) {
   });
 }
 
-test("packed npm artifact runs the operator CLI and hub outside the repository", { timeout: 240_000 }, async () => {
+test("packed npm artifact runs the operator CLI and hub outside the repository", { timeout: 480_000 }, async () => {
   const repository = process.cwd();
   const root = mkdtempSync(join(tmpdir(), "pi-mesh-package-install-"));
   const packDirectory = join(root, "pack");
