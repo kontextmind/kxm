@@ -164,10 +164,10 @@ var require_code = __commonJS({
     function interpolate(x2) {
       return typeof x2 == "number" || typeof x2 == "boolean" || x2 === null ? x2 : safeStringify(Array.isArray(x2) ? x2.join(",") : x2);
     }
-    function stringify2(x2) {
+    function stringify3(x2) {
       return new _Code(safeStringify(x2));
     }
-    exports.stringify = stringify2;
+    exports.stringify = stringify3;
     function safeStringify(x2) {
       return JSON.stringify(x2).replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
     }
@@ -2987,7 +2987,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve7.call(this, root, ref);
+      let _sch = resolve8.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a = root.localRefs) === null || _a === void 0 ? void 0 : _a[ref];
         const { schemaId } = this.opts;
@@ -3014,7 +3014,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve7(root, ref) {
+    function resolve8(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3839,7 +3839,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve7(baseURI, relativeURI, options) {
+    function resolve8(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const {
         parsed: baseParsed,
@@ -4201,7 +4201,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve: resolve7,
+      resolve: resolve8,
       resolveComponent,
       equal,
       serialize,
@@ -8913,7 +8913,7 @@ var require_stringify = __commonJS({
         props.push(doc.directives.tagString(tag));
       return props.join(" ");
     }
-    function stringify2(item, ctx, onComment, onChompKeep) {
+    function stringify3(item, ctx, onComment, onChompKeep) {
       if (identity.isPair(item))
         return item.toString(ctx, onComment, onChompKeep);
       if (identity.isAlias(item)) {
@@ -8942,7 +8942,7 @@ var require_stringify = __commonJS({
 ${ctx.indent}${str}`;
     }
     exports.createStringifyContext = createStringifyContext;
-    exports.stringify = stringify2;
+    exports.stringify = stringify3;
   }
 });
 
@@ -8952,7 +8952,7 @@ var require_stringifyPair = __commonJS({
     "use strict";
     var identity = require_identity();
     var Scalar = require_Scalar();
-    var stringify2 = require_stringify();
+    var stringify3 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyPair({ key, value }, ctx, onComment, onChompKeep) {
       const { allNullValues, doc, indent, indentStep, options: { commentString, indentSeq, simpleKeys } } = ctx;
@@ -8974,7 +8974,7 @@ var require_stringifyPair = __commonJS({
       });
       let keyCommentDone = false;
       let chompKeep = false;
-      let str = stringify2.stringify(key, ctx, () => keyCommentDone = true, () => chompKeep = true);
+      let str = stringify3.stringify(key, ctx, () => keyCommentDone = true, () => chompKeep = true);
       if (!explicitKey && !ctx.inFlow && str.length > 1024) {
         if (simpleKeys)
           throw new Error("With simple keys, single line scalar must not span more than 1024 characters");
@@ -9026,7 +9026,7 @@ ${indent}:`;
         ctx.indent = ctx.indent.substring(2);
       }
       let valueCommentDone = false;
-      const valueStr = stringify2.stringify(value, ctx, () => valueCommentDone = true, () => chompKeep = true);
+      const valueStr = stringify3.stringify(value, ctx, () => valueCommentDone = true, () => chompKeep = true);
       let ws = " ";
       if (keyComment || vsb || vcb) {
         ws = vsb ? "\n" : "";
@@ -9164,7 +9164,7 @@ var require_addPairToJSMap = __commonJS({
     "use strict";
     var log = require_log();
     var merge = require_merge();
-    var stringify2 = require_stringify();
+    var stringify3 = require_stringify();
     var identity = require_identity();
     var toJS = require_toJS();
     function addPairToJSMap(ctx, map, { key, value }) {
@@ -9200,7 +9200,7 @@ var require_addPairToJSMap = __commonJS({
       if (typeof jsKey !== "object")
         return String(jsKey);
       if (identity.isNode(key) && ctx?.doc) {
-        const strCtx = stringify2.createStringifyContext(ctx.doc, {});
+        const strCtx = stringify3.createStringifyContext(ctx.doc, {});
         strCtx.anchors = /* @__PURE__ */ new Set();
         for (const node of ctx.anchors.keys())
           strCtx.anchors.add(node.anchor);
@@ -9267,12 +9267,12 @@ var require_stringifyCollection = __commonJS({
   "node_modules/yaml/dist/stringify/stringifyCollection.js"(exports) {
     "use strict";
     var identity = require_identity();
-    var stringify2 = require_stringify();
+    var stringify3 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyCollection(collection, ctx, options) {
       const flow = ctx.inFlow ?? collection.flow;
-      const stringify3 = flow ? stringifyFlowCollection : stringifyBlockCollection;
-      return stringify3(collection, ctx, options);
+      const stringify4 = flow ? stringifyFlowCollection : stringifyBlockCollection;
+      return stringify4(collection, ctx, options);
     }
     function stringifyBlockCollection({ comment, items }, ctx, { blockItemPrefix, flowChars, itemIndent, onChompKeep, onComment }) {
       const { indent, options: { commentString } } = ctx;
@@ -9297,7 +9297,7 @@ var require_stringifyCollection = __commonJS({
           }
         }
         chompKeep = false;
-        let str2 = stringify2.stringify(item, itemCtx, () => comment2 = null, () => chompKeep = true);
+        let str2 = stringify3.stringify(item, itemCtx, () => comment2 = null, () => chompKeep = true);
         if (comment2)
           str2 += stringifyComment.lineComment(str2, itemIndent, commentString(comment2));
         if (chompKeep && comment2)
@@ -9364,7 +9364,7 @@ ${indent}${line}` : "\n";
         }
         if (comment)
           reqNewline = true;
-        let str = stringify2.stringify(item, itemCtx, () => comment = null);
+        let str = stringify3.stringify(item, itemCtx, () => comment = null);
         if (i < items.length - 1)
           str += ",";
         if (comment)
@@ -10718,7 +10718,7 @@ var require_stringifyDocument = __commonJS({
   "node_modules/yaml/dist/stringify/stringifyDocument.js"(exports) {
     "use strict";
     var identity = require_identity();
-    var stringify2 = require_stringify();
+    var stringify3 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyDocument(doc, options) {
       const lines = [];
@@ -10733,7 +10733,7 @@ var require_stringifyDocument = __commonJS({
       }
       if (hasDirectives)
         lines.push("---");
-      const ctx = stringify2.createStringifyContext(doc, options);
+      const ctx = stringify3.createStringifyContext(doc, options);
       const { commentString } = ctx.options;
       if (doc.commentBefore) {
         if (lines.length !== 1)
@@ -10755,7 +10755,7 @@ var require_stringifyDocument = __commonJS({
           contentComment = doc.contents.comment;
         }
         const onChompKeep = contentComment ? void 0 : () => chompKeep = true;
-        let body = stringify2.stringify(doc.contents, ctx, () => contentComment = null, onChompKeep);
+        let body = stringify3.stringify(doc.contents, ctx, () => contentComment = null, onChompKeep);
         if (contentComment)
           body += stringifyComment.lineComment(body, "", commentString(contentComment));
         if ((body[0] === "|" || body[0] === ">") && lines[lines.length - 1] === "---") {
@@ -10763,7 +10763,7 @@ var require_stringifyDocument = __commonJS({
         } else
           lines.push(body);
       } else {
-        lines.push(stringify2.stringify(doc.contents, ctx));
+        lines.push(stringify3.stringify(doc.contents, ctx));
       }
       if (doc.directives?.docEnd) {
         if (doc.comment) {
@@ -12890,7 +12890,7 @@ var require_cst_scalar = __commonJS({
 var require_cst_stringify = __commonJS({
   "node_modules/yaml/dist/parse/cst-stringify.js"(exports) {
     "use strict";
-    var stringify2 = (cst) => "type" in cst ? stringifyToken(cst) : stringifyItem(cst);
+    var stringify3 = (cst) => "type" in cst ? stringifyToken(cst) : stringifyItem(cst);
     function stringifyToken(token) {
       switch (token.type) {
         case "block-scalar": {
@@ -12943,7 +12943,7 @@ var require_cst_stringify = __commonJS({
         res += stringifyToken(value);
       return res;
     }
-    exports.stringify = stringify2;
+    exports.stringify = stringify3;
   }
 });
 
@@ -14656,7 +14656,7 @@ var require_public_api = __commonJS({
       }
       return doc.toJS(Object.assign({ reviver: _reviver }, options));
     }
-    function stringify2(value, replacer, options) {
+    function stringify3(value, replacer, options) {
       let _replacer = null;
       if (typeof replacer === "function" || Array.isArray(replacer)) {
         _replacer = replacer;
@@ -14681,7 +14681,7 @@ var require_public_api = __commonJS({
     exports.parse = parse2;
     exports.parseAllDocuments = parseAllDocuments;
     exports.parseDocument = parseDocument2;
-    exports.stringify = stringify2;
+    exports.stringify = stringify3;
   }
 });
 
@@ -14740,8 +14740,8 @@ var require_dist = __commonJS({
 // plugins/kxm-mesh/src/cli.ts
 import { spawn } from "node:child_process";
 import { createHmac as createHmac2, randomUUID as randomUUID5 } from "node:crypto";
-import { existsSync as existsSync8, mkdirSync as mkdirSync9, readFileSync as readFileSync8, readdirSync as readdirSync5, writeFileSync as writeFileSync8 } from "node:fs";
-import { basename as basename3, join as join15, resolve as resolve6 } from "node:path";
+import { existsSync as existsSync9, mkdirSync as mkdirSync10, readFileSync as readFileSync9, readdirSync as readdirSync5, writeFileSync as writeFileSync9 } from "node:fs";
+import { basename as basename3, join as join16, resolve as resolve7 } from "node:path";
 import { DatabaseSync as DatabaseSync3 } from "node:sqlite";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 
@@ -18633,7 +18633,7 @@ async function watchGithubChecks(input) {
   }
   const fetchImpl = input.fetchImpl ?? fetch;
   const now = input.now ?? Date.now;
-  const sleep = input.sleep ?? ((ms) => new Promise((resolve7) => setTimeout(resolve7, ms)));
+  const sleep = input.sleep ?? ((ms) => new Promise((resolve8) => setTimeout(resolve8, ms)));
   const deadline = now() + input.timeoutMs;
   const headers = {
     authorization: `Bearer ${token}`,
@@ -24281,10 +24281,10 @@ var TuiBase = class _TuiBase extends Container {
    * @returns Promise containing the parsed RGB color, or undefined if it times out or fails to parse.
    */
   queryTerminalBackgroundColor({ timeoutMs }) {
-    return new Promise((resolve7) => {
+    return new Promise((resolve8) => {
       const query = {
         settled: false,
-        resolve: resolve7,
+        resolve: resolve8,
         timer: void 0
       };
       query.timer = setTimeout(() => {
@@ -24307,7 +24307,7 @@ var TuiBase = class _TuiBase extends Container {
    * `CSI ? 997 ; 1 n` for dark or `CSI ? 997 ; 2 n` for light.
    */
   queryTerminalColorScheme({ timeoutMs }) {
-    return new Promise((resolve7) => {
+    return new Promise((resolve8) => {
       let settled = false;
       let timer;
       let unsubscribe = () => {
@@ -24321,7 +24321,7 @@ var TuiBase = class _TuiBase extends Container {
           timer = void 0;
         }
         unsubscribe();
-        resolve7(scheme);
+        resolve8(scheme);
       };
       unsubscribe = this.onTerminalColorSchemeChange(settle);
       timer = setTimeout(() => settle(void 0), timeoutMs);
@@ -26070,7 +26070,7 @@ var ProcessTerminal = class {
           break;
         if (now - lastDataTime >= idleMs)
           break;
-        await new Promise((resolve7) => setTimeout(resolve7, Math.min(idleMs, timeLeft)));
+        await new Promise((resolve8) => setTimeout(resolve8, Math.min(idleMs, timeLeft)));
       }
     } finally {
       process.stdin.removeListener("data", onData);
@@ -28073,11 +28073,11 @@ async function readJson(response) {
 }
 async function waitForReconnect(signal, milliseconds = 1e3) {
   if (signal.aborted) return;
-  await new Promise((resolve7) => {
+  await new Promise((resolve8) => {
     const done = () => {
       clearTimeout(timer);
       signal.removeEventListener("abort", done);
-      resolve7();
+      resolve8();
     };
     const timer = setTimeout(done, milliseconds);
     timer.unref();
@@ -28733,6 +28733,9 @@ var VnextSchemaRegistry = class {
   localBindingsValidator;
   templateProvenanceValidator;
   initOperationValidator;
+  migrationPlanValidator;
+  migrationDecisionValidator;
+  migrationReceiptValidator;
   constructor(schemasDir = DEFAULT_SCHEMA_DIR) {
     this.schemasDir = resolve3(schemasDir);
     this.ajv = new import__.Ajv2020({ allErrors: true, strict: true, strictRequired: false });
@@ -28744,9 +28747,15 @@ var VnextSchemaRegistry = class {
     const localBindingsFile = "local-repository-bindings.schema.json";
     const templateProvenanceFile = "template-provenance.schema.json";
     const initOperationFile = "init-operation.schema.json";
+    const migrationPlanFile = "migration-plan.schema.json";
+    const migrationDecisionFile = "migration-decision.schema.json";
+    const migrationReceiptFile = "migration-receipt.schema.json";
     this.ajv.addSchema(readJsonObject(join11(this.schemasDir, localBindingsFile)));
     this.ajv.addSchema(readJsonObject(join11(this.schemasDir, templateProvenanceFile)));
     this.ajv.addSchema(readJsonObject(join11(this.schemasDir, initOperationFile)));
+    this.ajv.addSchema(readJsonObject(join11(this.schemasDir, migrationPlanFile)));
+    this.ajv.addSchema(readJsonObject(join11(this.schemasDir, migrationDecisionFile)));
+    this.ajv.addSchema(readJsonObject(join11(this.schemasDir, migrationReceiptFile)));
     for (const [kind, definition] of Object.entries(RESOURCE_SCHEMA)) {
       const validator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${definition.file}`);
       if (!validator) throw new Error(`schema did not compile: ${definition.file}`);
@@ -28755,12 +28764,21 @@ var VnextSchemaRegistry = class {
     const localBindingsValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${localBindingsFile}`);
     const templateProvenanceValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${templateProvenanceFile}`);
     const initOperationValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${initOperationFile}`);
+    const migrationPlanValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${migrationPlanFile}`);
+    const migrationDecisionValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${migrationDecisionFile}`);
+    const migrationReceiptValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${migrationReceiptFile}`);
     if (!localBindingsValidator) throw new Error(`schema did not compile: ${localBindingsFile}`);
     if (!templateProvenanceValidator) throw new Error(`schema did not compile: ${templateProvenanceFile}`);
     if (!initOperationValidator) throw new Error(`schema did not compile: ${initOperationFile}`);
+    if (!migrationPlanValidator) throw new Error(`schema did not compile: ${migrationPlanFile}`);
+    if (!migrationDecisionValidator) throw new Error(`schema did not compile: ${migrationDecisionFile}`);
+    if (!migrationReceiptValidator) throw new Error(`schema did not compile: ${migrationReceiptFile}`);
     this.localBindingsValidator = localBindingsValidator;
     this.templateProvenanceValidator = templateProvenanceValidator;
     this.initOperationValidator = initOperationValidator;
+    this.migrationPlanValidator = migrationPlanValidator;
+    this.migrationDecisionValidator = migrationDecisionValidator;
+    this.migrationReceiptValidator = migrationReceiptValidator;
   }
   validate(kind, value, file) {
     const definition = RESOURCE_SCHEMA[kind];
@@ -28780,6 +28798,15 @@ var VnextSchemaRegistry = class {
   }
   validateInitOperation(value, file) {
     return this.validateAuxiliary(value, file, "kxm.init-operation.v1", this.initOperationValidator);
+  }
+  validateMigrationPlan(value, file) {
+    return this.validateAuxiliary(value, file, "kxm.migration-plan.v1", this.migrationPlanValidator);
+  }
+  validateMigrationDecision(value, file) {
+    return this.validateAuxiliary(value, file, "kxm.migration-decision.v1", this.migrationDecisionValidator);
+  }
+  validateMigrationReceipt(value, file) {
+    return this.validateAuxiliary(value, file, "kxm.migration-receipt.v1", this.migrationReceiptValidator);
   }
   validateAuxiliary(value, file, identity, validator) {
     if (value.schema !== identity) {
@@ -29119,6 +29146,32 @@ function validateToolPolicy(resource, policy, label, issues) {
     if (allowed.has(tool)) issues.push(issue("semantic", "tool_policy_contradiction", resource.logicalPath, `${label} both allows and denies ${tool}`));
   }
 }
+function validateVnextResources(resources, options = {}) {
+  const make = (logicalPath, kind, id, value) => ({
+    kind,
+    ...id === void 0 ? {} : { id },
+    file: logicalPath,
+    logicalPath,
+    value
+  });
+  let project;
+  const repositories = /* @__PURE__ */ new Map();
+  const agents = /* @__PURE__ */ new Map();
+  const models = /* @__PURE__ */ new Map();
+  const workflows = /* @__PURE__ */ new Map();
+  const environments = [];
+  for (const [logicalPath, resource] of resources) {
+    const made = make(logicalPath, resource.kind, resource.id, resource.value);
+    if (resource.kind === "project") project = made;
+    else if (resource.kind === "repository" && resource.id) repositories.set(resource.id, made);
+    else if (resource.kind === "agent" && resource.id) agents.set(resource.id, made);
+    else if (resource.kind === "model" && resource.id) models.set(resource.id, made);
+    else if (resource.kind === "workflow" && resource.id) workflows.set(resource.id, made);
+    else if (resource.kind === "environment") environments.push(made);
+  }
+  if (!project) return [issue("discovery", "project_definition_missing", ".kxm/project.yaml", "resource set has no project definition")];
+  return validateBundle(project, repositories, agents, models, workflows, environments, options);
+}
 function validateAgentScope(agent, step, repositories, file, stepId, issues) {
   validateToolScope(agent, step, file, stepId, issues);
   const agentRepositories = objectValue(agent.value.repositories) ?? {};
@@ -29232,8 +29285,8 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
       const writable = Object.values(objectValue(step.repositories) ?? {}).filter((access) => access === "write").length;
       if (maxWriteRepositories > writable) issues.push(issue("semantic", "write_repository_bound_invalid", file, `${stepId} maxWriteRepositories exceeds writable repository scope`));
     }
-    const join16 = objectValue(step.join);
-    const minimumPassed = join16 && typeof join16.minimumPassed === "number" ? join16.minimumPassed : void 0;
+    const join17 = objectValue(step.join);
+    const minimumPassed = join17 && typeof join17.minimumPassed === "number" ? join17.minimumPassed : void 0;
     if (minimumPassed !== void 0 && minimumPassed > maximum) issues.push(issue("semantic", "join_impossible", file, `${stepId} minimumPassed exceeds assignment maximum`));
     const distinctBy = names(assignment?.distinctBy);
     if (distinctBy.length > 0) {
@@ -29412,10 +29465,13 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
   for (const workflow of workflows.values()) validateWorkflow(workflow, agents, models, repositoryIds, gates, issues);
   return sortIssues(issues);
 }
-function canonicalize(value) {
+function vnextCanonicalJson(value) {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map((candidate) => canonicalize(candidate)).join(",")}]`;
-  return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalize(value[key])}`).join(",")}}`;
+  if (Array.isArray(value)) return `[${value.map((candidate) => vnextCanonicalJson(candidate)).join(",")}]`;
+  return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${vnextCanonicalJson(value[key])}`).join(",")}}`;
+}
+function canonicalize(value) {
+  return vnextCanonicalJson(value);
 }
 function bundleRevision(resources) {
   const hash = createHash3("sha256");
@@ -29449,9 +29505,11 @@ function discoverVnextProjectRoot(start = process.cwd()) {
 }
 function loadVnextProject(projectRoot, options = {}) {
   const root = resolve3(projectRoot);
-  const legacyInputs = legacyInputsAt(root);
-  if (legacyInputs.length > 0) {
-    throw new VnextConfigError(legacyInputs.map((file) => issue("semantic", "legacy_vnext_conflict", file, "legacy and vNext configuration cannot coexist before an accepted migration receipt")));
+  let migrationReceipt;
+  if (legacyConfigFilesAt(root).length > 0 && options.allowUnreceiptedLegacyConfig !== true) {
+    const receiptCheck = readVnextMigrationReceipt(root, options);
+    if (receiptCheck.issues.length > 0) throw new VnextConfigError(receiptCheck.issues);
+    migrationReceipt = receiptCheck.receipt;
   }
   const registry = new VnextSchemaRegistry(options.schemasDir);
   const project = readResource(registry, root, join11(root, ".kxm", "project.yaml"), ".kxm/project.yaml", "project");
@@ -29463,6 +29521,9 @@ function loadVnextProject(projectRoot, options = {}) {
     if (provenanceProjectId !== stringValue(project.value.id)) {
       earlyIssues.push(issue("semantic", "template_provenance_project_mismatch", ".kxm/template-provenance.yaml", "template provenance belongs to a different project identity"));
     }
+  }
+  if (migrationReceipt && stringValue(migrationReceipt.projectId) !== stringValue(project.value.id)) {
+    earlyIssues.push(issue("semantic", "migration_project_mismatch", VNEXT_MIGRATION_RECEIPT_PATH, "migration receipt belongs to a different project identity"));
   }
   const declaredRepositoryIds = new Set(valuesOf(project.value, "repositories").map((candidate) => stringValue(objectValue(candidate)?.id)).filter((candidate) => candidate !== void 0));
   for (const repositoryId of Object.keys(options.repositoryBindings ?? {}).sort(compareCodeUnits2)) {
@@ -29590,9 +29651,49 @@ function loadVnextProject(projectRoot, options = {}) {
     workflows,
     environments,
     ...templateProvenance === void 0 ? {} : { templateProvenance },
+    ...migrationReceipt === void 0 ? {} : { migrationReceipt },
     resources,
     configRevision: bundleRevision(resources)
   };
+}
+function verifyVnextMigrationReceiptTarget(root, receipt, resources, configRevision) {
+  const issues = [];
+  if (receipt.configRevision !== configRevision) {
+    issues.push(issue("semantic", "migration_target_changed", VNEXT_MIGRATION_RECEIPT_PATH, "target configuration revision no longer matches the migration receipt"));
+  }
+  const declared = /* @__PURE__ */ new Map();
+  for (const candidate of Array.isArray(receipt.resources) ? receipt.resources : []) {
+    if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
+      const record = candidate;
+      if (typeof record.path === "string") declared.set(record.path, record);
+    }
+  }
+  const installedPaths = /* @__PURE__ */ new Set();
+  for (const resource of resources) {
+    const relative5 = resource.file.startsWith(root) ? relativePortable(root, resource.file) : void 0;
+    if (!relative5) continue;
+    installedPaths.add(relative5);
+    const record = declared.get(relative5);
+    if (!record) {
+      issues.push(issue("semantic", "migration_target_unreceipted", relative5, "installed resource is not covered by the migration receipt"));
+      continue;
+    }
+    const current = hashFileRecord(root, relative5);
+    if (!current || current.sha256 !== record.sha256 || current.bytes !== record.bytes) {
+      issues.push(issue("semantic", "migration_target_modified", relative5, "installed resource bytes differ from the migration receipt"));
+    }
+  }
+  for (const path5 of declared.keys()) {
+    if (!installedPaths.has(path5)) {
+      issues.push(issue("semantic", "migration_target_missing", path5, "receipt-covered resource is not part of the validated configuration"));
+    }
+  }
+  return sortIssues(issues);
+}
+function relativePortable(root, absolute) {
+  const rel = relative2(root, absolute);
+  if (!rel || isAbsolute2(rel) || rel === ".." || rel.startsWith(`..${sep}`)) return void 0;
+  return rel.split(sep).join("/");
 }
 function legacyInputsAt(root) {
   const candidates = [
@@ -29602,6 +29703,92 @@ function legacyInputsAt(root) {
     ".kxm/state/mesh.db"
   ];
   return candidates.filter((candidate) => existsSync4(join11(root, ...candidate.split("/"))));
+}
+var VNEXT_MIGRATION_RECEIPT_PATH = ".kxm/migration-receipt.yaml";
+var LEGACY_CONFIG_FILES = [".kxm/config/agents.json", ".kxm/config/gates.json"];
+function legacyConfigFilesAt(root) {
+  const files = [];
+  for (const component of [".kxm", ".kxm/config"]) {
+    const absolute = join11(root, ...component.split("/"));
+    if (existsSync4(absolute) && lstatSync2(absolute).isSymbolicLink()) return [component];
+  }
+  for (const candidate of LEGACY_CONFIG_FILES) {
+    if (existsSync4(join11(root, ...candidate.split("/")))) files.push(candidate);
+  }
+  const workflowsDir = join11(root, ".kxm", "config", "workflows");
+  if (existsSync4(workflowsDir)) {
+    const stat = lstatSync2(workflowsDir);
+    if (stat.isSymbolicLink()) {
+      files.push(".kxm/config/workflows");
+      return files;
+    }
+    if (stat.isDirectory()) {
+      for (const entry of readdirSync3(workflowsDir, { withFileTypes: true }).filter((candidate) => (candidate.isFile() || candidate.isSymbolicLink()) && candidate.name.endsWith(".json")).sort((left, right) => compareCodeUnits2(left.name, right.name))) {
+        files.push(`.kxm/config/workflows/${entry.name}`);
+      }
+    }
+  }
+  return files;
+}
+function hashFileRecord(root, relativePath) {
+  const absolute = join11(root, ...relativePath.split("/"));
+  if (!existsSync4(absolute)) return void 0;
+  const bytes = readFileSync5(absolute);
+  return {
+    path: relativePath,
+    sha256: `sha256:${createHash3("sha256").update(bytes).digest("hex")}`,
+    bytes: bytes.byteLength
+  };
+}
+function migrationReceiptSelfHash(receipt) {
+  const { receiptSha256: _ignored, ...unsigned } = receipt;
+  return `sha256:${createHash3("sha256").update(vnextCanonicalJson(unsigned), "utf8").digest("hex")}`;
+}
+function readVnextMigrationReceipt(root, options = {}) {
+  const receiptPath = join11(root, ...VNEXT_MIGRATION_RECEIPT_PATH.split("/"));
+  const legacyFiles = legacyConfigFilesAt(root);
+  if (!existsSync4(receiptPath)) {
+    return {
+      issues: legacyFiles.map((file) => issue("semantic", "legacy_vnext_conflict", file, "legacy and vNext configuration cannot coexist before an accepted migration receipt"))
+    };
+  }
+  const receiptStat = lstatSync2(receiptPath);
+  if (receiptStat.isSymbolicLink() || !receiptStat.isFile()) {
+    return { issues: [issue("path", "migration_receipt_invalid", VNEXT_MIGRATION_RECEIPT_PATH, "migration receipt must be a regular file, not a link")] };
+  }
+  let receipt;
+  try {
+    receipt = parseRestrictedYaml(readFileSync5(receiptPath), VNEXT_MIGRATION_RECEIPT_PATH);
+  } catch (error) {
+    if (error instanceof VnextConfigError) return { issues: [...error.issues] };
+    throw error;
+  }
+  const registry = new VnextSchemaRegistry(options.schemasDir);
+  const schemaIssues = registry.validateMigrationReceipt(receipt, VNEXT_MIGRATION_RECEIPT_PATH);
+  if (schemaIssues.length > 0) return { issues: schemaIssues };
+  if (receipt.receiptSha256 !== migrationReceiptSelfHash(receipt)) {
+    return { issues: [issue("semantic", "migration_receipt_hash_mismatch", VNEXT_MIGRATION_RECEIPT_PATH, "receipt self-hash does not match its content")] };
+  }
+  const sources = (Array.isArray(receipt.sources) ? receipt.sources : []).map((candidate) => candidate && typeof candidate === "object" && !Array.isArray(candidate) ? candidate.path : void 0).filter((candidate) => typeof candidate === "string").sort(compareCodeUnits2);
+  const issues = [];
+  const declared = new Set(sources);
+  for (const file of legacyFiles) {
+    if (!declared.has(file)) {
+      issues.push(issue("semantic", "migration_source_unmigrated", file, "legacy configuration file is not covered by the migration receipt"));
+      continue;
+    }
+    const record = (Array.isArray(receipt.sources) ? receipt.sources : []).map((candidate) => candidate && typeof candidate === "object" && !Array.isArray(candidate) ? candidate : void 0).find((candidate) => candidate?.path === file);
+    const current = hashFileRecord(root, file);
+    if (!current || current.sha256 !== record?.sha256 || current.bytes !== record?.bytes) {
+      issues.push(issue("semantic", "migration_source_changed", file, "legacy configuration changed after the migration receipt was issued"));
+    }
+  }
+  for (const file of sources) {
+    if (!legacyFiles.includes(file)) {
+      issues.push(issue("semantic", "migration_source_missing", file, "receipt covers a legacy configuration file that no longer exists"));
+    }
+  }
+  return issues.length > 0 ? { issues } : { receipt, issues: [] };
 }
 function discoverLegacyRoot(start) {
   let initial = resolve3(start);
@@ -31149,9 +31336,1489 @@ function initializeVnextProject(start = process.cwd(), options = {}) {
   return withVnextLocalBindingLock(gitRoot, storeOptions, (lock) => initializeVnextProjectAtGitRoot(start, gitRoot, options, lock));
 }
 
+// plugins/kxm-mesh/src/vnext-migrate.ts
+var import_yaml3 = __toESM(require_dist(), 1);
+import { createHash as createHash5 } from "node:crypto";
+import { chmodSync as chmodSync3, closeSync as closeSync3, existsSync as existsSync8, fsyncSync as fsyncSync3, lstatSync as lstatSync5, mkdirSync as mkdirSync9, openSync as openSync3, readFileSync as readFileSync8, renameSync as renameSync5, rmSync as rmSync4, writeFileSync as writeFileSync8 } from "node:fs";
+import { join as join15 } from "node:path";
+var MAX_LEGACY_JSON_BYTES = 1024 * 1024;
+var MAX_LEGACY_JSON_DEPTH = 32;
+var MAX_LEGACY_JSON_NODES = 32768;
+var MAX_LEGACY_SOURCES = 64;
+function migrateIssue(phase, code, file, message) {
+  return { phase, code, file, message };
+}
+function migrateFail(code, file, message) {
+  throw new VnextConfigError([migrateIssue("parse", code, file, message)]);
+}
+function parseLegacyJson(text, label) {
+  const bytes = Buffer.byteLength(text, "utf8");
+  if (bytes > MAX_LEGACY_JSON_BYTES) migrateFail("document_too_large", label, `document exceeds ${MAX_LEGACY_JSON_BYTES} bytes`);
+  const state = { nodes: 0 };
+  const parseNode = (value, path5, depth) => {
+    state.nodes += 1;
+    if (state.nodes > MAX_LEGACY_JSON_NODES) migrateFail("node_limit", label, `document exceeds ${MAX_LEGACY_JSON_NODES} nodes`);
+    if (depth > MAX_LEGACY_JSON_DEPTH) migrateFail("depth_limit", label, `document exceeds nesting depth ${MAX_LEGACY_JSON_DEPTH}`);
+    if (value === null || typeof value === "boolean" || typeof value === "string") return value;
+    if (typeof value === "number") {
+      if (!Number.isFinite(value)) migrateFail("non_json_number", label, `${path5} is not a finite number`);
+      return value;
+    }
+    if (Array.isArray(value)) {
+      return value.map((entry, index) => parseNode(entry, `${path5}[${index}]`, depth + 1));
+    }
+    if (value && typeof value === "object") {
+      const record = {};
+      for (const [key, entry] of Object.entries(value)) record[key] = parseNode(entry, `${path5}.${key}`, depth + 1);
+      return record;
+    }
+    migrateFail("non_json_value", label, `${path5} is not JSON-compatible`);
+  };
+  let raw;
+  try {
+    raw = JSON.parse(text);
+  } catch (error) {
+    migrateFail("invalid_json", label, error instanceof Error ? error.message : String(error));
+  }
+  detectDuplicateKeys(text, label);
+  return parseNode(raw, "$", 0);
+}
+function detectDuplicateKeys(text, label) {
+  const stack = [];
+  let index = 0;
+  const length = text.length;
+  const skipWhitespace = () => {
+    while (index < length && /[\s]/.test(text[index])) index += 1;
+  };
+  const parseString = () => {
+    let result = "";
+    index += 1;
+    while (index < length) {
+      const char = text[index];
+      if (char === '"') {
+        index += 1;
+        return result;
+      }
+      if (char === "\\") {
+        const escape2 = text[index + 1];
+        if (escape2 === "u") {
+          result += String.fromCharCode(Number.parseInt(text.slice(index + 2, index + 6), 16));
+          index += 6;
+        } else {
+          const escapes = { '"': '"', "\\": "\\", "/": "/", b: "\b", f: "\f", n: "\n", r: "\r", t: "	" };
+          result += escapes[escape2] ?? escape2;
+          index += 2;
+        }
+      } else {
+        result += char;
+        index += 1;
+      }
+    }
+    migrateFail("invalid_json", label, "unterminated string");
+  };
+  const skipValue = () => {
+    skipWhitespace();
+    const char = text[index];
+    if (char === '"') {
+      parseString();
+      return;
+    }
+    if (char === "{" || char === "[") {
+      parseContainer();
+      return;
+    }
+    while (index < length && !/[\s,\]}]/.test(text[index])) index += 1;
+  };
+  const parseContainer = () => {
+    const char = text[index];
+    if (stack.length > MAX_LEGACY_JSON_DEPTH) migrateFail("depth_limit", label, `document exceeds nesting depth ${MAX_LEGACY_JSON_DEPTH}`);
+    if (char === "{") {
+      const keys = /* @__PURE__ */ new Set();
+      stack.push(keys);
+      index += 1;
+      skipWhitespace();
+      if (text[index] === "}") {
+        index += 1;
+        stack.pop();
+        return;
+      }
+      for (; ; ) {
+        skipWhitespace();
+        if (text[index] !== '"') migrateFail("invalid_json", label, `expected object key at byte ${index}`);
+        const key = parseString();
+        if (key === "__proto__" || key === "constructor" || key === "prototype") {
+          migrateFail("forbidden_key", label, `key ${JSON.stringify(key)} is forbidden`);
+        }
+        const frame = stack[stack.length - 1];
+        if (frame instanceof Set) {
+          if (frame.has(key)) migrateFail("duplicate_key", label, `duplicate key ${JSON.stringify(key)}`);
+          frame.add(key);
+        }
+        skipWhitespace();
+        if (text[index] !== ":") migrateFail("invalid_json", label, `expected ':' at byte ${index}`);
+        index += 1;
+        skipValue();
+        skipWhitespace();
+        if (text[index] === ",") {
+          index += 1;
+          continue;
+        }
+        if (text[index] === "}") {
+          index += 1;
+          stack.pop();
+          return;
+        }
+        migrateFail("invalid_json", label, `expected ',' or '}' at byte ${index}`);
+      }
+    }
+    if (char === "[") {
+      stack.push("array");
+      index += 1;
+      skipWhitespace();
+      if (text[index] === "]") {
+        index += 1;
+        stack.pop();
+        return;
+      }
+      for (; ; ) {
+        skipValue();
+        skipWhitespace();
+        if (text[index] === ",") {
+          index += 1;
+          continue;
+        }
+        if (text[index] === "]") {
+          index += 1;
+          stack.pop();
+          return;
+        }
+        migrateFail("invalid_json", label, `expected ',' or ']' at byte ${index}`);
+      }
+    }
+  };
+  skipValue();
+  skipWhitespace();
+  if (index !== length) migrateFail("invalid_json", label, `trailing content at byte ${index}`);
+}
+function sha256Of(input) {
+  return `sha256:${createHash5("sha256").update(input).digest("hex")}`;
+}
+function readVnextLegacySources(root) {
+  const files = legacyConfigFilesAt(root);
+  if (files.length > MAX_LEGACY_SOURCES) {
+    throw new VnextConfigError([migrateIssue("discovery", "legacy_source_limit", ".kxm/config", `legacy configuration exceeds ${MAX_LEGACY_SOURCES} files`)]);
+  }
+  return files.map((path5) => {
+    const absolute = join15(root, ...path5.split("/"));
+    const stat = lstatSync5(absolute);
+    if (stat.isSymbolicLink() || !stat.isFile()) {
+      throw new VnextConfigError([migrateIssue("path", "legacy_source_invalid", path5, "legacy configuration must be a regular file, not a link")]);
+    }
+    const buffer = readFileSync8(absolute);
+    let text;
+    try {
+      text = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+    } catch {
+      throw new VnextConfigError([migrateIssue("parse", "invalid_utf8", path5, "document is not valid UTF-8")]);
+    }
+    return {
+      path: path5,
+      sha256: sha256Of(buffer),
+      bytes: buffer.byteLength,
+      value: parseLegacyJson(text, path5)
+    };
+  });
+}
+function legacySourceDigest(sources) {
+  return sha256Of(vnextCanonicalJson(sources.map((source) => ({ path: source.path, sha256: source.sha256, bytes: source.bytes }))));
+}
+var IDENTIFIER2 = /^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$/;
+var KNOWN_AGENT_FIELDS = /* @__PURE__ */ new Set(["name", "kind", "driver", "model", "thinking", "purpose"]);
+var KNOWN_GATE_FIELDS = /* @__PURE__ */ new Set(["name", "kind", "driver", "purpose"]);
+var KNOWN_WORKFLOW_FIELDS = /* @__PURE__ */ new Set([
+  "id",
+  "source",
+  "project",
+  "target",
+  "secret",
+  "secretEnv",
+  "signalSecret",
+  "signalSecretEnv",
+  "event",
+  "filter",
+  "delivery",
+  "ttlMs",
+  "promptTemplate",
+  "stages",
+  "maxTransitions",
+  "reproOracle",
+  "planHash",
+  "requirePlanHash"
+]);
+var KNOWN_STAGE_FIELDS = /* @__PURE__ */ new Set(["id", "label", "instructions", "requiredEvidence", "maxAttempts", "area", "evidencePolicies", "on", "maxTransitions"]);
+var KNOWN_POLICY_FIELDS = /* @__PURE__ */ new Set(["kind", "minProducers", "eligibleAgents", "acceptedStatuses", "degradation"]);
+var KNOWN_TRANSITION_FIELDS = /* @__PURE__ */ new Set(["target", "maxTransitions"]);
+function compareCodeUnits4(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+function asObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value : void 0;
+}
+function asString(value) {
+  return typeof value === "string" ? value : void 0;
+}
+function normalizeIdentifier(raw) {
+  return raw.toLocaleLowerCase("en-US").replace(/[^a-z0-9_-]+/g, "-").replace(/[-_]{2,}/g, "-").replace(/^[-_]+/, "").replace(/[-_]+$/, "").replace(/^(?=[0-9])/, "id-");
+}
+function pointerEscape(segment) {
+  const escaped = segment.replace(/~/g, "~0").replace(/\//g, "~1");
+  if (escaped.length <= 200) return escaped;
+  const digest = createHash5("sha256").update(segment, "utf8").digest("hex").slice(0, 8);
+  return `${escaped.slice(0, 180)}~digest-${digest}`;
+}
+function elide(raw, max = 120) {
+  return raw.length <= max ? raw : `${raw.slice(0, max - 15)}\u2026[${raw.length}]`;
+}
+function keyFragment(raw) {
+  const full = normalizeIdentifier(raw) || "unnamed";
+  const normalized = full.length > 96 ? `${full.slice(0, 96)}-${full.length}` : full;
+  const digest = createHash5("sha256").update(raw, "utf8").digest("hex").slice(0, 8);
+  return `${normalized}-${digest}`;
+}
+function recordUnmapped(plan, sourcePath, pointer, value, sensitive) {
+  const digestInput = sensitive ? { redacted: true, bytes: Buffer.byteLength(vnextCanonicalJson(value === void 0 ? null : value), "utf8") } : value === void 0 ? null : value;
+  plan.unmapped.push({
+    sourcePath,
+    jsonPointer: pointer,
+    valueSha256: sha256Of(vnextCanonicalJson(digestInput)),
+    sensitive
+  });
+}
+function recordUnknownFields(plan, sourcePath, pointer, record, known) {
+  for (const key of Object.keys(record).sort(compareCodeUnits4)) {
+    if (!known.has(key)) recordUnmapped(plan, sourcePath, `${pointer}/${pointerEscape(key)}`, record[key], false);
+  }
+}
+function mapIdentity(plan, sourcePath, raw, kind, taken, decisions, dropPointer, dropValue) {
+  const normalized = normalizeIdentifier(raw);
+  const usable = (candidate) => IDENTIFIER2.test(candidate) && candidate.length <= 64;
+  const adopt = (candidate) => {
+    const foldedCandidate = candidate.toLocaleLowerCase("en-US");
+    const priorCandidate = taken.get(foldedCandidate);
+    if (priorCandidate !== void 0 && priorCandidate !== raw) return { outcome: "taken" };
+    if (priorCandidate === raw) return { outcome: "duplicate" };
+    taken.set(foldedCandidate, raw);
+    plan.renames.push({ from: elide(raw), to: candidate, kind });
+    return { outcome: "adopted", id: candidate };
+  };
+  const reportDuplicate = () => {
+    const decided = resolveDecision(
+      plan,
+      `identity-duplicate:${kind}:${keyFragment(raw)}`,
+      "unsupported",
+      sourcePath,
+      `${kind} name ${JSON.stringify(elide(raw, 200))} is declared more than once; confirm the duplicate definition is dropped`,
+      ["drop"],
+      decisions
+    );
+    recordUnmapped(plan, sourcePath, dropPointer ?? `/duplicates/${pointerEscape(raw)}`, dropValue ?? raw, false);
+    return decided === "drop" ? { status: "dropped" } : { status: "pending" };
+  };
+  if (!normalized || !usable(normalized)) {
+    const supplied = resolveDecision(
+      plan,
+      `identity:${kind}:${keyFragment(raw)}`,
+      "identity",
+      sourcePath,
+      `${kind} name ${JSON.stringify(elide(raw, 200))} cannot be normalized to a vNext identifier; supply a decision with the target identifier`,
+      ["<identifier>"],
+      decisions
+    );
+    if (typeof supplied === "string" && usable(supplied)) {
+      const adopted = adopt(supplied);
+      if (adopted.outcome === "adopted") return { status: "adopted", id: adopted.id };
+      if (adopted.outcome === "duplicate") return reportDuplicate();
+      plan.ambiguities.push({
+        key: `identity:${kind}:${keyFragment(raw)}`,
+        category: "identity",
+        sourcePath,
+        message: `decision-supplied identifier ${JSON.stringify(elide(supplied, 200))} for ${kind} ${JSON.stringify(elide(raw, 200))} collides with another migrated identity`,
+        allowedValues: ["<identifier>"]
+      });
+    }
+    return { status: "pending" };
+  }
+  const folded = normalized.toLocaleLowerCase("en-US");
+  const prior = taken.get(folded);
+  if (prior && prior !== raw) {
+    const supplied = resolveDecision(
+      plan,
+      `identity-collision:${kind}:${folded}-${keyFragment(raw)}`,
+      "identity",
+      sourcePath,
+      `${kind} names ${JSON.stringify(elide(prior, 200))} and ${JSON.stringify(elide(raw, 200))} collide after normalization; supply a distinct identifier for ${JSON.stringify(elide(raw, 200))}`,
+      ["<identifier>"],
+      decisions
+    );
+    if (typeof supplied === "string" && usable(supplied)) {
+      const adopted = adopt(supplied);
+      if (adopted.outcome === "adopted") return { status: "adopted", id: adopted.id };
+      if (adopted.outcome === "duplicate") return reportDuplicate();
+      plan.ambiguities.push({
+        key: `identity-collision:${kind}:${folded}-${keyFragment(raw)}`,
+        category: "identity",
+        sourcePath,
+        message: `decision-supplied identifier ${JSON.stringify(elide(supplied, 200))} for ${kind} ${JSON.stringify(elide(raw, 200))} collides with another migrated identity`,
+        allowedValues: ["<identifier>"]
+      });
+    }
+    return { status: "pending" };
+  }
+  if (prior === raw) return reportDuplicate();
+  taken.set(folded, raw);
+  if (normalized !== raw && !plan.renames.some((rename) => rename.kind === kind && rename.from === raw)) {
+    plan.renames.push({ from: elide(raw), to: normalized, kind });
+  }
+  return { status: "adopted", id: normalized };
+}
+function decisionValueAllowed(key, value, allowed) {
+  if (value === void 0) return false;
+  if (allowed.some((candidate) => candidate === "<identifier>")) {
+    return typeof value === "string" && IDENTIFIER2.test(value) && value.length <= 64;
+  }
+  if (allowed.some((candidate) => candidate === "<provider/model>")) {
+    if (typeof value !== "string") return false;
+    const separator = value.indexOf("/");
+    const provider = separator > 0 ? normalizeIdentifier(value.slice(0, separator)) : "";
+    const modelId = separator > 0 ? value.slice(separator + 1) : "";
+    return IDENTIFIER2.test(provider) && provider.length <= 64 && modelId.length >= 1 && modelId.length <= 200;
+  }
+  if (key.startsWith("backedge:")) {
+    return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 100;
+  }
+  if (key.startsWith("budget:")) {
+    return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 1e3;
+  }
+  if (key.startsWith("coordinator:") || key.startsWith("producer:")) {
+    if (allowed.some((candidate) => candidate === value)) return true;
+    return allowed.length >= 64 && typeof value === "string" && IDENTIFIER2.test(value) && value.length <= 64;
+  }
+  return allowed.some((candidate) => candidate === value);
+}
+function resolveDecision(plan, key, category, sourcePath, message, allowedValues, decisions) {
+  plan.decisionKeys.add(key);
+  plan.decisionAllowedValues.set(key, allowedValues);
+  if (Object.hasOwn(decisions, key)) {
+    const value = decisions[key];
+    if (decisionValueAllowed(key, value, allowedValues)) return value;
+    if (!plan.invalidDecisions.includes(key)) plan.invalidDecisions.push(key);
+  }
+  if (!plan.ambiguities.some((ambiguity) => ambiguity.key === key)) {
+    plan.ambiguities.push({ key, category, sourcePath, message, allowedValues });
+  }
+  return void 0;
+}
+function convertAgentsRoster(plan, source, decisions, agentNames) {
+  const agents = /* @__PURE__ */ new Map();
+  const models = /* @__PURE__ */ new Map();
+  const rawNames = /* @__PURE__ */ new Map();
+  const pendingRawNames = /* @__PURE__ */ new Set();
+  const modelNames = /* @__PURE__ */ new Map();
+  let identityPending = false;
+  const root = asObject(source.value);
+  if (!root) {
+    resolveDecision(
+      plan,
+      `unsupported:${source.path}:/`,
+      "unsupported",
+      source.path,
+      "agents.json must be a JSON object with an agents array; confirm it is dropped from conversion",
+      ["drop"],
+      decisions
+    );
+    return { agents, models, rawNames, pendingRawNames, identityPending };
+  }
+  recordUnknownFields(plan, source.path, "", root, /* @__PURE__ */ new Set(["schema", "project", "host", "agents", "ownership"]));
+  if (root.ownership !== void 0) recordUnmapped(plan, source.path, "/ownership", root.ownership, false);
+  if (root.host !== void 0) recordUnmapped(plan, source.path, "/host", root.host, false);
+  if (root.project !== void 0) recordUnmapped(plan, source.path, "/project", root.project, false);
+  if (root.schema !== void 0 && root.schema !== "kxm.agents.v1") recordUnmapped(plan, source.path, "/schema", root.schema, false);
+  const list = Array.isArray(root.agents) ? root.agents : [];
+  for (const [index, entry] of list.entries()) {
+    const pointer = `/agents/${index}`;
+    const record = asObject(entry);
+    if (!record) {
+      recordUnmapped(plan, source.path, pointer, entry, false);
+      continue;
+    }
+    recordUnknownFields(plan, source.path, pointer, record, KNOWN_AGENT_FIELDS);
+    const name = asString(record.name);
+    const kind = asString(record.kind) ?? "agent";
+    const driver = asString(record.driver) ?? "ai";
+    if (!name || kind !== "agent" || driver !== "ai") {
+      resolveDecision(
+        plan,
+        `unsupported:${source.path}:${pointer}`,
+        "unsupported",
+        source.path,
+        `roster entry ${index} (${name === void 0 ? "unnamed" : elide(name, 200)}) has kind ${elide(kind, 64)}/driver ${elide(driver, 64)}; only agent/ai entries convert losslessly \u2014 confirm the entry is dropped`,
+        ["drop"],
+        decisions
+      );
+      recordUnmapped(plan, source.path, pointer, record, false);
+      continue;
+    }
+    resolveDecision(
+      plan,
+      `permission:${keyFragment(name)}`,
+      "permission",
+      source.path,
+      `approve the narrowed tool/repository/network ceiling for agent ${elide(name, 200)}`,
+      ["approve"],
+      decisions
+    );
+    const agentIdentity = mapIdentity(plan, source.path, name, "agent", agentNames, decisions, pointer, record);
+    if (agentIdentity.status === "pending") {
+      identityPending = true;
+      pendingRawNames.add(name);
+    }
+    if (agentIdentity.status !== "adopted") continue;
+    const id = agentIdentity.id;
+    const agent = {
+      schema: "kxm.agent.v1",
+      purpose: asString(record.purpose) ?? `Migrated legacy agent ${elide(name, 200)}.`
+    };
+    const model = asString(record.model);
+    if (model) {
+      const applyModel = (candidate) => {
+        const separator = candidate.indexOf("/");
+        if (separator <= 0) return false;
+        const provider = normalizeIdentifier(candidate.slice(0, separator));
+        const modelId = candidate.slice(separator + 1);
+        if (IDENTIFIER2.test(provider) && provider.length <= 64 && modelId.length >= 1 && modelId.length <= 200) {
+          agent.model = { provider, model: modelId };
+          return true;
+        }
+        return false;
+      };
+      if (!applyModel(model)) {
+        const supplied = resolveDecision(
+          plan,
+          `model:${keyFragment(name)}`,
+          "identity",
+          source.path,
+          `agent ${elide(name, 200)} model ${JSON.stringify(elide(model, 200))} does not map to a provider identifier + model id pair; supply <provider>/<model>`,
+          ["<provider/model>"],
+          decisions
+        );
+        if (typeof supplied === "string" && supplied !== model) {
+          applyModel(supplied);
+        } else if (typeof supplied !== "string") {
+          recordUnmapped(plan, source.path, `${pointer}/model`, model, false);
+        }
+      }
+    }
+    const thinking = asString(record.thinking);
+    if (thinking) {
+      const selector = asObject(agent.model);
+      if (selector && typeof selector.profile !== "string") {
+        const profileIdentity = mapIdentity(plan, source.path, `${id}-primary`, "model", modelNames, decisions);
+        const profileId = profileIdentity.status === "adopted" ? profileIdentity.id : void 0;
+        if (profileId) {
+          const profile = {
+            schema: "kxm.model.v1",
+            provider: selector.provider,
+            model: selector.model,
+            thinking
+          };
+          models.set(profileId, profile);
+          agent.model = { profile: profileId };
+        }
+      } else {
+        recordUnmapped(plan, source.path, `${pointer}/thinking`, thinking, false);
+      }
+    }
+    agent.tools = { preset: "workspace-writer" };
+    agent.defaultRepositoryAccess = "none";
+    agent.network = "provider-only";
+    plan.permissionChanges.push({
+      sourcePath: source.path,
+      targetPath: `.kxm/agents/${id}.yaml`,
+      direction: "unknown",
+      summary: `agent ${elide(name, 200)}: legacy workers used launch-time tool flags the converter cannot observe; migrated ceiling is workspace-writer tools, no repository access, provider-only network`,
+      decisionKey: `permission:${keyFragment(name)}`
+    });
+    agents.set(id, agent);
+    if (!rawNames.has(name)) rawNames.set(name, id);
+  }
+  return { agents, models, rawNames, pendingRawNames, identityPending };
+}
+var IMPLEMENTED_GATES = /* @__PURE__ */ new Set(["test", "scm-delivery"]);
+function convertGatesRoster(plan, source, decisions) {
+  const root = asObject(source.value);
+  if (!root) {
+    resolveDecision(
+      plan,
+      `unsupported:${source.path}:/`,
+      "unsupported",
+      source.path,
+      "gates.json must be a JSON object with a gates array; confirm it is dropped from conversion",
+      ["drop"],
+      decisions
+    );
+    return;
+  }
+  recordUnknownFields(plan, source.path, "", root, /* @__PURE__ */ new Set(["schema", "gates"]));
+  if (root.schema !== void 0 && root.schema !== "kxm.gates.v1") recordUnmapped(plan, source.path, "/schema", root.schema, false);
+  const list = Array.isArray(root.gates) ? root.gates : [];
+  for (const [index, entry] of list.entries()) {
+    const pointer = `/gates/${index}`;
+    const record = asObject(entry);
+    if (!record) {
+      recordUnmapped(plan, source.path, pointer, entry, false);
+      continue;
+    }
+    recordUnknownFields(plan, source.path, pointer, record, KNOWN_GATE_FIELDS);
+    const name = asString(record.name) ?? `gate-${index}`;
+    if (!IMPLEMENTED_GATES.has(name)) {
+      resolveDecision(
+        plan,
+        `gate:${keyFragment(name)}`,
+        "unsupported",
+        source.path,
+        `gate ${JSON.stringify(elide(name, 200))} has no registered deterministic runner in vNext; it is preserved in the migration report only`,
+        ["report-only"],
+        decisions
+      );
+      recordUnmapped(plan, source.path, pointer, entry, false);
+    }
+  }
+}
+function mapStageRef(context, raw) {
+  return context.renamesByKind.get(raw) ?? normalizeIdentifier(raw);
+}
+function convertTransition(plan, source, context, stageId, stageKey, outcome, rawOutcome, rawValue, decisions, stagePointer) {
+  const pointer = `${stagePointer}/on/${pointerEscape(rawOutcome)}`;
+  const rule = typeof rawValue === "string" ? { target: rawValue } : asObject(rawValue);
+  if (!rule) {
+    recordUnmapped(plan, source.path, pointer, rawValue, false);
+    return void 0;
+  }
+  if (typeof rawValue !== "string") recordUnknownFields(plan, source.path, pointer, rule, KNOWN_TRANSITION_FIELDS);
+  const target = asString(rule.target);
+  if (!target) {
+    recordUnmapped(plan, source.path, pointer, rawValue, false);
+    return void 0;
+  }
+  const sourceIndex = context.stageIds.indexOf(stageId);
+  if (target === "$terminal") {
+    const chosen = resolveDecision(
+      plan,
+      `terminal:${context.workflowKey}:${stageKey}:${outcome}`,
+      "terminal-status",
+      source.path,
+      `legacy transition ${context.workflowId}/${stageId} outcome ${outcome} ends the run; choose the vNext terminal status (legacy semantics completed the run even on failure outcomes)`,
+      outcome === "passed" ? ["completed"] : ["completed", "failed", "cancelled"],
+      decisions
+    );
+    const status = typeof chosen === "string" && ["completed", "failed", "cancelled"].includes(chosen) ? chosen : "completed";
+    const objectRule2 = asObject(rawValue);
+    const result = { target: "$terminal", terminalStatus: status };
+    if (typeof objectRule2?.maxTransitions === "number") {
+      if (Number.isInteger(objectRule2.maxTransitions) && objectRule2.maxTransitions >= 1 && objectRule2.maxTransitions <= 100) {
+        result.maxTransitions = objectRule2.maxTransitions;
+      } else {
+        recordUnmapped(plan, source.path, `${pointer}/maxTransitions`, objectRule2.maxTransitions, false);
+      }
+    }
+    return result;
+  }
+  const targetId = mapStageRef(context, target);
+  const targetIndex = context.stageIds.indexOf(targetId);
+  if (targetIndex < 0) {
+    resolveDecision(
+      plan,
+      `transition-target:${context.workflowKey}:${stageKey}:${outcome}`,
+      "identity",
+      source.path,
+      `transition target ${JSON.stringify(elide(target, 200))} is not a stage of workflow ${context.workflowId}; confirm the edge is dropped`,
+      ["drop"],
+      decisions
+    );
+    recordUnmapped(plan, source.path, pointer, rawValue, false);
+    return void 0;
+  }
+  const objectRule = asObject(rawValue);
+  let explicitBudget;
+  if (typeof objectRule?.maxTransitions === "number") {
+    if (Number.isInteger(objectRule.maxTransitions) && objectRule.maxTransitions >= 1 && objectRule.maxTransitions <= 100) {
+      explicitBudget = objectRule.maxTransitions;
+    } else {
+      recordUnmapped(plan, source.path, `${pointer}/maxTransitions`, objectRule.maxTransitions, false);
+    }
+  }
+  const isBackEdge = targetIndex <= sourceIndex;
+  if (isBackEdge && explicitBudget === void 0) {
+    const chosen = resolveDecision(
+      plan,
+      `backedge:${context.workflowKey}:${stageKey}:${outcome}`,
+      "transition-budget",
+      source.path,
+      `back-edge ${context.workflowId}/${stageId} -> ${targetId} (outcome ${outcome}) has no per-edge budget in legacy; vNext requires maxTransitions (1-100)`,
+      [2, 3, 4, 5],
+      decisions
+    );
+    const budget = typeof chosen === "number" && Number.isInteger(chosen) && chosen >= 1 && chosen <= 100 ? chosen : 2;
+    return { target: targetId, maxTransitions: budget };
+  }
+  if (explicitBudget !== void 0) return { target: targetId, maxTransitions: explicitBudget };
+  return targetId;
+}
+function convertWorkflowFile(plan, source, decisions, agentIds, agentRawNames, pendingAgentRawNames, rosterIdentityPending, workflowNames) {
+  const workflows = /* @__PURE__ */ new Map();
+  const list = Array.isArray(source.value) ? source.value : [source.value];
+  for (const [definitionIndex, entry] of list.entries()) {
+    const definition = asObject(entry);
+    const basePointer = Array.isArray(source.value) ? `/${definitionIndex}` : "";
+    if (!definition) {
+      recordUnmapped(plan, source.path, basePointer || "/", entry, false);
+      continue;
+    }
+    recordUnknownFields(plan, source.path, basePointer, definition, KNOWN_WORKFLOW_FIELDS);
+    const fileStem = source.path.slice(source.path.lastIndexOf("/") + 1).replace(/\.json$/u, "");
+    const rawId = asString(definition.id) ?? `${fileStem}-${definitionIndex}`;
+    const workflowIdentity = mapIdentity(plan, source.path, rawId, "workflow", workflowNames, decisions, basePointer || "/", definition);
+    if (workflowIdentity.status === "dropped") continue;
+    const workflowId = workflowIdentity.status === "adopted" ? workflowIdentity.id : `preview-${(normalizeIdentifier(rawId) || "unnamed").slice(0, 46).replace(/[-_]+$/u, "")}-${createHash5("sha256").update(`${rawId}#${source.path}#${definitionIndex}`, "utf8").digest("hex").slice(0, 8)}`;
+    const workflowKey = keyFragment(rawId);
+    for (const field of ["source", "project", "event", "filter", "delivery", "ttlMs", "promptTemplate"]) {
+      if (definition[field] !== void 0) recordUnmapped(plan, source.path, `${basePointer}/${field}`, definition[field], false);
+    }
+    for (const field of ["secret", "signalSecret", "secretEnv", "signalSecretEnv"]) {
+      if (definition[field] !== void 0) {
+        recordUnmapped(plan, source.path, `${basePointer}/${field}`, definition[field], true);
+        resolveDecision(
+          plan,
+          `secret:${workflowKey}:${field}`,
+          "secret-reference",
+          source.path,
+          `workflow ${workflowId} field ${field} configures a webhook secret; vNext workflows never embed secrets \u2014 confirm the field is dropped and re-granted through scoped secret references when the trigger surface lands`,
+          ["drop"],
+          decisions
+        );
+      }
+    }
+    const rawTarget = asString(definition.target);
+    const normalizedTarget = rawTarget ? normalizeIdentifier(rawTarget) : void 0;
+    let stepAgent = rawTarget !== void 0 ? agentRawNames.get(rawTarget) : void 0;
+    if (!stepAgent && rawTarget !== void 0 && pendingAgentRawNames.has(rawTarget)) {
+      stepAgent = void 0;
+    } else if (!stepAgent && rawTarget !== void 0) {
+      const foldedTarget = rawTarget.toLocaleLowerCase("en-US");
+      for (const [rawName, id] of agentRawNames) {
+        if (rawName.toLocaleLowerCase("en-US") === foldedTarget) {
+          stepAgent = id;
+          break;
+        }
+      }
+    }
+    if (!stepAgent && agentRawNames.size === 0 && normalizedTarget && agentIds.has(normalizedTarget)) {
+      stepAgent = normalizedTarget;
+    }
+    const targetIsPendingAgent = rawTarget !== void 0 && [...pendingAgentRawNames].some((pending) => pending === rawTarget || pending.toLocaleLowerCase("en-US") === rawTarget.toLocaleLowerCase("en-US"));
+    if (!stepAgent && targetIsPendingAgent) {
+      stepAgent = normalizedTarget && IDENTIFIER2.test(normalizedTarget) && normalizedTarget.length <= 64 ? normalizedTarget : "coordinator";
+    }
+    if (!stepAgent) {
+      if (agentIds.size === 0 && rosterIdentityPending) {
+        stepAgent = normalizedTarget && IDENTIFIER2.test(normalizedTarget) && normalizedTarget.length <= 64 ? normalizedTarget : "coordinator";
+      } else if (agentIds.size === 0) {
+        const dropped = resolveDecision(
+          plan,
+          `coordinator:${workflowKey}`,
+          "identity",
+          source.path,
+          `workflow ${workflowId} target ${JSON.stringify(rawTarget === void 0 ? "" : elide(rawTarget, 200))} matches no migrated agent and the roster is empty; confirm the workflow is dropped`,
+          ["drop"],
+          decisions
+        );
+        if (dropped === "drop") continue;
+        stepAgent = normalizedTarget && IDENTIFIER2.test(normalizedTarget) && normalizedTarget.length <= 64 ? normalizedTarget : "coordinator";
+      } else {
+        const chosen = resolveDecision(
+          plan,
+          `coordinator:${workflowKey}`,
+          "identity",
+          source.path,
+          `workflow ${workflowId} target ${JSON.stringify(rawTarget === void 0 ? "" : elide(rawTarget, 200))} is not a migrated agent; choose the roster agent that executes its steps`,
+          [...agentIds.keys()].sort(compareCodeUnits4).slice(0, 64),
+          decisions
+        );
+        if (typeof chosen === "string" && agentIds.has(chosen)) {
+          stepAgent = chosen;
+          if (rawTarget) plan.renames.push({ from: elide(rawTarget), to: chosen, kind: "agent" });
+        } else {
+          if (chosen !== void 0 && !plan.invalidDecisions.includes(`coordinator:${workflowKey}`)) {
+            plan.invalidDecisions.push(`coordinator:${workflowKey}`);
+          }
+          if (chosen !== void 0 && !plan.ambiguities.some((ambiguity) => ambiguity.key === `coordinator:${workflowKey}`)) {
+            plan.ambiguities.push({
+              key: `coordinator:${workflowKey}`,
+              category: "identity",
+              sourcePath: source.path,
+              message: `decision value ${JSON.stringify(typeof chosen === "string" ? elide(chosen, 200) : chosen)} for workflow ${workflowId} is not a migrated agent`,
+              allowedValues: [...agentIds.keys()].sort(compareCodeUnits4).slice(0, 64)
+            });
+          }
+          stepAgent = normalizedTarget && IDENTIFIER2.test(normalizedTarget) && normalizedTarget.length <= 64 ? normalizedTarget : "coordinator";
+        }
+      }
+    }
+    const rawStages = Array.isArray(definition.stages) ? definition.stages : [];
+    const stageIds = [];
+    const stageRename = /* @__PURE__ */ new Map();
+    const stepIdByIndex = /* @__PURE__ */ new Map();
+    const stageKeyByRaw = /* @__PURE__ */ new Map();
+    const droppedStageIndexes = /* @__PURE__ */ new Set();
+    const takenSteps = /* @__PURE__ */ new Map();
+    for (const [stageIndex, stageEntry] of rawStages.entries()) {
+      const stage = asObject(stageEntry);
+      if (!stage) {
+        recordUnmapped(plan, source.path, `${basePointer}/stages/${stageIndex}`, stageEntry, false);
+        droppedStageIndexes.add(stageIndex);
+        continue;
+      }
+      const rawStageId = asString(stage.id);
+      if (!rawStageId) {
+        recordUnmapped(plan, source.path, `${basePointer}/stages/${stageIndex}`, stage, false);
+        droppedStageIndexes.add(stageIndex);
+        continue;
+      }
+      const stepIdentity = mapIdentity(plan, source.path, rawStageId, "step", takenSteps, decisions, `${basePointer}/stages/${stageIndex}`, stage);
+      if (stepIdentity.status === "dropped") {
+        droppedStageIndexes.add(stageIndex);
+        continue;
+      }
+      const stepId = stepIdentity.status === "adopted" ? stepIdentity.id : `preview-${(normalizeIdentifier(rawStageId) || "unnamed").slice(0, 46).replace(/[-_]+$/u, "")}-${createHash5("sha256").update(`${rawStageId}#${stageIndex}`, "utf8").digest("hex").slice(0, 8)}`;
+      const stepKey = keyFragment(rawStageId);
+      stageKeyByRaw.set(rawStageId, stepKey);
+      if (!asString(stage.instructions)) {
+        resolveDecision(
+          plan,
+          `instructions:${workflowKey}:${stepKey}`,
+          "unsupported",
+          source.path,
+          `stage ${stepId} has no instructions; vNext agent steps require executable instructions \u2014 confirm the stage is dropped`,
+          ["drop"],
+          decisions
+        );
+        recordUnmapped(plan, source.path, `${basePointer}/stages/${stageIndex}`, stage, false);
+        droppedStageIndexes.add(stageIndex);
+        continue;
+      }
+      if (!stageRename.has(rawStageId)) stageRename.set(rawStageId, stepId);
+      stepIdByIndex.set(stageIndex, stepId);
+      stageIds.push(stepId);
+    }
+    const context = { workflowId, workflowKey, stageIds, renamesByKind: stageRename };
+    const steps = [];
+    for (const [stageIndex, stageEntry] of rawStages.entries()) {
+      if (droppedStageIndexes.has(stageIndex)) continue;
+      const stage = asObject(stageEntry);
+      if (!stage) continue;
+      const rawStageId = asString(stage.id);
+      if (!rawStageId) continue;
+      const stepId = stepIdByIndex.get(stageIndex);
+      if (!stepId) continue;
+      const stepKey = stageKeyByRaw.get(rawStageId) ?? keyFragment(rawStageId);
+      const pointer = `${basePointer}/stages/${stageIndex}`;
+      recordUnknownFields(plan, source.path, pointer, stage, KNOWN_STAGE_FIELDS);
+      const label = asString(stage.label);
+      const instructions = asString(stage.instructions);
+      if (!instructions) continue;
+      const step = {
+        id: stepId,
+        kind: "agent",
+        agent: stepAgent
+      };
+      if (label) step.description = label;
+      let maxAttempts = 3;
+      if (typeof stage.maxAttempts === "number" && Number.isInteger(stage.maxAttempts) && stage.maxAttempts >= 1 && stage.maxAttempts <= 20) {
+        maxAttempts = stage.maxAttempts;
+      } else if (stage.maxAttempts !== void 0) {
+        recordUnmapped(plan, source.path, `${pointer}/maxAttempts`, stage.maxAttempts, false);
+      }
+      step.maxAttempts = maxAttempts;
+      step.instructions = instructions;
+      const requiredEvidence = [];
+      const policyProducers = /* @__PURE__ */ new Set();
+      let policyProducerMinimum = 0;
+      const rawEvidence = Array.isArray(stage.requiredEvidence) ? stage.requiredEvidence : [];
+      const seenKeys = /* @__PURE__ */ new Set();
+      for (const [evidenceIndex, evidenceEntry] of rawEvidence.entries()) {
+        const rawKey = asString(evidenceEntry);
+        if (!rawKey) {
+          recordUnmapped(plan, source.path, `${pointer}/requiredEvidence/${evidenceIndex}`, evidenceEntry, false);
+          continue;
+        }
+        const key = normalizeIdentifier(rawKey);
+        if (!IDENTIFIER2.test(key) || key.length > 64) {
+          recordUnmapped(plan, source.path, `${pointer}/requiredEvidence/${evidenceIndex}`, evidenceEntry, false);
+          continue;
+        }
+        if (seenKeys.has(key)) {
+          recordUnmapped(plan, source.path, `${pointer}/requiredEvidence/${evidenceIndex}`, evidenceEntry, false);
+          continue;
+        }
+        if (key !== rawKey) plan.renames.push({ from: elide(rawKey), to: key, kind: "evidence" });
+        seenKeys.add(key);
+        requiredEvidence.push({ key, kind: "assignment-result" });
+      }
+      const policies = asObject(stage.evidencePolicies);
+      if (policies) {
+        const seenPolicies = /* @__PURE__ */ new Set();
+        for (const [rawPolicyKey, policyEntry] of Object.entries(policies).sort(([left], [right]) => compareCodeUnits4(left, right))) {
+          const policy = asObject(policyEntry);
+          const policyKey = normalizeIdentifier(rawPolicyKey);
+          if (seenPolicies.has(policyKey)) {
+            recordUnmapped(plan, source.path, `${pointer}/evidencePolicies/${pointerEscape(rawPolicyKey)}`, policyEntry, false);
+            continue;
+          }
+          seenPolicies.add(policyKey);
+          const requirement = requiredEvidence.find((candidate) => candidate.key === policyKey);
+          if (!policy || !requirement) {
+            recordUnmapped(plan, source.path, `${pointer}/evidencePolicies/${pointerEscape(rawPolicyKey)}`, policyEntry, false);
+            continue;
+          }
+          recordUnknownFields(plan, source.path, `${pointer}/evidencePolicies/${pointerEscape(rawPolicyKey)}`, policy, KNOWN_POLICY_FIELDS);
+          let minProducers = 1;
+          if (typeof policy.minProducers === "number" && Number.isInteger(policy.minProducers) && policy.minProducers >= 1 && policy.minProducers <= 16) {
+            minProducers = policy.minProducers;
+          } else if (policy.minProducers !== void 0) {
+            recordUnmapped(plan, source.path, `${pointer}/evidencePolicies/${pointerEscape(rawPolicyKey)}/minProducers`, policy.minProducers, false);
+          }
+          if (policy.eligibleAgents !== void 0 && !Array.isArray(policy.eligibleAgents)) {
+            recordUnmapped(plan, source.path, `${pointer}/evidencePolicies/${pointerEscape(rawPolicyKey)}/eligibleAgents`, policy.eligibleAgents, false);
+          }
+          const eligible = Array.isArray(policy.eligibleAgents) ? policy.eligibleAgents : [];
+          const eligibleIds = [];
+          for (const [eligibleIndex, candidate] of eligible.entries()) {
+            const rawName = asString(candidate);
+            if (!rawName) {
+              recordUnmapped(plan, source.path, `${pointer}/evidencePolicies/${pointerEscape(rawPolicyKey)}/eligibleAgents/${eligibleIndex}`, candidate, false);
+              continue;
+            }
+            const rawBound = pendingAgentRawNames.has(rawName) ? void 0 : agentRawNames.get(rawName) ?? [...agentRawNames].find(([candidateName]) => candidateName.toLocaleLowerCase("en-US") === rawName.toLocaleLowerCase("en-US"))?.[1];
+            if (rawBound) {
+              if (!eligibleIds.includes(rawBound)) eligibleIds.push(rawBound);
+              continue;
+            }
+            if ([...pendingAgentRawNames].some((pending) => pending === rawName || pending.toLocaleLowerCase("en-US") === rawName.toLocaleLowerCase("en-US"))) {
+              const previewId = normalizeIdentifier(rawName);
+              if (IDENTIFIER2.test(previewId) && previewId.length <= 64 && !eligibleIds.includes(previewId)) {
+                eligibleIds.push(previewId);
+              }
+              continue;
+            }
+            const normalized = normalizeIdentifier(rawName);
+            if (agentRawNames.size === 0 && agentIds.has(normalized)) {
+              if (!eligibleIds.includes(normalized)) eligibleIds.push(normalized);
+              continue;
+            }
+            if (agentIds.size === 0) {
+              recordUnmapped(plan, source.path, `${pointer}/evidencePolicies/${pointerEscape(rawPolicyKey)}/eligibleAgents/${eligibleIndex}`, candidate, false);
+              continue;
+            }
+            const mapped = resolveDecision(
+              plan,
+              `producer:${workflowKey}:${stepKey}:${keyFragment(rawName)}`,
+              "evidence-policy",
+              source.path,
+              `evidence policy on ${stepId}.${policyKey} names producer ${JSON.stringify(elide(rawName, 200))} which is not a migrated agent; choose the roster agent that takes this producer role`,
+              [...agentIds.keys()].sort(compareCodeUnits4).slice(0, 64),
+              decisions
+            );
+            if (typeof mapped === "string" && agentIds.has(mapped)) {
+              plan.renames.push({ from: elide(rawName), to: mapped, kind: "agent" });
+              if (!eligibleIds.includes(mapped)) eligibleIds.push(mapped);
+            } else if (mapped !== void 0) {
+              if (!plan.invalidDecisions.includes(`producer:${workflowKey}:${stepKey}:${keyFragment(rawName)}`)) {
+                plan.invalidDecisions.push(`producer:${workflowKey}:${stepKey}:${keyFragment(rawName)}`);
+              }
+              if (!plan.ambiguities.some((ambiguity) => ambiguity.key === `producer:${workflowKey}:${stepKey}:${keyFragment(rawName)}`)) {
+                plan.ambiguities.push({
+                  key: `producer:${workflowKey}:${stepKey}:${keyFragment(rawName)}`,
+                  category: "evidence-policy",
+                  sourcePath: source.path,
+                  message: `decision value ${JSON.stringify(typeof mapped === "string" ? elide(mapped, 200) : mapped)} for producer ${JSON.stringify(elide(rawName, 200))} is not a migrated agent`,
+                  allowedValues: [...agentIds.keys()].sort(compareCodeUnits4).slice(0, 64)
+                });
+              }
+            }
+          }
+          const acceptedStatusesMalformed = policy.acceptedStatuses !== void 0 && !Array.isArray(policy.acceptedStatuses);
+          if (acceptedStatusesMalformed) {
+            recordUnmapped(plan, source.path, `${pointer}/evidencePolicies/${pointerEscape(rawPolicyKey)}/acceptedStatuses`, policy.acceptedStatuses, false);
+          }
+          const accepted = acceptedStatusesMalformed ? [] : Array.isArray(policy.acceptedStatuses) ? policy.acceptedStatuses : ["replied"];
+          if (Array.isArray(policy.acceptedStatuses) && policy.acceptedStatuses.length === 0) {
+            recordUnmapped(plan, source.path, `${pointer}/evidencePolicies/${pointerEscape(rawPolicyKey)}/acceptedStatuses`, policy.acceptedStatuses, false);
+          }
+          let acceptedStatuses = accepted.length > 0 && accepted.every((status) => status === "replied") ? ["passed"] : void 0;
+          if (!acceptedStatuses) {
+            const chosen = resolveDecision(
+              plan,
+              `statuses:${workflowKey}:${stepKey}:${policyKey}`,
+              "evidence-policy",
+              source.path,
+              acceptedStatusesMalformed ? `evidence policy ${policyKey} acceptedStatuses is malformed (not an array) and was preserved in the report; confirm mapping the policy to vNext 'passed'` : `evidence policy ${policyKey} accepted statuses ${JSON.stringify(elide(accepted.map((candidate) => String(candidate)).join(","), 200))} cannot map losslessly; confirm mapping to vNext 'passed'`,
+              ["passed"],
+              decisions
+            );
+            if (chosen === "passed") acceptedStatuses = ["passed"];
+          }
+          if (acceptedStatuses) {
+            plan.permissionChanges.push({
+              sourcePath: source.path,
+              targetPath: `.kxm/workflows/${workflowId}.yaml`,
+              direction: "narrowing",
+              summary: `evidence ${policyKey} on ${stepId}: legacy peer-reply policy (status 'replied') migrates to assignment-result producer policy requiring 'passed'`,
+              decisionKey: `evidence:${workflowKey}:${stepKey}:${policyKey}`
+            });
+            plan.permissionChanges.push({
+              sourcePath: source.path,
+              targetPath: `.kxm/workflows/${workflowId}.yaml`,
+              direction: "expansion",
+              summary: `step ${stepId}: assignment pool widens from the single legacy coordinator to coordinator plus evidence producers so vNext producer evidence stays in scope`,
+              decisionKey: `evidence:${workflowKey}:${stepKey}:${policyKey}`
+            });
+            resolveDecision(
+              plan,
+              `evidence:${workflowKey}:${stepKey}:${policyKey}`,
+              "evidence-policy",
+              source.path,
+              `approve strengthening ${stepId}.${policyKey} from 'peer replied' to 'peer assignment passed' and widening the step assignment pool to include the producers`,
+              ["approve"],
+              decisions
+            );
+          }
+          if (eligibleIds.length > 0 && acceptedStatuses) {
+            requirement.kind = "assignment-result";
+            requirement.producerPolicy = {
+              minimumProducers: minProducers,
+              eligibleAgents: eligibleIds,
+              acceptedStatuses
+            };
+            for (const producer of eligibleIds) policyProducers.add(producer);
+            policyProducerMinimum = Math.max(policyProducerMinimum, minProducers);
+            const degradation = asObject(policy.degradation);
+            if (degradation && degradation.minProducers !== void 0) {
+              if (typeof degradation.minProducers === "number" && Number.isInteger(degradation.minProducers) && degradation.minProducers >= 1 && degradation.minProducers <= 15 && degradation.minProducers < minProducers) {
+                requirement.producerPolicy.degradation = { minimumProducers: degradation.minProducers };
+              } else {
+                recordUnmapped(plan, source.path, `${pointer}/evidencePolicies/${pointerEscape(rawPolicyKey)}/degradation`, policy.degradation, false);
+              }
+            }
+          } else {
+            recordUnmapped(plan, source.path, `${pointer}/evidencePolicies/${pointerEscape(rawPolicyKey)}`, policyEntry, false);
+          }
+        }
+      }
+      if (requiredEvidence.length > 0) step.requiredEvidence = requiredEvidence;
+      if (policyProducers.size > 0) {
+        const pool = [stepAgent, ...[...policyProducers].filter((candidate) => candidate !== stepAgent).sort(compareCodeUnits4)];
+        step.assignments = {
+          allowedAgents: pool,
+          minimum: 1,
+          target: Math.max(1, policyProducerMinimum),
+          maximum: pool.length,
+          maxParallel: pool.length
+        };
+      }
+      const on = asObject(stage.on);
+      const transitions = {};
+      if (on) {
+        const seenOutcomes = /* @__PURE__ */ new Set();
+        for (const [rawOutcome, rawTransition] of Object.entries(on).sort(([left], [right]) => compareCodeUnits4(left, right))) {
+          const outcome = normalizeIdentifier(rawOutcome);
+          if (!IDENTIFIER2.test(outcome) || outcome.length > 64) {
+            recordUnmapped(plan, source.path, `${pointer}/on/${pointerEscape(rawOutcome)}`, rawTransition, false);
+            continue;
+          }
+          if (seenOutcomes.has(outcome)) {
+            recordUnmapped(plan, source.path, `${pointer}/on/${pointerEscape(rawOutcome)}`, rawTransition, false);
+            continue;
+          }
+          seenOutcomes.add(outcome);
+          if (outcome !== rawOutcome) plan.renames.push({ from: elide(rawOutcome), to: outcome, kind: "outcome" });
+          const converted = convertTransition(plan, source, context, stepId, stepKey, outcome, rawOutcome, rawTransition, decisions, pointer);
+          if (converted !== void 0) transitions[outcome] = converted;
+        }
+        if (transitions.passed === void 0) {
+          const nextId = stageIds[stageIds.indexOf(stepId) + 1];
+          transitions.passed = nextId ?? { target: "$terminal", terminalStatus: "completed" };
+        }
+      } else {
+        const nextId = stageIds[stageIds.indexOf(stepId) + 1];
+        transitions.passed = nextId ?? { target: "$terminal", terminalStatus: "completed" };
+      }
+      step.on = transitions;
+      if (typeof stage.maxTransitions === "number") {
+        recordUnmapped(plan, source.path, `${pointer}/maxTransitions`, stage.maxTransitions, false);
+      }
+      if (stage.area !== void 0) recordUnmapped(plan, source.path, `${pointer}/area`, stage.area, false);
+      steps.push(step);
+    }
+    if (steps.length === 0) {
+      resolveDecision(
+        plan,
+        `stages:${workflowKey}`,
+        "unsupported",
+        source.path,
+        `workflow ${workflowId} produced no convertible steps; confirm it is dropped`,
+        ["drop"],
+        decisions
+      );
+      continue;
+    }
+    const workflow = {
+      schema: "kxm.workflow.v1",
+      coordinator: stepAgent,
+      steps
+    };
+    if (typeof definition.maxTransitions === "number" && Number.isInteger(definition.maxTransitions) && definition.maxTransitions >= 1 && definition.maxTransitions <= 1e3) {
+      workflow.limits = { maxTransitions: definition.maxTransitions };
+    } else if (definition.maxTransitions !== void 0) {
+      recordUnmapped(plan, source.path, `${basePointer}/maxTransitions`, definition.maxTransitions, false);
+    }
+    if (workflow.limits === void 0) {
+      const hasBackEdge = steps.some((step) => Object.values(asObject(step.on) ?? {}).some((rule) => {
+        const target = typeof rule === "string" ? rule : asObject(rule)?.target;
+        return typeof target === "string" && target !== "$terminal" && stageIds.indexOf(target) <= stageIds.indexOf(String(step.id));
+      }));
+      if (hasBackEdge) {
+        const chosen = resolveDecision(
+          plan,
+          `budget:${workflowKey}`,
+          "transition-budget",
+          source.path,
+          `workflow ${workflowId} has back-edges but no legacy global maxTransitions; vNext requires limits.maxTransitions (1-1000)`,
+          [28],
+          decisions
+        );
+        workflow.limits = { maxTransitions: typeof chosen === "number" && Number.isInteger(chosen) && chosen >= 1 && chosen <= 1e3 ? chosen : 28 };
+      }
+    }
+    for (const oracleField of ["reproOracle", "planHash"]) {
+      const oracle = asObject(definition[oracleField]);
+      if (!oracle) continue;
+      const oracleStage = asString(oracle.stageId);
+      const oracleEvidence = asString(oracle.evidenceKey);
+      if (!oracleStage || !oracleEvidence) {
+        recordUnmapped(plan, source.path, `${basePointer}/${oracleField}`, definition[oracleField], false);
+        continue;
+      }
+      const mappedStage = context.renamesByKind.get(oracleStage);
+      if (!mappedStage) {
+        if (!context.stageIds.includes(normalizeIdentifier(oracleStage))) {
+          recordUnmapped(plan, source.path, `${basePointer}/${oracleField}`, definition[oracleField], false);
+          continue;
+        }
+      }
+      workflow[oracleField] = {
+        stageId: mappedStage ?? normalizeIdentifier(oracleStage),
+        evidenceKey: normalizeIdentifier(oracleEvidence)
+      };
+    }
+    if (Array.isArray(definition.requirePlanHash)) {
+      const mapped = [];
+      for (const [requireIndex, candidate] of definition.requirePlanHash.entries()) {
+        const rawStage = asString(candidate);
+        if (!rawStage) {
+          recordUnmapped(plan, source.path, `${basePointer}/requirePlanHash/${requireIndex}`, candidate, false);
+          continue;
+        }
+        const mappedStage = context.renamesByKind.get(rawStage);
+        if (!mappedStage && !context.stageIds.includes(normalizeIdentifier(rawStage))) {
+          recordUnmapped(plan, source.path, `${basePointer}/requirePlanHash/${requireIndex}`, candidate, false);
+          continue;
+        }
+        mapped.push(mappedStage ?? normalizeIdentifier(rawStage));
+      }
+      if (mapped.length > 0) workflow.requirePlanHash = [...new Set(mapped)].sort(compareCodeUnits4);
+    }
+    workflows.set(workflowId, workflow);
+  }
+  return workflows;
+}
+var PROJECT_ID2 = /^prj_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$/;
+function sortedRecord(map, prefix) {
+  return new Map([...map.entries()].sort(([left], [right]) => compareCodeUnits4(left, right)).map(([key, value]) => [`${prefix}${key}.yaml`, value]));
+}
+function migrationGitRoot(start) {
+  const root = discoverGitRoot(start);
+  if (!root) {
+    throw new VnextConfigError([migrateIssue("discovery", "git_root_required", ".", "kxm migrate must run inside the authoritative Git worktree")]);
+  }
+  return root;
+}
+function planVnextMigration(projectRoot, options = {}) {
+  const root = migrationGitRoot(projectRoot);
+  const registry = new VnextSchemaRegistry(options.schemasDir);
+  const sources = readVnextLegacySources(root);
+  if (sources.length === 0) {
+    throw new VnextConfigError([migrateIssue("discovery", "legacy_sources_missing", ".kxm/config", "no legacy configuration files found to migrate")]);
+  }
+  const decisions = options.decisions ?? {};
+  const plan = { ambiguities: [], invalidDecisions: [], decisionKeys: /* @__PURE__ */ new Set(), decisionAllowedValues: /* @__PURE__ */ new Map(), unmapped: [], renames: [], permissionChanges: [] };
+  const agentNames = /* @__PURE__ */ new Map();
+  const workflowNames = /* @__PURE__ */ new Map();
+  const agentsSource = sources.find((source) => source.path === ".kxm/config/agents.json");
+  const gatesSource = sources.find((source) => source.path === ".kxm/config/gates.json");
+  const converted = agentsSource ? convertAgentsRoster(plan, agentsSource, decisions, agentNames) : { agents: /* @__PURE__ */ new Map(), models: /* @__PURE__ */ new Map(), rawNames: /* @__PURE__ */ new Map(), pendingRawNames: /* @__PURE__ */ new Set(), identityPending: false };
+  if (!agentsSource) {
+    resolveDecision(
+      plan,
+      "agents-missing",
+      "unsupported",
+      ".kxm/config/agents.json",
+      "no agents.json roster; workflows convert against an empty agent set \u2014 confirm conversion continues",
+      ["continue"],
+      decisions
+    );
+  }
+  if (gatesSource) convertGatesRoster(plan, gatesSource, decisions);
+  const workflows = /* @__PURE__ */ new Map();
+  for (const source of sources) {
+    if (!source.path.startsWith(".kxm/config/workflows/")) continue;
+    const convertedWorkflows = convertWorkflowFile(
+      plan,
+      source,
+      decisions,
+      converted.agents,
+      converted.rawNames,
+      converted.pendingRawNames,
+      converted.identityPending,
+      workflowNames
+    );
+    for (const [id, workflow] of convertedWorkflows) workflows.set(id, workflow);
+  }
+  const projectId = options.projectId ?? `prj_mig${sha256Of(legacySourceDigest(sources)).slice(7, 39)}`;
+  if (!PROJECT_ID2.test(projectId)) {
+    throw new VnextConfigError([migrateIssue("semantic", "project_id_invalid", ".kxm/project.yaml", "project ID must satisfy the kxm.project.v1 opaque ID grammar and use the prj_ prefix")]);
+  }
+  const projectName = options.projectName ?? "Migrated legacy project";
+  if (projectName.length < 1 || projectName.length > 120 || /[\u0000\r\n]/.test(projectName)) {
+    throw new VnextConfigError([migrateIssue("semantic", "project_name_invalid", ".kxm/project.yaml", "project name must contain 1-120 characters on one line")]);
+  }
+  const resources = /* @__PURE__ */ new Map();
+  resources.set(".kxm/project.yaml", {
+    schema: "kxm.project.v1",
+    id: projectId,
+    name: projectName,
+    ...workflows.size > 0 ? { defaultWorkflow: [...workflows.keys()].sort(compareCodeUnits4)[0] } : {},
+    defaultExecutor: "local",
+    repositories: [{ id: "control", role: "control", required: true, pathHint: "." }],
+    workspace: {
+      dirtySnapshot: {
+        untracked: "ask",
+        dirtySubmodules: "fail"
+      }
+    }
+  });
+  resources.set(".kxm/repo/repo.yaml", {
+    schema: "kxm.repository.v1",
+    projectId,
+    repositoryId: "control",
+    description: "Authoritative project configuration and repository content.",
+    defaultAccess: "write"
+  });
+  for (const [path5, value] of sortedRecord(converted.agents, ".kxm/agents/")) resources.set(path5, value);
+  for (const [path5, value] of sortedRecord(converted.models, ".kxm/models/")) resources.set(path5, value);
+  for (const [path5, value] of sortedRecord(workflows, ".kxm/workflows/")) resources.set(path5, value);
+  const schemaIssues = [];
+  const kindOf = (path5) => path5 === ".kxm/project.yaml" ? "project" : path5.endsWith("repo.yaml") ? "repository" : path5.startsWith(".kxm/agents/") ? "agent" : path5.startsWith(".kxm/models/") ? "model" : "workflow";
+  const idOf = (path5) => path5 === ".kxm/project.yaml" || path5.endsWith("repo.yaml") ? void 0 : path5.slice(path5.lastIndexOf("/") + 1, -".yaml".length);
+  const semanticResources = /* @__PURE__ */ new Map();
+  for (const [path5, value] of [...resources.entries()].sort(([left], [right]) => compareCodeUnits4(left, right))) {
+    const kind = kindOf(path5);
+    schemaIssues.push(...registry.validate(kind, value, path5));
+    const id = idOf(path5);
+    semanticResources.set(path5, kind === "repository" ? { kind, id: "control", value } : { kind, ...id === void 0 ? {} : { id }, value });
+  }
+  if (schemaIssues.length > 0) throw new VnextConfigError(schemaIssues);
+  if (plan.ambiguities.length === 0) {
+    const semanticIssues = validateVnextResources(semanticResources, options);
+    if (semanticIssues.length > 0) throw new VnextConfigError(semanticIssues);
+  }
+  const planRecord = {
+    schema: "kxm.migration-plan.v1",
+    projectId,
+    projectName,
+    sourceDigest: legacySourceDigest(sources),
+    sources: sources.map((source) => ({ path: source.path, sha256: source.sha256, bytes: source.bytes })),
+    resources: [...resources.keys()].sort(compareCodeUnits4).map((path5) => {
+      const bytes = Buffer.from((0, import_yaml3.stringify)(resources.get(path5), { lineWidth: 0 }), "utf8");
+      return { path: path5, sha256: sha256Of(bytes), bytes: bytes.byteLength };
+    }),
+    ambiguities: [...plan.ambiguities].sort((left, right) => compareCodeUnits4(left.key, right.key)).map((ambiguity) => ({
+      key: ambiguity.key,
+      category: ambiguity.category,
+      sourcePath: ambiguity.sourcePath,
+      message: ambiguity.message,
+      allowedValues: [...ambiguity.allowedValues]
+    })),
+    unmapped: [...plan.unmapped].sort((left, right) => compareCodeUnits4(left.sourcePath, right.sourcePath) || compareCodeUnits4(left.jsonPointer, right.jsonPointer)).map((entry) => ({ ...entry })),
+    renames: [...new Map(plan.renames.map((rename) => [JSON.stringify([rename.kind, rename.from, rename.to]), rename])).values()].sort((left, right) => compareCodeUnits4(left.kind, right.kind) || compareCodeUnits4(left.from, right.from)).map((entry) => ({ ...entry })),
+    permissionChanges: [...plan.permissionChanges].sort((left, right) => compareCodeUnits4(left.decisionKey, right.decisionKey)).map((entry) => ({ ...entry })),
+    canApply: plan.ambiguities.length === 0
+  };
+  const planIssues = registry.validateMigrationPlan(planRecord, "kxm.migration-plan.v1");
+  if (planIssues.length > 0) throw new VnextConfigError(planIssues);
+  return {
+    plan: planRecord,
+    resources,
+    ambiguities: plan.ambiguities,
+    decisionKeys: plan.decisionKeys,
+    decisionAllowedValues: plan.decisionAllowedValues,
+    invalidDecisions: plan.invalidDecisions,
+    decisions,
+    sources
+  };
+}
+function readVnextMigrationDecisions(path5, schemasDir) {
+  if (!existsSync8(path5)) {
+    throw new VnextConfigError([migrateIssue("discovery", "decisions_missing", path5, "migration decisions file does not exist")]);
+  }
+  const registry = new VnextSchemaRegistry(schemasDir);
+  const value = parseRestrictedYaml(readFileSync8(path5), path5);
+  const issues = registry.validateMigrationDecision(value, path5);
+  if (issues.length > 0) throw new VnextConfigError(issues);
+  return value;
+}
+function resolutionsOf(decisions) {
+  const resolutions = decisions.resolutions;
+  if (!resolutions || typeof resolutions !== "object" || Array.isArray(resolutions)) return {};
+  return { ...resolutions };
+}
+function syncDirectory3(path5) {
+  let descriptor;
+  try {
+    descriptor = openSync3(path5, "r");
+    fsyncSync3(descriptor);
+  } catch (error) {
+    const code = error.code;
+    if (process.platform !== "win32" && code !== "EINVAL" && code !== "ENOTSUP" && code !== "EISDIR") throw error;
+  } finally {
+    if (descriptor !== void 0) closeSync3(descriptor);
+  }
+}
+function writeDurable2(path5, content) {
+  const temp = `${path5}.kxm-migration-tmp-${process.pid}-${createHash5("sha256").update(`${path5}${Date.now()}${Math.random()}`, "utf8").digest("hex").slice(0, 12)}`;
+  let created = false;
+  try {
+    const descriptor = openSync3(temp, "wx", 384);
+    created = true;
+    try {
+      writeFileSync8(descriptor, content);
+      fsyncSync3(descriptor);
+    } finally {
+      closeSync3(descriptor);
+    }
+    renameSync5(temp, path5);
+    try {
+      chmodSync3(path5, 384);
+    } catch {
+    }
+    syncDirectory3(join15(path5, ".."));
+  } finally {
+    if (created && existsSync8(temp)) rmSync4(temp, { force: true });
+  }
+}
+function applyVnextMigration(projectRoot, options = {}) {
+  const root = migrationGitRoot(projectRoot);
+  const storeOptions = {
+    ...options.localStateRoot === void 0 ? {} : { stateRoot: options.localStateRoot },
+    ...options.schemasDir === void 0 ? {} : { schemasDir: options.schemasDir }
+  };
+  const execute = (lock) => {
+    const receiptAbsolute = join15(root, ...VNEXT_MIGRATION_RECEIPT_PATH.split("/"));
+    if (existsSync8(receiptAbsolute)) {
+      const stat = lstatSync5(receiptAbsolute);
+      if (stat.isSymbolicLink() || !stat.isFile()) {
+        throw new VnextConfigError([migrateIssue("path", "migration_receipt_invalid", VNEXT_MIGRATION_RECEIPT_PATH, "migration receipt must be a regular file, not a link")]);
+      }
+      const existing = loadVnextProject(root, options);
+      return {
+        action: "already-migrated",
+        projectRoot: root,
+        receiptPath: VNEXT_MIGRATION_RECEIPT_PATH,
+        configRevision: existing.configRevision,
+        files: []
+      };
+    }
+    const decisionsRecord = options.decisionsFile ? readVnextMigrationDecisions(options.decisionsFile, options.schemasDir) : void 0;
+    const decisions = decisionsRecord ? resolutionsOf(decisionsRecord) : options.decisions ?? {};
+    const first = planVnextMigration(root, { ...options, decisions });
+    if (decisionsRecord) {
+      if (decisionsRecord.projectId !== first.plan.projectId) {
+        throw new VnextConfigError([migrateIssue("semantic", "decision_project_mismatch", options.decisionsFile ?? "<decisions>", "decisions file projectId does not match the recomputed plan")]);
+      }
+      if (decisionsRecord.projectName !== first.plan.projectName) {
+        throw new VnextConfigError([migrateIssue("semantic", "decision_project_mismatch", options.decisionsFile ?? "<decisions>", "decisions file projectName does not match the recomputed plan")]);
+      }
+      if (decisionsRecord.sourceDigest !== first.plan.sourceDigest) {
+        throw new VnextConfigError([migrateIssue("semantic", "decision_source_changed", options.decisionsFile ?? "<decisions>", "legacy sources changed after the decisions file was reviewed")]);
+      }
+    }
+    if (Object.keys(decisions).length > 0) {
+      const universe = planVnextMigration(root, { ...options, decisions: {} });
+      const unknown = [];
+      const invalid = [];
+      for (const [key, value] of Object.entries(decisions)) {
+        if (first.decisionKeys.has(key)) continue;
+        const universeAllowed = universe.decisionAllowedValues.get(key);
+        if (!universeAllowed) {
+          unknown.push(key);
+        } else if (!decisionValueAllowed(key, value, universeAllowed)) {
+          invalid.push(key);
+        }
+      }
+      if (unknown.length > 0) {
+        throw new VnextConfigError(unknown.sort(compareCodeUnits4).map((key) => migrateIssue("semantic", "decision_unknown", key, "decision key does not match any current ambiguity")));
+      }
+      const allInvalid = [.../* @__PURE__ */ new Set([...invalid, ...first.invalidDecisions])].sort(compareCodeUnits4);
+      if (allInvalid.length > 0) {
+        throw new VnextConfigError(allInvalid.map((key) => migrateIssue("semantic", "decision_value_invalid", key, "decision value is not one of the plan's allowed values")));
+      }
+    }
+    if (first.ambiguities.length > 0) {
+      return { action: "planned", projectRoot: root, files: [], plan: first.plan };
+    }
+    const files = [...first.resources.entries()].sort(([left], [right]) => compareCodeUnits4(left, right)).map(([path5, value]) => ({ path: path5, bytes: Buffer.from((0, import_yaml3.stringify)(value, { lineWidth: 0 }), "utf8") }));
+    const collisions = files.filter((file) => existsSync8(join15(root, ...file.path.split("/"))));
+    if (collisions.length > 0) {
+      throw new VnextConfigError(collisions.map((file) => migrateIssue("semantic", "migration_target_exists", file.path, "target resource already exists; refusing to overwrite")));
+    }
+    const parentIssues = [];
+    for (const file of files) {
+      const segments = file.path.split("/");
+      let current = root;
+      for (const segment of segments.slice(0, -1)) {
+        current = join15(current, segment);
+        if (!existsSync8(current)) continue;
+        const stat = lstatSync5(current);
+        if (stat.isSymbolicLink() || !stat.isDirectory()) {
+          parentIssues.push(migrateIssue("path", "migration_target_parent_invalid", file.path, `migration target parent ${segment} must be a regular directory, not a link`));
+          break;
+        }
+      }
+    }
+    if (parentIssues.length > 0) throw new VnextConfigError(parentIssues);
+    if (options.dryRun) {
+      return { action: "planned", projectRoot: root, files: files.map((file) => file.path), plan: first.plan };
+    }
+    if (!lock) throw new Error("project mutation lock is required to apply a migration");
+    const written = [];
+    try {
+      for (const file of files) {
+        const absolute = join15(root, ...file.path.split("/"));
+        mkdirSync9(join15(absolute, ".."), { recursive: true });
+        written.push(absolute);
+        writeDurable2(absolute, file.bytes);
+      }
+      const bundle = loadVnextProject(root, { ...options, allowUnreceiptedLegacyConfig: true });
+      const receipt = {
+        schema: "kxm.migration-receipt.v1",
+        migrationId: `mig_${sha256Of(`${first.plan.sourceDigest}
+${bundle.configRevision}`).slice(7, 39)}`,
+        projectId: String(first.plan.projectId),
+        sourceDigest: String(first.plan.sourceDigest),
+        decisionDigest: sha256Of(vnextCanonicalJson(decisionsRecord ?? { schema: "kxm.migration-decision.v1", projectId: first.plan.projectId, projectName: first.plan.projectName, sourceDigest: first.plan.sourceDigest, resolutions: decisions })),
+        configRevision: bundle.configRevision,
+        sources: first.plan.sources,
+        resources: files.map((file) => ({ path: file.path, sha256: sha256Of(file.bytes), bytes: file.bytes.byteLength }))
+      };
+      receipt.receiptSha256 = migrationReceiptSelfHash(receipt);
+      const registry = new VnextSchemaRegistry(options.schemasDir);
+      const receiptIssues = registry.validateMigrationReceipt(receipt, VNEXT_MIGRATION_RECEIPT_PATH);
+      if (receiptIssues.length > 0) throw new VnextConfigError(receiptIssues);
+      written.push(receiptAbsolute);
+      writeDurable2(receiptAbsolute, Buffer.from((0, import_yaml3.stringify)(receipt, { lineWidth: 0 }), "utf8"));
+      const verified = loadVnextProject(root, options);
+      return {
+        action: "applied",
+        projectRoot: root,
+        receiptPath: VNEXT_MIGRATION_RECEIPT_PATH,
+        configRevision: verified.configRevision,
+        files: files.map((file) => file.path),
+        plan: first.plan
+      };
+    } catch (error) {
+      for (const absolute of written.reverse()) {
+        try {
+          rmSync4(absolute, { force: true });
+        } catch {
+        }
+      }
+      throw error;
+    }
+  };
+  if (options.dryRun) return execute(void 0);
+  return withVnextLocalBindingLock(root, storeOptions, (lock) => execute(lock));
+}
+function verifyVnextMigration(projectRoot, options = {}) {
+  const root = migrationGitRoot(projectRoot);
+  const receiptAbsolute = join15(root, ...VNEXT_MIGRATION_RECEIPT_PATH.split("/"));
+  if (!existsSync8(receiptAbsolute)) {
+    return {
+      ok: false,
+      projectRoot: root,
+      receiptPath: VNEXT_MIGRATION_RECEIPT_PATH,
+      issues: [migrateIssue("discovery", "migration_receipt_missing", VNEXT_MIGRATION_RECEIPT_PATH, "no migration receipt exists")]
+    };
+  }
+  try {
+    const bundle = loadVnextProject(root, options);
+    const receipt = bundle.migrationReceipt;
+    if (!receipt) {
+      if (legacyConfigFilesAt(root).length === 0) {
+        const direct = readVnextMigrationReceipt(root, options);
+        return {
+          ok: false,
+          projectRoot: root,
+          receiptPath: VNEXT_MIGRATION_RECEIPT_PATH,
+          configRevision: bundle.configRevision,
+          issues: direct.issues.length > 0 ? direct.issues : [migrateIssue("semantic", "migration_receipt_invalid", VNEXT_MIGRATION_RECEIPT_PATH, "receipt did not validate")]
+        };
+      }
+      return {
+        ok: false,
+        projectRoot: root,
+        receiptPath: VNEXT_MIGRATION_RECEIPT_PATH,
+        configRevision: bundle.configRevision,
+        issues: [migrateIssue("semantic", "migration_receipt_invalid", VNEXT_MIGRATION_RECEIPT_PATH, "receipt did not validate during project load")]
+      };
+    }
+    const targetIssues = verifyVnextMigrationReceiptTarget(root, receipt, bundle.resources, bundle.configRevision);
+    return {
+      ok: targetIssues.length === 0,
+      projectRoot: root,
+      receiptPath: VNEXT_MIGRATION_RECEIPT_PATH,
+      configRevision: bundle.configRevision,
+      issues: targetIssues
+    };
+  } catch (error) {
+    if (error instanceof VnextConfigError) {
+      return { ok: false, projectRoot: root, receiptPath: VNEXT_MIGRATION_RECEIPT_PATH, issues: error.issues };
+    }
+    throw error;
+  }
+}
+
 // plugins/kxm-mesh/src/cli.ts
 var CLI_NAME = "kxm";
-var repoRoot = resolve6(fileURLToPath3(new URL("../../../", import.meta.url)));
+var repoRoot = resolve7(fileURLToPath3(new URL("../../../", import.meta.url)));
 var USAGE_ERROR_CODES = /* @__PURE__ */ new Set([
   "commander.help",
   "commander.helpDisplayed",
@@ -31167,7 +32834,7 @@ var USAGE_ERROR_CODES = /* @__PURE__ */ new Set([
 ]);
 function spawnScript(scriptName, extraEnv = {}) {
   return new Promise((resolveExit) => {
-    const child = spawn(process.execPath, [join15(repoRoot, "scripts", scriptName)], {
+    const child = spawn(process.execPath, [join16(repoRoot, "scripts", scriptName)], {
       stdio: "inherit",
       env: { ...process.env, ...extraEnv }
     });
@@ -31235,7 +32902,7 @@ function gateOf(runtime, name) {
 }
 function redactCliValue(value, field = "") {
   if (typeof value === "string") {
-    if ((field === "requestSha256" || field === "replySha256" || field === "behavioralSha256" || field === "workflowDefinitionSha256" || field === "verifierConfigSha256" || field === "rolePromptSha256" || field === "contentSha256" || field === "configRevision" || field === "baseSha256" || field === "localSha256" || field === "targetSha256" || field === "sourceTemplateRevision" || field === "targetTemplateRevision") && /^(?:sha256:)?[a-f0-9]{64}$/.test(value)) return value;
+    if ((field === "requestSha256" || field === "replySha256" || field === "behavioralSha256" || field === "workflowDefinitionSha256" || field === "verifierConfigSha256" || field === "rolePromptSha256" || field === "contentSha256" || field === "configRevision" || field === "baseSha256" || field === "localSha256" || field === "targetSha256" || field === "sourceTemplateRevision" || field === "targetTemplateRevision" || field === "sourceDigest" || field === "decisionDigest" || field === "receiptSha256" || field === "sha256" || field === "valueSha256") && /^(?:sha256:)?[a-f0-9]{64}$/.test(value)) return value;
     return redactSecrets(value);
   }
   if (Array.isArray(value)) return value.map((candidate) => redactCliValue(candidate));
@@ -31247,16 +32914,16 @@ function redactCliValue(value, field = "") {
   return value;
 }
 function workspaceDirs(cwd, workspaceFlag, env) {
-  const workdir = resolve6(env.PI_MESH_WORKDIR?.trim() || cwd);
-  const workspace = resolve6(workdir, workspaceFlag || env.PI_MESH_WORKSPACE_DIR?.trim() || ".kxm");
+  const workdir = resolve7(env.PI_MESH_WORKDIR?.trim() || cwd);
+  const workspace = resolve7(workdir, workspaceFlag || env.PI_MESH_WORKSPACE_DIR?.trim() || ".kxm");
   const derive = workspaceFlag !== void 0;
   return {
     workdir,
     workspace,
-    config: derive ? join15(workspace, "config") : resolve6(workdir, env.PI_MESH_CONFIG_DIR?.trim() || join15(workspace, "config")),
-    logs: derive ? join15(workspace, "logs") : resolve6(workdir, env.PI_MESH_LOGS_DIR?.trim() || join15(workspace, "logs")),
-    assets: derive ? join15(workspace, "assets") : resolve6(workdir, env.PI_MESH_ASSETS_DIR?.trim() || join15(workspace, "assets")),
-    state: derive ? join15(workspace, "state") : resolve6(workdir, env.PI_MESH_STATE_DIR?.trim() || join15(workspace, "state"))
+    config: derive ? join16(workspace, "config") : resolve7(workdir, env.PI_MESH_CONFIG_DIR?.trim() || join16(workspace, "config")),
+    logs: derive ? join16(workspace, "logs") : resolve7(workdir, env.PI_MESH_LOGS_DIR?.trim() || join16(workspace, "logs")),
+    assets: derive ? join16(workspace, "assets") : resolve7(workdir, env.PI_MESH_ASSETS_DIR?.trim() || join16(workspace, "assets")),
+    state: derive ? join16(workspace, "state") : resolve7(workdir, env.PI_MESH_STATE_DIR?.trim() || join16(workspace, "state"))
   };
 }
 function maskEnvName(name) {
@@ -31316,7 +32983,7 @@ async function hubGet(url, fetchImpl) {
   }
 }
 function localWorkflowSnapshot(dataPath, runId) {
-  if (!existsSync8(dataPath)) throw new Error("state_database_not_found");
+  if (!existsSync9(dataPath)) throw new Error("state_database_not_found");
   const database = new DatabaseSync3(dataPath, { readOnly: true });
   try {
     const rows = runId ? database.prepare("SELECT record FROM workflow_runs WHERE id = ?").all(runId) : database.prepare("SELECT record FROM workflow_runs ORDER BY rowid DESC LIMIT 200").all();
@@ -31409,7 +33076,7 @@ function activeWorkflowDefinition(runtime, definitionId) {
   let raw;
   if (file) {
     try {
-      raw = readFileSync8(resolve6(runtime.cwd, file), "utf8");
+      raw = readFileSync9(resolve7(runtime.cwd, file), "utf8");
     } catch {
       throw new Error("workflow definition file is unavailable");
     }
@@ -31545,12 +33212,142 @@ async function cmdVnextInit(runtime, options) {
     return 1;
   }
 }
+async function cmdVnextMigratePlan(runtime) {
+  if (runtime.workspaceFlag !== void 0) {
+    print(runtime.io, runtime.json, {
+      ok: false,
+      command: "migrate plan",
+      error: "workspace_option_unsupported"
+    }, "kxm migrate discovers the authoritative Git root from the current directory; --workspace is not supported");
+    return 2;
+  }
+  try {
+    const result = planVnextMigration(runtime.cwd, {});
+    const ambiguities = result.plan.ambiguities ?? [];
+    const unmapped = result.plan.unmapped ?? [];
+    const payload = {
+      ok: result.plan.canApply === true,
+      command: "migrate plan",
+      plan: result.plan,
+      plannedOnly: result.plan.canApply !== true
+    };
+    if (result.plan.canApply === true) {
+      print(runtime.io, runtime.json, payload, `migration plan: ${ambiguities.length} ambiguities, ${unmapped.length} preserved fields; ready to apply`);
+      return 0;
+    }
+    print(
+      runtime.io,
+      runtime.json,
+      payload,
+      `migration plan requires ${ambiguities.length} reviewed decision(s):
+${ambiguities.map((candidate) => `  - ${candidate.key}: ${candidate.message}`).join("\n")}`
+    );
+    return 1;
+  } catch (error) {
+    if (error instanceof VnextConfigError) {
+      print(runtime.io, runtime.json, { ok: false, command: "migrate plan", error: "migration_plan_failed", issues: error.issues }, `migration plan failed: ${error.message}`);
+      return 1;
+    }
+    print(runtime.io, runtime.json, { ok: false, command: "migrate plan", error: "migration_plan_io_failed" }, "migration plan failed because a local filesystem operation did not complete");
+    return 1;
+  }
+}
+async function cmdVnextMigrateApply(runtime, options) {
+  if (runtime.workspaceFlag !== void 0) {
+    print(runtime.io, runtime.json, {
+      ok: false,
+      command: "migrate apply",
+      error: "workspace_option_unsupported"
+    }, "kxm migrate discovers the authoritative Git root from the current directory; --workspace is not supported");
+    return 2;
+  }
+  try {
+    const result = applyVnextMigration(runtime.cwd, {
+      ...options.decisions?.trim() ? { decisionsFile: options.decisions.trim() } : {},
+      ...options.projectId?.trim() ? { projectId: options.projectId.trim() } : {},
+      ...options.name?.trim() ? { projectName: options.name.trim() } : {},
+      localStateRoot: vnextUserStateRoot({ env: runtime.env }),
+      dryRun: runtime.dryRun
+    });
+    const payload = {
+      ok: result.action !== "planned" || runtime.dryRun === true && result.plan?.canApply === true,
+      command: "migrate apply",
+      action: result.action,
+      files: result.files,
+      ...result.configRevision ? { configRevision: result.configRevision } : {},
+      ...result.receiptPath ? { receiptPath: result.receiptPath } : {},
+      plannedOnly: result.action === "planned"
+    };
+    if (result.action === "applied") {
+      print(runtime.io, runtime.json, payload, `migration applied: ${result.files.length} resources installed, receipt at ${result.receiptPath ?? ""}`);
+      return 0;
+    }
+    if (result.action === "already-migrated") {
+      print(runtime.io, runtime.json, payload, "migration receipt already exists; nothing to apply");
+      return 0;
+    }
+    if (runtime.dryRun && result.plan?.canApply === true) {
+      print(runtime.io, runtime.json, payload, `migration dry run: ${result.files.length} resources would be installed`);
+      return 0;
+    }
+    const ambiguities = result.plan?.ambiguities ?? [];
+    print(
+      runtime.io,
+      runtime.json,
+      { ...payload, plan: result.plan },
+      `migration blocked by ${ambiguities.length} unresolved decision(s); review 'kxm migrate plan' and pass --decisions:
+${ambiguities.map((candidate) => `  - ${candidate.key}: ${candidate.message}`).join("\n")}`
+    );
+    return 1;
+  } catch (error) {
+    if (error instanceof VnextConfigError) {
+      print(runtime.io, runtime.json, { ok: false, command: "migrate apply", error: "migration_apply_failed", issues: error.issues }, `migration apply failed: ${error.message}`);
+      return 1;
+    }
+    print(runtime.io, runtime.json, { ok: false, command: "migrate apply", error: "migration_apply_io_failed" }, "migration apply failed because a local filesystem operation did not complete");
+    return 1;
+  }
+}
+async function cmdVnextMigrateVerify(runtime) {
+  if (runtime.workspaceFlag !== void 0) {
+    print(runtime.io, runtime.json, {
+      ok: false,
+      command: "migrate verify",
+      error: "workspace_option_unsupported"
+    }, "kxm migrate discovers the authoritative Git root from the current directory; --workspace is not supported");
+    return 2;
+  }
+  let result;
+  try {
+    result = verifyVnextMigration(runtime.cwd, {});
+  } catch (error) {
+    if (error instanceof VnextConfigError) {
+      print(runtime.io, runtime.json, { ok: false, command: "migrate verify", error: "migration_verify_failed", issues: error.issues }, `migration verification failed: ${error.message}`);
+      return 1;
+    }
+    print(runtime.io, runtime.json, { ok: false, command: "migrate verify", error: "migration_verify_io_failed" }, "migration verification failed because a local filesystem operation did not complete");
+    return 1;
+  }
+  const payload = {
+    ok: result.ok,
+    command: "migrate verify",
+    ...result.configRevision ? { configRevision: result.configRevision } : {},
+    issues: result.issues
+  };
+  if (result.ok) {
+    print(runtime.io, runtime.json, payload, `migration receipt verified: legacy sources unchanged, target bundle matches ${result.configRevision ?? ""}`);
+    return 0;
+  }
+  print(runtime.io, runtime.json, payload, `migration verification failed:
+${result.issues.map((issue2) => `  - ${issue2.file}: ${issue2.code}: ${issue2.message}`).join("\n")}`);
+  return 1;
+}
 async function cmdInit(runtime) {
   const created = [];
   for (const directory of [runtime.dirs.config, runtime.dirs.logs, runtime.dirs.assets, runtime.dirs.state, ...standardAssetDirs(runtime.dirs.assets)]) {
     if (runtime.dryRun) created.push(directory);
     else {
-      mkdirSync9(directory, { recursive: true });
+      mkdirSync10(directory, { recursive: true });
       created.push(directory);
     }
   }
@@ -31581,13 +33378,13 @@ async function cmdValidate(runtime, fileFlag) {
     return 2;
   }
   const selectedFile = explicitFile || configuredFile;
-  const file = selectedFile ? resolve6(runtime.cwd, selectedFile) : void 0;
-  if (file && !existsSync8(file)) {
+  const file = selectedFile ? resolve7(runtime.cwd, selectedFile) : void 0;
+  if (file && !existsSync9(file)) {
     printWorker(runtime, worker, { ok: false, command: "validate", error: "file_not_found", file }, `workflow file not found: ${file}`);
     return 1;
   }
   try {
-    const raw = file ? readFileSync8(file, "utf8") : inline;
+    const raw = file ? readFileSync9(file, "utf8") : inline;
     const warnings = [];
     const definitions = parseWorkflowDefinitions(raw, runtime.env, (message) => warnings.push(message));
     const secretEnvs = definitions.map((definition) => ({
@@ -31612,7 +33409,7 @@ async function cmdValidate(runtime, fileFlag) {
 }
 async function cmdArtifactsExist(runtime, pathFlag) {
   const worker = gateOf(runtime, "artifacts-exist");
-  const checked = verifyArtifactExists(runtime.dirs.assets, resolve6(runtime.cwd, pathFlag));
+  const checked = verifyArtifactExists(runtime.dirs.assets, resolve7(runtime.cwd, pathFlag));
   if (!checked.ok) {
     printWorker(
       runtime,
@@ -31638,7 +33435,7 @@ async function cmdStatus(runtime) {
   return payload.ok ? 0 : 1;
 }
 async function cmdMeshTui(runtime) {
-  const dataPath = resolve6(runtime.dirs.workdir, runtime.env.PI_MESH_DATA_PATH?.trim() || join15(runtime.dirs.state, "mesh.db"));
+  const dataPath = resolve7(runtime.dirs.workdir, runtime.env.PI_MESH_DATA_PATH?.trim() || join16(runtime.dirs.state, "mesh.db"));
   if (runtime.dryRun) {
     print(runtime.io, runtime.json, {
       ok: true,
@@ -31725,7 +33522,7 @@ async function cmdWorker(runtime, options) {
   return await (runtime.io.spawnWorker ?? ((launchEnv) => spawnScript("pi-mesh-worker.mjs", launchEnv)))(extraEnv);
 }
 async function cmdStop(runtime, waitMsFlag) {
-  const pids = existsSync8(runtime.dirs.state) ? readdirSync5(runtime.dirs.state).filter((name) => name.endsWith(".pid")) : [];
+  const pids = existsSync9(runtime.dirs.state) ? readdirSync5(runtime.dirs.state).filter((name) => name.endsWith(".pid")) : [];
   if (runtime.dryRun) {
     print(runtime.io, runtime.json, { ok: true, command: "stop", dryRun: true, pidFiles: pids }, "would signal pid files");
     return 0;
@@ -31739,14 +33536,14 @@ async function cmdStop(runtime, waitMsFlag) {
   const records = /* @__PURE__ */ new Map();
   for (const file of pids) {
     try {
-      const record = JSON.parse(readFileSync8(join15(runtime.dirs.state, file), "utf8"));
+      const record = JSON.parse(readFileSync9(join16(runtime.dirs.state, file), "utf8"));
       const expectedControl = file === "hub.pid" ? "hub.stop" : file.startsWith("worker-") ? `${file.slice(0, -4)}.stop` : void 0;
       const expectedRole = file === "hub.pid" ? "hub" : file.startsWith("worker-") ? "worker" : void 0;
       if (record.version !== 1 || !Number.isInteger(record.pid) || record.pid <= 0 || !record.startedAt || !expectedControl || record.controlFile !== expectedControl || record.role !== expectedRole || !processExists2(record.pid)) {
         ignored.push(file);
         continue;
       }
-      writeFileSync8(join15(runtime.dirs.state, record.controlFile), `${JSON.stringify({ startedAt: record.startedAt, ...record.generation ? { generation: record.generation } : {}, requestedAt: (/* @__PURE__ */ new Date()).toISOString() })}
+      writeFileSync9(join16(runtime.dirs.state, record.controlFile), `${JSON.stringify({ startedAt: record.startedAt, ...record.generation ? { generation: record.generation } : {}, requestedAt: (/* @__PURE__ */ new Date()).toISOString() })}
 `, { encoding: "utf8", mode: 384 });
       requested.push(file);
       records.set(file, { pid: record.pid, startedAt: record.startedAt, ...record.generation ? { generation: record.generation } : {} });
@@ -31764,7 +33561,7 @@ async function cmdStop(runtime, waitMsFlag) {
   while (Date.now() <= deadline && stopped.size < requested.length) {
     for (const [file, record] of records) {
       try {
-        const current = JSON.parse(readFileSync8(join15(runtime.dirs.state, file), "utf8"));
+        const current = JSON.parse(readFileSync9(join16(runtime.dirs.state, file), "utf8"));
         if (current.pid !== record.pid || current.startedAt !== record.startedAt || current.generation !== record.generation || !processExists2(record.pid)) stopped.add(file);
       } catch {
         stopped.add(file);
@@ -31779,11 +33576,11 @@ async function cmdStop(runtime, waitMsFlag) {
 }
 async function cmdSessionStatus(runtime) {
   const stateDir = runtime.dirs.state;
-  const names2 = existsSync8(stateDir) ? readdirSync5(stateDir) : [];
+  const names2 = existsSync9(stateDir) ? readdirSync5(stateDir) : [];
   const claims = [];
   for (const file of names2.filter((name) => name.endsWith(".pid"))) {
     try {
-      const record = JSON.parse(readFileSync8(join15(stateDir, file), "utf8"));
+      const record = JSON.parse(readFileSync9(join16(stateDir, file), "utf8"));
       claims.push({
         file,
         role: record.role,
@@ -31798,7 +33595,7 @@ async function cmdSessionStatus(runtime) {
   const recoveries = [];
   for (const file of names2.filter((name) => name.startsWith("worker-recovery-") && name.endsWith(".json"))) {
     try {
-      const envelope = JSON.parse(readFileSync8(join15(stateDir, file), "utf8"));
+      const envelope = JSON.parse(readFileSync9(join16(stateDir, file), "utf8"));
       recoveries.push({
         file,
         reason: envelope.reason,
@@ -31859,7 +33656,7 @@ async function cmdSessionStart(runtime, options) {
     ...workflowId ? workflowAssetDirs(runtime.dirs.assets, workflowId) : []
   ];
   if (!runtime.dryRun) {
-    for (const directory of created) mkdirSync9(directory, { recursive: true });
+    for (const directory of created) mkdirSync10(directory, { recursive: true });
     writeSession(runtime.dirs.assets, session);
   }
   print(runtime.io, runtime.json, {
@@ -31875,7 +33672,7 @@ async function cmdImprove(runtime, targetFlag) {
   const targets = targetFlag === "cli" || targetFlag === "project" ? [targetFlag] : ["cli", "project"];
   const events = readTelemetry(telemetryPath(runtime.dirs.logs));
   const report = buildImprovementReport(events, targets);
-  const path5 = writeImprovementReport(join15(runtime.dirs.assets, "improvements"), report, runtime.dryRun);
+  const path5 = writeImprovementReport(join16(runtime.dirs.assets, "improvements"), report, runtime.dryRun);
   print(runtime.io, runtime.json, {
     ok: true,
     command: "improve",
@@ -32029,7 +33826,7 @@ function skillStateFromFlag(value) {
   throw new Error(`invalid skill state ${value}`);
 }
 function skillsRoot(runtime) {
-  return join15(runtime.dirs.workdir, ".kxm", "skills");
+  return join16(runtime.dirs.workdir, ".kxm", "skills");
 }
 function csv(value) {
   if (!value) return void 0;
@@ -32046,7 +33843,7 @@ async function cmdSkillsCreate(runtime, options) {
     const metadata = lifecycle.create({
       name: options.name,
       description: options.description ?? "",
-      content: readFileSync8(options.file, "utf8"),
+      content: readFileSync9(options.file, "utf8"),
       createdBy: options.createdBy,
       sources: {
         runIds: csv(options.run) ?? [],
@@ -32181,7 +33978,7 @@ async function cmdWorkflowStart(runtime, definitionIdArg, options) {
   }
   let payload;
   try {
-    const raw = payloadFlag.startsWith("@") ? readFileSync8(resolve6(runtime.cwd, payloadFlag.slice(1)), "utf8") : payloadFlag;
+    const raw = payloadFlag.startsWith("@") ? readFileSync9(resolve7(runtime.cwd, payloadFlag.slice(1)), "utf8") : payloadFlag;
     const value = JSON.parse(raw);
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("object required");
     payload = value;
@@ -32248,7 +34045,7 @@ async function cmdWorkflowDegrade(runtime, runId, stageId, options) {
   }
 }
 async function cmdWorkflowInspect(runtime, action, runId) {
-  const dataPath = resolve6(runtime.dirs.workdir, runtime.env.PI_MESH_DATA_PATH?.trim() || join15(runtime.dirs.state, "mesh.db"));
+  const dataPath = resolve7(runtime.dirs.workdir, runtime.env.PI_MESH_DATA_PATH?.trim() || join16(runtime.dirs.state, "mesh.db"));
   if (action === "get" && !runId) {
     runtime.io.stderr(`Usage: ${CLI_NAME} workflow get <runId>
 `);
@@ -32394,14 +34191,14 @@ async function cmdRetrospectiveExport(runtime, runId, options) {
     return 2;
   }
   const snapshotFlag = String(options.input || "");
-  const snapshotPath = snapshotFlag ? resolve6(runtime.cwd, snapshotFlag) : "";
+  const snapshotPath = snapshotFlag ? resolve7(runtime.cwd, snapshotFlag) : "";
   let snapshot;
   try {
     if (snapshotPath) {
-      if (!existsSync8(snapshotPath)) throw new Error("snapshot_missing");
-      snapshot = JSON.parse(readFileSync8(snapshotPath, "utf8"));
+      if (!existsSync9(snapshotPath)) throw new Error("snapshot_missing");
+      snapshot = JSON.parse(readFileSync9(snapshotPath, "utf8"));
     } else {
-      const dataPath = resolve6(runtime.dirs.workdir, runtime.env.PI_MESH_DATA_PATH?.trim() || join15(runtime.dirs.state, "mesh.db"));
+      const dataPath = resolve7(runtime.dirs.workdir, runtime.env.PI_MESH_DATA_PATH?.trim() || join16(runtime.dirs.state, "mesh.db"));
       const local = localWorkflowSnapshot(dataPath, runId);
       if (!local.runs[0]) throw new Error("workflow_not_found");
       snapshot = { run: local.runs[0], journal: local.journal };
@@ -32413,8 +34210,8 @@ async function cmdRetrospectiveExport(runtime, runId, options) {
     return 1;
   }
   const doc = buildRetrospective(snapshot.run, snapshot.journal);
-  const outDir = resolve6(runtime.cwd, String(options.outDir || join15(runtime.dirs.assets, "retrospectives")));
-  const assetsRoot = resolve6(runtime.dirs.assets);
+  const outDir = resolve7(runtime.cwd, String(options.outDir || join16(runtime.dirs.assets, "retrospectives")));
+  const assetsRoot = resolve7(runtime.dirs.assets);
   const assetsPrefix = `${assetsRoot}${process.platform === "win32" ? "\\" : "/"}`;
   if (outDir !== assetsRoot && !outDir.startsWith(assetsPrefix)) {
     print(runtime.io, runtime.json, { ok: false, command: "retrospective export", error: "output_outside_workspace_assets" }, "retrospectives must stay under the workspace assets directory");
@@ -32450,6 +34247,17 @@ function createProgram(ctx, result) {
   addGlobalOptions(program2);
   program2.command("init").description("Create, validate, or plan migration of a vNext project").option("--json", "Print machine-readable JSON").option("--dry-run", "Plan without making changes").option("--name <name>", "Project display name for a new project").option("--project-id <id>", "Stable project ID for controlled provisioning").option("--repository <id=absolute-path>", "Bind a member repository outside Git configuration", (value, previous) => [...previous, value], []).action(async function initAction(options) {
     result.code = await cmdVnextInit(runtimeFrom(ctx, this), options);
+  });
+  const migrate = addGlobalOptions(program2.command("migrate").description("Plan, apply, and verify legacy JSON configuration migration"));
+  migrate.helpCommand("help", "Show migrate help");
+  addGlobalOptions(migrate.command("plan").description("Compute the deterministic legacy-to-vNext migration plan without writes")).action(async function migratePlanAction() {
+    result.code = await cmdVnextMigratePlan(runtimeFrom(ctx, this));
+  });
+  addGlobalOptions(migrate.command("apply").description("Install a reviewed migration with a hash-linked receipt")).option("--decisions <file>", "Reviewed kxm.migration-decision.v1 YAML file").option("--project-id <id>", "Stable project ID for controlled provisioning").option("--name <name>", "Project display name").action(async function migrateApplyAction(options) {
+    result.code = await cmdVnextMigrateApply(runtimeFrom(ctx, this), options);
+  });
+  addGlobalOptions(migrate.command("verify").description("Verify a migration receipt against current sources and target bundle")).action(async function migrateVerifyAction() {
+    result.code = await cmdVnextMigrateVerify(runtimeFrom(ctx, this));
   });
   const agent = addGlobalOptions(program2.command("agent").description("Run and supervise agents"));
   agent.helpCommand("help", "Show agent help");
@@ -32585,7 +34393,7 @@ async function runCli(argv, env = process.env, io = { stdout: (text) => process.
     throw error;
   }
 }
-if (process.argv[1] && resolve6(process.argv[1]) === fileURLToPath3(import.meta.url)) {
+if (process.argv[1] && resolve7(process.argv[1]) === fileURLToPath3(import.meta.url)) {
   const code = await runCli(process.argv.slice(2));
   process.exitCode = code;
 }

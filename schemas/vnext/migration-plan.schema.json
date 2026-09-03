@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.kxm.dev/vnext/migration-plan.schema.json",
+  "title": "KXM legacy configuration migration plan",
+  "type": "object",
+  "required": [
+    "schema",
+    "projectId",
+    "projectName",
+    "sourceDigest",
+    "sources",
+    "resources",
+    "ambiguities",
+    "unmapped",
+    "renames",
+    "permissionChanges",
+    "canApply"
+  ],
+  "properties": {
+    "schema": { "const": "kxm.migration-plan.v1" },
+    "projectId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "projectName": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "sourceDigest": { "$ref": "common.schema.json#/$defs/sha256" },
+    "sources": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/fileRecord" },
+      "minItems": 1,
+      "maxItems": 256
+    },
+    "resources": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/fileRecord" },
+      "minItems": 2,
+      "maxItems": 512
+    },
+    "ambiguities": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ambiguity" },
+      "maxItems": 1024
+    },
+    "unmapped": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/unmapped" },
+      "maxItems": 2048
+    },
+    "renames": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/rename" },
+      "maxItems": 1024
+    },
+    "permissionChanges": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/permissionChange" },
+      "maxItems": 512
+    },
+    "canApply": { "type": "boolean" }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "fileRecord": {
+      "type": "object",
+      "required": ["path", "sha256", "bytes"],
+      "properties": {
+        "path": { "$ref": "common.schema.json#/$defs/relativePath" },
+        "sha256": { "$ref": "common.schema.json#/$defs/sha256" },
+        "bytes": { "type": "integer", "minimum": 0, "maximum": 268435456 }
+      },
+      "additionalProperties": false
+    },
+    "ambiguity": {
+      "type": "object",
+      "required": ["key", "category", "sourcePath", "message", "allowedValues"],
+      "properties": {
+        "key": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,511}$" },
+        "category": {
+          "enum": ["unsupported", "identity", "step-kind", "terminal-status", "transition-budget", "evidence-policy", "permission", "secret-reference"]
+        },
+        "sourcePath": { "$ref": "common.schema.json#/$defs/relativePath" },
+        "message": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "allowedValues": {
+          "type": "array",
+          "items": { "oneOf": [{ "type": "string", "maxLength": 256 }, { "type": "integer", "minimum": 1, "maximum": 100 }] },
+          "minItems": 1,
+          "maxItems": 64
+        }
+      },
+      "additionalProperties": false
+    },
+    "unmapped": {
+      "type": "object",
+      "required": ["sourcePath", "jsonPointer", "valueSha256", "sensitive"],
+      "properties": {
+        "sourcePath": { "$ref": "common.schema.json#/$defs/relativePath" },
+        "jsonPointer": { "type": "string", "pattern": "^/", "maxLength": 1024 },
+        "valueSha256": { "$ref": "common.schema.json#/$defs/sha256" },
+        "sensitive": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "rename": {
+      "type": "object",
+      "required": ["from", "to", "kind"],
+      "properties": {
+        "from": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "to": { "$ref": "common.schema.json#/$defs/identifier" },
+        "kind": { "enum": ["agent", "model", "workflow", "step", "evidence", "outcome"] }
+      },
+      "additionalProperties": false
+    },
+    "permissionChange": {
+      "type": "object",
+      "required": ["sourcePath", "targetPath", "direction", "summary", "decisionKey"],
+      "properties": {
+        "sourcePath": { "$ref": "common.schema.json#/$defs/relativePath" },
+        "targetPath": { "$ref": "common.schema.json#/$defs/relativePath" },
+        "direction": { "enum": ["narrowing", "expansion", "unknown"] },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "decisionKey": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,511}$" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

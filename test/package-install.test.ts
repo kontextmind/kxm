@@ -110,6 +110,9 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
     assert.equal(existsSync(join(packageRoot, "schemas", "vnext", "project.schema.json")), true);
     assert.equal(existsSync(join(packageRoot, "schemas", "vnext", "template-provenance.schema.json")), true);
     assert.equal(existsSync(join(packageRoot, "schemas", "vnext", "init-operation.schema.json")), true);
+    assert.equal(existsSync(join(packageRoot, "schemas", "vnext", "migration-plan.schema.json")), true);
+    assert.equal(existsSync(join(packageRoot, "schemas", "vnext", "migration-decision.schema.json")), true);
+    assert.equal(existsSync(join(packageRoot, "schemas", "vnext", "migration-receipt.schema.json")), true);
 
     const unsupportedWorkspace = spawnSync(process.execPath, [
       join(packageRoot, "scripts", "kxm.mjs"), "--workspace", join(vnextProject, "wrong"), "init", "--json",
@@ -168,6 +171,56 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
     ], { cwd: vnextProject, encoding: "utf8", env: joinEnvironment });
     assert.equal(packedJoinRepeated.status, 0, `${packedJoinRepeated.stderr}\n${packedJoinRepeated.stdout}`);
     assert.match(packedJoinRepeated.stdout, /"action":"validated"/);
+
+    // Packed consumer: legacy JSON migration plan/apply/verify round trip.
+    const legacyConsumer = join(consumer, "legacy-project");
+    mkdirSync(join(legacyConsumer, ".kxm", "config", "workflows"), { recursive: true });
+    makeGitRoot(legacyConsumer);
+    writeFileSync(join(legacyConsumer, ".kxm", "config", "agents.json"), JSON.stringify({
+      schema: "kxm.agents.v1",
+      agents: [{ name: "writer", kind: "agent", driver: "ai", purpose: "Writes" }],
+    }));
+    writeFileSync(join(legacyConsumer, ".kxm", "config", "workflows", "fix.json"), JSON.stringify([{
+      id: "fix",
+      target: "writer",
+      maxTransitions: 4,
+      stages: [{
+        id: "plan",
+        instructions: "Plan the fix.",
+        on: { passed: "$terminal", blocked: "$terminal" },
+      }],
+    }]));
+    const migratePlan = spawnSync(process.execPath, [
+      join(packageRoot, "scripts", "kxm.mjs"), "migrate", "plan", "--json",
+    ], { cwd: legacyConsumer, encoding: "utf8", env: joinEnvironment });
+    assert.equal(migratePlan.status, 1, `${migratePlan.stderr}\n${migratePlan.stdout}`);
+    const migratePlanPayload = JSON.parse(migratePlan.stdout) as {
+      plan: { canApply: boolean; projectId: string; projectName: string; sourceDigest: string; ambiguities: Array<{ key: string; allowedValues: Array<string | number> }> };
+    };
+    assert.equal(migratePlanPayload.plan.canApply, false);
+    const packedResolutions: Record<string, string | number> = {};
+    for (const ambiguity of migratePlanPayload.plan.ambiguities) packedResolutions[ambiguity.key] = ambiguity.allowedValues[0]!;
+    const packedDecisions = join(legacyConsumer, "decisions.yaml");
+    writeFileSync(packedDecisions, [
+      "schema: kxm.migration-decision.v1",
+      `projectId: ${migratePlanPayload.plan.projectId}`,
+      `projectName: ${migratePlanPayload.plan.projectName}`,
+      `sourceDigest: ${migratePlanPayload.plan.sourceDigest}`,
+      "resolutions:",
+      ...Object.entries(packedResolutions).map(([key, value]) => `  ${JSON.stringify(key)}: ${JSON.stringify(value)}`),
+      "",
+    ].join("\n"));
+    const migrateApply = spawnSync(process.execPath, [
+      join(packageRoot, "scripts", "kxm.mjs"), "migrate", "apply", "--json", "--decisions", packedDecisions,
+    ], { cwd: legacyConsumer, encoding: "utf8", env: joinEnvironment });
+    assert.equal(migrateApply.status, 0, `${migrateApply.stderr}\n${migrateApply.stdout}`);
+    assert.match(migrateApply.stdout, /"action":"applied"/);
+    assert.equal(existsSync(join(legacyConsumer, ".kxm", "migration-receipt.yaml")), true);
+    const migrateVerify = spawnSync(process.execPath, [
+      join(packageRoot, "scripts", "kxm.mjs"), "migrate", "verify", "--json",
+    ], { cwd: legacyConsumer, encoding: "utf8", env: joinEnvironment });
+    assert.equal(migrateVerify.status, 0, `${migrateVerify.stderr}\n${migrateVerify.stdout}`);
+    assert.match(migrateVerify.stdout, /"ok":true/);
 
     const globalInstall = runNpm([
       "install",

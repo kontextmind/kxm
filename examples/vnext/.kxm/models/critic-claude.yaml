@@ -1,6 +1,6 @@
 schema: kxm.model.v1
 provider: anthropic
-model: claude-fable-5
+model: claude-fable-5-1
 tags:
   - critic
 capabilities:

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.kxm.dev/vnext/migration-receipt.schema.json",
+  "title": "KXM verified legacy configuration migration receipt",
+  "type": "object",
+  "required": [
+    "schema",
+    "migrationId",
+    "projectId",
+    "sourceDigest",
+    "decisionDigest",
+    "configRevision",
+    "sources",
+    "resources",
+    "receiptSha256"
+  ],
+  "properties": {
+    "schema": { "const": "kxm.migration-receipt.v1" },
+    "migrationId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "projectId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "sourceDigest": { "$ref": "common.schema.json#/$defs/sha256" },
+    "decisionDigest": { "$ref": "common.schema.json#/$defs/sha256" },
+    "configRevision": { "$ref": "common.schema.json#/$defs/sha256" },
+    "sources": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/fileRecord" },
+      "minItems": 1,
+      "maxItems": 256
+    },
+    "resources": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/fileRecord" },
+      "minItems": 2,
+      "maxItems": 512
+    },
+    "previousReceiptSha256": { "$ref": "common.schema.json#/$defs/sha256" },
+    "receiptSha256": { "$ref": "common.schema.json#/$defs/sha256" }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "fileRecord": {
+      "type": "object",
+      "required": ["path", "sha256", "bytes"],
+      "properties": {
+        "path": { "$ref": "common.schema.json#/$defs/relativePath" },
+        "sha256": { "$ref": "common.schema.json#/$defs/sha256" },
+        "bytes": { "type": "integer", "minimum": 0, "maximum": 268435456 }
+      },
+      "additionalProperties": false
+    }
+  }
+}

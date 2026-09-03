@@ -262,7 +262,7 @@ const snapshot: MeshTuiSnapshot = {
     name: "fable",
     purpose: "critic",
     project: "payk12",
-    model: "claude-fable-5",
+    model: "claude-fable-5-1",
     connectedAt: "2026-08-27T13:00:00.000Z",
     lastSeenAt: "2026-08-27T13:59:50.000Z",
     online: true,

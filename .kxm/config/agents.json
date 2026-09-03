@@ -15,7 +15,7 @@
       "name": "fable",
       "kind": "agent",
       "driver": "ai",
-      "model": "anthropic/claude-fable-5",
+      "model": "anthropic/claude-fable-5-1",
       "thinking": "xhigh",
       "purpose": "Independent critic: architecture and permissions"
     },

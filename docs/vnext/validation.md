@@ -98,6 +98,40 @@ hard-link support fails safely. Create keeps its same-volume directory rename.
 A newer process must finish the pinned transaction before planning another
 template revision.
 
+#### Legacy configuration migration
+
+`kxm migrate plan|apply|verify` converts legacy `.kxm/config` JSON into
+validated vNext resources with an exact receipt:
+
+- Legacy files are read with byte/depth/node bounds and token-level
+  duplicate-key rejection. Symbolic links and linked `workflows/` directories
+  are never traversed for authoritative bytes.
+- The deterministic `kxm.migration-plan.v1` binds every source file by
+  sha256/bytes plus a combined `sourceDigest`, lists target resources with
+  rendered content hashes, and enumerates every ambiguity as a stable decision
+  key with its allowed values: terminal status for each legacy `$terminal`
+  edge (legacy semantics completed the run even on failure outcomes), per-edge
+  budgets for unbounded back-edges, missing global transition budgets,
+  evidence-policy strengthening from `replied` to `passed`, foreign producer
+  identities, secret-field drops, unimplemented gates, and each narrowed
+  permission ceiling. Unrecognized or unmappable fields are preserved as
+  hashed `unmapped` entries; sensitive values are hashed, never copied.
+  Identity normalization that changes a name is an explicit `renames` entry
+  applied to all bound references; case-fold collisions fail closed.
+- Apply requires a reviewed `kxm.migration-decision.v1` (or programmatic
+  resolutions) binding the exact plan: project ID, project name, and source
+  digest. Unknown keys and values outside the allowed set fail closed before
+  any write. The complete target bundle must pass exact-schema and semantic
+  validation before installation; existing target paths are never overwritten.
+- Installation uses durable writes under the project mutation lock and finishes
+  with a self-hashed `kxm.migration-receipt.v1` binding source hashes, decision
+  digest, target configuration revision, and installed resource hashes. The
+  receipt keeps the legacy inputs read-only: `loadVnextProject` accepts mixed
+  trees only through a verified receipt, and any later legacy-source edit makes
+  loading and `migrate verify` fail closed. Re-apply is an idempotent no-op.
+- `plan`, `verify`, and every `--dry-run` path perform no writes, locks,
+  staging, backups, or Runtime-local state creation.
+
 `--dry-run` may parse and classify a transaction but MUST NOT create the writer
 mutex, state directories, staging, backups, temporary files, or cleanup. Live
 mutations use a SQLite immediate transaction so process death releases the

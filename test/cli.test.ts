@@ -8,6 +8,7 @@ import test from "node:test";
 import { runCli as runCliImplementation, type CliIo } from "../plugins/kxm-mesh/src/cli.ts";
 import { vnextLocalBindingFile } from "../plugins/kxm-mesh/src/vnext-bindings.ts";
 import { initializeVnextProject } from "../plugins/kxm-mesh/src/vnext-init.ts";
+import { stringify } from "yaml";
 
 async function runCli(argv: string[], env: NodeJS.ProcessEnv, io: CliIo, cwd = process.cwd()): Promise<number> {
   const isolatedLogs = mkdtempSync(join(tmpdir(), "kxm-cli-telemetry-"));
@@ -226,6 +227,223 @@ test("vNext init joins with repeated CLI member bindings stored outside Git", as
     assert.equal(repeated.action, "validated");
     assert.equal(repeated.localBindingFile, joined.localBindingFile);
   } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(stateRoot, { recursive: true, force: true });
+  }
+});
+
+test("kxm migrate plans, applies with reviewed decisions, and verifies the receipt", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "kxm-migrate-cli-"));
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-migrate-cli-state-"));
+  const env = { KXM_STATE_HOME: stateRoot };
+  try {
+    makeGitRoot(cwd);
+    mkdirSync(join(cwd, ".kxm", "config", "workflows"), { recursive: true });
+    writeFileSync(join(cwd, ".kxm", "config", "agents.json"), JSON.stringify({
+      schema: "kxm.agents.v1",
+      agents: [{ name: "writer", kind: "agent", driver: "ai", model: "xai/grok-4.6", purpose: "Writes" }],
+    }), "utf8");
+    writeFileSync(join(cwd, ".kxm", "config", "workflows", "fix.json"), JSON.stringify([{
+      id: "fix",
+      target: "writer",
+      secretEnv: "FIX_SECRET",
+      maxTransitions: 6,
+      stages: [{
+        id: "plan",
+        instructions: "Plan the fix.",
+        requiredEvidence: ["plan"],
+        on: { passed: "implement", blocked: "$terminal" },
+      }, {
+        id: "implement",
+        instructions: "Implement the plan.",
+        requiredEvidence: ["diff"],
+        on: { passed: "$terminal", failed: "implement", blocked: "$terminal" },
+      }],
+    }]), "utf8");
+
+    const workspace = capture();
+    assert.equal(await runCli(["--workspace", cwd, "migrate", "plan", "--json"], env, workspace, cwd), 2);
+
+    const plannedIo = capture();
+    assert.equal(await runCli(["migrate", "plan", "--json"], env, plannedIo, cwd), 1);
+    const planned = JSON.parse(plannedIo.read().stdout) as {
+      ok: boolean;
+      plannedOnly: boolean;
+      plan: { canApply: boolean; ambiguities: Array<{ key: string; allowedValues: Array<string | number> }>; sourceDigest: string; projectId: string; projectName: string };
+    };
+    assert.equal(planned.ok, false);
+    assert.equal(planned.plannedOnly, true);
+    assert.equal(planned.plan.canApply, false);
+    const keys = planned.plan.ambiguities.map((ambiguity) => ambiguity.key);
+    assert(keys.some((key) => key.startsWith("secret:fix-") && key.endsWith(":secretEnv")));
+    assert(keys.some((key) => key.startsWith("terminal:fix-") && key.endsWith(":blocked")));
+    assert(keys.some((key) => key.startsWith("backedge:fix-") && key.endsWith(":failed")));
+    assert.equal(existsSync(join(cwd, ".kxm", "project.yaml")), false, "plan performs no writes");
+
+    const blockedIo = capture();
+    assert.equal(await runCli(["migrate", "apply", "--json"], env, blockedIo, cwd), 1);
+    const blocked = JSON.parse(blockedIo.read().stdout) as { action: string; plannedOnly: boolean };
+    assert.equal(blocked.action, "planned");
+    assert.equal(blocked.plannedOnly, true);
+    assert.equal(existsSync(join(cwd, ".kxm", "project.yaml")), false);
+
+    const resolutions: Record<string, string | number> = {};
+    for (const ambiguity of planned.plan.ambiguities) {
+      const first = ambiguity.allowedValues[0]!;
+      resolutions[ambiguity.key] = first;
+    }
+    const decisionsPath = join(cwd, "decisions.yaml");
+    writeFileSync(decisionsPath, stringify({
+      schema: "kxm.migration-decision.v1",
+      projectId: planned.plan.projectId,
+      projectName: planned.plan.projectName,
+      sourceDigest: planned.plan.sourceDigest,
+      resolutions,
+    }), "utf8");
+
+    const dryIo = capture();
+    assert.equal(await runCli(["migrate", "apply", "--json", "--dry-run", "--decisions", decisionsPath], env, dryIo, cwd), 0);
+    assert.match(dryIo.read().stdout, /"action":"planned"/);
+    assert.equal(existsSync(join(cwd, ".kxm", "project.yaml")), false, "apply --dry-run performs no writes");
+
+    const blockedDryIo = capture();
+    assert.equal(await runCli(["migrate", "apply", "--json", "--dry-run"], env, blockedDryIo, cwd), 1);
+    const blockedDry = JSON.parse(blockedDryIo.read().stdout) as { ok: boolean; action: string };
+    assert.equal(blockedDry.ok, false, "dry run with unresolved ambiguities must not report success");
+    assert.equal(blockedDry.action, "planned");
+    assert.equal(existsSync(join(cwd, ".kxm", "project.yaml")), false);
+
+    const appliedIo = capture();
+    assert.equal(await runCli(["migrate", "apply", "--json", "--decisions", decisionsPath], env, appliedIo, cwd), 0);
+    const applied = JSON.parse(appliedIo.read().stdout) as { action: string; configRevision: string; receiptPath: string; files: string[] };
+    assert.equal(applied.action, "applied");
+    assert.equal(applied.receiptPath, ".kxm/migration-receipt.yaml");
+    assert(applied.files.includes(".kxm/workflows/fix.yaml"));
+
+    const verifiedIo = capture();
+    assert.equal(await runCli(["migrate", "verify", "--json"], env, verifiedIo, cwd), 0);
+    const verified = JSON.parse(verifiedIo.read().stdout) as { ok: boolean; configRevision: string };
+    assert.equal(verified.ok, true);
+    assert.equal(verified.configRevision, applied.configRevision);
+
+    const initIo = capture();
+    assert.equal(await runCli(["init", "--json"], env, initIo, cwd), 0);
+    assert.match(initIo.read().stdout, /"action":"validated"/, "migrated project initializes as ready");
+
+    writeFileSync(join(cwd, ".kxm", "config", "agents.json"), "{}\n", "utf8");
+    const driftIo = capture();
+    assert.equal(await runCli(["migrate", "verify", "--json"], env, driftIo, cwd), 1);
+    assert.match(driftIo.read().stdout, /migration_source_changed/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(stateRoot, { recursive: true, force: true });
+  }
+});
+
+test("kxm migrate covers error paths and text output modes", async () => {
+  const emptyCwd = mkdtempSync(join(tmpdir(), "kxm-migrate-cli-empty-"));
+  const cwd = mkdtempSync(join(tmpdir(), "kxm-migrate-cli-text-"));
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-migrate-cli-text-state-"));
+  const env = { KXM_STATE_HOME: stateRoot };
+  try {
+    makeGitRoot(emptyCwd);
+    const noSourcesIo = capture();
+    assert.equal(await runCli(["migrate", "plan", "--json"], env, noSourcesIo, emptyCwd), 1);
+    const noSources = JSON.parse(noSourcesIo.read().stdout) as { error: string; issues: Array<{ code: string }> };
+    assert.equal(noSources.error, "migration_plan_failed");
+    assert(noSources.issues.some((issue) => issue.code === "legacy_sources_missing"));
+
+    const noReceiptIo = capture();
+    assert.equal(await runCli(["migrate", "verify", "--json"], env, noReceiptIo, emptyCwd), 1);
+    const noReceipt = JSON.parse(noReceiptIo.read().stdout) as { ok: boolean; issues: Array<{ code: string }> };
+    assert.equal(noReceipt.ok, false);
+    assert(noReceipt.issues.some((issue) => issue.code === "migration_receipt_missing"));
+
+    makeGitRoot(cwd);
+    mkdirSync(join(cwd, ".kxm", "config", "workflows"), { recursive: true });
+    writeFileSync(join(cwd, ".kxm", "config", "agents.json"), JSON.stringify({
+      schema: "kxm.agents.v1",
+      agents: [{ name: "writer", kind: "agent", driver: "ai", purpose: "Writes" }],
+    }), "utf8");
+    writeFileSync(join(cwd, ".kxm", "config", "workflows", "fix.json"), JSON.stringify([{
+      id: "fix",
+      target: "writer",
+      secretEnv: "FIX_SECRET",
+      maxTransitions: 6,
+      stages: [{
+        id: "plan",
+        instructions: "Plan the fix.",
+        on: { passed: "implement", blocked: "$terminal" },
+      }, {
+        id: "implement",
+        instructions: "Implement the plan.",
+        on: { passed: "$terminal", failed: "implement", blocked: "$terminal" },
+      }],
+    }]), "utf8");
+
+    // Text mode: blocked plan lists the required decisions.
+    const textPlanIo = capture();
+    assert.equal(await runCli(["migrate", "plan"], env, textPlanIo, cwd), 1);
+    assert.match(textPlanIo.read().stdout, /migration plan requires \d+ reviewed decision/);
+    assert.match(textPlanIo.read().stdout, /secret:fix-/);
+
+    // Text mode: blocked apply without decisions.
+    const textBlockedIo = capture();
+    assert.equal(await runCli(["migrate", "apply"], env, textBlockedIo, cwd), 1);
+    assert.match(textBlockedIo.read().stdout, /migration blocked by \d+ unresolved decision/);
+
+    // Missing decisions file is a stable error.
+    const missingDecisionsIo = capture();
+    assert.equal(await runCli(["migrate", "apply", "--json", "--decisions", join(cwd, "nope.yaml")], env, missingDecisionsIo, cwd), 1);
+    const missingDecisions = JSON.parse(missingDecisionsIo.read().stdout) as { error: string; issues: Array<{ code: string }> };
+    assert.equal(missingDecisions.error, "migration_apply_failed");
+    assert(missingDecisions.issues.some((issue) => issue.code === "decisions_missing"));
+
+    // Resolve everything, then exercise the text-mode canApply plan, apply,
+    // already-migrated, and verify-success paths.
+    const jsonPlanIo = capture();
+    assert.equal(await runCli(["migrate", "plan", "--json"], env, jsonPlanIo, cwd), 1);
+    const jsonPlan = JSON.parse(jsonPlanIo.read().stdout) as {
+      plan: { projectId: string; projectName: string; sourceDigest: string; ambiguities: Array<{ key: string; allowedValues: Array<string | number> }> };
+    };
+    const resolutions: Record<string, string | number> = {};
+    for (const ambiguity of jsonPlan.plan.ambiguities) resolutions[ambiguity.key] = ambiguity.allowedValues[0]!;
+    const decisionsPath = join(cwd, "decisions.yaml");
+    writeFileSync(decisionsPath, stringify({
+      schema: "kxm.migration-decision.v1",
+      projectId: jsonPlan.plan.projectId,
+      projectName: jsonPlan.plan.projectName,
+      sourceDigest: jsonPlan.plan.sourceDigest,
+      resolutions,
+    }), "utf8");
+
+    const canApplyTextIo = capture();
+    assert.equal(await runCli(["migrate", "plan"], env, canApplyTextIo, cwd), 1, "without decisions the plan still needs approvals");
+
+    const workspaceApplyIo = capture();
+    assert.equal(await runCli(["--workspace", cwd, "migrate", "apply", "--json"], env, workspaceApplyIo, cwd), 2);
+    const workspaceVerifyIo = capture();
+    assert.equal(await runCli(["--workspace", cwd, "migrate", "verify", "--json"], env, workspaceVerifyIo, cwd), 2);
+
+    const applyTextIo = capture();
+    assert.equal(await runCli(["migrate", "apply", "--decisions", decisionsPath], env, applyTextIo, cwd), 0);
+    assert.match(applyTextIo.read().stdout, /migration applied: \d+ resources installed/);
+
+    const alreadyTextIo = capture();
+    assert.equal(await runCli(["migrate", "apply"], env, alreadyTextIo, cwd), 0);
+    assert.match(alreadyTextIo.read().stdout, /migration receipt already exists; nothing to apply/);
+
+    const verifyTextIo = capture();
+    assert.equal(await runCli(["migrate", "verify"], env, verifyTextIo, cwd), 0);
+    assert.match(verifyTextIo.read().stdout, /migration receipt verified/);
+
+    // Verify failure in text mode lists issues.
+    writeFileSync(join(cwd, ".kxm", "workflows", "fix.yaml"), `${readFileSync(join(cwd, ".kxm", "workflows", "fix.yaml"), "utf8")}# drift\n`, "utf8");
+    const verifyFailTextIo = capture();
+    assert.equal(await runCli(["migrate", "verify"], env, verifyFailTextIo, cwd), 1);
+    assert.match(verifyFailTextIo.read().stdout, /migration verification failed/);
+  } finally {
+    rmSync(emptyCwd, { recursive: true, force: true });
     rmSync(cwd, { recursive: true, force: true });
     rmSync(stateRoot, { recursive: true, force: true });
   }

@@ -67,6 +67,7 @@ export interface VnextProjectBundle {
   workflows: ReadonlyMap<string, VnextResource>;
   environments: readonly VnextResource[];
   templateProvenance?: JsonObject;
+  migrationReceipt?: JsonObject;
   resources: readonly VnextResource[];
   configRevision: string;
 }
@@ -77,6 +78,8 @@ export interface VnextConfigOptions {
   registeredExecutors?: Iterable<string>;
   registeredGates?: Iterable<string>;
   registeredToolPresets?: Iterable<string>;
+  /** Internal: migration apply validates the staged target before the receipt exists. */
+  allowUnreceiptedLegacyConfig?: boolean;
 }
 
 export type VnextInitializationMode = "create" | "migrate" | "repair" | "ready";
@@ -250,6 +253,9 @@ export class VnextSchemaRegistry {
   readonly localBindingsValidator: ValidateFunction;
   readonly templateProvenanceValidator: ValidateFunction;
   readonly initOperationValidator: ValidateFunction;
+  readonly migrationPlanValidator: ValidateFunction;
+  readonly migrationDecisionValidator: ValidateFunction;
+  readonly migrationReceiptValidator: ValidateFunction;
 
   constructor(schemasDir = DEFAULT_SCHEMA_DIR) {
     this.schemasDir = resolve(schemasDir);
@@ -262,9 +268,15 @@ export class VnextSchemaRegistry {
     const localBindingsFile = "local-repository-bindings.schema.json";
     const templateProvenanceFile = "template-provenance.schema.json";
     const initOperationFile = "init-operation.schema.json";
+    const migrationPlanFile = "migration-plan.schema.json";
+    const migrationDecisionFile = "migration-decision.schema.json";
+    const migrationReceiptFile = "migration-receipt.schema.json";
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, localBindingsFile)));
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, templateProvenanceFile)));
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, initOperationFile)));
+    this.ajv.addSchema(readJsonObject(join(this.schemasDir, migrationPlanFile)));
+    this.ajv.addSchema(readJsonObject(join(this.schemasDir, migrationDecisionFile)));
+    this.ajv.addSchema(readJsonObject(join(this.schemasDir, migrationReceiptFile)));
     for (const [kind, definition] of Object.entries(RESOURCE_SCHEMA) as [VnextResourceKind, { identity: string; file: string }][]) {
       const validator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${definition.file}`);
       if (!validator) throw new Error(`schema did not compile: ${definition.file}`);
@@ -273,12 +285,21 @@ export class VnextSchemaRegistry {
     const localBindingsValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${localBindingsFile}`);
     const templateProvenanceValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${templateProvenanceFile}`);
     const initOperationValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${initOperationFile}`);
+    const migrationPlanValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${migrationPlanFile}`);
+    const migrationDecisionValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${migrationDecisionFile}`);
+    const migrationReceiptValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${migrationReceiptFile}`);
     if (!localBindingsValidator) throw new Error(`schema did not compile: ${localBindingsFile}`);
     if (!templateProvenanceValidator) throw new Error(`schema did not compile: ${templateProvenanceFile}`);
     if (!initOperationValidator) throw new Error(`schema did not compile: ${initOperationFile}`);
+    if (!migrationPlanValidator) throw new Error(`schema did not compile: ${migrationPlanFile}`);
+    if (!migrationDecisionValidator) throw new Error(`schema did not compile: ${migrationDecisionFile}`);
+    if (!migrationReceiptValidator) throw new Error(`schema did not compile: ${migrationReceiptFile}`);
     this.localBindingsValidator = localBindingsValidator;
     this.templateProvenanceValidator = templateProvenanceValidator;
     this.initOperationValidator = initOperationValidator;
+    this.migrationPlanValidator = migrationPlanValidator;
+    this.migrationDecisionValidator = migrationDecisionValidator;
+    this.migrationReceiptValidator = migrationReceiptValidator;
   }
 
   validate(kind: VnextResourceKind, value: JsonObject, file: string): VnextConfigIssue[] {
@@ -302,6 +323,18 @@ export class VnextSchemaRegistry {
 
   validateInitOperation(value: JsonObject, file: string): VnextConfigIssue[] {
     return this.validateAuxiliary(value, file, "kxm.init-operation.v1", this.initOperationValidator);
+  }
+
+  validateMigrationPlan(value: JsonObject, file: string): VnextConfigIssue[] {
+    return this.validateAuxiliary(value, file, "kxm.migration-plan.v1", this.migrationPlanValidator);
+  }
+
+  validateMigrationDecision(value: JsonObject, file: string): VnextConfigIssue[] {
+    return this.validateAuxiliary(value, file, "kxm.migration-decision.v1", this.migrationDecisionValidator);
+  }
+
+  validateMigrationReceipt(value: JsonObject, file: string): VnextConfigIssue[] {
+    return this.validateAuxiliary(value, file, "kxm.migration-receipt.v1", this.migrationReceiptValidator);
   }
 
   private validateAuxiliary(value: JsonObject, file: string, identity: string, validator: ValidateFunction): VnextConfigIssue[] {
@@ -712,6 +745,37 @@ function validateToolPolicy(resource: VnextResource, policy: JsonObject | undefi
   }
 }
 
+/** Validate an in-memory resource set with the same semantic rules as a loaded project. */
+export function validateVnextResources(
+  resources: ReadonlyMap<string, { kind: VnextResourceKind; id?: string; value: JsonObject }>,
+  options: VnextConfigOptions = {},
+): VnextConfigIssue[] {
+  const make = (logicalPath: string, kind: VnextResourceKind, id: string | undefined, value: JsonObject): VnextResource => ({
+    kind,
+    ...(id === undefined ? {} : { id }),
+    file: logicalPath,
+    logicalPath,
+    value,
+  });
+  let project: VnextResource | undefined;
+  const repositories = new Map<string, VnextResource>();
+  const agents = new Map<string, VnextResource>();
+  const models = new Map<string, VnextResource>();
+  const workflows = new Map<string, VnextResource>();
+  const environments: VnextResource[] = [];
+  for (const [logicalPath, resource] of resources) {
+    const made = make(logicalPath, resource.kind, resource.id, resource.value);
+    if (resource.kind === "project") project = made;
+    else if (resource.kind === "repository" && resource.id) repositories.set(resource.id, made);
+    else if (resource.kind === "agent" && resource.id) agents.set(resource.id, made);
+    else if (resource.kind === "model" && resource.id) models.set(resource.id, made);
+    else if (resource.kind === "workflow" && resource.id) workflows.set(resource.id, made);
+    else if (resource.kind === "environment") environments.push(made);
+  }
+  if (!project) return [issue("discovery", "project_definition_missing", ".kxm/project.yaml", "resource set has no project definition")];
+  return validateBundle(project, repositories, agents, models, workflows, environments, options);
+}
+
 function validateAgentScope(
   agent: VnextResource,
   step: JsonObject,
@@ -1045,10 +1109,14 @@ function validateBundle(
   return sortIssues(issues);
 }
 
-function canonicalize(value: JsonValue): string {
+export function vnextCanonicalJson(value: JsonValue): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map((candidate) => canonicalize(candidate)).join(",")}]`;
-  return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalize(value[key] as JsonValue)}`).join(",")}}`;
+  if (Array.isArray(value)) return `[${value.map((candidate) => vnextCanonicalJson(candidate)).join(",")}]`;
+  return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${vnextCanonicalJson(value[key] as JsonValue)}`).join(",")}}`;
+}
+
+function canonicalize(value: JsonValue): string {
+  return vnextCanonicalJson(value);
 }
 
 function bundleRevision(resources: readonly VnextResource[]): string {
@@ -1090,9 +1158,11 @@ export function discoverVnextProjectRoot(start = process.cwd()): string | undefi
 /** Load and semantically validate one complete, path-derived vNext configuration bundle. */
 export function loadVnextProject(projectRoot: string, options: VnextConfigOptions = {}): VnextProjectBundle {
   const root = resolve(projectRoot);
-  const legacyInputs = legacyInputsAt(root);
-  if (legacyInputs.length > 0) {
-    throw new VnextConfigError(legacyInputs.map((file) => issue("semantic", "legacy_vnext_conflict", file, "legacy and vNext configuration cannot coexist before an accepted migration receipt")));
+  let migrationReceipt: JsonObject | undefined;
+  if (legacyConfigFilesAt(root).length > 0 && options.allowUnreceiptedLegacyConfig !== true) {
+    const receiptCheck = readVnextMigrationReceipt(root, options);
+    if (receiptCheck.issues.length > 0) throw new VnextConfigError(receiptCheck.issues);
+    migrationReceipt = receiptCheck.receipt;
   }
   const registry = new VnextSchemaRegistry(options.schemasDir);
   const project = readResource(registry, root, join(root, ".kxm", "project.yaml"), ".kxm/project.yaml", "project");
@@ -1104,6 +1174,9 @@ export function loadVnextProject(projectRoot: string, options: VnextConfigOption
     if (provenanceProjectId !== stringValue(project.value.id)) {
       earlyIssues.push(issue("semantic", "template_provenance_project_mismatch", ".kxm/template-provenance.yaml", "template provenance belongs to a different project identity"));
     }
+  }
+  if (migrationReceipt && stringValue(migrationReceipt.projectId) !== stringValue(project.value.id)) {
+    earlyIssues.push(issue("semantic", "migration_project_mismatch", VNEXT_MIGRATION_RECEIPT_PATH, "migration receipt belongs to a different project identity"));
   }
   const declaredRepositoryIds = new Set(valuesOf(project.value, "repositories")
     .map((candidate) => stringValue(objectValue(candidate)?.id))
@@ -1237,9 +1310,63 @@ export function loadVnextProject(projectRoot: string, options: VnextConfigOption
     workflows,
     environments,
     ...(templateProvenance === undefined ? {} : { templateProvenance }),
+    ...(migrationReceipt === undefined ? {} : { migrationReceipt }),
     resources,
     configRevision: bundleRevision(resources),
   };
+}
+
+/**
+ * Fully verify a migration receipt against the loaded target bundle: target
+ * revision and per-resource bytes. Load-time coexistence only pins the
+ * legacy sources; this stricter check backs `kxm migrate verify`.
+ */
+export function verifyVnextMigrationReceiptTarget(
+  root: string,
+  receipt: JsonObject,
+  resources: readonly VnextResource[],
+  configRevision: string,
+): VnextConfigIssue[] {
+  const issues: VnextConfigIssue[] = [];
+  if (receipt.configRevision !== configRevision) {
+    issues.push(issue("semantic", "migration_target_changed", VNEXT_MIGRATION_RECEIPT_PATH, "target configuration revision no longer matches the migration receipt"));
+  }
+  const declared = new Map<string, JsonObject>();
+  for (const candidate of Array.isArray(receipt.resources) ? receipt.resources : []) {
+    if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
+      const record = candidate as JsonObject;
+      if (typeof record.path === "string") declared.set(record.path, record);
+    }
+  }
+  const installedPaths = new Set<string>();
+  for (const resource of resources) {
+    // Repository resources are loaded from their bound worktree paths; only
+    // control-tree files participate in receipt byte checks.
+    const relative = resource.file.startsWith(root) ? relativePortable(root, resource.file) : undefined;
+    if (!relative) continue;
+    installedPaths.add(relative);
+    const record = declared.get(relative);
+    if (!record) {
+      issues.push(issue("semantic", "migration_target_unreceipted", relative, "installed resource is not covered by the migration receipt"));
+      continue;
+    }
+    const current = hashFileRecord(root, relative);
+    if (!current || current.sha256 !== record.sha256 || current.bytes !== record.bytes) {
+      issues.push(issue("semantic", "migration_target_modified", relative, "installed resource bytes differ from the migration receipt"));
+    }
+  }
+  for (const path of declared.keys()) {
+    if (!installedPaths.has(path)) {
+      issues.push(issue("semantic", "migration_target_missing", path, "receipt-covered resource is not part of the validated configuration"));
+    }
+  }
+  return sortIssues(issues);
+}
+
+function relativePortable(root: string, absolute: string): string | undefined {
+  const rel = relative(root, absolute);
+  if (!rel || isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`)) return undefined;
+  return rel.split(sep).join("/");
 }
 
 function legacyInputsAt(root: string): string[] {
@@ -1250,6 +1377,121 @@ function legacyInputsAt(root: string): string[] {
     ".kxm/state/mesh.db",
   ];
   return candidates.filter((candidate) => existsSync(join(root, ...candidate.split("/"))));
+}
+
+export const VNEXT_MIGRATION_RECEIPT_PATH = ".kxm/migration-receipt.yaml";
+const LEGACY_CONFIG_FILES = [".kxm/config/agents.json", ".kxm/config/gates.json"] as const;
+
+/** Individual legacy configuration files (not directories, not runtime state) that a migration receipt must cover. */
+export function legacyConfigFilesAt(root: string): string[] {
+  const files: string[] = [];
+  // Never traverse linked parent components for authoritative legacy bytes;
+  // surface the linked path itself so readers reject it fail-closed.
+  for (const component of [".kxm", ".kxm/config"] as const) {
+    const absolute = join(root, ...component.split("/"));
+    if (existsSync(absolute) && lstatSync(absolute).isSymbolicLink()) return [component];
+  }
+  for (const candidate of LEGACY_CONFIG_FILES) {
+    if (existsSync(join(root, ...candidate.split("/")))) files.push(candidate);
+  }
+  const workflowsDir = join(root, ".kxm", "config", "workflows");
+  if (existsSync(workflowsDir)) {
+    const stat = lstatSync(workflowsDir);
+    if (stat.isSymbolicLink()) {
+      // Never traverse a link for authoritative legacy bytes; surface the
+      // linked directory itself so readers reject it fail-closed.
+      files.push(".kxm/config/workflows");
+      return files;
+    }
+    if (stat.isDirectory()) {
+      for (const entry of readdirSync(workflowsDir, { withFileTypes: true })
+        .filter((candidate) => (candidate.isFile() || candidate.isSymbolicLink()) && candidate.name.endsWith(".json"))
+        .sort((left, right) => compareCodeUnits(left.name, right.name))) {
+        // Linked workflow files are listed so readers reject them fail-closed
+        // (legacy_source_invalid) instead of silently omitting them.
+        files.push(`.kxm/config/workflows/${entry.name}`);
+      }
+    }
+  }
+  return files;
+}
+
+export interface VnextMigrationReceiptCheck {
+  receipt?: JsonObject;
+  issues: VnextConfigIssue[];
+}
+
+function hashFileRecord(root: string, relativePath: string): { path: string; sha256: string; bytes: number } | undefined {
+  const absolute = join(root, ...relativePath.split("/"));
+  if (!existsSync(absolute)) return undefined;
+  const bytes = readFileSync(absolute);
+  return {
+    path: relativePath,
+    sha256: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+    bytes: bytes.byteLength,
+  };
+}
+
+export function migrationReceiptSelfHash(receipt: JsonObject): string {
+  const { receiptSha256: _ignored, ...unsigned } = receipt;
+  return `sha256:${createHash("sha256").update(vnextCanonicalJson(unsigned as JsonObject), "utf8").digest("hex")}`;
+}
+
+/**
+ * Read and structurally verify a migration receipt: schema, self-hash, and
+ * exact coverage of the legacy configuration files still present. Does not
+ * compare the target configuration revision (computed by the caller).
+ */
+export function readVnextMigrationReceipt(root: string, options: VnextConfigOptions = {}): VnextMigrationReceiptCheck {
+  const receiptPath = join(root, ...VNEXT_MIGRATION_RECEIPT_PATH.split("/"));
+  const legacyFiles = legacyConfigFilesAt(root);
+  if (!existsSync(receiptPath)) {
+    return {
+      issues: legacyFiles.map((file) => issue("semantic", "legacy_vnext_conflict", file, "legacy and vNext configuration cannot coexist before an accepted migration receipt")),
+    };
+  }
+  const receiptStat = lstatSync(receiptPath);
+  if (receiptStat.isSymbolicLink() || !receiptStat.isFile()) {
+    return { issues: [issue("path", "migration_receipt_invalid", VNEXT_MIGRATION_RECEIPT_PATH, "migration receipt must be a regular file, not a link")] };
+  }
+  let receipt: JsonObject;
+  try {
+    receipt = parseRestrictedYaml(readFileSync(receiptPath), VNEXT_MIGRATION_RECEIPT_PATH);
+  } catch (error) {
+    if (error instanceof VnextConfigError) return { issues: [...error.issues] };
+    throw error;
+  }
+  const registry = new VnextSchemaRegistry(options.schemasDir);
+  const schemaIssues = registry.validateMigrationReceipt(receipt, VNEXT_MIGRATION_RECEIPT_PATH);
+  if (schemaIssues.length > 0) return { issues: schemaIssues };
+  if (receipt.receiptSha256 !== migrationReceiptSelfHash(receipt)) {
+    return { issues: [issue("semantic", "migration_receipt_hash_mismatch", VNEXT_MIGRATION_RECEIPT_PATH, "receipt self-hash does not match its content")] };
+  }
+  const sources = (Array.isArray(receipt.sources) ? receipt.sources : [])
+    .map((candidate) => (candidate && typeof candidate === "object" && !Array.isArray(candidate) ? (candidate as JsonObject).path : undefined))
+    .filter((candidate): candidate is string => typeof candidate === "string")
+    .sort(compareCodeUnits);
+  const issues: VnextConfigIssue[] = [];
+  const declared = new Set(sources);
+  for (const file of legacyFiles) {
+    if (!declared.has(file)) {
+      issues.push(issue("semantic", "migration_source_unmigrated", file, "legacy configuration file is not covered by the migration receipt"));
+      continue;
+    }
+    const record = (Array.isArray(receipt.sources) ? receipt.sources : [])
+      .map((candidate) => (candidate && typeof candidate === "object" && !Array.isArray(candidate) ? candidate as JsonObject : undefined))
+      .find((candidate) => candidate?.path === file);
+    const current = hashFileRecord(root, file);
+    if (!current || current.sha256 !== record?.sha256 || current.bytes !== record?.bytes) {
+      issues.push(issue("semantic", "migration_source_changed", file, "legacy configuration changed after the migration receipt was issued"));
+    }
+  }
+  for (const file of sources) {
+    if (!legacyFiles.includes(file)) {
+      issues.push(issue("semantic", "migration_source_missing", file, "receipt covers a legacy configuration file that no longer exists"));
+    }
+  }
+  return issues.length > 0 ? { issues } : { receipt, issues: [] };
 }
 
 function discoverLegacyRoot(start: string): { root: string; inputs: string[] } | undefined {
