@@ -408,8 +408,8 @@ test("kxm run creates, lists, shows, and cancels a run offline with an auto-star
   } finally {
     try { await runCli(["runtime", "stop", "--json"], env, capture(), cwd); } catch { /* best effort */ }
     await waitForSupervisorExit(env);
-    rmSync(cwd, { recursive: true, force: true });
-    rmSync(stateRoot, { recursive: true, force: true });
+    rmWithRetry(cwd);
+    rmWithRetry(stateRoot);
   }
 });
 
@@ -476,9 +476,9 @@ test("kxm run and runtime commands cover workspace, project, and dry-run branche
   } finally {
     try { await runCli(["runtime", "stop", "--json"], env, capture(), cwd); } catch { /* best effort */ }
     await waitForSupervisorExit(env);
-    rmSync(cwd, { recursive: true, force: true });
-    rmSync(noProject, { recursive: true, force: true });
-    rmSync(stateRoot, { recursive: true, force: true });
+    rmWithRetry(cwd);
+    rmWithRetry(noProject);
+    rmWithRetry(stateRoot);
   }
 });
 
@@ -487,10 +487,28 @@ import { vnextRuntimePaths } from "../plugins/kxm-mesh/src/vnext-runtime-store.t
 
 async function waitForSupervisorExit(env: NodeJS.ProcessEnv): Promise<void> {
   const paths = vnextRuntimePaths({ env });
-  const deadline = Date.now() + 10_000;
+  const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
-    if (!vnextSupervisorStatus(paths).running) return;
+    const status = vnextSupervisorStatus(paths);
+    const pid = status.pid;
+    const pidAlive = pid !== undefined && (() => {
+      try { process.kill(pid, 0); return true; } catch { return false; }
+    })();
+    if (!status.running && !pidAlive) return;
     await new Promise((resolveWait) => setTimeout(resolveWait, 150));
+  }
+}
+
+function rmWithRetry(path: string): void {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    try {
+      rmSync(path, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EBUSY" || attempt === 9) throw error;
+      const deadline = Date.now() + 400;
+      while (Date.now() < deadline) { /* busy-wait briefly */ }
+    }
   }
 }
 
