@@ -25,10 +25,16 @@ test("hub binding validates, persists, and probes health", async () => {
     assert.throws(() => validateHubUrl("ftp://x"), HubBindingError);
     assert.throws(() => validateHubUrl("http://user:pass@127.0.0.1:7331"), HubBindingError);
     assert.throws(() => validateHubUrl("http://127.0.0.1:7331/?q=1"), HubBindingError);
+    assert.throws(() => validateHubUrl("http://127.0.0.1:7331/?"), HubBindingError);
+    assert.throws(() => validateHubUrl("http://127.0.0.1:7331/#"), HubBindingError);
     const record = { schema: "kxm.hub-binding.v1" as const, url: "http://127.0.0.1:7331", boundAt: "2026-09-04T12:00:00.000Z" };
     assert.equal(writeHubBinding(record, env), hubBindingFile(env));
     assert.deepEqual(readHubBinding(env), record);
+    writeHubBinding({ ...record, url: "http://127.0.0.1:7331/" }, env);
+    assert.deepEqual(readHubBinding(env), record);
     writeFileSync(join(root, "hub-binding.json"), JSON.stringify({ ...record, extra: true }));
+    assert.throws(() => readHubBinding(env), HubBindingError);
+    writeFileSync(join(root, "hub-binding.json"), JSON.stringify({ ...record, boundAt: "garbage" }));
     assert.throws(() => readHubBinding(env), HubBindingError);
     assert.equal(removeHubBinding(env), true);
     assert.equal(readHubBinding(env), undefined);

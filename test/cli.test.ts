@@ -209,6 +209,25 @@ test("hub bind writes the host binding and reports unknown for a blackholed URL 
   }
 });
 
+test("hub unbind removes a binding whose boundAt is not an ISO timestamp", async () => {
+  const tmp = mkdtempSync(join(tmpdir(), "kxm-hub-unbind-garbage-"));
+  const env = { KXM_STATE_HOME: tmp };
+  const bindingPath = join(tmp, "hub-binding.json");
+  writeFileSync(bindingPath, `${JSON.stringify({
+    schema: "kxm.hub-binding.v1",
+    url: "http://127.0.0.1:7331",
+    boundAt: "garbage",
+  }, null, 2)}\n`);
+  try {
+    const unbind = capture();
+    assert.equal(await runCli(["hub", "unbind"], env, unbind), 0);
+    assert.equal(existsSync(bindingPath), false);
+    assert.match(unbind.read().stdout, /unbound hub \(record was malformed\)/);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test("vNext init creates and revalidates project configuration without legacy environment overrides", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "kxm-vnext-cli-init-"));
   const dryCwd = mkdtempSync(join(tmpdir(), "kxm-vnext-cli-dry-"));

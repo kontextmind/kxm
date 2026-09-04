@@ -11,7 +11,7 @@ import { createTestMesh } from "./helpers.ts";
 async function runCli(argv: string[], env: NodeJS.ProcessEnv, io: CliIo, cwd = process.cwd()): Promise<number> {
   const isolatedLogs = mkdtempSync(join(tmpdir(), "kxm-cli-context-"));
   try {
-    return await runCliImplementation(argv, { KXM_LOGS_DIR: isolatedLogs, ...env }, io, cwd);
+    return await runCliImplementation(argv, { KXM_LOGS_DIR: isolatedLogs, KXM_STATE_HOME: isolatedLogs, ...env }, io, cwd);
   } finally {
     rmSync(isolatedLogs, { recursive: true, force: true });
   }

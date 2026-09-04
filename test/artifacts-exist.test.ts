@@ -12,7 +12,16 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { runCli } from "../plugins/kxm/src/cli.ts";
+import { runCli as runCliImplementation, type CliIo } from "../plugins/kxm/src/cli.ts";
+
+async function runCli(argv: string[], env: NodeJS.ProcessEnv, io: CliIo, cwd = process.cwd()): Promise<number> {
+  const isolatedState = mkdtempSync(join(tmpdir(), "kxm-artifacts-state-"));
+  try {
+    return await runCliImplementation(argv, { KXM_STATE_HOME: isolatedState, ...env }, io, cwd);
+  } finally {
+    rmSync(isolatedState, { recursive: true, force: true });
+  }
+}
 
 function capture() {
   let stdout = "";

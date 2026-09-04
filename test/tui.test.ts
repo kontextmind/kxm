@@ -5,8 +5,17 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import type { Terminal } from "@earendil-works/pi-tui";
-import { runCli } from "../plugins/kxm/src/cli.ts";
+import { runCli as runCliImplementation, type CliIo } from "../plugins/kxm/src/cli.ts";
 import { applyMeshTuiKey, defaultMeshTuiView, loadLocalMeshSnapshot, MeshDashboard, renderMeshTui, runMeshTui, type MeshTuiSnapshot } from "../plugins/kxm/src/tui.ts";
+
+async function runCli(argv: string[], env: NodeJS.ProcessEnv, io: CliIo, cwd = process.cwd()): Promise<number> {
+  const isolatedState = mkdtempSync(join(tmpdir(), "kxm-tui-state-"));
+  try {
+    return await runCliImplementation(argv, { KXM_STATE_HOME: isolatedState, ...env }, io, cwd);
+  } finally {
+    rmSync(isolatedState, { recursive: true, force: true });
+  }
+}
 
 function capture() {
   let stdout = "";

@@ -1204,7 +1204,7 @@ async function cmdHub(runtime: Runtime): Promise<number> {
       config = loadKxmUpdateConfig(runtime.cwd);
     } catch (error) {
       if (error instanceof KxmUpdateConfigError) {
-        runtime.io.stderr(`kxm: ${error.message}; update check skipped\n`);
+        runtime.io.stderr(`kxm: ${error.message}; update check skipped; fix or remove .kxm/update.yaml\n`);
       } else {
         throw error;
       }

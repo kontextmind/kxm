@@ -445,7 +445,7 @@ test("hub start warns on malformed update.yaml and still spawns", async () => {
       },
     }, cwd), 0);
     assert.equal(spawned, 1);
-    assert.match(io.read().stderr, /kxm: \.kxm\/update\.yaml schema must be kxm\.update\.v1; update check skipped/);
+    assert.match(io.read().stderr, /kxm: \.kxm\/update\.yaml schema must be kxm\.update\.v1; update check skipped; fix or remove \.kxm\/update\.yaml/);
     assert.equal(existsUpdateCache(cwd), false);
   } finally {
     rmSync(cwd, { recursive: true, force: true });

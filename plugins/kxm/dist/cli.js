@@ -30714,12 +30714,13 @@ function validateHubUrl(raw) {
   } catch {
     throw new HubBindingError("hub_url_invalid");
   }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:" || parsed.username !== "" || parsed.password !== "" || parsed.search !== "" || parsed.hash !== "") {
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:" || parsed.username !== "" || parsed.password !== "" || parsed.search !== "" || parsed.hash !== "" || raw.includes("?") || raw.includes("#")) {
     throw new HubBindingError("hub_url_invalid");
   }
   return parsed.href.replace(/\/$/, "");
 }
 function isIsoTimestamp(value) {
+  if (Number.isNaN(Date.parse(value))) return false;
   return value === new Date(value).toISOString();
 }
 function isAbortError(error) {
@@ -30744,12 +30745,13 @@ function readHubBinding(env = process.env) {
   if (keys.length !== 3 || row.schema !== HUB_BINDING_SCHEMA || typeof row.url !== "string" || typeof row.boundAt !== "string" || !isIsoTimestamp(row.boundAt)) {
     throw new HubBindingError(`malformed hub binding at ${file}`);
   }
+  let url;
   try {
-    validateHubUrl(row.url);
+    url = validateHubUrl(row.url);
   } catch {
     throw new HubBindingError(`malformed hub binding at ${file}`);
   }
-  return { schema: HUB_BINDING_SCHEMA, url: row.url, boundAt: row.boundAt };
+  return { schema: HUB_BINDING_SCHEMA, url, boundAt: row.boundAt };
 }
 function writeHubBinding(record, env = process.env) {
   const file = hubBindingFile(env);
@@ -35642,7 +35644,7 @@ async function cmdHub(runtime) {
       config = loadKxmUpdateConfig(runtime.cwd);
     } catch (error) {
       if (error instanceof KxmUpdateConfigError) {
-        runtime.io.stderr(`kxm: ${error.message}; update check skipped
+        runtime.io.stderr(`kxm: ${error.message}; update check skipped; fix or remove .kxm/update.yaml
 `);
       } else {
         throw error;

@@ -37,6 +37,8 @@ export function validateHubUrl(raw: string): string {
     || parsed.password !== ""
     || parsed.search !== ""
     || parsed.hash !== ""
+    || raw.includes("?")
+    || raw.includes("#")
   ) {
     throw new HubBindingError("hub_url_invalid");
   }
@@ -44,6 +46,7 @@ export function validateHubUrl(raw: string): string {
 }
 
 function isIsoTimestamp(value: string): boolean {
+  if (Number.isNaN(Date.parse(value))) return false;
   return value === new Date(value).toISOString();
 }
 
@@ -78,12 +81,13 @@ export function readHubBinding(env: NodeJS.ProcessEnv = process.env): HubBinding
   ) {
     throw new HubBindingError(`malformed hub binding at ${file}`);
   }
+  let url: string;
   try {
-    validateHubUrl(row.url);
+    url = validateHubUrl(row.url);
   } catch {
     throw new HubBindingError(`malformed hub binding at ${file}`);
   }
-  return { schema: HUB_BINDING_SCHEMA, url: row.url, boundAt: row.boundAt };
+  return { schema: HUB_BINDING_SCHEMA, url, boundAt: row.boundAt };
 }
 
 export function writeHubBinding(record: HubBindingRecord, env: NodeJS.ProcessEnv = process.env): string {
