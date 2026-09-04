@@ -20,14 +20,26 @@ import { createSession, loadNamedWorkers, rosterNames, sessionAssetDirs, workflo
 import { buildImprovementReport, writeImprovementReport } from "./improve.ts";
 import { MESH_TUI_PANELS, runMeshTui, type MeshTuiPanel } from "./tui.ts";
 import { formatSessionBriefText, loadSessionBrief } from "./session-work.ts";
-import { formatHubInitNextSteps, parseHubInitOption } from "./hub-setup.ts";
+import {
+  HUB_BINDING_SCHEMA,
+  HubBindingError,
+  hubBindingFile,
+  probeHubHealth,
+  readHubBinding,
+  removeHubBinding,
+  validateHubUrl,
+  writeHubBinding,
+  type HubHealth,
+} from "./hub-binding.ts";
 import {
   fetchLatestKxmVersion,
   noticeFromVersions,
   planKxmPackageUpdate,
   readInstalledKxmVersion,
+  readUpdateCache,
   writeUpdateCache,
   KxmUpdateConfigError,
+  type KxmUpdateConfig,
   type KxmUpdateNotice,
 } from "./kxm-update.ts";
 import { loadKxmUpdateConfig } from "./kxm-update-config.ts";
@@ -96,6 +108,7 @@ interface Runtime extends CliContext, Required<Pick<GlobalOpts, "json" | "dryRun
   workspaceFlag?: string;
   dirs: ReturnType<typeof workspaceDirs>;
   serverUrl: string;
+  boundHubUrl?: string;
   fetchImpl: typeof fetch;
 }
 
@@ -386,13 +399,25 @@ function addGlobalOptions(command: Command): Command {
 
 function runtimeFrom(ctx: CliContext, command: Command): Runtime {
   const opts = command.optsWithGlobals() as GlobalOpts;
+  const envServerUrl = ctx.env.KXM_SERVER_URL?.trim();
+  let boundHubUrl: string | undefined;
+  try {
+    boundHubUrl = readHubBinding(ctx.env)?.url;
+  } catch (error) {
+    if (error instanceof HubBindingError) {
+      ctx.io.stderr(`kxm: ignoring malformed hub binding at ${hubBindingFile(ctx.env)}; run kxm hub bind <url> again\n`);
+    } else {
+      throw error;
+    }
+  }
   return {
     ...ctx,
     json: Boolean(opts.json),
     dryRun: Boolean(opts.dryRun),
     ...(opts.workspace === undefined ? {} : { workspaceFlag: opts.workspace }),
     dirs: workspaceDirs(ctx.cwd, opts.workspace, ctx.env),
-    serverUrl: ctx.env.KXM_SERVER_URL?.trim() || "http://127.0.0.1:7331",
+    serverUrl: envServerUrl || boundHubUrl || "http://127.0.0.1:7331",
+    ...(boundHubUrl ? { boundHubUrl } : {}),
     fetchImpl: ctx.io.fetchImpl ?? fetch,
   };
 }
@@ -484,12 +509,7 @@ function explicitRepositoryBindings(values: readonly string[]): Readonly<Record<
   return result;
 }
 
-async function cmdVnextInit(runtime: Runtime, options: { name?: string; projectId?: string; repository?: string[]; hub?: string | true; hubUrl?: string }): Promise<number> {
-  const hubInit = parseHubInitOption(options.hub, options.hubUrl);
-  if (!hubInit.ok) {
-    print(runtime.io, runtime.json, { ok: false, command: "init", error: hubInit.error }, hubInit.message);
-    return 2;
-  }
+async function cmdVnextInit(runtime: Runtime, options: { name?: string; projectId?: string; repository?: string[] }): Promise<number> {
   if (runtime.workspaceFlag !== undefined) {
     print(runtime.io, runtime.json, {
       ok: false,
@@ -521,22 +541,7 @@ async function cmdVnextInit(runtime: Runtime, options: { name?: string; projectI
       plannedOnly: initialized.action === "planned",
     };
     const finishInit = (code: number, text: string): number => {
-      if (hubInit.mode === "local") {
-        print(runtime.io, runtime.json, payload, text);
-        return code;
-      }
-      const nextSteps = formatHubInitNextSteps(hubInit.mode, hubInit.hubUrl ? { hubUrl: hubInit.hubUrl } : {});
-      const hub = {
-        mode: hubInit.mode,
-        ...(hubInit.hubUrl ? { hubUrl: hubInit.hubUrl } : {}),
-        nextSteps,
-      };
-      print(
-        runtime.io,
-        runtime.json,
-        { ...payload, hub },
-        `${text}\n${nextSteps}`,
-      );
+      print(runtime.io, runtime.json, payload, text);
       return code;
     };
     if (initialized.action === "created") {
@@ -913,11 +918,11 @@ async function cmdHarnessList(runtime: Runtime): Promise<number> {
   return 0;
 }
 
-async function refreshKxmUpdateNotice(runtime: Runtime): Promise<KxmUpdateNotice> {
-  const config = loadKxmUpdateConfig(runtime.cwd);
+async function refreshKxmUpdateNotice(runtime: Runtime, config?: KxmUpdateConfig): Promise<KxmUpdateNotice> {
+  const resolved = config ?? loadKxmUpdateConfig(runtime.cwd);
   const current = readInstalledKxmVersion(repoRoot);
-  const fetched = await fetchLatestKxmVersion(config.source, runtime.env, runtime.fetchImpl);
-  const notice = noticeFromVersions(current, fetched.latest, config, fetched.error);
+  const fetched = await fetchLatestKxmVersion(resolved.source, runtime.env, runtime.fetchImpl);
+  const notice = noticeFromVersions(current, fetched.latest, resolved, fetched.error);
   writeUpdateCache(runtime.dirs.state, notice);
   return notice;
 }
@@ -1190,16 +1195,24 @@ async function cmdDash(runtime: Runtime, options: { screen?: string } = {}): Pro
 }
 
 async function cmdHub(runtime: Runtime): Promise<number> {
+  let refresh: Promise<unknown> | undefined;
   if (!runtime.dryRun) {
+    const cached = readUpdateCache(runtime.dirs.state);
+    if (cached?.available) runtime.io.stderr(`${cached.message}\n`);
+    let config: KxmUpdateConfig | undefined;
     try {
-      const notice = await refreshKxmUpdateNotice(runtime);
-      if (notice.available) runtime.io.stderr(`${notice.message}\n`);
+      config = loadKxmUpdateConfig(runtime.cwd);
     } catch (error) {
       if (error instanceof KxmUpdateConfigError) {
-        print(runtime.io, runtime.json, { ok: false, command: "hub start", error: error.code }, error.message);
-        return 2;
+        runtime.io.stderr(`kxm: ${error.message}; update check skipped\n`);
+      } else {
+        throw error;
       }
-      throw error;
+    }
+    if (config) {
+      refresh = refreshKxmUpdateNotice(runtime, config).then((notice) => {
+        if (notice.available && !cached?.available) runtime.io.stderr(`${notice.message}\n`);
+      }).catch(() => undefined);
     }
   }
   const extraEnv = workspaceEnv(runtime);
@@ -1207,7 +1220,74 @@ async function cmdHub(runtime: Runtime): Promise<number> {
     print(runtime.io, runtime.json, { ok: true, command: "hub start", dryRun: true, workspace: runtime.dirs.workspace }, "would start hub");
     return 0;
   }
-  return await (runtime.io.spawnHub ?? ((launchEnv) => spawnScript("kxm-hub.mjs", launchEnv)))(extraEnv);
+  const code = await (runtime.io.spawnHub ?? ((launchEnv) => spawnScript("kxm-hub.mjs", launchEnv)))(extraEnv);
+  if (refresh) await refresh;
+  return code;
+}
+
+function formatHubBindHealth(health: HubHealth): string {
+  if (health === "on") return "health=on";
+  if (health === "off") return "health=off (nothing answered; run kxm hub start)";
+  return "health=unknown (no reply within 300 ms)";
+}
+
+async function cmdHubBind(runtime: Runtime, rawUrl: string): Promise<number> {
+  let url: string;
+  try {
+    url = validateHubUrl(rawUrl);
+  } catch (error) {
+    if (error instanceof HubBindingError) {
+      print(
+        runtime.io,
+        runtime.json,
+        { ok: false, command: "hub bind", error: "hub_url_invalid" },
+        "hub bind needs an http or https URL without credentials, query, or fragment",
+      );
+      return 2;
+    }
+    throw error;
+  }
+  const file = hubBindingFile(runtime.env);
+  if (runtime.dryRun) {
+    print(runtime.io, runtime.json, { ok: true, command: "hub bind", dryRun: true, url, file }, `would bind hub ${url}`);
+    return 0;
+  }
+  writeHubBinding({ schema: HUB_BINDING_SCHEMA, url, boundAt: new Date().toISOString() }, runtime.env);
+  const { health, probeMs } = await probeHubHealth(url, runtime.fetchImpl);
+  print(runtime.io, runtime.json, { ok: true, command: "hub bind", url, file, health, probeMs }, `bound hub ${url} · ${formatHubBindHealth(health)}`);
+  return 0;
+}
+
+async function cmdHubUnbind(runtime: Runtime): Promise<number> {
+  const file = hubBindingFile(runtime.env);
+  if (runtime.dryRun) {
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: true, command: "hub unbind", dryRun: true, ...(runtime.boundHubUrl ? { url: runtime.boundHubUrl } : {}), file },
+      `would unbind hub${runtime.boundHubUrl ? ` ${runtime.boundHubUrl}` : ""}`,
+    );
+    return 0;
+  }
+  let url: string | undefined;
+  let malformed = false;
+  try {
+    url = readHubBinding(runtime.env)?.url;
+  } catch (error) {
+    if (error instanceof HubBindingError) malformed = true;
+    else throw error;
+  }
+  if (!malformed && !url) {
+    print(runtime.io, runtime.json, { ok: false, command: "hub unbind", error: "hub_not_bound" }, `no hub binding at ${file}`);
+    return 1;
+  }
+  removeHubBinding(runtime.env);
+  if (malformed) {
+    print(runtime.io, runtime.json, { ok: true, command: "hub unbind", file }, "unbound hub (record was malformed)");
+    return 0;
+  }
+  print(runtime.io, runtime.json, { ok: true, command: "hub unbind", url, file }, `unbound hub ${url}`);
+  return 0;
 }
 
 async function cmdWorker(runtime: Runtime, options: {
@@ -1374,7 +1454,7 @@ async function cmdSessionBrief(runtime: Runtime, options: { status?: boolean } =
     KXM_DATA_PATH: runtime.env.KXM_DATA_PATH?.trim() || dataPath,
   };
   let hub: { online: boolean } | undefined;
-  if (runtime.env.KXM_SERVER_URL?.trim()) {
+  if (runtime.env.KXM_SERVER_URL?.trim() || runtime.boundHubUrl) {
     const health = await hubGet(`${runtime.serverUrl}/health`, runtime.fetchImpl);
     hub = { online: health.ok };
   }
@@ -2074,9 +2154,7 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .option("--name <name>", "Project display name for a new project")
     .option("--project-id <id>", "Stable project ID for controlled provisioning")
     .option("--repository <id=absolute-path>", "Bind a member repository outside Git configuration", (value, previous: string[]) => [...previous, value], [])
-    .option("--hub [mode]", "Use a hub: existing or new. Omit for local-only. SSH is not available")
-    .option("--hub-url <url>", "Existing hub URL (with --hub existing)")
-    .action(async function initAction(this: Command, options: { name?: string; projectId?: string; repository?: string[]; hub?: string | true; hubUrl?: string }) {
+    .action(async function initAction(this: Command, options: { name?: string; projectId?: string; repository?: string[] }) {
       result.code = await cmdVnextInit(runtimeFrom(ctx, this), options);
     });
 
@@ -2431,6 +2509,11 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .action(async function hubStopAction(this: Command, options: { waitMs?: string }) {
       result.code = await cmdStop(runtimeFrom(ctx, this), options.waitMs);
     });
+  addGlobalOptions(hub.command("bind").description("Bind this machine to a running hub").argument("<url>", "Hub base URL (http or https)"))
+    .action(async function hubBindAction(this: Command, url: string) {
+      result.code = await cmdHubBind(runtimeFrom(ctx, this), url);
+    });
+  addGlobalOptions(hub.command("unbind").description("Remove this machine's hub binding")).action(bind(cmdHubUnbind));
   addGlobalOptions(program.command("dash").description("Live screens for headless agents, tasks, workflows, and plans")
     .option("--screen <name>", "agents, tasks, workflows, plans, inbox, or procs"))
     .action(async function dashAction(this: Command, options: { screen?: string }) {

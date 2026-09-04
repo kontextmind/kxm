@@ -62,8 +62,9 @@ test("hub wrapper uses an idempotent graceful stop and keeps workspace state und
     let duplicateError = "";
     duplicate.stderr.setEncoding("utf8").on("data", (chunk: string) => { duplicateError += chunk; });
     const duplicateCode = await new Promise<number | null>((resolveExit) => duplicate.once("exit", resolveExit));
-    assert.notEqual(duplicateCode, 0);
-    assert.match(duplicateError, /hub is already managed by PID/);
+    assert.equal(duplicateCode, 1);
+    assert.match(duplicateError, /^kxm hub: KXM hub is already managed by PID \d+\. Run kxm hub stop before starting another hub\.\n$/);
+    assert.match(stdout, /; auth=token\n/);
     assert.equal(readFileSync(pidPath, "utf8"), recordText);
     writeFileSync(join(stateDir, "hub.stop"), JSON.stringify({ startedAt: record.startedAt, requestedAt: new Date().toISOString() }));
     const exitCode = await exit;

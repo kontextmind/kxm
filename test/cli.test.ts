@@ -13,7 +13,7 @@ import { stringify } from "yaml";
 async function runCli(argv: string[], env: NodeJS.ProcessEnv, io: CliIo, cwd = process.cwd()): Promise<number> {
   const isolatedLogs = mkdtempSync(join(tmpdir(), "kxm-cli-telemetry-"));
   try {
-    return await runCliImplementation(argv, { KXM_LOGS_DIR: isolatedLogs, ...env }, io, cwd);
+    return await runCliImplementation(argv, { KXM_LOGS_DIR: isolatedLogs, KXM_STATE_HOME: isolatedLogs, ...env }, io, cwd);
   } finally {
     rmSync(isolatedLogs, { recursive: true, force: true });
   }
@@ -53,13 +53,6 @@ test("kxm routes agent, session, workflow, and gate tooling", async () => {
   assert.equal(await runCli(["session", "help"], {}, sessionHelp), 0);
   assert.match(sessionHelp.read().stdout, /Usage: kxm session/);
   assert.match(sessionHelp.read().stdout, /brief/);
-  const initHelp = capture();
-  await runCli(["init", "--help"], {}, initHelp);
-  assert.match(`${initHelp.read().stdout}${initHelp.read().stderr}`, /--hub/);
-  const sshHub = capture();
-  assert.equal(await runCli(["init", "--json", "--hub", "ssh"], {}, sshHub), 2);
-  assert.match(sshHub.read().stderr, /hub_ssh_unsupported/);
-  assert.doesNotMatch(sshHub.read().stderr, /[Mm]esh/);
 
   const unknownTool = capture();
   assert.equal(await runCli(["nope"], {}, unknownTool), 2);
@@ -137,23 +130,82 @@ test("agent and gate CLI results share the worker envelope", async () => {
   assert.equal(gate.outcome, "failed");
 });
 
-test("init --hub new is opt-in and does not mention Mesh", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "kxm-cli-init-hub-"));
-  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-cli-init-hub-state-"));
+test("init rejects --hub and --hub-url as unknown options", async () => {
+  const hub = capture();
+  assert.equal(await runCli(["init", "--json", "--hub", "new"], {}, hub), 2);
+  assert.match(hub.read().stderr, /unknown option '--hub'/);
+  const hubUrl = capture();
+  assert.equal(await runCli(["init", "--hub-url", "http://127.0.0.1:7331"], {}, hubUrl), 2);
+  assert.match(hubUrl.read().stderr, /unknown option '--hub-url'/);
+  const help = capture();
+  await runCli(["init", "--help"], {}, help);
+  assert.doesNotMatch(`${help.read().stdout}${help.read().stderr}`, /--hub/);
+});
+
+test("hub bind writes the host binding and reports unknown for a blackholed URL within a second", async () => {
+  const tmp = mkdtempSync(join(tmpdir(), "kxm-hub-bind-"));
+  const env = { KXM_STATE_HOME: tmp };
+  const url = "http://10.255.255.1:7331";
+  const bindingPath = join(tmp, "hub-binding.json");
+  const abortingFetch: NonNullable<CliIo["fetchImpl"]> = (_input, init) => new Promise((_resolve, reject) => {
+    init?.signal?.addEventListener("abort", () => {
+      const error = new Error("aborted");
+      error.name = "AbortError";
+      reject(error);
+    });
+  });
   try {
-    makeGitRoot(cwd);
-    const io = capture();
-    assert.equal(await runCli([
-      "init", "--json", "--hub", "new", "--name", "Hub Project", "--project-id", "prj_01JHUBPROJECT0000000000000",
-    ], { KXM_STATE_HOME: stateRoot }, io, cwd), 0);
-    const payload = JSON.parse(io.read().stdout) as { action: string; hub?: { mode?: string } };
-    assert.equal(payload.action, "created");
-    assert.equal(payload.hub?.mode, "new");
-    assert.match(io.read().stdout, /kxm hub start/);
-    assert.doesNotMatch(io.read().stdout, /[Mm]esh/);
+    const unknown = capture();
+    const started = Date.now();
+    assert.equal(await runCli(["hub", "bind", url], env, { ...unknown, fetchImpl: abortingFetch }), 0);
+    assert.ok(Date.now() - started < 1000);
+    assert.match(unknown.read().stdout, /health=unknown \(no reply within 300 ms\)/);
+    const record = JSON.parse(readFileSync(bindingPath, "utf8")) as { schema: string; url: string; boundAt: string };
+    assert.equal(record.schema, "kxm.hub-binding.v1");
+    assert.equal(record.url, url);
+    assert.equal(record.boundAt, new Date(record.boundAt).toISOString());
+    assert.deepEqual(Object.keys(record).sort(), ["boundAt", "schema", "url"]);
+
+    const on = capture();
+    assert.equal(await runCli(["hub", "bind", url], env, {
+      ...on,
+      fetchImpl: async () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    }), 0);
+    assert.match(on.read().stdout, /health=on/);
+
+    const off = capture();
+    assert.equal(await runCli(["hub", "bind", url], env, {
+      ...off,
+      fetchImpl: async () => {
+        throw new TypeError("fetch failed");
+      },
+    }), 0);
+    assert.match(off.read().stdout, /health=off/);
+
+    const seen: string[] = [];
+    const view = capture();
+    assert.equal(await runCli(["hub", "--json", "view"], env, {
+      ...view,
+      fetchImpl: async (input) => {
+        seen.push(String(input));
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      },
+    }), 0);
+    assert.equal(seen.includes(`${url}/health`), true);
+
+    const unbind = capture();
+    assert.equal(await runCli(["hub", "unbind"], env, unbind), 0);
+    assert.equal(existsSync(bindingPath), false);
+
+    const missing = capture();
+    assert.equal(await runCli(["hub", "--json", "unbind"], env, missing), 1);
+    assert.match(missing.read().stderr, /hub_not_bound/);
+
+    const invalid = capture();
+    assert.equal(await runCli(["hub", "--json", "bind", "ftp://x"], env, invalid), 2);
+    assert.match(invalid.read().stderr, /hub_url_invalid/);
   } finally {
-    rmSync(cwd, { recursive: true, force: true });
-    rmSync(stateRoot, { recursive: true, force: true });
+    rmSync(tmp, { recursive: true, force: true });
   }
 });
 

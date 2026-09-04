@@ -206,7 +206,7 @@ The tool allowlist is a capability boundary inside Pi, not a prompt suggestion â
 
 | Command | Purpose |
 |---|---|
-| `kxm init` | Atomically create a provenance-tracked minimal vNext project, validate it without rewriting, resume a pinned interrupted create/repair, apply conflict-free non-authority template updates, or join an existing clone with repeatable `--repository <id=absolute-path>` member bindings stored outside Git. `--dry-run` performs no writes. Provenance-free/ambiguous repair and permission-expanding changes remain planning-only. These configuration slices do **not** activate a vNext Runtime. Default is **local-only**. `--hub existing` or `--hub new` prints hub-local next steps; `--hub ssh` fails closed; `--hub-url` is only valid with `--hub existing` |
+| `kxm init` | Atomically create a provenance-tracked minimal vNext project, validate it without rewriting, resume a pinned interrupted create/repair, apply conflict-free non-authority template updates, or join an existing clone with repeatable `--repository <id=absolute-path>` member bindings stored outside Git. `--dry-run` performs no writes. Provenance-free/ambiguous repair and permission-expanding changes remain planning-only. These configuration slices do **not** activate a vNext Runtime. `kxm init` is project-only; bind a running hub with `kxm hub bind <url>` |
 | `kxm migrate plan` | Convert legacy `.kxm/config` JSON (agents, gates, workflow definitions) into a deterministic, secret-free `kxm.migration-plan.v1` report: source/target hashes, decision-requiring ambiguities (terminal status, transition budgets, evidence-policy strengthening, secret drops, narrowed ceilings, foreign producers), hashed unmapped fields, and explicit identity renames. Performs no writes, locks, or staging |
 | `kxm migrate apply [--decisions <file>]` | Install a reviewed migration: re-checks the decision binding against current sources, validates the complete target bundle, refuses to overwrite existing paths, installs durably, and writes a self-hashed `kxm.migration-receipt.v1` that keeps legacy inputs read-only. Re-applying is an idempotent no-op. `--dry-run` performs no writes |
 | `kxm migrate verify` | Re-check the migration receipt against current legacy sources and the target bundle (self-hash, source hashes, configuration revision, resource bytes). Performs no writes |
@@ -231,6 +231,7 @@ The tool allowlist is a capability boundary inside Pi, not a prompt suggestion â
 | `kxm init` | Create or validate a project; configuration remains project-owned and no package dogfood templates are copied |
 | `kxm hub view` | Check `/health` and `/ready` |
 | `kxm hub bind <url>` | Bind this machine to a running hub |
+| `kxm hub unbind` | Remove this machine's hub binding |
 | `kxm update --check` / `kxm update --kxm` | Check or apply a kxm operator package update. Default source is GitHub release tarballs (`gh` plus `npm install --omit=peer`). `source: npm` is for after the public package exists. Optional Git `.kxm/update.yaml` (`kxm.update.v1`, `auto` boolean) enables auto-apply on `kxm update`. Notice also prints on `kxm hub start` and on the session widget from cache |
 | `kxm dash` | Open the read-only SSE observer dashboard; non-TTY output is one ANSI-free snapshot |
 | `kxm hub start` | Start the KXM hub in the foreground |

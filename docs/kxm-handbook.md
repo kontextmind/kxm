@@ -417,6 +417,7 @@ posts an exact failed signal and exits `4` on timeout.
 | `kxm init` | Creates or validates a project; never copies package dogfood configuration |
 | `kxm hub start` | Starts the hub in the foreground and opens the local SQLite store |
 | `kxm hub bind <url>` | Binds this machine to a running hub |
+| `kxm hub unbind` | Removes this machine's hub binding |
 | `kxm hub view` | Checks `/health` and `/ready` |
 | `kxm hub stop [--wait-ms <n>]` | Requests generation-matched hub and worker shutdown |
 | `kxm dash` | Opens the real-time read-only metadata dashboard; prints one plain snapshot without a TTY |

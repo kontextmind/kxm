@@ -4,13 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { runCli as runCliImplementation, type CliIo } from "../plugins/kxm/src/cli.ts";
+import { noticeFromVersions, writeUpdateCache } from "../plugins/kxm/src/kxm-update.ts";
 
 const currentVersion = (JSON.parse(readFileSync("package.json", "utf8")) as { version: string }).version;
 
 async function runCli(argv: string[], env: NodeJS.ProcessEnv, io: CliIo, cwd: string): Promise<number> {
   const isolatedLogs = mkdtempSync(join(tmpdir(), "kxm-update-cli-logs-"));
   try {
-    return await runCliImplementation(argv, { KXM_LOGS_DIR: isolatedLogs, ...env }, io, cwd);
+    return await runCliImplementation(argv, { KXM_LOGS_DIR: isolatedLogs, KXM_STATE_HOME: isolatedLogs, ...env }, io, cwd);
   } finally {
     rmSync(isolatedLogs, { recursive: true, force: true });
   }
@@ -386,7 +387,7 @@ test("harness list, runtime dry-run, and dash screens cover adjacent CLI branche
   }
 });
 
-test("hub start prints an available update notice and invalid yaml fails closed", async () => {
+test("hub start prints an available update notice", async () => {
   const cwd = tempProject();
   try {
     const io = capture();
@@ -402,6 +403,7 @@ test("hub start prints an available update notice and invalid yaml fails closed"
     assert.equal(spawned, 1);
     assert.match(io.read().stderr, /99\.0\.0 available/);
 
+    rmSync(join(cwd, ".kxm", "state", "update-check.json"), { force: true });
     const current = capture();
     assert.equal(await runCli(["hub", "start"], {}, {
       ...current,
@@ -421,17 +423,62 @@ test("hub start prints an available update notice and invalid yaml fails closed"
     }, cwd), 0);
     assert.equal(dryFetch, 0);
     assert.match(dry.read().stdout, /"dryRun":true/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
 
+test("hub start warns on malformed update.yaml and still spawns", async () => {
+  const cwd = tempProject();
+  try {
     writeUpdateYaml(cwd, "schema: no\nauto: false\n");
-    const invalid = capture();
-    assert.equal(await runCli(["hub", "--json", "start"], {}, {
-      ...invalid,
-      fetchImpl: githubFetch(),
-      spawnHub: () => {
-        throw new Error("must not spawn");
+    const io = capture();
+    let spawned = 0;
+    assert.equal(await runCli(["hub", "start"], {}, {
+      ...io,
+      fetchImpl: async () => {
+        throw new Error("must not fetch");
       },
-    }, cwd), 2);
-    assert.match(invalid.read().stderr, /kxm_update_config_invalid/);
+      spawnHub: () => {
+        spawned += 1;
+        return 0;
+      },
+    }, cwd), 0);
+    assert.equal(spawned, 1);
+    assert.match(io.read().stderr, /kxm: \.kxm\/update\.yaml schema must be kxm\.update\.v1; update check skipped/);
+    assert.equal(existsUpdateCache(cwd), false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("hub start prints the cached notice before spawning and refreshes in the background", async () => {
+  const cwd = tempProject();
+  try {
+    const availableNotice = noticeFromVersions(currentVersion, "99.0.0", {
+      schema: "kxm.update.v1",
+      auto: false,
+      source: "github",
+    });
+    writeUpdateCache(join(cwd, ".kxm", "state"), availableNotice);
+    const io = capture();
+    let spawnedAt = 0;
+    let fetchResolvedAt = 0;
+    assert.equal(await runCli(["hub", "start"], {}, {
+      ...io,
+      fetchImpl: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        fetchResolvedAt = Date.now();
+        return new Response(JSON.stringify({ tag_name: "v99.0.0" }), { status: 200 });
+      },
+      spawnHub: () => {
+        spawnedAt = Date.now();
+        return 0;
+      },
+    }, cwd), 0);
+    assert.ok(spawnedAt > 0 && fetchResolvedAt > 0);
+    assert.ok(spawnedAt < fetchResolvedAt);
+    assert.equal(io.read().stderr, `${availableNotice.message}\n`);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
