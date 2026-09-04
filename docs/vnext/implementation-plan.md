@@ -39,7 +39,12 @@ It does not replace the phase gates below.
   CLI. If the native harness is absent or logged out, fail closed (or prompt
   login) rather than silently switching to Pi. Pi remains the default
   long-lived worker only for providers it hosts that have no authenticated
-  native harness (e.g. xAI/Grok today).
+  native harness. **Superseded 2026-09-04:** xAI is no longer such a provider —
+  the `grok` CLI is installed and OAuth'd to `auth.x.ai`, so the writer role
+  dispatches through it and Pi's `xai` provider is the logged-out fallback.
+  This changes the writer's harness only; `kxm agent worker` / `pi --mode rpc`
+  remains Pi-only, because `grok` is a one-shot headless writer, not a
+  supervised long-lived worker.
 - Anthropic subscription models are the motivating case (Claude CLI vs Pi
   Anthropic API keys). The same rule applies to Codex, Kimi, Gemini, DeepSeek,
   and later harnesses.
