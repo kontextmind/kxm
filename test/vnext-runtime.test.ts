@@ -551,11 +551,24 @@ test("crash recovery: SIGKILL then restart yields identical projected state", as
     const events = await vnextRuntimeRequest(secondHandle, "GET", `/v1/runs/${runId}/events?projectRoot=${encodeURIComponent(root)}`);
     assert.equal((events.events as unknown[]).length, 1, "the creation event survived the crash");
   } finally {
-    first?.kill("SIGKILL");
-    second?.kill("SIGKILL");
+    // TerminateProcess is asynchronous on Windows: wait for both children to
+    // exit so their SQLite handles are released before the state dir goes.
+    await Promise.all([killAndWait(first), killAndWait(second)]);
     cleanup(root, stateRoot);
   }
 });
+
+async function killAndWait(child: ChildProcess | undefined): Promise<void> {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  await new Promise<void>((resolveExit) => {
+    const timer = setTimeout(resolveExit, 5_000);
+    child.once("exit", () => {
+      clearTimeout(timer);
+      resolveExit();
+    });
+    child.kill("SIGKILL");
+  });
+}
 
 import { spawn, type ChildProcess } from "node:child_process";
 
