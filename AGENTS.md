@@ -28,6 +28,8 @@ Claude is for **planning and review**, not the default writer. Do not treat `cla
 
 Examples: Anthropic → Claude CLI (subscription); OpenAI → Codex; Moonshot → Kimi; Google → Gemini CLI when present. xAI/Grok stays on Pi unless a Grok harness exists and is authenticated.
 
+**Aggregators (OpenRouter, etc.) are Pi *providers*, not a second coding harness.** If `pi auth check` / `/login openrouter` (or `OPENROUTER_API_KEY`) is good, Nous and other OpenRouter models are usable **on Pi** as `openrouter/…` ids. There is no OpenRouter/Nous `kxm agent worker` CLI. Prefer OpenRouter for those models so your OpenRouter credit is what gets billed; don’t invent a fake harness. Same auth-or-fail-closed rule.
+
 If the native harness is missing or logged out, do **not** silently bill through Pi’s other-provider key. Fail closed or ask to log in. Pi remains default only for providers it actually hosts (today: Grok and anything `pi auth check` covers that has **no** better native harness logged in).
 
 **Cost and quality insights:** Every assignment should make the next one faster, cheaper, or better — not just billed. Track harness + provider + model + thinking + **context size + input/output (and cache) tokens + latency + cost + whether verify passed / rework happened**. Some providers charge **more as context grows** (long-context premiums, thinking tokens, uncached input). Sticker $/1M is not enough — compare **cost at the context we actually send**. Prefer the cheapest logged-in native harness that still meets quality. Drop xhigh thinking, extra critics, and huge dumps when the report shows they don’t pay for themselves. Do not “upgrade” model or harness without evidence. Fail closed on untracked spend.
