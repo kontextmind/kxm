@@ -6,33 +6,34 @@ import {
   KxmUpdateConfigError,
   type KxmUpdateConfig,
 } from "./kxm-update.ts";
+import { vnextUserStateRoot } from "./vnext-bindings.ts";
 
-export function loadKxmUpdateConfig(projectRoot: string): KxmUpdateConfig {
-  const path = join(projectRoot, ".kxm", "update.yaml");
+export function loadKxmUpdateConfig(env: NodeJS.ProcessEnv = process.env): KxmUpdateConfig {
+  const path = join(vnextUserStateRoot({ env }), "update.yaml");
   if (!existsSync(path)) return { schema: KXM_UPDATE_SCHEMA, auto: false, source: "github" };
   let parsed: unknown;
   try {
     parsed = parseYaml(readFileSync(path, "utf8"));
   } catch {
-    throw new KxmUpdateConfigError(".kxm/update.yaml is not valid YAML");
+    throw new KxmUpdateConfigError("update.yaml is not valid YAML");
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new KxmUpdateConfigError(".kxm/update.yaml must be a mapping");
+    throw new KxmUpdateConfigError("update.yaml must be a mapping");
   }
   const row = parsed as Record<string, unknown>;
   const allowed = new Set(["schema", "auto", "source"]);
   for (const key of Object.keys(row)) {
-    if (!allowed.has(key)) throw new KxmUpdateConfigError(`.kxm/update.yaml unknown field ${key}`);
+    if (!allowed.has(key)) throw new KxmUpdateConfigError(`update.yaml unknown field ${key}`);
   }
   if (row.schema !== KXM_UPDATE_SCHEMA) {
-    throw new KxmUpdateConfigError(".kxm/update.yaml schema must be kxm.update.v1");
+    throw new KxmUpdateConfigError("update.yaml schema must be kxm.update.v1");
   }
   if (typeof row.auto !== "boolean") {
-    throw new KxmUpdateConfigError(".kxm/update.yaml auto must be a boolean");
+    throw new KxmUpdateConfigError("update.yaml auto must be a boolean");
   }
   const source = row.source === undefined ? "github" : row.source;
   if (source !== "npm" && source !== "github") {
-    throw new KxmUpdateConfigError(".kxm/update.yaml source must be npm or github");
+    throw new KxmUpdateConfigError("update.yaml source must be npm or github");
   }
   return { schema: KXM_UPDATE_SCHEMA, auto: row.auto, source };
 }

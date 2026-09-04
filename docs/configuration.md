@@ -232,7 +232,7 @@ The tool allowlist is a capability boundary inside Pi, not a prompt suggestion â
 | `kxm hub view` | Check `/health` and `/ready` |
 | `kxm hub bind <url>` | Bind this machine to a running hub |
 | `kxm hub unbind` | Remove this machine's hub binding |
-| `kxm update --check` / `kxm update --kxm` | Check or apply a kxm operator package update. Default source is GitHub release tarballs (`gh` plus `npm install --omit=peer`). `source: npm` is for after the public package exists. Optional Git `.kxm/update.yaml` (`kxm.update.v1`, `auto` boolean) enables auto-apply on `kxm update`. Notice also prints on `kxm hub start` and on the session widget from cache |
+| `kxm update --check` / `kxm update --kxm` | Check or apply a kxm operator package update from an npm-global install only. Other install kinds (source checkout, Pi git, Claude marketplace, npm-local, unknown) refuse `--kxm` and skip auto-apply. Source checkouts neither fetch nor nag. Default source is GitHub release tarballs; the release asset `kxm-<v>.tgz` must carry a sha256 digest or install fails closed. `source: npm` is for after the public package exists. Optional per-user `update.yaml` (`kxm.update.v1`, `auto` boolean) under the host state root (`KXM_STATE_HOME` / `%LOCALAPPDATA%\KXM` / macOS Application Support / XDG state) enables auto-apply on `kxm update`. A project `.kxm/update.yaml` is ignored with a warning. Notice also prints on `kxm hub start` (not from source) and on the session widget from cache |
 | `kxm dash` | Open the read-only SSE observer dashboard; non-TTY output is one ANSI-free snapshot |
 | `kxm hub start` | Start the KXM hub in the foreground |
 | `kxm hub stop` | Request managed hub and worker shutdown |

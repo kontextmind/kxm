@@ -98,9 +98,12 @@ It does not replace the phase gates below.
 - Phase 2 Runtime create/recover (PR #75) is in tree: supervisor, event store,
   projections, crash recovery. Runs stay `created` until Phase 3.
 - `kxm update --check` / `--kxm`: GitHub release tarball install (current), npm
-  source after the public package exists. Optional `.kxm/update.yaml` `auto`.
-  Notice on hub start and session widget (cached). Does not block session start
-  on the network.
+  source after the public package exists. `auto` only from per-user host-state
+  `update.yaml`. Install-kind detection: only npm-global applies; source
+  checkouts neither fetch nor nag; other kinds refuse and explain. GitHub
+  installs verify the `kxm-<v>.tgz` sha256 digest (absent is fatal).
+  Notice on hub start (skipped for source) and session widget (cached). Does
+  not block session start on the network.
 - Hub-local session brief: `kxm session brief`, Pi TUI picker + status/widget
   on `startup`/`new`/`fork`, `/kxm` (`status`/`hub`/`help` completions),
   skill `kxm-session`, `kxm hub bind <url>` / `kxm hub unbind`.
@@ -109,10 +112,17 @@ It does not replace the phase gates below.
 - `kxm hub bind <url>` / `unbind` persist a host-level `hub-binding.json`.
   `kxm init --hub` / `--hub-url` are unknown options. Hub start prints a cached
   update notice, refreshes in the background, and warns (does not exit 2) on a
-  malformed `.kxm/update.yaml`. Startup reports `auth=token|none`.
+  malformed per-user `update.yaml`. Source checkouts skip the notice. A project
+  `.kxm/update.yaml` is ignored with a warning. Startup reports `auth=token|none`.
 
 ### Still open
 
+- **B2 release asset:** nothing yet emits `kxm-<v>.tgz` (`npm pack` names
+  `kontextmind-kxm-<v>.tgz`; no `release.yml`). Until B2 uploads that name
+  with a GitHub `digest`, `kxm update --kxm` from a real npm-global install
+  fails closed with `release_digest_missing`. B2 must rename on upload, add a
+  test importing `kxmReleaseAssetName` against `release.yml`, and confirm
+  `gh release view --json assets` shows `digest`. No sidecar `.sha256` in A4.
 - **After public npm:** wiki-compile this project from hub context; npm as
   `kxm update` source. Not before.
 - **Next PR:** fold or drop `kxm mesh` (`init`/`smoke`); rename `MeshClient` /
