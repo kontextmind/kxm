@@ -10,14 +10,21 @@ permissions:
 
 jobs:
   validate:
-    name: Validate (${{ matrix.os }}, Node ${{ matrix.node }})
-    runs-on: ${{ matrix.os }}
+    name: Validate (${{ matrix.runner.name }}, Node ${{ matrix.node }})
+    runs-on: ${{ matrix.runner.labels }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
         node: [22.19.0, 24]
+        # Linux runs on the DOKS self-hosted runner (label doks); Windows on
+        # the larger hosted image. Job names are pinned by the protect-main
+        # ruleset, so change `name` and the ruleset together.
+        runner:
+          - name: linux
+            labels: [self-hosted, Linux, X64, doks]
+          - name: windows
+            labels: windows-latest-l
 
     steps:
       - name: Check out repository
