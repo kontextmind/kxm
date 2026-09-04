@@ -7,7 +7,8 @@ Read this first. Then follow
 ## Product
 
 - Name is **KXM**. Not Mesh, not pi-extensions.
-- Future work is not backwards-compatible: no new dual names or Mesh aliases.
+- Future work is not backwards-compatible. Fix leftovers with **brakes** (fail
+  closed on old names), not dual Mesh/KXM aliases.
 - Hub process: `kxm hub start` · `kxm hub view` · `kxm hub stop`
 - Live screens: `kxm dash` (optional `--screen agents|tasks|workflows|plans|inbox|procs`)
 - Hub-local session: `kxm session brief`; Pi TUI `/kxm` picker + status line.
@@ -97,4 +98,4 @@ A commit is not a PR. A PR is not a release.
 - Add a harness preferences overlay
 - Bypass fail-closed identity checks
 - Weaken `/fix` independent repro-before-oracle
-- Add backwards-compat shims or dual product names for new slices
+- Add backwards-compat shims or dual product names; brake old names instead

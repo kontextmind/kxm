@@ -13,12 +13,12 @@ It does not replace the phase gates below.
 
 - Product name is **KXM**. Do not present Mesh or pi-extensions as the product.
   Plugin, marketplace, and npm identity are `kxm` / `@kontextmind/kxm`.
-- **Future slices are not backwards-compatible.** Do not add upgrade shims,
-  dual names, or “alias until consumers migrate” for new work. Prefer agents
-  and workflows. Folding leftover Mesh CLI/types (`kxm mesh`, `MeshClient`,
-  `/mesh-status`) may break old names; that is accepted. Landed upgrade-compat
-  (e.g. session-isolation default `off`) stays until a named rip slice, not as
-  a pattern for new features.
+- **Future slices are not backwards-compatible.** Do not add upgrade shims or
+  dual names. **Fix leftovers with brakes:** fail closed on old product names
+  and commands (`kxm mesh`, `/mesh-status`, Mesh in operator copy) instead of
+  keeping an alias lane. Prefer agents and workflows. Landed shims (e.g.
+  session-isolation default `off`) get a named rip that fails closed, not a
+  permanent compatibility mode.
 - Durable hub SQLite default is `.kxm/state/kxm.db` (`KXM_DATA_PATH`).
 - Hub process CLI: `kxm hub start` / `kxm hub view` / `kxm hub stop`.
 - Live operator screens: `kxm dash` (not TUI/watch). Tabs: Agents, Tasks,
@@ -101,7 +101,7 @@ It does not replace the phase gates below.
 ### Still open
 
 - **Come back (not gates yet):** session-ready `/new`/`/fork` as a failing test;
-  fold or drop `kxm mesh` (`init`/`smoke`); rename `MeshClient` / `mesh:offline`;
+  brake `kxm mesh` / `/mesh-status` (fail closed, no alias); rename `MeshClient`;
   cleanup-before-push as a script (Windows `nul` junk files). Operator docs no
   longer open as Pi Mesh Comms; `/kxm hub` replaced `/mesh-status` in runbooks.
   Ship chrome is git dirty/ahead plus `npm run verify` / CI names — it does not
