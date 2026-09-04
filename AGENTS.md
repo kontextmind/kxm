@@ -86,8 +86,8 @@ Two combined gates (already in npm/CI). Do not add a third unless a test fails.
 
 | When | Gate | What it combines |
 |---|---|---|
-| **Commit** | `npm run verify` | `npm test` (build + tests) then `npm run check` (tsc + lint:docs + versions) |
-| **PR/MR** | CI `validate:ci` + `check:generated` | coverage + check + pack dry-run; generated `dist` current |
+| **Commit** | `npm run verify` | `npm test` (build + tests), `npm run check` (tsc + lint:docs + versions), then generated `dist` matches the staged `dist` |
+| **PR/MR** | CI `validate:ci` + `check:generated` on every leg | coverage + check + pack dry-run; generated `dist` current |
 
 Cleanup (`git status`, no `nul`/tmp/secrets; `dist` if CLI changed) is **before** the commit gate and **again before push**. Session-ready `/new`/`/fork` and leftover Mesh operator copy are **PR judgment**, not extra npm scripts, until they can fail a test without a live harness. Come-back list: Tracking **Still open**. Ship hint belongs on the Pi status/widget (`ship dirty` / `N local` / `PR after CI`), not in every chat turn.
 

@@ -45,9 +45,8 @@ export function checkGeneratedArtifacts(repository = process.cwd()) {
 
   const status = runGit(root, [
     "--literal-pathspecs",
-    "status",
-    "--porcelain=v1",
-    "--untracked-files=all",
+    "diff",
+    "--name-only",
     "--",
     ...GENERATED_ARTIFACTS,
   ]).stdout.trim();
