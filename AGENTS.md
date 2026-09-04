@@ -58,6 +58,15 @@ ages the plan, update **Tracking** and the affected phase gate in
 plan every session. Do not enlarge earlier phases. Fable proposes plan edits;
 Grok applies them.
 
+## Git and issue trackers
+
+Do not assume GitHub. Bind SCM and tickets from **this repo’s conventions**, then let the operator confirm at workflow/project creation:
+
+- Git remote (`github.com` / `gitlab.com` / other) and CI files (`.github/workflows` vs `.gitlab-ci.yml`)
+- Issue tracker if obvious (Jira key, GitHub Issues, GitLab issues) or **none**
+
+Ship GitHub checks + Jira webhooks first. GitLab (and other trackers) are adapters to add; until they exist, **offer the choice and fail closed** if the user picks an unimplemented one — don’t silently use GitHub.
+
 ## Do not
 
 - Bulk-migrate jira / provenance / v04 just to “set up”

@@ -97,6 +97,12 @@ It does not replace the phase gates below.
   simulated producers; caller-authored replies rejected).
 - Non-Pi dispatch adapters (Phase 11). Listing a harness does not execute it.
 - Confirm GitHub repository identity (`kontextmind/kxm` vs current remote).
+- **SCM and issue trackers:** detect from repo conventions (git remote, CI
+  layout, issue-key patterns) and **confirm at workflow/project creation**.
+  Do not hard-code GitHub. Implemented today: GitHub webhooks + `github watch`,
+  Jira inbound webhooks, `generic` HMAC. GitLab CI/issues and other trackers
+  are later adapters; an unimplemented choice fails closed. Git remotes stay
+  forge-agnostic. Not a Phase 3 gate.
 - **Post-MVP (do not implement now):** API budgets and **rollover** — spend
   leftover subscription/API allowance before buying the next increment when
   the insights loop says it’s worth it; cap and failover already apply. Keep
