@@ -541,7 +541,7 @@ test("crash recovery: SIGKILL then restart yields identical projected state", as
     // identical projected state. The token rotated on restart; re-read it.
     second = spawnChild(script, env);
     const secondStatus = await waitForSupervisor(paths);
-    const secondToken = await waitForToken(paths);
+    const secondToken = await waitForToken(paths, token);
     assert.equal(secondStatus.runtimeId, firstStatus.runtimeId, "the logical runtime identity survives takeover");
     assert.notEqual(secondStatus.pid, firstStatus.pid, "the process is new");
     const secondHandle = { runtimeId: secondStatus.runtimeId as string, port: secondStatus.port as number, token: secondToken, started: true };
@@ -583,11 +583,14 @@ function spawnChild(script: string, env: NodeJS.ProcessEnv): ChildProcess {
   return child;
 }
 
-async function waitForToken(paths: ReturnType<typeof vnextRuntimePaths>): Promise<string> {
+/** The supervisor claims the registry before it publishes its token, so a
+ * takeover briefly leaves the previous token on disk. Pass `previous` to
+ * wait for the rotated one. */
+async function waitForToken(paths: ReturnType<typeof vnextRuntimePaths>, previous?: string): Promise<string> {
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
     const token = readVnextSupervisorToken(paths);
-    if (token) return token;
+    if (token && token !== previous) return token;
     await new Promise((resolveWait) => setTimeout(resolveWait, 100));
   }
   throw new Error("supervisor token did not appear in time");
