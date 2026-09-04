@@ -122,16 +122,15 @@ jobs:
         if: steps.modules.outputs.cache-hit != 'true'
         run: npm ci
 
-      # Coverage instrumentation is what makes the Windows legs slow, and
-      # coverage is platform-independent for this codebase, so the threshold
-      # is enforced on Linux while Windows runs the same tests uninstrumented.
-      - name: Test with coverage, type-check, and inspect package (Linux)
-        if: runner.os == 'Linux'
+      # Every leg runs coverage. Dropping instrumentation on Windows would be
+      # faster, but `--experimental-test-coverage` sets NODE_V8_COVERAGE, and
+      # child processes inherit it — which changes their shutdown path. Without
+      # it, the child in the worker pre-ack test dies with 0xC0000409
+      # (STATUS_STACK_BUFFER_OVERRUN) on the hosted Windows image instead of
+      # exiting 7, deterministically on Node 24. See issue for the real fix;
+      # until then coverage is load-bearing on Windows, not just a metric.
+      - name: Test with coverage, type-check, and inspect package
         run: npm run validate:ci
-
-      - name: Test, type-check, and inspect package (Windows)
-        if: runner.os == 'Windows'
-        run: npm test && npm run check && npm pack --dry-run
 
   generated:
     name: Generated artifacts current
