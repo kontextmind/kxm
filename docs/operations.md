@@ -53,13 +53,14 @@ The dashboard uses Pi's `@earendil-works/pi-tui` renderer. With the administrati
 
 | Key | Action |
 |---|---|
-| `Up` / `Down` | Select a panel; on narrow terminals, scroll content |
-| `Enter` / `Space` | Toggle the selected panel |
-| `1`–`4` | Reveal Agents, Messages, Runs, or PIDs |
-| `PgUp` / `PgDn`, `Ctrl+U` / `Ctrl+D` | Scroll visible panel content |
-| `h` / `?` | Toggle help |
-| `Esc` | Close help, then quit |
-| `q` / `Ctrl+C` | Quit |
+| `1`–`6` | Agents, Tasks, Workflows, Plans, Inbox, or Procs |
+| `Tab` / `]` | Next tab |
+| `[` | Previous tab |
+| `←` / `→` | List pane / detail pane |
+| `↑` / `↓` | Select |
+| `PgUp` / `PgDn` | Scroll |
+| `h` | Toggle help |
+| `q` | Quit |
 
 In a non-interactive shell, `kxm dash` prints one ANSI-free snapshot and exits.
 Use `kxm hub view --json` instead when a machine-readable result is required.

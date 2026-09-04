@@ -103,11 +103,11 @@ Names are case-insensitively unique among online agents in one project. A clean 
 
 | Plugin field | Environment value |
 |---|---|
-| Mesh server URL | `KXM_SERVER_URL` |
+| KXM server URL | `KXM_SERVER_URL` |
 | Authentication token | `KXM_AUTH_TOKEN` |
 | Agent name | `KXM_AGENT_NAME` |
 | Agent purpose | `KXM_AGENT_PURPOSE` |
-| Mesh project | `KXM_PROJECT` |
+| Project | `KXM_PROJECT` |
 
 `KXM_PROJECT_DIR` is supplied internally to derive a default project. Users normally should not set it.
 
@@ -202,7 +202,7 @@ The tool allowlist is a capability boundary inside Pi, not a prompt suggestion â
 
 ## Operator CLI
 
-`kxm` is additive and does not replace `kxm-hub` or `kxm-worker`. The current hub command groups are `agent`, `session`, `workflow`, `gate`, `mesh`, and `improve`; the root `init` command is the first configuration-only vNext slice. If the installed `kxm --help` prints the former flat command list (`validate | status | hub | worker | stop | â€¦`), the committed `plugins/kxm/dist/cli.js` predates these groups and needs `npm run build` and a commit. The CLI is an operator **client**: the hub's durable state, the protocol and schema types, and reviewed Git configuration define behaviour; where the CLI diverges from them, the CLI is the defect.
+`kxm` is additive and does not replace `kxm-hub` or `kxm-worker`. The current hub command groups are `agent`, `session`, `workflow`, `gate`, `hub`, `dash`, and `improve`; the root `init` command is the first configuration-only vNext slice. If the installed `kxm --help` prints the former flat command list (`validate | status | hub | worker | stop | â€¦`), the committed `plugins/kxm/dist/cli.js` predates these groups and needs `npm run build` and a commit. The CLI is an operator **client**: the hub's durable state, the protocol and schema types, and reviewed Git configuration define behaviour; where the CLI diverges from them, the CLI is the defect.
 
 | Command | Purpose |
 |---|---|
@@ -228,13 +228,13 @@ The tool allowlist is a capability boundary inside Pi, not a prompt suggestion â
 | `kxm gate degrade <runId> <stageId> --requirement <key> --reason <text>` | Use the administrative token to approve a policy-declared lower peer minimum for the current attempt |
 | `kxm gate signal` | Post a signed workflow callback |
 | `kxm gate github watch` | Poll required GitHub checks and post the existing signed signal |
-| `kxm mesh init` | Create empty `.kxm` directories; configuration remains project-owned and no package dogfood templates are copied |
+| `kxm init` | Create or validate a project; configuration remains project-owned and no package dogfood templates are copied |
 | `kxm hub view` | Check `/health` and `/ready` |
+| `kxm hub bind <url>` | Bind this machine to a running hub |
 | `kxm update --check` / `kxm update --kxm` | Check or apply a kxm operator package update. Default source is GitHub release tarballs (`gh` plus `npm install --omit=peer`). `source: npm` is for after the public package exists. Optional Git `.kxm/update.yaml` (`kxm.update.v1`, `auto` boolean) enables auto-apply on `kxm update`. Notice also prints on `kxm hub start` and on the session widget from cache |
 | `kxm dash` | Open the read-only SSE observer dashboard; non-TTY output is one ANSI-free snapshot |
-| `kxm hub start` | Start the KXM hub |
+| `kxm hub start` | Start the KXM hub in the foreground |
 | `kxm hub stop` | Request managed hub and worker shutdown |
-| `kxm mesh smoke` | Opt-in two-worker real-Pi release harness |
 | `kxm improve` | Bucket `.kxm/logs/telemetry.jsonl` events into a proposed-only improvement report; does not read the workflow journal |
 
 Improvement telemetry is classified as `project` whenever a project or workflow identity is present, and as `cli` for unscoped operator behavior. Set `KXM_IMPROVE_TARGET=cli` or `KXM_IMPROVE_TARGET=project` only when an operator needs to override that generic classification; this changes report bucketing, not workflow state.

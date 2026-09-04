@@ -50,7 +50,9 @@ function committedProject(prefix: string): { root: string; stateRoot: string } {
 }
 
 function cleanup(...paths: string[]): void {
-  for (const path of paths) rmSync(path, { recursive: true, force: true });
+  // A SIGKILLed runtime can still hold its SQLite handles for a moment on
+  // Windows; rmSync retries so teardown does not fail the test with EPERM.
+  for (const path of paths) rmSync(path, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 }
 
 test("run acceptance is immutable, idempotent, and pins revisions", () => {

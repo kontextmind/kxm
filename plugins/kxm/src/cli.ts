@@ -16,7 +16,7 @@ import { writeCompiledWiki } from "./wiki.ts";
 import { agentWorker, gateWorker, workerResult, type Worker, type WorkerOutcome } from "./envelope.ts";
 import { appendTelemetry, inferImprovementTarget, makeTelemetryEvent, readTelemetry, readRoutingRecords, telemetryPath } from "./telemetry.ts";
 import { behavioralConfigHash, compareRoutingRecords, groupByBehavior } from "./routing.ts";
-import { createSession, loadNamedWorkers, rosterNames, sessionAssetDirs, standardAssetDirs, workflowAssetDirs, writeSession } from "./session.ts";
+import { createSession, loadNamedWorkers, rosterNames, sessionAssetDirs, workflowAssetDirs, writeSession } from "./session.ts";
 import { buildImprovementReport, writeImprovementReport } from "./improve.ts";
 import { MESH_TUI_PANELS, runMeshTui, type MeshTuiPanel } from "./tui.ts";
 import { formatSessionBriefText, loadSessionBrief } from "./session-work.ts";
@@ -1052,21 +1052,6 @@ async function cmdVnextRuntime(runtime: Runtime, action: string): Promise<number
   }
 }
 
-async function cmdInit(runtime: Runtime): Promise<number> {
-  const created: string[] = [];
-  for (const directory of [runtime.dirs.config, runtime.dirs.logs, runtime.dirs.assets, runtime.dirs.state, ...standardAssetDirs(runtime.dirs.assets)]) {
-    if (runtime.dryRun) created.push(directory);
-    else {
-      mkdirSync(directory, { recursive: true });
-      created.push(directory);
-    }
-  }
-  // Workspace configuration is project-owned. Never seed a consumer with the
-  // package repository's provider-specific dogfood roster or workflows.
-  print(runtime.io, runtime.json, { ok: true, command: "init", created, templates: false }, `initialized ${runtime.dirs.workspace}`);
-  return 0;
-}
-
 async function cmdValidate(runtime: Runtime, fileFlag?: string): Promise<number> {
   const worker = gateOf(runtime, "validate");
   const explicitFile = fileFlag?.trim();
@@ -2049,14 +2034,6 @@ async function cmdRetrospectiveExport(runtime: Runtime, runId: string, options: 
   return 0;
 }
 
-async function cmdSmoke(runtime: Runtime, realPi: boolean): Promise<number> {
-  if (runtime.env.KXM_SMOKE !== "1" && !realPi) {
-    print(runtime.io, runtime.json, { ok: true, skipped: true, reason: "KXM_SMOKE is not 1" }, "smoke skipped");
-    return 0;
-  }
-  return await spawnScript("smoke-multi-pi.mjs", { KXM_SMOKE: "1", ...workspaceEnv(runtime) });
-}
-
 function createProgram(ctx: CliContext, result: { code: number }): Command {
   const bind = (action: (runtime: Runtime, ...args: never[]) => Promise<number>) => {
     return async function commandAction(this: Command, ...args: unknown[]) {
@@ -2443,14 +2420,6 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .option("--screen <name>", "agents, tasks, workflows, plans, inbox, or procs"))
     .action(async function dashAction(this: Command, options: { screen?: string }) {
       result.code = await cmdDash(runtimeFrom(ctx, this), options);
-    });
-  const mesh = addGlobalOptions(program.command("mesh").description("Workspace init and smoke helpers"));
-  mesh.helpCommand("help", "Show mesh help");
-  addGlobalOptions(mesh.command("init").description("Create .kxm directories")).action(bind(cmdInit));
-  addGlobalOptions(mesh.command("smoke").description("Opt-in two-worker real-Pi release harness"))
-    .option("--real-pi", "Run even when KXM_SMOKE is unset")
-    .action(async function smokeAction(this: Command, options: { realPi?: boolean }) {
-      result.code = await cmdSmoke(runtimeFrom(ctx, this), Boolean(options.realPi));
     });
 
   return program;

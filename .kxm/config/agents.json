@@ -1,6 +1,6 @@
 {
   "schema": "kxm.agents.v1",
-  "project": "pi-extensions-v04",
+  "project": "kxm",
   "host": "local",
   "agents": [
     {

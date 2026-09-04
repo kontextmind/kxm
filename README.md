@@ -1,4 +1,4 @@
-# KontextMind Pi Extensions
+# KXM
 
 [![CI](https://github.com/kontextmind/kxm/actions/workflows/ci.yml/badge.svg)](https://github.com/kontextmind/kxm/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -6,7 +6,7 @@
 
 Give running coding agents a small, dependable communication plane.
 
-**Pi Mesh Comms** lets Pi and Claude Code agents discover one another, send focused requests, continue working independently, and collect replies without sharing an oversized conversation. It provides communication primitives—not an autonomous swarm manager—so each agent keeps its own context and safety controls.
+**KXM** lets Pi and Claude Code agents discover one another, send focused requests, continue working independently, and collect replies without sharing an oversized conversation. It provides communication primitives—not an autonomous swarm manager—so each agent keeps its own context and safety controls.
 
 > **Project status:** Production candidate (`0.4.x`) for a single hub serving local or trusted-team agents. Durable delivery, signed webhook workflows, operator CLI, security controls, observability, and recovery are tested. It is not a horizontally scaled or multi-tenant orchestration service. See [Production boundaries](#production-boundaries).
 
@@ -22,38 +22,85 @@ Give running coding agents a small, dependable communication plane.
 - **Verify peer provenance.** Per-requirement quorum gates count unique eligible producers from immutable, attempt-bound replied messages rather than coordinator-authored claims.
 - **Learn from every run.** Capture plans, decisions, contradictions, errors, and lessons without turning unreviewed opinions into policy.
 
-## Quick start: two Pi agents
+## First run
 
-You need Node.js 22.19 or newer on the 22.x line, or Node.js 24 or newer, plus Pi, Git, and two terminal windows.
+You need Node.js 22.19 or newer on the 22.x line, or Node.js 24 or newer, plus Git, GitHub CLI, Pi, and two terminal windows. Six steps take you from install to `kxm session brief` and `/kxm hub`.
 
-### 1. Start the hub
+### 1. Install
+
+Download the packed release through an authenticated GitHub CLI session. Run `gh auth login` first if necessary. Pi's Git package install supplies the extension and Agent Skill; it does not place `kxm` on `PATH`.
+
+PowerShell:
 
 ```powershell
-git clone https://github.com/kontextmind/kxm.git
-cd kxm
-npm ci
-$env:KXM_AUTH_TOKEN = "replace-with-an-admin-token"
-$env:KXM_PROJECT_TOKENS = '{"demo":"replace-with-a-demo-project-token"}'
-npm run hub
-```
-
-The hub listens on `http://127.0.0.1:7331`. Keep this terminal running.
-
-### 2. Install the Pi package
-
-Run once:
-
-```text
+$version = "<release-version>"
+$asset = "kxm-$version.tgz"
+$releaseDir = Join-Path $PWD ".kxm-release"
+New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
+gh release download "v$version" --repo kontextmind/kxm --pattern $asset --dir $releaseDir --clobber
+npm install --global --omit=peer (Join-Path $releaseDir $asset)
 pi install git:github.com/kontextmind/kxm
 ```
 
-If the repository is private, Git must already be authenticated for an account that has access.
-This Pi package install supplies the extension and Agent Skill to Pi; it does
-not place the `kxm` operator command on `PATH`.
+Bash:
 
-### 3. Start each agent
+```bash
+version='<release-version>'
+asset="kxm-${version}.tgz"
+mkdir -p .kxm-release
+gh release download "v${version}" --repo kontextmind/kxm \
+  --pattern "$asset" --dir .kxm-release --clobber
+npm install --global --omit=peer ".kxm-release/$asset"
+pi install git:github.com/kontextmind/kxm
+```
 
-Set the same server, `demo` project token, and project in both agent terminals; do not give agents the administrative token. Give each agent a unique name and a useful purpose.
+From a clone, run `npm ci` and use `node scripts/kxm.mjs` in place of `kxm`. Do not use `npm install --global git+https://github.com/kontextmind/kxm.git`.
+
+### 2. Initialize the project
+
+```text
+kxm init
+```
+
+### 3. Start the hub in another terminal
+
+`kxm hub start` is foreground. Keep that terminal running.
+
+PowerShell:
+
+```powershell
+$env:KXM_AUTH_TOKEN = "replace-with-an-admin-token"
+$env:KXM_PROJECT_TOKENS = '{"demo":"replace-with-a-demo-project-token"}'
+kxm hub start
+```
+
+Bash:
+
+```bash
+export KXM_AUTH_TOKEN="replace-with-an-admin-token"
+export KXM_PROJECT_TOKENS='{"demo":"replace-with-a-demo-project-token"}'
+kxm hub start
+```
+
+The hub listens on `http://127.0.0.1:7331`.
+
+### 4. Bind this machine to the hub
+
+```text
+kxm hub bind http://127.0.0.1:7331
+```
+
+### 5. Confirm the session
+
+```text
+kxm session brief
+```
+
+### 6. Open Pi and check the hub
+
+Give agents the project token, not the administrative token.
+
+PowerShell:
 
 ```powershell
 $env:KXM_SERVER_URL = "http://127.0.0.1:7331"
@@ -64,47 +111,26 @@ $env:KXM_AGENT_PURPOSE = "Plans work and coordinates handoffs"
 pi
 ```
 
-Start the second terminal as `reviewer`, `builder`, or another role. In Pi, run `/mesh-status` to confirm the connection.
+Bash:
 
-### 4. Delegate a task
-
-```text
-Use the kxm skill. List the available peers, ask the reviewer to
-inspect this plan for correctness risks, continue any independent work, and
-collect the review before finalizing.
+```bash
+export KXM_SERVER_URL=http://127.0.0.1:7331
+export KXM_AUTH_TOKEN="replace-with-a-demo-project-token"
+export KXM_PROJECT=demo
+export KXM_AGENT_NAME=planner
+export KXM_AGENT_PURPOSE="Plans work and coordinates handoffs"
+pi
 ```
 
-For a Pi-to-Claude setup, follow [Getting started](docs/getting-started.md#connect-claude-code).
+In Pi, run `/kxm hub`. For a second agent or Claude Code, follow [Getting started](docs/getting-started.md).
 
 ## Command-first operation
 
-The `kxm` entry point manages one workspace consistently. Tools are `agent`, `session`, `workflow`, `gate`, and `mesh`. Runtime configuration, logs, durable state, and generated retrospectives stay under `.kxm` unless `--workspace` selects another root.
+The `kxm` entry point manages one project. Tools are `init`, `hub`, `dash`, `session`, `agent`, `workflow`, and `gate`. Runtime configuration, logs, durable state, and generated retrospectives stay under `.kxm`.
 
-Install the packed release asset before using the command. GitHub CLI keeps
-this flow compatible with private repositories; run `gh auth login` first when
-the current account is not authenticated.
+After the first-run path above, load a reviewed Jira definition with distinct administrative, project, workflow-start, and callback credentials:
 
 ```powershell
-$version = "<release-version>"
-$asset = "kxm-$version.tgz"
-$releaseDir = Join-Path $PWD ".kxm-release"
-New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
-gh release download "v$version" --repo kontextmind/kxm --pattern $asset --dir $releaseDir --clobber
-npm install --global --omit=peer (Join-Path $releaseDir $asset)
-kxm mesh help
-```
-
-To operate from a clone instead, run `npm ci` in the clone and replace
-`kxm` below with `node scripts/kxm.mjs`. Do not use
-`npm install --global git+https://github.com/kontextmind/kxm.git` as
-the operator install path; the supported global install is the versioned release
-tarball.
-
-In the hub terminal, initialize the workspace and load the Jira definition with
-distinct administrative, project, workflow-start, and callback credentials:
-
-```powershell
-kxm mesh init
 # Create or copy a reviewed definition to .kxm/config/workflows/jira-development.json.
 $env:KXM_AUTH_TOKEN = "replace-with-the-admin-token"
 $env:KXM_PROJECT_TOKENS = '{"product":"replace-with-the-project-token"}'
@@ -162,7 +188,7 @@ only for a workflow whose evidence policy declares a lower minimum.
 
 | Component | What it does | Packaging |
 |---|---|---|
-| Mesh hub | Persists presence and routes authenticated HTTP/SSE messages | Node.js executable + SQLite |
+| KXM hub | Persists presence and routes authenticated HTTP/SSE messages | Node.js executable + SQLite |
 | Pi extension | Adds communication, workflow, journal, and improvement tools | `pi.extensions` |
 | Agent Skill | Teaches agents a safe, efficient coordination workflow | `pi.skills` and `SKILL.md` |
 | Claude bridge | Exposes the same workflow plane through MCP and optional channel events | Claude Code plugin |
@@ -172,7 +198,7 @@ only for a workflow whose evidence policy declares a lower minimum.
 
 ```text
 Pi planner ──HTTP──┐
-                   ├── Mesh hub ──SSE──> addressed inbound requests
+                   ├── KXM hub ──SSE──> addressed inbound requests
 Pi reviewer ─HTTP──┤      │
                    │      └── presence, heartbeats, message state
 Claude Code ─MCP───┘

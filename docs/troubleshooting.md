@@ -96,7 +96,7 @@ Terminal records are removed after seven days by default. Increase `KXM_MESSAGE_
 
 1. Confirm the marketplace and plugin are installed.
 2. Run `/reload-plugins` or restart Claude Code.
-3. Inspect `/mcp` and verify the `pi-mesh` server connected.
+3. Inspect `/mcp` and verify the `kxm` server connected.
 4. Confirm Node.js 22.19 or newer on the 22.x line, or Node.js 24 or newer, is on the `PATH` used by Claude Code.
 5. Reinstall or update the marketplace if the cached plugin predates the `dist/mcp-server.js` bundle.
 

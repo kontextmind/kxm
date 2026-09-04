@@ -1,26 +1,28 @@
 ---
 name: kxm
-description: Coordinate work with peer Pi or Claude Code agents through the pi-mesh communication hub. Use when work should be delegated, reviewed, compared, or handed off to another running agent.
+description: Coordinate work with peer Pi or Claude Code agents through the KXM hub. Use when work should be delegated, reviewed, compared, or handed off to another running agent.
 ---
 
 # KXM
 
-Use the mesh for focused collaboration between running agents. Keep each agent's context narrow and exchange concise requests, evidence, and results.
+Use KXM for focused collaboration between running agents. Keep each agent's context narrow and exchange concise requests, evidence, and results.
 
 ## What this skill covers — and what it does not
 
-This skill is the **agent-side tool protocol**. It teaches the `mesh_*` tools available inside Pi and Claude Code. It does not teach the `kxm` operator CLI, and it does not define the result envelope.
+This skill is the **agent-side tool protocol**. It teaches the `kxm_*` tools available inside Pi and Claude Code. It does not teach the `kxm` operator CLI, and it does not define the result envelope.
 
 | Surface | Who uses it | What it does | Where documented |
 |---|---|---|---|
-| `mesh_*` tools (`kxm_list`, `kxm_send`, `kxm_fanout`, `kxm_get`, `kxm_await`, `kxm_cancel`, `kxm_inbox`, `kxm_reply`, `kxm_workflow_list` / `get` / `record` / `checkpoint` / `wait`, `kxm_improvement_report`) | a running agent | peer messaging; durable-workflow checkpoints, waits, and journal | this file |
-| `kxm` CLI (`agent worker`; `session status` / `start` / `stop`; `workflow list` / `get` / `start` / `export`; `gate validate` / `artifacts-exist` / `degrade` / `signal` / `github watch`; `improve`; `mesh init` / `status` / `tui` / `hub` / `stop` / `smoke`) | a human operator in a shell | process lifecycle, signed webhook start, signed callbacks, local inspection, exports | `docs/architecture.md`, `docs/configuration.md`, `kxm --help` |
+| `kxm_*` tools (`kxm_list`, `kxm_send`, `kxm_fanout`, `kxm_get`, `kxm_await`, `kxm_cancel`, `kxm_inbox`, `kxm_reply`, `kxm_workflow_list` / `get` / `record` / `checkpoint` / `wait`, `kxm_improvement_report`) | a running agent | peer messaging; durable-workflow checkpoints, waits, and journal | this file |
+| `kxm` CLI (`init`; `hub start` / `view` / `stop`; `dash`; `session brief` / `status` / `start` / `stop`; `agent worker`; `workflow list` / `get` / `start` / `export`; `gate validate` / `artifacts-exist` / `degrade` / `signal` / `github watch`; `improve`) | a human operator in a shell | process lifecycle, signed webhook start, signed callbacks, local inspection, exports | `docs/architecture.md`, `docs/configuration.md`, `kxm --help` |
 | `kxm.worker-result.v1` envelope | emitted by some CLI commands (`gate validate`, `gate artifacts-exist`, `gate degrade`, `gate signal`, `gate github watch`, `agent worker --dry-run`) | a self-described result record appended to `.kxm/logs/telemetry.jsonl` | `docs/architecture.md` |
+
+peer and workflow commands arrive with D6
 
 Consequences for agents:
 
 - A `kxm.worker-result.v1` object you write into a reply or checkpoint is **caller-authored text**. The hub does not verify it, and it never satisfies a `peer-reply` requirement. Only durable replied message IDs cited in `evidenceRefs` do.
-- No `mesh_*` tool starts workers, runs a gate, or signs a webhook. If a stage instruction says "run the quality gate" and no `kxm gate` command implements that name, it is an operator or agent action to perform and report honestly, not a check the engine runs.
+- No `kxm_*` tool starts workers, runs a gate, or signs a webhook. If a stage instruction says "run the quality gate" and no `kxm gate` command implements that name, it is an operator or agent action to perform and report honestly, not a check the engine runs.
 - `kxm session start` writes a manifest and creates directories; it does not start any process. `kxm session stop` stops every managed hub and worker in the workspace, the same as `kxm hub stop`. Do not describe either as session-scoped in plans or journals.
 
 ## Operating procedure
@@ -42,7 +44,7 @@ Consequences for agents:
 
 ## Receiving work
 
-Long-lived workers **never finish the mesh**, but every individual model turn must settle. The hub is the sole durable queue (`queued` → `delivered` → `replied`): waiting tasks remain `queued`, and only the one entering a model turn becomes `delivered`. Local message IDs are a disposable scheduling cache, never a second source of truth. Do not write a "final report" or exit while registered.
+Long-lived workers **never finish the hub**, but every individual model turn must settle. The hub is the sole durable queue (`queued` → `delivered` → `replied`): waiting tasks remain `queued`, and only the one entering a model turn becomes `delivered`. Local message IDs are a disposable scheduling cache, never a second source of truth. Do not write a "final report" or exit while registered.
 
 - Ordering is deterministic: `steer`, then `followUp`, then `nextTurn`, FIFO within each class. Process one message per turn; do not fold multiple steers together. A steer changes the next safe turn and never interrupts an atomic write.
 - In Pi, the extension owns hub waiting and injects inbound agent turns. Do **not** call `kxm_inbox`; settle the current response and the extension immediately activates the next hub item. Autonomous Pi workers normalize `nextTurn` to a triggered follow-up because no future human prompt exists.
@@ -67,7 +69,7 @@ When an inbound request names a durable workflow run:
 5. For a mixture-of-agents planning or review requirement, use `kxm_fanout` with one to three eligible peers. **You, the coordinator, are never an eligible producer**: the hub counts only replies to messages you sent to *other* agents, and rejects any reference whose recipient is the run's target. If the policy's `eligibleAgents` includes the coordinator's own name, or `minProducers` exceeds the number of eligible agents other than you, the requirement cannot be satisfied — record a `contradiction` naming the policy and stop rather than retrying. Before invoking the tool, verify that the same argument object contains `workflowContext` with the run ID, exact active stage ID, canonical requirement key, and current 1-based attempt (`stage.attempts + 1`). A plan or journal statement is not a substitute for the actual tool argument. If an evidence request was accidentally sent without context, its message ID can never satisfy the gate; disregard it and resend once with a new attempt-specific key and the exact context. A stable attempt-specific `idempotencyKeyPrefix` such as `planning-attempt-1` makes an exact transport retry safe, but correlation and idempotency do not establish provenance. Normally omit message TTL for model work. A local wait ending returns a recoverable pending handle; use `kxm_get` or repeat the exact fanout, never a new key. Only `replied` messages count, and multiple messages from one peer still count as one producer. Collect independent responses before showing agents one another's answers, record disagreements, then synthesize the strongest compatible recommendations.
 6. Call `kxm_workflow_checkpoint` with the active stage, result, summary, ordinary `evidence`, and peer `evidenceRefs`. Correct and repeat any warning or failure; diagnostic evidence is journaled but does not count toward the later passing attempt. After an attempt is consumed, create fresh peer messages with the new attempt number—old references fail closed.
 7. When an external system must finish asynchronously, call `kxm_workflow_wait` with the active stage, a stable signal key, expected result, bounded timeout, ordinary evidence, and any peer `evidenceRefs` that the hub can verify before waiting. The later passing callback accumulates with that verified snapshot and must supply every remaining named ordinary requirement. A callback cannot invent peer provenance or approve degradation. After the hub reports `waiting`, settle the turn. Do not fabricate a callback result or keep the turn open merely to poll.
-8. If strict peer quorum cannot be met, report the missing eligible producer and stop. Only a human operator, in a shell with the administrative `KXM_AUTH_TOKEN`, can approve a policy-declared lower minimum for the current attempt by running `kxm gate degrade <runId> <stageId> --requirement <key> --reason <text>`. There is no `mesh_*` tool for this and an agent must not attempt it. The approval is journaled; it does not pass the gate; submit enough verified references to meet the approved minimum and report the outcome as degraded.
+8. If strict peer quorum cannot be met, report the missing eligible producer and stop. Only a human operator, in a shell with the administrative `KXM_AUTH_TOKEN`, can approve a policy-declared lower minimum for the current attempt by running `kxm gate degrade <runId> <stageId> --requirement <key> --reason <text>`. There is no `kxm_*` tool for this and an agent must not attempt it. The approval is journaled; it does not pass the gate; submit enough verified references to meet the approved minimum and report the outcome as degraded.
 9. Otherwise, do not settle the coordinator turn until every required checkpoint passes or the run reaches a terminal failure.
 10. In the retrospective, use `kxm_improvement_report` to propose measurable improvements. Peer-evidence audit output contains metadata and hashes, never request or reply bodies. Never weaken gates or change policy automatically.
 
@@ -88,9 +90,9 @@ When an inbound request names a durable workflow run:
   - If you are the designated writer, confine changes to the paths the task names and report the changed paths in your reply so a reviewer can diff them against the plan.
 - Prefer two to four purposeful agents over a large chatty swarm.
 - Do not bounce a request repeatedly. Forward only when the next peer has a clearly different capability, and preserve the correlation ID.
-- Never include secrets, credentials, or unnecessary private data in mesh messages.
+- Never include secrets, credentials, or unnecessary private data in peer messages.
 - Treat provenance as proof of durable routing within the project credential boundary, not proof of truth, model identity, independent inference, non-collusion, or human approval.
 
 See [the protocol reference](references/protocol.md) when implementing another client or diagnosing delivery.
 
-For hub-local session start, status-line stats, and `kxm init --hub`, see the `kxm-session` skill. That path is opt-in hub local, not local-only Runtime insights.
+For hub-local session start, status-line stats, and `kxm hub bind`, see the `kxm-session` skill.

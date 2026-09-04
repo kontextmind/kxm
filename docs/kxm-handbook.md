@@ -146,20 +146,19 @@ The Claude plugin includes the bundled MCP runtime and shared skill.
 
 ## Five-minute setup
 
-### 1. Create a workspace
+### 1. Initialize the project
 
-```powershell
-kxm --workspace C:\work\product\.kxm mesh init
+From the project directory:
+
+```text
+kxm init
 ```
 
-```bash
-kxm --workspace /work/product/.kxm mesh init
-```
+### 2. Start the hub in another terminal
 
-### 2. Configure separate credentials
-
-Use a high-entropy administrative token for hub operations and a different
-project token for agents. Never pass either token on a command line.
+`kxm hub start` is foreground. Keep that terminal running. Use a high-entropy
+administrative token for hub operations and a different project token for
+agents. Never pass either token on a command line.
 
 PowerShell:
 
@@ -168,7 +167,6 @@ $env:KXM_HOST = "127.0.0.1"
 $env:KXM_PORT = "7331"
 $env:KXM_AUTH_TOKEN = "<admin-token>"
 $env:KXM_PROJECT_TOKENS = '{"product":"<project-token>"}'
-$env:KXM_WORKSPACE_DIR = "C:\work\product\.kxm"
 kxm hub start
 ```
 
@@ -179,7 +177,6 @@ export KXM_HOST=127.0.0.1
 export KXM_PORT=7331
 export KXM_AUTH_TOKEN='<admin-token>'
 export KXM_PROJECT_TOKENS='{"product":"<project-token>"}'
-export KXM_WORKSPACE_DIR=/work/product/.kxm
 kxm hub start
 ```
 
@@ -187,15 +184,24 @@ Store service values in an ACL-protected, gitignored environment file or secret
 manager. If using Node's `--env-file`, keep the file path—not its contents—on
 the command line.
 
-### 3. Verify the hub
+### 3. Bind, then confirm the session
+
+```text
+kxm hub bind http://127.0.0.1:7331
+kxm session brief
+```
+
+PowerShell health check:
 
 ```powershell
-kxm --workspace C:\work\product\.kxm hub view
+kxm hub view
 Invoke-RestMethod http://127.0.0.1:7331/ready
 ```
 
+Bash:
+
 ```bash
-kxm --workspace /work/product/.kxm hub view
+kxm hub view
 curl --fail http://127.0.0.1:7331/ready
 ```
 
@@ -404,16 +410,17 @@ There is no generic `kxm gate run <name>`. Names in `gates.json` are descriptive
 unless one of the implemented commands above executes them. `github watch`
 posts an exact failed signal and exits `4` on timeout.
 
-### Mesh commands
+### Hub and session commands
 
 | Command | What it does |
 |---|---|
-| `kxm mesh init` | Creates empty standard workspace directories; never copies package dogfood configuration |
+| `kxm init` | Creates or validates a project; never copies package dogfood configuration |
+| `kxm hub start` | Starts the hub in the foreground and opens the local SQLite store |
+| `kxm hub bind <url>` | Binds this machine to a running hub |
 | `kxm hub view` | Checks `/health` and `/ready` |
-| `kxm dash` | Opens the real-time read-only metadata dashboard; prints one plain snapshot without a TTY |
-| `kxm hub start` | Starts the hub and local SQLite store |
 | `kxm hub stop [--wait-ms <n>]` | Requests generation-matched hub and worker shutdown |
-| `kxm mesh smoke [--real-pi]` | Runs the opt-in two-worker real-Pi release harness |
+| `kxm dash` | Opens the real-time read-only metadata dashboard; prints one plain snapshot without a TTY |
+| `kxm session brief` | Prints the hub-local session snapshot |
 
 ### Improvement command
 
@@ -567,14 +574,14 @@ Provide these plugin settings:
 
 | Setting | Example |
 |---|---|
-| Mesh server URL | `http://127.0.0.1:7331` |
+| KXM server URL | `http://127.0.0.1:7331` |
 | Authentication token | Project token, never the admin token |
 | Agent name | `claude-reviewer` or `fable` |
 | Agent purpose | `Independent review and UI/UX criticism` |
 | Project | `product` |
 
 Restart Claude Code after changing settings. Use `/mcp` to confirm the bundled
-`pi-mesh` MCP server connected, then call `kxm_list`.
+`kxm` MCP server connected, then call `kxm_list`.
 
 KXM does not choose the Claude model. Select the required Claude CLI/model
 profile separately; the mesh identity and model session remain different
@@ -818,13 +825,14 @@ remaining ordinary authenticated hub identities during fallback.
 
 | Key | Action |
 |---|---|
-| `Up` / `Down` | Select a panel; scroll on narrow terminals |
-| `Enter` / `Space` | Toggle selected panel |
-| `1`–`4` | Reveal Agents, Messages, Runs, or PIDs |
-| `PgUp` / `PgDn`, `Ctrl+U` / `Ctrl+D` | Scroll content |
-| `h` / `?` | Toggle help |
-| `Esc` | Close help, then quit |
-| `q` / `Ctrl+C` | Quit |
+| `1`–`6` | Agents, Tasks, Workflows, Plans, Inbox, or Procs |
+| `Tab` / `]` | Next tab |
+| `[` | Previous tab |
+| `←` / `→` | List pane / detail pane |
+| `↑` / `↓` | Select |
+| `PgUp` / `PgDn` | Scroll |
+| `h` | Toggle help |
+| `q` | Quit |
 
 Without a TTY, the command prints one ANSI-free snapshot. Use
 `kxm hub view --json` for a health result intended for automation.

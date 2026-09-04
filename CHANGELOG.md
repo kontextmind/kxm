@@ -18,8 +18,11 @@ All notable user-facing changes are documented here. The project follows [Semant
 - `kxm dash` is a tabbed list/detail dashboard (agents, tasks, workflows, plans,
   inbox, procs). `kxm harness list` / `kxm update` observe and update harnesses
   without a second preferences store.
-- Future slices do not add backwards-compat shims. Leftover Mesh names get
-  brakes (fail closed), not aliases.
+- First-run path is install, `kxm init`, foreground `kxm hub start`, `kxm hub
+  bind <url>`, `kxm session brief`, then `pi` and `/kxm hub`. `kxm hub bind`
+  arrives with A3.
+- The `kxm mesh` group is deleted. Commander reports it as an unknown command.
+- Future slices do not add backwards-compat shims.
 
 ### Added
 
@@ -29,7 +32,7 @@ All notable user-facing changes are documented here. The project follows [Semant
 - Hub-local session chrome: `kxm session brief [--status]`, Pi TUI picker and
   status line on new/fork sessions, `/kxm` (`status`/`hub`/`help`), skill
   `kxm-session`. `kxm init --hub existing|new` is opt-in; omit `--hub` for
-  local-only; SSH is not available. `/kxm hub` is the hub slash; `/mesh-status` is removed.
+  local-only; SSH is not available.
   Pi widget `ship` line shows git dirty/ahead vs verify/CI (does not run tests).
 - `kxm update --check` / `--kxm` notices and applies operator package updates.
   GitHub releases are the current install path; npm is for after the public
