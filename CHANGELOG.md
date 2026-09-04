@@ -12,6 +12,16 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- CI classifies each push and pull request: documentation-only changes run
+  only the docs lint job, while code changes run the full matrix. Every leg
+  still runs coverage: dropping instrumentation on Windows would be faster,
+  but `--experimental-test-coverage` sets `NODE_V8_COVERAGE`, which child
+  processes inherit and which changes their shutdown path, so an
+  uninstrumented Windows leg fails the worker pre-ack test on Node 24.
+  A newer push cancels an older pull-request run. `check:generated` runs in
+  its own job so a test failure cannot mask dist drift. `node_modules` is
+  cached per lockfile. Dependabot groups minor and patch npm updates and all
+  Actions updates.
 - Product identity is **KXM** (`@kontextmind/kxm`, plugin `kxm`). Hub CLI is
   `kxm hub start|view|stop`; live screens are `kxm dash`. Default database is
   `.kxm/state/kxm.db`. Agent tools use the `kxm_*` prefix; env vars use `KXM_*`.

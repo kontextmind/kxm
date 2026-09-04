@@ -4,13 +4,88 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+# One run per PR (or per ref on main). A newer push cancels the older PR run;
+# main runs are never cancelled so the badge reflects the latest main commit.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  changes:
+    name: Classify changes
+    # Aux jobs share the DOKS self-hosted Linux pool with the validate linux legs.
+    runs-on: [self-hosted, Linux, X64, doks]
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.classify.outputs.code }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Classify changed paths
+        id: classify
+        shell: bash
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "pull_request" ]; then
+            base="origin/$BASE_REF"
+          elif [ "$EVENT" = "push" ] && [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ] && git cat-file -e "$BEFORE_SHA" 2>/dev/null; then
+            base="$BEFORE_SHA"
+          else
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            echo "no comparable base; treating as code change"
+            exit 0
+          fi
+          files=$(git diff --name-only "$base...HEAD" || git diff --name-only "$base" HEAD)
+          echo "$files"
+          # Documentation-only paths. Anything else is code.
+          code=false
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            case "$f" in
+              *.md|docs/*|.kxm/assets/*|LICENSE|.github/ISSUE_TEMPLATE/*|.github/PULL_REQUEST_TEMPLATE.md|.github/dependabot.yml) ;;
+              *) code=true ;;
+            esac
+          done <<< "$files"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "code=$code"
+
+  docs:
+    name: Docs lint
+    # Aux jobs share the DOKS self-hosted Linux pool with the validate linux legs.
+    runs-on: [self-hosted, Linux, X64, doks]
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Lint documentation and version surfaces
+        run: npm run lint:docs && npm run check:versions
+
   validate:
     name: Validate (${{ matrix.runner.name }}, Node ${{ matrix.node }})
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ${{ matrix.runner.labels }}
     timeout-minutes: 30
     strategy:
@@ -36,12 +111,46 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
 
+      - name: Restore node_modules
+        id: modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: modules-${{ runner.os }}-node${{ matrix.node }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install locked dependencies
+        if: steps.modules.outputs.cache-hit != 'true'
+        run: npm ci
+
+      # Every leg runs coverage. Dropping instrumentation on Windows would be
+      # faster, but `--experimental-test-coverage` sets NODE_V8_COVERAGE, and
+      # child processes inherit it — which changes their shutdown path. Without
+      # it, the child in the worker pre-ack test dies with 0xC0000409
+      # (STATUS_STACK_BUFFER_OVERRUN) on the hosted Windows image instead of
+      # exiting 7, deterministically on Node 24. See issue for the real fix;
+      # until then coverage is load-bearing on Windows, not just a metric.
+      - name: Test with coverage, type-check, and inspect package
+        run: npm run validate:ci
+
+  generated:
+    name: Generated artifacts current
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    # Aux jobs share the DOKS self-hosted Linux pool with the validate linux legs.
+    runs-on: [self-hosted, Linux, X64, doks]
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
       - name: Install locked dependencies
         run: npm ci
 
-      - name: Test, type-check, and inspect package
-        run: npm run validate:ci
-
       - name: Verify generated runtime bundles are current
-        if: runner.os == 'Linux' && matrix.node == 24
         run: npm run check:generated
