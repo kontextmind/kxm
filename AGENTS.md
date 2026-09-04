@@ -15,6 +15,7 @@ Read this first. Then follow
   `kxm init --hub existing|new` is opt-in; default init is local-only.
 - DB: `.kxm/state/kxm.db`
 - Plugin / npm: `kxm` / `@kontextmind/kxm`
+- Punt wiki compile/ingest and npm update-source until a **public npm** release.
 
 ## Who does what
 
