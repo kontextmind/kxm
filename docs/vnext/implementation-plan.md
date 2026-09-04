@@ -160,7 +160,6 @@ Then, in the same change:
 Claude (Fable) proposes plan/slice edits. Grok applies them with the code or
 docs change that justified the update. Tests stay the verifier.
 
-
 ## Phase 0: contract package
 
 Deliver this directory, machine-readable schemas, a complete YAML fixture,
