@@ -15,12 +15,14 @@ You need:
 
 All agents in one pool must use the same hub URL, project token, and project name. Keep the hub/operator administrative token separate. Every active agent in that project must have a unique name.
 
-## Install the operator command
+## 1. Install
 
 Pi's Git package installation supplies the extension and Agent Skill but does
-not add `kxm` to `PATH`. For command-first operation, download the packed
-release through an authenticated GitHub CLI session and install that local
-tarball. Run `gh auth login` first if necessary.
+not add `kxm` to `PATH`. Download the packed release through an authenticated
+GitHub CLI session and install that local tarball. Run `gh auth login` first if
+necessary.
+
+PowerShell:
 
 ```powershell
 $version = "<release-version>"
@@ -29,6 +31,20 @@ $releaseDir = Join-Path $PWD ".kxm-release"
 New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
 gh release download "v$version" --repo kontextmind/kxm --pattern $asset --dir $releaseDir --clobber
 npm install --global --omit=peer (Join-Path $releaseDir $asset)
+pi install git:github.com/kontextmind/kxm
+kxm --help
+```
+
+Bash:
+
+```bash
+version='<release-version>'
+asset="kxm-${version}.tgz"
+mkdir -p .kxm-release
+gh release download "v${version}" --repo kontextmind/kxm \
+  --pattern "$asset" --dir .kxm-release --clobber
+npm install --global --omit=peer ".kxm-release/$asset"
+pi install git:github.com/kontextmind/kxm
 kxm --help
 ```
 
@@ -37,9 +53,19 @@ operator package is the versioned release tarball. To run from source instead,
 clone the repository, run `npm ci`, and use `node scripts/kxm.mjs` in place
 of `kxm`.
 
-## Start the hub
+## 2. Initialize the project
 
-With the packed operator command installed:
+```text
+kxm init
+```
+
+`kxm init` never copies the package repository's dogfood roster or workflows into a consumer workspace.
+
+## 3. Start the hub in another terminal
+
+`kxm hub start` is foreground. Keep that terminal running.
+
+PowerShell:
 
 ```powershell
 $env:KXM_AUTH_TOKEN = "replace-with-an-admin-token"
@@ -47,7 +73,7 @@ $env:KXM_PROJECT_TOKENS = '{"demo":"replace-with-a-demo-project-token"}'
 kxm hub start
 ```
 
-On macOS or Linux, use:
+Bash:
 
 ```bash
 export KXM_AUTH_TOKEN="replace-with-an-admin-token"
@@ -55,45 +81,31 @@ export KXM_PROJECT_TOKENS='{"demo":"replace-with-a-demo-project-token"}'
 kxm hub start
 ```
 
-For the source alternative, start the clone with `npm run hub`.
-
 A successful start prints:
 
 ```text
 kxm hub listening at http://127.0.0.1:7331; storage=<workspace>/.kxm/state/kxm.db
 ```
 
-In another terminal, verify the health endpoint:
+The default database survives hub restarts and is ignored by Git.
 
-```powershell
-Invoke-RestMethod http://127.0.0.1:7331/health
-```
-
-The response should contain `ok: true`. Check `/ready` as well when validating storage readiness. The default database survives hub restarts and is ignored by Git.
-
-The additive `kxm` command initializes empty project-owned workspace directories. After adding your reviewed workflow file, validate it without printing secrets:
-
-```powershell
-kxm mesh --json init
-kxm gate --json validate --file .kxm/config/workflows/product.json
-kxm hub --json view
-```
-
-`mesh init` never copies the package repository's dogfood roster or workflows into a consumer workspace.
-
-## Connect Pi agents
-
-Install the package once:
+## 4. Bind this machine to the hub
 
 ```text
-pi install git:github.com/kontextmind/kxm
+kxm hub bind http://127.0.0.1:7331
 ```
 
-If the repository is private, authenticate Git before running the install.
-This step configures Pi only; it does not install the operator command described
-above.
+## 5. Confirm the session
 
-Set an identity and start the first agent:
+```text
+kxm session brief
+```
+
+## 6. Open Pi and check the hub
+
+Set an identity and start the first agent. Do not give agents the administrative token.
+
+PowerShell:
 
 ```powershell
 $env:KXM_SERVER_URL = "http://127.0.0.1:7331"
@@ -104,6 +116,19 @@ $env:KXM_AGENT_PURPOSE = "Plans work and coordinates handoffs"
 pi
 ```
 
+Bash:
+
+```bash
+export KXM_SERVER_URL=http://127.0.0.1:7331
+export KXM_AUTH_TOKEN="replace-with-a-demo-project-token"
+export KXM_PROJECT=demo
+export KXM_AGENT_NAME=planner
+export KXM_AGENT_PURPOSE="Plans work and coordinates handoffs"
+pi
+```
+
+In Pi, run `/kxm hub`. It should show the connected identity and server.
+
 Open a second terminal, repeat the settings, and change only the identity:
 
 ```powershell
@@ -111,8 +136,6 @@ $env:KXM_AGENT_NAME = "reviewer"
 $env:KXM_AGENT_PURPOSE = "Reviews plans and code for correctness risks"
 pi
 ```
-
-Run `/kxm hub` in either session. It should show the connected identity and server.
 
 Ask the planner:
 
@@ -139,7 +162,7 @@ Configure these values when prompted:
 
 | Setting | Example |
 |---|---|
-| Mesh server URL | `http://127.0.0.1:7331` |
+| KXM server URL | `http://127.0.0.1:7331` |
 | Authentication token | The `demo` project token, not the administrative token |
 | Agent name | `claude-reviewer` |
 | Agent purpose | `Reviews implementation and tests` |

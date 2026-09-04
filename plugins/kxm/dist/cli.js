@@ -19594,15 +19594,6 @@ function sessionAssetDirs(assetsDir, sessionId) {
   const root = join4(assetsDir, "sessions", sessionId);
   return [root, join4(root, "inputs"), join4(root, "outputs")];
 }
-function standardAssetDirs(assetsDir) {
-  return [
-    join4(assetsDir, "retrospectives"),
-    join4(assetsDir, "workflows"),
-    join4(assetsDir, "sessions"),
-    join4(assetsDir, "improvements"),
-    join4(assetsDir, "generated")
-  ];
-}
 function rosterNames(configDir) {
   return [...loadRosterMap(configDir).values()].map((row) => String(row.name));
 }
@@ -35471,18 +35462,6 @@ async function cmdVnextRuntime(runtime, action) {
     return 1;
   }
 }
-async function cmdInit(runtime) {
-  const created = [];
-  for (const directory of [runtime.dirs.config, runtime.dirs.logs, runtime.dirs.assets, runtime.dirs.state, ...standardAssetDirs(runtime.dirs.assets)]) {
-    if (runtime.dryRun) created.push(directory);
-    else {
-      mkdirSync14(directory, { recursive: true });
-      created.push(directory);
-    }
-  }
-  print(runtime.io, runtime.json, { ok: true, command: "init", created, templates: false }, `initialized ${runtime.dirs.workspace}`);
-  return 0;
-}
 async function cmdValidate(runtime, fileFlag) {
   const worker = gateOf(runtime, "validate");
   const explicitFile = fileFlag?.trim();
@@ -36408,13 +36387,6 @@ async function cmdRetrospectiveExport(runtime, runId, options) {
   print(runtime.io, runtime.json, { ok: true, command: "retrospective export", ...written, reviewDecision: doc.reviewDecision }, `exported ${written.jsonPath}`);
   return 0;
 }
-async function cmdSmoke(runtime, realPi) {
-  if (runtime.env.KXM_SMOKE !== "1" && !realPi) {
-    print(runtime.io, runtime.json, { ok: true, skipped: true, reason: "KXM_SMOKE is not 1" }, "smoke skipped");
-    return 0;
-  }
-  return await spawnScript("smoke-multi-pi.mjs", { KXM_SMOKE: "1", ...workspaceEnv(runtime) });
-}
 function createProgram(ctx, result) {
   const bind = (action) => {
     return async function commandAction(...args) {
@@ -36594,12 +36566,6 @@ function createProgram(ctx, result) {
   });
   addGlobalOptions(program2.command("dash").description("Live screens for headless agents, tasks, workflows, and plans").option("--screen <name>", "agents, tasks, workflows, plans, inbox, or procs")).action(async function dashAction(options) {
     result.code = await cmdDash(runtimeFrom(ctx, this), options);
-  });
-  const mesh = addGlobalOptions(program2.command("mesh").description("Workspace init and smoke helpers"));
-  mesh.helpCommand("help", "Show mesh help");
-  addGlobalOptions(mesh.command("init").description("Create .kxm directories")).action(bind(cmdInit));
-  addGlobalOptions(mesh.command("smoke").description("Opt-in two-worker real-Pi release harness")).option("--real-pi", "Run even when KXM_SMOKE is unset").action(async function smokeAction(options) {
-    result.code = await cmdSmoke(runtimeFrom(ctx, this), Boolean(options.realPi));
   });
   return program2;
 }

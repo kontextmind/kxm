@@ -67,6 +67,11 @@ test("kxm routes agent, session, workflow, and gate tooling", async () => {
   assert.equal(await runCli(["agent", "nope"], {}, unknownCommand), 2);
 });
 
+test("kxm mesh is an unknown command", async () => {
+  const io = capture();
+  assert.equal(await runCli(["mesh"], {}, io), 2);
+});
+
 test("agent and gate CLI results share the worker envelope", async () => {
   const agentIo = capture();
   assert.equal(await runCli([
@@ -705,16 +710,11 @@ test("kxm migrate covers error paths and text output modes", async () => {
 test("init and validate work in an isolated workspace", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "pi-mesh-cli-"));
   try {
-    const io = capture();
     const isolated = join(cwd, "ws");
-    const initCode = await runCli(["mesh", "--json", "--workspace", isolated, "init"], {
-      KXM_CONFIG_DIR: join(cwd, "should-not-use"),
-    }, io, cwd);
-    assert.equal(initCode, 0);
-    assert.match(io.read().stdout, /"command":"init"/);
-    assert.equal(existsSync(join(isolated, "config")), true);
-    assert.equal(existsSync(join(cwd, "should-not-use")), false);
-    assert.equal(existsSync(join(isolated, "config", "agents.json")), false, "consumer init must not copy the package dogfood roster");
+    mkdirSync(join(isolated, "config"), { recursive: true });
+    mkdirSync(join(isolated, "assets"), { recursive: true });
+    mkdirSync(join(isolated, "state"), { recursive: true });
+    assert.equal(existsSync(join(isolated, "config", "agents.json")), false, "consumer workspace must not copy the package dogfood roster");
 
     writeFileSync(join(isolated, "config", "agents.json"), JSON.stringify({
       schema: "kxm.agents.v1",
@@ -1069,9 +1069,6 @@ test("live workflow start is signed and smoke skips without opt-in", async () =>
   }), 0);
   assert.match(start.read().stdout, /"runId":"run_cli"/);
   assert.match(signature, /^sha256=[a-f0-9]{64}$/);
-  const smoke = capture();
-  assert.equal(await runCli(["mesh", "--json", "smoke"], {}, smoke), 0);
-  assert.match(smoke.read().stdout, /"skipped":true/);
 });
 
 test("release workflow retries reuse one explicit delivery identifier", () => {
@@ -1273,7 +1270,7 @@ test("invalid and unavailable operator commands fail safely with stable exit cod
     assert.equal(await runCli(["workflow", "--json", "nope"], {}, capture(), cwd), 2);
     assert.equal(await runCli(["workflow", "--json", "export"], {}, capture(), cwd), 2);
     assert.equal(await runCli(["workflow", "--json", "export", "run_missing", "--input", join(cwd, "missing.json")], {}, capture(), cwd), 1);
-    assert.equal(await runCli(["mesh", "--json", "not-a-command"], {}, capture(), cwd), 2);
+    assert.equal(await runCli(["mesh"], {}, capture(), cwd), 2);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

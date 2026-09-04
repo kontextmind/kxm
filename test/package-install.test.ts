@@ -75,17 +75,23 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
     assert.equal(installed.status, 0, `${installed.stderr}\n${installed.stdout}`);
 
     const packageRoot = join(consumer, "node_modules", "@kontextmind", "kxm");
-    const cli = spawnSync(process.execPath, [join(packageRoot, "scripts", "kxm.mjs"), "mesh", "help"], {
+    const cli = spawnSync(process.execPath, [join(packageRoot, "scripts", "kxm.mjs"), "hub", "help"], {
       cwd: consumer,
       encoding: "utf8",
     });
     assert.equal(cli.status, 0, `${cli.stderr}\n${cli.stdout}`);
-    assert.match(cli.stdout, /Usage: kxm mesh/);
+    assert.match(cli.stdout, /Usage: kxm hub/);
     assert.doesNotMatch(cli.stderr, /ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING/);
 
-    const installedBin = runNpm(["exec", "--offline", "--", "kxm", "mesh", "help"], consumer);
+    const installedBin = runNpm(["exec", "--offline", "--", "kxm", "hub", "help"], consumer);
     assert.equal(installedBin.status, 0, `${installedBin.stderr}\n${installedBin.stdout}`);
-    assert.match(installedBin.stdout, /Usage: kxm mesh/);
+    assert.match(installedBin.stdout, /Usage: kxm hub/);
+
+    const unknownMesh = spawnSync(process.execPath, [join(packageRoot, "scripts", "kxm.mjs"), "mesh"], {
+      cwd: consumer,
+      encoding: "utf8",
+    });
+    assert.equal(unknownMesh.status, 2, `${unknownMesh.stderr}\n${unknownMesh.stdout}`);
 
     const vnextProject = join(consumer, "vnext-project");
     const packedState = join(consumer, "kxm-state");
@@ -290,40 +296,9 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
       ? join(globalPrefix, "kxm.cmd")
       : join(globalPrefix, "bin", "kxm");
     assert.equal(existsSync(operatorBin), true);
-    const globalCli = runOperatorBin(operatorBin, ["mesh", "help"], consumer);
+    const globalCli = runOperatorBin(operatorBin, ["hub", "help"], consumer);
     assert.equal(globalCli.status, 0, `${globalCli.stderr}\n${globalCli.stdout}`);
-    assert.match(globalCli.stdout, /Usage: kxm mesh/);
-
-    const dryRun = spawnSync(process.execPath, [
-      join(packageRoot, "scripts", "kxm.mjs"),
-      "--dry-run",
-      "--json",
-      "mesh",
-      "init",
-    ], { cwd: consumer, encoding: "utf8" });
-    assert.equal(dryRun.status, 0, `${dryRun.stderr}\n${dryRun.stdout}`);
-    const dryRunPayload = JSON.parse(dryRun.stdout) as {
-      ok: boolean;
-      command: string;
-      created: string[];
-      templates: boolean;
-    };
-    assert.deepEqual(dryRunPayload, {
-      ok: true,
-      command: "init",
-      created: [
-        join(consumer, ".kxm", "config"),
-        join(consumer, ".kxm", "logs"),
-        join(consumer, ".kxm", "assets"),
-        join(consumer, ".kxm", "state"),
-        join(consumer, ".kxm", "assets", "retrospectives"),
-        join(consumer, ".kxm", "assets", "workflows"),
-        join(consumer, ".kxm", "assets", "sessions"),
-        join(consumer, ".kxm", "assets", "improvements"),
-        join(consumer, ".kxm", "assets", "generated"),
-      ],
-      templates: false,
-    });
+    assert.match(globalCli.stdout, /Usage: kxm hub/);
 
     const environment = { ...process.env };
     for (const key of [
