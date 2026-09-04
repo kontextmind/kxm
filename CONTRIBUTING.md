@@ -23,12 +23,22 @@ Run the main checks:
 ```powershell
 npm run test:coverage
 npm run check
-npm run check:generated
 npm run validate:claude
 npm pack --dry-run
 ```
 
-`npm run validate` runs the complete local release gate.
+`npm run verify` now includes `check:generated` (staged `dist` vs the current build). `npm run validate` runs the complete local release gate.
+
+### Coverage ratchet
+
+The three `--test-coverage-*` thresholds in `package.json` are the measured whole-tree values at the time they were set. A PR may raise any of them. No PR may lower one. A PR that drops coverage below the gate adds tests; it does not touch the flag. If a later run fails by a fraction with no code change, the answer is a test fix or a raise elsewhere, never a lowered flag. 95/80/90 is a milestone, not the gate.
+
+### Coverage excludes
+
+`--test-coverage-include=plugins/kxm/src/**/*.ts` covers the source tree. An exclude needs a reason that is not "hard to test":
+
+- `plugins/kxm/src/server.ts`: hub process entry. Executed only as the esbuild bundle `dist/server.js` spawned via `scripts/kxm-hub.mjs`. Child execution attributes to `dist`, never to this source file. No test imports it.
+- `plugins/kxm/src/mcp-server.ts`: MCP stdio entry, bundled by `build:mcp` and exercised as a spawned process. Same attribution reason. No test imports it.
 
 ## Making a change
 
@@ -49,9 +59,10 @@ npm run build
 
 Commit the corresponding files under `plugins/kxm/dist/` with the source change. npm and Claude marketplace installations use these self-contained artifacts and must not require development dependencies or runtime TypeScript stripping.
 
-After committing the generated files, run `npm run check:generated`. It rebuilds
-the runtimes and fails if any required artifact is missing, untracked, or
-changed by the build.
+After building, `git add plugins/kxm/dist`, then run `npm run verify`. The
+generated-artifact check rebuilds the runtimes and compares the built files
+to the staged copy; it fails if any required artifact is missing, untracked,
+or differs from the index.
 
 Do not edit generated runtime files by hand.
 
