@@ -58,7 +58,12 @@ function claimPidFile() {
   throw new Error("could not claim the KXM hub PID file");
 }
 
-claimPidFile();
+try {
+  claimPidFile();
+} catch (error) {
+  process.stderr.write(`kxm hub: ${error.message}. Run kxm hub stop before starting another hub.\n`);
+  process.exit(1);
+}
 rmSync(controlPath, { force: true });
 function cleanupPid() { try { const record = JSON.parse(readFileSync(pidPath, "utf8")); if (record.pid === process.pid) rmSync(pidPath, { force: true }); } catch { /* replaced */ } }
 process.once("exit", cleanupPid);

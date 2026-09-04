@@ -1,6 +1,6 @@
 ---
 name: kxm-session
-description: Set up a local KXM hub session brief — recent tasks/plans, status-line stats, and harness chrome. Use when starting a new session, running kxm init --hub, or configuring a status bar. Local-only Runtime insights and SSH/remote hubs are after MVP.
+description: Set up a local KXM hub session brief — recent tasks/plans, status-line stats, and harness chrome. Use when starting a new session, running kxm init, kxm hub bind, or configuring a status bar. Local-only Runtime insights and SSH/remote hubs are after MVP.
 ---
 
 # KXM session (hub local)
@@ -11,32 +11,22 @@ MVP is a **local hub** on this machine. Work is agents and workflows. Do not con
 
 | Track | When | What this skill does |
 |---|---|---|
-| **Local-only** | `kxm init` with no `--hub` | Skip hub start, skip session brief, skip status-line chrome |
-| **Hub local (MVP)** | `kxm init --hub existing` or `--hub new` | Use or start a loopback hub with this project's Git config; session brief + status line |
+| **Local-only** | `kxm init` (project-only) | Skip hub start, skip session brief, skip status-line chrome |
+| **Hub local (MVP)** | `kxm hub bind <url>` | Bind this host to a running loopback hub; session brief + status line |
 | **SSH / HTTPS remote** | After MVP | Fail closed. Not available |
 
 In-harness Pi can attach to a local hub. Local Runtime workflow insights (`kxm dash` from the vNext event store) are after MVP.
 
-## Init (hub opt-in)
+## First run (hub local)
 
 ```text
-kxm init                  # local-only; no hub
-kxm init --hub existing   # existing hub, existing or new project config
-kxm init --hub new        # new local hub, existing Git project config
-kxm init --hub existing --hub-url http://127.0.0.1:7331
-```
-
-`--hub ssh` / remote install is not available. Keep `.kxm/config` in Git; do not recopy templates onto an existing project.
-
-New local hub:
-
-```text
-kxm hub start
-kxm hub view
+kxm init
+kxm hub start                 # other terminal
+kxm hub bind <url>
 kxm session brief
 ```
 
-Existing hub: set `KXM_SERVER_URL` (and project token) to that hub, then `kxm hub view` / `kxm session brief`.
+Keep `.kxm/config` in Git; do not recopy templates onto an existing project. `KXM_SERVER_URL` still overrides a bound URL.
 
 ## Session brief
 
