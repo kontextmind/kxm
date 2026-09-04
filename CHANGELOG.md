@@ -23,7 +23,7 @@ All notable user-facing changes are documented here. The project follows [Semant
 - Hub-local session chrome: `kxm session brief [--status]`, Pi TUI picker and
   status line on new/fork sessions, `/kxm` (`status`/`hub`/`help`), skill
   `kxm-session`. `kxm init --hub existing|new` is opt-in; omit `--hub` for
-  local-only; SSH is not available. `/kxm hub` replaces `/mesh-status`.
+  local-only; SSH is not available. `/kxm hub` is the hub slash; `/mesh-status` is removed.
   Pi widget `ship` line shows git dirty/ahead vs verify/CI (does not run tests).
 - `kxm update --check` / `--kxm` notices and applies operator package updates.
   GitHub releases are the current install path; npm is for after the public

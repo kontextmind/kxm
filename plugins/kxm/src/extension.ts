@@ -268,7 +268,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
   }
 
   function requireClient(): MeshClient {
-    if (!client?.agent) throw new Error("pi-mesh is not connected; check KXM_SERVER_URL and /mesh-status");
+    if (!client?.agent) throw new Error("kxm hub is not connected; check KXM_SERVER_URL and /kxm hub");
     return client;
   }
 
@@ -1180,13 +1180,6 @@ export default function piMeshExtension(pi: ExtensionAPI) {
         confidence: params.confidence,
         evidenceRefs: params.evidenceRefs,
       })));
-    },
-  });
-
-  pi.registerCommand("mesh-status", {
-    description: "Deprecated alias of /kxm hub",
-    handler: async (_args, ctx) => {
-      await showKxmHub(ctx);
     },
   });
 

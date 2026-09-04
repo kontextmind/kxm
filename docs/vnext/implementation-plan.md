@@ -99,17 +99,14 @@ It does not replace the phase gates below.
 - Hub-local session brief: `kxm session brief`, Pi TUI picker + status/widget
   on `startup`/`new`/`fork`, `/kxm` (`status`/`hub`/`help` completions),
   skill `kxm-session`, `kxm init --hub existing|new` (SSH fail-closed).
-  `/kxm hub` wraps hub view + online agents; `/mesh-status` is a deprecated alias.
+  `/kxm hub` wraps hub view + online agents. `/mesh-status` is removed (brakes).
   Slash inspects via the same brief snapshot as the CLI. No message bodies.
 
 ### Still open
 
-- **Come back (not gates yet):** session-ready `/new`/`/fork` as a failing test;
-  brake `kxm mesh` / `/mesh-status` (fail closed, no alias); rename `MeshClient`;
-  cleanup-before-push as a script (Windows `nul` junk files). Operator docs no
-  longer open as Pi Mesh Comms; `/kxm hub` replaced `/mesh-status` in runbooks.
-  Ship chrome is git dirty/ahead plus `npm run verify` / CI names — it does not
-  run verify.
+- **Next PR (not this one):** fold or drop `kxm mesh` (`init`/`smoke`); rename
+  `MeshClient` / `mesh:offline`; session-ready `/new`/`/fork` as a failing test.
+  This PR brakes `/mesh-status` (removed) and ignores Windows `nul` via gitignore.
 - Rebuild generated `plugins/kxm/dist` and run full `npm test` after the latest
   CLI rename.
 - Docs sweep: operator pages updated to `kxm hub start|view|stop` and `kxm dash`;

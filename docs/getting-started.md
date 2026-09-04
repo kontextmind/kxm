@@ -29,7 +29,7 @@ $releaseDir = Join-Path $PWD ".kxm-release"
 New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
 gh release download "v$version" --repo kontextmind/kxm --pattern $asset --dir $releaseDir --clobber
 npm install --global --omit=peer (Join-Path $releaseDir $asset)
-kxm mesh help
+kxm --help
 ```
 
 Do not substitute a global `git+https` npm install; the supported global
