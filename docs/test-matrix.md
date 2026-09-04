@@ -40,7 +40,7 @@ npm run validate
 | Safe diagnostic classification and redaction | `test/diagnostics.test.ts`, `test/extension.test.ts`, `test/hub-api.test.ts` |
 | Operator CLI init/validate/export/watch | `test/cli.test.ts`, `test/github-watch.test.ts` |
 | Local and isolated-global packed npm CLI plus hub runtimes | `test/package-install.test.ts` |
-| Required generated runtimes are present, tracked, and unchanged after build | `scripts/check-generated.mjs`, `test/generated-artifacts.test.ts` |
+| Required generated runtimes are present, tracked, and match the staged copy after build | `scripts/check-generated.mjs`, `test/generated-artifacts.test.ts` |
 | Retrospective export snapshots, metadata-only provenance audit, body allowlisting, degradation records, and v1 compatibility | `test/retrospective.test.ts` |
 | Interrupted-worker continue fallback, exact run-bound recovery, unbound telemetry isolation, and one-turn durable replay | `test/worker.test.ts`, `test/recovery.test.ts`, `test/extension.test.ts` |
 | Hub-owned workflow affinity; integrated hub→extension→supervisor→replacement replay; pre-ack default/run/cross-run routing; one-child session-dir swapping; stable ordinary context; LRU retention; and corrupt-state/link containment | `test/hub-api.test.ts`, `test/extension.test.ts`, `test/worker.test.ts`, `test/cli.test.ts` |
@@ -81,7 +81,7 @@ The CI minimums are 95% lines, 80% branches, and 90% functions across the measur
 | Long-lived headless coordinator | `scripts/kxm-worker.mjs` | Restart limits, spawn failure, collision-resistant ownership, exact resource and tool loading, raw-output isolation, bounded RPC framing, bounded drain, hung-tool recovery, provider/model fallback, and `--continue` fallback are automated; the opt-in real-Pi gate verifies two workers, discovery, request/reply, fanout, durable restart/resume, journal, and checkpoint |
 | GitHub check signal adapter | `plugins/kxm/src/github-watch.ts` | Deterministic pagination, conclusion, retry, and per-wait delivery-generation states in `test/github-watch.test.ts` |
 | Operator CLI | `scripts/kxm.mjs` | Isolated workspace commands in `test/cli.test.ts`; the packed artifact is installed locally and with the documented global `--omit=peer` path by `test/package-install.test.ts` |
-| Hub-local session brief | `plugins/kxm/src/session-work.ts`, `test/session-work.test.ts`, `test/cli.test.ts` | Status line and task/plan lists from hub SQLite without message bodies; `init --hub ssh` fails closed |
+| Hub-local session brief | `plugins/kxm/src/session-work.ts`, `test/session-work.test.ts`, `test/cli.test.ts` | Status line and task/plan lists from hub SQLite without message bodies; `init --hub` is an unknown option; `hub bind` reports on/off/unknown |
 | Native-free package install and Windows `pi.cmd` worker launch | `package.json`, `test/store.test.ts`, `test/worker.test.ts` | CI runs on Ubuntu and Windows at Node 22.19 and Node 24; the Windows test executes a command-script fixture through `ComSpec` |
 
 ## Manual release checks

@@ -12,6 +12,21 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- Coverage include inverted to `plugins/kxm/src/**/*.ts`. Excludes are only
+  `server.ts` and `mcp-server.ts` (spawned bundles attribute to `dist`; see
+  CONTRIBUTING). Measured on Windows Node 22.21.0 locally (one leg; CI legs
+  were not read because this unit does not push): lines 93.75, branches 80.87,
+  functions 93.53. Thresholds set to 93/80/93 (per-leg minimum truncated to a
+  whole percent). **This is not a weakened gate**: the old 95/80/90 measured 13
+  hand-listed files, while 93/80/93 measures all 42 non-excluded files, so the
+  enforced surface roughly triples and functions actually rises from 90 to 93.
+  Lines reads lower only because the denominator changed. From here the values
+  may only ratchet up; 95/80/90 is a milestone, not the gate. `npm run verify` now ends with `check:generated`, which diffs
+  built `dist` against the staged copy. `kxm-hub` and `kxm-worker` bins are
+  removed (`kxm` remains; scripts still ship). Peers
+  `@earendil-works/pi-coding-agent` and `typebox` are optional, pinned as
+  devDependencies at lockfile versions 0.84.3 and 1.3.19.
+  `.kxm/config/workflows/provenance-quorum.json` now ships in `files`.
 - CI classifies each push and pull request: documentation-only changes run
   only the docs lint job, while code changes run the full matrix. Every leg
   still runs coverage: dropping instrumentation on Windows would be faster,
@@ -29,8 +44,13 @@ All notable user-facing changes are documented here. The project follows [Semant
   inbox, procs). `kxm harness list` / `kxm update` observe and update harnesses
   without a second preferences store.
 - First-run path is install, `kxm init`, foreground `kxm hub start`, `kxm hub
-  bind <url>`, `kxm session brief`, then `pi` and `/kxm hub`. `kxm hub bind`
-  arrives with A3.
+  bind <url>`, `kxm session brief`, then `pi` and `/kxm hub`. Hub start prints
+  a cached update notice before spawn and refreshes in the background; a first
+  start with an empty cache may print the notice only after the hub is up.
+  Malformed `.kxm/update.yaml` is a stderr warning and does not block start;
+  `kxm update` still fails closed.
+- **Breaking:** `kxm init --hub` and `--hub-url` are unknown options. Bind
+  with `kxm hub bind <url>`; remove the binding with `kxm hub unbind`.
 - The `kxm mesh` group is deleted. Commander reports it as an unknown command.
 - **Breaking renames (A2, no aliases):** wire headers `x-mesh-agent-id`,
   `x-mesh-agent-key`, `x-mesh-delivery-id`, and `x-mesh-events-mode` are now
@@ -57,9 +77,12 @@ All notable user-facing changes are documented here. The project follows [Semant
   cost/insights, plan hygiene).
 - Hub-local session chrome: `kxm session brief [--status]`, Pi TUI picker and
   status line on new/fork sessions, `/kxm` (`status`/`hub`/`help`), skill
-  `kxm-session`. `kxm init --hub existing|new` is opt-in; omit `--hub` for
-  local-only; SSH is not available.
+  `kxm-session`. `kxm hub bind <url>` / `kxm hub unbind` persist a host-level
+  hub URL; `kxm init` is project-only.
   Pi widget `ship` line shows git dirty/ahead vs verify/CI (does not run tests).
+- `kxm hub bind <url>` writes `kxm.hub-binding.v1` and probes `/health` in
+  300 ms (`on` / `off` / `unknown`). Hub listening line reports `auth=token`
+  or `auth=none`.
 - `kxm update --check` / `--kxm` notices and applies operator package updates.
   GitHub releases are the current install path; npm is for after the public
   package. Git `.kxm/update.yaml` `auto` applies on `kxm update`.

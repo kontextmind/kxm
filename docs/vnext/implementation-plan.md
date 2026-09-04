@@ -82,9 +82,10 @@ It does not replace the phase gates below.
 - CLI Fable/Codex/Kimi critiques are artifacts plus human signoff, never
   hub `peer-reply` evidence.
 - Workflow fixture ids: `kxm-provenance`, `kxm-v04` (not `pi-extensions-*`).
-- **Hub local is MVP.** `kxm init` is local-only unless `--hub existing|new`.
-  Session brief, Pi status line, and `/kxm` read the local hub snapshot.
-  Local Runtime in-harness insights and SSH/HTTPS hub install are after MVP.
+- **Hub local is MVP.** `kxm init` is project-only. `kxm hub bind <url>` binds
+  this host to a running hub. Session brief, Pi status line, and `/kxm` read
+  the local hub snapshot. Local Runtime in-harness insights and SSH/HTTPS hub
+  install are after MVP.
 - **Public npm first.** Do not run wiki compile/lint/ingest for this repo, and
   do not treat `source: npm` as the default updater, until `@kontextmind/kxm`
   is a public npm release. Until then: GitHub release tarballs + docs/Tracking.
@@ -107,9 +108,18 @@ It does not replace the phase gates below.
   on the network.
 - Hub-local session brief: `kxm session brief`, Pi TUI picker + status/widget
   on `startup`/`new`/`fork`, `/kxm` (`status`/`hub`/`help` completions),
-  skill `kxm-session`, `kxm init --hub existing|new` (SSH fail-closed).
+  skill `kxm-session`, `kxm hub bind <url>` / `kxm hub unbind`.
   `/kxm hub` wraps hub view + online agents. `/mesh-status` is removed (brakes).
   Slash inspects via the same brief snapshot as the CLI. No message bodies.
+- `kxm hub bind <url>` / `unbind` persist a host-level `hub-binding.json`.
+  `kxm init --hub` / `--hub-url` are unknown options. Hub start prints a cached
+  update notice, refreshes in the background, and warns (does not exit 2) on a
+  malformed `.kxm/update.yaml`. Startup reports `auth=token|none`.
+- Coverage include inverted to `plugins/kxm/src/**/*.ts`; excludes are only
+  `server.ts` and `mcp-server.ts` (spawned bundles attribute to `dist`).
+  Thresholds are measured whole-tree values and may only ratchet up.
+  `npm run verify` includes `check:generated`, which diffs built `dist` against
+  the staged copy. `check:generated` also runs on every CI validate leg.
 
 ### Still open
 
@@ -117,6 +127,11 @@ It does not replace the phase gates below.
   `kxm update` source. Not before.
 - **Next PR:** fold or drop `kxm mesh` (`init`/`smoke`); rename `MeshClient` /
   `mesh:offline`; session-ready `/new`/`/fork` as a failing test.
+- Coverage only lists modules some test loaded; a future source file with zero
+  imports from tests will not drag the number down. A test that imports every
+  non-excluded module belongs before the next ratchet raise, not as a B1 add.
+- The standalone `generated` CI job is redundant with the validate legs; drop
+  it in B2 together with a `protect-main` ruleset edit.
 - Rebuild generated `plugins/kxm/dist` and run full `npm test` after the latest
   CLI rename.
 - Docs sweep: operator pages updated to `kxm hub start|view|stop` and `kxm dash`;
