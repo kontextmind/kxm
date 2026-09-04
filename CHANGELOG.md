@@ -17,8 +17,11 @@ All notable user-facing changes are documented here. The project follows [Semant
   CONTRIBUTING). Measured on Windows Node 22.21.0 locally (one leg; CI legs
   were not read because this unit does not push): lines 93.75, branches 80.87,
   functions 93.53. Thresholds set to 93/80/93 (per-leg minimum truncated to a
-  whole percent). Those values may only ratchet up; 95/80/90 is a milestone,
-  not the gate. `npm run verify` now ends with `check:generated`, which diffs
+  whole percent). **This is not a weakened gate**: the old 95/80/90 measured 13
+  hand-listed files, while 93/80/93 measures all 42 non-excluded files, so the
+  enforced surface roughly triples and functions actually rises from 90 to 93.
+  Lines reads lower only because the denominator changed. From here the values
+  may only ratchet up; 95/80/90 is a milestone, not the gate. `npm run verify` now ends with `check:generated`, which diffs
   built `dist` against the staged copy. `kxm-hub` and `kxm-worker` bins are
   removed (`kxm` remains; scripts still ship). Peers
   `@earendil-works/pi-coding-agent` and `typebox` are optional, pinned as
