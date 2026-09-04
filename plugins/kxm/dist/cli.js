@@ -14778,9 +14778,9 @@ var require__ = __commonJS({
 // plugins/kxm/src/cli.ts
 import { spawn as spawn2, spawnSync as spawnSync6 } from "node:child_process";
 import { createHmac as createHmac3, randomUUID as randomUUID6 } from "node:crypto";
-import { existsSync as existsSync13, mkdirSync as mkdirSync14, mkdtempSync as mkdtempSync2, readFileSync as readFileSync12, readdirSync as readdirSync5, writeFileSync as writeFileSync12 } from "node:fs";
+import { existsSync as existsSync14, mkdirSync as mkdirSync14, mkdtempSync as mkdtempSync2, readFileSync as readFileSync13, readdirSync as readdirSync5, writeFileSync as writeFileSync12 } from "node:fs";
 import { tmpdir as tmpdir2 } from "node:os";
-import { basename as basename3, join as join20, resolve as resolve11 } from "node:path";
+import { basename as basename3, join as join21, resolve as resolve11 } from "node:path";
 import { DatabaseSync as DatabaseSync4 } from "node:sqlite";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 
@@ -28365,7 +28365,6 @@ async function runMeshTui(input) {
 import { spawnSync } from "node:child_process";
 
 // plugins/kxm/src/kxm-update.ts
-var import_yaml = __toESM(require_dist(), 1);
 import { existsSync as existsSync4, readFileSync as readFileSync5, writeFileSync as writeFileSync6, mkdirSync as mkdirSync7 } from "node:fs";
 import { join as join11 } from "node:path";
 var KXM_UPDATE_SCHEMA = "kxm.update.v1";
@@ -28399,35 +28398,6 @@ function compareSemver(left, right) {
     if (a[i] !== b2[i]) return a[i] < b2[i] ? -1 : 1;
   }
   return 0;
-}
-function loadKxmUpdateConfig(projectRoot) {
-  const path5 = join11(projectRoot, ".kxm", "update.yaml");
-  if (!existsSync4(path5)) return { schema: KXM_UPDATE_SCHEMA, auto: false, source: "github" };
-  let parsed;
-  try {
-    parsed = (0, import_yaml.parse)(readFileSync5(path5, "utf8"));
-  } catch {
-    throw new KxmUpdateConfigError(".kxm/update.yaml is not valid YAML");
-  }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new KxmUpdateConfigError(".kxm/update.yaml must be a mapping");
-  }
-  const row = parsed;
-  const allowed = /* @__PURE__ */ new Set(["schema", "auto", "source"]);
-  for (const key of Object.keys(row)) {
-    if (!allowed.has(key)) throw new KxmUpdateConfigError(`.kxm/update.yaml unknown field ${key}`);
-  }
-  if (row.schema !== KXM_UPDATE_SCHEMA) {
-    throw new KxmUpdateConfigError(".kxm/update.yaml schema must be kxm.update.v1");
-  }
-  if (typeof row.auto !== "boolean") {
-    throw new KxmUpdateConfigError(".kxm/update.yaml auto must be a boolean");
-  }
-  const source = row.source === void 0 ? "github" : row.source;
-  if (source !== "npm" && source !== "github") {
-    throw new KxmUpdateConfigError(".kxm/update.yaml source must be npm or github");
-  }
-  return { schema: KXM_UPDATE_SCHEMA, auto: row.auto, source };
 }
 function formatKxmUpdateNotice(notice) {
   if (!notice.available) return notice.message;
@@ -28730,13 +28700,47 @@ function formatHubInitNextSteps(mode, input = {}) {
   ].join("\n");
 }
 
+// plugins/kxm/src/kxm-update-config.ts
+var import_yaml = __toESM(require_dist(), 1);
+import { existsSync as existsSync5, readFileSync as readFileSync6 } from "node:fs";
+import { join as join12 } from "node:path";
+function loadKxmUpdateConfig(projectRoot) {
+  const path5 = join12(projectRoot, ".kxm", "update.yaml");
+  if (!existsSync5(path5)) return { schema: KXM_UPDATE_SCHEMA, auto: false, source: "github" };
+  let parsed;
+  try {
+    parsed = (0, import_yaml.parse)(readFileSync6(path5, "utf8"));
+  } catch {
+    throw new KxmUpdateConfigError(".kxm/update.yaml is not valid YAML");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new KxmUpdateConfigError(".kxm/update.yaml must be a mapping");
+  }
+  const row = parsed;
+  const allowed = /* @__PURE__ */ new Set(["schema", "auto", "source"]);
+  for (const key of Object.keys(row)) {
+    if (!allowed.has(key)) throw new KxmUpdateConfigError(`.kxm/update.yaml unknown field ${key}`);
+  }
+  if (row.schema !== KXM_UPDATE_SCHEMA) {
+    throw new KxmUpdateConfigError(".kxm/update.yaml schema must be kxm.update.v1");
+  }
+  if (typeof row.auto !== "boolean") {
+    throw new KxmUpdateConfigError(".kxm/update.yaml auto must be a boolean");
+  }
+  const source = row.source === void 0 ? "github" : row.source;
+  if (source !== "npm" && source !== "github") {
+    throw new KxmUpdateConfigError(".kxm/update.yaml source must be npm or github");
+  }
+  return { schema: KXM_UPDATE_SCHEMA, auto: row.auto, source };
+}
+
 // plugins/kxm/src/vnext-config.ts
 var import__ = __toESM(require__(), 1);
 var import_yaml3 = __toESM(require_dist(), 1);
 import { spawnSync as spawnSync3 } from "node:child_process";
 import { createHash as createHash3 } from "node:crypto";
-import { existsSync as existsSync5, lstatSync as lstatSync2, readFileSync as readFileSync6, readdirSync as readdirSync3, realpathSync as realpathSync2 } from "node:fs";
-import { basename, dirname as dirname3, extname, isAbsolute as isAbsolute2, join as join12, relative as relative2, resolve as resolve4, sep } from "node:path";
+import { existsSync as existsSync6, lstatSync as lstatSync2, readFileSync as readFileSync7, readdirSync as readdirSync3, realpathSync as realpathSync2 } from "node:fs";
+import { basename, dirname as dirname3, extname, isAbsolute as isAbsolute2, join as join13, relative as relative2, resolve as resolve4, sep } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // plugins/kxm/src/vnext-template.ts
@@ -29217,7 +29221,7 @@ var VnextConfigError = class extends Error {
   }
 };
 var PACKAGE_ROOT = resolve4(dirname3(fileURLToPath2(import.meta.url)), "../../..");
-var DEFAULT_SCHEMA_DIR = join12(PACKAGE_ROOT, "schemas", "vnext");
+var DEFAULT_SCHEMA_DIR = join13(PACKAGE_ROOT, "schemas", "vnext");
 var RESOURCE_SCHEMA = Object.freeze({
   project: { identity: "kxm.project.v1", file: "project.schema.json" },
   repository: { identity: "kxm.repository.v1", file: "repository.schema.json" },
@@ -29343,7 +29347,7 @@ function parseRestrictedYaml(input, label = "<yaml>", limits = VNEXT_YAML_LIMITS
   return value;
 }
 function readJsonObject(file) {
-  const parsed = JSON.parse(readFileSync6(file, "utf8"));
+  const parsed = JSON.parse(readFileSync7(file, "utf8"));
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`${file} is not a JSON object`);
   return parsed;
 }
@@ -29361,10 +29365,10 @@ var VnextSchemaRegistry = class {
   constructor(schemasDir = DEFAULT_SCHEMA_DIR) {
     this.schemasDir = resolve4(schemasDir);
     this.ajv = new import__.Ajv2020({ allErrors: true, strict: true, strictRequired: false });
-    const common = readJsonObject(join12(this.schemasDir, "common.schema.json"));
+    const common = readJsonObject(join13(this.schemasDir, "common.schema.json"));
     this.ajv.addSchema(common);
     for (const definition of Object.values(RESOURCE_SCHEMA)) {
-      this.ajv.addSchema(readJsonObject(join12(this.schemasDir, definition.file)));
+      this.ajv.addSchema(readJsonObject(join13(this.schemasDir, definition.file)));
     }
     const localBindingsFile = "local-repository-bindings.schema.json";
     const templateProvenanceFile = "template-provenance.schema.json";
@@ -29373,13 +29377,13 @@ var VnextSchemaRegistry = class {
     const migrationDecisionFile = "migration-decision.schema.json";
     const migrationReceiptFile = "migration-receipt.schema.json";
     const permissionDiffFile = "permission-diff.schema.json";
-    this.ajv.addSchema(readJsonObject(join12(this.schemasDir, localBindingsFile)));
-    this.ajv.addSchema(readJsonObject(join12(this.schemasDir, templateProvenanceFile)));
-    this.ajv.addSchema(readJsonObject(join12(this.schemasDir, initOperationFile)));
-    this.ajv.addSchema(readJsonObject(join12(this.schemasDir, migrationPlanFile)));
-    this.ajv.addSchema(readJsonObject(join12(this.schemasDir, migrationDecisionFile)));
-    this.ajv.addSchema(readJsonObject(join12(this.schemasDir, migrationReceiptFile)));
-    this.ajv.addSchema(readJsonObject(join12(this.schemasDir, permissionDiffFile)));
+    this.ajv.addSchema(readJsonObject(join13(this.schemasDir, localBindingsFile)));
+    this.ajv.addSchema(readJsonObject(join13(this.schemasDir, templateProvenanceFile)));
+    this.ajv.addSchema(readJsonObject(join13(this.schemasDir, initOperationFile)));
+    this.ajv.addSchema(readJsonObject(join13(this.schemasDir, migrationPlanFile)));
+    this.ajv.addSchema(readJsonObject(join13(this.schemasDir, migrationDecisionFile)));
+    this.ajv.addSchema(readJsonObject(join13(this.schemasDir, migrationReceiptFile)));
+    this.ajv.addSchema(readJsonObject(join13(this.schemasDir, permissionDiffFile)));
     for (const [kind, definition] of Object.entries(RESOURCE_SCHEMA)) {
       const validator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${definition.file}`);
       if (!validator) throw new Error(`schema did not compile: ${definition.file}`);
@@ -29471,15 +29475,15 @@ function containedHostPath(root, candidate) {
 function portableBindingIssue(root, pathHint, repositoryId) {
   let current = root;
   for (const segment of pathHint === "." ? [] : pathHint.split("/")) {
-    current = join12(current, segment);
-    if (!existsSync5(current)) break;
+    current = join13(current, segment);
+    if (!existsSync6(current)) break;
     const stat = lstatSync2(current);
     if (stat.isSymbolicLink()) {
       return issue("path", "repository_binding_path_link", ".kxm/project.yaml", `portable pathHint for ${repositoryId} traverses a symbolic link or junction`);
     }
   }
   const binding = resolve4(root, ...pathHint.split("/"));
-  if (existsSync5(binding)) {
+  if (existsSync6(binding)) {
     const realRoot = canonicalHostPath(root);
     const realBinding = canonicalHostPath(binding);
     if (!containedHostPath(realRoot, realBinding)) {
@@ -29530,20 +29534,20 @@ function readResource(registry, root, file, logicalPath, kind, id, containmentRo
     parent = dirname3(parent);
   }
   if (!stat.isFile()) fail("path", "resource_not_file", label, "configuration resource must be a regular file");
-  const value = parseRestrictedYaml(readFileSync6(file), label);
+  const value = parseRestrictedYaml(readFileSync7(file), label);
   const issues = registry.validate(kind, value, label);
   if (issues.length > 0) throw new VnextConfigError(issues);
   return { kind, ...id === void 0 ? {} : { id }, file, logicalPath, value };
 }
 function readTemplateProvenance(registry, root) {
-  const file = join12(root, ".kxm", "template-provenance.yaml");
-  if (!existsSync5(file)) return void 0;
+  const file = join13(root, ".kxm", "template-provenance.yaml");
+  if (!existsSync6(file)) return void 0;
   const label = ".kxm/template-provenance.yaml";
   const stat = lstatSync2(file);
   if (stat.isSymbolicLink() || !stat.isFile()) {
     fail("path", "resource_not_file", label, "template provenance must be a regular file, not a link or directory");
   }
-  const configRoot = join12(root, ".kxm");
+  const configRoot = join13(root, ".kxm");
   let parent = dirname3(file);
   while (parent !== root) {
     const parentStat = lstatSync2(parent);
@@ -29553,7 +29557,7 @@ function readTemplateProvenance(registry, root) {
     if (parent === configRoot) break;
     parent = dirname3(parent);
   }
-  const value = parseRestrictedYaml(readFileSync6(file), label);
+  const value = parseRestrictedYaml(readFileSync7(file), label);
   const issues = registry.validateTemplateProvenance(value, label);
   if (issues.length > 0) throw new VnextConfigError(issues);
   if (!resolveVnextTemplateBaseline(value)) {
@@ -29584,7 +29588,7 @@ function readTemplateProvenance(registry, root) {
 }
 function listNamedResources(registry, root, directory, logicalDirectory, kind) {
   const resources = /* @__PURE__ */ new Map();
-  if (!existsSync5(directory)) return resources;
+  if (!existsSync6(directory)) return resources;
   const stat = lstatSync2(directory);
   if (stat.isSymbolicLink() || !stat.isDirectory()) {
     fail("path", "resource_directory_invalid", displayPath(root, directory), "resource directory must be a regular directory");
@@ -29593,26 +29597,26 @@ function listNamedResources(registry, root, directory, logicalDirectory, kind) {
   const entries = readdirSync3(directory, { withFileTypes: true }).sort((left, right) => compareCodeUnits2(left.name, right.name));
   for (const entry of entries) {
     if (entry.isDirectory()) {
-      issues.push(issue("path", "nested_resource_directory", displayPath(root, join12(directory, entry.name)), "nested resource directories are not allowed"));
+      issues.push(issue("path", "nested_resource_directory", displayPath(root, join13(directory, entry.name)), "nested resource directories are not allowed"));
       continue;
     }
     if (!entry.name.toLowerCase().endsWith(".yaml") && !entry.name.toLowerCase().endsWith(".yml")) continue;
     if (!entry.isFile() || extname(entry.name) !== ".yaml") {
-      issues.push(issue("path", "resource_filename_invalid", displayPath(root, join12(directory, entry.name)), "resource must be a regular file with the exact .yaml extension"));
+      issues.push(issue("path", "resource_filename_invalid", displayPath(root, join13(directory, entry.name)), "resource must be a regular file with the exact .yaml extension"));
       continue;
     }
     const id = basename(entry.name, ".yaml");
     if (!resourceIdentifier(id)) {
-      issues.push(issue("path", "resource_id_invalid", displayPath(root, join12(directory, entry.name)), `filename-derived identity ${id} is invalid or platform-reserved`));
+      issues.push(issue("path", "resource_id_invalid", displayPath(root, join13(directory, entry.name)), `filename-derived identity ${id} is invalid or platform-reserved`));
       continue;
     }
     const collision = [...resources.keys()].find((candidate) => candidate.toLocaleLowerCase("en-US") === id.toLocaleLowerCase("en-US"));
     if (collision) {
-      issues.push(issue("path", "resource_id_collision", displayPath(root, join12(directory, entry.name)), `${id} case-folds to existing ${collision}`));
+      issues.push(issue("path", "resource_id_collision", displayPath(root, join13(directory, entry.name)), `${id} case-folds to existing ${collision}`));
       continue;
     }
     try {
-      const resource = readResource(registry, root, join12(directory, entry.name), `${logicalDirectory}/${id}.yaml`, kind, id);
+      const resource = readResource(registry, root, join13(directory, entry.name), `${logicalDirectory}/${id}.yaml`, kind, id);
       resources.set(id, resource);
     } catch (error) {
       if (error instanceof VnextConfigError) issues.push(...error.issues);
@@ -29921,8 +29925,8 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
       const writable = Object.values(objectValue(step.repositories) ?? {}).filter((access) => access === "write").length;
       if (maxWriteRepositories > writable) issues.push(issue("semantic", "write_repository_bound_invalid", file, `${stepId} maxWriteRepositories exceeds writable repository scope`));
     }
-    const join21 = objectValue(step.join);
-    const minimumPassed = join21 && typeof join21.minimumPassed === "number" ? join21.minimumPassed : void 0;
+    const join22 = objectValue(step.join);
+    const minimumPassed = join22 && typeof join22.minimumPassed === "number" ? join22.minimumPassed : void 0;
     if (minimumPassed !== void 0 && minimumPassed > maximum) issues.push(issue("semantic", "join_impossible", file, `${stepId} minimumPassed exceeds assignment maximum`));
     const distinctBy = names(assignment?.distinctBy);
     if (distinctBy.length > 0) {
@@ -30129,7 +30133,7 @@ function gitEnvironment() {
 }
 function discoverGitRoot(start = process.cwd()) {
   let current = resolve4(start);
-  if (existsSync5(current) && !lstatSync2(current).isDirectory()) current = dirname3(current);
+  if (existsSync6(current) && !lstatSync2(current).isDirectory()) current = dirname3(current);
   const result = spawnSync3("git", ["-C", current, "rev-parse", "--show-toplevel"], {
     encoding: "utf8",
     env: gitEnvironment(),
@@ -30138,11 +30142,11 @@ function discoverGitRoot(start = process.cwd()) {
   });
   if (result.status !== 0 || result.error || !result.stdout.trim()) return void 0;
   const root = resolve4(result.stdout.trim());
-  return existsSync5(root) && lstatSync2(root).isDirectory() ? root : void 0;
+  return existsSync6(root) && lstatSync2(root).isDirectory() ? root : void 0;
 }
 function discoverVnextProjectRoot(start = process.cwd()) {
   const gitRoot = discoverGitRoot(start);
-  return gitRoot && existsSync5(join12(gitRoot, ".kxm", "project.yaml")) ? gitRoot : void 0;
+  return gitRoot && existsSync6(join13(gitRoot, ".kxm", "project.yaml")) ? gitRoot : void 0;
 }
 function loadVnextProject(projectRoot, options = {}) {
   const root = resolve4(projectRoot);
@@ -30153,7 +30157,7 @@ function loadVnextProject(projectRoot, options = {}) {
     migrationReceipt = receiptCheck.receipt;
   }
   const registry = new VnextSchemaRegistry(options.schemasDir);
-  const project = readResource(registry, root, join12(root, ".kxm", "project.yaml"), ".kxm/project.yaml", "project");
+  const project = readResource(registry, root, join13(root, ".kxm", "project.yaml"), ".kxm/project.yaml", "project");
   const earlyIssues = [];
   validatePortablePaths(project, earlyIssues);
   const templateProvenance = readTemplateProvenance(registry, root);
@@ -30175,14 +30179,14 @@ function loadVnextProject(projectRoot, options = {}) {
     }
   }
   if (earlyIssues.length > 0) throw new VnextConfigError(earlyIssues);
-  const agents = listNamedResources(registry, root, join12(root, ".kxm", "agents"), ".kxm/agents", "agent");
-  const models = listNamedResources(registry, root, join12(root, ".kxm", "models"), ".kxm/models", "model");
-  const workflows = listNamedResources(registry, root, join12(root, ".kxm", "workflows"), ".kxm/workflows", "workflow");
+  const agents = listNamedResources(registry, root, join13(root, ".kxm", "agents"), ".kxm/agents", "agent");
+  const models = listNamedResources(registry, root, join13(root, ".kxm", "models"), ".kxm/models", "model");
+  const workflows = listNamedResources(registry, root, join13(root, ".kxm", "workflows"), ".kxm/workflows", "workflow");
   const environments = [];
   const repositories = /* @__PURE__ */ new Map();
   const loadIssues = [];
-  const projectEnvironment = join12(root, ".kxm", "project", "env.yaml");
-  if (existsSync5(projectEnvironment)) {
+  const projectEnvironment = join13(root, ".kxm", "project", "env.yaml");
+  if (existsSync6(projectEnvironment)) {
     try {
       environments.push(readResource(registry, root, projectEnvironment, ".kxm/project/env.yaml", "environment"));
     } catch (error) {
@@ -30224,7 +30228,7 @@ function loadVnextProject(projectRoot, options = {}) {
       if (required) loadIssues.push(issue("discovery", "repository_binding_missing", ".kxm/project.yaml", `required repository ${repositoryId} has no portable pathHint or host-local binding`));
       continue;
     }
-    if (!existsSync5(binding)) {
+    if (!existsSync6(binding)) {
       if (required || hasLocalBinding) loadIssues.push(issue("discovery", "repository_binding_unavailable", ".kxm/project.yaml", `${hasLocalBinding ? "explicit" : "required"} repository binding ${repositoryId} is unavailable`));
       continue;
     }
@@ -30247,9 +30251,9 @@ function loadVnextProject(projectRoot, options = {}) {
       continue;
     }
     seenBindings.set(foldedBinding, repositoryId);
-    const repositoryFile = join12(binding, ".kxm", "repo", "repo.yaml");
+    const repositoryFile = join13(binding, ".kxm", "repo", "repo.yaml");
     let definitionValidated = false;
-    if (existsSync5(repositoryFile)) {
+    if (existsSync6(repositoryFile)) {
       try {
         const resource = readResource(registry, root, repositoryFile, `.kxm/repositories/${repositoryId}/repo.yaml`, "repository", repositoryId, binding);
         if (resource.value.repositoryId !== repositoryId) {
@@ -30265,8 +30269,8 @@ function loadVnextProject(projectRoot, options = {}) {
     } else if (required || hasLocalBinding) {
       loadIssues.push(issue("discovery", "repository_definition_missing", `.kxm/repositories/${repositoryId}/repo.yaml`, `${hasLocalBinding ? "explicit" : "required"} repository ${repositoryId} has no repo.yaml`));
     }
-    const environmentFile = join12(binding, ".kxm", "repo", "env.yaml");
-    if (existsSync5(environmentFile)) {
+    const environmentFile = join13(binding, ".kxm", "repo", "env.yaml");
+    if (existsSync6(environmentFile)) {
       if (!definitionValidated) {
         loadIssues.push(issue("reference", "repository_environment_without_definition", `.kxm/repositories/${repositoryId}/env.yaml`, `repository ${repositoryId} environment requires a validated matching repo.yaml`));
       } else {
@@ -30343,21 +30347,21 @@ function legacyInputsAt(root) {
     ".kxm/config/workflows",
     ".kxm/state/kxm.db"
   ];
-  return candidates.filter((candidate) => existsSync5(join12(root, ...candidate.split("/"))));
+  return candidates.filter((candidate) => existsSync6(join13(root, ...candidate.split("/"))));
 }
 var VNEXT_MIGRATION_RECEIPT_PATH = ".kxm/migration-receipt.yaml";
 var LEGACY_CONFIG_FILES = [".kxm/config/agents.json", ".kxm/config/gates.json"];
 function legacyConfigFilesAt(root) {
   const files = [];
   for (const component of [".kxm", ".kxm/config"]) {
-    const absolute = join12(root, ...component.split("/"));
-    if (existsSync5(absolute) && lstatSync2(absolute).isSymbolicLink()) return [component];
+    const absolute = join13(root, ...component.split("/"));
+    if (existsSync6(absolute) && lstatSync2(absolute).isSymbolicLink()) return [component];
   }
   for (const candidate of LEGACY_CONFIG_FILES) {
-    if (existsSync5(join12(root, ...candidate.split("/")))) files.push(candidate);
+    if (existsSync6(join13(root, ...candidate.split("/")))) files.push(candidate);
   }
-  const workflowsDir = join12(root, ".kxm", "config", "workflows");
-  if (existsSync5(workflowsDir)) {
+  const workflowsDir = join13(root, ".kxm", "config", "workflows");
+  if (existsSync6(workflowsDir)) {
     const stat = lstatSync2(workflowsDir);
     if (stat.isSymbolicLink()) {
       files.push(".kxm/config/workflows");
@@ -30372,9 +30376,9 @@ function legacyConfigFilesAt(root) {
   return files;
 }
 function hashFileRecord(root, relativePath) {
-  const absolute = join12(root, ...relativePath.split("/"));
-  if (!existsSync5(absolute)) return void 0;
-  const bytes = readFileSync6(absolute);
+  const absolute = join13(root, ...relativePath.split("/"));
+  if (!existsSync6(absolute)) return void 0;
+  const bytes = readFileSync7(absolute);
   return {
     path: relativePath,
     sha256: `sha256:${createHash3("sha256").update(bytes).digest("hex")}`,
@@ -30386,9 +30390,9 @@ function migrationReceiptSelfHash(receipt) {
   return `sha256:${createHash3("sha256").update(vnextCanonicalJson(unsigned), "utf8").digest("hex")}`;
 }
 function readVnextMigrationReceipt(root, options = {}) {
-  const receiptPath = join12(root, ...VNEXT_MIGRATION_RECEIPT_PATH.split("/"));
+  const receiptPath = join13(root, ...VNEXT_MIGRATION_RECEIPT_PATH.split("/"));
   const legacyFiles = legacyConfigFilesAt(root);
-  if (!existsSync5(receiptPath)) {
+  if (!existsSync6(receiptPath)) {
     return {
       issues: legacyFiles.map((file) => issue("semantic", "legacy_vnext_conflict", file, "legacy and vNext configuration cannot coexist before an accepted migration receipt"))
     };
@@ -30399,7 +30403,7 @@ function readVnextMigrationReceipt(root, options = {}) {
   }
   let receipt;
   try {
-    receipt = parseRestrictedYaml(readFileSync6(receiptPath), VNEXT_MIGRATION_RECEIPT_PATH);
+    receipt = parseRestrictedYaml(readFileSync7(receiptPath), VNEXT_MIGRATION_RECEIPT_PATH);
   } catch (error) {
     if (error instanceof VnextConfigError) return { issues: [...error.issues] };
     throw error;
@@ -30433,7 +30437,7 @@ function readVnextMigrationReceipt(root, options = {}) {
 }
 function discoverLegacyRoot(start) {
   let initial = resolve4(start);
-  if (existsSync5(initial) && !lstatSync2(initial).isDirectory()) initial = dirname3(initial);
+  if (existsSync6(initial) && !lstatSync2(initial).isDirectory()) initial = dirname3(initial);
   const candidate = discoverGitRoot(initial) ?? initial;
   const inputs = legacyInputsAt(candidate);
   return inputs.length > 0 ? { root: candidate, inputs } : void 0;
@@ -30460,7 +30464,7 @@ function planVnextInitialization(start = process.cwd(), options = {}) {
   }
   const gitRoot = discoverGitRoot(inspectedFrom);
   const candidateRoot = gitRoot ?? inspectedFrom;
-  if (existsSync5(join12(candidateRoot, ".kxm"))) {
+  if (existsSync6(join13(candidateRoot, ".kxm"))) {
     return {
       mode: "repair",
       inspectedFrom,
@@ -30479,12 +30483,12 @@ import { createHash as createHash4, randomUUID as randomUUID2 } from "node:crypt
 import {
   chmodSync,
   closeSync,
-  existsSync as existsSync6,
+  existsSync as existsSync7,
   fsyncSync,
   lstatSync as lstatSync3,
   mkdirSync as mkdirSync8,
   openSync,
-  readFileSync as readFileSync7,
+  readFileSync as readFileSync8,
   realpathSync as realpathSync3,
   renameSync as renameSync3,
   rmSync as rmSync2,
@@ -30492,7 +30496,7 @@ import {
 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
 import { DatabaseSync as DatabaseSync2 } from "node:sqlite";
-import { dirname as dirname4, isAbsolute as isAbsolute3, join as join13, parse, relative as relative3, resolve as resolve5, sep as sep2 } from "node:path";
+import { dirname as dirname4, isAbsolute as isAbsolute3, join as join14, parse, relative as relative3, resolve as resolve5, sep as sep2 } from "node:path";
 var MAX_BINDING_RECORD_BYTES = 256 * 1024;
 var BINDING_LABEL = "Runtime-local repository bindings";
 var activeLocks = /* @__PURE__ */ new WeakSet();
@@ -30526,12 +30530,12 @@ function vnextUserStateRoot(options = {}) {
   }
   if (platform === "win32") {
     const localAppData = env.LOCALAPPDATA?.trim();
-    const base2 = localAppData && isAbsolute3(localAppData) ? localAppData : join13(home, "AppData", "Local");
+    const base2 = localAppData && isAbsolute3(localAppData) ? localAppData : join14(home, "AppData", "Local");
     return resolve5(base2, "KXM");
   }
   if (platform === "darwin") return resolve5(home, "Library", "Application Support", "KXM");
   const xdgState = env.XDG_STATE_HOME?.trim();
-  const base = xdgState && isAbsolute3(xdgState) ? xdgState : join13(home, ".local", "state");
+  const base = xdgState && isAbsolute3(xdgState) ? xdgState : join14(home, ".local", "state");
   return resolve5(base, "kxm");
 }
 function projectBindingKey(projectRoot, platform = process.platform) {
@@ -30541,10 +30545,10 @@ function projectBindingKey(projectRoot, platform = process.platform) {
 }
 function vnextLocalBindingFile(projectRoot, options = {}) {
   const stateRoot = vnextUserStateRoot(options);
-  return join13(stateRoot, "projects", projectBindingKey(projectRoot, options.platform), "repository-bindings.json");
+  return join14(stateRoot, "projects", projectBindingKey(projectRoot, options.platform), "repository-bindings.json");
 }
 function checkedDirectory(path5, description) {
-  if (!existsSync6(path5)) return false;
+  if (!existsSync7(path5)) return false;
   const stat = lstatSync3(path5);
   if (stat.isSymbolicLink() || !stat.isDirectory()) {
     bindingError("path", "local_binding_directory_invalid", `${description} must be a regular directory, not a link or file`);
@@ -30552,7 +30556,7 @@ function checkedDirectory(path5, description) {
   return true;
 }
 function existingBindingDirectory(file, stateRoot) {
-  const projects = join13(stateRoot, "projects");
+  const projects = join14(stateRoot, "projects");
   const project = dirname4(file);
   if (!checkedDirectory(stateRoot, "local state root")) return false;
   if (!checkedDirectory(projects, "local projects directory")) return false;
@@ -30579,7 +30583,7 @@ function readVnextLocalBindings(projectRoot, options = {}) {
   const root = resolve5(projectRoot);
   const stateRoot = vnextUserStateRoot(options);
   const file = vnextLocalBindingFile(root, options);
-  if (!existingBindingDirectory(file, stateRoot) || !existsSync6(file)) return void 0;
+  if (!existingBindingDirectory(file, stateRoot) || !existsSync7(file)) return void 0;
   const stat = lstatSync3(file);
   if (stat.isSymbolicLink() || !stat.isFile()) {
     bindingError("path", "local_binding_file_invalid", "binding record must be a regular file, not a link or directory");
@@ -30587,7 +30591,7 @@ function readVnextLocalBindings(projectRoot, options = {}) {
   if (stat.size > MAX_BINDING_RECORD_BYTES) {
     bindingError("parse", "local_binding_file_too_large", `binding record exceeds ${MAX_BINDING_RECORD_BYTES} bytes`);
   }
-  const parsed = parseRestrictedYaml(readFileSync7(file), BINDING_LABEL);
+  const parsed = parseRestrictedYaml(readFileSync8(file), BINDING_LABEL);
   return asRecord(parsed, file, root, options.schemasDir);
 }
 function normalizedRecord(projectRoot, projectId, repositories, schemasDir) {
@@ -30627,7 +30631,7 @@ function syncDirectory(path5) {
   }
 }
 function createDirectoryIfMissing(path5) {
-  if (existsSync6(path5)) return;
+  if (existsSync7(path5)) return;
   try {
     mkdirSync8(path5, { mode: 448 });
     syncDirectory(dirname4(path5));
@@ -30638,7 +30642,7 @@ function createDirectoryIfMissing(path5) {
 function ensureDurableDirectory(path5, description) {
   const missing = [];
   let current = resolve5(path5);
-  while (!existsSync6(current)) {
+  while (!existsSync7(current)) {
     missing.push(current);
     const parent = dirname4(current);
     if (parent === current) bindingError("path", "local_binding_directory_invalid", `${description} has no existing filesystem ancestor`);
@@ -30655,7 +30659,7 @@ function ensureBindingDirectory(file, stateRoot) {
   ensureDurableDirectory(stateRoot, "local state root");
   checkedDirectory(stateRoot, "local state root");
   syncDirectory(stateRoot);
-  const projects = join13(stateRoot, "projects");
+  const projects = join14(stateRoot, "projects");
   createDirectoryIfMissing(projects);
   checkedDirectory(projects, "local projects directory");
   const project = dirname4(file);
@@ -30668,7 +30672,7 @@ function assertNoLinkedDirectoryComponents(path5, description) {
   let current = filesystemRoot;
   const remainder = relative3(filesystemRoot, absolute);
   for (const segment of remainder.split(sep2).filter(Boolean)) {
-    current = join13(current, segment);
+    current = join14(current, segment);
     const stat = lstatSync3(current);
     if (stat.isSymbolicLink() || !stat.isDirectory()) {
       bindingError("path", "project_operation_lock_parent_invalid", `${description} contains a linked or non-directory component`);
@@ -30695,8 +30699,8 @@ function projectOperationLockFile(projectRoot) {
   if (gitStat.isSymbolicLink() || !gitStat.isDirectory()) {
     bindingError("path", "project_operation_lock_parent_invalid", "authoritative Git metadata must resolve to a regular directory");
   }
-  const lockDirectory = join13(gitDirectory, "kxm");
-  if (existsSync6(lockDirectory)) {
+  const lockDirectory = join14(gitDirectory, "kxm");
+  if (existsSync7(lockDirectory)) {
     const stat = lstatSync3(lockDirectory);
     if (stat.isSymbolicLink() || !stat.isDirectory()) {
       bindingError("path", "project_operation_lock_parent_invalid", "Git-local KXM lock directory must be regular, not a link or file");
@@ -30705,12 +30709,12 @@ function projectOperationLockFile(projectRoot) {
     mkdirSync8(lockDirectory, { mode: 448 });
     syncDirectory(gitDirectory);
   }
-  return join13(lockDirectory, "project-operation-lock.sqlite");
+  return join14(lockDirectory, "project-operation-lock.sqlite");
 }
 function withVnextLocalBindingLock(projectRoot, options, callback) {
   const root = resolve5(projectRoot);
   const file = projectOperationLockFile(root);
-  if (existsSync6(file)) {
+  if (existsSync7(file)) {
     const stat = lstatSync3(file);
     if (stat.isSymbolicLink() || !stat.isFile()) {
       bindingError("path", "local_binding_lock_invalid", "project-operation lock must be a regular file, not a link or directory");
@@ -30764,7 +30768,7 @@ function writeVnextLocalBindings(projectRoot, projectId, repositories, options =
   const { file, record } = planned;
   if (!planned.written) return planned;
   ensureBindingDirectory(file, vnextUserStateRoot(options));
-  const temporary = join13(dirname4(file), `.repository-bindings-${process.pid}-${randomUUID2()}.tmp`);
+  const temporary = join14(dirname4(file), `.repository-bindings-${process.pid}-${randomUUID2()}.tmp`);
   let descriptor;
   try {
     descriptor = openSync(temporary, "wx", 384);
@@ -30788,34 +30792,34 @@ function writeVnextLocalBindings(projectRoot, projectId, repositories, options =
 
 // plugins/kxm/src/vnext-init.ts
 import { randomUUID as randomUUID4 } from "node:crypto";
-import { existsSync as existsSync9 } from "node:fs";
-import { basename as basename2, join as join16 } from "node:path";
+import { existsSync as existsSync10 } from "node:fs";
+import { basename as basename2, join as join17 } from "node:path";
 
 // plugins/kxm/src/vnext-repair.ts
 import { randomUUID as randomUUID3 } from "node:crypto";
 import {
   chmodSync as chmodSync2,
   closeSync as closeSync2,
-  existsSync as existsSync8,
+  existsSync as existsSync9,
   fsyncSync as fsyncSync2,
   linkSync,
   lstatSync as lstatSync4,
   mkdirSync as mkdirSync10,
   openSync as openSync2,
-  readFileSync as readFileSync9,
+  readFileSync as readFileSync10,
   readdirSync as readdirSync4,
   renameSync as renameSync4,
   rmSync as rmSync4,
   writeFileSync as writeFileSync9
 } from "node:fs";
-import { dirname as dirname6, isAbsolute as isAbsolute4, join as join15, relative as relative4, resolve as resolve7 } from "node:path";
+import { dirname as dirname6, isAbsolute as isAbsolute4, join as join16, relative as relative4, resolve as resolve7 } from "node:path";
 
 // plugins/kxm/src/vnext-permission.ts
 import { spawnSync as spawnSync5 } from "node:child_process";
 import { createHash as createHash5 } from "node:crypto";
-import { existsSync as existsSync7, mkdtempSync, mkdirSync as mkdirSync9, readFileSync as readFileSync8, rmSync as rmSync3, writeFileSync as writeFileSync8 } from "node:fs";
+import { existsSync as existsSync8, mkdtempSync, mkdirSync as mkdirSync9, readFileSync as readFileSync9, rmSync as rmSync3, writeFileSync as writeFileSync8 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname as dirname5, join as join14, resolve as resolve6, sep as sep3 } from "node:path";
+import { dirname as dirname5, join as join15, resolve as resolve6, sep as sep3 } from "node:path";
 var PROSE_FIELDS = {
   project: /* @__PURE__ */ new Set(["name", "description"]),
   repository: /* @__PURE__ */ new Set(["description"]),
@@ -31320,7 +31324,7 @@ function loadVnextProjectAtRevision(root, revision, options = {}) {
   const tree = resolveTreeRevision(root, revision);
   const listing = gitBuffer(root, ["ls-tree", "-r", "-z", "--name-only", tree]).toString("utf8");
   const paths = listing.split("\0").filter((line) => line.length > 0 && (line.startsWith(".kxm/") || line.includes("/.kxm/")));
-  const shadow = mkdtempSync(join14(tmpdir(), "kxm-permission-base-"));
+  const shadow = mkdtempSync(join15(tmpdir(), "kxm-permission-base-"));
   const shadowResolved = resolve6(shadow);
   const shadowMembersDir = `.kxm-shadow-members-${createHash5("sha256").update(shadowResolved, "utf8").digest("hex").slice(0, 8)}`;
   try {
@@ -31334,7 +31338,7 @@ function loadVnextProjectAtRevision(root, revision, options = {}) {
           message: "Git tree entry contains a traversal or non-portable segment"
         }]);
       }
-      const absolute = join14(shadowResolved, ...segments);
+      const absolute = join15(shadowResolved, ...segments);
       const resolved = resolve6(absolute);
       if (!resolved.startsWith(`${shadowResolved}${sep3}`)) {
         throw new VnextConfigError([{
@@ -31349,7 +31353,7 @@ function loadVnextProjectAtRevision(root, revision, options = {}) {
       writeFileSync8(absolute, content);
     }
     initShadowGitRoot(shadowResolved);
-    const baseProjectFile = join14(shadowResolved, ".kxm", "project.yaml");
+    const baseProjectFile = join15(shadowResolved, ".kxm", "project.yaml");
     let baseProject;
     try {
       baseProject = loadBaseProjectDeclarations(baseProjectFile);
@@ -31380,7 +31384,7 @@ function loadVnextProjectAtRevision(root, revision, options = {}) {
       }
       const boundPath = options.repositoryBindings?.[member.repositoryId];
       const memberWorktree = boundPath ? resolve6(boundPath) : member.pathHint ? resolve6(root, ...member.pathHint.split("/")) : void 0;
-      if (!memberWorktree || !existsSync7(memberWorktree)) {
+      if (!memberWorktree || !existsSync8(memberWorktree)) {
         if (member.required === false) continue;
         throw new VnextConfigError([{
           phase: "discovery",
@@ -31427,7 +31431,7 @@ function loadVnextProjectAtRevision(root, revision, options = {}) {
       const memberTree = git(memberWorktree, ["rev-parse", "--verify", "--quiet", `${pinnedCommit}^{tree}`]).trim();
       const memberListing = gitBuffer(memberWorktree, ["ls-tree", "-r", "-z", "--name-only", memberTree]).toString("utf8");
       const memberPaths = memberListing.split("\0").filter((line) => line.length > 0 && (line.startsWith(".kxm/") || line.includes("/.kxm/")));
-      const memberShadowRoot = join14(shadowResolved, shadowMembersDir, member.repositoryId);
+      const memberShadowRoot = join15(shadowResolved, shadowMembersDir, member.repositoryId);
       if (!resolve6(memberShadowRoot).startsWith(`${resolve6(shadowResolved, shadowMembersDir)}${sep3}`)) {
         throw new VnextConfigError([{
           phase: "path",
@@ -31441,7 +31445,7 @@ function loadVnextProjectAtRevision(root, revision, options = {}) {
         if (segments.some((segment) => segment === "" || segment === "." || segment === ".." || /[\\:]/.test(segment))) {
           throw new VnextConfigError([{ phase: "path", code: "git_tree_path_invalid", file: path5, message: "member Git tree entry contains a traversal or non-portable segment" }]);
         }
-        const absolute = join14(memberShadowRoot, ...segments);
+        const absolute = join15(memberShadowRoot, ...segments);
         const resolved = resolve6(absolute);
         if (!resolved.startsWith(`${resolve6(memberShadowRoot)}${sep3}`)) {
           throw new VnextConfigError([{ phase: "path", code: "git_tree_path_invalid", file: path5, message: "member Git tree entry escapes the shadow root" }]);
@@ -31469,8 +31473,8 @@ function portableMemberPathHint(pathHint) {
   return pathHint !== "." && vnextPortablePath(pathHint);
 }
 function loadBaseProjectDeclarations(projectFile) {
-  if (!existsSync7(projectFile)) return [];
-  const value = parseRestrictedYaml(readFileSync8(projectFile, "utf8"), ".kxm/project.yaml");
+  if (!existsSync8(projectFile)) return [];
+  const value = parseRestrictedYaml(readFileSync9(projectFile, "utf8"), ".kxm/project.yaml");
   const repositories = Array.isArray(value?.repositories) ? value.repositories : [];
   const members = [];
   for (const entry of repositories) {
@@ -31597,19 +31601,19 @@ function sameHostPath3(left, right) {
   return process.platform === "win32" ? first.toLocaleLowerCase("en-US") === second.toLocaleLowerCase("en-US") : first === second;
 }
 function transactionRoot(projectRoot) {
-  return join15(resolve7(projectRoot), TRANSACTION_NAME);
+  return join16(resolve7(projectRoot), TRANSACTION_NAME);
 }
 function operationFile(projectRoot) {
-  return join15(transactionRoot(projectRoot), OPERATION_FILE);
+  return join16(transactionRoot(projectRoot), OPERATION_FILE);
 }
 function targetFile(projectRoot, portablePath2) {
-  return join15(transactionRoot(projectRoot), "targets", ...portablePath2.split("/"));
+  return join16(transactionRoot(projectRoot), "targets", ...portablePath2.split("/"));
 }
 function shadowRoot(projectRoot) {
-  return join15(transactionRoot(projectRoot), "shadow");
+  return join16(transactionRoot(projectRoot), "shadow");
 }
 function backupFile(projectRoot, portablePath2) {
-  return join15(transactionRoot(projectRoot), "backups", ...portablePath2.split("/"));
+  return join16(transactionRoot(projectRoot), "backups", ...portablePath2.split("/"));
 }
 function portableManagedPath(path5) {
   return path5.startsWith(".kxm/") && path5 !== VNEXT_TEMPLATE_PROVENANCE_PATH && path5.length <= 1024 && !path5.includes("\\") && !isAbsolute4(path5) && PORTABLE_PATH.test(path5) && !/[<>:"|?*]/.test(path5);
@@ -31618,11 +31622,11 @@ function readRegularBounded(file, label) {
   const stat = lstatSync4(file);
   if (stat.isSymbolicLink() || !stat.isFile()) fail2("repair_file_invalid", label, "managed file must be a regular file, not a link or directory", "path");
   if (stat.size > MAX_MANAGED_FILE_BYTES) fail2("repair_file_too_large", label, `managed file exceeds ${MAX_MANAGED_FILE_BYTES} bytes`, "parse");
-  return readFileSync9(file);
+  return readFileSync10(file);
 }
 function readOptionalManaged(projectRoot, path5) {
-  const file = join15(projectRoot, ...path5.split("/"));
-  if (!existsSync8(file)) return void 0;
+  const file = join16(projectRoot, ...path5.split("/"));
+  if (!existsSync9(file)) return void 0;
   let parent = dirname6(file);
   const boundary = resolve7(projectRoot);
   while (parent !== boundary) {
@@ -31633,9 +31637,9 @@ function readOptionalManaged(projectRoot, path5) {
   return readRegularBounded(file, path5);
 }
 function readProjectAndProvenance(projectRoot, schemasDir) {
-  const projectFile = join15(projectRoot, ".kxm", "project.yaml");
-  const provenanceFile = join15(projectRoot, ...VNEXT_TEMPLATE_PROVENANCE_PATH.split("/"));
-  if (!existsSync8(projectFile) || !existsSync8(provenanceFile)) return void 0;
+  const projectFile = join16(projectRoot, ".kxm", "project.yaml");
+  const provenanceFile = join16(projectRoot, ...VNEXT_TEMPLATE_PROVENANCE_PATH.split("/"));
+  if (!existsSync9(projectFile) || !existsSync9(provenanceFile)) return void 0;
   const projectBytes = readOptionalManaged(projectRoot, ".kxm/project.yaml");
   const provenanceBytes = readOptionalManaged(projectRoot, VNEXT_TEMPLATE_PROVENANCE_PATH);
   if (!projectBytes || !provenanceBytes) return void 0;
@@ -31798,7 +31802,7 @@ function operationPlanSha(operation) {
 function writeOperation(projectRoot, operation) {
   const root = transactionRoot(projectRoot);
   const file = operationFile(projectRoot);
-  const temporary = join15(root, `.operation-${operation.operationId}-${randomUUID3()}.tmp`);
+  const temporary = join16(root, `.operation-${operation.operationId}-${randomUUID3()}.tmp`);
   try {
     writeDurableNew(temporary, Buffer.from(`${JSON.stringify(operation, null, 2)}
 `, "utf8"), 384);
@@ -31815,11 +31819,11 @@ function updatePhase(projectRoot, operation, phase) {
 }
 function readOperation(projectRoot, schemasDir) {
   const root = transactionRoot(projectRoot);
-  if (!existsSync8(root)) return void 0;
+  if (!existsSync9(root)) return void 0;
   const stat = lstatSync4(root);
   if (stat.isSymbolicLink() || !stat.isDirectory()) fail2("init_transaction_invalid", TRANSACTION_NAME, "initialization transaction must be a regular directory", "path");
   const file = operationFile(projectRoot);
-  if (!existsSync8(file)) {
+  if (!existsSync9(file)) {
     const entries = readdirSync4(root, { withFileTypes: true });
     const recoverable = entries.every((entry) => entry.isFile() && /^\.operation-op_[a-f0-9]{32}-[a-f0-9-]{36}\.tmp$/.test(entry.name));
     if (recoverable) return void 0;
@@ -31847,10 +31851,10 @@ function readOperation(projectRoot, schemasDir) {
   return operation;
 }
 function hasVnextInitTransaction(projectRoot) {
-  return existsSync8(transactionRoot(projectRoot));
+  return existsSync9(transactionRoot(projectRoot));
 }
 function readTarget(projectRoot, path5) {
-  return readOptionalManaged(join15(transactionRoot(projectRoot), "targets"), path5);
+  return readOptionalManaged(join16(transactionRoot(projectRoot), "targets"), path5);
 }
 function writeTarget(projectRoot, path5, bytes) {
   if (bytes.byteLength > MAX_MANAGED_FILE_BYTES) fail2("template_target_too_large", path5, `target exceeds ${MAX_MANAGED_FILE_BYTES} bytes`);
@@ -31890,7 +31894,7 @@ function verifyBackups(projectRoot, operation) {
   if (operation.kind !== "repair") return;
   for (const entry of operation.files) {
     if (entry.observedSha256 === null) continue;
-    const bytes = readOptionalManaged(join15(transactionRoot(projectRoot), "backups"), entry.path);
+    const bytes = readOptionalManaged(join16(transactionRoot(projectRoot), "backups"), entry.path);
     if (!bytes || vnextContentSha256(bytes) !== entry.observedSha256) {
       fail2("init_transaction_backup_invalid", entry.path, "pinned preimage backup is missing or corrupt");
     }
@@ -31923,10 +31927,10 @@ function sourceConfigFiles(projectRoot) {
     ".kxm/repo/repo.yaml",
     ".kxm/repo/env.yaml"
   ];
-  const files = fixed.filter((path5) => existsSync8(join15(projectRoot, ...path5.split("/"))));
+  const files = fixed.filter((path5) => existsSync9(join16(projectRoot, ...path5.split("/"))));
   for (const directory of ["agents", "models", "workflows"]) {
-    const absolute = join15(projectRoot, ".kxm", directory);
-    if (!existsSync8(absolute)) continue;
+    const absolute = join16(projectRoot, ".kxm", directory);
+    if (!existsSync9(absolute)) continue;
     const stat = lstatSync4(absolute);
     if (stat.isSymbolicLink() || !stat.isDirectory()) fail2("repair_directory_invalid", `.kxm/${directory}`, "configuration directory must be regular", "path");
     for (const entry of readdirSync4(absolute, { withFileTypes: true })) {
@@ -31948,7 +31952,7 @@ function absoluteMemberBindings(projectRoot, project, explicit = {}) {
     if (repository.role !== "member" || typeof repository.id !== "string" || Object.hasOwn(bindings, repository.id)) continue;
     if (typeof repository.pathHint === "string") {
       const candidate2 = resolve7(projectRoot, ...repository.pathHint.split("/"));
-      if (existsSync8(candidate2)) bindings[repository.id] = candidate2;
+      if (existsSync9(candidate2)) bindings[repository.id] = candidate2;
     }
   }
   return bindings;
@@ -31962,8 +31966,8 @@ function prepareShadow(projectRoot, operation, options) {
       const bytes = readOptionalManaged(projectRoot, path5);
       if (!bytes) fail2("repair_snapshot_file_missing", path5, "configuration changed during shadow preparation");
       total += bytes.byteLength;
-      const source = join15(projectRoot, ...path5.split("/"));
-      const destination = join15(shadow, ...path5.split("/"));
+      const source = join16(projectRoot, ...path5.split("/"));
+      const destination = join16(shadow, ...path5.split("/"));
       mkdirSync10(dirname6(destination), { recursive: true, mode: 448 });
       writeDurableNew(destination, bytes, lstatSync4(source).mode & 511);
       if (total > MAX_MANAGED_TOTAL_BYTES) fail2("repair_snapshot_too_large", ".kxm", `configuration snapshot exceeds ${MAX_MANAGED_TOTAL_BYTES} bytes`, "parse");
@@ -31972,12 +31976,12 @@ function prepareShadow(projectRoot, operation, options) {
   for (const entry of operation.files) {
     const bytes = readTarget(projectRoot, entry.path);
     if (!bytes) fail2("init_transaction_target_missing", entry.path, "pinned target artifact is missing");
-    const destination = join15(shadow, ...entry.path.split("/"));
+    const destination = join16(shadow, ...entry.path.split("/"));
     mkdirSync10(dirname6(destination), { recursive: true, mode: 448 });
-    const mode = existsSync8(destination) ? lstatSync4(destination).mode & 511 : 420;
+    const mode = existsSync9(destination) ? lstatSync4(destination).mode & 511 : 420;
     writeDurable(destination, bytes, mode);
   }
-  const project = parseRestrictedYaml(readFileSync9(join15(shadow, ".kxm", "project.yaml")), ".kxm/project.yaml");
+  const project = parseRestrictedYaml(readFileSync10(join16(shadow, ".kxm", "project.yaml")), ".kxm/project.yaml");
   const bound = absoluteMemberBindings(projectRoot, project, options.repositoryBindings);
   loadVnextProject(shadow, { ...loaderOptions(options), repositoryBindings: bound });
   const provenance = readProjectAndProvenance(shadow, options.schemasDir)?.provenance;
@@ -32015,7 +32019,7 @@ function prepareOperation(projectRoot, operation, rendered, options) {
   const transaction = transactionRoot(projectRoot);
   validateOperationRecord(operation, options.schemasDir);
   validateOperationIntent(projectRoot, operation);
-  if (existsSync8(transaction)) fail2("init_transaction_exists", TRANSACTION_NAME, "an initialization transaction already exists and must be resumed");
+  if (existsSync9(transaction)) fail2("init_transaction_exists", TRANSACTION_NAME, "an initialization transaction already exists and must be resumed");
   mkdirSync10(transaction, { mode: 448 });
   syncDirectory2(projectRoot);
   writeOperation(projectRoot, operation);
@@ -32041,21 +32045,21 @@ function ensureDestinationParents(projectRoot, path5) {
   const segments = path5.split("/").slice(0, -1);
   let current = boundary;
   for (const segment of segments) {
-    current = join15(current, segment);
-    if (!existsSync8(current)) mkdirSync10(current, { mode: 448 });
+    current = join16(current, segment);
+    if (!existsSync9(current)) mkdirSync10(current, { mode: 448 });
     const stat = lstatSync4(current);
     if (stat.isSymbolicLink() || !stat.isDirectory()) fail2("repair_destination_parent_invalid", path5, "destination parent must be a regular directory", "path");
   }
 }
 function destinationSha(projectRoot, path5) {
-  const file = join15(projectRoot, ...path5.split("/"));
-  if (!existsSync8(file)) return void 0;
+  const file = join16(projectRoot, ...path5.split("/"));
+  if (!existsSync9(file)) return void 0;
   return vnextContentSha256(readRegularBounded(file, path5));
 }
 function requireConditionalLinkSupport(directory, operationId, path5) {
   const nonce = randomUUID3();
-  const source = join15(directory, `.kxm-repair-${operationId}-${nonce}.link-source`);
-  const target = join15(directory, `.kxm-repair-${operationId}-${nonce}.link-target`);
+  const source = join16(directory, `.kxm-repair-${operationId}-${nonce}.link-source`);
+  const target = join16(directory, `.kxm-repair-${operationId}-${nonce}.link-target`);
   try {
     writeDurableNew(source, Buffer.from("kxm-link-probe\n", "utf8"), 384);
     try {
@@ -32070,19 +32074,19 @@ function requireConditionalLinkSupport(directory, operationId, path5) {
   }
 }
 function atomicInstallTarget(projectRoot, operation, entry) {
-  const destination = join15(projectRoot, ...entry.path.split("/"));
+  const destination = join16(projectRoot, ...entry.path.split("/"));
   ensureDestinationParents(projectRoot, entry.path);
   const directory = dirname6(destination);
   const temporaryPrefix = `.kxm-repair-${operation.operationId}-`;
   const pathKey = vnextContentSha256(entry.path).slice("sha256:".length, "sha256:".length + 16);
-  const displaced = join15(directory, `${temporaryPrefix}${pathKey}.preimage`);
-  if (existsSync8(displaced)) {
+  const displaced = join16(directory, `${temporaryPrefix}${pathKey}.preimage`);
+  if (existsSync9(displaced)) {
     const stat = lstatSync4(displaced);
     if (stat.isSymbolicLink() || !stat.isFile()) fail2("repair_preimage_temporary_invalid", entry.path, "stale displaced preimage is not a regular file", "path");
-    if (entry.observedSha256 === null || vnextContentSha256(readFileSync9(displaced)) !== entry.observedSha256) {
+    if (entry.observedSha256 === null || vnextContentSha256(readFileSync10(displaced)) !== entry.observedSha256) {
       fail2("repair_preimage_temporary_mismatch", entry.path, "stale displaced preimage does not match the pinned operation");
     }
-    if (!existsSync8(destination)) {
+    if (!existsSync9(destination)) {
       try {
         linkSync(displaced, destination);
       } catch {
@@ -32097,7 +32101,7 @@ function atomicInstallTarget(projectRoot, operation, entry) {
     const owned = candidate.name.startsWith(temporaryPrefix) && (candidate.name.endsWith(".tmp") || candidate.name.endsWith(".link-source") || candidate.name.endsWith(".link-target"));
     if (!owned) continue;
     if (!candidate.isFile()) fail2("repair_temporary_invalid", entry.path, "stale operation temporary is not a regular file", "path");
-    rmSync4(join15(directory, candidate.name), { force: true });
+    rmSync4(join16(directory, candidate.name), { force: true });
   }
   const current = destinationSha(projectRoot, entry.path);
   if (current === entry.targetSha256) return;
@@ -32107,15 +32111,15 @@ function atomicInstallTarget(projectRoot, operation, entry) {
   requireConditionalLinkSupport(directory, operation.operationId, entry.path);
   const bytes = readTarget(projectRoot, entry.path);
   if (!bytes) fail2("init_transaction_target_missing", entry.path, "pinned target artifact is missing");
-  const temporary = join15(directory, `${temporaryPrefix}${randomUUID3()}.tmp`);
-  const mode = existsSync8(destination) ? lstatSync4(destination).mode & 511 : 420;
+  const temporary = join16(directory, `${temporaryPrefix}${randomUUID3()}.tmp`);
+  const mode = existsSync9(destination) ? lstatSync4(destination).mode & 511 : 420;
   try {
     writeDurableNew(temporary, bytes, mode);
     if (entry.observedSha256 !== null) {
       renameSync4(destination, displaced);
       syncDirectory2(directory);
-      if (vnextContentSha256(readFileSync9(displaced)) !== entry.observedSha256) {
-        if (!existsSync8(destination)) {
+      if (vnextContentSha256(readFileSync10(displaced)) !== entry.observedSha256) {
+        if (!existsSync9(destination)) {
           try {
             linkSync(displaced, destination);
           } catch {
@@ -32131,7 +32135,7 @@ function atomicInstallTarget(projectRoot, operation, entry) {
     try {
       linkSync(temporary, destination);
     } catch {
-      if (!existsSync8(destination) && existsSync8(displaced)) {
+      if (!existsSync9(destination) && existsSync9(displaced)) {
         try {
           linkSync(displaced, destination);
         } catch {
@@ -32153,12 +32157,12 @@ function atomicInstallTarget(projectRoot, operation, entry) {
   if (destinationSha(projectRoot, entry.path) !== entry.targetSha256) fail2("repair_install_verification_failed", entry.path, "installed target hash does not match the pinned operation");
 }
 function installedCreateMatches(projectRoot, operation) {
-  const configRoot = join15(projectRoot, ".kxm");
-  if (!existsSync8(configRoot)) return false;
+  const configRoot = join16(projectRoot, ".kxm");
+  if (!existsSync9(configRoot)) return false;
   const actual = [];
   const visit2 = (directory) => {
     for (const entry of readdirSync4(directory, { withFileTypes: true })) {
-      const absolute = join15(directory, entry.name);
+      const absolute = join16(directory, entry.name);
       if (entry.isSymbolicLink()) fail2("create_resume_link", relativeConfigPath(projectRoot, absolute), "created configuration must not contain links", "path");
       if (entry.isDirectory()) visit2(absolute);
       else if (entry.isFile()) actual.push(relativeConfigPath(projectRoot, absolute));
@@ -32174,12 +32178,12 @@ function relativeConfigPath(projectRoot, file) {
   return relative4(resolve7(projectRoot), file).replaceAll("\\", "/");
 }
 function syncTreeDirectories(root) {
-  if (!existsSync8(root)) return;
+  if (!existsSync9(root)) return;
   const directories = [];
   const visit2 = (directory) => {
     directories.push(directory);
     for (const entry of readdirSync4(directory, { withFileTypes: true })) {
-      if (entry.isDirectory()) visit2(join15(directory, entry.name));
+      if (entry.isDirectory()) visit2(join16(directory, entry.name));
     }
   };
   visit2(root);
@@ -32193,7 +32197,7 @@ function rebuildCreateShadow(projectRoot, operation, options) {
   if (stat.isSymbolicLink() || !stat.isDirectory() || !installedCreateMatches(shadow, operation)) {
     fail2("create_shadow_invalid", TRANSACTION_NAME, "reconstructed create shadow does not exactly match pinned target files", "path");
   }
-  syncTreeDirectories(join15(shadow, ".kxm"));
+  syncTreeDirectories(join16(shadow, ".kxm"));
 }
 function applyOperation(projectRoot, original, options, resumed) {
   let operation = original;
@@ -32202,10 +32206,10 @@ function applyOperation(projectRoot, original, options, resumed) {
   verifyBackups(projectRoot, operation);
   operation = updatePhase(projectRoot, operation, "applying");
   if (operation.kind === "create") {
-    const destination = join15(projectRoot, ".kxm");
-    if (!existsSync8(destination)) {
+    const destination = join16(projectRoot, ".kxm");
+    if (!existsSync9(destination)) {
       rebuildCreateShadow(projectRoot, operation, effectiveOptions);
-      renameSync4(join15(shadowRoot(projectRoot), ".kxm"), destination);
+      renameSync4(join16(shadowRoot(projectRoot), ".kxm"), destination);
       syncDirectory2(projectRoot);
     } else if (!installedCreateMatches(projectRoot, operation)) {
       fail2("create_resume_conflict", ".kxm", "existing project configuration does not match the pinned create operation");
@@ -32232,7 +32236,7 @@ function applyOperation(projectRoot, original, options, resumed) {
   operation = updatePhase(projectRoot, operation, "verified");
   if (options.testFaultAt === "verified") throw new Error("injected init fault after verification");
   const files = operation.files.map((entry) => entry.path);
-  syncTreeDirectories(join15(projectRoot, ".kxm"));
+  syncTreeDirectories(join16(projectRoot, ".kxm"));
   return { kind: operation.kind, resumed, bundle, files };
 }
 function prepareAndApplyVnextCreate(projectRoot, rendered, options = {}) {
@@ -32345,7 +32349,7 @@ function finishPreparingOperation(projectRoot, operation, options) {
   const rendered = rendererForOperation(operation);
   if (!rendered) fail2("init_transaction_renderer_unavailable", TRANSACTION_NAME, "this binary cannot reproduce the pinned pre-application target");
   for (const directory of ["targets", "backups", "shadow"]) {
-    rmSync4(join15(transactionRoot(projectRoot), directory), { recursive: true, force: true });
+    rmSync4(join16(transactionRoot(projectRoot), directory), { recursive: true, force: true });
   }
   for (const entry of operation.files) {
     const bytes = rendered.files.get(entry.path);
@@ -32363,7 +32367,7 @@ function resumeVnextInitTransaction(projectRoot, options = {}) {
   let operation = readOperation(projectRoot, options.schemasDir);
   if (!operation) {
     const root = transactionRoot(projectRoot);
-    if (existsSync8(root)) {
+    if (existsSync9(root)) {
       rmSync4(root, { recursive: true, force: true });
       syncDirectory2(projectRoot);
     }
@@ -32379,7 +32383,7 @@ function commitVnextInitTransaction(projectRoot, schemasDir) {
     fail2("init_transaction_not_verified", TRANSACTION_NAME, "initialization transaction cannot commit before installed state is verified");
   }
   const transaction = transactionRoot(projectRoot);
-  const retired = join15(projectRoot, `${TRANSACTION_NAME}-cleanup-${operation.operationId}-${randomUUID3()}`);
+  const retired = join16(projectRoot, `${TRANSACTION_NAME}-cleanup-${operation.operationId}-${randomUUID3()}`);
   renameSync4(transaction, retired);
   syncDirectory2(projectRoot);
   rmSync4(retired, { recursive: true, force: true });
@@ -32488,7 +32492,7 @@ function validateBindingIdentities(bundle, persisted, explicit) {
 }
 function initializeVnextProjectAtGitRoot(start, gitRoot, options, mutationLock) {
   const storeOptions = bindingStoreOptions(options);
-  const persisted = existsSync9(join16(gitRoot, ".kxm", "project.yaml")) ? readVnextLocalBindings(gitRoot, storeOptions) : void 0;
+  const persisted = existsSync10(join17(gitRoot, ".kxm", "project.yaml")) ? readVnextLocalBindings(gitRoot, storeOptions) : void 0;
   const repositoryBindings = Object.fromEntries([
     ...Object.entries(persisted?.repositories ?? {}),
     ...Object.entries(options.repositoryBindings ?? {})
@@ -32677,7 +32681,7 @@ function initializeVnextProjectAtGitRoot(start, gitRoot, options, mutationLock) 
   const files = [...rendered.files.keys()];
   if (options.dryRun) return { action: "planned", plan, projectRoot: gitRoot, files };
   if (!mutationLock) throw new Error("project mutation lock is required to create configuration");
-  if (existsSync9(join16(gitRoot, ".kxm"))) {
+  if (existsSync10(join17(gitRoot, ".kxm"))) {
     throw new VnextConfigError([initIssue("workspace_changed", ".kxm", "workspace changed after planning; existing .kxm state was not overwritten")]);
   }
   const created = prepareAndApplyVnextCreate(gitRoot, rendered, transactionOptions);
@@ -32708,8 +32712,8 @@ function initializeVnextProject(start = process.cwd(), options = {}) {
 // plugins/kxm/src/vnext-migrate.ts
 var import_yaml4 = __toESM(require_dist(), 1);
 import { createHash as createHash6 } from "node:crypto";
-import { chmodSync as chmodSync3, closeSync as closeSync3, existsSync as existsSync10, fsyncSync as fsyncSync3, lstatSync as lstatSync5, mkdirSync as mkdirSync11, openSync as openSync3, readFileSync as readFileSync10, renameSync as renameSync5, rmSync as rmSync5, writeFileSync as writeFileSync10 } from "node:fs";
-import { join as join17 } from "node:path";
+import { chmodSync as chmodSync3, closeSync as closeSync3, existsSync as existsSync11, fsyncSync as fsyncSync3, lstatSync as lstatSync5, mkdirSync as mkdirSync11, openSync as openSync3, readFileSync as readFileSync11, renameSync as renameSync5, rmSync as rmSync5, writeFileSync as writeFileSync10 } from "node:fs";
+import { join as join18 } from "node:path";
 var MAX_LEGACY_JSON_BYTES = 1024 * 1024;
 var MAX_LEGACY_JSON_DEPTH = 32;
 var MAX_LEGACY_JSON_NODES = 32768;
@@ -32878,12 +32882,12 @@ function readVnextLegacySources(root) {
     throw new VnextConfigError([migrateIssue("discovery", "legacy_source_limit", ".kxm/config", `legacy configuration exceeds ${MAX_LEGACY_SOURCES} files`)]);
   }
   return files.map((path5) => {
-    const absolute = join17(root, ...path5.split("/"));
+    const absolute = join18(root, ...path5.split("/"));
     const stat = lstatSync5(absolute);
     if (stat.isSymbolicLink() || !stat.isFile()) {
       throw new VnextConfigError([migrateIssue("path", "legacy_source_invalid", path5, "legacy configuration must be a regular file, not a link")]);
     }
-    const buffer = readFileSync10(absolute);
+    const buffer = readFileSync11(absolute);
     let text;
     try {
       text = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
@@ -33956,11 +33960,11 @@ function planVnextMigration(projectRoot, options = {}) {
   };
 }
 function readVnextMigrationDecisions(path5, schemasDir) {
-  if (!existsSync10(path5)) {
+  if (!existsSync11(path5)) {
     throw new VnextConfigError([migrateIssue("discovery", "decisions_missing", path5, "migration decisions file does not exist")]);
   }
   const registry = new VnextSchemaRegistry(schemasDir);
-  const value = parseRestrictedYaml(readFileSync10(path5), path5);
+  const value = parseRestrictedYaml(readFileSync11(path5), path5);
   const issues = registry.validateMigrationDecision(value, path5);
   if (issues.length > 0) throw new VnextConfigError(issues);
   return value;
@@ -33999,9 +34003,9 @@ function writeDurable2(path5, content) {
       chmodSync3(path5, 384);
     } catch {
     }
-    syncDirectory3(join17(path5, ".."));
+    syncDirectory3(join18(path5, ".."));
   } finally {
-    if (created && existsSync10(temp)) rmSync5(temp, { force: true });
+    if (created && existsSync11(temp)) rmSync5(temp, { force: true });
   }
 }
 function applyVnextMigration(projectRoot, options = {}) {
@@ -34011,8 +34015,8 @@ function applyVnextMigration(projectRoot, options = {}) {
     ...options.schemasDir === void 0 ? {} : { schemasDir: options.schemasDir }
   };
   const execute = (lock) => {
-    const receiptAbsolute = join17(root, ...VNEXT_MIGRATION_RECEIPT_PATH.split("/"));
-    if (existsSync10(receiptAbsolute)) {
+    const receiptAbsolute = join18(root, ...VNEXT_MIGRATION_RECEIPT_PATH.split("/"));
+    if (existsSync11(receiptAbsolute)) {
       const stat = lstatSync5(receiptAbsolute);
       if (stat.isSymbolicLink() || !stat.isFile()) {
         throw new VnextConfigError([migrateIssue("path", "migration_receipt_invalid", VNEXT_MIGRATION_RECEIPT_PATH, "migration receipt must be a regular file, not a link")]);
@@ -34065,7 +34069,7 @@ function applyVnextMigration(projectRoot, options = {}) {
       return { action: "planned", projectRoot: root, files: [], plan: first.plan };
     }
     const files = [...first.resources.entries()].sort(([left], [right]) => compareCodeUnits4(left, right)).map(([path5, value]) => ({ path: path5, bytes: Buffer.from((0, import_yaml4.stringify)(value, { lineWidth: 0 }), "utf8") }));
-    const collisions = files.filter((file) => existsSync10(join17(root, ...file.path.split("/"))));
+    const collisions = files.filter((file) => existsSync11(join18(root, ...file.path.split("/"))));
     if (collisions.length > 0) {
       throw new VnextConfigError(collisions.map((file) => migrateIssue("semantic", "migration_target_exists", file.path, "target resource already exists; refusing to overwrite")));
     }
@@ -34074,8 +34078,8 @@ function applyVnextMigration(projectRoot, options = {}) {
       const segments = file.path.split("/");
       let current = root;
       for (const segment of segments.slice(0, -1)) {
-        current = join17(current, segment);
-        if (!existsSync10(current)) continue;
+        current = join18(current, segment);
+        if (!existsSync11(current)) continue;
         const stat = lstatSync5(current);
         if (stat.isSymbolicLink() || !stat.isDirectory()) {
           parentIssues.push(migrateIssue("path", "migration_target_parent_invalid", file.path, `migration target parent ${segment} must be a regular directory, not a link`));
@@ -34091,8 +34095,8 @@ function applyVnextMigration(projectRoot, options = {}) {
     const written = [];
     try {
       for (const file of files) {
-        const absolute = join17(root, ...file.path.split("/"));
-        mkdirSync11(join17(absolute, ".."), { recursive: true });
+        const absolute = join18(root, ...file.path.split("/"));
+        mkdirSync11(join18(absolute, ".."), { recursive: true });
         written.push(absolute);
         writeDurable2(absolute, file.bytes);
       }
@@ -34138,8 +34142,8 @@ ${bundle.configRevision}`).slice(7, 39)}`,
 }
 function verifyVnextMigration(projectRoot, options = {}) {
   const root = migrationGitRoot(projectRoot);
-  const receiptAbsolute = join17(root, ...VNEXT_MIGRATION_RECEIPT_PATH.split("/"));
-  if (!existsSync10(receiptAbsolute)) {
+  const receiptAbsolute = join18(root, ...VNEXT_MIGRATION_RECEIPT_PATH.split("/"));
+  if (!existsSync11(receiptAbsolute)) {
     return {
       ok: false,
       projectRoot: root,
@@ -34188,23 +34192,23 @@ function verifyVnextMigration(projectRoot, options = {}) {
 // plugins/kxm/src/vnext-runtime-supervisor.ts
 import { spawn } from "node:child_process";
 import { createHash as createHash8, createHmac as createHmac2, randomBytes, timingSafeEqual } from "node:crypto";
-import { chmodSync as chmodSync4, existsSync as existsSync12, lstatSync as lstatSync7, mkdirSync as mkdirSync13, readFileSync as readFileSync11, renameSync as renameSync6, rmSync as rmSync6, writeFileSync as writeFileSync11 } from "node:fs";
-import { dirname as dirname8, isAbsolute as isAbsolute5, join as join19, resolve as resolve10 } from "node:path";
+import { chmodSync as chmodSync4, existsSync as existsSync13, lstatSync as lstatSync7, mkdirSync as mkdirSync13, readFileSync as readFileSync12, renameSync as renameSync6, rmSync as rmSync6, writeFileSync as writeFileSync11 } from "node:fs";
+import { dirname as dirname8, isAbsolute as isAbsolute5, join as join20, resolve as resolve10 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 
 // plugins/kxm/src/vnext-runtime-store.ts
 import { createHash as createHash7, randomUUID as randomUUID5 } from "node:crypto";
-import { existsSync as existsSync11, lstatSync as lstatSync6, mkdirSync as mkdirSync12, realpathSync as realpathSync4 } from "node:fs";
-import { dirname as dirname7, join as join18, resolve as resolve9 } from "node:path";
+import { existsSync as existsSync12, lstatSync as lstatSync6, mkdirSync as mkdirSync12, realpathSync as realpathSync4 } from "node:fs";
+import { dirname as dirname7, join as join19, resolve as resolve9 } from "node:path";
 import { DatabaseSync as DatabaseSync3 } from "node:sqlite";
 function vnextRuntimePaths(options = {}) {
   const stateRoot = options.stateRoot ? resolve9(options.stateRoot) : vnextUserStateRoot({ ...options.env ? { env: options.env } : {}, ...options.homeDir ? { homeDir: options.homeDir } : {} });
-  const runtimeDir = join18(stateRoot, "runtime");
+  const runtimeDir = join19(stateRoot, "runtime");
   return {
     stateRoot,
     runtimeDir,
-    registryDb: join18(runtimeDir, "registry.db"),
-    projectsDir: join18(runtimeDir, "projects")
+    registryDb: join19(runtimeDir, "registry.db"),
+    projectsDir: join19(runtimeDir, "projects")
   };
 }
 function runtimeIssue(phase, code, file, message) {
@@ -34225,7 +34229,7 @@ function projectRuntimeKey(projectRoot) {
 }
 function checkedParent(path5, description) {
   const parent = dirname7(path5);
-  if (!existsSync11(parent)) mkdirSync12(parent, { recursive: true, mode: 448 });
+  if (!existsSync12(parent)) mkdirSync12(parent, { recursive: true, mode: 448 });
   const stat = lstatSync6(parent);
   if (stat.isSymbolicLink() || !stat.isDirectory()) {
     throw runtimeError("runtime_path_invalid", description, `${description} parent must be a regular directory, not a link`);
@@ -34233,14 +34237,14 @@ function checkedParent(path5, description) {
 }
 function openDatabase(file, description, schema) {
   checkedParent(file, description);
-  if (existsSync11(file)) {
+  if (existsSync12(file)) {
     const stat = lstatSync6(file);
     if (stat.isSymbolicLink() || !stat.isFile()) {
       throw runtimeError("runtime_path_invalid", description, `${description} must be a regular file, not a link or directory`);
     }
   }
   for (const sidecar of [`${file}-wal`, `${file}-shm`]) {
-    if (existsSync11(sidecar) && lstatSync6(sidecar).isSymbolicLink()) {
+    if (existsSync12(sidecar) && lstatSync6(sidecar).isSymbolicLink()) {
       throw runtimeError("runtime_path_invalid", description, `${description} sidecar must not be a link`);
     }
   }
@@ -34447,16 +34451,16 @@ var RUNTIME_EPOCH_NS = process.hrtime.bigint();
 // plugins/kxm/src/vnext-runtime-supervisor.ts
 var repoRoot = resolve10(fileURLToPath3(new URL("../../../", import.meta.url)));
 function vnextSupervisorTokenFile(paths) {
-  return join19(paths.runtimeDir, "supervisor.token");
+  return join20(paths.runtimeDir, "supervisor.token");
 }
 function readVnextSupervisorToken(paths) {
   const file = vnextSupervisorTokenFile(paths);
-  if (!existsSync12(file)) return void 0;
+  if (!existsSync13(file)) return void 0;
   const stat = lstatSync7(file);
   if (stat.isSymbolicLink() || !stat.isFile()) {
     throw runtimeError("runtime_path_invalid", file, "supervisor token file must be a regular file, not a link");
   }
-  const token = readFileSync11(file, "utf8").trim();
+  const token = readFileSync12(file, "utf8").trim();
   return token.length >= 32 ? token : void 0;
 }
 function processAlive(pid) {
@@ -34470,21 +34474,21 @@ function processAlive(pid) {
 var HEARTBEAT_STALE_MS = 15e3;
 var SUPERVISOR_ERROR_MAX_AGE_MS = 3e4;
 function supervisorErrorFile(paths) {
-  return join19(paths.runtimeDir, "supervisor.error");
+  return join20(paths.runtimeDir, "supervisor.error");
 }
 function clearSupervisorError(paths) {
   const file = supervisorErrorFile(paths);
-  if (existsSync12(file)) rmSync6(file, { force: true });
+  if (existsSync13(file)) rmSync6(file, { force: true });
 }
 function readRecentSupervisorError(paths) {
   const file = supervisorErrorFile(paths);
-  if (!existsSync12(file)) return void 0;
+  if (!existsSync13(file)) return void 0;
   const ageMs = Date.now() - lstatSync7(file).mtimeMs;
   if (ageMs > SUPERVISOR_ERROR_MAX_AGE_MS) return void 0;
-  return readFileSync11(file, "utf8").trim();
+  return readFileSync12(file, "utf8").trim();
 }
 function vnextSupervisorStatus(paths) {
-  if (!existsSync12(paths.registryDb)) return { running: false };
+  if (!existsSync13(paths.registryDb)) return { running: false };
   const registry = new VnextRuntimeRegistry(paths.registryDb);
   try {
     const record = registry.supervisor();
@@ -34545,7 +34549,7 @@ async function ensureVnextSupervisor(options = {}) {
     throw runtimeError("runtime_supervisor_unreachable", paths.registryDb, `runtime supervisor pid ${status.pid} is registered as running but cannot be probed`);
   }
   clearSupervisorError(paths);
-  const scriptPath = join19(repoRoot, "scripts", "kxm-runtime-supervisor.mjs");
+  const scriptPath = join20(repoRoot, "scripts", "kxm-runtime-supervisor.mjs");
   const spawnImpl = options.spawnImpl ?? ((script, env) => {
     const child = spawn(process.execPath, [script], {
       detached: true,
@@ -34614,7 +34618,7 @@ var USAGE_ERROR_CODES = /* @__PURE__ */ new Set([
 ]);
 function spawnScript(scriptName, extraEnv = {}) {
   return new Promise((resolveExit) => {
-    const child = spawn2(process.execPath, [join20(repoRoot2, "scripts", scriptName)], {
+    const child = spawn2(process.execPath, [join21(repoRoot2, "scripts", scriptName)], {
       stdio: "inherit",
       env: { ...process.env, ...extraEnv }
     });
@@ -34700,10 +34704,10 @@ function workspaceDirs(cwd, workspaceFlag, env) {
   return {
     workdir,
     workspace,
-    config: derive ? join20(workspace, "config") : resolve11(workdir, env.KXM_CONFIG_DIR?.trim() || join20(workspace, "config")),
-    logs: derive ? join20(workspace, "logs") : resolve11(workdir, env.KXM_LOGS_DIR?.trim() || join20(workspace, "logs")),
-    assets: derive ? join20(workspace, "assets") : resolve11(workdir, env.KXM_ASSETS_DIR?.trim() || join20(workspace, "assets")),
-    state: derive ? join20(workspace, "state") : resolve11(workdir, env.KXM_STATE_DIR?.trim() || join20(workspace, "state"))
+    config: derive ? join21(workspace, "config") : resolve11(workdir, env.KXM_CONFIG_DIR?.trim() || join21(workspace, "config")),
+    logs: derive ? join21(workspace, "logs") : resolve11(workdir, env.KXM_LOGS_DIR?.trim() || join21(workspace, "logs")),
+    assets: derive ? join21(workspace, "assets") : resolve11(workdir, env.KXM_ASSETS_DIR?.trim() || join21(workspace, "assets")),
+    state: derive ? join21(workspace, "state") : resolve11(workdir, env.KXM_STATE_DIR?.trim() || join21(workspace, "state"))
   };
 }
 function maskEnvName(name) {
@@ -34763,7 +34767,7 @@ async function hubGet(url, fetchImpl) {
   }
 }
 function localWorkflowSnapshot(dataPath, runId) {
-  if (!existsSync13(dataPath)) throw new Error("state_database_not_found");
+  if (!existsSync14(dataPath)) throw new Error("state_database_not_found");
   const database = new DatabaseSync4(dataPath, { readOnly: true });
   try {
     const rows = runId ? database.prepare("SELECT record FROM workflow_runs WHERE id = ?").all(runId) : database.prepare("SELECT record FROM workflow_runs ORDER BY rowid DESC LIMIT 200").all();
@@ -34856,7 +34860,7 @@ function activeWorkflowDefinition(runtime, definitionId) {
   let raw;
   if (file) {
     try {
-      raw = readFileSync12(resolve11(runtime.cwd, file), "utf8");
+      raw = readFileSync13(resolve11(runtime.cwd, file), "utf8");
     } catch {
       throw new Error("workflow definition file is unavailable");
     }
@@ -35338,7 +35342,7 @@ async function refreshKxmUpdateNotice(runtime) {
 }
 function applyKxmPackageUpdate(runtime, notice) {
   if (!notice.latest) return { ok: false, detail: "no_latest_version" };
-  const releaseDir = mkdtempSync2(join20(tmpdir2(), "kxm-pkg-update-"));
+  const releaseDir = mkdtempSync2(join21(tmpdir2(), "kxm-pkg-update-"));
   const planned = planKxmPackageUpdate(notice.source, notice.latest, releaseDir);
   if (runtime.dryRun) {
     return { ok: true, detail: planned.map((step) => `${step.command} ${step.args.join(" ")}`).join(" && ") };
@@ -35504,12 +35508,12 @@ async function cmdValidate(runtime, fileFlag) {
   }
   const selectedFile = explicitFile || configuredFile;
   const file = selectedFile ? resolve11(runtime.cwd, selectedFile) : void 0;
-  if (file && !existsSync13(file)) {
+  if (file && !existsSync14(file)) {
     printWorker(runtime, worker, { ok: false, command: "validate", error: "file_not_found", file }, `workflow file not found: ${file}`);
     return 1;
   }
   try {
-    const raw = file ? readFileSync12(file, "utf8") : inline;
+    const raw = file ? readFileSync13(file, "utf8") : inline;
     const warnings = [];
     const definitions = parseWorkflowDefinitions(raw, runtime.env, (message) => warnings.push(message));
     const secretEnvs = definitions.map((definition) => ({
@@ -35566,7 +35570,7 @@ async function cmdDash(runtime, options = {}) {
     return 2;
   }
   const screen = requested;
-  const dataPath = resolve11(runtime.dirs.workdir, runtime.env.KXM_DATA_PATH?.trim() || join20(runtime.dirs.state, "kxm.db"));
+  const dataPath = resolve11(runtime.dirs.workdir, runtime.env.KXM_DATA_PATH?.trim() || join21(runtime.dirs.state, "kxm.db"));
   if (runtime.dryRun) {
     print(runtime.io, runtime.json, {
       ok: true,
@@ -35668,7 +35672,7 @@ async function cmdWorker(runtime, options) {
   return await (runtime.io.spawnWorker ?? ((launchEnv) => spawnScript("kxm-worker.mjs", launchEnv)))(extraEnv);
 }
 async function cmdStop(runtime, waitMsFlag) {
-  const pids = existsSync13(runtime.dirs.state) ? readdirSync5(runtime.dirs.state).filter((name) => name.endsWith(".pid")) : [];
+  const pids = existsSync14(runtime.dirs.state) ? readdirSync5(runtime.dirs.state).filter((name) => name.endsWith(".pid")) : [];
   if (runtime.dryRun) {
     print(runtime.io, runtime.json, { ok: true, command: "stop", dryRun: true, pidFiles: pids }, "would signal pid files");
     return 0;
@@ -35682,14 +35686,14 @@ async function cmdStop(runtime, waitMsFlag) {
   const records = /* @__PURE__ */ new Map();
   for (const file of pids) {
     try {
-      const record = JSON.parse(readFileSync12(join20(runtime.dirs.state, file), "utf8"));
+      const record = JSON.parse(readFileSync13(join21(runtime.dirs.state, file), "utf8"));
       const expectedControl = file === "hub.pid" ? "hub.stop" : file.startsWith("worker-") ? `${file.slice(0, -4)}.stop` : void 0;
       const expectedRole = file === "hub.pid" ? "hub" : file.startsWith("worker-") ? "worker" : void 0;
       if (record.version !== 1 || !Number.isInteger(record.pid) || record.pid <= 0 || !record.startedAt || !expectedControl || record.controlFile !== expectedControl || record.role !== expectedRole || !processExists2(record.pid)) {
         ignored.push(file);
         continue;
       }
-      writeFileSync12(join20(runtime.dirs.state, record.controlFile), `${JSON.stringify({ startedAt: record.startedAt, ...record.generation ? { generation: record.generation } : {}, requestedAt: (/* @__PURE__ */ new Date()).toISOString() })}
+      writeFileSync12(join21(runtime.dirs.state, record.controlFile), `${JSON.stringify({ startedAt: record.startedAt, ...record.generation ? { generation: record.generation } : {}, requestedAt: (/* @__PURE__ */ new Date()).toISOString() })}
 `, { encoding: "utf8", mode: 384 });
       requested.push(file);
       records.set(file, { pid: record.pid, startedAt: record.startedAt, ...record.generation ? { generation: record.generation } : {} });
@@ -35707,7 +35711,7 @@ async function cmdStop(runtime, waitMsFlag) {
   while (Date.now() <= deadline && stopped.size < requested.length) {
     for (const [file, record] of records) {
       try {
-        const current = JSON.parse(readFileSync12(join20(runtime.dirs.state, file), "utf8"));
+        const current = JSON.parse(readFileSync13(join21(runtime.dirs.state, file), "utf8"));
         if (current.pid !== record.pid || current.startedAt !== record.startedAt || current.generation !== record.generation || !processExists2(record.pid)) stopped.add(file);
       } catch {
         stopped.add(file);
@@ -35722,11 +35726,11 @@ async function cmdStop(runtime, waitMsFlag) {
 }
 async function cmdSessionStatus(runtime) {
   const stateDir = runtime.dirs.state;
-  const names2 = existsSync13(stateDir) ? readdirSync5(stateDir) : [];
+  const names2 = existsSync14(stateDir) ? readdirSync5(stateDir) : [];
   const claims = [];
   for (const file of names2.filter((name) => name.endsWith(".pid"))) {
     try {
-      const record = JSON.parse(readFileSync12(join20(stateDir, file), "utf8"));
+      const record = JSON.parse(readFileSync13(join21(stateDir, file), "utf8"));
       claims.push({
         file,
         role: record.role,
@@ -35741,7 +35745,7 @@ async function cmdSessionStatus(runtime) {
   const recoveries = [];
   for (const file of names2.filter((name) => name.startsWith("worker-recovery-") && name.endsWith(".json"))) {
     try {
-      const envelope = JSON.parse(readFileSync12(join20(stateDir, file), "utf8"));
+      const envelope = JSON.parse(readFileSync13(join21(stateDir, file), "utf8"));
       recoveries.push({
         file,
         reason: envelope.reason,
@@ -35765,7 +35769,7 @@ async function cmdSessionStatus(runtime) {
   return 0;
 }
 async function cmdSessionBrief(runtime, options = {}) {
-  const dataPath = resolve11(runtime.dirs.workdir, runtime.env.KXM_DATA_PATH?.trim() || join20(runtime.dirs.state, "kxm.db"));
+  const dataPath = resolve11(runtime.dirs.workdir, runtime.env.KXM_DATA_PATH?.trim() || join21(runtime.dirs.state, "kxm.db"));
   const env = {
     ...runtime.env,
     KXM_STATE_DIR: runtime.dirs.state,
@@ -35851,7 +35855,7 @@ async function cmdImprove(runtime, targetFlag) {
   const targets = targetFlag === "cli" || targetFlag === "project" ? [targetFlag] : ["cli", "project"];
   const events = readTelemetry(telemetryPath(runtime.dirs.logs));
   const report = buildImprovementReport(events, targets);
-  const path5 = writeImprovementReport(join20(runtime.dirs.assets, "improvements"), report, runtime.dryRun);
+  const path5 = writeImprovementReport(join21(runtime.dirs.assets, "improvements"), report, runtime.dryRun);
   print(runtime.io, runtime.json, {
     ok: true,
     command: "improve",
@@ -36005,7 +36009,7 @@ function skillStateFromFlag(value) {
   throw new Error(`invalid skill state ${value}`);
 }
 function skillsRoot(runtime) {
-  return join20(runtime.dirs.workdir, ".kxm", "skills");
+  return join21(runtime.dirs.workdir, ".kxm", "skills");
 }
 function csv(value) {
   if (!value) return void 0;
@@ -36022,7 +36026,7 @@ async function cmdSkillsCreate(runtime, options) {
     const metadata = lifecycle.create({
       name: options.name,
       description: options.description ?? "",
-      content: readFileSync12(options.file, "utf8"),
+      content: readFileSync13(options.file, "utf8"),
       createdBy: options.createdBy,
       sources: {
         runIds: csv(options.run) ?? [],
@@ -36157,7 +36161,7 @@ async function cmdWorkflowStart(runtime, definitionIdArg, options) {
   }
   let payload;
   try {
-    const raw = payloadFlag.startsWith("@") ? readFileSync12(resolve11(runtime.cwd, payloadFlag.slice(1)), "utf8") : payloadFlag;
+    const raw = payloadFlag.startsWith("@") ? readFileSync13(resolve11(runtime.cwd, payloadFlag.slice(1)), "utf8") : payloadFlag;
     const value = JSON.parse(raw);
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("object required");
     payload = value;
@@ -36224,7 +36228,7 @@ async function cmdWorkflowDegrade(runtime, runId, stageId, options) {
   }
 }
 async function cmdWorkflowInspect(runtime, action, runId) {
-  const dataPath = resolve11(runtime.dirs.workdir, runtime.env.KXM_DATA_PATH?.trim() || join20(runtime.dirs.state, "kxm.db"));
+  const dataPath = resolve11(runtime.dirs.workdir, runtime.env.KXM_DATA_PATH?.trim() || join21(runtime.dirs.state, "kxm.db"));
   if (action === "get" && !runId) {
     runtime.io.stderr(`Usage: ${CLI_NAME} workflow get <runId>
 `);
@@ -36374,10 +36378,10 @@ async function cmdRetrospectiveExport(runtime, runId, options) {
   let snapshot;
   try {
     if (snapshotPath) {
-      if (!existsSync13(snapshotPath)) throw new Error("snapshot_missing");
-      snapshot = JSON.parse(readFileSync12(snapshotPath, "utf8"));
+      if (!existsSync14(snapshotPath)) throw new Error("snapshot_missing");
+      snapshot = JSON.parse(readFileSync13(snapshotPath, "utf8"));
     } else {
-      const dataPath = resolve11(runtime.dirs.workdir, runtime.env.KXM_DATA_PATH?.trim() || join20(runtime.dirs.state, "kxm.db"));
+      const dataPath = resolve11(runtime.dirs.workdir, runtime.env.KXM_DATA_PATH?.trim() || join21(runtime.dirs.state, "kxm.db"));
       const local = localWorkflowSnapshot(dataPath, runId);
       if (!local.runs[0]) throw new Error("workflow_not_found");
       snapshot = { run: local.runs[0], journal: local.journal };
@@ -36389,7 +36393,7 @@ async function cmdRetrospectiveExport(runtime, runId, options) {
     return 1;
   }
   const doc = buildRetrospective(snapshot.run, snapshot.journal);
-  const outDir = resolve11(runtime.cwd, String(options.outDir || join20(runtime.dirs.assets, "retrospectives")));
+  const outDir = resolve11(runtime.cwd, String(options.outDir || join21(runtime.dirs.assets, "retrospectives")));
   const assetsRoot = resolve11(runtime.dirs.assets);
   const assetsPrefix = `${assetsRoot}${process.platform === "win32" ? "\\" : "/"}`;
   if (outDir !== assetsRoot && !outDir.startsWith(assetsPrefix)) {

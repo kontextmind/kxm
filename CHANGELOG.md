@@ -4,6 +4,12 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ## Unreleased
 
+### Fixed
+
+- Pi git installs no longer fail to load the extension when production
+  `node_modules` omits `yaml`. Update-config YAML parsing stays on the bundled
+  CLI path.
+
 ### Changed
 
 - Product identity is **KXM** (`@kontextmind/kxm`, plugin `kxm`). Hub CLI is

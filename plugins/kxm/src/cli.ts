@@ -23,7 +23,6 @@ import { formatSessionBriefText, loadSessionBrief } from "./session-work.ts";
 import { formatHubInitNextSteps, parseHubInitOption } from "./hub-setup.ts";
 import {
   fetchLatestKxmVersion,
-  loadKxmUpdateConfig,
   noticeFromVersions,
   planKxmPackageUpdate,
   readInstalledKxmVersion,
@@ -31,6 +30,7 @@ import {
   KxmUpdateConfigError,
   type KxmUpdateNotice,
 } from "./kxm-update.ts";
+import { loadKxmUpdateConfig } from "./kxm-update-config.ts";
 import { VnextConfigError, discoverVnextProjectRoot, type VnextInitializationPlan } from "./vnext-config.ts";
 import { vnextUserStateRoot } from "./vnext-bindings.ts";
 import { initializeVnextProject } from "./vnext-init.ts";
