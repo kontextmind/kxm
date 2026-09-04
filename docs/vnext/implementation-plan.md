@@ -106,6 +106,13 @@ It does not replace the phase gates below.
   Jira inbound webhooks, `generic` HMAC. GitLab CI/issues and other trackers
   are later adapters; an unimplemented choice fails closed. Git remotes stay
   forge-agnostic. Not a Phase 3 gate.
+- **Model catalog and pricing feed (post-MVP to land, design now):** refresh
+  available models via native harness updaters (`kxm update --models` and
+  peers). A dated, hashed catalog (vendor or aggregator JSON — not LLM
+  guesswork) should carry model ids, context-tier list prices, and cache
+  rates. “Top providers” = catalog ∩ authenticated harnesses, ranked by our
+  routing report (quality, latency, **actual** spend), not marketing. Stale or
+  missing prices are `unknown`; never underquote. Not a Phase 3 gate.
 - **Post-MVP (do not implement now):** API budgets and **rollover** — spend
   leftover subscription/API allowance before buying the next increment when
   the insights loop says it’s worth it; cap and failover already apply. Keep
