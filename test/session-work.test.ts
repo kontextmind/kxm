@@ -5,6 +5,8 @@ import {
   buildSessionBrief,
   formatSessionBriefText,
   formatSessionStatusLine,
+  formatSessionWidget,
+  formatShipLine,
   itemFromChoice,
   kxmSlashCompletions,
   parseKxmSlashArgs,
@@ -52,20 +54,18 @@ test("session brief lists hub tasks and plans without message bodies", () => {
 });
 
 test("session status line reports hub online and idle", () => {
-  assert.equal(formatSessionStatusLine({
+  const empty = {
     activeTasks: 0,
     waitingTasks: 0,
     planCount: 0,
     inbox: 0,
     runTotal: 0,
-  }), "kxm idle");
-  assert.match(formatSessionStatusLine({
-    activeTasks: 0,
-    waitingTasks: 0,
-    planCount: 0,
-    inbox: 0,
-    runTotal: 0,
-  }, undefined, { online: true }), /hub:on/);
+  };
+  assert.equal(formatSessionStatusLine(empty), "kxm idle");
+  assert.match(formatSessionStatusLine(empty, undefined, { online: true }), /hub:on/);
+  assert.match(formatSessionStatusLine(empty, undefined, undefined, { dirty: true, ahead: 0 }), /dirty/);
+  assert.equal(formatShipLine({ dirty: true, ahead: 0 }), "ship dirty · commit after verify");
+  assert.match(formatSessionWidget(empty, undefined, undefined, { dirty: false, ahead: 2 }).join("\n"), /2 local/);
 });
 
 test("session brief picker is TUI-only and can be disabled", () => {

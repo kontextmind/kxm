@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import {
   loadLocalMeshSnapshot,
   resolveKxmSnapshotPaths,
@@ -30,6 +31,11 @@ export interface SessionWorkStats {
 
 export interface SessionHubStatus {
   online?: boolean;
+}
+
+export interface SessionShipStatus {
+  dirty: boolean;
+  ahead: number;
 }
 
 export interface SessionBrief {
@@ -83,10 +89,32 @@ function recentTasks(runs: MeshTuiRun[]): MeshTuiRun[] {
   return [...active, ...rest].slice(0, MAX_SESSION_BRIEF_TASKS);
 }
 
-export function formatSessionStatusLine(stats: SessionWorkStats, current?: SessionWorkItem, hub?: SessionHubStatus): string {
+export function formatShipLine(ship?: SessionShipStatus): string {
+  if (!ship) return "ship verify · PR=CI";
+  if (ship.dirty) return "ship dirty · commit after verify";
+  if (ship.ahead > 0) return `ship ${ship.ahead} local · PR after CI`;
+  return "ship clean · PR after CI";
+}
+
+export function readGitShip(cwd: string): SessionShipStatus | undefined {
+  try {
+    const dirty = spawnSync("git", ["-C", cwd, "status", "--porcelain"], { encoding: "utf8", windowsHide: true });
+    if (dirty.status !== 0) return undefined;
+    const ahead = spawnSync("git", ["-C", cwd, "rev-list", "--count", "@{u}..HEAD"], { encoding: "utf8", windowsHide: true });
+    return {
+      dirty: dirty.stdout.trim().length > 0,
+      ahead: ahead.status === 0 ? Number.parseInt(ahead.stdout.trim(), 10) || 0 : 0,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+export function formatSessionStatusLine(stats: SessionWorkStats, current?: SessionWorkItem, hub?: SessionHubStatus, ship?: SessionShipStatus): string {
   const head = hubPrefix(hub);
   if (!current && stats.activeTasks === 0 && stats.planCount === 0 && stats.inbox === 0) {
-    return hub?.online === undefined ? "kxm idle" : `${head} · idle`;
+    const idle = hub?.online === undefined ? "kxm idle" : `${head} · idle`;
+    return ship?.dirty ? `${idle} · dirty` : idle;
   }
   const parts: string[] = [];
   if (current?.kind === "task") parts.push(`${head} ${current.detail}`);
@@ -96,11 +124,13 @@ export function formatSessionStatusLine(stats: SessionWorkStats, current?: Sessi
   if (stats.waitingTasks > 0) parts.push(`${stats.waitingTasks} waiting`);
   parts.push(`${stats.planCount} plan${stats.planCount === 1 ? "" : "s"}`);
   if (stats.inbox > 0) parts.push(`inbox ${stats.inbox}`);
+  if (ship?.dirty) parts.push("dirty");
+  else if (ship && ship.ahead > 0) parts.push(`${ship.ahead} local`);
   const line = parts.join(" · ");
   return line.length <= 80 ? line : `${line.slice(0, 79)}…`;
 }
 
-export function formatSessionWidget(stats: SessionWorkStats, current?: SessionWorkItem, hub?: SessionHubStatus): string[] {
+export function formatSessionWidget(stats: SessionWorkStats, current?: SessionWorkItem, hub?: SessionHubStatus, ship?: SessionShipStatus): string[] {
   const hubMark = hub?.online === true ? "hub:on  " : hub?.online === false ? "hub:off  " : "";
   const lines = [
     `KXM  ${hubMark}${stats.activeTasks} tasks  ${stats.waitingTasks} waiting  ${stats.planCount} plans  inbox ${stats.inbox}`,
@@ -108,6 +138,7 @@ export function formatSessionWidget(stats: SessionWorkStats, current?: SessionWo
   if (current) lines.push(`now  ${current.kind}  ${truncate(current.detail, 56)}`);
   else if (stats.latestPlan) lines.push(`plan ${truncate(stats.latestPlan, 60)}`);
   else lines.push("now  no selected work");
+  lines.push(formatShipLine(ship));
   return lines;
 }
 
@@ -115,6 +146,7 @@ export function buildSessionBrief(
   snapshot: Pick<LocalMeshSnapshot, "runs" | "plans" | "openMessageTotal" | "runTotal">,
   current?: SessionWorkItem,
   hub?: SessionHubStatus,
+  ship?: SessionShipStatus,
 ): SessionBrief {
   const active = snapshot.runs.filter((run) => run.status === "running" || run.status === "waiting");
   const stats: SessionWorkStats = {
@@ -131,8 +163,8 @@ export function buildSessionBrief(
     stats,
     tasks,
     plans,
-    statusLine: formatSessionStatusLine(stats, current, hub),
-    widgetLines: formatSessionWidget(stats, current, hub),
+    statusLine: formatSessionStatusLine(stats, current, hub, ship),
+    widgetLines: formatSessionWidget(stats, current, hub, ship),
   };
 }
 
@@ -164,11 +196,12 @@ export function formatSessionBriefText(brief: SessionBrief): string {
 }
 
 export function loadSessionBrief(cwd: string, env: NodeJS.ProcessEnv = process.env, current?: SessionWorkItem, hub?: SessionHubStatus): SessionBrief {
+  const ship = readGitShip(cwd);
   try {
     const paths = resolveKxmSnapshotPaths(cwd, env);
-    return buildSessionBrief(loadLocalMeshSnapshot(paths.dataPath, paths.stateDir), current, hub);
+    return buildSessionBrief(loadLocalMeshSnapshot(paths.dataPath, paths.stateDir), current, hub, ship);
   } catch {
-    return buildSessionBrief({ runs: [], plans: [], openMessageTotal: 0, runTotal: 0 }, current, hub);
+    return buildSessionBrief({ runs: [], plans: [], openMessageTotal: 0, runTotal: 0 }, current, hub, ship);
   }
 }
 

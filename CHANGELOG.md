@@ -22,6 +22,7 @@ All notable user-facing changes are documented here. The project follows [Semant
   status line on new/fork sessions, `/kxm` (`status`/`hub`/`help`), skill
   `kxm-session`. `kxm init --hub existing|new` is opt-in; omit `--hub` for
   local-only; SSH is not available. `/kxm hub` replaces `/mesh-status`.
+  Pi widget `ship` line shows git dirty/ahead vs verify/CI (does not run tests).
 
 ## 0.5.1 - 2026-09-01
 

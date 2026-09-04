@@ -94,6 +94,11 @@ It does not replace the phase gates below.
 
 ### Still open
 
+- **Come back (not gates yet):** session-ready `/new`/`/fork` as a failing test;
+  Mesh operator-copy fold (`architecture.md` / `configuration.md` still say
+  Pi Mesh Comms; `kxm mesh`; `MeshClient`); cleanup-before-push as a script.
+  Until then the Pi widget `ship` line is git dirty/ahead plus `npm run verify` /
+  CI names — it does not run verify.
 - Rebuild generated `plugins/kxm/dist` and run full `npm test` after the latest
   CLI rename.
 - Docs sweep: operator pages updated to `kxm hub start|view|stop` and `kxm dash`;

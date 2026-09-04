@@ -42,7 +42,7 @@ Existing hub: set `KXM_SERVER_URL` (and project token) to that hub, then `kxm hu
 
 `kxm session brief` reads the **local hub** SQLite (tasks = workflow runs, plans = journal `plan` rows). No message bodies. `--status` prints the status line for harnesses that have one.
 
-Interactive **Pi TUI**: on `startup` / `/new` / `/fork`, the kxm extension offers recent tasks/plans and paints the footer + widget. `/kxm` reopens the picker. `/kxm status` refreshes chrome only. `/kxm hub` is hub view (replaces `/mesh-status`). Workers, RPC, and print mode never prompt. `KXM_SESSION_BRIEF=off` disables the picker only.
+Interactive **Pi TUI**: on `startup` / `/new` / `/fork`, the kxm extension offers recent tasks/plans and paints the footer + widget (including a `ship` line: dirty vs local commits vs PR after CI). `/kxm` reopens the picker. `/kxm status` refreshes chrome only. `/kxm hub` is hub view (replaces `/mesh-status`). Workers, RPC, and print mode never prompt. `KXM_SESSION_BRIEF=off` disables the picker only.
 
 ## Harness support (fail closed)
 
