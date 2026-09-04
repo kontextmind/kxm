@@ -39,8 +39,11 @@ It does not replace the phase gates below.
   and later harnesses.
 - **Cost efficiency and tracking are required**, not optional telemetry.
   Every dispatched assignment records harness, provider, model, thinking,
-  latency, cost (or explicit `unmetered`/`unknown` — never a silent omit),
-  and outcome (verify passed, rework, fail). Prefer an authenticated
+  **context tokens (in/out/cache when known)**, latency, cost (or explicit
+  `unmetered`/`unknown` — never a silent omit), and outcome (verify passed,
+  rework, fail). Some models/providers **price by context** (long-context
+  tiers, thinking tokens, cache miss vs hit). Routing must compare cost at
+  the actual context, not list price alone. Prefer an authenticated
   provider-native harness over Pi API keys for the same lab.
 - **Insights loop:** `kxm routing report` (and `kxm dash` spend/quality
   views) exist to keep models **fast, efficient, high-quality, and cheap**.
