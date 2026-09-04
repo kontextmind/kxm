@@ -1,6 +1,7 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHmac, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
@@ -18,6 +19,18 @@ import { behavioralConfigHash, compareRoutingRecords, groupByBehavior } from "./
 import { createSession, loadNamedWorkers, rosterNames, sessionAssetDirs, standardAssetDirs, workflowAssetDirs, writeSession } from "./session.ts";
 import { buildImprovementReport, writeImprovementReport } from "./improve.ts";
 import { MESH_TUI_PANELS, runMeshTui, type MeshTuiPanel } from "./tui.ts";
+import { formatSessionBriefText, loadSessionBrief } from "./session-work.ts";
+import { formatHubInitNextSteps, parseHubInitOption } from "./hub-setup.ts";
+import {
+  fetchLatestKxmVersion,
+  loadKxmUpdateConfig,
+  noticeFromVersions,
+  planKxmPackageUpdate,
+  readInstalledKxmVersion,
+  writeUpdateCache,
+  KxmUpdateConfigError,
+  type KxmUpdateNotice,
+} from "./kxm-update.ts";
 import { VnextConfigError, discoverVnextProjectRoot, type VnextInitializationPlan } from "./vnext-config.ts";
 import { vnextUserStateRoot } from "./vnext-bindings.ts";
 import { initializeVnextProject } from "./vnext-init.ts";
@@ -463,7 +476,12 @@ function explicitRepositoryBindings(values: readonly string[]): Readonly<Record<
   return result;
 }
 
-async function cmdVnextInit(runtime: Runtime, options: { name?: string; projectId?: string; repository?: string[] }): Promise<number> {
+async function cmdVnextInit(runtime: Runtime, options: { name?: string; projectId?: string; repository?: string[]; hub?: string | true; hubUrl?: string }): Promise<number> {
+  const hubInit = parseHubInitOption(options.hub, options.hubUrl);
+  if (!hubInit.ok) {
+    print(runtime.io, runtime.json, { ok: false, command: "init", error: hubInit.error }, hubInit.message);
+    return 2;
+  }
   if (runtime.workspaceFlag !== undefined) {
     print(runtime.io, runtime.json, {
       ok: false,
@@ -494,37 +512,49 @@ async function cmdVnextInit(runtime: Runtime, options: { name?: string; projectI
       ...(initialized.transactionKind === undefined ? {} : { transactionKind: initialized.transactionKind }),
       plannedOnly: initialized.action === "planned",
     };
+    const finishInit = (code: number, text: string): number => {
+      if (hubInit.mode === "local") {
+        print(runtime.io, runtime.json, payload, text);
+        return code;
+      }
+      const nextSteps = formatHubInitNextSteps(hubInit.mode, hubInit.hubUrl ? { hubUrl: hubInit.hubUrl } : {});
+      const hub = {
+        mode: hubInit.mode,
+        ...(hubInit.hubUrl ? { hubUrl: hubInit.hubUrl } : {}),
+        nextSteps,
+      };
+      print(
+        runtime.io,
+        runtime.json,
+        { ...payload, hub },
+        `${text}\n${nextSteps}`,
+      );
+      return code;
+    };
     if (initialized.action === "created") {
-      print(runtime.io, runtime.json, payload, `initialized vNext project at ${initialized.projectRoot ?? runtime.cwd}`);
-      return 0;
+      return finishInit(0, `initialized vNext project at ${initialized.projectRoot ?? runtime.cwd}`);
     }
     if (initialized.action === "joined") {
-      print(runtime.io, runtime.json, payload, `joined vNext project at ${initialized.projectRoot ?? runtime.cwd}`);
-      return 0;
+      return finishInit(0, `joined vNext project at ${initialized.projectRoot ?? runtime.cwd}`);
     }
     if (initialized.action === "repaired") {
-      print(runtime.io, runtime.json, payload, `repaired vNext project at ${initialized.projectRoot ?? runtime.cwd}`);
-      return 0;
+      return finishInit(0, `repaired vNext project at ${initialized.projectRoot ?? runtime.cwd}`);
     }
     if (initialized.action === "resumed") {
-      print(runtime.io, runtime.json, payload, `resumed vNext ${initialized.transactionKind ?? "initialization"} at ${initialized.projectRoot ?? runtime.cwd}`);
-      return 0;
+      return finishInit(0, `resumed vNext ${initialized.transactionKind ?? "initialization"} at ${initialized.projectRoot ?? runtime.cwd}`);
     }
     if (initialized.action === "validated") {
-      print(runtime.io, runtime.json, payload, `validated vNext project at ${initialized.projectRoot ?? runtime.cwd}`);
-      return 0;
+      return finishInit(0, `validated vNext project at ${initialized.projectRoot ?? runtime.cwd}`);
     }
     if (runtime.dryRun) {
-      print(runtime.io, runtime.json, payload, `init plan: ${initialized.plan.mode}`);
-      return 0;
+      return finishInit(0, `init plan: ${initialized.plan.mode}`);
     }
     const next = initialized.plan.mode === "migrate"
       ? "legacy state requires reviewed migration; conversion is not available in this implementation slice"
       : initialized.repairPlan?.issues.length
         ? "managed-template repair is blocked by conflicts or authority changes; local files were preserved"
         : "partial or provenance-free vNext state requires explicit repair; no files were overwritten";
-    print(runtime.io, runtime.json, payload, next);
-    return 1;
+    return finishInit(1, next);
   } catch (error) {
     if (error instanceof VnextConfigError) {
       print(runtime.io, runtime.json, {
@@ -869,25 +899,101 @@ async function cmdHarnessList(runtime: Runtime): Promise<number> {
   return 0;
 }
 
-async function cmdUpdate(runtime: Runtime, harness: string | undefined, options: { self?: boolean; extensions?: boolean; models?: boolean }): Promise<number> {
+async function refreshKxmUpdateNotice(runtime: Runtime): Promise<KxmUpdateNotice> {
+  const config = loadKxmUpdateConfig(runtime.cwd);
+  const current = readInstalledKxmVersion(repoRoot);
+  const fetched = await fetchLatestKxmVersion(config.source, runtime.env, runtime.fetchImpl);
+  const notice = noticeFromVersions(current, fetched.latest, config, fetched.error);
+  writeUpdateCache(runtime.dirs.state, notice);
+  return notice;
+}
+
+function applyKxmPackageUpdate(runtime: Runtime, notice: KxmUpdateNotice): { ok: boolean; detail: string } {
+  if (!notice.latest) return { ok: false, detail: "no_latest_version" };
+  const releaseDir = mkdtempSync(join(tmpdir(), "kxm-pkg-update-"));
+  const planned = planKxmPackageUpdate(notice.source, notice.latest, releaseDir);
+  if (runtime.dryRun) {
+    return { ok: true, detail: planned.map((step) => `${step.command} ${step.args.join(" ")}`).join(" && ") };
+  }
+  for (const step of planned) {
+    const result = spawnSync(step.command, [...step.args], {
+      encoding: "utf8",
+      windowsHide: true,
+      shell: process.platform === "win32",
+    });
+    if (result.status !== 0) {
+      const detail = (result.stderr || result.stdout || result.error?.message || "update_failed").trim().slice(0, 500);
+      return { ok: false, detail };
+    }
+  }
+  return { ok: true, detail: `installed ${notice.latest} from ${notice.source}` };
+}
+
+async function cmdUpdate(runtime: Runtime, harness: string | undefined, options: {
+  self?: boolean;
+  extensions?: boolean;
+  models?: boolean;
+  check?: boolean;
+  kxm?: boolean;
+}): Promise<number> {
+  if (options.check && (options.kxm || options.self || options.extensions || options.models || harness)) {
+    print(runtime.io, runtime.json, { ok: false, command: "update", error: "scope_conflict" }, "--check cannot be combined with other update flags");
+    return 2;
+  }
   const selected = [options.self, options.extensions, options.models].filter(Boolean).length;
   if (selected > 1) {
     print(runtime.io, runtime.json, { ok: false, command: "update", error: "scope_conflict" }, "specify at most one of --self, --extensions, or --models");
     return 2;
   }
+  let notice: KxmUpdateNotice;
+  try {
+    notice = await refreshKxmUpdateNotice(runtime);
+  } catch (error) {
+    if (error instanceof KxmUpdateConfigError) {
+      print(runtime.io, runtime.json, { ok: false, command: "update", error: error.code }, error.message);
+      return 2;
+    }
+    throw error;
+  }
+  if (options.check) {
+    print(runtime.io, runtime.json, { ok: true, command: "update check", ...notice }, notice.message);
+    return 0;
+  }
+  const applyKxm = Boolean(options.kxm || notice.auto);
+  let kxmApply: { ok: boolean; detail: string } | undefined;
+  if (applyKxm && notice.available) {
+    kxmApply = applyKxmPackageUpdate(runtime, notice);
+    if (!kxmApply.ok && options.kxm) {
+      print(runtime.io, runtime.json, { ok: false, command: "update", kxm: kxmApply, notice }, kxmApply.detail);
+      return 1;
+    }
+  }
+  const skipHarness = Boolean(options.kxm && selected === 0 && !harness && !notice.auto);
+  if (skipHarness) {
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: kxmApply?.ok !== false, command: "update", dryRun: runtime.dryRun, notice, kxm: kxmApply },
+      kxmApply?.detail ?? notice.message,
+    );
+    return kxmApply?.ok === false ? 1 : 0;
+  }
   const scope: HarnessUpdateScope = options.self ? "self" : options.extensions ? "extensions" : options.models ? "models" : "all";
   const inventory = probeHarnesses({ env: runtime.env });
   const planned = planHarnessUpdate(inventory, { ...(harness ? { harness } : {}), scope });
   const steps = runHarnessUpdate(planned, { env: runtime.env, dryRun: runtime.dryRun });
-  const failed = steps.some((step) => step.outcome === "failed");
+  const failed = steps.some((step) => step.outcome === "failed") || kxmApply?.ok === false;
   const skippedUnknown = steps.some((step) => step.detail === "unknown_harness");
+  const text = [notice.available ? notice.message : undefined, kxmApply?.detail, formatHarnessUpdate(steps)].filter(Boolean).join("\n");
   print(runtime.io, runtime.json, {
     ok: !failed && !skippedUnknown,
     command: "update",
     dryRun: runtime.dryRun,
     scope,
+    notice,
+    ...(kxmApply ? { kxm: kxmApply } : {}),
     steps,
-  }, formatHarnessUpdate(steps));
+  }, text);
   if (skippedUnknown) return 2;
   return failed ? 1 : 0;
 }
@@ -1085,6 +1191,18 @@ async function cmdDash(runtime: Runtime, options: { screen?: string } = {}): Pro
 }
 
 async function cmdHub(runtime: Runtime): Promise<number> {
+  if (!runtime.dryRun) {
+    try {
+      const notice = await refreshKxmUpdateNotice(runtime);
+      if (notice.available) runtime.io.stderr(`${notice.message}\n`);
+    } catch (error) {
+      if (error instanceof KxmUpdateConfigError) {
+        print(runtime.io, runtime.json, { ok: false, command: "hub start", error: error.code }, error.message);
+        return 2;
+      }
+      throw error;
+    }
+  }
   const extraEnv = workspaceEnv(runtime);
   if (runtime.dryRun) {
     print(runtime.io, runtime.json, { ok: true, command: "hub start", dryRun: true, workspace: runtime.dirs.workspace }, "would start hub");
@@ -1245,6 +1363,40 @@ async function cmdSessionStatus(runtime: Runtime): Promise<number> {
     runtime.json,
     { ok: true, command: "session status", claims, recoveries },
     `${claims.length} session claim(s), ${recoveries.length} recovery envelope(s)`,
+  );
+  return 0;
+}
+
+async function cmdSessionBrief(runtime: Runtime, options: { status?: boolean } = {}): Promise<number> {
+  const dataPath = resolve(runtime.dirs.workdir, runtime.env.KXM_DATA_PATH?.trim() || join(runtime.dirs.state, "kxm.db"));
+  const env = {
+    ...runtime.env,
+    KXM_STATE_DIR: runtime.dirs.state,
+    KXM_DATA_PATH: runtime.env.KXM_DATA_PATH?.trim() || dataPath,
+  };
+  let hub: { online: boolean } | undefined;
+  if (runtime.env.KXM_SERVER_URL?.trim()) {
+    const health = await hubGet(`${runtime.serverUrl}/health`, runtime.fetchImpl);
+    hub = { online: health.ok };
+  }
+  const brief = loadSessionBrief(runtime.dirs.workdir, env, undefined, hub);
+  if (options.status) {
+    print(runtime.io, runtime.json, { ok: true, command: "session brief", statusLine: brief.statusLine, stats: brief.stats, hub }, brief.statusLine);
+    return 0;
+  }
+  print(
+    runtime.io,
+    runtime.json,
+    {
+      ok: true,
+      command: "session brief",
+      statusLine: brief.statusLine,
+      stats: brief.stats,
+      tasks: brief.tasks,
+      plans: brief.plans,
+      ...(hub ? { hub } : {}),
+    },
+    formatSessionBriefText(brief),
   );
   return 0;
 }
@@ -1930,7 +2082,9 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .option("--name <name>", "Project display name for a new project")
     .option("--project-id <id>", "Stable project ID for controlled provisioning")
     .option("--repository <id=absolute-path>", "Bind a member repository outside Git configuration", (value, previous: string[]) => [...previous, value], [])
-    .action(async function initAction(this: Command, options: { name?: string; projectId?: string; repository?: string[] }) {
+    .option("--hub [mode]", "Use a hub: existing or new. Omit for local-only. SSH is not available")
+    .option("--hub-url <url>", "Existing hub URL (with --hub existing)")
+    .action(async function initAction(this: Command, options: { name?: string; projectId?: string; repository?: string[]; hub?: string | true; hubUrl?: string }) {
       result.code = await cmdVnextInit(runtimeFrom(ctx, this), options);
     });
 
@@ -1977,12 +2131,20 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
   const harnessCmd = addGlobalOptions(program.command("harness").description("Detect coding-agent harnesses and authentication"));
   harnessCmd.helpCommand("help", "Show harness help");
   addGlobalOptions(harnessCmd.command("list").description("Show installed harnesses, auth, and native updaters")).action(bind(cmdHarnessList));
-  addGlobalOptions(program.command("update").description("Update detected harness CLIs, extensions, plugins, and model catalogs")
+  addGlobalOptions(program.command("update").description("Update kxm, harness CLIs, extensions, plugins, and model catalogs")
     .argument("[harness]", "Harness id (default: every detected harness)")
+    .option("--check", "Check for a kxm package update without applying")
+    .option("--kxm", "Apply the kxm operator package update (GitHub release tarball or npm)")
     .option("--self", "Update only the harness CLI")
     .option("--extensions", "Update only extensions/plugins (Pi packages, Claude kxm)")
     .option("--models", "Refresh model catalogs where the harness supports it"))
-    .action(async function updateAction(this: Command, harness: string | undefined, options: { self?: boolean; extensions?: boolean; models?: boolean }) {
+    .action(async function updateAction(this: Command, harness: string | undefined, options: {
+      self?: boolean;
+      extensions?: boolean;
+      models?: boolean;
+      check?: boolean;
+      kxm?: boolean;
+    }) {
       result.code = await cmdUpdate(runtimeFrom(ctx, this), harness, options);
     });
 
@@ -2038,9 +2200,14 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
       result.code = await cmdWorker(runtimeFrom(ctx, this), options);
     });
 
-  const session = addGlobalOptions(program.command("session").description("Create manifests and inspect or drain Pi worker sessions"));
+  const session = addGlobalOptions(program.command("session").description("Create manifests, inspect sessions, and brief recent hub work"));
   session.helpCommand("help", "Show session help");
   addGlobalOptions(session.command("status").description("Show session claims and recovery envelopes")).action(bind(cmdSessionStatus));
+  addGlobalOptions(session.command("brief").description("Show recent hub tasks and plans for a new session (read-only)"))
+    .option("--status", "Print only the status line")
+    .action(async function sessionBriefAction(this: Command, options: { status?: boolean }) {
+      result.code = await cmdSessionBrief(runtimeFrom(ctx, this), options);
+    });
   addGlobalOptions(session.command("start").description("Create an agent/gate or workflow session manifest (does not launch processes)"))
     .option("--id <id>", "Session id")
     .option("--workflow <id>", "Workflow definition id")

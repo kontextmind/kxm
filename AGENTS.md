@@ -7,8 +7,12 @@ Read this first. Then follow
 ## Product
 
 - Name is **KXM**. Not Mesh, not pi-extensions.
+- Future work is not backwards-compatible. Fix leftovers with **brakes** (fail
+  closed on old names), not dual Mesh/KXM aliases.
 - Hub process: `kxm hub start` · `kxm hub view` · `kxm hub stop`
 - Live screens: `kxm dash` (optional `--screen agents|tasks|workflows|plans|inbox|procs`)
+- Hub-local session: `kxm session brief`; Pi TUI `/kxm` picker + status line.
+  `kxm init --hub existing|new` is opt-in; default init is local-only.
 - DB: `.kxm/state/kxm.db`
 - Plugin / npm: `kxm` / `@kontextmind/kxm`
 
@@ -71,9 +75,27 @@ Do not assume GitHub. Bind SCM and tickets from **this repo’s conventions**, t
 
 Ship GitHub checks + Jira webhooks first. GitLab (and other trackers) are adapters to add; until they exist, **offer the choice and fail closed** if the user picks an unimplemented one — don’t silently use GitHub.
 
+## Verify and ship (gates, not memory)
+
+On `/new` and `/fork`, update Tracking and affected docs in the **same** change.
+Work is **agents** and **workflows**. Warn before fixing contradictions or
+deleting duplicate docs/code. Product name is KXM.
+
+Two combined gates (already in npm/CI). Do not add a third unless a test fails.
+
+| When | Gate | What it combines |
+|---|---|---|
+| **Commit** | `npm run verify` | `npm test` (build + tests) then `npm run check` (tsc + lint:docs + versions) |
+| **PR/MR** | CI `validate:ci` + `check:generated` | coverage + check + pack dry-run; generated `dist` current |
+
+Cleanup (`git status`, no `nul`/tmp/secrets; `dist` if CLI changed) is **before** the commit gate and **again before push**. Session-ready `/new`/`/fork` and leftover Mesh operator copy are **PR judgment**, not extra npm scripts, until they can fail a test without a live harness. Come-back list: Tracking **Still open**. Ship hint belongs on the Pi status/widget (`ship dirty` / `N local` / `PR after CI`), not in every chat turn.
+
+A commit is not a PR. A PR is not a release.
+
 ## Do not
 
 - Bulk-migrate jira / provenance / v04 just to “set up”
 - Add a harness preferences overlay
 - Bypass fail-closed identity checks
 - Weaken `/fix` independent repro-before-oracle
+- Add backwards-compat shims or dual product names; brake old names instead

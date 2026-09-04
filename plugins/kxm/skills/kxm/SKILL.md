@@ -92,3 +92,5 @@ When an inbound request names a durable workflow run:
 - Treat provenance as proof of durable routing within the project credential boundary, not proof of truth, model identity, independent inference, non-collusion, or human approval.
 
 See [the protocol reference](references/protocol.md) when implementing another client or diagnosing delivery.
+
+For hub-local session start, status-line stats, and `kxm init --hub`, see the `kxm-session` skill. That path is opt-in hub local, not local-only Runtime insights.

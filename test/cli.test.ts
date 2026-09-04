@@ -52,6 +52,15 @@ test("kxm routes agent, session, workflow, and gate tooling", async () => {
   const sessionHelp = capture();
   assert.equal(await runCli(["session", "help"], {}, sessionHelp), 0);
   assert.match(sessionHelp.read().stdout, /Usage: kxm session/);
+  assert.match(sessionHelp.read().stdout, /brief/);
+  const initHelp = capture();
+  await runCli(["init", "--help"], {}, initHelp);
+  assert.match(`${initHelp.read().stdout}${initHelp.read().stderr}`, /--hub/);
+  const sshHub = capture();
+  assert.equal(await runCli(["init", "--json", "--hub", "ssh"], {}, sshHub), 2);
+  assert.match(sshHub.read().stdout, /hub_ssh_unsupported/);
+  assert.doesNotMatch(sshHub.read().stdout, /[Mm]esh/);
+
   const unknownTool = capture();
   assert.equal(await runCli(["nope"], {}, unknownTool), 2);
   const unknownCommand = capture();
@@ -92,6 +101,26 @@ test("agent and gate CLI results share the worker envelope", async () => {
   assert.equal(gate.worker.driver, "code");
   assert.equal(gate.command, "validate");
   assert.equal(gate.outcome, "failed");
+});
+
+test("init --hub new is opt-in and does not mention Mesh", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "kxm-cli-init-hub-"));
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-cli-init-hub-state-"));
+  try {
+    makeGitRoot(cwd);
+    const io = capture();
+    assert.equal(await runCli([
+      "init", "--json", "--hub", "new", "--name", "Hub Project", "--project-id", "prj_01JHUBPROJECT0000000000000",
+    ], { KXM_STATE_HOME: stateRoot }, io, cwd), 0);
+    const payload = JSON.parse(io.read().stdout) as { action: string; hub?: { mode?: string } };
+    assert.equal(payload.action, "created");
+    assert.equal(payload.hub?.mode, "new");
+    assert.match(io.read().stdout, /kxm hub start/);
+    assert.doesNotMatch(io.read().stdout, /[Mm]esh/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(stateRoot, { recursive: true, force: true });
+  }
 });
 
 test("vNext init creates and revalidates project configuration without legacy environment overrides", async () => {
@@ -695,6 +724,58 @@ test("init and validate work in an isolated workspace", async () => {
       schema: "kxm.gates.v1",
       gates: [{ name: "validate", kind: "gate", driver: "code", purpose: "validates" }],
     }));
+    mkdirSync(join(isolated, "state"), { recursive: true });
+    const database = new DatabaseSync(join(isolated, "state", "kxm.db"));
+    try {
+      database.exec("CREATE TABLE agents (record TEXT NOT NULL); CREATE TABLE messages (record TEXT NOT NULL); CREATE TABLE workflow_runs (record TEXT NOT NULL); CREATE TABLE workflow_journal (category TEXT, record TEXT NOT NULL);");
+      database.prepare("INSERT INTO workflow_runs(record) VALUES (?)").run(JSON.stringify({
+        id: "run_brief1",
+        status: "running",
+        definitionId: "default",
+        project: "demo",
+        currentStage: "implement",
+        stages: [
+          { id: "plan", status: "passed" },
+          { id: "implement", status: "in_progress" },
+        ],
+        createdAt: "2026-09-01T00:00:00.000Z",
+        updatedAt: "2026-09-01T00:00:00.000Z",
+      }));
+      database.prepare("INSERT INTO workflow_journal(category, record) VALUES (?, ?)").run("plan", JSON.stringify({
+        id: "plan_brief1",
+        runId: "run_brief1",
+        category: "plan",
+        summary: "Hub local session brief",
+        createdAt: "2026-09-01T00:00:00.000Z",
+      }));
+      database.prepare("INSERT INTO messages(record) VALUES (?)").run(JSON.stringify({
+        id: "msg_brief",
+        status: "delivered",
+        from: "agt_1",
+        fromName: "sender",
+        to: "agt_2",
+        toName: "recipient",
+        delivery: "followUp",
+        content: "SECRET BODY MUST NOT LOAD",
+        createdAt: "2026-09-01T00:00:00.000Z",
+        expiresAt: "2026-09-02T00:00:00.000Z",
+        hops: 0,
+        maxHops: 5,
+      }));
+    } finally {
+      database.close();
+    }
+    const briefIo = capture();
+    assert.equal(await runCli(["session", "--json", "--workspace", isolated, "brief"], {}, briefIo, cwd), 0);
+    const briefOut = briefIo.read().stdout;
+    assert.match(briefOut, /"command":"session brief"/);
+    assert.match(briefOut, /run_brief1/);
+    assert.match(briefOut, /Hub local session brief/);
+    assert.doesNotMatch(briefOut, /SECRET BODY MUST NOT LOAD/);
+    const briefStatus = capture();
+    assert.equal(await runCli(["session", "--json", "--workspace", isolated, "brief", "--status"], {}, briefStatus, cwd), 0);
+    assert.match(briefStatus.read().stdout, /statusLine/);
+
     const sessionIo = capture();
     assert.equal(await runCli([
       "session", "--json", "--workspace", isolated, "start", "--id", "review-1", "--mix", "planner,validate",

@@ -1,6 +1,6 @@
 # Configuration reference
 
-Pi Mesh Comms uses environment variables for the hub and Pi extension. The Claude Code plugin maps its settings to the same client values.
+KXM uses environment variables for the hub and Pi extension. The Claude Code plugin maps its settings to the same client values.
 
 ## vNext local project settings
 
@@ -63,6 +63,7 @@ rewrites it.
 | `KXM_ASSETS_DIR` | `.kxm/assets` | Durable workspace workflow assets |
 | `KXM_STATE_DIR` | `.kxm/state` | Restart-recovery state directory |
 | `KXM_DATA_PATH` | `.kxm/state/kxm.db` | SQLite database path; use `:memory:` only for disposable runs |
+| `KXM_SESSION_BRIEF` | picker on Pi TUI `startup`/`new`/`fork` | `off` disables the session-start task/plan picker only; status chrome still paints |
 | `KXM_LOG_PATH` | `.kxm/logs/kxm-hub.jsonl` | Structured hub JSON Lines log |
 | `KXM_MESSAGE_TTL_MS` | `86400000` | Default message lifetime, from 1 second through 7 days |
 | `KXM_MESSAGE_RETENTION_MS` | `604800000` | Time to keep terminal messages; minimum 1 second |
@@ -205,7 +206,7 @@ The tool allowlist is a capability boundary inside Pi, not a prompt suggestion â
 
 | Command | Purpose |
 |---|---|
-| `kxm init` | Atomically create a provenance-tracked minimal vNext project, validate it without rewriting, resume a pinned interrupted create/repair, apply conflict-free non-authority template updates, or join an existing clone with repeatable `--repository <id=absolute-path>` member bindings stored outside Git. `--dry-run` performs no writes. Provenance-free/ambiguous repair and permission-expanding changes remain planning-only. These configuration slices do **not** activate a vNext Runtime |
+| `kxm init` | Atomically create a provenance-tracked minimal vNext project, validate it without rewriting, resume a pinned interrupted create/repair, apply conflict-free non-authority template updates, or join an existing clone with repeatable `--repository <id=absolute-path>` member bindings stored outside Git. `--dry-run` performs no writes. Provenance-free/ambiguous repair and permission-expanding changes remain planning-only. These configuration slices do **not** activate a vNext Runtime. Default is **local-only**. `--hub existing` or `--hub new` prints hub-local next steps; `--hub ssh` fails closed; `--hub-url` is only valid with `--hub existing` |
 | `kxm migrate plan` | Convert legacy `.kxm/config` JSON (agents, gates, workflow definitions) into a deterministic, secret-free `kxm.migration-plan.v1` report: source/target hashes, decision-requiring ambiguities (terminal status, transition budgets, evidence-policy strengthening, secret drops, narrowed ceilings, foreign producers), hashed unmapped fields, and explicit identity renames. Performs no writes, locks, or staging |
 | `kxm migrate apply [--decisions <file>]` | Install a reviewed migration: re-checks the decision binding against current sources, validates the complete target bundle, refuses to overwrite existing paths, installs durably, and writes a self-hashed `kxm.migration-receipt.v1` that keeps legacy inputs read-only. Re-applying is an idempotent no-op. `--dry-run` performs no writes |
 | `kxm migrate verify` | Re-check the migration receipt against current legacy sources and the target bundle (self-hash, source hashes, configuration revision, resource bytes). Performs no writes |
@@ -218,6 +219,7 @@ The tool allowlist is a capability boundary inside Pi, not a prompt suggestion â
 | `kxm runtime start \| status \| stop` | Manage the detached vNext Runtime supervisor: auto-start with liveness probe, token-authenticated 127.0.0.1 API, crash recovery with a stable logical runtime identity |
 | `kxm agent worker` | Start a long-lived Pi worker. Use `--session-isolation workflow` to enable per-workflow Pi contexts; the upgrade-compatible default is `off`. Does not read a workspace `agents.json`; pass `--model`, `--tools`, and related flags explicitly |
 | `kxm session start --id <id> (--mix a,b \| --workflow <definitionId>)` | Write a `kxm.session.v1` manifest under `.kxm/assets/sessions/<id>/` and create asset directories. **Does not start any process.** `--workflow` records the whole roster, not the definition's participants |
+| `kxm session brief [--status]` | Read-only local hub snapshot of recent tasks (workflow runs) and plans (journal). `--status` prints the status line for harness chrome. No message bodies. Does not start a hub |
 | `kxm session status` | Show PID claim files and recovery envelopes under `.kxm/state`; does not read `session.json` |
 | `kxm session stop` | Request shutdown of **every** managed hub and worker process in the workspace â€” the same operation as `kxm hub stop`; not scoped to a session |
 | `kxm workflow list \| get \| start \| export` | Inspect, start, or export workflow runs. `list`/`get`/`export` read the **local** `.kxm/state/kxm.db`, not the configured hub |
@@ -228,8 +230,9 @@ The tool allowlist is a capability boundary inside Pi, not a prompt suggestion â
 | `kxm gate github watch` | Poll required GitHub checks and post the existing signed signal |
 | `kxm mesh init` | Create empty `.kxm` directories; configuration remains project-owned and no package dogfood templates are copied |
 | `kxm hub view` | Check `/health` and `/ready` |
+| `kxm update --check` / `kxm update --kxm` | Check or apply a kxm operator package update. Default source is GitHub release tarballs (`gh` plus `npm install --omit=peer`). `source: npm` is for after the public package exists. Optional Git `.kxm/update.yaml` (`kxm.update.v1`, `auto` boolean) enables auto-apply on `kxm update`. Notice also prints on `kxm hub start` and on the session widget from cache |
 | `kxm dash` | Open the read-only SSE observer dashboard; non-TTY output is one ANSI-free snapshot |
-| `kxm hub start` | Start the mesh hub |
+| `kxm hub start` | Start the KXM hub |
 | `kxm hub stop` | Request managed hub and worker shutdown |
 | `kxm mesh smoke` | Opt-in two-worker real-Pi release harness |
 | `kxm improve` | Bucket `.kxm/logs/telemetry.jsonl` events into a proposed-only improvement report; does not read the workflow journal |

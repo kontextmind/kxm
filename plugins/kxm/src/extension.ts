@@ -8,6 +8,15 @@ import { MAX_CONTENT_CHARS, type DeliveryMode, type HubEvent, type MessageRecord
 import type { ContextItemKind } from "./context.ts";
 import type { ImprovementArea, JournalCategory, WorkflowCheckpointStatus } from "./workflow.ts";
 import { consumeWorkerRecoveryEnvelope, workerStateKey } from "./recovery.ts";
+import {
+  itemFromChoice,
+  kxmSlashCompletions,
+  loadSessionBrief,
+  parseKxmSlashArgs,
+  sessionBriefChoices,
+  sessionBriefPickerEnabled,
+  type SessionWorkItem,
+} from "./session-work.ts";
 
 const SETTLEMENT_RETRY_BASE_MS = 250;
 const SETTLEMENT_RETRY_MAX_MS = 30_000;
@@ -259,8 +268,63 @@ export default function piMeshExtension(pi: ExtensionAPI) {
   }
 
   function requireClient(): MeshClient {
-    if (!client?.agent) throw new Error("pi-mesh is not connected; check KXM_SERVER_URL and /mesh-status");
+    if (!client?.agent) throw new Error("kxm hub is not connected; check KXM_SERVER_URL and /kxm hub");
     return client;
+  }
+
+  let currentWork: SessionWorkItem | undefined;
+
+  async function applySessionChrome(
+    ctx: {
+      cwd?: string;
+      mode?: string;
+      ui: {
+        setStatus?: (key: string, value: string | undefined) => void;
+        setWidget?: (key: string, lines: string[] | undefined) => void;
+        setEditorText?: (text: string) => void;
+        select?: (title: string, options: string[]) => Promise<string | undefined>;
+      };
+    },
+    event: { reason?: string },
+    offerPicker: boolean,
+  ): Promise<void> {
+    const cwd = typeof ctx.cwd === "string" ? ctx.cwd : process.cwd();
+    const hub = process.env.KXM_SERVER_URL?.trim() ? { online: Boolean(client?.agent) } : undefined;
+    const brief = loadSessionBrief(cwd, process.env, currentWork, hub);
+    ctx.ui.setStatus?.("kxm", brief.statusLine);
+    ctx.ui.setWidget?.("kxm-work", brief.widgetLines);
+    if (!offerPicker || !sessionBriefPickerEnabled({
+      env: process.env,
+      ...(ctx.mode ? { mode: ctx.mode } : {}),
+      ...(event.reason ? { reason: event.reason } : {}),
+    })) return;
+    if (brief.tasks.length === 0 && brief.plans.length === 0) return;
+    if (typeof ctx.ui.select !== "function") return;
+    const choice = await ctx.ui.select("Continue KXM work?", sessionBriefChoices(brief));
+    const item = itemFromChoice(brief, choice);
+    if (!item) return;
+    currentWork = item;
+    const selected = loadSessionBrief(cwd, process.env, item, hub);
+    ctx.ui.setStatus?.("kxm", selected.statusLine);
+    ctx.ui.setWidget?.("kxm-work", selected.widgetLines);
+    ctx.ui.setEditorText?.(item.prompt);
+  }
+
+  async function showKxmHub(ctx: { ui: { notify: (message: string, type: "info" | "warning" | "error") => void } }): Promise<void> {
+    const url = (process.env.KXM_SERVER_URL ?? "http://127.0.0.1:7331").replace(/\/$/, "");
+    let health = "unreachable";
+    try {
+      const response = await fetch(`${url}/health`);
+      health = response.ok ? "ok" : `http_${response.status}`;
+    } catch {
+      health = "unreachable";
+    }
+    if (!client?.agent) {
+      ctx.ui.notify(`kxm hub view: health=${health}; no agent connected`, "warning");
+      return;
+    }
+    const peers = await client.listAgents();
+    ctx.ui.notify(`kxm hub view: health=${health}; ${client.agent.name}; ${peers.length} online agent(s)`, "info");
   }
 
   function clearActivationWatchdog(messageId?: string): void {
@@ -555,7 +619,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     }
   }
 
-  pi.on("session_start", async (_event, ctx) => {
+  pi.on("session_start", async (event: { reason?: string }, ctx) => {
     shuttingDown = false;
     try {
       currentSessionBinding = bindingFromEnvironment();
@@ -604,12 +668,15 @@ export default function piMeshExtension(pi: ExtensionAPI) {
         || (currentSessionBinding.kind === "workflow" && recovered?.runId === currentSessionBinding.runId);
       if (recovered?.freshSession && recovered.runId && !recovered.peerLocal && recoveryMatchesSession && !durableInboundWillReplay) {
         pi.sendMessage({ customType: "pi-mesh-recovery", content: [`Resume durable workflow run ${recovered.runId} after a fresh-session worker recovery.`, recovered.stageId ? `Last recorded stage: ${recovered.stageId}.` : "Resolve the current stage from kxm_workflow_get.", `Recovery reason: ${recovered.reason}.`, "Call kxm_workflow_get, inspect its journal and stage evidence, then continue the current stage without repeating completed work.", "Record the recovery decision and checkpoint only after the required evidence is satisfied."].join("\n"), display: true, details: { runId: recovered.runId, stageId: recovered.stageId, reason: recovered.reason } }, { triggerTurn: true, deliverAs: "followUp" });
+        await applySessionChrome(ctx, event, false);
+        return;
       }
     } catch (error) {
       client = undefined;
       ctx.ui.setStatus("pi-mesh", "mesh:offline");
       ctx.ui.notify(`pi-mesh connection failed: ${error instanceof Error ? error.message : String(error)}`, "error");
     }
+    await applySessionChrome(ctx, event, true);
   });
 
   pi.on("message_start", (event) => {
@@ -1116,15 +1183,23 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     },
   });
 
-  pi.registerCommand("mesh-status", {
-    description: "Show pi-mesh connection and peer status",
-    handler: async (_args, ctx) => {
-      if (!client?.agent) {
-        ctx.ui.notify("pi-mesh is offline", "warning");
+  pi.registerCommand("kxm", {
+    description: "Hub session brief, status line, and hub view",
+    getArgumentCompletions: (prefix: string) => {
+      const items = kxmSlashCompletions(prefix);
+      return items.length > 0 ? items : null;
+    },
+    handler: async (args, ctx) => {
+      const command = parseKxmSlashArgs(typeof args === "string" ? args : undefined);
+      if (command === "hub") {
+        await showKxmHub(ctx);
         return;
       }
-      const peers = await client.listAgents();
-      ctx.ui.notify(`pi-mesh: ${client.agent.name}; ${peers.length} online agent(s)`, "info");
+      if (command === "help") {
+        ctx.ui.notify("kxm: /kxm | /kxm status | /kxm hub | /kxm help. CLI: kxm session brief, kxm hub view", "info");
+        return;
+      }
+      await applySessionChrome(ctx, { reason: "new" }, command === "brief");
     },
   });
 }

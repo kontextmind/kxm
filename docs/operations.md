@@ -1,6 +1,6 @@
 # Operations guide
 
-This guide covers the production envelope for one Pi Mesh Comms hub and one SQLite database.
+This guide covers the production envelope for one KXM hub and one SQLite database.
 
 ## Deployment classification
 

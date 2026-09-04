@@ -8,7 +8,7 @@ Start with the smallest boundary: hub health, authentication, registration, peer
 2. Request `/health`, then `/ready` to confirm storage access.
 3. Compare the hub URL, token, and project on both agents.
 4. Confirm every agent has a unique name.
-5. Run `/mesh-status` in Pi or call `kxm_list` in Claude.
+5. Run `/kxm hub` in Pi or call `kxm_list` in Claude.
 6. Inspect hub logs for registration, stale-agent, or server-error events.
 7. If a workflow tool returns `workflow_forbidden`, read `operation`, `assignedCoordinatorName`, and `nextAction`. Do not retry as a peer.
 

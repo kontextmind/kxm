@@ -372,8 +372,9 @@ The worker does not read model, tool, role, or ownership values from
 |---|---|---|
 | `kxm session start --id <id> --mix <names>` | Resolves roster names and writes a `kxm.session.v1` manifest | Does not start a process |
 | `kxm session start --id <id> --workflow <definition>` | Creates manifest and workflow asset directories | Records the whole roster; does not dispatch a workflow |
+| `kxm session brief [--status]` | Lists recent hub tasks and plans; `--status` is the one-line footer | Does not start a hub or a run |
 | `kxm session status` | Lists PID claims and recovery envelopes in local state | Does not read session manifests |
-| `kxm session stop [--wait-ms <n>]` | Requests managed process shutdown | Global workspace stop, identical in scope to `mesh stop` |
+| `kxm session stop [--wait-ms <n>]` | Requests managed process shutdown | Global workspace stop, identical in scope to `kxm hub stop` |
 
 ### Workflow commands
 
@@ -443,7 +444,7 @@ $env:KXM_AGENT_PURPOSE = "Independent correctness reviewer"
 pi
 ```
 
-Use `/mesh-status` to display the current identity and connection. Ask Pi to use
+Use `/kxm hub` to display the current identity and hub connection. Ask Pi to use
 the `kxm` skill before delegating complex work.
 
 ### Always-on Pi workers
@@ -983,7 +984,7 @@ preserve evidence, and recover from hub-owned workflow state.
 2. Check `/health`, then `/ready`.
 3. Compare URL, project, and project token on both agents.
 4. Confirm unique live names.
-5. Run `/mesh-status` in Pi or `kxm_list` in Pi/Claude.
+5. Run `/kxm hub` in Pi or `kxm_list` in Pi/Claude.
 6. Inspect structured logs without copying secrets or raw model content.
 7. For queued workflow work, look for the one expected session route swap.
 8. For a delivered message, inspect the recipient and activation/tool watchdogs;
