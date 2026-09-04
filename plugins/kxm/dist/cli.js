@@ -28361,6 +28361,7 @@ async function runMeshTui(input) {
 }
 
 // plugins/kxm/src/session-work.ts
+import { spawnSync } from "node:child_process";
 var MAX_SESSION_BRIEF_TASKS = 5;
 var MAX_SESSION_BRIEF_PLANS = 5;
 function hubPrefix(hub) {
@@ -28400,10 +28401,30 @@ function recentTasks(runs) {
   const rest = runs.filter((run) => run.status !== "running" && run.status !== "waiting");
   return [...active, ...rest].slice(0, MAX_SESSION_BRIEF_TASKS);
 }
-function formatSessionStatusLine(stats, current, hub) {
+function formatShipLine(ship) {
+  if (!ship) return "ship verify \xB7 PR=CI";
+  if (ship.dirty) return "ship dirty \xB7 commit after verify";
+  if (ship.ahead > 0) return `ship ${ship.ahead} local \xB7 PR after CI`;
+  return "ship clean \xB7 PR after CI";
+}
+function readGitShip(cwd) {
+  try {
+    const dirty = spawnSync("git", ["-C", cwd, "status", "--porcelain"], { encoding: "utf8", windowsHide: true });
+    if (dirty.status !== 0) return void 0;
+    const ahead = spawnSync("git", ["-C", cwd, "rev-list", "--count", "@{u}..HEAD"], { encoding: "utf8", windowsHide: true });
+    return {
+      dirty: dirty.stdout.trim().length > 0,
+      ahead: ahead.status === 0 ? Number.parseInt(ahead.stdout.trim(), 10) || 0 : 0
+    };
+  } catch {
+    return void 0;
+  }
+}
+function formatSessionStatusLine(stats, current, hub, ship) {
   const head = hubPrefix(hub);
   if (!current && stats.activeTasks === 0 && stats.planCount === 0 && stats.inbox === 0) {
-    return hub?.online === void 0 ? "kxm idle" : `${head} \xB7 idle`;
+    const idle = hub?.online === void 0 ? "kxm idle" : `${head} \xB7 idle`;
+    return ship?.dirty ? `${idle} \xB7 dirty` : idle;
   }
   const parts = [];
   if (current?.kind === "task") parts.push(`${head} ${current.detail}`);
@@ -28413,10 +28434,12 @@ function formatSessionStatusLine(stats, current, hub) {
   if (stats.waitingTasks > 0) parts.push(`${stats.waitingTasks} waiting`);
   parts.push(`${stats.planCount} plan${stats.planCount === 1 ? "" : "s"}`);
   if (stats.inbox > 0) parts.push(`inbox ${stats.inbox}`);
+  if (ship?.dirty) parts.push("dirty");
+  else if (ship && ship.ahead > 0) parts.push(`${ship.ahead} local`);
   const line = parts.join(" \xB7 ");
   return line.length <= 80 ? line : `${line.slice(0, 79)}\u2026`;
 }
-function formatSessionWidget(stats, current, hub) {
+function formatSessionWidget(stats, current, hub, ship) {
   const hubMark = hub?.online === true ? "hub:on  " : hub?.online === false ? "hub:off  " : "";
   const lines = [
     `KXM  ${hubMark}${stats.activeTasks} tasks  ${stats.waitingTasks} waiting  ${stats.planCount} plans  inbox ${stats.inbox}`
@@ -28424,9 +28447,10 @@ function formatSessionWidget(stats, current, hub) {
   if (current) lines.push(`now  ${current.kind}  ${truncate(current.detail, 56)}`);
   else if (stats.latestPlan) lines.push(`plan ${truncate(stats.latestPlan, 60)}`);
   else lines.push("now  no selected work");
+  lines.push(formatShipLine(ship));
   return lines;
 }
-function buildSessionBrief(snapshot, current, hub) {
+function buildSessionBrief(snapshot, current, hub, ship) {
   const active = snapshot.runs.filter((run) => run.status === "running" || run.status === "waiting");
   const stats = {
     activeTasks: active.length,
@@ -28442,8 +28466,8 @@ function buildSessionBrief(snapshot, current, hub) {
     stats,
     tasks,
     plans,
-    statusLine: formatSessionStatusLine(stats, current, hub),
-    widgetLines: formatSessionWidget(stats, current, hub)
+    statusLine: formatSessionStatusLine(stats, current, hub, ship),
+    widgetLines: formatSessionWidget(stats, current, hub, ship)
   };
 }
 function formatSessionBriefText(brief) {
@@ -28464,11 +28488,12 @@ function formatSessionBriefText(brief) {
   return lines.join("\n");
 }
 function loadSessionBrief(cwd, env = process.env, current, hub) {
+  const ship = readGitShip(cwd);
   try {
     const paths = resolveKxmSnapshotPaths(cwd, env);
-    return buildSessionBrief(loadLocalMeshSnapshot(paths.dataPath, paths.stateDir), current, hub);
+    return buildSessionBrief(loadLocalMeshSnapshot(paths.dataPath, paths.stateDir), current, hub, ship);
   } catch {
-    return buildSessionBrief({ runs: [], plans: [], openMessageTotal: 0, runTotal: 0 }, current, hub);
+    return buildSessionBrief({ runs: [], plans: [], openMessageTotal: 0, runTotal: 0 }, current, hub, ship);
   }
 }
 
@@ -28533,7 +28558,7 @@ function formatHubInitNextSteps(mode, input = {}) {
 // plugins/kxm/src/vnext-config.ts
 var import__ = __toESM(require__(), 1);
 var import_yaml2 = __toESM(require_dist(), 1);
-import { spawnSync as spawnSync2 } from "node:child_process";
+import { spawnSync as spawnSync3 } from "node:child_process";
 import { createHash as createHash3 } from "node:crypto";
 import { existsSync as existsSync4, lstatSync as lstatSync2, readFileSync as readFileSync5, readdirSync as readdirSync3, realpathSync as realpathSync2 } from "node:fs";
 import { basename, dirname as dirname3, extname, isAbsolute as isAbsolute2, join as join11, relative as relative2, resolve as resolve4, sep } from "node:path";
@@ -28732,7 +28757,7 @@ function resolveVnextTemplateBaseline(value) {
 }
 
 // plugins/kxm/src/vnext-harness.ts
-import { spawnSync } from "node:child_process";
+import { spawnSync as spawnSync2 } from "node:child_process";
 var DEFAULT_HARNESS = "pi";
 var BUILTIN_HARNESSES = Object.freeze([
   {
@@ -28808,7 +28833,7 @@ function isKnownHarnessId(id, extra = []) {
 function defaultRunner(env) {
   return (command, args, timeoutMs) => {
     try {
-      const result = spawnSync(command, [...args], {
+      const result = spawnSync2(command, [...args], {
         encoding: "utf8",
         timeout: timeoutMs,
         windowsHide: true,
@@ -29930,7 +29955,7 @@ function gitEnvironment() {
 function discoverGitRoot(start = process.cwd()) {
   let current = resolve4(start);
   if (existsSync4(current) && !lstatSync2(current).isDirectory()) current = dirname3(current);
-  const result = spawnSync2("git", ["-C", current, "rev-parse", "--show-toplevel"], {
+  const result = spawnSync3("git", ["-C", current, "rev-parse", "--show-toplevel"], {
     encoding: "utf8",
     env: gitEnvironment(),
     timeout: 5e3,
@@ -30274,7 +30299,7 @@ function planVnextInitialization(start = process.cwd(), options = {}) {
 }
 
 // plugins/kxm/src/vnext-bindings.ts
-import { spawnSync as spawnSync3 } from "node:child_process";
+import { spawnSync as spawnSync4 } from "node:child_process";
 import { createHash as createHash4, randomUUID as randomUUID2 } from "node:crypto";
 import {
   chmodSync,
@@ -30480,7 +30505,7 @@ function projectOperationLockFile(projectRoot) {
   for (const key of Object.keys(env)) {
     if (key.toLocaleUpperCase("en-US").startsWith("GIT_")) delete env[key];
   }
-  const result = spawnSync3("git", ["-C", projectRoot, "rev-parse", "--absolute-git-dir"], {
+  const result = spawnSync4("git", ["-C", projectRoot, "rev-parse", "--absolute-git-dir"], {
     encoding: "utf8",
     env,
     timeout: 5e3,
@@ -30611,7 +30636,7 @@ import {
 import { dirname as dirname6, isAbsolute as isAbsolute4, join as join14, relative as relative4, resolve as resolve7 } from "node:path";
 
 // plugins/kxm/src/vnext-permission.ts
-import { spawnSync as spawnSync4 } from "node:child_process";
+import { spawnSync as spawnSync5 } from "node:child_process";
 import { createHash as createHash5 } from "node:crypto";
 import { existsSync as existsSync6, mkdtempSync, mkdirSync as mkdirSync8, readFileSync as readFileSync7, rmSync as rmSync3, writeFileSync as writeFileSync7 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -31071,7 +31096,7 @@ function gitEnvironment2() {
   return Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.toUpperCase().startsWith("GIT_")));
 }
 function git(root, args) {
-  const result = spawnSync4("git", ["-C", root, ...args], {
+  const result = spawnSync5("git", ["-C", root, ...args], {
     encoding: "utf8",
     env: gitEnvironment2(),
     timeout: 15e3,
@@ -31089,7 +31114,7 @@ function git(root, args) {
   return result.stdout;
 }
 function gitBuffer(root, args) {
-  const result = spawnSync4("git", ["-C", root, ...args], {
+  const result = spawnSync5("git", ["-C", root, ...args], {
     env: gitEnvironment2(),
     timeout: 15e3,
     windowsHide: true,
@@ -31287,7 +31312,7 @@ function loadBaseProjectDeclarations(projectFile) {
   return members;
 }
 function initShadowGitRoot(directory) {
-  const result = spawnSync4("git", ["-c", "init.defaultBranch=main", "init", "--quiet", directory], {
+  const result = spawnSync5("git", ["-c", "init.defaultBranch=main", "init", "--quiet", directory], {
     encoding: "utf8",
     env: gitEnvironment2(),
     timeout: 1e4,
