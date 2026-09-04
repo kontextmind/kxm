@@ -76,7 +76,7 @@ The additive `kxm` command initializes empty project-owned workspace directories
 ```powershell
 kxm mesh --json init
 kxm gate --json validate --file .kxm/config/workflows/product.json
-kxm mesh --json status
+kxm hub --json view
 ```
 
 `mesh init` never copies the package repository's dogfood roster or workflows into a consumer workspace.
