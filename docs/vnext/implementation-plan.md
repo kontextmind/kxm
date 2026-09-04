@@ -13,6 +13,12 @@ It does not replace the phase gates below.
 
 - Product name is **KXM**. Do not present Mesh or pi-extensions as the product.
   Plugin, marketplace, and npm identity are `kxm` / `@kontextmind/kxm`.
+- **Future slices are not backwards-compatible.** Do not add upgrade shims,
+  dual names, or “alias until consumers migrate” for new work. Prefer agents
+  and workflows. Folding leftover Mesh CLI/types (`kxm mesh`, `MeshClient`,
+  `/mesh-status`) may break old names; that is accepted. Landed upgrade-compat
+  (e.g. session-isolation default `off`) stays until a named rip slice, not as
+  a pattern for new features.
 - Durable hub SQLite default is `.kxm/state/kxm.db` (`KXM_DATA_PATH`).
 - Hub process CLI: `kxm hub start` / `kxm hub view` / `kxm hub stop`.
 - Live operator screens: `kxm dash` (not TUI/watch). Tabs: Agents, Tasks,

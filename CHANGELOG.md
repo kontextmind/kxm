@@ -12,6 +12,7 @@ All notable user-facing changes are documented here. The project follows [Semant
 - `kxm dash` is a tabbed list/detail dashboard (agents, tasks, workflows, plans,
   inbox, procs). `kxm harness list` / `kxm update` observe and update harnesses
   without a second preferences store.
+- Future slices do not add backwards-compat shims or dual Mesh/KXM names.
 
 ### Added
 
