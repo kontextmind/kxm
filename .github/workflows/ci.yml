@@ -132,6 +132,9 @@ jobs:
       - name: Test with coverage, type-check, and inspect package
         run: npm run validate:ci
 
+      - name: Verify generated runtime bundles are current
+        run: npm run check:generated
+
   generated:
     name: Generated artifacts current
     needs: changes

@@ -40,7 +40,7 @@ npm run validate
 | Safe diagnostic classification and redaction | `test/diagnostics.test.ts`, `test/extension.test.ts`, `test/hub-api.test.ts` |
 | Operator CLI init/validate/export/watch | `test/cli.test.ts`, `test/github-watch.test.ts` |
 | Local and isolated-global packed npm CLI plus hub runtimes | `test/package-install.test.ts` |
-| Required generated runtimes are present, tracked, and unchanged after build | `scripts/check-generated.mjs`, `test/generated-artifacts.test.ts` |
+| Required generated runtimes are present, tracked, and match the staged copy after build | `scripts/check-generated.mjs`, `test/generated-artifacts.test.ts` |
 | Retrospective export snapshots, metadata-only provenance audit, body allowlisting, degradation records, and v1 compatibility | `test/retrospective.test.ts` |
 | Interrupted-worker continue fallback, exact run-bound recovery, unbound telemetry isolation, and one-turn durable replay | `test/worker.test.ts`, `test/recovery.test.ts`, `test/extension.test.ts` |
 | Hub-owned workflow affinity; integrated hub→extension→supervisor→replacement replay; pre-ack default/run/cross-run routing; one-child session-dir swapping; stable ordinary context; LRU retention; and corrupt-state/link containment | `test/hub-api.test.ts`, `test/extension.test.ts`, `test/worker.test.ts`, `test/cli.test.ts` |
