@@ -113,7 +113,7 @@ jobs:
 
       - name: Restore node_modules
         id: modules
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: node_modules
           key: modules-${{ runner.os }}-node${{ matrix.node }}-${{ hashFiles('package-lock.json') }}
