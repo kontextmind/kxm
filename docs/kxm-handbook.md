@@ -372,8 +372,9 @@ The worker does not read model, tool, role, or ownership values from
 |---|---|---|
 | `kxm session start --id <id> --mix <names>` | Resolves roster names and writes a `kxm.session.v1` manifest | Does not start a process |
 | `kxm session start --id <id> --workflow <definition>` | Creates manifest and workflow asset directories | Records the whole roster; does not dispatch a workflow |
+| `kxm session brief [--status]` | Lists recent hub tasks and plans; `--status` is the one-line footer | Does not start a hub or a run |
 | `kxm session status` | Lists PID claims and recovery envelopes in local state | Does not read session manifests |
-| `kxm session stop [--wait-ms <n>]` | Requests managed process shutdown | Global workspace stop, identical in scope to `mesh stop` |
+| `kxm session stop [--wait-ms <n>]` | Requests managed process shutdown | Global workspace stop, identical in scope to `kxm hub stop` |
 
 ### Workflow commands
 

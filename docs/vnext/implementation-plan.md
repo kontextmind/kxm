@@ -71,6 +71,9 @@ It does not replace the phase gates below.
 - CLI Fable/Codex/Kimi critiques are artifacts plus human signoff, never
   hub `peer-reply` evidence.
 - Workflow fixture ids: `kxm-provenance`, `kxm-v04` (not `pi-extensions-*`).
+- **Hub local is MVP.** `kxm init` is local-only unless `--hub existing|new`.
+  Session brief, Pi status line, and `/kxm` read the local hub snapshot.
+  Local Runtime in-harness insights and SSH/HTTPS hub install are after MVP.
 
 ### Landed in this tree (unreleased)
 
@@ -83,6 +86,9 @@ It does not replace the phase gates below.
 - Harness catalog + `kxm harness list` + `kxm update`.
 - Phase 2 Runtime create/recover (PR #75) is in tree: supervisor, event store,
   projections, crash recovery. Runs stay `created` until Phase 3.
+- Hub-local session brief: `kxm session brief`, Pi TUI picker + status/widget,
+  `/kxm`, skill `kxm-session`, `kxm init --hub existing|new` (SSH fail-closed).
+  Slash inspects via the same brief snapshot as the CLI. No message bodies.
 
 ### Still open
 
@@ -233,10 +239,12 @@ status line, `/kxm` menu, settings, and validated agent/workflow/model editors.
 headless; `kxm harness list` / `kxm update`; `kxm dash` as the operator peek;
 `kxm hub start|view|stop`. YAML remains the only enablement surface.
 
-**Still this phase:** Pi RPC adapter, per-run sessions, `/kxm` menu,
-validated YAML editors (enable/disable harnesses and models by editing Git
-files, not a parallel store), assignment dispatch that binds harness from
-auth inventory, and routing records that always include harness+cost.
+**Still this phase:** Pi RPC adapter, per-run sessions, the rest of the `/kxm`
+menu (hub/workflows/agents completions wrapping CLI), validated YAML editors
+(enable/disable harnesses and models by editing Git files, not a parallel
+store), assignment dispatch that binds harness from auth inventory, and routing
+records that always include harness+cost. Hub-local session brief and Pi status
+line are in tree.
 
 **Gate:** `kxm init` followed by `kxm run default "prompt"` resolves the
 materialized `default.yaml` and completes a single-repository Pi workflow with

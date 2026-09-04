@@ -18,6 +18,9 @@ All notable user-facing changes are documented here. The project follows [Semant
 - Session brief `AGENTS.md` / `CLAUDE.md` and Tracking in
   `docs/vnext/implementation-plan.md` (roles, provider-native harness routing,
   cost/insights, plan hygiene).
+- Hub-local session chrome: `kxm session brief [--status]`, Pi TUI picker and
+  status line on new sessions, `/kxm`, skill `kxm-session`. `kxm init --hub
+  existing|new` is opt-in; omit `--hub` for local-only; SSH is not available.
 
 ## 0.5.1 - 2026-09-01
 

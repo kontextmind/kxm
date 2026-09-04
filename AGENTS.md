@@ -9,6 +9,8 @@ Read this first. Then follow
 - Name is **KXM**. Not Mesh, not pi-extensions.
 - Hub process: `kxm hub start` · `kxm hub view` · `kxm hub stop`
 - Live screens: `kxm dash` (optional `--screen agents|tasks|workflows|plans|inbox|procs`)
+- Hub-local session: `kxm session brief`; Pi TUI `/kxm` picker + status line.
+  `kxm init --hub existing|new` is opt-in; default init is local-only.
 - DB: `.kxm/state/kxm.db`
 - Plugin / npm: `kxm` / `@kontextmind/kxm`
 

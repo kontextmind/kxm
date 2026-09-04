@@ -18,6 +18,8 @@ import { behavioralConfigHash, compareRoutingRecords, groupByBehavior } from "./
 import { createSession, loadNamedWorkers, rosterNames, sessionAssetDirs, standardAssetDirs, workflowAssetDirs, writeSession } from "./session.ts";
 import { buildImprovementReport, writeImprovementReport } from "./improve.ts";
 import { MESH_TUI_PANELS, runMeshTui, type MeshTuiPanel } from "./tui.ts";
+import { formatSessionBriefText, loadSessionBrief } from "./session-work.ts";
+import { formatHubInitNextSteps, parseHubInitOption } from "./hub-setup.ts";
 import { VnextConfigError, discoverVnextProjectRoot, type VnextInitializationPlan } from "./vnext-config.ts";
 import { vnextUserStateRoot } from "./vnext-bindings.ts";
 import { initializeVnextProject } from "./vnext-init.ts";
@@ -463,7 +465,12 @@ function explicitRepositoryBindings(values: readonly string[]): Readonly<Record<
   return result;
 }
 
-async function cmdVnextInit(runtime: Runtime, options: { name?: string; projectId?: string; repository?: string[] }): Promise<number> {
+async function cmdVnextInit(runtime: Runtime, options: { name?: string; projectId?: string; repository?: string[]; hub?: string | true; hubUrl?: string }): Promise<number> {
+  const hubInit = parseHubInitOption(options.hub, options.hubUrl);
+  if (!hubInit.ok) {
+    print(runtime.io, runtime.json, { ok: false, command: "init", error: hubInit.error }, hubInit.message);
+    return 2;
+  }
   if (runtime.workspaceFlag !== undefined) {
     print(runtime.io, runtime.json, {
       ok: false,
@@ -494,37 +501,49 @@ async function cmdVnextInit(runtime: Runtime, options: { name?: string; projectI
       ...(initialized.transactionKind === undefined ? {} : { transactionKind: initialized.transactionKind }),
       plannedOnly: initialized.action === "planned",
     };
+    const finishInit = (code: number, text: string): number => {
+      if (hubInit.mode === "local") {
+        print(runtime.io, runtime.json, payload, text);
+        return code;
+      }
+      const nextSteps = formatHubInitNextSteps(hubInit.mode, hubInit.hubUrl ? { hubUrl: hubInit.hubUrl } : {});
+      const hub = {
+        mode: hubInit.mode,
+        ...(hubInit.hubUrl ? { hubUrl: hubInit.hubUrl } : {}),
+        nextSteps,
+      };
+      print(
+        runtime.io,
+        runtime.json,
+        { ...payload, hub },
+        `${text}\n${nextSteps}`,
+      );
+      return code;
+    };
     if (initialized.action === "created") {
-      print(runtime.io, runtime.json, payload, `initialized vNext project at ${initialized.projectRoot ?? runtime.cwd}`);
-      return 0;
+      return finishInit(0, `initialized vNext project at ${initialized.projectRoot ?? runtime.cwd}`);
     }
     if (initialized.action === "joined") {
-      print(runtime.io, runtime.json, payload, `joined vNext project at ${initialized.projectRoot ?? runtime.cwd}`);
-      return 0;
+      return finishInit(0, `joined vNext project at ${initialized.projectRoot ?? runtime.cwd}`);
     }
     if (initialized.action === "repaired") {
-      print(runtime.io, runtime.json, payload, `repaired vNext project at ${initialized.projectRoot ?? runtime.cwd}`);
-      return 0;
+      return finishInit(0, `repaired vNext project at ${initialized.projectRoot ?? runtime.cwd}`);
     }
     if (initialized.action === "resumed") {
-      print(runtime.io, runtime.json, payload, `resumed vNext ${initialized.transactionKind ?? "initialization"} at ${initialized.projectRoot ?? runtime.cwd}`);
-      return 0;
+      return finishInit(0, `resumed vNext ${initialized.transactionKind ?? "initialization"} at ${initialized.projectRoot ?? runtime.cwd}`);
     }
     if (initialized.action === "validated") {
-      print(runtime.io, runtime.json, payload, `validated vNext project at ${initialized.projectRoot ?? runtime.cwd}`);
-      return 0;
+      return finishInit(0, `validated vNext project at ${initialized.projectRoot ?? runtime.cwd}`);
     }
     if (runtime.dryRun) {
-      print(runtime.io, runtime.json, payload, `init plan: ${initialized.plan.mode}`);
-      return 0;
+      return finishInit(0, `init plan: ${initialized.plan.mode}`);
     }
     const next = initialized.plan.mode === "migrate"
       ? "legacy state requires reviewed migration; conversion is not available in this implementation slice"
       : initialized.repairPlan?.issues.length
         ? "managed-template repair is blocked by conflicts or authority changes; local files were preserved"
         : "partial or provenance-free vNext state requires explicit repair; no files were overwritten";
-    print(runtime.io, runtime.json, payload, next);
-    return 1;
+    return finishInit(1, next);
   } catch (error) {
     if (error instanceof VnextConfigError) {
       print(runtime.io, runtime.json, {
@@ -1249,6 +1268,40 @@ async function cmdSessionStatus(runtime: Runtime): Promise<number> {
   return 0;
 }
 
+async function cmdSessionBrief(runtime: Runtime, options: { status?: boolean } = {}): Promise<number> {
+  const dataPath = resolve(runtime.dirs.workdir, runtime.env.KXM_DATA_PATH?.trim() || join(runtime.dirs.state, "kxm.db"));
+  const env = {
+    ...runtime.env,
+    KXM_STATE_DIR: runtime.dirs.state,
+    KXM_DATA_PATH: runtime.env.KXM_DATA_PATH?.trim() || dataPath,
+  };
+  let hub: { online: boolean } | undefined;
+  if (runtime.env.KXM_SERVER_URL?.trim()) {
+    const health = await hubGet(`${runtime.serverUrl}/health`, runtime.fetchImpl);
+    hub = { online: health.ok };
+  }
+  const brief = loadSessionBrief(runtime.dirs.workdir, env, undefined, hub);
+  if (options.status) {
+    print(runtime.io, runtime.json, { ok: true, command: "session brief", statusLine: brief.statusLine, stats: brief.stats, hub }, brief.statusLine);
+    return 0;
+  }
+  print(
+    runtime.io,
+    runtime.json,
+    {
+      ok: true,
+      command: "session brief",
+      statusLine: brief.statusLine,
+      stats: brief.stats,
+      tasks: brief.tasks,
+      plans: brief.plans,
+      ...(hub ? { hub } : {}),
+    },
+    formatSessionBriefText(brief),
+  );
+  return 0;
+}
+
 async function cmdSessionStart(runtime: Runtime, options: { id?: string; workflow?: string; mix?: string }): Promise<number> {
   const id = options.id?.trim() || `session_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
   const workflowId = options.workflow?.trim();
@@ -1930,7 +1983,9 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .option("--name <name>", "Project display name for a new project")
     .option("--project-id <id>", "Stable project ID for controlled provisioning")
     .option("--repository <id=absolute-path>", "Bind a member repository outside Git configuration", (value, previous: string[]) => [...previous, value], [])
-    .action(async function initAction(this: Command, options: { name?: string; projectId?: string; repository?: string[] }) {
+    .option("--hub [mode]", "Use a hub: existing or new. Omit for local-only. SSH is not available")
+    .option("--hub-url <url>", "Existing hub URL (with --hub existing)")
+    .action(async function initAction(this: Command, options: { name?: string; projectId?: string; repository?: string[]; hub?: string | true; hubUrl?: string }) {
       result.code = await cmdVnextInit(runtimeFrom(ctx, this), options);
     });
 
@@ -2038,9 +2093,14 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
       result.code = await cmdWorker(runtimeFrom(ctx, this), options);
     });
 
-  const session = addGlobalOptions(program.command("session").description("Create manifests and inspect or drain Pi worker sessions"));
+  const session = addGlobalOptions(program.command("session").description("Create manifests, inspect sessions, and brief recent hub work"));
   session.helpCommand("help", "Show session help");
   addGlobalOptions(session.command("status").description("Show session claims and recovery envelopes")).action(bind(cmdSessionStatus));
+  addGlobalOptions(session.command("brief").description("Show recent hub tasks and plans for a new session (read-only)"))
+    .option("--status", "Print only the status line")
+    .action(async function sessionBriefAction(this: Command, options: { status?: boolean }) {
+      result.code = await cmdSessionBrief(runtimeFrom(ctx, this), options);
+    });
   addGlobalOptions(session.command("start").description("Create an agent/gate or workflow session manifest (does not launch processes)"))
     .option("--id <id>", "Session id")
     .option("--workflow <id>", "Workflow definition id")

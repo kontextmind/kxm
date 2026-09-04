@@ -28,6 +28,7 @@ Envelope parity is a **shape** guarantee, not a **trust** guarantee. An agent-au
 |---|---|---|
 | `kxm session start --id <id> (--mix a,b \| --workflow <definitionId>)` | Resolves names against the workspace `agents.json` / `gates.json`, writes `.kxm/assets/sessions/<id>/session.json` (`kxm.session.v1`), creates `inputs/` and `outputs/` (plus `assets/workflows/<definitionId>/{inputs,outputs,generated}` in workflow mode), and exits. | Start any process, dispatch a workflow, run a gate, or set `KXM_SESSION_ID`. In `--workflow` mode it lists the **entire roster**, not the definition's participants, and does not read the definition. |
 | `kxm session status` | Lists PID claim files and worker-recovery envelopes under `.kxm/state`. | Read `session.json` or report anything `session start` created. |
+| `kxm session brief [--status]` | Read-only hub snapshot of recent workflow runs (tasks) and journal `plan` rows. `--status` prints the status line. No message bodies. | Start a hub, dispatch a workflow, or read vNext Runtime runs |
 | `kxm session stop` | Requests shutdown of the hub **and every worker** with a PID file in the workspace. It takes no session ID and is the same operation as `kxm hub stop`. | Stop one session. **Treat it as a global stop.** |
 
 Treat `session.json` as a manifest for humans and dashboards. The effective execution primitives are `kxm hub start` (one hub process), `kxm agent worker` (one worker process), and `kxm workflow start` (one signed run).
@@ -178,8 +179,11 @@ Workflow session isolation is a context-routing and accidental-cross-run safety 
 | `src/redact.ts` | Secret and token redaction helpers |
 | `src/inbox.ts` | Deduplicated Claude MCP inbox notification delivery |
 | `src/artifacts-exist.ts` | Asset containment and non-empty regular-file gate |
-| `src/tui.ts` | Read-only SSE mesh observer dashboard |
-| `src/cli.ts` | Operator CLI (agent, session, workflow, gate, mesh, improve); a client of the hub |
+| `src/tui.ts` | Read-only SSE observer dashboard |
+| `src/local-snapshot.ts` | Read-only hub SQLite snapshot (runs, plans, inbox metadata; no bodies) |
+| `src/session-work.ts` | Session brief, status line, and work-picker labels from that snapshot |
+| `src/hub-setup.ts` | `kxm init --hub` parse and next steps (local-only default; SSH fail-closed) |
+| `src/cli.ts` | Operator CLI (agent, session, workflow, gate, hub, improve); a client of the hub |
 | `src/envelope.ts` | `kxm.worker.v1` / `kxm.worker-result.v1` constructors |
 | `src/session.ts` | Roster loading and `kxm.session.v1` manifest writing; does not spawn processes |
 | `src/telemetry.ts` | Appends redacted CLI result envelopes to `.kxm/logs/telemetry.jsonl` |
