@@ -152,7 +152,7 @@ export interface WorkflowDegradationApproval {
   attempt: number;
   policyMinProducers: number;
   approvedMinProducers: number;
-  approvedBy: "mesh-admin";
+  approvedBy: "kxm-admin";
   reason: string;
   approvedAt: string;
 }
@@ -1547,7 +1547,7 @@ export function approveWorkflowDegradation(
     attempt,
     policyMinProducers: policy.minProducers,
     approvedMinProducers: policy.degradation.minProducers,
-    approvedBy: "mesh-admin",
+    approvedBy: "kxm-admin",
     reason: requireString(reason, "reason", { max: 1_000 }),
     approvedAt: timestamp,
   };

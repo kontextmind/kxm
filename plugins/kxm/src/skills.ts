@@ -371,7 +371,7 @@ export class SkillLifecycle {
       schema: SKILL_DECISION_SCHEMA,
       candidateId,
       decision: "rejected",
-      decidedBy: decision.decidedBy?.trim() || "mesh-admin",
+      decidedBy: decision.decidedBy?.trim() || "kxm-admin",
       reason: decision.reason?.trim() || "rejected",
       evidenceRefs: [],
       decidedAt: this.now(),

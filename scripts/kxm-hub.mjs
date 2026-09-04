@@ -43,19 +43,19 @@ function claimPidFile() {
       } catch (existingError) {
         if (existingError?.code === "ENOENT") continue;
         throw new Error(
-          `pi-mesh hub PID claim is invalid at ${pidPath}; remove it only after verifying no hub process is running`,
+          `KXM hub PID claim is invalid at ${pidPath}; remove it only after verifying no hub process is running`,
           { cause: existingError },
         );
       }
       if (existing?.version === 1 && existing.role === "hub" && Number.isInteger(existing.pid) && processExists(existing.pid)) {
-        throw new Error(`pi-mesh hub is already managed by PID ${existing.pid}`);
+        throw new Error(`KXM hub is already managed by PID ${existing.pid}`);
       }
       throw new Error(
-        `pi-mesh hub PID claim is stale at ${pidPath}; remove it only after verifying no hub process is running`,
+        `KXM hub PID claim is stale at ${pidPath}; remove it only after verifying no hub process is running`,
       );
     }
   }
-  throw new Error("could not claim the pi-mesh hub PID file");
+  throw new Error("could not claim the KXM hub PID file");
 }
 
 claimPidFile();
@@ -73,7 +73,7 @@ const child = spawn(process.execPath, [
 let stopping = false;
 
 child.once("error", (error) => {
-  process.stderr.write(`Failed to start pi-mesh hub: ${error.message}\n`);
+  process.stderr.write(`Failed to start KXM hub: ${error.message}\n`);
   process.exitCode = 1;
 });
 

@@ -124,7 +124,7 @@ export async function postWorkflowSignal(input: {
     headers: {
       "content-type": "application/json",
       "x-hub-signature-256": signature,
-      "x-mesh-delivery-id": input.deliveryId,
+      "x-kxm-delivery-id": input.deliveryId,
     },
     body,
   }, input.timeoutMs ?? 15_000);
@@ -154,7 +154,7 @@ export async function watchGithubChecks(input: GithubWatchInput): Promise<Github
   const headers = {
     authorization: `Bearer ${token}`,
     accept: "application/vnd.github+json",
-    "user-agent": "pi-mesh-github-watch",
+    "user-agent": "kxm-github-watch",
   };
   const contextEvidence: WorkflowEvidenceInput = {
     "workflow.run": input.runId,

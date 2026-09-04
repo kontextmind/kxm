@@ -100,8 +100,8 @@ export function operationForTool(toolName: string | undefined): DiagnosticOperat
 }
 
 export function areaForTool(toolName: string | undefined): "workflow" | "harness" | "implementation" {
-  if (toolName?.startsWith("mesh_workflow_")) return "workflow";
-  if (toolName?.startsWith("mesh_")) return "harness";
+  if (toolName?.startsWith("kxm_workflow_")) return "workflow";
+  if (toolName?.startsWith("kxm_")) return "harness";
   return "implementation";
 }
 

@@ -150,7 +150,7 @@ test("retrospective adds metadata-only peer provenance and explicit degradation 
     attempt: 1,
     policyMinProducers: 2,
     approvedMinProducers: 1,
-    approvedBy: "mesh-admin",
+    approvedBy: "kxm-admin",
     reason: "Provider outage\n## forged heading token=sk-abcdefghijkl",
     approvedAt: "2026-08-26T00:00:00.500Z",
   }];
@@ -169,7 +169,7 @@ test("retrospective adds metadata-only peer provenance and explicit degradation 
   assert.equal(audit.verifiedMessages[0]!.context.attempt, 1);
   assert.equal(audit.verifiedMessages[0]!.hashes.replySha256, "b".repeat(64));
   assert.equal(audit.degraded, true);
-  assert.equal(audit.degradationApprovals[0]!.approvedBy, "mesh-admin");
+  assert.equal(audit.degradationApprovals[0]!.approvedBy, "kxm-admin");
   assert.doesNotMatch(audit.degradationApprovals[0]!.reason, /\n|sk-abcdefghijkl/);
 
   const serialized = JSON.stringify(retrospective);

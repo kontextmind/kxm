@@ -132,7 +132,7 @@ const providerRetryMs = Number(process.env.KXM_WORKER_PROVIDER_RETRY_MS?.trim() 
 if (!Number.isInteger(providerRetryMs) || providerRetryMs < 1_000 || providerRetryMs > 3_600_000) {
   throw new Error("KXM_WORKER_PROVIDER_RETRY_MS must be an integer between 1000 and 3600000");
 }
-// Mesh wait tools may legitimately run for 30 minutes. Keep a one-minute
+// KXM wait tools may legitimately run for 30 minutes. Keep a one-minute
 // supervisor grace so their own bounded timeout can return durable handles.
 const toolTimeoutMs = Number(process.env.KXM_WORKER_TOOL_TIMEOUT_MS?.trim() || 1_860_000);
 if (!Number.isInteger(toolTimeoutMs) || (toolTimeoutMs !== 0 && (toolTimeoutMs < 1_000 || toolTimeoutMs > 86_400_000))) {
@@ -194,19 +194,19 @@ function claimPidFile() {
       } catch (existingError) {
         if (existingError?.code === "ENOENT") continue;
         throw new Error(
-          `pi-mesh worker PID claim is invalid at ${pidPath}; remove it only after verifying no matching worker is running`,
+          `KXM worker PID claim is invalid at ${pidPath}; remove it only after verifying no matching worker is running`,
           { cause: existingError },
         );
       }
       if (existing?.version === 1 && existing.role === "worker" && Number.isInteger(existing.pid) && processExists(existing.pid)) {
-        throw new Error(`pi-mesh worker ${project}/${name} is already managed by PID ${existing.pid}`);
+        throw new Error(`KXM worker ${project}/${name} is already managed by PID ${existing.pid}`);
       }
       throw new Error(
-        `pi-mesh worker PID claim is stale at ${pidPath}; remove it only after verifying no matching worker is running`,
+        `KXM worker PID claim is stale at ${pidPath}; remove it only after verifying no matching worker is running`,
       );
     }
   }
-  throw new Error("could not claim the pi-mesh worker PID file");
+  throw new Error("could not claim the KXM worker PID file");
 }
 
 function cleanupPid() {

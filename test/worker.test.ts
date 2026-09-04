@@ -225,7 +225,7 @@ test("hub, extension, and supervisor complete the real pre-ack route and destina
       "  registerTool() {}, registerCommand() {},",
       "  getSessionName() { return process.env.KXM_AGENT_NAME; },",
       "  sendMessage(message) {",
-      "    if (message.customType !== 'pi-mesh-inbound' || finishing) return;",
+      "    if (message.customType !== 'kxm-inbound' || finishing) return;",
       "    finishing = true;",
       "    queueMicrotask(async () => {",
       "      await emit('message_start', { message });",
@@ -268,7 +268,7 @@ test("hub, extension, and supervisor complete the real pre-ack route and destina
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-mesh-delivery-id": "integrated-session-route-delivery",
+        "x-kxm-delivery-id": "integrated-session-route-delivery",
         "x-hub-signature": `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`,
       },
       body,

@@ -53,7 +53,7 @@ export interface RetrospectiveEvidenceAuditV1 {
     attempt: number;
     policyMinProducers: number;
     approvedMinProducers: number;
-    approvedBy: "mesh-admin";
+    approvedBy: "kxm-admin";
     reason: string;
     approvedAt: string;
   }>;

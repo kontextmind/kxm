@@ -194,7 +194,7 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
     model: { provider: "test", id: "model" },
     ui,
   });
-  assert.ok(statuses.includes("mesh:pi-under-test"));
+  assert.ok(statuses.includes("hub:pi-under-test"));
   await waitFor(async () => (await peer.listAgents()).some((agent) => agent.name === "pi-under-test"));
 
   const listed = await fake.tools.get("kxm_list")!.execute("call-list", {});
@@ -285,7 +285,7 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-mesh-delivery-id": "extension-delivery-7",
+      "x-kxm-delivery-id": "extension-delivery-7",
       "x-hub-signature": `sha256=${createHmac("sha256", webhookSecret).update(workflowPayload).digest("hex")}`,
     },
     body: workflowPayload,
@@ -451,7 +451,7 @@ test("fresh Pi session receives a durable workflow recovery turn", async (contex
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-mesh-delivery-id": "recovery-delivery-1",
+      "x-kxm-delivery-id": "recovery-delivery-1",
       "x-hub-signature": `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`,
     },
     body,
@@ -492,8 +492,8 @@ test("fresh Pi session receives a durable workflow recovery turn", async (contex
   piMeshExtension(fake.api);
   const ui = { setStatus() {}, notify() {} };
   await fake.emit("session_start", {}, { cwd: process.cwd(), model: { provider: "test", id: "model" }, ui });
-  await waitFor(() => fake.sent.some(({ message }) => message.customType === "pi-mesh-recovery"));
-  const recovered = fake.sent.find(({ message }) => message.customType === "pi-mesh-recovery")!;
+  await waitFor(() => fake.sent.some(({ message }) => message.customType === "kxm-recovery"));
+  const recovered = fake.sent.find(({ message }) => message.customType === "kxm-recovery")!;
   assert.match(String(recovered.message.content), new RegExp(runId));
   assert.match(String(recovered.message.content), /Last recorded stage: implement/);
   assert.equal(recovered.options.triggerTurn, true);
@@ -529,7 +529,7 @@ test("fresh tool-timeout recovery relies on one durable inbound replay", async (
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-mesh-delivery-id": "tool-timeout-recovery-delivery-1",
+      "x-kxm-delivery-id": "tool-timeout-recovery-delivery-1",
       "x-hub-signature": `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`,
     },
     body,
@@ -575,11 +575,11 @@ test("fresh tool-timeout recovery relies on one durable inbound replay", async (
   piMeshExtension(fake.api);
   const ui = { setStatus() {}, notify() {} };
   await fake.emit("session_start", {}, { cwd: process.cwd(), model: { provider: "test", id: "model" }, ui });
-  await waitFor(() => fake.sent.some(({ message }) => message.customType === "pi-mesh-inbound"));
-  assert.equal(fake.sent.filter(({ message }) => message.customType === "pi-mesh-inbound").length, 1);
-  assert.equal(fake.sent.some(({ message }) => message.customType === "pi-mesh-recovery"), false);
+  await waitFor(() => fake.sent.some(({ message }) => message.customType === "kxm-inbound"));
+  assert.equal(fake.sent.filter(({ message }) => message.customType === "kxm-inbound").length, 1);
+  assert.equal(fake.sent.some(({ message }) => message.customType === "kxm-recovery"), false);
   assert.equal(
-    (fake.sent.find(({ message }) => message.customType === "pi-mesh-inbound")?.message.details as { messageId?: string } | undefined)?.messageId,
+    (fake.sent.find(({ message }) => message.customType === "kxm-inbound")?.message.details as { messageId?: string } | undefined)?.messageId,
     run.messageId,
   );
   assert.equal(existsSync(envelopePath), false);
@@ -650,7 +650,7 @@ test("Pi extension preserves workflow work after a settled provider error and al
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-mesh-delivery-id": "provider-recovery-delivery-1",
+      "x-kxm-delivery-id": "provider-recovery-delivery-1",
       "x-hub-signature": `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`,
     },
     body,
@@ -961,7 +961,7 @@ test("supervised Pi routes a workflow prompt before acknowledgement and replays 
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-mesh-delivery-id": "session-isolation-delivery",
+      "x-kxm-delivery-id": "session-isolation-delivery",
       "x-hub-signature": `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`,
     },
     body,

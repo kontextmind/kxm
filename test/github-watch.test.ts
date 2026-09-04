@@ -84,7 +84,7 @@ test("each watcher invocation uses a new delivery generation for fail then re-wa
       });
     }
     if (url.includes("/signals/")) {
-      const deliveryId = new Headers(init?.headers).get("x-mesh-delivery-id") ?? "";
+      const deliveryId = new Headers(init?.headers).get("x-kxm-delivery-id") ?? "";
       const body = String(init?.body ?? "");
       const previous = deliveries.get(deliveryId);
       if (previous !== undefined && previous !== body) return jsonResponse(409, { code: "workflow_signal_delivery_conflict" });
@@ -255,7 +255,7 @@ test("signal delivery retries transient hub failures with a stable delivery id",
       if (url.includes("/pulls/2")) return jsonResponse(200, { head: { sha: "def456" } });
       if (url.includes("/check-runs")) return jsonResponse(200, { check_runs: [{ name: "ci", status: "completed", conclusion: "success" }] });
       posts += 1;
-      deliveries.push(new Headers(init?.headers).get("x-mesh-delivery-id") ?? "");
+      deliveries.push(new Headers(init?.headers).get("x-kxm-delivery-id") ?? "");
       return posts === 1 ? jsonResponse(503, {}) : jsonResponse(202, { duplicate: false });
     },
   });

@@ -205,7 +205,7 @@ test("interactive dashboard registers a legacy observer when ops access is lost 
         start(controller) {
           controller.enqueue(encoder.encode(": heartbeat\n\n"));
         },
-      }), { headers: { "content-type": "text/event-stream", "x-mesh-events-mode": "presence" } });
+      }), { headers: { "content-type": "text/event-stream", "x-kxm-events-mode": "presence" } });
     }
     if (url.includes("/v1/agents/agt_transition_observer") && init?.method === "DELETE") return new Response(null, { status: 204 });
     throw new Error(`unexpected request: ${url}`);

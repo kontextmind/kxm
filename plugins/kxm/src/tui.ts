@@ -575,7 +575,7 @@ export async function runMeshTui(input: {
   const headers = (identity?: { id: string; key: string }): Record<string, string> => ({
     "content-type": "application/json",
     ...(input.authToken ? { authorization: `Bearer ${input.authToken}` } : {}),
-    ...(identity ? { "x-mesh-agent-id": identity.id, "x-mesh-agent-key": identity.key } : {}),
+    ...(identity ? { "x-kxm-agent-id": identity.id, "x-kxm-agent-key": identity.key } : {}),
   });
   const tty = input.isTty ?? Boolean(input.stdin?.isTTY && process.stdout.isTTY);
   let identity: { id: string; key: string } | undefined;
@@ -794,7 +794,7 @@ export async function runMeshTui(input: {
           paint(snapshot);
           continue;
         }
-        if (!useOpsStream && events.ok && events.headers.get("x-mesh-events-mode") !== "presence") {
+        if (!useOpsStream && events.ok && events.headers.get("x-kxm-events-mode") !== "presence") {
           await events.body?.cancel();
           snapshot = await snapshotFromHub("snapshot", {
             error: "hub does not support metadata-only presence SSE; live fallback disabled",

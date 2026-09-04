@@ -114,7 +114,7 @@ export function parseStateItem(value: unknown): ContextItem {
 }
 
 /** Native SQLite-backed temporal state provider. Agents may propose; only
- * the control plane (mesh admin routes) may promote, and never the proposal
+ * the control plane (hub admin routes) may promote, and never the proposal
  * author. All mutations are durable and evidence-bound. */
 export class NativeStateProvider implements StateProvider {
   readonly name = "native-sqlite";

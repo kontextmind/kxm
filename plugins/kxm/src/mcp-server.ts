@@ -176,7 +176,7 @@ async function ensureClient(): Promise<MeshClient> {
 const tools = [
   {
     name: "kxm_list",
-    description: "List online peer agents in the current mesh project.",
+    description: "List online peer agents in the current hub project.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
   {

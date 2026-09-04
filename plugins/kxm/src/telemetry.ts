@@ -11,7 +11,7 @@ export interface TelemetryEvent {
   schema: typeof TELEMETRY_SCHEMA;
   recordedAt: string;
   sessionId?: string;
-  host: "local" | "mesh";
+  host: "local" | "hub";
   target: ImprovementTarget;
   envelope: WorkerResultEnvelope;
 }
@@ -59,7 +59,7 @@ export function telemetryPath(logsDir: string): string {
 export function makeTelemetryEvent(input: {
   envelope: WorkerResultEnvelope;
   sessionId?: string;
-  host?: "local" | "mesh";
+  host?: "local" | "hub";
   target: ImprovementTarget;
 }): TelemetryEvent {
   return {

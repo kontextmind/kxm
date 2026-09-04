@@ -171,7 +171,7 @@ export class MeshClient {
   }
 
   async start(onEvent: (event: HubEvent) => void | Promise<void>): Promise<AgentRecord> {
-    if (!this.stopped) throw new Error("mesh client is already started");
+    if (!this.stopped) throw new Error("hub client is already started");
     this.stopped = false;
     this.onEvent = onEvent;
     try {
@@ -536,8 +536,8 @@ export class MeshClient {
     const headers: Record<string, string> = { "content-type": "application/json" };
     if (this.options.authToken) headers.authorization = `Bearer ${this.options.authToken}`;
     if (includeIdentity && this.agent && this.agentKey) {
-      headers["x-mesh-agent-id"] = this.agent.id;
-      headers["x-mesh-agent-key"] = this.agentKey;
+      headers["x-kxm-agent-id"] = this.agent.id;
+      headers["x-kxm-agent-key"] = this.agentKey;
     }
     return headers;
   }

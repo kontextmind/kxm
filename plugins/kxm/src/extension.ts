@@ -23,7 +23,7 @@ const SETTLEMENT_RETRY_MAX_MS = 30_000;
 
 function boundedPeerReply(reply: string): string {
   if (reply.length <= MAX_CONTENT_CHARS) return reply;
-  const suffix = `\n\n[pi-mesh: response truncated from ${reply.length} characters to fit the message limit; the full output may remain in the replying agent's local session or worker log]`;
+  const suffix = `\n\n[kxm: response truncated from ${reply.length} characters to fit the message limit; the full output may remain in the replying agent's local session or worker log]`;
   return reply.slice(0, MAX_CONTENT_CHARS - suffix.length) + suffix;
 }
 
@@ -346,7 +346,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
       activationStartTimer = undefined;
       if (shuttingDown || activeInbound || awaitingActivation?.id !== messageId) return;
       notify?.(
-        `pi-mesh worker is stuck: delivered message ${messageId} did not start a model turn within ${timeoutMs}ms; requesting supervised restart`,
+        `kxm worker is stuck: delivered message ${messageId} did not start a model turn within ${timeoutMs}ms; requesting supervised restart`,
         "error",
       );
       persistRecoveryContext();
@@ -392,7 +392,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     );
     activationRetryAttempt += 1;
     notify?.(
-      `pi-mesh could not activate the next hub message; it remains durable and activation will retry in ${delayMs}ms: ${error instanceof Error ? error.message : String(error)}`,
+      `kxm could not activate the next hub message; it remains durable and activation will retry in ${delayMs}ms: ${error instanceof Error ? error.message : String(error)}`,
       "error",
     );
     activationRetryTimer = setTimeout(() => {
@@ -469,7 +469,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
       startActivationWatchdog(acknowledged.id);
       try {
         pi.sendMessage({
-          customType: "pi-mesh-inbound",
+          customType: "kxm-inbound",
           content: [
             `Peer request from ${acknowledged.fromName} (message ${acknowledged.id}):`,
             "",
@@ -574,7 +574,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     settlementRetryAttempt += 1;
     persistRecoveryContext();
     notify?.(
-      `pi-mesh could not return reply for ${messageId}; recovery state was retained and settlement will retry in ${delayMs}ms: ${error instanceof Error ? error.message : String(error)}`,
+      `kxm could not return reply for ${messageId}; recovery state was retained and settlement will retry in ${delayMs}ms: ${error instanceof Error ? error.message : String(error)}`,
       "error",
     );
     settlementRetryTimer = setTimeout(() => {
@@ -624,8 +624,8 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     try {
       currentSessionBinding = bindingFromEnvironment();
     } catch (error) {
-      ctx.ui.setStatus("pi-mesh", "mesh:offline");
-      ctx.ui.notify(`pi-mesh session routing configuration failed: ${error instanceof Error ? error.message : String(error)}`, "error");
+      ctx.ui.setStatus("kxm", "hub:offline");
+      ctx.ui.notify(`kxm session routing configuration failed: ${error instanceof Error ? error.message : String(error)}`, "error");
       void ctx.shutdown();
       return;
     }
@@ -651,8 +651,8 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     requestWorkerRestart = () => { void ctx.shutdown(); };
     try {
       const agent = await client.start(receive);
-      ctx.ui.setStatus("pi-mesh", `mesh:${agent.name}`);
-      ctx.ui.notify(`Connected to pi-mesh as ${agent.name}`, "info");
+      ctx.ui.setStatus("kxm", `hub:${agent.name}`);
+      ctx.ui.notify(`Connected to the KXM hub as ${agent.name}`, "info");
       const recovered = stateDir ? await consumeWorkerRecoveryEnvelope(client, stateDir, agent.name, project) : undefined;
       const recoveryReplayIds = recovered?.activeMessageIds ?? recovered?.pendingMessageIds ?? [];
       const replayCandidates = await Promise.all(recoveryReplayIds.slice(0, 16).map(async (messageId) => {
@@ -667,21 +667,21 @@ export default function piMeshExtension(pi: ExtensionAPI) {
       const recoveryMatchesSession = process.env.KXM_WORKER_SESSION_ISOLATION !== "workflow"
         || (currentSessionBinding.kind === "workflow" && recovered?.runId === currentSessionBinding.runId);
       if (recovered?.freshSession && recovered.runId && !recovered.peerLocal && recoveryMatchesSession && !durableInboundWillReplay) {
-        pi.sendMessage({ customType: "pi-mesh-recovery", content: [`Resume durable workflow run ${recovered.runId} after a fresh-session worker recovery.`, recovered.stageId ? `Last recorded stage: ${recovered.stageId}.` : "Resolve the current stage from kxm_workflow_get.", `Recovery reason: ${recovered.reason}.`, "Call kxm_workflow_get, inspect its journal and stage evidence, then continue the current stage without repeating completed work.", "Record the recovery decision and checkpoint only after the required evidence is satisfied."].join("\n"), display: true, details: { runId: recovered.runId, stageId: recovered.stageId, reason: recovered.reason } }, { triggerTurn: true, deliverAs: "followUp" });
+        pi.sendMessage({ customType: "kxm-recovery", content: [`Resume durable workflow run ${recovered.runId} after a fresh-session worker recovery.`, recovered.stageId ? `Last recorded stage: ${recovered.stageId}.` : "Resolve the current stage from kxm_workflow_get.", `Recovery reason: ${recovered.reason}.`, "Call kxm_workflow_get, inspect its journal and stage evidence, then continue the current stage without repeating completed work.", "Record the recovery decision and checkpoint only after the required evidence is satisfied."].join("\n"), display: true, details: { runId: recovered.runId, stageId: recovered.stageId, reason: recovered.reason } }, { triggerTurn: true, deliverAs: "followUp" });
         await applySessionChrome(ctx, event, false);
         return;
       }
     } catch (error) {
       client = undefined;
-      ctx.ui.setStatus("pi-mesh", "mesh:offline");
-      ctx.ui.notify(`pi-mesh connection failed: ${error instanceof Error ? error.message : String(error)}`, "error");
+      ctx.ui.setStatus("kxm", "hub:offline");
+      ctx.ui.notify(`kxm connection failed: ${error instanceof Error ? error.message : String(error)}`, "error");
     }
     await applySessionChrome(ctx, event, true);
   });
 
   pi.on("message_start", (event) => {
     const message = event.message as { customType?: string; details?: { messageId?: string } };
-    if (message.customType !== "pi-mesh-inbound" || !awaitingActivation) return;
+    if (message.customType !== "kxm-inbound" || !awaitingActivation) return;
     if (message.details?.messageId !== awaitingActivation.id) return;
     clearActivationWatchdog(awaitingActivation.id);
     activeInbound = awaitingActivation;
@@ -774,7 +774,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
         }
       }
       notify?.(
-        `pi-mesh retained ${activeInbound.id} after ${activeFailure.class}; switch the model or let the supervised worker recover it`,
+        `kxm retained ${activeInbound.id} after ${activeFailure.class}; switch the model or let the supervised worker recover it`,
         "error",
       );
       return;
@@ -806,8 +806,8 @@ export default function piMeshExtension(pi: ExtensionAPI) {
 
   pi.registerTool({
     name: "kxm_list",
-    label: "List mesh peers",
-    description: "List online peer agents in this project's pi-mesh pool, including their names and purposes.",
+    label: "List hub peers",
+    description: "List online peer agents in this project's hub pool, including their names and purposes.",
     parameters: Type.Object({}),
     async execute() {
       return result({ agents: await requireClient().listAgents() });

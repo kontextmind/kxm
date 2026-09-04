@@ -28,7 +28,7 @@ export class MeshStore {
     const schemaVersion = schemaRow?.user_version ?? 0;
     if (schemaVersion > 3) {
       this.database.close();
-      throw new Error(`mesh database schema ${schemaVersion} is newer than this runtime supports`);
+      throw new Error(`hub database schema ${schemaVersion} is newer than this runtime supports`);
     }
     this.database.exec(`
       PRAGMA journal_mode = WAL;

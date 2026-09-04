@@ -140,8 +140,8 @@ async function api(baseUrl, path, options = {}) {
       "content-type": "application/json",
       authorization: `Bearer ${options.authToken}`,
       ...(options.identity ? {
-        "x-mesh-agent-id": options.identity.agent.id,
-        "x-mesh-agent-key": options.identity.agentKey,
+        "x-kxm-agent-id": options.identity.agent.id,
+        "x-kxm-agent-key": options.identity.agentKey,
       } : {}),
       ...(options.headers ?? {}),
     },
@@ -426,7 +426,7 @@ export async function runRealSmoke(options = {}) {
         const started = await api(baseUrl, "/v1/webhooks/real-pi-smoke", {
           method: "POST",
           authToken,
-          headers: { "x-mesh-event": "smoke.requested", "x-mesh-delivery-id": `smoke-${randomUUID()}`, "x-hub-signature": `sha256=${createHmac("sha256", webhookSecret).update(payload).digest("hex")}` },
+          headers: { "x-mesh-event": "smoke.requested", "x-kxm-delivery-id": `smoke-${randomUUID()}`, "x-hub-signature": `sha256=${createHmac("sha256", webhookSecret).update(payload).digest("hex")}` },
           body: payload,
         });
         await api(baseUrl, `/v1/workflows/${encodeURIComponent(started.run.id)}/journal`, {

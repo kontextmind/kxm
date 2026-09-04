@@ -239,7 +239,7 @@ async function startProvenanceMesh(
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-mesh-delivery-id": `${definition.id}-delivery`,
+      "x-kxm-delivery-id": `${definition.id}-delivery`,
       "x-hub-signature": `sha256=${createHmac("sha256", definition.secret).update(payload).digest("hex")}`,
     },
     body: payload,
@@ -1047,7 +1047,7 @@ test("peer evidence captured before a wait survives a signed callback checkpoint
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-mesh-delivery-id": "ci-main-passed",
+        "x-kxm-delivery-id": "ci-main-passed",
         "x-hub-signature-256": `sha256=${createHmac("sha256", SIGNAL_SECRET).update(signalBody).digest("hex")}`,
       },
       body: signalBody,
@@ -1089,8 +1089,8 @@ test("an in-flight checkpoint cannot resurrect a concurrently expired wait", asy
     mesh.token,
     body,
     {
-      "x-mesh-agent-id": coordinator.agent!.id,
-      "x-mesh-agent-key": agentKey,
+      "x-kxm-agent-id": coordinator.agent!.id,
+      "x-kxm-agent-key": agentKey,
     },
   );
   await waitFor(() => mesh.hub.state.workflowRuns.get(run.id)?.status === "failed", 2_500);
@@ -1137,7 +1137,7 @@ test("a signed callback can use prior admin approval but cannot approve degradat
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-mesh-delivery-id": "ci-degraded-passed",
+      "x-kxm-delivery-id": "ci-degraded-passed",
       "x-hub-signature-256": `sha256=${createHmac("sha256", SIGNAL_SECRET).update(signalBody).digest("hex")}`,
     },
     body: signalBody,

@@ -190,7 +190,7 @@ test("hub context surfaces: role packets, recall, state, episodes, explain, pari
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-mesh-delivery-id": "context-hub-1",
+      "x-kxm-delivery-id": "context-hub-1",
       "x-hub-signature": `sha256=${createHmac("sha256", secret).update(payload).digest("hex")}`,
     },
     body: payload,

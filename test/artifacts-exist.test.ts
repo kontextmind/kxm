@@ -269,26 +269,26 @@ test("artifacts-exist accepts only non-empty regular files contained by real wor
 
     const emptyResult = await invoke(empty);
     assert.equal(emptyResult.code, 1);
-    assert.match(emptyResult.stdout, /artifact_empty/);
+    assert.match(emptyResult.stderr, /artifact_empty/);
 
     const directoryResult = await invoke(directory);
     assert.equal(directoryResult.code, 1);
-    assert.match(directoryResult.stdout, /artifact_not_file/);
+    assert.match(directoryResult.stderr, /artifact_not_file/);
 
     const missingResult = await invoke(missing);
     assert.equal(missingResult.code, 1);
-    assert.match(missingResult.stdout, /artifact_missing/);
+    assert.match(missingResult.stderr, /artifact_missing/);
 
     const outsideResult = await invoke(outside);
     assert.equal(outsideResult.code, 1);
-    assert.match(outsideResult.stdout, /artifact_outside_workspace_assets/);
+    assert.match(outsideResult.stderr, /artifact_outside_workspace_assets/);
 
     const escaped = join(assets, "outputs", "escaped.md");
     try {
       symlinkSync(outside, escaped, "file");
       const escapedResult = await invoke(escaped);
       assert.equal(escapedResult.code, 1);
-      assert.match(escapedResult.stdout, /artifact_outside_workspace_assets/);
+      assert.match(escapedResult.stderr, /artifact_outside_workspace_assets/);
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       if (code !== "EPERM" && code !== "EACCES" && code !== "ENOTSUP") throw error;
