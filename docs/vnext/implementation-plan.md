@@ -86,8 +86,10 @@ It does not replace the phase gates below.
 - Harness catalog + `kxm harness list` + `kxm update`.
 - Phase 2 Runtime create/recover (PR #75) is in tree: supervisor, event store,
   projections, crash recovery. Runs stay `created` until Phase 3.
-- Hub-local session brief: `kxm session brief`, Pi TUI picker + status/widget,
-  `/kxm`, skill `kxm-session`, `kxm init --hub existing|new` (SSH fail-closed).
+- Hub-local session brief: `kxm session brief`, Pi TUI picker + status/widget
+  on `startup`/`new`/`fork`, `/kxm` (`status`/`hub`/`help` completions),
+  skill `kxm-session`, `kxm init --hub existing|new` (SSH fail-closed).
+  `/kxm hub` wraps hub view + online agents; `/mesh-status` is a deprecated alias.
   Slash inspects via the same brief snapshot as the CLI. No message bodies.
 
 ### Still open

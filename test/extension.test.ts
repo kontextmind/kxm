@@ -177,6 +177,7 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
   >;
   assert.equal(Object.values(evidenceRefValue)[0]!.properties.messageIds.maxItems, 16);
   assert.ok(fake.commands.has("mesh-status"));
+  assert.ok(fake.commands.has("kxm"));
 
   const statuses: string[] = [];
   const notices: Array<{ message: string; type: string }> = [];
@@ -421,7 +422,7 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
   assert.ok(notices.some((notice) => notice.message.includes("pi-under-test") && notice.type === "info"));
   await fake.emit("session_shutdown");
   await fake.commands.get("mesh-status")!.handler("", { ui });
-  assert.ok(notices.some((notice) => notice.message === "pi-mesh is offline" && notice.type === "warning"));
+  assert.ok(notices.some((notice) => notice.message.includes("no agent connected") && notice.type === "warning"));
   await assert.rejects(() => fake.tools.get("kxm_list")!.execute("offline", {}), /not connected/);
 });
 

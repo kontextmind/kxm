@@ -444,7 +444,7 @@ $env:KXM_AGENT_PURPOSE = "Independent correctness reviewer"
 pi
 ```
 
-Use `/mesh-status` to display the current identity and connection. Ask Pi to use
+Use `/kxm hub` to display the current identity and hub connection. Ask Pi to use
 the `kxm` skill before delegating complex work.
 
 ### Always-on Pi workers
@@ -984,7 +984,7 @@ preserve evidence, and recover from hub-owned workflow state.
 2. Check `/health`, then `/ready`.
 3. Compare URL, project, and project token on both agents.
 4. Confirm unique live names.
-5. Run `/mesh-status` in Pi or `kxm_list` in Pi/Claude.
+5. Run `/kxm hub` in Pi or `kxm_list` in Pi/Claude.
 6. Inspect structured logs without copying secrets or raw model content.
 7. For queued workflow work, look for the one expected session route swap.
 8. For a delivered message, inspect the recipient and activation/tool watchdogs;

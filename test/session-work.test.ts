@@ -6,6 +6,8 @@ import {
   formatSessionBriefText,
   formatSessionStatusLine,
   itemFromChoice,
+  kxmSlashCompletions,
+  parseKxmSlashArgs,
   sessionBriefChoices,
   sessionBriefPickerEnabled,
 } from "../plugins/kxm/src/session-work.ts";
@@ -68,9 +70,14 @@ test("session status line reports hub online and idle", () => {
 
 test("session brief picker is TUI-only and can be disabled", () => {
   assert.equal(sessionBriefPickerEnabled({ mode: "tui", reason: "new" }), true);
+  assert.equal(sessionBriefPickerEnabled({ mode: "tui", reason: "fork" }), true);
   assert.equal(sessionBriefPickerEnabled({ mode: "rpc", reason: "new" }), false);
   assert.equal(sessionBriefPickerEnabled({ mode: "tui", reason: "resume" }), false);
   assert.equal(sessionBriefPickerEnabled({ mode: "tui", reason: "new", env: { KXM_SESSION_BRIEF: "off" } }), false);
+  assert.equal(parseKxmSlashArgs(undefined), "brief");
+  assert.equal(parseKxmSlashArgs("hub"), "hub");
+  assert.equal(parseKxmSlashArgs("nope"), "help");
+  assert.deepEqual(kxmSlashCompletions("h").map((item) => item.value), ["hub", "help"]);
 });
 
 test("init --hub is opt-in and rejects SSH", () => {

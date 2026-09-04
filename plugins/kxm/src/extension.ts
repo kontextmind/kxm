@@ -10,7 +10,9 @@ import type { ImprovementArea, JournalCategory, WorkflowCheckpointStatus } from 
 import { consumeWorkerRecoveryEnvelope, workerStateKey } from "./recovery.ts";
 import {
   itemFromChoice,
+  kxmSlashCompletions,
   loadSessionBrief,
+  parseKxmSlashArgs,
   sessionBriefChoices,
   sessionBriefPickerEnabled,
   type SessionWorkItem,
@@ -306,6 +308,23 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     ctx.ui.setStatus?.("kxm", selected.statusLine);
     ctx.ui.setWidget?.("kxm-work", selected.widgetLines);
     ctx.ui.setEditorText?.(item.prompt);
+  }
+
+  async function showKxmHub(ctx: { ui: { notify: (message: string, type: "info" | "warning" | "error") => void } }): Promise<void> {
+    const url = (process.env.KXM_SERVER_URL ?? "http://127.0.0.1:7331").replace(/\/$/, "");
+    let health = "unreachable";
+    try {
+      const response = await fetch(`${url}/health`);
+      health = response.ok ? "ok" : `http_${response.status}`;
+    } catch {
+      health = "unreachable";
+    }
+    if (!client?.agent) {
+      ctx.ui.notify(`kxm hub view: health=${health}; no agent connected`, "warning");
+      return;
+    }
+    const peers = await client.listAgents();
+    ctx.ui.notify(`kxm hub view: health=${health}; ${client.agent.name}; ${peers.length} online agent(s)`, "info");
   }
 
   function clearActivationWatchdog(messageId?: string): void {
@@ -1165,21 +1184,29 @@ export default function piMeshExtension(pi: ExtensionAPI) {
   });
 
   pi.registerCommand("mesh-status", {
-    description: "Show pi-mesh connection and peer status",
+    description: "Deprecated alias of /kxm hub",
     handler: async (_args, ctx) => {
-      if (!client?.agent) {
-        ctx.ui.notify("pi-mesh is offline", "warning");
-        return;
-      }
-      const peers = await client.listAgents();
-      ctx.ui.notify(`pi-mesh: ${client.agent.name}; ${peers.length} online agent(s)`, "info");
+      await showKxmHub(ctx);
     },
   });
 
   pi.registerCommand("kxm", {
-    description: "Show KXM hub plan/task stats and pick recent work",
+    description: "Hub session brief, status line, and hub view",
+    getArgumentCompletions: (prefix: string) => {
+      const items = kxmSlashCompletions(prefix);
+      return items.length > 0 ? items : null;
+    },
     handler: async (args, ctx) => {
-      await applySessionChrome(ctx, { reason: "new" }, String(args ?? "").trim() !== "status");
+      const command = parseKxmSlashArgs(typeof args === "string" ? args : undefined);
+      if (command === "hub") {
+        await showKxmHub(ctx);
+        return;
+      }
+      if (command === "help") {
+        ctx.ui.notify("kxm: /kxm | /kxm status | /kxm hub | /kxm help. CLI: kxm session brief, kxm hub view", "info");
+        return;
+      }
+      await applySessionChrome(ctx, { reason: "new" }, command === "brief");
     },
   });
 }

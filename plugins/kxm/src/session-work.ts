@@ -176,5 +176,22 @@ export function sessionBriefPickerEnabled(input: { env?: NodeJS.ProcessEnv; mode
   if (input.env?.KXM_SESSION_BRIEF?.trim() === "off") return false;
   if (input.mode !== "tui") return false;
   const reason = input.reason ?? "startup";
-  return reason === "startup" || reason === "new";
+  return reason === "startup" || reason === "new" || reason === "fork";
+}
+
+export const KXM_SLASH_SUBCOMMANDS = ["status", "hub", "help"] as const;
+export type KxmSlashCommand = "brief" | typeof KXM_SLASH_SUBCOMMANDS[number];
+
+export function parseKxmSlashArgs(args: string | undefined): KxmSlashCommand {
+  const raw = String(args ?? "").trim().toLowerCase();
+  if (raw === "" || raw === "brief") return "brief";
+  if (raw === "status" || raw === "hub" || raw === "help") return raw;
+  return "help";
+}
+
+export function kxmSlashCompletions(prefix: string): Array<{ value: string; label: string }> {
+  const p = prefix.trim().toLowerCase();
+  return KXM_SLASH_SUBCOMMANDS
+    .filter((name) => name.startsWith(p))
+    .map((name) => ({ value: name, label: name }));
 }

@@ -63,7 +63,7 @@ rewrites it.
 | `KXM_ASSETS_DIR` | `.kxm/assets` | Durable workspace workflow assets |
 | `KXM_STATE_DIR` | `.kxm/state` | Restart-recovery state directory |
 | `KXM_DATA_PATH` | `.kxm/state/kxm.db` | SQLite database path; use `:memory:` only for disposable runs |
-| `KXM_SESSION_BRIEF` | picker on Pi TUI `startup`/`new` | `off` disables the session-start task/plan picker only; status chrome still paints |
+| `KXM_SESSION_BRIEF` | picker on Pi TUI `startup`/`new`/`fork` | `off` disables the session-start task/plan picker only; status chrome still paints |
 | `KXM_LOG_PATH` | `.kxm/logs/kxm-hub.jsonl` | Structured hub JSON Lines log |
 | `KXM_MESSAGE_TTL_MS` | `86400000` | Default message lifetime, from 1 second through 7 days |
 | `KXM_MESSAGE_RETENTION_MS` | `604800000` | Time to keep terminal messages; minimum 1 second |
