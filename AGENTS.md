@@ -92,6 +92,11 @@ Cleanup (`git status`, no `nul`/tmp/secrets; `dist` if CLI changed) is **before*
 
 A commit is not a PR. A PR is not a release.
 
+**PR loop (do not sit on this in the interactive session):** push the branch,
+open the MR, enable auto-merge, watch CI on a background worker. Fix failures
+and conflicts until green. After merge: update local `main`, delete the branch
+(and worktree if used).
+
 ## Do not
 
 - Bulk-migrate jira / provenance / v04 just to “set up”
