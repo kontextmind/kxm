@@ -230,8 +230,9 @@ The tool allowlist is a capability boundary inside Pi, not a prompt suggestion â
 | `kxm gate github watch` | Poll required GitHub checks and post the existing signed signal |
 | `kxm mesh init` | Create empty `.kxm` directories; configuration remains project-owned and no package dogfood templates are copied |
 | `kxm hub view` | Check `/health` and `/ready` |
+| `kxm update --check` / `kxm update --kxm` | Check or apply a kxm operator package update. Default source is GitHub release tarballs (`gh` plus `npm install --omit=peer`). `source: npm` is for after the public package exists. Optional Git `.kxm/update.yaml` (`kxm.update.v1`, `auto` boolean) enables auto-apply on `kxm update`. Notice also prints on `kxm hub start` and on the session widget from cache |
 | `kxm dash` | Open the read-only SSE observer dashboard; non-TTY output is one ANSI-free snapshot |
-| `kxm hub start` | Start the mesh hub |
+| `kxm hub start` | Start the KXM hub |
 | `kxm hub stop` | Request managed hub and worker shutdown |
 | `kxm mesh smoke` | Opt-in two-worker real-Pi release harness |
 | `kxm improve` | Bucket `.kxm/logs/telemetry.jsonl` events into a proposed-only improvement report; does not read the workflow journal |

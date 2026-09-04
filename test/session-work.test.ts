@@ -64,6 +64,7 @@ test("session status line reports hub online and idle", () => {
   assert.equal(formatSessionStatusLine(empty), "kxm idle");
   assert.match(formatSessionStatusLine(empty, undefined, { online: true }), /hub:on/);
   assert.match(formatSessionStatusLine(empty, undefined, undefined, { dirty: true, ahead: 0 }), /dirty/);
+  assert.match(formatSessionStatusLine(empty, undefined, undefined, undefined, "0.5.2"), /upd 0\.5\.2/);
   assert.equal(formatShipLine({ dirty: true, ahead: 0 }), "ship dirty · commit after verify");
   assert.match(formatSessionWidget(empty, undefined, undefined, { dirty: false, ahead: 2 }).join("\n"), /2 local/);
 });

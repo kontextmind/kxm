@@ -6,6 +6,7 @@ import {
   type MeshTuiPlan,
   type MeshTuiRun,
 } from "./local-snapshot.ts";
+import { readUpdateCache } from "./kxm-update.ts";
 
 export const SESSION_BRIEF_SKIP_LABEL = "Skip — start a fresh session";
 export const MAX_SESSION_BRIEF_TASKS = 5;
@@ -110,11 +111,12 @@ export function readGitShip(cwd: string): SessionShipStatus | undefined {
   }
 }
 
-export function formatSessionStatusLine(stats: SessionWorkStats, current?: SessionWorkItem, hub?: SessionHubStatus, ship?: SessionShipStatus): string {
+export function formatSessionStatusLine(stats: SessionWorkStats, current?: SessionWorkItem, hub?: SessionHubStatus, ship?: SessionShipStatus, updateLatest?: string): string {
   const head = hubPrefix(hub);
   if (!current && stats.activeTasks === 0 && stats.planCount === 0 && stats.inbox === 0) {
     const idle = hub?.online === undefined ? "kxm idle" : `${head} · idle`;
-    return ship?.dirty ? `${idle} · dirty` : idle;
+    const withShip = ship?.dirty ? `${idle} · dirty` : idle;
+    return updateLatest ? `${withShip} · upd ${updateLatest}` : withShip;
   }
   const parts: string[] = [];
   if (current?.kind === "task") parts.push(`${head} ${current.detail}`);
@@ -126,11 +128,12 @@ export function formatSessionStatusLine(stats: SessionWorkStats, current?: Sessi
   if (stats.inbox > 0) parts.push(`inbox ${stats.inbox}`);
   if (ship?.dirty) parts.push("dirty");
   else if (ship && ship.ahead > 0) parts.push(`${ship.ahead} local`);
+  if (updateLatest) parts.push(`upd ${updateLatest}`);
   const line = parts.join(" · ");
   return line.length <= 80 ? line : `${line.slice(0, 79)}…`;
 }
 
-export function formatSessionWidget(stats: SessionWorkStats, current?: SessionWorkItem, hub?: SessionHubStatus, ship?: SessionShipStatus): string[] {
+export function formatSessionWidget(stats: SessionWorkStats, current?: SessionWorkItem, hub?: SessionHubStatus, ship?: SessionShipStatus, updateLatest?: string): string[] {
   const hubMark = hub?.online === true ? "hub:on  " : hub?.online === false ? "hub:off  " : "";
   const lines = [
     `KXM  ${hubMark}${stats.activeTasks} tasks  ${stats.waitingTasks} waiting  ${stats.planCount} plans  inbox ${stats.inbox}`,
@@ -139,6 +142,7 @@ export function formatSessionWidget(stats: SessionWorkStats, current?: SessionWo
   else if (stats.latestPlan) lines.push(`plan ${truncate(stats.latestPlan, 60)}`);
   else lines.push("now  no selected work");
   lines.push(formatShipLine(ship));
+  if (updateLatest) lines.push(`update  ${updateLatest} available · kxm update --kxm`);
   return lines;
 }
 
@@ -147,6 +151,7 @@ export function buildSessionBrief(
   current?: SessionWorkItem,
   hub?: SessionHubStatus,
   ship?: SessionShipStatus,
+  updateLatest?: string,
 ): SessionBrief {
   const active = snapshot.runs.filter((run) => run.status === "running" || run.status === "waiting");
   const stats: SessionWorkStats = {
@@ -163,8 +168,8 @@ export function buildSessionBrief(
     stats,
     tasks,
     plans,
-    statusLine: formatSessionStatusLine(stats, current, hub, ship),
-    widgetLines: formatSessionWidget(stats, current, hub, ship),
+    statusLine: formatSessionStatusLine(stats, current, hub, ship, updateLatest),
+    widgetLines: formatSessionWidget(stats, current, hub, ship, updateLatest),
   };
 }
 
@@ -199,7 +204,9 @@ export function loadSessionBrief(cwd: string, env: NodeJS.ProcessEnv = process.e
   const ship = readGitShip(cwd);
   try {
     const paths = resolveKxmSnapshotPaths(cwd, env);
-    return buildSessionBrief(loadLocalMeshSnapshot(paths.dataPath, paths.stateDir), current, hub, ship);
+    const cached = readUpdateCache(paths.stateDir);
+    const updateLatest = cached?.available ? cached.latest : undefined;
+    return buildSessionBrief(loadLocalMeshSnapshot(paths.dataPath, paths.stateDir), current, hub, ship, updateLatest);
   } catch {
     return buildSessionBrief({ runs: [], plans: [], openMessageTotal: 0, runTotal: 0 }, current, hub, ship);
   }

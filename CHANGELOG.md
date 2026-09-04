@@ -25,6 +25,9 @@ All notable user-facing changes are documented here. The project follows [Semant
   `kxm-session`. `kxm init --hub existing|new` is opt-in; omit `--hub` for
   local-only; SSH is not available. `/kxm hub` replaces `/mesh-status`.
   Pi widget `ship` line shows git dirty/ahead vs verify/CI (does not run tests).
+- `kxm update --check` / `--kxm` notices and applies operator package updates.
+  GitHub releases are the current install path; npm is for after the public
+  package. Git `.kxm/update.yaml` `auto` applies on `kxm update`.
 
 ## 0.5.1 - 2026-09-01
 
