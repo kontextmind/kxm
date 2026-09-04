@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { removeTempDir } from "./helpers.ts";
 import {
   VnextRunEventStore,
   VnextRuntimeRegistry,
@@ -50,9 +51,7 @@ function committedProject(prefix: string): { root: string; stateRoot: string } {
 }
 
 function cleanup(...paths: string[]): void {
-  // A SIGKILLed runtime can still hold its SQLite handles for a moment on
-  // Windows; rmSync retries so teardown does not fail the test with EPERM.
-  for (const path of paths) rmSync(path, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  removeTempDir(...paths);
 }
 
 test("run acceptance is immutable, idempotent, and pins revisions", () => {
