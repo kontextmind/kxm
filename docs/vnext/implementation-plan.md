@@ -80,6 +80,10 @@ It does not replace the phase gates below.
 - **Hub local is MVP.** `kxm init` is local-only unless `--hub existing|new`.
   Session brief, Pi status line, and `/kxm` read the local hub snapshot.
   Local Runtime in-harness insights and SSH/HTTPS hub install are after MVP.
+- **Public npm first.** Do not run wiki compile/lint/ingest for this repo, and
+  do not treat `source: npm` as the default updater, until `@kontextmind/kxm`
+  is a public npm release. Until then: GitHub release tarballs + docs/Tracking.
+  Wiki stays compiled-from-hub (`kxm context wiki-compile`); no ingest CLI.
 
 ### Landed in this tree (unreleased)
 
@@ -104,9 +108,10 @@ It does not replace the phase gates below.
 
 ### Still open
 
-- **Next PR (not this one):** fold or drop `kxm mesh` (`init`/`smoke`); rename
-  `MeshClient` / `mesh:offline`; session-ready `/new`/`/fork` as a failing test.
-  This PR brakes `/mesh-status` (removed) and ignores Windows `nul` via gitignore.
+- **After public npm:** wiki-compile this project from hub context; npm as
+  `kxm update` source. Not before.
+- **Next PR:** fold or drop `kxm mesh` (`init`/`smoke`); rename `MeshClient` /
+  `mesh:offline`; session-ready `/new`/`/fork` as a failing test.
 - Rebuild generated `plugins/kxm/dist` and run full `npm test` after the latest
   CLI rename.
 - Docs sweep: operator pages updated to `kxm hub start|view|stop` and `kxm dash`;
