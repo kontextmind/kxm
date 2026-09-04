@@ -73,18 +73,20 @@ Do not assume GitHub. Bind SCM and tickets from **this repo’s conventions**, t
 
 Ship GitHub checks + Jira webhooks first. GitLab (and other trackers) are adapters to add; until they exist, **offer the choice and fail closed** if the user picks an unimplemented one — don’t silently use GitHub.
 
-## Verify and ship (fail fast)
+## Verify and ship (gates, not memory)
 
-On `/new` and `/fork`, and before commit or PR: update Tracking and affected
-docs in the **same** change. Work is **agents** and **workflows**. Warn before
-fixing contradictions or deleting duplicate docs/code. Product name is KXM.
+On `/new` and `/fork`, update Tracking and affected docs in the **same** change.
+Work is **agents** and **workflows**. Warn before fixing contradictions or
+deleting duplicate docs/code. Product name is KXM.
 
-1. **Cleanup** — `git status`; drop `nul`, tmp, logs, secrets; rebuild `dist` only if CLI changed.
-2. **`npx tsc --noEmit`**
-3. **Tests** — slice tests, then `npm test`.
-4. **`npm run lint:docs`**
-5. **Commit?** — slice coherent, 1–4 green → recommend commit.
-6. **PR/MR?** — also session-ready (`/new`/`/fork` can pick real work), leftover Mesh operator copy fixed or deferred in Tracking. Cleanup again **before push**.
+Two combined gates (already in npm/CI). Do not add a third unless a test fails.
+
+| When | Gate | What it combines |
+|---|---|---|
+| **Commit** | `npm run verify` | `npm test` (build + tests) then `npm run check` (tsc + lint:docs + versions) |
+| **PR/MR** | CI `validate:ci` + `check:generated` | coverage + check + pack dry-run; generated `dist` current |
+
+Cleanup (`git status`, no `nul`/tmp/secrets; `dist` if CLI changed) is **before** the commit gate and **again before push**. Session-ready `/new`/`/fork` and leftover Mesh operator copy are **PR judgment**, not extra npm scripts, until they can fail a test without a live harness.
 
 A commit is not a PR. A PR is not a release.
 
