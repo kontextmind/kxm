@@ -77,9 +77,10 @@ It does not replace the phase gates below.
 - CLI Fable/Codex/Kimi critiques are artifacts plus human signoff, never
   hub `peer-reply` evidence.
 - Workflow fixture ids: `kxm-provenance`, `kxm-v04` (not `pi-extensions-*`).
-- **Hub local is MVP.** `kxm init` is local-only unless `--hub existing|new`.
-  Session brief, Pi status line, and `/kxm` read the local hub snapshot.
-  Local Runtime in-harness insights and SSH/HTTPS hub install are after MVP.
+- **Hub local is MVP.** `kxm init` is project-only. `kxm hub bind <url>` binds
+  this host to a running hub. Session brief, Pi status line, and `/kxm` read
+  the local hub snapshot. Local Runtime in-harness insights and SSH/HTTPS hub
+  install are after MVP.
 - **Public npm first.** Do not run wiki compile/lint/ingest for this repo, and
   do not treat `source: npm` as the default updater, until `@kontextmind/kxm`
   is a public npm release. Until then: GitHub release tarballs + docs/Tracking.
@@ -102,9 +103,13 @@ It does not replace the phase gates below.
   on the network.
 - Hub-local session brief: `kxm session brief`, Pi TUI picker + status/widget
   on `startup`/`new`/`fork`, `/kxm` (`status`/`hub`/`help` completions),
-  skill `kxm-session`, `kxm init --hub existing|new` (SSH fail-closed).
+  skill `kxm-session`, `kxm hub bind <url>` / `kxm hub unbind`.
   `/kxm hub` wraps hub view + online agents. `/mesh-status` is removed (brakes).
   Slash inspects via the same brief snapshot as the CLI. No message bodies.
+- `kxm hub bind <url>` / `unbind` persist a host-level `hub-binding.json`.
+  `kxm init --hub` / `--hub-url` are unknown options. Hub start prints a cached
+  update notice, refreshes in the background, and warns (does not exit 2) on a
+  malformed `.kxm/update.yaml`. Startup reports `auth=token|none`.
 
 ### Still open
 

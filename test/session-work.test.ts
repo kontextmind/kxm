@@ -13,7 +13,6 @@ import {
   sessionBriefChoices,
   sessionBriefPickerEnabled,
 } from "../plugins/kxm/src/session-work.ts";
-import { parseHubInitOption } from "../plugins/kxm/src/hub-setup.ts";
 
 test("session brief lists hub tasks and plans without message bodies", () => {
   const brief = buildSessionBrief({
@@ -79,21 +78,4 @@ test("session brief picker is TUI-only and can be disabled", () => {
   assert.equal(parseKxmSlashArgs("hub"), "hub");
   assert.equal(parseKxmSlashArgs("nope"), "help");
   assert.deepEqual(kxmSlashCompletions("h").map((item) => item.value), ["hub", "help"]);
-});
-
-test("init --hub is opt-in and rejects SSH", () => {
-  const local = parseHubInitOption(undefined);
-  assert.equal(local.ok, true);
-  if (local.ok) assert.equal(local.mode, "local");
-  const existing = parseHubInitOption(true);
-  assert.equal(existing.ok, true);
-  if (existing.ok) assert.equal(existing.mode, "existing");
-  const created = parseHubInitOption("new");
-  assert.equal(created.ok, true);
-  if (created.ok) assert.equal(created.mode, "new");
-  const ssh = parseHubInitOption("ssh");
-  assert.equal(ssh.ok, false);
-  if (!ssh.ok) assert.equal(ssh.error, "hub_ssh_unsupported");
-  const urlOnly = parseHubInitOption(undefined, "http://127.0.0.1:7331");
-  assert.equal(urlOnly.ok, false);
 });

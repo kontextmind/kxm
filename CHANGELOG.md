@@ -29,8 +29,13 @@ All notable user-facing changes are documented here. The project follows [Semant
   inbox, procs). `kxm harness list` / `kxm update` observe and update harnesses
   without a second preferences store.
 - First-run path is install, `kxm init`, foreground `kxm hub start`, `kxm hub
-  bind <url>`, `kxm session brief`, then `pi` and `/kxm hub`. `kxm hub bind`
-  arrives with A3.
+  bind <url>`, `kxm session brief`, then `pi` and `/kxm hub`. Hub start prints
+  a cached update notice before spawn and refreshes in the background; a first
+  start with an empty cache may print the notice only after the hub is up.
+  Malformed `.kxm/update.yaml` is a stderr warning and does not block start;
+  `kxm update` still fails closed.
+- **Breaking:** `kxm init --hub` and `--hub-url` are unknown options. Bind
+  with `kxm hub bind <url>`; remove the binding with `kxm hub unbind`.
 - The `kxm mesh` group is deleted. Commander reports it as an unknown command.
 - **Breaking renames (A2, no aliases):** wire headers `x-mesh-agent-id`,
   `x-mesh-agent-key`, `x-mesh-delivery-id`, and `x-mesh-events-mode` are now
@@ -57,9 +62,12 @@ All notable user-facing changes are documented here. The project follows [Semant
   cost/insights, plan hygiene).
 - Hub-local session chrome: `kxm session brief [--status]`, Pi TUI picker and
   status line on new/fork sessions, `/kxm` (`status`/`hub`/`help`), skill
-  `kxm-session`. `kxm init --hub existing|new` is opt-in; omit `--hub` for
-  local-only; SSH is not available.
+  `kxm-session`. `kxm hub bind <url>` / `kxm hub unbind` persist a host-level
+  hub URL; `kxm init` is project-only.
   Pi widget `ship` line shows git dirty/ahead vs verify/CI (does not run tests).
+- `kxm hub bind <url>` writes `kxm.hub-binding.v1` and probes `/health` in
+  300 ms (`on` / `off` / `unknown`). Hub listening line reports `auth=token`
+  or `auth=none`.
 - `kxm update --check` / `--kxm` notices and applies operator package updates.
   GitHub releases are the current install path; npm is for after the public
   package. Git `.kxm/update.yaml` `auto` applies on `kxm update`.

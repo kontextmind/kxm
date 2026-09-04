@@ -89,8 +89,12 @@ const hub = createMeshHub({
 });
 
 const address = await hub.start();
-structuredLog({ event: "hub_started", url: address.url, workspaceDir, configDir, logsDir, assetsDir, stateDir, dataPath, logPath });
-process.stdout.write(`kxm hub listening at ${address.url}; storage=${dataPath}\n`);
+const auth = authToken ? "token" : "none";
+if (auth === "none") {
+  process.stderr.write("kxm hub: auth=none; every loopback caller is trusted. Set KXM_AUTH_TOKEN before relying on this hub.\n");
+}
+structuredLog({ event: "hub_started", url: address.url, workspaceDir, configDir, logsDir, assetsDir, stateDir, dataPath, logPath, auth });
+process.stdout.write(`kxm hub listening at ${address.url}; storage=${dataPath}; auth=${auth}\n`);
 
 let shutdownPromise: Promise<void> | undefined;
 function shutdown(signal: string): Promise<void> {
