@@ -22,7 +22,7 @@ pi-mesh CLI
 
 ## Command contracts
 
-Additive bin `pi-mesh`. Keep `pi-mesh-hub` and `pi-mesh-worker`.
+Additive bin `pi-mesh`. Keep `kxm-hub` and `kxm-worker`.
 
 Global: `--json`, `--dry-run`, `--workspace <dir>`.
 

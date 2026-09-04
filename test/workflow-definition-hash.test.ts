@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   workflowDefinitionHash,
   type WebhookWorkflowDefinition,
-} from "../plugins/kxm-mesh/src/workflow.ts";
+} from "../plugins/kxm/src/workflow.ts";
 import { createTestMesh, responseJson } from "./helpers.ts";
 
 test("webhook run creation stamps the canonical definition hash and keeps it durable", async (context) => {

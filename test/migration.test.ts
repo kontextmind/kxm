@@ -4,9 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
-import { MeshStore } from "../plugins/kxm-mesh/src/store.ts";
-import { NativeStateProvider } from "../plugins/kxm-mesh/src/state.ts";
-import type { ContextItem } from "../plugins/kxm-mesh/src/context.ts";
+import { MeshStore } from "../plugins/kxm/src/store.ts";
+import { NativeStateProvider } from "../plugins/kxm/src/state.ts";
+import type { ContextItem } from "../plugins/kxm/src/context.ts";
 
 /** A hand-built v0.4-shaped database: schema version 2, the four legacy
  * tables, and one row each. Opening it with the current runtime must upgrade
@@ -49,7 +49,7 @@ function createV04Database(path: string): void {
 
 test("v0.4 databases upgrade in place to the v0.5 context schema", async () => {
   const directory = mkdtempSync(join(tmpdir(), "kxm-migration-"));
-  const path = join(directory, "mesh.db");
+  const path = join(directory, "kxm.db");
   try {
     createV04Database(path);
     const store = new MeshStore(path);

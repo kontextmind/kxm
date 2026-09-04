@@ -4,6 +4,7 @@ name: Payments Platform
 description: Example control project with API and web member repositories.
 defaultWorkflow: default
 defaultExecutor: local
+defaultHarness: pi
 repositories:
   - id: control
     role: control

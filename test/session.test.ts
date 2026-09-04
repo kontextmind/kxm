@@ -7,7 +7,7 @@ import {
   SessionConfigError,
   loadNamedWorkers,
   rosterNames,
-} from "../plugins/kxm-mesh/src/session.ts";
+} from "../plugins/kxm/src/session.ts";
 
 function withConfig(context: TestContext, files: Record<string, string>): string {
   const dir = mkdtempSync(join(tmpdir(), "kxm-session-test-"));

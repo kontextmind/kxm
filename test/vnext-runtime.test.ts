@@ -11,7 +11,7 @@ import {
   newVnextCommandId,
   projectRuntimeKey,
   vnextRuntimePaths,
-} from "../plugins/kxm-mesh/src/vnext-runtime-store.ts";
+} from "../plugins/kxm/src/vnext-runtime-store.ts";
 import {
   acceptVnextRun,
   cancelVnextRun,
@@ -21,7 +21,7 @@ import {
   rebuildVnextRunProjection,
   vnextPolicyRevisions,
   vnextRunRevisionDrift,
-} from "../plugins/kxm-mesh/src/vnext-runtime.ts";
+} from "../plugins/kxm/src/vnext-runtime.ts";
 import {
   ensureVnextSupervisor,
   readVnextSupervisorToken,
@@ -29,9 +29,9 @@ import {
   vnextRuntimeRequest,
   vnextSupervisorStatus,
   vnextSupervisorTokenFile,
-} from "../plugins/kxm-mesh/src/vnext-runtime-supervisor.ts";
-import { loadVnextProject } from "../plugins/kxm-mesh/src/vnext-config.ts";
-import { initializeVnextProject } from "../plugins/kxm-mesh/src/vnext-init.ts";
+} from "../plugins/kxm/src/vnext-runtime-supervisor.ts";
+import { loadVnextProject } from "../plugins/kxm/src/vnext-config.ts";
+import { initializeVnextProject } from "../plugins/kxm/src/vnext-init.ts";
 
 function makeGitRoot(root: string): void {
   const initialized = spawnSync("git", ["-c", "init.defaultBranch=main", "init", "--quiet", root], { encoding: "utf8", windowsHide: true });

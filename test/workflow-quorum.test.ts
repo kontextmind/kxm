@@ -4,7 +4,7 @@ import {
   canonicalWorkflowDefinitionJson,
   parseWorkflowDefinitions,
   workflowDefinitionHash,
-} from "../plugins/kxm-mesh/src/workflow.ts";
+} from "../plugins/kxm/src/workflow.ts";
 
 function definitionWithPolicy(policy: Record<string, unknown>, target = "grok"): string {
   return JSON.stringify([{

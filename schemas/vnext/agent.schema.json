@@ -11,6 +11,7 @@
     "instructions": { "type": "string", "maxLength": 16000 },
     "model": { "$ref": "common.schema.json#/$defs/modelSelector" },
     "executor": { "$ref": "common.schema.json#/$defs/identifier" },
+    "harness": { "$ref": "common.schema.json#/$defs/identifier" },
     "tools": { "$ref": "common.schema.json#/$defs/toolPolicy" },
     "defaultRepositoryAccess": { "$ref": "common.schema.json#/$defs/repositoryAccess" },
     "repositories": {

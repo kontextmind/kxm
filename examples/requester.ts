@@ -1,17 +1,17 @@
 import { randomUUID } from "node:crypto";
-import { MeshClient } from "../plugins/kxm-mesh/src/client.ts";
+import { MeshClient } from "../plugins/kxm/src/client.ts";
 
 const [target, ...contentParts] = process.argv.slice(2);
 if (!target || contentParts.length === 0) {
   throw new Error("usage: requester.ts <target> <request text>");
 }
 
-const authToken = process.env.PI_MESH_AUTH_TOKEN;
+const authToken = process.env.KXM_AUTH_TOKEN;
 const client = new MeshClient({
-  serverUrl: process.env.PI_MESH_SERVER_URL ?? "http://127.0.0.1:7331",
-  name: process.env.PI_MESH_AGENT_NAME ?? `example-requester-${process.pid}`,
-  purpose: process.env.PI_MESH_AGENT_PURPOSE ?? "Sends a request from the command line",
-  project: process.env.PI_MESH_PROJECT ?? "example",
+  serverUrl: process.env.KXM_SERVER_URL ?? "http://127.0.0.1:7331",
+  name: process.env.KXM_AGENT_NAME ?? `example-requester-${process.pid}`,
+  purpose: process.env.KXM_AGENT_PURPOSE ?? "Sends a request from the command line",
+  project: process.env.KXM_PROJECT ?? "example",
   ...(authToken ? { authToken } : {}),
 });
 

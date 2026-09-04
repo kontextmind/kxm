@@ -11,20 +11,20 @@ const script = resolve("scripts/smoke-multi-pi.mjs");
 test("real Pi smoke remains opt-in in ordinary test runs", () => {
   const result = spawnSync(process.execPath, [script], {
     encoding: "utf8",
-    env: { ...process.env, PI_MESH_SMOKE: "0" },
+    env: { ...process.env, KXM_SMOKE: "0" },
   });
   assert.equal(result.status, 0);
   assert.deepEqual(JSON.parse(result.stdout.trim()), {
     ok: true,
     skipped: true,
-    reason: "PI_MESH_SMOKE is not 1",
+    reason: "KXM_SMOKE is not 1",
   });
 });
 
 test("real Pi smoke rejects an enabled run without two configured models", () => {
   const result = spawnSync(process.execPath, [script], {
     encoding: "utf8",
-    env: { ...process.env, PI_MESH_SMOKE: "1", PI_MESH_SMOKE_MODELS: "one/model" },
+    env: { ...process.env, KXM_SMOKE: "1", KXM_SMOKE_MODELS: "one/model" },
   });
   assert.equal(result.status, 1);
   const output = JSON.parse(result.stdout.trim()) as { ok: boolean; skipped: boolean; error: string };

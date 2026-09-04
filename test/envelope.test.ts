@@ -6,7 +6,7 @@ import {
   agentWorker,
   gateWorker,
   workerResult,
-} from "../plugins/kxm-mesh/src/envelope.ts";
+} from "../plugins/kxm/src/envelope.ts";
 
 test("agents and gates share the worker base and result envelope", () => {
   const agent = agentWorker({ name: "coordinator", project: "demo", model: "xai/grok-4.6" });

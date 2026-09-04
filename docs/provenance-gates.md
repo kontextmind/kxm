@@ -126,17 +126,17 @@ eligible reviewers `reviewer-claude` and `reviewer-grok`.
 Start with separate project and administrative credentials:
 
 ```powershell
-$env:PI_MESH_AUTH_TOKEN = "replace-with-the-admin-token"
-$env:PI_MESH_PROJECT_TOKENS = '{"provenance-demo":"replace-with-the-project-token"}'
-$env:PI_MESH_WEBHOOK_WORKFLOWS_FILE = "examples/provenance-workflow.json"
-kxm mesh hub
+$env:KXM_AUTH_TOKEN = "replace-with-the-admin-token"
+$env:KXM_PROJECT_TOKENS = '{"provenance-demo":"replace-with-the-project-token"}'
+$env:KXM_WEBHOOK_WORKFLOWS_FILE = "examples/provenance-workflow.json"
+kxm hub start
 ```
 
 Give the coordinator and peer workers only the project token. Start all three
 before starting the workflow:
 
 ```powershell
-$env:PI_MESH_AUTH_TOKEN = "replace-with-the-project-token"
+$env:KXM_AUTH_TOKEN = "replace-with-the-project-token"
 kxm agent worker --name coordinator --project provenance-demo --session-isolation workflow
 kxm agent worker --name reviewer-claude --project provenance-demo --model anthropic/claude-opus-4-6 --session-isolation workflow
 kxm agent worker --name reviewer-grok --project provenance-demo --model xai/grok-4.6 --session-isolation workflow
@@ -145,7 +145,7 @@ kxm agent worker --name reviewer-grok --project provenance-demo --model xai/grok
 In an operator terminal, supply the workflow-start secret and create a run:
 
 ```powershell
-$env:PI_MESH_WORKFLOW_SECRET = "replace-with-the-workflow-start-secret"
+$env:KXM_WORKFLOW_SECRET = "replace-with-the-workflow-start-secret"
 kxm gate validate --file examples/provenance-workflow.json
 kxm workflow start provenance-review --payload '{"task":{"id":"DEMO-1","summary":"Review the proposed change"}}'
 kxm workflow list
@@ -206,7 +206,7 @@ attempt.
 Inspect the requested action, then approve it with a non-secret reason:
 
 ```powershell
-$env:PI_MESH_AUTH_TOKEN = "replace-with-the-admin-token"
+$env:KXM_AUTH_TOKEN = "replace-with-the-admin-token"
 kxm gate --dry-run --json degrade run_123 review `
   --requirement "independent peer reviews" `
   --reason "reviewer-grok provider outage incident-482"
@@ -265,7 +265,7 @@ schema-v2 databases and workflow histories remain readable.
 
 Legacy string or keyed evidence remains valid for requirements without a peer
 policy. It deliberately cannot satisfy a declared peer policy. Back up
-`.kxm/state/mesh.db` before every upgrade, finish or inspect active runs, and
+`.kxm/state/kxm.db` before every upgrade, finish or inspect active runs, and
 validate workflow definitions before restarting the hub.
 
 ## Context authority lattice (v0.5)

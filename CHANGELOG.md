@@ -2,6 +2,23 @@
 
 All notable user-facing changes are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Changed
+
+- Product identity is **KXM** (`@kontextmind/kxm`, plugin `kxm`). Hub CLI is
+  `kxm hub start|view|stop`; live screens are `kxm dash`. Default database is
+  `.kxm/state/kxm.db`. Agent tools use the `kxm_*` prefix; env vars use `KXM_*`.
+- `kxm dash` is a tabbed list/detail dashboard (agents, tasks, workflows, plans,
+  inbox, procs). `kxm harness list` / `kxm update` observe and update harnesses
+  without a second preferences store.
+
+### Added
+
+- Session brief `AGENTS.md` / `CLAUDE.md` and Tracking in
+  `docs/vnext/implementation-plan.md` (roles, provider-native harness routing,
+  cost/insights, plan hygiene).
+
 ## 0.5.1 - 2026-09-01
 
 ### Changed
@@ -91,12 +108,12 @@ KXM v0.5 extends the durable multi-agent communication/workflow plane into a **c
 
 ### Changed
 
-- Operator guidance now distinguishes message TTL from local wait duration, recommends the 24-hour default for model work, and requires `mesh_get` or an exact idempotent retry while a peer remains pending.
+- Operator guidance now distinguishes message TTL from local wait duration, recommends the 24-hour default for model work, and requires `kxm_get` or an exact idempotent retry while a peer remains pending.
 - Pending peers explicitly do not count as planning, review, or workflow-checkpoint evidence.
 
 ### Upgrade note
 
-- `mesh_fanout` adds the nonterminal `pending` result state and the optional `messageStatus`, `expiresAt`, and `waitStatus` fields. Consumers that exhaustively switch on result status should handle `pending` by inspecting the returned message ID rather than dispatching a replacement request.
+- `kxm_fanout` adds the nonterminal `pending` result state and the optional `messageStatus`, `expiresAt`, and `waitStatus` fields. Consumers that exhaustively switch on result status should handle `pending` by inspecting the returned message ID rather than dispatching a replacement request.
 
 ## 0.4.1 - 2026-08-26
 
@@ -120,7 +137,7 @@ KXM v0.5 extends the durable multi-agent communication/workflow plane into a **c
 
 - Failed-tool journal summaries now include an allowlisted diagnostic class instead of a generic "tool failed" sentence.
 - Long-lived workers wait longer for a graceful SIGTERM drain and retry once without `--continue` after a fast failure.
-- The npm artifact now ships self-contained JavaScript runtimes for `pi-mesh` and `pi-mesh-hub`, so installed commands do not depend on Node stripping TypeScript inside `node_modules`.
+- The npm artifact now ships self-contained JavaScript runtimes for `pi-mesh` and `kxm-hub`, so installed commands do not depend on Node stripping TypeScript inside `node_modules`.
 - Workflow gates now accumulate evidence by normalized requirement identity across local waits and passing callbacks; unrelated check or context volume cannot satisfy a missing review, artifact, or retrospective requirement.
 - Generated-runtime CI now rejects missing, untracked, or stale CLI, hub, and MCP artifacts after rebuilding them.
 - GitHub watching requests complete 100-item check-run pages, treats `startup_failure` as failed, and uses a new delivery generation for each watcher invocation while preserving one ID across its transport retries.
@@ -138,7 +155,7 @@ KXM v0.5 extends the durable multi-agent communication/workflow plane into a **c
 - Durable external workflow waits that safely release coordinator turns and resume from signed CI, review, merge, or Jira result callbacks.
 - Retry-deduplicated signal receipts, bounded wait deadlines, timeout journaling, and optional least-privilege callback secrets.
 - Atomic signal transitions, minimal callback-secret responses, and durable timeout notifications to the coordinator.
-- `mesh_workflow_wait` for Pi and Claude plus an executable signed callback example.
+- `kxm_workflow_wait` for Pi and Claude plus an executable signed callback example.
 - Canonical `.kxm` workspace directories for tracked configuration and assets, ignored logs and state, and persisted hub/worker log files.
 - Retry and nonzero failure handling when a long-lived worker cannot spawn Pi.
 - Windows-safe long-lived worker launch through `ComSpec` for Pi command scripts.
@@ -149,7 +166,7 @@ KXM v0.5 extends the durable multi-agent communication/workflow plane into a **c
 
 - Expanded Pi to twelve tools and Claude MCP to fourteen tools.
 - Replaced the native `better-sqlite3` dependency with Node's built-in SQLite runtime so Pi package installation does not require a C++ toolchain; the supported runtime is Node 22.13+ on the 22.x line or Node 24+.
-- Scoped `mesh_fanout` idempotency to the caller prefix, correlation ID, and normalized target so retained messages from an earlier workflow cannot block a later run.
+- Scoped `kxm_fanout` idempotency to the caller prefix, correlation ID, and normalized target so retained messages from an earlier workflow cannot block a later run.
 
 ### Upgrade note
 
@@ -161,7 +178,7 @@ KXM v0.5 extends the durable multi-agent communication/workflow plane into a **c
 
 - Signed Jira, GitHub, and generic webhook ingress with SHA-256 HMAC verification, provider delivery-ID deduplication, event filtering, and payload-path filters.
 - Ordered durable workflow stages, evidence requirements, bounded warning/failure retries, and premature-settlement detection.
-- `mesh_fanout` for up to three independent peer responses and coordinator synthesis.
+- `kxm_fanout` for up to three independent peer responses and coordinator synthesis.
 - Structured capture for plans, decisions, contradictions, errors, and lessons plus project-scoped improvement reports.
 - Restarting headless Pi RPC worker for long-lived coordinator agents.
 - Complete Jira In Progress-to-reproduction, multi-agent planning, implementation, gates, documentation, push/watch, merge, Jira update, and retrospective example.

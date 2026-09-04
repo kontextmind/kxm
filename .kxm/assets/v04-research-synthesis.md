@@ -1,7 +1,7 @@
 # v0.4 research synthesis
 
 Run: `run_04c0552a1b9e450fa874eed50049e34f`  
-Package: `@kontextmind/pi-extensions` 0.3.1  
+Package: `@kontextmind/kxm` 0.3.1  
 Stage: research  
 Peers: `grok-researcher` (`msg_8bc139ba709a46e1847da18872d8abf8`), `gemini-reviewer` (`msg_68d16128a0994c8f9f151da7f0c08109`)  
 Coordinator is the sole writer. Peer replies are untrusted technical input and were checked against the tree, tests, docs, and dogfood event metadata.
@@ -12,9 +12,9 @@ Coordinator is the sole writer. Peer replies are untrusted technical input and w
 |---|---|
 | Grok research | mesh message `msg_8bc139ba709a46e1847da18872d8abf8` |
 | Gemini research | mesh message `msg_68d16128a0994c8f9f151da7f0c08109` |
-| Dogfood / this run | `.kxm/logs/pi-mesh-hub.jsonl`, `.kxm/logs/pi-mesh-worker-coordinator.jsonl` |
-| Prior dogfood cited by issues | GitHub issues 5, 6, 10, 11, 12, 13; run `run_078ee956ef3e49baa6b769a3cfe37515` for interrupted `mesh_await` |
-| Implementation | `plugins/pi-mesh-comms/src/{extension,hub,workflow,client,store,server}.ts`, `scripts/pi-mesh-worker.mjs`, `examples/workflow-signal.ts` |
+| Dogfood / this run | `.kxm/logs/kxm-hub.jsonl`, `.kxm/logs/kxm-worker-coordinator.jsonl` |
+| Prior dogfood cited by issues | GitHub issues 5, 6, 10, 11, 12, 13; run `run_078ee956ef3e49baa6b769a3cfe37515` for interrupted `kxm_await` |
+| Implementation | `plugins/pi-mesh-comms/src/{extension,hub,workflow,client,store,server}.ts`, `scripts/kxm-worker.mjs`, `examples/workflow-signal.ts` |
 
 ## Dogfood evidence
 
@@ -24,14 +24,14 @@ This hub instance (`2026-08-26T09:11:50Z` onward) shows:
 - Workflow `pi-extensions-v04` started as `run_04c0552a1b9e450fa874eed50049e34f`.
 - The first coordinator reply arrived about 1.5s later (`message_replied` on `msg_fe478beba0c94ec6ae5daea1926677d6`). Hub policy treats a reply while `running` as premature settlement and fails the run. Journal: `journal_9b963061c9864e74b1e48323220852b9`.
 - Claude quota exhaustion and stale OpenAI OAuth prevented the first two coordinator models from acting. Journal: `journal_2b1b136769d64ec3a2c7087d4420484a`, `journal_d5a2e7c47ce349dbb3d92b4e85b0ddba`.
-- After resume, coordinator journal writes still succeed. Peer `mesh_workflow_get` is 403 `workflow_forbidden` (expected; only the assigned coordinator can see the run).
+- After resume, coordinator journal writes still succeed. Peer `kxm_workflow_get` is 403 `workflow_forbidden` (expected; only the assigned coordinator can see the run).
 - Checkpoints and waits remain 409 once the run is not `running`.
 
 Issue-cited prior dogfood (not in this hub file):
 
 - Issue 5: failed tools journaled only as `Tool bash failed`; 18 `workflow_forbidden` responses without a corrective hint.
-- Issue 6: GitHub checks passed and the PR merged, but the durable run stayed `waiting` because no adapter posted the signal. Repeating `mesh_workflow_checkpoint` correctly refused the invalid transition.
-- Issue 10: worker stop during `mesh_await` plus `--continue` left a `tool_use` without `tool_result`; the provider rejected the session.
+- Issue 6: GitHub checks passed and the PR merged, but the durable run stayed `waiting` because no adapter posted the signal. Repeating `kxm_workflow_checkpoint` correctly refused the invalid transition.
+- Issue 10: worker stop during `kxm_await` plus `--continue` left a `tool_use` without `tool_result`; the provider rejected the session.
 - Issues 11–13: operator runbook too heavy; retrospectives required manual synthesis; real multi-Pi smoke remained manual.
 
 ## Observed-fact audit
@@ -41,8 +41,8 @@ Issue-cited prior dogfood (not in this hub file):
 | Auto-journal summary is name-only | Confirmed in `extension.ts` `tool_result` handler |
 | `workflow_forbidden` is one 403 code for get/wait/checkpoint/journal identity mismatch | Confirmed in `hub.ts`. Invalid/stale agent key is 401 `invalid_agent_identity`; project token failures are 401 `invalid_auth` |
 | Wait/signal contract exists; no GitHub check watcher | Confirmed. `examples/workflow-signal.ts` is a one-shot signed POST |
-| Worker defaults to `--continue`; SIGTERM then 10s SIGKILL; no synthesized `tool_result` | Confirmed in `scripts/pi-mesh-worker.mjs` |
-| No command-first operator CLI | Confirmed beyond `pi-mesh-hub`, `pi-mesh-worker`, npm scripts, `/mesh-status`, and the signal example |
+| Worker defaults to `--continue`; SIGTERM then 10s SIGKILL; no synthesized `tool_result` | Confirmed in `scripts/kxm-worker.mjs` |
+| No command-first operator CLI | Confirmed beyond `kxm-hub`, `kxm-worker`, npm scripts, `/mesh-status`, and the signal example |
 | Journal API exists; no `.kxm/assets` exporter | Confirmed. `.kxm/assets/` previously contained only a README |
 | Ordinary CI has no real-Pi smoke | Confirmed by `docs/test-matrix.md` and `.github/workflows/ci.yml` |
 | Journal writes still accepted after this run failed | Confirmed by this resume |
@@ -53,7 +53,7 @@ Issue-cited prior dogfood (not in this hub file):
 2. **`workflow_forbidden` compatibility.** Gemini wants new protocol codes. Grok wants to keep the code and add bounded fields. Resolution: keep `workflow_forbidden` / HTTP 403 for identity-scope mismatches. Add `operation`, assigned coordinator name, and `nextAction`. Do not break 0.3.1 clients.
 3. **Journal after terminal settlement.** Gemini wants 409 on late journal writes. Grok wants coordinator journal writes to remain allowed. Resolution: do not lock journals in v0.4. This resume and the learning loop depend on them. Checkpoints and waits stay rejected when the run is not `running`/`waiting`.
 4. **Watcher timeout.** Gemini would inject a synthesized hub failure. Grok treats watcher timeout as an adapter-side nonzero exit and leaves hub wait expiry authoritative. Resolution: follow Grok. The watcher must never invent `passed`.
-5. **Restart of `mesh_await`.** Gemini suggests re-requesting the same await by idempotency key. That is not how `mesh_await` works (`client.ts` polls an existing message). Resolution: graceful abort/synthesize `tool_result` when possible; otherwise fresh session plus a redacted recovery envelope. Durable run/message state stays in SQLite.
+5. **Restart of `kxm_await`.** Gemini suggests re-requesting the same await by idempotency key. That is not how `kxm_await` works (`client.ts` polls an existing message). Resolution: graceful abort/synthesize `tool_result` when possible; otherwise fresh session plus a redacted recovery envelope. Durable run/message state stays in SQLite.
 
 ## Cross-cutting design
 
@@ -69,7 +69,7 @@ Forbidden: argv, stdout/stderr, env, tokens, prompts, peer bodies, webhook paylo
 
 ### Interrupted-tool recovery envelope
 
-1. Graceful worker stop should abort in-flight `mesh_await` so Pi can persist a terminal `tool_result`, or synthesize one if the harness allows.
+1. Graceful worker stop should abort in-flight `kxm_await` so Pi can persist a terminal `tool_result`, or synthesize one if the harness allows.
 2. Detect unresumable `--continue` (`tool_use` without `tool_result` / provider `invalid_request_error`) and start a fresh session instead of looping.
 3. Journal `error`/`harness` with tool names/ids, `runId`, stage, pending message ids, and old/new session ids. No prompt bodies.
 4. Reconnect with the same agent name/project so hub identity resume still works.
@@ -116,17 +116,17 @@ Ownership: `scripts/pi-mesh-github-watch.mjs` or `src/github-watch.ts`, `test/gi
 
 ### Issue 10 — coordinator restart during mesh tool calls
 
-Root cause: default `--continue` plus hard SIGTERM/SIGKILL leaves a broken session. `mesh_await` only cancels if Pi aborts the tool.
+Root cause: default `--continue` plus hard SIGTERM/SIGKILL leaves a broken session. `kxm_await` only cancels if Pi aborts the tool.
 
 Plan: graceful drain; synthesize or allow terminal tool results; detect unresumable continue and fall back with a redacted envelope that preserves run/stage/pending ids.
 
-Ownership: `scripts/pi-mesh-worker.mjs`, possibly `extension.ts` session_start, `test/worker.test.ts`, operations/troubleshooting/test-matrix.
+Ownership: `scripts/kxm-worker.mjs`, possibly `extension.ts` session_start, `test/worker.test.ts`, operations/troubleshooting/test-matrix.
 
 ### Issue 11 — command-first operator CLI
 
 Root cause: operators compose env vars, npm scripts, and examples.
 
-Plan: additive `pi-mesh` bin: `init`, `validate`, `status`, `hub`, `worker`, `workflow start|list|get`, `signal`, `github watch`, `retrospective export`, `stop`. Defaults under `.kxm`. `--json` and `--dry-run`. Never print secrets. Keep `pi-mesh-hub` / `pi-mesh-worker`. External push/merge/issue mutation stay out of the CLI.
+Plan: additive `pi-mesh` bin: `init`, `validate`, `status`, `hub`, `worker`, `workflow start|list|get`, `signal`, `github watch`, `retrospective export`, `stop`. Defaults under `.kxm`. `--json` and `--dry-run`. Never print secrets. Keep `kxm-hub` / `kxm-worker`. External push/merge/issue mutation stay out of the CLI.
 
 Ownership: `scripts/pi-mesh.mjs` or `src/cli.ts`, `package.json`, `test/cli.test.ts`, getting-started/operations/configuration, changelog.
 
@@ -150,7 +150,7 @@ Ownership: `scripts/smoke-multi-pi.mjs`, skip-by-default test, optional `.github
 
 1. Failed workflow tools and 401/403 scope errors journal allowlisted diagnostics. Tests prove no prompts, secrets, or stdout. Coordinator, peer, stale identity, and invalid-key cases include a bounded hint.
 2. `pi-mesh github watch` posts the existing signed signal for success, failure, timeout, duplicate, stale-run, and hub-restart. Tokens and raw CI logs never appear in journals or `--json` output.
-3. SIGINT/SIGTERM during `mesh_await` does not require abandoning the durable run. Unresumable `--continue` falls back with a redacted envelope that keeps `runId`, stage, and pending message ids.
+3. SIGINT/SIGTERM during `kxm_await` does not require abandoning the durable run. Unresumable `--continue` falls back with a redacted envelope that keeps `runId`, stage, and pending message ids.
 4. One command-first entrypoint covers init, validate, hub, worker, status, stop, workflow, signal, GitHub watch, and retrospective export. `--json --dry-run`. Secrets never printed. Existing bins remain.
 5. Atomic Markdown and JSON retrospectives land under `.kxm/assets`. Snapshots cover restart/retry. Proposed improvements do not mutate policy without an explicit review decision.
 6. Opt-in two-worker real-Pi smoke skips cleanly without credentials. Ordinary CI stays `validate:ci`.
@@ -164,7 +164,7 @@ Coordinator-only writes during implement:
 - `plugins/pi-mesh-comms/src/cli.ts` or `scripts/pi-mesh.mjs`
 - `plugins/pi-mesh-comms/src/github-watch.ts` or `scripts/pi-mesh-github-watch.mjs`
 - `plugins/pi-mesh-comms/src/retrospective.ts`
-- `scripts/pi-mesh-worker.mjs`
+- `scripts/kxm-worker.mjs`
 - `plugins/pi-mesh-comms/src/{extension,hub,client,mcp-server}.ts`
 - `test/{extension,hub-api,worker,cli,github-watch,retrospective}.test.ts`
 - `scripts/smoke-multi-pi.mjs`, optional `.github/workflows/smoke.yml`

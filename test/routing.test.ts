@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { workerResult, agentWorker } from "../plugins/kxm-mesh/src/envelope.ts";
+import { workerResult, agentWorker } from "../plugins/kxm/src/envelope.ts";
 import {
   BEHAVIORAL_HASH_VERSION,
   ROUTING_RECORD_SCHEMA,
@@ -12,8 +12,8 @@ import {
   groupByBehavior,
   parseRoutingRecord,
   type RoutingRecord,
-} from "../plugins/kxm-mesh/src/routing.ts";
-import { appendTelemetry, readRoutingRecords, readTelemetry, telemetryPath } from "../plugins/kxm-mesh/src/telemetry.ts";
+} from "../plugins/kxm/src/routing.ts";
+import { appendTelemetry, readRoutingRecords, readTelemetry, telemetryPath } from "../plugins/kxm/src/telemetry.ts";
 
 const SKILL_SHA = "a".repeat(64);
 
@@ -242,7 +242,7 @@ test("kxm routing report aggregates telemetry by behavioral configuration", asyn
     }
     assert.match(readFileSync(path, "utf8"), /behavioralSha256/);
 
-    const { runCli } = await import("../plugins/kxm-mesh/src/cli.ts");
+    const { runCli } = await import("../plugins/kxm/src/cli.ts");
     let stdout = "";
     const io = {
       stdout: (text: string) => {

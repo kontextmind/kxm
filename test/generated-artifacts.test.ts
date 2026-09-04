@@ -7,10 +7,10 @@ import test from "node:test";
 
 const checker = resolve("scripts/check-generated.mjs");
 const artifacts = [
-  "plugins/kxm-mesh/dist/cli.js",
-  "plugins/kxm-mesh/dist/server.js",
-  "plugins/kxm-mesh/dist/mcp-server.js",
-  "plugins/kxm-mesh/dist/vnext-runtime-supervisor.js",
+  "plugins/kxm/dist/cli.js",
+  "plugins/kxm/dist/server.js",
+  "plugins/kxm/dist/mcp-server.js",
+  "plugins/kxm/dist/vnext-runtime-supervisor.js",
 ];
 
 function run(cwd: string, command: string, args: string[]) {

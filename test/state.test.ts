@@ -3,8 +3,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { ProtocolError } from "../plugins/kxm-mesh/src/protocol.ts";
-import { MeshStore } from "../plugins/kxm-mesh/src/store.ts";
+import { ProtocolError } from "../plugins/kxm/src/protocol.ts";
+import { MeshStore } from "../plugins/kxm/src/store.ts";
 import {
   NativeStateProvider,
   detectStateContradictions,
@@ -13,9 +13,9 @@ import {
   parseStateItem,
   stateActiveAt,
   type StateContradiction,
-} from "../plugins/kxm-mesh/src/state.ts";
-import type { ContextItem } from "../plugins/kxm-mesh/src/context.ts";
-import type { StateChangeProposal } from "../plugins/kxm-mesh/src/context/providers.ts";
+} from "../plugins/kxm/src/state.ts";
+import type { ContextItem } from "../plugins/kxm/src/context.ts";
+import type { StateChangeProposal } from "../plugins/kxm/src/context/providers.ts";
 
 function proposal(overrides: Partial<StateChangeProposal> = {}): StateChangeProposal {
   return {
@@ -223,7 +223,7 @@ test("set-valued state keys allow multiple currents through currentSet", async (
 
 test("state survives restart with durable migration", async () => {
   const directory = mkdtempSync(join(tmpdir(), "kxm-state-"));
-  const path = join(directory, "mesh.db");
+  const path = join(directory, "kxm.db");
   try {
     const first = new MeshStore(path);
     const clock = deterministicClock();

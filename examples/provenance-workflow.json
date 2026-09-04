@@ -4,14 +4,14 @@
     "source": "generic",
     "project": "provenance-demo",
     "target": "coordinator",
-    "secretEnv": "PI_MESH_WORKFLOW_SECRET",
+    "secretEnv": "KXM_WORKFLOW_SECRET",
     "delivery": "followUp",
     "promptTemplate": "Review {{task.id}}: {{task.summary}}. Collect independent peer findings, preserve contradictions, and make an evidence-backed decision.",
     "stages": [
       {
         "id": "review",
         "label": "Independent review",
-        "instructions": "Ask both eligible reviewers independently with one mesh_fanout call. Set correlationId to the exact run ID, timeoutMs to 120000, and idempotencyKeyPrefix to the deterministic value provenance-review:<runId>:review:<attempt>. The tool call itself must include workflowContext for this run, stage review, requirement independent peer reviews, and the current attempt; stating that context in a plan is not sufficient. Treat every returned messageId as the durable handle immediately. Use mesh_get to verify each stored message has the exact run, stage, requirement, and attempt binding. For every pending reply, call mesh_await with that messageId and timeoutMs 120000; never replace pending work with a new idempotency prefix. On interruption or uncertain delivery, repeat the exact fanout parameters so the hub returns the same messages. Re-read and verify each durable message after it replies. Compare findings, record contradictions and the chosen resolution, then cite only the bound durable replied message IDs.",
+        "instructions": "Ask both eligible reviewers independently with one kxm_fanout call. Set correlationId to the exact run ID, timeoutMs to 120000, and idempotencyKeyPrefix to the deterministic value provenance-review:<runId>:review:<attempt>. The tool call itself must include workflowContext for this run, stage review, requirement independent peer reviews, and the current attempt; stating that context in a plan is not sufficient. Treat every returned messageId as the durable handle immediately. Use kxm_get to verify each stored message has the exact run, stage, requirement, and attempt binding. For every pending reply, call kxm_await with that messageId and timeoutMs 120000; never replace pending work with a new idempotency prefix. On interruption or uncertain delivery, repeat the exact fanout parameters so the hub returns the same messages. Re-read and verify each durable message after it replies. Compare findings, record contradictions and the chosen resolution, then cite only the bound durable replied message IDs.",
         "requiredEvidence": [
           "independent peer reviews",
           "coordinator decision"

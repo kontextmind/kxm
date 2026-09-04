@@ -21,7 +21,7 @@ Journal entries carry an improvement area, severity, evidence links, relationshi
 
 ## Required capture behavior
 
-Use `mesh_workflow_record` during the run, not only in a final retrospective:
+Use `kxm_workflow_record` during the run, not only in a final retrospective:
 
 - record a `plan` before implementation;
 - record a `decision` with alternatives and why one was chosen;
@@ -62,7 +62,7 @@ The retrospective stage reviews journal entries, groups contributing causes, and
 
 ### Weekly
 
-Call `mesh_improvement_report` and review the top errors, contradictions, and lessons in each area. Merge duplicates while retaining source run IDs. Rank candidates using:
+Call `kxm_improvement_report` and review the top errors, contradictions, and lessons in each area. Merge duplicates while retaining source run IDs. Rank candidates using:
 
 ```text
 priority = frequency × severity × workflow cost × confidence

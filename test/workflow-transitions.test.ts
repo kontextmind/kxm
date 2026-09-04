@@ -6,7 +6,7 @@ import {
   validateWorkflowTransitions,
   type WorkflowRun,
   type WebhookWorkflowDefinition,
-} from "../plugins/kxm-mesh/src/workflow.ts";
+} from "../plugins/kxm/src/workflow.ts";
 
 function definition(raw: Record<string, unknown>): WebhookWorkflowDefinition {
   const environment = { SECRET: "secret-value-with-entropy-16" };
@@ -268,12 +268,12 @@ test("approvals and gates cannot be bypassed by forward transitions", () => {
 });
 
 test("transitions survive restart through run persistence", async () => {
-  const { MeshStore } = await import("../plugins/kxm-mesh/src/store.ts");
+  const { MeshStore } = await import("../plugins/kxm/src/store.ts");
   const { mkdtempSync, rmSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   const directory = mkdtempSync(join(tmpdir(), "kxm-transitions-"));
-  const path = join(directory, "mesh.db");
+  const path = join(directory, "kxm.db");
   try {
     const workflow = definition({
       maxTransitions: 4,

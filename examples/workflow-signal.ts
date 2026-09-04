@@ -1,16 +1,16 @@
 import { createHmac, randomUUID } from "node:crypto";
-import { canonicalWorkflowEvidenceKey } from "../plugins/kxm-mesh/src/workflow.ts";
+import { canonicalWorkflowEvidenceKey } from "../plugins/kxm/src/workflow.ts";
 
 const [runId, signalKey, status, summary, ...evidenceArgs] = process.argv.slice(2);
-const serverUrl = process.env.PI_MESH_SERVER_URL?.trim() || "http://127.0.0.1:7331";
-const definitionId = process.env.PI_MESH_WORKFLOW_ID?.trim();
-const secret = process.env.PI_MESH_WORKFLOW_SIGNAL_SECRET?.trim();
+const serverUrl = process.env.KXM_SERVER_URL?.trim() || "http://127.0.0.1:7331";
+const definitionId = process.env.KXM_WORKFLOW_ID?.trim();
+const secret = process.env.KXM_WORKFLOW_SIGNAL_SECRET?.trim();
 
 if (!runId || !signalKey || !status || !summary || !definitionId || !secret) {
   console.error([
     "Usage: workflow-signal <runId> <signalKey> <passed|warning|failed> <summary> [<required-key>=<evidence> ...]",
-    "Required environment: PI_MESH_WORKFLOW_ID, PI_MESH_WORKFLOW_SIGNAL_SECRET",
-    "Optional environment: PI_MESH_SERVER_URL, PI_MESH_SIGNAL_DELIVERY_ID",
+    "Required environment: KXM_WORKFLOW_ID, KXM_WORKFLOW_SIGNAL_SECRET",
+    "Optional environment: KXM_SERVER_URL, KXM_SIGNAL_DELIVERY_ID",
   ].join("\n"));
   process.exitCode = 2;
 } else if (status !== "passed" && status !== "warning" && status !== "failed") {
@@ -32,7 +32,7 @@ if (!runId || !signalKey || !status || !summary || !definitionId || !secret) {
   const evidence = Object.fromEntries(evidenceEntries);
   const body = JSON.stringify({ status, summary, evidence });
   const signature = `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
-  const deliveryId = process.env.PI_MESH_SIGNAL_DELIVERY_ID?.trim() || `example-${randomUUID()}`;
+  const deliveryId = process.env.KXM_SIGNAL_DELIVERY_ID?.trim() || `example-${randomUUID()}`;
   const endpoint = [
     serverUrl.replace(/\/$/, ""),
     "v1/webhooks",

@@ -1,14 +1,12 @@
 # KXM vNext contract package
 
 > **Status: planned normative contract.** This directory describes the target
-> architecture accepted for KXM vNext. The commands and storage contracts are
-> not all implemented yet. The implemented Phase 1 slices provide restricted
-> YAML loading, provenance-backed atomic create/validate, resumable create and
-> repair transactions, conflict-free non-authority template reconciliation, and
-> explicit join with Runtime-local repository bindings for `kxm init`. They do
-> not activate a Runtime, infer ownership for provenance-free files, approve
-> permission expansion, or convert legacy state. For current v0.5 execution
-> behavior, use [Architecture](../architecture.md) and
+> architecture accepted for KXM vNext. Not all commands are implemented.
+> Phase 1 (init/migrate/trust) and Phase 2 (Runtime create/recover) have landed
+> slices; Phase 3 does not yet execute workflow steps. Operator tracking for
+> the KXM rename, `kxm dash`, hub CLI, and harness YAML lives in the
+> [implementation plan](implementation-plan.md#tracking-working-tree-not-a-release).
+> For current hub execution behavior, use [Architecture](../architecture.md) and
 > [Configuration](../configuration.md).
 
 KXM vNext is a convention-over-configuration, local-first orchestration and

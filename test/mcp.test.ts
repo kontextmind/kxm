@@ -12,7 +12,7 @@ type RpcResponse = {
 };
 
 test("bundled MCP server initializes and publishes the mesh tool catalog", async (context) => {
-  const child = spawn(process.execPath, ["plugins/kxm-mesh/dist/mcp-server.js"], {
+  const child = spawn(process.execPath, ["plugins/kxm/dist/mcp-server.js"], {
     cwd: process.cwd(),
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -76,20 +76,20 @@ test("bundled MCP server initializes and publishes the mesh tool catalog", async
   assert.deepEqual(
     tools.map((tool) => tool.name),
     [
-      "mesh_list",
-      "mesh_send",
-      "mesh_get",
-      "mesh_fanout",
-      "mesh_await",
-      "mesh_cancel",
-      "mesh_inbox",
-      "mesh_reply",
-      "mesh_workflow_list",
-      "mesh_workflow_get",
-      "mesh_workflow_checkpoint",
-      "mesh_workflow_record",
-      "mesh_workflow_wait",
-      "mesh_improvement_report",
+      "kxm_list",
+      "kxm_send",
+      "kxm_get",
+      "kxm_fanout",
+      "kxm_await",
+      "kxm_cancel",
+      "kxm_inbox",
+      "kxm_reply",
+      "kxm_workflow_list",
+      "kxm_workflow_get",
+      "kxm_workflow_checkpoint",
+      "kxm_workflow_record",
+      "kxm_workflow_wait",
+      "kxm_improvement_report",
       "kxm_context",
       "kxm_recall",
       "kxm_state",
@@ -97,7 +97,7 @@ test("bundled MCP server initializes and publishes the mesh tool catalog", async
       "kxm_promote",
     ],
   );
-  const sendTool = tools.find((tool) => tool.name === "mesh_send")!;
+  const sendTool = tools.find((tool) => tool.name === "kxm_send")!;
   assert.deepEqual(
     (sendTool.inputSchema.properties.workflowContext!.required as string[]),
     ["runId", "stageId", "requirementKey", "attempt"],
@@ -106,7 +106,7 @@ test("bundled MCP server initializes and publishes the mesh tool catalog", async
     String(sendTool.inputSchema.properties.idempotencyKey!.description),
     /not a workflow security or evidence binding/,
   );
-  const checkpointTool = tools.find((tool) => tool.name === "mesh_workflow_checkpoint")!;
+  const checkpointTool = tools.find((tool) => tool.name === "kxm_workflow_checkpoint")!;
   const evidenceRefValue = checkpointTool.inputSchema.properties.evidenceRefs!.additionalProperties as {
     properties: { messageIds: { maxItems: number } };
   };
@@ -155,15 +155,15 @@ test("bundled MCP tools cover outbound, inbound, reply, cancellation, and channe
     }
   });
 
-  const child = spawn(process.execPath, ["plugins/kxm-mesh/dist/mcp-server.js"], {
+  const child = spawn(process.execPath, ["plugins/kxm/dist/mcp-server.js"], {
     cwd: process.cwd(),
     env: {
       ...process.env,
-      PI_MESH_SERVER_URL: mesh.address.url,
-      PI_MESH_AUTH_TOKEN: mesh.token,
-      PI_MESH_AGENT_NAME: "claude-under-test",
-      PI_MESH_AGENT_PURPOSE: "MCP integration test",
-      PI_MESH_PROJECT: "test-project",
+      KXM_SERVER_URL: mesh.address.url,
+      KXM_AUTH_TOKEN: mesh.token,
+      KXM_AGENT_NAME: "claude-under-test",
+      KXM_AGENT_PURPOSE: "MCP integration test",
+      KXM_PROJECT: "test-project",
     },
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -216,9 +216,9 @@ test("bundled MCP tools cover outbound, inbound, reply, cancellation, and channe
   });
   child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
 
-  const listed = toolValue(await tool("mesh_list"));
+  const listed = toolValue(await tool("kxm_list"));
   assert.match(JSON.stringify(listed), /reviewer/);
-  const sent = toolValue(await tool("mesh_send", {
+  const sent = toolValue(await tool("kxm_send", {
     target: "reviewer",
     content: "review this",
     correlationId: "mcp-outbound",
@@ -226,10 +226,10 @@ test("bundled MCP tools cover outbound, inbound, reply, cancellation, and channe
     ttlMs: 5_000,
   }));
   const outboundId = String(sent.messageId);
-  const completed = toolValue(await tool("mesh_await", { messageId: outboundId, timeoutMs: 2_000 }));
+  const completed = toolValue(await tool("kxm_await", { messageId: outboundId, timeoutMs: 2_000 }));
   assert.equal((completed.reply as { content: string }).content, "review complete");
-  assert.equal(toolValue(await tool("mesh_get", { messageId: outboundId })).status, "replied");
-  const panel = toolValue(await tool("mesh_fanout", {
+  assert.equal(toolValue(await tool("kxm_get", { messageId: outboundId })).status, "replied");
+  const panel = toolValue(await tool("kxm_fanout", {
     targets: ["reviewer"],
     content: "review this",
     correlationId: "mcp-panel",
@@ -237,7 +237,7 @@ test("bundled MCP tools cover outbound, inbound, reply, cancellation, and channe
     timeoutMs: 2_000,
   }));
   assert.match(JSON.stringify(panel), /review complete/);
-  const pendingPanel = toolValue(await tool("mesh_fanout", {
+  const pendingPanel = toolValue(await tool("kxm_fanout", {
     targets: ["reviewer"],
     content: "review after the local wait ends",
     correlationId: "mcp-panel-timeout",
@@ -252,8 +252,8 @@ test("bundled MCP tools cover outbound, inbound, reply, cancellation, and channe
   assert.ok(pendingResponse?.expiresAt);
   assert.ok(pendingResponse?.messageStatus === "queued" || pendingResponse?.messageStatus === "delivered");
 
-  const cancellable = toolValue(await tool("mesh_send", { target: "reviewer", content: "cancel this" }));
-  const cancelled = toolValue(await tool("mesh_cancel", { messageId: cancellable.messageId }));
+  const cancellable = toolValue(await tool("kxm_send", { target: "reviewer", content: "cancel this" }));
+  const cancelled = toolValue(await tool("kxm_cancel", { messageId: cancellable.messageId }));
   assert.equal(cancelled.status, "cancelled");
 
   const inbound = await peer.send({ target: "claude-under-test", content: "incoming review" });
@@ -261,34 +261,34 @@ test("bundled MCP tools cover outbound, inbound, reply, cancellation, and channe
   const channel = notifications.find((notification) => notification.method === "notifications/claude/channel")!;
   assert.match(JSON.stringify(channel), /incoming review/);
   assert.match(JSON.stringify(channel), new RegExp(inbound.id));
-  const inbox = toolValue(await tool("mesh_inbox"));
+  const inbox = toolValue(await tool("kxm_inbox"));
   assert.match(JSON.stringify(inbox), new RegExp(inbound.id));
-  const replied = toolValue(await tool("mesh_reply", { messageId: inbound.id, content: "inbound complete" }));
+  const replied = toolValue(await tool("kxm_reply", { messageId: inbound.id, content: "inbound complete" }));
   assert.equal(replied.status, "replied");
   assert.equal((await peer.awaitResponse(inbound.id, 2_000)).reply?.content, "inbound complete");
-  assert.doesNotMatch(JSON.stringify(toolValue(await tool("mesh_inbox"))), new RegExp(inbound.id));
+  assert.doesNotMatch(JSON.stringify(toolValue(await tool("kxm_inbox"))), new RegExp(inbound.id));
 
   const cancelledInbound = await peer.send({ target: "claude-under-test", content: "cancel incoming work" });
-  await waitFor(async () => JSON.stringify(toolValue(await tool("mesh_inbox"))).includes(cancelledInbound.id));
+  await waitFor(async () => JSON.stringify(toolValue(await tool("kxm_inbox"))).includes(cancelledInbound.id));
   assert.equal((await peer.cancel(cancelledInbound.id)).status, "cancelled");
-  await waitFor(async () => !JSON.stringify(toolValue(await tool("mesh_inbox"))).includes(cancelledInbound.id));
+  await waitFor(async () => !JSON.stringify(toolValue(await tool("kxm_inbox"))).includes(cancelledInbound.id));
 
   const missedTerminalEvent = await peer.send({ target: "claude-under-test", content: "reconcile missed cancellation" });
-  await waitFor(async () => JSON.stringify(toolValue(await tool("mesh_inbox"))).includes(missedTerminalEvent.id));
+  await waitFor(async () => JSON.stringify(toolValue(await tool("kxm_inbox"))).includes(missedTerminalEvent.id));
   const missedRecord = mesh.hub.state.messages.get(missedTerminalEvent.id)!;
   missedRecord.status = "cancelled";
   missedRecord.cancelledAt = new Date().toISOString();
-  await waitFor(async () => !JSON.stringify(toolValue(await tool("mesh_inbox"))).includes(missedTerminalEvent.id));
+  await waitFor(async () => !JSON.stringify(toolValue(await tool("kxm_inbox"))).includes(missedTerminalEvent.id));
 
   const expiredInbound = await peer.send({
     target: "claude-under-test",
     content: "expire incoming work",
     ttlMs: 1_000,
   });
-  await waitFor(async () => JSON.stringify(toolValue(await tool("mesh_inbox"))).includes(expiredInbound.id));
+  await waitFor(async () => JSON.stringify(toolValue(await tool("kxm_inbox"))).includes(expiredInbound.id));
   await new Promise((resolve) => setTimeout(resolve, 1_050));
   assert.equal((await peer.getMessage(expiredInbound.id)).status, "expired");
-  await waitFor(async () => !JSON.stringify(toolValue(await tool("mesh_inbox"))).includes(expiredInbound.id));
+  await waitFor(async () => !JSON.stringify(toolValue(await tool("kxm_inbox"))).includes(expiredInbound.id));
 
   const workflowPayload = JSON.stringify({ event: "task", task: { id: "MCP-9" } });
   const webhook = await fetch(`${mesh.address.url}/v1/webhooks/mcp-workflow`, {
@@ -301,16 +301,16 @@ test("bundled MCP tools cover outbound, inbound, reply, cancellation, and channe
     body: workflowPayload,
   });
   const workflow = await webhook.json() as { run: { id: string; messageId: string } };
-  await waitFor(async () => JSON.stringify(toolValue(await tool("mesh_inbox"))).includes(workflow.run.messageId));
-  assert.match(JSON.stringify(toolValue(await tool("mesh_workflow_list"))), /mcp-workflow/);
-  assert.match(JSON.stringify(toolValue(await tool("mesh_workflow_get", { runId: workflow.run.id }))), /in_progress/);
+  await waitFor(async () => JSON.stringify(toolValue(await tool("kxm_inbox"))).includes(workflow.run.messageId));
+  assert.match(JSON.stringify(toolValue(await tool("kxm_workflow_list"))), /mcp-workflow/);
+  assert.match(JSON.stringify(toolValue(await tool("kxm_workflow_get", { runId: workflow.run.id }))), /in_progress/);
   const provenanceContext = {
     runId: workflow.run.id,
     stageId: "work",
     requirementKey: "checks",
     attempt: 1,
   };
-  const provenanceSend = toolValue(await tool("mesh_send", {
+  const provenanceSend = toolValue(await tool("kxm_send", {
     target: "reviewer",
     content: "workflow provenance send",
     correlationId: workflow.run.id,
@@ -318,14 +318,14 @@ test("bundled MCP tools cover outbound, inbound, reply, cancellation, and channe
     workflowContext: provenanceContext,
   }));
   const provenanceSendId = String(provenanceSend.messageId);
-  await tool("mesh_await", { messageId: provenanceSendId, timeoutMs: 2_000 });
-  const provenanceMessage = toolValue(await tool("mesh_get", { messageId: provenanceSendId }));
+  await tool("kxm_await", { messageId: provenanceSendId, timeoutMs: 2_000 });
+  const provenanceMessage = toolValue(await tool("kxm_get", { messageId: provenanceSendId }));
   assert.equal(provenanceMessage.workflowRunId, workflow.run.id);
   assert.deepEqual(provenanceMessage.workflowContext, {
     schema: "pi-mesh.workflow-message-context.v1",
     ...provenanceContext,
   });
-  const provenanceFanout = toolValue(await tool("mesh_fanout", {
+  const provenanceFanout = toolValue(await tool("kxm_fanout", {
     targets: ["reviewer"],
     content: "workflow provenance fanout",
     correlationId: workflow.run.id,
@@ -334,7 +334,7 @@ test("bundled MCP tools cover outbound, inbound, reply, cancellation, and channe
     timeoutMs: 2_000,
   }));
   const [provenanceFanoutResult] = provenanceFanout.responses as Array<{ messageId: string }>;
-  const provenanceFanoutMessage = toolValue(await tool("mesh_get", {
+  const provenanceFanoutMessage = toolValue(await tool("kxm_get", {
     messageId: provenanceFanoutResult!.messageId,
   }));
   assert.equal(provenanceFanoutMessage.workflowRunId, workflow.run.id);
@@ -342,7 +342,7 @@ test("bundled MCP tools cover outbound, inbound, reply, cancellation, and channe
     schema: "pi-mesh.workflow-message-context.v1",
     ...provenanceContext,
   });
-  const recorded = toolValue(await tool("mesh_workflow_record", {
+  const recorded = toolValue(await tool("kxm_workflow_record", {
     runId: workflow.run.id,
     category: "lesson",
     area: "harness",
@@ -351,7 +351,7 @@ test("bundled MCP tools cover outbound, inbound, reply, cancellation, and channe
     evidence: ["MCP-9"],
   }));
   assert.equal(recorded.category, "lesson");
-  const invalidWait = await tool("mesh_workflow_wait", {
+  const invalidWait = await tool("kxm_workflow_wait", {
     runId: workflow.run.id,
     stageId: "work",
     signalKey: "external-check",
@@ -360,7 +360,7 @@ test("bundled MCP tools cover outbound, inbound, reply, cancellation, and channe
   });
   assert.equal(invalidWait.result?.isError, true);
   assert.match(JSON.stringify(invalidWait.result), /peer evidence message not found/);
-  const checkpoint = toolValue(await tool("mesh_workflow_checkpoint", {
+  const checkpoint = toolValue(await tool("kxm_workflow_checkpoint", {
     runId: workflow.run.id,
     stageId: "work",
     status: "passed",
@@ -368,13 +368,13 @@ test("bundled MCP tools cover outbound, inbound, reply, cancellation, and channe
     evidenceRefs: { checks: { messageIds: [provenanceSendId] } },
   }));
   assert.equal(checkpoint.completed, true);
-  assert.match(JSON.stringify(toolValue(await tool("mesh_improvement_report"))), /harness/);
-  assert.equal(toolValue(await tool("mesh_reply", {
+  assert.match(JSON.stringify(toolValue(await tool("kxm_improvement_report"))), /harness/);
+  assert.equal(toolValue(await tool("kxm_reply", {
     messageId: workflow.run.messageId,
     content: "workflow complete",
   })).status, "replied");
 
-  const invalid = await tool("mesh_send", { content: "missing target" });
+  const invalid = await tool("kxm_send", { content: "missing target" });
   assert.equal(invalid.result?.isError, true);
   assert.match(JSON.stringify(invalid.result), /target is required/);
   assert.equal(stderr, "");
@@ -390,15 +390,15 @@ test("MCP inbox rehydrates one delivered message record after process restart", 
   });
 
   async function startMcp() {
-    const child = spawn(process.execPath, ["plugins/kxm-mesh/dist/mcp-server.js"], {
+    const child = spawn(process.execPath, ["plugins/kxm/dist/mcp-server.js"], {
       cwd: process.cwd(),
       env: {
         ...process.env,
-        PI_MESH_SERVER_URL: mesh.address.url,
-        PI_MESH_AUTH_TOKEN: mesh.token,
-        PI_MESH_AGENT_NAME: "claude-restart-test",
-        PI_MESH_AGENT_PURPOSE: "MCP restart integration test",
-        PI_MESH_PROJECT: "test-project",
+        KXM_SERVER_URL: mesh.address.url,
+        KXM_AUTH_TOKEN: mesh.token,
+        KXM_AGENT_NAME: "claude-restart-test",
+        KXM_AGENT_PURPOSE: "MCP restart integration test",
+        KXM_PROJECT: "test-project",
       },
       stdio: ["pipe", "pipe", "pipe"],
     });
@@ -468,23 +468,23 @@ test("MCP inbox rehydrates one delivered message record after process restart", 
   }
 
   const first = await startMcp();
-  await first.tool("mesh_list");
+  await first.tool("kxm_list");
   await waitFor(async () => (await peer.listAgents()).some((agent) => agent.name === "claude-restart-test"));
   const inbound = await peer.send({ target: "claude-restart-test", content: "resume this delivered request" });
   await waitFor(() => first.notifications.some((notification) => JSON.stringify(notification).includes(inbound.id)));
-  assert.match(JSON.stringify(first.value(await first.tool("mesh_inbox"))), new RegExp(inbound.id));
+  assert.match(JSON.stringify(first.value(await first.tool("kxm_inbox"))), new RegExp(inbound.id));
   assert.equal((await peer.getMessage(inbound.id)).status, "delivered");
   await first.stop();
 
   const durableAgent = [...mesh.hub.state.agents.values()].find((agent) => agent.name === "claude-restart-test")!;
   durableAgent.online = false;
   const second = await startMcp();
-  await second.tool("mesh_list");
+  await second.tool("kxm_list");
   await waitFor(() => second.notifications.some((notification) => JSON.stringify(notification).includes(inbound.id)));
   await new Promise((resolve) => setTimeout(resolve, 100));
   assert.equal(second.notifications.filter((notification) => JSON.stringify(notification).includes(inbound.id)).length, 1);
-  assert.match(JSON.stringify(second.value(await second.tool("mesh_inbox"))), new RegExp(inbound.id));
-  const reply = second.value(await second.tool("mesh_reply", {
+  assert.match(JSON.stringify(second.value(await second.tool("kxm_inbox"))), new RegExp(inbound.id));
+  const reply = second.value(await second.tool("kxm_reply", {
     messageId: inbound.id,
     content: "restart reply complete",
   }));

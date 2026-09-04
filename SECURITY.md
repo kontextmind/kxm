@@ -6,7 +6,7 @@ Security fixes are applied to the latest published release and the default branc
 
 ## Report a vulnerability
 
-Please do not open a public issue for a suspected vulnerability. Use [GitHub private vulnerability reporting](https://github.com/kontextmind/pi-extensions/security/advisories/new) and include:
+Please do not open a public issue for a suspected vulnerability. Use [GitHub private vulnerability reporting](https://github.com/kontextmind/kxm/security/advisories/new) and include:
 
 - affected version or commit;
 - impact and realistic attack scenario;
@@ -57,13 +57,13 @@ Authentication does not make a mesh message trustworthy. Agents must retain thei
 - Use a long random token and load it from a secret manager or protected environment.
 - Use distinct project tokens when different teams share one hub.
 - Reserve a distinct administrative token for admin routes; give agents only their explicit project token. Never give a workflow callback or peer the admin token.
-- Protect and back up `.kxm/state/mesh.db` because it contains messages and agent credentials.
+- Protect and back up `.kxm/state/kxm.db` because it contains messages and agent credentials.
 - Protect `.kxm/logs`; raw long-lived Pi process logs can contain model output, tool output, paths, and other sensitive operational data.
 - Keep secrets out of tracked `.kxm/config` and `.kxm/assets`; runtime logs, generated assets, and state must remain uncommitted.
 - Store webhook secrets in dedicated environment variables through `secretEnv`; do not commit them in workflow JSON.
 - Use a separate `signalSecretEnv` for callbacks and never put credentials, private prompts, or sensitive incident details in a degradation reason.
 - Review every quorum degradation as a security-relevant decision. It must be declared by policy, limited to the current attempt, and followed by enough verified replies to meet the approved minimum.
-- Enforce read-only reviewer and single-writer coordinator roles with `PI_MESH_WORKER_TOOLS`; prompt instructions do not remove shell, edit, or write capabilities.
+- Enforce read-only reviewer and single-writer coordinator roles with `KXM_WORKER_TOOLS`; prompt instructions do not remove shell, edit, or write capabilities.
 - Treat verified evidence snapshots as sensitive metadata. They omit message bodies but retain agent names/IDs, workflow scope, timestamps, and content hashes beyond normal terminal-message retention.
 - Restrict webhook ingress by TLS, network policy, and provider configuration even when signatures are enabled.
 - Put TLS and network access controls in front of any non-loopback deployment.

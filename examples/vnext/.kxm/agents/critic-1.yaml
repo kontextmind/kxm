@@ -1,5 +1,6 @@
 schema: kxm.agent.v1
 purpose: First fixed-identity critic for migrated strict producer policies.
+harness: claude
 model:
   profile: critic-claude
 tools:

@@ -11,11 +11,11 @@ import {
   loadVnextProject,
   parseRestrictedYaml,
   planVnextInitialization,
-} from "../plugins/kxm-mesh/src/vnext-config.ts";
-import { readVnextLocalBindings, vnextLocalBindingFile, withVnextLocalBindingLock } from "../plugins/kxm-mesh/src/vnext-bindings.ts";
-import { initializeVnextProject } from "../plugins/kxm-mesh/src/vnext-init.ts";
-import { vnextInitTransactionPath } from "../plugins/kxm-mesh/src/vnext-repair.ts";
-import { vnextContentSha256 } from "../plugins/kxm-mesh/src/vnext-template.ts";
+} from "../plugins/kxm/src/vnext-config.ts";
+import { readVnextLocalBindings, vnextLocalBindingFile, withVnextLocalBindingLock } from "../plugins/kxm/src/vnext-bindings.ts";
+import { initializeVnextProject } from "../plugins/kxm/src/vnext-init.ts";
+import { vnextInitTransactionPath } from "../plugins/kxm/src/vnext-repair.ts";
+import { vnextContentSha256 } from "../plugins/kxm/src/vnext-template.ts";
 
 const fixture = resolve("examples/vnext");
 

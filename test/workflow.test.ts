@@ -10,7 +10,7 @@ import {
   waitForWorkflowSignal,
   type WorkflowJournalEntry,
   type WorkflowRun,
-} from "../plugins/kxm-mesh/src/workflow.ts";
+} from "../plugins/kxm/src/workflow.ts";
 
 function definitionJson(): string {
   return JSON.stringify([{

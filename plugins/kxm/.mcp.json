@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "kxm": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/dist/mcp-server.js"
+      ],
+      "env": {
+        "KXM_SERVER_URL": "${user_config.server_url}",
+        "KXM_AUTH_TOKEN": "${user_config.auth_token}",
+        "KXM_AGENT_NAME": "${user_config.agent_name}",
+        "KXM_AGENT_PURPOSE": "${user_config.agent_purpose}",
+        "KXM_PROJECT": "${user_config.project}",
+        "KXM_PROJECT_DIR": "${CLAUDE_PROJECT_DIR}"
+      }
+    }
+  }
+}

@@ -14,9 +14,9 @@ import {
   loadVnextProjectAtRevision,
   vnextAuthorityEntries,
   vnextProseEntries,
-} from "../plugins/kxm-mesh/src/vnext-permission.ts";
-import { VnextSchemaRegistry, loadVnextProject, type JsonObject } from "../plugins/kxm-mesh/src/vnext-config.ts";
-import { initializeVnextProject } from "../plugins/kxm-mesh/src/vnext-init.ts";
+} from "../plugins/kxm/src/vnext-permission.ts";
+import { VnextSchemaRegistry, loadVnextProject, type JsonObject } from "../plugins/kxm/src/vnext-config.ts";
+import { initializeVnextProject } from "../plugins/kxm/src/vnext-init.ts";
 
 function makeGitRoot(root: string): void {
   const initialized = spawnSync("git", ["-c", "init.defaultBranch=main", "init", "--quiet", root], { encoding: "utf8", windowsHide: true });
@@ -73,7 +73,7 @@ test("authority projection excludes prose and covers every authority-bearing fie
   };
   const entries = vnextAuthorityEntries({ kind: "agent", id: "coordinator", value: agent });
   const paths = entries.map((entry) => entry.path);
-  for (const expected of ["/model", "/executor", "/tools", "/defaultRepositoryAccess", "/repositories/control", "/secrets/by-ref/github-token", "/network", "/resultSchema", "/session"]) {
+  for (const expected of ["/model", "/executor", "/harness", "/tools", "/defaultRepositoryAccess", "/repositories/control", "/secrets/by-ref/github-token", "/network", "/resultSchema", "/session"]) {
     assert(paths.includes(expected), `missing ${expected}`);
   }
   assert(!paths.includes("/purpose") && !paths.includes("/instructions"), "prose is not authority");

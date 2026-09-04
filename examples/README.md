@@ -47,8 +47,8 @@ The message ID is generated at runtime and is omitted above.
 With the normal hub running, start a deterministic reviewer:
 
 ```powershell
-$env:PI_MESH_AUTH_TOKEN = "replace-with-your-token"
-$env:PI_MESH_PROJECT = "example"
+$env:KXM_AUTH_TOKEN = "replace-with-your-token"
+$env:KXM_PROJECT = "example"
 node --experimental-strip-types examples/reviewer-agent.ts
 ```
 
@@ -57,8 +57,8 @@ This sample echoes requests to demonstrate acknowledgement and reply mechanics. 
 Send it a request from another terminal:
 
 ```powershell
-$env:PI_MESH_AUTH_TOKEN = "replace-with-your-token"
-$env:PI_MESH_PROJECT = "example"
+$env:KXM_AUTH_TOKEN = "replace-with-your-token"
+$env:KXM_PROJECT = "example"
 node --experimental-strip-types examples/requester.ts example-reviewer "Check the rollout plan"
 ```
 
@@ -67,7 +67,7 @@ node --experimental-strip-types examples/requester.ts example-reviewer "Check th
 ### Plan then review
 
 ```text
-Use kxm-mesh. Ask planner to produce a bounded implementation plan, then
+Use kxm. Ask planner to produce a bounded implementation plan, then
 ask reviewer to identify correctness and security risks. Verify both responses
 before making changes.
 ```
@@ -75,7 +75,7 @@ before making changes.
 ### Implement with separate ownership
 
 ```text
-Use kxm-mesh. Give api-builder ownership of src/api only and ui-builder
+Use kxm. Give api-builder ownership of src/api only and ui-builder
 ownership of src/ui only. Ask each for changed paths and test results. Do not
 let either agent edit shared configuration.
 ```
@@ -83,14 +83,14 @@ let either agent edit shared configuration.
 ### Non-blocking delegation
 
 ```text
-Send reviewer a request with mesh_send, retain the message ID, continue the
-independent implementation, then use mesh_get before deciding whether to wait.
+Send reviewer a request with kxm_send, retain the message ID, continue the
+independent implementation, then use kxm_get before deciding whether to wait.
 ```
 
 ### Cancel obsolete work
 
 ```text
-If a sent request is no longer relevant, call mesh_cancel with its message ID.
+If a sent request is no longer relevant, call kxm_cancel with its message ID.
 Do not treat cancellation as rollback: verify whether the peer already changed
 files or external state.
 ```

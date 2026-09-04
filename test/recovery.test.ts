@@ -3,8 +3,8 @@ import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { consumeWorkerRecoveryEnvelope, recoveryEnvelopePath } from "../plugins/kxm-mesh/src/recovery.ts";
-import { MeshHttpError, type MeshClient } from "../plugins/kxm-mesh/src/client.ts";
+import { consumeWorkerRecoveryEnvelope, recoveryEnvelopePath } from "../plugins/kxm/src/recovery.ts";
+import { MeshHttpError, type MeshClient } from "../plugins/kxm/src/client.ts";
 
 test("recovery envelope is journaled without prompt bodies and then deleted", async () => {
   const directory = mkdtempSync(join(tmpdir(), "pi-mesh-recovery-"));
@@ -41,7 +41,7 @@ test("recovery envelope is journaled without prompt bodies and then deleted", as
       severity: "error",
       summary: "Worker recovered with unresumable_session",
       evidence: [
-        "tool:mesh_await",
+        "tool:kxm_await",
         "class:unresumable_session",
         "operation:await",
         "code:unresumable_session",

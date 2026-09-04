@@ -28,9 +28,9 @@ Envelope parity is a **shape** guarantee, not a **trust** guarantee. An agent-au
 |---|---|---|
 | `kxm session start --id <id> (--mix a,b \| --workflow <definitionId>)` | Resolves names against the workspace `agents.json` / `gates.json`, writes `.kxm/assets/sessions/<id>/session.json` (`kxm.session.v1`), creates `inputs/` and `outputs/` (plus `assets/workflows/<definitionId>/{inputs,outputs,generated}` in workflow mode), and exits. | Start any process, dispatch a workflow, run a gate, or set `KXM_SESSION_ID`. In `--workflow` mode it lists the **entire roster**, not the definition's participants, and does not read the definition. |
 | `kxm session status` | Lists PID claim files and worker-recovery envelopes under `.kxm/state`. | Read `session.json` or report anything `session start` created. |
-| `kxm session stop` | Requests shutdown of the hub **and every worker** with a PID file in the workspace. It takes no session ID and is the same operation as `kxm mesh stop`. | Stop one session. **Treat it as a global stop.** |
+| `kxm session stop` | Requests shutdown of the hub **and every worker** with a PID file in the workspace. It takes no session ID and is the same operation as `kxm hub stop`. | Stop one session. **Treat it as a global stop.** |
 
-Treat `session.json` as a manifest for humans and dashboards. The effective execution primitives are `kxm mesh hub` (one hub process), `kxm agent worker` (one worker process), and `kxm workflow start` (one signed run).
+Treat `session.json` as a manifest for humans and dashboards. The effective execution primitives are `kxm hub start` (one hub process), `kxm agent worker` (one worker process), and `kxm workflow start` (one signed run).
 
 ### Pi model-context isolation
 
@@ -39,7 +39,7 @@ A KXM session manifest, a durable workflow run, and a Pi conversation session ar
 | Object | Durable location | Purpose |
 |---|---|---|
 | KXM session manifest | `.kxm/assets/sessions/<id>/session.json` | Human-reviewed roster/asset plan; never launches a process |
-| Workflow run | `.kxm/state/mesh.db` | Hub-owned stage machine, evidence, journal, messages, and callbacks |
+| Workflow run | `.kxm/state/kxm.db` | Hub-owned stage machine, evidence, journal, messages, and callbacks |
 | Pi session | `.kxm/state/pi-sessions/<workerKey>/.../*.jsonl` | Model conversation history for one exact worker context binding |
 
 `kxm agent worker --session-isolation workflow` enables scoped isolation. It remains opt-in for the first upgrade-compatible release so existing shared Pi histories are not silently abandoned. Ordinary messages then bind to a stable `default/` Pi session. Hub-authorized workflow work binds to `runs/<runId>/`, producing one durable Pi history for each `{project, agent, workflowRunId}`. The hub owns the canonical `workflowRunId`; a caller-controlled correlation ID cannot create affinity.
@@ -56,7 +56,7 @@ hub message queued
                                                    └─ queued message replays
 ```
 
-The extension requests a change only while there is no active, awaiting, or settling inbound turn. The supervisor applies it only from the child's `close` handler, so two Pi processes never write the same session JSONL. Provider, tool-timeout, supervisor, and machine restarts resume only the active binding when that directory contains history. Route requests are bound to the exact worker identity and supervisor generation; manifests and canonical run IDs are bounded and validated. At most `PI_MESH_WORKER_MAX_RUN_SESSIONS` run histories are retained, with inactive least-recently-used histories evicted. An invalid manifest is renamed with a `.corrupt-<timestamp>` suffix and the worker fails safely back to the stable default scope; unrelated session directories are never selected by inference.
+The extension requests a change only while there is no active, awaiting, or settling inbound turn. The supervisor applies it only from the child's `close` handler, so two Pi processes never write the same session JSONL. Provider, tool-timeout, supervisor, and machine restarts resume only the active binding when that directory contains history. Route requests are bound to the exact worker identity and supervisor generation; manifests and canonical run IDs are bounded and validated. At most `KXM_WORKER_MAX_RUN_SESSIONS` run histories are retained, with inactive least-recently-used histories evicted. An invalid manifest is renamed with a `.corrupt-<timestamp>` suffix and the worker fails safely back to the stable default scope; unrelated session directories are never selected by inference.
 
 The upgrade-compatible default `--session-isolation off` retains the former single shared Pi history. Enabling `workflow` creates new scoped storage and therefore begins a fresh default history unless the worker already used that scope; authoritative facts must remain in workflow state, assets, and Git.
 
@@ -90,7 +90,7 @@ Claude MCP ─── HTTP/SSE ───┘    ├── SQLite WAL
 
 The hub validates and authenticates requests, stores agents and messages, pushes addressed work over SSE, and exposes a separate administrative metadata-only operations SSE stream for dashboards. Operations wakeups and snapshots are project-scoped and never include request or reply bodies. The hub expires stale work and purges terminal records after the configured retention window. SQLite is the source of restart recovery; in-memory maps are the live working set.
 
-**Source of truth.** Semantics are defined by the protocol and schema types (`src/protocol.ts`, `src/workflow.ts`), the hub's durable state (`.kxm/state/mesh.db`: agents, messages, workflow runs, journal), and reviewed workspace configuration in git (`.kxm/config`). The `kxm` CLI, the Pi extension, and the Claude MCP server are **clients** of that state. When a client's behaviour differs from the hub's or a definition's contract, the contract is authoritative and the client is the defect. One deliberate locality limitation remains: `kxm workflow list` / `get` read the local SQLite file rather than the configured hub, so they only describe runs when the operator is on the hub host. Start, signal, and GitHub watch now resolve credentials from the selected active definition and use the start secret as the documented callback fallback.
+**Source of truth.** Semantics are defined by the protocol and schema types (`src/protocol.ts`, `src/workflow.ts`), the hub's durable state (`.kxm/state/kxm.db`: agents, messages, workflow runs, journal), and reviewed workspace configuration in git (`.kxm/config`). The `kxm` CLI, the Pi extension, and the Claude MCP server are **clients** of that state. When a client's behaviour differs from the hub's or a definition's contract, the contract is authoritative and the client is the defect. One deliberate locality limitation remains: `kxm workflow list` / `get` read the local SQLite file rather than the configured hub, so they only describe runs when the operator is on the hub host. Start, signal, and GitHub watch now resolve credentials from the selected active definition and use the start secret as the documented callback fallback.
 
 Signed webhook workflows add a durable run and coordinator message in one request. The stable provider delivery ID prevents duplicate Jira or GitHub retries. Ordered checkpoints enforce attempt limits and exact keyed evidence requirements. Local evidence can be accumulated when a coordinator enters a durable `waiting` state; a separately signed and deduplicated external result must complete the remaining named requirements before it can advance the stage. A separate journal preserves plans, decisions, contradictions, errors, and lessons for reviewed continuous improvement.
 
@@ -123,7 +123,7 @@ An ordinary coordinator reply while `running` is a failure because required work
 
 Stages form an ordered list. A failed checkpoint retries the **same** stage until `maxAttempts` is exhausted, after which the run is terminal; there are no back-edges (an instruction such as "failures return to build" is prose the engine cannot execute) and no resume verb. Workflow definitions are read from the single file or inline JSON the hub was started with. Each run records a secret-free semantic `definitionHash`, so credential rotation does not create false drift while behavior changes remain auditable.
 
-`MeshClient` owns registration, rotating agent credentials, heartbeats, bounded HTTP requests, SSE reconnects, and automatic re-registration after hub state loss. The Pi extension adds peer messaging plus workflow checkpoint, wait, journal, and reporting tools. Claude MCP adds the same workflow plane plus `mesh_inbox` and `mesh_reply`.
+`MeshClient` owns registration, rotating agent credentials, heartbeats, bounded HTTP requests, SSE reconnects, and automatic re-registration after hub state loss. The Pi extension adds peer messaging plus workflow checkpoint, wait, journal, and reporting tools. Claude MCP adds the same workflow plane plus `kxm_inbox` and `kxm_reply`.
 
 ## Message lifecycle
 
@@ -152,9 +152,9 @@ gates should reserve a distinct administrative token, issue explicit project
 tokens per trust domain, protect network and state access, and keep
 consequential repository or human gates authoritative.
 
-`.kxm/state/mesh.db` is not encrypted by the application and contains messages plus agent credentials — message bodies are stored as sent, not redacted. Protect the `.kxm` runtime directories with operating-system permissions and encrypted storage where required. Structured hub logs omit message bodies, but raw worker agent logs (`pi-agent-*.log`) capture the Pi process's stdout and stderr verbatim and may contain model or tool output, including anything a tool printed. Peer content remains untrusted regardless of authentication.
+`.kxm/state/kxm.db` is not encrypted by the application and contains messages plus agent credentials — message bodies are stored as sent, not redacted. Protect the `.kxm` runtime directories with operating-system permissions and encrypted storage where required. Structured hub logs omit message bodies, but raw worker agent logs (`pi-agent-*.log`) capture the Pi process's stdout and stderr verbatim and may contain model or tool output, including anything a tool printed. Peer content remains untrusted regardless of authentication.
 
-**Filesystem write boundaries are not enforced.** The worker launcher's `PI_MESH_WORKER_TOOLS` allowlist restricts which Pi tools a worker may call (for example omitting `write`, `edit`, and the platform shell); it does not restrict paths. Any worker that has a write-capable tool can modify any file its OS user can reach, in any repository under its working directory. Workspace roster fields such as `ownership.writeAgent` and `roles` in `agents.json`, and `mode` or `notes` in `host.json`, are **not read by the hub, the CLI, or the launcher** (host mode is inferred from the `PI_MESH_SERVER_URL` hostname). They document intent for humans and prompts. Deployments that need a real boundary should give non-writer workers a tool allowlist without write tools and/or a separate read-only Git worktree, and review changed paths against the plan.
+**Filesystem write boundaries are not enforced.** The worker launcher's `KXM_WORKER_TOOLS` allowlist restricts which Pi tools a worker may call (for example omitting `write`, `edit`, and the platform shell); it does not restrict paths. Any worker that has a write-capable tool can modify any file its OS user can reach, in any repository under its working directory. Workspace roster fields such as `ownership.writeAgent` and `roles` in `agents.json`, and `mode` or `notes` in `host.json`, are **not read by the hub, the CLI, or the launcher** (host mode is inferred from the `KXM_SERVER_URL` hostname). They document intent for humans and prompts. Deployments that need a real boundary should give non-writer workers a tool allowlist without write tools and/or a separate read-only Git worktree, and review changed paths against the plan.
 
 Workflow session isolation is a context-routing and accidental-cross-run safety mechanism, not a security sandbox against a malicious process running as the same OS user. A shell-capable model can reach any state or session file its account can reach and inherits the worker routing environment. The supervisor rejects linked/aliased session directories and validates route identity, generation, source binding, and bounds to contain stale or malformed state, but OS separation is required against a deliberately hostile worker. Keep `.kxm/state` ACL-restricted, withhold shell/write tools from untrusted peers, or run them under separate accounts/containers.
 
@@ -193,7 +193,7 @@ Workflow session isolation is a context-routing and accidental-cross-run safety 
 
 The generated runtimes are committed because installed packages must work without a development toolchain or runtime TypeScript stripping. Edit the source, run `npm run build`, and commit the source and corresponding files under `dist/`.
 
-The command groups described in this document (`agent`, `session`, `workflow`, `gate`, `mesh`, `improve`) are defined in `src/cli.ts`. The committed `plugins/kxm-mesh/dist/cli.js` that `scripts/kxm.mjs` launches may lag the source: if `kxm --help` prints a flat command list (`init | validate | status | hub | worker | stop | workflow … | signal | github watch | retrospective export | smoke`), the bundle predates the Commander groups and must be rebuilt and committed before the operator surface here is what actually runs.
+The command groups described in this document (`agent`, `session`, `workflow`, `gate`, `mesh`, `improve`) are defined in `src/cli.ts`. The committed `plugins/kxm/dist/cli.js` that `scripts/kxm.mjs` launches may lag the source: if `kxm --help` prints a flat command list (`init | validate | status | hub | worker | stop | workflow … | signal | github watch | retrospective export | smoke`), the bundle predates the Commander groups and must be rebuilt and committed before the operator surface here is what actually runs.
 
 Peer-policy fields are additive to SQLite schema version 2 because agents,
 messages, and workflow runs are stored as JSON records. Existing schema-v2
@@ -225,8 +225,8 @@ Key invariants:
 
 Optional context backends (a temporal-graph adapter such as Graphiti, or an
 experimental retrieval provider) plug into the internal `ContextProvider` /
-`StateProvider` seams in `plugins/kxm-mesh/src/context/providers.ts`. The
-native SQLite implementation (`plugins/kxm-mesh/src/state.ts`) is the default
+`StateProvider` seams in `plugins/kxm/src/context/providers.ts`. The
+native SQLite implementation (`plugins/kxm/src/state.ts`) is the default
 and the reference. Providers are internal: agents interact only with the
 `kxm context` CLI and the `kxm_*` Pi/MCP tools, and provider failures fail
 closed to smaller context, never broader authority.

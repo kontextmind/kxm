@@ -4,9 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { MeshStore } from "../plugins/kxm-mesh/src/store.ts";
-import type { MessageRecord } from "../plugins/kxm-mesh/src/protocol.ts";
-import type { WorkflowJournalEntry, WorkflowRun } from "../plugins/kxm-mesh/src/workflow.ts";
+import { MeshStore } from "../plugins/kxm/src/store.ts";
+import type { MessageRecord } from "../plugins/kxm/src/protocol.ts";
+import type { WorkflowJournalEntry, WorkflowRun } from "../plugins/kxm/src/workflow.ts";
 
 test("store supports memory mode and health checks", () => {
   const store = new MeshStore();
@@ -26,7 +26,7 @@ test("store preserves the five-second SQLite busy timeout", () => {
 
 test("store rejects databases created by a newer schema", () => {
   const directory = mkdtempSync(join(tmpdir(), "pi-mesh-schema-"));
-  const path = join(directory, "mesh.db");
+  const path = join(directory, "kxm.db");
   try {
     const database = new DatabaseSync(path);
     database.exec("PRAGMA user_version = 4");
@@ -39,7 +39,7 @@ test("store rejects databases created by a newer schema", () => {
 
 test("store persists workflow checkpoints and learning journal entries", () => {
   const directory = mkdtempSync(join(tmpdir(), "pi-mesh-workflow-store-"));
-  const path = join(directory, "mesh.db");
+  const path = join(directory, "kxm.db");
   const run: WorkflowRun = {
     id: "run-1",
     definitionId: "jira",
@@ -84,7 +84,7 @@ test("store persists workflow checkpoints and learning journal entries", () => {
 
 test("verified peer evidence survives restart and source-message retention without a schema bump", () => {
   const directory = mkdtempSync(join(tmpdir(), "pi-mesh-provenance-store-"));
-  const path = join(directory, "mesh.db");
+  const path = join(directory, "kxm.db");
   let first: MeshStore | undefined;
   let second: MeshStore | undefined;
   let third: MeshStore | undefined;
@@ -212,7 +212,7 @@ test("verified peer evidence survives restart and source-message retention witho
 
 test("workflow transitions commit run, message, and journal atomically and roll back on failure", () => {
   const directory = mkdtempSync(join(tmpdir(), "pi-mesh-transition-store-"));
-  const path = join(directory, "mesh.db");
+  const path = join(directory, "kxm.db");
   const run: WorkflowRun = {
     id: "run-atomic",
     definitionId: "workflow",

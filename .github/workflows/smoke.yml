@@ -10,8 +10,8 @@ on:
 
 jobs:
   smoke:
-    if: ${{ vars.PI_MESH_SMOKE_RUNNER != '' }}
-    runs-on: ${{ vars.PI_MESH_SMOKE_RUNNER }}
+    if: ${{ vars.KXM_SMOKE_RUNNER != '' }}
+    runs-on: ${{ vars.KXM_SMOKE_RUNNER }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
@@ -22,5 +22,5 @@ jobs:
       - run: npm ci
       - run: node scripts/smoke-multi-pi.mjs
         env:
-          PI_MESH_SMOKE: "1"
-          PI_MESH_SMOKE_MODELS: ${{ inputs.models || vars.PI_MESH_SMOKE_MODELS }}
+          KXM_SMOKE: "1"
+          KXM_SMOKE_MODELS: ${{ inputs.models || vars.KXM_SMOKE_MODELS }}

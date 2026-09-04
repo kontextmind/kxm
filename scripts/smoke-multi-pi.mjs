@@ -9,16 +9,16 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const hubScript = join(root, "scripts", "pi-mesh-hub.mjs");
-const workerScript = join(root, "scripts", "pi-mesh-worker.mjs");
-const extensionPath = join(root, "plugins", "kxm-mesh", "src", "extension.ts");
+const hubScript = join(root, "scripts", "kxm-hub.mjs");
+const workerScript = join(root, "scripts", "kxm-worker.mjs");
+const extensionPath = join(root, "plugins", "kxm", "src", "extension.ts");
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_CAPTURE_CHARS = 32_768;
 
 export function parseSmokeModels(value) {
   const models = [...new Set(String(value ?? "").split(",").map((item) => item.trim()).filter(Boolean))];
   if (models.some((model) => !/^[A-Za-z0-9._:/-]{1,160}$/.test(model))) {
-    throw new Error("PI_MESH_SMOKE_MODELS contains an invalid model ID");
+    throw new Error("KXM_SMOKE_MODELS contains an invalid model ID");
   }
   return models;
 }
@@ -62,7 +62,7 @@ function runCommand(command, args, options = {}) {
 }
 
 function resolvePiCommand() {
-  const configured = process.env.PI_MESH_SMOKE_PI_COMMAND?.trim();
+  const configured = process.env.KXM_SMOKE_PI_COMMAND?.trim();
   if (configured) return configured;
   const locator = runCommand(process.platform === "win32" ? "where.exe" : "which", ["pi"]);
   if (locator.status !== 0) return undefined;
@@ -285,8 +285,8 @@ async function stopRecord(processRecord, stateDir, role, name, project) {
 }
 
 export async function runRealSmoke(options = {}) {
-  const models = options.models ?? parseSmokeModels(process.env.PI_MESH_SMOKE_MODELS);
-  if (models.length < 2) throw new Error("PI_MESH_SMOKE_MODELS must name at least two distinct models");
+  const models = options.models ?? parseSmokeModels(process.env.KXM_SMOKE_MODELS);
+  if (models.length < 2) throw new Error("KXM_SMOKE_MODELS must name at least two distinct models");
   const piCommand = options.piCommand ?? resolvePiCommand();
   if (!piCommand) return { ok: true, skipped: true, reason: "real Pi binary unavailable" };
   const probe = runCommand(piCommand, ["--version"]);
@@ -296,9 +296,9 @@ export async function runRealSmoke(options = {}) {
     return { ok: true, skipped: true, reason: "model credentials unavailable", unavailableModels };
   }
 
-  const timeoutMs = Number(process.env.PI_MESH_SMOKE_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS);
+  const timeoutMs = Number(process.env.KXM_SMOKE_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS);
   if (!Number.isInteger(timeoutMs) || timeoutMs < 30_000 || timeoutMs > 600_000) {
-    throw new Error("PI_MESH_SMOKE_TIMEOUT_MS must be an integer from 30000 to 600000");
+    throw new Error("KXM_SMOKE_TIMEOUT_MS must be an integer from 30000 to 600000");
   }
   const tempRoot = mkdtempSync(join(tmpdir(), "pi-mesh-real-smoke-"));
   const workspaceDir = join(tempRoot, ".kxm");
@@ -318,7 +318,7 @@ export async function runRealSmoke(options = {}) {
     source: "generic",
     project,
     target: "smoke-operator",
-    secretEnv: "PI_MESH_SMOKE_WEBHOOK_SECRET",
+    secretEnv: "KXM_SMOKE_WEBHOOK_SECRET",
     event: "smoke.requested",
     delivery: "followUp",
     promptTemplate: "Run isolated smoke {{runId}}",
@@ -326,20 +326,20 @@ export async function runRealSmoke(options = {}) {
   }];
   const commonEnv = {
     ...process.env,
-    PI_MESH_HOST: "127.0.0.1",
-    PI_MESH_PORT: String(port),
-    PI_MESH_SERVER_URL: baseUrl,
-    PI_MESH_AUTH_TOKEN: authToken,
-    PI_MESH_PROJECT: project,
-    PI_MESH_WORKDIR: tempRoot,
-    PI_MESH_WORKSPACE_DIR: workspaceDir,
-    PI_MESH_CONFIG_DIR: join(workspaceDir, "config"),
-    PI_MESH_LOGS_DIR: logsDir,
-    PI_MESH_ASSETS_DIR: assetsDir,
-    PI_MESH_STATE_DIR: stateDir,
-    PI_MESH_DATA_PATH: join(stateDir, "mesh.db"),
-    PI_MESH_WEBHOOK_WORKFLOWS: JSON.stringify(workflow),
-    PI_MESH_SMOKE_WEBHOOK_SECRET: webhookSecret,
+    KXM_HOST: "127.0.0.1",
+    KXM_PORT: String(port),
+    KXM_SERVER_URL: baseUrl,
+    KXM_AUTH_TOKEN: authToken,
+    KXM_PROJECT: project,
+    KXM_WORKDIR: tempRoot,
+    KXM_WORKSPACE_DIR: workspaceDir,
+    KXM_CONFIG_DIR: join(workspaceDir, "config"),
+    KXM_LOGS_DIR: logsDir,
+    KXM_ASSETS_DIR: assetsDir,
+    KXM_STATE_DIR: stateDir,
+    KXM_DATA_PATH: join(stateDir, "kxm.db"),
+    KXM_WEBHOOK_WORKFLOWS: JSON.stringify(workflow),
+    KXM_SMOKE_WEBHOOK_SECRET: webhookSecret,
   };
   const processes = { hub: undefined, workers: new Map() };
   let stage = "start";
@@ -353,13 +353,13 @@ export async function runRealSmoke(options = {}) {
       const name = workerNames[index];
       const record = spawnNode(workerScript, {
         ...commonEnv,
-        PI_MESH_AGENT_NAME: name,
-        PI_MESH_AGENT_PURPOSE: "real Pi smoke peer",
-        PI_MESH_WORKER_MODEL: models[index],
-        PI_MESH_PI_COMMAND: shim,
-        PI_MESH_WORKER_DRAIN_MS: "10000",
-        PI_MESH_WORKER_MAX_RESTARTS: "2",
-        PI_MESH_WORKER_SESSION_ISOLATION: "workflow",
+        KXM_AGENT_NAME: name,
+        KXM_AGENT_PURPOSE: "real Pi smoke peer",
+        KXM_WORKER_MODEL: models[index],
+        KXM_PI_COMMAND: shim,
+        KXM_WORKER_DRAIN_MS: "10000",
+        KXM_WORKER_MAX_RESTARTS: "2",
+        KXM_WORKER_SESSION_ISOLATION: "workflow",
       }, name);
       processes.workers.set(name, record);
       return record;
@@ -463,9 +463,9 @@ export async function runRealSmoke(options = {}) {
 }
 
 async function main() {
-  const enabled = process.env.PI_MESH_SMOKE === "1" || process.argv.includes("--real-pi");
+  const enabled = process.env.KXM_SMOKE === "1" || process.argv.includes("--real-pi");
   if (!enabled) {
-    writeOutcome({ ok: true, skipped: true, reason: "PI_MESH_SMOKE is not 1" });
+    writeOutcome({ ok: true, skipped: true, reason: "KXM_SMOKE is not 1" });
     return;
   }
   try {

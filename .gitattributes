@@ -1,4 +1,4 @@
 * text=auto eol=lf
 
-plugins/kxm-mesh/dist/** linguist-generated=true
+plugins/kxm/dist/** linguist-generated=true
 package-lock.json linguist-generated=true

@@ -1,0 +1,1099 @@
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import {
+  Box,
+  Container,
+  HStack,
+  Key,
+  matchesKey,
+  ProcessTerminal,
+  ScrollView,
+  stripTerminalSequences,
+  Text,
+  TruncatedText,
+  TuiAltScreen,
+  VStack,
+  type Component,
+  type Terminal,
+  type TUI,
+} from "@earendil-works/pi-tui";
+import type { AgentRecord, MessageRecord } from "./protocol.ts";
+import type { WorkflowRun } from "./workflow.ts";
+
+export interface MeshTuiPidClaim {
+  file: string;
+  role?: string;
+  pid?: number;
+  live: boolean;
+}
+
+export const MESH_TUI_PANELS = ["agents", "tasks", "workflows", "plans", "inbox", "procs"] as const;
+export type MeshTuiPanel = typeof MESH_TUI_PANELS[number];
+
+export const MESH_TUI_TAB_LABELS: Record<MeshTuiPanel, string> = {
+  agents: "Agents",
+  tasks: "Tasks",
+  workflows: "Workflows",
+  plans: "Plans",
+  inbox: "Inbox",
+  procs: "Procs",
+};
+
+export interface MeshTuiView {
+  tab: MeshTuiPanel;
+  selected: number;
+  pane: "list" | "detail";
+  help: boolean;
+}
+
+export function defaultMeshTuiView(screen?: MeshTuiPanel): MeshTuiView {
+  return { tab: screen ?? "agents", selected: 0, pane: "list", help: false };
+}
+
+export function applyMeshTuiKey(view: MeshTuiView, key: string, itemCount = 0): MeshTuiView | "quit" {
+  if (matchesKey(key, "q") || matchesKey(key, Key.ctrl("c"))) return "quit";
+  if (matchesKey(key, Key.escape)) return view.help ? { ...view, help: false } : "quit";
+  if (matchesKey(key, "h") || matchesKey(key, "?")) return { ...view, help: !view.help };
+  const byNumber: Record<string, MeshTuiPanel> = {
+    "1": "agents",
+    "2": "tasks",
+    "3": "workflows",
+    "4": "plans",
+    "5": "inbox",
+    "6": "procs",
+  };
+  const tab = byNumber[key];
+  if (tab) return { tab, selected: 0, pane: "list", help: false };
+  const index = MESH_TUI_PANELS.indexOf(view.tab);
+  if (matchesKey(key, Key.tab) || matchesKey(key, "]")) {
+    return { tab: MESH_TUI_PANELS[(index + 1) % MESH_TUI_PANELS.length]!, selected: 0, pane: "list", help: false };
+  }
+  if (matchesKey(key, Key.shift("tab")) || matchesKey(key, "[")) {
+    return { tab: MESH_TUI_PANELS[(index - 1 + MESH_TUI_PANELS.length) % MESH_TUI_PANELS.length]!, selected: 0, pane: "list", help: false };
+  }
+  if (matchesKey(key, Key.left)) return { ...view, pane: "list", help: false };
+  if (matchesKey(key, Key.right) || matchesKey(key, Key.enter) || matchesKey(key, Key.space)) {
+    return { ...view, pane: "detail", help: false };
+  }
+  if (matchesKey(key, Key.up)) {
+    return { ...view, selected: Math.max(0, view.selected - 1), pane: "list", help: false };
+  }
+  if (matchesKey(key, Key.down)) {
+    return { ...view, selected: Math.min(Math.max(0, itemCount - 1), view.selected + 1), pane: "list", help: false };
+  }
+  return view;
+}
+
+export interface MeshTuiRunStage {
+  id: string;
+  label?: string;
+  status: string;
+  attempts?: number;
+}
+
+export interface MeshTuiRun {
+  id: string;
+  status: string;
+  definitionId: string;
+  project: string;
+  currentStage?: string;
+  targetAgentName?: string;
+  updatedAt?: string;
+  progress?: { done: number; total: number };
+  stages?: MeshTuiRunStage[];
+}
+
+export interface MeshTuiPlan {
+  id: string;
+  runId: string;
+  summary: string;
+  createdAt: string;
+  stageId?: string;
+  severity?: string;
+}
+
+export interface MeshTuiSnapshot {
+  serverUrl: string;
+  healthOk: boolean;
+  readyOk: boolean;
+  storage?: string;
+  onlineCount: number;
+  transport: "sse" | "snapshot";
+  metadataMode?: "ops" | "legacy";
+  agents: AgentRecord[];
+  openMessages: Array<Pick<MessageRecord, "id" | "status" | "fromName" | "toName" | "delivery" | "createdAt" | "correlationId">>;
+  openMessageTotal: number;
+  runs: MeshTuiRun[];
+  runTotal: number;
+  plans: MeshTuiPlan[];
+  pids: MeshTuiPidClaim[];
+  error?: string;
+  fetchedAt: string;
+}
+
+function processExists(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+function age(iso: string, now: number): string {
+  const ms = now - Date.parse(iso);
+  if (!Number.isFinite(ms) || ms < 0) return "?";
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
+}
+
+function pad(value: string, width: number): string {
+  const text = value.replace(/\s+/g, " ").trim();
+  if (text.length <= width) return text.padEnd(width);
+  return `${text.slice(0, Math.max(0, width - 1))}…`;
+}
+
+function readJsonRows<T>(database: DatabaseSync, sql: string): T[] {
+  const rows = database.prepare(sql).all() as Array<{ record: string }>;
+  const out: T[] = [];
+  for (const row of rows) {
+    try {
+      out.push(JSON.parse(row.record) as T);
+    } catch {
+      // skip corrupt rows
+    }
+  }
+  return out;
+}
+
+const DONE_STAGE_STATUSES = new Set(["passed", "failed", "warning"]);
+
+export function summarizeMeshRun(run: Pick<WorkflowRun, "id" | "status" | "definitionId" | "project" | "currentStage" | "targetAgentName" | "updatedAt" | "stages">): MeshTuiRun {
+  const stages = (run.stages ?? []).map((stage) => ({
+    id: stage.id,
+    ...(stage.label ? { label: stage.label } : {}),
+    status: stage.status,
+    ...(stage.attempts ? { attempts: stage.attempts } : {}),
+  }));
+  const total = stages.length;
+  const done = stages.filter((stage) => DONE_STAGE_STATUSES.has(stage.status)).length;
+  return {
+    id: run.id,
+    status: run.status,
+    definitionId: run.definitionId,
+    project: run.project,
+    ...(run.currentStage ? { currentStage: run.currentStage } : {}),
+    ...(run.targetAgentName ? { targetAgentName: run.targetAgentName } : {}),
+    ...(run.updatedAt ? { updatedAt: run.updatedAt } : {}),
+    ...(total > 0 ? { progress: { done, total }, stages } : {}),
+  };
+}
+
+function summarizeMeshPlan(entry: { id: string; runId: string; category?: string; summary: string; createdAt: string; stageId?: string; severity?: string }): MeshTuiPlan | undefined {
+  if (entry.category && entry.category !== "plan") return undefined;
+  const summary = entry.summary.replace(/\s+/g, " ").trim().slice(0, 120);
+  if (!summary) return undefined;
+  return {
+    id: entry.id,
+    runId: entry.runId,
+    summary,
+    createdAt: entry.createdAt,
+    ...(entry.stageId ? { stageId: entry.stageId } : {}),
+    ...(entry.severity ? { severity: entry.severity } : {}),
+  };
+}
+
+function progressBar(done: number, total: number, width = 10): string {
+  if (total <= 0) return "-".repeat(width);
+  const filled = Math.max(0, Math.min(width, Math.round((done / total) * width)));
+  return "#".repeat(filled) + "-".repeat(width - filled);
+}
+
+function stageMark(status: string, theme: MeshTuiTheme): string {
+  if (status === "passed") return theme.success("[x]");
+  if (status === "failed") return theme.error("[F]");
+  if (status === "warning") return theme.warning("[!]");
+  if (status === "in_progress") return theme.warning("[~]");
+  if (status === "waiting") return theme.dim("[.]");
+  return theme.dim("[ ]");
+}
+
+function readPlanMetadata(database: DatabaseSync): MeshTuiPlan[] {
+  try {
+    const rows = database.prepare(`
+      SELECT record FROM workflow_journal
+      WHERE category = 'plan'
+      ORDER BY rowid DESC
+      LIMIT 16
+    `).all() as Array<{ record: string }>;
+    const plans: MeshTuiPlan[] = [];
+    for (const row of rows) {
+      try {
+        const parsed = JSON.parse(row.record) as {
+          id?: string;
+          runId?: string;
+          category?: string;
+          summary?: string;
+          createdAt?: string;
+          stageId?: string;
+          severity?: string;
+          details?: string;
+        };
+        if (typeof parsed.id !== "string" || typeof parsed.runId !== "string" || typeof parsed.summary !== "string" || typeof parsed.createdAt !== "string") continue;
+        const plan = summarizeMeshPlan({
+          id: parsed.id,
+          runId: parsed.runId,
+          summary: parsed.summary,
+          createdAt: parsed.createdAt,
+          ...(parsed.category ? { category: parsed.category } : {}),
+          ...(parsed.stageId ? { stageId: parsed.stageId } : {}),
+          ...(parsed.severity ? { severity: parsed.severity } : {}),
+        });
+        if (plan) plans.push(plan);
+      } catch { /* skip malformed journal rows */ }
+    }
+    return plans;
+  } catch {
+    return [];
+  }
+}
+
+function countRows(database: DatabaseSync, table: "messages" | "workflow_runs", where = ""): number {
+  const row = database.prepare(`SELECT COUNT(*) AS count FROM ${table}${where}`).get() as { count?: number | bigint } | undefined;
+  return Number(row?.count ?? 0);
+}
+
+function readOpenMessageMetadata(database: DatabaseSync): MeshTuiSnapshot["openMessages"] {
+  const rows = database.prepare(`
+    SELECT
+      json_extract(record, '$.id') AS id,
+      json_extract(record, '$.status') AS status,
+      COALESCE(json_extract(record, '$.fromName'), json_extract(record, '$.from')) AS fromName,
+      COALESCE(json_extract(record, '$.toName'), json_extract(record, '$.to')) AS toName,
+      json_extract(record, '$.delivery') AS delivery,
+      json_extract(record, '$.createdAt') AS createdAt,
+      json_extract(record, '$.correlationId') AS correlationId
+    FROM messages
+    WHERE json_extract(record, '$.status') IN ('queued', 'delivered')
+    ORDER BY json_extract(record, '$.createdAt') DESC
+    LIMIT 16
+  `).all() as Array<Record<string, unknown>>;
+  const messages: MeshTuiSnapshot["openMessages"] = [];
+  for (const row of rows) {
+    if (
+      typeof row.id !== "string" ||
+      (row.status !== "queued" && row.status !== "delivered") ||
+      typeof row.fromName !== "string" ||
+      typeof row.toName !== "string" ||
+      (row.delivery !== "steer" && row.delivery !== "followUp" && row.delivery !== "nextTurn") ||
+      typeof row.createdAt !== "string"
+    ) continue;
+    messages.push({
+      id: row.id,
+      status: row.status,
+      fromName: row.fromName,
+      toName: row.toName,
+      delivery: row.delivery,
+      createdAt: row.createdAt,
+      ...(typeof row.correlationId === "string" ? { correlationId: row.correlationId } : {}),
+    });
+  }
+  return messages;
+}
+
+export function loadLocalMeshSnapshot(dataPath: string, stateDir: string): Pick<MeshTuiSnapshot, "agents" | "openMessages" | "openMessageTotal" | "runs" | "runTotal" | "plans" | "pids"> {
+  let agents: AgentRecord[] = [];
+  let openMessages: MeshTuiSnapshot["openMessages"] = [];
+  let openMessageTotal = 0;
+  let runs: WorkflowRun[] = [];
+  let runTotal = 0;
+  let plans: MeshTuiPlan[] = [];
+  if (existsSync(dataPath)) {
+    const database = new DatabaseSync(dataPath, { readOnly: true });
+    try {
+      agents = readJsonRows<AgentRecord>(database, "SELECT record FROM agents");
+      openMessages = readOpenMessageMetadata(database);
+      openMessageTotal = countRows(database, "messages", " WHERE json_extract(record, '$.status') IN ('queued', 'delivered')");
+      runs = readJsonRows<WorkflowRun>(database, "SELECT record FROM workflow_runs ORDER BY rowid DESC LIMIT 8");
+      runTotal = countRows(database, "workflow_runs");
+      plans = readPlanMetadata(database);
+    } finally {
+      database.close();
+    }
+  }
+  const pids: MeshTuiPidClaim[] = [];
+  if (existsSync(stateDir)) {
+    for (const file of readdirSync(stateDir).filter((name) => name.endsWith(".pid"))) {
+      try {
+        const record = JSON.parse(readFileSync(join(stateDir, file), "utf8")) as { pid?: number; role?: string };
+        pids.push({
+          file,
+          ...(record.role ? { role: record.role } : {}),
+          ...(record.pid !== undefined ? { pid: record.pid } : {}),
+          live: Number.isInteger(record.pid) && record.pid! > 0 && processExists(record.pid!),
+        });
+      } catch {
+        pids.push({ file, live: false });
+      }
+    }
+  }
+  return {
+    agents: agents.sort((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name)),
+    openMessages,
+    openMessageTotal,
+    runs: runs.map((run) => summarizeMeshRun(run)),
+    runTotal,
+    plans,
+    pids,
+  };
+}
+
+type MeshTuiStyle = (text: string) => string;
+
+interface MeshTuiTheme {
+  accent: MeshTuiStyle;
+  dim: MeshTuiStyle;
+  error: MeshTuiStyle;
+  success: MeshTuiStyle;
+  warning: MeshTuiStyle;
+  headerBg: MeshTuiStyle;
+  panelBg: MeshTuiStyle;
+}
+
+function meshTuiTheme(color: boolean): MeshTuiTheme {
+  const ansi = (code: string): MeshTuiStyle => color ? (text) => `\u001b[${code}m${text}\u001b[0m` : (text) => text;
+  return {
+    accent: ansi("1;36"),
+    dim: ansi("2"),
+    error: ansi("1;31"),
+    success: ansi("1;32"),
+    warning: ansi("1;33"),
+    headerBg: ansi("1;97;44"),
+    panelBg: ansi("48;5;236"),
+  };
+}
+
+function visibleAgents(snapshot: MeshTuiSnapshot): AgentRecord[] {
+  return snapshot.agents.filter((agent) => agent.model !== "kxm-tui");
+}
+
+function panelMetric(snapshot: MeshTuiSnapshot, panel: MeshTuiPanel): string {
+  if (panel === "agents") {
+    const agents = visibleAgents(snapshot);
+    return `${agents.filter((agent) => agent.online).length}/${agents.length}`;
+  }
+  if (panel === "tasks") {
+    const active = snapshot.runs.filter((run) => run.status === "running" || run.status === "waiting");
+    const total = active.reduce((sum, run) => sum + (run.progress?.total ?? 0), 0);
+    const done = active.reduce((sum, run) => sum + (run.progress?.done ?? 0), 0);
+    return total > 0 ? `${done}/${total}` : String(active.length);
+  }
+  if (panel === "workflows") return snapshot.runs.length === snapshot.runTotal ? String(snapshot.runTotal) : `${snapshot.runs.length}/${snapshot.runTotal}`;
+  if (panel === "plans") return String(snapshot.plans.length);
+  if (panel === "inbox") return snapshot.openMessages.length === snapshot.openMessageTotal ? String(snapshot.openMessageTotal) : `${snapshot.openMessages.length}/${snapshot.openMessageTotal}`;
+  return `${snapshot.pids.filter((claim) => claim.live).length}/${snapshot.pids.length}`;
+}
+
+function panelRows(snapshot: MeshTuiSnapshot, panel: MeshTuiPanel, theme: MeshTuiTheme): string[] {
+  const now = Date.parse(snapshot.fetchedAt);
+  if (panel === "agents") {
+    const agents = visibleAgents(snapshot);
+    return agents.length === 0 ? [] : [
+      theme.dim(`${pad("name", 14)} ${pad("on", 3)} ${pad("model", 24)} ${pad("seen", 4)} purpose`),
+      ...agents.map((agent) => (
+        `${pad(agent.name, 14)} ${agent.online ? theme.success(pad("yes", 3)) : theme.dim(pad("no", 3))} ${pad(agent.model ?? "-", 24)} ${pad(age(agent.lastSeenAt, now), 4)} ${agent.purpose}`
+      )),
+    ];
+  }
+  if (panel === "tasks") {
+    const active = snapshot.runs.filter((run) => run.status === "running" || run.status === "waiting");
+    if (active.length === 0) return [];
+    const rows: string[] = [];
+    for (const run of active) {
+      const progress = run.progress;
+      const bar = progress ? progressBar(progress.done, progress.total) : "----------";
+      const counts = progress ? `${progress.done}/${progress.total}` : "-";
+      rows.push(`${pad(run.definitionId, 16)} ${pad(run.status, 9)} ${bar} ${pad(counts, 5)} ${run.currentStage ?? "-"}  ${run.id}`);
+      for (const stage of run.stages ?? []) {
+        const attempts = stage.attempts && stage.attempts > 1 ? `  attempt ${stage.attempts}` : "";
+        rows.push(`  ${stageMark(stage.status, theme)} ${pad(stage.label ?? stage.id, 22)} ${stage.status}${attempts}`);
+      }
+    }
+    return rows;
+  }
+  if (panel === "workflows") {
+    return [
+      ...(snapshot.runs.length === 0 ? [] : [theme.dim(`${pad("state", 10)} ${pad("workflow", 16)} ${pad("stage", 14)} ${pad("done", 5)} id`)]),
+      ...snapshot.runs.map((run) => {
+        const counts = run.progress ? `${run.progress.done}/${run.progress.total}` : "-";
+        return `${pad(run.status, 10)} ${pad(run.definitionId, 16)} ${pad(run.currentStage ?? "-", 14)} ${pad(counts, 5)} ${run.id}`;
+      }),
+      ...(snapshot.runTotal > snapshot.runs.length ? [theme.dim(`… +${snapshot.runTotal - snapshot.runs.length} more`)] : []),
+    ];
+  }
+  if (panel === "plans") {
+    return snapshot.plans.length === 0 ? [] : [
+      theme.dim(`${pad("age", 4)} ${pad("run", 12)} ${pad("stage", 14)} plan`),
+      ...snapshot.plans.map((plan) => (
+        `${pad(age(plan.createdAt, now), 4)} ${pad(plan.runId, 12)} ${pad(plan.stageId ?? "-", 14)} ${plan.summary}`
+      )),
+    ];
+  }
+  if (panel === "inbox") {
+    return snapshot.openMessages.length === 0 ? [] : [
+      theme.dim(`${pad("state", 9)} ${pad("from", 12)} ${pad("to", 12)} ${pad("mode", 8)} ${pad("age", 4)} id`),
+      ...snapshot.openMessages.map((message) => (
+        `${theme.warning(pad(message.status, 9))} ${pad(message.fromName, 12)} ${pad(message.toName, 12)} ${pad(message.delivery, 8)} ${pad(age(message.createdAt, now), 4)} ${message.id}`
+      )),
+      ...(snapshot.openMessageTotal > snapshot.openMessages.length ? [theme.dim(`… +${snapshot.openMessageTotal - snapshot.openMessages.length} more`)] : []),
+    ];
+  }
+  return snapshot.pids.map((claim) => `${claim.live ? theme.success("live") : theme.error("dead")}  ${pad(claim.role ?? "-", 8)} pid=${claim.pid ?? "-"}  ${claim.file}`);
+}
+
+function tabItemCount(snapshot: MeshTuiSnapshot, tab: MeshTuiPanel): number {
+  if (tab === "agents") return visibleAgents(snapshot).length;
+  if (tab === "tasks") return snapshot.runs.filter((run) => run.status === "running" || run.status === "waiting").length;
+  if (tab === "workflows") return snapshot.runs.length;
+  if (tab === "plans") return snapshot.plans.length;
+  if (tab === "inbox") return snapshot.openMessages.length;
+  return snapshot.pids.length;
+}
+
+function tabSplits(tab: MeshTuiPanel): boolean {
+  return tab !== "procs";
+}
+
+function cursor(theme: MeshTuiTheme, selected: boolean, pane: "list" | "detail", activePane: "list" | "detail"): string {
+  if (!selected) return "  ";
+  return activePane === pane ? theme.accent("› ") : theme.dim("· ");
+}
+
+function listLines(snapshot: MeshTuiSnapshot, view: MeshTuiView, theme: MeshTuiTheme): string[] {
+  const now = Date.parse(snapshot.fetchedAt);
+  const mark = (index: number) => cursor(theme, index === view.selected, "list", view.pane);
+  if (view.tab === "agents") {
+    return visibleAgents(snapshot).map((agent, index) => (
+      `${mark(index)}${pad(agent.name, 14)} ${agent.online ? theme.success(pad("yes", 3)) : theme.dim(pad("no", 3))} ${pad(agent.model ?? "-", 18)} ${pad(age(agent.lastSeenAt, now), 4)}`
+    ));
+  }
+  if (view.tab === "tasks" || view.tab === "workflows") {
+    const runs = view.tab === "tasks"
+      ? snapshot.runs.filter((run) => run.status === "running" || run.status === "waiting")
+      : snapshot.runs;
+    return runs.map((run, index) => {
+      const counts = run.progress ? `${run.progress.done}/${run.progress.total}` : "-";
+      const bar = run.progress ? progressBar(run.progress.done, run.progress.total, 8) : "--------";
+      return `${mark(index)}${pad(run.definitionId, 14)} ${pad(run.status, 8)} ${bar} ${pad(counts, 5)} ${run.id}`;
+    });
+  }
+  if (view.tab === "plans") {
+    return snapshot.plans.map((plan, index) => (
+      `${mark(index)}${pad(age(plan.createdAt, now), 4)} ${pad(plan.stageId ?? "-", 12)} ${plan.summary}`
+    ));
+  }
+  if (view.tab === "inbox") {
+    return snapshot.openMessages.map((message, index) => (
+      `${mark(index)}${pad(message.status, 9)} ${pad(message.fromName, 10)} → ${pad(message.toName, 10)} ${pad(age(message.createdAt, now), 4)}`
+    ));
+  }
+  return snapshot.pids.map((claim, index) => (
+    `${mark(index)}${claim.live ? theme.success("live") : theme.error("dead")}  ${pad(claim.role ?? "-", 8)} pid=${claim.pid ?? "-"}`
+  ));
+}
+
+function detailLines(snapshot: MeshTuiSnapshot, view: MeshTuiView, theme: MeshTuiTheme): string[] {
+  const now = Date.parse(snapshot.fetchedAt);
+  if (view.tab === "agents") {
+    const agent = visibleAgents(snapshot)[view.selected];
+    if (!agent) return [theme.dim("No agent selected")];
+    const related = snapshot.openMessages.filter((message) => message.fromName === agent.name || message.toName === agent.name);
+    return [
+      theme.accent(agent.name),
+      `${agent.online ? theme.success("online") : theme.dim("offline")}  ${agent.model ?? "-"}`,
+      agent.purpose,
+      `seen ${age(agent.lastSeenAt, now)} ago`,
+      "",
+      theme.dim("Open work"),
+      ...(related.length === 0 ? [theme.dim("none")] : related.map((message) => `${message.status}  ${message.fromName} → ${message.toName}  ${age(message.createdAt, now)}`)),
+    ];
+  }
+  if (view.tab === "tasks" || view.tab === "workflows") {
+    const runs = view.tab === "tasks"
+      ? snapshot.runs.filter((run) => run.status === "running" || run.status === "waiting")
+      : snapshot.runs;
+    const run = runs[view.selected];
+    if (!run) return [theme.dim("No run selected")];
+    const counts = run.progress ? `${run.progress.done}/${run.progress.total}` : "-";
+    return [
+      theme.accent(run.definitionId),
+      `${run.status}  ${counts}  ${run.currentStage ?? "-"}`,
+      run.id,
+      run.targetAgentName ? `owner ${run.targetAgentName}` : "",
+      "",
+      ...(run.stages ?? []).map((stage) => {
+        const attempts = stage.attempts && stage.attempts > 1 ? `  attempt ${stage.attempts}` : "";
+        return `${stageMark(stage.status, theme)} ${pad(stage.label ?? stage.id, 22)} ${stage.status}${attempts}`;
+      }),
+    ].filter((line) => line !== "");
+  }
+  if (view.tab === "plans") {
+    const plan = snapshot.plans[view.selected];
+    if (!plan) return [theme.dim("No plan selected")];
+    const run = snapshot.runs.find((candidate) => candidate.id === plan.runId);
+    return [
+      theme.accent("Plan"),
+      plan.summary,
+      `run ${plan.runId}`,
+      plan.stageId ? `stage ${plan.stageId}` : "",
+      `${plan.severity ?? "info"}  ${age(plan.createdAt, now)} ago`,
+      "",
+      ...(run?.stages ?? []).map((stage) => `${stageMark(stage.status, theme)} ${stage.label ?? stage.id}`),
+    ].filter((line) => line !== "");
+  }
+  if (view.tab === "inbox") {
+    const message = snapshot.openMessages[view.selected];
+    if (!message) return [theme.dim("No message selected")];
+    return [
+      theme.accent(message.id),
+      `${message.status}  ${message.delivery}`,
+      `${message.fromName} → ${message.toName}`,
+      age(message.createdAt, now),
+      message.correlationId ? `corr ${message.correlationId}` : theme.dim("bodies never shown"),
+    ];
+  }
+  const claim = snapshot.pids[view.selected];
+  if (!claim) return [theme.dim("No process selected")];
+  return [
+    claim.live ? theme.success("live") : theme.error("dead"),
+    claim.role ?? "-",
+    `pid ${claim.pid ?? "-"}`,
+    claim.file,
+  ];
+}
+
+function renderTabBar(snapshot: MeshTuiSnapshot, view: MeshTuiView, theme: MeshTuiTheme): string {
+  return MESH_TUI_PANELS.map((panel, index) => {
+    const label = `${index + 1} ${MESH_TUI_TAB_LABELS[panel]} ${panelMetric(snapshot, panel)}`;
+    return view.tab === panel ? theme.accent(`[${label}]`) : theme.dim(` ${label} `);
+  }).join(" ");
+}
+
+function dataPanel(title: string, metric: string, rows: string[], emptyText: string, theme: MeshTuiTheme): Component {
+  const panel = new Box(1, 0, theme.panelBg);
+  panel.addChild(new Text(`${theme.accent(`▌ ${title}`)}  ${theme.dim(metric)}`, 0, 0));
+  const table = new Container();
+  if (rows.length === 0) {
+    table.addChild(new Text(theme.dim(emptyText), 0, 0));
+  } else {
+    for (const row of rows) table.addChild(new TruncatedText(row, 0, 0));
+  }
+  panel.addChild(table);
+  return panel;
+}
+
+export class MeshDashboard implements Component {
+  readonly root = new VStack([], { gap: 0 });
+  private readonly listContent = new VStack([], { gap: 0 });
+  private readonly listScroll = new ScrollView(this.listContent, { primary: true, overscroll: "contain", scrollbar: "auto" });
+  private readonly detailContent = new VStack([], { gap: 0 });
+  private readonly detailScroll = new ScrollView(this.detailContent, { primary: true, overscroll: "contain", scrollbar: "auto" });
+  private snapshot: MeshTuiSnapshot;
+  private view: MeshTuiView;
+  private readonly color: boolean;
+  private readonly requestRender: () => void;
+  private readonly onQuit: () => void;
+  private readonly getWidth: () => number;
+
+  constructor(
+    snapshot: MeshTuiSnapshot,
+    view: MeshTuiView,
+    color: boolean,
+    requestRender: () => void,
+    onQuit: () => void,
+    getWidth: () => number = () => 120,
+  ) {
+    this.snapshot = snapshot;
+    this.view = view;
+    this.color = color;
+    this.requestRender = requestRender;
+    this.onQuit = onQuit;
+    this.getWidth = getWidth;
+    this.rebuild();
+  }
+
+  update(snapshot: MeshTuiSnapshot): void {
+    this.snapshot = snapshot;
+    this.rebuild();
+    this.requestRender();
+  }
+
+  private activeScroll(): ScrollView {
+    return this.view.pane === "detail" ? this.detailScroll : this.listScroll;
+  }
+
+  private fillPane(target: VStack, rows: string[], empty: string, theme: MeshTuiTheme): void {
+    target.clear();
+    if (rows.length === 0) target.addChild(new Text(theme.dim(empty), 0, 0));
+    else for (const row of rows) target.addChild(new TruncatedText(row, 0, 0));
+  }
+
+  private rebuild(): void {
+    const theme = meshTuiTheme(this.color);
+    const title = new TruncatedText(theme.accent("kxm dash"), 0, 0);
+    const hub = this.snapshot.healthOk ? theme.success("● hub ok") : theme.error("✗ hub down");
+    const ready = this.snapshot.readyOk ? theme.success("● ready") : theme.error("✗ not ready");
+    const agents = visibleAgents(this.snapshot);
+    const online = agents.filter((agent) => agent.online).length;
+    const transport = this.snapshot.transport === "snapshot"
+      ? "snapshot"
+      : this.snapshot.metadataMode === "ops"
+        ? "live ops"
+        : this.snapshot.metadataMode === "legacy"
+          ? "presence/local"
+          : "live";
+    const updated = this.snapshot.fetchedAt.slice(11, 19);
+    const status = new TruncatedText(
+      `${hub}  ${ready}  ${transport}  ${online}/${agents.length} online  ${theme.dim(`updated ${updated} UTC · ${this.snapshot.serverUrl}`)}`,
+      0,
+      0,
+    );
+    const header = new Box(1, 0, theme.headerBg);
+    header.addChild(new HStack([
+      { component: title, basis: 16, shrink: 1, minSize: 10 },
+      { component: status, grow: 1, shrink: 1, minSize: 20 },
+    ], { gap: 2 }));
+
+    const tabs = new Box(1, 0, theme.panelBg);
+    tabs.addChild(new TruncatedText(renderTabBar(this.snapshot, this.view, theme), 0, 0));
+
+    this.fillPane(this.listContent, listLines(this.snapshot, this.view, theme), "Nothing here yet", theme);
+    this.fillPane(this.detailContent, detailLines(this.snapshot, this.view, theme), "Select an item", theme);
+
+    const listTitle = this.view.pane === "list" ? theme.accent("list") : theme.dim("list");
+    const detailTitle = this.view.pane === "detail" ? theme.accent("detail") : theme.dim("detail");
+    const listPane = new Box(1, 0, theme.panelBg);
+    listPane.addChild(new Text(listTitle, 0, 0));
+    listPane.addChild(this.listScroll);
+    const detailPane = new Box(1, 0, theme.panelBg);
+    detailPane.addChild(new Text(detailTitle, 0, 0));
+    detailPane.addChild(this.detailScroll);
+
+    const split = tabSplits(this.view.tab);
+    const body = this.view.help
+      ? (() => {
+        const help = new Box(1, 0, theme.panelBg);
+        help.addChild(new Text(`${theme.accent("kxm dash")}\n1–6 or Tab/[ ] switch tabs · ←→ list/detail · ↑↓ select · PgUp/PgDn scroll · h help · q quit\nAgents, Tasks, Workflows, Plans, Inbox, Procs. Split pane on wide terminals. No message bodies.`, 0, 0));
+        return help;
+      })()
+      : split
+        ? new HStack([
+          { component: listPane, basis: 44, shrink: 1, minSize: 28, visible: ({ width }) => width >= 76 || this.view.pane === "list" },
+          { component: detailPane, grow: 1, shrink: 1, minSize: 28, visible: ({ width }) => width >= 76 || this.view.pane === "detail" },
+        ], { gap: 1 })
+        : listPane;
+
+    const error = this.snapshot.error ? `  ${theme.error(`ERROR ${this.snapshot.error}`)}` : "";
+    const feed = this.snapshot.metadataMode === "legacy" ? "presence + local" : "live";
+    const footer = new TruncatedText(
+      `${theme.dim(`tab ${MESH_TUI_TAB_LABELS[this.view.tab]} · ${this.view.pane} · 1–6 tabs · ←→ panes · h help · q quit · ${feed}`)}${error}`,
+      1,
+      0,
+    );
+
+    this.root.clear();
+    this.root.addChild(header, { basis: "auto", shrink: 0 });
+    this.root.addChild(tabs, { basis: "auto", shrink: 0 });
+    this.root.addChild(body, { basis: "auto", grow: 1, shrink: 1, minSize: 1 });
+    this.root.addChild(footer, { basis: "auto", shrink: 0 });
+  }
+
+  handleInput(data: string): void {
+    const viewport = this.activeScroll().viewportHeight;
+    const page = viewport > 3 ? viewport - 2 : 10;
+    if (matchesKey(data, Key.pageUp) || matchesKey(data, Key.ctrl("u"))) {
+      this.activeScroll().scrollBy(-page);
+      this.requestRender();
+      return;
+    }
+    if (matchesKey(data, Key.pageDown) || matchesKey(data, Key.ctrl("d"))) {
+      this.activeScroll().scrollBy(page);
+      this.requestRender();
+      return;
+    }
+    const next = applyMeshTuiKey(this.view, data, tabItemCount(this.snapshot, this.view.tab));
+    if (next === "quit") {
+      this.onQuit();
+      return;
+    }
+    if (next !== this.view) {
+      this.view = next;
+      this.rebuild();
+      this.requestRender();
+    }
+  }
+
+  invalidate(): void {
+    this.root.invalidate();
+  }
+
+  render(width: number): string[] {
+    return this.root.render(width);
+  }
+}
+
+export function renderMeshTui(snapshot: MeshTuiSnapshot, view: MeshTuiView = defaultMeshTuiView(), width = 120): string {
+  const dashboard = new MeshDashboard(snapshot, view, false, () => undefined, () => undefined);
+  return `${dashboard.render(width).map(stripTerminalSequences).join("\n")}\n`;
+}
+
+async function readJson<T>(response: Response): Promise<T> {
+  return await response.json() as T;
+}
+
+async function waitForReconnect(signal: AbortSignal, milliseconds = 1_000): Promise<void> {
+  if (signal.aborted) return;
+  await new Promise<void>((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, milliseconds);
+    timer.unref();
+    signal.addEventListener("abort", done, { once: true });
+  });
+}
+
+export async function runMeshTui(input: {
+  serverUrl: string;
+  dataPath: string;
+  stateDir: string;
+  project: string;
+  authToken?: string;
+  fetchImpl: typeof fetch;
+  stdout: (text: string) => void;
+  stdin?: NodeJS.ReadStream;
+  isTty?: boolean;
+  now?: () => Date;
+  abort?: AbortSignal;
+  terminal?: Terminal;
+  reconnectMs?: number;
+  screen?: MeshTuiPanel;
+}): Promise<number> {
+  const base = input.serverUrl.replace(/\/$/, "");
+  const headers = (identity?: { id: string; key: string }): Record<string, string> => ({
+    "content-type": "application/json",
+    ...(input.authToken ? { authorization: `Bearer ${input.authToken}` } : {}),
+    ...(identity ? { "x-mesh-agent-id": identity.id, "x-mesh-agent-key": identity.key } : {}),
+  });
+  const tty = input.isTty ?? Boolean(input.stdin?.isTTY && process.stdout.isTTY);
+  let identity: { id: string; key: string } | undefined;
+  let useOpsStream = true;
+  let interactive: { tui: TUI; dashboard: MeshDashboard } | undefined;
+  const name = `kxm-tui-${process.pid}`;
+  const view = defaultMeshTuiView(input.screen);
+
+  const paint = (snapshot: MeshTuiSnapshot) => {
+    if (interactive) {
+      interactive.dashboard.update(snapshot);
+      return;
+    }
+    input.stdout(renderMeshTui(snapshot, view));
+  };
+
+  const snapshotFromHub = async (transport: "sse" | "snapshot", extra?: Partial<MeshTuiSnapshot>): Promise<MeshTuiSnapshot> => {
+    const fetchedAt = (input.now?.() ?? new Date()).toISOString();
+    let healthOk = false;
+    let readyOk = false;
+    let storage: string | undefined;
+    let onlineCount = 0;
+    let error: string | undefined;
+    try {
+      const health = await input.fetchImpl(`${base}/health`);
+      const body = await readJson<{ ok?: boolean; agents?: number }>(health);
+      healthOk = health.ok && body.ok === true;
+      onlineCount = Number.isInteger(body.agents) ? body.agents as number : 0;
+    } catch {
+      error = "hub_unreachable";
+    }
+    try {
+      const ready = await input.fetchImpl(`${base}/ready`);
+      const body = await readJson<{ ok?: boolean; storage?: string }>(ready);
+      readyOk = ready.ok && body.ok === true;
+      storage = body.storage;
+    } catch {
+      error = error ?? "hub_unreachable";
+    }
+    let local = loadLocalMeshSnapshot(input.dataPath, input.stateDir);
+    if (useOpsStream) {
+      try {
+        const ops = await input.fetchImpl(`${base}/v1/ops/snapshot?project=${encodeURIComponent(input.project)}`, {
+          headers: headers(),
+        });
+        if (ops.ok) {
+          const body = await readJson<{
+            agents: AgentRecord[];
+            openMessages: MeshTuiSnapshot["openMessages"];
+            openMessageTotal: number;
+            runs: MeshTuiSnapshot["runs"];
+            runTotal: number;
+            plans?: MeshTuiPlan[];
+          }>(ops);
+          local = {
+            ...local,
+            agents: body.agents,
+            openMessages: body.openMessages,
+            openMessageTotal: body.openMessageTotal,
+            runs: body.runs,
+            runTotal: body.runTotal,
+            plans: body.plans ?? local.plans,
+          };
+        } else if (ops.status === 401 || ops.status === 403 || ops.status === 404 || ops.status === 503) {
+          useOpsStream = false;
+        } else {
+          error = error ?? `ops_snapshot_http_${ops.status}`;
+        }
+      } catch {
+        error = error ?? "ops_snapshot_unreachable";
+      }
+    }
+    if (!useOpsStream && identity) {
+      try {
+        const listed = await input.fetchImpl(`${base}/v1/agents`, { headers: headers(identity) });
+        if (listed.ok) {
+          const body = await readJson<{ agents: AgentRecord[] }>(listed);
+          const byId = new Map(local.agents.map((agent) => [agent.id, agent]));
+          for (const agent of body.agents) byId.set(agent.id, agent);
+          local = {
+            ...local,
+            agents: [...byId.values()].sort((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name)),
+          };
+        }
+      } catch {
+        error = error ?? "agents_unreachable";
+      }
+    }
+    return {
+      serverUrl: input.serverUrl,
+      healthOk,
+      readyOk,
+      ...(storage ? { storage } : {}),
+      onlineCount,
+      transport,
+      metadataMode: useOpsStream ? "ops" : "legacy",
+      fetchedAt,
+      ...(error ? { error } : {}),
+      ...local,
+      ...extra,
+    };
+  };
+
+  const registerObserver = async () => {
+    if (identity) return;
+    const registration = await input.fetchImpl(`${base}/v1/agents/register`, {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify({
+        name,
+        purpose: "Read-only mesh observer TUI",
+        project: input.project,
+        model: "kxm-tui",
+      }),
+    });
+    if (!registration.ok) throw new Error(`observer registration failed with HTTP ${registration.status}`);
+    const registered = await readJson<{ agent: AgentRecord; agentKey: string }>(registration);
+    identity = { id: registered.agent.id, key: registered.agentKey };
+  };
+
+  const unregister = async () => {
+    if (!identity) return;
+    const registeredIdentity = identity;
+    identity = undefined;
+    await input.fetchImpl(`${base}/v1/agents/${encodeURIComponent(registeredIdentity.id)}`, {
+      method: "DELETE",
+      headers: headers(registeredIdentity),
+    }).catch(() => undefined);
+  };
+
+  try {
+    let snapshot = await snapshotFromHub("sse");
+    if (!useOpsStream) {
+      try {
+        await registerObserver();
+      } catch (error) {
+        const failed = await snapshotFromHub("snapshot", {
+          error: error instanceof Error ? error.message : "observer registration failed",
+        });
+        paint(failed);
+        return 1;
+      }
+      snapshot = await snapshotFromHub("sse");
+    }
+    if (!tty) {
+      paint(snapshot);
+      return snapshot.healthOk ? 0 : 1;
+    }
+
+    const abort = new AbortController();
+    const onAbort = () => abort.abort();
+    input.abort?.addEventListener("abort", onAbort);
+    if (input.abort?.aborted) abort.abort();
+
+    const terminal = input.terminal ?? new ProcessTerminal();
+    const tui = new TuiAltScreen(terminal, false, undefined, { mouse: true });
+    const dashboard = new MeshDashboard(
+      snapshot,
+      view,
+      process.env.NO_COLOR === undefined,
+      () => tui.requestRender(),
+      () => abort.abort(),
+      () => terminal.columns,
+    );
+    interactive = { tui, dashboard };
+    tui.setLayoutRoot(dashboard.root);
+    tui.setFocus(dashboard);
+    tui.start();
+
+    const applyPresence = (agent: AgentRecord) => {
+      const byId = new Map(snapshot.agents.map((row) => [row.id, row]));
+      byId.set(agent.id, agent);
+      const { error: _staleError, ...healthySnapshot } = snapshot;
+      snapshot = {
+        ...healthySnapshot,
+        transport: "sse",
+        fetchedAt: (input.now?.() ?? new Date()).toISOString(),
+        agents: [...byId.values()].sort((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name)),
+        onlineCount: [...byId.values()].filter((row) => row.online).length,
+      };
+    };
+
+    try {
+      while (!abort.signal.aborted) {
+        let events: Response;
+        try {
+          if (!useOpsStream && !identity) throw new Error("legacy SSE requires an observer identity");
+          const eventUrl = useOpsStream
+            ? `${base}/v1/ops/events?project=${encodeURIComponent(input.project)}`
+            : `${base}/v1/events?agentId=${encodeURIComponent(identity!.id)}&presenceOnly=true`;
+          events = await input.fetchImpl(eventUrl, {
+            headers: { ...headers(useOpsStream ? undefined : identity!), accept: "text/event-stream" },
+            signal: abort.signal,
+          });
+        } catch (error) {
+          if (abort.signal.aborted) break;
+          snapshot = await snapshotFromHub("snapshot", { error: error instanceof Error ? `sse_${error.message}` : "sse_unreachable" });
+          paint(snapshot);
+          await waitForReconnect(abort.signal, input.reconnectMs);
+          continue;
+        }
+        if (useOpsStream && (events.status === 401 || events.status === 403 || events.status === 404 || events.status === 503)) {
+          useOpsStream = false;
+          try {
+            await registerObserver();
+          } catch {
+            snapshot = await snapshotFromHub("snapshot", {
+              error: "live metadata access was lost and legacy observer registration failed",
+            });
+            paint(snapshot);
+            break;
+          }
+          snapshot = await snapshotFromHub("snapshot", {
+            error: "admin metadata stream unavailable; using legacy presence and local snapshots",
+          });
+          paint(snapshot);
+          continue;
+        }
+        if (!useOpsStream && events.ok && events.headers.get("x-mesh-events-mode") !== "presence") {
+          await events.body?.cancel();
+          snapshot = await snapshotFromHub("snapshot", {
+            error: "hub does not support metadata-only presence SSE; live fallback disabled",
+          });
+          paint(snapshot);
+          break;
+        }
+        if (!events.ok || !events.body) {
+          snapshot = await snapshotFromHub("snapshot", { error: `sse_http_${events.status}` });
+          paint(snapshot);
+          await waitForReconnect(abort.signal, input.reconnectMs);
+          continue;
+        }
+        if (snapshot.error || snapshot.transport !== "sse") {
+          const { error: _staleError, ...healthySnapshot } = snapshot;
+          snapshot = {
+            ...healthySnapshot,
+            transport: "sse",
+            fetchedAt: (input.now?.() ?? new Date()).toISOString(),
+          };
+          paint(snapshot);
+        }
+        const reader = events.body.getReader();
+        const decoder = new TextDecoder();
+        let pending = "";
+        while (!abort.signal.aborted) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          pending += decoder.decode(value, { stream: true });
+          const parts = pending.split("\n\n");
+          pending = parts.pop() ?? "";
+          for (const part of parts) {
+            if (part.startsWith(":")) continue;
+            const lines = part.split("\n");
+            const eventLine = lines.find((line) => line.startsWith("event:"));
+            if (!useOpsStream && eventLine?.slice(6).trim() !== "presence") continue;
+            const dataLine = lines.find((line) => line.startsWith("data:"));
+            if (!dataLine) continue;
+            let parsed: { type?: "ops" | "presence"; agent?: AgentRecord; project?: string; topic?: string; at?: string };
+            try {
+              parsed = JSON.parse(dataLine.slice(5).trim()) as typeof parsed;
+            } catch {
+              continue;
+            }
+            if ("type" in parsed && parsed.type === "ops") {
+              snapshot = await snapshotFromHub("sse");
+              paint(snapshot);
+            } else if ("type" in parsed && parsed.type === "presence" && parsed.agent) {
+              applyPresence(parsed.agent);
+              const local = loadLocalMeshSnapshot(input.dataPath, input.stateDir);
+              snapshot = {
+                ...snapshot,
+                openMessages: local.openMessages,
+                openMessageTotal: local.openMessageTotal,
+                runs: local.runs,
+                runTotal: local.runTotal,
+                pids: local.pids,
+              };
+              paint(snapshot);
+            }
+          }
+        }
+        if (!abort.signal.aborted) {
+          snapshot = await snapshotFromHub("snapshot", { error: "sse_reconnecting" });
+          paint(snapshot);
+          await waitForReconnect(abort.signal, input.reconnectMs);
+        }
+      }
+    } catch (error) {
+      if (!abort.signal.aborted) throw error;
+    } finally {
+      input.abort?.removeEventListener("abort", onAbort);
+      tui.stop();
+      interactive = undefined;
+    }
+    return 0;
+  } catch (error) {
+    const failed = await snapshotFromHub("snapshot", {
+      error: error instanceof Error ? error.message : "tui_failed",
+    });
+    paint(failed);
+    return 1;
+  } finally {
+    await unregister();
+  }
+}

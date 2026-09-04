@@ -4,12 +4,12 @@
 
 | Surface | Name today | Should be |
 |---|---|---|
-| npm package | `@kontextmind/pi-extensions` | keep until a real 0.5 rename |
-| bin | `kxm`, `pi-mesh-hub`, `pi-mesh-worker` | `kxm` only; hub/worker via `kxm mesh hub` / `kxm agent worker` |
-| Claude plugin | `kxm-mesh` | `kxm` (core) + later `kxm-mesh` add-on for non-localhost |
-| Pi extension path | `plugins/kxm-mesh/src/extension.ts` | same folder until split |
-| Skill | `plugins/kxm-mesh/skills/kxm-mesh` | `kxm` operator skill + `kxm-mesh` peer-protocol skill |
-| Env | `PI_MESH_*` | keep (compat); document as mesh transport, not CLI name |
+| npm package | `@kontextmind/kxm` | keep until a real 0.5 rename |
+| bin | `kxm`, `kxm-hub`, `kxm-worker` | `kxm` only; hub/worker via `kxm mesh hub` / `kxm agent worker` |
+| Claude plugin | `kxm` | `kxm` (core) + later `kxm` add-on for non-localhost |
+| Pi extension path | `plugins/kxm/src/extension.ts` | same folder until split |
+| Skill | `plugins/kxm/skills/kxm` | `kxm` operator skill + `kxm` peer-protocol skill |
+| Env | `KXM_*` | keep (compat); document as mesh transport, not CLI name |
 
 ## Local vs mesh
 
@@ -24,7 +24,7 @@ SSSF already had two backends (`claude_code` vs `pi`) per agent. kxm should have
 
 ## Skill rewrite (owed)
 
-The skill still starts “Call `mesh_list`”. Add a front-matter section:
+The skill still starts “Call `kxm_list`”. Add a front-matter section:
 
 1. If the user is an operator → `kxm …`
 2. If you are a peer agent → `mesh_*`

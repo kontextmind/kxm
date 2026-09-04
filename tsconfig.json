@@ -13,5 +13,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["plugins/kxm-mesh/src/**/*.ts", "test/**/*.ts", "examples/**/*.ts"]
+  "include": ["plugins/kxm/src/**/*.ts", "test/**/*.ts", "examples/**/*.ts"]
 }

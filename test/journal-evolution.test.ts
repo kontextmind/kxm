@@ -12,8 +12,8 @@ import {
   parseJournalCategory,
   type JournalCategory,
   type WorkflowJournalEntry,
-} from "../plugins/kxm-mesh/src/workflow.ts";
-import { buildRetrospective } from "../plugins/kxm-mesh/src/retrospective.ts";
+} from "../plugins/kxm/src/workflow.ts";
+import { buildRetrospective } from "../plugins/kxm/src/retrospective.ts";
 
 function entry(overrides: Record<string, unknown> = {}): WorkflowJournalEntry {
   return {

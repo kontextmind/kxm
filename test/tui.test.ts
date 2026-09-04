@@ -5,8 +5,8 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import type { Terminal } from "@earendil-works/pi-tui";
-import { runCli } from "../plugins/kxm-mesh/src/cli.ts";
-import { applyMeshTuiKey, defaultMeshTuiView, loadLocalMeshSnapshot, MeshDashboard, renderMeshTui, runMeshTui, type MeshTuiSnapshot } from "../plugins/kxm-mesh/src/tui.ts";
+import { runCli } from "../plugins/kxm/src/cli.ts";
+import { applyMeshTuiKey, defaultMeshTuiView, loadLocalMeshSnapshot, MeshDashboard, renderMeshTui, runMeshTui, type MeshTuiSnapshot } from "../plugins/kxm/src/tui.ts";
 
 function capture() {
   let stdout = "";
@@ -22,11 +22,11 @@ function capture() {
   };
 }
 
-test("mesh tui dry-run does not open SSE", async () => {
+test("kxm dash dry-run does not open SSE", async () => {
   const io = capture();
-  assert.equal(await runCli(["mesh", "--json", "--dry-run", "tui"], {}, io), 0);
+  assert.equal(await runCli(["dash", "--json", "--dry-run"], {}, io), 0);
   const payload = JSON.parse(io.read().stdout) as { command: string; dryRun: boolean; transport: string };
-  assert.equal(payload.command, "tui");
+  assert.equal(payload.command, "dash");
   assert.equal(payload.dryRun, true);
   assert.equal(payload.transport, "sse");
 });
@@ -88,8 +88,10 @@ test("non-TTY dashboard prefers the authenticated metadata-only ops snapshot", a
       now: () => new Date("2026-08-27T14:00:00.000Z"),
     });
     assert.equal(code, 0);
-    assert.match(output, /msg_ops_live/);
+    assert.match(output, /kxm dash/);
     assert.match(output, /worker/);
+    assert.match(output, /reviewer/);
+    assert.match(output, /sender → worker/);
     assert.doesNotMatch(output, /message body|password/i);
     assert.ok(requested.some((url) => url.includes("/v1/ops/snapshot")));
     assert.equal(requested.some((url) => url.endsWith("/v1/agents/register")), false, "admin ops mode must not register a synthetic observer agent");
@@ -278,6 +280,7 @@ const snapshot: MeshTuiSnapshot = {
   openMessageTotal: 1,
   runs: [{ id: "run_hidden", status: "running", definitionId: "review", project: "payk12" }],
   runTotal: 1,
+  plans: [],
   pids: [],
 };
 
@@ -296,9 +299,9 @@ test("renderMeshTui omits message bodies, hides observer identities, and shows a
       online: true,
     }],
   });
+  assert.match(frame, /kxm dash/);
   assert.match(frame, /fable/);
   assert.match(frame, /live/);
-  assert.match(frame, /delivered/);
   assert.doesNotMatch(frame, /secret body|password/i);
   assert.doesNotMatch(frame, /msg content/);
   assert.doesNotMatch(frame, /kxm-tui-123/, "the observer must not pollute agent rows or counts");
@@ -306,34 +309,31 @@ test("renderMeshTui omits message bodies, hides observer identities, and shows a
   assert.doesNotMatch(frame, /\u001b\[/, "non-TTY snapshot must not contain ANSI controls");
 });
 
-test("panel shortcuts toggle the requested dashboard panel", () => {
+test("number keys switch tabs instead of stacking panels", () => {
   const initial = defaultMeshTuiView();
+  assert.equal(initial.tab, "agents");
   assert.doesNotMatch(renderMeshTui(snapshot, initial), /run_hidden/);
   const changed = applyMeshTuiKey(initial, "3");
   assert.notEqual(changed, "quit");
-  if (changed === "quit") assert.fail("panel shortcut unexpectedly quit");
+  if (changed === "quit") assert.fail("tab shortcut unexpectedly quit");
+  assert.equal(changed.tab, "workflows");
   assert.match(renderMeshTui(snapshot, changed), /run_hidden/);
-  const stillOpen = applyMeshTuiKey(changed, "3");
-  assert.notEqual(stillOpen, "quit");
-  if (stillOpen === "quit") assert.fail("panel shortcut unexpectedly quit");
-  assert.equal(stillOpen.open.runs, true, "number keys reveal rather than hide an open panel");
   assert.equal(applyMeshTuiKey(initial, "\u001b"), "quit");
   const help = { ...initial, help: true };
   assert.deepEqual(applyMeshTuiKey(help, "\u001b"), { ...help, help: false });
 });
 
-test("dashboard reports capped totals without undercounting", () => {
-  const frame = renderMeshTui({ ...snapshot, openMessageTotal: 10 });
-  assert.match(frame, /Messages \(1\/10\)/);
-  assert.match(frame, /… \+9 more/);
+test("inbox tab reports capped open-message totals", () => {
+  const frame = renderMeshTui({ ...snapshot, openMessageTotal: 10 }, defaultMeshTuiView("inbox"));
+  assert.match(frame, /Inbox 1\/10/);
 });
 
 test("dashboard respects narrow terminal width", () => {
   const frame = renderMeshTui(snapshot, defaultMeshTuiView(), 60);
   for (const line of frame.trimEnd().split("\n")) assert.ok(line.length <= 60, `${line.length}: ${line}`);
   assert.match(frame, /Agents/);
-  assert.doesNotMatch(frame, /PANELS/, "sidebar is hidden below the responsive breakpoint");
-  assert.match(frame, /h help/, "narrow layout keeps help discoverable");
+  assert.doesNotMatch(frame, /PANELS/);
+  assert.match(frame, /h help/);
 });
 
 test("interactive dashboard uses the shared key reducer", () => {
@@ -344,7 +344,7 @@ test("interactive dashboard uses the shared key reducer", () => {
   });
   dashboard.handleInput("3");
   assert.match(dashboard.render(100).join("\n"), /run_hidden/);
-  dashboard.handleInput(" ");
+  dashboard.handleInput("1");
   assert.doesNotMatch(dashboard.render(100).join("\n"), /run_hidden/);
   dashboard.handleInput("h");
   dashboard.handleInput("\u001b");
@@ -356,7 +356,7 @@ test("interactive dashboard uses the shared key reducer", () => {
 
 test("SQLite snapshot projects message metadata without retaining bodies", () => {
   const root = mkdtempSync(join(tmpdir(), "kxm-tui-privacy-"));
-  const dataPath = join(root, "mesh.db");
+  const dataPath = join(root, "kxm.db");
   const stateDir = join(root, "state");
   const database = new DatabaseSync(dataPath);
   try {

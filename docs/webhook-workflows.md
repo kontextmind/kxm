@@ -41,8 +41,8 @@ Load it without storing its secret in the JSON file:
 ```powershell
 $env:JIRA_WEBHOOK_SECRET = "replace-with-a-high-entropy-secret"
 $env:WORKFLOW_SIGNAL_SECRET = "replace-with-a-separate-callback-secret"
-$env:PI_MESH_WEBHOOK_WORKFLOWS_FILE = ".kxm/config/workflows/jira-development.json"
-kxm mesh hub
+$env:KXM_WEBHOOK_WORKFLOWS_FILE = ".kxm/config/workflows/jira-development.json"
+kxm hub start
 ```
 
 Configure Jira to send `jira:issue_updated` to:
@@ -60,16 +60,16 @@ Webhook authentication authorizes only workflow creation. The Jira-update stage 
 Install the Pi package, then configure a stable identity that matches the workflow target:
 
 ```powershell
-$env:PI_MESH_SERVER_URL = "http://127.0.0.1:7331"
-$env:PI_MESH_AUTH_TOKEN = "product-project-token"
-$env:PI_MESH_PROJECT = "product"
-$env:PI_MESH_AGENT_NAME = "coordinator"
-$env:PI_MESH_AGENT_PURPOSE = "Coordinates Jira development workflows and quality gates"
-$env:PI_MESH_WORKDIR = "D:\work\product-repository"
+$env:KXM_SERVER_URL = "http://127.0.0.1:7331"
+$env:KXM_AUTH_TOKEN = "product-project-token"
+$env:KXM_PROJECT = "product"
+$env:KXM_AGENT_NAME = "coordinator"
+$env:KXM_AGENT_PURPOSE = "Coordinates Jira development workflows and quality gates"
+$env:KXM_WORKDIR = "D:\work\product-repository"
 kxm agent worker --session-isolation workflow
 ```
 
-Workflow isolation is explicit during the upgrade-compatible release and begins fresh scoped storage on first use. The worker launches Pi in headless RPC mode, keeps stdin open, preserves its active bound session by default, and restarts with bounded exponential backoff. Run the worker itself under the operating system's service manager for boot startup, resource limits, log collection, and crash policy. Set `PI_MESH_WORKER_CONTINUE=false` only when every process restart should create a fresh Pi session.
+Workflow isolation is explicit during the upgrade-compatible release and begins fresh scoped storage on first use. The worker launches Pi in headless RPC mode, keeps stdin open, preserves its active bound session by default, and restarts with bounded exponential backoff. Run the worker itself under the operating system's service manager for boot startup, resource limits, log collection, and crash policy. Set `KXM_WORKER_CONTINUE=false` only when every process restart should create a fresh Pi session.
 
 ## Workflow definition fields
 
@@ -100,11 +100,11 @@ included or the unique resolved set cannot satisfy the configured minimum.
 See [Peer provenance and quorum gates](provenance-gates.md) for the complete
 schema and command-first example.
 
-Use `PI_MESH_WEBHOOK_WORKFLOWS` for inline JSON or `PI_MESH_WEBHOOK_WORKFLOWS_FILE` for a file, never both. Prefer `secretEnv` over a literal `secret`.
+Use `KXM_WEBHOOK_WORKFLOWS` for inline JSON or `KXM_WEBHOOK_WORKFLOWS_FILE` for a file, never both. Prefer `secretEnv` over a literal `secret`.
 
 ## Pause for CI, review, merge, or Jira
 
-A coordinator should not hold an agent turn open while an external system runs for minutes or hours. On the active stage, call `mesh_workflow_wait` with:
+A coordinator should not hold an agent turn open while an external system runs for minutes or hours. On the active stage, call `kxm_workflow_wait` with:
 
 - the run and active stage IDs;
 - a stable `signalKey`, such as `github-pr-42-checks`;
@@ -149,10 +149,10 @@ Callback responses deliberately expose only status, stage, retry, completion, re
 The repository includes a small callback sender for smoke tests and automation adapters:
 
 ```powershell
-$env:PI_MESH_SERVER_URL = "https://your-mesh-host.example"
-$env:PI_MESH_WORKFLOW_ID = "jira-development"
-$env:PI_MESH_WORKFLOW_SIGNAL_SECRET = "replace-with-the-callback-secret"
-$env:PI_MESH_SIGNAL_DELIVERY_ID = "github-check-run-123-attempt-1"
+$env:KXM_SERVER_URL = "https://your-mesh-host.example"
+$env:KXM_WORKFLOW_ID = "jira-development"
+$env:KXM_WORKFLOW_SIGNAL_SECRET = "replace-with-the-callback-secret"
+$env:KXM_SIGNAL_DELIVERY_ID = "github-check-run-123-attempt-1"
 node --experimental-strip-types examples/workflow-signal.ts `
   run_123 github-pr-42-checks passed "All required checks passed" `
   "github.check:ci=https://github.example/org/repo/actions/runs/123"
@@ -163,8 +163,8 @@ In a real integration, store the `runId` and `signalKey` in Jira, pull-request m
 To watch GitHub checks and post that same signal, use the command-first adapter:
 
 ```powershell
-$env:PI_MESH_WORKFLOW_ID = "jira-development"
-$env:PI_MESH_WORKFLOW_SIGNAL_SECRET = "replace-with-the-callback-secret"
+$env:KXM_WORKFLOW_ID = "jira-development"
+$env:KXM_WORKFLOW_SIGNAL_SECRET = "replace-with-the-callback-secret"
 $env:GITHUB_TOKEN = "replace-with-a-checks-read-token"
 kxm gate github watch --run-id run_123 --stage-id watch --signal-key github-pr-42-checks --repo org/repo --pr 42 --required ci --timeout-ms 3600000
 ```

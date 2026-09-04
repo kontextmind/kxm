@@ -22,14 +22,14 @@ import {
   validateContextPacketContents,
   type ContextItem,
   type ContextPacket,
-} from "../plugins/kxm-mesh/src/context.ts";
+} from "../plugins/kxm/src/context.ts";
 import {
   ContextProviderRegistry,
   type ContextProvider,
   type StateChangeProposal,
   type StateProvider,
-} from "../plugins/kxm-mesh/src/context/providers.ts";
-import { MeshStore } from "../plugins/kxm-mesh/src/store.ts";
+} from "../plugins/kxm/src/context/providers.ts";
+import { MeshStore } from "../plugins/kxm/src/store.ts";
 
 function item(overrides: Record<string, unknown> = {}): ContextItem {
   return parseContextItem({
@@ -250,7 +250,7 @@ test("state provider seam carries the v1 proposal schema", () => {
 
 test("context items persist project-isolated across restarts", () => {
   const directory = mkdtempSync(join(tmpdir(), "kxm-context-"));
-  const path = join(directory, "mesh.db");
+  const path = join(directory, "kxm.db");
   try {
     const first = new MeshStore(path);
     first.saveContextItem(item({ id: "ctx_keep", project: "kxm" }));

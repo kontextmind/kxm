@@ -10,15 +10,15 @@ import {
   VnextConfigError,
   loadVnextProject,
   planVnextInitialization,
-} from "../plugins/kxm-mesh/src/vnext-config.ts";
+} from "../plugins/kxm/src/vnext-config.ts";
 import {
   applyVnextMigration,
   parseLegacyJson,
   planVnextMigration,
   verifyVnextMigration,
   type VnextMigrationPlanResult,
-} from "../plugins/kxm-mesh/src/vnext-migrate.ts";
-import type { JsonObject, JsonValue } from "../plugins/kxm-mesh/src/vnext-config.ts";
+} from "../plugins/kxm/src/vnext-migrate.ts";
+import type { JsonObject, JsonValue } from "../plugins/kxm/src/vnext-config.ts";
 
 function makeGitRoot(root: string): void {
   const initialized = spawnSync("git", ["-c", "init.defaultBranch=main", "init", "--quiet", root], { encoding: "utf8", windowsHide: true });

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
-import { parseWorkflowDefinitions } from "../plugins/kxm-mesh/src/workflow.ts";
+import { parseWorkflowDefinitions } from "../plugins/kxm/src/workflow.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -49,10 +49,10 @@ test("Jira development workflow example is valid and covers the complete lifecyc
 test("repository provenance quorum workflow parses with its declared peer policies", () => {
   const raw = readFileSync(".kxm/config/workflows/provenance-quorum.json", "utf8");
   const [workflow] = parseWorkflowDefinitions(raw, {
-    PI_MESH_V04_WORKFLOW_SECRET: "repository-provenance-start-secret",
-    PI_MESH_V04_SIGNAL_SECRET: "repository-provenance-signal-secret",
+    KXM_V04_WORKFLOW_SECRET: "repository-provenance-start-secret",
+    KXM_V04_SIGNAL_SECRET: "repository-provenance-signal-secret",
   });
-  assert.equal(workflow!.id, "pi-extensions-provenance");
+  assert.equal(workflow!.id, "kxm-provenance");
   assert.equal(workflow!.target, "provenance-coordinator");
   assert.equal(workflow!.stages.find((stage) => stage.id === "plan")!
     .evidencePolicies?.["independent plan message ids"]?.minProducers, 2);
@@ -63,7 +63,7 @@ test("repository provenance quorum workflow parses with its declared peer polici
 test("provenance example and command-first guide share one runnable topology", () => {
   const raw = readFileSync("examples/provenance-workflow.json", "utf8");
   const [workflow] = parseWorkflowDefinitions(raw, {
-    PI_MESH_WORKFLOW_SECRET: "example-provenance-secret-value",
+    KXM_WORKFLOW_SECRET: "example-provenance-secret-value",
   });
   assert.equal(workflow!.id, "provenance-review");
   assert.equal(workflow!.project, "provenance-demo");

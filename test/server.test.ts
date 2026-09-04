@@ -9,22 +9,22 @@ test("hub wrapper uses an idempotent graceful stop and keeps workspace state und
   const workdir = mkdtempSync(join(tmpdir(), "pi-mesh-server-"));
   const environment = { ...process.env };
   for (const key of [
-    "PI_MESH_WORKSPACE_DIR",
-    "PI_MESH_CONFIG_DIR",
-    "PI_MESH_LOGS_DIR",
-    "PI_MESH_ASSETS_DIR",
-    "PI_MESH_STATE_DIR",
-    "PI_MESH_DATA_PATH",
-    "PI_MESH_LOG_PATH",
-    "PI_MESH_WEBHOOK_WORKFLOWS",
-    "PI_MESH_WEBHOOK_WORKFLOWS_FILE",
+    "KXM_WORKSPACE_DIR",
+    "KXM_CONFIG_DIR",
+    "KXM_LOGS_DIR",
+    "KXM_ASSETS_DIR",
+    "KXM_STATE_DIR",
+    "KXM_DATA_PATH",
+    "KXM_LOG_PATH",
+    "KXM_WEBHOOK_WORKFLOWS",
+    "KXM_WEBHOOK_WORKFLOWS_FILE",
   ]) delete environment[key];
   Object.assign(environment, {
-    PI_MESH_HOST: "127.0.0.1",
-    PI_MESH_PORT: "0",
-    PI_MESH_AUTH_TOKEN: "server-workspace-test-token",
+    KXM_HOST: "127.0.0.1",
+    KXM_PORT: "0",
+    KXM_AUTH_TOKEN: "server-workspace-test-token",
   });
-  const child = spawn(process.execPath, [resolve("scripts/pi-mesh-hub.mjs")], {
+  const child = spawn(process.execPath, [resolve("scripts/kxm-hub.mjs")], {
     cwd: workdir,
     env: environment,
     stdio: ["ignore", "pipe", "pipe"],
@@ -38,7 +38,7 @@ test("hub wrapper uses an idempotent graceful stop and keeps workspace state und
     const url = await new Promise<string>((resolveUrl, reject) => {
       const timeout = setTimeout(() => reject(new Error(`hub did not start: ${stdout}\n${stderr}`)), 5_000);
       const inspect = () => {
-        const match = stdout.match(/kxm mesh hub listening at (http:\/\/[^;]+);/);
+        const match = stdout.match(/kxm hub listening at (http:\/\/[^;]+);/);
         if (!match) return;
         clearTimeout(timeout);
         resolveUrl(match[1]!);
@@ -54,7 +54,7 @@ test("hub wrapper uses an idempotent graceful stop and keeps workspace state und
     const pidPath = join(stateDir, "hub.pid");
     const recordText = readFileSync(pidPath, "utf8");
     const record = JSON.parse(recordText) as { startedAt: string };
-    const duplicate = spawn(process.execPath, [resolve("scripts/pi-mesh-hub.mjs")], {
+    const duplicate = spawn(process.execPath, [resolve("scripts/kxm-hub.mjs")], {
       cwd: workdir,
       env: environment,
       stdio: ["ignore", "pipe", "pipe"],
@@ -71,8 +71,8 @@ test("hub wrapper uses an idempotent graceful stop and keeps workspace state und
     const root = join(workdir, ".kxm");
     assert.equal(existsSync(join(root, "config")), true);
     assert.equal(existsSync(join(root, "assets")), true);
-    assert.equal(existsSync(join(root, "state", "mesh.db")), true);
-    const logPath = join(root, "logs", "pi-mesh-hub.jsonl");
+    assert.equal(existsSync(join(root, "state", "kxm.db")), true);
+    const logPath = join(root, "logs", "kxm-hub.jsonl");
     assert.equal(existsSync(logPath), true);
     const logs = readFileSync(logPath, "utf8");
     assert.match(logs, /"event":"hub_started"/);
@@ -100,14 +100,14 @@ test("concurrent hub wrappers never replace an unverifiable stale PID claim", as
   writeFileSync(pidPath, staleRecord);
   const environment = {
     ...process.env,
-    PI_MESH_WORKDIR: workdir,
-    PI_MESH_HOST: "127.0.0.1",
-    PI_MESH_PORT: "0",
-    PI_MESH_AUTH_TOKEN: "server-workspace-test-token",
+    KXM_WORKDIR: workdir,
+    KXM_HOST: "127.0.0.1",
+    KXM_PORT: "0",
+    KXM_AUTH_TOKEN: "server-workspace-test-token",
   };
   try {
     const launch = () => new Promise<{ code: number | null; stderr: string }>((resolveExit) => {
-      const child = spawn(process.execPath, [resolve("scripts/pi-mesh-hub.mjs")], {
+      const child = spawn(process.execPath, [resolve("scripts/kxm-hub.mjs")], {
         cwd: workdir,
         env: environment,
         stdio: ["ignore", "ignore", "pipe"],

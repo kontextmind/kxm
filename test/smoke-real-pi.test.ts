@@ -5,7 +5,7 @@ import test from "node:test";
 test("real multi-Pi smoke skips unless explicitly enabled", async () => {
   const result = await new Promise<{ code: number | null; stdout: string }>((resolve) => {
     const child = spawn(process.execPath, ["scripts/smoke-multi-pi.mjs"], {
-      env: { ...process.env, PI_MESH_SMOKE: "" },
+      env: { ...process.env, KXM_SMOKE: "" },
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
@@ -16,5 +16,5 @@ test("real multi-Pi smoke skips unless explicitly enabled", async () => {
   });
   assert.equal(result.code, 0);
   assert.match(result.stdout, /"skipped":true/);
-  assert.doesNotMatch(result.stdout, /PI_MESH_AUTH_TOKEN|GITHUB_TOKEN|sk-/);
+  assert.doesNotMatch(result.stdout, /KXM_AUTH_TOKEN|GITHUB_TOKEN|sk-/);
 });

@@ -3,16 +3,16 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { ProtocolError } from "../plugins/kxm-mesh/src/protocol.ts";
-import { parseContextItem, type ContextItem } from "../plugins/kxm-mesh/src/context.ts";
-import type { StateContradiction } from "../plugins/kxm-mesh/src/state.ts";
+import { ProtocolError } from "../plugins/kxm/src/protocol.ts";
+import { parseContextItem, type ContextItem } from "../plugins/kxm/src/context.ts";
+import type { StateContradiction } from "../plugins/kxm/src/state.ts";
 import {
   WIKI_ROOT,
   compileKnowledgeWiki,
   lintKnowledgeWiki,
   writeCompiledWiki,
   type WikiSourcePool,
-} from "../plugins/kxm-mesh/src/wiki.ts";
+} from "../plugins/kxm/src/wiki.ts";
 
 function item(overrides: Record<string, unknown> = {}): ContextItem {
   return parseContextItem({

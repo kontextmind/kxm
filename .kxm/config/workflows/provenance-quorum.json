@@ -1,11 +1,11 @@
 [
   {
-    "id": "pi-extensions-provenance",
+    "id": "kxm-provenance",
     "source": "generic",
-    "project": "pi-extensions-provenance",
+    "project": "kxm-provenance",
     "target": "provenance-coordinator",
-    "secretEnv": "PI_MESH_V04_WORKFLOW_SECRET",
-    "signalSecretEnv": "PI_MESH_V04_SIGNAL_SECRET",
+    "secretEnv": "KXM_V04_WORKFLOW_SECRET",
+    "signalSecretEnv": "KXM_V04_SIGNAL_SECRET",
     "event": "extension.provenance_requested",
     "delivery": "followUp",
     "ttlMs": 604800000,

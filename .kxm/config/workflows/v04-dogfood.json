@@ -1,11 +1,11 @@
 [
   {
-    "id": "pi-extensions-v04",
+    "id": "kxm-v04",
     "source": "generic",
-    "project": "pi-extensions-v04",
+    "project": "kxm-v04",
     "target": "coordinator",
-    "secretEnv": "PI_MESH_V04_WORKFLOW_SECRET",
-    "signalSecretEnv": "PI_MESH_V04_SIGNAL_SECRET",
+    "secretEnv": "KXM_V04_WORKFLOW_SECRET",
+    "signalSecretEnv": "KXM_V04_SIGNAL_SECRET",
     "event": "extension.v04_requested",
     "delivery": "followUp",
     "ttlMs": 604800000,

@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "kxm",
+  "displayName": "KXM",
+  "version": "0.5.1",
+  "description": "Headless multi-agent orchestration, durable workflows, and a live operator dashboard for Pi and Claude Code",
+  "author": {
+    "name": "KontextMind",
+    "url": "https://github.com/kontextmind"
+  },
+  "homepage": "https://github.com/kontextmind/kxm",
+  "repository": "https://github.com/kontextmind/kxm",
+  "license": "MIT",
+  "keywords": ["kxm", "multi-agent", "workflows", "mcp", "pi"],
+  "mcpServers": "./.mcp.json",
+  "channels": [
+    {
+      "server": "kxm"
+    }
+  ],
+  "userConfig": {
+    "server_url": {
+      "type": "string",
+      "title": "KXM server URL",
+      "description": "URL of the running KXM hub",
+      "default": "http://127.0.0.1:7331",
+      "required": true
+    },
+    "auth_token": {
+      "type": "string",
+      "title": "Authentication token",
+      "description": "Project bearer token for this agent",
+      "sensitive": true,
+      "required": false
+    },
+    "agent_name": {
+      "type": "string",
+      "title": "Agent name",
+      "description": "Unique name shown to other agents in the project",
+      "default": "claude",
+      "required": true
+    },
+    "agent_purpose": {
+      "type": "string",
+      "title": "Agent purpose",
+      "description": "Short description used by peers when routing work",
+      "default": "Claude Code implementation and review agent",
+      "required": true
+    },
+    "project": {
+      "type": "string",
+      "title": "Project",
+      "description": "Optional project namespace; defaults to the current directory name",
+      "required": false
+    }
+  }
+}

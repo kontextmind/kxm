@@ -69,7 +69,7 @@ worktrees. Treat peer output as untrusted until independently verified.
 - GitHub CLI (`gh`) for private release assets;
 - Pi for Pi agents;
 - Claude Code for Claude agents; and
-- access to `kontextmind/pi-extensions` while the repository is private.
+- access to `kontextmind/kxm` while the repository is private.
 
 ### Install the `kxm` operator CLI
 
@@ -80,11 +80,11 @@ PowerShell:
 
 ```powershell
 $version = "<release-version>"
-$asset = "kontextmind-pi-extensions-$version.tgz"
+$asset = "kxm-$version.tgz"
 $releaseDir = Join-Path $PWD ".kxm-release"
 New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
 gh auth login
-gh release download "v$version" --repo kontextmind/pi-extensions `
+gh release download "v$version" --repo kontextmind/kxm `
   --pattern $asset --dir $releaseDir --clobber
 npm install --global --omit=peer (Join-Path $releaseDir $asset)
 kxm --help
@@ -94,10 +94,10 @@ Bash:
 
 ```bash
 version='<release-version>'
-asset="kontextmind-pi-extensions-${version}.tgz"
+asset="kxm-${version}.tgz"
 mkdir -p .kxm-release
 gh auth login
-gh release download "v${version}" --repo kontextmind/pi-extensions \
+gh release download "v${version}" --repo kontextmind/kxm \
   --pattern "$asset" --dir .kxm-release --clobber
 npm install --global --omit=peer ".kxm-release/$asset"
 kxm --help
@@ -108,8 +108,8 @@ Do not use `npx kxm` or a global `git+https` npm install.
 ### Run from a source checkout
 
 ```bash
-git clone <authorized-pi-extensions-url>
-cd pi-extensions
+git clone <authorized-kxm-url>
+cd kxm
 npm ci
 npm run check
 node scripts/kxm.mjs --help
@@ -124,10 +124,10 @@ after changing CLI source.
 From Pi:
 
 ```text
-pi install git:github.com/kontextmind/pi-extensions
+pi install git:github.com/kontextmind/kxm
 ```
 
-This installs the Pi extension and the `kxm-mesh` Agent Skill. Restart Pi after
+This installs the Pi extension and the `kxm` Agent Skill. Restart Pi after
 installation or package updates.
 
 ### Install in Claude Code
@@ -135,8 +135,8 @@ installation or package updates.
 From Claude Code:
 
 ```text
-/plugin marketplace add kontextmind/pi-extensions
-/plugin install kxm-mesh@kontextmind-pi-extensions
+/plugin marketplace add kontextmind/kxm
+/plugin install kxm
 /reload-plugins
 ```
 
@@ -164,23 +164,23 @@ project token for agents. Never pass either token on a command line.
 PowerShell:
 
 ```powershell
-$env:PI_MESH_HOST = "127.0.0.1"
-$env:PI_MESH_PORT = "7331"
-$env:PI_MESH_AUTH_TOKEN = "<admin-token>"
-$env:PI_MESH_PROJECT_TOKENS = '{"product":"<project-token>"}'
-$env:PI_MESH_WORKSPACE_DIR = "C:\work\product\.kxm"
-kxm mesh hub
+$env:KXM_HOST = "127.0.0.1"
+$env:KXM_PORT = "7331"
+$env:KXM_AUTH_TOKEN = "<admin-token>"
+$env:KXM_PROJECT_TOKENS = '{"product":"<project-token>"}'
+$env:KXM_WORKSPACE_DIR = "C:\work\product\.kxm"
+kxm hub start
 ```
 
 Bash:
 
 ```bash
-export PI_MESH_HOST=127.0.0.1
-export PI_MESH_PORT=7331
-export PI_MESH_AUTH_TOKEN='<admin-token>'
-export PI_MESH_PROJECT_TOKENS='{"product":"<project-token>"}'
-export PI_MESH_WORKSPACE_DIR=/work/product/.kxm
-kxm mesh hub
+export KXM_HOST=127.0.0.1
+export KXM_PORT=7331
+export KXM_AUTH_TOKEN='<admin-token>'
+export KXM_PROJECT_TOKENS='{"product":"<project-token>"}'
+export KXM_WORKSPACE_DIR=/work/product/.kxm
+kxm hub start
 ```
 
 Store service values in an ACL-protected, gitignored environment file or secret
@@ -190,12 +190,12 @@ the command line.
 ### 3. Verify the hub
 
 ```powershell
-kxm --workspace C:\work\product\.kxm mesh status
+kxm --workspace C:\work\product\.kxm hub view
 Invoke-RestMethod http://127.0.0.1:7331/ready
 ```
 
 ```bash
-kxm --workspace /work/product/.kxm mesh status
+kxm --workspace /work/product/.kxm hub view
 curl --fail http://127.0.0.1:7331/ready
 ```
 
@@ -204,19 +204,19 @@ curl --fail http://127.0.0.1:7331/ready
 Use only the project token in the worker environment:
 
 ```powershell
-$env:PI_MESH_SERVER_URL = "http://127.0.0.1:7331"
-$env:PI_MESH_AUTH_TOKEN = "<project-token>"
-$env:PI_MESH_PROJECT = "product"
-$env:PI_MESH_WORKDIR = "C:\work\product"
+$env:KXM_SERVER_URL = "http://127.0.0.1:7331"
+$env:KXM_AUTH_TOKEN = "<project-token>"
+$env:KXM_PROJECT = "product"
+$env:KXM_WORKDIR = "C:\work\product"
 kxm agent worker --name coordinator --project product `
   --model provider/model --session-isolation workflow
 ```
 
 ```bash
-export PI_MESH_SERVER_URL=http://127.0.0.1:7331
-export PI_MESH_AUTH_TOKEN='<project-token>'
-export PI_MESH_PROJECT=product
-export PI_MESH_WORKDIR=/work/product
+export KXM_SERVER_URL=http://127.0.0.1:7331
+export KXM_AUTH_TOKEN='<project-token>'
+export KXM_PROJECT=product
+export KXM_WORKDIR=/work/product
 kxm agent worker --name coordinator --project product \
   --model provider/model --session-isolation workflow
 ```
@@ -224,8 +224,8 @@ kxm agent worker --name coordinator --project product \
 ### 5. Connect another Pi or Claude peer
 
 Give it the same hub URL, project token, and project, but a different agent name.
-Call `mesh_list` to verify discovery, then send one focused request with
-`mesh_send`.
+Call `kxm_list` to verify discovery, then send one focused request with
+`kxm_send`.
 
 ---
 
@@ -239,8 +239,8 @@ Call `mesh_list` to verify discovery, then send one focused request with
 │   ├── env.example                 # variable names and safe placeholders
 │   └── workflows/*.json            # active workflow definition candidates
 ├── logs/                           # ignored runtime logs and telemetry
-│   ├── pi-mesh-hub.jsonl
-│   ├── pi-mesh-worker-*.jsonl
+│   ├── kxm-hub.jsonl
+│   ├── kxm-worker-*.jsonl
 │   ├── pi-agent-*.log              # raw Pi output; may be sensitive
 │   └── telemetry.jsonl
 ├── assets/                         # intentional human-reviewable inputs/outputs
@@ -248,7 +248,7 @@ Call `mesh_list` to verify discovery, then send one focused request with
 │   ├── workflows/<definition>/...
 │   └── retrospectives/<runId>.{json,md}
 └── state/                          # ignored runtime state; protect with OS ACLs
-    ├── mesh.db
+    ├── kxm.db
     ├── hub.pid / worker-*.pid
     ├── worker-recovery-*.json
     ├── worker-session-binding-*.json
@@ -259,7 +259,7 @@ Call `mesh_list` to verify discovery, then send one focused request with
 
 Commit reviewed configuration and intentional reusable assets. Do not commit
 runtime state, credentials, raw model logs, generated secrets, or SQLite files.
-Workflow stages and evidence live in `mesh.db`; important implementation results
+Workflow stages and evidence live in `kxm.db`; important implementation results
 should also live in Git or another system of record.
 
 ---
@@ -270,8 +270,8 @@ should also live in Git or another system of record.
 
 | Credential | Give it to | Capabilities |
 |---|---|---|
-| `PI_MESH_AUTH_TOKEN` administrative token | Hub and trusted operator terminal | Operations snapshot/SSE, metrics where protected, quorum degradation, and fallback project access |
-| Entry in `PI_MESH_PROJECT_TOKENS` | Hub only | Maps one project to its worker credential |
+| `KXM_AUTH_TOKEN` administrative token | Hub and trusted operator terminal | Operations snapshot/SSE, metrics where protected, quorum degradation, and fallback project access |
+| Entry in `KXM_PROJECT_TOKENS` | Hub only | Maps one project to its worker credential |
 | Project token | Pi and Claude agents in that project | Registration, discovery, messaging, and assigned workflow operations only |
 | Workflow start secret | Hub and webhook sender/operator | HMAC-signs a new workflow delivery |
 | Workflow signal secret | Hub and callback sender/operator | HMAC-signs an external result; may fall back to the start secret if the definition omits it |
@@ -285,18 +285,18 @@ provenance trust domain.
 
 | Variable | Default | Purpose |
 |---|---:|---|
-| `PI_MESH_HOST` | `127.0.0.1` | Bind interface |
-| `PI_MESH_PORT` | `7331` | Hub port; `0` chooses a free port |
-| `PI_MESH_AUTH_TOKEN` | none | Administrative bearer token |
-| `PI_MESH_PROJECT_TOKENS` | none | JSON object of project-to-token mappings |
-| `PI_MESH_WORKSPACE_DIR` | `.kxm` | Workspace root |
-| `PI_MESH_DATA_PATH` | `.kxm/state/mesh.db` | SQLite path |
-| `PI_MESH_MESSAGE_TTL_MS` | `86400000` | Default request lifetime |
-| `PI_MESH_MESSAGE_RETENTION_MS` | `604800000` | Terminal-message retention |
-| `PI_MESH_RATE_LIMIT_MAX` | `600` | Requests per bucket/window |
-| `PI_MESH_RATE_LIMIT_WINDOW_MS` | `60000` | Rate-limit window |
-| `PI_MESH_WEBHOOK_WORKFLOWS_FILE` | none | One active JSON workflow-definition file |
-| `PI_MESH_WEBHOOK_WORKFLOWS` | none | Inline alternative; never set with the file variable |
+| `KXM_HOST` | `127.0.0.1` | Bind interface |
+| `KXM_PORT` | `7331` | Hub port; `0` chooses a free port |
+| `KXM_AUTH_TOKEN` | none | Administrative bearer token |
+| `KXM_PROJECT_TOKENS` | none | JSON object of project-to-token mappings |
+| `KXM_WORKSPACE_DIR` | `.kxm` | Workspace root |
+| `KXM_DATA_PATH` | `.kxm/state/kxm.db` | SQLite path |
+| `KXM_MESSAGE_TTL_MS` | `86400000` | Default request lifetime |
+| `KXM_MESSAGE_RETENTION_MS` | `604800000` | Terminal-message retention |
+| `KXM_RATE_LIMIT_MAX` | `600` | Requests per bucket/window |
+| `KXM_RATE_LIMIT_WINDOW_MS` | `60000` | Rate-limit window |
+| `KXM_WEBHOOK_WORKFLOWS_FILE` | none | One active JSON workflow-definition file |
+| `KXM_WEBHOOK_WORKFLOWS` | none | Inline alternative; never set with the file variable |
 
 A non-loopback bind requires an administrative token. Use TLS termination and
 network controls before allowing remote access.
@@ -305,32 +305,32 @@ network controls before allowing remote access.
 
 | Variable | Default | Purpose |
 |---|---:|---|
-| `PI_MESH_SERVER_URL` | `http://127.0.0.1:7331` | Hub URL |
-| `PI_MESH_AUTH_TOKEN` | none | Project token for agents |
-| `PI_MESH_PROJECT` | current directory name | Discovery/authentication namespace |
-| `PI_MESH_AGENT_NAME` | harness-derived | Unique live name in the project |
-| `PI_MESH_AGENT_PURPOSE` | general-purpose | Capability shown during peer discovery |
+| `KXM_SERVER_URL` | `http://127.0.0.1:7331` | Hub URL |
+| `KXM_AUTH_TOKEN` | none | Project token for agents |
+| `KXM_PROJECT` | current directory name | Discovery/authentication namespace |
+| `KXM_AGENT_NAME` | harness-derived | Unique live name in the project |
+| `KXM_AGENT_PURPOSE` | general-purpose | Capability shown during peer discovery |
 
 ### Supervised Pi variables
 
 | Variable | Default | Purpose |
 |---|---:|---|
-| `PI_MESH_WORKDIR` | current directory | Repository used by Pi |
-| `PI_MESH_PI_COMMAND` | `pi` / `pi.cmd` | Explicit Pi executable |
-| `PI_MESH_WORKER_MODEL` | Pi default | Primary model selector |
-| `PI_MESH_WORKER_FALLBACK_MODELS` | none | Up to eight ordered fallback models |
-| `PI_MESH_WORKER_TOOLS` | Pi defaults | Comma-separated Pi tool allowlist |
-| `PI_MESH_WORKER_CONTINUE` | `true` | Allow active-session resume |
-| `PI_MESH_WORKER_INITIAL_CONTINUE` | same | Set `false` for a fresh first child only |
-| `PI_MESH_WORKER_SESSION_ISOLATION` | `off` for upgrade compatibility | Set `workflow` to enable stable-default plus per-run contexts |
-| `PI_MESH_WORKER_MAX_RUN_SESSIONS` | `128` | Retained workflow-specific sessions, range `1`–`1024` |
-| `PI_MESH_WORKER_TOOL_TIMEOUT_MS` | `1860000` | Tool watchdog; `0` disables it |
-| `PI_MESH_WORKER_ACTIVATION_TIMEOUT_MS` | `60000` | Delivered-message turn-start watchdog |
-| `PI_MESH_WORKER_PROVIDER_RETRY_MS` | `60000` | Delay when provider fallbacks are exhausted |
-| `PI_MESH_WORKER_DRAIN_MS` | `15000` | Graceful child shutdown window |
-| `PI_MESH_WORKER_MAX_RESTARTS` | unlimited | Optional supervisor retry ceiling |
-| `PI_MESH_WORKER_EXTENSION_PATHS` | discovery | Exact extension files, separated by the platform path delimiter |
-| `PI_MESH_WORKER_SKILL_PATHS` | discovery | Exact skill files/directories, same delimiter |
+| `KXM_WORKDIR` | current directory | Repository used by Pi |
+| `KXM_PI_COMMAND` | `pi` / `pi.cmd` | Explicit Pi executable |
+| `KXM_WORKER_MODEL` | Pi default | Primary model selector |
+| `KXM_WORKER_FALLBACK_MODELS` | none | Up to eight ordered fallback models |
+| `KXM_WORKER_TOOLS` | Pi defaults | Comma-separated Pi tool allowlist |
+| `KXM_WORKER_CONTINUE` | `true` | Allow active-session resume |
+| `KXM_WORKER_INITIAL_CONTINUE` | same | Set `false` for a fresh first child only |
+| `KXM_WORKER_SESSION_ISOLATION` | `off` for upgrade compatibility | Set `workflow` to enable stable-default plus per-run contexts |
+| `KXM_WORKER_MAX_RUN_SESSIONS` | `128` | Retained workflow-specific sessions, range `1`–`1024` |
+| `KXM_WORKER_TOOL_TIMEOUT_MS` | `1860000` | Tool watchdog; `0` disables it |
+| `KXM_WORKER_ACTIVATION_TIMEOUT_MS` | `60000` | Delivered-message turn-start watchdog |
+| `KXM_WORKER_PROVIDER_RETRY_MS` | `60000` | Delay when provider fallbacks are exhausted |
+| `KXM_WORKER_DRAIN_MS` | `15000` | Graceful child shutdown window |
+| `KXM_WORKER_MAX_RESTARTS` | unlimited | Optional supervisor retry ceiling |
+| `KXM_WORKER_EXTENSION_PATHS` | discovery | Exact extension files, separated by the platform path delimiter |
+| `KXM_WORKER_SKILL_PATHS` | discovery | Exact skill files/directories, same delimiter |
 
 When exact extension or skill paths are supplied, automatic discovery is
 disabled only for that category. Review those paths as executable dependencies.
@@ -408,10 +408,10 @@ posts an exact failed signal and exits `4` on timeout.
 | Command | What it does |
 |---|---|
 | `kxm mesh init` | Creates empty standard workspace directories; never copies package dogfood configuration |
-| `kxm mesh status` | Checks `/health` and `/ready` |
-| `kxm mesh tui` | Opens the real-time read-only metadata dashboard; prints one plain snapshot without a TTY |
-| `kxm mesh hub` | Starts the hub and local SQLite store |
-| `kxm mesh stop [--wait-ms <n>]` | Requests generation-matched hub and worker shutdown |
+| `kxm hub view` | Checks `/health` and `/ready` |
+| `kxm dash` | Opens the real-time read-only metadata dashboard; prints one plain snapshot without a TTY |
+| `kxm hub start` | Starts the hub and local SQLite store |
+| `kxm hub stop [--wait-ms <n>]` | Requests generation-matched hub and worker shutdown |
 | `kxm mesh smoke [--real-pi]` | Runs the opt-in two-worker real-Pi release harness |
 
 ### Improvement command
@@ -435,16 +435,16 @@ configuration, gates, or the workflow journal.
 Set the agent variables before starting Pi:
 
 ```powershell
-$env:PI_MESH_SERVER_URL = "http://127.0.0.1:7331"
-$env:PI_MESH_AUTH_TOKEN = "<project-token>"
-$env:PI_MESH_PROJECT = "product"
-$env:PI_MESH_AGENT_NAME = "reviewer"
-$env:PI_MESH_AGENT_PURPOSE = "Independent correctness reviewer"
+$env:KXM_SERVER_URL = "http://127.0.0.1:7331"
+$env:KXM_AUTH_TOKEN = "<project-token>"
+$env:KXM_PROJECT = "product"
+$env:KXM_AGENT_NAME = "reviewer"
+$env:KXM_AGENT_PURPOSE = "Independent correctness reviewer"
 pi
 ```
 
 Use `/mesh-status` to display the current identity and connection. Ask Pi to use
-the `kxm-mesh` skill before delegating complex work.
+the `kxm` skill before delegating complex work.
 
 ### Always-on Pi workers
 
@@ -468,7 +468,7 @@ work remains `queued`. Only work entering a model turn becomes `delivered`.
 use:
 
 ```text
---tools read,grep,find,ls,mesh_list,mesh_send,mesh_get,mesh_await
+--tools read,grep,find,ls,kxm_list,kxm_send,kxm_get,kxm_await
 ```
 
 A writer needs only the mutation and shell tools required by its assignment.
@@ -530,7 +530,7 @@ rejected without changing scope.
 Bindings live in `.kxm/state/worker-session-binding-<workerKey>.json`. Restarting
 the supervisor reloads the active binding and continues only when that session
 directory has Pi JSONL history. Inactive workflow sessions are retained up to
-`PI_MESH_WORKER_MAX_RUN_SESSIONS`; least-recently-used inactive entries and
+`KXM_WORKER_MAX_RUN_SESSIONS`; least-recently-used inactive entries and
 directories are deleted when the bound is reached.
 
 A corrupt binding manifest is quarantined with a `.corrupt-<timestamp>` suffix.
@@ -573,7 +573,7 @@ Provide these plugin settings:
 | Project | `product` |
 
 Restart Claude Code after changing settings. Use `/mcp` to confirm the bundled
-`pi-mesh` MCP server connected, then call `mesh_list`.
+`pi-mesh` MCP server connected, then call `kxm_list`.
 
 KXM does not choose the Claude model. Select the required Claude CLI/model
 profile separately; the mesh identity and model session remain different
@@ -585,26 +585,26 @@ During the Claude channel research preview, explicitly trust the community
 channel:
 
 ```text
-claude --dangerously-load-development-channels plugin:kxm-mesh@kontextmind-pi-extensions
+claude --dangerously-load-development-channels plugin:kxm
 ```
 
 If the organization has approved it through `allowedChannelPlugins`:
 
 ```text
-claude --channels plugin:kxm-mesh@kontextmind-pi-extensions
+claude --channels plugin:kxm
 ```
 
-Inbound work arrives as `<channel source="kxm-mesh" ...>` events. Process one
-request, call `mesh_reply`, and keep the Claude session open for the next event.
+Inbound work arrives as `<channel source="kxm" ...>` events. Process one
+request, call `kxm_reply`, and keep the Claude session open for the next event.
 
 ### MCP pull mode
 
 Without channels, Claude retains full outbound and workflow capability. For
 inbound work:
 
-1. call `mesh_inbox`;
+1. call `kxm_inbox`;
 2. process one durable request;
-3. call `mesh_reply` with its message ID; and
+3. call `kxm_reply` with its message ID; and
 4. repeat with bounded backoff while the inbox is empty.
 
 Do not describe pull mode as push-driven liveness.
@@ -614,7 +614,7 @@ Do not describe pull mode as push-driven liveness.
 Per-workflow automatic Pi session routing applies to the supervised Pi worker,
 not to Claude Code. A Claude operator who needs strict run isolation should use
 a separate Claude session/agent identity per run or an external Claude
-supervisor. Workflow authority still comes from `mesh_workflow_get`, the hub
+supervisor. Workflow authority still comes from `kxm_workflow_get`, the hub
 journal, evidence, and assets—not from either harness's context window.
 
 ---
@@ -627,32 +627,32 @@ These tools are available in Pi and Claude MCP:
 
 | Tool | Purpose |
 |---|---|
-| `mesh_list` | List online peers, purposes, and models |
-| `mesh_send` | Send one focused request; returns a durable message ID |
-| `mesh_fanout` | Send the same independent request to one through three peers |
-| `mesh_get` | Inspect a request without blocking |
-| `mesh_await` | Wait only when the response blocks progress |
-| `mesh_cancel` | Cancel queued/delivered work owned by the sender |
-| `mesh_workflow_list` | List durable workflow runs assigned to this coordinator |
-| `mesh_workflow_get` | Read stages, evidence policies, waits, and journal |
-| `mesh_workflow_checkpoint` | Submit a stage result with keyed evidence and verified message references |
-| `mesh_workflow_wait` | Save evidence and pause until an authenticated callback |
-| `mesh_workflow_record` | Record a plan, decision, contradiction, error, or lesson |
-| `mesh_improvement_report` | Summarize learning by improvement area |
+| `kxm_list` | List online peers, purposes, and models |
+| `kxm_send` | Send one focused request; returns a durable message ID |
+| `kxm_fanout` | Send the same independent request to one through three peers |
+| `kxm_get` | Inspect a request without blocking |
+| `kxm_await` | Wait only when the response blocks progress |
+| `kxm_cancel` | Cancel queued/delivered work owned by the sender |
+| `kxm_workflow_list` | List durable workflow runs assigned to this coordinator |
+| `kxm_workflow_get` | Read stages, evidence policies, waits, and journal |
+| `kxm_workflow_checkpoint` | Submit a stage result with keyed evidence and verified message references |
+| `kxm_workflow_wait` | Save evidence and pause until an authenticated callback |
+| `kxm_workflow_record` | Record a plan, decision, contradiction, error, or lesson |
+| `kxm_improvement_report` | Summarize learning by improvement area |
 
 Claude MCP also exposes:
 
 | Tool | Purpose |
 |---|---|
-| `mesh_inbox` | Reconcile and list durable inbound work in pull mode |
-| `mesh_reply` | Reply to one inbound request |
+| `kxm_inbox` | Reconcile and list durable inbound work in pull mode |
+| `kxm_reply` | Reply to one inbound request |
 
 ### Messaging rules
 
 - Use `followUp` by default; reserve `steer` for an active blocker.
 - Supply an idempotency key when a send may be retried.
-- A local `mesh_await` or fanout timeout does not cancel the durable message.
-- Use `mesh_get` or repeat the exact idempotent operation; do not invent a new
+- A local `kxm_await` or fanout timeout does not cancel the durable message.
+- Use `kxm_get` or repeat the exact idempotent operation; do not invent a new
   request while the first remains pending.
 - Cancellation cannot undo filesystem or external side effects.
 - Never put credentials or unnecessary private data in a mesh message.
@@ -667,13 +667,13 @@ Claude MCP also exposes:
 Set exactly one of:
 
 ```text
-PI_MESH_WEBHOOK_WORKFLOWS_FILE=.kxm/config/workflows/product.json
+KXM_WEBHOOK_WORKFLOWS_FILE=.kxm/config/workflows/product.json
 ```
 
 or:
 
 ```text
-PI_MESH_WEBHOOK_WORKFLOWS=[...inline JSON...]
+KXM_WEBHOOK_WORKFLOWS=[...inline JSON...]
 ```
 
 The hub loads only that source for its current boot. A workflow definition
@@ -707,7 +707,7 @@ a conflicting body fails.
 
 For every active stage:
 
-1. call `mesh_workflow_get`;
+1. call `kxm_workflow_get`;
 2. follow only `currentStage`;
 3. record material plans, decisions, contradictions, errors, and lessons;
 4. gather exact required evidence;
@@ -716,7 +716,7 @@ For every active stage:
 7. correct warnings/failures until passed or attempts are exhausted.
 
 Settling while a run is still `running` without a valid checkpoint fails the
-run. Settling after a successful `mesh_workflow_wait` is expected and releases
+run. Settling after a successful `kxm_workflow_wait` is expected and releases
 compute until the callback creates a fresh message.
 
 ### Workflow journal categories
@@ -784,7 +784,7 @@ stage; the coordinator must still provide the approved minimum references.
 
 ### External waits and signals
 
-The coordinator calls `mesh_workflow_wait` with a stable signal key, expected
+The coordinator calls `kxm_workflow_wait` with a stable signal key, expected
 result, timeout, and any already verified evidence. A separate operator or
 integration posts:
 
@@ -804,7 +804,7 @@ sending a new result.
 Start the dashboard with the administrative credential:
 
 ```powershell
-kxm --workspace C:\work\product\.kxm mesh tui
+kxm --workspace C:\work\product\.kxm dash
 ```
 
 The TUI uses `@earendil-works/pi-tui`. It subscribes to authenticated
@@ -826,7 +826,7 @@ remaining ordinary authenticated hub identities during fallback.
 | `q` / `Ctrl+C` | Quit |
 
 Without a TTY, the command prints one ANSI-free snapshot. Use
-`kxm mesh status --json` for a health result intended for automation.
+`kxm hub view --json` for a health result intended for automation.
 
 ### Health and operations endpoints
 
@@ -942,7 +942,7 @@ when the agent itself is outside the trust boundary.
 SQLite uses WAL mode. The simplest safe backup is:
 
 1. stop the hub gracefully;
-2. copy `.kxm/state/mesh.db` to protected storage;
+2. copy `.kxm/state/kxm.db` to protected storage;
 3. record the package version and reviewed configuration; and
 4. restart and verify `/ready`.
 
@@ -979,19 +979,19 @@ preserve evidence, and recover from hub-owned workflow state.
 
 ## Troubleshooting checklist
 
-1. Confirm `kxm mesh hub` is running.
+1. Confirm `kxm hub start` is running.
 2. Check `/health`, then `/ready`.
 3. Compare URL, project, and project token on both agents.
 4. Confirm unique live names.
-5. Run `/mesh-status` in Pi or `mesh_list` in Pi/Claude.
+5. Run `/mesh-status` in Pi or `kxm_list` in Pi/Claude.
 6. Inspect structured logs without copying secrets or raw model content.
 7. For queued workflow work, look for the one expected session route swap.
 8. For a delivered message, inspect the recipient and activation/tool watchdogs;
    do not send duplicates.
-9. For a workflow, call `mesh_workflow_get` and use the exact active stage,
+9. For a workflow, call `kxm_workflow_get` and use the exact active stage,
    requirement keys, attempt, wait key, and coordinator.
 10. For Claude, inspect `/mcp`; if channel push is unavailable, use
-    `mesh_inbox`/`mesh_reply`.
+    `kxm_inbox`/`kxm_reply`.
 
 Common causes:
 
@@ -1018,11 +1018,11 @@ See [Troubleshooting](troubleshooting.md) for error-specific recovery.
 |---|---:|---:|---:|
 | Start/stop hub and workers | Yes | No | No |
 | Initialize workspace | Yes | No | No |
-| Peer discovery | Status/TUI only | `mesh_list` | `mesh_list` |
+| Peer discovery | Status/TUI only | `kxm_list` | `kxm_list` |
 | Send, poll, wait, cancel | No | Yes | Yes |
 | Fanout to 1–3 peers | No | Yes | Yes |
 | Pushed inbound turns | N/A | Native extension | Optional channel |
-| Pull inbox and explicit reply | N/A | Extension owns queue | `mesh_inbox`, `mesh_reply` |
+| Pull inbox and explicit reply | N/A | Extension owns queue | `kxm_inbox`, `kxm_reply` |
 | Always-on worker supervision | Starts Pi worker | Yes | External Claude supervision required |
 | Workflow-specific model sessions | Configures mode | Automatic for supervised Pi | Use separate Claude sessions externally |
 | Workflow list/get | Local SQLite CLI | Mesh tools | Mesh tools |
@@ -1034,7 +1034,7 @@ See [Troubleshooting](troubleshooting.md) for error-specific recovery.
 | GitHub check watcher | Yes | No | No |
 | Artifact existence gate | Yes | Can invoke CLI if shell is allowed | Can invoke CLI if shell is allowed |
 | Retrospective export | Yes | Can record source evidence | Can record source evidence |
-| Proposed telemetry improvement report | Yes | `mesh_improvement_report` covers workflow journal separately | Same |
+| Proposed telemetry improvement report | Yes | `kxm_improvement_report` covers workflow journal separately | Same |
 | Live metadata-only TUI | Yes | No | No |
 
 ---

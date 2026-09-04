@@ -3,15 +3,15 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { runCli as runCliImplementation, type CliIo } from "../plugins/kxm-mesh/src/cli.ts";
-import piMeshExtension from "../plugins/kxm-mesh/src/extension.ts";
+import { runCli as runCliImplementation, type CliIo } from "../plugins/kxm/src/cli.ts";
+import piMeshExtension from "../plugins/kxm/src/extension.ts";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createTestMesh } from "./helpers.ts";
 
 async function runCli(argv: string[], env: NodeJS.ProcessEnv, io: CliIo, cwd = process.cwd()): Promise<number> {
   const isolatedLogs = mkdtempSync(join(tmpdir(), "kxm-cli-context-"));
   try {
-    return await runCliImplementation(argv, { PI_MESH_LOGS_DIR: isolatedLogs, ...env }, io, cwd);
+    return await runCliImplementation(argv, { KXM_LOGS_DIR: isolatedLogs, ...env }, io, cwd);
   } finally {
     rmSync(isolatedLogs, { recursive: true, force: true });
   }
@@ -112,14 +112,14 @@ test("kxm context CLI commands call the hub context API with parity", async () =
 
 test("Pi extension kxm_* tools expose the context API with project isolation", async (context) => {
   const mesh = await createTestMesh(context);
-  const keys = ["PI_MESH_SERVER_URL", "PI_MESH_AUTH_TOKEN", "PI_MESH_PROJECT", "PI_MESH_AGENT_NAME", "PI_MESH_STATE_DIR"] as const;
+  const keys = ["KXM_SERVER_URL", "KXM_AUTH_TOKEN", "KXM_PROJECT", "KXM_AGENT_NAME", "KXM_STATE_DIR"] as const;
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   Object.assign(process.env, {
-    PI_MESH_SERVER_URL: mesh.address.url,
-    PI_MESH_AUTH_TOKEN: mesh.token,
-    PI_MESH_PROJECT: "test-project",
-    PI_MESH_AGENT_NAME: "context-agent",
-    PI_MESH_STATE_DIR: mkdtempSync(join(tmpdir(), "kxm-ext-state-")),
+    KXM_SERVER_URL: mesh.address.url,
+    KXM_AUTH_TOKEN: mesh.token,
+    KXM_PROJECT: "test-project",
+    KXM_AGENT_NAME: "context-agent",
+    KXM_STATE_DIR: mkdtempSync(join(tmpdir(), "kxm-ext-state-")),
   });
   context.after(() => {
     for (const key of keys) {

@@ -1,6 +1,6 @@
 import type { TestContext } from "node:test";
-import { MeshClient } from "../plugins/kxm-mesh/src/client.ts";
-import { createMeshHub, type MeshHub, type MeshHubOptions } from "../plugins/kxm-mesh/src/hub.ts";
+import { MeshClient } from "../plugins/kxm/src/client.ts";
+import { createMeshHub, type MeshHub, type MeshHubOptions } from "../plugins/kxm/src/hub.ts";
 
 export interface TestMesh {
   hub: MeshHub;

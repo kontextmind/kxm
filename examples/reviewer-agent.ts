@@ -1,12 +1,12 @@
-import { MeshClient } from "../plugins/kxm-mesh/src/client.ts";
+import { MeshClient } from "../plugins/kxm/src/client.ts";
 
-const serverUrl = process.env.PI_MESH_SERVER_URL ?? "http://127.0.0.1:7331";
-const authToken = process.env.PI_MESH_AUTH_TOKEN;
-const project = process.env.PI_MESH_PROJECT ?? "example";
+const serverUrl = process.env.KXM_SERVER_URL ?? "http://127.0.0.1:7331";
+const authToken = process.env.KXM_AUTH_TOKEN;
+const project = process.env.KXM_PROJECT ?? "example";
 const client = new MeshClient({
   serverUrl,
-  name: process.env.PI_MESH_AGENT_NAME ?? "example-reviewer",
-  purpose: process.env.PI_MESH_AGENT_PURPOSE ?? "Demonstrates a custom mesh client",
+  name: process.env.KXM_AGENT_NAME ?? "example-reviewer",
+  purpose: process.env.KXM_AGENT_PURPOSE ?? "Demonstrates a custom mesh client",
   project,
   ...(authToken ? { authToken } : {}),
 });

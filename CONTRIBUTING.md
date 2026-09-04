@@ -47,7 +47,7 @@ When changing the CLI, hub, MCP server, or one of their shared modules, run:
 npm run build
 ```
 
-Commit the corresponding files under `plugins/kxm-mesh/dist/` with the source change. npm and Claude marketplace installations use these self-contained artifacts and must not require development dependencies or runtime TypeScript stripping.
+Commit the corresponding files under `plugins/kxm/dist/` with the source change. npm and Claude marketplace installations use these self-contained artifacts and must not require development dependencies or runtime TypeScript stripping.
 
 After committing the generated files, run `npm run check:generated`. It rebuilds
 the runtimes and fails if any required artifact is missing, untracked, or
@@ -62,7 +62,7 @@ Repository-local runtime conventions belong under `.kxm`: reviewable configurati
 Changes to routes, request fields, status transitions, delivery modes, limits, or authentication require:
 
 - integration tests;
-- an update to `plugins/kxm-mesh/skills/kxm-mesh/references/protocol.md`;
+- an update to `plugins/kxm/skills/kxm/references/protocol.md`;
 - an update to the relevant guide under `docs/`;
 - a changelog entry;
 - a compatibility note when existing clients could break.

@@ -7,7 +7,7 @@ import {
   parseBoundedInteger,
   parseDeliveryMode,
   requireString,
-} from "../plugins/kxm-mesh/src/protocol.ts";
+} from "../plugins/kxm/src/protocol.ts";
 
 test("newId creates prefixed unique identifiers", () => {
   const first = newId("msg");

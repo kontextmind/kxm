@@ -11,4 +11,4 @@
 
 Secrets remain in environment variables or an approved secret manager. Do not put tokens, webhook secrets, credentials, or private prompt dumps anywhere under `.kxm/config`.
 
-All directory defaults derive from `.kxm`. Set `PI_MESH_WORKSPACE_DIR` to relocate the complete workspace or use a specific path override when an operator-managed volume requires it.
+All directory defaults derive from `.kxm`. Set `KXM_WORKSPACE_DIR` to relocate the complete workspace or use a specific path override when an operator-managed volume requires it.

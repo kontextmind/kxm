@@ -9,14 +9,14 @@ Presence of vNext documents does not activate new behavior.
 |---|---|---|
 | `.kxm/config/agents.json` aggregate roster | `.kxm/agents/<id>.yaml` individual definitions | Split records, infer ID from filename, preserve unrecognized fields in a migration report rather than silently dropping them |
 | `gates.json` descriptive records | Workflow step/gate references plus registered deterministic adapters | Map only implemented gates; report names with no runner |
-| `PI_MESH_WEBHOOK_WORKFLOWS` inline JSON | `.kxm/workflows/<id>.yaml` | Materialize secret-free behavior; convert secret fields to references |
-| `PI_MESH_WEBHOOK_WORKFLOWS_FILE` JSON array | Individual workflow YAML files | Split definitions and validate typed transitions |
+| `KXM_WEBHOOK_WORKFLOWS` inline JSON | `.kxm/workflows/<id>.yaml` | Materialize secret-free behavior; convert secret fields to references |
+| `KXM_WEBHOOK_WORKFLOWS_FILE` JSON array | Individual workflow YAML files | Split definitions and validate typed transitions |
 | `.kxm/config/workflows/*.json` including `/fix` | `.kxm/workflows/<id>.yaml` | Preserve typed transitions, immutable reproduction oracle, approved-plan hash, plan-hash requirements, producer policies, and attempt/transition budgets |
 | Hub-selected project from environment | Git project identity plus Runtime-local binding | Detect and ask on ambiguity; do not derive durable identity from directory basename |
 | Long-lived manually started Pi workers | Runtime-managed run-scoped sessions | Existing worker mode remains available during compatibility release |
 | Shared/off workflow Pi history | `{run, agent, instance, scopeEpoch}` sessions | Never import shared conversation history into a narrower run scope |
 | Hub-owned workflow state | Home Runtime event log with hub projection | Import completed history as legacy records; active-run cutover requires quiescence |
-| SQLite schema v3 `mesh.db` | Runtime registry, per-project event stores, hub registry/project stores | Copy through versioned migration; never mutate the only database in place |
+| SQLite schema v3 `kxm.db` | Runtime registry, per-project event stores, hub registry/project stores | Copy through versioned migration; never mutate the only database in place |
 | Full peer message bodies in hub DB | Summary-first sync events | Existing bodies remain protected legacy data and are not re-emitted automatically |
 | Project tokens/manual environment auth | Runtime enrollment and scoped credentials | Preserve current mode until enrollment is confirmed; never copy tokens into Git |
 | `.kxm/config/env.example` | Built-in defaults plus optional scoped env YAML | Import only explicit portable differences; secrets become references |

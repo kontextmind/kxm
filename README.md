@@ -1,6 +1,6 @@
 # KontextMind Pi Extensions
 
-[![CI](https://github.com/kontextmind/pi-extensions/actions/workflows/ci.yml/badge.svg)](https://github.com/kontextmind/pi-extensions/actions/workflows/ci.yml)
+[![CI](https://github.com/kontextmind/kxm/actions/workflows/ci.yml/badge.svg)](https://github.com/kontextmind/kxm/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node.js 22.19+ or 24+](https://img.shields.io/badge/node-22.19%2B%20%7C%2024%2B-339933.svg)](https://nodejs.org/)
 
@@ -29,11 +29,11 @@ You need Node.js 22.19 or newer on the 22.x line, or Node.js 24 or newer, plus P
 ### 1. Start the hub
 
 ```powershell
-git clone https://github.com/kontextmind/pi-extensions.git
-cd pi-extensions
+git clone https://github.com/kontextmind/kxm.git
+cd kxm
 npm ci
-$env:PI_MESH_AUTH_TOKEN = "replace-with-an-admin-token"
-$env:PI_MESH_PROJECT_TOKENS = '{"demo":"replace-with-a-demo-project-token"}'
+$env:KXM_AUTH_TOKEN = "replace-with-an-admin-token"
+$env:KXM_PROJECT_TOKENS = '{"demo":"replace-with-a-demo-project-token"}'
 npm run hub
 ```
 
@@ -44,7 +44,7 @@ The hub listens on `http://127.0.0.1:7331`. Keep this terminal running.
 Run once:
 
 ```text
-pi install git:github.com/kontextmind/pi-extensions
+pi install git:github.com/kontextmind/kxm
 ```
 
 If the repository is private, Git must already be authenticated for an account that has access.
@@ -56,11 +56,11 @@ not place the `kxm` operator command on `PATH`.
 Set the same server, `demo` project token, and project in both agent terminals; do not give agents the administrative token. Give each agent a unique name and a useful purpose.
 
 ```powershell
-$env:PI_MESH_SERVER_URL = "http://127.0.0.1:7331"
-$env:PI_MESH_AUTH_TOKEN = "replace-with-a-demo-project-token"
-$env:PI_MESH_PROJECT = "demo"
-$env:PI_MESH_AGENT_NAME = "planner"
-$env:PI_MESH_AGENT_PURPOSE = "Plans work and coordinates handoffs"
+$env:KXM_SERVER_URL = "http://127.0.0.1:7331"
+$env:KXM_AUTH_TOKEN = "replace-with-a-demo-project-token"
+$env:KXM_PROJECT = "demo"
+$env:KXM_AGENT_NAME = "planner"
+$env:KXM_AGENT_PURPOSE = "Plans work and coordinates handoffs"
 pi
 ```
 
@@ -69,7 +69,7 @@ Start the second terminal as `reviewer`, `builder`, or another role. In Pi, run 
 ### 4. Delegate a task
 
 ```text
-Use the kxm-mesh skill. List the available peers, ask the reviewer to
+Use the kxm skill. List the available peers, ask the reviewer to
 inspect this plan for correctness risks, continue any independent work, and
 collect the review before finalizing.
 ```
@@ -86,17 +86,17 @@ the current account is not authenticated.
 
 ```powershell
 $version = "<release-version>"
-$asset = "kontextmind-pi-extensions-$version.tgz"
+$asset = "kxm-$version.tgz"
 $releaseDir = Join-Path $PWD ".kxm-release"
 New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
-gh release download "v$version" --repo kontextmind/pi-extensions --pattern $asset --dir $releaseDir --clobber
+gh release download "v$version" --repo kontextmind/kxm --pattern $asset --dir $releaseDir --clobber
 npm install --global --omit=peer (Join-Path $releaseDir $asset)
 kxm mesh help
 ```
 
 To operate from a clone instead, run `npm ci` in the clone and replace
 `kxm` below with `node scripts/kxm.mjs`. Do not use
-`npm install --global git+https://github.com/kontextmind/pi-extensions.git` as
+`npm install --global git+https://github.com/kontextmind/kxm.git` as
 the operator install path; the supported global install is the versioned release
 tarball.
 
@@ -106,13 +106,13 @@ distinct administrative, project, workflow-start, and callback credentials:
 ```powershell
 kxm mesh init
 # Create or copy a reviewed definition to .kxm/config/workflows/jira-development.json.
-$env:PI_MESH_AUTH_TOKEN = "replace-with-the-admin-token"
-$env:PI_MESH_PROJECT_TOKENS = '{"product":"replace-with-the-project-token"}'
+$env:KXM_AUTH_TOKEN = "replace-with-the-admin-token"
+$env:KXM_PROJECT_TOKENS = '{"product":"replace-with-the-project-token"}'
 $env:JIRA_WEBHOOK_SECRET = "replace-with-the-workflow-start-secret"
 $env:WORKFLOW_SIGNAL_SECRET = "replace-with-the-callback-secret"
-$env:PI_MESH_WEBHOOK_WORKFLOWS_FILE = ".kxm/config/workflows/jira-development.json"
+$env:KXM_WEBHOOK_WORKFLOWS_FILE = ".kxm/config/workflows/jira-development.json"
 kxm gate validate --file .kxm/config/workflows/jira-development.json
-kxm mesh hub
+kxm hub start
 ```
 
 In a separately supervised coordinator terminal, give the single writer only
@@ -121,12 +121,12 @@ PowerShell example uses the Windows shell tool; replace `powershell` with `bash`
 on macOS or Linux.
 
 ```powershell
-$env:PI_MESH_AUTH_TOKEN = "replace-with-the-project-token"
+$env:KXM_AUTH_TOKEN = "replace-with-the-project-token"
 $coordinatorTools = @(
   "read", "powershell", "edit", "write", "grep", "find", "ls",
-  "mesh_list", "mesh_send", "mesh_fanout", "mesh_get", "mesh_await",
-  "mesh_workflow_get", "mesh_workflow_checkpoint", "mesh_workflow_wait",
-  "mesh_workflow_record", "mesh_improvement_report"
+  "kxm_list", "kxm_send", "kxm_fanout", "kxm_get", "kxm_await",
+  "kxm_workflow_get", "kxm_workflow_checkpoint", "kxm_workflow_wait",
+  "kxm_workflow_record", "kxm_improvement_report"
 ) -join ","
 kxm agent worker --name coordinator --project product --model xai/grok-4.6 `
   --fallback-models antigravity/gemini-3.1-pro --tools $coordinatorTools `
@@ -138,9 +138,9 @@ or write capabilities to them. In an operator terminal, start and inspect work,
 then run external watchers with the separate callback secret:
 
 ```powershell
-$env:PI_MESH_WORKFLOW_SECRET = "replace-with-the-workflow-start-secret"
-$env:PI_MESH_WORKFLOW_ID = "jira-development"
-$env:PI_MESH_WORKFLOW_SIGNAL_SECRET = "replace-with-the-callback-secret"
+$env:KXM_WORKFLOW_SECRET = "replace-with-the-workflow-start-secret"
+$env:KXM_WORKFLOW_ID = "jira-development"
+$env:KXM_WORKFLOW_SIGNAL_SECRET = "replace-with-the-callback-secret"
 $env:GITHUB_TOKEN = "replace-with-a-checks-read-token"
 kxm workflow start jira-development --payload '@ticket.json'
 kxm workflow list
@@ -148,7 +148,7 @@ kxm workflow get run_123
 kxm gate github watch --run-id run_123 --stage-id push-watch `
   --signal-key pr-42-checks --repo org/repo --pr 42 --required ci
 kxm workflow export run_123
-kxm mesh stop
+kxm hub stop
 ```
 
 Use `--dry-run --json` to inspect mutation plans without exposing configured
@@ -178,7 +178,7 @@ Pi reviewer ─HTTP──┤      │
 Claude Code ─MCP───┘
 ```
 
-The hub routes messages; it does not merge contexts, choose tasks, or bypass tool permissions. A typical request moves through `queued` → `delivered` → `replied`. It may instead end as `cancelled`, `expired`, or `error`. The sender can check it with `mesh_get`, wait with `mesh_await`, or stop pending work with `mesh_cancel`. A local `mesh_fanout` wait ending is nonterminal: it returns a durable pending handle that can be checked with `mesh_get` or retried with the same correlation and idempotency prefix.
+The hub routes messages; it does not merge contexts, choose tasks, or bypass tool permissions. A typical request moves through `queued` → `delivered` → `replied`. It may instead end as `cancelled`, `expired`, or `error`. The sender can check it with `kxm_get`, wait with `kxm_await`, or stop pending work with `kxm_cancel`. A local `kxm_fanout` wait ending is nonterminal: it returns a durable pending handle that can be checked with `kxm_get` or retried with the same correlation and idempotency prefix.
 
 ## Documentation
 
@@ -205,20 +205,20 @@ The [documentation index](docs/README.md) describes the intended audience and sc
 Inside Claude Code:
 
 ```text
-/plugin marketplace add kontextmind/pi-extensions
-/plugin install kxm-mesh@kontextmind-pi-extensions
+/plugin marketplace add kontextmind/kxm
+/plugin install kxm
 /reload-plugins
 ```
 
-The plugin provides peer messaging plus workflow listing, checkpoints, structured journal capture, and project improvement reports. See the [plugin tool table](plugins/kxm-mesh/README.md#tools).
+The plugin provides peer messaging plus workflow listing, checkpoints, structured journal capture, and project improvement reports. See the [plugin tool table](plugins/kxm/README.md#tools).
 
 Pushed Claude channel delivery is a research-preview feature. Community channels currently require an explicit development-channel launch:
 
 ```text
-claude --dangerously-load-development-channels plugin:kxm-mesh@kontextmind-pi-extensions
+claude --dangerously-load-development-channels plugin:kxm
 ```
 
-Without channel mode, ordinary MCP tools still work; use `mesh_inbox` and `mesh_reply` for inbound requests. See [Getting started](docs/getting-started.md#connect-claude-code) for the complete flow.
+Without channel mode, ordinary MCP tools still work; use `kxm_inbox` and `kxm_reply` for inbound requests. See [Getting started](docs/getting-started.md#connect-claude-code) for the complete flow.
 
 ## Production boundaries
 
@@ -264,7 +264,7 @@ Run the complete local gate with `npm run validate`. See [Contributing](CONTRIBU
 .claude-plugin/                 Claude marketplace catalog
 .github/                        CI and contribution templates
 docs/                           User, operator, and architecture guides
-plugins/kxm-mesh/
+plugins/kxm/
 ├── .claude-plugin/             Claude plugin manifest
 ├── dist/                       Generated self-contained CLI, hub, and MCP runtimes
 ├── skills/                     Portable Agent Skill
@@ -272,7 +272,7 @@ plugins/kxm-mesh/
 scripts/                        Build and consistency helpers
 test/                           Integration tests
 examples/                       Executable transport scenarios and callback sender
-scripts/pi-mesh-worker.mjs      Restarting headless Pi RPC worker
+scripts/kxm-worker.mjs      Restarting headless Pi RPC worker
 ```
 
 ## License

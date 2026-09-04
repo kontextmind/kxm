@@ -6,7 +6,7 @@ import {
   agentWorker,
   gateWorker,
   workerResult,
-} from "../plugins/kxm-mesh/src/envelope.ts";
+} from "../plugins/kxm/src/envelope.ts";
 
 test("workerResult hub-owned keys cannot be clobbered by additive payload fields", () => {
   const agent = agentWorker({ name: "kimi", project: "payk12", model: "kimi-coding/k3" });

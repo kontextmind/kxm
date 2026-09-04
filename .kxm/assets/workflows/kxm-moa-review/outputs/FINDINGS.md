@@ -17,8 +17,8 @@ Do not call this done.
 |---|---|---|---|
 | KXM-1 | harness | high | Four-critic MOA never executed; only grok wrote a review |
 | KXM-2 | harness | high | `kxm improve` existed as a function but was not a CLI command until this pass |
-| KXM-3 | documentation | high | Skill `kxm-mesh` still teaches `mesh_*` tools, not `kxm agent/session/workflow/gate` |
-| KXM-4 | implementation | high | Plugin/package names mixed: `@kontextmind/pi-extensions`, plugin `kxm-mesh`, bins `kxm` + leftover `pi-mesh-*` |
+| KXM-3 | documentation | high | Skill `kxm` still teaches `mesh_*` tools, not `kxm agent/session/workflow/gate` |
+| KXM-4 | implementation | high | Plugin/package names mixed: `@kontextmind/kxm`, plugin `kxm`, bins `kxm` + leftover `pi-mesh-*` |
 | KXM-5 | gates | med | SSSF `writes:` / `protected_files` not ported; `--tools` is not a path boundary |
 | KXM-6 | workflow | med | Session mix/workflow start writes JSON; does not launch workers or bind `KXM_SESSION_ID` for children |
 | KXM-7 | harness | med | `session stop` and `mesh stop` are the same PID drain |
@@ -42,12 +42,12 @@ Do not call this done.
 
 ## Improve kxm (product)
 
-1. Rebuild `plugins/kxm-mesh/dist` and drop or alias `pi-mesh` / `pi-mesh-hub` / `pi-mesh-worker` bins.
+1. Rebuild `plugins/kxm/dist` and drop or alias `pi-mesh` / `kxm-hub` / `kxm-worker` bins.
 2. Rewrite the skill around `kxm` tools; keep `mesh_*` as the *agent-to-agent* protocol, not the operator CLI.
 3. One stop command. Alias the other.
 4. Bind session id: `kxm session start` should print `KXM_SESSION_ID=` and worker spawn should inherit it.
 5. Port SSSF `writes:` as a gate (`artifacts-exist` + unauthorized path rollback) before claiming factory parity.
-6. `kxm improve` should classify `cli` vs `project` with an explicit field on telemetry, not `PI_MESH_PROJECT===payk12`.
+6. `kxm improve` should classify `cli` vs `project` with an explicit field on telemetry, not `KXM_PROJECT===payk12`.
 7. Do not implement the dashboard until JSONL + session files are the boring path (see `docs/kxm-observability-dashboard.md`).
 
 ## Improve PayK12 (project custom)

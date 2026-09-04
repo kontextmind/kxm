@@ -3,14 +3,14 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { CliIo } from "../plugins/kxm-mesh/src/cli.ts";
+import type { CliIo } from "../plugins/kxm/src/cli.ts";
 import {
   PROMOTION_REQUIRED_EVALUATIONS,
   SkillLifecycle,
   SkillLifecycleError,
   skillContentSha256,
   skillIdFor,
-} from "../plugins/kxm-mesh/src/skills.ts";
+} from "../plugins/kxm/src/skills.ts";
 
 function lifecycle(overrides: { allowOptimizationEvals?: boolean } = {}): { lifecycle: SkillLifecycle; root: string } {
   const root = mkdtempSync(join(tmpdir(), "kxm-skills-"));
@@ -228,12 +228,12 @@ test("deterministic ids and audit ordering make promotion decisions reproducible
 });
 
 test("kxm skills CLI drives the lifecycle end to end", async () => {
-  const { runCli: runCliImpl } = await import("../plugins/kxm-mesh/src/cli.ts");
+  const { runCli: runCliImpl } = await import("../plugins/kxm/src/cli.ts");
   const cwd = mkdtempSync(join(tmpdir(), "kxm-skills-cli-"));
   const runCli = async (argv: string[], io: CliIo): Promise<number> => {
     const logs = mkdtempSync(join(tmpdir(), "kxm-skills-logs-"));
     try {
-      return await runCliImpl(argv, { PI_MESH_LOGS_DIR: logs }, io, cwd);
+      return await runCliImpl(argv, { KXM_LOGS_DIR: logs }, io, cwd);
     } finally {
       rmSync(logs, { recursive: true, force: true });
     }

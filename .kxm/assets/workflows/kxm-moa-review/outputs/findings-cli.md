@@ -15,7 +15,7 @@ This is clearer than SSSF’s `just sdlc` + 15 `adw_*.py` entrypoints.
 
 ## Criticisms
 
-**Operator vs protocol.** Humans should never need `mesh_send`. Agents should never need `kxm mesh hub`. The skill still mixes them. Split:
+**Operator vs protocol.** Humans should never need `kxm_send`. Agents should never need `kxm mesh hub`. The skill still mixes them. Split:
 
 - Operator skill / README: `kxm …`
 - Agent skill: `mesh_*` + envelopes

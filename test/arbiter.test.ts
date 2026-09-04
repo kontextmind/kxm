@@ -7,9 +7,9 @@ import {
   journalEntryToContextItem,
   rolePolicy,
   type RoleContextPolicy,
-} from "../plugins/kxm-mesh/src/arbiter.ts";
-import { parseContextItem, type ContextItem } from "../plugins/kxm-mesh/src/context.ts";
-import type { WorkflowJournalEntry } from "../plugins/kxm-mesh/src/workflow.ts";
+} from "../plugins/kxm/src/arbiter.ts";
+import { parseContextItem, type ContextItem } from "../plugins/kxm/src/context.ts";
+import type { WorkflowJournalEntry } from "../plugins/kxm/src/workflow.ts";
 
 function poolItem(overrides: Record<string, unknown> = {}): ContextItem {
   return parseContextItem({
@@ -269,7 +269,7 @@ test("hub context surfaces: role packets, recall, state, episodes, explain, pari
 
   // Parity: CLI and MCP call the same endpoints. The CLI helper posts to the
   // identical paths with the admin token; verify one representative call.
-  const { hubContextPost } = await import("../plugins/kxm-mesh/src/cli.ts");
+  const { hubContextPost } = await import("../plugins/kxm/src/cli.ts");
   const cliState = await hubContextPost({
     serverUrl: mesh.address.url,
     path: "/v1/context/state",

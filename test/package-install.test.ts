@@ -74,7 +74,7 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
     ], consumer);
     assert.equal(installed.status, 0, `${installed.stderr}\n${installed.stdout}`);
 
-    const packageRoot = join(consumer, "node_modules", "@kontextmind", "pi-extensions");
+    const packageRoot = join(consumer, "node_modules", "@kontextmind", "kxm");
     const cli = spawnSync(process.execPath, [join(packageRoot, "scripts", "kxm.mjs"), "mesh", "help"], {
       cwd: consumer,
       encoding: "utf8",
@@ -273,7 +273,7 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
       join(packageRoot, "scripts", "kxm.mjs"), "runtime", "stop", "--json",
     ], { cwd: legacyConsumer, encoding: "utf8", env: joinEnvironment, timeout: 60_000 });
     assert.equal(packedStop.status, 0, `${packedStop.stderr}\n${packedStop.stdout}`);
-    assert.equal(existsSync(join(packageRoot, "plugins", "kxm-mesh", "dist", "vnext-runtime-supervisor.js")), true);
+    assert.equal(existsSync(join(packageRoot, "plugins", "kxm", "dist", "vnext-runtime-supervisor.js")), true);
 
     const globalInstall = runNpm([
       "install",
@@ -327,22 +327,22 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
 
     const environment = { ...process.env };
     for (const key of [
-      "PI_MESH_WORKSPACE_DIR",
-      "PI_MESH_CONFIG_DIR",
-      "PI_MESH_LOGS_DIR",
-      "PI_MESH_ASSETS_DIR",
-      "PI_MESH_STATE_DIR",
-      "PI_MESH_DATA_PATH",
-      "PI_MESH_LOG_PATH",
-      "PI_MESH_WEBHOOK_WORKFLOWS",
-      "PI_MESH_WEBHOOK_WORKFLOWS_FILE",
+      "KXM_WORKSPACE_DIR",
+      "KXM_CONFIG_DIR",
+      "KXM_LOGS_DIR",
+      "KXM_ASSETS_DIR",
+      "KXM_STATE_DIR",
+      "KXM_DATA_PATH",
+      "KXM_LOG_PATH",
+      "KXM_WEBHOOK_WORKFLOWS",
+      "KXM_WEBHOOK_WORKFLOWS_FILE",
     ]) delete environment[key];
     Object.assign(environment, {
-      PI_MESH_HOST: "127.0.0.1",
-      PI_MESH_PORT: "0",
-      PI_MESH_AUTH_TOKEN: "packed-consumer-test-token",
+      KXM_HOST: "127.0.0.1",
+      KXM_PORT: "0",
+      KXM_AUTH_TOKEN: "packed-consumer-test-token",
     });
-    hub = spawn(process.execPath, [join(packageRoot, "scripts", "pi-mesh-hub.mjs")], {
+    hub = spawn(process.execPath, [join(packageRoot, "scripts", "kxm-hub.mjs")], {
       cwd: runtime,
       env: environment,
       stdio: ["ignore", "pipe", "pipe"],
@@ -355,7 +355,7 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
     const url = await new Promise<string>((resolveUrl, reject) => {
       const timeout = setTimeout(() => reject(new Error(`packed hub did not start: ${stdout}\n${stderr}`)), 10_000);
       const inspect = () => {
-        const match = stdout.match(/kxm mesh hub listening at (http:\/\/[^;]+);/);
+        const match = stdout.match(/kxm hub listening at (http:\/\/[^;]+);/);
         if (!match) return;
         clearTimeout(timeout);
         resolveUrl(match[1]!);
@@ -375,7 +375,7 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
     }));
     assert.equal(await hubExit, 0);
     assert.equal(stderr, "");
-    assert.match(readFileSync(join(runtime, ".kxm", "logs", "pi-mesh-hub.jsonl"), "utf8"), /"event":"hub_stopping"/);
+    assert.match(readFileSync(join(runtime, ".kxm", "logs", "kxm-hub.jsonl"), "utf8"), /"event":"hub_stopping"/);
   } finally {
     if (hub?.exitCode === null) hub.kill("SIGKILL");
     if (hubExit) await hubExit;

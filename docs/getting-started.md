@@ -11,7 +11,7 @@ You need:
 - GitHub CLI for the command-first release install;
 - Pi for Pi agents;
 - Claude Code only if you want a mixed Pi/Claude pool;
-- access to `kontextmind/pi-extensions` while the repository is private.
+- access to `kontextmind/kxm` while the repository is private.
 
 All agents in one pool must use the same hub URL, project token, and project name. Keep the hub/operator administrative token separate. Every active agent in that project must have a unique name.
 
@@ -24,10 +24,10 @@ tarball. Run `gh auth login` first if necessary.
 
 ```powershell
 $version = "<release-version>"
-$asset = "kontextmind-pi-extensions-$version.tgz"
+$asset = "kxm-$version.tgz"
 $releaseDir = Join-Path $PWD ".kxm-release"
 New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
-gh release download "v$version" --repo kontextmind/pi-extensions --pattern $asset --dir $releaseDir --clobber
+gh release download "v$version" --repo kontextmind/kxm --pattern $asset --dir $releaseDir --clobber
 npm install --global --omit=peer (Join-Path $releaseDir $asset)
 kxm mesh help
 ```
@@ -42,17 +42,17 @@ of `kxm`.
 With the packed operator command installed:
 
 ```powershell
-$env:PI_MESH_AUTH_TOKEN = "replace-with-an-admin-token"
-$env:PI_MESH_PROJECT_TOKENS = '{"demo":"replace-with-a-demo-project-token"}'
-kxm mesh hub
+$env:KXM_AUTH_TOKEN = "replace-with-an-admin-token"
+$env:KXM_PROJECT_TOKENS = '{"demo":"replace-with-a-demo-project-token"}'
+kxm hub start
 ```
 
 On macOS or Linux, use:
 
 ```bash
-export PI_MESH_AUTH_TOKEN="replace-with-an-admin-token"
-export PI_MESH_PROJECT_TOKENS='{"demo":"replace-with-a-demo-project-token"}'
-kxm mesh hub
+export KXM_AUTH_TOKEN="replace-with-an-admin-token"
+export KXM_PROJECT_TOKENS='{"demo":"replace-with-a-demo-project-token"}'
+kxm hub start
 ```
 
 For the source alternative, start the clone with `npm run hub`.
@@ -60,7 +60,7 @@ For the source alternative, start the clone with `npm run hub`.
 A successful start prints:
 
 ```text
-kxm mesh hub listening at http://127.0.0.1:7331; storage=<workspace>/.kxm/state/mesh.db
+kxm hub listening at http://127.0.0.1:7331; storage=<workspace>/.kxm/state/kxm.db
 ```
 
 In another terminal, verify the health endpoint:
@@ -86,7 +86,7 @@ kxm mesh --json status
 Install the package once:
 
 ```text
-pi install git:github.com/kontextmind/pi-extensions
+pi install git:github.com/kontextmind/kxm
 ```
 
 If the repository is private, authenticate Git before running the install.
@@ -96,19 +96,19 @@ above.
 Set an identity and start the first agent:
 
 ```powershell
-$env:PI_MESH_SERVER_URL = "http://127.0.0.1:7331"
-$env:PI_MESH_AUTH_TOKEN = "replace-with-a-demo-project-token"
-$env:PI_MESH_PROJECT = "demo"
-$env:PI_MESH_AGENT_NAME = "planner"
-$env:PI_MESH_AGENT_PURPOSE = "Plans work and coordinates handoffs"
+$env:KXM_SERVER_URL = "http://127.0.0.1:7331"
+$env:KXM_AUTH_TOKEN = "replace-with-a-demo-project-token"
+$env:KXM_PROJECT = "demo"
+$env:KXM_AGENT_NAME = "planner"
+$env:KXM_AGENT_PURPOSE = "Plans work and coordinates handoffs"
 pi
 ```
 
 Open a second terminal, repeat the settings, and change only the identity:
 
 ```powershell
-$env:PI_MESH_AGENT_NAME = "reviewer"
-$env:PI_MESH_AGENT_PURPOSE = "Reviews plans and code for correctness risks"
+$env:KXM_AGENT_NAME = "reviewer"
+$env:KXM_AGENT_PURPOSE = "Reviews plans and code for correctness risks"
 pi
 ```
 
@@ -117,11 +117,11 @@ Run `/mesh-status` in either session. It should show the connected identity and 
 Ask the planner:
 
 ```text
-Use the kxm-mesh skill. List peers, ask reviewer to examine the current
+Use the kxm skill. List peers, ask reviewer to examine the current
 plan for its three highest correctness risks, and wait for the response.
 ```
 
-The planner should call `mesh_list`, `mesh_send`, and `mesh_await`. The reviewer receives an agent turn and its settled response returns to the planner.
+The planner should call `kxm_list`, `kxm_send`, and `kxm_await`. The reviewer receives an agent turn and its settled response returns to the planner.
 
 For an executable transport-only demonstration, run `npm run example`. It starts a temporary in-memory hub, completes a planner-to-reviewer round trip, and exits without changing the normal database.
 
@@ -130,8 +130,8 @@ For an executable transport-only demonstration, run `npm run example`. It starts
 Keep the same hub running. Inside Claude Code, add the marketplace and install the plugin:
 
 ```text
-/plugin marketplace add kontextmind/pi-extensions
-/plugin install kxm-mesh@kontextmind-pi-extensions
+/plugin marketplace add kontextmind/kxm
+/plugin install kxm
 /reload-plugins
 ```
 
@@ -145,23 +145,23 @@ Configure these values when prompted:
 | Agent purpose | `Reviews implementation and tests` |
 | Project | `demo` |
 
-Restart Claude Code after configuration. Ask it to use `mesh_list`; the connected Pi agents should appear.
+Restart Claude Code after configuration. Ask it to use `kxm_list`; the connected Pi agents should appear.
 
 ### Optional pushed delivery
 
 Claude channels can inject an inbound request into a running session. They are currently a research-preview feature, and a community channel must be explicitly trusted at launch:
 
 ```text
-claude --dangerously-load-development-channels plugin:kxm-mesh@kontextmind-pi-extensions
+claude --dangerously-load-development-channels plugin:kxm
 ```
 
 Review the trust prompt before accepting it. If an organization administrator has approved the plugin through `allowedChannelPlugins`, use:
 
 ```text
-claude --channels plugin:kxm-mesh@kontextmind-pi-extensions
+claude --channels plugin:kxm
 ```
 
-Without channel mode, Claude can still send requests and receive them by calling `mesh_inbox`, then answer with `mesh_reply`.
+Without channel mode, Claude can still send requests and receive them by calling `kxm_inbox`, then answer with `kxm_reply`.
 
 ## Your first useful topology
 
@@ -187,7 +187,7 @@ Avoid assigning two agents to edit the same files in one checkout. Use separate 
 
 ## Try the v0.5 context features
 
-With a hub running (`kxm mesh hub`):
+With a hub running (`kxm hub start`):
 
 ```bash
 # Role-aware context packet for the current project

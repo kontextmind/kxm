@@ -3,14 +3,14 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { WorkerResultEnvelope } from "../plugins/kxm-mesh/src/envelope.ts";
+import type { WorkerResultEnvelope } from "../plugins/kxm/src/envelope.ts";
 import {
   appendTelemetry,
   inferImprovementTarget,
   makeTelemetryEvent,
   readTelemetry,
   telemetryPath,
-} from "../plugins/kxm-mesh/src/telemetry.ts";
+} from "../plugins/kxm/src/telemetry.ts";
 
 const envelope = {
   schema: "kxm.worker-result.v1",
@@ -25,7 +25,7 @@ const envelope = {
 test("improvement telemetry classifies every named project generically and honors an explicit target", () => {
   assert.equal(inferImprovementTarget({ project: "any-product" }), "project");
   assert.equal(inferImprovementTarget({ workflowId: "release-review" }), "project");
-  assert.equal(inferImprovementTarget({ env: { PI_MESH_PROJECT: "from-env" } }), "project");
+  assert.equal(inferImprovementTarget({ env: { KXM_PROJECT: "from-env" } }), "project");
   assert.equal(inferImprovementTarget({}), "cli");
   assert.equal(inferImprovementTarget({ project: "product", env: { KXM_IMPROVE_TARGET: "cli" } }), "cli");
   assert.equal(inferImprovementTarget({ env: { KXM_IMPROVE_TARGET: "project" } }), "project");

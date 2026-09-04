@@ -1,15 +1,15 @@
 {
-  "name": "@kontextmind/pi-extensions",
+  "name": "@kontextmind/kxm",
   "version": "0.5.1",
-  "description": "Pi extensions and Agent Skills for multi-agent communication",
+  "description": "KXM local-first multi-agent orchestration and operator dashboard",
   "type": "module",
   "author": "KontextMind",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kontextmind/pi-extensions.git"
+    "url": "git+https://github.com/kontextmind/kxm.git"
   },
-  "homepage": "https://github.com/kontextmind/pi-extensions#readme",
-  "bugs": "https://github.com/kontextmind/pi-extensions/issues",
+  "homepage": "https://github.com/kontextmind/kxm#readme",
+  "bugs": "https://github.com/kontextmind/kxm/issues",
   "keywords": [
     "pi-package",
     "pi-extension",
@@ -24,34 +24,34 @@
     "node": "^22.19.0 || >=24.0.0"
   },
   "scripts": {
-    "hub": "node scripts/pi-mesh-hub.mjs",
-    "worker": "node scripts/pi-mesh-worker.mjs",
+    "hub": "node scripts/kxm-hub.mjs",
+    "worker": "node scripts/kxm-worker.mjs",
     "example": "node --disable-warning=ExperimentalWarning --experimental-strip-types examples/roundtrip.ts",
-    "build:mcp": "esbuild plugins/kxm-mesh/src/mcp-server.ts --bundle --platform=node --format=esm --target=node22 --alias:@modelcontextprotocol/sdk/server/index.js=./node_modules/@modelcontextprotocol/sdk/dist/esm/server/index.js --alias:@modelcontextprotocol/sdk/server/stdio.js=./node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js --alias:@modelcontextprotocol/sdk/types.js=./node_modules/@modelcontextprotocol/sdk/dist/esm/types.js --outfile=plugins/kxm-mesh/dist/mcp-server.js --banner:js=\"#!/usr/bin/env node\"",
+    "build:mcp": "esbuild plugins/kxm/src/mcp-server.ts --bundle --platform=node --format=esm --target=node22 --alias:@modelcontextprotocol/sdk/server/index.js=./node_modules/@modelcontextprotocol/sdk/dist/esm/server/index.js --alias:@modelcontextprotocol/sdk/server/stdio.js=./node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js --alias:@modelcontextprotocol/sdk/types.js=./node_modules/@modelcontextprotocol/sdk/dist/esm/types.js --outfile=plugins/kxm/dist/mcp-server.js --banner:js=\"#!/usr/bin/env node\"",
     "build:runtime": "node scripts/build-runtime.mjs",
     "build": "npm run build:mcp && npm run build:runtime",
     "check:generated": "npm run build && node scripts/check-generated.mjs",
     "test": "npm run build && node --disable-warning=ExperimentalWarning --experimental-strip-types --test test/*.test.ts",
-    "test:coverage": "npm run build && node --disable-warning=ExperimentalWarning --experimental-strip-types --test --experimental-test-coverage --test-coverage-lines=95 --test-coverage-branches=80 --test-coverage-functions=90 --test-coverage-include=plugins/kxm-mesh/src/client.ts --test-coverage-include=plugins/kxm-mesh/src/extension.ts --test-coverage-include=plugins/kxm-mesh/src/hub.ts --test-coverage-include=plugins/kxm-mesh/src/inbox.ts --test-coverage-include=plugins/kxm-mesh/src/protocol.ts --test-coverage-include=plugins/kxm-mesh/src/store.ts --test-coverage-include=plugins/kxm-mesh/src/workflow.ts --test-coverage-include=plugins/kxm-mesh/src/diagnostics.ts --test-coverage-include=plugins/kxm-mesh/src/redact.ts --test-coverage-include=plugins/kxm-mesh/src/cli.ts --test-coverage-include=plugins/kxm-mesh/src/github-watch.ts --test-coverage-include=plugins/kxm-mesh/src/retrospective.ts --test-coverage-include=plugins/kxm-mesh/src/recovery.ts test/*.test.ts",
+    "test:coverage": "npm run build && node --disable-warning=ExperimentalWarning --experimental-strip-types --test --experimental-test-coverage --test-coverage-lines=95 --test-coverage-branches=80 --test-coverage-functions=90 --test-coverage-include=plugins/kxm/src/client.ts --test-coverage-include=plugins/kxm/src/extension.ts --test-coverage-include=plugins/kxm/src/hub.ts --test-coverage-include=plugins/kxm/src/inbox.ts --test-coverage-include=plugins/kxm/src/protocol.ts --test-coverage-include=plugins/kxm/src/store.ts --test-coverage-include=plugins/kxm/src/workflow.ts --test-coverage-include=plugins/kxm/src/diagnostics.ts --test-coverage-include=plugins/kxm/src/redact.ts --test-coverage-include=plugins/kxm/src/cli.ts --test-coverage-include=plugins/kxm/src/github-watch.ts --test-coverage-include=plugins/kxm/src/retrospective.ts --test-coverage-include=plugins/kxm/src/recovery.ts test/*.test.ts",
     "typecheck": "tsc --noEmit",
     "lint:docs": "markdownlint-cli2",
     "check:versions": "node scripts/check-versions.mjs",
     "check": "npm run typecheck && npm run lint:docs && npm run check:versions",
-    "validate:claude": "claude plugin validate . --strict && claude plugin validate plugins/kxm-mesh --strict",
+    "validate:claude": "claude plugin validate . --strict && claude plugin validate plugins/kxm --strict",
     "validate:ci": "npm run test:coverage && npm run check && npm pack --dry-run",
     "validate": "npm run validate:ci && npm run validate:claude"
   },
   "bin": {
     "kxm": "./scripts/kxm.mjs",
-    "pi-mesh-hub": "./scripts/pi-mesh-hub.mjs",
-    "pi-mesh-worker": "./scripts/pi-mesh-worker.mjs"
+    "kxm-hub": "./scripts/kxm-hub.mjs",
+    "kxm-worker": "./scripts/kxm-worker.mjs"
   },
   "pi": {
     "extensions": [
-      "./plugins/kxm-mesh/src/extension.ts"
+      "./plugins/kxm/src/extension.ts"
     ],
     "skills": [
-      "./plugins/kxm-mesh/skills"
+      "./plugins/kxm/skills"
     ]
   },
   "peerDependencies": {
@@ -79,13 +79,13 @@
     ".kxm/config/workflows/v04-dogfood.json",
     ".kxm/config/workflows/fix.json",
     ".claude-plugin",
-    "plugins/kxm-mesh/.claude-plugin",
-    "plugins/kxm-mesh/.mcp.json",
-    "plugins/kxm-mesh/package.json",
-    "plugins/kxm-mesh/README.md",
-    "plugins/kxm-mesh/dist",
-    "plugins/kxm-mesh/skills",
-    "plugins/kxm-mesh/src",
+    "plugins/kxm/.claude-plugin",
+    "plugins/kxm/.mcp.json",
+    "plugins/kxm/package.json",
+    "plugins/kxm/README.md",
+    "plugins/kxm/dist",
+    "plugins/kxm/skills",
+    "plugins/kxm/src",
     "scripts",
     "docs",
     "examples",

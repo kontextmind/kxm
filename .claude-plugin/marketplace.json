@@ -1,19 +1,19 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
-  "name": "kontextmind-pi-extensions",
-  "description": "KontextMind extensions for Pi, Claude Code, and multi-agent workflows",
+  "name": "kxm",
+  "description": "KXM: headless multi-agent orchestration and live operator dashboard",
   "owner": {
     "name": "KontextMind",
     "url": "https://github.com/kontextmind"
   },
   "plugins": [
     {
-      "name": "kxm-mesh",
-      "source": "./plugins/kxm-mesh",
-      "description": "Durable peer communication and signed webhook workflows for Pi and Claude Code agents",
+      "name": "kxm",
+      "source": "./plugins/kxm",
+      "description": "Durable workflows, peer agents, and kxm tui",
       "version": "0.5.1",
       "category": "development",
-      "tags": ["multi-agent", "communication", "workflows", "webhooks", "mcp", "pi"]
+      "tags": ["kxm", "multi-agent", "workflows", "mcp"]
     }
   ]
 }

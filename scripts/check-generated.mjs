@@ -6,10 +6,10 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 export const GENERATED_ARTIFACTS = [
-  "plugins/kxm-mesh/dist/cli.js",
-  "plugins/kxm-mesh/dist/server.js",
-  "plugins/kxm-mesh/dist/mcp-server.js",
-  "plugins/kxm-mesh/dist/vnext-runtime-supervisor.js",
+  "plugins/kxm/dist/cli.js",
+  "plugins/kxm/dist/server.js",
+  "plugins/kxm/dist/mcp-server.js",
+  "plugins/kxm/dist/vnext-runtime-supervisor.js",
 ];
 
 function runGit(repository, args, allowFailure = false) {

@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import piMeshExtension, { bindingForMessage, workflowRunIdForMessage } from "../plugins/kxm-mesh/src/extension.ts";
-import { recoveryEnvelopePath, workerStateKey } from "../plugins/kxm-mesh/src/recovery.ts";
+import piMeshExtension, { bindingForMessage, workflowRunIdForMessage } from "../plugins/kxm/src/extension.ts";
+import { recoveryEnvelopePath, workerStateKey } from "../plugins/kxm/src/recovery.ts";
 import { createTestMesh, waitFor } from "./helpers.ts";
 
 type EventHandler = (...args: unknown[]) => unknown | Promise<unknown>;
@@ -112,26 +112,26 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
   });
 
   const previous = {
-    url: process.env.PI_MESH_SERVER_URL,
-    token: process.env.PI_MESH_AUTH_TOKEN,
-    project: process.env.PI_MESH_PROJECT,
-    name: process.env.PI_MESH_AGENT_NAME,
-    purpose: process.env.PI_MESH_AGENT_PURPOSE,
+    url: process.env.KXM_SERVER_URL,
+    token: process.env.KXM_AUTH_TOKEN,
+    project: process.env.KXM_PROJECT,
+    name: process.env.KXM_AGENT_NAME,
+    purpose: process.env.KXM_AGENT_PURPOSE,
   };
   Object.assign(process.env, {
-    PI_MESH_SERVER_URL: mesh.address.url,
-    PI_MESH_AUTH_TOKEN: mesh.token,
-    PI_MESH_PROJECT: "test-project",
-    PI_MESH_AGENT_NAME: "pi-under-test",
-    PI_MESH_AGENT_PURPOSE: "Tests native Pi integration",
+    KXM_SERVER_URL: mesh.address.url,
+    KXM_AUTH_TOKEN: mesh.token,
+    KXM_PROJECT: "test-project",
+    KXM_AGENT_NAME: "pi-under-test",
+    KXM_AGENT_PURPOSE: "Tests native Pi integration",
   });
   context.after(() => {
     for (const [key, value] of Object.entries({
-      PI_MESH_SERVER_URL: previous.url,
-      PI_MESH_AUTH_TOKEN: previous.token,
-      PI_MESH_PROJECT: previous.project,
-      PI_MESH_AGENT_NAME: previous.name,
-      PI_MESH_AGENT_PURPOSE: previous.purpose,
+      KXM_SERVER_URL: previous.url,
+      KXM_AUTH_TOKEN: previous.token,
+      KXM_PROJECT: previous.project,
+      KXM_AGENT_NAME: previous.name,
+      KXM_AGENT_PURPOSE: previous.purpose,
     })) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
@@ -141,25 +141,25 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
   const fake = fakePi();
   piMeshExtension(fake.api);
   assert.deepEqual([...fake.tools.keys()], [
-    "mesh_list",
-    "mesh_send",
-    "mesh_get",
-    "mesh_fanout",
-    "mesh_await",
-    "mesh_cancel",
-    "mesh_workflow_list",
-    "mesh_workflow_get",
-    "mesh_workflow_checkpoint",
-    "mesh_workflow_wait",
-    "mesh_workflow_record",
-    "mesh_improvement_report",
+    "kxm_list",
+    "kxm_send",
+    "kxm_get",
+    "kxm_fanout",
+    "kxm_await",
+    "kxm_cancel",
+    "kxm_workflow_list",
+    "kxm_workflow_get",
+    "kxm_workflow_checkpoint",
+    "kxm_workflow_wait",
+    "kxm_workflow_record",
+    "kxm_improvement_report",
     "kxm_context",
     "kxm_recall",
     "kxm_state",
     "kxm_episode",
     "kxm_promote",
   ]);
-  const sendTool = fake.tools.get("mesh_send")!;
+  const sendTool = fake.tools.get("kxm_send")!;
   const sendProperties = (sendTool.parameters as {
     properties: Record<string, Record<string, unknown>>;
   }).properties;
@@ -168,7 +168,7 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
     ["runId", "stageId", "requirementKey", "attempt"],
   );
   assert.match(String(sendProperties.idempotencyKey!.description), /not a workflow security or evidence binding/);
-  const checkpointProperties = (fake.tools.get("mesh_workflow_checkpoint")!.parameters as {
+  const checkpointProperties = (fake.tools.get("kxm_workflow_checkpoint")!.parameters as {
     properties: Record<string, Record<string, unknown>>;
   }).properties;
   const evidenceRefValue = checkpointProperties.evidenceRefs!.patternProperties as Record<
@@ -196,9 +196,9 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
   assert.ok(statuses.includes("mesh:pi-under-test"));
   await waitFor(async () => (await peer.listAgents()).some((agent) => agent.name === "pi-under-test"));
 
-  const listed = await fake.tools.get("mesh_list")!.execute("call-list", {});
+  const listed = await fake.tools.get("kxm_list")!.execute("call-list", {});
   assert.match(JSON.stringify(listed.details), /reviewer/);
-  const sent = await fake.tools.get("mesh_send")!.execute("call-send", {
+  const sent = await fake.tools.get("kxm_send")!.execute("call-send", {
     target: "reviewer",
     content: "outbound review",
     delivery: "followUp",
@@ -207,11 +207,11 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
     ttlMs: 5_000,
   });
   const sentId = (sent.details as { messageId: string }).messageId;
-  const awaited = await fake.tools.get("mesh_await")!.execute("call-await", { messageId: sentId, timeoutMs: 2_000 });
+  const awaited = await fake.tools.get("kxm_await")!.execute("call-await", { messageId: sentId, timeoutMs: 2_000 });
   assert.match(JSON.stringify(awaited.details), /outbound approved/);
-  const fetched = await fake.tools.get("mesh_get")!.execute("call-get", { messageId: sentId });
+  const fetched = await fake.tools.get("kxm_get")!.execute("call-get", { messageId: sentId });
   assert.match(JSON.stringify(fetched.details), /replied/);
-  const panel = await fake.tools.get("mesh_fanout")!.execute("call-fanout", {
+  const panel = await fake.tools.get("kxm_fanout")!.execute("call-fanout", {
     targets: ["reviewer"],
     content: "outbound review",
     correlationId: "extension-panel",
@@ -221,7 +221,7 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
   assert.match(JSON.stringify(panel.details), /outbound approved/);
   const fanoutAbort = new AbortController();
   setTimeout(() => fanoutAbort.abort(), 30).unref();
-  const interruptedPanel = await fake.tools.get("mesh_fanout")!.execute("call-fanout-abort", {
+  const interruptedPanel = await fake.tools.get("kxm_fanout")!.execute("call-fanout-abort", {
     targets: ["reviewer"],
     content: "continue this review after prompt interruption",
     correlationId: "extension-panel-abort",
@@ -299,18 +299,18 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
     isError: true,
     text: "ENOENT command not found",
   });
-  const afterToolFailure = await fake.tools.get("mesh_workflow_get")!.execute("workflow-get-after-tool", { runId: workflowRunId });
+  const afterToolFailure = await fake.tools.get("kxm_workflow_get")!.execute("workflow-get-after-tool", { runId: workflowRunId });
   assert.match(JSON.stringify(afterToolFailure.details), /Tool bash failed: command_not_found/);
   assert.doesNotMatch(JSON.stringify(afterToolFailure.details), /sk-|ghp_|Bearer |prompt body|stdout dump/);
-  assert.match(JSON.stringify((await fake.tools.get("mesh_workflow_list")!.execute("workflow-list", {})).details), /TASK|extension-workflow/);
-  assert.match(JSON.stringify((await fake.tools.get("mesh_workflow_get")!.execute("workflow-get", { runId: workflowRunId })).details), /in_progress/);
+  assert.match(JSON.stringify((await fake.tools.get("kxm_workflow_list")!.execute("workflow-list", {})).details), /TASK|extension-workflow/);
+  assert.match(JSON.stringify((await fake.tools.get("kxm_workflow_get")!.execute("workflow-get", { runId: workflowRunId })).details), /in_progress/);
   const provenanceContext = {
     runId: workflowRunId,
     stageId: "work",
     requirementKey: "test",
     attempt: 1,
   };
-  const provenanceSend = await fake.tools.get("mesh_send")!.execute("workflow-provenance-send", {
+  const provenanceSend = await fake.tools.get("kxm_send")!.execute("workflow-provenance-send", {
     target: "reviewer",
     content: "workflow provenance send",
     correlationId: workflowRunId,
@@ -318,11 +318,11 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
     workflowContext: provenanceContext,
   });
   const provenanceSendId = (provenanceSend.details as { messageId: string }).messageId;
-  await fake.tools.get("mesh_await")!.execute("workflow-provenance-send-await", {
+  await fake.tools.get("kxm_await")!.execute("workflow-provenance-send-await", {
     messageId: provenanceSendId,
     timeoutMs: 2_000,
   });
-  const provenanceMessage = await fake.tools.get("mesh_get")!.execute("workflow-provenance-send-get", {
+  const provenanceMessage = await fake.tools.get("kxm_get")!.execute("workflow-provenance-send-get", {
     messageId: provenanceSendId,
   });
   const provenanceMessageDetails = provenanceMessage.details as {
@@ -334,7 +334,7 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
     schema: "pi-mesh.workflow-message-context.v1",
     ...provenanceContext,
   });
-  const provenanceFanout = await fake.tools.get("mesh_fanout")!.execute("workflow-provenance-fanout", {
+  const provenanceFanout = await fake.tools.get("kxm_fanout")!.execute("workflow-provenance-fanout", {
     targets: ["reviewer"],
     content: "workflow provenance fanout",
     correlationId: workflowRunId,
@@ -345,7 +345,7 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
   const [provenanceFanoutResult] = (provenanceFanout.details as {
     responses: Array<{ messageId: string }>;
   }).responses;
-  const provenanceFanoutMessage = await fake.tools.get("mesh_get")!.execute("workflow-provenance-fanout-get", {
+  const provenanceFanoutMessage = await fake.tools.get("kxm_get")!.execute("workflow-provenance-fanout-get", {
     messageId: provenanceFanoutResult!.messageId,
   });
   const provenanceFanoutDetails = provenanceFanoutMessage.details as {
@@ -357,20 +357,20 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
     schema: "pi-mesh.workflow-message-context.v1",
     ...provenanceContext,
   });
-  await fake.tools.get("mesh_workflow_record")!.execute("workflow-record", {
+  await fake.tools.get("kxm_workflow_record")!.execute("workflow-record", {
     runId: workflowRunId,
     category: "decision",
     area: "implementation",
     summary: "Use the smallest safe change",
   });
-  await assert.rejects(() => fake.tools.get("mesh_workflow_wait")!.execute("workflow-wait-invalid", {
+  await assert.rejects(() => fake.tools.get("kxm_workflow_wait")!.execute("workflow-wait-invalid", {
     runId: workflowRunId,
     stageId: "work",
     signalKey: "external-check",
     summary: "Wait for external check",
     evidenceRefs: { test: { messageIds: ["msg_missing_surface_reference"] } },
   }), /peer evidence message not found/);
-  const checkpoint = await fake.tools.get("mesh_workflow_checkpoint")!.execute("workflow-checkpoint", {
+  const checkpoint = await fake.tools.get("kxm_workflow_checkpoint")!.execute("workflow-checkpoint", {
     runId: workflowRunId,
     stageId: "work",
     status: "passed",
@@ -378,7 +378,7 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
     evidenceRefs: { test: { messageIds: [provenanceSendId] } },
   });
   assert.equal((checkpoint.details as { completed: boolean }).completed, true);
-  assert.match(JSON.stringify((await fake.tools.get("mesh_improvement_report")!.execute("improvements", {})).details), /implementation/);
+  assert.match(JSON.stringify((await fake.tools.get("kxm_improvement_report")!.execute("improvements", {})).details), /implementation/);
   await fake.emit("agent_end", { messages: [{ role: "assistant", content: "workflow complete" }] });
   await fake.emit("agent_settled");
 
@@ -408,11 +408,11 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
   assert.equal(boundedReply.length, 32_000);
   assert.match(boundedReply, /response truncated from 32001 characters to fit the message limit/);
 
-  const cancellable = await fake.tools.get("mesh_send")!.execute("call-send-cancel", {
+  const cancellable = await fake.tools.get("kxm_send")!.execute("call-send-cancel", {
     target: "reviewer",
     content: "do not complete",
   });
-  const cancelled = await fake.tools.get("mesh_cancel")!.execute("call-cancel", {
+  const cancelled = await fake.tools.get("kxm_cancel")!.execute("call-cancel", {
     messageId: (cancellable.details as { messageId: string }).messageId,
   });
   assert.match(JSON.stringify(cancelled.details), /cancelled/);
@@ -422,7 +422,7 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
   await fake.emit("session_shutdown");
   await fake.commands.get("mesh-status")!.handler("", { ui });
   assert.ok(notices.some((notice) => notice.message === "pi-mesh is offline" && notice.type === "warning"));
-  await assert.rejects(() => fake.tools.get("mesh_list")!.execute("offline", {}), /not connected/);
+  await assert.rejects(() => fake.tools.get("kxm_list")!.execute("offline", {}), /not connected/);
 });
 
 test("fresh Pi session receives a durable workflow recovery turn", async (context) => {
@@ -471,14 +471,14 @@ test("fresh Pi session receives a durable workflow recovery turn", async (contex
     stageId: "implement",
     pendingMessageIds: [],
   }));
-  const keys = ["PI_MESH_SERVER_URL", "PI_MESH_AUTH_TOKEN", "PI_MESH_PROJECT", "PI_MESH_AGENT_NAME", "PI_MESH_STATE_DIR"] as const;
+  const keys = ["KXM_SERVER_URL", "KXM_AUTH_TOKEN", "KXM_PROJECT", "KXM_AGENT_NAME", "KXM_STATE_DIR"] as const;
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   Object.assign(process.env, {
-    PI_MESH_SERVER_URL: mesh.address.url,
-    PI_MESH_AUTH_TOKEN: mesh.token,
-    PI_MESH_PROJECT: "recovery-project",
-    PI_MESH_AGENT_NAME: "recovering-agent",
-    PI_MESH_STATE_DIR: stateDir,
+    KXM_SERVER_URL: mesh.address.url,
+    KXM_AUTH_TOKEN: mesh.token,
+    KXM_PROJECT: "recovery-project",
+    KXM_AGENT_NAME: "recovering-agent",
+    KXM_STATE_DIR: stateDir,
   });
   context.after(() => {
     for (const key of keys) {
@@ -497,7 +497,7 @@ test("fresh Pi session receives a durable workflow recovery turn", async (contex
   assert.match(String(recovered.message.content), /Last recorded stage: implement/);
   assert.equal(recovered.options.triggerTurn, true);
   assert.equal(existsSync(envelopePath), false);
-  const workflow = await fake.tools.get("mesh_workflow_get")!.execute("recovered-run", { runId });
+  const workflow = await fake.tools.get("kxm_workflow_get")!.execute("recovered-run", { runId });
   assert.match(JSON.stringify(workflow.details), /Worker recovered with unresumable_session/);
   await fake.emit("session_shutdown");
 });
@@ -553,14 +553,14 @@ test("fresh tool-timeout recovery relies on one durable inbound replay", async (
     pendingMessageIds: [run.messageId],
   }));
 
-  const keys = ["PI_MESH_SERVER_URL", "PI_MESH_AUTH_TOKEN", "PI_MESH_PROJECT", "PI_MESH_AGENT_NAME", "PI_MESH_STATE_DIR"] as const;
+  const keys = ["KXM_SERVER_URL", "KXM_AUTH_TOKEN", "KXM_PROJECT", "KXM_AGENT_NAME", "KXM_STATE_DIR"] as const;
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   Object.assign(process.env, {
-    PI_MESH_SERVER_URL: mesh.address.url,
-    PI_MESH_AUTH_TOKEN: mesh.token,
-    PI_MESH_PROJECT: "tool-timeout-recovery-project",
-    PI_MESH_AGENT_NAME: "tool-timeout-agent",
-    PI_MESH_STATE_DIR: stateDir,
+    KXM_SERVER_URL: mesh.address.url,
+    KXM_AUTH_TOKEN: mesh.token,
+    KXM_PROJECT: "tool-timeout-recovery-project",
+    KXM_AGENT_NAME: "tool-timeout-agent",
+    KXM_STATE_DIR: stateDir,
   });
   context.after(() => {
     for (const key of keys) {
@@ -582,7 +582,7 @@ test("fresh tool-timeout recovery relies on one durable inbound replay", async (
     run.messageId,
   );
   assert.equal(existsSync(envelopePath), false);
-  const workflow = await fake.tools.get("mesh_workflow_get")!.execute("tool-timeout-recovered-run", { runId: run.id });
+  const workflow = await fake.tools.get("kxm_workflow_get")!.execute("tool-timeout-recovered-run", { runId: run.id });
   assert.match(JSON.stringify(workflow.details), /Worker recovered with tool_timeout/);
   await fake.emit("session_shutdown");
 });
@@ -616,14 +616,14 @@ test("Pi extension preserves workflow work after a settled provider error and al
     runId: "run_stale_legacy",
   }));
   context.after(() => rmSync(stateDir, { recursive: true, force: true }));
-  const keys = ["PI_MESH_SERVER_URL", "PI_MESH_AUTH_TOKEN", "PI_MESH_PROJECT", "PI_MESH_AGENT_NAME", "PI_MESH_STATE_DIR"] as const;
+  const keys = ["KXM_SERVER_URL", "KXM_AUTH_TOKEN", "KXM_PROJECT", "KXM_AGENT_NAME", "KXM_STATE_DIR"] as const;
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   Object.assign(process.env, {
-    PI_MESH_SERVER_URL: mesh.address.url,
-    PI_MESH_AUTH_TOKEN: mesh.token,
-    PI_MESH_PROJECT: "provider-recovery-project",
-    PI_MESH_AGENT_NAME: "provider-recovery-agent",
-    PI_MESH_STATE_DIR: stateDir,
+    KXM_SERVER_URL: mesh.address.url,
+    KXM_AUTH_TOKEN: mesh.token,
+    KXM_PROJECT: "provider-recovery-project",
+    KXM_AGENT_NAME: "provider-recovery-agent",
+    KXM_STATE_DIR: stateDir,
   });
   context.after(() => {
     for (const key of keys) {
@@ -677,7 +677,7 @@ test("Pi extension preserves workflow work after a settled provider error and al
   };
   assert.ok(recoveryContext.pendingMessageIds.includes(message.id));
   assert.equal(existsSync(legacyContextPath), false);
-  const afterFailure = await fake.tools.get("mesh_workflow_get")!.execute("provider-error-run", { runId });
+  const afterFailure = await fake.tools.get("kxm_workflow_get")!.execute("provider-error-run", { runId });
   const serialized = JSON.stringify(afterFailure.details);
   assert.match(serialized, /Tool provider failed: quota/);
   assert.match(serialized, /nextAction:switch_model_or_retry/);
@@ -689,7 +689,7 @@ test("Pi extension preserves workflow work after a settled provider error and al
   await fake.emit("agent_end", {
     messages: [{ role: "assistant", content: "recovered response", stopReason: "stop" }],
   });
-  await fake.tools.get("mesh_workflow_checkpoint")!.execute("provider-recovery-checkpoint", {
+  await fake.tools.get("kxm_workflow_checkpoint")!.execute("provider-recovery-checkpoint", {
     runId,
     stageId: "review",
     status: "passed",
@@ -708,14 +708,14 @@ test("Pi extension drops terminal work, advances its queue, and exposes transien
   await peer.start(() => undefined);
   const stateDir = mkdtempSync(join(tmpdir(), "pi-mesh-extension-queue-"));
   context.after(() => rmSync(stateDir, { recursive: true, force: true }));
-  const keys = ["PI_MESH_SERVER_URL", "PI_MESH_AUTH_TOKEN", "PI_MESH_PROJECT", "PI_MESH_AGENT_NAME", "PI_MESH_STATE_DIR"] as const;
+  const keys = ["KXM_SERVER_URL", "KXM_AUTH_TOKEN", "KXM_PROJECT", "KXM_AGENT_NAME", "KXM_STATE_DIR"] as const;
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   Object.assign(process.env, {
-    PI_MESH_SERVER_URL: mesh.address.url,
-    PI_MESH_AUTH_TOKEN: mesh.token,
-    PI_MESH_PROJECT: "test-project",
-    PI_MESH_AGENT_NAME: "queue-worker",
-    PI_MESH_STATE_DIR: stateDir,
+    KXM_SERVER_URL: mesh.address.url,
+    KXM_AUTH_TOKEN: mesh.token,
+    KXM_PROJECT: "test-project",
+    KXM_AGENT_NAME: "queue-worker",
+    KXM_STATE_DIR: stateDir,
   });
   context.after(() => {
     for (const key of keys) {
@@ -911,30 +911,30 @@ test("supervised Pi routes a workflow prompt before acknowledgement and replays 
   const stateDir = mkdtempSync(join(tmpdir(), "pi-mesh-extension-session-route-"));
   context.after(() => rmSync(stateDir, { recursive: true, force: true }));
   const keys = [
-    "PI_MESH_SERVER_URL",
-    "PI_MESH_AUTH_TOKEN",
-    "PI_MESH_PROJECT",
-    "PI_MESH_AGENT_NAME",
-    "PI_MESH_STATE_DIR",
-    "PI_MESH_WORKER_IDENTITY_KEY",
-    "PI_MESH_WORKER_GENERATION",
-    "PI_MESH_WORKER_CHILD_INCARCATION",
-    "PI_MESH_WORKER_SESSION_ISOLATION",
-    "PI_MESH_WORKER_SESSION_SCOPE",
+    "KXM_SERVER_URL",
+    "KXM_AUTH_TOKEN",
+    "KXM_PROJECT",
+    "KXM_AGENT_NAME",
+    "KXM_STATE_DIR",
+    "KXM_WORKER_IDENTITY_KEY",
+    "KXM_WORKER_GENERATION",
+    "KXM_WORKER_CHILD_INCARCATION",
+    "KXM_WORKER_SESSION_ISOLATION",
+    "KXM_WORKER_SESSION_SCOPE",
   ] as const;
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   const identityKey = workerStateKey("test-project", "isolation-worker");
   Object.assign(process.env, {
-    PI_MESH_SERVER_URL: mesh.address.url,
-    PI_MESH_AUTH_TOKEN: mesh.token,
-    PI_MESH_PROJECT: "test-project",
-    PI_MESH_AGENT_NAME: "isolation-worker",
-    PI_MESH_STATE_DIR: stateDir,
-    PI_MESH_WORKER_IDENTITY_KEY: identityKey,
-    PI_MESH_WORKER_GENERATION: "generation-one",
-    PI_MESH_WORKER_CHILD_INCARCATION: "1",
-    PI_MESH_WORKER_SESSION_ISOLATION: "workflow",
-    PI_MESH_WORKER_SESSION_SCOPE: "default",
+    KXM_SERVER_URL: mesh.address.url,
+    KXM_AUTH_TOKEN: mesh.token,
+    KXM_PROJECT: "test-project",
+    KXM_AGENT_NAME: "isolation-worker",
+    KXM_STATE_DIR: stateDir,
+    KXM_WORKER_IDENTITY_KEY: identityKey,
+    KXM_WORKER_GENERATION: "generation-one",
+    KXM_WORKER_CHILD_INCARCATION: "1",
+    KXM_WORKER_SESSION_ISOLATION: "workflow",
+    KXM_WORKER_SESSION_SCOPE: "default",
   });
   context.after(() => {
     for (const key of keys) {
@@ -979,7 +979,7 @@ test("supervised Pi routes a workflow prompt before acknowledgement and replays 
   await first.emit("session_shutdown");
 
   rmSync(requestPath, { force: true });
-  process.env.PI_MESH_WORKER_SESSION_SCOPE = `workflow:${started.run.id}`;
+  process.env.KXM_WORKER_SESSION_SCOPE = `workflow:${started.run.id}`;
   const replacement = fakePi();
   piMeshExtension(replacement.api);
   await replacement.emit("session_start", {}, {
@@ -1016,7 +1016,7 @@ test("supervised Pi routes a workflow prompt before acknowledgement and replays 
   await replacement.emit("session_shutdown");
 
   rmSync(requestPath, { force: true });
-  process.env.PI_MESH_WORKER_SESSION_SCOPE = "default";
+  process.env.KXM_WORKER_SESSION_SCOPE = "default";
   const defaultReplacement = fakePi();
   piMeshExtension(defaultReplacement.api);
   await defaultReplacement.emit("session_start", {}, {
@@ -1044,23 +1044,23 @@ test("Pi extension defers post-ack activation during shutdown and replays the me
   const stateDir = mkdtempSync(join(tmpdir(), "pi-mesh-extension-shutdown-ack-"));
   context.after(() => rmSync(stateDir, { recursive: true, force: true }));
   const keys = [
-    "PI_MESH_SERVER_URL",
-    "PI_MESH_AUTH_TOKEN",
-    "PI_MESH_PROJECT",
-    "PI_MESH_AGENT_NAME",
-    "PI_MESH_STATE_DIR",
-    "PI_MESH_WORKER_IDENTITY_KEY",
-    "PI_MESH_WORKER_ACTIVATION_TIMEOUT_MS",
+    "KXM_SERVER_URL",
+    "KXM_AUTH_TOKEN",
+    "KXM_PROJECT",
+    "KXM_AGENT_NAME",
+    "KXM_STATE_DIR",
+    "KXM_WORKER_IDENTITY_KEY",
+    "KXM_WORKER_ACTIVATION_TIMEOUT_MS",
   ] as const;
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   Object.assign(process.env, {
-    PI_MESH_SERVER_URL: mesh.address.url,
-    PI_MESH_AUTH_TOKEN: mesh.token,
-    PI_MESH_PROJECT: "test-project",
-    PI_MESH_AGENT_NAME: "shutdown-ack-worker",
-    PI_MESH_STATE_DIR: stateDir,
-    PI_MESH_WORKER_IDENTITY_KEY: "shutdown-ack-test-worker",
-    PI_MESH_WORKER_ACTIVATION_TIMEOUT_MS: "1000",
+    KXM_SERVER_URL: mesh.address.url,
+    KXM_AUTH_TOKEN: mesh.token,
+    KXM_PROJECT: "test-project",
+    KXM_AGENT_NAME: "shutdown-ack-worker",
+    KXM_STATE_DIR: stateDir,
+    KXM_WORKER_IDENTITY_KEY: "shutdown-ack-test-worker",
+    KXM_WORKER_ACTIVATION_TIMEOUT_MS: "1000",
   });
   context.after(() => {
     for (const key of keys) {
@@ -1136,14 +1136,14 @@ test("Pi extension retries activation when sendMessage throws", async (context) 
   await peer.start(() => undefined);
   const stateDir = mkdtempSync(join(tmpdir(), "pi-mesh-extension-send-retry-"));
   context.after(() => rmSync(stateDir, { recursive: true, force: true }));
-  const keys = ["PI_MESH_SERVER_URL", "PI_MESH_AUTH_TOKEN", "PI_MESH_PROJECT", "PI_MESH_AGENT_NAME", "PI_MESH_STATE_DIR"] as const;
+  const keys = ["KXM_SERVER_URL", "KXM_AUTH_TOKEN", "KXM_PROJECT", "KXM_AGENT_NAME", "KXM_STATE_DIR"] as const;
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   Object.assign(process.env, {
-    PI_MESH_SERVER_URL: mesh.address.url,
-    PI_MESH_AUTH_TOKEN: mesh.token,
-    PI_MESH_PROJECT: "test-project",
-    PI_MESH_AGENT_NAME: "send-retry-worker",
-    PI_MESH_STATE_DIR: stateDir,
+    KXM_SERVER_URL: mesh.address.url,
+    KXM_AUTH_TOKEN: mesh.token,
+    KXM_PROJECT: "test-project",
+    KXM_AGENT_NAME: "send-retry-worker",
+    KXM_STATE_DIR: stateDir,
   });
   context.after(() => {
     for (const key of keys) {
@@ -1194,14 +1194,14 @@ test("Pi extension drops a message when acknowledgement is already terminal", as
   await peer.start(() => undefined);
   const stateDir = mkdtempSync(join(tmpdir(), "pi-mesh-extension-terminal-ack-"));
   context.after(() => rmSync(stateDir, { recursive: true, force: true }));
-  const keys = ["PI_MESH_SERVER_URL", "PI_MESH_AUTH_TOKEN", "PI_MESH_PROJECT", "PI_MESH_AGENT_NAME", "PI_MESH_STATE_DIR"] as const;
+  const keys = ["KXM_SERVER_URL", "KXM_AUTH_TOKEN", "KXM_PROJECT", "KXM_AGENT_NAME", "KXM_STATE_DIR"] as const;
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   Object.assign(process.env, {
-    PI_MESH_SERVER_URL: mesh.address.url,
-    PI_MESH_AUTH_TOKEN: mesh.token,
-    PI_MESH_PROJECT: "test-project",
-    PI_MESH_AGENT_NAME: "terminal-ack-worker",
-    PI_MESH_STATE_DIR: stateDir,
+    KXM_SERVER_URL: mesh.address.url,
+    KXM_AUTH_TOKEN: mesh.token,
+    KXM_PROJECT: "test-project",
+    KXM_AGENT_NAME: "terminal-ack-worker",
+    KXM_STATE_DIR: stateDir,
   });
   context.after(() => {
     for (const key of keys) {

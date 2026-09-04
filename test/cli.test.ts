@@ -5,15 +5,15 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { runCli as runCliImplementation, type CliIo } from "../plugins/kxm-mesh/src/cli.ts";
-import { vnextLocalBindingFile } from "../plugins/kxm-mesh/src/vnext-bindings.ts";
-import { initializeVnextProject } from "../plugins/kxm-mesh/src/vnext-init.ts";
+import { runCli as runCliImplementation, type CliIo } from "../plugins/kxm/src/cli.ts";
+import { vnextLocalBindingFile } from "../plugins/kxm/src/vnext-bindings.ts";
+import { initializeVnextProject } from "../plugins/kxm/src/vnext-init.ts";
 import { stringify } from "yaml";
 
 async function runCli(argv: string[], env: NodeJS.ProcessEnv, io: CliIo, cwd = process.cwd()): Promise<number> {
   const isolatedLogs = mkdtempSync(join(tmpdir(), "kxm-cli-telemetry-"));
   try {
-    return await runCliImplementation(argv, { PI_MESH_LOGS_DIR: isolatedLogs, ...env }, io, cwd);
+    return await runCliImplementation(argv, { KXM_LOGS_DIR: isolatedLogs, ...env }, io, cwd);
   } finally {
     rmSync(isolatedLogs, { recursive: true, force: true });
   }
@@ -113,8 +113,8 @@ test("vNext init creates and revalidates project configuration without legacy en
       "init", "--json", "--name", "CLI Project", "--project-id", "prj_01JCLIPROJECT0000000000000",
     ], {
       ...stateEnv,
-      PI_MESH_WORKDIR: join(cwd, "must-not-use"),
-      PI_MESH_CONFIG_DIR: join(cwd, "also-must-not-use"),
+      KXM_WORKDIR: join(cwd, "must-not-use"),
+      KXM_CONFIG_DIR: join(cwd, "also-must-not-use"),
     }, createdIo, cwd), 0);
     const created = JSON.parse(createdIo.read().stdout) as { action: string; mode: string; configRevision: string; files: string[] };
     assert.equal(created.action, "created");
@@ -482,8 +482,8 @@ test("kxm run and runtime commands cover workspace, project, and dry-run branche
   }
 });
 
-import { vnextSupervisorStatus } from "../plugins/kxm-mesh/src/vnext-runtime-supervisor.ts";
-import { vnextRuntimePaths } from "../plugins/kxm-mesh/src/vnext-runtime-store.ts";
+import { vnextSupervisorStatus } from "../plugins/kxm/src/vnext-runtime-supervisor.ts";
+import { vnextRuntimePaths } from "../plugins/kxm/src/vnext-runtime-store.ts";
 
 async function waitForSupervisorExit(env: NodeJS.ProcessEnv): Promise<void> {
   const paths = vnextRuntimePaths({ env });
@@ -679,7 +679,7 @@ test("init and validate work in an isolated workspace", async () => {
     const io = capture();
     const isolated = join(cwd, "ws");
     const initCode = await runCli(["mesh", "--json", "--workspace", isolated, "init"], {
-      PI_MESH_CONFIG_DIR: join(cwd, "should-not-use"),
+      KXM_CONFIG_DIR: join(cwd, "should-not-use"),
     }, io, cwd);
     assert.equal(initCode, 0);
     assert.match(io.read().stdout, /"command":"init"/);
@@ -703,8 +703,8 @@ test("init and validate work in an isolated workspace", async () => {
     assert.equal(existsSync(join(isolated, "assets", "sessions", "review-1", "session.json")), true);
 
     const env = {
-      PI_MESH_V04_WORKFLOW_SECRET: "0123456789abcdef",
-      PI_MESH_V04_SIGNAL_SECRET: "0123456789abcdef",
+      KXM_V04_WORKFLOW_SECRET: "0123456789abcdef",
+      KXM_V04_SIGNAL_SECRET: "0123456789abcdef",
     };
     const file = join(process.cwd(), ".kxm/config/workflows/v04-dogfood.json");
     const validate = capture();
@@ -722,31 +722,31 @@ test("gate validate mirrors the hub workflow source XOR", async () => {
     const file = join(process.cwd(), ".kxm/config/workflows/v04-dogfood.json");
     const inline = readFileSync(file, "utf8");
     const secrets = {
-      PI_MESH_V04_WORKFLOW_SECRET: "0123456789abcdef",
-      PI_MESH_V04_SIGNAL_SECRET: "0123456789abcdef",
+      KXM_V04_WORKFLOW_SECRET: "0123456789abcdef",
+      KXM_V04_SIGNAL_SECRET: "0123456789abcdef",
     };
 
     const missing = capture();
     assert.equal(await runCli(["gate", "--json", "validate"], {
       ...secrets,
-      PI_MESH_WEBHOOK_WORKFLOWS: "",
-      PI_MESH_WEBHOOK_WORKFLOWS_FILE: "",
+      KXM_WEBHOOK_WORKFLOWS: "",
+      KXM_WEBHOOK_WORKFLOWS_FILE: "",
     }, missing, cwd), 2);
     assert.match(missing.read().stdout, /workflow_source_required/);
 
     const ambiguous = capture();
     assert.equal(await runCli(["gate", "--json", "validate"], {
       ...secrets,
-      PI_MESH_WEBHOOK_WORKFLOWS: inline,
-      PI_MESH_WEBHOOK_WORKFLOWS_FILE: file,
+      KXM_WEBHOOK_WORKFLOWS: inline,
+      KXM_WEBHOOK_WORKFLOWS_FILE: file,
     }, ambiguous, cwd), 2);
     assert.match(ambiguous.read().stdout, /ambiguous_workflow_source/);
 
     const inlineOnly = capture();
     assert.equal(await runCli(["gate", "--json", "validate"], {
       ...secrets,
-      PI_MESH_WEBHOOK_WORKFLOWS: inline,
-      PI_MESH_WEBHOOK_WORKFLOWS_FILE: "",
+      KXM_WEBHOOK_WORKFLOWS: inline,
+      KXM_WEBHOOK_WORKFLOWS_FILE: "",
     }, inlineOnly, cwd), 0, inlineOnly.read().stdout);
     assert.match(inlineOnly.read().stdout, /"source":"inline"/);
     assert.doesNotMatch(inlineOnly.read().stdout, /0123456789abcdef/);
@@ -754,16 +754,16 @@ test("gate validate mirrors the hub workflow source XOR", async () => {
     const configuredFile = capture();
     assert.equal(await runCli(["gate", "--json", "validate"], {
       ...secrets,
-      PI_MESH_WEBHOOK_WORKFLOWS: "",
-      PI_MESH_WEBHOOK_WORKFLOWS_FILE: file,
+      KXM_WEBHOOK_WORKFLOWS: "",
+      KXM_WEBHOOK_WORKFLOWS_FILE: file,
     }, configuredFile, cwd), 0, configuredFile.read().stdout);
     assert.match(configuredFile.read().stdout, /"source":"file"/);
 
     const explicitWins = capture();
     assert.equal(await runCli(["gate", "--json", "validate", "--file", file], {
       ...secrets,
-      PI_MESH_WEBHOOK_WORKFLOWS: "not-json",
-      PI_MESH_WEBHOOK_WORKFLOWS_FILE: join(cwd, "also-ignored.json"),
+      KXM_WEBHOOK_WORKFLOWS: "not-json",
+      KXM_WEBHOOK_WORKFLOWS_FILE: join(cwd, "also-ignored.json"),
     }, explicitWins, cwd), 0, explicitWins.read().stdout);
     assert.match(explicitWins.read().stdout, /"source":"file"/);
   } finally {
@@ -773,11 +773,11 @@ test("gate validate mirrors the hub workflow source XOR", async () => {
 
 test("hub and worker dry-run do not spawn, and live hub uses the injected spawner", async () => {
   const dry = capture();
-  assert.equal(await runCli(["mesh", "--json", "--dry-run", "hub"], {}, dry), 0);
+  assert.equal(await runCli(["hub", "--json", "--dry-run", "start"], {}, dry), 0);
   assert.match(dry.read().stdout, /"dryRun":true/);
   const live = capture();
   let spawned = false;
-  const code = await runCli(["mesh", "--json", "hub"], {}, {
+  const code = await runCli(["hub", "--json", "start"], {}, {
     ...live,
     spawnHub: () => {
       spawned = true;
@@ -803,7 +803,7 @@ test("hub and worker dry-run do not spawn, and live hub uses the injected spawne
     "vendor/secondary,vendor/tertiary",
     "--fresh-start",
     "--tools",
-    "read,grep,mesh_fanout",
+    "read,grep,kxm_fanout",
     "--session-isolation",
     "workflow",
   ], {}, {
@@ -813,23 +813,23 @@ test("hub and worker dry-run do not spawn, and live hub uses the injected spawne
       return 0;
     },
   }), 0);
-  assert.equal(workerEnv?.PI_MESH_WORKER_MODEL, "vendor/primary");
-  assert.equal(workerEnv?.PI_MESH_WORKER_FALLBACK_MODELS, "vendor/secondary,vendor/tertiary");
-  assert.equal(workerEnv?.PI_MESH_WORKER_INITIAL_CONTINUE, "false");
-  assert.equal(workerEnv?.PI_MESH_WORKER_TOOLS, "read,grep,mesh_fanout");
-  assert.equal(workerEnv?.PI_MESH_WORKER_SESSION_ISOLATION, "workflow");
+  assert.equal(workerEnv?.KXM_WORKER_MODEL, "vendor/primary");
+  assert.equal(workerEnv?.KXM_WORKER_FALLBACK_MODELS, "vendor/secondary,vendor/tertiary");
+  assert.equal(workerEnv?.KXM_WORKER_INITIAL_CONTINUE, "false");
+  assert.equal(workerEnv?.KXM_WORKER_TOOLS, "read,grep,kxm_fanout");
+  assert.equal(workerEnv?.KXM_WORKER_SESSION_ISOLATION, "workflow");
 
   let compatibilityEnv: NodeJS.ProcessEnv | undefined;
   assert.equal(await runCli([
     "agent", "worker", "--name", "legacy", "--project", "product",
-  ], { PI_MESH_WORKER_SESSION_ISOLATION: "off" }, {
+  ], { KXM_WORKER_SESSION_ISOLATION: "off" }, {
     ...capture(),
     spawnWorker: (environment) => {
       compatibilityEnv = environment;
       return 0;
     },
   }), 0);
-  assert.equal(compatibilityEnv?.PI_MESH_WORKER_SESSION_ISOLATION, "off");
+  assert.equal(compatibilityEnv?.KXM_WORKER_SESSION_ISOLATION, "off");
 
   let defaultEnv: NodeJS.ProcessEnv | undefined;
   assert.equal(await runCli([
@@ -841,7 +841,7 @@ test("hub and worker dry-run do not spawn, and live hub uses the injected spawne
       return 0;
     },
   }), 0);
-  assert.equal(defaultEnv?.PI_MESH_WORKER_SESSION_ISOLATION, "off");
+  assert.equal(defaultEnv?.KXM_WORKER_SESSION_ISOLATION, "off");
 
   const invalidIsolation = capture();
   assert.equal(await runCli([
@@ -850,12 +850,12 @@ test("hub and worker dry-run do not spawn, and live hub uses the injected spawne
   assert.match(invalidIsolation.read().stderr, /must be workflow or off/);
 });
 
-test("mesh tui defaults to the current project instead of a vendor-specific project", async () => {
+test("kxm dash defaults to the current project instead of a vendor-specific project", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "generic-product-"));
   const requested: string[] = [];
   try {
     const io = capture();
-    assert.equal(await runCli(["mesh", "tui"], {}, {
+    assert.equal(await runCli(["dash"], {}, {
       ...io,
       fetchImpl: async (input) => {
         const url = String(input);
@@ -887,7 +887,7 @@ test("stop, signal, status, and help cover the remaining command contract", asyn
     const missing = capture();
     assert.equal(await runCli(["gate", "--json", "validate", "--file", join(cwd, "missing.json")], {}, missing, cwd), 1);
     const stopDry = capture();
-    assert.equal(await runCli(["mesh", "--json", "--dry-run", "stop"], {}, stopDry, cwd), 0);
+    assert.equal(await runCli(["hub", "--json", "--dry-run", "stop"], {}, stopDry, cwd), 0);
     const improve = capture();
     assert.equal(await runCli(["improve", "--json", "--workspace", cwd, "--target", "project"], {}, improve, cwd), 0);
     const improveResult = JSON.parse(improve.read().stdout) as { command: string; path: string; events: number };
@@ -916,20 +916,20 @@ test("stop, signal, status, and help cover the remaining command contract", asyn
     assert.equal(await runCli(["session", "--json", "--dry-run", "--workspace", cwd, "stop"], {}, sessionStopDry, cwd), 0);
     assert.match(sessionStopDry.read().stdout, /"dryRun":true/);
     const stop = capture();
-    assert.equal(await runCli(["mesh", "--json", "--workspace", cwd, "stop"], {}, {
+    assert.equal(await runCli(["hub", "--json", "--workspace", cwd, "stop"], {}, {
       ...stop,
       sleep: async () => { rmSync(pidPath, { force: true }); },
     }, cwd), 0);
     assert.match(stop.read().stdout, /"stopped":\["hub.pid"\]/);
     const status = capture();
-    assert.equal(await runCli(["mesh", "--json", "status"], {}, {
+    assert.equal(await runCli(["hub", "--json", "view"], {}, {
       ...status,
       fetchImpl: async () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
     }, cwd), 0);
     const signalDry = capture();
     assert.equal(await runCli(
       ["gate", "--json", "--dry-run", "signal", "run_1", "key", "passed", "ok"],
-      { PI_MESH_WORKFLOW_ID: "wf", PI_MESH_WORKFLOW_SIGNAL_SECRET: "signal-secret-16chars" },
+      { KXM_WORKFLOW_ID: "wf", KXM_WORKFLOW_SIGNAL_SECRET: "signal-secret-16chars" },
       signalDry,
       cwd,
     ), 0);
@@ -938,7 +938,7 @@ test("stop, signal, status, and help cover the remaining command contract", asyn
     const signalDeliveryIds: string[] = [];
     assert.equal(await runCli(
       ["gate", "--json", "signal", "run_1", "key", "passed", "ok", " Local   Review =artifact.md", "GitHub.Check:CI=https://ci.example/1"],
-      { PI_MESH_WORKFLOW_ID: "wf", PI_MESH_WORKFLOW_SIGNAL_SECRET: "signal-secret-16chars" },
+      { KXM_WORKFLOW_ID: "wf", KXM_WORKFLOW_SIGNAL_SECRET: "signal-secret-16chars" },
       {
         ...signalLive,
         fetchImpl: async (_input, init) => {
@@ -955,7 +955,7 @@ test("stop, signal, status, and help cover the remaining command contract", asyn
     });
     assert.equal(await runCli(
       ["gate", "--json", "signal", "run_1", "key", "failed", "retry required"],
-      { PI_MESH_WORKFLOW_ID: "wf", PI_MESH_WORKFLOW_SIGNAL_SECRET: "signal-secret-16chars" },
+      { KXM_WORKFLOW_ID: "wf", KXM_WORKFLOW_SIGNAL_SECRET: "signal-secret-16chars" },
       {
         ...capture(),
         fetchImpl: async (_input, init) => {
@@ -978,7 +978,7 @@ test("live workflow start is signed and smoke skips without opt-in", async () =>
   const start = capture();
   let signature = "";
   assert.equal(await runCli(["workflow", "--json", "start", "wf", "--payload", "{\"task\":\"TASK-1\"}", "--delivery-id", "cli-1"], {
-    PI_MESH_WORKFLOW_SECRET: "workflow-secret-16chars",
+    KXM_WORKFLOW_SECRET: "workflow-secret-16chars",
   }, {
     ...start,
     fetchImpl: async (_input, init) => {
@@ -1007,8 +1007,8 @@ test("release workflow retries reuse one explicit delivery identifier", () => {
   assert.match(review.instructions, /timeoutMs to 120000/);
   assert.match(review.instructions, /provenance-review:<runId>:review:<attempt>/);
   assert.match(review.instructions, /Treat every returned messageId as the durable handle/);
-  assert.match(review.instructions, /mesh_get to verify each stored message has the exact run, stage, requirement, and attempt binding/);
-  assert.match(review.instructions, /mesh_await with that messageId and timeoutMs 120000/);
+  assert.match(review.instructions, /kxm_get to verify each stored message has the exact run, stage, requirement, and attempt binding/);
+  assert.match(review.instructions, /kxm_await with that messageId and timeoutMs 120000/);
   assert.match(review.instructions, /repeat the exact fanout parameters/);
   assert.match(launcher, /toolTimeoutMs = 180000/);
   assert.match(launcher, /fanoutTimeoutMs = 120000/);
@@ -1030,8 +1030,8 @@ test("workflow degradation approval is an explicit admin command", async () => {
     "--reason",
     "one configured peer is unavailable",
   ], {
-    PI_MESH_AUTH_TOKEN: "admin-secret-token",
-    PI_MESH_SERVER_URL: "http://127.0.0.1:7331",
+    KXM_AUTH_TOKEN: "admin-secret-token",
+    KXM_SERVER_URL: "http://127.0.0.1:7331",
   }, {
     ...io,
     fetchImpl: async (input, init) => {
@@ -1061,8 +1061,8 @@ test("github watch dry-run does not leak tokens", async () => {
   const code = await runCli(
     ["gate", "--json", "--dry-run", "github", "watch", "--run-id", "run_1", "--stage-id", "review", "--signal-key", "k", "--repo", "acme/app", "--pr", "1"],
     {
-      PI_MESH_WORKFLOW_ID: "wf",
-      PI_MESH_WORKFLOW_SIGNAL_SECRET: "signal-secret-16chars",
+      KXM_WORKFLOW_ID: "wf",
+      KXM_WORKFLOW_SIGNAL_SECRET: "signal-secret-16chars",
       GITHUB_TOKEN: "ghs_should_not_appear",
     },
     {
@@ -1127,7 +1127,7 @@ test("retrospective export writes proposed artifacts", async () => {
 test("workflow list/get use local SQLite state and redact configured secret values", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "pi-mesh-cli-state-"));
   const stateDir = join(cwd, ".kxm", "state");
-  const dataPath = join(stateDir, "mesh.db");
+  const dataPath = join(stateDir, "kxm.db");
   try {
     mkdirSync(stateDir, { recursive: true });
     const database = new DatabaseSync(dataPath);
@@ -1147,7 +1147,7 @@ test("workflow list/get use local SQLite state and redact configured secret valu
     }));
     database.prepare("INSERT INTO workflow_journal (run_id, record) VALUES (?, ?)").run("run_local", JSON.stringify({ id: "journal_1", runId: "run_local", summary: "safe evidence" }));
     database.close();
-    const env = { PI_MESH_DATA_PATH: dataPath, PI_MESH_TEST_SECRET: "exact-secret-value" };
+    const env = { KXM_DATA_PATH: dataPath, KXM_TEST_SECRET: "exact-secret-value" };
     const list = capture();
     assert.equal(await runCli(["workflow", "--json", "list"], env, list, cwd), 0);
     assert.match(list.read().stdout, /run_local/);
@@ -1173,17 +1173,17 @@ test("invalid and unavailable operator commands fail safely with stable exit cod
     writeFileSync(invalidWorkflow, "{");
     assert.equal(await runCli(["gate", "--json", "validate", "--file", invalidWorkflow], {}, capture(), cwd), 1);
     assert.equal(await runCli(["agent", "--json", "worker"], {}, capture(), cwd), 2);
-    assert.equal(await runCli(["mesh", "--json", "stop"], {}, capture(), cwd), 1);
+    assert.equal(await runCli(["hub", "--json", "stop"], {}, capture(), cwd), 1);
     assert.equal(await runCli(["workflow", "--json", "get"], {}, capture(), cwd), 2);
     assert.equal(await runCli(["gate", "--json", "degrade", "run_1", "review"], {}, capture(), cwd), 2);
-    assert.equal(await runCli(["workflow", "--json", "start", "wf", "--payload", "[]"], { PI_MESH_WORKFLOW_SECRET: "workflow-secret-16chars" }, capture(), cwd), 2);
-    assert.equal(await runCli(["workflow", "--json", "--dry-run", "start", "wf", "--payload", "{}"], { PI_MESH_WORKFLOW_SECRET: "workflow-secret-16chars" }, capture(), cwd), 0);
+    assert.equal(await runCli(["workflow", "--json", "start", "wf", "--payload", "[]"], { KXM_WORKFLOW_SECRET: "workflow-secret-16chars" }, capture(), cwd), 2);
+    assert.equal(await runCli(["workflow", "--json", "--dry-run", "start", "wf", "--payload", "{}"], { KXM_WORKFLOW_SECRET: "workflow-secret-16chars" }, capture(), cwd), 0);
     assert.equal(await runCli(["gate", "--json", "signal"], {}, capture(), cwd), 2);
     assert.equal(await runCli(["gate", "--json", "signal", "run_1", "key", "invalid", "summary"], {}, capture(), cwd), 2);
     assert.equal(await runCli(["gate", "--json", "signal", "run_1", "key", "passed", "summary"], {}, capture(), cwd), 2);
     assert.equal(await runCli(
       ["gate", "--json", "signal", "run_1", "key", "passed", "summary", "Review=one", " review =two"],
-      { PI_MESH_WORKFLOW_ID: "wf", PI_MESH_WORKFLOW_SIGNAL_SECRET: "signal-secret-16chars" },
+      { KXM_WORKFLOW_ID: "wf", KXM_WORKFLOW_SIGNAL_SECRET: "signal-secret-16chars" },
       capture(),
       cwd,
     ), 2);

@@ -4,10 +4,10 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { MeshClient, MeshHttpError } from "../plugins/kxm-mesh/src/client.ts";
-import { createMeshHub } from "../plugins/kxm-mesh/src/hub.ts";
-import { MAX_BODY_BYTES } from "../plugins/kxm-mesh/src/protocol.ts";
-import type { WebhookWorkflowDefinition } from "../plugins/kxm-mesh/src/workflow.ts";
+import { MeshClient, MeshHttpError } from "../plugins/kxm/src/client.ts";
+import { createMeshHub } from "../plugins/kxm/src/hub.ts";
+import { MAX_BODY_BYTES } from "../plugins/kxm/src/protocol.ts";
+import type { WebhookWorkflowDefinition } from "../plugins/kxm/src/workflow.ts";
 import { createTestMesh, responseJson, waitFor } from "./helpers.ts";
 
 interface RawIdentity {
@@ -413,7 +413,7 @@ test("rate limiting returns retry guidance and resets after the window", async (
 
 test("SQLite persistence retains messages and resumes identities across hub restarts", async (context) => {
   const directory = mkdtempSync(join(tmpdir(), "pi-mesh-test-"));
-  const database = join(directory, "mesh.db");
+  const database = join(directory, "kxm.db");
   const token = "persistent-token";
   const hub1 = createMeshHub({ port: 0, authToken: token, dataPath: database, rateLimit: false });
   const address1 = await hub1.start();
@@ -636,7 +636,7 @@ test("signed Jira webhooks start durable workflows, deduplicate retries, journal
   const runId = acceptedBody.run.id;
   assert.equal(mesh.hub.state.messages.get(acceptedBody.run.messageId)?.workflowRunId, runId);
   await waitFor(() => inbound?.includes("PROD-42") ?? false);
-  assert.match(inbound!, /mesh_workflow_record/);
+  assert.match(inbound!, /kxm_workflow_record/);
   assert.equal((await sendWebhook("jira-delivery-42")).status, 200);
   assert.equal((await coordinator.listWorkflows()).length, 1);
   await assert.rejects(() => observer.getWorkflow(runId), (error: unknown) => {

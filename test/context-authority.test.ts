@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ProtocolError } from "../plugins/kxm-mesh/src/protocol.ts";
+import { ProtocolError } from "../plugins/kxm/src/protocol.ts";
 import {
   AUTHORITY_GRANT_FLOOR,
   MAX_CONTEXT_LINEAGE,
@@ -15,8 +15,8 @@ import {
   validateContextPacketContents,
   type ContextItem,
   type ContextPacket,
-} from "../plugins/kxm-mesh/src/context.ts";
-import { redactSecrets } from "../plugins/kxm-mesh/src/redact.ts";
+} from "../plugins/kxm/src/context.ts";
+import { redactSecrets } from "../plugins/kxm/src/redact.ts";
 
 function item(overrides: Record<string, unknown> = {}): ContextItem {
   return parseContextItem({

@@ -7,7 +7,7 @@ import {
   parseWorkflowDefinitions,
   type WorkflowRun,
   type WebhookWorkflowDefinition,
-} from "../plugins/kxm-mesh/src/workflow.ts";
+} from "../plugins/kxm/src/workflow.ts";
 
 const FIX_JSON = readFileSync(".kxm/config/workflows/fix.json", "utf8");
 
@@ -356,12 +356,12 @@ test("max-transition exhaustion fails the run safely with retrospective evidence
 });
 
 test("oracle and plan hash survive restart durability", async () => {
-  const { MeshStore } = await import("../plugins/kxm-mesh/src/store.ts");
+  const { MeshStore } = await import("../plugins/kxm/src/store.ts");
   const { mkdtempSync, rmSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   const directory = mkdtempSync(join(tmpdir(), "kxm-fix-"));
-  const path = join(directory, "mesh.db");
+  const path = join(directory, "kxm.db");
   try {
     const testRun = run();
     let at = 0;

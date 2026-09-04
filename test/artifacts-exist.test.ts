@@ -12,7 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { runCli } from "../plugins/kxm-mesh/src/cli.ts";
+import { runCli } from "../plugins/kxm/src/cli.ts";
 
 function capture() {
   let stdout = "";
@@ -51,12 +51,12 @@ test("workflow start, signal, and github watch resolve credentials from the acti
     const startSecret = "definition-start-secret-123";
     const signalSecret = "definition-signal-secret-123";
     const env = {
-      PI_MESH_WEBHOOK_WORKFLOWS_FILE: definitionFile,
-      PI_MESH_WORKFLOW_ID: "configured-workflow",
+      KXM_WEBHOOK_WORKFLOWS_FILE: definitionFile,
+      KXM_WORKFLOW_ID: "configured-workflow",
       CUSTOM_START_SECRET: startSecret,
       CUSTOM_SIGNAL_SECRET: signalSecret,
-      PI_MESH_WORKFLOW_SECRET: "legacy-start-secret-must-not-win",
-      PI_MESH_WORKFLOW_SIGNAL_SECRET: "legacy-signal-secret-must-not-win",
+      KXM_WORKFLOW_SECRET: "legacy-start-secret-must-not-win",
+      KXM_WORKFLOW_SIGNAL_SECRET: "legacy-signal-secret-must-not-win",
       GITHUB_TOKEN: "github-test-token",
     };
 
@@ -162,10 +162,10 @@ test("an active workflow signal falls back to its start secret, never a generic 
     const code = await runCli(
       ["gate", "--json", "signal", "run_1", "ready", "passed", "done"],
       {
-        PI_MESH_WEBHOOK_WORKFLOWS_FILE: definitionFile,
-        PI_MESH_WORKFLOW_ID: "configured-workflow",
+        KXM_WEBHOOK_WORKFLOWS_FILE: definitionFile,
+        KXM_WORKFLOW_ID: "configured-workflow",
         CUSTOM_START_SECRET: startSecret,
-        PI_MESH_WORKFLOW_SIGNAL_SECRET: "legacy-signal-secret-must-not-win",
+        KXM_WORKFLOW_SIGNAL_SECRET: "legacy-signal-secret-must-not-win",
       },
       {
         ...io,
@@ -193,8 +193,8 @@ test("an active workflow start never falls back to a generic secret", async () =
     const code = await runCli(
       ["workflow", "--json", "start", "configured-workflow", "--payload", "{}"],
       {
-        PI_MESH_WEBHOOK_WORKFLOWS_FILE: definitionFile,
-        PI_MESH_WORKFLOW_SECRET: "legacy-start-secret-must-not-win",
+        KXM_WEBHOOK_WORKFLOWS_FILE: definitionFile,
+        KXM_WORKFLOW_SECRET: "legacy-start-secret-must-not-win",
       },
       io,
       cwd,
@@ -223,8 +223,8 @@ test("worker-envelope dry-runs leave telemetry unchanged", async () => {
         "signal", "run_1", "ready", "passed", "done",
       ],
       {
-        PI_MESH_WORKFLOW_ID: "legacy-workflow",
-        PI_MESH_WORKFLOW_SIGNAL_SECRET: "legacy-signal-secret-123",
+        KXM_WORKFLOW_ID: "legacy-workflow",
+        KXM_WORKFLOW_SIGNAL_SECRET: "legacy-signal-secret-123",
       },
       io,
       cwd,
@@ -305,7 +305,7 @@ test("artifacts-exist accepts only non-empty regular files contained by real wor
 });
 
 test("session start maps SessionConfigError to exit 2 without creating assets", async (context) => {
-  const sessionSource = readFileSync(resolve("plugins/kxm-mesh/src/session.ts"), "utf8");
+  const sessionSource = readFileSync(resolve("plugins/kxm/src/session.ts"), "utf8");
   if (!sessionSource.includes("SessionConfigError")) {
     context.skip("WS2 SessionConfigError has not landed in this checkout");
     return;
