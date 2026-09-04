@@ -1,6 +1,6 @@
 # Configuration reference
 
-Pi Mesh Comms uses environment variables for the hub and Pi extension. The Claude Code plugin maps its settings to the same client values.
+KXM uses environment variables for the hub and Pi extension. The Claude Code plugin maps its settings to the same client values.
 
 ## vNext local project settings
 

@@ -112,7 +112,7 @@ $env:KXM_AGENT_PURPOSE = "Reviews plans and code for correctness risks"
 pi
 ```
 
-Run `/mesh-status` in either session. It should show the connected identity and server.
+Run `/kxm hub` in either session. It should show the connected identity and server.
 
 Ask the planner:
 

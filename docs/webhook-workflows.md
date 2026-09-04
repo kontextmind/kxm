@@ -1,6 +1,6 @@
 # Webhook workflows and long-lived agents
 
-Pi Mesh Comms can turn a signed Jira, GitHub, or generic webhook into a durable prompt for a long-lived coordinator. The hub verifies the original request body, deduplicates provider retries, records the workflow before acknowledging it, and queues the prompt even when a previously registered coordinator is temporarily offline.
+KXM can turn a signed Jira, GitHub, or generic webhook into a durable prompt for a long-lived coordinator. The hub verifies the original request body, deduplicates provider retries, records the workflow before acknowledging it, and queues the prompt even when a previously registered coordinator is temporarily offline.
 
 ## How the runtime behaves
 

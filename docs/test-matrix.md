@@ -86,7 +86,7 @@ The CI minimums are 95% lines, 80% branches, and 90% functions across the measur
 
 ## Manual release checks
 
-Automation cannot prove that a third-party harness UI renders perfectly. Before a release, connect two current Pi sessions, run `/mesh-status`, complete one inbound round trip, install the marketplace plugin in a clean Claude Code profile, and verify `kxm_list`. Exercise preview channel delivery only when the target Claude Code version supports community channels.
+Automation cannot prove that a third-party harness UI renders perfectly. Before a release, connect two current Pi sessions, run `/kxm hub`, complete one inbound round trip, install the marketplace plugin in a clean Claude Code profile, and verify `kxm_list`. Exercise preview channel delivery only when the target Claude Code version supports community channels.
 
 Create the versioned tarball with `npm pack`, attach it to the matching GitHub
 release, and verify the authenticated `gh release download` plus

@@ -1,6 +1,6 @@
 # Architecture
 
-Pi Mesh Comms is a durable, single-node transport and integration layer for running coding agents. It deliberately avoids becoming a shared-memory framework or autonomous workflow scheduler.
+KXM is a durable, single-node hub for agents and workflows. It deliberately avoids becoming a shared-memory framework or autonomous workflow scheduler.
 
 ## Workers
 
