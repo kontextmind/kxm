@@ -508,7 +508,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
    * a stable caller identity for provenance. */
   function contextCallerProject(request: IncomingMessage, requested: unknown): { project: string; caller: string } {
     const project = requireString(requested, "project", { max: 200 });
-    const agentHeader = request.headers["x-mesh-agent-id"];
+    const agentHeader = request.headers["x-kxm-agent-id"];
     if (typeof agentHeader === "string" && agentHeader.trim()) {
       const agent = requireAgent(request);
       requireProjectAuth(request, agent.project);
@@ -518,7 +518,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
       return { project, caller: agent.id };
     }
     requireAdminAuth(request);
-    return { project, caller: "mesh-admin" };
+    return { project, caller: "kxm-admin" };
   }
 
   function requireAdminAuth(request: IncomingMessage): void {
@@ -543,8 +543,8 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
   }
 
   function requireAgent(request: IncomingMessage, expectedId?: string): StoredAgent {
-    const agentId = expectedId ?? String(request.headers["x-mesh-agent-id"] ?? "");
-    const agentKey = String(request.headers["x-mesh-agent-key"] ?? "");
+    const agentId = expectedId ?? String(request.headers["x-kxm-agent-id"] ?? "");
+    const agentKey = String(request.headers["x-kxm-agent-key"] ?? "");
     const agent = agents.get(agentId);
     if (!agent || !agentKey || !safeTokenEqual(agentKey, agent.key)) {
       throw new ProtocolError(401, "invalid agent identity", "invalid_agent_identity", {
@@ -562,7 +562,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
 
   function checkRateLimit(request: IncomingMessage, response: ServerResponse): void {
     if (!rateLimit) return;
-    const key = String(request.headers["x-mesh-agent-id"] ?? request.socket.remoteAddress ?? "unknown");
+    const key = String(request.headers["x-kxm-agent-id"] ?? request.socket.remoteAddress ?? "unknown");
     const now = Date.now();
     const current = rateBuckets.get(key);
     const bucket = !current || now - current.startedAt >= rateLimit.windowMs
@@ -1124,7 +1124,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         }
         const deliveryHeader = request.headers["x-atlassian-webhook-identifier"]
           ?? request.headers["x-github-delivery"]
-          ?? request.headers["x-mesh-delivery-id"];
+          ?? request.headers["x-kxm-delivery-id"];
         const deliveryId = requireString(deliveryHeader, "webhook delivery identifier", { max: 128 });
         const payloadHash = createHash("sha256").update(rawBody).digest("hex");
         const existingReceipt = run.signalReceipts?.find((receipt) => receipt.deliveryId === deliveryId);
@@ -1281,7 +1281,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         }
         const deliveryHeader = request.headers["x-atlassian-webhook-identifier"]
           ?? request.headers["x-github-delivery"]
-          ?? request.headers["x-mesh-delivery-id"];
+          ?? request.headers["x-kxm-delivery-id"];
         const deliveryId = requireString(deliveryHeader, "webhook delivery identifier", { max: 128 });
         const existing = [...workflowRuns.values()].find(
           (run) => run.definitionId === definition.id && run.deliveryId === deliveryId,
@@ -1473,7 +1473,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           const entry: WorkflowJournalEntry = {
             id: newId("journal"),
             runId: transition.id,
-            agentId: "mesh-admin",
+            agentId: "kxm-admin",
             category: "decision",
             area: stage.area ?? "security",
             severity: "warning",
@@ -1635,7 +1635,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         const proposalId = requireString(body.proposalId, "proposalId", { max: 128 });
         const project = requireString(body.project, "project", { max: 200 });
         const evidence = boundedStringList(body.evidence, "evidence", 32);
-        const promoted = await stateProvider.promote(proposalId, evidence, "mesh-admin");
+        const promoted = await stateProvider.promote(proposalId, evidence, "kxm-admin");
         counters.contextRequests += 1;
         publishOps(project, "workflows");
         logger({ event: "context_state_promoted", project, proposalId, promotedId: promoted.id, stateKey: promoted.stateKey });
@@ -1706,7 +1706,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
 
       const journalPromotionMatch = url.pathname.match(/^\/v1\/journal\/([^/]+)\/promotion$/);
       if (method === "POST" && journalPromotionMatch) {
-        // Governed promotion is a control-plane decision. Only mesh admins
+        // Governed promotion is a control-plane decision. Only hub admins
         // may decide it, and the deciding principal can never be the entry
         // author. Journal entries remain evidence: this endpoint changes a
         // learning lifecycle state, never gates, workflow policy, or
@@ -1730,7 +1730,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           {
             to,
             evidenceRefs,
-            decidedBy: "mesh-admin",
+            decidedBy: "kxm-admin",
             reason: requireString(body.reason, "reason", { max: 1_000 }),
           },
           nowIso(),
@@ -2143,7 +2143,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           connection: "keep-alive",
           "x-accel-buffering": "no",
           "x-content-type-options": "nosniff",
-          ...(presenceOnly ? { "x-mesh-events-mode": "presence" } : {}),
+          ...(presenceOnly ? { "x-kxm-events-mode": "presence" } : {}),
         });
         response.write(`event: ready\ndata: ${JSON.stringify({ agent: publicAgent(current) })}\n\n`);
         const client: SseClient = {

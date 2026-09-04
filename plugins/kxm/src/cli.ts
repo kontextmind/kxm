@@ -126,9 +126,17 @@ function parseEvidencePairs(values: string[]): WorkflowEvidenceInput {
   return Object.fromEntries(evidence);
 }
 
+const CLI_RESULT_SCHEMA = "kxm.cli-result.v1";
+
+/** Every CLI payload carries a schema tag; payloads that already declare one
+ * (worker envelopes) keep theirs. `ok:false` goes to stderr in both modes so
+ * agents can split results from errors without parsing. */
 function print(io: CliIo, jsonMode: boolean, payload: object, text: string): void {
-  const safePayload = JSON.stringify(redactCliValue(payload));
-  io.stdout(jsonMode ? `${safePayload}\n` : `${redactSecrets(text)}\n`);
+  const tagged = { schema: CLI_RESULT_SCHEMA, ...payload } as Record<string, unknown>;
+  const safePayload = JSON.stringify(redactCliValue(tagged));
+  const line = jsonMode ? `${safePayload}\n` : `${redactSecrets(text)}\n`;
+  if (tagged.ok === false) io.stderr(line);
+  else io.stdout(line);
 }
 
 function printWorker(
@@ -164,14 +172,14 @@ function printWorker(
   print(runtime.io, runtime.json, envelope, text);
 }
 
-function hostMode(runtime: Runtime): "local" | "mesh" {
+function hostMode(runtime: Runtime): "local" | "hub" {
   try {
     const hostname = new URL(runtime.serverUrl).hostname;
     if (hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1") return "local";
   } catch {
     // Default local when the hub URL is not a URL.
   }
-  return "mesh";
+  return "hub";
 }
 
 function gateOf(runtime: Runtime, name: string): ReturnType<typeof gateWorker> {
@@ -324,7 +332,7 @@ async function postWorkflowStart(input: { serverUrl: string; definitionId: strin
   const signature = `sha256=${createHmac("sha256", input.secret).update(body).digest("hex")}`;
   const response = await input.fetchImpl(`${input.serverUrl.replace(/\/$/, "")}/v1/webhooks/${encodeURIComponent(input.definitionId)}`, {
     method: "POST",
-    headers: { "content-type": "application/json", "x-hub-signature-256": signature, "x-mesh-delivery-id": input.deliveryId, ...(input.event ? { "x-github-event": input.event } : {}) },
+    headers: { "content-type": "application/json", "x-hub-signature-256": signature, "x-kxm-delivery-id": input.deliveryId, ...(input.event ? { "x-github-event": input.event } : {}) },
     body,
   });
   const responseText = (await response.text()).slice(0, 8_000);
@@ -750,6 +758,11 @@ async function cmdVnextTrust(runtime: Runtime, check: boolean, options: { base?:
   }
 }
 
+/** No step engine exists yet: `kxm run` durably accepts a run and stops.
+ * Phase 3a (units D1 to D4) replaces this notice with real progress. */
+const RUN_ENGINE_PHASE = "pre-3a";
+const RUN_ENGINE_NOTICE = "runs remain created until Phase 3a lands; no steps execute yet";
+
 async function cmdVnextRun(runtime: Runtime, workflow: string | undefined, promptParts: string[]): Promise<number> {
   if (runtime.workspaceFlag !== undefined) {
     print(runtime.io, runtime.json, {
@@ -796,10 +809,11 @@ async function cmdVnextRun(runtime: Runtime, workflow: string | undefined, promp
     print(runtime.io, runtime.json, {
       ok: true,
       command: "run",
+      phase: RUN_ENGINE_PHASE,
       idempotent: acceptance.idempotent === true,
       run,
       supervisor: { runtimeId: supervisor.runtimeId, port: supervisor.port, started: supervisor.started },
-    }, `run ${run.status}: ${run.runId} (home ${run.homeRuntimeId.slice(0, 12)}…, config ${run.configRevision.slice(0, 19)}…)`);
+    }, `run ${run.status}: ${run.runId} (home ${run.homeRuntimeId.slice(0, 12)}…, config ${run.configRevision.slice(0, 19)}…)\n${RUN_ENGINE_NOTICE}`);
     return 0;
   } catch (error) {
     if (error instanceof VnextConfigError) {
@@ -815,20 +829,20 @@ async function cmdVnextRunStatus(runtime: Runtime, runId: string): Promise<numbe
   try {
     const projectRoot = discoverVnextProjectRoot(runtime.cwd);
     if (!projectRoot) {
-      print(runtime.io, runtime.json, { ok: false, command: "run status", error: "project_required" }, "kxm run status requires a vNext project");
+      print(runtime.io, runtime.json, { ok: false, command: "runs status", error: "project_required" }, "kxm runs status requires a vNext project (run kxm init first)");
       return 1;
     }
     const supervisor = await ensureVnextSupervisor({ env: runtime.env });
     const result = await vnextRuntimeRequest(supervisor, "GET", `/v1/runs/${encodeURIComponent(runId)}?projectRoot=${encodeURIComponent(projectRoot)}`);
     const run = result.run as { runId: string; status: string; workflowId: string; configRevision: string; updatedAt: string };
-    print(runtime.io, runtime.json, { ok: true, command: "run status", run }, `run ${run.runId}: ${run.status} (workflow ${run.workflowId}, updated ${run.updatedAt})`);
+    print(runtime.io, runtime.json, { ok: true, command: "runs status", run }, `run ${run.runId}: ${run.status} (workflow ${run.workflowId}, updated ${run.updatedAt})`);
     return 0;
   } catch (error) {
     if (error instanceof VnextConfigError) {
-      print(runtime.io, runtime.json, { ok: false, command: "run status", error: "run_status_failed", issues: error.issues }, `run status failed: ${error.message}`);
+      print(runtime.io, runtime.json, { ok: false, command: "runs status", error: "run_status_failed", issues: error.issues }, `run status failed: ${error.message}`);
       return 1;
     }
-    print(runtime.io, runtime.json, { ok: false, command: "run status", error: "run_status_io_failed" }, "run status failed because a local operation did not complete");
+    print(runtime.io, runtime.json, { ok: false, command: "runs status", error: "run_status_io_failed" }, "run status failed because a local operation did not complete");
     return 1;
   }
 }
@@ -837,11 +851,11 @@ async function cmdVnextRunCancel(runtime: Runtime, runId: string): Promise<numbe
   try {
     const projectRoot = discoverVnextProjectRoot(runtime.cwd);
     if (!projectRoot) {
-      print(runtime.io, runtime.json, { ok: false, command: "run cancel", error: "project_required" }, "kxm run cancel requires a vNext project");
+      print(runtime.io, runtime.json, { ok: false, command: "runs cancel", error: "project_required" }, "kxm runs cancel requires a vNext project (run kxm init first)");
       return 1;
     }
     if (runtime.dryRun) {
-      print(runtime.io, runtime.json, { ok: true, command: "run cancel", dryRun: true, runId }, `cancel plan: run ${runId} (no events written)`);
+      print(runtime.io, runtime.json, { ok: true, command: "runs cancel", dryRun: true, runId }, `cancel plan: run ${runId} (no events written)`);
       return 0;
     }
     const supervisor = await ensureVnextSupervisor({ env: runtime.env });
@@ -849,17 +863,17 @@ async function cmdVnextRunCancel(runtime: Runtime, runId: string): Promise<numbe
     const run = result.run as { runId: string; status: string };
     print(runtime.io, runtime.json, {
       ok: true,
-      command: "run cancel",
+      command: "runs cancel",
       idempotent: result.idempotent === true,
       run,
     }, `run ${run.runId}: ${run.status}`);
     return 0;
   } catch (error) {
     if (error instanceof VnextConfigError) {
-      print(runtime.io, runtime.json, { ok: false, command: "run cancel", error: "run_cancel_failed", issues: error.issues }, `run cancel failed: ${error.message}`);
+      print(runtime.io, runtime.json, { ok: false, command: "runs cancel", error: "run_cancel_failed", issues: error.issues }, `run cancel failed: ${error.message}`);
       return 1;
     }
-    print(runtime.io, runtime.json, { ok: false, command: "run cancel", error: "run_cancel_io_failed" }, "run cancel failed because a local operation did not complete");
+    print(runtime.io, runtime.json, { ok: false, command: "runs cancel", error: "run_cancel_io_failed" }, "run cancel failed because a local operation did not complete");
     return 1;
   }
 }
@@ -868,7 +882,7 @@ async function cmdVnextRunList(runtime: Runtime): Promise<number> {
   try {
     const projectRoot = discoverVnextProjectRoot(runtime.cwd);
     if (!projectRoot) {
-      print(runtime.io, runtime.json, { ok: false, command: "run list", error: "project_required" }, "kxm run list requires a vNext project");
+      print(runtime.io, runtime.json, { ok: false, command: "runs list", error: "project_required" }, "kxm runs list requires a vNext project (run kxm init first)");
       return 1;
     }
     const bundle = loadVnextProject(projectRoot, {});
@@ -879,16 +893,16 @@ async function cmdVnextRunList(runtime: Runtime): Promise<number> {
     print(
       runtime.io,
       runtime.json,
-      { ok: true, command: "run list", runs },
+      { ok: true, command: "runs list", runs },
       runs.length === 0 ? "no runs" : runs.map((run) => `${run.runId}  ${run.status}  ${run.workflowId}  ${run.createdAt}`).join("\n"),
     );
     return 0;
   } catch (error) {
     if (error instanceof VnextConfigError) {
-      print(runtime.io, runtime.json, { ok: false, command: "run list", error: "run_list_failed", issues: error.issues }, `run list failed: ${error.message}`);
+      print(runtime.io, runtime.json, { ok: false, command: "runs list", error: "run_list_failed", issues: error.issues }, `run list failed: ${error.message}`);
       return 1;
     }
-    print(runtime.io, runtime.json, { ok: false, command: "run list", error: "run_list_io_failed" }, "run list failed because a local operation did not complete");
+    print(runtime.io, runtime.json, { ok: false, command: "runs list", error: "run_list_io_failed" }, "run list failed because a local operation did not complete");
     return 1;
   }
 }
@@ -2044,7 +2058,8 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
 
   const program = new Command(CLI_NAME);
   program
-    .description("KontextMind local-first orchestration and mesh CLI")
+    .description("KontextMind local-first orchestration CLI")
+    .version(readInstalledKxmVersion(repoRoot), "-V, --version", "Print the installed kxm version")
     .exitOverride()
     .configureOutput({
       writeOut: (text) => ctx.io.stdout(text),
@@ -2082,7 +2097,7 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
       result.code = await cmdVnextMigrateVerify(runtimeFrom(ctx, this));
     });
 
-  addGlobalOptions(program.command("run").description("Create and manage vNext runs (offline-first)")
+  addGlobalOptions(program.command("run").description("Create a vNext run (offline-first; no steps execute until Phase 3a)")
     .argument("[workflow]", "Workflow id to run")
     .argument("[prompt...]", "Run prompt (hashed, never stored raw)")
     .action(async function runAction(this: Command, workflow: string | undefined, promptParts: string[]) {
@@ -2157,7 +2172,7 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
   agent.helpCommand("help", "Show agent help");
   addGlobalOptions(agent.command("worker").description("Start a long-lived Pi worker"))
     .option("--name <name>", "Agent name")
-    .option("--project <project>", "Mesh project")
+    .option("--project <project>", "Hub project")
     .option("--model <id>", "Primary model")
     .option("--fallback-models <ids>", "Comma-separated fallback models")
     .option("--tools <names>", "Comma-separated Pi tool allowlist")

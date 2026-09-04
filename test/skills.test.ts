@@ -83,7 +83,7 @@ test("promotion requires all protected evaluations, durable evidence, and a non-
 
   // Promotion before evaluations fails closed.
   assert.throws(
-    () => store.promote(id, { decidedBy: "mesh-admin", reason: "trust", evidenceRefs: ["eval:static"] }),
+    () => store.promote(id, { decidedBy: "kxm-admin", reason: "trust", evidenceRefs: ["eval:static"] }),
     /requires passing static-review, sandbox, functional, safety evaluations/,
   );
 
@@ -96,11 +96,11 @@ test("promotion requires all protected evaluations, durable evidence, and a non-
   );
   // Promotion without durable evidence fails closed.
   assert.throws(
-    () => store.promote(id, { decidedBy: "mesh-admin", reason: "ok", evidenceRefs: [] }),
+    () => store.promote(id, { decidedBy: "kxm-admin", reason: "ok", evidenceRefs: [] }),
     /requires durable evidence/,
   );
 
-  const promoted = store.promote(id, { decidedBy: "mesh-admin", reason: "protected eval passed", evidenceRefs: ["eval:sandbox-log"] });
+  const promoted = store.promote(id, { decidedBy: "kxm-admin", reason: "protected eval passed", evidenceRefs: ["eval:sandbox-log"] });
   // The promoted skill is readable with pinned content.
   const promotedRead = store.read("promoted", id);
   assert.equal(promotedRead.metadata.id, promoted.id);
@@ -113,7 +113,7 @@ test("promotion requires all protected evaluations, durable evidence, and a non-
   assert.equal(history.filter((record) => record.schema === "kxm.skill-evaluation.v1").length, 4);
   const decision = history.find((record) => record.schema === "kxm.skill-decision.v1") as { decision: string; decidedBy: string };
   assert.equal(decision.decision, "promoted");
-  assert.equal(decision.decidedBy, "mesh-admin");
+  assert.equal(decision.decidedBy, "kxm-admin");
 });
 
 test("functional regression or safety failure quarantines automatically", () => {
@@ -136,7 +136,7 @@ test("functional regression or safety failure quarantines automatically", () => 
 
   // A quarantined candidate cannot be promoted directly.
   assert.throws(
-    () => store.promote(safetyId, { decidedBy: "mesh-admin", reason: "retry", evidenceRefs: ["eval:1"] }),
+    () => store.promote(safetyId, { decidedBy: "kxm-admin", reason: "retry", evidenceRefs: ["eval:1"] }),
     /not found in candidate/,
   );
 });
@@ -145,7 +145,7 @@ test("promoted skills are immutable; changes require a new candidate cycle", () 
   const { lifecycle: store, root } = lifecycle();
   const metadata = store.create(candidateInput());
   passAllEvaluations(store, metadata.id);
-  store.promote(metadata.id, { decidedBy: "mesh-admin", reason: "ok", evidenceRefs: ["eval:1"] });
+  store.promote(metadata.id, { decidedBy: "kxm-admin", reason: "ok", evidenceRefs: ["eval:1"] });
 
   // Verifying integrity passes for the pinned content.
   store.verify("promoted", metadata.id);
@@ -176,7 +176,7 @@ test("promoted skills are immutable; changes require a new candidate cycle", () 
   assert.notEqual(v2.id, metadata.id);
   // Evaluations from v1 do not carry over.
   assert.throws(
-    () => store.promote(v2.id, { decidedBy: "mesh-admin", reason: "shortcut", evidenceRefs: ["eval:1"] }),
+    () => store.promote(v2.id, { decidedBy: "kxm-admin", reason: "shortcut", evidenceRefs: ["eval:1"] }),
     /requires passing/,
   );
 });
@@ -185,7 +185,7 @@ test("rejected candidates remain queryable in history", () => {
   const { lifecycle: store } = lifecycle();
   const metadata = store.create(candidateInput({ name: "bad-idea" }));
   store.evaluate(metadata.id, { kind: "static-review", evaluatorVersion: "eval-1.0.0", passed: true, details: "provenance ok" });
-  store.reject(metadata.id, { decidedBy: "mesh-admin", reason: "duplicates an existing pattern" });
+  store.reject(metadata.id, { decidedBy: "kxm-admin", reason: "duplicates an existing pattern" });
   assert.equal(store.list("rejected").length, 1);
   const history = store.history(metadata.id);
   const decision = history.find((record) => record.schema === "kxm.skill-decision.v1") as { decision: string; reason: string };
@@ -272,7 +272,7 @@ test("kxm skills CLI drives the lifecycle end to end", async () => {
       assert.equal(await runCli(["skills", "evaluate", id, "--kind", kind, "--evaluator", "eval-2.0"], capture()), 0);
     }
     const promoted = capture();
-    assert.equal(await runCli(["skills", "promote", id, "--decided-by", "mesh-admin", "--evidence", "eval:log"], promoted), 0);
+    assert.equal(await runCli(["skills", "promote", id, "--decided-by", "kxm-admin", "--evidence", "eval:log"], promoted), 0);
     assert.match(promoted.read().stdout, /promoted skill/);
 
     // List and verify.
@@ -294,7 +294,7 @@ test("kxm skills CLI drives the lifecycle end to end", async () => {
     const rejectCreated = JSON.parse(rejectIo.read().stdout) as { metadata: { id: string } };
     const rejectId = rejectCreated.metadata.id;
     const rejected = capture();
-    assert.equal(await runCli(["skills", "reject", rejectId, "--decided-by", "mesh-admin", "--reason", "duplicate"], rejected), 0);
+    assert.equal(await runCli(["skills", "reject", rejectId, "--decided-by", "kxm-admin", "--reason", "duplicate"], rejected), 0);
     assert.match(rejected.read().stdout, /history retained/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });

@@ -15837,7 +15837,7 @@ var MeshClient = class {
     this.options = { heartbeatMs: 1e4, reconnectMs: 1e3, requestTimeoutMs: 15e3, ...options };
   }
   async start(onEvent) {
-    if (!this.stopped) throw new Error("mesh client is already started");
+    if (!this.stopped) throw new Error("hub client is already started");
     this.stopped = false;
     this.onEvent = onEvent;
     try {
@@ -16095,8 +16095,8 @@ var MeshClient = class {
     const headers = { "content-type": "application/json" };
     if (this.options.authToken) headers.authorization = `Bearer ${this.options.authToken}`;
     if (includeIdentity && this.agent && this.agentKey) {
-      headers["x-mesh-agent-id"] = this.agent.id;
-      headers["x-mesh-agent-key"] = this.agentKey;
+      headers["x-kxm-agent-id"] = this.agent.id;
+      headers["x-kxm-agent-key"] = this.agentKey;
     }
     return headers;
   }
@@ -16317,7 +16317,7 @@ async function ensureClient() {
 var tools = [
   {
     name: "kxm_list",
-    description: "List online peer agents in the current mesh project.",
+    description: "List online peer agents in the current hub project.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false }
   },
   {

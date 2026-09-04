@@ -22,7 +22,7 @@ export class SessionConfigError extends Error {
 export interface SessionRecord {
   schema: typeof SESSION_SCHEMA;
   id: string;
-  host: "local" | "mesh";
+  host: "local" | "hub";
   mode: "mix" | "workflow";
   workflowId?: string;
   workers: Worker[];
@@ -152,7 +152,7 @@ function loadRoster(path: string, key: "agents" | "gates"): Array<Record<string,
 
 export function createSession(input: {
   id: string;
-  host: "local" | "mesh";
+  host: "local" | "hub";
   mode: "mix" | "workflow";
   workflowId?: string;
   workers: Worker[];

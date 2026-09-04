@@ -32,7 +32,7 @@ test("webhook run creation stamps the canonical definition hash and keeps it dur
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-mesh-delivery-id": deliveryId,
+      "x-kxm-delivery-id": deliveryId,
       "x-hub-signature": `sha256=${createHmac("sha256", secret).update(payload).digest("hex")}`,
     },
     body: payload,

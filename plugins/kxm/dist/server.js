@@ -1942,7 +1942,7 @@ function approveWorkflowDegradation(run, stageId, requirement, reason, approvalI
     attempt,
     policyMinProducers: policy.minProducers,
     approvedMinProducers: policy.degradation.minProducers,
-    approvedBy: "mesh-admin",
+    approvedBy: "kxm-admin",
     reason: requireString(reason, "reason", { max: 1e3 }),
     approvedAt: timestamp
   };
@@ -2202,7 +2202,7 @@ var MeshStore = class {
     const schemaVersion = schemaRow?.user_version ?? 0;
     if (schemaVersion > 3) {
       this.database.close();
-      throw new Error(`mesh database schema ${schemaVersion} is newer than this runtime supports`);
+      throw new Error(`hub database schema ${schemaVersion} is newer than this runtime supports`);
     }
     this.database.exec(`
       PRAGMA journal_mode = WAL;
@@ -2701,7 +2701,7 @@ function createMeshHub(options = {}) {
   }
   function contextCallerProject(request, requested) {
     const project = requireString(requested, "project", { max: 200 });
-    const agentHeader = request.headers["x-mesh-agent-id"];
+    const agentHeader = request.headers["x-kxm-agent-id"];
     if (typeof agentHeader === "string" && agentHeader.trim()) {
       const agent = requireAgent(request);
       requireProjectAuth(request, agent.project);
@@ -2711,7 +2711,7 @@ function createMeshHub(options = {}) {
       return { project, caller: agent.id };
     }
     requireAdminAuth(request);
-    return { project, caller: "mesh-admin" };
+    return { project, caller: "kxm-admin" };
   }
   function requireAdminAuth(request) {
     if (!authToken2 && isLoopback(host2)) return;
@@ -2733,8 +2733,8 @@ function createMeshHub(options = {}) {
     requireAdminAuth(request);
   }
   function requireAgent(request, expectedId) {
-    const agentId = expectedId ?? String(request.headers["x-mesh-agent-id"] ?? "");
-    const agentKey = String(request.headers["x-mesh-agent-key"] ?? "");
+    const agentId = expectedId ?? String(request.headers["x-kxm-agent-id"] ?? "");
+    const agentKey = String(request.headers["x-kxm-agent-key"] ?? "");
     const agent = agents.get(agentId);
     if (!agent || !agentKey || !safeTokenEqual(agentKey, agent.key)) {
       throw new ProtocolError(401, "invalid agent identity", "invalid_agent_identity", {
@@ -2751,7 +2751,7 @@ function createMeshHub(options = {}) {
   }
   function checkRateLimit(request, response) {
     if (!rateLimit) return;
-    const key = String(request.headers["x-mesh-agent-id"] ?? request.socket.remoteAddress ?? "unknown");
+    const key = String(request.headers["x-kxm-agent-id"] ?? request.socket.remoteAddress ?? "unknown");
     const now = Date.now();
     const current = rateBuckets.get(key);
     const bucket = !current || now - current.startedAt >= rateLimit.windowMs ? { startedAt: now, count: 0 } : current;
@@ -3286,7 +3286,7 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
         if (!run || run.definitionId !== definition.id) {
           throw new ProtocolError(404, "workflow run not found", "workflow_not_found");
         }
-        const deliveryHeader = request.headers["x-atlassian-webhook-identifier"] ?? request.headers["x-github-delivery"] ?? request.headers["x-mesh-delivery-id"];
+        const deliveryHeader = request.headers["x-atlassian-webhook-identifier"] ?? request.headers["x-github-delivery"] ?? request.headers["x-kxm-delivery-id"];
         const deliveryId = requireString(deliveryHeader, "webhook delivery identifier", { max: 128 });
         const payloadHash = createHash2("sha256").update(rawBody).digest("hex");
         const existingReceipt = run.signalReceipts?.find((receipt2) => receipt2.deliveryId === deliveryId);
@@ -3440,7 +3440,7 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
           response.writeHead(204, { "cache-control": "no-store" }).end();
           return;
         }
-        const deliveryHeader = request.headers["x-atlassian-webhook-identifier"] ?? request.headers["x-github-delivery"] ?? request.headers["x-mesh-delivery-id"];
+        const deliveryHeader = request.headers["x-atlassian-webhook-identifier"] ?? request.headers["x-github-delivery"] ?? request.headers["x-kxm-delivery-id"];
         const deliveryId = requireString(deliveryHeader, "webhook delivery identifier", { max: 128 });
         const existing = [...workflowRuns.values()].find(
           (run2) => run2.definitionId === definition.id && run2.deliveryId === deliveryId
@@ -3626,7 +3626,7 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
           const entry = {
             id: newId("journal"),
             runId: transition.id,
-            agentId: "mesh-admin",
+            agentId: "kxm-admin",
             category: "decision",
             area: stage.area ?? "security",
             severity: "warning",
@@ -3734,7 +3734,7 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
         const proposalId = requireString(body.proposalId, "proposalId", { max: 128 });
         const project = requireString(body.project, "project", { max: 200 });
         const evidence = boundedStringList(body.evidence, "evidence", 32);
-        const promoted = await stateProvider.promote(proposalId, evidence, "mesh-admin");
+        const promoted = await stateProvider.promote(proposalId, evidence, "kxm-admin");
         counters.contextRequests += 1;
         publishOps(project, "workflows");
         logger({ event: "context_state_promoted", project, proposalId, promotedId: promoted.id, stateKey: promoted.stateKey });
@@ -3811,7 +3811,7 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
           {
             to,
             evidenceRefs,
-            decidedBy: "mesh-admin",
+            decidedBy: "kxm-admin",
             reason: requireString(body.reason, "reason", { max: 1e3 })
           },
           nowIso()
@@ -4197,7 +4197,7 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
           connection: "keep-alive",
           "x-accel-buffering": "no",
           "x-content-type-options": "nosniff",
-          ...presenceOnly ? { "x-mesh-events-mode": "presence" } : {}
+          ...presenceOnly ? { "x-kxm-events-mode": "presence" } : {}
         });
         response.write(`event: ready
 data: ${JSON.stringify({ agent: publicAgent(current) })}

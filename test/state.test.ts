@@ -100,19 +100,19 @@ test("promotion is evidence-bound, authorized, and supersession-linked", async (
     "state_promotion_invalid",
   );
   // Empty promotion evidence fails closed.
-  await assertProtocolError(provider.promote(id, [], "mesh-admin"), "state_promotion_invalid");
+  await assertProtocolError(provider.promote(id, [], "kxm-admin"), "state_promotion_invalid");
   // Unknown proposal IDs fail closed.
-  await assertProtocolError(provider.promote("ctx_missing", ["eval:1"], "mesh-admin"), "state_proposal_not_found");
+  await assertProtocolError(provider.promote("ctx_missing", ["eval:1"], "kxm-admin"), "state_proposal_not_found");
 
-  const promoted = await provider.promote(id, ["receipt:ci-migration"], "mesh-admin");
+  const promoted = await provider.promote(id, ["receipt:ci-migration"], "kxm-admin");
   assert.equal(promoted.status, "current");
   assert.equal(promoted.stateKey, "ci.pipeline");
   assert.deepEqual(promoted.supersedes, ["ctx_state_initial"]);
   assert.deepEqual(promoted.evidenceRefs, ["journal_journal_1", "receipt:ci-migration", "receipt:run_1/verify"]);
-  assert.equal(promoted.provenance.sourceRef, "promoted-by:mesh-admin");
+  assert.equal(promoted.provenance.sourceRef, "promoted-by:kxm-admin");
 
   // Double promotion fails closed: the proposal is consumed.
-  await assertProtocolError(provider.promote(id, ["eval:1"], "mesh-admin"), "state_proposal_not_promotable");
+  await assertProtocolError(provider.promote(id, ["eval:1"], "kxm-admin"), "state_proposal_not_promotable");
 
   // The supersession graph is queryable.
   const superseder = await provider.supersededBy("kxm", "ctx_state_initial");
@@ -132,7 +132,7 @@ test("temporal queries are deterministic and superseded state never looks curren
   const promoted = await provider.promote(
     (await firstProposalId(store))!,
     ["receipt:ci-migration"],
-    "mesh-admin",
+    "kxm-admin",
   );
 
   // Current query: only the promoted value.
@@ -198,7 +198,7 @@ test("competing proposals are detected, not silently resolved", async () => {
   const promoted = await provider.promote(
     (await firstProposalId(store))!,
     ["receipt:ci-migration"],
-    "mesh-admin",
+    "kxm-admin",
   );
   assert.equal(promoted.status, "current");
   assert.deepEqual(provider.contradictions(), []);
@@ -234,7 +234,7 @@ test("state survives restart with durable migration", async () => {
     const promoted = await firstProvider.promote(
       (await firstProposalId(first))!,
       ["receipt:ci-migration"],
-      "mesh-admin",
+      "kxm-admin",
     );
     const firstHistory = firstProvider.stateHistory("kxm", "ci.pipeline").map((item) => item.id);
     first.close();

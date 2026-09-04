@@ -77,7 +77,7 @@ test("v0.4 databases upgrade in place to the v0.5 context schema", async () => {
       evidenceRefs: ["migration:test"],
       proposedBy: "migration-fixture",
     });
-    const promoted: ContextItem = await provider.promote(proposalId, ["migration:evidence"], "mesh-admin");
+    const promoted: ContextItem = await provider.promote(proposalId, ["migration:evidence"], "kxm-admin");
     assert.equal(promoted.status, "current");
     assert.equal(store.getContextItem(promoted.id)?.project, "legacy-project");
     // And a v0.4 lesson still reads as a v0.4 lesson (no promotion lifecycle).

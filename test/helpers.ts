@@ -1,3 +1,5 @@
+import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import type { TestContext } from "node:test";
 import { MeshClient } from "../plugins/kxm/src/client.ts";
 import { createMeshHub, type MeshHub, type MeshHubOptions } from "../plugins/kxm/src/hub.ts";
@@ -59,4 +61,29 @@ export async function waitFor(predicate: () => boolean | Promise<boolean>, timeo
 
 export async function responseJson(response: Response): Promise<Record<string, unknown>> {
   return await response.json() as Record<string, unknown>;
+}
+
+/** Remove a test temp directory. On Windows a SIGKILLed or SIGTERMed child
+ * (or its own child) can hold the directory open for a while, so retry for a
+ * few seconds and then tolerate a lingering lock: leaking an OS temp dir is
+ * not a test failure. Any other error still throws. */
+export function removeTempDir(...paths: string[]): void {
+  for (const path of paths) {
+    try {
+      rmSync(path, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "EBUSY" && code !== "EPERM" && code !== "ENOTEMPTY") throw error;
+      process.stderr.write(`removeTempDir: leaving ${path} behind after ${code}\n`);
+    }
+  }
+}
+
+/** Concatenate every log under <workdir>/.kxm/logs for failure messages. */
+export function workerLogs(workdir: string): string {
+  const dir = join(workdir, ".kxm", "logs");
+  if (!existsSync(dir)) return "(no logs)";
+  return readdirSync(dir)
+    .map((name) => `--- ${name} ---\n${readFileSync(join(dir, name), "utf8")}`)
+    .join("\n");
 }

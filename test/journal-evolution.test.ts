@@ -80,7 +80,7 @@ test("governed promotion lifecycle is monotonic and self-decision-proof", () => 
 
   const approved = applyJournalPromotion(
     candidate,
-    { to: "approved", evidenceRefs: ["eval:static-review", "eval:sandbox"], decidedBy: "mesh-admin", reason: "passed protected eval" },
+    { to: "approved", evidenceRefs: ["eval:static-review", "eval:sandbox"], decidedBy: "kxm-admin", reason: "passed protected eval" },
     "2026-01-02T00:00:00.000Z",
   );
   assert.equal(journalPromotionState(approved), "approved");
@@ -90,7 +90,7 @@ test("governed promotion lifecycle is monotonic and self-decision-proof", () => 
   // Terminal states never re-open, in any direction.
   for (const to of ["approved", "rejected", "quarantined"] as const) {
     assert.throws(
-      () => applyJournalPromotion(approved, { to, evidenceRefs: ["ev"], decidedBy: "mesh-admin", reason: "again" }, "2026-01-03T00:00:00.000Z"),
+      () => applyJournalPromotion(approved, { to, evidenceRefs: ["ev"], decidedBy: "kxm-admin", reason: "again" }, "2026-01-03T00:00:00.000Z"),
       /terminal state/,
     );
   }
@@ -98,7 +98,7 @@ test("governed promotion lifecycle is monotonic and self-decision-proof", () => 
   // Rejected hypotheses and failed experiments stay queryable, not flattened.
   const rejectedHypothesis = applyJournalPromotion(
     entry({ id: "journal_hyp1", category: "hypothesis", agentId: "agent_critic" }),
-    { to: "rejected", evidenceRefs: ["experiment:run_1/counterexample"], decidedBy: "mesh-admin", reason: "counterexample observed" },
+    { to: "rejected", evidenceRefs: ["experiment:run_1/counterexample"], decidedBy: "kxm-admin", reason: "counterexample observed" },
     "2026-01-02T00:00:00.000Z",
   );
   assert.equal(journalPromotionState(rejectedHypothesis), "rejected");
@@ -106,7 +106,7 @@ test("governed promotion lifecycle is monotonic and self-decision-proof", () => 
 
   // Evidence is mandatory for every promotion decision.
   assert.throws(
-    () => applyJournalPromotion(candidate, { to: "approved", evidenceRefs: [], decidedBy: "mesh-admin", reason: "no evidence" }, "2026-01-02T00:00:00.000Z"),
+    () => applyJournalPromotion(candidate, { to: "approved", evidenceRefs: [], decidedBy: "kxm-admin", reason: "no evidence" }, "2026-01-02T00:00:00.000Z"),
     /at least one durable evidence reference/,
   );
 
@@ -114,7 +114,7 @@ test("governed promotion lifecycle is monotonic and self-decision-proof", () => 
   const observation = entry({ category: "observation" });
   assert.equal(journalPromotionState(observation), undefined);
   assert.throws(
-    () => applyJournalPromotion(observation, { to: "approved", evidenceRefs: ["ev"], decidedBy: "mesh-admin", reason: "why" }, "2026-01-02T00:00:00.000Z"),
+    () => applyJournalPromotion(observation, { to: "approved", evidenceRefs: ["ev"], decidedBy: "kxm-admin", reason: "why" }, "2026-01-02T00:00:00.000Z"),
     /do not participate in promotion/,
   );
   assert.deepEqual(PROMOTABLE_JOURNAL_CATEGORIES, ["skill-candidate", "hypothesis", "experiment"]);
@@ -166,7 +166,7 @@ test("retrospective exports new categories with promotion state and no raw bodie
   });
   const promoted = applyJournalPromotion(
     candidate,
-    { to: "quarantined", evidenceRefs: ["eval:safety"], decidedBy: "mesh-admin", reason: "safety eval failed" },
+    { to: "quarantined", evidenceRefs: ["eval:safety"], decidedBy: "kxm-admin", reason: "safety eval failed" },
     "2026-01-02T00:00:00.000Z",
   );
   const built = buildRetrospective(run, [legacyEntry(run.id), candidate, { ...promoted, id: "journal_retro_skill_promoted" }]);
@@ -220,7 +220,7 @@ test("hub enforces journal evidence, new categories, and governed promotion", as
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-mesh-delivery-id": "journal-hub-1",
+      "x-kxm-delivery-id": "journal-hub-1",
       "x-hub-signature": `sha256=${createHmac("sha256", secret).update(payload).digest("hex")}`,
     },
     body: payload,

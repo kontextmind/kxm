@@ -58,8 +58,8 @@ test("kxm routes agent, session, workflow, and gate tooling", async () => {
   assert.match(`${initHelp.read().stdout}${initHelp.read().stderr}`, /--hub/);
   const sshHub = capture();
   assert.equal(await runCli(["init", "--json", "--hub", "ssh"], {}, sshHub), 2);
-  assert.match(sshHub.read().stdout, /hub_ssh_unsupported/);
-  assert.doesNotMatch(sshHub.read().stdout, /[Mm]esh/);
+  assert.match(sshHub.read().stderr, /hub_ssh_unsupported/);
+  assert.doesNotMatch(sshHub.read().stderr, /[Mm]esh/);
 
   const unknownTool = capture();
   assert.equal(await runCli(["nope"], {}, unknownTool), 2);
@@ -70,6 +70,35 @@ test("kxm routes agent, session, workflow, and gate tooling", async () => {
 test("kxm mesh is an unknown command", async () => {
   const io = capture();
   assert.equal(await runCli(["mesh"], {}, io), 2);
+});
+
+test("kxm --version prints the package version", async () => {
+  const pkg = JSON.parse(readFileSync(resolve("package.json"), "utf8")) as { version: string };
+  const io = capture();
+  await runCli(["--version"], {}, io);
+  assert.equal(io.read().stdout.trim(), pkg.version);
+  assert.equal(io.read().stderr, "");
+});
+
+test("error payloads carry a schema and land on stderr in JSON and text modes", async () => {
+  const json = capture();
+  assert.equal(await runCli(["run", "--json"], {}, json), 2);
+  assert.equal(json.read().stdout, "");
+  const payload = JSON.parse(json.read().stderr) as { schema: string; ok: boolean; command: string; error: string };
+  assert.equal(payload.schema, "kxm.cli-result.v1");
+  assert.equal(payload.ok, false);
+  assert.equal(payload.command, "run");
+  assert.equal(payload.error, "workflow_required");
+
+  const text = capture();
+  assert.equal(await runCli(["run"], {}, text), 2);
+  assert.equal(text.read().stdout, "");
+  assert.match(text.read().stderr, /usage: kxm run <workflow>/);
+
+  const ok = capture();
+  assert.equal(await runCli(["harness", "list", "--json"], {}, ok), 0);
+  assert.equal(ok.read().stderr, "");
+  assert.equal((JSON.parse(ok.read().stdout) as { schema: string }).schema, "kxm.cli-result.v1");
 });
 
 test("agent and gate CLI results share the worker envelope", async () => {
@@ -94,7 +123,7 @@ test("agent and gate CLI results share the worker envelope", async () => {
   assert.equal(await runCli([
     "gate", "--json", "validate", "--file", join(tmpdir(), "kxm-missing-workflow.json"),
   ], {}, gateIo), 1);
-  const gate = JSON.parse(gateIo.read().stdout) as {
+  const gate = JSON.parse(gateIo.read().stderr) as {
     schema: string;
     worker: { schema: string; kind: string; driver: string; name: string };
     command: string;
@@ -139,7 +168,7 @@ test("vNext init creates and revalidates project configuration without legacy en
     makeGitRoot(dryCwd);
     const unsupportedWorkspace = capture();
     assert.equal(await runCli(["--workspace", join(cwd, "wrong"), "init", "--json"], {}, unsupportedWorkspace, cwd), 2);
-    assert.match(unsupportedWorkspace.read().stdout, /"error":"workspace_option_unsupported"/);
+    assert.match(unsupportedWorkspace.read().stderr, /"error":"workspace_option_unsupported"/);
     assert.equal(existsSync(join(cwd, ".kxm")), false);
 
     const createdIo = capture();
@@ -170,24 +199,24 @@ test("vNext init creates and revalidates project configuration without legacy en
     assert.equal(existsSync(join(dryCwd, ".kxm")), false);
     const invalidIo = capture();
     assert.equal(await runCli(["init", "--json", "--dry-run", "--project-id", "not-a-project-id"], stateEnv, invalidIo, dryCwd), 1);
-    assert.match(invalidIo.read().stdout, /"error":"vnext_initialization_failed"/);
+    assert.match(invalidIo.read().stderr, /"error":"vnext_initialization_failed"/);
     assert.equal(existsSync(join(dryCwd, ".kxm")), false);
 
     const noGitIo = capture();
     assert.equal(await runCli(["init", "--json", "--dry-run"], stateEnv, noGitIo, legacyCwd), 1);
-    assert.match(noGitIo.read().stdout, /git_root_required/);
+    assert.match(noGitIo.read().stderr, /git_root_required/);
 
     makeGitRoot(legacyCwd);
     mkdirSync(join(legacyCwd, ".kxm", "config"), { recursive: true });
     writeFileSync(join(legacyCwd, ".kxm", "config", "agents.json"), "[]\n");
     const invalidMigrationIo = capture();
     assert.equal(await runCli(["init", "--json", "--dry-run", "--project-id", "invalid"], stateEnv, invalidMigrationIo, legacyCwd), 1);
-    assert.match(invalidMigrationIo.read().stdout, /project_id_invalid/);
+    assert.match(invalidMigrationIo.read().stderr, /project_id_invalid/);
     const legacyIo = capture();
     assert.equal(await runCli(["init", "--json"], stateEnv, legacyIo, legacyCwd), 1);
-    assert.match(legacyIo.read().stdout, /"mode":"migrate"/);
-    assert.match(legacyIo.read().stdout, /\.kxm\/config\/agents\.json/);
-    assert.match(legacyIo.read().stdout, /"plannedOnly":true/);
+    assert.match(legacyIo.read().stderr, /"mode":"migrate"/);
+    assert.match(legacyIo.read().stderr, /\.kxm\/config\/agents\.json/);
+    assert.match(legacyIo.read().stderr, /"plannedOnly":true/);
   } finally {
     for (const root of [cwd, dryCwd, legacyCwd, stateRoot]) rmSync(root, { recursive: true, force: true });
   }
@@ -235,12 +264,12 @@ test("vNext init joins with repeated CLI member bindings stored outside Git", as
 
     const malformed = capture();
     assert.equal(await runCli(["init", "--json", "--repository", "api"], env, malformed, cwd), 1);
-    assert.match(malformed.read().stdout, /repository_binding_argument_invalid/);
+    assert.match(malformed.read().stderr, /repository_binding_argument_invalid/);
     const duplicate = capture();
     assert.equal(await runCli([
       "init", "--json", "--repository", `api=${api}`, "--repository", `api=${api}`,
     ], env, duplicate, cwd), 1);
-    assert.match(duplicate.read().stdout, /repository_binding_argument_duplicate/);
+    assert.match(duplicate.read().stderr, /repository_binding_argument_duplicate/);
 
     const joinedIo = capture();
     assert.equal(await runCli(["init", "--json", "--repository", `api=${api}`], env, joinedIo, cwd), 0);
@@ -300,7 +329,7 @@ test("kxm migrate plans, applies with reviewed decisions, and verifies the recei
 
     const plannedIo = capture();
     assert.equal(await runCli(["migrate", "plan", "--json"], env, plannedIo, cwd), 1);
-    const planned = JSON.parse(plannedIo.read().stdout) as {
+    const planned = JSON.parse(plannedIo.read().stderr) as {
       ok: boolean;
       plannedOnly: boolean;
       plan: { canApply: boolean; ambiguities: Array<{ key: string; allowedValues: Array<string | number> }>; sourceDigest: string; projectId: string; projectName: string };
@@ -316,7 +345,7 @@ test("kxm migrate plans, applies with reviewed decisions, and verifies the recei
 
     const blockedIo = capture();
     assert.equal(await runCli(["migrate", "apply", "--json"], env, blockedIo, cwd), 1);
-    const blocked = JSON.parse(blockedIo.read().stdout) as { action: string; plannedOnly: boolean };
+    const blocked = JSON.parse(blockedIo.read().stderr) as { action: string; plannedOnly: boolean };
     assert.equal(blocked.action, "planned");
     assert.equal(blocked.plannedOnly, true);
     assert.equal(existsSync(join(cwd, ".kxm", "project.yaml")), false);
@@ -342,7 +371,7 @@ test("kxm migrate plans, applies with reviewed decisions, and verifies the recei
 
     const blockedDryIo = capture();
     assert.equal(await runCli(["migrate", "apply", "--json", "--dry-run"], env, blockedDryIo, cwd), 1);
-    const blockedDry = JSON.parse(blockedDryIo.read().stdout) as { ok: boolean; action: string };
+    const blockedDry = JSON.parse(blockedDryIo.read().stderr) as { ok: boolean; action: string };
     assert.equal(blockedDry.ok, false, "dry run with unresolved ambiguities must not report success");
     assert.equal(blockedDry.action, "planned");
     assert.equal(existsSync(join(cwd, ".kxm", "project.yaml")), false);
@@ -367,7 +396,7 @@ test("kxm migrate plans, applies with reviewed decisions, and verifies the recei
     writeFileSync(join(cwd, ".kxm", "config", "agents.json"), "{}\n", "utf8");
     const driftIo = capture();
     assert.equal(await runCli(["migrate", "verify", "--json"], env, driftIo, cwd), 1);
-    assert.match(driftIo.read().stdout, /migration_source_changed/);
+    assert.match(driftIo.read().stderr, /migration_source_changed/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
     rmSync(stateRoot, { recursive: true, force: true });
@@ -390,7 +419,7 @@ test("kxm run creates, lists, shows, and cancels a run offline with an auto-star
 
     const noWorkflowIo = capture();
     assert.equal(await runCli(["run", "missing", "--json"], env, noWorkflowIo, cwd), 1);
-    assert.match(noWorkflowIo.read().stdout, /run_workflow_unknown/);
+    assert.match(noWorkflowIo.read().stderr, /run_workflow_unknown/);
 
     const runIo = capture();
     assert.equal(await runCli(["run", "default", "--json", "fix the flaky gate"], env, runIo, cwd), 0);
@@ -456,7 +485,7 @@ test("kxm run and runtime commands cover workspace, project, and dry-run branche
     makeGitRoot(noProject);
     const workspaceIo = capture();
     assert.equal(await runCli(["--workspace", cwd, "run", "default", "--json"], env, workspaceIo, cwd), 2);
-    assert.match(workspaceIo.read().stdout, /workspace_option_unsupported/);
+    assert.match(workspaceIo.read().stderr, /workspace_option_unsupported/);
 
     for (const [args, command] of [
       [["run", "default", "--json"], "run"],
@@ -466,7 +495,7 @@ test("kxm run and runtime commands cover workspace, project, and dry-run branche
     ] as const) {
       const io = capture();
       assert.equal(await runCli([...args], env, io, noProject), 1, command);
-      assert.match(io.read().stdout, /project_required/, command);
+      assert.match(io.read().stderr, /project_required/, command);
     }
 
     makeGitRoot(cwd);
@@ -491,21 +520,21 @@ test("kxm run and runtime commands cover workspace, project, and dry-run branche
     // Exercise the VnextConfigError catch branches on each run command.
     const missingRunIo = capture();
     assert.equal(await runCli(["runs", "cancel", "run_00000000000000000000000000000000", "--json"], env, missingRunIo, cwd), 1);
-    assert.match(missingRunIo.read().stdout, /run_unknown|run_cancel_failed/);
+    assert.match(missingRunIo.read().stderr, /run_unknown|run_cancel_failed/);
 
     const missingStatusIo = capture();
     assert.equal(await runCli(["runs", "status", "run_00000000000000000000000000000000", "--json"], env, missingStatusIo, cwd), 1);
-    assert.match(missingStatusIo.read().stdout, /run_unknown|run_status_failed/);
+    assert.match(missingStatusIo.read().stderr, /run_unknown|run_status_failed/);
 
     const projectFile = join(cwd, ".kxm", "project.yaml");
     const projectYaml = readFileSync(projectFile, "utf8");
     writeFileSync(projectFile, "schema: kxm.project.v1\n", "utf8");
     const brokenRunIo = capture();
     assert.equal(await runCli(["run", "default", "--json"], env, brokenRunIo, cwd), 1);
-    assert.match(brokenRunIo.read().stdout, /run_failed|schema_/);
+    assert.match(brokenRunIo.read().stderr, /run_failed|schema_/);
     const brokenListIo = capture();
     assert.equal(await runCli(["runs", "list", "--json"], env, brokenListIo, cwd), 1);
-    assert.match(brokenListIo.read().stdout, /run_list_failed|schema_/);
+    assert.match(brokenListIo.read().stderr, /run_list_failed|schema_/);
     writeFileSync(projectFile, projectYaml, "utf8");
   } finally {
     try { await runCli(["runtime", "stop", "--json"], env, capture(), cwd); } catch { /* best effort */ }
@@ -575,7 +604,7 @@ test("kxm trust diff and check classify expansions against HEAD", async () => {
     writeFileSync(agentFile, readFileSync(agentFile, "utf8").replace("network: provider-only", "network: host"), "utf8");
     const expandedIo = capture();
     assert.equal(await runCli(["trust", "check", "--json"], env, expandedIo, cwd), 1);
-    const expanded = JSON.parse(expandedIo.read().stdout) as {
+    const expanded = JSON.parse(expandedIo.read().stderr) as {
       ok: boolean;
       requiresReview: boolean;
       changes: Array<{ field: string; direction: string; resource: string }>;
@@ -586,12 +615,12 @@ test("kxm trust diff and check classify expansions against HEAD", async () => {
 
     const expandedTextIo = capture();
     assert.equal(await runCli(["trust", "check"], env, expandedTextIo, cwd), 1);
-    assert.match(expandedTextIo.read().stdout, /EXPANSION/);
-    assert.match(expandedTextIo.read().stdout, /trust check failed/);
+    assert.match(expandedTextIo.read().stderr, /EXPANSION/);
+    assert.match(expandedTextIo.read().stderr, /trust check failed/);
 
     const invalidBaseIo = capture();
     assert.equal(await runCli(["trust", "check", "--json", "--base", "nope; rm -rf /"], env, invalidBaseIo, cwd), 1);
-    assert.match(invalidBaseIo.read().stdout, /git_revision_invalid/);
+    assert.match(invalidBaseIo.read().stderr, /git_revision_invalid/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
     rmSync(stateRoot, { recursive: true, force: true });
@@ -607,13 +636,13 @@ test("kxm migrate covers error paths and text output modes", async () => {
     makeGitRoot(emptyCwd);
     const noSourcesIo = capture();
     assert.equal(await runCli(["migrate", "plan", "--json"], env, noSourcesIo, emptyCwd), 1);
-    const noSources = JSON.parse(noSourcesIo.read().stdout) as { error: string; issues: Array<{ code: string }> };
+    const noSources = JSON.parse(noSourcesIo.read().stderr) as { error: string; issues: Array<{ code: string }> };
     assert.equal(noSources.error, "migration_plan_failed");
     assert(noSources.issues.some((issue) => issue.code === "legacy_sources_missing"));
 
     const noReceiptIo = capture();
     assert.equal(await runCli(["migrate", "verify", "--json"], env, noReceiptIo, emptyCwd), 1);
-    const noReceipt = JSON.parse(noReceiptIo.read().stdout) as { ok: boolean; issues: Array<{ code: string }> };
+    const noReceipt = JSON.parse(noReceiptIo.read().stderr) as { ok: boolean; issues: Array<{ code: string }> };
     assert.equal(noReceipt.ok, false);
     assert(noReceipt.issues.some((issue) => issue.code === "migration_receipt_missing"));
 
@@ -642,18 +671,18 @@ test("kxm migrate covers error paths and text output modes", async () => {
     // Text mode: blocked plan lists the required decisions.
     const textPlanIo = capture();
     assert.equal(await runCli(["migrate", "plan"], env, textPlanIo, cwd), 1);
-    assert.match(textPlanIo.read().stdout, /migration plan requires \d+ reviewed decision/);
-    assert.match(textPlanIo.read().stdout, /secret:fix-/);
+    assert.match(textPlanIo.read().stderr, /migration plan requires \d+ reviewed decision/);
+    assert.match(textPlanIo.read().stderr, /secret:fix-/);
 
     // Text mode: blocked apply without decisions.
     const textBlockedIo = capture();
     assert.equal(await runCli(["migrate", "apply"], env, textBlockedIo, cwd), 1);
-    assert.match(textBlockedIo.read().stdout, /migration blocked by \d+ unresolved decision/);
+    assert.match(textBlockedIo.read().stderr, /migration blocked by \d+ unresolved decision/);
 
     // Missing decisions file is a stable error.
     const missingDecisionsIo = capture();
     assert.equal(await runCli(["migrate", "apply", "--json", "--decisions", join(cwd, "nope.yaml")], env, missingDecisionsIo, cwd), 1);
-    const missingDecisions = JSON.parse(missingDecisionsIo.read().stdout) as { error: string; issues: Array<{ code: string }> };
+    const missingDecisions = JSON.parse(missingDecisionsIo.read().stderr) as { error: string; issues: Array<{ code: string }> };
     assert.equal(missingDecisions.error, "migration_apply_failed");
     assert(missingDecisions.issues.some((issue) => issue.code === "decisions_missing"));
 
@@ -661,7 +690,7 @@ test("kxm migrate covers error paths and text output modes", async () => {
     // already-migrated, and verify-success paths.
     const jsonPlanIo = capture();
     assert.equal(await runCli(["migrate", "plan", "--json"], env, jsonPlanIo, cwd), 1);
-    const jsonPlan = JSON.parse(jsonPlanIo.read().stdout) as {
+    const jsonPlan = JSON.parse(jsonPlanIo.read().stderr) as {
       plan: { projectId: string; projectName: string; sourceDigest: string; ambiguities: Array<{ key: string; allowedValues: Array<string | number> }> };
     };
     const resolutions: Record<string, string | number> = {};
@@ -699,7 +728,7 @@ test("kxm migrate covers error paths and text output modes", async () => {
     writeFileSync(join(cwd, ".kxm", "workflows", "fix.yaml"), `${readFileSync(join(cwd, ".kxm", "workflows", "fix.yaml"), "utf8")}# drift\n`, "utf8");
     const verifyFailTextIo = capture();
     assert.equal(await runCli(["migrate", "verify"], env, verifyFailTextIo, cwd), 1);
-    assert.match(verifyFailTextIo.read().stdout, /migration verification failed/);
+    assert.match(verifyFailTextIo.read().stderr, /migration verification failed/);
   } finally {
     rmSync(emptyCwd, { recursive: true, force: true });
     rmSync(cwd, { recursive: true, force: true });
@@ -813,7 +842,7 @@ test("gate validate mirrors the hub workflow source XOR", async () => {
       KXM_WEBHOOK_WORKFLOWS: "",
       KXM_WEBHOOK_WORKFLOWS_FILE: "",
     }, missing, cwd), 2);
-    assert.match(missing.read().stdout, /workflow_source_required/);
+    assert.match(missing.read().stderr, /workflow_source_required/);
 
     const ambiguous = capture();
     assert.equal(await runCli(["gate", "--json", "validate"], {
@@ -821,7 +850,7 @@ test("gate validate mirrors the hub workflow source XOR", async () => {
       KXM_WEBHOOK_WORKFLOWS: inline,
       KXM_WEBHOOK_WORKFLOWS_FILE: file,
     }, ambiguous, cwd), 2);
-    assert.match(ambiguous.read().stdout, /ambiguous_workflow_source/);
+    assert.match(ambiguous.read().stderr, /ambiguous_workflow_source/);
 
     const inlineOnly = capture();
     assert.equal(await runCli(["gate", "--json", "validate"], {
@@ -1024,7 +1053,7 @@ test("stop, signal, status, and help cover the remaining command contract", asyn
         ...signalLive,
         fetchImpl: async (_input, init) => {
           signalBody = String(init?.body ?? "");
-          signalDeliveryIds.push(new Headers(init?.headers).get("x-mesh-delivery-id") ?? "");
+          signalDeliveryIds.push(new Headers(init?.headers).get("x-kxm-delivery-id") ?? "");
           return new Response(JSON.stringify({ duplicate: false }), { status: 202 });
         },
       },
@@ -1040,7 +1069,7 @@ test("stop, signal, status, and help cover the remaining command contract", asyn
       {
         ...capture(),
         fetchImpl: async (_input, init) => {
-          signalDeliveryIds.push(new Headers(init?.headers).get("x-mesh-delivery-id") ?? "");
+          signalDeliveryIds.push(new Headers(init?.headers).get("x-kxm-delivery-id") ?? "");
           return new Response(JSON.stringify({ duplicate: false }), { status: 202 });
         },
       },
@@ -1196,7 +1225,7 @@ test("retrospective export writes proposed artifacts", async () => {
     assert.match(io.read().stdout, /"reviewDecision":"proposed"/);
     const outside = capture();
     assert.equal(await runCli(["workflow", "--json", "--workspace", workspace, "export", "run_cli", "--input", input, "--out-dir", join(cwd, "outside")], {}, outside, cwd), 2);
-    assert.match(outside.read().stdout, /output_outside_workspace_assets/);
+    assert.match(outside.read().stderr, /output_outside_workspace_assets/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

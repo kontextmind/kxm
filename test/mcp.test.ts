@@ -295,7 +295,7 @@ test("bundled MCP tools cover outbound, inbound, reply, cancellation, and channe
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-mesh-delivery-id": "mcp-delivery-9",
+      "x-kxm-delivery-id": "mcp-delivery-9",
       "x-hub-signature": `sha256=${createHmac("sha256", webhookSecret).update(workflowPayload).digest("hex")}`,
     },
     body: workflowPayload,

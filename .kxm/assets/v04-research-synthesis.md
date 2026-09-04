@@ -84,7 +84,7 @@ Hub contract stays: signed `POST /v1/webhooks/:id/runs/:runId/signals/:signalKey
 | Success | All required checks success → `passed` + URLs, conclusions, timestamps |
 | Failure | Any required check failure/cancelled/timed_out → `failed` or `warning`; no raw CI logs |
 | Timeout | Watcher exits nonzero; does not invent `passed`. Hub wait expiry remains the durable timeout |
-| Duplicate | Reuse `x-mesh-delivery-id`; accept `duplicate: true` |
+| Duplicate | Reuse `x-kxm-delivery-id`; accept `duplicate: true` |
 | Stale-run | 409/404 is terminal for the adapter |
 | Hub-restart | Retry the same delivery id; receipts live in SQLite |
 

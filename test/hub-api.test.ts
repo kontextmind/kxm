@@ -34,8 +34,8 @@ function identityHeaders(identity: RawIdentity, token: string): Record<string, s
   return {
     "content-type": "application/json",
     ...(token ? { authorization: `Bearer ${token}` } : {}),
-    "x-mesh-agent-id": identity.agent.id,
-    "x-mesh-agent-key": identity.agentKey,
+    "x-kxm-agent-id": identity.agent.id,
+    "x-kxm-agent-key": identity.agentKey,
   };
 }
 
@@ -146,8 +146,8 @@ test("project tokens isolate authentication and discovery", async (context) => {
   const wrongProjectToken = await fetch(`${mesh.address.url}/v1/agents`, {
     headers: {
       authorization: "Bearer admin-token",
-      "x-mesh-agent-id": alpha.agent!.id,
-      "x-mesh-agent-key": String((alpha as unknown as { agentKey: string }).agentKey),
+      "x-kxm-agent-id": alpha.agent!.id,
+      "x-kxm-agent-key": String((alpha as unknown as { agentKey: string }).agentKey),
     },
   });
   assert.equal(wrongProjectToken.status, 401);
@@ -531,7 +531,7 @@ test("legacy TUI fallback receives presence-only SSE and never queued message bo
     { headers: identityHeaders(observer, mesh.token) },
   );
   assert.equal(eventsResponse.status, 200);
-  assert.equal(eventsResponse.headers.get("x-mesh-events-mode"), "presence");
+  assert.equal(eventsResponse.headers.get("x-kxm-events-mode"), "presence");
   const events = sseData(eventsResponse);
   context.after(() => events.close());
   await events.next(); // ready
@@ -729,7 +729,7 @@ test("webhook workflows reject unsigned deliveries and unknown coordinators", as
   const url = `${mesh.address.url}/v1/webhooks/unknown-target`;
   const unsigned = await fetch(url, {
     method: "POST",
-    headers: { "content-type": "application/json", "x-mesh-delivery-id": "unsigned" },
+    headers: { "content-type": "application/json", "x-kxm-delivery-id": "unsigned" },
     body: payload,
   });
   assert.equal(unsigned.status, 401);
@@ -738,7 +738,7 @@ test("webhook workflows reject unsigned deliveries and unknown coordinators", as
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-mesh-delivery-id": "unknown",
+      "x-kxm-delivery-id": "unknown",
       "x-hub-signature": `sha256=${createHmac("sha256", secret).update(payload).digest("hex")}`,
     },
     body: payload,
@@ -770,7 +770,7 @@ test("a coordinator that settles before passing checkpoints fails the run and re
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-mesh-delivery-id": "premature-1",
+      "x-kxm-delivery-id": "premature-1",
       "x-hub-signature": `sha256=${createHmac("sha256", secret).update(payload).digest("hex")}`,
     },
     body: payload,
@@ -1010,7 +1010,7 @@ test("an expired external signal wait fails durably and records the timeout", as
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-mesh-delivery-id": "timeout-start",
+      "x-kxm-delivery-id": "timeout-start",
       "x-hub-signature": `sha256=${createHmac("sha256", secret).update(payload).digest("hex")}`,
     },
     body: payload,
@@ -1057,7 +1057,7 @@ test("webhook prompts queue for a known offline coordinator and deliver after id
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-mesh-delivery-id": "offline-1",
+      "x-kxm-delivery-id": "offline-1",
       "x-hub-signature": `sha256=${createHmac("sha256", secret).update(payload).digest("hex")}`,
     },
     body: payload,

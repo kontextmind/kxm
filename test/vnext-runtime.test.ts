@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { removeTempDir } from "./helpers.ts";
 import {
   VnextRunEventStore,
   VnextRuntimeRegistry,
@@ -50,9 +51,7 @@ function committedProject(prefix: string): { root: string; stateRoot: string } {
 }
 
 function cleanup(...paths: string[]): void {
-  // A SIGKILLed runtime can still hold its SQLite handles for a moment on
-  // Windows; rmSync retries so teardown does not fail the test with EPERM.
-  for (const path of paths) rmSync(path, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  removeTempDir(...paths);
 }
 
 test("run acceptance is immutable, idempotent, and pins revisions", () => {
@@ -541,7 +540,7 @@ test("crash recovery: SIGKILL then restart yields identical projected state", as
     // identical projected state. The token rotated on restart; re-read it.
     second = spawnChild(script, env);
     const secondStatus = await waitForSupervisor(paths);
-    const secondToken = await waitForToken(paths);
+    const secondToken = await waitForToken(paths, token);
     assert.equal(secondStatus.runtimeId, firstStatus.runtimeId, "the logical runtime identity survives takeover");
     assert.notEqual(secondStatus.pid, firstStatus.pid, "the process is new");
     const secondHandle = { runtimeId: secondStatus.runtimeId as string, port: secondStatus.port as number, token: secondToken, started: true };
@@ -551,11 +550,24 @@ test("crash recovery: SIGKILL then restart yields identical projected state", as
     const events = await vnextRuntimeRequest(secondHandle, "GET", `/v1/runs/${runId}/events?projectRoot=${encodeURIComponent(root)}`);
     assert.equal((events.events as unknown[]).length, 1, "the creation event survived the crash");
   } finally {
-    first?.kill("SIGKILL");
-    second?.kill("SIGKILL");
+    // TerminateProcess is asynchronous on Windows: wait for both children to
+    // exit so their SQLite handles are released before the state dir goes.
+    await Promise.all([killAndWait(first), killAndWait(second)]);
     cleanup(root, stateRoot);
   }
 });
+
+async function killAndWait(child: ChildProcess | undefined): Promise<void> {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  await new Promise<void>((resolveExit) => {
+    const timer = setTimeout(resolveExit, 5_000);
+    child.once("exit", () => {
+      clearTimeout(timer);
+      resolveExit();
+    });
+    child.kill("SIGKILL");
+  });
+}
 
 import { spawn, type ChildProcess } from "node:child_process";
 
@@ -570,11 +582,14 @@ function spawnChild(script: string, env: NodeJS.ProcessEnv): ChildProcess {
   return child;
 }
 
-async function waitForToken(paths: ReturnType<typeof vnextRuntimePaths>): Promise<string> {
+/** The supervisor claims the registry before it publishes its token, so a
+ * takeover briefly leaves the previous token on disk. Pass `previous` to
+ * wait for the rotated one. */
+async function waitForToken(paths: ReturnType<typeof vnextRuntimePaths>, previous?: string): Promise<string> {
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
     const token = readVnextSupervisorToken(paths);
-    if (token) return token;
+    if (token && token !== previous) return token;
     await new Promise((resolveWait) => setTimeout(resolveWait, 100));
   }
   throw new Error("supervisor token did not appear in time");

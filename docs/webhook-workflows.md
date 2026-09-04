@@ -179,7 +179,7 @@ invents a `passed` result.
 
 Each watcher invocation creates a new bounded delivery generation and includes
 the pull-request head SHA when GitHub returned one. Transport retries within
-that invocation reuse the exact `x-mesh-delivery-id`. After a failed or timed
+that invocation reuse the exact `x-kxm-delivery-id`. After a failed or timed
 out result, start a new watcher for the new workflow wait; do not reuse the old
 generated ID. Supply `--delivery-id` only when an external supervisor must
 retry the same callback attempt with a stable provider identifier. The standalone

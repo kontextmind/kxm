@@ -134,16 +134,16 @@ test("update rejects conflicting flags and invalid update.yaml", async () => {
   try {
     const checkKxm = capture();
     assert.equal(await runCli(["update", "--json", "--check", "--kxm"], {}, { ...checkKxm, fetchImpl: githubFetch() }, cwd), 2);
-    assert.match(checkKxm.read().stdout, /scope_conflict/);
+    assert.match(checkKxm.read().stderr, /scope_conflict/);
 
     const twoScopes = capture();
     assert.equal(await runCli(["update", "--json", "--self", "--models"], {}, { ...twoScopes, fetchImpl: githubFetch() }, cwd), 2);
-    assert.match(twoScopes.read().stdout, /scope_conflict/);
+    assert.match(twoScopes.read().stderr, /scope_conflict/);
 
     writeUpdateYaml(cwd, "schema: kxm.update.v1\nauto: maybe\n");
     const invalid = capture();
     assert.equal(await runCli(["update", "--json", "--check"], {}, { ...invalid, fetchImpl: githubFetch() }, cwd), 2);
-    assert.match(invalid.read().stdout, /kxm_update_config_invalid/);
+    assert.match(invalid.read().stderr, /kxm_update_config_invalid/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -221,7 +221,7 @@ test("update dry-run unknown harness is fail-closed", async () => {
       ...io,
       fetchImpl: githubFetch(`v${currentVersion}`),
     }, cwd), 2);
-    const payload = JSON.parse(io.read().stdout) as { ok: boolean; steps: Array<{ detail?: string }> };
+    const payload = JSON.parse(io.read().stderr) as { ok: boolean; steps: Array<{ detail?: string }> };
     assert.equal(payload.ok, false);
     assert.ok(payload.steps.some((step) => step.detail === "unknown_harness"));
   } finally {
@@ -237,7 +237,7 @@ test("update --kxm reports installer failure without applying harness updates", 
     const io = capture();
     const code = await runCli(["update", "--json", "--kxm"], {}, { ...io, fetchImpl: githubFetch("v99.0.0") }, cwd);
     assert.equal(code, 1);
-    const payload = JSON.parse(io.read().stdout) as { ok: boolean; kxm?: { ok: boolean; detail: string } };
+    const payload = JSON.parse(io.read().stderr) as { ok: boolean; kxm?: { ok: boolean; detail: string } };
     assert.equal(payload.ok, false);
     assert.equal(payload.kxm?.ok, false);
     assert.ok((payload.kxm?.detail ?? "").length > 0);
@@ -288,7 +288,7 @@ test("harness list, runtime dry-run, and dash screens cover adjacent CLI branche
 
     const dashUnknown = capture();
     assert.equal(await runCli(["dash", "--json", "--screen", "nope"], {}, dashUnknown, cwd), 2);
-    assert.match(dashUnknown.read().stdout, /unknown_screen/);
+    assert.match(dashUnknown.read().stderr, /unknown_screen/);
 
     const dashJson = capture();
     assert.equal(await runCli(["dash", "--json"], {}, {
@@ -326,7 +326,7 @@ test("harness list, runtime dry-run, and dash screens cover adjacent CLI branche
         throw new Error("offline");
       },
     }, cwd), 1);
-    assert.match(view.read().stdout, /hub_unreachable/);
+    assert.match(view.read().stderr, /hub_unreachable/);
 
     const sessionBoth = capture();
     assert.equal(await runCli(["session", "start", "--workflow", "wf", "--mix", "coordinator"], {}, sessionBoth, cwd), 2);
@@ -379,7 +379,7 @@ test("harness list, runtime dry-run, and dash screens cover adjacent CLI branche
       "workflow", "--json", "start", "wf",
       "--payload", "[1]",
     ], { KXM_WORKFLOW_SECRET: "workflow-secret-16chars" }, wfPayload, cwd), 2);
-    assert.match(wfPayload.read().stdout, /invalid_payload/);
+    assert.match(wfPayload.read().stderr, /invalid_payload/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
     rmSync(stateHome, { recursive: true, force: true });
@@ -431,7 +431,7 @@ test("hub start prints an available update notice and invalid yaml fails closed"
         throw new Error("must not spawn");
       },
     }, cwd), 2);
-    assert.match(invalid.read().stdout, /kxm_update_config_invalid/);
+    assert.match(invalid.read().stderr, /kxm_update_config_invalid/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

@@ -124,7 +124,7 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
       join(packageRoot, "scripts", "kxm.mjs"), "--workspace", join(vnextProject, "wrong"), "init", "--json",
     ], { cwd: vnextProject, encoding: "utf8" });
     assert.equal(unsupportedWorkspace.status, 2, `${unsupportedWorkspace.stderr}\n${unsupportedWorkspace.stdout}`);
-    assert.match(unsupportedWorkspace.stdout, /workspace_option_unsupported/);
+    assert.match(unsupportedWorkspace.stderr, /workspace_option_unsupported/);
 
     const packedProjectYaml = readFileSync(packedProjectFile, "utf8");
     writeFileSync(packedProjectFile, packedProjectYaml.replace("pathHint: .", "pathHint: COM¹"));
@@ -132,7 +132,7 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
       join(packageRoot, "scripts", "kxm.mjs"), "init", "--json",
     ], { cwd: vnextProject, encoding: "utf8" });
     assert.equal(invalidPortablePath.status, 1, `${invalidPortablePath.stderr}\n${invalidPortablePath.stdout}`);
-    assert.match(invalidPortablePath.stdout, /schema_pattern/);
+    assert.match(invalidPortablePath.stderr, /schema_pattern/);
     writeFileSync(packedProjectFile, packedProjectYaml);
 
     const invalidDryRun = join(consumer, "invalid-vnext-project");
@@ -142,7 +142,7 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
       join(packageRoot, "scripts", "kxm.mjs"), "init", "--json", "--dry-run", "--project-id", "invalid",
     ], { cwd: invalidDryRun, encoding: "utf8" });
     assert.equal(invalidProvisioning.status, 1, `${invalidProvisioning.stderr}\n${invalidProvisioning.stdout}`);
-    assert.match(invalidProvisioning.stdout, /project_id_invalid/);
+    assert.match(invalidProvisioning.stderr, /project_id_invalid/);
 
     const packedMember = join(consumer, "packed-api");
     mkdirSync(packedMember);
@@ -200,7 +200,7 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
       join(packageRoot, "scripts", "kxm.mjs"), "migrate", "plan", "--json",
     ], { cwd: legacyConsumer, encoding: "utf8", env: joinEnvironment });
     assert.equal(migratePlan.status, 1, `${migratePlan.stderr}\n${migratePlan.stdout}`);
-    const migratePlanPayload = JSON.parse(migratePlan.stdout) as {
+    const migratePlanPayload = JSON.parse(migratePlan.stderr) as {
       plan: { canApply: boolean; projectId: string; projectName: string; sourceDigest: string; ambiguities: Array<{ key: string; allowedValues: Array<string | number> }> };
     };
     assert.equal(migratePlanPayload.plan.canApply, false);
@@ -245,7 +245,7 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
       join(packageRoot, "scripts", "kxm.mjs"), "trust", "check", "--json",
     ], { cwd: legacyConsumer, encoding: "utf8", env: joinEnvironment });
     assert.equal(trustExpanded.status, 1, `${trustExpanded.stderr}\n${trustExpanded.stdout}`);
-    assert.match(trustExpanded.stdout, /"requiresReview":true/);
+    assert.match(trustExpanded.stderr, /"requiresReview":true/);
     spawnSync("git", ["-C", legacyConsumer, "add", "-A"], { windowsHide: true });
     const trustCommit = spawnSync("git", ["-C", legacyConsumer, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "grant host network"], { windowsHide: true });
     assert.equal(trustCommit.status, 0, trustCommit.stderr as unknown as string);

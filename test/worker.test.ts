@@ -7,7 +7,7 @@ import { delimiter, join, resolve } from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 import { recoveryEnvelopePath, workerStateKey } from "../plugins/kxm/src/recovery.ts";
-import { createTestMesh, waitFor } from "./helpers.ts";
+import { createTestMesh, removeTempDir, waitFor, workerLogs } from "./helpers.ts";
 
 const inheritedWorkspaceKeys = [
   "KXM_WORKSPACE_DIR",
@@ -109,7 +109,7 @@ test("long-lived worker supervises Pi and honors the restart limit", async () =>
     assert.equal(existsSync(join(workdir, ".kxm", "assets")), true);
     assert.equal(existsSync(join(workdir, ".kxm", "state")), true);
   } finally {
-    rmSync(workdir, { recursive: true, force: true });
+    removeTempDir(workdir);
   }
 });
 
@@ -155,7 +155,7 @@ test("workflow isolation serially swaps one child across bounded run-specific Pi
       KXM_WORKER_MAX_RESTARTS: "0",
       KXM_WORKDIR: workdir,
     });
-    assert.equal(result.code, 7, `${result.stderr}\n${result.stdout}`);
+    assert.equal(result.code, 7, `${result.stderr}\n${result.stdout}\n${workerLogs(workdir)}`);
     const calls = readFileSync(invocations, "utf8").trim().split("\n").map((line) => JSON.parse(line)) as Array<{
       scope: string;
       args: string[];
@@ -189,7 +189,7 @@ test("workflow isolation serially swaps one child across bounded run-specific Pi
     assert.match(result.stdout, /"event":"worker_session_routed"/);
     assert.doesNotMatch(result.stdout, /worker_restart_scheduled/);
   } finally {
-    rmSync(workdir, { recursive: true, force: true });
+    removeTempDir(workdir);
   }
 });
 
@@ -225,7 +225,7 @@ test("hub, extension, and supervisor complete the real pre-ack route and destina
       "  registerTool() {}, registerCommand() {},",
       "  getSessionName() { return process.env.KXM_AGENT_NAME; },",
       "  sendMessage(message) {",
-      "    if (message.customType !== 'pi-mesh-inbound' || finishing) return;",
+      "    if (message.customType !== 'kxm-inbound' || finishing) return;",
       "    finishing = true;",
       "    queueMicrotask(async () => {",
       "      await emit('message_start', { message });",
@@ -268,7 +268,7 @@ test("hub, extension, and supervisor complete the real pre-ack route and destina
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-mesh-delivery-id": "integrated-session-route-delivery",
+        "x-kxm-delivery-id": "integrated-session-route-delivery",
         "x-hub-signature": `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`,
       },
       body,
@@ -283,7 +283,7 @@ test("hub, extension, and supervisor complete the real pre-ack route and destina
     assert.match(result.stdout, /"event":"worker_session_routed"/);
     assert.equal(existsSync(workerFile(workdir, "integrated-project", "integrated-worker", "session-request")), false);
   } finally {
-    rmSync(workdir, { recursive: true, force: true });
+    removeTempDir(workdir);
   }
 });
 
@@ -323,7 +323,7 @@ test("workflow isolation rejects a current-generation route whose source is not 
     assert.deepEqual(manifest.active, { kind: "default" });
     assert.equal(manifest.runs[targetRun], undefined);
   } finally {
-    rmSync(workdir, { recursive: true, force: true });
+    removeTempDir(workdir);
   }
 });
 
@@ -364,7 +364,7 @@ test("workflow isolation quarantines corrupt bindings and safely recovers the st
     assert.match(result.stdout, /"event":"worker_session_orphans_adopted"/);
     assert.match(result.stdout, /"sessionScope":"default"/);
   } finally {
-    rmSync(workdir, { recursive: true, force: true });
+    removeTempDir(workdir);
   }
 });
 
@@ -387,8 +387,8 @@ test("workflow isolation rejects linked session roots before Pi can write an ali
     assert.match(result.stderr, /session root is not a safe real directory|session root must be a real directory/);
     assert.deepEqual(readdirSync(external), []);
   } finally {
-    rmSync(workdir, { recursive: true, force: true });
-    rmSync(external, { recursive: true, force: true });
+    removeTempDir(workdir);
+    removeTempDir(external);
   }
 });
 
@@ -464,7 +464,7 @@ test("worker ownership rejects exact duplicates while isolating projects and san
       : new Promise<void>((resolveExit) => child.once("exit", () => resolveExit()))));
   } finally {
     for (const child of children) if (child.exitCode === null) child.kill("SIGKILL");
-    rmSync(workdir, { recursive: true, force: true });
+    removeTempDir(workdir);
   }
 });
 
@@ -514,7 +514,7 @@ test("worker refuses stale claims and never deletes a replacement generation dur
     await exited;
     assert.equal(readFileSync(ownedPath, "utf8"), `${JSON.stringify(replacement)}\n`);
   } finally {
-    rmSync(workdir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    removeTempDir(workdir);
   }
 });
 
@@ -536,7 +536,7 @@ test("long-lived worker treats spawn failures as retryable nonzero exits", async
     const logPath = workerFile(workdir, "product", "missing-pi", "structured-log");
     assert.match(readFileSync(logPath, "utf8"), /ENOENT/);
   } finally {
-    rmSync(workdir, { recursive: true, force: true });
+    removeTempDir(workdir);
   }
 });
 
@@ -598,7 +598,7 @@ test("long-lived worker pins an explicit worktree extension and skill", async ()
       resolve(workdir, skillPath),
     ]);
   } finally {
-    rmSync(workdir, { recursive: true, force: true });
+    removeTempDir(workdir);
   }
 });
 
@@ -639,7 +639,7 @@ test("long-lived worker revalidates exact resources before every restart", async
     assert.match(result.stdout, /"event":"worker_resource_validation_failed"/);
     assert.match(result.stderr, /WORKER_SKILL_PATHS path does not exist/);
   } finally {
-    rmSync(workdir, { recursive: true, force: true });
+    removeTempDir(workdir);
   }
 });
 
@@ -700,7 +700,7 @@ test("long-lived worker rotates to a configured fallback after a settled provide
     assert.equal(envelope.failureClass, "quota");
     assert.doesNotMatch(JSON.stringify(envelope), /Secret provider body/);
   } finally {
-    rmSync(workdir, { recursive: true, force: true });
+    removeTempDir(workdir);
   }
 });
 
@@ -736,7 +736,7 @@ test("long-lived worker waits for Pi retries to settle before rotating models", 
     assert.doesNotMatch(result.stdout, /RETRY_ORDER_SECRET/);
     assert.match(readFileSync(workerFile(workdir, "product", "coordinator", "agent-log"), "utf8"), /RETRY_ORDER_SECRET/);
   } finally {
-    rmSync(workdir, { recursive: true, force: true });
+    removeTempDir(workdir);
   }
 });
 
@@ -776,7 +776,7 @@ test("long-lived worker recovers the final provider failure from an oversized bo
     assert.doesNotMatch(result.stderr, /LARGE_PROVIDER_(?:HISTORY|SECRET)/);
     assert.match(readFileSync(workerFile(workdir, "product", "coordinator", "agent-log"), "utf8"), /LARGE_PROVIDER_SECRET/);
   } finally {
-    rmSync(workdir, { recursive: true, force: true });
+    removeTempDir(workdir);
   }
 });
 
@@ -809,7 +809,7 @@ test("long-lived worker bounds and isolates an oversized malformed frame without
     assert.doesNotMatch(structuredLog, /MALFORMED_RPC_SECRET/);
     assert.match(readFileSync(workerFile(workdir, "product", "coordinator", "agent-log"), "utf8"), /MALFORMED_RPC_SECRET/);
   } finally {
-    rmSync(workdir, { recursive: true, force: true });
+    removeTempDir(workdir);
   }
 });
 
@@ -862,7 +862,7 @@ test("long-lived worker retries a settled unresumable continuation fresh without
     assert.equal(envelope.reason, "unresumable_session");
     assert.equal(envelope.freshSession, true);
   } finally {
-    rmSync(workdir, { recursive: true, force: true });
+    removeTempDir(workdir);
   }
 });
 
@@ -907,7 +907,7 @@ test("long-lived worker exhausts ordered fallbacks without cycling and uses the 
     assert.match(result.stdout, /"event":"worker_provider_restart_scheduled".*"delayMs":1500.*"fallbackSelected":false/);
     assert.match(result.stdout, /"event":"worker_restart_limit_reached".*"reason":"provider_error"/);
   } finally {
-    rmSync(workdir, { recursive: true, force: true });
+    removeTempDir(workdir);
   }
 });
 
@@ -950,7 +950,7 @@ test("long-lived worker restarts a timed-out tool and records only bounded metad
     assert.equal(envelope.reason, "tool_timeout");
     assert.equal(envelope.failureClass, "timeout");
   } finally {
-    rmSync(workdir, { recursive: true, force: true });
+    removeTempDir(workdir);
   }
 });
 
@@ -985,7 +985,7 @@ test("long-lived worker bounds an oversized tool frame and still cancels its wat
     assert.match(readFileSync(workerFile(workdir, "product", "coordinator", "agent-log"), "utf8"), /LARGE_TOOL_RESULT/);
     assert.equal(existsSync(workerFile(workdir, "product", "coordinator", "recovery")), false);
   } finally {
-    rmSync(workdir, { recursive: true, force: true });
+    removeTempDir(workdir);
   }
 });
 
@@ -1027,7 +1027,7 @@ test("long-lived worker rejects invalid explicit resource paths before supervisi
     assert.match(wrongType.stderr, /path must be an extension file/);
     assert.doesNotMatch(wrongType.stdout, /worker_starting/);
   } finally {
-    rmSync(workdir, { recursive: true, force: true });
+    removeTempDir(workdir);
   }
 });
 
@@ -1068,7 +1068,7 @@ test("long-lived worker launches command scripts through ComSpec on Windows", {
     assert.notEqual(rejected.code, 0);
     assert.match(rejected.stderr, /cannot be passed safely to a Windows command script/);
   } finally {
-    rmSync(workdir, { recursive: true, force: true });
+    removeTempDir(workdir);
   }
 });
 
@@ -1121,7 +1121,7 @@ test("long-lived worker falls back from an unresumable --continue start", async 
     assert.deepEqual(envelope.artifactPointers, [".kxm/assets/implementation.md"]);
     assert.doesNotMatch(JSON.stringify(envelope), /prompt|sk-|ghp_/);
   } finally {
-    rmSync(workdir, { recursive: true, force: true });
+    removeTempDir(workdir);
   }
 });
 
@@ -1146,7 +1146,7 @@ test("long-lived worker does not treat unrelated auth failures as unresumable se
     assert.doesNotMatch(result.stdout, /worker_continue_fallback/);
     assert.equal(existsSync(workerFile(workdir, "product", "coordinator", "recovery")), false);
   } finally {
-    rmSync(workdir, { recursive: true, force: true });
+    removeTempDir(workdir);
   }
 });
 
@@ -1212,11 +1212,11 @@ test("long-lived worker ignores stale RPC responses and confirms abort during ac
     assert.equal(existsSync(workerFile(workdir, "product", "drainer", "pid")), false);
   } finally {
     try {
-      rmSync(workdir, { recursive: true, force: true });
+      removeTempDir(workdir);
     } catch {
       setTimeout(() => {
         try {
-          rmSync(workdir, { recursive: true, force: true });
+          removeTempDir(workdir);
         } catch {
           // Windows may keep a short lock on a just-killed child directory.
         }

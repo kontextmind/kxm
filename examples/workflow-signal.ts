@@ -47,7 +47,7 @@ if (!runId || !signalKey || !status || !summary || !definitionId || !secret) {
     headers: {
       "content-type": "application/json",
       "x-hub-signature-256": signature,
-      "x-mesh-delivery-id": deliveryId,
+      "x-kxm-delivery-id": deliveryId,
     },
     body,
   });

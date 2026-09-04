@@ -22,6 +22,22 @@ All notable user-facing changes are documented here. The project follows [Semant
   bind <url>`, `kxm session brief`, then `pi` and `/kxm hub`. `kxm hub bind`
   arrives with A3.
 - The `kxm mesh` group is deleted. Commander reports it as an unknown command.
+- **Breaking renames (A2, no aliases):** wire headers `x-mesh-agent-id`,
+  `x-mesh-agent-key`, `x-mesh-delivery-id`, and `x-mesh-events-mode` are now
+  `x-kxm-agent-id`, `x-kxm-agent-key`, `x-kxm-delivery-id`, and
+  `x-kxm-events-mode`; hub and workers ship in one package and upgrade
+  together, with no header version check. The administrative caller id
+  `mesh-admin` is `kxm-admin` in context provenance, journal promotions, and
+  degradation approvals. Telemetry and session-manifest `host` is `local` or
+  `hub` (was `mesh`). Pi extension custom message types are `kxm-inbound` and
+  `kxm-recovery`; the status line reads `hub:<agent>`. Bin script and worker
+  messages say KXM. Prometheus `pi_mesh_*` metric names are unchanged until E3.
+- CLI honesty: `kxm --version` prints the package version; every JSON payload
+  carries `schema: "kxm.cli-result.v1"` (worker envelopes keep
+  `kxm.worker-result.v1`); `ok:false` payloads go to stderr in both text and
+  JSON modes; `kxm runs status|cancel|list` report themselves as `runs ...`;
+  `kxm run` says that runs remain created until Phase 3a lands and its JSON
+  carries `phase: "pre-3a"`.
 - Future slices do not add backwards-compat shims.
 
 ### Added
