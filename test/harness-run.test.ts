@@ -630,27 +630,27 @@ test("structured result has sidecar paths, not raw stderr or model transport", a
 test("win32 launcher rejects .cmd/.bat/.ps1/extensionless without spawn", () => {
   const exists = (path: string) => path.endsWith(".cmd") || path.endsWith("grok");
   assert.throws(
-    () => resolveLauncher("C:\\\\Tools\\\\grok.cmd", { platform: "win32", existsSync: () => true }),
+    () => resolveLauncher(String.raw`C:\Tools\grok.cmd`, { platform: "win32", existsSync: () => true }),
     /unsupported-launcher/,
   );
   assert.throws(
-    () => resolveLauncher("C:\\\\Tools\\\\grok.bat", { platform: "win32", existsSync: () => true }),
+    () => resolveLauncher(String.raw`C:\Tools\grok.bat`, { platform: "win32", existsSync: () => true }),
     /unsupported-launcher/,
   );
   assert.throws(
-    () => resolveLauncher("C:\\\\Tools\\\\grok.ps1", { platform: "win32", existsSync: () => true }),
+    () => resolveLauncher(String.raw`C:\Tools\grok.ps1`, { platform: "win32", existsSync: () => true }),
     /unsupported-launcher/,
   );
   assert.throws(
     () => resolveLauncher("grok", {
       platform: "win32",
-      pathEnv: "C:\\\\Tools",
+      pathEnv: String.raw`C:\Tools`,
       existsSync: exists,
     }),
     /unsupported-launcher/,
   );
-  const exe = resolveLauncher("C:\\\\Tools\\\\grok.exe", { platform: "win32", existsSync: () => true });
-  assert.equal(exe, "C:\\\\Tools\\\\grok.exe");
+  const exe = resolveLauncher(String.raw`C:\Tools\grok.exe`, { platform: "win32", existsSync: () => true });
+  assert.equal(exe, String.raw`C:\Tools\grok.exe`);
   assert.match(unsupportedLauncherMessage("pi.cmd", "win32"), /pi.cmd/);
 });
 
