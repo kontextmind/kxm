@@ -39,7 +39,15 @@ It does not replace the phase gates below.
   CLI. If the native harness is absent or logged out, fail closed (or prompt
   login) rather than silently switching to Pi. Pi remains the default
   long-lived worker only for providers it hosts that have no authenticated
-  native harness (e.g. xAI/Grok today).
+  native harness. **Superseded 2026-09-04 / tightened 2026-09-05:** xAI is no
+  longer such a provider — the `grok` CLI is installed and OAuth'd to
+  `auth.x.ai` (`grok models` reports logged in), so the writer role dispatches
+  through it. If `grok` is missing or logged out, fail closed; Pi's `xai`
+  provider is not a writer fallback. This changes the writer's harness only;
+  `kxm agent worker` / `pi --mode rpc` remains Pi-only, because `grok` is a
+  one-shot headless writer, not a supervised long-lived worker. The repo
+  `scripts/harness-run.mjs` helper is a bounded dev dispatcher (auth preflight,
+  verified pairs, private sidecars), not a Phase 11 product adapter.
 - Anthropic subscription models are the motivating case (Claude CLI vs Pi
   Anthropic API keys). The same rule applies to Codex, Kimi, Gemini, DeepSeek,
   and later harnesses.
@@ -116,6 +124,21 @@ It does not replace the phase gates below.
   malformed per-user `update.yaml`. Source
   checkouts skip the notice. A project `.kxm/update.yaml` is ignored with a
   warning. Startup reports `auth=token|none`.
+- Headless `scripts/harness-run.mjs` helper (2026-09-05): native auth
+  preflight, verified grok/claude/codex/OpenRouter-Pi pairs, no native-provider
+  Pi fallback, private answer/stderr sidecars, shell:false launchers.
+  Routing fields `harness`/`role`/`model`/`permission`/`prompt_file` are
+  required nonempty strings (no CLI-default model or permission). Pi
+  planner/reviewer cannot `edit`; only `experiment` may. `max_cost_usd` and
+  `timeout_ms` must be positive finite numbers when set (zero is not dropped
+  silently). `just` recipes JSON.stringify user paths via positional args.
+  Recipe quoting tests use the justfile body and do not require a just binary;
+  live just integration is optional. `just runs` labels billed / list /
+  unmetered / unknown (never absent as `$0`). `prompt_file` and
+  `output_schema` resolve against the invocation cwd and are read before any
+  auth or assignment spawn; missing or unreadable inputs fail closed with
+  zero spawn. File-consuming argv tokens are absolute so the child can run
+  in `request.cwd`. Windows helper dispatch is unverified. Not Phase 11.
 - Coverage include inverted to `plugins/kxm/src/**/*.ts`; excludes are only
   `server.ts` and `mcp-server.ts` (spawned bundles attribute to `dist`).
   Thresholds are measured whole-tree values and may only ratchet up.
@@ -157,6 +180,9 @@ It does not replace the phase gates below.
 - Phase 3 engine (model-free driver on `default.yaml` **and** `fix.yaml` with
   simulated producers; caller-authored replies rejected).
 - Non-Pi dispatch adapters (Phase 11). Listing a harness does not execute it.
+  The `scripts/harness-run.mjs` dev helper is not that adapter.
+- Product catalog still lacks a `grok` entry and Codex `authArgs`. Helper
+  allowlists are script constants, not a preferences overlay or catalog feed.
 - Confirm GitHub repository identity (`kontextmind/kxm` vs current remote).
 - **SCM and issue trackers:** detect from repo conventions (git remote, CI
   layout, issue-key patterns) and **confirm at workflow/project creation**.
