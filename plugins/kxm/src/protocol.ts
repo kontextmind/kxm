@@ -43,6 +43,32 @@ export interface WorkflowMessageContext {
   attempt: number;
 }
 
+export type WorkflowCheckpointStatus = "passed" | "warning" | "failed";
+export type JournalCategory =
+  | "plan"
+  | "decision"
+  | "contradiction"
+  | "error"
+  | "lesson"
+  | "observation"
+  | "hypothesis"
+  | "experiment"
+  | "state-change"
+  | "skill-candidate";
+export type ImprovementArea = "harness" | "gates" | "implementation" | "workflow" | "documentation" | "security" | "other";
+
+/** Evidence submitted for one checkpoint or external signal, keyed by a
+ * requirement from WorkflowStageDefinition.requiredEvidence. */
+export type WorkflowEvidenceInput = Record<string, string>;
+
+/** Callers cite durable message IDs only. Producer identity and the evidence
+ * snapshot are derived by the hub from the stored message. */
+export interface WorkflowEvidenceReference {
+  messageIds: string[];
+}
+
+export type WorkflowEvidenceReferenceInput = Record<string, WorkflowEvidenceReference>;
+
 export interface MessageRecord {
   id: string;
   project: string;

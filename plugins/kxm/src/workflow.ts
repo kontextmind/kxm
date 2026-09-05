@@ -5,24 +5,27 @@ import {
   ProtocolError,
   newId,
   requireString,
+  type ImprovementArea,
+  type JournalCategory,
   type MessageRecord,
+  type WorkflowCheckpointStatus,
+  type WorkflowEvidenceInput,
+  type WorkflowEvidenceReference,
+  type WorkflowEvidenceReferenceInput,
   type WorkflowMessageContext,
 } from "./protocol.ts";
 
-export type WorkflowCheckpointStatus = "passed" | "warning" | "failed";
+export type {
+  ImprovementArea,
+  JournalCategory,
+  WorkflowCheckpointStatus,
+  WorkflowEvidenceInput,
+  WorkflowEvidenceReference,
+  WorkflowEvidenceReferenceInput,
+} from "./protocol.ts";
+
 export type WorkflowRunStatus = "running" | "waiting" | "completed" | "failed";
 export type WorkflowStageStatus = "pending" | "in_progress" | "waiting" | WorkflowCheckpointStatus;
-export type JournalCategory =
-  | "plan"
-  | "decision"
-  | "contradiction"
-  | "error"
-  | "lesson"
-  | "observation"
-  | "hypothesis"
-  | "experiment"
-  | "state-change"
-  | "skill-candidate";
 
 /** Every journal category this runtime accepts. v0.4 records only use the
  * first five; the v0.5 additions turn the journal into the canonical episode
@@ -79,24 +82,11 @@ export interface JournalPromotionRecord {
   reason: string;
   decidedAt: string;
 }
-export type ImprovementArea = "harness" | "gates" | "implementation" | "workflow" | "documentation" | "security" | "other";
-
-/** Evidence submitted for one checkpoint or external signal, keyed by a
- * requirement from WorkflowStageDefinition.requiredEvidence. */
-export type WorkflowEvidenceInput = Record<string, string>;
 
 /** Durable evidence accumulated across local work, retries, and an external
  * signal. A legacy string array can still be read from pre-0.4 databases, but
  * it never satisfies a keyed requirement. */
 export type WorkflowEvidence = Record<string, string[]>;
-
-/** Callers cite durable message IDs only. Producer identity and the evidence
- * snapshot are derived by the hub from the stored message. */
-export interface WorkflowEvidenceReference {
-  messageIds: string[];
-}
-
-export type WorkflowEvidenceReferenceInput = Record<string, WorkflowEvidenceReference>;
 
 export interface PeerReplyDegradationPolicy {
   minProducers: number;

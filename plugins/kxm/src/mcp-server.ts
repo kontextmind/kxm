@@ -4,14 +4,17 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { HubClient, HubHttpError } from "./client.ts";
 import { deliverInboxNotification } from "./inbox.ts";
-import type { DeliveryMode, HubEvent, MessageRecord, WorkflowMessageContext } from "./protocol.ts";
 import type {
+  DeliveryMode,
+  HubEvent,
   ImprovementArea,
   JournalCategory,
+  MessageRecord,
   WorkflowCheckpointStatus,
   WorkflowEvidenceInput,
   WorkflowEvidenceReferenceInput,
-} from "./workflow.ts";
+  WorkflowMessageContext,
+} from "./protocol.ts";
 
 const VERSION = "0.5.1";
 const inbox = new Map<string, MessageRecord>();

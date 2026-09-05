@@ -45,6 +45,14 @@
   "bin": {
     "kxm": "./scripts/kxm.mjs"
   },
+  "exports": {
+    "./core": "./plugins/kxm/dist/core.js",
+    "./runtime": "./plugins/kxm/dist/runtime.js",
+    "./client": "./plugins/kxm/dist/client.js",
+    "./extension": "./plugins/kxm/dist/extension.js",
+    "./mcp": "./plugins/kxm/dist/mcp-server.js",
+    "./package.json": "./package.json"
+  },
   "pi": {
     "extensions": [
       "./plugins/kxm/src/extension.ts"

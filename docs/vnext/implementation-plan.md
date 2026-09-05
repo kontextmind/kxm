@@ -161,6 +161,25 @@ It does not replace the phase gates below.
   Thresholds are measured whole-tree values and may only ratchet up.
   `npm run verify` includes `check:generated`, which diffs built `dist` against
   the staged copy. `check:generated` also runs on every CI validate leg.
+- **B4 issue 85 (unreleased):** five-layer import boundary held by
+  `test/import-boundary.test.ts`. Direct imports from `extension.ts` and
+  `mcp-server.ts` to hub, store, or workflow are banned including type-only;
+  the six shared workflow data shapes live in `protocol.ts`, with an internal
+  type re-export from `workflow.ts` (not a product alias). Package `exports`
+  are exactly `./core`, `./runtime`, `./client`, `./extension`, `./mcp`, and
+  `./package.json`, all compiled `plugins/kxm/dist` JS except `./package.json`.
+  No bare `"."` entry. `./mcp` is the executable path. `pi.extensions` stays
+  on source. Four library bundles are in `check:generated`. The durable pack
+  guard asserts those four library bundles plus the two barrel sources are
+  present in `npm pack`, and that `package.json` `files` still includes
+  `plugins/kxm/dist` and `plugins/kxm/src`. One-time six-file delta versus
+  this slice's base (zero removals) is saved in `b4/pack-proof.json` plus
+  base/candidate manifests; tests do not freeze that delta against HEAD.
+  Boundary tests witness value imports, type-only exports, inline
+  `import type`, transitive external edges, and fail closed on a missing
+  local AST. Family seeds include `vnext-runtime*` plus harness, routing,
+  envelope, and redact. The packed install still runs the CLI, hub, and the
+  three library subpaths.
 - `release.yml` on `v*` tags asserts the tag equals `package.json` version
   before install, runs `validate:ci` + `check:generated`, and packs
   `kxm-<v>.tgz` (`kxmReleaseAssetName`). Release lookup: GET-by-tag is the
@@ -264,6 +283,9 @@ It does not replace the phase gates below.
   execution enforcement is a Phase 3 engine gate, not this auth/inventory
   slice. Unhosted harness/model pair rejection lands in the Phase 4 assignment
   layer (and Phase 11 adapters). Do not treat B3 as blanket-complete.
+- No `types` export condition until declaration emit exists.
+- MCP factory API waits for a second consumer (D13); `./mcp` stays an
+  executable path.
 - Helper allowlists in `scripts/harness-run.mjs` are script constants, not a
   preferences overlay or catalog feed. Grok is in the observational catalog
   (`mode: either`) and is not a supervised long-lived worker.
@@ -433,6 +455,12 @@ without a second asset; mismatch tag failed before install. Cleanup left
 published `v0.5.1` and tree `0.5.1` unchanged. `protect-main` `22251971`
 now requires `Plugin validation`; `delete_branch_on_merge` is true. First
 published `kxm-<v>.tgz` and public npm remain later.
+
+**B4 note (not the Phase 5 gate):** package seams and the strict
+extension/mcp import boundary landed in tree. The old pack-unchanged
+expectation cannot hold: intended library bundles plus source barrels change
+the tarball by exactly those six paths versus this slice's base. The Phase 5
+gate is unchanged.
 
 **Gate:** the public local release runs a dirty two-repository workflow through
 a Runtime crash without a hub or secret leakage. Release assets come from

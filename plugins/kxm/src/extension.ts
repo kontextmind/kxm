@@ -4,9 +4,16 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { HubClient, HubHttpError } from "./client.ts";
 import { areaForTool, classifyFailure, diagnosticEvidence, diagnosticSummary, type Diagnostic } from "./diagnostics.ts";
-import { MAX_CONTENT_CHARS, type DeliveryMode, type HubEvent, type MessageRecord } from "./protocol.ts";
+import {
+  MAX_CONTENT_CHARS,
+  type DeliveryMode,
+  type HubEvent,
+  type ImprovementArea,
+  type JournalCategory,
+  type MessageRecord,
+  type WorkflowCheckpointStatus,
+} from "./protocol.ts";
 import type { ContextItemKind } from "./context.ts";
-import type { ImprovementArea, JournalCategory, WorkflowCheckpointStatus } from "./workflow.ts";
 import { consumeWorkerRecoveryEnvelope, workerStateKey } from "./recovery.ts";
 import {
   itemFromChoice,
