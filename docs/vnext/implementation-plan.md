@@ -25,7 +25,7 @@ It does not replace the phase gates below.
   Workflows, Plans, Inbox, Procs. Wide terminals use list+detail panes.
 - Agent/model config is Git YAML. Omit `harness` (and `defaultHarness`) for
   **Pi**. Other harness ids (`claude`, `kimi`, `codex`, `gemini`, `deepseek`,
-  and later others) are declared on the agent. No second enable/disable
+  `grok`, and later others) are declared on the agent. No second enable/disable
   preferences file.
 - A harness only runs models it actually hosts (Claude ≠ Grok; Codex ≠ Kimi).
   Only Pi is the long-lived headless worker. Other CLIs may be interactive or
@@ -77,8 +77,15 @@ It does not replace the phase gates below.
   empty set fails closed with the limits that fired. Fallback is not an
   independent critic.
 - `kxm harness list` is observational (installed/authenticated), not a
-  headless-capability claim. `kxm update` delegates to each harness's own
-  updater. Governed `kxm skills` are not auto-updated.
+  headless-capability claim. `kxm harness list` auth is `yes|no|unknown`.
+  `unknown` and `no` are never eligible. Eligibility is a pure function over
+  the inventory, with no spawn or network. Pi has no global auth status:
+  `pi auth check` requires `--provider` or `--model`, so the inventory without
+  a named provider/model reports Pi as `unknown` with issue
+  `auth_context_required`, pure eligibility excludes Pi, and the Phase 4
+  assignment probe supplies the exact requested provider/model before any Pi
+  readiness claim. `kxm update` delegates to each harness's own updater.
+  Governed `kxm skills` are not auto-updated.
 - Daily operator loop is a slim `default` path (plan → implement → verify →
   ready), not the 13-stage `/fix`. Dual-critic `/fix` and three-provider review
   are Phase 7. Independent repro-before-oracle stays for `/fix`.
@@ -124,6 +131,16 @@ It does not replace the phase gates below.
   malformed per-user `update.yaml`. Source
   checkouts skip the notice. A project `.kxm/update.yaml` is ignored with a
   warning. Startup reports `auth=token|none`.
+- Tri-state auth probes: Codex distinguishes ChatGPT subscription, API key,
+  and unparsed. Pi inventory without a named provider/model is `unknown` with
+  `auth_context_required` (no global auth; missing-context, not a provider
+  stand-in). Claude parses JSON `loggedIn`. Grok catalog entry observational
+  (`mode: either`), probe parses the confirmed login line. Kimi, Gemini, and
+  DeepSeek report `unknown`. `eligibleHarnesses` fail-closed pure selection.
+  Rule tests: no static harness/model matrix; eligibility excludes unknown and
+  false; `default.yaml` declared graph routes `ready` only through `verify`.
+  This is inventory filtering only (issue 84 auth/eligibility sub-slice), not
+  a supervised-worker claim or live assignment.
 - Headless `scripts/harness-run.mjs` helper (2026-09-05): native auth
   preflight, verified grok/claude/codex/OpenRouter-Pi pairs, no native-provider
   Pi fallback, private answer/stderr sidecars, shell:false launchers.
@@ -220,8 +237,15 @@ It does not replace the phase gates below.
   simulated producers; caller-authored replies rejected).
 - Non-Pi dispatch adapters (Phase 11). Listing a harness does not execute it.
   The `scripts/harness-run.mjs` dev helper is not that adapter.
-- Product catalog still lacks a `grok` entry and Codex `authArgs`. Helper
-  allowlists are script constants, not a preferences overlay or catalog feed.
+- **Issue 84 remainder:** Kimi read-only auth-status probe: no non-mutating
+  CLI status command found. Managed provider status requires the server API,
+  which this slice does not start. Deferred, named probe. Verify-before-ready
+  execution enforcement is a Phase 3 engine gate, not this auth/inventory
+  slice. Unhosted harness/model pair rejection lands in the Phase 4 assignment
+  layer (and Phase 11 adapters). Do not treat B3 as blanket-complete.
+- Helper allowlists in `scripts/harness-run.mjs` are script constants, not a
+  preferences overlay or catalog feed. Grok is in the observational catalog
+  (`mode: either`) and is not a supervised long-lived worker.
 - Confirm GitHub repository identity (`kontextmind/kxm` vs current remote).
 - **SCM and issue trackers:** detect from repo conventions (git remote, CI
   layout, issue-key patterns) and **confirm at workflow/project creation**.
@@ -358,9 +382,14 @@ headless; `kxm harness list` / `kxm update`; `kxm dash` as the operator peek;
 **Still this phase:** Pi RPC adapter, per-run sessions, the rest of the `/kxm`
 menu (hub/workflows/agents completions wrapping CLI), validated YAML editors
 (enable/disable harnesses and models by editing Git files, not a parallel
-store), assignment dispatch that binds harness from auth inventory, and routing
+store), assignment dispatch that binds harness from auth inventory
+(`eligibleHarnesses` filters detected and authenticated ids only; it does
+not take a provider/model pair), unhosted harness/model pair rejection at
+assignment (separate from that auth filter), and routing
 records that always include harness+cost. Hub-local session brief and Pi status
 line are in tree with a deterministic `startup`/`new`/`fork` readiness test.
+The Phase 4 assignment probe supplies the exact requested provider/model
+before any Pi readiness claim.
 
 **Gate:** `kxm init` followed by `kxm run default "prompt"` resolves the
 materialized `default.yaml` and completes a single-repository Pi workflow with

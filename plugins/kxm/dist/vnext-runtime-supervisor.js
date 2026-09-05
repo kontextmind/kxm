@@ -14994,7 +14994,6 @@ var BUILTIN_HARNESSES = Object.freeze([
     mode: "headless",
     commands: ["pi"],
     versionArgs: ["--version"],
-    authArgs: ["auth", "check"],
     update: {
       self: ["update", "--self"],
       extensions: ["update", "--extensions"],
@@ -15030,6 +15029,7 @@ var BUILTIN_HARNESSES = Object.freeze([
     mode: "either",
     commands: ["codex"],
     versionArgs: ["--version"],
+    authArgs: ["login", "status"],
     update: { self: ["update"] }
   },
   {
@@ -15048,6 +15048,16 @@ var BUILTIN_HARNESSES = Object.freeze([
     mode: "either",
     commands: ["deepseek"],
     versionArgs: ["--version"],
+    update: { self: ["update"] }
+  },
+  {
+    id: "grok",
+    label: "Grok CLI",
+    default: false,
+    mode: "either",
+    commands: ["grok"],
+    versionArgs: ["--version"],
+    authArgs: ["models"],
     update: { self: ["update"] }
   }
 ]);

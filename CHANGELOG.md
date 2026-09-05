@@ -59,6 +59,14 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- `kxm harness list` auth is tri-state `yes` / `no` / `unknown`. Codex
+  distinguishes ChatGPT vs API-key login status (text keeps `auth=yes` and
+  adds an `API key` note); Claude parses JSON `loggedIn`; Grok is an
+  observational catalog entry (`mode: either`) with a confirmed login probe.
+  Recognized logged-out payloads stay `no` on a normal nonzero CLI; spawn,
+  unparsed, and contradictory `ok`/`code` stay `unknown`. Pi without a named
+  provider/model is `unknown`. `eligibleHarnesses` selects only detected and
+  authenticated inventory entries and fail-closes when empty.
 - Headless `scripts/harness-run.mjs` helper now fail-closes on native auth
   preflight, unverified harnesses, native-provider Pi impersonation, and
   unsupported Windows launchers. Read-only Claude uses `--safe-mode` and

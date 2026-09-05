@@ -28904,6 +28904,11 @@ function resolveVnextTemplateBaseline(value) {
 // plugins/kxm/src/vnext-harness.ts
 import { spawnSync as spawnSync2 } from "node:child_process";
 var DEFAULT_HARNESS = "pi";
+var UNKNOWN_AUTH_HARNESSES = /* @__PURE__ */ new Set(["kimi", "gemini", "deepseek"]);
+var GROK_LOGIN_LINE = "You are logged in with grok.com.";
+var CODEX_CHATGPT_LINE = "Logged in using ChatGPT";
+var CODEX_API_KEY_PREFIX = "Logged in using an API key";
+var CODEX_NEGATIVE_LINE = "Not logged in";
 var BUILTIN_HARNESSES = Object.freeze([
   {
     id: "pi",
@@ -28912,7 +28917,6 @@ var BUILTIN_HARNESSES = Object.freeze([
     mode: "headless",
     commands: ["pi"],
     versionArgs: ["--version"],
-    authArgs: ["auth", "check"],
     update: {
       self: ["update", "--self"],
       extensions: ["update", "--extensions"],
@@ -28948,6 +28952,7 @@ var BUILTIN_HARNESSES = Object.freeze([
     mode: "either",
     commands: ["codex"],
     versionArgs: ["--version"],
+    authArgs: ["login", "status"],
     update: { self: ["update"] }
   },
   {
@@ -28966,6 +28971,16 @@ var BUILTIN_HARNESSES = Object.freeze([
     mode: "either",
     commands: ["deepseek"],
     versionArgs: ["--version"],
+    update: { self: ["update"] }
+  },
+  {
+    id: "grok",
+    label: "Grok CLI",
+    default: false,
+    mode: "either",
+    commands: ["grok"],
+    versionArgs: ["--version"],
+    authArgs: ["models"],
     update: { self: ["update"] }
   }
 ]);
@@ -29008,6 +29023,64 @@ function boundText(text, max = 4e3) {
   if (!trimmed) return void 0;
   return trimmed.length <= max ? trimmed : `${trimmed.slice(0, max)}\u2026`;
 }
+function authLines(result) {
+  return `${result.stdout}
+${result.stderr}`.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+}
+function parseJsonObject(text) {
+  try {
+    const value = JSON.parse(text.trim());
+    if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  } catch {
+  }
+  return void 0;
+}
+function authConflictIssue(result) {
+  const fields = [];
+  const okTrue = result.ok === true;
+  const codeZero = result.code === 0;
+  if (okTrue !== codeZero) fields.push("ok", "code");
+  if (okTrue && result.error) {
+    if (!fields.includes("ok")) fields.push("ok");
+    fields.push("error");
+  }
+  return fields.length > 0 ? `auth_conflict:${fields.join(",")}` : void 0;
+}
+function commandSucceeded(result) {
+  return result.ok === true && result.code === 0 && !result.error;
+}
+function isCodexApiKeyLine(line) {
+  return line === CODEX_API_KEY_PREFIX || line.startsWith(`${CODEX_API_KEY_PREFIX} - `);
+}
+function interpretAuth(id, result) {
+  const conflict = authConflictIssue(result);
+  if (conflict) return { authenticated: null, issues: [conflict] };
+  if (result.error) return { authenticated: null, issues: ["auth_probe_error"] };
+  const lines = authLines(result);
+  if (id === "claude") {
+    const payload = parseJsonObject(result.stdout);
+    if (payload && payload.loggedIn === false) return { authenticated: false, issues: ["not_authenticated"] };
+    if (commandSucceeded(result) && payload && payload.loggedIn === true) return { authenticated: true, issues: [] };
+    return { authenticated: null, issues: ["auth_unparsed"] };
+  }
+  if (id === "codex") {
+    if (lines.some((line) => line === CODEX_NEGATIVE_LINE || line.startsWith(`${CODEX_NEGATIVE_LINE} `))) {
+      return { authenticated: false, issues: ["not_authenticated"] };
+    }
+    if (commandSucceeded(result) && lines.some((line) => line === CODEX_CHATGPT_LINE)) {
+      return { authenticated: true, issues: [] };
+    }
+    if (commandSucceeded(result) && lines.some((line) => isCodexApiKeyLine(line))) {
+      return { authenticated: true, issues: ["auth_api_key"] };
+    }
+    return { authenticated: null, issues: ["auth_unparsed"] };
+  }
+  if (id === "grok") {
+    if (commandSucceeded(result) && lines.some((line) => line === GROK_LOGIN_LINE)) return { authenticated: true, issues: [] };
+    return { authenticated: null, issues: ["auth_unparsed"] };
+  }
+  return { authenticated: null, issues: ["auth_unparsed"] };
+}
 function probeEntry(entry, runCommand, timeoutMs) {
   const issues = [];
   let detected = false;
@@ -29024,13 +29097,16 @@ function probeEntry(entry, runCommand, timeoutMs) {
   }
   let authenticated = null;
   if (!detected) authenticated = false;
-  else if (entry.authArgs && command) {
-    const auth = runCommand(command, entry.authArgs, timeoutMs);
-    if (auth.ok) authenticated = true;
-    else {
-      authenticated = false;
-      issues.push("not_authenticated");
-    }
+  else if (entry.id === "pi") {
+    authenticated = null;
+    issues.push("auth_context_required");
+  } else if (UNKNOWN_AUTH_HARNESSES.has(entry.id) || !entry.authArgs) {
+    authenticated = null;
+    if (UNKNOWN_AUTH_HARNESSES.has(entry.id)) issues.push("auth_unknown");
+  } else if (command) {
+    const parsed = interpretAuth(entry.id, runCommand(command, entry.authArgs, timeoutMs));
+    authenticated = parsed.authenticated;
+    issues.push(...parsed.issues);
   }
   return {
     id: entry.id,
@@ -29137,18 +29213,19 @@ function runHarnessUpdate(steps, options = {}) {
 function formatHarnessInventory(inventory) {
   const header = "id        default  detected  auth     updates";
   const rows = inventory.harnesses.map((entry) => {
-    const auth = entry.authenticated === true ? "yes" : entry.authenticated === false ? "no" : "n/a";
+    const auth = entry.authenticated === true ? "yes" : entry.authenticated === false ? "no" : "unknown";
     const updates = [
       entry.canUpdate.self ? "self" : void 0,
       entry.canUpdate.extensions ? "extensions" : void 0,
       entry.canUpdate.models ? "models" : void 0
     ].filter(Boolean).join(",") || "none";
+    const apiKeyNote = entry.issues.includes("auth_api_key") ? " API key" : "";
     return [
       entry.id.padEnd(9),
       (entry.default ? "yes" : "no").padEnd(7),
       (entry.detected ? "yes" : "no").padEnd(8),
       auth.padEnd(8),
-      updates
+      `${updates}${apiKeyNote}`
     ].join(" ");
   });
   return [
