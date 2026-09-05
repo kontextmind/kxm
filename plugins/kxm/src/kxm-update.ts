@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
@@ -5,8 +6,14 @@ export const KXM_UPDATE_SCHEMA = "kxm.update.v1" as const;
 export const KXM_UPDATE_CACHE = "update-check.json";
 const CHECK_TIMEOUT_MS = 2_500;
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const SHA256_DIGEST = /^sha256:([0-9a-fA-F]{64})$/;
 
 export type KxmUpdateSource = "npm" | "github";
+
+export interface KxmReleaseAsset {
+  name: string;
+  sha256: string;
+}
 
 export interface KxmUpdateConfig {
   schema: typeof KXM_UPDATE_SCHEMA;
@@ -21,6 +28,7 @@ export interface KxmUpdateNotice {
   auto: boolean;
   source: KxmUpdateSource;
   message: string;
+  asset?: KxmReleaseAsset;
 }
 
 export class KxmUpdateConfigError extends Error {
@@ -29,6 +37,10 @@ export class KxmUpdateConfigError extends Error {
     super(message);
     this.name = "KxmUpdateConfigError";
   }
+}
+
+export function kxmReleaseAssetName(version: string): string {
+  return `kxm-${version}.tgz`;
 }
 
 export function readInstalledKxmVersion(root: string): string {
@@ -61,34 +73,46 @@ export function formatKxmUpdateNotice(notice: KxmUpdateNotice): string {
   return `kxm ${notice.current} → ${notice.latest} available · ${apply}`;
 }
 
+function withAsset(notice: KxmUpdateNotice, asset?: KxmReleaseAsset): KxmUpdateNotice {
+  return asset ? { ...notice, asset } : notice;
+}
+
 export function noticeFromVersions(
   current: string,
   latest: string | undefined,
   config: KxmUpdateConfig,
   checkError?: string,
+  asset?: KxmReleaseAsset,
 ): KxmUpdateNotice {
   if (checkError || !latest) {
-    return {
+    return withAsset({
       current,
       auto: config.auto,
       source: config.source,
       available: false,
       message: checkError ? `kxm update check unavailable (${checkError})` : `kxm ${current}`,
-    };
+    }, asset);
   }
   const cmp = compareSemver(current, latest);
   if (cmp === undefined) {
-    return {
+    return withAsset({
       current,
       latest,
       auto: config.auto,
       source: config.source,
       available: false,
       message: "kxm update check unavailable (non-semver)",
-    };
+    }, asset);
   }
   if (cmp >= 0) {
-    return { current, latest, auto: config.auto, source: config.source, available: false, message: `kxm ${current}` };
+    return withAsset({
+      current,
+      latest,
+      auto: config.auto,
+      source: config.source,
+      available: false,
+      message: `kxm ${current}`,
+    }, asset);
   }
   const available: KxmUpdateNotice = {
     current,
@@ -97,6 +121,7 @@ export function noticeFromVersions(
     source: config.source,
     available: true,
     message: "",
+    ...(asset ? { asset } : {}),
   };
   available.message = formatKxmUpdateNotice(available);
   return available;
@@ -123,11 +148,23 @@ export function writeUpdateCache(stateDir: string, notice: KxmUpdateNotice, now 
   writeFileSync(join(stateDir, KXM_UPDATE_CACHE), `${JSON.stringify({ checkedAt: now, notice })}\n`, { encoding: "utf8" });
 }
 
+function githubReleaseAsset(assets: unknown, version: string): KxmReleaseAsset | undefined {
+  if (!Array.isArray(assets)) return undefined;
+  const name = kxmReleaseAssetName(version);
+  const match = assets.find((item) => item && typeof item === "object" && (item as { name?: unknown }).name === name);
+  if (!match || typeof match !== "object") return undefined;
+  const digest = (match as { digest?: unknown }).digest;
+  if (typeof digest !== "string") return undefined;
+  const parsed = SHA256_DIGEST.exec(digest.trim());
+  if (!parsed) return undefined;
+  return { name, sha256: parsed[1]!.toLowerCase() };
+}
+
 export async function fetchLatestKxmVersion(
   source: KxmUpdateSource,
   env: NodeJS.ProcessEnv,
   fetchImpl: typeof fetch = fetch,
-): Promise<{ latest?: string; error?: string }> {
+): Promise<{ latest?: string; error?: string; asset?: KxmReleaseAsset }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), CHECK_TIMEOUT_MS);
   try {
@@ -146,11 +183,12 @@ export async function fetchLatestKxmVersion(
       headers,
     });
     if (!response.ok) return { error: `github_http_${response.status}` };
-    const body = await response.json() as { tag_name?: unknown };
+    const body = await response.json() as { tag_name?: unknown; assets?: unknown };
     if (typeof body.tag_name !== "string") return { error: "github_tag_invalid" };
     const version = body.tag_name.replace(/^v/, "");
     if (!parseSemver(version)) return { error: "github_version_invalid" };
-    return { latest: version };
+    const asset = githubReleaseAsset(body.assets, version);
+    return asset ? { latest: version, asset } : { latest: version };
   } catch (error) {
     const aborted = error instanceof Error && error.name === "AbortError";
     return { error: aborted ? "timeout" : "unreachable" };
@@ -159,22 +197,42 @@ export async function fetchLatestKxmVersion(
   }
 }
 
-export interface KxmPackageUpdateStep {
-  command: string;
-  args: string[];
+export type KxmPackageUpdateStep =
+  | { kind: "download"; command: "gh"; args: string[] }
+  | { kind: "verify"; path: string; sha256: string }
+  | { kind: "install"; command: "npm"; args: string[] };
+
+export function verifyReleaseAssetDigest(path: string, sha256: string): boolean {
+  if (!existsSync(path)) return false;
+  try {
+    const actual = createHash("sha256").update(readFileSync(path)).digest("hex");
+    return actual === sha256.toLowerCase();
+  } catch {
+    return false;
+  }
 }
 
-/** npm registry apply is for after the public package exists. Git installs use GitHub release tarballs. */
-export function planKxmPackageUpdate(source: KxmUpdateSource, latest: string, releaseDir: string): KxmPackageUpdateStep[] {
+/** npm registry apply is for after the public package exists. npm verifies registry integrity itself; do not duplicate that check here. Git installs use GitHub release tarballs. */
+export function planKxmPackageUpdate(
+  source: KxmUpdateSource,
+  latest: string,
+  releaseDir: string,
+  asset?: KxmReleaseAsset,
+): KxmPackageUpdateStep[] {
   if (source === "npm") {
-    return [{ command: "npm", args: ["install", "--global", "--omit=peer", `@kontextmind/kxm@${latest}`] }];
+    return [{ kind: "install", command: "npm", args: ["install", "--global", "--omit=peer", `@kontextmind/kxm@${latest}`] }];
   }
-  const asset = `kxm-${latest}.tgz`;
-  return [
+  const name = asset?.name ?? kxmReleaseAssetName(latest);
+  const steps: KxmPackageUpdateStep[] = [
     {
+      kind: "download",
       command: "gh",
-      args: ["release", "download", `v${latest}`, "--repo", "kontextmind/kxm", "--pattern", asset, "--dir", releaseDir, "--clobber"],
+      args: ["release", "download", `v${latest}`, "--repo", "kontextmind/kxm", "--pattern", name, "--dir", releaseDir, "--clobber"],
     },
-    { command: "npm", args: ["install", "--global", "--omit=peer", join(releaseDir, asset)] },
   ];
+  if (asset?.sha256) {
+    steps.push({ kind: "verify", path: join(releaseDir, name), sha256: asset.sha256 });
+  }
+  steps.push({ kind: "install", command: "npm", args: ["install", "--global", "--omit=peer", join(releaseDir, name)] });
+  return steps;
 }

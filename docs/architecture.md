@@ -183,7 +183,9 @@ Workflow session isolation is a context-routing and accidental-cross-run safety 
 | `src/local-snapshot.ts` | Read-only hub SQLite snapshot (runs, plans, inbox metadata; no bodies) |
 | `src/session-work.ts` | Session brief, status line, and work-picker labels from that snapshot |
 | `src/hub-binding.ts` | host-level hub binding (Runtime-local, never Git) and 300 ms health probe |
-| `src/kxm-update.ts` | Operator package update check (GitHub releases now, npm later) and `.kxm/update.yaml` |
+| `src/kxm-update.ts` | Operator package update check (GitHub releases now, npm later), release-asset digest, and notice cache |
+| `src/kxm-update-config.ts` | Per-user `update.yaml` under the host state root (`auto` is never read from the project) |
+| `src/kxm-install-kind.ts` | Install-kind classifier (npm-global / npm-local / pi-git / claude-marketplace / source / unknown) |
 | `src/cli.ts` | Operator CLI (agent, session, workflow, gate, hub, improve); a client of the hub |
 | `src/envelope.ts` | `kxm.worker.v1` / `kxm.worker-result.v1` constructors |
 | `src/session.ts` | Roster loading and `kxm.session.v1` manifest writing; does not spawn processes |

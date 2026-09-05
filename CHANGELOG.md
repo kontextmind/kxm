@@ -9,6 +9,9 @@ All notable user-facing changes are documented here. The project follows [Semant
 - Pi git installs no longer fail to load the extension when production
   `node_modules` omits `yaml`. Update-config YAML parsing stays on the bundled
   CLI path.
+- Explicit `kxm update --kxm` refuses non-global installs (`install_kind_*`)
+  even when already current or the release check is unavailable. Auto-apply
+  still hints only when an update is available.
 
 ### Changed
 

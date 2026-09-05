@@ -1,8 +1,8 @@
 import { spawn, spawnSync } from "node:child_process";
-import { createHmac, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { createHash, createHmac, randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { basename, dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { Command, CommanderError } from "commander";
@@ -33,16 +33,25 @@ import {
 } from "./hub-binding.ts";
 import {
   fetchLatestKxmVersion,
+  kxmReleaseAssetName,
   noticeFromVersions,
   planKxmPackageUpdate,
   readInstalledKxmVersion,
   readUpdateCache,
+  verifyReleaseAssetDigest,
   writeUpdateCache,
   KxmUpdateConfigError,
+  type KxmPackageUpdateStep,
   type KxmUpdateConfig,
   type KxmUpdateNotice,
 } from "./kxm-update.ts";
 import { loadKxmUpdateConfig } from "./kxm-update-config.ts";
+import {
+  classifyInstallRoot,
+  resolveInstallKind,
+  type InstallKindReport,
+  type InstallProbe,
+} from "./kxm-install-kind.ts";
 import { VnextConfigError, discoverVnextProjectRoot, type VnextInitializationPlan } from "./vnext-config.ts";
 import { vnextUserStateRoot } from "./vnext-bindings.ts";
 import { initializeVnextProject } from "./vnext-init.ts";
@@ -66,6 +75,13 @@ import {
 } from "./vnext-harness.ts";
 import type { WorkflowEvidenceInput, WorkflowJournalEntry, WorkflowRun } from "./workflow.ts";
 
+export interface CliSpawnResult {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+  error?: Error;
+}
+
 export interface CliIo {
   stdout: (text: string) => void;
   stderr: (text: string) => void;
@@ -74,6 +90,8 @@ export interface CliIo {
   sleep?: (ms: number) => Promise<void>;
   spawnHub?: (extraEnv: NodeJS.ProcessEnv) => number | Promise<number>;
   spawnWorker?: (extraEnv: NodeJS.ProcessEnv) => number | Promise<number>;
+  installProbe?: Partial<InstallProbe>;
+  spawnSync?: (command: string, args: readonly string[]) => CliSpawnResult;
 }
 
 const CLI_NAME = "kxm";
@@ -918,34 +936,107 @@ async function cmdHarnessList(runtime: Runtime): Promise<number> {
   return 0;
 }
 
+function installProbeFrom(runtime: Runtime): InstallProbe {
+  const partial = runtime.io.installProbe ?? {};
+  return {
+    moduleDir: partial.moduleDir ?? dirname(fileURLToPath(import.meta.url)),
+    repoRoot: partial.repoRoot ?? repoRoot,
+    homeDir: partial.homeDir ?? homedir(),
+    platform: partial.platform ?? process.platform,
+    env: partial.env ?? runtime.env,
+  };
+}
+
+function cliSpawn(runtime: Runtime, command: string, args: readonly string[], extra?: { timeout?: number }): CliSpawnResult {
+  if (runtime.io.spawnSync) return runtime.io.spawnSync(command, args);
+  const result = spawnSync(command, [...args], {
+    encoding: "utf8",
+    windowsHide: true,
+    shell: process.platform === "win32",
+    ...extra,
+  });
+  return {
+    status: result.status,
+    stdout: typeof result.stdout === "string" ? result.stdout : "",
+    stderr: typeof result.stderr === "string" ? result.stderr : "",
+    ...(result.error ? { error: result.error } : {}),
+  };
+}
+
+function npmGlobalRootFn(runtime: Runtime): () => string | undefined {
+  return () => {
+    const result = cliSpawn(runtime, "npm", ["root", "-g"], { timeout: 5_000 });
+    if (result.error || result.status !== 0) return undefined;
+    const out = result.stdout.trim();
+    return out || undefined;
+  };
+}
+
+function warnIgnoredProjectUpdateYaml(runtime: Runtime): void {
+  const projectFile = join(runtime.dirs.workspace, "update.yaml");
+  if (!existsSync(projectFile)) return;
+  const userFile = join(vnextUserStateRoot({ env: runtime.env }), "update.yaml");
+  runtime.io.stderr(`kxm: ignoring .kxm/update.yaml in ${runtime.dirs.workdir}; update settings are read only from ${userFile}\n`);
+}
+
+function installKindPayload(report: InstallKindReport): { installKind: string; root: string } {
+  return { installKind: report.kind, root: report.root };
+}
+
+function formatPackageUpdateStep(step: KxmPackageUpdateStep): string {
+  if (step.kind === "verify") return `verify sha256 ${step.path}`;
+  return `${step.command} ${step.args.join(" ")}`;
+}
+
 async function refreshKxmUpdateNotice(runtime: Runtime, config?: KxmUpdateConfig): Promise<KxmUpdateNotice> {
-  const resolved = config ?? loadKxmUpdateConfig(runtime.cwd);
+  const resolved = config ?? loadKxmUpdateConfig(runtime.env);
   const current = readInstalledKxmVersion(repoRoot);
   const fetched = await fetchLatestKxmVersion(resolved.source, runtime.env, runtime.fetchImpl);
-  const notice = noticeFromVersions(current, fetched.latest, resolved, fetched.error);
+  const notice = noticeFromVersions(current, fetched.latest, resolved, fetched.error, fetched.asset);
   writeUpdateCache(runtime.dirs.state, notice);
   return notice;
 }
 
-function applyKxmPackageUpdate(runtime: Runtime, notice: KxmUpdateNotice): { ok: boolean; detail: string } {
+function applyKxmPackageUpdate(runtime: Runtime, notice: KxmUpdateNotice): { ok: boolean; detail: string; error?: string } {
   if (!notice.latest) return { ok: false, detail: "no_latest_version" };
+  if (notice.source === "github" && !notice.asset?.sha256) {
+    const name = kxmReleaseAssetName(notice.latest);
+    return {
+      ok: false,
+      error: "release_digest_missing",
+      detail: `release v${notice.latest} has no sha256 digest for ${name}; refusing to install`,
+    };
+  }
   const releaseDir = mkdtempSync(join(tmpdir(), "kxm-pkg-update-"));
-  const planned = planKxmPackageUpdate(notice.source, notice.latest, releaseDir);
-  if (runtime.dryRun) {
-    return { ok: true, detail: planned.map((step) => `${step.command} ${step.args.join(" ")}`).join(" && ") };
-  }
-  for (const step of planned) {
-    const result = spawnSync(step.command, [...step.args], {
-      encoding: "utf8",
-      windowsHide: true,
-      shell: process.platform === "win32",
-    });
-    if (result.status !== 0) {
-      const detail = (result.stderr || result.stdout || result.error?.message || "update_failed").trim().slice(0, 500);
-      return { ok: false, detail };
+  try {
+    const planned = planKxmPackageUpdate(notice.source, notice.latest, releaseDir, notice.asset);
+    if (runtime.dryRun) {
+      return { ok: true, detail: planned.map(formatPackageUpdateStep).join(" && ") };
     }
+    for (const step of planned) {
+      if (step.kind === "verify") {
+        if (!verifyReleaseAssetDigest(step.path, step.sha256)) {
+          const actual = existsSync(step.path)
+            ? createHash("sha256").update(readFileSync(step.path)).digest("hex")
+            : "missing";
+          return {
+            ok: false,
+            error: "release_digest_mismatch",
+            detail: `${kxmReleaseAssetName(notice.latest)} sha256 ${actual} does not match release digest ${step.sha256}; refusing to install`,
+          };
+        }
+        continue;
+      }
+      const result = cliSpawn(runtime, step.command, step.args);
+      if (result.status !== 0) {
+        const detail = (result.stderr || result.stdout || result.error?.message || "update_failed").trim().slice(0, 500);
+        return { ok: false, detail };
+      }
+    }
+    return { ok: true, detail: `installed ${notice.latest} from ${notice.source}` };
+  } finally {
+    rmSync(releaseDir, { recursive: true, force: true });
   }
-  return { ok: true, detail: `installed ${notice.latest} from ${notice.source}` };
 }
 
 async function cmdUpdate(runtime: Runtime, harness: string | undefined, options: {
@@ -964,27 +1055,98 @@ async function cmdUpdate(runtime: Runtime, harness: string | undefined, options:
     print(runtime.io, runtime.json, { ok: false, command: "update", error: "scope_conflict" }, "specify at most one of --self, --extensions, or --models");
     return 2;
   }
+  warnIgnoredProjectUpdateYaml(runtime);
+  const probe = installProbeFrom(runtime);
+  const classified = classifyInstallRoot(probe);
+  const current = readInstalledKxmVersion(repoRoot);
   let notice: KxmUpdateNotice;
-  try {
-    notice = await refreshKxmUpdateNotice(runtime);
-  } catch (error) {
-    if (error instanceof KxmUpdateConfigError) {
-      print(runtime.io, runtime.json, { ok: false, command: "update", error: error.code }, error.message);
+  let kindReport = classified;
+  if (classified.kind === "source") {
+    if (options.check) {
+      const message = `kxm ${current} (running from source at ${classified.root})`;
+      print(runtime.io, runtime.json, {
+        ok: true,
+        command: "update check",
+        current,
+        available: false,
+        auto: false,
+        source: "github",
+        installKind: "source",
+        root: classified.root,
+        message,
+      }, message);
+      return 0;
+    }
+    if (options.kxm) {
+      print(runtime.io, runtime.json, {
+        ok: false,
+        command: "update",
+        error: "install_kind_source",
+        installKind: "source",
+        root: classified.root,
+        instruction: classified.instruction,
+      }, classified.instruction);
       return 2;
     }
-    throw error;
+    notice = {
+      current,
+      available: false,
+      auto: false,
+      source: "github",
+      message: `kxm ${current} (running from source)`,
+    };
+  } else {
+    try {
+      notice = await refreshKxmUpdateNotice(runtime);
+    } catch (error) {
+      if (error instanceof KxmUpdateConfigError) {
+        print(runtime.io, runtime.json, { ok: false, command: "update", error: error.code, ...installKindPayload(classified) }, error.message);
+        return 2;
+      }
+      throw error;
+    }
   }
   if (options.check) {
-    print(runtime.io, runtime.json, { ok: true, command: "update check", ...notice }, notice.message);
+    print(runtime.io, runtime.json, {
+      ok: true,
+      command: "update check",
+      ...notice,
+      ...installKindPayload(classified),
+    }, notice.message);
     return 0;
   }
   const applyKxm = Boolean(options.kxm || notice.auto);
-  let kxmApply: { ok: boolean; detail: string } | undefined;
-  if (applyKxm && notice.available) {
-    kxmApply = applyKxmPackageUpdate(runtime, notice);
-    if (!kxmApply.ok && options.kxm) {
-      print(runtime.io, runtime.json, { ok: false, command: "update", kxm: kxmApply, notice }, kxmApply.detail);
-      return 1;
+  let kxmApply: { ok: boolean; detail: string; error?: string } | undefined;
+  if (applyKxm) {
+    const resolved = resolveInstallKind(probe, npmGlobalRootFn(runtime));
+    kindReport = resolved;
+    if (resolved.kind !== "npm-global") {
+      if (options.kxm) {
+        print(runtime.io, runtime.json, {
+          ok: false,
+          command: "update",
+          error: `install_kind_${resolved.kind}`,
+          installKind: resolved.kind,
+          root: resolved.root,
+          instruction: resolved.instruction,
+          notice,
+        }, resolved.instruction);
+        return 2;
+      }
+      if (notice.available) runtime.io.stderr(`kxm: ${resolved.instruction}\n`);
+    } else if (notice.available) {
+      kxmApply = applyKxmPackageUpdate(runtime, notice);
+      if (!kxmApply.ok && options.kxm) {
+        print(runtime.io, runtime.json, {
+          ok: false,
+          command: "update",
+          error: kxmApply.error,
+          kxm: kxmApply,
+          notice,
+          ...installKindPayload(resolved),
+        }, kxmApply.detail);
+        return 1;
+      }
     }
   }
   const skipHarness = Boolean(options.kxm && selected === 0 && !harness && !notice.auto);
@@ -992,7 +1154,7 @@ async function cmdUpdate(runtime: Runtime, harness: string | undefined, options:
     print(
       runtime.io,
       runtime.json,
-      { ok: kxmApply?.ok !== false, command: "update", dryRun: runtime.dryRun, notice, kxm: kxmApply },
+      { ok: kxmApply?.ok !== false, command: "update", dryRun: runtime.dryRun, notice, kxm: kxmApply, ...installKindPayload(kindReport) },
       kxmApply?.detail ?? notice.message,
     );
     return kxmApply?.ok === false ? 1 : 0;
@@ -1012,6 +1174,7 @@ async function cmdUpdate(runtime: Runtime, harness: string | undefined, options:
     notice,
     ...(kxmApply ? { kxm: kxmApply } : {}),
     steps,
+    ...installKindPayload(kindReport),
   }, text);
   if (skippedUnknown) return 2;
   return failed ? 1 : 0;
@@ -1197,22 +1360,27 @@ async function cmdDash(runtime: Runtime, options: { screen?: string } = {}): Pro
 async function cmdHub(runtime: Runtime): Promise<number> {
   let refresh: Promise<unknown> | undefined;
   if (!runtime.dryRun) {
-    const cached = readUpdateCache(runtime.dirs.state);
-    if (cached?.available) runtime.io.stderr(`${cached.message}\n`);
-    let config: KxmUpdateConfig | undefined;
-    try {
-      config = loadKxmUpdateConfig(runtime.cwd);
-    } catch (error) {
-      if (error instanceof KxmUpdateConfigError) {
-        runtime.io.stderr(`kxm: ${error.message}; update check skipped; fix or remove .kxm/update.yaml\n`);
-      } else {
-        throw error;
+    const probe = installProbeFrom(runtime);
+    if (classifyInstallRoot(probe).kind !== "source") {
+      warnIgnoredProjectUpdateYaml(runtime);
+      const cached = readUpdateCache(runtime.dirs.state);
+      if (cached?.available) runtime.io.stderr(`${cached.message}\n`);
+      let config: KxmUpdateConfig | undefined;
+      try {
+        config = loadKxmUpdateConfig(runtime.env);
+      } catch (error) {
+        if (error instanceof KxmUpdateConfigError) {
+          const yamlPath = join(vnextUserStateRoot({ env: runtime.env }), "update.yaml");
+          runtime.io.stderr(`kxm: ${error.message}; update check skipped; fix or remove ${yamlPath}\n`);
+        } else {
+          throw error;
+        }
       }
-    }
-    if (config) {
-      refresh = refreshKxmUpdateNotice(runtime, config).then((notice) => {
-        if (notice.available && !cached?.available) runtime.io.stderr(`${notice.message}\n`);
-      }).catch(() => undefined);
+      if (config) {
+        refresh = refreshKxmUpdateNotice(runtime, config).then((notice) => {
+          if (notice.available && !cached?.available) runtime.io.stderr(`${notice.message}\n`);
+        }).catch(() => undefined);
+      }
     }
   }
   const extraEnv = workspaceEnv(runtime);

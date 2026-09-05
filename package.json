@@ -83,6 +83,7 @@
     ".kxm/assets/retrospectives/README.md",
     ".kxm/config/README.md",
     ".kxm/config/env.example",
+    ".kxm/config/update.example.yaml",
     ".kxm/config/agents.json",
     ".kxm/config/workflows/jira-development.json",
     ".kxm/config/workflows/v04-dogfood.json",
