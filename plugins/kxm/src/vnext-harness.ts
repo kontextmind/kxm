@@ -51,6 +51,12 @@ export interface HarnessInventory {
   harnesses: readonly HarnessStatus[];
 }
 
+const UNKNOWN_AUTH_HARNESSES = new Set(["kimi", "gemini", "deepseek"]);
+const GROK_LOGIN_LINE = "You are logged in with grok.com.";
+const CODEX_CHATGPT_LINE = "Logged in using ChatGPT";
+const CODEX_API_KEY_PREFIX = "Logged in using an API key";
+const CODEX_NEGATIVE_LINE = "Not logged in";
+
 export interface HarnessUpdateStep {
   harness: string;
   scope: Exclude<HarnessUpdateScope, "all">;
@@ -70,7 +76,6 @@ export const BUILTIN_HARNESSES: readonly HarnessCatalogEntry[] = Object.freeze([
     mode: "headless",
     commands: ["pi"],
     versionArgs: ["--version"],
-    authArgs: ["auth", "check"],
     update: {
       self: ["update", "--self"],
       extensions: ["update", "--extensions"],
@@ -106,6 +111,7 @@ export const BUILTIN_HARNESSES: readonly HarnessCatalogEntry[] = Object.freeze([
     mode: "either",
     commands: ["codex"],
     versionArgs: ["--version"],
+    authArgs: ["login", "status"],
     update: { self: ["update"] },
   },
   {
@@ -124,6 +130,16 @@ export const BUILTIN_HARNESSES: readonly HarnessCatalogEntry[] = Object.freeze([
     mode: "either",
     commands: ["deepseek"],
     versionArgs: ["--version"],
+    update: { self: ["update"] },
+  },
+  {
+    id: "grok",
+    label: "Grok CLI",
+    default: false,
+    mode: "either",
+    commands: ["grok"],
+    versionArgs: ["--version"],
+    authArgs: ["models"],
     update: { self: ["update"] },
   },
 ]);
@@ -172,6 +188,71 @@ function boundText(text: string, max = 4000): string | undefined {
   return trimmed.length <= max ? trimmed : `${trimmed.slice(0, max)}…`;
 }
 
+function authLines(result: HarnessCommandResult): string[] {
+  return `${result.stdout}\n${result.stderr}`.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+}
+
+function parseJsonObject(text: string): Record<string, unknown> | undefined {
+  try {
+    const value: unknown = JSON.parse(text.trim());
+    if (value && typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
+  } catch {
+    // Inventory auth is fail-closed unknown, not a dump of the raw body.
+  }
+  return undefined;
+}
+
+function authConflictIssue(result: HarnessCommandResult): string | undefined {
+  const fields: string[] = [];
+  const okTrue = result.ok === true;
+  const codeZero = result.code === 0;
+  if (okTrue !== codeZero) fields.push("ok", "code");
+  if (okTrue && result.error) {
+    if (!fields.includes("ok")) fields.push("ok");
+    fields.push("error");
+  }
+  return fields.length > 0 ? `auth_conflict:${fields.join(",")}` : undefined;
+}
+
+function commandSucceeded(result: HarnessCommandResult): boolean {
+  return result.ok === true && result.code === 0 && !result.error;
+}
+
+function isCodexApiKeyLine(line: string): boolean {
+  return line === CODEX_API_KEY_PREFIX || line.startsWith(`${CODEX_API_KEY_PREFIX} - `);
+}
+
+function interpretAuth(id: string, result: HarnessCommandResult): { authenticated: boolean | null; issues: string[] } {
+  const conflict = authConflictIssue(result);
+  if (conflict) return { authenticated: null, issues: [conflict] };
+  if (result.error) return { authenticated: null, issues: ["auth_probe_error"] };
+
+  const lines = authLines(result);
+  if (id === "claude") {
+    const payload = parseJsonObject(result.stdout);
+    if (payload && payload.loggedIn === false) return { authenticated: false, issues: ["not_authenticated"] };
+    if (commandSucceeded(result) && payload && payload.loggedIn === true) return { authenticated: true, issues: [] };
+    return { authenticated: null, issues: ["auth_unparsed"] };
+  }
+  if (id === "codex") {
+    if (lines.some((line) => line === CODEX_NEGATIVE_LINE || line.startsWith(`${CODEX_NEGATIVE_LINE} `))) {
+      return { authenticated: false, issues: ["not_authenticated"] };
+    }
+    if (commandSucceeded(result) && lines.some((line) => line === CODEX_CHATGPT_LINE)) {
+      return { authenticated: true, issues: [] };
+    }
+    if (commandSucceeded(result) && lines.some((line) => isCodexApiKeyLine(line))) {
+      return { authenticated: true, issues: ["auth_api_key"] };
+    }
+    return { authenticated: null, issues: ["auth_unparsed"] };
+  }
+  if (id === "grok") {
+    if (commandSucceeded(result) && lines.some((line) => line === GROK_LOGIN_LINE)) return { authenticated: true, issues: [] };
+    return { authenticated: null, issues: ["auth_unparsed"] };
+  }
+  return { authenticated: null, issues: ["auth_unparsed"] };
+}
+
 function probeEntry(
   entry: HarnessCatalogEntry,
   runCommand: (command: string, args: readonly string[], timeoutMs: number) => HarnessCommandResult,
@@ -192,13 +273,16 @@ function probeEntry(
   }
   let authenticated: boolean | null = null;
   if (!detected) authenticated = false;
-  else if (entry.authArgs && command) {
-    const auth = runCommand(command, entry.authArgs, timeoutMs);
-    if (auth.ok) authenticated = true;
-    else {
-      authenticated = false;
-      issues.push("not_authenticated");
-    }
+  else if (entry.id === "pi") {
+    authenticated = null;
+    issues.push("auth_context_required");
+  } else if (UNKNOWN_AUTH_HARNESSES.has(entry.id) || !entry.authArgs) {
+    authenticated = null;
+    if (UNKNOWN_AUTH_HARNESSES.has(entry.id)) issues.push("auth_unknown");
+  } else if (command) {
+    const parsed = interpretAuth(entry.id, runCommand(command, entry.authArgs, timeoutMs));
+    authenticated = parsed.authenticated;
+    issues.push(...parsed.issues);
   }
   return {
     id: entry.id,
@@ -225,6 +309,14 @@ export function probeHarnesses(options: HarnessProbeOptions = {}): HarnessInvent
     defaultHarness: DEFAULT_HARNESS,
     harnesses: BUILTIN_HARNESSES.map((entry) => probeEntry(entry, runCommand, timeoutMs)),
   };
+}
+
+export function eligibleHarnesses(inventory: HarnessInventory): readonly string[] {
+  const eligible = inventory.harnesses
+    .filter((entry) => entry.detected && entry.authenticated === true)
+    .map((entry) => entry.id);
+  if (eligible.length === 0) throw new Error("no_authenticated_harness");
+  return eligible;
 }
 
 function scopesFor(scope: HarnessUpdateScope, entry: HarnessCatalogEntry): Exclude<HarnessUpdateScope, "all">[] {
@@ -319,18 +411,19 @@ export function runHarnessUpdate(
 export function formatHarnessInventory(inventory: HarnessInventory): string {
   const header = "id        default  detected  auth     updates";
   const rows = inventory.harnesses.map((entry) => {
-    const auth = entry.authenticated === true ? "yes" : entry.authenticated === false ? "no" : "n/a";
+    const auth = entry.authenticated === true ? "yes" : entry.authenticated === false ? "no" : "unknown";
     const updates = [
       entry.canUpdate.self ? "self" : undefined,
       entry.canUpdate.extensions ? "extensions" : undefined,
       entry.canUpdate.models ? "models" : undefined,
     ].filter(Boolean).join(",") || "none";
+    const apiKeyNote = entry.issues.includes("auth_api_key") ? " API key" : "";
     return [
       entry.id.padEnd(9),
       (entry.default ? "yes" : "no").padEnd(7),
       (entry.detected ? "yes" : "no").padEnd(8),
       auth.padEnd(8),
-      updates,
+      `${updates}${apiKeyNote}`,
     ].join(" ");
   });
   return [
