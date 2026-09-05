@@ -154,6 +154,13 @@ It does not replace the phase gates below.
   (status line, widget, online and offline hub, TUI picker skip/select, RPC and
   opt-out, single registration) is a deterministic extension test. Pi install is
   pinned `@main`.
+- Queue test (#119) and worker PID readiness (#120): on failure the queue
+  test stops the extension in `try/finally` with bounded `shutdownExtension`
+  before hub teardown. Fixture `requestTimeoutMs` defaults to 1000; this
+  peer uses 5000. TTL untouched. An abort-aware injected first-send failure
+  must exit the child itself within a deadline. The worker generation test
+  waits for a complete matching PID record and stops the owned child in
+  `finally` before removing the temp dir.
 
 ### Still open
 

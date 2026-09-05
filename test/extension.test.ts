@@ -708,7 +708,7 @@ test("Pi extension preserves workflow work after a settled provider error and al
 
 test("Pi extension drops terminal work, advances its queue, and exposes transient reply failures", async (context) => {
   const mesh = await createTestMesh(context, { messageRetentionMs: 1_000, cleanupIntervalMs: 25 });
-  const peer = mesh.makeClient("queue-sender");
+  const peer = mesh.makeClient("queue-sender", { requestTimeoutMs: 5_000 });
   await peer.start(() => undefined);
   const stateDir = mkdtempSync(join(tmpdir(), "pi-mesh-extension-queue-"));
   context.after(() => rmSync(stateDir, { recursive: true, force: true }));
@@ -732,164 +732,168 @@ test("Pi extension drops terminal work, advances its queue, and exposes transien
   const fake = fakePi();
   piMeshExtension(fake.api);
   const notices: Array<{ message: string; type: string }> = [];
-  await fake.emit("session_start", {}, {
-    cwd: process.cwd(),
-    model: { provider: "test", id: "model" },
-    ui: {
-      setStatus() {},
-      notify(message: string, type: string) { notices.push({ message, type }); },
-    },
-  });
+  try {
+    await fake.emit("session_start", {}, {
+      cwd: process.cwd(),
+      model: { provider: "test", id: "model" },
+      ui: {
+        setStatus() {},
+        notify(message: string, type: string) { notices.push({ message, type }); },
+      },
+    });
 
-  const first = await peer.send({ target: "queue-worker", content: "hold the queue" });
-  await waitFor(() => fake.sent.length === 1);
-  await fake.emit("message_start", { message: fake.sent[0]!.message });
-  const expiring = await peer.send({ target: "queue-worker", content: "must never run", ttlMs: 1_000 });
-  const next = await peer.send({ target: "queue-worker", content: "run after the first" });
-  const contextPath = join(stateDir, `worker-context-${workerStateKey("test-project", "queue-worker")}.json`);
-  await waitFor(() => {
-    if (!existsSync(contextPath)) return false;
-    const envelope = JSON.parse(readFileSync(contextPath, "utf8")) as { pendingMessageIds: string[] };
-    return envelope.pendingMessageIds.includes(expiring.id) && envelope.pendingMessageIds.includes(next.id);
-  });
-  await new Promise((resolve) => setTimeout(resolve, 1_050));
-  assert.equal((await peer.getMessage(expiring.id)).status, "expired");
-  await waitFor(() => {
-    const envelope = JSON.parse(readFileSync(contextPath, "utf8")) as { pendingMessageIds: string[] };
-    return !envelope.pendingMessageIds.includes(expiring.id) && envelope.pendingMessageIds.includes(next.id);
-  });
+    const first = await peer.send({ target: "queue-worker", content: "hold the queue" });
+    await waitFor(() => fake.sent.length === 1);
+    await fake.emit("message_start", { message: fake.sent[0]!.message });
+    const expiring = await peer.send({ target: "queue-worker", content: "must never run", ttlMs: 1_000 });
+    const next = await peer.send({ target: "queue-worker", content: "run after the first" });
+    const contextPath = join(stateDir, `worker-context-${workerStateKey("test-project", "queue-worker")}.json`);
+    await waitFor(() => {
+      if (!existsSync(contextPath)) return false;
+      const envelope = JSON.parse(readFileSync(contextPath, "utf8")) as { pendingMessageIds: string[] };
+      return envelope.pendingMessageIds.includes(expiring.id) && envelope.pendingMessageIds.includes(next.id);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 1_050));
+    assert.equal((await peer.getMessage(expiring.id)).status, "expired");
+    await waitFor(() => {
+      const envelope = JSON.parse(readFileSync(contextPath, "utf8")) as { pendingMessageIds: string[] };
+      return !envelope.pendingMessageIds.includes(expiring.id) && envelope.pendingMessageIds.includes(next.id);
+    });
 
-  await fake.emit("agent_end", { messages: [{ role: "assistant", content: "first complete" }] });
-  await fake.emit("agent_settled");
-  assert.equal((await peer.awaitResponse(first.id, 2_000)).reply?.content, "first complete");
-  await waitFor(() => fake.sent.length === 2);
-  assert.match(String(fake.sent[1]!.message.content), /run after the first/);
-  assert.doesNotMatch(String(fake.sent[1]!.message.content), /must never run/);
-  await fake.emit("message_start", { message: fake.sent[1]!.message });
-  await fake.emit("agent_end", { messages: [{ role: "assistant", content: "next complete" }] });
-  await fake.emit("agent_settled");
-  assert.equal((await peer.awaitResponse(next.id, 2_000)).reply?.content, "next complete");
+    await fake.emit("agent_end", { messages: [{ role: "assistant", content: "first complete" }] });
+    await fake.emit("agent_settled");
+    assert.equal((await peer.awaitResponse(first.id, 2_000)).reply?.content, "first complete");
+    await waitFor(() => fake.sent.length === 2);
+    assert.match(String(fake.sent[1]!.message.content), /run after the first/);
+    assert.doesNotMatch(String(fake.sent[1]!.message.content), /must never run/);
+    await fake.emit("message_start", { message: fake.sent[1]!.message });
+    await fake.emit("agent_end", { messages: [{ role: "assistant", content: "next complete" }] });
+    await fake.emit("agent_settled");
+    assert.equal((await peer.awaitResponse(next.id, 2_000)).reply?.content, "next complete");
 
-  const expiredActive = await peer.send({
-    target: "queue-worker",
-    content: "expire while active",
-    ttlMs: 1_000,
-  });
-  await waitFor(() => fake.sent.length === 3);
-  await fake.emit("message_start", { message: fake.sent[2]!.message });
-  await fake.emit("agent_end", { messages: [{ role: "assistant", content: "late result" }] });
-  const afterExpiration = await peer.send({ target: "queue-worker", content: "run after active expiration" });
-  await new Promise((resolve) => setTimeout(resolve, 1_050));
-  assert.equal((await peer.getMessage(expiredActive.id)).status, "expired");
-  await waitFor(() => !mesh.hub.state.messages.has(expiredActive.id), 2_000);
-  await fake.emit("agent_settled");
-  await waitFor(() => fake.sent.length === 4);
-  assert.match(String(fake.sent[3]!.message.content), /run after active expiration/);
-  await fake.emit("message_start", { message: fake.sent[3]!.message });
-  await fake.emit("agent_end", { messages: [{ role: "assistant", content: "expiration recovery complete" }] });
-  await fake.emit("agent_settled");
-  assert.equal((await peer.awaitResponse(afterExpiration.id, 2_000)).reply?.content, "expiration recovery complete");
+    const expiredActive = await peer.send({
+      target: "queue-worker",
+      content: "expire while active",
+      ttlMs: 1_000,
+    });
+    await waitFor(() => fake.sent.length === 3);
+    await fake.emit("message_start", { message: fake.sent[2]!.message });
+    await fake.emit("agent_end", { messages: [{ role: "assistant", content: "late result" }] });
+    const afterExpiration = await peer.send({ target: "queue-worker", content: "run after active expiration" });
+    await new Promise((resolve) => setTimeout(resolve, 1_050));
+    assert.equal((await peer.getMessage(expiredActive.id)).status, "expired");
+    await waitFor(() => !mesh.hub.state.messages.has(expiredActive.id), 2_000);
+    await fake.emit("agent_settled");
+    await waitFor(() => fake.sent.length === 4);
+    assert.match(String(fake.sent[3]!.message.content), /run after active expiration/);
+    await fake.emit("message_start", { message: fake.sent[3]!.message });
+    await fake.emit("agent_end", { messages: [{ role: "assistant", content: "expiration recovery complete" }] });
+    await fake.emit("agent_settled");
+    assert.equal((await peer.awaitResponse(afterExpiration.id, 2_000)).reply?.content, "expiration recovery complete");
 
-  const cancellationRace = await peer.send({ target: "queue-worker", content: "race cancellation with settlement" });
-  await waitFor(() => fake.sent.length === 5);
-  await fake.emit("message_start", { message: fake.sent[4]!.message });
-  await fake.emit("agent_end", { messages: [{ role: "assistant", content: "must be rejected" }] });
-  const afterConflict = await peer.send({ target: "queue-worker", content: "run after terminal conflict" });
-  const conflictFetch = globalThis.fetch;
-  let cancellationSent = false;
-  globalThis.fetch = async (input, init) => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    if (url.endsWith(`/v1/messages/${cancellationRace.id}/reply`) && init?.method === "POST") {
-      if (!cancellationSent) {
-        cancellationSent = true;
-        await peer.cancel(cancellationRace.id);
+    const cancellationRace = await peer.send({ target: "queue-worker", content: "race cancellation with settlement" });
+    await waitFor(() => fake.sent.length === 5);
+    await fake.emit("message_start", { message: fake.sent[4]!.message });
+    await fake.emit("agent_end", { messages: [{ role: "assistant", content: "must be rejected" }] });
+    const afterConflict = await peer.send({ target: "queue-worker", content: "run after terminal conflict" });
+    const conflictFetch = globalThis.fetch;
+    let cancellationSent = false;
+    globalThis.fetch = async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.endsWith(`/v1/messages/${cancellationRace.id}/reply`) && init?.method === "POST") {
+        if (!cancellationSent) {
+          cancellationSent = true;
+          await peer.cancel(cancellationRace.id);
+        }
       }
+      return await conflictFetch(input, init);
+    };
+    try {
+      await fake.emit("agent_settled");
+    } finally {
+      globalThis.fetch = conflictFetch;
     }
-    return await conflictFetch(input, init);
-  };
-  try {
+    assert.equal((await peer.getMessage(cancellationRace.id)).status, "cancelled");
+    await waitFor(() => fake.sent.length === 6);
+    assert.match(String(fake.sent[5]!.message.content), /run after terminal conflict/);
+    await fake.emit("message_start", { message: fake.sent[5]!.message });
+    await fake.emit("agent_end", { messages: [{ role: "assistant", content: "conflict recovery complete" }] });
     await fake.emit("agent_settled");
-  } finally {
-    globalThis.fetch = conflictFetch;
-  }
-  assert.equal((await peer.getMessage(cancellationRace.id)).status, "cancelled");
-  await waitFor(() => fake.sent.length === 6);
-  assert.match(String(fake.sent[5]!.message.content), /run after terminal conflict/);
-  await fake.emit("message_start", { message: fake.sent[5]!.message });
-  await fake.emit("agent_end", { messages: [{ role: "assistant", content: "conflict recovery complete" }] });
-  await fake.emit("agent_settled");
-  assert.equal((await peer.awaitResponse(afterConflict.id, 2_000)).reply?.content, "conflict recovery complete");
+    assert.equal((await peer.awaitResponse(afterConflict.id, 2_000)).reply?.content, "conflict recovery complete");
 
-  const transient = await peer.send({ target: "queue-worker", content: "retry a transient reply" });
-  await waitFor(() => fake.sent.length === 7);
-  await fake.emit("message_start", { message: fake.sent[6]!.message });
-  await fake.emit("agent_end", { messages: [{ role: "assistant", content: "eventual reply" }] });
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (input, init) => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    if (url.endsWith(`/v1/messages/${transient.id}/reply`) && init?.method === "POST") {
-      throw new Error("simulated transient reply outage");
+    const transient = await peer.send({ target: "queue-worker", content: "retry a transient reply" });
+    await waitFor(() => fake.sent.length === 7);
+    await fake.emit("message_start", { message: fake.sent[6]!.message });
+    await fake.emit("agent_end", { messages: [{ role: "assistant", content: "eventual reply" }] });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.endsWith(`/v1/messages/${transient.id}/reply`) && init?.method === "POST") {
+        throw new Error("simulated transient reply outage");
+      }
+      return await originalFetch(input, init);
+    };
+    try {
+      await fake.emit("agent_settled");
+    } finally {
+      globalThis.fetch = originalFetch;
     }
-    return await originalFetch(input, init);
-  };
-  try {
+    const retained = JSON.parse(readFileSync(contextPath, "utf8")) as { pendingMessageIds: string[] };
+    assert.ok(retained.pendingMessageIds.includes(transient.id));
+    assert.ok(notices.some((notice) => notice.type === "error" && notice.message.includes("recovery state was retained")));
+    await fake.emit("agent_end", { messages: [{ role: "assistant", content: "unrelated later turn" }] });
+    assert.equal((await peer.awaitResponse(transient.id, 2_000)).reply?.content, "eventual reply");
+    assert.equal(existsSync(contextPath), false);
+
+    const ackFetch = globalThis.fetch;
+    let ackFailed = false;
+    globalThis.fetch = async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (!ackFailed && url.endsWith("/ack") && init?.method === "POST") {
+        ackFailed = true;
+        throw new Error("simulated transient acknowledgement outage");
+      }
+      return await ackFetch(input, init);
+    };
+    let ackRecovery: Awaited<ReturnType<typeof peer.send>>;
+    try {
+      ackRecovery = await peer.send({ target: "queue-worker", content: "recover acknowledgement replay" });
+      await waitFor(() => ackFailed);
+    } finally {
+      globalThis.fetch = ackFetch;
+    }
+    await waitFor(() => fake.sent.length === 8, 3_000);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(fake.sent.length, 8);
+    await fake.emit("message_start", { message: fake.sent[7]!.message });
+    await fake.emit("agent_end", { messages: [{ role: "assistant", content: "ack recovery complete" }] });
     await fake.emit("agent_settled");
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-  const retained = JSON.parse(readFileSync(contextPath, "utf8")) as { pendingMessageIds: string[] };
-  assert.ok(retained.pendingMessageIds.includes(transient.id));
-  assert.ok(notices.some((notice) => notice.type === "error" && notice.message.includes("recovery state was retained")));
-  await fake.emit("agent_end", { messages: [{ role: "assistant", content: "unrelated later turn" }] });
-  assert.equal((await peer.awaitResponse(transient.id, 2_000)).reply?.content, "eventual reply");
-  assert.equal(existsSync(contextPath), false);
+    assert.equal((await peer.awaitResponse(ackRecovery!.id, 2_000)).reply?.content, "ack recovery complete");
 
-  const ackFetch = globalThis.fetch;
-  let ackFailed = false;
-  globalThis.fetch = async (input, init) => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    if (!ackFailed && url.endsWith("/ack") && init?.method === "POST") {
-      ackFailed = true;
-      throw new Error("simulated transient acknowledgement outage");
+    const shutdownRace = await peer.send({ target: "queue-worker", content: "retain settlement during shutdown" });
+    await waitFor(() => fake.sent.length === 9);
+    await fake.emit("message_start", { message: fake.sent[8]!.message });
+    await fake.emit("agent_end", { messages: [{ role: "assistant", content: "shutdown reply" }] });
+    await peer.send({ target: "queue-worker", content: "must not activate during shutdown" });
+    const shutdownFetch = globalThis.fetch;
+    globalThis.fetch = async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.endsWith(`/v1/messages/${shutdownRace.id}/reply`) && init?.method === "POST") {
+        throw new Error("simulated shutdown settlement outage");
+      }
+      return await shutdownFetch(input, init);
+    };
+    try {
+      await fake.emit("agent_settled");
+    } finally {
+      globalThis.fetch = shutdownFetch;
     }
-    return await ackFetch(input, init);
-  };
-  let ackRecovery: Awaited<ReturnType<typeof peer.send>>;
-  try {
-    ackRecovery = await peer.send({ target: "queue-worker", content: "recover acknowledgement replay" });
-    await waitFor(() => ackFailed);
+    await fake.emit("session_shutdown");
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    assert.equal(fake.sent.length, 9);
   } finally {
-    globalThis.fetch = ackFetch;
+    await shutdownExtension(fake);
   }
-  await waitFor(() => fake.sent.length === 8, 3_000);
-  await new Promise((resolve) => setTimeout(resolve, 100));
-  assert.equal(fake.sent.length, 8);
-  await fake.emit("message_start", { message: fake.sent[7]!.message });
-  await fake.emit("agent_end", { messages: [{ role: "assistant", content: "ack recovery complete" }] });
-  await fake.emit("agent_settled");
-  assert.equal((await peer.awaitResponse(ackRecovery!.id, 2_000)).reply?.content, "ack recovery complete");
-
-  const shutdownRace = await peer.send({ target: "queue-worker", content: "retain settlement during shutdown" });
-  await waitFor(() => fake.sent.length === 9);
-  await fake.emit("message_start", { message: fake.sent[8]!.message });
-  await fake.emit("agent_end", { messages: [{ role: "assistant", content: "shutdown reply" }] });
-  await peer.send({ target: "queue-worker", content: "must not activate during shutdown" });
-  const shutdownFetch = globalThis.fetch;
-  globalThis.fetch = async (input, init) => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    if (url.endsWith(`/v1/messages/${shutdownRace.id}/reply`) && init?.method === "POST") {
-      throw new Error("simulated shutdown settlement outage");
-    }
-    return await shutdownFetch(input, init);
-  };
-  try {
-    await fake.emit("agent_settled");
-  } finally {
-    globalThis.fetch = shutdownFetch;
-  }
-  await fake.emit("session_shutdown");
-  await new Promise((resolve) => setTimeout(resolve, 350));
-  assert.equal(fake.sent.length, 9);
 });
 
 test("supervised Pi routes a workflow prompt before acknowledgement and replays it in the run session", async (context) => {
