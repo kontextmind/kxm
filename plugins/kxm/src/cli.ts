@@ -2529,6 +2529,38 @@ function mapCommanderError(error: CommanderError): number {
   return error.exitCode || 1;
 }
 
+const MESH_REMOVED_TEXT = "kxm mesh was removed. Use kxm init, kxm hub start|view|stop, and node scripts/smoke-multi-pi.mjs (KXM_SMOKE=1).";
+
+/** Detect `mesh` as the first command token after recognized nonterminal global
+ * options so `kxm --json mesh` fails closed. `--version`, `--help`, and unknown
+ * options are left for Commander. */
+function removedMeshInvocation(argv: string[]): { invoked: boolean; json: boolean } {
+  let json = false;
+  let invoked = false;
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]!;
+    if (arg === "--") {
+      if (argv[i + 1] === "mesh") invoked = true;
+      break;
+    }
+    if (arg === "--json") {
+      json = true;
+      continue;
+    }
+    if (arg === "--dry-run") continue;
+    if (arg === "--workspace") {
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith("--workspace=")) continue;
+    if (arg.startsWith("-")) break;
+    invoked = arg === "mesh";
+    break;
+  }
+  if (invoked && argv.includes("--json")) json = true;
+  return { invoked, json };
+}
+
 export async function runCli(
   argv: string[],
   env: NodeJS.ProcessEnv = process.env,
@@ -2538,6 +2570,11 @@ export async function runCli(
   const originalStdout = io.stdout;
   const originalStderr = io.stderr;
   io = { ...io, stdout: (text) => originalStdout(redactConfiguredValues(text, env)), stderr: (text) => originalStderr(redactConfiguredValues(text, env)) };
+  const mesh = removedMeshInvocation(argv);
+  if (mesh.invoked) {
+    print(io, mesh.json, { ok: false, command: "mesh", error: "removed_command" }, MESH_REMOVED_TEXT);
+    return 2;
+  }
   const result = { code: 0 };
   const program = createProgram({ env, io, cwd }, result);
   try {

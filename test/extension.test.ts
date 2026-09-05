@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import piMeshExtension, { bindingForMessage, workflowRunIdForMessage } from "../plugins/kxm/src/extension.ts";
 import { recoveryEnvelopePath, workerStateKey } from "../plugins/kxm/src/recovery.ts";
+import { SESSION_BRIEF_SKIP_LABEL } from "../plugins/kxm/src/session-work.ts";
 import { createTestMesh, waitFor } from "./helpers.ts";
 
 type EventHandler = (...args: unknown[]) => unknown | Promise<unknown>;
@@ -1250,4 +1253,276 @@ test("Pi extension drops a message when acknowledgement is already terminal", as
     globalThis.fetch = originalFetch;
   }
   await fake.emit("session_shutdown");
+});
+
+const SESSION_ENV_KEYS = [
+  "KXM_SERVER_URL",
+  "KXM_AUTH_TOKEN",
+  "KXM_PROJECT",
+  "KXM_AGENT_NAME",
+  "KXM_AGENT_PURPOSE",
+  "KXM_STATE_DIR",
+  "KXM_DATA_PATH",
+  "KXM_SESSION_BRIEF",
+] as const;
+
+function swapSessionEnv(context: { after: (fn: () => void) => void }, next: Record<string, string | undefined>): void {
+  const previous = Object.fromEntries(SESSION_ENV_KEYS.map((key) => [key, process.env[key]]));
+  for (const key of SESSION_ENV_KEYS) {
+    const value = next[key];
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  context.after(() => {
+    for (const key of SESSION_ENV_KEYS) {
+      const value = previous[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+}
+
+function recordingUi(selectImpl?: (title: string, options: string[]) => Promise<string | undefined>) {
+  const statuses: Array<{ key: string; value: string | undefined }> = [];
+  const widgets: Array<{ key: string; lines: string[] | undefined }> = [];
+  const notices: Array<{ message: string; type: string }> = [];
+  const selects: Array<{ title: string; options: string[] }> = [];
+  const editors: string[] = [];
+  return {
+    statuses,
+    widgets,
+    notices,
+    selects,
+    editors,
+    ui: {
+      setStatus(key: string, value: string | undefined) {
+        statuses.push({ key, value });
+      },
+      setWidget(key: string, lines: string[] | undefined) {
+        widgets.push({ key, lines });
+      },
+      notify(message: string, type: string) {
+        notices.push({ message, type });
+      },
+      setEditorText(text: string) {
+        editors.push(text);
+      },
+      async select(title: string, options: string[]) {
+        selects.push({ title, options });
+        return selectImpl ? await selectImpl(title, options) : undefined;
+      },
+    },
+  };
+}
+
+async function shutdownExtension(fake: ReturnType<typeof fakePi>, timeoutMs = 5_000): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      fake.emit("session_shutdown"),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`session_shutdown timed out after ${timeoutMs}ms`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function lastKxmStatus(statuses: Array<{ key: string; value: string | undefined }>): string {
+  const hit = [...statuses].reverse().find((item) => item.key === "kxm");
+  assert.ok(typeof hit?.value === "string", "expected kxm status");
+  return hit.value;
+}
+
+function lastKxmWidget(widgets: Array<{ key: string; lines: string[] | undefined }>): string[] {
+  const hit = [...widgets].reverse().find((item) => item.key === "kxm-work");
+  assert.ok(Array.isArray(hit?.lines) && hit.lines.length > 0, "expected kxm-work widget");
+  return hit.lines;
+}
+
+function sessionCtx(cwd: string, ui: ReturnType<typeof recordingUi>["ui"], mode = "tui") {
+  return {
+    cwd,
+    mode,
+    model: { provider: "test", id: "model" },
+    ui,
+  };
+}
+
+async function closedLoopbackPort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => resolve());
+  });
+  const address = server.address();
+  const port = typeof address === "object" && address ? address.port : 0;
+  await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  return port;
+}
+
+function seedSessionSnapshot(root: string): void {
+  const stateDir = join(root, ".kxm", "state");
+  mkdirSync(stateDir, { recursive: true });
+  const database = new DatabaseSync(join(stateDir, "kxm.db"));
+  try {
+    database.exec("CREATE TABLE agents (record TEXT NOT NULL); CREATE TABLE messages (record TEXT NOT NULL); CREATE TABLE workflow_runs (record TEXT NOT NULL); CREATE TABLE workflow_journal (category TEXT, record TEXT NOT NULL);");
+    database.prepare("INSERT INTO workflow_runs(record) VALUES (?)").run(JSON.stringify({
+      id: "run_ready1",
+      status: "running",
+      definitionId: "default",
+      project: "demo",
+      currentStage: "implement",
+      stages: [
+        { id: "plan", status: "passed" },
+        { id: "implement", status: "in_progress" },
+      ],
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:00.000Z",
+    }));
+    database.prepare("INSERT INTO workflow_journal(category, record) VALUES (?, ?)").run("plan", JSON.stringify({
+      id: "plan_ready1",
+      runId: "run_ready1",
+      category: "plan",
+      summary: "Continue the session-ready plan",
+      createdAt: "2026-09-01T00:00:00.000Z",
+    }));
+  } finally {
+    database.close();
+  }
+}
+
+function assertOnlineChrome(rec: ReturnType<typeof recordingUi>): void {
+  assert.match(lastKxmStatus(rec.statuses), /^kxm hub:on/);
+  assert.match(lastKxmWidget(rec.widgets)[0]!, /hub:on/);
+}
+
+test("Pi extension session readiness keeps a single hub registration across startup, new, and fork", async (context) => {
+  const mesh = await createTestMesh(context);
+  const peer = mesh.makeClient("session-ready-observer");
+  await peer.start(() => undefined);
+  const cwd = mkdtempSync(join(tmpdir(), "kxm-session-ready-"));
+  const fake = fakePi();
+  context.after(async () => {
+    await shutdownExtension(fake);
+    rmSync(cwd, { recursive: true, force: true });
+  });
+  swapSessionEnv(context, {
+    KXM_SERVER_URL: mesh.address.url,
+    KXM_AUTH_TOKEN: mesh.token,
+    KXM_PROJECT: "test-project",
+    KXM_AGENT_NAME: "pi-session-ready",
+    KXM_AGENT_PURPOSE: "Session readiness",
+  });
+
+  piMeshExtension(fake.api);
+  const startup = recordingUi();
+  await fake.emit("session_start", { reason: "startup" }, sessionCtx(cwd, startup.ui));
+  assertOnlineChrome(startup);
+  assert.equal(startup.selects.length, 0);
+  await waitFor(async () => (await peer.listAgents()).filter((agent) => agent.name === "pi-session-ready").length === 1);
+
+  await shutdownExtension(fake);
+  const startedNew = recordingUi();
+  await fake.emit("session_start", { reason: "new" }, sessionCtx(cwd, startedNew.ui));
+  assertOnlineChrome(startedNew);
+  assert.equal((await peer.listAgents()).filter((agent) => agent.name === "pi-session-ready").length, 1);
+
+  const forked = recordingUi();
+  await fake.emit("session_start", { reason: "fork" }, sessionCtx(cwd, forked.ui));
+  assertOnlineChrome(forked);
+  assert.equal((await peer.listAgents()).filter((agent) => agent.name === "pi-session-ready").length, 1);
+  await shutdownExtension(fake);
+});
+
+test("Pi extension session readiness reports offline chrome and reapplies /kxm", async (context) => {
+  const port = await closedLoopbackPort();
+  const cwd = mkdtempSync(join(tmpdir(), "kxm-session-offline-"));
+  const fake = fakePi();
+  context.after(async () => {
+    await shutdownExtension(fake);
+    rmSync(cwd, { recursive: true, force: true });
+  });
+  swapSessionEnv(context, {
+    KXM_SERVER_URL: `http://127.0.0.1:${port}`,
+    KXM_PROJECT: "test-project",
+    KXM_AGENT_NAME: "pi-session-offline",
+  });
+
+  piMeshExtension(fake.api);
+  const offline = recordingUi();
+  const ctx = sessionCtx(cwd, offline.ui);
+  await fake.emit("session_start", { reason: "new" }, ctx);
+  assert.match(lastKxmStatus(offline.statuses), /^kxm hub:off/);
+  assert.match(lastKxmWidget(offline.widgets)[0]!, /hub:off/);
+  assert.ok(offline.notices.some((notice) => notice.type === "error" && /kxm connection failed/.test(notice.message)));
+
+  await fake.commands.get("kxm")!.handler("", ctx);
+  assert.match(lastKxmStatus(offline.statuses), /^kxm hub:off/);
+  assert.match(lastKxmWidget(offline.widgets)[0]!, /hub:off/);
+  await shutdownExtension(fake);
+});
+
+test("Pi extension TUI picker can skip or select a populated snapshot, writes editor text, and skips RPC and opt-out", async (context) => {
+  const mesh = await createTestMesh(context);
+  const cwd = mkdtempSync(join(tmpdir(), "kxm-session-picker-"));
+  seedSessionSnapshot(cwd);
+  const fake = fakePi();
+  context.after(async () => {
+    await shutdownExtension(fake);
+    rmSync(cwd, { recursive: true, force: true });
+  });
+  swapSessionEnv(context, {
+    KXM_SERVER_URL: mesh.address.url,
+    KXM_AUTH_TOKEN: mesh.token,
+    KXM_PROJECT: "test-project",
+    KXM_AGENT_NAME: "pi-session-picker",
+  });
+
+  piMeshExtension(fake.api);
+
+  const skipped = recordingUi(async (_title, options) => {
+    assert.equal(options[0], SESSION_BRIEF_SKIP_LABEL);
+    assert.ok(options.some((option) => /Task/.test(option)));
+    assert.ok(options.some((option) => /Plan/.test(option)));
+    return SESSION_BRIEF_SKIP_LABEL;
+  });
+  await fake.emit("session_start", { reason: "startup" }, sessionCtx(cwd, skipped.ui));
+  assert.equal(skipped.selects.length, 1);
+  assert.equal(skipped.editors.length, 0);
+  assertOnlineChrome(skipped);
+  assert.doesNotMatch(lastKxmWidget(skipped.widgets).join("\n"), /now  task/);
+  assert.doesNotMatch(lastKxmStatus(skipped.statuses), /default\/implement/);
+  await shutdownExtension(fake);
+
+  const selected = recordingUi(async (_title, options) => options.find((option) => option.startsWith("Task")));
+  await fake.emit("session_start", { reason: "new" }, sessionCtx(cwd, selected.ui));
+  assert.equal(selected.selects.length, 1);
+  assertOnlineChrome(selected);
+  assert.match(lastKxmStatus(selected.statuses), /default\/implement/);
+  assert.match(lastKxmWidget(selected.widgets).join("\n"), /now  task/);
+  assert.equal(selected.editors.length, 1);
+  assert.match(selected.editors[0]!, /Continue KXM task `default`/);
+  await shutdownExtension(fake);
+
+  const rpc = recordingUi();
+  await fake.emit("session_start", { reason: "fork" }, sessionCtx(cwd, rpc.ui, "rpc"));
+  assert.equal(rpc.selects.length, 0);
+  assert.equal(rpc.editors.length, 0);
+  assertOnlineChrome(rpc);
+  await shutdownExtension(fake);
+
+  swapSessionEnv(context, {
+    KXM_SERVER_URL: mesh.address.url,
+    KXM_AUTH_TOKEN: mesh.token,
+    KXM_PROJECT: "test-project",
+    KXM_AGENT_NAME: "pi-session-picker",
+    KXM_SESSION_BRIEF: "off",
+  });
+  const optedOut = recordingUi();
+  await fake.emit("session_start", { reason: "fork" }, sessionCtx(cwd, optedOut.ui));
+  assert.equal(optedOut.selects.length, 0);
+  assertOnlineChrome(optedOut);
+  await shutdownExtension(fake);
 });

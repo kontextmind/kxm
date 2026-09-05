@@ -27917,7 +27917,7 @@ function renderTabBar(snapshot, view, theme) {
     return view.tab === panel ? theme.accent(`[${label}]`) : theme.dim(` ${label} `);
   }).join(" ");
 }
-var MeshDashboard = class {
+var KxmDashboard = class {
   root = new VStack([], { gap: 0 });
   listContent = new VStack([], { gap: 0 });
   listScroll = new ScrollView(this.listContent, { primary: true, overscroll: "contain", scrollbar: "auto" });
@@ -28038,7 +28038,7 @@ Agents, Tasks, Workflows, Plans, Inbox, Procs. Split pane on wide terminals. No 
   }
 };
 function renderMeshTui(snapshot, view = defaultMeshTuiView(), width = 120) {
-  const dashboard = new MeshDashboard(snapshot, view, false, () => void 0, () => void 0);
+  const dashboard = new KxmDashboard(snapshot, view, false, () => void 0, () => void 0);
   return `${dashboard.render(width).map(stripTerminalSequences).join("\n")}
 `;
 }
@@ -28206,7 +28206,7 @@ async function runMeshTui(input) {
     if (input.abort?.aborted) abort.abort();
     const terminal = input.terminal ?? new ProcessTerminal();
     const tui = new TuiAltScreen(terminal, false, void 0, { mouse: true });
-    const dashboard = new MeshDashboard(
+    const dashboard = new KxmDashboard(
       snapshot,
       view,
       process.env.NO_COLOR === void 0,
@@ -36705,10 +36705,42 @@ function mapCommanderError(error) {
   if (USAGE_ERROR_CODES.has(error.code)) return 2;
   return error.exitCode || 1;
 }
+var MESH_REMOVED_TEXT = "kxm mesh was removed. Use kxm init, kxm hub start|view|stop, and node scripts/smoke-multi-pi.mjs (KXM_SMOKE=1).";
+function removedMeshInvocation(argv) {
+  let json = false;
+  let invoked = false;
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--") {
+      if (argv[i + 1] === "mesh") invoked = true;
+      break;
+    }
+    if (arg === "--json") {
+      json = true;
+      continue;
+    }
+    if (arg === "--dry-run") continue;
+    if (arg === "--workspace") {
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith("--workspace=")) continue;
+    if (arg.startsWith("-")) break;
+    invoked = arg === "mesh";
+    break;
+  }
+  if (invoked && argv.includes("--json")) json = true;
+  return { invoked, json };
+}
 async function runCli(argv, env = process.env, io = { stdout: (text) => process.stdout.write(text), stderr: (text) => process.stderr.write(text) }, cwd = process.cwd()) {
   const originalStdout = io.stdout;
   const originalStderr = io.stderr;
   io = { ...io, stdout: (text) => originalStdout(redactConfiguredValues(text, env)), stderr: (text) => originalStderr(redactConfiguredValues(text, env)) };
+  const mesh = removedMeshInvocation(argv);
+  if (mesh.invoked) {
+    print(io, mesh.json, { ok: false, command: "mesh", error: "removed_command" }, MESH_REMOVED_TEXT);
+    return 2;
+  }
   const result = { code: 0 };
   const program2 = createProgram({ env, io, cwd }, result);
   try {

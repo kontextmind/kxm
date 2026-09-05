@@ -13,7 +13,7 @@
 7. [Pi integration](#pi-integration)
 8. [Workflow-specific Pi sessions](#workflow-specific-pi-sessions)
 9. [Claude Code integration](#claude-code-integration)
-10. [Mesh tools](#mesh-tools)
+10. [Hub tools](#hub-tools)
 11. [Durable workflows](#durable-workflows)
 12. [Evidence gates and external callbacks](#evidence-gates-and-external-callbacks)
 13. [Live TUI and observability](#live-tui-and-observability)
@@ -124,7 +124,7 @@ after changing CLI source.
 From Pi:
 
 ```text
-pi install git:github.com/kontextmind/kxm
+pi install git:github.com/kontextmind/kxm@main
 ```
 
 This installs the Pi extension and the `kxm` Agent Skill. Restart Pi after
@@ -585,7 +585,7 @@ Restart Claude Code after changing settings. Use `/mcp` to confirm the bundled
 `kxm` MCP server connected, then call `kxm_list`.
 
 KXM does not choose the Claude model. Select the required Claude CLI/model
-profile separately; the mesh identity and model session remain different
+profile separately; the hub identity and model session remain different
 concepts.
 
 ### Pushed channel mode
@@ -628,7 +628,7 @@ journal, evidence, and assets—not from either harness's context window.
 
 ---
 
-## Mesh tools
+## Hub tools
 
 ### Shared outbound and workflow tools
 
@@ -664,7 +664,7 @@ Claude MCP also exposes:
 - Use `kxm_get` or repeat the exact idempotent operation; do not invent a new
   request while the first remains pending.
 - Cancellation cannot undo filesystem or external side effects.
-- Never put credentials or unnecessary private data in a mesh message.
+- Never put credentials or unnecessary private data in a hub message.
 - Keep one task and one owner per request.
 
 ---
@@ -932,7 +932,7 @@ where required.
 - Use distinct high-entropy admin and project credentials.
 - Give workers only project tokens.
 - Terminate TLS at a trusted proxy for remote access and disable SSE buffering.
-- Protect workflow HMAC secrets separately from mesh tokens.
+- Protect workflow HMAC secrets separately from hub tokens.
 - Treat plugin extension paths and skills as executable privileged inputs.
 - Do not rely on prompts, roster roles, or ownership fields as a sandbox.
 - Do not expose the hub directly to the public internet.
@@ -1008,7 +1008,7 @@ Common causes:
 | Symptom | Likely cause |
 |---|---|
 | `kxm` not found | Only the Pi package was installed; install the release CLI or use the source wrapper |
-| Pi shows `mesh:offline` | URL/token/project mismatch, duplicate live name, missing extension, or unreachable hub |
+| Pi shows `hub:off` | URL/token/project mismatch, duplicate live name, missing extension, or unreachable hub |
 | Claude tools missing | Plugin not reloaded, MCP bundle unavailable, or unsupported Node version |
 | Request stays queued | Recipient offline/SSE unavailable, or one safe Pi session swap is in progress |
 | Request stays delivered | Agent turn, approval, tool, provider, or settlement is still active |
@@ -1035,7 +1035,7 @@ See [Troubleshooting](troubleshooting.md) for error-specific recovery.
 | Pull inbox and explicit reply | N/A | Extension owns queue | `kxm_inbox`, `kxm_reply` |
 | Always-on worker supervision | Starts Pi worker | Yes | External Claude supervision required |
 | Workflow-specific model sessions | Configures mode | Automatic for supervised Pi | Use separate Claude sessions externally |
-| Workflow list/get | Local SQLite CLI | Mesh tools | Mesh tools |
+| Workflow list/get | Local SQLite CLI | Hub tools | Hub tools |
 | Start signed workflow | Yes | No | No |
 | Checkpoint/wait/journal | No | Yes | Yes |
 | Peer provenance context/references | No | Yes | Yes |

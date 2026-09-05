@@ -2,7 +2,7 @@ import { basename } from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import { MeshClient, MeshHttpError } from "./client.ts";
+import { HubClient, HubHttpError } from "./client.ts";
 import { deliverInboxNotification } from "./inbox.ts";
 import type { DeliveryMode, HubEvent, MessageRecord, WorkflowMessageContext } from "./protocol.ts";
 import type {
@@ -16,8 +16,8 @@ import type {
 const VERSION = "0.5.1";
 const inbox = new Map<string, MessageRecord>();
 const notifiedInbox = new Set<string>();
-let meshClient: MeshClient | undefined;
-let starting: Promise<MeshClient> | undefined;
+let meshClient: HubClient | undefined;
+let starting: Promise<HubClient> | undefined;
 
 const mcp = new Server(
   { name: "kxm", version: VERSION },
@@ -78,7 +78,7 @@ function optionalEvidenceRefs(value: unknown): WorkflowEvidenceReferenceInput | 
 }
 
 function isTerminalMessageError(error: unknown): boolean {
-  return error instanceof MeshHttpError
+  return error instanceof HubHttpError
     && (error.statusCode === 409
       || (error.statusCode === 404 && error.code === "message_not_found"));
 }
@@ -90,7 +90,7 @@ function isTerminalMessage(message: MessageRecord): boolean {
     || message.status === "error";
 }
 
-async function reconcileInbox(client: MeshClient): Promise<void> {
+async function reconcileInbox(client: HubClient): Promise<void> {
   await Promise.all([...inbox.keys()].map(async (messageId) => {
     try {
       const current = await client.getMessage(messageId);
@@ -143,13 +143,13 @@ async function onHubEvent(event: HubEvent): Promise<void> {
   });
 }
 
-async function ensureClient(): Promise<MeshClient> {
+async function ensureClient(): Promise<HubClient> {
   if (meshClient?.agent) return meshClient;
   if (starting) return starting;
   starting = (async () => {
     const projectDir = process.env.KXM_PROJECT_DIR || process.env.CLAUDE_PROJECT_DIR || process.cwd();
     const authToken = optionalString(process.env.KXM_AUTH_TOKEN);
-    const candidate = new MeshClient({
+    const candidate = new HubClient({
       serverUrl: process.env.KXM_SERVER_URL?.trim() || "http://127.0.0.1:7331",
       name: process.env.KXM_AGENT_NAME?.trim() || `claude-${process.pid}`,
       purpose: process.env.KXM_AGENT_PURPOSE?.trim() || "Claude Code implementation and review agent",
@@ -575,15 +575,15 @@ mcp.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       case "kxm_improvement_report":
         return textResult(await client.improvementReport());
       case "kxm_context":
-        return textResult(await client.contextGet(asRecord(args) as unknown as Parameters<MeshClient["contextGet"]>[0]));
+        return textResult(await client.contextGet(asRecord(args) as unknown as Parameters<HubClient["contextGet"]>[0]));
       case "kxm_recall":
-        return textResult(await client.contextRecall(asRecord(args) as unknown as Parameters<MeshClient["contextRecall"]>[0]));
+        return textResult(await client.contextRecall(asRecord(args) as unknown as Parameters<HubClient["contextRecall"]>[0]));
       case "kxm_state":
-        return textResult(await client.contextState(asRecord(args) as unknown as Parameters<MeshClient["contextState"]>[0]));
+        return textResult(await client.contextState(asRecord(args) as unknown as Parameters<HubClient["contextState"]>[0]));
       case "kxm_episode":
-        return textResult(await client.contextEpisode(asRecord(args) as unknown as Parameters<MeshClient["contextEpisode"]>[0]));
+        return textResult(await client.contextEpisode(asRecord(args) as unknown as Parameters<HubClient["contextEpisode"]>[0]));
       case "kxm_promote":
-        return textResult(await client.contextStatePropose(asRecord(args) as unknown as Parameters<MeshClient["contextStatePropose"]>[0]));
+        return textResult(await client.contextStatePropose(asRecord(args) as unknown as Parameters<HubClient["contextStatePropose"]>[0]));
       default:
         throw new Error(`unknown tool: ${request.params.name}`);
     }

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { MeshClient } from "../plugins/kxm/src/client.ts";
+import { HubClient } from "../plugins/kxm/src/client.ts";
 
 const [target, ...contentParts] = process.argv.slice(2);
 if (!target || contentParts.length === 0) {
@@ -7,7 +7,7 @@ if (!target || contentParts.length === 0) {
 }
 
 const authToken = process.env.KXM_AUTH_TOKEN;
-const client = new MeshClient({
+const client = new HubClient({
   serverUrl: process.env.KXM_SERVER_URL ?? "http://127.0.0.1:7331",
   name: process.env.KXM_AGENT_NAME ?? `example-requester-${process.pid}`,
   purpose: process.env.KXM_AGENT_PURPOSE ?? "Sends a request from the command line",

@@ -45,7 +45,7 @@ export interface ContextWikiCompilation {
   pages: { path: string; content: string }[];
 }
 
-export interface MeshClientOptions {
+export interface HubClientOptions {
   serverUrl: string;
   authToken?: string;
   name: string;
@@ -133,7 +133,7 @@ function fanoutIdempotencyKey(
   return `fanout:${createHash("sha256").update(scope).digest("hex")}`;
 }
 
-export class MeshHttpError extends Error {
+export class HubHttpError extends Error {
   readonly statusCode: number;
   readonly code?: string;
   readonly requestId?: string;
@@ -147,7 +147,7 @@ export class MeshHttpError extends Error {
     extras?: Record<string, unknown>,
   ) {
     super(message);
-    this.name = "MeshHttpError";
+    this.name = "HubHttpError";
     this.statusCode = statusCode;
     if (code) this.code = code;
     if (requestId) this.requestId = requestId;
@@ -155,8 +155,8 @@ export class MeshHttpError extends Error {
   }
 }
 
-export class MeshClient {
-  readonly options: MeshClientOptions;
+export class HubClient {
+  readonly options: HubClientOptions;
   agent: AgentRecord | undefined;
   private agentKey: string | undefined;
   private heartbeatTimer?: NodeJS.Timeout;
@@ -166,7 +166,7 @@ export class MeshClient {
   private registration: Promise<AgentRecord> | undefined;
   private eventLoop: Promise<void> | undefined;
 
-  constructor(options: MeshClientOptions) {
+  constructor(options: HubClientOptions) {
     this.options = { heartbeatMs: 10_000, reconnectMs: 1_000, requestTimeoutMs: 15_000, ...options };
   }
 
@@ -485,7 +485,7 @@ export class MeshClient {
         body: "{}",
       });
     } catch (error) {
-      if (error instanceof MeshHttpError && error.statusCode === 401) void this.recoverRegistration();
+      if (error instanceof HubHttpError && error.statusCode === 401) void this.recoverRegistration();
     }
   }
 
@@ -601,7 +601,7 @@ export class MeshClient {
       for (const key of ["operation", "nextAction", "assignedCoordinatorName"]) {
         if (typeof body[key] === "string") extras[key] = body[key];
       }
-      throw new MeshHttpError(
+      throw new HubHttpError(
         response.status,
         String(body.error ?? `HTTP ${response.status}`),
         typeof body.code === "string" ? body.code : undefined,

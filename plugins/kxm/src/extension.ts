@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node
 import { basename, dirname, join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { MeshClient, MeshHttpError } from "./client.ts";
+import { HubClient, HubHttpError } from "./client.ts";
 import { areaForTool, classifyFailure, diagnosticEvidence, diagnosticSummary, type Diagnostic } from "./diagnostics.ts";
 import { MAX_CONTENT_CHARS, type DeliveryMode, type HubEvent, type MessageRecord } from "./protocol.ts";
 import type { ContextItemKind } from "./context.ts";
@@ -35,7 +35,7 @@ function isTerminalMessage(message: MessageRecord): boolean {
 }
 
 function isTerminalMessageError(error: unknown): boolean {
-  return error instanceof MeshHttpError
+  return error instanceof HubHttpError
     && (error.statusCode === 409
       || (error.statusCode === 404 && error.code === "message_not_found"));
 }
@@ -146,7 +146,7 @@ function assistantFailure(messages: unknown[]): Diagnostic | undefined {
 }
 
 export default function piMeshExtension(pi: ExtensionAPI) {
-  let client: MeshClient | undefined;
+  let client: HubClient | undefined;
   let pending: MessageRecord[] = [];
   let activatingInbound: MessageRecord | undefined;
   let awaitingActivation: MessageRecord | undefined;
@@ -259,7 +259,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
 
   async function workflowCall<T>(operation: () => Promise<T>): Promise<T> {
     try { return await operation(); } catch (error) {
-      if (!(error instanceof MeshHttpError)) throw error;
+      if (!(error instanceof HubHttpError)) throw error;
       const assigned = typeof error.extras?.assignedCoordinatorName === "string" ? ` assignedCoordinator=${error.extras.assignedCoordinatorName}` : "";
       const nextAction = typeof error.extras?.nextAction === "string" ? ` nextAction=${error.extras.nextAction}` : "";
       const operationName = typeof error.extras?.operation === "string" ? ` operation=${error.extras.operation}` : "";
@@ -267,7 +267,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     }
   }
 
-  function requireClient(): MeshClient {
+  function requireClient(): HubClient {
     if (!client?.agent) throw new Error("kxm hub is not connected; check KXM_SERVER_URL and /kxm hub");
     return client;
   }
@@ -621,10 +621,12 @@ export default function piMeshExtension(pi: ExtensionAPI) {
 
   pi.on("session_start", async (event: { reason?: string }, ctx) => {
     shuttingDown = false;
+    await client?.stop();
+    client = undefined;
     try {
       currentSessionBinding = bindingFromEnvironment();
     } catch (error) {
-      ctx.ui.setStatus("kxm", "hub:offline");
+      ctx.ui.setStatus("kxm", "kxm hub:off");
       ctx.ui.notify(`kxm session routing configuration failed: ${error instanceof Error ? error.message : String(error)}`, "error");
       void ctx.shutdown();
       return;
@@ -639,7 +641,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
     removeMatchingLegacyRecoveryContext();
     const purpose = process.env.KXM_AGENT_PURPOSE ?? "General-purpose coding agent";
     const model = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
-    client = new MeshClient({
+    client = new HubClient({
       serverUrl,
       name,
       purpose,
@@ -673,7 +675,7 @@ export default function piMeshExtension(pi: ExtensionAPI) {
       }
     } catch (error) {
       client = undefined;
-      ctx.ui.setStatus("kxm", "hub:offline");
+      ctx.ui.setStatus("kxm", "kxm hub:off");
       ctx.ui.notify(`kxm connection failed: ${error instanceof Error ? error.message : String(error)}`, "error");
     }
     await applySessionChrome(ctx, event, true);
