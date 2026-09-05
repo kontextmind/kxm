@@ -18,16 +18,18 @@ Install the locked dependencies:
 npm ci
 ```
 
-Run the main checks:
+Run the commit gate:
 
 ```powershell
-npm run test:coverage
-npm run check
-npm run validate:claude
-npm pack --dry-run
+npm run verify
 ```
 
-`npm run verify` now includes `check:generated` (staged `dist` vs the current build). `npm run validate` runs the complete local release gate.
+`npm run verify` is `npm test`, `npm run check`, and `check:generated` (staged
+`dist` vs the current build). CI PR legs run `validate:ci` (coverage + check +
+pack dry-run) and `check:generated` on every matrix cell. Plugin validation is
+a hosted CI job (`claude plugin validate`), not a third npm script and not a
+pre-push requirement. `npm run validate` still exists for a local machine that
+already has the Claude CLI.
 
 ### Coverage ratchet
 
@@ -47,7 +49,7 @@ The three `--test-coverage-*` thresholds in `package.json` are the measured whol
 3. Keep one clear concern per commit.
 4. Add or update tests and `docs/test-matrix.md` for behavior changes.
 5. Update the relevant user guide and `CHANGELOG.md` for user-visible changes.
-6. Run `npm run validate` before requesting review.
+6. Run `npm run verify` before requesting review. Plugin validation runs in CI.
 
 ## Source and generated files
 

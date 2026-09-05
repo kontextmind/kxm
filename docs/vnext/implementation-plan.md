@@ -144,6 +144,46 @@ It does not replace the phase gates below.
   Thresholds are measured whole-tree values and may only ratchet up.
   `npm run verify` includes `check:generated`, which diffs built `dist` against
   the staged copy. `check:generated` also runs on every CI validate leg.
+- `release.yml` on `v*` tags asserts the tag equals `package.json` version
+  before install, runs `validate:ci` + `check:generated`, and packs
+  `kxm-<v>.tgz` (`kxmReleaseAssetName`). Release lookup: GET-by-tag is the
+  published-release guard. Only HTTP 404 on that call continues; auth,
+  network, and 5xx fail with no mutation. On 404, list
+  `/releases?per_page=100` including drafts and exhaust pages (or fail closed
+  if pagination cannot be finished or is capped). Filter `tag_name === tag`:
+  one draft reuses its id and assets; any published match is
+  `published_release`; duplicate drafts fail closed; none may create. List
+  401/403/network/5xx/unparseable/pagination failure is not missing. A
+  published release for the tag is never modified. Rerunning a tag never
+  replaces an asset. It succeeds only when the existing asset digest equals
+  the local sha256, and it fails without mutation otherwise. After upload,
+  the REST asset `digest` must equal the local sha256 (Actions artifact
+  digests are not proof). `test/kxm-release-github.test.ts` holds those
+  boundaries; `test/ci-contract.test.ts` imports `kxmReleaseAssetName`
+  against `release.yml`. The standalone `generated` job is gone. `Plugin
+  validation` runs native `claude plugin validate` on a hosted runner with
+  `@anthropic-ai/claude-code@2.1.261` (no model auth or model calls). After
+  `--ignore-scripts` install of that pin, CI runs the vendor `install.cjs`
+  so the native binary is present. The npm
+  publish job exists but is `if: false`. Activating it requires a later phase
+  that adds a published-release prerequisite (release lookup returns
+  `draft: false` for the tag) and the `npm-publish` environment. Not
+  activated by B2.
+- **B2 live draft proof (temporary, cleaned; not a published asset):**
+  mismatch tag `v0.0.0-b2mismatch.20260905.1` run `33995663476` failed closed
+  before install (no draft). Correct tag `v0.5.20260905` at proof commit
+  `9960e6f`; Release run `33995686608` attempt 1 uploaded draft `383391727`
+  asset `546379172` `kxm-0.5.20260905.tgz` digest
+  `sha256:96eb9aa99cd7025b3f313f7a8caa660a48f8efe08bf649d88fe82353aa74851f`
+  (independently downloaded bytes match). Attempt 2 `success` with
+  `skipped: true`, same release/asset/digest, no duplicate drafts. Root
+  deleted the temporary draft plus remote/local tags and the proof
+  branch/worktree; absence verified via release list and `ls-remote`.
+  Published `v0.5.1` unchanged; tree version remains `0.5.1`.
+- **protect-main applied:** ruleset `22251971` keeps all live rules and the
+  four Validate contexts; `Plugin validation` is now required.
+  `delete_branch_on_merge` is true. Evidence: B2 artifacts
+  `ruleset-applied.json` and `repository-applied.json`.
 - `kxm mesh` fails closed with a stderr brake naming `kxm init`, `kxm hub`, and
   `scripts/smoke-multi-pi.mjs`. `MeshClient`/`MeshHttpError` are `HubClient`/
   `HubHttpError`; `MeshDashboard` is `KxmDashboard`. Operator copy says `hub:off`;
@@ -155,19 +195,18 @@ It does not replace the phase gates below.
 
 ### Still open
 
-- **B2 release asset:** nothing yet emits `kxm-<v>.tgz` (`npm pack` names
-  `kontextmind-kxm-<v>.tgz`; no `release.yml`). Until B2 uploads that name
-  with a GitHub `digest`, `kxm update --kxm` from a real npm-global install
-  fails closed with `release_digest_missing`. B2 must rename on upload, add a
-  test importing `kxmReleaseAssetName` against `release.yml`, and confirm
-  `gh release view --json assets` shows `digest`. No sidecar `.sha256` in A4.
+- First real draft-to-published release after B2 (later release phase).
+  `kxm update --kxm` end to end from a published asset. Temporary draft proof
+  does not replace this. No sidecar `.sha256`.
 - **After public npm:** wiki-compile this project from hub context; npm as
   `kxm update` source. Not before.
 - Coverage only lists modules some test loaded; a future source file with zero
   imports from tests will not drag the number down. A test that imports every
   non-excluded module belongs before the next ratchet raise, not as a B1 add.
-- The standalone `generated` CI job is redundant with the validate legs; drop
-  it in B2 together with a `protect-main` ruleset edit.
+- Queue/worker CI cleanup, separate PRs (not claimed fixed here):
+  - **#119:** intermittent Windows Node 24 queue/timeout hang after a failed
+    send.
+  - **#120:** worker PID file race; partial JSON seen on POSIX.
 - Docs sweep: operator pages updated to `kxm hub start|view|stop` and `kxm dash`;
   CHANGELOG history may still mention old names.
 - Remaining Mesh-named internals (`MeshHub`, `createMeshHub`, `MeshStore`,
@@ -338,8 +377,16 @@ bindings, default-derived environments, host secret grants, local logs,
 repository-aware timing, patches/local commits, and non-atomic delivery
 manifests.
 
+**B2 note (not the Phase 5 gate):** `release.yml` created a
+temporary draft on tag `v0.5.20260905` and the same-digest rerun skipped
+without a second asset; mismatch tag failed before install. Cleanup left
+published `v0.5.1` and tree `0.5.1` unchanged. `protect-main` `22251971`
+now requires `Plugin validation`; `delete_branch_on_merge` is true. First
+published `kxm-<v>.tgz` and public npm remain later.
+
 **Gate:** the public local release runs a dirty two-repository workflow through
-a Runtime crash without a hub or secret leakage.
+a Runtime crash without a hub or secret leakage. Release assets come from
+`release.yml` on a tag, never hand uploaded.
 
 ## Phase 6: SSH and exe.dev
 

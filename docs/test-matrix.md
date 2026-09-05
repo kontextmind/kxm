@@ -2,10 +2,11 @@
 
 The release gate executes every test, measures the core source directly, type-checks strict TypeScript, lints documentation, verifies package versions, validates Claude manifests, rebuilds the generated runtimes, and installs and executes the npm artifact outside the repository.
 
-Run the automated gate with:
+Run the commit gate with `npm run verify`. CI PR legs run `validate:ci` plus
+`check:generated`. Plugin validation is a hosted CI job.
 
 ```powershell
-npm run validate
+npm run verify
 ```
 
 ## Product features
@@ -41,6 +42,7 @@ npm run validate
 | Operator CLI init/validate/export/watch | `test/cli.test.ts`, `test/github-watch.test.ts` |
 | Local and isolated-global packed npm CLI plus hub runtimes | `test/package-install.test.ts` |
 | Required generated runtimes are present, tracked, and match the staged copy after build | `scripts/check-generated.mjs`, `test/generated-artifacts.test.ts` |
+| Tag release packs `kxm-<v>.tgz`, fail-closed draft GitHub upload, 404-then-list draft discovery, digest proof, no clobber | `scripts/kxm-release-github.mjs`, `test/kxm-release-github.test.ts`, `test/ci-contract.test.ts` |
 | Retrospective export snapshots, metadata-only provenance audit, body allowlisting, degradation records, and v1 compatibility | `test/retrospective.test.ts` |
 | Interrupted-worker continue fallback, exact run-bound recovery, unbound telemetry isolation, and one-turn durable replay | `test/worker.test.ts`, `test/recovery.test.ts`, `test/extension.test.ts` |
 | Hub-owned workflow affinity; integrated hub→extension→supervisor→replacement replay; pre-ack default/run/cross-run routing; one-child session-dir swapping; stable ordinary context; LRU retention; and corrupt-state/link containment | `test/hub-api.test.ts`, `test/extension.test.ts`, `test/worker.test.ts`, `test/cli.test.ts` |
@@ -58,7 +60,11 @@ npm run validate
 | Permission-diff trust workflow: structured authority projections, conservative lattice classification (access, network, budgets, quorums, snapshots, secrets, transitions, shapes), prose neutrality, Git base shadowing, CLI diff/check gating, and packed-consumer round trips | `test/vnext-permission.test.ts`, `test/cli.test.ts`, `test/contracts-vnext.test.ts`, `test/package-install.test.ts` |
 | Event-sourced local Runtime: supervisor singleton with stable logical identity, immutable home bindings, append-only per-project event stores, idempotent acceptance/cancel, projection rebuild equivalence, token-authenticated local API, auto-start, SIGKILL crash recovery, offline CLI, packed consumer | `test/vnext-runtime.test.ts`, `test/cli.test.ts`, `test/package-install.test.ts` |
 
-The CI minimums are 95% lines, 80% branches, and 90% functions across the measured transport/workflow core sources explicitly listed in `package.json`. TUI rendering, session/roster helpers, envelope construction, telemetry, and proposed-report formatting have executable feature tests but are intentionally outside that aggregate percentage; their generated or packed entry points remain exercised by integration tests. The generated MCP runtime is exercised as a child process, while the packed CLI and hub are installed in a clean consumer and exercised from `node_modules`.
+The CI minimums are 93% lines, 80% branches, and 93% functions across
+`plugins/kxm/src/**/*.ts` (excludes `server.ts` and `mcp-server.ts`). Those
+floors may only ratchet up. The generated MCP runtime is exercised as a child
+process, while the packed CLI and hub are installed in a clean consumer and
+exercised from `node_modules`.
 
 ## Executable examples and use cases
 

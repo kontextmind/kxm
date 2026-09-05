@@ -274,13 +274,13 @@ This repository follows the native package structures for:
 
 ```powershell
 npm ci
-npm run test:coverage
-npm run check
-npm run validate:claude
-npm pack --dry-run
+npm run verify
 ```
 
-`npm run verify` includes `check:generated`. Run the complete local gate with `npm run validate`. See [Contributing](CONTRIBUTING.md) before changing the protocol or generated runtimes.
+`npm run verify` includes `check:generated`. CI also runs `validate:ci` and
+plugin validation (`claude plugin validate`) as a hosted job. See
+[Contributing](CONTRIBUTING.md) before changing the protocol or generated
+runtimes.
 
 ## Repository layout
 
