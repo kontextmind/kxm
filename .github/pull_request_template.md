@@ -1,5 +1,9 @@
 # Pull request
 
+Slice issue: #N
+
+Which code change aged the plan (or none):
+
 ## What changed
 
 Describe the user or maintainer problem and the solution.
@@ -11,11 +15,8 @@ Describe the user or maintainer problem and the solution.
 
 ## Validation
 
-- [ ] `npm test`
-- [ ] `npm run check`
-- [ ] `npm run check:generated` after generated runtimes are committed
-- [ ] `npm run validate:claude` when packaging changed
-- [ ] `npm pack --dry-run`
+- [ ] `npm run verify` before push
+- [ ] CI validate legs green (plugin validation is a CI job, not a local extra npm script)
 
 ## Documentation and compatibility
 

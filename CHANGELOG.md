@@ -4,6 +4,30 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ## Unreleased
 
+### Added
+
+- Tag-triggered `release.yml` packs `kxm-<v>.tgz`, creates or reuses only a
+  **draft** GitHub release, and fails unless the REST asset digest equals the
+  local sha256. A published release for the tag is never modified; reruns skip
+  upload only when the existing digest matches. npm publish stays `if: false`
+  until a later published-release + `npm-publish` environment gate.
+- Hosted `Plugin validation` CI job runs native `claude plugin validate` with
+  `@anthropic-ai/claude-code@2.1.261` (no model calls).
+- Session brief `AGENTS.md` / `CLAUDE.md` and Tracking in
+  `docs/vnext/implementation-plan.md` (roles, provider-native harness routing,
+  cost/insights, plan hygiene).
+- Hub-local session chrome: `kxm session brief [--status]`, Pi TUI picker and
+  status line on new/fork sessions, `/kxm` (`status`/`hub`/`help`), skill
+  `kxm-session`. `kxm hub bind <url>` / `kxm hub unbind` persist a host-level
+  hub URL; `kxm init` is project-only.
+  Pi widget `ship` line shows git dirty/ahead vs verify/CI (does not run tests).
+- `kxm hub bind <url>` writes `kxm.hub-binding.v1` and probes `/health` in
+  300 ms (`on` / `off` / `unknown`). Hub listening line reports `auth=token`
+  or `auth=none`.
+- `kxm update --check` / `--kxm` notices and applies operator package updates.
+  GitHub releases are the current install path; npm is for after the public
+  package. Git `.kxm/update.yaml` `auto` applies on `kxm update`.
+
 ### Fixed
 
 - Pi git installs no longer fail to load the extension when production
@@ -48,9 +72,9 @@ All notable user-facing changes are documented here. The project follows [Semant
   but `--experimental-test-coverage` sets `NODE_V8_COVERAGE`, which child
   processes inherit and which changes their shutdown path, so an
   uninstrumented Windows leg fails the worker pre-ack test on Node 24.
-  A newer push cancels an older pull-request run. `check:generated` runs in
-  its own job so a test failure cannot mask dist drift. `node_modules` is
-  cached per lockfile. Dependabot groups minor and patch npm updates and all
+  A newer push cancels an older pull-request run. `check:generated` runs on
+  every validate leg; the standalone `generated` job is removed. `node_modules`
+  is cached per lockfile. Dependabot groups minor and patch npm updates and all
   Actions updates.
 - Product identity is **KXM** (`@kontextmind/kxm`, plugin `kxm`). Hub CLI is
   `kxm hub start|view|stop`; live screens are `kxm dash`. Default database is
@@ -84,23 +108,6 @@ All notable user-facing changes are documented here. The project follows [Semant
   `kxm run` says that runs remain created until Phase 3a lands and its JSON
   carries `phase: "pre-3a"`.
 - Future slices do not add backwards-compat shims.
-
-### Added
-
-- Session brief `AGENTS.md` / `CLAUDE.md` and Tracking in
-  `docs/vnext/implementation-plan.md` (roles, provider-native harness routing,
-  cost/insights, plan hygiene).
-- Hub-local session chrome: `kxm session brief [--status]`, Pi TUI picker and
-  status line on new/fork sessions, `/kxm` (`status`/`hub`/`help`), skill
-  `kxm-session`. `kxm hub bind <url>` / `kxm hub unbind` persist a host-level
-  hub URL; `kxm init` is project-only.
-  Pi widget `ship` line shows git dirty/ahead vs verify/CI (does not run tests).
-- `kxm hub bind <url>` writes `kxm.hub-binding.v1` and probes `/health` in
-  300 ms (`on` / `off` / `unknown`). Hub listening line reports `auth=token`
-  or `auth=none`.
-- `kxm update --check` / `--kxm` notices and applies operator package updates.
-  GitHub releases are the current install path; npm is for after the public
-  package. Git `.kxm/update.yaml` `auto` applies on `kxm update`.
 
 ## 0.5.1 - 2026-09-01
 

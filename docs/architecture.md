@@ -184,6 +184,7 @@ Workflow session isolation is a context-routing and accidental-cross-run safety 
 | `src/session-work.ts` | Session brief, status line, and work-picker labels from that snapshot |
 | `src/hub-binding.ts` | host-level hub binding (Runtime-local, never Git) and 300 ms health probe |
 | `src/kxm-update.ts` | Operator package update check (GitHub releases now, npm later), release-asset digest, and notice cache |
+| `scripts/kxm-release-github.mjs` | Tag-triggered draft GitHub release helper: 404-only create, no published-release mutation, digest idempotence |
 | `src/kxm-update-config.ts` | Per-user `update.yaml` under the host state root (`auto` is never read from the project) |
 | `src/kxm-install-kind.ts` | Install-kind classifier (npm-global / npm-local / pi-git / claude-marketplace / source / unknown) |
 | `src/cli.ts` | Operator CLI (agent, session, workflow, gate, hub, improve); a client of the hub |

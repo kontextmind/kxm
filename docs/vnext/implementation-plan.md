@@ -121,6 +121,23 @@ It does not replace the phase gates below.
   Thresholds are measured whole-tree values and may only ratchet up.
   `npm run verify` includes `check:generated`, which diffs built `dist` against
   the staged copy. `check:generated` also runs on every CI validate leg.
+- `release.yml` on `v*` tags asserts the tag equals `package.json` version
+  before install, runs `validate:ci` + `check:generated`, and packs
+  `kxm-<v>.tgz` (`kxmReleaseAssetName`). Release lookup: only HTTP 404 may
+  create a draft; auth, network, and 5xx fail with no mutation; a published
+  release for the tag is never modified. Rerunning a tag never replaces an
+  asset. It succeeds only when the existing asset digest equals the local
+  sha256, and it fails without mutation otherwise. After upload, the REST
+  asset `digest` must equal the local sha256 (Actions artifact digests are
+  not proof). `test/kxm-release-github.test.ts` holds those boundaries;
+  `test/ci-contract.test.ts` imports `kxmReleaseAssetName` against
+  `release.yml`. The standalone `generated` job is gone. `Plugin validation`
+  runs native `claude plugin validate` on a hosted runner with
+  `@anthropic-ai/claude-code@2.1.261` (no model auth or model calls). The npm
+  publish job exists but is `if: false`. Activating it requires a later phase
+  that adds a published-release prerequisite (release lookup returns
+  `draft: false` for the tag) and the `npm-publish` environment. Not
+  activated by B2.
 - `kxm mesh` fails closed with a stderr brake naming `kxm init`, `kxm hub`, and
   `scripts/smoke-multi-pi.mjs`. `MeshClient`/`MeshHttpError` are `HubClient`/
   `HubHttpError`; `MeshDashboard` is `KxmDashboard`. Operator copy says `hub:off`;
@@ -132,19 +149,23 @@ It does not replace the phase gates below.
 
 ### Still open
 
-- **B2 release asset:** nothing yet emits `kxm-<v>.tgz` (`npm pack` names
-  `kontextmind-kxm-<v>.tgz`; no `release.yml`). Until B2 uploads that name
-  with a GitHub `digest`, `kxm update --kxm` from a real npm-global install
-  fails closed with `release_digest_missing`. B2 must rename on upload, add a
-  test importing `kxmReleaseAssetName` against `release.yml`, and confirm
-  `gh release view --json assets` shows `digest`. No sidecar `.sha256` in A4.
+- **B2 live proof (still open):** workflow and tests are in tree; a real draft
+  REST `digest` and a rerun that takes the idempotent skip path have not been
+  recorded. Until that proof, `kxm update --kxm` from a real npm-global
+  install still fails closed when GitHub has no `kxm-<v>.tgz` digest.
+  Existing `v0.5.1` published release is untouched. No sidecar `.sha256`.
+  After a green tag run plus idempotent rerun, record run/release/asset IDs
+  and digest, then drop this bullet.
+- First real draft-to-published release after B2 (later release phase).
+  `kxm update --kxm` end to end from a published asset.
 - **After public npm:** wiki-compile this project from hub context; npm as
   `kxm update` source. Not before.
 - Coverage only lists modules some test loaded; a future source file with zero
   imports from tests will not drag the number down. A test that imports every
   non-excluded module belongs before the next ratchet raise, not as a B1 add.
-- The standalone `generated` CI job is redundant with the validate legs; drop
-  it in B2 together with a `protect-main` ruleset edit.
+- Root PUT of `protect-main` to add `Plugin validation` after it is green on
+  the B2 PR head (four Validate contexts stay). `delete_branch_on_merge` is a
+  root settings change after code/test/review proof. Not done in this slice.
 - Docs sweep: operator pages updated to `kxm hub start|view|stop` and `kxm dash`;
   CHANGELOG history may still mention old names.
 - Remaining Mesh-named internals (`MeshHub`, `createMeshHub`, `MeshStore`,
@@ -313,7 +334,8 @@ repository-aware timing, patches/local commits, and non-atomic delivery
 manifests.
 
 **Gate:** the public local release runs a dirty two-repository workflow through
-a Runtime crash without a hub or secret leakage.
+a Runtime crash without a hub or secret leakage. Release assets come from
+`release.yml` on a tag, never hand uploaded.
 
 ## Phase 6: SSH and exe.dev
 
