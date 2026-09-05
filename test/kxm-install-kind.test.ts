@@ -81,6 +81,24 @@ test("win32 path comparison is case-insensitive via the platform input", () => {
     env: {},
   });
   assert.equal(report.kind, "pi-git");
+
+  const mixed = classifyInstallRoot({
+    moduleDir: "C:/Users/Test/AppData/Roaming/npm/node_modules/@kontextmind/kxm/plugins/kxm/dist",
+    repoRoot: "C:\\Users\\Test\\.pi\\agent\\git\\github.com\\kontextmind\\kxm",
+    homeDir: "c:/users/test",
+    platform: "win32",
+    env: {},
+  });
+  assert.equal(mixed.kind, "pi-git");
+
+  const sibling = classifyInstallRoot({
+    moduleDir: "C:\\Users\\Testing\\AppData\\Roaming\\npm\\node_modules\\@kontextmind\\kxm\\plugins\\kxm\\dist",
+    repoRoot: "C:\\Users\\Testing\\.pi\\agent\\git\\github.com\\kontextmind\\kxm",
+    homeDir: "c:\\users\\test",
+    platform: "win32",
+    env: {},
+  });
+  assert.equal(sibling.kind, "unknown");
 });
 
 test("resolveInstallKind refines npm-package and fails closed when spawn is empty", () => {

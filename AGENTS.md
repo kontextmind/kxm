@@ -89,7 +89,7 @@ Two combined gates (already in npm/CI). Do not add a third unless a test fails.
 | **Commit** | `npm run verify` | `npm test` (build + tests), `npm run check` (tsc + lint:docs + versions), then generated `dist` matches the staged `dist` |
 | **PR/MR** | CI `validate:ci` + `check:generated` on every leg | coverage + check + pack dry-run; generated `dist` current |
 
-Cleanup (`git status`, no `nul`/tmp/secrets; `dist` if CLI changed) is **before** the commit gate and **again before push**. Session-ready `/new`/`/fork` and leftover Mesh operator copy are **PR judgment**, not extra npm scripts, until they can fail a test without a live harness. Come-back list: Tracking **Still open**. Ship hint belongs on the Pi status/widget (`ship dirty` / `N local` / `PR after CI`), not in every chat turn.
+Cleanup (`git status`, no `nul`/tmp/secrets; `dist` if CLI changed) is **before** the commit gate and **again before push**. Session-ready `/new`/`/fork` and Mesh operator copy are held by tests under `npm test` (extension readiness test, docs brake); no extra npm script. Come-back list: Tracking **Still open**. Ship hint belongs on the Pi status/widget (`ship dirty` / `N local` / `PR after CI`), not in every chat turn.
 
 A commit is not a PR. A PR is not a release.
 

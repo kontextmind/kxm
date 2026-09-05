@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { lstatSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { MeshHttpError, type MeshClient } from "./client.ts";
+import { HubHttpError, type HubClient } from "./client.ts";
 import { classifyFailure, diagnosticEvidence } from "./diagnostics.ts";
 
 export interface WorkerRecoveryEnvelope {
@@ -147,7 +147,7 @@ export function readWorkerRecoveryEnvelope(stateDir: string, agentName: string, 
   return findWorkerRecoveryEnvelope(stateDir, agentName, project)?.envelope;
 }
 
-export async function consumeWorkerRecoveryEnvelope(client: MeshClient, stateDir: string, agentName: string, project?: string): Promise<WorkerRecoveryEnvelope | undefined> {
+export async function consumeWorkerRecoveryEnvelope(client: HubClient, stateDir: string, agentName: string, project?: string): Promise<WorkerRecoveryEnvelope | undefined> {
   const found = findWorkerRecoveryEnvelope(stateDir, agentName, project);
   if (!found) return undefined;
   const { envelope, path } = found;
@@ -196,7 +196,7 @@ export async function consumeWorkerRecoveryEnvelope(client: MeshClient, stateDir
     rmSync(path, { force: true });
     return { ...envelope, runId, ...(stageId ? { stageId } : {}) };
   } catch (error) {
-    if (error instanceof MeshHttpError && error.statusCode === 403 && error.code === "workflow_forbidden") {
+    if (error instanceof HubHttpError && error.statusCode === 403 && error.code === "workflow_forbidden") {
       // Workflow-affine peers need the same local replay protection as the
       // coordinator, but only the assigned coordinator may mutate the journal.
       // Consume their local envelope instead of retrying an unauthorized write

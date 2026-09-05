@@ -234,7 +234,7 @@ fields can continue reading the v1 document.
 
 ## Trust boundary
 
-This mechanism proves provenance only inside the mesh credential boundary:
+This mechanism proves provenance only inside the hub credential boundary:
 
 - a project-token holder can register a new agent or reclaim an offline agent
   name and its durable ID in that project;

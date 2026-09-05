@@ -1,9 +1,9 @@
-import { MeshClient } from "../plugins/kxm/src/client.ts";
+import { HubClient } from "../plugins/kxm/src/client.ts";
 
 const serverUrl = process.env.KXM_SERVER_URL ?? "http://127.0.0.1:7331";
 const authToken = process.env.KXM_AUTH_TOKEN;
 const project = process.env.KXM_PROJECT ?? "example";
-const client = new MeshClient({
+const client = new HubClient({
   serverUrl,
   name: process.env.KXM_AGENT_NAME ?? "example-reviewer",
   purpose: process.env.KXM_AGENT_PURPOSE ?? "Demonstrates a custom mesh client",

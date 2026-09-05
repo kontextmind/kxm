@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, sep } from "node:path";
+import { dirname, join } from "node:path";
 import { canonicalHostPath, sameHostPath } from "./vnext-bindings.ts";
 
 export interface InstallProbe {
@@ -28,19 +28,20 @@ function packageIsKxm(root: string): boolean {
   }
 }
 
+function pathSegments(path: string): string[] {
+  return canonicalHostPath(path).split(/[/\\]+/).filter((part) => part.length > 0);
+}
+
 function isUnder(child: string, parent: string, platform: NodeJS.Platform): boolean {
   if (sameHostPath(child, parent, platform)) return true;
-  const left = canonicalHostPath(child);
-  const right = canonicalHostPath(parent);
-  const [a, b] = platform === "win32"
-    ? [left.toLocaleLowerCase("en-US"), right.toLocaleLowerCase("en-US")]
-    : [left, right];
-  const prefix = b.endsWith(sep) ? b : `${b}${sep}`;
-  return a.startsWith(prefix);
+  const childParts = pathSegments(child);
+  const parentParts = pathSegments(parent);
+  if (parentParts.length === 0 || childParts.length < parentParts.length) return false;
+  return parentParts.every((part, i) => segmentEq(part, childParts[i]!, platform));
 }
 
 function lastSegments(path: string): string[] {
-  return canonicalHostPath(path).split(/[/\\]/).filter((part) => part.length > 0).slice(-3);
+  return pathSegments(path).slice(-3);
 }
 
 function segmentEq(left: string, right: string, platform: NodeJS.Platform): boolean {

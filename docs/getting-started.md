@@ -31,7 +31,7 @@ $releaseDir = Join-Path $PWD ".kxm-release"
 New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
 gh release download "v$version" --repo kontextmind/kxm --pattern $asset --dir $releaseDir --clobber
 npm install --global --omit=peer (Join-Path $releaseDir $asset)
-pi install git:github.com/kontextmind/kxm
+pi install git:github.com/kontextmind/kxm@main
 kxm --help
 ```
 
@@ -44,7 +44,7 @@ mkdir -p .kxm-release
 gh release download "v${version}" --repo kontextmind/kxm \
   --pattern "$asset" --dir .kxm-release --clobber
 npm install --global --omit=peer ".kxm-release/$asset"
-pi install git:github.com/kontextmind/kxm
+pi install git:github.com/kontextmind/kxm@main
 kxm --help
 ```
 

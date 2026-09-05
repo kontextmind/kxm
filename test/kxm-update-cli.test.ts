@@ -561,6 +561,152 @@ test("update --kxm fails closed when kxm is not an npm global install", async ()
   }
 });
 
+test("update --kxm refuses unsupported kinds when current or the release check fails", async () => {
+  const cwd = tempProject();
+  const home = mkdtempSync(join(tmpdir(), "kxm-kind-current-"));
+  try {
+    const piRoot = join(home, ".pi", "agent", "git", "github.com", "kontextmind", "kxm");
+    mkdirSync(join(piRoot, ".git"), { recursive: true });
+    writeFileSync(join(piRoot, "package.json"), `${JSON.stringify({ name: "@kontextmind/kxm", version: "0.0.1" })}\n`);
+    const piIo = capture();
+    const piSpawn = npmGlobalSpawn(join(home, "node_modules"));
+    assert.equal(await runCli(["update", "--json", "--kxm"], {}, {
+      ...piIo,
+      fetchImpl: releaseFetch(`v${currentVersion}`),
+      installProbe: {
+        moduleDir: join(piRoot, "plugins", "kxm", "dist"),
+        repoRoot: piRoot,
+        homeDir: home,
+        platform: process.platform,
+        env: {},
+      },
+      spawnSync: piSpawn.spawnSync,
+    }, cwd), 2);
+    const piPayload = JSON.parse(piIo.read().stderr) as { error: string; notice?: { available: boolean } };
+    assert.equal(piPayload.error, "install_kind_pi-git");
+    assert.equal(piPayload.notice?.available, false);
+    assert.equal(piSpawn.calls.some((call) => call.command === "gh"), false);
+    assert.equal(piSpawn.calls.some((call) => call.command === "npm" && call.args.includes("install")), false);
+
+    const unknownRoot = mkdtempSync(join(home, "plain-"));
+    writeFileSync(join(unknownRoot, "package.json"), `${JSON.stringify({ name: "@kontextmind/kxm", version: "0.0.1" })}\n`);
+    const unknownCurrent = capture();
+    const unknownCurrentSpawn = npmGlobalSpawn(join(home, "node_modules"));
+    assert.equal(await runCli(["update", "--json", "--kxm"], {}, {
+      ...unknownCurrent,
+      fetchImpl: releaseFetch(`v${currentVersion}`),
+      installProbe: {
+        moduleDir: join(unknownRoot, "dist"),
+        repoRoot: unknownRoot,
+        homeDir: home,
+        platform: process.platform,
+        env: {},
+      },
+      spawnSync: unknownCurrentSpawn.spawnSync,
+    }, cwd), 2);
+    const unknownCurrentPayload = JSON.parse(unknownCurrent.read().stderr) as { error: string };
+    assert.equal(unknownCurrentPayload.error, "install_kind_unknown");
+    assert.equal(unknownCurrentSpawn.calls.some((call) => call.command === "gh"), false);
+    assert.equal(unknownCurrentSpawn.calls.some((call) => call.command === "npm" && call.args.includes("install")), false);
+
+    const unknownOffline = capture();
+    const unknownOfflineSpawn = npmGlobalSpawn(join(home, "node_modules"));
+    assert.equal(await runCli(["update", "--json", "--kxm"], {}, {
+      ...unknownOffline,
+      fetchImpl: async () => {
+        throw new Error("network down");
+      },
+      installProbe: {
+        moduleDir: join(unknownRoot, "dist"),
+        repoRoot: unknownRoot,
+        homeDir: home,
+        platform: process.platform,
+        env: {},
+      },
+      spawnSync: unknownOfflineSpawn.spawnSync,
+    }, cwd), 2);
+    const unknownOfflinePayload = JSON.parse(unknownOffline.read().stderr) as {
+      error: string;
+      notice?: { available: boolean; message: string };
+    };
+    assert.equal(unknownOfflinePayload.error, "install_kind_unknown");
+    assert.equal(unknownOfflinePayload.notice?.available, false);
+    assert.match(unknownOfflinePayload.notice?.message ?? "", /unreachable/);
+    assert.equal(unknownOfflineSpawn.calls.some((call) => call.command === "gh"), false);
+    assert.equal(unknownOfflineSpawn.calls.some((call) => call.command === "npm" && call.args.includes("install")), false);
+
+    const fakeLocal = fakeNpmGlobal();
+    try {
+      const checkIo = capture();
+      const checkSpawn = npmGlobalSpawn(join(home, "other-global", "node_modules"));
+      assert.equal(await runCli(["update", "--json", "--check"], {}, withGlobal(checkIo, fakeLocal, {
+        fetchImpl: releaseFetch(`v${currentVersion}`),
+        spawnSync: checkSpawn.spawnSync,
+      }), cwd), 0);
+      const checkPayload = JSON.parse(checkIo.read().stdout) as { installKind: string };
+      assert.equal(checkPayload.installKind, "npm-package");
+      assert.notEqual(checkPayload.installKind, "npm-global");
+      assert.equal(checkSpawn.calls.length, 0);
+    } finally {
+      fakeLocal.cleanup();
+    }
+
+    const fakeGlobal = fakeNpmGlobal();
+    try {
+      const eligible = npmGlobalSpawn(fakeGlobal.npmRoot);
+      const eligibleIo = capture();
+      assert.equal(await runCli(["update", "--json", "--kxm"], {}, withGlobal(eligibleIo, fakeGlobal, {
+        fetchImpl: releaseFetch(`v${currentVersion}`),
+        spawnSync: eligible.spawnSync,
+      }), cwd), 0);
+      const eligiblePayload = JSON.parse(eligibleIo.read().stdout) as { kxm?: unknown; installKind: string };
+      assert.equal(eligiblePayload.kxm, undefined);
+      assert.equal(eligiblePayload.installKind, "npm-global");
+      assert.equal(eligible.calls.some((call) => call.command === "npm" && call.args.includes("install")), false);
+    } finally {
+      fakeGlobal.cleanup();
+    }
+
+    const marketDir = join(home, ".claude", "plugins", "cache", "kxm", "kxm", "0.0.1", "dist");
+    mkdirSync(marketDir, { recursive: true });
+    const stateHome = mkdtempSync(join(tmpdir(), "kxm-auto-quiet-"));
+    try {
+      writeUserUpdateYaml(stateHome, "schema: kxm.update.v1\nauto: true\nsource: github\n");
+      const autoIo = capture();
+      assert.equal(await runCli(["update", "--json", "--dry-run"], { KXM_STATE_HOME: stateHome }, {
+        ...autoIo,
+        fetchImpl: releaseFetch(`v${currentVersion}`),
+        installProbe: {
+          moduleDir: marketDir,
+          repoRoot: join(home, ".claude", "plugins", "cache", "kxm", "kxm"),
+          homeDir: home,
+          platform: process.platform,
+          env: {},
+        },
+      }, cwd), 0);
+      const autoPayload = JSON.parse(autoIo.read().stdout) as {
+        notice: { auto: boolean; available: boolean };
+        kxm?: unknown;
+        steps?: unknown[];
+        scope?: string;
+        installKind: string;
+      };
+      assert.equal(autoPayload.notice.auto, true);
+      assert.equal(autoPayload.notice.available, false);
+      assert.equal(autoPayload.kxm, undefined);
+      assert.equal(autoPayload.installKind, "claude-marketplace");
+      assert.equal(autoPayload.scope, "all");
+      assert.ok(Array.isArray(autoPayload.steps));
+      assert.equal(/kxm: /.test(autoIo.read().stderr), false);
+    } finally {
+      rmSync(stateHome, { recursive: true, force: true });
+    }
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("update ignores auto in the working directory update.yaml", async () => {
   const cwd = tempProject();
   const fake = fakeNpmGlobal();

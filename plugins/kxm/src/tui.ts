@@ -382,7 +382,7 @@ function dataPanel(title: string, metric: string, rows: string[], emptyText: str
   return panel;
 }
 
-export class MeshDashboard implements Component {
+export class KxmDashboard implements Component {
   readonly root = new VStack([], { gap: 0 });
   private readonly listContent = new VStack([], { gap: 0 });
   private readonly listScroll = new ScrollView(this.listContent, { primary: true, overscroll: "contain", scrollbar: "auto" });
@@ -533,7 +533,7 @@ export class MeshDashboard implements Component {
 }
 
 export function renderMeshTui(snapshot: MeshTuiSnapshot, view: MeshTuiView = defaultMeshTuiView(), width = 120): string {
-  const dashboard = new MeshDashboard(snapshot, view, false, () => undefined, () => undefined);
+  const dashboard = new KxmDashboard(snapshot, view, false, () => undefined, () => undefined);
   return `${dashboard.render(width).map(stripTerminalSequences).join("\n")}\n`;
 }
 
@@ -580,7 +580,7 @@ export async function runMeshTui(input: {
   const tty = input.isTty ?? Boolean(input.stdin?.isTTY && process.stdout.isTTY);
   let identity: { id: string; key: string } | undefined;
   let useOpsStream = true;
-  let interactive: { tui: TUI; dashboard: MeshDashboard } | undefined;
+  let interactive: { tui: TUI; dashboard: KxmDashboard } | undefined;
   const name = `kxm-tui-${process.pid}`;
   const view = defaultMeshTuiView(input.screen);
 
@@ -732,7 +732,7 @@ export async function runMeshTui(input: {
 
     const terminal = input.terminal ?? new ProcessTerminal();
     const tui = new TuiAltScreen(terminal, false, undefined, { mouse: true });
-    const dashboard = new MeshDashboard(
+    const dashboard = new KxmDashboard(
       snapshot,
       view,
       process.env.NO_COLOR === undefined,
