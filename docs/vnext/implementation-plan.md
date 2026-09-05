@@ -171,6 +171,16 @@ It does not replace the phase gates below.
   Existing `v0.5.1` published release is untouched. No sidecar `.sha256`.
   After a green tag run plus idempotent rerun, record run/release/asset IDs
   and digest, then drop this bullet.
+- **Issue #112 (open, candidate only):** Windows Node 24 pre-ack child can
+  exit `3221226505` (`STATUS_STACK_BUFFER_OVERRUN`) instead of 7 under
+  `npm run` (deterministic without coverage; intermittent with it, including
+  B2 `validate:ci` job `101388712312`). Mechanism unknown. This tree has a
+  **candidate** fixture-only repair: the integrated pre-ack child awaits real
+  `session_shutdown`, clears its keepalive interval, sets `process.exitCode`,
+  and exits naturally. Failed cleanup does not force 7. Not a claimed fix.
+  Close only after a hosted probe under `npm run` without coverage shows
+  baseline `79b5862` fail (`3221226505 !== 7`) and the fixture change pass.
+  `validate:ci` alone does not close it.
 - First real draft-to-published release after B2 (later release phase).
   `kxm update --kxm` end to end from a published asset.
 - **After public npm:** wiki-compile this project from hub context; npm as
