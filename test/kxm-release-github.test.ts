@@ -4,8 +4,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { kxmReleaseAssetName } from "../plugins/kxm/src/kxm-update.ts";
-// @ts-expect-error The helper is a workflow script with no declaration artifact.
-import { createGithubReleaseApi, fileSha256, interpretReleaseLookup, main, planDraftAssetAction, runKxmReleasePublish, verifyListedAssetDigest } from "../scripts/kxm-release-github.mjs";
+import {
+  createGithubReleaseApi,
+  fileSha256,
+  interpretReleaseListPage,
+  interpretReleaseLookup,
+  main,
+  parseLinkHeaderHasNext,
+  planDraftAssetAction,
+  RELEASE_LIST_PER_PAGE,
+  runKxmReleasePublish,
+  selectReleaseForTag,
+  verifyListedAssetDigest,
+  // @ts-expect-error The helper is a workflow script with no declaration artifact.
+} from "../scripts/kxm-release-github.mjs";
 
 const HEX_A = "a".repeat(64);
 const HEX_B = "b".repeat(64);
@@ -26,10 +38,20 @@ function mockApi(handlers: Record<string, (...args: unknown[]) => unknown>) {
   return {
     calls,
     getReleaseByTag: wrap("getReleaseByTag"),
+    listReleases: wrap("listReleases"),
     createDraftRelease: wrap("createDraftRelease"),
     uploadReleaseAsset: wrap("uploadReleaseAsset"),
     listReleaseAssets: wrap("listReleaseAssets"),
   };
+}
+
+function fillerReleases(count: number, startId = 1) {
+  return Array.from({ length: count }, (_, index) => ({
+    id: startId + index,
+    draft: true,
+    tag_name: `other-${startId + index}`,
+    assets: [],
+  }));
 }
 
 test("lookup only treats HTTP 404 as missing; auth, 5xx, and network fail closed", () => {
@@ -166,6 +188,27 @@ test("publish fails closed on missing token, published release, and lookup error
   );
 });
 
+test("list page HTTP errors are not missing; Link rel=next is detected", () => {
+  assert.equal(interpretReleaseListPage({ status: 401 }).code, "lookup_auth");
+  assert.equal(interpretReleaseListPage({ status: 403 }).code, "lookup_auth");
+  assert.equal(interpretReleaseListPage({ status: 500 }).code, "lookup_http");
+  assert.equal(interpretReleaseListPage({ error: "network" }).code, "lookup_network");
+  assert.equal(interpretReleaseListPage({ status: 200, body: { id: 1 } }).code, "lookup_http");
+  assert.equal(interpretReleaseListPage({ status: 404, body: [] }).code, "lookup_http");
+  const page = interpretReleaseListPage({
+    status: 200,
+    body: fillerReleases(RELEASE_LIST_PER_PAGE),
+  });
+  assert.equal(page.ok, true);
+  assert.equal(page.hasNext, true);
+  assert.equal(parseLinkHeaderHasNext('</releases?page=2>; rel="next"'), true);
+  assert.equal(parseLinkHeaderHasNext('</releases?page=1>; rel="prev"'), false);
+  assert.equal(selectReleaseForTag([
+    { id: 1, draft: true, tag_name: "v0.5.2", assets: [] },
+    { id: 2, draft: true, tag_name: "v0.5.2", assets: [] },
+  ], "v0.5.2").code, "duplicate_drafts");
+});
+
 test("matching draft digest is idempotent and does not upload or create", async () => {
   const api = mockApi({
     getReleaseByTag: () => ({
@@ -189,6 +232,7 @@ test("matching draft digest is idempotent and does not upload or create", async 
 test("create-and-upload proves the listed GitHub digest, not the upload response", async () => {
   const api = mockApi({
     getReleaseByTag: () => ({ status: 404 }),
+    listReleases: () => ({ status: 200, body: [] }),
     createDraftRelease: () => ({ status: 201, body: { id: 70, draft: true } }),
     uploadReleaseAsset: () => ({ status: 201, body: { id: 1, name: ASSET, digest: `sha256:${HEX_B}` } }),
     listReleaseAssets: () => ({
@@ -210,10 +254,186 @@ test("create-and-upload proves the listed GitHub digest, not the upload response
   assert.equal(result.digest, `sha256:${HEX_A}`);
   assert.deepEqual(api.calls.map((call) => call[0]), [
     "getReleaseByTag",
+    "listReleases",
     "createDraftRelease",
     "uploadReleaseAsset",
     "listReleaseAssets",
   ]);
+});
+
+test("404 by tag plus matching draft in the list is idempotent and does not upload", async () => {
+  const api = mockApi({
+    getReleaseByTag: () => ({ status: 404 }),
+    listReleases: () => ({
+      status: 200,
+      body: [{
+        id: 11,
+        draft: true,
+        tag_name: "v0.5.2",
+        assets: [{ id: 99, name: ASSET, digest: `sha256:${HEX_A}` }],
+      }],
+    }),
+  });
+  const result = await runKxmReleasePublish({
+    token: "tok",
+    tag: "v0.5.2",
+    assetName: ASSET,
+    assetPath: "x",
+    localSha256: HEX_A,
+    api,
+  });
+  assert.equal(result.skipped, true);
+  assert.equal(result.releaseId, 11);
+  assert.equal(result.assetId, 99);
+  assert.deepEqual(api.calls.map((call) => call[0]), ["getReleaseByTag", "listReleases"]);
+});
+
+test("existing draft on the second list page is reused and not recreated", async () => {
+  const api = mockApi({
+    getReleaseByTag: () => ({ status: 404 }),
+    listReleases: (...args: unknown[]) => {
+      const page = (args[0] as { page?: number } | undefined)?.page;
+      if (page === 1) {
+        return {
+          status: 200,
+          body: fillerReleases(RELEASE_LIST_PER_PAGE),
+          link: '</repos/kontextmind/kxm/releases?page=2>; rel="next"',
+        };
+      }
+      if (page === 2) {
+        return {
+          status: 200,
+          body: [{
+            id: 404,
+            draft: true,
+            tag_name: "v0.5.2",
+            assets: [{ id: 7, name: ASSET, digest: `sha256:${HEX_A}` }],
+          }],
+        };
+      }
+      throw new Error(`unexpected page ${page}`);
+    },
+  });
+  const result = await runKxmReleasePublish({
+    token: "tok",
+    tag: "v0.5.2",
+    assetName: ASSET,
+    assetPath: "x",
+    localSha256: HEX_A,
+    api,
+  });
+  assert.equal(result.skipped, true);
+  assert.equal(result.releaseId, 404);
+  assert.equal(result.assetId, 7);
+  assert.deepEqual(api.calls.map((call) => call[0]), ["getReleaseByTag", "listReleases", "listReleases"]);
+  assert.equal((api.calls[1]?.[1] as { page: number }).page, 1);
+  assert.equal((api.calls[2]?.[1] as { page: number }).page, 2);
+});
+
+test("duplicate drafts and list failures fail closed with no mutation", async () => {
+  const duplicates = mockApi({
+    getReleaseByTag: () => ({ status: 404 }),
+    listReleases: () => ({
+      status: 200,
+      body: [
+        { id: 1, draft: true, tag_name: "v0.5.2", assets: [] },
+        { id: 2, draft: true, tag_name: "v0.5.2", assets: [] },
+      ],
+    }),
+  });
+  await assert.rejects(
+    () => runKxmReleasePublish({
+      token: "tok",
+      tag: "v0.5.2",
+      assetName: ASSET,
+      assetPath: "x",
+      localSha256: HEX_A,
+      api: duplicates,
+    }),
+    (error: unknown) => hasCode(error, "duplicate_drafts"),
+  );
+  assert.deepEqual(duplicates.calls.map((call) => call[0]), ["getReleaseByTag", "listReleases"]);
+
+  const listedPublished = mockApi({
+    getReleaseByTag: () => ({ status: 404 }),
+    listReleases: () => ({
+      status: 200,
+      body: [{ id: 8, draft: false, tag_name: "v0.5.2", assets: [] }],
+    }),
+  });
+  await assert.rejects(
+    () => runKxmReleasePublish({
+      token: "tok",
+      tag: "v0.5.2",
+      assetName: ASSET,
+      assetPath: "x",
+      localSha256: HEX_A,
+      api: listedPublished,
+    }),
+    (error: unknown) => hasCode(error, "published_release"),
+  );
+  assert.deepEqual(listedPublished.calls.map((call) => call[0]), ["getReleaseByTag", "listReleases"]);
+
+  for (const [name, listResult, code] of [
+    ["auth", { status: 401 }, "lookup_auth"],
+    ["http", { status: 503 }, "lookup_http"],
+    ["unparseable", { status: 200, body: "nope" }, "lookup_http"],
+  ] as const) {
+    const api = mockApi({
+      getReleaseByTag: () => ({ status: 404 }),
+      listReleases: () => listResult,
+    });
+    await assert.rejects(
+      () => runKxmReleasePublish({
+        token: "tok",
+        tag: "v0.5.2",
+        assetName: ASSET,
+        assetPath: "x",
+        localSha256: HEX_A,
+        api,
+      }),
+      (error: unknown) => hasCode(error, code),
+      name,
+    );
+    assert.deepEqual(api.calls.map((call) => call[0]), ["getReleaseByTag", "listReleases"]);
+  }
+
+  const net = mockApi({
+    getReleaseByTag: () => ({ status: 404 }),
+    listReleases: () => {
+      throw new Error("ECONNRESET");
+    },
+  });
+  await assert.rejects(
+    () => runKxmReleasePublish({
+      token: "tok",
+      tag: "v0.5.2",
+      assetName: ASSET,
+      assetPath: "x",
+      localSha256: HEX_A,
+      api: net,
+    }),
+    (error: unknown) => hasCode(error, "lookup_network"),
+  );
+  assert.deepEqual(net.calls.map((call) => call[0]), ["getReleaseByTag", "listReleases"]);
+
+  const capped = mockApi({
+    getReleaseByTag: () => ({ status: 404 }),
+    listReleases: () => ({ status: 200, body: fillerReleases(RELEASE_LIST_PER_PAGE) }),
+  });
+  await assert.rejects(
+    () => runKxmReleasePublish({
+      token: "tok",
+      tag: "v0.5.2",
+      assetName: ASSET,
+      assetPath: "x",
+      localSha256: HEX_A,
+      api: capped,
+      listMaxPages: 2,
+    }),
+    (error: unknown) => hasCode(error, "lookup_pagination"),
+  );
+  assert.deepEqual(capped.calls.map((call) => call[0]), ["getReleaseByTag", "listReleases", "listReleases"]);
 });
 
 test("upload is refused when the listed GitHub digest is missing or different", async () => {
@@ -261,6 +481,12 @@ test("GitHub client sends auth, creates drafts only, and uploads to the uploads 
     requests.push({ url, init });
     if (String(url).includes("/releases/tags/")) {
       return new Response("{\"message\":\"Not Found\"}", { status: 404 });
+    }
+    if (
+      String(url) === "https://api.github.com/repos/kontextmind/kxm/releases?per_page=100&page=1"
+      && (init.method === undefined || init.method === "GET")
+    ) {
+      return new Response("[]", { status: 200 });
     }
     if (String(url) === "https://api.github.com/repos/kontextmind/kxm/releases" && init.method === "POST") {
       return new Response("{\"id\":5,\"draft\":true}", { status: 201 });

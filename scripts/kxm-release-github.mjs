@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
 const SHA256_DIGEST = /^sha256:([0-9a-fA-F]{64})$/i;
+export const RELEASE_LIST_PER_PAGE = 100;
+export const RELEASE_LIST_MAX_PAGES = 100;
 
 export class KxmReleaseGithubError extends Error {
   constructor(code, message, extra = {}) {
@@ -58,6 +60,123 @@ export function interpretReleaseLookup(result) {
   }
   const assets = Array.isArray(body.assets) ? body.assets : [];
   return { ok: true, state: "draft", id, assets };
+}
+
+export function parseLinkHeaderHasNext(link) {
+  if (typeof link !== "string" || link.length === 0) return false;
+  return /(?:^|[,;\s])rel\s*=\s*"next"(?:$|[,;\s])|(?:^|[,;\s])rel\s*=\s*next(?:$|[,;\s])/i.test(link);
+}
+
+export function interpretReleaseListPage(result) {
+  if (result?.error === "network") {
+    return { ok: false, code: "lookup_network", message: "release list network failure" };
+  }
+  if (result?.error === "auth") {
+    return { ok: false, code: "lookup_auth", message: "release list auth failure" };
+  }
+  const status = result?.status;
+  if (status === 401 || status === 403) {
+    return { ok: false, code: "lookup_auth", status, message: `release list auth failure (${status})` };
+  }
+  if (typeof status !== "number" || status < 200 || status >= 300) {
+    return { ok: false, code: "lookup_http", status, message: `release list failed (${status ?? "no status"})` };
+  }
+  if (!Array.isArray(result.body)) {
+    return { ok: false, code: "lookup_http", message: "release list returned invalid body" };
+  }
+  if (result.body.length > RELEASE_LIST_PER_PAGE) {
+    return {
+      ok: false,
+      code: "lookup_pagination",
+      message: "release list page exceeded per_page",
+    };
+  }
+  return { ok: true, items: result.body, hasNext: releaseListPageHasNext(result, result.body.length) };
+}
+
+function releaseListPageHasNext(result, length) {
+  const link = typeof result?.link === "string"
+    ? result.link
+    : (typeof result?.headers?.get === "function" ? result.headers.get("link") : result?.headers?.link);
+  if (parseLinkHeaderHasNext(link)) return true;
+  return length === RELEASE_LIST_PER_PAGE;
+}
+
+export function selectReleaseForTag(items, tag) {
+  if (!Array.isArray(items)) {
+    return { ok: false, code: "lookup_http", message: "release list returned invalid body" };
+  }
+  const matches = [];
+  for (const item of items) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return { ok: false, code: "lookup_http", message: "release list returned invalid entry" };
+    }
+    if (item.tag_name === tag) matches.push(item);
+  }
+  const published = matches.find((item) => item.draft !== true);
+  if (published) {
+    return interpretReleaseLookup({ status: 200, body: published });
+  }
+  const drafts = matches.filter((item) => item.draft === true);
+  if (drafts.length > 1) {
+    return {
+      ok: false,
+      code: "duplicate_drafts",
+      message: "multiple draft releases for tag",
+    };
+  }
+  if (drafts.length === 1) {
+    return interpretReleaseLookup({ status: 200, body: drafts[0] });
+  }
+  return { ok: true, state: "missing" };
+}
+
+async function listDraftReleaseForTag(api, tag, maxPages) {
+  if (typeof api.listReleases !== "function") {
+    return { ok: false, code: "lookup_http", message: "release list client is required" };
+  }
+  const matches = [];
+  for (let page = 1; page <= maxPages; page += 1) {
+    let raw;
+    try {
+      raw = await callApi(api.listReleases.bind(api), [{ page, perPage: RELEASE_LIST_PER_PAGE }]);
+    } catch (error) {
+      if (error instanceof KxmReleaseGithubError) throw error;
+      throw new KxmReleaseGithubError("lookup_network", "release list network failure");
+    }
+    const parsed = interpretReleaseListPage(raw);
+    if (!parsed.ok) return parsed;
+    for (const item of parsed.items) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return { ok: false, code: "lookup_http", message: "release list returned invalid entry" };
+      }
+      if (item.tag_name === tag) matches.push(item);
+    }
+    if (!parsed.hasNext) {
+      return selectReleaseForTag(matches, tag);
+    }
+  }
+  return {
+    ok: false,
+    code: "lookup_pagination",
+    message: "release list pagination exceeded max pages",
+  };
+}
+
+export async function findReleaseForTag(api, tag, options = {}) {
+  let lookupRaw;
+  try {
+    lookupRaw = await callApi(api.getReleaseByTag.bind(api), [tag]);
+  } catch (error) {
+    if (error instanceof KxmReleaseGithubError) throw error;
+    throw new KxmReleaseGithubError("lookup_network", "release lookup network failure");
+  }
+  const byTag = interpretReleaseLookup(lookupRaw);
+  if (!byTag.ok || byTag.state === "draft") return byTag;
+  const maxPages = Number.isInteger(options.listMaxPages) && options.listMaxPages > 0
+    ? options.listMaxPages
+    : RELEASE_LIST_MAX_PAGES;
+  return listDraftReleaseForTag(api, tag, maxPages);
 }
 
 export function planDraftAssetAction(lookup, { assetName, localSha256 }) {
@@ -159,14 +278,7 @@ export async function runKxmReleasePublish(input) {
     throw new KxmReleaseGithubError("lookup_http", "GitHub API client is required");
   }
 
-  let lookupRaw;
-  try {
-    lookupRaw = await callApi(api.getReleaseByTag.bind(api), [input.tag]);
-  } catch (error) {
-    if (error instanceof KxmReleaseGithubError) throw error;
-    throw new KxmReleaseGithubError("lookup_network", "release lookup network failure");
-  }
-  const lookup = interpretReleaseLookup(lookupRaw);
+  const lookup = await findReleaseForTag(api, input.tag, { listMaxPages: input.listMaxPages });
   const plan = planDraftAssetAction(lookup, { assetName, localSha256 });
   if (!plan.ok) fail(plan);
 
@@ -265,12 +377,19 @@ export function createGithubReleaseApi({ token, repo, fetchImpl = fetch, readFil
         body = undefined;
       }
     }
-    return { status: response.status, body };
+    return { status: response.status, body, link: response.headers?.get?.("link") };
   }
 
   return {
     getReleaseByTag(tag) {
       return request(`https://api.github.com/repos/${repo}/releases/tags/${encodeURIComponent(tag)}`);
+    },
+    listReleases({ page = 1, perPage = RELEASE_LIST_PER_PAGE } = {}) {
+      const safePage = Number.isInteger(page) && page > 0 ? page : 1;
+      const safePerPage = Number.isInteger(perPage) && perPage > 0 ? perPage : RELEASE_LIST_PER_PAGE;
+      return request(
+        `https://api.github.com/repos/${repo}/releases?per_page=${safePerPage}&page=${safePage}`,
+      );
     },
     createDraftRelease({ tag, name }) {
       return request(`https://api.github.com/repos/${repo}/releases`, {

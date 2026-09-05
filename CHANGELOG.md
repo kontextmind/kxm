@@ -12,7 +12,9 @@ All notable user-facing changes are documented here. The project follows [Semant
   upload only when the existing digest matches. npm publish stays `if: false`
   until a later published-release + `npm-publish` environment gate.
 - Hosted `Plugin validation` CI job runs native `claude plugin validate` with
-  `@anthropic-ai/claude-code@2.1.261` (no model calls).
+  `@anthropic-ai/claude-code@2.1.261` (no model calls). After
+  `--ignore-scripts` install, the job runs that package's `install.cjs` so
+  the native binary is present.
 - Session brief `AGENTS.md` / `CLAUDE.md` and Tracking in
   `docs/vnext/implementation-plan.md` (roles, provider-native harness routing,
   cost/insights, plan hygiene).
@@ -30,6 +32,10 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Fixed
 
+- Draft GitHub release lookup lists releases (including drafts, every page)
+  after a by-tag 404 so a retry reuses one draft instead of creating another.
+  Duplicate drafts, a published match, and list/pagination failures fail
+  closed with no mutation.
 - Pi git installs no longer fail to load the extension when production
   `node_modules` omits `yaml`. Update-config YAML parsing stays on the bundled
   CLI path.

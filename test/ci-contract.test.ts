@@ -46,6 +46,8 @@ test("CI keeps four Validate names, generated job is gone, plugin pin and PR-onl
   assert.match(validateRuns, /npm run check:generated/);
   assert.match(ciText, /name: Plugin validation/);
   assert.match(ciText, /@anthropic-ai\/claude-code@2\.1\.261/);
+  assert.match(ciText, /npm install --no-save --ignore-scripts @anthropic-ai\/claude-code@2\.1\.261/);
+  assert.match(ciText, /node node_modules\/@anthropic-ai\/claude-code\/install\.cjs/);
   assert.match(ciText, /claude plugin validate/);
   assert.match(ciText, /\.github\/pull_request_template\.md/);
   assert.doesNotMatch(ciText, /\.github\/PULL_REQUEST_TEMPLATE\.md/);

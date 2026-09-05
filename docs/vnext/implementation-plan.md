@@ -123,17 +123,25 @@ It does not replace the phase gates below.
   the staged copy. `check:generated` also runs on every CI validate leg.
 - `release.yml` on `v*` tags asserts the tag equals `package.json` version
   before install, runs `validate:ci` + `check:generated`, and packs
-  `kxm-<v>.tgz` (`kxmReleaseAssetName`). Release lookup: only HTTP 404 may
-  create a draft; auth, network, and 5xx fail with no mutation; a published
-  release for the tag is never modified. Rerunning a tag never replaces an
-  asset. It succeeds only when the existing asset digest equals the local
-  sha256, and it fails without mutation otherwise. After upload, the REST
-  asset `digest` must equal the local sha256 (Actions artifact digests are
-  not proof). `test/kxm-release-github.test.ts` holds those boundaries;
-  `test/ci-contract.test.ts` imports `kxmReleaseAssetName` against
-  `release.yml`. The standalone `generated` job is gone. `Plugin validation`
-  runs native `claude plugin validate` on a hosted runner with
-  `@anthropic-ai/claude-code@2.1.261` (no model auth or model calls). The npm
+  `kxm-<v>.tgz` (`kxmReleaseAssetName`). Release lookup: GET-by-tag is the
+  published-release guard. Only HTTP 404 on that call continues; auth,
+  network, and 5xx fail with no mutation. On 404, list
+  `/releases?per_page=100` including drafts and exhaust pages (or fail closed
+  if pagination cannot be finished or is capped). Filter `tag_name === tag`:
+  one draft reuses its id and assets; any published match is
+  `published_release`; duplicate drafts fail closed; none may create. List
+  401/403/network/5xx/unparseable/pagination failure is not missing. A
+  published release for the tag is never modified. Rerunning a tag never
+  replaces an asset. It succeeds only when the existing asset digest equals
+  the local sha256, and it fails without mutation otherwise. After upload,
+  the REST asset `digest` must equal the local sha256 (Actions artifact
+  digests are not proof). `test/kxm-release-github.test.ts` holds those
+  boundaries; `test/ci-contract.test.ts` imports `kxmReleaseAssetName`
+  against `release.yml`. The standalone `generated` job is gone. `Plugin
+  validation` runs native `claude plugin validate` on a hosted runner with
+  `@anthropic-ai/claude-code@2.1.261` (no model auth or model calls). After
+  `--ignore-scripts` install of that pin, CI runs the vendor `install.cjs`
+  so the native binary is present. The npm
   publish job exists but is `if: false`. Activating it requires a later phase
   that adds a published-release prerequisite (release lookup returns
   `draft: false` for the tag) and the `npm-publish` environment. Not
