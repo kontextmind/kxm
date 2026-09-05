@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { MeshClient, MeshHttpError } from "../plugins/kxm/src/client.ts";
+import { HubClient, HubHttpError } from "../plugins/kxm/src/client.ts";
 import { createMeshHub } from "../plugins/kxm/src/hub.ts";
 import { MAX_BODY_BYTES } from "../plugins/kxm/src/protocol.ts";
 import type { WebhookWorkflowDefinition } from "../plugins/kxm/src/workflow.ts";
@@ -234,7 +234,7 @@ test("message acknowledgement, visibility, reply, and terminal-state authorizati
   const message = await sender.send({ target: "receiver", content: "review" });
 
   await assert.rejects(() => observer.acknowledge(message.id), (error: unknown) => {
-    assert.ok(error instanceof MeshHttpError);
+    assert.ok(error instanceof HubHttpError);
     assert.equal(error.statusCode, 403);
     assert.equal(error.code, "message_forbidden");
     assert.ok(error.requestId);
@@ -417,8 +417,8 @@ test("SQLite persistence retains messages and resumes identities across hub rest
   const token = "persistent-token";
   const hub1 = createMeshHub({ port: 0, authToken: token, dataPath: database, rateLimit: false });
   const address1 = await hub1.start();
-  const sender1 = new MeshClient({ serverUrl: address1.url, authToken: token, name: "sender", purpose: "send", project: "persist" });
-  const receiver1 = new MeshClient({ serverUrl: address1.url, authToken: token, name: "receiver", purpose: "receive", project: "persist" });
+  const sender1 = new HubClient({ serverUrl: address1.url, authToken: token, name: "sender", purpose: "send", project: "persist" });
+  const receiver1 = new HubClient({ serverUrl: address1.url, authToken: token, name: "receiver", purpose: "receive", project: "persist" });
   await Promise.all([sender1.start(() => undefined), receiver1.start(() => undefined)]);
   const originalSenderId = sender1.agent!.id;
   const originalReceiverId = receiver1.agent!.id;
@@ -428,8 +428,8 @@ test("SQLite persistence retains messages and resumes identities across hub rest
 
   const hub2 = createMeshHub({ port: 0, authToken: token, dataPath: database, rateLimit: false });
   const address2 = await hub2.start();
-  const sender2 = new MeshClient({ serverUrl: address2.url, authToken: token, name: "sender", purpose: "send", project: "persist" });
-  const receiver2 = new MeshClient({ serverUrl: address2.url, authToken: token, name: "receiver", purpose: "receive", project: "persist" });
+  const sender2 = new HubClient({ serverUrl: address2.url, authToken: token, name: "sender", purpose: "send", project: "persist" });
+  const receiver2 = new HubClient({ serverUrl: address2.url, authToken: token, name: "receiver", purpose: "receive", project: "persist" });
   context.after(async () => {
     await Promise.allSettled([sender2.stop(), receiver2.stop()]);
     await hub2.close();
@@ -640,7 +640,7 @@ test("signed Jira webhooks start durable workflows, deduplicate retries, journal
   assert.equal((await sendWebhook("jira-delivery-42")).status, 200);
   assert.equal((await coordinator.listWorkflows()).length, 1);
   await assert.rejects(() => observer.getWorkflow(runId), (error: unknown) => {
-    assert.ok(error instanceof MeshHttpError);
+    assert.ok(error instanceof HubHttpError);
     assert.equal(error.statusCode, 403);
     assert.equal(error.code, "workflow_forbidden");
     assert.equal(error.extras?.operation, "get");

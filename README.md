@@ -39,7 +39,7 @@ $releaseDir = Join-Path $PWD ".kxm-release"
 New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
 gh release download "v$version" --repo kontextmind/kxm --pattern $asset --dir $releaseDir --clobber
 npm install --global --omit=peer (Join-Path $releaseDir $asset)
-pi install git:github.com/kontextmind/kxm
+pi install git:github.com/kontextmind/kxm@main
 ```
 
 Bash:
@@ -51,7 +51,7 @@ mkdir -p .kxm-release
 gh release download "v${version}" --repo kontextmind/kxm \
   --pattern "$asset" --dir .kxm-release --clobber
 npm install --global --omit=peer ".kxm-release/$asset"
-pi install git:github.com/kontextmind/kxm
+pi install git:github.com/kontextmind/kxm@main
 ```
 
 From a clone, run `npm ci` and use `node scripts/kxm.mjs` in place of `kxm`. Do not use `npm install --global git+https://github.com/kontextmind/kxm.git`.

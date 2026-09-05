@@ -39,12 +39,15 @@ It does not replace the phase gates below.
   CLI. If the native harness is absent or logged out, fail closed (or prompt
   login) rather than silently switching to Pi. Pi remains the default
   long-lived worker only for providers it hosts that have no authenticated
-  native harness. **Superseded 2026-09-04:** xAI is no longer such a provider —
-  the `grok` CLI is installed and OAuth'd to `auth.x.ai`, so the writer role
-  dispatches through it and Pi's `xai` provider is the logged-out fallback.
-  This changes the writer's harness only; `kxm agent worker` / `pi --mode rpc`
-  remains Pi-only, because `grok` is a one-shot headless writer, not a
-  supervised long-lived worker.
+  native harness. **Superseded 2026-09-04 / tightened 2026-09-05:** xAI is no
+  longer such a provider — the `grok` CLI is installed and OAuth'd to
+  `auth.x.ai` (`grok models` reports logged in), so the writer role dispatches
+  through it. If `grok` is missing or logged out, fail closed; Pi's `xai`
+  provider is not a writer fallback. This changes the writer's harness only;
+  `kxm agent worker` / `pi --mode rpc` remains Pi-only, because `grok` is a
+  one-shot headless writer, not a supervised long-lived worker. The repo
+  `scripts/harness-run.mjs` helper is a bounded dev dispatcher (auth preflight,
+  verified pairs, private sidecars), not a Phase 11 product adapter.
 - Anthropic subscription models are the motivating case (Claude CLI vs Pi
   Anthropic API keys). The same rule applies to Codex, Kimi, Gemini, DeepSeek,
   and later harnesses.
@@ -103,9 +106,13 @@ It does not replace the phase gates below.
 - Phase 2 Runtime create/recover (PR #75) is in tree: supervisor, event store,
   projections, crash recovery. Runs stay `created` until Phase 3.
 - `kxm update --check` / `--kxm`: GitHub release tarball install (current), npm
-  source after the public package exists. Optional `.kxm/update.yaml` `auto`.
-  Notice on hub start and session widget (cached). Does not block session start
-  on the network.
+  source after the public package exists. `auto` only from per-user host-state
+  `update.yaml`. Install-kind detection: only npm-global applies; source
+  checkouts neither fetch nor nag; other kinds refuse and explain, including
+  explicit `--kxm` when already current or the release check fails. GitHub
+  installs verify the `kxm-<v>.tgz` sha256 digest (absent is fatal).
+  Notice on hub start (skipped for source) and session widget (cached). Does
+  not block session start on the network.
 - Hub-local session brief: `kxm session brief`, Pi TUI picker + status/widget
   on `startup`/`new`/`fork`, `/kxm` (`status`/`hub`/`help` completions),
   skill `kxm-session`, `kxm hub bind <url>` / `kxm hub unbind`.
@@ -114,37 +121,68 @@ It does not replace the phase gates below.
 - `kxm hub bind <url>` / `unbind` persist a host-level `hub-binding.json`.
   `kxm init --hub` / `--hub-url` are unknown options. Hub start prints a cached
   update notice, refreshes in the background, and warns (does not exit 2) on a
-  malformed `.kxm/update.yaml`. Startup reports `auth=token|none`.
+  malformed per-user `update.yaml`. Source
+  checkouts skip the notice. A project `.kxm/update.yaml` is ignored with a
+  warning. Startup reports `auth=token|none`.
+- Headless `scripts/harness-run.mjs` helper (2026-09-05): native auth
+  preflight, verified grok/claude/codex/OpenRouter-Pi pairs, no native-provider
+  Pi fallback, private answer/stderr sidecars, shell:false launchers.
+  Routing fields `harness`/`role`/`model`/`permission`/`prompt_file` are
+  required nonempty strings (no CLI-default model or permission). Pi
+  planner/reviewer cannot `edit`; only `experiment` may. `max_cost_usd` and
+  `timeout_ms` must be positive finite numbers when set (zero is not dropped
+  silently). `just` recipes JSON.stringify user paths via positional args.
+  Recipe quoting tests use the justfile body and do not require a just binary;
+  live just integration is optional. `just runs` labels billed / list /
+  unmetered / unknown (never absent as `$0`). `prompt_file` and
+  `output_schema` resolve against the invocation cwd and are read before any
+  auth or assignment spawn; missing or unreadable inputs fail closed with
+  zero spawn. File-consuming argv tokens are absolute so the child can run
+  in `request.cwd`. Windows helper dispatch is unverified. Not Phase 11.
 - Coverage include inverted to `plugins/kxm/src/**/*.ts`; excludes are only
   `server.ts` and `mcp-server.ts` (spawned bundles attribute to `dist`).
   Thresholds are measured whole-tree values and may only ratchet up.
   `npm run verify` includes `check:generated`, which diffs built `dist` against
   the staged copy. `check:generated` also runs on every CI validate leg.
+- `kxm mesh` fails closed with a stderr brake naming `kxm init`, `kxm hub`, and
+  `scripts/smoke-multi-pi.mjs`. `MeshClient`/`MeshHttpError` are `HubClient`/
+  `HubHttpError`; `MeshDashboard` is `KxmDashboard`. Operator copy says `hub:off`;
+  a docs brake test under `npm test` fails on `mesh:offline`, `kxm mesh`,
+  `/mesh-status`, `MeshClient`. Session readiness on `startup`/`new`/`fork`
+  (status line, widget, online and offline hub, TUI picker skip/select, RPC and
+  opt-out, single registration) is a deterministic extension test. Pi install is
+  pinned `@main`.
 
 ### Still open
 
+- **B2 release asset:** nothing yet emits `kxm-<v>.tgz` (`npm pack` names
+  `kontextmind-kxm-<v>.tgz`; no `release.yml`). Until B2 uploads that name
+  with a GitHub `digest`, `kxm update --kxm` from a real npm-global install
+  fails closed with `release_digest_missing`. B2 must rename on upload, add a
+  test importing `kxmReleaseAssetName` against `release.yml`, and confirm
+  `gh release view --json assets` shows `digest`. No sidecar `.sha256` in A4.
 - **After public npm:** wiki-compile this project from hub context; npm as
   `kxm update` source. Not before.
-- **Next PR:** fold or drop `kxm mesh` (`init`/`smoke`); rename `MeshClient` /
-  `mesh:offline`; session-ready `/new`/`/fork` as a failing test.
 - Coverage only lists modules some test loaded; a future source file with zero
   imports from tests will not drag the number down. A test that imports every
   non-excluded module belongs before the next ratchet raise, not as a B1 add.
 - The standalone `generated` CI job is redundant with the validate legs; drop
   it in B2 together with a `protect-main` ruleset edit.
-- Rebuild generated `plugins/kxm/dist` and run full `npm test` after the latest
-  CLI rename.
 - Docs sweep: operator pages updated to `kxm hub start|view|stop` and `kxm dash`;
   CHANGELOG history may still mention old names.
-- Remaining `kxm mesh` group (`init`, `smoke`) — fold or drop; do not keep Mesh
-  as a product name.
-- Internal type names (`MeshClient`, `MeshDashboard`).
+- Remaining Mesh-named internals (`MeshHub`, `createMeshHub`, `MeshStore`,
+  `MeshTui*`, `LocalMeshSnapshot`, `piMeshExtension`, `pi-mesh.*` schema ids,
+  `pi_mesh_*` metrics, `X-Mesh-Delivery-ID`) rename together at the E3
+  wire/schema bump, not piecemeal.
 - Slim live `default` workflow for this repo (no bulk migrate of jira/provenance/v04).
 - YAML-editing enable/disable UI (Phase 4 `/kxm` settings or `kxm dash` config
   tab). Do not add a preferences overlay.
 - Phase 3 engine (model-free driver on `default.yaml` **and** `fix.yaml` with
   simulated producers; caller-authored replies rejected).
 - Non-Pi dispatch adapters (Phase 11). Listing a harness does not execute it.
+  The `scripts/harness-run.mjs` dev helper is not that adapter.
+- Product catalog still lacks a `grok` entry and Codex `authArgs`. Helper
+  allowlists are script constants, not a preferences overlay or catalog feed.
 - Confirm GitHub repository identity (`kontextmind/kxm` vs current remote).
 - **SCM and issue trackers:** detect from repo conventions (git remote, CI
   layout, issue-key patterns) and **confirm at workflow/project creation**.
@@ -283,7 +321,7 @@ menu (hub/workflows/agents completions wrapping CLI), validated YAML editors
 (enable/disable harnesses and models by editing Git files, not a parallel
 store), assignment dispatch that binds harness from auth inventory, and routing
 records that always include harness+cost. Hub-local session brief and Pi status
-line are in tree.
+line are in tree with a deterministic `startup`/`new`/`fork` readiness test.
 
 **Gate:** `kxm init` followed by `kxm run default "prompt"` resolves the
 materialized `default.yaml` and completes a single-repository Pi workflow with
@@ -293,7 +331,7 @@ visible local status (`kxm dash`). `fix.yaml` is not required to run live.
 
 Ship the local Runtime track publicly beside, not on top of, the legacy hub
 engine. Explicit `kxm init`/migration receipts activate vNext resources per
-project; existing hub runs and mesh commands remain on their current contracts.
+project; existing hub runs, `kxm hub …`, and the `kxm_*` tools remain on their current contracts.
 
 Implement worktrees, dirty snapshots, one-writer leases, multi-repository
 bindings, default-derived environments, host secret grants, local logs,

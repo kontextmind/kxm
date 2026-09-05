@@ -6,7 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import type { Terminal } from "@earendil-works/pi-tui";
 import { runCli as runCliImplementation, type CliIo } from "../plugins/kxm/src/cli.ts";
-import { applyMeshTuiKey, defaultMeshTuiView, loadLocalMeshSnapshot, MeshDashboard, renderMeshTui, runMeshTui, type MeshTuiSnapshot } from "../plugins/kxm/src/tui.ts";
+import { applyMeshTuiKey, defaultMeshTuiView, loadLocalMeshSnapshot, KxmDashboard, renderMeshTui, runMeshTui, type MeshTuiSnapshot } from "../plugins/kxm/src/tui.ts";
 
 async function runCli(argv: string[], env: NodeJS.ProcessEnv, io: CliIo, cwd = process.cwd()): Promise<number> {
   const isolatedState = mkdtempSync(join(tmpdir(), "kxm-tui-state-"));
@@ -348,7 +348,7 @@ test("dashboard respects narrow terminal width", () => {
 test("interactive dashboard uses the shared key reducer", () => {
   let renders = 0;
   let quit = false;
-  const dashboard = new MeshDashboard(snapshot, defaultMeshTuiView(), false, () => renders++, () => {
+  const dashboard = new KxmDashboard(snapshot, defaultMeshTuiView(), false, () => renders++, () => {
     quit = true;
   });
   dashboard.handleInput("3");

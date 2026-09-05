@@ -12,9 +12,8 @@ Task: $ARGUMENTS
 Do this:
 
 1. **Confirm auth.** `grok models` must report a logged-in account and list
-   `grok-4.6`. If it does not, stop and say so. Falling back to `pi --model
-   xai/grok-4.6` is allowed only because Pi hosts xAI too — never fall back onto
-   a different provider's key.
+   `grok-4.6`. If it does not, **stop**. Do not fall back to
+   `pi --model xai/grok-4.6` or any other provider.
 2. **Isolate.** Put the lane in its own git worktree branched from `origin/main`
    (or resume the existing one if this unit already has a branch). Never run a
    writer in a tree another lane is using.

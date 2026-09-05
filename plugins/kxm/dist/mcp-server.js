@@ -15809,21 +15809,21 @@ function fanoutIdempotencyKey(prefix, target, correlationId, workflowContext) {
   });
   return `fanout:${createHash("sha256").update(scope).digest("hex")}`;
 }
-var MeshHttpError = class extends Error {
+var HubHttpError = class extends Error {
   statusCode;
   code;
   requestId;
   extras;
   constructor(statusCode, message, code, requestId, extras) {
     super(message);
-    this.name = "MeshHttpError";
+    this.name = "HubHttpError";
     this.statusCode = statusCode;
     if (code) this.code = code;
     if (requestId) this.requestId = requestId;
     if (extras) this.extras = extras;
   }
 };
-var MeshClient = class {
+var HubClient = class {
   options;
   agent;
   agentKey;
@@ -16050,7 +16050,7 @@ var MeshClient = class {
         body: "{}"
       });
     } catch (error2) {
-      if (error2 instanceof MeshHttpError && error2.statusCode === 401) void this.recoverRegistration();
+      if (error2 instanceof HubHttpError && error2.statusCode === 401) void this.recoverRegistration();
     }
   }
   async runEventLoop() {
@@ -16157,7 +16157,7 @@ var MeshClient = class {
       for (const key of ["operation", "nextAction", "assignedCoordinatorName"]) {
         if (typeof body[key] === "string") extras[key] = body[key];
       }
-      throw new MeshHttpError(
+      throw new HubHttpError(
         response.status,
         String(body.error ?? `HTTP ${response.status}`),
         typeof body.code === "string" ? body.code : void 0,
@@ -16229,7 +16229,7 @@ function optionalEvidenceRefs(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : void 0;
 }
 function isTerminalMessageError(error2) {
-  return error2 instanceof MeshHttpError && (error2.statusCode === 409 || error2.statusCode === 404 && error2.code === "message_not_found");
+  return error2 instanceof HubHttpError && (error2.statusCode === 409 || error2.statusCode === 404 && error2.code === "message_not_found");
 }
 function isTerminalMessage(message) {
   return message.status === "replied" || message.status === "cancelled" || message.status === "expired" || message.status === "error";
@@ -16291,7 +16291,7 @@ async function ensureClient() {
   starting = (async () => {
     const projectDir = process.env.KXM_PROJECT_DIR || process.env.CLAUDE_PROJECT_DIR || process.cwd();
     const authToken = optionalString(process.env.KXM_AUTH_TOKEN);
-    const candidate = new MeshClient({
+    const candidate = new HubClient({
       serverUrl: process.env.KXM_SERVER_URL?.trim() || "http://127.0.0.1:7331",
       name: process.env.KXM_AGENT_NAME?.trim() || `claude-${process.pid}`,
       purpose: process.env.KXM_AGENT_PURPOSE?.trim() || "Claude Code implementation and review agent",

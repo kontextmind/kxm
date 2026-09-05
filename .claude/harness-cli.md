@@ -4,94 +4,95 @@ Role routing comes from [`AGENTS.md`](../AGENTS.md). This file is the
 **mechanics**: what each CLI actually supports headlessly, and the defaults we
 use. If the routing table and this file disagree, `AGENTS.md` wins.
 
-Everything below was probed on this machine on 2026-09-04. Re-probe after any
-CLI update; these surfaces change without notice.
+Snapshot date: **2026-09-05**. Re-probe after any CLI update; these surfaces
+change without notice. Installed ≠ auth-verified ≠ helper-eligible.
 
-## Installed and authenticated
+## Installed vs auth-verified
 
-| CLI | Version | Provider / auth | Verified |
+| CLI | Installed (this host) | Auth-verified | Helper-eligible |
 |---|---|---|---|
-| `pi` | 0.85.0 | multi-provider; `xai`, `anthropic`, `google`, `openrouter` = `ready`; `openai`, `moonshot`, `deepseek` = `not_ready` | `pi auth check --provider <p>` |
-| `claude` | 2.1.260 | Anthropic subscription | running now |
-| `codex` | 0.153.2 | `Logged in using ChatGPT` | `codex login status` |
-| `grok` | 1.0.13 | OAuth to `auth.x.ai` | `~/.grok/auth.json` |
-| `kimi` | 0.40.1 | `managed:kimi-code`, oauth, 4 models; default `kimi-code/kimi-for-coding` | `kimi provider list` |
-| `gemini` | 0.56.0 | Google | installed |
-| `agy` | 1.1.22 | gateway over Gemini / Claude / GPT-OSS models | `agy models` |
+| `pi` | 0.85.0 | `pi auth check --provider <p>`; OpenRouter may be `ready`; native-lab prefixes are braked | OpenRouter only, after JSONL usage parse |
+| `claude` | 2.1.260 | `claude auth status` → `claude.ai` | read-only plan/review (`fable`) |
+| `codex` | 0.153.2 | `codex login status` → ChatGPT | read-only CLI/docs review (`gpt-5.6-sol`) |
+| `grok` | 1.0.13 | `grok models` → logged in with grok.com | writer only (`grok-4.6`) |
+| `kimi` | 0.40.1 | oauth via `kimi provider list` | **no** — unverified helper dispatch |
+| `gemini` | 0.56.0 | **unknown** (installed only) | **no** |
+| `agy` | 1.1.22 | `agy models` (gateway) | **no** |
 
-**Not installed: `hermes`, `dsh`.** Neither is on `PATH` and neither has a
-home directory under `~`. If they exist under other binary names, say which and
-I will probe them.
+**Not installed: `hermes`, `dsh`.** Windows helper dispatch is **unsupported**
+in `scripts/harness-run.mjs` (shell:false, absolute `.exe` only; `.cmd`/`.bat`/
+`.ps1` refused). That is not a claim that any harness works on Windows.
 
-## Flag matrix
+Product catalog still has no `grok` row and Codex has no `authArgs`. Do not
+invent them here.
+
+## Flag matrix (verified helper routes)
 
 | | headless | prompt input | model | thinking / effort | auto-approve | output format |
 |---|---|---|---|---|---|---|
-| **pi** | `-p` | positional, or `@file` | `--model <provider/id>`; `:level` shorthand (`sonnet:high`) | `--thinking off\|minimal\|low\|medium\|high\|xhigh\|max` | `-a` trusts project files; `--tools` / `--exclude-tools` | `--mode text\|json\|rpc` |
-| **claude** | `-p` | **stdin** (preferred) or positional | `--model` | model-encoded, no flag | `--dangerously-skip-permissions`; `--allowedTools` | `--output-format text\|json\|stream-json` |
-| **codex** | `exec` | positional | `-m` | no flag; via `-c model_reasoning_effort=...` (unverified) | `--sandbox <profile>`; `--dangerously-bypass-approvals-and-sandbox` | `--json` (JSONL), `--output-schema`, `-o <file>` |
-| **grok** | `-p/--single` | `-p`, **`--prompt-file`**, `--prompt-json` | `-m` | `--reasoning-effort` (alias `--effort`) | `--always-approve`; `--permission-mode`; `--sandbox` | `--output-format plain\|json\|streaming-json\|streaming-messages-json` |
-| **kimi** | `-p/--prompt` | `-p` | `-m` | none | `-y/--yolo`; `--auto` | `--output-format text\|stream-json` |
-| **gemini** | `-p/--prompt` | `-p`, appended to stdin | `-m` | none | `-y`; `--approval-mode default\|auto_edit\|yolo\|plan` | `-o text\|json\|stream-json` |
-| **agy** | `-p/--print` | `-p` / `--prompt` | `--model` | `--effort low\|medium\|high` | `--dangerously-skip-permissions`; `--sandbox` | `--output-format text\|json\|stream-json` |
+| **pi** | `-p` | `@file` | `--model openrouter/<id>` | `--thinking` ladder | `-a` (experiment edit only) or `--tools read,grep,find,ls --no-extensions --no-skills --no-prompt-templates` | `--mode json` |
+| **claude** | `-p` | **stdin** | `--model` | `--effort` (verified) | read-only: `--tools Read,Glob,Grep --safe-mode --strict-mcp-config --disable-slash-commands` | `--output-format json` |
+| **codex** | `exec` | stdin `-` | `-m` | `-c model_reasoning_effort=...` (verified) | `--sandbox read-only` | `--json` (JSONL) |
+| **grok** | `--prompt-file` | file | `-m` | `--reasoning-effort` | `--always-approve` | `--output-format json` |
 
-There is no `--fast` flag on any of them. Claude Code's fast mode is the
-interactive `/fast` toggle, not a CLI flag. `agy` encodes effort in the model id
-instead (`gemini-3.8-flash-high`, `-medium`, `-low`).
-
-Read-only modes worth knowing: `gemini --approval-mode plan`, `grok --sandbox` /
-`--permission-mode plan`, `codex exec --sandbox read-only`, `pi --tools
-read,grep,find,ls`, `claude --allowedTools Read Grep Glob Bash`.
+Kimi, Gemini, and Agy stay fail-closed in the helper. Grok read-only is
+unsupported pending a permission-mode probe. Never `--bare`. Never Bash on
+read-only Claude. Never read `~/.grok/auth.json`.
 
 ## Defaults
 
 | Role | Command |
 |---|---|
 | Implement / write | `grok --prompt-file <brief> -m grok-4.6 --reasoning-effort high --always-approve --output-format json` |
-| Implement / write (fallback, only if `grok` is logged out) | `pi -p --model xai/grok-4.6 --thinking medium -a "@<brief>"` |
-| Plan | `cat <brief> \| claude -p --model fable --allowedTools Read Grep Glob Bash` |
-| Review: architecture, permissions | `cat <brief> \| claude -p --model fable --allowedTools Read Grep Glob Bash` |
+| Plan | `cat <brief> \| claude -p --model fable --tools Read,Glob,Grep --safe-mode --strict-mcp-config --mcp-config <empty.json> --disable-slash-commands --output-format json` |
+| Review: architecture, permissions | same as Plan |
 | Review: CLI, docs | `codex exec -m gpt-5.6-sol -C <dir> --sandbox read-only --json - < <brief>` |
 
-**Provider-native rule.** Anthropic models go through the Claude CLI
-subscription, never Pi's Anthropic API key — even though `pi auth check
---provider anthropic` says `ready`. OpenAI goes through Codex. Moonshot goes
-through `kimi` (Pi's `moonshot` is `not_ready` anyway). **xAI goes through the
-Grok CLI**, which is OAuth'd to `auth.x.ai`; Pi's `xai` provider is the fallback
-only when `grok` is logged out. If the native harness is missing or logged out,
-**fail closed and say so** rather than silently billing a different provider's key.
+Prefer `just impl|plan|review-arch|review-cli`. There is **no** `impl-pi`
+writer fallback. If `grok` is logged out, stop.
+
+**Provider-native rule.** Anthropic → Claude CLI; OpenAI → Codex; xAI → Grok
+CLI; Moonshot → Kimi CLI when that helper is verified (not today); Google →
+Gemini CLI when auth is verified (not today). Pi may run **OpenRouter** after
+`pi auth check --provider openrouter`. Native-lab prefixes (`anthropic`,
+`openai`, `xai`, `moonshot`, `google`, `deepseek`) fail closed on Pi. If the
+native harness is missing or logged out, fail closed — never silently bill a
+different provider's key.
 
 Moving the writer to `grok` does not make it a long-lived worker: `kxm agent
-worker` / `pi --mode rpc` is still Pi-only. `grok` is a one-shot headless writer.
+worker` / `pi --mode rpc` is still Pi-only.
 
 ## Per-CLI gotchas, all hit in practice
 
-- **claude**: `--allowedTools` is variadic. A prompt passed positionally after it
-  is swallowed as tool rules and split on commas; the run then dies with "Input
-  must be provided either through stdin or as a prompt argument". Pass the
-  prompt on **stdin**, and space-separate the tool values.
-- **pi**: prefer `@<file>` over shell-quoting a long brief. A fresh worktree has
-  no `node_modules`, so any lane that runs gates needs `npm ci` first.
-- **grok**: `--prompt-file` takes the brief from a file, which sidesteps quoting
-  entirely — the best headless prompt surface of the seven. Note `-w/--worktree`
-  does **not** create a worktree in headless `-p` mode.
-- **agy**: `--print-timeout` defaults to 5m. Raise it for long units or the run
-  is truncated.
-- **codex**: `exec` is the non-interactive subcommand; `-C` sets the directory.
-  Pass the prompt as `-` on **stdin**. Positionally it dies as `spawn
-  ENAMETOOLONG` once a brief passes the ~32k Windows command-line limit.
-- **kimi / gemini / agy**: no prompt-file and no stdin prompt, so they cannot
-  take a long brief at all on Windows. `harness-run.mjs` refuses these above 30k
-  bytes with an explanation rather than a bare errno.
+- **claude**: `--allowedTools` is variadic and will swallow a positional
+  prompt. The helper uses `--tools Read,Glob,Grep` as one argument and stdin
+  for the brief. `--bare` is replaced by `--safe-mode` plus empty MCP config.
+  Hooks or skills on a read-only request are rejected, not ignored.
+  `--max-budget-usd` is passed only for a positive finite `max_cost_usd`
+  (zero is not a verified Claude budget).
+- **pi**: prefer `@<file>`. JSONL `message_end` usage is **per call**; sum
+  every assistant usage-bearing event for assignment totals. `stopReason`
+  `error`/`aborted` fails even on exit 0. Planner/reviewer cannot `edit`;
+  only an explicit `experiment` role may. Read-only adds `--no-extensions
+  --no-skills --no-prompt-templates`. `hooks:true` is refused.
+- **requests**: `harness`, `role`, `model`, `permission`, and `prompt_file`
+  are required nonempty strings. Missing model or permission does not
+  default to the CLI. Grok and Codex reject `hooks`/`skills` even when
+  `false` (no verified disable flag). Grok `--json-schema` stays supported.
+- **grok**: `--prompt-file` is the headless prompt surface. Auth via
+  `grok models`, not an auth.json scrape.
+- **codex**: pass the prompt as `-` on stdin. `turn.failed` is `ok:false`
+  even on exit 0. ChatGPT login is `unmetered`.
+- **kimi / gemini / agy**: unverified in this helper; long inline prompts
+  also hit the Windows command-line limit.
 
 ## Rules for every headless run
 
-1. **Isolate.** One git worktree per concurrent lane. Two writers in one tree
-   clobber each other.
+1. **Isolate.** One git worktree per concurrent lane.
 2. **Background it.** Never block the interactive session on a long run.
-3. **Log it.** Redirect stdout and stderr to a scratchpad file and read that.
-4. **Verify independently.** Re-check the tree, the gates, and the PR yourself.
-   The agent's summary is a claim, not evidence.
-5. **Artifacts, not evidence.** Claude/Codex/Kimi critiques are artifacts plus
-   human signoff. They are never hub `peer-reply` evidence, and a fallback model
-   is not a second critic.
+3. **Log it.** The helper writes answer and stderr sidecars (mode 0600) and
+   returns paths, not raw payloads. Headless plan/review callers read
+   `answerPath`.
+4. **Verify independently.** Re-check the tree and gates yourself.
+5. **Artifacts, not evidence.** Claude/Codex critiques are artifacts plus
+   human signoff, never hub `peer-reply` evidence.

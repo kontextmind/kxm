@@ -1,0 +1,28 @@
+{
+  "grok": {
+    "exitCode": 0,
+    "observedAt": "2026-09-05",
+    "stdout": "You are logged in with grok.com.\n\nDefault model: grok-4.6\n\nAvailable models:\n  * grok-4.6 (default)\n  - grok-4.5\n",
+    "stderr": ""
+  },
+  "claude": {
+    "exitCode": 0,
+    "observedAt": "2026-09-05",
+    "loggedIn": true,
+    "authMethod": "claude.ai",
+    "apiProvider": "firstParty",
+    "subscriptionType": "max"
+  },
+  "codex": {
+    "exitCode": 0,
+    "observedAt": "2026-09-05",
+    "stdout": "",
+    "stderr": "Logged in using ChatGPT\n"
+  },
+  "kimi": {
+    "exitCode": 0,
+    "observedAt": "2026-09-05",
+    "stdout": "managed:kimi-code  type=kimi  models=4  source=oauth\n\nDefault model: kimi-code/kimi-for-coding\n",
+    "stderr": ""
+  }
+}

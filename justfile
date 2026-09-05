@@ -21,49 +21,48 @@ default:
 # Each recipe builds a kxm.harness-request.v1 envelope and prints a
 # kxm.harness-result.v1 envelope. BRIEF is a path to a Markdown brief; never an
 # inline prompt, which is how the shell-quoting bugs get in.
+# User paths are "$1"/"$2" (positional-arguments) and JSON.stringify in Node.
+# Recipe literals (role/harness/model) are not taken from user strings.
 
 # (`just --list` shows only the LAST comment line, so that one is the summary.)
 
 # implement a unit with the designated writer: just impl brief.md [worktree]
+# Native grok only. There is no Pi writer fallback.
 impl BRIEF CWD=".":
-    @{{run}} - <<< '{"schema":"kxm.harness-request.v1","role":"writer","harness":"grok","model":"grok-4.6","effort":"high","permission":"edit","prompt_file":"{{BRIEF}}","cwd":"{{CWD}}"}'
-
-# fallback writer, only when `grok` is logged out: just impl-pi brief.md
-impl-pi BRIEF CWD=".":
-    @{{run}} - <<< '{"schema":"kxm.harness-request.v1","role":"writer","harness":"pi","model":"xai/grok-4.6","effort":"medium","permission":"edit","prompt_file":"{{BRIEF}}","cwd":"{{CWD}}"}'
+    @node -e 'const [prompt_file, cwd] = process.argv.slice(-2); process.stdout.write(JSON.stringify({schema:"kxm.harness-request.v1",role:"writer",harness:"grok",model:"grok-4.6",effort:"high",permission:"edit",prompt_file,cwd}))' -- "$1" "$2" | {{run}} -
 
 # plan a unit, read-only, independent of the writer: just plan brief.md
 plan BRIEF CWD=".":
-    @{{run}} - <<< '{"schema":"kxm.harness-request.v1","role":"planner","harness":"claude","model":"fable","effort":"high","permission":"read-only","prompt_file":"{{BRIEF}}","cwd":"{{CWD}}"}'
+    @node -e 'const [prompt_file, cwd] = process.argv.slice(-2); process.stdout.write(JSON.stringify({schema:"kxm.harness-request.v1",role:"planner",harness:"claude",model:"fable",effort:"high",permission:"read-only",prompt_file,cwd}))' -- "$1" "$2" | {{run}} -
 
 # review architecture and permissions, read-only: just review-arch brief.md
 review-arch BRIEF CWD=".":
-    @{{run}} - <<< '{"schema":"kxm.harness-request.v1","role":"reviewer-arch","harness":"claude","model":"fable","effort":"high","permission":"read-only","prompt_file":"{{BRIEF}}","cwd":"{{CWD}}"}'
+    @node -e 'const [prompt_file, cwd] = process.argv.slice(-2); process.stdout.write(JSON.stringify({schema:"kxm.harness-request.v1",role:"reviewer-arch",harness:"claude",model:"fable",effort:"high",permission:"read-only",prompt_file,cwd}))' -- "$1" "$2" | {{run}} -
 
 # review CLI surface and docs, read-only, different provider: just review-cli brief.md
 review-cli BRIEF CWD=".":
-    @{{run}} - <<< '{"schema":"kxm.harness-request.v1","role":"reviewer-cli","harness":"codex","model":"gpt-5.6-sol","effort":"high","permission":"read-only","prompt_file":"{{BRIEF}}","cwd":"{{CWD}}"}'
+    @node -e 'const [prompt_file, cwd] = process.argv.slice(-2); process.stdout.write(JSON.stringify({schema:"kxm.harness-request.v1",role:"reviewer-cli",harness:"codex",model:"gpt-5.6-sol",effort:"high",permission:"read-only",prompt_file,cwd}))' -- "$1" "$2" | {{run}} -
 
 # any harness by hand from a full envelope file: just dispatch request.json
 dispatch REQUEST:
-    @{{run}} "{{REQUEST}}"
+    @{{run}} -- "$1"
 
 # detached, survives Ctrl+C and dropped SSH: just impl-bg brief.md [worktree]
 impl-bg BRIEF CWD=".":
     @mkdir -p .kxm/logs
-    @nohup just impl "{{BRIEF}}" "{{CWD}}" > ".kxm/logs/impl-$(date +%Y%m%d-%H%M%S).json" 2>&1 &
+    @nohup just impl "$1" "$2" > ".kxm/logs/impl-$(date +%Y%m%d-%H%M%S).json" 2>&1 &
     @echo "detached — follow with: just runs"
 
 # ── isolation ───────────────────────────────────────────────────────────────
 
 # one worktree per concurrent lane; two writers in one tree clobber each other
 worktree UNIT:
-    git worktree add "../kxm-{{UNIT}}" -b "{{UNIT}}" origin/main
-    @echo "lane ready at ../kxm-{{UNIT}}"
+    git worktree add -b "$1" -- "../kxm-$1" origin/main
+    @echo "lane ready at ../kxm-$1"
 
 # drop a finished lane: just worktree-drop a3-hub-bind
 worktree-drop UNIT:
-    git worktree remove "../kxm-{{UNIT}}"
+    git worktree remove -- "../kxm-$1"
 
 # ── inspect ─────────────────────────────────────────────────────────────────
 
@@ -80,9 +79,9 @@ harnesses:
 
 # the last dispatch results: just runs
 runs:
-    @ls -t .kxm/logs/*.json 2>/dev/null | head -10 | while read f; do \
+    @ls -t .kxm/logs/*.json 2>/dev/null | head -10 | while read -r f; do \
         printf '%s  ' "$f"; \
-        node -e 'const r=require("fs").readFileSync(0,"utf8");const j=JSON.parse(r);console.log(j.ok?"ok":"FAIL",j.harness,j.effectiveModel??"",j.latencyMs+"ms","$"+(j.costUsd??0).toFixed(4))' < "$f" 2>/dev/null || echo "(unparsed)"; \
+        node -e 'const j=JSON.parse(require("fs").readFileSync(0,"utf8")); const b=j.costBasis; let cost="unknown"; if (b==="unmetered") cost="unmetered"; else { const n=typeof j.costUsd==="number"&&Number.isFinite(j.costUsd)?j.costUsd:undefined; const est=typeof j.providerReportedCostUsd==="number"&&Number.isFinite(j.providerReportedCostUsd)?j.providerReportedCostUsd:undefined; const amount=n??est; if (b==="unknown"||b==null||amount===undefined) cost="unknown"; else if (b==="list") cost="list $"+amount.toFixed(4); else if (b==="billed") cost="billed $"+amount.toFixed(4); else cost=String(b)+" $"+amount.toFixed(4); } console.log(j.ok?"ok":"FAIL", j.harness??"", j.effectiveModel??"", (j.latencyMs??"?")+"ms", cost);' < "$f" 2>/dev/null || echo "(unparsed)"; \
     done
 
 # ── gates ───────────────────────────────────────────────────────────────────

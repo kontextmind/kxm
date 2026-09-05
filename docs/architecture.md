@@ -124,7 +124,7 @@ An ordinary coordinator reply while `running` is a failure because required work
 
 Stages form an ordered list. A failed checkpoint retries the **same** stage until `maxAttempts` is exhausted, after which the run is terminal; there are no back-edges (an instruction such as "failures return to build" is prose the engine cannot execute) and no resume verb. Workflow definitions are read from the single file or inline JSON the hub was started with. Each run records a secret-free semantic `definitionHash`, so credential rotation does not create false drift while behavior changes remain auditable.
 
-`MeshClient` owns registration, rotating agent credentials, heartbeats, bounded HTTP requests, SSE reconnects, and automatic re-registration after hub state loss. The Pi extension adds peer messaging plus workflow checkpoint, wait, journal, and reporting tools. Claude MCP adds the same workflow plane plus `kxm_inbox` and `kxm_reply`.
+`HubClient` owns registration, rotating agent credentials, heartbeats, bounded HTTP requests, SSE reconnects, and automatic re-registration after hub state loss. The Pi extension adds peer messaging plus workflow checkpoint, wait, journal, and reporting tools. Claude MCP adds the same workflow plane plus `kxm_inbox` and `kxm_reply`.
 
 ## Message lifecycle
 
@@ -183,7 +183,9 @@ Workflow session isolation is a context-routing and accidental-cross-run safety 
 | `src/local-snapshot.ts` | Read-only hub SQLite snapshot (runs, plans, inbox metadata; no bodies) |
 | `src/session-work.ts` | Session brief, status line, and work-picker labels from that snapshot |
 | `src/hub-binding.ts` | host-level hub binding (Runtime-local, never Git) and 300 ms health probe |
-| `src/kxm-update.ts` | Operator package update check (GitHub releases now, npm later) and `.kxm/update.yaml` |
+| `src/kxm-update.ts` | Operator package update check (GitHub releases now, npm later), release-asset digest, and notice cache |
+| `src/kxm-update-config.ts` | Per-user `update.yaml` under the host state root (`auto` is never read from the project) |
+| `src/kxm-install-kind.ts` | Install-kind classifier (npm-global / npm-local / pi-git / claude-marketplace / source / unknown) |
 | `src/cli.ts` | Operator CLI (agent, session, workflow, gate, hub, improve); a client of the hub |
 | `src/envelope.ts` | `kxm.worker.v1` / `kxm.worker-result.v1` constructors |
 | `src/session.ts` | Roster loading and `kxm.session.v1` manifest writing; does not spawn processes |
@@ -198,7 +200,7 @@ Workflow session isolation is a context-routing and accidental-cross-run safety 
 
 The generated runtimes are committed because installed packages must work without a development toolchain or runtime TypeScript stripping. Edit the source, run `npm run build`, and commit the source and corresponding files under `dist/`.
 
-The command groups described in this document (`agent`, `session`, `workflow`, `gate`, `mesh`, `improve`) are defined in `src/cli.ts`. The committed `plugins/kxm/dist/cli.js` that `scripts/kxm.mjs` launches may lag the source: if `kxm --help` prints a flat command list (`init | validate | status | hub | worker | stop | workflow … | signal | github watch | retrospective export | smoke`), the bundle predates the Commander groups and must be rebuilt and committed before the operator surface here is what actually runs.
+The command groups described in this document (`agent`, `session`, `workflow`, `gate`, `hub`, `dash`, `improve`) plus root `init` are defined in `src/cli.ts`. The committed `plugins/kxm/dist/cli.js` that `scripts/kxm.mjs` launches may lag the source: if `kxm --help` prints a former flat command list instead of these Commander groups, rebuild with `npm run build` and commit the generated `dist` before the operator surface here is what actually runs.
 
 Peer-policy fields are additive to SQLite schema version 2 because agents,
 messages, and workflow runs are stored as JSON records. Existing schema-v2

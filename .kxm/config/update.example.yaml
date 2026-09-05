@@ -1,0 +1,9 @@
+# Copy this file to the per-user state root. kxm never reads a project
+# .kxm/update.yaml (it prints a warning and continues). Locations:
+#   Windows: %LOCALAPPDATA%\KXM\update.yaml
+#   macOS:   ~/Library/Application Support/KXM/update.yaml
+#   Linux:   ${XDG_STATE_HOME:-~/.local/state}/kxm/update.yaml
+# Override the state root with an absolute KXM_STATE_HOME for tests.
+schema: kxm.update.v1
+auto: false
+source: github

@@ -71,7 +71,7 @@ function bindingError(phase: VnextConfigIssue["phase"], code: string, message: s
   throw new VnextConfigError([bindingIssue(phase, code, message)]);
 }
 
-function canonicalHostPath(path: string): string {
+export function canonicalHostPath(path: string): string {
   const absolute = resolve(path);
   try {
     return realpathSync.native(absolute);
@@ -80,7 +80,7 @@ function canonicalHostPath(path: string): string {
   }
 }
 
-function sameHostPath(left: string, right: string, platform = process.platform): boolean {
+export function sameHostPath(left: string, right: string, platform = process.platform): boolean {
   const first = canonicalHostPath(left);
   const second = canonicalHostPath(right);
   return platform === "win32"

@@ -1,15 +1,15 @@
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { TestContext } from "node:test";
-import { MeshClient } from "../plugins/kxm/src/client.ts";
+import { HubClient } from "../plugins/kxm/src/client.ts";
 import { createMeshHub, type MeshHub, type MeshHubOptions } from "../plugins/kxm/src/hub.ts";
 
 export interface TestMesh {
   hub: MeshHub;
   address: { host: string; port: number; url: string };
   token: string;
-  clients: MeshClient[];
-  makeClient(name: string, options?: { project?: string; token?: string; purpose?: string }): MeshClient;
+  clients: HubClient[];
+  makeClient(name: string, options?: { project?: string; token?: string; purpose?: string }): HubClient;
 }
 
 export async function createTestMesh(context: TestContext, options: MeshHubOptions = {}): Promise<TestMesh> {
@@ -22,7 +22,7 @@ export async function createTestMesh(context: TestContext, options: MeshHubOptio
     ...(token ? { authToken: token } : {}),
   });
   const address = await hub.start();
-  const clients: MeshClient[] = [];
+  const clients: HubClient[] = [];
   context.after(async () => {
     await Promise.allSettled(clients.map((client) => client.stop()));
     await hub.close();
@@ -33,7 +33,7 @@ export async function createTestMesh(context: TestContext, options: MeshHubOptio
     token,
     clients,
     makeClient(name, clientOptions = {}) {
-      const client = new MeshClient({
+      const client = new HubClient({
         serverUrl: address.url,
         authToken: clientOptions.token ?? token,
         name,

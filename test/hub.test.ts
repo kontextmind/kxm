@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { MeshClient } from "../plugins/kxm/src/client.ts";
+import { HubClient } from "../plugins/kxm/src/client.ts";
 import { createMeshHub, type MeshHub } from "../plugins/kxm/src/hub.ts";
 
-const resources: Array<{ hub: MeshHub; clients: MeshClient[] }> = [];
+const resources: Array<{ hub: MeshHub; clients: HubClient[] }> = [];
 
 afterEach(async () => {
   while (resources.length) {
@@ -17,10 +17,10 @@ async function setup() {
   const token = "test-token";
   const hub = createMeshHub({ port: 0, authToken: token, shutdownGraceMs: 50 });
   const address = await hub.start();
-  const clients: MeshClient[] = [];
+  const clients: HubClient[] = [];
   resources.push({ hub, clients });
   const makeClient = (name: string) => {
-    const client = new MeshClient({
+    const client = new HubClient({
       serverUrl: address.url,
       authToken: token,
       name,

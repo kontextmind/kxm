@@ -60,9 +60,80 @@ test("kxm routes agent, session, workflow, and gate tooling", async () => {
   assert.equal(await runCli(["agent", "nope"], {}, unknownCommand), 2);
 });
 
-test("kxm mesh is an unknown command", async () => {
-  const io = capture();
-  assert.equal(await runCli(["mesh"], {}, io), 2);
+test("kxm mesh fails closed without side effects, including JSON and subcommands", async () => {
+  const help = capture();
+  assert.equal(await runCli(["help"], {}, help), 0);
+  assert.doesNotMatch(help.read().stdout, /\bmesh\b/);
+  assert.doesNotMatch(help.read().stderr, /\bmesh\b/);
+
+  const cwd = mkdtempSync(join(tmpdir(), "kxm-mesh-brake-"));
+  try {
+    const cases = [
+      ["mesh"],
+      ["mesh", "init"],
+      ["mesh", "smoke"],
+      ["--json", "mesh"],
+      ["mesh", "--json"],
+      ["--json", "mesh", "init"],
+      ["--workspace", cwd, "mesh", "init"],
+      ["--json", "--workspace", cwd, "mesh", "smoke"],
+      ["--dry-run", "mesh"],
+      ["--json", "--dry-run", "mesh", "init"],
+    ];
+    for (const argv of cases) {
+      const io = capture();
+      assert.equal(await runCli(argv, {}, io, cwd), 2, argv.join(" "));
+      assert.equal(io.read().stdout, "", argv.join(" "));
+      if (argv.includes("--json")) {
+        const payload = JSON.parse(io.read().stderr) as { ok: boolean; command: string; error: string; schema: string };
+        assert.equal(payload.ok, false);
+        assert.equal(payload.command, "mesh");
+        assert.equal(payload.error, "removed_command");
+        assert.equal(payload.schema, "kxm.cli-result.v1");
+      } else {
+        assert.match(io.read().stderr, /kxm mesh was removed/);
+        assert.match(io.read().stderr, /kxm init/);
+        assert.match(io.read().stderr, /kxm hub/);
+        assert.match(io.read().stderr, /scripts\/smoke-multi-pi\.mjs/);
+      }
+    }
+    assert.equal(existsSync(join(cwd, ".kxm")), false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("kxm mesh brake defers to Commander for version, help, and invalid options", async () => {
+  const pkg = JSON.parse(readFileSync(resolve("package.json"), "utf8")) as { version: string };
+
+  const version = capture();
+  assert.equal(await runCli(["--version", "mesh"], {}, version), 0);
+  assert.equal(version.read().stdout.trim(), pkg.version);
+  assert.equal(version.read().stderr, "");
+  assert.doesNotMatch(version.read().stdout, /removed/);
+
+  const help = capture();
+  assert.equal(await runCli(["--help", "mesh"], {}, help), 0);
+  assert.match(help.read().stdout, /Usage: kxm/);
+  assert.doesNotMatch(help.read().stdout + help.read().stderr, /kxm mesh was removed/);
+
+  const bogus = capture();
+  assert.equal(await runCli(["--bogus", "mesh"], {}, bogus), 2);
+  assert.match(bogus.read().stderr, /unknown option '--bogus'/);
+  assert.doesNotMatch(bogus.read().stderr, /kxm mesh was removed/);
+
+  const jsonMesh = capture();
+  assert.equal(await runCli(["--json", "mesh"], {}, jsonMesh), 2);
+  assert.equal(jsonMesh.read().stdout, "");
+  const payload = JSON.parse(jsonMesh.read().stderr) as { ok: boolean; command: string; error: string; schema: string };
+  assert.equal(payload.ok, false);
+  assert.equal(payload.command, "mesh");
+  assert.equal(payload.error, "removed_command");
+  assert.equal(payload.schema, "kxm.cli-result.v1");
+
+  const subcommand = capture();
+  assert.equal(await runCli(["mesh", "init"], {}, subcommand), 2);
+  assert.match(subcommand.read().stderr, /kxm mesh was removed/);
 });
 
 test("kxm --version prints the package version", async () => {
