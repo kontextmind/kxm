@@ -87,6 +87,27 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
     assert.equal(installedBin.status, 0, `${installedBin.stderr}\n${installedBin.stdout}`);
     assert.match(installedBin.stdout, /Usage: kxm hub/);
 
+    writeFileSync(join(consumer, "import-seams.mjs"), `${[
+      "const core = await import('@kontextmind/kxm/core');",
+      "const runtime = await import('@kontextmind/kxm/runtime');",
+      "const client = await import('@kontextmind/kxm/client');",
+      "if (typeof core.redactSecrets !== 'function') throw new Error('missing redactSecrets');",
+      "if (typeof runtime.vnextRuntimePaths !== 'function') throw new Error('missing vnextRuntimePaths');",
+      "if (typeof client.HubClient !== 'function') throw new Error('missing HubClient');",
+      "const { existsSync } = await import('node:fs');",
+      "const { fileURLToPath } = await import('node:url');",
+      "const extensionUrl = import.meta.resolve('@kontextmind/kxm/extension');",
+      "const mcpUrl = import.meta.resolve('@kontextmind/kxm/mcp');",
+      "if (!existsSync(fileURLToPath(extensionUrl))) throw new Error('extension export did not resolve');",
+      "if (!existsSync(fileURLToPath(mcpUrl))) throw new Error('mcp export did not resolve');",
+    ].join("\n")}\n`);
+    const librarySmoke = spawnSync(process.execPath, [join(consumer, "import-seams.mjs")], {
+      cwd: consumer,
+      encoding: "utf8",
+    });
+    assert.equal(librarySmoke.status, 0, `${librarySmoke.stderr}\n${librarySmoke.stdout}`);
+    assert.doesNotMatch(librarySmoke.stderr, /ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING/);
+
     const unknownMesh = spawnSync(process.execPath, [join(packageRoot, "scripts", "kxm.mjs"), "mesh"], {
       cwd: consumer,
       encoding: "utf8",

@@ -12,6 +12,22 @@ await build({
   banner: { js: "#!/usr/bin/env node" },
 });
 
+await build({
+  entryPoints: [
+    "plugins/kxm/src/core.ts",
+    "plugins/kxm/src/runtime.ts",
+    "plugins/kxm/src/client.ts",
+    "plugins/kxm/src/extension.ts",
+  ],
+  bundle: true,
+  platform: "node",
+  format: "esm",
+  target: "node22",
+  outdir: "plugins/kxm/dist",
+  entryNames: "[name]",
+  external: ["@earendil-works/pi-coding-agent", "typebox"],
+});
+
 const shebang = "#!/usr/bin/env node\n";
 const createRequire = "import { createRequire as __kxmCreateRequire } from 'node:module'; const require = __kxmCreateRequire(import.meta.url);\n";
 // The bundled YAML CommonJS internals use dynamic require, which is
@@ -24,3 +40,10 @@ for (const bundlePath of [
   if (!bundled.startsWith(shebang)) throw new Error(`runtime bundle is missing its executable shebang: ${bundlePath}`);
   writeFileSync(bundlePath, `${shebang}${createRequire}${bundled.slice(shebang.length)}`);
 }
+
+const runtimeLibrary = "plugins/kxm/dist/runtime.js";
+const runtimeLibraryText = readFileSync(runtimeLibrary, "utf8");
+if (runtimeLibraryText.startsWith(shebang)) {
+  throw new Error(`library bundle must not have an executable shebang: ${runtimeLibrary}`);
+}
+writeFileSync(runtimeLibrary, `${createRequire}${runtimeLibraryText}`);

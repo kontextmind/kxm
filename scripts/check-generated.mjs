@@ -10,6 +10,10 @@ export const GENERATED_ARTIFACTS = [
   "plugins/kxm/dist/server.js",
   "plugins/kxm/dist/mcp-server.js",
   "plugins/kxm/dist/vnext-runtime-supervisor.js",
+  "plugins/kxm/dist/core.js",
+  "plugins/kxm/dist/runtime.js",
+  "plugins/kxm/dist/client.js",
+  "plugins/kxm/dist/extension.js",
 ];
 
 function runGit(repository, args, allowFailure = false) {

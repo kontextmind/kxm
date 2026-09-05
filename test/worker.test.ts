@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { createHmac } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -70,6 +70,108 @@ async function waitForFile(path: string, timeoutMs = 5_000): Promise<void> {
   while (!existsSync(path)) {
     if (Date.now() >= deadline) throw new Error(`timed out waiting for ${path}`);
     await new Promise((resolveWait) => setTimeout(resolveWait, 25));
+  }
+}
+
+type WorkerPidIdentity = {
+  pid: number;
+  role: string;
+  version: number;
+  agentName: string;
+  project: string;
+};
+
+const PID_RECORD_POLL_MS = 25;
+const PID_DIAGNOSTIC_CAP = 256;
+const OWNED_CHILD_WAIT_MS = 5_000;
+
+function boundedPidDiagnostic(raw: string | undefined): string {
+  const text = raw === undefined ? "(missing)" : raw;
+  return text.length <= PID_DIAGNOSTIC_CAP ? text : `${text.slice(0, PID_DIAGNOSTIC_CAP)}…`;
+}
+
+function isErrno(error: unknown, code: string): boolean {
+  return Boolean(error && typeof error === "object" && (error as NodeJS.ErrnoException).code === code);
+}
+
+function isCompletePidRecord(record: unknown, expected: WorkerPidIdentity): record is Record<string, unknown> & { generation: string } {
+  if (record === null || typeof record !== "object" || Array.isArray(record)) return false;
+  const value = record as Record<string, unknown>;
+  return value.pid === expected.pid
+    && value.role === expected.role
+    && value.version === expected.version
+    && value.agentName === expected.agentName
+    && value.project === expected.project
+    && typeof value.generation === "string"
+    && value.generation.length > 0;
+}
+
+function childAlreadyStopped(child: ChildProcess): boolean {
+  return child.exitCode !== null || child.signalCode !== null;
+}
+
+function waitForChildStop(child: ChildProcess, timeoutMs: number): Promise<boolean> {
+  if (childAlreadyStopped(child)) return Promise.resolve(true);
+  return new Promise((resolveStop, rejectStop) => {
+    let settled = false;
+    const finish = (stopped: boolean, error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      child.off("exit", onExit);
+      child.off("error", onError);
+      if (error) rejectStop(error);
+      else resolveStop(stopped);
+    };
+    const onExit = () => finish(true);
+    const onError = (error: Error) => finish(false, error);
+    const timer = setTimeout(() => finish(false), timeoutMs);
+    timer.unref();
+    child.once("exit", onExit);
+    child.once("error", onError);
+    if (childAlreadyStopped(child)) finish(true);
+  });
+}
+
+async function stopOwnedChild(child: ChildProcess | undefined, timeoutMs = OWNED_CHILD_WAIT_MS): Promise<void> {
+  if (!child || childAlreadyStopped(child)) return;
+  const stopped = waitForChildStop(child, timeoutMs);
+  try {
+    child.kill("SIGKILL");
+  } catch {
+    // Already exited or never started; still wait so listeners settle.
+  }
+  try {
+    await stopped;
+  } catch {
+    // Bounded cleanup must not mask the original failure.
+  }
+}
+
+async function waitForPidRecord(
+  path: string,
+  expected: WorkerPidIdentity,
+  timeoutMs = 5_000,
+): Promise<Record<string, unknown> & { generation: string }> {
+  const deadline = Date.now() + timeoutMs;
+  let lastRaw: string | undefined;
+  while (true) {
+    try {
+      lastRaw = readFileSync(path, "utf8");
+      try {
+        const parsed: unknown = JSON.parse(lastRaw);
+        if (isCompletePidRecord(parsed, expected)) return parsed;
+      } catch (error) {
+        if (!(error instanceof SyntaxError)) throw error;
+      }
+    } catch (error) {
+      if (!isErrno(error, "ENOENT")) throw error;
+      lastRaw = undefined;
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(`timed out waiting for complete PID record at ${path}: ${boundedPidDiagnostic(lastRaw)}`);
+    }
+    await new Promise((resolveWait) => setTimeout(resolveWait, PID_RECORD_POLL_MS));
   }
 }
 
@@ -220,6 +322,22 @@ test("hub, extension, and supervisor complete the real pre-ack route and destina
       "const handlers = new Map();",
       "const emit = async (name, event = {}, ctx) => { for (const handler of handlers.get(name) ?? []) await handler(event, ctx); };",
       "let finishing = false;",
+      "let shuttingDown = false;",
+      "let keepalive;",
+      "const finish = async (code) => {",
+      "  if (shuttingDown) return;",
+      "  shuttingDown = true;",
+      "  finishing = true;",
+      "  try {",
+      "    await emit('session_shutdown');",
+      "    process.exitCode = code;",
+      "  } catch (error) {",
+      "    process.stderr.write(String(error instanceof Error ? error.stack ?? error.message : error) + '\\n');",
+      "    process.exitCode = 1;",
+      "  } finally {",
+      "    clearInterval(keepalive);",
+      "  }",
+      "};",
       "const api = {",
       "  on(name, handler) { const list = handlers.get(name) ?? []; list.push(handler); handlers.set(name, list); },",
       "  registerTool() {}, registerCommand() {},",
@@ -231,7 +349,7 @@ test("hub, extension, and supervisor complete the real pre-ack route and destina
       "      await emit('message_start', { message });",
       "      await emit('agent_end', { messages: [{ role: 'assistant', content: 'integrated isolated reply' }] });",
       "      await emit('agent_settled');",
-      "      setTimeout(() => process.exit(7), 25);",
+      "      await finish(7);",
       "    });",
       "  },",
       "};",
@@ -239,11 +357,10 @@ test("hub, extension, and supervisor complete the real pre-ack route and destina
       "const scope = process.env.KXM_WORKER_SESSION_SCOPE;",
       "const sessionId = scope === 'default' ? '44444444-4444-4444-8444-444444444444' : '55555555-5555-4555-8555-555555555555';",
       "const ui = { setStatus() {}, notify() {} };",
-      "let shuttingDown = false;",
-      "const ctx = { cwd: process.cwd(), model: { provider: 'test', id: 'integrated' }, sessionManager: { getSessionId: () => sessionId }, ui, async shutdown() { if (shuttingDown) return; shuttingDown = true; await emit('session_shutdown'); process.exit(0); } };",
+      "const ctx = { cwd: process.cwd(), model: { provider: 'test', id: 'integrated' }, sessionManager: { getSessionId: () => sessionId }, ui, shutdown() { return finish(0); } };",
+      "keepalive = setInterval(() => {}, 1000);",
       "await emit('session_start', {}, ctx);",
       "fs.appendFileSync(invocations, JSON.stringify({ scope, args: process.argv.slice(2) }) + '\\n');",
-      "setInterval(() => {}, 1000);",
       "",
     ].join("\n"));
     writeFileSync(command, process.platform === "win32"
@@ -475,6 +592,7 @@ test("worker refuses stale claims and never deletes a replacement generation dur
   const stalePath = workerFile(workdir, "product", "stale-agent", "pid");
   const stale = `${JSON.stringify({ version: 1, pid: 2_147_483_647, role: "worker", startedAt: "2000-01-01T00:00:00.000Z" })}\n`;
   writeFileSync(stalePath, stale);
+  let child: ChildProcess | undefined;
   try {
     const rejected = await runWorker({
       KXM_AGENT_NAME: "stale-agent",
@@ -494,7 +612,7 @@ test("worker refuses stale claims and never deletes a replacement generation dur
       : `#!/bin/sh\nexec "${process.execPath}" "${fixture}"\n`);
     if (process.platform !== "win32") chmodSync(command, 0o700);
     const ownedPath = workerFile(workdir, "product", "owned-agent", "pid");
-    const child = spawn(process.execPath, ["scripts/kxm-worker.mjs"], {
+    child = spawn(process.execPath, ["scripts/kxm-worker.mjs"], {
       cwd: process.cwd(),
       env: isolatedWorkerEnv({
         KXM_AGENT_NAME: "owned-agent",
@@ -505,16 +623,99 @@ test("worker refuses stale claims and never deletes a replacement generation dur
       }),
       stdio: "ignore",
     });
-    await waitForFile(ownedPath);
-    const original = JSON.parse(readFileSync(ownedPath, "utf8"));
+    if (typeof child.pid !== "number") throw new Error("worker spawn did not assign a pid");
+    const original = await waitForPidRecord(ownedPath, {
+      pid: child.pid,
+      role: "worker",
+      version: 1,
+      agentName: "owned-agent",
+      project: "product",
+    });
     const replacement = { ...original, generation: "replacement-generation" };
     writeFileSync(ownedPath, `${JSON.stringify(replacement)}\n`);
-    const exited = new Promise<void>((resolveExit) => child.once("exit", () => resolveExit()));
-    child.kill("SIGTERM");
-    await exited;
+    const exited = waitForChildStop(child, OWNED_CHILD_WAIT_MS);
+    writeFileSync(workerFile(workdir, "product", "owned-agent", "control"), JSON.stringify({
+      startedAt: original.startedAt,
+      generation: original.generation,
+    }));
+    assert.equal(await exited, true, "worker did not exit after control-file stop within the deadline");
+    assert.ok(childAlreadyStopped(child), "worker did not exit after control-file stop within the deadline");
+    assert.equal(child.exitCode, 0, `worker exited abnormally: code=${child.exitCode} signal=${child.signalCode}`);
     assert.equal(readFileSync(ownedPath, "utf8"), `${JSON.stringify(replacement)}\n`);
   } finally {
+    await stopOwnedChild(child);
     removeTempDir(workdir);
+  }
+});
+
+test("PID record readiness distinguishes partial JSON, wrong identity, and a complete valid record", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "kxm-pid-ready-"));
+  const path = join(workdir, "worker.pid");
+  const expected: WorkerPidIdentity = {
+    pid: 4242,
+    role: "worker",
+    version: 1,
+    agentName: "owned-agent",
+    project: "product",
+  };
+  try {
+    writeFileSync(path, '{"version":1');
+    await assert.rejects(
+      () => waitForPidRecord(path, expected, 200),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /timed out waiting for complete PID record/);
+        assert.match(error.message, /\{"version":1/);
+        return true;
+      },
+    );
+
+    writeFileSync(path, `${JSON.stringify({
+      version: 1,
+      pid: 1,
+      role: "worker",
+      agentName: "other-agent",
+      project: "product",
+      generation: "gen-wrong",
+    })}\n`);
+    await assert.rejects(
+      () => waitForPidRecord(path, expected, 200),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /timed out waiting for complete PID record/);
+        assert.match(error.message, /other-agent/);
+        return true;
+      },
+    );
+
+    const complete = {
+      version: 1,
+      pid: 4242,
+      role: "worker",
+      agentName: "owned-agent",
+      project: "product",
+      generation: "gen-complete",
+      startedAt: "2026-01-01T00:00:00.000Z",
+    };
+    writeFileSync(path, `${JSON.stringify(complete)}\n`);
+    const record = await waitForPidRecord(path, expected, 200);
+    assert.equal(record.pid, 4242);
+    assert.equal(record.generation, "gen-complete");
+  } finally {
+    removeTempDir(workdir);
+  }
+});
+
+test("waitForChildStop does not treat a live-child deadline as exit", async () => {
+  let child: ChildProcess | undefined;
+  try {
+    child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+    if (typeof child.pid !== "number") throw new Error("child spawn did not assign a pid");
+    const stopped = await waitForChildStop(child, 50);
+    assert.equal(stopped, false, "deadline must not report success while the child is still alive");
+    assert.equal(childAlreadyStopped(child), false);
+  } finally {
+    await stopOwnedChild(child);
   }
 });
 

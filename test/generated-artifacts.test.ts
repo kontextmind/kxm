@@ -3,15 +3,13 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import test from "node:test";
 
 const checker = resolve("scripts/check-generated.mjs");
-const artifacts = [
-  "plugins/kxm/dist/cli.js",
-  "plugins/kxm/dist/server.js",
-  "plugins/kxm/dist/mcp-server.js",
-  "plugins/kxm/dist/vnext-runtime-supervisor.js",
-];
+const { GENERATED_ARTIFACTS: artifacts } = await import(pathToFileURL(checker).href) as {
+  GENERATED_ARTIFACTS: readonly string[];
+};
 
 function run(cwd: string, command: string, args: string[]) {
   return spawnSync(command, args, { cwd, encoding: "utf8", windowsHide: true });
@@ -51,7 +49,7 @@ test("generated artifact check requires every bundle to exist and be tracked and
     roots.push(clean);
     const accepted = run(clean, process.execPath, [checker]);
     assert.equal(accepted.status, 0, `${accepted.stderr}\n${accepted.stdout}`);
-    assert.match(accepted.stdout, /tracked and current \(4\)/);
+    assert.match(accepted.stdout, new RegExp(`tracked and current \\(${artifacts.length}\\)`));
 
     const missing = repository();
     roots.push(missing);

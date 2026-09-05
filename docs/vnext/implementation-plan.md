@@ -161,6 +161,25 @@ It does not replace the phase gates below.
   Thresholds are measured whole-tree values and may only ratchet up.
   `npm run verify` includes `check:generated`, which diffs built `dist` against
   the staged copy. `check:generated` also runs on every CI validate leg.
+- **B4 issue 85 (unreleased):** five-layer import boundary held by
+  `test/import-boundary.test.ts`. Direct imports from `extension.ts` and
+  `mcp-server.ts` to hub, store, or workflow are banned including type-only;
+  the six shared workflow data shapes live in `protocol.ts`, with an internal
+  type re-export from `workflow.ts` (not a product alias). Package `exports`
+  are exactly `./core`, `./runtime`, `./client`, `./extension`, `./mcp`, and
+  `./package.json`, all compiled `plugins/kxm/dist` JS except `./package.json`.
+  No bare `"."` entry. `./mcp` is the executable path. `pi.extensions` stays
+  on source. Four library bundles are in `check:generated`. The durable pack
+  guard asserts those four library bundles plus the two barrel sources are
+  present in `npm pack`, and that `package.json` `files` still includes
+  `plugins/kxm/dist` and `plugins/kxm/src`. One-time six-file delta versus
+  this slice's base (zero removals) is saved in `b4/pack-proof.json` plus
+  base/candidate manifests; tests do not freeze that delta against HEAD.
+  Boundary tests witness value imports, type-only exports, inline
+  `import type`, transitive external edges, and fail closed on a missing
+  local AST. Family seeds include `vnext-runtime*` plus harness, routing,
+  envelope, and redact. The packed install still runs the CLI, hub, and the
+  three library subpaths.
 - `release.yml` on `v*` tags asserts the tag equals `package.json` version
   before install, runs `validate:ci` + `check:generated`, and packs
   `kxm-<v>.tgz` (`kxmReleaseAssetName`). Release lookup: GET-by-tag is the
@@ -209,6 +228,29 @@ It does not replace the phase gates below.
   (status line, widget, online and offline hub, TUI picker skip/select, RPC and
   opt-out, single registration) is a deterministic extension test. Pi install is
   pinned `@main`.
+- Queue test (#119) and worker PID readiness (#120) **landed** (test-only;
+  production worker unchanged): on failure the queue test stops the
+  extension in `try/finally` with bounded `shutdownExtension` before hub
+  teardown. Fixture `requestTimeoutMs` defaults to 1000; this peer uses
+  5000. TTL untouched. An abort-aware injected first-send failure must
+  exit the child itself within a deadline. The worker generation test waits
+  for a complete matching PID record (identity JSON, not file existence)
+  and stops the owned child in `finally` with a bounded SIGKILL before
+  removing the temp dir. Deadline-as-success is rejected; bounded exit
+  protocol is asserted. Partial JSON identity-readiness is covered by a
+  deterministic helper test.
+- **#112 fixture repair landed** (test-only, not a claimed Windows crash
+  mechanism): the integrated pre-ack child awaits real `session_shutdown`,
+  clears its keepalive, sets `process.exitCode`, and does not call
+  `process.exit`. Failed cleanup does not force 7. Controlled hosted
+  regression proof (not the underlying crash mechanism): GitHub Actions
+  run `33998022233`, `windows-latest-l`, Node `24.19.0`, `npm test` with
+  coverage absent. Baseline exact `79b5862` 3/3 known pre-ack failures
+  (`actual: 3221226505` vs `expected: 7`), no unrelated failures. Fixed
+  exact `c499cb2` 3/3 full suite pass, pre-ack ran, exit 0. Both commits
+  immutable. Temporary probe workflow/branch/worktree deleted and never
+  merged. All four normal `validate:ci` coverage legs remain required.
+  Not a general Windows cure; no extra permanent npm gate.
 
 ### Still open
 
@@ -220,10 +262,8 @@ It does not replace the phase gates below.
 - Coverage only lists modules some test loaded; a future source file with zero
   imports from tests will not drag the number down. A test that imports every
   non-excluded module belongs before the next ratchet raise, not as a B1 add.
-- Queue/worker CI cleanup, separate PRs (not claimed fixed here):
-  - **#119:** intermittent Windows Node 24 queue/timeout hang after a failed
-    send.
-  - **#120:** worker PID file race; partial JSON seen on POSIX.
+- **Issue #115 (open):** unrelated SQLite race. No speculative fix in this
+  slice.
 - Docs sweep: operator pages updated to `kxm hub start|view|stop` and `kxm dash`;
   CHANGELOG history may still mention old names.
 - Remaining Mesh-named internals (`MeshHub`, `createMeshHub`, `MeshStore`,
@@ -243,6 +283,9 @@ It does not replace the phase gates below.
   execution enforcement is a Phase 3 engine gate, not this auth/inventory
   slice. Unhosted harness/model pair rejection lands in the Phase 4 assignment
   layer (and Phase 11 adapters). Do not treat B3 as blanket-complete.
+- No `types` export condition until declaration emit exists.
+- MCP factory API waits for a second consumer (D13); `./mcp` stays an
+  executable path.
 - Helper allowlists in `scripts/harness-run.mjs` are script constants, not a
   preferences overlay or catalog feed. Grok is in the observational catalog
   (`mode: either`) and is not a supervised long-lived worker.
@@ -412,6 +455,12 @@ without a second asset; mismatch tag failed before install. Cleanup left
 published `v0.5.1` and tree `0.5.1` unchanged. `protect-main` `22251971`
 now requires `Plugin validation`; `delete_branch_on_merge` is true. First
 published `kxm-<v>.tgz` and public npm remain later.
+
+**B4 note (not the Phase 5 gate):** package seams and the strict
+extension/mcp import boundary landed in tree. The old pack-unchanged
+expectation cannot hold: intended library bundles plus source barrels change
+the tarball by exactly those six paths versus this slice's base. The Phase 5
+gate is unchanged.
 
 **Gate:** the public local release runs a dirty two-repository workflow through
 a Runtime crash without a hub or secret leakage. Release assets come from
