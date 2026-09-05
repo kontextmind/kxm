@@ -36,6 +36,20 @@ All notable user-facing changes are documented here. The project follows [Semant
   after a by-tag 404 so a retry reuses one draft instead of creating another.
   Duplicate drafts, a published match, and list/pagination failures fail
   closed with no mutation.
+- Headless helper reads `prompt_file` and `output_schema` against the
+  invocation cwd before any auth or assignment spawn. Missing or unreadable
+  inputs fail closed with zero spawn and no child left waiting on stdin.
+  File-consuming argv tokens are absolute so the assignment can run in
+  `request.cwd`.
+- Headless helper preflight requires `harness`, `role`, `model`, `permission`,
+  and `prompt_file` as nonempty strings, so omitted permission no longer
+  launches Pi with `-a` and omitted model no longer falls through to a CLI
+  default. Pi planner and reviewer roles cannot `edit`; only `experiment` may.
+  `max_cost_usd` and `timeout_ms` reject non-numbers, non-finite values, and
+  zero instead of dropping the flag. `just` recipes pass user paths as quoted
+  positional arguments and `JSON.stringify` them; `just runs` prints
+  `billed` / `list` / `unmetered` / `unknown` instead of `$0.0000` for absent
+  cost.
 - Pi git installs no longer fail to load the extension when production
   `node_modules` omits `yaml`. Update-config YAML parsing stays on the bundled
   CLI path.
@@ -45,6 +59,13 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- Headless `scripts/harness-run.mjs` helper now fail-closes on native auth
+  preflight, unverified harnesses, native-provider Pi impersonation, and
+  unsupported Windows launchers. Read-only Claude uses `--safe-mode` and
+  `Read,Glob,Grep` (no `--bare`, no Bash). Usage is cumulative per assignment;
+  context occupancy is explicit unknown. Answer and stderr stay in private
+  sidecars. There is no `impl-pi` Grok fallback. This is a dev helper, not a
+  Phase 11 adapter.
 - Pi install instructions pin `@main`; an older checkout tracking `master` must
   `pi remove` then reinstall.
 - `kxm mesh` (including `init`/`smoke` and `--json`) fails closed with a stderr

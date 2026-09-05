@@ -39,7 +39,15 @@ It does not replace the phase gates below.
   CLI. If the native harness is absent or logged out, fail closed (or prompt
   login) rather than silently switching to Pi. Pi remains the default
   long-lived worker only for providers it hosts that have no authenticated
-  native harness (e.g. xAI/Grok today).
+  native harness. **Superseded 2026-09-04 / tightened 2026-09-05:** xAI is no
+  longer such a provider — the `grok` CLI is installed and OAuth'd to
+  `auth.x.ai` (`grok models` reports logged in), so the writer role dispatches
+  through it. If `grok` is missing or logged out, fail closed; Pi's `xai`
+  provider is not a writer fallback. This changes the writer's harness only;
+  `kxm agent worker` / `pi --mode rpc` remains Pi-only, because `grok` is a
+  one-shot headless writer, not a supervised long-lived worker. The repo
+  `scripts/harness-run.mjs` helper is a bounded dev dispatcher (auth preflight,
+  verified pairs, private sidecars), not a Phase 11 product adapter.
 - Anthropic subscription models are the motivating case (Claude CLI vs Pi
   Anthropic API keys). The same rule applies to Codex, Kimi, Gemini, DeepSeek,
   and later harnesses.
@@ -116,6 +124,21 @@ It does not replace the phase gates below.
   malformed per-user `update.yaml`. Source
   checkouts skip the notice. A project `.kxm/update.yaml` is ignored with a
   warning. Startup reports `auth=token|none`.
+- Headless `scripts/harness-run.mjs` helper (2026-09-05): native auth
+  preflight, verified grok/claude/codex/OpenRouter-Pi pairs, no native-provider
+  Pi fallback, private answer/stderr sidecars, shell:false launchers.
+  Routing fields `harness`/`role`/`model`/`permission`/`prompt_file` are
+  required nonempty strings (no CLI-default model or permission). Pi
+  planner/reviewer cannot `edit`; only `experiment` may. `max_cost_usd` and
+  `timeout_ms` must be positive finite numbers when set (zero is not dropped
+  silently). `just` recipes JSON.stringify user paths via positional args.
+  Recipe quoting tests use the justfile body and do not require a just binary;
+  live just integration is optional. `just runs` labels billed / list /
+  unmetered / unknown (never absent as `$0`). `prompt_file` and
+  `output_schema` resolve against the invocation cwd and are read before any
+  auth or assignment spawn; missing or unreadable inputs fail closed with
+  zero spawn. File-consuming argv tokens are absolute so the child can run
+  in `request.cwd`. Windows helper dispatch is unverified. Not Phase 11.
 - Coverage include inverted to `plugins/kxm/src/**/*.ts`; excludes are only
   `server.ts` and `mcp-server.ts` (spawned bundles attribute to `dist`).
   Thresholds are measured whole-tree values and may only ratchet up.
@@ -146,6 +169,21 @@ It does not replace the phase gates below.
   that adds a published-release prerequisite (release lookup returns
   `draft: false` for the tag) and the `npm-publish` environment. Not
   activated by B2.
+- **B2 live draft proof (temporary, cleaned; not a published asset):**
+  mismatch tag `v0.0.0-b2mismatch.20260905.1` run `33995663476` failed closed
+  before install (no draft). Correct tag `v0.5.20260905` at proof commit
+  `9960e6f`; Release run `33995686608` attempt 1 uploaded draft `383391727`
+  asset `546379172` `kxm-0.5.20260905.tgz` digest
+  `sha256:96eb9aa99cd7025b3f313f7a8caa660a48f8efe08bf649d88fe82353aa74851f`
+  (independently downloaded bytes match). Attempt 2 `success` with
+  `skipped: true`, same release/asset/digest, no duplicate drafts. Root
+  deleted the temporary draft plus remote/local tags and the proof
+  branch/worktree; absence verified via release list and `ls-remote`.
+  Published `v0.5.1` unchanged; tree version remains `0.5.1`.
+- **protect-main applied:** ruleset `22251971` keeps all live rules and the
+  four Validate contexts; `Plugin validation` is now required.
+  `delete_branch_on_merge` is true. Evidence: B2 artifacts
+  `ruleset-applied.json` and `repository-applied.json`.
 - `kxm mesh` fails closed with a stderr brake naming `kxm init`, `kxm hub`, and
   `scripts/smoke-multi-pi.mjs`. `MeshClient`/`MeshHttpError` are `HubClient`/
   `HubHttpError`; `MeshDashboard` is `KxmDashboard`. Operator copy says `hub:off`;
@@ -157,23 +195,18 @@ It does not replace the phase gates below.
 
 ### Still open
 
-- **B2 live proof (still open):** workflow and tests are in tree; a real draft
-  REST `digest` and a rerun that takes the idempotent skip path have not been
-  recorded. Until that proof, `kxm update --kxm` from a real npm-global
-  install still fails closed when GitHub has no `kxm-<v>.tgz` digest.
-  Existing `v0.5.1` published release is untouched. No sidecar `.sha256`.
-  After a green tag run plus idempotent rerun, record run/release/asset IDs
-  and digest, then drop this bullet.
 - First real draft-to-published release after B2 (later release phase).
-  `kxm update --kxm` end to end from a published asset.
+  `kxm update --kxm` end to end from a published asset. Temporary draft proof
+  does not replace this. No sidecar `.sha256`.
 - **After public npm:** wiki-compile this project from hub context; npm as
   `kxm update` source. Not before.
 - Coverage only lists modules some test loaded; a future source file with zero
   imports from tests will not drag the number down. A test that imports every
   non-excluded module belongs before the next ratchet raise, not as a B1 add.
-- Root PUT of `protect-main` to add `Plugin validation` after it is green on
-  the B2 PR head (four Validate contexts stay). `delete_branch_on_merge` is a
-  root settings change after code/test/review proof. Not done in this slice.
+- Queue/worker CI cleanup, separate PRs (not claimed fixed here):
+  - **#119:** intermittent Windows Node 24 queue/timeout hang after a failed
+    send.
+  - **#120:** worker PID file race; partial JSON seen on POSIX.
 - Docs sweep: operator pages updated to `kxm hub start|view|stop` and `kxm dash`;
   CHANGELOG history may still mention old names.
 - Remaining Mesh-named internals (`MeshHub`, `createMeshHub`, `MeshStore`,
@@ -186,6 +219,9 @@ It does not replace the phase gates below.
 - Phase 3 engine (model-free driver on `default.yaml` **and** `fix.yaml` with
   simulated producers; caller-authored replies rejected).
 - Non-Pi dispatch adapters (Phase 11). Listing a harness does not execute it.
+  The `scripts/harness-run.mjs` dev helper is not that adapter.
+- Product catalog still lacks a `grok` entry and Codex `authArgs`. Helper
+  allowlists are script constants, not a preferences overlay or catalog feed.
 - Confirm GitHub repository identity (`kontextmind/kxm` vs current remote).
 - **SCM and issue trackers:** detect from repo conventions (git remote, CI
   layout, issue-key patterns) and **confirm at workflow/project creation**.
@@ -340,6 +376,13 @@ Implement worktrees, dirty snapshots, one-writer leases, multi-repository
 bindings, default-derived environments, host secret grants, local logs,
 repository-aware timing, patches/local commits, and non-atomic delivery
 manifests.
+
+**B2 note (not the Phase 5 gate):** `release.yml` created a
+temporary draft on tag `v0.5.20260905` and the same-digest rerun skipped
+without a second asset; mismatch tag failed before install. Cleanup left
+published `v0.5.1` and tree `0.5.1` unchanged. `protect-main` `22251971`
+now requires `Plugin validation`; `delete_branch_on_merge` is true. First
+published `kxm-<v>.tgz` and public npm remain later.
 
 **Gate:** the public local release runs a dirty two-repository workflow through
 a Runtime crash without a hub or secret leakage. Release assets come from

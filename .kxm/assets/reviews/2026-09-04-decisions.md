@@ -288,3 +288,34 @@ zero-login path). A research pass on exe.dev precedes sizing.
 **Decided.** SSH and exe.dev executors do not displace any MVP unit. They
 stay Phase 6, off the critical path, and the exe.dev research pass runs
 when Phase 6 is scheduled, not before.
+
+## D17. Writer role moves to the Grok CLI (2026-09-04, supersedes part of D1)
+
+**Decided.** The implementer dispatches through the **native `grok` CLI**
+(`grok --prompt-file <brief> -m grok-4.6 --always-approve`), not through Pi.
+This is the provider-native rule applying to xAI for the first time: `grok`
+1.0.13 is installed and OAuth'd to `auth.x.ai`, so Pi's `xai` provider is no
+longer the best authenticated route for Grok.
+
+**Tightened 2026-09-05.** Auth evidence is `grok models` (logged in with
+grok.com, default grok-4.6). Do not read `~/.grok/auth.json` or dump env.
+If `grok` is missing or logged out, **fail closed**. Pi's `xai` provider is
+not a writer fallback. Native-provider Pi brakes also cover anthropic,
+openai, moonshot, google, and deepseek. OpenRouter remains a Pi provider
+authenticated by `pi auth check --provider openrouter`.
+
+Verified before switching: `grok` writes files headlessly in a given `cwd`,
+reports `modelUsage` and `total_cost_usd` in a shape near-identical to the
+Claude CLI's, and resolves `grok-4.6` to the `grok-4.6-build` effective model.
+
+**Scope limit.** This changes the writer's harness only. `kxm agent worker` /
+`pi --mode rpc` stays Pi-only: `grok` is a one-shot headless writer, not a
+supervised long-lived worker. D1's MVP gate is otherwise unchanged, except that
+the implementer arm now reads "through the Grok CLI" rather than "through Pi on
+Grok or GLM". The repo helper is not a Phase 11 adapter.
+
+**Consequence for D10.** `grok`'s native `--output-format json` already carries
+per-model tokens, cache reads, and cost, so the routing record for a writer
+attempt no longer has to be reconstructed from Pi's envelope. Token aggregates
+are cumulative; context occupancy is explicit unknown (do not infer peak
+window from totals).
