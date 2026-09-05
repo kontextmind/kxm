@@ -1,17 +1,17 @@
-import { MeshClient } from "../plugins/kxm/src/client.ts";
+import { HubClient } from "../plugins/kxm/src/client.ts";
 import { createMeshHub } from "../plugins/kxm/src/hub.ts";
 
 const token = "local-example-token";
 const hub = createMeshHub({ port: 0, authToken: token, rateLimit: false });
 const address = await hub.start();
-const planner = new MeshClient({
+const planner = new HubClient({
   serverUrl: address.url,
   authToken: token,
   name: "example-planner",
   purpose: "Delegates a focused example task",
   project: "example",
 });
-const reviewer = new MeshClient({
+const reviewer = new HubClient({
   serverUrl: address.url,
   authToken: token,
   name: "example-reviewer",

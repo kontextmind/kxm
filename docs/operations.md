@@ -176,12 +176,12 @@ Broader deployments need shared state and coordination, external identity and fi
 
 ## v0.5 context/state storage
 
-The mesh database (schema version 3) carries `context_items` alongside
+The hub database (schema version 3) carries `context_items` alongside
 agents, messages, workflow runs, and the journal. Temporal state, knowledge
 records, and their audit trails live in the same SQLite file and upgrade in
 place from v0.4 databases.
 
-- **Backup and restore**: include the mesh database file and, if used, the
+- **Backup and restore**: include the hub database file and, if used, the
   `.kxm/skills/` and `.kxm/knowledge/` trees. The wiki is a compiled view and
   can be regenerated (`kxm context wiki-compile`); skills history and state
   records are authoritative and must be backed up.

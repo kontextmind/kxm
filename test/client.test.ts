@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import test from "node:test";
-import { MeshClient } from "../plugins/kxm/src/client.ts";
+import { HubClient } from "../plugins/kxm/src/client.ts";
 import { createMeshHub } from "../plugins/kxm/src/hub.ts";
 import { createTestMesh, waitFor } from "./helpers.ts";
 
@@ -134,7 +134,7 @@ test("client registration fails with a bounded request timeout", async (context)
   });
   const address = server.address();
   assert.ok(address && typeof address !== "string");
-  const client = new MeshClient({
+  const client = new HubClient({
     serverUrl: `http://127.0.0.1:${address.port}`,
     name: "timeout",
     purpose: "test",
@@ -152,7 +152,7 @@ test("client rejects invalid JSON hub responses", async (context) => {
   context.after(() => server.close());
   const address = server.address();
   assert.ok(address && typeof address !== "string");
-  const client = new MeshClient({
+  const client = new HubClient({
     serverUrl: `http://127.0.0.1:${address.port}`,
     name: "invalid-json",
     purpose: "test",
@@ -165,7 +165,7 @@ test("event loop automatically re-registers after an in-memory hub restart", asy
   const token = "restart-token";
   const firstHub = createMeshHub({ host: "127.0.0.1", port: 0, authToken: token, rateLimit: false });
   const firstAddress = await firstHub.start();
-  const client = new MeshClient({
+  const client = new HubClient({
     serverUrl: firstAddress.url,
     authToken: token,
     name: "restartable",

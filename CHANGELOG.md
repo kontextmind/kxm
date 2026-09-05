@@ -12,6 +12,18 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- Pi install instructions pin `@main`; an older checkout tracking `master` must
+  `pi remove` then reinstall.
+- `kxm mesh` (including `init`/`smoke` and `--json`) fails closed with a stderr
+  brake naming `kxm init`, `kxm hub`, and `scripts/smoke-multi-pi.mjs`. The
+  command stays absent from help.
+- `MeshClient`/`MeshHttpError` are `HubClient`/`HubHttpError`; `MeshDashboard`
+  is `KxmDashboard`.
+- Operator copy says `hub:off`; a docs brake test fails on leftover Mesh
+  operator tokens.
+- Session readiness on `startup`/`new`/`fork` (status, widget, picker
+  skip/select, online/offline hub, RPC and opt-out, single registration) is a
+  deterministic extension test.
 - Coverage include inverted to `plugins/kxm/src/**/*.ts`. Excludes are only
   `server.ts` and `mcp-server.ts` (spawned bundles attribute to `dist`; see
   CONTRIBUTING). Measured on Windows Node 22.21.0 locally (one leg; CI legs

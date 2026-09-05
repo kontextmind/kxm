@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { createHash, createHmac } from "node:crypto";
 import { request as httpRequest, type ClientRequest } from "node:http";
 import test, { type TestContext } from "node:test";
-import type { MeshClient } from "../plugins/kxm/src/client.ts";
-import { MeshHttpError } from "../plugins/kxm/src/client.ts";
+import type { HubClient } from "../plugins/kxm/src/client.ts";
+import { HubHttpError } from "../plugins/kxm/src/client.ts";
 import type { MeshHubOptions } from "../plugins/kxm/src/hub.ts";
 import type { MessageRecord, WorkflowMessageContext } from "../plugins/kxm/src/protocol.ts";
 import {
@@ -60,7 +60,7 @@ function beginJsonPost(
 
 function expectMeshError(code: string, statusCode?: number): (error: unknown) => boolean {
   return (error: unknown): boolean => {
-    assert.ok(error instanceof MeshHttpError);
+    assert.ok(error instanceof HubHttpError);
     assert.equal(error.code, code);
     if (statusCode !== undefined) assert.equal(error.statusCode, statusCode);
     return true;
@@ -209,10 +209,10 @@ function workflowDefinition(options: {
 
 interface ProvenanceMesh {
   mesh: TestMesh;
-  coordinator: MeshClient;
-  peerA: MeshClient;
-  peerB: MeshClient;
-  outsider: MeshClient;
+  coordinator: HubClient;
+  peerA: HubClient;
+  peerB: HubClient;
+  outsider: HubClient;
   run: WorkflowRun;
 }
 
@@ -250,8 +250,8 @@ async function startProvenanceMesh(
 }
 
 async function obtainPeerReply(
-  coordinator: MeshClient,
-  peer: MeshClient,
+  coordinator: HubClient,
+  peer: HubClient,
   runId: string,
   requirementKey = "peer review",
   attempt = 1,

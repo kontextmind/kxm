@@ -92,6 +92,8 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
       encoding: "utf8",
     });
     assert.equal(unknownMesh.status, 2, `${unknownMesh.stderr}\n${unknownMesh.stdout}`);
+    assert.match(unknownMesh.stderr, /kxm mesh was removed/);
+    assert.equal(unknownMesh.stdout, "");
 
     const vnextProject = join(consumer, "vnext-project");
     const packedState = join(consumer, "kxm-state");

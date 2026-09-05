@@ -20,16 +20,17 @@ Presence of vNext documents does not activate new behavior.
 | Full peer message bodies in hub DB | Summary-first sync events | Existing bodies remain protected legacy data and are not re-emitted automatically |
 | Project tokens/manual environment auth | Runtime enrollment and scoped credentials | Preserve current mode until enrollment is confirmed; never copy tokens into Git |
 | `.kxm/config/env.example` | Built-in defaults plus optional scoped env YAML | Import only explicit portable differences; secrets become references |
-| `kxm mesh init` empty directories | Unified `kxm init` create/join/migrate/repair | Old command aliases to the compatible subset for one release |
+| `kxm mesh init` empty directories | Unified `kxm init` create/join/migrate/repair | Removed; `kxm init` is the only entry and `kxm mesh` fails closed |
 | `kxm session start` manifest only | `kxm run` executable run | Do not reinterpret old session manifests as completed or active runs |
 | Existing context items and journal | Pinned memory revisions and candidates | Preserve provenance/authority floors; no automatic executable promotion |
 
 ## Compatibility releases and activation
 
 Local Runtime support may ship publicly before hub vNext, but it remains beside
-the current mesh commands and stores. A project activates `kxm.*.v1` only by an
-explicit successful `kxm init`/migration receipt; file presence alone never
-activates it. Legacy hub runs continue on the legacy engine.
+existing hub contracts and stores. Old command names are not preserved. A project
+activates `kxm.*.v1` only by an explicit successful `kxm init`/migration receipt;
+file presence alone never activates it. Legacy hub runs continue on the legacy
+engine.
 
 When Phase 8 activates hub vNext, at least one hub transition release provides:
 

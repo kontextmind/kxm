@@ -115,25 +115,30 @@ It does not replace the phase gates below.
   Thresholds are measured whole-tree values and may only ratchet up.
   `npm run verify` includes `check:generated`, which diffs built `dist` against
   the staged copy. `check:generated` also runs on every CI validate leg.
+- `kxm mesh` fails closed with a stderr brake naming `kxm init`, `kxm hub`, and
+  `scripts/smoke-multi-pi.mjs`. `MeshClient`/`MeshHttpError` are `HubClient`/
+  `HubHttpError`; `MeshDashboard` is `KxmDashboard`. Operator copy says `hub:off`;
+  a docs brake test under `npm test` fails on `mesh:offline`, `kxm mesh`,
+  `/mesh-status`, `MeshClient`. Session readiness on `startup`/`new`/`fork`
+  (status line, widget, online and offline hub, TUI picker skip/select, RPC and
+  opt-out, single registration) is a deterministic extension test. Pi install is
+  pinned `@main`.
 
 ### Still open
 
 - **After public npm:** wiki-compile this project from hub context; npm as
   `kxm update` source. Not before.
-- **Next PR:** fold or drop `kxm mesh` (`init`/`smoke`); rename `MeshClient` /
-  `mesh:offline`; session-ready `/new`/`/fork` as a failing test.
 - Coverage only lists modules some test loaded; a future source file with zero
   imports from tests will not drag the number down. A test that imports every
   non-excluded module belongs before the next ratchet raise, not as a B1 add.
 - The standalone `generated` CI job is redundant with the validate legs; drop
   it in B2 together with a `protect-main` ruleset edit.
-- Rebuild generated `plugins/kxm/dist` and run full `npm test` after the latest
-  CLI rename.
 - Docs sweep: operator pages updated to `kxm hub start|view|stop` and `kxm dash`;
   CHANGELOG history may still mention old names.
-- Remaining `kxm mesh` group (`init`, `smoke`) — fold or drop; do not keep Mesh
-  as a product name.
-- Internal type names (`MeshClient`, `MeshDashboard`).
+- Remaining Mesh-named internals (`MeshHub`, `createMeshHub`, `MeshStore`,
+  `MeshTui*`, `LocalMeshSnapshot`, `piMeshExtension`, `pi-mesh.*` schema ids,
+  `pi_mesh_*` metrics, `X-Mesh-Delivery-ID`) rename together at the E3
+  wire/schema bump, not piecemeal.
 - Slim live `default` workflow for this repo (no bulk migrate of jira/provenance/v04).
 - YAML-editing enable/disable UI (Phase 4 `/kxm` settings or `kxm dash` config
   tab). Do not add a preferences overlay.
@@ -278,7 +283,7 @@ menu (hub/workflows/agents completions wrapping CLI), validated YAML editors
 (enable/disable harnesses and models by editing Git files, not a parallel
 store), assignment dispatch that binds harness from auth inventory, and routing
 records that always include harness+cost. Hub-local session brief and Pi status
-line are in tree.
+line are in tree with a deterministic `startup`/`new`/`fork` readiness test.
 
 **Gate:** `kxm init` followed by `kxm run default "prompt"` resolves the
 materialized `default.yaml` and completes a single-repository Pi workflow with
@@ -288,7 +293,7 @@ visible local status (`kxm dash`). `fix.yaml` is not required to run live.
 
 Ship the local Runtime track publicly beside, not on top of, the legacy hub
 engine. Explicit `kxm init`/migration receipts activate vNext resources per
-project; existing hub runs and mesh commands remain on their current contracts.
+project; existing hub runs, `kxm hub …`, and the `kxm_*` tools remain on their current contracts.
 
 Implement worktrees, dirty snapshots, one-writer leases, multi-repository
 bindings, default-derived environments, host secret grants, local logs,

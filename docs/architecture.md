@@ -124,7 +124,7 @@ An ordinary coordinator reply while `running` is a failure because required work
 
 Stages form an ordered list. A failed checkpoint retries the **same** stage until `maxAttempts` is exhausted, after which the run is terminal; there are no back-edges (an instruction such as "failures return to build" is prose the engine cannot execute) and no resume verb. Workflow definitions are read from the single file or inline JSON the hub was started with. Each run records a secret-free semantic `definitionHash`, so credential rotation does not create false drift while behavior changes remain auditable.
 
-`MeshClient` owns registration, rotating agent credentials, heartbeats, bounded HTTP requests, SSE reconnects, and automatic re-registration after hub state loss. The Pi extension adds peer messaging plus workflow checkpoint, wait, journal, and reporting tools. Claude MCP adds the same workflow plane plus `kxm_inbox` and `kxm_reply`.
+`HubClient` owns registration, rotating agent credentials, heartbeats, bounded HTTP requests, SSE reconnects, and automatic re-registration after hub state loss. The Pi extension adds peer messaging plus workflow checkpoint, wait, journal, and reporting tools. Claude MCP adds the same workflow plane plus `kxm_inbox` and `kxm_reply`.
 
 ## Message lifecycle
 
@@ -198,7 +198,7 @@ Workflow session isolation is a context-routing and accidental-cross-run safety 
 
 The generated runtimes are committed because installed packages must work without a development toolchain or runtime TypeScript stripping. Edit the source, run `npm run build`, and commit the source and corresponding files under `dist/`.
 
-The command groups described in this document (`agent`, `session`, `workflow`, `gate`, `mesh`, `improve`) are defined in `src/cli.ts`. The committed `plugins/kxm/dist/cli.js` that `scripts/kxm.mjs` launches may lag the source: if `kxm --help` prints a flat command list (`init | validate | status | hub | worker | stop | workflow … | signal | github watch | retrospective export | smoke`), the bundle predates the Commander groups and must be rebuilt and committed before the operator surface here is what actually runs.
+The command groups described in this document (`agent`, `session`, `workflow`, `gate`, `hub`, `dash`, `improve`) plus root `init` are defined in `src/cli.ts`. The committed `plugins/kxm/dist/cli.js` that `scripts/kxm.mjs` launches may lag the source: if `kxm --help` prints a former flat command list instead of these Commander groups, rebuild with `npm run build` and commit the generated `dist` before the operator surface here is what actually runs.
 
 Peer-policy fields are additive to SQLite schema version 2 because agents,
 messages, and workflow runs are stored as JSON records. Existing schema-v2

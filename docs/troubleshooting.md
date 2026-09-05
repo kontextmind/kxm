@@ -20,11 +20,11 @@ If a worker was stopped during `kxm_await`, `--continue` may leave a `tool_use` 
 
 ### A model quota or provider error settles the agent
 
-Pi Mesh waits until Pi has exhausted its own automatic retries. It then keeps the inbound message in `delivered` state, records an allowlisted `quota` or `provider_error` diagnostic without the provider body, and restarts the RPC child. Configure `KXM_WORKER_FALLBACK_MODELS` (or `--fallback-models`) to rotate immediately; otherwise the worker retries after `KXM_WORKER_PROVIDER_RETRY_MS`. Keep continuation enabled so finished peer calls and tool results survive the model switch. Use `--fresh-start`, not `--no-continue`, when only the first launch must avoid old session state.
+KXM waits until Pi has exhausted its own automatic retries. It then keeps the inbound message in `delivered` state, records an allowlisted `quota` or `provider_error` diagnostic without the provider body, and restarts the RPC child. Configure `KXM_WORKER_FALLBACK_MODELS` (or `--fallback-models`) to rotate immediately; otherwise the worker retries after `KXM_WORKER_PROVIDER_RETRY_MS`. Keep continuation enabled so finished peer calls and tool results survive the model switch. Use `--fresh-start`, not `--no-continue`, when only the first launch must avoid old session state.
 
 ### A worker heartbeat is healthy but one tool never finishes
 
-Set `KXM_WORKER_TOOL_TIMEOUT_MS` above the longest legitimate tool call. Its 31-minute default intentionally gives a 30-minute `kxm_await` or `kxm_fanout` time to return durable pending handles before supervision intervenes. When that bound is exceeded, the structured worker log records `worker_tool_timeout` with only the allowlisted tool name and diagnostic class, the delivered mesh request stays recoverable, and the RPC process is restarted. If the stuck worker was supposed to be read-only, also set `KXM_WORKER_TOOLS=read,grep,find,ls`; prompt wording alone does not remove shell or write capabilities.
+Set `KXM_WORKER_TOOL_TIMEOUT_MS` above the longest legitimate tool call. Its 31-minute default intentionally gives a 30-minute `kxm_await` or `kxm_fanout` time to return durable pending handles before supervision intervenes. When that bound is exceeded, the structured worker log records `worker_tool_timeout` with only the allowlisted tool name and diagnostic class, the delivered hub request stays recoverable, and the RPC process is restarted. If the stuck worker was supposed to be read-only, also set `KXM_WORKER_TOOLS=read,grep,find,ls`; prompt wording alone does not remove shell or write capabilities.
 
 ### A hub or worker PID claim is stale
 
@@ -52,7 +52,7 @@ Do not delete or rewrite the database. Start the package version that created it
 
 Another process owns the port. Stop that process or choose another port, then update every agent's `KXM_SERVER_URL`.
 
-### Pi shows `mesh:offline`
+### Pi shows `hub:off`
 
 - Confirm the hub is reachable from the Pi terminal.
 - Verify `KXM_AUTH_TOKEN` exactly matches the hub token.
@@ -61,9 +61,20 @@ Another process owns the port. Stop that process or choose another port, then up
 - For an exact development load, use `pi --no-extensions -e ./plugins/kxm/src/extension.ts`. Add every required provider extension with another `-e`; otherwise Pi discovery is intentionally disabled.
 - For long-lived workers, set the reviewed `KXM_WORKER_EXTENSION_PATHS` and `KXM_WORKER_SKILL_PATHS` described in [Configuration](configuration.md#long-lived-worker-settings). Invalid paths fail before supervision instead of entering a restart loop.
 
+### Pi update fails looking for `refs/heads/master`
+
+The KXM default branch is `main`. An older Pi git checkout still tracking
+`master` fails with `couldn't find remote ref refs/heads/master`. Remove the
+package and reinstall with an explicit ref:
+
+```text
+pi remove git:github.com/kontextmind/kxm
+pi install git:github.com/kontextmind/kxm@main
+```
+
 ### `kxm` is not recognized
 
-`pi install git:github.com/kontextmind/kxm` installs the Pi extension
+`pi install git:github.com/kontextmind/kxm@main` installs the Pi extension
 and Agent Skill, not a global operator command. Install the versioned `.tgz`
 release asset through the authenticated `gh release download` flow in
 [Getting started](getting-started.md#install-the-operator-command), or run
@@ -82,7 +93,7 @@ The recipient registered but has no active SSE stream. Confirm its process is ru
 
 The recipient acknowledged it but has not replied. It may still be working, waiting for approval, or blocked. Avoid sending the same request repeatedly. Check the recipient session directly if the wait is unexpected.
 
-If the work is obsolete, the sender can call `kxm_cancel`. This changes mesh state only; it cannot reverse file changes or external effects already performed by the peer.
+If the work is obsolete, the sender can call `kxm_cancel`. This changes hub state only; it cannot reverse file changes or external effects already performed by the peer.
 
 ### `kxm_await` times out
 

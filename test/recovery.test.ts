@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { consumeWorkerRecoveryEnvelope, recoveryEnvelopePath } from "../plugins/kxm/src/recovery.ts";
-import { MeshHttpError, type MeshClient } from "../plugins/kxm/src/client.ts";
+import { HubHttpError, type HubClient } from "../plugins/kxm/src/client.ts";
 
 test("recovery envelope is journaled without prompt bodies and then deleted", async () => {
   const directory = mkdtempSync(join(tmpdir(), "pi-mesh-recovery-"));
@@ -14,7 +14,7 @@ test("recovery envelope is journaled without prompt bodies and then deleted", as
       recorded.push({ runId, input });
       return { id: "journal_rec" };
     },
-  } as unknown as MeshClient;
+  } as unknown as HubClient;
   writeFileSync(recoveryEnvelopePath(directory, "coordinator"), JSON.stringify({
     version: 1,
     reason: "unresumable_session",
@@ -109,7 +109,7 @@ test("recovery envelope is journaled without prompt bodies and then deleted", as
     recordWorkflowEntry: async () => {
       throw new Error("hub unavailable");
     },
-  } as unknown as MeshClient;
+  } as unknown as HubClient;
   await consumeWorkerRecoveryEnvelope(failing, directory, "coordinator");
   assert.equal(existsSync(recoveryEnvelopePath(directory, "coordinator")), true);
   rmSync(directory, { recursive: true, force: true });
@@ -135,9 +135,9 @@ test("workflow-affine peers consume local recovery without unauthorized coordina
   const peer = {
     recordWorkflowEntry: async () => {
       calls += 1;
-      throw new MeshHttpError(403, "Only the assigned coordinator may record workflow entries", "workflow_forbidden");
+      throw new HubHttpError(403, "Only the assigned coordinator may record workflow entries", "workflow_forbidden");
     },
-  } as unknown as MeshClient;
+  } as unknown as HubClient;
   const recovered = await consumeWorkerRecoveryEnvelope(peer, directory, "reviewer", "demo");
   assert.equal(calls, 1);
   assert.equal(recovered?.runId, "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
@@ -159,7 +159,7 @@ test("unbound recovery telemetry is consumed without guessing a workflow", async
       workflowCalls += 1;
       throw new Error("must not attach unbound telemetry");
     },
-  } as unknown as MeshClient;
+  } as unknown as HubClient;
   writeFileSync(path, JSON.stringify({
     version: 1,
     reason: "worker_signal",
@@ -198,7 +198,7 @@ test("invalid collision-safe recovery state is bounded and quarantined", async (
   const directory = mkdtempSync(join(tmpdir(), "pi-mesh-invalid-recovery-"));
   const path = recoveryEnvelopePath(directory, "coordinator", "demo");
   writeFileSync(path, "x".repeat(129 * 1_024));
-  const recovered = await consumeWorkerRecoveryEnvelope({} as MeshClient, directory, "coordinator", "demo");
+  const recovered = await consumeWorkerRecoveryEnvelope({} as HubClient, directory, "coordinator", "demo");
   assert.equal(recovered, undefined);
   assert.equal(existsSync(path), false);
   assert.ok(readdirSync(directory).some((name) => name.startsWith(`${path.split(/[\\/]/).at(-1)}.corrupt-`)));
@@ -224,7 +224,7 @@ test("invalid collision-safe recovery state is bounded and quarantined", async (
   ];
   for (const fields of invalidFields) {
     writeFileSync(path, JSON.stringify({ ...base, ...fields }));
-    assert.equal(await consumeWorkerRecoveryEnvelope({} as MeshClient, directory, "coordinator", "demo"), undefined);
+    assert.equal(await consumeWorkerRecoveryEnvelope({} as HubClient, directory, "coordinator", "demo"), undefined);
     assert.equal(existsSync(path), false);
   }
   rmSync(directory, { recursive: true, force: true });
@@ -248,7 +248,7 @@ test("recovery paths isolate exact project/name identities and migrate only matc
     freshSession: false,
     createdAt: "2026-08-26T00:00:00.000Z",
   }));
-  const fake = {} as MeshClient;
+  const fake = {} as HubClient;
   assert.equal(await consumeWorkerRecoveryEnvelope(fake, directory, "review/agent", "project-b"), undefined);
   assert.equal(existsSync(legacyPath), true);
   assert.equal((await consumeWorkerRecoveryEnvelope(fake, directory, "review/agent", "project-a"))?.project, "project-a");

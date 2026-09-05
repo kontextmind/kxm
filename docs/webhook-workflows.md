@@ -77,7 +77,7 @@ Workflow isolation is explicit during the upgrade-compatible release and begins 
 |---|---|
 | `id` | URL-safe workflow identifier |
 | `source` | `jira`, `github`, or `generic` |
-| `project` | Mesh project containing the coordinator |
+| `project` | Hub project containing the coordinator |
 | `target` | Stable coordinator name or durable agent ID |
 | `secretEnv` | Environment variable containing the HMAC secret |
 | `signalSecretEnv` | Optional separate HMAC secret for external result callbacks |
@@ -149,7 +149,7 @@ Callback responses deliberately expose only status, stage, retry, completion, re
 The repository includes a small callback sender for smoke tests and automation adapters:
 
 ```powershell
-$env:KXM_SERVER_URL = "https://your-mesh-host.example"
+$env:KXM_SERVER_URL = "https://your-hub-host.example"
 $env:KXM_WORKFLOW_ID = "jira-development"
 $env:KXM_WORKFLOW_SIGNAL_SECRET = "replace-with-the-callback-secret"
 $env:KXM_SIGNAL_DELIVERY_ID = "github-check-run-123-attempt-1"
@@ -226,7 +226,7 @@ for the truth of submitted evidence. Repository rules, human approvals, and
 harness permissions remain authoritative for push, merge, Jira mutation, and
 other external effects.
 
-Peer quorum proves provenance inside the mesh project credential boundary. It
+Peer quorum proves provenance inside the hub project credential boundary. It
 does not prove answer quality, truth, distinct underlying models, independent
 inference, non-collusion, or human approval.
 
