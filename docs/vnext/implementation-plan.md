@@ -209,6 +209,29 @@ It does not replace the phase gates below.
   (status line, widget, online and offline hub, TUI picker skip/select, RPC and
   opt-out, single registration) is a deterministic extension test. Pi install is
   pinned `@main`.
+- Queue test (#119) and worker PID readiness (#120) **landed** (test-only;
+  production worker unchanged): on failure the queue test stops the
+  extension in `try/finally` with bounded `shutdownExtension` before hub
+  teardown. Fixture `requestTimeoutMs` defaults to 1000; this peer uses
+  5000. TTL untouched. An abort-aware injected first-send failure must
+  exit the child itself within a deadline. The worker generation test waits
+  for a complete matching PID record (identity JSON, not file existence)
+  and stops the owned child in `finally` with a bounded SIGKILL before
+  removing the temp dir. Deadline-as-success is rejected; bounded exit
+  protocol is asserted. Partial JSON identity-readiness is covered by a
+  deterministic helper test.
+- **#112 fixture repair landed** (test-only, not a claimed Windows crash
+  mechanism): the integrated pre-ack child awaits real `session_shutdown`,
+  clears its keepalive, sets `process.exitCode`, and does not call
+  `process.exit`. Failed cleanup does not force 7. Controlled hosted
+  regression proof (not the underlying crash mechanism): GitHub Actions
+  run `33998022233`, `windows-latest-l`, Node `24.19.0`, `npm test` with
+  coverage absent. Baseline exact `79b5862` 3/3 known pre-ack failures
+  (`actual: 3221226505` vs `expected: 7`), no unrelated failures. Fixed
+  exact `c499cb2` 3/3 full suite pass, pre-ack ran, exit 0. Both commits
+  immutable. Temporary probe workflow/branch/worktree deleted and never
+  merged. All four normal `validate:ci` coverage legs remain required.
+  Not a general Windows cure; no extra permanent npm gate.
 
 ### Still open
 
@@ -220,10 +243,8 @@ It does not replace the phase gates below.
 - Coverage only lists modules some test loaded; a future source file with zero
   imports from tests will not drag the number down. A test that imports every
   non-excluded module belongs before the next ratchet raise, not as a B1 add.
-- Queue/worker CI cleanup, separate PRs (not claimed fixed here):
-  - **#119:** intermittent Windows Node 24 queue/timeout hang after a failed
-    send.
-  - **#120:** worker PID file race; partial JSON seen on POSIX.
+- **Issue #115 (open):** unrelated SQLite race. No speculative fix in this
+  slice.
 - Docs sweep: operator pages updated to `kxm hub start|view|stop` and `kxm dash`;
   CHANGELOG history may still mention old names.
 - Remaining Mesh-named internals (`MeshHub`, `createMeshHub`, `MeshStore`,

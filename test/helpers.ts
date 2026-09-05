@@ -9,7 +9,12 @@ export interface TestMesh {
   address: { host: string; port: number; url: string };
   token: string;
   clients: HubClient[];
-  makeClient(name: string, options?: { project?: string; token?: string; purpose?: string }): HubClient;
+  makeClient(name: string, options?: {
+    project?: string;
+    token?: string;
+    purpose?: string;
+    requestTimeoutMs?: number;
+  }): HubClient;
 }
 
 export async function createTestMesh(context: TestContext, options: MeshHubOptions = {}): Promise<TestMesh> {
@@ -41,7 +46,7 @@ export async function createTestMesh(context: TestContext, options: MeshHubOptio
         project: clientOptions.project ?? "test-project",
         heartbeatMs: 100,
         reconnectMs: 20,
-        requestTimeoutMs: 1_000,
+        requestTimeoutMs: clientOptions.requestTimeoutMs ?? 1_000,
       });
       clients.push(client);
       return client;
