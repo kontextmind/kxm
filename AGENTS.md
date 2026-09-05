@@ -21,9 +21,9 @@ Read this first. Then follow
 
 | Role | Who | Why |
 |---|---|---|
-| **Implement / write code** | **Grok** (`xai/grok-4.6`) via Pi, headless | Designated sole writer. Fast at repo-shaped edits. |
+| **Implement / write code** | **Grok** (`grok --model grok-4.6`), headless | Designated sole writer. Fast at repo-shaped edits. Native xAI harness. If `grok` is missing or logged out, fail closed — do not fall back to Pi. |
 | **Plan** | **Claude Fable** (`claude --model fable`) | Architecture and permissions; independent of the writer. |
-| **Review** | **Fable** (architecture/permissions) and **Codex gpt-sol** (CLI/docs) | Different providers from the writer. One critic is enough unless the change is auth, workflow policy, or multi-package. |
+| **Review** | **Fable** (architecture/permissions) and **Codex gpt-5.6-sol** (CLI/docs) | Different providers from the writer. One critic is enough unless the change is auth, workflow policy, or multi-package. |
 | **Portability / mapping** | **Kimi** only when the task is Windows/path/CLI-portability | Not a default reviewer. |
 | **Verify** | The implementer runs `npm test` / `npx tsc --noEmit`. Critics do not replace tests. | Deterministic gates beat a third model. |
 
@@ -31,11 +31,13 @@ Claude is for **planning and review**, not the default writer. Do not treat `cla
 
 **Provider-native harness:** If the model’s provider has its own harness and that harness is **installed and logged in**, use it — not Pi’s copy of the same provider. That is why `kxm harness list` checks auth.
 
-Examples: Anthropic → Claude CLI (subscription); OpenAI → Codex; Moonshot → Kimi; Google → Gemini CLI when present. xAI/Grok stays on Pi unless a Grok harness exists and is authenticated.
+Examples: Anthropic → Claude CLI (subscription); OpenAI → Codex; Moonshot → Kimi; Google → Gemini CLI when present; xAI → **Grok CLI** (`grok`, OAuth to `auth.x.ai`), which superseded Pi for the writer role on 2026-09-04.
 
 **Aggregators (OpenRouter, etc.) are Pi *providers*, not a second coding harness.** If `pi auth check` / `/login openrouter` (or `OPENROUTER_API_KEY`) is good, Nous and other OpenRouter models are usable **on Pi** as `openrouter/…` ids. There is no OpenRouter/Nous `kxm agent worker` CLI. Prefer OpenRouter for those models so your OpenRouter credit is what gets billed; don’t invent a fake harness. Same auth-or-fail-closed rule.
 
-If the native harness is missing or logged out, do **not** silently bill through Pi’s other-provider key. Fail closed or ask to log in. Pi remains default only for providers it actually hosts (today: Grok and anything `pi auth check` covers that has **no** better native harness logged in).
+If the native harness is missing or logged out, do **not** silently bill through Pi’s other-provider key. Fail closed or ask to log in. Pi remains default only for providers it actually hosts that have **no** authenticated native harness — today that is whatever `pi auth check` covers beyond Anthropic (Claude CLI), OpenAI (Codex), xAI (Grok CLI), Moonshot (Kimi), and Google (Gemini CLI).
+
+**Harness ≠ long-lived worker.** Moving the writer role to the Grok CLI does not make `grok` a supervised RPC worker: `kxm agent worker` / `pi --mode rpc` is still Pi-only. The Grok CLI is a one-shot headless writer (`grok --prompt-file`). Do not declare a `grok` long-lived worker until one exists and is tested.
 
 **Cost and quality insights:** Every assignment should make the next one faster, cheaper, or better — not just billed. Track harness + provider + model + thinking + **context size + input/output (and cache) tokens + latency + cost + whether verify passed / rework happened**. Some providers charge **more as context grows** (long-context premiums, thinking tokens, uncached input). Sticker $/1M is not enough — compare **cost at the context we actually send**. Prefer the cheapest logged-in native harness that still meets quality. Drop xhigh thinking, extra critics, and huge dumps when the report shows they don’t pay for themselves. Do not “upgrade” model or harness without evidence. Fail closed on untracked spend.
 
