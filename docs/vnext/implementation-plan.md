@@ -163,6 +163,8 @@ It does not replace the phase gates below.
 - **D3 S1 registry foundation:** `.kxm/gates.yaml` uses the closed
   `kxm.gate-registry.v1` schema. Gate ids resolve only through that file;
   obsolete caller allowlists and old schema/outcome names fail closed.
+  Command `argv[0]` must be a bare executable or absolute POSIX path;
+  relative paths with separators and directory names `.` and `..` refuse.
   Gate-only `expect: pass|fail` compiles, defaulting to `pass`. Registry
   changes affect configuration and tool-policy hashes; timeout-only
   decreases narrow permission budgets. The current `v4-registry` template
@@ -662,7 +664,8 @@ Windows verification of the run loop is deferred with the platform pause.
 **D3 S1 (implemented, unreleased):** closed registry loading and gate-only
 `expect` compilation, permission projection, and a registry-bearing current
 initializer template. Missing registries, unknown gate ids, obsolete options,
-and old gate outcome spellings refuse. Historical template bytes are unchanged.
+old gate outcome spellings, relative executables, and directory-name `argv[0]`
+values `.` and `..` refuse. Historical template bytes are unchanged.
 The engine still refuses gates. S2 pins/store/replay, S3 artifact execution and
 preflight, and S4 command execution remain; D4 supplies the remaining workflow
 features. Issue #89 is open. No execution or evidence gate is claimed passed.

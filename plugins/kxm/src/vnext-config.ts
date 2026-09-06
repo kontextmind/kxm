@@ -1146,7 +1146,7 @@ function validateBundle(
     const definition = objectValue(value);
     const executable = Array.isArray(definition?.argv) ? definition.argv[0] : undefined;
     if (definition?.kind === "command" && typeof executable === "string" &&
-        (executable.includes("\\") || (!executable.startsWith("/") && executable.includes("/")))) {
+        (executable === "." || executable === ".." || executable.includes("\\") || (!executable.startsWith("/") && executable.includes("/")))) {
       issues.push(issue("semantic", "gate_executable_invalid", ".kxm/gates.yaml", `${id} argv[0] must be a bare executable or absolute POSIX path`));
     }
   }

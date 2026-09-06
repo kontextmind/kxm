@@ -15949,7 +15949,7 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
   for (const [id, value] of Object.entries(objectValue(gateRegistry?.value.gates) ?? {})) {
     const definition = objectValue(value);
     const executable = Array.isArray(definition?.argv) ? definition.argv[0] : void 0;
-    if (definition?.kind === "command" && typeof executable === "string" && (executable.includes("\\") || !executable.startsWith("/") && executable.includes("/"))) {
+    if (definition?.kind === "command" && typeof executable === "string" && (executable === "." || executable === ".." || executable.includes("\\") || !executable.startsWith("/") && executable.includes("/"))) {
       issues.push(issue("semantic", "gate_executable_invalid", ".kxm/gates.yaml", `${id} argv[0] must be a bare executable or absolute POSIX path`));
     }
   }

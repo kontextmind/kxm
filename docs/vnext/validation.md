@@ -311,7 +311,8 @@ gates:
 Command definitions require literal `argv` (1–64 nonempty strings, each at
 most 4096 characters) and integer `timeoutMs` from 1 to 2147483647. The first
 argument must be a bare executable name or an absolute POSIX path; relative
-paths such as `./test.sh` refuse. Optional `cwd` can only be `control`.
+paths such as `./test.sh` and directory names `.` and `..` refuse. Optional
+`cwd` can only be `control`.
 `env`, `shell`, and undeclared fields refuse. Artifact paths use the shared
 portable relative-path grammar beneath `.kxm/assets`; `.` and traversal refuse.
 Artifact definitions have no timeout. `kind: reserved` registers an id without

@@ -80,7 +80,7 @@ test("registry schema closes definitions and bounds argv, timeouts, and artifact
   assert.throws(() => check(registry(Object.fromEntries(Array.from({ length: 65 }, (_, i) => [`g${i}`, command])))), VnextConfigError);
   assert.throws(() => check({ ...registry(), surprise: true }), VnextConfigError);
   withProject((root) => {
-    for (const executable of ["./npm", "bin/npm", "bin\\npm"]) {
+    for (const executable of ["./npm", "bin/npm", "bin\\npm", ".", ".."]) {
       write(root, ".kxm/gates.yaml", registry({ test: { ...command, argv: [executable] } }));
       assert.throws(() => loadVnextProject(root), hasCode("gate_executable_invalid"));
     }
