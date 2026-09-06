@@ -23,7 +23,8 @@ The words **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are normative.
 | [Terminology](terminology.md) | Canonical names and identity hierarchy |
 | [Lifecycles](lifecycles.md) | Run, step, assignment, attempt, effect, delivery, and synchronization states |
 | [Effects and recovery](effects-and-recovery.md) | Retry, reconciliation, reattachment, and `blocked_uncertain` rules |
-| [Synchronization](synchronization.md) | Sync-safe allowlist and pre-outbox redaction |
+| [Synchronization](synchronization.md) | Sync-safe allowlist and pre-outbox redaction (Phase 8 implementation) |
+| [Routing](routing.md) | Shipped v1 parser/report vs helper telemetry vs planned v2/catalog |
 | [Validation](validation.md) | Parse, schema, reference, semantic, permission, and snapshot validation |
 | [Migration](migration.md) | Compatibility from the current environment/JSON/SQLite surfaces |
 | [Implementation plan](implementation-plan.md) | Ordered implementation and release gates |
