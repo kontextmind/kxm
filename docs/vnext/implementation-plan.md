@@ -175,6 +175,11 @@ It does not replace the phase gates below.
   The parent-alias regression owns its temporary symlink on Mac/Linux;
   the earlier CI failure remains in private history. This developer runner
   prerequisite does not complete any product phase gate.
+- **Runtime initialization CI repair:** concurrent first-open callers inspect
+  schema versions and tables under the same write transaction that initializes
+  the registry or event store. Deterministic two-process regressions cover both;
+  newer, outdated, and malformed schemas still fail closed. Phase gates are
+  unchanged.
 - **Platform pause (2026-09-05):** the active PR gate is two Linux
   `validate:ci` + `check:generated` legs (Node 22.19.0 and 24) plus Docs lint
   and Plugin validation. Classify changes plus those four jobs is five CI
@@ -641,6 +646,8 @@ outbox, auto-start, and crash recovery.
 store, command-idempotent run acceptance (prompt hashed, not stored), projection
 rebuild, cancel-to-terminal, crash recovery, `kxm runtime start|status|stop`,
 and `kxm run` create/recover with the hub absent. Runs remain `created`.
+Concurrent first-open schema inspection and initialization are serialized for
+the registry and event store; schema compatibility brakes and the gate are unchanged.
 Compiled step execution is Phase 3. The outbox is listed in this phase but
 not landed; it lands with its only consumer in Phase 8. The gate stays as
 written.

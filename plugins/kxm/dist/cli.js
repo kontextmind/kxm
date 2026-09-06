@@ -34578,51 +34578,48 @@ function openDatabase(file, description, spec) {
     }
   }
   const database = new DatabaseSync3(file);
-  database.exec("PRAGMA busy_timeout = 5000");
-  const row = database.prepare("PRAGMA user_version").get();
-  const version = row?.user_version ?? 0;
-  if (version > spec.version) {
-    database.close();
-    throw runtimeError("runtime_schema_newer", file, `${description} schema version ${version} is newer than this runtime supports`);
-  }
-  if (version === 0) {
-    const existing = userTables(database);
-    if (existing.length > 0) {
-      database.close();
-      throw runtimeError("runtime_schema_shape_invalid", file, `${description} has tables at schema version 0`);
+  let transaction = false;
+  try {
+    database.exec("PRAGMA busy_timeout = 5000");
+    database.exec("BEGIN IMMEDIATE");
+    transaction = true;
+    const row = database.prepare("PRAGMA user_version").get();
+    const version = row?.user_version ?? 0;
+    if (version > spec.version) {
+      throw runtimeError("runtime_schema_newer", file, `${description} schema version ${version} is newer than this runtime supports`);
     }
-    try {
-      database.exec("BEGIN IMMEDIATE");
+    if (version === 0) {
+      const existing = userTables(database);
+      if (existing.length > 0) {
+        throw runtimeError("runtime_schema_shape_invalid", file, `${description} has tables at schema version 0`);
+      }
       database.exec(spec.schema);
       database.exec(`PRAGMA user_version = ${spec.version}`);
-      database.exec("COMMIT");
-    } catch (error) {
+    } else if (version < spec.version) {
+      throw runtimeError(
+        "runtime_schema_outdated",
+        file,
+        `${description} schema version ${version} is older than ${spec.version}; backup, restore, and migration remain E6`
+      );
+    } else {
+      verifyExpectedTables(database, file, description, spec.tables);
+    }
+    database.exec("COMMIT");
+    transaction = false;
+    database.exec("PRAGMA journal_mode = WAL");
+    database.exec("PRAGMA synchronous = NORMAL");
+    database.exec("PRAGMA foreign_keys = ON");
+    return database;
+  } catch (error) {
+    if (transaction) {
       try {
         database.exec("ROLLBACK");
       } catch {
       }
-      database.close();
-      throw error;
     }
-  } else if (version < spec.version) {
     database.close();
-    throw runtimeError(
-      "runtime_schema_outdated",
-      file,
-      `${description} schema version ${version} is older than ${spec.version}; backup, restore, and migration remain E6`
-    );
-  } else {
-    try {
-      verifyExpectedTables(database, file, description, spec.tables);
-    } catch (error) {
-      database.close();
-      throw error;
-    }
+    throw error;
   }
-  database.exec("PRAGMA journal_mode = WAL");
-  database.exec("PRAGMA synchronous = NORMAL");
-  database.exec("PRAGMA foreign_keys = ON");
-  return database;
 }
 var VNEXT_REGISTRY_SCHEMA_VERSION = 1;
 var REGISTRY_TABLES = {
