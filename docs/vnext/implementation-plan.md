@@ -275,6 +275,29 @@ It does not replace the phase gates below.
   evidence declarations, oracles, and plan-hash requirements. Both
   `default.yaml` and `fix.yaml` compile. `kind: workflow` is reserved and
   rejected at compile. No execution, no I/O, no events.
+- **D2 engine run loop (agent-only, model-free; unreleased):** `vnext-engine.ts`
+  pins the D1 compiled plan in an immutable content-addressed `run_plans`
+  envelope and advances `created → preparing → running →
+  completed|failed|cancelled` with a driver-simulated producer only. The fold
+  requires `run.created` first, binds assignment/result/terminal events, and
+  rejects `waiting` / `blocked_uncertain` in this slice. Operator `cancelled`
+  from `created`/`preparing` requires recorded `run.cancel_requested`; a
+  compiled selected `terminalStatus=cancelled` remains valid without that
+  operator event. Pin rehydration validates the full envelope from `unknown`
+  (row and pin-event hash). D2 event payloads are closed. Public
+  `drive`/`step`/scheduler share one per-store admission map: same-run
+  exclusion for the whole drive, duplicate queue ids rejected as `run_busy`
+  before admission, bound oversubscription as `run_admission_exceeded`, stale
+  handles as `scheduler_policy_conflict`, and cross-project bundles as
+  `run_owner_mismatch`. Direct
+  drive uses the same bound and cannot widen it. Executing commit precedes
+  in-process invoke with no await gap; sync throw and async rejection both
+  settle `producer_rejected` with no capability leak. A real child-process
+  restart of an executing attempt is `attempt_unreconciled` (cancel then
+  `cancel_pending_foreign`); there is no live-owner reset and no D4
+  adoption/remint. Proven on a synthetic agent-only fixture; `default.yaml`
+  pins and stops fail-closed at start because it declares run duration
+  limits. D3/D4 and the rest of Phase 3 remain open.
 
 ### Still open
 
@@ -297,14 +320,15 @@ It does not replace the phase gates below.
 - Slim live `default` workflow for this repo (no bulk migrate of jira/provenance/v04).
 - YAML-editing enable/disable UI (Phase 4 `/kxm` settings or `kxm dash` config
   tab). Do not add a preferences overlay.
-- Phase 3 engine remainder (D2 run loop and transitions, D3 gate execution and
-  attempt-bound evidence, D4 joins, approval, waits, recovery, and the driver
-  gate). Compile alone does not close Phase 3. D2 persisted-plan validation
-  (ownership, hash match against the pinned event, full field validation, and
-  re-freeze after parse) lands with its consumer; D1 does not export
-  `isVnextCompiledPlan`. D3 and D4 must honor a declared `assignments` or
-  `join` on gate, approval, and wait steps or fail closed; D1 only preserves
-  the declaration.
+- Phase 3 engine remainder (D3 gate execution, `expect`, attempt-bound
+  evidence; D4 joins, approval, waits, duration and cost budgets,
+  `blocked_uncertain` recovery, producer drain, and the full driver gate on
+  `default.yaml` and `fix.yaml`). Compile and the agent-only run loop do not
+  close Phase 3. D3 and D4 must honor a declared `assignments` or `join` on
+  gate, approval, and wait steps or fail closed; D1 only preserves the
+  declaration.
+- Version-1 run event stores are refused with `runtime_schema_outdated`;
+  backup, restore, and migration remain E6.
 - Non-Pi dispatch adapters (Phase 11). Listing a harness does not execute it.
   The `scripts/harness-run.mjs` dev helper is not that adapter.
 - **Issue 84 remainder:** Kimi read-only auth-status probe: no non-mutating
@@ -445,6 +469,11 @@ assignments, physical attempts, join rules, budgets, deterministic gates,
 waits, approvals, steering, cancellation, and uncertain-effect handling.
 
 **Compile slice (landed, unreleased):** compiled plan and step model only.
+
+**Run-loop slice (landed, unreleased):** agent-only execution with a simulated
+in-process producer, shared project admission, and fail-closed unreconciled
+attempts after process restart. No gates, evidence, joins, duration or cost
+budget enforcement, or D4 recovery/adoption. The Gate sentence is unchanged.
 
 **Gate:** a model-free test driver completes and recovers
 `examples/vnext/.kxm/workflows/default.yaml` (plan → implement → verify → ready)

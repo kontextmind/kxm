@@ -398,7 +398,7 @@ async function startVnextRuntimeSupervisorInner(
           }
           const context = contextFor(projectRoot);
           if (request.method === "GET" && !sub) {
-            const projected = rebuildVnextRunProjection(context.eventStore, runId);
+            const projected = rebuildVnextRunProjection(context, runId);
             sendJson(response, 200, { ok: true, run: projected });
             return;
           }

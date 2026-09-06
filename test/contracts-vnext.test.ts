@@ -403,10 +403,10 @@ test("vNext records preserve source-event identity and complete repository pins"
   const created = localEvents.find((event) => event.eventType === "run.created");
   assert(created);
   const payload = asObject(created.payload, "run.created.payload");
-  const pinnedRepositories = new Set(arrayValue(payload.repositories, "run.created.repositories")
-    .map((entry) => stringValue(asObject(entry, "snapshot").repositoryId, "snapshot.repositoryId")));
-  assert.deepEqual(pinnedRepositories, projectRepositories, "run.created must pin every bound repository");
-  assert(arrayValue(payload.executors, "run.created.executors").length > 0, "run.created must pin executor/harness versions");
+  const pinnedRepositories = new Set(arrayValue(payload.repositoryIds, "run.created.repositoryIds")
+    .map((entry) => stringValue(entry, "repositoryId")));
+  assert.deepEqual(pinnedRepositories, projectRepositories, "run.created must pin every bound repository id");
+  assert(Array.isArray(payload.executorIds), "run.created must declare executor inventory ids");
 });
 
 test("schemas reject unsafe effects, inconsistent delivery, unbounded snapshots, and ambiguous terminals", () => {
@@ -490,6 +490,43 @@ test("schemas reject unsafe effects, inconsistent delivery, unbounded snapshots,
   const validateResult = ajv.getSchema("https://schemas.kxm.dev/vnext/assignment-result.schema.json");
   assert(validateResult);
   assert.equal(validateResult(assignmentResult), false, "partial is a panel/delivery state, not an assignment result state");
+
+  const created = JSON.parse(readFileSync(resolve(exampleDir, "records/run-created.json"), "utf8")) as JsonObject;
+  created.memoryRevision = "ctxrev_absent";
+  asObject(created.payload, "payload").executorIds = [];
+  assert.equal(validateRunEvent(created), true, ajv.errorsText(validateRunEvent.errors));
+  const recorded = JSON.parse(readFileSync(resolve(exampleDir, "records/assignment-result-recorded.json"), "utf8")) as JsonObject;
+  asObject(recorded.payload, "payload").resultClass = "outcome";
+  assert.equal(validateRunEvent(recorded), true, ajv.errorsText(validateRunEvent.errors));
+  const cancel = JSON.parse(readFileSync(resolve(exampleDir, "records/run-created.json"), "utf8")) as JsonObject;
+  cancel.eventType = "run.cancel_requested";
+  cancel.payload = {
+    actor: { kind: "runtime", id: stringValue(cancel.homeRuntimeId, "homeRuntimeId") },
+    reason: "operator_cancel",
+  };
+  assert.equal(validateRunEvent(cancel), true, ajv.errorsText(validateRunEvent.errors));
+
+  const resultRecorded = JSON.parse(readFileSync(resolve(exampleDir, "records/assignment-result-recorded.json"), "utf8")) as JsonObject;
+  delete asObject(resultRecorded.payload, "payload").resultClass;
+  assert.equal(validateRunEvent(resultRecorded), false, "assignment.result_recorded requires resultClass");
+  const outcomeMissing = JSON.parse(readFileSync(resolve(exampleDir, "records/assignment-result-recorded.json"), "utf8")) as JsonObject;
+  delete asObject(outcomeMissing.payload, "payload").outcome;
+  assert.equal(validateRunEvent(outcomeMissing), false, "outcome class requires outcome");
+  const cancelledWithOutcome = JSON.parse(readFileSync(resolve(exampleDir, "records/assignment-result-recorded.json"), "utf8")) as JsonObject;
+  asObject(cancelledWithOutcome.payload, "payload").resultClass = "cancelled";
+  assert.equal(validateRunEvent(cancelledWithOutcome), false, "non-outcome resultClass forbids outcome");
+  const dispatched = JSON.parse(readFileSync(resolve(exampleDir, "records/run-created.json"), "utf8")) as JsonObject;
+  dispatched.eventType = "assignment.dispatched";
+  dispatched.payload = { assignmentId: "assignment_01JASSIGNMENT00000000000", status: "dispatched" };
+  assert.equal(validateRunEvent(dispatched), false, "assignment.dispatched requires capabilityHash");
+  const entered = JSON.parse(readFileSync(resolve(exampleDir, "records/run-created.json"), "utf8")) as JsonObject;
+  entered.eventType = "step.entered";
+  entered.payload = { stepAttempt: 1, status: "pending" };
+  assert.equal(validateRunEvent(entered), false, "step.entered requires stepId");
+  const statusChanged = JSON.parse(readFileSync(resolve(exampleDir, "records/run-created.json"), "utf8")) as JsonObject;
+  statusChanged.eventType = "run.status_changed";
+  statusChanged.payload = { reason: "operator_cancel" };
+  assert.equal(validateRunEvent(statusChanged), false, "run.status_changed requires status");
 });
 
 test("portable path schema rejects traversal and destination-incompatible names", () => {

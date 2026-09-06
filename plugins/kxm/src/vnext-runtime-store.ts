@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { VnextConfigError, type VnextConfigIssue, type VnextConfigOptions } from "./vnext-config.ts";
+import { VnextConfigError, validateRunEvent, type VnextConfigIssue, type VnextConfigOptions } from "./vnext-config.ts";
 import { vnextUserStateRoot } from "./vnext-bindings.ts";
 
 /* ------------------------------------------------------------------ *
@@ -59,7 +59,39 @@ function checkedParent(path: string, description: string): void {
   }
 }
 
-function openDatabase(file: string, description: string, schema: string): DatabaseSync {
+export interface VnextDatabaseSchema {
+  schema: string;
+  version: number;
+  tables: Readonly<Record<string, readonly string[]>>;
+}
+
+function userTables(database: DatabaseSync): string[] {
+  const rows = database.prepare(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+  ).all() as Array<{ name: string }>;
+  return rows.map((row) => row.name);
+}
+
+function tableColumns(database: DatabaseSync, table: string): string[] {
+  const rows = database.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  return rows.map((row) => row.name).sort();
+}
+
+function verifyExpectedTables(database: DatabaseSync, file: string, description: string, expected: Readonly<Record<string, readonly string[]>>): void {
+  const present = new Set(userTables(database));
+  for (const [table, columns] of Object.entries(expected)) {
+    if (!present.has(table)) {
+      throw runtimeError("runtime_schema_shape_invalid", file, `${description} is missing table ${table}`);
+    }
+    const actual = tableColumns(database, table);
+    const missing = columns.filter((column) => !actual.includes(column));
+    if (missing.length > 0) {
+      throw runtimeError("runtime_schema_shape_invalid", file, `${description} table ${table} is missing columns ${missing.join(", ")}`);
+    }
+  }
+}
+
+function openDatabase(file: string, description: string, spec: VnextDatabaseSchema): DatabaseSync {
   checkedParent(file, description);
   if (existsSync(file)) {
     const stat = lstatSync(file);
@@ -76,13 +108,44 @@ function openDatabase(file: string, description: string, schema: string): Databa
   database.exec("PRAGMA busy_timeout = 5000");
   const row = database.prepare("PRAGMA user_version").get() as { user_version: number } | undefined;
   const version = row?.user_version ?? 0;
-  if (version > 1) {
+  if (version > spec.version) {
     database.close();
-    throw runtimeError("runtime_schema_newer", description, `${description} schema version ${version} is newer than this runtime supports`);
+    throw runtimeError("runtime_schema_newer", file, `${description} schema version ${version} is newer than this runtime supports`);
+  }
+  if (version === 0) {
+    const existing = userTables(database);
+    if (existing.length > 0) {
+      database.close();
+      throw runtimeError("runtime_schema_shape_invalid", file, `${description} has tables at schema version 0`);
+    }
+    try {
+      database.exec("BEGIN IMMEDIATE");
+      database.exec(spec.schema);
+      database.exec(`PRAGMA user_version = ${spec.version}`);
+      database.exec("COMMIT");
+    } catch (error) {
+      try { database.exec("ROLLBACK"); } catch { /* already rolled back */ }
+      database.close();
+      throw error;
+    }
+  } else if (version < spec.version) {
+    database.close();
+    throw runtimeError(
+      "runtime_schema_outdated",
+      file,
+      `${description} schema version ${version} is older than ${spec.version}; backup, restore, and migration remain E6`,
+    );
+  } else {
+    try {
+      verifyExpectedTables(database, file, description, spec.tables);
+    } catch (error) {
+      database.close();
+      throw error;
+    }
   }
   database.exec("PRAGMA journal_mode = WAL");
   database.exec("PRAGMA synchronous = NORMAL");
-  database.exec(schema);
+  database.exec("PRAGMA foreign_keys = ON");
   return database;
 }
 
@@ -107,8 +170,15 @@ export interface VnextProjectRegistration {
   registeredAt: string;
 }
 
+export const VNEXT_REGISTRY_SCHEMA_VERSION = 1;
+
+const REGISTRY_TABLES = {
+  supervisor: ["singleton_id", "runtime_id", "pid", "port", "token_hash", "started_at", "heartbeat_at", "state"],
+  projects: ["project_id", "project_root", "project_key", "home_runtime_id", "config_revision", "registered_at"],
+} as const;
+
 const REGISTRY_SCHEMA = `
-CREATE TABLE IF NOT EXISTS supervisor (
+CREATE TABLE supervisor (
   singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
   runtime_id TEXT NOT NULL,
   pid INTEGER NOT NULL,
@@ -118,7 +188,7 @@ CREATE TABLE IF NOT EXISTS supervisor (
   heartbeat_at TEXT NOT NULL,
   state TEXT NOT NULL
 ) STRICT;
-CREATE TABLE IF NOT EXISTS projects (
+CREATE TABLE projects (
   project_id TEXT PRIMARY KEY,
   project_root TEXT NOT NULL,
   project_key TEXT NOT NULL UNIQUE,
@@ -126,7 +196,6 @@ CREATE TABLE IF NOT EXISTS projects (
   config_revision TEXT,
   registered_at TEXT NOT NULL
 ) STRICT;
-PRAGMA user_version = 1;
 `;
 
 export class VnextRuntimeRegistry {
@@ -135,7 +204,11 @@ export class VnextRuntimeRegistry {
 
   constructor(path: string) {
     this.path = resolve(path);
-    this.database = openDatabase(this.path, "runtime registry", REGISTRY_SCHEMA);
+    this.database = openDatabase(this.path, "runtime registry", {
+      schema: REGISTRY_SCHEMA,
+      version: VNEXT_REGISTRY_SCHEMA_VERSION,
+      tables: REGISTRY_TABLES,
+    });
   }
 
   close(): void {
@@ -322,6 +395,9 @@ export class VnextRuntimeRegistry {
 
 export type VnextRunStatus = "created" | "preparing" | "running" | "waiting" | "blocked_uncertain" | "cancelling" | "cancelled" | "completed" | "failed";
 
+export const VNEXT_RUN_EVENT_SCHEMA = "kxm.run-event.v1";
+export const VNEXT_ABSENT_MEMORY_REVISION = "ctxrev_absent";
+
 export interface VnextRunRecord {
   runId: string;
   projectId: string;
@@ -330,7 +406,7 @@ export interface VnextRunRecord {
   promptSha256: string;
   status: VnextRunStatus;
   configRevision: string;
-  memoryRevision?: string;
+  memoryRevision: string;
   executorPolicyRevision: string;
   toolPolicyRevision: string;
   createdAt: string;
@@ -338,20 +414,46 @@ export interface VnextRunRecord {
 }
 
 export interface VnextRunEvent {
+  schema: typeof VNEXT_RUN_EVENT_SCHEMA;
   eventId: string;
   eventType: string;
   projectId: string;
   runId: string;
+  homeRuntimeId: string;
   sequence: number;
   commandId?: string;
   occurredAt: string;
   recordedAt: string;
-  monotonicNs: number;
+  monotonicNs: string;
   configRevision: string;
-  memoryRevision?: string;
+  memoryRevision: string;
   executorPolicyRevision: string;
   toolPolicyRevision: string;
   payload: Record<string, unknown>;
+}
+
+export interface VnextRunPlanRow {
+  runId: string;
+  runPlanHash: string;
+  envelope: string;
+  pinnedSequence: number;
+}
+
+export interface VnextRunStateRow {
+  runId: string;
+  lastSequence: number;
+  state: string;
+}
+
+export interface VnextAttemptCapabilityRow {
+  attemptId: string;
+  runId: string;
+  assignmentId: string;
+  stepId: string;
+  stepAttempt: number;
+  producerId: string;
+  capabilityHash: string;
+  state: "issued" | "settled" | "revoked";
 }
 
 export interface VnextCommandRecord {
@@ -362,8 +464,19 @@ export interface VnextCommandRecord {
   recordedAt: string;
 }
 
+export const VNEXT_EVENT_STORE_SCHEMA_VERSION = 2;
+
+const EVENT_STORE_TABLES = {
+  runs: ["run_id", "project_id", "home_runtime_id", "workflow_id", "prompt_sha256", "status", "config_revision", "memory_revision", "executor_policy_revision", "tool_policy_revision", "created_at", "updated_at"],
+  events: ["project_id", "run_id", "sequence", "event_id", "event_type", "command_id", "occurred_at", "recorded_at", "monotonic_ns", "config_revision", "memory_revision", "executor_policy_revision", "tool_policy_revision", "payload", "schema", "home_runtime_id"],
+  commands: ["command_id", "run_id", "kind", "result", "recorded_at"],
+  run_plans: ["run_id", "run_plan_hash", "envelope", "pinned_sequence"],
+  run_state: ["run_id", "last_sequence", "state"],
+  attempt_capabilities: ["attempt_id", "run_id", "assignment_id", "step_id", "step_attempt", "producer_id", "capability_hash", "state"],
+} as const;
+
 const EVENT_STORE_SCHEMA = `
-CREATE TABLE IF NOT EXISTS runs (
+CREATE TABLE runs (
   run_id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL,
   home_runtime_id TEXT NOT NULL,
@@ -371,13 +484,13 @@ CREATE TABLE IF NOT EXISTS runs (
   prompt_sha256 TEXT NOT NULL,
   status TEXT NOT NULL,
   config_revision TEXT NOT NULL,
-  memory_revision TEXT,
+  memory_revision TEXT NOT NULL,
   executor_policy_revision TEXT NOT NULL,
   tool_policy_revision TEXT NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 ) STRICT;
-CREATE TABLE IF NOT EXISTS events (
+CREATE TABLE events (
   project_id TEXT NOT NULL,
   run_id TEXT NOT NULL,
   sequence INTEGER NOT NULL,
@@ -386,23 +499,45 @@ CREATE TABLE IF NOT EXISTS events (
   command_id TEXT,
   occurred_at TEXT NOT NULL,
   recorded_at TEXT NOT NULL,
-  monotonic_ns INTEGER NOT NULL,
+  monotonic_ns TEXT NOT NULL,
   config_revision TEXT NOT NULL,
-  memory_revision TEXT,
+  memory_revision TEXT NOT NULL,
   executor_policy_revision TEXT NOT NULL,
   tool_policy_revision TEXT NOT NULL,
   payload TEXT NOT NULL,
+  schema TEXT NOT NULL,
+  home_runtime_id TEXT NOT NULL,
   PRIMARY KEY (project_id, run_id, sequence)
 ) STRICT;
-CREATE INDEX IF NOT EXISTS events_run ON events(run_id, sequence);
-CREATE TABLE IF NOT EXISTS commands (
+CREATE INDEX events_run ON events(run_id, sequence);
+CREATE TABLE commands (
   command_id TEXT PRIMARY KEY,
   run_id TEXT NOT NULL,
   kind TEXT NOT NULL,
   result TEXT NOT NULL,
   recorded_at TEXT NOT NULL
 ) STRICT;
-PRAGMA user_version = 1;
+CREATE TABLE run_plans (
+  run_id TEXT PRIMARY KEY REFERENCES runs(run_id),
+  run_plan_hash TEXT NOT NULL,
+  envelope TEXT NOT NULL,
+  pinned_sequence INTEGER NOT NULL
+) STRICT;
+CREATE TABLE run_state (
+  run_id TEXT PRIMARY KEY REFERENCES runs(run_id),
+  last_sequence INTEGER NOT NULL,
+  state TEXT NOT NULL
+) STRICT;
+CREATE TABLE attempt_capabilities (
+  attempt_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  assignment_id TEXT NOT NULL,
+  step_id TEXT NOT NULL,
+  step_attempt INTEGER NOT NULL,
+  producer_id TEXT NOT NULL,
+  capability_hash TEXT NOT NULL UNIQUE,
+  state TEXT NOT NULL CHECK (state IN ('issued','settled','revoked'))
+) STRICT;
 `;
 
 export class VnextRunEventStore {
@@ -411,7 +546,11 @@ export class VnextRunEventStore {
 
   constructor(path: string) {
     this.path = resolve(path);
-    this.database = openDatabase(this.path, "run event store", EVENT_STORE_SCHEMA);
+    this.database = openDatabase(this.path, "run event store", {
+      schema: EVENT_STORE_SCHEMA,
+      version: VNEXT_EVENT_STORE_SCHEMA_VERSION,
+      tables: EVENT_STORE_TABLES,
+    });
   }
 
   close(): void {
@@ -457,7 +596,7 @@ export class VnextRunEventStore {
       record.promptSha256,
       record.status,
       record.configRevision,
-      record.memoryRevision ?? null,
+      record.memoryRevision,
       record.executorPolicyRevision,
       record.toolPolicyRevision,
       record.createdAt,
@@ -482,7 +621,7 @@ export class VnextRunEventStore {
         prompt_sha256: string;
         status: VnextRunStatus;
         config_revision: string;
-        memory_revision: string | null;
+        memory_revision: string;
         executor_policy_revision: string;
         tool_policy_revision: string;
         created_at: string;
@@ -506,9 +645,15 @@ export class VnextRunEventStore {
   }
 
   appendEvent(event: VnextRunEvent): void {
+    validateRunEvent(event, "run-event");
+    const run = this.run(event.runId);
+    if (!run) throw runtimeError("run_unknown", event.runId, "run does not exist in this event store");
+    if (event.homeRuntimeId !== run.homeRuntimeId || event.projectId !== run.projectId) {
+      throw runtimeError("run_event_owner_mismatch", event.runId, "event homeRuntimeId or projectId does not match the run");
+    }
     this.database.prepare(`
-      INSERT INTO events (project_id, run_id, sequence, event_id, event_type, command_id, occurred_at, recorded_at, monotonic_ns, config_revision, memory_revision, executor_policy_revision, tool_policy_revision, payload)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO events (project_id, run_id, sequence, event_id, event_type, command_id, occurred_at, recorded_at, monotonic_ns, config_revision, memory_revision, executor_policy_revision, tool_policy_revision, payload, schema, home_runtime_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       event.projectId,
       event.runId,
@@ -520,16 +665,18 @@ export class VnextRunEventStore {
       event.recordedAt,
       event.monotonicNs,
       event.configRevision,
-      event.memoryRevision ?? null,
+      event.memoryRevision,
       event.executorPolicyRevision,
       event.toolPolicyRevision,
       JSON.stringify(event.payload),
+      event.schema,
+      event.homeRuntimeId,
     );
   }
 
   events(runId: string, afterSequence = 0, limit = 200): VnextRunEvent[] {
     const rows = this.database.prepare(`
-      SELECT project_id, run_id, sequence, event_id, event_type, command_id, occurred_at, recorded_at, monotonic_ns, config_revision, memory_revision, executor_policy_revision, tool_policy_revision, payload
+      SELECT project_id, run_id, sequence, event_id, event_type, command_id, occurred_at, recorded_at, monotonic_ns, config_revision, memory_revision, executor_policy_revision, tool_policy_revision, payload, schema, home_runtime_id
       FROM events WHERE run_id = ? AND sequence > ? ORDER BY sequence ASC LIMIT ?
     `).all(runId, afterSequence, limit) as Array<{
       project_id: string;
@@ -540,29 +687,89 @@ export class VnextRunEventStore {
       command_id: string | null;
       occurred_at: string;
       recorded_at: string;
-      monotonic_ns: number;
+      monotonic_ns: string;
       config_revision: string;
-      memory_revision: string | null;
+      memory_revision: string;
       executor_policy_revision: string;
       tool_policy_revision: string;
       payload: string;
+      schema: typeof VNEXT_RUN_EVENT_SCHEMA;
+      home_runtime_id: string;
     }>;
     return rows.map((row) => ({
+      schema: row.schema,
       eventId: row.event_id,
       eventType: row.event_type,
       projectId: row.project_id,
       runId: row.run_id,
+      homeRuntimeId: row.home_runtime_id,
       sequence: row.sequence,
       ...(row.command_id !== null ? { commandId: row.command_id } : {}),
       occurredAt: row.occurred_at,
       recordedAt: row.recorded_at,
       monotonicNs: row.monotonic_ns,
       configRevision: row.config_revision,
-      ...(row.memory_revision !== null ? { memoryRevision: row.memory_revision } : {}),
+      memoryRevision: row.memory_revision,
       executorPolicyRevision: row.executor_policy_revision,
       toolPolicyRevision: row.tool_policy_revision,
       payload: JSON.parse(row.payload) as Record<string, unknown>,
     }));
+  }
+
+  insertRunPlan(row: VnextRunPlanRow): void {
+    this.database.prepare("INSERT INTO run_plans (run_id, run_plan_hash, envelope, pinned_sequence) VALUES (?, ?, ?, ?)")
+      .run(row.runId, row.runPlanHash, row.envelope, row.pinnedSequence);
+  }
+
+  runPlan(runId: string): VnextRunPlanRow | undefined {
+    const row = this.database.prepare("SELECT run_id, run_plan_hash, envelope, pinned_sequence FROM run_plans WHERE run_id = ?").get(runId) as
+      | { run_id: string; run_plan_hash: string; envelope: string; pinned_sequence: number }
+      | undefined;
+    return row
+      ? { runId: row.run_id, runPlanHash: row.run_plan_hash, envelope: row.envelope, pinnedSequence: row.pinned_sequence }
+      : undefined;
+  }
+
+  runState(runId: string): VnextRunStateRow | undefined {
+    const row = this.database.prepare("SELECT run_id, last_sequence, state FROM run_state WHERE run_id = ?").get(runId) as
+      | { run_id: string; last_sequence: number; state: string }
+      | undefined;
+    return row ? { runId: row.run_id, lastSequence: row.last_sequence, state: row.state } : undefined;
+  }
+
+  upsertRunState(row: VnextRunStateRow): void {
+    this.database.prepare(`
+      INSERT INTO run_state (run_id, last_sequence, state) VALUES (?, ?, ?)
+      ON CONFLICT(run_id) DO UPDATE SET last_sequence = excluded.last_sequence, state = excluded.state
+    `).run(row.runId, row.lastSequence, row.state);
+  }
+
+  insertCapability(row: VnextAttemptCapabilityRow): void {
+    this.database.prepare(`
+      INSERT INTO attempt_capabilities (attempt_id, run_id, assignment_id, step_id, step_attempt, producer_id, capability_hash, state)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(row.attemptId, row.runId, row.assignmentId, row.stepId, row.stepAttempt, row.producerId, row.capabilityHash, row.state);
+  }
+
+  capabilityByHash(capabilityHash: string): VnextAttemptCapabilityRow | undefined {
+    return capabilityFromRow(this.database.prepare(`
+      SELECT attempt_id, run_id, assignment_id, step_id, step_attempt, producer_id, capability_hash, state
+      FROM attempt_capabilities WHERE capability_hash = ?
+    `).get(capabilityHash) as CapabilitySqlRow | undefined);
+  }
+
+  capabilityByAttempt(attemptId: string): VnextAttemptCapabilityRow | undefined {
+    return capabilityFromRow(this.database.prepare(`
+      SELECT attempt_id, run_id, assignment_id, step_id, step_attempt, producer_id, capability_hash, state
+      FROM attempt_capabilities WHERE attempt_id = ?
+    `).get(attemptId) as CapabilitySqlRow | undefined);
+  }
+
+  settleCapability(attemptId: string, state: "settled" | "revoked"): void {
+    const updated = this.database.prepare("UPDATE attempt_capabilities SET state = ? WHERE attempt_id = ?").run(state, attemptId);
+    if (Number(updated.changes) !== 1) {
+      throw runtimeError("capability_unknown", attemptId, "attempt capability does not exist");
+    }
   }
 }
 
@@ -574,12 +781,15 @@ function runFromRow(row: {
   prompt_sha256: string;
   status: VnextRunStatus;
   config_revision: string;
-  memory_revision: string | null;
+  memory_revision: string;
   executor_policy_revision: string;
   tool_policy_revision: string;
   created_at: string;
   updated_at: string;
 }): VnextRunRecord {
+  if (typeof row.memory_revision !== "string" || row.memory_revision.length === 0) {
+    throw runtimeError("runtime_schema_shape_invalid", row.run_id, "memory_revision is required");
+  }
   return {
     runId: row.run_id,
     projectId: row.project_id,
@@ -588,7 +798,7 @@ function runFromRow(row: {
     promptSha256: row.prompt_sha256,
     status: row.status,
     configRevision: row.config_revision,
-    ...(row.memory_revision !== null ? { memoryRevision: row.memory_revision } : {}),
+    memoryRevision: row.memory_revision,
     executorPolicyRevision: row.executor_policy_revision,
     toolPolicyRevision: row.tool_policy_revision,
     createdAt: row.created_at,
@@ -607,4 +817,38 @@ export function newVnextEventId(): string {
 
 export function newVnextCommandId(): string {
   return `cmd_${randomUUID().replaceAll("-", "")}`;
+}
+
+export function newVnextAssignmentId(): string {
+  return `asg_${randomUUID().replaceAll("-", "")}`;
+}
+
+export function newVnextAttemptId(): string {
+  return `att_${randomUUID().replaceAll("-", "")}`;
+}
+
+type CapabilitySqlRow = {
+  attempt_id: string;
+  run_id: string;
+  assignment_id: string;
+  step_id: string;
+  step_attempt: number;
+  producer_id: string;
+  capability_hash: string;
+  state: VnextAttemptCapabilityRow["state"];
+};
+
+function capabilityFromRow(row: CapabilitySqlRow | undefined): VnextAttemptCapabilityRow | undefined {
+  return row
+    ? {
+      attemptId: row.attempt_id,
+      runId: row.run_id,
+      assignmentId: row.assignment_id,
+      stepId: row.step_id,
+      stepAttempt: row.step_attempt,
+      producerId: row.producer_id,
+      capabilityHash: row.capability_hash,
+      state: row.state,
+    }
+    : undefined;
 }

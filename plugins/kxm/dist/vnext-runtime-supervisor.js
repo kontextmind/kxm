@@ -14777,7 +14777,7 @@ var require_dist = __commonJS({
 
 // plugins/kxm/src/vnext-runtime-supervisor.ts
 import { spawn } from "node:child_process";
-import { createHash as createHash5, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash as createHash6, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { chmodSync, existsSync as existsSync3, lstatSync as lstatSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync2, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { dirname as dirname4, isAbsolute as isAbsolute3, join as join5, resolve as resolve4 } from "node:path";
@@ -15223,6 +15223,7 @@ var VnextSchemaRegistry = class {
   migrationDecisionValidator;
   migrationReceiptValidator;
   permissionDiffValidator;
+  runEventValidator;
   constructor(schemasDir = DEFAULT_SCHEMA_DIR) {
     this.schemasDir = resolve(schemasDir);
     this.ajv = new import__.Ajv2020({ allErrors: true, strict: true, strictRequired: false });
@@ -15238,6 +15239,7 @@ var VnextSchemaRegistry = class {
     const migrationDecisionFile = "migration-decision.schema.json";
     const migrationReceiptFile = "migration-receipt.schema.json";
     const permissionDiffFile = "permission-diff.schema.json";
+    const runEventFile = "run-event.schema.json";
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, localBindingsFile)));
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, templateProvenanceFile)));
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, initOperationFile)));
@@ -15245,6 +15247,7 @@ var VnextSchemaRegistry = class {
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, migrationDecisionFile)));
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, migrationReceiptFile)));
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, permissionDiffFile)));
+    this.ajv.addSchema(readJsonObject(join(this.schemasDir, runEventFile)));
     for (const [kind, definition] of Object.entries(RESOURCE_SCHEMA)) {
       const validator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${definition.file}`);
       if (!validator) throw new Error(`schema did not compile: ${definition.file}`);
@@ -15257,6 +15260,7 @@ var VnextSchemaRegistry = class {
     const migrationDecisionValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${migrationDecisionFile}`);
     const migrationReceiptValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${migrationReceiptFile}`);
     const permissionDiffValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${permissionDiffFile}`);
+    const runEventValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${runEventFile}`);
     if (!localBindingsValidator) throw new Error(`schema did not compile: ${localBindingsFile}`);
     if (!templateProvenanceValidator) throw new Error(`schema did not compile: ${templateProvenanceFile}`);
     if (!initOperationValidator) throw new Error(`schema did not compile: ${initOperationFile}`);
@@ -15264,6 +15268,7 @@ var VnextSchemaRegistry = class {
     if (!migrationDecisionValidator) throw new Error(`schema did not compile: ${migrationDecisionFile}`);
     if (!migrationReceiptValidator) throw new Error(`schema did not compile: ${migrationReceiptFile}`);
     if (!permissionDiffValidator) throw new Error(`schema did not compile: ${permissionDiffFile}`);
+    if (!runEventValidator) throw new Error(`schema did not compile: ${runEventFile}`);
     this.localBindingsValidator = localBindingsValidator;
     this.templateProvenanceValidator = templateProvenanceValidator;
     this.initOperationValidator = initOperationValidator;
@@ -15271,6 +15276,7 @@ var VnextSchemaRegistry = class {
     this.migrationDecisionValidator = migrationDecisionValidator;
     this.migrationReceiptValidator = migrationReceiptValidator;
     this.permissionDiffValidator = permissionDiffValidator;
+    this.runEventValidator = runEventValidator;
   }
   validate(kind, value, file) {
     const definition = RESOURCE_SCHEMA[kind];
@@ -15311,6 +15317,18 @@ var VnextSchemaRegistry = class {
     return (validator.errors ?? []).map((error) => schemaIssue(file, error));
   }
 };
+var cachedRunEventRegistry;
+function validateRunEvent(value, file) {
+  const registry = cachedRunEventRegistry ??= new VnextSchemaRegistry();
+  if (!registry.runEventValidator(value)) {
+    throw new VnextConfigError([issue(
+      "schema",
+      "run_event_invalid",
+      file,
+      registry.ajv.errorsText(registry.runEventValidator.errors, { separator: "; " })
+    )]);
+  }
+}
 function schemaIssue(file, error) {
   const location = error.instancePath || "/";
   const suffix = error.params && "additionalProperty" in error.params ? ` (${String(error.params.additionalProperty)})` : "";
@@ -15426,10 +15444,10 @@ function readTemplateProvenance(registry, root) {
   let prior = "";
   let managedBytes = 0;
   for (const candidate of files) {
-    const record = objectValue(candidate);
-    const path = record && stringValue(record.path);
+    const record2 = objectValue(candidate);
+    const path = record2 && stringValue(record2.path);
     if (!path) continue;
-    managedBytes += typeof record.bytes === "number" ? record.bytes : 0;
+    managedBytes += typeof record2.bytes === "number" ? record2.bytes : 0;
     const folded = path.toLocaleLowerCase("en-US");
     if (!path.startsWith(".kxm/") || path === label || !portablePath(path)) {
       fail("path", "template_provenance_path_invalid", label, `managed path ${path} is not a portable project-configuration path`);
@@ -16202,9 +16220,9 @@ function readVnextMigrationReceipt(root, options = {}) {
       issues.push(issue("semantic", "migration_source_unmigrated", file, "legacy configuration file is not covered by the migration receipt"));
       continue;
     }
-    const record = (Array.isArray(receipt.sources) ? receipt.sources : []).map((candidate) => candidate && typeof candidate === "object" && !Array.isArray(candidate) ? candidate : void 0).find((candidate) => candidate?.path === file);
+    const record2 = (Array.isArray(receipt.sources) ? receipt.sources : []).map((candidate) => candidate && typeof candidate === "object" && !Array.isArray(candidate) ? candidate : void 0).find((candidate) => candidate?.path === file);
     const current = hashFileRecord(root, file);
-    if (!current || current.sha256 !== record?.sha256 || current.bytes !== record?.bytes) {
+    if (!current || current.sha256 !== record2?.sha256 || current.bytes !== record2?.bytes) {
       issues.push(issue("semantic", "migration_source_changed", file, "legacy configuration changed after the migration receipt was issued"));
     }
   }
@@ -16289,7 +16307,30 @@ function checkedParent(path, description) {
     throw runtimeError("runtime_path_invalid", description, `${description} parent must be a regular directory, not a link`);
   }
 }
-function openDatabase(file, description, schema) {
+function userTables(database) {
+  const rows = database.prepare(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+  ).all();
+  return rows.map((row) => row.name);
+}
+function tableColumns(database, table) {
+  const rows = database.prepare(`PRAGMA table_info(${table})`).all();
+  return rows.map((row) => row.name).sort();
+}
+function verifyExpectedTables(database, file, description, expected) {
+  const present = new Set(userTables(database));
+  for (const [table, columns] of Object.entries(expected)) {
+    if (!present.has(table)) {
+      throw runtimeError("runtime_schema_shape_invalid", file, `${description} is missing table ${table}`);
+    }
+    const actual = tableColumns(database, table);
+    const missing = columns.filter((column) => !actual.includes(column));
+    if (missing.length > 0) {
+      throw runtimeError("runtime_schema_shape_invalid", file, `${description} table ${table} is missing columns ${missing.join(", ")}`);
+    }
+  }
+}
+function openDatabase(file, description, spec) {
   checkedParent(file, description);
   if (existsSync2(file)) {
     const stat = lstatSync2(file);
@@ -16306,17 +16347,56 @@ function openDatabase(file, description, schema) {
   database.exec("PRAGMA busy_timeout = 5000");
   const row = database.prepare("PRAGMA user_version").get();
   const version = row?.user_version ?? 0;
-  if (version > 1) {
+  if (version > spec.version) {
     database.close();
-    throw runtimeError("runtime_schema_newer", description, `${description} schema version ${version} is newer than this runtime supports`);
+    throw runtimeError("runtime_schema_newer", file, `${description} schema version ${version} is newer than this runtime supports`);
+  }
+  if (version === 0) {
+    const existing = userTables(database);
+    if (existing.length > 0) {
+      database.close();
+      throw runtimeError("runtime_schema_shape_invalid", file, `${description} has tables at schema version 0`);
+    }
+    try {
+      database.exec("BEGIN IMMEDIATE");
+      database.exec(spec.schema);
+      database.exec(`PRAGMA user_version = ${spec.version}`);
+      database.exec("COMMIT");
+    } catch (error) {
+      try {
+        database.exec("ROLLBACK");
+      } catch {
+      }
+      database.close();
+      throw error;
+    }
+  } else if (version < spec.version) {
+    database.close();
+    throw runtimeError(
+      "runtime_schema_outdated",
+      file,
+      `${description} schema version ${version} is older than ${spec.version}; backup, restore, and migration remain E6`
+    );
+  } else {
+    try {
+      verifyExpectedTables(database, file, description, spec.tables);
+    } catch (error) {
+      database.close();
+      throw error;
+    }
   }
   database.exec("PRAGMA journal_mode = WAL");
   database.exec("PRAGMA synchronous = NORMAL");
-  database.exec(schema);
+  database.exec("PRAGMA foreign_keys = ON");
   return database;
 }
+var VNEXT_REGISTRY_SCHEMA_VERSION = 1;
+var REGISTRY_TABLES = {
+  supervisor: ["singleton_id", "runtime_id", "pid", "port", "token_hash", "started_at", "heartbeat_at", "state"],
+  projects: ["project_id", "project_root", "project_key", "home_runtime_id", "config_revision", "registered_at"]
+};
 var REGISTRY_SCHEMA = `
-CREATE TABLE IF NOT EXISTS supervisor (
+CREATE TABLE supervisor (
   singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
   runtime_id TEXT NOT NULL,
   pid INTEGER NOT NULL,
@@ -16326,7 +16406,7 @@ CREATE TABLE IF NOT EXISTS supervisor (
   heartbeat_at TEXT NOT NULL,
   state TEXT NOT NULL
 ) STRICT;
-CREATE TABLE IF NOT EXISTS projects (
+CREATE TABLE projects (
   project_id TEXT PRIMARY KEY,
   project_root TEXT NOT NULL,
   project_key TEXT NOT NULL UNIQUE,
@@ -16334,20 +16414,23 @@ CREATE TABLE IF NOT EXISTS projects (
   config_revision TEXT,
   registered_at TEXT NOT NULL
 ) STRICT;
-PRAGMA user_version = 1;
 `;
 var VnextRuntimeRegistry = class {
   path;
   database;
   constructor(path) {
     this.path = resolve3(path);
-    this.database = openDatabase(this.path, "runtime registry", REGISTRY_SCHEMA);
+    this.database = openDatabase(this.path, "runtime registry", {
+      schema: REGISTRY_SCHEMA,
+      version: VNEXT_REGISTRY_SCHEMA_VERSION,
+      tables: REGISTRY_TABLES
+    });
   }
   close() {
     this.database.close();
   }
   /** Atomically claim or refresh the supervisor singleton. Returns the record that now owns it. */
-  claimSupervisor(record) {
+  claimSupervisor(record2) {
     this.database.exec("BEGIN IMMEDIATE");
     try {
       const existing = this.readSupervisorRow();
@@ -16355,12 +16438,12 @@ var VnextRuntimeRegistry = class {
         this.database.prepare(`
           INSERT INTO supervisor (singleton_id, runtime_id, pid, port, token_hash, started_at, heartbeat_at, state)
           VALUES (1, ?, ?, ?, ?, ?, ?, 'running')
-        `).run(record.runtimeId, record.pid, record.port, record.tokenHash, record.now, record.now);
+        `).run(record2.runtimeId, record2.pid, record2.port, record2.tokenHash, record2.now, record2.now);
         this.database.exec("COMMIT");
         return { claimed: true, record: this.supervisor() };
       }
-      if (existing.runtimeId === record.runtimeId && existing.pid === record.pid) {
-        this.database.prepare("UPDATE supervisor SET heartbeat_at = ?, state = 'running' WHERE singleton_id = 1").run(record.now);
+      if (existing.runtimeId === record2.runtimeId && existing.pid === record2.pid) {
+        this.database.prepare("UPDATE supervisor SET heartbeat_at = ?, state = 'running' WHERE singleton_id = 1").run(record2.now);
         this.database.exec("COMMIT");
         return { claimed: true, record: this.supervisor() };
       }
@@ -16375,16 +16458,16 @@ var VnextRuntimeRegistry = class {
     }
   }
   /** Take over a dead supervisor's singleton, preserving its logical runtime identity and project home bindings. */
-  takeoverSupervisor(record) {
+  takeoverSupervisor(record2) {
     this.database.exec("BEGIN IMMEDIATE");
     try {
       const existing = this.readSupervisorRow();
-      const runtimeId = existing?.runtimeId ?? record.runtimeId;
+      const runtimeId = existing?.runtimeId ?? record2.runtimeId;
       const updated = this.database.prepare(`
         UPDATE supervisor
         SET runtime_id = ?, pid = ?, port = ?, token_hash = ?, started_at = ?, heartbeat_at = ?, state = 'running'
         WHERE singleton_id = 1 AND pid = ? AND heartbeat_at = ?
-      `).run(runtimeId, record.pid, record.port, record.tokenHash, record.now, record.now, record.observedDeadPid, record.observedHeartbeatAt);
+      `).run(runtimeId, record2.pid, record2.port, record2.tokenHash, record2.now, record2.now, record2.observedDeadPid, record2.observedHeartbeatAt);
       if (updated.changes !== 1) {
         this.database.exec("ROLLBACK");
         throw runtimeError("runtime_supervisor_conflict", "supervisor", "another process claimed the supervisor singleton first");
@@ -16498,8 +16581,19 @@ var VnextRuntimeRegistry = class {
     } : void 0;
   }
 };
+var VNEXT_RUN_EVENT_SCHEMA = "kxm.run-event.v1";
+var VNEXT_ABSENT_MEMORY_REVISION = "ctxrev_absent";
+var VNEXT_EVENT_STORE_SCHEMA_VERSION = 2;
+var EVENT_STORE_TABLES = {
+  runs: ["run_id", "project_id", "home_runtime_id", "workflow_id", "prompt_sha256", "status", "config_revision", "memory_revision", "executor_policy_revision", "tool_policy_revision", "created_at", "updated_at"],
+  events: ["project_id", "run_id", "sequence", "event_id", "event_type", "command_id", "occurred_at", "recorded_at", "monotonic_ns", "config_revision", "memory_revision", "executor_policy_revision", "tool_policy_revision", "payload", "schema", "home_runtime_id"],
+  commands: ["command_id", "run_id", "kind", "result", "recorded_at"],
+  run_plans: ["run_id", "run_plan_hash", "envelope", "pinned_sequence"],
+  run_state: ["run_id", "last_sequence", "state"],
+  attempt_capabilities: ["attempt_id", "run_id", "assignment_id", "step_id", "step_attempt", "producer_id", "capability_hash", "state"]
+};
 var EVENT_STORE_SCHEMA = `
-CREATE TABLE IF NOT EXISTS runs (
+CREATE TABLE runs (
   run_id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL,
   home_runtime_id TEXT NOT NULL,
@@ -16507,13 +16601,13 @@ CREATE TABLE IF NOT EXISTS runs (
   prompt_sha256 TEXT NOT NULL,
   status TEXT NOT NULL,
   config_revision TEXT NOT NULL,
-  memory_revision TEXT,
+  memory_revision TEXT NOT NULL,
   executor_policy_revision TEXT NOT NULL,
   tool_policy_revision TEXT NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 ) STRICT;
-CREATE TABLE IF NOT EXISTS events (
+CREATE TABLE events (
   project_id TEXT NOT NULL,
   run_id TEXT NOT NULL,
   sequence INTEGER NOT NULL,
@@ -16522,30 +16616,56 @@ CREATE TABLE IF NOT EXISTS events (
   command_id TEXT,
   occurred_at TEXT NOT NULL,
   recorded_at TEXT NOT NULL,
-  monotonic_ns INTEGER NOT NULL,
+  monotonic_ns TEXT NOT NULL,
   config_revision TEXT NOT NULL,
-  memory_revision TEXT,
+  memory_revision TEXT NOT NULL,
   executor_policy_revision TEXT NOT NULL,
   tool_policy_revision TEXT NOT NULL,
   payload TEXT NOT NULL,
+  schema TEXT NOT NULL,
+  home_runtime_id TEXT NOT NULL,
   PRIMARY KEY (project_id, run_id, sequence)
 ) STRICT;
-CREATE INDEX IF NOT EXISTS events_run ON events(run_id, sequence);
-CREATE TABLE IF NOT EXISTS commands (
+CREATE INDEX events_run ON events(run_id, sequence);
+CREATE TABLE commands (
   command_id TEXT PRIMARY KEY,
   run_id TEXT NOT NULL,
   kind TEXT NOT NULL,
   result TEXT NOT NULL,
   recorded_at TEXT NOT NULL
 ) STRICT;
-PRAGMA user_version = 1;
+CREATE TABLE run_plans (
+  run_id TEXT PRIMARY KEY REFERENCES runs(run_id),
+  run_plan_hash TEXT NOT NULL,
+  envelope TEXT NOT NULL,
+  pinned_sequence INTEGER NOT NULL
+) STRICT;
+CREATE TABLE run_state (
+  run_id TEXT PRIMARY KEY REFERENCES runs(run_id),
+  last_sequence INTEGER NOT NULL,
+  state TEXT NOT NULL
+) STRICT;
+CREATE TABLE attempt_capabilities (
+  attempt_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  assignment_id TEXT NOT NULL,
+  step_id TEXT NOT NULL,
+  step_attempt INTEGER NOT NULL,
+  producer_id TEXT NOT NULL,
+  capability_hash TEXT NOT NULL UNIQUE,
+  state TEXT NOT NULL CHECK (state IN ('issued','settled','revoked'))
+) STRICT;
 `;
 var VnextRunEventStore = class {
   path;
   database;
   constructor(path) {
     this.path = resolve3(path);
-    this.database = openDatabase(this.path, "run event store", EVENT_STORE_SCHEMA);
+    this.database = openDatabase(this.path, "run event store", {
+      schema: EVENT_STORE_SCHEMA,
+      version: VNEXT_EVENT_STORE_SCHEMA_VERSION,
+      tables: EVENT_STORE_TABLES
+    });
   }
   close() {
     this.database.close();
@@ -16569,26 +16689,26 @@ var VnextRunEventStore = class {
     const row = this.database.prepare("SELECT command_id, run_id, kind, result, recorded_at FROM commands WHERE command_id = ?").get(commandId);
     return row ? { commandId: row.command_id, runId: row.run_id, kind: row.kind, result: JSON.parse(row.result), recordedAt: row.recorded_at } : void 0;
   }
-  insertCommand(record) {
-    this.database.prepare("INSERT INTO commands (command_id, run_id, kind, result, recorded_at) VALUES (?, ?, ?, ?, ?)").run(record.commandId, record.runId, record.kind, JSON.stringify(record.result), record.recordedAt);
+  insertCommand(record2) {
+    this.database.prepare("INSERT INTO commands (command_id, run_id, kind, result, recorded_at) VALUES (?, ?, ?, ?, ?)").run(record2.commandId, record2.runId, record2.kind, JSON.stringify(record2.result), record2.recordedAt);
   }
-  insertRun(record) {
+  insertRun(record2) {
     this.database.prepare(`
       INSERT INTO runs (run_id, project_id, home_runtime_id, workflow_id, prompt_sha256, status, config_revision, memory_revision, executor_policy_revision, tool_policy_revision, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      record.runId,
-      record.projectId,
-      record.homeRuntimeId,
-      record.workflowId,
-      record.promptSha256,
-      record.status,
-      record.configRevision,
-      record.memoryRevision ?? null,
-      record.executorPolicyRevision,
-      record.toolPolicyRevision,
-      record.createdAt,
-      record.updatedAt
+      record2.runId,
+      record2.projectId,
+      record2.homeRuntimeId,
+      record2.workflowId,
+      record2.promptSha256,
+      record2.status,
+      record2.configRevision,
+      record2.memoryRevision,
+      record2.executorPolicyRevision,
+      record2.toolPolicyRevision,
+      record2.createdAt,
+      record2.updatedAt
     );
   }
   updateRunStatus(runId, status, updatedAt) {
@@ -16613,9 +16733,15 @@ var VnextRunEventStore = class {
     return row.max_sequence + 1;
   }
   appendEvent(event) {
+    validateRunEvent(event, "run-event");
+    const run = this.run(event.runId);
+    if (!run) throw runtimeError("run_unknown", event.runId, "run does not exist in this event store");
+    if (event.homeRuntimeId !== run.homeRuntimeId || event.projectId !== run.projectId) {
+      throw runtimeError("run_event_owner_mismatch", event.runId, "event homeRuntimeId or projectId does not match the run");
+    }
     this.database.prepare(`
-      INSERT INTO events (project_id, run_id, sequence, event_id, event_type, command_id, occurred_at, recorded_at, monotonic_ns, config_revision, memory_revision, executor_policy_revision, tool_policy_revision, payload)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO events (project_id, run_id, sequence, event_id, event_type, command_id, occurred_at, recorded_at, monotonic_ns, config_revision, memory_revision, executor_policy_revision, tool_policy_revision, payload, schema, home_runtime_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       event.projectId,
       event.runId,
@@ -16627,36 +16753,84 @@ var VnextRunEventStore = class {
       event.recordedAt,
       event.monotonicNs,
       event.configRevision,
-      event.memoryRevision ?? null,
+      event.memoryRevision,
       event.executorPolicyRevision,
       event.toolPolicyRevision,
-      JSON.stringify(event.payload)
+      JSON.stringify(event.payload),
+      event.schema,
+      event.homeRuntimeId
     );
   }
   events(runId, afterSequence = 0, limit = 200) {
     const rows = this.database.prepare(`
-      SELECT project_id, run_id, sequence, event_id, event_type, command_id, occurred_at, recorded_at, monotonic_ns, config_revision, memory_revision, executor_policy_revision, tool_policy_revision, payload
+      SELECT project_id, run_id, sequence, event_id, event_type, command_id, occurred_at, recorded_at, monotonic_ns, config_revision, memory_revision, executor_policy_revision, tool_policy_revision, payload, schema, home_runtime_id
       FROM events WHERE run_id = ? AND sequence > ? ORDER BY sequence ASC LIMIT ?
     `).all(runId, afterSequence, limit);
     return rows.map((row) => ({
+      schema: row.schema,
       eventId: row.event_id,
       eventType: row.event_type,
       projectId: row.project_id,
       runId: row.run_id,
+      homeRuntimeId: row.home_runtime_id,
       sequence: row.sequence,
       ...row.command_id !== null ? { commandId: row.command_id } : {},
       occurredAt: row.occurred_at,
       recordedAt: row.recorded_at,
       monotonicNs: row.monotonic_ns,
       configRevision: row.config_revision,
-      ...row.memory_revision !== null ? { memoryRevision: row.memory_revision } : {},
+      memoryRevision: row.memory_revision,
       executorPolicyRevision: row.executor_policy_revision,
       toolPolicyRevision: row.tool_policy_revision,
       payload: JSON.parse(row.payload)
     }));
   }
+  insertRunPlan(row) {
+    this.database.prepare("INSERT INTO run_plans (run_id, run_plan_hash, envelope, pinned_sequence) VALUES (?, ?, ?, ?)").run(row.runId, row.runPlanHash, row.envelope, row.pinnedSequence);
+  }
+  runPlan(runId) {
+    const row = this.database.prepare("SELECT run_id, run_plan_hash, envelope, pinned_sequence FROM run_plans WHERE run_id = ?").get(runId);
+    return row ? { runId: row.run_id, runPlanHash: row.run_plan_hash, envelope: row.envelope, pinnedSequence: row.pinned_sequence } : void 0;
+  }
+  runState(runId) {
+    const row = this.database.prepare("SELECT run_id, last_sequence, state FROM run_state WHERE run_id = ?").get(runId);
+    return row ? { runId: row.run_id, lastSequence: row.last_sequence, state: row.state } : void 0;
+  }
+  upsertRunState(row) {
+    this.database.prepare(`
+      INSERT INTO run_state (run_id, last_sequence, state) VALUES (?, ?, ?)
+      ON CONFLICT(run_id) DO UPDATE SET last_sequence = excluded.last_sequence, state = excluded.state
+    `).run(row.runId, row.lastSequence, row.state);
+  }
+  insertCapability(row) {
+    this.database.prepare(`
+      INSERT INTO attempt_capabilities (attempt_id, run_id, assignment_id, step_id, step_attempt, producer_id, capability_hash, state)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(row.attemptId, row.runId, row.assignmentId, row.stepId, row.stepAttempt, row.producerId, row.capabilityHash, row.state);
+  }
+  capabilityByHash(capabilityHash) {
+    return capabilityFromRow(this.database.prepare(`
+      SELECT attempt_id, run_id, assignment_id, step_id, step_attempt, producer_id, capability_hash, state
+      FROM attempt_capabilities WHERE capability_hash = ?
+    `).get(capabilityHash));
+  }
+  capabilityByAttempt(attemptId) {
+    return capabilityFromRow(this.database.prepare(`
+      SELECT attempt_id, run_id, assignment_id, step_id, step_attempt, producer_id, capability_hash, state
+      FROM attempt_capabilities WHERE attempt_id = ?
+    `).get(attemptId));
+  }
+  settleCapability(attemptId, state) {
+    const updated = this.database.prepare("UPDATE attempt_capabilities SET state = ? WHERE attempt_id = ?").run(state, attemptId);
+    if (Number(updated.changes) !== 1) {
+      throw runtimeError("capability_unknown", attemptId, "attempt capability does not exist");
+    }
+  }
 };
 function runFromRow(row) {
+  if (typeof row.memory_revision !== "string" || row.memory_revision.length === 0) {
+    throw runtimeError("runtime_schema_shape_invalid", row.run_id, "memory_revision is required");
+  }
   return {
     runId: row.run_id,
     projectId: row.project_id,
@@ -16665,7 +16839,7 @@ function runFromRow(row) {
     promptSha256: row.prompt_sha256,
     status: row.status,
     configRevision: row.config_revision,
-    ...row.memory_revision !== null ? { memoryRevision: row.memory_revision } : {},
+    memoryRevision: row.memory_revision,
     executorPolicyRevision: row.executor_policy_revision,
     toolPolicyRevision: row.tool_policy_revision,
     createdAt: row.created_at,
@@ -16681,12 +16855,1091 @@ function newVnextEventId() {
 function newVnextCommandId() {
   return `cmd_${randomUUID().replaceAll("-", "")}`;
 }
+function capabilityFromRow(row) {
+  return row ? {
+    attemptId: row.attempt_id,
+    runId: row.run_id,
+    assignmentId: row.assignment_id,
+    stepId: row.step_id,
+    stepAttempt: row.step_attempt,
+    producerId: row.producer_id,
+    capabilityHash: row.capability_hash,
+    state: row.state
+  } : void 0;
+}
 
 // plugins/kxm/src/vnext-runtime.ts
-import { createHash as createHash4 } from "node:crypto";
+import { createHash as createHash5 } from "node:crypto";
 import { join as join4 } from "node:path";
-function sha256Of(input) {
+
+// plugins/kxm/src/vnext-engine-fold.ts
+var VNEXT_RUN_STATE_SCHEMA = "kxm.run-state.v1";
+var RUN_STATUSES = /* @__PURE__ */ new Set(["created", "preparing", "running", "waiting", "blocked_uncertain", "cancelling", "cancelled", "completed", "failed"]);
+var TERMINAL_RUN = /* @__PURE__ */ new Set(["cancelled", "completed", "failed"]);
+var STEP_STATUSES = /* @__PURE__ */ new Set(["pending", "preparing", "running", "passed", "failed", "cancelled"]);
+var ASSIGNMENT_STATUSES = /* @__PURE__ */ new Set(["created", "accepted", "dispatched", "executing", "result_recorded", "terminal"]);
+var ATTEMPT_STATUSES = /* @__PURE__ */ new Set(["created", "starting", "executing", "settling", "terminal"]);
+var RESULT_CLASSES = /* @__PURE__ */ new Set(["outcome", "outcome_unknown", "producer_rejected", "cancelled"]);
+var SLICE_BLOCKED_RUN = /* @__PURE__ */ new Set(["waiting", "blocked_uncertain"]);
+var RUN_EDGES = {
+  created: /* @__PURE__ */ new Set(["preparing", "cancelled", "failed"]),
+  preparing: /* @__PURE__ */ new Set(["running", "cancelled", "failed"]),
+  running: /* @__PURE__ */ new Set(["cancelling", "cancelled", "completed", "failed"]),
+  waiting: /* @__PURE__ */ new Set(["running", "blocked_uncertain", "cancelling", "completed", "failed", "cancelled"]),
+  blocked_uncertain: /* @__PURE__ */ new Set(["running", "cancelling", "failed"]),
+  cancelling: /* @__PURE__ */ new Set(["cancelled", "failed"]),
+  cancelled: /* @__PURE__ */ new Set(),
+  completed: /* @__PURE__ */ new Set(),
+  failed: /* @__PURE__ */ new Set()
+};
+var STEP_EDGES = {
+  pending: /* @__PURE__ */ new Set(["preparing"]),
+  preparing: /* @__PURE__ */ new Set(["running"]),
+  running: /* @__PURE__ */ new Set(["passed", "failed", "cancelled"])
+};
+var ASSIGNMENT_EDGES = {
+  created: /* @__PURE__ */ new Set(["accepted"]),
+  accepted: /* @__PURE__ */ new Set(["dispatched"]),
+  dispatched: /* @__PURE__ */ new Set(["executing"]),
+  executing: /* @__PURE__ */ new Set(["result_recorded"]),
+  result_recorded: /* @__PURE__ */ new Set(["terminal"])
+};
+var ATTEMPT_EDGES = {
+  created: /* @__PURE__ */ new Set(["starting"]),
+  starting: /* @__PURE__ */ new Set(["executing"]),
+  executing: /* @__PURE__ */ new Set(["settling"]),
+  settling: /* @__PURE__ */ new Set(["terminal"])
+};
+function foldVnextRunState(run, plan, events) {
+  if (events.length === 0) {
+    throw runtimeError("run_events_illegal", run.runId, "run has no events");
+  }
+  const state = {
+    schema: VNEXT_RUN_STATE_SCHEMA,
+    runId: run.runId,
+    status: "created",
+    stepAttempts: /* @__PURE__ */ Object.create(null),
+    edgeTransitions: /* @__PURE__ */ Object.create(null),
+    transitionsUsed: 0,
+    cancelRequested: false,
+    terminalEventSeen: false,
+    awaitingTransition: false
+  };
+  for (const [index, event] of events.entries()) {
+    if (event.sequence !== index + 1) {
+      throw runtimeError("run_events_illegal", run.runId, `event sequence is not contiguous at ${event.sequence}`);
+    }
+    assertEventIdentity(run, event);
+    if (state.terminalEventSeen) {
+      throw runtimeError("run_events_illegal", run.runId, "no events are allowed after a terminal run status");
+    }
+    if (index === 0 && event.eventType !== "run.created") {
+      throw runtimeError("run_events_illegal", run.runId, "first event must be run.created");
+    }
+    if (state.lastTerminalTransition !== void 0) {
+      if (event.eventType !== "run.status_changed" || event.payload.status !== state.lastTerminalTransition) {
+        throw runtimeError("run_events_illegal", run.runId, "terminal transition must be followed by the matching run.status_changed");
+      }
+    }
+    if ((event.eventType.startsWith("step.") || event.eventType.startsWith("assignment.") || event.eventType.startsWith("attempt.")) && !plan) {
+      throw runtimeError("run_plan_missing", run.runId, "step events require a pinned run plan");
+    }
+    switch (event.eventType) {
+      case "run.created":
+        foldRunCreated(state, run, event, index);
+        break;
+      case "run.status_changed":
+        foldRunStatus(state, plan, event);
+        break;
+      case "run.cancel_requested":
+        foldCancelRequested(state, event);
+        break;
+      case "step.entered":
+        foldStepEntered(state, plan, event);
+        break;
+      case "step.status_changed":
+        foldStepStatus(state, event);
+        break;
+      case "step.outcome_recorded":
+        foldOutcome(state, plan, event);
+        break;
+      case "step.transitioned":
+        foldTransitioned(state, plan, event);
+        break;
+      case "assignment.created":
+        foldAssignmentCreated(state, event);
+        break;
+      case "assignment.accepted":
+        foldAssignmentAdvance(state, plan, event, "accepted");
+        break;
+      case "assignment.dispatched":
+        foldAssignmentAdvance(state, plan, event, "dispatched");
+        break;
+      case "assignment.executing":
+        foldAssignmentAdvance(state, plan, event, "executing");
+        break;
+      case "assignment.result_recorded":
+        foldAssignmentAdvance(state, plan, event, "result_recorded");
+        break;
+      case "assignment.terminal":
+        foldAssignmentAdvance(state, plan, event, "terminal");
+        break;
+      case "attempt.created":
+        foldAttemptCreated(state, event);
+        break;
+      case "attempt.status_changed":
+        foldAttemptStatus(state, event);
+        break;
+      default:
+        throw runtimeError("run_events_illegal", run.runId, `event type ${event.eventType} is not legal in this engine slice`);
+    }
+  }
+  if ((state.status === "preparing" || state.status === "running" || state.status === "cancelling") && !plan) {
+    throw runtimeError("run_plan_missing", run.runId, `status ${state.status} requires a pinned run plan`);
+  }
+  return freezeState(state);
+}
+function assertEventIdentity(run, event) {
+  if (event.schema !== "kxm.run-event.v1") {
+    throw runtimeError("run_events_illegal", run.runId, "event schema is not kxm.run-event.v1");
+  }
+  if (event.runId !== run.runId || event.projectId !== run.projectId || event.homeRuntimeId !== run.homeRuntimeId) {
+    throw runtimeError("run_event_owner_mismatch", run.runId, "event identity does not match the run");
+  }
+  if (event.configRevision !== run.configRevision || event.memoryRevision !== run.memoryRevision || event.executorPolicyRevision !== run.executorPolicyRevision || event.toolPolicyRevision !== run.toolPolicyRevision) {
+    throw runtimeError("run_event_owner_mismatch", run.runId, "event revisions do not match the run");
+  }
+}
+function foldRunCreated(state, run, event, index) {
+  if (index !== 0 || event.sequence !== 1) {
+    throw runtimeError("run_events_illegal", state.runId, "run.created is only legal at sequence 1");
+  }
+  if (event.payload.status !== "created") {
+    throw runtimeError("run_events_illegal", state.runId, "run.created payload status must be created");
+  }
+  if (event.payload.workflowId !== run.workflowId) {
+    throw runtimeError("run_events_illegal", state.runId, "run.created workflowId does not match the run");
+  }
+  state.status = "created";
+}
+function foldRunStatus(state, plan, event) {
+  const next = event.payload.status;
+  if (typeof next !== "string" || !RUN_STATUSES.has(next)) {
+    throw runtimeError("run_events_illegal", state.runId, `run.status_changed has invalid status ${String(next)}`);
+  }
+  const status = next;
+  if (SLICE_BLOCKED_RUN.has(status)) {
+    throw runtimeError("run_events_illegal", state.runId, `event type ${event.eventType} is not legal in this engine slice`);
+  }
+  const allowed = RUN_EDGES[state.status];
+  if (!allowed?.has(status)) {
+    throw runtimeError("run_events_illegal", state.runId, `illegal run transition ${state.status} -> ${status}`);
+  }
+  if (status === "cancelling") {
+    if (!state.cancelRequested) {
+      throw runtimeError("run_events_illegal", state.runId, "cancelling requires run.cancel_requested");
+    }
+  }
+  if (status === "preparing") {
+    const hash = event.payload.runPlanHash;
+    if (typeof hash !== "string") {
+      throw runtimeError("run_events_illegal", state.runId, "preparing requires runPlanHash");
+    }
+    state.runPlanHash = hash;
+  }
+  if ((status === "running" || status === "cancelling") && !plan) {
+    throw runtimeError("run_plan_missing", state.runId, `status ${status} requires a pinned run plan`);
+  }
+  if (TERMINAL_RUN.has(status)) {
+    assertTerminalRunStatus(state, plan, status, event);
+    if (typeof event.payload.reason === "string") state.terminalReason = event.payload.reason;
+    state.terminalEventSeen = true;
+    state.awaitingTransition = false;
+    state.lastTerminalTransition = void 0;
+    state.currentStep = void 0;
+    state.pendingStepId = void 0;
+  }
+  state.status = status;
+}
+function assertTerminalRunStatus(state, plan, status, event) {
+  if (status === "completed") {
+    if (state.lastTerminalTransition !== "completed") {
+      throw runtimeError("run_events_illegal", state.runId, "completed requires a selected terminal transition");
+    }
+    return;
+  }
+  if (status === "cancelled") {
+    if (state.lastTerminalTransition === "cancelled" && state.status === "running") return;
+    if ((state.status === "created" || state.status === "preparing") && state.cancelRequested) return;
+    if (state.status === "cancelling") {
+      if (!state.currentStep) return;
+      if (state.currentStep.status === "cancelled" && (!state.currentStep.attemptId || state.currentStep.attemptStatus === "terminal")) {
+        return;
+      }
+    }
+    throw runtimeError("run_events_illegal", state.runId, "cancelled requires a selected terminal or a settled operator cancel");
+  }
+  if (status === "failed") {
+    if (state.lastTerminalTransition === "failed") return;
+    if (isProvenFailure(state, plan)) return;
+    if (event.payload.reason === "executing_unrecorded" && state.currentStep?.attemptStatus === "starting") return;
+    throw runtimeError("run_events_illegal", state.runId, "failed requires a selected failed terminal or proven rejection/budget facts");
+  }
+}
+function isProvenFailure(state, plan) {
+  const current = state.currentStep;
+  if (current) {
+    const stepTerminal = current.status === "passed" || current.status === "failed" || current.status === "cancelled";
+    const settled = (!current.attemptId || current.attemptStatus === "terminal") && (!current.assignmentId || current.assignmentStatus === "terminal");
+    if (stepTerminal && settled) {
+      if ((state.recordedResultClass === "outcome_unknown" || state.recordedResultClass === "producer_rejected") && current.status === "failed") {
+        return true;
+      }
+      if (plan && current.outcome) {
+        const selected = plan.steps[current.stepId]?.transitions[current.outcome];
+        if (selected) {
+          const edgeKey = `${current.stepId}:${current.outcome}`;
+          const edgeUsed = (state.edgeTransitions[edgeKey] ?? 0) + 1;
+          if (selected.maxTransitions !== void 0 && edgeUsed > selected.maxTransitions) return true;
+          if (state.transitionsUsed + 1 > plan.transitionBudget) return true;
+          if (selected.to === "step") {
+            const used2 = state.stepAttempts[selected.target] ?? 0;
+            const target = plan.steps[selected.target];
+            if (target && used2 >= target.maxAttempts) return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+  if (!plan) return false;
+  const stepId = state.pendingStepId ?? plan.entryStepId;
+  const step = plan.steps[stepId];
+  const used = state.stepAttempts[stepId] ?? 0;
+  return Boolean(step && used >= step.maxAttempts);
+}
+function foldCancelRequested(state, event) {
+  if (state.cancelRequested || TERMINAL_RUN.has(state.status)) {
+    throw runtimeError("run_events_illegal", state.runId, "duplicate run.cancel_requested is not legal");
+  }
+  state.cancelRequested = true;
+  if (event.commandId) state.cancelCommandId = event.commandId;
+}
+function requireRunning(state, eventType) {
+  if (state.status !== "running" && !(state.status === "cancelling" && eventType !== "step.entered")) {
+    throw runtimeError("run_events_illegal", state.runId, `${eventType} is not legal while the run is ${state.status}`);
+  }
+}
+function foldStepEntered(state, plan, event) {
+  if (state.status !== "running") {
+    throw runtimeError("run_events_illegal", state.runId, "step.entered is only legal while running");
+  }
+  if (state.currentStep) {
+    throw runtimeError("run_events_illegal", state.runId, "step.entered is illegal while a step is active");
+  }
+  const stepId = stringPayload(event, "stepId");
+  const stepAttempt = integerPayload(event, "stepAttempt");
+  const expected = state.pendingStepId ?? plan.entryStepId;
+  if (stepId !== expected) {
+    throw runtimeError("run_events_illegal", state.runId, `step.entered ${stepId} does not match pending ${expected}`);
+  }
+  const step = requireStep(plan, stepId, state.runId);
+  const used = state.stepAttempts[stepId] ?? 0;
+  if (used >= step.maxAttempts) {
+    throw runtimeError("run_events_illegal", state.runId, `step ${stepId} exceeds maxAttempts`);
+  }
+  if (stepAttempt !== used + 1) {
+    throw runtimeError("run_events_illegal", state.runId, `stepAttempt ${stepAttempt} is not the next attempt for ${stepId}`);
+  }
+  state.stepAttempts[stepId] = stepAttempt;
+  state.pendingStepId = void 0;
+  state.awaitingTransition = false;
+  state.lastOutcomeEvent = void 0;
+  state.recordedOutcome = void 0;
+  state.recordedResultClass = void 0;
+  state.currentStep = { stepId, stepAttempt, status: "pending" };
+}
+function foldStepStatus(state, event) {
+  requireActiveStep(state, "step.status_changed");
+  const stepId = stringPayload(event, "stepId");
+  const status = stringPayload(event, "status");
+  if (stepId !== state.currentStep.stepId) {
+    throw runtimeError("run_events_illegal", state.runId, "step.status_changed does not match the active step");
+  }
+  if (!STEP_STATUSES.has(status)) {
+    throw runtimeError("run_events_illegal", state.runId, `illegal step status ${status}`);
+  }
+  const allowed = STEP_EDGES[state.currentStep.status];
+  if (!allowed?.has(status)) {
+    throw runtimeError("run_events_illegal", state.runId, `illegal step transition ${state.currentStep.status} -> ${status}`);
+  }
+  if (status === "passed" || status === "failed" || status === "cancelled") {
+    if (state.currentStep.attemptId && state.currentStep.attemptStatus !== "terminal") {
+      throw runtimeError("run_events_illegal", state.runId, "terminal step status requires a terminal attempt");
+    }
+    if (status === "passed" && state.recordedOutcome !== "passed") {
+      throw runtimeError("run_events_illegal", state.runId, "passed requires recordedOutcome passed");
+    }
+    if (state.lastOutcomeEvent) state.awaitingTransition = true;
+  }
+  state.currentStep = { ...state.currentStep, status };
+}
+function foldOutcome(state, plan, event) {
+  requireActiveStep(state, "step.outcome_recorded");
+  const stepId = stringPayload(event, "stepId");
+  const stepAttempt = integerPayload(event, "stepAttempt");
+  const outcome = stringPayload(event, "outcome");
+  const current = state.currentStep;
+  if (stepId !== current.stepId || stepAttempt !== current.stepAttempt) {
+    throw runtimeError("run_events_illegal", state.runId, "step.outcome_recorded does not match the active attempt");
+  }
+  if (current.attemptStatus !== "terminal" || current.assignmentStatus !== "terminal") {
+    throw runtimeError("run_events_illegal", state.runId, "step.outcome_recorded requires a terminal attempt and assignment");
+  }
+  if (current.outcome !== void 0) {
+    throw runtimeError("run_events_illegal", state.runId, "step.outcome_recorded cannot overwrite a recorded outcome");
+  }
+  if (outcome !== state.recordedOutcome) {
+    throw runtimeError("run_events_illegal", state.runId, "step.outcome_recorded does not match the recorded assignment outcome");
+  }
+  const step = requireStep(plan, stepId, state.runId);
+  if (!step.outcomes.includes(outcome)) {
+    throw runtimeError("run_events_illegal", state.runId, `outcome ${outcome} is not declared for ${stepId}`);
+  }
+  state.currentStep = { ...current, outcome };
+  state.lastOutcomeEvent = { stepId, stepAttempt, outcome };
+}
+function foldTransitioned(state, plan, event) {
+  requireActiveStep(state, "step.transitioned");
+  const fromStepId = stringPayload(event, "fromStepId");
+  const outcome = stringPayload(event, "outcome");
+  const current = state.currentStep;
+  if (fromStepId !== current.stepId) {
+    throw runtimeError("run_events_illegal", state.runId, "step.transitioned does not match the active step");
+  }
+  if (current.status !== "passed" && current.status !== "failed" && current.status !== "cancelled") {
+    throw runtimeError("run_events_illegal", state.runId, "step.transitioned requires a settled step status");
+  }
+  if (!state.lastOutcomeEvent || state.lastOutcomeEvent.outcome !== outcome || state.lastOutcomeEvent.stepId !== fromStepId) {
+    throw runtimeError("run_events_illegal", state.runId, "step.transitioned requires a prior matching step.outcome_recorded");
+  }
+  const step = requireStep(plan, fromStepId, state.runId);
+  const selected = step.transitions[outcome];
+  if (!selected) {
+    throw runtimeError("run_events_illegal", state.runId, `no compiled transition for ${fromStepId}:${outcome}`);
+  }
+  assertTransitionPayload(state.runId, selected, event);
+  const edgeKey = `${fromStepId}:${outcome}`;
+  const edgeUsed = (state.edgeTransitions[edgeKey] ?? 0) + 1;
+  if (selected.maxTransitions !== void 0 && edgeUsed > selected.maxTransitions) {
+    throw runtimeError("run_events_illegal", state.runId, `edge ${edgeKey} exceeds maxTransitions`);
+  }
+  const transitionsUsed = state.transitionsUsed + 1;
+  if (transitionsUsed > plan.transitionBudget) {
+    throw runtimeError("run_events_illegal", state.runId, "transitionBudget exceeded");
+  }
+  if (selected.to === "step") {
+    const target = requireStep(plan, selected.target, state.runId);
+    const targetUsed = state.stepAttempts[selected.target] ?? 0;
+    if (targetUsed >= target.maxAttempts) {
+      throw runtimeError("run_events_illegal", state.runId, `target step ${selected.target} has no remaining attempts`);
+    }
+    state.pendingStepId = selected.target;
+  } else {
+    state.lastTerminalTransition = selected.terminalStatus;
+  }
+  state.edgeTransitions[edgeKey] = edgeUsed;
+  state.transitionsUsed = transitionsUsed;
+  state.currentStep = void 0;
+  state.awaitingTransition = false;
+  state.lastOutcomeEvent = void 0;
+}
+function assertTransitionPayload(runId, selected, event) {
+  if (selected.to === "step") {
+    if (event.payload.toStepId !== selected.target) {
+      throw runtimeError("run_events_illegal", runId, "step.transitioned toStepId does not match the compiled target");
+    }
+    if (event.payload.status !== void 0) {
+      throw runtimeError("run_events_illegal", runId, "step-target transition must not carry a terminal status");
+    }
+    return;
+  }
+  if (event.payload.toStepId !== void 0) {
+    throw runtimeError("run_events_illegal", runId, "terminal step.transitioned must not set toStepId");
+  }
+  if (event.payload.status !== selected.terminalStatus) {
+    throw runtimeError("run_events_illegal", runId, "terminal step.transitioned status does not match the compiled terminal");
+  }
+}
+function foldAssignmentCreated(state, event) {
+  requireActiveStep(state, "assignment.created");
+  const current = state.currentStep;
+  if (current.assignmentId) {
+    throw runtimeError("run_events_illegal", state.runId, "assignment.created repeats an assignment");
+  }
+  const assignmentId = stringPayload(event, "assignmentId");
+  const stepId = stringPayload(event, "stepId");
+  const stepAttempt = integerPayload(event, "stepAttempt");
+  if (stepId !== current.stepId || stepAttempt !== current.stepAttempt) {
+    throw runtimeError("run_events_illegal", state.runId, "assignment.created does not match the active step attempt");
+  }
+  state.currentStep = { ...current, assignmentId, assignmentStatus: "created" };
+}
+function foldAssignmentAdvance(state, plan, event, next) {
+  requireActiveStep(state, `assignment.${next}`);
+  const current = state.currentStep;
+  if (!current.assignmentId || !current.assignmentStatus) {
+    throw runtimeError("run_events_illegal", state.runId, `assignment ${next} has no active assignment`);
+  }
+  const assignmentId = stringPayload(event, "assignmentId");
+  if (assignmentId !== current.assignmentId) {
+    throw runtimeError("run_events_illegal", state.runId, "assignment event assignmentId does not match the active assignment");
+  }
+  if (!ASSIGNMENT_STATUSES.has(next)) {
+    throw runtimeError("run_events_illegal", state.runId, `illegal assignment status ${next}`);
+  }
+  const allowed = ASSIGNMENT_EDGES[current.assignmentStatus];
+  if (!allowed?.has(next)) {
+    throw runtimeError("run_events_illegal", state.runId, `illegal assignment transition ${current.assignmentStatus} -> ${next}`);
+  }
+  if (next === "dispatched") {
+    stringPayload(event, "capabilityHash");
+  }
+  if (next === "result_recorded") {
+    const resultClass = stringPayload(event, "resultClass");
+    if (!RESULT_CLASSES.has(resultClass)) {
+      throw runtimeError("run_events_illegal", state.runId, `illegal resultClass ${resultClass}`);
+    }
+    if (resultClass === "outcome") {
+      const outcome = stringPayload(event, "outcome");
+      const step = requireStep(plan, current.stepId, state.runId);
+      if (!step.outcomes.includes(outcome)) {
+        throw runtimeError("run_events_illegal", state.runId, `outcome ${outcome} is not declared for ${current.stepId}`);
+      }
+      state.recordedOutcome = outcome;
+    } else if (event.payload.outcome !== void 0) {
+      throw runtimeError("run_events_illegal", state.runId, "non-outcome resultClass must not set outcome");
+    } else {
+      state.recordedOutcome = void 0;
+    }
+    state.recordedResultClass = resultClass;
+  }
+  if (next === "terminal") {
+    const outcome = stringPayload(event, "outcome");
+    const resultClass = state.recordedResultClass;
+    if (resultClass === "outcome") {
+      if (outcome !== state.recordedOutcome) {
+        throw runtimeError("run_events_illegal", state.runId, "assignment.terminal outcome does not match result_recorded");
+      }
+    } else if (resultClass === "outcome_unknown" || resultClass === "producer_rejected") {
+      if (outcome !== "failed") {
+        throw runtimeError("run_events_illegal", state.runId, "rejected or unknown results must terminal as failed");
+      }
+    } else if (resultClass === "cancelled") {
+      if (outcome !== "cancelled") {
+        throw runtimeError("run_events_illegal", state.runId, "cancelled results must terminal as cancelled");
+      }
+    } else {
+      throw runtimeError("run_events_illegal", state.runId, "assignment.terminal requires a prior result_recorded class");
+    }
+  }
+  state.currentStep = { ...current, assignmentStatus: next };
+}
+function foldAttemptCreated(state, event) {
+  requireActiveStep(state, "attempt.created");
+  const current = state.currentStep;
+  if (current.attemptId) {
+    throw runtimeError("run_events_illegal", state.runId, "attempt.created repeats an attempt");
+  }
+  const attemptId = stringPayload(event, "attemptId");
+  const assignmentId = stringPayload(event, "assignmentId");
+  if (assignmentId !== current.assignmentId) {
+    throw runtimeError("run_events_illegal", state.runId, "attempt.created assignmentId does not match");
+  }
+  state.currentStep = { ...current, attemptId, attemptStatus: "created" };
+}
+function foldAttemptStatus(state, event) {
+  requireActiveStep(state, "attempt.status_changed");
+  const current = state.currentStep;
+  if (!current.attemptId || !current.attemptStatus) {
+    throw runtimeError("run_events_illegal", state.runId, "attempt.status_changed has no active attempt");
+  }
+  const attemptId = stringPayload(event, "attemptId");
+  const status = stringPayload(event, "status");
+  if (attemptId !== current.attemptId) {
+    throw runtimeError("run_events_illegal", state.runId, "attempt.status_changed does not match the active attempt");
+  }
+  if (!ATTEMPT_STATUSES.has(status)) {
+    throw runtimeError("run_events_illegal", state.runId, `illegal attempt status ${status}`);
+  }
+  const allowed = ATTEMPT_EDGES[current.attemptStatus];
+  if (!allowed?.has(status)) {
+    throw runtimeError("run_events_illegal", state.runId, `illegal attempt transition ${current.attemptStatus} -> ${status}`);
+  }
+  state.currentStep = { ...current, attemptStatus: status };
+}
+function requireActiveStep(state, eventType) {
+  requireRunning(state, eventType);
+  if (!state.currentStep) {
+    throw runtimeError("run_events_illegal", state.runId, `${eventType} requires an active step`);
+  }
+}
+function requireStep(plan, stepId, runId) {
+  const step = plan.steps[stepId];
+  if (!step) throw runtimeError("run_events_illegal", runId, `unknown step ${stepId}`);
+  return step;
+}
+function stringPayload(event, field) {
+  const value = event.payload[field];
+  if (typeof value !== "string" || value.length === 0) {
+    throw runtimeError("run_events_illegal", event.runId, `${event.eventType} is missing ${field}`);
+  }
+  return value;
+}
+function integerPayload(event, field) {
+  const value = event.payload[field];
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    throw runtimeError("run_events_illegal", event.runId, `${event.eventType} is missing a valid ${field}`);
+  }
+  return value;
+}
+function freezeState(state) {
+  const frozen = {
+    schema: VNEXT_RUN_STATE_SCHEMA,
+    runId: state.runId,
+    status: state.status,
+    ...state.runPlanHash !== void 0 ? { runPlanHash: state.runPlanHash } : {},
+    ...state.pendingStepId !== void 0 ? { pendingStepId: state.pendingStepId } : {},
+    ...state.currentStep !== void 0 ? { currentStep: Object.freeze({ ...omitUndefined(state.currentStep) }) } : {},
+    stepAttempts: Object.freeze({ ...state.stepAttempts }),
+    edgeTransitions: Object.freeze({ ...state.edgeTransitions }),
+    transitionsUsed: state.transitionsUsed,
+    cancelRequested: state.cancelRequested,
+    ...state.terminalReason !== void 0 ? { terminalReason: state.terminalReason } : {}
+  };
+  return Object.freeze(frozen);
+}
+function omitUndefined(value) {
+  const copy = { ...value };
+  for (const key of Object.keys(copy)) {
+    if (copy[key] === void 0) delete copy[key];
+  }
+  return copy;
+}
+function isTerminalRunStatus(status) {
+  return TERMINAL_RUN.has(status);
+}
+
+// plugins/kxm/src/vnext-engine-plan.ts
+import { createHash as createHash4 } from "node:crypto";
+
+// plugins/kxm/src/vnext-engine-compile.ts
+var VNEXT_COMPILED_WORKFLOW_SCHEMA = "kxm.compiled-workflow.v1";
+
+// plugins/kxm/src/vnext-engine-plan.ts
+var VNEXT_RUN_PLAN_SCHEMA = "kxm.run-plan.v1";
+var SUPPORTED_KINDS = /* @__PURE__ */ new Set(["agent", "moa", "gate", "approval", "wait"]);
+var TERMINAL = /* @__PURE__ */ new Set(["completed", "failed", "cancelled"]);
+var JOIN_STRATEGIES = /* @__PURE__ */ new Set(["all", "all-settled", "quorum", "first-success"]);
+var EVIDENCE_KINDS = /* @__PURE__ */ new Set(["assignment-result", "gate", "receipt", "approval", "artifact"]);
+var REPOSITORY_ACCESS = /* @__PURE__ */ new Set(["none", "read", "write"]);
+var DISTINCT_BY = /* @__PURE__ */ new Set(["provider", "model", "profile"]);
+var ENVELOPE_REQUIRED = ["schema", "runId", "projectId", "homeRuntimeId", "workflowId", "revisions", "projectLimits", "plan"];
+var REVISION_REQUIRED = ["config", "executorPolicy", "toolPolicy", "memory"];
+var PROJECT_LIMIT_REQUIRED = ["maxConcurrentRuns"];
+var PROJECT_LIMIT_OPTIONAL = ["maxRunDurationMs", "maxAgentTimeMs"];
+var PLAN_REQUIRED = ["schema", "workflowId", "coordinator", "limits", "transitionBudget", "hasBackEdges", "entryStepId", "order", "steps", "requirePlanHash"];
+var PLAN_OPTIONAL = ["sourcePath", "reproOracle", "planHash"];
+var LIMIT_OPTIONAL = ["maxTransitions", "maxRunDurationMs", "maxAgentTimeMs", "maxModelCost", "currency"];
+var STEP_REQUIRED = [
+  "id",
+  "index",
+  "kind",
+  "maxAttempts",
+  "safeSpeculation",
+  "repositories",
+  "secrets",
+  "requiredEvidence",
+  "outcomes",
+  "transitions",
+  "requiresPlanHash",
+  "assignments",
+  "join"
+];
+var STEP_OPTIONAL = ["description", "instructions", "timeoutMs", "tools", "model"];
+var ASSIGNMENT_REQUIRED = ["allowedAgents", "minimum", "target", "maximum", "maxParallel", "maxAttemptsPerAssignment", "distinctBy"];
+var ASSIGNMENT_OPTIONAL = ["maxWriteRepositories"];
+var JOIN_REQUIRED = ["strategy"];
+var JOIN_OPTIONAL = ["minimumPassed", "cancelRemaining"];
+var EVIDENCE_REQUIRED = ["key", "kind", "minimum", "reusableAcrossAttempts"];
+var EVIDENCE_OPTIONAL = ["producerPolicy"];
+function vnextSha256(input) {
   return `sha256:${createHash4("sha256").update(input, "utf8").digest("hex")}`;
+}
+function hashVnextRunPlanEnvelope(envelope) {
+  return vnextSha256(vnextCanonicalJson(envelope));
+}
+function freezeVnextCompiledPlan(plan) {
+  const steps = /* @__PURE__ */ Object.create(null);
+  for (const id of plan.order) {
+    const step = plan.steps[id];
+    if (!step) throw runtimeError("run_plan_corrupt", plan.workflowId, `compiled plan is missing step ${id}`);
+    steps[id] = freezeStep(step);
+  }
+  return deepFreeze({
+    ...plan,
+    steps,
+    order: [...plan.order],
+    requirePlanHash: [...plan.requirePlanHash]
+  });
+}
+function freezeStep(step) {
+  const transitions = /* @__PURE__ */ Object.create(null);
+  for (const outcome of step.outcomes) {
+    const transition2 = step.transitions[outcome];
+    if (!transition2) throw runtimeError("run_plan_corrupt", step.id, `compiled plan is missing transition ${outcome}`);
+    transitions[outcome] = { ...transition2 };
+  }
+  const repositories = /* @__PURE__ */ Object.create(null);
+  for (const [id, access] of Object.entries(step.repositories)) repositories[id] = access;
+  return deepFreeze({
+    ...step,
+    outcomes: [...step.outcomes],
+    transitions,
+    repositories,
+    secrets: step.secrets.map((entry) => ({ ...entry })),
+    requiredEvidence: step.requiredEvidence.map((entry) => ({ ...entry })),
+    assignments: {
+      ...step.assignments,
+      allowedAgents: [...step.assignments.allowedAgents],
+      distinctBy: [...step.assignments.distinctBy]
+    },
+    join: { ...step.join }
+  });
+}
+function parseVnextRunPlanEnvelope(raw, run, expectedHash) {
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw runtimeError("run_plan_corrupt", run.runId, "run plan envelope is not JSON");
+  }
+  const envelope = parseEnvelope(parsed, run);
+  const hash = hashVnextRunPlanEnvelope(envelope);
+  if (hash !== expectedHash) {
+    throw runtimeError("run_plan_corrupt", run.runId, "run plan envelope hash does not match");
+  }
+  return envelope;
+}
+function rehydrateVnextCompiledPlanFromStore(store, run) {
+  return loadPinnedEnvelope(store, run).plan;
+}
+function loadPinnedEnvelope(store, run) {
+  const row = store.runPlan(run.runId);
+  if (!row) throw runtimeError("run_plan_missing", run.runId, "run has no pinned plan");
+  const events = store.events(run.runId, 0, row.pinnedSequence);
+  const pinEvent = events.find((event) => event.sequence === row.pinnedSequence);
+  const eventHash = pinEvent?.payload.runPlanHash;
+  if (typeof eventHash !== "string" || eventHash !== row.runPlanHash) {
+    throw runtimeError("run_plan_corrupt", run.runId, "pinned runPlanHash does not match the plan row");
+  }
+  return parseVnextRunPlanEnvelope(row.envelope, run, row.runPlanHash);
+}
+function parseEnvelope(parsed, run) {
+  const value = asObject(parsed, run.runId, "run plan envelope");
+  assertExactKeys(value, ENVELOPE_REQUIRED, [], run.runId, "run plan envelope");
+  if (value.schema !== VNEXT_RUN_PLAN_SCHEMA) {
+    throw runtimeError("run_plan_corrupt", run.runId, "run plan envelope schema is not kxm.run-plan.v1");
+  }
+  const runId = asString(value.runId, run.runId, "runId");
+  const projectId = asString(value.projectId, run.runId, "projectId");
+  const homeRuntimeId = asString(value.homeRuntimeId, run.runId, "homeRuntimeId");
+  const workflowId = asString(value.workflowId, run.runId, "workflowId");
+  if (runId !== run.runId || projectId !== run.projectId || homeRuntimeId !== run.homeRuntimeId || workflowId !== run.workflowId) {
+    throw runtimeError("run_plan_corrupt", run.runId, "run plan envelope identity does not match the run");
+  }
+  const revisionsValue = asObject(value.revisions, run.runId, "revisions");
+  assertExactKeys(revisionsValue, REVISION_REQUIRED, [], run.runId, "revisions");
+  const revisions = {
+    config: asString(revisionsValue.config, run.runId, "revisions.config"),
+    executorPolicy: asString(revisionsValue.executorPolicy, run.runId, "revisions.executorPolicy"),
+    toolPolicy: asString(revisionsValue.toolPolicy, run.runId, "revisions.toolPolicy"),
+    memory: asString(revisionsValue.memory, run.runId, "revisions.memory")
+  };
+  if (revisions.config !== run.configRevision || revisions.executorPolicy !== run.executorPolicyRevision || revisions.toolPolicy !== run.toolPolicyRevision || revisions.memory !== run.memoryRevision) {
+    throw runtimeError("run_plan_corrupt", run.runId, "run plan envelope revisions do not match the run");
+  }
+  const limitsValue = asObject(value.projectLimits, run.runId, "projectLimits");
+  assertExactKeys(limitsValue, PROJECT_LIMIT_REQUIRED, PROJECT_LIMIT_OPTIONAL, run.runId, "projectLimits");
+  const projectLimits = {
+    maxConcurrentRuns: asCount(limitsValue.maxConcurrentRuns, run.runId, "projectLimits.maxConcurrentRuns"),
+    ...limitsValue.maxRunDurationMs !== void 0 ? { maxRunDurationMs: asDuration(limitsValue.maxRunDurationMs, run.runId, "projectLimits.maxRunDurationMs") } : {},
+    ...limitsValue.maxAgentTimeMs !== void 0 ? { maxAgentTimeMs: asDuration(limitsValue.maxAgentTimeMs, run.runId, "projectLimits.maxAgentTimeMs") } : {}
+  };
+  return {
+    schema: VNEXT_RUN_PLAN_SCHEMA,
+    runId,
+    projectId,
+    homeRuntimeId,
+    workflowId,
+    revisions,
+    projectLimits,
+    plan: freezeVnextCompiledPlan(parseCompiledPlan(value.plan, run.runId))
+  };
+}
+function parseCompiledPlan(raw, runId) {
+  const value = asObject(raw, runId, "compiled plan");
+  assertExactKeys(value, PLAN_REQUIRED, PLAN_OPTIONAL, runId, "compiled plan");
+  if (value.schema !== VNEXT_COMPILED_WORKFLOW_SCHEMA) {
+    throw runtimeError("run_plan_corrupt", runId, "compiled plan schema is not kxm.compiled-workflow.v1");
+  }
+  const order = asStringArray(value.order, runId, "order");
+  const stepsValue = asObject(value.steps, runId, "steps");
+  const stepIds = Object.keys(stepsValue);
+  if (!sameSet(stepIds, order)) {
+    throw runtimeError("run_plan_corrupt", runId, "compiled plan step keys do not equal order");
+  }
+  const steps = /* @__PURE__ */ Object.create(null);
+  for (const stepId of order) {
+    steps[stepId] = parseStep(stepsValue[stepId], stepId, runId);
+  }
+  const entryStepId = asString(value.entryStepId, runId, "entryStepId");
+  if (!steps[entryStepId] || !order.includes(entryStepId)) {
+    throw runtimeError("run_plan_corrupt", runId, "entryStepId is not in compiled steps");
+  }
+  const limitsObject = asObject(value.limits, runId, "limits");
+  assertExactKeys(limitsObject, [], LIMIT_OPTIONAL, runId, "limits");
+  const limits = {
+    ...limitsObject.maxTransitions !== void 0 ? { maxTransitions: asCount(limitsObject.maxTransitions, runId, "limits.maxTransitions") } : {},
+    ...limitsObject.maxRunDurationMs !== void 0 ? { maxRunDurationMs: asDuration(limitsObject.maxRunDurationMs, runId, "limits.maxRunDurationMs") } : {},
+    ...limitsObject.maxAgentTimeMs !== void 0 ? { maxAgentTimeMs: asDuration(limitsObject.maxAgentTimeMs, runId, "limits.maxAgentTimeMs") } : {},
+    ...limitsObject.maxModelCost !== void 0 ? { maxModelCost: asCost(limitsObject.maxModelCost, runId, "limits.maxModelCost") } : {},
+    ...limitsObject.currency !== void 0 ? { currency: asString(limitsObject.currency, runId, "limits.currency") } : {}
+  };
+  const requirePlanHash = asStringArray(value.requirePlanHash, runId, "requirePlanHash");
+  for (const stageId of requirePlanHash) {
+    if (!steps[stageId]) throw runtimeError("run_plan_corrupt", runId, `requirePlanHash references unknown step ${stageId}`);
+  }
+  const plan = {
+    schema: VNEXT_COMPILED_WORKFLOW_SCHEMA,
+    workflowId: asString(value.workflowId, runId, "workflowId"),
+    ...value.sourcePath !== void 0 ? { sourcePath: asStringAllowEmpty(value.sourcePath, runId, "sourcePath") } : {},
+    coordinator: asString(value.coordinator, runId, "coordinator"),
+    limits,
+    transitionBudget: asCount(value.transitionBudget, runId, "transitionBudget"),
+    hasBackEdges: asBoolean(value.hasBackEdges, runId, "hasBackEdges"),
+    entryStepId,
+    order,
+    steps,
+    ...value.reproOracle !== void 0 ? { reproOracle: parseOracle(value.reproOracle, steps, runId, "reproOracle") } : {},
+    ...value.planHash !== void 0 ? { planHash: parseOracle(value.planHash, steps, runId, "planHash") } : {},
+    requirePlanHash
+  };
+  return plan;
+}
+function parseStep(raw, stepId, runId) {
+  const value = asObject(raw, runId, `step ${stepId}`);
+  const kind = asString(value.kind, runId, `${stepId}.kind`);
+  if (!SUPPORTED_KINDS.has(kind)) {
+    throw runtimeError("run_plan_corrupt", runId, `step ${stepId} has unsupported kind ${kind}`);
+  }
+  const extraRequired = kind === "agent" || kind === "moa" ? ["agent"] : kind === "gate" ? ["gate", "expect"] : kind === "wait" ? ["signal"] : [];
+  assertExactKeys(value, [...STEP_REQUIRED, ...extraRequired], STEP_OPTIONAL, runId, `step ${stepId}`);
+  const id = asString(value.id, runId, `${stepId}.id`);
+  if (id !== stepId) throw runtimeError("run_plan_corrupt", runId, `step ${stepId} id does not match its key`);
+  const outcomes = asStringArray(value.outcomes, runId, `${stepId}.outcomes`);
+  if (new Set(outcomes).size !== outcomes.length) {
+    throw runtimeError("run_plan_corrupt", runId, `step ${stepId} outcomes are not unique`);
+  }
+  const sorted = [...outcomes].sort();
+  if (outcomes.join("\0") !== sorted.join("\0")) {
+    throw runtimeError("run_plan_corrupt", runId, `step ${stepId} outcomes are not sorted`);
+  }
+  const transitionsValue = asObject(value.transitions, runId, `${stepId}.transitions`);
+  if (!sameSet(Object.keys(transitionsValue), outcomes)) {
+    throw runtimeError("run_plan_corrupt", runId, `step ${stepId} transition keys do not equal outcomes`);
+  }
+  const transitions = /* @__PURE__ */ Object.create(null);
+  for (const outcome of outcomes) {
+    transitions[outcome] = parseTransition(transitionsValue[outcome], stepId, outcome, runId);
+  }
+  const repositoriesValue = asObject(value.repositories, runId, `${stepId}.repositories`);
+  const repositories = /* @__PURE__ */ Object.create(null);
+  for (const [repositoryId, access] of Object.entries(repositoriesValue)) {
+    if (typeof access !== "string" || !REPOSITORY_ACCESS.has(access)) {
+      throw runtimeError("run_plan_corrupt", runId, `step ${stepId} repository ${repositoryId} has invalid access`);
+    }
+    repositories[repositoryId] = access;
+  }
+  const base = {
+    id,
+    index: asIndex(value.index, runId, `${stepId}.index`),
+    ...value.description !== void 0 ? { description: asStringAllowEmpty(value.description, runId, `${stepId}.description`) } : {},
+    ...value.instructions !== void 0 ? { instructions: asStringAllowEmpty(value.instructions, runId, `${stepId}.instructions`) } : {},
+    maxAttempts: asCount(value.maxAttempts, runId, `${stepId}.maxAttempts`),
+    ...value.timeoutMs !== void 0 ? { timeoutMs: asDuration(value.timeoutMs, runId, `${stepId}.timeoutMs`) } : {},
+    safeSpeculation: asBoolean(value.safeSpeculation, runId, `${stepId}.safeSpeculation`),
+    repositories,
+    ...value.tools !== void 0 ? { tools: asJsonObject(value.tools, runId, `${stepId}.tools`) } : {},
+    secrets: asObjectArray(value.secrets, runId, `${stepId}.secrets`).map((entry) => ({ ...entry })),
+    ...value.model !== void 0 ? { model: cloneJson(value.model) } : {},
+    requiredEvidence: asUnknownArray(value.requiredEvidence, runId, `${stepId}.requiredEvidence`).map((entry, index) => parseEvidence(entry, stepId, index, runId)),
+    outcomes,
+    transitions,
+    requiresPlanHash: asBoolean(value.requiresPlanHash, runId, `${stepId}.requiresPlanHash`),
+    assignments: parseAssignments(value.assignments, stepId, runId),
+    join: parseJoin(value.join, stepId, runId)
+  };
+  if (kind === "agent" || kind === "moa") {
+    return { ...base, kind, agent: asString(value.agent, runId, `${stepId}.agent`) };
+  }
+  if (kind === "gate") {
+    const expect = asString(value.expect, runId, `${stepId}.expect`);
+    if (expect !== "pass" && expect !== "fail") {
+      throw runtimeError("run_plan_corrupt", runId, `step ${stepId} expect is invalid`);
+    }
+    return { ...base, kind, gate: asString(value.gate, runId, `${stepId}.gate`), expect };
+  }
+  if (kind === "wait") {
+    return { ...base, kind, signal: asString(value.signal, runId, `${stepId}.signal`) };
+  }
+  return { ...base, kind: "approval" };
+}
+function parseTransition(raw, stepId, outcome, runId) {
+  const value = asObject(raw, runId, `${stepId}.${outcome}`);
+  const to = asString(value.to, runId, `${stepId}.${outcome}.to`);
+  const maxTransitions = value.maxTransitions !== void 0 ? asCount(value.maxTransitions, runId, `${stepId}.${outcome}.maxTransitions`) : void 0;
+  if (to === "step") {
+    assertExactKeys(value, ["to", "target", "edge"], ["maxTransitions"], runId, `${stepId}.${outcome}`);
+    const edge = asString(value.edge, runId, `${stepId}.${outcome}.edge`);
+    if (edge !== "forward" && edge !== "back") {
+      throw runtimeError("run_plan_corrupt", runId, `step ${stepId} transition ${outcome} edge is invalid`);
+    }
+    return {
+      to: "step",
+      target: asString(value.target, runId, `${stepId}.${outcome}.target`),
+      edge,
+      ...maxTransitions !== void 0 ? { maxTransitions } : {}
+    };
+  }
+  if (to === "terminal") {
+    assertExactKeys(value, ["to", "terminalStatus"], ["maxTransitions"], runId, `${stepId}.${outcome}`);
+    const terminalStatus = asString(value.terminalStatus, runId, `${stepId}.${outcome}.terminalStatus`);
+    if (!TERMINAL.has(terminalStatus)) {
+      throw runtimeError("run_plan_corrupt", runId, `step ${stepId} has an illegal terminal status`);
+    }
+    return {
+      to: "terminal",
+      terminalStatus,
+      ...maxTransitions !== void 0 ? { maxTransitions } : {}
+    };
+  }
+  throw runtimeError("run_plan_corrupt", runId, `step ${stepId} transition ${outcome} is not a discriminated transition`);
+}
+function parseAssignments(raw, stepId, runId) {
+  const value = asObject(raw, runId, `${stepId}.assignments`);
+  assertExactKeys(value, ASSIGNMENT_REQUIRED, ASSIGNMENT_OPTIONAL, runId, `${stepId}.assignments`);
+  const distinctBy = asStringArray(value.distinctBy, runId, `${stepId}.assignments.distinctBy`);
+  if (distinctBy.some((entry) => !DISTINCT_BY.has(entry))) {
+    throw runtimeError("run_plan_corrupt", runId, `step ${stepId} distinctBy is invalid`);
+  }
+  return {
+    allowedAgents: asStringArray(value.allowedAgents, runId, `${stepId}.assignments.allowedAgents`),
+    minimum: asCount(value.minimum, runId, `${stepId}.assignments.minimum`),
+    target: asCount(value.target, runId, `${stepId}.assignments.target`),
+    maximum: asCount(value.maximum, runId, `${stepId}.assignments.maximum`),
+    maxParallel: asCount(value.maxParallel, runId, `${stepId}.assignments.maxParallel`),
+    maxAttemptsPerAssignment: asCount(value.maxAttemptsPerAssignment, runId, `${stepId}.assignments.maxAttemptsPerAssignment`),
+    ...value.maxWriteRepositories !== void 0 ? { maxWriteRepositories: asCount(value.maxWriteRepositories, runId, `${stepId}.assignments.maxWriteRepositories`) } : {},
+    distinctBy
+  };
+}
+function parseJoin(raw, stepId, runId) {
+  const value = asObject(raw, runId, `${stepId}.join`);
+  assertExactKeys(value, JOIN_REQUIRED, JOIN_OPTIONAL, runId, `${stepId}.join`);
+  const strategy = asString(value.strategy, runId, `${stepId}.join.strategy`);
+  if (!JOIN_STRATEGIES.has(strategy)) {
+    throw runtimeError("run_plan_corrupt", runId, `step ${stepId} join strategy is invalid`);
+  }
+  return {
+    strategy,
+    ...value.minimumPassed !== void 0 ? { minimumPassed: asCount(value.minimumPassed, runId, `${stepId}.join.minimumPassed`) } : {},
+    ...value.cancelRemaining !== void 0 ? { cancelRemaining: asBoolean(value.cancelRemaining, runId, `${stepId}.join.cancelRemaining`) } : {}
+  };
+}
+function parseEvidence(raw, stepId, index, runId) {
+  const value = asObject(raw, runId, `${stepId}.requiredEvidence[${index}]`);
+  assertExactKeys(value, EVIDENCE_REQUIRED, EVIDENCE_OPTIONAL, runId, `${stepId}.requiredEvidence[${index}]`);
+  const kind = asString(value.kind, runId, `${stepId}.requiredEvidence[${index}].kind`);
+  if (!EVIDENCE_KINDS.has(kind)) {
+    throw runtimeError("run_plan_corrupt", runId, `step ${stepId} evidence kind is invalid`);
+  }
+  return {
+    key: asString(value.key, runId, `${stepId}.requiredEvidence[${index}].key`),
+    kind,
+    minimum: asCount(value.minimum, runId, `${stepId}.requiredEvidence[${index}].minimum`),
+    reusableAcrossAttempts: asBoolean(value.reusableAcrossAttempts, runId, `${stepId}.requiredEvidence[${index}].reusableAcrossAttempts`),
+    ...value.producerPolicy !== void 0 ? { producerPolicy: parseProducerPolicy(value.producerPolicy, stepId, runId) } : {}
+  };
+}
+function parseProducerPolicy(raw, stepId, runId) {
+  const value = asObject(raw, runId, `${stepId}.producerPolicy`);
+  assertExactKeys(value, ["minimumProducers", "eligibleAgents", "acceptedStatuses"], ["degradation"], runId, `${stepId}.producerPolicy`);
+  const accepted = value.acceptedStatuses;
+  if (!Array.isArray(accepted) || accepted.length !== 1 || accepted[0] !== "passed") {
+    throw runtimeError("run_plan_corrupt", runId, `step ${stepId} producerPolicy.acceptedStatuses is invalid`);
+  }
+  let degradation;
+  if (value.degradation !== void 0) {
+    const nested = asObject(value.degradation, runId, `${stepId}.producerPolicy.degradation`);
+    assertExactKeys(nested, ["minimumProducers"], [], runId, `${stepId}.producerPolicy.degradation`);
+    degradation = { minimumProducers: asCount(nested.minimumProducers, runId, `${stepId}.producerPolicy.degradation.minimumProducers`) };
+  }
+  return {
+    minimumProducers: asCount(value.minimumProducers, runId, `${stepId}.producerPolicy.minimumProducers`),
+    eligibleAgents: asStringArray(value.eligibleAgents, runId, `${stepId}.producerPolicy.eligibleAgents`),
+    acceptedStatuses: ["passed"],
+    ...degradation ? { degradation } : {}
+  };
+}
+function parseOracle(raw, steps, runId, label) {
+  const value = asObject(raw, runId, label);
+  assertExactKeys(value, ["stageId", "evidenceKey"], [], runId, label);
+  const stageId = asString(value.stageId, runId, `${label}.stageId`);
+  const evidenceKey = asString(value.evidenceKey, runId, `${label}.evidenceKey`);
+  const step = steps[stageId];
+  if (!step) throw runtimeError("run_plan_corrupt", runId, `${label} references unknown stage ${stageId}`);
+  if (!step.requiredEvidence.some((item) => item.key === evidenceKey)) {
+    throw runtimeError("run_plan_corrupt", runId, `${label} references undeclared evidence ${evidenceKey}`);
+  }
+  return { stageId, evidenceKey };
+}
+function asObject(value, runId, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw runtimeError("run_plan_corrupt", runId, `${label} is not an object`);
+  }
+  return value;
+}
+function assertExactKeys(value, required, optional, runId, label) {
+  const allowed = /* @__PURE__ */ new Set([...required, ...optional]);
+  for (const key of required) {
+    if (!(key in value)) throw runtimeError("run_plan_corrupt", runId, `${label} is missing ${key}`);
+  }
+  for (const key of Object.keys(value)) {
+    if (!allowed.has(key)) throw runtimeError("run_plan_corrupt", runId, `${label} has unexpected key ${key}`);
+  }
+}
+function asString(value, runId, label) {
+  if (typeof value !== "string" || value.length === 0) {
+    throw runtimeError("run_plan_corrupt", runId, `${label} is not a non-empty string`);
+  }
+  return value;
+}
+function asStringAllowEmpty(value, runId, label) {
+  if (typeof value !== "string") throw runtimeError("run_plan_corrupt", runId, `${label} is not a string`);
+  return value;
+}
+function asBoolean(value, runId, label) {
+  if (typeof value !== "boolean") throw runtimeError("run_plan_corrupt", runId, `${label} is not a boolean`);
+  return value;
+}
+function asCount(value, runId, label) {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    throw runtimeError("run_plan_corrupt", runId, `${label} is not a positive integer`);
+  }
+  return value;
+}
+function asDuration(value, runId, label) {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    throw runtimeError("run_plan_corrupt", runId, `${label} is not a duration integer`);
+  }
+  return value;
+}
+function asCost(value, runId, label) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    throw runtimeError("run_plan_corrupt", runId, `${label} is not a positive cost`);
+  }
+  return value;
+}
+function asIndex(value, runId, label) {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    throw runtimeError("run_plan_corrupt", runId, `${label} is not a non-negative integer`);
+  }
+  return value;
+}
+function asStringArray(value, runId, label) {
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) {
+    throw runtimeError("run_plan_corrupt", runId, `${label} is not a string array`);
+  }
+  return [...value];
+}
+function asUnknownArray(value, runId, label) {
+  if (!Array.isArray(value)) throw runtimeError("run_plan_corrupt", runId, `${label} is not an array`);
+  return value;
+}
+function asObjectArray(value, runId, label) {
+  if (!Array.isArray(value)) throw runtimeError("run_plan_corrupt", runId, `${label} is not an array`);
+  return value.map((entry, index) => asJsonObject(entry, runId, `${label}[${index}]`));
+}
+function asJsonObject(value, runId, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw runtimeError("run_plan_corrupt", runId, `${label} is not an object`);
+  }
+  return cloneJson(value);
+}
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+function sameSet(left, right) {
+  if (left.length !== right.length) return false;
+  const set = new Set(right);
+  return left.every((entry) => set.has(entry));
+}
+function deepFreeze(value) {
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) {
+    for (const entry of value) deepFreeze(entry);
+  } else {
+    for (const entry of Object.values(value)) deepFreeze(entry);
+  }
+  return Object.freeze(value);
+}
+
+// plugins/kxm/src/vnext-runtime-owner.ts
+var owners = /* @__PURE__ */ new Map();
+function record(storePath) {
+  const existing = owners.get(storePath);
+  if (existing) return existing;
+  const created = {
+    handles: 0,
+    admitted: /* @__PURE__ */ new Map(),
+    queue: [],
+    attempts: /* @__PURE__ */ new Map()
+  };
+  owners.set(storePath, created);
+  return created;
+}
+function maybeDelete(storePath, owner) {
+  if (owner.handles === 0 && owner.admitted.size === 0 && owner.queue.length === 0 && owner.attempts.size === 0) {
+    owners.delete(storePath);
+  }
+}
+function registerVnextRuntimeHandle(storePath) {
+  record(storePath).handles += 1;
+}
+function unregisterVnextRuntimeHandle(storePath) {
+  const owner = owners.get(storePath);
+  if (!owner) return;
+  owner.handles = Math.max(0, owner.handles - 1);
+  maybeDelete(storePath, owner);
+}
+function vnextAttemptController(storePath, runId) {
+  return owners.get(storePath)?.attempts.get(runId);
+}
+
+// plugins/kxm/src/vnext-runtime.ts
+function sha256Of(input) {
+  return `sha256:${createHash5("sha256").update(input, "utf8").digest("hex")}`;
 }
 function objectValue2(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value : void 0;
@@ -16709,9 +17962,9 @@ function vnextToolPolicyRevision(bundle) {
   for (const workflow of [...bundle.workflows.values()].sort((left, right) => String(left.id).localeCompare(String(right.id)))) {
     const steps = Array.isArray(workflow.value.steps) ? workflow.value.steps : [];
     for (const step of steps) {
-      const record = objectValue2(step);
-      if (record?.tools !== void 0) {
-        policies.push({ workflow: workflow.id ?? "unknown", step: record.id ?? null, tools: objectValue2(record.tools) ?? null });
+      const record2 = objectValue2(step);
+      if (record2?.tools !== void 0) {
+        policies.push({ workflow: workflow.id ?? "unknown", step: record2.id ?? null, tools: objectValue2(record2.tools) ?? null });
       }
     }
   }
@@ -16720,9 +17973,19 @@ function vnextToolPolicyRevision(bundle) {
 function vnextPolicyRevisions(bundle) {
   return {
     configRevision: bundle.configRevision,
+    memoryRevision: VNEXT_ABSENT_MEMORY_REVISION,
     executorPolicyRevision: vnextExecutorPolicyRevision(bundle),
     toolPolicyRevision: vnextToolPolicyRevision(bundle)
   };
+}
+function vnextDeclaredRepositoryIds(bundle) {
+  return [...bundle.repositories.keys()].sort();
+}
+function vnextDeclaredExecutorIds(bundle) {
+  return [...new Set([
+    typeof bundle.project.value.defaultExecutor === "string" ? bundle.project.value.defaultExecutor : void 0,
+    ...[...bundle.agents.values()].map((agent) => agent.value.executor).filter((value) => typeof value === "string")
+  ].filter((value) => value !== void 0))].sort();
 }
 function openVnextRuntimeContext(projectRoot, options) {
   const paths = vnextRuntimePaths(options.stateRoot !== void 0 ? { stateRoot: options.stateRoot } : {});
@@ -16738,6 +18001,7 @@ function openVnextRuntimeContext(projectRoot, options) {
       now: options.now ?? (/* @__PURE__ */ new Date()).toISOString()
     });
     const eventStore = new VnextRunEventStore(join4(paths.projectsDir, registration.projectKey, "run-events.db"));
+    registerVnextRuntimeHandle(eventStore.path);
     return {
       registry,
       projectRoot: bundle.projectRoot,
@@ -16751,20 +18015,32 @@ function openVnextRuntimeContext(projectRoot, options) {
   }
 }
 function closeVnextRuntimeContext(context) {
+  unregisterVnextRuntimeHandle(context.eventStore.path);
   context.eventStore.close();
   context.registry.close();
 }
-var RUN_CREATED_REQUIRED = ["workflowId", "status", "repositories", "executors"];
 var RUNTIME_EPOCH_NS = process.hrtime.bigint();
 function vnextMonotonicNs() {
-  return Number(process.hrtime.bigint() - RUNTIME_EPOCH_NS);
+  return (process.hrtime.bigint() - RUNTIME_EPOCH_NS).toString();
 }
-function validateRunCreatedPayload(payload) {
-  for (const field of RUN_CREATED_REQUIRED) {
-    if (payload[field] === void 0) {
-      throw runtimeError("run_event_invalid", "run.created", `run.created payload is missing ${field}`);
-    }
-  }
+function vnextIncrementMonotonicNs(value) {
+  return (BigInt(value) + 1n).toString();
+}
+function vnextEventBase(context, run, now, monotonicNs, commandId) {
+  return {
+    schema: VNEXT_RUN_EVENT_SCHEMA,
+    projectId: context.projectId,
+    runId: run.runId,
+    homeRuntimeId: run.homeRuntimeId,
+    occurredAt: now,
+    recordedAt: now,
+    monotonicNs,
+    configRevision: run.configRevision,
+    memoryRevision: run.memoryRevision,
+    executorPolicyRevision: run.executorPolicyRevision,
+    toolPolicyRevision: run.toolPolicyRevision,
+    ...commandId !== void 0 ? { commandId } : {}
+  };
 }
 function acceptVnextRun(context, bundle, request, options = {}) {
   const commandId = request.commandId ?? newVnextCommandId();
@@ -16775,7 +18051,7 @@ function acceptVnextRun(context, bundle, request, options = {}) {
     throw runtimeError("run_workflow_unknown", ".kxm/workflows", `workflow ${request.workflowId} does not exist in this project`);
   }
   const revisions = vnextPolicyRevisions(bundle);
-  const promptSha256 = `sha256:${createHash4("sha256").update(request.prompt, "utf8").digest("hex")}`;
+  const promptSha256 = `sha256:${createHash5("sha256").update(request.prompt, "utf8").digest("hex")}`;
   return context.eventStore.transaction(() => {
     const prior = context.eventStore.command(commandId);
     if (prior) {
@@ -16792,30 +18068,27 @@ function acceptVnextRun(context, bundle, request, options = {}) {
       return { accepted: true, idempotent: true, run: run2, event: events[0] };
     }
     const runId = newVnextRunId();
-    const repositories = [...bundle.repositories.keys()].sort();
-    const executors = [...new Set([
-      typeof bundle.project.value.defaultExecutor === "string" ? bundle.project.value.defaultExecutor : void 0,
-      ...[...bundle.agents.values()].map((agent) => agent.value.executor).filter((value) => typeof value === "string")
-    ].filter((value) => value !== void 0))].sort();
     const payload = {
       workflowId: request.workflowId,
       status: "created",
-      repositories,
-      executors,
-      promptSha256
+      promptHash: promptSha256,
+      repositoryIds: vnextDeclaredRepositoryIds(bundle),
+      executorIds: vnextDeclaredExecutorIds(bundle)
     };
-    validateRunCreatedPayload(payload);
     const event = {
+      schema: VNEXT_RUN_EVENT_SCHEMA,
       eventId: newVnextEventId(),
       eventType: "run.created",
       projectId: context.projectId,
       runId,
+      homeRuntimeId: context.homeRuntimeId,
       sequence: 1,
       commandId,
       occurredAt: now,
       recordedAt: now,
       monotonicNs,
       configRevision: revisions.configRevision,
+      memoryRevision: revisions.memoryRevision,
       executorPolicyRevision: revisions.executorPolicyRevision,
       toolPolicyRevision: revisions.toolPolicyRevision,
       payload
@@ -16828,6 +18101,7 @@ function acceptVnextRun(context, bundle, request, options = {}) {
       promptSha256,
       status: "created",
       configRevision: revisions.configRevision,
+      memoryRevision: revisions.memoryRevision,
       executorPolicyRevision: revisions.executorPolicyRevision,
       toolPolicyRevision: revisions.toolPolicyRevision,
       createdAt: now,
@@ -16845,50 +18119,54 @@ function acceptVnextRun(context, bundle, request, options = {}) {
     return { accepted: true, idempotent: false, run, event };
   });
 }
-var RUN_STATUSES = /* @__PURE__ */ new Set(["created", "preparing", "running", "waiting", "blocked_uncertain", "cancelling", "cancelled", "completed", "failed"]);
-var TERMINAL_STATUSES = /* @__PURE__ */ new Set(["completed", "failed", "cancelled"]);
-function projectVnextRunStatus(events) {
-  let status = "created";
-  for (const event of events) {
-    switch (event.eventType) {
-      case "run.created":
-        status = "created";
-        break;
-      case "run.status_changed": {
-        const next = event.payload.status;
-        if (typeof next !== "string" || !RUN_STATUSES.has(next)) {
-          throw runtimeError("run_events_corrupt", event.runId, `run.status_changed has invalid status ${String(next)}`);
-        }
-        status = next;
-        break;
-      }
-      case "run.cancel_requested":
-        if (!TERMINAL_STATUSES.has(status)) status = "cancelling";
-        break;
-      default:
-        break;
-    }
+function foldStoredVnextRun(context, run) {
+  const events = context.eventStore.events(run.runId, 0, 1e6);
+  const planRow = context.eventStore.runPlan(run.runId);
+  const plan = planRow ? rehydrateVnextCompiledPlanFromStore(context.eventStore, run) : void 0;
+  if (!planRow && events.some((event) => event.eventType.startsWith("step.") || event.payload.status === "preparing" || event.payload.status === "running" || event.payload.status === "cancelling")) {
+    throw runtimeError("run_plan_missing", run.runId, "run reached preparing or later without a pinned plan");
   }
-  return status;
+  return foldVnextRunState(run, plan, events);
 }
-function rebuildVnextRunProjection(store, runId) {
-  const stored = store.run(runId);
+function persistProjection(context, run, state, now) {
+  const canonical = vnextCanonicalJson(state);
+  const stored = context.eventStore.runState(run.runId);
+  if (stored && stored.state !== canonical) {
+    throw runtimeError("run_projection_divergent", run.runId, "stored run_state does not match the folded projection");
+  }
+  if (!stored) {
+    context.eventStore.upsertRunState({
+      runId: run.runId,
+      lastSequence: context.eventStore.nextSequence(run.runId) - 1,
+      state: canonical
+    });
+  }
+  const updated = { ...run, status: state.status, updatedAt: now };
+  if (run.status !== state.status) context.eventStore.updateRunStatus(run.runId, state.status, now);
+  return updated;
+}
+function rebuildVnextRunProjection(context, runId) {
+  const stored = context.eventStore.run(runId);
   if (!stored) throw runtimeError("run_unknown", runId, "run does not exist in this event store");
-  const events = store.events(runId, 0, 1e6);
+  const state = foldStoredVnextRun(context, stored);
+  const events = context.eventStore.events(runId, 0, 1e6);
   if (events.length === 0) throw runtimeError("run_events_corrupt", runId, "run has no events");
-  const projected = projectVnextRunStatus(events);
   const last = events[events.length - 1];
-  return {
-    ...stored,
-    status: projected,
-    updatedAt: last.occurredAt
-  };
+  return persistProjection(context, stored, state, last.occurredAt);
+}
+function persistVnextRunState(context, runId, state, lastSequence) {
+  context.eventStore.upsertRunState({
+    runId,
+    lastSequence,
+    state: vnextCanonicalJson(state)
+  });
 }
 function cancelVnextRun(context, runId, options = {}) {
   const commandId = options.commandId ?? newVnextCommandId();
   const now = options.now ?? (/* @__PURE__ */ new Date()).toISOString();
   const monotonicNs = options.monotonicNs ?? vnextMonotonicNs();
-  return context.eventStore.transaction(() => {
+  let abortController;
+  const result = context.eventStore.transaction(() => {
     const prior = context.eventStore.command(commandId);
     if (prior) {
       if (prior.kind !== "run.cancel" || prior.runId !== runId) {
@@ -16900,52 +18178,73 @@ function cancelVnextRun(context, runId, options = {}) {
     }
     const run = context.eventStore.run(runId);
     if (!run) throw runtimeError("run_unknown", runId, "run does not exist in this event store");
-    if (TERMINAL_STATUSES.has(run.status)) {
-      return { run, idempotent: true, events: [] };
+    const folded = foldStoredVnextRun(context, run);
+    if (isTerminalRunStatus(folded.status) || folded.status === "cancelling") {
+      context.eventStore.insertCommand({
+        commandId,
+        runId,
+        kind: "run.cancel",
+        result: { runId, status: folded.status },
+        recordedAt: now
+      });
+      return { run: { ...run, status: folded.status }, idempotent: true, events: [] };
     }
     const events = [];
-    const base = {
-      projectId: context.projectId,
-      runId,
-      commandId,
-      configRevision: run.configRevision,
-      executorPolicyRevision: run.executorPolicyRevision,
-      toolPolicyRevision: run.toolPolicyRevision
-    };
     let sequence = context.eventStore.nextSequence(runId);
-    const cancelRequested = {
-      ...base,
-      eventId: newVnextEventId(),
-      eventType: "run.cancel_requested",
-      sequence: sequence++,
-      occurredAt: now,
-      recordedAt: now,
-      monotonicNs,
-      payload: { requestedBy: "operator" }
+    let nextMono = monotonicNs;
+    const push = (eventType, payload) => {
+      const event = {
+        ...vnextEventBase(context, run, now, nextMono, commandId),
+        eventId: newVnextEventId(),
+        eventType,
+        sequence: sequence++,
+        payload
+      };
+      nextMono = vnextIncrementMonotonicNs(nextMono);
+      events.push(event);
+      return event;
     };
-    events.push(cancelRequested);
-    const statusChanged = {
-      ...base,
-      eventId: newVnextEventId(),
-      eventType: "run.status_changed",
-      sequence: sequence++,
-      occurredAt: now,
-      recordedAt: now,
-      monotonicNs: monotonicNs + 1,
-      payload: { status: "cancelled", reason: "operator_cancel" }
-    };
-    events.push(statusChanged);
+    const activeAttempt = Boolean(folded.currentStep?.attemptId);
+    push("run.cancel_requested", {
+      actor: { kind: "runtime", id: context.homeRuntimeId },
+      reason: "operator_cancel"
+    });
+    let status = "cancelled";
+    if (folded.status === "running" && activeAttempt) {
+      status = "cancelling";
+      push("run.status_changed", { status: "cancelling", reason: "operator_cancel" });
+      if (folded.currentStep?.attemptId) {
+        const capability = context.eventStore.capabilityByAttempt(folded.currentStep.attemptId);
+        if (capability && capability.state === "issued") {
+          context.eventStore.settleCapability(folded.currentStep.attemptId, "revoked");
+        }
+      }
+      abortController = vnextAttemptController(context.eventStore.path, runId)?.controller;
+    } else if (folded.status === "running" && !activeAttempt) {
+      push("run.status_changed", { status: "cancelling", reason: "operator_cancel" });
+      push("run.status_changed", { status: "cancelled", reason: "operator_cancel" });
+    } else {
+      push("run.status_changed", { status: "cancelled", reason: "operator_cancel" });
+    }
     for (const event of events) context.eventStore.appendEvent(event);
-    context.eventStore.updateRunStatus(runId, "cancelled", now);
+    const nextState = foldVnextRunState(
+      run,
+      context.eventStore.runPlan(runId) ? rehydrateVnextCompiledPlanFromStore(context.eventStore, run) : void 0,
+      [...context.eventStore.events(runId, 0, 1e6)]
+    );
+    persistVnextRunState(context, runId, nextState, events[events.length - 1].sequence);
+    context.eventStore.updateRunStatus(runId, status, now);
     context.eventStore.insertCommand({
       commandId,
       runId,
       kind: "run.cancel",
-      result: { runId, status: "cancelled" },
+      result: { runId, status },
       recordedAt: now
     });
-    return { run: { ...run, status: "cancelled", updatedAt: now }, idempotent: false, events };
+    return { run: { ...run, status, updatedAt: now }, idempotent: false, events };
   });
+  abortController?.abort();
+  return result;
 }
 
 // plugins/kxm/src/vnext-runtime-supervisor.ts
@@ -16970,7 +18269,7 @@ function publishVnextSupervisorToken(paths, token) {
   }
 }
 function hashVnextSupervisorToken(token) {
-  return `sha256:${createHash5("sha256").update(`kxm-runtime-supervisor\0${token}`, "utf8").digest("hex")}`;
+  return `sha256:${createHash6("sha256").update(`kxm-runtime-supervisor\0${token}`, "utf8").digest("hex")}`;
 }
 function readVnextSupervisorToken(paths) {
   const file = vnextSupervisorTokenFile(paths);
@@ -17018,19 +18317,19 @@ function vnextSupervisorStatus(paths) {
   if (!existsSync3(paths.registryDb)) return { running: false };
   const registry = new VnextRuntimeRegistry(paths.registryDb);
   try {
-    const record = registry.supervisor();
-    if (!record) return { running: false };
-    const heartbeatAgeMs = Date.now() - Date.parse(record.heartbeatAt);
+    const record2 = registry.supervisor();
+    if (!record2) return { running: false };
+    const heartbeatAgeMs = Date.now() - Date.parse(record2.heartbeatAt);
     const fresh = Number.isFinite(heartbeatAgeMs) && heartbeatAgeMs < HEARTBEAT_STALE_MS;
-    const alive = record.state === "running" && fresh && processAlive(record.pid);
+    const alive = record2.state === "running" && fresh && processAlive(record2.pid);
     return {
       running: alive,
-      runtimeId: record.runtimeId,
-      pid: record.pid,
-      port: record.port,
-      state: alive ? record.state : "dead",
-      heartbeatAt: record.heartbeatAt,
-      startedAt: record.startedAt
+      runtimeId: record2.runtimeId,
+      pid: record2.pid,
+      port: record2.port,
+      state: alive ? record2.state : "dead",
+      heartbeatAt: record2.heartbeatAt,
+      startedAt: record2.startedAt
     };
   } finally {
     registry.close();
@@ -17158,7 +18457,7 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
   const token = randomBytes(32).toString("hex");
   const tokenHash = hashVnextSupervisorToken(token);
   const registry = new VnextRuntimeRegistry(paths.registryDb);
-  const runtimeId = `rtm_${createHash5("sha256").update(`${paths.stateRoot}\0${process.pid}\0${now()}\0${randomBytes(16).toString("hex")}`, "utf8").digest("hex").slice(0, 24)}`;
+  const runtimeId = `rtm_${createHash6("sha256").update(`${paths.stateRoot}\0${process.pid}\0${now()}\0${randomBytes(16).toString("hex")}`, "utf8").digest("hex").slice(0, 24)}`;
   const requestedPort = requestedPortOption ?? 0;
   let activeRuntimeId = runtimeId;
   const contexts = /* @__PURE__ */ new Map();
@@ -17241,7 +18540,7 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
           }
           const context = contextFor(projectRoot);
           if (request.method === "GET" && !sub) {
-            const projected = rebuildVnextRunProjection(context.eventStore, runId);
+            const projected = rebuildVnextRunProjection(context, runId);
             sendJson(response, 200, { ok: true, run: projected });
             return;
           }

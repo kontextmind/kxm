@@ -3,8 +3,9 @@
 > **Status: planned normative contract.** This directory describes the target
 > architecture accepted for KXM vNext. Not all commands are implemented.
 > Phase 1 (init/migrate/trust) and Phase 2 (Runtime create/recover) have landed
-> slices; Phase 3 does not yet execute workflow steps. Operator tracking for
-> the KXM rename, `kxm dash`, hub CLI, and harness YAML lives in the
+> slices; Phase 3 has an agent-only simulated run loop, not the default/fix
+> driver gate. Operator tracking for the KXM rename, `kxm dash`, hub CLI, and
+> harness YAML lives in the
 > [implementation plan](implementation-plan.md#tracking-working-tree-not-a-release).
 > For current hub execution behavior, use [Architecture](../architecture.md) and
 > [Configuration](../configuration.md).

@@ -9,13 +9,21 @@ import {
   type VnextConfigOptions,
   type VnextProjectBundle,
 } from "./vnext-config.ts";
+import { foldVnextRunState, isTerminalRunStatus, type VnextRunState } from "./vnext-engine-fold.ts";
+import { rehydrateVnextCompiledPlanFromStore } from "./vnext-engine-plan.ts";
 import {
+  registerVnextRuntimeHandle,
+  unregisterVnextRuntimeHandle,
+  vnextAttemptController,
+} from "./vnext-runtime-owner.ts";
+import {
+  VNEXT_ABSENT_MEMORY_REVISION,
+  VNEXT_RUN_EVENT_SCHEMA,
   VnextRunEventStore,
   VnextRuntimeRegistry,
   newVnextCommandId,
   newVnextEventId,
   newVnextRunId,
-  projectRuntimeKey,
   runtimeError,
   vnextRuntimePaths,
   type VnextRunEvent,
@@ -29,7 +37,7 @@ import {
 
 export interface VnextPolicyRevisions {
   configRevision: string;
-  memoryRevision?: string;
+  memoryRevision: string;
   executorPolicyRevision: string;
   toolPolicyRevision: string;
 }
@@ -75,8 +83,36 @@ export function vnextToolPolicyRevision(bundle: VnextProjectBundle): string {
 export function vnextPolicyRevisions(bundle: VnextProjectBundle): VnextPolicyRevisions {
   return {
     configRevision: bundle.configRevision,
+    memoryRevision: VNEXT_ABSENT_MEMORY_REVISION,
     executorPolicyRevision: vnextExecutorPolicyRevision(bundle),
     toolPolicyRevision: vnextToolPolicyRevision(bundle),
+  };
+}
+
+export function vnextDeclaredRepositoryIds(bundle: VnextProjectBundle): string[] {
+  return [...bundle.repositories.keys()].sort();
+}
+
+export function vnextDeclaredExecutorIds(bundle: VnextProjectBundle): string[] {
+  return [...new Set([
+    typeof bundle.project.value.defaultExecutor === "string" ? bundle.project.value.defaultExecutor : undefined,
+    ...[...bundle.agents.values()].map((agent) => agent.value.executor).filter((value): value is string => typeof value === "string"),
+  ].filter((value): value is string => value !== undefined))].sort();
+}
+
+export function vnextProjectAdmissionLimits(bundle: VnextProjectBundle): {
+  maxConcurrentRuns: number;
+  maxRunDurationMs?: number;
+  maxAgentTimeMs?: number;
+} {
+  const limits = objectValue(bundle.project.value.limits);
+  const maxConcurrentRuns = typeof limits?.maxConcurrentRuns === "number" && Number.isInteger(limits.maxConcurrentRuns) && limits.maxConcurrentRuns >= 1
+    ? limits.maxConcurrentRuns
+    : 1;
+  return {
+    maxConcurrentRuns,
+    ...(typeof limits?.maxRunDurationMs === "number" ? { maxRunDurationMs: limits.maxRunDurationMs } : {}),
+    ...(typeof limits?.maxAgentTimeMs === "number" ? { maxAgentTimeMs: limits.maxAgentTimeMs } : {}),
   };
 }
 
@@ -128,6 +164,7 @@ export function openVnextRuntimeContext(
       now: options.now ?? new Date().toISOString(),
     });
     const eventStore = new VnextRunEventStore(join(paths.projectsDir, registration.projectKey, "run-events.db"));
+    registerVnextRuntimeHandle(eventStore.path);
     return {
       registry,
       projectRoot: bundle.projectRoot,
@@ -142,24 +179,37 @@ export function openVnextRuntimeContext(
 }
 
 export function closeVnextRuntimeContext(context: VnextRuntimeContext): void {
+  unregisterVnextRuntimeHandle(context.eventStore.path);
   context.eventStore.close();
   context.registry.close();
 }
 
-const RUN_CREATED_REQUIRED = ["workflowId", "status", "repositories", "executors"];
 const RUNTIME_EPOCH_NS = process.hrtime.bigint();
 
-/** Millisecond-precision monotonic nanoseconds relative to process start (safe below 2^53). */
-export function vnextMonotonicNs(): number {
-  return Number(process.hrtime.bigint() - RUNTIME_EPOCH_NS);
+/** Intra-process monotonic nanoseconds as a decimal string, ordered only by sequence. */
+export function vnextMonotonicNs(): string {
+  return (process.hrtime.bigint() - RUNTIME_EPOCH_NS).toString();
 }
 
-function validateRunCreatedPayload(payload: Record<string, unknown>): void {
-  for (const field of RUN_CREATED_REQUIRED) {
-    if (payload[field] === undefined) {
-      throw runtimeError("run_event_invalid", "run.created", `run.created payload is missing ${field}`);
-    }
-  }
+export function vnextIncrementMonotonicNs(value: string): string {
+  return (BigInt(value) + 1n).toString();
+}
+
+export function vnextEventBase(context: VnextRuntimeContext, run: VnextRunRecord, now: string, monotonicNs: string, commandId?: string): Omit<VnextRunEvent, "eventId" | "eventType" | "sequence" | "payload"> {
+  return {
+    schema: VNEXT_RUN_EVENT_SCHEMA,
+    projectId: context.projectId,
+    runId: run.runId,
+    homeRuntimeId: run.homeRuntimeId,
+    occurredAt: now,
+    recordedAt: now,
+    monotonicNs,
+    configRevision: run.configRevision,
+    memoryRevision: run.memoryRevision,
+    executorPolicyRevision: run.executorPolicyRevision,
+    toolPolicyRevision: run.toolPolicyRevision,
+    ...(commandId !== undefined ? { commandId } : {}),
+  };
 }
 
 /** Accept a run idempotently: a repeated commandId returns the prior acceptance. */
@@ -167,7 +217,7 @@ export function acceptVnextRun(
   context: VnextRuntimeContext,
   bundle: VnextProjectBundle,
   request: VnextRunAcceptanceRequest,
-  options: { now?: string; monotonicNs?: number } = {},
+  options: { now?: string; monotonicNs?: string } = {},
 ): VnextRunAcceptance {
   const commandId = request.commandId ?? newVnextCommandId();
   const now = options.now ?? new Date().toISOString();
@@ -197,30 +247,27 @@ export function acceptVnextRun(
     }
 
     const runId = newVnextRunId();
-    const repositories = [...bundle.repositories.keys()].sort();
-    const executors = [...new Set([
-      typeof bundle.project.value.defaultExecutor === "string" ? bundle.project.value.defaultExecutor : undefined,
-      ...[...bundle.agents.values()].map((agent) => agent.value.executor).filter((value): value is string => typeof value === "string"),
-    ].filter((value): value is string => value !== undefined))].sort();
     const payload: Record<string, unknown> = {
       workflowId: request.workflowId,
       status: "created",
-      repositories,
-      executors,
-      promptSha256,
+      promptHash: promptSha256,
+      repositoryIds: vnextDeclaredRepositoryIds(bundle),
+      executorIds: vnextDeclaredExecutorIds(bundle),
     };
-    validateRunCreatedPayload(payload);
     const event: VnextRunEvent = {
+      schema: VNEXT_RUN_EVENT_SCHEMA,
       eventId: newVnextEventId(),
       eventType: "run.created",
       projectId: context.projectId,
       runId,
+      homeRuntimeId: context.homeRuntimeId,
       sequence: 1,
       commandId,
       occurredAt: now,
       recordedAt: now,
       monotonicNs,
       configRevision: revisions.configRevision,
+      memoryRevision: revisions.memoryRevision,
       executorPolicyRevision: revisions.executorPolicyRevision,
       toolPolicyRevision: revisions.toolPolicyRevision,
       payload,
@@ -233,6 +280,7 @@ export function acceptVnextRun(
       promptSha256,
       status: "created",
       configRevision: revisions.configRevision,
+      memoryRevision: revisions.memoryRevision,
       executorPolicyRevision: revisions.executorPolicyRevision,
       toolPolicyRevision: revisions.toolPolicyRevision,
       createdAt: now,
@@ -255,77 +303,56 @@ export function acceptVnextRun(
  * Projection
  * ------------------------------------------------------------------ */
 
-const RUN_EVENT_TYPES = new Set([
-  "run.created",
-  "run.status_changed",
-  "run.cancel_requested",
-  "step.entered",
-  "step.status_changed",
-  "step.outcome_recorded",
-  "step.transitioned",
-  "assignment.created",
-  "assignment.accepted",
-  "assignment.dispatched",
-  "assignment.executing",
-  "assignment.reattaching",
-  "assignment.retry_pending",
-  "assignment.result_recorded",
-  "assignment.terminal",
-  "attempt.created",
-  "attempt.status_changed",
-  "attempt.connection_lost",
-  "effect.intent_recorded",
-  "effect.dispatched",
-  "effect.observed",
-  "effect.receipt_recorded",
-  "effect.settled",
-  "effect.blocked_uncertain",
-  "effect.uncertainty_resolved",
-]);
-
-const RUN_STATUSES = new Set<VnextRunStatus>(["created", "preparing", "running", "waiting", "blocked_uncertain", "cancelling", "cancelled", "completed", "failed"]);
-const TERMINAL_STATUSES = new Set<VnextRunStatus>(["completed", "failed", "cancelled"]);
+export function foldStoredVnextRun(context: VnextRuntimeContext, run: VnextRunRecord): VnextRunState {
+  const events = context.eventStore.events(run.runId, 0, 1_000_000);
+  const planRow = context.eventStore.runPlan(run.runId);
+  const plan = planRow ? rehydrateVnextCompiledPlanFromStore(context.eventStore, run) : undefined;
+  if (!planRow && events.some((event) => event.eventType.startsWith("step.") || event.payload.status === "preparing" || event.payload.status === "running" || event.payload.status === "cancelling")) {
+    throw runtimeError("run_plan_missing", run.runId, "run reached preparing or later without a pinned plan");
+  }
+  return foldVnextRunState(run, plan, events);
+}
 
 /** Fold a run's event sequence into its current status (deterministic). */
-export function projectVnextRunStatus(events: readonly VnextRunEvent[]): VnextRunStatus {
-  let status: VnextRunStatus = "created";
-  for (const event of events) {
-    switch (event.eventType) {
-      case "run.created":
-        status = "created";
-        break;
-      case "run.status_changed": {
-        const next = event.payload.status;
-        if (typeof next !== "string" || !RUN_STATUSES.has(next as VnextRunStatus)) {
-          throw runtimeError("run_events_corrupt", event.runId, `run.status_changed has invalid status ${String(next)}`);
-        }
-        status = next as VnextRunStatus;
-        break;
-      }
-      case "run.cancel_requested":
-        if (!TERMINAL_STATUSES.has(status)) status = "cancelling";
-        break;
-      default:
-        // Later phases fold step/assignment/effect events into richer state.
-        break;
-    }
+export function projectVnextRunStatus(run: VnextRunRecord, events: readonly VnextRunEvent[]): VnextRunStatus {
+  return foldVnextRunState(run, undefined, events).status;
+}
+
+function persistProjection(context: VnextRuntimeContext, run: VnextRunRecord, state: VnextRunState, now: string): VnextRunRecord {
+  const canonical = vnextCanonicalJson(state as unknown as JsonValue);
+  const stored = context.eventStore.runState(run.runId);
+  if (stored && stored.state !== canonical) {
+    throw runtimeError("run_projection_divergent", run.runId, "stored run_state does not match the folded projection");
   }
-  return status;
+  if (!stored) {
+    context.eventStore.upsertRunState({
+      runId: run.runId,
+      lastSequence: context.eventStore.nextSequence(run.runId) - 1,
+      state: canonical,
+    });
+  }
+  const updated = { ...run, status: state.status, updatedAt: now };
+  if (run.status !== state.status) context.eventStore.updateRunStatus(run.runId, state.status, now);
+  return updated;
 }
 
 /** Rebuild the stored run row from the event log; returns the projected record. */
-export function rebuildVnextRunProjection(store: VnextRunEventStore, runId: string): VnextRunRecord {
-  const stored = store.run(runId);
+export function rebuildVnextRunProjection(context: VnextRuntimeContext, runId: string): VnextRunRecord {
+  const stored = context.eventStore.run(runId);
   if (!stored) throw runtimeError("run_unknown", runId, "run does not exist in this event store");
-  const events = store.events(runId, 0, 1_000_000);
+  const state = foldStoredVnextRun(context, stored);
+  const events = context.eventStore.events(runId, 0, 1_000_000);
   if (events.length === 0) throw runtimeError("run_events_corrupt", runId, "run has no events");
-  const projected = projectVnextRunStatus(events);
   const last = events[events.length - 1]!;
-  return {
-    ...stored,
-    status: projected,
-    updatedAt: last.occurredAt,
-  };
+  return persistProjection(context, stored, state, last.occurredAt);
+}
+
+export function persistVnextRunState(context: VnextRuntimeContext, runId: string, state: VnextRunState, lastSequence: number): void {
+  context.eventStore.upsertRunState({
+    runId,
+    lastSequence,
+    state: vnextCanonicalJson(state as unknown as JsonValue),
+  });
 }
 
 /* ------------------------------------------------------------------ *
@@ -341,13 +368,14 @@ export interface VnextRunCancelResult {
 export function cancelVnextRun(
   context: VnextRuntimeContext,
   runId: string,
-  options: { commandId?: string; now?: string; monotonicNs?: number } = {},
+  options: { commandId?: string; now?: string; monotonicNs?: string } = {},
 ): VnextRunCancelResult {
   const commandId = options.commandId ?? newVnextCommandId();
   const now = options.now ?? new Date().toISOString();
   const monotonicNs = options.monotonicNs ?? vnextMonotonicNs();
+  let abortController: AbortController | undefined;
 
-  return context.eventStore.transaction(() => {
+  const result = context.eventStore.transaction(() => {
     const prior = context.eventStore.command(commandId);
     if (prior) {
       if (prior.kind !== "run.cancel" || prior.runId !== runId) {
@@ -355,60 +383,82 @@ export function cancelVnextRun(
       }
       const run = context.eventStore.run(prior.runId);
       if (!run) throw runtimeError("run_command_corrupt", commandId, "idempotent command references a missing run");
-      return { run, idempotent: true, events: [] };
+      return { run, idempotent: true, events: [] as VnextRunEvent[] };
     }
     const run = context.eventStore.run(runId);
     if (!run) throw runtimeError("run_unknown", runId, "run does not exist in this event store");
-    if (TERMINAL_STATUSES.has(run.status)) {
-      return { run, idempotent: true, events: [] };
+    const folded = foldStoredVnextRun(context, run);
+    if (isTerminalRunStatus(folded.status) || folded.status === "cancelling") {
+      context.eventStore.insertCommand({
+        commandId,
+        runId,
+        kind: "run.cancel",
+        result: { runId, status: folded.status },
+        recordedAt: now,
+      });
+      return { run: { ...run, status: folded.status }, idempotent: true, events: [] as VnextRunEvent[] };
     }
 
     const events: VnextRunEvent[] = [];
-    const base = {
-      projectId: context.projectId,
-      runId,
-      commandId,
-      configRevision: run.configRevision,
-      executorPolicyRevision: run.executorPolicyRevision,
-      toolPolicyRevision: run.toolPolicyRevision,
-    };
     let sequence = context.eventStore.nextSequence(runId);
-    const cancelRequested: VnextRunEvent = {
-      ...base,
-      eventId: newVnextEventId(),
-      eventType: "run.cancel_requested",
-      sequence: sequence++,
-      occurredAt: now,
-      recordedAt: now,
-      monotonicNs,
-      payload: { requestedBy: "operator" },
+    let nextMono = monotonicNs;
+    const push = (eventType: string, payload: Record<string, unknown>): VnextRunEvent => {
+      const event: VnextRunEvent = {
+        ...vnextEventBase(context, run, now, nextMono, commandId),
+        eventId: newVnextEventId(),
+        eventType,
+        sequence: sequence++,
+        payload,
+      };
+      nextMono = vnextIncrementMonotonicNs(nextMono);
+      events.push(event);
+      return event;
     };
-    events.push(cancelRequested);
-    // Phase 2 has no child processes to drain: cancelling completes
-    // immediately as a durable, ordered pair of events.
-    const statusChanged: VnextRunEvent = {
-      ...base,
-      eventId: newVnextEventId(),
-      eventType: "run.status_changed",
-      sequence: sequence++,
-      occurredAt: now,
-      recordedAt: now,
-      monotonicNs: monotonicNs + 1,
-      payload: { status: "cancelled", reason: "operator_cancel" },
-    };
-    events.push(statusChanged);
+
+    const activeAttempt = Boolean(folded.currentStep?.attemptId);
+    push("run.cancel_requested", {
+      actor: { kind: "runtime", id: context.homeRuntimeId },
+      reason: "operator_cancel",
+    });
+
+    let status: VnextRunStatus = "cancelled";
+    if (folded.status === "running" && activeAttempt) {
+      status = "cancelling";
+      push("run.status_changed", { status: "cancelling", reason: "operator_cancel" });
+      if (folded.currentStep?.attemptId) {
+        const capability = context.eventStore.capabilityByAttempt(folded.currentStep.attemptId);
+        if (capability && capability.state === "issued") {
+          context.eventStore.settleCapability(folded.currentStep.attemptId, "revoked");
+        }
+      }
+      abortController = vnextAttemptController(context.eventStore.path, runId)?.controller;
+    } else if (folded.status === "running" && !activeAttempt) {
+      push("run.status_changed", { status: "cancelling", reason: "operator_cancel" });
+      push("run.status_changed", { status: "cancelled", reason: "operator_cancel" });
+    } else {
+      push("run.status_changed", { status: "cancelled", reason: "operator_cancel" });
+    }
 
     for (const event of events) context.eventStore.appendEvent(event);
-    context.eventStore.updateRunStatus(runId, "cancelled", now);
+    const nextState = foldVnextRunState(
+      run,
+      context.eventStore.runPlan(runId) ? rehydrateVnextCompiledPlanFromStore(context.eventStore, run) : undefined,
+      [...context.eventStore.events(runId, 0, 1_000_000)],
+    );
+    persistVnextRunState(context, runId, nextState, events[events.length - 1]!.sequence);
+    context.eventStore.updateRunStatus(runId, status, now);
     context.eventStore.insertCommand({
       commandId,
       runId,
       kind: "run.cancel",
-      result: { runId, status: "cancelled" },
+      result: { runId, status },
       recordedAt: now,
     });
-    return { run: { ...run, status: "cancelled", updatedAt: now }, idempotent: false, events };
+    return { run: { ...run, status, updatedAt: now }, idempotent: false, events };
   });
+
+  abortController?.abort();
+  return result;
 }
 
 /* ------------------------------------------------------------------ *
@@ -422,4 +472,8 @@ export function vnextRunRevisionDrift(run: VnextRunRecord, bundle: VnextProjectB
     currentRevision: bundle.configRevision,
     pinnedRevision: run.configRevision,
   };
+}
+
+export function assertVnextConfigError(error: unknown): asserts error is VnextConfigError {
+  if (!(error instanceof VnextConfigError)) throw error;
 }

@@ -1,0 +1,16 @@
+schema: kxm.workflow.v1
+description: Single agent step used for scheduler admission tests.
+coordinator: coordinator
+limits:
+  maxTransitions: 2
+steps:
+  - id: only
+    kind: agent
+    agent: implementer
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: $terminal
+        terminalStatus: failed

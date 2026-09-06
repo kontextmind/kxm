@@ -18,6 +18,7 @@
     "workflowId": "fix",
     "status": "result_recorded",
     "outcome": "implemented",
+    "resultClass": "outcome",
     "summary": "Added single-flight token refresh and regression coverage.",
     "stepId": "implement",
     "stepAttempt": 1,

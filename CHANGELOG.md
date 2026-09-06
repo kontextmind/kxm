@@ -6,9 +6,19 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Added
 
+- Agent-only vNext run loop (`vnext-engine.ts`): pins a D1 compiled plan in an
+  immutable hashed envelope, folds schema-valid `kxm.run-event.v1` events with
+  a run_state projection, and drives a model-free simulated producer under
+  transition/step budgets. Public drive, step, and scheduler share one
+  admission bound. Sync and async producer failures settle as
+  `producer_rejected` without leaking the attempt capability. A process
+  restart of an executing attempt is unreconciled; operator cancel before pin
+  still rebuilds. Duration/cost limits and the default/fix driver gate stay
+  fail-closed for later slices. Event store is schema v2; version-1 files are
+  refused (E6).
 - Pure vNext workflow compile (`vnext-engine-compile.ts`) turns a validated
-  `kxm.workflow.v1` into a frozen JSON plan. Compile is not execution; Phase 3
-  remains open for the run loop.
+  `kxm.workflow.v1` into a frozen JSON plan. Compile is not execution; D3/D4
+  remain open.
 - Routing contract doc (`docs/vnext/routing.md`) and synchronization status
   (schema-tested; Phase 8 implementation).
 - Tag-triggered `release.yml` packs `kxm-<v>.tgz`, creates or reuses only a

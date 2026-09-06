@@ -63,7 +63,7 @@ test("run acceptance is immutable, idempotent, and pins revisions", () => {
     assert.match(revisions.executorPolicyRevision, /^sha256:[a-f0-9]{64}$/);
     assert.match(revisions.toolPolicyRevision, /^sha256:[a-f0-9]{64}$/);
 
-    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: "rtm_test" });
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: "rtm_01JTEST000000000000000000" });
     try {
       const commandId = newVnextCommandId();
       const first = acceptVnextRun(context, bundle, { commandId, workflowId: "default", prompt: "fix the bug" });
@@ -74,10 +74,13 @@ test("run acceptance is immutable, idempotent, and pins revisions", () => {
       assert.equal(first.run.status, "created");
       assert.equal(first.event.sequence, 1);
       assert.equal(first.event.eventType, "run.created");
-      const payload = first.event.payload as { promptSha256: string; workflowId: string; repositories: string[]; executors: string[] };
-      assert.match(payload.promptSha256, /^sha256:/);
+      const payload = first.event.payload as { promptHash: string; workflowId: string; repositoryIds: string[]; executorIds: string[] };
+      assert.match(payload.promptHash, /^sha256:/);
       assert.equal(payload.workflowId, "default");
-      assert.deepEqual(payload.repositories, ["control"]);
+      assert.deepEqual(payload.repositoryIds, ["control"]);
+      assert.equal(first.event.schema, "kxm.run-event.v1");
+      assert.equal(first.event.memoryRevision, "ctxrev_absent");
+      assert.equal(first.run.memoryRevision, "ctxrev_absent");
       assert(!JSON.stringify(first.event.payload).includes("fix the bug"), "prompt content is never stored");
 
       const second = acceptVnextRun(context, bundle, { commandId, workflowId: "default", prompt: "fix the bug" });
@@ -86,7 +89,7 @@ test("run acceptance is immutable, idempotent, and pins revisions", () => {
       assert.equal(context.eventStore.events(first.run.runId, 0, 10).length, 1, "no duplicate semantic events");
 
       // Home runtime is immutable across contexts.
-      const reopened = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: "rtm_test" });
+      const reopened = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: "rtm_01JTEST000000000000000000" });
       try {
         assert.equal(reopened.homeRuntimeId, context.homeRuntimeId);
       } finally {
@@ -108,7 +111,7 @@ test("event sequence integrity and projection rebuild equivalence", () => {
   const { root, stateRoot } = committedProject("kxm-runtime-projection-");
   try {
     const bundle = loadVnextProject(root);
-    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: "rtm_test" });
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: "rtm_01JTEST000000000000000000" });
     try {
       const accepted = acceptVnextRun(context, bundle, { workflowId: "default", prompt: "work" });
       const cancelled = cancelVnextRun(context, accepted.run.runId);
@@ -122,8 +125,8 @@ test("event sequence integrity and projection rebuild equivalence", () => {
 
       const events = context.eventStore.events(accepted.run.runId, 0, 100);
       assert.equal(events.length, 3);
-      assert.equal(projectVnextRunStatus(events), "cancelled");
-      const rebuilt = rebuildVnextRunProjection(context.eventStore, accepted.run.runId);
+      assert.equal(projectVnextRunStatus(accepted.run, events), "cancelled");
+      const rebuilt = rebuildVnextRunProjection(context, accepted.run.runId);
       assert.equal(rebuilt.status, "cancelled", "projection rebuild matches incremental state");
       assert.equal(rebuilt.runId, accepted.run.runId);
 
@@ -298,7 +301,7 @@ test("newer schema versions fail closed; command conflicts and status validation
 
     // Command conflicts: kind, runId, and request mismatches fail closed.
     const bundle = loadVnextProject(root);
-    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: "rtm_test" });
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: "rtm_01JTEST000000000000000000" });
     try {
       const acceptCommand = newVnextCommandId();
       acceptVnextRun(context, bundle, { commandId: acceptCommand, workflowId: "default", prompt: "one" });
