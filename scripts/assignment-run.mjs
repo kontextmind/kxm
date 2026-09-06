@@ -3717,9 +3717,13 @@ function assertSourcesNotRecorded(value, taskDir, io) {
     // Canonical native records already own their usage. Their sidecars can
     // be external to task_dir, so check the stored output binding as well.
     if (io.existsSync(join(item.path, "manifest.json"))) {
-      const manifest = privateRecord(join(item.path, "manifest.json"), io).value;
+      let manifest;
+      try { manifest = privateRecord(join(item.path, "manifest.json"), io).value; }
+      catch { continue; }
       const identity = identifyAssignment(manifest, io);
-      if (!identity || identity.record_dir !== item.path) throw failClosed("foreign native record", "observation_invalid");
+      // Legacy bootstrap directories and probe artifacts are not canonical
+      // native records. Their explicit cost imports retain source provenance.
+      if (!identity || identity.record_dir !== item.path) continue;
       const roots = [item.path];
       if (identity.output_dir && !io.existsSync(join(item.path, "refusal.json"))) {
         try {

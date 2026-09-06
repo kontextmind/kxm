@@ -260,7 +260,9 @@ It does not replace the phase gates below.
   Imports cannot authorize witness or acceptance, duplicate native usage,
   erase failed attempts, or turn estimates/unknowns into spend. Exclusions
   retain their reasons and provenance. Historical attribution does not depend
-  on the current plan or a retained worktree. Attribution history is read by
+  on the current plan or a retained worktree. Legacy bootstrap manifests are
+  source history, not canonical native assignments that can block imports.
+  Attribution history is read by
   directory, so interrupted writes remain visible even without a latest link.
   If a writer dies holding `.observation-lock`, confirm no observation writer
   is active before removing that empty task-local lock directory and retrying.

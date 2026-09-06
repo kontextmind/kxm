@@ -239,3 +239,18 @@ test("external native output sources cannot be imported a second time", async ()
     assert.throws(() => observeAssignmentCost({ taskDir: f.taskDir, observation: f.value }), code("source_already_recorded"));
   } finally { f.cleanup(); }
 });
+
+test("legacy bootstrap manifests beside native records do not block explicit historical imports", async () => {
+  const f = fixture();
+  try {
+    await nativeFixture(f, "completion");
+    for (const [id, value] of [
+      ["old-bootstrap", { schema: "kxm.bootstrap-assignment.v1", task_id: "task-a", assignment_id: "task-a/old-bootstrap" }],
+      ["old-shape", { schema: "kxm.assignment.v1", task_id: "task-a", assignment_id: "task-a/old-shape" }],
+      ["old-unschematized", { task_id: "task-a", assignment_id: "old-unschematized" }],
+    ] as const) {
+      const dir = join(f.taskDir, id); mkdirSync(dir); writeFileSync(join(dir, "manifest.json"), JSON.stringify(value));
+    }
+    assert.equal(observeAssignmentCost({ taskDir: f.taskDir, observation: f.value }).cost_only, true);
+  } finally { f.cleanup(); }
+});
