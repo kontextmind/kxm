@@ -28,12 +28,13 @@ test("release workflow is tag-triggered, fail-closed drafts, and npm publish sta
   assert.deepEqual(doc.on?.push?.tags, ["v*"]);
   assert.equal(doc.permissions?.contents, "read");
   assert.equal(doc.jobs?.release?.permissions?.contents, "write");
+  assert.equal(doc.jobs?.release?.if, false);
   assert.equal(doc.jobs?.["publish-npm"]?.if, false);
   assert.match(releaseText, /draft: false/);
   assert.match(releaseText, /npm-publish/);
 });
 
-test("CI required jobs are unconditional, four Validate names match the ruleset, plugin pin and PR-only cancel stay", () => {
+test("CI required jobs are unconditional, two linux Validate names match the ruleset, plugin pin and PR-only cancel stay", () => {
   const doc = parse(ciText) as {
     concurrency?: { "cancel-in-progress"?: string };
     jobs?: Record<
@@ -53,6 +54,8 @@ test("CI required jobs are unconditional, four Validate names match the ruleset,
   assert.equal(nameTemplate, "Validate (${{ matrix.runner.name }}, Node ${{ matrix.node }})");
   const nodes = doc.jobs?.validate?.strategy?.matrix?.node ?? [];
   const runners = doc.jobs?.validate?.strategy?.matrix?.runner ?? [];
+  assert.deepEqual(nodes.map(String), ["22.19.0", "24"]);
+  assert.equal(runners.some((r) => r.name === "windows"), false);
   const expanded = runners.flatMap((runner) =>
     nodes.map((node) =>
       nameTemplate
@@ -63,10 +66,8 @@ test("CI required jobs are unconditional, four Validate names match the ruleset,
   assert.deepEqual(new Set(expanded), new Set([
     "Validate (linux, Node 22.19.0)",
     "Validate (linux, Node 24)",
-    "Validate (windows, Node 22.19.0)",
-    "Validate (windows, Node 24)",
   ]));
-  assert.equal(expanded.length, 4);
+  assert.equal(expanded.length, 2);
   assert.equal(doc.jobs?.plugin?.name, "Plugin validation");
   assert.equal(doc.concurrency?.["cancel-in-progress"], "${{ github.event_name == 'pull_request' }}");
   const validateRuns = (doc.jobs?.validate?.steps ?? []).map((step) => step.run).join("\n");

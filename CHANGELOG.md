@@ -77,6 +77,12 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- Operator-authorized platform pause (2026-09-05): PR CI keeps two Linux
+  Validate legs (Node 22.19.0 and 24) plus Classify, Docs lint, and Plugin
+  validation (five jobs). Windows CI legs, hosted Windows probes, and
+  `release.yml` are paused (`release` job `if: false`); Windows is not
+  deprecated and no Windows source or tests were removed. Local verification
+  remains `npm run verify` on macOS. No new paid macOS runner.
 - Headless `scripts/harness-run.mjs` now emits `kxm.harness-result.v2`:
   transport `completed|failed|interrupted` is separate from closed model-claim
   metadata and from product `routing-record.v1` `finalOutcome`. Grok adds
