@@ -5,6 +5,7 @@ export const COMPLETION_SCHEMA: "kxm.assignment-completion.v1";
 export const REFUSAL_SCHEMA: "kxm.assignment-refusal.v1";
 export const ASSIGNMENT_DISPATCH_SCHEMA: "kxm.assignment-dispatch.v1";
 export const TELEMETRY_SCHEMA: "kxm.telemetry.v1";
+export const RECORDING_RESOLUTION_SCHEMA: "kxm.assignment-recording-resolution.v1";
 export const RUNNER_CODES: readonly string[];
 export const VERIFY_WITNESS_ID: "verify";
 export const WITNESS_IDS: readonly string[];
@@ -113,7 +114,10 @@ export interface AssignmentCompletion {
   readonly sidecars: Readonly<Record<string, Readonly<{ path: string; bytes: number }>>>;
   readonly verification: Readonly<{ status: "not-run" }>;
   readonly critic: Readonly<
-    | { kind: "none" }
+    | {
+      kind: "none";
+      reason: "not-review" | "transport-not-completed" | "candidate-unknown" | "candidate-changed" | "no-verdict";
+    }
     | { kind: "review"; verdict: "PASS" | "BLOCK"; judged_tree: string; role: string }
   >;
   readonly attribution: Readonly<{ status: "unclassified" }>;
@@ -129,8 +133,23 @@ export function assignmentTelemetryPath(outputDir: string): string;
 export function appendAssignmentTelemetry(completion: object, outputDir: string, deps?: object): boolean;
 export function runAssignment(manifest: unknown, deps?: Record<string, unknown>): Promise<AssignmentCompletion>;
 export function observeAssignment(outputDir: string, deps?: Record<string, unknown>): Promise<boolean>;
+
+export interface AssignmentRecordingResolution {
+  readonly schema: "kxm.assignment-recording-resolution.v1";
+  readonly task_id: string;
+  readonly assignment_id: string;
+  readonly resolvedAt?: string;
+  readonly completion_sha256: string;
+  readonly steps: Readonly<{
+    candidate_snapshot: "ok" | "failed" | "skipped";
+    sidecars: "ok" | "failed" | "skipped";
+    routing_record: "ok" | "failed" | "skipped";
+    telemetry: "ok" | "failed" | "skipped";
+  }>;
+}
+
 export function main(argv?: string[], io?: {
   stdin: NodeJS.ReadableStream;
   stdout: NodeJS.WritableStream;
   stderr: NodeJS.WritableStream;
-}): Promise<AssignmentCompletion>;
+}): Promise<AssignmentCompletion | AssignmentRecordingResolution>;

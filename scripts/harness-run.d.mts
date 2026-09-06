@@ -7,6 +7,7 @@ export const CONTEXT_OCCUPANCY_UNKNOWN: "unknown";
 export const COST_BASIS: readonly string[];
 export const MODEL_CLAIM_STATUSES: readonly string[];
 export const REVIEW_VERDICTS: readonly string[];
+export const CLAIM_SOURCES: readonly string[];
 export const CLAIM_COUNT_CAP: number;
 export const TRANSPORT_STATUSES: readonly string[];
 export const TRANSPORT_STAGES: readonly string[];

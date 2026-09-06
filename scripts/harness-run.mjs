@@ -35,6 +35,7 @@ export const CONTEXT_OCCUPANCY_UNKNOWN = "unknown";
 export const COST_BASIS = Object.freeze(["provider-reported", "list", "unmetered", "unknown"]);
 export const MODEL_CLAIM_STATUSES = Object.freeze(["done", "partial", "fail", "blocked"]);
 export const REVIEW_VERDICTS = Object.freeze(["PASS", "BLOCK"]);
+export const CLAIM_SOURCES = Object.freeze(["structured_output", "result", "none"]);
 export const CLAIM_COUNT_CAP = 1000;
 export const TRANSPORT_STATUSES = Object.freeze(["completed", "failed", "interrupted"]);
 export const TRANSPORT_STAGES = Object.freeze(["preflight", "auth", "spawn", "run"]);
@@ -701,6 +702,7 @@ export function normalizeClaudeOrGrok(payload, requestedModel) {
     ...(errorCode ? { errorCode } : {}),
     ...(errorDetail ? { errorDetail } : {}),
     ...(resolved.effectiveModel === "unknown" ? { modelResolution: "unresolved-alias" } : {}),
+    ...(payload.structured_output !== undefined ? { structuredOutput: payload.structured_output } : {}),
   };
 }
 
@@ -713,6 +715,8 @@ function resolveHelperCostBasis(explicit, providerReportedCostUsd) {
 
 const CLAIM_SIDECAR_KEYS = Object.freeze([
   "summary",
+  "deferredItems",
+  "findings",
   "notes",
   "notes_for_next_agent",
   "notesForNextAgent",
@@ -783,6 +787,7 @@ const MODEL_CLAIM_PUBLIC_KEYS = Object.freeze([
   "deferredCount",
   "artifactCount",
   "verdict",
+  "claimSource",
   "unrecognizedCount",
   "path",
   "bytes",
@@ -972,6 +977,9 @@ function closePublicResult(result) {
     if (closed.modelClaim.verdict !== undefined && !REVIEW_VERDICTS.includes(closed.modelClaim.verdict)) {
       delete closed.modelClaim.verdict;
     }
+    if (closed.modelClaim.claimSource !== undefined && !CLAIM_SOURCES.includes(closed.modelClaim.claimSource)) {
+      closed.modelClaim.claimSource = "none";
+    }
     for (const key of ["completedCount", "deferredCount", "artifactCount", "unrecognizedCount", "bytes"]) {
       const value = closedNonnegInt(closed.modelClaim[key]);
       if (value === undefined) delete closed.modelClaim[key];
@@ -1077,9 +1085,7 @@ function claimCount(value) {
   return capClaimCount(value);
 }
 
-function extractModelClaim(text, role) {
-  const fenced = /```(?:json)?\s*([\s\S]*?)```/.exec(text);
-  const candidate = parseJson(fenced ? fenced[1] : text);
+function extractModelClaimFromObject(candidate, role) {
   if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return undefined;
   if (typeof candidate.status !== "string" && candidate.verdict === undefined
     && candidate.completed === undefined && candidate.deferred === undefined
@@ -1124,6 +1130,37 @@ function extractModelClaim(text, role) {
     unrecognizedCount,
     raw: candidate,
   };
+}
+
+function extractModelClaim(text, role) {
+  const fenced = /```(?:json)?\s*([\s\S]*?)```/.exec(text);
+  const candidate = parseJson(fenced ? fenced[1] : text);
+  return extractModelClaimFromObject(candidate, role);
+}
+
+function extractClaim(fields, role, schemaRequested) {
+  if (schemaRequested && fields?.structuredOutput !== undefined) {
+    const raw = fields.structuredOutput;
+    const extracted = extractModelClaimFromObject(raw, role);
+    if (extracted) return { ...extracted, claimSource: "structured_output" };
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      return {
+        status: "unrecognized",
+        unrecognizedCount: Object.keys(raw).length,
+        claimSource: "structured_output",
+        raw,
+      };
+    }
+    return {
+      status: "unrecognized",
+      unrecognizedCount: 1,
+      claimSource: "structured_output",
+      raw: { structured_output: raw },
+    };
+  }
+  const fromText = extractModelClaim(typeof fields?.text === "string" ? fields.text : "", role);
+  if (fromText) return { ...fromText, claimSource: "result" };
+  return undefined;
 }
 
 export function diagnoseHarnessResult(payload, filePath = "-") {
@@ -1513,7 +1550,7 @@ export async function runHarness(request, deps = {}) {
   try {
     if (stderrBytes > 0) writePrivate(stderrPath, collected.stderr, deps);
     if (answerBytes > 0) writePrivate(answerPath, answerText, deps);
-    extractedClaim = extractModelClaim(answerText, request.role);
+    extractedClaim = extractClaim(fields, request.role, Boolean(schemaInput));
     if (extractedClaim) {
       const claimPath = join(outputDir, "model-claim.json");
       const claimBody = `${JSON.stringify(extractedClaim.raw)}\n`;
@@ -1524,6 +1561,7 @@ export async function runHarness(request, deps = {}) {
         ...(extractedClaim.deferredCount !== undefined ? { deferredCount: extractedClaim.deferredCount } : {}),
         ...(extractedClaim.artifactCount !== undefined ? { artifactCount: extractedClaim.artifactCount } : {}),
         ...(extractedClaim.verdict ? { verdict: extractedClaim.verdict } : {}),
+        claimSource: extractedClaim.claimSource ?? "none",
         unrecognizedCount: extractedClaim.unrecognizedCount,
         path: claimPath,
         bytes: Buffer.byteLength(claimBody),

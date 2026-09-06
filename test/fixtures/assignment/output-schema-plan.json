@@ -1,0 +1,39 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "completedCount",
+    "deferredCount",
+    "artifactCount",
+    "summary",
+    "deferredItems"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["done", "partial", "fail", "blocked"]
+    },
+    "completedCount": {
+      "type": "integer",
+      "description": "Nonnegative integer. The runner caps public counts at 1000; JSON Schema minimum/maximum keywords are omitted because cross-provider keyword support is unproven."
+    },
+    "deferredCount": {
+      "type": "integer",
+      "description": "Nonnegative integer. The runner caps public counts at 1000; JSON Schema minimum/maximum keywords are omitted because cross-provider keyword support is unproven."
+    },
+    "artifactCount": {
+      "type": "integer",
+      "description": "Nonnegative integer. The runner caps public counts at 1000; JSON Schema minimum/maximum keywords are omitted because cross-provider keyword support is unproven."
+    },
+    "summary": {
+      "type": "string"
+    },
+    "deferredItems": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

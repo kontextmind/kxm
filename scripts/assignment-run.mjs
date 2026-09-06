@@ -39,6 +39,7 @@ import {
   TOKEN_BASIS,
   TRANSPORT_STAGES,
   TRANSPORT_STATUSES,
+  CLAIM_SOURCES,
   preflightRequest,
   runHarness,
 } from "./harness-run.mjs";
@@ -93,6 +94,7 @@ export const WRITER_KINDS = Object.freeze(["implement", "repair"]);
 export const CLEAN_BASE_KINDS = Object.freeze(["plan", "implement", "repair"]);
 export const ASSIGNMENT_DISPATCH_SCHEMA = "kxm.assignment-dispatch.v1";
 export const TELEMETRY_SCHEMA = "kxm.telemetry.v1";
+export const RECORDING_RESOLUTION_SCHEMA = "kxm.assignment-recording-resolution.v1";
 export const READ_MECHANISMS = Object.freeze({
   claude: "Use only the Read, Glob, and Grep tools. Do not use the shell.",
   codex: "You run in a read-only sandbox. Read-only shell inspection with cat, sed, rg, and git is allowed. Do not write files, update the index, or commit.",
@@ -308,14 +310,33 @@ function deepestExistingAncestor(target, lstatImpl) {
   }
 }
 
+function realpathOrUnknown(path, realpathImpl) {
+  try {
+    return realpathImpl(path);
+  } catch (error) {
+    throw failClosed(`cannot realpath existing ancestor: ${error?.code ?? "unknown"}`, "unknown");
+  }
+}
+
 function comparablePath(target, realpathImpl, lstatImpl) {
   const resolved = resolvePath(target);
-  const ancestor = deepestExistingAncestor(resolved, lstatImpl);
-  let realAncestor = ancestor;
+  let ancestor = deepestExistingAncestor(resolved, lstatImpl);
+  let realAncestor;
   try {
     realAncestor = realpathImpl(ancestor);
   } catch (error) {
-    throw failClosed(`cannot realpath existing ancestor: ${error?.code ?? "unknown"}`, "unknown");
+    // A dangling final entry is known to exist via lstat. Compare through the
+    // parent so existence can still be output_dir_exists. Parent lstat/realpath
+    // uncertainty stays unknown.
+    if (ancestor !== resolved) {
+      throw failClosed(`cannot realpath existing ancestor: ${error?.code ?? "unknown"}`, "unknown");
+    }
+    const parent = dirname(resolved);
+    if (parent === resolved) {
+      throw failClosed(`cannot realpath existing ancestor: ${error?.code ?? "unknown"}`, "unknown");
+    }
+    ancestor = deepestExistingAncestor(parent, lstatImpl);
+    realAncestor = realpathOrUnknown(ancestor, realpathImpl);
   }
   if (resolved === ancestor) return realAncestor;
   return resolvePath(realAncestor, relative(ancestor, resolved));
@@ -887,23 +908,33 @@ function bytesOf(body) {
   return Buffer.byteLength(typeof body === "string" ? body : Buffer.from(body), "utf8");
 }
 
-export function assignmentOutputSchema(kind) {
-  const review = REVIEW_KINDS.includes(kind);
-  const schema = {
+const COUNT_DESCRIPTION = "Nonnegative integer. The runner caps public counts at 1000; JSON Schema minimum/maximum keywords are omitted because cross-provider keyword support is unproven.";
+
+function closedSchemaObject(properties) {
+  return {
     type: "object",
-    additionalProperties: true,
-    properties: {
-      status: { type: "string", enum: [...MODEL_CLAIM_STATUSES] },
-      completedCount: { type: "integer", minimum: 0, maximum: 1000 },
-      deferredCount: { type: "integer", minimum: 0, maximum: 1000 },
-      artifactCount: { type: "integer", minimum: 0, maximum: 1000 },
-    },
+    additionalProperties: false,
+    required: Object.keys(properties),
+    properties,
   };
-  if (review) {
-    schema.required = ["verdict"];
-    schema.properties.verdict = { type: "string", enum: [...REVIEW_VERDICTS] };
+}
+
+export function assignmentOutputSchema(kind) {
+  if (REVIEW_KINDS.includes(kind)) {
+    return closedSchemaObject({
+      verdict: { type: "string", enum: [...REVIEW_VERDICTS] },
+      summary: { type: "string" },
+      findings: { type: "array", items: { type: "string" } },
+    });
   }
-  return schema;
+  return closedSchemaObject({
+    status: { type: "string", enum: [...MODEL_CLAIM_STATUSES] },
+    completedCount: { type: "integer", description: COUNT_DESCRIPTION },
+    deferredCount: { type: "integer", description: COUNT_DESCRIPTION },
+    artifactCount: { type: "integer", description: COUNT_DESCRIPTION },
+    summary: { type: "string" },
+    deferredItems: { type: "array", items: { type: "string" } },
+  });
 }
 
 function planBody(validated, deps) {
@@ -1039,27 +1070,40 @@ function consumeOwnership(validated, manifest, deps) {
 }
 
 function snapshotCandidate(cwd, spawnSyncImpl, realpathImpl) {
-  const gitState = inspectWorktree(cwd, spawnSyncImpl, realpathImpl);
-  const indexTree = git(cwd, ["write-tree"], spawnSyncImpl);
-  const clean = gitState.statusRecords.every((record) => record.y === " " && !isUnmergedRecord(record));
-  return Object.freeze({
-    status: "recorded",
-    head: gitState.head,
-    index_tree: indexTree,
-    clean,
-  });
+  try {
+    const gitState = inspectWorktree(cwd, spawnSyncImpl, realpathImpl);
+    const indexTree = git(cwd, ["write-tree"], spawnSyncImpl);
+    const clean = gitState.statusRecords.every((record) => record.y === " " && !isUnmergedRecord(record));
+    return Object.freeze({
+      status: "recorded",
+      head: gitState.head,
+      index_tree: indexTree,
+      clean,
+    });
+  } catch {
+    return Object.freeze({ status: "unknown", code: "snapshot_failed" });
+  }
 }
 
 function closedTransport(result, fallback) {
-  const status = TRANSPORT_STATUSES.includes(result?.status) ? result.status : fallback.status;
-  const stage = TRANSPORT_STAGES.includes(result?.stage) ? result.stage : fallback.stage;
-  const errorCode = typeof result?.errorCode === "string" && ERROR_CODES.includes(result.errorCode)
-    ? result.errorCode
-    : fallback.errorCode;
+  if (!result || result.schema !== RESULT_SCHEMA) {
+    return Object.freeze({
+      status: "failed",
+      stage: "run",
+      ok: false,
+      errorCode: "normalization_failed",
+    });
+  }
+  const status = TRANSPORT_STATUSES.includes(result.status) ? result.status : fallback.status;
+  const stage = TRANSPORT_STAGES.includes(result.stage) ? result.stage : fallback.stage;
+  let errorCode;
+  if (typeof result.errorCode === "string") {
+    errorCode = ERROR_CODES.includes(result.errorCode) ? result.errorCode : "unrecognized";
+  }
   const transport = {
     status,
     stage,
-    ok: result?.ok === true && status === "completed",
+    ok: result.ok === true && status === "completed",
   };
   if (typeof result?.startedAt === "string") transport.startedAt = result.startedAt;
   if (typeof result?.finishedAt === "string") transport.finishedAt = result.finishedAt;
@@ -1087,8 +1131,11 @@ function closedUsage(result) {
   };
   const costBasis = COST_BASIS.includes(result?.costBasis) ? result.costBasis : "unknown";
   usage.costBasis = costBasis;
+  const metadata = result?.providerMetadata && typeof result.providerMetadata === "object"
+    ? result.providerMetadata
+    : {};
   for (const key of ["tokensIn", "tokensOut", "cacheReadTokens", "cacheCreationTokens", "reasoningTokens"]) {
-    const value = result?.[key];
+    const value = result?.[key] ?? metadata[key];
     if (Number.isInteger(value) && value >= 0) usage[key] = value;
   }
   for (const key of ["costUsd", "providerReportedCostUsd"]) {
@@ -1112,6 +1159,7 @@ function boundedModelClaim(result, kind) {
   }
   if (review && REVIEW_VERDICTS.includes(raw.verdict)) claim.verdict = raw.verdict;
   if (typeof raw.path === "string") claim.path = raw.path;
+  if (CLAIM_SOURCES.includes(raw.claimSource)) claim.claimSource = raw.claimSource;
   let unrecognized = claim.unrecognizedCount ?? 0;
   for (const key of Object.keys(raw)) {
     if (MODEL_CLAIM_OVERRIDE_KEYS.includes(key)) unrecognized += 1;
@@ -1120,17 +1168,23 @@ function boundedModelClaim(result, kind) {
   return Object.freeze(claim);
 }
 
-function deriveCritic(validated, candidate, modelClaim) {
+function deriveCritic(validated, candidate, modelClaim, transport) {
   if (!REVIEW_KINDS.includes(validated.kind)) {
-    return Object.freeze({ kind: "none" });
+    return Object.freeze({ kind: "none", reason: "not-review" });
+  }
+  if (!(transport?.status === "completed" && transport?.ok === true)) {
+    return Object.freeze({ kind: "none", reason: "transport-not-completed" });
+  }
+  if (!candidate || candidate.status !== "recorded") {
+    return Object.freeze({ kind: "none", reason: "candidate-unknown" });
   }
   const reviewedTree = validated.git.index_tree;
   const unchanged = candidate.head === validated.git.head
     && candidate.index_tree === reviewedTree
     && candidate.clean === validated.git.clean;
-  if (!unchanged) return Object.freeze({ kind: "none" });
+  if (!unchanged) return Object.freeze({ kind: "none", reason: "candidate-changed" });
   if (!modelClaim || !REVIEW_VERDICTS.includes(modelClaim.verdict)) {
-    return Object.freeze({ kind: "none" });
+    return Object.freeze({ kind: "none", reason: "no-verdict" });
   }
   return Object.freeze({
     kind: "review",
@@ -1140,9 +1194,14 @@ function deriveCritic(validated, candidate, modelClaim) {
   });
 }
 
-function failureHarnessResult(error, validated) {
-  const stage = error?.stage && TRANSPORT_STAGES.includes(error.stage) ? error.stage : "preflight";
-  const errorCode = stage === "auth" ? "auth_failed" : stage === "spawn" ? "spawn_failed" : "preflight_failed";
+function thrownHarnessResult(error, validated) {
+  const explicit = error?.stage;
+  const stage = explicit === "preflight" || explicit === "auth" ? explicit : "run";
+  const errorCode = stage === "auth"
+    ? "auth_failed"
+    : stage === "preflight"
+      ? "preflight_failed"
+      : "unrecognized";
   return {
     schema: RESULT_SCHEMA,
     ok: false,
@@ -1166,7 +1225,7 @@ function routingInt(value) {
 }
 
 function buildRoutingRecord(validated, promptSha, usage, transport, effectiveModel) {
-  const planSha = validated.plan_ref.kind === "current" ? validated.plan_ref.sha256 : undefined;
+  const planSha = validated.plan_ref?.kind === "current" ? validated.plan_ref.sha256 : undefined;
   const requestedModel = `${validated.harness}/${validated.model}`;
   const behavioral = {
     requestedModel,
@@ -1181,7 +1240,14 @@ function buildRoutingRecord(validated, promptSha, usage, transport, effectiveMod
     harness: validated.harness,
     transportStatus: transport.status,
     costBasis: usage.costBasis,
+    tokenBasis: usage.tokenBasis ?? TOKEN_BASIS,
+    contextOccupancy: usage.contextOccupancy ?? CONTEXT_OCCUPANCY_UNKNOWN,
   };
+  if (Number.isFinite(transport?.latencyMs) && transport.latencyMs >= 0) {
+    providerMetadata.latencyMs = transport.latencyMs;
+  }
+  if (usage.usagePartial === true) providerMetadata.usagePartial = true;
+  if (validated.rework_of) providerMetadata.rework_of = validated.rework_of;
   const record = {
     schema: ROUTING_RECORD_SCHEMA,
     behavioralHashVersion: BEHAVIORAL_HASH_VERSION,
@@ -1195,69 +1261,173 @@ function buildRoutingRecord(validated, promptSha, usage, transport, effectiveMod
     agentRole: validated.role,
     rolePromptSha256: promptSha,
     skills: [],
-    retries: 0,
+    retries: validated.rework_of ? 1 : 0,
     transitions: 0,
     humanInterventions: 0,
     finalOutcome: "pending",
     providerMetadata,
   };
   if (planSha) record.workflowDefinitionSha256 = planSha;
-  const tokensIn = routingInt(usage.tokensIn);
-  const tokensOut = routingInt(usage.tokensOut);
-  const cacheRead = routingInt(usage.cacheReadTokens);
-  if (tokensIn !== undefined) record.tokensIn = tokensIn;
-  else if (Number.isInteger(usage.tokensIn) && usage.tokensIn > 1_000_000) providerMetadata.tokensIn = usage.tokensIn;
-  if (tokensOut !== undefined) record.tokensOut = tokensOut;
-  else if (Number.isInteger(usage.tokensOut) && usage.tokensOut > 1_000_000) providerMetadata.tokensOut = usage.tokensOut;
-  if (cacheRead !== undefined) record.cacheReadTokens = cacheRead;
-  if (typeof usage.costUsd === "number") record.costUsd = usage.costUsd;
-  else if (typeof usage.providerReportedCostUsd === "number") record.costUsd = usage.providerReportedCostUsd;
+  for (const key of ["tokensIn", "tokensOut", "cacheReadTokens"]) {
+    const value = usage[key];
+    if (!Number.isInteger(value) || value < 0) continue;
+    const capped = routingInt(value);
+    if (capped !== undefined) record[key] = capped;
+    else providerMetadata[key] = value;
+  }
+  for (const key of ["cacheCreationTokens", "reasoningTokens"]) {
+    const value = usage[key];
+    if (Number.isInteger(value) && value >= 0) providerMetadata[key] = value;
+  }
+  if (usage.costBasis === "provider-reported") {
+    const cost = typeof usage.costUsd === "number" ? usage.costUsd : usage.providerReportedCostUsd;
+    if (typeof cost === "number" && Number.isFinite(cost) && cost >= 0) record.costUsd = cost;
+  } else if (usage.costBasis === "unmetered") {
+    const estimate = typeof usage.providerReportedCostUsd === "number"
+      ? usage.providerReportedCostUsd
+      : usage.costUsd;
+    if (typeof estimate === "number" && Number.isFinite(estimate) && estimate >= 0) {
+      providerMetadata.unmeteredEstimateUsd = estimate;
+    }
+  } else if (usage.costBasis === "list") {
+    const estimate = typeof usage.costUsd === "number" ? usage.costUsd : usage.providerReportedCostUsd;
+    if (typeof estimate === "number" && Number.isFinite(estimate) && estimate >= 0) {
+      providerMetadata.listEstimateUsd = estimate;
+    }
+  }
   return parseRoutingRecord(record);
+}
+
+function routingRecordFromCompletion(completion) {
+  return buildRoutingRecord(
+    {
+      assignment_id: completion.assignment_id,
+      kind: completion.kind,
+      harness: completion.route.harness,
+      model: completion.route.model,
+      effort: completion.route.effort,
+      role: completion.route.role,
+      plan_ref: completion.plan,
+      rework_of: completion.rework_of,
+    },
+    completion.prompt.sha256,
+    completion.usage,
+    completion.transport,
+    completion.transport?.effectiveModel,
+  );
+}
+
+function withoutRegeneratedTimestamps(value) {
+  if (Array.isArray(value)) return value.map(withoutRegeneratedTimestamps);
+  if (!value || typeof value !== "object") return value;
+  const out = {};
+  for (const key of Object.keys(value).sort()) {
+    if (key === "recordedAt" || key === "createdAt" || key === "resolvedAt") continue;
+    out[key] = withoutRegeneratedTimestamps(value[key]);
+  }
+  return out;
+}
+
+function sameStableFacts(left, right) {
+  return JSON.stringify(withoutRegeneratedTimestamps(left)) === JSON.stringify(withoutRegeneratedTimestamps(right));
+}
+
+function sameInvokedPath(left, right) {
+  try {
+    if (realpathSync(left) === realpathSync(right)) return true;
+  } catch {
+    // Fall through to inode identity when a parent alias cannot be resolved.
+  }
+  try {
+    const leftStat = statSync(left);
+    const rightStat = statSync(right);
+    return leftStat.dev === rightStat.dev && leftStat.ino === rightStat.ino;
+  } catch {
+    return false;
+  }
 }
 
 export function assignmentTelemetryPath(outputDir) {
   return join(outputDir, "telemetry.jsonl");
 }
 
-export function appendAssignmentTelemetry(completion, outputDir, deps = {}) {
-  const path = assignmentTelemetryPath(outputDir);
-  const exists = deps.existsSync ?? existsSync;
-  if (exists(path)) return false;
-  const routing = completion.routingRecord;
-  if (!routing) {
-    throw failClosed("completion is missing a parsed routing record for telemetry", "telemetry_failed");
-  }
-  parseRoutingRecord(routing);
+function expectedTelemetryEvent(completion, routing) {
+  const parsed = parseRoutingRecord(routing);
   const ok = completion.transport?.ok === true;
-  const envelope = workerResult(
-    agentWorker({
-      name: `assignment:${completion.assignment_id}`,
-      purpose: "dev assignment runner",
-      model: completion.route.model,
-      thinking: completion.route.effort,
-    }),
-    {
-      command: "assignment-run",
-      ok,
-      outcome: "running",
-      summary: `assignment ${completion.assignment_id} transport ${completion.transport.status}`,
-      createdAt: nowIso(),
-      routing,
-    },
-  );
-  const event = {
+  return {
     schema: TELEMETRY_SCHEMA,
     recordedAt: nowIso(),
     host: "local",
     target: "cli",
-    envelope,
+    envelope: workerResult(
+      agentWorker({
+        name: `assignment:${completion.assignment_id}`,
+        purpose: "dev assignment runner",
+        model: completion.route.model,
+        thinking: completion.route.effort,
+      }),
+      {
+        command: "assignment-run",
+        ok,
+        outcome: "running",
+        summary: `assignment ${completion.assignment_id} transport ${completion.transport.status}`,
+        createdAt: nowIso(),
+        routing: parsed,
+      },
+    ),
   };
-  const line = `${JSON.stringify(event)}\n`;
+}
+
+function readExistingTelemetryEvents(path, deps) {
+  const read = deps.readFileSync ?? readFileSync;
+  let raw;
+  try {
+    raw = read(path, "utf8");
+  } catch (error) {
+    throw failClosed(`cannot read assignment telemetry: ${error?.message ?? error}`, "telemetry_failed");
+  }
+  const lines = String(raw).split(/\r?\n/).filter((line) => line.trim() !== "");
+  return lines.map((line) => {
+    try {
+      return JSON.parse(line);
+    } catch {
+      throw failClosed("existing telemetry is malformed", "telemetry_failed");
+    }
+  });
+}
+
+function assertTelemetryMatchesCompletion(path, expected, deps) {
+  const events = readExistingTelemetryEvents(path, deps);
+  if (events.length !== 1) {
+    throw failClosed("telemetry.jsonl must contain exactly one bound event", "telemetry_failed");
+  }
+  const event = events[0];
+  if (!isPlainObject(event) || event.schema !== TELEMETRY_SCHEMA) {
+    throw failClosed("existing telemetry is not a bound assignment event", "telemetry_failed");
+  }
+  if (!sameStableFacts(event, expected)) {
+    throw failClosed("existing telemetry does not match this assignment completion", "telemetry_failed");
+  }
+}
+
+export function appendAssignmentTelemetry(completion, outputDir, deps = {}) {
+  const path = assignmentTelemetryPath(outputDir);
+  const exists = deps.existsSync ?? existsSync;
+  const routing = completion.routingRecord ?? routingRecordFromCompletion(completion);
+  const expected = expectedTelemetryEvent(completion, routing);
+  if (exists(path)) {
+    assertTelemetryMatchesCompletion(path, expected, deps);
+    return false;
+  }
+  const line = `${JSON.stringify(expected)}\n`;
   try {
     writePrivate(path, line, deps, "wx");
     return true;
   } catch (error) {
-    if (error && error.code === "EEXIST") return false;
+    if (error && error.code === "EEXIST") {
+      assertTelemetryMatchesCompletion(path, expected, deps);
+      return false;
+    }
     throw failClosed(`cannot append assignment telemetry: ${error?.message ?? error}`, "telemetry_failed");
   }
 }
@@ -1319,7 +1489,7 @@ function buildCompletion(validated, hashes, candidate, harnessResult, sidecars, 
   });
   const usage = closedUsage(harnessResult);
   const modelClaim = boundedModelClaim(harnessResult, validated.kind);
-  const critic = deriveCritic(validated, observed, modelClaim);
+  const critic = deriveCritic(validated, observed, modelClaim, transport);
   const route = Object.freeze({
     harness: validated.harness,
     model: validated.model,
@@ -1361,16 +1531,10 @@ function buildCompletion(validated, hashes, candidate, harnessResult, sidecars, 
     verification: Object.freeze({ status: "not-run" }),
     critic,
     attribution: Object.freeze({ status: "unclassified" }),
-    routingRecord: buildRoutingRecord(
-      validated,
-      hashes.promptSha,
-      usage,
-      transport,
-      harnessResult?.effectiveModel,
-    ),
   };
   if (validated.rework_of) completion.rework_of = validated.rework_of;
   if (modelClaim) completion.model_claim = modelClaim;
+  if (extras.routingRecord) completion.routingRecord = extras.routingRecord;
   return completion;
 }
 
@@ -1487,6 +1651,43 @@ function writeRefusal(identity, manifest, stage, code, error, deps) {
   return refusal;
 }
 
+const RECORDING_STEP_CODES = Object.freeze({
+  candidate_snapshot: "snapshot_failed",
+  sidecars: "sidecar_failed",
+  routing_record: "routing_record_failed",
+  telemetry: "telemetry_failed",
+});
+
+function firstRecordingFailure(steps) {
+  for (const step of ["candidate_snapshot", "sidecars", "routing_record", "telemetry"]) {
+    if (steps[step] === "failed") {
+      return { status: "failed", steps: Object.freeze({ ...steps }), code: RECORDING_STEP_CODES[step] };
+    }
+  }
+  return Object.freeze({ status: "ok" });
+}
+
+function trySidecarStat(path, bytes, io, recordDir, steps, now) {
+  if (typeof path !== "string") return undefined;
+  try {
+    if (Number.isInteger(bytes) && bytes >= 0) return sidecarRef(path, bytes);
+    if (!io.existsSync(path)) return undefined;
+    return sidecarRef(path, io.statSync(path).size);
+  } catch (error) {
+    steps.sidecars = "failed";
+    try {
+      appendRunnerError(recordDir, {
+        step: "sidecars",
+        code: "sidecar_failed",
+        message: error?.message ?? "sidecar stat failed",
+      }, { ...io, now });
+    } catch {
+      // Diagnostics are best-effort; recording still records sidecar_failed.
+    }
+    return undefined;
+  }
+}
+
 async function dispatchOwnedAssignment(validated, manifest, deps, ledger) {
   const io = ioDeps(deps);
   const recordDir = validated.record_dir;
@@ -1527,18 +1728,18 @@ async function dispatchOwnedAssignment(validated, manifest, deps, ledger) {
     throw failClosed(error?.message ?? "cannot write pre-dispatch", "record_write_failed");
   }
 
+  const run = deps.runHarness ?? runHarness;
   ledger.invoked = true;
-  let invocation = "returned";
-  let harnessResult;
   try {
-    harnessResult = await runHarness(harnessRequest(validated, promptPath, schemaPath), deps);
+    ledger.result = await run(harnessRequest(validated, promptPath, schemaPath), deps);
+    ledger.invocation = "returned";
   } catch (error) {
-    invocation = "thrown";
-    harnessResult = failureHarnessResult(error, validated);
+    ledger.invocation = "thrown";
+    ledger.result = thrownHarnessResult(error, validated);
     try {
       appendRunnerError(recordDir, {
-        step: "run",
-        code: "unknown",
+        step: error?.stage === "preflight" || error?.stage === "auth" ? error.stage : "run",
+        code: ledger.result.errorCode,
         message: error?.message ?? "native harness failed",
       }, { ...io, now: deps.now });
     } catch {
@@ -1546,48 +1747,173 @@ async function dispatchOwnedAssignment(validated, manifest, deps, ledger) {
     }
   }
 
+  const steps = {
+    candidate_snapshot: "ok",
+    sidecars: "ok",
+    routing_record: "ok",
+    telemetry: "ok",
+  };
   const candidate = snapshotCandidate(validated.cwd, io.spawnSync, io.realpathSync);
+  if (candidate.status === "unknown") {
+    steps.candidate_snapshot = "failed";
+    try {
+      appendRunnerError(recordDir, {
+        step: "candidate_snapshot",
+        code: "snapshot_failed",
+        message: "candidate snapshot failed",
+      }, { ...io, now: deps.now });
+    } catch {
+      // Private diagnostics must not replace observed transport facts.
+    }
+  }
+
   const hashes = { manifestSha, promptSha };
   const sidecars = {
     pre_dispatch: sidecarRef(preDispatchPath, bytesOf(`${JSON.stringify(preDispatch)}\n`)),
     prompt: sidecarRef(promptPath, bytesOf(promptText)),
     output_schema: sidecarRef(schemaPath, bytesOf(schemaText)),
   };
-  if (typeof harnessResult.dispatchPath === "string" && io.existsSync(harnessResult.dispatchPath)) {
-    sidecars.harness_dispatch = sidecarRef(
-      harnessResult.dispatchPath,
-      io.statSync(harnessResult.dispatchPath).size,
-    );
+  const harnessResult = ledger.result;
+  const dispatchCandidates = [
+    harnessResult?.dispatchPath,
+    join(validated.output_dir, "dispatch.json"),
+  ];
+  for (const path of dispatchCandidates) {
+    const ref = trySidecarStat(path, undefined, io, recordDir, steps, deps.now);
+    if (ref) {
+      sidecars.harness_dispatch = ref;
+      break;
+    }
   }
-  if (typeof harnessResult.answerPath === "string" && Number.isInteger(harnessResult.answerBytes)) {
-    sidecars.answer = sidecarRef(harnessResult.answerPath, harnessResult.answerBytes);
-  }
-  if (typeof harnessResult.stderrPath === "string" && Number.isInteger(harnessResult.stderrBytes)) {
-    sidecars.stderr = sidecarRef(harnessResult.stderrPath, harnessResult.stderrBytes);
-  }
-  if (typeof harnessResult.errorPath === "string" && Number.isInteger(harnessResult.errorBytes)) {
-    sidecars.error = sidecarRef(harnessResult.errorPath, harnessResult.errorBytes);
-  }
-  if (harnessResult.modelClaim?.path && Number.isInteger(harnessResult.modelClaim.bytes)) {
-    sidecars.model_claim = sidecarRef(harnessResult.modelClaim.path, harnessResult.modelClaim.bytes);
-  }
+  const answer = trySidecarStat(harnessResult?.answerPath, harnessResult?.answerBytes, io, recordDir, steps, deps.now);
+  if (answer) sidecars.answer = answer;
+  const stderr = trySidecarStat(harnessResult?.stderrPath, harnessResult?.stderrBytes, io, recordDir, steps, deps.now);
+  if (stderr) sidecars.stderr = stderr;
+  const helperError = trySidecarStat(harnessResult?.errorPath, harnessResult?.errorBytes, io, recordDir, steps, deps.now);
+  if (helperError) sidecars.error = helperError;
+  const claimRef = trySidecarStat(
+    harnessResult?.modelClaim?.path,
+    harnessResult?.modelClaim?.bytes,
+    io,
+    recordDir,
+    steps,
+    deps.now,
+  );
+  if (claimRef) sidecars.model_claim = claimRef;
   const errorsPath = runnerErrorsPath(recordDir);
-  if (io.existsSync(errorsPath)) {
-    sidecars.runner_errors = sidecarRef(errorsPath, io.statSync(errorsPath).size);
-  }
+  const runnerErrors = trySidecarStat(errorsPath, undefined, io, recordDir, steps, deps.now);
+  if (runnerErrors) sidecars.runner_errors = runnerErrors;
 
-  const completion = buildCompletion(validated, hashes, candidate, harnessResult, sidecars, { invocation });
-  const routingPath = join(recordDir, "routing-record.json");
-  writePrivate(routingPath, `${JSON.stringify(completion.routingRecord)}\n`, io, "wx");
-  sidecars.routing = sidecarRef(routingPath, bytesOf(`${JSON.stringify(completion.routingRecord)}\n`));
-  completion.sidecars = closeSidecars(sidecars);
-  const publicCompletion = writeCompletionExclusive(completionPath, completion, io);
+  return recordInvocationCompletion(
+    validated,
+    hashes,
+    candidate,
+    harnessResult,
+    sidecars,
+    steps,
+    ledger.invocation,
+    io,
+    deps.now,
+    completionPath,
+  );
+}
+
+function writeRoutingRecordExclusive(path, routingRecord, io) {
+  const body = `${JSON.stringify(routingRecord)}\n`;
   try {
-    appendAssignmentTelemetry(completion, recordDir, io);
-  } catch {
-    // Completion is immutable once written; observeAssignment retries a missing append.
+    writePrivate(path, body, io, "wx");
+    return body;
+  } catch (error) {
+    if (error && error.code === "EEXIST") {
+      const existing = parseJsonFile(
+        path,
+        readRegularFile(path, io.readFileSync, io.existsSync, io.statSync, "routing_record_failed"),
+        "routing record",
+        "routing_record_failed",
+      );
+      const parsed = parseRoutingRecord(existing);
+      if (!sameStableFacts(parsed, routingRecord)) {
+        throw failClosed("existing routing record does not match this assignment completion", "routing_record_failed");
+      }
+      return `${JSON.stringify(existing)}\n`;
+    }
+    throw failClosed(`cannot write routing record: ${error?.message ?? error}`, "routing_record_failed");
   }
-  return Object.freeze(publicCompletion);
+}
+
+function recordInvocationCompletion(
+  validated,
+  hashes,
+  candidate,
+  harnessResult,
+  sidecars,
+  steps,
+  invocation,
+  io,
+  now,
+  completionPath,
+) {
+  const recordDir = validated.record_dir;
+  const transport = closedTransport(harnessResult, {
+    status: "failed",
+    stage: "run",
+    errorCode: "unrecognized",
+  });
+  const usage = closedUsage(harnessResult);
+  let routingRecord;
+  try {
+    routingRecord = buildRoutingRecord(
+      validated,
+      hashes.promptSha,
+      usage,
+      transport,
+      harnessResult?.effectiveModel,
+    );
+    const routingPath = join(recordDir, "routing-record.json");
+    const routingBody = writeRoutingRecordExclusive(routingPath, routingRecord, io);
+    sidecars.routing = sidecarRef(routingPath, bytesOf(routingBody));
+  } catch (error) {
+    steps.routing_record = "failed";
+    steps.telemetry = "skipped";
+    routingRecord = undefined;
+    try {
+      appendRunnerError(recordDir, {
+        step: "routing_record",
+        code: "routing_record_failed",
+        message: error?.message ?? "routing record failed",
+      }, { ...io, now });
+    } catch {
+      // Bookkeeping failure is recorded in completion.recording.
+    }
+  }
+  const completion = buildCompletion(validated, hashes, candidate, harnessResult, sidecars, {
+    invocation,
+    routingRecord,
+  });
+  completion.sidecars = closeSidecars(sidecars);
+  if (steps.routing_record === "ok") {
+    try {
+      appendAssignmentTelemetry(completion, recordDir, io);
+    } catch (error) {
+      steps.telemetry = "failed";
+      try {
+        appendRunnerError(recordDir, {
+          step: "telemetry",
+          code: "telemetry_failed",
+          message: error?.message ?? "telemetry append failed",
+        }, { ...io, now });
+      } catch {
+        // Immutable completion still records telemetry_failed.
+      }
+    }
+  }
+  const errorsAfter = trySidecarStat(runnerErrorsPath(recordDir), undefined, io, recordDir, steps, now);
+  if (errorsAfter) {
+    sidecars.runner_errors = errorsAfter;
+    completion.sidecars = closeSidecars(sidecars);
+  }
+  completion.recording = firstRecordingFailure(steps);
+  return Object.freeze(writeCompletionExclusive(completionPath, completion, io));
 }
 
 export async function runAssignment(manifest, deps = {}) {
@@ -1623,7 +1949,7 @@ export async function runAssignment(manifest, deps = {}) {
     }
     throw error;
   }
-  const ledger = { invoked: false };
+  const ledger = { invoked: false, invocation: undefined, result: undefined };
   try {
     return await dispatchOwnedAssignment(validated, manifest, deps, ledger);
   } catch (error) {
@@ -1635,37 +1961,131 @@ export async function runAssignment(manifest, deps = {}) {
       writeRefusal(refusalIdentity(validated), manifest, "prepare", code, error, deps);
       throw error;
     }
-    let candidate;
-    try {
-      candidate = snapshotCandidate(validated.cwd, ioCatch.spawnSync, ioCatch.realpathSync);
-    } catch {
-      candidate = Object.freeze({
-        status: "recorded",
-        head: validated.git.head,
-        index_tree: validated.git.index_tree,
-        clean: validated.git.clean,
-      });
-    }
+    const candidate = snapshotCandidate(validated.cwd, ioCatch.spawnSync, ioCatch.realpathSync);
     const promptPath = join(validated.record_dir, "prompt.md");
     const promptSha = ioCatch.existsSync(promptPath)
       ? sha256Bytes(ioCatch.readFileSync(promptPath))
       : sha256Bytes(Buffer.from(""));
-    const completion = buildCompletion(
+    const harnessResult = ledger.invocation === "returned"
+      ? ledger.result
+      : (ledger.result ?? thrownHarnessResult(error, validated));
+    const steps = {
+      candidate_snapshot: candidate.status === "recorded" ? "ok" : "failed",
+      sidecars: "ok",
+      routing_record: "ok",
+      telemetry: "ok",
+    };
+    const sidecars = {};
+    const dispatchCandidates = [
+      harnessResult?.dispatchPath,
+      join(validated.output_dir, "dispatch.json"),
+    ];
+    for (const path of dispatchCandidates) {
+      const ref = trySidecarStat(path, undefined, ioCatch, validated.record_dir, steps, deps.now);
+      if (ref) {
+        sidecars.harness_dispatch = ref;
+        break;
+      }
+    }
+    const answer = trySidecarStat(harnessResult?.answerPath, harnessResult?.answerBytes, ioCatch, validated.record_dir, steps, deps.now);
+    if (answer) sidecars.answer = answer;
+    const stderr = trySidecarStat(harnessResult?.stderrPath, harnessResult?.stderrBytes, ioCatch, validated.record_dir, steps, deps.now);
+    if (stderr) sidecars.stderr = stderr;
+    const helperError = trySidecarStat(harnessResult?.errorPath, harnessResult?.errorBytes, ioCatch, validated.record_dir, steps, deps.now);
+    if (helperError) sidecars.error = helperError;
+    return recordInvocationCompletion(
       validated,
       { manifestSha: digestManifest(manifest, deps), promptSha },
       candidate,
-      failureHarnessResult(error, validated),
-      {},
-      { invocation: "thrown" },
+      harnessResult,
+      sidecars,
+      steps,
+      ledger.invocation === "returned" ? "returned" : "thrown",
+      ioCatch,
+      deps.now,
+      completionPath,
     );
-    const publicCompletion = writeCompletionExclusive(completionPath, completion, ioCatch);
-    try {
-      appendAssignmentTelemetry(completion, validated.record_dir, ioCatch);
-    } catch {
-      // Same immutable-completion rule as the success path.
-    }
-    return Object.freeze(publicCompletion);
   }
+}
+
+function expectedRecordingResolution(completion, bytes, steps) {
+  return {
+    schema: RECORDING_RESOLUTION_SCHEMA,
+    assignment_id: completion.assignment_id,
+    task_id: completion.task_id,
+    completion_sha256: sha256Bytes(bytes),
+    steps,
+  };
+}
+
+function readExistingResolution(path, io, code = "record_write_failed") {
+  return parseJsonFile(
+    path,
+    readRegularFile(path, io.readFileSync, io.existsSync, io.statSync, code),
+    "recording resolution",
+    code,
+  );
+}
+
+function assertResolutionMatches(existing, expected) {
+  if (!isPlainObject(existing) || existing.schema !== RECORDING_RESOLUTION_SCHEMA) {
+    throw failClosed("existing recording resolution is not bound to this completion", "record_write_failed");
+  }
+  if (!sameStableFacts(existing, expected)) {
+    throw failClosed("existing recording resolution does not match this completion", "record_write_failed");
+  }
+}
+
+function writeRecordingResolved(recordDir, completion, bytes, steps, io) {
+  const path = join(recordDir, "recording-resolved.json");
+  const expected = expectedRecordingResolution(completion, bytes, steps);
+  if (io.existsSync(path)) {
+    assertResolutionMatches(readExistingResolution(path, io), expected);
+    return false;
+  }
+  const body = `${JSON.stringify({
+    ...expected,
+    resolvedAt: new Date((io.now ?? Date.now)()).toISOString(),
+  }, undefined, 2)}\n`;
+  try {
+    writePrivate(path, body, io, "wx");
+    return true;
+  } catch (error) {
+    if (error && error.code === "EEXIST") {
+      assertResolutionMatches(readExistingResolution(path, io), expected);
+      return false;
+    }
+    throw failClosed(`cannot write recording resolution: ${error?.message ?? error}`, "record_write_failed");
+  }
+}
+
+function originalRecordingSteps(completion) {
+  if (completion.recording?.status === "ok") {
+    return {
+      candidate_snapshot: "ok",
+      sidecars: "ok",
+      routing_record: "ok",
+      telemetry: "ok",
+    };
+  }
+  const steps = completion.recording?.steps;
+  return {
+    candidate_snapshot: steps?.candidate_snapshot
+      ?? (completion.candidate?.status === "recorded" ? "ok" : "failed"),
+    sidecars: steps?.sidecars ?? "failed",
+    routing_record: steps?.routing_record ?? "failed",
+    telemetry: steps?.telemetry ?? "skipped",
+  };
+}
+
+function recoverSidecarStep(original) {
+  // Observe recovers routing/telemetry only. Surviving recorded refs do not
+  // prove an omitted failed sidecar (for example a missing answer ref) is ok.
+  return original;
+}
+
+function existingRoutingBytes(path, io) {
+  return readRegularFile(path, io.readFileSync, io.existsSync, io.statSync, "routing_record_failed");
 }
 
 export async function observeAssignment(outputDir, deps = {}) {
@@ -1676,41 +2096,109 @@ export async function observeAssignment(outputDir, deps = {}) {
   if (!isPlainObject(completion) || completion.schema !== COMPLETION_SCHEMA) {
     throw failClosed(`assignment completion schema must be ${COMPLETION_SCHEMA}`, "record_write_failed");
   }
+  if (completion.binding?.record_dir && !samePath(completion.binding.record_dir, outputDir, io.realpathSync)) {
+    throw failClosed("completion is not bound to this record directory", "record_write_failed");
+  }
+  const steps = originalRecordingSteps(completion);
+  if (completion.candidate?.status !== "recorded" && steps.candidate_snapshot === "ok") {
+    steps.candidate_snapshot = "failed";
+  }
+  steps.sidecars = recoverSidecarStep(steps.sidecars);
+
   const routingPath = join(outputDir, "routing-record.json");
   let routingRecord;
-  if (io.existsSync(routingPath)) {
-    routingRecord = parseJsonFile(
-      routingPath,
-      readRegularFile(routingPath, io.readFileSync, io.existsSync, io.statSync),
-      "routing record",
-    );
-  } else {
-    routingRecord = buildRoutingRecord(
-      {
-        assignment_id: completion.assignment_id,
-        kind: completion.kind,
-        harness: completion.route.harness,
-        model: completion.route.model,
-        effort: completion.route.effort,
-        role: completion.route.role,
-        plan_ref: completion.plan,
-      },
-      completion.prompt.sha256,
-      completion.usage,
-      completion.transport,
-      completion.transport.effectiveModel,
-    );
+  let expectedRouting;
+  try {
+    expectedRouting = routingRecordFromCompletion(completion);
+  } catch (error) {
+    if (io.existsSync(routingPath)) {
+      existingRoutingBytes(routingPath, io);
+      throw failClosed("existing routing record cannot be validated against this completion", "routing_record_failed");
+    }
+    steps.routing_record = "failed";
+    steps.telemetry = "skipped";
+    writeRecordingResolved(outputDir, completion, bytes, steps, io);
+    throw failClosed(error?.message ?? "cannot rebuild routing record", "routing_record_failed");
   }
-  return appendAssignmentTelemetry({ ...completion, routingRecord }, outputDir, io);
+  if (io.existsSync(routingPath)) {
+    const existing = parseJsonFile(
+      routingPath,
+      existingRoutingBytes(routingPath, io),
+      "routing record",
+      "routing_record_failed",
+    );
+    let parsed;
+    try {
+      parsed = parseRoutingRecord(existing);
+    } catch {
+      throw failClosed("existing routing record is not a bound assignment record", "routing_record_failed");
+    }
+    if (parsed.workflowRunId !== completion.assignment_id) {
+      throw failClosed("existing routing record is bound to a foreign assignment", "routing_record_failed");
+    }
+    if (!sameStableFacts(parsed, expectedRouting)) {
+      throw failClosed("existing routing record does not match this assignment completion", "routing_record_failed");
+    }
+    routingRecord = parsed;
+    steps.routing_record = "ok";
+  } else {
+    try {
+      writeRoutingRecordExclusive(routingPath, expectedRouting, io);
+      routingRecord = expectedRouting;
+      steps.routing_record = "ok";
+    } catch (error) {
+      steps.routing_record = "failed";
+      steps.telemetry = "skipped";
+      throw failClosed(error?.message ?? "cannot rebuild routing record", "routing_record_failed");
+    }
+  }
+  let appended = false;
+  if (steps.routing_record === "ok") {
+    appended = appendAssignmentTelemetry({ ...completion, routingRecord }, outputDir, io);
+    steps.telemetry = "ok";
+  }
+  writeRecordingResolved(outputDir, completion, bytes, steps, io);
+  return appended;
 }
+
+const CLI_USAGE = "usage: assignment-run.mjs run --manifest <absolute-path> | observe --record-dir <absolute-path>";
 
 export async function main(argv = process.argv, io = { stdin: process.stdin, stdout: process.stdout, stderr: process.stderr }) {
   const args = argv.slice(2).filter((arg) => arg !== "--");
   if (args.includes("--task-dir")) {
     throw failClosed("run --manifest does not accept --task-dir; task_dir comes from the manifest", "manifest_invalid");
   }
+  if (args[0] === "observe") {
+    if (args[1] !== "--record-dir" || typeof args[2] !== "string" || args.length !== 3) {
+      throw failClosed(CLI_USAGE, "manifest_invalid");
+    }
+    const recordDir = args[2];
+    if (!nodePath.isAbsolute(recordDir)) {
+      throw failClosed("--record-dir must be an absolute path", "manifest_invalid");
+    }
+    try {
+      await observeAssignment(recordDir);
+      const resolutionPath = join(recordDir, "recording-resolved.json");
+      const resolution = parseJsonFile(
+        resolutionPath,
+        readRegularFile(resolutionPath, readFileSync, existsSync, statSync),
+        "recording resolution",
+      );
+      io.stdout.write(`${JSON.stringify(resolution, undefined, 2)}\n`);
+      const unresolved = Object.values(resolution.steps ?? {}).some((step) => step === "failed");
+      process.exitCode = unresolved ? 1 : 0;
+      return resolution;
+    } catch (error) {
+      const code = error?.runnerCode && RUNNER_CODES.includes(error.runnerCode)
+        ? error.runnerCode
+        : "unknown";
+      io.stderr.write(`${code}: ${error.message}\n`);
+      process.exitCode = 1;
+      throw error;
+    }
+  }
   if (args[0] !== "run" || args[1] !== "--manifest" || typeof args[2] !== "string" || args.length !== 3) {
-    throw failClosed("usage: assignment-run.mjs run --manifest <absolute-path>", "manifest_invalid");
+    throw failClosed(CLI_USAGE, "manifest_invalid");
   }
   const manifestPath = args[2];
   if (!nodePath.isAbsolute(manifestPath)) {
@@ -1737,11 +2225,7 @@ function invokedAsMain() {
   const self = fileURLToPath(import.meta.url);
   const argv1 = process.argv[1];
   if (!argv1) return false;
-  try {
-    return resolvePath(argv1) === self;
-  } catch {
-    return false;
-  }
+  return sameInvokedPath(argv1, self);
 }
 
 if (invokedAsMain()) {

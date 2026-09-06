@@ -25,8 +25,10 @@ import {
   PLAN_POINTER_FILENAME,
   PLAN_POINTER_SCHEMA,
   READ_MECHANISMS,
+  RECORDING_RESOLUTION_SCHEMA,
   REFUSAL_SCHEMA,
   appendAssignmentTelemetry,
+  assignmentOutputSchema,
   assignmentTelemetryPath,
   main as assignmentMain,
   observeAssignment,
@@ -1465,11 +1467,13 @@ test("generated prompts bind actual read mechanisms and native permission flags"
     const schemaPath = reviewCompletion.sidecars.output_schema?.path;
     assert.equal(typeof schemaPath, "string");
     const schema = JSON.parse(readFileSync(schemaPath!, "utf8")) as {
+      additionalProperties?: boolean;
       required?: string[];
       properties?: { verdict?: { enum?: string[] } };
     };
-    assert.deepEqual(schema.required, ["verdict"]);
+    assert.deepEqual(schema.required?.slice().sort(), ["findings", "summary", "verdict"]);
     assert.deepEqual(schema.properties?.verdict?.enum, ["PASS", "BLOCK"]);
+    assert.equal(schema.additionalProperties, false);
 
     const cliDir = initTask();
     try {
@@ -2465,5 +2469,750 @@ test("realpath failure of deepest existing ancestor fails closed", () => {
   } finally {
     cleanup(root, taskDir);
   }
+});
+
+test("dangling final output symlink is output_dir_exists not unknown", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const outputDir = join(dirname(taskDir), "native-link");
+    symlinkSync(join(dirname(taskDir), "missing-target"), outputDir);
+    const manifest = writerManifest(root, commit, taskDir, {
+      assignment_id: "asg-dangling",
+      output_dir: outputDir,
+    });
+    const { deps, spawns } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, grokAuth);
+    await assert.rejects(
+      () => runAssignment(manifest, deps),
+      (error: unknown) => {
+        assert.equal((error as { runnerCode?: string }).runnerCode, "output_dir_exists");
+        return true;
+      },
+    );
+    assert.equal(spawns.length, 0);
+    const refusal = JSON.parse(readFileSync(join(taskDir, "asg-dangling", "refusal.json"), "utf8")) as {
+      stage: string;
+      code: string;
+    };
+    assert.equal(refusal.stage, "validation");
+    assert.equal(refusal.code, "output_dir_exists");
+    assert.equal(lstatSync(outputDir).isSymbolicLink(), true);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("returned native facts survive snapshot failure and keep untracked output", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const manifest = writerManifest(root, commit, taskDir);
+    const { deps, spawns } = dispatchDeps("grok", {
+      stdout: grokAnswer({ status: "done" }, {
+        usage: { input_tokens: 20, output_tokens: 10 },
+        total_cost_usd: 0.25,
+        modelUsage: { "grok-4.6": { inputTokens: 20, outputTokens: 10, costUSD: 0.25 } },
+      }),
+    }, grokAuth, {
+      onSpawn: (cwd) => {
+        writeFileSync(join(cwd, "native-output.txt"), "native output\n");
+      },
+    });
+    const innerSpawn = deps.spawnSync;
+    deps.spawnSync = ((command: string, args?: readonly string[], options?: object) => {
+      if (command === "git" && (args ?? []).includes("write-tree")) {
+        return { status: 128, stdout: "", stderr: "PRIVATE_SNAPSHOT_ERROR", error: undefined };
+      }
+      return innerSpawn(command, args, options);
+    }) as typeof spawnSync;
+    const completion = await runAssignment(manifest, deps);
+    assert.equal(spawns.length, 1);
+    assert.equal(completion.invocation, "returned");
+    assert.equal(completion.transport.status, "completed");
+    assert.equal(completion.transport.ok, true);
+    assert.equal(Object.hasOwn(completion.transport, "errorCode"), false);
+    assert.equal(completion.candidate.status, "unknown");
+    if (completion.candidate.status === "unknown") {
+      assert.equal(completion.candidate.code, "snapshot_failed");
+    }
+    assert.equal(completion.recording.status, "failed");
+    if (completion.recording.status === "failed") {
+      assert.equal(completion.recording.steps.candidate_snapshot, "failed");
+    }
+    assert.equal(completion.usage.tokensIn, 20);
+    assert.equal(completion.usage.tokensOut, 10);
+    assert.equal(completion.usage.providerReportedCostUsd, 0.25);
+    assert.equal(existsSync(join(root, "native-output.txt")), true);
+    assert.equal(JSON.stringify(completion).includes("PRIVATE_SNAPSHOT_ERROR"), false);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("failed native PASS is a model claim never eligible critic evidence", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    writeFileSync(join(root, "README.md"), "repo\nstaged\n");
+    git(root, ["add", "README.md"]);
+    const indexTree = git(root, ["write-tree"]);
+    const manifest = reviewerManifest(root, commit, indexTree, taskDir);
+    const { deps } = dispatchDeps(
+      "claude",
+      { stdout: claudeAnswer({ verdict: "PASS", status: "done" }), exitCode: 1 },
+      claudeAuth,
+    );
+    const completion = await runAssignment(manifest, deps);
+    assert.equal(completion.transport.status, "failed");
+    assert.equal(completion.model_claim?.verdict, "PASS");
+    assert.equal(completion.critic.kind, "none");
+    if (completion.critic.kind === "none") {
+      assert.equal(completion.critic.reason, "transport-not-completed");
+    }
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("subscription estimate and over-cap cache stay out of routing costUsd", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    writeFileSync(join(root, "README.md"), "repo\nstaged\n");
+    git(root, ["add", "README.md"]);
+    const indexTree = git(root, ["write-tree"]);
+    const manifest = reviewerManifest(root, commit, indexTree, taskDir);
+    const { deps } = dispatchDeps("claude", {
+      stdout: claudeAnswer({ verdict: "PASS", status: "done" }, {
+        usage: { input_tokens: 20, output_tokens: 10, cache_read_input_tokens: 2_000_001 },
+        total_cost_usd: 0.25,
+        modelUsage: {},
+      }),
+    }, claudeAuth);
+    const completion = await runAssignment(manifest, deps);
+    assert.equal(completion.usage.costBasis, "unmetered");
+    const routing = JSON.parse(readFileSync(join(taskDir, "asg-review-1", "routing-record.json"), "utf8")) as {
+      costUsd?: number;
+      providerMetadata?: { unmeteredEstimateUsd?: number; cacheReadTokens?: number };
+    };
+    assert.equal(Object.hasOwn(routing, "costUsd"), false);
+    assert.equal(routing.providerMetadata?.unmeteredEstimateUsd, 0.25);
+    assert.equal(routing.providerMetadata?.cacheReadTokens, 2_000_001);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("documented Claude structured_output binds a tree-bound critic verdict", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    writeFileSync(join(root, "README.md"), "repo\nstaged\n");
+    git(root, ["add", "README.md"]);
+    const indexTree = git(root, ["write-tree"]);
+    const manifest = reviewerManifest(root, commit, indexTree, taskDir);
+    const { deps } = dispatchDeps("claude", {
+      stdout: claudeAnswer({ status: "done" }, {
+        result: "",
+        structured_output: { verdict: "PASS", summary: "PRIVATE_REPORT_SENTINEL", findings: [] },
+      }),
+    }, claudeAuth);
+    const completion = await runAssignment(manifest, deps);
+    assert.equal(completion.transport.status, "completed");
+    assert.equal(completion.model_claim?.verdict, "PASS");
+    assert.equal(completion.model_claim?.claimSource, "structured_output");
+    assert.equal(completion.critic.kind, "review");
+    if (completion.critic.kind === "review") {
+      assert.equal(completion.critic.verdict, "PASS");
+      assert.equal(completion.critic.judged_tree, indexTree);
+    }
+    if (completion.candidate.status === "recorded") {
+      assert.equal(completion.critic.kind === "review" && completion.critic.judged_tree === completion.candidate.index_tree, true);
+    }
+    assert.equal(JSON.stringify(completion).includes("PRIVATE_REPORT_SENTINEL"), false);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("telemetry failure recovers without model rerun or completion rewrite", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const manifest = writerManifest(root, commit, taskDir);
+    const { deps, spawns } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, grokAuth);
+    const realWrite = writeFileSync;
+    (deps as { writeFileSync?: typeof writeFileSync }).writeFileSync = ((
+      path: string | Buffer | URL,
+      body: string | Buffer,
+      opts?: object,
+    ) => {
+      if (basename(String(path)) === "telemetry.jsonl") {
+        const error = new Error("PRIVATE_TELEMETRY_ERROR") as NodeJS.ErrnoException;
+        error.code = "EACCES";
+        throw error;
+      }
+      return realWrite(path, body, opts);
+    }) as typeof writeFileSync;
+    const completion = await runAssignment(manifest, deps);
+    const recordDir = join(taskDir, "asg-writer-1");
+    assert.equal(completion.transport.status, "completed");
+    assert.equal(completion.recording.status, "failed");
+    if (completion.recording.status === "failed") {
+      assert.equal(completion.recording.steps.telemetry, "failed");
+    }
+    assert.equal(existsSync(join(recordDir, "telemetry.jsonl")), false);
+    const completionPath = join(recordDir, "completion.json");
+    const bytes = readFileSync(completionPath);
+    await observeAssignment(recordDir);
+    assert.deepEqual(readFileSync(completionPath), bytes);
+    const lines = () => readFileSync(join(recordDir, "telemetry.jsonl"), "utf8").trim().split("\n");
+    assert.equal(lines().length, 1);
+    const resolution = JSON.parse(readFileSync(join(recordDir, "recording-resolved.json"), "utf8")) as {
+      schema: string;
+      completion_sha256: string;
+    };
+    assert.equal(resolution.schema, RECORDING_RESOLUTION_SCHEMA);
+    assert.equal(resolution.completion_sha256, sha256(bytes));
+    await observeAssignment(recordDir);
+    assert.equal(lines().length, 1);
+    assert.deepEqual(readFileSync(completionPath), bytes);
+    assert.equal(spawns.length, 1);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("pre-invocation prepare failure remains an undispatched refusal", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const manifest = writerManifest(root, commit, taskDir);
+    const { deps, spawns } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, grokAuth);
+    const realWrite = writeFileSync;
+    (deps as { writeFileSync?: typeof writeFileSync }).writeFileSync = ((
+      path: string | Buffer | URL,
+      body: string | Buffer,
+      opts?: object,
+    ) => {
+      if (basename(String(path)) === "output-schema.json") {
+        const error = new Error("PRIVATE_PREPARE_ERROR") as NodeJS.ErrnoException;
+        error.code = "EACCES";
+        throw error;
+      }
+      return realWrite(path, body, opts);
+    }) as typeof writeFileSync;
+    await assert.rejects(() => runAssignment(manifest, deps));
+    assert.equal(spawns.length, 0);
+    assert.equal(existsSync(join(taskDir, "asg-writer-1", "completion.json")), false);
+    const refusal = JSON.parse(readFileSync(join(taskDir, "asg-writer-1", "refusal.json"), "utf8")) as {
+      stage: string;
+      code: string;
+      provider_calls: number;
+    };
+    assert.equal(refusal.stage, "prepare");
+    assert.equal(refusal.provider_calls, 0);
+    assert.equal(existsSync(join(taskDir, "asg-writer-1", "telemetry.jsonl")), false);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("unstaged helper throw is failed run with unknown usage and dispatch sidecar", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const manifest = writerManifest(root, commit, taskDir);
+    const { deps, spawns } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, grokAuth);
+    (deps as { runHarness?: (request: { output_dir: string }) => Promise<unknown> }).runHarness = async (request) => {
+      writeFileSync(join(request.output_dir, "dispatch.json"), `${JSON.stringify({ command: "grok", pid: 1 })}\n`);
+      throw new Error("PRIVATE_UNSTAGED_THROW");
+    };
+    const completion = await runAssignment(manifest, deps);
+    assert.equal(spawns.length, 0);
+    assert.equal(completion.invocation, "thrown");
+    assert.equal(completion.transport.status, "failed");
+    assert.equal(completion.transport.stage, "run");
+    assert.equal(completion.transport.errorCode, "unrecognized");
+    assert.equal(completion.usage.costBasis, "unknown");
+    assert.equal(completion.sidecars.harness_dispatch?.path.endsWith("dispatch.json"), true);
+    assert.equal(JSON.stringify(completion).includes("PRIVATE_UNSTAGED_THROW"), false);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("malicious structured fields and private prose cannot override metadata", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    writeFileSync(join(root, "README.md"), "repo\nstaged\n");
+    git(root, ["add", "README.md"]);
+    const indexTree = git(root, ["write-tree"]);
+    const manifest = reviewerManifest(root, commit, indexTree, taskDir);
+    const claim = {
+      verdict: "PASS",
+      summary: "PRIVATE_REPORT_SENTINEL",
+      findings: ["PRIVATE_FINDING_SENTINEL"],
+      verification: { status: "passed" },
+      cost: 0,
+      critic: "PASS",
+      role: "implementer",
+      usage: { tokensIn: 999 },
+      transport: { ok: true },
+    };
+    const { deps } = dispatchDeps("claude", {
+      stdout: claudeAnswer({ status: "done" }, { result: "", structured_output: claim }),
+    }, claudeAuth);
+    const completion = await runAssignment(manifest, deps);
+    assert.equal(completion.verification.status, "not-run");
+    assert.equal(completion.route.role, "reviewer-arch");
+    assert.equal(completion.usage.tokensIn, 8);
+    assert.equal((completion.model_claim?.unrecognizedCount as number) >= 6, true);
+    assert.equal(JSON.stringify(completion).includes("PRIVATE_REPORT_SENTINEL"), false);
+    assert.equal(JSON.stringify(completion).includes("PRIVATE_FINDING_SENTINEL"), false);
+    assert.equal(completion.model_claim?.summary, undefined);
+    assert.equal(completion.model_claim?.findings, undefined);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("generated schemas close every object, require every field, and match snapshots", () => {
+  const visit = (node: unknown) => {
+    if (!node || typeof node !== "object") return;
+    const record = node as Record<string, unknown>;
+    if (record.type === "object" || record.properties) {
+      assert.equal(record.additionalProperties, false);
+      assert.deepEqual(
+        [...(record.required as string[])].sort(),
+        Object.keys(record.properties as object).sort(),
+      );
+    }
+    assert.equal("minimum" in record, false);
+    assert.equal("maximum" in record, false);
+    for (const value of Object.values(record)) {
+      if (Array.isArray(value)) value.forEach(visit);
+      else visit(value);
+    }
+  };
+  for (const kind of ["plan", "implement", "repair", "review-arch", "review-cli"] as const) {
+    const schema = assignmentOutputSchema(kind);
+    visit(schema);
+    const fixture = JSON.parse(readFileSync(join("test/fixtures/assignment", `output-schema-${kind}.json`), "utf8"));
+    assert.deepEqual(schema, fixture);
+  }
+  const observation = JSON.parse(
+    readFileSync(join("test/fixtures/assignment/m3b-codex-schema-observation.json"), "utf8"),
+  ) as { liveRejectionObserved: boolean; evidenceLimit: string };
+  assert.equal(observation.liveRejectionObserved, false);
+  assert.match(observation.evidenceLimit, /not a captured native rejection/);
+});
+
+function fakeV2Result(extra: Record<string, unknown> = {}) {
+  return {
+    schema: "kxm.harness-result.v2",
+    ok: true,
+    status: "completed",
+    stage: "run",
+    exitCode: 0,
+    observedChildExit: true,
+    command: "grok",
+    effectiveModel: "grok-4.6",
+    startedAt: "2026-09-06T05:00:00.000Z",
+    finishedAt: "2026-09-06T05:00:00.012Z",
+    latencyMs: 12,
+    costBasis: "provider-reported",
+    costUsd: 0.25,
+    providerReportedCostUsd: 0.25,
+    tokensIn: 20,
+    tokensOut: 10,
+    tokenBasis: "cumulative",
+    contextOccupancy: "unknown",
+    ...extra,
+  };
+}
+
+test("routing normalization failure keeps completion and known native facts", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const manifest = writerManifest(root, commit, taskDir);
+    const { deps, spawns } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, grokAuth);
+    (deps as { runHarness?: () => Promise<unknown> }).runHarness = async () => fakeV2Result({
+      effectiveModel: "x".repeat(201),
+    });
+    const completion = await runAssignment(manifest, deps);
+    const recordDir = join(taskDir, "asg-writer-1");
+    assert.equal(spawns.length, 0);
+    assert.equal(completion.invocation, "returned");
+    assert.equal(completion.transport.status, "completed");
+    assert.equal(completion.transport.effectiveModel, "x".repeat(201));
+    assert.equal(completion.usage.tokensIn, 20);
+    assert.equal(completion.usage.costUsd, 0.25);
+    assert.equal(completion.recording.status, "failed");
+    if (completion.recording.status === "failed") {
+      assert.equal(completion.recording.steps.routing_record, "failed");
+      assert.equal(completion.recording.steps.telemetry, "skipped");
+    }
+    assert.equal(existsSync(join(recordDir, "completion.json")), true);
+    assert.equal(existsSync(join(recordDir, "telemetry.jsonl")), false);
+    assert.equal(JSON.stringify(completion).includes("PRIVATE_"), false);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("malformed telemetry cannot resolve bookkeeping and is left untouched", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const manifest = writerManifest(root, commit, taskDir);
+    const { deps } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, grokAuth);
+    const realWrite = writeFileSync;
+    (deps as { writeFileSync?: typeof writeFileSync }).writeFileSync = ((
+      path: string | Buffer | URL,
+      body: string | Buffer,
+      opts?: object,
+    ) => {
+      if (basename(String(path)) === "telemetry.jsonl") {
+        const error = new Error("PRIVATE_TELEMETRY_ERROR") as NodeJS.ErrnoException;
+        error.code = "EACCES";
+        throw error;
+      }
+      return realWrite(path, body, opts);
+    }) as typeof writeFileSync;
+    await runAssignment(manifest, deps);
+    const recordDir = join(taskDir, "asg-writer-1");
+    const telemetryPath = join(recordDir, "telemetry.jsonl");
+    writeFileSync(telemetryPath, "{}\n");
+    await assert.rejects(() => observeAssignment(recordDir));
+    assert.equal(readFileSync(telemetryPath, "utf8"), "{}\n");
+    assert.equal(existsSync(join(recordDir, "recording-resolved.json")), false);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("foreign routing record cannot resolve this assignment", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const manifest = writerManifest(root, commit, taskDir);
+    const { deps } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, grokAuth);
+    const realWrite = writeFileSync;
+    (deps as { writeFileSync?: typeof writeFileSync }).writeFileSync = ((
+      path: string | Buffer | URL,
+      body: string | Buffer,
+      opts?: object,
+    ) => {
+      if (basename(String(path)) === "telemetry.jsonl") {
+        const error = new Error("PRIVATE_TELEMETRY_ERROR") as NodeJS.ErrnoException;
+        error.code = "EACCES";
+        throw error;
+      }
+      return realWrite(path, body, opts);
+    }) as typeof writeFileSync;
+    await runAssignment(manifest, deps);
+    const recordDir = join(taskDir, "asg-writer-1");
+    const routingPath = join(recordDir, "routing-record.json");
+    const routing = JSON.parse(readFileSync(routingPath, "utf8")) as { workflowRunId: string };
+    routing.workflowRunId = "foreign-assignment";
+    const bytes = `${JSON.stringify(routing)}\n`;
+    writeFileSync(routingPath, bytes);
+    await assert.rejects(() => observeAssignment(recordDir));
+    assert.equal(readFileSync(routingPath, "utf8"), bytes);
+    assert.equal(existsSync(join(recordDir, "recording-resolved.json")), false);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("observe does not recover an omitted failed answer sidecar from surviving refs", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const manifest = writerManifest(root, commit, taskDir);
+    const { deps } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, grokAuth);
+    const recordDir = join(taskDir, "asg-writer-1");
+    const answerPath = join(recordDir, "native-answer.txt");
+    const failingStat = ((path: string) => {
+      if (String(path) === answerPath) {
+        const error = new Error("PRIVATE_ANSWER_STAT_ERROR") as NodeJS.ErrnoException;
+        error.code = "EACCES";
+        throw error;
+      }
+      return statSync(path);
+    }) as typeof statSync;
+    (deps as { statSync?: typeof statSync }).statSync = failingStat;
+    (deps as { runHarness?: typeof import("../scripts/harness-run.mjs").runHarness }).runHarness = (async () => {
+      writeFileSync(join(recordDir, "dispatch.json"), "{}\n");
+      writeFileSync(answerPath, "private answer");
+      return {
+        schema: "kxm.harness-result.v2",
+        ok: true,
+        status: "completed",
+        stage: "run",
+        exitCode: 0,
+        observedChildExit: true,
+        command: "grok",
+        effectiveModel: "grok-4.6",
+        startedAt: "2026-09-06T05:00:00.000Z",
+        finishedAt: "2026-09-06T05:00:00.012Z",
+        latencyMs: 12,
+        costBasis: "provider-reported",
+        costUsd: 0.12,
+        providerReportedCostUsd: 0.12,
+        tokensIn: 11,
+        tokensOut: 5,
+        answerPath,
+      };
+    }) as typeof import("../scripts/harness-run.mjs").runHarness;
+    const completion = await runAssignment(manifest, deps);
+    assert.equal(completion.recording.status, "failed");
+    if (completion.recording.status === "failed") {
+      assert.equal(completion.recording.steps.sidecars, "failed");
+    }
+    assert.equal(completion.sidecars.answer, undefined);
+    assert.equal(completion.sidecars.harness_dispatch?.path.endsWith("dispatch.json"), true);
+    const completionPath = join(recordDir, "completion.json");
+    const before = readFileSync(completionPath);
+    try {
+      await observeAssignment(recordDir, { statSync: failingStat });
+    } catch {
+      // Routing recovery may still succeed; sidecar must remain failed.
+    }
+    assert.deepEqual(readFileSync(completionPath), before);
+    const resolutionPath = join(recordDir, "recording-resolved.json");
+    assert.equal(existsSync(resolutionPath), true);
+    const resolution = JSON.parse(readFileSync(resolutionPath, "utf8")) as { steps: { sidecars: string } };
+    assert.equal(resolution.steps.sidecars, "failed");
+    const sink = { write() {} };
+    await assignmentMain(["node", "assignment-run.mjs", "observe", "--record-dir", recordDir], {
+      stdin: process.stdin,
+      stdout: sink as unknown as NodeJS.WriteStream,
+      stderr: sink as unknown as NodeJS.WriteStream,
+    });
+    assert.equal(process.exitCode, 1);
+    process.exitCode = 0;
+    assert.equal(JSON.stringify(completion).includes("PRIVATE_ANSWER_STAT_ERROR"), false);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("observe does not invent recovery of a persistent sidecar failure", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const manifest = writerManifest(root, commit, taskDir);
+    const { deps } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, grokAuth);
+    const failingStat = ((path: string) => {
+      if (basename(String(path)) === "dispatch.json") {
+        const error = new Error("PRIVATE_PERSISTENT_STAT_ERROR") as NodeJS.ErrnoException;
+        error.code = "EACCES";
+        throw error;
+      }
+      return statSync(path);
+    }) as typeof statSync;
+    (deps as { statSync?: typeof statSync }).statSync = failingStat;
+    const completion = await runAssignment(manifest, deps);
+    assert.equal(completion.recording.status, "failed");
+    if (completion.recording.status === "failed") {
+      assert.equal(completion.recording.steps.sidecars, "failed");
+    }
+    const recordDir = join(taskDir, "asg-writer-1");
+    try {
+      await observeAssignment(recordDir, { statSync: failingStat });
+    } catch {
+      // Resolution may be withheld when observation cannot recover the sidecar.
+    }
+    const resolutionPath = join(recordDir, "recording-resolved.json");
+    if (existsSync(resolutionPath)) {
+      const resolution = JSON.parse(readFileSync(resolutionPath, "utf8")) as { steps: { sidecars: string } };
+      assert.notEqual(resolution.steps.sidecars, "ok");
+    }
+    assert.equal(JSON.stringify(completion).includes("PRIVATE_PERSISTENT_STAT_ERROR"), false);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("existing resolution for another completion is rejected without overwrite", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const manifest = writerManifest(root, commit, taskDir);
+    const { deps } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, grokAuth);
+    const realWrite = writeFileSync;
+    (deps as { writeFileSync?: typeof writeFileSync }).writeFileSync = ((
+      path: string | Buffer | URL,
+      body: string | Buffer,
+      opts?: object,
+    ) => {
+      if (basename(String(path)) === "telemetry.jsonl") {
+        const error = new Error("PRIVATE_TELEMETRY_ERROR") as NodeJS.ErrnoException;
+        error.code = "EACCES";
+        throw error;
+      }
+      return realWrite(path, body, opts);
+    }) as typeof writeFileSync;
+    await runAssignment(manifest, deps);
+    const recordDir = join(taskDir, "asg-writer-1");
+    const resolutionPath = join(recordDir, "recording-resolved.json");
+    const bytes = `${JSON.stringify({
+      schema: RECORDING_RESOLUTION_SCHEMA,
+      task_id: "task-a",
+      assignment_id: "asg-writer-1",
+      resolvedAt: new Date().toISOString(),
+      completion_sha256: "0".repeat(64),
+      steps: { candidate_snapshot: "ok", sidecars: "ok", routing_record: "ok", telemetry: "ok" },
+    })}\n`;
+    writeFileSync(resolutionPath, bytes);
+    await assert.rejects(() => observeAssignment(recordDir));
+    assert.equal(readFileSync(resolutionPath, "utf8"), bytes);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("repair telemetry retains rework, latency, and known partial usage", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const first = writerManifest(root, commit, taskDir);
+    const firstDeps = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, grokAuth);
+    await runAssignment(first, firstDeps.deps);
+    const repair = writerManifest(root, commit, taskDir, {
+      assignment_id: "asg-writer-2",
+      output_dir: "asg-writer-2",
+      kind: "repair",
+      rework_of: "asg-writer-1",
+    });
+    const { deps } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, grokAuth);
+    (deps as { runHarness?: () => Promise<unknown> }).runHarness = async () => fakeV2Result({
+      usagePartial: true,
+    });
+    const completion = await runAssignment(repair, deps);
+    assert.equal(completion.rework_of, "asg-writer-1");
+    const routing = JSON.parse(readFileSync(join(taskDir, "asg-writer-2", "routing-record.json"), "utf8")) as {
+      retries: number;
+      providerMetadata: {
+        latencyMs?: number;
+        usagePartial?: boolean;
+        tokenBasis?: string;
+        contextOccupancy?: string;
+        rework_of?: string;
+      };
+    };
+    assert.equal(routing.retries, 1);
+    assert.equal(routing.providerMetadata.latencyMs, 12);
+    assert.equal(routing.providerMetadata.usagePartial, true);
+    assert.equal(routing.providerMetadata.tokenBasis, "cumulative");
+    assert.equal(routing.providerMetadata.contextOccupancy, "unknown");
+    assert.equal(routing.providerMetadata.rework_of, "asg-writer-1");
+    const bytes = readFileSync(join(taskDir, "asg-writer-2", "routing-record.json"));
+    await observeAssignment(join(taskDir, "asg-writer-2"));
+    assert.deepEqual(readFileSync(join(taskDir, "asg-writer-2", "routing-record.json")), bytes);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("matching telemetry and resolution remain idempotent", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const manifest = writerManifest(root, commit, taskDir);
+    const { deps } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, grokAuth);
+    const completion = await runAssignment(manifest, deps);
+    const recordDir = join(taskDir, "asg-writer-1");
+    const telemetryPath = assignmentTelemetryPath(recordDir);
+    const telemetryBytes = readFileSync(telemetryPath);
+    assert.equal(await observeAssignment(recordDir), false);
+    assert.deepEqual(readFileSync(telemetryPath), telemetryBytes);
+    const resolutionPath = join(recordDir, "recording-resolved.json");
+    const resolutionBytes = readFileSync(resolutionPath);
+    assert.equal(await observeAssignment(recordDir), false);
+    assert.deepEqual(readFileSync(resolutionPath), resolutionBytes);
+    assert.equal(appendAssignmentTelemetry({
+      ...completion,
+      routingRecord: JSON.parse(readFileSync(join(recordDir, "routing-record.json"), "utf8")),
+    }, recordDir), false);
+    assert.deepEqual(readFileSync(telemetryPath), telemetryBytes);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("conflicting telemetry is rejected without overwrite", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const manifest = writerManifest(root, commit, taskDir);
+    const { deps } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, grokAuth);
+    await runAssignment(manifest, deps);
+    const recordDir = join(taskDir, "asg-writer-1");
+    const telemetryPath = assignmentTelemetryPath(recordDir);
+    const foreign = `${JSON.stringify({
+      schema: "kxm.telemetry.v1",
+      recordedAt: "2026-09-06T00:00:00.000Z",
+      host: "local",
+      target: "cli",
+      envelope: { schema: "kxm.worker-result.v1", command: "foreign", ok: true, outcome: "running", summary: "no", createdAt: "2026-09-06T00:00:00.000Z" },
+    })}\n`;
+    writeFileSync(telemetryPath, foreign);
+    await assert.rejects(() => observeAssignment(recordDir));
+    assert.equal(readFileSync(telemetryPath, "utf8"), foreign);
+    assert.equal(existsSync(join(recordDir, "recording-resolved.json")), false);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("observe CLI recovers telemetry through --record-dir without native spawn", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const manifest = writerManifest(root, commit, taskDir);
+    const { deps, spawns } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, grokAuth);
+    const realWrite = writeFileSync;
+    (deps as { writeFileSync?: typeof writeFileSync }).writeFileSync = ((
+      path: string | Buffer | URL,
+      body: string | Buffer,
+      opts?: object,
+    ) => {
+      if (basename(String(path)) === "telemetry.jsonl") {
+        const error = new Error("PRIVATE_TELEMETRY_ERROR") as NodeJS.ErrnoException;
+        error.code = "EACCES";
+        throw error;
+      }
+      return realWrite(path, body, opts);
+    }) as typeof writeFileSync;
+    await runAssignment(manifest, deps);
+    const recordDir = realpathSync(join(taskDir, "asg-writer-1"));
+    const nativeSpawns = spawns.length;
+    const proc = spawnSync(process.execPath, [
+      realpathSync(resolve("scripts/assignment-run.mjs")),
+      "observe",
+      "--record-dir",
+      recordDir,
+    ], { encoding: "utf8" });
+    assert.equal(proc.status, 0, proc.stderr);
+    assert.equal(existsSync(join(recordDir, "recording-resolved.json")), true);
+    assert.equal(readFileSync(join(recordDir, "telemetry.jsonl"), "utf8").trim().split("\n").length, 1);
+    assert.equal(spawns.length, nativeSpawns);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("CLI invoked through a parent alias executes validation", () => {
+  const proc = spawnSync(process.execPath, [
+    "/tmp/kxm-execution-loop/scripts/assignment-run.mjs",
+    "invalid-command",
+  ], { encoding: "utf8" });
+  assert.notEqual(proc.status, 0);
+  assert.match(proc.stderr, /usage:/);
 });
 

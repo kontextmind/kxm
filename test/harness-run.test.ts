@@ -2072,6 +2072,44 @@ test("review PASS remains a model claim and cannot become verify or acceptance",
     assert.equal(result.acceptance, undefined);
     assert.equal((result.modelClaim as { verification?: unknown }).verification, undefined);
     assert.equal((result.modelClaim as { acceptance?: unknown }).acceptance, undefined);
+    assert.equal((result.modelClaim as { claimSource?: string }).claimSource, "result");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Claude structured_output is the claim source while result stays the answer", async () => {
+  const dir = tempDir();
+  try {
+    const prompt = promptFile(dir);
+    const schemaPath = join(dir, "schema.json");
+    writeFileSync(schemaPath, `${JSON.stringify({ type: "object", additionalProperties: false })}\n`);
+    const { result } = await dispatch({
+      schema: REQUEST_SCHEMA,
+      harness: "claude",
+      role: "reviewer-arch",
+      model: "fable",
+      permission: "read-only",
+      prompt_file: prompt,
+      output_schema: schemaPath,
+      output_dir: join(dir, "structured"),
+    }, {
+      stdout: `${JSON.stringify({
+        result: "ordinary answer text",
+        structured_output: { verdict: "PASS", summary: "PRIVATE_REPORT_SENTINEL", findings: [] },
+        is_error: false,
+        usage: { input_tokens: 4, output_tokens: 2 },
+        total_cost_usd: 0.1,
+      })}\n`,
+    }, claudeAuth());
+    assert.equal(result.status, "completed");
+    assert.equal((result.modelClaim as { verdict?: string }).verdict, "PASS");
+    assert.equal((result.modelClaim as { claimSource?: string }).claimSource, "structured_output");
+    assert.equal((result.modelClaim as { summary?: unknown }).summary, undefined);
+    assert.equal(readFileSync(String(result.answerPath), "utf8"), "ordinary answer text");
+    assert.equal(readFileSync(String((result.modelClaim as { path: string }).path), "utf8").includes("PRIVATE_REPORT_SENTINEL"), true);
+    const serialized = JSON.stringify(result);
+    assert.doesNotMatch(serialized, /PRIVATE_REPORT_SENTINEL/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
