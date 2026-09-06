@@ -100,6 +100,19 @@ It does not replace the phase gates below.
   do not treat `source: npm` as the default updater, until `@kontextmind/kxm`
   is a public npm release. Until then: GitHub release tarballs + docs/Tracking.
   Wiki stays compiled-from-hub (`kxm context wiki-compile`); no ingest CLI.
+- **Routing and cost contract** lives in [`docs/vnext/routing.md`](routing.md).
+  v1 is shipped parse-only; helper telemetry is a dev tool; v2, event-settle
+  write, ranked report, and price catalog are planned. The 2026-09-04
+  [work plan](../../.kxm/assets/reviews/2026-09-04-work-plan.md) and
+  [decisions](../../.kxm/assets/reviews/2026-09-04-decisions.md) are historical
+  inputs and yield to AGENTS.md and this Tracking section where they differ.
+  **C1 (2026-09-05) supersession:** docs remainder for #86 is that routing
+  contract, synchronization status, and these phase notes. Historical quick
+  rename of `default.yaml`, Phase 3a/3b split, adapter-as-MVP, Tracking
+  delete/250-line cap, and “no brakes” instructions are **not** pending tasks.
+  #86 stays open for later D8/D9/D14 plan text when those phases are
+  scheduled, the v1 report underquote fix, and remaining report
+  implementation — not for those superseded instructions.
 
 ### Landed in this tree (unreleased)
 
@@ -319,6 +332,9 @@ It does not replace the phase gates below.
   failing tests and workflow `gate` steps, not by asking the model to
   remember AGENTS.md. A loop without a gate will drift. Phase 3+ engines
   must fail closed when a required gate is skipped.
+- v1 `kxm routing report` sums missing cost as zero and sorts by run count;
+  not a ranking source until the v2 record and separated cost populations
+  land (see [routing.md](routing.md)).
 
 ### Plan hygiene (periodic, not every turn)
 
@@ -395,7 +411,9 @@ outbox, auto-start, and crash recovery.
 store, command-idempotent run acceptance (prompt hashed, not stored), projection
 rebuild, cancel-to-terminal, crash recovery, `kxm runtime start|status|stop`,
 and `kxm run` create/recover with the hub absent. Runs remain `created`.
-Compiled step execution is Phase 3.
+Compiled step execution is Phase 3. The outbox is listed in this phase but
+not landed; it lands with its only consumer in Phase 8. The gate stays as
+written.
 
 **Gate:** `kxm run` creates and recovers a local owned run with the hub absent.
 
@@ -447,7 +465,8 @@ project; existing hub runs, `kxm hub …`, and the `kxm_*` tools remain on their
 Implement worktrees, dirty snapshots, one-writer leases, multi-repository
 bindings, default-derived environments, host secret grants, local logs,
 repository-aware timing, patches/local commits, and non-atomic delivery
-manifests.
+manifests. Per-run worktree isolation from the 2026-09-04 review (D15) lands
+here, not in Phase 3.
 
 **B2 note (not the Phase 5 gate):** `release.yml` created a
 temporary draft on tag `v0.5.20260905` and the same-digest rerun skipped
@@ -493,7 +512,9 @@ Begin the hub compatibility release and cutover described in
 configuration snapshots, run
 requests, sync-safe event ingestion, project stores, capability scheduling,
 shared-action leases, offline reconciliation, and aggregate TUI read models.
-Migrate current schema-v3 hub data behind a compatibility release.
+Migrate current schema-v3 hub data behind a compatibility release. The
+synchronization contract is schema-tested only today; implementation starts
+here.
 
 **Gate:** two Runtimes execute and synchronize independent offline runs but
 cannot perform conflicting shared mutable actions without fencing.
@@ -545,6 +566,8 @@ Every phase adds:
 - opt-in real harness/external integration tests where deterministic fakes are
   insufficient;
 - documentation and migration updates in the same change.
+- every source file is inside the coverage include unless excluded with a
+  reason (B1). Coverage still only measures modules some test loaded.
 
 Generated package artifacts remain reproducible and the existing `npm run
 validate` gate remains green throughout migration.

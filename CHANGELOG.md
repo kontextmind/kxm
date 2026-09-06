@@ -6,6 +6,8 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Added
 
+- Routing contract doc (`docs/vnext/routing.md`) and synchronization status
+  (schema-tested; Phase 8 implementation).
 - Tag-triggered `release.yml` packs `kxm-<v>.tgz`, creates or reuses only a
   **draft** GitHub release, and fails unless the REST asset digest equals the
   local sha256. A published release for the tag is never modified; reruns skip

@@ -1,5 +1,9 @@
 # Hub synchronization contract
 
+> **Status.** `kxm.sync-event.v1` is a **schema-tested contract**. There is no
+> outbox table, sync transform, or hub ingestion in source. Implementation
+> begins in [Phase 8](implementation-plan.md#phase-8-multi-project-hub-vnext).
+
 Synchronization is summary-first, project-scoped, at-least-once, and
 allowlist-based. The full local event is never placed directly in the outbox.
 
