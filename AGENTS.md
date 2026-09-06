@@ -89,7 +89,7 @@ Two combined gates (already in npm/CI). Do not add a third unless a test fails.
 | When | Gate | What it combines |
 |---|---|---|
 | **Commit** | `npm run verify` | `npm test` (build + tests), `npm run check` (tsc + lint:docs + versions), then generated `dist` matches the staged `dist` |
-| **PR/MR** | CI `validate:ci` + `check:generated` on every leg | coverage + check + pack dry-run; generated `dist` current. Plugin validation is a CI job, not a third npm script. |
+| **PR/MR** | CI `validate:ci` + `check:generated` on two Linux legs (Node 22.19.0 and 24) plus Classify changes, Docs lint, and Plugin validation, five jobs. Local Mac `npm run verify` before push. Windows tests, builds, and release automation are paused, not deprecated. | coverage + check + pack dry-run; generated `dist` current. Plugin validation is a CI job, not a third npm script. |
 
 Cleanup (`git status`, no `nul`/tmp/secrets; `dist` if CLI changed) is **before** the commit gate and **again before push**. Session-ready `/new`/`/fork` and Mesh operator copy are held by tests under `npm test` (extension readiness test, docs brake); no extra npm script. Come-back list: Tracking **Still open**. Ship hint belongs on the Pi status/widget (`ship dirty` / `N local` / `PR after CI`), not in every chat turn.
 

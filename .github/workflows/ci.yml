@@ -91,14 +91,13 @@ jobs:
       fail-fast: false
       matrix:
         node: [22.19.0, 24]
-        # Linux runs on the DOKS self-hosted runner (label doks); Windows on
-        # the larger hosted image. Job names are pinned by the protect-main
-        # ruleset, so change `name` and the ruleset together.
+        # Linux runs on the DOKS self-hosted runner. Windows legs are paused
+        # by operator decision on 2026-09-05, not removed as a supported
+        # target. Job names are pinned by the protect-main ruleset, so change
+        # name and ruleset together.
         runner:
           - name: linux
             labels: [self-hosted, Linux, X64, doks]
-          - name: windows
-            labels: windows-latest-l
 
     steps:
       - name: Check out repository
@@ -121,13 +120,8 @@ jobs:
         if: steps.modules.outputs.cache-hit != 'true'
         run: npm ci
 
-      # Every leg runs coverage. Dropping instrumentation on Windows would be
-      # faster, but `--experimental-test-coverage` sets NODE_V8_COVERAGE, and
-      # child processes inherit it — which changes their shutdown path. Without
-      # it, the child in the worker pre-ack test dies with 0xC0000409
-      # (STATUS_STACK_BUFFER_OVERRUN) on the hosted Windows image instead of
-      # exiting 7, deterministically on Node 24. See issue for the real fix;
-      # until then coverage is load-bearing on Windows, not just a metric.
+      # Every active leg runs coverage because `validate:ci` is the PR gate.
+      # Historical Windows coverage evidence remains in Tracking.
       - name: Test with coverage, type-check, and inspect package
         run: npm run validate:ci
 

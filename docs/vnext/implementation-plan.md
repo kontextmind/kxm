@@ -96,6 +96,13 @@ It does not replace the phase gates below.
   this host to a running hub. Session brief, Pi status line, and `/kxm` read
   the local hub snapshot. Local Runtime in-harness insights and SSH/HTTPS hub
   install are after MVP.
+- **Platform pause (operator, 2026-09-05):** Windows CI legs, hosted Windows
+  probes, and release automation are paused, not deprecated. Active hosted
+  verification is two Linux Node 22.19.0 and 24 Validate legs plus Docs lint
+  and Plugin validation; Classify changes is the fifth job. Local verification
+  is `npm run verify` on macOS. No new paid macOS runner. Windows source and
+  tests stay in tree. Windows resumption and release resumption are separate
+  deferred choices; each updates Tracking, tests, and settings together.
 - **Public npm first.** Do not run wiki compile/lint/ingest for this repo, and
   do not treat `source: npm` as the default updater, until `@kontextmind/kxm`
   is a public npm release. Until then: GitHub release tarballs + docs/Tracking.
@@ -116,9 +123,20 @@ It does not replace the phase gates below.
 
 ### Landed in this tree (unreleased)
 
+- **Platform pause (2026-09-05):** the active PR gate is two Linux
+  `validate:ci` + `check:generated` legs (Node 22.19.0 and 24) plus Docs lint
+  and Plugin validation. Classify changes plus those four jobs is five CI
+  jobs; all five run on docs-only diffs. Local verification is `npm run
+  verify` on macOS. Windows CI legs, hosted Windows probes, and `release.yml`
+  are paused: the two Windows contexts left ruleset `22251971`, the Release
+  and probe workflows are disabled in settings, and the `release` job carries
+  a source `if: false` latch so re-enabling the workflow cannot publish.
+  Release safety logic and its tests are unchanged. Windows is paused, not
+  unsupported; no Windows code was removed. No new paid macOS runner.
 - PR CI no longer skips Validate or Plugin validation for docs-only diffs,
   restoring the ruleset’s required contexts (four expanded Validate names plus
-  Plugin validation).
+  Plugin validation). That seven-job PR surface (four Validate legs plus
+  classify/docs/plugin) is historical as of the 2026-09-05 platform pause.
 - Plugin/package/skill/MCP rename toward `kxm`; tools `kxm_list` / `kxm_send` / …;
   env prefix `KXM_*`.
 - `kxm dash` tabbed dashboard; hub ops snapshot carries run progress and plan
@@ -236,6 +254,8 @@ It does not replace the phase gates below.
   four Validate contexts; `Plugin validation` is now required.
   `delete_branch_on_merge` is true. Evidence: B2 artifacts
   `ruleset-applied.json` and `repository-applied.json`.
+  Amended 2026-09-05: Windows contexts removed; Linux contexts and Plugin
+  validation remain required.
 - `kxm mesh` fails closed with a stderr brake naming `kxm init`, `kxm hub`, and
   `scripts/smoke-multi-pi.mjs`. `MeshClient`/`MeshHttpError` are `HubClient`/
   `HubHttpError`; `MeshDashboard` is `KxmDashboard`. Operator copy says `hub:off`;
@@ -267,6 +287,8 @@ It does not replace the phase gates below.
   immutable. Temporary probe workflow/branch/worktree deleted and never
   merged. All four normal `validate:ci` coverage legs remain required.
   Not a general Windows cure; no extra permanent npm gate.
+  Windows legs are paused as of 2026-09-05; the four-leg statement above is
+  historical. The pre-ack shutdown fixture fix remains landed.
 - **D1 engine compile (pure):** `vnext-engine-compile.ts` compiles a validated
   `kxm.workflow.v1` into a deep-frozen, JSON-serializable plan keyed by step id
   with typed transitions, per-edge and global transition budgets, step
@@ -298,9 +320,20 @@ It does not replace the phase gates below.
   adoption/remint. Proven on a synthetic agent-only fixture; `default.yaml`
   pins and stops fail-closed at start because it declares run duration
   limits. D3/D4 and the rest of Phase 3 remain open.
+  Issue #88 / D2 closed on all seven PR CI jobs (four Validate legs plus
+  classify/docs/plugin) before the pause; the post-merge main Windows Node 24
+  package-cleanup failure in run `34006194862` is unresolved and deferred.
 
 ### Still open
 
+- **Windows resumption (deferred):** restore the two Windows Validate legs and
+  their ruleset contexts, and diagnose the Node 24 package cleanup failure, in
+  a reviewed change that updates Tracking, tests, and settings together. D3
+  platform-specific success remains unverified and deferred. Issue #127 setup
+  stays active on Linux and local Mac.
+- **Release resumption (deferred):** remove the `release` job latch and
+  re-enable the Release workflow in a reviewed change that updates Tracking,
+  tests, and settings together. Independent of Windows resumption.
 - First real draft-to-published release after B2 (later release phase).
   `kxm update --kxm` end to end from a published asset. Temporary draft proof
   does not replace this. No sidecar `.sha256`.
@@ -474,6 +507,7 @@ waits, approvals, steering, cancellation, and uncertain-effect handling.
 in-process producer, shared project admission, and fail-closed unreconciled
 attempts after process restart. No gates, evidence, joins, duration or cost
 budget enforcement, or D4 recovery/adoption. The Gate sentence is unchanged.
+Windows verification of the run loop is deferred with the platform pause.
 
 **Gate:** a model-free test driver completes and recovers
 `examples/vnext/.kxm/workflows/default.yaml` (plan → implement → verify → ready)
@@ -525,7 +559,8 @@ temporary draft on tag `v0.5.20260905` and the same-digest rerun skipped
 without a second asset; mismatch tag failed before install. Cleanup left
 published `v0.5.1` and tree `0.5.1` unchanged. `protect-main` `22251971`
 now requires `Plugin validation`; `delete_branch_on_merge` is true. First
-published `kxm-<v>.tgz` and public npm remain later.
+published `kxm-<v>.tgz` and public npm remain later. Release automation is
+paused as of 2026-09-05 (job latch); the Phase 5 gate sentence is unchanged.
 
 **B4 note (not the Phase 5 gate):** package seams and the strict
 extension/mcp import boundary landed in tree. The old pack-unchanged
