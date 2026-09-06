@@ -13,8 +13,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Release automation is paused (operator decision 2026-09-05, Windows and
+  # release work deferred). This latch fails closed even if the workflow is
+  # re-enabled in GitHub settings. Resuming requires a reviewed PR that removes
+  # this `if` and updates test/ci-contract.test.ts and Tracking together.
   release:
     name: Draft GitHub release
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

@@ -89,7 +89,7 @@ exercised from `node_modules`.
 | GitHub check signal adapter | `plugins/kxm/src/github-watch.ts` | Deterministic pagination, conclusion, retry, and per-wait delivery-generation states in `test/github-watch.test.ts` |
 | Operator CLI | `scripts/kxm.mjs` | Isolated workspace commands in `test/cli.test.ts`; the packed artifact is installed locally and with the documented global `--omit=peer` path by `test/package-install.test.ts` |
 | Hub-local session brief | `plugins/kxm/src/session-work.ts`, `test/session-work.test.ts`, `test/cli.test.ts` | Status line and task/plan lists from hub SQLite without message bodies; `init --hub` is an unknown option; `hub bind` reports on/off/unknown |
-| Native-free package install and Windows `pi.cmd` worker launch | `package.json`, `test/store.test.ts`, `test/worker.test.ts` | CI runs on Ubuntu and Windows at Node 22.19 and Node 24; the Windows test executes a command-script fixture through `ComSpec` |
+| Native-free package install and Windows `pi.cmd` worker launch | `package.json`, `test/store.test.ts`, `test/worker.test.ts` | CI runs on Linux at Node 22.19 and Node 24; the Windows `pi.cmd` fixture stays in `test/worker.test.ts` and runs locally on Windows or when the paused Windows legs resume. |
 
 ## Manual release checks
 
