@@ -15,7 +15,7 @@ import {
 import { readVnextLocalBindings, vnextLocalBindingFile, withVnextLocalBindingLock } from "../plugins/kxm/src/vnext-bindings.ts";
 import { initializeVnextProject } from "../plugins/kxm/src/vnext-init.ts";
 import { vnextInitTransactionPath } from "../plugins/kxm/src/vnext-repair.ts";
-import { vnextContentSha256 } from "../plugins/kxm/src/vnext-template.ts";
+import { renderVnextTemplate, vnextContentSha256 } from "../plugins/kxm/src/vnext-template.ts";
 
 const fixture = resolve("examples/vnext");
 
@@ -31,6 +31,19 @@ function temporaryFixture(prefix: string): string {
   makeGitRoot(join(root, "repositories", "api"));
   makeGitRoot(join(root, "repositories", "web"));
   return root;
+}
+
+// Historical repair fixtures retain the exact v1 renderer/provenance. The
+// explicit registry is a separately reviewed project resource, not a fallback
+// or a rewrite of the historical template's baseline.
+function historicalRepairProject(root: string, options: { projectId: string; projectName: string; localStateRoot?: string }): void {
+  for (const [path, bytes] of renderVnextTemplate(options.projectId, options.projectName, "v1").files) {
+    const file = join(root, path);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, bytes);
+  }
+  writeFileSync(join(root, ".kxm/gates.yaml"), "schema: kxm.gate-registry.v1\ngates:\n  test:\n    kind: command\n    argv: [npm, test]\n    timeoutMs: 3600000\n");
+  loadVnextProject(root);
 }
 
 function issueCodes(error: unknown): string[] {
@@ -65,7 +78,7 @@ test("production vNext loader discovers and resolves the complete fixture determ
     assert.equal(first.project.value.id, "prj_01JPROJECT00000000000000000");
     assert.deepEqual([...first.repositories.keys()].sort(), ["api", "control", "web"]);
     assert.deepEqual([...first.workflows.keys()].sort(), ["default", "fix"]);
-    assert.equal(first.resources.length, 21);
+    assert.equal(first.resources.length, 22);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -255,7 +268,7 @@ test("vNext init atomically creates a minimal project and is idempotent", () => 
       localStateRoot: stateRoot,
     });
     assert.equal(created.action, "created");
-    assert.equal(created.files.length, 6);
+    assert.equal(created.files.length, 7);
     assert.match(created.configRevision ?? "", /^sha256:[a-f0-9]{64}$/);
     const before = created.files.map((file) => readFileSync(join(root, ...file.split("/")), "utf8"));
 
@@ -277,7 +290,7 @@ test("vNext template provenance supports conflict-free three-way repair and pres
   try {
     makeGitRoot(root);
     makeGitRoot(memberRoot);
-    initializeVnextProject(root, {
+    historicalRepairProject(root, {
       projectId: "prj_01JREPAIRPROJECT00000000000",
       projectName: "Repair Project",
       localStateRoot: stateRoot,
@@ -352,7 +365,7 @@ test("vNext template repair blocks overlapping edits and authority expansion wit
   try {
     for (const root of [conflictRoot, policyRoot]) {
       makeGitRoot(root);
-      initializeVnextProject(root, {
+      historicalRepairProject(root, {
         projectId: root === conflictRoot ? "prj_01JREPAIRCONFLICT000000000" : "prj_01JREPAIRPOLICY00000000000",
         projectName: "Blocked Repair",
         localStateRoot: stateRoot,
@@ -428,7 +441,7 @@ test("vNext init resumes pinned create and repair operations across injected cra
       const root = mkdtempSync(join(tmpdir(), `kxm-vnext-resume-${fault}-`));
       roots.push(root);
       makeGitRoot(root);
-      initializeVnextProject(root, {
+      historicalRepairProject(root, {
         projectId: `prj_01JRESUME${fault.replace("-", "").toUpperCase()}00000000`,
         projectName: "Resume Repair",
         localStateRoot: stateRoot,
@@ -452,7 +465,7 @@ test("vNext init resumes pinned create and repair operations across injected cra
     const changedRoot = mkdtempSync(join(tmpdir(), "kxm-vnext-resume-concurrent-change-"));
     roots.push(changedRoot);
     makeGitRoot(changedRoot);
-    initializeVnextProject(changedRoot, {
+    historicalRepairProject(changedRoot, {
       projectId: "prj_01JRESUMECHANGED0000000000",
       projectName: "Resume Changed",
       localStateRoot: stateRoot,
@@ -548,7 +561,7 @@ test("vNext repair validates the complete shadow before changing project files",
   const stateRoot = mkdtempSync(join(tmpdir(), "kxm-vnext-repair-shadow-state-"));
   try {
     makeGitRoot(root);
-    initializeVnextProject(root, {
+    historicalRepairProject(root, {
       projectId: "prj_01JREPAIRSHADOW00000000000",
       projectName: "Shadow Validation",
       localStateRoot: stateRoot,

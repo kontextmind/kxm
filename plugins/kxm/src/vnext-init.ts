@@ -5,6 +5,7 @@ import {
   VnextConfigError,
   discoverGitRoot,
   loadVnextProject,
+  assertNoRegisteredGates,
   planVnextInitialization,
   type JsonObject,
   type VnextConfigIssue,
@@ -83,11 +84,11 @@ function generatedProjectId(requested?: string): string {
 }
 
 function configOptions(options: VnextInitOptions, repositoryBindings: Readonly<Record<string, string>>): VnextConfigOptions {
+  assertNoRegisteredGates(options);
   return {
     ...(options.schemasDir === undefined ? {} : { schemasDir: options.schemasDir }),
     repositoryBindings,
     ...(options.registeredExecutors === undefined ? {} : { registeredExecutors: options.registeredExecutors }),
-    ...(options.registeredGates === undefined ? {} : { registeredGates: options.registeredGates }),
     ...(options.registeredToolPresets === undefined ? {} : { registeredToolPresets: options.registeredToolPresets }),
   };
 }
@@ -408,6 +409,7 @@ function initializeVnextProjectAtGitRoot(
 }
 
 export function initializeVnextProject(start = process.cwd(), options: VnextInitOptions = {}): VnextInitResult {
+  assertNoRegisteredGates(options);
   const gitRoot = discoverGitRoot(start);
   if (!gitRoot) {
     throw new VnextConfigError([initIssue("git_root_required", ".", "kxm init must run inside the authoritative Git worktree")]);

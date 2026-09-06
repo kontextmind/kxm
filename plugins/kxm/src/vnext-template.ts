@@ -4,8 +4,8 @@ import type { JsonObject, JsonValue } from "./vnext-config.ts";
 
 export const VNEXT_TEMPLATE_ID = "builtin-minimal";
 export const VNEXT_TEMPLATE_PROVENANCE_PATH = ".kxm/template-provenance.yaml";
-export const CURRENT_VNEXT_TEMPLATE_VARIANT: VnextTemplateVariant = "v1";
-export const SUPPORTED_VNEXT_TEMPLATE_VARIANTS = ["v1", "v2", "v3-policy"] as const;
+export const CURRENT_VNEXT_TEMPLATE_VARIANT: VnextTemplateVariant = "v4-registry";
+export const SUPPORTED_VNEXT_TEMPLATE_VARIANTS = ["v1", "v2", "v3-policy", "v4-registry"] as const;
 
 export type VnextTemplateVariant = typeof SUPPORTED_VNEXT_TEMPLATE_VARIANTS[number];
 
@@ -67,7 +67,7 @@ export function vnextAuthoritySha256(value: JsonObject): string {
 }
 
 function coreTemplate(projectId: string, projectName: string, variant: VnextTemplateVariant): ReadonlyMap<string, JsonObject> {
-  return new Map<string, JsonObject>([
+  const files = new Map<string, JsonObject>([
     [".kxm/project.yaml", {
       schema: "kxm.project.v1",
       id: projectId,
@@ -92,7 +92,7 @@ function coreTemplate(projectId: string, projectName: string, variant: VnextTemp
     }],
     [".kxm/agents/coordinator.yaml", {
       schema: "kxm.agent.v1",
-      purpose: variant === "v1"
+      purpose: variant === "v1" || variant === "v4-registry"
         ? "Coordinate the pinned workflow and emit schema-validated commands."
         : "Coordinate the pinned workflow and emit validated, reviewable commands.",
       tools: { preset: "coordinator" },
@@ -173,6 +173,13 @@ function coreTemplate(projectId: string, projectName: string, variant: VnextTemp
       ],
     }],
   ]);
+  if (variant === "v4-registry") {
+    files.set(".kxm/gates.yaml", {
+      schema: "kxm.gate-registry.v1",
+      gates: { test: { kind: "command", argv: ["npm", "test"], timeoutMs: 3_600_000 } },
+    });
+  }
+  return files;
 }
 
 function provenanceRevision(files: readonly VnextTemplateFileRecord[]): string {

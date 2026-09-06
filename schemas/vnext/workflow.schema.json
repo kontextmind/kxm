@@ -176,6 +176,7 @@
         "instructions": { "type": "string", "maxLength": 16000 },
         "agent": { "$ref": "common.schema.json#/$defs/identifier" },
         "gate": { "$ref": "common.schema.json#/$defs/identifier" },
+        "expect": { "enum": ["pass", "fail"], "default": "pass" },
         "signal": { "$ref": "common.schema.json#/$defs/identifier" },
         "model": { "$ref": "common.schema.json#/$defs/modelSelector" },
         "repositories": {
@@ -208,6 +209,10 @@
         }
       },
       "allOf": [
+        {
+          "if": { "required": ["expect"] },
+          "then": { "properties": { "kind": { "const": "gate" } } }
+        },
         {
           "if": { "properties": { "kind": { "enum": ["agent", "moa"] } }, "required": ["kind"] },
           "then": { "required": ["agent"] }

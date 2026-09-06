@@ -1,0 +1,35 @@
+{
+  "v1": {
+    "revision": "sha256:1f2aa2b555cc7bff70dc8d739fe9125cde3cde62deeb648ce41293bd272c0269",
+    "files": {
+      ".kxm/agents/coordinator.yaml": "sha256:d89b7680bd7606d9d01439997ad46dcc5406db1168b64dc43e65b89a407106fd",
+      ".kxm/agents/implementer.yaml": "sha256:ac382d34ab14be12deeadf61d22609a4598ae8aaeadcf5436d751f4d4cc80bd6",
+      ".kxm/project.yaml": "sha256:d0899be827d3bd66b13cf3f3694b9d1ddd4d3bf27dc7912c9a2954349b68cd54",
+      ".kxm/repo/repo.yaml": "sha256:dee91f083aa5c45e7360f404a21c88a3478a6db1abe054a3081065381c8edd01",
+      ".kxm/template-provenance.yaml": "sha256:98db979d0096f11e29eddc982127d24f7e01b0f9efe54ba2bee9dcfef5fe0609",
+      ".kxm/workflows/default.yaml": "sha256:84caa75036d511d391b54d67eedcdfa227a3b724a2bc09de9a7382fdcac14d1e"
+    }
+  },
+  "v2": {
+    "revision": "sha256:4ff22e3c2e871cc70ceb67731e1d7eb79daf05929bde8757eba89eb9387ce087",
+    "files": {
+      ".kxm/agents/coordinator.yaml": "sha256:fbfc8c425effd54dfeb0a0eccc2f3c5b9316ef2a84e630c23b83c40e20d51b14",
+      ".kxm/agents/implementer.yaml": "sha256:ac382d34ab14be12deeadf61d22609a4598ae8aaeadcf5436d751f4d4cc80bd6",
+      ".kxm/project.yaml": "sha256:d0899be827d3bd66b13cf3f3694b9d1ddd4d3bf27dc7912c9a2954349b68cd54",
+      ".kxm/repo/repo.yaml": "sha256:dee91f083aa5c45e7360f404a21c88a3478a6db1abe054a3081065381c8edd01",
+      ".kxm/template-provenance.yaml": "sha256:3524901a2b85409ea32abdfda9240628961e5344b1efd538d90788f839f8bab7",
+      ".kxm/workflows/default.yaml": "sha256:84caa75036d511d391b54d67eedcdfa227a3b724a2bc09de9a7382fdcac14d1e"
+    }
+  },
+  "v3-policy": {
+    "revision": "sha256:d229ca2e0192ad72cb30b41798c86b12ed151cdece9621c757526582ffc73b57",
+    "files": {
+      ".kxm/agents/coordinator.yaml": "sha256:66e78ad48c82d8c41e7d8978ed71c60953ad1efb80318686100071f73fdb242d",
+      ".kxm/agents/implementer.yaml": "sha256:ac382d34ab14be12deeadf61d22609a4598ae8aaeadcf5436d751f4d4cc80bd6",
+      ".kxm/project.yaml": "sha256:d0899be827d3bd66b13cf3f3694b9d1ddd4d3bf27dc7912c9a2954349b68cd54",
+      ".kxm/repo/repo.yaml": "sha256:dee91f083aa5c45e7360f404a21c88a3478a6db1abe054a3081065381c8edd01",
+      ".kxm/template-provenance.yaml": "sha256:6d8c483a9bdf8c423a86c92dc167322ee9f2cd72bef0d05b09183d9bdcc16fa7",
+      ".kxm/workflows/default.yaml": "sha256:84caa75036d511d391b54d67eedcdfa227a3b724a2bc09de9a7382fdcac14d1e"
+    }
+  }
+}

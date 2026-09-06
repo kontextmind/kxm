@@ -47,6 +47,9 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Fixed
 
+- Concurrent Runtime registry and event-store initialization now checks and
+  creates the schema under one write transaction, preventing duplicate-table
+  failures when a supervisor and status reader first open the same database.
 - Historical (before the 2026-09-05 platform pause): PR CI no longer skipped
   Validate or Plugin validation for docs-only diffs, so the then-required
   contexts (four expanded Validate names plus Plugin validation) still ran.

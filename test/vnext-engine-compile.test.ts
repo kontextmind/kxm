@@ -277,7 +277,7 @@ test("compile is deterministic and serializes by canonical JSON", () => {
   assert.equal(canonical(first), canonical(second));
   assert.notEqual(first.steps, second.steps);
   assert.deepEqual([...first.order], Object.keys(first.steps));
-  assert.deepEqual([...stepOf(first, "local-verify").outcomes], ["blocked", "implementation_failure", "passed", "plan_invalidated"]);
+  assert.deepEqual([...stepOf(first, "local-verify").outcomes], ["blocked", "implementation-failure", "passed", "plan_invalidated"]);
   const roundTrip = JSON.parse(JSON.stringify(first)) as JsonValue;
   assert.equal(canonical(roundTrip), canonical(first));
 });
