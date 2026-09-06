@@ -254,8 +254,18 @@ It does not replace the phase gates below.
   gate cwd, manifest-bound rework, cross-worktree reviews, and
   task-owned BLOCK scans. Structurally bound BLOCK reviews still block
   acceptance when telemetry recording fails; bookkeeping recovery preserves
-  their immutable verdict. W2 attribution/cost-only observations and W3
-  report/plan-current/recipes remain open. M4b is not
+  their immutable verdict. W2 is implemented locally: `attribute` retains
+  private explanations in immutable history with a hash-bound latest pointer;
+  `observe-cost` imports source-hashed, explicitly cost-only observations.
+  Imports cannot authorize witness or acceptance, duplicate native usage,
+  erase failed attempts, or turn estimates/unknowns into spend. Exclusions
+  retain their reasons and provenance. Historical attribution does not depend
+  on the current plan or a retained worktree. Attribution history is read by
+  directory, so interrupted writes remain visible even without a latest link.
+  If a writer dies holding `.observation-lock`, confirm no observation writer
+  is active before removing that empty task-local lock directory and retrying.
+  W3 report/plan-current/recipes remain
+  open. M4b is not
   implemented/unreleased until W3. M5 workflow docs adoption remains
   pending before D3; the assignment runner is not adopted. The operator
   authorized agent changes on 2026-09-06; Codex applied the bounded W1
@@ -460,7 +470,8 @@ It does not replace the phase gates below.
   and stored-manifest/plan/recording binding are implemented/unreleased,
   not accepted. M4b W1 accept is in progress (critic snapshot, gate
   cwd, stored rework, cross-worktree, and task-bound BLOCK checks);
-  W2/W3 and M5 remain pending.
+  W2 attribution/cost-only observations are implemented locally; W3 and
+  M5 remain pending.
   Issue #88 / D2 closed on all seven PR CI jobs (four Validate legs plus
   classify/docs/plugin) before the pause; the post-merge main Windows Node 24
   package-cleanup failure in run `34006194862` is unresolved and deferred.
@@ -511,8 +522,9 @@ It does not replace the phase gates below.
   accepted; root writes this assignment's receipt after native exit.
   M4b W1 accept is in progress (not implemented/unreleased; binding
   repair for critic snapshot/gate cwd/rework/worktree/BLOCK ownership);
-  W2 attribution/cost-only observations, W3 report/plan-current/recipes,
-  and M5 AGENTS/workflow docs adoption remain pending before D3. D3 still needs bounded
+  W2 attribution/cost-only observations are implemented locally. W3
+  report/plan-current/recipes and M5 AGENTS/workflow docs adoption remain
+  pending before D3. D3 still needs bounded
   contract resolution after this prerequisite. Not a product assignment
   layer (Phase 4) and not Phase 11 adapters. The assignment runner is
   not adopted.
@@ -526,7 +538,8 @@ It does not replace the phase gates below.
   validation, and corrected M3b remain unreleased and not accepted;
   M4a is implemented/unreleased and not accepted; M4b W1 accept is in
   progress with the stored-manifest critic/receipt/BLOCK binding repair;
-  W2/W3, M5, and D3 contract resolution are still open. This is not full AGENTS workflow
+  W2 attribution/cost-only observations are implemented locally; W3, M5,
+  and D3 contract resolution are still open. This is not full AGENTS workflow
   adoption (M5) and not a scratch-retirement claim.
 - Version-1 run event stores are refused with `runtime_schema_outdated`;
   backup, restore, and migration remain E6.
@@ -707,12 +720,13 @@ completion and current pointer, and requires routing/telemetry to be
 recorded or hash-bound recovered, before any npm execution. It does
 not re-run pre-dispatch writer admission; completion candidate
 `unknown` stays unknown. M3b acceptance, M4b (W1 accept in progress
-with critic/receipt/rework/worktree/BLOCK binding repair; W2/W3 open),
+with critic/receipt/rework/worktree/BLOCK binding repair; W2 implemented
+locally; W3 open),
 M5, and D3 remain pending. Not a Phase 3 completion or
 scratch-runner retirement.
-The assignment runner is not adopted. Root writes this assignment's M4a
-fixed-witness receipt after native exit; that receipt is not yet present
-in this still-running writer.
+The assignment runner is not adopted. Native writer witnesses follow native
+exit. Operator-authorized Codex work uses recorded local bootstrap verification
+until final adoption; it does not fabricate a native completion.
 
 **Gate:** a model-free test driver completes and recovers
 `examples/vnext/.kxm/workflows/default.yaml` (plan → implement → verify → ready)

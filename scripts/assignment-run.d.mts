@@ -266,4 +266,52 @@ export function main(argv?: string[], io?: {
   spawnSync?: typeof import("node:child_process").spawnSync;
   env?: NodeJS.ProcessEnv;
   now?: () => number;
-}): Promise<AssignmentCompletion | AssignmentRecordingResolution | AssignmentWitnessReceipt | TaskAccepted>;
+}): Promise<AssignmentCompletion | AssignmentRecordingResolution | AssignmentWitnessReceipt | TaskAccepted | CostObservationReceipt | AttributionPointer>;
+
+export const COST_OBSERVATION_SCHEMA: "kxm.cost-observation.v1";
+export const ATTRIBUTION_SCHEMA: "kxm.assignment-attribution.v1";
+export const ATTRIBUTION_CLASSES: readonly string[];
+export interface CostObservation {
+  schema: "kxm.cost-observation.v1";
+  task_id: string;
+  assignment_id: string;
+  kind: string;
+  route: { harness: string; provider: string; model: string; effort: string };
+  status: "completed" | "failed" | "interrupted" | "unknown";
+  timing: { started_at: string | null; finished_at: string | null; latency_ms: number | null };
+  usage: {
+    input_tokens: number | null;
+    output_tokens: number | null;
+    cache_read_tokens: number | null;
+    cache_write_tokens: number | null;
+    reasoning_tokens: number | null;
+    context_tokens: number | null;
+    token_basis: "cumulative";
+    cost_basis: "provider-reported" | "list" | "unmetered" | "unknown";
+    cost_usd: number | null;
+    estimate_usd: number | null;
+    partial: boolean;
+  };
+  sources: Array<{ path: string; sha256: string }>;
+  note: string;
+  accounting: { included: boolean; reason: string };
+  cost_only: true;
+  rework: boolean | null;
+  rework_of?: string;
+}
+export interface CostObservationReceipt {
+  schema: "kxm.cost-observation.v1";
+  task_id: string;
+  assignment_id: string;
+  cost_only: true;
+  path: string;
+  sha256: string;
+}
+export interface AttributionPointer {
+  schema: "kxm.assignment-attribution.v1";
+  id: string;
+  classification: "orchestration" | "model" | "environment" | "unclassified";
+  sha256: string;
+}
+export function observeAssignmentCost(request: { taskDir: string; observation: CostObservation }, deps?: Record<string, unknown>): CostObservationReceipt;
+export function attributeAssignment(request: { taskDir: string; recordDir: string; classification: string; explanation: string }, deps?: Record<string, unknown>): AttributionPointer;

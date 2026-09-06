@@ -9,7 +9,7 @@
 // Not a product assignment layer.
 
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   chmodSync,
   existsSync,
@@ -17,6 +17,9 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
+  rmdirSync,
+  rmSync,
   realpathSync,
   statSync,
   writeFileSync,
@@ -94,6 +97,11 @@ export const RUNNER_CODES = Object.freeze([
   "critic_block",
   "accepted_exists",
   "record_outside_task",
+  "observation_invalid",
+  "source_invalid",
+  "source_already_recorded",
+  "attribution_invalid",
+  "history_conflict",
   "unknown",
 ]);
 export const VERIFY_WITNESS_ID = "verify";
@@ -121,6 +129,9 @@ export const WITNESS_CODES = Object.freeze([
 ]);
 export const ACCEPTED_SCHEMA = "kxm.task-accepted.v1";
 export const ACCEPTED_FILENAME = "accepted.json";
+export const COST_OBSERVATION_SCHEMA = "kxm.cost-observation.v1";
+export const ATTRIBUTION_SCHEMA = "kxm.assignment-attribution.v1";
+export const ATTRIBUTION_CLASSES = Object.freeze(["orchestration", "model", "environment", "unclassified"]);
 export const ACCEPTED_NOTE = "developer record; not human approval, hub peer evidence, CI success, or merged/released status";
 export const REQUIRED_ACCEPT_CRITICS = Object.freeze({
   "review-arch": Object.freeze({ harness: "claude", model: "fable", role: "reviewer-arch" }),
@@ -900,6 +911,9 @@ function ioDeps(deps = {}) {
     writeFileSync: deps.writeFileSync ?? writeFileSync,
     chmodSync: deps.chmodSync ?? chmodSync,
     readdirSync: deps.readdirSync ?? readdirSync,
+    renameSync: deps.renameSync ?? renameSync,
+    rmdirSync: deps.rmdirSync ?? rmdirSync,
+    rmSync: deps.rmSync ?? rmSync,
     manifestBytes: deps.manifestBytes,
     now: deps.now,
   };
@@ -3579,8 +3593,299 @@ export async function acceptAssignment(request, deps = {}) {
   }
 }
 
+// Cost observations never become native evidence. Nullable measurements mean
+// unknown; cumulative token counts do not claim context-window occupancy.
+const COST_KEYS = ["schema", "task_id", "assignment_id", "kind", "route", "status", "timing", "usage", "sources", "note", "accounting", "cost_only", "rework", "rework_of"];
+const COST_USAGE_KEYS = ["input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens", "context_tokens", "token_basis", "cost_basis", "cost_usd", "estimate_usd", "partial"];
+
+function observationFailure(error, fallback = "observation_invalid") {
+  // Notes, paths and arbitrary imported keys must not reach CLI diagnostics.
+  return failClosed("assignment observation refused", error?.runnerCode ?? fallback);
+}
+
+function observationTask(taskDir, io) {
+  const dir = requireAbsoluteExistingDir(taskDir, "task_dir", "record_outside_task", io);
+  requireIdentity(basename(dir), "task_id", "record_outside_task");
+  return dir;
+}
+
+function privateRecord(path, io, code = "observation_invalid") {
+  const stat = lstatOrNull(path, io.lstatSync);
+  if (!stat?.isFile()) throw failClosed("expected a regular record file", code);
+  const bytes = io.readFileSync(path);
+  return { path, bytes, sha256: sha256Bytes(bytes), value: parseJsonFile(path, bytes, "record", code) };
+}
+
+function validateCostObservation(value, taskDir, io, verifySources = true) {
+  closedObject(value, COST_KEYS, "cost observation", ["rework_of"], "observation_invalid");
+  if (value.schema !== COST_OBSERVATION_SCHEMA || value.cost_only !== true || value.task_id !== basename(taskDir)) {
+    throw failClosed("cost observation identity is invalid", "observation_invalid");
+  }
+  requireIdentity(value.assignment_id, "assignment_id", "observation_invalid");
+  if (![...ASSIGNMENT_KINDS, "unknown"].includes(value.kind)) throw failClosed("invalid observed kind", "observation_invalid");
+  closedObject(value.route, ["harness", "provider", "model", "effort"], "route", [], "observation_invalid");
+  for (const item of Object.values(value.route)) {
+    if (typeof item !== "string" || !item.trim() || item.length > 256) throw failClosed("invalid observed route", "observation_invalid");
+  }
+  if (!["completed", "failed", "interrupted", "unknown"].includes(value.status)) throw failClosed("invalid observed status", "observation_invalid");
+  closedObject(value.timing, ["started_at", "finished_at", "latency_ms"], "timing", [], "observation_invalid");
+  for (const key of ["started_at", "finished_at"]) {
+    const time = value.timing[key];
+    if (time !== null && (typeof time !== "string" || !/^\d{4}-\d{2}-\d{2}T.*Z$/.test(time) || !Number.isFinite(Date.parse(time)))) {
+      throw failClosed("invalid observed timestamp", "observation_invalid");
+    }
+  }
+  if (value.timing.started_at !== null && value.timing.finished_at !== null && Date.parse(value.timing.finished_at) < Date.parse(value.timing.started_at)) {
+    throw failClosed("reversed observed timestamps", "observation_invalid");
+  }
+  closedObject(value.usage, COST_USAGE_KEYS, "usage", [], "observation_invalid");
+  for (const key of COST_USAGE_KEYS.filter((key) => key.endsWith("_tokens"))) {
+    const count = value.usage[key];
+    if (count !== null && (!Number.isSafeInteger(count) || count < 0)) throw failClosed("invalid token count", "observation_invalid");
+  }
+  for (const amount of [value.timing.latency_ms, value.usage.cost_usd, value.usage.estimate_usd]) {
+    if (amount !== null && (typeof amount !== "number" || !Number.isFinite(amount) || amount < 0)) throw failClosed("invalid measurement", "observation_invalid");
+  }
+  const usage = value.usage;
+  if (usage.token_basis !== TOKEN_BASIS || !COST_BASIS.includes(usage.cost_basis) || typeof usage.partial !== "boolean") {
+    throw failClosed("invalid cost or token basis", "observation_invalid");
+  }
+  if ((usage.cost_basis !== "provider-reported" && usage.cost_usd !== null)
+    || (usage.cost_basis === "provider-reported" && usage.estimate_usd !== null)
+    || (usage.cost_basis === "unknown" && usage.estimate_usd !== null)) {
+    throw failClosed("cost and estimate bases disagree", "observation_invalid");
+  }
+  if (typeof value.note !== "string") throw failClosed("private note must be text", "observation_invalid");
+  if (value.rework !== null && typeof value.rework !== "boolean") throw failClosed("observed rework must be boolean or unknown", "observation_invalid");
+  closedObject(value.accounting, ["included", "reason"], "accounting", [], "observation_invalid");
+  if (typeof value.accounting.included !== "boolean" || typeof value.accounting.reason !== "string"
+    || (!value.accounting.included && !value.accounting.reason.trim())) throw failClosed("exclusions require a reason", "observation_invalid");
+  if (value.rework_of !== undefined) {
+    requireIdentity(value.rework_of, "rework_of", "observation_invalid");
+    if (value.rework_of === value.assignment_id) throw failClosed("self rework is invalid", "observation_invalid");
+  }
+  if (!Array.isArray(value.sources) || value.sources.length === 0) throw failClosed("source provenance required", "source_invalid");
+  const paths = new Set();
+  for (const source of value.sources) {
+    closedObject(source, ["path", "sha256"], "source", [], "source_invalid");
+    if (typeof source.path !== "string" || !nodePath.isAbsolute(source.path)) throw failClosed("absolute source required", "source_invalid");
+    requireHex(source.sha256, "source hash", /^[a-f0-9]{64}$/, "source_invalid");
+    if (paths.has(source.path)) throw failClosed("duplicate source", "source_invalid");
+    paths.add(source.path);
+    if (verifySources) {
+      const stat = lstatOrNull(source.path, io.lstatSync);
+      if (!stat?.isFile() || sha256Bytes(io.readFileSync(source.path)) !== source.sha256) throw failClosed("source digest mismatch", "source_invalid");
+    }
+  }
+  return value;
+}
+
+function ensurePrivateDirectory(path, io) {
+  const stat = lstatOrNull(path, io.lstatSync);
+  if (stat) {
+    if (!stat.isDirectory()) throw failClosed("unsafe history directory", "history_conflict");
+  } else {
+    io.mkdirSync(path, { mode: 0o700 });
+  }
+}
+
+function atomicPrivatePointer(path, value, io) {
+  const stat = lstatOrNull(path, io.lstatSync);
+  if (stat && !stat.isFile()) throw failClosed("unsafe latest pointer", "history_conflict");
+  const temp = `${path}.${randomUUID()}.tmp`;
+  writePrivate(temp, `${JSON.stringify(value, null, 2)}\n`, io);
+  try { io.renameSync(temp, path); } finally { io.rmSync(temp, { force: true }); }
+}
+
+function withObservationLock(taskDir, io, run) {
+  const lock = join(taskDir, ".observation-lock");
+  try { io.mkdirSync(lock, { mode: 0o700 }); } catch { throw failClosed("observation writer is locked", "history_conflict"); }
+  try { return run(); } finally { io.rmdirSync(lock); }
+}
+
+function assertSourcesNotRecorded(value, taskDir, io) {
+  for (const item of listDirectAssignmentDirs(taskDir, io)) {
+    const imported = join(item.path, "cost-observation.json");
+    if (io.existsSync(imported)) {
+      const prior = validateCostObservation(privateRecord(imported, io).value, taskDir, io, false);
+      if (prior.assignment_id !== item.assignment_id) throw failClosed("foreign cost record", "observation_invalid");
+      if (value.sources.some((source) => prior.sources.some((old) => old.sha256 === source.sha256
+        || comparablePath(old.path, io.realpathSync, io.lstatSync) === comparablePath(source.path, io.realpathSync, io.lstatSync)))) {
+        throw failClosed("source already observed", "source_already_recorded");
+      }
+    }
+    // Canonical native records already own their usage. Their sidecars can
+    // be external to task_dir, so check the stored output binding as well.
+    if (io.existsSync(join(item.path, "manifest.json"))) {
+      const manifest = privateRecord(join(item.path, "manifest.json"), io).value;
+      const identity = identifyAssignment(manifest, io);
+      if (!identity || identity.record_dir !== item.path) throw failClosed("foreign native record", "observation_invalid");
+      const roots = [item.path];
+      if (identity.output_dir && !io.existsSync(join(item.path, "refusal.json"))) {
+        try {
+          roots.push(historicalAssignmentIdentity(manifest, item.path, io).output_dir);
+        } catch {
+          // Invalid manifests can be persisted before dispatch. They own
+          // their record directory, not an arbitrary invalid output root.
+        }
+      }
+      for (const source of value.sources) {
+        const actual = comparablePath(source.path, io.realpathSync, io.lstatSync);
+        if (roots.some((root) => actual === root || actual.startsWith(`${root}${nodePath.sep}`))) {
+          throw failClosed("native source already recorded", "source_already_recorded");
+        }
+      }
+    }
+  }
+}
+
+export function observeAssignmentCost(request, deps = {}) {
+  const io = ioDeps(deps);
+  try {
+    const taskDir = observationTask(request.taskDir, io);
+    const value = validateCostObservation(request.observation, taskDir, io);
+    return withObservationLock(taskDir, io, () => {
+      const recordDir = join(taskDir, value.assignment_id);
+      if (lstatOrNull(recordDir, io.lstatSync)) throw failClosed("identity already taken", "identity_taken");
+      assertSourcesNotRecorded(value, taskDir, io);
+      // Reserve non-recursively. A failed write leaves the identity consumed.
+      io.mkdirSync(recordDir, { mode: 0o700 });
+      const path = join(recordDir, "cost-observation.json");
+      const bytes = Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
+      writePrivate(path, bytes, io);
+      return { schema: COST_OBSERVATION_SCHEMA, task_id: value.task_id, assignment_id: value.assignment_id, cost_only: true, path, sha256: sha256Bytes(bytes) };
+    });
+  } catch (error) { throw observationFailure(error); }
+}
+
+function historicalAssignmentIdentity(manifest, recordDir, io) {
+  closedObject(manifest, ASSIGNMENT_KEYS, "historical manifest", OPTIONAL_ASSIGNMENT_KEYS, "attribution_invalid");
+  const identity = identifyAssignment(manifest, io);
+  if (!identity || identity.record_dir !== recordDir || !ASSIGNMENT_KINDS.includes(manifest.kind)
+    || typeof manifest.cwd !== "string" || !nodePath.isAbsolute(manifest.cwd)) {
+    throw failClosed("invalid historical identity", "attribution_invalid");
+  }
+  for (const key of ["harness", "model", "effort", "permission", "output_dir"]) {
+    requireNonemptyString(manifest[key], key, "attribution_invalid");
+  }
+  const output = comparableOutputBinding(identity.output_dir, identity.task_dir, recordDir, manifest.cwd, io.lstatSync, io.realpathSync);
+  // Attribution annotates immutable past facts; it does not admit a new
+  // assignment or authorize a gate. Neither plan currency nor cwd liveness
+  // is relevant, and a retired route can still receive historical notes.
+  return { ...manifest, ...identity, role: KIND_ROLES[manifest.kind],
+    cwd: comparablePath(manifest.cwd, io.realpathSync, io.lstatSync), output_dir: output.out };
+}
+
+function attributionSubject(taskDir, recordDir, io) {
+  const cost = join(recordDir, "cost-observation.json");
+  if (io.existsSync(cost)) {
+    const loaded = privateRecord(cost, io);
+    const value = validateCostObservation(loaded.value, taskDir, io, false);
+    if (value.assignment_id !== basename(recordDir)) throw failClosed("foreign cost record", "attribution_invalid");
+    return { path: loaded.path, sha256: loaded.sha256 };
+  }
+  const name = ["completion.json", "refusal.json", "pre-dispatch.json"].find((file) => io.existsSync(join(recordDir, file)));
+  if (!name) throw failClosed("assignment has no bound record", "attribution_invalid");
+  const loaded = privateRecord(join(recordDir, name), io);
+  const manifest = privateRecord(join(recordDir, "manifest.json"), io);
+  const identity = identifyAssignment(manifest.value, io);
+  const value = loaded.value;
+  const expected = { "completion.json": COMPLETION_SCHEMA, "refusal.json": REFUSAL_SCHEMA, "pre-dispatch.json": ASSIGNMENT_DISPATCH_SCHEMA }[name];
+  if (!identity || identity.task_dir !== taskDir || identity.record_dir !== recordDir
+    || value.schema !== expected || value.task_id !== identity.task_id || value.assignment_id !== identity.assignment_id
+    || (value.manifest?.sha256 ?? value.manifest_sha256) !== manifest.sha256) {
+    throw failClosed("assignment identity or digest mismatch", "attribution_invalid");
+  }
+  if (name === "completion.json") {
+    const stored = historicalAssignmentIdentity(manifest.value, recordDir, io);
+    const binding = closedObject(value.binding, ["task_dir", "cwd", "record_dir", "output_dir"], "historical binding", [], "attribution_invalid");
+    const normalized = Object.fromEntries(Object.entries(binding).map(([key, path]) => {
+      if (typeof path !== "string" || !nodePath.isAbsolute(path)) throw failClosed("invalid historical path", "attribution_invalid");
+      return [key, comparablePath(path, io.realpathSync, io.lstatSync)];
+    }));
+    assertCompletionMatchesStored({ ...value, binding: normalized }, stored, io);
+  } else if (name === "refusal.json") {
+    if (value.provider_calls !== 0 || !samePath(value.binding?.task_dir ?? "", taskDir, io.realpathSync)
+      || !samePath(value.binding?.record_dir ?? "", recordDir, io.realpathSync)) throw failClosed("foreign refusal", "attribution_invalid");
+  } else {
+    historicalAssignmentIdentity(manifest.value, recordDir, io);
+  }
+  return { path: loaded.path, sha256: loaded.sha256 };
+}
+
+export function attributeAssignment(request, deps = {}) {
+  const io = ioDeps(deps);
+  try {
+    const taskDir = observationTask(request.taskDir, io);
+    const recordDir = assertCanonicalRecordDir(taskDir, request.recordDir, "record_dir", io);
+    if (!ATTRIBUTION_CLASSES.includes(request.classification) || typeof request.explanation !== "string" || !request.explanation.trim()) {
+      throw failClosed("attribution requires a class and private explanation", "attribution_invalid");
+    }
+    const subject = attributionSubject(taskDir, recordDir, io);
+    return withObservationLock(taskDir, io, () => {
+      const dir = join(recordDir, "attribution");
+      const history = join(dir, "history");
+      ensurePrivateDirectory(dir, io);
+      ensurePrivateDirectory(history, io);
+      const latestPath = join(dir, "latest.json");
+      let previous = null;
+      if (lstatOrNull(latestPath, io.lstatSync)) {
+        const latest = privateRecord(latestPath, io, "history_conflict").value;
+        const priorPath = join(history, `${requireIdentity(latest.id, "attribution id", "history_conflict")}.json`);
+        const prior = privateRecord(priorPath, io, "history_conflict");
+        if (prior.sha256 !== latest.sha256 || prior.value.task_id !== basename(taskDir)
+          || prior.value.assignment_id !== basename(recordDir)) throw failClosed("invalid history pointer", "history_conflict");
+        previous = { id: latest.id, sha256: prior.sha256 };
+      }
+      const id = `a-${randomUUID()}`;
+      const value = { schema: ATTRIBUTION_SCHEMA, id, task_id: basename(taskDir), assignment_id: basename(recordDir),
+        classification: request.classification, recorded_at: new Date((io.now ?? Date.now)()).toISOString(),
+        subject, previous, explanation: request.explanation };
+      const bytes = Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
+      writePrivate(join(history, `${id}.json`), bytes, io);
+      const latest = { schema: ATTRIBUTION_SCHEMA, id, classification: value.classification, sha256: sha256Bytes(bytes) };
+      atomicPrivatePointer(latestPath, latest, io);
+      return latest;
+    });
+  } catch (error) { throw observationFailure(error, "attribution_invalid"); }
+}
+
+function observationCli(args) {
+  const allowed = args[0] === "attribute"
+    ? ["--task-dir", "--record-dir", "--class", "--explanation-file"]
+    : ["--task-dir", "--input"];
+  const values = {};
+  for (let i = 1; i < args.length; i += 2) {
+    if (!allowed.includes(args[i]) || values[args[i]] !== undefined || typeof args[i + 1] !== "string") {
+      throw failClosed("invalid observation arguments", "observation_invalid");
+    }
+    values[args[i]] = args[i + 1];
+  }
+  if (allowed.some((key) => values[key] === undefined)) throw failClosed("missing observation argument", "observation_invalid");
+  return values;
+}
+
 export async function main(argv = process.argv, io = { stdin: process.stdin, stdout: process.stdout, stderr: process.stderr }) {
   const args = argv.slice(2).filter((arg) => arg !== "--");
+  if (["attribute", "observe-cost"].includes(args[0])) {
+    try {
+      const values = observationCli(args);
+      const source = values["--input"] ?? values["--explanation-file"];
+      if (!nodePath.isAbsolute(source) || !lstatSync(source).isFile()) throw failClosed("regular input file required", "source_invalid");
+      const text = readFileSync(source, "utf8");
+      const result = args[0] === "attribute"
+        ? attributeAssignment({ taskDir: values["--task-dir"], recordDir: values["--record-dir"], classification: values["--class"], explanation: text })
+        : observeAssignmentCost({ taskDir: values["--task-dir"], observation: JSON.parse(text) });
+      io.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      process.exitCode = 0;
+      return result;
+    } catch (error) {
+      const failure = observationFailure(error);
+      io.stderr.write(`${failure.runnerCode}: assignment observation refused\n`);
+      process.exitCode = 1;
+      throw failure;
+    }
+  }
   if (args[0] === "accept") {
     try {
       const parsed = parseAcceptCli(args);
