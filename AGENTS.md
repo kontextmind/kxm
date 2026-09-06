@@ -19,15 +19,56 @@ Read this first. Then follow
 
 ## Who does what
 
-| Role | Who | Why |
-|---|---|---|
-| **Implement / write code** | **Grok** (`grok --model grok-4.6`), headless | Designated sole writer. Fast at repo-shaped edits. Native xAI harness. If `grok` is missing or logged out, fail closed — do not fall back to Pi. |
-| **Plan** | **Claude Fable** (`claude --model fable`) | Architecture and permissions; independent of the writer. |
-| **Review** | **Fable** (architecture/permissions) and **Codex gpt-5.6-sol** (CLI/docs) | Different providers from the writer. One critic is enough unless the change is auth, workflow policy, or multi-package. |
-| **Portability / mapping** | **Kimi** only when the task is Windows/path/CLI-portability | Not a default reviewer. |
-| **Verify** | The implementer runs `npm test` / `npx tsc --noEmit`. Critics do not replace tests. | Deterministic gates beat a third model. |
+Agents are a **rotation per workflow role**, chosen from authenticated,
+supported helper routes using verified quality, total time/cost, and rework.
+Root may change agents without asking again. Capability and auth checks stay
+fail-closed. Different providers supply independent review. This is developer
+orchestration policy for the issue 127 runner, not a Phase 4/11 product
+router.
 
-Claude is for **planning and review**, not the default writer. Do not treat `claude -p` output as hub peer-reply evidence; save it as an artifact plus human signoff.
+| Role | Starting rotation | Why |
+|---|---|---|
+| **Implement / write code** | **Grok** (`grok --model grok-4.6`), headless | Currently admitted native writer on this runner. Fast at repo-shaped edits. If `grok` is missing or logged out, fail closed — do not fall back to Pi. Not a fixed sole writer. |
+| **Plan** | **Claude Fable** (`claude --model fable`) | Architecture and permissions; independent of the writer. |
+| **Review** | **Fable** (architecture/permissions) and **Codex gpt-5.6-sol** (CLI/docs) | Different providers from the writer. Both designated critics are required for acceptance on this runner; a single critic is at most preliminary triage. |
+| **Portability / mapping** | **Kimi** only when the task is Windows/path/CLI-portability | Not a default reviewer. |
+| **Verify** | The implementer runs `npm run verify`. Critics do not replace tests. | Deterministic gates beat a third model. Root re-runs the fixed witness. |
+
+Claude is for **planning and review**, not the default writer. Do not treat
+`claude -p` output as hub peer-reply evidence; save it as an artifact plus
+human signoff. Do not declare Codex and Grok interchangeable in current
+harness-run role mapping. Codex session work is an authorized **bootstrap**
+route with unknown root usage/cost, never a forged native writer completion.
+If a different native writer route is needed, resolve it with capability/auth
+evidence.
+
+**Attempts and relief.** Two attempts by default on one brief. A third only
+with concrete new evidence or a changed approach, then bring relief. Preserve
+every attempt, blocker, candidate, and failed check; transfer findings.
+New-model comparisons are bounded experiments, not fanout on every task. The
+standalone `just assign` command does not automatically schedule failover.
+
+**Private handoff notes.** When needed, each role leaves concise private notes:
+missing input, friction, what worked, suggested next change, artifact/check
+refs, and approaches already tried. Those notes live in private model
+summaries (`summary` / sidecars) and in `just attribute` history
+(`orchestration|model|environment|unclassified` plus a private explanation).
+Notes never grant tools, waive verification, skip review, or become
+human/hub approval. Do not add schema fields for them.
+
+**Normal entry** is a closed assignment manifest plus the current plan through
+`just assign`. Fixed `just witness` verifies the exact candidate. `just accept`
+binds the actual commit and independent Fable/Sol PASS records. `just
+attribute` and `just observe-cost` keep private history without editing
+`completion.json`. `just change-report` separates provider-reported spend,
+list estimates, unmetered, unknown, partial data, all attempts, and explicit
+exclusions. Root bootstrap costs remain unknown and are recorded as
+cost-only. Public PR/CI ids are observations, not success proof. Low-level
+`just impl|plan|review-arch|review-cli` recipes are harness transport only;
+they do not mint assignment, witness, or acceptance proof.
+
+Evidence-informed **effort defaults** (not a ranking, not a catalog): medium
+for implementation, planning, and architecture review; low for CLI review.
 
 **Provider-native harness:** If the model’s provider has its own harness and that harness is **installed and logged in**, use it — not Pi’s copy of the same provider. That is why `kxm harness list` checks auth.
 
@@ -59,7 +100,10 @@ Harness default is **Pi** (omit `harness:` in YAML). Other CLIs are opt-in on th
 
 ## Daily loop
 
-Use a slim path: plan → implement → verify. Do **not** run the 13-stage `/fix` for setup or docs. Dual-critic `/fix` is Phase 7.
+Use a slim path: plan → implement → verify. Do **not** run the 13-stage `/fix`
+for setup or docs. Dual-critic `/fix` is Phase 7. For this repo's issue 127
+runner, that slim path is assignment → witness → (attribute/observe-cost as
+needed) → accept, not a scratch `just impl` call.
 
 ## Plans and slices
 
@@ -67,7 +111,7 @@ When a gate passes, a slice lands in the wrong phase, or a name/CLI change
 ages the plan, update **Tracking** and the affected phase gate in
 `docs/vnext/implementation-plan.md` in the **same** change. Do not refresh the
 plan every session. Do not enlarge earlier phases. Fable proposes plan edits;
-Grok applies them.
+the current writer applies them (starting rotation: Grok).
 
 ## Git and issue trackers
 

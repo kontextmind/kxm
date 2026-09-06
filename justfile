@@ -19,29 +19,31 @@ default:
 
 # ── dispatch ────────────────────────────────────────────────────────────────
 # Each recipe builds a kxm.harness-request.v1 envelope and prints a
-# kxm.harness-result.v1 envelope. BRIEF is a path to a Markdown brief; never an
+# kxm.harness-result.v2 envelope. BRIEF is a path to a Markdown brief; never an
 # inline prompt, which is how the shell-quoting bugs get in.
 # User paths are "$1"/"$2" (positional-arguments) and JSON.stringify in Node.
 # Recipe literals (role/harness/model) are not taken from user strings.
 
 # (`just --list` shows only the LAST comment line, so that one is the summary.)
+# These four recipes are low-level harness transport. They do not mint
+# assignment, witness, or acceptance proof. Prefer just assign for that.
 
-# implement a unit with the designated writer: just impl brief.md [worktree]
-# Native grok only. There is no Pi writer fallback.
+# implement a unit with the current writer: just impl brief.md [worktree]
+# Native grok only. There is no Pi writer fallback. Effort default: medium.
 impl BRIEF CWD=".":
-    @node -e 'const [prompt_file, cwd] = process.argv.slice(-2); process.stdout.write(JSON.stringify({schema:"kxm.harness-request.v1",role:"writer",harness:"grok",model:"grok-4.6",effort:"high",permission:"edit",prompt_file,cwd}))' -- "$1" "$2" | {{run}} -
+    @node -e 'const [prompt_file, cwd] = process.argv.slice(-2); process.stdout.write(JSON.stringify({schema:"kxm.harness-request.v1",role:"writer",harness:"grok",model:"grok-4.6",effort:"medium",permission:"edit",prompt_file,cwd}))' -- "$1" "$2" | {{run}} -
 
 # plan a unit, read-only, independent of the writer: just plan brief.md
 plan BRIEF CWD=".":
-    @node -e 'const [prompt_file, cwd] = process.argv.slice(-2); process.stdout.write(JSON.stringify({schema:"kxm.harness-request.v1",role:"planner",harness:"claude",model:"fable",effort:"high",permission:"read-only",prompt_file,cwd}))' -- "$1" "$2" | {{run}} -
+    @node -e 'const [prompt_file, cwd] = process.argv.slice(-2); process.stdout.write(JSON.stringify({schema:"kxm.harness-request.v1",role:"planner",harness:"claude",model:"fable",effort:"medium",permission:"read-only",prompt_file,cwd}))' -- "$1" "$2" | {{run}} -
 
 # review architecture and permissions, read-only: just review-arch brief.md
 review-arch BRIEF CWD=".":
-    @node -e 'const [prompt_file, cwd] = process.argv.slice(-2); process.stdout.write(JSON.stringify({schema:"kxm.harness-request.v1",role:"reviewer-arch",harness:"claude",model:"fable",effort:"high",permission:"read-only",prompt_file,cwd}))' -- "$1" "$2" | {{run}} -
+    @node -e 'const [prompt_file, cwd] = process.argv.slice(-2); process.stdout.write(JSON.stringify({schema:"kxm.harness-request.v1",role:"reviewer-arch",harness:"claude",model:"fable",effort:"medium",permission:"read-only",prompt_file,cwd}))' -- "$1" "$2" | {{run}} -
 
 # review CLI surface and docs, read-only, different provider: just review-cli brief.md
 review-cli BRIEF CWD=".":
-    @node -e 'const [prompt_file, cwd] = process.argv.slice(-2); process.stdout.write(JSON.stringify({schema:"kxm.harness-request.v1",role:"reviewer-cli",harness:"codex",model:"gpt-5.6-sol",effort:"high",permission:"read-only",prompt_file,cwd}))' -- "$1" "$2" | {{run}} -
+    @node -e 'const [prompt_file, cwd] = process.argv.slice(-2); process.stdout.write(JSON.stringify({schema:"kxm.harness-request.v1",role:"reviewer-cli",harness:"codex",model:"gpt-5.6-sol",effort:"low",permission:"read-only",prompt_file,cwd}))' -- "$1" "$2" | {{run}} -
 
 # any harness by hand from a full envelope file: just dispatch request.json
 dispatch REQUEST:
@@ -81,7 +83,8 @@ harnesses:
 runs:
     @ls -t .kxm/logs/*.json 2>/dev/null | head -10 | while read -r f; do \
         printf '%s  ' "$f"; \
-        node -e 'const j=JSON.parse(require("fs").readFileSync(0,"utf8")); const b=j.costBasis; let cost="unknown"; if (b==="unmetered") cost="unmetered"; else { const n=typeof j.costUsd==="number"&&Number.isFinite(j.costUsd)?j.costUsd:undefined; const est=typeof j.providerReportedCostUsd==="number"&&Number.isFinite(j.providerReportedCostUsd)?j.providerReportedCostUsd:undefined; const amount=n??est; if (b==="unknown"||b==null||amount===undefined) cost="unknown"; else if (b==="list") cost="list $"+amount.toFixed(4); else if (b==="billed") cost="billed $"+amount.toFixed(4); else cost=String(b)+" $"+amount.toFixed(4); } console.log(j.ok?"ok":"FAIL", j.harness??"", j.effectiveModel??"", (j.latencyMs??"?")+"ms", cost);' < "$f" 2>/dev/null || echo "(unparsed)"; \
+        KXM_RESULT_FILE="$f" \
+        node -e 'const fs=require("fs"); const file=process.env.KXM_RESULT_FILE||"-"; let j; try { j=JSON.parse(fs.readFileSync(0,"utf8")); } catch { console.log("(unparsed)"); process.exit(0); } const expected="kxm.harness-result.v2"; const observed=(j&&j.schema)||"none"; if (observed!==expected) { console.log(file+": observed schema "+observed+"; obsolete result schema kxm.harness-result.v1; expected "+expected); process.exit(0); } const b=j.costBasis; let cost="unknown"; if (b==="unmetered") cost="unmetered"; else { const n=typeof j.costUsd==="number"&&Number.isFinite(j.costUsd)?j.costUsd:undefined; const est=typeof j.providerReportedCostUsd==="number"&&Number.isFinite(j.providerReportedCostUsd)?j.providerReportedCostUsd:undefined; const amount=n??est; if (b==="unknown"||b==null||amount===undefined) cost="unknown"; else if (b==="list") cost="list $"+amount.toFixed(4); else if (b==="billed") cost="billed $"+amount.toFixed(4); else cost=String(b)+" $"+amount.toFixed(4); } console.log(j.ok?"ok":"FAIL", j.harness??"", j.effectiveModel??"", (j.latencyMs??"?")+"ms", cost);' < "$f" 2>/dev/null || echo "(unparsed)"; \
     done
 
 # ── gates ───────────────────────────────────────────────────────────────────
@@ -94,3 +97,32 @@ verify:
 # the PR gate
 check-generated:
     npm run check:generated
+
+# Normal assignment workflow (not the impl/plan/review transport recipes).
+# run a bound assignment: just assign /absolute/manifest.json
+assign MANIFEST:
+    @node scripts/assignment-run.mjs run --manifest "$1"
+
+# run the fixed verification witness for an existing native assignment
+witness RECORD:
+    @node scripts/assignment-run.mjs witness --record-dir "$1"
+
+# attach private attribution and handoff feedback to an assignment
+attribute TASK RECORD CLASS EXPLANATION:
+    @node scripts/assignment-run.mjs attribute --task-dir "$1" --record-dir "$2" --class "$3" --explanation-file "$4"
+
+# import one historical cost observation without native evidence or telemetry
+observe-cost TASK INPUT:
+    @node scripts/assignment-run.mjs observe-cost --task-dir "$1" --input "$2"
+
+# accept an exact witnessed commit with both designated critic records
+accept TASK COMMIT WRITER ARCH CLI:
+    @node scripts/assignment-run.mjs accept --task-dir "$1" --commit "$2" --record-dir "$3" --critic "$4" --critic "$5"
+
+# preserve current plan history and advance its pointer with a generation check
+plan-current TASK PLAN SHA COMMIT GENERATION:
+    @node scripts/assignment-run.mjs plan-current --task-dir "$1" --plan "$2" --sha256 "$3" --base-commit "$4" --expected-generation "$5"
+
+# report task attempts, rework, costs and all retained verification history
+change-report TASK:
+    @node scripts/assignment-run.mjs change-report --task-dir "$1"

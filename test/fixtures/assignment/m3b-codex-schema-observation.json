@@ -1,0 +1,5 @@
+{
+  "evidenceLimit": "No live Codex schema request was made; not a captured native rejection.",
+  "inference": "Codex --output-schema documented Structured Outputs subset requires closed objects and required property keys. Role schemas are closed in R2 from that documented inference, not from an observed live Codex rejection.",
+  "liveRejectionObserved": false
+}

@@ -48,6 +48,43 @@ It does not replace the phase gates below.
   one-shot headless writer, not a supervised long-lived worker. The repo
   `scripts/harness-run.mjs` helper is a bounded dev dispatcher (auth preflight,
   verified pairs, private sidecars), not a Phase 11 product adapter.
+- **Developer assignment runner (issue 127, unreleased):** normal entry is
+  `just assign` with a closed `kxm.assignment.v1` manifest and
+  `task_dir/plan-current.json`. Fixed `just witness` verifies the exact
+  candidate; `just accept` binds an actual commit plus independent Fable
+  architecture and Sol CLI PASS records. `just attribute` and
+  `just observe-cost` keep private history without editing completions.
+  `just change-report` separates provider-reported, list estimates,
+  unmetered, unknown, partial, all attempts, and explicit exclusions.
+  Root bootstrap cost stays unknown and is imported as cost-only. Public
+  PR/CI ids are observations, not success proof. `just
+  impl|plan|review-arch|review-cli` are low-level harness transport; they
+  do not mint assignment, witness, or acceptance proof. Evidence-informed
+  effort defaults: medium for implementation, planning, and architecture
+  review; low for CLI review. Not a ranking or a product catalog. The
+  runner is not the Phase 4 assignment layer and not a Phase 11 adapter.
+  Phase 3 `default.yaml`/`fix.yaml` remain model-free. Phase 9 may use the
+  cost report to propose changes; it is not learned policy. Phase 7 quorum
+  and npm/wiki deferrals are unchanged. D3 needs a bounded contract
+  resolution after this prerequisite.
+- **Role rotation (operator, 2026-09-06):** choose agents per role from
+  authenticated, supported helper routes using verified quality, total
+  time/cost, and rework. Root may change agents without asking again.
+  Starting rotation: writer `grok`/`grok-4.6`, planner and architecture
+  critic `claude`/`fable`, CLI critic `codex`/`gpt-5.6-sol`. Grok remains
+  the currently admitted native writer route; Codex session work is an
+  authorized bootstrap route with unknown root usage/cost, never a forged
+  native completion. Do not declare Codex and Grok interchangeable in
+  harness-run role mapping. Two attempts by default; a third only with
+  concrete new evidence or a changed approach, then relief. Preserve every
+  attempt. New-model trials are bounded comparable tasks, not daily
+  fanout. This is orchestration policy; `just assign` does not
+  automatically schedule failover.
+- **Private handoff notes:** when needed, each role leaves concise private
+  notes (missing input, friction, what worked, suggested next change,
+  artifact/check refs, approaches tried) in private model summaries and
+  `attribute` history. Notes never grant tools, waive verification, or
+  become human/hub approval. No extra schema fields.
 - Anthropic subscription models are the motivating case (Claude CLI vs Pi
   Anthropic API keys). The same rule applies to Codex, Kimi, Gemini, DeepSeek,
   and later harnesses.
@@ -123,6 +160,10 @@ It does not replace the phase gates below.
 
 ### Landed in this tree (unreleased)
 
+- **Issue 127 CI repair:** the parent-alias CLI regression creates and cleans
+  up its own temporary symlink, so Mac/Linux checks do not depend on an
+  operator's checkout path. The earlier Linux failure remains recorded;
+  the corrected candidate still requires PR CI. Phase gates are unchanged.
 - **Platform pause (2026-09-05):** the active PR gate is two Linux
   `validate:ci` + `check:generated` legs (Node 22.19.0 and 24) plus Docs lint
   and Plugin validation. Classify changes plus those four jobs is five CI
@@ -175,21 +216,174 @@ It does not replace the phase gates below.
   false; `default.yaml` declared graph routes `ready` only through `verify`.
   This is inventory filtering only (issue 84 auth/eligibility sub-slice), not
   a supervised-worker claim or live assignment.
-- Headless `scripts/harness-run.mjs` helper (2026-09-05): native auth
-  preflight, verified grok/claude/codex/OpenRouter-Pi pairs, no native-provider
-  Pi fallback, private answer/stderr sidecars, shell:false launchers.
+- Headless `scripts/harness-run.mjs` helper (2026-09-05, M1 transport
+  2026-09-06 unreleased, not accepted): native auth preflight, verified
+  grok/claude/codex/OpenRouter-Pi pairs, no native-provider Pi fallback,
+  private answer/stderr/dispatch/model-claim/error sidecars, shell:false
+  launchers. Result schema is `kxm.harness-result.v2` only; obsolete v1
+  files are diagnosed and not parsed or upgraded. Helper `finalOutcome`
+  and arbitrary `agent` envelopes are gone. Transport
+  `completed|failed|interrupted` is not a model claim and not product
+  `routing-record.v1` `finalOutcome`. Direct-child `exit`/`close` keep a
+  null `exitCode` and the exact `signal`; an external signal with no
+  helper timeout is `interrupted`. Natural successful exit waits for
+  stdio close/drain; `completed` needs exit code 0 and observed close or
+  both streams drained. Lingering inherited pipes settle on a bound as
+  `stdio_incomplete` (known usage stays partial) without signaling an
+  already-exited child or adopting descendants. Close with a null code
+  and no signal is `unknown_exit`, not `completed`. Timeout
+  requests SIGTERM, then SIGKILL after a bounded grace, and can settle
+  with `observedChildExit` false when stdio never closes, without
+  descendant-death claims. Public metadata is a closed allowlist
+  (`errorCode`/`stopReason` known enums) with type checks on the whole
+  public result and nested usage/cost/providerMetadata (finite
+  nonnegative cost, nonnegative integer counters, bounded
+  enums/booleans/strings). Invalid scalar objects and malformed strings
+  are dropped, not leaked or coerced to zero; known valid fields and
+  aggregate >1M metadata stay. Raw invalid details stay private. The
+  first-80-character stderr substring scan is gone. Post-spawn
+  write/normalization/spawn failures, including malformed optional text
+  and stdin/pid-record write errors, keep their known run/spawn stage
+  and any observed partial spend; they are not relabeled as no-spend
+  preflight and do not throw as `ERR_INVALID_ARG_TYPE`. Grok argv adds
+  `--no-subagents --disable-web-search` and optional `--max-turns`;
+  Codex adds `--ignore-user-config` (parser probe exit 0; top-level help
+  omits it).
   Routing fields `harness`/`role`/`model`/`permission`/`prompt_file` are
   required nonempty strings (no CLI-default model or permission). Pi
   planner/reviewer cannot `edit`; only `experiment` may. `max_cost_usd` and
-  `timeout_ms` must be positive finite numbers when set (zero is not dropped
-  silently). `just` recipes JSON.stringify user paths via positional args.
-  Recipe quoting tests use the justfile body and do not require a just binary;
-  live just integration is optional. `just runs` labels billed / list /
-  unmetered / unknown (never absent as `$0`). `prompt_file` and
-  `output_schema` resolve against the invocation cwd and are read before any
-  auth or assignment spawn; missing or unreadable inputs fail closed with
-  zero spawn. File-consuming argv tokens are absolute so the child can run
-  in `request.cwd`. Windows helper dispatch is unverified. Not Phase 11.
+  `timeout_ms` must be positive finite numbers when set (zero is not
+  dropped silently). `just` recipes JSON.stringify user paths via
+  positional args. Recipe quoting tests use the justfile body and do not
+  require a just binary; live just integration is optional. `just runs`
+  accepts v2 only and labels billed / list / unmetered / unknown /
+  provider-reported (never absent as `$0`). `prompt_file` and
+  `output_schema` resolve against the invocation cwd and are read before
+  any auth or assignment spawn; missing or unreadable inputs fail closed
+  with zero spawn. File-consuming argv tokens are absolute so the child
+  can run in `request.cwd`. Windows helper dispatch is unverified. Not
+  Phase 11. Issue 127 M1 transport, M2 reusable test helpers
+  (engine/runtime git project setup and harness fake-child/auth/dispatch),
+  and corrected M3a exported assignment-manifest validation plus M3b
+  exclusive ownership, canonical records, identifiable refusals, bounded
+  diagnostics, role verify instruction, observed invocation facts, immutable
+  completion/bookkeeping recovery, critic eligibility, separated cost
+  populations, and provider-compatible closed native schemas are
+  implemented/unreleased, not accepted. R1 remains the ownership/canonical
+  checkpoint (public kind, explicit runner codes, path-component ancestry,
+  fail-closed lstat/realpath, implementer witness sentence, canonical
+  output identity through deepest-existing-ancestor realpath from
+  validation through reservation/harness/success binding, including known
+  dangling final entries as `output_dir_exists`). R2 is the local
+  unreleased repair of B1–B4/C1–C2 observed facts/cost/native schemas,
+  including bound observe recovery/idempotency and parent-alias CLI identity.
+  This is not M3b acceptance or runner adoption. M4a fixed
+  `verify`/`validate-ci` witness execution, before/after candidate
+  snapshots, and private receipt history/latest under
+  `task_dir/<assignment_id>/witness` are implemented/unreleased, not
+  accepted. `witness --record-dir <absolute-path>` requires an existing
+  completion, binds stored-manifest identity/cwd/kind/route, the
+  canonical `task_dir/<assignment_id>` record path, current or originally
+  admitted bootstrap plan, and recovered routing/telemetry bookkeeping
+  before any gate execution, and does not rewrite `completion.json` or
+  re-run writer admission. Unknown completion candidates stay unknown
+  while the witness takes its own snapshots. M4b W1 is implemented locally:
+  exact-commit developer acceptance (`accept --task-dir --commit
+  --record-dir --critic --critic`) binds the latest passed verify
+  receipt, designated Fable/Sol critic PASS records, and the actual
+  commit tree, including stored-manifest critic snapshots, writer-bound
+  gate cwd, manifest-bound rework, cross-worktree reviews, and
+  task-owned BLOCK scans. Historical same-tree BLOCK reviews bind by stored
+  manifest identity and completion, not the live plan pointer or a live
+  review cwd; a plan-current advance or removed worktree does not drop them.
+  Structurally bound BLOCK reviews still block
+  acceptance when telemetry recording fails; bookkeeping recovery preserves
+  their immutable verdict. W2 is implemented locally: `attribute` retains
+  private explanations in immutable history with a hash-bound latest pointer;
+  `observe-cost` imports source-hashed, explicitly cost-only observations.
+  Imports cannot authorize witness or acceptance, duplicate native usage,
+  erase failed attempts, or turn estimates/unknowns into spend. Exclusions
+  retain their reasons and provenance. Historical attribution does not depend
+  on the current plan or a retained worktree. Legacy bootstrap manifests are
+  source history, not canonical native assignments that can block imports.
+  Attribution history is read by
+  directory, so interrupted writes remain visible even without a latest link.
+  If a writer dies holding `.observation-lock`, confirm no observation writer
+  is active before removing that empty task-local lock directory and retrying.
+  W3 is implemented locally: `change-report --task-dir` reports native and
+  imported attempts, explicit exclusions, all gate and attribution history,
+  separate cost bases, elapsed time and summed durations. Unknowns remain
+  unknown; cumulative tokens are not context occupancy; the effort table is
+  descriptive, not a ranking. `plan-current` uses expected generation and
+  proposed hash checks, preserves prior plan/pointer bytes, and atomically
+  advances the pointer. Safe positional just recipes expose the runner.
+  M4b is implemented/unreleased. Per-candidate acceptance requires an
+  actual native writer, the fixed witness, and both designated native
+  reviews; PR/CI/merge complete issue 127. This candidate does not assert
+  those gates passed. M5 docs/defaults (AGENTS, harness-cli, routing,
+  Tracking, evidence-informed recipe effort) are implemented/unreleased.
+  Low-level `just impl|plan|review-*` recipes remain harness transport.
+  The operator
+  authorized agent changes on 2026-09-06; Codex applied the bounded W1
+  repair after repeated Grok no-work outcomes. Its local verification is
+  recorded as bootstrap evidence, not a native completion or acceptance.
+  D3 still waits on bounded contract resolution after this
+  prerequisite.
+  `scripts/assignment-run.mjs` validates closed `kxm.assignment.v1`
+  (kind/route, explicit effort/permission, cwd plus required `task_dir`
+  whose final segment equals `task_id`, clean or staged base, current or
+  restricted bootstrap `plan_ref` bound to `task_dir/plan-current.json`,
+  hashed inputs, contract, fresh identity/output and rework under
+  `task_dir`). Git comparisons for validation are read-only
+  (`--no-optional-locks`, porcelain `-z` status, `cat-file -t`,
+  `diff-index --cached --quiet`); validation never mints a tree or writes
+  `.git`. `run --manifest <absolute-path>` consumes identity at
+  `task_dir/<assignment_id>` (exclusive non-recursive mkdir plus immutable
+  manifest copy, no `--task-dir` override). Safe custom output may be a
+  sibling or external path, including missing parents and nested paths
+  under the record directory; the final output directory is reserved
+  non-recursively and never adopted. Runner records stay canonical;
+  native sidecars use `output_dir`. Identifiable invalid inputs write
+  `refusal.json` with `provider_calls` 0; duplicate/unsafe identity writes
+  nothing. Completions bind invocation (`thrown`/`returned`), observed
+  candidate (`recorded` or `unknown`/`snapshot_failed`), and recording
+  status for candidate/sidecar/routing/telemetry steps. Returned v2
+  transport/usage/claims are preserved across later snapshot or write
+  failures; pre-invocation failures stay refusals; helper throws with an
+  explicit preflight/auth stage record that stage, and unclassified throws
+  are failed run/`unrecognized` with unknown usage. `observe` recovers
+  resolvable routing/telemetry via a completion-hash-bound
+  `recording-resolved.json` without rewriting completion or rerunning the
+  model. Routing normalization is bookkeeping: a returned v2 result still
+  writes completion with known transport/usage even when the routing schema
+  rejects an over-long effectiveModel. Existing telemetry, routing, and
+  resolution files are accepted only when they match this assignment's
+  stable identity and facts (timestamps ignored); malformed, foreign, or
+  conflicting bytes fail closed without overwrite. Observation keeps original
+  unknown/failed candidate and sidecar facts and does not advertise
+  unrecovered recording failures as ok, including omitted failed sidecar
+  refs that never entered `completion.sidecars`. Surviving recorded files
+  are not sidecar recovery. `observe --record-dir <absolute-path>`
+  is the recovery CLI; parent-alias invocation compares real path identity
+  so `/tmp` vs `/private/tmp` still runs `main`. This remains local
+  unreleased M3b work, not acceptance. Critic review requires completed native transport, an unchanged
+  recorded candidate, and a validated top-level PASS/BLOCK; otherwise
+  `critic.kind` is `none` with a bounded reason. Only provider-reported
+  cost populates routing `costUsd`; unmetered/list estimates and over-cap
+  tokens stay named providerMetadata. Native output schemas are closed
+  (`additionalProperties` false, every property required, no
+  minimum/maximum keywords). Private pre-dispatch carries
+  manifest/prompt/plan hashes, dispatch is the v2 helper, and one pending
+  routing record is appended before the immutable completion.
+  Importing or calling validation still does not create an output
+  directory, reserve an ID, write dispatch, mutate the worktree, spawn a
+  provider, or fake live auth. No new npm gate. Snapshot/mint of an
+  output candidate is only in the effectful recording path. Witness
+  snapshots may `git write-tree` the current index; a dirty unstaged
+  baseline refuses with zero gate execution. Passed receipts require
+  every fixed-gate exit 0, identical HEAD/index_tree, and a clean
+  unstaged/unignored worktree before and after. Staged `dist` is a valid
+  candidate. Model claims cannot set verification.
 - Coverage include inverted to `plugins/kxm/src/**/*.ts`; excludes are only
   `server.ts` and `mcp-server.ts` (spawned bundles attribute to `dist`).
   Thresholds are measured whole-tree values and may only ratchet up.
@@ -319,7 +513,26 @@ It does not replace the phase gates below.
   `cancel_pending_foreign`); there is no live-owner reset and no D4
   adoption/remint. Proven on a synthetic agent-only fixture; `default.yaml`
   pins and stops fail-closed at start because it declares run duration
-  limits. D3/D4 and the rest of Phase 3 remain open.
+  limits. D3/D4 and the rest of Phase 3 remain open. Issue 127 M1 helper
+  transport, M2 reusable test extraction, and corrected M3a
+  assignment-manifest validation (`task_dir` authority, read-only Git)
+  and corrected M3b exclusive ownership/canonical records/refusals/diagnostics
+  (including parent-alias output identity via deepest-existing-ancestor
+  realpath) plus R2 observed facts/cost/native schemas, bound observe
+  recovery/idempotency, and parent-alias CLI identity are unreleased setup
+  prerequisites for later assignment work; they do not complete Phase 3,
+  adopt the runner, or retire scratch runners. Corrected M3b is a local
+  unreleased implementation, not accepted. M4a fixed-witness execution
+  and stored-manifest/plan/recording binding are implemented/unreleased,
+  not accepted. M4b W1 accept is implemented locally (critic snapshot, gate
+  cwd, stored rework, cross-worktree, and task-bound BLOCK checks);
+  W2/W3 observations, reporting, plan history and recipes are implemented
+  locally; M5 docs/defaults are implemented/unreleased, including historical
+  BLOCK binding that does not depend on the live plan pointer or a retained
+  review worktree. Per-candidate acceptance requires an actual native writer,
+  the fixed witness, and both designated native reviews; PR/CI/merge complete
+  issue 127. This candidate does not assert those gates passed. D3
+  contract resolution remains after this prerequisite.
   Issue #88 / D2 closed on all seven PR CI jobs (four Validate legs plus
   classify/docs/plugin) before the pause; the post-merge main Windows Node 24
   package-cleanup failure in run `34006194862` is unresolved and deferred.
@@ -353,13 +566,49 @@ It does not replace the phase gates below.
 - Slim live `default` workflow for this repo (no bulk migrate of jira/provenance/v04).
 - YAML-editing enable/disable UI (Phase 4 `/kxm` settings or `kxm dash` config
   tab). Do not add a preferences overlay.
+- **Issue 127 remainder:** M1 helper transport, M2 reusable test
+  extraction, corrected M3a exported assignment-manifest validation
+  (`task_dir` authority, read-only Git comparisons), and corrected M3b
+  (R1 exclusive ownership/canonical records/identifiable refusals/bounded
+  diagnostics plus R2 observed facts/cost/native schemas, bound observe
+  recovery/idempotency, and parent-alias CLI identity) are
+  implemented/unreleased (platform pause already in tree); they are not
+  accepted completion. R1 remains the ownership checkpoint, including
+  canonical output identity from validation through reservation and
+  dangling final entries as `output_dir_exists`. R2 is the local
+  unreleased facts/cost/schema/recovery repair. Full M3b acceptance remains
+  pending. M4a fixed `verify`/`validate-ci` gates, candidate-bound
+  receipts, stored-manifest identity/plan/recording binding before
+  execution, and `witness --record-dir` are implemented/unreleased, not
+  accepted; root writes this assignment's receipt after native exit.
+  M4b W1 accept is implemented locally with bindings for critic snapshot,
+  gate cwd, rework, worktree and BLOCK ownership. Historical same-tree BLOCK
+  discovery uses stored identity/completion, not live plan currency or cwd
+  liveness. Per-candidate acceptance requires an actual native writer, the
+  fixed witness, and both designated native reviews; PR/CI/merge complete
+  issue 127. This candidate does not assert those gates passed.
+  W2/W3 attribution, observations, reporting, plan history and recipes are
+  implemented/unreleased. M5 docs/defaults are implemented/unreleased.
+  Low-level transport recipes remain for that purpose. D3 still needs bounded
+  contract resolution after this prerequisite. Not a product assignment
+  layer (Phase 4) and not Phase 11 adapters.
 - Phase 3 engine remainder (D3 gate execution, `expect`, attempt-bound
   evidence; D4 joins, approval, waits, duration and cost budgets,
   `blocked_uncertain` recovery, producer drain, and the full driver gate on
   `default.yaml` and `fix.yaml`). Compile and the agent-only run loop do not
   close Phase 3. D3 and D4 must honor a declared `assignments` or `join` on
   gate, approval, and wait steps or fail closed; D1 only preserves the
-  declaration.
+  declaration. Issue 127 M1 transport, M2 reusable tests, corrected M3a
+  validation, and corrected M3b remain unreleased and not accepted;
+  M4a is implemented/unreleased and not accepted; M4b W1 accept is
+  implemented locally with stored-manifest critic/receipt/BLOCK bindings,
+  including historical BLOCK identity after plan advance or worktree removal;
+  W2/W3 are implemented/unreleased; M5 docs/defaults are
+  implemented/unreleased. Per-candidate acceptance requires an actual native
+  writer, the fixed witness, and both designated native reviews; PR/CI/merge
+  complete issue 127. This candidate does not assert those gates passed. D3
+  contract resolution remains open. This is not full AGENTS workflow
+  adoption and not a scratch-retirement claim.
 - Version-1 run event stores are refused with `runtime_schema_outdated`;
   backup, restore, and migration remain E6.
 - Non-Pi dispatch adapters (Phase 11). Listing a harness does not execute it.
@@ -433,8 +682,9 @@ Then, in the same change:
 4. Do **not** pull Phase 7+ MOA or Phase 11 adapters into earlier gates.
 5. Do **not** rewrite the whole plan; patch the few paragraphs that aged.
 
-Claude (Fable) proposes plan/slice edits. Grok applies them with the code or
-docs change that justified the update. Tests stay the verifier.
+Claude (Fable) proposes plan/slice edits. The current writer applies them
+(starting rotation: Grok) with the code or docs change that justified the
+update. Tests stay the verifier.
 
 ## Phase 0: contract package
 
@@ -509,6 +759,51 @@ attempts after process restart. No gates, evidence, joins, duration or cost
 budget enforcement, or D4 recovery/adoption. The Gate sentence is unchanged.
 Windows verification of the run loop is deferred with the platform pause.
 
+**Issue 127 M1+M2+M3+M4a (unreleased, not this gate, not accepted):** helper
+transport result v2, supported launch flags, honest termination facts,
+stdio drain vs bounded linger (`stdio_incomplete` / `unknown_exit` are
+not `completed`), type-closed public usage/cost, malformed
+text and post-spawn write failures with retained spend, bounded timeout
+settle, and closed public metadata; plus extracted test helpers for
+committed vNext git projects and harness fake-child/auth/dispatch; plus
+corrected exported closed `kxm.assignment.v1` validation bound to
+manifest `task_dir`, with read-only Git comparisons and no spawn,
+output-dir creation, ID reservation, dispatch record, `.git` write, or
+worktree mutation on the validation export; plus corrected M3b role
+templates, canonical `task_dir/<assignment_id>` records, exclusive
+non-recursive identity and final-output mkdir, identifiable refusals,
+bounded `runner-errors.jsonl`, implementer verify instruction, observed
+invocation/candidate/recording facts, telemetry observe recovery, critic
+eligibility, separated cost populations, and closed native output
+schemas, bound observe recovery/idempotency, and argv path identity so a
+a parent alias still runs `main`. The parent-alias CLI regression now
+creates its own temporary Mac/Linux symlink to `scripts` (junction on
+Windows if resumed); it does not hard-code a host path. Phase gates
+unchanged. Corrected M3b is local/unreleased,
+not accepted; parent-alias output identity uses the existing
+deepest-existing-ancestor comparison rather than a second resolver, and a
+known dangling final output entry is `output_dir_exists`. M4a adds
+fixed `verify`→`[npm,run,verify]` and `validate-ci`→`[npm,run,validate:ci]`
+execution (`shell:false`), before/after `write-tree` snapshots, and
+immutable private receipts plus a latest pointer under the assignment
+record directory. Witness-time binding compares stored-manifest
+identity, cwd, kind/route, canonical record path, and plan against the
+completion and current pointer, and requires routing/telemetry to be
+recorded or hash-bound recovered, before any npm execution. It does
+not re-run pre-dispatch writer admission; completion candidate
+`unknown` stays unknown. M3b acceptance and M4b (W1 accept implemented locally
+with critic/receipt/rework/worktree/BLOCK binding repair, including historical
+same-tree BLOCK identity after plan-current advance or review-worktree
+removal; W2/W3 implemented locally) remain unaccepted. M5 docs/defaults are
+implemented/unreleased. Per-candidate acceptance requires an actual native
+writer, the fixed witness, and both designated native reviews; PR/CI/merge
+complete issue 127. This candidate does not assert those gates passed. D3
+remains after this prerequisite. Not a Phase 3 completion.
+Low-level `just impl|plan|review-*` recipes remain harness transport. Native
+writer witnesses follow native exit. Operator-authorized Codex work uses
+recorded local bootstrap verification; it does not fabricate a native
+completion.
+
 **Gate:** a model-free test driver completes and recovers
 `examples/vnext/.kxm/workflows/default.yaml` (plan → implement → verify → ready)
 and `fix.yaml` (approval, two-producer join, rework) without illegal transitions
@@ -529,9 +824,10 @@ headless; `kxm harness list` / `kxm update`; `kxm dash` as the operator peek;
 **Still this phase:** Pi RPC adapter, per-run sessions, the rest of the `/kxm`
 menu (hub/workflows/agents completions wrapping CLI), validated YAML editors
 (enable/disable harnesses and models by editing Git files, not a parallel
-store), assignment dispatch that binds harness from auth inventory
+store), live assignment dispatch that binds harness from auth inventory
 (`eligibleHarnesses` filters detected and authenticated ids only; it does
-not take a provider/model pair), unhosted harness/model pair rejection at
+not take a provider/model pair; `scripts/assignment-run.mjs` is not that
+layer), unhosted harness/model pair rejection at
 assignment (separate from that auth filter), and routing
 records that always include harness+cost. Hub-local session brief and Pi status
 line are in tree with a deterministic `startup`/`new`/`fork` readiness test.
@@ -636,6 +932,8 @@ and explicit high-availability/takeover fencing.
 `kxm harness list` may already show these CLIs. Dispatch is this phase. An
 enabled-in-YAML harness without an adapter fails closed at assignment time.
 Earlier Claude CLI use is allowed; CLI output is not hub peer evidence.
+`scripts/harness-run.mjs` and `scripts/assignment-run.mjs` are not these
+adapters.
 
 **Gate:** unsupported capabilities fail explicitly and no adapter weakens the
 common result, effect, secret, or recovery contracts.

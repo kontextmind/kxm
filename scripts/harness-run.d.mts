@@ -1,8 +1,18 @@
 export const REQUEST_SCHEMA: "kxm.harness-request.v1";
-export const RESULT_SCHEMA: "kxm.harness-result.v1";
+export const RESULT_SCHEMA: "kxm.harness-result.v2";
+export const OBSOLETE_RESULT_SCHEMA: "kxm.harness-result.v1";
 export const ROUTING_INT_CAP: number;
 export const TOKEN_BASIS: "cumulative";
 export const CONTEXT_OCCUPANCY_UNKNOWN: "unknown";
+export const COST_BASIS: readonly string[];
+export const MODEL_CLAIM_STATUSES: readonly string[];
+export const REVIEW_VERDICTS: readonly string[];
+export const CLAIM_SOURCES: readonly string[];
+export const CLAIM_COUNT_CAP: number;
+export const TRANSPORT_STATUSES: readonly string[];
+export const TRANSPORT_STAGES: readonly string[];
+export const STOP_REASONS: readonly string[];
+export const ERROR_CODES: readonly string[];
 export const EFFORT: readonly string[];
 export const NATIVE_PI_BRAKE_PROVIDERS: readonly string[];
 export const ROUTES: Record<string, {
@@ -46,6 +56,11 @@ export function formatRunCost(result: {
   costUsd?: number;
   providerReportedCostUsd?: number;
 }): string;
+export function diagnoseHarnessResult(payload: unknown, filePath?: string): {
+  result?: Record<string, any>;
+  diagnostic?: string;
+};
+export function formatRunListing(payload: unknown, filePath?: string): string;
 export function normalizePi(stdout: string): Record<string, any>;
 export function normalizeCodex(stdout: string): Record<string, any>;
 export function resolveModelUsage(modelUsage: Record<string, unknown>, requestedModel?: string): {
