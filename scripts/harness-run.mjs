@@ -3,8 +3,11 @@
 //
 // Reads a `kxm.harness-request.v1` JSON envelope (file argument or stdin),
 // dispatches it to an allowlisted provider CLI, and prints a
-// `kxm.harness-result.v2` envelope on stdout. Transport completion is not
-// product `routing-record.v1` finalOutcome and is not a model claim.
+// `kxm.harness-result.v2` envelope on stdout. Transport `completed` requires
+// an observed exit code of exactly 0 and observed stdout/stderr completion
+// (close or both streams drained). Valid JSON alone is not complete output.
+// Transport completion is not product `routing-record.v1` finalOutcome and is
+// not a model claim.
 // Raw model/terminal payloads stay in private 0600 sidecars, not metadata.
 
 import { spawn, spawnSync } from "node:child_process";
@@ -49,6 +52,8 @@ export const ERROR_CODES = Object.freeze([
   "stop_aborted",
   "normalization_failed",
   "write_failed",
+  "stdio_incomplete",
+  "unknown_exit",
   "unrecognized",
 ]);
 const DEFAULT_KILL_GRACE_MS = 2_000;
@@ -1544,6 +1549,12 @@ export async function runHarness(request, deps = {}) {
   } else if (spawnFailed) {
     errorCode = "spawn_failed";
     errorDetail = joinDetail(errorDetail, String(collected.error?.message ?? "spawn failed"));
+  } else if (collected.outputComplete !== true) {
+    errorCode = "stdio_incomplete";
+    errorDetail = joinDetail(errorDetail, "stdio incomplete");
+  } else if (collected.observedChildExit === true && collected.exitCode === null && !collected.signal) {
+    errorCode = errorCode ?? "unknown_exit";
+    errorDetail = joinDetail(errorDetail, "unknown exit");
   } else if (emptyPayload && !errorCode) {
     errorCode = "empty_payload";
     errorDetail = errorDetail ?? "empty JSON payload";
@@ -1625,6 +1636,7 @@ function collectChildStdio(child, options) {
       exitCode: observedExit ? observedExit.code : null,
       signal: observedExit ? observedExit.signal ?? null : null,
       observedChildExit: Boolean(observedExit),
+      outputComplete: gotClose || stdioDrained(),
       ...extra,
     });
     const onStdout = (chunk) => { stdout += chunk; };
@@ -1738,9 +1750,11 @@ function buildTransportResult(input) {
   const emptyPayload = fields.emptyPayload === true;
   const spawnFailed = stage === "spawn";
   const signaled = Boolean(collected.signal) && collected.observedChildExit === true;
+  const successfulExit = collected.observedChildExit === true && collected.exitCode === 0;
+  const outputComplete = collected.outputComplete === true;
   const status = timedOut || killRequest || signaled
     ? "interrupted"
-    : (errorCode || emptyPayload || writeFailed || collected.exitCode !== 0 && collected.exitCode !== null || spawnFailed)
+    : (errorCode || emptyPayload || writeFailed || !successfulExit || !outputComplete || spawnFailed)
       ? "failed"
       : "completed";
   const ok = status === "completed";

@@ -1917,11 +1917,123 @@ test("observed exit without stdio close is not missing completion", { timeout: 1
     assert.equal(result.exitCode, 0);
     assert.equal(result.signal, undefined);
     assert.equal(result.observedChildExit, true);
-    assert.equal(result.status, "completed");
+    assert.equal(result.status, "failed");
+    assert.notEqual(result.status, "completed");
+    assert.equal(result.errorCode, "stdio_incomplete");
     assert.equal(result.tokensIn, 3);
+    assert.equal(result.usagePartial, true);
     assert.deepEqual(kills, []);
     assert.equal(result.processDead, undefined);
     assert.equal(result.childDied, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("valid JSON with exit 0 and unclosed pipes is stdio_incomplete not completed", { timeout: 1500 }, async () => {
+  const dir = tempDir();
+  try {
+    const prompt = promptFile(dir);
+    const kills: string[] = [];
+    const result = await runHarness({
+      schema: REQUEST_SCHEMA,
+      harness: "grok",
+      role: "writer",
+      model: "grok-4.6",
+      permission: "edit",
+      prompt_file: prompt,
+      output_dir: join(dir, "linger-json"),
+    } as never, {
+      platform: process.platform,
+      env: { PATH: "/tmp/kxm-harness-bin" },
+      existsSync: (path: string) => String(path).includes("grok"),
+      spawnSync: () => grokAuth(),
+      killGraceMs: 10,
+      spawn: () => {
+        const child = fakeChild({ hang: true, keepPipesOpen: true });
+        child.kill = (signal?: string) => {
+          kills.push(String(signal));
+          return true;
+        };
+        queueMicrotask(() => {
+          child.stdout.write(`${JSON.stringify({
+            result: "ok",
+            total_cost_usd: 0.5,
+            usage: { input_tokens: 42, output_tokens: 2 },
+          })}`);
+          child.emit("exit", 0, null);
+        });
+        return child;
+      },
+      observedAt: "2026-09-05",
+      now: () => 1_000,
+    });
+    assert.equal(result.status, "failed");
+    assert.notEqual(result.status, "completed");
+    assert.equal(result.stage, "run");
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.signal, undefined);
+    assert.equal(result.errorCode, "stdio_incomplete");
+    assert.equal(result.observedChildExit, true);
+    assert.equal(result.costUsd, 0.5);
+    assert.equal(result.tokensIn, 42);
+    assert.equal(result.usagePartial, true);
+    assert.deepEqual(kills, []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("close with null exit and null signal is not completed even with valid JSON", { timeout: 1500 }, async () => {
+  const dir = tempDir();
+  try {
+    const prompt = promptFile(dir);
+    const kills: string[] = [];
+    const result = await runHarness({
+      schema: REQUEST_SCHEMA,
+      harness: "grok",
+      role: "writer",
+      model: "grok-4.6",
+      permission: "edit",
+      prompt_file: prompt,
+      output_dir: join(dir, "null-exit"),
+    } as never, {
+      platform: process.platform,
+      env: { PATH: "/tmp/kxm-harness-bin" },
+      existsSync: (path: string) => String(path).includes("grok"),
+      spawnSync: () => grokAuth(),
+      spawn: () => {
+        const child = fakeChild({ hang: true });
+        child.kill = (signal?: string) => {
+          kills.push(String(signal));
+          return true;
+        };
+        queueMicrotask(() => {
+          child.stdout.write(`${JSON.stringify({
+            result: "ok",
+            total_cost_usd: 0.5,
+            usage: { input_tokens: 42, output_tokens: 2 },
+          })}`);
+          child.stdout.end();
+          child.stderr.end();
+          child.emit("close", null, null);
+        });
+        return child;
+      },
+      observedAt: "2026-09-05",
+      now: () => 1_000,
+    });
+    assert.equal(result.status, "failed");
+    assert.notEqual(result.status, "completed");
+    assert.equal(result.stage, "run");
+    assert.equal(result.exitCode, null);
+    assert.equal(result.signal, undefined);
+    assert.equal(result.errorCode, "unknown_exit");
+    assert.equal(result.observedChildExit, true);
+    assert.equal(result.costUsd, 0.5);
+    assert.equal(result.tokensIn, 42);
+    assert.equal(result.usagePartial, true);
+    assert.deepEqual(kills, []);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -2217,7 +2329,7 @@ test("bounded linger after exit does not collect later output or signal the chil
     ]);
     assert.equal(result.observedChildExit, true);
     assert.equal(result.status, "failed");
-    assert.equal(result.errorCode, "empty_payload");
+    assert.equal(result.errorCode, "stdio_incomplete");
     assert.equal(result.tokensIn, undefined);
     assert.equal(result.costUsd, undefined);
     assert.deepEqual(kills, []);

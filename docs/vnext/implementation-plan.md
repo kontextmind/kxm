@@ -186,8 +186,11 @@ It does not replace the phase gates below.
   `routing-record.v1` `finalOutcome`. Direct-child `exit`/`close` keep a
   null `exitCode` and the exact `signal`; an external signal with no
   helper timeout is `interrupted`. Natural successful exit waits for
-  stdio close/drain; lingering inherited pipes settle on a bound without
-  signaling an already-exited child or adopting descendants. Timeout
+  stdio close/drain; `completed` needs exit code 0 and observed close or
+  both streams drained. Lingering inherited pipes settle on a bound as
+  `stdio_incomplete` (known usage stays partial) without signaling an
+  already-exited child or adopting descendants. Close with a null code
+  and no signal is `unknown_exit`, not `completed`. Timeout
   requests SIGTERM, then SIGKILL after a bounded grace, and can settle
   with `observedChildExit` false when stdio never closes, without
   descendant-death claims. Public metadata is a closed allowlist
@@ -553,7 +556,8 @@ Windows verification of the run loop is deferred with the platform pause.
 
 **Issue 127 M1 (unreleased, not this gate, not accepted):** helper
 transport result v2, supported launch flags, honest termination facts,
-stdio drain vs bounded linger, type-closed public usage/cost, malformed
+stdio drain vs bounded linger (`stdio_incomplete` / `unknown_exit` are
+not `completed`), type-closed public usage/cost, malformed
 text and post-spawn write failures with retained spend, bounded timeout
 settle, and closed public metadata. M2–M5 and D3 remain open. Not a
 Phase 3 completion or scratch-runner retirement. The assignment runner
