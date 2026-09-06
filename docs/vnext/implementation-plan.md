@@ -267,6 +267,14 @@ It does not replace the phase gates below.
   immutable. Temporary probe workflow/branch/worktree deleted and never
   merged. All four normal `validate:ci` coverage legs remain required.
   Not a general Windows cure; no extra permanent npm gate.
+- **D1 engine compile (pure):** `vnext-engine-compile.ts` compiles a validated
+  `kxm.workflow.v1` into a deep-frozen, JSON-serializable plan keyed by step id
+  with typed transitions, per-edge and global transition budgets, step
+  `maxAttempts`, resolved assignment bounds and join on every step kind (never
+  wider than the loader validated; assignment bounds use the loader's formula),
+  evidence declarations, oracles, and plan-hash requirements. Both
+  `default.yaml` and `fix.yaml` compile. `kind: workflow` is reserved and
+  rejected at compile. No execution, no I/O, no events.
 
 ### Still open
 
@@ -289,8 +297,14 @@ It does not replace the phase gates below.
 - Slim live `default` workflow for this repo (no bulk migrate of jira/provenance/v04).
 - YAML-editing enable/disable UI (Phase 4 `/kxm` settings or `kxm dash` config
   tab). Do not add a preferences overlay.
-- Phase 3 engine (model-free driver on `default.yaml` **and** `fix.yaml` with
-  simulated producers; caller-authored replies rejected).
+- Phase 3 engine remainder (D2 run loop and transitions, D3 gate execution and
+  attempt-bound evidence, D4 joins, approval, waits, recovery, and the driver
+  gate). Compile alone does not close Phase 3. D2 persisted-plan validation
+  (ownership, hash match against the pinned event, full field validation, and
+  re-freeze after parse) lands with its consumer; D1 does not export
+  `isVnextCompiledPlan`. D3 and D4 must honor a declared `assignments` or
+  `join` on gate, approval, and wait steps or fail closed; D1 only preserves
+  the declaration.
 - Non-Pi dispatch adapters (Phase 11). Listing a harness does not execute it.
   The `scripts/harness-run.mjs` dev helper is not that adapter.
 - **Issue 84 remainder:** Kimi read-only auth-status probe: no non-mutating
@@ -338,6 +352,10 @@ It does not replace the phase gates below.
 - v1 `kxm routing report` sums missing cost as zero and sorts by run count;
   not a ranking source until the v2 record and separated cost populations
   land (see [routing.md](routing.md)).
+- Kind-level MOA defaults (target 3, minimum 2, maximum 3, all-settled with
+  minimumPassed 2, provider-distinct) are declared as a Phase 7 target in
+  lifecycles.md; today loader and compiler resolve omitted bounds to one
+  assignment and join `all`. Change schema, loader, compiler, and docs together.
 
 ### Plan hygiene (periodic, not every turn)
 
@@ -425,6 +443,8 @@ written.
 Implement compiled sequential steps, typed bounded transitions, step attempts,
 assignments, physical attempts, join rules, budgets, deterministic gates,
 waits, approvals, steering, cancellation, and uncertain-effect handling.
+
+**Compile slice (landed, unreleased):** compiled plan and step model only.
 
 **Gate:** a model-free test driver completes and recovers
 `examples/vnext/.kxm/workflows/default.yaml` (plan → implement → verify → ready)

@@ -6,6 +6,9 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Added
 
+- Pure vNext workflow compile (`vnext-engine-compile.ts`) turns a validated
+  `kxm.workflow.v1` into a frozen JSON plan. Compile is not execution; Phase 3
+  remains open for the run loop.
 - Routing contract doc (`docs/vnext/routing.md`) and synchronization status
   (schema-tested; Phase 8 implementation).
 - Tag-triggered `release.yml` packs `kxm-<v>.tgz`, creates or reuses only a

@@ -151,9 +151,9 @@ settled sufficiently for a step outcome. The coordinator cannot override it.
 
 ### MOA
 
-A mixture-of-agents panel. The default is three provider-distinct isolated
+A mixture-of-agents panel. The reviewed template default (see `fix.yaml`) is three provider-distinct isolated
 instances, all-settled, with at least two valid completions before coordinator
-synthesis.
+synthesis. The compiled kind default stays a single assignment until Phase 7.
 
 ## Evidence and effects
 
