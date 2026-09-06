@@ -1,11 +1,9 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { cpSync, mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { removeTempDir } from "./helpers.ts";
+import { committedProject } from "./helpers/vnext-project.ts";
 import {
   VnextRunEventStore,
   VnextRuntimeRegistry,
@@ -32,23 +30,6 @@ import {
   vnextSupervisorTokenFile,
 } from "../plugins/kxm/src/vnext-runtime-supervisor.ts";
 import { loadVnextProject } from "../plugins/kxm/src/vnext-config.ts";
-import { initializeVnextProject } from "../plugins/kxm/src/vnext-init.ts";
-
-function makeGitRoot(root: string): void {
-  const initialized = spawnSync("git", ["-c", "init.defaultBranch=main", "init", "--quiet", root], { encoding: "utf8", windowsHide: true });
-  assert.equal(initialized.status, 0, initialized.stderr);
-}
-
-function committedProject(prefix: string): { root: string; stateRoot: string } {
-  const root = mkdtempSync(join(tmpdir(), prefix));
-  const stateRoot = mkdtempSync(join(tmpdir(), `${prefix}state-`));
-  makeGitRoot(root);
-  initializeVnextProject(root, { projectId: "prj_01JRUNTIMETEST0000000000", projectName: "Runtime Test" });
-  spawnSync("git", ["-C", root, "add", "-A"], { windowsHide: true });
-  const commit = spawnSync("git", ["-C", root, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "init"], { windowsHide: true });
-  assert.equal(commit.status, 0, commit.stderr as unknown as string);
-  return { root, stateRoot };
-}
 
 function cleanup(...paths: string[]): void {
   removeTempDir(...paths);

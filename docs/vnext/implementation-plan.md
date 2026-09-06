@@ -221,9 +221,12 @@ It does not replace the phase gates below.
   any auth or assignment spawn; missing or unreadable inputs fail closed
   with zero spawn. File-consuming argv tokens are absolute so the child
   can run in `request.cwd`. Windows helper dispatch is unverified. Not
-  Phase 11. Issue 127 M2–M5 (reusable tests, assignment runner,
+  Phase 11. Issue 127 M1 transport plus M2 reusable test helpers
+  (engine/runtime git project setup and harness fake-child/auth/dispatch)
+  are implemented/unreleased, not accepted. M3–M5 (assignment runner,
   witnesses/accept/report, workflow docs adoption) remain open before D3;
-  the assignment runner is not adopted.
+  the assignment runner is not adopted. D3 still waits on bounded
+  contract resolution after this prerequisite.
 - Coverage include inverted to `plugins/kxm/src/**/*.ts`; excludes are only
   `server.ts` and `mcp-server.ts` (spawned bundles attribute to `dist`).
   Thresholds are measured whole-tree values and may only ratchet up.
@@ -354,8 +357,9 @@ It does not replace the phase gates below.
   adoption/remint. Proven on a synthetic agent-only fixture; `default.yaml`
   pins and stops fail-closed at start because it declares run duration
   limits. D3/D4 and the rest of Phase 3 remain open. Issue 127 M1 helper
-  transport is an unreleased setup prerequisite for later assignment work;
-  it does not complete Phase 3 or retire scratch runners.
+  transport and M2 reusable test extraction are unreleased setup
+  prerequisites for later assignment work; they do not complete Phase 3
+  or retire scratch runners.
   Issue #88 / D2 closed on all seven PR CI jobs (four Validate legs plus
   classify/docs/plugin) before the pause; the post-merge main Windows Node 24
   package-cleanup failure in run `34006194862` is unresolved and deferred.
@@ -389,9 +393,9 @@ It does not replace the phase gates below.
 - Slim live `default` workflow for this repo (no bulk migrate of jira/provenance/v04).
 - YAML-editing enable/disable UI (Phase 4 `/kxm` settings or `kxm dash` config
   tab). Do not add a preferences overlay.
-- **Issue 127 remainder:** M1 helper transport is an unreleased checkpoint
-  plus demonstrated drain/type/text/write edge repairs; it is not accepted
-  completion. M2 reusable test extraction, M3 assignment runner and plan
+- **Issue 127 remainder:** M1 helper transport and M2 reusable test
+  extraction are implemented/unreleased (platform pause already in tree);
+  they are not accepted completion. M3 assignment runner and plan
   pointer, M4 witnesses/accept/report, and M5 AGENTS/workflow docs adoption
   are still open before D3. D3 still needs bounded contract resolution after
   this prerequisite. Not a product assignment layer (Phase 4) and not Phase
@@ -402,9 +406,10 @@ It does not replace the phase gates below.
   `default.yaml` and `fix.yaml`). Compile and the agent-only run loop do not
   close Phase 3. D3 and D4 must honor a declared `assignments` or `join` on
   gate, approval, and wait steps or fail closed; D1 only preserves the
-  declaration. Issue 127 M1 transport remains unreleased and not accepted;
-  M2–M5 and D3 contract resolution are still open. This is not full AGENTS
-  workflow adoption (M5) and not a scratch-retirement claim.
+  declaration. Issue 127 M1 transport and M2 reusable tests remain
+  unreleased and not accepted; M3–M5 and D3 contract resolution are still
+  open. This is not full AGENTS workflow adoption (M5) and not a
+  scratch-retirement claim.
 - Version-1 run event stores are refused with `runtime_schema_outdated`;
   backup, restore, and migration remain E6.
 - Non-Pi dispatch adapters (Phase 11). Listing a harness does not execute it.
@@ -554,14 +559,15 @@ attempts after process restart. No gates, evidence, joins, duration or cost
 budget enforcement, or D4 recovery/adoption. The Gate sentence is unchanged.
 Windows verification of the run loop is deferred with the platform pause.
 
-**Issue 127 M1 (unreleased, not this gate, not accepted):** helper
+**Issue 127 M1+M2 (unreleased, not this gate, not accepted):** helper
 transport result v2, supported launch flags, honest termination facts,
 stdio drain vs bounded linger (`stdio_incomplete` / `unknown_exit` are
 not `completed`), type-closed public usage/cost, malformed
 text and post-spawn write failures with retained spend, bounded timeout
-settle, and closed public metadata. M2–M5 and D3 remain open. Not a
-Phase 3 completion or scratch-runner retirement. The assignment runner
-is not adopted.
+settle, and closed public metadata; plus extracted test helpers for
+committed vNext git projects and harness fake-child/auth/dispatch.
+M3–M5 and D3 remain open. Not a Phase 3 completion or scratch-runner
+retirement. The assignment runner is not adopted.
 
 **Gate:** a model-free test driver completes and recovers
 `examples/vnext/.kxm/workflows/default.yaml` (plan → implement → verify → ready)

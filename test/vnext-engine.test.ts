@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
-import { cpSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { removeTempDir } from "./helpers.ts";
+import { engineProject } from "./helpers/vnext-project.ts";
 import { loadVnextProject, parseRestrictedYaml, validateRunEvent } from "../plugins/kxm/src/vnext-config.ts";
 import { compileVnextWorkflow } from "../plugins/kxm/src/vnext-engine-compile.ts";
-import { initializeVnextProject } from "../plugins/kxm/src/vnext-init.ts";
 import { foldVnextRunState } from "../plugins/kxm/src/vnext-engine-fold.ts";
 import {
   hashVnextRunPlanEnvelope,
@@ -57,29 +57,6 @@ import { vnextCanonicalJson as canonicalJson, type JsonValue } from "../plugins/
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fixtureDir = resolve(repoRoot, "test/fixtures/vnext-engine");
 const HOME = "rtm_01JENGINE00000000000000000";
-
-function makeGitRoot(root: string): void {
-  const initialized = spawnSync("git", ["-c", "init.defaultBranch=main", "init", "--quiet", root], { encoding: "utf8", windowsHide: true });
-  assert.equal(initialized.status, 0, initialized.stderr);
-}
-
-function engineProject(
-  prefix: string,
-  workflows: string[] = ["agent-only.yaml", "unsupported-gate.yaml", "one-step.yaml"],
-  projectId = "prj_01JENGINE00000000000000000",
-): { root: string; stateRoot: string } {
-  const root = mkdtempSync(join(tmpdir(), prefix));
-  const stateRoot = mkdtempSync(join(tmpdir(), `${prefix}state-`));
-  makeGitRoot(root);
-  initializeVnextProject(root, { projectId, projectName: "Engine Test" });
-  for (const file of workflows) {
-    cpSync(join(fixtureDir, file), join(root, ".kxm", "workflows", file));
-  }
-  spawnSync("git", ["-C", root, "add", "-A"], { windowsHide: true });
-  const commit = spawnSync("git", ["-C", root, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "init"], { windowsHide: true });
-  assert.equal(commit.status, 0, commit.stderr as unknown as string);
-  return { root, stateRoot };
-}
 
 function scanForCapability(value: unknown, path: string, hits: string[]): void {
   if (typeof value === "string") {

@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -21,11 +20,7 @@ import {
   type HarnessStatus,
 } from "../plugins/kxm/src/vnext-harness.ts";
 import { computeVnextResourcePermissionDiff } from "../plugins/kxm/src/vnext-permission.ts";
-
-function makeGitRoot(root: string): void {
-  const initialized = spawnSync("git", ["-c", "init.defaultBranch=main", "init", "--quiet", root], { encoding: "utf8", windowsHide: true });
-  assert.equal(initialized.status, 0, initialized.stderr);
-}
+import { makeGitRoot } from "./helpers/git-root.ts";
 
 function runner(handlers: Record<string, HarnessCommandResult>): (command: string, args: readonly string[], timeoutMs: number) => HarnessCommandResult {
   return (command, args) => {
