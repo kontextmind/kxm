@@ -1,0 +1,34 @@
+{
+  "observedAt": "2026-09-06T02:09:42.099993+00:00",
+  "versions": {
+    "grok": {
+      "exitCode": 0,
+      "version": "grok 1.0.5 (5115b46bc909) [stable]"
+    },
+    "codex": {
+      "exitCode": 0,
+      "version": "codex-cli 0.153.3"
+    },
+    "claude": {
+      "exitCode": 0,
+      "version": "2.1.261 (Claude Code)"
+    }
+  },
+  "codexIgnoreUserConfigParserProbe": {
+    "command": [
+      "codex",
+      "exec",
+      "--ignore-user-config",
+      "--help"
+    ],
+    "exitCode": 0
+  },
+  "helpHashes": {
+    "claude-help.txt": "95a31820dc2a7b1adbd197346baa89a62cddd14b984079e1fc2ad56d11a97b20",
+    "codex-isolation-help.txt": "e504bac5a6364566fbe408132dec7993639def9258ece34e8352f51f8d43687c",
+    "codex-help.txt": "e8ecd554e6e3e870a55e540f1a21598c085cfee237f9c735ff9b5ba4ac4cf08a",
+    "codex-exec-help.txt": "e504bac5a6364566fbe408132dec7993639def9258ece34e8352f51f8d43687c",
+    "grok-help.txt": "a0e05fe31356e5c06d79354c19bc9a2d7a8abeaef6de15dc3287c7194a4cad9e"
+  },
+  "limits": "Local CLI parser/help evidence, no model call and no proof of all isolation semantics. Existing actual native runs use these flags; deterministic argv and smoke tests still required."
+}

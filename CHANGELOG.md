@@ -77,6 +77,12 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- Headless `scripts/harness-run.mjs` now emits `kxm.harness-result.v2`:
+  transport `completed|failed|interrupted` is separate from closed model-claim
+  metadata and from product `routing-record.v1` `finalOutcome`. Grok adds
+  `--no-subagents` and `--disable-web-search` plus optional `max_turns`;
+  Codex adds `--ignore-user-config`. Obsolete v1 result files are diagnosed,
+  not upgraded.
 - `kxm harness list` auth is tri-state `yes` / `no` / `unknown`. Codex
   distinguishes ChatGPT vs API-key login status (text keeps `auth=yes` and
   adds an `API key` note); Claude parses JSON `loggedIn`; Grok is an

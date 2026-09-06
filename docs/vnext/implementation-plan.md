@@ -157,21 +157,31 @@ It does not replace the phase gates below.
   false; `default.yaml` declared graph routes `ready` only through `verify`.
   This is inventory filtering only (issue 84 auth/eligibility sub-slice), not
   a supervised-worker claim or live assignment.
-- Headless `scripts/harness-run.mjs` helper (2026-09-05): native auth
-  preflight, verified grok/claude/codex/OpenRouter-Pi pairs, no native-provider
-  Pi fallback, private answer/stderr sidecars, shell:false launchers.
-  Routing fields `harness`/`role`/`model`/`permission`/`prompt_file` are
-  required nonempty strings (no CLI-default model or permission). Pi
-  planner/reviewer cannot `edit`; only `experiment` may. `max_cost_usd` and
-  `timeout_ms` must be positive finite numbers when set (zero is not dropped
-  silently). `just` recipes JSON.stringify user paths via positional args.
-  Recipe quoting tests use the justfile body and do not require a just binary;
-  live just integration is optional. `just runs` labels billed / list /
-  unmetered / unknown (never absent as `$0`). `prompt_file` and
+- Headless `scripts/harness-run.mjs` helper (2026-09-05, M1 transport
+  2026-09-06 unreleased): native auth preflight, verified
+  grok/claude/codex/OpenRouter-Pi pairs, no native-provider Pi fallback,
+  private answer/stderr/dispatch/model-claim sidecars, shell:false launchers.
+  Result schema is `kxm.harness-result.v2` only; obsolete v1 files are
+  diagnosed and not parsed or upgraded. Helper `finalOutcome` and arbitrary
+  `agent` envelopes are gone. Transport `completed|failed|interrupted` is
+  not a model claim and not product `routing-record.v1` `finalOutcome`.
+  Grok argv adds `--no-subagents --disable-web-search` and optional
+  `--max-turns`; Codex adds `--ignore-user-config` (parser probe exit 0;
+  top-level help omits it). Routing fields `harness`/`role`/`model`/
+  `permission`/`prompt_file` are required nonempty strings (no CLI-default
+  model or permission). Pi planner/reviewer cannot `edit`; only `experiment`
+  may. `max_cost_usd` and `timeout_ms` must be positive finite numbers when
+  set (zero is not dropped silently). `just` recipes JSON.stringify user
+  paths via positional args. Recipe quoting tests use the justfile body and
+  do not require a just binary; live just integration is optional. `just
+  runs` accepts v2 only and labels billed / list / unmetered / unknown /
+  provider-reported (never absent as `$0`). `prompt_file` and
   `output_schema` resolve against the invocation cwd and are read before any
   auth or assignment spawn; missing or unreadable inputs fail closed with
   zero spawn. File-consuming argv tokens are absolute so the child can run
   in `request.cwd`. Windows helper dispatch is unverified. Not Phase 11.
+  Issue 127 M2–M5 (reusable tests, assignment runner, witnesses/accept/
+  report, workflow docs adoption) remain open before D3.
 - Coverage include inverted to `plugins/kxm/src/**/*.ts`; excludes are only
   `server.ts` and `mcp-server.ts` (spawned bundles attribute to `dist`).
   Thresholds are measured whole-tree values and may only ratchet up.
@@ -297,7 +307,9 @@ It does not replace the phase gates below.
   `cancel_pending_foreign`); there is no live-owner reset and no D4
   adoption/remint. Proven on a synthetic agent-only fixture; `default.yaml`
   pins and stops fail-closed at start because it declares run duration
-  limits. D3/D4 and the rest of Phase 3 remain open.
+  limits. D3/D4 and the rest of Phase 3 remain open. Issue 127 M1 helper
+  transport is an unreleased setup prerequisite for later assignment work;
+  it does not complete Phase 3 or retire scratch runners.
 
 ### Still open
 
@@ -320,13 +332,21 @@ It does not replace the phase gates below.
 - Slim live `default` workflow for this repo (no bulk migrate of jira/provenance/v04).
 - YAML-editing enable/disable UI (Phase 4 `/kxm` settings or `kxm dash` config
   tab). Do not add a preferences overlay.
+- **Issue 127 remainder:** M1 helper transport is implemented/unreleased.
+  M2 reusable test extraction, M3 assignment runner and plan pointer, M4
+  witnesses/accept/report, and M5 AGENTS/workflow docs adoption are still
+  open before D3. D3 still needs bounded contract resolution after this
+  prerequisite. Not a product assignment layer (Phase 4) and not Phase 11
+  adapters.
 - Phase 3 engine remainder (D3 gate execution, `expect`, attempt-bound
   evidence; D4 joins, approval, waits, duration and cost budgets,
   `blocked_uncertain` recovery, producer drain, and the full driver gate on
   `default.yaml` and `fix.yaml`). Compile and the agent-only run loop do not
   close Phase 3. D3 and D4 must honor a declared `assignments` or `join` on
   gate, approval, and wait steps or fail closed; D1 only preserves the
-  declaration.
+  declaration. Issue 127 M1 transport is implemented/unreleased; M2–M5 and
+  D3 contract resolution are still open. This is not full AGENTS workflow
+  adoption (M5) and not a scratch-retirement claim.
 - Version-1 run event stores are refused with `runtime_schema_outdated`;
   backup, restore, and migration remain E6.
 - Non-Pi dispatch adapters (Phase 11). Listing a harness does not execute it.
@@ -474,6 +494,10 @@ waits, approvals, steering, cancellation, and uncertain-effect handling.
 in-process producer, shared project admission, and fail-closed unreconciled
 attempts after process restart. No gates, evidence, joins, duration or cost
 budget enforcement, or D4 recovery/adoption. The Gate sentence is unchanged.
+
+**Issue 127 M1 (unreleased, not this gate):** helper transport result v2 and
+supported launch flags. M2–M5 and D3 remain open. Not a Phase 3 completion
+or scratch-runner retirement.
 
 **Gate:** a model-free test driver completes and recovers
 `examples/vnext/.kxm/workflows/default.yaml` (plan → implement → verify → ready)

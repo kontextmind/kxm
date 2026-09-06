@@ -19,7 +19,7 @@ default:
 
 # ── dispatch ────────────────────────────────────────────────────────────────
 # Each recipe builds a kxm.harness-request.v1 envelope and prints a
-# kxm.harness-result.v1 envelope. BRIEF is a path to a Markdown brief; never an
+# kxm.harness-result.v2 envelope. BRIEF is a path to a Markdown brief; never an
 # inline prompt, which is how the shell-quoting bugs get in.
 # User paths are "$1"/"$2" (positional-arguments) and JSON.stringify in Node.
 # Recipe literals (role/harness/model) are not taken from user strings.
@@ -81,7 +81,8 @@ harnesses:
 runs:
     @ls -t .kxm/logs/*.json 2>/dev/null | head -10 | while read -r f; do \
         printf '%s  ' "$f"; \
-        node -e 'const j=JSON.parse(require("fs").readFileSync(0,"utf8")); const b=j.costBasis; let cost="unknown"; if (b==="unmetered") cost="unmetered"; else { const n=typeof j.costUsd==="number"&&Number.isFinite(j.costUsd)?j.costUsd:undefined; const est=typeof j.providerReportedCostUsd==="number"&&Number.isFinite(j.providerReportedCostUsd)?j.providerReportedCostUsd:undefined; const amount=n??est; if (b==="unknown"||b==null||amount===undefined) cost="unknown"; else if (b==="list") cost="list $"+amount.toFixed(4); else if (b==="billed") cost="billed $"+amount.toFixed(4); else cost=String(b)+" $"+amount.toFixed(4); } console.log(j.ok?"ok":"FAIL", j.harness??"", j.effectiveModel??"", (j.latencyMs??"?")+"ms", cost);' < "$f" 2>/dev/null || echo "(unparsed)"; \
+        KXM_RESULT_FILE="$f" \
+        node -e 'const fs=require("fs"); const file=process.env.KXM_RESULT_FILE||"-"; let j; try { j=JSON.parse(fs.readFileSync(0,"utf8")); } catch { console.log("(unparsed)"); process.exit(0); } const expected="kxm.harness-result.v2"; const observed=(j&&j.schema)||"none"; if (observed!==expected) { console.log(file+": observed schema "+observed+"; obsolete result schema kxm.harness-result.v1; expected "+expected); process.exit(0); } const b=j.costBasis; let cost="unknown"; if (b==="unmetered") cost="unmetered"; else { const n=typeof j.costUsd==="number"&&Number.isFinite(j.costUsd)?j.costUsd:undefined; const est=typeof j.providerReportedCostUsd==="number"&&Number.isFinite(j.providerReportedCostUsd)?j.providerReportedCostUsd:undefined; const amount=n??est; if (b==="unknown"||b==null||amount===undefined) cost="unknown"; else if (b==="list") cost="list $"+amount.toFixed(4); else if (b==="billed") cost="billed $"+amount.toFixed(4); else cost=String(b)+" $"+amount.toFixed(4); } console.log(j.ok?"ok":"FAIL", j.harness??"", j.effectiveModel??"", (j.latencyMs??"?")+"ms", cost);' < "$f" 2>/dev/null || echo "(unparsed)"; \
     done
 
 # ── gates ───────────────────────────────────────────────────────────────────

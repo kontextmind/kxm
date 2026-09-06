@@ -3,11 +3,12 @@
 //
 // Reads a `kxm.harness-request.v1` JSON envelope (file argument or stdin),
 // dispatches it to an allowlisted provider CLI, and prints a
-// `kxm.harness-result.v1` envelope on stdout. Result field names match
-// `RoutingRecord` in plugins/kxm/src/routing.ts so D5 can persist one later.
+// `kxm.harness-result.v2` envelope on stdout. Transport completion is not
+// product `routing-record.v1` finalOutcome and is not a model claim.
 // Raw model/terminal payloads stay in private 0600 sidecars, not metadata.
 
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   chmodSync,
   existsSync,
@@ -23,10 +24,16 @@ const { posix, win32, join } = nodePath;
 const resolvePath = nodePath.resolve;
 
 export const REQUEST_SCHEMA = "kxm.harness-request.v1";
-export const RESULT_SCHEMA = "kxm.harness-result.v1";
+export const RESULT_SCHEMA = "kxm.harness-result.v2";
+export const OBSOLETE_RESULT_SCHEMA = "kxm.harness-result.v1";
 export const ROUTING_INT_CAP = 1_000_000;
 export const TOKEN_BASIS = "cumulative";
 export const CONTEXT_OCCUPANCY_UNKNOWN = "unknown";
+export const COST_BASIS = Object.freeze(["provider-reported", "list", "unmetered", "unknown"]);
+export const MODEL_CLAIM_STATUSES = Object.freeze(["done", "partial", "fail", "blocked"]);
+export const REVIEW_VERDICTS = Object.freeze(["PASS", "BLOCK"]);
+export const CLAIM_COUNT_CAP = 1000;
+const DEFAULT_KILL_GRACE_MS = 2_000;
 
 export const EFFORT = Object.freeze(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
@@ -55,6 +62,7 @@ const REQUEST_KEYS = Object.freeze([
   "output_schema",
   "timeout_ms",
   "output_dir",
+  "max_turns",
 ]);
 
 const UNSUPPORTED_LAUNCHER = /\.(cmd|bat|ps1)$/i;
@@ -134,9 +142,10 @@ export function parseJson(text) {
   }
 }
 
-function failClosed(message) {
+function failClosed(message, stage = "preflight") {
   const error = new Error(message);
   error.failClosed = true;
+  error.stage = stage;
   return error;
 }
 
@@ -237,47 +246,47 @@ export function parseAuth(harness, stdio, options = {}) {
   const stderr = stdio.stderr ?? "";
   const code = stdio.exitCode ?? stdio.status ?? 0;
   if (code !== 0) {
-    throw failClosed(loginHint(harness, `${harness} auth command exited ${code}.`));
+    throw failClosed(loginHint(harness, `${harness} auth command exited ${code}.`), "auth");
   }
   if (harness === "grok") {
     if (!/logged in/i.test(stdout)) {
-      throw failClosed(loginHint("grok", "grok models did not report a logged-in session."));
+      throw failClosed(loginHint("grok", "grok models did not report a logged-in session."), "auth");
     }
     const method = /grok\.com/i.test(stdout) ? "grok.com" : "unknown";
     if (method === "unknown") {
-      throw failClosed(loginHint("grok", "grok auth method could not be determined."));
+      throw failClosed(loginHint("grok", "grok auth method could not be determined."), "auth");
     }
     return { loggedIn: true, method, observedAt };
   }
   if (harness === "claude") {
     const payload = parseJson(stdout);
     if (!payload || typeof payload !== "object") {
-      throw failClosed(loginHint("claude", "claude auth status was not parseable JSON."));
+      throw failClosed(loginHint("claude", "claude auth status was not parseable JSON."), "auth");
     }
     if (payload.loggedIn !== true) {
-      throw failClosed(loginHint("claude", "claude auth status is logged out."));
+      throw failClosed(loginHint("claude", "claude auth status is logged out."), "auth");
     }
     const method = typeof payload.authMethod === "string" ? payload.authMethod : undefined;
     if (!method) {
-      throw failClosed(loginHint("claude", "claude auth method is undetermined."));
+      throw failClosed(loginHint("claude", "claude auth method is undetermined."), "auth");
     }
     return { loggedIn: true, method, observedAt, subscriptionType: payload.subscriptionType };
   }
   if (harness === "codex") {
     const text = `${stdout}\n${stderr}`;
     if (!/logged in using chatgpt/i.test(text)) {
-      throw failClosed(loginHint("codex", "codex login status did not report ChatGPT auth."));
+      throw failClosed(loginHint("codex", "codex login status did not report ChatGPT auth."), "auth");
     }
     return { loggedIn: true, method: "ChatGPT", observedAt };
   }
   if (harness === "pi") {
     const text = `${stdout}\n${stderr}`;
     if (/not[_ ]ready/i.test(text) || !/\bready\b/i.test(text)) {
-      throw failClosed(loginHint("pi", "pi auth check did not report OpenRouter ready."));
+      throw failClosed(loginHint("pi", "pi auth check did not report OpenRouter ready."), "auth");
     }
     return { loggedIn: true, method: "openrouter", observedAt };
   }
-  throw failClosed(`unknown harness ${harness} for auth parse`);
+  throw failClosed(`unknown harness ${harness} for auth parse`, "auth");
 }
 
 function claudeIsolationArgs(mcpConfigPath) {
@@ -317,6 +326,9 @@ export function buildArgv(request, ctx = {}) {
       model,
       ...(effort ? ["--reasoning-effort", effort] : []),
       "--always-approve",
+      "--no-subagents",
+      "--disable-web-search",
+      ...(request.max_turns !== undefined ? ["--max-turns", String(request.max_turns)] : []),
       ...(schemaText !== undefined ? ["--json-schema", schemaText] : []),
       "--output-format",
       "json",
@@ -347,6 +359,7 @@ export function buildArgv(request, ctx = {}) {
       ...(effort ? ["-c", `model_reasoning_effort="${effort}"`] : []),
       "--sandbox",
       "read-only",
+      "--ignore-user-config",
       ...(schemaPath ? ["--output-schema", schemaPath] : []),
       "--json",
       "-",
@@ -589,7 +602,7 @@ export function normalizeClaudeOrGrok(payload, requestedModel) {
     reasoningTokens: usage.reasoning_tokens ?? usage.output_tokens_details?.thinking_tokens,
     providerReportedCostUsd,
     costUsd: providerReportedCostUsd,
-    costBasis: detail.costBasis ?? (providerReportedCostUsd === undefined ? "unknown" : "list"),
+    costBasis: resolveHelperCostBasis(detail.costBasis, providerReportedCostUsd),
     stopReason,
     tokenBasis: TOKEN_BASIS,
     auxiliaryUsage: resolved.auxiliary,
@@ -599,17 +612,107 @@ export function normalizeClaudeOrGrok(payload, requestedModel) {
   };
 }
 
-function agentEnvelope(text) {
+function resolveHelperCostBasis(explicit, providerReportedCostUsd) {
+  if (explicit === "list") return "list";
+  if (explicit === "unmetered") return "unmetered";
+  if (providerReportedCostUsd === undefined) return "unknown";
+  return "provider-reported";
+}
+
+const CLAIM_SIDECAR_KEYS = Object.freeze([
+  "summary",
+  "notes",
+  "notes_for_next_agent",
+  "notesForNextAgent",
+  "report",
+  "lists",
+]);
+const CLAIM_COUNT_SOURCE_KEYS = Object.freeze(["completed", "deferred", "artifacts"]);
+const CLAIM_CLOSED_KEYS = Object.freeze([
+  "status",
+  "completedCount",
+  "deferredCount",
+  "artifactCount",
+  "verdict",
+]);
+
+function capClaimCount(value) {
+  if (typeof value === "number" && Number.isInteger(value) && value >= 0) {
+    return Math.min(value, CLAIM_COUNT_CAP);
+  }
+  return undefined;
+}
+
+function claimCount(value) {
+  if (Array.isArray(value)) return Math.min(value.length, CLAIM_COUNT_CAP);
+  return capClaimCount(value);
+}
+
+function extractModelClaim(text, role) {
   const fenced = /```(?:json)?\s*([\s\S]*?)```/.exec(text);
   const candidate = parseJson(fenced ? fenced[1] : text);
-  if (!candidate || typeof candidate.status !== "string") return undefined;
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return undefined;
+  if (typeof candidate.status !== "string" && candidate.verdict === undefined
+    && candidate.completed === undefined && candidate.deferred === undefined
+    && candidate.artifacts === undefined && candidate.completedCount === undefined) {
+    return undefined;
+  }
+
+  const known = new Set([...CLAIM_CLOSED_KEYS, ...CLAIM_SIDECAR_KEYS, ...CLAIM_COUNT_SOURCE_KEYS]);
+  let unrecognizedCount = 0;
+  for (const key of Object.keys(candidate)) {
+    if (!known.has(key)) unrecognizedCount += 1;
+  }
+
+  const rawStatus = candidate.status;
+  const status = MODEL_CLAIM_STATUSES.includes(rawStatus) ? rawStatus : "unrecognized";
+  if (typeof rawStatus === "string" && !MODEL_CLAIM_STATUSES.includes(rawStatus)) {
+    unrecognizedCount += 1;
+  } else if (rawStatus !== undefined && typeof rawStatus !== "string") {
+    unrecognizedCount += 1;
+  }
+
+  const completedCount = claimCount(candidate.completedCount ?? candidate.completed);
+  const deferredCount = claimCount(candidate.deferredCount ?? candidate.deferred);
+  const artifactCount = claimCount(candidate.artifactCount ?? candidate.artifacts);
+
+  const review = role === "reviewer-arch" || role === "reviewer-cli";
+  let verdict;
+  if (candidate.verdict !== undefined) {
+    if (review && REVIEW_VERDICTS.includes(candidate.verdict)) {
+      verdict = candidate.verdict;
+    } else {
+      unrecognizedCount += 1;
+    }
+  }
+
   return {
-    status: candidate.status,
-    summary: candidate.summary ?? "",
-    artifacts: Array.isArray(candidate.artifacts) ? candidate.artifacts : [],
-    notesForNextAgent: candidate.notes_for_next_agent ?? candidate.notesForNextAgent ?? "",
-    ...candidate,
+    status,
+    ...(completedCount !== undefined ? { completedCount } : {}),
+    ...(deferredCount !== undefined ? { deferredCount } : {}),
+    ...(artifactCount !== undefined ? { artifactCount } : {}),
+    ...(verdict ? { verdict } : {}),
+    unrecognizedCount,
+    raw: candidate,
   };
+}
+
+export function diagnoseHarnessResult(payload, filePath = "-") {
+  const observed = payload && typeof payload === "object" && !Array.isArray(payload)
+    ? (payload.schema ?? "none")
+    : "none";
+  if (observed === RESULT_SCHEMA) return { result: payload };
+  return {
+    diagnostic: `${filePath}: observed schema ${observed}; obsolete result schema ${OBSOLETE_RESULT_SCHEMA}; expected ${RESULT_SCHEMA}`,
+  };
+}
+
+export function formatRunListing(payload, filePath = "-") {
+  const diagnosed = diagnoseHarnessResult(payload, filePath);
+  if (diagnosed.diagnostic) return diagnosed.diagnostic;
+  const row = diagnosed.result;
+  const cost = formatRunCost(row);
+  return `${row.ok ? "ok" : "FAIL"} ${row.harness ?? ""} ${row.effectiveModel ?? ""} ${(row.latencyMs ?? "?") + "ms"} ${cost}`;
 }
 
 function applyRoutingCap(fields) {
@@ -738,6 +841,15 @@ export function preflightRequest(request) {
   if (request.max_cost_usd !== undefined && harness !== "claude") {
     throw failClosed(`${harness} does not accept max_cost_usd in this helper`);
   }
+  if (request.max_turns !== undefined) {
+    const value = request.max_turns;
+    if (!Number.isInteger(value) || value <= 0) {
+      throw failClosed("max_turns must be a positive integer; zero is not a verified constraint");
+    }
+    if (harness !== "grok") {
+      throw failClosed(`${harness} does not accept max_turns in this helper`);
+    }
+  }
   return route;
 }
 
@@ -824,7 +936,7 @@ export async function runHarness(request, deps = {}) {
     timeout: deps.authTimeoutMs ?? 15_000,
   });
   if (auth.error && auth.error.code === "ENOENT") {
-    throw failClosed(loginHint(cliId, `missing binary ${cliId}.`));
+    throw failClosed(loginHint(cliId, `missing binary ${cliId}.`), "auth");
   }
   let authStatus;
   authStatus = parseAuth(cliId, {
@@ -835,6 +947,15 @@ export async function runHarness(request, deps = {}) {
 
   const stdinPrompt = request.harness === "claude" || request.harness === "codex";
   const started = now();
+  const dispatchRecord = {
+    requestHash: createHash("sha256").update(JSON.stringify(request)).digest("hex"),
+    timestamp: new Date(started).toISOString(),
+    command: cliId,
+    pid: null,
+  };
+  const dispatchPath = join(outputDir, "dispatch.json");
+  writePrivate(dispatchPath, `${JSON.stringify(dispatchRecord)}\n`, deps);
+
   const child = spawnImpl(resolved, argv, {
     cwd,
     env,
@@ -842,30 +963,55 @@ export async function runHarness(request, deps = {}) {
     windowsHide: true,
     stdio: [stdinPrompt ? "pipe" : "ignore", "pipe", "pipe"],
   });
+  if (child?.pid != null) {
+    dispatchRecord.pid = child.pid;
+    writePrivate(dispatchPath, `${JSON.stringify(dispatchRecord)}\n`, deps);
+  }
   if (stdinPrompt && child.stdin) {
     child.stdin.write(promptInput.text);
     child.stdin.end();
   }
 
   let timedOut = false;
+  let killRequest;
   let timer;
+  let escalateTimer;
+  const killGraceMs = deps.killGraceMs ?? DEFAULT_KILL_GRACE_MS;
+  const requestTermination = (signal) => {
+    killRequest = { signal, escalated: signal === "SIGKILL" };
+    try {
+      child.kill(signal);
+    } catch {
+      // Direct child may already have exited; missing close is not process-death proof.
+    }
+  };
   if (request.timeout_ms !== undefined) {
     timer = setTimeout(() => {
       timedOut = true;
-      child.kill("SIGKILL");
+      requestTermination("SIGTERM");
+      escalateTimer = setTimeout(() => {
+        requestTermination("SIGKILL");
+      }, killGraceMs);
     }, request.timeout_ms);
   }
   const collected = await new Promise((resolve) => {
     let stdout = "";
     let stderr = "";
+    let settled = false;
+    const finish = (payload) => {
+      if (settled) return;
+      settled = true;
+      resolve(payload);
+    };
     child.stdout?.setEncoding?.("utf8");
     child.stderr?.setEncoding?.("utf8");
     child.stdout?.on?.("data", (chunk) => { stdout += chunk; });
     child.stderr?.on?.("data", (chunk) => { stderr += chunk; });
-    child.on("error", (error) => resolve({ stdout, stderr, exitCode: -1, error }));
-    child.on("close", (code) => resolve({ stdout, stderr, exitCode: code ?? -1 }));
+    child.on("error", (error) => finish({ stdout, stderr, exitCode: -1, error, observedChildExit: false }));
+    child.on("close", (code) => finish({ stdout, stderr, exitCode: code ?? -1, observedChildExit: true }));
   });
   if (timer) clearTimeout(timer);
+  if (escalateTimer) clearTimeout(escalateTimer);
   const latencyMs = now() - started;
 
   const fields = request.harness === "codex"
@@ -883,6 +1029,11 @@ export async function runHarness(request, deps = {}) {
   } else if (fields.costUsd === undefined && fields.providerReportedCostUsd === undefined) {
     fields.costBasis = fields.costBasis ?? "unknown";
   }
+  if (fields.costBasis === "billed" || (fields.costBasis && !COST_BASIS.includes(fields.costBasis))) {
+    fields.costBasis = fields.providerReportedCostUsd !== undefined || fields.costUsd !== undefined
+      ? "provider-reported"
+      : "unknown";
+  }
 
   const stderrPath = join(outputDir, "stderr.log");
   const stderrBytes = Buffer.byteLength(collected.stderr ?? "", "utf8");
@@ -892,7 +1043,23 @@ export async function runHarness(request, deps = {}) {
   const answerBytes = Buffer.byteLength(answerText, "utf8");
   if (answerBytes > 0) writePrivate(answerPath, answerText, deps);
 
-  const agent = agentEnvelope(answerText);
+  const extractedClaim = extractModelClaim(answerText, request.role);
+  let modelClaim;
+  if (extractedClaim) {
+    const claimPath = join(outputDir, "model-claim.json");
+    const claimBody = `${JSON.stringify(extractedClaim.raw)}\n`;
+    writePrivate(claimPath, claimBody, deps);
+    modelClaim = {
+      status: extractedClaim.status,
+      ...(extractedClaim.completedCount !== undefined ? { completedCount: extractedClaim.completedCount } : {}),
+      ...(extractedClaim.deferredCount !== undefined ? { deferredCount: extractedClaim.deferredCount } : {}),
+      ...(extractedClaim.artifactCount !== undefined ? { artifactCount: extractedClaim.artifactCount } : {}),
+      ...(extractedClaim.verdict ? { verdict: extractedClaim.verdict } : {}),
+      unrecognizedCount: extractedClaim.unrecognizedCount,
+      path: claimPath,
+      bytes: Buffer.byteLength(claimBody),
+    };
+  }
   const emptyPayload = fields.emptyPayload === true
     || ((request.harness === "codex" || request.harness === "pi")
       ? jsonlEvents(collected.stdout).length === 0
@@ -902,16 +1069,26 @@ export async function runHarness(request, deps = {}) {
     : emptyPayload
       ? (fields.harnessError ?? "empty JSON payload")
       : fields.harnessError;
-  const ok = collected.exitCode === 0
-    && !timedOut
-    && !harnessError
-    && !emptyPayload
-    && agent?.status !== "fail";
+  const spawnFailed = Boolean(collected.error) && collected.observedChildExit !== true;
+  const status = timedOut || killRequest
+    ? "interrupted"
+    : (harnessError || emptyPayload || collected.exitCode !== 0 || spawnFailed)
+      ? "failed"
+      : "completed";
+  const ok = status === "completed";
+  const stage = spawnFailed ? "spawn" : "run";
 
   const { capped, metadata } = applyRoutingCap(fields);
+  const usagePresent = [
+    capped.tokensIn, capped.tokensOut, capped.cacheReadTokens, capped.cacheCreationTokens,
+    capped.reasoningTokens, fields.costUsd, fields.providerReportedCostUsd, metadata.tokensIn,
+  ].some((value) => value !== undefined);
+  const usagePartial = status !== "completed" && usagePresent;
   const result = {
     schema: RESULT_SCHEMA,
     ok,
+    status,
+    stage,
     harness: request.harness,
     provider: request.harness === "pi" ? piProviderOf(request.model) : route.provider,
     role: request.role,
@@ -919,16 +1096,20 @@ export async function runHarness(request, deps = {}) {
     effectiveModel: fields.effectiveModel,
     reasoningEffort: effort,
     ...(clamped ? { effortClampedFrom: clamped } : {}),
+    startedAt: new Date(started).toISOString(),
+    finishedAt: new Date(started + latencyMs).toISOString(),
     latencyMs,
     exitCode: collected.exitCode,
     timedOut,
-    finalOutcome: ok ? "passed" : "failed",
+    ...(killRequest ? { killRequest } : {}),
+    observedChildExit: collected.observedChildExit === true,
     tokenBasis: TOKEN_BASIS,
     contextOccupancy: CONTEXT_OCCUPANCY_UNKNOWN,
     ...capped,
     ...(fields.costUsd !== undefined ? { costUsd: fields.costUsd } : {}),
     costBasis: fields.costBasis,
     ...(fields.providerReportedCostUsd !== undefined ? { providerReportedCostUsd: fields.providerReportedCostUsd } : {}),
+    ...(usagePartial ? { usagePartial: true } : {}),
     ...(fields.sessionId ? { sessionId: fields.sessionId } : {}),
     ...(fields.stopReason ? { stopReason: fields.stopReason } : {}),
     ...(harnessError ? { harnessError: String(harnessError).slice(0, 500) } : {}),
@@ -939,9 +1120,10 @@ export async function runHarness(request, deps = {}) {
       : {}),
     auth: authStatus,
     command: cliId,
+    dispatchPath,
     ...(answerBytes > 0 ? { answerPath, answerBytes } : {}),
     ...(stderrBytes > 0 ? { stderrPath, stderrBytes } : {}),
-    ...(agent ? { agent } : {}),
+    ...(modelClaim ? { modelClaim } : {}),
     ...(Object.keys(metadata).length > 0 ? { providerMetadata: metadata } : {}),
   };
   assertNoRawTransport(result, collected);
@@ -989,6 +1171,8 @@ if (invokedAsMain()) {
     const failure = {
       schema: RESULT_SCHEMA,
       ok: false,
+      status: "failed",
+      stage: error.stage ?? "preflight",
       error: error.message,
     };
     process.stdout.write(`${JSON.stringify(failure, undefined, 2)}\n`);
