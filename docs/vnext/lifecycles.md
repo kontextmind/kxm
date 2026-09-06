@@ -152,7 +152,9 @@ Fail-closed compiled defaults:
 | Deterministic gate | 1 | Exactly 1 | 1 | `all` |
 | Human approval | 1 | Exactly 1 authorized decision | 1 | `all` |
 | Wait | 1 | Exactly 1 signal | 1 | `all` |
-| MOA | 1 | Target 3, minimum 2, maximum 3 | 1 | `all-settled`, minimum 2 valid completions |
+| MOA | 1 | Exactly 1 unless the step declares a panel | 1 | `all` |
+
+Current contract (`kxm.workflow.v1`): an omitted `assignments` block resolves for every kind to minimum 1, target = minimum, maximum = target, maxParallel = maximum, one physical attempt per assignment; an omitted `join` resolves to `all`. The loader checks these numbers and the compiler mirrors them exactly; the compiler never resolves a larger ceiling than the loader validated. A MOA step must declare its panel explicitly (see `fix.yaml`). The kind-level MOA default of target 3, minimum 2, maximum 3, all-settled with two valid completions is a Phase 7 change made to schema, loader, compiler, and this table in one change.
 
 Templates may materialize larger reviewed attempt ceilings. No omitted field ever
 means unlimited retries.
