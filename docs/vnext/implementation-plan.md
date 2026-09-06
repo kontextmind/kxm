@@ -221,12 +221,24 @@ It does not replace the phase gates below.
   any auth or assignment spawn; missing or unreadable inputs fail closed
   with zero spawn. File-consuming argv tokens are absolute so the child
   can run in `request.cwd`. Windows helper dispatch is unverified. Not
-  Phase 11. Issue 127 M1 transport plus M2 reusable test helpers
-  (engine/runtime git project setup and harness fake-child/auth/dispatch)
-  are implemented/unreleased, not accepted. M3–M5 (assignment runner,
-  witnesses/accept/report, workflow docs adoption) remain open before D3;
-  the assignment runner is not adopted. D3 still waits on bounded
-  contract resolution after this prerequisite.
+  Phase 11. Issue 127 M1 transport, M2 reusable test helpers
+  (engine/runtime git project setup and harness fake-child/auth/dispatch),
+  and corrected M3a exported assignment-manifest validation are
+  implemented/unreleased, not accepted. M3b templates/dispatch/completion,
+  M4a/M4b witnesses/accept/report, and M5 workflow docs adoption remain
+  pending before D3; the assignment runner is not adopted. D3 still waits
+  on bounded contract resolution after this prerequisite.
+  `scripts/assignment-run.mjs` validates closed `kxm.assignment.v1`
+  (kind/route, explicit effort/permission, cwd plus required `task_dir`
+  whose final segment equals `task_id`, clean or staged base, current or
+  restricted bootstrap `plan_ref` bound to `task_dir/plan-current.json`,
+  hashed inputs, contract, fresh identity/output and rework under
+  `task_dir`). Git comparisons are read-only (`--no-optional-locks`,
+  porcelain `-z` status, `cat-file -t`, `diff-index --cached --quiet`);
+  validation never mints a tree or writes `.git`. Importing or calling
+  validation does not create an output directory, reserve an ID against
+  races, write dispatch, mutate the worktree, spawn a provider, or fake
+  live auth. No new CLI command or npm gate. Atomic consumption is M3b.
 - Coverage include inverted to `plugins/kxm/src/**/*.ts`; excludes are only
   `server.ts` and `mcp-server.ts` (spawned bundles attribute to `dist`).
   Thresholds are measured whole-tree values and may only ratchet up.
@@ -357,9 +369,11 @@ It does not replace the phase gates below.
   adoption/remint. Proven on a synthetic agent-only fixture; `default.yaml`
   pins and stops fail-closed at start because it declares run duration
   limits. D3/D4 and the rest of Phase 3 remain open. Issue 127 M1 helper
-  transport and M2 reusable test extraction are unreleased setup
-  prerequisites for later assignment work; they do not complete Phase 3
-  or retire scratch runners.
+  transport, M2 reusable test extraction, and corrected M3a
+  assignment-manifest validation (`task_dir` authority, read-only Git)
+  are unreleased setup prerequisites for later assignment work; they do
+  not complete Phase 3, adopt the runner, or retire scratch runners.
+  M3b/M4a/M4b/M5 remain pending.
   Issue #88 / D2 closed on all seven PR CI jobs (four Validate legs plus
   classify/docs/plugin) before the pause; the post-merge main Windows Node 24
   package-cleanup failure in run `34006194862` is unresolved and deferred.
@@ -393,11 +407,13 @@ It does not replace the phase gates below.
 - Slim live `default` workflow for this repo (no bulk migrate of jira/provenance/v04).
 - YAML-editing enable/disable UI (Phase 4 `/kxm` settings or `kxm dash` config
   tab). Do not add a preferences overlay.
-- **Issue 127 remainder:** M1 helper transport and M2 reusable test
-  extraction are implemented/unreleased (platform pause already in tree);
-  they are not accepted completion. M3 assignment runner and plan
-  pointer, M4 witnesses/accept/report, and M5 AGENTS/workflow docs adoption
-  are still open before D3. D3 still needs bounded contract resolution after
+- **Issue 127 remainder:** M1 helper transport, M2 reusable test
+  extraction, and corrected M3a exported assignment-manifest validation
+  (`task_dir` authority, read-only Git comparisons) are
+  implemented/unreleased (platform pause already in tree); they are not
+  accepted completion. M3b templates/dispatch/completion, M4a/M4b
+  witnesses/accept/report, and M5 AGENTS/workflow docs adoption remain
+  pending before D3. D3 still needs bounded contract resolution after
   this prerequisite. Not a product assignment layer (Phase 4) and not Phase
   11 adapters. The assignment runner is not adopted.
 - Phase 3 engine remainder (D3 gate execution, `expect`, attempt-bound
@@ -406,10 +422,10 @@ It does not replace the phase gates below.
   `default.yaml` and `fix.yaml`). Compile and the agent-only run loop do not
   close Phase 3. D3 and D4 must honor a declared `assignments` or `join` on
   gate, approval, and wait steps or fail closed; D1 only preserves the
-  declaration. Issue 127 M1 transport and M2 reusable tests remain
-  unreleased and not accepted; M3–M5 and D3 contract resolution are still
-  open. This is not full AGENTS workflow adoption (M5) and not a
-  scratch-retirement claim.
+  declaration. Issue 127 M1 transport, M2 reusable tests, and corrected
+  M3a validation remain unreleased and not accepted; M3b/M4a/M4b/M5 and
+  D3 contract resolution are still open. This is not full AGENTS workflow
+  adoption (M5) and not a scratch-retirement claim.
 - Version-1 run event stores are refused with `runtime_schema_outdated`;
   backup, restore, and migration remain E6.
 - Non-Pi dispatch adapters (Phase 11). Listing a harness does not execute it.
@@ -559,15 +575,19 @@ attempts after process restart. No gates, evidence, joins, duration or cost
 budget enforcement, or D4 recovery/adoption. The Gate sentence is unchanged.
 Windows verification of the run loop is deferred with the platform pause.
 
-**Issue 127 M1+M2 (unreleased, not this gate, not accepted):** helper
+**Issue 127 M1+M2+M3a (unreleased, not this gate, not accepted):** helper
 transport result v2, supported launch flags, honest termination facts,
 stdio drain vs bounded linger (`stdio_incomplete` / `unknown_exit` are
 not `completed`), type-closed public usage/cost, malformed
 text and post-spawn write failures with retained spend, bounded timeout
 settle, and closed public metadata; plus extracted test helpers for
-committed vNext git projects and harness fake-child/auth/dispatch.
-M3–M5 and D3 remain open. Not a Phase 3 completion or scratch-runner
-retirement. The assignment runner is not adopted.
+committed vNext git projects and harness fake-child/auth/dispatch; plus
+corrected exported closed `kxm.assignment.v1` validation bound to
+manifest `task_dir`, with read-only Git comparisons and no spawn,
+output-dir creation, ID reservation, dispatch record, `.git` write, or
+worktree mutation. M3b/M4a/M4b/M5 and D3 remain pending. Not a Phase 3
+completion or scratch-runner retirement. The assignment runner is not
+adopted.
 
 **Gate:** a model-free test driver completes and recovers
 `examples/vnext/.kxm/workflows/default.yaml` (plan → implement → verify → ready)
