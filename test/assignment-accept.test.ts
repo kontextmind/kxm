@@ -30,6 +30,7 @@ import {
   observeAssignment,
   runAssignment,
   witnessAssignment,
+  writeCurrentPlan,
 } from "../scripts/assignment-run.mjs";
 import {
   claudeAuth,
@@ -76,14 +77,15 @@ function writePlan(
   taskId: string,
   body = "# plan\n",
   commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-): { sha: string } {
+  generation = 1,
+): { sha: string; path: string } {
   const planPath = join(taskDir, "plan-current.md");
   writeFileSync(planPath, body);
   const sha = sha256(body);
   writeFileSync(join(taskDir, PLAN_POINTER_FILENAME), `${JSON.stringify({
     schema: PLAN_POINTER_SCHEMA,
     task_id: taskId,
-    generation: 1,
+    generation,
     plan_path: "plan-current.md",
     plan_sha256: sha,
     base_commit: commit,
@@ -91,7 +93,7 @@ function writePlan(
     updated_at: "2026-09-06T00:00:00.000Z",
     supersedes: [],
   }, null, 2)}\n`);
-  return { sha };
+  return { sha, path: planPath };
 }
 
 function writerManifest(
@@ -102,7 +104,10 @@ function writerManifest(
 ) {
   const taskId = "task-a";
   const assignmentId = typeof overrides.assignment_id === "string" ? overrides.assignment_id : "asg-writer-1";
-  const { sha } = writePlan(taskDir, taskId, "# plan\n", commit);
+  const planRef = overrides.plan_ref as { kind?: string; path?: string; sha256?: string } | undefined;
+  const { sha } = planRef
+    ? { sha: typeof planRef.sha256 === "string" ? planRef.sha256 : "" }
+    : writePlan(taskDir, taskId, "# plan\n", commit);
   return {
     schema: ASSIGNMENT_SCHEMA,
     task_id: taskId,
@@ -115,7 +120,7 @@ function writerManifest(
     cwd: root,
     task_dir: taskDir,
     base: { kind: "clean", commit },
-    plan_ref: { kind: "current", path: "plan-current.md", sha256: sha },
+    plan_ref: planRef ?? { kind: "current", path: "plan-current.md", sha256: sha },
     inputs: [],
     contract: {
       boundary: "Add assignment accept only.",
@@ -136,7 +141,10 @@ function reviewerManifest(
 ) {
   const taskId = "task-a";
   const assignmentId = typeof overrides.assignment_id === "string" ? overrides.assignment_id : "asg-arch-1";
-  const { sha } = writePlan(taskDir, taskId, "# plan\n", commit);
+  const planRef = overrides.plan_ref as { kind?: string; path?: string; sha256?: string } | undefined;
+  const { sha } = planRef
+    ? { sha: typeof planRef.sha256 === "string" ? planRef.sha256 : "" }
+    : writePlan(taskDir, taskId, "# plan\n", commit);
   return {
     schema: ASSIGNMENT_SCHEMA,
     task_id: taskId,
@@ -149,7 +157,7 @@ function reviewerManifest(
     cwd: root,
     task_dir: taskDir,
     base: { kind: "clean", commit },
-    plan_ref: { kind: "current", path: "plan-current.md", sha256: sha },
+    plan_ref: planRef ?? { kind: "current", path: "plan-current.md", sha256: sha },
     inputs: [],
     contract: {
       boundary: "Review the accepted tree.",
@@ -299,7 +307,13 @@ function modeOf(path: string): number {
   return statSync(path).mode & 0o777;
 }
 
-async function runWriter(root: string, commit: string, taskDir: string, assignmentId = "asg-writer-1") {
+async function runWriter(
+  root: string,
+  commit: string,
+  taskDir: string,
+  assignmentId = "asg-writer-1",
+  extras: Record<string, unknown> = {},
+) {
   const { deps, spawns } = dispatchDeps("grok", {
     stdout: grokAnswer({
       status: "done",
@@ -315,6 +329,7 @@ async function runWriter(root: string, commit: string, taskDir: string, assignme
   const completion = await runAssignment(writerManifest(root, commit, taskDir, {
     assignment_id: assignmentId,
     output_dir: assignmentId,
+    ...extras,
   }), deps);
   assert.equal(spawns.length, 1);
   assert.equal(completion.schema, COMPLETION_SCHEMA);
@@ -792,6 +807,119 @@ test("unresolved BLOCK is not bypassed by a cherry-picked PASS; rework supersede
     assert.equal(accepted.tree, tree);
     assert.equal(accepted.critics.find((item) => item.kind === "review-arch")?.assignment_id, "asg-arch-rework");
   } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("invalid invocation advertises every implemented command and flag", async () => {
+  await assert.rejects(
+    () => assignmentMain(["node", "assignment-run.mjs", "not-a-command"]),
+    (error: unknown) => {
+      const message = String((error as Error).message);
+      assert.match(message, /^usage: assignment-run\.mjs /);
+      for (const token of [
+        "run --manifest <absolute-path>",
+        "observe --record-dir <absolute-path>",
+        "witness --record-dir <absolute-path>",
+        "accept --task-dir <absolute-path> --commit <commit> --record-dir <absolute-path> --critic <absolute-path> --critic <absolute-path> [--observed-pr <id>] [--observed-ci <id>]",
+        "attribute --task-dir <absolute-path> --record-dir <absolute-path> --class <orchestration|model|environment|unclassified> --explanation-file <absolute-path>",
+        "observe-cost --task-dir <absolute-path> --input <absolute-path>",
+        "plan-current --task-dir <absolute-path> --plan <absolute-path> --sha256 <hex64> --base-commit <commit> --expected-generation <n>",
+        "change-report --task-dir <absolute-path>",
+      ]) {
+        assert.equal(message.includes(token), true, token);
+      }
+      return true;
+    },
+  );
+});
+
+test("same-tree BLOCK survives plan-current advance and same-role rework can clear it", async () => {
+  const { root, commit: baseCommit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const writerDir = await runWriter(root, baseCommit, taskDir);
+    const { receipt } = await runWitness(writerDir);
+    assert.equal(receipt.result, "passed");
+    const { commit, tree } = commitIndex(root);
+    await runReview(root, commit, taskDir, "review-arch", "asg-arch-block", {}, {
+      verdict: "BLOCK",
+      summary: "stale-plan-block",
+      findings: ["no"],
+    });
+    const nextBody = "# plan generation 2\n";
+    const nextPath = join(taskDir, "plan-gen-2.md");
+    writeFileSync(nextPath, nextBody);
+    const nextSha = sha256(nextBody);
+    writeCurrentPlan({
+      taskDir,
+      plan: nextPath,
+      sha256: nextSha,
+      baseCommit: commit,
+      expectedGeneration: 1,
+    });
+    const planRef = { kind: "current" as const, path: nextPath, sha256: nextSha };
+    const nextWriter = await runWriter(root, commit, taskDir, "asg-writer-2", { plan_ref: planRef });
+    const nextWitness = await runWitness(nextWriter);
+    assert.equal(nextWitness.receipt.result, "passed");
+    const archPass = await runReview(root, commit, taskDir, "review-arch", "asg-arch-pass", { plan_ref: planRef });
+    const cliPass = await runReview(root, commit, taskDir, "review-cli", "asg-cli-pass", { plan_ref: planRef });
+    await assert.rejects(
+      () => acceptAssignment({
+        taskDir,
+        commit,
+        recordDir: nextWriter,
+        critics: [archPass, cliPass],
+      }),
+      rejectCode("critic_block"),
+    );
+    const reworkDir = await runReview(root, commit, taskDir, "review-arch", "asg-arch-rework", {
+      plan_ref: planRef,
+      rework_of: "asg-arch-block",
+    });
+    const accepted = await acceptAssignment({
+      taskDir,
+      commit,
+      recordDir: nextWriter,
+      critics: [reworkDir, cliPass],
+    });
+    assert.equal(accepted.tree, tree);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("same-tree BLOCK from a removed review worktree still refuses accept", async () => {
+  const { root, commit: baseCommit } = initRepo();
+  const taskDir = initTask();
+  const reviewWt = join(dirname(root), `kxm-review-${basename(root)}`);
+  try {
+    const writerDir = await runWriter(root, baseCommit, taskDir);
+    const { receipt } = await runWitness(writerDir);
+    assert.equal(receipt.result, "passed");
+    const { commit, tree } = commitIndex(root);
+    git(root, ["worktree", "add", "--detach", reviewWt, commit]);
+    await runReview(reviewWt, commit, taskDir, "review-arch", "asg-arch-other-wt", {}, {
+      verdict: "BLOCK",
+      summary: "other-worktree-block",
+      findings: ["no"],
+    });
+    rmSync(reviewWt, { recursive: true, force: true });
+    git(root, ["worktree", "prune"]);
+    const archDir = await runReview(root, commit, taskDir, "review-arch", "asg-arch-1");
+    const cliDir = await runReview(root, commit, taskDir, "review-cli", "asg-cli-1");
+    await assert.rejects(
+      () => acceptAssignment({
+        taskDir,
+        commit,
+        recordDir: writerDir,
+        critics: [archDir, cliDir],
+      }),
+      rejectCode("critic_block"),
+    );
+    assert.equal(tree.length, 40);
+  } finally {
+    rmSync(reviewWt, { recursive: true, force: true });
     cleanup(root, taskDir);
   }
 });

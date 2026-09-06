@@ -2233,7 +2233,7 @@ export async function observeAssignment(outputDir, deps = {}) {
   return appended;
 }
 
-const CLI_USAGE = "usage: assignment-run.mjs run --manifest <absolute-path> | observe --record-dir <absolute-path> | witness --record-dir <absolute-path> | accept --task-dir <absolute-path> --commit <commit> --record-dir <absolute-path> --critic <absolute-path> --critic <absolute-path> [--observed-pr <id>] [--observed-ci <id>]";
+const CLI_USAGE = "usage: assignment-run.mjs run --manifest <absolute-path> | observe --record-dir <absolute-path> | witness --record-dir <absolute-path> | accept --task-dir <absolute-path> --commit <commit> --record-dir <absolute-path> --critic <absolute-path> --critic <absolute-path> [--observed-pr <id>] [--observed-ci <id>] | attribute --task-dir <absolute-path> --record-dir <absolute-path> --class <orchestration|model|environment|unclassified> --explanation-file <absolute-path> | observe-cost --task-dir <absolute-path> --input <absolute-path> | plan-current --task-dir <absolute-path> --plan <absolute-path> --sha256 <hex64> --base-commit <commit> --expected-generation <n> | change-report --task-dir <absolute-path>";
 
 const WITNESS_RECEIPT_KEYS = Object.freeze([
   "schema",
@@ -3407,10 +3407,63 @@ function listDirectAssignmentDirs(taskDir, io) {
   return dirs;
 }
 
+function historicalPlanRef(manifest, taskDir) {
+  const planRef = manifest.plan_ref;
+  if (!isPlainObject(planRef) || !PLAN_REF_KINDS.includes(planRef.kind)) {
+    throw failClosed(`stored plan_ref.kind must be ${PLAN_REF_KINDS.join(" or ")}`, "plan_mismatch");
+  }
+  if (planRef.kind === "current") {
+    closedObject(planRef, ["kind", "path", "sha256"], "historical plan_ref", [], "plan_mismatch");
+    return Object.freeze({
+      kind: "current",
+      path: resolvePath(taskDir, requireNonemptyString(planRef.path, "historical plan_ref.path", "plan_mismatch")),
+      sha256: requireHex(planRef.sha256, "historical plan_ref.sha256", HEX64, "plan_mismatch"),
+    });
+  }
+  closedObject(planRef, ["kind", "reason"], "historical plan_ref", [], "plan_mismatch");
+  return Object.freeze({
+    kind: "bootstrap",
+    reason: requireNonemptyString(planRef.reason, "historical plan_ref.reason", "plan_mismatch"),
+  });
+}
+
+function normalizeHistoricalBinding(binding, io, code = "attribution_invalid") {
+  const closed = closedObject(
+    binding,
+    ["task_dir", "cwd", "record_dir", "output_dir"],
+    "historical binding",
+    [],
+    code,
+  );
+  return Object.fromEntries(Object.entries(closed).map(([key, path]) => {
+    if (typeof path !== "string" || !nodePath.isAbsolute(path)) {
+      throw failClosed("invalid historical path", code);
+    }
+    return [key, comparablePath(path, io.realpathSync, io.lstatSync)];
+  }));
+}
+
+function loadHistoricallyBoundAssignment(recordDir, expectedTaskDir, io) {
+  const loaded = loadWitnessCompletion(recordDir, io);
+  const stored = loadStoredManifest(recordDir, loaded.completion, io);
+  const identity = historicalAssignmentIdentity(stored.manifest, recordDir, io);
+  if (!samePath(identity.task_dir, expectedTaskDir, io.realpathSync)) {
+    throw failClosed("stored assignment task_dir does not match --task-dir", "witness_binding_invalid");
+  }
+  assertCompletionMatchesStored({
+    ...loaded.completion,
+    binding: normalizeHistoricalBinding(loaded.completion.binding, io),
+  }, identity, io);
+  const plan = bindWitnessPlan(loaded.completion, {
+    plan_ref: historicalPlanRef(stored.manifest, identity.task_dir),
+  }, io);
+  return { loaded, stored, identity, plan, completion: loaded.completion };
+}
+
 function tryLoadOwnedReview(recordDir, expectedTaskDir, expectedTaskId, io) {
   try {
-    // A bookkeeping failure cannot erase a structurally bound BLOCK review.
-    const bound = loadStructurallyBoundAssignment(recordDir, expectedTaskDir, io);
+    // BLOCK discovery binds historical identity, not live plan/cwd currency.
+    const bound = loadHistoricallyBoundAssignment(recordDir, expectedTaskDir, io);
     if (bound.identity.task_id !== expectedTaskId) return null;
     if (bound.identity.assignment_id !== basename(recordDir)) return null;
     if (!REVIEW_KINDS.includes(bound.identity.kind)) return null;
@@ -3803,12 +3856,10 @@ function attributionSubject(taskDir, recordDir, io) {
   }
   if (name === "completion.json") {
     const stored = historicalAssignmentIdentity(manifest.value, recordDir, io);
-    const binding = closedObject(value.binding, ["task_dir", "cwd", "record_dir", "output_dir"], "historical binding", [], "attribution_invalid");
-    const normalized = Object.fromEntries(Object.entries(binding).map(([key, path]) => {
-      if (typeof path !== "string" || !nodePath.isAbsolute(path)) throw failClosed("invalid historical path", "attribution_invalid");
-      return [key, comparablePath(path, io.realpathSync, io.lstatSync)];
-    }));
-    assertCompletionMatchesStored({ ...value, binding: normalized }, stored, io);
+    assertCompletionMatchesStored({
+      ...value,
+      binding: normalizeHistoricalBinding(value.binding, io),
+    }, stored, io);
   } else if (name === "refusal.json") {
     if (value.provider_calls !== 0 || !samePath(value.binding?.task_dir ?? "", taskDir, io.realpathSync)
       || !samePath(value.binding?.record_dir ?? "", recordDir, io.realpathSync)) throw failClosed("foreign refusal", "attribution_invalid");

@@ -30,7 +30,7 @@ router.
 |---|---|---|
 | **Implement / write code** | **Grok** (`grok --model grok-4.6`), headless | Currently admitted native writer on this runner. Fast at repo-shaped edits. If `grok` is missing or logged out, fail closed — do not fall back to Pi. Not a fixed sole writer. |
 | **Plan** | **Claude Fable** (`claude --model fable`) | Architecture and permissions; independent of the writer. |
-| **Review** | **Fable** (architecture/permissions) and **Codex gpt-5.6-sol** (CLI/docs) | Different providers from the writer. One critic is enough unless the change is auth, workflow policy, or multi-package. |
+| **Review** | **Fable** (architecture/permissions) and **Codex gpt-5.6-sol** (CLI/docs) | Different providers from the writer. Both designated critics are required for acceptance on this runner; a single critic is at most preliminary triage. |
 | **Portability / mapping** | **Kimi** only when the task is Windows/path/CLI-portability | Not a default reviewer. |
 | **Verify** | The implementer runs `npm run verify`. Critics do not replace tests. | Deterministic gates beat a third model. Root re-runs the fixed witness. |
 

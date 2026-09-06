@@ -117,7 +117,8 @@ just observe-cost /abs/task-dir /abs/observation.json
 
 just accept /abs/task-dir <commit> /abs/writer-record /abs/arch-review /abs/cli-review
 # accept --task-dir --commit --record-dir --critic --critic
-# optional --observed-pr <id> --observed-ci <id>
+# optional observed PR/CI (direct script; the five-argument just recipe cannot forward them):
+# node scripts/assignment-run.mjs accept --task-dir /abs/task --commit <sha> --record-dir /abs/writer --critic /abs/arch --critic /abs/cli [--observed-pr <id>] [--observed-ci <id>]
 
 just plan-current /abs/task-dir /abs/plan.md <sha256> <base-commit> <expected-generation>
 just change-report /abs/task-dir
@@ -142,10 +143,15 @@ Distinctions the report and docs must keep:
 - Private handoff notes live in `attribute` explanations and private model
   summaries; the report references them and does not print the prose.
 
-Evidence-informed **effort defaults** for example manifests and transport
-recipes: medium implementation/planning/architecture, low CLI review. Not a
+Evidence-informed **effort defaults** for transport recipes and operator
+manifests: medium implementation/planning/architecture, low CLI review. Not a
 learned policy and not a catalog feed. Phase 9 may use this report to
 **propose** harness or model changes; activation still requires Git review.
+
+Per-candidate acceptance requires an actual native writer, the fixed witness,
+and both designated native reviews. PR/CI/merge complete issue 127. This
+document does not assert those gates have passed. Low-level
+`just impl|plan|review-arch|review-cli` recipes remain harness transport.
 
 ## Planned: v2 record
 

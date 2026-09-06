@@ -289,7 +289,10 @@ It does not replace the phase gates below.
   receipt, designated Fable/Sol critic PASS records, and the actual
   commit tree, including stored-manifest critic snapshots, writer-bound
   gate cwd, manifest-bound rework, cross-worktree reviews, and
-  task-owned BLOCK scans. Structurally bound BLOCK reviews still block
+  task-owned BLOCK scans. Historical same-tree BLOCK reviews bind by stored
+  manifest identity and completion, not the live plan pointer or a live
+  review cwd; a plan-current advance or removed worktree does not drop them.
+  Structurally bound BLOCK reviews still block
   acceptance when telemetry recording fails; bookkeeping recovery preserves
   their immutable verdict. W2 is implemented locally: `attribute` retains
   private explanations in immutable history with a hash-bound latest pointer;
@@ -310,11 +313,13 @@ It does not replace the phase gates below.
   descriptive, not a ranking. `plan-current` uses expected generation and
   proposed hash checks, preserves prior plan/pointer bytes, and atomically
   advances the pointer. Safe positional just recipes expose the runner.
-  M4b is implemented/unreleased; final review and adoption are pending.
-  M5 docs/defaults (AGENTS, harness-cli, routing, Tracking, evidence-informed
-  recipe effort) are implemented/unreleased in this candidate. Runner
-  adoption, scratch-recipe retirement, and native Fable/Sol review smoke
-  remain pending; the assignment runner is not adopted. The operator
+  M4b is implemented/unreleased. Per-candidate acceptance requires an
+  actual native writer, the fixed witness, and both designated native
+  reviews; PR/CI/merge complete issue 127. This candidate does not assert
+  those gates passed. M5 docs/defaults (AGENTS, harness-cli, routing,
+  Tracking, evidence-informed recipe effort) are implemented/unreleased.
+  Low-level `just impl|plan|review-*` recipes remain harness transport.
+  The operator
   authorized agent changes on 2026-09-06; Codex applied the bounded W1
   repair after repeated Grok no-work outcomes. Its local verification is
   recorded as bootstrap evidence, not a native completion or acceptance.
@@ -518,8 +523,12 @@ It does not replace the phase gates below.
   not accepted. M4b W1 accept is implemented locally (critic snapshot, gate
   cwd, stored rework, cross-worktree, and task-bound BLOCK checks);
   W2/W3 observations, reporting, plan history and recipes are implemented
-  locally; M5 docs/defaults are implemented/unreleased; adoption and D3
-  contract resolution remain pending.
+  locally; M5 docs/defaults are implemented/unreleased, including historical
+  BLOCK binding that does not depend on the live plan pointer or a retained
+  review worktree. Per-candidate acceptance requires an actual native writer,
+  the fixed witness, and both designated native reviews; PR/CI/merge complete
+  issue 127. This candidate does not assert those gates passed. D3
+  contract resolution remains after this prerequisite.
   Issue #88 / D2 closed on all seven PR CI jobs (four Validate legs plus
   classify/docs/plugin) before the pause; the post-merge main Windows Node 24
   package-cleanup failure in run `34006194862` is unresolved and deferred.
@@ -569,14 +578,16 @@ It does not replace the phase gates below.
   execution, and `witness --record-dir` are implemented/unreleased, not
   accepted; root writes this assignment's receipt after native exit.
   M4b W1 accept is implemented locally with bindings for critic snapshot,
-  gate cwd, rework, worktree and BLOCK ownership; final acceptance is pending.
+  gate cwd, rework, worktree and BLOCK ownership. Historical same-tree BLOCK
+  discovery uses stored identity/completion, not live plan currency or cwd
+  liveness. Per-candidate acceptance requires an actual native writer, the
+  fixed witness, and both designated native reviews; PR/CI/merge complete
+  issue 127. This candidate does not assert those gates passed.
   W2/W3 attribution, observations, reporting, plan history and recipes are
-  implemented/unreleased. M5 docs/defaults are implemented/unreleased;
-  runner adoption and scratch-recipe retirement still need native writer
-  plus Fable/Sol review smoke. D3 still needs bounded
+  implemented/unreleased. M5 docs/defaults are implemented/unreleased.
+  Low-level transport recipes remain for that purpose. D3 still needs bounded
   contract resolution after this prerequisite. Not a product assignment
-  layer (Phase 4) and not Phase 11 adapters. The assignment runner is
-  not adopted.
+  layer (Phase 4) and not Phase 11 adapters.
 - Phase 3 engine remainder (D3 gate execution, `expect`, attempt-bound
   evidence; D4 joins, approval, waits, duration and cost budgets,
   `blocked_uncertain` recovery, producer drain, and the full driver gate on
@@ -586,10 +597,13 @@ It does not replace the phase gates below.
   declaration. Issue 127 M1 transport, M2 reusable tests, corrected M3a
   validation, and corrected M3b remain unreleased and not accepted;
   M4a is implemented/unreleased and not accepted; M4b W1 accept is
-  implemented locally with stored-manifest critic/receipt/BLOCK bindings;
+  implemented locally with stored-manifest critic/receipt/BLOCK bindings,
+  including historical BLOCK identity after plan advance or worktree removal;
   W2/W3 are implemented/unreleased; M5 docs/defaults are
-  implemented/unreleased; runner adoption and D3 contract resolution remain
-  open. This is not full AGENTS workflow
+  implemented/unreleased. Per-candidate acceptance requires an actual native
+  writer, the fixed witness, and both designated native reviews; PR/CI/merge
+  complete issue 127. This candidate does not assert those gates passed. D3
+  contract resolution remains open. This is not full AGENTS workflow
   adoption and not a scratch-retirement claim.
 - Version-1 run event stores are refused with `runtime_schema_outdated`;
   backup, restore, and migration remain E6.
@@ -771,13 +785,17 @@ completion and current pointer, and requires routing/telemetry to be
 recorded or hash-bound recovered, before any npm execution. It does
 not re-run pre-dispatch writer admission; completion candidate
 `unknown` stays unknown. M3b acceptance and M4b (W1 accept implemented locally
-with critic/receipt/rework/worktree/BLOCK binding repair; W2/W3 implemented
-locally) remain unaccepted. M5 docs/defaults are implemented/unreleased;
-adoption and D3 remain pending. Not a Phase 3 completion or
-scratch-runner retirement.
-The assignment runner is not adopted. Native writer witnesses follow native
-exit. Operator-authorized Codex work uses recorded local bootstrap verification
-until final adoption; it does not fabricate a native completion.
+with critic/receipt/rework/worktree/BLOCK binding repair, including historical
+same-tree BLOCK identity after plan-current advance or review-worktree
+removal; W2/W3 implemented locally) remain unaccepted. M5 docs/defaults are
+implemented/unreleased. Per-candidate acceptance requires an actual native
+writer, the fixed witness, and both designated native reviews; PR/CI/merge
+complete issue 127. This candidate does not assert those gates passed. D3
+remains after this prerequisite. Not a Phase 3 completion.
+Low-level `just impl|plan|review-*` recipes remain harness transport. Native
+writer witnesses follow native exit. Operator-authorized Codex work uses
+recorded local bootstrap verification; it does not fabricate a native
+completion.
 
 **Gate:** a model-free test driver completes and recovers
 `examples/vnext/.kxm/workflows/default.yaml` (plan → implement → verify → ready)
