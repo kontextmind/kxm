@@ -65,8 +65,8 @@ It does not replace the phase gates below.
   runner is not the Phase 4 assignment layer and not a Phase 11 adapter.
   Phase 3 `default.yaml`/`fix.yaml` remain model-free. Phase 9 may use the
   cost report to propose changes; it is not learned policy. Phase 7 quorum
-  and npm/wiki deferrals are unchanged. D3 needs a bounded contract
-  resolution after this prerequisite.
+  and npm/wiki deferrals are unchanged. PR #129 merged as `50c8482` with
+  all five required CI jobs green, closing #127. D3 follows in bounded slices.
 - **Role rotation (operator, 2026-09-06):** choose agents per role from
   authenticated, supported helper routes using verified quality, total
   time/cost, and rework. Root may change agents without asking again.
@@ -160,10 +160,19 @@ It does not replace the phase gates below.
 
 ### Landed in this tree (unreleased)
 
-- **Issue 127 CI repair:** the parent-alias CLI regression creates and cleans
-  up its own temporary symlink, so Mac/Linux checks do not depend on an
-  operator's checkout path. The earlier Linux failure remains recorded;
-  the corrected candidate still requires PR CI. Phase gates are unchanged.
+- **D3 S1 registry foundation:** `.kxm/gates.yaml` uses the closed
+  `kxm.gate-registry.v1` schema. Gate ids resolve only through that file;
+  obsolete caller allowlists and old schema/outcome names fail closed.
+  Gate-only `expect: pass|fail` compiles, defaulting to `pass`. Registry
+  changes affect configuration and tool-policy hashes; timeout-only
+  decreases narrow permission budgets. The current `v4-registry` template
+  declares `npm test`; historical template bytes and provenance are retained.
+  Execution and attempt-bound evidence are still open, and #89 remains open.
+- **Issue 127 complete (PR #129, `50c8482`):** native writer, fixed witness,
+  independent Fable/Sol reviews, acceptance, and all five PR CI jobs passed.
+  The parent-alias regression owns its temporary symlink on Mac/Linux;
+  the earlier CI failure remains in private history. This developer runner
+  prerequisite does not complete any product phase gate.
 - **Platform pause (2026-09-05):** the active PR gate is two Linux
   `validate:ci` + `check:generated` legs (Node 22.19.0 and 24) plus Docs lint
   and Plugin validation. Classify changes plus those four jobs is five CI
@@ -217,7 +226,7 @@ It does not replace the phase gates below.
   This is inventory filtering only (issue 84 auth/eligibility sub-slice), not
   a supervised-worker claim or live assignment.
 - Headless `scripts/harness-run.mjs` helper (2026-09-05, M1 transport
-  2026-09-06 unreleased, not accepted): native auth preflight, verified
+  2026-09-06 merged in PR #129, unreleased): native auth preflight, verified
   grok/claude/codex/OpenRouter-Pi pairs, no native-provider Pi fallback,
   private answer/stderr/dispatch/model-claim/error sidecars, shell:false
   launchers. Result schema is `kxm.harness-result.v2` only; obsolete v1
@@ -262,73 +271,15 @@ It does not replace the phase gates below.
   any auth or assignment spawn; missing or unreadable inputs fail closed
   with zero spawn. File-consuming argv tokens are absolute so the child
   can run in `request.cwd`. Windows helper dispatch is unverified. Not
-  Phase 11. Issue 127 M1 transport, M2 reusable test helpers
-  (engine/runtime git project setup and harness fake-child/auth/dispatch),
-  and corrected M3a exported assignment-manifest validation plus M3b
-  exclusive ownership, canonical records, identifiable refusals, bounded
-  diagnostics, role verify instruction, observed invocation facts, immutable
-  completion/bookkeeping recovery, critic eligibility, separated cost
-  populations, and provider-compatible closed native schemas are
-  implemented/unreleased, not accepted. R1 remains the ownership/canonical
-  checkpoint (public kind, explicit runner codes, path-component ancestry,
-  fail-closed lstat/realpath, implementer witness sentence, canonical
-  output identity through deepest-existing-ancestor realpath from
-  validation through reservation/harness/success binding, including known
-  dangling final entries as `output_dir_exists`). R2 is the local
-  unreleased repair of B1–B4/C1–C2 observed facts/cost/native schemas,
-  including bound observe recovery/idempotency and parent-alias CLI identity.
-  This is not M3b acceptance or runner adoption. M4a fixed
-  `verify`/`validate-ci` witness execution, before/after candidate
-  snapshots, and private receipt history/latest under
-  `task_dir/<assignment_id>/witness` are implemented/unreleased, not
-  accepted. `witness --record-dir <absolute-path>` requires an existing
-  completion, binds stored-manifest identity/cwd/kind/route, the
-  canonical `task_dir/<assignment_id>` record path, current or originally
-  admitted bootstrap plan, and recovered routing/telemetry bookkeeping
-  before any gate execution, and does not rewrite `completion.json` or
-  re-run writer admission. Unknown completion candidates stay unknown
-  while the witness takes its own snapshots. M4b W1 is implemented locally:
-  exact-commit developer acceptance (`accept --task-dir --commit
-  --record-dir --critic --critic`) binds the latest passed verify
-  receipt, designated Fable/Sol critic PASS records, and the actual
-  commit tree, including stored-manifest critic snapshots, writer-bound
-  gate cwd, manifest-bound rework, cross-worktree reviews, and
-  task-owned BLOCK scans. Historical same-tree BLOCK reviews bind by stored
-  manifest identity and completion, not the live plan pointer or a live
-  review cwd; a plan-current advance or removed worktree does not drop them.
-  Structurally bound BLOCK reviews still block
-  acceptance when telemetry recording fails; bookkeeping recovery preserves
-  their immutable verdict. W2 is implemented locally: `attribute` retains
-  private explanations in immutable history with a hash-bound latest pointer;
-  `observe-cost` imports source-hashed, explicitly cost-only observations.
-  Imports cannot authorize witness or acceptance, duplicate native usage,
-  erase failed attempts, or turn estimates/unknowns into spend. Exclusions
-  retain their reasons and provenance. Historical attribution does not depend
-  on the current plan or a retained worktree. Legacy bootstrap manifests are
-  source history, not canonical native assignments that can block imports.
-  Attribution history is read by
-  directory, so interrupted writes remain visible even without a latest link.
-  If a writer dies holding `.observation-lock`, confirm no observation writer
-  is active before removing that empty task-local lock directory and retrying.
-  W3 is implemented locally: `change-report --task-dir` reports native and
-  imported attempts, explicit exclusions, all gate and attribution history,
-  separate cost bases, elapsed time and summed durations. Unknowns remain
-  unknown; cumulative tokens are not context occupancy; the effort table is
-  descriptive, not a ranking. `plan-current` uses expected generation and
-  proposed hash checks, preserves prior plan/pointer bytes, and atomically
-  advances the pointer. Safe positional just recipes expose the runner.
-  M4b is implemented/unreleased. Per-candidate acceptance requires an
-  actual native writer, the fixed witness, and both designated native
-  reviews; PR/CI/merge complete issue 127. This candidate does not assert
-  those gates passed. M5 docs/defaults (AGENTS, harness-cli, routing,
-  Tracking, evidence-informed recipe effort) are implemented/unreleased.
-  Low-level `just impl|plan|review-*` recipes remain harness transport.
-  The operator
-  authorized agent changes on 2026-09-06; Codex applied the bounded W1
-  repair after repeated Grok no-work outcomes. Its local verification is
-  recorded as bootstrap evidence, not a native completion or acceptance.
-  D3 still waits on bounded contract resolution after this
-  prerequisite.
+  Phase 11. The issue 127 runner is merged and adopted for developer
+  assignments (PR #129); its transport, manifest validation, canonical
+  records, fixed witnesses, exact-commit acceptance, private attribution,
+  cost observations, reporting, and plan history are implemented/unreleased.
+  Per-candidate acceptance binds an actual native writer, the fixed witness,
+  and both designated native reviewers. Historical same-tree BLOCK records
+  remain binding after plan advance or worktree removal. Cost-only bootstrap
+  observations cannot authorize acceptance or fabricate native completions.
+  Low-level `just impl|plan|review-*` remain transport recipes.
   `scripts/assignment-run.mjs` validates closed `kxm.assignment.v1`
   (kind/route, explicit effort/permission, cwd plus required `task_dir`
   whose final segment equals `task_id`, clean or staged base, current or
@@ -513,26 +464,8 @@ It does not replace the phase gates below.
   `cancel_pending_foreign`); there is no live-owner reset and no D4
   adoption/remint. Proven on a synthetic agent-only fixture; `default.yaml`
   pins and stops fail-closed at start because it declares run duration
-  limits. D3/D4 and the rest of Phase 3 remain open. Issue 127 M1 helper
-  transport, M2 reusable test extraction, and corrected M3a
-  assignment-manifest validation (`task_dir` authority, read-only Git)
-  and corrected M3b exclusive ownership/canonical records/refusals/diagnostics
-  (including parent-alias output identity via deepest-existing-ancestor
-  realpath) plus R2 observed facts/cost/native schemas, bound observe
-  recovery/idempotency, and parent-alias CLI identity are unreleased setup
-  prerequisites for later assignment work; they do not complete Phase 3,
-  adopt the runner, or retire scratch runners. Corrected M3b is a local
-  unreleased implementation, not accepted. M4a fixed-witness execution
-  and stored-manifest/plan/recording binding are implemented/unreleased,
-  not accepted. M4b W1 accept is implemented locally (critic snapshot, gate
-  cwd, stored rework, cross-worktree, and task-bound BLOCK checks);
-  W2/W3 observations, reporting, plan history and recipes are implemented
-  locally; M5 docs/defaults are implemented/unreleased, including historical
-  BLOCK binding that does not depend on the live plan pointer or a retained
-  review worktree. Per-candidate acceptance requires an actual native writer,
-  the fixed witness, and both designated native reviews; PR/CI/merge complete
-  issue 127. This candidate does not assert those gates passed. D3
-  contract resolution remains after this prerequisite.
+  limits. D3/D4 and the rest of Phase 3 remain open. The developer runner
+  prerequisite merged in PR #129; it does not satisfy this engine gate.
   Issue #88 / D2 closed on all seven PR CI jobs (four Validate legs plus
   classify/docs/plugin) before the pause; the post-merge main Windows Node 24
   package-cleanup failure in run `34006194862` is unresolved and deferred.
@@ -542,8 +475,8 @@ It does not replace the phase gates below.
 - **Windows resumption (deferred):** restore the two Windows Validate legs and
   their ruleset contexts, and diagnose the Node 24 package cleanup failure, in
   a reviewed change that updates Tracking, tests, and settings together. D3
-  platform-specific success remains unverified and deferred. Issue #127 setup
-  stays active on Linux and local Mac.
+  Windows-specific success remains unverified and deferred. Active work
+  continues on Linux and local Mac.
 - **Release resumption (deferred):** remove the `release` job latch and
   re-enable the Release workflow in a reviewed change that updates Tracking,
   tests, and settings together. Independent of Windows resumption.
@@ -566,49 +499,16 @@ It does not replace the phase gates below.
 - Slim live `default` workflow for this repo (no bulk migrate of jira/provenance/v04).
 - YAML-editing enable/disable UI (Phase 4 `/kxm` settings or `kxm dash` config
   tab). Do not add a preferences overlay.
-- **Issue 127 remainder:** M1 helper transport, M2 reusable test
-  extraction, corrected M3a exported assignment-manifest validation
-  (`task_dir` authority, read-only Git comparisons), and corrected M3b
-  (R1 exclusive ownership/canonical records/identifiable refusals/bounded
-  diagnostics plus R2 observed facts/cost/native schemas, bound observe
-  recovery/idempotency, and parent-alias CLI identity) are
-  implemented/unreleased (platform pause already in tree); they are not
-  accepted completion. R1 remains the ownership checkpoint, including
-  canonical output identity from validation through reservation and
-  dangling final entries as `output_dir_exists`. R2 is the local
-  unreleased facts/cost/schema/recovery repair. Full M3b acceptance remains
-  pending. M4a fixed `verify`/`validate-ci` gates, candidate-bound
-  receipts, stored-manifest identity/plan/recording binding before
-  execution, and `witness --record-dir` are implemented/unreleased, not
-  accepted; root writes this assignment's receipt after native exit.
-  M4b W1 accept is implemented locally with bindings for critic snapshot,
-  gate cwd, rework, worktree and BLOCK ownership. Historical same-tree BLOCK
-  discovery uses stored identity/completion, not live plan currency or cwd
-  liveness. Per-candidate acceptance requires an actual native writer, the
-  fixed witness, and both designated native reviews; PR/CI/merge complete
-  issue 127. This candidate does not assert those gates passed.
-  W2/W3 attribution, observations, reporting, plan history and recipes are
-  implemented/unreleased. M5 docs/defaults are implemented/unreleased.
-  Low-level transport recipes remain for that purpose. D3 still needs bounded
-  contract resolution after this prerequisite. Not a product assignment
-  layer (Phase 4) and not Phase 11 adapters.
-- Phase 3 engine remainder (D3 gate execution, `expect`, attempt-bound
-  evidence; D4 joins, approval, waits, duration and cost budgets,
-  `blocked_uncertain` recovery, producer drain, and the full driver gate on
-  `default.yaml` and `fix.yaml`). Compile and the agent-only run loop do not
-  close Phase 3. D3 and D4 must honor a declared `assignments` or `join` on
-  gate, approval, and wait steps or fail closed; D1 only preserves the
-  declaration. Issue 127 M1 transport, M2 reusable tests, corrected M3a
-  validation, and corrected M3b remain unreleased and not accepted;
-  M4a is implemented/unreleased and not accepted; M4b W1 accept is
-  implemented locally with stored-manifest critic/receipt/BLOCK bindings,
-  including historical BLOCK identity after plan advance or worktree removal;
-  W2/W3 are implemented/unreleased; M5 docs/defaults are
-  implemented/unreleased. Per-candidate acceptance requires an actual native
-  writer, the fixed witness, and both designated native reviews; PR/CI/merge
-  complete issue 127. This candidate does not assert those gates passed. D3
-  contract resolution remains open. This is not full AGENTS workflow
-  adoption and not a scratch-retirement claim.
+- Phase 3 engine remainder: D3 S2 pins/store/replay, S3 artifact gates and
+  preflight, and S4 command execution with attempt-bound evidence. Registry
+  configuration and `expect` compilation are implemented in S1; actual gate
+  evaluation is still unsupported. D4 joins, approval, waits, duration/cost
+  budgets, `blocked_uncertain` recovery, and producer drain follow. Then the
+  full model-free driver must complete `default.yaml` and `fix.yaml`.
+  D3/D4 must honor declared `assignments` and `join` on non-agent steps or
+  fail closed. Neither the agent-only loop nor the merged developer runner
+  closes Phase 3. Issue #89 stays open until real gate execution/evidence
+  passes its tests; live Pi execution remains Phase 4.
 - Version-1 run event stores are refused with `runtime_schema_outdated`;
   backup, restore, and migration remain E6.
 - Non-Pi dispatch adapters (Phase 11). Listing a harness does not execute it.
@@ -759,50 +659,21 @@ attempts after process restart. No gates, evidence, joins, duration or cost
 budget enforcement, or D4 recovery/adoption. The Gate sentence is unchanged.
 Windows verification of the run loop is deferred with the platform pause.
 
-**Issue 127 M1+M2+M3+M4a (unreleased, not this gate, not accepted):** helper
-transport result v2, supported launch flags, honest termination facts,
-stdio drain vs bounded linger (`stdio_incomplete` / `unknown_exit` are
-not `completed`), type-closed public usage/cost, malformed
-text and post-spawn write failures with retained spend, bounded timeout
-settle, and closed public metadata; plus extracted test helpers for
-committed vNext git projects and harness fake-child/auth/dispatch; plus
-corrected exported closed `kxm.assignment.v1` validation bound to
-manifest `task_dir`, with read-only Git comparisons and no spawn,
-output-dir creation, ID reservation, dispatch record, `.git` write, or
-worktree mutation on the validation export; plus corrected M3b role
-templates, canonical `task_dir/<assignment_id>` records, exclusive
-non-recursive identity and final-output mkdir, identifiable refusals,
-bounded `runner-errors.jsonl`, implementer verify instruction, observed
-invocation/candidate/recording facts, telemetry observe recovery, critic
-eligibility, separated cost populations, and closed native output
-schemas, bound observe recovery/idempotency, and argv path identity so a
-a parent alias still runs `main`. The parent-alias CLI regression now
-creates its own temporary Mac/Linux symlink to `scripts` (junction on
-Windows if resumed); it does not hard-code a host path. Phase gates
-unchanged. Corrected M3b is local/unreleased,
-not accepted; parent-alias output identity uses the existing
-deepest-existing-ancestor comparison rather than a second resolver, and a
-known dangling final output entry is `output_dir_exists`. M4a adds
-fixed `verify`→`[npm,run,verify]` and `validate-ci`→`[npm,run,validate:ci]`
-execution (`shell:false`), before/after `write-tree` snapshots, and
-immutable private receipts plus a latest pointer under the assignment
-record directory. Witness-time binding compares stored-manifest
-identity, cwd, kind/route, canonical record path, and plan against the
-completion and current pointer, and requires routing/telemetry to be
-recorded or hash-bound recovered, before any npm execution. It does
-not re-run pre-dispatch writer admission; completion candidate
-`unknown` stays unknown. M3b acceptance and M4b (W1 accept implemented locally
-with critic/receipt/rework/worktree/BLOCK binding repair, including historical
-same-tree BLOCK identity after plan-current advance or review-worktree
-removal; W2/W3 implemented locally) remain unaccepted. M5 docs/defaults are
-implemented/unreleased. Per-candidate acceptance requires an actual native
-writer, the fixed witness, and both designated native reviews; PR/CI/merge
-complete issue 127. This candidate does not assert those gates passed. D3
-remains after this prerequisite. Not a Phase 3 completion.
-Low-level `just impl|plan|review-*` recipes remain harness transport. Native
-writer witnesses follow native exit. Operator-authorized Codex work uses
-recorded local bootstrap verification; it does not fabricate a native
-completion.
+**D3 S1 (implemented, unreleased):** closed registry loading and gate-only
+`expect` compilation, permission projection, and a registry-bearing current
+initializer template. Missing registries, unknown gate ids, obsolete options,
+and old gate outcome spellings refuse. Historical template bytes are unchanged.
+The engine still refuses gates. S2 pins/store/replay, S3 artifact execution and
+preflight, and S4 command execution remain; D4 supplies the remaining workflow
+features. Issue #89 is open. No execution or evidence gate is claimed passed.
+
+**Developer prerequisite (PR #129 merged, #127 closed):** the assignment runner
+has native assignment records, fixed witnesses, exact-commit acceptance and
+independent Fable/Sol reviews. All five required PR CI jobs passed. Its
+parent-alias regression owns the temporary link, preserving argv identity.
+Low-level harness recipes remain transport. Authorized Codex relief records
+local bootstrap verification and unknown cost; it does not fabricate a native
+writer completion. This prerequisite does not satisfy the Phase 3 gate.
 
 **Gate:** a model-free test driver completes and recovers
 `examples/vnext/.kxm/workflows/default.yaml` (plan → implement → verify → ready)

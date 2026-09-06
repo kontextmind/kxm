@@ -114,6 +114,7 @@ function validateResource(
     "kxm.model.v1": "model",
     "kxm.environment.v1": "environment",
     "kxm.workflow.v1": "workflow",
+    "kxm.gate-registry.v1": "gate-registry",
   };
   const name = schemaName[identity];
   assert(name, `unknown resource schema ${identity} in ${relative(root, resource.file)}`);
@@ -329,8 +330,10 @@ test("vNext fix fixture preserves current oracle, plan-hash, and producer contro
     }
     const targetOutcomes = asObject(targetStage.on, "target.on");
     for (const [outcome, legacyTarget] of Object.entries(asObject(legacyStage.on, "legacy.on"))) {
-      assert(outcome in targetOutcomes, `outcome ${outcome} was dropped from ${String(legacyStage.id)}`);
-      assert.equal(transitionTarget(targetOutcomes[outcome]).target, legacyTarget, `transition ${String(legacyStage.id)}.${outcome} changed target`);
+      // Gate outcomes intentionally brake the old underscore spelling in D3.
+      const currentOutcome: string = targetStage.kind === "gate" && outcome === "implementation_failure" ? "implementation-failure" : outcome;
+      assert(currentOutcome in targetOutcomes, `outcome ${currentOutcome} was dropped from ${String(legacyStage.id)}`);
+      assert.equal(transitionTarget(targetOutcomes[currentOutcome]).target, legacyTarget, `transition ${String(legacyStage.id)}.${currentOutcome} changed target`);
     }
     if (legacyStage.evidencePolicies === undefined) continue;
     const producerRequirements = arrayValue(targetStage.requiredEvidence, "target.requiredEvidence")

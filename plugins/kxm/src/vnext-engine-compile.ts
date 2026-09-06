@@ -286,6 +286,12 @@ function compileStep(
     pushIssue(sink, { code: "step_signal_missing", stepId: id, message: `${id} is missing signal` });
   }
 
+  if (step.expect !== undefined && (kind !== "gate" || (step.expect !== "pass" && step.expect !== "fail"))) {
+    pushIssue(sink, { code: "gate_expect_invalid", stepId: id, message: "expect is gate-only pass or fail" });
+  }
+  if (kind === "gate" && Object.keys(objectValue(step.on) ?? {}).some((outcome) => outcome === "implementation_failure" || outcome === "repro_missing")) {
+    pushIssue(sink, { code: "gate_outcome_renamed", stepId: id, message: "use implementation-failure and repro-missing" });
+  }
   const maxAttempts = compileCountField(step.maxAttempts, 1, `${id}.maxAttempts`, id, sink);
   const timeoutMs = compileOptionalDuration(step.timeoutMs, `${id}.timeoutMs`, id, sink);
   const assignments = compileAssignments(step, id, agent, sink);
@@ -327,7 +333,7 @@ function compileStep(
   }
   if (kind === "gate") {
     if (!gate) return undefined;
-    return { ...base, kind, gate, expect: "pass" };
+    return { ...base, kind, gate, expect: step.expect === "fail" ? "fail" : "pass" };
   }
   if (kind === "wait") {
     if (!signal) return undefined;

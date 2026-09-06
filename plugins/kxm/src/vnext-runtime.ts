@@ -77,7 +77,7 @@ export function vnextToolPolicyRevision(bundle: VnextProjectBundle): string {
       }
     }
   }
-  return sha256Of(vnextCanonicalJson(policies));
+  return sha256Of(vnextCanonicalJson({ policies, gateRegistry: bundle.gateRegistry?.value ?? null }));
 }
 
 export function vnextPolicyRevisions(bundle: VnextProjectBundle): VnextPolicyRevisions {

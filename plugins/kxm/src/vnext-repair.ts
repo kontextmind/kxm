@@ -19,6 +19,7 @@ import {
   VnextConfigError,
   VnextSchemaRegistry,
   loadVnextProject,
+  assertNoRegisteredGates,
   parseRestrictedYaml,
   type JsonObject,
   type VnextConfigIssue,
@@ -43,6 +44,7 @@ import type { VnextResourceKind } from "./vnext-config.ts";
 /** Map a managed template path to its resource kind for permission diffing. */
 function resourceKindForTemplatePath(path: string): VnextResourceKind {
   if (path === ".kxm/project.yaml") return "project";
+  if (path === ".kxm/gates.yaml") return "gate-registry";
   if (path.endsWith("repo.yaml")) return "repository";
   if (path.startsWith(".kxm/agents/")) return "agent";
   if (path.startsWith(".kxm/models/")) return "model";
@@ -115,7 +117,6 @@ export interface VnextRepairRuntimeOptions {
   schemasDir?: string;
   repositoryBindings?: Readonly<Record<string, string>>;
   registeredExecutors?: Iterable<string>;
-  registeredGates?: Iterable<string>;
   registeredToolPresets?: Iterable<string>;
   templateVariant?: VnextTemplateVariant;
   testFaultAt?: "prepared" | "first-resource" | "provenance" | "verified";
@@ -281,6 +282,7 @@ export function planVnextTemplateRepair(
   projectRoot: string,
   options: VnextRepairRuntimeOptions = {},
 ): VnextTemplateRepairPlan | undefined {
+  assertNoRegisteredGates(options);
   const root = resolve(projectRoot);
   const source = readProjectAndProvenance(root, options.schemasDir);
   if (!source) return undefined;
@@ -535,11 +537,11 @@ function verifyTargetArtifacts(projectRoot: string, operation: VnextInitOperatio
 }
 
 function loaderOptions(options: VnextRepairRuntimeOptions): VnextConfigOptions {
+  assertNoRegisteredGates(options);
   return {
     ...(options.schemasDir === undefined ? {} : { schemasDir: options.schemasDir }),
     ...(options.repositoryBindings === undefined ? {} : { repositoryBindings: options.repositoryBindings }),
     ...(options.registeredExecutors === undefined ? {} : { registeredExecutors: options.registeredExecutors }),
-    ...(options.registeredGates === undefined ? {} : { registeredGates: options.registeredGates }),
     ...(options.registeredToolPresets === undefined ? {} : { registeredToolPresets: options.registeredToolPresets }),
   };
 }
@@ -547,6 +549,7 @@ function loaderOptions(options: VnextRepairRuntimeOptions): VnextConfigOptions {
 function sourceConfigFiles(projectRoot: string): string[] {
   const fixed = [
     ".kxm/project.yaml",
+    ".kxm/gates.yaml",
     VNEXT_TEMPLATE_PROVENANCE_PATH,
     ".kxm/project/env.yaml",
     ".kxm/repo/repo.yaml",
@@ -847,6 +850,7 @@ function applyOperation(
   options: VnextRepairRuntimeOptions,
   resumed: boolean,
 ): VnextOperationResult {
+  assertNoRegisteredGates(options);
   let operation = original;
   const effectiveOptions = options;
   verifyTargetArtifacts(projectRoot, operation);
@@ -892,6 +896,7 @@ export function prepareAndApplyVnextCreate(
   rendered: VnextRenderedTemplate,
   options: VnextRepairRuntimeOptions = {},
 ): VnextOperationResult {
+  assertNoRegisteredGates(options);
   const files = [...rendered.files.entries()].map(([path, bytes]): VnextInitOperationFile => ({
     path,
     observedSha256: null,
@@ -909,6 +914,7 @@ export function prepareAndApplyVnextRepair(
   plan: VnextTemplateRepairPlan,
   options: VnextRepairRuntimeOptions = {},
 ): VnextOperationResult {
+  assertNoRegisteredGates(options);
   if (!plan.canApply) fail("template_repair_not_applicable", ".kxm", "template repair has conflicts, policy changes, or no safe template-only update");
   const rendered = renderVnextTemplate(plan.projectId, plan.projectName, options.templateVariant ?? CURRENT_VNEXT_TEMPLATE_VARIANT);
   if (rendered.templateRevision !== plan.targetTemplateRevision) fail("template_repair_target_changed", ".kxm", "template target changed after planning");
@@ -1048,6 +1054,7 @@ export function resumeVnextInitTransaction(
   projectRoot: string,
   options: VnextRepairRuntimeOptions = {},
 ): VnextOperationResult | undefined {
+  assertNoRegisteredGates(options);
   let operation = readOperation(projectRoot, options.schemasDir);
   if (!operation) {
     const root = transactionRoot(projectRoot);

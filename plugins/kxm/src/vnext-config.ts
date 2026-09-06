@@ -49,7 +49,7 @@ export class VnextConfigError extends Error {
   }
 }
 
-export type VnextResourceKind = "project" | "repository" | "agent" | "model" | "environment" | "workflow";
+export type VnextResourceKind = "project" | "repository" | "agent" | "model" | "environment" | "workflow" | "gate-registry";
 
 export interface VnextResource {
   kind: VnextResourceKind;
@@ -67,6 +67,7 @@ export interface VnextProjectBundle {
   models: ReadonlyMap<string, VnextResource>;
   workflows: ReadonlyMap<string, VnextResource>;
   environments: readonly VnextResource[];
+  gateRegistry?: VnextResource;
   templateProvenance?: JsonObject;
   migrationReceipt?: JsonObject;
   resources: readonly VnextResource[];
@@ -77,7 +78,6 @@ export interface VnextConfigOptions {
   schemasDir?: string;
   repositoryBindings?: Readonly<Record<string, string>>;
   registeredExecutors?: Iterable<string>;
-  registeredGates?: Iterable<string>;
   registeredToolPresets?: Iterable<string>;
   registeredHarnesses?: Iterable<string>;
   /** Internal: migration apply validates the staged target before the receipt exists. */
@@ -106,11 +106,11 @@ const RESOURCE_SCHEMA: Readonly<Record<VnextResourceKind, { identity: string; fi
   model: { identity: "kxm.model.v1", file: "model.schema.json" },
   environment: { identity: "kxm.environment.v1", file: "environment.schema.json" },
   workflow: { identity: "kxm.workflow.v1", file: "workflow.schema.json" },
+  "gate-registry": { identity: "kxm.gate-registry.v1", file: "gate-registry.schema.json" },
 });
 const IDENTIFIER = /^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$/;
 const WINDOWS_RESERVED = /^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³]|conin\$|conout\$|clock\$)$/i;
 const BUILTIN_EXECUTORS = ["local", "ssh", "exe-dev"];
-const BUILTIN_GATES = ["test", "scm-delivery"];
 const BUILTIN_TOOL_PRESETS = ["coordinator", "read-only", "workspace-writer", "tests-writer"];
 const SECRET_VALUE_PATTERNS: readonly RegExp[] = [
   /-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----/,
@@ -800,6 +800,8 @@ export function validateVnextResources(
     logicalPath,
     value,
   });
+  assertNoRegisteredGates(options);
+  let gateRegistry: VnextResource | undefined;
   let project: VnextResource | undefined;
   const repositories = new Map<string, VnextResource>();
   const agents = new Map<string, VnextResource>();
@@ -814,9 +816,10 @@ export function validateVnextResources(
     else if (resource.kind === "model" && resource.id) models.set(resource.id, made);
     else if (resource.kind === "workflow" && resource.id) workflows.set(resource.id, made);
     else if (resource.kind === "environment") environments.push(made);
+    else if (resource.kind === "gate-registry") gateRegistry = made;
   }
   if (!project) return [issue("discovery", "project_definition_missing", ".kxm/project.yaml", "resource set has no project definition")];
-  return validateBundle(project, repositories, agents, models, workflows, environments, options);
+  return validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry);
 }
 
 function validateAgentScope(
@@ -863,7 +866,7 @@ function validateWorkflow(
   agents: ReadonlyMap<string, VnextResource>,
   models: ReadonlyMap<string, VnextResource>,
   repositories: ReadonlySet<string>,
-  gates: ReadonlySet<string>,
+  gates: ReadonlySet<string> | undefined,
   issues: VnextConfigIssue[],
 ): void {
   const file = workflow.logicalPath;
@@ -910,7 +913,16 @@ function validateWorkflow(
       issues.push(issue("reference", "agent_unknown", file, `${stepId} references unknown agent ${primaryAgentId}`));
     }
     const gate = stringValue(step.gate);
-    if (kind === "gate" && gate && !gates.has(gate)) issues.push(issue("reference", "gate_unknown", file, `${stepId} references unregistered gate ${gate}`));
+    if (kind === "gate" && gate) {
+      if (!gates) issues.push(issue("reference", "gate_registry_missing", file, `${stepId} requires .kxm/gates.yaml`));
+      else if (!gates.has(gate)) issues.push(issue("reference", "gate_unknown", file, `${stepId} references unregistered gate ${gate}`));
+    }
+    if (step.expect !== undefined && (kind !== "gate" || !["pass", "fail"].includes(String(step.expect)))) {
+      issues.push(issue("semantic", "gate_expect_invalid", file, `${stepId} expect is gate-only pass or fail`));
+    }
+    if (kind === "gate" && Object.keys(objectValue(step.on) ?? {}).some((outcome) => outcome === "implementation_failure" || outcome === "repro_missing")) {
+      issues.push(issue("semantic", "gate_outcome_renamed", file, `${stepId} must use implementation-failure and repro-missing`));
+    }
     for (const repositoryId of Object.keys(objectValue(step.repositories) ?? {})) {
       if (!repositories.has(repositoryId)) issues.push(issue("reference", "repository_unknown", file, `${stepId} references unknown repository ${repositoryId}`));
     }
@@ -1101,6 +1113,7 @@ function validateBundle(
   workflows: ReadonlyMap<string, VnextResource>,
   environments: readonly VnextResource[],
   options: VnextConfigOptions,
+  gateRegistry?: VnextResource,
 ): VnextConfigIssue[] {
   const issues: VnextConfigIssue[] = [];
   const entries = valuesOf(project.value, "repositories").map((candidate) => objectValue(candidate)).filter((candidate): candidate is JsonObject => Boolean(candidate));
@@ -1128,7 +1141,15 @@ function validateBundle(
   for (const environment of environments) validateEnvironment(environment, issues);
 
   const executors = new Set(options.registeredExecutors ?? BUILTIN_EXECUTORS);
-  const gates = new Set(options.registeredGates ?? BUILTIN_GATES);
+  const gates = gateRegistry ? new Set(Object.keys(objectValue(gateRegistry.value.gates) ?? {})) : undefined;
+  for (const [id, value] of Object.entries(objectValue(gateRegistry?.value.gates) ?? {})) {
+    const definition = objectValue(value);
+    const executable = Array.isArray(definition?.argv) ? definition.argv[0] : undefined;
+    if (definition?.kind === "command" && typeof executable === "string" &&
+        (executable.includes("\\") || (!executable.startsWith("/") && executable.includes("/")))) {
+      issues.push(issue("semantic", "gate_executable_invalid", ".kxm/gates.yaml", `${id} argv[0] must be a bare executable or absolute POSIX path`));
+    }
+  }
   const presets = new Set(options.registeredToolPresets ?? BUILTIN_TOOL_PRESETS);
   const harnesses = new Set(options.registeredHarnesses ?? BUILTIN_HARNESS_IDS);
   const defaultExecutor = stringValue(project.value.defaultExecutor);
@@ -1203,8 +1224,16 @@ export function discoverVnextProjectRoot(start = process.cwd()): string | undefi
   return gitRoot && existsSync(join(gitRoot, ".kxm", "project.yaml")) ? gitRoot : undefined;
 }
 
+/** The former caller-supplied gate allowlist cannot substitute for reviewed YAML. */
+export function assertNoRegisteredGates(options: object): void {
+  if ("registeredGates" in options) {
+    throw new VnextConfigError([issue("semantic", "registered_gates_removed", ".kxm/gates.yaml", "registeredGates was removed; declare gates in .kxm/gates.yaml")]);
+  }
+}
+
 /** Load and semantically validate one complete, path-derived vNext configuration bundle. */
 export function loadVnextProject(projectRoot: string, options: VnextConfigOptions = {}): VnextProjectBundle {
+  assertNoRegisteredGates(options);
   const root = resolve(projectRoot);
   let migrationReceipt: JsonObject | undefined;
   if (legacyConfigFilesAt(root).length > 0 && options.allowUnreceiptedLegacyConfig !== true) {
@@ -1241,6 +1270,8 @@ export function loadVnextProject(projectRoot: string, options: VnextConfigOption
   const agents = listNamedResources(registry, root, join(root, ".kxm", "agents"), ".kxm/agents", "agent");
   const models = listNamedResources(registry, root, join(root, ".kxm", "models"), ".kxm/models", "model");
   const workflows = listNamedResources(registry, root, join(root, ".kxm", "workflows"), ".kxm/workflows", "workflow");
+  const gatePath = join(root, ".kxm", "gates.yaml");
+  const gateRegistry = existsSync(gatePath) ? readResource(registry, root, gatePath, ".kxm/gates.yaml", "gate-registry") : undefined;
   const environments: VnextResource[] = [];
   const repositories = new Map<string, VnextResource>();
   const loadIssues: VnextConfigIssue[] = [];
@@ -1345,9 +1376,9 @@ export function loadVnextProject(projectRoot: string, options: VnextConfigOption
   }
   if (loadIssues.length > 0) throw new VnextConfigError(loadIssues);
 
-  const issues = validateBundle(project, repositories, agents, models, workflows, environments, options);
+  const issues = validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry);
   if (issues.length > 0) throw new VnextConfigError(issues);
-  const resources = [project, ...repositories.values(), ...agents.values(), ...models.values(), ...workflows.values(), ...environments]
+  const resources = [project, ...repositories.values(), ...agents.values(), ...models.values(), ...workflows.values(), ...environments, ...(gateRegistry ? [gateRegistry] : [])]
     .sort((left, right) => compareCodeUnits(left.logicalPath, right.logicalPath));
   return {
     projectRoot: root,
@@ -1357,6 +1388,7 @@ export function loadVnextProject(projectRoot: string, options: VnextConfigOption
     models,
     workflows,
     environments,
+    ...(gateRegistry ? { gateRegistry } : {}),
     ...(templateProvenance === undefined ? {} : { templateProvenance }),
     ...(migrationReceipt === undefined ? {} : { migrationReceipt }),
     resources,
