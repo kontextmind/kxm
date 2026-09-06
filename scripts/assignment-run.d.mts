@@ -266,7 +266,7 @@ export function main(argv?: string[], io?: {
   spawnSync?: typeof import("node:child_process").spawnSync;
   env?: NodeJS.ProcessEnv;
   now?: () => number;
-}): Promise<AssignmentCompletion | AssignmentRecordingResolution | AssignmentWitnessReceipt | TaskAccepted | CostObservationReceipt | AttributionPointer>;
+}): Promise<AssignmentCompletion | AssignmentRecordingResolution | AssignmentWitnessReceipt | TaskAccepted | CostObservationReceipt | AttributionPointer | ReturnType<typeof changeReport> | ReturnType<typeof writeCurrentPlan>>;
 
 export const COST_OBSERVATION_SCHEMA: "kxm.cost-observation.v1";
 export const ATTRIBUTION_SCHEMA: "kxm.assignment-attribution.v1";
@@ -315,3 +315,30 @@ export interface AttributionPointer {
 }
 export function observeAssignmentCost(request: { taskDir: string; observation: CostObservation }, deps?: Record<string, unknown>): CostObservationReceipt;
 export function attributeAssignment(request: { taskDir: string; recordDir: string; classification: string; explanation: string }, deps?: Record<string, unknown>): AttributionPointer;
+
+export const CHANGE_REPORT_SCHEMA: "kxm.change-report.v1";
+export function changeReport(request: { taskDir: string }, deps?: Record<string, unknown>): {
+  schema: "kxm.change-report.v1";
+  task_id: string;
+  assignments: Array<Record<string, any>>;
+  totals: Record<string, any>;
+  ignored: Array<{ name: string; reason: string }>;
+  issues: Array<Record<string, string>>;
+  acceptance: Record<string, any> | null;
+  effort_observations: Array<Record<string, any>>;
+  ranking: "not-ranked";
+  orchestration_usage: "unavailable";
+};
+export function writeCurrentPlan(request: {
+  taskDir: string; plan: string; sha256: string; baseCommit: string; expectedGeneration: number; settledDecisions?: string[];
+}, deps?: Record<string, unknown>): {
+  schema: "kxm.plan-pointer.v1";
+  task_id: string;
+  generation: number;
+  plan_path: string;
+  plan_sha256: string;
+  base_commit: string;
+  settled_decisions: string[];
+  supersedes: Array<Record<string, unknown>>;
+  updated_at: string;
+};

@@ -95,3 +95,31 @@ verify:
 # the PR gate
 check-generated:
     npm run check:generated
+
+# run a bound assignment: just assign /absolute/manifest.json
+assign MANIFEST:
+    @node scripts/assignment-run.mjs run --manifest "$1"
+
+# run the fixed verification witness for an existing native assignment
+witness RECORD:
+    @node scripts/assignment-run.mjs witness --record-dir "$1"
+
+# attach private attribution and handoff feedback to an assignment
+attribute TASK RECORD CLASS EXPLANATION:
+    @node scripts/assignment-run.mjs attribute --task-dir "$1" --record-dir "$2" --class "$3" --explanation-file "$4"
+
+# import one historical cost observation without native evidence or telemetry
+observe-cost TASK INPUT:
+    @node scripts/assignment-run.mjs observe-cost --task-dir "$1" --input "$2"
+
+# accept an exact witnessed commit with both designated critic records
+accept TASK COMMIT WRITER ARCH CLI:
+    @node scripts/assignment-run.mjs accept --task-dir "$1" --commit "$2" --record-dir "$3" --critic "$4" --critic "$5"
+
+# preserve current plan history and advance its pointer with a generation check
+plan-current TASK PLAN SHA COMMIT GENERATION:
+    @node scripts/assignment-run.mjs plan-current --task-dir "$1" --plan "$2" --sha256 "$3" --base-commit "$4" --expected-generation "$5"
+
+# report task attempts, rework, costs and all retained verification history
+change-report TASK:
+    @node scripts/assignment-run.mjs change-report --task-dir "$1"

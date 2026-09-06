@@ -3869,8 +3869,251 @@ function observationCli(args) {
   return values;
 }
 
+export const CHANGE_REPORT_SCHEMA = "kxm.change-report.v1";
+
+function artifactRef(loaded) { return { path: loaded.path, sha256: loaded.sha256 }; }
+function finiteMeasurement(value) { return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null; }
+function publicRoute(value = {}) {
+  return Object.fromEntries(["harness", "provider", "model", "effort", "role"].map((key) =>
+    [key, typeof value[key] === "string" && value[key].length <= 256 ? value[key] : "unknown"]));
+}
+
+function observationHistories(recordDir, io) {
+  const result = { witnesses: [], attributions: [], latest_witness: null, latest_attribution: null, issues: [] };
+  for (const [kind, folder, schema] of [["witness", "witness", WITNESS_SCHEMA], ["attribution", "attribution", ATTRIBUTION_SCHEMA]]) {
+    const dir = join(recordDir, folder);
+    if (!lstatOrNull(dir, io.lstatSync)) continue;
+    if (!io.lstatSync(dir).isDirectory()) { result.issues.push(`${kind}_directory_invalid`); continue; }
+    const history = join(dir, "history");
+    const records = kind === "witness" ? result.witnesses : result.attributions;
+    if (lstatOrNull(history, io.lstatSync)?.isDirectory()) {
+      for (const name of io.readdirSync(history).sort()) {
+        if (!name.endsWith(".json")) continue;
+        try {
+          const loaded = privateRecord(join(history, name), io);
+          const value = loaded.value;
+          if (value.schema !== schema || value.assignment_id !== basename(recordDir) || value.task_id !== basename(dirname(recordDir))) throw new Error("foreign history");
+          if (kind === "witness") {
+            if (!WITNESS_RESULTS.includes(value.result) || `${value.receipt_id}.json` !== name) throw new Error("invalid witness");
+            records.push({ ...artifactRef(loaded), id: value.receipt_id, result: value.result, duration_ms: finiteMeasurement(value.durationMs) });
+          } else {
+            if (!ATTRIBUTION_CLASSES.includes(value.classification) || `${value.id}.json` !== name) throw new Error("invalid attribution");
+            records.push({ ...artifactRef(loaded), id: value.id, classification: value.classification, explanation_ref: { path: loaded.path, field: "explanation" } });
+          }
+        } catch { result.issues.push(`${kind}_history_invalid`); }
+      }
+    }
+    const latest = join(dir, "latest.json");
+    if (lstatOrNull(latest, io.lstatSync)) {
+      try {
+        const value = privateRecord(latest, io).value;
+        const id = kind === "witness" ? value.receipt_id : value.id;
+        const found = records.find((item) => item.id === id && item.sha256 === value.sha256);
+        if (!found) throw new Error("invalid latest");
+        result[`latest_${kind}`] = found.id;
+      } catch { result.issues.push(`${kind}_latest_invalid`); }
+    } else if (records.length) result.issues.push(`${kind}_latest_missing`);
+  }
+  return result;
+}
+
+function reportAssignment(dir, taskDir, io) {
+  const base = { assignment_id: basename(dir), record_dir: dir };
+  const cost = join(dir, "cost-observation.json");
+  if (lstatOrNull(cost, io.lstatSync)) {
+    const loaded = privateRecord(cost, io);
+    const value = validateCostObservation(loaded.value, taskDir, io, false);
+    if (value.assignment_id !== base.assignment_id) throw failClosed("foreign cost identity", "observation_invalid");
+    return { ...base, type: "cost-observation", source: artifactRef(loaded), cost_only: true,
+      included: value.accounting.included, exclusion_reason_ref: value.accounting.included ? null : { path: cost, field: "accounting.reason" },
+      provenance: value.sources, private_note_ref: { path: cost, field: "note" }, route: publicRoute(value.route), kind: value.kind,
+      status: value.status, rework: value.rework, rework_of: value.rework_of ?? null, timing: value.timing, usage: value.usage,
+      verification: "ineligible", critic: null, history: observationHistories(dir, io) };
+  }
+  const manifestPath = join(dir, "manifest.json");
+  if (!lstatOrNull(manifestPath, io.lstatSync)) return null;
+  const manifest = privateRecord(manifestPath, io);
+  const identity = identifyAssignment(manifest.value, io);
+  if (!identity || identity.record_dir !== dir) return null;
+  const hasRecord = ["completion.json", "refusal.json", "pre-dispatch.json"].some((name) => lstatOrNull(join(dir, name), io.lstatSync));
+  const source = hasRecord ? attributionSubject(taskDir, dir, io) : artifactRef(manifest);
+  const histories = observationHistories(dir, io);
+  const row = { ...base, source, included: true, cost_only: false, kind: identity.kind,
+    route: publicRoute({ ...manifest.value, role: KIND_ROLES[identity.kind] }), rework: Boolean(manifest.value.rework_of),
+    rework_of: manifest.value.rework_of ?? null, history: histories };
+  if (source.path.endsWith("completion.json")) {
+    const value = privateRecord(source.path, io).value;
+    const usage = value.usage ?? {};
+    const basis = COST_BASIS.includes(usage.costBasis) ? usage.costBasis : "unknown";
+    const latest = histories.witnesses.find((item) => item.id === histories.latest_witness);
+    return { ...row, type: "native", route: publicRoute({ ...value.route, provider: { claude: "anthropic", codex: "openai", grok: "xai" }[value.route?.harness] }), status: value.transport?.status ?? "unknown",
+      recording: value.recording?.status ?? "unknown", model_claim: value.model_claim ?? null,
+      critic: value.critic?.kind === "review" ? { verdict: value.critic.verdict, judged_tree: value.critic.judged_tree } : null,
+      verification: latest?.result ?? "not-run", timing: { started_at: value.transport?.startedAt ?? null,
+        finished_at: value.transport?.finishedAt ?? null, latency_ms: finiteMeasurement(value.transport?.latencyMs) },
+      usage: { input_tokens: finiteMeasurement(usage.tokensIn), output_tokens: finiteMeasurement(usage.tokensOut),
+        cache_read_tokens: finiteMeasurement(usage.cacheReadTokens), cache_write_tokens: finiteMeasurement(usage.cacheCreationTokens),
+        reasoning_tokens: finiteMeasurement(usage.reasoningTokens), context_tokens: null, token_basis: "cumulative",
+        cost_basis: basis, cost_usd: basis === "provider-reported" ? finiteMeasurement(usage.costUsd) : null,
+        estimate_usd: ["list", "unmetered"].includes(basis) ? finiteMeasurement(usage.providerReportedCostUsd ?? usage.costUsd) : null,
+        partial: usage.usagePartial === true || value.transport?.status !== "completed" } };
+  }
+  if (source.path.endsWith("refusal.json")) {
+    const value = privateRecord(source.path, io).value;
+    return { ...row, type: "refusal", status: "refused", code: value.code, provider_calls: 0,
+      verification: "not-run", critic: null, timing: null, usage: null };
+  }
+  return { ...row, type: "missing-completion", status: "unknown", verification: "not-run", critic: null,
+    timing: { started_at: privateRecord(source.path, io).value.timestamp ?? null, finished_at: null, latency_ms: null },
+    usage: { cost_basis: "unknown", cost_usd: null, estimate_usd: null, partial: true } };
+}
+
+function sumMeasurements(values) {
+  const known = values.map(finiteMeasurement).filter((value) => value !== null);
+  return { total: known.length ? known.reduce((sum, value) => sum + value, 0) : null, known: known.length, unknown: values.length - known.length };
+}
+
+export function changeReport(request, deps = {}) {
+  const io = ioDeps(deps);
+  const taskDir = observationTask(request.taskDir, io);
+  const assignments = [];
+  const ignored = [];
+  const issues = [];
+  const dirs = listDirectAssignmentDirs(taskDir, io);
+  const candidates = new Set(dirs.map((item) => item.assignment_id));
+  for (const name of io.readdirSync(taskDir).sort()) {
+    if (!candidates.has(name)) { ignored.push({ name, reason: "not_assignment_directory" }); continue; }
+    try {
+      const row = reportAssignment(join(taskDir, name), taskDir, io);
+      if (row) assignments.push(row);
+      else ignored.push({ name, reason: "no_canonical_assignment" });
+    } catch {
+      issues.push({ assignment_id: name, code: "record_invalid" });
+    }
+  }
+  const included = assignments.filter((row) => row.included);
+  const metered = included.filter((row) => row.type !== "refusal");
+  const timeValues = (key) => included.map((row) => row.timing?.[key])
+    .filter((value) => typeof value === "string").map(Date.parse).filter(Number.isFinite);
+  const starts = timeValues("started_at");
+  const finishes = timeValues("finished_at");
+  const timesComplete = metered.every((row) => row.timing?.started_at && row.timing?.finished_at);
+  const costs = Object.fromEntries(COST_BASIS.map((basis) => {
+    const rows = metered.filter((row) => row.usage.cost_basis === basis);
+    return [basis, { assignments: rows.length, amount_basis: ["list", "unmetered"].includes(basis) ? "estimate" : basis,
+      amount_usd: sumMeasurements(rows.map((row) => basis === "provider-reported" ? row.usage.cost_usd : row.usage.estimate_usd)) }];
+  }));
+  const efforts = new Map();
+  for (const row of included) {
+    const key = JSON.stringify([row.route.harness, row.route.model, row.kind, row.route.effort]);
+    const value = efforts.get(key) ?? { route: row.route, kind: row.kind, attempts: 0, verified: 0, rework: 0, rework_unknown: 0 };
+    value.attempts += 1; value.verified += Number(row.verification === "passed");
+    value.rework += Number(row.rework === true); value.rework_unknown += Number(row.rework === null);
+    efforts.set(key, value);
+  }
+  let acceptance = null;
+  if (lstatOrNull(join(taskDir, ACCEPTED_FILENAME), io.lstatSync)) {
+    try {
+      const loaded = privateRecord(join(taskDir, ACCEPTED_FILENAME), io);
+      const value = loaded.value;
+      if (value.schema !== ACCEPTED_SCHEMA || value.task_id !== basename(taskDir)) throw new Error("foreign acceptance");
+      acceptance = { source: artifactRef(loaded), commit: value.commit, recorded_tree: value.tree, observed: value.observed,
+        note: ACCEPTED_NOTE, derived_tree: null, commit_tree_rechecked: false };
+      try {
+        const writerDir = assertCanonicalRecordDir(taskDir, value.writer?.record_dir, "writer", io);
+        const writer = privateRecord(join(writerDir, "completion.json"), io).value;
+        attributionSubject(taskDir, writerDir, io);
+        const proven = proveAcceptedCommit(writer.binding.cwd, value.commit, io.spawnSync);
+        acceptance.derived_tree = proven.tree;
+        acceptance.commit_tree_rechecked = proven.tree === value.tree;
+        if (!acceptance.commit_tree_rechecked) issues.push({ code: "accepted_tree_mismatch" });
+      } catch { issues.push({ code: "accepted_commit_unavailable" }); }
+    } catch { issues.push({ code: "acceptance_record_invalid" }); }
+  }
+  return { schema: CHANGE_REPORT_SCHEMA, task_id: basename(taskDir), generated_at: new Date((io.now ?? Date.now)()).toISOString(),
+    assignments, ignored, issues, acceptance, totals: { scope: "recorded task assignments", included: included.length, excluded: assignments.length - included.length,
+      not_dispatched: included.filter((row) => row.type === "refusal").length, costs,
+      partial: issues.length > 0 || included.some((row) => row.history.issues.length > 0) || metered.some((row) => row.usage.partial || row.usage.cost_basis === "unknown" || row.usage.cost_usd === null && row.usage.estimate_usd === null),
+      elapsed_ms: starts.length && finishes.length ? Math.max(0, Math.max(...finishes) - Math.min(...starts)) : null, elapsed_partial: !timesComplete,
+      summed_native_latency_ms: sumMeasurements(metered.map((row) => row.timing?.latency_ms)),
+      summed_witness_duration_ms: sumMeasurements(included.flatMap((row) => row.history.witnesses.map((item) => item.duration_ms))) },
+    effort_observations: [...efforts.values()], ranking: "not-ranked", orchestration_usage: "unavailable",
+    notes: ["Provider-reported amounts are not invoices; subscription estimates are not spend.",
+      "Token counters are cumulative, not measured context occupancy. Missing measurements are not zero.",
+      "History lists every retained receipt, including failed and orphaned entries. Private handoff notes are referenced, not printed.",
+      "Observed PR/CI identifiers do not prove CI success or merge. No acceptance or role authority is created by this report."] };
+}
+
+export function writeCurrentPlan(request, deps = {}) {
+  const io = ioDeps(deps);
+  try {
+    const taskDir = observationTask(request.taskDir, io);
+    if (!Number.isSafeInteger(request.expectedGeneration) || request.expectedGeneration < 0) throw failClosed("expected generation required", "plan_ref_invalid");
+    if (typeof request.plan !== "string" || !nodePath.isAbsolute(request.plan)) throw failClosed("absolute plan required", "plan_ref_invalid");
+    requireHex(request.sha256, "proposed plan digest", HEX64, "plan_ref_invalid");
+    requireHex(request.baseCommit, "base commit", HEX40, "plan_ref_invalid");
+    return withObservationLock(taskDir, io, () => {
+      const proposedStat = lstatOrNull(request.plan, io.lstatSync);
+      if (!proposedStat?.isFile()) throw failClosed("regular plan file required", "plan_ref_invalid");
+      const proposed = io.readFileSync(request.plan);
+      if (sha256Bytes(proposed) !== request.sha256) throw failClosed("proposed plan hash mismatch", "plan_ref_invalid");
+      const pointerPath = join(taskDir, PLAN_POINTER_FILENAME);
+      if (samePath(request.plan, pointerPath, io.realpathSync)) throw failClosed("plan cannot be its own pointer", "plan_ref_invalid");
+      if (request.settledDecisions !== undefined) requireStringArray(request.settledDecisions, "settled decisions", "plan_ref_invalid");
+      let old = null;
+      let oldPlan = null;
+      if (lstatOrNull(pointerPath, io.lstatSync)) {
+        old = privateRecord(pointerPath, io, "plan_ref_invalid");
+        validatePointer(old.value);
+        if (old.value.task_id !== basename(taskDir)) throw failClosed("foreign pointer", "plan_ref_invalid");
+        const oldPath = resolvePath(taskDir, old.value.plan_path);
+        const stat = lstatOrNull(oldPath, io.lstatSync);
+        if (!stat?.isFile()) throw failClosed("old plan unavailable", "plan_ref_invalid");
+        const bytes = io.readFileSync(oldPath);
+        if (sha256Bytes(bytes) !== old.value.plan_sha256) throw failClosed("old plan hash mismatch", "plan_ref_invalid");
+        oldPlan = bytes;
+      }
+      if ((old?.value.generation ?? 0) !== request.expectedGeneration) throw failClosed("stale plan generation", "history_conflict");
+      const supersedes = [...(old?.value.supersedes ?? [])];
+      if (old) {
+        const history = join(taskDir, "plan-history");
+        ensurePrivateDirectory(history, io);
+        const archivedPlan = join(history, `generation-${old.value.generation}.md`);
+        const archivedPointer = join(history, `generation-${old.value.generation}.json`);
+        if (lstatOrNull(archivedPlan, io.lstatSync) || lstatOrNull(archivedPointer, io.lstatSync)) throw failClosed("plan history conflict", "history_conflict");
+        writePrivate(archivedPlan, oldPlan, io);
+        writePrivate(archivedPointer, old.bytes, io);
+        supersedes.push({ generation: old.value.generation, plan_path: archivedPlan, plan_sha256: old.value.plan_sha256,
+          base_commit: old.value.base_commit, updated_at: old.value.updated_at });
+      }
+      const value = { schema: PLAN_POINTER_SCHEMA, task_id: basename(taskDir), generation: request.expectedGeneration + 1,
+        plan_path: comparablePath(request.plan, io.realpathSync, io.lstatSync), plan_sha256: request.sha256, base_commit: request.baseCommit,
+        settled_decisions: request.settledDecisions ?? old?.value.settled_decisions ?? [], supersedes, updated_at: new Date((io.now ?? Date.now)()).toISOString() };
+      validatePointer(value);
+      atomicPrivatePointer(pointerPath, value, io);
+      return value;
+    });
+  } catch (error) { throw observationFailure(error, "plan_ref_invalid"); }
+}
+
 export async function main(argv = process.argv, io = { stdin: process.stdin, stdout: process.stdout, stderr: process.stderr }) {
   const args = argv.slice(2).filter((arg) => arg !== "--");
+  if (["change-report", "plan-current"].includes(args[0])) {
+    try {
+      const flags = args[0] === "change-report" ? ["--task-dir"] : ["--task-dir", "--plan", "--sha256", "--base-commit", "--expected-generation"];
+      const values = {};
+      for (let i = 1; i < args.length; i += 2) {
+        if (!flags.includes(args[i]) || values[args[i]] !== undefined || args[i + 1] === undefined) throw failClosed("invalid report/plan arguments", "manifest_invalid");
+        values[args[i]] = args[i + 1];
+      }
+      if (flags.some((key) => values[key] === undefined)) throw failClosed("missing report/plan arguments", "manifest_invalid");
+      const result = args[0] === "change-report" ? changeReport({ taskDir: values["--task-dir"] })
+        : writeCurrentPlan({ taskDir: values["--task-dir"], plan: values["--plan"], sha256: values["--sha256"], baseCommit: values["--base-commit"], expectedGeneration: /^\d+$/.test(values["--expected-generation"]) ? Number(values["--expected-generation"]) : NaN });
+      io.stdout.write(`${JSON.stringify(result, null, 2)}\n`); process.exitCode = 0; return result;
+    } catch (error) {
+      const failure = observationFailure(error); io.stderr.write(`${failure.runnerCode}: assignment report/plan refused\n`); process.exitCode = 1; throw failure;
+    }
+  }
   if (["attribute", "observe-cost"].includes(args[0])) {
     try {
       const values = observationCli(args);

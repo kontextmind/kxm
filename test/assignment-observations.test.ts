@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpath
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { attributeAssignment, COST_OBSERVATION_SCHEMA, observeAssignmentCost, runAssignment, witnessAssignment, type CostObservation } from "../scripts/assignment-run.mjs";
+import { attributeAssignment, changeReport, writeCurrentPlan, COST_OBSERVATION_SCHEMA, observeAssignmentCost, runAssignment, witnessAssignment, type CostObservation } from "../scripts/assignment-run.mjs";
 import { makeGitRoot } from "./helpers/git-root.ts";
 
 const digest = (bytes: string | Buffer) => createHash("sha256").update(bytes).digest("hex");
@@ -252,5 +252,155 @@ test("legacy bootstrap manifests beside native records do not block explicit his
       const dir = join(f.taskDir, id); mkdirSync(dir); writeFileSync(join(dir, "manifest.json"), JSON.stringify(value));
     }
     assert.equal(observeAssignmentCost({ taskDir: f.taskDir, observation: f.value }).cost_only, true);
+  } finally { f.cleanup(); }
+});
+
+test("change report separates excluded costs, estimates, unknowns and elapsed time", () => {
+  const f = fixture();
+  try {
+    f.value.timing = { started_at: "2026-09-06T00:00:00.000Z", finished_at: "2026-09-06T00:00:01.000Z", latency_ms: 750 };
+    observeAssignmentCost({ taskDir: f.taskDir, observation: f.value });
+    const excluded = structuredClone(f.value); excluded.assignment_id = "excluded";
+    const path = join(f.root, "excluded-source"); writeFileSync(path, "excluded-source");
+    excluded.sources = [{ path, sha256: digest(readFileSync(path)) }];
+    excluded.accounting = { included: false, reason: "PRIVATE_NOTE separate platform" };
+    excluded.usage.cost_basis = "unmetered"; excluded.usage.cost_usd = null; excluded.usage.estimate_usd = 19;
+    observeAssignmentCost({ taskDir: f.taskDir, observation: excluded });
+    const unknown = structuredClone(f.value); unknown.assignment_id = "unknown";
+    const unknownPath = join(f.root, "unknown-source"); writeFileSync(unknownPath, "unknown-source");
+    unknown.sources = [{ path: unknownPath, sha256: digest(readFileSync(unknownPath)) }];
+    unknown.usage.cost_basis = "unknown"; unknown.usage.cost_usd = null;
+    unknown.timing.latency_ms = null;
+    observeAssignmentCost({ taskDir: f.taskDir, observation: unknown });
+    mkdirSync(join(f.taskDir, "nested")); mkdirSync(join(f.taskDir, "nested", "invisible"));
+    writeFileSync(join(f.taskDir, "nested", "invisible", "cost-observation.json"), JSON.stringify(f.value));
+    const report = changeReport({ taskDir: f.taskDir });
+    assert.equal(report.assignments.length, 3);
+    assert.equal(report.totals.included, 2); assert.equal(report.totals.excluded, 1);
+    assert.equal(report.totals.costs["provider-reported"].amount_usd.total, 0.125);
+    assert.equal(report.totals.costs.unmetered.amount_usd.total, null);
+    assert.equal(report.totals.costs.unknown.assignments, 1);
+    assert.equal(report.totals.costs.unknown.amount_usd.total, null);
+    assert.equal(report.totals.elapsed_ms, 1000);
+    assert.equal(report.totals.summed_native_latency_ms.total, 750);
+    assert.equal(report.totals.summed_native_latency_ms.unknown, 1);
+    assert.equal(report.ranking, "not-ranked");
+    assert.equal(report.orchestration_usage, "unavailable");
+    assert.equal(JSON.stringify(report).includes("PRIVATE_NOTE"), false);
+    assert.equal(report.assignments[0]!.usage.context_tokens, null);
+    assert.ok(report.ignored.some((item) => item.name === "nested"));
+  } finally { f.cleanup(); }
+});
+
+test("report retains native failure, all gate history, private attribution history and zero-call refusals", async () => {
+  const f = fixture();
+  try {
+    const recordDir = await nativeFixture(f, "completion");
+    const completion = readFileSync(join(recordDir, "completion.json"));
+    const nativeManifest = read(join(recordDir, "manifest.json"));
+    await assert.rejects(() => runAssignment({ ...nativeManifest, assignment_id: "refusal", output_dir: "refusal/output", invalid: true }));
+    const missing = join(f.taskDir, "missing"); mkdirSync(missing);
+    writeFileSync(join(missing, "manifest.json"), JSON.stringify({ ...nativeManifest, assignment_id: "missing", output_dir: "missing/output" }));
+    const gate = (status: number) => ((command: string, args: readonly string[], options: object) => command === "npm"
+      ? { status, signal: null, stdout: "fixture gate", stderr: "" } : spawnSync(command, args, options)) as typeof spawnSync;
+    await witnessAssignment(recordDir, { spawnSync: gate(0) });
+    await witnessAssignment(recordDir, { spawnSync: gate(1) });
+    attributeAssignment({ taskDir: f.taskDir, recordDir, classification: "unclassified", explanation: "PRIVATE_NOTE handoff" });
+    attributeAssignment({ taskDir: f.taskDir, recordDir, classification: "environment", explanation: "confirmed cause" });
+    rmSync(join(recordDir, "attribution", "latest.json"));
+    const report = changeReport({ taskDir: f.taskDir });
+    assert.equal(report.assignments.length, 3);
+    const native = report.assignments.find((item) => item.assignment_id === "native")!;
+    assert.equal(native.type, "native"); assert.equal(native.status, "failed");
+    assert.equal(native.verification, "failed");
+    assert.deepEqual(native.history.witnesses.map((item: { result: string }) => item.result).sort(), ["failed", "passed"]);
+    assert.equal(native.history.attributions.length, 2);
+    assert.ok(native.history.issues.includes("attribution_latest_missing"));
+    assert.equal(report.totals.not_dispatched, 1);
+    assert.equal(report.assignments.find((row) => row.type === "refusal")!.usage, null);
+    assert.ok(report.assignments.some((row) => row.type === "missing-completion"));
+    assert.deepEqual(readFileSync(join(recordDir, "completion.json")), completion);
+    assert.equal(JSON.stringify(report).includes("PRIVATE_NOTE"), false);
+  } finally { f.cleanup(); }
+});
+
+test("plan-current preserves prior plan and pointer bytes and rejects stale or conflicting history", () => {
+  const f = fixture();
+  try {
+    const plan1 = join(f.root, "plan1.md"); writeFileSync(plan1, "# one\n");
+    const plan2 = join(f.root, "plan2.md"); writeFileSync(plan2, "# two\n");
+    const baseCommit = "a".repeat(40);
+    const first = writeCurrentPlan({ taskDir: f.taskDir, plan: plan1, sha256: digest(readFileSync(plan1)), baseCommit, expectedGeneration: 0, settledDecisions: ["bounded scope"] });
+    const originalPointer = readFileSync(join(f.taskDir, "plan-current.json"));
+    assert.equal(first.generation, 1);
+    const request = { taskDir: f.taskDir, plan: plan2, sha256: digest(readFileSync(plan2)), baseCommit, expectedGeneration: 1 };
+    const second = writeCurrentPlan(request);
+    assert.equal(second.generation, 2);
+    assert.deepEqual(second.settled_decisions, ["bounded scope"]);
+    assert.deepEqual(readFileSync(join(f.taskDir, "plan-history", "generation-1.json")), originalPointer);
+    assert.deepEqual(readFileSync(join(f.taskDir, "plan-history", "generation-1.md")), readFileSync(plan1));
+    const secondPointer = readFileSync(join(f.taskDir, "plan-current.json"));
+    assert.throws(() => writeCurrentPlan(request), code("history_conflict"));
+    assert.deepEqual(readFileSync(join(f.taskDir, "plan-current.json")), secondPointer);
+    writeFileSync(plan2, "changed after pointer");
+    assert.throws(() => writeCurrentPlan({ ...request, plan: plan1, sha256: digest(readFileSync(plan1)), expectedGeneration: 2 }), code("plan_ref_invalid"));
+    assert.deepEqual(readFileSync(join(f.taskDir, "plan-current.json")), secondPointer);
+  } finally { f.cleanup(); }
+});
+
+test("plan-current refuses unsafe sources, bad generations and history collisions without pointer changes", () => {
+  const f = fixture();
+  try {
+    const plan = join(f.root, "plan.md"); writeFileSync(plan, "plan");
+    const request = { taskDir: f.taskDir, plan, sha256: digest(readFileSync(plan)), baseCommit: "b".repeat(40), expectedGeneration: 0 };
+    assert.throws(() => writeCurrentPlan({ ...request, sha256: "0".repeat(64) }), code("plan_ref_invalid"));
+    assert.equal(existsSync(join(f.taskDir, "plan-current.json")), false);
+    const link = join(f.root, "plan-link"); symlinkSync(plan, link);
+    assert.throws(() => writeCurrentPlan({ ...request, plan: link }), code("plan_ref_invalid"));
+    writeCurrentPlan(request);
+    const before = readFileSync(join(f.taskDir, "plan-current.json"));
+    assert.throws(() => writeCurrentPlan({ ...request, plan: join(f.taskDir, "plan-current.json"), sha256: digest(before), expectedGeneration: 1 }), code("plan_ref_invalid"));
+    mkdirSync(join(f.taskDir, "plan-history"));
+    writeFileSync(join(f.taskDir, "plan-history", "generation-1.md"), "rival");
+    assert.throws(() => writeCurrentPlan({ ...request, expectedGeneration: 1 }), code("history_conflict"));
+    assert.deepEqual(readFileSync(join(f.taskDir, "plan-current.json")), before);
+    assert.equal(readFileSync(join(f.taskDir, "plan-history", "generation-1.md"), "utf8"), "rival");
+  } finally { f.cleanup(); }
+});
+
+test("new just recipes pass literal arguments through the shell", () => {
+  const recipes = readFileSync("justfile", "utf8");
+  for (const name of ["assign", "witness", "attribute", "observe-cost", "accept", "plan-current", "change-report"]) {
+    const match = new RegExp(`^${name}[^\\n]*\\n([^\\n]*)`, "m").exec(recipes);
+    assert.ok(match, `${name} recipe present`);
+    assert.match(match[1]!, /"\$1"/);
+    assert.equal(match[1]!.includes("{{"), false);
+  }
+  const f = fixture();
+  try {
+    const plan = join(f.root, "plan $(touch sentinel).md"); writeFileSync(plan, "# plan\n");
+    const runRecipe = (name: string, args: string[]) => {
+      const body = new RegExp(`^${name}[^\\n]*\\n([^\\n]*)`, "m").exec(recipes)![1]!.trim().replace(/^@/, "");
+      return spawnSync("sh", ["-c", body, name, ...args], { encoding: "utf8" });
+    };
+    const result = runRecipe("plan-current", [f.taskDir, plan, digest(readFileSync(plan)), "a".repeat(40), "0"]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(read(join(f.taskDir, "plan-current.json")).generation, 1);
+    assert.equal(existsSync(join(f.root, "sentinel")), false);
+    const report = runRecipe("change-report", [f.taskDir]);
+    assert.equal(report.status, 0, report.stderr);
+    assert.equal(JSON.parse(report.stdout).schema, "kxm.change-report.v1");
+  } finally { f.cleanup(); }
+});
+
+test("report does not turn an unknown finish time into zero elapsed duration", () => {
+  const f = fixture();
+  try {
+    f.value.timing.started_at = "2026-09-06T00:00:00.000Z";
+    observeAssignmentCost({ taskDir: f.taskDir, observation: f.value });
+    const report = changeReport({ taskDir: f.taskDir });
+    assert.equal(report.totals.elapsed_ms, null);
+    assert.equal(report.totals.elapsed_partial, true);
+    assert.equal(report.totals.summed_native_latency_ms.total, null);
   } finally { f.cleanup(); }
 });
