@@ -47,9 +47,9 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Fixed
 
-- PR CI no longer skips Validate or Plugin validation for docs-only diffs, so
-  the ruleset’s required contexts (four expanded Validate names plus Plugin
-  validation) still run.
+- Historical (before the 2026-09-05 platform pause): PR CI no longer skipped
+  Validate or Plugin validation for docs-only diffs, so the then-required
+  contexts (four expanded Validate names plus Plugin validation) still ran.
 - Draft GitHub release lookup lists releases (including drafts, every page)
   after a by-tag 404 so a retry reuses one draft instead of creating another.
   Duplicate drafts, a published match, and list/pagination failures fail
@@ -78,8 +78,8 @@ All notable user-facing changes are documented here. The project follows [Semant
 ### Changed
 
 - Operator-authorized platform pause (2026-09-05): PR CI keeps two Linux
-  Validate legs (Node 22.19.0 and 24) plus Classify, Docs lint, and Plugin
-  validation (five jobs). Windows CI legs, hosted Windows probes, and
+  Validate legs (Node 22.19.0 and 24) plus Classify changes, Docs lint, and
+  Plugin validation (five jobs). Windows CI legs, hosted Windows probes, and
   `release.yml` are paused (`release` job `if: false`); Windows is not
   deprecated and no Windows source or tests were removed. Local verification
   remains `npm run verify` on macOS. No new paid macOS runner.

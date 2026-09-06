@@ -120,10 +120,8 @@ jobs:
         if: steps.modules.outputs.cache-hit != 'true'
         run: npm ci
 
-      # Every leg runs coverage because `validate:ci` is the PR gate. The
-      # Windows-specific pre-ack shutdown note (0xC0000409 under
-      # uninstrumented Node 24) is recorded in Tracking as deferred, not
-      # restated here.
+      # Every active leg runs coverage because `validate:ci` is the PR gate.
+      # Historical Windows coverage evidence remains in Tracking.
       - name: Test with coverage, type-check, and inspect package
         run: npm run validate:ci
 

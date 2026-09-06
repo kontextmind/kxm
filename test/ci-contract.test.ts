@@ -34,20 +34,40 @@ test("release workflow is tag-triggered, fail-closed drafts, and npm publish sta
   assert.match(releaseText, /npm-publish/);
 });
 
+type CiJobs = Record<
+  string,
+  {
+    name?: string;
+    if?: unknown;
+    steps?: Array<{ run?: string }>;
+    strategy?: { matrix?: { node?: unknown[]; runner?: Array<{ name?: string }> } };
+  }
+>;
+
+function assertApprovedCiJobDefinitions(jobs: CiJobs | undefined) {
+  assert.ok(jobs);
+  assert.deepEqual(Object.keys(jobs), ["changes", "docs", "validate", "plugin"]);
+  for (const id of ["changes", "docs", "validate", "plugin"] as const) {
+    assert.equal(jobs[id]?.if, undefined);
+  }
+  assert.equal(jobs.changes?.name, "Classify changes");
+  assert.equal(jobs.docs?.name, "Docs lint");
+}
+
 test("CI required jobs are unconditional, two linux Validate names match the ruleset, plugin pin and PR-only cancel stay", () => {
   const doc = parse(ciText) as {
     concurrency?: { "cancel-in-progress"?: string };
-    jobs?: Record<
-      string,
-      {
-        name?: string;
-        if?: unknown;
-        steps?: Array<{ run?: string }>;
-        strategy?: { matrix?: { node?: unknown[]; runner?: Array<{ name?: string }> } };
-      }
-    >;
+    jobs?: CiJobs;
   };
+  assertApprovedCiJobDefinitions(doc.jobs);
   assert.equal(doc.jobs?.generated, undefined);
+  const skippedDocs = structuredClone(doc.jobs) as CiJobs;
+  assert.ok(skippedDocs.docs);
+  skippedDocs.docs.if = "${{ needs.changes.outputs.code == 'true' }}";
+  assert.throws(() => assertApprovedCiJobDefinitions(skippedDocs));
+  const extraPlatform = structuredClone(doc.jobs) as CiJobs;
+  extraPlatform.macos = { name: "Validate (macos, Node 24)" };
+  assert.throws(() => assertApprovedCiJobDefinitions(extraPlatform));
   assert.equal(doc.jobs?.validate?.if, undefined);
   assert.equal(doc.jobs?.plugin?.if, undefined);
   const nameTemplate = doc.jobs?.validate?.name ?? "";
@@ -68,6 +88,7 @@ test("CI required jobs are unconditional, two linux Validate names match the rul
     "Validate (linux, Node 24)",
   ]));
   assert.equal(expanded.length, 2);
+  assert.equal(1 + 1 + expanded.length + 1, 5);
   assert.equal(doc.jobs?.plugin?.name, "Plugin validation");
   assert.equal(doc.concurrency?.["cancel-in-progress"], "${{ github.event_name == 'pull_request' }}");
   const validateRuns = (doc.jobs?.validate?.steps ?? []).map((step) => step.run).join("\n");

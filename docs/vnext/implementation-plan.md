@@ -358,7 +358,7 @@ It does not replace the phase gates below.
   it does not complete Phase 3 or retire scratch runners.
   Issue #88 / D2 closed on all seven PR CI jobs (four Validate legs plus
   classify/docs/plugin) before the pause; the post-merge main Windows Node 24
-  package-cleanup failure in run `34006194862` is recorded as deferred.
+  package-cleanup failure in run `34006194862` is unresolved and deferred.
 
 ### Still open
 
