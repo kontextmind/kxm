@@ -34,6 +34,9 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Fixed
 
+- PR CI no longer skips Validate or Plugin validation for docs-only diffs, so
+  the ruleset’s required contexts (four expanded Validate names plus Plugin
+  validation) still run.
 - Draft GitHub release lookup lists releases (including drafts, every page)
   after a by-tag 404 so a retry reuses one draft instead of creating another.
   Duplicate drafts, a published match, and list/pagination failures fail

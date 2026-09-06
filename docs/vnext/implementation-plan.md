@@ -116,6 +116,9 @@ It does not replace the phase gates below.
 
 ### Landed in this tree (unreleased)
 
+- PR CI no longer skips Validate or Plugin validation for docs-only diffs,
+  restoring the ruleset’s required contexts (four expanded Validate names plus
+  Plugin validation).
 - Plugin/package/skill/MCP rename toward `kxm`; tools `kxm_list` / `kxm_send` / …;
   env prefix `KXM_*`.
 - `kxm dash` tabbed dashboard; hub ops snapshot carries run progress and plan

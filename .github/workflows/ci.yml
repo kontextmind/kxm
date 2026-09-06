@@ -85,7 +85,6 @@ jobs:
   validate:
     name: Validate (${{ matrix.runner.name }}, Node ${{ matrix.node }})
     needs: changes
-    if: needs.changes.outputs.code == 'true'
     runs-on: ${{ matrix.runner.labels }}
     timeout-minutes: 30
     strategy:
@@ -138,7 +137,6 @@ jobs:
   plugin:
     name: Plugin validation
     needs: changes
-    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

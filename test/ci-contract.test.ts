@@ -33,18 +33,45 @@ test("release workflow is tag-triggered, fail-closed drafts, and npm publish sta
   assert.match(releaseText, /npm-publish/);
 });
 
-test("CI keeps four Validate names, generated job is gone, plugin pin and PR-only cancel stay", () => {
+test("CI required jobs are unconditional, four Validate names match the ruleset, plugin pin and PR-only cancel stay", () => {
   const doc = parse(ciText) as {
     concurrency?: { "cancel-in-progress"?: string };
-    jobs?: Record<string, { name?: string; steps?: Array<{ run?: string }> }>;
+    jobs?: Record<
+      string,
+      {
+        name?: string;
+        if?: unknown;
+        steps?: Array<{ run?: string }>;
+        strategy?: { matrix?: { node?: unknown[]; runner?: Array<{ name?: string }> } };
+      }
+    >;
   };
   assert.equal(doc.jobs?.generated, undefined);
-  assert.equal(doc.jobs?.validate?.name, "Validate (${{ matrix.runner.name }}, Node ${{ matrix.node }})");
+  assert.equal(doc.jobs?.validate?.if, undefined);
+  assert.equal(doc.jobs?.plugin?.if, undefined);
+  const nameTemplate = doc.jobs?.validate?.name ?? "";
+  assert.equal(nameTemplate, "Validate (${{ matrix.runner.name }}, Node ${{ matrix.node }})");
+  const nodes = doc.jobs?.validate?.strategy?.matrix?.node ?? [];
+  const runners = doc.jobs?.validate?.strategy?.matrix?.runner ?? [];
+  const expanded = runners.flatMap((runner) =>
+    nodes.map((node) =>
+      nameTemplate
+        .replace("${{ matrix.runner.name }}", String(runner.name ?? ""))
+        .replace("${{ matrix.node }}", String(node)),
+    ),
+  );
+  assert.deepEqual(new Set(expanded), new Set([
+    "Validate (linux, Node 22.19.0)",
+    "Validate (linux, Node 24)",
+    "Validate (windows, Node 22.19.0)",
+    "Validate (windows, Node 24)",
+  ]));
+  assert.equal(expanded.length, 4);
+  assert.equal(doc.jobs?.plugin?.name, "Plugin validation");
   assert.equal(doc.concurrency?.["cancel-in-progress"], "${{ github.event_name == 'pull_request' }}");
   const validateRuns = (doc.jobs?.validate?.steps ?? []).map((step) => step.run).join("\n");
   assert.match(validateRuns, /npm run validate:ci/);
   assert.match(validateRuns, /npm run check:generated/);
-  assert.match(ciText, /name: Plugin validation/);
   assert.match(ciText, /@anthropic-ai\/claude-code@2\.1\.261/);
   assert.match(ciText, /npm install --no-save --ignore-scripts @anthropic-ai\/claude-code@2\.1\.261/);
   assert.match(ciText, /node node_modules\/@anthropic-ai\/claude-code\/install\.cjs/);
