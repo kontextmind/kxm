@@ -236,10 +236,22 @@ It does not replace the phase gates below.
   dangling final entries as `output_dir_exists`). R2 is the local
   unreleased repair of B1–B4/C1–C2 observed facts/cost/native schemas,
   including bound observe recovery/idempotency and parent-alias CLI identity.
-  This is not M3b acceptance or runner adoption. M4a/M4b witnesses/accept/report
-  and M5 workflow docs adoption remain pending before D3; the assignment
-  runner is not adopted. There is no M4 fixed-witness receipt yet.
-  D3 still waits on bounded contract resolution after this prerequisite.
+  This is not M3b acceptance or runner adoption. M4a fixed
+  `verify`/`validate-ci` witness execution, before/after candidate
+  snapshots, and private receipt history/latest under
+  `task_dir/<assignment_id>/witness` are implemented/unreleased, not
+  accepted. `witness --record-dir <absolute-path>` requires an existing
+  completion, binds stored-manifest identity/cwd/kind/route, the
+  canonical `task_dir/<assignment_id>` record path, current or originally
+  admitted bootstrap plan, and recovered routing/telemetry bookkeeping
+  before any gate execution, and does not rewrite `completion.json` or
+  re-run writer admission. Unknown completion candidates stay unknown
+  while the witness takes its own snapshots. M4b
+  accept/attribute/report/plan-current/recipes and M5 workflow docs
+  adoption remain pending before D3; the assignment runner is not
+  adopted. This assignment's own M4a receipt is written by root after
+  native exit. D3 still waits on bounded contract resolution after this
+  prerequisite.
   `scripts/assignment-run.mjs` validates closed `kxm.assignment.v1`
   (kind/route, explicit effort/permission, cwd plus required `task_dir`
   whose final segment equals `task_id`, clean or staged base, current or
@@ -289,7 +301,12 @@ It does not replace the phase gates below.
   Importing or calling validation still does not create an output
   directory, reserve an ID, write dispatch, mutate the worktree, spawn a
   provider, or fake live auth. No new npm gate. Snapshot/mint of an
-  output candidate is only in the effectful recording path.
+  output candidate is only in the effectful recording path. Witness
+  snapshots may `git write-tree` the current index; a dirty unstaged
+  baseline refuses with zero gate execution. Passed receipts require
+  every fixed-gate exit 0, identical HEAD/index_tree, and a clean
+  unstaged/unignored worktree before and after. Staged `dist` is a valid
+  candidate. Model claims cannot set verification.
 - Coverage include inverted to `plugins/kxm/src/**/*.ts`; excludes are only
   `server.ts` and `mcp-server.ts` (spawned bundles attribute to `dist`).
   Thresholds are measured whole-tree values and may only ratchet up.
@@ -428,7 +445,9 @@ It does not replace the phase gates below.
   recovery/idempotency, and parent-alias CLI identity are unreleased setup
   prerequisites for later assignment work; they do not complete Phase 3,
   adopt the runner, or retire scratch runners. Corrected M3b is a local
-  unreleased implementation, not accepted. M4a/M4b/M5 remain pending.
+  unreleased implementation, not accepted. M4a fixed-witness execution
+  and stored-manifest/plan/recording binding are implemented/unreleased,
+  not accepted. M4b/M5 remain pending.
   Issue #88 / D2 closed on all seven PR CI jobs (four Validate legs plus
   classify/docs/plugin) before the pause; the post-merge main Windows Node 24
   package-cleanup failure in run `34006194862` is unresolved and deferred.
@@ -473,11 +492,15 @@ It does not replace the phase gates below.
   canonical output identity from validation through reservation and
   dangling final entries as `output_dir_exists`. R2 is the local
   unreleased facts/cost/schema/recovery repair. Full M3b acceptance remains
-  pending. M4a/M4b witnesses/accept/report and M5 AGENTS/workflow docs
-  adoption remain pending before D3; there is no M4 fixed-witness receipt
-  yet. D3 still needs bounded contract resolution after this
-  prerequisite. Not a product assignment layer (Phase 4) and not Phase 11
-  adapters. The assignment runner is not adopted.
+  pending. M4a fixed `verify`/`validate-ci` gates, candidate-bound
+  receipts, stored-manifest identity/plan/recording binding before
+  execution, and `witness --record-dir` are implemented/unreleased, not
+  accepted; root writes this assignment's receipt after native exit.
+  M4b accept/attribute/report/plan-current/recipes and M5 AGENTS/workflow
+  docs adoption remain pending before D3. D3 still needs bounded
+  contract resolution after this prerequisite. Not a product assignment
+  layer (Phase 4) and not Phase 11 adapters. The assignment runner is
+  not adopted.
 - Phase 3 engine remainder (D3 gate execution, `expect`, attempt-bound
   evidence; D4 joins, approval, waits, duration and cost budgets,
   `blocked_uncertain` recovery, producer drain, and the full driver gate on
@@ -486,8 +509,9 @@ It does not replace the phase gates below.
   gate, approval, and wait steps or fail closed; D1 only preserves the
   declaration. Issue 127 M1 transport, M2 reusable tests, corrected M3a
   validation, and corrected M3b remain unreleased and not accepted;
-  M4a/M4b/M5, and D3 contract resolution are still open. This is not
-  full AGENTS workflow adoption (M5) and not a scratch-retirement claim.
+  M4a is implemented/unreleased and not accepted; M4b/M5, and D3
+  contract resolution are still open. This is not full AGENTS workflow
+  adoption (M5) and not a scratch-retirement claim.
 - Version-1 run event stores are refused with `runtime_schema_outdated`;
   backup, restore, and migration remain E6.
 - Non-Pi dispatch adapters (Phase 11). Listing a harness does not execute it.
@@ -637,7 +661,7 @@ attempts after process restart. No gates, evidence, joins, duration or cost
 budget enforcement, or D4 recovery/adoption. The Gate sentence is unchanged.
 Windows verification of the run loop is deferred with the platform pause.
 
-**Issue 127 M1+M2+M3 (unreleased, not this gate, not accepted):** helper
+**Issue 127 M1+M2+M3+M4a (unreleased, not this gate, not accepted):** helper
 transport result v2, supported launch flags, honest termination facts,
 stdio drain vs bounded linger (`stdio_incomplete` / `unknown_exit` are
 not `completed`), type-closed public usage/cost, malformed
@@ -657,11 +681,20 @@ schemas, bound observe recovery/idempotency, and argv path identity so a
 `/tmp` parent alias still runs `main`. Corrected M3b is local/unreleased,
 not accepted; parent-alias output identity uses the existing
 deepest-existing-ancestor comparison rather than a second resolver, and a
-known dangling final output entry is `output_dir_exists`. M3b acceptance,
-M4a/M4b/M5, and D3 remain pending. Not a Phase 3 completion or
-scratch-runner retirement.
-The assignment runner is not adopted. There is no M4 fixed-witness
-receipt yet.
+known dangling final output entry is `output_dir_exists`. M4a adds
+fixed `verify`→`[npm,run,verify]` and `validate-ci`→`[npm,run,validate:ci]`
+execution (`shell:false`), before/after `write-tree` snapshots, and
+immutable private receipts plus a latest pointer under the assignment
+record directory. Witness-time binding compares stored-manifest
+identity, cwd, kind/route, canonical record path, and plan against the
+completion and current pointer, and requires routing/telemetry to be
+recorded or hash-bound recovered, before any npm execution. It does
+not re-run pre-dispatch writer admission; completion candidate
+`unknown` stays unknown. M3b acceptance, M4b/M5, and D3 remain
+pending. Not a Phase 3 completion or scratch-runner retirement.
+The assignment runner is not adopted. Root writes this assignment's M4a
+fixed-witness receipt after native exit; that receipt is not yet present
+in this still-running writer.
 
 **Gate:** a model-free test driver completes and recovers
 `examples/vnext/.kxm/workflows/default.yaml` (plan → implement → verify → ready)

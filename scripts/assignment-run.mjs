@@ -2,7 +2,9 @@
 // Dev assignment helper. M3a is exported pure validation: no spawn, identity
 // consumption, dispatch, or .git writes. M3b adds role templates, exclusive
 // identity/output consume, one-shot v2 harness dispatch, immutable completion,
-// and one pending telemetry append. Not a product assignment layer.
+// and one pending telemetry append. M4a adds fixed verify/validate-ci
+// witness execution, stored-manifest identity/plan/recording binding,
+// and candidate-bound private receipts. Not a product assignment layer.
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -71,10 +73,39 @@ export const RUNNER_CODES = Object.freeze([
   "sidecar_failed",
   "routing_record_failed",
   "telemetry_failed",
+  "completion_missing",
+  "completion_invalid",
+  "witness_binding_invalid",
+  "plan_mismatch",
+  "recording_unresolved",
+  "dirty_baseline",
+  "gate_failed",
+  "candidate_changed",
   "unknown",
 ]);
 export const VERIFY_WITNESS_ID = "verify";
+export const VALIDATE_CI_WITNESS_ID = "validate-ci";
 export const WITNESS_IDS = Object.freeze(["verify", "validate-ci"]);
+export const FIXED_GATES = Object.freeze({
+  verify: Object.freeze(["npm", "run", "verify"]),
+  "validate-ci": Object.freeze(["npm", "run", "validate:ci"]),
+});
+export const WITNESS_SCHEMA = "kxm.assignment-witness.v1";
+export const WITNESS_LATEST_SCHEMA = "kxm.assignment-witness-latest.v1";
+export const WITNESS_RESULTS = Object.freeze(["passed", "failed", "refused"]);
+export const WITNESS_CODES = Object.freeze([
+  "completion_missing",
+  "completion_invalid",
+  "witness_binding_invalid",
+  "plan_mismatch",
+  "recording_unresolved",
+  "dirty_baseline",
+  "snapshot_failed",
+  "gate_failed",
+  "candidate_changed",
+  "record_write_failed",
+  "unknown",
+]);
 export const ASSIGNMENT_KINDS = Object.freeze([
   "plan",
   "implement",
@@ -353,7 +384,7 @@ function isSameOrDescendant(root, path) {
   return path === root || isStrictAncestor(root, path);
 }
 
-function validateOutputDir(outputDir, taskDir, recordDir, cwd, lstatImpl, realpathImpl) {
+function comparableOutputBinding(outputDir, taskDir, recordDir, cwd, lstatImpl, realpathImpl) {
   const out = comparablePath(outputDir, realpathImpl, lstatImpl);
   const task = comparablePath(taskDir, realpathImpl, lstatImpl);
   const record = comparablePath(recordDir, realpathImpl, lstatImpl);
@@ -367,10 +398,15 @@ function validateOutputDir(outputDir, taskDir, recordDir, cwd, lstatImpl, realpa
   if (isSameOrDescendant(gitDir, out)) {
     throw failClosed(`output_dir is unsafe: protected namespace ${outputDir}`, "output_dir_unsafe");
   }
+  return { out, record };
+}
+
+function validateOutputDir(outputDir, taskDir, recordDir, cwd, lstatImpl, realpathImpl) {
+  const compared = comparableOutputBinding(outputDir, taskDir, recordDir, cwd, lstatImpl, realpathImpl);
   if (lstatOrNull(outputDir, lstatImpl)) {
     throw failClosed(`output_dir already exists: ${outputDir}`, "output_dir_exists");
   }
-  return { out, record };
+  return compared;
 }
 
 function readRegularFile(path, readImpl, existsImpl, statImpl, code = "manifest_invalid") {
@@ -2161,7 +2197,662 @@ export async function observeAssignment(outputDir, deps = {}) {
   return appended;
 }
 
-const CLI_USAGE = "usage: assignment-run.mjs run --manifest <absolute-path> | observe --record-dir <absolute-path>";
+const CLI_USAGE = "usage: assignment-run.mjs run --manifest <absolute-path> | observe --record-dir <absolute-path> | witness --record-dir <absolute-path>";
+
+const WITNESS_RECEIPT_KEYS = Object.freeze([
+  "schema",
+  "receipt_id",
+  "task_id",
+  "assignment_id",
+  "kind",
+  "recordedAt",
+  "manifest",
+  "completion",
+  "plan",
+  "binding",
+  "candidate",
+  "gates",
+  "result",
+  "code",
+  "startedAt",
+  "finishedAt",
+  "durationMs",
+]);
+const WITNESS_LATEST_KEYS = Object.freeze([
+  "schema",
+  "task_id",
+  "assignment_id",
+  "receipt_id",
+  "path",
+  "sha256",
+  "recordedAt",
+  "result",
+]);
+const WITNESS_DIRNAME = "witness";
+const WITNESS_HISTORY_DIRNAME = "history";
+const WITNESS_LATEST_FILENAME = "latest.json";
+
+function witnessCode(code) {
+  return WITNESS_CODES.includes(code) ? code : "unknown";
+}
+
+function isWitnessDirty(records) {
+  return records.some((record) => isUnmergedRecord(record) || record.y !== " ");
+}
+
+function snapshotWitnessCandidate(cwd, spawnSyncImpl, realpathImpl) {
+  try {
+    const gitState = inspectWorktree(cwd, spawnSyncImpl, realpathImpl);
+    const { result, stdout } = runGit(cwd, ["write-tree"], spawnSyncImpl);
+    if (result.status !== 0) {
+      return Object.freeze({ status: "unknown", code: "snapshot_failed" });
+    }
+    const indexTree = stdout.trim();
+    if (!HEX40.test(indexTree)) {
+      return Object.freeze({ status: "unknown", code: "snapshot_failed" });
+    }
+    return Object.freeze({
+      status: "recorded",
+      head: gitState.head,
+      index_tree: indexTree,
+      clean: !isWitnessDirty(gitState.statusRecords),
+    });
+  } catch {
+    return Object.freeze({ status: "unknown", code: "snapshot_failed" });
+  }
+}
+
+function recordedSnapshot(snapshot) {
+  if (snapshot?.status === "recorded") {
+    return Object.freeze({
+      head: snapshot.head,
+      index_tree: snapshot.index_tree,
+      clean: snapshot.clean === true,
+    });
+  }
+  return Object.freeze({ status: "unknown", code: snapshot?.code === "snapshot_failed" ? "snapshot_failed" : "unknown" });
+}
+
+function witnessDir(recordDir) {
+  return join(recordDir, WITNESS_DIRNAME);
+}
+
+function witnessHistoryDir(recordDir) {
+  return join(witnessDir(recordDir), WITNESS_HISTORY_DIRNAME);
+}
+
+function witnessLatestPath(recordDir) {
+  return join(witnessDir(recordDir), WITNESS_LATEST_FILENAME);
+}
+
+function nextWitnessReceiptId(historyDir, now, existsImpl) {
+  const iso = new Date(now()).toISOString().replace(/[-:.]/g, "");
+  let id = `w-${iso}`;
+  let n = 2;
+  while (existsImpl(join(historyDir, `${id}.json`))) {
+    id = `w-${iso}-${n}`;
+    n += 1;
+  }
+  return id;
+}
+
+function loadWitnessCompletion(recordDir, io) {
+  const completionPath = join(recordDir, "completion.json");
+  if (!io.existsSync(completionPath)) {
+    throw failClosed(`missing assignment completion: ${completionPath}`, "completion_missing");
+  }
+  const bytes = readRegularFile(completionPath, io.readFileSync, io.existsSync, io.statSync, "completion_invalid");
+  const completion = parseJsonFile(completionPath, bytes, "assignment completion", "completion_invalid");
+  if (!isPlainObject(completion) || completion.schema !== COMPLETION_SCHEMA) {
+    throw failClosed(`assignment completion schema must be ${COMPLETION_SCHEMA}`, "completion_invalid");
+  }
+  if (completion.binding?.record_dir && !samePath(completion.binding.record_dir, recordDir, io.realpathSync)) {
+    throw failClosed("completion is not bound to this record directory", "witness_binding_invalid");
+  }
+  return { completion, bytes, path: completionPath };
+}
+
+function loadStoredManifest(recordDir, completion, io) {
+  const path = join(recordDir, "manifest.json");
+  const bytes = readRegularFile(path, io.readFileSync, io.existsSync, io.statSync, "witness_binding_invalid");
+  const sha = sha256Bytes(bytes);
+  if (typeof completion.manifest?.sha256 !== "string" || sha !== completion.manifest.sha256) {
+    throw failClosed("stored manifest digest does not match completion.manifest.sha256", "witness_binding_invalid");
+  }
+  const manifest = parseJsonFile(path, bytes, "stored assignment manifest", "witness_binding_invalid");
+  return { manifest, path, sha256: sha };
+}
+
+function bindWitnessIdentityFromCompletion(completion, recordDir, io) {
+  const taskId = requireIdentity(completion.task_id, "completion.task_id", "witness_binding_invalid");
+  const assignmentId = requireIdentity(completion.assignment_id, "completion.assignment_id", "witness_binding_invalid");
+  const binding = closedObject(
+    completion.binding,
+    ["task_dir", "cwd", "record_dir", "output_dir"],
+    "completion.binding",
+    [],
+    "witness_binding_invalid",
+  );
+  const taskDir = validateTaskDir(binding.task_dir, taskId, io.existsSync, io.statSync, io.realpathSync);
+  if (!samePath(binding.record_dir, recordDir, io.realpathSync)) {
+    throw failClosed("completion.binding.record_dir does not match --record-dir", "witness_binding_invalid");
+  }
+  const cwd = resolvePath(requireNonemptyString(binding.cwd, "completion.binding.cwd", "witness_binding_invalid"));
+  if (!io.existsSync(cwd)) {
+    throw failClosed(`cwd does not exist: ${cwd}`, "witness_binding_invalid");
+  }
+  return Object.freeze({
+    task_id: taskId,
+    assignment_id: assignmentId,
+    kind: typeof completion.kind === "string" ? completion.kind : undefined,
+    task_dir: taskDir,
+    cwd,
+    record_dir: comparablePath(recordDir, io.realpathSync, io.lstatSync),
+    output_dir: resolvePath(binding.output_dir),
+  });
+}
+
+function validateStoredManifestBinding(manifest, recordDir, io) {
+  closedObject(manifest, ASSIGNMENT_KEYS, "stored assignment manifest", OPTIONAL_ASSIGNMENT_KEYS, "witness_binding_invalid");
+  if (manifest.schema !== ASSIGNMENT_SCHEMA) {
+    throw failClosed(`stored assignment schema must be ${ASSIGNMENT_SCHEMA}`, "witness_binding_invalid");
+  }
+  const taskId = requireIdentity(manifest.task_id, "stored task_id", "witness_binding_invalid");
+  const assignmentId = requireIdentity(manifest.assignment_id, "stored assignment_id", "witness_binding_invalid");
+  if (!ASSIGNMENT_KINDS.includes(manifest.kind)) {
+    throw failClosed(`unknown stored kind ${manifest.kind}`, "witness_binding_invalid");
+  }
+  const cwd = resolvePath(requireNonemptyString(manifest.cwd, "stored cwd", "witness_binding_invalid"));
+  if (!io.existsSync(cwd)) {
+    throw failClosed(`stored cwd does not exist: ${cwd}`, "witness_binding_invalid");
+  }
+  const taskDir = validateTaskDir(manifest.task_dir, taskId, io.existsSync, io.statSync, io.realpathSync);
+  const { role, effort } = validateRoute(manifest);
+  const contract = validateContract(manifest.contract, manifest.kind);
+  const requestedOutputDir = resolvePath(taskDir, requireNonemptyString(manifest.output_dir, "stored output_dir", "witness_binding_invalid"));
+  const identityDir = assignmentRecordDir(taskDir, assignmentId);
+  if (!samePath(identityDir, recordDir, io.realpathSync)) {
+    throw failClosed("canonical record path must be task_dir/assignment_id", "witness_binding_invalid");
+  }
+  const compared = comparableOutputBinding(
+    requestedOutputDir,
+    taskDir,
+    identityDir,
+    cwd,
+    io.lstatSync,
+    io.realpathSync,
+  );
+  if (!isPlainObject(manifest.plan_ref) || !PLAN_REF_KINDS.includes(manifest.plan_ref.kind)) {
+    throw failClosed(`stored plan_ref.kind must be ${PLAN_REF_KINDS.join(" or ")}`, "plan_mismatch");
+  }
+  const planRef = manifest.plan_ref.kind === "current"
+    ? validateCurrentPlanRef(manifest.plan_ref, taskDir, taskId, io)
+    : validateBootstrapPlanRef(manifest.plan_ref, taskDir, manifest.kind, io);
+  return Object.freeze({
+    task_id: taskId,
+    assignment_id: assignmentId,
+    kind: manifest.kind,
+    role,
+    harness: manifest.harness,
+    model: manifest.model,
+    effort,
+    permission: manifest.permission,
+    cwd,
+    task_dir: taskDir,
+    record_dir: comparablePath(recordDir, io.realpathSync, io.lstatSync),
+    output_dir: compared.out,
+    plan_ref: planRef,
+    contract,
+  });
+}
+
+function assertCompletionMatchesStored(completion, stored, io) {
+  if (completion.task_id !== stored.task_id) {
+    throw failClosed("completion.task_id does not match stored manifest", "witness_binding_invalid");
+  }
+  if (completion.assignment_id !== stored.assignment_id) {
+    throw failClosed("completion.assignment_id does not match stored manifest", "witness_binding_invalid");
+  }
+  if (completion.kind !== stored.kind) {
+    throw failClosed("completion.kind does not match stored manifest", "witness_binding_invalid");
+  }
+  const route = closedObject(
+    completion.route,
+    ["harness", "model", "effort", "permission", "role"],
+    "completion.route",
+    [],
+    "witness_binding_invalid",
+  );
+  if (
+    route.harness !== stored.harness
+    || route.model !== stored.model
+    || route.effort !== stored.effort
+    || route.permission !== stored.permission
+    || route.role !== stored.role
+  ) {
+    throw failClosed("completion.route does not match stored manifest", "witness_binding_invalid");
+  }
+  const binding = closedObject(
+    completion.binding,
+    ["task_dir", "cwd", "record_dir", "output_dir"],
+    "completion.binding",
+    [],
+    "witness_binding_invalid",
+  );
+  if (!samePath(binding.task_dir, stored.task_dir, io.realpathSync)) {
+    throw failClosed("completion.binding.task_dir does not match stored manifest", "witness_binding_invalid");
+  }
+  if (!samePath(binding.cwd, stored.cwd, io.realpathSync)) {
+    throw failClosed("completion.binding.cwd does not match stored manifest", "witness_binding_invalid");
+  }
+  if (!samePath(binding.record_dir, stored.record_dir, io.realpathSync)) {
+    throw failClosed("completion.binding.record_dir does not match stored manifest", "witness_binding_invalid");
+  }
+  if (!samePath(binding.output_dir, stored.output_dir, io.realpathSync)) {
+    throw failClosed("completion.binding.output_dir does not match stored manifest", "witness_binding_invalid");
+  }
+}
+
+function bindWitnessPlan(completion, stored, io) {
+  const storedPlan = stored.plan_ref;
+  const plan = completion.plan;
+  if (storedPlan.kind === "current") {
+    if (plan?.kind === "bootstrap") {
+      throw failClosed("stored current manifest forbids bootstrap completion", "plan_mismatch");
+    }
+    if (plan?.kind !== "current") {
+      throw failClosed("completion.plan.kind must be current", "plan_mismatch");
+    }
+    const claimed = requireHex(plan.sha256, "completion.plan.sha256", HEX64, "plan_mismatch");
+    if (claimed !== storedPlan.sha256) {
+      throw failClosed("completion.plan.sha256 does not match stored current plan", "plan_mismatch");
+    }
+    if (!samePath(plan.path, storedPlan.path, io.realpathSync)) {
+      throw failClosed("completion.plan.path does not match stored current plan", "plan_mismatch");
+    }
+    return storedPlan;
+  }
+  if (plan?.kind !== "bootstrap") {
+    throw failClosed("bootstrap stored manifest requires bootstrap completion.plan", "plan_mismatch");
+  }
+  requireNonemptyString(plan.reason, "completion.plan.reason", "plan_mismatch");
+  return storedPlan;
+}
+
+function recordingBookkeepingReady(steps) {
+  return steps?.routing_record === "ok" && steps?.telemetry === "ok";
+}
+
+function assertWitnessRecordingReady(completion, bytes, recordDir, io) {
+  const recording = completion.recording;
+  if (!isPlainObject(recording)) {
+    throw failClosed("completion.recording is required", "recording_unresolved");
+  }
+  if (recording.status === "ok") return;
+  if (recording.status !== "failed") {
+    throw failClosed("completion.recording.status must be ok or failed", "recording_unresolved");
+  }
+  const original = originalRecordingSteps(completion);
+  if (recordingBookkeepingReady(original)) return;
+  const resolutionPath = join(recordDir, "recording-resolved.json");
+  if (!io.existsSync(resolutionPath)) {
+    throw failClosed("unresolved routing or telemetry recording must be recovered before witness", "recording_unresolved");
+  }
+  const resolution = readExistingResolution(resolutionPath, io, "recording_unresolved");
+  closedObject(
+    resolution,
+    ["schema", "assignment_id", "task_id", "resolvedAt", "completion_sha256", "steps"],
+    "recording resolution",
+    ["resolvedAt"],
+    "recording_unresolved",
+  );
+  if (resolution.schema !== RECORDING_RESOLUTION_SCHEMA) {
+    throw failClosed("recording resolution schema is invalid", "recording_unresolved");
+  }
+  if (resolution.assignment_id !== completion.assignment_id || resolution.task_id !== completion.task_id) {
+    throw failClosed("recording resolution is not bound to this assignment", "recording_unresolved");
+  }
+  const expectedSteps = {
+    candidate_snapshot: original.candidate_snapshot,
+    sidecars: recoverSidecarStep(original.sidecars),
+    routing_record: "ok",
+    telemetry: "ok",
+  };
+  try {
+    assertResolutionMatches(resolution, expectedRecordingResolution(completion, bytes, expectedSteps));
+  } catch (error) {
+    throw failClosed(error?.message ?? "recording resolution does not match this completion", "recording_unresolved");
+  }
+  if (!recordingBookkeepingReady(resolution.steps)) {
+    throw failClosed("recording resolution did not recover routing and telemetry", "recording_unresolved");
+  }
+}
+
+function witnessBindingCode(error) {
+  const code = error?.runnerCode;
+  if (code === "plan_ref_invalid" || code === "plan_mismatch") return "plan_mismatch";
+  if (code === "recording_unresolved") return "recording_unresolved";
+  if (WITNESS_CODES.includes(code)) return code;
+  return "witness_binding_invalid";
+}
+
+function fallbackWitnessPlan(completion) {
+  if (completion.plan?.kind === "bootstrap") {
+    return Object.freeze({ kind: "bootstrap", reason: completion.plan.reason });
+  }
+  return Object.freeze({ kind: "current", sha256: completion.plan?.sha256 });
+}
+
+function writeEarlyWitnessRefusal(recordDir, io, identity, stored, loaded, plan, code, startedAt, startedMs, now) {
+  const receiptId = nextWitnessReceiptId(witnessHistoryDir(recordDir), now, io.existsSync);
+  const finishedAt = new Date(now()).toISOString();
+  return writeWitnessReceipt(recordDir, {
+    schema: WITNESS_SCHEMA,
+    receipt_id: receiptId,
+    task_id: identity.task_id,
+    assignment_id: identity.assignment_id,
+    kind: identity.kind,
+    recordedAt: finishedAt,
+    manifest: Object.freeze({ path: stored.path, sha256: stored.sha256 }),
+    completion: Object.freeze({ path: loaded.path, sha256: sha256Bytes(loaded.bytes) }),
+    plan: plan ?? fallbackWitnessPlan(loaded.completion),
+    binding: Object.freeze({
+      task_dir: identity.task_dir,
+      cwd: identity.cwd,
+      record_dir: identity.record_dir,
+    }),
+    candidate: Object.freeze({}),
+    gates: [],
+    result: "refused",
+    code,
+    startedAt,
+    finishedAt,
+    durationMs: Math.max(0, Date.now() - startedMs),
+  }, {}, io);
+}
+
+function contractedWitnessId(manifest) {
+  const id = manifest?.contract?.witness?.id;
+  if (!WITNESS_IDS.includes(id)) {
+    throw failClosed("stored contract.witness.id is not a fixed gate", "witness_binding_invalid");
+  }
+  if (WRITER_KINDS.includes(manifest.kind) && id !== VERIFY_WITNESS_ID) {
+    throw failClosed("implement and repair require the fixed verify witness", "witness_binding_invalid");
+  }
+  return id;
+}
+
+function gatesForWitnessId(witnessId) {
+  return Object.freeze(WITNESS_IDS.filter((id) => id === witnessId).map((id) => ({
+    id,
+    argv: [...FIXED_GATES[id]],
+  })));
+}
+
+function runFixedGate(gate, cwd, spawnSyncImpl, env) {
+  const argv = [...FIXED_GATES[gate.id]];
+  const started = Date.now();
+  const result = spawnSyncImpl(argv[0], argv.slice(1), {
+    cwd,
+    env,
+    encoding: "utf8",
+    shell: false,
+    windowsHide: true,
+  });
+  const durationMs = Math.max(0, Date.now() - started);
+  return {
+    id: gate.id,
+    argv,
+    shell: false,
+    cwd,
+    exitCode: Number.isInteger(result?.status) ? result.status : result?.status === null ? null : null,
+    signal: typeof result?.signal === "string" ? result.signal : null,
+    timedOut: false,
+    durationMs,
+    stdout: String(result?.stdout ?? ""),
+    stderr: String(result?.stderr ?? ""),
+    spawnError: result?.error ? String(result.error.code ?? result.error.message ?? "spawn_failed") : undefined,
+  };
+}
+
+function gateSucceeded(gate) {
+  return gate.exitCode === 0 && gate.signal == null && !gate.spawnError;
+}
+
+function ensureWitnessDirs(recordDir, io) {
+  const root = witnessDir(recordDir);
+  const history = witnessHistoryDir(recordDir);
+  try {
+    if (!io.existsSync(root)) io.mkdirSync(root, { recursive: true, mode: 0o700 });
+    if (!io.existsSync(history)) io.mkdirSync(history, { recursive: true, mode: 0o700 });
+  } catch (error) {
+    throw failClosed(`cannot create witness directories: ${error?.message ?? error}`, "record_write_failed");
+  }
+  return { root, history };
+}
+
+function pickPublicWitness(receipt) {
+  const picked = {};
+  for (const key of WITNESS_RECEIPT_KEYS) {
+    if (receipt[key] !== undefined) picked[key] = receipt[key];
+  }
+  return picked;
+}
+
+function writeWitnessLatest(recordDir, receipt, receiptPath, receiptSha, io) {
+  const latest = {
+    schema: WITNESS_LATEST_SCHEMA,
+    task_id: receipt.task_id,
+    assignment_id: receipt.assignment_id,
+    receipt_id: receipt.receipt_id,
+    path: receiptPath,
+    sha256: receiptSha,
+    recordedAt: receipt.recordedAt,
+    result: receipt.result,
+  };
+  const body = `${JSON.stringify(latest, undefined, 2)}\n`;
+  const path = witnessLatestPath(recordDir);
+  writePrivate(path, body, io, "w");
+  return sidecarRef(path, bytesOf(body));
+}
+
+function writeWitnessReceipt(recordDir, receipt, logs, io) {
+  const dirs = ensureWitnessDirs(recordDir, io);
+  const receiptId = receipt.receipt_id;
+  const artifactDir = join(dirs.history, receiptId);
+  try {
+    io.mkdirSync(artifactDir, { recursive: true, mode: 0o700 });
+  } catch (error) {
+    throw failClosed(`cannot create witness receipt directory: ${error?.message ?? error}`, "record_write_failed");
+  }
+  const publicGates = [];
+  for (const gate of receipt.gates) {
+    const logName = `${gate.id}.log`;
+    const logPath = join(artifactDir, logName);
+    const logBody = logs[gate.id] ?? "";
+    writePrivate(logPath, logBody, io, "wx");
+    publicGates.push(Object.freeze({
+      id: gate.id,
+      argv: Object.freeze([...gate.argv]),
+      shell: false,
+      cwd: gate.cwd,
+      exitCode: gate.exitCode,
+      signal: gate.signal,
+      timedOut: gate.timedOut === true,
+      durationMs: gate.durationMs,
+      log: sidecarRef(logPath, bytesOf(logBody)),
+    }));
+  }
+  const publicReceipt = pickPublicWitness({
+    ...receipt,
+    gates: Object.freeze(publicGates),
+  });
+  const receiptPath = join(dirs.history, `${receiptId}.json`);
+  const body = `${JSON.stringify(publicReceipt, undefined, 2)}\n`;
+  writePrivate(receiptPath, body, io, "wx");
+  const sha = sha256Bytes(Buffer.from(body));
+  writeWitnessLatest(recordDir, publicReceipt, receiptPath, sha, io);
+  return Object.freeze({ ...publicReceipt, path: receiptPath, sha256: sha });
+}
+
+function isRecordedWitnessSnapshot(snapshot) {
+  return Boolean(
+    snapshot
+    && snapshot.status !== "unknown"
+    && typeof snapshot.head === "string"
+    && HEX40.test(snapshot.head)
+    && typeof snapshot.index_tree === "string"
+    && HEX40.test(snapshot.index_tree),
+  );
+}
+
+function classifyWitnessResult({ before, after, gates, ranGates }) {
+  if (!ranGates) {
+    if (!isRecordedWitnessSnapshot(before)) return { result: "refused", code: "snapshot_failed" };
+    if (before.clean !== true) return { result: "refused", code: "dirty_baseline" };
+    return { result: "refused", code: "unknown" };
+  }
+  const gateFail = gates.some((gate) => !gateSucceeded(gate));
+  if (!isRecordedWitnessSnapshot(after)) {
+    return { result: "failed", code: gateFail ? "gate_failed" : "snapshot_failed" };
+  }
+  const unchanged = before.head === after.head
+    && before.index_tree === after.index_tree
+    && before.clean === true
+    && after.clean === true;
+  if (gateFail) return { result: "failed", code: "gate_failed" };
+  if (!unchanged) return { result: "failed", code: "candidate_changed" };
+  return { result: "passed" };
+}
+
+export async function witnessAssignment(recordDirValue, deps = {}) {
+  const io = ioDeps(deps);
+  const startedMs = Date.now();
+  const startedAt = new Date((deps.now ?? Date.now)()).toISOString();
+  if (typeof recordDirValue !== "string" || !nodePath.isAbsolute(recordDirValue)) {
+    throw failClosed("--record-dir must be an absolute path", "manifest_invalid");
+  }
+  if (!io.existsSync(recordDirValue)) {
+    throw failClosed(`record directory does not exist: ${recordDirValue}`, "completion_missing");
+  }
+  const recordDir = comparablePath(recordDirValue, io.realpathSync, io.lstatSync);
+  const loaded = loadWitnessCompletion(recordDir, io);
+  const completion = loaded.completion;
+  const stored = loadStoredManifest(recordDir, completion, io);
+  const now = deps.now ?? Date.now;
+  let identity;
+  let plan;
+  try {
+    identity = validateStoredManifestBinding(stored.manifest, recordDir, io);
+    assertCompletionMatchesStored(completion, identity, io);
+    plan = bindWitnessPlan(completion, identity, io);
+    assertWitnessRecordingReady(completion, loaded.bytes, recordDir, io);
+  } catch (error) {
+    if (!identity) {
+      try {
+        identity = bindWitnessIdentityFromCompletion(completion, recordDir, io);
+      } catch {
+        identity = Object.freeze({
+          task_id: typeof stored.manifest.task_id === "string" ? stored.manifest.task_id : completion.task_id,
+          assignment_id: typeof stored.manifest.assignment_id === "string" ? stored.manifest.assignment_id : completion.assignment_id,
+          kind: typeof stored.manifest.kind === "string" ? stored.manifest.kind : completion.kind,
+          task_dir: resolvePath(stored.manifest.task_dir ?? completion.binding?.task_dir ?? recordDir),
+          cwd: resolvePath(stored.manifest.cwd ?? completion.binding?.cwd ?? recordDir),
+          record_dir: recordDir,
+        });
+      }
+    }
+    return writeEarlyWitnessRefusal(
+      recordDir,
+      io,
+      identity,
+      stored,
+      loaded,
+      plan,
+      witnessBindingCode(error),
+      startedAt,
+      startedMs,
+      now,
+    );
+  }
+
+  let witnessId;
+  try {
+    witnessId = contractedWitnessId(stored.manifest);
+  } catch (error) {
+    return writeEarlyWitnessRefusal(
+      recordDir,
+      io,
+      identity,
+      stored,
+      loaded,
+      plan,
+      witnessCode(error?.runnerCode),
+      startedAt,
+      startedMs,
+      now,
+    );
+  }
+
+  const before = snapshotWitnessCandidate(identity.cwd, io.spawnSync, io.realpathSync);
+  const candidate = { before: recordedSnapshot(before) };
+  const dirtyOrUnknown = before.status !== "recorded" || before.clean !== true;
+  const logs = {};
+  let gates = [];
+  let ranGates = false;
+  if (!dirtyOrUnknown) {
+    ranGates = true;
+    const env = deps.env ?? process.env;
+    gates = gatesForWitnessId(witnessId).map((gate) => {
+      const executed = runFixedGate(gate, identity.cwd, io.spawnSync, env);
+      logs[executed.id] = [
+        `argv=${JSON.stringify(executed.argv)}`,
+        `shell=false`,
+        `cwd=${executed.cwd}`,
+        `exitCode=${executed.exitCode}`,
+        `signal=${executed.signal ?? ""}`,
+        executed.spawnError ? `spawnError=${executed.spawnError}` : "",
+        executed.stdout ? `stdout:\n${executed.stdout}` : "",
+        executed.stderr ? `stderr:\n${executed.stderr}` : "",
+      ].filter((line) => line !== "").join("\n");
+      return executed;
+    });
+    candidate.after = recordedSnapshot(snapshotWitnessCandidate(identity.cwd, io.spawnSync, io.realpathSync));
+  }
+
+  const classified = classifyWitnessResult({
+    before,
+    after: candidate.after,
+    gates,
+    ranGates,
+  });
+  const receiptId = nextWitnessReceiptId(witnessHistoryDir(recordDir), deps.now ?? Date.now, io.existsSync);
+  const finishedAt = new Date((deps.now ?? Date.now)()).toISOString();
+  const receipt = {
+    schema: WITNESS_SCHEMA,
+    receipt_id: receiptId,
+    task_id: identity.task_id,
+    assignment_id: identity.assignment_id,
+    kind: identity.kind,
+    recordedAt: finishedAt,
+    manifest: Object.freeze({ path: stored.path, sha256: stored.sha256 }),
+    completion: Object.freeze({ path: loaded.path, sha256: sha256Bytes(loaded.bytes) }),
+    plan,
+    binding: Object.freeze({
+      task_dir: identity.task_dir,
+      cwd: identity.cwd,
+      record_dir: identity.record_dir,
+    }),
+    candidate: Object.freeze(candidate),
+    gates,
+    result: classified.result,
+    startedAt,
+    finishedAt,
+    durationMs: Math.max(0, Date.now() - startedMs),
+  };
+  if (classified.code) receipt.code = classified.code;
+  return writeWitnessReceipt(recordDir, receipt, logs, io);
+}
 
 export async function main(argv = process.argv, io = { stdin: process.stdin, stdout: process.stdout, stderr: process.stderr }) {
   const args = argv.slice(2).filter((arg) => arg !== "--");
@@ -2188,6 +2879,32 @@ export async function main(argv = process.argv, io = { stdin: process.stdin, std
       const unresolved = Object.values(resolution.steps ?? {}).some((step) => step === "failed");
       process.exitCode = unresolved ? 1 : 0;
       return resolution;
+    } catch (error) {
+      const code = error?.runnerCode && RUNNER_CODES.includes(error.runnerCode)
+        ? error.runnerCode
+        : "unknown";
+      io.stderr.write(`${code}: ${error.message}\n`);
+      process.exitCode = 1;
+      throw error;
+    }
+  }
+  if (args[0] === "witness") {
+    if (args[1] !== "--record-dir" || typeof args[2] !== "string" || args.length !== 3) {
+      throw failClosed(CLI_USAGE, "manifest_invalid");
+    }
+    const recordDir = args[2];
+    if (!nodePath.isAbsolute(recordDir)) {
+      throw failClosed("--record-dir must be an absolute path", "manifest_invalid");
+    }
+    try {
+      const receipt = await witnessAssignment(recordDir, {
+        spawnSync: io.spawnSync ?? spawnSync,
+        env: io.env,
+        now: io.now,
+      });
+      io.stdout.write(`${JSON.stringify(receipt, undefined, 2)}\n`);
+      process.exitCode = receipt.result === "passed" ? 0 : 1;
+      return receipt;
     } catch (error) {
       const code = error?.runnerCode && RUNNER_CODES.includes(error.runnerCode)
         ? error.runnerCode
