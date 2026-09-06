@@ -3211,11 +3211,21 @@ test("observe CLI recovers telemetry through --record-dir without native spawn",
 });
 
 test("CLI invoked through a parent alias executes validation", () => {
-  const proc = spawnSync(process.execPath, [
-    "/tmp/kxm-execution-loop/scripts/assignment-run.mjs",
-    "invalid-command",
-  ], { encoding: "utf8" });
-  assert.notEqual(proc.status, 0);
-  assert.match(proc.stderr, /usage:/);
+  const aliasRoot = mkdtempSync(join(tmpdir(), "kxm-parent-alias-"));
+  const alias = join(aliasRoot, "scripts");
+  try {
+    symlinkSync(
+      resolve("scripts"),
+      alias,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    const proc = spawnSync(process.execPath, [
+      join(alias, "assignment-run.mjs"),
+      "invalid-command",
+    ], { encoding: "utf8" });
+    assert.notEqual(proc.status, 0);
+    assert.match(proc.stderr, /usage:/);
+  } finally {
+    rmSync(aliasRoot, { recursive: true, force: true });
+  }
 });
-

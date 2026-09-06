@@ -160,6 +160,10 @@ It does not replace the phase gates below.
 
 ### Landed in this tree (unreleased)
 
+- **Issue 127 CI repair:** the parent-alias CLI regression creates and cleans
+  up its own temporary symlink, so Mac/Linux checks do not depend on an
+  operator's checkout path. The earlier Linux failure remains recorded;
+  the corrected candidate still requires PR CI. Phase gates are unchanged.
 - **Platform pause (2026-09-05):** the active PR gate is two Linux
   `validate:ci` + `check:generated` legs (Node 22.19.0 and 24) plus Docs lint
   and Plugin validation. Classify changes plus those four jobs is five CI
@@ -772,7 +776,10 @@ bounded `runner-errors.jsonl`, implementer verify instruction, observed
 invocation/candidate/recording facts, telemetry observe recovery, critic
 eligibility, separated cost populations, and closed native output
 schemas, bound observe recovery/idempotency, and argv path identity so a
-`/tmp` parent alias still runs `main`. Corrected M3b is local/unreleased,
+a parent alias still runs `main`. The parent-alias CLI regression now
+creates its own temporary Mac/Linux symlink to `scripts` (junction on
+Windows if resumed); it does not hard-code a host path. Phase gates
+unchanged. Corrected M3b is local/unreleased,
 not accepted; parent-alias output identity uses the existing
 deepest-existing-ancestor comparison rather than a second resolver, and a
 known dangling final output entry is `output_dir_exists`. M4a adds
