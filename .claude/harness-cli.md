@@ -92,12 +92,18 @@ worker` / `pi --mode rpc` is still Pi-only.
   --help` and a parser probe (`codex exec --ignore-user-config --help` exit 0)
   record it. Help presence is not combination proof.
 - **results**: helper stdout is `kxm.harness-result.v2` only. `just runs`
-  diagnoses obsolete `kxm.harness-result.v1` files (path, observed schema,
-  obsolete id) and does not parse or upgrade them. Transport
-  `completed|failed|interrupted` is not a model claim and not product
-  `finalOutcome`. Timeout is interrupted with `timedOut` true. Private
-  `dispatch.json` is written before billed spawn. Model prose stays in
-  `answer.txt` / `model-claim.json` sidecars.
+  diagnoses obsolete `kxm.harness-result.v1` files (path, observed known
+  schema or `unrecognized`, obsolete id) and does not parse or upgrade
+  them. Transport `completed|failed|interrupted` is not a model claim and
+  not product `finalOutcome`. Timeout is interrupted with `timedOut` true;
+  SIGTERM then SIGKILL after a bounded grace; missing `close` is not
+  descendant death. Direct-child signal termination keeps `exitCode` null
+  and the exact `signal` and is `interrupted` even without a helper
+  timeout. Public metadata is a closed allowlist (bounded `errorCode` /
+  `stopReason`); raw model/stdio text stays in private sidecars
+  (`answer.txt`, `stderr.log`, `error.txt`, `model-claim.json`). Review
+  top-level `PASS`/`BLOCK` is a model claim, never verify/acceptance.
+  Private `dispatch.json` is written before billed spawn.
 - **kimi / gemini / agy**: unverified in this helper; long inline prompts
   also hit the Windows command-line limit.
 

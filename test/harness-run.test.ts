@@ -54,31 +54,43 @@ function fakeChild(options: {
   stdout?: string;
   stderr?: string;
   exitCode?: number | null;
+  signal?: string | null;
   hang?: boolean;
+  ignoreKill?: boolean;
+  keepPipesOpen?: boolean;
 } = {}) {
   const child = new EventEmitter() as EventEmitter & {
     stdout: PassThrough;
     stderr: PassThrough;
     stdin: PassThrough;
-    kill: (signal?: string) => void;
+    kill: (signal?: string) => boolean;
+    killed?: boolean;
   };
   child.stdout = new PassThrough();
   child.stderr = new PassThrough();
   child.stdin = new PassThrough();
-  let closed = false;
-  const close = (code: number | null) => {
-    if (closed) return;
-    closed = true;
-    child.stdout.end();
-    child.stderr.end();
-    child.emit("close", code);
+  let completed = false;
+  const complete = (code: number | null, signal: string | null = null) => {
+    if (completed) return;
+    completed = true;
+    child.emit("exit", code, signal);
+    if (!options.keepPipesOpen) {
+      child.stdout.end();
+      child.stderr.end();
+      child.emit("close", code, signal);
+    }
   };
-  child.kill = () => close(null);
+  child.kill = (signal?: string) => {
+    child.killed = true;
+    if (options.ignoreKill) return true;
+    complete(null, signal ?? "SIGTERM");
+    return true;
+  };
   queueMicrotask(() => {
     if (options.hang) return;
     if (options.stdout) child.stdout.write(options.stdout);
     if (options.stderr) child.stderr.write(options.stderr);
-    close(options.exitCode ?? 0);
+    complete(options.exitCode ?? 0, options.signal ?? null);
   });
   return child;
 }
@@ -472,7 +484,9 @@ test("pi aborted stopReason is a harness error even on exit 0", async () => {
       output_dir: join(dir, "out"),
     }, { stdout, exitCode: 0 }, piAuth());
     assert.equal(result.ok, false);
-    assert.match(String(result.harnessError), /aborted/);
+    assert.equal(result.errorCode, "stop_aborted");
+    assert.equal(result.stopReason, "aborted");
+    assert.equal(result.harnessError, undefined);
     assert.equal(result.status, "failed");
     assert.equal(result.finalOutcome, undefined);
     assert.equal(spawns.length, 1);
@@ -513,7 +527,9 @@ test("native error payloads fail even when the CLI exits 0", async () => {
       exitCode: 0,
     }, codexAuth());
     assert.equal(codexErr.result.ok, false);
-    assert.match(String(codexErr.result.harnessError), /exploded|turn/);
+    assert.equal(codexErr.result.errorCode, "turn_failed");
+    assert.equal(codexErr.result.harnessError, undefined);
+    assert.doesNotMatch(JSON.stringify(codexErr.result), /exploded/);
 
     const empty = await dispatch({
       schema: REQUEST_SCHEMA,
@@ -525,7 +541,8 @@ test("native error payloads fail even when the CLI exits 0", async () => {
       output_dir: join(dir, "e"),
     }, { stdout: "   ", exitCode: 0 });
     assert.equal(empty.result.ok, false);
-    assert.match(String(empty.result.harnessError), /empty JSON payload/);
+    assert.equal(empty.result.errorCode, "empty_payload");
+    assert.equal(empty.result.harnessError, undefined);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -1627,8 +1644,10 @@ test("timeout interruption records timedOut without completed or process-dead cl
           if (signal === "SIGKILL") {
             child.stdout.end();
             child.stderr.end();
-            child.emit("close", null);
+            child.emit("exit", null, signal);
+            child.emit("close", null, signal);
           }
+          return true;
         };
         return child;
       },
@@ -1708,8 +1727,10 @@ test("failed and interrupted runs keep partial usage and do not invent zeros", a
           if (signal === "SIGKILL") {
             child.stdout.end();
             child.stderr.end();
-            child.emit("close", null);
+            child.emit("exit", null, signal);
+            child.emit("close", null, signal);
           }
+          return true;
         };
         return child;
       },
@@ -1804,6 +1825,323 @@ test("closed model claims cannot override transport or leak free-text sentinels"
     assert.equal(reviewClaim.status, "done");
     assert.equal(reviewClaim.verdict, "PASS");
     assert.equal(reviewClaim.completedCount, 1000);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("signaled close preserves null exit code and exact signal as interrupted without timeout", async () => {
+  const dir = tempDir();
+  try {
+    const prompt = promptFile(dir);
+    const result = await runHarness({
+      schema: REQUEST_SCHEMA,
+      harness: "grok",
+      role: "writer",
+      model: "grok-4.6",
+      permission: "edit",
+      prompt_file: prompt,
+      output_dir: join(dir, "out"),
+    } as never, {
+      platform: process.platform,
+      env: { PATH: "/tmp/kxm-harness-bin" },
+      existsSync: (path: string) => String(path).includes("grok"),
+      spawnSync: () => grokAuth(),
+      spawn: () => {
+        const child = fakeChild({ hang: true });
+        queueMicrotask(() => {
+          child.stdout.end();
+          child.stderr.end();
+          child.emit("exit", null, "SIGTERM");
+          child.emit("close", null, "SIGTERM");
+        });
+        return child;
+      },
+      observedAt: "2026-09-05",
+      now: () => 1_000,
+    });
+    assert.equal(result.exitCode, null);
+    assert.equal(result.signal, "SIGTERM");
+    assert.equal(result.status, "interrupted");
+    assert.equal(result.timedOut, false);
+    assert.equal(result.observedChildExit, true);
+    assert.equal(result.ok, false);
+    assert.equal(result.killRequest, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("observed exit without stdio close is not missing completion", { timeout: 1500 }, async () => {
+  const dir = tempDir();
+  try {
+    const prompt = promptFile(dir);
+    const result = await Promise.race([
+      runHarness({
+      schema: REQUEST_SCHEMA,
+      harness: "grok",
+      role: "writer",
+      model: "grok-4.6",
+      permission: "edit",
+      prompt_file: prompt,
+      output_dir: join(dir, "out"),
+    } as never, {
+      platform: process.platform,
+      env: { PATH: "/tmp/kxm-harness-bin" },
+      existsSync: (path: string) => String(path).includes("grok"),
+      spawnSync: () => grokAuth(),
+      spawn: () => {
+        const child = fakeChild({ hang: true, keepPipesOpen: true });
+        queueMicrotask(() => {
+          child.stdout.write(`${JSON.stringify({
+            result: "drained",
+            modelUsage: { "grok-4.6-build": { inputTokens: 3, outputTokens: 1 } },
+          })}\n`);
+          child.emit("exit", 0, null);
+        });
+        return child;
+      },
+      observedAt: "2026-09-05",
+      now: () => 1_000,
+    }),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("helper did not settle after observed exit")), 800);
+      }),
+    ]);
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.signal, undefined);
+    assert.equal(result.observedChildExit, true);
+    assert.equal(result.status, "completed");
+    assert.equal(result.tokensIn, 3);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("timeout records SIGTERM then SIGKILL and can settle without close or descendant-death claims", { timeout: 1500 }, async () => {
+  const dir = tempDir();
+  try {
+    const prompt = promptFile(dir);
+    const kills: string[] = [];
+    const result = await Promise.race([
+      runHarness({
+        schema: REQUEST_SCHEMA,
+        harness: "grok",
+        role: "writer",
+        model: "grok-4.6",
+        permission: "edit",
+        prompt_file: prompt,
+        timeout_ms: 5,
+        output_dir: join(dir, "out"),
+      } as never, {
+        platform: process.platform,
+        env: { PATH: "/tmp/kxm-harness-bin" },
+        existsSync: (path: string) => String(path).includes("grok"),
+        spawnSync: () => grokAuth(),
+        killGraceMs: 10,
+        spawn: () => {
+          const child = fakeChild({ hang: true, ignoreKill: true, keepPipesOpen: true });
+          child.kill = (signal?: string) => {
+            kills.push(String(signal));
+            child.killed = true;
+            return true;
+          };
+          return child;
+        },
+        observedAt: "2026-09-05",
+        now: () => 1_000,
+      }),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("helper did not settle after timeout bound")), 800);
+      }),
+    ]);
+    assert.equal(result.status, "interrupted");
+    assert.equal(result.timedOut, true);
+    assert.equal(result.ok, false);
+    assert.equal(result.observedChildExit, false);
+    assert.equal(result.exitCode, null);
+    assert.deepEqual(kills, ["SIGTERM", "SIGKILL"]);
+    assert.equal((result.killRequest as { signal?: string; escalated?: boolean } | undefined)?.signal, "SIGKILL");
+    assert.equal((result.killRequest as { escalated?: boolean } | undefined)?.escalated, true);
+    assert.equal(result.processDead, undefined);
+    assert.equal(result.childDied, undefined);
+    assert.equal(result.descendantsTerminated, undefined);
+    assert.equal(result.descendantsKilled, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("closed public metadata cannot leak model free text via error, stopReason, or schema diagnostics", async () => {
+  const dir = tempDir();
+  const leak = "LEAK-SHORT-FREE-TEXT";
+  const schemaLeak = `INJECT-SCHEMA-${leak}`;
+  try {
+    const prompt = promptFile(dir);
+    const { result } = await dispatch({
+      schema: REQUEST_SCHEMA,
+      harness: "grok",
+      role: "writer",
+      model: "grok-4.6",
+      permission: "edit",
+      prompt_file: prompt,
+      output_dir: join(dir, "out"),
+    }, {
+      stdout: `${JSON.stringify({
+        result: leak,
+        is_error: true,
+        stop_reason: leak,
+        extra_model_field: leak,
+        error: { message: leak },
+        modelUsage: { "grok-4.6-build": { inputTokens: 5, outputTokens: 2, secret: leak } },
+        total_cost_usd: 0.03,
+      })}\n`,
+      stderr: leak,
+      exitCode: 0,
+    });
+    const serialized = JSON.stringify(result);
+    assert.doesNotMatch(serialized, /LEAK-SHORT-FREE-TEXT/);
+    assert.equal(result.harnessError, undefined);
+    assert.equal(result.stopReason, "unrecognized");
+    assert.equal(result.errorCode, "model_error");
+    assert.equal(result.status, "failed");
+    assert.equal(result.tokensIn, 5);
+    assert.equal(result.usagePartial, true);
+    assert.equal(result.extra_model_field, undefined);
+    assert.ok(result.errorPath);
+    assert.equal(readFileSync(String(result.errorPath), "utf8").includes(leak), true);
+    assert.equal(readFileSync(String(result.stderrPath), "utf8"), leak);
+    assert.equal(result.modelClaim, undefined);
+
+    const diagnosed = diagnoseHarnessResult({ schema: schemaLeak, ok: true }, "poison.json");
+    assert.ok(diagnosed.diagnostic);
+    assert.doesNotMatch(String(diagnosed.diagnostic), /LEAK-SHORT-FREE-TEXT/);
+    assert.doesNotMatch(String(diagnosed.diagnostic), /INJECT-SCHEMA/);
+    assert.match(String(diagnosed.diagnostic), /observed schema unrecognized/);
+    assert.match(String(diagnosed.diagnostic), /poison\.json/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("review PASS remains a model claim and cannot become verify or acceptance", async () => {
+  const dir = tempDir();
+  try {
+    const prompt = promptFile(dir);
+    const { result } = await dispatch({
+      schema: REQUEST_SCHEMA,
+      harness: "codex",
+      role: "reviewer-cli",
+      model: "gpt-5.6-sol",
+      permission: "read-only",
+      prompt_file: prompt,
+      output_dir: join(dir, "review"),
+    }, {
+      stdout: [
+        JSON.stringify({
+          type: "item.completed",
+          item: {
+            type: "agent_message",
+            text: JSON.stringify({
+              status: "done",
+              verdict: "PASS",
+              verification: { passed: true },
+              acceptance: { accepted: true },
+            }),
+          },
+        }),
+        JSON.stringify({ type: "turn.completed", usage: { input_tokens: 2, output_tokens: 2 } }),
+      ].join("\n"),
+    }, codexAuth());
+    assert.equal(result.status, "completed");
+    assert.equal((result.modelClaim as { verdict?: string }).verdict, "PASS");
+    assert.equal(result.verification, undefined);
+    assert.equal(result.acceptance, undefined);
+    assert.equal((result.modelClaim as { verification?: unknown }).verification, undefined);
+    assert.equal((result.modelClaim as { acceptance?: unknown }).acceptance, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("post-spawn write failure keeps observed spend and is not a no-spend preflight", async () => {
+  const dir = tempDir();
+  try {
+    const prompt = promptFile(dir);
+    const result = await runHarness({
+      schema: REQUEST_SCHEMA,
+      harness: "grok",
+      role: "writer",
+      model: "grok-4.6",
+      permission: "edit",
+      prompt_file: prompt,
+      output_dir: join(dir, "out"),
+    } as never, {
+      platform: process.platform,
+      env: { PATH: "/tmp/kxm-harness-bin" },
+      existsSync: (path: string) => String(path).includes("grok"),
+      spawnSync: () => grokAuth(),
+      spawn: () => fakeChild({
+        stdout: `${JSON.stringify({
+          result: "partial-before-write",
+          modelUsage: { "grok-4.6-build": { inputTokens: 9, outputTokens: 4 } },
+          total_cost_usd: 0.07,
+        })}\n`,
+      }),
+      writeFileSync: (path: string, body: string | NodeJS.ArrayBufferView, options?: unknown) => {
+        if (String(path).endsWith("answer.txt")) {
+          throw new Error("EIO: answer sidecar");
+        }
+        writeFileSync(path, body, options as never);
+      },
+      observedAt: "2026-09-05",
+      now: () => 1_000,
+    });
+    assert.equal(result.status, "failed");
+    assert.equal(result.stage, "run");
+    assert.notEqual(result.stage, "preflight");
+    assert.equal(result.errorCode, "write_failed");
+    assert.equal(result.tokensIn, 9);
+    assert.equal(result.tokensOut, 4);
+    assert.equal(result.costUsd, 0.07);
+    assert.equal(result.usagePartial, true);
+    assert.equal(result.observedChildExit, true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("spawn failure is stage spawn with no invented spend", async () => {
+  const dir = tempDir();
+  try {
+    const prompt = promptFile(dir);
+    const result = await runHarness({
+      schema: REQUEST_SCHEMA,
+      harness: "grok",
+      role: "writer",
+      model: "grok-4.6",
+      permission: "edit",
+      prompt_file: prompt,
+      output_dir: join(dir, "out"),
+    } as never, {
+      platform: process.platform,
+      env: { PATH: "/tmp/kxm-harness-bin" },
+      existsSync: (path: string) => String(path).includes("grok"),
+      spawnSync: () => grokAuth(),
+      spawn: () => {
+        throw Object.assign(new Error("spawn EACCES"), { code: "EACCES" });
+      },
+      observedAt: "2026-09-05",
+      now: () => 1_000,
+    });
+    assert.equal(result.status, "failed");
+    assert.equal(result.stage, "spawn");
+    assert.notEqual(result.stage, "preflight");
+    assert.equal(result.errorCode, "spawn_failed");
+    assert.equal(result.tokensIn, undefined);
+    assert.equal(result.costUsd, undefined);
+    assert.equal(result.usagePartial, undefined);
+    assert.equal(result.observedChildExit, false);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

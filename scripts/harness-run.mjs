@@ -33,7 +33,26 @@ export const COST_BASIS = Object.freeze(["provider-reported", "list", "unmetered
 export const MODEL_CLAIM_STATUSES = Object.freeze(["done", "partial", "fail", "blocked"]);
 export const REVIEW_VERDICTS = Object.freeze(["PASS", "BLOCK"]);
 export const CLAIM_COUNT_CAP = 1000;
+export const TRANSPORT_STATUSES = Object.freeze(["completed", "failed", "interrupted"]);
+export const TRANSPORT_STAGES = Object.freeze(["preflight", "auth", "spawn", "run"]);
+export const STOP_REASONS = Object.freeze(["end_turn", "stop", "error", "aborted", "toolUse", "unrecognized"]);
+export const ERROR_CODES = Object.freeze([
+  "preflight_failed",
+  "auth_failed",
+  "spawn_failed",
+  "empty_payload",
+  "timed_out",
+  "signaled",
+  "model_error",
+  "turn_failed",
+  "stop_error",
+  "stop_aborted",
+  "normalization_failed",
+  "write_failed",
+  "unrecognized",
+]);
 const DEFAULT_KILL_GRACE_MS = 2_000;
+const KNOWN_RESULT_SCHEMAS = Object.freeze([RESULT_SCHEMA, OBSOLETE_RESULT_SCHEMA]);
 
 export const EFFORT = Object.freeze(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
@@ -420,10 +439,25 @@ function addNumber(left, right) {
   return (typeof left === "number" ? left : 0) + right;
 }
 
+function closeStopReason(value) {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (typeof value === "string" && STOP_REASONS.includes(value)) return value;
+  return "unrecognized";
+}
+
+function joinDetail(...parts) {
+  return parts.filter((part) => typeof part === "string" && part.length > 0).join("\n");
+}
+
 export function normalizePi(stdout) {
   const events = jsonlEvents(stdout);
   if (events.length === 0) {
-    return { emptyPayload: true, harnessError: "empty JSON payload", costBasis: "unknown" };
+    return {
+      emptyPayload: true,
+      errorCode: "empty_payload",
+      errorDetail: "empty JSON payload",
+      costBasis: "unknown",
+    };
   }
   const errorEvent = events.find((event) => event.type === "error" || event.type === "agent_error"
     || event.stopReason === "error" || event.message?.stopReason === "error");
@@ -445,7 +479,7 @@ export function normalizePi(stdout) {
       cacheReadTokens: usage.cacheRead,
       cacheCreationTokens: usage.cacheWrite,
       costUsd: usage.cost?.total,
-      stopReason: event.message?.stopReason,
+      stopReason: closeStopReason(event.message?.stopReason),
     });
   }
   const last = assistantEnds.at(-1)?.message;
@@ -461,12 +495,23 @@ export function normalizePi(stdout) {
     cacheCreationTokens = addNumber(cacheCreationTokens, entry.cacheCreationTokens);
     costUsd = addNumber(costUsd, entry.costUsd);
   }
-  const stopReason = last?.stopReason;
-  const harnessError = errorEvent
-    ? String(errorEvent.message?.errorMessage ?? errorEvent.error ?? errorEvent.message ?? "error").slice(0, 500)
-    : stopReason === "error" || stopReason === "aborted"
-      ? `pi stopReason ${stopReason}`
-      : undefined;
+  const rawStop = last?.stopReason;
+  const stopReason = closeStopReason(rawStop);
+  let errorCode;
+  let errorDetail;
+  if (errorEvent) {
+    errorCode = "model_error";
+    errorDetail = String(errorEvent.message?.errorMessage ?? errorEvent.error ?? errorEvent.message ?? "error");
+  } else if (stopReason === "error") {
+    errorCode = "stop_error";
+    errorDetail = "pi stopReason error";
+  } else if (stopReason === "aborted") {
+    errorCode = "stop_aborted";
+    errorDetail = "pi stopReason aborted";
+  }
+  if (rawStop !== undefined && stopReason === "unrecognized") {
+    errorDetail = joinDetail(errorDetail, `stopReason ${String(rawStop)}`);
+  }
   return {
     text: assistantText(last),
     sessionId: events.find((event) => event.type === "session")?.id,
@@ -480,7 +525,8 @@ export function normalizePi(stdout) {
     stopReason,
     usageEvents,
     tokenBasis: TOKEN_BASIS,
-    ...(harnessError ? { harnessError } : {}),
+    ...(errorCode ? { errorCode } : {}),
+    ...(errorDetail ? { errorDetail } : {}),
   };
 }
 
@@ -495,7 +541,12 @@ function assistantText(message) {
 export function normalizeCodex(stdout) {
   const events = jsonlEvents(stdout);
   if (events.length === 0) {
-    return { emptyPayload: true, harnessError: "empty JSON payload", costBasis: "unknown" };
+    return {
+      emptyPayload: true,
+      errorCode: "empty_payload",
+      errorDetail: "empty JSON payload",
+      costBasis: "unknown",
+    };
   }
   const message = events.filter((event) => event.item?.type === "agent_message").pop();
   const usage = events.find((event) => event.type === "turn.completed")?.usage ?? {};
@@ -510,7 +561,10 @@ export function normalizeCodex(stdout) {
     tokenBasis: TOKEN_BASIS,
     costBasis: "unmetered",
     ...(failure
-      ? { harnessError: String(failure.message ?? failure.error?.message ?? "turn.failed").slice(0, 500) }
+      ? {
+        errorCode: "turn_failed",
+        errorDetail: String(failure.message ?? failure.error?.message ?? "turn.failed"),
+      }
       : {}),
   };
 }
@@ -573,7 +627,12 @@ function usageRow(model, usage = {}) {
 
 export function normalizeClaudeOrGrok(payload, requestedModel) {
   if (!payload || typeof payload !== "object") {
-    return { emptyPayload: true, harnessError: "empty JSON payload", costBasis: "unknown" };
+    return {
+      emptyPayload: true,
+      errorCode: "empty_payload",
+      errorDetail: "empty JSON payload",
+      costBasis: "unknown",
+    };
   }
   const usage = payload.usage ?? {};
   const resolved = resolveModelUsage(payload.modelUsage ?? {}, requestedModel);
@@ -583,14 +642,26 @@ export function normalizeClaudeOrGrok(payload, requestedModel) {
   const cacheReadTokens = detail.cacheReadInputTokens ?? usage.cache_read_input_tokens;
   const cacheCreationTokens = detail.cacheCreationInputTokens ?? usage.cache_creation_input_tokens;
   const providerReportedCostUsd = payload.total_cost_usd ?? detail.costUSD;
-  const stopReason = payload.stop_reason ?? payload.stopReason;
-  const harnessError = payload.is_error
-    ? String(payload.result ?? payload.error ?? "is_error")
-    : stopReason === "error" || stopReason === "aborted"
-      ? `stopReason ${stopReason}`
-      : payload.error
-        ? String(payload.error?.message ?? payload.error).slice(0, 500)
-        : undefined;
+  const rawStop = payload.stop_reason ?? payload.stopReason;
+  const stopReason = closeStopReason(rawStop);
+  let errorCode;
+  let errorDetail;
+  if (payload.is_error) {
+    errorCode = "model_error";
+    errorDetail = String(payload.result ?? payload.error?.message ?? payload.error ?? "is_error");
+  } else if (stopReason === "error") {
+    errorCode = "stop_error";
+    errorDetail = "stopReason error";
+  } else if (stopReason === "aborted") {
+    errorCode = "stop_aborted";
+    errorDetail = "stopReason aborted";
+  } else if (payload.error) {
+    errorCode = "model_error";
+    errorDetail = String(payload.error?.message ?? payload.error);
+  }
+  if (rawStop !== undefined && stopReason === "unrecognized") {
+    errorDetail = joinDetail(errorDetail, `stopReason ${String(rawStop)}`);
+  }
   return {
     text: typeof payload.result === "string" ? payload.result : (payload.text ?? ""),
     sessionId: payload.sessionId ?? payload.session_id,
@@ -607,7 +678,8 @@ export function normalizeClaudeOrGrok(payload, requestedModel) {
     tokenBasis: TOKEN_BASIS,
     auxiliaryUsage: resolved.auxiliary,
     candidateModels: resolved.candidates,
-    ...(harnessError ? { harnessError } : {}),
+    ...(errorCode ? { errorCode } : {}),
+    ...(errorDetail ? { errorDetail } : {}),
     ...(resolved.effectiveModel === "unknown" ? { modelResolution: "unresolved-alias" } : {}),
   };
 }
@@ -635,6 +707,176 @@ const CLAIM_CLOSED_KEYS = Object.freeze([
   "artifactCount",
   "verdict",
 ]);
+const RESULT_PUBLIC_KEYS = Object.freeze([
+  "schema",
+  "ok",
+  "status",
+  "stage",
+  "harness",
+  "provider",
+  "role",
+  "requestedModel",
+  "effectiveModel",
+  "reasoningEffort",
+  "effortClampedFrom",
+  "startedAt",
+  "finishedAt",
+  "latencyMs",
+  "exitCode",
+  "signal",
+  "timedOut",
+  "killRequest",
+  "observedChildExit",
+  "tokenBasis",
+  "contextOccupancy",
+  "tokensIn",
+  "tokensOut",
+  "cacheReadTokens",
+  "cacheCreationTokens",
+  "reasoningTokens",
+  "costUsd",
+  "costBasis",
+  "providerReportedCostUsd",
+  "usagePartial",
+  "sessionId",
+  "stopReason",
+  "errorCode",
+  "error",
+  "auxiliaryUsage",
+  "usageEvents",
+  "candidateModels",
+  "auth",
+  "command",
+  "dispatchPath",
+  "answerPath",
+  "answerBytes",
+  "stderrPath",
+  "stderrBytes",
+  "errorPath",
+  "errorBytes",
+  "modelClaim",
+  "providerMetadata",
+]);
+const MODEL_CLAIM_PUBLIC_KEYS = Object.freeze([
+  "status",
+  "completedCount",
+  "deferredCount",
+  "artifactCount",
+  "verdict",
+  "unrecognizedCount",
+  "path",
+  "bytes",
+]);
+const AUTH_PUBLIC_KEYS = Object.freeze(["loggedIn", "method", "observedAt", "subscriptionType"]);
+const KILL_REQUEST_KEYS = Object.freeze(["signal", "escalated"]);
+const USAGE_ROW_KEYS = Object.freeze([
+  "model",
+  "tokensIn",
+  "tokensOut",
+  "cacheReadTokens",
+  "cacheCreationTokens",
+  "costUsd",
+  "costBasis",
+  "stopReason",
+]);
+const PROVIDER_METADATA_KEYS = Object.freeze([
+  "tokensIn",
+  "tokensOut",
+  "cacheReadTokens",
+  "cacheCreationTokens",
+  "reasoningTokens",
+  "tokenBasis",
+]);
+
+function pickKeys(value, keys) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const out = {};
+  for (const key of keys) {
+    if (value[key] !== undefined) out[key] = value[key];
+  }
+  return out;
+}
+
+function closeUsageRow(row) {
+  const closed = pickKeys(row, USAGE_ROW_KEYS);
+  if (!closed) return undefined;
+  if (closed.stopReason !== undefined) closed.stopReason = closeStopReason(closed.stopReason);
+  if (closed.costBasis !== undefined && !COST_BASIS.includes(closed.costBasis)) {
+    delete closed.costBasis;
+  }
+  return closed;
+}
+
+function closePublicResult(result) {
+  const closed = pickKeys(result, RESULT_PUBLIC_KEYS) ?? {};
+  closed.schema = RESULT_SCHEMA;
+  if (closed.stopReason !== undefined) closed.stopReason = closeStopReason(closed.stopReason);
+  if (closed.errorCode !== undefined && !ERROR_CODES.includes(closed.errorCode)) {
+    closed.errorCode = "unrecognized";
+  }
+  if (closed.status !== undefined && !TRANSPORT_STATUSES.includes(closed.status)) {
+    closed.status = "failed";
+  }
+  if (closed.stage !== undefined && !TRANSPORT_STAGES.includes(closed.stage)) {
+    closed.stage = "run";
+  }
+  if (closed.modelClaim) {
+    closed.modelClaim = pickKeys(closed.modelClaim, MODEL_CLAIM_PUBLIC_KEYS);
+    if (
+      closed.modelClaim.status !== undefined
+      && !MODEL_CLAIM_STATUSES.includes(closed.modelClaim.status)
+      && closed.modelClaim.status !== "unrecognized"
+    ) {
+      closed.modelClaim.status = "unrecognized";
+    }
+    if (closed.modelClaim.verdict !== undefined && !REVIEW_VERDICTS.includes(closed.modelClaim.verdict)) {
+      delete closed.modelClaim.verdict;
+    }
+  }
+  if (closed.auth) closed.auth = pickKeys(closed.auth, AUTH_PUBLIC_KEYS);
+  if (closed.killRequest) {
+    closed.killRequest = pickKeys(closed.killRequest, KILL_REQUEST_KEYS);
+    closed.killRequest.escalated = closed.killRequest.escalated === true;
+  }
+  if (Array.isArray(closed.auxiliaryUsage)) {
+    closed.auxiliaryUsage = closed.auxiliaryUsage.map(closeUsageRow).filter(Boolean);
+  }
+  if (Array.isArray(closed.usageEvents)) {
+    closed.usageEvents = closed.usageEvents.map(closeUsageRow).filter(Boolean);
+  }
+  if (closed.providerMetadata) {
+    closed.providerMetadata = pickKeys(closed.providerMetadata, PROVIDER_METADATA_KEYS);
+  }
+  if (Array.isArray(closed.candidateModels)) {
+    closed.candidateModels = closed.candidateModels.filter((name) => typeof name === "string");
+  }
+  if (typeof closed.sessionId !== "string") delete closed.sessionId;
+  if (closed.signal == null) delete closed.signal;
+  delete closed.stderr;
+  delete closed.stdout;
+  delete closed.text;
+  delete closed.argv;
+  delete closed.harnessError;
+  assertClosedResult(closed);
+  return closed;
+}
+
+function assertClosedResult(result) {
+  for (const key of Object.keys(result)) {
+    if (!RESULT_PUBLIC_KEYS.includes(key)) {
+      throw failClosed(`result leaked unknown field ${key}`, "run");
+    }
+  }
+  if (Object.hasOwn(result, "stderr") || Object.hasOwn(result, "stdout") || Object.hasOwn(result, "text")) {
+    throw failClosed("structured result must not carry raw stdio");
+  }
+  if (Object.hasOwn(result, "harnessError")) {
+    throw failClosed("structured result must not carry raw harnessError text");
+  }
+  if (Object.hasOwn(result, "contextTokens")) {
+    throw failClosed("contextTokens is removed; occupancy is unknown");
+  }
+}
 
 function capClaimCount(value) {
   if (typeof value === "number" && Number.isInteger(value) && value >= 0) {
@@ -698,12 +940,16 @@ function extractModelClaim(text, role) {
 }
 
 export function diagnoseHarnessResult(payload, filePath = "-") {
-  const observed = payload && typeof payload === "object" && !Array.isArray(payload)
-    ? (payload.schema ?? "none")
-    : "none";
+  const rawObserved = payload && typeof payload === "object" && !Array.isArray(payload)
+    ? payload.schema
+    : undefined;
+  const observed = typeof rawObserved === "string" && rawObserved.length > 0 ? rawObserved : "none";
   if (observed === RESULT_SCHEMA) return { result: payload };
+  const observedLabel = observed === "none" || KNOWN_RESULT_SCHEMAS.includes(observed)
+    ? observed
+    : "unrecognized";
   return {
-    diagnostic: `${filePath}: observed schema ${observed}; obsolete result schema ${OBSOLETE_RESULT_SCHEMA}; expected ${RESULT_SCHEMA}`,
+    diagnostic: `${filePath}: observed schema ${observedLabel}; obsolete result schema ${OBSOLETE_RESULT_SCHEMA}; expected ${RESULT_SCHEMA}`,
   };
 }
 
@@ -956,69 +1202,91 @@ export async function runHarness(request, deps = {}) {
   const dispatchPath = join(outputDir, "dispatch.json");
   writePrivate(dispatchPath, `${JSON.stringify(dispatchRecord)}\n`, deps);
 
-  const child = spawnImpl(resolved, argv, {
-    cwd,
-    env,
-    shell: false,
-    windowsHide: true,
-    stdio: [stdinPrompt ? "pipe" : "ignore", "pipe", "pipe"],
-  });
-  if (child?.pid != null) {
-    dispatchRecord.pid = child.pid;
-    writePrivate(dispatchPath, `${JSON.stringify(dispatchRecord)}\n`, deps);
+  const killGraceMs = deps.killGraceMs ?? DEFAULT_KILL_GRACE_MS;
+  let timedOut = false;
+  let killRequest;
+  let child;
+  try {
+    child = spawnImpl(resolved, argv, {
+      cwd,
+      env,
+      shell: false,
+      windowsHide: true,
+      stdio: [stdinPrompt ? "pipe" : "ignore", "pipe", "pipe"],
+    });
+  } catch {
+    return closePublicResult(buildTransportResult({
+      request,
+      route,
+      effort,
+      clamped,
+      authStatus,
+      started,
+      latencyMs: now() - started,
+      collected: { stdout: "", stderr: "", exitCode: null, signal: null, observedChildExit: false },
+      fields: { costBasis: "unknown" },
+      timedOut: false,
+      killRequest: undefined,
+      outputDir,
+      dispatchPath,
+      cliId,
+      stage: "spawn",
+      errorCode: "spawn_failed",
+      errorDetail: "spawn failed",
+      writeFailed: false,
+      modelClaim: undefined,
+      answerBytes: 0,
+      stderrBytes: 0,
+      errorBytes: 0,
+    }));
+  }
+
+  try {
+    if (child?.pid != null) {
+      dispatchRecord.pid = child.pid;
+      writePrivate(dispatchPath, `${JSON.stringify(dispatchRecord)}\n`, deps);
+    }
+  } catch {
+    // Pid amend is after spawn; a sidecar write miss is not a preflight miss.
   }
   if (stdinPrompt && child.stdin) {
     child.stdin.write(promptInput.text);
     child.stdin.end();
   }
 
-  let timedOut = false;
-  let killRequest;
-  let timer;
-  let escalateTimer;
-  const killGraceMs = deps.killGraceMs ?? DEFAULT_KILL_GRACE_MS;
   const requestTermination = (signal) => {
     killRequest = { signal, escalated: signal === "SIGKILL" };
     try {
       child.kill(signal);
     } catch {
-      // Direct child may already have exited; missing close is not process-death proof.
+      // Direct child may already have exited; missing completion is not process-death proof.
     }
   };
-  if (request.timeout_ms !== undefined) {
-    timer = setTimeout(() => {
+  const collected = await collectChildStdio(child, {
+    timeoutMs: request.timeout_ms,
+    killGraceMs,
+    onTimeout: () => {
       timedOut = true;
-      requestTermination("SIGTERM");
-      escalateTimer = setTimeout(() => {
-        requestTermination("SIGKILL");
-      }, killGraceMs);
-    }, request.timeout_ms);
-  }
-  const collected = await new Promise((resolve) => {
-    let stdout = "";
-    let stderr = "";
-    let settled = false;
-    const finish = (payload) => {
-      if (settled) return;
-      settled = true;
-      resolve(payload);
-    };
-    child.stdout?.setEncoding?.("utf8");
-    child.stderr?.setEncoding?.("utf8");
-    child.stdout?.on?.("data", (chunk) => { stdout += chunk; });
-    child.stderr?.on?.("data", (chunk) => { stderr += chunk; });
-    child.on("error", (error) => finish({ stdout, stderr, exitCode: -1, error, observedChildExit: false }));
-    child.on("close", (code) => finish({ stdout, stderr, exitCode: code ?? -1, observedChildExit: true }));
+    },
+    requestTermination,
   });
-  if (timer) clearTimeout(timer);
-  if (escalateTimer) clearTimeout(escalateTimer);
   const latencyMs = now() - started;
+  const spawnFailed = Boolean(collected.error) && collected.observedChildExit !== true;
 
-  const fields = request.harness === "codex"
-    ? normalizeCodex(collected.stdout)
-    : request.harness === "pi"
-      ? normalizePi(collected.stdout)
-      : normalizeClaudeOrGrok(parseJson(collected.stdout), request.model);
+  let fields;
+  try {
+    fields = request.harness === "codex"
+      ? normalizeCodex(collected.stdout)
+      : request.harness === "pi"
+        ? normalizePi(collected.stdout)
+        : normalizeClaudeOrGrok(parseJson(collected.stdout), request.model);
+  } catch (error) {
+    fields = {
+      errorCode: "normalization_failed",
+      errorDetail: String(error?.message ?? "normalization failed"),
+      costBasis: "unknown",
+    };
+  }
 
   if (request.harness === "claude" && authStatus.method === "claude.ai") {
     fields.costBasis = "unmetered";
@@ -1036,55 +1304,199 @@ export async function runHarness(request, deps = {}) {
   }
 
   const stderrPath = join(outputDir, "stderr.log");
-  const stderrBytes = Buffer.byteLength(collected.stderr ?? "", "utf8");
-  if (stderrBytes > 0) writePrivate(stderrPath, collected.stderr, deps);
-  const answerText = fields.text ?? "";
   const answerPath = join(outputDir, "answer.txt");
+  const errorPath = join(outputDir, "error.txt");
+  const stderrBytes = Buffer.byteLength(collected.stderr ?? "", "utf8");
+  const answerText = fields.text ?? "";
   const answerBytes = Buffer.byteLength(answerText, "utf8");
-  if (answerBytes > 0) writePrivate(answerPath, answerText, deps);
-
-  const extractedClaim = extractModelClaim(answerText, request.role);
+  let extractedClaim;
   let modelClaim;
-  if (extractedClaim) {
-    const claimPath = join(outputDir, "model-claim.json");
-    const claimBody = `${JSON.stringify(extractedClaim.raw)}\n`;
-    writePrivate(claimPath, claimBody, deps);
-    modelClaim = {
-      status: extractedClaim.status,
-      ...(extractedClaim.completedCount !== undefined ? { completedCount: extractedClaim.completedCount } : {}),
-      ...(extractedClaim.deferredCount !== undefined ? { deferredCount: extractedClaim.deferredCount } : {}),
-      ...(extractedClaim.artifactCount !== undefined ? { artifactCount: extractedClaim.artifactCount } : {}),
-      ...(extractedClaim.verdict ? { verdict: extractedClaim.verdict } : {}),
-      unrecognizedCount: extractedClaim.unrecognizedCount,
-      path: claimPath,
-      bytes: Buffer.byteLength(claimBody),
-    };
+  let writeFailed = false;
+  let writeDetail;
+  try {
+    if (stderrBytes > 0) writePrivate(stderrPath, collected.stderr, deps);
+    if (answerBytes > 0) writePrivate(answerPath, answerText, deps);
+    extractedClaim = extractModelClaim(answerText, request.role);
+    if (extractedClaim) {
+      const claimPath = join(outputDir, "model-claim.json");
+      const claimBody = `${JSON.stringify(extractedClaim.raw)}\n`;
+      writePrivate(claimPath, claimBody, deps);
+      modelClaim = {
+        status: extractedClaim.status,
+        ...(extractedClaim.completedCount !== undefined ? { completedCount: extractedClaim.completedCount } : {}),
+        ...(extractedClaim.deferredCount !== undefined ? { deferredCount: extractedClaim.deferredCount } : {}),
+        ...(extractedClaim.artifactCount !== undefined ? { artifactCount: extractedClaim.artifactCount } : {}),
+        ...(extractedClaim.verdict ? { verdict: extractedClaim.verdict } : {}),
+        unrecognizedCount: extractedClaim.unrecognizedCount,
+        path: claimPath,
+        bytes: Buffer.byteLength(claimBody),
+      };
+    }
+  } catch (error) {
+    writeFailed = true;
+    writeDetail = String(error?.message ?? "sidecar write failed");
   }
+
   const emptyPayload = fields.emptyPayload === true
     || ((request.harness === "codex" || request.harness === "pi")
       ? jsonlEvents(collected.stdout).length === 0
       : !parseJson(collected.stdout));
-  const harnessError = timedOut
-    ? (fields.harnessError ?? "timed out")
-    : emptyPayload
-      ? (fields.harnessError ?? "empty JSON payload")
-      : fields.harnessError;
-  const spawnFailed = Boolean(collected.error) && collected.observedChildExit !== true;
-  const status = timedOut || killRequest
+  let errorCode = fields.errorCode;
+  let errorDetail = fields.errorDetail;
+  if (timedOut) {
+    errorCode = "timed_out";
+    errorDetail = joinDetail(errorDetail, "timed out");
+  } else if (collected.signal && collected.observedChildExit) {
+    errorCode = errorCode ?? "signaled";
+    errorDetail = joinDetail(errorDetail, `signal ${collected.signal}`);
+  } else if (spawnFailed) {
+    errorCode = "spawn_failed";
+    errorDetail = joinDetail(errorDetail, String(collected.error?.message ?? "spawn failed"));
+  } else if (emptyPayload && !errorCode) {
+    errorCode = "empty_payload";
+    errorDetail = errorDetail ?? "empty JSON payload";
+  }
+  if (writeFailed) {
+    errorCode = errorCode ?? "write_failed";
+    errorDetail = joinDetail(errorDetail, writeDetail ?? "sidecar write failed");
+  }
+
+  let errorBytes = 0;
+  if (errorDetail) {
+    try {
+      writePrivate(errorPath, `${errorDetail}\n`, deps);
+      errorBytes = Buffer.byteLength(`${errorDetail}\n`, "utf8");
+    } catch {
+      writeFailed = true;
+      errorCode = errorCode ?? "write_failed";
+    }
+  }
+
+  return closePublicResult(buildTransportResult({
+    request,
+    route,
+    effort,
+    clamped,
+    authStatus,
+    started,
+    latencyMs,
+    collected,
+    fields,
+    timedOut,
+    killRequest,
+    outputDir,
+    dispatchPath,
+    cliId,
+    stage: spawnFailed ? "spawn" : "run",
+    errorCode,
+    errorDetail,
+    writeFailed,
+    modelClaim,
+    answerPath,
+    answerBytes,
+    stderrPath,
+    stderrBytes,
+    errorPath,
+    errorBytes,
+  }));
+}
+
+function collectChildStdio(child, options) {
+  const { timeoutMs, killGraceMs, onTimeout, requestTermination } = options;
+  return new Promise((resolve) => {
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    let observedExit;
+    let timer;
+    let escalateTimer;
+    let missingTimer;
+    const finish = (payload) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      if (escalateTimer) clearTimeout(escalateTimer);
+      if (missingTimer) clearTimeout(missingTimer);
+      resolve(payload);
+    };
+    const facts = (extra = {}) => ({
+      stdout,
+      stderr,
+      exitCode: observedExit ? observedExit.code : null,
+      signal: observedExit ? observedExit.signal ?? null : null,
+      observedChildExit: Boolean(observedExit),
+      ...extra,
+    });
+    child.stdout?.setEncoding?.("utf8");
+    child.stderr?.setEncoding?.("utf8");
+    child.stdout?.on?.("data", (chunk) => { stdout += chunk; });
+    child.stderr?.on?.("data", (chunk) => { stderr += chunk; });
+    child.on("error", (error) => finish(facts({ error })));
+    child.on("exit", (code, signal) => {
+      observedExit = { code, signal };
+      queueMicrotask(() => finish(facts()));
+    });
+    child.on("close", (code, signal) => {
+      if (!observedExit) observedExit = { code, signal };
+      finish(facts());
+    });
+    if (timeoutMs !== undefined) {
+      timer = setTimeout(() => {
+        onTimeout();
+        requestTermination("SIGTERM");
+        escalateTimer = setTimeout(() => {
+          if (settled) return;
+          requestTermination("SIGKILL");
+          missingTimer = setTimeout(() => finish(facts()), killGraceMs);
+        }, killGraceMs);
+      }, timeoutMs);
+    }
+  });
+}
+
+function buildTransportResult(input) {
+  const {
+    request,
+    route,
+    effort,
+    clamped,
+    authStatus,
+    started,
+    latencyMs,
+    collected,
+    fields,
+    timedOut,
+    killRequest,
+    dispatchPath,
+    cliId,
+    stage,
+    errorCode,
+    writeFailed,
+    modelClaim,
+    answerPath,
+    answerBytes,
+    stderrPath,
+    stderrBytes,
+    errorPath,
+    errorBytes,
+  } = input;
+  const emptyPayload = fields.emptyPayload === true;
+  const spawnFailed = stage === "spawn";
+  const signaled = Boolean(collected.signal) && collected.observedChildExit === true;
+  const status = timedOut || killRequest || signaled
     ? "interrupted"
-    : (harnessError || emptyPayload || collected.exitCode !== 0 || spawnFailed)
+    : (errorCode || emptyPayload || writeFailed || collected.exitCode !== 0 && collected.exitCode !== null || spawnFailed)
       ? "failed"
       : "completed";
   const ok = status === "completed";
-  const stage = spawnFailed ? "spawn" : "run";
-
   const { capped, metadata } = applyRoutingCap(fields);
   const usagePresent = [
     capped.tokensIn, capped.tokensOut, capped.cacheReadTokens, capped.cacheCreationTokens,
     capped.reasoningTokens, fields.costUsd, fields.providerReportedCostUsd, metadata.tokensIn,
   ].some((value) => value !== undefined);
   const usagePartial = status !== "completed" && usagePresent;
-  const result = {
+  const publicErrorCode = status === "completed" ? undefined : errorCode;
+  return {
     schema: RESULT_SCHEMA,
     ok,
     status,
@@ -1099,7 +1511,8 @@ export async function runHarness(request, deps = {}) {
     startedAt: new Date(started).toISOString(),
     finishedAt: new Date(started + latencyMs).toISOString(),
     latencyMs,
-    exitCode: collected.exitCode,
+    exitCode: collected.exitCode === undefined ? null : collected.exitCode,
+    ...(collected.signal ? { signal: collected.signal } : {}),
     timedOut,
     ...(killRequest ? { killRequest } : {}),
     observedChildExit: collected.observedChildExit === true,
@@ -1110,9 +1523,9 @@ export async function runHarness(request, deps = {}) {
     costBasis: fields.costBasis,
     ...(fields.providerReportedCostUsd !== undefined ? { providerReportedCostUsd: fields.providerReportedCostUsd } : {}),
     ...(usagePartial ? { usagePartial: true } : {}),
-    ...(fields.sessionId ? { sessionId: fields.sessionId } : {}),
+    ...(typeof fields.sessionId === "string" ? { sessionId: fields.sessionId } : {}),
     ...(fields.stopReason ? { stopReason: fields.stopReason } : {}),
-    ...(harnessError ? { harnessError: String(harnessError).slice(0, 500) } : {}),
+    ...(publicErrorCode ? { errorCode: publicErrorCode } : {}),
     ...(fields.auxiliaryUsage?.length ? { auxiliaryUsage: fields.auxiliaryUsage } : {}),
     ...(fields.usageEvents?.length ? { usageEvents: fields.usageEvents } : {}),
     ...(fields.candidateModels && fields.effectiveModel === "unknown"
@@ -1123,24 +1536,10 @@ export async function runHarness(request, deps = {}) {
     dispatchPath,
     ...(answerBytes > 0 ? { answerPath, answerBytes } : {}),
     ...(stderrBytes > 0 ? { stderrPath, stderrBytes } : {}),
+    ...(errorBytes > 0 ? { errorPath, errorBytes } : {}),
     ...(modelClaim ? { modelClaim } : {}),
     ...(Object.keys(metadata).length > 0 ? { providerMetadata: metadata } : {}),
   };
-  assertNoRawTransport(result, collected);
-  return result;
-}
-
-function assertNoRawTransport(result, collected) {
-  const serialized = JSON.stringify(result);
-  if (Object.hasOwn(result, "stderr") && typeof result.stderr === "string") {
-    throw failClosed("structured result must not carry raw stderr");
-  }
-  if (Object.hasOwn(result, "contextTokens")) {
-    throw failClosed("contextTokens is removed; occupancy is unknown");
-  }
-  if (collected.stderr && collected.stderr.length > 80 && serialized.includes(collected.stderr.slice(0, 80))) {
-    throw failClosed("structured result leaked raw stderr");
-  }
 }
 
 export async function main(argv = process.argv, io = { stdin: process.stdin, stdout: process.stdout, stderr: process.stderr }) {
@@ -1168,13 +1567,15 @@ function invokedAsMain() {
 
 if (invokedAsMain()) {
   main().catch((error) => {
-    const failure = {
+    const stage = TRANSPORT_STAGES.includes(error.stage) ? error.stage : "preflight";
+    const failure = closePublicResult({
       schema: RESULT_SCHEMA,
       ok: false,
       status: "failed",
-      stage: error.stage ?? "preflight",
+      stage,
+      errorCode: stage === "auth" ? "auth_failed" : stage === "spawn" ? "spawn_failed" : "preflight_failed",
       error: error.message,
-    };
+    });
     process.stdout.write(`${JSON.stringify(failure, undefined, 2)}\n`);
     process.exit(2);
   });

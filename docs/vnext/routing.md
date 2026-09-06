@@ -51,8 +51,9 @@ underquote is why the report is **not** a ranking source.
 a routing record. Helper `status` is transport-only (`completed`, `failed`,
 `interrupted`) and must not be read as product `routing-record.v1`
 `finalOutcome`. Obsolete `kxm.harness-result.v1` files are diagnosed (file,
-observed schema, obsolete schema id) and left untouched; there is no v1
-parser or upgrade lane.
+observed known schema or `unrecognized`, obsolete schema id) and left
+untouched; there is no v1 parser or upgrade lane. Public result fields are
+a closed allowlist; raw model/stdio text is not copied into metadata.
 
 Observed normalization (not an invoice; none of these paths reconcile
 against an invoice or usage API):
