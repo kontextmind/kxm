@@ -85,6 +85,22 @@ It does not replace the phase gates below.
   artifact/check refs, approaches tried) in private model summaries and
   `attribute` history. Notes never grant tools, waive verification, or
   become human/hub approval. No extra schema fields.
+- **Operator bootstrap acceptance exception (2026-09-06, single repair):**
+  the operator explicitly authorized acceptance of PR #130's Runtime
+  initialization repair (`ad8ff33`, tree `0b33c23`) after two native Grok
+  attempts produced no work and no alternative writer was admitted. Before
+  ready/auto-merge, the final candidate, including this documentation change,
+  requires bootstrap verification, a separate exact fixed-command witness
+  bound to its tree, fresh independent Fable architecture and Sol CLI PASS
+  reviews, and all five required CI jobs green on its final head. Record this
+  as a separate auditable operator-acceptance artifact: the runner has no
+  labeled bootstrap exception. It is not native assignment acceptance, a
+  `just accept` record, or hub approval. The original `d3/accepted.json` for
+  `2754af7` stays immutable and does not cover this repair; no native completion
+  or native witness is fabricated. Root usage/cost remains unknown, and all
+  failed/native attempts are retained. This one-repair operator decision does
+  not grant automatic fallback, routing changes, model authority, or changes
+  to product phase gates.
 - Anthropic subscription models are the motivating case (Claude CLI vs Pi
   Anthropic API keys). The same rule applies to Codex, Kimi, Gemini, DeepSeek,
   and later harnesses.
@@ -175,11 +191,13 @@ It does not replace the phase gates below.
   The parent-alias regression owns its temporary symlink on Mac/Linux;
   the earlier CI failure remains in private history. This developer runner
   prerequisite does not complete any product phase gate.
-- **Runtime initialization CI repair:** concurrent first-open callers inspect
+- **Runtime initialization CI repair (PR #130, operator bootstrap exception):**
+  concurrent first-open callers inspect
   schema versions and tables under the same write transaction that initializes
   the registry or event store. Deterministic two-process regressions cover both;
-  newer, outdated, and malformed schemas still fail closed. Phase gates are
-  unchanged.
+  newer, outdated, and malformed schemas still fail closed. Acceptance follows
+  the single-repair operator exception above; the two unsuccessful native
+  attempts remain in private history. Phase gates are unchanged.
 - **Platform pause (2026-09-05):** the active PR gate is two Linux
   `validate:ci` + `check:generated` legs (Node 22.19.0 and 24) plus Docs lint
   and Plugin validation. Classify changes plus those four jobs is five CI
@@ -648,6 +666,8 @@ rebuild, cancel-to-terminal, crash recovery, `kxm runtime start|status|stop`,
 and `kxm run` create/recover with the hub absent. Runs remain `created`.
 Concurrent first-open schema inspection and initialization are serialized for
 the registry and event store; schema compatibility brakes and the gate are unchanged.
+Operator bootstrap acceptance of that repair is a developer-process decision;
+it does not advance, weaken, or re-satisfy this gate.
 Compiled step execution is Phase 3. The outbox is listed in this phase but
 not landed; it lands with its only consumer in Phase 8. The gate stays as
 written.
@@ -684,6 +704,12 @@ parent-alias regression owns the temporary link, preserving argv identity.
 Low-level harness recipes remain transport. Authorized Codex relief records
 local bootstrap verification and unknown cost; it does not fabricate a native
 writer completion. This prerequisite does not satisfy the Phase 3 gate.
+
+**Operator bootstrap acceptance (PR #130):** the single-repair exception requires
+bootstrap verification, a candidate-bound fixed-command witness, fresh Fable/Sol
+reviews, and final-head CI. It is not native assignment acceptance or hub
+approval. The repair changes Phase 2 storage only; this exception does not
+satisfy, advance, or weaken the Phase 3 gate, D3 S2–S4, or issue #89.
 
 **Gate:** a model-free test driver completes and recovers
 `examples/vnext/.kxm/workflows/default.yaml` (plan → implement → verify → ready)
