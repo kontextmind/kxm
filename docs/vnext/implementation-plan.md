@@ -176,25 +176,35 @@ It does not replace the phase gates below.
   This is inventory filtering only (issue 84 auth/eligibility sub-slice), not
   a supervised-worker claim or live assignment.
 - Headless `scripts/harness-run.mjs` helper (2026-09-05, M1 transport
-  2026-09-06 unreleased; required transport cases covered in this tree):
-  native auth preflight, verified grok/claude/codex/OpenRouter-Pi pairs, no
-  native-provider Pi fallback, private answer/stderr/dispatch/model-claim/
-  error sidecars, shell:false launchers. Result schema is
-  `kxm.harness-result.v2` only; obsolete v1 files are diagnosed and not
-  parsed or upgraded. Helper `finalOutcome` and arbitrary `agent` envelopes
-  are gone. Transport `completed|failed|interrupted` is not a model claim
-  and not product `routing-record.v1` `finalOutcome`. Direct-child `exit`/
-  `close` keep a null `exitCode` and the exact `signal`; an external signal
-  with no helper timeout is `interrupted`. Timeout requests SIGTERM, then
-  SIGKILL after a bounded grace, and can settle with `observedChildExit`
-  false when stdio never closes, without descendant-death claims. Public
-  metadata is a closed allowlist (`errorCode`/`stopReason` known enums);
-  raw model/stdio text stays private. The first-80-character stderr
-  substring scan is gone. Post-spawn write/normalization/spawn failures
-  keep their known stage and any observed partial spend; they are not
-  relabeled as no-spend preflight. Grok argv adds `--no-subagents
-  --disable-web-search` and optional `--max-turns`; Codex adds
-  `--ignore-user-config` (parser probe exit 0; top-level help omits it).
+  2026-09-06 unreleased, not accepted): native auth preflight, verified
+  grok/claude/codex/OpenRouter-Pi pairs, no native-provider Pi fallback,
+  private answer/stderr/dispatch/model-claim/error sidecars, shell:false
+  launchers. Result schema is `kxm.harness-result.v2` only; obsolete v1
+  files are diagnosed and not parsed or upgraded. Helper `finalOutcome`
+  and arbitrary `agent` envelopes are gone. Transport
+  `completed|failed|interrupted` is not a model claim and not product
+  `routing-record.v1` `finalOutcome`. Direct-child `exit`/`close` keep a
+  null `exitCode` and the exact `signal`; an external signal with no
+  helper timeout is `interrupted`. Natural successful exit waits for
+  stdio close/drain; lingering inherited pipes settle on a bound without
+  signaling an already-exited child or adopting descendants. Timeout
+  requests SIGTERM, then SIGKILL after a bounded grace, and can settle
+  with `observedChildExit` false when stdio never closes, without
+  descendant-death claims. Public metadata is a closed allowlist
+  (`errorCode`/`stopReason` known enums) with type checks on the whole
+  public result and nested usage/cost/providerMetadata (finite
+  nonnegative cost, nonnegative integer counters, bounded
+  enums/booleans/strings). Invalid scalar objects and malformed strings
+  are dropped, not leaked or coerced to zero; known valid fields and
+  aggregate >1M metadata stay. Raw invalid details stay private. The
+  first-80-character stderr substring scan is gone. Post-spawn
+  write/normalization/spawn failures, including malformed optional text
+  and stdin/pid-record write errors, keep their known run/spawn stage
+  and any observed partial spend; they are not relabeled as no-spend
+  preflight and do not throw as `ERR_INVALID_ARG_TYPE`. Grok argv adds
+  `--no-subagents --disable-web-search` and optional `--max-turns`;
+  Codex adds `--ignore-user-config` (parser probe exit 0; top-level help
+  omits it).
   Routing fields `harness`/`role`/`model`/`permission`/`prompt_file` are
   required nonempty strings (no CLI-default model or permission). Pi
   planner/reviewer cannot `edit`; only `experiment` may. `max_cost_usd` and
@@ -376,8 +386,9 @@ It does not replace the phase gates below.
 - Slim live `default` workflow for this repo (no bulk migrate of jira/provenance/v04).
 - YAML-editing enable/disable UI (Phase 4 `/kxm` settings or `kxm dash` config
   tab). Do not add a preferences overlay.
-- **Issue 127 remainder:** M1 helper transport required cases are covered
-  (unreleased). M2 reusable test extraction, M3 assignment runner and plan
+- **Issue 127 remainder:** M1 helper transport is an unreleased checkpoint
+  plus demonstrated drain/type/text/write edge repairs; it is not accepted
+  completion. M2 reusable test extraction, M3 assignment runner and plan
   pointer, M4 witnesses/accept/report, and M5 AGENTS/workflow docs adoption
   are still open before D3. D3 still needs bounded contract resolution after
   this prerequisite. Not a product assignment layer (Phase 4) and not Phase
@@ -388,9 +399,9 @@ It does not replace the phase gates below.
   `default.yaml` and `fix.yaml`). Compile and the agent-only run loop do not
   close Phase 3. D3 and D4 must honor a declared `assignments` or `join` on
   gate, approval, and wait steps or fail closed; D1 only preserves the
-  declaration. Issue 127 M1 transport required cases are covered
-  (unreleased); M2–M5 and D3 contract resolution are still open. This is
-  not full AGENTS workflow adoption (M5) and not a scratch-retirement claim.
+  declaration. Issue 127 M1 transport remains unreleased and not accepted;
+  M2–M5 and D3 contract resolution are still open. This is not full AGENTS
+  workflow adoption (M5) and not a scratch-retirement claim.
 - Version-1 run event stores are refused with `runtime_schema_outdated`;
   backup, restore, and migration remain E6.
 - Non-Pi dispatch adapters (Phase 11). Listing a harness does not execute it.
@@ -540,11 +551,13 @@ attempts after process restart. No gates, evidence, joins, duration or cost
 budget enforcement, or D4 recovery/adoption. The Gate sentence is unchanged.
 Windows verification of the run loop is deferred with the platform pause.
 
-**Issue 127 M1 (unreleased, not this gate):** helper transport result v2,
-supported launch flags, honest termination facts, bounded timeout settle,
-and closed public metadata. M2–M5 and D3 remain open. Not a Phase 3
-completion or scratch-runner retirement. The assignment runner is not
-adopted.
+**Issue 127 M1 (unreleased, not this gate, not accepted):** helper
+transport result v2, supported launch flags, honest termination facts,
+stdio drain vs bounded linger, type-closed public usage/cost, malformed
+text and post-spawn write failures with retained spend, bounded timeout
+settle, and closed public metadata. M2–M5 and D3 remain open. Not a
+Phase 3 completion or scratch-runner retirement. The assignment runner
+is not adopted.
 
 **Gate:** a model-free test driver completes and recovers
 `examples/vnext/.kxm/workflows/default.yaml` (plan → implement → verify → ready)

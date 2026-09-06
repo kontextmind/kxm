@@ -53,7 +53,8 @@ a routing record. Helper `status` is transport-only (`completed`, `failed`,
 `finalOutcome`. Obsolete `kxm.harness-result.v1` files are diagnosed (file,
 observed known schema or `unrecognized`, obsolete schema id) and left
 untouched; there is no v1 parser or upgrade lane. Public result fields are
-a closed allowlist; raw model/stdio text is not copied into metadata.
+a closed allowlist with type checks (no arbitrary objects in scalar
+positions); raw model/stdio text is not copied into metadata.
 
 Observed normalization (not an invoice; none of these paths reconcile
 against an invoice or usage API):

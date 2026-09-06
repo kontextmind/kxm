@@ -662,8 +662,23 @@ export function normalizeClaudeOrGrok(payload, requestedModel) {
   if (rawStop !== undefined && stopReason === "unrecognized") {
     errorDetail = joinDetail(errorDetail, `stopReason ${String(rawStop)}`);
   }
+  let text = "";
+  let malformedText = false;
+  if (typeof payload.result === "string") {
+    text = payload.result;
+  } else if (payload.result !== undefined && payload.result !== null) {
+    malformedText = true;
+  } else if (typeof payload.text === "string") {
+    text = payload.text;
+  } else if (payload.text !== undefined) {
+    malformedText = true;
+  }
+  if (malformedText && !errorCode) {
+    errorCode = "normalization_failed";
+    errorDetail = joinDetail(errorDetail, "malformed optional text field");
+  }
   return {
-    text: typeof payload.result === "string" ? payload.result : (payload.text ?? ""),
+    text,
     sessionId: payload.sessionId ?? payload.session_id,
     effectiveModel: resolved.effectiveModel,
     tokensIn,
@@ -797,14 +812,84 @@ function pickKeys(value, keys) {
   return out;
 }
 
+function closedNonnegInt(value) {
+  if (typeof value === "number" && Number.isInteger(value) && value >= 0) return value;
+  return undefined;
+}
+
+function closedNonnegFinite(value) {
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0) return value;
+  return undefined;
+}
+
+function closedString(value) {
+  return typeof value === "string" ? value : undefined;
+}
+
+function closedBoolean(value) {
+  return value === true || value === false ? value : undefined;
+}
+
+function closedCostBasis(value) {
+  return typeof value === "string" && COST_BASIS.includes(value) ? value : undefined;
+}
+
+const PUBLIC_STRING_KEYS = Object.freeze([
+  "schema",
+  "harness",
+  "provider",
+  "role",
+  "requestedModel",
+  "effectiveModel",
+  "reasoningEffort",
+  "effortClampedFrom",
+  "startedAt",
+  "finishedAt",
+  "signal",
+  "tokenBasis",
+  "contextOccupancy",
+  "sessionId",
+  "error",
+  "command",
+  "dispatchPath",
+  "answerPath",
+  "stderrPath",
+  "errorPath",
+]);
+const PUBLIC_TOKEN_KEYS = Object.freeze([
+  "tokensIn",
+  "tokensOut",
+  "cacheReadTokens",
+  "cacheCreationTokens",
+  "reasoningTokens",
+]);
+const PUBLIC_COST_KEYS = Object.freeze(["costUsd", "providerReportedCostUsd"]);
+const PUBLIC_BYTE_KEYS = Object.freeze(["answerBytes", "stderrBytes", "errorBytes"]);
+
 function closeUsageRow(row) {
   const closed = pickKeys(row, USAGE_ROW_KEYS);
   if (!closed) return undefined;
-  if (closed.stopReason !== undefined) closed.stopReason = closeStopReason(closed.stopReason);
-  if (closed.costBasis !== undefined && !COST_BASIS.includes(closed.costBasis)) {
-    delete closed.costBasis;
+  const model = closedString(closed.model);
+  if (model === undefined) delete closed.model;
+  else closed.model = model;
+  for (const key of PUBLIC_TOKEN_KEYS) {
+    if (!(key in closed)) continue;
+    const value = closedNonnegInt(closed[key]);
+    if (value === undefined) delete closed[key];
+    else closed[key] = value;
   }
-  return closed;
+  const costUsd = closedNonnegFinite(closed.costUsd);
+  if (costUsd === undefined) delete closed.costUsd;
+  else closed.costUsd = costUsd;
+  const costBasis = closedCostBasis(closed.costBasis);
+  if (costBasis === undefined) delete closed.costBasis;
+  else closed.costBasis = costBasis;
+  if (closed.stopReason !== undefined) {
+    const stopReason = closeStopReason(closed.stopReason);
+    if (stopReason === undefined) delete closed.stopReason;
+    else closed.stopReason = stopReason;
+  }
+  return Object.keys(closed).length > 0 ? closed : undefined;
 }
 
 function closePublicResult(result) {
@@ -820,6 +905,55 @@ function closePublicResult(result) {
   if (closed.stage !== undefined && !TRANSPORT_STAGES.includes(closed.stage)) {
     closed.stage = "run";
   }
+  const ok = closedBoolean(closed.ok);
+  if (ok === undefined) delete closed.ok;
+  else closed.ok = ok;
+  const timedOut = closedBoolean(closed.timedOut);
+  if (timedOut === undefined) delete closed.timedOut;
+  else closed.timedOut = timedOut;
+  const observedChildExit = closedBoolean(closed.observedChildExit);
+  if (observedChildExit === undefined) delete closed.observedChildExit;
+  else closed.observedChildExit = observedChildExit;
+  if (closed.usagePartial === true) closed.usagePartial = true;
+  else delete closed.usagePartial;
+  if (closed.exitCode !== undefined && closed.exitCode !== null
+    && !(typeof closed.exitCode === "number" && Number.isInteger(closed.exitCode))) {
+    delete closed.exitCode;
+  }
+  const latencyMs = closedNonnegFinite(closed.latencyMs);
+  if (latencyMs === undefined) delete closed.latencyMs;
+  else closed.latencyMs = latencyMs;
+  for (const key of PUBLIC_STRING_KEYS) {
+    if (closed[key] === undefined) continue;
+    const value = closedString(closed[key]);
+    if (value === undefined) delete closed[key];
+    else closed[key] = value;
+  }
+  for (const key of PUBLIC_TOKEN_KEYS) {
+    if (closed[key] === undefined) continue;
+    const value = closedNonnegInt(closed[key]);
+    if (value === undefined) delete closed[key];
+    else closed[key] = value;
+  }
+  for (const key of PUBLIC_COST_KEYS) {
+    if (closed[key] === undefined) continue;
+    const value = closedNonnegFinite(closed[key]);
+    if (value === undefined) delete closed[key];
+    else closed[key] = value;
+  }
+  for (const key of PUBLIC_BYTE_KEYS) {
+    if (closed[key] === undefined) continue;
+    const value = closedNonnegInt(closed[key]);
+    if (value === undefined) delete closed[key];
+    else closed[key] = value;
+  }
+  const costBasis = closedCostBasis(closed.costBasis);
+  if (costBasis === undefined) delete closed.costBasis;
+  else closed.costBasis = costBasis;
+  if (closed.tokenBasis !== undefined && closed.tokenBasis !== TOKEN_BASIS) delete closed.tokenBasis;
+  if (closed.contextOccupancy !== undefined && closed.contextOccupancy !== CONTEXT_OCCUPANCY_UNKNOWN) {
+    delete closed.contextOccupancy;
+  }
   if (closed.modelClaim) {
     closed.modelClaim = pickKeys(closed.modelClaim, MODEL_CLAIM_PUBLIC_KEYS);
     if (
@@ -829,28 +963,76 @@ function closePublicResult(result) {
     ) {
       closed.modelClaim.status = "unrecognized";
     }
+    if (typeof closed.modelClaim.status !== "string") delete closed.modelClaim.status;
     if (closed.modelClaim.verdict !== undefined && !REVIEW_VERDICTS.includes(closed.modelClaim.verdict)) {
       delete closed.modelClaim.verdict;
     }
+    for (const key of ["completedCount", "deferredCount", "artifactCount", "unrecognizedCount", "bytes"]) {
+      const value = closedNonnegInt(closed.modelClaim[key]);
+      if (value === undefined) delete closed.modelClaim[key];
+      else closed.modelClaim[key] = value;
+    }
+    const claimPath = closedString(closed.modelClaim.path);
+    if (claimPath === undefined) delete closed.modelClaim.path;
+    else closed.modelClaim.path = claimPath;
   }
-  if (closed.auth) closed.auth = pickKeys(closed.auth, AUTH_PUBLIC_KEYS);
+  if (closed.auth) {
+    closed.auth = pickKeys(closed.auth, AUTH_PUBLIC_KEYS);
+    const loggedIn = closedBoolean(closed.auth.loggedIn);
+    if (loggedIn === undefined) delete closed.auth.loggedIn;
+    else closed.auth.loggedIn = loggedIn;
+    const method = closedString(closed.auth.method);
+    if (method === undefined) delete closed.auth.method;
+    else closed.auth.method = method;
+    const observedAt = closedString(closed.auth.observedAt);
+    if (observedAt === undefined) delete closed.auth.observedAt;
+    else closed.auth.observedAt = observedAt;
+    const subscriptionType = closed.auth.subscriptionType;
+    if (subscriptionType !== undefined
+      && typeof subscriptionType !== "string"
+      && typeof subscriptionType !== "number"
+      && typeof subscriptionType !== "boolean") {
+      delete closed.auth.subscriptionType;
+    }
+  }
   if (closed.killRequest) {
     closed.killRequest = pickKeys(closed.killRequest, KILL_REQUEST_KEYS);
+    const killSignal = closedString(closed.killRequest.signal);
+    if (killSignal === undefined) delete closed.killRequest.signal;
+    else closed.killRequest.signal = killSignal;
     closed.killRequest.escalated = closed.killRequest.escalated === true;
   }
   if (Array.isArray(closed.auxiliaryUsage)) {
     closed.auxiliaryUsage = closed.auxiliaryUsage.map(closeUsageRow).filter(Boolean);
+  } else {
+    delete closed.auxiliaryUsage;
   }
   if (Array.isArray(closed.usageEvents)) {
     closed.usageEvents = closed.usageEvents.map(closeUsageRow).filter(Boolean);
+  } else {
+    delete closed.usageEvents;
   }
   if (closed.providerMetadata) {
     closed.providerMetadata = pickKeys(closed.providerMetadata, PROVIDER_METADATA_KEYS);
+    if (closed.providerMetadata) {
+      for (const key of PUBLIC_TOKEN_KEYS) {
+        if (closed.providerMetadata[key] === undefined) continue;
+        const value = closedNonnegInt(closed.providerMetadata[key]);
+        if (value === undefined) delete closed.providerMetadata[key];
+        else closed.providerMetadata[key] = value;
+      }
+      if (closed.providerMetadata.tokenBasis !== undefined
+        && closed.providerMetadata.tokenBasis !== TOKEN_BASIS) {
+        delete closed.providerMetadata.tokenBasis;
+      }
+      if (Object.keys(closed.providerMetadata).length === 0) delete closed.providerMetadata;
+    }
   }
   if (Array.isArray(closed.candidateModels)) {
     closed.candidateModels = closed.candidateModels.filter((name) => typeof name === "string");
+  } else {
+    delete closed.candidateModels;
   }
-  if (typeof closed.sessionId !== "string") delete closed.sessionId;
   if (closed.signal == null) delete closed.signal;
   delete closed.stderr;
   delete closed.stdout;
@@ -964,10 +1146,10 @@ export function formatRunListing(payload, filePath = "-") {
 function applyRoutingCap(fields) {
   const metadata = {};
   const capped = {};
-  for (const name of ["tokensIn", "tokensOut", "cacheReadTokens", "cacheCreationTokens", "reasoningTokens"]) {
-    const value = fields[name];
+  for (const name of PUBLIC_TOKEN_KEYS) {
+    const value = closedNonnegInt(fields[name]);
     if (value === undefined) continue;
-    if (typeof value === "number" && Number.isInteger(value) && value >= 0 && value > ROUTING_INT_CAP) {
+    if (value > ROUTING_INT_CAP) {
       metadata[name] = value;
       metadata.tokenBasis = TOKEN_BASIS;
     } else {
@@ -1241,19 +1423,8 @@ export async function runHarness(request, deps = {}) {
     }));
   }
 
-  try {
-    if (child?.pid != null) {
-      dispatchRecord.pid = child.pid;
-      writePrivate(dispatchPath, `${JSON.stringify(dispatchRecord)}\n`, deps);
-    }
-  } catch {
-    // Pid amend is after spawn; a sidecar write miss is not a preflight miss.
-  }
-  if (stdinPrompt && child.stdin) {
-    child.stdin.write(promptInput.text);
-    child.stdin.end();
-  }
-
+  let writeFailed = false;
+  let writeDetail;
   const requestTermination = (signal) => {
     killRequest = { signal, escalated: signal === "SIGKILL" };
     try {
@@ -1262,7 +1433,7 @@ export async function runHarness(request, deps = {}) {
       // Direct child may already have exited; missing completion is not process-death proof.
     }
   };
-  const collected = await collectChildStdio(child, {
+  const collectedPromise = collectChildStdio(child, {
     timeoutMs: request.timeout_ms,
     killGraceMs,
     onTimeout: () => {
@@ -1270,6 +1441,29 @@ export async function runHarness(request, deps = {}) {
     },
     requestTermination,
   });
+  try {
+    if (child?.pid != null) {
+      dispatchRecord.pid = child.pid;
+      writePrivate(dispatchPath, `${JSON.stringify(dispatchRecord)}\n`, deps);
+    }
+  } catch (error) {
+    writeFailed = true;
+    writeDetail = String(error?.message ?? "pid record amend failed");
+  }
+  if (stdinPrompt && child.stdin) {
+    const noteStdinFailure = (error) => {
+      writeFailed = true;
+      writeDetail = joinDetail(writeDetail, String(error?.message ?? "stdin write failed"));
+    };
+    child.stdin.on("error", noteStdinFailure);
+    try {
+      child.stdin.write(promptInput.text);
+      child.stdin.end();
+    } catch (error) {
+      noteStdinFailure(error);
+    }
+  }
+  const collected = await collectedPromise;
   const latencyMs = now() - started;
   const spawnFailed = Boolean(collected.error) && collected.observedChildExit !== true;
 
@@ -1307,12 +1501,10 @@ export async function runHarness(request, deps = {}) {
   const answerPath = join(outputDir, "answer.txt");
   const errorPath = join(outputDir, "error.txt");
   const stderrBytes = Buffer.byteLength(collected.stderr ?? "", "utf8");
-  const answerText = fields.text ?? "";
+  const answerText = typeof fields.text === "string" ? fields.text : "";
   const answerBytes = Buffer.byteLength(answerText, "utf8");
   let extractedClaim;
   let modelClaim;
-  let writeFailed = false;
-  let writeDetail;
   try {
     if (stderrBytes > 0) writePrivate(stderrPath, collected.stderr, deps);
     if (answerBytes > 0) writePrivate(answerPath, answerText, deps);
@@ -1334,7 +1526,7 @@ export async function runHarness(request, deps = {}) {
     }
   } catch (error) {
     writeFailed = true;
-    writeDetail = String(error?.message ?? "sidecar write failed");
+    writeDetail = joinDetail(writeDetail, String(error?.message ?? "sidecar write failed"));
   }
 
   const emptyPayload = fields.emptyPayload === true
@@ -1408,16 +1600,24 @@ function collectChildStdio(child, options) {
     let stderr = "";
     let settled = false;
     let observedExit;
+    let gotClose = false;
+    let stdoutEnded = !child.stdout;
+    let stderrEnded = !child.stderr;
     let timer;
     let escalateTimer;
     let missingTimer;
-    const finish = (payload) => {
-      if (settled) return;
-      settled = true;
-      if (timer) clearTimeout(timer);
-      if (escalateTimer) clearTimeout(escalateTimer);
-      if (missingTimer) clearTimeout(missingTimer);
-      resolve(payload);
+    let drainTimer;
+    const stdioDrained = () => stdoutEnded && stderrEnded;
+    const requestKill = (signal) => {
+      if (observedExit) return;
+      requestTermination(signal);
+    };
+    const unrefHandle = (handle) => {
+      try {
+        handle?.unref?.();
+      } catch {
+        // Unref is best-effort; missing unref is not a death claim.
+      }
     };
     const facts = (extra = {}) => ({
       stdout,
@@ -1427,27 +1627,82 @@ function collectChildStdio(child, options) {
       observedChildExit: Boolean(observedExit),
       ...extra,
     });
+    const onStdout = (chunk) => { stdout += chunk; };
+    const onStderr = (chunk) => { stderr += chunk; };
+    const onStdoutEnd = () => {
+      stdoutEnded = true;
+      if (observedExit && stdioDrained()) finish();
+    };
+    const onStderrEnd = () => {
+      stderrEnded = true;
+      if (observedExit && stdioDrained()) finish();
+    };
+    const onError = (error) => finish({ error });
+    const onExit = (code, signal) => {
+      observedExit = { code, signal };
+      if (gotClose || stdioDrained()) {
+        finish();
+        return;
+      }
+      if (!drainTimer) {
+        drainTimer = setTimeout(() => finish(), killGraceMs);
+      }
+    };
+    const onClose = (code, signal) => {
+      gotClose = true;
+      stdoutEnded = true;
+      stderrEnded = true;
+      if (!observedExit) observedExit = { code, signal };
+      finish();
+    };
+    const detach = () => {
+      child.stdout?.off?.("data", onStdout);
+      child.stdout?.off?.("end", onStdoutEnd);
+      child.stderr?.off?.("data", onStderr);
+      child.stderr?.off?.("end", onStderrEnd);
+      child.off("error", onError);
+      child.off("exit", onExit);
+      child.off("close", onClose);
+    };
+    const releaseIncomplete = () => {
+      try { child.stdout?.pause?.(); } catch { /* owned collection pause only */ }
+      try { child.stderr?.pause?.(); } catch { /* owned collection pause only */ }
+      unrefHandle(child.stdout);
+      unrefHandle(child.stderr);
+      unrefHandle(child);
+    };
+    const finish = (extra = {}) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      if (escalateTimer) clearTimeout(escalateTimer);
+      if (missingTimer) clearTimeout(missingTimer);
+      if (drainTimer) clearTimeout(drainTimer);
+      detach();
+      if (!gotClose) releaseIncomplete();
+      resolve(facts(extra));
+    };
     child.stdout?.setEncoding?.("utf8");
     child.stderr?.setEncoding?.("utf8");
-    child.stdout?.on?.("data", (chunk) => { stdout += chunk; });
-    child.stderr?.on?.("data", (chunk) => { stderr += chunk; });
-    child.on("error", (error) => finish(facts({ error })));
-    child.on("exit", (code, signal) => {
-      observedExit = { code, signal };
-      queueMicrotask(() => finish(facts()));
-    });
-    child.on("close", (code, signal) => {
-      if (!observedExit) observedExit = { code, signal };
-      finish(facts());
-    });
+    child.stdout?.on?.("data", onStdout);
+    child.stderr?.on?.("data", onStderr);
+    child.stdout?.on?.("end", onStdoutEnd);
+    child.stderr?.on?.("end", onStderrEnd);
+    child.on("error", onError);
+    child.on("exit", onExit);
+    child.on("close", onClose);
     if (timeoutMs !== undefined) {
       timer = setTimeout(() => {
+        if (observedExit) {
+          finish();
+          return;
+        }
         onTimeout();
-        requestTermination("SIGTERM");
+        requestKill("SIGTERM");
         escalateTimer = setTimeout(() => {
           if (settled) return;
-          requestTermination("SIGKILL");
-          missingTimer = setTimeout(() => finish(facts()), killGraceMs);
+          requestKill("SIGKILL");
+          missingTimer = setTimeout(() => finish(), killGraceMs);
         }, killGraceMs);
       }, timeoutMs);
     }
@@ -1519,9 +1774,11 @@ function buildTransportResult(input) {
     tokenBasis: TOKEN_BASIS,
     contextOccupancy: CONTEXT_OCCUPANCY_UNKNOWN,
     ...capped,
-    ...(fields.costUsd !== undefined ? { costUsd: fields.costUsd } : {}),
+    ...(closedNonnegFinite(fields.costUsd) !== undefined ? { costUsd: closedNonnegFinite(fields.costUsd) } : {}),
     costBasis: fields.costBasis,
-    ...(fields.providerReportedCostUsd !== undefined ? { providerReportedCostUsd: fields.providerReportedCostUsd } : {}),
+    ...(closedNonnegFinite(fields.providerReportedCostUsd) !== undefined
+      ? { providerReportedCostUsd: closedNonnegFinite(fields.providerReportedCostUsd) }
+      : {}),
     ...(usagePartial ? { usagePartial: true } : {}),
     ...(typeof fields.sessionId === "string" ? { sessionId: fields.sessionId } : {}),
     ...(fields.stopReason ? { stopReason: fields.stopReason } : {}),

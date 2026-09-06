@@ -86,10 +86,14 @@ All notable user-facing changes are documented here. The project follows [Semant
 - Headless `scripts/harness-run.mjs` now emits `kxm.harness-result.v2`:
   transport `completed|failed|interrupted` is separate from closed model-claim
   metadata and from product `routing-record.v1` `finalOutcome`. Direct-child
-  signal facts keep a null `exitCode` and the exact `signal`. Timeout
-  SIGTERM then SIGKILL can settle without a `close` and does not claim
-  descendant death. Public metadata is a closed allowlist; raw model/stdio
-  text stays in private sidecars. Grok adds `--no-subagents` and
+  signal facts keep a null `exitCode` and the exact `signal`. Natural
+  successful exit waits for stdio drain; lingering pipes settle bounded
+  without signaling an already-exited child. Public result types are closed
+  (no object leak in token/cost scalars). Malformed optional text and
+  post-spawn stdin/pid writes fail at run stage with retained usage.
+  Timeout SIGTERM then SIGKILL can settle without a `close` and does not
+  claim descendant death. Public metadata is a closed allowlist; raw
+  model/stdio text stays in private sidecars. Grok adds `--no-subagents` and
   `--disable-web-search` plus optional `max_turns`; Codex adds
   `--ignore-user-config`. Obsolete v1 result files are diagnosed, not
   upgraded.
