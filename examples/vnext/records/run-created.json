@@ -19,6 +19,8 @@
     "displayTitle": "Fix concurrent token refresh",
     "promptHash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
     "status": "created",
+    "repositoryIds": ["api", "control", "web"],
+    "executorIds": ["local"],
     "executors": [
       {
         "id": "local",

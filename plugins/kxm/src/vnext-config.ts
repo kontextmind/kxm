@@ -259,6 +259,7 @@ export class VnextSchemaRegistry {
   readonly migrationDecisionValidator: ValidateFunction;
   readonly migrationReceiptValidator: ValidateFunction;
   readonly permissionDiffValidator: ValidateFunction;
+  readonly runEventValidator: ValidateFunction;
 
   constructor(schemasDir = DEFAULT_SCHEMA_DIR) {
     this.schemasDir = resolve(schemasDir);
@@ -275,6 +276,7 @@ export class VnextSchemaRegistry {
     const migrationDecisionFile = "migration-decision.schema.json";
     const migrationReceiptFile = "migration-receipt.schema.json";
     const permissionDiffFile = "permission-diff.schema.json";
+    const runEventFile = "run-event.schema.json";
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, localBindingsFile)));
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, templateProvenanceFile)));
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, initOperationFile)));
@@ -282,6 +284,7 @@ export class VnextSchemaRegistry {
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, migrationDecisionFile)));
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, migrationReceiptFile)));
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, permissionDiffFile)));
+    this.ajv.addSchema(readJsonObject(join(this.schemasDir, runEventFile)));
     for (const [kind, definition] of Object.entries(RESOURCE_SCHEMA) as [VnextResourceKind, { identity: string; file: string }][]) {
       const validator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${definition.file}`);
       if (!validator) throw new Error(`schema did not compile: ${definition.file}`);
@@ -294,6 +297,7 @@ export class VnextSchemaRegistry {
     const migrationDecisionValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${migrationDecisionFile}`);
     const migrationReceiptValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${migrationReceiptFile}`);
     const permissionDiffValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${permissionDiffFile}`);
+    const runEventValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${runEventFile}`);
     if (!localBindingsValidator) throw new Error(`schema did not compile: ${localBindingsFile}`);
     if (!templateProvenanceValidator) throw new Error(`schema did not compile: ${templateProvenanceFile}`);
     if (!initOperationValidator) throw new Error(`schema did not compile: ${initOperationFile}`);
@@ -301,6 +305,7 @@ export class VnextSchemaRegistry {
     if (!migrationDecisionValidator) throw new Error(`schema did not compile: ${migrationDecisionFile}`);
     if (!migrationReceiptValidator) throw new Error(`schema did not compile: ${migrationReceiptFile}`);
     if (!permissionDiffValidator) throw new Error(`schema did not compile: ${permissionDiffFile}`);
+    if (!runEventValidator) throw new Error(`schema did not compile: ${runEventFile}`);
     this.localBindingsValidator = localBindingsValidator;
     this.templateProvenanceValidator = templateProvenanceValidator;
     this.initOperationValidator = initOperationValidator;
@@ -308,6 +313,7 @@ export class VnextSchemaRegistry {
     this.migrationDecisionValidator = migrationDecisionValidator;
     this.migrationReceiptValidator = migrationReceiptValidator;
     this.permissionDiffValidator = permissionDiffValidator;
+    this.runEventValidator = runEventValidator;
   }
 
   validate(kind: VnextResourceKind, value: JsonObject, file: string): VnextConfigIssue[] {
@@ -355,6 +361,21 @@ export class VnextSchemaRegistry {
     }
     if (validator(value)) return [];
     return (validator.errors ?? []).map((error) => schemaIssue(file, error));
+  }
+}
+
+let cachedRunEventRegistry: VnextSchemaRegistry | undefined;
+
+/** Validate a local run event against `kxm.run-event.v1`. Throws `run_event_invalid`. */
+export function validateRunEvent(value: unknown, file: string): void {
+  const registry = (cachedRunEventRegistry ??= new VnextSchemaRegistry());
+  if (!registry.runEventValidator(value)) {
+    throw new VnextConfigError([issue(
+      "schema",
+      "run_event_invalid",
+      file,
+      registry.ajv.errorsText(registry.runEventValidator.errors, { separator: "; " }),
+    )]);
   }
 }
 

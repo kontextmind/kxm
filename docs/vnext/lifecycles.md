@@ -43,7 +43,7 @@ created → preparing → running ↔ waiting
 | State | Meaning | Allowed exits |
 |---|---|---|
 | `created` | Identity, owner, and pinned revisions recorded | `preparing`, `cancelled`, `failed` |
-| `preparing` | Inputs, capabilities, workspaces, secrets, and models are being verified | `running`, `cancelled`, `failed` |
+| `preparing` | Inputs, capabilities, workspaces, secrets, and models are being verified; the run plan pin is recorded here | `running`, `cancelled`, `failed` |
 | `running` | One top-level step is active | `waiting`, `blocked_uncertain`, `cancelling`, `completed`, `failed` |
 | `waiting` | No model/process compute is required; a declared signal, lease, or approval is pending | `running`, `blocked_uncertain`, `cancelling`, `completed`, `failed`, `cancelled` |
 | `blocked_uncertain` | An effect outcome cannot be proven | `running`, `cancelling`, `failed` |
@@ -51,6 +51,10 @@ created → preparing → running ↔ waiting
 | `completed` | Declared success terminal reached | None |
 | `failed` | Declared failure or exhausted budget reached | None |
 | `cancelled` | Cancellation completed without unresolved owned effects | None |
+
+Operator `cancelled` from `created` or `preparing` requires a recorded
+`run.cancel_requested`. A compiled selected `terminalStatus=cancelled` may
+still complete from `running` without that operator event.
 
 A run cannot move to another Runtime by editing a projection or hub record.
 
@@ -94,7 +98,7 @@ created → accepted → dispatched → executing → result_recorded → termin
 | `created` | Assignment identity, purpose, bounds, and requested evidence recorded |
 | `accepted` | Runtime has resolved policy, agent, model, repository, tools, secrets, and executor |
 | `dispatched` | Attempt identity and dispatch intent persisted before process start |
-| `executing` | Exact process/session positively identified as running |
+| `executing` | Invocation admitted and the attempt capability is usable. This slice is in-process (no OS process identity yet); later recovery still requires exact process/session proof |
 | `reattaching` | Runtime is verifying the same process/session and event cursor |
 | `result_recorded` | Structured attempt result and referenced receipts are durably stored |
 | `retry_pending` | Policy permits another physical attempt after the prior attempt became terminal |

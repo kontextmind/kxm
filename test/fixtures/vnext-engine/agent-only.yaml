@@ -1,0 +1,35 @@
+schema: kxm.workflow.v1
+description: Synthetic agent-only rework loop for the D2 engine proof.
+coordinator: coordinator
+limits:
+  maxTransitions: 8
+steps:
+  - id: a
+    kind: agent
+    agent: implementer
+    maxAttempts: 2
+    on:
+      passed: b
+      failed:
+        target: $terminal
+        terminalStatus: failed
+  - id: b
+    kind: agent
+    agent: implementer
+    maxAttempts: 2
+    on:
+      passed: c
+      failed:
+        target: a
+        maxTransitions: 2
+  - id: c
+    kind: agent
+    agent: implementer
+    maxAttempts: 1
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: $terminal
+        terminalStatus: failed

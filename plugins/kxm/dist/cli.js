@@ -29405,6 +29405,7 @@ var VnextSchemaRegistry = class {
   migrationDecisionValidator;
   migrationReceiptValidator;
   permissionDiffValidator;
+  runEventValidator;
   constructor(schemasDir = DEFAULT_SCHEMA_DIR) {
     this.schemasDir = resolve4(schemasDir);
     this.ajv = new import__.Ajv2020({ allErrors: true, strict: true, strictRequired: false });
@@ -29420,6 +29421,7 @@ var VnextSchemaRegistry = class {
     const migrationDecisionFile = "migration-decision.schema.json";
     const migrationReceiptFile = "migration-receipt.schema.json";
     const permissionDiffFile = "permission-diff.schema.json";
+    const runEventFile = "run-event.schema.json";
     this.ajv.addSchema(readJsonObject(join12(this.schemasDir, localBindingsFile)));
     this.ajv.addSchema(readJsonObject(join12(this.schemasDir, templateProvenanceFile)));
     this.ajv.addSchema(readJsonObject(join12(this.schemasDir, initOperationFile)));
@@ -29427,6 +29429,7 @@ var VnextSchemaRegistry = class {
     this.ajv.addSchema(readJsonObject(join12(this.schemasDir, migrationDecisionFile)));
     this.ajv.addSchema(readJsonObject(join12(this.schemasDir, migrationReceiptFile)));
     this.ajv.addSchema(readJsonObject(join12(this.schemasDir, permissionDiffFile)));
+    this.ajv.addSchema(readJsonObject(join12(this.schemasDir, runEventFile)));
     for (const [kind, definition] of Object.entries(RESOURCE_SCHEMA)) {
       const validator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${definition.file}`);
       if (!validator) throw new Error(`schema did not compile: ${definition.file}`);
@@ -29439,6 +29442,7 @@ var VnextSchemaRegistry = class {
     const migrationDecisionValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${migrationDecisionFile}`);
     const migrationReceiptValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${migrationReceiptFile}`);
     const permissionDiffValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${permissionDiffFile}`);
+    const runEventValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${runEventFile}`);
     if (!localBindingsValidator) throw new Error(`schema did not compile: ${localBindingsFile}`);
     if (!templateProvenanceValidator) throw new Error(`schema did not compile: ${templateProvenanceFile}`);
     if (!initOperationValidator) throw new Error(`schema did not compile: ${initOperationFile}`);
@@ -29446,6 +29450,7 @@ var VnextSchemaRegistry = class {
     if (!migrationDecisionValidator) throw new Error(`schema did not compile: ${migrationDecisionFile}`);
     if (!migrationReceiptValidator) throw new Error(`schema did not compile: ${migrationReceiptFile}`);
     if (!permissionDiffValidator) throw new Error(`schema did not compile: ${permissionDiffFile}`);
+    if (!runEventValidator) throw new Error(`schema did not compile: ${runEventFile}`);
     this.localBindingsValidator = localBindingsValidator;
     this.templateProvenanceValidator = templateProvenanceValidator;
     this.initOperationValidator = initOperationValidator;
@@ -29453,6 +29458,7 @@ var VnextSchemaRegistry = class {
     this.migrationDecisionValidator = migrationDecisionValidator;
     this.migrationReceiptValidator = migrationReceiptValidator;
     this.permissionDiffValidator = permissionDiffValidator;
+    this.runEventValidator = runEventValidator;
   }
   validate(kind, value, file) {
     const definition = RESOURCE_SCHEMA[kind];
@@ -34476,7 +34482,30 @@ function checkedParent(path5, description) {
     throw runtimeError("runtime_path_invalid", description, `${description} parent must be a regular directory, not a link`);
   }
 }
-function openDatabase(file, description, schema) {
+function userTables(database) {
+  const rows = database.prepare(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+  ).all();
+  return rows.map((row) => row.name);
+}
+function tableColumns(database, table) {
+  const rows = database.prepare(`PRAGMA table_info(${table})`).all();
+  return rows.map((row) => row.name).sort();
+}
+function verifyExpectedTables(database, file, description, expected) {
+  const present = new Set(userTables(database));
+  for (const [table, columns] of Object.entries(expected)) {
+    if (!present.has(table)) {
+      throw runtimeError("runtime_schema_shape_invalid", file, `${description} is missing table ${table}`);
+    }
+    const actual = tableColumns(database, table);
+    const missing = columns.filter((column) => !actual.includes(column));
+    if (missing.length > 0) {
+      throw runtimeError("runtime_schema_shape_invalid", file, `${description} table ${table} is missing columns ${missing.join(", ")}`);
+    }
+  }
+}
+function openDatabase(file, description, spec) {
   checkedParent(file, description);
   if (existsSync14(file)) {
     const stat = lstatSync6(file);
@@ -34493,17 +34522,56 @@ function openDatabase(file, description, schema) {
   database.exec("PRAGMA busy_timeout = 5000");
   const row = database.prepare("PRAGMA user_version").get();
   const version = row?.user_version ?? 0;
-  if (version > 1) {
+  if (version > spec.version) {
     database.close();
-    throw runtimeError("runtime_schema_newer", description, `${description} schema version ${version} is newer than this runtime supports`);
+    throw runtimeError("runtime_schema_newer", file, `${description} schema version ${version} is newer than this runtime supports`);
+  }
+  if (version === 0) {
+    const existing = userTables(database);
+    if (existing.length > 0) {
+      database.close();
+      throw runtimeError("runtime_schema_shape_invalid", file, `${description} has tables at schema version 0`);
+    }
+    try {
+      database.exec("BEGIN IMMEDIATE");
+      database.exec(spec.schema);
+      database.exec(`PRAGMA user_version = ${spec.version}`);
+      database.exec("COMMIT");
+    } catch (error) {
+      try {
+        database.exec("ROLLBACK");
+      } catch {
+      }
+      database.close();
+      throw error;
+    }
+  } else if (version < spec.version) {
+    database.close();
+    throw runtimeError(
+      "runtime_schema_outdated",
+      file,
+      `${description} schema version ${version} is older than ${spec.version}; backup, restore, and migration remain E6`
+    );
+  } else {
+    try {
+      verifyExpectedTables(database, file, description, spec.tables);
+    } catch (error) {
+      database.close();
+      throw error;
+    }
   }
   database.exec("PRAGMA journal_mode = WAL");
   database.exec("PRAGMA synchronous = NORMAL");
-  database.exec(schema);
+  database.exec("PRAGMA foreign_keys = ON");
   return database;
 }
+var VNEXT_REGISTRY_SCHEMA_VERSION = 1;
+var REGISTRY_TABLES = {
+  supervisor: ["singleton_id", "runtime_id", "pid", "port", "token_hash", "started_at", "heartbeat_at", "state"],
+  projects: ["project_id", "project_root", "project_key", "home_runtime_id", "config_revision", "registered_at"]
+};
 var REGISTRY_SCHEMA = `
-CREATE TABLE IF NOT EXISTS supervisor (
+CREATE TABLE supervisor (
   singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
   runtime_id TEXT NOT NULL,
   pid INTEGER NOT NULL,
@@ -34513,7 +34581,7 @@ CREATE TABLE IF NOT EXISTS supervisor (
   heartbeat_at TEXT NOT NULL,
   state TEXT NOT NULL
 ) STRICT;
-CREATE TABLE IF NOT EXISTS projects (
+CREATE TABLE projects (
   project_id TEXT PRIMARY KEY,
   project_root TEXT NOT NULL,
   project_key TEXT NOT NULL UNIQUE,
@@ -34521,14 +34589,17 @@ CREATE TABLE IF NOT EXISTS projects (
   config_revision TEXT,
   registered_at TEXT NOT NULL
 ) STRICT;
-PRAGMA user_version = 1;
 `;
 var VnextRuntimeRegistry = class {
   path;
   database;
   constructor(path5) {
     this.path = resolve9(path5);
-    this.database = openDatabase(this.path, "runtime registry", REGISTRY_SCHEMA);
+    this.database = openDatabase(this.path, "runtime registry", {
+      schema: REGISTRY_SCHEMA,
+      version: VNEXT_REGISTRY_SCHEMA_VERSION,
+      tables: REGISTRY_TABLES
+    });
   }
   close() {
     this.database.close();

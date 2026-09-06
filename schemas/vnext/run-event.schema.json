@@ -53,7 +53,144 @@
       "if": { "properties": { "eventType": { "const": "run.created" } }, "required": ["eventType"] },
       "then": {
         "properties": {
-          "payload": { "type": "object", "required": ["workflowId", "status", "repositories", "executors"] }
+          "payload": {
+            "type": "object",
+            "required": ["workflowId", "status", "promptHash", "repositoryIds", "executorIds"]
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "run.status_changed" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["status"] }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "eventType": { "const": "run.status_changed" },
+          "payload": { "type": "object", "properties": { "status": { "const": "preparing" } }, "required": ["status"] }
+        },
+        "required": ["eventType", "payload"]
+      },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["status", "runPlanHash"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "run.cancel_requested" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["actor", "reason"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "step.entered" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["stepId", "stepAttempt", "status"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "step.status_changed" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["stepId", "status", "previousStatus"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "step.outcome_recorded" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["stepId", "stepAttempt", "outcome"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "step.transitioned" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["fromStepId", "outcome"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "assignment.created" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["assignmentId", "stepId", "stepAttempt", "status"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "enum": ["assignment.accepted", "assignment.executing"] } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["assignmentId", "status"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "assignment.dispatched" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["assignmentId", "capabilityHash", "status"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "assignment.result_recorded" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "required": ["assignmentId", "resultClass"],
+            "allOf": [
+              {
+                "if": { "properties": { "resultClass": { "const": "outcome" } }, "required": ["resultClass"] },
+                "then": { "required": ["outcome"] }
+              },
+              {
+                "if": {
+                  "properties": { "resultClass": { "enum": ["outcome_unknown", "producer_rejected", "cancelled"] } },
+                  "required": ["resultClass"]
+                },
+                "then": { "not": { "required": ["outcome"] } }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "assignment.terminal" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["assignmentId", "outcome", "status"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "attempt.created" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["attemptId", "assignmentId", "status"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "attempt.status_changed" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["attemptId", "status"] }
         }
       }
     },
@@ -179,6 +316,9 @@
         "workflowId": { "$ref": "common.schema.json#/$defs/identifier" },
         "displayTitle": { "type": "string", "minLength": 1, "maxLength": 200 },
         "promptHash": { "$ref": "common.schema.json#/$defs/sha256" },
+        "runPlanHash": { "$ref": "common.schema.json#/$defs/sha256" },
+        "capabilityHash": { "$ref": "common.schema.json#/$defs/sha256" },
+        "resultClass": { "enum": ["outcome", "outcome_unknown", "producer_rejected", "cancelled"] },
         "status": { "$ref": "common.schema.json#/$defs/lifecycleStatus" },
         "previousStatus": { "$ref": "common.schema.json#/$defs/lifecycleStatus" },
         "outcome": { "$ref": "common.schema.json#/$defs/identifier" },
@@ -195,11 +335,23 @@
         "instanceNo": { "type": "integer", "minimum": 1, "maximum": 64 },
         "scopeEpoch": { "type": "integer", "minimum": 1 },
         "executor": { "$ref": "common.schema.json#/$defs/executorResolution" },
+        "executorIds": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/identifier" },
+          "minItems": 0,
+          "maxItems": 16
+        },
         "executors": {
           "type": "array",
           "items": { "$ref": "common.schema.json#/$defs/executorResolution" },
           "minItems": 1,
           "maxItems": 16
+        },
+        "repositoryIds": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/identifier" },
+          "minItems": 0,
+          "maxItems": 64
         },
         "model": { "$ref": "common.schema.json#/$defs/modelResolution" },
         "repositories": {
