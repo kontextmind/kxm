@@ -16,16 +16,32 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, relative } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import test from "node:test";
 import {
+  ASSIGNMENT_DISPATCH_SCHEMA,
   ASSIGNMENT_SCHEMA,
   COMPLETION_SCHEMA,
   PLAN_POINTER_FILENAME,
   PLAN_POINTER_SCHEMA,
+  READ_MECHANISMS,
+  REFUSAL_SCHEMA,
+  appendAssignmentTelemetry,
+  assignmentTelemetryPath,
+  main as assignmentMain,
+  observeAssignment,
+  renderAssignmentPrompt,
+  runAssignment,
   validateAssignmentManifest,
 } from "../scripts/assignment-run.mjs";
+import {
+  claudeAuth,
+  codexAuth,
+  fakeChild,
+  grokAuth,
+} from "./helpers/harness-fake.ts";
 import { makeGitRoot } from "./helpers/git-root.ts";
+import { readRoutingRecords, readTelemetry } from "../plugins/kxm/src/telemetry.ts";
 
 function sha256(content: string | Buffer): string {
   return createHash("sha256").update(content).digest("hex");
@@ -509,9 +525,9 @@ test("duplicate assignment identity refuses a still-fresh output path", () => {
   const { root, commit } = initRepo();
   const taskDir = initTask();
   try {
-    const outputDir = join(taskDir, "fresh-output");
+    const outputDir = join(dirname(taskDir), "out", "a1-run");
     const identityDir = join(taskDir, "asg-writer-1");
-    const manifest = writerManifest(root, commit, taskDir, { output_dir: "fresh-output" });
+    const manifest = writerManifest(root, commit, taskDir, { output_dir: outputDir });
     mkdirSync(identityDir, { recursive: true });
     const beforeWorktree = worktreeSnapshot(root);
     const beforeGit = gitSnapshot(root);
@@ -527,9 +543,10 @@ test("duplicate output_dir refuses without creating or spawning", () => {
   const { root, commit } = initRepo();
   const taskDir = initTask();
   try {
-    const outputDir = join(taskDir, "already-out");
+    const outputDir = join(dirname(taskDir), "out", "already-out");
+    mkdirSync(dirname(outputDir), { recursive: true });
     mkdirSync(outputDir);
-    const manifest = writerManifest(root, commit, taskDir, { output_dir: "already-out" });
+    const manifest = writerManifest(root, commit, taskDir, { output_dir: outputDir });
     const beforeWorktree = worktreeSnapshot(root);
     const beforeGit = gitSnapshot(root);
     const { calls, spawnSync: spawn } = recordingSpawnSync();
@@ -950,7 +967,10 @@ test("exact git argv for accepted clean and staged paths", () => {
     const indexTree = git(root, ["write-tree"]);
     const reviewDir = initTask();
     try {
-      const reviewer = reviewerManifest(root, commit, indexTree, reviewDir, { assignment_id: "asg-review-argv" });
+      const reviewer = reviewerManifest(root, commit, indexTree, reviewDir, {
+        assignment_id: "asg-review-argv",
+        output_dir: "asg-review-argv",
+      });
       const { calls: stagedCalls, spawnSync: stagedSpawn } = recordingSpawnSync();
       validateAssignmentManifest(reviewer, { spawnSync: stagedSpawn });
       assertAllowedGitArgv(stagedCalls, root);
@@ -1209,11 +1229,14 @@ test("relative output_dir resolves under task_dir and may equal the identity dir
   try {
     const validated = validateAssignmentManifest(writerManifest(root, commit, taskDir, { output_dir: "asg-writer-1" }));
     assert.equal(validated.output_dir, join(realpathSync(taskDir), "asg-writer-1"));
-    mkdirSync(join(taskDir, "already"));
+    assert.equal(validated.record_dir, validated.output_dir);
+    const sibling = join(dirname(taskDir), "out", "already");
+    mkdirSync(dirname(sibling), { recursive: true });
+    mkdirSync(sibling);
     assert.throws(
       () => validateAssignmentManifest(writerManifest(root, commit, taskDir, {
         assignment_id: "asg-writer-3",
-        output_dir: "already",
+        output_dir: sibling,
       })),
       /output_dir already exists/,
     );
@@ -1264,3 +1287,1183 @@ test("shared task_dir across worktrees keeps duplicate and rework identity", () 
     cleanup(root, taskDir, [wt2]);
   }
 });
+
+const HEX64_RE = /^[a-f0-9]{64}$/;
+
+function grokAnswer(claim: unknown, extra: Record<string, unknown> = {}) {
+  return `${JSON.stringify({
+    result: JSON.stringify(claim),
+    sessionId: "g1",
+    stop_reason: "end_turn",
+    total_cost_usd: 0.12,
+    usage: { input_tokens: 11, output_tokens: 5 },
+    modelUsage: { "grok-4.6": { inputTokens: 11, outputTokens: 5, costUSD: 0.12 } },
+    ...extra,
+  })}\n`;
+}
+
+function claudeAnswer(claim: unknown, extra: Record<string, unknown> = {}) {
+  return `${JSON.stringify({
+    result: JSON.stringify(claim),
+    is_error: false,
+    session_id: "sess-fable",
+    stop_reason: "end_turn",
+    total_cost_usd: 1.5,
+    usage: { input_tokens: 8, output_tokens: 4 },
+    modelUsage: { fable: { inputTokens: 8, outputTokens: 4, costUSD: 1.5 } },
+    ...extra,
+  })}\n`;
+}
+
+function dispatchDeps(harness: string, assignment: { stdout?: string; stderr?: string; exitCode?: number | null }, auth: () => object, extras: {
+  onSpawn?: (cwd: string) => void;
+  onAuth?: (outputDir: string) => void;
+  outputDir?: string;
+} = {}) {
+  const spawns: Array<{ command: string; argv: string[]; cwd?: string }> = [];
+  const authCalls: Array<{ command: string; argv: string[] }> = [];
+  const deps = {
+    platform: process.platform,
+    env: { PATH: "/tmp/kxm-harness-bin" },
+    observedAt: "2026-09-05",
+    now: () => 1_000,
+    existsSync: (path: string) => existsSync(path) || String(path).includes(harness),
+    spawnSync: ((command: string, args?: readonly string[], options?: object) => {
+      if (command === "git") return spawnSync(command, args, options);
+      authCalls.push({ command, argv: [...(args ?? [])] });
+      extras.onAuth?.(extras.outputDir ?? "");
+      return auth();
+    }) as typeof spawnSync,
+    spawn: (command: string, argv: string[], options: { cwd?: string }) => {
+      const cwd = options.cwd;
+      spawns.push(cwd === undefined ? { command, argv } : { command, argv, cwd });
+      extras.onSpawn?.(cwd ?? "");
+      return fakeChild(assignment);
+    },
+  };
+  return { deps, spawns, authCalls };
+}
+
+test("dispatch writes pre-dispatch before native transport and refuses a duplicate race", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const manifest = writerManifest(root, commit, taskDir);
+    const outputDir = join(taskDir, "asg-writer-1");
+    let sawPreDispatchAtAuth = false;
+    let sawPreDispatchAtSpawn = false;
+    const { deps, spawns, authCalls } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done", completedCount: 1 }) }, grokAuth, {
+      outputDir,
+      onAuth: () => {
+        const raw = readFileSync(join(outputDir, "pre-dispatch.json"), "utf8");
+        const pre = JSON.parse(raw) as { schema: string; prompt_sha256: string; manifest_sha256: string; plan_sha256?: string };
+        assert.equal(pre.schema, ASSIGNMENT_DISPATCH_SCHEMA);
+        assert.match(pre.prompt_sha256, HEX64_RE);
+        assert.match(pre.manifest_sha256, HEX64_RE);
+        assert.match(pre.plan_sha256 ?? "", HEX64_RE);
+        sawPreDispatchAtAuth = true;
+      },
+      onSpawn: () => {
+        assert.equal(existsSync(join(outputDir, "pre-dispatch.json")), true);
+        sawPreDispatchAtSpawn = true;
+      },
+    });
+    const first = await runAssignment(manifest, deps);
+    assert.equal(sawPreDispatchAtAuth, true);
+    assert.equal(sawPreDispatchAtSpawn, true);
+    assert.equal(authCalls.length > 0, true);
+    assert.equal(spawns.length, 1);
+    assert.equal(first.transport.status, "completed");
+    assert.equal(first.verification.status, "not-run");
+    assert.equal(first.critic.kind, "none");
+    assert.equal(first.attribution.status, "unclassified");
+    assert.equal(Object.hasOwn(first, "acceptance"), false);
+    const original = readFileSync(join(outputDir, "completion.json"));
+    const { deps: secondDeps, spawns: secondSpawns } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, grokAuth);
+    await assert.rejects(() => runAssignment(manifest, secondDeps), /already present/);
+    assert.equal(secondSpawns.length, 0);
+    assert.deepEqual(readFileSync(join(outputDir, "completion.json")), original);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("native auth failure records stage auth with unknown usage and does not spawn a model", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const manifest = writerManifest(root, commit, taskDir);
+    const { deps, spawns } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, () => ({
+      status: 0,
+      stdout: "Available models:\n",
+      stderr: "",
+      error: undefined,
+    }));
+    const completion = await runAssignment(manifest, deps);
+    assert.equal(spawns.length, 0);
+    assert.equal(completion.transport.status, "failed");
+    assert.equal(completion.transport.stage, "auth");
+    assert.equal(completion.transport.errorCode, "auth_failed");
+    assert.equal(completion.transport.ok, false);
+    assert.equal(completion.usage.costBasis, "unknown");
+    assert.equal(completion.usage.contextOccupancy, "unknown");
+    assert.equal(completion.usage.tokenBasis, "cumulative");
+    assert.equal(completion.usage.tokensIn, undefined);
+    assert.equal(completion.usage.costUsd, undefined);
+    assert.equal(completion.verification.status, "not-run");
+    assert.equal(Object.hasOwn(completion, "acceptance"), false);
+    assert.equal(completion.transport.errorCode, "auth_failed");
+    assert.equal(existsSync(join(taskDir, "asg-writer-1", "pre-dispatch.json")), true);
+    assert.equal(existsSync(join(taskDir, "asg-writer-1", "completion.json")), true);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("generated prompts bind actual read mechanisms and native permission flags", async () => {
+  const { root, commit } = initRepo();
+  const writerDir = initTask();
+  const reviewDir = initTask();
+  try {
+    const writer = writerManifest(root, commit, writerDir);
+    const { deps: grokDeps, spawns: grokSpawns } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, grokAuth);
+    const grokCompletion = await runAssignment(writer, grokDeps);
+    const grokPromptPath = grokCompletion.sidecars.prompt?.path;
+    assert.equal(typeof grokPromptPath, "string");
+    const grokPrompt = readFileSync(grokPromptPath!, "utf8");
+    assert.match(grokPrompt, /Use repository tools/);
+    assert.match(grokPrompt, /not an OS sandbox claim/);
+    assert.equal(grokPrompt.includes(READ_MECHANISMS.grok as string), true);
+    assert.match(grokPrompt, /run `npm run verify` before completing/i);
+    assert.match(grokPrompt, /Root re-runs the same fixed witness after you exit/);
+    const grokArgv = grokSpawns[0]?.argv ?? [];
+    assert.equal(grokArgv.includes("--no-subagents"), true);
+    assert.equal(grokArgv.includes("--disable-web-search"), true);
+    assert.equal(grokArgv.includes("--always-approve"), true);
+
+    writeFileSync(join(root, "README.md"), "repo\nstaged\n");
+    git(root, ["add", "README.md"]);
+    const indexTree = git(root, ["write-tree"]);
+    const reviewer = reviewerManifest(root, commit, indexTree, reviewDir);
+    const { deps: claudeDeps, spawns: claudeSpawns } = dispatchDeps(
+      "claude",
+      { stdout: claudeAnswer({ verdict: "PASS", status: "done" }) },
+      claudeAuth,
+    );
+    const reviewCompletion = await runAssignment(reviewer, claudeDeps);
+    const reviewPromptPath = reviewCompletion.sidecars.prompt?.path;
+    assert.equal(typeof reviewPromptPath, "string");
+    const reviewPrompt = readFileSync(reviewPromptPath!, "utf8");
+    assert.equal(reviewPrompt.includes(READ_MECHANISMS.claude as string), true);
+    assert.match(reviewPrompt, /Do not use the shell/);
+    assert.match(reviewPrompt, /top-level `verdict` of exactly PASS or BLOCK/);
+    assert.match(reviewPrompt, /Root runs the witness separately; do not run it/);
+    assert.equal(reviewPrompt.includes("npm run verify"), false);
+    const claudeArgv = claudeSpawns[0]?.argv ?? [];
+    assert.equal(claudeArgv.includes("--tools"), true);
+    assert.equal(claudeArgv.includes("Read,Glob,Grep"), true);
+    const schemaPath = reviewCompletion.sidecars.output_schema?.path;
+    assert.equal(typeof schemaPath, "string");
+    const schema = JSON.parse(readFileSync(schemaPath!, "utf8")) as {
+      required?: string[];
+      properties?: { verdict?: { enum?: string[] } };
+    };
+    assert.deepEqual(schema.required, ["verdict"]);
+    assert.deepEqual(schema.properties?.verdict?.enum, ["PASS", "BLOCK"]);
+
+    const cliDir = initTask();
+    try {
+      const cliReview = reviewerManifest(root, commit, indexTree, cliDir, {
+        assignment_id: "asg-review-cli",
+        kind: "review-cli",
+        harness: "codex",
+        model: "gpt-5.6-sol",
+        effort: "low",
+        output_dir: "asg-review-cli",
+      });
+      const { deps: codexDeps, spawns: codexSpawns } = dispatchDeps(
+        "codex",
+        { stdout: claudeAnswer({ verdict: "BLOCK", status: "done" }) },
+        codexAuth,
+      );
+      const cliCompletion = await runAssignment(cliReview, codexDeps);
+      const cliPromptPath = cliCompletion.sidecars.prompt?.path;
+      assert.equal(typeof cliPromptPath, "string");
+      const cliPrompt = readFileSync(cliPromptPath!, "utf8");
+      assert.equal(cliPrompt.includes(READ_MECHANISMS.codex as string), true);
+      assert.match(cliPrompt, /cat, sed, rg, and git/);
+      assert.match(cliPrompt, /Do not write files/);
+      const codexArgv = codexSpawns[0]?.argv ?? [];
+      assert.equal(codexArgv.includes("--sandbox"), true);
+      assert.equal(codexArgv.includes("read-only"), true);
+      assert.equal(codexArgv.includes("--ignore-user-config"), true);
+    } finally {
+      rmSync(dirname(cliDir), { recursive: true, force: true });
+    }
+  } finally {
+    cleanup(root, writerDir, [dirname(reviewDir)]);
+  }
+});
+
+test("unchanged staged review binds PASS to the reviewed tree", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    writeFileSync(join(root, "README.md"), "repo\nstaged\n");
+    git(root, ["add", "README.md"]);
+    const indexTree = git(root, ["write-tree"]);
+    const manifest = reviewerManifest(root, commit, indexTree, taskDir);
+    const { deps } = dispatchDeps("claude", { stdout: claudeAnswer({ verdict: "PASS", status: "done" }) }, claudeAuth);
+    const completion = await runAssignment(manifest, deps);
+    assert.equal(completion.candidate.status, "recorded");
+    assert.equal(completion.invocation, "returned");
+    assert.equal(completion.recording.status, "ok");
+    if (completion.candidate.status === "recorded") {
+      assert.equal(completion.candidate.index_tree, indexTree);
+      assert.equal(completion.candidate.head, commit);
+      assert.equal(completion.candidate.clean, true);
+    }
+    assert.equal(completion.critic.kind, "review");
+    if (completion.critic.kind === "review") {
+      assert.equal(completion.critic.verdict, "PASS");
+      assert.equal(completion.critic.judged_tree, indexTree);
+      assert.equal(completion.critic.role, "reviewer-arch");
+    }
+    assert.equal(completion.verification.status, "not-run");
+    assert.equal(completion.transport.status, "completed");
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("malformed or absent review verdict cannot certify", async () => {
+  const { root, commit } = initRepo();
+  const malformedDir = initTask();
+  const absentDir = initTask();
+  try {
+    writeFileSync(join(root, "README.md"), "repo\nstaged\n");
+    git(root, ["add", "README.md"]);
+    const indexTree = git(root, ["write-tree"]);
+    const malformed = reviewerManifest(root, commit, indexTree, malformedDir, {
+      assignment_id: "asg-review-malformed",
+      output_dir: "asg-review-malformed",
+    });
+    const { deps: malformedDeps } = dispatchDeps(
+      "claude",
+      { stdout: claudeAnswer({ verdict: "looks good", status: "done", notes: "PASS in prose" }) },
+      claudeAuth,
+    );
+    const malformedCompletion = await runAssignment(malformed, malformedDeps);
+    assert.equal(malformedCompletion.critic.kind, "none");
+    assert.equal(malformedCompletion.model_claim?.verdict, undefined);
+
+    const absent = reviewerManifest(root, commit, indexTree, absentDir, {
+      assignment_id: "asg-review-absent",
+      output_dir: "asg-review-absent",
+    });
+    const { deps: absentDeps } = dispatchDeps(
+      "claude",
+      { stdout: claudeAnswer({ status: "done", report: "I would PASS this change." }) },
+      claudeAuth,
+    );
+    const absentCompletion = await runAssignment(absent, absentDeps);
+    assert.equal(absentCompletion.critic.kind, "none");
+    assert.equal(absentCompletion.model_claim?.verdict, undefined);
+  } finally {
+    cleanup(root, malformedDir, [dirname(absentDir)]);
+  }
+});
+
+test("review that alters the candidate cannot certify the original tree", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    writeFileSync(join(root, "README.md"), "repo\nstaged\n");
+    git(root, ["add", "README.md"]);
+    const indexTree = git(root, ["write-tree"]);
+    const manifest = reviewerManifest(root, commit, indexTree, taskDir);
+    const { deps } = dispatchDeps("claude", { stdout: claudeAnswer({ verdict: "PASS", status: "done" }) }, claudeAuth, {
+      onSpawn: (cwd) => {
+        writeFileSync(join(cwd, "review-edit.md"), "changed worktree\n");
+      },
+    });
+    const completion = await runAssignment(manifest, deps);
+    assert.equal(completion.candidate.status, "recorded");
+    if (completion.candidate.status === "recorded") {
+      assert.equal(completion.candidate.clean, false);
+      assert.notEqual(completion.candidate.index_tree === indexTree && completion.candidate.clean, true);
+    }
+    assert.equal(completion.critic.kind, "none");
+    assert.equal(completion.model_claim?.verdict, "PASS");
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("model claims cannot spoof verification, cost, role, or acceptance", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const manifest = writerManifest(root, commit, taskDir);
+    const { deps } = dispatchDeps("grok", { stdout: grokAnswer({
+      status: "done",
+      verification: "passed",
+      costUsd: 0,
+      cost: { usd: 0 },
+      acceptance: { commit },
+      critic: { verdict: "PASS" },
+      role: "reviewer-arch",
+      usage: { tokensIn: 1 },
+      transport: { status: "completed" },
+    }) }, grokAuth);
+    const completion = await runAssignment(manifest, deps);
+    assert.equal(completion.verification.status, "not-run");
+    assert.equal(completion.critic.kind, "none");
+    assert.equal(completion.role, "writer");
+    assert.equal(completion.route.role, "writer");
+    assert.equal(Object.hasOwn(completion, "acceptance"), false);
+    assert.equal(completion.usage.costBasis, "provider-reported");
+    assert.equal(completion.usage.costUsd, 0.12);
+    assert.equal((completion.model_claim?.unrecognizedCount as number) > 0, true);
+    assert.equal(completion.transport.status, "completed");
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("known partial usage is preserved after a failed transport", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const manifest = writerManifest(root, commit, taskDir);
+    const { deps } = dispatchDeps("grok", {
+      stdout: grokAnswer({ status: "fail" }, { is_error: true }),
+      exitCode: 1,
+    }, grokAuth);
+    const completion = await runAssignment(manifest, deps);
+    assert.equal(completion.transport.status, "failed");
+    assert.equal(completion.transport.ok, false);
+    assert.equal(completion.usage.usagePartial, true);
+    assert.equal(completion.usage.tokensIn, 11);
+    assert.equal(completion.usage.tokensOut, 5);
+    assert.equal(completion.usage.costUsd, 0.12);
+    assert.equal(completion.verification.status, "not-run");
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("pending success records transport completed without acceptance or verification", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const manifest = writerManifest(root, commit, taskDir);
+    const { deps } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done", completedCount: 1 }) }, grokAuth);
+    const completion = await runAssignment(manifest, deps);
+    assert.equal(completion.transport.status, "completed");
+    assert.equal(completion.transport.ok, true);
+    assert.equal(completion.verification.status, "not-run");
+    assert.equal(Object.hasOwn(completion, "acceptance"), false);
+    assert.equal(completion.attribution.status, "unclassified");
+    const events = readTelemetry(assignmentTelemetryPath(join(taskDir, "asg-writer-1")));
+    assert.equal(events.length, 1);
+    const routing = readRoutingRecords(assignmentTelemetryPath(join(taskDir, "asg-writer-1")));
+    assert.equal(routing.length, 1);
+    assert.equal(routing[0]?.routing.finalOutcome, "pending");
+    assert.equal(routing[0]?.routing.retries, 0);
+    assert.equal(routing[0]?.routing.verifierOutcome, undefined);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("repeated observation appends telemetry only once", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const manifest = writerManifest(root, commit, taskDir);
+    const { deps } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, grokAuth);
+    const completion = await runAssignment(manifest, deps);
+    const outputDir = join(taskDir, "asg-writer-1");
+    const path = assignmentTelemetryPath(outputDir);
+    assert.equal(readTelemetry(path).length, 1);
+    assert.equal(await observeAssignment(outputDir), false);
+    assert.equal(appendAssignmentTelemetry({ ...completion, routingRecord: JSON.parse(readFileSync(join(outputDir, "routing-record.json"), "utf8")) }, outputDir), false);
+    assert.equal(readTelemetry(path).length, 1);
+    assert.equal(readRoutingRecords(path).length, 1);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("CLI requires absolute --manifest and rejects --task-dir", async () => {
+  await assert.rejects(
+    () => assignmentMain(["node", "assignment-run.mjs", "run", "--manifest", "/tmp/x.json", "--task-dir", "/tmp/task"]),
+    /does not accept --task-dir/,
+  );
+  await assert.rejects(
+    () => assignmentMain(["node", "assignment-run.mjs", "run", "--manifest", "relative.json"]),
+    /absolute path/,
+  );
+});
+
+function names(dir: string): string[] {
+  return existsSync(dir) ? readdirSync(dir).sort() : [];
+}
+
+function modeOf(path: string): number {
+  return statSync(path).mode & 0o777;
+}
+
+function publicText(value: unknown): string {
+  return JSON.stringify(value);
+}
+
+test("sibling custom output with absent parent keeps canonical records", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const assignmentId = "a1";
+    const outputDir = join(dirname(taskDir), "out", "a1-run");
+    const recordDir = join(taskDir, assignmentId);
+    const manifest = writerManifest(root, commit, taskDir, {
+      assignment_id: assignmentId,
+      output_dir: outputDir,
+    });
+    const { deps, spawns } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done", completedCount: 1 }) }, grokAuth);
+    const completion = await runAssignment(manifest, deps);
+    assert.equal(spawns.length, 1);
+    assert.equal(completion.binding.record_dir, realpathSync(recordDir));
+    assert.equal(completion.binding.output_dir, realpathSync(outputDir));
+    assert.equal(completion.binding.task_dir, realpathSync(taskDir));
+    assert.equal(completion.binding.cwd, root);
+    assert.equal(completion.invocation, "returned");
+    assert.equal(completion.recording.status, "ok");
+    assert.equal(completion.candidate.status, "recorded");
+    assert.equal(existsSync(join(recordDir, "completion.json")), true);
+    assert.equal(existsSync(join(recordDir, "manifest.json")), true);
+    assert.equal(existsSync(join(recordDir, "prompt.md")), true);
+    assert.equal(existsSync(join(recordDir, "pre-dispatch.json")), true);
+    assert.equal(existsSync(join(outputDir, "completion.json")), false);
+    assert.equal(existsSync(join(outputDir, "prompt.md")), false);
+    assert.equal(names(outputDir).every((name) => [
+      "dispatch.json",
+      "answer.txt",
+      "stderr.log",
+      "model-claim.json",
+      "error.txt",
+    ].includes(name)), true);
+    const rework = writerManifest(root, commit, taskDir, {
+      assignment_id: "a2",
+      output_dir: join(dirname(taskDir), "out", "a2-run"),
+      rework_of: assignmentId,
+    });
+    const validated = validateAssignmentManifest(rework);
+    assert.equal(validated.rework_of, assignmentId);
+    assert.notEqual(validated.output_dir, outputDir);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("nested output_dir below record_dir at depth two is created", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const assignmentId = "asg-writer-1";
+    const recordDir = join(taskDir, assignmentId);
+    const outputDir = join(recordDir, "nested", "deep");
+    const manifest = writerManifest(root, commit, taskDir, { output_dir: outputDir });
+    const { deps } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, grokAuth);
+    const completion = await runAssignment(manifest, deps);
+    assert.equal(completion.binding.record_dir, realpathSync(recordDir));
+    assert.equal(completion.binding.output_dir, realpathSync(outputDir));
+    assert.equal(existsSync(join(recordDir, "completion.json")), true);
+    assert.equal(existsSync(outputDir), true);
+    assert.equal(existsSync(join(outputDir, "completion.json")), false);
+    assert.equal(existsSync(join(recordDir, "nested", "deep")), true);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("rival directory at the final output path after validation is not adopted", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const assignmentId = "a1";
+    const outputDir = join(dirname(taskDir), "out", "a1-run");
+    const recordDir = join(taskDir, assignmentId);
+    const manifest = writerManifest(root, commit, taskDir, {
+      assignment_id: assignmentId,
+      output_dir: outputDir,
+    });
+    const { deps, spawns } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, grokAuth);
+    const canonicalOut = validateAssignmentManifest(manifest).output_dir;
+    const realMkdir = mkdirSync;
+    (deps as { mkdirSync?: typeof mkdirSync }).mkdirSync = ((path: string, opts?: { recursive?: boolean; mode?: number }) => {
+      if (path === canonicalOut && opts?.recursive === false) {
+        realMkdir(canonicalOut, { recursive: true });
+        writeFileSync(join(canonicalOut, "prompt.md"), "OTHER_OWNER\n");
+      }
+      return realMkdir(path, opts);
+    }) as typeof mkdirSync;
+    await assert.rejects(
+      () => runAssignment(manifest, deps),
+      (error: unknown) => {
+        assert.equal((error as { runnerCode?: string }).runnerCode, "output_dir_taken");
+        return true;
+      },
+    );
+    assert.equal(spawns.length, 0);
+    const refusal = JSON.parse(readFileSync(join(recordDir, "refusal.json"), "utf8")) as {
+      schema: string;
+      stage: string;
+      code: string;
+      provider_calls: number;
+    };
+    assert.equal(refusal.schema, REFUSAL_SCHEMA);
+    assert.equal(refusal.stage, "ownership");
+    assert.equal(refusal.code, "output_dir_taken");
+    assert.equal(refusal.provider_calls, 0);
+    assert.equal(readFileSync(join(canonicalOut, "prompt.md"), "utf8"), "OTHER_OWNER\n");
+    assert.equal(existsSync(join(recordDir, "completion.json")), false);
+    assert.equal(existsSync(join(recordDir, "telemetry.jsonl")), false);
+    assert.throws(
+      () => validateAssignmentManifest(writerManifest(root, commit, taskDir, {
+        assignment_id: "a2",
+        output_dir: join(dirname(taskDir), "out", "a2-run"),
+        rework_of: assignmentId,
+      })),
+      /does not point at an existing completion/,
+    );
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("rival symlink at the final output path after validation is not adopted", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const assignmentId = "a1-link";
+    const outputDir = join(dirname(taskDir), "out", "a1-run");
+    const recordDir = join(taskDir, assignmentId);
+    const rival = join(dirname(taskDir), "out", "rival-target");
+    const manifest = writerManifest(root, commit, taskDir, {
+      assignment_id: assignmentId,
+      output_dir: outputDir,
+    });
+    const { deps, spawns } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, grokAuth);
+    const canonicalOut = validateAssignmentManifest(manifest).output_dir;
+    const realMkdir = mkdirSync;
+    (deps as { mkdirSync?: typeof mkdirSync }).mkdirSync = ((path: string, opts?: { recursive?: boolean; mode?: number }) => {
+      if (path === canonicalOut && opts?.recursive === false) {
+        realMkdir(rival, { recursive: true });
+        writeFileSync(join(rival, "prompt.md"), "OTHER_OWNER\n");
+        symlinkSync(rival, canonicalOut);
+      }
+      return realMkdir(path, opts);
+    }) as typeof mkdirSync;
+    await assert.rejects(
+      () => runAssignment(manifest, deps),
+      (error: unknown) => {
+        assert.equal((error as { runnerCode?: string }).runnerCode, "output_dir_taken");
+        return true;
+      },
+    );
+    assert.equal(spawns.length, 0);
+    const refusal = JSON.parse(readFileSync(join(recordDir, "refusal.json"), "utf8")) as { code: string; stage: string };
+    assert.equal(refusal.stage, "ownership");
+    assert.equal(refusal.code, "output_dir_taken");
+    assert.equal(lstatSync(canonicalOut).isSymbolicLink(), true);
+    assert.equal(readFileSync(join(rival, "prompt.md"), "utf8"), "OTHER_OWNER\n");
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("rival creating only the parent of custom output still succeeds", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const outputDir = join(dirname(taskDir), "out", "a1-run");
+    mkdirSync(dirname(outputDir), { recursive: true });
+    const manifest = writerManifest(root, commit, taskDir, {
+      assignment_id: "a1-parent",
+      output_dir: outputDir,
+    });
+    const { deps, spawns } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, grokAuth);
+    const completion = await runAssignment(manifest, deps);
+    assert.equal(spawns.length, 1);
+    assert.equal(completion.transport.status, "completed");
+    assert.equal(completion.binding.output_dir, realpathSync(outputDir));
+    assert.equal(existsSync(join(taskDir, "a1-parent", "completion.json")), true);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("parent alias of own fresh record is the canonical output identity", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const parent = dirname(taskDir);
+    const alias = join(parent, "alias");
+    symlinkSync(parent, alias);
+    const assignmentId = "a1-own-alias";
+    const requested = join(alias, basename(taskDir), assignmentId);
+    const canonical = join(realpathSync(taskDir), assignmentId);
+    const manifestBytes = Buffer.from(JSON.stringify(writerManifest(root, commit, taskDir, {
+      assignment_id: assignmentId,
+      output_dir: requested,
+    })));
+    const manifest = JSON.parse(manifestBytes.toString("utf8")) as ReturnType<typeof writerManifest>;
+    const validated = validateAssignmentManifest(manifest);
+    assert.equal(validated.output_dir, canonical);
+    assert.equal(validated.record_dir, canonical);
+    assert.equal(validated.requested_output_dir, resolve(requested));
+    const { deps, spawns } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done", completedCount: 1 }) }, grokAuth);
+    const completion = await runAssignment(manifest, { ...deps, manifestBytes });
+    assert.equal(spawns.length, 1);
+    assert.equal(completion.binding.output_dir, canonical);
+    assert.equal(completion.binding.record_dir, canonical);
+    assert.equal(completion.manifest.sha256, sha256(manifestBytes));
+    assert.deepEqual(readFileSync(join(canonical, "manifest.json")), manifestBytes);
+    assert.equal(existsSync(join(canonical, "completion.json")), true);
+    assert.equal(existsSync(join(canonical, "dispatch.json")), true);
+    assert.equal(lstatSync(alias).isSymbolicLink(), true);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("parent alias of external fresh output uses the canonical harness path", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const parent = dirname(taskDir);
+    const alias = join(parent, "alias");
+    symlinkSync(parent, alias);
+    const assignmentId = "a1-ext-alias";
+    const requested = join(alias, "out", "a1-run");
+    const canonical = join(realpathSync(parent), "out", "a1-run");
+    const recordDir = join(realpathSync(taskDir), assignmentId);
+    const manifestBytes = Buffer.from(JSON.stringify(writerManifest(root, commit, taskDir, {
+      assignment_id: assignmentId,
+      output_dir: requested,
+    })));
+    const manifest = JSON.parse(manifestBytes.toString("utf8")) as ReturnType<typeof writerManifest>;
+    const validated = validateAssignmentManifest(manifest);
+    assert.equal(validated.output_dir, canonical);
+    assert.equal(validated.record_dir, recordDir);
+    assert.notEqual(validated.output_dir, validated.record_dir);
+    const { deps, spawns } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done", completedCount: 1 }) }, grokAuth);
+    const completion = await runAssignment(manifest, { ...deps, manifestBytes });
+    assert.equal(spawns.length, 1);
+    assert.equal(completion.binding.output_dir, realpathSync(canonical));
+    assert.equal(completion.binding.record_dir, recordDir);
+    assert.equal(completion.manifest.sha256, sha256(manifestBytes));
+    assert.deepEqual(readFileSync(join(recordDir, "manifest.json")), manifestBytes);
+    assert.equal(existsSync(join(recordDir, "completion.json")), true);
+    assert.equal(existsSync(join(canonical, "dispatch.json")), true);
+    assert.equal(existsSync(join(recordDir, "dispatch.json")), false);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("existing and racing final symlink at parent-alias output still refuses", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const parent = dirname(taskDir);
+    const alias = join(parent, "alias");
+    symlinkSync(parent, alias);
+    const existingId = "a1-exist-link";
+    const existingRequested = join(alias, "out", "exist-run");
+    mkdirSync(join(parent, "out"), { recursive: true });
+    symlinkSync(join(parent, "out"), existingRequested);
+    const existingManifest = writerManifest(root, commit, taskDir, {
+      assignment_id: existingId,
+      output_dir: existingRequested,
+    });
+    const existingDeps = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, grokAuth);
+    await assert.rejects(
+      () => runAssignment(existingManifest, existingDeps.deps),
+      (error: unknown) => {
+        assert.equal((error as { runnerCode?: string }).runnerCode, "output_dir_exists");
+        return true;
+      },
+    );
+    assert.equal(existingDeps.spawns.length, 0);
+    const existingRefusal = JSON.parse(readFileSync(join(taskDir, existingId, "refusal.json"), "utf8")) as {
+      stage: string;
+      code: string;
+      binding: { output_dir: string };
+    };
+    assert.equal(existingRefusal.stage, "validation");
+    assert.equal(existingRefusal.code, "output_dir_exists");
+    assert.equal(existingRefusal.binding.output_dir, resolve(existingRequested));
+    assert.equal(lstatSync(existingRequested).isSymbolicLink(), true);
+
+    const raceId = "a1-race-link";
+    const raceRequested = join(alias, "out", "race-run");
+    const raceCanonical = join(realpathSync(parent), "out", "race-run");
+    const rival = join(parent, "out", "rival-target");
+    const raceManifest = writerManifest(root, commit, taskDir, {
+      assignment_id: raceId,
+      output_dir: raceRequested,
+    });
+    const { deps, spawns } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, grokAuth);
+    const realMkdir = mkdirSync;
+    (deps as { mkdirSync?: typeof mkdirSync }).mkdirSync = ((path: string, opts?: { recursive?: boolean; mode?: number }) => {
+      if (path === raceCanonical && opts?.recursive === false) {
+        realMkdir(rival, { recursive: true });
+        writeFileSync(join(rival, "prompt.md"), "OTHER_OWNER\n");
+        symlinkSync(rival, raceCanonical);
+      }
+      return realMkdir(path, opts);
+    }) as typeof mkdirSync;
+    await assert.rejects(
+      () => runAssignment(raceManifest, deps),
+      (error: unknown) => {
+        assert.equal((error as { runnerCode?: string }).runnerCode, "output_dir_taken");
+        return true;
+      },
+    );
+    assert.equal(spawns.length, 0);
+    const refusal = JSON.parse(readFileSync(join(taskDir, raceId, "refusal.json"), "utf8")) as {
+      stage: string;
+      code: string;
+      binding: { output_dir: string };
+    };
+    assert.equal(refusal.stage, "ownership");
+    assert.equal(refusal.code, "output_dir_taken");
+    assert.equal(refusal.binding.output_dir, resolve(raceRequested));
+    assert.equal(lstatSync(raceCanonical).isSymbolicLink(), true);
+    assert.equal(readFileSync(join(rival, "prompt.md"), "utf8"), "OTHER_OWNER\n");
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("unsafe reserved namespace and .git output_dir write refusal only under the record dir", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const cases: Array<{ id: string; output: string }> = [
+      { id: "unsafe-eq", output: taskDir },
+      { id: "unsafe-parent", output: dirname(taskDir) },
+      { id: "unsafe-other", output: join(taskDir, "asg-other") },
+      { id: "unsafe-hist", output: join(taskDir, "plan-history", "x") },
+      { id: "unsafe-git", output: join(root, ".git", "x") },
+    ];
+    for (const item of cases) {
+      const manifest = writerManifest(root, commit, taskDir, {
+        assignment_id: item.id,
+        output_dir: item.output,
+      });
+      const beforeGit = gitSnapshot(root);
+      const beforeTask = snapshotTree(taskDir);
+      const { deps, spawns } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, grokAuth);
+      await assert.rejects(
+        () => runAssignment(manifest, deps),
+        (error: unknown) => {
+          assert.equal((error as { runnerCode?: string }).runnerCode, "output_dir_unsafe");
+          return true;
+        },
+      );
+      assert.equal(spawns.length, 0);
+      const recordDir = join(taskDir, item.id);
+      const refusal = JSON.parse(readFileSync(join(recordDir, "refusal.json"), "utf8")) as {
+        stage: string;
+        code: string;
+        provider_calls: number;
+      };
+      assert.equal(refusal.stage, "validation");
+      assert.equal(refusal.code, "output_dir_unsafe");
+      assert.equal(refusal.provider_calls, 0);
+      if (item.id !== "unsafe-eq" && item.id !== "unsafe-parent") {
+        assert.equal(existsSync(item.output), false);
+      }
+      assert.equal(existsSync(join(taskDir, "plan-history")), false);
+      assert.equal(existsSync(join(root, ".git", "x")), false);
+      const afterGit = gitSnapshot(root);
+      assert.deepEqual([...afterGit.files.entries()], [...beforeGit.files.entries()]);
+      const afterTask = snapshotTree(taskDir);
+      for (const rel of afterTask.keys()) {
+        if (rel === `${item.id}/manifest.json` || rel === `${item.id}/refusal.json` || rel === `${item.id}/runner-errors.jsonl`) {
+          continue;
+        }
+        assert.equal(beforeTask.has(rel) || rel.startsWith(`${item.id}/`), true);
+      }
+    }
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("existing final output path writes refusal and does not spawn", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const outputDir = join(dirname(taskDir), "out", "exists");
+    mkdirSync(outputDir, { recursive: true });
+    writeFileSync(join(outputDir, "keep.txt"), "keep\n");
+    const assignmentId = "asg-exists";
+    const manifest = writerManifest(root, commit, taskDir, {
+      assignment_id: assignmentId,
+      output_dir: outputDir,
+    });
+    const { deps, spawns } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, grokAuth);
+    await assert.rejects(
+      () => runAssignment(manifest, deps),
+      (error: unknown) => {
+        assert.equal((error as { runnerCode?: string }).runnerCode, "output_dir_exists");
+        return true;
+      },
+    );
+    assert.equal(spawns.length, 0);
+    const refusal = JSON.parse(readFileSync(join(taskDir, assignmentId, "refusal.json"), "utf8")) as {
+      stage: string;
+      code: string;
+    };
+    assert.equal(refusal.stage, "validation");
+    assert.equal(refusal.code, "output_dir_exists");
+    assert.equal(readFileSync(join(outputDir, "keep.txt"), "utf8"), "keep\n");
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("pre-existing record_dir refuses with no write", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const manifest = writerManifest(root, commit, taskDir);
+    const recordDir = join(taskDir, "asg-writer-1");
+    mkdirSync(recordDir);
+    writeFileSync(join(recordDir, "keep.json"), "{\"keep\":true}\n");
+    const beforeGit = gitSnapshot(root);
+    const beforeTask = snapshotTree(taskDir);
+    const { deps, spawns } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, grokAuth);
+    await assert.rejects(() => runAssignment(manifest, deps), /already present/);
+    assert.equal(spawns.length, 0);
+    assert.deepEqual([...snapshotTree(taskDir).entries()], [...beforeTask.entries()]);
+    assert.deepEqual([...gitSnapshot(root).files.entries()], [...beforeGit.files.entries()]);
+    assert.equal(readFileSync(join(recordDir, "keep.json"), "utf8"), "{\"keep\":true}\n");
+    assert.equal(existsSync(join(recordDir, "refusal.json")), false);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("identifiable invalid writes refusal with zero provider calls and private diagnostics", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const sentinel = "SENTINEL_RAW_LEAK_TEST";
+    const assignmentId = "asg-invalid";
+    const manifest = writerManifest(root, commit, taskDir, {
+      assignment_id: assignmentId,
+      effort: sentinel,
+    });
+    const { deps, spawns } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, grokAuth);
+    await assert.rejects(() => runAssignment(manifest, deps), /unknown effort|does not accept effort/);
+    assert.equal(spawns.length, 0);
+    const recordDir = join(taskDir, assignmentId);
+    const refusal = JSON.parse(readFileSync(join(recordDir, "refusal.json"), "utf8")) as Record<string, unknown>;
+    assert.equal(refusal.schema, REFUSAL_SCHEMA);
+    assert.equal(refusal.stage, "validation");
+    assert.equal(refusal.provider_calls, 0);
+    assert.equal(existsSync(join(recordDir, "telemetry.jsonl")), false);
+    assert.equal(existsSync(join(recordDir, "completion.json")), false);
+    assert.equal(publicText(refusal).includes(sentinel), false);
+    const errorsPath = join(recordDir, "runner-errors.jsonl");
+    assert.equal(existsSync(errorsPath), true);
+    assert.equal(modeOf(errorsPath), 0o600);
+    assert.equal(readFileSync(errorsPath, "utf8").includes(sentinel), true);
+    assert.equal(existsSync(join(recordDir, "error.txt")), false);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("unidentifiable manifest writes nothing under task_dir", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    writePlan(taskDir, "task-a", "# plan\n", commit);
+    const before = snapshotTree(taskDir);
+    const manifest = {
+      schema: "kxm.assignment.v0",
+      task_id: "task-a",
+      assignment_id: "asg-writer-1",
+      kind: "implement",
+      harness: "grok",
+      model: "grok-4.6",
+      effort: "high",
+      permission: "edit",
+      cwd: root,
+      task_dir: taskDir,
+      base: { kind: "clean", commit },
+      plan_ref: { kind: "current", path: "plan-current.md", sha256: sha256("# plan\n") },
+      inputs: [],
+      contract: {
+        boundary: "x",
+        deliverables: ["scripts/assignment-run.mjs"],
+        witness: { id: "verify" },
+        deferred: [],
+      },
+      output_dir: "asg-writer-1",
+    };
+    await assert.rejects(() => runAssignment(manifest), /assignment schema must be/);
+    assert.deepEqual([...snapshotTree(taskDir).entries()], [...before.entries()]);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("runner never creates error.txt and preserves a helper error.txt", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const recordDir = join(taskDir, "asg-writer-1");
+    const helperError = "HELPER_ERROR_BYTES\n";
+    const manifest = writerManifest(root, commit, taskDir);
+    const { deps, spawns } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, () => ({
+      status: 0,
+      stdout: "Available models:\n",
+      stderr: "",
+      error: undefined,
+    }), {
+      outputDir: recordDir,
+      onAuth: () => {
+        writeFileSync(join(recordDir, "error.txt"), helperError);
+      },
+    });
+    const completion = await runAssignment(manifest, deps);
+    assert.equal(spawns.length, 0);
+    assert.equal(completion.transport.stage, "auth");
+    assert.equal(readFileSync(join(recordDir, "error.txt"), "utf8"), helperError);
+    assert.equal(existsSync(join(recordDir, "error.txt")), true);
+    if (existsSync(join(recordDir, "runner-errors.jsonl"))) {
+      assert.equal(modeOf(join(recordDir, "runner-errors.jsonl")), 0o600);
+      assert.notEqual(join(recordDir, "runner-errors.jsonl"), join(recordDir, "error.txt"));
+    }
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("implement prompt requires verify and review prompt forbids it", () => {
+  const { root, commit } = initRepo();
+  const writerDir = initTask();
+  const reviewDir = initTask();
+  try {
+    const writer = validateAssignmentManifest(writerManifest(root, commit, writerDir));
+    const writerPrompt = renderAssignmentPrompt(writer);
+    assert.match(writerPrompt, /Run `npm run verify` before completing and report its exit code/);
+    assert.match(writerPrompt, /Root re-runs the same fixed witness after you exit/);
+    assert.equal(writerPrompt.includes("not executed in this assignment"), false);
+    const repairDir = initTask();
+    try {
+      const repair = validateAssignmentManifest(writerManifest(root, commit, repairDir, { kind: "repair" }));
+      const repairPrompt = renderAssignmentPrompt(repair);
+      assert.match(repairPrompt, /Run `npm run verify` before completing and report its exit code/);
+      assert.equal(repairPrompt.includes("not executed in this assignment"), false);
+    } finally {
+      rmSync(dirname(repairDir), { recursive: true, force: true });
+    }
+    const plannerDir = initTask();
+    try {
+      const planner = validateAssignmentManifest(planManifest(root, commit, plannerDir));
+      const planPrompt = renderAssignmentPrompt(planner);
+      assert.match(planPrompt, /Root runs the witness separately; do not run it/);
+      assert.equal(/npm run verify/.test(planPrompt), false);
+    } finally {
+      rmSync(dirname(plannerDir), { recursive: true, force: true });
+    }
+    writeFileSync(join(root, "README.md"), "repo\nstaged\n");
+    git(root, ["add", "README.md"]);
+    const indexTree = git(root, ["write-tree"]);
+    const reviewer = validateAssignmentManifest(reviewerManifest(root, commit, indexTree, reviewDir));
+    const reviewPrompt = renderAssignmentPrompt(reviewer);
+    assert.match(reviewPrompt, /Root runs the witness separately; do not run it/);
+    assert.equal(/npm run verify/.test(reviewPrompt), false);
+  } finally {
+    cleanup(root, writerDir, [dirname(reviewDir)]);
+  }
+});
+
+test("invalid kind writes identifiable refusal without public kind or sentinel", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const sentinel = "SENTINEL_PRIVATE_KIND";
+    const assignmentId = "asg-kind";
+    const manifest = writerManifest(root, commit, taskDir, {
+      assignment_id: assignmentId,
+      kind: sentinel,
+    });
+    const { deps, spawns } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, grokAuth);
+    await assert.rejects(
+      () => runAssignment(manifest, deps),
+      (error: unknown) => {
+        assert.equal((error as { runnerCode?: string }).runnerCode, "route_invalid");
+        return true;
+      },
+    );
+    assert.equal(spawns.length, 0);
+    const recordDir = join(taskDir, assignmentId);
+    const refusal = JSON.parse(readFileSync(join(recordDir, "refusal.json"), "utf8")) as Record<string, unknown>;
+    assert.equal(refusal.schema, REFUSAL_SCHEMA);
+    assert.equal(refusal.stage, "validation");
+    assert.equal(refusal.code, "route_invalid");
+    assert.equal(refusal.provider_calls, 0);
+    assert.equal(Object.hasOwn(refusal, "kind"), false);
+    assert.equal(JSON.stringify(refusal).includes(sentinel), false);
+    const stored = JSON.parse(readFileSync(join(recordDir, "manifest.json"), "utf8")) as { kind: string };
+    assert.equal(stored.kind, sentinel);
+    assert.equal(readFileSync(join(recordDir, "runner-errors.jsonl"), "utf8").includes(sentinel), true);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("kind already present is route_invalid and still consumes identity", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const assignmentId = "asg-already-kind";
+    const manifest = writerManifest(root, commit, taskDir, {
+      assignment_id: assignmentId,
+      kind: "already present",
+    });
+    const { deps, spawns } = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, grokAuth);
+    await assert.rejects(
+      () => runAssignment(manifest, deps),
+      (error: unknown) => {
+        assert.equal((error as { runnerCode?: string }).runnerCode, "route_invalid");
+        return true;
+      },
+    );
+    assert.equal(spawns.length, 0);
+    const refusal = JSON.parse(readFileSync(join(taskDir, assignmentId, "refusal.json"), "utf8")) as {
+      stage: string;
+      code: string;
+      kind?: string;
+    };
+    assert.equal(refusal.stage, "validation");
+    assert.equal(refusal.code, "route_invalid");
+    assert.equal(Object.hasOwn(refusal, "kind"), false);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("dot-prefixed foreign task descendant is unsafe; owned descendant runs", async () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const foreign = writerManifest(root, commit, taskDir, {
+      assignment_id: "asg-dot-foreign",
+      output_dir: "..foreign/native",
+    });
+    const foreignDeps = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, grokAuth);
+    await assert.rejects(
+      () => runAssignment(foreign, foreignDeps.deps),
+      (error: unknown) => {
+        assert.equal((error as { runnerCode?: string }).runnerCode, "output_dir_unsafe");
+        return true;
+      },
+    );
+    assert.equal(foreignDeps.spawns.length, 0);
+    const foreignRefusal = JSON.parse(
+      readFileSync(join(taskDir, "asg-dot-foreign", "refusal.json"), "utf8"),
+    ) as { code: string; stage: string };
+    assert.equal(foreignRefusal.code, "output_dir_unsafe");
+    assert.equal(foreignRefusal.stage, "validation");
+    assert.equal(existsSync(join(taskDir, "..foreign")), false);
+
+    const owned = writerManifest(root, commit, taskDir, {
+      assignment_id: "asg-dot-owned",
+      output_dir: "asg-dot-owned/..owned/native",
+    });
+    const ownedDeps = dispatchDeps("grok", { stdout: grokAnswer({ status: "done" }) }, grokAuth);
+    const completion = await runAssignment(owned, ownedDeps.deps);
+    assert.equal(ownedDeps.spawns.length, 1);
+    assert.equal(completion.schema, COMPLETION_SCHEMA);
+    assert.equal(existsSync(join(taskDir, "asg-dot-owned", "..owned", "native")), true);
+    assert.equal(existsSync(join(taskDir, "asg-dot-owned", "completion.json")), true);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("lstat EACCES is not treated as missing output", () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const manifest = writerManifest(root, commit, taskDir, {
+      assignment_id: "asg-lstat",
+      output_dir: "asg-lstat",
+    });
+    const output = resolve(taskDir, "asg-lstat");
+    assert.throws(
+      () => validateAssignmentManifest(manifest, {
+        lstatSync: ((path: string) => {
+          if (basename(String(path)) === "asg-lstat") {
+            const error = new Error("PRIVATE_PERMISSION_DETAIL") as NodeJS.ErrnoException;
+            error.code = "EACCES";
+            throw error;
+          }
+          return lstatSync(path);
+        }) as typeof lstatSync,
+      }),
+      (error: unknown) => {
+        assert.equal((error as { runnerCode?: string }).runnerCode, "unknown");
+        assert.equal(String((error as Error).message).includes("PRIVATE_PERMISSION_DETAIL"), false);
+        return true;
+      },
+    );
+    assert.equal(existsSync(join(taskDir, "asg-lstat")), false);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
+test("realpath failure of deepest existing ancestor fails closed", () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const parent = join(dirname(taskDir), "opaque-parent");
+    mkdirSync(parent);
+    const manifest = writerManifest(root, commit, taskDir, {
+      assignment_id: "asg-realpath",
+      output_dir: join(parent, "native"),
+    });
+    assert.throws(
+      () => validateAssignmentManifest(manifest, {
+        realpathSync: ((path: string) => {
+          if (String(path) === parent) {
+            const error = new Error("PRIVATE_REALPATH_DETAIL") as NodeJS.ErrnoException;
+            error.code = "EACCES";
+            throw error;
+          }
+          return realpathSync(path);
+        }) as typeof realpathSync,
+      }),
+      (error: unknown) => {
+        assert.equal((error as { runnerCode?: string }).runnerCode, "unknown");
+        assert.equal(String((error as Error).message).includes("PRIVATE_REALPATH_DETAIL"), false);
+        return true;
+      },
+    );
+    assert.equal(existsSync(join(parent, "native")), false);
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+
