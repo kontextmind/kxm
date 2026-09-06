@@ -2,11 +2,14 @@
 
 Role routing comes from [`AGENTS.md`](../AGENTS.md). This file is the
 **mechanics**: what each CLI actually supports headlessly, and the defaults we
-use. If the routing table and this file disagree, `AGENTS.md` wins.
+use. If the routing table and this file disagree, `AGENTS.md` wins. Agents are
+a rotation; Grok is the currently admitted native writer, not a fixed sole
+writer.
 
-Snapshot date: **2026-09-06** (M1 capability probe). Re-probe after any CLI
-update; these surfaces change without notice. Installed ≠ auth-verified ≠
-helper-eligible.
+Snapshot date: **2026-09-06** (M1 capability probe). Catalog/auth rows below
+are corrected from `plugins/kxm/src/vnext-harness.ts` and helper argv (M5
+docs). Re-probe after any CLI update; these surfaces change without notice.
+Installed ≠ auth-verified ≠ helper-eligible.
 
 ## Installed vs auth-verified
 
@@ -24,8 +27,9 @@ helper-eligible.
 in `scripts/harness-run.mjs` (shell:false, absolute `.exe` only; `.cmd`/`.bat`/
 `.ps1` refused). That is not a claim that any harness works on Windows.
 
-Product catalog still has no `grok` row and Codex has no `authArgs`. Do not
-invent them here.
+Product catalog (`BUILTIN_HARNESSES`): `grok` is present (`mode: either`,
+`authArgs: ["models"]`). Codex `authArgs` are `["login", "status"]`. Helper
+auth is observational inventory, not a Phase 11 adapter.
 
 ## Flag matrix (verified helper routes)
 
@@ -42,15 +46,23 @@ read-only Claude. Never read `~/.grok/auth.json`.
 
 ## Defaults
 
+Evidence-informed recipe defaults (not a ranking): **medium** for
+implementation, planning, and architecture review; **low** for CLI review.
+
 | Role | Command |
 |---|---|
-| Implement / write | `grok --prompt-file <brief> -m grok-4.6 --reasoning-effort high --always-approve --no-subagents --disable-web-search --output-format json` |
-| Plan | `cat <brief> \| claude -p --model fable --tools Read,Glob,Grep --safe-mode --strict-mcp-config --mcp-config <empty.json> --disable-slash-commands --output-format json` |
+| Implement / write | `grok --prompt-file <brief> -m grok-4.6 --reasoning-effort medium --always-approve --no-subagents --disable-web-search --output-format json` |
+| Plan | `cat <brief> \| claude -p --model fable --effort medium --tools Read,Glob,Grep --safe-mode --strict-mcp-config --mcp-config <empty.json> --disable-slash-commands --output-format json` |
 | Review: architecture, permissions | same as Plan |
-| Review: CLI, docs | `codex exec -m gpt-5.6-sol -C <dir> --sandbox read-only --ignore-user-config --json - < <brief>` |
+| Review: CLI, docs | `codex exec -m gpt-5.6-sol -c model_reasoning_effort="low" -C <dir> --sandbox read-only --ignore-user-config --json - < <brief>` |
 
-Prefer `just impl|plan|review-arch|review-cli`. There is **no** `impl-pi`
-writer fallback. If `grok` is logged out, stop.
+`just impl|plan|review-arch|review-cli` are **low-level harness transport**.
+They do not mint assignment, witness, or acceptance proof. Normal entry is
+`just assign` with a closed manifest; then `just witness`, `just attribute`,
+`just observe-cost`, `just accept`, `just plan-current`, and
+`just change-report` (positional quoted arguments). There is **no** `impl-pi`
+writer fallback. If `grok` is logged out, stop. Two attempts by default; a
+third only with new evidence or a changed approach, then relief.
 
 **Provider-native rule.** Anthropic → Claude CLI; OpenAI → Codex; xAI → Grok
 CLI; Moonshot → Kimi CLI when that helper is verified (not today); Google →

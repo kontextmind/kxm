@@ -3,9 +3,14 @@
 > **Status.** `kxm.routing-record.v1` is **shipped and parse-only**. Dev-helper
 > telemetry (`kxm.harness-request.v1` / `kxm.harness-result.v2` from
 > `scripts/harness-run.mjs`) is a **shipped development tool**, not a product
-> producer of routing records. **Planned and unimplemented:** v2 records,
+> producer of routing records. The issue 127 assignment runner
+> (`scripts/assignment-run.mjs`, `just assign`) is **implemented/unreleased**:
+> it writes helper telemetry and a bookkeeping routing record per assignment,
+> not product event-settle. **Planned and unimplemented:** v2 records,
 > engine event-settle write, ranked `kxm routing report`, and a dated hashed
-> price catalog.
+> price catalog. M5 docs/defaults are in this tree; runner adoption and
+> retirement of scratch recipes still need native writer plus Fable/Sol
+> review smoke. This is not a Phase 4 assignment layer or a Phase 11 adapter.
 
 This document describes what the tree does today versus what Tracking still
 plans. It does not invent prices or close product enums.
@@ -89,6 +94,58 @@ against an invoice or usage API):
 Do not relabel provider-reported or list-basis amounts as billed. Partial
 usage after failure or interruption is kept and marked `usagePartial`;
 missing counters stay absent, not zero.
+
+## Implemented/unreleased: assignment runner (issue 127)
+
+`scripts/assignment-run.mjs` is the normal **dev** entry. It is not `kxm run`
+and does not replace Phase 3/4 gates.
+
+Working commands (absolute paths; flags from the script, not invented):
+
+```text
+just assign /abs/manifest.json
+# node scripts/assignment-run.mjs run --manifest /abs/manifest.json
+
+just witness /abs/record-dir
+# witness --record-dir /abs/record-dir
+
+just attribute /abs/task-dir /abs/record-dir orchestration /abs/note.txt
+# attribute --task-dir --record-dir --class --explanation-file
+
+just observe-cost /abs/task-dir /abs/observation.json
+# observe-cost --task-dir --input
+
+just accept /abs/task-dir <commit> /abs/writer-record /abs/arch-review /abs/cli-review
+# accept --task-dir --commit --record-dir --critic --critic
+# optional --observed-pr <id> --observed-ci <id>
+
+just plan-current /abs/task-dir /abs/plan.md <sha256> <base-commit> <expected-generation>
+just change-report /abs/task-dir
+```
+
+`just impl|plan|review-arch|review-cli` remain harness transport. They do not
+create assignment identity, witness receipts, or `accepted.json`.
+
+Distinctions the report and docs must keep:
+
+- **Manifest / current plan / gate / acceptance / cost** are different
+  records. Completions are not acceptance. Witness receipts are not critic
+  PASS. `attribute` history does not edit `completion.json`. Cost-only
+  imports never gain witness or acceptance eligibility.
+- `change-report` separates provider-reported sums, list estimates,
+  unmetered, unknown, not-dispatched (`provider_calls` 0), and partial
+  markers. Missing is not `0`. Unmetered is not free. Cumulative tokens are
+  not context occupancy. True elapsed time is separate from summed latency
+  and summed witness duration. The effort table is descriptive, not a
+  ranking. Orchestration/root usage is unavailable unless imported.
+- Observed PR/CI identifiers are unvalidated observations.
+- Private handoff notes live in `attribute` explanations and private model
+  summaries; the report references them and does not print the prose.
+
+Evidence-informed **effort defaults** for example manifests and transport
+recipes: medium implementation/planning/architecture, low CLI review. Not a
+learned policy and not a catalog feed. Phase 9 may use this report to
+**propose** harness or model changes; activation still requires Git review.
 
 ## Planned: v2 record
 

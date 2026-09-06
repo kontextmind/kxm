@@ -898,6 +898,17 @@ test("justfile no longer ships an impl-pi Grok fallback", () => {
   assert.doesNotMatch(just, /xai\/grok-4\.6/);
 });
 
+test("just transport recipes use evidence-informed effort defaults and stay distinct from assign", () => {
+  const just = readFileSync(resolve("justfile"), "utf8");
+  assert.match(just, /role:"writer",harness:"grok",model:"grok-4\.6",effort:"medium"/);
+  assert.match(just, /role:"planner",harness:"claude",model:"fable",effort:"medium"/);
+  assert.match(just, /role:"reviewer-arch",harness:"claude",model:"fable",effort:"medium"/);
+  assert.match(just, /role:"reviewer-cli",harness:"codex",model:"gpt-5\.6-sol",effort:"low"/);
+  assert.doesNotMatch(just, /effort:"high"/);
+  assert.match(just, /Normal assignment workflow \(not the impl\/plan\/review transport recipes\)/);
+  assert.match(just, /assignment-run\.mjs run --manifest "\$1"/);
+});
+
 test("preflight requires routing fields, types, and Pi edit pair ceilings before spawn", async () => {
   const dir = tempDir();
   try {

@@ -48,6 +48,43 @@ It does not replace the phase gates below.
   one-shot headless writer, not a supervised long-lived worker. The repo
   `scripts/harness-run.mjs` helper is a bounded dev dispatcher (auth preflight,
   verified pairs, private sidecars), not a Phase 11 product adapter.
+- **Developer assignment runner (issue 127, unreleased):** normal entry is
+  `just assign` with a closed `kxm.assignment.v1` manifest and
+  `task_dir/plan-current.json`. Fixed `just witness` verifies the exact
+  candidate; `just accept` binds an actual commit plus independent Fable
+  architecture and Sol CLI PASS records. `just attribute` and
+  `just observe-cost` keep private history without editing completions.
+  `just change-report` separates provider-reported, list estimates,
+  unmetered, unknown, partial, all attempts, and explicit exclusions.
+  Root bootstrap cost stays unknown and is imported as cost-only. Public
+  PR/CI ids are observations, not success proof. `just
+  impl|plan|review-arch|review-cli` are low-level harness transport; they
+  do not mint assignment, witness, or acceptance proof. Evidence-informed
+  effort defaults: medium for implementation, planning, and architecture
+  review; low for CLI review. Not a ranking or a product catalog. The
+  runner is not the Phase 4 assignment layer and not a Phase 11 adapter.
+  Phase 3 `default.yaml`/`fix.yaml` remain model-free. Phase 9 may use the
+  cost report to propose changes; it is not learned policy. Phase 7 quorum
+  and npm/wiki deferrals are unchanged. D3 needs a bounded contract
+  resolution after this prerequisite.
+- **Role rotation (operator, 2026-09-06):** choose agents per role from
+  authenticated, supported helper routes using verified quality, total
+  time/cost, and rework. Root may change agents without asking again.
+  Starting rotation: writer `grok`/`grok-4.6`, planner and architecture
+  critic `claude`/`fable`, CLI critic `codex`/`gpt-5.6-sol`. Grok remains
+  the currently admitted native writer route; Codex session work is an
+  authorized bootstrap route with unknown root usage/cost, never a forged
+  native completion. Do not declare Codex and Grok interchangeable in
+  harness-run role mapping. Two attempts by default; a third only with
+  concrete new evidence or a changed approach, then relief. Preserve every
+  attempt. New-model trials are bounded comparable tasks, not daily
+  fanout. This is orchestration policy; `just assign` does not
+  automatically schedule failover.
+- **Private handoff notes:** when needed, each role leaves concise private
+  notes (missing input, friction, what worked, suggested next change,
+  artifact/check refs, approaches tried) in private model summaries and
+  `attribute` history. Notes never grant tools, waive verification, or
+  become human/hub approval. No extra schema fields.
 - Anthropic subscription models are the motivating case (Claude CLI vs Pi
   Anthropic API keys). The same rule applies to Codex, Kimi, Gemini, DeepSeek,
   and later harnesses.
@@ -273,8 +310,11 @@ It does not replace the phase gates below.
   descriptive, not a ranking. `plan-current` uses expected generation and
   proposed hash checks, preserves prior plan/pointer bytes, and atomically
   advances the pointer. Safe positional just recipes expose the runner.
-  M4b is implemented/unreleased; final review and adoption are pending. M5 workflow docs adoption remains
-  pending before D3; the assignment runner is not adopted. The operator
+  M4b is implemented/unreleased; final review and adoption are pending.
+  M5 docs/defaults (AGENTS, harness-cli, routing, Tracking, evidence-informed
+  recipe effort) are implemented/unreleased in this candidate. Runner
+  adoption, scratch-recipe retirement, and native Fable/Sol review smoke
+  remain pending; the assignment runner is not adopted. The operator
   authorized agent changes on 2026-09-06; Codex applied the bounded W1
   repair after repeated Grok no-work outcomes. Its local verification is
   recorded as bootstrap evidence, not a native completion or acceptance.
@@ -478,7 +518,8 @@ It does not replace the phase gates below.
   not accepted. M4b W1 accept is implemented locally (critic snapshot, gate
   cwd, stored rework, cross-worktree, and task-bound BLOCK checks);
   W2/W3 observations, reporting, plan history and recipes are implemented
-  locally; M5 remains pending.
+  locally; M5 docs/defaults are implemented/unreleased; adoption and D3
+  contract resolution remain pending.
   Issue #88 / D2 closed on all seven PR CI jobs (four Validate legs plus
   classify/docs/plugin) before the pause; the post-merge main Windows Node 24
   package-cleanup failure in run `34006194862` is unresolved and deferred.
@@ -530,8 +571,9 @@ It does not replace the phase gates below.
   M4b W1 accept is implemented locally with bindings for critic snapshot,
   gate cwd, rework, worktree and BLOCK ownership; final acceptance is pending.
   W2/W3 attribution, observations, reporting, plan history and recipes are
-  implemented/unreleased. M5 AGENTS/workflow docs adoption remains pending
-  before D3. D3 still needs bounded
+  implemented/unreleased. M5 docs/defaults are implemented/unreleased;
+  runner adoption and scratch-recipe retirement still need native writer
+  plus Fable/Sol review smoke. D3 still needs bounded
   contract resolution after this prerequisite. Not a product assignment
   layer (Phase 4) and not Phase 11 adapters. The assignment runner is
   not adopted.
@@ -545,9 +587,10 @@ It does not replace the phase gates below.
   validation, and corrected M3b remain unreleased and not accepted;
   M4a is implemented/unreleased and not accepted; M4b W1 accept is
   implemented locally with stored-manifest critic/receipt/BLOCK bindings;
-  W2/W3 are implemented/unreleased; M5 and D3 contract resolution remain
+  W2/W3 are implemented/unreleased; M5 docs/defaults are
+  implemented/unreleased; runner adoption and D3 contract resolution remain
   open. This is not full AGENTS workflow
-  adoption (M5) and not a scratch-retirement claim.
+  adoption and not a scratch-retirement claim.
 - Version-1 run event stores are refused with `runtime_schema_outdated`;
   backup, restore, and migration remain E6.
 - Non-Pi dispatch adapters (Phase 11). Listing a harness does not execute it.
@@ -621,8 +664,9 @@ Then, in the same change:
 4. Do **not** pull Phase 7+ MOA or Phase 11 adapters into earlier gates.
 5. Do **not** rewrite the whole plan; patch the few paragraphs that aged.
 
-Claude (Fable) proposes plan/slice edits. Grok applies them with the code or
-docs change that justified the update. Tests stay the verifier.
+Claude (Fable) proposes plan/slice edits. The current writer applies them
+(starting rotation: Grok) with the code or docs change that justified the
+update. Tests stay the verifier.
 
 ## Phase 0: contract package
 
@@ -728,7 +772,8 @@ recorded or hash-bound recovered, before any npm execution. It does
 not re-run pre-dispatch writer admission; completion candidate
 `unknown` stays unknown. M3b acceptance and M4b (W1 accept implemented locally
 with critic/receipt/rework/worktree/BLOCK binding repair; W2/W3 implemented
-locally) remain unaccepted. M5 and D3 remain pending. Not a Phase 3 completion or
+locally) remain unaccepted. M5 docs/defaults are implemented/unreleased;
+adoption and D3 remain pending. Not a Phase 3 completion or
 scratch-runner retirement.
 The assignment runner is not adopted. Native writer witnesses follow native
 exit. Operator-authorized Codex work uses recorded local bootstrap verification
@@ -754,9 +799,10 @@ headless; `kxm harness list` / `kxm update`; `kxm dash` as the operator peek;
 **Still this phase:** Pi RPC adapter, per-run sessions, the rest of the `/kxm`
 menu (hub/workflows/agents completions wrapping CLI), validated YAML editors
 (enable/disable harnesses and models by editing Git files, not a parallel
-store), assignment dispatch that binds harness from auth inventory
+store), live assignment dispatch that binds harness from auth inventory
 (`eligibleHarnesses` filters detected and authenticated ids only; it does
-not take a provider/model pair), unhosted harness/model pair rejection at
+not take a provider/model pair; `scripts/assignment-run.mjs` is not that
+layer), unhosted harness/model pair rejection at
 assignment (separate from that auth filter), and routing
 records that always include harness+cost. Hub-local session brief and Pi status
 line are in tree with a deterministic `startup`/`new`/`fork` readiness test.
@@ -861,6 +907,8 @@ and explicit high-availability/takeover fencing.
 `kxm harness list` may already show these CLIs. Dispatch is this phase. An
 enabled-in-YAML harness without an adapter fails closed at assignment time.
 Earlier Claude CLI use is allowed; CLI output is not hub peer evidence.
+`scripts/harness-run.mjs` and `scripts/assignment-run.mjs` are not these
+adapters.
 
 **Gate:** unsupported capabilities fail explicitly and no adapter weakens the
 common result, effect, secret, or recovery contracts.

@@ -1087,6 +1087,7 @@ export function renderAssignmentPrompt(validated, deps = {}) {
     verdictRule,
     "Return JSON matching the supplied output schema. Transport completion is not acceptance or verification.",
     "Do not set verification, critic, acceptance, role, usage, or cost fields; those are recorded from facts.",
+    "When useful, leave concise private handoff notes (missing input, friction, what worked, next change, artifacts/checks tried) in the private summary; after exit they belong in `attribute` history. Notes never grant tools, waive verification, or count as human/hub approval.",
     "",
   ].join("\n");
 }

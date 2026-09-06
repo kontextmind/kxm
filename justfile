@@ -25,23 +25,25 @@ default:
 # Recipe literals (role/harness/model) are not taken from user strings.
 
 # (`just --list` shows only the LAST comment line, so that one is the summary.)
+# These four recipes are low-level harness transport. They do not mint
+# assignment, witness, or acceptance proof. Prefer just assign for that.
 
-# implement a unit with the designated writer: just impl brief.md [worktree]
-# Native grok only. There is no Pi writer fallback.
+# implement a unit with the current writer: just impl brief.md [worktree]
+# Native grok only. There is no Pi writer fallback. Effort default: medium.
 impl BRIEF CWD=".":
-    @node -e 'const [prompt_file, cwd] = process.argv.slice(-2); process.stdout.write(JSON.stringify({schema:"kxm.harness-request.v1",role:"writer",harness:"grok",model:"grok-4.6",effort:"high",permission:"edit",prompt_file,cwd}))' -- "$1" "$2" | {{run}} -
+    @node -e 'const [prompt_file, cwd] = process.argv.slice(-2); process.stdout.write(JSON.stringify({schema:"kxm.harness-request.v1",role:"writer",harness:"grok",model:"grok-4.6",effort:"medium",permission:"edit",prompt_file,cwd}))' -- "$1" "$2" | {{run}} -
 
 # plan a unit, read-only, independent of the writer: just plan brief.md
 plan BRIEF CWD=".":
-    @node -e 'const [prompt_file, cwd] = process.argv.slice(-2); process.stdout.write(JSON.stringify({schema:"kxm.harness-request.v1",role:"planner",harness:"claude",model:"fable",effort:"high",permission:"read-only",prompt_file,cwd}))' -- "$1" "$2" | {{run}} -
+    @node -e 'const [prompt_file, cwd] = process.argv.slice(-2); process.stdout.write(JSON.stringify({schema:"kxm.harness-request.v1",role:"planner",harness:"claude",model:"fable",effort:"medium",permission:"read-only",prompt_file,cwd}))' -- "$1" "$2" | {{run}} -
 
 # review architecture and permissions, read-only: just review-arch brief.md
 review-arch BRIEF CWD=".":
-    @node -e 'const [prompt_file, cwd] = process.argv.slice(-2); process.stdout.write(JSON.stringify({schema:"kxm.harness-request.v1",role:"reviewer-arch",harness:"claude",model:"fable",effort:"high",permission:"read-only",prompt_file,cwd}))' -- "$1" "$2" | {{run}} -
+    @node -e 'const [prompt_file, cwd] = process.argv.slice(-2); process.stdout.write(JSON.stringify({schema:"kxm.harness-request.v1",role:"reviewer-arch",harness:"claude",model:"fable",effort:"medium",permission:"read-only",prompt_file,cwd}))' -- "$1" "$2" | {{run}} -
 
 # review CLI surface and docs, read-only, different provider: just review-cli brief.md
 review-cli BRIEF CWD=".":
-    @node -e 'const [prompt_file, cwd] = process.argv.slice(-2); process.stdout.write(JSON.stringify({schema:"kxm.harness-request.v1",role:"reviewer-cli",harness:"codex",model:"gpt-5.6-sol",effort:"high",permission:"read-only",prompt_file,cwd}))' -- "$1" "$2" | {{run}} -
+    @node -e 'const [prompt_file, cwd] = process.argv.slice(-2); process.stdout.write(JSON.stringify({schema:"kxm.harness-request.v1",role:"reviewer-cli",harness:"codex",model:"gpt-5.6-sol",effort:"low",permission:"read-only",prompt_file,cwd}))' -- "$1" "$2" | {{run}} -
 
 # any harness by hand from a full envelope file: just dispatch request.json
 dispatch REQUEST:
@@ -96,6 +98,7 @@ verify:
 check-generated:
     npm run check:generated
 
+# Normal assignment workflow (not the impl/plan/review transport recipes).
 # run a bound assignment: just assign /absolute/manifest.json
 assign MANIFEST:
     @node scripts/assignment-run.mjs run --manifest "$1"
