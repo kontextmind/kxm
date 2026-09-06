@@ -18,6 +18,14 @@ export const WITNESS_SCHEMA: "kxm.assignment-witness.v1";
 export const WITNESS_LATEST_SCHEMA: "kxm.assignment-witness-latest.v1";
 export const WITNESS_RESULTS: readonly string[];
 export const WITNESS_CODES: readonly string[];
+export const ACCEPTED_SCHEMA: "kxm.task-accepted.v1";
+export const ACCEPTED_FILENAME: "accepted.json";
+export const ACCEPTED_NOTE: string;
+export const REQUIRED_ACCEPT_CRITICS: Readonly<Record<string, Readonly<{
+  harness: string;
+  model: string;
+  role: string;
+}>>>;
 export const ASSIGNMENT_KINDS: readonly string[];
 export const KIND_ROLES: Readonly<Record<string, string>>;
 export const REVIEW_KINDS: readonly string[];
@@ -187,6 +195,56 @@ export interface AssignmentWitnessReceipt {
 
 export function witnessAssignment(recordDir: string, deps?: Record<string, unknown>): Promise<AssignmentWitnessReceipt>;
 
+export interface TaskAccepted {
+  readonly schema: "kxm.task-accepted.v1";
+  readonly task_id: string;
+  readonly commit: string;
+  readonly tree: string;
+  readonly writer: Readonly<{
+    assignment_id: string;
+    record_dir: string;
+    kind: string;
+    completion: Readonly<{ path: string; sha256: string }>;
+    manifest: Readonly<{ path: string; sha256: string }>;
+    receipt: Readonly<{ id: string; path: string; sha256: string }>;
+  }>;
+  readonly plan: Readonly<{
+    kind: "current";
+    path: string;
+    sha256: string;
+    pointer_path: string;
+    generation: number;
+  }>;
+  readonly critics: readonly Readonly<{
+    kind: string;
+    role: string;
+    harness: string;
+    model: string;
+    assignment_id: string;
+    record_dir: string;
+    completion: Readonly<{ path: string; sha256: string }>;
+    verdict: "PASS";
+    judged_tree: string;
+  }>[];
+  readonly acceptedAt: string;
+  readonly observed: Readonly<{
+    pr?: Readonly<{ id: string; validated: false }>;
+    ci?: Readonly<{ id: string; validated: false }>;
+  }>;
+  readonly note: string;
+  readonly path?: string;
+  readonly sha256?: string;
+}
+
+export function acceptAssignment(request: {
+  taskDir: string;
+  commit: string;
+  recordDir: string;
+  critics: readonly string[];
+  observedPr?: string;
+  observedCi?: string;
+}, deps?: Record<string, unknown>): Promise<TaskAccepted>;
+
 export interface AssignmentRecordingResolution {
   readonly schema: "kxm.assignment-recording-resolution.v1";
   readonly task_id: string;
@@ -208,4 +266,4 @@ export function main(argv?: string[], io?: {
   spawnSync?: typeof import("node:child_process").spawnSync;
   env?: NodeJS.ProcessEnv;
   now?: () => number;
-}): Promise<AssignmentCompletion | AssignmentRecordingResolution | AssignmentWitnessReceipt>;
+}): Promise<AssignmentCompletion | AssignmentRecordingResolution | AssignmentWitnessReceipt | TaskAccepted>;

@@ -4,7 +4,9 @@
 // identity/output consume, one-shot v2 harness dispatch, immutable completion,
 // and one pending telemetry append. M4a adds fixed verify/validate-ci
 // witness execution, stored-manifest identity/plan/recording binding,
-// and candidate-bound private receipts. Not a product assignment layer.
+// and candidate-bound private receipts. M4b W1 adds exact-commit developer
+// acceptance from the latest passed verify receipt and designated critics.
+// Not a product assignment layer.
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -13,6 +15,7 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   statSync,
@@ -81,6 +84,16 @@ export const RUNNER_CODES = Object.freeze([
   "dirty_baseline",
   "gate_failed",
   "candidate_changed",
+  "commit_missing",
+  "commit_tree_mismatch",
+  "witness_missing",
+  "witness_stale",
+  "witness_failed",
+  "critic_invalid",
+  "critic_tree_mismatch",
+  "critic_block",
+  "accepted_exists",
+  "record_outside_task",
   "unknown",
 ]);
 export const VERIFY_WITNESS_ID = "verify";
@@ -106,6 +119,13 @@ export const WITNESS_CODES = Object.freeze([
   "record_write_failed",
   "unknown",
 ]);
+export const ACCEPTED_SCHEMA = "kxm.task-accepted.v1";
+export const ACCEPTED_FILENAME = "accepted.json";
+export const ACCEPTED_NOTE = "developer record; not human approval, hub peer evidence, CI success, or merged/released status";
+export const REQUIRED_ACCEPT_CRITICS = Object.freeze({
+  "review-arch": Object.freeze({ harness: "claude", model: "fable", role: "reviewer-arch" }),
+  "review-cli": Object.freeze({ harness: "codex", model: "gpt-5.6-sol", role: "reviewer-cli" }),
+});
 export const ASSIGNMENT_KINDS = Object.freeze([
   "plan",
   "implement",
@@ -879,6 +899,7 @@ function ioDeps(deps = {}) {
     mkdirSync: deps.mkdirSync ?? mkdirSync,
     writeFileSync: deps.writeFileSync ?? writeFileSync,
     chmodSync: deps.chmodSync ?? chmodSync,
+    readdirSync: deps.readdirSync ?? readdirSync,
     manifestBytes: deps.manifestBytes,
     now: deps.now,
   };
@@ -2197,7 +2218,7 @@ export async function observeAssignment(outputDir, deps = {}) {
   return appended;
 }
 
-const CLI_USAGE = "usage: assignment-run.mjs run --manifest <absolute-path> | observe --record-dir <absolute-path> | witness --record-dir <absolute-path>";
+const CLI_USAGE = "usage: assignment-run.mjs run --manifest <absolute-path> | observe --record-dir <absolute-path> | witness --record-dir <absolute-path> | accept --task-dir <absolute-path> --commit <commit> --record-dir <absolute-path> --critic <absolute-path> --critic <absolute-path> [--observed-pr <id>] [--observed-ci <id>]";
 
 const WITNESS_RECEIPT_KEYS = Object.freeze([
   "schema",
@@ -2388,6 +2409,27 @@ function validateStoredManifestBinding(manifest, recordDir, io) {
   const planRef = manifest.plan_ref.kind === "current"
     ? validateCurrentPlanRef(manifest.plan_ref, taskDir, taskId, io)
     : validateBootstrapPlanRef(manifest.plan_ref, taskDir, manifest.kind, io);
+  const storedBase = closedObject(
+    manifest.base,
+    ["kind", "commit", "index_tree"],
+    "stored base",
+    ["index_tree"],
+    "witness_binding_invalid",
+  );
+  if (!BASE_KINDS.includes(storedBase.kind)) {
+    throw failClosed(`unknown stored base.kind ${storedBase.kind}`, "witness_binding_invalid");
+  }
+  const baseCommit = requireHex(storedBase.commit, "stored base.commit", HEX40, "witness_binding_invalid");
+  const base = storedBase.kind === "staged"
+    ? Object.freeze({
+      kind: "staged",
+      commit: baseCommit,
+      index_tree: requireHex(storedBase.index_tree, "stored base.index_tree", HEX40, "witness_binding_invalid"),
+    })
+    : Object.freeze({ kind: "clean", commit: baseCommit });
+  const reworkOf = manifest.rework_of === undefined
+    ? undefined
+    : requireIdentity(manifest.rework_of, "stored rework_of", "witness_binding_invalid");
   return Object.freeze({
     task_id: taskId,
     assignment_id: assignmentId,
@@ -2403,6 +2445,8 @@ function validateStoredManifestBinding(manifest, recordDir, io) {
     output_dir: compared.out,
     plan_ref: planRef,
     contract,
+    base,
+    ...(reworkOf ? { rework_of: reworkOf } : {}),
   });
 }
 
@@ -2450,6 +2494,9 @@ function assertCompletionMatchesStored(completion, stored, io) {
   }
   if (!samePath(binding.output_dir, stored.output_dir, io.realpathSync)) {
     throw failClosed("completion.binding.output_dir does not match stored manifest", "witness_binding_invalid");
+  }
+  if ((completion.rework_of ?? undefined) !== (stored.rework_of ?? undefined)) {
+    throw failClosed("completion.rework_of does not match stored manifest", "witness_binding_invalid");
   }
 }
 
@@ -2854,8 +2901,713 @@ export async function witnessAssignment(recordDirValue, deps = {}) {
   return writeWitnessReceipt(recordDir, receipt, logs, io);
 }
 
+const ACCEPT_SINGLETONS = Object.freeze([
+  "--task-dir",
+  "--commit",
+  "--record-dir",
+  "--observed-pr",
+  "--observed-ci",
+]);
+const ACCEPTED_KEYS = Object.freeze([
+  "schema",
+  "task_id",
+  "commit",
+  "tree",
+  "writer",
+  "plan",
+  "critics",
+  "acceptedAt",
+  "observed",
+  "note",
+]);
+const ACCEPTED_WRITER_KEYS = Object.freeze([
+  "assignment_id",
+  "record_dir",
+  "kind",
+  "completion",
+  "manifest",
+  "receipt",
+]);
+const ACCEPTED_CRITIC_KEYS = Object.freeze([
+  "kind",
+  "role",
+  "harness",
+  "model",
+  "assignment_id",
+  "record_dir",
+  "completion",
+  "verdict",
+  "judged_tree",
+]);
+const ACCEPTED_LINK_KEYS = Object.freeze(["path", "sha256"]);
+const ACCEPTED_RECEIPT_KEYS = Object.freeze(["id", "path", "sha256"]);
+const OBSERVED_ID_KEYS = Object.freeze(["id", "validated"]);
+const TASK_DIR_SKIP_NAMES = Object.freeze([
+  PLAN_POINTER_FILENAME,
+  ACCEPTED_FILENAME,
+  "runner-errors.jsonl",
+  "plan-history",
+]);
+
+function parseAcceptCli(args) {
+  if (args[0] !== "accept") {
+    throw failClosed(CLI_USAGE, "manifest_invalid");
+  }
+  const rest = args.slice(1);
+  const seen = new Set();
+  const critics = [];
+  const values = {};
+  for (let index = 0; index < rest.length; index += 1) {
+    const flag = rest[index];
+    if (typeof flag !== "string" || !flag.startsWith("--")) {
+      throw failClosed(CLI_USAGE, "manifest_invalid");
+    }
+    if (flag !== "--critic" && !ACCEPT_SINGLETONS.includes(flag)) {
+      throw failClosed(`unknown accept option ${flag}`, "manifest_invalid");
+    }
+    const value = rest[index + 1];
+    if (typeof value !== "string" || value.length === 0) {
+      throw failClosed(`missing value for ${flag}`, "manifest_invalid");
+    }
+    index += 1;
+    if (flag === "--critic") {
+      critics.push(value);
+      continue;
+    }
+    if (seen.has(flag)) {
+      throw failClosed(`duplicate option ${flag}`, "manifest_invalid");
+    }
+    seen.add(flag);
+    values[flag] = value;
+  }
+  if (values["--task-dir"] === undefined || values["--commit"] === undefined || values["--record-dir"] === undefined) {
+    throw failClosed(CLI_USAGE, "manifest_invalid");
+  }
+  if (critics.length !== 2) {
+    throw failClosed("accept requires exactly two --critic record directories", "manifest_invalid");
+  }
+  return Object.freeze({
+    taskDir: values["--task-dir"],
+    commit: values["--commit"],
+    recordDir: values["--record-dir"],
+    critics: Object.freeze([...critics]),
+    observedPr: values["--observed-pr"],
+    observedCi: values["--observed-ci"],
+  });
+}
+
+function requireAbsoluteExistingDir(value, label, code, io) {
+  const path = requireNonemptyString(value, label, code);
+  if (!nodePath.isAbsolute(path)) {
+    throw failClosed(`${label} must be an absolute path`, code);
+  }
+  if (!io.existsSync(path)) {
+    throw failClosed(`${label} does not exist: ${path}`, code);
+  }
+  let stat;
+  try {
+    stat = io.statSync(path);
+  } catch {
+    throw failClosed(`${label} is not a directory: ${path}`, code);
+  }
+  if (!stat.isDirectory()) {
+    throw failClosed(`${label} is not a directory: ${path}`, code);
+  }
+  return comparablePath(path, io.realpathSync, io.lstatSync);
+}
+
+function assertCanonicalRecordDir(taskDir, recordDirValue, label, io) {
+  const path = requireNonemptyString(recordDirValue, label, "manifest_invalid");
+  if (!nodePath.isAbsolute(path)) {
+    throw failClosed(`${label} must be an absolute path`, "manifest_invalid");
+  }
+  if (!io.existsSync(path)) {
+    throw failClosed(`${label} does not exist: ${path}`, "completion_missing");
+  }
+  let stat;
+  try {
+    stat = io.lstatSync(path);
+  } catch {
+    throw failClosed(`${label} is not a directory: ${path}`, "record_outside_task");
+  }
+  if (!stat.isDirectory()) {
+    throw failClosed(`${label} is not a directory: ${path}`, "record_outside_task");
+  }
+  const recordDir = comparablePath(path, io.realpathSync, io.lstatSync);
+  if (dirname(recordDir) !== taskDir) {
+    throw failClosed(`${label} must be a canonical direct child of task_dir`, "record_outside_task");
+  }
+  const assignmentId = basename(recordDir);
+  if (!IDENTITY.test(assignmentId)) {
+    throw failClosed(`${label} directory name must be a stable identity token`, "record_outside_task");
+  }
+  return recordDir;
+}
+
+function loadStructurallyBoundAssignment(recordDir, expectedTaskDir, io) {
+  const loaded = loadWitnessCompletion(recordDir, io);
+  const stored = loadStoredManifest(recordDir, loaded.completion, io);
+  let identity;
+  try {
+    identity = validateStoredManifestBinding(stored.manifest, recordDir, io);
+    if (!samePath(identity.task_dir, expectedTaskDir, io.realpathSync)) {
+      throw failClosed("stored assignment task_dir does not match --task-dir", "witness_binding_invalid");
+    }
+    assertCompletionMatchesStored(loaded.completion, identity, io);
+    const plan = bindWitnessPlan(loaded.completion, identity, io);
+    return { loaded, stored, identity, plan, completion: loaded.completion };
+  } catch (error) {
+    if (error?.runnerCode === "plan_ref_invalid") {
+      throw failClosed(error.message, "plan_mismatch");
+    }
+    throw error;
+  }
+}
+
+function loadBoundAssignment(recordDir, expectedTaskDir, io) {
+  const bound = loadStructurallyBoundAssignment(recordDir, expectedTaskDir, io);
+  assertWitnessRecordingReady(bound.completion, bound.loaded.bytes, recordDir, io);
+  return bound;
+}
+
+function listHistoryReceiptIds(recordDir, io) {
+  const historyDir = witnessHistoryDir(recordDir);
+  if (!io.existsSync(historyDir)) return [];
+  let names;
+  try {
+    names = io.readdirSync(historyDir);
+  } catch (error) {
+    throw failClosed(`cannot read witness history: ${error?.message ?? error}`, "witness_missing");
+  }
+  const ids = [];
+  for (const name of names) {
+    const entry = typeof name === "string" ? name : name?.name;
+    if (typeof entry !== "string" || !entry.endsWith(".json")) continue;
+    ids.push(entry.slice(0, -5));
+  }
+  return ids;
+}
+
+function loadLatestPassedWitness(recordDir, identity, stored, io) {
+  const latestPath = witnessLatestPath(recordDir);
+  if (!io.existsSync(latestPath)) {
+    throw failClosed("missing latest witness pointer", "witness_missing");
+  }
+  const latestBytes = readRegularFile(latestPath, io.readFileSync, io.existsSync, io.statSync, "witness_missing");
+  const latest = parseJsonFile(latestPath, latestBytes, "latest witness pointer", "witness_stale");
+  closedObject(latest, WITNESS_LATEST_KEYS, "latest witness pointer", [], "witness_stale");
+  if (latest.schema !== WITNESS_LATEST_SCHEMA) {
+    throw failClosed(`latest witness schema must be ${WITNESS_LATEST_SCHEMA}`, "witness_stale");
+  }
+  if (latest.task_id !== identity.task_id || latest.assignment_id !== identity.assignment_id) {
+    throw failClosed("latest witness pointer is not bound to this assignment", "witness_stale");
+  }
+  const receiptPath = requireNonemptyString(latest.path, "latest.path", "witness_stale");
+  if (!nodePath.isAbsolute(receiptPath)) {
+    throw failClosed("latest witness path must be absolute", "witness_stale");
+  }
+  const historyDir = comparablePath(witnessHistoryDir(recordDir), io.realpathSync, io.lstatSync);
+  const receiptDir = comparablePath(dirname(receiptPath), io.realpathSync, io.lstatSync);
+  if (receiptDir !== historyDir) {
+    throw failClosed("latest witness receipt is not in this assignment history", "witness_stale");
+  }
+  const receiptBytes = readRegularFile(receiptPath, io.readFileSync, io.existsSync, io.statSync, "witness_missing");
+  const actualSha = sha256Bytes(receiptBytes);
+  if (actualSha !== requireHex(latest.sha256, "latest.sha256", HEX64, "witness_stale")) {
+    throw failClosed("latest witness receipt digest does not match", "witness_stale");
+  }
+  const receipt = parseJsonFile(receiptPath, receiptBytes, "witness receipt", "witness_stale");
+  if (!isPlainObject(receipt) || receipt.schema !== WITNESS_SCHEMA) {
+    throw failClosed(`witness receipt schema must be ${WITNESS_SCHEMA}`, "witness_stale");
+  }
+  if (receipt.receipt_id !== latest.receipt_id) {
+    throw failClosed("latest witness pointer does not match receipt_id", "witness_stale");
+  }
+  for (const id of listHistoryReceiptIds(recordDir, io)) {
+    if (id > latest.receipt_id) {
+      throw failClosed("latest witness pointer is stale", "witness_stale");
+    }
+  }
+  if (receipt.result !== "passed") {
+    throw failClosed("latest witness receipt is not passed", "witness_failed");
+  }
+  if (receipt.task_id !== identity.task_id || receipt.assignment_id !== identity.assignment_id) {
+    throw failClosed("witness receipt identity does not match stored assignment", "witness_binding_invalid");
+  }
+  if (receipt.kind !== identity.kind) {
+    throw failClosed("witness receipt kind does not match stored assignment", "witness_binding_invalid");
+  }
+  if (typeof receipt.manifest?.sha256 !== "string" || receipt.manifest.sha256 !== stored.sha256) {
+    throw failClosed("witness receipt manifest digest does not match stored manifest", "witness_binding_invalid");
+  }
+  return { latest, receipt, path: receiptPath, sha256: actualSha };
+}
+
+function assertReceiptMatchesWriter(receipt, identity, stored, loaded, plan, io) {
+  if (typeof receipt.manifest?.sha256 !== "string" || receipt.manifest.sha256 !== stored.sha256) {
+    throw failClosed("witness receipt manifest digest does not match stored manifest", "witness_binding_invalid");
+  }
+  if (typeof receipt.completion?.sha256 !== "string" || receipt.completion.sha256 !== sha256Bytes(loaded.bytes)) {
+    throw failClosed("witness receipt completion digest does not match", "witness_binding_invalid");
+  }
+  if (!samePath(receipt.binding?.task_dir, identity.task_dir, io.realpathSync)) {
+    throw failClosed("witness receipt task_dir does not match stored assignment", "witness_binding_invalid");
+  }
+  if (!samePath(receipt.binding?.cwd, identity.cwd, io.realpathSync)) {
+    throw failClosed("witness receipt cwd does not match stored assignment", "witness_binding_invalid");
+  }
+  if (!samePath(receipt.binding?.record_dir, identity.record_dir, io.realpathSync)) {
+    throw failClosed("witness receipt record_dir does not match stored assignment", "witness_binding_invalid");
+  }
+  if (plan.kind === "current") {
+    if (receipt.plan?.kind !== "current") {
+      throw failClosed("witness receipt plan is not current", "plan_mismatch");
+    }
+    if (receipt.plan.sha256 !== plan.sha256) {
+      throw failClosed("witness receipt plan hash does not match current plan", "plan_mismatch");
+    }
+  }
+  if (!Array.isArray(receipt.gates) || receipt.gates.length < 1) {
+    throw failClosed("passed witness receipt is missing the contracted verify gate", "witness_failed");
+  }
+  const verify = receipt.gates.find((gate) => gate.id === VERIFY_WITNESS_ID);
+  if (!verify) {
+    throw failClosed("passed witness receipt is missing the contracted verify gate", "witness_failed");
+  }
+  if (!Array.isArray(verify.argv) || verify.argv.length !== 3
+    || verify.argv[0] !== "npm" || verify.argv[1] !== "run" || verify.argv[2] !== "verify") {
+    throw failClosed("witness verify argv is not the fixed gate", "witness_failed");
+  }
+  if (verify.shell !== false) {
+    throw failClosed("witness gates must execute shell:false", "witness_failed");
+  }
+  for (const gate of receipt.gates) {
+    if (!samePath(gate.cwd, identity.cwd, io.realpathSync)) {
+      throw failClosed("witness gate cwd does not match stored assignment cwd", "witness_binding_invalid");
+    }
+    if (gate.exitCode !== 0 || gate.signal != null || gate.timedOut === true) {
+      throw failClosed("witness gate exits are not all successful", "witness_failed");
+    }
+  }
+  const before = receipt.candidate?.before;
+  const after = receipt.candidate?.after;
+  if (!isRecordedWitnessSnapshot(before) || !isRecordedWitnessSnapshot(after)) {
+    throw failClosed("passed witness receipt is missing recorded snapshots", "witness_failed");
+  }
+  if (before.clean !== true || after.clean !== true
+    || before.head !== after.head
+    || before.index_tree !== after.index_tree) {
+    throw failClosed("witness before/after snapshots are not identical and clean", "witness_failed");
+  }
+  return before.index_tree;
+}
+
+function assertCurrentPlanAgreement(identity, completion, receipt, io) {
+  if (identity.plan_ref.kind !== "current") {
+    throw failClosed("acceptance requires a current plan pointer", "plan_mismatch");
+  }
+  const pointerPath = pointerPathFor(identity.task_dir);
+  const pointerBytes = readRegularFile(pointerPath, io.readFileSync, io.existsSync, io.statSync, "plan_mismatch");
+  const pointer = validatePointer(parseJsonFile(pointerPath, pointerBytes, "plan pointer", "plan_mismatch"));
+  if (pointer.task_id !== identity.task_id) {
+    throw failClosed("current plan pointer task_id does not match assignment", "plan_mismatch");
+  }
+  const planPath = resolvePath(identity.task_dir, pointer.plan_path);
+  if (!samePath(planPath, identity.plan_ref.path, io.realpathSync)) {
+    throw failClosed("current plan path does not match stored plan_ref", "plan_mismatch");
+  }
+  const planBytes = readRegularFile(planPath, io.readFileSync, io.existsSync, io.statSync, "plan_mismatch");
+  const actual = sha256Bytes(planBytes);
+  if (pointer.plan_sha256 !== actual || identity.plan_ref.sha256 !== actual) {
+    throw failClosed("current plan pointer hash does not match plan file digest", "plan_mismatch");
+  }
+  if (completion.plan?.kind !== "current" || completion.plan.sha256 !== actual) {
+    throw failClosed("completion plan hash does not match current plan", "plan_mismatch");
+  }
+  if (receipt.plan?.kind !== "current" || receipt.plan.sha256 !== actual) {
+    throw failClosed("witness receipt plan hash does not match current plan", "plan_mismatch");
+  }
+  if (pointer.generation !== identity.plan_ref.generation) {
+    throw failClosed("current plan generation does not match stored plan_ref", "plan_mismatch");
+  }
+  return Object.freeze({
+    kind: "current",
+    path: identity.plan_ref.path,
+    sha256: actual,
+    pointer_path: pointerPath,
+    generation: pointer.generation,
+  });
+}
+
+function proveAcceptedCommit(cwd, commitValue, spawnSyncImpl) {
+  const commit = requireNonemptyString(commitValue, "--commit", "commit_missing");
+  const typeRun = runGit(cwd, ["cat-file", "-t", commit], spawnSyncImpl);
+  if (typeRun.result.status !== 0 || typeRun.stdout.trim() !== "commit") {
+    throw failClosed(`--commit is not an existing commit object`, "commit_missing");
+  }
+  const resolvedRun = runGit(cwd, ["rev-parse", commit], spawnSyncImpl);
+  const resolved = resolvedRun.stdout.trim();
+  if (resolvedRun.result.status !== 0 || !HEX40.test(resolved)) {
+    throw failClosed(`--commit is not an existing commit object`, "commit_missing");
+  }
+  const treeRun = runGit(cwd, ["rev-parse", `${commit}^{tree}`], spawnSyncImpl);
+  const tree = treeRun.stdout.trim();
+  if (treeRun.result.status !== 0 || !HEX40.test(tree)) {
+    throw failClosed(`cannot derive tree for commit ${commit}`, "commit_missing");
+  }
+  return Object.freeze({ commit: resolved, tree });
+}
+
+function observedId(value, label) {
+  if (value === undefined) return undefined;
+  const id = requireNonemptyString(value, label, "manifest_invalid");
+  return Object.freeze({ id, validated: false });
+}
+
+function closedObserved(pr, ci) {
+  const observed = {};
+  if (pr) observed.pr = pr;
+  if (ci) observed.ci = ci;
+  if (observed.pr) closedObject(observed.pr, OBSERVED_ID_KEYS, "observed.pr", [], "manifest_invalid");
+  if (observed.ci) closedObject(observed.ci, OBSERVED_ID_KEYS, "observed.ci", [], "manifest_invalid");
+  return Object.freeze(observed);
+}
+
+function assertEligibleWriter(bound) {
+  if (!WRITER_KINDS.includes(bound.identity.kind)) {
+    throw failClosed("acceptance writer must be implement or repair", "witness_binding_invalid");
+  }
+  const transport = bound.completion.transport;
+  if (!(transport?.status === "completed" && transport?.ok === true)) {
+    throw failClosed("writer transport is not completed/ok", "witness_binding_invalid");
+  }
+}
+
+function requiredCriticSpec(kind) {
+  const spec = REQUIRED_ACCEPT_CRITICS[kind];
+  if (!spec) {
+    throw failClosed(`unsupported critic kind ${kind}`, "critic_invalid");
+  }
+  return spec;
+}
+
+function declaredReviewedTree(identity, spawnSyncImpl) {
+  const base = identity.base;
+  if (!base || !HEX40.test(base.commit)) {
+    throw failClosed("stored critic base.commit is missing", "critic_invalid");
+  }
+  if (base.kind === "staged") {
+    return requireHex(base.index_tree, "stored base.index_tree", HEX40, "critic_tree_mismatch");
+  }
+  const treeRun = runGit(identity.cwd, ["rev-parse", `${base.commit}^{tree}`], spawnSyncImpl);
+  const tree = treeRun.stdout.trim();
+  if (treeRun.result.status !== 0 || !HEX40.test(tree)) {
+    throw failClosed("cannot derive stored critic baseline tree", "critic_tree_mismatch");
+  }
+  return tree;
+}
+
+function assertEligibleCritic(bound, acceptedTree, io, writer) {
+  const kind = bound.identity.kind;
+  const spec = requiredCriticSpec(kind);
+  if (bound.identity.harness !== spec.harness || bound.identity.model !== spec.model || bound.identity.role !== spec.role) {
+    throw failClosed(`critic ${kind} must use ${spec.harness}/${spec.model}`, "critic_invalid");
+  }
+  if (!samePath(bound.identity.task_dir, writer.identity.task_dir, io.realpathSync)) {
+    throw failClosed("critic task_dir does not match writer task_dir", "critic_invalid");
+  }
+  const transport = bound.completion.transport;
+  if (!(transport?.status === "completed" && transport?.ok === true)) {
+    throw failClosed("critic transport is not completed/ok", "critic_invalid");
+  }
+  const candidate = bound.completion.candidate;
+  if (!candidate || candidate.status !== "recorded") {
+    throw failClosed("critic candidate is unknown", "critic_invalid");
+  }
+  if (candidate.clean !== true) {
+    throw failClosed("critic candidate is not a clean recorded snapshot", "critic_invalid");
+  }
+  if (candidate.head !== bound.identity.base.commit) {
+    throw failClosed("critic candidate head does not match stored manifest base.commit", "critic_tree_mismatch");
+  }
+  const reviewedTree = declaredReviewedTree(bound.identity, io.spawnSync);
+  if (candidate.index_tree !== reviewedTree) {
+    throw failClosed("critic candidate tree does not match stored reviewed baseline", "critic_tree_mismatch");
+  }
+  if (candidate.index_tree !== acceptedTree) {
+    throw failClosed("critic candidate tree does not match accepted tree", "critic_tree_mismatch");
+  }
+  const critic = bound.completion.critic;
+  if (!isPlainObject(critic) || critic.kind !== "review") {
+    throw failClosed("model_claim PASS is not a critic", "critic_invalid");
+  }
+  if (!REVIEW_VERDICTS.includes(critic.verdict)) {
+    throw failClosed("critic has no validated verdict", "critic_invalid");
+  }
+  if (critic.verdict === "BLOCK") {
+    throw failClosed("critic verdict is BLOCK", "critic_block");
+  }
+  if (critic.verdict !== "PASS") {
+    throw failClosed("critic verdict is not PASS", "critic_invalid");
+  }
+  if (critic.judged_tree !== acceptedTree) {
+    throw failClosed("critic judged_tree does not match accepted tree", "critic_tree_mismatch");
+  }
+  if (critic.role !== spec.role) {
+    throw failClosed("critic role does not match designated review role", "critic_invalid");
+  }
+  return Object.freeze({
+    kind,
+    role: spec.role,
+    harness: spec.harness,
+    model: spec.model,
+    assignment_id: bound.identity.assignment_id,
+    record_dir: bound.identity.record_dir,
+    completion: Object.freeze({
+      path: bound.loaded.path,
+      sha256: sha256Bytes(bound.loaded.bytes),
+    }),
+    verdict: "PASS",
+    judged_tree: acceptedTree,
+  });
+}
+
+function listDirectAssignmentDirs(taskDir, io) {
+  let names;
+  try {
+    names = io.readdirSync(taskDir);
+  } catch (error) {
+    throw failClosed(`cannot read task_dir: ${error?.message ?? error}`, "unknown");
+  }
+  const dirs = [];
+  for (const name of names) {
+    const entry = typeof name === "string" ? name : name?.name;
+    if (typeof entry !== "string" || TASK_DIR_SKIP_NAMES.includes(entry)) continue;
+    if (!IDENTITY.test(entry)) continue;
+    const path = join(taskDir, entry);
+    const stat = lstatOrNull(path, io.lstatSync);
+    if (!stat || !stat.isDirectory()) continue;
+    dirs.push({ assignment_id: entry, path: comparablePath(path, io.realpathSync, io.lstatSync) });
+  }
+  return dirs;
+}
+
+function tryLoadOwnedReview(recordDir, expectedTaskDir, expectedTaskId, io) {
+  try {
+    // A bookkeeping failure cannot erase a structurally bound BLOCK review.
+    const bound = loadStructurallyBoundAssignment(recordDir, expectedTaskDir, io);
+    if (bound.identity.task_id !== expectedTaskId) return null;
+    if (bound.identity.assignment_id !== basename(recordDir)) return null;
+    if (!REVIEW_KINDS.includes(bound.identity.kind)) return null;
+    return bound;
+  } catch {
+    return null;
+  }
+}
+
+function reworkAncestorIds(assignmentId, byId) {
+  const seen = new Set();
+  let current = assignmentId;
+  while (current && !seen.has(current)) {
+    seen.add(current);
+    current = byId.get(current)?.identity?.rework_of;
+  }
+  return seen;
+}
+
+function assertNoUnresolvedBlock(taskDir, critics, acceptedTree, expectedTaskId, io) {
+  const dirs = listDirectAssignmentDirs(taskDir, io);
+  const reviews = [];
+  for (const dir of dirs) {
+    const bound = tryLoadOwnedReview(dir.path, taskDir, expectedTaskId, io);
+    if (!bound) continue;
+    reviews.push(bound);
+  }
+  const byId = new Map(reviews.map((item) => [item.identity.assignment_id, item]));
+  for (const kind of Object.keys(REQUIRED_ACCEPT_CRITICS)) {
+    const supplied = critics.find((item) => item.kind === kind);
+    if (!supplied) {
+      throw failClosed(`missing designated ${kind} critic`, "critic_invalid");
+    }
+    const ancestors = reworkAncestorIds(supplied.assignment_id, byId);
+    for (const review of reviews) {
+      if (review.identity.kind !== kind) continue;
+      const critic = review.completion.critic;
+      if (!isPlainObject(critic) || critic.kind !== "review" || critic.verdict !== "BLOCK") continue;
+      if (critic.judged_tree !== acceptedTree) continue;
+      if (ancestors.has(review.identity.assignment_id) && review.identity.assignment_id !== supplied.assignment_id) {
+        continue;
+      }
+      throw failClosed("unresolved critic BLOCK remains for the accepted tree", "critic_block");
+    }
+  }
+}
+
+function writeAcceptedRecord(taskDir, record, io) {
+  const path = join(taskDir, ACCEPTED_FILENAME);
+  if (lstatOrNull(path, io.lstatSync)) {
+    throw failClosed("accepted.json already exists", "accepted_exists");
+  }
+  const body = `${JSON.stringify(record, undefined, 2)}\n`;
+  try {
+    writePrivate(path, body, io, "wx");
+  } catch (error) {
+    if (error && error.code === "EEXIST") {
+      throw failClosed("accepted.json already exists", "accepted_exists");
+    }
+    throw failClosed(`cannot write accepted.json: ${error?.message ?? error}`, "record_write_failed");
+  }
+  return Object.freeze({ ...record, path, sha256: sha256Bytes(Buffer.from(body)) });
+}
+
+function logAcceptError(taskDir, error, io) {
+  if (!taskDir) return;
+  const code = RUNNER_CODES.includes(error?.runnerCode) ? error.runnerCode : "unknown";
+  try {
+    appendRunnerError(taskDir, {
+      step: "accept",
+      code,
+      message: error?.message ?? "accept failed",
+    }, io);
+  } catch {
+    // Public refusal already carries the bounded code.
+  }
+}
+
+export async function acceptAssignment(request, deps = {}) {
+  const io = ioDeps(deps);
+  let taskDir = null;
+  try {
+    const taskDirValue = request?.taskDir ?? request?.task_dir;
+    const commitValue = request?.commit;
+    const writerRecordValue = request?.recordDir ?? request?.record_dir;
+    const criticValues = request?.critics;
+    if (!Array.isArray(criticValues) || criticValues.length !== 2) {
+      throw failClosed("accept requires exactly two --critic record directories", "manifest_invalid");
+    }
+    taskDir = requireAbsoluteExistingDir(taskDirValue, "--task-dir", "manifest_invalid", io);
+    const writerDir = assertCanonicalRecordDir(taskDir, writerRecordValue, "--record-dir", io);
+    const criticDirs = criticValues.map((value, index) => (
+      assertCanonicalRecordDir(taskDir, value, `--critic[${index}]`, io)
+    ));
+    if (new Set([writerDir, ...criticDirs]).size !== 3) {
+      throw failClosed("writer and critic record directories must be distinct", "critic_invalid");
+    }
+    const writer = loadBoundAssignment(writerDir, taskDir, io);
+    assertEligibleWriter(writer);
+    const witness = loadLatestPassedWitness(
+      writerDir,
+      writer.identity,
+      writer.stored,
+      io,
+    );
+    const witnessedTree = assertReceiptMatchesWriter(
+      witness.receipt,
+      writer.identity,
+      writer.stored,
+      writer.loaded,
+      writer.plan,
+      io,
+    );
+    const plan = assertCurrentPlanAgreement(writer.identity, writer.completion, witness.receipt, io);
+    const proven = proveAcceptedCommit(writer.identity.cwd, commitValue, io.spawnSync);
+    if (proven.tree !== witnessedTree) {
+      throw failClosed("commit tree does not equal the latest passed witness index_tree", "commit_tree_mismatch");
+    }
+    const criticEvidence = criticDirs.map((dir) => {
+      const bound = loadBoundAssignment(dir, taskDir, io);
+      return assertEligibleCritic(bound, proven.tree, io, writer);
+    });
+    const kinds = criticEvidence.map((item) => item.kind);
+    if (new Set(kinds).size !== 2) {
+      throw failClosed("critics must be distinct review-arch and review-cli roles", "critic_invalid");
+    }
+    for (const kind of Object.keys(REQUIRED_ACCEPT_CRITICS)) {
+      if (!kinds.includes(kind)) {
+        throw failClosed(`missing designated ${kind} critic`, "critic_invalid");
+      }
+    }
+    assertNoUnresolvedBlock(taskDir, criticEvidence, proven.tree, writer.identity.task_id, io);
+    const observed = closedObserved(
+      observedId(request.observedPr ?? request.observed_pr, "--observed-pr"),
+      observedId(request.observedCi ?? request.observed_ci, "--observed-ci"),
+    );
+    const acceptedAt = new Date((deps.now ?? Date.now)()).toISOString();
+    const writerEvidence = Object.freeze({
+      assignment_id: writer.identity.assignment_id,
+      record_dir: writer.identity.record_dir,
+      kind: writer.identity.kind,
+      completion: Object.freeze({
+        path: writer.loaded.path,
+        sha256: sha256Bytes(writer.loaded.bytes),
+      }),
+      manifest: Object.freeze({
+        path: writer.stored.path,
+        sha256: writer.stored.sha256,
+      }),
+      receipt: Object.freeze({
+        id: witness.receipt.receipt_id,
+        path: witness.path,
+        sha256: witness.sha256,
+      }),
+    });
+    closedObject(writerEvidence, ACCEPTED_WRITER_KEYS, "accepted.writer", [], "unknown");
+    for (const critic of criticEvidence) {
+      closedObject(critic, ACCEPTED_CRITIC_KEYS, "accepted.critic", [], "unknown");
+      closedObject(critic.completion, ACCEPTED_LINK_KEYS, "accepted.critic.completion", [], "unknown");
+    }
+    closedObject(writerEvidence.completion, ACCEPTED_LINK_KEYS, "accepted.writer.completion", [], "unknown");
+    closedObject(writerEvidence.manifest, ACCEPTED_LINK_KEYS, "accepted.writer.manifest", [], "unknown");
+    closedObject(writerEvidence.receipt, ACCEPTED_RECEIPT_KEYS, "accepted.writer.receipt", [], "unknown");
+    const record = Object.freeze({
+      schema: ACCEPTED_SCHEMA,
+      task_id: writer.identity.task_id,
+      commit: proven.commit,
+      tree: proven.tree,
+      writer: writerEvidence,
+      plan,
+      critics: Object.freeze(criticEvidence),
+      acceptedAt,
+      observed,
+      note: ACCEPTED_NOTE,
+    });
+    closedObject(record, ACCEPTED_KEYS, "accepted", [], "unknown");
+    return writeAcceptedRecord(taskDir, record, io);
+  } catch (error) {
+    logAcceptError(taskDir, error, io);
+    throw error;
+  }
+}
+
 export async function main(argv = process.argv, io = { stdin: process.stdin, stdout: process.stdout, stderr: process.stderr }) {
   const args = argv.slice(2).filter((arg) => arg !== "--");
+  if (args[0] === "accept") {
+    try {
+      const parsed = parseAcceptCli(args);
+      const accepted = await acceptAssignment({
+        taskDir: parsed.taskDir,
+        commit: parsed.commit,
+        recordDir: parsed.recordDir,
+        critics: parsed.critics,
+        observedPr: parsed.observedPr,
+        observedCi: parsed.observedCi,
+      }, {
+        spawnSync: io.spawnSync ?? spawnSync,
+        env: io.env,
+        now: io.now,
+      });
+      io.stdout.write(`${JSON.stringify(accepted, undefined, 2)}\n`);
+      process.exitCode = 0;
+      return accepted;
+    } catch (error) {
+      const code = error?.runnerCode && RUNNER_CODES.includes(error.runnerCode)
+        ? error.runnerCode
+        : "unknown";
+      io.stderr.write(`${code}: ${error.message}\n`);
+      process.exitCode = 1;
+      throw error;
+    }
+  }
   if (args.includes("--task-dir")) {
     throw failClosed("run --manifest does not accept --task-dir; task_dir comes from the manifest", "manifest_invalid");
   }
