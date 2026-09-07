@@ -6,7 +6,7 @@ use. If the routing table and this file disagree, `AGENTS.md` wins. Agents are
 a rotation; Grok is the currently admitted native writer, not a fixed sole
 writer.
 
-Snapshot date: **2026-09-06** (M1 capability probe). Catalog/auth rows below
+Snapshot date: **2026-09-07** (Nous Portal helper prefix). Catalog/auth rows below
 are corrected from `plugins/kxm/src/vnext-harness.ts` and helper argv (M5
 docs). Re-probe after any CLI update; these surfaces change without notice.
 Installed ≠ auth-verified ≠ helper-eligible.
@@ -15,7 +15,7 @@ Installed ≠ auth-verified ≠ helper-eligible.
 
 | CLI | Installed (this host) | Auth-verified | Helper-eligible |
 |---|---|---|---|
-| `pi` | 0.85.0 | `pi auth check --provider <p>`; OpenRouter may be `ready`; native-lab prefixes are braked | OpenRouter only, after JSONL usage parse |
+| `pi` | 0.85.0 | `pi auth check --provider <p>`; OpenRouter or Nous Portal may be `ready`; native-lab prefixes are braked | OpenRouter or Nous Portal, after JSONL usage parse |
 | `claude` | 2.1.261 | `claude auth status` → `claude.ai` | read-only plan/review (`fable`) |
 | `codex` | 0.153.3 | `codex login status` → ChatGPT | read-only CLI/docs review (`gpt-5.6-sol`) |
 | `grok` | 1.0.5 | `grok models` → logged in with grok.com | writer only (`grok-4.6`) |
@@ -35,7 +35,7 @@ auth is observational inventory, not a Phase 11 adapter.
 
 | | headless | prompt input | model | thinking / effort | auto-approve | output format |
 |---|---|---|---|---|---|---|
-| **pi** | `-p` | `@file` | `--model openrouter/<id>` | `--thinking` ladder | `-a` (experiment edit only) or `--tools read,grep,find,ls --no-extensions --no-skills --no-prompt-templates` | `--mode json` |
+| **pi** | `-p` | `@file` | `--model openrouter/<id>` or `--model nous-portal/<id>` | `--thinking` ladder | `-a` (experiment edit only) or `--tools read,grep,find,ls --no-extensions --no-skills --no-prompt-templates` | `--mode json` |
 | **claude** | `-p` | **stdin** | `--model` | `--effort` (verified) | read-only: `--tools Read,Glob,Grep --safe-mode --strict-mcp-config --disable-slash-commands` | `--output-format json` |
 | **codex** | `exec` | stdin `-` | `-m` | `-c model_reasoning_effort=...` (verified) | `--sandbox read-only --ignore-user-config` | `--json` (JSONL) |
 | **grok** | `--prompt-file` | file | `-m` | `--reasoning-effort` | `--always-approve --no-subagents --disable-web-search` | `--output-format json` |
@@ -67,10 +67,20 @@ third only with new evidence or a changed approach, then relief.
 **Provider-native rule.** Anthropic → Claude CLI; OpenAI → Codex; xAI → Grok
 CLI; Moonshot → Kimi CLI when that helper is verified (not today); Google →
 Gemini CLI when auth is verified (not today). Pi may run **OpenRouter** after
-`pi auth check --provider openrouter`. Native-lab prefixes (`anthropic`,
-`openai`, `xai`, `moonshot`, `google`, `deepseek`) fail closed on Pi. If the
-native harness is missing or logged out, fail closed — never silently bill a
-different provider's key.
+`pi auth check --provider openrouter`, or **Nous Research Portal** after
+`pi install npm:@jayteelabs/pi-nous-portal-provider` and
+`pi auth check --provider nous-portal`. Login: `/login openrouter`, or
+`/login` → subscription or API key → Nous Research Portal (`NOUS_API_KEY`;
+optional `NOUS_PORTAL_BASE_URL` / `NOUS_INFERENCE_BASE_URL`). Example:
+`pi -p --model nous-portal/tencent/hy4-preview` (same as
+`pi -p nous-portal -m tencent/hy4-preview`). Verify Hy4 availability and
+list prices on Portal `/models` (publicly cited Portal ~$0.67/$2.00, 20%
+off OpenRouter list ~$0.83/$2.50). Hy4 is experiment-only in this helper;
+the only admitted Pi writer is `openrouter/qwen/qwen3-coder-plus`.
+Native-lab prefixes (`anthropic`, `openai`, `xai`, `moonshot`, `google`,
+`deepseek`) fail closed on Pi. If the native harness is missing or logged
+out, fail closed — never silently bill a different provider's key. There
+is no Nous CLI harness.
 
 Moving the writer to `grok` does not make it a long-lived worker: `kxm agent
 worker` / `pi --mode rpc` is still Pi-only.
@@ -87,7 +97,11 @@ worker` / `pi --mode rpc` is still Pi-only.
   every assistant usage-bearing event for assignment totals. `stopReason`
   `error`/`aborted` fails even on exit 0. Planner/reviewer cannot `edit`;
   only an explicit `experiment` role may. Read-only adds `--no-extensions
-  --no-skills --no-prompt-templates`. `hooks:true` is refused.
+  --no-skills --no-prompt-templates`. `hooks:true` is refused. Helper
+  prefixes are `openrouter/*` and `nous-portal/*` (not
+  `nous-portal-api-key`, which is the package's login-picker alias). Auth
+  is `pi auth check --provider <prefix>`; writer still requires exact
+  OpenRouter Qwen JSON readiness.
 - **requests**: `harness`, `role`, `model`, `permission`, and `prompt_file`
   are required nonempty strings. Missing model or permission does not
   default to the CLI. Grok and Codex reject `hooks`/`skills` even when

@@ -17,6 +17,9 @@ import {
 } from "./helpers/harness-fake.ts";
 import {
   NATIVE_PI_BRAKE_PROVIDERS,
+  PI_ADMITTED_WRITER,
+  PI_ALLOWED_PROVIDERS,
+  PI_NOUS_PORTAL_HY4,
   REQUEST_SCHEMA,
   RESULT_SCHEMA,
   ROUTING_INT_CAP,
@@ -29,6 +32,9 @@ import {
   normalizeCodex,
   normalizePi,
   parseAuth,
+  piAuthCheckArgs,
+  piModelId,
+  piProviderOf,
   preflightRequest,
   resolveLauncher,
   resolveModelUsage,
@@ -159,6 +165,66 @@ test("preflight refuses role, mode, pair, and native-provider Pi routes before s
       permission: "read-only",
       prompt_file: prompt,
     });
+    preflightRequest({
+      schema: REQUEST_SCHEMA,
+      harness: "pi",
+      role: "experiment",
+      model: PI_NOUS_PORTAL_HY4,
+      permission: "read-only",
+      prompt_file: prompt,
+    });
+    preflightRequest({
+      schema: REQUEST_SCHEMA,
+      harness: "pi",
+      role: "experiment",
+      model: PI_NOUS_PORTAL_HY4,
+      permission: "edit",
+      prompt_file: prompt,
+    });
+    assert.throws(
+      () => preflightRequest({
+        schema: REQUEST_SCHEMA,
+        harness: "pi",
+        role: "writer",
+        model: PI_NOUS_PORTAL_HY4,
+        permission: "edit",
+        prompt_file: prompt,
+      }),
+      /pi writer/,
+    );
+    assert.throws(
+      () => preflightRequest({
+        schema: REQUEST_SCHEMA,
+        harness: "pi",
+        role: "experiment",
+        model: "together/secret-model",
+        permission: "read-only",
+        prompt_file: prompt,
+      }),
+      /nous-portal\/\*/,
+    );
+    assert.throws(
+      () => preflightRequest({
+        schema: REQUEST_SCHEMA,
+        harness: "pi",
+        role: "experiment",
+        model: "nous-portal-api-key/tencent/hy4-preview",
+        permission: "read-only",
+        prompt_file: prompt,
+      }),
+      /not allowlisted/,
+    );
+    assert.deepEqual([...PI_ALLOWED_PROVIDERS], ["openrouter", "nous-portal"]);
+    assert.equal(piProviderOf(PI_NOUS_PORTAL_HY4), "nous-portal");
+    assert.equal(piModelId(PI_NOUS_PORTAL_HY4), "tencent/hy4-preview");
+    assert.equal(PI_ADMITTED_WRITER, "openrouter/qwen/qwen3-coder-plus");
+    assert.deepEqual(
+      piAuthCheckArgs({
+        model: "openrouter/nous-research/deephermes-3-mistral-24b-preview",
+        role: "experiment",
+      }),
+      ["auth", "check", "--provider", "openrouter"],
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -238,6 +304,24 @@ test("auth parse: success, logout, and garbage fail closed", () => {
   assert.equal(codex.method, "ChatGPT");
   assert.throws(() => parseAuth("codex", { stdout: "garbage", stderr: "nope", exitCode: 0 }), /ChatGPT/);
   assert.throws(() => parseAuth("pi", { stdout: "openrouter  not_ready", stderr: "", exitCode: 0 }), /OpenRouter/);
+  const openrouter = parseAuth("pi", { stdout: "openrouter  ready\n", stderr: "", exitCode: 0 }, {
+    observedAt: "2026-09-05",
+    provider: "openrouter",
+  });
+  assert.deepEqual(openrouter, { loggedIn: true, method: "openrouter", observedAt: "2026-09-05" });
+  const nous = parseAuth("pi", { stdout: "nous-portal  ready\n", stderr: "", exitCode: 0 }, {
+    observedAt: "2026-09-05",
+    provider: "nous-portal",
+  });
+  assert.deepEqual(nous, { loggedIn: true, method: "nous-portal", observedAt: "2026-09-05" });
+  assert.throws(
+    () => parseAuth("pi", { stdout: "nous-portal  not_ready\n", stderr: "", exitCode: 0 }, { provider: "nous-portal" }),
+    /Nous Portal/,
+  );
+  assert.throws(
+    () => parseAuth("pi", { stdout: "openrouter  ready\n", stderr: "", exitCode: 0 }, { provider: "nous-portal" }),
+    /could not be determined/,
+  );
 });
 
 test("subscription billed cost is unmetered; list estimate stays separate; missing cost is unknown", async () => {
@@ -2702,5 +2786,60 @@ test("Pi writer admits only Qwen edit and requires exact model auth before spawn
       await assert.rejects(() => runHarness({ ...request, output_dir: join(dir, `bad-${calls++}`) }, { ...deps, spawnSync: () => ({ status: 0, stdout: proof, stderr: "" }) }), /auth|readiness|ready/);
     }
     assert.equal(spawned, 1, "no model launch on missing exact auth proof");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("Pi admits Nous Portal Hy4 experiment after provider auth and still refuses it as writer", async () => {
+  const dir = tempDir();
+  try {
+    const experiment = {
+      schema: REQUEST_SCHEMA,
+      harness: "pi",
+      role: "experiment",
+      model: PI_NOUS_PORTAL_HY4,
+      permission: "read-only",
+      prompt_file: promptFile(dir),
+      output_dir: join(dir, "out"),
+    };
+    preflightRequest(experiment);
+    assert.deepEqual(piAuthCheckArgs(experiment), ["auth", "check", "--provider", "nous-portal"]);
+    assert.throws(
+      () => preflightRequest({ ...experiment, role: "writer", permission: "edit" }),
+      /pi writer/,
+    );
+    let spawned = 0;
+    const authArgs: string[][] = [];
+    const deps = {
+      env: { PATH: dir },
+      existsSync: () => true,
+      spawnSync: (_command: string, args: string[]) => {
+        authArgs.push(args);
+        return piAuth("nous-portal");
+      },
+      spawn: () => {
+        spawned += 1;
+        return fakeChild({
+          stdout: [
+            piLine({ type: "session", id: "nous-hy4" }),
+            piLine(piAssistantEnd({ model: "nous-portal/tencent/hy4-preview" })),
+          ].join(""),
+        });
+      },
+    };
+    const result = await runHarness(experiment, deps);
+    assert.equal(result.ok, true);
+    assert.equal(result.provider, "nous-portal");
+    assert.equal(result.requestedModel, PI_NOUS_PORTAL_HY4);
+    assert.equal(result.auth?.method, "nous-portal");
+    assert.equal(spawned, 1);
+    assert.deepEqual(authArgs[0], ["auth", "check", "--provider", "nous-portal"]);
+    await assert.rejects(
+      () => runHarness({ ...experiment, output_dir: join(dir, "logged-out") }, {
+        ...deps,
+        spawnSync: () => ({ status: 0, stdout: "nous-portal  not_ready\n", stderr: "" }),
+      }),
+      /Nous Portal/,
+    );
+    assert.equal(spawned, 1, "no model launch when Nous Portal auth is not ready");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
