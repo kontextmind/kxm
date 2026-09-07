@@ -325,7 +325,8 @@ test("vNext init creates and revalidates project configuration without legacy en
     assert.equal(created.action, "created");
     assert.equal(created.mode, "ready");
     assert.match(created.configRevision, /^sha256:[a-f0-9]{64}$/);
-    assert.equal(created.files.length, 6);
+    assert.equal(created.files.length, 7);
+    assert(created.files.includes(".kxm/gates.yaml"));
     assert.equal(existsSync(join(cwd, ".kxm", "project.yaml")), true);
     assert.equal(existsSync(join(cwd, "must-not-use")), false);
 

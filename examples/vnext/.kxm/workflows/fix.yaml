@@ -302,7 +302,7 @@ steps:
     timeoutMs: 3600000
     on:
       passed: delivery
-      implementation_failure:
+      implementation-failure:
         target: implement
         maxTransitions: 4
       plan_invalidated:

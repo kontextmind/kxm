@@ -28714,8 +28714,8 @@ var import_yaml = __toESM(require_dist(), 1);
 import { createHash as createHash3 } from "node:crypto";
 var VNEXT_TEMPLATE_ID = "builtin-minimal";
 var VNEXT_TEMPLATE_PROVENANCE_PATH = ".kxm/template-provenance.yaml";
-var CURRENT_VNEXT_TEMPLATE_VARIANT = "v1";
-var SUPPORTED_VNEXT_TEMPLATE_VARIANTS = ["v1", "v2", "v3-policy"];
+var CURRENT_VNEXT_TEMPLATE_VARIANT = "v4-registry";
+var SUPPORTED_VNEXT_TEMPLATE_VARIANTS = ["v1", "v2", "v3-policy", "v4-registry"];
 function compareCodeUnits(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
@@ -28741,7 +28741,7 @@ function vnextAuthoritySha256(value) {
   return vnextContentSha256(canonicalJson(authorityProjection(value)));
 }
 function coreTemplate(projectId, projectName, variant) {
-  return /* @__PURE__ */ new Map([
+  const files = /* @__PURE__ */ new Map([
     [".kxm/project.yaml", {
       schema: "kxm.project.v1",
       id: projectId,
@@ -28766,7 +28766,7 @@ function coreTemplate(projectId, projectName, variant) {
     }],
     [".kxm/agents/coordinator.yaml", {
       schema: "kxm.agent.v1",
-      purpose: variant === "v1" ? "Coordinate the pinned workflow and emit schema-validated commands." : "Coordinate the pinned workflow and emit validated, reviewable commands.",
+      purpose: variant === "v1" || variant === "v4-registry" ? "Coordinate the pinned workflow and emit schema-validated commands." : "Coordinate the pinned workflow and emit validated, reviewable commands.",
       tools: { preset: "coordinator" },
       defaultRepositoryAccess: "read",
       repositories: { control: variant === "v3-policy" ? "write" : "read" },
@@ -28845,6 +28845,13 @@ function coreTemplate(projectId, projectName, variant) {
       ]
     }]
   ]);
+  if (variant === "v4-registry") {
+    files.set(".kxm/gates.yaml", {
+      schema: "kxm.gate-registry.v1",
+      gates: { test: { kind: "command", argv: ["npm", "test"], timeoutMs: 36e5 } }
+    });
+  }
+  return files;
 }
 function provenanceRevision(files) {
   return vnextContentSha256(canonicalJson(files.map((file) => ({
@@ -29271,12 +29278,12 @@ var RESOURCE_SCHEMA = Object.freeze({
   agent: { identity: "kxm.agent.v1", file: "agent.schema.json" },
   model: { identity: "kxm.model.v1", file: "model.schema.json" },
   environment: { identity: "kxm.environment.v1", file: "environment.schema.json" },
-  workflow: { identity: "kxm.workflow.v1", file: "workflow.schema.json" }
+  workflow: { identity: "kxm.workflow.v1", file: "workflow.schema.json" },
+  "gate-registry": { identity: "kxm.gate-registry.v1", file: "gate-registry.schema.json" }
 });
 var IDENTIFIER = /^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$/;
 var WINDOWS_RESERVED = /^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³]|conin\$|conout\$|clock\$)$/i;
 var BUILTIN_EXECUTORS = ["local", "ssh", "exe-dev"];
-var BUILTIN_GATES = ["test", "scm-delivery"];
 var BUILTIN_TOOL_PRESETS = ["coordinator", "read-only", "workspace-writer", "tests-writer"];
 var SECRET_VALUE_PATTERNS = [
   /-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----/,
@@ -29843,6 +29850,8 @@ function validateVnextResources(resources, options = {}) {
     logicalPath,
     value
   });
+  assertNoRegisteredGates(options);
+  let gateRegistry;
   let project;
   const repositories = /* @__PURE__ */ new Map();
   const agents = /* @__PURE__ */ new Map();
@@ -29857,9 +29866,10 @@ function validateVnextResources(resources, options = {}) {
     else if (resource.kind === "model" && resource.id) models.set(resource.id, made);
     else if (resource.kind === "workflow" && resource.id) workflows.set(resource.id, made);
     else if (resource.kind === "environment") environments.push(made);
+    else if (resource.kind === "gate-registry") gateRegistry = made;
   }
   if (!project) return [issue("discovery", "project_definition_missing", ".kxm/project.yaml", "resource set has no project definition")];
-  return validateBundle(project, repositories, agents, models, workflows, environments, options);
+  return validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry);
 }
 function validateAgentScope(agent, step, repositories, file, stepId, issues) {
   validateToolScope(agent, step, file, stepId, issues);
@@ -29934,7 +29944,16 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
       issues.push(issue("reference", "agent_unknown", file, `${stepId} references unknown agent ${primaryAgentId}`));
     }
     const gate = stringValue(step.gate);
-    if (kind === "gate" && gate && !gates.has(gate)) issues.push(issue("reference", "gate_unknown", file, `${stepId} references unregistered gate ${gate}`));
+    if (kind === "gate" && gate) {
+      if (!gates) issues.push(issue("reference", "gate_registry_missing", file, `${stepId} requires .kxm/gates.yaml`));
+      else if (!gates.has(gate)) issues.push(issue("reference", "gate_unknown", file, `${stepId} references unregistered gate ${gate}`));
+    }
+    if (step.expect !== void 0 && (kind !== "gate" || !["pass", "fail"].includes(String(step.expect)))) {
+      issues.push(issue("semantic", "gate_expect_invalid", file, `${stepId} expect is gate-only pass or fail`));
+    }
+    if (kind === "gate" && Object.keys(objectValue(step.on) ?? {}).some((outcome) => outcome === "implementation_failure" || outcome === "repro_missing")) {
+      issues.push(issue("semantic", "gate_outcome_renamed", file, `${stepId} must use implementation-failure and repro-missing`));
+    }
     for (const repositoryId of Object.keys(objectValue(step.repositories) ?? {})) {
       if (!repositories.has(repositoryId)) issues.push(issue("reference", "repository_unknown", file, `${stepId} references unknown repository ${repositoryId}`));
     }
@@ -30107,7 +30126,7 @@ function validateModelReferences(models, issues) {
   };
   for (const id of models.keys()) walk(id, []);
 }
-function validateBundle(project, repositories, agents, models, workflows, environments, options) {
+function validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry) {
   const issues = [];
   const entries = valuesOf(project.value, "repositories").map((candidate) => objectValue(candidate)).filter((candidate) => Boolean(candidate));
   const repositoryIds = /* @__PURE__ */ new Set();
@@ -30133,7 +30152,14 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
   for (const resource of [project, ...environments]) validatePortablePaths(resource, issues);
   for (const environment of environments) validateEnvironment(environment, issues);
   const executors = new Set(options.registeredExecutors ?? BUILTIN_EXECUTORS);
-  const gates = new Set(options.registeredGates ?? BUILTIN_GATES);
+  const gates = gateRegistry ? new Set(Object.keys(objectValue(gateRegistry.value.gates) ?? {})) : void 0;
+  for (const [id, value] of Object.entries(objectValue(gateRegistry?.value.gates) ?? {})) {
+    const definition = objectValue(value);
+    const executable = Array.isArray(definition?.argv) ? definition.argv[0] : void 0;
+    if (definition?.kind === "command" && typeof executable === "string" && (executable === "." || executable === ".." || executable.includes("\\") || !executable.startsWith("/") && executable.includes("/"))) {
+      issues.push(issue("semantic", "gate_executable_invalid", ".kxm/gates.yaml", `${id} argv[0] must be a bare executable or absolute POSIX path`));
+    }
+  }
   const presets = new Set(options.registeredToolPresets ?? BUILTIN_TOOL_PRESETS);
   const harnesses = new Set(options.registeredHarnesses ?? BUILTIN_HARNESS_IDS);
   const defaultExecutor = stringValue(project.value.defaultExecutor);
@@ -30197,7 +30223,13 @@ function discoverVnextProjectRoot(start = process.cwd()) {
   const gitRoot = discoverGitRoot(start);
   return gitRoot && existsSync5(join12(gitRoot, ".kxm", "project.yaml")) ? gitRoot : void 0;
 }
+function assertNoRegisteredGates(options) {
+  if ("registeredGates" in options) {
+    throw new VnextConfigError([issue("semantic", "registered_gates_removed", ".kxm/gates.yaml", "registeredGates was removed; declare gates in .kxm/gates.yaml")]);
+  }
+}
 function loadVnextProject(projectRoot, options = {}) {
+  assertNoRegisteredGates(options);
   const root = resolve4(projectRoot);
   let migrationReceipt;
   if (legacyConfigFilesAt(root).length > 0 && options.allowUnreceiptedLegacyConfig !== true) {
@@ -30231,6 +30263,8 @@ function loadVnextProject(projectRoot, options = {}) {
   const agents = listNamedResources(registry, root, join12(root, ".kxm", "agents"), ".kxm/agents", "agent");
   const models = listNamedResources(registry, root, join12(root, ".kxm", "models"), ".kxm/models", "model");
   const workflows = listNamedResources(registry, root, join12(root, ".kxm", "workflows"), ".kxm/workflows", "workflow");
+  const gatePath = join12(root, ".kxm", "gates.yaml");
+  const gateRegistry = existsSync5(gatePath) ? readResource(registry, root, gatePath, ".kxm/gates.yaml", "gate-registry") : void 0;
   const environments = [];
   const repositories = /* @__PURE__ */ new Map();
   const loadIssues = [];
@@ -30333,9 +30367,9 @@ function loadVnextProject(projectRoot, options = {}) {
     }
   }
   if (loadIssues.length > 0) throw new VnextConfigError(loadIssues);
-  const issues = validateBundle(project, repositories, agents, models, workflows, environments, options);
+  const issues = validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry);
   if (issues.length > 0) throw new VnextConfigError(issues);
-  const resources = [project, ...repositories.values(), ...agents.values(), ...models.values(), ...workflows.values(), ...environments].sort((left, right) => compareCodeUnits2(left.logicalPath, right.logicalPath));
+  const resources = [project, ...repositories.values(), ...agents.values(), ...models.values(), ...workflows.values(), ...environments, ...gateRegistry ? [gateRegistry] : []].sort((left, right) => compareCodeUnits2(left.logicalPath, right.logicalPath));
   return {
     projectRoot: root,
     project,
@@ -30344,6 +30378,7 @@ function loadVnextProject(projectRoot, options = {}) {
     models,
     workflows,
     environments,
+    ...gateRegistry ? { gateRegistry } : {},
     ...templateProvenance === void 0 ? {} : { templateProvenance },
     ...migrationReceipt === void 0 ? {} : { migrationReceipt },
     resources,
@@ -31073,7 +31108,8 @@ var PROSE_FIELDS = {
   agent: /* @__PURE__ */ new Set(["purpose", "instructions"]),
   model: /* @__PURE__ */ new Set([]),
   environment: /* @__PURE__ */ new Set([]),
-  workflow: /* @__PURE__ */ new Set(["description"])
+  workflow: /* @__PURE__ */ new Set(["description"]),
+  "gate-registry": /* @__PURE__ */ new Set([])
 };
 var ACCESS_RANK = { none: 0, read: 1, write: 2 };
 var NETWORK_RANK = { none: 0, "provider-only": 1, restricted: 2, host: 3 };
@@ -31194,6 +31230,20 @@ function vnextAuthorityEntries(resource) {
       }
       break;
     }
+    case "gate-registry": {
+      push("/schema", "resource-shape", value.schema);
+      const gates = asObject(value.gates) ?? {};
+      for (const id of Object.keys(gates).sort()) {
+        const definition = asObject(gates[id]);
+        const path5 = `/gates/${pointerEscape(id)}`;
+        if (definition?.kind === "command") {
+          const { timeoutMs, ...authority } = definition;
+          push(path5, "gate", authority);
+          push(`${path5}/timeoutMs`, "budget", timeoutMs);
+        } else push(path5, "gate", gates[id]);
+      }
+      break;
+    }
     case "workflow": {
       push("/coordinator", "resource-shape", value.coordinator);
       const limits = asObject(value.limits);
@@ -31209,6 +31259,7 @@ function vnextAuthorityEntries(resource) {
         push(`${stepPath}/kind`, "resource-shape", step.kind);
         push(`${stepPath}/agent`, "resource-shape", step.agent);
         push(`${stepPath}/gate`, "gate", step.gate);
+        if (step.kind === "gate") push(`${stepPath}/expect`, "gate", step.expect ?? "pass");
         push(`${stepPath}/signal`, "delivery", step.signal);
         push(`${stepPath}/model`, "model", step.model);
         push(`${stepPath}/maxAttempts`, "budget", step.maxAttempts);
@@ -31440,7 +31491,7 @@ function computeVnextPermissionDiff(base, candidate) {
       continue;
     }
     const resource = candidateResource ?? baseResource;
-    const direction = candidateResource ? "expansion" : resource.kind === "model" ? "expansion" : "narrowing";
+    const direction = candidateResource ? "expansion" : resource.kind === "model" || resource.kind === "gate-registry" ? "expansion" : "narrowing";
     changes.push({
       resource: logicalPath,
       path: "/",
@@ -31775,6 +31826,7 @@ function formatVnextPermissionDiff(diff) {
 // plugins/kxm/src/vnext-repair.ts
 function resourceKindForTemplatePath(path5) {
   if (path5 === ".kxm/project.yaml") return "project";
+  if (path5 === ".kxm/gates.yaml") return "gate-registry";
   if (path5.endsWith("repo.yaml")) return "repository";
   if (path5.startsWith(".kxm/agents/")) return "agent";
   if (path5.startsWith(".kxm/models/")) return "model";
@@ -31921,6 +31973,7 @@ function readProjectAndProvenance(projectRoot, schemasDir) {
   return { project, provenance, provenanceBytes };
 }
 function planVnextTemplateRepair(projectRoot, options = {}) {
+  assertNoRegisteredGates(options);
   const root = resolve7(projectRoot);
   const source = readProjectAndProvenance(root, options.schemasDir);
   if (!source) return void 0;
@@ -32158,17 +32211,18 @@ function verifyTargetArtifacts(projectRoot, operation) {
   if (operation.files.length > MAX_MANAGED_FILES || total > MAX_MANAGED_TOTAL_BYTES) fail2("init_transaction_bounds_exceeded", TRANSACTION_NAME, "operation exceeds bounded file or byte limits", "parse");
 }
 function loaderOptions(options) {
+  assertNoRegisteredGates(options);
   return {
     ...options.schemasDir === void 0 ? {} : { schemasDir: options.schemasDir },
     ...options.repositoryBindings === void 0 ? {} : { repositoryBindings: options.repositoryBindings },
     ...options.registeredExecutors === void 0 ? {} : { registeredExecutors: options.registeredExecutors },
-    ...options.registeredGates === void 0 ? {} : { registeredGates: options.registeredGates },
     ...options.registeredToolPresets === void 0 ? {} : { registeredToolPresets: options.registeredToolPresets }
   };
 }
 function sourceConfigFiles(projectRoot) {
   const fixed = [
     ".kxm/project.yaml",
+    ".kxm/gates.yaml",
     VNEXT_TEMPLATE_PROVENANCE_PATH,
     ".kxm/project/env.yaml",
     ".kxm/repo/repo.yaml",
@@ -32447,6 +32501,7 @@ function rebuildCreateShadow(projectRoot, operation, options) {
   syncTreeDirectories(join18(shadow, ".kxm"));
 }
 function applyOperation(projectRoot, original, options, resumed) {
+  assertNoRegisteredGates(options);
   let operation = original;
   const effectiveOptions = options;
   verifyTargetArtifacts(projectRoot, operation);
@@ -32487,6 +32542,7 @@ function applyOperation(projectRoot, original, options, resumed) {
   return { kind: operation.kind, resumed, bundle, files };
 }
 function prepareAndApplyVnextCreate(projectRoot, rendered, options = {}) {
+  assertNoRegisteredGates(options);
   const files = [...rendered.files.entries()].map(([path5, bytes]) => ({
     path: path5,
     observedSha256: null,
@@ -32500,6 +32556,7 @@ function prepareAndApplyVnextCreate(projectRoot, rendered, options = {}) {
   return applyOperation(projectRoot, prepared, options, false);
 }
 function prepareAndApplyVnextRepair(plan, options = {}) {
+  assertNoRegisteredGates(options);
   if (!plan.canApply) fail2("template_repair_not_applicable", ".kxm", "template repair has conflicts, policy changes, or no safe template-only update");
   const rendered = renderVnextTemplate(plan.projectId, plan.projectName, options.templateVariant ?? CURRENT_VNEXT_TEMPLATE_VARIANT);
   if (rendered.templateRevision !== plan.targetTemplateRevision) fail2("template_repair_target_changed", ".kxm", "template target changed after planning");
@@ -32611,6 +32668,7 @@ function finishPreparingOperation(projectRoot, operation, options) {
   return updatePhase(projectRoot, operation, "prepared");
 }
 function resumeVnextInitTransaction(projectRoot, options = {}) {
+  assertNoRegisteredGates(options);
   let operation = readOperation(projectRoot, options.schemasDir);
   if (!operation) {
     const root = transactionRoot(projectRoot);
@@ -32665,11 +32723,11 @@ function generatedProjectId(requested) {
   return id;
 }
 function configOptions(options, repositoryBindings) {
+  assertNoRegisteredGates(options);
   return {
     ...options.schemasDir === void 0 ? {} : { schemasDir: options.schemasDir },
     repositoryBindings,
     ...options.registeredExecutors === void 0 ? {} : { registeredExecutors: options.registeredExecutors },
-    ...options.registeredGates === void 0 ? {} : { registeredGates: options.registeredGates },
     ...options.registeredToolPresets === void 0 ? {} : { registeredToolPresets: options.registeredToolPresets }
   };
 }
@@ -32942,6 +33000,7 @@ function initializeVnextProjectAtGitRoot(start, gitRoot, options, mutationLock) 
   };
 }
 function initializeVnextProject(start = process.cwd(), options = {}) {
+  assertNoRegisteredGates(options);
   const gitRoot = discoverGitRoot(start);
   if (!gitRoot) {
     throw new VnextConfigError([initIssue("git_root_required", ".", "kxm init must run inside the authoritative Git worktree")]);
@@ -34519,51 +34578,48 @@ function openDatabase(file, description, spec) {
     }
   }
   const database = new DatabaseSync3(file);
-  database.exec("PRAGMA busy_timeout = 5000");
-  const row = database.prepare("PRAGMA user_version").get();
-  const version = row?.user_version ?? 0;
-  if (version > spec.version) {
-    database.close();
-    throw runtimeError("runtime_schema_newer", file, `${description} schema version ${version} is newer than this runtime supports`);
-  }
-  if (version === 0) {
-    const existing = userTables(database);
-    if (existing.length > 0) {
-      database.close();
-      throw runtimeError("runtime_schema_shape_invalid", file, `${description} has tables at schema version 0`);
+  let transaction = false;
+  try {
+    database.exec("PRAGMA busy_timeout = 5000");
+    database.exec("BEGIN IMMEDIATE");
+    transaction = true;
+    const row = database.prepare("PRAGMA user_version").get();
+    const version = row?.user_version ?? 0;
+    if (version > spec.version) {
+      throw runtimeError("runtime_schema_newer", file, `${description} schema version ${version} is newer than this runtime supports`);
     }
-    try {
-      database.exec("BEGIN IMMEDIATE");
+    if (version === 0) {
+      const existing = userTables(database);
+      if (existing.length > 0) {
+        throw runtimeError("runtime_schema_shape_invalid", file, `${description} has tables at schema version 0`);
+      }
       database.exec(spec.schema);
       database.exec(`PRAGMA user_version = ${spec.version}`);
-      database.exec("COMMIT");
-    } catch (error) {
+    } else if (version < spec.version) {
+      throw runtimeError(
+        "runtime_schema_outdated",
+        file,
+        `${description} schema version ${version} is older than ${spec.version}; backup, restore, and migration remain E6`
+      );
+    } else {
+      verifyExpectedTables(database, file, description, spec.tables);
+    }
+    database.exec("COMMIT");
+    transaction = false;
+    database.exec("PRAGMA journal_mode = WAL");
+    database.exec("PRAGMA synchronous = NORMAL");
+    database.exec("PRAGMA foreign_keys = ON");
+    return database;
+  } catch (error) {
+    if (transaction) {
       try {
         database.exec("ROLLBACK");
       } catch {
       }
-      database.close();
-      throw error;
     }
-  } else if (version < spec.version) {
     database.close();
-    throw runtimeError(
-      "runtime_schema_outdated",
-      file,
-      `${description} schema version ${version} is older than ${spec.version}; backup, restore, and migration remain E6`
-    );
-  } else {
-    try {
-      verifyExpectedTables(database, file, description, spec.tables);
-    } catch (error) {
-      database.close();
-      throw error;
-    }
+    throw error;
   }
-  database.exec("PRAGMA journal_mode = WAL");
-  database.exec("PRAGMA synchronous = NORMAL");
-  database.exec("PRAGMA foreign_keys = ON");
-  return database;
 }
 var VNEXT_REGISTRY_SCHEMA_VERSION = 1;
 var REGISTRY_TABLES = {

@@ -1,12 +1,17 @@
 import assert from "node:assert/strict";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { removeTempDir } from "./helpers.ts";
+import { fileURLToPath } from "node:url";
+import { removeTempDir, waitFor } from "./helpers.ts";
 import { committedProject } from "./helpers/vnext-project.ts";
 import {
   VnextRunEventStore,
   VnextRuntimeRegistry,
+  VNEXT_EVENT_STORE_SCHEMA_VERSION,
+  VNEXT_REGISTRY_SCHEMA_VERSION,
   newVnextCommandId,
   projectRuntimeKey,
   vnextRuntimePaths,
@@ -33,6 +38,57 @@ import { loadVnextProject } from "../plugins/kxm/src/vnext-config.ts";
 
 function cleanup(...paths: string[]): void {
   removeTempDir(...paths);
+}
+
+for (const kind of ["registry", "events"] as const) {
+  test(`concurrent first-open initializes the ${kind} database once`, { timeout: 25_000 }, async () => {
+    const directory = mkdtempSync(join(tmpdir(), "kxm-runtime-first-open-"));
+    const databasePath = join(directory, "state.db");
+    const fixture = fileURLToPath(new URL("./fixtures/vnext-runtime/concurrent-first-open.ts", import.meta.url));
+    const env = { ...process.env };
+    delete env.NODE_TEST_CONTEXT;
+    const children = ["one", "two"].map((participant) => {
+      const child = spawn(process.execPath, [
+        "--disable-warning=ExperimentalWarning", "--experimental-strip-types",
+        fixture, kind, databasePath, directory, participant,
+      ], { env, stdio: ["ignore", "ignore", "pipe"], windowsHide: true });
+      let stderr = "";
+      child.stderr.setEncoding("utf8").on("data", (chunk: string) => { stderr += chunk; });
+      child.on("error", (error: Error) => { stderr += error.message; });
+      const timer = setTimeout(() => child.kill("SIGKILL"), 18_000);
+      const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null; stderr: string }>((resolve) => {
+        child.once("close", (code, signal) => {
+          clearTimeout(timer);
+          resolve({ code, signal, stderr });
+        });
+      });
+      return { child, closed };
+    });
+    try {
+      await waitFor(() => ["one", "two"].every((id) => existsSync(join(directory, `arrived-${id}`))), 10_000);
+      writeFileSync(join(directory, "release"), "go");
+      for (const result of await Promise.all(children.map(({ closed }) => closed))) {
+        assert.equal(result.code, 0, `concurrent opener failed (${result.signal}): ${result.stderr}`);
+      }
+      const database = new DatabaseSync(databasePath);
+      try {
+        const version = database.prepare("PRAGMA user_version").get() as { user_version: number };
+        assert.equal(version.user_version, kind === "registry" ? VNEXT_REGISTRY_SCHEMA_VERSION : VNEXT_EVENT_STORE_SCHEMA_VERSION);
+        const tables = database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as Array<{ name: string }>;
+        assert.deepEqual(tables.map(({ name }) => name), kind === "registry"
+          ? ["projects", "supervisor"]
+          : ["attempt_capabilities", "commands", "events", "run_plans", "run_state", "runs"]);
+      } finally {
+        database.close();
+      }
+    } finally {
+      for (const { child } of children) {
+        if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+      }
+      await Promise.all(children.map(({ closed }) => closed));
+      cleanup(directory);
+    }
+  });
 }
 
 test("run acceptance is immutable, idempotent, and pins revisions", () => {

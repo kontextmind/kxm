@@ -291,3 +291,45 @@ revision.
 committed YAML example with the restricted parser profile and validates each
 resource plus representative event/result/delivery/candidate records against
 the committed JSON Schemas.
+
+## Gate registry foundation
+
+Projects with gate steps must declare `.kxm/gates.yaml`:
+
+```yaml
+schema: kxm.gate-registry.v1
+gates:
+  test:
+    kind: command
+    argv: [npm, test]
+    timeoutMs: 3600000
+  report:
+    kind: artifacts-exist
+    paths: [reviews/result.json]
+```
+
+Command definitions require literal `argv` (1–64 nonempty strings, each at
+most 4096 characters) and integer `timeoutMs` from 1 to 2147483647. The first
+argument must be a bare executable name or an absolute POSIX path; relative
+paths such as `./test.sh` and directory names `.` and `..` refuse. Optional
+`cwd` can only be `control`.
+`env`, `shell`, and undeclared fields refuse. Artifact paths use the shared
+portable relative-path grammar beneath `.kxm/assets`; `.` and traversal refuse.
+Artifact definitions have no timeout. `kind: reserved` registers an id without
+claiming executable support. Registries contain 1–64 named definitions.
+
+Workflow gate steps accept `expect: pass` (default) or `expect: fail`.
+Non-gate `expect` is invalid. Use `implementation-failure` and `repro-missing`
+for gate outcomes; their old underscore spellings are rejected. The former
+`registeredGates` caller option and `kxm.gates.v1` identity are also rejected.
+A project without gate steps may omit the registry.
+
+These are configuration and compilation contracts. Gate execution, artifact
+containment checks, timeout settlement, and attempt-bound evidence remain D3
+follow-up work; a valid definition does not mean the engine can execute it.
+Registry changes alter the full configuration/tool-policy hashes. Permission
+review treats only numeric timeout decreases as narrowing; other definition
+changes and removal of a gate or registry require review. Explicit default
+`expect: pass` is neutral. New projects use `v4-registry`; historical template
+bytes and provenance remain unchanged. Existing projects must explicitly
+review and add a registry before using gate workflows.

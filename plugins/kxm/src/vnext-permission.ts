@@ -58,6 +58,7 @@ const PROSE_FIELDS: Readonly<Record<VnextResourceKind, ReadonlySet<string>>> = {
   model: new Set([]),
   environment: new Set([]),
   workflow: new Set(["description"]),
+  "gate-registry": new Set([]),
 };
 
 const ACCESS_RANK: Readonly<Record<string, number>> = { none: 0, read: 1, write: 2 };
@@ -192,6 +193,20 @@ export function vnextAuthorityEntries(resource: { kind: VnextResourceKind; id?: 
       }
       break;
     }
+    case "gate-registry": {
+      push("/schema", "resource-shape", value.schema);
+      const gates = asObject(value.gates) ?? {};
+      for (const id of Object.keys(gates).sort()) {
+        const definition = asObject(gates[id]);
+        const path = `/gates/${pointerEscape(id)}`;
+        if (definition?.kind === "command") {
+          const { timeoutMs, ...authority } = definition;
+          push(path, "gate", authority);
+          push(`${path}/timeoutMs`, "budget", timeoutMs);
+        } else push(path, "gate", gates[id]);
+      }
+      break;
+    }
     case "workflow": {
       push("/coordinator", "resource-shape", value.coordinator);
       const limits = asObject(value.limits);
@@ -207,6 +222,7 @@ export function vnextAuthorityEntries(resource: { kind: VnextResourceKind; id?: 
         push(`${stepPath}/kind`, "resource-shape", step.kind);
         push(`${stepPath}/agent`, "resource-shape", step.agent);
         push(`${stepPath}/gate`, "gate", step.gate);
+        if (step.kind === "gate") push(`${stepPath}/expect`, "gate", step.expect ?? "pass");
         push(`${stepPath}/signal`, "delivery", step.signal);
         push(`${stepPath}/model`, "model", step.model);
         push(`${stepPath}/maxAttempts`, "budget", step.maxAttempts);
@@ -515,7 +531,7 @@ export function computeVnextPermissionDiff(base: VnextProjectBundle, candidate: 
     const resource = candidateResource ?? baseResource as VnextResource;
     const direction: VnextPermissionDirection = candidateResource
       ? "expansion"
-      : (resource.kind === "model" ? "expansion" : "narrowing");
+      : ((resource.kind === "model" || resource.kind === "gate-registry") ? "expansion" : "narrowing");
     changes.push({
       resource: logicalPath,
       path: "/",
