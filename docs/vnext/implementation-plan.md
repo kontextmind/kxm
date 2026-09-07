@@ -75,9 +75,13 @@ It does not replace the phase gates below.
   the currently admitted native writer route; Codex session work is an
   authorized bootstrap route with unknown root usage/cost, never a forged
   native completion. Do not declare Codex and Grok interchangeable in
-  harness-run role mapping. Two attempts by default; a third only with
-  concrete new evidence or a changed approach, then relief. Preserve every
-  attempt. New-model trials are bounded comparable tasks, not daily
+  harness-run role mapping. Operator update (2026-09-07): after failed or
+  exhausted attempts, immediately try the next suggested eligible authenticated
+  model. OpenRouter Qwen `qwen/qwen3-coder-plus` is narrowly admitted as a Pi
+  writer with exact model auth and edit permission; it has no supported native
+  route here. Other model writer routes require reviewed admission. Native
+  subscriptions remain preferred for the same model. Preserve every attempt,
+  cost, witness, independent review, and acceptance requirement. New-model trials are bounded comparable tasks, not daily
   fanout. This is orchestration policy; `just assign` does not
   automatically schedule failover.
 - **Private handoff notes:** when needed, each role leaves concise private
@@ -186,6 +190,18 @@ It does not replace the phase gates below.
   decreases narrow permission budgets. The current `v4-registry` template
   declares `npm test`; historical template bytes and provenance are retained.
   Execution and attempt-bound evidence are still open, and #89 remains open.
+- **D3 S2 pins/store/replay:** run plans pin `kxm.run-plan.v2` with the exact
+  registry hash, referenced gate definitions and control-root key. Event store
+  schema 3 adds immutable `gate_attempts`, `gate_observations` and
+  `gate_evidence` rows bound to the full run/owner/step/assignment/attempt/effect
+  identity; events are appended before the rows they reference under immediate
+  foreign keys, and every production fold (status, cancel, dispatch, settlement,
+  rebuild) verifies events against rows and rows against events. Closed
+  complete/no-start observation facts are shared on insert and replay;
+  evaluated settlement keeps the observation and fails the run when a
+  transition budget is exhausted. Proven no-start settles truthfully without
+  an executing event; uncertain observations freeze without evidence. The
+  engine still refuses gate dispatch; #89 remains open.
 - **Issue 127 complete (PR #129, `50c8482`):** native writer, fixed witness,
   independent Fable/Sol reviews, acceptance, and all five PR CI jobs passed.
   The parent-alias regression owns its temporary symlink on Mac/Linux;
@@ -524,18 +540,22 @@ It does not replace the phase gates below.
 - Slim live `default` workflow for this repo (no bulk migrate of jira/provenance/v04).
 - YAML-editing enable/disable UI (Phase 4 `/kxm` settings or `kxm dash` config
   tab). Do not add a preferences overlay.
-- Phase 3 engine remainder: D3 S2 pins/store/replay, S3 artifact gates and
-  preflight, and S4 command execution with attempt-bound evidence. Registry
-  configuration and `expect` compilation are implemented in S1; actual gate
-  evaluation is still unsupported. D4 joins, approval, waits, duration/cost
-  budgets, `blocked_uncertain` recovery, and producer drain follow. Then the
-  full model-free driver must complete `default.yaml` and `fix.yaml`.
-  D3/D4 must honor declared `assignments` and `join` on non-agent steps or
-  fail closed. Neither the agent-only loop nor the merged developer runner
-  closes Phase 3. Issue #89 stays open until real gate execution/evidence
-  passes its tests; live Pi execution remains Phase 4.
-- Version-1 run event stores are refused with `runtime_schema_outdated`;
-  backup, restore, and migration remain E6.
+- Phase 3 engine remainder: S3 artifact gates and preflight, and S4 command
+  execution with attempt-bound evidence. Registry configuration and `expect`
+  compilation are implemented in S1; envelope pins, store rows, and
+  bidirectional replay are implemented in S2. Actual gate evaluation is still
+  unsupported. D4 joins, approval, waits, duration/cost budgets,
+  `blocked_uncertain` recovery, and producer drain follow. Then the full
+  model-free driver must complete `default.yaml` and `fix.yaml`. D3/D4 must
+  honor declared `assignments` and `join` on non-agent steps or fail closed.
+  Neither the agent-only loop nor the merged developer runner closes Phase 3.
+  Issue #89 stays open until real gate execution/evidence passes its tests;
+  live Pi execution remains Phase 4.
+- Version 1 and 2 run event stores and `kxm.run-plan.v1` envelopes are refused
+  with `runtime_schema_outdated` / `run_plan_corrupt`; there is no migration
+  lane, and backup/restore remain E6. Coordinated rewriting of an envelope, its
+  pin event and all gate rows is outside self-hash integrity; revision drift
+  does not detect it.
 - Non-Pi dispatch adapters (Phase 11). Listing a harness does not execute it.
   The `scripts/harness-run.mjs` dev helper is not that adapter.
 - **Issue 84 remainder:** Kimi read-only auth-status probe: no non-mutating
@@ -693,9 +713,17 @@ Windows verification of the run loop is deferred with the platform pause.
 initializer template. Missing registries, unknown gate ids, obsolete options,
 old gate outcome spellings, relative executables, and directory-name `argv[0]`
 values `.` and `..` refuse. Historical template bytes are unchanged.
-The engine still refuses gates. S2 pins/store/replay, S3 artifact execution and
-preflight, and S4 command execution remain; D4 supplies the remaining workflow
-features. Issue #89 is open. No execution or evidence gate is claimed passed.
+The engine still refuses gates. Issue #89 is open. No execution or evidence
+gate is claimed passed.
+
+**D3 S2 (implemented, unreleased):** envelope v2 pins, store v3 gate rows,
+gate-only fold rules for intent, spawn, observation, settlement, no-start and
+uncertainty, and bidirectional replay on every production read, cancel,
+settlement and recovery path. Evaluated settlement applies the same
+transition-budget failure as agent settlement and does not drop a committed
+complete observation. Closed observation facts and evidence identity/expect
+are checked on insert and replay. Gate dispatch, artifact checks and command
+execution remain S3/S4; no execution or evidence gate is claimed passed.
 
 **Developer prerequisite (PR #129 merged, #127 closed):** the assignment runner
 has native assignment records, fixed witnesses, exact-commit acceptance and

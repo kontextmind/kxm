@@ -3229,3 +3229,21 @@ test("CLI invoked through a parent alias executes validation", () => {
     rmSync(aliasRoot, { recursive: true, force: true });
   }
 });
+
+test("Qwen relief remains a bound writer assignment with fixed witness and honest Pi prompt", () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const manifest = writerManifest(root, commit, taskDir, { harness: "pi", model: "openrouter/qwen/qwen3-coder-plus", kind: "repair", effort: "medium" });
+    const validated = validateAssignmentManifest(manifest);
+    assert.equal(validated.role, "writer");
+    assert.equal(validated.kind, "repair");
+    assert.equal(validated.contract.witness.id, "verify");
+    assert.equal(validated.git.head, commit);
+    const prompt = renderAssignmentPrompt(validated);
+    assert.match(prompt, /OpenRouter model through Pi/);
+    assert.match(prompt, /Root re-runs the same fixed witness/);
+    assert.doesNotMatch(prompt, /Use only the read, grep, find, and ls tools/);
+    assert.throws(() => validateAssignmentManifest({ ...manifest, model: "openrouter/x-ai/grok-4.6" }), /pi writer/);
+  } finally { cleanup(root, taskDir); }
+});

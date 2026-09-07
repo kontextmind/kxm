@@ -15378,6 +15378,9 @@ function portableBindingIssue(root, pathHint, repositoryId) {
   }
   return void 0;
 }
+function vnextPortablePath(path) {
+  return portablePath(path);
+}
 function portablePath(path) {
   if (path === ".") return true;
   if (path.includes("\\") || path.startsWith("/") || /^[A-Za-z]:/.test(path) || /[<>:"|?*\u0000-\u001F]/.test(path)) return false;
@@ -16397,7 +16400,7 @@ function openDatabase(file, description, spec) {
       throw runtimeError(
         "runtime_schema_outdated",
         file,
-        `${description} schema version ${version} is older than ${spec.version}; backup, restore, and migration remain E6`
+        `${description} schema version ${version} is older than ${spec.version}; no migration lane, backup and restore remain E6`
       );
     } else {
       verifyExpectedTables(database, file, description, spec.tables);
@@ -16612,14 +16615,86 @@ var VnextRuntimeRegistry = class {
 };
 var VNEXT_RUN_EVENT_SCHEMA = "kxm.run-event.v1";
 var VNEXT_ABSENT_MEMORY_REVISION = "ctxrev_absent";
-var VNEXT_EVENT_STORE_SCHEMA_VERSION = 2;
+var VNEXT_EVENT_STORE_SCHEMA_VERSION = 3;
 var EVENT_STORE_TABLES = {
   runs: ["run_id", "project_id", "home_runtime_id", "workflow_id", "prompt_sha256", "status", "config_revision", "memory_revision", "executor_policy_revision", "tool_policy_revision", "created_at", "updated_at"],
   events: ["project_id", "run_id", "sequence", "event_id", "event_type", "command_id", "occurred_at", "recorded_at", "monotonic_ns", "config_revision", "memory_revision", "executor_policy_revision", "tool_policy_revision", "payload", "schema", "home_runtime_id"],
   commands: ["command_id", "run_id", "kind", "result", "recorded_at"],
   run_plans: ["run_id", "run_plan_hash", "envelope", "pinned_sequence"],
   run_state: ["run_id", "last_sequence", "state"],
-  attempt_capabilities: ["attempt_id", "run_id", "assignment_id", "step_id", "step_attempt", "producer_id", "capability_hash", "state"]
+  attempt_capabilities: ["attempt_id", "run_id", "assignment_id", "step_id", "step_attempt", "producer_id", "capability_hash", "state"],
+  gate_attempts: [
+    "attempt_id",
+    "run_id",
+    "project_id",
+    "home_runtime_id",
+    "step_id",
+    "step_attempt",
+    "assignment_id",
+    "effect_id",
+    "gate_id",
+    "gate_kind",
+    "expect",
+    "gate_definition_hash",
+    "registry_hash",
+    "run_plan_hash",
+    "control_project_key",
+    "producer_id",
+    "intent_event_id",
+    "content_hash"
+  ],
+  gate_observations: [
+    "observation_id",
+    "attempt_id",
+    "run_id",
+    "project_id",
+    "home_runtime_id",
+    "step_id",
+    "step_attempt",
+    "assignment_id",
+    "effect_id",
+    "completeness",
+    "spawned",
+    "pid",
+    "exit_code",
+    "signal",
+    "exit_observed",
+    "close_observed",
+    "stop_cause",
+    "signals_attempted",
+    "error_class",
+    "stdout_sha256",
+    "stdout_bytes",
+    "stdout_complete",
+    "stderr_sha256",
+    "stderr_bytes",
+    "stderr_complete",
+    "checked_count",
+    "failed_count",
+    "elapsed_ms",
+    "started_at",
+    "finished_at",
+    "recorded_event_id",
+    "content_hash"
+  ],
+  gate_evidence: [
+    "evidence_id",
+    "attempt_id",
+    "observation_id",
+    "run_id",
+    "project_id",
+    "home_runtime_id",
+    "step_id",
+    "step_attempt",
+    "assignment_id",
+    "effect_id",
+    "evidence_key",
+    "kind",
+    "expect",
+    "outcome",
+    "settled_event_id",
+    "content_hash"
+  ]
 };
 var EVENT_STORE_SCHEMA = `
 CREATE TABLE runs (
@@ -16684,6 +16759,83 @@ CREATE TABLE attempt_capabilities (
   capability_hash TEXT NOT NULL UNIQUE,
   state TEXT NOT NULL CHECK (state IN ('issued','settled','revoked'))
 ) STRICT;
+CREATE TABLE gate_attempts (
+  attempt_id TEXT PRIMARY KEY REFERENCES attempt_capabilities(attempt_id),
+  run_id TEXT NOT NULL REFERENCES runs(run_id),
+  project_id TEXT NOT NULL,
+  home_runtime_id TEXT NOT NULL,
+  step_id TEXT NOT NULL,
+  step_attempt INTEGER NOT NULL,
+  assignment_id TEXT NOT NULL,
+  effect_id TEXT NOT NULL UNIQUE,
+  gate_id TEXT NOT NULL,
+  gate_kind TEXT NOT NULL CHECK (gate_kind IN ('command','artifacts-exist')),
+  expect TEXT NOT NULL CHECK (expect IN ('pass','fail')),
+  gate_definition_hash TEXT NOT NULL,
+  registry_hash TEXT NOT NULL,
+  run_plan_hash TEXT NOT NULL,
+  control_project_key TEXT NOT NULL,
+  producer_id TEXT NOT NULL CHECK (producer_id = 'kxm-gate'),
+  intent_event_id TEXT NOT NULL UNIQUE REFERENCES events(event_id),
+  content_hash TEXT NOT NULL
+) STRICT;
+CREATE INDEX gate_attempts_run ON gate_attempts(run_id);
+CREATE INDEX gate_attempts_project ON gate_attempts(project_id);
+CREATE TABLE gate_observations (
+  observation_id TEXT PRIMARY KEY,
+  attempt_id TEXT NOT NULL UNIQUE REFERENCES gate_attempts(attempt_id),
+  run_id TEXT NOT NULL REFERENCES runs(run_id),
+  project_id TEXT NOT NULL,
+  home_runtime_id TEXT NOT NULL,
+  step_id TEXT NOT NULL,
+  step_attempt INTEGER NOT NULL,
+  assignment_id TEXT NOT NULL,
+  effect_id TEXT NOT NULL,
+  completeness TEXT NOT NULL CHECK (completeness IN ('complete','incomplete','no-start')),
+  spawned INTEGER NOT NULL CHECK (spawned IN (0, 1)),
+  pid INTEGER,
+  exit_code INTEGER,
+  signal TEXT,
+  exit_observed INTEGER NOT NULL CHECK (exit_observed IN (0, 1)),
+  close_observed INTEGER NOT NULL CHECK (close_observed IN (0, 1)),
+  stop_cause TEXT NOT NULL CHECK (stop_cause IN ('none','timeout','cancel','error')),
+  signals_attempted TEXT NOT NULL CHECK (signals_attempted IN ('none','term','term-kill')),
+  error_class TEXT CHECK (error_class IN ('validation','spawn-error','stream-error','stop-error','recording-error','lost-close')),
+  stdout_sha256 TEXT,
+  stdout_bytes INTEGER,
+  stdout_complete INTEGER CHECK (stdout_complete IN (0, 1)),
+  stderr_sha256 TEXT,
+  stderr_bytes INTEGER,
+  stderr_complete INTEGER CHECK (stderr_complete IN (0, 1)),
+  checked_count INTEGER,
+  failed_count INTEGER,
+  elapsed_ms INTEGER NOT NULL,
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  recorded_event_id TEXT NOT NULL UNIQUE REFERENCES events(event_id),
+  content_hash TEXT NOT NULL
+) STRICT;
+CREATE INDEX gate_observations_run ON gate_observations(run_id);
+CREATE TABLE gate_evidence (
+  evidence_id TEXT PRIMARY KEY,
+  attempt_id TEXT NOT NULL UNIQUE REFERENCES gate_attempts(attempt_id),
+  observation_id TEXT NOT NULL UNIQUE REFERENCES gate_observations(observation_id),
+  run_id TEXT NOT NULL REFERENCES runs(run_id),
+  project_id TEXT NOT NULL,
+  home_runtime_id TEXT NOT NULL,
+  step_id TEXT NOT NULL,
+  step_attempt INTEGER NOT NULL,
+  assignment_id TEXT NOT NULL,
+  effect_id TEXT NOT NULL,
+  evidence_key TEXT,
+  kind TEXT NOT NULL CHECK (kind = 'gate'),
+  expect TEXT NOT NULL CHECK (expect IN ('pass','fail')),
+  outcome TEXT NOT NULL CHECK (outcome IN ('passed','implementation-failure','repro-missing')),
+  settled_event_id TEXT NOT NULL UNIQUE REFERENCES events(event_id),
+  content_hash TEXT NOT NULL
+) STRICT;
+CREATE UNIQUE INDEX gate_evidence_key ON gate_evidence(run_id, step_id, step_attempt, evidence_key) WHERE evidence_key IS NOT NULL;
+CREATE INDEX gate_evidence_run ON gate_evidence(run_id);
 `;
 var VnextRunEventStore = class {
   path;
@@ -16855,6 +17007,189 @@ var VnextRunEventStore = class {
       throw runtimeError("capability_unknown", attemptId, "attempt capability does not exist");
     }
   }
+  insertGateAttempt(row) {
+    assertGateAttemptRow(row);
+    this.assertEventType(row.runId, row.intentEventId, ["effect.intent_recorded"]);
+    const capability = this.capabilityByAttempt(row.attemptId);
+    if (!capability || capability.runId !== row.runId || capability.assignmentId !== row.assignmentId || capability.stepId !== row.stepId || capability.stepAttempt !== row.stepAttempt) {
+      throw gateRowInvalid(row.attemptId, "gate attempt identity does not match attempt_capabilities");
+    }
+    this.database.prepare(`
+      INSERT INTO gate_attempts (
+        attempt_id, run_id, project_id, home_runtime_id, step_id, step_attempt, assignment_id, effect_id,
+        gate_id, gate_kind, expect, gate_definition_hash, registry_hash, run_plan_hash, control_project_key,
+        producer_id, intent_event_id, content_hash
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      row.attemptId,
+      row.runId,
+      row.projectId,
+      row.homeRuntimeId,
+      row.stepId,
+      row.stepAttempt,
+      row.assignmentId,
+      row.effectId,
+      row.gateId,
+      row.gateKind,
+      row.expect,
+      row.gateDefinitionHash,
+      row.registryHash,
+      row.runPlanHash,
+      row.controlProjectKey,
+      row.producerId,
+      row.intentEventId,
+      row.contentHash
+    );
+  }
+  insertGateObservation(row) {
+    assertGateObservationRow(row);
+    this.assertEventType(row.runId, row.recordedEventId, ["effect.observed", "effect.blocked_uncertain"]);
+    const attempt = this.gateAttempt(row.attemptId);
+    if (!attempt) throw gateRowInvalid(row.attemptId, "gate observation has no matching gate attempt");
+    assertSharedIdentity(row, attempt, row.observationId);
+    assertClosedGateObservation(attempt.gateKind, row, row.observationId);
+    this.database.prepare(`
+      INSERT INTO gate_observations (
+        observation_id, attempt_id, run_id, project_id, home_runtime_id, step_id, step_attempt, assignment_id, effect_id,
+        completeness, spawned, pid, exit_code, signal, exit_observed, close_observed, stop_cause, signals_attempted,
+        error_class, stdout_sha256, stdout_bytes, stdout_complete, stderr_sha256, stderr_bytes, stderr_complete,
+        checked_count, failed_count, elapsed_ms, started_at, finished_at, recorded_event_id, content_hash
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      row.observationId,
+      row.attemptId,
+      row.runId,
+      row.projectId,
+      row.homeRuntimeId,
+      row.stepId,
+      row.stepAttempt,
+      row.assignmentId,
+      row.effectId,
+      row.completeness,
+      row.spawned,
+      row.pid,
+      row.exitCode,
+      row.signal,
+      row.exitObserved,
+      row.closeObserved,
+      row.stopCause,
+      row.signalsAttempted,
+      row.errorClass,
+      row.stdoutSha256,
+      row.stdoutBytes,
+      row.stdoutComplete,
+      row.stderrSha256,
+      row.stderrBytes,
+      row.stderrComplete,
+      row.checkedCount,
+      row.failedCount,
+      row.elapsedMs,
+      row.startedAt,
+      row.finishedAt,
+      row.recordedEventId,
+      row.contentHash
+    );
+  }
+  insertGateEvidence(row) {
+    assertGateEvidenceRow(row);
+    this.assertEventType(row.runId, row.settledEventId, ["effect.settled"]);
+    const attempt = this.gateAttempt(row.attemptId);
+    if (!attempt) throw gateRowInvalid(row.attemptId, "gate evidence has no matching gate attempt");
+    assertSharedIdentity(row, attempt, row.evidenceId);
+    const observation = this.gateObservationForAttempt(row.attemptId);
+    if (!observation || observation.observationId !== row.observationId) {
+      throw gateRowInvalid(row.evidenceId, "gate evidence observation_id does not match the attempt observation");
+    }
+    this.database.prepare(`
+      INSERT INTO gate_evidence (
+        evidence_id, attempt_id, observation_id, run_id, project_id, home_runtime_id, step_id, step_attempt,
+        assignment_id, effect_id, evidence_key, kind, expect, outcome, settled_event_id, content_hash
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      row.evidenceId,
+      row.attemptId,
+      row.observationId,
+      row.runId,
+      row.projectId,
+      row.homeRuntimeId,
+      row.stepId,
+      row.stepAttempt,
+      row.assignmentId,
+      row.effectId,
+      row.evidenceKey,
+      row.kind,
+      row.expect,
+      row.outcome,
+      row.settledEventId,
+      row.contentHash
+    );
+  }
+  gateAttempt(attemptId) {
+    const row = this.database.prepare(`
+      SELECT attempt_id, run_id, project_id, home_runtime_id, step_id, step_attempt, assignment_id, effect_id,
+        gate_id, gate_kind, expect, gate_definition_hash, registry_hash, run_plan_hash, control_project_key,
+        producer_id, intent_event_id, content_hash
+      FROM gate_attempts WHERE attempt_id = ?
+    `).get(attemptId);
+    return row ? gateAttemptFromSql(row) : void 0;
+  }
+  gateAttemptsForRun(runId) {
+    const rows = this.database.prepare(`
+      SELECT attempt_id, run_id, project_id, home_runtime_id, step_id, step_attempt, assignment_id, effect_id,
+        gate_id, gate_kind, expect, gate_definition_hash, registry_hash, run_plan_hash, control_project_key,
+        producer_id, intent_event_id, content_hash
+      FROM gate_attempts WHERE run_id = ? ORDER BY step_attempt ASC, attempt_id ASC
+    `).all(runId);
+    return rows.map(gateAttemptFromSql);
+  }
+  gateObservationForAttempt(attemptId) {
+    const row = this.database.prepare(`
+      SELECT observation_id, attempt_id, run_id, project_id, home_runtime_id, step_id, step_attempt, assignment_id,
+        effect_id, completeness, spawned, pid, exit_code, signal, exit_observed, close_observed, stop_cause,
+        signals_attempted, error_class, stdout_sha256, stdout_bytes, stdout_complete, stderr_sha256, stderr_bytes,
+        stderr_complete, checked_count, failed_count, elapsed_ms, started_at, finished_at, recorded_event_id, content_hash
+      FROM gate_observations WHERE attempt_id = ?
+    `).get(attemptId);
+    return row ? gateObservationFromSql(row) : void 0;
+  }
+  gateObservationsForRun(runId) {
+    const rows = this.database.prepare(`
+      SELECT observation_id, attempt_id, run_id, project_id, home_runtime_id, step_id, step_attempt, assignment_id,
+        effect_id, completeness, spawned, pid, exit_code, signal, exit_observed, close_observed, stop_cause,
+        signals_attempted, error_class, stdout_sha256, stdout_bytes, stdout_complete, stderr_sha256, stderr_bytes,
+        stderr_complete, checked_count, failed_count, elapsed_ms, started_at, finished_at, recorded_event_id, content_hash
+      FROM gate_observations WHERE run_id = ? ORDER BY step_attempt ASC, observation_id ASC
+    `).all(runId);
+    return rows.map(gateObservationFromSql);
+  }
+  gateEvidenceForRun(runId) {
+    const rows = this.database.prepare(`
+      SELECT evidence_id, attempt_id, observation_id, run_id, project_id, home_runtime_id, step_id, step_attempt,
+        assignment_id, effect_id, evidence_key, kind, expect, outcome, settled_event_id, content_hash
+      FROM gate_evidence WHERE run_id = ? ORDER BY step_attempt ASC, evidence_id ASC
+    `).all(runId);
+    return rows.map(gateEvidenceFromSql);
+  }
+  gateEvidenceForAttempt(attemptId) {
+    const row = this.database.prepare(`
+      SELECT evidence_id, attempt_id, observation_id, run_id, project_id, home_runtime_id, step_id, step_attempt,
+        assignment_id, effect_id, evidence_key, kind, expect, outcome, settled_event_id, content_hash
+      FROM gate_evidence WHERE attempt_id = ?
+    `).get(attemptId);
+    return row ? gateEvidenceFromSql(row) : void 0;
+  }
+  gateRowCounts(runId) {
+    const attempts = this.database.prepare("SELECT COUNT(*) AS n FROM gate_attempts WHERE run_id = ?").get(runId);
+    const observations = this.database.prepare("SELECT COUNT(*) AS n FROM gate_observations WHERE run_id = ?").get(runId);
+    const evidence = this.database.prepare("SELECT COUNT(*) AS n FROM gate_evidence WHERE run_id = ?").get(runId);
+    return { attempts: Number(attempts.n), observations: Number(observations.n), evidence: Number(evidence.n) };
+  }
+  assertEventType(runId, eventId, allowed) {
+    const row = this.database.prepare("SELECT run_id, event_type FROM events WHERE event_id = ?").get(eventId);
+    if (!row || row.run_id !== runId || !allowed.includes(row.event_type)) {
+      throw gateRowInvalid(eventId, `referenced event is not ${allowed.join("|")} for this run`);
+    }
+  }
 };
 function runFromRow(row) {
   if (typeof row.memory_revision !== "string" || row.memory_revision.length === 0) {
@@ -16883,6 +17218,301 @@ function newVnextEventId() {
 }
 function newVnextCommandId() {
   return `cmd_${randomUUID().replaceAll("-", "")}`;
+}
+var SHA256 = /^sha256:[a-f0-9]{64}$/;
+var OPAQUE = /^[a-z][a-z0-9]{1,15}_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$/;
+var FORBIDDEN_TEXT_KEYS = /* @__PURE__ */ new Set(["stdout", "stderr", "error", "errorText", "stdoutText", "stderrText", "errorMessage", "message"]);
+var GATE_ATTEMPT_KEYS = [
+  "attemptId",
+  "runId",
+  "projectId",
+  "homeRuntimeId",
+  "stepId",
+  "stepAttempt",
+  "assignmentId",
+  "effectId",
+  "gateId",
+  "gateKind",
+  "expect",
+  "gateDefinitionHash",
+  "registryHash",
+  "runPlanHash",
+  "controlProjectKey",
+  "producerId",
+  "intentEventId",
+  "contentHash"
+];
+var GATE_OBSERVATION_KEYS = [
+  "observationId",
+  "attemptId",
+  "runId",
+  "projectId",
+  "homeRuntimeId",
+  "stepId",
+  "stepAttempt",
+  "assignmentId",
+  "effectId",
+  "completeness",
+  "spawned",
+  "pid",
+  "exitCode",
+  "signal",
+  "exitObserved",
+  "closeObserved",
+  "stopCause",
+  "signalsAttempted",
+  "errorClass",
+  "stdoutSha256",
+  "stdoutBytes",
+  "stdoutComplete",
+  "stderrSha256",
+  "stderrBytes",
+  "stderrComplete",
+  "checkedCount",
+  "failedCount",
+  "elapsedMs",
+  "startedAt",
+  "finishedAt",
+  "recordedEventId",
+  "contentHash"
+];
+var GATE_EVIDENCE_KEYS = [
+  "evidenceId",
+  "attemptId",
+  "observationId",
+  "runId",
+  "projectId",
+  "homeRuntimeId",
+  "stepId",
+  "stepAttempt",
+  "assignmentId",
+  "effectId",
+  "evidenceKey",
+  "kind",
+  "expect",
+  "outcome",
+  "settledEventId",
+  "contentHash"
+];
+function gateRowContentHash(table, row) {
+  const copy = { ...row };
+  delete copy.contentHash;
+  void table;
+  return `sha256:${createHash3("sha256").update(vnextCanonicalJson(copy), "utf8").digest("hex")}`;
+}
+function assertClosedGateObservation(kind, row, id = "observation") {
+  if (row.completeness === "incomplete") return;
+  if (row.completeness === "no-start") {
+    const legitimateStartFailure = (row.errorClass === "validation" || row.errorClass === "spawn-error") && row.stopCause === "none";
+    const requestedStop = row.stopCause === "cancel" && row.errorClass === null;
+    if (row.spawned !== 0 || row.pid !== null || row.exitCode !== null || row.signal !== null || row.exitObserved !== 0 || row.closeObserved !== 0 || row.signalsAttempted !== "none" || row.stdoutSha256 !== null || row.stdoutBytes !== null || row.stdoutComplete !== null || row.stderrSha256 !== null || row.stderrBytes !== null || row.stderrComplete !== null || row.checkedCount !== null || row.failedCount !== null || !legitimateStartFailure && !requestedStop) {
+      throw gateRowInvalid(id, "no-start observation forbids PID/exit/close/stream/check facts and requires a legitimate no-start cause");
+    }
+    return;
+  }
+  if (kind === "command") {
+    if (row.spawned !== 1 || typeof row.pid !== "number" || typeof row.exitCode !== "number" || row.signal !== null || row.exitObserved !== 1 || row.closeObserved !== 1 || row.stopCause !== "none" || row.signalsAttempted !== "none" || row.stdoutComplete !== 1 || row.stderrComplete !== 1 || typeof row.stdoutSha256 !== "string" || typeof row.stderrSha256 !== "string" || typeof row.stdoutBytes !== "number" || typeof row.stderrBytes !== "number" || row.checkedCount !== null || row.failedCount !== null) {
+      throw gateRowInvalid(id, "complete command observation requires spawn, numeric exit, no signal, exit/close, complete streams, and stopCause none");
+    }
+    return;
+  }
+  if (row.spawned !== 0 || row.pid !== null || row.exitCode !== null || row.signal !== null || row.exitObserved !== 0 || row.closeObserved !== 0 || row.stopCause !== "none" || row.signalsAttempted !== "none" || row.stdoutSha256 !== null || row.stdoutBytes !== null || row.stdoutComplete !== null || row.stderrSha256 !== null || row.stderrBytes !== null || row.stderrComplete !== null || typeof row.checkedCount !== "number" || typeof row.failedCount !== "number" || row.checkedCount < 0 || row.failedCount < 0 || row.failedCount > row.checkedCount) {
+    throw gateRowInvalid(id, "complete artifacts observation requires consistent counts and no command facts");
+  }
+}
+function computeGateEvidenceOutcome(kind, expect, observation) {
+  assertClosedGateObservation(kind, observation);
+  if (observation.completeness !== "complete") {
+    throw gateRowInvalid("observation", "evaluated settlement requires a complete observation");
+  }
+  if (kind === "artifacts-exist") {
+    if (expect === "fail") throw gateRowInvalid("artifacts-exist", "artifacts-exist cannot expect fail");
+    return observation.failedCount === 0 ? "passed" : "implementation-failure";
+  }
+  if (expect === "pass") return observation.exitCode === 0 ? "passed" : "implementation-failure";
+  return observation.exitCode === 0 ? "repro-missing" : "passed";
+}
+function gateRowInvalid(file, message) {
+  return runtimeError("gate_row_invalid", file, message);
+}
+function assertExactRowKeys(row, keys, id) {
+  const actual = Object.keys(row);
+  if (actual.length !== keys.length || keys.some((key) => !Object.prototype.hasOwnProperty.call(row, key))) {
+    throw gateRowInvalid(id, "gate row does not have the exact key set");
+  }
+  for (const key of actual) {
+    if (FORBIDDEN_TEXT_KEYS.has(key)) throw gateRowInvalid(id, "gate row must not carry raw stdout/stderr/error text");
+  }
+}
+function assertId(value, prefix, id, label) {
+  if (typeof value !== "string" || !value.startsWith(prefix) || !OPAQUE.test(value)) {
+    throw gateRowInvalid(id, `${label} is not a valid ${prefix} opaque id`);
+  }
+}
+function assertSha(value, id, label) {
+  if (typeof value !== "string" || !SHA256.test(value)) throw gateRowInvalid(id, `${label} is not a sha256 hash`);
+}
+function assertFlag(value, id, label) {
+  if (value !== 0 && value !== 1) throw gateRowInvalid(id, `${label} must be 0 or 1`);
+}
+function assertNullInt(value, id, label) {
+  if (value !== null && (typeof value !== "number" || !Number.isInteger(value))) {
+    throw gateRowInvalid(id, `${label} must be an integer or null`);
+  }
+}
+function assertGateAttemptRow(row) {
+  assertExactRowKeys(row, GATE_ATTEMPT_KEYS, row.attemptId);
+  assertId(row.attemptId, "att_", row.attemptId, "attemptId");
+  assertId(row.effectId, "eff_", row.attemptId, "effectId");
+  assertId(row.intentEventId, "evt_", row.attemptId, "intentEventId");
+  assertSha(row.gateDefinitionHash, row.attemptId, "gateDefinitionHash");
+  assertSha(row.registryHash, row.attemptId, "registryHash");
+  assertSha(row.runPlanHash, row.attemptId, "runPlanHash");
+  if (row.producerId !== "kxm-gate") throw gateRowInvalid(row.attemptId, "producerId must be kxm-gate");
+  if (row.gateKind !== "command" && row.gateKind !== "artifacts-exist") {
+    throw gateRowInvalid(row.attemptId, "gateKind is invalid");
+  }
+  if (row.expect !== "pass" && row.expect !== "fail") throw gateRowInvalid(row.attemptId, "expect is invalid");
+  if (row.gateKind === "artifacts-exist" && row.expect === "fail") {
+    throw gateRowInvalid(row.attemptId, "artifacts-exist cannot expect fail");
+  }
+  if (typeof row.controlProjectKey !== "string" || row.controlProjectKey.length === 0) {
+    throw gateRowInvalid(row.attemptId, "controlProjectKey is required");
+  }
+  if (gateRowContentHash("gate_attempts", row) !== row.contentHash) {
+    throw gateRowInvalid(row.attemptId, "contentHash does not match the canonical row");
+  }
+}
+function assertGateObservationRow(row) {
+  assertExactRowKeys(row, GATE_OBSERVATION_KEYS, row.observationId);
+  assertId(row.observationId, "obs_", row.observationId, "observationId");
+  assertId(row.attemptId, "att_", row.observationId, "attemptId");
+  assertId(row.effectId, "eff_", row.observationId, "effectId");
+  assertId(row.recordedEventId, "evt_", row.observationId, "recordedEventId");
+  if (!["complete", "incomplete", "no-start"].includes(row.completeness)) {
+    throw gateRowInvalid(row.observationId, "completeness is invalid");
+  }
+  assertFlag(row.spawned, row.observationId, "spawned");
+  assertFlag(row.exitObserved, row.observationId, "exitObserved");
+  assertFlag(row.closeObserved, row.observationId, "closeObserved");
+  assertNullInt(row.pid, row.observationId, "pid");
+  assertNullInt(row.exitCode, row.observationId, "exitCode");
+  assertNullInt(row.stdoutBytes, row.observationId, "stdoutBytes");
+  assertNullInt(row.stderrBytes, row.observationId, "stderrBytes");
+  assertNullInt(row.checkedCount, row.observationId, "checkedCount");
+  assertNullInt(row.failedCount, row.observationId, "failedCount");
+  if (typeof row.elapsedMs !== "number" || !Number.isInteger(row.elapsedMs) || row.elapsedMs < 0) {
+    throw gateRowInvalid(row.observationId, "elapsedMs is invalid");
+  }
+  if (row.stdoutSha256 !== null) assertSha(row.stdoutSha256, row.observationId, "stdoutSha256");
+  if (row.stderrSha256 !== null) assertSha(row.stderrSha256, row.observationId, "stderrSha256");
+  if (row.stdoutComplete !== null && row.stdoutComplete !== 0 && row.stdoutComplete !== 1) {
+    throw gateRowInvalid(row.observationId, "stdoutComplete must be 0, 1, or null");
+  }
+  if (row.stderrComplete !== null && row.stderrComplete !== 0 && row.stderrComplete !== 1) {
+    throw gateRowInvalid(row.observationId, "stderrComplete must be 0, 1, or null");
+  }
+  if (gateRowContentHash("gate_observations", row) !== row.contentHash) {
+    throw gateRowInvalid(row.observationId, "contentHash does not match the canonical row");
+  }
+}
+function assertGateEvidenceRow(row) {
+  assertExactRowKeys(row, GATE_EVIDENCE_KEYS, row.evidenceId);
+  assertId(row.evidenceId, "gev_", row.evidenceId, "evidenceId");
+  assertId(row.attemptId, "att_", row.evidenceId, "attemptId");
+  assertId(row.observationId, "obs_", row.evidenceId, "observationId");
+  assertId(row.effectId, "eff_", row.evidenceId, "effectId");
+  assertId(row.settledEventId, "evt_", row.evidenceId, "settledEventId");
+  if (row.kind !== "gate") throw gateRowInvalid(row.evidenceId, "kind must be gate");
+  if (!["passed", "implementation-failure", "repro-missing"].includes(row.outcome)) {
+    throw gateRowInvalid(row.evidenceId, "outcome is invalid");
+  }
+  if (gateRowContentHash("gate_evidence", row) !== row.contentHash) {
+    throw gateRowInvalid(row.evidenceId, "contentHash does not match the canonical row");
+  }
+}
+function assertSharedIdentity(row, attempt, id) {
+  if (row.runId !== attempt.runId || row.projectId !== attempt.projectId || row.homeRuntimeId !== attempt.homeRuntimeId || row.stepId !== attempt.stepId || row.stepAttempt !== attempt.stepAttempt || row.assignmentId !== attempt.assignmentId || row.effectId !== attempt.effectId) {
+    throw gateRowInvalid(id, "row identity does not match the gate attempt");
+  }
+}
+function gateAttemptFromSql(row) {
+  return {
+    attemptId: row.attempt_id,
+    runId: row.run_id,
+    projectId: row.project_id,
+    homeRuntimeId: row.home_runtime_id,
+    stepId: row.step_id,
+    stepAttempt: row.step_attempt,
+    assignmentId: row.assignment_id,
+    effectId: row.effect_id,
+    gateId: row.gate_id,
+    gateKind: row.gate_kind,
+    expect: row.expect,
+    gateDefinitionHash: row.gate_definition_hash,
+    registryHash: row.registry_hash,
+    runPlanHash: row.run_plan_hash,
+    controlProjectKey: row.control_project_key,
+    producerId: row.producer_id,
+    intentEventId: row.intent_event_id,
+    contentHash: row.content_hash
+  };
+}
+function gateObservationFromSql(row) {
+  return {
+    observationId: row.observation_id,
+    attemptId: row.attempt_id,
+    runId: row.run_id,
+    projectId: row.project_id,
+    homeRuntimeId: row.home_runtime_id,
+    stepId: row.step_id,
+    stepAttempt: row.step_attempt,
+    assignmentId: row.assignment_id,
+    effectId: row.effect_id,
+    completeness: row.completeness,
+    spawned: row.spawned === 1 ? 1 : 0,
+    pid: row.pid,
+    exitCode: row.exit_code,
+    signal: row.signal,
+    exitObserved: row.exit_observed === 1 ? 1 : 0,
+    closeObserved: row.close_observed === 1 ? 1 : 0,
+    stopCause: row.stop_cause,
+    signalsAttempted: row.signals_attempted,
+    errorClass: row.error_class,
+    stdoutSha256: row.stdout_sha256,
+    stdoutBytes: row.stdout_bytes,
+    stdoutComplete: row.stdout_complete === null ? null : row.stdout_complete === 1 ? 1 : 0,
+    stderrSha256: row.stderr_sha256,
+    stderrBytes: row.stderr_bytes,
+    stderrComplete: row.stderr_complete === null ? null : row.stderr_complete === 1 ? 1 : 0,
+    checkedCount: row.checked_count,
+    failedCount: row.failed_count,
+    elapsedMs: row.elapsed_ms,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+    recordedEventId: row.recorded_event_id,
+    contentHash: row.content_hash
+  };
+}
+function gateEvidenceFromSql(row) {
+  return {
+    evidenceId: row.evidence_id,
+    attemptId: row.attempt_id,
+    observationId: row.observation_id,
+    runId: row.run_id,
+    projectId: row.project_id,
+    homeRuntimeId: row.home_runtime_id,
+    stepId: row.step_id,
+    stepAttempt: row.step_attempt,
+    assignmentId: row.assignment_id,
+    effectId: row.effect_id,
+    evidenceKey: row.evidence_key,
+    kind: row.kind,
+    expect: row.expect,
+    outcome: row.outcome,
+    settledEventId: row.settled_event_id,
+    contentHash: row.content_hash
+  };
 }
 function capabilityFromRow(row) {
   return row ? {
@@ -16939,7 +17569,7 @@ var ATTEMPT_EDGES = {
   executing: /* @__PURE__ */ new Set(["settling"]),
   settling: /* @__PURE__ */ new Set(["terminal"])
 };
-function foldVnextRunState(run, plan, events) {
+function foldVnextRunState(run, plan, events, options = {}) {
   if (events.length === 0) {
     throw runtimeError("run_events_illegal", run.runId, "run has no events");
   }
@@ -16970,8 +17600,15 @@ function foldVnextRunState(run, plan, events) {
         throw runtimeError("run_events_illegal", run.runId, "terminal transition must be followed by the matching run.status_changed");
       }
     }
-    if ((event.eventType.startsWith("step.") || event.eventType.startsWith("assignment.") || event.eventType.startsWith("attempt.")) && !plan) {
+    if ((event.eventType.startsWith("step.") || event.eventType.startsWith("assignment.") || event.eventType.startsWith("attempt.") || event.eventType.startsWith("effect.")) && !plan) {
       throw runtimeError("run_plan_missing", run.runId, "step events require a pinned run plan");
+    }
+    if (state.currentStep?.effectState === "blocked_uncertain") {
+      const namesFrozen = event.payload.stepId === state.currentStep.stepId || event.payload.attemptId === state.currentStep.attemptId || event.payload.assignmentId === state.currentStep.assignmentId || event.payload.effect !== void 0 && typeof event.payload.effect === "object" && event.payload.effect !== null && "id" in event.payload.effect && event.payload.effect.id === state.currentStep.effectId;
+      const blockedFamily = event.eventType.startsWith("step.") || event.eventType.startsWith("assignment.") || event.eventType.startsWith("attempt.") || event.eventType.startsWith("effect.");
+      if (blockedFamily && namesFrozen) {
+        throw runtimeError("run_events_illegal", run.runId, "blocked_uncertain freezes the gate attempt");
+      }
     }
     switch (event.eventType) {
       case "run.created":
@@ -17017,7 +17654,22 @@ function foldVnextRunState(run, plan, events) {
         foldAttemptCreated(state, event);
         break;
       case "attempt.status_changed":
-        foldAttemptStatus(state, event);
+        foldAttemptStatus(state, plan, event);
+        break;
+      case "effect.intent_recorded":
+        foldEffectIntent(state, plan, event);
+        break;
+      case "effect.dispatched":
+        foldEffectDispatched(state, plan, event);
+        break;
+      case "effect.observed":
+        foldEffectObserved(state, plan, event, options);
+        break;
+      case "effect.settled":
+        foldEffectSettled(state, plan, event);
+        break;
+      case "effect.blocked_uncertain":
+        foldEffectUncertain(state, plan, event);
         break;
       default:
         throw runtimeError("run_events_illegal", run.runId, `event type ${event.eventType} is not legal in this engine slice`);
@@ -17111,7 +17763,13 @@ function assertTerminalRunStatus(state, plan, status, event) {
   if (status === "failed") {
     if (state.lastTerminalTransition === "failed") return;
     if (isProvenFailure(state, plan)) return;
-    if (event.payload.reason === "executing_unrecorded" && state.currentStep?.attemptStatus === "starting") return;
+    if (event.payload.reason === "executing_unrecorded" && state.currentStep?.attemptStatus === "starting") {
+      const step = plan?.steps[state.currentStep.stepId];
+      if (step?.kind === "gate") {
+        throw runtimeError("run_events_illegal", state.runId, "executing_unrecorded is illegal on a gate step");
+      }
+      return;
+    }
     throw runtimeError("run_events_illegal", state.runId, "failed requires a selected failed terminal or proven rejection/budget facts");
   }
 }
@@ -17327,8 +17985,10 @@ function foldAssignmentAdvance(state, plan, event, next) {
   if (!ASSIGNMENT_STATUSES.has(next)) {
     throw runtimeError("run_events_illegal", state.runId, `illegal assignment status ${next}`);
   }
+  const step = requireStep(plan, current.stepId, state.runId);
   const allowed = ASSIGNMENT_EDGES[current.assignmentStatus];
-  if (!allowed?.has(next)) {
+  const noStartProof = step.kind === "gate" && current.assignmentStatus === "dispatched" && next === "result_recorded" && (current.effectState === "observed-no-start" || current.effectState === "settled-proof");
+  if (!allowed?.has(next) && !noStartProof) {
     throw runtimeError("run_events_illegal", state.runId, `illegal assignment transition ${current.assignmentStatus} -> ${next}`);
   }
   if (next === "dispatched") {
@@ -17341,14 +18001,32 @@ function foldAssignmentAdvance(state, plan, event, next) {
     }
     if (resultClass === "outcome") {
       const outcome = stringPayload(event, "outcome");
-      const step = requireStep(plan, current.stepId, state.runId);
       if (!step.outcomes.includes(outcome)) {
         throw runtimeError("run_events_illegal", state.runId, `outcome ${outcome} is not declared for ${current.stepId}`);
+      }
+      if (step.kind === "gate") {
+        if (current.effectState !== "settled") {
+          throw runtimeError("run_events_illegal", state.runId, "gate outcome requires evaluated effect.settled");
+        }
+        if (outcome !== current.settledOutcome) {
+          throw runtimeError("run_events_illegal", state.runId, "gate result outcome does not match settledOutcome");
+        }
       }
       state.recordedOutcome = outcome;
     } else if (event.payload.outcome !== void 0) {
       throw runtimeError("run_events_illegal", state.runId, "non-outcome resultClass must not set outcome");
     } else {
+      if (step.kind === "gate") {
+        if (resultClass === "outcome_unknown") {
+          throw runtimeError("run_events_illegal", state.runId, "outcome_unknown is illegal on a gate step");
+        }
+        if (current.effectState !== "settled-proof") {
+          throw runtimeError("run_events_illegal", state.runId, "gate producer_rejected or cancelled requires proof-only effect.settled");
+        }
+        if (resultClass === "producer_rejected" && current.observationCompleteness !== "no-start") {
+          throw runtimeError("run_events_illegal", state.runId, "producer_rejected requires a no-start observation");
+        }
+      }
       state.recordedOutcome = void 0;
     }
     state.recordedResultClass = resultClass;
@@ -17387,7 +18065,7 @@ function foldAttemptCreated(state, event) {
   }
   state.currentStep = { ...current, attemptId, attemptStatus: "created" };
 }
-function foldAttemptStatus(state, event) {
+function foldAttemptStatus(state, plan, event) {
   requireActiveStep(state, "attempt.status_changed");
   const current = state.currentStep;
   if (!current.attemptId || !current.attemptStatus) {
@@ -17402,10 +18080,180 @@ function foldAttemptStatus(state, event) {
     throw runtimeError("run_events_illegal", state.runId, `illegal attempt status ${status}`);
   }
   const allowed = ATTEMPT_EDGES[current.attemptStatus];
-  if (!allowed?.has(status)) {
+  const step = requireStep(plan, current.stepId, state.runId);
+  const noStartSettling = step.kind === "gate" && current.attemptStatus === "starting" && status === "settling" && (current.effectState === "observed-no-start" || current.effectState === "settled-proof");
+  if (!allowed?.has(status) && !noStartSettling) {
     throw runtimeError("run_events_illegal", state.runId, `illegal attempt transition ${current.attemptStatus} -> ${status}`);
   }
   state.currentStep = { ...current, attemptStatus: status };
+}
+function requireGateEffect(state, plan, event) {
+  requireActiveStep(state, event.eventType);
+  const current = state.currentStep;
+  const step = requireStep(plan, current.stepId, state.runId);
+  if (step.kind !== "gate") {
+    throw runtimeError("run_events_illegal", state.runId, "agent steps reject effect events");
+  }
+  assertEffectIdentity(state, event, current);
+  return current;
+}
+function assertEffectIdentity(state, event, current) {
+  const effect = event.payload.effect;
+  if (!effect || typeof effect !== "object" || Array.isArray(effect)) {
+    throw runtimeError("run_events_illegal", state.runId, `${event.eventType} is missing effect`);
+  }
+  const effectId = effect.id;
+  if (typeof effectId !== "string" || effectId.length === 0) {
+    throw runtimeError("run_events_illegal", state.runId, `${event.eventType} is missing effect.id`);
+  }
+  const stepId = stringPayload(event, "stepId");
+  const stepAttempt = integerPayload(event, "stepAttempt");
+  const assignmentId = stringPayload(event, "assignmentId");
+  const attemptId = stringPayload(event, "attemptId");
+  if (stepId !== current.stepId || stepAttempt !== current.stepAttempt || assignmentId !== current.assignmentId || attemptId !== current.attemptId) {
+    throw runtimeError("run_events_illegal", state.runId, `${event.eventType} identity does not match the active attempt`);
+  }
+  if (current.effectId && current.effectId !== effectId) {
+    throw runtimeError("run_events_illegal", state.runId, `${event.eventType} effect.id does not match the active effect`);
+  }
+}
+function foldEffectIntent(state, plan, event) {
+  const current = requireGateEffect(state, plan, event);
+  if (current.attemptStatus !== "starting" || current.effectState) {
+    throw runtimeError("run_events_illegal", state.runId, "effect.intent_recorded requires a starting attempt with no effect");
+  }
+  const effectId = event.payload.effect.id;
+  state.currentStep = { ...current, effectId, effectState: "intent" };
+}
+function foldEffectDispatched(state, plan, event) {
+  const current = requireGateEffect(state, plan, event);
+  if (current.effectState !== "intent") {
+    throw runtimeError("run_events_illegal", state.runId, "effect.dispatched requires effect intent");
+  }
+  if (current.assignmentStatus !== "executing" || current.attemptStatus !== "executing") {
+    throw runtimeError("run_events_illegal", state.runId, "effect.dispatched requires executing assignment and attempt");
+  }
+  state.currentStep = { ...current, effectState: "dispatched" };
+}
+function foldEffectObserved(state, plan, event, options) {
+  const current = requireGateEffect(state, plan, event);
+  if (current.effectState === "observed-complete" || current.effectState === "observed-no-start" || current.effectState === "observed-unknown") {
+    throw runtimeError("run_events_illegal", state.runId, "a completed observation cannot be rewritten");
+  }
+  if (current.effectState !== "intent" && current.effectState !== "dispatched") {
+    throw runtimeError("run_events_illegal", state.runId, "effect.observed is not legal from this effect state");
+  }
+  const receipt = event.payload.receipt;
+  if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) {
+    throw runtimeError("run_events_illegal", state.runId, "effect.observed is missing receipt");
+  }
+  const receiptId = receipt.id;
+  const receiptHash = receipt.hash;
+  const provider = receipt.provider;
+  const kind = receipt.kind;
+  if (typeof receiptId !== "string" || receiptId.length === 0) {
+    throw runtimeError("run_events_illegal", state.runId, "effect.observed receipt.id is invalid");
+  }
+  if (provider !== "kxm-gate") {
+    throw runtimeError("run_events_illegal", state.runId, "effect.observed receipt.provider must be kxm-gate");
+  }
+  const expectedKind = options.gateKind?.(current.stepId);
+  if (expectedKind && kind !== expectedKind) {
+    throw runtimeError("run_events_illegal", state.runId, "effect.observed receipt.kind does not match the pinned definition");
+  }
+  const looked = options.observationLookup?.(current.attemptId, receiptId);
+  let effectState = "observed-unknown";
+  if (looked) {
+    if (looked.completeness === "complete") {
+      if (current.effectState === "intent" && expectedKind !== "artifacts-exist") {
+        throw runtimeError("run_events_illegal", state.runId, "complete command observations require effect.dispatched");
+      }
+      effectState = "observed-complete";
+    } else if (looked.completeness === "no-start") {
+      if (current.effectState !== "intent") {
+        throw runtimeError("run_events_illegal", state.runId, "no-start observations are only legal from intent");
+      }
+      effectState = "observed-no-start";
+    } else {
+      throw runtimeError("run_events_illegal", state.runId, "effect.observed cannot record an incomplete observation");
+    }
+  }
+  state.currentStep = {
+    ...current,
+    effectState,
+    observationId: receiptId,
+    observationCompleteness: effectState === "observed-complete" ? "complete" : effectState === "observed-no-start" ? "no-start" : "unknown",
+    ...typeof receiptHash === "string" ? { observationHash: receiptHash } : {}
+  };
+}
+function foldEffectSettled(state, plan, event) {
+  const current = requireGateEffect(state, plan, event);
+  const hasOutcome = event.payload.outcome !== void 0;
+  const hasEvidence = event.payload.evidenceRefs !== void 0;
+  const receipt = event.payload.receipt;
+  if (hasOutcome || hasEvidence) {
+    if (current.effectState !== "observed-complete") {
+      throw runtimeError("run_events_illegal", state.runId, "evaluated effect.settled requires observed-complete");
+    }
+    const outcome = stringPayload(event, "outcome");
+    if (outcome !== "passed" && outcome !== "implementation-failure" && outcome !== "repro-missing") {
+      throw runtimeError("run_events_illegal", state.runId, "evaluated effect.settled outcome is invalid");
+    }
+    const step = requireStep(plan, current.stepId, state.runId);
+    if (!step.outcomes.includes(outcome)) {
+      throw runtimeError("run_events_illegal", state.runId, `outcome ${outcome} is not declared for ${current.stepId}`);
+    }
+    const refs = event.payload.evidenceRefs;
+    if (!Array.isArray(refs) || refs.length !== 1) {
+      throw runtimeError("run_events_illegal", state.runId, "evaluated effect.settled requires exactly one evidenceRef");
+    }
+    const ref = refs[0];
+    if (typeof ref.id !== "string" || ref.kind !== "gate" || typeof ref.hash !== "string" || !/^sha256:[a-f0-9]{64}$/.test(ref.hash) || ref.status !== "settled") {
+      throw runtimeError("run_events_illegal", state.runId, "evaluated effect.settled evidenceRef is invalid");
+    }
+    state.currentStep = {
+      ...current,
+      effectState: "settled",
+      settledOutcome: outcome,
+      evidenceRefs: [{ id: ref.id, kind: "gate", hash: ref.hash, status: "settled" }]
+    };
+    return;
+  }
+  if (current.effectState !== "observed-complete" && current.effectState !== "observed-no-start") {
+    throw runtimeError("run_events_illegal", state.runId, "proof-only effect.settled requires a prior observation");
+  }
+  if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) {
+    throw runtimeError("run_events_illegal", state.runId, "proof-only effect.settled is missing observation receipt");
+  }
+  const receiptId = receipt.id;
+  const receiptHash = receipt.hash;
+  if (receiptId !== current.observationId || current.observationHash && receiptHash !== current.observationHash) {
+    throw runtimeError("run_events_illegal", state.runId, "proof-only effect.settled does not bind the prior observation");
+  }
+  state.currentStep = { ...current, effectState: "settled-proof" };
+}
+function foldEffectUncertain(state, plan, event) {
+  const current = requireGateEffect(state, plan, event);
+  if (current.effectState === "observed-complete" || current.effectState === "observed-no-start" || current.effectState === "observed-unknown") {
+    throw runtimeError("run_events_illegal", state.runId, "blocked_uncertain after an observation is illegal");
+  }
+  if (current.effectState !== "intent" && current.effectState !== "dispatched") {
+    throw runtimeError("run_events_illegal", state.runId, "effect.blocked_uncertain is not legal from this effect state");
+  }
+  const reason = stringPayload(event, "reason");
+  const allowed = /* @__PURE__ */ new Set(["timeout", "cancel", "stream-error", "stop-error", "lost-close", "signal-termination", "recording-error"]);
+  if (!allowed.has(reason)) {
+    throw runtimeError("run_events_illegal", state.runId, "effect.blocked_uncertain reason is invalid");
+  }
+  const receipt = event.payload.receipt;
+  if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) {
+    throw runtimeError("run_events_illegal", state.runId, "effect.blocked_uncertain is missing receipt");
+  }
+  const receiptId = receipt.id;
+  if (typeof receiptId !== "string" || receiptId.length === 0) {
+    throw runtimeError("run_events_illegal", state.runId, "effect.blocked_uncertain receipt.id is invalid");
+  }
+  state.currentStep = { ...current, effectState: "blocked_uncertain", observationId: receiptId };
 }
 function requireActiveStep(state, eventType) {
   requireRunning(state, eventType);
@@ -17466,14 +18314,18 @@ import { createHash as createHash4 } from "node:crypto";
 var VNEXT_COMPILED_WORKFLOW_SCHEMA = "kxm.compiled-workflow.v1";
 
 // plugins/kxm/src/vnext-engine-plan.ts
-var VNEXT_RUN_PLAN_SCHEMA = "kxm.run-plan.v1";
+var VNEXT_RUN_PLAN_SCHEMA = "kxm.run-plan.v2";
 var SUPPORTED_KINDS = /* @__PURE__ */ new Set(["agent", "moa", "gate", "approval", "wait"]);
 var TERMINAL = /* @__PURE__ */ new Set(["completed", "failed", "cancelled"]);
 var JOIN_STRATEGIES = /* @__PURE__ */ new Set(["all", "all-settled", "quorum", "first-success"]);
 var EVIDENCE_KINDS = /* @__PURE__ */ new Set(["assignment-result", "gate", "receipt", "approval", "artifact"]);
 var REPOSITORY_ACCESS = /* @__PURE__ */ new Set(["none", "read", "write"]);
 var DISTINCT_BY = /* @__PURE__ */ new Set(["provider", "model", "profile"]);
-var ENVELOPE_REQUIRED = ["schema", "runId", "projectId", "homeRuntimeId", "workflowId", "revisions", "projectLimits", "plan"];
+var ENVELOPE_REQUIRED = ["schema", "runId", "projectId", "homeRuntimeId", "workflowId", "revisions", "projectLimits", "plan", "gates"];
+var GATES_REQUIRED = ["registry", "definitions", "controlRoot"];
+var REGISTRY_PIN_REQUIRED = ["schema", "hash"];
+var CONTROL_ROOT_REQUIRED = ["repositoryId", "projectKey"];
+var GATE_REGISTRY_SCHEMA = "kxm.gate-registry.v1";
 var REVISION_REQUIRED = ["config", "executorPolicy", "toolPolicy", "memory"];
 var PROJECT_LIMIT_REQUIRED = ["maxConcurrentRuns"];
 var PROJECT_LIMIT_OPTIONAL = ["maxRunDurationMs", "maxAgentTimeMs"];
@@ -17560,8 +18412,8 @@ function parseVnextRunPlanEnvelope(raw, run, expectedHash) {
   }
   return envelope;
 }
-function rehydrateVnextCompiledPlanFromStore(store, run) {
-  return loadPinnedEnvelope(store, run).plan;
+function loadVnextRunPlanEnvelope(store, run) {
+  return loadPinnedEnvelope(store, run);
 }
 function loadPinnedEnvelope(store, run) {
   const row = store.runPlan(run.runId);
@@ -17578,7 +18430,7 @@ function parseEnvelope(parsed, run) {
   const value = asObject(parsed, run.runId, "run plan envelope");
   assertExactKeys(value, ENVELOPE_REQUIRED, [], run.runId, "run plan envelope");
   if (value.schema !== VNEXT_RUN_PLAN_SCHEMA) {
-    throw runtimeError("run_plan_corrupt", run.runId, "run plan envelope schema is not kxm.run-plan.v1");
+    throw runtimeError("run_plan_corrupt", run.runId, "schema is not kxm.run-plan.v2");
   }
   const runId = asString(value.runId, run.runId, "runId");
   const projectId = asString(value.projectId, run.runId, "projectId");
@@ -17605,6 +18457,7 @@ function parseEnvelope(parsed, run) {
     ...limitsValue.maxRunDurationMs !== void 0 ? { maxRunDurationMs: asDuration(limitsValue.maxRunDurationMs, run.runId, "projectLimits.maxRunDurationMs") } : {},
     ...limitsValue.maxAgentTimeMs !== void 0 ? { maxAgentTimeMs: asDuration(limitsValue.maxAgentTimeMs, run.runId, "projectLimits.maxAgentTimeMs") } : {}
   };
+  const plan = freezeVnextCompiledPlan(parseCompiledPlan(value.plan, run.runId));
   return {
     schema: VNEXT_RUN_PLAN_SCHEMA,
     runId,
@@ -17613,8 +18466,129 @@ function parseEnvelope(parsed, run) {
     workflowId,
     revisions,
     projectLimits,
-    plan: freezeVnextCompiledPlan(parseCompiledPlan(value.plan, run.runId))
+    plan,
+    gates: freezeGates(parseGates(value.gates, plan, run.runId))
   };
+}
+function parseGates(raw, plan, runId) {
+  const value = asObject(raw, runId, "gates");
+  assertExactKeys(value, GATES_REQUIRED, [], runId, "gates");
+  const referenced = /* @__PURE__ */ new Set();
+  for (const stepId of plan.order) {
+    const step = plan.steps[stepId];
+    if (step?.kind === "gate") referenced.add(step.gate);
+  }
+  const registry = parseRegistryPin(value.registry, runId, referenced.size > 0);
+  const controlRoot = parseControlRoot(value.controlRoot, runId);
+  const definitionsValue = asObject(value.definitions, runId, "gates.definitions");
+  const defined = Object.keys(definitionsValue);
+  for (const stepId of plan.order) {
+    const step = plan.steps[stepId];
+    if (step?.kind !== "gate") continue;
+    if (!(step.gate in definitionsValue)) {
+      throw runtimeError("run_plan_corrupt", runId, `gate step ${stepId} has no pinned definition`);
+    }
+  }
+  for (const gateId of defined) {
+    if (!referenced.has(gateId)) {
+      throw runtimeError("run_plan_corrupt", runId, `definition ${gateId} is not referenced`);
+    }
+  }
+  const definitions = /* @__PURE__ */ Object.create(null);
+  for (const gateId of defined) {
+    definitions[gateId] = parseGateDefinition(definitionsValue[gateId], gateId, runId);
+  }
+  return { registry, definitions, controlRoot };
+}
+function parseRegistryPin(raw, runId, required) {
+  if (raw === null) {
+    if (required) throw runtimeError("run_plan_corrupt", runId, "gate steps require a non-null registry pin");
+    return null;
+  }
+  const value = asObject(raw, runId, "gates.registry");
+  assertExactKeys(value, REGISTRY_PIN_REQUIRED, [], runId, "gates.registry");
+  if (value.schema !== GATE_REGISTRY_SCHEMA) {
+    throw runtimeError("run_plan_corrupt", runId, "gates.registry.schema is not kxm.gate-registry.v1");
+  }
+  const hash = asString(value.hash, runId, "gates.registry.hash");
+  if (!/^sha256:[a-f0-9]{64}$/.test(hash)) {
+    throw runtimeError("run_plan_corrupt", runId, "gates.registry.hash is not a sha256 digest");
+  }
+  return { schema: GATE_REGISTRY_SCHEMA, hash };
+}
+function parseControlRoot(raw, runId) {
+  const value = asObject(raw, runId, "gates.controlRoot");
+  assertExactKeys(value, CONTROL_ROOT_REQUIRED, [], runId, "gates.controlRoot");
+  const repositoryId = asString(value.repositoryId, runId, "gates.controlRoot.repositoryId");
+  if (repositoryId !== "control") {
+    throw runtimeError("run_plan_corrupt", runId, "gates.controlRoot.repositoryId must be control");
+  }
+  return { repositoryId: "control", projectKey: asString(value.projectKey, runId, "gates.controlRoot.projectKey") };
+}
+function parseGateDefinition(raw, gateId, runId) {
+  const value = asObject(raw, runId, `gates.definitions.${gateId}`);
+  const kind = asString(value.kind, runId, `gates.definitions.${gateId}.kind`);
+  if (kind === "command") {
+    assertExactKeys(value, ["kind", "argv", "timeoutMs"], ["cwd"], runId, `gates.definitions.${gateId}`);
+    const argv = asStringArray(value.argv, runId, `gates.definitions.${gateId}.argv`);
+    if (argv.length < 1 || argv.length > 64) {
+      throw runtimeError("run_plan_corrupt", runId, `gates.definitions.${gateId}.argv length is invalid`);
+    }
+    for (const [index, entry] of argv.entries()) {
+      if (entry.length === 0 || entry.length > 4096 || entry.includes("\0")) {
+        throw runtimeError("run_plan_corrupt", runId, `gates.definitions.${gateId}.argv[${index}] is invalid`);
+      }
+    }
+    const executable = argv[0];
+    if (executable === "." || executable === ".." || executable.includes("\\") || !executable.startsWith("/") && executable.includes("/")) {
+      throw runtimeError("run_plan_corrupt", runId, `gates.definitions.${gateId} argv[0] must be a bare executable or absolute POSIX path`);
+    }
+    const timeoutMs = value.timeoutMs;
+    if (typeof timeoutMs !== "number" || !Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 2147483647) {
+      throw runtimeError("run_plan_corrupt", runId, `gates.definitions.${gateId}.timeoutMs is invalid`);
+    }
+    if (value.cwd !== void 0 && value.cwd !== "control") {
+      throw runtimeError("run_plan_corrupt", runId, `gates.definitions.${gateId}.cwd is invalid`);
+    }
+    return {
+      kind: "command",
+      argv,
+      timeoutMs,
+      ...value.cwd === "control" ? { cwd: "control" } : {}
+    };
+  }
+  if (kind === "artifacts-exist") {
+    assertExactKeys(value, ["kind", "paths"], [], runId, `gates.definitions.${gateId}`);
+    const paths = asStringArray(value.paths, runId, `gates.definitions.${gateId}.paths`);
+    if (paths.length < 1 || paths.length > 64) {
+      throw runtimeError("run_plan_corrupt", runId, `gates.definitions.${gateId}.paths length is invalid`);
+    }
+    if (new Set(paths).size !== paths.length) {
+      throw runtimeError("run_plan_corrupt", runId, `gates.definitions.${gateId}.paths are not unique`);
+    }
+    for (const path of paths) {
+      if (path === "." || !vnextPortablePath(path) || path.startsWith("/") || path.includes("\\")) {
+        throw runtimeError("run_plan_corrupt", runId, `gates.definitions.${gateId} path is not a portable relative path`);
+      }
+    }
+    return { kind: "artifacts-exist", paths };
+  }
+  if (kind === "reserved") {
+    assertExactKeys(value, ["kind"], [], runId, `gates.definitions.${gateId}`);
+    return { kind: "reserved" };
+  }
+  throw runtimeError("run_plan_corrupt", runId, `gates.definitions.${gateId} kind is invalid`);
+}
+function freezeGates(gates) {
+  const definitions = /* @__PURE__ */ Object.create(null);
+  for (const [id, definition] of Object.entries(gates.definitions)) {
+    definitions[id] = deepFreeze({ ...definition, ...definition.kind === "command" ? { argv: [...definition.argv] } : {}, ...definition.kind === "artifacts-exist" ? { paths: [...definition.paths] } : {} });
+  }
+  return deepFreeze({
+    registry: gates.registry ? { ...gates.registry } : null,
+    definitions,
+    controlRoot: { ...gates.controlRoot }
+  });
 }
 function parseCompiledPlan(raw, runId) {
   const value = asObject(raw, runId, "compiled plan");
@@ -17934,6 +18908,239 @@ function deepFreeze(value) {
   return Object.freeze(value);
 }
 
+// plugins/kxm/src/vnext-gate-hash.ts
+function gateDefinitionHash(id, definition) {
+  return vnextSha256(vnextCanonicalJson({ id, ...definition }));
+}
+
+// plugins/kxm/src/vnext-engine-evidence.ts
+function verifyVnextGateEvidence(store, run, envelope, events, state) {
+  const attempts = store.gateAttemptsForRun(run.runId);
+  const observations = store.gateObservationsForRun(run.runId);
+  const evidence = store.gateEvidenceForRun(run.runId);
+  const counts = store.gateRowCounts(run.runId);
+  if (counts.attempts !== attempts.length || counts.observations !== observations.length || counts.evidence !== evidence.length) {
+    throw runtimeError("gate_evidence_orphan", run.runId, "gate row counts do not match loaded attempt/observation/evidence tuples");
+  }
+  const attemptById = new Map(attempts.map((row) => [row.attemptId, row]));
+  const observationByAttempt = new Map(observations.map((row) => [row.attemptId, row]));
+  const evidenceByAttempt = new Map(evidence.map((row) => [row.attemptId, row]));
+  const intentEvents = events.filter((event) => event.eventType === "effect.intent_recorded");
+  const observedEvents = events.filter((event) => event.eventType === "effect.observed" || event.eventType === "effect.blocked_uncertain");
+  const settledEvents = events.filter((event) => event.eventType === "effect.settled");
+  for (const event of intentEvents) {
+    const attemptId = stringField(event, "attemptId");
+    const row = attemptById.get(attemptId);
+    if (!row) throw runtimeError("gate_attempt_pin_mismatch", run.runId, `effect.intent_recorded ${event.eventId} has no gate_attempts row`);
+    assertAttemptMatchesEvent(run, envelope, state, event, row);
+  }
+  for (const event of observedEvents) {
+    const attemptId = stringField(event, "attemptId");
+    const receipt = event.payload.receipt;
+    const observationId = typeof receipt?.id === "string" ? receipt.id : void 0;
+    const row = observationByAttempt.get(attemptId);
+    if (!row || row.observationId !== observationId) {
+      throw runtimeError("gate_observation_missing", run.runId, `${event.eventType} has no matching observation row`);
+    }
+    if (row.recordedEventId !== event.eventId) {
+      throw runtimeError("gate_observation_missing", run.runId, "observation recorded_event_id does not match the event");
+    }
+    if (gateRowContentHash("gate_observations", row) !== row.contentHash) {
+      throw runtimeError("gate_evidence_hash_mismatch", run.runId, "observation contentHash does not recompute");
+    }
+    if (typeof receipt?.hash === "string" && receipt.hash !== row.contentHash) {
+      throw runtimeError("gate_evidence_hash_mismatch", run.runId, "observation receipt.hash does not match the row");
+    }
+    const attempt = attemptById.get(attemptId);
+    if (!attempt) throw runtimeError("gate_attempt_pin_mismatch", run.runId, "observation has no gate attempt");
+    assertShared(run, row, attempt);
+    assertClosedGateObservation(attempt.gateKind, row, row.observationId);
+    if (event.eventType === "effect.observed" && row.completeness !== "complete" && row.completeness !== "no-start") {
+      throw runtimeError("gate_observation_missing", run.runId, "effect.observed requires complete or no-start completeness");
+    }
+    if (event.eventType === "effect.blocked_uncertain" && row.completeness !== "incomplete") {
+      throw runtimeError("gate_observation_missing", run.runId, "blocked_uncertain requires incomplete completeness");
+    }
+  }
+  for (const event of settledEvents) {
+    const attemptId = stringField(event, "attemptId");
+    const refs = event.payload.evidenceRefs;
+    const evaluated = Array.isArray(refs) && refs.length > 0;
+    if (evaluated) {
+      const row = evidenceByAttempt.get(attemptId);
+      const ref = refs[0];
+      if (!row || row.evidenceId !== ref.id) {
+        throw runtimeError("gate_evidence_missing", run.runId, "effect.settled has no matching evidence row");
+      }
+      if (row.settledEventId !== event.eventId) {
+        throw runtimeError("gate_evidence_missing", run.runId, "evidence settled_event_id does not match the event");
+      }
+      if (gateRowContentHash("gate_evidence", row) !== row.contentHash || typeof ref.hash === "string" && ref.hash !== row.contentHash) {
+        throw runtimeError("gate_evidence_hash_mismatch", run.runId, "evidence hash does not recompute");
+      }
+      if (row.outcome !== event.payload.outcome) {
+        throw runtimeError("gate_evidence_hash_mismatch", run.runId, "evidence outcome does not match the settled payload");
+      }
+      const attempt = attemptById.get(attemptId);
+      if (!attempt) throw runtimeError("gate_attempt_pin_mismatch", run.runId, "evidence has no gate attempt");
+      assertShared(run, row, attempt);
+      if (row.expect !== attempt.expect) {
+        throw runtimeError("gate_attempt_pin_mismatch", run.runId, "evidence expect does not match the gate attempt");
+      }
+      const observation = observationByAttempt.get(attemptId);
+      if (!observation || observation.observationId !== row.observationId) {
+        throw runtimeError("gate_observation_missing", run.runId, "evidence observation_id does not match the attempt observation");
+      }
+      const recomputed = computeGateEvidenceOutcome(attempt.gateKind, attempt.expect, observation);
+      if (row.outcome !== recomputed || event.payload.outcome !== recomputed) {
+        throw runtimeError("gate_evidence_hash_mismatch", run.runId, "evidence outcome does not match the observation and expect");
+      }
+      const step = envelope.plan.steps[row.stepId];
+      const required = step?.requiredEvidence.filter((item) => item.kind === "gate") ?? [];
+      const expectedKey = required.length === 1 ? required[0].key : null;
+      if (row.evidenceKey !== expectedKey) {
+        throw runtimeError("gate_evidence_unexpected", run.runId, "evidence_key does not match the declared requiredEvidence key");
+      }
+    } else {
+      if (evidenceByAttempt.has(attemptId)) {
+        throw runtimeError("gate_evidence_unexpected", run.runId, "proof-only settlement must not have a gate_evidence row");
+      }
+      const observation = observationByAttempt.get(attemptId);
+      const receipt = event.payload.receipt;
+      if (!observation || observation.observationId !== receipt?.id || observation.contentHash !== receipt?.hash) {
+        throw runtimeError("gate_observation_missing", run.runId, "proof-only settlement does not bind the observation");
+      }
+    }
+  }
+  const namedAttemptIds = new Set(intentEvents.map((event) => stringField(event, "attemptId")));
+  for (const row of attempts) {
+    if (!namedAttemptIds.has(row.attemptId)) {
+      throw runtimeError("gate_evidence_orphan", run.runId, `gate_attempts row ${row.attemptId} is not named by effect.intent_recorded`);
+    }
+    if (row.runId !== run.runId) throw runtimeError("gate_evidence_orphan", run.runId, "gate attempt belongs to a foreign run");
+    if (gateRowContentHash("gate_attempts", row) !== row.contentHash) {
+      throw runtimeError("gate_evidence_hash_mismatch", run.runId, "gate attempt contentHash does not recompute");
+    }
+  }
+  for (const row of observations) {
+    if (!attemptById.has(row.attemptId)) {
+      throw runtimeError("gate_evidence_orphan", run.runId, `observation ${row.observationId} is owned by this run but names a foreign attempt`);
+    }
+    const event = events.find((item) => item.eventId === row.recordedEventId);
+    if (!event || event.eventType !== "effect.observed" && event.eventType !== "effect.blocked_uncertain") {
+      throw runtimeError("gate_evidence_orphan", run.runId, `observation ${row.observationId} is not named by an observation event`);
+    }
+    if (stringField(event, "attemptId") !== row.attemptId) {
+      throw runtimeError("gate_evidence_orphan", run.runId, `observation ${row.observationId} is not named by this attempt's observation event`);
+    }
+    const attempt = attemptById.get(row.attemptId);
+    assertShared(run, row, attempt);
+    assertClosedGateObservation(attempt.gateKind, row, row.observationId);
+  }
+  for (const row of evidence) {
+    if (!attemptById.has(row.attemptId)) {
+      throw runtimeError("gate_evidence_orphan", run.runId, `evidence ${row.evidenceId} is owned by this run but names a foreign attempt`);
+    }
+    const event = events.find((item) => item.eventId === row.settledEventId);
+    if (!event || event.eventType !== "effect.settled") {
+      throw runtimeError("gate_evidence_orphan", run.runId, `evidence ${row.evidenceId} is not named by effect.settled`);
+    }
+    if (stringField(event, "attemptId") !== row.attemptId) {
+      throw runtimeError("gate_evidence_orphan", run.runId, `evidence ${row.evidenceId} is not named by this attempt's settled event`);
+    }
+    const refs = event.payload.evidenceRefs;
+    if (!Array.isArray(refs) || refs.length !== 1 || refs[0].id !== row.evidenceId) {
+      throw runtimeError("gate_evidence_orphan", run.runId, "evidence row is not the payload evidenceRef");
+    }
+    const attempt = attemptById.get(row.attemptId);
+    assertShared(run, row, attempt);
+    if (row.expect !== attempt.expect) {
+      throw runtimeError("gate_attempt_pin_mismatch", run.runId, "evidence expect does not match the gate attempt");
+    }
+  }
+  if (attempts.length !== intentEvents.length) {
+    throw runtimeError("gate_evidence_orphan", run.runId, "gate attempt count does not match intent events");
+  }
+  if (observations.length !== observedEvents.length) {
+    throw runtimeError("gate_observation_missing", run.runId, "observation count does not match observation events");
+  }
+  const lastEffect = lastEffectByAttempt(events);
+  for (const [attemptId, last] of lastEffect) {
+    const evidenceRow = evidenceByAttempt.get(attemptId);
+    if (last === "effect.settled") {
+      const settled = settledEvents.filter((event) => stringField(event, "attemptId") === attemptId).at(-1);
+      const evaluated = Array.isArray(settled?.payload.evidenceRefs) && settled.payload.evidenceRefs.length > 0;
+      if (evaluated && !evidenceRow) throw runtimeError("gate_evidence_missing", run.runId, "evaluated settlement is missing evidence");
+      if (!evaluated && evidenceRow) throw runtimeError("gate_evidence_unexpected", run.runId, "proof-only settlement has evidence");
+      const capability = store.capabilityByAttempt(attemptId);
+      if (evaluated && capability?.state === "issued") {
+        throw runtimeError("gate_evidence_unexpected", run.runId, "settled attempt still has issued capability");
+      }
+    } else if (evidenceRow) {
+      throw runtimeError("gate_evidence_unexpected", run.runId, "non-settled attempt has evidence");
+    }
+  }
+  void vnextCanonicalJson;
+}
+function lastEffectByAttempt(events) {
+  const last = /* @__PURE__ */ new Map();
+  for (const event of events) {
+    if (!event.eventType.startsWith("effect.")) continue;
+    const attemptId = event.payload.attemptId;
+    if (typeof attemptId === "string") last.set(attemptId, event.eventType);
+  }
+  return last;
+}
+function assertAttemptMatchesEvent(run, envelope, state, event, row) {
+  const effectId = event.payload.effect?.id;
+  if (row.effectId !== effectId || row.intentEventId !== event.eventId) {
+    throw runtimeError("gate_attempt_pin_mismatch", run.runId, "intent event does not match the gate attempt");
+  }
+  if (row.runId !== run.runId || row.projectId !== run.projectId || row.homeRuntimeId !== run.homeRuntimeId) {
+    throw runtimeError("gate_attempt_pin_mismatch", run.runId, "gate attempt owner does not match the run");
+  }
+  if (row.stepId !== event.payload.stepId || row.stepAttempt !== event.payload.stepAttempt || row.assignmentId !== event.payload.assignmentId || row.attemptId !== event.payload.attemptId) {
+    throw runtimeError("gate_attempt_pin_mismatch", run.runId, "gate attempt identity does not match the intent payload");
+  }
+  const step = envelope.plan.steps[row.stepId];
+  if (!step || step.kind !== "gate") {
+    throw runtimeError("gate_attempt_pin_mismatch", run.runId, "gate attempt step is not a gate");
+  }
+  if (row.gateId !== step.gate || row.expect !== step.expect) {
+    throw runtimeError("gate_attempt_pin_mismatch", run.runId, "gate attempt gate/expect do not match the plan");
+  }
+  const definition = envelope.gates.definitions[step.gate];
+  if (!definition || definition.kind !== row.gateKind) {
+    throw runtimeError("gate_attempt_pin_mismatch", run.runId, "gate attempt kind does not match the pinned definition");
+  }
+  const expectedDefinitionHash = gateDefinitionHash(step.gate, definition);
+  if (row.gateDefinitionHash !== expectedDefinitionHash) {
+    throw runtimeError("gate_attempt_pin_mismatch", run.runId, "gate_definition_hash does not match the pinned definition");
+  }
+  if (!envelope.gates.registry || row.registryHash !== envelope.gates.registry.hash) {
+    throw runtimeError("gate_attempt_pin_mismatch", run.runId, "registry_hash does not match the pinned registry");
+  }
+  const planRowHash = envelope && state.runPlanHash;
+  if (row.runPlanHash !== planRowHash) {
+    throw runtimeError("gate_attempt_pin_mismatch", run.runId, "run_plan_hash does not match the pinned plan");
+  }
+  if (row.controlProjectKey !== envelope.gates.controlRoot.projectKey) {
+    throw runtimeError("gate_attempt_pin_mismatch", run.runId, "control_project_key does not match the envelope");
+  }
+}
+function assertShared(run, row, attempt) {
+  if (row.runId !== attempt.runId || row.projectId !== attempt.projectId || row.homeRuntimeId !== attempt.homeRuntimeId || row.stepId !== attempt.stepId || row.stepAttempt !== attempt.stepAttempt || row.assignmentId !== attempt.assignmentId || row.effectId !== attempt.effectId) {
+    throw runtimeError("gate_attempt_pin_mismatch", run.runId, "row identity does not match the gate attempt");
+  }
+}
+function stringField(event, field) {
+  const value = event.payload[field];
+  if (typeof value !== "string" || value.length === 0) {
+    throw runtimeError("gate_attempt_pin_mismatch", event.runId, `${event.eventType} is missing ${field}`);
+  }
+  return value;
+}
+
 // plugins/kxm/src/vnext-runtime-owner.ts
 var owners = /* @__PURE__ */ new Map();
 function record(storePath) {
@@ -18151,11 +19358,24 @@ function acceptVnextRun(context, bundle, request, options = {}) {
 function foldStoredVnextRun(context, run) {
   const events = context.eventStore.events(run.runId, 0, 1e6);
   const planRow = context.eventStore.runPlan(run.runId);
-  const plan = planRow ? rehydrateVnextCompiledPlanFromStore(context.eventStore, run) : void 0;
-  if (!planRow && events.some((event) => event.eventType.startsWith("step.") || event.payload.status === "preparing" || event.payload.status === "running" || event.payload.status === "cancelling")) {
+  if (!planRow && events.some((event) => event.eventType.startsWith("step.") || event.eventType.startsWith("effect.") || event.payload.status === "preparing" || event.payload.status === "running" || event.payload.status === "cancelling")) {
     throw runtimeError("run_plan_missing", run.runId, "run reached preparing or later without a pinned plan");
   }
-  return foldVnextRunState(run, plan, events);
+  const envelope = planRow ? loadVnextRunPlanEnvelope(context.eventStore, run) : void 0;
+  const state = foldVnextRunState(run, envelope?.plan, events, envelope ? {
+    observationLookup: (attemptId, observationId) => {
+      const row = context.eventStore.gateObservationForAttempt(attemptId);
+      if (!row || row.observationId !== observationId) return void 0;
+      return { completeness: row.completeness };
+    },
+    gateKind: (stepId) => {
+      const step = envelope.plan.steps[stepId];
+      if (!step || step.kind !== "gate") return void 0;
+      return envelope.gates.definitions[step.gate]?.kind;
+    }
+  } : {});
+  if (envelope) verifyVnextGateEvidence(context.eventStore, run, envelope, events, state);
+  return state;
 }
 function persistProjection(context, run, state, now) {
   const canonical = vnextCanonicalJson(state);
@@ -18256,11 +19476,7 @@ function cancelVnextRun(context, runId, options = {}) {
       push("run.status_changed", { status: "cancelled", reason: "operator_cancel" });
     }
     for (const event of events) context.eventStore.appendEvent(event);
-    const nextState = foldVnextRunState(
-      run,
-      context.eventStore.runPlan(runId) ? rehydrateVnextCompiledPlanFromStore(context.eventStore, run) : void 0,
-      [...context.eventStore.events(runId, 0, 1e6)]
-    );
+    const nextState = foldStoredVnextRun(context, run);
     persistVnextRunState(context, runId, nextState, events[events.length - 1].sequence);
     context.eventStore.updateRunStatus(runId, status, now);
     context.eventStore.insertCommand({

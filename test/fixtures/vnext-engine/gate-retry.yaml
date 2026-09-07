@@ -1,0 +1,17 @@
+schema: kxm.workflow.v1
+description: Gate step with two attempts.
+coordinator: coordinator
+limits:
+  maxTransitions: 8
+steps:
+  - id: check
+    kind: gate
+    gate: test
+    maxAttempts: 2
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      implementation-failure:
+        target: check
+        maxTransitions: 2

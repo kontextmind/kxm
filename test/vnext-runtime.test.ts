@@ -21,7 +21,7 @@ import {
   cancelVnextRun,
   closeVnextRuntimeContext,
   openVnextRuntimeContext,
-  projectVnextRunStatus,
+  readVnextRunStatus,
   rebuildVnextRunProjection,
   vnextPolicyRevisions,
   vnextRunRevisionDrift,
@@ -77,7 +77,7 @@ for (const kind of ["registry", "events"] as const) {
         const tables = database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as Array<{ name: string }>;
         assert.deepEqual(tables.map(({ name }) => name), kind === "registry"
           ? ["projects", "supervisor"]
-          : ["attempt_capabilities", "commands", "events", "run_plans", "run_state", "runs"]);
+          : ["attempt_capabilities", "commands", "events", "gate_attempts", "gate_evidence", "gate_observations", "run_plans", "run_state", "runs"]);
       } finally {
         database.close();
       }
@@ -162,7 +162,7 @@ test("event sequence integrity and projection rebuild equivalence", () => {
 
       const events = context.eventStore.events(accepted.run.runId, 0, 100);
       assert.equal(events.length, 3);
-      assert.equal(projectVnextRunStatus(accepted.run, events), "cancelled");
+      assert.equal(readVnextRunStatus(context, accepted.run), "cancelled");
       const rebuilt = rebuildVnextRunProjection(context, accepted.run.runId);
       assert.equal(rebuilt.status, "cancelled", "projection rebuild matches incremental state");
       assert.equal(rebuilt.runId, accepted.run.runId);

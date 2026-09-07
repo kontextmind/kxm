@@ -2676,3 +2676,31 @@ test("just binary integration is optional when the binary is installed", (t) => 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("Pi writer admits only Qwen edit and requires exact model auth before spawn", async () => {
+  const dir = tempDir();
+  try {
+    const request = { schema: REQUEST_SCHEMA, harness: "pi", role: "writer", model: "openrouter/qwen/qwen3-coder-plus", permission: "edit", prompt_file: promptFile(dir), output_dir: join(dir, "out") };
+    preflightRequest(request);
+    for (const change of [{ permission: "read-only" }, { model: "openrouter/anthropic/fable" }, { model: "openrouter/openai/gpt-5.6-sol" }, { model: "openrouter/x-ai/grok-4.6" }, { model: "openrouter/qwen/unknown" }]) {
+      assert.throws(() => preflightRequest({ ...request, ...change }), /pi writer/);
+    }
+    let calls = 0;
+    let spawned = 0;
+    const authArgs: string[][] = [];
+    const deps = {
+      env: { PATH: dir }, existsSync: () => true,
+      spawnSync: (_command: string, args: string[]) => { authArgs.push(args); calls++; return { status: 0, stdout: JSON.stringify({ provider: "openrouter", status: "ready" }), stderr: "" }; },
+      spawn: () => { spawned++; return fakeChild({ stdout: piLine(piAssistantEnd({ model: "qwen/qwen3-coder-plus" })) }); },
+    };
+    const result = await runHarness(request, deps);
+    assert.equal(result.ok, true);
+    assert.equal(spawned, 1);
+    assert.equal(calls, 1);
+    assert.deepEqual(authArgs[0], ["auth", "check", "--provider", "openrouter", "--model", "qwen/qwen3-coder-plus", "--json"]);
+    for (const proof of ["openrouter ready", JSON.stringify({ provider: "other", status: "ready" }), JSON.stringify({ provider: "openrouter", status: "not_ready" })]) {
+      await assert.rejects(() => runHarness({ ...request, output_dir: join(dir, `bad-${calls++}`) }, { ...deps, spawnSync: () => ({ status: 0, stdout: proof, stderr: "" }) }), /auth|readiness|ready/);
+    }
+    assert.equal(spawned, 1, "no model launch on missing exact auth proof");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

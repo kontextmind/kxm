@@ -1,0 +1,17 @@
+schema: kxm.workflow.v1
+description: Command gate that expects failure.
+coordinator: coordinator
+limits:
+  maxTransitions: 4
+steps:
+  - id: check
+    kind: gate
+    gate: test
+    expect: fail
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      repro-missing:
+        target: $terminal
+        terminalStatus: failed

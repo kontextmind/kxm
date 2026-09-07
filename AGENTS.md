@@ -28,7 +28,7 @@ router.
 
 | Role | Starting rotation | Why |
 |---|---|---|
-| **Implement / write code** | **Grok** (`grok --model grok-4.6`), headless | Currently admitted native writer on this runner. Fast at repo-shaped edits. If `grok` is missing or logged out, fail closed — do not fall back to Pi. Not a fixed sole writer. |
+| **Implement / write code** | **Grok** (`grok --model grok-4.6`), headless | Currently admitted native writer on this runner. Fast at repo-shaped edits. After failure, immediately use the next eligible authenticated model. Qwen `qwen/qwen3-coder-plus` is admitted through OpenRouter/Pi with exact model auth; never bill Grok through Pi. Not a fixed sole writer. |
 | **Plan** | **Claude Fable** (`claude --model fable`) | Architecture and permissions; independent of the writer. |
 | **Review** | **Fable** (architecture/permissions) and **Codex gpt-5.6-sol** (CLI/docs) | Different providers from the writer. Both designated critics are required for acceptance on this runner; a single critic is at most preliminary triage. |
 | **Portability / mapping** | **Kimi** only when the task is Windows/path/CLI-portability | Not a default reviewer. |
@@ -42,9 +42,14 @@ route with unknown root usage/cost, never a forged native writer completion.
 If a different native writer route is needed, resolve it with capability/auth
 evidence.
 
-**Attempts and relief.** Two attempts by default on one brief. A third only
-with concrete new evidence or a changed approach, then bring relief. Preserve
-every attempt, blocker, candidate, and failed check; transfer findings.
+**Attempts and relief (operator, 2026-09-07).** Never stop solely because
+attempts are exhausted or failed. Immediately try the next suggested eligible
+authenticated model and transfer findings. Preserve every attempt, candidate,
+failed check, and cost record. Prefer an authenticated native subscription for
+the same model. The narrowly admitted Pi writer is OpenRouter Qwen
+`qwen/qwen3-coder-plus`, which has no supported native route here; other models
+require reviewed admission. Identity, witness, both critics, and acceptance
+remain mandatory.
 New-model comparisons are bounded experiments, not fanout on every task. The
 standalone `just assign` command does not automatically schedule failover.
 

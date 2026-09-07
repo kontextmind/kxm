@@ -10,7 +10,8 @@ import {
   type VnextProjectBundle,
 } from "./vnext-config.ts";
 import { foldVnextRunState, isTerminalRunStatus, type VnextRunState } from "./vnext-engine-fold.ts";
-import { rehydrateVnextCompiledPlanFromStore } from "./vnext-engine-plan.ts";
+import { verifyVnextGateEvidence } from "./vnext-engine-evidence.ts";
+import { loadVnextRunPlanEnvelope } from "./vnext-engine-plan.ts";
 import {
   registerVnextRuntimeHandle,
   unregisterVnextRuntimeHandle,
@@ -306,16 +307,31 @@ export function acceptVnextRun(
 export function foldStoredVnextRun(context: VnextRuntimeContext, run: VnextRunRecord): VnextRunState {
   const events = context.eventStore.events(run.runId, 0, 1_000_000);
   const planRow = context.eventStore.runPlan(run.runId);
-  const plan = planRow ? rehydrateVnextCompiledPlanFromStore(context.eventStore, run) : undefined;
-  if (!planRow && events.some((event) => event.eventType.startsWith("step.") || event.payload.status === "preparing" || event.payload.status === "running" || event.payload.status === "cancelling")) {
+  if (!planRow && events.some((event) => event.eventType.startsWith("step.") || event.eventType.startsWith("effect.") || event.payload.status === "preparing" || event.payload.status === "running" || event.payload.status === "cancelling")) {
     throw runtimeError("run_plan_missing", run.runId, "run reached preparing or later without a pinned plan");
   }
-  return foldVnextRunState(run, plan, events);
+  const envelope = planRow ? loadVnextRunPlanEnvelope(context.eventStore, run) : undefined;
+  const state = foldVnextRunState(run, envelope?.plan, events, envelope
+    ? {
+      observationLookup: (attemptId, observationId) => {
+        const row = context.eventStore.gateObservationForAttempt(attemptId);
+        if (!row || row.observationId !== observationId) return undefined;
+        return { completeness: row.completeness };
+      },
+      gateKind: (stepId) => {
+        const step = envelope.plan.steps[stepId];
+        if (!step || step.kind !== "gate") return undefined;
+        return envelope.gates.definitions[step.gate]?.kind;
+      },
+    }
+    : {});
+  if (envelope) verifyVnextGateEvidence(context.eventStore, run, envelope, events, state);
+  return state;
 }
 
-/** Fold a run's event sequence into its current status (deterministic). */
-export function projectVnextRunStatus(run: VnextRunRecord, events: readonly VnextRunEvent[]): VnextRunStatus {
-  return foldVnextRunState(run, undefined, events).status;
+/** Fold a stored run into its current status with evidence verification. */
+export function readVnextRunStatus(context: VnextRuntimeContext, run: VnextRunRecord): VnextRunStatus {
+  return foldStoredVnextRun(context, run).status;
 }
 
 function persistProjection(context: VnextRuntimeContext, run: VnextRunRecord, state: VnextRunState, now: string): VnextRunRecord {
@@ -440,11 +456,7 @@ export function cancelVnextRun(
     }
 
     for (const event of events) context.eventStore.appendEvent(event);
-    const nextState = foldVnextRunState(
-      run,
-      context.eventStore.runPlan(runId) ? rehydrateVnextCompiledPlanFromStore(context.eventStore, run) : undefined,
-      [...context.eventStore.events(runId, 0, 1_000_000)],
-    );
+    const nextState = foldStoredVnextRun(context, run);
     persistVnextRunState(context, runId, nextState, events[events.length - 1]!.sequence);
     context.eventStore.updateRunStatus(runId, status, now);
     context.eventStore.insertCommand({
