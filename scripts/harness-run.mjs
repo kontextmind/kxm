@@ -101,7 +101,28 @@ const REQUEST_KEYS = Object.freeze([
 
 const UNSUPPORTED_LAUNCHER = /\.(cmd|bat|ps1)$/i;
 
-/** Verified helper routes only. Kimi/Gemini/Agy/DeepSeek CLIs fail closed. */
+const AGY_MODELS = Object.freeze([
+  "gemini-3.8-flash-high",
+  "gemini-3.8-flash-medium",
+  "gemini-3.8-flash-low",
+  "gemini-3.7-flash-high",
+  "gemini-3.7-flash-medium",
+  "gemini-3.7-flash-low",
+  "gemini-3.6-flash-high",
+  "gemini-3.6-flash-medium",
+  "gemini-3.6-flash-low",
+  "gemini-3.1-pro-high",
+  "gemini-3.1-pro-low",
+]);
+
+/** Tab-separated `id<TAB>label` rows from `agy models` (committed probe fixture). */
+const AGY_MODEL_ROW = /^[a-z0-9][a-z0-9.+_-]*\t+\S/im;
+
+function agyModelsListed(text) {
+  return AGY_MODEL_ROW.test(String(text ?? ""));
+}
+
+/** Verified helper routes only. Kimi/Gemini/DeepSeek CLIs fail closed. */
 export const ROUTES = Object.freeze({
   grok: {
     provider: "xai",
@@ -110,6 +131,14 @@ export const ROUTES = Object.freeze({
     models: Object.freeze(["grok-4.6"]),
     efforts: Object.freeze(["low", "medium", "high"]),
     auth: Object.freeze({ args: ["models"], loginHint: "grok (OAuth to auth.x.ai)" }),
+  },
+  agy: {
+    provider: "google",
+    roles: Object.freeze(["writer", "experiment"]),
+    permissions: Object.freeze(["edit"]),
+    models: AGY_MODELS,
+    efforts: Object.freeze(["low", "medium", "high"]),
+    auth: Object.freeze({ args: ["models"], loginHint: "agy (Antigravity OAuth)" }),
   },
   claude: {
     provider: "anthropic",
@@ -140,7 +169,7 @@ export const ROUTES = Object.freeze({
   },
 });
 
-const UNVERIFIED_HARNESSES = Object.freeze(["kimi", "gemini", "agy", "deepseek"]);
+const UNVERIFIED_HARNESSES = Object.freeze(["kimi", "gemini", "deepseek"]);
 
 export function clampEffort(harness, effort) {
   const accepted = ROUTES[harness]?.efforts ?? [];
@@ -385,6 +414,13 @@ export function parseAuth(harness, stdio, options = {}) {
     }
     return { loggedIn: true, method: reported, observedAt };
   }
+  if (harness === "agy") {
+    const text = `${stdout}\n${stderr}`;
+    if (!agyModelsListed(text)) {
+      throw failClosed(loginHint("agy", "agy models did not print a models list."), "auth");
+    }
+    return { loggedIn: true, method: "antigravity-oauth", observedAt };
+  }
   throw failClosed(`unknown harness ${harness} for auth parse`, "auth");
 }
 
@@ -417,6 +453,21 @@ export function buildArgv(request, ctx = {}) {
   const promptPath = ctx.promptPath ?? request.prompt_file;
   const schemaPath = ctx.schemaPath ?? request.output_schema;
   const schemaText = ctx.schemaText ?? (request.output_schema ? readFileSync(request.output_schema, "utf8") : undefined);
+  if (harness === "agy") {
+    const promptText = ctx.promptText ?? (promptPath ? readFileSync(promptPath, "utf8") : "");
+    return [
+      "-p",
+      promptText,
+      "--output-format",
+      "json",
+      "--dangerously-skip-permissions",
+      "--model",
+      model,
+      ...(effort ? ["--effort", effort] : []),
+      ...(schemaPath ? ["--json-schema", schemaPath] : []),
+      ...(request.timeout_ms !== undefined ? ["--print-timeout", `${request.timeout_ms}ms`] : []),
+    ];
+  }
   if (harness === "grok") {
     return [
       "--prompt-file",
@@ -705,6 +756,64 @@ function usageRow(model, usage = {}) {
   };
 }
 
+export function normalizeAgy(payload) {
+  if (!payload || typeof payload !== "object") {
+    return {
+      emptyPayload: true,
+      errorCode: "empty_payload",
+      errorDetail: "empty JSON payload",
+      costBasis: "unmetered",
+    };
+  }
+  const usage = payload.usage && typeof payload.usage === "object" ? payload.usage : {};
+  const denied = Array.isArray(payload.denied_actions)
+    ? payload.denied_actions.filter((item) => item !== undefined && item !== null && String(item).length > 0)
+    : (typeof payload.denied_actions === "string" && payload.denied_actions.trim()
+      ? [payload.denied_actions.trim()]
+      : []);
+  const rawError = payload.error;
+  const errorText = rawError === undefined || rawError === null || rawError === ""
+    ? undefined
+    : String(rawError?.message ?? rawError);
+  const isTimeout = errorText === "timeout waiting for response";
+  let errorCode;
+  let errorDetail;
+  if (denied.length > 0) {
+    errorCode = "turn_failed";
+    errorDetail = joinDetail(`denied_actions: ${JSON.stringify(denied)}`, errorText);
+  } else if (payload.status === "SUCCESS") {
+    errorCode = undefined;
+  } else if (payload.status === "ERROR" && isTimeout) {
+    errorCode = "timed_out";
+    errorDetail = errorText;
+  } else if (payload.status === "ERROR") {
+    errorCode = "model_error";
+    errorDetail = errorText ?? "ERROR";
+  } else {
+    errorCode = "model_error";
+    errorDetail = errorText ?? `unrecognized agy status ${String(payload.status ?? "missing")}`;
+  }
+  const reportedModel = typeof payload.model === "string" && payload.model.trim()
+    ? payload.model.trim()
+    : undefined;
+  const text = typeof payload.response === "string" ? payload.response : "";
+  return {
+    text,
+    sessionId: typeof payload.conversation_id === "string" ? payload.conversation_id : undefined,
+    ...(reportedModel ? { effectiveModel: reportedModel } : {}),
+    tokensIn: usage.input_tokens,
+    tokensOut: usage.output_tokens,
+    cacheReadTokens: usage.cache_read_tokens,
+    reasoningTokens: usage.thinking_tokens,
+    totalTokens: usage.total_tokens,
+    tokenBasis: TOKEN_BASIS,
+    costBasis: "unmetered",
+    ...(payload.structured_output !== undefined ? { structuredOutput: payload.structured_output } : {}),
+    ...(errorCode ? { errorCode } : {}),
+    ...(errorDetail ? { errorDetail } : {}),
+  };
+}
+
 export function normalizeClaudeOrGrok(payload, requestedModel) {
   if (!payload || typeof payload !== "object") {
     return {
@@ -832,6 +941,7 @@ const RESULT_PUBLIC_KEYS = Object.freeze([
   "cacheReadTokens",
   "cacheCreationTokens",
   "reasoningTokens",
+  "totalTokens",
   "costUsd",
   "costBasis",
   "providerReportedCostUsd",
@@ -884,6 +994,7 @@ const PROVIDER_METADATA_KEYS = Object.freeze([
   "cacheReadTokens",
   "cacheCreationTokens",
   "reasoningTokens",
+  "totalTokens",
   "tokenBasis",
 ]);
 
@@ -946,6 +1057,7 @@ const PUBLIC_TOKEN_KEYS = Object.freeze([
   "cacheReadTokens",
   "cacheCreationTokens",
   "reasoningTokens",
+  "totalTokens",
 ]);
 const PUBLIC_COST_KEYS = Object.freeze(["costUsd", "providerReportedCostUsd"]);
 const PUBLIC_BYTE_KEYS = Object.freeze(["answerBytes", "stderrBytes", "errorBytes"]);
@@ -1455,6 +1567,7 @@ export async function runHarness(request, deps = {}) {
   const argv = buildArgv(prepared, {
     mcpConfigPath,
     promptPath: promptInput.path,
+    promptText: promptInput.text,
     schemaPath: schemaInput?.path,
     schemaText: schemaInput?.text,
   });
@@ -1599,7 +1712,9 @@ export async function runHarness(request, deps = {}) {
       ? normalizeCodex(collected.stdout)
       : request.harness === "pi"
         ? normalizePi(collected.stdout)
-        : normalizeClaudeOrGrok(parseJson(collected.stdout), request.model);
+        : request.harness === "agy"
+          ? normalizeAgy(parseJson(collected.stdout))
+          : normalizeClaudeOrGrok(parseJson(collected.stdout), request.model);
   } catch (error) {
     fields = {
       errorCode: "normalization_failed",
@@ -1612,6 +1727,9 @@ export async function runHarness(request, deps = {}) {
     fields.costBasis = "unmetered";
     fields.costUsd = undefined;
   } else if (request.harness === "codex" && authStatus.method === "ChatGPT") {
+    fields.costBasis = "unmetered";
+    fields.costUsd = undefined;
+  } else if (request.harness === "agy" && authStatus.method === "antigravity-oauth") {
     fields.costBasis = "unmetered";
     fields.costUsd = undefined;
   } else if (fields.costUsd === undefined && fields.providerReportedCostUsd === undefined) {
@@ -1872,7 +1990,9 @@ function buildTransportResult(input) {
   const emptyPayload = fields.emptyPayload === true;
   const spawnFailed = stage === "spawn";
   const signaled = Boolean(collected.signal) && collected.observedChildExit === true;
-  const successfulExit = collected.observedChildExit === true && collected.exitCode === 0;
+  const successfulExit = request.harness === "agy"
+    ? collected.observedChildExit === true
+    : collected.observedChildExit === true && collected.exitCode === 0;
   const outputComplete = collected.outputComplete === true;
   const status = timedOut || killRequest || signaled
     ? "interrupted"
@@ -1883,7 +2003,7 @@ function buildTransportResult(input) {
   const { capped, metadata } = applyRoutingCap(fields);
   const usagePresent = [
     capped.tokensIn, capped.tokensOut, capped.cacheReadTokens, capped.cacheCreationTokens,
-    capped.reasoningTokens, fields.costUsd, fields.providerReportedCostUsd, metadata.tokensIn,
+    capped.reasoningTokens, capped.totalTokens, fields.costUsd, fields.providerReportedCostUsd, metadata.tokensIn,
   ].some((value) => value !== undefined);
   const usagePartial = status !== "completed" && usagePresent;
   const publicErrorCode = status === "completed" ? undefined : errorCode;

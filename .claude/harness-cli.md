@@ -6,7 +6,7 @@ use. If the routing table and this file disagree, `AGENTS.md` wins. Agents are
 a rotation; Grok is the currently admitted native writer, not a fixed sole
 writer.
 
-Snapshot date: **2026-09-07** (Nous Portal helper prefix). Catalog/auth rows below
+Snapshot date: **2026-09-08** (agy helper admission). Catalog/auth rows below
 are corrected from `plugins/kxm/src/vnext-harness.ts` and helper argv (M5
 docs). Re-probe after any CLI update; these surfaces change without notice.
 Installed ≠ auth-verified ≠ helper-eligible.
@@ -20,16 +20,17 @@ Installed ≠ auth-verified ≠ helper-eligible.
 | `codex` | 0.153.3 | `codex login status` → ChatGPT | read-only CLI/docs review (`gpt-5.6-sol`) |
 | `grok` | 1.0.5 | `grok models` → logged in with grok.com | writer only (`grok-4.6`) |
 | `kimi` | 0.40.1 | oauth via `kimi provider list` | **no** — unverified helper dispatch |
-| `gemini` | 0.56.0 | **unknown** (installed only) | **no** |
-| `agy` | 1.1.22 | `agy models` (gateway) | **no** |
+| `gemini` | 0.56.0 | **unknown** (installed only) | **no** — deprecated individual-tier CLI; catalog stays |
+| `agy` | 1.1.27 | `agy models` → non-empty models list (Antigravity OAuth) | writer/experiment **edit**, Gemini kebab ids only |
 
 **Not installed: `hermes`, `dsh`.** Windows helper dispatch is **unsupported**
 in `scripts/harness-run.mjs` (shell:false, absolute `.exe` only; `.cmd`/`.bat`/
 `.ps1` refused). That is not a claim that any harness works on Windows.
 
-Product catalog (`BUILTIN_HARNESSES`): `grok` is present (`mode: either`,
-`authArgs: ["models"]`). Codex `authArgs` are `["login", "status"]`. Helper
-auth is observational inventory, not a Phase 11 adapter.
+Product catalog (`BUILTIN_HARNESSES`): `grok` and `agy` are present
+(`mode: either`, `authArgs: ["models"]`). Codex `authArgs` are
+`["login", "status"]`. Helper auth is observational inventory, not a
+Phase 11 adapter.
 
 ## Flag matrix (verified helper routes)
 
@@ -39,10 +40,12 @@ auth is observational inventory, not a Phase 11 adapter.
 | **claude** | `-p` | **stdin** | `--model` | `--effort` (verified) | read-only: `--tools Read,Glob,Grep --safe-mode --strict-mcp-config --disable-slash-commands` | `--output-format json` |
 | **codex** | `exec` | stdin `-` | `-m` | `-c model_reasoning_effort=...` (verified) | `--sandbox read-only --ignore-user-config` | `--json` (JSONL) |
 | **grok** | `--prompt-file` | file | `-m` | `--reasoning-effort` | `--always-approve --no-subagents --disable-web-search` | `--output-format json` |
+| **agy** | `-p <text>` | argv (no `--prompt-file`, stdin is extra only) | `--model` (Gemini kebab ids; model id already embeds a tier) | `--effort` (also pass; do not dedupe with the id) | `--dangerously-skip-permissions` | `--output-format json` |
 
-Kimi, Gemini, and Agy stay fail-closed in the helper. Grok read-only is
-unsupported pending a permission-mode probe. Never `--bare`. Never Bash on
-read-only Claude. Never read `~/.grok/auth.json`.
+Kimi and Gemini stay fail-closed in the helper. Grok read-only is
+unsupported pending a permission-mode probe. Agy read-only roles are
+deferred until a granular read-permission route exists. Never `--bare`.
+Never Bash on read-only Claude. Never read `~/.grok/auth.json`.
 
 ## Defaults
 
@@ -66,7 +69,8 @@ third only with new evidence or a changed approach, then relief.
 
 **Provider-native rule.** Anthropic → Claude CLI; OpenAI → Codex; xAI → Grok
 CLI; Moonshot → Kimi CLI when that helper is verified (not today); Google →
-Gemini CLI when auth is verified (not today). Pi may run **OpenRouter** after
+agy (Antigravity CLI) for Gemini writer/experiment edit (starting rotation
+unchanged; deprecated Gemini CLI catalog stays). Pi may run **OpenRouter** after
 `pi auth check --provider openrouter`, or **Nous Research Portal** after
 `pi install npm:@jayteelabs/pi-nous-portal-provider` and
 `pi auth check --provider nous-portal`. Login: `/login openrouter`, or
@@ -83,7 +87,8 @@ out, fail closed — never silently bill a different provider's key. There
 is no Nous CLI harness.
 
 Moving the writer to `grok` does not make it a long-lived worker: `kxm agent
-worker` / `pi --mode rpc` is still Pi-only.
+worker` / `pi --mode rpc` is still Pi-only. `agy` is one-shot headless, not
+an RPC worker.
 
 ## Per-CLI gotchas, all hit in practice
 
@@ -130,7 +135,17 @@ worker` / `pi --mode rpc` is still Pi-only.
   (`answer.txt`, `stderr.log`, `error.txt`, `model-claim.json`). Review
   top-level `PASS`/`BLOCK` is a model claim, never verify/acceptance.
   Private `dispatch.json` is written before billed spawn.
-- **kimi / gemini / agy**: unverified in this helper; long inline prompts
+- **agy**: prompt is argv `-p <text>` (no `--prompt-file`; stdin is only
+  extra input). Trust JSON `status`, never the exit code (`SUCCESS` /
+  `ERROR` / timeout all exit 0). Timeout string is
+  `timeout waiting for response`. Non-empty `denied_actions` is
+  `turn_failed` (list in the private error sidecar). Cost basis
+  `unmetered`; never `$0`. `effectiveModel` only if agy reports a `model`
+  field. `--json-schema` takes a path; `--print-timeout` is Go duration
+  (`<timeout_ms>ms`). Model id and `--effort` are both passed. Auth is
+  `agy models` → models list, method `antigravity-oauth`. Gemini kebab ids
+  only in this helper; hosted Claude/GPT ids need separate admission.
+- **kimi / gemini**: unverified in this helper; long inline prompts
   also hit the Windows command-line limit.
 
 ## Rules for every headless run

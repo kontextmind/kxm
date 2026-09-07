@@ -62,7 +62,7 @@ function issueCodes(error: unknown): string[] {
 
 test("builtin catalog defaults to headless Pi and lists known harnesses", () => {
   assert.equal(DEFAULT_HARNESS, "pi");
-  assert.deepEqual([...BUILTIN_HARNESS_IDS], ["pi", "claude", "kimi", "codex", "gemini", "deepseek", "grok"]);
+  assert.deepEqual([...BUILTIN_HARNESS_IDS], ["pi", "claude", "kimi", "codex", "gemini", "deepseek", "grok", "agy"]);
 });
 
 test("probe reports detect/auth without a preferences overlay", () => {
@@ -404,6 +404,65 @@ test("grok catalog is observational either-mode and parses the confirmed login l
   });
   assert.equal(status(commandFailure, "grok").authenticated, null);
   assert(status(commandFailure, "grok").issues.includes("auth_unparsed"));
+});
+
+test("agy catalog is observational either-mode and parses the committed models probe", () => {
+  assert(BUILTIN_HARNESS_IDS.includes("agy"));
+  const agyEntry = BUILTIN_HARNESSES.find((entry) => entry.id === "agy");
+  assert.equal(agyEntry?.label, "Antigravity CLI");
+  assert.equal(agyEntry?.mode, "either");
+  assert.equal(agyEntry?.default, false);
+  assert.deepEqual([...agyEntry?.commands ?? []], ["agy"]);
+  assert.deepEqual([...agyEntry?.versionArgs ?? []], ["--version"]);
+  assert.deepEqual([...agyEntry?.authArgs ?? []], ["models"]);
+  assert.deepEqual(agyEntry?.update.self, ["update"]);
+  assert.equal(agyEntry?.update.models, undefined);
+  const probe = readFileSync(join(repoRoot, "test/fixtures/harness/agy-models-probe.txt"), "utf8");
+  const loggedIn = probeHarnesses({
+    runCommand: runner({
+      "agy --version": { ok: true, code: 0, stdout: "agy 1.1.27\n", stderr: "" },
+      "agy models": { ok: true, code: 0, stdout: probe, stderr: "" },
+    }),
+  });
+  assert.equal(status(loggedIn, "agy").authenticated, true);
+  assert.equal(status(loggedIn, "agy").detected, true);
+
+  const empty = probeHarnesses({
+    runCommand: runner({
+      "agy --version": { ok: true, code: 0, stdout: "agy 1.1.27\n", stderr: "" },
+      "agy models": { ok: true, code: 0, stdout: "", stderr: "" },
+    }),
+  });
+  assert.equal(status(empty, "agy").authenticated, false);
+  assert(status(empty, "agy").issues.includes("not_authenticated"));
+
+  const nonzero = probeHarnesses({
+    runCommand: runner({
+      "agy --version": { ok: true, code: 0, stdout: "agy 1.1.27\n", stderr: "" },
+      "agy models": { ok: false, code: 1, stdout: "", stderr: "unauthenticated" },
+    }),
+  });
+  assert.equal(status(nonzero, "agy").authenticated, false);
+  assert(status(nonzero, "agy").issues.includes("not_authenticated"));
+
+  const garbage = probeHarnesses({
+    runCommand: runner({
+      "agy --version": { ok: true, code: 0, stdout: "agy 1.1.27\n", stderr: "" },
+      "agy models": { ok: true, code: 0, stdout: "Fetching available models...\n", stderr: "" },
+    }),
+  });
+  assert.equal(status(garbage, "agy").authenticated, null);
+  assert(status(garbage, "agy").issues.includes("auth_unparsed"));
+
+  const eligible = vnextHarness.eligibleHarnesses({
+    defaultHarness: "pi",
+    harnesses: [
+      { id: "pi", label: "Pi", default: true, mode: "headless", detected: true, authenticated: null, canUpdate: { self: true, extensions: true, models: true }, issues: ["auth_context_required"] },
+      { id: "agy", label: "Antigravity CLI", default: false, mode: "either", detected: true, authenticated: true, canUpdate: { self: true, extensions: false, models: false }, issues: [] },
+      { id: "gemini", label: "Gemini CLI", default: false, mode: "either", detected: true, authenticated: null, canUpdate: { self: true, extensions: false, models: false }, issues: ["auth_unknown"] },
+    ],
+  });
+  assert.deepEqual([...eligible], ["agy"]);
 });
 
 test("kimi gemini and deepseek stay unknown without secret-bearing config-list commands", () => {

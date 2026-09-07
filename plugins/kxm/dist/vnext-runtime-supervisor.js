@@ -15066,6 +15066,16 @@ var BUILTIN_HARNESSES = Object.freeze([
     versionArgs: ["--version"],
     authArgs: ["models"],
     update: { self: ["update"] }
+  },
+  {
+    id: "agy",
+    label: "Antigravity CLI",
+    default: false,
+    mode: "either",
+    commands: ["agy"],
+    versionArgs: ["--version"],
+    authArgs: ["models"],
+    update: { self: ["update"] }
   }
 ]);
 var BUILTIN_HARNESS_IDS = BUILTIN_HARNESSES.map((entry) => entry.id);

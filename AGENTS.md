@@ -77,7 +77,7 @@ for implementation, planning, and architecture review; low for CLI review.
 
 **Provider-native harness:** If the model’s provider has its own harness and that harness is **installed and logged in**, use it — not Pi’s copy of the same provider. That is why `kxm harness list` checks auth.
 
-Examples: Anthropic → Claude CLI (subscription); OpenAI → Codex; Moonshot → Kimi; Google → Gemini CLI when present; xAI → **Grok CLI** (`grok`, OAuth to `auth.x.ai`), which superseded Pi for the writer role on 2026-09-04.
+Examples: Anthropic → Claude CLI (subscription); OpenAI → Codex; Moonshot → Kimi; Google → **agy (Antigravity CLI)** (`agy`, Antigravity OAuth) as an admitted native Google subscription writer/experiment edit route for Gemini kebab ids only (not a worker; starting rotation remains Grok; the deprecated `gemini` CLI catalog entry stays); xAI → **Grok CLI** (`grok`, OAuth to `auth.x.ai`), which superseded Pi for the writer role on 2026-09-04.
 
 **Aggregators are Pi *providers*, not a second coding harness.** There is no
 OpenRouter or Nous `kxm agent worker` CLI and no fake Nous harness. Pi is
@@ -103,9 +103,9 @@ Two helper prefixes are allowlisted after fail-closed `pi auth check
 Same auth-or-fail-closed rule. Other `nous-portal` or OpenRouter writer
 routes need reviewed admission.
 
-If the native harness is missing or logged out, do **not** silently bill through Pi’s other-provider key. Fail closed or ask to log in. Pi remains default only for providers it actually hosts that have **no** authenticated native harness — today that is whatever `pi auth check` covers beyond Anthropic (Claude CLI), OpenAI (Codex), xAI (Grok CLI), Moonshot (Kimi), and Google (Gemini CLI).
+If the native harness is missing or logged out, do **not** silently bill through Pi’s other-provider key. Fail closed or ask to log in. Pi remains default only for providers it actually hosts that have **no** authenticated native harness — today that is whatever `pi auth check` covers beyond Anthropic (Claude CLI), OpenAI (Codex), xAI (Grok CLI), Moonshot (Kimi), and Google (agy / Antigravity CLI; deprecated Gemini CLI catalog remains).
 
-**Harness ≠ long-lived worker.** Moving the writer role to the Grok CLI does not make `grok` a supervised RPC worker: `kxm agent worker` / `pi --mode rpc` is still Pi-only. The Grok CLI is a one-shot headless writer (`grok --prompt-file`). Do not declare a `grok` long-lived worker until one exists and is tested.
+**Harness ≠ long-lived worker.** Moving the writer role to the Grok CLI does not make `grok` a supervised RPC worker: `kxm agent worker` / `pi --mode rpc` is still Pi-only. The Grok CLI is a one-shot headless writer (`grok --prompt-file`). `agy` is also one-shot headless (`agy -p`), not a worker. Do not declare a `grok` or `agy` long-lived worker until one exists and is tested.
 
 **Cost and quality insights:** Every assignment should make the next one faster, cheaper, or better — not just billed. Track harness + provider + model + thinking + **context size + input/output (and cache) tokens + latency + cost + whether verify passed / rework happened**. Some providers charge **more as context grows** (long-context premiums, thinking tokens, uncached input). Sticker $/1M is not enough — compare **cost at the context we actually send**. Prefer the cheapest logged-in native harness that still meets quality. Drop xhigh thinking, extra critics, and huge dumps when the report shows they don’t pay for themselves. Do not “upgrade” model or harness without evidence. Fail closed on untracked spend.
 

@@ -25,7 +25,7 @@ It does not replace the phase gates below.
   Workflows, Plans, Inbox, Procs. Wide terminals use list+detail panes.
 - Agent/model config is Git YAML. Omit `harness` (and `defaultHarness`) for
   **Pi**. Other harness ids (`claude`, `kimi`, `codex`, `gemini`, `deepseek`,
-  `grok`, and later others) are declared on the agent. No second enable/disable
+  `grok`, `agy`, and later others) are declared on the agent. No second enable/disable
   preferences file.
 - A harness only runs models it actually hosts (Claude ≠ Grok; Codex ≠ Kimi).
   Only Pi is the long-lived headless worker. Other CLIs may be interactive or
@@ -48,6 +48,11 @@ It does not replace the phase gates below.
   one-shot headless writer, not a supervised long-lived worker. The repo
   `scripts/harness-run.mjs` helper is a bounded dev dispatcher (auth preflight,
   verified pairs, private sidecars), not a Phase 11 product adapter.
+  **agy (Antigravity CLI, 2026-09-08):** admitted native Google subscription
+  writer/experiment edit route for Gemini kebab ids only. One-shot headless
+  CLI, not a worker. Starting rotation unchanged (Grok remains first).
+  Deprecated `gemini` CLI catalog entry is not removed or braked in this
+  slice.
 - **Developer assignment runner (issue 127, unreleased):** normal entry is
   `just assign` with a closed `kxm.assignment.v1` manifest and
   `task_dir/plan-current.json`. Fixed `just witness` verifies the exact
@@ -186,6 +191,18 @@ It does not replace the phase gates below.
 - **Developer roster U1a foundation (2026-09-07):** An unwired synchronous helper loader reads a committed, clean policy only from a control checkout at or behind the fixed trusted main ref. It pins commit/blob/raw SHA256, validates source-bound model origins and code-owned role/permission/vendor ceilings, and replays historical policy from Git objects. Pi provider validation follows the accepted helper’s shared provider ceiling, without adding a production Nous route. Config validity is not live harness/model capability or auth evidence: the existing dispatch brakes remain in force, including native model checks. This foundation does not change live routing, grant auth, or pass a product Phase 4 gate. U1b dispatch/critic/acceptance binding and CLAUDE/PR131 replacement remain open.
 
 ### Landed in this tree (unreleased)
+
+- **agy (Antigravity CLI) helper admission:** `scripts/harness-run.mjs`
+  `ROUTES.agy` is a writer/experiment **edit** route (provider `google`,
+  Gemini kebab ids only) with argv `-p` prompt transport (no `--prompt-file`,
+  no stdin), JSON `status` parsing (never the exit code), unmetered
+  subscription cost, and non-empty `denied_actions` as `turn_failed`. Catalog
+  `id: agy` is observational (`mode: either`, `authArgs: ["models"]`,
+  `update.self: ["update"]`). Auth success is a non-empty models list from
+  `agy models` (method `antigravity-oauth`). Not a Pi-style RPC worker;
+  starting writer rotation is unchanged. Deprecated `gemini` CLI catalog
+  entry stays. Read-only agy roles and agy-hosted non-Google models remain
+  deferred.
 
 - **ARC scale-set CI selectors:** all `ci.yml` / `release.yml` / `smoke.yml`
   `runs-on` values are the scalar scale-set name `kontextmind-doks`. The
