@@ -44,7 +44,7 @@ interface OwnerRecord {
   implicit?: OwnerPolicy;
   admitted: Map<string, AdmissionRecord>;
   queue: QueueItem[];
-  attempts: Map<string, VnextOwnedAttempt>;
+  attempts: Map<string, Map<string, VnextOwnedAttempt>>;
 }
 
 const owners = new Map<string, OwnerRecord>();
@@ -94,20 +94,36 @@ export function vnextRuntimeHandleCount(storePath: string): number {
 }
 
 export function registerVnextAttemptController(storePath: string, runId: string, attempt: VnextOwnedAttempt): void {
-  record(storePath).attempts.set(runId, attempt);
+  const owner = record(storePath);
+  let runAttempts = owner.attempts.get(runId);
+  if (!runAttempts) {
+    runAttempts = new Map();
+    owner.attempts.set(runId, runAttempts);
+  }
+  if (runAttempts.has(attempt.attemptId)) {
+    throw runtimeError("attempt_controller_duplicate", attempt.attemptId, `attempt ${attempt.attemptId} is already registered`);
+  }
+  runAttempts.set(attempt.attemptId, attempt);
 }
 
-export function vnextAttemptController(storePath: string, runId: string): VnextOwnedAttempt | undefined {
-  return owners.get(storePath)?.attempts.get(runId);
+export function vnextAttemptController(storePath: string, runId: string, attemptId: string): VnextOwnedAttempt | undefined {
+  return owners.get(storePath)?.attempts.get(runId)?.get(attemptId);
 }
 
-export function unregisterVnextAttemptController(storePath: string, runId: string, attemptId?: string): void {
+export function vnextAttemptControllers(storePath: string, runId: string): VnextOwnedAttempt[] {
+  const runAttempts = owners.get(storePath)?.attempts.get(runId);
+  if (!runAttempts) return [];
+  return [...runAttempts.values()];
+}
+
+export function unregisterVnextAttemptController(storePath: string, runId: string, attemptId: string): void {
   const owner = owners.get(storePath);
   if (!owner) return;
-  const current = owner.attempts.get(runId);
-  if (!current) return;
-  if (attemptId !== undefined && current.attemptId !== attemptId) return;
-  owner.attempts.delete(runId);
+  const runAttempts = owner.attempts.get(runId);
+  if (!runAttempts) return;
+  if (!runAttempts.has(attemptId)) return;
+  runAttempts.delete(attemptId);
+  if (runAttempts.size === 0) owner.attempts.delete(runId);
   maybeDelete(storePath, owner);
 }
 
