@@ -183,6 +183,7 @@ It does not replace the phase gates below.
   scheduled, the v1 report underquote fix, and remaining report
   implementation — not for those superseded instructions.
 - **Workflow taxonomy (operator, 2026-09-07):** [`docs/openrouter-model-workforce-guide.md`](../openrouter-model-workforce-guide.md) is organized Area -> Workflow -> Stage -> Assigned role across seven areas (`software-engineering`, `design-experience`, `media-production`, `data-analytics`, `research-strategy`, `business-operations`, `security-reliability`) and 21 workflows with declared kebab-case documentation slugs. Slugs are documentation identity only: no runtime config, role admission, schema field, CLI behavior, or alias lane. Inherited candidate lists are dated research requiring live verification before dispatch, not certified prices or an eligibility grant. Model/harness, platform, modality, tools, and personal/work context are routing attributes, not area trees; area grouping never pools unrelated role quality into one global model ranking. Fable and Sol critics remain required for the developer runner. No phase gate changes.
+- **Developer roster U1a foundation (2026-09-07):** An unwired synchronous helper loader reads a committed, clean policy only from a control checkout at or behind the fixed trusted main ref. It pins commit/blob/raw SHA256, validates source-bound model origins and code-owned role/permission/vendor ceilings, and replays historical policy from Git objects. Pi provider validation follows the accepted helper’s shared provider ceiling, without adding a production Nous route. Config validity is not live harness/model capability or auth evidence: the existing dispatch brakes remain in force, including native model checks. This foundation does not change live routing, grant auth, or pass a product Phase 4 gate. U1b dispatch/critic/acceptance binding and CLAUDE/PR131 replacement remain open.
 
 ### Landed in this tree (unreleased)
 
@@ -599,6 +600,10 @@ It does not replace the phase gates below.
 - **Release resumption (deferred):** remove the `release` job latch and
   re-enable the Release workflow in a reviewed change that updates Tracking,
   tests, and settings together. Independent of Windows resumption.
+- **U1b dispatch/critic/acceptance binding:** Complete the live dispatch,
+  critic review, and acceptance binding to replace CLAUDE/PR131. This
+  includes connecting the loader to the actual routing/assignment logic.
+  U1a supplies the unwired trusted loader foundation; it does not change live assignment eligibility.
 - First real draft-to-published release after B2 (later release phase).
   `kxm update --kxm` end to end from a published asset. Temporary draft proof
   does not replace this. No sidecar `.sha256`.
@@ -886,6 +891,10 @@ replies are rejected. Out of gate: live models, provider-distinctness,
 all-settled degradation. Pi/CLI executions do not satisfy this gate.
 
 ## Phase 4: Pi adapter and Pi-native UX
+
+Developer roster U1a adds an unwired trusted policy loader and Git replay tests.
+Live developer assignment binding remains U1b; this does not satisfy the
+product adapter gate below.
 
 Implement Pi model/auth discovery, supervised RPC sessions, per-run
 coordinators, scope epochs, tool presets, model profile/tag resolution, the Pi
