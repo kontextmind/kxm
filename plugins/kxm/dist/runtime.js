@@ -17564,7 +17564,8 @@ function capabilityFromRow(row) {
 }
 
 // plugins/kxm/src/vnext-engine-fold.ts
-var VNEXT_RUN_STATE_SCHEMA = "kxm.run-state.v1";
+var VNEXT_RUN_STATE_SCHEMA = "kxm.run-state.v2";
+var FOLD_PANEL_BOUND = 1;
 var RUN_STATUSES = /* @__PURE__ */ new Set(["created", "preparing", "running", "waiting", "blocked_uncertain", "cancelling", "cancelled", "completed", "failed"]);
 var TERMINAL_RUN = /* @__PURE__ */ new Set(["cancelled", "completed", "failed"]);
 var STEP_STATUSES = /* @__PURE__ */ new Set(["pending", "preparing", "running", "passed", "failed", "cancelled"]);
@@ -17601,6 +17602,51 @@ var ATTEMPT_EDGES = {
   executing: /* @__PURE__ */ new Set(["settling"]),
   settling: /* @__PURE__ */ new Set(["terminal"])
 };
+function emptyPanel() {
+  return { order: [], assignments: /* @__PURE__ */ Object.create(null) };
+}
+function panelAssignmentId(current) {
+  return current.panel.order[0];
+}
+function panelAssignment(current, assignmentId) {
+  const id = assignmentId ?? panelAssignmentId(current);
+  return id ? current.panel.assignments[id] : void 0;
+}
+function panelAttemptId(current) {
+  return panelAssignment(current)?.currentAttemptId;
+}
+function panelAttempt(current) {
+  const assignment = panelAssignment(current);
+  const attemptId = assignment?.currentAttemptId;
+  return attemptId ? assignment.attempts[attemptId] : void 0;
+}
+function findPanelAttempt(panel, attemptId) {
+  for (const assignmentId of panel.order) {
+    const assignment = panel.assignments[assignmentId];
+    const attempt = assignment?.attempts[attemptId];
+    if (attempt) return { assignmentId, assignment, attempt };
+  }
+  return void 0;
+}
+function putAssignment(current, assignmentId, assignment) {
+  return {
+    ...current,
+    panel: {
+      order: current.panel.order,
+      assignments: { ...current.panel.assignments, [assignmentId]: assignment }
+    }
+  };
+}
+function vnextFoldPanelAttemptIds(step) {
+  if (!step) return [];
+  const ids = [];
+  for (const assignmentId of step.panel.order) {
+    const assignment = step.panel.assignments[assignmentId];
+    if (!assignment) continue;
+    for (const attemptId of Object.keys(assignment.attempts)) ids.push(attemptId);
+  }
+  return ids;
+}
 function foldVnextRunState(run, plan, events, options = {}) {
   if (events.length === 0) {
     throw runtimeError("run_events_illegal", run.runId, "run has no events");
@@ -17636,7 +17682,7 @@ function foldVnextRunState(run, plan, events, options = {}) {
       throw runtimeError("run_plan_missing", run.runId, "step events require a pinned run plan");
     }
     if (state.currentStep?.effectState === "blocked_uncertain") {
-      const namesFrozen = event.payload.stepId === state.currentStep.stepId || event.payload.attemptId === state.currentStep.attemptId || event.payload.assignmentId === state.currentStep.assignmentId || event.payload.effect !== void 0 && typeof event.payload.effect === "object" && event.payload.effect !== null && "id" in event.payload.effect && event.payload.effect.id === state.currentStep.effectId;
+      const namesFrozen = event.payload.stepId === state.currentStep.stepId || event.payload.attemptId === panelAttemptId(state.currentStep) || event.payload.assignmentId === panelAssignmentId(state.currentStep) || event.payload.effect !== void 0 && typeof event.payload.effect === "object" && event.payload.effect !== null && "id" in event.payload.effect && event.payload.effect.id === state.currentStep.effectId;
       const blockedFamily = event.eventType.startsWith("step.") || event.eventType.startsWith("assignment.") || event.eventType.startsWith("attempt.") || event.eventType.startsWith("effect.");
       if (blockedFamily && namesFrozen) {
         throw runtimeError("run_events_illegal", run.runId, "blocked_uncertain freezes the gate attempt");
@@ -17786,7 +17832,7 @@ function assertTerminalRunStatus(state, plan, status, event) {
     if ((state.status === "created" || state.status === "preparing") && state.cancelRequested) return;
     if (state.status === "cancelling") {
       if (!state.currentStep) return;
-      if (state.currentStep.status === "cancelled" && (!state.currentStep.attemptId || state.currentStep.attemptStatus === "terminal")) {
+      if (state.currentStep.status === "cancelled" && (!panelAttemptId(state.currentStep) || panelAttempt(state.currentStep)?.status === "terminal")) {
         return;
       }
     }
@@ -17795,8 +17841,9 @@ function assertTerminalRunStatus(state, plan, status, event) {
   if (status === "failed") {
     if (state.lastTerminalTransition === "failed") return;
     if (isProvenFailure(state, plan)) return;
-    if (event.payload.reason === "executing_unrecorded" && state.currentStep?.attemptStatus === "starting") {
-      const step = plan?.steps[state.currentStep.stepId];
+    const currentStep = state.currentStep;
+    if (event.payload.reason === "executing_unrecorded" && currentStep && panelAttempt(currentStep)?.status === "starting") {
+      const step = plan?.steps[currentStep.stepId];
       if (step?.kind === "gate") {
         throw runtimeError("run_events_illegal", state.runId, "executing_unrecorded is illegal on a gate step");
       }
@@ -17809,7 +17856,7 @@ function isProvenFailure(state, plan) {
   const current = state.currentStep;
   if (current) {
     const stepTerminal = current.status === "passed" || current.status === "failed" || current.status === "cancelled";
-    const settled = (!current.attemptId || current.attemptStatus === "terminal") && (!current.assignmentId || current.assignmentStatus === "terminal");
+    const settled = (!panelAttemptId(current) || panelAttempt(current)?.status === "terminal") && (!panelAssignmentId(current) || panelAssignment(current)?.status === "terminal");
     if (stepTerminal && settled) {
       if ((state.recordedResultClass === "outcome_unknown" || state.recordedResultClass === "producer_rejected") && current.status === "failed") {
         return true;
@@ -17876,7 +17923,7 @@ function foldStepEntered(state, plan, event) {
   state.lastOutcomeEvent = void 0;
   state.recordedOutcome = void 0;
   state.recordedResultClass = void 0;
-  state.currentStep = { stepId, stepAttempt, status: "pending" };
+  state.currentStep = { stepId, stepAttempt, status: "pending", panel: emptyPanel() };
 }
 function foldStepStatus(state, event) {
   requireActiveStep(state, "step.status_changed");
@@ -17893,7 +17940,7 @@ function foldStepStatus(state, event) {
     throw runtimeError("run_events_illegal", state.runId, `illegal step transition ${state.currentStep.status} -> ${status}`);
   }
   if (status === "passed" || status === "failed" || status === "cancelled") {
-    if (state.currentStep.attemptId && state.currentStep.attemptStatus !== "terminal") {
+    if (panelAttemptId(state.currentStep) && panelAttempt(state.currentStep)?.status !== "terminal") {
       throw runtimeError("run_events_illegal", state.runId, "terminal step status requires a terminal attempt");
     }
     if (status === "passed" && state.recordedOutcome !== "passed") {
@@ -17912,7 +17959,7 @@ function foldOutcome(state, plan, event) {
   if (stepId !== current.stepId || stepAttempt !== current.stepAttempt) {
     throw runtimeError("run_events_illegal", state.runId, "step.outcome_recorded does not match the active attempt");
   }
-  if (current.attemptStatus !== "terminal" || current.assignmentStatus !== "terminal") {
+  if (panelAttempt(current)?.status !== "terminal" || panelAssignment(current)?.status !== "terminal") {
     throw runtimeError("run_events_illegal", state.runId, "step.outcome_recorded requires a terminal attempt and assignment");
   }
   if (current.outcome !== void 0) {
@@ -17993,7 +18040,7 @@ function assertTransitionPayload(runId, selected, event) {
 function foldAssignmentCreated(state, event) {
   requireActiveStep(state, "assignment.created");
   const current = state.currentStep;
-  if (current.assignmentId) {
+  if (current.panel.order.length >= FOLD_PANEL_BOUND) {
     throw runtimeError("run_events_illegal", state.runId, "assignment.created repeats an assignment");
   }
   const assignmentId = stringPayload(event, "assignmentId");
@@ -18002,35 +18049,51 @@ function foldAssignmentCreated(state, event) {
   if (stepId !== current.stepId || stepAttempt !== current.stepAttempt) {
     throw runtimeError("run_events_illegal", state.runId, "assignment.created does not match the active step attempt");
   }
-  state.currentStep = { ...current, assignmentId, assignmentStatus: "created" };
+  if (current.panel.assignments[assignmentId]) {
+    throw runtimeError("run_events_illegal", state.runId, "assignment.created repeats an assignment");
+  }
+  state.currentStep = {
+    ...current,
+    panel: {
+      order: [...current.panel.order, assignmentId],
+      assignments: {
+        ...current.panel.assignments,
+        [assignmentId]: { status: "created", attempts: /* @__PURE__ */ Object.create(null) }
+      }
+    }
+  };
 }
 function foldAssignmentAdvance(state, plan, event, next) {
   requireActiveStep(state, `assignment.${next}`);
   const current = state.currentStep;
-  if (!current.assignmentId || !current.assignmentStatus) {
+  if (current.panel.order.length === 0) {
     throw runtimeError("run_events_illegal", state.runId, `assignment ${next} has no active assignment`);
   }
   const assignmentId = stringPayload(event, "assignmentId");
-  if (assignmentId !== current.assignmentId) {
+  const assignment = current.panel.assignments[assignmentId];
+  if (!assignment) {
     throw runtimeError("run_events_illegal", state.runId, "assignment event assignmentId does not match the active assignment");
   }
   if (!ASSIGNMENT_STATUSES.has(next)) {
     throw runtimeError("run_events_illegal", state.runId, `illegal assignment status ${next}`);
   }
   const step = requireStep(plan, current.stepId, state.runId);
-  const allowed = ASSIGNMENT_EDGES[current.assignmentStatus];
-  const noStartProof = step.kind === "gate" && current.assignmentStatus === "dispatched" && next === "result_recorded" && (current.effectState === "observed-no-start" || current.effectState === "settled-proof");
+  const allowed = ASSIGNMENT_EDGES[assignment.status];
+  const noStartProof = step.kind === "gate" && assignment.status === "dispatched" && next === "result_recorded" && (current.effectState === "observed-no-start" || current.effectState === "settled-proof");
   if (!allowed?.has(next) && !noStartProof) {
-    throw runtimeError("run_events_illegal", state.runId, `illegal assignment transition ${current.assignmentStatus} -> ${next}`);
+    throw runtimeError("run_events_illegal", state.runId, `illegal assignment transition ${assignment.status} -> ${next}`);
   }
   if (next === "dispatched") {
     stringPayload(event, "capabilityHash");
   }
+  let nextAssignment = { ...assignment, status: next, attempts: { ...assignment.attempts } };
   if (next === "result_recorded") {
     const resultClass = stringPayload(event, "resultClass");
     if (!RESULT_CLASSES.has(resultClass)) {
       throw runtimeError("run_events_illegal", state.runId, `illegal resultClass ${resultClass}`);
     }
+    const attemptId = assignment.currentAttemptId;
+    const attempt = attemptId ? assignment.attempts[attemptId] : void 0;
     if (resultClass === "outcome") {
       const outcome = stringPayload(event, "outcome");
       if (!step.outcomes.includes(outcome)) {
@@ -18045,6 +18108,12 @@ function foldAssignmentAdvance(state, plan, event, next) {
         }
       }
       state.recordedOutcome = outcome;
+      if (attemptId && attempt) {
+        nextAssignment = {
+          ...nextAssignment,
+          attempts: { ...nextAssignment.attempts, [attemptId]: { ...attempt, resultClass, outcome } }
+        };
+      }
     } else if (event.payload.outcome !== void 0) {
       throw runtimeError("run_events_illegal", state.runId, "non-outcome resultClass must not set outcome");
     } else {
@@ -18060,6 +18129,12 @@ function foldAssignmentAdvance(state, plan, event, next) {
         }
       }
       state.recordedOutcome = void 0;
+      if (attemptId && attempt) {
+        nextAssignment = {
+          ...nextAssignment,
+          attempts: { ...nextAssignment.attempts, [attemptId]: { ...attempt, resultClass } }
+        };
+      }
     }
     state.recordedResultClass = resultClass;
   }
@@ -18081,43 +18156,63 @@ function foldAssignmentAdvance(state, plan, event, next) {
     } else {
       throw runtimeError("run_events_illegal", state.runId, "assignment.terminal requires a prior result_recorded class");
     }
+    const attemptId = nextAssignment.currentAttemptId;
+    const attempt = attemptId ? nextAssignment.attempts[attemptId] : void 0;
+    if (attemptId && attempt && attempt.outcome === void 0) {
+      nextAssignment = {
+        ...nextAssignment,
+        attempts: { ...nextAssignment.attempts, [attemptId]: { ...attempt, outcome } }
+      };
+    }
   }
-  state.currentStep = { ...current, assignmentStatus: next };
+  state.currentStep = putAssignment(current, assignmentId, nextAssignment);
 }
 function foldAttemptCreated(state, event) {
   requireActiveStep(state, "attempt.created");
   const current = state.currentStep;
-  if (current.attemptId) {
+  const assignmentId = stringPayload(event, "assignmentId");
+  const assignment = current.panel.assignments[assignmentId];
+  if (!assignment) {
+    throw runtimeError("run_events_illegal", state.runId, "attempt.created assignmentId does not match");
+  }
+  if (assignment.currentAttemptId || Object.keys(assignment.attempts).length >= FOLD_PANEL_BOUND) {
     throw runtimeError("run_events_illegal", state.runId, "attempt.created repeats an attempt");
   }
   const attemptId = stringPayload(event, "attemptId");
-  const assignmentId = stringPayload(event, "assignmentId");
-  if (assignmentId !== current.assignmentId) {
-    throw runtimeError("run_events_illegal", state.runId, "attempt.created assignmentId does not match");
+  if (findPanelAttempt(current.panel, attemptId)) {
+    throw runtimeError("run_events_illegal", state.runId, "attempt.created repeats an attempt");
   }
-  state.currentStep = { ...current, attemptId, attemptStatus: "created" };
+  state.currentStep = putAssignment(current, assignmentId, {
+    ...assignment,
+    currentAttemptId: attemptId,
+    attempts: { ...assignment.attempts, [attemptId]: { status: "created" } }
+  });
 }
 function foldAttemptStatus(state, plan, event) {
   requireActiveStep(state, "attempt.status_changed");
   const current = state.currentStep;
-  if (!current.attemptId || !current.attemptStatus) {
+  if (vnextFoldPanelAttemptIds(current).length === 0) {
     throw runtimeError("run_events_illegal", state.runId, "attempt.status_changed has no active attempt");
   }
   const attemptId = stringPayload(event, "attemptId");
-  const status = stringPayload(event, "status");
-  if (attemptId !== current.attemptId) {
+  const located = findPanelAttempt(current.panel, attemptId);
+  if (!located) {
     throw runtimeError("run_events_illegal", state.runId, "attempt.status_changed does not match the active attempt");
   }
+  const status = stringPayload(event, "status");
   if (!ATTEMPT_STATUSES.has(status)) {
     throw runtimeError("run_events_illegal", state.runId, `illegal attempt status ${status}`);
   }
-  const allowed = ATTEMPT_EDGES[current.attemptStatus];
+  const allowed = ATTEMPT_EDGES[located.attempt.status];
   const step = requireStep(plan, current.stepId, state.runId);
-  const noStartSettling = step.kind === "gate" && current.attemptStatus === "starting" && status === "settling" && (current.effectState === "observed-no-start" || current.effectState === "settled-proof");
+  const noStartSettling = step.kind === "gate" && located.attempt.status === "starting" && status === "settling" && (current.effectState === "observed-no-start" || current.effectState === "settled-proof");
   if (!allowed?.has(status) && !noStartSettling) {
-    throw runtimeError("run_events_illegal", state.runId, `illegal attempt transition ${current.attemptStatus} -> ${status}`);
+    throw runtimeError("run_events_illegal", state.runId, `illegal attempt transition ${located.attempt.status} -> ${status}`);
   }
-  state.currentStep = { ...current, attemptStatus: status };
+  state.currentStep = putAssignment(current, located.assignmentId, {
+    ...located.assignment,
+    attempts: { ...located.assignment.attempts, [attemptId]: { ...located.attempt, status } }
+  });
 }
 function requireGateEffect(state, plan, event) {
   requireActiveStep(state, event.eventType);
@@ -18142,7 +18237,7 @@ function assertEffectIdentity(state, event, current) {
   const stepAttempt = integerPayload(event, "stepAttempt");
   const assignmentId = stringPayload(event, "assignmentId");
   const attemptId = stringPayload(event, "attemptId");
-  if (stepId !== current.stepId || stepAttempt !== current.stepAttempt || assignmentId !== current.assignmentId || attemptId !== current.attemptId) {
+  if (stepId !== current.stepId || stepAttempt !== current.stepAttempt || assignmentId !== panelAssignmentId(current) || attemptId !== panelAttemptId(current)) {
     throw runtimeError("run_events_illegal", state.runId, `${event.eventType} identity does not match the active attempt`);
   }
   if (current.effectId && current.effectId !== effectId) {
@@ -18151,7 +18246,7 @@ function assertEffectIdentity(state, event, current) {
 }
 function foldEffectIntent(state, plan, event) {
   const current = requireGateEffect(state, plan, event);
-  if (current.attemptStatus !== "starting" || current.effectState) {
+  if (panelAttempt(current)?.status !== "starting" || current.effectState) {
     throw runtimeError("run_events_illegal", state.runId, "effect.intent_recorded requires a starting attempt with no effect");
   }
   const effectId = event.payload.effect.id;
@@ -18162,7 +18257,7 @@ function foldEffectDispatched(state, plan, event) {
   if (current.effectState !== "intent") {
     throw runtimeError("run_events_illegal", state.runId, "effect.dispatched requires effect intent");
   }
-  if (current.assignmentStatus !== "executing" || current.attemptStatus !== "executing") {
+  if (panelAssignment(current)?.status !== "executing" || panelAttempt(current)?.status !== "executing") {
     throw runtimeError("run_events_illegal", state.runId, "effect.dispatched requires executing assignment and attempt");
   }
   state.currentStep = { ...current, effectState: "dispatched" };
@@ -18193,7 +18288,7 @@ function foldEffectObserved(state, plan, event, options) {
   if (expectedKind && kind !== expectedKind) {
     throw runtimeError("run_events_illegal", state.runId, "effect.observed receipt.kind does not match the pinned definition");
   }
-  const looked = options.observationLookup?.(current.attemptId, receiptId);
+  const looked = options.observationLookup?.(panelAttemptId(current), receiptId);
   let effectState = "observed-unknown";
   if (looked) {
     if (looked.completeness === "complete") {
@@ -18312,6 +18407,50 @@ function integerPayload(event, field) {
   }
   return value;
 }
+function freezePanel(panel) {
+  const assignments = /* @__PURE__ */ Object.create(null);
+  for (const assignmentId of Object.keys(panel.assignments).sort()) {
+    const assignment = panel.assignments[assignmentId];
+    const attempts = /* @__PURE__ */ Object.create(null);
+    for (const attemptId of Object.keys(assignment.attempts).sort()) {
+      attempts[attemptId] = Object.freeze(omitUndefined({ ...assignment.attempts[attemptId] }));
+    }
+    assignments[assignmentId] = Object.freeze(omitUndefined({
+      status: assignment.status,
+      ...assignment.currentAttemptId !== void 0 ? { currentAttemptId: assignment.currentAttemptId } : {},
+      attempts: Object.freeze(attempts)
+    }));
+  }
+  return Object.freeze({
+    order: Object.freeze([...panel.order]),
+    assignments: Object.freeze(assignments)
+  });
+}
+function freezeCurrentStep(current) {
+  const panel = freezePanel(current.panel);
+  const assignmentId = panel.order.length === 1 ? panel.order[0] : void 0;
+  const assignment = assignmentId ? panel.assignments[assignmentId] : void 0;
+  const attemptId = assignment?.currentAttemptId;
+  const attempt = attemptId ? assignment?.attempts[attemptId] : void 0;
+  return Object.freeze(omitUndefined({
+    stepId: current.stepId,
+    stepAttempt: current.stepAttempt,
+    status: current.status,
+    panel,
+    ...assignmentId !== void 0 ? { assignmentId } : {},
+    ...assignment ? { assignmentStatus: assignment.status } : {},
+    ...attemptId !== void 0 ? { attemptId } : {},
+    ...attempt ? { attemptStatus: attempt.status } : {},
+    ...current.outcome !== void 0 ? { outcome: current.outcome } : {},
+    ...current.effectId !== void 0 ? { effectId: current.effectId } : {},
+    ...current.effectState !== void 0 ? { effectState: current.effectState } : {},
+    ...current.observationId !== void 0 ? { observationId: current.observationId } : {},
+    ...current.observationHash !== void 0 ? { observationHash: current.observationHash } : {},
+    ...current.observationCompleteness !== void 0 ? { observationCompleteness: current.observationCompleteness } : {},
+    ...current.settledOutcome !== void 0 ? { settledOutcome: current.settledOutcome } : {},
+    ...current.evidenceRefs !== void 0 ? { evidenceRefs: current.evidenceRefs } : {}
+  }));
+}
 function freezeState(state) {
   const frozen = {
     schema: VNEXT_RUN_STATE_SCHEMA,
@@ -18319,7 +18458,7 @@ function freezeState(state) {
     status: state.status,
     ...state.runPlanHash !== void 0 ? { runPlanHash: state.runPlanHash } : {},
     ...state.pendingStepId !== void 0 ? { pendingStepId: state.pendingStepId } : {},
-    ...state.currentStep !== void 0 ? { currentStep: Object.freeze({ ...omitUndefined(state.currentStep) }) } : {},
+    ...state.currentStep !== void 0 ? { currentStep: freezeCurrentStep(state.currentStep) } : {},
     stepAttempts: Object.freeze({ ...state.stepAttempts }),
     edgeTransitions: Object.freeze({ ...state.edgeTransitions }),
     transitionsUsed: state.transitionsUsed,
@@ -19201,8 +19340,10 @@ function unregisterVnextRuntimeHandle(storePath) {
   owner.handles = Math.max(0, owner.handles - 1);
   maybeDelete(storePath, owner);
 }
-function vnextAttemptController(storePath, runId) {
-  return owners.get(storePath)?.attempts.get(runId);
+function vnextAttemptControllers(storePath, runId) {
+  const runAttempts = owners.get(storePath)?.attempts.get(runId);
+  if (!runAttempts) return [];
+  return [...runAttempts.values()];
 }
 
 // plugins/kxm/src/vnext-runtime.ts
@@ -19448,7 +19589,24 @@ function foldStoredVnextRun(context, run) {
     }
   } : {});
   if (envelope) verifyVnextGateEvidence(context.eventStore, run, envelope, events, state);
+  assertStoredProjection(context, run);
   return state;
+}
+function storedProjectionSchema(stateJson) {
+  try {
+    const parsed = JSON.parse(stateJson);
+    return typeof parsed.schema === "string" ? parsed.schema : void 0;
+  } catch {
+    return void 0;
+  }
+}
+function assertStoredProjection(context, run) {
+  const stored = context.eventStore.runState(run.runId);
+  if (!stored) return;
+  const schema = storedProjectionSchema(stored.state);
+  if (schema !== VNEXT_RUN_STATE_SCHEMA) {
+    throw runtimeError("run_projection_divergent", run.runId, "stored run_state does not match the folded projection");
+  }
 }
 function readVnextRunStatus(context, run) {
   return foldStoredVnextRun(context, run).status;
@@ -19480,6 +19638,13 @@ function rebuildVnextRunProjection(context, runId) {
   return persistProjection(context, stored, state, last.occurredAt);
 }
 function persistVnextRunState(context, runId, state, lastSequence) {
+  const stored = context.eventStore.runState(runId);
+  if (stored) {
+    const schema = storedProjectionSchema(stored.state);
+    if (schema !== VNEXT_RUN_STATE_SCHEMA) {
+      throw runtimeError("run_projection_divergent", runId, "stored run_state does not match the folded projection");
+    }
+  }
   context.eventStore.upsertRunState({
     runId,
     lastSequence,
@@ -19490,7 +19655,7 @@ function cancelVnextRun(context, runId, options = {}) {
   const commandId = options.commandId ?? newVnextCommandId();
   const now = options.now ?? (/* @__PURE__ */ new Date()).toISOString();
   const monotonicNs = options.monotonicNs ?? vnextMonotonicNs();
-  let abortController;
+  const abortControllers = [];
   const result = context.eventStore.transaction(() => {
     const prior = context.eventStore.command(commandId);
     if (prior) {
@@ -19529,7 +19694,7 @@ function cancelVnextRun(context, runId, options = {}) {
       events.push(event);
       return event;
     };
-    const activeAttempt = Boolean(folded.currentStep?.attemptId);
+    const activeAttempt = Boolean(folded.currentStep?.attemptId) || vnextFoldPanelAttemptIds(folded.currentStep).length > 0;
     push("run.cancel_requested", {
       actor: { kind: "runtime", id: context.homeRuntimeId },
       reason: "operator_cancel"
@@ -19538,13 +19703,17 @@ function cancelVnextRun(context, runId, options = {}) {
     if (folded.status === "running" && activeAttempt) {
       status = "cancelling";
       push("run.status_changed", { status: "cancelling", reason: "operator_cancel" });
-      if (folded.currentStep?.attemptId) {
-        const capability = context.eventStore.capabilityByAttempt(folded.currentStep.attemptId);
+      const attemptIds = new Set(vnextFoldPanelAttemptIds(folded.currentStep));
+      if (folded.currentStep?.attemptId) attemptIds.add(folded.currentStep.attemptId);
+      for (const attemptId of attemptIds) {
+        const capability = context.eventStore.capabilityByAttempt(attemptId);
         if (capability && capability.state === "issued") {
-          context.eventStore.settleCapability(folded.currentStep.attemptId, "revoked");
+          context.eventStore.settleCapability(attemptId, "revoked");
         }
       }
-      abortController = vnextAttemptController(context.eventStore.path, runId)?.controller;
+      for (const owned of vnextAttemptControllers(context.eventStore.path, runId)) {
+        abortControllers.push(owned.controller);
+      }
     } else if (folded.status === "running" && !activeAttempt) {
       push("run.status_changed", { status: "cancelling", reason: "operator_cancel" });
       push("run.status_changed", { status: "cancelled", reason: "operator_cancel" });
@@ -19564,7 +19733,7 @@ function cancelVnextRun(context, runId, options = {}) {
     });
     return { run: { ...run, status, updatedAt: now }, idempotent: false, events };
   });
-  abortController?.abort();
+  for (const controller of abortControllers) controller.abort();
   return result;
 }
 function vnextRunRevisionDrift(run, bundle) {

@@ -10,7 +10,7 @@ import { removeTempDir } from "./helpers.ts";
 import { engineProject } from "./helpers/vnext-project.ts";
 import { loadVnextProject, parseRestrictedYaml, validateRunEvent } from "../plugins/kxm/src/vnext-config.ts";
 import { compileVnextWorkflow } from "../plugins/kxm/src/vnext-engine-compile.ts";
-import { foldVnextRunState } from "../plugins/kxm/src/vnext-engine-fold.ts";
+import { FOLD_PANEL_BOUND, foldVnextRunState } from "../plugins/kxm/src/vnext-engine-fold.ts";
 import {
   hashVnextRunPlanEnvelope,
   loadVnextRunPlanEnvelope,
@@ -30,9 +30,12 @@ import {
   admitVnextRun,
   bindVnextSchedulerPolicy,
   enqueueVnextScheduledRun,
+  registerVnextAttemptController,
   releaseVnextRun,
+  unregisterVnextAttemptController,
   vnextActiveScheduledRuns,
   vnextAttemptController,
+  vnextAttemptControllers,
   vnextQueuedScheduledRuns,
 } from "../plugins/kxm/src/vnext-runtime-owner.ts";
 import {
@@ -50,6 +53,7 @@ import {
   cancelVnextRun,
   closeVnextRuntimeContext,
   openVnextRuntimeContext,
+  readVnextRunStatus,
   rebuildVnextRunProjection,
 } from "../plugins/kxm/src/vnext-runtime.ts";
 import { vnextCanonicalJson as canonicalJson, type JsonValue } from "../plugins/kxm/src/vnext-config.ts";
@@ -91,6 +95,7 @@ test("agent-only end to end advances, folds, and matches run_state bytes", async
       pinVnextCompiledPlan(context, bundle, accepted.run.runId);
       const driven = await driveVnextRun(context, accepted.run.runId, outcomes(["passed", "failed", "passed", "passed", "passed"]));
       assert.equal(driven.state.status, "completed");
+      assert.equal(driven.state.schema, "kxm.run-state.v2");
       assert.equal(driven.state.stepAttempts.a, 2);
       assert.equal(driven.state.stepAttempts.b, 2);
       assert.equal(driven.state.stepAttempts.c, 1);
@@ -495,7 +500,7 @@ test("synchronous producer throw settles as producer_rejected without leaking th
       scanForCapability(driven, "drive", hits);
       scanForCapability(caught, "caught", hits);
       assert.deepEqual(hits, []);
-      assert.equal(vnextAttemptController(context.eventStore.path, accepted.run.runId), undefined);
+      assert.equal(vnextAttemptControllers(context.eventStore.path, accepted.run.runId).length, 0);
       const again = await driveVnextRun(context, accepted.run.runId, outcomes(["passed"]));
       assert.equal(again.state.status, "failed");
       assert.equal(again.state.terminalReason, driven.state.terminalReason);
@@ -1127,7 +1132,16 @@ test("illegal folds fail closed", () => {
   assert.throws(() => foldVnextRunState(run, plan, running), /run_events_illegal/);
 
   assert.equal(foldVnextRunState(run, plan, foldPrefix(run, plan, "running")).status, "running");
-  assert.equal(foldVnextRunState(run, plan, foldPrefix(run, plan, "executing")).currentStep?.attemptStatus, "executing");
+  const executingState = foldVnextRunState(run, plan, foldPrefix(run, plan, "executing"));
+  assert.equal(executingState.schema, "kxm.run-state.v2");
+  assert.equal(FOLD_PANEL_BOUND, 1);
+  assert.deepEqual(executingState.currentStep?.panel.order, [ASG]);
+  assert.equal(executingState.currentStep?.assignmentId, ASG);
+  assert.equal(executingState.currentStep?.attemptId, ATM);
+  assert.equal(executingState.currentStep?.assignmentStatus, "executing");
+  assert.equal(executingState.currentStep?.attemptStatus, "executing");
+  assert.equal(executingState.currentStep?.panel.assignments[ASG]?.currentAttemptId, ATM);
+  assert.equal(executingState.currentStep?.panel.assignments[ASG]?.attempts[ATM]?.status, "executing");
   const starting = foldPrefix(run, plan, "executing").slice(0, 10);
   assert.equal(foldVnextRunState(run, plan, starting).currentStep?.attemptStatus, "starting");
   assert.equal(
@@ -1268,6 +1282,123 @@ test("illegal folds fail closed", () => {
   assert.equal(cancelledCreated.status, "cancelled");
   assert.equal(cancelledCreated.cancelRequested, true);
   assert.equal(foldVnextRunState(oneStepRun, oneStep, foldPrefix(oneStepRun, oneStep, "completed")).status, "completed");
+  const afterAssignment = foldPrefix(run, plan, "executing").slice(0, 6);
+  illegal([
+    ...afterAssignment,
+    event(run, afterAssignment.length + 1, "assignment.created", { assignmentId: "asg_01JSECOND0000000000000000", stepId: "a", stepAttempt: 1, status: "created" }),
+  ]);
+  const afterAttempt = foldPrefix(run, plan, "executing").slice(0, 8);
+  illegal([
+    ...afterAttempt,
+    event(run, afterAttempt.length + 1, "attempt.created", { attemptId: "atm_01JSECOND00000000000000", assignmentId: ASG, status: "created" }),
+  ]);
+  illegal([
+    ...foldPrefix(run, plan, "executing"),
+    event(run, foldPrefix(run, plan, "executing").length + 1, "attempt.status_changed", { attemptId: "atm_01JUNKNOWN0000000000000", status: "settling" }),
+  ]);
+});
+
+test("owner map is exact per attempt, refuses duplicates, and cancel aborts one run", async () => {
+  const storePath = join(tmpdir(), `kxm-owner-${process.pid}-${Date.now()}`);
+  const runA = "run_01JOWNERA00000000000000000";
+  const runB = "run_01JOWNERB00000000000000000";
+  const first = { attemptId: "atm_01JOWNER1A0000000000000", controller: new AbortController() };
+  const sibling = { attemptId: "atm_01JOWNER1B0000000000000", controller: new AbortController() };
+  const other = { attemptId: "atm_01JOWNER2A0000000000000", controller: new AbortController() };
+  registerVnextAttemptController(storePath, runA, first);
+  registerVnextAttemptController(storePath, runA, sibling);
+  registerVnextAttemptController(storePath, runB, other);
+  assert.equal(vnextAttemptController(storePath, runA, first.attemptId)?.attemptId, first.attemptId);
+  assert.equal(vnextAttemptControllers(storePath, runA).length, 2);
+  assert.throws(
+    () => registerVnextAttemptController(storePath, runA, { attemptId: first.attemptId, controller: new AbortController() }),
+    /attempt_controller_duplicate/,
+  );
+  unregisterVnextAttemptController(storePath, runA, first.attemptId);
+  assert.equal(vnextAttemptController(storePath, runA, first.attemptId), undefined);
+  assert.equal(vnextAttemptController(storePath, runA, sibling.attemptId)?.attemptId, sibling.attemptId);
+  assert.equal(vnextAttemptController(storePath, runB, other.attemptId)?.attemptId, other.attemptId);
+  unregisterVnextAttemptController(storePath, runA, sibling.attemptId);
+  unregisterVnextAttemptController(storePath, runB, other.attemptId);
+  assert.equal(vnextAttemptControllers(storePath, runA).length, 0);
+
+  const { root, stateRoot } = engineProject("kxm-engine-owner-cancel-");
+  try {
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const hanging = acceptVnextRun(context, bundle, { workflowId: "one-step", prompt: "owner-cancel" });
+      pinVnextCompiledPlan(context, bundle, hanging.run.runId);
+      let resume: (value: { outcome: string }) => void = () => undefined;
+      const deferred = new Promise<{ outcome: string }>((resolve) => {
+        resume = resolve;
+      });
+      const extra = new AbortController();
+      const survivor = new AbortController();
+      const drive = driveVnextRun(context, hanging.run.runId, createVnextSimulatedProducer(async () => deferred));
+      const started = Date.now();
+      while (vnextAttemptControllers(context.eventStore.path, hanging.run.runId).length === 0) {
+        if (Date.now() - started > 2000) throw new Error("attempt controller was not registered");
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      registerVnextAttemptController(context.eventStore.path, hanging.run.runId, {
+        attemptId: "atm_01JEXTRA0000000000000000",
+        controller: extra,
+      });
+      registerVnextAttemptController(context.eventStore.path, "run_01JSURVIVE000000000000000", {
+        attemptId: "atm_01JSURVIVE0000000000000",
+        controller: survivor,
+      });
+      const pending = cancelVnextRun(context, hanging.run.runId);
+      assert.equal(pending.run.status, "cancelling");
+      assert.equal(extra.signal.aborted, true);
+      assert.equal(survivor.signal.aborted, false);
+      resume({ outcome: "passed" });
+      const settled = await drive;
+      assert.equal(settled.state.status, "cancelled");
+      unregisterVnextAttemptController(context.eventStore.path, hanging.run.runId, "atm_01JEXTRA0000000000000000");
+      unregisterVnextAttemptController(context.eventStore.path, "run_01JSURVIVE000000000000000", "atm_01JSURVIVE0000000000000");
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("stale v1 run_state fails closed on read, drive, and cancel without rewrite", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-v1-proj-");
+  try {
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "one-step", prompt: "v1-proj" });
+      pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+      const driven = await driveVnextRun(context, accepted.run.runId, outcomes(["passed"]));
+      assert.equal(driven.state.status, "completed");
+      assert.equal(driven.state.schema, "kxm.run-state.v2");
+      const stored = context.eventStore.runState(accepted.run.runId)!;
+      const v1 = stored.state.replaceAll("kxm.run-state.v2", "kxm.run-state.v1");
+      assert.notEqual(v1, stored.state);
+      const db = new DatabaseSync(context.eventStore.path);
+      db.prepare("UPDATE run_state SET state = ? WHERE run_id = ?").run(v1, accepted.run.runId);
+      db.close();
+      assert.equal(context.eventStore.runState(accepted.run.runId)!.state, v1);
+      const run = context.eventStore.run(accepted.run.runId)!;
+      assert.throws(() => readVnextRunStatus(context, run), /run_projection_divergent/);
+      assert.equal(context.eventStore.runState(accepted.run.runId)!.state, v1);
+      await assert.rejects(() => driveVnextRun(context, accepted.run.runId, outcomes(["passed"])), /run_projection_divergent/);
+      assert.equal(context.eventStore.runState(accepted.run.runId)!.state, v1);
+      assert.throws(() => cancelVnextRun(context, accepted.run.runId), /run_projection_divergent/);
+      assert.equal(context.eventStore.runState(accepted.run.runId)!.state, v1);
+      assert.throws(() => rebuildVnextRunProjection(context, accepted.run.runId), /run_projection_divergent/);
+      assert.equal(context.eventStore.runState(accepted.run.runId)!.state, v1);
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
 });
 
 test("full-shape rehydration rejects malformed envelopes with matching hashes", () => {

@@ -25,6 +25,7 @@ import {
   unregisterVnextAttemptController,
   vnextAdmittedToken,
   vnextAttemptController,
+  vnextAttemptControllers,
   vnextGateHold,
   vnextSchedulerPolicy,
 } from "./vnext-runtime-owner.ts";
@@ -777,7 +778,7 @@ function prepareDispatch(
   const run = requireRun(context, runId);
   const plan = rehydrateVnextCompiledPlanFromStore(context.eventStore, run);
   const state = foldStoredVnextRun(context, run);
-  if (state.status === "cancelling" && !vnextAttemptController(context.eventStore.path, runId)) {
+  if (state.status === "cancelling" && vnextAttemptControllers(context.eventStore.path, runId).length === 0) {
     return {
       kind: "return",
       state,
@@ -1458,7 +1459,7 @@ function classifyRecoverableGateAttempt(
     && current.assignmentId === row.assignmentId
     && current.effectId === row.effectId
     && current.stepId === row.stepId;
-  const controller = vnextAttemptController(context.eventStore.path, row.runId);
+  const controller = vnextAttemptController(context.eventStore.path, row.runId, row.attemptId);
   if (row.gateKind === "command") {
     const hold = vnextGateHold(context.eventStore.path, row.runId);
     const admittedToken = vnextAdmittedToken(context.eventStore.path, row.runId);

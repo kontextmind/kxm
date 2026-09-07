@@ -578,12 +578,16 @@ It does not replace the phase gates below.
   in S2; artifacts-exist evaluation and orphan-visible command preflight are
   implemented in S3; POSIX command spawn, exact admission holds, hashed
   stream observations, and real process facts are implemented in S4
-  (unreleased). D4 recovery, joins, approval, waits, duration/cost budgets,
-  and producer drain follow. Then the full model-free driver must complete
-  `default.yaml` and `fix.yaml`. D3/D4 must honor declared `assignments` and
-  `join` on non-agent steps or fail closed. Neither the agent-only loop nor
-  the merged developer runner closes Phase 3. Issue #89 stays open until this
-  command-execution slice is accepted; live Pi execution remains Phase 4.
+  (unreleased). D4 U1 (unreleased, partial foundation only) folds a bound-1
+  authoritative panel as `kxm.run-state.v2` and owns controllers by exact
+  attempt id; stale v1 projections fail closed without rewrite. D4 recovery,
+  joins, approval, waits, duration/cost budgets, and producer drain follow.
+  Then the full model-free driver must complete `default.yaml` and
+  `fix.yaml`. D3/D4 must honor declared `assignments` and `join` on non-agent
+  steps or fail closed. Neither the agent-only loop nor the merged developer
+  runner closes Phase 3. Issue #89 stays open until this command-execution
+  slice is accepted; live Pi execution remains Phase 4. D4/fullgate remain
+  open.
 - Version 1 and 2 run event stores and `kxm.run-plan.v1` envelopes are refused
   with `runtime_schema_outdated` / `run_plan_corrupt`; there is no migration
   lane, and backup/restore remain E6. Coordinated rewriting of an envelope, its
@@ -783,9 +787,13 @@ hold; a full admission slot occupied by an unsettled, mismatched,
 unverifiable, or closed-context hold still fails closed as
 `run_admission_exceeded`. After committed complete or proof-only terminal
 proof, an exact in-process active hold may finish internally so admission
-can release; unresolved holds do not. D4 recovery, joins, approval, waits,
-duration/cost budgets, and the full model-free driver remain open. Issue #89
-remains open. No Phase 3 Gate sentence is claimed passed.
+can release; unresolved holds do not. D4 U1 (partial foundation, unreleased)
+keeps one assignment and one physical attempt, stores that pair in an
+authoritative bound-1 panel (`kxm.run-state.v2`), and looks up owners by
+exact attempt id. No new events, statuses, recovery, joins, or driver work
+land in U1. D4 recovery, joins, approval, waits, duration/cost budgets, and
+the full model-free driver remain open. Issue #89 remains open. No Phase 3
+Gate sentence is claimed passed.
 
 **Developer prerequisite (PR #129 merged, #127 closed):** the assignment runner
 has native assignment records, fixed witnesses, exact-commit acceptance and

@@ -547,6 +547,17 @@ test("S3 owned exact controller is ordinary concurrency; unowned and uncertain b
     recordGateIntent(context, ownedRun, ownedEnvelope, "check");
     const ownedAttempt = context.eventStore.gateAttemptsForRun(ownedRun.runId)[0]!;
     registerVnextAttemptController(context.eventStore.path, ownedRun.runId, {
+      attemptId: "atm_01JMISMATCH0000000000000",
+      controller: new AbortController(),
+    });
+    try {
+      const mismatched = gateRecoveryPreflight(context);
+      assert.equal(mismatched.owned, 0);
+      assert.equal(mismatched.blocking.some((item) => item.attemptId === ownedAttempt.attemptId), true);
+    } finally {
+      unregisterVnextAttemptController(context.eventStore.path, ownedRun.runId, "atm_01JMISMATCH0000000000000");
+    }
+    registerVnextAttemptController(context.eventStore.path, ownedRun.runId, {
       attemptId: ownedAttempt.attemptId,
       controller: new AbortController(),
     });

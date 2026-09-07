@@ -9,13 +9,13 @@ import {
   type VnextConfigOptions,
   type VnextProjectBundle,
 } from "./vnext-config.ts";
-import { foldVnextRunState, isTerminalRunStatus, type VnextRunState } from "./vnext-engine-fold.ts";
+import { foldVnextRunState, isTerminalRunStatus, VNEXT_RUN_STATE_SCHEMA, vnextFoldPanelAttemptIds, type VnextRunState } from "./vnext-engine-fold.ts";
 import { verifyVnextGateEvidence } from "./vnext-engine-evidence.ts";
 import { loadVnextRunPlanEnvelope } from "./vnext-engine-plan.ts";
 import {
   registerVnextRuntimeHandle,
   unregisterVnextRuntimeHandle,
-  vnextAttemptController,
+  vnextAttemptControllers,
 } from "./vnext-runtime-owner.ts";
 import {
   VNEXT_ABSENT_MEMORY_REVISION,
@@ -362,7 +362,26 @@ export function foldStoredVnextRun(context: VnextRuntimeContext, run: VnextRunRe
     }
     : {});
   if (envelope) verifyVnextGateEvidence(context.eventStore, run, envelope, events, state);
+  assertStoredProjection(context, run);
   return state;
+}
+
+function storedProjectionSchema(stateJson: string): string | undefined {
+  try {
+    const parsed = JSON.parse(stateJson) as { schema?: unknown };
+    return typeof parsed.schema === "string" ? parsed.schema : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function assertStoredProjection(context: VnextRuntimeContext, run: VnextRunRecord): void {
+  const stored = context.eventStore.runState(run.runId);
+  if (!stored) return;
+  const schema = storedProjectionSchema(stored.state);
+  if (schema !== VNEXT_RUN_STATE_SCHEMA) {
+    throw runtimeError("run_projection_divergent", run.runId, "stored run_state does not match the folded projection");
+  }
 }
 
 /** Fold a stored run into its current status with evidence verification. */
@@ -400,6 +419,13 @@ export function rebuildVnextRunProjection(context: VnextRuntimeContext, runId: s
 }
 
 export function persistVnextRunState(context: VnextRuntimeContext, runId: string, state: VnextRunState, lastSequence: number): void {
+  const stored = context.eventStore.runState(runId);
+  if (stored) {
+    const schema = storedProjectionSchema(stored.state);
+    if (schema !== VNEXT_RUN_STATE_SCHEMA) {
+      throw runtimeError("run_projection_divergent", runId, "stored run_state does not match the folded projection");
+    }
+  }
   context.eventStore.upsertRunState({
     runId,
     lastSequence,
@@ -425,7 +451,7 @@ export function cancelVnextRun(
   const commandId = options.commandId ?? newVnextCommandId();
   const now = options.now ?? new Date().toISOString();
   const monotonicNs = options.monotonicNs ?? vnextMonotonicNs();
-  let abortController: AbortController | undefined;
+  const abortControllers: AbortController[] = [];
 
   const result = context.eventStore.transaction(() => {
     const prior = context.eventStore.command(commandId);
@@ -467,7 +493,7 @@ export function cancelVnextRun(
       return event;
     };
 
-    const activeAttempt = Boolean(folded.currentStep?.attemptId);
+    const activeAttempt = Boolean(folded.currentStep?.attemptId) || vnextFoldPanelAttemptIds(folded.currentStep).length > 0;
     push("run.cancel_requested", {
       actor: { kind: "runtime", id: context.homeRuntimeId },
       reason: "operator_cancel",
@@ -477,13 +503,17 @@ export function cancelVnextRun(
     if (folded.status === "running" && activeAttempt) {
       status = "cancelling";
       push("run.status_changed", { status: "cancelling", reason: "operator_cancel" });
-      if (folded.currentStep?.attemptId) {
-        const capability = context.eventStore.capabilityByAttempt(folded.currentStep.attemptId);
+      const attemptIds = new Set(vnextFoldPanelAttemptIds(folded.currentStep));
+      if (folded.currentStep?.attemptId) attemptIds.add(folded.currentStep.attemptId);
+      for (const attemptId of attemptIds) {
+        const capability = context.eventStore.capabilityByAttempt(attemptId);
         if (capability && capability.state === "issued") {
-          context.eventStore.settleCapability(folded.currentStep.attemptId, "revoked");
+          context.eventStore.settleCapability(attemptId, "revoked");
         }
       }
-      abortController = vnextAttemptController(context.eventStore.path, runId)?.controller;
+      for (const owned of vnextAttemptControllers(context.eventStore.path, runId)) {
+        abortControllers.push(owned.controller);
+      }
     } else if (folded.status === "running" && !activeAttempt) {
       push("run.status_changed", { status: "cancelling", reason: "operator_cancel" });
       push("run.status_changed", { status: "cancelled", reason: "operator_cancel" });
@@ -505,7 +535,7 @@ export function cancelVnextRun(
     return { run: { ...run, status, updatedAt: now }, idempotent: false, events };
   });
 
-  abortController?.abort();
+  for (const controller of abortControllers) controller.abort();
   return result;
 }
 
