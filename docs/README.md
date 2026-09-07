@@ -14,7 +14,7 @@ This documentation is organized by task. Start with the guide that matches what 
 | [Webhook workflows](webhook-workflows.md) | Automation owners | Start durable work from Jira or another signed webhook |
 | [Peer provenance and quorum gates](provenance-gates.md) | Workflow authors and security reviewers | Require durable replies from eligible peer identities without overstating the trust guarantee |
 | [Continuous improvement](continuous-improvement.md) | Product and engineering leads | Turn run evidence into reviewed workflow improvements |
-| [OpenRouter Model Workforce Guide](openrouter-model-workforce-guide.md) | Workflow designers and operators | Area -> Workflow -> Stage -> Role taxonomy with documentation slugs, dated OpenRouter model candidates, and selection policy |
+| [Workflow guide](workflow-guide.md) | Workflow designers and operators | Area -> Workflow -> Stage -> Role taxonomy with documentation slugs, dated research candidates, and selection policy |
 | [Agent Envelopes & Quality Gates](agent-communication-envelopes-and-gates.md) | Multi-agent workflow engineers | Production communication envelopes, quality gates, and work loops |
 | [vNext contract package](vnext/README.md) | Maintainers and reviewers | Review the accepted local-first target architecture and implementation contracts |
 
@@ -31,3 +31,17 @@ Project-level policies live at the repository root:
 - Distinguish verified behavior from planned behavior; `docs/vnext` is a planned normative target until activation.
 - Distinguish durable single-node delivery from clustering and exactly-once execution.
 - Update the relevant guide in the same change that modifies user-visible behavior.
+
+## Which docs each workflow relies on
+
+Cross-reference only. Guide slugs imply no runtime config, admission, schema, or
+CLI behavior.
+
+| Workflow slug | Primary docs |
+|---|---|
+| `build-feature` | [Getting started](getting-started.md), [Configuration](configuration.md), [Architecture](architecture.md), [Test matrix](test-matrix.md) |
+| `refactor-repair-regressions` | [Architecture](architecture.md), [Test matrix](test-matrix.md), [Troubleshooting](troubleshooting.md), [Provenance gates](provenance-gates.md) |
+| `stabilize-flaky-tests` | [Test matrix](test-matrix.md), [Operations](operations.md), [Troubleshooting](troubleshooting.md) |
+| `design-software-system` | [Architecture](architecture.md), [Configuration](configuration.md), [vNext contracts](vnext/README.md) |
+| `investigate-incident` | [Operations](operations.md), [Troubleshooting](troubleshooting.md), [Webhook workflows](webhook-workflows.md) |
+| `patch-vulnerability` | [Provenance gates](provenance-gates.md), [Operations](operations.md), [Configuration](configuration.md) |

@@ -1,9 +1,15 @@
-# Continuous-improvement plan
+# Continuous improvement
 
 Every workflow run produces two distinct records:
 
 - operational events for service health and delivery;
 - a structured journal for plans, decisions, contradictions, errors, lessons, observations, hypotheses, experiments, state changes, and skill candidates.
+
+`kxm improve` buckets redacted `.kxm/logs/telemetry.jsonl` events into a
+proposed-only report and does not read the workflow journal. Journal capture
+uses `kxm_workflow_record`. Terminal runs export a bounded retrospective under
+`.kxm/assets/retrospectives`; re-export from durable local state with
+`kxm workflow export`.
 
 Journal entries carry an improvement area, severity, evidence links, relationships to other entries, and (when stage-bound) run/stage/attempt provenance. The design preserves disagreement instead of flattening it into a single final answer.
 

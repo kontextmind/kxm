@@ -205,6 +205,6 @@ is still planned; this live mapping is not that overlay.
 ## Precedence
 
 [AGENTS.md](../../AGENTS.md) and
-[Tracking](implementation-plan.md#tracking-working-tree-not-a-release)
+[Tracking](../../plans/implementation-plan.md#tracking-working-tree-not-a-release)
 win where they differ from historical 2026-09-04 reviews.
 Issue 86 stays open for later-phase remainder (see Tracking).

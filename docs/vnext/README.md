@@ -3,10 +3,11 @@
 > **Status: planned normative contract.** This directory describes the target
 > architecture accepted for KXM vNext. Not all commands are implemented.
 > Phase 1 (init/migrate/trust) and Phase 2 (Runtime create/recover) have landed
-> slices; Phase 3 has an agent-only simulated run loop, not the default/fix
-> driver gate. Operator tracking for the KXM rename, `kxm dash`, hub CLI, and
+> slices. Phase 3 has D3 S1–S4 and D4 U2a-2 implemented (unreleased); it is not
+> only an agent-only simulated loop, and the default/fix driver gate remains
+> open. Operator tracking for the KXM rename, `kxm dash`, hub CLI, and
 > harness YAML lives in the
-> [implementation plan](implementation-plan.md#tracking-working-tree-not-a-release).
+> [implementation plan](../../plans/implementation-plan.md#tracking-working-tree-not-a-release).
 > For current hub execution behavior, use [Architecture](../architecture.md) and
 > [Configuration](../configuration.md).
 
@@ -28,7 +29,7 @@ The words **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are normative.
 | [Routing](routing.md) | Shipped v1 parser/report vs helper telemetry vs planned v2/catalog |
 | [Validation](validation.md) | Parse, schema, reference, semantic, permission, and snapshot validation |
 | [Migration](migration.md) | Compatibility from the current environment/JSON/SQLite surfaces |
-| [Implementation plan](implementation-plan.md) | Ordered implementation and release gates |
+| [Implementation plan](../../plans/implementation-plan.md) | Ordered implementation and release gates |
 | [Examples](../../examples/vnext/README.md) | Complete project and workflow fixture |
 
 Machine-readable schemas live under [`schemas/vnext`](../../schemas/vnext).

@@ -17,10 +17,11 @@
 11. [Durable workflows](#durable-workflows)
 12. [Evidence gates and external callbacks](#evidence-gates-and-external-callbacks)
 13. [Live TUI and observability](#live-tui-and-observability)
-14. [Reliability, privacy, and security](#reliability-privacy-and-security)
-15. [Backup, upgrade, and recovery](#backup-upgrade-and-recovery)
-16. [Troubleshooting checklist](#troubleshooting-checklist)
-17. [Feature availability matrix](#feature-availability-matrix)
+14. [Context operating system (v0.5)](#context-operating-system-v05)
+15. [Reliability, privacy, and security](#reliability-privacy-and-security)
+16. [Backup, upgrade, and recovery](#backup-upgrade-and-recovery)
+17. [Troubleshooting checklist](#troubleshooting-checklist)
+18. [Feature availability matrix](#feature-availability-matrix)
 
 ---
 
@@ -434,6 +435,24 @@ report. Named project/workflow activity is classified as `project`; unscoped
 operator activity is `cli`. `KXM_IMPROVE_TARGET=cli|project` explicitly
 overrides that classification. The command does not automatically modify code,
 configuration, gates, or the workflow journal.
+
+### Context commands
+
+| Command | What it does |
+|---|---|
+| `kxm context get <project> --role <role> --task <task>` | Assembles a role-aware context packet |
+| `kxm context recall <project>` | Searches durable context records (metadata only) |
+| `kxm context state <project> <key>` | Current or historical value for one state key (`--as-of`) |
+| `kxm context episode <project>` | Episodic learning records from workflow journals |
+| `kxm context promote <project> <proposalId> --evidence <refs>` | Promotes an approved state proposal (control plane) |
+| `kxm context explain <project> <itemId>` | Explains which evidence and lineage back a context item |
+| `kxm context wiki-compile <project>` | Compiles the knowledge wiki for review |
+| `kxm context wiki-lint <project>` | Lints a compiled wiki for broken refs, orphans, and stale state |
+| `kxm skills` | Governed skill candidate lifecycle |
+
+Agents use the same surfaces through Pi/MCP tools `kxm_context`, `kxm_recall`,
+`kxm_state`, `kxm_episode`, and `kxm_promote`. There is no `kxm_explain` tool;
+lineage is an operator CLI query.
 
 ---
 
@@ -861,7 +880,7 @@ knowledge wiki, and a governed skill lifecycle. Agents use the same features
 through `kxm_context`, `kxm_recall`, `kxm_state`, `kxm_episode`, and
 `kxm_promote` (Pi and MCP); provider-specific memory APIs are never exposed.
 
-### Role-aware packets
+### Role-aware packets, recall, episodes, and explain
 
 `kxm context get <project> --role <role> --task <task>` assembles a
 token-budgeted packet. Roles shape selection: repro agents get prior
@@ -869,6 +888,12 @@ reproductions and incidents; planners get state and decisions; critics get
 contradictions and failed approaches; implementers get the approved plan and
 skills; verifiers get acceptance evidence. Superseded and rejected records
 are excluded by default, and every packet is project-isolated.
+
+`kxm context recall <project> --query <text>` searches durable context records
+and returns metadata only. `kxm context episode <project>` lists episodic
+learning records from workflow journals (`--run` limits to one run).
+`kxm context explain <project> <itemId>` explains which evidence and lineage
+back a context item.
 
 ### Temporal state and promotion
 
@@ -1045,6 +1070,9 @@ See [Troubleshooting](troubleshooting.md) for error-specific recovery.
 | Artifact existence gate | Yes | Can invoke CLI if shell is allowed | Can invoke CLI if shell is allowed |
 | Retrospective export | Yes | Can record source evidence | Can record source evidence |
 | Proposed telemetry improvement report | Yes | `kxm_improvement_report` covers workflow journal separately | Same |
+| Context packets, recall, state, episodes, explain | Yes | `kxm_context`, `kxm_recall`, `kxm_state`, `kxm_episode` | Same MCP tools |
+| Promote state proposals | Yes | `kxm_promote` | `kxm_promote` |
+| Governed skills | Yes | No | No |
 | Live metadata-only TUI | Yes | No | No |
 
 ---

@@ -219,6 +219,9 @@ kxm context get my-project --role planner --task "plan the CI migration" --budge
 # Search durable context records (metadata only)
 kxm context recall my-project --query "flaky"
 
+# Explain evidence and lineage for one context item
+kxm context explain my-project ctx_item_abc123
+
 # Authoritative temporal state (and historical queries)
 kxm context state my-project ci.pipeline
 kxm context state my-project ci.pipeline --as-of 2026-01-15T00:00:00.000Z

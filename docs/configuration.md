@@ -111,6 +111,25 @@ Names are case-insensitively unique among online agents in one project. A clean 
 
 `KXM_PROJECT_DIR` is supplied internally to derive a default project. Users normally should not set it.
 
+## Environment-variable classification
+
+Names that look like `KXM_*` are not all operator configuration. This table is
+read from source; it does not invent defaults.
+
+| Name | Kind | Notes |
+|---|---|---|
+| `KXM_SLASH_SUBCOMMANDS` | TypeScript constant | Not an environment variable. Slash picker verbs in `session-work.ts`. Do not document as configuration. |
+| `KXM_UPDATE_CACHE` | TypeScript constant | Not an environment variable. Cache filename in `kxm-update.ts`. |
+| `KXM_UPDATE_SCHEMA` | TypeScript constant | Not an environment variable. Schema id `kxm.update.v1` in `kxm-update.ts`. |
+| `KXM_ASSET` | Internal release helper | GitHub release publish contract (`scripts/kxm-release-github.mjs`). Not operator configuration. |
+| `KXM_ASSET_PATH` | Internal release helper | Local tarball path for the same publish contract. Not operator configuration. |
+| `KXM_ASSET_SHA256` | Internal release helper | Declared digest checked against the local asset. Not operator configuration. |
+| `KXM_SMOKE_WEBHOOK_SECRET` | Internal gate-runner contract | Smoke workflow HMAC secret (`scripts/smoke-multi-pi.mjs`). Not operator configuration. |
+| `KXM_WORKER_IDENTITY_KEY` | Internal supervisor→child | Set by `scripts/kxm-worker.mjs` for the Pi extension. Not operator configuration. |
+| `KXM_WORKER_GENERATION` | Internal supervisor→child | Supervisor generation stamp for the child. Not operator configuration. |
+| `KXM_WORKER_CHILD_INCARCATION` | Internal supervisor→child | Child incarnation counter. Not operator configuration. |
+| `KXM_WORKER_STOP_AFTER_MS` | Internal supervisor→child | Optional supervisor self-stop used by tests. Not operator configuration. |
+
 ## Protocol limits
 
 | Behavior | Value |
@@ -202,7 +221,7 @@ The tool allowlist is a capability boundary inside Pi, not a prompt suggestion �
 
 ## Operator CLI
 
-`kxm` is additive and does not replace `kxm-hub` or `kxm-worker`. The current hub command groups are `agent`, `session`, `workflow`, `gate`, `hub`, `dash`, and `improve`; the root `init` command is the first configuration-only vNext slice. If the installed `kxm --help` prints the former flat command list (`validate | status | hub | worker | stop | …`), the committed `plugins/kxm/dist/cli.js` predates these groups and needs `npm run build` and a commit. The CLI is an operator **client**: the hub's durable state, the protocol and schema types, and reviewed Git configuration define behaviour; where the CLI diverges from them, the CLI is the defect.
+The current hub command groups are `agent`, `session`, `workflow`, `gate`, `hub`, `dash`, `improve`, `context`, and `skills`; the root `init` command is the first configuration-only vNext slice. The CLI is an operator **client**: the hub's durable state, the protocol and schema types, and reviewed Git configuration define behaviour; where the CLI diverges from them, the CLI is the defect.
 
 | Command | Purpose |
 |---|---|
@@ -237,6 +256,8 @@ The tool allowlist is a capability boundary inside Pi, not a prompt suggestion �
 | `kxm hub start` | Start the KXM hub in the foreground |
 | `kxm hub stop` | Request managed hub and worker shutdown |
 | `kxm improve` | Bucket `.kxm/logs/telemetry.jsonl` events into a proposed-only improvement report; does not read the workflow journal |
+| `kxm context get \| recall \| state \| episode \| promote \| explain \| wiki-compile \| wiki-lint` | Context operating system: role-aware packets, metadata search, temporal state, episodes, evidence-backed lineage (`explain`), wiki compile/lint |
+| `kxm skills` | Governed skill candidate lifecycle |
 
 Improvement telemetry is classified as `project` whenever a project or workflow identity is present, and as `cli` for unscoped operator behavior. Set `KXM_IMPROVE_TARGET=cli` or `KXM_IMPROVE_TARGET=project` only when an operator needs to override that generic classification; this changes report bucketing, not workflow state.
 

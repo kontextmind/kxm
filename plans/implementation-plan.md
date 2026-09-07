@@ -174,11 +174,11 @@ It does not replace the phase gates below.
   do not treat `source: npm` as the default updater, until `@kontextmind/kxm`
   is a public npm release. Until then: GitHub release tarballs + docs/Tracking.
   Wiki stays compiled-from-hub (`kxm context wiki-compile`); no ingest CLI.
-- **Routing and cost contract** lives in [`docs/vnext/routing.md`](routing.md).
+- **Routing and cost contract** lives in [`docs/vnext/routing.md`](../docs/vnext/routing.md).
   v1 is shipped parse-only; helper telemetry is a dev tool; v2, event-settle
   write, ranked report, and price catalog are planned. The 2026-09-04
-  [work plan](../../.kxm/assets/reviews/2026-09-04-work-plan.md) and
-  [decisions](../../.kxm/assets/reviews/2026-09-04-decisions.md) are historical
+  [work plan](history/2026-09-04-work-plan.md) and
+  [decisions](history/2026-09-04-decisions.md) are historical
   inputs and yield to AGENTS.md and this Tracking section where they differ.
   **C1 (2026-09-05) supersession:** docs remainder for #86 is that routing
   contract, synchronization status, and these phase notes. Historical quick
@@ -187,8 +187,9 @@ It does not replace the phase gates below.
   #86 stays open for later D8/D9/D14 plan text when those phases are
   scheduled, the v1 report underquote fix, and remaining report
   implementation — not for those superseded instructions.
-- **Workflow taxonomy (operator, 2026-09-07):** [`docs/openrouter-model-workforce-guide.md`](../openrouter-model-workforce-guide.md) is organized Area -> Workflow -> Stage -> Assigned role across seven areas (`software-engineering`, `design-experience`, `media-production`, `data-analytics`, `research-strategy`, `business-operations`, `security-reliability`) and 21 workflows with declared kebab-case documentation slugs. Slugs are documentation identity only: no runtime config, role admission, schema field, CLI behavior, or alias lane. Inherited candidate lists are dated research requiring live verification before dispatch, not certified prices or an eligibility grant. Model/harness, platform, modality, tools, and personal/work context are routing attributes, not area trees; area grouping never pools unrelated role quality into one global model ranking. Fable and Sol critics remain required for the developer runner. No phase gate changes.
+- **Workflow taxonomy (operator, 2026-09-07; path 2026-09-08):** [`docs/workflow-guide.md`](../docs/workflow-guide.md) is organized Area -> Workflow -> Stage -> Assigned role across seven areas (`software-engineering`, `design-experience`, `media-production`, `data-analytics`, `research-strategy`, `business-operations`, `security-reliability`) and 21 workflows with declared kebab-case documentation slugs. The taxonomy is route-agnostic for native harness subscriptions and API-key Pi providers. Slugs are documentation identity only: no runtime config, role admission, schema field, CLI behavior, or alias lane. Inherited candidate lists are dated research requiring live verification before dispatch, not certified prices or an eligibility grant. Model/harness, platform, modality, tools, and personal/work context are routing attributes, not area trees; area grouping never pools unrelated role quality into one global model ranking. Fable and Sol critics remain required for the developer runner. No phase gate changes.
 - **Developer roster U1a foundation (2026-09-07):** An unwired synchronous helper loader reads a committed, clean policy only from a control checkout at or behind the fixed trusted main ref. It pins commit/blob/raw SHA256, validates source-bound model origins and code-owned role/permission/vendor ceilings, and replays historical policy from Git objects. Pi provider validation follows the accepted helper’s shared provider ceiling, without adding a production Nous route. Config validity is not live harness/model capability or auth evidence: the existing dispatch brakes remain in force, including native model checks. This foundation does not change live routing, grant auth, or pass a product Phase 4 gate. U1b dispatch/critic/acceptance binding and CLAUDE/PR131 replacement remain open.
+- **Planning home and workflow guide (operator, 2026-09-08):** `.kxm/` is the KXM tool's own workspace (state, logs, workflow outputs). Project planning documents live in `plans/` at the repo root. `docs/workflow-guide.md` is the route-agnostic Area → Workflow → Stage → Role taxonomy for native harness subscriptions and API-key Pi providers.
 
 ### Landed in this tree (unreleased)
 
@@ -203,6 +204,7 @@ It does not replace the phase gates below.
   starting writer rotation is unchanged. Deprecated `gemini` CLI catalog
   entry stays. Read-only agy roles and agy-hosted non-Google models remain
   deferred.
+- **Docs audit slice (issue #144):** planning docs moved to `plans/` (implementation plan, v05 design record, v04/provenance history and 2026-09-04 reviews); `docs/workflow-guide.md` renamed and retitled; docs brake widened (`docs/**`, plugin READMEs, skills, AGENTS.md, CLAUDE.md, `.claude/**/*.md`; `plans/` exempt); stale copy, env-var classification, context OS coverage including `kxm context explain`, README workflow-slug index, and phase-neutral `kxm run` help. No product behavior change beyond CLI help wording.
 
 - **ARC scale-set CI selectors:** all `ci.yml` / `release.yml` / `smoke.yml`
   `runs-on` values are the scalar scale-set name `kontextmind-doks`. The
@@ -609,6 +611,9 @@ It does not replace the phase gates below.
 
 ### Still open
 
+- **E3 schema ids:** rename `pi-mesh.*` wire identifiers (issue #96). Current docs cite the live ids; do not alias.
+- **Maintainers doc** for the assignment runner (`just assign` / witness / accept).
+- **After merge:** rewrite `Source:` links in slice issues #84–#103 to the moved plan paths.
 - **Windows resumption (deferred):** restore the two Windows Validate legs and
   their ruleset contexts, and diagnose the Node 24 package cleanup failure, in
   a reviewed change that updates Tracking, tests, and settings together. D3
@@ -719,7 +724,7 @@ It does not replace the phase gates below.
   must fail closed when a required gate is skipped.
 - v1 `kxm routing report` sums missing cost as zero and sorts by run count;
   not a ranking source until the v2 record and separated cost populations
-  land (see [routing.md](routing.md)).
+  land (see [routing.md](../docs/vnext/routing.md)).
 - Kind-level MOA defaults (target 3, minimum 2, maximum 3, all-settled with
   minimumPassed 2, provider-distinct) are declared as a Phase 7 target in
   lifecycles.md; today loader and compiler resolve omitted bounds to one
@@ -995,7 +1000,7 @@ closed on missing producers rather than degrade them.
 ## Phase 8: multi-project hub vNext
 
 Begin the hub compatibility release and cutover described in
-[Migration](migration.md). Implement project/runtime enrollment, immutable
+[Migration](../docs/vnext/migration.md). Implement project/runtime enrollment, immutable
 configuration snapshots, run
 requests, sync-safe event ingestion, project stores, capability scheduling,
 shared-action leases, offline reconciliation, and aggregate TUI read models.
@@ -1012,7 +1017,7 @@ Implement memory revisions, local bounded replicas, role-aware context,
 evidence-linked candidates, protected evaluation, Git patch promotion, and
 revision-aware effectiveness statistics.
 
-Design note (2026-09-07): future evidence-linked candidates and effectiveness statistics will be keyed by the workflow and role slugs declared in [`docs/openrouter-model-workforce-guide.md`](../openrouter-model-workforce-guide.md), not by model alone. Area grouping is navigation; measured quality stays per role, so no global cross-area model ranking is derived. Those slugs are documentation identity, not runtime identifiers, and this note does not assert a working product router.
+Design note (2026-09-07): future evidence-linked candidates and effectiveness statistics will be keyed by the workflow and role slugs declared in [`docs/workflow-guide.md`](../docs/workflow-guide.md), not by model alone. Area grouping is navigation; measured quality stays per role, so no global cross-area model ranking is derived. Those slugs are documentation identity, not runtime identifiers, and this note does not assert a working product router.
 
 **Gate:** a candidate is evaluated, reviewed through Git, activated only for a
 future run, and measured against its declared outcome. Routing/cost/latency

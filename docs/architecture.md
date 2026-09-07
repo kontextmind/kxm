@@ -187,7 +187,7 @@ Workflow session isolation is a context-routing and accidental-cross-run safety 
 | `scripts/kxm-release-github.mjs` | Tag-triggered draft GitHub release helper: by-tag published guard, 404-then-list draft discovery with pagination fail-closed, no published-release mutation, digest idempotence |
 | `src/kxm-update-config.ts` | Per-user `update.yaml` under the host state root (`auto` is never read from the project) |
 | `src/kxm-install-kind.ts` | Install-kind classifier (npm-global / npm-local / pi-git / claude-marketplace / source / unknown) |
-| `src/cli.ts` | Operator CLI (agent, session, workflow, gate, hub, improve); a client of the hub |
+| `src/cli.ts` | Operator CLI (agent, session, workflow, gate, hub, dash, improve, context, skills); a client of the hub |
 | `src/envelope.ts` | `kxm.worker.v1` / `kxm.worker-result.v1` constructors |
 | `src/session.ts` | Roster loading and `kxm.session.v1` manifest writing; does not spawn processes |
 | `src/telemetry.ts` | Appends redacted CLI result envelopes to `.kxm/logs/telemetry.jsonl` |
@@ -201,7 +201,7 @@ Workflow session isolation is a context-routing and accidental-cross-run safety 
 
 The generated runtimes are committed because installed packages must work without a development toolchain or runtime TypeScript stripping. Edit the source, run `npm run build`, and commit the source and corresponding files under `dist/`.
 
-The command groups described in this document (`agent`, `session`, `workflow`, `gate`, `hub`, `dash`, `improve`) plus root `init` are defined in `src/cli.ts`. The committed `plugins/kxm/dist/cli.js` that `scripts/kxm.mjs` launches may lag the source: if `kxm --help` prints a former flat command list instead of these Commander groups, rebuild with `npm run build` and commit the generated `dist` before the operator surface here is what actually runs.
+The command groups described in this document (`agent`, `session`, `workflow`, `gate`, `hub`, `dash`, `improve`, `context`, `skills`) plus root `init` are defined in `src/cli.ts`. If `kxm --help` prints a former flat command list instead of these Commander groups, treat it as a stale-`dist` symptom; see [Troubleshooting](troubleshooting.md).
 
 Peer-policy fields are additive to SQLite schema version 2 because agents,
 messages, and workflow runs are stored as JSON records. Existing schema-v2
@@ -236,5 +236,7 @@ experimental retrieval provider) plug into the internal `ContextProvider` /
 `StateProvider` seams in `plugins/kxm/src/context/providers.ts`. The
 native SQLite implementation (`plugins/kxm/src/state.ts`) is the default
 and the reference. Providers are internal: agents interact only with the
-`kxm context` CLI and the `kxm_*` Pi/MCP tools, and provider failures fail
-closed to smaller context, never broader authority.
+`kxm context` CLI (`get`, `recall`, `state`, `episode`, `promote`, `explain`,
+`wiki-compile`, `wiki-lint`), governed `kxm skills`, and the Pi/MCP tools
+`kxm_context`, `kxm_recall`, `kxm_state`, `kxm_episode`, and `kxm_promote`.
+Provider failures fail closed to smaller context, never broader authority.

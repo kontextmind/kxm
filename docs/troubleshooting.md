@@ -72,6 +72,13 @@ pi remove git:github.com/kontextmind/kxm
 pi install git:github.com/kontextmind/kxm@main
 ```
 
+### `kxm --help` prints a former flat command list
+
+If the installed `kxm --help` prints `validate | status | hub | worker | stop | …`
+instead of the current Commander groups, the committed `plugins/kxm/dist/cli.js`
+is stale. Run `npm run build` and commit the generated `dist` so the operator
+CLI matches source.
+
 ### `kxm` is not recognized
 
 `pi install git:github.com/kontextmind/kxm@main` installs the Pi extension

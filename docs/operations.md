@@ -84,7 +84,8 @@ KXM_SMOKE=1 KXM_SMOKE_MODELS='xai/grok-4.6,anthropic/claude-sonnet-4-5' node scr
 ```
 
 For GitHub Actions, smoke runs on the ARC scale set `kontextmind-doks`. Set
-repository variable `KXM_SMOKE_RUNNER` exactly to `kontextmind-doks` and
+the GitHub repository variable `KXM_SMOKE_RUNNER` (a readiness latch, not a
+process environment variable) exactly to `kontextmind-doks` and
 `KXM_SMOKE_MODELS` to the two model IDs. Any other value skips the job. A
 manual dispatch can override the model variable with its `models` input.
 Readiness means Pi credentials are provisioned to ephemeral ARC pods and

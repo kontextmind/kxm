@@ -128,7 +128,7 @@ test('index flags cannot hide modified control helpers', async t => {
 test('shipping policy and guide evidence bind without replacing their hash', async t => {
   const f = await fixture(); t.after(f.close);
   f.write('.kxm/roster.json', readFileSync(path.join(repo, '.kxm/roster.json'), 'utf8'));
-  f.write('docs/openrouter-model-workforce-guide.md', readFileSync(path.join(repo, 'docs/openrouter-model-workforce-guide.md'), 'utf8'));
+  f.write('docs/workflow-guide.md', readFileSync(path.join(repo, 'docs/workflow-guide.md'), 'utf8'));
   f.commit();
   assert.deepEqual(f.loadTrustedRosterPolicy().policy, JSON.parse(readFileSync(path.join(repo, '.kxm/roster.json'), 'utf8')));
 });
