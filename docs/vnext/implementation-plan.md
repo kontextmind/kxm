@@ -196,6 +196,8 @@ It does not replace the phase gates below.
   Ruleset `22251971` required contexts are unchanged. This is not a
   capacity or speed promise.
 
+  The first live ARC run exposed a fixture that relied on ambient Git identity for a conflicting merge; the fixture now sets a per-command identity and asserts the unmerged index exists before testing the refusal.
+
 - **Pi helper Nous Portal prefix (dev helper, not Phase 11):**
   `scripts/harness-run.mjs` allowlists `openrouter/*` and `nous-portal/*`.
   Auth is `pi auth check --provider openrouter|nous-portal`. Native-provider
