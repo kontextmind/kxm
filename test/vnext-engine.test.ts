@@ -10,7 +10,7 @@ import { removeTempDir } from "./helpers.ts";
 import { engineProject } from "./helpers/vnext-project.ts";
 import { loadVnextProject, parseRestrictedYaml, validateRunEvent } from "../plugins/kxm/src/vnext-config.ts";
 import { compileVnextWorkflow } from "../plugins/kxm/src/vnext-engine-compile.ts";
-import { FOLD_PANEL_BOUND, foldVnextRunState } from "../plugins/kxm/src/vnext-engine-fold.ts";
+import { FOLD_PANEL_BOUND, foldVnextRunState, vnextJoinAll } from "../plugins/kxm/src/vnext-engine-fold.ts";
 import {
   hashVnextRunPlanEnvelope,
   loadVnextRunPlanEnvelope,
@@ -56,7 +56,7 @@ import {
   readVnextRunStatus,
   rebuildVnextRunProjection,
 } from "../plugins/kxm/src/vnext-runtime.ts";
-import { vnextCanonicalJson as canonicalJson, type JsonValue } from "../plugins/kxm/src/vnext-config.ts";
+import { vnextCanonicalJson as canonicalJson, type JsonObject, type JsonValue } from "../plugins/kxm/src/vnext-config.ts";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fixtureDir = resolve(repoRoot, "test/fixtures/vnext-engine");
@@ -377,6 +377,66 @@ test("untrusted producers are rejected and factory objects are frozen", async ()
     removeTempDir(root, stateRoot);
   }
 });
+
+test("trusted driver custom-done reaches compiled completed independently of step status", async () => {
+  await assertCustomDoneTerminal("completed");
+});
+
+test("trusted driver custom-done reaches compiled cancelled independently of step status", async () => {
+  await assertCustomDoneTerminal("cancelled");
+});
+
+async function assertCustomDoneTerminal(terminal: "completed" | "cancelled"): Promise<void> {
+  const { root, stateRoot } = engineProject("kxm-engine-custom-terminal-");
+  try {
+    writeFileSync(join(root, ".kxm", "workflows", "custom-done.yaml"), `schema: kxm.workflow.v1
+coordinator: coordinator
+steps:
+  - id: only
+    kind: agent
+    agent: implementer
+    on:
+      passed: { target: $terminal, terminalStatus: completed }
+      custom-done: { target: $terminal, terminalStatus: ${terminal} }
+`);
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "custom-done", prompt: `custom-done-${terminal}` });
+      pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+      const driven = await driveVnextRun(
+        context,
+        accepted.run.runId,
+        createVnextSimulatedProducer(() => ({ outcome: "custom-done" })),
+      );
+      assert.equal(driven.state.status, terminal);
+      assert.equal(driven.state.edgeTransitions["only:custom-done"], 1);
+      const events = context.eventStore.events(accepted.run.runId, 0, 10_000);
+      for (const event of events) validateRunEvent(event, "run-event");
+      const outcomeRecorded = events.find((event) => event.eventType === "step.outcome_recorded");
+      assert.equal(outcomeRecorded?.payload.outcome, "custom-done");
+      const terminalStep = events.find((event) =>
+        event.eventType === "step.status_changed"
+        && (event.payload.status === "passed" || event.payload.status === "failed" || event.payload.status === "cancelled")
+      );
+      assert.equal(terminalStep?.payload.status, "failed");
+      const stored = context.eventStore.runState(accepted.run.runId);
+      assert.ok(stored);
+      const folded = foldVnextRunState(
+        context.eventStore.run(accepted.run.runId)!,
+        rehydrateVnextCompiledPlan(context, accepted.run.runId),
+        events,
+      );
+      assert.equal(folded.status, terminal);
+      assert.equal(canonicalJson(folded as unknown as JsonValue), stored.state);
+      assert.equal(rebuildVnextRunProjection(context, accepted.run.runId).status, terminal);
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+}
 
 test("duplicate settlement is busy; capabilities bind to the current issued attempt", async () => {
   const { root, stateRoot } = engineProject("kxm-engine-cap-");
@@ -1298,6 +1358,334 @@ test("illegal folds fail closed", () => {
   ]);
 });
 
+test("U2a-1 join-all panel fold owns per-assignment results", () => {
+  const run: VnextRunRecord = {
+    runId: "run_01JPANEL000000000000000000",
+    projectId: "prj_01JENGINE00000000000000000",
+    homeRuntimeId: HOME,
+    workflowId: "panel",
+    promptSha256: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    status: "created",
+    configRevision: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    memoryRevision: "ctxrev_absent",
+    executorPolicyRevision: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    toolPolicyRevision: "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    createdAt: "2026-09-05T00:00:00.000Z",
+    updatedAt: "2026-09-05T00:00:00.000Z",
+  };
+  const illegal = (history: VnextRunEvent[], compiled: ReturnType<typeof compileVnextWorkflow>, record = run) => {
+    assert.throws(() => foldVnextRunState(record, compiled, history), /run_events_illegal/);
+  };
+
+  const panel = compilePanelPlan({ maximum: 2, maxParallel: 2 });
+  const afterFirst = panelPrefix(run, panel, [{ id: ASG, attempt: ATM }], "created");
+  const twoCreated = [
+    ...afterFirst,
+    event(run, afterFirst.length + 1, "assignment.created", {
+      assignmentId: ASG2, stepId: "only", stepAttempt: 1, agentId: "implementer", status: "created",
+    }),
+  ];
+  assert.deepEqual(foldVnextRunState(run, panel, twoCreated).currentStep?.panel.order, [ASG, ASG2]);
+
+  const boundOne = compilePanelPlan({ maximum: 1, maxParallel: 1 });
+  illegal([
+    ...panelPrefix(run, boundOne, [{ id: ASG, attempt: ATM }], "created"),
+    event(run, 7, "assignment.created", {
+      assignmentId: ASG2, stepId: "only", stepAttempt: 1, agentId: "implementer", status: "created",
+    }),
+  ], boundOne);
+
+  const gate = compilePanelPlan({ kind: "gate", maximum: 2, maxParallel: 2 });
+  illegal([
+    ...panelPrefix(run, gate, [{ id: ASG, attempt: ATM }], "created"),
+    event(run, 7, "assignment.created", {
+      assignmentId: ASG2, stepId: "only", stepAttempt: 1, agentId: "implementer", status: "created",
+    }),
+  ], gate);
+
+  const quorum = compilePanelPlan({ maximum: 2, maxParallel: 2, joinStrategy: "quorum" });
+  illegal([
+    ...panelPrefix(run, quorum, [{ id: ASG, attempt: ATM }], "created"),
+    event(run, 7, "assignment.created", {
+      assignmentId: ASG2, stepId: "only", stepAttempt: 1, agentId: "implementer", status: "created",
+    }),
+  ], quorum);
+
+  const approval = compilePanelPlan({ kind: "approval", maximum: 2, maxParallel: 2 });
+  illegal([
+    ...panelPrefix(run, approval, [{ id: ASG, attempt: ATM }], "created"),
+    event(run, 7, "assignment.created", {
+      assignmentId: ASG2, stepId: "only", stepAttempt: 1, agentId: "implementer", status: "created",
+    }),
+  ], approval);
+
+  const twoStarting = panelPrefix(run, panel, [
+    { id: ASG, attempt: ATM },
+    { id: ASG2, attempt: ATM2 },
+  ], "starting");
+  illegal([
+    ...twoStarting,
+    event(run, twoStarting.length + 1, "attempt.status_changed", { attemptId: ATM, status: "settling" }),
+  ], panel);
+
+  const mixedAThenB = panelMembers(run, panel, [
+    { id: ASG, attempt: ATM, resultClass: "outcome", outcome: "passed", terminalOutcome: "passed" },
+    { id: ASG2, attempt: ATM2, resultClass: "outcome", outcome: "failed", terminalOutcome: "failed" },
+  ]);
+  assert.equal(foldVnextRunState(run, panel, mixedAThenB.terminal).currentStep?.panel.assignments[ASG]?.attempts[ATM]?.outcome, "passed");
+  assert.equal(foldVnextRunState(run, panel, mixedAThenB.terminal).currentStep?.panel.assignments[ASG2]?.attempts[ATM2]?.outcome, "failed");
+  illegal([...mixedAThenB.beforeFirstTerminal, event(run, mixedAThenB.beforeFirstTerminal.length + 1, "assignment.terminal", { assignmentId: ASG, outcome: "failed", status: "terminal" })], panel);
+
+  const mixedBThenA = panelMembers(run, panel, [
+    { id: ASG2, attempt: ATM2, resultClass: "outcome", outcome: "failed", terminalOutcome: "failed" },
+    { id: ASG, attempt: ATM, resultClass: "outcome", outcome: "passed", terminalOutcome: "passed" },
+  ]);
+  illegal([...mixedBThenA.beforeFirstTerminal, event(run, mixedBThenA.beforeFirstTerminal.length + 1, "assignment.terminal", { assignmentId: ASG2, outcome: "passed", status: "terminal" })], panel);
+
+  const bothPassed = panelMembers(run, panel, [
+    { id: ASG, attempt: ATM, resultClass: "outcome", outcome: "passed", terminalOutcome: "passed" },
+    { id: ASG2, attempt: ATM2, resultClass: "outcome", outcome: "passed", terminalOutcome: "passed" },
+  ]);
+  const passedOutcome = [
+    ...bothPassed.terminal,
+    event(run, bothPassed.terminal.length + 1, "step.outcome_recorded", { stepId: "only", stepAttempt: 1, outcome: "passed" }),
+  ];
+  assert.equal(foldVnextRunState(run, panel, passedOutcome).currentStep?.outcome, "passed");
+  const passedStep = [
+    ...passedOutcome,
+    event(run, passedOutcome.length + 1, "step.status_changed", { stepId: "only", status: "passed", previousStatus: "running" }),
+  ];
+  assert.equal(foldVnextRunState(run, panel, passedStep).currentStep?.status, "passed");
+  illegal([...passedOutcome, event(run, passedOutcome.length + 1, "step.outcome_recorded", { stepId: "only", stepAttempt: 1, outcome: "passed" })], panel);
+
+  illegal([...mixedAThenB.terminal, event(run, mixedAThenB.terminal.length + 1, "step.outcome_recorded", { stepId: "only", stepAttempt: 1, outcome: "passed" })], panel);
+  const conflictFailed = [
+    ...mixedAThenB.terminal,
+    event(run, mixedAThenB.terminal.length + 1, "step.status_changed", { stepId: "only", status: "failed", previousStatus: "running" }),
+  ];
+  assert.equal(foldVnextRunState(run, panel, conflictFailed).currentStep?.status, "failed");
+  illegal([
+    ...conflictFailed,
+    event(run, conflictFailed.length + 1, "step.transitioned", { fromStepId: "only", status: "failed", outcome: "failed" }),
+  ], panel);
+  assert.equal(foldVnextRunState(run, panel, [
+    ...conflictFailed,
+    event(run, conflictFailed.length + 1, "run.status_changed", { status: "failed", reason: "join_conflict" }),
+  ]).status, "failed");
+
+  const custom = compilePanelPlan({
+    maximum: 2,
+    maxParallel: 2,
+    outcomes: {
+      passed: { target: "$terminal", terminalStatus: "completed" },
+      failed: { target: "$terminal", terminalStatus: "failed" },
+      "needs-work": { target: "$terminal", terminalStatus: "failed" },
+    },
+  });
+  const customMembers = panelMembers(run, custom, [
+    { id: ASG, attempt: ATM, resultClass: "outcome", outcome: "needs-work", terminalOutcome: "needs-work" },
+    { id: ASG2, attempt: ATM2, resultClass: "outcome", outcome: "needs-work", terminalOutcome: "needs-work" },
+  ]);
+  const customOutcome = [
+    ...customMembers.terminal,
+    event(run, customMembers.terminal.length + 1, "step.outcome_recorded", { stepId: "only", stepAttempt: 1, outcome: "needs-work" }),
+  ];
+  assert.equal(foldVnextRunState(run, custom, customOutcome).currentStep?.outcome, "needs-work");
+  illegal([...customOutcome, event(run, customOutcome.length + 1, "step.status_changed", { stepId: "only", status: "passed", previousStatus: "running" })], custom);
+
+  const unknownMix = panelMembers(run, panel, [
+    { id: ASG, attempt: ATM, resultClass: "outcome", outcome: "passed", terminalOutcome: "passed" },
+    { id: ASG2, attempt: ATM2, resultClass: "outcome_unknown", terminalOutcome: "failed" },
+  ]);
+  illegal([...unknownMix.terminal, event(run, unknownMix.terminal.length + 1, "step.outcome_recorded", { stepId: "only", stepAttempt: 1, outcome: "passed" })], panel);
+  illegal([...unknownMix.terminal, event(run, unknownMix.terminal.length + 1, "step.outcome_recorded", { stepId: "only", stepAttempt: 1, outcome: "failed" })], panel);
+  const unknownFailed = [
+    ...unknownMix.terminal,
+    event(run, unknownMix.terminal.length + 1, "step.status_changed", { stepId: "only", status: "failed", previousStatus: "running" }),
+  ];
+  assert.equal(foldVnextRunState(run, panel, unknownFailed).currentStep?.status, "failed");
+  illegal([
+    ...unknownFailed,
+    event(run, unknownFailed.length + 1, "step.transitioned", { fromStepId: "only", status: "failed", outcome: "failed" }),
+  ], panel);
+  assert.equal(foldVnextRunState(run, panel, [
+    ...unknownFailed,
+    event(run, unknownFailed.length + 1, "run.status_changed", { status: "failed", reason: "outcome_unknown" }),
+  ]).status, "failed");
+
+  const rejectedCancel = panelMembers(run, panel, [
+    { id: ASG, attempt: ATM, resultClass: "producer_rejected", terminalOutcome: "failed" },
+    { id: ASG2, attempt: ATM2, resultClass: "cancelled", terminalOutcome: "cancelled" },
+  ]);
+  illegal([...rejectedCancel.terminal, event(run, rejectedCancel.terminal.length + 1, "step.status_changed", { stepId: "only", status: "cancelled", previousStatus: "running" })], panel);
+  const rejectedFailed = [
+    ...rejectedCancel.terminal,
+    event(run, rejectedCancel.terminal.length + 1, "step.status_changed", { stepId: "only", status: "failed", previousStatus: "running" }),
+  ];
+  assert.equal(foldVnextRunState(run, panel, rejectedFailed).currentStep?.status, "failed");
+  illegal([
+    ...rejectedFailed,
+    event(run, rejectedFailed.length + 1, "step.transitioned", { fromStepId: "only", status: "failed", outcome: "failed" }),
+  ], panel);
+
+  const allCancelled = panelMembers(run, panel, [
+    { id: ASG, attempt: ATM, resultClass: "cancelled", terminalOutcome: "cancelled" },
+    { id: ASG2, attempt: ATM2, resultClass: "cancelled", terminalOutcome: "cancelled" },
+  ], { cancelRequested: true });
+  illegal([...allCancelled.terminal, event(run, allCancelled.terminal.length + 1, "step.status_changed", { stepId: "only", status: "passed", previousStatus: "running" })], panel);
+  const cancelledStep = [
+    ...allCancelled.terminal,
+    event(run, allCancelled.terminal.length + 1, "step.status_changed", { stepId: "only", status: "cancelled", previousStatus: "running" }),
+  ];
+  assert.equal(foldVnextRunState(run, panel, cancelledStep).currentStep?.status, "cancelled");
+
+  const minTwo = compilePanelPlan({ minimum: 2, maximum: 2, maxParallel: 2 });
+  const oneOfTwo = panelMembers(run, minTwo, [
+    { id: ASG, attempt: ATM, resultClass: "outcome", outcome: "passed", terminalOutcome: "passed" },
+  ]);
+  illegal([...oneOfTwo.terminal, event(run, oneOfTwo.terminal.length + 1, "step.status_changed", { stepId: "only", status: "passed", previousStatus: "running" })], minTwo);
+  illegal([...oneOfTwo.terminal, event(run, oneOfTwo.terminal.length + 1, "step.status_changed", { stepId: "only", status: "failed", previousStatus: "running" })], minTwo);
+  illegal([...oneOfTwo.terminal, event(run, oneOfTwo.terminal.length + 1, "step.status_changed", { stepId: "only", status: "cancelled", previousStatus: "running" })], minTwo);
+
+  const { events: drainEvents, push: drainPush } = panelPush(run);
+  panelBootstrap(drainPush, run, true);
+  drainPush("assignment.created", { assignmentId: ASG, stepId: "only", stepAttempt: 1, agentId: "implementer", status: "created" });
+  drainPush("assignment.created", { assignmentId: ASG2, stepId: "only", stepAttempt: 1, agentId: "implementer", status: "created" });
+  drainPush("run.cancel_requested", { actor: { kind: "runtime", id: HOME }, reason: "operator_cancel" });
+  illegal([...drainEvents, event(run, drainEvents.length + 1, "step.outcome_recorded", { stepId: "only", stepAttempt: 1, outcome: "passed" })], panel);
+  illegal([
+    ...drainEvents,
+    event(run, drainEvents.length + 1, "step.status_changed", { stepId: "only", status: "cancelled", previousStatus: "running" }),
+  ], panel);
+
+  const statusMatrix = compilePanelPlan({
+    maximum: 2,
+    maxParallel: 2,
+    outcomes: {
+      passed: { target: "$terminal", terminalStatus: "completed" },
+      failed: { target: "$terminal", terminalStatus: "failed" },
+      "needs-work": { target: "$terminal", terminalStatus: "failed" },
+      cancelled: { target: "$terminal", terminalStatus: "cancelled" },
+    },
+  });
+  const expectedJoinStatus = (outcome: string) => outcome === "passed" ? "passed" : outcome === "cancelled" ? "cancelled" : "failed";
+  for (const outcome of ["passed", "needs-work", "cancelled"] as const) {
+    const replay = panelMembers(run, statusMatrix, [
+      { id: ASG, attempt: ATM, resultClass: "outcome", outcome, terminalOutcome: outcome },
+      { id: ASG2, attempt: ATM2, resultClass: "outcome", outcome, terminalOutcome: outcome },
+    ]);
+    for (const status of ["passed", "failed", "cancelled"] as const) {
+      const history = [
+        ...replay.terminal,
+        event(run, replay.terminal.length + 1, "step.status_changed", { stepId: "only", status, previousStatus: "running" }),
+      ];
+      if (status === expectedJoinStatus(outcome)) {
+        assert.equal(foldVnextRunState(run, statusMatrix, history).currentStep?.status, status);
+      } else {
+        illegal(history, statusMatrix);
+      }
+    }
+  }
+
+  const terminalThenCreated = panelMembers(run, panel, [
+    { id: ASG, attempt: ATM, resultClass: "outcome", outcome: "passed", terminalOutcome: "passed" },
+  ]);
+  const mixedOwners = [
+    ...terminalThenCreated.terminal,
+    event(run, terminalThenCreated.terminal.length + 1, "assignment.created", {
+      assignmentId: ASG2, stepId: "only", stepAttempt: 1, agentId: "implementer", status: "created",
+    }),
+  ];
+  illegal([...mixedOwners, event(run, mixedOwners.length + 1, "step.status_changed", { stepId: "only", status: "passed", previousStatus: "running" })], panel);
+  illegal([...mixedOwners, event(run, mixedOwners.length + 1, "step.status_changed", { stepId: "only", status: "failed", previousStatus: "running" })], panel);
+  illegal([...mixedOwners, event(run, mixedOwners.length + 1, "step.status_changed", { stepId: "only", status: "cancelled", previousStatus: "running" })], panel);
+
+  const { events: undersizedCreatedEvents, push: undersizedCreatedPush } = panelPush(run);
+  panelBootstrap(undersizedCreatedPush, run, true);
+  undersizedCreatedPush("assignment.created", { assignmentId: ASG, stepId: "only", stepAttempt: 1, agentId: "implementer", status: "created" });
+  undersizedCreatedPush("run.cancel_requested", { actor: { kind: "runtime", id: HOME }, reason: "operator_cancel" });
+  illegal([...undersizedCreatedEvents, event(run, undersizedCreatedEvents.length + 1, "step.status_changed", { stepId: "only", status: "passed", previousStatus: "running" })], minTwo);
+  illegal([...undersizedCreatedEvents, event(run, undersizedCreatedEvents.length + 1, "step.status_changed", { stepId: "only", status: "failed", previousStatus: "running" })], minTwo);
+  illegal([...undersizedCreatedEvents, event(run, undersizedCreatedEvents.length + 1, "step.status_changed", { stepId: "only", status: "cancelled", previousStatus: "running" })], minTwo);
+
+  const serial = compilePanelPlan({ maximum: 3, maxParallel: 1 });
+  const firstStarting = panelPrefix(run, serial, [{ id: ASG, attempt: ATM }], "starting");
+  const secondCreated = [
+    ...firstStarting,
+    event(run, firstStarting.length + 1, "assignment.created", {
+      assignmentId: ASG2, stepId: "only", stepAttempt: 1, agentId: "implementer", status: "created",
+    }),
+    event(run, firstStarting.length + 2, "assignment.accepted", { assignmentId: ASG2, status: "accepted" }),
+    event(run, firstStarting.length + 3, "attempt.created", { attemptId: ATM2, assignmentId: ASG2, status: "created" }),
+    event(run, firstStarting.length + 4, "assignment.dispatched", { assignmentId: ASG2, capabilityHash: PLAN_HASH, status: "dispatched" }),
+  ];
+  illegal([...secondCreated, event(run, secondCreated.length + 1, "attempt.status_changed", { attemptId: ATM2, status: "starting" })], serial);
+  const firstSettled = panelMembers(run, serial, [
+    { id: ASG, attempt: ATM, resultClass: "outcome", outcome: "passed", terminalOutcome: "passed" },
+  ]);
+  const admitAfter = [
+    ...firstSettled.terminal,
+    event(run, firstSettled.terminal.length + 1, "assignment.created", {
+      assignmentId: ASG2, stepId: "only", stepAttempt: 1, agentId: "implementer", status: "created",
+    }),
+    event(run, firstSettled.terminal.length + 2, "assignment.accepted", { assignmentId: ASG2, status: "accepted" }),
+    event(run, firstSettled.terminal.length + 3, "attempt.created", { attemptId: ATM2, assignmentId: ASG2, status: "created" }),
+    event(run, firstSettled.terminal.length + 4, "assignment.dispatched", { assignmentId: ASG2, capabilityHash: PLAN_HASH, status: "dispatched" }),
+    event(run, firstSettled.terminal.length + 5, "attempt.status_changed", { attemptId: ATM2, status: "starting" }),
+  ];
+  assert.equal(foldVnextRunState(run, serial, admitAfter).currentStep?.panel.assignments[ASG2]?.attempts[ATM2]?.status, "starting");
+
+  const third = compilePanelPlan({ maximum: 2, maxParallel: 2 });
+  const twoAssignments = panelPrefix(run, third, [
+    { id: ASG, attempt: ATM },
+    { id: ASG2, attempt: ATM2 },
+  ], "created-both");
+  illegal([
+    ...twoAssignments,
+    event(run, twoAssignments.length + 1, "assignment.created", {
+      assignmentId: "asg_01JASSIGN30000000000000000", stepId: "only", stepAttempt: 1, agentId: "implementer", status: "created",
+    }),
+  ], third);
+
+  const secondAttempt = panelPrefix(run, panel, [{ id: ASG, attempt: ATM }], "created");
+  const afterAttempt = [
+    ...secondAttempt,
+    event(run, secondAttempt.length + 1, "assignment.accepted", { assignmentId: ASG, status: "accepted" }),
+    event(run, secondAttempt.length + 2, "attempt.created", { attemptId: ATM, assignmentId: ASG, status: "created" }),
+  ];
+  illegal([...afterAttempt, event(run, afterAttempt.length + 1, "attempt.created", { attemptId: ATM2, assignmentId: ASG, status: "created" })], panel);
+
+  const startThenCancel = panelPrefix(run, panel, [{ id: ASG, attempt: ATM }], "starting");
+  const withCancel = [
+    ...startThenCancel,
+    event(run, startThenCancel.length + 1, "run.cancel_requested", { actor: { kind: "runtime", id: HOME }, reason: "operator_cancel" }),
+  ];
+  illegal([...withCancel, event(run, withCancel.length + 1, "attempt.status_changed", { attemptId: ATM, status: "settling" })], panel);
+  const gateStarting = panelPrefix(run, gate, [{ id: ASG, attempt: ATM }], "starting");
+  illegal([...gateStarting, event(run, gateStarting.length + 1, "attempt.status_changed", { attemptId: ATM, status: "settling" })], gate);
+
+  const singletonPlan = compileVnextWorkflow({
+    id: "agent-only",
+    value: parseRestrictedYaml(readFileSync(join(fixtureDir, "agent-only.yaml"), "utf8"), "agent-only.yaml"),
+  });
+  const singletonRun = { ...run, workflowId: "agent-only" };
+  const executing = foldPrefix(singletonRun, singletonPlan, "executing");
+  const executingState = foldVnextRunState(singletonRun, singletonPlan, executing);
+  assert.equal(executingState.schema, "kxm.run-state.v2");
+  assert.equal(executingState.currentStep?.assignmentId, ASG);
+  assert.equal(executingState.currentStep?.attemptId, ATM);
+  assert.equal(FOLD_PANEL_BOUND, 1);
+
+  const joinOnce = vnextJoinAll(panel.steps.only!, foldVnextRunState(run, panel, bothPassed.terminal).currentStep!.panel);
+  const joinTwice = vnextJoinAll(panel.steps.only!, foldVnextRunState(run, panel, bothPassed.terminal).currentStep!.panel);
+  assert.deepEqual(joinOnce, joinTwice);
+  assert.deepEqual(joinOnce, { tag: "outcome", outcome: "passed" });
+  const frozenPanel = foldVnextRunState(run, panel, bothPassed.terminal).currentStep!.panel;
+  const before = JSON.stringify(frozenPanel);
+  vnextJoinAll(panel.steps.only!, frozenPanel);
+  assert.equal(JSON.stringify(frozenPanel), before);
+});
+
 test("owner map is exact per attempt, refuses duplicates, and cancel aborts one run", async () => {
   const storePath = join(tmpdir(), `kxm-owner-${process.pid}-${Date.now()}`);
   const runA = "run_01JOWNERA00000000000000000";
@@ -1461,6 +1849,8 @@ test("full-shape rehydration rejects malformed envelopes with matching hashes", 
 const PLAN_HASH = "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 const ASG = "asg_01JASSIGN00000000000000000";
 const ATM = "atm_01JATTEMPT00000000000000";
+const ASG2 = "asg_01JASSIGN20000000000000000";
+const ATM2 = "atm_01JATTEMPT2000000000000";
 
 function event(run: VnextRunRecord, sequence: number, eventType: string, payload: Record<string, unknown>): VnextRunEvent {
   return {
@@ -1549,4 +1939,158 @@ function foldPrefix(
   if (stage === "transitioned") return events;
   events.push(event(run, 21, "run.status_changed", { status: selected.terminalStatus }));
   return events;
+}
+
+function compilePanelPlan(spec: {
+  kind?: "agent" | "moa" | "gate" | "approval" | "wait";
+  minimum?: number;
+  maximum?: number;
+  maxParallel?: number;
+  joinStrategy?: "all" | "all-settled" | "quorum" | "first-success";
+  outcomes?: Record<string, { target: "$terminal"; terminalStatus: "completed" | "failed" | "cancelled" }>;
+}): ReturnType<typeof compileVnextWorkflow> {
+  const kind = spec.kind ?? "agent";
+  const maximum = spec.maximum ?? 2;
+  const step: JsonObject = {
+    id: "only",
+    kind,
+    assignments: {
+      minimum: spec.minimum ?? 1,
+      target: maximum,
+      maximum,
+      maxParallel: spec.maxParallel ?? maximum,
+    },
+    join: { strategy: spec.joinStrategy ?? "all" },
+    on: spec.outcomes ?? {
+      passed: { target: "$terminal", terminalStatus: "completed" },
+      failed: { target: "$terminal", terminalStatus: "failed" },
+    },
+  };
+  if (kind === "agent" || kind === "moa") step.agent = "implementer";
+  if (kind === "gate") step.gate = "local-verify";
+  if (kind === "wait") step.signal = "continue";
+  return compileVnextWorkflow({
+    id: "panel",
+    value: { schema: "kxm.workflow.v1", coordinator: "coordinator", steps: [step] },
+  });
+}
+
+interface PanelMemberSpec {
+  id: string;
+  attempt: string;
+  resultClass?: string;
+  outcome?: string;
+  terminalOutcome?: string;
+}
+
+function panelPush(run: VnextRunRecord): { events: VnextRunEvent[]; push: (type: string, payload: Record<string, unknown>) => void } {
+  const events: VnextRunEvent[] = [];
+  const push = (type: string, payload: Record<string, unknown>) => {
+    events.push(event(run, events.length + 1, type, payload));
+  };
+  return { events, push };
+}
+
+function panelBootstrap(push: (type: string, payload: Record<string, unknown>) => void, run: VnextRunRecord, running = false): void {
+  push("run.created", {
+    workflowId: run.workflowId,
+    status: "created",
+    promptHash: run.promptSha256,
+    repositoryIds: [],
+    executorIds: [],
+  });
+  push("run.status_changed", { status: "preparing", runPlanHash: PLAN_HASH });
+  push("run.status_changed", { status: "running" });
+  push("step.entered", { stepId: "only", stepAttempt: 1, status: "pending" });
+  push("step.status_changed", { stepId: "only", status: "preparing", previousStatus: "pending" });
+  if (running) push("step.status_changed", { stepId: "only", status: "running", previousStatus: "preparing" });
+}
+
+function panelAdvanceMember(
+  push: (type: string, payload: Record<string, unknown>) => void,
+  member: PanelMemberSpec,
+  through: "created" | "starting" | "executing" | "result" | "attempt-terminal" | "terminal",
+): void {
+  push("assignment.created", { assignmentId: member.id, stepId: "only", stepAttempt: 1, agentId: "implementer", status: "created" });
+  if (through === "created") return;
+  push("assignment.accepted", { assignmentId: member.id, status: "accepted" });
+  push("attempt.created", { attemptId: member.attempt, assignmentId: member.id, status: "created" });
+  push("assignment.dispatched", { assignmentId: member.id, capabilityHash: PLAN_HASH, status: "dispatched" });
+  push("attempt.status_changed", { attemptId: member.attempt, status: "starting" });
+  if (through === "starting") return;
+  push("assignment.executing", { assignmentId: member.id, status: "executing" });
+  push("attempt.status_changed", { attemptId: member.attempt, status: "executing" });
+  if (through === "executing") return;
+  push("attempt.status_changed", { attemptId: member.attempt, status: "settling" });
+  const recorded: Record<string, unknown> = { assignmentId: member.id, resultClass: member.resultClass ?? "outcome", status: "result_recorded" };
+  if (member.outcome !== undefined) recorded.outcome = member.outcome;
+  push("assignment.result_recorded", recorded);
+  if (through === "result") return;
+  push("attempt.status_changed", { attemptId: member.attempt, status: "terminal" });
+  if (through === "attempt-terminal") return;
+  push("assignment.terminal", { assignmentId: member.id, outcome: member.terminalOutcome ?? member.outcome ?? "failed", status: "terminal" });
+}
+
+function panelPrefix(
+  run: VnextRunRecord,
+  _plan: ReturnType<typeof compileVnextWorkflow>,
+  members: PanelMemberSpec[],
+  stage: "created" | "created-both" | "starting",
+): VnextRunEvent[] {
+  const { events, push } = panelPush(run);
+  panelBootstrap(push, run, false);
+  if (stage === "created") {
+    panelAdvanceMember(push, members[0]!, "created");
+    return events;
+  }
+  if (stage === "created-both") {
+    for (const member of members) panelAdvanceMember(push, member, "created");
+    return events;
+  }
+  let stepRunning = false;
+  for (const member of members) {
+    panelAdvanceMember(push, member, "starting");
+    if (!stepRunning) {
+      push("step.status_changed", { stepId: "only", status: "running", previousStatus: "preparing" });
+      stepRunning = true;
+    }
+  }
+  return events;
+}
+
+function panelMembers(
+  run: VnextRunRecord,
+  _plan: ReturnType<typeof compileVnextWorkflow>,
+  members: PanelMemberSpec[],
+  options: { cancelRequested?: boolean } = {},
+): { terminal: VnextRunEvent[]; beforeFirstTerminal: VnextRunEvent[] } {
+  const { events, push } = panelPush(run);
+  panelBootstrap(push, run, false);
+  let stepRunning = false;
+  for (const member of members) {
+    panelAdvanceMember(push, member, "starting");
+    if (!stepRunning) {
+      push("step.status_changed", { stepId: "only", status: "running", previousStatus: "preparing" });
+      stepRunning = true;
+    }
+  }
+  for (const member of members) {
+    push("assignment.executing", { assignmentId: member.id, status: "executing" });
+    push("attempt.status_changed", { attemptId: member.attempt, status: "executing" });
+  }
+  if (options.cancelRequested) {
+    push("run.cancel_requested", { actor: { kind: "runtime", id: HOME }, reason: "operator_cancel" });
+  }
+  for (const member of members) {
+    push("attempt.status_changed", { attemptId: member.attempt, status: "settling" });
+    const recorded: Record<string, unknown> = { assignmentId: member.id, resultClass: member.resultClass ?? "outcome", status: "result_recorded" };
+    if (member.outcome !== undefined) recorded.outcome = member.outcome;
+    push("assignment.result_recorded", recorded);
+    push("attempt.status_changed", { attemptId: member.attempt, status: "terminal" });
+  }
+  const beforeFirstTerminal = [...events];
+  for (const member of members) {
+    push("assignment.terminal", { assignmentId: member.id, outcome: member.terminalOutcome ?? member.outcome ?? "failed", status: "terminal" });
+  }
+  return { terminal: events, beforeFirstTerminal };
 }

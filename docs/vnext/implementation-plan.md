@@ -580,8 +580,13 @@ It does not replace the phase gates below.
   stream observations, and real process facts are implemented in S4
   (unreleased). D4 U1 (unreleased, partial foundation only) folds a bound-1
   authoritative panel as `kxm.run-state.v2` and owns controllers by exact
-  attempt id; stale v1 projections fail closed without rewrite. D4 recovery,
-  joins, approval, waits, duration/cost budgets, and producer drain follow.
+  attempt id; stale v1 projections fail closed without rewrite. D4 U2a-1
+  (unreleased, fold only) derives join-all from per-assignment current
+  attempt results, bounds agent/moa `all` panels by compiled
+  `assignments.maximum` (other kinds/strategies stay 1), and checks
+  `maxParallel` before a next `starting`. Engine multi-dispatch remains
+  guarded. D4 recovery, remaining joins, approval, waits, duration/cost
+  budgets, and producer drain follow.
   Then the full model-free driver must complete `default.yaml` and
   `fix.yaml`. D3/D4 must honor declared `assignments` and `join` on non-agent
   steps or fail closed. Neither the agent-only loop nor the merged developer
@@ -790,10 +795,11 @@ proof, an exact in-process active hold may finish internally so admission
 can release; unresolved holds do not. D4 U1 (partial foundation, unreleased)
 keeps one assignment and one physical attempt, stores that pair in an
 authoritative bound-1 panel (`kxm.run-state.v2`), and looks up owners by
-exact attempt id. No new events, statuses, recovery, joins, or driver work
-land in U1. D4 recovery, joins, approval, waits, duration/cost budgets, and
-the full model-free driver remain open. Issue #89 remains open. No Phase 3
-Gate sentence is claimed passed.
+exact attempt id. D4 U2a-1 (unreleased, fold only) defines and tests
+panel join-all fold semantics; engine multi-dispatch is still guarded.
+No new events or run-state fields. D4 recovery, remaining joins, approval,
+waits, duration/cost budgets, and the full model-free driver remain open.
+Issue #89 remains open. No Phase 3 Gate sentence is claimed passed.
 
 **Developer prerequisite (PR #129 merged, #127 closed):** the assignment runner
 has native assignment records, fixed witnesses, exact-commit acceptance and

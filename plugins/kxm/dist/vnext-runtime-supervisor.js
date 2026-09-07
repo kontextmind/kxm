@@ -17618,9 +17618,83 @@ function findPanelAttempt(panel, attemptId) {
   for (const assignmentId of panel.order) {
     const assignment = panel.assignments[assignmentId];
     const attempt = assignment?.attempts[attemptId];
-    if (attempt) return { assignmentId, assignment, attempt };
+    if (attempt && assignment) return { assignmentId, assignment, attempt };
   }
   return void 0;
+}
+function panelAssignmentBound(plan, current) {
+  const step = plan?.steps[current.stepId];
+  if (!step) return FOLD_PANEL_BOUND;
+  if ((step.kind === "agent" || step.kind === "moa") && step.join.strategy === "all") {
+    return step.assignments.maximum;
+  }
+  return FOLD_PANEL_BOUND;
+}
+function panelAssignmentsTerminal(current) {
+  if (current.panel.order.length === 0) return false;
+  for (const assignmentId of current.panel.order) {
+    const assignment = current.panel.assignments[assignmentId];
+    if (!assignment || assignment.status !== "terminal") return false;
+  }
+  return true;
+}
+function panelIssuedAttemptsTerminal(current) {
+  for (const assignmentId of current.panel.order) {
+    const assignment = current.panel.assignments[assignmentId];
+    if (!assignment) return false;
+    for (const attempt of Object.values(assignment.attempts)) {
+      if (attempt.status !== "terminal") return false;
+    }
+  }
+  return true;
+}
+function panelInFlightCount(panel) {
+  let count = 0;
+  for (const assignmentId of panel.order) {
+    const assignment = panel.assignments[assignmentId];
+    if (!assignment) continue;
+    for (const attempt of Object.values(assignment.attempts)) {
+      if (attempt.status === "starting" || attempt.status === "executing" || attempt.status === "settling") count += 1;
+    }
+  }
+  return count;
+}
+function currentAttemptOf(assignment) {
+  const attemptId = assignment.currentAttemptId;
+  return attemptId ? assignment.attempts[attemptId] : void 0;
+}
+function expectedStatusForDeclaredOutcome(step, outcome) {
+  if (outcome === "passed") return "passed";
+  if (outcome === "cancelled") return "cancelled";
+  return "failed";
+}
+function vnextJoinAll(step, panel) {
+  if (panel.order.length < step.assignments.minimum) return { tag: "unsatisfied" };
+  const members = [];
+  for (const assignmentId of panel.order) {
+    const assignment = panel.assignments[assignmentId];
+    if (!assignment || assignment.status !== "terminal") return { tag: "unsatisfied" };
+    const issued = Object.values(assignment.attempts);
+    if (issued.length === 0) return { tag: "unsatisfied" };
+    for (const attempt of issued) {
+      if (attempt.status !== "terminal" || !attempt.resultClass) return { tag: "unsatisfied" };
+    }
+    const current = currentAttemptOf(assignment);
+    if (!current?.resultClass) return { tag: "unsatisfied" };
+    members.push({ resultClass: current.resultClass, outcome: current.outcome });
+  }
+  if (members.some((member) => member.resultClass === "outcome_unknown" || member.resultClass === "producer_rejected")) {
+    return { tag: "rejected" };
+  }
+  if (members.every((member) => member.resultClass === "cancelled")) return { tag: "cancelled" };
+  if (members.every((member) => member.resultClass === "outcome")) {
+    const outcome = members[0]?.outcome;
+    if (typeof outcome === "string" && members.every((member) => member.outcome === outcome)) {
+      return { tag: "outcome", outcome };
+    }
+    return { tag: "conflict" };
+  }
+  return { tag: "conflict" };
 }
 function putAssignment(current, assignmentId, assignment) {
   return {
@@ -17696,7 +17770,7 @@ function foldVnextRunState(run, plan, events, options = {}) {
         foldStepEntered(state, plan, event);
         break;
       case "step.status_changed":
-        foldStepStatus(state, event);
+        foldStepStatus(state, plan, event);
         break;
       case "step.outcome_recorded":
         foldOutcome(state, plan, event);
@@ -17705,7 +17779,7 @@ function foldVnextRunState(run, plan, events, options = {}) {
         foldTransitioned(state, plan, event);
         break;
       case "assignment.created":
-        foldAssignmentCreated(state, event);
+        foldAssignmentCreated(state, plan, event);
         break;
       case "assignment.accepted":
         foldAssignmentAdvance(state, plan, event, "accepted");
@@ -17826,7 +17900,7 @@ function assertTerminalRunStatus(state, plan, status, event) {
     if ((state.status === "created" || state.status === "preparing") && state.cancelRequested) return;
     if (state.status === "cancelling") {
       if (!state.currentStep) return;
-      if (state.currentStep.status === "cancelled" && (!panelAttemptId(state.currentStep) || panelAttempt(state.currentStep)?.status === "terminal")) {
+      if (state.currentStep.status === "cancelled" && panelIssuedAttemptsTerminal(state.currentStep)) {
         return;
       }
     }
@@ -17836,7 +17910,7 @@ function assertTerminalRunStatus(state, plan, status, event) {
     if (state.lastTerminalTransition === "failed") return;
     if (isProvenFailure(state, plan)) return;
     const currentStep = state.currentStep;
-    if (event.payload.reason === "executing_unrecorded" && currentStep && panelAttempt(currentStep)?.status === "starting") {
+    if (event.payload.reason === "executing_unrecorded" && currentStep && currentStep.panel.order.length === 1 && panelAttempt(currentStep)?.status === "starting") {
       const step = plan?.steps[currentStep.stepId];
       if (step?.kind === "gate") {
         throw runtimeError("run_events_illegal", state.runId, "executing_unrecorded is illegal on a gate step");
@@ -17850,10 +17924,12 @@ function isProvenFailure(state, plan) {
   const current = state.currentStep;
   if (current) {
     const stepTerminal = current.status === "passed" || current.status === "failed" || current.status === "cancelled";
-    const settled = (!panelAttemptId(current) || panelAttempt(current)?.status === "terminal") && (!panelAssignmentId(current) || panelAssignment(current)?.status === "terminal");
+    const settled = panelIssuedAttemptsTerminal(current) && panelAssignmentsTerminal(current);
     if (stepTerminal && settled) {
-      if ((state.recordedResultClass === "outcome_unknown" || state.recordedResultClass === "producer_rejected") && current.status === "failed") {
-        return true;
+      const step2 = plan?.steps[current.stepId];
+      if (step2 && current.status === "failed") {
+        const joined = vnextJoinAll(step2, current.panel);
+        if (joined.tag === "rejected" || joined.tag === "conflict") return true;
       }
       if (plan && current.outcome) {
         const selected = plan.steps[current.stepId]?.transitions[current.outcome];
@@ -17915,11 +17991,9 @@ function foldStepEntered(state, plan, event) {
   state.pendingStepId = void 0;
   state.awaitingTransition = false;
   state.lastOutcomeEvent = void 0;
-  state.recordedOutcome = void 0;
-  state.recordedResultClass = void 0;
   state.currentStep = { stepId, stepAttempt, status: "pending", panel: emptyPanel() };
 }
-function foldStepStatus(state, event) {
+function foldStepStatus(state, plan, event) {
   requireActiveStep(state, "step.status_changed");
   const stepId = stringPayload(event, "stepId");
   const status = stringPayload(event, "status");
@@ -17934,10 +18008,49 @@ function foldStepStatus(state, event) {
     throw runtimeError("run_events_illegal", state.runId, `illegal step transition ${state.currentStep.status} -> ${status}`);
   }
   if (status === "passed" || status === "failed" || status === "cancelled") {
-    if (panelAttemptId(state.currentStep) && panelAttempt(state.currentStep)?.status !== "terminal") {
+    const current = state.currentStep;
+    if (!panelIssuedAttemptsTerminal(current)) {
       throw runtimeError("run_events_illegal", state.runId, "terminal step status requires a terminal attempt");
     }
-    if (status === "passed" && state.recordedOutcome !== "passed") {
+    const step = plan ? requireStep(plan, current.stepId, state.runId) : void 0;
+    if (step) {
+      const joined = vnextJoinAll(step, current.panel);
+      if (joined.tag === "outcome") {
+        const expectedStatus = expectedStatusForDeclaredOutcome(step, joined.outcome);
+        const selected = step.transitions[joined.outcome];
+        const isCustomOutcomeCancelled = typeof joined.outcome === "string" && joined.outcome !== "passed" && joined.outcome !== "cancelled" && selected?.to === "terminal" && selected.terminalStatus === "cancelled" && status === "cancelled";
+        if (status !== expectedStatus && !isCustomOutcomeCancelled) {
+          if (expectedStatus === "passed") {
+            throw runtimeError("run_events_illegal", state.runId, "passed outcome must lead to passed status");
+          }
+          if (expectedStatus === "cancelled") {
+            throw runtimeError("run_events_illegal", state.runId, "cancelled outcome must lead to cancelled status");
+          }
+          throw runtimeError("run_events_illegal", state.runId, "non-passed declared outcome must lead to failed status");
+        }
+      } else if (joined.tag === "unsatisfied") {
+        const assignmentId = current.panel.order[0];
+        const assignment = assignmentId ? current.panel.assignments[assignmentId] : void 0;
+        const createdOnlySingleton = status === "cancelled" && state.cancelRequested && current.panel.order.length === 1 && current.panel.order.length >= step.assignments.minimum && assignment?.status === "created";
+        if (!createdOnlySingleton) {
+          throw runtimeError("run_events_illegal", state.runId, "terminal step status is not legal for this panel join");
+        }
+      } else if (joined.tag === "rejected" || joined.tag === "conflict") {
+        if (status === "cancelled") {
+          throw runtimeError("run_events_illegal", state.runId, "rejected or conflict cannot cancel the step");
+        }
+        if (status !== "failed") {
+          throw runtimeError("run_events_illegal", state.runId, "passed requires recordedOutcome passed");
+        }
+      } else if (joined.tag === "cancelled") {
+        if (!state.cancelRequested) {
+          throw runtimeError("run_events_illegal", state.runId, "cancelled join requires cancellation authority");
+        }
+        if (status !== "cancelled") {
+          throw runtimeError("run_events_illegal", state.runId, "cancelled join must lead to cancelled status");
+        }
+      }
+    } else if (status === "passed") {
       throw runtimeError("run_events_illegal", state.runId, "passed requires recordedOutcome passed");
     }
     if (state.lastOutcomeEvent) state.awaitingTransition = true;
@@ -17953,16 +18066,17 @@ function foldOutcome(state, plan, event) {
   if (stepId !== current.stepId || stepAttempt !== current.stepAttempt) {
     throw runtimeError("run_events_illegal", state.runId, "step.outcome_recorded does not match the active attempt");
   }
-  if (panelAttempt(current)?.status !== "terminal" || panelAssignment(current)?.status !== "terminal") {
+  if (!panelIssuedAttemptsTerminal(current) || !panelAssignmentsTerminal(current)) {
     throw runtimeError("run_events_illegal", state.runId, "step.outcome_recorded requires a terminal attempt and assignment");
   }
   if (current.outcome !== void 0) {
     throw runtimeError("run_events_illegal", state.runId, "step.outcome_recorded cannot overwrite a recorded outcome");
   }
-  if (outcome !== state.recordedOutcome) {
+  const step = requireStep(plan, stepId, state.runId);
+  const joined = vnextJoinAll(step, current.panel);
+  if (joined.tag !== "outcome" || joined.outcome !== outcome) {
     throw runtimeError("run_events_illegal", state.runId, "step.outcome_recorded does not match the recorded assignment outcome");
   }
-  const step = requireStep(plan, stepId, state.runId);
   if (!step.outcomes.includes(outcome)) {
     throw runtimeError("run_events_illegal", state.runId, `outcome ${outcome} is not declared for ${stepId}`);
   }
@@ -18031,10 +18145,10 @@ function assertTransitionPayload(runId, selected, event) {
     throw runtimeError("run_events_illegal", runId, "terminal step.transitioned status does not match the compiled terminal");
   }
 }
-function foldAssignmentCreated(state, event) {
+function foldAssignmentCreated(state, plan, event) {
   requireActiveStep(state, "assignment.created");
   const current = state.currentStep;
-  if (current.panel.order.length >= FOLD_PANEL_BOUND) {
+  if (current.panel.order.length >= panelAssignmentBound(plan, current)) {
     throw runtimeError("run_events_illegal", state.runId, "assignment.created repeats an assignment");
   }
   const assignmentId = stringPayload(event, "assignmentId");
@@ -18101,7 +18215,6 @@ function foldAssignmentAdvance(state, plan, event, next) {
           throw runtimeError("run_events_illegal", state.runId, "gate result outcome does not match settledOutcome");
         }
       }
-      state.recordedOutcome = outcome;
       if (attemptId && attempt) {
         nextAssignment = {
           ...nextAssignment,
@@ -18122,7 +18235,6 @@ function foldAssignmentAdvance(state, plan, event, next) {
           throw runtimeError("run_events_illegal", state.runId, "producer_rejected requires a no-start observation");
         }
       }
-      state.recordedOutcome = void 0;
       if (attemptId && attempt) {
         nextAssignment = {
           ...nextAssignment,
@@ -18130,13 +18242,13 @@ function foldAssignmentAdvance(state, plan, event, next) {
         };
       }
     }
-    state.recordedResultClass = resultClass;
   }
   if (next === "terminal") {
     const outcome = stringPayload(event, "outcome");
-    const resultClass = state.recordedResultClass;
+    const ownerAttempt = currentAttemptOf(nextAssignment);
+    const resultClass = ownerAttempt?.resultClass;
     if (resultClass === "outcome") {
-      if (outcome !== state.recordedOutcome) {
+      if (outcome !== ownerAttempt?.outcome) {
         throw runtimeError("run_events_illegal", state.runId, "assignment.terminal outcome does not match result_recorded");
       }
     } else if (resultClass === "outcome_unknown" || resultClass === "producer_rejected") {
@@ -18202,6 +18314,9 @@ function foldAttemptStatus(state, plan, event) {
   const noStartSettling = step.kind === "gate" && located.attempt.status === "starting" && status === "settling" && (current.effectState === "observed-no-start" || current.effectState === "settled-proof");
   if (!allowed?.has(status) && !noStartSettling) {
     throw runtimeError("run_events_illegal", state.runId, `illegal attempt transition ${located.attempt.status} -> ${status}`);
+  }
+  if (status === "starting" && panelInFlightCount(current.panel) + 1 > step.assignments.maxParallel) {
+    throw runtimeError("run_events_illegal", state.runId, "maxParallel exceeded");
   }
   state.currentStep = putAssignment(current, located.assignmentId, {
     ...located.assignment,
