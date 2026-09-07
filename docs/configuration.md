@@ -325,6 +325,16 @@ stay discovery/build metadata and are not registered as a `cost.tiers`
 schedule that can underquote at an exact threshold. Upper-bound estimates are
 labeled in both `nous/*` and `nous-proxy/*` display names (proxy keeps
 `subscription proxy, market ref`). Source URL, fetch date, and raw SHA stay
-on the discovery report. Streaming compatibility flags remain unverified.
+on the discovery report. **Compatibility (2026-09-07):** tests verified one
+streamed tool call plus usage on `qwen/qwen3-coder-plus` for the direct API
+and an OAuth-backed Hermes proxy. Both recorded usage. Included subscription
+quota consumed and extra billed amount remain unknown. Other models and
+automatic auth refresh remain unverified. Official Nous native Messages
+support is documented for `anthropic/*` only; Qwen uses chat/completions, so
+direct Claude→Nous→Qwen is unsupported by that route
+([hermes_cli/providers.py](https://github.com/NousResearch/hermes-agent/blob/main/hermes_cli/providers.py),
+observed 2026-09-07). A mocked env bearer proves header support, not OAuth
+credential interchangeability. KXM does not start the Hermes proxy; an
+operator isolated test did. Default configuration is unchanged.
 Assumed OpenAI-style fixtures under `test/fixtures/nous/` still cover the
 older numeric `cost` shape.
