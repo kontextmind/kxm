@@ -20,6 +20,7 @@ import {
 } from "../plugins/kxm/src/nous-provider.ts";
 
 const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "nous");
+const FIXTURE_NOW_MS = Date.parse("2026-09-07T18:00:08.000Z");
 
 function readJson(name: string): unknown {
   return JSON.parse(readFileSync(join(fixtureDir, name), "utf8"));
@@ -97,7 +98,7 @@ test("string pricing is not guessed into zeros", () => {
 
 test("catalog pin supplies capacity and preserves upper-bound plus verified zeros", () => {
   const pinFile = readJson("catalog-pin.json");
-  const loaded = parseCatalogPin(pinFile);
+  const loaded = parseCatalogPin(pinFile, FIXTURE_NOW_MS);
   assert.equal(loaded.ok, true);
   if (!loaded.ok) return;
   const idsOnly = parseModelsResponse(readJson("models-ids-only.json"));
@@ -118,7 +119,7 @@ test("catalog pin supplies capacity and preserves upper-bound plus verified zero
   assert.equal(proxy.registered[0]?.billing, "subscription");
   assert.equal(proxy.registered[0]?.cost.output, 2.4);
 
-  const tiers = parseCatalogPin(readJson("catalog-tiers.json"));
+  const tiers = parseCatalogPin(readJson("catalog-tiers.json"), FIXTURE_NOW_MS);
   assert.equal(tiers.ok, true);
   if (!tiers.ok) return;
   const tiered = buildModelConfigs([{ id: "tiered-model" }], tiers.pin, "direct");
@@ -150,7 +151,7 @@ test("malformed, stale, unit-less, and unverified-zero pins fail closed", () => 
     },
   };
   const negative = { ...base, hash: catalogHash(base) };
-  assert.equal(parseCatalogPin(negative).ok, false);
+  assert.equal(parseCatalogPin(negative, FIXTURE_NOW_MS).ok, false);
 
   const unverifiedZeroModels = {
     ...base,
@@ -165,10 +166,10 @@ test("malformed, stale, unit-less, and unverified-zero pins fail closed", () => 
       },
     },
   };
-  assert.equal(parseCatalogPin({ ...unverifiedZeroModels, hash: catalogHash(unverifiedZeroModels) }).ok, false);
+  assert.equal(parseCatalogPin({ ...unverifiedZeroModels, hash: catalogHash(unverifiedZeroModels) }, FIXTURE_NOW_MS).ok, false);
 
   const unitless = { ...base, units: "tokens", models: {} };
-  assert.equal(parseCatalogPin({ ...unitless, hash: catalogHash(unitless) }).ok, false);
+  assert.equal(parseCatalogPin({ ...unitless, hash: catalogHash(unitless) }, FIXTURE_NOW_MS).ok, false);
 
   const empty = readJson("catalog-empty.json") as NousCatalogPin;
   const stale = parseCatalogPin(empty, Date.parse("2026-11-01T00:00:00.000Z"));
@@ -176,7 +177,7 @@ test("malformed, stale, unit-less, and unverified-zero pins fail closed", () => 
   if (!stale.ok) assert.match(stale.reason, /stale/);
 
   const wrongHash = { ...empty, hash: "sha256:" + "ab".repeat(32) };
-  assert.equal(parseCatalogPin(wrongHash).ok, false);
+  assert.equal(parseCatalogPin(wrongHash, FIXTURE_NOW_MS).ok, false);
 });
 
 test("discovery timeout, 401, and connection refused are classified without leaking secrets", async () => {
@@ -372,7 +373,7 @@ test("matching catalog pin supplies rates and capacity when live pricing is malf
     units: NOUS_PRICE_UNITS,
     models,
   };
-  const loaded = parseCatalogPin({ ...pinBody, hash: catalogHash(pinBody) });
+  const loaded = parseCatalogPin({ ...pinBody, hash: catalogHash(pinBody) }, FIXTURE_NOW_MS);
   assert.equal(loaded.ok, true);
   if (!loaded.ok) return;
   const parsed = parseModelsResponse({

@@ -18,6 +18,7 @@ import { nousFactoryWork, registerNousProviders } from "../plugins/kxm/src/nous-
 import { preflightRequest, REQUEST_SCHEMA } from "../scripts/harness-run.mjs";
 
 const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "nous");
+const FIXTURE_NOW_MS = Date.parse("2026-09-07T18:00:08.000Z");
 const idsOnly = JSON.parse(readFileSync(join(fixtureDir, "models-ids-only.json"), "utf8"));
 const withCapacity = JSON.parse(readFileSync(join(fixtureDir, "models-with-capacity.json"), "utf8"));
 const livePublic = JSON.parse(readFileSync(join(fixtureDir, "models-live-public.json"), "utf8"));
@@ -181,6 +182,7 @@ test("proxy never sends NOUS_API_KEY and uses a placeholder bearer", async () =>
       NOUS_API_KEY: "nous-only-secret",
       KXM_NOUS_CATALOG_FILE: pinPath,
     },
+    nowMs: FIXTURE_NOW_MS,
     fetch: async (_url, init) => {
       headers.push(String((init?.headers as Record<string, string> | undefined)?.Authorization ?? ""));
       return jsonResponse(idsOnly);
@@ -262,6 +264,7 @@ test("pin registers known models and skips the rest; malformed pin is unused", a
       NOUS_API_KEY: "k",
       KXM_NOUS_CATALOG_FILE: pinPath,
     },
+    nowMs: FIXTURE_NOW_MS,
     fetch: async () => jsonResponse(idsOnly),
   });
   const models = pi.providers.get(NOUS_DIRECT_ID)?.models as Array<{ id: string }>;
@@ -301,7 +304,7 @@ test("live public catalog registers observed metadata, upper-bound rates, and di
   const pi = fakePi();
   const report = await registerNousProviders(pi.api, {
     env: { KXM_NOUS_PROVIDERS: "direct", NOUS_API_KEY: "k" },
-    nowMs: Date.parse("2026-09-07T18:00:08.000Z"),
+    nowMs: FIXTURE_NOW_MS,
     fetch: async () => jsonResponse(livePublic),
   });
   assert.equal(report.direct.provenance?.source, `${NOUS_DIRECT_BASE_URL}/models`);
