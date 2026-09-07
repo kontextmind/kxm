@@ -188,6 +188,7 @@ It does not replace the phase gates below.
   scheduled, the v1 report underquote fix, and remaining report
   implementation — not for those superseded instructions.
 - **Workflow taxonomy (operator, 2026-09-07):** [`docs/openrouter-model-workforce-guide.md`](../openrouter-model-workforce-guide.md) is organized Area -> Workflow -> Stage -> Assigned role across seven areas (`software-engineering`, `design-experience`, `media-production`, `data-analytics`, `research-strategy`, `business-operations`, `security-reliability`) and 21 workflows with declared kebab-case documentation slugs. Slugs are documentation identity only: no runtime config, role admission, schema field, CLI behavior, or alias lane. Inherited candidate lists are dated research requiring live verification before dispatch, not certified prices or an eligibility grant. Model/harness, platform, modality, tools, and personal/work context are routing attributes, not area trees; area grouping never pools unrelated role quality into one global model ranking. Fable and Sol critics remain required for the developer runner. No phase gate changes.
+- **Developer roster U1a foundation (2026-09-07):** An unwired synchronous helper loader reads a committed, clean policy only from a control checkout at or behind the fixed trusted main ref. It pins commit/blob/raw SHA256, validates source-bound model origins and code-owned role/permission/vendor ceilings, and replays historical policy from Git objects. Pi provider validation follows the accepted helper’s shared provider ceiling, without adding a production Nous route. Config validity is not live harness/model capability or auth evidence: the existing dispatch brakes remain in force, including native model checks. This foundation does not change live routing, grant auth, or pass a product Phase 4 gate. U1b dispatch/critic/acceptance binding and CLAUDE/PR131 replacement remain open.
 
 ### Landed in this tree (unreleased)
 
@@ -604,7 +605,7 @@ It does not replace the phase gates below.
   classify/docs/plugin) before the pause; the post-merge main Windows Node 24
   package-cleanup failure in run `34006194862` is unresolved and deferred.
 
-- **Nous opt-in Pi providers:** opt-in `nous/*` (direct API) and `nous-proxy/*` (Hermes subscription proxy) via `KXM_NOUS_PROVIDERS`, with fail-closed catalog/price boundary, bounded factory-time discovery, and env-only direct auth (`NOUS_API_KEY`). No router, no writer admission. Public `/v1/models` catalog fields are observed (`context_length`, `top_provider.max_completion_tokens`, `architecture.input_modalities`, `supported_parameters`, per-token `pricing` plus `overrides`); convert once to USD/M and never apply `original` or a blanket discount. Matching dated pins supply rates/capacity when live pricing is incomplete. Context tiers emit a labeled componentwise upper bound without a Pi `cost.tiers` schedule. Live auth and streaming compatibility flags remain unverified.
+- **Nous opt-in Pi providers:** opt-in `nous/*` (direct API) and `nous-proxy/*` (Hermes subscription proxy) via `KXM_NOUS_PROVIDERS`, with fail-closed catalog/price boundary, bounded factory-time discovery, and env-only direct auth (`NOUS_API_KEY`). No router, no writer admission. Public `/v1/models` catalog fields are observed (`context_length`, `top_provider.max_completion_tokens`, `architecture.input_modalities`, `supported_parameters`, per-token `pricing` plus `overrides`); convert once to USD/M and never apply `original` or a blanket discount. Matching dated pins supply rates/capacity when live pricing is incomplete. Context tiers emit a labeled componentwise upper bound without a Pi `cost.tiers` schedule. **Verified 2026-09-07:** tests verified one streamed tool call plus usage on `qwen/qwen3-coder-plus` for the direct API and an OAuth-backed Hermes proxy, with exact model auth. Other models, automatic auth refresh, exact quota, and extra charges remain unverified. Routing v2 and persisted catalog deferrals remain.
 
 ### Still open
 
@@ -616,6 +617,10 @@ It does not replace the phase gates below.
 - **Release resumption (deferred):** remove the `release` job latch and
   re-enable the Release workflow in a reviewed change that updates Tracking,
   tests, and settings together. Independent of Windows resumption.
+- **U1b dispatch/critic/acceptance binding:** Complete the live dispatch,
+  critic review, and acceptance binding to replace CLAUDE/PR131. This
+  includes connecting the loader to the actual routing/assignment logic.
+  U1a supplies the unwired trusted loader foundation; it does not change live assignment eligibility.
 - First real draft-to-published release after B2 (later release phase).
   `kxm update --kxm` end to end from a published asset. Temporary draft proof
   does not replace this. No sidecar `.sha256`.
@@ -720,10 +725,10 @@ It does not replace the phase gates below.
   lifecycles.md; today loader and compiler resolve omitted bounds to one
   assignment and join `all`. Change schema, loader, compiler, and docs together.
 
-- Live streaming compatibility flags for Nous after a login remain unverified. Public catalog field names and per-token pricing are observed from an unauthenticated GET.
-- Routing v2 unmetered labelling for Nous subscription-proxy usage; extra billed amount beyond subscription remains unknown unless actually reported.
+- Other Nous models, automatic auth refresh, exact quota, and extra charges remain unverified after the 2026-09-07 `qwen/qwen3-coder-plus` smokes. Public catalog field names and per-token pricing are observed from an unauthenticated GET.
+- Routing v2 unmetered labelling for Nous subscription-proxy usage: included subscription quota consumed and extra billed amount remain unknown unless actually reported.
 - Persisted Nous catalog via Pi `publish` is deferred.
-- Claude Code compatibility experiment for Nous is a separate assignment.
+- **Claude experiment outcome (2026-09-07):** installed CLI 2.1.261 local mocked Messages streaming and model passthrough, dummy API-key and bearer auth, and unknown-tool rejection passed; no real tools executed. Official Nous implementation provides native Messages only for `anthropic/*`; Qwen is chat/completions, so direct Claude→Nous→Qwen is unsupported by the documented route ([hermes_cli/providers.py](https://github.com/NousResearch/hermes-agent/blob/main/hermes_cli/providers.py), observed 2026-09-07). Anthropic via Nous was not live-tested because the authenticated native subscription is preferred. No adapter/translation layer or role admission was built. Mocked env bearer support does not prove OAuth credential interchangeability.
 
 ### Plan hygiene (periodic, not every turn)
 
@@ -903,6 +908,10 @@ replies are rejected. Out of gate: live models, provider-distinctness,
 all-settled degradation. Pi/CLI executions do not satisfy this gate.
 
 ## Phase 4: Pi adapter and Pi-native UX
+
+Developer roster U1a adds an unwired trusted policy loader and Git replay tests.
+Live developer assignment binding remains U1b; this does not satisfy the
+product adapter gate below.
 
 Implement Pi model/auth discovery, supervised RPC sessions, per-run
 coordinators, scope epochs, tool presets, model profile/tag resolution, the Pi
