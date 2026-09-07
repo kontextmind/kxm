@@ -48,6 +48,7 @@ import {
   TRANSPORT_STAGES,
   TRANSPORT_STATUSES,
   CLAIM_SOURCES,
+  piProviderOf,
   preflightRequest,
   runHarness,
 } from "./harness-run.mjs";
@@ -4000,7 +4001,7 @@ function reportAssignment(dir, taskDir, io) {
     const usage = value.usage ?? {};
     const basis = COST_BASIS.includes(usage.costBasis) ? usage.costBasis : "unknown";
     const latest = histories.witnesses.find((item) => item.id === histories.latest_witness);
-    return { ...row, type: "native", route: publicRoute({ ...value.route, provider: { claude: "anthropic", codex: "openai", grok: "xai", pi: "openrouter" }[value.route?.harness] }), status: value.transport?.status ?? "unknown",
+    return { ...row, type: "native", route: publicRoute({ ...value.route, provider: value.route?.harness === "pi" ? piProviderOf(value.route?.model) : { claude: "anthropic", codex: "openai", grok: "xai" }[value.route?.harness] }), status: value.transport?.status ?? "unknown",
       recording: value.recording?.status ?? "unknown", model_claim: value.model_claim ?? null,
       critic: value.critic?.kind === "review" ? { verdict: value.critic.verdict, judged_tree: value.critic.judged_tree } : null,
       verification: latest?.result ?? "not-run", timing: { started_at: value.transport?.startedAt ?? null,
