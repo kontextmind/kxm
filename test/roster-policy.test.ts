@@ -1,528 +1,125 @@
-import { describe, it, beforeEach, afterEach } from 'node:test';
-import assert from 'assert';
-import fs from 'fs/promises';
-import path from 'path';
-import { tmpdir } from 'os';
-import { spawnSync } from 'child_process';
-import { fileURLToPath } from 'url';
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-// Import the functions from the .mjs file
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const rosterPolicyPath = path.resolve(__dirname, '../scripts/roster-policy.mjs');
-
-// Dynamic import since it's an ES module
-const { loadTrustedRosterPolicy, resolveBoundPolicy } = await import(rosterPolicyPath);
-
-describe('roster-policy loader', () => {
-  let testDir: string;
-  let originalDir: string;
-
-  beforeEach(async () => {
-    originalDir = process.cwd();
-    
-    // Create a temporary directory for testing
-    testDir = await fs.mkdtemp(path.join(tmpdir(), 'roster-test-'));
-    process.chdir(testDir);
-    
-    // Initialize a git repository
-    spawnSync('git', ['init'], { cwd: testDir });
-    spawnSync('git', ['config', 'user.name', 'Test User'], { cwd: testDir });
-    spawnSync('git', ['config', 'user.email', 'test@example.com'], { cwd: testDir });
-    
-    // Create a basic .kxm directory
-    await fs.mkdir('.kxm', { recursive: true });
+const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const hash = (bytes: string | Buffer) => createHash('sha256').update(bytes).digest('hex');
+// Each fixture imports its own exact loader and helper copies. No cwd override,
+// trust override, live-repository import, or mocked Git authority.
+async function fixture() {
+  const root = mkdtempSync(path.join(tmpdir(), 'kxm roster % '));
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim();
+  const write = (name: string, contents: string) => { mkdirSync(path.dirname(path.join(root, name)), { recursive: true }); writeFileSync(path.join(root, name), contents); };
+  git('init', '-b', 'main'); git('config', 'user.email', 'fixture@example.invalid'); git('config', 'user.name', 'Fixture'); git('config', 'commit.gpgsign', 'false');
+  mkdirSync(path.join(root, 'scripts'));
+  for (const file of ['roster-policy.mjs', 'harness-run.mjs']) copyFileSync(path.join(repo, 'scripts', file), path.join(root, 'scripts', file));
+  write('evidence.md', 'Reviewed model-origin evidence, fixture only.\n');
+  const policy = JSON.parse(readFileSync(path.join(repo, '.kxm/roster.json'), 'utf8'));
+  policy.model_origins['openrouter/qwen/qwen3-coder-plus'].evidence = { source: 'evidence.md', sha256: hash(readFileSync(path.join(root, 'evidence.md'))) };
+  const save = () => write('.kxm/roster.json', JSON.stringify(policy, null, 2) + '\n');
+  const commit = (trusted = true) => { git('add', '.'); git('commit', '-m', 'Fixture'); if (trusted) git('update-ref', 'refs/remotes/origin/main', 'HEAD'); };
+  save(); commit();
+  const loader = await import(pathToFileURL(path.join(root, 'scripts/roster-policy.mjs')).href) as typeof import('../scripts/roster-policy.mjs');
+  return { root, git, write, policy, save, commit, ...loader, close: () => rmSync(root, { recursive: true, force: true }) };
+}
+test('trusted committed policy has exact immutable commit/blob/raw hash identity', async t => {
+  const f = await fixture(); t.after(f.close);
+  const result = f.loadTrustedRosterPolicy();
+  assert.equal(result.identity.commit, f.git('rev-parse', 'HEAD'));
+  assert.equal(result.identity.blob, f.git('rev-parse', 'HEAD:.kxm/roster.json'));
+  assert.equal(result.identity.sha256, hash(readFileSync(path.join(f.root, '.kxm/roster.json'))));
+  assert.equal(result.policy.routes['qwen-openrouter-pi']!.vendor, 'alibaba');
+  assert.throws(() => (result.policy.routes['grok-native']!.roles as string[]).push('planner'), TypeError);
+  assert.throws(() => (result.identity as { commit: string }).commit = 'forged', TypeError);
+  assert.deepEqual(f.resolveBoundPolicy(result.identity), result);
+});
+test('historical binding reads policy and origin evidence at the pinned commit', async t => {
+  const f = await fixture(); t.after(f.close);
+  const old = f.loadTrustedRosterPolicy();
+  f.write('evidence.md', 'A new reviewed catalog\n');
+  f.policy.model_origins['openrouter/qwen/qwen3-coder-plus'].evidence.sha256 = hash('A new reviewed catalog\n');
+  f.policy.routes['grok-native']!.status = 'retired'; f.policy.lineup.writer = ['qwen-openrouter-pi'];
+  f.save(); f.commit();
+  assert.equal(f.loadTrustedRosterPolicy().policy.routes['grok-native']!.status, 'retired');
+  assert.deepEqual(f.resolveBoundPolicy(old.identity), old);
+});
+for (const kind of ['missing-ref', 'ahead', 'untracked-source', 'dirty-helper', 'dirty-policy', 'staged-policy', 'missing-policy', 'symlink-policy', 'symlink-parent', 'skip-worktree-byte-mismatch'] as const) {
+  test(`refuses ${kind} without treating another failure as proof`, async t => {
+    const f = await fixture(); t.after(f.close);
+    assert.ok(f.loadTrustedRosterPolicy());
+    let expected = /dirty or untracked|Git evidence|missing or not a regular|regular contained|differs from committed/;
+    if (kind === 'missing-ref') f.git('update-ref', '-d', 'refs/remotes/origin/main');
+    if (kind === 'ahead') { f.write('new-source.mjs', 'export {};'); f.commit(false); }
+    if (kind === 'untracked-source') f.write('new-source.mjs', 'export {};');
+    if (kind === 'dirty-helper') f.write('scripts/harness-run.mjs', '// changed helper');
+    if (kind === 'dirty-policy' || kind === 'staged-policy') { f.write('.kxm/roster.json', '{}'); if (kind === 'staged-policy') f.git('add', '.kxm/roster.json'); }
+    if (kind === 'missing-policy') { rmSync(path.join(f.root, '.kxm/roster.json')); f.commit(); }
+    if (kind === 'symlink-policy') { f.write('copy.json', readFileSync(path.join(f.root, '.kxm/roster.json'), 'utf8')); rmSync(path.join(f.root, '.kxm/roster.json')); symlinkSync('../copy.json', path.join(f.root, '.kxm/roster.json')); f.commit(); }
+    if (kind === 'symlink-parent') { f.git('update-index', '--skip-worktree', '.kxm/roster.json'); const bytes = readFileSync(path.join(f.root, '.kxm/roster.json'), 'utf8'); rmSync(path.join(f.root, '.kxm'), { recursive: true }); const outside = mkdtempSync(path.join(tmpdir(), 'kxm-policy-parent-')); t.after(() => rmSync(outside, { recursive: true, force: true })); writeFileSync(path.join(outside, 'roster.json'), bytes); symlinkSync(outside, path.join(f.root, '.kxm')); }
+    if (kind === 'skip-worktree-byte-mismatch') { f.git('update-index', '--skip-worktree', '.kxm/roster.json'); f.write('.kxm/roster.json', '{}'); expected = /differs from committed/; }
+    assert.throws(() => f.loadTrustedRosterPolicy(), expected);
   });
+}
+test('config-only nonnative addition needs exact pinned origin evidence', async t => {
+  const f = await fixture(); t.after(f.close);
+  f.policy.routes['new-model'] = { harness: 'pi', model: 'openrouter/example-lab/coder-next', vendor: 'example-lab', roles: ['writer'], permissions: ['edit'], status: 'admitted' };
+  f.policy.model_origins['openrouter/example-lab/coder-next'] = { vendor: 'example-lab', evidence: { source: 'evidence.md', sha256: hash(readFileSync(path.join(f.root, 'evidence.md'))) } };
+  f.policy.lineup.writer.push('new-model'); f.save(); f.commit();
+  assert.equal(f.loadTrustedRosterPolicy().policy.routes['new-model']!.model, 'openrouter/example-lab/coder-next');
+});
+const invalid: [string, (p: any) => void, RegExp][] = [
+  ['unknown key', p => p.extra = true, /unknown keys/],
+  ['missing schema', p => delete p.schema, /missing or unknown/],
+  ['old status', p => p.routes['grok-native'].status = 'active', /status/],
+  ['unsupported harness', p => p.routes['grok-native'].harness = 'kimi', /harness/],
+  ['Claude edit', p => p.routes['fable-claude'].permissions = ['edit'], /permissions/],
+  ['Grok critic', p => p.routes['grok-native'].roles = ['reviewer-arch'], /roles/],
+  ['missing origin', p => p.model_origins = {}, /missing exact model origin/],
+  ['unverified evidence hash', p => p.model_origins['openrouter/qwen/qwen3-coder-plus'].evidence.sha256 = '0'.repeat(64), /evidence hash/],
+  ['escaping source', p => p.model_origins['openrouter/qwen/qwen3-coder-plus'].evidence.source = '../evidence.md', /contained/],
+  ['billing vendor as origin', p => { p.routes['qwen-openrouter-pi'].vendor = 'openrouter'; p.model_origins['openrouter/qwen/qwen3-coder-plus'].vendor = 'openrouter'; }, /origin\/vendor/],
+  ['native origin relabeled', p => p.routes['qwen-openrouter-pi'].vendor = 'OpenAI', /native vendor/],
+  ['native alias in model', p => { p.routes['qwen-openrouter-pi'].model = 'openrouter/x-ai/fake'; }, /native vendor/],
+  ['moonshot alias', p => p.routes['qwen-openrouter-pi'].vendor = 'moonshotai', /native vendor/],
+  ['native vendor mismatch', p => p.routes['fable-claude'].vendor = 'other', /vendor\/model/],
+  ['retired lineup', p => p.routes['qwen-openrouter-pi'].status = 'retired', /not admitted/],
+  ['duplicate lineup', p => p.lineup.writer.push('grok-native'), /duplicate/],
+  ['missing critic', p => delete p.required_critics['review-cli'], /missing or unknown/],
+  ['forged critic id', p => p.required_critics['review-cli'] = 'grok-native', /required critic/],
+  ['array critics', p => p.required_critics['review-cli'] = ['sol-codex'], /required critic/],
+  ['Pi readonly writer', p => p.routes['qwen-openrouter-pi'].permissions = ['read-only'], /writer requires edit/],
+  ['Pi critic edit', p => p.routes['qwen-openrouter-pi'].roles.push('reviewer-arch'), /cannot edit/],
+];
+for (const [name, mutate, expected] of invalid) test(`closed policy refuses ${name}`, async t => {
+  const f = await fixture(); t.after(f.close); mutate(f.policy); f.save(); f.commit();
+  assert.throws(() => f.loadTrustedRosterPolicy(), expected);
+});
+test('independent vendors required for critics and every admitted writer', async t => {
+  const f = await fixture(); t.after(f.close);
+  f.policy.routes['pi-critic'] = { harness: 'pi', model: 'openrouter/qwen/qwen3-coder-plus', vendor: 'alibaba', roles: ['reviewer-cli'], permissions: ['read-only'], status: 'admitted' };
+  f.policy.lineup['reviewer-cli'] = ['pi-critic']; f.policy.required_critics['review-cli'] = 'pi-critic'; f.save(); f.commit();
+  assert.throws(() => f.loadTrustedRosterPolicy(), /writer and critics/);
+  f.policy.routes['qwen-openrouter-pi'].status = 'retired'; f.policy.lineup.writer = ['grok-native'];
+  f.policy.routes['pi-critic'].roles.push('reviewer-arch'); f.policy.lineup['reviewer-arch'] = ['pi-critic']; f.policy.required_critics['review-arch'] = 'pi-critic'; f.save(); f.commit();
+  assert.throws(() => f.loadTrustedRosterPolicy(), /critics must have independent/);
+});
+test('forged, incomplete, shell-shaped and untrusted historical identities refuse', async t => {
+  const f = await fixture(); t.after(f.close); const good = f.loadTrustedRosterPolicy().identity;
+  for (const bad of [{ ...good, blob: '0'.repeat(40) }, { ...good, sha256: '0'.repeat(64) }, { ...good, commit: 'HEAD;touch BAD' }, { commit: good.commit }, { ...good, extra: true }]) {
+    assert.throws(() => f.resolveBoundPolicy(bad as typeof good), /refused/);
+  }
+  f.write('untrusted.txt', 'candidate'); f.commit(false); const candidate = f.git('rev-parse', 'HEAD'); f.git('reset', '--hard', good.commit);
+  assert.throws(() => f.resolveBoundPolicy({ ...good, commit: candidate }), /Git evidence/);
+});
 
-  afterEach(async () => {
-    process.chdir(originalDir);
-    // Clean up the temporary directory
-    try {
-      await fs.rm(testDir, { recursive: true, force: true });
-    } catch (err) {
-      // Ignore cleanup errors in tests
-    }
-  });
-
-  describe('loadTrustedRosterPolicy', () => {
-    it('should successfully load a valid policy from a clean, trusted repository', async () => {
-      // Create a valid roster policy
-      const validPolicy = {
-        routes: [
-          {
-            id: 'test-route-1',
-            harness: 'pi',
-            model: 'gpt-4o',
-            vendor: 'openai',
-            roles: ['implementer'],
-            permissions: { edit: true, execute: true },
-            status: 'active'
-          }
-        ],
-        lineup: {
-          implementer: ['test-route-1']
-        },
-        required_critics: {
-          'review-arch': 'test-route-2',
-          'review-cli': 'test-route-3'
-        },
-        model_origins: {
-          'gpt-4o': {
-            vendor: 'openai',
-            evidence: 'committed-config'
-          }
-        }
-      };
-
-      await fs.writeFile('.kxm/roster.json', JSON.stringify(validPolicy, null, 2));
-
-      // Add and commit the file to make it part of the repository
-      spawnSync('git', ['add', '.'], { cwd: testDir });
-      spawnSync('git', ['commit', '-m', 'Add roster policy'], { cwd: testDir });
-      // Create origin/main reference to simulate trusted state
-      spawnSync('git', ['branch', '-f', 'origin/main', 'HEAD'], { cwd: testDir, shell: true });
-
-      const result = await loadTrustedRosterPolicy();
-
-      assert.ok(result.identity);
-      assert.ok(result.identity.source);
-      assert.ok(result.identity.sha256);
-      assert.ok(result.identity.commit);
-      assert.ok(result.policy);
-      assert.strictEqual(result.policy.routes.length, 1);
-      assert.strictEqual(result.policy.routes[0].id, 'test-route-1');
-      assert.strictEqual(result.policy.routes[0].model, 'gpt-4o');
-    });
-
-    it('should reject an invalid policy schema', async () => {
-      // Create an invalid roster policy (missing required fields)
-      const invalidPolicy = {
-        invalidField: 'this should not be here'
-      };
-
-      await fs.writeFile('.kxm/roster.json', JSON.stringify(invalidPolicy, null, 2));
-
-      // Add and commit the file to make it part of the repository
-      spawnSync('git', ['add', '.'], { cwd: testDir });
-      spawnSync('git', ['commit', '-m', 'Add invalid roster policy'], { cwd: testDir });
-      // Create origin/main reference to simulate trusted state
-      spawnSync('git', ['branch', '-f', 'origin/main', 'HEAD'], { cwd: testDir, shell: true });
-
-      await assert.rejects(
-        () => loadTrustedRosterPolicy(),
-        /Policy must have a routes array/
-      );
-    });
-
-    it('should reject a repository with uncommitted changes', async () => {
-      // Create a valid policy file but don't commit it
-      const validPolicy = {
-        routes: [
-          {
-            id: 'test-route-1',
-            harness: 'pi',
-            model: 'gpt-4o',
-            vendor: 'openai',
-            roles: ['implementer'],
-            permissions: { edit: true, execute: true },
-            status: 'active'
-          }
-        ]
-      };
-
-      await fs.writeFile('.kxm/roster.json', JSON.stringify(validPolicy, null, 2));
-
-      await assert.rejects(
-        () => loadTrustedRosterPolicy(),
-        /Repository has uncommitted changes/
-      );
-    });
-
-    it('should reject a repository that is not trusted (not ancestor of origin/main)', async () => {
-      // Create a valid policy file and commit it
-      const validPolicy = {
-        routes: [
-          {
-            id: 'test-route-1',
-            harness: 'pi',
-            model: 'gpt-4o',
-            vendor: 'openai',
-            roles: ['implementer'],
-            permissions: { edit: true, execute: true },
-            status: 'active'
-          }
-        ]
-      };
-
-      await fs.writeFile('.kxm/roster.json', JSON.stringify(validPolicy, null, 2));
-      spawnSync('git', ['add', '.'], { cwd: testDir });
-      spawnSync('git', ['commit', '-m', 'Add roster policy'], { cwd: testDir });
-
-      // Don't create origin/main reference to simulate untrusted state
-      // This should cause the trust check to fail
-
-      await assert.rejects(
-        () => loadTrustedRosterPolicy(),
-        /Current HEAD is not trusted/
-      );
-    });
-
-    it('should reject a policy file that does not match its Git blob', async () => {
-      // Create a valid policy file and commit it
-      const validPolicy = {
-        routes: [
-          {
-            id: 'test-route-1',
-            harness: 'pi',
-            model: 'gpt-4o',
-            vendor: 'openai',
-            roles: ['implementer'],
-            permissions: { edit: true, execute: true },
-            status: 'active'
-          }
-        ]
-      };
-
-      await fs.writeFile('.kxm/roster.json', JSON.stringify(validPolicy, null, 2));
-      spawnSync('git', ['add', '.'], { cwd: testDir });
-      spawnSync('git', ['commit', '-m', 'Add roster policy'], { cwd: testDir });
-      // Create origin/main reference to simulate trusted state
-      spawnSync('git', ['branch', '-f', 'origin/main', 'HEAD'], { cwd: testDir, shell: true });
-
-      // Now modify the file to not match the committed version
-      const modifiedPolicy = {
-        ...validPolicy,
-        routes: [
-          {
-            ...validPolicy.routes[0],
-            id: 'modified-route'
-          }
-        ]
-      };
-
-      await fs.writeFile('.kxm/roster.json', JSON.stringify(modifiedPolicy, null, 2));
-
-      await assert.rejects(
-        () => loadTrustedRosterPolicy(),
-        /File content does not match Git blob/
-      );
-    });
-  });
-
-  describe('resolveBoundPolicy', () => {
-    it('should successfully resolve a policy from a specific commit', async () => {
-      // Create a valid policy file and commit it
-      const validPolicy = {
-        routes: [
-          {
-            id: 'test-route-1',
-            harness: 'pi',
-            model: 'gpt-4o',
-            vendor: 'openai',
-            roles: ['implementer'],
-            permissions: { edit: true, execute: true },
-            status: 'active'
-          }
-        ]
-      };
-
-      await fs.writeFile('.kxm/roster.json', JSON.stringify(validPolicy, null, 2));
-      spawnSync('git', ['add', '.'], { cwd: testDir });
-      const commitResult = spawnSync('git', ['commit', '-m', 'Add roster policy'], { cwd: testDir });
-      
-      // Get the commit hash
-      const commitHash = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: testDir }).stdout.toString().trim();
-      
-      // Create origin/main reference to simulate trusted state
-      spawnSync('git', ['branch', '-f', 'origin/main', 'HEAD'], { cwd: testDir, shell: true });
-
-      // Calculate the expected SHA256 of the file content
-      const crypto = await import('crypto');
-      const contentHash = crypto.createHash('sha256')
-        .update(JSON.stringify(validPolicy, null, 2))
-        .digest('hex');
-
-      const identity = {
-        source: '.kxm/roster.json',
-        sha256: contentHash,
-        commit: commitHash
-      };
-
-      const result = await resolveBoundPolicy(identity);
-
-      assert.ok(result.identity);
-      assert.strictEqual(result.identity.commit, commitHash);
-      assert.strictEqual(result.identity.sha256, contentHash);
-      assert.ok(result.policy);
-      assert.strictEqual(result.policy.routes.length, 1);
-      assert.strictEqual(result.policy.routes[0].id, 'test-route-1');
-    });
-
-    it('should reject an invalid identity', async () => {
-      const invalidIdentity = {
-        source: '.kxm/roster.json',
-        // Missing sha256 and commit
-      };
-
-      await assert.rejects(
-        () => resolveBoundPolicy(invalidIdentity as any),
-        /Invalid identity/
-      );
-    });
-
-    it('should reject a commit that does not exist', async () => {
-      const fakeIdentity = {
-        source: '.kxm/roster.json',
-        sha256: 'somefakehashthatis40characterslongxxxxxxx',
-        commit: '0000000000000000000000000000000000000000'
-      };
-
-      await assert.rejects(
-        () => resolveBoundPolicy(fakeIdentity),
-        /Failed to resolve policy/
-      );
-    });
-
-    it('should reject a policy when content hash does not match', async () => {
-      // Create a valid policy file and commit it
-      const validPolicy = {
-        routes: [
-          {
-            id: 'test-route-1',
-            harness: 'pi',
-            model: 'gpt-4o',
-            vendor: 'openai',
-            roles: ['implementer'],
-            permissions: { edit: true, execute: true },
-            status: 'active'
-          }
-        ]
-      };
-
-      await fs.writeFile('.kxm/roster.json', JSON.stringify(validPolicy, null, 2));
-      spawnSync('git', ['add', '.'], { cwd: testDir });
-      spawnSync('git', ['commit', '-m', 'Add roster policy'], { cwd: testDir });
-      
-      // Get the commit hash
-      const commitHash = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: testDir }).stdout.toString().trim();
-      
-      // Create origin/main reference to simulate trusted state
-      spawnSync('git', ['branch', '-f', 'origin/main', 'HEAD'], { cwd: testDir, shell: true });
-
-      // Use an incorrect SHA256 hash
-      const wrongIdentity = {
-        source: '.kxm/roster.json',
-        sha256: 'wronghashthats40characterslongxxxxxxxxxxxx',
-        commit: commitHash
-      };
-
-      await assert.rejects(
-        () => resolveBoundPolicy(wrongIdentity),
-        /Content hash mismatch/
-      );
-    });
-  });
-
-  describe('real Git fixture tests', () => {
-    it('should handle successful committed/trusted policy', async () => {
-      // Test successful committed/trusted policy scenario
-      const policy = {
-        routes: [
-          {
-            id: 'trusted-route',
-            harness: 'grok',
-            model: 'grok-4.6',
-            vendor: 'xai',
-            roles: ['implementer'],
-            permissions: { edit: true },
-            status: 'active'
-          }
-        ],
-        lineup: {
-          implementer: ['trusted-route']
-        },
-        required_critics: {
-          'review-arch': 'fable-reviewer',
-          'review-cli': 'sol-reviewer'
-        },
-        model_origins: {
-          'grok-4.6': {
-            vendor: 'xai',
-            evidence: 'committed-config'
-          }
-        }
-      };
-
-      await fs.writeFile('.kxm/roster.json', JSON.stringify(policy, null, 2));
-      spawnSync('git', ['add', '.'], { cwd: testDir });
-      spawnSync('git', ['commit', '-m', 'Add trusted policy'], { cwd: testDir });
-      // Create origin/main reference to simulate trusted state
-      spawnSync('git', ['branch', '-f', 'origin/main', 'HEAD'], { cwd: testDir, shell: true });
-
-      const result = await loadTrustedRosterPolicy();
-      assert.ok(result);
-      assert.strictEqual(result.policy.routes[0].id, 'trusted-route');
-    });
-
-    it('should handle missing/untracked policy file', async () => {
-      // Don't create the policy file at all
-      await assert.rejects(
-        () => loadTrustedRosterPolicy(),
-        /Policy file does not exist/
-      );
-    });
-
-    it('should handle dirty/untracked control source', async () => {
-      // Create policy file but don't commit it (simulating untracked)
-      const policy = {
-        routes: [
-          {
-            id: 'untracked-route',
-            harness: 'pi',
-            model: 'gpt-4o',
-            vendor: 'openai',
-            roles: ['implementer'],
-            permissions: { edit: true },
-            status: 'active'
-          }
-        ]
-      };
-
-      await fs.writeFile('.kxm/roster.json', JSON.stringify(policy, null, 2));
-
-      await assert.rejects(
-        () => loadTrustedRosterPolicy(),
-        /Repository has uncommitted changes/
-      );
-    });
-
-    it('should handle candidate ahead of trusted ref', async () => {
-      // Create initial policy and commit
-      const initialPolicy = {
-        routes: [
-          {
-            id: 'initial-route',
-            harness: 'pi',
-            model: 'gpt-4o',
-            vendor: 'openai',
-            roles: ['implementer'],
-            permissions: { edit: true },
-            status: 'active'
-          }
-        ]
-      };
-
-      await fs.writeFile('.kxm/roster.json', JSON.stringify(initialPolicy, null, 2));
-      spawnSync('git', ['add', '.'], { cwd: testDir });
-      spawnSync('git', ['commit', '-m', 'Initial policy'], { cwd: testDir });
-      
-      // Create origin/main reference pointing to this commit
-      spawnSync('git', ['update-ref', 'refs/remotes/origin/main', 'HEAD'], { cwd: testDir });
-
-      // Now create a new commit that advances HEAD beyond origin/main
-      const updatedPolicy = {
-        routes: [
-          {
-            id: 'updated-route',
-            harness: 'claude',
-            model: 'fable',
-            vendor: 'anthropic',
-            roles: ['planner'],
-            permissions: { plan: true },
-            status: 'active'
-          }
-        ]
-      };
-
-      await fs.writeFile('.kxm/roster.json', JSON.stringify(updatedPolicy, null, 2));
-      spawnSync('git', ['add', '.'], { cwd: testDir });
-      spawnSync('git', ['commit', '-m', 'Updated policy'], { cwd: testDir });
-
-      // Now HEAD is ahead of origin/main, which should cause trust check to fail
-      await assert.rejects(
-        () => loadTrustedRosterPolicy(),
-        /Current HEAD is not trusted/
-      );
-    });
-
-    it('should handle raw-byte mismatch', async () => {
-      // Create policy file and commit it
-      const policy = {
-        routes: [
-          {
-            id: 'byte-match-route',
-            harness: 'pi',
-            model: 'gpt-4o',
-            vendor: 'openai',
-            roles: ['implementer'],
-            permissions: { edit: true },
-            status: 'active'
-          }
-        ]
-      };
-
-      await fs.writeFile('.kxm/roster.json', JSON.stringify(policy, null, 2));
-      spawnSync('git', ['add', '.'], { cwd: testDir });
-      spawnSync('git', ['commit', '-m', 'Policy with byte mismatch'], { cwd: testDir });
-      // Create origin/main reference to simulate trusted state
-      spawnSync('git', ['branch', '-f', 'origin/main', 'HEAD'], { cwd: testDir, shell: true });
-
-      // Modify the file content to create a byte mismatch
-      const modifiedPolicy = {
-        ...policy,
-        routes: [
-          {
-            ...policy.routes[0],
-            id: 'modified-after-commit'
-          }
-        ]
-      };
-
-      await fs.writeFile('.kxm/roster.json', JSON.stringify(modifiedPolicy, null, 2));
-
-      await assert.rejects(
-        () => loadTrustedRosterPolicy(),
-        /File content does not match Git blob/
-      );
-    });
-
-    it('should handle forged identity', async () => {
-      // Create a valid policy file and commit it
-      const policy = {
-        routes: [
-          {
-            id: 'real-route',
-            harness: 'pi',
-            model: 'gpt-4o',
-            vendor: 'openai',
-            roles: ['implementer'],
-            permissions: { edit: true },
-            status: 'active'
-          }
-        ]
-      };
-
-      await fs.writeFile('.kxm/roster.json', JSON.stringify(policy, null, 2));
-      spawnSync('git', ['add', '.'], { cwd: testDir });
-      spawnSync('git', ['commit', '-m', 'Real policy'], { cwd: testDir });
-      
-      // Get the real commit hash
-      const realCommit = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: testDir }).stdout.toString().trim();
-      
-      // Create origin/main reference to simulate trusted state
-      spawnSync('git', ['branch', '-f', 'origin/main', 'HEAD'], { cwd: testDir, shell: true });
-
-      // Try to resolve with forged identity (different commit, same source)
-      const forgedIdentity = {
-        source: '.kxm/roster.json',
-        sha256: '0000000000000000000000000000000000000000000000000000000000000000', // Wrong hash
-        commit: realCommit
-      };
-
-      await assert.rejects(
-        () => resolveBoundPolicy(forgedIdentity),
-        /Content hash mismatch/
-      );
-    });
-  });
+test('index flags cannot hide modified control helpers', async t => {
+  const f = await fixture(); t.after(f.close);
+  f.git('update-index', '--assume-unchanged', 'scripts/harness-run.mjs');
+  f.write('scripts/harness-run.mjs', '// hidden modification');
+  assert.throws(() => f.loadTrustedRosterPolicy(), /hidden index flags/);
 });

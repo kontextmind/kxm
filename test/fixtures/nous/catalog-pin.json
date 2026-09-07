@@ -1,0 +1,50 @@
+{
+  "schema": "kxm.nous-catalog.v1",
+  "recordedAt": "2026-09-07T00:00:00.000Z",
+  "source": "operator dated pin; assumed rates pending live Nous verification",
+  "units": "usd_per_million_tokens",
+  "hash": "sha256:a53635d4fd0e5d2e7e2d4012277169b0749dd139f210f2533462f1220be4f59e",
+  "models": {
+    "hermes-3": {
+      "contextWindow": 131072,
+      "maxTokens": 8192,
+      "cost": {
+        "input": 0.8,
+        "output": 2.4,
+        "cacheRead": 0.08,
+        "cacheWrite": 0.8
+      },
+      "priceBasis": "list",
+      "billing": "metered",
+      "verified": true,
+      "name": "Hermes 3"
+    },
+    "hermes-3-proxy": {
+      "contextWindow": 131072,
+      "maxTokens": 8192,
+      "cost": {
+        "input": 0.8,
+        "output": 2.4,
+        "cacheRead": 0.08,
+        "cacheWrite": 0.8
+      },
+      "priceBasis": "list",
+      "billing": "subscription",
+      "verified": true,
+      "name": "Hermes 3"
+    },
+    "free-zero": {
+      "contextWindow": 8192,
+      "maxTokens": 2048,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "priceBasis": "list",
+      "billing": "metered",
+      "verified": true
+    }
+  }
+}

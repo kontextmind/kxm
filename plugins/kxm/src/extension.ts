@@ -3,6 +3,7 @@ import { basename, dirname, join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { HubClient, HubHttpError } from "./client.ts";
+import { nousFactoryWork, type NousRegistrationReport } from "./nous-pi.ts";
 import { areaForTool, classifyFailure, diagnosticEvidence, diagnosticSummary, type Diagnostic } from "./diagnostics.ts";
 import {
   MAX_CONTENT_CHARS,
@@ -134,7 +135,7 @@ function assistantText(messages: unknown[]): string | undefined {
   return text || undefined;
 }
 
-function assistantFailure(messages: unknown[]): Diagnostic | undefined {
+export function assistantFailure(messages: unknown[]): Diagnostic | undefined {
   const message = latestAssistantMessage(messages);
   if (!message || (message.stopReason !== "error" && message.stopReason !== "aborted")) return undefined;
   if (message.stopReason === "aborted") {
@@ -152,8 +153,9 @@ function assistantFailure(messages: unknown[]): Diagnostic | undefined {
   });
 }
 
-export default function piMeshExtension(pi: ExtensionAPI) {
+export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> {
   let client: HubClient | undefined;
+  let nousReport: NousRegistrationReport | undefined;
   let pending: MessageRecord[] = [];
   let activatingInbound: MessageRecord | undefined;
   let awaitingActivation: MessageRecord | undefined;
@@ -628,6 +630,11 @@ export default function piMeshExtension(pi: ExtensionAPI) {
 
   pi.on("session_start", async (event: { reason?: string }, ctx) => {
     shuttingDown = false;
+    if (nousReport?.guidance.length) {
+      for (const item of nousReport.guidance) {
+        ctx.ui.notify(item.message, item.level);
+      }
+    }
     await client?.stop();
     client = undefined;
     try {
@@ -1210,5 +1217,9 @@ export default function piMeshExtension(pi: ExtensionAPI) {
       }
       await applySessionChrome(ctx, { reason: "new" }, command === "brief");
     },
+  });
+
+  return nousFactoryWork(pi, (report) => {
+    nousReport = report;
   });
 }

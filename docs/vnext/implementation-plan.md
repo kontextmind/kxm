@@ -173,12 +173,12 @@ It does not replace the phase gates below.
   **C1 (2026-09-05) supersession:** docs remainder for #86 is that routing
   contract, synchronization status, and these phase notes. Historical quick
   rename of `default.yaml`, Phase 3a/3b split, adapter-as-MVP, Tracking
-  delete/250-line cap, and "no brakes" instructions are **not** pending tasks.
+  delete/250-line cap, and “no brakes” instructions are **not** pending tasks.
   #86 stays open for later D8/D9/D14 plan text when those phases are
   scheduled, the v1 report underquote fix, and remaining report
   implementation — not for those superseded instructions.
 - **Workflow taxonomy (operator, 2026-09-07):** [`docs/openrouter-model-workforce-guide.md`](../openrouter-model-workforce-guide.md) is organized Area -> Workflow -> Stage -> Assigned role across seven areas (`software-engineering`, `design-experience`, `media-production`, `data-analytics`, `research-strategy`, `business-operations`, `security-reliability`) and 21 workflows with declared kebab-case documentation slugs. Slugs are documentation identity only: no runtime config, role admission, schema field, CLI behavior, or alias lane. Inherited candidate lists are dated research requiring live verification before dispatch, not certified prices or an eligibility grant. Model/harness, platform, modality, tools, and personal/work context are routing attributes, not area trees; area grouping never pools unrelated role quality into one global model ranking. Fable and Sol critics remain required for the developer runner. No phase gate changes.
-- **U1a adopted loader foundation (2026-09-07):** Native Fable's source-bound plan confirms splitting an unwired trusted loader/config/test foundation (U1a) from live dispatch/critic/acceptance binding, CLAUDE/PR131 replacement and AGENTS/routing docs (U1b). U1a delivers synchronous ESM loader that derives repo root, requires clean trusted state, verifies file identity against Git blobs, and supports config-only model choices with exact vendor/origin mapping. The loader enforces production constraints (clean source, trusted refs) and provides identity evidence (source, sha256, commit) for bound policies. This establishes the trusted foundation for U1b dispatch integration.
+- **Developer roster U1a foundation (2026-09-07):** An unwired synchronous helper loader reads a committed, clean policy only from a control checkout at or behind the fixed trusted main ref. It pins commit/blob/raw SHA256, validates source-bound model origins and code-owned role/permission/vendor ceilings, and replays historical policy from Git objects. This foundation does not change live routing, grant auth, or pass a product Phase 4 gate. U1b dispatch/critic/acceptance binding and CLAUDE/PR131 replacement remain open.
 
 ### Landed in this tree (unreleased)
 
@@ -562,6 +562,8 @@ It does not replace the phase gates below.
   classify/docs/plugin) before the pause; the post-merge main Windows Node 24
   package-cleanup failure in run `34006194862` is unresolved and deferred.
 
+- **Nous opt-in Pi providers:** opt-in `nous/*` (direct API) and `nous-proxy/*` (Hermes subscription proxy) via `KXM_NOUS_PROVIDERS`, with fail-closed catalog/price boundary, bounded factory-time discovery, and env-only direct auth (`NOUS_API_KEY`). No router, no writer admission. Public `/v1/models` catalog fields are observed (`context_length`, `top_provider.max_completion_tokens`, `architecture.input_modalities`, `supported_parameters`, per-token `pricing` plus `overrides`); convert once to USD/M and never apply `original` or a blanket discount. Matching dated pins supply rates/capacity when live pricing is incomplete. Context tiers emit a labeled componentwise upper bound without a Pi `cost.tiers` schedule. Live auth and streaming compatibility flags remain unverified.
+
 ### Still open
 
 - **Windows resumption (deferred):** restore the two Windows Validate legs and
@@ -575,7 +577,7 @@ It does not replace the phase gates below.
 - **U1b dispatch/critic/acceptance binding:** Complete the live dispatch,
   critic review, and acceptance binding to replace CLAUDE/PR131. This
   includes connecting the loader to the actual routing/assignment logic.
-  U1a completed the unwired trusted loader foundation.
+  U1a supplies the unwired trusted loader foundation; it does not change live assignment eligibility.
 - First real draft-to-published release after B2 (later release phase).
   `kxm update --kxm` end to end from a published asset. Temporary draft proof
   does not replace this. No sidecar `.sha256`.
@@ -678,6 +680,11 @@ It does not replace the phase gates below.
   minimumPassed 2, provider-distinct) are declared as a Phase 7 target in
   lifecycles.md; today loader and compiler resolve omitted bounds to one
   assignment and join `all`. Change schema, loader, compiler, and docs together.
+
+- Live streaming compatibility flags for Nous after a login remain unverified. Public catalog field names and per-token pricing are observed from an unauthenticated GET.
+- Routing v2 unmetered labelling for Nous subscription-proxy usage; extra billed amount beyond subscription remains unknown unless actually reported.
+- Persisted Nous catalog via Pi `publish` is deferred.
+- Claude Code compatibility experiment for Nous is a separate assignment.
 
 ### Plan hygiene (periodic, not every turn)
 
@@ -858,6 +865,10 @@ all-settled degradation. Pi/CLI executions do not satisfy this gate.
 
 ## Phase 4: Pi adapter and Pi-native UX
 
+Developer roster U1a adds an unwired trusted policy loader and Git replay tests.
+Live developer assignment binding remains U1b; this does not satisfy the
+product adapter gate below.
+
 Implement Pi model/auth discovery, supervised RPC sessions, per-run
 coordinators, scope epochs, tool presets, model profile/tag resolution, the Pi
 status line, `/kxm` menu, settings, and validated agent/workflow/model editors.
@@ -865,6 +876,10 @@ status line, `/kxm` menu, settings, and validated agent/workflow/model editors.
 **Config slice (landed, unreleased):** harness catalog with Pi as default
 headless; `kxm harness list` / `kxm update`; `kxm dash` as the operator peek;
 `kxm hub start|view|stop`. YAML remains the only enablement surface.
+Extension-registered opt-in Nous providers exist, with live public catalog
+normalization into labeled USD/M upper bounds (no Pi `cost.tiers` schedule)
+plus provenance on the discovery report; assignment-time provider/model
+admission remains Phase 4 work.
 
 **Still this phase:** Pi RPC adapter, per-run sessions, the rest of the `/kxm`
 menu (hub/workflows/agents completions wrapping CLI), validated YAML editors

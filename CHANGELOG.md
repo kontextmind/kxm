@@ -47,6 +47,16 @@ All notable user-facing changes are documented here. The project follows [Semant
 - `kxm update --check` / `--kxm` notices and applies operator package updates.
   GitHub releases are the current install path; npm is for after the public
   package. Git `.kxm/update.yaml` `auto` applies on `kxm update`.
+- Opt-in Nous Pi providers `nous/*` (direct API, `NOUS_API_KEY` only) and
+  `nous-proxy/*` (local Hermes subscription proxy). Unset `KXM_NOUS_PROVIDERS`
+  leaves startup offline: no fetch and no `registerProvider`. Bounded live
+  `/v1/models` catalog discovery (or a matching dated pin) fail-closes on
+  unknown tokens, non-loopback proxy URLs, and incomplete or malformed rates
+  rather than guessing zero. Context-tier estimates are labeled upper bounds
+  in both direct and proxy display names (proxy keeps
+  `subscription proxy, market ref`) and are not registered as a Pi
+  `cost.tiers` schedule. Mac/Linux setup order is in `docs/configuration.md`.
+  Authenticated live inference and streaming compatibility remain unverified.
 
 ### Fixed
 

@@ -1,78 +1,82 @@
 {
-  "routes": [
-    {
-      "id": "grok-4.6",
+  "schema": "kxm.developer-roster.v1",
+  "routes": {
+    "grok-native": {
       "harness": "grok",
       "model": "grok-4.6",
       "vendor": "xai",
-      "roles": ["implementer"],
-      "permissions": {
-        "edit": true,
-        "execute": true
-      },
-      "status": "active"
+      "roles": [
+        "writer"
+      ],
+      "permissions": [
+        "edit"
+      ],
+      "status": "admitted"
     },
-    {
-      "id": "claude-fable",
+    "qwen-openrouter-pi": {
+      "harness": "pi",
+      "model": "openrouter/qwen/qwen3-coder-plus",
+      "vendor": "alibaba",
+      "roles": [
+        "writer"
+      ],
+      "permissions": [
+        "edit"
+      ],
+      "status": "admitted"
+    },
+    "fable-claude": {
       "harness": "claude",
       "model": "fable",
       "vendor": "anthropic",
-      "roles": ["planner", "review-arch"],
-      "permissions": {
-        "plan": true,
-        "review": true
-      },
-      "status": "active"
+      "roles": [
+        "planner",
+        "reviewer-arch"
+      ],
+      "permissions": [
+        "read-only"
+      ],
+      "status": "admitted"
     },
-    {
-      "id": "codex-gpt-5.6-sol",
+    "sol-codex": {
       "harness": "codex",
       "model": "gpt-5.6-sol",
       "vendor": "openai",
-      "roles": ["review-cli"],
-      "permissions": {
-        "review": true
-      },
-      "status": "active"
-    },
-    {
-      "id": "pi-qwen3-coder-plus",
-      "harness": "pi",
-      "model": "openrouter/qwen/qwen3-coder-plus",
-      "vendor": "openrouter",
-      "roles": ["implementer"],
-      "permissions": {
-        "edit": true
-      },
-      "status": "active"
+      "roles": [
+        "reviewer-cli"
+      ],
+      "permissions": [
+        "read-only"
+      ],
+      "status": "admitted"
     }
-  ],
+  },
   "lineup": {
-    "implementer": ["grok-4.6", "pi-qwen3-coder-plus"],
-    "planner": ["claude-fable"],
-    "review-arch": ["claude-fable"],
-    "review-cli": ["codex-gpt-5.6-sol"]
+    "writer": [
+      "grok-native",
+      "qwen-openrouter-pi"
+    ],
+    "planner": [
+      "fable-claude"
+    ],
+    "reviewer-arch": [
+      "fable-claude"
+    ],
+    "reviewer-cli": [
+      "sol-codex"
+    ]
   },
   "required_critics": {
-    "review-arch": "claude-fable",
-    "review-cli": "codex-gpt-5.6-sol"
+    "review-arch": "fable-claude",
+    "review-cli": "sol-codex"
   },
   "model_origins": {
-    "grok-4.6": {
-      "vendor": "xai",
-      "evidence": "committed-config"
-    },
-    "fable": {
-      "vendor": "anthropic",
-      "evidence": "committed-config"
-    },
-    "gpt-5.6-sol": {
-      "vendor": "openai",
-      "evidence": "committed-config"
-    },
     "openrouter/qwen/qwen3-coder-plus": {
-      "vendor": "openrouter",
-      "evidence": "committed-config"
+      "vendor": "alibaba",
+      "evidence": {
+        "source": "docs/openrouter-model-workforce-guide.md",
+        "sha256": "fb58cf89977049c0acace96afb54f921d7d5a58b43736f152e8713cc825f9c8a"
+      }
     }
   }
 }

@@ -1,47 +1,19 @@
-/**
- * Type definitions for the trusted roster policy loader
- */
-
-interface RosterRoute {
-  id: string;
-  harness: 'pi' | 'claude' | 'kimi' | 'codex' | 'gemini' | 'deepseek' | 'grok';
-  model: string;
-  vendor: string;
-  roles: string[];
-  permissions: Record<string, unknown>;
-  status: 'active' | 'disabled' | 'retired';
+export interface RosterRoute {
+  readonly harness: 'grok' | 'claude' | 'codex' | 'pi';
+  readonly model: string;
+  readonly vendor: string;
+  readonly roles: readonly string[];
+  readonly permissions: readonly ('read-only' | 'edit')[];
+  readonly status: 'admitted' | 'retired';
 }
-
-interface RosterPolicy {
-  routes: RosterRoute[];
-  lineup?: Record<string, string[]>;
-  required_critics?: Record<'review-arch' | 'review-cli' | string, string>;
-  model_origins?: Record<string, { vendor: string; evidence: string }>;
+export interface RosterPolicy {
+  readonly schema: 'kxm.developer-roster.v1';
+  readonly routes: Readonly<Record<string, RosterRoute>>;
+  readonly lineup: Readonly<Record<string, readonly string[]>>;
+  readonly required_critics: Readonly<Record<'review-arch' | 'review-cli', string>>;
+  readonly model_origins: Readonly<Record<string, { readonly vendor: string; readonly evidence: { readonly source: string; readonly sha256: string } }>>;
 }
-
-interface PolicyIdentity {
-  source: string; // repo-relative file path
-  sha256: string; // SHA256 hash of the content
-  commit: string; // Git commit SHA
-}
-
-interface LoadedPolicy {
-  identity: PolicyIdentity;
-  policy: Readonly<RosterPolicy>;
-}
-
-/**
- * Load and validate the trusted roster policy from the current repository state
- * @param policyPath Path to the policy file, defaults to '.kxm/roster.json'
- * @returns Promise containing the policy identity and frozen policy data
- * @throws Error if the policy is invalid, untrusted, or doesn't meet requirements
- */
-export function loadTrustedRosterPolicy(policyPath?: string): Promise<LoadedPolicy>;
-
-/**
- * Resolve policy from a previously bound commit (not current working files)
- * @param identity The identity of the policy to resolve
- * @returns Promise containing the resolved policy
- * @throws Error if the commit doesn't exist or the content doesn't match
- */
-export function resolveBoundPolicy(identity: PolicyIdentity): Promise<LoadedPolicy>;
+export interface PolicyIdentity { readonly commit: string; readonly blob: string; readonly sha256: string }
+export interface LoadedPolicy { readonly identity: PolicyIdentity; readonly policy: RosterPolicy }
+export function loadTrustedRosterPolicy(): LoadedPolicy;
+export function resolveBoundPolicy(identity: PolicyIdentity): LoadedPolicy;

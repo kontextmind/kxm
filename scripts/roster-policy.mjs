@@ -1,307 +1,155 @@
-// Synchronous ESM loader for trusted developer roster policy
-// Derives production repo root one level above executing scripts module
-// Requires current control HEAD equal/ancestor of existing trusted main ref
-// and clean control source (including unexpected untracked source)
-// Policy regular contained file committed at HEAD, byte-equal to its Git blob
-// Returns pinned commit/blob/raw SHA identity and frozen/copy-safe policy data
+/** Unwired developer policy foundation. No dispatch or acceptance authority. */
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { lstatSync, readFileSync, realpathSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { NATIVE_PI_BRAKE_PROVIDERS, ROUTES } from './harness-run.mjs';
 
-import { readFile, stat } from 'fs/promises';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import path from 'path';
-
-const execAsync = promisify(exec);
-
-/**
- * Get the repository root directory (one level above the scripts module)
- */
-async function getRepoRoot() {
-  // Get the directory of this script (scripts/) and go one level up
-  const scriptDir = path.dirname(new URL(import.meta.url).pathname);
-  return path.resolve(scriptDir, '..');
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const POLICY = '.kxm/roster.json';
+const TRUSTED = 'refs/remotes/origin/main';
+const ROLES = ['writer', 'planner', 'reviewer-arch', 'reviewer-cli', 'experiment'];
+const ALIASES = Object.freeze({ 'x-ai': 'xai', moonshotai: 'moonshot', 'google-ai': 'google', qwen: 'alibaba' });
+const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
+const refuse = message => { throw new Error(`Roster policy refused: ${message}`); };
+const git = (...args) => {
+  try { return execFileSync('git', args, { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] }); }
+  catch { return refuse(`Git evidence unavailable (${args[0]})`); }
+};
+const gitText = (...args) => git(...args).toString('utf8').trim();
+const canonical = value => ALIASES[value] ?? value;
+const own = (obj, key) => Object.hasOwn(obj, key);
+function record(value, label) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) refuse(`${label} must be an object`);
 }
-
-/**
- * Check if the repository is clean (no uncommitted changes)
- */
-async function isRepoClean(repoRoot) {
-  try {
-    const { stdout } = await execAsync('git status --porcelain --untracked-files=no', { cwd: repoRoot });
-    return stdout.trim().length === 0;
-  } catch (error) {
-    throw new Error(`Git status check failed: ${error.message}`);
-  }
+function keys(value, expected, label) {
+  record(value, label);
+  if (Object.keys(value).length !== expected.length || expected.some(key => !own(value, key))) refuse(`${label} has missing or unknown keys`);
 }
-
-/**
- * Get current HEAD commit SHA
- */
-async function getCurrentHead(repoRoot) {
-  try {
-    const { stdout } = await execAsync('git rev-parse HEAD', { cwd: repoRoot });
-    return stdout.trim();
-  } catch (error) {
-    throw new Error(`Failed to get current HEAD: ${error.message}`);
-  }
+function text(value, label) {
+  if (typeof value !== 'string' || !value || value.length > 512 || /[\s\x00-\x1f]/u.test(value)) refuse(`${label} must be a nonempty token`);
 }
-
-/**
- * Check if current HEAD is ancestor of or equal to trusted main ref
- */
-async function isAncestorOrEqual(repoRoot, trustedRef = 'refs/remotes/origin/main') {
-  try {
-    // Check if the trusted ref exists
-    const { stdout: refExists } = await execAsync(`git rev-parse --verify ${trustedRef}`, { 
-      cwd: repoRoot,
-      stdio: ['pipe', 'pipe', 'ignore'] // Suppress error output if ref doesn't exist
-    }).catch(() => ({ stdout: '' }));
-    
-    if (!refExists.trim()) {
-      // If trusted ref doesn't exist, check if we're on a clean main branch
-      const { stdout: currentBranch } = await execAsync('git rev-parse --abbrev-ref HEAD', { cwd: repoRoot });
-      if (currentBranch.trim() === 'main') {
-        return true;
-      }
-      return false;
-    }
-
-    // Check if current HEAD is an ancestor of or equal to the trusted ref
-    try {
-      await execAsync(`git merge-base --is-ancestor HEAD ${trustedRef}`, { cwd: repoRoot });
-      return true;
-    } catch {
-      // If not an ancestor, check if they're equal
-      const currentHead = await getCurrentHead(repoRoot);
-      const { stdout: trustedSha } = await execAsync(`git rev-parse ${trustedRef}`, { cwd: repoRoot });
-      return currentHead === trustedSha.trim();
-    }
-  } catch (error) {
-    throw new Error(`Failed to check ancestry: ${error.message}`);
-  }
+function list(value, allowed, label) {
+  if (!Array.isArray(value) || !value.length || value.some(item => !allowed.includes(item)) || new Set(value).size !== value.length) refuse(`${label} contains unsupported or duplicate values`);
 }
-
-/**
- * Get the Git blob SHA for a file at HEAD
- */
-async function getFileBlobSha(repoRoot, filePath) {
-  try {
-    const { stdout } = await execAsync(`git rev-parse HEAD:${filePath}`, { cwd: repoRoot });
-    return stdout.trim();
-  } catch (error) {
-    throw new Error(`Failed to get blob SHA for ${filePath}: ${error.message}`);
-  }
+function sourcePath(value) {
+  text(value, 'source path');
+  if (path.posix.isAbsolute(value) || value.includes('\\') || value.split('/').some(part => !part || part === '.' || part === '..')) refuse('source path must be contained and relative');
+  return value;
 }
-
-/**
- * Calculate SHA256 hash of file content
- */
-async function calculateFileHash(filePath) {
-  const crypto = await import('crypto');
-  const fs = await import('fs');
-  
-  const content = await fs.promises.readFile(filePath);
-  return crypto.createHash('sha256').update(content).digest('hex');
+function objectId(value, label) {
+  if (typeof value !== 'string' || !/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u.test(value)) refuse(`invalid ${label}`);
 }
-
-/**
- * Load and validate the trusted roster policy
- */
-export async function loadTrustedRosterPolicy(policyPath = '.kxm/roster.json') {
-  const repoRoot = await getRepoRoot();
-  
-  // Check that we're in a git repository
-  try {
-    await execAsync('git rev-parse --git-dir', { cwd: repoRoot });
-  } catch (error) {
-    throw new Error('Not in a git repository');
+function digest(value) {
+  if (typeof value !== 'string' || !/^[a-f0-9]{64}$/u.test(value)) refuse('invalid SHA256');
+}
+function frozen(value) {
+  if (value && typeof value === 'object') { for (const child of Object.values(value)) frozen(child); Object.freeze(value); }
+  return value;
+}
+function control() {
+  if (realpathSync(gitText('rev-parse', '--show-toplevel')) !== realpathSync(ROOT)) refuse('module is outside its control repository');
+  const head = gitText('rev-parse', '--verify', 'HEAD^{commit}');
+  const trusted = gitText('rev-parse', '--verify', `${TRUSTED}^{commit}`);
+  git('merge-base', '--is-ancestor', head, trusted);
+  const flags = git('ls-files', '-v', '-z').toString('utf8').split('\0').filter(Boolean);
+  if (flags.some(entry => entry.slice(2) !== POLICY && (entry[0] === 'S' || entry[0] === entry[0].toLowerCase()))) refuse('hidden index flags on control source');
+  if (git('status', '--porcelain=v1', '--untracked-files=all').length) refuse('dirty or untracked control source');
+  return { head, trusted };
+}
+function unchanged(before) {
+  const after = control();
+  if (before.head !== after.head || before.trusted !== after.trusted) refuse('control changed while reading policy');
+}
+function blobAt(commit, source) {
+  sourcePath(source);
+  const entry = git('ls-tree', '-z', commit, '--', source).toString('utf8');
+  const match = /^(100644|100755) blob ([a-f0-9]{40}(?:[a-f0-9]{24})?)\t([^\0]+)\0$/u.exec(entry);
+  if (!match || match[3] !== source) refuse('source is missing or not a regular committed file');
+  return { blob: match[2], bytes: git('cat-file', 'blob', match[2]) };
+}
+function workingBytes(source) {
+  let current = ROOT;
+  const parts = sourcePath(source).split('/');
+  for (let i = 0; i < parts.length; i++) {
+    current = path.join(current, parts[i]);
+    const info = lstatSync(current);
+    if (info.isSymbolicLink() || (i === parts.length - 1 ? !info.isFile() : !info.isDirectory())) refuse('working policy must be a regular contained file');
   }
-  
-  // Verify repo is clean
-  const isClean = await isRepoClean(repoRoot);
-  if (!isClean) {
-    throw new Error('Repository has uncommitted changes');
-  }
-  
-  // Verify current HEAD is equal/ancestor of trusted main ref
-  const isTrusted = await isAncestorOrEqual(repoRoot);
-  if (!isTrusted) {
-    throw new Error('Current HEAD is not trusted (not ancestor of or equal to origin/main)');
-  }
-  
-  // Construct full path to policy file
-  const fullPath = path.join(repoRoot, policyPath);
-  
-  // Verify the file exists
-  try {
-    await stat(fullPath);
-  } catch (error) {
-    throw new Error(`Policy file does not exist: ${fullPath}`);
-  }
-  
-  // Get the blob SHA for the file at HEAD
-  const relativePath = path.relative(repoRoot, fullPath).replace(/\\/g, '/');
-  const expectedBlobSha = await getFileBlobSha(repoRoot, relativePath);
-  
-  // Read the actual file content
-  const fileContent = await readFile(fullPath, 'utf8');
-  const actualFileHash = await calculateFileHash(fullPath);
-  
-  // Verify the file content matches the Git blob
-  if (actualFileHash !== expectedBlobSha) {
-    throw new Error(`File content does not match Git blob: ${policyPath}`);
-  }
-  
-  // Parse the policy
+  return readFileSync(current);
+}
+function validate(bytes, commit) {
   let policy;
-  try {
-    policy = JSON.parse(fileContent);
-  } catch (error) {
-    throw new Error(`Invalid JSON in policy file: ${error.message}`);
+  try { policy = JSON.parse(bytes.toString('utf8')); } catch { refuse('invalid policy JSON'); }
+  keys(policy, ['schema', 'routes', 'lineup', 'required_critics', 'model_origins'], 'policy');
+  if (policy.schema !== 'kxm.developer-roster.v1') refuse('unsupported schema');
+  record(policy.routes, 'routes'); record(policy.lineup, 'lineup'); record(policy.model_origins, 'model origins');
+  if (!Object.keys(policy.routes).length) refuse('empty routes');
+  for (const [model, origin] of Object.entries(policy.model_origins)) {
+    text(model, 'origin model'); keys(origin, ['vendor', 'evidence'], 'origin');
+    text(origin.vendor, 'origin vendor');
+    keys(origin.evidence, ['source', 'sha256'], 'origin evidence'); digest(origin.evidence.sha256);
+    if (sha256(blobAt(commit, origin.evidence.source).bytes) !== origin.evidence.sha256) refuse('origin evidence hash mismatch');
   }
-  
-  // Validate the policy schema
-  validateRosterSchema(policy);
-  
-  // Get current HEAD for identity
-  const currentHead = await getCurrentHead(repoRoot);
-  
-  // Return frozen policy data with identity
-  return {
-    identity: {
-      source: policyPath,
-      sha256: actualFileHash,
-      commit: currentHead
-    },
-    policy: Object.freeze(JSON.parse(JSON.stringify(policy))) // Deep freeze
-  };
+  for (const [id, route] of Object.entries(policy.routes)) {
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(id)) refuse('invalid route id');
+    keys(route, ['harness', 'model', 'vendor', 'roles', 'permissions', 'status'], 'route');
+    text(route.harness, 'harness'); text(route.model, 'model'); text(route.vendor, 'vendor');
+    if (!own(ROUTES, route.harness)) refuse('unsupported harness');
+    const ceiling = ROUTES[route.harness];
+    list(route.roles, ceiling.roles, 'roles'); list(route.permissions, ceiling.permissions, 'permissions');
+    if (!['admitted', 'retired'].includes(route.status)) refuse('unsupported status');
+    if (route.harness === 'pi') {
+      const parts = route.model.split('/');
+      if (parts.length < 3 || parts[0] !== 'openrouter' || parts.some(part => !part)) refuse('unsupported Pi provider/model');
+      const prefix = canonical(parts[1].toLowerCase());
+      const vendor = canonical(route.vendor.toLowerCase());
+      if (NATIVE_PI_BRAKE_PROVIDERS.includes(prefix) || NATIVE_PI_BRAKE_PROVIDERS.includes(vendor)) refuse('native vendor cannot use Pi');
+      if (!own(policy.model_origins, route.model)) refuse('missing exact model origin');
+      const origin = policy.model_origins[route.model];
+      if (canonical(origin.vendor.toLowerCase()) !== vendor || vendor === 'openrouter') refuse('model origin/vendor mismatch');
+      if (route.roles.includes('writer') && (route.permissions.length !== 1 || route.permissions[0] !== 'edit')) refuse('Pi writer requires edit permission only');
+      if (route.permissions.includes('edit') && route.roles.some(role => !['writer', 'experiment'].includes(role))) refuse('Pi critic/planner cannot edit');
+    } else if (canonical(route.vendor.toLowerCase()) !== ceiling.provider || route.model.includes('/')) refuse('native route vendor/model mismatch');
+  }
+  for (const [role, ids] of Object.entries(policy.lineup)) {
+    if (!ROLES.includes(role)) refuse('unsupported lineup role');
+    list(ids, Object.keys(policy.routes), 'lineup');
+    if (ids.some(id => policy.routes[id].status !== 'admitted' || !policy.routes[id].roles.includes(role))) refuse('lineup route not admitted for role');
+  }
+  for (const role of ['writer', 'planner', 'reviewer-arch', 'reviewer-cli']) if (!own(policy.lineup, role)) refuse('required lineup missing');
+  keys(policy.required_critics, ['review-arch', 'review-cli'], 'required critics');
+  const critics = [];
+  for (const [kind, role] of [['review-arch', 'reviewer-arch'], ['review-cli', 'reviewer-cli']]) {
+    const id = policy.required_critics[kind];
+    if (typeof id !== 'string' || !policy.lineup[role].includes(id)) refuse('required critic not in admitted lineup');
+    const route = policy.routes[id];
+    if (route.permissions.length !== 1 || route.permissions[0] !== 'read-only') refuse('critic must be read-only');
+    critics.push(canonical(route.vendor.toLowerCase()));
+  }
+  if (critics[0] === critics[1]) refuse('critics must have independent vendors');
+  for (const route of Object.values(policy.routes)) {
+    if (route.status === 'admitted' && route.roles.includes('writer') && critics.includes(canonical(route.vendor.toLowerCase()))) refuse('writer and critics must have independent vendors');
+  }
+  return policy;
 }
-
-/**
- * Validate the roster policy schema
- */
-function validateRosterSchema(policy) {
-  if (typeof policy !== 'object' || policy === null) {
-    throw new Error('Policy must be an object');
-  }
-  
-  // Validate routes array
-  if (!Array.isArray(policy.routes)) {
-    throw new Error('Policy must have a routes array');
-  }
-  
-  for (const [index, route] of policy.routes.entries()) {
-    if (typeof route.id !== 'string') {
-      throw new Error(`Route[${index}].id must be a string`);
-    }
-    
-    if (!['pi', 'claude', 'kimi', 'codex', 'gemini', 'deepseek', 'grok'].includes(route.harness)) {
-      throw new Error(`Route[${index}].harness must be a valid harness`);
-    }
-    
-    if (typeof route.model !== 'string') {
-      throw new Error(`Route[${index}].model must be a string`);
-    }
-    
-    if (typeof route.vendor !== 'string') {
-      throw new Error(`Route[${index}].vendor must be a string`);
-    }
-    
-    if (!Array.isArray(route.roles)) {
-      throw new Error(`Route[${index}].roles must be an array`);
-    }
-    
-    if (typeof route.permissions !== 'object' || route.permissions === null) {
-      throw new Error(`Route[${index}].permissions must be an object`);
-    }
-    
-    if (!['active', 'disabled', 'retired'].includes(route.status)) {
-      throw new Error(`Route[${index}].status must be 'active', 'disabled', or 'retired'`);
-    }
-  }
-  
-  // Validate lineup
-  if (policy.lineup && typeof policy.lineup === 'object') {
-    for (const [role, ids] of Object.entries(policy.lineup)) {
-      if (!Array.isArray(ids)) {
-        throw new Error(`Lineup role '${role}' must map to an array of IDs`);
-      }
-    }
-  }
-  
-  // Validate required critics
-  if (policy.required_critics && typeof policy.required_critics === 'object') {
-    for (const [criticType, id] of Object.entries(policy.required_critics)) {
-      if (typeof id !== 'string') {
-        throw new Error(`Required critic '${criticType}' must map to a string ID`);
-      }
-    }
-  }
-  
-  // Validate model origins
-  if (policy.model_origins && typeof policy.model_origins === 'object') {
-    for (const [model, originInfo] of Object.entries(policy.model_origins)) {
-      if (typeof originInfo !== 'object' || originInfo === null) {
-        throw new Error(`Model origin '${model}' must map to an object`);
-      }
-      
-      if (typeof originInfo.vendor !== 'string') {
-        throw new Error(`Model origin '${model}' must have a vendor string`);
-      }
-      
-      if (typeof originInfo.evidence !== 'string') {
-        throw new Error(`Model origin '${model}' must have an evidence string`);
-      }
-    }
-  }
+export function loadTrustedRosterPolicy() {
+  const snapshot = control();
+  const { blob, bytes } = blobAt(snapshot.head, POLICY);
+  if (!workingBytes(POLICY).equals(bytes)) refuse('working policy differs from committed bytes');
+  const policy = validate(bytes, snapshot.head);
+  unchanged(snapshot);
+  return frozen({ identity: { commit: snapshot.head, blob, sha256: sha256(bytes) }, policy });
 }
-
-/**
- * Resolve policy from a previously bound commit (not current working files)
- */
-export async function resolveBoundPolicy(identity) {
-  const repoRoot = await getRepoRoot();
-  
-  if (!identity || !identity.commit || !identity.source) {
-    throw new Error('Invalid identity: must have commit and source');
-  }
-  
-  try {
-    // Check if the commit exists in the repo
-    await execAsync(`git cat-file -e ${identity.commit}`, { cwd: repoRoot });
-    
-    // Get the file content from the specific commit
-    const { stdout } = await execAsync(`git show ${identity.commit}:${identity.source}`, { cwd: repoRoot });
-    
-    // Calculate hash of the content from the commit
-    const crypto = await import('crypto');
-    const commitContentHash = crypto.createHash('sha256').update(stdout).digest('hex');
-    
-    // Verify the hash matches what we expect
-    if (commitContentHash !== identity.sha256) {
-      throw new Error(`Content hash mismatch for commit ${identity.commit}, expected ${identity.sha256}, got ${commitContentHash}`);
-    }
-    
-    // Parse and validate the policy
-    const policy = JSON.parse(stdout);
-    validateRosterSchema(policy);
-    
-    return {
-      identity: { ...identity }, // Copy the identity
-      policy: Object.freeze(JSON.parse(JSON.stringify(policy))) // Deep freeze
-    };
-  } catch (error) {
-    throw new Error(`Failed to resolve policy from commit ${identity.commit}: ${error.message}`);
-  }
-}
-
-// Export for direct execution when this file is run
-if (process.argv[1] === new URL(import.meta.url).pathname) {
-  loadTrustedRosterPolicy()
-    .then(result => {
-      console.log(JSON.stringify(result, null, 2));
-    })
-    .catch(error => {
-      console.error('Error loading roster policy:', error.message);
-      process.exit(1);
-    });
+export function resolveBoundPolicy(identity) {
+  keys(identity, ['commit', 'blob', 'sha256'], 'identity');
+  objectId(identity.commit, 'commit'); objectId(identity.blob, 'blob'); digest(identity.sha256);
+  const snapshot = control();
+  git('merge-base', '--is-ancestor', identity.commit, snapshot.trusted);
+  const { blob, bytes } = blobAt(identity.commit, POLICY);
+  if (blob !== identity.blob || sha256(bytes) !== identity.sha256) refuse('bound identity mismatch');
+  const policy = validate(bytes, identity.commit);
+  unchanged(snapshot);
+  return frozen({ identity: { ...identity }, policy });
 }
