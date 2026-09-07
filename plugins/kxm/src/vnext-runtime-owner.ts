@@ -6,16 +6,30 @@ export interface VnextOwnedAttempt {
   controller: AbortController;
 }
 
+export interface VnextGateHoldView {
+  attemptId: string;
+  token: string;
+  state: "active" | "unsettled";
+}
+
+interface GateHold {
+  attemptId: string;
+  token: string;
+  state: "active" | "unsettled";
+  stop?: () => void;
+}
+
 interface AdmissionRecord {
   token: string;
   configRevision: string;
+  gateHold?: GateHold;
 }
 
 interface QueueItem {
   runId: string;
   configRevision: string;
   bound: number;
-  start: () => Promise<unknown>;
+  start: (token: string) => Promise<unknown>;
   fail: (error: unknown) => void;
 }
 
@@ -151,10 +165,74 @@ export function releaseVnextRun(storePath: string, runId: string, token: string)
   if (!owner) return;
   const current = owner.admitted.get(runId);
   if (!current || current.token !== token) return;
+  if (current.gateHold) return;
   owner.admitted.delete(runId);
   pump(storePath, owner);
   clearImplicitIfIdle(owner);
   maybeDelete(storePath, owner);
+}
+
+export function armVnextGateHold(
+  storePath: string,
+  runId: string,
+  token: string,
+  attemptId: string,
+  stop: () => void,
+): void {
+  const owner = record(storePath);
+  const current = owner.admitted.get(runId);
+  if (!current || current.token !== token) {
+    throw runtimeError("run_events_illegal", runId, "gate hold requires the exact admitted token");
+  }
+  if (current.gateHold) {
+    throw runtimeError("run_events_illegal", runId, "admission already has a gate hold");
+  }
+  current.gateHold = { attemptId, token, state: "active", stop };
+}
+
+export function markVnextGateHoldUnsettled(storePath: string, runId: string, token: string, attemptId: string): void {
+  const owner = owners.get(storePath);
+  const current = owner?.admitted.get(runId);
+  if (!current || current.token !== token) {
+    throw runtimeError("run_events_illegal", runId, "unsettled hold requires the exact admitted token");
+  }
+  const hold = current.gateHold;
+  if (!hold || hold.attemptId !== attemptId || hold.token !== token) {
+    throw runtimeError("run_events_illegal", runId, "unsettled hold does not match the armed attempt");
+  }
+  hold.state = "unsettled";
+}
+
+export function finishVnextOwnedGate(storePath: string, runId: string, token: string, attemptId: string): void {
+  const owner = owners.get(storePath);
+  const current = owner?.admitted.get(runId);
+  if (!current || current.token !== token) {
+    throw runtimeError("run_events_illegal", runId, "owned gate finish requires the exact admitted token");
+  }
+  const hold = current.gateHold;
+  if (!hold || hold.attemptId !== attemptId || hold.token !== token) {
+    throw runtimeError("run_events_illegal", runId, "owned gate finish does not match the armed attempt");
+  }
+  if (hold.state === "unsettled") {
+    throw runtimeError("run_events_illegal", runId, "unsettled gate hold cannot be finished");
+  }
+  delete current.gateHold;
+}
+
+export function dropVnextGateStopHook(storePath: string, runId: string, attemptId: string): void {
+  const hold = owners.get(storePath)?.admitted.get(runId)?.gateHold;
+  if (!hold || hold.attemptId !== attemptId) return;
+  delete hold.stop;
+}
+
+export function vnextGateHold(storePath: string, runId: string): VnextGateHoldView | undefined {
+  const hold = owners.get(storePath)?.admitted.get(runId)?.gateHold;
+  if (!hold) return undefined;
+  return { attemptId: hold.attemptId, token: hold.token, state: hold.state };
+}
+
+export function vnextAdmittedToken(storePath: string, runId: string): string | undefined {
+  return owners.get(storePath)?.admitted.get(runId)?.token;
 }
 
 export function enqueueVnextScheduledRun(
@@ -162,7 +240,7 @@ export function enqueueVnextScheduledRun(
   runId: string,
   configRevision: string,
   bound: number,
-  start: () => Promise<unknown>,
+  start: (token: string) => Promise<unknown>,
 ): Promise<unknown> {
   const owner = record(storePath);
   if (owner.admitted.has(runId) || owner.queue.some((item) => item.runId === runId)) {
@@ -173,7 +251,7 @@ export function enqueueVnextScheduledRun(
       runId,
       configRevision,
       bound,
-      start: () => start().then(resolve, reject),
+      start: (token) => start(token).then(resolve, reject),
       fail: (error: unknown) => reject(error),
     });
     pump(storePath, owner);
@@ -200,7 +278,7 @@ function pump(storePath: string, owner: OwnerRecord): void {
       next.fail(error);
       continue;
     }
-    void next.start().finally(() => {
+    void next.start(token).finally(() => {
       releaseVnextRun(storePath, next.runId, token);
     });
   }

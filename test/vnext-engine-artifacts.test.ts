@@ -341,14 +341,6 @@ test("S3 declaration refusals happen before intent", async () => {
     assert.equal(context.eventStore.events(undeclared.runId, 0, 50).some((event) => event.eventType === "step.entered"), false);
     assert.equal(context.eventStore.gateRowCounts(undeclared.runId).attempts, 0);
 
-    const command = acceptReady(context, bundle, "gate-command-ready", "s4");
-    const refused = await stepVnextRun(context, command.runId, producer());
-    assert.equal(refused.handoff?.reason, "step_unsupported");
-    assert.equal(refused.handoff?.field, "kind");
-    assert.match(refused.handoff?.detail ?? "", /S4/);
-    assert.equal(context.eventStore.events(command.runId, 0, 50).some((event) => event.eventType === "step.entered"), false);
-    assert.equal(context.eventStore.gateRowCounts(command.runId).attempts, 0);
-
     const outcomes = acceptReady(context, bundle, "unsupported-gate", "outcomes");
     const undeclaredOutcomes = await stepVnextRun(context, outcomes.runId, producer());
     assert.equal(undeclaredOutcomes.handoff?.reason, "step_unsupported");
@@ -483,10 +475,25 @@ test("S3 legitimate settled gate history is excluded from recovery without false
     const afterSettled = gateRecoveryPreflight(context);
     assert.equal(afterSettled.blocking.length, 0);
     assert.equal(afterSettled.owned, 0);
-    const command = acceptReady(context, bundle, "gate-command-ready", "after-settled-history");
+    writeFileSync(join(root, ".kxm", "gates.yaml"), `schema: kxm.gate-registry.v1
+gates:
+  test:
+    kind: command
+    argv: ${JSON.stringify([process.execPath, "-e", "process.exit(0)"])}
+    timeoutMs: 3600000
+  artifacts:
+    kind: artifacts-exist
+    paths: [dist/index.js]
+  artifacts-multi:
+    kind: artifacts-exist
+    paths: [keep/a.txt, keep/b.txt]
+`);
+    const commandBundle = loadVnextProject(root);
+    const command = acceptReady(context, commandBundle, "gate-command-ready", "after-settled-history");
     const allowed = await stepVnextRun(context, command.runId, producer());
-    assert.equal(allowed.handoff?.reason, "step_unsupported");
-    assert.equal(allowed.handoff?.field, "kind");
+    assert.notEqual(allowed.handoff?.reason, "gate_recovery_pending");
+    assert.equal(allowed.state.status, "completed");
+    assert.equal(context.eventStore.gateAttemptsForRun(command.runId).length, 1);
 
     const unownedRun = acceptReady(context, bundle, "artifacts-gate", "unfinished-after-settled");
     const unownedEnvelope = loadVnextRunPlanEnvelope(context.eventStore, unownedRun);
@@ -547,10 +554,6 @@ test("S3 owned exact controller is ordinary concurrency; unowned and uncertain b
       const owned = gateRecoveryPreflight(context);
       assert.equal(owned.owned, 1);
       assert.equal(owned.blocking.length, 0);
-      const command = acceptReady(context, bundle, "gate-command-ready", "while-owned");
-      const allowed = await stepVnextRun(context, command.runId, producer());
-      assert.equal(allowed.handoff?.reason, "step_unsupported");
-      assert.equal(allowed.handoff?.field, "kind");
     } finally {
       unregisterVnextAttemptController(context.eventStore.path, ownedRun.runId, ownedAttempt.attemptId);
     }
