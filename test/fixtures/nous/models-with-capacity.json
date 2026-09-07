@@ -1,0 +1,20 @@
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "hermes-3",
+      "name": "Hermes 3",
+      "contextWindow": 131072,
+      "maxTokens": 8192,
+      "units": "usd_per_million_tokens",
+      "verified": true,
+      "cost": {
+        "input": 0.8,
+        "output": 2.4,
+        "cacheRead": 0.08,
+        "cacheWrite": 0.8
+      }
+    }
+  ],
+  "assumedShape": "pending live /v1/models verification"
+}

@@ -561,6 +561,8 @@ It does not replace the phase gates below.
   classify/docs/plugin) before the pause; the post-merge main Windows Node 24
   package-cleanup failure in run `34006194862` is unresolved and deferred.
 
+- **Nous opt-in Pi providers:** opt-in `nous/*` (direct API) and `nous-proxy/*` (Hermes subscription proxy) via `KXM_NOUS_PROVIDERS`, with fail-closed catalog/price boundary, bounded factory-time discovery, and env-only direct auth (`NOUS_API_KEY`). No router, no writer admission, live auth and `/v1/models` shape unverified.
+
 ### Still open
 
 - **Windows resumption (deferred):** restore the two Windows Validate legs and
@@ -673,6 +675,11 @@ It does not replace the phase gates below.
   minimumPassed 2, provider-distinct) are declared as a Phase 7 target in
   lifecycles.md; today loader and compiler resolve omitted bounds to one
   assignment and join `all`. Change schema, loader, compiler, and docs together.
+
+- Live verification of Nous `/v1/models` shape and streaming compatibility flags after a Nous login.
+- Routing v2 unmetered labelling for Nous subscription-proxy usage; extra billed amount beyond subscription remains unknown unless actually reported.
+- Persisted Nous catalog via Pi `publish` is deferred.
+- Claude Code compatibility experiment for Nous is a separate assignment.
 
 ### Plan hygiene (periodic, not every turn)
 
@@ -860,6 +867,8 @@ status line, `/kxm` menu, settings, and validated agent/workflow/model editors.
 **Config slice (landed, unreleased):** harness catalog with Pi as default
 headless; `kxm harness list` / `kxm update`; `kxm dash` as the operator peek;
 `kxm hub start|view|stop`. YAML remains the only enablement surface.
+Extension-registered opt-in Nous providers exist; assignment-time
+provider/model admission remains Phase 4 work.
 
 **Still this phase:** Pi RPC adapter, per-run sessions, the rest of the `/kxm`
 menu (hub/workflows/agents completions wrapping CLI), validated YAML editors

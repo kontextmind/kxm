@@ -187,6 +187,13 @@ Until v2 and separated cost populations land:
   from a future report — not v1 run-count sort.
 - API budgets and rollover remain later, not this phase.
 
+Pi numeric cost for `nous-proxy/*` is a market-reference value from a dated
+operator catalog pin (display suffix `subscription proxy, market ref`), not
+billed spend. Direct `nous/*` uses verified numeric rates when present.
+`COST_BASIS` is unchanged; true unmetered labelling for subscription proxy
+usage is a routing v2 item. Extra usage beyond a subscription stays unknown
+unless a provider actually reports it.
+
 ## Precedence
 
 [AGENTS.md](../../AGENTS.md) and

@@ -259,3 +259,56 @@ See [Webhook workflows](webhook-workflows.md) for the base schema and the comple
 | `nextTurn` | Information should wait for a later turn | Queue context without immediate work |
 
 `followUp` is the safe default. Use [`.kxm/config/env.example`](../.kxm/config/env.example) as a reference, but load values through your shell, supervisor, container platform, or secret manager. Never commit real tokens.
+
+## Nous providers (opt-in)
+
+Unset `KXM_NOUS_PROVIDERS` leaves startup synchronous and offline: no fetch,
+no `registerProvider`, no notice. Models are never auto-selected. There is no
+preference overlay and no writer/router admission.
+
+### Clean-machine setup order
+
+Direct API (no Hermes):
+
+1. Obtain a Nous API key from the vendor.
+2. `export NOUS_API_KEY=...` in the shell or supervisor that starts Pi.
+3. `export KXM_NOUS_PROVIDERS=direct`
+4. Optionally point `KXM_NOUS_CATALOG_FILE` at a dated `kxm.nous-catalog.v1`
+   pin (see `test/fixtures/nous/catalog-empty.json` for the empty template).
+5. Start Pi. Models appear as `nous/<id>` only when capacity and verified
+   numeric rates are known from `/v1/models` or the pin.
+
+This slice reads **only** `NOUS_API_KEY` for direct auth. It does not discover
+models from stored Pi `/login` credentials.
+
+Hermes subscription proxy (direct API is not required):
+
+1. Install Hermes yourself if it is missing. KXM does not install it.
+2. Log in with the installed command: `hermes login --provider nous`.
+   Newer docs also mention `hermes setup --portal`; that flow is not claimed
+   working on every CLI.
+3. Start the local proxy: `hermes proxy start`. Check `hermes proxy status`.
+   Default base URL is `http://127.0.0.1:8645/v1`.
+4. `export KXM_NOUS_PROVIDERS=proxy`
+5. Start Pi. Models appear as `nous-proxy/<id>` with display suffix
+   `subscription proxy, market ref`.
+
+KXM never runs login, install, proxy start, or paid requests for you.
+
+### Environment
+
+- `KXM_NOUS_PROVIDERS`: comma list of `direct` and/or `proxy`. Unknown tokens
+  fail closed: nothing is registered.
+- `KXM_NOUS_PROXY_URL`: optional loopback `http`/`https` URL
+  (`127.0.0.1`, `localhost`, or `::1` only). Non-loopback fails closed.
+- `KXM_NOUS_DISCOVERY_TIMEOUT_MS`: bounded GET `/v1/models` timeout, default
+  `5000`.
+- `KXM_NOUS_CATALOG_FILE`: operator pin with `schema`, `recordedAt`, `source`,
+  `units` (`usd_per_million_tokens`), `hash` (`sha256:` of canonical
+  recordedAt/source/units/models), and per-model capacity plus four finite
+  nonnegative rates. Verified zeros are allowed; unverified zeros, stale
+  pins (older than 30 days), missing units, or a bad hash exclude data.
+  Per-context tiers register at the upper bound.
+
+Live `/v1/models` field names and streaming flags remain unverified. Fixtures
+under `test/fixtures/nous/` are assumed shapes, not vendor dumps.

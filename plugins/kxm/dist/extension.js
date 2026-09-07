@@ -417,6 +417,625 @@ var HubClient = class {
   }
 };
 
+// plugins/kxm/src/nous-pi.ts
+import { readFile } from "node:fs/promises";
+
+// plugins/kxm/src/nous-provider.ts
+import { createHash as createHash2 } from "node:crypto";
+
+// plugins/kxm/src/redact.ts
+var SECRET_PATTERNS = [
+  /\bsk-[A-Za-z0-9_-]{8,}\b/g,
+  /\bghp_[A-Za-z0-9_]{20,}\b/g,
+  /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
+  /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/gi,
+  /\bBearer\s+[A-Za-z0-9._~+/=-]+\b/gi,
+  /\bKXM_[A-Z0-9_]*(TOKEN|SECRET|KEY)[A-Z0-9_]*=\S+/gi,
+  /\b(GITHUB_TOKEN|GH_TOKEN|KXM_AUTH_TOKEN|KXM_WORKFLOW_SIGNAL_SECRET)=\S+/gi,
+  /\b[A-Fa-f0-9]{64}\b/g
+];
+function redactSecrets(value) {
+  let result2 = value;
+  for (const pattern of SECRET_PATTERNS) {
+    result2 = result2.replace(pattern, "[redacted]");
+  }
+  return result2;
+}
+
+// plugins/kxm/src/nous-provider.ts
+var NOUS_DIRECT_ID = "nous";
+var NOUS_PROXY_ID = "nous-proxy";
+var NOUS_DIRECT_BASE_URL = "https://inference-api.nousresearch.com/v1";
+var NOUS_PROXY_DEFAULT_BASE_URL = "http://127.0.0.1:8645/v1";
+var NOUS_PROXY_PLACEHOLDER_KEY = "kxm-nous-proxy";
+var NOUS_CATALOG_SCHEMA = "kxm.nous-catalog.v1";
+var NOUS_PRICE_UNITS = "usd_per_million_tokens";
+var DEFAULT_DISCOVERY_TIMEOUT_MS = 5e3;
+var NOUS_CATALOG_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1e3;
+var LOOPBACK_HOSTS = /* @__PURE__ */ new Set(["127.0.0.1", "localhost", "::1"]);
+var PROVIDER_TOKENS = /* @__PURE__ */ new Set(["direct", "proxy"]);
+function parseNousEnv(env = process.env) {
+  const raw = env.KXM_NOUS_PROVIDERS?.trim() ?? "";
+  const timeoutMs = parseTimeout(env.KXM_NOUS_DISCOVERY_TIMEOUT_MS);
+  if (!raw) {
+    return { status: "unset", providers: [], timeoutMs };
+  }
+  const tokens = raw.split(",").map((part) => part.trim()).filter(Boolean);
+  const unknownTokens = [...new Set(tokens.filter((token) => !PROVIDER_TOKENS.has(token)))];
+  if (unknownTokens.length > 0) {
+    return {
+      status: "invalid",
+      providers: [],
+      unknownTokens,
+      timeoutMs,
+      error: `unknown KXM_NOUS_PROVIDERS token(s): ${unknownTokens.join(", ")}; expected direct and/or proxy`
+    };
+  }
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    return {
+      status: "invalid",
+      providers: [],
+      unknownTokens: [],
+      timeoutMs: DEFAULT_DISCOVERY_TIMEOUT_MS,
+      error: "KXM_NOUS_DISCOVERY_TIMEOUT_MS must be a positive finite number of milliseconds"
+    };
+  }
+  const providers = [...new Set(tokens)];
+  const catalogFile = env.KXM_NOUS_CATALOG_FILE?.trim();
+  const proxyOverride = env.KXM_NOUS_PROXY_URL?.trim();
+  return {
+    status: "ready",
+    providers,
+    timeoutMs,
+    proxyUrl: proxyOverride && proxyOverride.length > 0 ? proxyOverride : NOUS_PROXY_DEFAULT_BASE_URL,
+    ...catalogFile ? { catalogFile } : {}
+  };
+}
+function parseTimeout(raw) {
+  if (raw === void 0 || raw.trim() === "") return DEFAULT_DISCOVERY_TIMEOUT_MS;
+  const value = Number(raw);
+  return value;
+}
+function isLoopbackUrl(value) {
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+  if (parsed.username || parsed.password) return false;
+  const host = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  return LOOPBACK_HOSTS.has(host);
+}
+function modelsUrl(baseUrl) {
+  return `${baseUrl.replace(/\/+$/, "")}/models`;
+}
+function sanitizeNousText(value) {
+  const stripped = value.replace(/\bBearer\s+\S+/gi, "Bearer [redacted]").replace(/\b(NOUS_API_KEY|OPENROUTER_API_KEY|ANTHROPIC_API_KEY|api[_-]?key)\s*[:=]\s*\S+/gi, "$1=[redacted]");
+  return redactSecrets(stripped).slice(0, 500);
+}
+function catalogCanonicalPayload(pin) {
+  return canonicalJson({
+    recordedAt: pin.recordedAt,
+    source: pin.source,
+    units: pin.units,
+    models: pin.models
+  });
+}
+function catalogHash(pin) {
+  return `sha256:${createHash2("sha256").update(catalogCanonicalPayload(pin)).digest("hex")}`;
+}
+function parseCatalogPin(raw, nowMs = Date.now()) {
+  if (!isRecord(raw)) return { ok: false, reason: "catalog is not an object" };
+  if (raw.schema !== NOUS_CATALOG_SCHEMA) {
+    return { ok: false, reason: `catalog schema must be ${NOUS_CATALOG_SCHEMA}` };
+  }
+  if (typeof raw.recordedAt !== "string" || Number.isNaN(Date.parse(raw.recordedAt))) {
+    return { ok: false, reason: "catalog recordedAt must be an ISO-8601 timestamp" };
+  }
+  if (typeof raw.source !== "string" || raw.source.trim().length === 0) {
+    return { ok: false, reason: "catalog source is required" };
+  }
+  if (raw.units !== NOUS_PRICE_UNITS) {
+    return { ok: false, reason: `catalog units must be ${NOUS_PRICE_UNITS}` };
+  }
+  if (typeof raw.hash !== "string" || !/^sha256:[a-f0-9]{64}$/.test(raw.hash)) {
+    return { ok: false, reason: "catalog hash must be sha256:<64 hex>" };
+  }
+  if (!isRecord(raw.models)) return { ok: false, reason: "catalog models must be an object" };
+  const expected = catalogHash({
+    recordedAt: raw.recordedAt,
+    source: raw.source.trim(),
+    units: NOUS_PRICE_UNITS,
+    models: raw.models
+  });
+  if (raw.hash !== expected) {
+    return { ok: false, reason: "catalog hash does not match recordedAt/source/units/models" };
+  }
+  const models = {};
+  for (const [id, entry] of Object.entries(raw.models)) {
+    const parsed = parsePinModel(id, entry);
+    if (!parsed.ok) return parsed;
+    models[id] = parsed.model;
+  }
+  const pin = {
+    schema: NOUS_CATALOG_SCHEMA,
+    recordedAt: raw.recordedAt,
+    source: raw.source.trim(),
+    units: NOUS_PRICE_UNITS,
+    hash: raw.hash,
+    models
+  };
+  const recordedAtMs = Date.parse(pin.recordedAt);
+  if (recordedAtMs > nowMs + 6e4) {
+    return { ok: false, reason: "catalog recordedAt is in the future" };
+  }
+  if (nowMs - recordedAtMs > NOUS_CATALOG_MAX_AGE_MS) {
+    return { ok: false, reason: "catalog is stale (recordedAt older than 30 days)" };
+  }
+  return { ok: true, pin };
+}
+function parsePinModel(id, entry) {
+  if (!id.trim()) return { ok: false, reason: "catalog model id is empty" };
+  if (!isRecord(entry)) return { ok: false, reason: `catalog model ${id} is not an object` };
+  const contextWindow = asPositiveInt(entry.contextWindow);
+  const maxTokens = asPositiveInt(entry.maxTokens);
+  if (contextWindow === void 0 || maxTokens === void 0) {
+    return { ok: false, reason: `catalog model ${id} is missing positive contextWindow/maxTokens` };
+  }
+  if (entry.priceBasis !== "list" && entry.priceBasis !== "upper-bound") {
+    return { ok: false, reason: `catalog model ${id} priceBasis must be list or upper-bound` };
+  }
+  if (entry.billing !== "metered" && entry.billing !== "subscription" && entry.billing !== "subscription_plus_usage") {
+    return { ok: false, reason: `catalog model ${id} billing must be metered, subscription, or subscription_plus_usage` };
+  }
+  if (typeof entry.verified !== "boolean") {
+    return { ok: false, reason: `catalog model ${id} verified must be a boolean` };
+  }
+  const rates = parseRates(entry.cost);
+  if (!rates) return { ok: false, reason: `catalog model ${id} cost rates must be finite nonnegative numbers` };
+  let cost = rates;
+  let priceBasis = entry.priceBasis;
+  if (entry.tiers !== void 0) {
+    if (!Array.isArray(entry.tiers) || entry.tiers.length === 0) {
+      return { ok: false, reason: `catalog model ${id} tiers must be a nonempty array when present` };
+    }
+    const tierRates = [rates];
+    for (const tier of entry.tiers) {
+      if (!isRecord(tier)) return { ok: false, reason: `catalog model ${id} has a malformed tier` };
+      const parsedTier = parseRates(tier);
+      if (!parsedTier) return { ok: false, reason: `catalog model ${id} tier rates must be finite nonnegative numbers` };
+      if (asNonnegInt(tier.inputTokensAbove) === void 0) {
+        return { ok: false, reason: `catalog model ${id} tier is missing inputTokensAbove` };
+      }
+      tierRates.push(parsedTier);
+    }
+    cost = upperBoundRates(tierRates);
+    priceBasis = "upper-bound";
+  }
+  if (!entry.verified && hasZeroRate(cost)) {
+    return { ok: false, reason: `catalog model ${id} has unverified zero rates` };
+  }
+  return {
+    ok: true,
+    model: {
+      contextWindow,
+      maxTokens,
+      cost,
+      priceBasis,
+      billing: entry.billing,
+      verified: entry.verified,
+      ...typeof entry.name === "string" && entry.name.trim() ? { name: entry.name.trim() } : {}
+    }
+  };
+}
+function parseModelsResponse(raw) {
+  if (!isRecord(raw) || !Array.isArray(raw.data)) {
+    return { ok: false, error: "invalid", reason: "models response is not an object with a data array (assumed OpenAI-style shape, unverified live)" };
+  }
+  const models = [];
+  for (const item of raw.data) {
+    if (!isRecord(item) || typeof item.id !== "string" || !item.id.trim()) {
+      return { ok: false, error: "invalid", reason: "models response contains an entry without an id" };
+    }
+    const model = { id: item.id.trim() };
+    if (typeof item.name === "string" && item.name.trim()) model.name = item.name.trim();
+    const contextWindow = asPositiveInt(item.contextWindow ?? item.context_window);
+    const maxTokens = asPositiveInt(item.maxTokens ?? item.max_tokens ?? item.max_output_tokens);
+    if (contextWindow !== void 0) model.contextWindow = contextWindow;
+    if (maxTokens !== void 0) model.maxTokens = maxTokens;
+    if (typeof item.units === "string") model.units = item.units;
+    if (typeof item.verified === "boolean") model.verified = item.verified;
+    const costSource = isRecord(item.cost) ? item.cost : isRecord(item.pricing) ? item.pricing : void 0;
+    const cost = costSource ? parseRates(costSource) : void 0;
+    if (cost) model.cost = cost;
+    if (Array.isArray(item.tiers)) {
+      const tiers = [];
+      for (const tier of item.tiers) {
+        if (!isRecord(tier)) continue;
+        const rates = parseRates(tier);
+        const above = asNonnegInt(tier.inputTokensAbove ?? tier.input_tokens_above);
+        if (rates && above !== void 0) tiers.push({ ...rates, inputTokensAbove: above });
+      }
+      if (tiers.length > 0) model.tiers = tiers;
+    }
+    models.push(model);
+  }
+  return { ok: true, models };
+}
+async function fetchNousModels(options) {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), options.timeoutMs);
+  try {
+    const headers = { Accept: "application/json" };
+    if (options.authorization) headers.Authorization = `Bearer ${options.authorization}`;
+    const response = await fetchImpl(options.url, { method: "GET", headers, signal: controller.signal });
+    if (response.status === 401 || response.status === 403) {
+      return { ok: false, error: "auth", status: response.status, reason: `HTTP ${response.status}` };
+    }
+    if (!response.ok) {
+      return { ok: false, error: "http", status: response.status, reason: `HTTP ${response.status}` };
+    }
+    let payload;
+    try {
+      payload = await response.json();
+    } catch {
+      return { ok: false, error: "invalid", reason: "models response is not JSON" };
+    }
+    return parseModelsResponse(payload);
+  } catch (error) {
+    if (isAbortError(error)) {
+      return { ok: false, error: "timeout", reason: `discovery timed out after ${options.timeoutMs}ms` };
+    }
+    if (isConnectionRefused(error)) {
+      return { ok: false, error: "connection-refused", reason: "connection refused" };
+    }
+    return { ok: false, error: "http", reason: sanitizeNousText(error instanceof Error ? error.message : "discovery failed") };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+function buildModelConfigs(discovered, pin, route) {
+  const registered = [];
+  const skipped = [];
+  const requiredBilling = route === "direct" ? ["metered"] : ["subscription", "subscription_plus_usage"];
+  for (const item of discovered) {
+    const fromPin = pin?.models[item.id];
+    const capacity = {
+      contextWindow: fromPin?.contextWindow ?? item.contextWindow,
+      maxTokens: fromPin?.maxTokens ?? item.maxTokens
+    };
+    if (capacity.contextWindow === void 0 || capacity.maxTokens === void 0) {
+      skipped.push({ id: item.id, reason: "unpriced, not registered: missing contextWindow or maxTokens" });
+      continue;
+    }
+    let cost;
+    let priceBasis = "list";
+    let verified = false;
+    if (fromPin) {
+      cost = fromPin.cost;
+      priceBasis = fromPin.priceBasis;
+      verified = fromPin.verified;
+    } else {
+      const apiRates = item.tiers && item.tiers.length > 0 ? upperBoundRates([item.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, ...item.tiers]) : item.cost;
+      if (!apiRates) {
+        skipped.push({ id: item.id, reason: "unpriced, not registered: no numeric cost rates and no catalog pin" });
+        continue;
+      }
+      if (item.units !== NOUS_PRICE_UNITS) {
+        skipped.push({ id: item.id, reason: `unpriced, not registered: units must be ${NOUS_PRICE_UNITS}` });
+        continue;
+      }
+      if (item.tiers && item.tiers.length > 0) priceBasis = "upper-bound";
+      verified = item.verified === true;
+      cost = apiRates;
+    }
+    if (!cost) {
+      skipped.push({ id: item.id, reason: "unpriced, not registered" });
+      continue;
+    }
+    if (hasZeroRate(cost) && !verified) {
+      skipped.push({ id: item.id, reason: "unpriced, not registered: unverified zero rates" });
+      continue;
+    }
+    const billing = fromPin?.billing ?? (route === "direct" ? "metered" : "subscription");
+    if (!requiredBilling.includes(billing)) {
+      skipped.push({ id: item.id, reason: `excluded: billing ${billing} is not valid for ${route}` });
+      continue;
+    }
+    const display = route === "proxy" ? `${fromPin?.name ?? item.name ?? item.id} (subscription proxy, market ref)` : fromPin?.name ?? item.name ?? item.id;
+    registered.push({
+      id: item.id,
+      name: display,
+      contextWindow: capacity.contextWindow,
+      maxTokens: capacity.maxTokens,
+      cost,
+      priceBasis,
+      billing,
+      verified
+    });
+  }
+  return { registered, skipped };
+}
+function guidanceFor(input) {
+  const messages = [];
+  if (input.parsed.status === "invalid") {
+    messages.push({ message: input.parsed.error, level: "error" });
+    return messages;
+  }
+  if (input.parsed.status !== "ready") return messages;
+  if (input.parsed.providers.includes("direct") && !input.directHasKey) {
+    messages.push({
+      message: "Nous direct API is opted in but NOUS_API_KEY is unset. Set NOUS_API_KEY. This slice does not use stored Pi /login credentials.",
+      level: "info"
+    });
+  }
+  if (input.proxyUrlInvalid) {
+    messages.push({
+      message: "KXM_NOUS_PROXY_URL must be a loopback http(s) URL (127.0.0.1, localhost, or ::1). Failing closed.",
+      level: "error"
+    });
+  }
+  if (input.proxyDiscovery?.ok === false && input.proxyDiscovery.error === "connection-refused") {
+    messages.push({
+      message: "Nous proxy is not reachable. Start it with `hermes proxy start` and check `hermes proxy status`. KXM does not install, spawn, or log in for you.",
+      level: "info"
+    });
+  }
+  if (input.proxyDiscovery?.ok === false && input.proxyDiscovery.error === "auth") {
+    messages.push({
+      message: "Nous proxy returned unauthorized. Log in with `hermes login --provider nous`. Newer docs also mention `hermes setup --portal` (not verified on this CLI).",
+      level: "info"
+    });
+  }
+  if (input.directDiscovery?.ok === false && input.directDiscovery.error === "timeout") {
+    messages.push({ message: `Nous direct discovery ${input.directDiscovery.reason}.`, level: "info" });
+  }
+  if (input.proxyDiscovery?.ok === false && input.proxyDiscovery.error === "timeout") {
+    messages.push({ message: `Nous proxy discovery ${input.proxyDiscovery.reason}.`, level: "info" });
+  }
+  if (input.catalogError) {
+    messages.push({ message: `Nous catalog pin not used: ${input.catalogError}.`, level: "error" });
+  }
+  if (input.skipped && input.skipped.length > 0) {
+    const preview = input.skipped.slice(0, 8).map((item) => `${item.id} (${item.reason})`).join("; ");
+    messages.push({
+      message: `Skipped ${input.skipped.length} Nous model(s) as unpriced or invalid: ${preview}.`,
+      level: "info"
+    });
+  }
+  return messages.map((item) => ({ ...item, message: sanitizeNousText(item.message) }));
+}
+function parseRates(value) {
+  if (!isRecord(value)) return void 0;
+  const input = asFiniteNonneg(value.input);
+  const output = asFiniteNonneg(value.output);
+  const cacheRead = asFiniteNonneg(value.cacheRead ?? value.cache_read ?? value.cache_input);
+  const cacheWrite = asFiniteNonneg(value.cacheWrite ?? value.cache_write);
+  if (input === void 0 || output === void 0 || cacheRead === void 0 || cacheWrite === void 0) return void 0;
+  return { input, output, cacheRead, cacheWrite };
+}
+function upperBoundRates(list) {
+  return {
+    input: Math.max(...list.map((item) => item.input)),
+    output: Math.max(...list.map((item) => item.output)),
+    cacheRead: Math.max(...list.map((item) => item.cacheRead)),
+    cacheWrite: Math.max(...list.map((item) => item.cacheWrite))
+  };
+}
+function hasZeroRate(cost) {
+  return cost.input === 0 || cost.output === 0 || cost.cacheRead === 0 || cost.cacheWrite === 0;
+}
+function asFiniteNonneg(value) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return void 0;
+  return value;
+}
+function asPositiveInt(value) {
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) return void 0;
+  return value;
+}
+function asNonnegInt(value) {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) return void 0;
+  return value;
+}
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function canonicalJson(value) {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
+  const keys = Object.keys(value).sort();
+  return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+}
+function isAbortError(error) {
+  if (!error || typeof error !== "object") return false;
+  const name = error.name;
+  return name === "AbortError" || name === "TimeoutError";
+}
+function isConnectionRefused(error) {
+  const codes = [];
+  let current = error;
+  for (let depth = 0; depth < 4 && current && typeof current === "object"; depth += 1) {
+    const code = current.code;
+    if (typeof code === "string") codes.push(code);
+    const message = current.message;
+    if (typeof message === "string" && /ECONNREFUSED/i.test(message)) return true;
+    current = current.cause;
+  }
+  return codes.includes("ECONNREFUSED");
+}
+
+// plugins/kxm/src/nous-pi.ts
+var emptySide = (id) => ({ id, registered: 0, skipped: 0 });
+function emptyNousReport() {
+  return {
+    optedIn: false,
+    direct: emptySide(NOUS_DIRECT_ID),
+    proxy: emptySide(NOUS_PROXY_ID),
+    guidance: [],
+    registeredProviders: []
+  };
+}
+function nousFactoryWork(pi, onReport, deps = {}) {
+  const env = deps.env ?? process.env;
+  const parsed = parseNousEnv(env);
+  if (parsed.status === "unset") {
+    onReport(emptyNousReport());
+    return;
+  }
+  if (parsed.status === "invalid") {
+    onReport({
+      ...emptyNousReport(),
+      optedIn: true,
+      guidance: guidanceFor({ parsed })
+    });
+    return;
+  }
+  return registerNousProviders(pi, deps).then(onReport);
+}
+async function registerNousProviders(pi, deps = {}) {
+  const env = deps.env ?? process.env;
+  const parsed = parseNousEnv(env);
+  if (parsed.status === "unset") return emptyNousReport();
+  if (parsed.status === "invalid") {
+    return { ...emptyNousReport(), optedIn: true, guidance: guidanceFor({ parsed }) };
+  }
+  const report = emptyNousReport();
+  report.optedIn = true;
+  let pin;
+  let catalogError;
+  if (parsed.catalogFile) {
+    const loaded = await loadCatalog(parsed.catalogFile, deps);
+    if (loaded.ok) pin = loaded.pin;
+    else catalogError = loaded.reason;
+  }
+  const skipped = [];
+  let directDiscovery;
+  let proxyDiscovery;
+  let proxyUrlInvalid = false;
+  const directHasKey = hasDirectKey(env);
+  if (parsed.providers.includes("direct")) {
+    const result2 = await registerRoute({
+      pi,
+      route: "direct",
+      env,
+      parsed,
+      pin,
+      hasKey: directHasKey,
+      ...deps.fetch ? { fetchImpl: deps.fetch } : {}
+    });
+    report.direct = result2.side;
+    directDiscovery = result2.discovery;
+    skipped.push(...result2.skipped);
+    if (result2.registered) report.registeredProviders.push(NOUS_DIRECT_ID);
+  }
+  if (parsed.providers.includes("proxy")) {
+    if (!isLoopbackUrl(parsed.proxyUrl)) {
+      proxyUrlInvalid = true;
+      report.proxy = {
+        id: NOUS_PROXY_ID,
+        registered: 0,
+        skipped: 0,
+        error: "non-loopback",
+        reason: "proxy URL is not loopback http(s)"
+      };
+    } else {
+      const result2 = await registerRoute({
+        pi,
+        route: "proxy",
+        env,
+        parsed,
+        pin,
+        hasKey: true,
+        ...deps.fetch ? { fetchImpl: deps.fetch } : {}
+      });
+      report.proxy = result2.side;
+      proxyDiscovery = result2.discovery;
+      skipped.push(...result2.skipped);
+      if (result2.registered) report.registeredProviders.push(NOUS_PROXY_ID);
+    }
+  }
+  report.guidance = guidanceFor({
+    parsed,
+    directHasKey,
+    proxyUrlInvalid,
+    skipped,
+    ...directDiscovery ? { directDiscovery } : {},
+    ...proxyDiscovery ? { proxyDiscovery } : {},
+    ...catalogError ? { catalogError } : {}
+  });
+  return report;
+}
+async function registerRoute(input) {
+  const providerId = input.route === "direct" ? NOUS_DIRECT_ID : NOUS_PROXY_ID;
+  const baseUrl = input.route === "direct" ? NOUS_DIRECT_BASE_URL : input.parsed.proxyUrl;
+  const side = { id: providerId, registered: 0, skipped: 0 };
+  if (input.route === "direct" && !input.hasKey) {
+    registerLegacy(input.pi, providerId, baseUrl, "$NOUS_API_KEY", []);
+    return { side, skipped: [], registered: true };
+  }
+  const authorization = input.route === "direct" ? input.env.NOUS_API_KEY : NOUS_PROXY_PLACEHOLDER_KEY;
+  const discovery = await fetchNousModels({
+    url: modelsUrl(baseUrl),
+    timeoutMs: input.parsed.timeoutMs,
+    ...authorization ? { authorization } : {},
+    ...input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}
+  });
+  if (!discovery.ok) {
+    side.error = discovery.error;
+    side.reason = discovery.reason;
+    registerLegacy(input.pi, providerId, baseUrl, apiKeyRef(input.route), []);
+    return { side, discovery, skipped: [], registered: true };
+  }
+  const built = buildModelConfigs(discovery.models, input.pin, input.route);
+  side.registered = built.registered.length;
+  side.skipped = built.skipped.length;
+  registerLegacy(input.pi, providerId, baseUrl, apiKeyRef(input.route), built.registered);
+  return { side, discovery, skipped: built.skipped, registered: true };
+}
+function apiKeyRef(route) {
+  return route === "direct" ? "$NOUS_API_KEY" : NOUS_PROXY_PLACEHOLDER_KEY;
+}
+function registerLegacy(pi, id, baseUrl, apiKey, models) {
+  if (typeof pi.registerProvider !== "function") {
+    throw new Error("Pi registerProvider is unavailable");
+  }
+  pi.registerProvider(id, {
+    name: id === NOUS_DIRECT_ID ? "Nous" : "Nous subscription proxy",
+    baseUrl,
+    apiKey,
+    api: "openai-completions",
+    authHeader: true,
+    models: models.map((model) => ({
+      id: model.id,
+      name: model.name,
+      reasoning: false,
+      input: ["text"],
+      cost: model.cost,
+      contextWindow: model.contextWindow,
+      maxTokens: model.maxTokens
+    }))
+  });
+}
+function hasDirectKey(env) {
+  const key = env.NOUS_API_KEY;
+  return typeof key === "string" && key.trim().length > 0;
+}
+async function loadCatalog(path, deps) {
+  try {
+    const read = deps.readFile ?? ((filePath) => readFile(filePath, "utf8"));
+    const text = await read(path);
+    return parseCatalogPin(JSON.parse(text), deps.nowMs ?? Date.now());
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      return { ok: false, reason: "catalog file is not valid JSON" };
+    }
+    return { ok: false, reason: sanitizeNousText(error instanceof Error ? error.message : "catalog file could not be read") };
+  }
+}
+
 // plugins/kxm/src/diagnostics.ts
 var NEXT_ACTIONS = [
   "use_assigned_coordinator",
@@ -530,13 +1149,13 @@ function diagnosticSummary(diagnostic) {
 }
 
 // plugins/kxm/src/recovery.ts
-import { createHash as createHash2 } from "node:crypto";
+import { createHash as createHash3 } from "node:crypto";
 import { lstatSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 function workerStateKey(project, agentName) {
   const safeProject = project.replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 24) || "project";
   const safeName = agentName.replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 32) || "agent";
-  const digest = createHash2("sha256").update(JSON.stringify({ project, agentName })).digest("hex").slice(0, 24);
+  const digest = createHash3("sha256").update(JSON.stringify({ project, agentName })).digest("hex").slice(0, 24);
   return `${safeProject}-${safeName}-${digest}`;
 }
 function legacyRecoveryEnvelopePath(stateDir, agentName) {
@@ -1107,6 +1726,7 @@ function assistantFailure(messages) {
 }
 function piMeshExtension(pi) {
   let client;
+  let nousReport;
   let pending = [];
   let activatingInbound;
   let awaitingActivation;
@@ -1515,6 +2135,11 @@ function piMeshExtension(pi) {
   }
   pi.on("session_start", async (event, ctx) => {
     shuttingDown = false;
+    if (nousReport?.guidance.length) {
+      for (const item of nousReport.guidance) {
+        ctx.ui.notify(item.message, item.level);
+      }
+    }
     await client?.stop();
     client = void 0;
     try {
@@ -2063,8 +2688,12 @@ function piMeshExtension(pi) {
       await applySessionChrome(ctx, { reason: "new" }, command === "brief");
     }
   });
+  return nousFactoryWork(pi, (report) => {
+    nousReport = report;
+  });
 }
 export {
+  assistantFailure,
   bindingForMessage,
   piMeshExtension as default,
   workflowRunIdForMessage
