@@ -173,11 +173,12 @@ It does not replace the phase gates below.
   **C1 (2026-09-05) supersession:** docs remainder for #86 is that routing
   contract, synchronization status, and these phase notes. Historical quick
   rename of `default.yaml`, Phase 3a/3b split, adapter-as-MVP, Tracking
-  delete/250-line cap, and “no brakes” instructions are **not** pending tasks.
+  delete/250-line cap, and "no brakes" instructions are **not** pending tasks.
   #86 stays open for later D8/D9/D14 plan text when those phases are
   scheduled, the v1 report underquote fix, and remaining report
   implementation — not for those superseded instructions.
 - **Workflow taxonomy (operator, 2026-09-07):** [`docs/openrouter-model-workforce-guide.md`](../openrouter-model-workforce-guide.md) is organized Area -> Workflow -> Stage -> Assigned role across seven areas (`software-engineering`, `design-experience`, `media-production`, `data-analytics`, `research-strategy`, `business-operations`, `security-reliability`) and 21 workflows with declared kebab-case documentation slugs. Slugs are documentation identity only: no runtime config, role admission, schema field, CLI behavior, or alias lane. Inherited candidate lists are dated research requiring live verification before dispatch, not certified prices or an eligibility grant. Model/harness, platform, modality, tools, and personal/work context are routing attributes, not area trees; area grouping never pools unrelated role quality into one global model ranking. Fable and Sol critics remain required for the developer runner. No phase gate changes.
+- **U1a adopted loader foundation (2026-09-07):** Native Fable's source-bound plan confirms splitting an unwired trusted loader/config/test foundation (U1a) from live dispatch/critic/acceptance binding, CLAUDE/PR131 replacement and AGENTS/routing docs (U1b). U1a delivers synchronous ESM loader that derives repo root, requires clean trusted state, verifies file identity against Git blobs, and supports config-only model choices with exact vendor/origin mapping. The loader enforces production constraints (clean source, trusted refs) and provides identity evidence (source, sha256, commit) for bound policies. This establishes the trusted foundation for U1b dispatch integration.
 
 ### Landed in this tree (unreleased)
 
@@ -571,6 +572,10 @@ It does not replace the phase gates below.
 - **Release resumption (deferred):** remove the `release` job latch and
   re-enable the Release workflow in a reviewed change that updates Tracking,
   tests, and settings together. Independent of Windows resumption.
+- **U1b dispatch/critic/acceptance binding:** Complete the live dispatch,
+  critic review, and acceptance binding to replace CLAUDE/PR131. This
+  includes connecting the loader to the actual routing/assignment logic.
+  U1a completed the unwired trusted loader foundation.
 - First real draft-to-published release after B2 (later release phase).
   `kxm update --kxm` end to end from a published asset. Temporary draft proof
   does not replace this. No sidecar `.sha256`.

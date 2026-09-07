@@ -1,0 +1,78 @@
+{
+  "routes": [
+    {
+      "id": "grok-4.6",
+      "harness": "grok",
+      "model": "grok-4.6",
+      "vendor": "xai",
+      "roles": ["implementer"],
+      "permissions": {
+        "edit": true,
+        "execute": true
+      },
+      "status": "active"
+    },
+    {
+      "id": "claude-fable",
+      "harness": "claude",
+      "model": "fable",
+      "vendor": "anthropic",
+      "roles": ["planner", "review-arch"],
+      "permissions": {
+        "plan": true,
+        "review": true
+      },
+      "status": "active"
+    },
+    {
+      "id": "codex-gpt-5.6-sol",
+      "harness": "codex",
+      "model": "gpt-5.6-sol",
+      "vendor": "openai",
+      "roles": ["review-cli"],
+      "permissions": {
+        "review": true
+      },
+      "status": "active"
+    },
+    {
+      "id": "pi-qwen3-coder-plus",
+      "harness": "pi",
+      "model": "openrouter/qwen/qwen3-coder-plus",
+      "vendor": "openrouter",
+      "roles": ["implementer"],
+      "permissions": {
+        "edit": true
+      },
+      "status": "active"
+    }
+  ],
+  "lineup": {
+    "implementer": ["grok-4.6", "pi-qwen3-coder-plus"],
+    "planner": ["claude-fable"],
+    "review-arch": ["claude-fable"],
+    "review-cli": ["codex-gpt-5.6-sol"]
+  },
+  "required_critics": {
+    "review-arch": "claude-fable",
+    "review-cli": "codex-gpt-5.6-sol"
+  },
+  "model_origins": {
+    "grok-4.6": {
+      "vendor": "xai",
+      "evidence": "committed-config"
+    },
+    "fable": {
+      "vendor": "anthropic",
+      "evidence": "committed-config"
+    },
+    "gpt-5.6-sol": {
+      "vendor": "openai",
+      "evidence": "committed-config"
+    },
+    "openrouter/qwen/qwen3-coder-plus": {
+      "vendor": "openrouter",
+      "evidence": "committed-config"
+    }
+  }
+}
