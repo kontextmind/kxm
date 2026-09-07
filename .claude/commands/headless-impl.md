@@ -34,7 +34,7 @@ Do this:
    `npm run check:generated`) really passed. The writer's summary is a claim,
    not evidence.
 6. **Write back.** Append the five-line entry to
-   `.kxm/assets/reviews/2026-09-04-work-log.md` (unit id, what landed, PR, what
+   `plans/history/2026-09-04-work-log.md` (unit id, what landed, PR, what
    surprised you, what the next unit should know).
 
 Do not merge or enable auto-merge on the writer's behalf unless I asked for it.

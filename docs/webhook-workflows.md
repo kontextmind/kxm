@@ -48,7 +48,7 @@ kxm hub start
 Configure Jira to send `jira:issue_updated` to:
 
 ```text
-https://your-mesh-host.example/v1/webhooks/jira-development
+https://your-kxm-host.example/v1/webhooks/jira-development
 ```
 
 Set the same secret when creating the Jira webhook. The endpoint requires `X-Hub-Signature` using SHA-256 and `X-Atlassian-Webhook-Identifier`. The stable delivery identifier makes Jira retries idempotent. Terminate TLS and restrict ingress before exposing the endpoint beyond a trusted network.
@@ -157,6 +157,9 @@ node --experimental-strip-types examples/workflow-signal.ts `
   run_123 github-pr-42-checks passed "All required checks passed" `
   "github.check:ci=https://github.example/org/repo/actions/runs/123"
 ```
+
+`examples/workflow-signal.ts` reads `KXM_SIGNAL_DELIVERY_ID` and sends it as
+`x-kxm-delivery-id`. The CLI equivalent is `kxm gate signal --delivery-id`.
 
 In a real integration, store the `runId` and `signalKey` in Jira, pull-request metadata, or the external job's inputs when the coordinator starts the wait. Treat them as routing identifiers rather than secrets.
 

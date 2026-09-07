@@ -782,9 +782,9 @@ async function cmdVnextTrust(runtime: Runtime, check: boolean, options: { base?:
 }
 
 /** No step engine exists yet: `kxm run` durably accepts a run and stops.
- * Phase 3a (units D1 to D4) replaces this notice with real progress. */
+ * The run engine replaces this notice with real progress. */
 const RUN_ENGINE_PHASE = "pre-3a";
-const RUN_ENGINE_NOTICE = "runs remain created until Phase 3a lands; no steps execute yet";
+const RUN_ENGINE_NOTICE = "runs remain created until the run engine lands; no steps execute yet";
 
 async function cmdVnextRun(runtime: Runtime, workflow: string | undefined, promptParts: string[]): Promise<number> {
   if (runtime.workspaceFlag !== undefined) {
@@ -2343,7 +2343,7 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
       result.code = await cmdVnextMigrateVerify(runtimeFrom(ctx, this));
     });
 
-  addGlobalOptions(program.command("run").description("Create a vNext run (offline-first; no steps execute until Phase 3a)")
+  addGlobalOptions(program.command("run").description("Create a vNext run (offline-first; no steps execute until the run engine lands)")
     .argument("[workflow]", "Workflow id to run")
     .argument("[prompt...]", "Run prompt (hashed, never stored raw)")
     .action(async function runAction(this: Command, workflow: string | undefined, promptParts: string[]) {

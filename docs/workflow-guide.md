@@ -1,4 +1,9 @@
-# OpenRouter Model Workforce and Workflow Architecture Guide
+# Workflow guide
+
+This Area → Workflow → Stage → Role taxonomy applies to native harness
+subscriptions (Claude CLI, Codex, Grok CLI, agy/Antigravity) and to API-key Pi
+providers (OpenRouter, Nous Portal). Vendor-prefixed model ids in the candidate
+lists are dated research candidates, not admission.
 
 ## Table of Contents
 
@@ -12,7 +17,6 @@
 8. [Selection Policy](#selection-policy)
 9. [Slug Registry](#slug-registry)
 10. [Historical Navigation](#historical-navigation)
-11. [Strategic Implementation and Execution Checklist](#strategic-implementation-and-execution-checklist)
 
 ---
 
@@ -1053,13 +1057,4 @@ This table is historical navigation from the 2026-09-06 heading numbers to the c
 | Workflow 7.3: Terminal User Interface (TUI) & Rich CLI Experience Engineering | `engineer-terminal-interfaces` | 7.3.1–7.3.2 |
 | Workflow 7.4: Multimodal Visual Design QA, Accessibility (a11y) & Polish Audit | `audit-visual-accessibility` | 7.4.1–7.4.2 |
 
----
-
-## Strategic Implementation and Execution Checklist
-
-1. **Deterministic Developer Gate Alignment:** Code implementations (backend, frontend, TUI, build tools) use currently admitted writers per Tracking: **`x-ai/grok-4.6`** ($2.00/$6.00) and **`qwen/qwen3-coder-plus`** ($0.65/$3.25) as primary writers, ensuring they pass deterministic verification gates (`npm run verify`) without hitting high-cost completion penalties.
-2. **Dual-Critic Acceptance for this Developer Runner:** All architecture, PR, and specification reviews require independent signoff from the designated critic pair:
-   - **`anthropic/claude-fable-5.1`** (Architecture & Permissions)
-   - **`openai/gpt-5.6-sol`** (CLI, Protocol & Contracts)
-3. **Optional Filter Stage:** High-throughput streaming ingestion (logs, telemetry, video frames, email batch) may pass through Tier-0 models (**`deepseek/deepseek-v4-flash-0731`** at $0.05/M or **`qwen/qwen3.7-flash`** at $0.03/M) to filter 90% of noise before escalating to deep reasoning models.
-4. **Context Safety Ceiling:** Models with $\le 200\text{k}$ context (**`openai/o3`**, **`deepseek/deepseek-r1-0528`**) must only receive pre-distilled inputs ($\le 100\text{k}$ tokens) to guarantee zero context-overflow exceptions during production runs.
+Role rotation, admission, and dispatch policy live in AGENTS.md and Tracking, not in this guide.

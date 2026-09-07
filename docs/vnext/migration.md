@@ -20,7 +20,7 @@ Presence of vNext documents does not activate new behavior.
 | Full peer message bodies in hub DB | Summary-first sync events | Existing bodies remain protected legacy data and are not re-emitted automatically |
 | Project tokens/manual environment auth | Runtime enrollment and scoped credentials | Preserve current mode until enrollment is confirmed; never copy tokens into Git |
 | `.kxm/config/env.example` | Built-in defaults plus optional scoped env YAML | Import only explicit portable differences; secrets become references |
-| `kxm mesh init` empty directories | Unified `kxm init` create/join/migrate/repair | Removed; `kxm init` is the only entry and `kxm mesh` fails closed |
+| Retired product-prefixed init (empty directories) | Unified `kxm init` create/join/migrate/repair | Removed; `kxm init` is the only entry and the old init command fails closed |
 | `kxm session start` manifest only | `kxm run` executable run | Do not reinterpret old session manifests as completed or active runs |
 | Existing context items and journal | Pinned memory revisions and candidates | Preserve provenance/authority floors; no automatic executable promotion |
 

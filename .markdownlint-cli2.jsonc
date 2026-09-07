@@ -10,6 +10,7 @@
     "*.md",
     ".kxm/**/*.md",
     "docs/**/*.md",
+    "plans/**/*.md",
     "plugins/**/*.md",
     ".github/**/*.md"
   ],

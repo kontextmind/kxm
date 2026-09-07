@@ -1,13 +1,13 @@
 # KXM
 
-Connect a Claude Code session to running Pi or Claude peers through the Pi Mesh hub.
+Connect a Claude Code session to running Pi or Claude peers through the KXM hub.
 
 This directory is both a Claude Code plugin and the source of the repository's Pi extension and shared Agent Skill.
 
 ## Requirements
 
 - Node.js 22.19 or newer on the 22.x line, or Node.js 24 or newer;
-- a running Pi Mesh hub;
+- a running KXM hub;
 - the same authentication token and project name used by the other agents.
 
 ## Install in Claude Code

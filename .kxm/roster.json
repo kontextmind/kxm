@@ -74,8 +74,8 @@
     "openrouter/qwen/qwen3-coder-plus": {
       "vendor": "alibaba",
       "evidence": {
-        "source": "docs/openrouter-model-workforce-guide.md",
-        "sha256": "fb58cf89977049c0acace96afb54f921d7d5a58b43736f152e8713cc825f9c8a"
+        "source": "docs/workflow-guide.md",
+        "sha256": "f0172c76b10faa468eb9fd84de40dc179d79dc001ef81320ee2710d40b1779c4"
       }
     }
   }

@@ -1,7 +1,7 @@
 # KXM session brief
 
 Read this first. Then follow
-[`docs/vnext/implementation-plan.md`](docs/vnext/implementation-plan.md)
+[`plans/implementation-plan.md`](plans/implementation-plan.md)
 (especially **Tracking**). Do not invent a parallel process.
 
 ## Product
@@ -136,7 +136,7 @@ needed) → accept, not a scratch `just impl` call.
 
 When a gate passes, a slice lands in the wrong phase, or a name/CLI change
 ages the plan, update **Tracking** and the affected phase gate in
-`docs/vnext/implementation-plan.md` in the **same** change. Do not refresh the
+`plans/implementation-plan.md` in the **same** change. Do not refresh the
 plan every session. Do not enlarge earlier phases. Fable proposes plan edits;
 the current writer applies them (starting rotation: Grok).
 

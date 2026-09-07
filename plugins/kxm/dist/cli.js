@@ -35573,7 +35573,7 @@ trust check failed: review every expansion above before merging`);
   }
 }
 var RUN_ENGINE_PHASE = "pre-3a";
-var RUN_ENGINE_NOTICE = "runs remain created until Phase 3a lands; no steps execute yet";
+var RUN_ENGINE_NOTICE = "runs remain created until the run engine lands; no steps execute yet";
 async function cmdVnextRun(runtime, workflow, promptParts) {
   if (runtime.workspaceFlag !== void 0) {
     print(runtime.io, runtime.json, {
@@ -37029,7 +37029,7 @@ function createProgram(ctx, result) {
   addGlobalOptions(migrate.command("verify").description("Verify a migration receipt against current sources and target bundle")).action(async function migrateVerifyAction() {
     result.code = await cmdVnextMigrateVerify(runtimeFrom(ctx, this));
   });
-  addGlobalOptions(program2.command("run").description("Create a vNext run (offline-first; no steps execute until Phase 3a)").argument("[workflow]", "Workflow id to run").argument("[prompt...]", "Run prompt (hashed, never stored raw)").action(async function runAction(workflow2, promptParts) {
+  addGlobalOptions(program2.command("run").description("Create a vNext run (offline-first; no steps execute until the run engine lands)").argument("[workflow]", "Workflow id to run").argument("[prompt...]", "Run prompt (hashed, never stored raw)").action(async function runAction(workflow2, promptParts) {
     result.code = await cmdVnextRun(runtimeFrom(ctx, this), workflow2, promptParts);
   }));
   const runCmd = addGlobalOptions(program2.command("runs").description("Inspect vNext runs"));

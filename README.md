@@ -220,6 +220,7 @@ The hub routes messages; it does not merge contexts, choose tasks, or bypass too
 | Start work from Jira or another webhook | [Webhook workflows](docs/webhook-workflows.md) |
 | Require verified replies from eligible peers | [Peer provenance and quorum gates](docs/provenance-gates.md) |
 | Improve the harness and delivery process from evidence | [Continuous improvement](docs/continuous-improvement.md) |
+| Navigate Area → Workflow → Stage → Role taxonomy | [Workflow guide](docs/workflow-guide.md) |
 | Develop or submit a change | [Contributing](CONTRIBUTING.md) |
 | Report a vulnerability | [Security policy](SECURITY.md) |
 | Review user-facing changes | [Changelog](CHANGELOG.md) |
