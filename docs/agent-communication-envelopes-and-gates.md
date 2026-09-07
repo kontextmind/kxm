@@ -14,7 +14,7 @@ This guide specifies the standard communication envelopes, quality gates, work l
 
 ## Architectural Components for Multi-Agent Workflows
 
-A production multi-agent system is composed of five distinct subsystem layers:
+A production multi-agent system is composed of five distinct subsystem layers. For area, workflow and role naming conventions, see the [workforce guide](openrouter-model-workforce-guide.md).
 
 ```text
 +------------------------------------------------------------------------+

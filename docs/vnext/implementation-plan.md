@@ -177,6 +177,7 @@ It does not replace the phase gates below.
   #86 stays open for later D8/D9/D14 plan text when those phases are
   scheduled, the v1 report underquote fix, and remaining report
   implementation — not for those superseded instructions.
+- **Workflow taxonomy (operator, 2026-09-07):** [`docs/openrouter-model-workforce-guide.md`](../openrouter-model-workforce-guide.md) is organized Area -> Workflow -> Stage -> Assigned role across seven areas (`software-engineering`, `design-experience`, `media-production`, `data-analytics`, `research-strategy`, `business-operations`, `security-reliability`) and 21 workflows with declared kebab-case documentation slugs. Slugs are documentation identity only: no runtime config, role admission, schema field, CLI behavior, or alias lane. Inherited candidate lists are dated research requiring live verification before dispatch, not certified prices or an eligibility grant. Model/harness, platform, modality, tools, and personal/work context are routing attributes, not area trees; area grouping never pools unrelated role quality into one global model ranking. Fable and Sol critics remain required for the developer runner. No phase gate changes.
 
 ### Landed in this tree (unreleased)
 
@@ -946,6 +947,8 @@ cannot perform conflicting shared mutable actions without fencing.
 Implement memory revisions, local bounded replicas, role-aware context,
 evidence-linked candidates, protected evaluation, Git patch promotion, and
 revision-aware effectiveness statistics.
+
+Design note (2026-09-07): future evidence-linked candidates and effectiveness statistics will be keyed by the workflow and role slugs declared in [`docs/openrouter-model-workforce-guide.md`](../openrouter-model-workforce-guide.md), not by model alone. Area grouping is navigation; measured quality stays per role, so no global cross-area model ranking is derived. Those slugs are documentation identity, not runtime identifiers, and this note does not assert a working product router.
 
 **Gate:** a candidate is evaluated, reviewed through Git, activated only for a
 future run, and measured against its declared outcome. Routing/cost/latency
