@@ -25,6 +25,7 @@ import {
   startVnextRun,
   stepVnextRun,
   verifyVnextAttemptCapability,
+  vnextPanelDispatchSeams,
 } from "../plugins/kxm/src/vnext-engine.ts";
 import {
   admitVnextRun,
@@ -1676,6 +1677,129 @@ test("U2a-1 join-all panel fold owns per-assignment results", () => {
   assert.equal(executingState.currentStep?.attemptId, ATM);
   assert.equal(FOLD_PANEL_BOUND, 1);
 
+  illegal([
+    ...passedStep,
+    event(run, passedStep.length + 1, "assignment.created", {
+      assignmentId: ASG3, stepId: "only", stepAttempt: 1, agentId: "implementer", status: "created",
+    }),
+  ], panel);
+  illegal([
+    ...passedOutcome,
+    event(run, passedOutcome.length + 1, "attempt.created", { attemptId: ATM3, assignmentId: ASG, status: "created" }),
+  ], panel);
+  illegal([
+    ...passedOutcome,
+    event(run, passedOutcome.length + 1, "attempt.status_changed", { attemptId: ATM, status: "starting" }),
+  ], panel);
+  for (const lateState of ["created", "executing"] as const) {
+    const lateEvents = [...passedStep];
+    const latePush = (type: string, payload: Record<string, unknown>) => {
+      lateEvents.push(event(run, lateEvents.length + 1, type, payload));
+    };
+    latePush("assignment.created", { assignmentId: ASG3, stepId: "only", stepAttempt: 1, agentId: "implementer", status: "created" });
+    if (lateState === "executing") {
+      latePush("assignment.accepted", { assignmentId: ASG3, status: "accepted" });
+      latePush("attempt.created", { attemptId: ATM3, assignmentId: ASG3, status: "created" });
+      latePush("assignment.dispatched", { assignmentId: ASG3, capabilityHash: PLAN_HASH, status: "dispatched" });
+      latePush("attempt.status_changed", { attemptId: ATM3, status: "starting" });
+      latePush("assignment.executing", { assignmentId: ASG3, status: "executing" });
+      latePush("attempt.status_changed", { attemptId: ATM3, status: "executing" });
+    }
+    illegal(lateEvents, panel);
+    illegal([
+      ...lateEvents,
+      event(run, lateEvents.length + 1, "step.transitioned", { fromStepId: "only", status: "completed", outcome: "passed" }),
+    ], panel);
+  }
+  illegal([
+    ...bothPassed.beforeFirstTerminal,
+    event(run, bothPassed.beforeFirstTerminal.length + 1, "step.transitioned", { fromStepId: "only", status: "completed", outcome: "passed" }),
+  ], panel);
+
+  const cancellingBirth = panelPrefix(run, panel, [{ id: ASG, attempt: ATM }], "starting");
+  const cancelThenBirth = [
+    ...cancellingBirth,
+    event(run, cancellingBirth.length + 1, "run.cancel_requested", { actor: { kind: "runtime", id: HOME }, reason: "operator_cancel" }),
+    event(run, cancellingBirth.length + 2, "run.status_changed", { status: "cancelling", reason: "operator_cancel" }),
+    event(run, cancellingBirth.length + 3, "assignment.created", {
+      assignmentId: ASG2, stepId: "only", stepAttempt: 1, agentId: "implementer", status: "created",
+    }),
+  ];
+  illegal(cancelThenBirth, panel);
+  const cancelIntentThenBirth = [
+    ...cancellingBirth,
+    event(run, cancellingBirth.length + 1, "run.cancel_requested", { actor: { kind: "runtime", id: HOME }, reason: "operator_cancel" }),
+    event(run, cancellingBirth.length + 2, "assignment.created", {
+      assignmentId: ASG2, stepId: "only", stepAttempt: 1, agentId: "implementer", status: "created",
+    }),
+  ];
+  illegal(cancelIntentThenBirth, panel);
+  const cancelIntentThenStart = [
+    ...panelPrefix(run, panel, [{ id: ASG, attempt: ATM }], "created"),
+    event(run, 7, "run.cancel_requested", { actor: { kind: "runtime", id: HOME }, reason: "operator_cancel" }),
+    event(run, 8, "assignment.accepted", { assignmentId: ASG, status: "accepted" }),
+    event(run, 9, "attempt.created", { attemptId: ATM, assignmentId: ASG, status: "created" }),
+    event(run, 10, "assignment.dispatched", { assignmentId: ASG, capabilityHash: PLAN_HASH, status: "dispatched" }),
+    event(run, 11, "attempt.status_changed", { attemptId: ATM, status: "starting" }),
+  ];
+  illegal(cancelIntentThenStart, panel);
+
+  const maxTwo = compilePanelPlan({ maximum: 2, maxParallel: 2 });
+  const twoStartingPanel = panelPrefix(run, maxTwo, [
+    { id: ASG, attempt: ATM },
+    { id: ASG2, attempt: ATM2 },
+  ], "starting");
+  illegal([
+    ...twoStartingPanel,
+    event(run, twoStartingPanel.length + 1, "run.status_changed", { status: "failed", reason: "executing_unrecorded" }),
+  ], maxTwo);
+  const panelOneStarting = panelPrefix(run, maxTwo, [{ id: ASG, attempt: ATM }], "starting");
+  illegal([
+    ...panelOneStarting,
+    event(run, panelOneStarting.length + 1, "run.status_changed", { status: "failed", reason: "executing_unrecorded" }),
+  ], maxTwo);
+
+  const passedCancelled = panelMembers(run, panel, [
+    { id: ASG, attempt: ATM, resultClass: "outcome", outcome: "passed", terminalOutcome: "passed" },
+    { id: ASG2, attempt: ATM2, resultClass: "cancelled", terminalOutcome: "cancelled" },
+  ], { cancelRequested: true });
+  const mixedCancelStep = [
+    ...passedCancelled.terminal,
+    event(run, passedCancelled.terminal.length + 1, "step.status_changed", { stepId: "only", status: "cancelled", previousStatus: "running" }),
+  ];
+  assert.equal(foldVnextRunState(run, panel, mixedCancelStep).currentStep?.status, "cancelled");
+  illegal([
+    ...passedCancelled.terminal,
+    event(run, passedCancelled.terminal.length + 1, "step.status_changed", { stepId: "only", status: "passed", previousStatus: "running" }),
+  ], panel);
+
+  const conflictCancel = panelMembers(run, panel, [
+    { id: ASG, attempt: ATM, resultClass: "outcome", outcome: "passed", terminalOutcome: "passed" },
+    { id: ASG2, attempt: ATM2, resultClass: "outcome", outcome: "failed", terminalOutcome: "failed" },
+  ], { cancelRequested: true });
+  illegal([
+    ...conflictCancel.terminal,
+    event(run, conflictCancel.terminal.length + 1, "step.status_changed", { stepId: "only", status: "cancelled", previousStatus: "running" }),
+  ], panel);
+  assert.equal(foldVnextRunState(run, panel, [
+    ...conflictCancel.terminal,
+    event(run, conflictCancel.terminal.length + 1, "step.status_changed", { stepId: "only", status: "failed", previousStatus: "running" }),
+  ]).currentStep?.status, "failed");
+
+  const refillPlan = compilePanelPlan({ minimum: 1, target: 3, maximum: 3, maxParallel: 2 });
+  const twoPassed = panelMembers(run, refillPlan, [
+    { id: ASG, attempt: ATM, resultClass: "outcome", outcome: "passed", terminalOutcome: "passed" },
+    { id: ASG2, attempt: ATM2, resultClass: "outcome", outcome: "passed", terminalOutcome: "passed" },
+  ], { cancelRequested: true });
+  illegal([
+    ...twoPassed.terminal,
+    event(run, twoPassed.terminal.length + 1, "step.status_changed", { stepId: "only", status: "passed", previousStatus: "running" }),
+  ], refillPlan);
+  assert.equal(foldVnextRunState(run, refillPlan, [
+    ...twoPassed.terminal,
+    event(run, twoPassed.terminal.length + 1, "step.status_changed", { stepId: "only", status: "cancelled", previousStatus: "running" }),
+  ]).currentStep?.status, "cancelled");
+
   const joinOnce = vnextJoinAll(panel.steps.only!, foldVnextRunState(run, panel, bothPassed.terminal).currentStep!.panel);
   const joinTwice = vnextJoinAll(panel.steps.only!, foldVnextRunState(run, panel, bothPassed.terminal).currentStep!.panel);
   assert.deepEqual(joinOnce, joinTwice);
@@ -1747,6 +1871,675 @@ test("owner map is exact per attempt, refuses duplicates, and cancel aborts one 
       unregisterVnextAttemptController(context.eventStore.path, hanging.run.runId, "atm_01JEXTRA0000000000000000");
       unregisterVnextAttemptController(context.eventStore.path, "run_01JSURVIVE000000000000000", "atm_01JSURVIVE0000000000000");
     } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+function writePanelWorkflow(
+  root: string,
+  name: string,
+  spec: {
+    kind?: "agent" | "moa";
+    minimum?: number;
+    target?: number;
+    maximum?: number;
+    maxParallel?: number;
+    extraJoin?: string;
+    extraAssignments?: string;
+    outcomes?: string;
+    allowedAgents?: string;
+  } = {},
+): void {
+  const kind = spec.kind ?? "agent";
+  const maximum = spec.maximum ?? 2;
+  const target = spec.target ?? maximum;
+  const maxParallel = spec.maxParallel ?? maximum;
+  const minimum = spec.minimum ?? 1;
+  const outcomes = spec.outcomes ?? `      passed: { target: $terminal, terminalStatus: completed }
+      failed: { target: $terminal, terminalStatus: failed }`;
+  writeFileSync(join(root, ".kxm", "workflows", `${name}.yaml`), `schema: kxm.workflow.v1
+coordinator: coordinator
+steps:
+  - id: only
+    kind: ${kind}
+    agent: implementer
+    assignments:
+      ${spec.allowedAgents ?? "allowedAgents: [implementer, coordinator]"}
+      minimum: ${minimum}
+      target: ${target}
+      maximum: ${maximum}
+      maxParallel: ${maxParallel}
+      ${spec.extraAssignments ?? ""}
+    join:
+      strategy: all
+      ${spec.extraJoin ?? ""}
+    on:
+${outcomes}
+`);
+}
+
+function resetPanelSeams(): void {
+  vnextPanelDispatchSeams.afterBirth = undefined;
+  vnextPanelDispatchSeams.beforeAppendExecuting = undefined;
+  vnextPanelDispatchSeams.failAppendExecuting = undefined;
+  vnextPanelDispatchSeams.beforeInvoke = undefined;
+  vnextPanelDispatchSeams.failSettleMember = undefined;
+}
+
+test("U2a-2 panel target 2 maxParallel 2 settles both members then joins once", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-u2a2-p1-");
+  try {
+    writePanelWorkflow(root, "panel-two");
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "panel-two", prompt: "p1" });
+      pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+      const seen: string[] = [];
+      const driven = await driveVnextRun(context, accepted.run.runId, createVnextSimulatedProducer((request) => {
+        seen.push(request.attemptId);
+        verifyVnextAttemptCapability(context, request.capability, { runId: request.runId, attemptId: request.attemptId });
+        return { outcome: "passed" };
+      }));
+      assert.equal(driven.state.status, "completed");
+      assert.equal(seen.length, 2);
+      const events = context.eventStore.events(accepted.run.runId, 0, 10_000);
+      assert.equal(events.filter((event) => event.eventType === "assignment.created").length, 2);
+      assert.equal(events.filter((event) => event.eventType === "step.outcome_recorded").length, 1);
+      assert.equal(events.filter((event) => event.eventType === "step.transitioned").length, 1);
+      assert.equal(vnextAttemptControllers(context.eventStore.path, accepted.run.runId).length, 0);
+      const caps = events.filter((event) => event.eventType === "attempt.created").map((event) => String(event.payload.attemptId));
+      for (const attemptId of caps) {
+        assert.equal(context.eventStore.capabilityByAttempt(attemptId)?.state, "settled");
+      }
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("U2a-2 maxParallel 1 births second member only after first settlement commit", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-u2a2-p2-");
+  try {
+    writePanelWorkflow(root, "panel-serial", { maximum: 2, maxParallel: 1 });
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "panel-serial", prompt: "p2" });
+      pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+      const driven = await driveVnextRun(context, accepted.run.runId, outcomes(["passed", "passed"]));
+      assert.equal(driven.state.status, "completed");
+      const events = context.eventStore.events(accepted.run.runId, 0, 10_000);
+      const created = events.filter((event) => event.eventType === "assignment.created");
+      const terminals = events.filter((event) => event.eventType === "assignment.terminal");
+      assert.equal(created.length, 2);
+      assert.equal(terminals.length, 2);
+      assert.ok(terminals[0]!.sequence < created[1]!.sequence);
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("U2a-2 target 2 within maximum 3 births exactly target members", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-u2a2-p3-");
+  try {
+    writePanelWorkflow(root, "panel-target", { target: 2, maximum: 3, maxParallel: 2 });
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "panel-target", prompt: "p3" });
+      pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+      const driven = await driveVnextRun(context, accepted.run.runId, outcomes(["passed", "passed"]));
+      assert.equal(driven.state.status, "completed");
+      assert.equal(context.eventStore.events(accepted.run.runId, 0, 10_000).filter((event) => event.eventType === "assignment.created").length, 2);
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("U2a-2 custom-done panel reaches compiled cancelled terminal with step failed", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-u2a2-p4-");
+  try {
+    writePanelWorkflow(root, "panel-custom", {
+      outcomes: `      passed: { target: $terminal, terminalStatus: completed }
+      custom-done: { target: $terminal, terminalStatus: cancelled }`,
+    });
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "panel-custom", prompt: "p4" });
+      pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+      const driven = await driveVnextRun(context, accepted.run.runId, createVnextSimulatedProducer(() => ({ outcome: "custom-done" })));
+      assert.equal(driven.state.status, "cancelled");
+      const events = context.eventStore.events(accepted.run.runId, 0, 10_000);
+      assert.equal(events.find((event) => event.eventType === "step.outcome_recorded")?.payload.outcome, "custom-done");
+      const terminalStep = events.find((event) =>
+        event.eventType === "step.status_changed"
+        && (event.payload.status === "passed" || event.payload.status === "failed" || event.payload.status === "cancelled")
+      );
+      assert.equal(terminalStep?.payload.status, "failed");
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("U2a-2 member outcome conflict joins failed after both members settle", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-u2a2-p5-");
+  try {
+    writePanelWorkflow(root, "panel-conflict");
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "panel-conflict", prompt: "p5" });
+      pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+      const driven = await driveVnextRun(context, accepted.run.runId, outcomes(["passed", "failed"]));
+      assert.equal(driven.state.status, "failed");
+      assert.equal(driven.state.terminalReason, "join_conflict");
+      const events = context.eventStore.events(accepted.run.runId, 0, 10_000);
+      assert.equal(events.filter((event) => event.eventType === "assignment.terminal").length, 2);
+      assert.equal(events.filter((event) => event.eventType === "step.outcome_recorded").length, 0);
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("U2a-2 producer_rejected member joins rejected only after sibling drains", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-u2a2-p6-");
+  try {
+    writePanelWorkflow(root, "panel-reject");
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "panel-reject", prompt: "p6" });
+      pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+      let releaseSibling: (value: { outcome: string }) => void = () => undefined;
+      const sibling = new Promise<{ outcome: string }>((resolve) => {
+        releaseSibling = resolve;
+      });
+      let first = true;
+      let rejectedFirst = false;
+      const drivenP = driveVnextRun(context, accepted.run.runId, createVnextSimulatedProducer(async () => {
+        if (first) {
+          first = false;
+          rejectedFirst = true;
+          throw new Error("producer boom");
+        }
+        return sibling;
+      }));
+      while (!rejectedFirst) await Promise.resolve();
+      assert.equal(context.eventStore.run(accepted.run.runId)?.status, "running");
+      releaseSibling({ outcome: "passed" });
+      const driven = await drivenP;
+      assert.equal(driven.state.status, "failed");
+      assert.equal(driven.state.terminalReason, "outcome_unknown");
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("U2a-2 cancel from another handle drains issued members and never births the unissued third", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-u2a2-p7-");
+  const otherRoot = { root, stateRoot };
+  try {
+    writePanelWorkflow(root, "panel-cancel", { target: 3, maximum: 3, maxParallel: 2 });
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    const other = openVnextRuntimeContext(otherRoot.root, { stateRoot: otherRoot.stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "panel-cancel", prompt: "p7" });
+      pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+      let started = 0;
+      let bothStarted: () => void = () => undefined;
+      const ready = new Promise<void>((resolve) => {
+        bothStarted = resolve;
+      });
+      const drive = driveVnextRun(context, accepted.run.runId, createVnextSimulatedProducer(async (request) => {
+        started += 1;
+        if (started === 2) bothStarted();
+        await new Promise((_, reject) => {
+          if (request.signal.aborted) reject(new Error("aborted"));
+          request.signal.addEventListener("abort", () => reject(new Error("aborted")));
+        });
+        return { outcome: "passed" };
+      }));
+      await ready;
+      const cancel = cancelVnextRun(other, accepted.run.runId);
+      assert.equal(cancel.run.status, "cancelling");
+      const done = await drive;
+      assert.equal(done.state.status, "cancelled");
+      const events = context.eventStore.events(accepted.run.runId, 0, 10_000);
+      const created = events.filter((event) => event.eventType === "assignment.created");
+      assert.equal(created.length, 2);
+      const cancellingAt = events.find((event) => event.eventType === "run.status_changed" && event.payload.status === "cancelling")?.sequence;
+      assert.ok(cancellingAt);
+      assert.equal(created.every((event) => event.sequence < cancellingAt), true);
+    } finally {
+      closeVnextRuntimeContext(other);
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("U2a-2 cancel with one passed member and one executing ends cancelled not failed", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-u2a2-p8-");
+  try {
+    writePanelWorkflow(root, "panel-mixed-cancel", { maxParallel: 1, maximum: 2 });
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "panel-mixed-cancel", prompt: "p8" });
+      pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+      let second = false;
+      let secondStarted: (request: { signal: AbortSignal }) => void = () => undefined;
+      const ready = new Promise<{ signal: AbortSignal }>((resolve) => {
+        secondStarted = resolve;
+      });
+      const drive = driveVnextRun(context, accepted.run.runId, createVnextSimulatedProducer(async (request) => {
+        if (!second) {
+          second = true;
+          return { outcome: "passed" };
+        }
+        secondStarted(request);
+        await new Promise((_, reject) => {
+          if (request.signal.aborted) reject(new Error("aborted"));
+          request.signal.addEventListener("abort", () => reject(new Error("aborted")));
+        });
+        return { outcome: "failed" };
+      }));
+      const hanging = await ready;
+      assert.equal(hanging.signal.aborted, false);
+      const cancel = cancelVnextRun(context, accepted.run.runId);
+      assert.equal(cancel.run.status, "cancelling");
+      const done = await drive;
+      assert.equal(done.state.status, "cancelled");
+      assert.notEqual(done.state.status, "failed");
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("U2a-2 capability verify accepts each executing member and rejects a settled sibling", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-u2a2-p9-");
+  try {
+    writePanelWorkflow(root, "panel-cap", { maxParallel: 1, maximum: 2 });
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "panel-cap", prompt: "p9" });
+      pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+      const secrets: Array<{ secret: string; attemptId: string; assignmentId: string }> = [];
+      const driven = await driveVnextRun(context, accepted.run.runId, createVnextSimulatedProducer((request) => {
+        secrets.push({ secret: request.capability, attemptId: request.attemptId, assignmentId: request.assignmentId });
+        verifyVnextAttemptCapability(context, request.capability, { runId: request.runId, attemptId: request.attemptId });
+        if (secrets.length === 2) {
+          assert.throws(
+            () => verifyVnextAttemptCapability(context, secrets[0]!.secret, { runId: request.runId, attemptId: secrets[0]!.attemptId }),
+            /capability_rejected/,
+          );
+          assert.throws(
+            () => verifyVnextAttemptCapability(context, request.capability, { runId: request.runId, attemptId: secrets[0]!.attemptId }),
+            /capability_rejected/,
+          );
+          assert.throws(
+            () => verifyVnextAttemptCapability(context, request.capability, { runId: "run_01JWRONG00000000000000000", attemptId: request.attemptId }),
+            /capability_rejected/,
+          );
+        }
+        return { outcome: "passed" };
+      }));
+      assert.equal(driven.state.status, "completed");
+      assert.equal(secrets.length, 2);
+      assert.throws(
+        () => verifyVnextAttemptCapability(context, secrets[1]!.secret, { runId: accepted.run.runId, attemptId: secrets[1]!.attemptId }),
+        /capability_rejected/,
+      );
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("U2a-2 moa join-all step dispatches like agent", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-u2a2-p10-");
+  try {
+    writePanelWorkflow(root, "panel-moa", { kind: "moa" });
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "panel-moa", prompt: "p10" });
+      pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+      const driven = await driveVnextRun(context, accepted.run.runId, outcomes(["passed", "passed"]));
+      assert.equal(driven.state.status, "completed");
+      assert.equal(context.eventStore.events(accepted.run.runId, 0, 10_000).filter((event) => event.eventType === "assignment.created").length, 2);
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("U2a-2 engine hands off cancelRemaining, minimumPassed, maxAttemptsPerAssignment 2 as step_unsupported", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-u2a2-n8-");
+  try {
+    const cases = [
+      { name: "panel-minpass", extraJoin: "minimumPassed: 1", field: "join.minimumPassed" },
+      { name: "panel-cancel-rem", extraJoin: "cancelRemaining: true", field: "join.cancelRemaining" },
+      { name: "panel-retry", extraAssignments: "maxAttemptsPerAssignment: 2", field: "assignments.maxAttemptsPerAssignment" },
+    ];
+    const bundleBase = loadVnextProject(root);
+    void bundleBase;
+    for (const item of cases) {
+      writePanelWorkflow(root, item.name, {
+        ...(item.extraJoin !== undefined ? { extraJoin: item.extraJoin } : {}),
+        ...(item.extraAssignments !== undefined ? { extraAssignments: item.extraAssignments } : {}),
+        maximum: 1,
+        maxParallel: 1,
+        allowedAgents: "allowedAgents: [implementer]",
+      });
+      const bundle = loadVnextProject(root);
+      const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+      try {
+        const accepted = acceptVnextRun(context, bundle, { workflowId: item.name, prompt: item.name });
+        pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+        startVnextRun(context, accepted.run.runId);
+        const blocked = await stepVnextRun(context, accepted.run.runId, outcomes(["passed"]));
+        assert.equal(blocked.handoff?.reason, "step_unsupported");
+        assert.equal(blocked.handoff?.field, item.field);
+        assert.equal(blocked.state.status, "running");
+      } finally {
+        closeVnextRuntimeContext(context);
+      }
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("U2a-2 appendExecuting failure with active sibling drains and does not mint executing_unrecorded", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-u2a2-n9-");
+  try {
+    writePanelWorkflow(root, "panel-append-fail");
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    resetPanelSeams();
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "panel-append-fail", prompt: "n9" });
+      pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+      let born = 0;
+      vnextPanelDispatchSeams.afterBirth = () => {
+        born += 1;
+      };
+      vnextPanelDispatchSeams.failAppendExecuting = () => born >= 2;
+      const driven = await driveVnextRun(context, accepted.run.runId, createVnextSimulatedProducer(async (request) => {
+        await new Promise((_, reject) => {
+          if (request.signal.aborted) reject(new Error("aborted"));
+          request.signal.addEventListener("abort", () => reject(new Error("aborted")));
+        });
+        return { outcome: "passed" };
+      }));
+      assert.equal(driven.handoff?.reason, "attempt_unreconciled");
+      assert.notEqual(driven.state.status, "failed");
+      assert.notEqual(driven.state.status, "completed");
+      const events = context.eventStore.events(accepted.run.runId, 0, 10_000);
+      assert.equal(events.some((event) => event.payload.reason === "executing_unrecorded"), false);
+      assert.equal(vnextAttemptControllers(context.eventStore.path, accepted.run.runId).length, 0);
+      const starting = driven.state.currentStep?.panel.order
+        .map((id) => driven.state.currentStep?.panel.assignments[id])
+        .some((assignment) => Object.values(assignment?.attempts ?? {}).some((attempt) => attempt.status === "starting"));
+      assert.equal(starting, true);
+    } finally {
+      resetPanelSeams();
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("U2a-2 settlement write failure with active sibling retains uncertainty", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-u2a2-settle-fail-");
+  try {
+    writePanelWorkflow(root, "panel-settle-fail");
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    resetPanelSeams();
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "panel-settle-fail", prompt: "settle-fail" });
+      pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+      let settles = 0;
+      vnextPanelDispatchSeams.failSettleMember = () => {
+        settles += 1;
+        return settles === 1;
+      };
+      const driven = await driveVnextRun(context, accepted.run.runId, outcomes(["passed", "passed"]));
+      assert.equal(driven.handoff?.reason, "attempt_unreconciled");
+      assert.notEqual(driven.state.status, "completed");
+      assert.notEqual(driven.state.status, "failed");
+      assert.equal(vnextAttemptControllers(context.eventStore.path, accepted.run.runId).length, 0);
+    } finally {
+      resetPanelSeams();
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("U2a-2 prepareDispatch reports attempt_unreconciled for any executing panel member", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-u2a2-n10-");
+  try {
+    writePanelWorkflow(root, "panel-unrec");
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    resetPanelSeams();
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "panel-unrec", prompt: "n10" });
+      pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+      let born = 0;
+      vnextPanelDispatchSeams.afterBirth = () => {
+        born += 1;
+      };
+      vnextPanelDispatchSeams.failAppendExecuting = () => born >= 2;
+      const first = await driveVnextRun(context, accepted.run.runId, createVnextSimulatedProducer(async (request) => {
+        await new Promise((_, reject) => {
+          if (request.signal.aborted) reject(new Error("aborted"));
+          request.signal.addEventListener("abort", () => reject(new Error("aborted")));
+        });
+        return { outcome: "passed" };
+      }));
+      assert.equal(first.handoff?.reason, "attempt_unreconciled");
+      const again = await stepVnextRun(context, accepted.run.runId, outcomes(["passed"]));
+      assert.equal(again.handoff?.reason, "attempt_unreconciled");
+      assert.ok(again.handoff?.attemptId);
+      assert.equal(again.state.status === "completed" || again.state.status === "failed", false);
+    } finally {
+      resetPanelSeams();
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("U2a-2 cancelled between executing record and invoke must not call producer", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-u2a2-cancel-invoke-");
+  try {
+    writePanelWorkflow(root, "panel-cancel-invoke", { maximum: 2, target: 2, maxParallel: 1 });
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    resetPanelSeams();
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "panel-cancel-invoke", prompt: "cancel-invoke" });
+      pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+      let calls = 0;
+      vnextPanelDispatchSeams.beforeInvoke = () => {
+        cancelVnextRun(context, accepted.run.runId);
+      };
+      const driven = await driveVnextRun(context, accepted.run.runId, createVnextSimulatedProducer(() => {
+        calls += 1;
+        return { outcome: "passed" };
+      }));
+      assert.equal(calls, 0, "revoked work must never be invoked");
+      assert.equal(driven.handoff?.reason, "attempt_unreconciled");
+    } finally {
+      resetPanelSeams();
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("U2a-2 birth exception must drain active sibling before releasing owner", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-u2a2-birth-exception-");
+  let release = (): void => undefined;
+  try {
+    writePanelWorkflow(root, "panel-birth-error", { maximum: 2, target: 2, maxParallel: 2 });
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    resetPanelSeams();
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "panel-birth-error", prompt: "birth-error" });
+      pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+      let born = 0;
+      vnextPanelDispatchSeams.afterBirth = () => {
+        born += 1;
+        if (born === 2) throw new Error("root second birth failure");
+      };
+      let finished = false;
+      let callbackFinished = false;
+      const deferred = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const pending = driveVnextRun(context, accepted.run.runId, createVnextSimulatedProducer(async () => {
+        await deferred;
+        callbackFinished = true;
+        return { outcome: "passed" };
+      })).then((value) => {
+        finished = true;
+        return { value };
+      }, (error) => {
+        finished = true;
+        return { error: String(error) };
+      });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      const early = {
+        finished,
+        callbackFinished,
+        owners: vnextAttemptControllers(context.eventStore.path, accepted.run.runId).length,
+      };
+      release();
+      await pending;
+      assert.equal(early.finished, false, "drive must not finish while its callback remains active");
+      assert.equal(early.owners, 1, "active callback must retain its controller");
+    } finally {
+      release();
+      resetPanelSeams();
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("U2a-2 cleanup must match pending result by attempt after earlier settlement", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-u2a2-pending-identity-");
+  try {
+    writePanelWorkflow(root, "panel-pending-identity", { maximum: 3, target: 3, maxParallel: 2 });
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    resetPanelSeams();
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "panel-pending-identity", prompt: "pending-identity" });
+      pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+      let born = 0;
+      vnextPanelDispatchSeams.afterBirth = () => {
+        born += 1;
+        if (born === 3) throw new Error("root third birth failure");
+      };
+      let calls = 0;
+      const done = await driveVnextRun(context, accepted.run.runId, createVnextSimulatedProducer(async (request) => {
+        calls += 1;
+        if (calls === 1) return { outcome: "passed" };
+        await new Promise<void>((_, reject) => {
+          if (request.signal.aborted) reject(new Error("aborted"));
+          else request.signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+        });
+        return { outcome: "passed" };
+      }));
+      const attempts = done.state.currentStep?.panel.order.flatMap((assignmentId) =>
+        Object.entries(done.state.currentStep!.panel.assignments[assignmentId]!.attempts).map(([id, attempt]) => ({
+          id,
+          status: attempt.status,
+        }))
+      ) ?? [];
+      assert.equal(calls, 2);
+      assert.equal(attempts.every((attempt) => attempt.status === "terminal"), true, "every drained invoked sibling must be truthfully settled by its own identity");
+    } finally {
+      resetPanelSeams();
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("U2a-2 capability hash replacement before invoke must reject dispatch", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-u2a2-capability-hash-");
+  try {
+    writePanelWorkflow(root, "panel-capability-hash", { maximum: 2, target: 2, maxParallel: 1 });
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    resetPanelSeams();
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "panel-capability-hash", prompt: "capability-hash" });
+      pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+      vnextPanelDispatchSeams.beforeInvoke = (member) => {
+        const db = new DatabaseSync(context.eventStore.path);
+        try {
+          db.prepare("UPDATE attempt_capabilities SET capability_hash = ? WHERE attempt_id = ?").run("a".repeat(64), member.attemptId);
+        } finally {
+          db.close();
+        }
+      };
+      let calls = 0;
+      const done = await driveVnextRun(context, accepted.run.runId, createVnextSimulatedProducer(() => {
+        calls += 1;
+        return { outcome: "passed" };
+      }));
+      assert.equal(calls, 0, "dispatch must reject a capability hash different from the minted owner capability");
+      assert.equal(done.handoff?.reason, "attempt_unreconciled");
+    } finally {
+      resetPanelSeams();
       closeVnextRuntimeContext(context);
     }
   } finally {
@@ -1851,6 +2644,8 @@ const ASG = "asg_01JASSIGN00000000000000000";
 const ATM = "atm_01JATTEMPT00000000000000";
 const ASG2 = "asg_01JASSIGN20000000000000000";
 const ATM2 = "atm_01JATTEMPT2000000000000";
+const ASG3 = "asg_01JASSIGN30000000000000000";
+const ATM3 = "atm_01JATTEMPT3000000000000";
 
 function event(run: VnextRunRecord, sequence: number, eventType: string, payload: Record<string, unknown>): VnextRunEvent {
   return {
@@ -1944,6 +2739,7 @@ function foldPrefix(
 function compilePanelPlan(spec: {
   kind?: "agent" | "moa" | "gate" | "approval" | "wait";
   minimum?: number;
+  target?: number;
   maximum?: number;
   maxParallel?: number;
   joinStrategy?: "all" | "all-settled" | "quorum" | "first-success";
@@ -1951,12 +2747,13 @@ function compilePanelPlan(spec: {
 }): ReturnType<typeof compileVnextWorkflow> {
   const kind = spec.kind ?? "agent";
   const maximum = spec.maximum ?? 2;
+  const target = spec.target ?? maximum;
   const step: JsonObject = {
     id: "only",
     kind,
     assignments: {
       minimum: spec.minimum ?? 1,
-      target: maximum,
+      target,
       maximum,
       maxParallel: spec.maxParallel ?? maximum,
     },

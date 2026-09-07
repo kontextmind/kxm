@@ -1,6 +1,12 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { compileVnextWorkflow, type VnextCompiledPlan, type VnextCompiledStep } from "./vnext-engine-compile.ts";
-import { isTerminalRunStatus, type VnextRunState } from "./vnext-engine-fold.ts";
+import {
+  isTerminalRunStatus,
+  vnextFoldPanelAttempt,
+  vnextFoldPanelAttemptIds,
+  vnextJoinAll,
+  type VnextRunState,
+} from "./vnext-engine-fold.ts";
 import {
   VNEXT_RUN_PLAN_SCHEMA,
   freezeVnextCompiledPlan,
@@ -366,15 +372,22 @@ export function verifyVnextAttemptCapability(
   const hashBuf = Buffer.from(presentedHash);
   const storedBuf = Buffer.from(row?.capabilityHash ?? presentedHash);
   const hashMatch = hashBuf.length === storedBuf.length && timingSafeEqual(hashBuf, storedBuf);
+  const located = vnextFoldPanelAttempt(folded?.currentStep, expected.attemptId);
   const ok = Boolean(
     hashMatch
     && row
     && row.state === "issued"
     && row.runId === expected.runId
     && row.attemptId === expected.attemptId
-    && folded?.currentStep?.attemptId === expected.attemptId
-    && folded.currentStep.attemptStatus === "executing"
-    && folded.status === "running",
+    && row.producerId === "driver-simulated"
+    && folded
+    && folded.status === "running"
+    && folded.currentStep
+    && folded.currentStep.stepId === row.stepId
+    && folded.currentStep.stepAttempt === row.stepAttempt
+    && located
+    && located.assignmentId === row.assignmentId
+    && located.attempt.status === "executing",
   );
   if (!ok) {
     throw runtimeError("capability_rejected", expected.attemptId, "attempt capability was rejected");
@@ -454,21 +467,7 @@ async function stepLocked(context: VnextRuntimeContext, runId: string, producer:
     }
   }
 
-  const dispatch = prepared.dispatch;
-  registerVnextAttemptController(context.eventStore.path, runId, { attemptId: dispatch.attemptId, controller: dispatch.controller });
-  try {
-    try {
-      context.eventStore.transaction(() => appendExecuting(context, dispatch));
-    } catch (error) {
-      dispatch.controller.abort();
-      context.eventStore.transaction(() => hardStopUnrecorded(context, dispatch, "executing_unrecorded"));
-      throw error;
-    }
-    const produced = await invokeProducer(producer, dispatch.request);
-    return context.eventStore.transaction(() => settleAttempt(context, dispatch, produced.result, produced.error));
-  } finally {
-    unregisterVnextAttemptController(context.eventStore.path, runId, dispatch.attemptId);
-  }
+  return drivePanel(context, prepared.panel, producer);
 }
 
 async function runPreparedCommandGate(
@@ -771,10 +770,54 @@ interface PreparedDispatch {
   state: VnextRunState;
 }
 
+interface PreparedPanel {
+  run: VnextRunRecord;
+  plan: VnextCompiledPlan;
+  step: VnextCompiledStep;
+  stepId: string;
+  stepAttempt: number;
+  target: number;
+  maxParallel: number;
+  first: PreparedDispatch;
+  state: VnextRunState;
+}
+
+export interface VnextPanelMemberHook {
+  readonly attemptId: string;
+  readonly assignmentId: string;
+  readonly stepId: string;
+  readonly stepAttempt: number;
+}
+
+export interface VnextPanelDispatchSeams {
+  afterBirth?: ((member: VnextPanelMemberHook) => void) | undefined;
+  beforeAppendExecuting?: ((member: VnextPanelMemberHook) => void) | undefined;
+  failAppendExecuting?: ((member: VnextPanelMemberHook) => boolean) | undefined;
+  beforeInvoke?: ((member: VnextPanelMemberHook) => void) | undefined;
+  failSettleMember?: ((member: VnextPanelMemberHook) => boolean) | undefined;
+}
+
+export const vnextPanelDispatchSeams: VnextPanelDispatchSeams = {};
+
+function unreconciledPanelAttemptId(state: VnextRunState): string | undefined {
+  const current = state.currentStep;
+  if (!current) return undefined;
+  for (const assignmentId of current.panel.order) {
+    const assignment = current.panel.assignments[assignmentId];
+    if (!assignment) continue;
+    for (const [attemptId, attempt] of Object.entries(assignment.attempts)) {
+      if (attempt.status === "starting" || attempt.status === "executing" || attempt.status === "settling") {
+        return attemptId;
+      }
+    }
+  }
+  return undefined;
+}
+
 function prepareDispatch(
   context: VnextRuntimeContext,
   runId: string,
-): { kind: "dispatch"; dispatch: PreparedDispatch } | { kind: "return"; state: VnextRunState; handoff?: VnextRunHandoff } | ({ kind: "gate" } & VnextPreparedGateDispatch) {
+): { kind: "panel"; panel: PreparedPanel } | { kind: "return"; state: VnextRunState; handoff?: VnextRunHandoff } | ({ kind: "gate" } & VnextPreparedGateDispatch) {
   const run = requireRun(context, runId);
   const plan = rehydrateVnextCompiledPlanFromStore(context.eventStore, run);
   const state = foldStoredVnextRun(context, run);
@@ -789,9 +832,8 @@ function prepareDispatch(
       },
     };
   }
-  const attemptStatus = state.currentStep?.attemptStatus;
-  if (attemptStatus === "starting" || attemptStatus === "executing" || attemptStatus === "settling") {
-    const attemptId = state.currentStep?.attemptId;
+  const unreconciledAttemptId = unreconciledPanelAttemptId(state);
+  if (unreconciledAttemptId) {
     const currentStepId = state.currentStep?.stepId;
     if (currentStepId === undefined) {
       throw runtimeError("run_events_illegal", runId, "unreconciled attempt is missing step identity");
@@ -801,7 +843,7 @@ function prepareDispatch(
       state,
       handoff: {
         reason: "attempt_unreconciled",
-        ...(attemptId !== undefined ? { attemptId } : {}),
+        attemptId: unreconciledAttemptId,
         stepId: currentStepId,
         detail: "issued attempt is not held by this process",
       },
@@ -868,12 +910,7 @@ function prepareDispatch(
   if (used >= step.maxAttempts) {
     return { kind: "return", ...failBudget(context, run, plan, state, "budget_step_attempts", stepId) };
   }
-  const agentId = step.kind === "agent" || step.kind === "moa" ? step.agent : "coordinator";
-  const assignmentId = newVnextAssignmentId();
-  const attemptId = newVnextAttemptId();
   const stepAttempt = used + 1;
-  const minted = mintCapabilitySecret();
-  const controller = new AbortController();
   const now = new Date().toISOString();
   let sequence = context.eventStore.nextSequence(runId);
   let mono = vnextMonotonicNs();
@@ -890,53 +927,146 @@ function prepareDispatch(
   };
   push("step.entered", { stepId, stepAttempt, status: "pending" });
   push("step.status_changed", { stepId, status: "preparing", previousStatus: "pending" });
-  push("assignment.created", { assignmentId, stepId, stepAttempt, agentId, status: "created" });
-  push("assignment.accepted", { assignmentId, status: "accepted" });
-  push("attempt.created", { attemptId, assignmentId, status: "created" });
-  push("assignment.dispatched", { assignmentId, capabilityHash: minted.hash, status: "dispatched" });
-  push("attempt.status_changed", { attemptId, status: "starting" });
-  push("step.status_changed", { stepId, status: "running", previousStatus: "preparing" });
   for (const event of events) context.eventStore.appendEvent(event);
-  context.eventStore.insertCapability({
-    attemptId,
-    runId,
-    assignmentId,
+  const entered = foldStoredVnextRun(context, run);
+  persistVnextRunState(context, runId, entered, events[events.length - 1]!.sequence);
+  const first = birthMember(context, {
+    run,
+    plan,
+    step,
     stepId,
     stepAttempt,
-    producerId: "driver-simulated",
-    capabilityHash: minted.hash,
-    state: "issued",
+    enterRunning: true,
   });
-  const next = foldStoredVnextRun(context, run);
-  persistVnextRunState(context, runId, next, events[events.length - 1]!.sequence);
-  const request: VnextProducerRequest = {
-    runId,
-    stepId,
-    stepAttempt,
-    assignmentId,
-    attemptId,
-    agentId,
-    capability: minted.secret,
-    allowedOutcomes: step.outcomes,
-    signal: controller.signal,
-  };
   return {
-    kind: "dispatch",
-    dispatch: {
+    kind: "panel",
+    panel: {
       run,
       plan,
       step,
       stepId,
       stepAttempt,
+      target: step.assignments.target,
+      maxParallel: step.assignments.maxParallel,
+      first,
+      state: first.state,
+    },
+  };
+}
+
+function panelInFlight(state: VnextRunState): number {
+  const current = state.currentStep;
+  if (!current) return 0;
+  let count = 0;
+  for (const assignmentId of current.panel.order) {
+    const assignment = current.panel.assignments[assignmentId];
+    if (!assignment) continue;
+    for (const attempt of Object.values(assignment.attempts)) {
+      if (attempt.status === "starting" || attempt.status === "executing" || attempt.status === "settling") count += 1;
+    }
+  }
+  return count;
+}
+
+function panelFrozenState(state: VnextRunState): boolean {
+  const current = state.currentStep;
+  if (!current) return true;
+  return current.outcome !== undefined
+    || current.status === "passed"
+    || current.status === "failed"
+    || current.status === "cancelled";
+}
+
+function birthAllowed(state: VnextRunState, step: VnextCompiledStep): boolean {
+  if (state.status !== "running" || state.cancelRequested || panelFrozenState(state)) return false;
+  const born = state.currentStep?.panel.order.length ?? 0;
+  if (born >= step.assignments.target) return false;
+  if (panelInFlight(state) >= step.assignments.maxParallel) return false;
+  return true;
+}
+
+function birthMember(
+  context: VnextRuntimeContext,
+  input: {
+    run: VnextRunRecord;
+    plan: VnextCompiledPlan;
+    step: VnextCompiledStep;
+    stepId: string;
+    stepAttempt: number;
+    enterRunning?: boolean;
+  },
+): PreparedDispatch {
+  const run = requireRun(context, input.run.runId);
+  const folded = foldStoredVnextRun(context, run);
+  if (!birthAllowed(folded, input.step)) {
+    throw runtimeError("run_events_illegal", run.runId, "member birth is not legal");
+  }
+  const agentId = input.step.kind === "agent" || input.step.kind === "moa" ? input.step.agent : "coordinator";
+  const assignmentId = newVnextAssignmentId();
+  const attemptId = newVnextAttemptId();
+  const minted = mintCapabilitySecret();
+  const controller = new AbortController();
+  const now = new Date().toISOString();
+  let sequence = context.eventStore.nextSequence(run.runId);
+  let mono = vnextMonotonicNs();
+  const events: VnextRunEvent[] = [];
+  const push = (eventType: string, payload: Record<string, unknown>): void => {
+    events.push({
+      ...vnextEventBase(context, run, now, mono),
+      eventId: newVnextEventId(),
+      eventType,
+      sequence: sequence++,
+      payload,
+    });
+    mono = vnextIncrementMonotonicNs(mono);
+  };
+  push("assignment.created", { assignmentId, stepId: input.stepId, stepAttempt: input.stepAttempt, agentId, status: "created" });
+  push("assignment.accepted", { assignmentId, status: "accepted" });
+  push("attempt.created", { attemptId, assignmentId, status: "created" });
+  push("assignment.dispatched", { assignmentId, capabilityHash: minted.hash, status: "dispatched" });
+  push("attempt.status_changed", { attemptId, status: "starting" });
+  if (input.enterRunning) {
+    push("step.status_changed", { stepId: input.stepId, status: "running", previousStatus: "preparing" });
+  }
+  for (const event of events) context.eventStore.appendEvent(event);
+  context.eventStore.insertCapability({
+    attemptId,
+    runId: run.runId,
+    assignmentId,
+    stepId: input.stepId,
+    stepAttempt: input.stepAttempt,
+    producerId: "driver-simulated",
+    capabilityHash: minted.hash,
+    state: "issued",
+  });
+  const next = foldStoredVnextRun(context, run);
+  persistVnextRunState(context, run.runId, next, events[events.length - 1]!.sequence);
+  const member: PreparedDispatch = {
+    run,
+    plan: input.plan,
+    step: input.step,
+    stepId: input.stepId,
+    stepAttempt: input.stepAttempt,
+    assignmentId,
+    attemptId,
+    agentId,
+    capabilityHash: minted.hash,
+    request: {
+      runId: run.runId,
+      stepId: input.stepId,
+      stepAttempt: input.stepAttempt,
       assignmentId,
       attemptId,
       agentId,
-      capabilityHash: minted.hash,
-      request,
-      controller,
-      state: next,
+      capability: minted.secret,
+      allowedOutcomes: input.step.outcomes,
+      signal: controller.signal,
     },
+    controller,
+    state: next,
   };
+  vnextPanelDispatchSeams.afterBirth?.(member);
+  return member;
 }
 
 function appendExecuting(context: VnextRuntimeContext, dispatch: PreparedDispatch): void {
@@ -965,16 +1095,283 @@ function appendExecuting(context: VnextRuntimeContext, dispatch: PreparedDispatc
   persistVnextRunState(context, run.runId, next, events[events.length - 1]!.sequence);
 }
 
-function settleAttempt(
+type MemberWork =
+  | { attemptId: string; invoked: true; produced: { result?: VnextProducerResult; error: boolean } }
+  | { attemptId: string; invoked: false; skipped: true }
+  | { attemptId: string; invoked: false; appendFailed: true; error: unknown };
+
+function singletonPanel(step: VnextCompiledStep): boolean {
+  return step.assignments.maximum === 1 && step.assignments.target === 1;
+}
+
+function unreconciledHandoff(state: VnextRunState, stepId: string, attemptId?: string): VnextRunDriveResult {
+  return {
+    state,
+    handoff: {
+      reason: "attempt_unreconciled",
+      stepId,
+      ...(attemptId !== undefined ? { attemptId } : {}),
+      detail: "issued attempt is not held by this process",
+    },
+  };
+}
+
+function capabilityHashBound(stored: string, minted: string): boolean {
+  const left = Buffer.from(stored);
+  const right = Buffer.from(minted);
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
+function capabilityMatchesDispatch(
+  capability: VnextAttemptCapabilityRow | undefined,
+  member: PreparedDispatch,
+  allowedStates: ReadonlyArray<VnextAttemptCapabilityRow["state"]>,
+): boolean {
+  return Boolean(
+    capability
+    && capabilityHashBound(capability.capabilityHash, member.capabilityHash)
+    && capability.runId === member.run.runId
+    && capability.stepId === member.stepId
+    && capability.stepAttempt === member.stepAttempt
+    && capability.assignmentId === member.assignmentId
+    && capability.attemptId === member.attemptId
+    && capability.producerId === "driver-simulated"
+    && allowedStates.includes(capability.state),
+  );
+}
+
+async function drivePanel(
+  context: VnextRuntimeContext,
+  panel: PreparedPanel,
+  producer: VnextProducer,
+): Promise<VnextRunDriveResult> {
+  const runId = panel.run.runId;
+  const owned = new Map<string, PreparedDispatch>();
+  const pending = new Map<string, Promise<MemberWork>>();
+  let stopBirths = false;
+  let settlementFailed = false;
+
+  const register = (member: PreparedDispatch): void => {
+    registerVnextAttemptController(context.eventStore.path, runId, { attemptId: member.attemptId, controller: member.controller });
+    owned.set(member.attemptId, member);
+  };
+
+  const abortOwned = (): void => {
+    for (const member of owned.values()) member.controller.abort();
+  };
+
+  const launch = (member: PreparedDispatch): void => {
+    register(member);
+    const work = (async (): Promise<MemberWork> => {
+      try {
+        vnextPanelDispatchSeams.beforeAppendExecuting?.(member);
+        const started = context.eventStore.transaction(() => {
+          if (vnextPanelDispatchSeams.failAppendExecuting?.(member)) {
+            throw runtimeError("run_events_illegal", runId, "appendExecuting failed");
+          }
+          const run = requireRun(context, runId);
+          const state = foldStoredVnextRun(context, run);
+          const capability = context.eventStore.capabilityByAttempt(member.attemptId);
+          const located = vnextFoldPanelAttempt(state.currentStep, member.attemptId);
+          if (
+            state.cancelRequested
+            || state.status === "cancelling"
+            || !capabilityMatchesDispatch(capability, member, ["issued"])
+            || !located
+            || located.assignmentId !== member.assignmentId
+            || located.attempt.status !== "starting"
+          ) {
+            return false;
+          }
+          appendExecuting(context, member);
+          return true;
+        });
+        if (!started) return { attemptId: member.attemptId, invoked: false, skipped: true };
+        const executingBound = (): boolean => {
+          const run = requireRun(context, runId);
+          const state = foldStoredVnextRun(context, run);
+          const capability = context.eventStore.capabilityByAttempt(member.attemptId);
+          const located = vnextFoldPanelAttempt(state.currentStep, member.attemptId);
+          if (
+            state.cancelRequested
+            || state.status === "cancelling"
+            || !capabilityMatchesDispatch(capability, member, ["issued"])
+            || !located
+            || located.assignmentId !== member.assignmentId
+            || located.attempt.status !== "executing"
+          ) {
+            return false;
+          }
+          return true;
+        };
+        if (!executingBound()) return { attemptId: member.attemptId, invoked: false, skipped: true };
+        vnextPanelDispatchSeams.beforeInvoke?.(member);
+        if (!executingBound()) return { attemptId: member.attemptId, invoked: false, skipped: true };
+        const produced = await invokeProducer(producer, member.request);
+        return { attemptId: member.attemptId, invoked: true, produced };
+      } catch (error) {
+        member.controller.abort();
+        return { attemptId: member.attemptId, invoked: false, appendFailed: true, error };
+      }
+    })();
+    pending.set(member.attemptId, work);
+  };
+
+  const tryBirth = (): PreparedDispatch | undefined => {
+    if (stopBirths) return undefined;
+    return context.eventStore.transaction(() => {
+      const run = requireRun(context, runId);
+      const state = foldStoredVnextRun(context, run);
+      if (!birthAllowed(state, panel.step)) return undefined;
+      return birthMember(context, {
+        run,
+        plan: panel.plan,
+        step: panel.step,
+        stepId: panel.stepId,
+        stepAttempt: panel.stepAttempt,
+      });
+    });
+  };
+
+  const settleInvoked = (member: PreparedDispatch, produced: { result?: VnextProducerResult; error: boolean }): boolean => {
+    try {
+      context.eventStore.transaction(() => {
+        if (vnextPanelDispatchSeams.failSettleMember?.(member)) {
+          throw runtimeError("run_events_illegal", runId, "member settlement write failed");
+        }
+        settleMember(context, member, produced.result, produced.error);
+      });
+      return true;
+    } catch {
+      settlementFailed = true;
+      stopBirths = true;
+      return false;
+    }
+  };
+
+  const drainPendingInvoked = async (): Promise<void> => {
+    const rest = await Promise.allSettled([...pending.values()]);
+    pending.clear();
+    for (const result of rest) {
+      if (result.status !== "fulfilled") continue;
+      const item = result.value;
+      const sibling = owned.get(item.attemptId);
+      if (sibling && item.invoked) {
+        settleInvoked(sibling, item.produced);
+      }
+    }
+  };
+
+  try {
+    launch(panel.first);
+    while (true) {
+      while (!stopBirths && !settlementFailed) {
+        try {
+          const next = tryBirth();
+          if (!next) break;
+          launch(next);
+        } catch {
+          stopBirths = true;
+          abortOwned();
+          await drainPendingInvoked();
+          const state = foldStoredVnextRun(context, requireRun(context, runId));
+          return unreconciledHandoff(state, panel.stepId);
+        }
+      }
+      if (pending.size === 0) break;
+      const finished = await Promise.race(pending.values());
+      pending.delete(finished.attemptId);
+      const member = owned.get(finished.attemptId);
+      if (!member) continue;
+      if ("appendFailed" in finished && finished.appendFailed) {
+        stopBirths = true;
+        abortOwned();
+        const rest = await Promise.all([...pending.values()]);
+        pending.clear();
+        if (singletonPanel(panel.step)) {
+          context.eventStore.transaction(() => hardStopUnrecorded(context, member, "executing_unrecorded"));
+          throw finished.error;
+        }
+        for (const item of rest) {
+          const sibling = owned.get(item.attemptId);
+          if (sibling && item.invoked) {
+            settleInvoked(sibling, item.produced);
+          }
+        }
+        const state = foldStoredVnextRun(context, requireRun(context, runId));
+        return unreconciledHandoff(state, panel.stepId, member.attemptId);
+      }
+      if (!finished.invoked) {
+        stopBirths = true;
+        continue;
+      }
+      if (!settleInvoked(member, finished.produced)) {
+        abortOwned();
+        const rest = await Promise.all([...pending.values()]);
+        pending.clear();
+        for (const item of rest) {
+          const sibling = owned.get(item.attemptId);
+          if (sibling && item.invoked) {
+            settleInvoked(sibling, item.produced);
+          }
+        }
+        const state = foldStoredVnextRun(context, requireRun(context, runId));
+        return unreconciledHandoff(state, panel.stepId, member.attemptId);
+      }
+    }
+
+    const folded = foldStoredVnextRun(context, requireRun(context, runId));
+    const leftover = unreconciledPanelAttemptId(folded);
+    if (leftover || settlementFailed) {
+      return unreconciledHandoff(folded, panel.stepId, leftover);
+    }
+    const born = folded.currentStep?.panel.order.length ?? 0;
+    const allTerminal = Boolean(
+      folded.currentStep
+      && born > 0
+      && folded.currentStep.panel.order.every((assignmentId) => folded.currentStep?.panel.assignments[assignmentId]?.status === "terminal")
+      && vnextFoldPanelAttemptIds(folded.currentStep).every((attemptId) => vnextFoldPanelAttempt(folded.currentStep, attemptId)?.attempt.status === "terminal"),
+    );
+    if (!allTerminal) {
+      return unreconciledHandoff(folded, panel.stepId, leftover);
+    }
+    if (born < panel.target && folded.status !== "cancelling" && !folded.cancelRequested) {
+      return unreconciledHandoff(folded, panel.stepId);
+    }
+    try {
+      return context.eventStore.transaction(() => joinPanel(context, panel));
+    } catch {
+      const state = foldStoredVnextRun(context, requireRun(context, runId));
+      return unreconciledHandoff(state, panel.stepId);
+    }
+  } catch (error) {
+    abortOwned();
+    await drainPendingInvoked();
+    throw error;
+  } finally {
+    for (const attemptId of owned.keys()) {
+      unregisterVnextAttemptController(context.eventStore.path, runId, attemptId);
+    }
+  }
+}
+
+function settleMember(
   context: VnextRuntimeContext,
   dispatch: PreparedDispatch,
   result: VnextProducerResult | undefined,
   produceError: boolean,
-): VnextRunDriveResult {
+): void {
   const run = requireRun(context, dispatch.run.runId);
   const state = foldStoredVnextRun(context, run);
   const capability = context.eventStore.capabilityByAttempt(dispatch.attemptId);
-  if (state.currentStep?.attemptId !== dispatch.attemptId || !capability || (capability.state !== "issued" && capability.state !== "revoked")) {
+  const located = vnextFoldPanelAttempt(state.currentStep, dispatch.attemptId);
+  if (
+    !located
+    || located.assignmentId !== dispatch.assignmentId
+    || located.attempt.status !== "executing"
+    || !capability
+    || !capabilityMatchesDispatch(capability, dispatch, ["issued", "revoked"])
+  ) {
     throw runtimeError("run_events_illegal", run.runId, "settle attempted for a non-current capability");
   }
   const cancelling = state.status === "cancelling" || capability.state === "revoked";
@@ -992,64 +1389,127 @@ function settleAttempt(
     });
     mono = vnextIncrementMonotonicNs(mono);
   };
-
   push("attempt.status_changed", { attemptId: dispatch.attemptId, status: "settling" });
   if (cancelling) {
     push("assignment.result_recorded", { assignmentId: dispatch.assignmentId, resultClass: "cancelled", status: "result_recorded" });
     push("attempt.status_changed", { attemptId: dispatch.attemptId, status: "terminal" });
     push("assignment.terminal", { assignmentId: dispatch.assignmentId, outcome: "cancelled", status: "terminal" });
-    push("step.status_changed", { stepId: dispatch.stepId, status: "cancelled", previousStatus: "running" });
+  } else {
+    const outcome = !produceError && result && typeof result.outcome === "string" ? result.outcome : undefined;
+    const known = outcome !== undefined && dispatch.step.outcomes.includes(outcome);
+    if (!known) {
+      push("assignment.result_recorded", {
+        assignmentId: dispatch.assignmentId,
+        resultClass: produceError ? "producer_rejected" : "outcome_unknown",
+        status: "result_recorded",
+      });
+      push("attempt.status_changed", { attemptId: dispatch.attemptId, status: "terminal" });
+      push("assignment.terminal", { assignmentId: dispatch.assignmentId, outcome: "failed", status: "terminal" });
+    } else {
+      push("assignment.result_recorded", {
+        assignmentId: dispatch.assignmentId,
+        outcome,
+        resultClass: "outcome",
+        status: "result_recorded",
+      });
+      push("attempt.status_changed", { attemptId: dispatch.attemptId, status: "terminal" });
+      push("assignment.terminal", { assignmentId: dispatch.assignmentId, outcome, status: "terminal" });
+    }
+  }
+  context.eventStore.settleCapability(dispatch.attemptId, "settled");
+  for (const event of events) context.eventStore.appendEvent(event);
+  const next = foldStoredVnextRun(context, run);
+  persistVnextRunState(context, run.runId, next, events[events.length - 1]!.sequence);
+}
+
+function joinPanel(context: VnextRuntimeContext, panel: PreparedPanel): VnextRunDriveResult {
+  const run = requireRun(context, panel.run.runId);
+  const state = foldStoredVnextRun(context, run);
+  const current = state.currentStep;
+  if (!current || current.stepId !== panel.stepId) {
+    throw runtimeError("run_events_illegal", run.runId, "join attempted without the prepared step");
+  }
+  const joined = vnextJoinAll(panel.step, current.panel);
+  const now = new Date().toISOString();
+  let sequence = context.eventStore.nextSequence(run.runId);
+  let mono = vnextMonotonicNs();
+  const events: VnextRunEvent[] = [];
+  const push = (eventType: string, payload: Record<string, unknown>): void => {
+    events.push({
+      ...vnextEventBase(context, run, now, mono),
+      eventId: newVnextEventId(),
+      eventType,
+      sequence: sequence++,
+      payload,
+    });
+    mono = vnextIncrementMonotonicNs(mono);
+  };
+
+  const failRun = (reason: string): VnextRunDriveResult => {
+    push("step.status_changed", { stepId: panel.stepId, status: "failed", previousStatus: "running" });
+    push("run.status_changed", { status: "failed", reason, stepId: panel.stepId });
+    for (const event of events) context.eventStore.appendEvent(event);
+    const next = foldStoredVnextRun(context, run);
+    persistVnextRunState(context, run.runId, next, events[events.length - 1]!.sequence);
+    context.eventStore.updateRunStatus(run.runId, "failed", now);
+    return { state: next };
+  };
+
+  const cancelRun = (): VnextRunDriveResult => {
+    push("step.status_changed", { stepId: panel.stepId, status: "cancelled", previousStatus: "running" });
     push("run.status_changed", { status: "cancelled", reason: "operator_cancel" });
-    context.eventStore.settleCapability(dispatch.attemptId, "settled");
     for (const event of events) context.eventStore.appendEvent(event);
     const next = foldStoredVnextRun(context, run);
     persistVnextRunState(context, run.runId, next, events[events.length - 1]!.sequence);
     context.eventStore.updateRunStatus(run.runId, "cancelled", now);
     return { state: next };
+  };
+
+  const members: Array<{ resultClass: string | undefined; outcome: string | undefined }> = [];
+  for (const assignmentId of current.panel.order) {
+    const assignment = current.panel.assignments[assignmentId];
+    const attemptId = assignment?.currentAttemptId;
+    const attempt = attemptId ? assignment?.attempts[attemptId] : undefined;
+    members.push({ resultClass: attempt?.resultClass, outcome: attempt?.outcome });
+  }
+  const rejected = members.some((member) => member.resultClass === "outcome_unknown" || member.resultClass === "producer_rejected");
+  const declared = members.filter((member) => member.resultClass === "outcome");
+  const declaredConflict = declared.length > 0 && declared.some((member) => member.outcome !== declared[0]?.outcome);
+
+  if (state.cancelRequested || state.status === "cancelling") {
+    if (rejected || declaredConflict) return failRun(rejected ? "outcome_unknown" : "join_conflict");
+    return cancelRun();
+  }
+  if (joined.tag === "rejected") return failRun("outcome_unknown");
+  if (joined.tag === "conflict") return failRun("join_conflict");
+  if (joined.tag === "cancelled") {
+    throw runtimeError("run_events_illegal", run.runId, "cancelled join requires cancellation authority");
+  }
+  if (joined.tag !== "outcome") {
+    throw runtimeError("run_events_illegal", run.runId, "join attempted before the panel is joinable");
   }
 
-  const outcome = !produceError && result && typeof result.outcome === "string" ? result.outcome : undefined;
-  const known = outcome !== undefined && dispatch.step.outcomes.includes(outcome);
-  if (!known) {
-    push("assignment.result_recorded", { assignmentId: dispatch.assignmentId, resultClass: produceError ? "producer_rejected" : "outcome_unknown", status: "result_recorded" });
-    push("attempt.status_changed", { attemptId: dispatch.attemptId, status: "terminal" });
-    push("assignment.terminal", { assignmentId: dispatch.assignmentId, outcome: "failed", status: "terminal" });
-    push("step.status_changed", { stepId: dispatch.stepId, status: "failed", previousStatus: "running" });
-    push("run.status_changed", { status: "failed", reason: "outcome_unknown", stepId: dispatch.stepId });
-    context.eventStore.settleCapability(dispatch.attemptId, "settled");
-    for (const event of events) context.eventStore.appendEvent(event);
-    const next = foldStoredVnextRun(context, run);
-    persistVnextRunState(context, run.runId, next, events[events.length - 1]!.sequence);
-    context.eventStore.updateRunStatus(run.runId, "failed", now);
-    return { state: next };
-  }
-
-  const selected = dispatch.step.transitions[outcome]!;
-  push("assignment.result_recorded", { assignmentId: dispatch.assignmentId, outcome, resultClass: "outcome", status: "result_recorded" });
-  push("attempt.status_changed", { attemptId: dispatch.attemptId, status: "terminal" });
-  push("assignment.terminal", { assignmentId: dispatch.assignmentId, outcome, status: "terminal" });
-  push("step.outcome_recorded", { stepId: dispatch.stepId, stepAttempt: dispatch.stepAttempt, outcome });
+  const outcome = joined.outcome;
+  const selected = panel.step.transitions[outcome];
+  if (!selected) return failRun("outcome_unknown");
+  push("step.outcome_recorded", { stepId: panel.stepId, stepAttempt: panel.stepAttempt, outcome });
   const stepStatus = outcome === "passed" ? "passed" : outcome === "cancelled" ? "cancelled" : "failed";
-  push("step.status_changed", { stepId: dispatch.stepId, status: stepStatus, previousStatus: "running" });
-
-  const budget = transitionBudgetFailure(dispatch.plan, state, dispatch.stepId, outcome);
+  push("step.status_changed", { stepId: panel.stepId, status: stepStatus, previousStatus: "running" });
+  const budget = transitionBudgetFailure(panel.plan, state, panel.stepId, outcome);
   if (budget) {
-    push("run.status_changed", { status: "failed", reason: budget, stepId: dispatch.stepId, outcome });
-    context.eventStore.settleCapability(dispatch.attemptId, "settled");
+    push("run.status_changed", { status: "failed", reason: budget, stepId: panel.stepId, outcome });
     for (const event of events) context.eventStore.appendEvent(event);
     const next = foldStoredVnextRun(context, run);
     persistVnextRunState(context, run.runId, next, events[events.length - 1]!.sequence);
     context.eventStore.updateRunStatus(run.runId, "failed", now);
     return { state: next };
   }
-
   if (selected.to === "step") {
-    push("step.transitioned", { fromStepId: dispatch.stepId, toStepId: selected.target, outcome });
+    push("step.transitioned", { fromStepId: panel.stepId, toStepId: selected.target, outcome });
   } else {
-    push("step.transitioned", { fromStepId: dispatch.stepId, status: selected.terminalStatus, outcome });
+    push("step.transitioned", { fromStepId: panel.stepId, status: selected.terminalStatus, outcome });
     push("run.status_changed", { status: selected.terminalStatus });
   }
-  context.eventStore.settleCapability(dispatch.attemptId, "settled");
   for (const event of events) context.eventStore.appendEvent(event);
   const next = foldStoredVnextRun(context, run);
   persistVnextRunState(context, run.runId, next, events[events.length - 1]!.sequence);
@@ -1140,10 +1600,13 @@ function unsupportedLimit(envelope: VnextRunPlanEnvelope): VnextRunHandoff | und
 
 function unsupportedStep(plan: VnextCompiledPlan, step: VnextCompiledStep): Omit<VnextRunHandoff, "stepId"> | undefined {
   if (step.kind === "gate") throw runtimeError("run_plan_corrupt", plan.workflowId, `unsupportedStep called on gate without envelope; use unsupportedGateStep instead`);
-  if (step.kind !== "agent") return { reason: "step_unsupported", field: "kind", detail: `step kind ${step.kind} is not executed in this slice` };
-  if (step.assignments.maximum !== 1) return { reason: "step_unsupported", field: "assignments.maximum", detail: "only a single assignment is supported" };
+  if (step.kind !== "agent" && step.kind !== "moa") return { reason: "step_unsupported", field: "kind", detail: `step kind ${step.kind} is not executed in this slice` };
   if (step.assignments.maxAttemptsPerAssignment !== 1) return { reason: "step_unsupported", field: "assignments.maxAttemptsPerAssignment", detail: "only one physical attempt is supported" };
   if (step.join.strategy !== "all") return { reason: "step_unsupported", field: "join.strategy", detail: "only join all is supported" };
+  if (step.join.minimumPassed !== undefined) return { reason: "step_unsupported", field: "join.minimumPassed", detail: "minimumPassed is not executed in this slice" };
+  if (step.join.cancelRemaining) return { reason: "step_unsupported", field: "join.cancelRemaining", detail: "cancelRemaining is not executed in this slice" };
+  if (step.assignments.distinctBy.length > 0) return { reason: "step_unsupported", field: "assignments.distinctBy", detail: "distinctBy is not executed in this slice" };
+  if (step.assignments.maxWriteRepositories) return { reason: "step_unsupported", field: "assignments.maxWriteRepositories", detail: "maxWriteRepositories is not executed in this slice" };
   if (step.requiredEvidence.length > 0) return { reason: "step_unsupported", field: "requiredEvidence", detail: "evidence is not executed in this slice" };
   if (step.requiresPlanHash) return { reason: "step_unsupported", field: "requiresPlanHash", detail: "plan-hash evidence is not executed in this slice" };
   if (step.timeoutMs !== undefined) return { reason: "step_unsupported", field: "timeoutMs", detail: "timeouts are not executed in this slice" };

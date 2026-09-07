@@ -261,6 +261,51 @@ function panelInFlightCount(panel: MutablePanel): number {
   return count;
 }
 
+function panelFrozen(current: MutableCurrentStep): boolean {
+  return current.outcome !== undefined
+    || current.status === "passed"
+    || current.status === "failed"
+    || current.status === "cancelled";
+}
+
+function createdOnlySingletonCancel(state: MutableState, step: VnextCompiledStep, current: MutableCurrentStep, status: string): boolean {
+  const assignmentId = current.panel.order[0];
+  const assignment = assignmentId ? current.panel.assignments[assignmentId] : undefined;
+  return status === "cancelled"
+    && state.cancelRequested
+    && current.panel.order.length === 1
+    && current.panel.order.length >= step.assignments.minimum
+    && assignment?.status === "created";
+}
+
+function authorizedCancelStep(state: MutableState, step: VnextCompiledStep, current: MutableCurrentStep, status: string): boolean {
+  if (status !== "cancelled" || !state.cancelRequested) return false;
+  if (createdOnlySingletonCancel(state, step, current, status)) return true;
+  if (!panelIssuedAttemptsTerminal(current) || !panelAssignmentsTerminal(current)) return false;
+  const members: Array<{ resultClass: string; outcome: string | undefined }> = [];
+  for (const assignmentId of current.panel.order) {
+    const assignment = current.panel.assignments[assignmentId];
+    if (!assignment) return false;
+    const issued = Object.values(assignment.attempts);
+    if (issued.length === 0) return false;
+    for (const attempt of issued) {
+      if (attempt.status !== "terminal" || !attempt.resultClass) return false;
+    }
+    const currentAttempt = currentAttemptOf(assignment);
+    if (!currentAttempt?.resultClass) return false;
+    members.push({ resultClass: currentAttempt.resultClass, outcome: currentAttempt.outcome });
+  }
+  if (members.some((member) => member.resultClass === "outcome_unknown" || member.resultClass === "producer_rejected")) {
+    return false;
+  }
+  const declared = members.filter((member) => member.resultClass === "outcome");
+  if (declared.length > 0) {
+    const outcome = declared[0]?.outcome;
+    if (typeof outcome !== "string" || declared.some((member) => member.outcome !== outcome)) return false;
+  }
+  return members.every((member) => member.resultClass === "outcome" || member.resultClass === "cancelled");
+}
+
 function currentAttemptOf(assignment: {
   currentAttemptId?: string | undefined;
   attempts: { readonly [id: string]: { resultClass?: string | undefined; outcome?: string | undefined } | undefined };
@@ -561,6 +606,9 @@ function assertTerminalRunStatus(
       if (step?.kind === "gate") {
         throw runtimeError("run_events_illegal", state.runId, "executing_unrecorded is illegal on a gate step");
       }
+      if (step && (step.kind === "agent" || step.kind === "moa") && step.assignments.maximum > 1) {
+        throw runtimeError("run_events_illegal", state.runId, "executing_unrecorded is illegal on a multi-assignment panel");
+      }
       return;
     }
     throw runtimeError("run_events_illegal", state.runId, "failed requires a selected failed terminal or proven rejection/budget facts");
@@ -668,15 +716,18 @@ function foldStepStatus(state: MutableState, plan: VnextCompiledPlan | undefined
       const joined = vnextJoinAll(step, current.panel);
       if (joined.tag === "outcome") {
         const expectedStatus = expectedStatusForDeclaredOutcome(step, joined.outcome);
-        // Allow custom outcome -> step cancelled only when exact compiled transition is terminal cancelled
         const selected = step.transitions[joined.outcome];
-        const isCustomOutcomeCancelled = typeof joined.outcome === "string" 
-          && joined.outcome !== "passed" 
+        const isCustomOutcomeCancelled = typeof joined.outcome === "string"
+          && joined.outcome !== "passed"
           && joined.outcome !== "cancelled"
-          && selected?.to === "terminal" 
+          && selected?.to === "terminal"
           && selected.terminalStatus === "cancelled"
           && status === "cancelled";
-        if (status !== expectedStatus && !isCustomOutcomeCancelled) {
+        if (status === "cancelled" && authorizedCancelStep(state, step, current, status)) {
+          // Durable cancel may coexist with consistent declared outcomes.
+        } else if (status === "passed" && state.cancelRequested && current.panel.order.length < step.assignments.target) {
+          throw runtimeError("run_events_illegal", state.runId, "cancel before target refill cannot mint a passed step");
+        } else if (status !== expectedStatus && !isCustomOutcomeCancelled) {
           if (expectedStatus === "passed") {
             throw runtimeError("run_events_illegal", state.runId, "passed outcome must lead to passed status");
           }
@@ -686,21 +737,15 @@ function foldStepStatus(state: MutableState, plan: VnextCompiledPlan | undefined
           throw runtimeError("run_events_illegal", state.runId, "non-passed declared outcome must lead to failed status");
         }
       } else if (joined.tag === "unsatisfied") {
-        const assignmentId = current.panel.order[0];
-        const assignment = assignmentId ? current.panel.assignments[assignmentId] : undefined;
-        const createdOnlySingleton = status === "cancelled"
-          && state.cancelRequested
-          && current.panel.order.length === 1
-          && current.panel.order.length >= step.assignments.minimum
-          && assignment?.status === "created";
-        if (!createdOnlySingleton) {
+        if (!authorizedCancelStep(state, step, current, status)) {
           throw runtimeError("run_events_illegal", state.runId, "terminal step status is not legal for this panel join");
         }
       } else if (joined.tag === "rejected" || joined.tag === "conflict") {
         if (status === "cancelled") {
-          throw runtimeError("run_events_illegal", state.runId, "rejected or conflict cannot cancel the step");
-        }
-        if (status !== "failed") {
+          if (!authorizedCancelStep(state, step, current, status)) {
+            throw runtimeError("run_events_illegal", state.runId, "rejected or conflict cannot cancel the step");
+          }
+        } else if (status !== "failed") {
           throw runtimeError("run_events_illegal", state.runId, "passed requires recordedOutcome passed");
         }
       } else if (joined.tag === "cancelled") {
@@ -760,7 +805,14 @@ function foldTransitioned(state: MutableState, plan: VnextCompiledPlan, event: V
   if (!state.lastOutcomeEvent || state.lastOutcomeEvent.outcome !== outcome || state.lastOutcomeEvent.stepId !== fromStepId) {
     throw runtimeError("run_events_illegal", state.runId, "step.transitioned requires a prior matching step.outcome_recorded");
   }
+  if (!panelIssuedAttemptsTerminal(current) || !panelAssignmentsTerminal(current)) {
+    throw runtimeError("run_events_illegal", state.runId, "step.transitioned requires every panel assignment and issued attempt to be terminal");
+  }
   const step = requireStep(plan, fromStepId, state.runId);
+  const joined = vnextJoinAll(step, current.panel);
+  if (joined.tag !== "outcome" || joined.outcome !== outcome) {
+    throw runtimeError("run_events_illegal", state.runId, "step.transitioned requires a matching joined declared outcome");
+  }
   const selected = step.transitions[outcome];
   if (!selected) {
     throw runtimeError("run_events_illegal", state.runId, `no compiled transition for ${fromStepId}:${outcome}`);
@@ -813,6 +865,9 @@ function assertTransitionPayload(runId: string, selected: VnextCompiledTransitio
 function foldAssignmentCreated(state: MutableState, plan: VnextCompiledPlan | undefined, event: VnextRunEvent): void {
   requireActiveStep(state, "assignment.created");
   const current = state.currentStep!;
+  if (state.status !== "running" || state.cancelRequested || panelFrozen(current)) {
+    throw runtimeError("run_events_illegal", state.runId, "assignment.created is not legal after freeze or cancel intent");
+  }
   if (current.panel.order.length >= panelAssignmentBound(plan, current)) {
     throw runtimeError("run_events_illegal", state.runId, "assignment.created repeats an assignment");
   }
@@ -862,6 +917,12 @@ function foldAssignmentAdvance(state: MutableState, plan: VnextCompiledPlan, eve
   }
   if (next === "dispatched") {
     stringPayload(event, "capabilityHash");
+  }
+  if (next === "executing" && panelFrozen(current)) {
+    throw runtimeError("run_events_illegal", state.runId, "assignment.executing is not legal after freeze");
+  }
+  if (next === "executing" && state.cancelRequested && step.kind !== "gate") {
+    throw runtimeError("run_events_illegal", state.runId, "assignment.executing is not legal after cancel intent");
   }
   let nextAssignment: MutableAssignment = { ...assignment, status: next, attempts: { ...assignment.attempts } };
   if (next === "result_recorded") {
@@ -946,6 +1007,9 @@ function foldAssignmentAdvance(state: MutableState, plan: VnextCompiledPlan, eve
 function foldAttemptCreated(state: MutableState, event: VnextRunEvent): void {
   requireActiveStep(state, "attempt.created");
   const current = state.currentStep!;
+  if (state.status !== "running" || state.cancelRequested || panelFrozen(current)) {
+    throw runtimeError("run_events_illegal", state.runId, "attempt.created is not legal after freeze or cancel intent");
+  }
   const assignmentId = stringPayload(event, "assignmentId");
   const assignment = current.panel.assignments[assignmentId];
   if (!assignment) {
@@ -988,6 +1052,15 @@ function foldAttemptStatus(state: MutableState, plan: VnextCompiledPlan, event: 
     && (current.effectState === "observed-no-start" || current.effectState === "settled-proof");
   if (!allowed?.has(status) && !noStartSettling) {
     throw runtimeError("run_events_illegal", state.runId, `illegal attempt transition ${located.attempt.status} -> ${status}`);
+  }
+  if (panelFrozen(current) && (status === "starting" || status === "executing")) {
+    throw runtimeError("run_events_illegal", state.runId, "attempt start is not legal after freeze");
+  }
+  if (state.cancelRequested && status === "starting") {
+    throw runtimeError("run_events_illegal", state.runId, "attempt start is not legal after cancel intent");
+  }
+  if (state.cancelRequested && status === "executing" && step.kind !== "gate") {
+    throw runtimeError("run_events_illegal", state.runId, "attempt start is not legal after cancel intent");
   }
   if (status === "starting" && panelInFlightCount(current.panel) + 1 > step.assignments.maxParallel) {
     throw runtimeError("run_events_illegal", state.runId, "maxParallel exceeded");

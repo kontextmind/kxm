@@ -232,8 +232,25 @@ It does not replace the phase gates below.
   can return without leaking the slot; that is not D4 resolution.
   Donor tree `048fa056c3e07a6bcc8079775377508e15baeaa7` (native Grok plus
   GLM OpenRouter experiment) is retained as provenance, not acceptance.
-  D4 `blocked_uncertain` recovery, joins, approval, waits, duration/cost
-  budgets, and the full Phase 3 driver remain open. Issue #89 remains open.
+  D4 `blocked_uncertain` recovery, remaining joins, approval, waits,
+  duration/cost budgets, and the full Phase 3 driver remain open. Issue #89
+  remains open.
+- **D4 U2a-2 model-free join-all panel dispatch (implemented, unreleased):**
+  agent/moa `join: all` steps birth exactly `assignments.target` members
+  through a `maxParallel` window, settle each owner separately, and join
+  once. Membership and attempt start freeze after a recorded outcome,
+  terminal step, or durable `cancelRequested`. Exact capability lookup
+  binds the executing owner at starting, executing, pre-invoke, and
+  settlement to the minted hash plus run/step/stepAttempt/assignment/attempt/
+  driver producer/state; a tampered hash is rejected before invoke.
+  Pending cleanup locates `owned.get(item.attemptId)`, never a positional
+  `owned` index. `executing_unrecorded` stays the singleton exception only.
+  Uninvoked starting agents and failed durable settlement
+  stay unresolved with `attempt_unreconciled` rather than a fabricated
+  terminal run. Full D4, default/fix driver gate, evidence, retries,
+  approvals, waits, budgets, and recovery remain open. Operator-prioritized
+  roster/routing planning is next after this slice is accepted; it is not
+  implemented here and does not pass a product Phase 4 gate.
 - **Issue 127 complete (PR #129, `50c8482`):** native writer, fixed witness,
   independent Fable/Sol reviews, acceptance, and all five PR CI jobs passed.
   The parent-alias regression owns its temporary symlink on Mac/Linux;
@@ -584,9 +601,15 @@ It does not replace the phase gates below.
   (unreleased, fold only) derives join-all from per-assignment current
   attempt results, bounds agent/moa `all` panels by compiled
   `assignments.maximum` (other kinds/strategies stay 1), and checks
-  `maxParallel` before a next `starting`. Engine multi-dispatch remains
-  guarded. D4 recovery, remaining joins, approval, waits, duration/cost
-  budgets, and producer drain follow.
+  `maxParallel` before a next `starting`. D4 U2a-2 (implemented,
+  unreleased) adds model-free agent/moa join-all dispatch: target-bounded
+  sequential births, maxParallel window, per-member settlement separated
+  from one join commit, membership freeze at outcome/terminal/cancel
+  intent, fail-closed capability/settlement, exact pending-owner drain, and
+  minted capability-hash bind through invoke. Full D4, default/fix
+  driver gate, evidence, retries, approvals, waits, budgets, and recovery
+  remain open. Roster/routing planning follows this slice; it is not a
+  Phase 4 product gate.
   Then the full model-free driver must complete `default.yaml` and
   `fix.yaml`. D3/D4 must honor declared `assignments` and `join` on non-agent
   steps or fail closed. Neither the agent-only loop nor the merged developer
@@ -796,10 +819,15 @@ can release; unresolved holds do not. D4 U1 (partial foundation, unreleased)
 keeps one assignment and one physical attempt, stores that pair in an
 authoritative bound-1 panel (`kxm.run-state.v2`), and looks up owners by
 exact attempt id. D4 U2a-1 (unreleased, fold only) defines and tests
-panel join-all fold semantics; engine multi-dispatch is still guarded.
-No new events or run-state fields. D4 recovery, remaining joins, approval,
-waits, duration/cost budgets, and the full model-free driver remain open.
-Issue #89 remains open. No Phase 3 Gate sentence is claimed passed.
+panel join-all fold semantics. D4 U2a-2 (implemented, unreleased) dispatches
+model-free agent/moa join-all panels with target-bounded births, a
+maxParallel window, per-member settlement, one join commit, freeze after
+outcome/terminal/cancel intent, fail-closed capability/settlement, exact
+pending-owner drain, and minted capability-hash bind through invoke.
+No new events or run-state fields. Full D4, remaining joins, approval,
+waits, duration/cost budgets, recovery, and the model-free driver remain
+open. Roster/routing is not implemented in this slice and does not pass
+Phase 4. Issue #89 remains open. No Phase 3 Gate sentence is claimed passed.
 
 **Developer prerequisite (PR #129 merged, #127 closed):** the assignment runner
 has native assignment records, fixed witnesses, exact-commit acceptance and
