@@ -79,7 +79,11 @@ It does not replace the phase gates below.
   exhausted attempts, immediately try the next suggested eligible authenticated
   model. OpenRouter Qwen `qwen/qwen3-coder-plus` is narrowly admitted as a Pi
   writer with exact model auth and edit permission; it has no supported native
-  route here. Other model writer routes require reviewed admission. Native
+  route here. Nous Research Portal is a second Pi helper provider
+  (`nous-portal/*` after `@jayteelabs/pi-nous-portal-provider` and
+  `pi auth check --provider nous-portal`); `nous-portal/tencent/hy4-preview`
+  is the reviewed experiment example, not a second writer. Other model
+  writer routes require reviewed admission. Native
   subscriptions remain preferred for the same model. Preserve every attempt,
   cost, witness, independent review, and acceptance requirement. New-model trials are bounded comparable tasks, not daily
   fanout. This is orchestration policy; `just assign` does not
@@ -191,6 +195,15 @@ It does not replace the phase gates below.
   Release/npm remain `if: false` and the Windows pause is unchanged.
   Ruleset `22251971` required contexts are unchanged. This is not a
   capacity or speed promise.
+
+- **Pi helper Nous Portal prefix (dev helper, not Phase 11):**
+  `scripts/harness-run.mjs` allowlists `openrouter/*` and `nous-portal/*`.
+  Auth is `pi auth check --provider openrouter|nous-portal`. Native-provider
+  Pi brake is unchanged. Writer remains exact
+  `openrouter/qwen/qwen3-coder-plus` with edit and JSON readiness proof.
+  `nous-portal/tencent/hy4-preview` is experiment/read-only (experiment may
+  edit); it is not a second writer. Install
+  `npm:@jayteelabs/pi-nous-portal-provider`; there is no Nous harness CLI.
 - **D3 S1 registry foundation:** `.kxm/gates.yaml` uses the closed
   `kxm.gate-registry.v1` schema. Gate ids resolve only through that file;
   obsolete caller allowlists and old schema/outcome names fail closed.
@@ -647,7 +660,8 @@ It does not replace the phase gates below.
 - MCP factory API waits for a second consumer (D13); `./mcp` stays an
   executable path.
 - Helper allowlists in `scripts/harness-run.mjs` are script constants, not a
-  preferences overlay or catalog feed. Grok is in the observational catalog
+  preferences overlay or catalog feed. Pi prefixes today: `openrouter` and
+  `nous-portal`. Grok is in the observational catalog
   (`mode: either`) and is not a supervised long-lived worker.
 - Confirm GitHub repository identity (`kontextmind/kxm` vs current remote).
 - **SCM and issue trackers:** detect from repo conventions (git remote, CI

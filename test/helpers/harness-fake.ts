@@ -96,8 +96,8 @@ export function codexAuth() {
   return { status: 0, stdout: String(fixture.stdout), stderr: String(fixture.stderr), error: undefined };
 }
 
-export function piAuth() {
-  return { status: 0, stdout: "openrouter  ready\n", stderr: "", error: undefined };
+export function piAuth(provider = "openrouter") {
+  return { status: 0, stdout: `${provider}  ready\n`, stderr: "", error: undefined };
 }
 
 export async function dispatch(request: Record<string, unknown>, assignment: {
