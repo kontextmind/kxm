@@ -20,6 +20,7 @@ import { preflightRequest, REQUEST_SCHEMA } from "../scripts/harness-run.mjs";
 const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "nous");
 const idsOnly = JSON.parse(readFileSync(join(fixtureDir, "models-ids-only.json"), "utf8"));
 const withCapacity = JSON.parse(readFileSync(join(fixtureDir, "models-with-capacity.json"), "utf8"));
+const livePublic = JSON.parse(readFileSync(join(fixtureDir, "models-live-public.json"), "utf8"));
 const pinPath = join(fixtureDir, "catalog-pin.json");
 const PI_AI = resolve("node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/index.js");
 const PI_AI_COMPLETIONS = resolve("node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/openai-completions.lazy.js");
@@ -294,6 +295,40 @@ test("no guidance contains a bearer or key", async () => {
   assert.equal(looksLikeSecret(blob), false);
   assert.doesNotMatch(blob, /sk-leaked/);
   assert.doesNotMatch(blob, /Bearer /);
+});
+
+test("live public catalog registers observed metadata, upper-bound rates, and discovery provenance", async () => {
+  const pi = fakePi();
+  const report = await registerNousProviders(pi.api, {
+    env: { KXM_NOUS_PROVIDERS: "direct", NOUS_API_KEY: "k" },
+    nowMs: Date.parse("2026-09-07T18:00:08.000Z"),
+    fetch: async () => jsonResponse(livePublic),
+  });
+  assert.equal(report.direct.provenance?.source, `${NOUS_DIRECT_BASE_URL}/models`);
+  assert.equal(report.direct.provenance?.fetchedAt, "2026-09-07T18:00:08.000Z");
+  assert.match(report.direct.provenance?.rawSha256 ?? "", /^sha256:[a-f0-9]{64}$/);
+  const models = pi.providers.get(NOUS_DIRECT_ID)?.models as Array<{
+    id: string;
+    reasoning: boolean;
+    input: string[];
+    cost: { input: number; output: number; cacheRead: number; cacheWrite: number; tiers?: Array<{ inputTokensAbove: number; input: number; output: number }> };
+    contextWindow: number;
+    maxTokens: number;
+  }>;
+  const qwen = models.find((model) => model.id === "qwen/qwen3-coder-plus");
+  assert.equal(qwen?.reasoning, false);
+  assert.deepEqual(qwen?.input, ["text"]);
+  assert.equal(qwen?.contextWindow, 1_000_000);
+  assert.equal(qwen?.maxTokens, 65536);
+  assert.equal(qwen?.cost.input, 1.95);
+  assert.equal(qwen?.cost.output, 9.75);
+  assert.deepEqual(qwen?.cost.tiers?.map((tier) => tier.inputTokensAbove), [32000, 128000]);
+  const sol = models.find((model) => model.id === "openai/gpt-5.6-sol");
+  assert.equal(sol?.reasoning, true);
+  assert.deepEqual(sol?.input, ["text", "image"]);
+  assert.equal(sol?.cost.input, 4);
+  assert.equal(sol?.cost.output, 15);
+  assert.equal(report.direct.registered, 4);
 });
 
 test("helper brake still refuses nous/* and nous-proxy/*", () => {

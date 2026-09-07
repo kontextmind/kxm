@@ -244,3 +244,127 @@ test("guidance names installed Hermes login first and never includes bearers", (
     assert.equal(sanitizeNousText(item.message), item.message);
   }
 });
+
+test("live public catalog converts per-token strings, keeps override tiers, and never uses original or a 20% haircut", () => {
+  const parsed = parseModelsResponse(readJson("models-live-public.json"));
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+
+  const qwen = parsed.models.find((model) => model.id === "qwen/qwen3-coder-plus");
+  assert.ok(qwen);
+  assert.equal(qwen?.contextWindow, 1_000_000);
+  assert.equal(qwen?.maxTokens, 65536);
+  assert.deepEqual(qwen?.input, ["text"]);
+  assert.equal(qwen?.reasoning, false);
+  assert.equal(qwen?.tools, true);
+  assert.equal(qwen?.units, NOUS_PRICE_UNITS);
+  assert.equal(qwen?.cost?.input, 0.52);
+  assert.equal(qwen?.cost?.output, 2.6);
+  assert.equal(qwen?.cost?.cacheRead, 0.104);
+  assert.equal(qwen?.cost?.cacheWrite, 0.65);
+  assert.deepEqual(qwen?.tiers?.map((tier) => tier.inputTokensAbove), [32000, 128000]);
+  assert.equal(qwen?.tiers?.[0]?.input, 1.17);
+  assert.equal(qwen?.tiers?.[0]?.output, 5.85);
+  assert.equal(qwen?.tiers?.[0]?.cacheRead, 0.234);
+  assert.equal(qwen?.tiers?.[0]?.cacheWrite, 1.4625);
+  assert.equal(qwen?.tiers?.[1]?.input, 1.95);
+  assert.equal(qwen?.tiers?.[1]?.output, 9.75);
+  assert.equal(qwen?.tiers?.[1]?.cacheRead, 0.39);
+  assert.equal(qwen?.tiers?.[1]?.cacheWrite, 2.4375);
+
+  const qwenBuilt = buildModelConfigs([qwen!], undefined, "direct");
+  assert.equal(qwenBuilt.registered.length, 1);
+  assert.equal(qwenBuilt.registered[0]?.priceBasis, "upper-bound");
+  assert.equal(qwenBuilt.registered[0]?.cost.input, 1.95);
+  assert.equal(qwenBuilt.registered[0]?.cost.output, 9.75);
+  assert.equal(qwenBuilt.registered[0]?.cost.cacheRead, 0.39);
+  assert.equal(qwenBuilt.registered[0]?.cost.cacheWrite, 2.4375);
+  assert.equal(qwenBuilt.registered[0]?.tiers?.length, 2);
+
+  const sol = parsed.models.find((model) => model.id === "openai/gpt-5.6-sol");
+  assert.ok(sol);
+  assert.equal(sol?.contextWindow, 1_050_000);
+  assert.equal(sol?.maxTokens, 128000);
+  assert.deepEqual(sol?.input, ["text", "image"]);
+  assert.equal(sol?.reasoning, true);
+  assert.equal(sol?.tools, true);
+  const solBuilt = buildModelConfigs([sol!], undefined, "direct");
+  assert.equal(solBuilt.registered[0]?.cost.input, 4);
+  assert.equal(solBuilt.registered[0]?.cost.output, 15);
+  assert.notEqual(solBuilt.registered[0]?.cost.input, 3.2);
+  assert.notEqual(solBuilt.registered[0]?.cost.output, 12);
+
+  const astra = parsed.models.find((model) => model.id === "openai/gpt-6-astra");
+  const astraBuilt = buildModelConfigs([astra!], undefined, "direct");
+  assert.equal(astraBuilt.registered[0]?.cost.input, 20);
+  assert.equal(astraBuilt.registered[0]?.cost.output, 75);
+  assert.notEqual(astraBuilt.registered[0]?.cost.input, 10);
+  assert.notEqual(astraBuilt.registered[0]?.cost.output, 50);
+});
+
+test("malformed live overrides and incomplete rates exclude the model instead of keeping a cheap base", () => {
+  const parsed = parseModelsResponse({
+    data: [
+      {
+        id: "broken-override",
+        context_length: 1000,
+        top_provider: { max_completion_tokens: 100 },
+        architecture: { input_modalities: ["text"] },
+        pricing: {
+          prompt: "0.000001",
+          completion: "0.000002",
+          input_cache_read: "0.0000001",
+          input_cache_write: "0.0000002",
+          overrides: [{ min_prompt_tokens: 128000, prompt: "0.000009" }],
+        },
+      },
+      {
+        id: "missing-cache",
+        context_length: 1000,
+        top_provider: { max_completion_tokens: 100 },
+        architecture: { input_modalities: ["text"] },
+        pricing: { prompt: "0.000001", completion: "0.000002", input_cache_read: "0.0000001" },
+      },
+      {
+        id: "file-only",
+        context_length: 1000,
+        top_provider: { max_completion_tokens: 100 },
+        architecture: { input_modalities: ["file"] },
+        pricing: {
+          prompt: "0.000001",
+          completion: "0.000002",
+          input_cache_read: "0.0000001",
+          input_cache_write: "0.0000002",
+        },
+      },
+    ],
+  });
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+  const built = buildModelConfigs(parsed.models, undefined, "direct");
+  assert.equal(built.registered.length, 0);
+  assert.ok(built.skipped.some((item) => item.id === "broken-override" && /malformed|incomplete/.test(item.reason)));
+  assert.ok(built.skipped.some((item) => item.id === "missing-cache" && /malformed|incomplete/.test(item.reason)));
+  assert.ok(built.skipped.some((item) => item.id === "file-only" && /modalities/.test(item.reason)));
+  assert.equal(parsed.models.find((model) => model.id === "broken-override")?.cost, undefined);
+});
+
+test("live fetch records source URL, fetched date, and raw SHA without billing original rates", async () => {
+  const body = JSON.stringify(readJson("models-live-public.json"));
+  const fetchedAt = "2026-09-07T18:00:08.000Z";
+  const result = await fetchNousModels({
+    url: "https://inference-api.nousresearch.com/v1/models",
+    timeoutMs: 50,
+    nowMs: Date.parse(fetchedAt),
+    fetchImpl: async () => new Response(body, { status: 200, headers: { "content-type": "application/json" } }),
+  });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.provenance?.source, "https://inference-api.nousresearch.com/v1/models");
+  assert.equal(result.provenance?.fetchedAt, fetchedAt);
+  assert.match(result.provenance?.rawSha256 ?? "", /^sha256:[a-f0-9]{64}$/);
+  const luna = result.models.find((model) => model.id === "openai/gpt-5.6-luna");
+  const built = buildModelConfigs([luna!], undefined, "direct");
+  assert.equal(built.registered[0]?.cost.input, 0.4);
+  assert.notEqual(built.registered[0]?.cost.input, 1);
+});

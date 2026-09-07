@@ -561,7 +561,7 @@ It does not replace the phase gates below.
   classify/docs/plugin) before the pause; the post-merge main Windows Node 24
   package-cleanup failure in run `34006194862` is unresolved and deferred.
 
-- **Nous opt-in Pi providers:** opt-in `nous/*` (direct API) and `nous-proxy/*` (Hermes subscription proxy) via `KXM_NOUS_PROVIDERS`, with fail-closed catalog/price boundary, bounded factory-time discovery, and env-only direct auth (`NOUS_API_KEY`). No router, no writer admission, live auth and `/v1/models` shape unverified.
+- **Nous opt-in Pi providers:** opt-in `nous/*` (direct API) and `nous-proxy/*` (Hermes subscription proxy) via `KXM_NOUS_PROVIDERS`, with fail-closed catalog/price boundary, bounded factory-time discovery, and env-only direct auth (`NOUS_API_KEY`). No router, no writer admission. Public `/v1/models` catalog fields are observed (`context_length`, `top_provider.max_completion_tokens`, `architecture.input_modalities`, `supported_parameters`, per-token `pricing` plus `overrides`); convert once to USD/M and never apply `original` or a blanket discount. Live auth and streaming compatibility flags remain unverified.
 
 ### Still open
 
@@ -676,7 +676,7 @@ It does not replace the phase gates below.
   lifecycles.md; today loader and compiler resolve omitted bounds to one
   assignment and join `all`. Change schema, loader, compiler, and docs together.
 
-- Live verification of Nous `/v1/models` shape and streaming compatibility flags after a Nous login.
+- Live streaming compatibility flags for Nous after a login remain unverified. Public catalog field names and per-token pricing are observed from an unauthenticated GET.
 - Routing v2 unmetered labelling for Nous subscription-proxy usage; extra billed amount beyond subscription remains unknown unless actually reported.
 - Persisted Nous catalog via Pi `publish` is deferred.
 - Claude Code compatibility experiment for Nous is a separate assignment.
@@ -867,8 +867,9 @@ status line, `/kxm` menu, settings, and validated agent/workflow/model editors.
 **Config slice (landed, unreleased):** harness catalog with Pi as default
 headless; `kxm harness list` / `kxm update`; `kxm dash` as the operator peek;
 `kxm hub start|view|stop`. YAML remains the only enablement surface.
-Extension-registered opt-in Nous providers exist; assignment-time
-provider/model admission remains Phase 4 work.
+Extension-registered opt-in Nous providers exist, with live public catalog
+normalization into USD/M plus provenance on the discovery report;
+assignment-time provider/model admission remains Phase 4 work.
 
 **Still this phase:** Pi RPC adapter, per-run sessions, the rest of the `/kxm`
 menu (hub/workflows/agents completions wrapping CLI), validated YAML editors

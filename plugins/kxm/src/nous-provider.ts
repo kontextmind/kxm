@@ -2,7 +2,12 @@
  * Opt-in Nous provider helpers. Pure: env parse, loopback checks, catalog
  * validation, model-config building, and guidance. No Pi / pi-ai imports.
  *
- * Live /v1/models response shape is unverified; fixtures are assumed.
+ * Public GET /v1/models catalog fields are observed: context_length,
+ * top_provider.max_completion_tokens, architecture.input_modalities,
+ * supported_parameters, and pricing.prompt/completion/input_cache_* as
+ * per-token decimal strings plus pricing.overrides[]. Convert once to
+ * usd_per_million_tokens. Never apply pricing.original or a blanket discount.
+ * Assumed OpenAI-style fixtures remain valid. Streaming flags are unverified.
  */
 
 import { createHash } from "node:crypto";
@@ -24,6 +29,10 @@ const PROVIDER_TOKENS = new Set(["direct", "proxy"]);
 export type NousProviderKind = "direct" | "proxy";
 export type NousPriceBasis = "list" | "upper-bound";
 export type NousBilling = "metered" | "subscription" | "subscription_plus_usage";
+export type NousInputModality = "text" | "image";
+
+const PER_TOKEN_TO_USD_PER_M = 1_000_000;
+const PI_INPUT_ORDER: NousInputModality[] = ["text", "image"];
 
 export interface NousCostRates {
   input: number;
@@ -65,10 +74,21 @@ export interface DiscoveredModel {
   units?: string;
   verified?: boolean;
   tiers?: NousCostTier[];
+  input?: NousInputModality[];
+  reasoning?: boolean;
+  tools?: boolean;
+  pricingIssue?: string;
+  capabilityIssue?: string;
+}
+
+export interface DiscoveryProvenance {
+  source: string;
+  fetchedAt: string;
+  rawSha256: string;
 }
 
 export type DiscoveryOutcome =
-  | { ok: true; models: DiscoveredModel[] }
+  | { ok: true; models: DiscoveredModel[]; provenance?: DiscoveryProvenance }
   | { ok: false; error: "timeout" | "connection-refused" | "auth" | "http" | "invalid"; status?: number; reason: string };
 
 export type CatalogLoad =
@@ -84,6 +104,10 @@ export interface BuiltModel {
   priceBasis: NousPriceBasis;
   billing: NousBilling;
   verified: boolean;
+  input?: NousInputModality[];
+  reasoning?: boolean;
+  tools?: boolean;
+  tiers?: NousCostTier[];
 }
 
 export interface BuildModelsResult {
@@ -300,7 +324,7 @@ function parsePinModel(id: string, entry: unknown): { ok: true; model: Omit<Nous
 
 export function parseModelsResponse(raw: unknown): DiscoveryOutcome {
   if (!isRecord(raw) || !Array.isArray(raw.data)) {
-    return { ok: false, error: "invalid", reason: "models response is not an object with a data array (assumed OpenAI-style shape, unverified live)" };
+    return { ok: false, error: "invalid", reason: "models response is not an object with a data array" };
   }
   const models: DiscoveredModel[] = [];
   for (const item of raw.data) {
@@ -309,24 +333,62 @@ export function parseModelsResponse(raw: unknown): DiscoveryOutcome {
     }
     const model: DiscoveredModel = { id: item.id.trim() };
     if (typeof item.name === "string" && item.name.trim()) model.name = item.name.trim();
-    const contextWindow = asPositiveInt(item.contextWindow ?? item.context_window);
-    const maxTokens = asPositiveInt(item.maxTokens ?? item.max_tokens ?? item.max_output_tokens);
+    const topProvider = isRecord(item.top_provider) ? item.top_provider : undefined;
+    const contextWindow = asPositiveInt(item.contextWindow ?? item.context_window ?? item.context_length);
+    const maxTokens = asPositiveInt(
+      item.maxTokens ?? item.max_tokens ?? item.max_output_tokens ?? topProvider?.max_completion_tokens,
+    );
     if (contextWindow !== undefined) model.contextWindow = contextWindow;
     if (maxTokens !== undefined) model.maxTokens = maxTokens;
     if (typeof item.units === "string") model.units = item.units;
     if (typeof item.verified === "boolean") model.verified = item.verified;
-    const costSource = isRecord(item.cost) ? item.cost : isRecord(item.pricing) ? item.pricing : undefined;
-    const cost = costSource ? parseRates(costSource) : undefined;
-    if (cost) model.cost = cost;
-    if (Array.isArray(item.tiers)) {
-      const tiers: NousCostTier[] = [];
-      for (const tier of item.tiers) {
-        if (!isRecord(tier)) continue;
-        const rates = parseRates(tier);
-        const above = asNonnegInt(tier.inputTokensAbove ?? tier.input_tokens_above);
-        if (rates && above !== undefined) tiers.push({ ...rates, inputTokensAbove: above });
+
+    const architecture = isRecord(item.architecture) ? item.architecture : undefined;
+    if (architecture && "input_modalities" in architecture) {
+      const input = parseInputModalities(architecture.input_modalities);
+      if (!input) model.capabilityIssue = "unknown input modalities";
+      else model.input = input;
+    }
+
+    const supported = parseSupportedParameters(item.supported_parameters);
+    if (supported) {
+      model.reasoning = supported.reasoning;
+      model.tools = supported.tools;
+    }
+
+    if (isRecord(item.pricing)) {
+      const live = parseLivePricing(item.pricing);
+      if (!live) {
+        model.pricingIssue = "malformed or incomplete live pricing; costly tiers are not dropped and zeros are not guessed";
+      } else {
+        model.cost = live.cost;
+        model.units = NOUS_PRICE_UNITS;
+        if (live.tiers.length > 0) model.tiers = live.tiers;
       }
-      if (tiers.length > 0) model.tiers = tiers;
+    } else {
+      const cost = isRecord(item.cost) ? parseRates(item.cost) : undefined;
+      if (cost) model.cost = cost;
+      if (Array.isArray(item.tiers)) {
+        const tiers: NousCostTier[] = [];
+        for (const tier of item.tiers) {
+          if (!isRecord(tier)) {
+            model.pricingIssue = "malformed assumed-shape tier";
+            break;
+          }
+          const rates = parseRates(tier);
+          const above = asNonnegInt(tier.inputTokensAbove ?? tier.input_tokens_above);
+          if (!rates || above === undefined) {
+            model.pricingIssue = "incomplete assumed-shape tier";
+            break;
+          }
+          tiers.push({ ...rates, inputTokensAbove: above });
+        }
+        if (!model.pricingIssue && tiers.length > 0) model.tiers = tiers;
+        if (model.pricingIssue) {
+          delete model.cost;
+          delete model.tiers;
+        }
+      }
     }
     models.push(model);
   }
@@ -338,6 +400,7 @@ export async function fetchNousModels(options: {
   timeoutMs: number;
   authorization?: string;
   fetchImpl?: typeof fetch;
+  nowMs?: number;
 }): Promise<DiscoveryOutcome> {
   const fetchImpl = options.fetchImpl ?? fetch;
   const controller = new AbortController();
@@ -352,13 +415,28 @@ export async function fetchNousModels(options: {
     if (!response.ok) {
       return { ok: false, error: "http", status: response.status, reason: `HTTP ${response.status}` };
     }
-    let payload: unknown;
+    let text: string;
     try {
-      payload = await response.json();
+      text = await response.text();
     } catch {
       return { ok: false, error: "invalid", reason: "models response is not JSON" };
     }
-    return parseModelsResponse(payload);
+    let payload: unknown;
+    try {
+      payload = JSON.parse(text) as unknown;
+    } catch {
+      return { ok: false, error: "invalid", reason: "models response is not JSON" };
+    }
+    const parsed = parseModelsResponse(payload);
+    if (!parsed.ok) return parsed;
+    return {
+      ...parsed,
+      provenance: {
+        source: options.url,
+        fetchedAt: new Date(options.nowMs ?? Date.now()).toISOString(),
+        rawSha256: `sha256:${createHash("sha256").update(text).digest("hex")}`,
+      },
+    };
   } catch (error) {
     if (isAbortError(error)) {
       return { ok: false, error: "timeout", reason: `discovery timed out after ${options.timeoutMs}ms` };
@@ -384,6 +462,14 @@ export function buildModelConfigs(
     : ["subscription", "subscription_plus_usage"];
 
   for (const item of discovered) {
+    if (item.capabilityIssue) {
+      skipped.push({ id: item.id, reason: `excluded: ${item.capabilityIssue}` });
+      continue;
+    }
+    if (item.pricingIssue) {
+      skipped.push({ id: item.id, reason: `unpriced, not registered: ${item.pricingIssue}` });
+      continue;
+    }
     const fromPin = pin?.models[item.id];
     const capacity = {
       contextWindow: fromPin?.contextWindow ?? item.contextWindow,
@@ -396,15 +482,16 @@ export function buildModelConfigs(
     let cost: NousCostRates | undefined;
     let priceBasis: NousPriceBasis = "list";
     let verified = false;
+    let tiers: NousCostTier[] | undefined;
     if (fromPin) {
       cost = fromPin.cost;
       priceBasis = fromPin.priceBasis;
       verified = fromPin.verified;
     } else {
-      const apiRates = item.tiers && item.tiers.length > 0
-        ? upperBoundRates([item.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, ...item.tiers])
-        : item.cost;
-      if (!apiRates) {
+      const rateSources: NousCostRates[] = [];
+      if (item.cost) rateSources.push(item.cost);
+      if (item.tiers && item.tiers.length > 0) rateSources.push(...item.tiers);
+      if (rateSources.length === 0) {
         skipped.push({ id: item.id, reason: "unpriced, not registered: no numeric cost rates and no catalog pin" });
         continue;
       }
@@ -412,9 +499,14 @@ export function buildModelConfigs(
         skipped.push({ id: item.id, reason: `unpriced, not registered: units must be ${NOUS_PRICE_UNITS}` });
         continue;
       }
-      if (item.tiers && item.tiers.length > 0) priceBasis = "upper-bound";
+      if (item.tiers && item.tiers.length > 0) {
+        priceBasis = "upper-bound";
+        cost = upperBoundRates(rateSources);
+        tiers = item.tiers;
+      } else {
+        cost = item.cost;
+      }
       verified = item.verified === true;
-      cost = apiRates;
     }
     if (!cost) {
       skipped.push({ id: item.id, reason: "unpriced, not registered" });
@@ -441,6 +533,10 @@ export function buildModelConfigs(
       priceBasis,
       billing,
       verified,
+      ...(item.input ? { input: item.input } : {}),
+      ...(item.reasoning !== undefined ? { reasoning: item.reasoning } : {}),
+      ...(item.tools !== undefined ? { tools: item.tools } : {}),
+      ...(tiers ? { tiers } : {}),
     });
   }
   return { registered, skipped };
@@ -502,6 +598,59 @@ export function guidanceFor(input: {
     });
   }
   return messages.map((item) => ({ ...item, message: sanitizeNousText(item.message) }));
+}
+
+function parseLivePricing(pricing: Record<string, unknown>): { cost: NousCostRates; tiers: NousCostTier[] } | undefined {
+  const cost = parseLiveRates(pricing);
+  if (!cost) return undefined;
+  if (!("overrides" in pricing) || pricing.overrides === undefined) {
+    return { cost, tiers: [] };
+  }
+  if (!Array.isArray(pricing.overrides)) return undefined;
+  const tiers: NousCostTier[] = [];
+  for (const override of pricing.overrides) {
+    if (!isRecord(override)) return undefined;
+    const rates = parseLiveRates(override);
+    const above = asNonnegInt(override.min_prompt_tokens ?? override.minPromptTokens);
+    if (!rates || above === undefined) return undefined;
+    tiers.push({ ...rates, inputTokensAbove: above });
+  }
+  return { cost, tiers };
+}
+
+function parseLiveRates(value: Record<string, unknown>): NousCostRates | undefined {
+  const input = perTokenToUsdPerM(value.prompt);
+  const output = perTokenToUsdPerM(value.completion);
+  const cacheRead = perTokenToUsdPerM(value.input_cache_read ?? value.inputCacheRead);
+  const cacheWrite = perTokenToUsdPerM(value.input_cache_write ?? value.inputCacheWrite);
+  if (input === undefined || output === undefined || cacheRead === undefined || cacheWrite === undefined) return undefined;
+  return { input, output, cacheRead, cacheWrite };
+}
+
+function perTokenToUsdPerM(value: unknown): number | undefined {
+  let perToken: number | undefined;
+  if (typeof value === "number") perToken = value;
+  else if (typeof value === "string" && value.trim() !== "") perToken = Number(value);
+  if (perToken === undefined || !Number.isFinite(perToken) || perToken < 0) return undefined;
+  const usdPerM = Number((perToken * PER_TOKEN_TO_USD_PER_M).toFixed(8));
+  if (!Number.isFinite(usdPerM) || usdPerM < 0) return undefined;
+  return usdPerM;
+}
+
+function parseInputModalities(value: unknown): NousInputModality[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const present = new Set(value.filter((item): item is NousInputModality => item === "text" || item === "image"));
+  const mapped = PI_INPUT_ORDER.filter((item) => present.has(item));
+  return mapped.length > 0 ? mapped : undefined;
+}
+
+function parseSupportedParameters(value: unknown): { reasoning: boolean; tools: boolean } | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const params = new Set(value.filter((item): item is string => typeof item === "string"));
+  return {
+    reasoning: params.has("reasoning") || params.has("include_reasoning"),
+    tools: params.has("tools") || params.has("tool_choice"),
+  };
 }
 
 function parseRates(value: unknown): NousCostRates | undefined {

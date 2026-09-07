@@ -22,6 +22,7 @@ import {
   type BuiltModel,
   type CatalogLoad,
   type DiscoveryOutcome,
+  type DiscoveryProvenance,
   type GuidanceMessage,
   type NousCatalogPin,
   type NousEnvParse,
@@ -34,6 +35,7 @@ export interface NousProviderRegistration {
   skipped: number;
   error?: string;
   reason?: string;
+  provenance?: DiscoveryProvenance;
 }
 
 export interface NousRegistrationReport {
@@ -127,6 +129,7 @@ export async function registerNousProviders(
       pin,
       hasKey: directHasKey,
       ...(deps.fetch ? { fetchImpl: deps.fetch } : {}),
+      ...(deps.nowMs !== undefined ? { nowMs: deps.nowMs } : {}),
     });
     report.direct = result.side;
     directDiscovery = result.discovery;
@@ -153,6 +156,7 @@ export async function registerNousProviders(
         pin,
         hasKey: true,
         ...(deps.fetch ? { fetchImpl: deps.fetch } : {}),
+        ...(deps.nowMs !== undefined ? { nowMs: deps.nowMs } : {}),
       });
       report.proxy = result.side;
       proxyDiscovery = result.discovery;
@@ -181,6 +185,7 @@ async function registerRoute(input: {
   pin: NousCatalogPin | undefined;
   fetchImpl?: typeof fetch;
   hasKey: boolean;
+  nowMs?: number;
 }): Promise<{
   side: NousProviderRegistration;
   discovery?: DiscoveryOutcome;
@@ -205,6 +210,7 @@ async function registerRoute(input: {
     timeoutMs: input.parsed.timeoutMs,
     ...(authorization ? { authorization } : {}),
     ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}),
+    ...(input.nowMs !== undefined ? { nowMs: input.nowMs } : {}),
   });
 
   if (!discovery.ok) {
@@ -214,6 +220,7 @@ async function registerRoute(input: {
     return { side, discovery, skipped: [], registered: true };
   }
 
+  if (discovery.provenance) side.provenance = discovery.provenance;
   const built = buildModelConfigs(discovery.models, input.pin, input.route);
   side.registered = built.registered.length;
   side.skipped = built.skipped.length;
@@ -244,9 +251,11 @@ function registerLegacy(
     models: models.map((model) => ({
       id: model.id,
       name: model.name,
-      reasoning: false,
-      input: ["text"],
-      cost: model.cost,
+      reasoning: model.reasoning === true,
+      input: model.input && model.input.length > 0 ? model.input : ["text"],
+      cost: model.tiers && model.tiers.length > 0
+        ? { ...model.cost, tiers: model.tiers }
+        : model.cost,
       contextWindow: model.contextWindow,
       maxTokens: model.maxTokens,
     })),
