@@ -1,0 +1,10 @@
+{
+  "object": "list",
+  "data": [
+    { "id": "hermes-3" },
+    { "id": "hermes-3-proxy" },
+    { "id": "free-zero" },
+    { "id": "unknown-unpriced" }
+  ],
+  "assumedShape": "pending live /v1/models verification"
+}

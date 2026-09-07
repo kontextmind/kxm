@@ -1,0 +1,31 @@
+{
+  "schema": "kxm.nous-catalog.v1",
+  "recordedAt": "2026-09-07T00:00:00.000Z",
+  "source": "operator dated pin with per-context tiers",
+  "units": "usd_per_million_tokens",
+  "hash": "sha256:b7b399e3efee86d9dd89a86b3fe6cd9ccdc74fb8384f501688906b177e719d55",
+  "models": {
+    "tiered-model": {
+      "contextWindow": 1000000,
+      "maxTokens": 16384,
+      "cost": {
+        "input": 1,
+        "output": 2,
+        "cacheRead": 0.1,
+        "cacheWrite": 0.5
+      },
+      "priceBasis": "list",
+      "billing": "metered",
+      "verified": true,
+      "tiers": [
+        {
+          "inputTokensAbove": 128000,
+          "input": 3,
+          "output": 6,
+          "cacheRead": 0.3,
+          "cacheWrite": 1.5
+        }
+      ]
+    }
+  }
+}
