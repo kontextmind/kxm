@@ -1,0 +1,8 @@
+{
+  "schema": "kxm.nous-catalog.v1",
+  "recordedAt": "2026-09-07T00:00:00.000Z",
+  "source": "operator-pin-template",
+  "units": "usd_per_million_tokens",
+  "hash": "sha256:f0fcb651dc2fe2ba18d158ab565133d6ef4a6c4099c2653e01ca5f8ac7d5f290",
+  "models": {}
+}

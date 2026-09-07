@@ -187,6 +187,21 @@ Until v2 and separated cost populations land:
   from a future report — not v1 run-count sort.
 - API budgets and rollover remain later, not this phase.
 
+Pi numeric cost for `nous-proxy/*` is a market-reference value from a dated
+operator catalog pin or converted live list rates (display suffix
+`subscription proxy, market ref`), not billed spend. Direct `nous/*` uses
+verified numeric USD/M rates when present: live public catalog prices are
+per-token decimal strings converted once, never `pricing.original` and never
+a guessed 20% haircut. Incomplete live tiers are excluded, not zeroed, unless
+a matching dated pin supplies rates and capacity. Context tiers register as a
+labeled componentwise upper bound without a Pi `cost.tiers` schedule (exact
+tier scheduling is later). Direct and proxy display names show `upper-bound`
+when that bound is used; proxy still keeps subscription/market-ref identity.
+`COST_BASIS` is unchanged; true unmetered labelling for subscription proxy
+usage is a routing v2 item. Extra usage beyond a subscription stays unknown
+unless a provider actually reports it. The dated hashed product catalog feed
+is still planned; this live mapping is not that overlay.
+
 ## Precedence
 
 [AGENTS.md](../../AGENTS.md) and
