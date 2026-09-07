@@ -19249,6 +19249,8 @@ function vnextDeclaredExecutorIds(bundle) {
     ...[...bundle.agents.values()].map((agent) => agent.value.executor).filter((value) => typeof value === "string")
   ].filter((value) => value !== void 0))].sort();
 }
+var closedRuntimeContexts = /* @__PURE__ */ new WeakSet();
+var runtimeCloseHooks = /* @__PURE__ */ new WeakMap();
 function openVnextRuntimeContext(projectRoot, options) {
   const paths = vnextRuntimePaths(options.stateRoot !== void 0 ? { stateRoot: options.stateRoot } : {});
   const registry = new VnextRuntimeRegistry(paths.registryDb);
@@ -19277,6 +19279,18 @@ function openVnextRuntimeContext(projectRoot, options) {
   }
 }
 function closeVnextRuntimeContext(context) {
+  if (closedRuntimeContexts.has(context)) return;
+  closedRuntimeContexts.add(context);
+  const hooks = runtimeCloseHooks.get(context);
+  runtimeCloseHooks.delete(context);
+  if (hooks) {
+    for (const hook of hooks) {
+      try {
+        hook();
+      } catch {
+      }
+    }
+  }
   unregisterVnextRuntimeHandle(context.eventStore.path);
   context.eventStore.close();
   context.registry.close();

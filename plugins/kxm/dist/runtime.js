@@ -19264,6 +19264,26 @@ function vnextProjectAdmissionLimits(bundle) {
     ...typeof limits?.maxAgentTimeMs === "number" ? { maxAgentTimeMs: limits.maxAgentTimeMs } : {}
   };
 }
+var closedRuntimeContexts = /* @__PURE__ */ new WeakSet();
+var runtimeCloseHooks = /* @__PURE__ */ new WeakMap();
+function isVnextRuntimeContextClosed(context) {
+  return closedRuntimeContexts.has(context);
+}
+function registerVnextRuntimeCloseHook(context, hook) {
+  if (closedRuntimeContexts.has(context)) {
+    hook();
+    return () => void 0;
+  }
+  let hooks = runtimeCloseHooks.get(context);
+  if (!hooks) {
+    hooks = /* @__PURE__ */ new Set();
+    runtimeCloseHooks.set(context, hooks);
+  }
+  hooks.add(hook);
+  return () => {
+    hooks.delete(hook);
+  };
+}
 function openVnextRuntimeContext(projectRoot, options) {
   const paths = vnextRuntimePaths(options.stateRoot !== void 0 ? { stateRoot: options.stateRoot } : {});
   const registry = new VnextRuntimeRegistry(paths.registryDb);
@@ -19292,6 +19312,18 @@ function openVnextRuntimeContext(projectRoot, options) {
   }
 }
 function closeVnextRuntimeContext(context) {
+  if (closedRuntimeContexts.has(context)) return;
+  closedRuntimeContexts.add(context);
+  const hooks = runtimeCloseHooks.get(context);
+  runtimeCloseHooks.delete(context);
+  if (hooks) {
+    for (const hook of hooks) {
+      try {
+        hook();
+      } catch {
+      }
+    }
+  }
   unregisterVnextRuntimeHandle(context.eventStore.path);
   context.eventStore.close();
   context.registry.close();
@@ -20004,6 +20036,7 @@ export {
   gateRowContentHash,
   hashVnextSupervisorToken,
   hashVnextTokenProof,
+  isVnextRuntimeContextClosed,
   newVnextAssignmentId,
   newVnextAttemptId,
   newVnextCommandId,
@@ -20018,6 +20051,7 @@ export {
   readVnextRunStatus,
   readVnextSupervisorToken,
   rebuildVnextRunProjection,
+  registerVnextRuntimeCloseHook,
   runtimeError,
   startVnextRuntimeSupervisor,
   vnextDeclaredExecutorIds,

@@ -14,17 +14,25 @@ import {
 import { gateRegistryHash } from "./vnext-gate-hash.ts";
 import {
   admitVnextRun,
+  armVnextGateHold,
   bindVnextSchedulerPolicy,
+  dropVnextGateStopHook,
   enqueueVnextScheduledRun,
+  finishVnextOwnedGate,
+  markVnextGateHoldUnsettled,
   registerVnextAttemptController,
   releaseVnextRun,
   unregisterVnextAttemptController,
+  vnextAdmittedToken,
   vnextAttemptController,
+  vnextGateHold,
   vnextSchedulerPolicy,
 } from "./vnext-runtime-owner.ts";
 import {
   foldStoredVnextRun,
+  isVnextRuntimeContextClosed,
   persistVnextRunState,
+  registerVnextRuntimeCloseHook,
   vnextEventBase,
   vnextIncrementMonotonicNs,
   vnextMonotonicNs,
@@ -48,10 +56,14 @@ import {
 } from "./vnext-runtime-store.ts";
 import { vnextCanonicalJson, type JsonValue, type VnextProjectBundle } from "./vnext-config.ts";
 import { evaluateArtifactsGate } from "./vnext-engine-artifacts.ts";
+import { createCommandObserver } from "./vnext-engine-command.ts";
 import {
   recordGateCancelObservedInTransaction,
   recordGateIntentInTransaction,
+  recordGateNoStartInTransaction,
   recordGateSettlementInTransaction,
+  recordGateSpawnedInTransaction,
+  recordGateUncertainInTransaction,
   type VnextGateObservationInput,
 } from "./vnext-engine-gate-records.ts";
 
@@ -80,7 +92,7 @@ export interface VnextProducer {
 }
 
 export interface VnextRunHandoff {
-  readonly reason: "limit_unsupported" | "step_unsupported" | "attempt_unreconciled" | "cancel_pending_foreign" | "gate_unsupported" | "gate_outcome_undeclared" | "gate_recovery_pending";
+  readonly reason: "limit_unsupported" | "step_unsupported" | "attempt_unreconciled" | "cancel_pending_foreign" | "gate_unsupported" | "gate_outcome_undeclared" | "gate_recovery_pending" | "attempt_unsettled";
   readonly field?: string;
   readonly stepId?: string;
   readonly attemptId?: string;
@@ -248,7 +260,7 @@ export function startVnextRun(context: VnextRuntimeContext, runId: string): Vnex
 
 export async function stepVnextRun(context: VnextRuntimeContext, runId: string, producer: VnextProducer): Promise<VnextRunDriveResult> {
   requireTrustedProducer(producer);
-  return withAdmission(context, runId, () => stepLocked(context, runId, producer));
+  return withAdmission(context, runId, (token) => stepLocked(context, runId, producer, token));
 }
 
 export async function driveVnextRun(context: VnextRuntimeContext, runId: string, producer: VnextProducer): Promise<VnextRunDriveResult> {
@@ -257,10 +269,10 @@ export async function driveVnextRun(context: VnextRuntimeContext, runId: string,
   if (run.status === "created") {
     throw runtimeError("run_plan_missing", runId, "drive requires a pinned plan");
   }
-  return withAdmission(context, runId, () => driveAdmitted(context, runId, producer));
+  return withAdmission(context, runId, (token) => driveAdmitted(context, runId, producer, token));
 }
 
-async function driveAdmitted(context: VnextRuntimeContext, runId: string, producer: VnextProducer): Promise<VnextRunDriveResult> {
+async function driveAdmitted(context: VnextRuntimeContext, runId: string, producer: VnextProducer, token: string): Promise<VnextRunDriveResult> {
   const run = requireRun(context, runId);
   if (run.status === "preparing") {
     const started = startVnextRun(context, runId);
@@ -269,7 +281,7 @@ async function driveAdmitted(context: VnextRuntimeContext, runId: string, produc
   let latest: VnextRunDriveResult = { state: foldStoredVnextRun(context, requireRun(context, runId)) };
   while (latest.state.status === "running") {
     const before = context.eventStore.runState(runId)?.lastSequence;
-    latest = await stepLocked(context, runId, producer);
+    latest = await stepLocked(context, runId, producer, token);
     if (latest.handoff) return latest;
     if (latest.state.status === "running") {
       const after = context.eventStore.runState(runId)?.lastSequence;
@@ -281,10 +293,10 @@ async function driveAdmitted(context: VnextRuntimeContext, runId: string, produc
   return latest;
 }
 
-async function withAdmission<T>(context: VnextRuntimeContext, runId: string, fn: () => Promise<T>): Promise<T> {
+async function withAdmission<T>(context: VnextRuntimeContext, runId: string, fn: (token: string) => Promise<T>): Promise<T> {
   const token = admitPinnedRun(context, runId);
   try {
-    return await fn();
+    return await fn(token);
   } finally {
     releaseVnextRun(context.eventStore.path, runId, token);
   }
@@ -333,7 +345,7 @@ export class VnextRunScheduler {
         runId,
         envelope.revisions.config,
         envelope.projectLimits.maxConcurrentRuns,
-        () => driveAdmitted(this.context, runId, producer),
+        (token) => driveAdmitted(this.context, runId, producer, token),
       ) as Promise<VnextRunDriveResult>;
     } catch (error) {
       return Promise.reject(error);
@@ -404,27 +416,35 @@ export interface VnextPreparedGateDispatch {
 export interface VnextGateDispatchSeams {
   afterEvaluate?: ((prepared: VnextPreparedGateDispatch) => void) | undefined;
   afterObservationWrite?: ((prepared: VnextPreparedGateDispatch) => void) | undefined;
+  afterUncertaintyWrite?: ((prepared: VnextPreparedGateDispatch) => void) | undefined;
+  afterSettlementCommit?: ((prepared: VnextPreparedGateDispatch) => void) | undefined;
+  afterSpawnRecord?: ((prepared: VnextPreparedGateDispatch) => void) | undefined;
+  beforeCommandSpawn?: ((prepared: VnextPreparedGateDispatch) => void) | undefined;
+  beforeCommandSettle?: ((prepared: VnextPreparedGateDispatch) => void) | undefined;
 }
 
 export const vnextGateDispatchSeams: VnextGateDispatchSeams = {};
 
-async function stepLocked(context: VnextRuntimeContext, runId: string, producer: VnextProducer): Promise<VnextRunDriveResult> {
+async function stepLocked(context: VnextRuntimeContext, runId: string, producer: VnextProducer, token: string): Promise<VnextRunDriveResult> {
   const prepared = context.eventStore.transaction(() => prepareDispatch(context, runId));
   if (prepared.kind === "return") {
     return prepared.handoff ? { state: prepared.state, handoff: prepared.handoff } : { state: prepared.state };
   }
 
   if (prepared.kind === "gate") {
+    const step = prepared.envelope.plan.steps[prepared.stepId];
+    if (!step || step.kind !== "gate") {
+      throw runtimeError("run_events_illegal", prepared.run.runId, "prepared gate step is not a gate");
+    }
+    const definition = prepared.envelope.gates.definitions[step.gate];
+    if (definition?.kind === "command") {
+      return runPreparedCommandGate(context, prepared, definition, token);
+    }
+    if (!definition || definition.kind !== "artifacts-exist") {
+      throw runtimeError("run_events_illegal", prepared.run.runId, "prepared gate is not artifacts-exist");
+    }
     registerVnextAttemptController(context.eventStore.path, runId, { attemptId: prepared.attemptId, controller: prepared.controller });
     try {
-      const step = prepared.envelope.plan.steps[prepared.stepId];
-      if (!step || step.kind !== "gate") {
-        throw runtimeError("run_events_illegal", prepared.run.runId, "prepared gate step is not a gate");
-      }
-      const definition = prepared.envelope.gates.definitions[step.gate];
-      if (!definition || definition.kind !== "artifacts-exist") {
-        throw runtimeError("run_events_illegal", prepared.run.runId, "prepared gate is not artifacts-exist");
-      }
       const observation = evaluateArtifactsGate(context, definition);
       vnextGateDispatchSeams.afterEvaluate?.(prepared);
       return context.eventStore.transaction(() => settlePreparedGate(context, prepared, observation));
@@ -447,6 +467,291 @@ async function stepLocked(context: VnextRuntimeContext, runId: string, producer:
     return context.eventStore.transaction(() => settleAttempt(context, dispatch, produced.result, produced.error));
   } finally {
     unregisterVnextAttemptController(context.eventStore.path, runId, dispatch.attemptId);
+  }
+}
+
+async function runPreparedCommandGate(
+  context: VnextRuntimeContext,
+  prepared: VnextPreparedGateDispatch,
+  definition: { readonly kind: "command"; readonly argv: readonly string[]; readonly timeoutMs: number; readonly cwd?: "control" },
+  token: string,
+): Promise<VnextRunDriveResult> {
+  const storePath = context.eventStore.path;
+  const observer = createCommandObserver({
+    definition,
+    cwd: context.projectRoot,
+    signal: prepared.controller.signal,
+    onSpawned: () => {
+      if (isVnextRuntimeContextClosed(context)) return;
+      try {
+        context.eventStore.transaction(() => {
+          recordGateSpawnedInTransaction(context, prepared.run, prepared.envelope, prepared.stepId);
+          vnextGateDispatchSeams.afterSpawnRecord?.(prepared);
+        });
+      } catch (error) {
+        // Mark the hold unsettled synchronously BEFORE the observer stop path
+        // can take any fallible action (group signalling) on this attempt.
+        try {
+          markVnextGateHoldUnsettled(storePath, prepared.run.runId, token, prepared.attemptId);
+        } catch {
+          // The hold is already unsettled or released; the original failure governs.
+        }
+        throw error;
+      }
+    },
+  });
+  armVnextGateHold(storePath, prepared.run.runId, token, prepared.attemptId, () => observer.requestStop("cancel"));
+  registerVnextAttemptController(storePath, prepared.run.runId, { attemptId: prepared.attemptId, controller: prepared.controller });
+  const unhookClose = registerVnextRuntimeCloseHook(context, () => {
+    try {
+      markVnextGateHoldUnsettled(storePath, prepared.run.runId, token, prepared.attemptId);
+    } catch {
+      // Hold may already be unsettled.
+    }
+    dropVnextGateStopHook(storePath, prepared.run.runId, prepared.attemptId);
+    observer.beginBoundedCleanup();
+  });
+  try {
+    vnextGateDispatchSeams.beforeCommandSpawn?.(prepared);
+    const outcome = await observer.run();
+    dropVnextGateStopHook(storePath, prepared.run.runId, prepared.attemptId);
+    if (isVnextRuntimeContextClosed(context)) {
+      try {
+        markVnextGateHoldUnsettled(storePath, prepared.run.runId, token, prepared.attemptId);
+      } catch {
+        // already unsettled
+      }
+      return closedCommandHandoff(context, prepared, outcome.kind === "uncertain" ? outcome.reason : "lost-close");
+    }
+    if (outcome.kind === "no-start") {
+      return commitOwnedCommandSettlement(context, prepared, token, () => (
+        recordGateNoStartInTransaction(context, prepared.run, prepared.envelope, prepared.stepId, outcome.observation)
+      ), outcome.observation);
+    }
+    if (outcome.kind === "complete") {
+      try {
+        vnextGateDispatchSeams.beforeCommandSettle?.(prepared);
+      } catch (error) {
+        // Retain the unsettled hold and attempt a truthful recording-error
+        // uncertainty only if no observation was committed.
+        return recoverCommandRecordingFailure(context, prepared, token, outcome.observation, error);
+      }
+      if (isVnextRuntimeContextClosed(context)) {
+        try {
+          markVnextGateHoldUnsettled(storePath, prepared.run.runId, token, prepared.attemptId);
+        } catch {
+          // already unsettled
+        }
+        return closedCommandHandoff(context, prepared, "lost-close");
+      }
+      return commitOwnedCommandSettlement(context, prepared, token, () => settlePreparedGate(context, prepared, outcome.observation), outcome.observation);
+    }
+    return commitCommandUncertainty(context, prepared, token, outcome.reason, outcome.observation);
+  } finally {
+    unhookClose();
+    unregisterVnextAttemptController(storePath, prepared.run.runId, prepared.attemptId);
+  }
+}
+
+function closedCommandHandoff(
+  context: VnextRuntimeContext,
+  prepared: VnextPreparedGateDispatch,
+  reason: string,
+): VnextRunDriveResult {
+  let state: VnextRunDriveResult["state"];
+  try {
+    state = foldStoredVnextRun(context, requireRun(context, prepared.run.runId));
+  } catch {
+    state = prepared.state;
+  }
+  return {
+    state,
+    handoff: {
+      reason: "attempt_unsettled",
+      stepId: prepared.stepId,
+      attemptId: prepared.attemptId,
+      detail: reason,
+    },
+  };
+}
+
+function commitOwnedCommandSettlement(
+  context: VnextRuntimeContext,
+  prepared: VnextPreparedGateDispatch,
+  token: string,
+  write: () => { state: VnextRunDriveResult["state"] },
+  observation: VnextGateObservationInput,
+): VnextRunDriveResult {
+  let committed: { state: VnextRunDriveResult["state"] };
+  try {
+    committed = context.eventStore.transaction(() => write());
+  } catch (error) {
+    return recoverCommandRecordingFailure(context, prepared, token, observation, error);
+  }
+  try {
+    vnextGateDispatchSeams.afterSettlementCommit?.(prepared);
+  } catch (error) {
+    return retainCommittedCommandProof(context, prepared, token, error);
+  }
+  try {
+    finishVnextOwnedGate(context.eventStore.path, prepared.run.runId, token, prepared.attemptId);
+  } catch (error) {
+    return retainCommittedCommandProof(context, prepared, token, error);
+  }
+  return committed;
+}
+
+function retainCommittedCommandProof(
+  context: VnextRuntimeContext,
+  prepared: VnextPreparedGateDispatch,
+  token: string,
+  error: unknown,
+): never {
+  try {
+    finishOwnedGateAfterCommittedTerminalProof(context, prepared, token);
+  } catch {
+    // Invalid identity or hold state inside finish stays fail-closed; do not force or retry a release.
+  }
+  throw error;
+}
+
+function finishOwnedGateAfterCommittedTerminalProof(
+  context: VnextRuntimeContext,
+  prepared: VnextPreparedGateDispatch,
+  token: string,
+): void {
+  if (isVnextRuntimeContextClosed(context)) return;
+  const run = context.eventStore.run(prepared.run.runId);
+  if (!run || run.projectId !== context.projectId || run.homeRuntimeId !== context.homeRuntimeId) return;
+  const row = context.eventStore.gateAttempt(prepared.attemptId);
+  const preparedIdentity = {
+    runId: prepared.run.runId,
+    attemptId: prepared.attemptId,
+    assignmentId: prepared.assignmentId,
+    effectId: prepared.effectId,
+    stepId: prepared.stepId,
+  };
+  if (!row || !gateRowIdentityMatches(row, preparedIdentity) || row.projectId !== context.projectId || row.homeRuntimeId !== context.homeRuntimeId) {
+    return;
+  }
+  const observation = context.eventStore.gateObservationForAttempt(prepared.attemptId);
+  const evidence = context.eventStore.gateEvidenceForAttempt(prepared.attemptId);
+  const events = context.eventStore.events(prepared.run.runId, 0, 1_000_000);
+  let state;
+  try {
+    state = foldStoredVnextRun(context, run);
+  } catch {
+    return;
+  }
+  const capability = context.eventStore.capabilityByAttempt(prepared.attemptId);
+  if (
+    !capability
+    || capability.state !== "settled"
+    || capability.runId !== prepared.run.runId
+    || capability.attemptId !== prepared.attemptId
+    || capability.assignmentId !== prepared.assignmentId
+    || capability.stepId !== prepared.stepId
+    || capability.stepAttempt !== prepared.stepAttempt
+  ) {
+    return;
+  }
+  const terminalProof = isEvaluatedSettledProof(row, observation, evidence)
+    || isExcludedTerminalProof(state, row, observation, evidence, events);
+  if (!terminalProof) return;
+  const hold = vnextGateHold(context.eventStore.path, prepared.run.runId);
+  const admittedToken = vnextAdmittedToken(context.eventStore.path, prepared.run.runId);
+  if (
+    !hold
+    || hold.state !== "active"
+    || hold.attemptId !== prepared.attemptId
+    || hold.token !== token
+    || admittedToken !== token
+  ) {
+    return;
+  }
+  finishVnextOwnedGate(context.eventStore.path, prepared.run.runId, token, prepared.attemptId);
+}
+
+function recoverCommandRecordingFailure(
+  context: VnextRuntimeContext,
+  prepared: VnextPreparedGateDispatch,
+  token: string,
+  observation: VnextGateObservationInput,
+  error: unknown,
+): VnextRunDriveResult {
+  markVnextGateHoldUnsettled(context.eventStore.path, prepared.run.runId, token, prepared.attemptId);
+  if (isVnextRuntimeContextClosed(context)) {
+    throw error;
+  }
+  const existing = context.eventStore.gateObservationForAttempt(prepared.attemptId);
+  if (existing) {
+    throw runtimeError(
+      "run_events_illegal",
+      prepared.run.runId,
+      `command observation recording failed after committed proof: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const folded = foldStoredVnextRun(context, requireRun(context, prepared.run.runId));
+  if (folded.currentStep?.attemptId === prepared.attemptId && folded.currentStep.observationId) {
+    throw runtimeError(
+      "run_events_illegal",
+      prepared.run.runId,
+      "command observation recording failed after committed proof",
+    );
+  }
+  const incomplete: VnextGateObservationInput = {
+    ...observation,
+    completeness: "incomplete",
+    errorClass: observation.errorClass ?? "recording-error",
+    stopCause: observation.stopCause === "none" ? "error" : observation.stopCause,
+  };
+  return commitCommandUncertainty(context, prepared, token, "recording-error", incomplete, error);
+}
+
+function commitCommandUncertainty(
+  context: VnextRuntimeContext,
+  prepared: VnextPreparedGateDispatch,
+  token: string,
+  reason: string,
+  observation: VnextGateObservationInput,
+  priorError?: unknown,
+): VnextRunDriveResult {
+  try {
+    markVnextGateHoldUnsettled(context.eventStore.path, prepared.run.runId, token, prepared.attemptId);
+  } catch {
+    // already unsettled
+  }
+  if (isVnextRuntimeContextClosed(context)) {
+    if (priorError) throw priorError;
+    return closedCommandHandoff(context, prepared, reason);
+  }
+  const existing = context.eventStore.gateObservationForAttempt(prepared.attemptId);
+  if (existing) {
+    throw runtimeError(
+      "run_events_illegal",
+      prepared.run.runId,
+      "command observation already committed; uncertainty cannot replace it",
+    );
+  }
+  const incomplete: VnextGateObservationInput = { ...observation, completeness: "incomplete" };
+  try {
+    const written = context.eventStore.transaction(() => {
+      const result = recordGateUncertainInTransaction(context, prepared.run, prepared.envelope, prepared.stepId, reason, incomplete);
+      vnextGateDispatchSeams.afterUncertaintyWrite?.(prepared);
+      return result;
+    });
+    return {
+      state: written.state,
+      handoff: {
+        reason: "attempt_unsettled",
+        stepId: prepared.stepId,
+        attemptId: prepared.attemptId,
+        detail: reason,
+      },
+    };
+  } catch (error) {
+    if (priorError) throw priorError;
+    throw error;
   }
 }
 
@@ -527,16 +832,6 @@ function prepareDispatch(
           },
         };
       }
-      return {
-        kind: "return",
-        state,
-        handoff: {
-          reason: "step_unsupported",
-          field: "kind",
-          stepId,
-          detail: "command gates are not executed until S4",
-        },
-      };
     }
     const result = recordGateIntentInTransaction(context, run, envelope, stepId);
     const current = result.state.currentStep;
@@ -946,7 +1241,9 @@ function unsupportedGateStep(plan: VnextCompiledPlan, step: VnextCompiledStep & 
     if (definition.kind === "artifacts-exist") {
       return { reason: "step_unsupported", field: "timeoutMs", detail: "artifacts-exist gates do not support timeoutMs" };
     }
-    // For command gates, we'll reject them in S3 but allow in S4
+    if (definition.kind === "command" && definition.timeoutMs !== undefined && step.timeoutMs < definition.timeoutMs) {
+      return { reason: "step_unsupported", field: "timeoutMs", detail: "command step timeoutMs narrower than the registry timeout is refused" };
+    }
   }
 
   // Check repositories constraints
@@ -1162,6 +1459,26 @@ function classifyRecoverableGateAttempt(
     && current.effectId === row.effectId
     && current.stepId === row.stepId;
   const controller = vnextAttemptController(context.eventStore.path, row.runId);
+  if (row.gateKind === "command") {
+    const hold = vnextGateHold(context.eventStore.path, row.runId);
+    const admittedToken = vnextAdmittedToken(context.eventStore.path, row.runId);
+    if (hold && hold.attemptId !== row.attemptId) {
+      throw runtimeError("gate_recovery_corrupt", row.attemptId, "gate recovery preflight: gate hold does not match the attempt");
+    }
+    if (hold && admittedToken !== undefined && hold.token !== admittedToken) {
+      throw runtimeError("gate_recovery_corrupt", row.attemptId, "gate recovery preflight: gate hold token does not match admission");
+    }
+    if (hold?.state === "unsettled") return "blocking";
+    const ownedCommand = run.homeRuntimeId === context.homeRuntimeId
+      && sameAttempt
+      && hold?.state === "active"
+      && hold.attemptId === row.attemptId
+      && hold.token === admittedToken
+      && controller?.attemptId === row.attemptId
+      && current?.effectState !== "blocked_uncertain";
+    if (ownedCommand) return "owned";
+    return "blocking";
+  }
   const ownedHere = run.homeRuntimeId === context.homeRuntimeId
     && sameAttempt
     && controller?.attemptId === row.attemptId
@@ -1278,7 +1595,7 @@ function settlePreparedGate(
   }
   const cancelled = folded.status === "cancelling" || capability.state === "revoked";
   if (observation.completeness !== "complete") {
-    throw runtimeError("gate_row_invalid", run.runId, "artifacts evaluation must produce a complete observation");
+    throw runtimeError("gate_row_invalid", run.runId, "gate settlement requires a complete observation");
   }
   const settled = cancelled
     ? recordGateCancelObservedInTransaction(context, run, prepared.envelope, prepared.stepId, observation)

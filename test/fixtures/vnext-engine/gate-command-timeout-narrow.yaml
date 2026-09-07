@@ -1,0 +1,19 @@
+schema: kxm.workflow.v1
+description: Command gate with a step timeout narrower than the registry.
+coordinator: coordinator
+limits:
+  maxTransitions: 4
+steps:
+  - id: check
+    kind: gate
+    gate: test
+    timeoutMs: 1000
+    repositories:
+      control: write
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      implementation-failure:
+        target: $terminal
+        terminalStatus: failed

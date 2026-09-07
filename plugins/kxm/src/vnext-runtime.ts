@@ -142,6 +142,29 @@ export interface VnextRuntimeContext {
   eventStore: VnextRunEventStore;
 }
 
+const closedRuntimeContexts = new WeakSet<VnextRuntimeContext>();
+const runtimeCloseHooks = new WeakMap<VnextRuntimeContext, Set<() => void>>();
+
+export function isVnextRuntimeContextClosed(context: VnextRuntimeContext): boolean {
+  return closedRuntimeContexts.has(context);
+}
+
+export function registerVnextRuntimeCloseHook(context: VnextRuntimeContext, hook: () => void): () => void {
+  if (closedRuntimeContexts.has(context)) {
+    hook();
+    return () => undefined;
+  }
+  let hooks = runtimeCloseHooks.get(context);
+  if (!hooks) {
+    hooks = new Set();
+    runtimeCloseHooks.set(context, hooks);
+  }
+  hooks.add(hook);
+  return () => {
+    hooks.delete(hook);
+  };
+}
+
 /**
  * Open (and register if needed) the runtime context for a project root.
  * homeRuntimeId is the accepting Runtime's identity: the supervisor passes its
@@ -180,6 +203,19 @@ export function openVnextRuntimeContext(
 }
 
 export function closeVnextRuntimeContext(context: VnextRuntimeContext): void {
+  if (closedRuntimeContexts.has(context)) return;
+  closedRuntimeContexts.add(context);
+  const hooks = runtimeCloseHooks.get(context);
+  runtimeCloseHooks.delete(context);
+  if (hooks) {
+    for (const hook of hooks) {
+      try {
+        hook();
+      } catch {
+        // Close must still close stores; observer cleanup is best-effort.
+      }
+    }
+  }
   unregisterVnextRuntimeHandle(context.eventStore.path);
   context.eventStore.close();
   context.registry.close();

@@ -214,7 +214,26 @@ It does not replace the phase gates below.
   revoked `kxm-gate` capability. Settlement revalidates the prepared attempt;
   a revoked capability keeps the complete observation as proof-only cancel.
   Evaluation errors after checks begin keep T1 unresolved. S4 command
-  execution, D4 recovery, and #89 remain open.
+  execution is implemented in this tree (unreleased). D4 recovery and #89
+  remain open.
+- **D3 S4 command execution (implemented, unreleased):** POSIX command gates
+  spawn with `shell: false` and detached process groups, arm exact admission
+  holds through evaluated settlement, and record immutable hashed
+  stdout/stderr observations plus real pid/exit/signal/stop facts. Requested
+  primary causes (timeout, cancel, recording-error, and other stop classes)
+  stay ahead of a later observed exit signal; `signal-termination` is only
+  for an externally signalled exit with no earlier requested cause. Context
+  close is local to that runtime handle. Recovery preflight treats unsettled
+  holds and a controller without a matching hold as blocking; capacity-1
+  admission still fails closed while an unsettled, mismatched, unverifiable,
+  or closed-context hold occupies the slot. After a committed complete or
+  proof-only terminal settlement, the same in-process active hold and
+  admission token may finish internally so the original post-commit error
+  can return without leaking the slot; that is not D4 resolution.
+  Donor tree `048fa056c3e07a6bcc8079775377508e15baeaa7` (native Grok plus
+  GLM OpenRouter experiment) is retained as provenance, not acceptance.
+  D4 `blocked_uncertain` recovery, joins, approval, waits, duration/cost
+  budgets, and the full Phase 3 driver remain open. Issue #89 remains open.
 - **Issue 127 complete (PR #129, `50c8482`):** native writer, fixed witness,
   independent Fable/Sol reviews, acceptance, and all five PR CI jobs passed.
   The parent-alias regression owns its temporary symlink on Mac/Linux;
@@ -553,17 +572,18 @@ It does not replace the phase gates below.
 - Slim live `default` workflow for this repo (no bulk migrate of jira/provenance/v04).
 - YAML-editing enable/disable UI (Phase 4 `/kxm` settings or `kxm dash` config
   tab). Do not add a preferences overlay.
-- Phase 3 engine remainder: S4 command execution with attempt-bound evidence.
-  Registry configuration and `expect` compilation are implemented in S1;
-  envelope pins, store rows, and bidirectional replay are implemented in S2;
-  artifacts-exist evaluation and orphan-visible command preflight are
-  implemented in S3. Command spawn, holds, and D4 `blocked_uncertain` recovery
-  remain open. D4 joins, approval, waits, duration/cost budgets, and producer
-  drain follow. Then the full model-free driver must complete `default.yaml`
-  and `fix.yaml`. D3/D4 must honor declared `assignments` and `join` on
-  non-agent steps or fail closed. Neither the agent-only loop nor the merged
-  developer runner closes Phase 3. Issue #89 stays open until command
-  execution/evidence passes its tests; live Pi execution remains Phase 4.
+- Phase 3 engine remainder: D4 `blocked_uncertain` recovery after S4 command
+  execution. Registry configuration and `expect` compilation are implemented
+  in S1; envelope pins, store rows, and bidirectional replay are implemented
+  in S2; artifacts-exist evaluation and orphan-visible command preflight are
+  implemented in S3; POSIX command spawn, exact admission holds, hashed
+  stream observations, and real process facts are implemented in S4
+  (unreleased). D4 recovery, joins, approval, waits, duration/cost budgets,
+  and producer drain follow. Then the full model-free driver must complete
+  `default.yaml` and `fix.yaml`. D3/D4 must honor declared `assignments` and
+  `join` on non-agent steps or fail closed. Neither the agent-only loop nor
+  the merged developer runner closes Phase 3. Issue #89 stays open until this
+  command-execution slice is accepted; live Pi execution remains Phase 4.
 - Version 1 and 2 run event stores and `kxm.run-plan.v1` envelopes are refused
   with `runtime_schema_outdated` / `run_plan_corrupt`; there is no migration
   lane, and backup/restore remain E6. Coordinated rewriting of an envelope, its
@@ -747,8 +767,25 @@ capabilities, fails closed on missing rows, producer/state contradictions, or
 identity/pin/replay mismatch, and blocks new command gates when an unowned or
 uncertain attempt remains. Owned non-uncertain controllers are ordinary
 concurrency. Cross-process revoke keeps a complete observation as proof-only
-cancel. S4 command spawn and D4 recovery stay deferred; no execution or
-evidence gate is claimed passed.
+cancel. S4 command spawn is implemented in this tree (unreleased). D4
+recovery stays deferred; the Phase 3 execution/evidence gate is not claimed
+passed.
+
+**D3 S4 (implemented, unreleased):** command gates spawn POSIX children with
+`shell: false` and detached groups, keep the admission hold through
+settlement or as `unsettled`, hash complete stdout/stderr streams, and record
+actual pid/exit/signal/stop facts. Requested timeout, cancel, recording-error,
+and other stop classes remain the uncertainty reason when a later signal is
+observed; signal-termination is only an unsolicited external signal. Context
+close suppresses late writes for that handle only. Recovery preflight blocks
+new command gates on unsettled holds and on a controller without a matching
+hold; a full admission slot occupied by an unsettled, mismatched,
+unverifiable, or closed-context hold still fails closed as
+`run_admission_exceeded`. After committed complete or proof-only terminal
+proof, an exact in-process active hold may finish internally so admission
+can release; unresolved holds do not. D4 recovery, joins, approval, waits,
+duration/cost budgets, and the full model-free driver remain open. Issue #89
+remains open. No Phase 3 Gate sentence is claimed passed.
 
 **Developer prerequisite (PR #129 merged, #127 closed):** the assignment runner
 has native assignment records, fixed witnesses, exact-commit acceptance and
