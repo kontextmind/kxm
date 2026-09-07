@@ -56,7 +56,12 @@ All notable user-facing changes are documented here. The project follows [Semant
   in both direct and proxy display names (proxy keeps
   `subscription proxy, market ref`) and are not registered as a Pi
   `cost.tiers` schedule. Mac/Linux setup order is in `docs/configuration.md`.
-  Authenticated live inference and streaming compatibility remain unverified.
+  On 2026-09-07, tests verified one streamed tool call plus usage on
+  `qwen/qwen3-coder-plus` for the direct API and an OAuth-backed Hermes
+  proxy. Other models and automatic auth refresh remain unverified.
+  Official Nous native Messages is for `anthropic/*`; Qwen uses
+  chat/completions, so direct Claude→Nous→Qwen is unsupported by that
+  documented route.
 
 ### Fixed
 
