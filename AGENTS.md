@@ -79,7 +79,29 @@ for implementation, planning, and architecture review; low for CLI review.
 
 Examples: Anthropic → Claude CLI (subscription); OpenAI → Codex; Moonshot → Kimi; Google → Gemini CLI when present; xAI → **Grok CLI** (`grok`, OAuth to `auth.x.ai`), which superseded Pi for the writer role on 2026-09-04.
 
-**Aggregators (OpenRouter, etc.) are Pi *providers*, not a second coding harness.** If `pi auth check` / `/login openrouter` (or `OPENROUTER_API_KEY`) is good, Nous and other OpenRouter models are usable **on Pi** as `openrouter/…` ids. There is no OpenRouter/Nous `kxm agent worker` CLI. Prefer OpenRouter for those models so your OpenRouter credit is what gets billed; don’t invent a fake harness. Same auth-or-fail-closed rule.
+**Aggregators are Pi *providers*, not a second coding harness.** There is no
+OpenRouter or Nous `kxm agent worker` CLI and no fake Nous harness. Pi is
+still the only long-lived worker (`kxm agent worker` / `pi --mode rpc`).
+Two helper prefixes are allowlisted after fail-closed `pi auth check
+--provider <id>`:
+
+- **OpenRouter** (`openrouter/…`): `/login openrouter` or
+  `OPENROUTER_API_KEY`. Bills OpenRouter credit. The narrowly admitted Pi
+  writer remains `openrouter/qwen/qwen3-coder-plus` with exact model auth
+  and edit permission.
+- **Nous Research Portal** (`nous-portal/…`): install
+  `@jayteelabs/pi-nous-portal-provider` (`pi install
+  npm:@jayteelabs/pi-nous-portal-provider`), then `/login` → subscription
+  or API key → Nous Research Portal, or `NOUS_API_KEY`. Optional
+  `NOUS_PORTAL_BASE_URL` (default `https://portal.nousresearch.com`) and
+  `NOUS_INFERENCE_BASE_URL` (default
+  `https://inference-api.nousresearch.com/v1`). Bills Portal, not
+  OpenRouter. `nous-portal/tencent/hy4-preview` is the reviewed experiment
+  example (`pi -p nous-portal -m tencent/hy4-preview`). Verify live ids
+  and list prices on Portal `/models`. Hy4 is **not** a second Pi writer.
+
+Same auth-or-fail-closed rule. Other `nous-portal` or OpenRouter writer
+routes need reviewed admission.
 
 If the native harness is missing or logged out, do **not** silently bill through Pi’s other-provider key. Fail closed or ask to log in. Pi remains default only for providers it actually hosts that have **no** authenticated native harness — today that is whatever `pi auth check` covers beyond Anthropic (Claude CLI), OpenAI (Codex), xAI (Grok CLI), Moonshot (Kimi), and Google (Gemini CLI).
 

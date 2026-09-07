@@ -72,6 +72,15 @@ export const NATIVE_PI_BRAKE_PROVIDERS = Object.freeze([
   "deepseek",
 ]);
 
+/** Verified Pi aggregator prefixes. Not a catalog and not a writer grant. */
+export const PI_ALLOWED_PROVIDERS = Object.freeze(["openrouter", "nous-portal"]);
+
+/** Exact helper model string after `@jayteelabs/pi-nous-portal-provider` is installed. */
+export const PI_NOUS_PORTAL_HY4 = "nous-portal/tencent/hy4-preview";
+
+/** Narrowly admitted Pi writer. Other Pi models need reviewed route admission. */
+export const PI_ADMITTED_WRITER = "openrouter/qwen/qwen3-coder-plus";
+
 const REQUEST_KEYS = Object.freeze([
   "schema",
   "role",
@@ -124,7 +133,10 @@ export const ROUTES = Object.freeze({
     permissions: Object.freeze(["read-only", "edit"]),
     models: Object.freeze([]),
     efforts: EFFORT,
-    auth: Object.freeze({ args: ["auth", "check"], loginHint: "pi /login openrouter" }),
+    auth: Object.freeze({
+      args: ["auth", "check"],
+      loginHint: "pi /login openrouter or install @jayteelabs/pi-nous-portal-provider and /login Nous Research Portal",
+    }),
   },
 });
 
@@ -174,14 +186,49 @@ function failClosed(message, stage = "preflight") {
   return error;
 }
 
-function loginHint(harness, detail) {
-  const hint = ROUTES[harness]?.auth.loginHint ?? "the native harness CLI";
+function piLoginHint(provider) {
+  if (provider === "nous-portal") {
+    return "pi install npm:@jayteelabs/pi-nous-portal-provider, then /login → subscription or API key → Nous Research Portal (or NOUS_API_KEY)";
+  }
+  if (provider === "openrouter") return "pi /login openrouter";
+  return ROUTES.pi.auth.loginHint;
+}
+
+function loginHint(harness, detail, provider) {
+  const hint = harness === "pi"
+    ? piLoginHint(provider)
+    : (ROUTES[harness]?.auth.loginHint ?? "the native harness CLI");
   return `${detail} Log in with ${hint} and retry; native-provider Pi fallback is not used.`;
 }
 
 export function piProviderOf(model) {
   if (typeof model !== "string" || !model.includes("/")) return undefined;
   return model.slice(0, model.indexOf("/")).trim().toLowerCase();
+}
+
+export function piModelId(model) {
+  const provider = piProviderOf(model);
+  if (!provider) return undefined;
+  const id = model.slice(model.indexOf("/") + 1).trim();
+  return id || undefined;
+}
+
+function piProviderLabel(provider) {
+  if (provider === "nous-portal") return "Nous Portal";
+  if (provider === "openrouter") return "OpenRouter";
+  return "Pi provider";
+}
+
+export function piAuthCheckArgs(request) {
+  const provider = piProviderOf(request.model);
+  if (!provider) throw failClosed("pi model must be provider/id");
+  const args = [...ROUTES.pi.auth.args, "--provider", provider];
+  if (request.role === "writer") {
+    const modelId = piModelId(request.model);
+    if (!modelId) throw failClosed("pi writer requires provider/id");
+    args.push("--model", modelId, "--json");
+  }
+  return args;
 }
 
 function pathApi(platform) {
@@ -305,11 +352,38 @@ export function parseAuth(harness, stdio, options = {}) {
     return { loggedIn: true, method: "ChatGPT", observedAt };
   }
   if (harness === "pi") {
+    const requested = typeof options.provider === "string" && options.provider.trim()
+      ? options.provider.trim().toLowerCase()
+      : undefined;
     const text = `${stdout}\n${stderr}`;
-    if (/not[_ ]ready/i.test(text) || !/\bready\b/i.test(text)) {
-      throw failClosed(loginHint("pi", "pi auth check did not report OpenRouter ready."), "auth");
+    const payload = parseJson(stdout);
+    const reportedFromJson = typeof payload?.provider === "string"
+      ? payload.provider.trim().toLowerCase()
+      : undefined;
+    const reportedFromText = /\bnous-portal\b/i.test(text)
+      ? "nous-portal"
+      : /\bopenrouter\b/i.test(text)
+        ? "openrouter"
+        : undefined;
+    const reported = reportedFromJson ?? reportedFromText ?? requested;
+    const jsonStatus = typeof payload?.status === "string" ? payload.status : undefined;
+    if (/not[_ ]ready/i.test(text) || (jsonStatus !== undefined && jsonStatus !== "ready")
+      || !/\bready\b/i.test(text)) {
+      throw failClosed(
+        loginHint("pi", `pi auth check did not report ${piProviderLabel(requested ?? reported)} ready.`, requested ?? reported),
+        "auth",
+      );
     }
-    return { loggedIn: true, method: "openrouter", observedAt };
+    if (!reported || (requested && reported !== requested)) {
+      throw failClosed(loginHint("pi", "pi auth check provider could not be determined.", requested), "auth");
+    }
+    if (!PI_ALLOWED_PROVIDERS.includes(reported)) {
+      throw failClosed(
+        loginHint("pi", `pi helper allows only openrouter/* or nous-portal/*; ${reported} is not allowlisted.`, requested),
+        "auth",
+      );
+    }
+    return { loggedIn: true, method: reported, observedAt };
   }
   throw failClosed(`unknown harness ${harness} for auth parse`, "auth");
 }
@@ -1279,15 +1353,15 @@ export function preflightRequest(request) {
   if (harness === "pi") {
     const provider = piProviderOf(request.model);
     if (!provider) {
-      throw failClosed("pi model must be provider/id (OpenRouter only in this helper)");
+      throw failClosed("pi model must be provider/id (openrouter/* or nous-portal/* in this helper)");
     }
     if (NATIVE_PI_BRAKE_PROVIDERS.includes(provider)) {
       throw failClosed(`pi brake: ${provider} has a native harness; refusing Pi impersonation`);
     }
-    if (provider !== "openrouter") {
-      throw failClosed(`pi helper allows only openrouter/*; ${provider} is not a native CLI and is not allowlisted`);
+    if (!PI_ALLOWED_PROVIDERS.includes(provider)) {
+      throw failClosed(`pi helper allows only openrouter/* or nous-portal/*; ${provider} is not a native CLI and is not allowlisted`);
     }
-    if (request.role === "writer" && (request.model !== "openrouter/qwen/qwen3-coder-plus" || request.permission !== "edit")) {
+    if (request.role === "writer" && (request.model !== PI_ADMITTED_WRITER || request.permission !== "edit")) {
       throw failClosed("pi writer refuses unsupported route; allows only authenticated openrouter/qwen/qwen3-coder-plus with edit permission; other models need reviewed route admission");
     }
   }
@@ -1395,7 +1469,7 @@ export async function runHarness(request, deps = {}) {
   const authArgs = request.harness === "claude"
     ? [...claudeIsolationArgs(mcpConfigPath), ...route.auth.args]
     : request.harness === "pi"
-      ? [...route.auth.args, "--provider", "openrouter", ...(request.role === "writer" ? ["--model", request.model.slice("openrouter/".length), "--json"] : [])]
+      ? piAuthCheckArgs(request)
       : [...route.auth.args];
   const auth = spawnSyncImpl(resolved, authArgs, {
     cwd,
@@ -1413,11 +1487,14 @@ export async function runHarness(request, deps = {}) {
     stdout: auth.stdout?.toString?.() ?? "",
     stderr: auth.stderr?.toString?.() ?? "",
     exitCode: auth.status ?? (auth.error ? -1 : 0),
-  }, { observedAt: deps.observedAt });
+  }, {
+    observedAt: deps.observedAt,
+    ...(request.harness === "pi" ? { provider: piProviderOf(request.model) } : {}),
+  });
 
   if (request.harness === "pi" && request.role === "writer") {
     const proof = parseJson(auth.stdout?.toString?.() ?? "");
-    if (proof?.provider !== "openrouter" || proof?.status !== "ready") {
+    if (proof?.provider !== piProviderOf(request.model) || proof?.status !== "ready") {
       throw failClosed("pi writer requires exact provider/model auth readiness", "auth");
     }
   }
