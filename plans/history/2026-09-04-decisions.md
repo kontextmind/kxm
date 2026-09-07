@@ -1,8 +1,8 @@
 # Refinement decisions, 2026-09-04
 
 > **Precedence (2026-09-05).** Historical record. Body below is unchanged.
-> Where this file conflicts with [AGENTS.md](../../../AGENTS.md) and current
-> [Tracking](../../../docs/vnext/implementation-plan.md#tracking-working-tree-not-a-release),
+> Where this file conflicts with [AGENTS.md](../../AGENTS.md) and current
+> [Tracking](../implementation-plan.md#tracking-working-tree-not-a-release),
 > those win. See Tracking’s C1 supersession note for disposition of #86.
 
 Owner decisions from the one-item-at-a-time review of
