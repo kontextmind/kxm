@@ -20,7 +20,7 @@ jobs:
   release:
     name: Draft GitHub release
     if: false
-    runs-on: ubuntu-latest
+    runs-on: kontextmind-doks
     timeout-minutes: 30
     permissions:
       contents: write
@@ -87,7 +87,7 @@ jobs:
     name: Publish npm (inactive)
     needs: release
     if: false
-    runs-on: ubuntu-latest
+    runs-on: kontextmind-doks
     timeout-minutes: 10
     environment: npm-publish
     permissions:

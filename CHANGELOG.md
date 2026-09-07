@@ -98,6 +98,12 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- CI, release, and smoke workflows select the ARC scale set
+  `kontextmind-doks` (scalar `runs-on`, not a label tuple). Plugin
+  validation moved off GitHub-hosted runners. Manual smoke is
+  equality-gated on `KXM_SMOKE_RUNNER` and stays disabled until Pi
+  credentials exist in ephemeral pods. Release/npm `if: false` and the
+  Windows pause are unchanged.
 - Operator-authorized platform pause (2026-09-05): PR CI keeps two Linux
   Validate legs (Node 22.19.0 and 24) plus Classify changes, Docs lint, and
   Plugin validation (five jobs). Windows CI legs, hosted Windows probes, and
