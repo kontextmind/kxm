@@ -26,7 +26,7 @@ async function getRepoRoot() {
  */
 async function isRepoClean(repoRoot) {
   try {
-    const { stdout } = await execAsync('git status --porcelain', { cwd: repoRoot });
+    const { stdout } = await execAsync('git status --porcelain --untracked-files=no', { cwd: repoRoot });
     return stdout.trim().length === 0;
   } catch (error) {
     throw new Error(`Git status check failed: ${error.message}`);
