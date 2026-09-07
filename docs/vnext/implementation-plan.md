@@ -158,9 +158,10 @@ It does not replace the phase gates below.
   the local hub snapshot. Local Runtime in-harness insights and SSH/HTTPS hub
   install are after MVP.
 - **Platform pause (operator, 2026-09-05):** Windows CI legs, hosted Windows
-  probes, and release automation are paused, not deprecated. Active hosted
-  verification is two Linux Node 22.19.0 and 24 Validate legs plus Docs lint
-  and Plugin validation; Classify changes is the fifth job. Local verification
+  probes, and release automation are paused, not deprecated. Active verification
+  runs on the ARC runner scale set kontextmind-doks (DOKS, 0..4 ephemeral
+  pods): two Linux Node 22.19.0 and 24 Validate legs plus Docs lint and
+  Plugin validation; Classify changes is the fifth job. Local verification
   is `npm run verify` on macOS. No new paid macOS runner. Windows source and
   tests stay in tree. Windows resumption and release resumption are separate
   deferred choices; each updates Tracking, tests, and settings together.
@@ -184,6 +185,18 @@ It does not replace the phase gates below.
 - **Workflow taxonomy (operator, 2026-09-07):** [`docs/openrouter-model-workforce-guide.md`](../openrouter-model-workforce-guide.md) is organized Area -> Workflow -> Stage -> Assigned role across seven areas (`software-engineering`, `design-experience`, `media-production`, `data-analytics`, `research-strategy`, `business-operations`, `security-reliability`) and 21 workflows with declared kebab-case documentation slugs. Slugs are documentation identity only: no runtime config, role admission, schema field, CLI behavior, or alias lane. Inherited candidate lists are dated research requiring live verification before dispatch, not certified prices or an eligibility grant. Model/harness, platform, modality, tools, and personal/work context are routing attributes, not area trees; area grouping never pools unrelated role quality into one global model ranking. Fable and Sol critics remain required for the developer runner. No phase gate changes.
 
 ### Landed in this tree (unreleased)
+
+- **ARC scale-set CI selectors:** all `ci.yml` / `release.yml` / `smoke.yml`
+  `runs-on` values are the scalar scale-set name `kontextmind-doks`. The
+  previous `[self-hosted, Linux, X64, doks]` label tuple selected singleton
+  `km-gh-rn01` and queued. Manual smoke is equality-gated on
+  `KXM_SMOKE_RUNNER == 'kontextmind-doks'` and stays disabled until Pi
+  credentials are provisioned into ephemeral pods and pass `pi auth check`.
+  Release/npm remain `if: false` and the Windows pause is unchanged.
+  Ruleset `22251971` required contexts are unchanged. This is not a
+  capacity or speed promise.
+
+  The first live ARC run exposed a fixture that relied on ambient Git identity for a conflicting merge; the fixture now sets a per-command identity and asserts the unmerged index exists before testing the refusal.
 
 - **Pi helper Nous Portal prefix (dev helper, not Phase 11):**
   `scripts/harness-run.mjs` allowlists `openrouter/*` and `nous-portal/*`.
@@ -479,7 +492,8 @@ It does not replace the phase gates below.
   digests are not proof). `test/kxm-release-github.test.ts` holds those
   boundaries; `test/ci-contract.test.ts` imports `kxmReleaseAssetName`
   against `release.yml`. The standalone `generated` job is gone. `Plugin
-  validation` runs native `claude plugin validate` on a hosted runner with
+  validation` runs native `claude plugin validate` on the kontextmind-doks
+  ARC scale set (previously GitHub-hosted) with
   `@anthropic-ai/claude-code@2.1.261` (no model auth or model calls). After
   `--ignore-scripts` install of that pin, CI runs the vendor `install.cjs`
   so the native binary is present. The npm
