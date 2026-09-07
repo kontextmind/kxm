@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { preflightRequest } from '../scripts/harness-run.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -122,4 +123,19 @@ test('index flags cannot hide modified control helpers', async t => {
   f.git('update-index', '--assume-unchanged', 'scripts/harness-run.mjs');
   f.write('scripts/harness-run.mjs', '// hidden modification');
   assert.throws(() => f.loadTrustedRosterPolicy(), /hidden index flags/);
+});
+
+test('shipping policy and guide evidence bind without replacing their hash', async t => {
+  const f = await fixture(); t.after(f.close);
+  f.write('.kxm/roster.json', readFileSync(path.join(repo, '.kxm/roster.json'), 'utf8'));
+  f.write('docs/openrouter-model-workforce-guide.md', readFileSync(path.join(repo, 'docs/openrouter-model-workforce-guide.md'), 'utf8'));
+  f.commit();
+  assert.deepEqual(f.loadTrustedRosterPolicy().policy, JSON.parse(readFileSync(path.join(repo, '.kxm/roster.json'), 'utf8')));
+});
+test('config-only native model choice does not grant live dispatch capability', async t => {
+  const f = await fixture(); t.after(f.close);
+  f.policy.routes['grok-native'].model = 'future-reviewed-model'; f.save(); f.commit();
+  const route = f.loadTrustedRosterPolicy().policy.routes['grok-native']!;
+  assert.equal(route.model, 'future-reviewed-model');
+  assert.throws(() => preflightRequest({ schema: 'kxm.harness-request.v1', harness: route.harness, model: route.model, role: 'writer', permission: 'edit', prompt_file: 'unused.md' }), /grok does not accept model/);
 });
