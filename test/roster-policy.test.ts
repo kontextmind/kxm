@@ -139,3 +139,29 @@ test('config-only native model choice does not grant live dispatch capability', 
   assert.equal(route.model, 'future-reviewed-model');
   assert.throws(() => preflightRequest({ schema: 'kxm.harness-request.v1', harness: route.harness, model: route.model, role: 'writer', permission: 'edit', prompt_file: 'unused.md' }), /grok does not accept model/);
 });
+
+function addNousFixture(policy: any, permission: 'read-only' | 'edit' = 'read-only') {
+  policy.routes['nous-fixture'] = { harness: 'pi', model: 'nous-portal/tencent/hy4-preview', vendor: 'tencent', roles: [permission === 'edit' ? 'writer' : 'experiment'], permissions: [permission], status: 'admitted' };
+  policy.model_origins['nous-portal/tencent/hy4-preview'] = { vendor: 'tencent', evidence: { ...policy.model_origins['openrouter/qwen/qwen3-coder-plus'].evidence } };
+}
+test('config-only Nous experiment uses the shared provider ceiling and pinned fixture evidence', async t => {
+  const f = await fixture(); t.after(f.close); addNousFixture(f.policy); f.save(); f.commit();
+  assert.equal(f.loadTrustedRosterPolicy().policy.routes['nous-fixture']!.model, 'nous-portal/tencent/hy4-preview');
+});
+test('billing provider cannot be an origin even in an unused mapping', async t => {
+  const f = await fixture(); t.after(f.close); addNousFixture(f.policy);
+  f.policy.model_origins['nous-portal/tencent/hy4-preview'].vendor = 'nous-portal'; f.save(); f.commit();
+  assert.throws(() => f.loadTrustedRosterPolicy(), /origin\/vendor/);
+});
+test('Nous native-vendor relabeling and unknown Pi prefixes refuse', async t => {
+  const f = await fixture(); t.after(f.close); addNousFixture(f.policy);
+  f.policy.routes['nous-fixture'].vendor = 'Anthropic'; f.save(); f.commit();
+  assert.throws(() => f.loadTrustedRosterPolicy(), /native vendor/);
+  f.policy.routes['nous-fixture'].vendor = 'tencent'; f.policy.routes['nous-fixture'].model = 'unknown-provider/tencent/hy4-preview'; f.save(); f.commit();
+  assert.throws(() => f.loadTrustedRosterPolicy(), /unsupported Pi provider/);
+});
+test('config-only Nous writer does not become a live admitted writer', async t => {
+  const f = await fixture(); t.after(f.close); addNousFixture(f.policy, 'edit'); f.save(); f.commit();
+  const route = f.loadTrustedRosterPolicy().policy.routes['nous-fixture']!;
+  assert.throws(() => preflightRequest({ schema: 'kxm.harness-request.v1', harness: 'pi', model: route.model, role: 'writer', permission: 'edit', prompt_file: 'unused.md' }), /pi writer refuses unsupported route/);
+});

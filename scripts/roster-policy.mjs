@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { NATIVE_PI_BRAKE_PROVIDERS, ROUTES } from './harness-run.mjs';
+import { NATIVE_PI_BRAKE_PROVIDERS, PI_ALLOWED_PROVIDERS, ROUTES } from './harness-run.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const POLICY = '.kxm/roster.json';
@@ -89,6 +89,7 @@ function validate(bytes, commit) {
   for (const [model, origin] of Object.entries(policy.model_origins)) {
     text(model, 'origin model'); keys(origin, ['vendor', 'evidence'], 'origin');
     text(origin.vendor, 'origin vendor');
+    if (PI_ALLOWED_PROVIDERS.includes(canonical(origin.vendor.toLowerCase()))) refuse('origin/vendor must name the model vendor, not billing provider');
     keys(origin.evidence, ['source', 'sha256'], 'origin evidence'); digest(origin.evidence.sha256);
     if (sha256(blobAt(commit, origin.evidence.source).bytes) !== origin.evidence.sha256) refuse('origin evidence hash mismatch');
   }
@@ -102,13 +103,13 @@ function validate(bytes, commit) {
     if (!['admitted', 'retired'].includes(route.status)) refuse('unsupported status');
     if (route.harness === 'pi') {
       const parts = route.model.split('/');
-      if (parts.length < 3 || parts[0] !== 'openrouter' || parts.some(part => !part)) refuse('unsupported Pi provider/model');
+      if (parts.length < 3 || !PI_ALLOWED_PROVIDERS.includes(parts[0]) || parts.some(part => !part)) refuse('unsupported Pi provider/model');
       const prefix = canonical(parts[1].toLowerCase());
       const vendor = canonical(route.vendor.toLowerCase());
       if (NATIVE_PI_BRAKE_PROVIDERS.includes(prefix) || NATIVE_PI_BRAKE_PROVIDERS.includes(vendor)) refuse('native vendor cannot use Pi');
       if (!own(policy.model_origins, route.model)) refuse('missing exact model origin');
       const origin = policy.model_origins[route.model];
-      if (canonical(origin.vendor.toLowerCase()) !== vendor || vendor === 'openrouter') refuse('model origin/vendor mismatch');
+      if (canonical(origin.vendor.toLowerCase()) !== vendor || PI_ALLOWED_PROVIDERS.includes(vendor)) refuse('model origin/vendor mismatch');
       if (route.roles.includes('writer') && (route.permissions.length !== 1 || route.permissions[0] !== 'edit')) refuse('Pi writer requires edit permission only');
       if (route.permissions.includes('edit') && route.roles.some(role => !['writer', 'experiment'].includes(role))) refuse('Pi critic/planner cannot edit');
     } else if (canonical(route.vendor.toLowerCase()) !== ceiling.provider || route.model.includes('/')) refuse('native route vendor/model mismatch');
