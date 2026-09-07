@@ -39,11 +39,21 @@ import {
   projectRuntimeKey,
   runtimeError,
   type VnextAttemptCapabilityRow,
+  type VnextGateAttemptRow,
+  type VnextGateEvidenceRow,
+  type VnextGateObservationRow,
   type VnextRunEvent,
   type VnextRunRecord,
   type VnextRunStatus,
 } from "./vnext-runtime-store.ts";
 import { vnextCanonicalJson, type JsonValue, type VnextProjectBundle } from "./vnext-config.ts";
+import { evaluateArtifactsGate } from "./vnext-engine-artifacts.ts";
+import {
+  recordGateCancelObservedInTransaction,
+  recordGateIntentInTransaction,
+  recordGateSettlementInTransaction,
+  type VnextGateObservationInput,
+} from "./vnext-engine-gate-records.ts";
 
 const trustedProducers = new WeakSet<object>();
 const CAPABILITY_PREFIX = "kxm-attempt-capability\0";
@@ -70,7 +80,7 @@ export interface VnextProducer {
 }
 
 export interface VnextRunHandoff {
-  readonly reason: "limit_unsupported" | "step_unsupported" | "attempt_unreconciled" | "cancel_pending_foreign";
+  readonly reason: "limit_unsupported" | "step_unsupported" | "attempt_unreconciled" | "cancel_pending_foreign" | "gate_unsupported" | "gate_outcome_undeclared" | "gate_recovery_pending";
   readonly field?: string;
   readonly stepId?: string;
   readonly attemptId?: string;
@@ -379,11 +389,50 @@ function invokeProducer(
   );
 }
 
+export interface VnextPreparedGateDispatch {
+  readonly run: VnextRunRecord;
+  readonly envelope: VnextRunPlanEnvelope;
+  readonly stepId: string;
+  readonly stepAttempt: number;
+  readonly assignmentId: string;
+  readonly attemptId: string;
+  readonly effectId: string;
+  readonly controller: AbortController;
+  readonly state: VnextRunState;
+}
+
+export interface VnextGateDispatchSeams {
+  afterEvaluate?: ((prepared: VnextPreparedGateDispatch) => void) | undefined;
+  afterObservationWrite?: ((prepared: VnextPreparedGateDispatch) => void) | undefined;
+}
+
+export const vnextGateDispatchSeams: VnextGateDispatchSeams = {};
+
 async function stepLocked(context: VnextRuntimeContext, runId: string, producer: VnextProducer): Promise<VnextRunDriveResult> {
   const prepared = context.eventStore.transaction(() => prepareDispatch(context, runId));
   if (prepared.kind === "return") {
     return prepared.handoff ? { state: prepared.state, handoff: prepared.handoff } : { state: prepared.state };
   }
+
+  if (prepared.kind === "gate") {
+    registerVnextAttemptController(context.eventStore.path, runId, { attemptId: prepared.attemptId, controller: prepared.controller });
+    try {
+      const step = prepared.envelope.plan.steps[prepared.stepId];
+      if (!step || step.kind !== "gate") {
+        throw runtimeError("run_events_illegal", prepared.run.runId, "prepared gate step is not a gate");
+      }
+      const definition = prepared.envelope.gates.definitions[step.gate];
+      if (!definition || definition.kind !== "artifacts-exist") {
+        throw runtimeError("run_events_illegal", prepared.run.runId, "prepared gate is not artifacts-exist");
+      }
+      const observation = evaluateArtifactsGate(context, definition);
+      vnextGateDispatchSeams.afterEvaluate?.(prepared);
+      return context.eventStore.transaction(() => settlePreparedGate(context, prepared, observation));
+    } finally {
+      unregisterVnextAttemptController(context.eventStore.path, runId, prepared.attemptId);
+    }
+  }
+
   const dispatch = prepared.dispatch;
   registerVnextAttemptController(context.eventStore.path, runId, { attemptId: dispatch.attemptId, controller: dispatch.controller });
   try {
@@ -419,7 +468,7 @@ interface PreparedDispatch {
 function prepareDispatch(
   context: VnextRuntimeContext,
   runId: string,
-): { kind: "dispatch"; dispatch: PreparedDispatch } | { kind: "return"; state: VnextRunState; handoff?: VnextRunHandoff } {
+): { kind: "dispatch"; dispatch: PreparedDispatch } | { kind: "return"; state: VnextRunState; handoff?: VnextRunHandoff } | ({ kind: "gate" } & VnextPreparedGateDispatch) {
   const run = requireRun(context, runId);
   const plan = rehydrateVnextCompiledPlanFromStore(context.eventStore, run);
   const state = foldStoredVnextRun(context, run);
@@ -437,13 +486,17 @@ function prepareDispatch(
   const attemptStatus = state.currentStep?.attemptStatus;
   if (attemptStatus === "starting" || attemptStatus === "executing" || attemptStatus === "settling") {
     const attemptId = state.currentStep?.attemptId;
+    const currentStepId = state.currentStep?.stepId;
+    if (currentStepId === undefined) {
+      throw runtimeError("run_events_illegal", runId, "unreconciled attempt is missing step identity");
+    }
     return {
       kind: "return",
       state,
       handoff: {
         reason: "attempt_unreconciled",
         ...(attemptId !== undefined ? { attemptId } : {}),
-        stepId: state.currentStep!.stepId,
+        stepId: currentStepId,
         detail: "issued attempt is not held by this process",
       },
     };
@@ -454,6 +507,65 @@ function prepareDispatch(
   const stepId = state.pendingStepId ?? plan.entryStepId;
   const step = plan.steps[stepId];
   if (!step) throw runtimeError("run_events_illegal", runId, `unknown pending step ${stepId}`);
+
+  if (step.kind === "gate") {
+    const envelope = loadVnextRunPlanEnvelope(context.eventStore, run);
+    const unsupported = unsupportedGateStep(plan, step, envelope, context);
+    if (unsupported) return { kind: "return", state, handoff: { ...unsupported, stepId } };
+    const definition = envelope.gates.definitions[step.gate];
+    if (definition?.kind === "command") {
+      const preflightResult = gateRecoveryPreflight(context);
+      const firstBlocking = preflightResult.blocking[0];
+      if (firstBlocking) {
+        return {
+          kind: "return",
+          state,
+          handoff: {
+            reason: "gate_recovery_pending",
+            attemptId: firstBlocking.attemptId,
+            detail: `${preflightResult.blocking.length} unfinished gate attempt(s) in project`,
+          },
+        };
+      }
+      return {
+        kind: "return",
+        state,
+        handoff: {
+          reason: "step_unsupported",
+          field: "kind",
+          stepId,
+          detail: "command gates are not executed until S4",
+        },
+      };
+    }
+    const result = recordGateIntentInTransaction(context, run, envelope, stepId);
+    const current = result.state.currentStep;
+    const attemptId = current?.attemptId;
+    const assignmentId = current?.assignmentId;
+    const effectId = current?.effectId;
+    if (
+      !current
+      || current.stepId !== stepId
+      || attemptId === undefined
+      || assignmentId === undefined
+      || effectId === undefined
+    ) {
+      throw runtimeError("run_events_illegal", runId, "gate intent did not bind exact attempt identity");
+    }
+    return {
+      kind: "gate",
+      run,
+      envelope,
+      stepId,
+      stepAttempt: current.stepAttempt,
+      assignmentId,
+      attemptId,
+      effectId,
+      controller: new AbortController(),
+      state: result.state,
+    };
+  }
+
   const unsupported = unsupportedStep(plan, step);
   if (unsupported) return { kind: "return", state, handoff: { ...unsupported, stepId } };
   const used = state.stepAttempts[stepId] ?? 0;
@@ -731,6 +843,7 @@ function unsupportedLimit(envelope: VnextRunPlanEnvelope): VnextRunHandoff | und
 }
 
 function unsupportedStep(plan: VnextCompiledPlan, step: VnextCompiledStep): Omit<VnextRunHandoff, "stepId"> | undefined {
+  if (step.kind === "gate") throw runtimeError("run_plan_corrupt", plan.workflowId, `unsupportedStep called on gate without envelope; use unsupportedGateStep instead`);
   if (step.kind !== "agent") return { reason: "step_unsupported", field: "kind", detail: `step kind ${step.kind} is not executed in this slice` };
   if (step.assignments.maximum !== 1) return { reason: "step_unsupported", field: "assignments.maximum", detail: "only a single assignment is supported" };
   if (step.assignments.maxAttemptsPerAssignment !== 1) return { reason: "step_unsupported", field: "assignments.maxAttemptsPerAssignment", detail: "only one physical attempt is supported" };
@@ -747,6 +860,143 @@ function unsupportedStep(plan: VnextCompiledPlan, step: VnextCompiledStep): Omit
   }
   if (plan.reproOracle?.stageId === step.id) return { reason: "step_unsupported", field: "reproOracle", detail: "repro oracle is not executed in this slice" };
   if (plan.planHash?.stageId === step.id) return { reason: "step_unsupported", field: "planHash", detail: "plan hash oracle is not executed in this slice" };
+  return undefined;
+}
+
+function unsupportedGateStep(plan: VnextCompiledPlan, step: VnextCompiledStep & { kind: "gate" }, envelope: VnextRunPlanEnvelope, context?: { projectRoot: string }): Omit<VnextRunHandoff, "stepId"> | undefined {
+  if (!step.gate) return { reason: "step_unsupported", field: "gate", detail: "gate step is missing gate id" };
+  if (envelope.gates.registry === null) {
+    return { reason: "step_unsupported", field: "gate", detail: `step ${step.id} refers to a gate but registry is null` };
+  }
+  const definition = envelope.gates.definitions[step.gate];
+  if (!definition) {
+    return { reason: "step_unsupported", field: "gate", detail: `gate definition ${step.gate} not found in registry` };
+  }
+  if (definition.kind === "reserved") {
+    return { reason: "gate_unsupported", field: "gate", detail: `gate ${step.gate} is reserved and cannot be executed` };
+  }
+
+  // Check assignments constraints
+  if (step.assignments.allowedAgents && step.assignments.allowedAgents.length > 0) {
+    return { reason: "step_unsupported", field: "assignments.allowedAgents", detail: "gate steps do not support allowedAgents" };
+  }
+  if (step.assignments.minimum !== 1 || step.assignments.target !== 1 || step.assignments.maximum !== 1) {
+    return { reason: "step_unsupported", field: "assignments", detail: "gate steps require exactly 1 agent assignment" };
+  }
+  if (step.assignments.maxParallel !== 1) {
+    return { reason: "step_unsupported", field: "assignments.maxParallel", detail: "gate steps require maxParallel of 1" };
+  }
+  if (step.assignments.maxAttemptsPerAssignment !== 1) {
+    return { reason: "step_unsupported", field: "assignments.maxAttemptsPerAssignment", detail: "gate steps require maxAttemptsPerAssignment of 1" };
+  }
+  if (step.assignments.distinctBy && step.assignments.distinctBy.length > 0) {
+    return { reason: "step_unsupported", field: "assignments.distinctBy", detail: "gate steps do not support distinctBy" };
+  }
+  if (step.assignments.maxWriteRepositories) {
+    return { reason: "step_unsupported", field: "assignments.maxWriteRepositories", detail: "gate steps do not support maxWriteRepositories" };
+  }
+
+  // Check join constraints
+  if (step.join.strategy !== "all") {
+    return { reason: "step_unsupported", field: "join", detail: `gate steps require join strategy 'all', not '${step.join.strategy}'` };
+  }
+  if (step.join.minimumPassed !== undefined) {
+    return { reason: "step_unsupported", field: "join", detail: "gate steps do not support minimumPassed" };
+  }
+  if (step.join.cancelRemaining) {
+    return { reason: "step_unsupported", field: "join", detail: "gate steps do not support cancelRemaining" };
+  }
+
+  // Check required evidence constraints
+  if (step.requiredEvidence.length > 1) {
+    return { reason: "step_unsupported", field: "requiredEvidence", detail: "gate steps support at most one required evidence entry" };
+  }
+  if (step.requiredEvidence.length === 1) {
+    const evidence = step.requiredEvidence[0];
+    if (!evidence || evidence.kind !== "gate" || evidence.minimum !== 1 || evidence.reusableAcrossAttempts !== false || evidence.producerPolicy) {
+      return { reason: "step_unsupported", field: "requiredEvidence", detail: "gate steps only support simple gate evidence with minimum 1 and reusableAcrossAttempts false" };
+    }
+  }
+
+  // Check other constraints
+  if (step.requiresPlanHash) {
+    return { reason: "step_unsupported", field: "requiresPlanHash", detail: "gate steps do not support requiresPlanHash" };
+  }
+  if (step.safeSpeculation) {
+    return { reason: "step_unsupported", field: "safeSpeculation", detail: "gate steps do not support safeSpeculation" };
+  }
+  if (step.tools) {
+    return { reason: "step_unsupported", field: "tools", detail: "gate steps do not support tools" };
+  }
+  if (step.secrets && step.secrets.length > 0) {
+    return { reason: "step_unsupported", field: "secrets", detail: "gate steps do not support secrets" };
+  }
+  if (step.model) {
+    return { reason: "step_unsupported", field: "model", detail: "gate steps do not support model" };
+  }
+  if (plan.reproOracle?.stageId === step.id) {
+    return { reason: "step_unsupported", field: "reproOracle", detail: "gate steps cannot be repro oracle" };
+  }
+  if (plan.planHash?.stageId === step.id) {
+    return { reason: "step_unsupported", field: "planHash", detail: "gate steps cannot be plan hash oracle" };
+  }
+
+  // Check timeout constraints
+  if (step.timeoutMs !== undefined) {
+    if (definition.kind === "artifacts-exist") {
+      return { reason: "step_unsupported", field: "timeoutMs", detail: "artifacts-exist gates do not support timeoutMs" };
+    }
+    // For command gates, we'll reject them in S3 but allow in S4
+  }
+
+  // Check repositories constraints
+  const repositories = step.repositories;
+  if (!repositories || Object.keys(repositories).length === 0) {
+    return { reason: "step_unsupported", field: "repositories", detail: "gate steps require repository declarations" };
+  }
+
+  if (definition.kind === "artifacts-exist") {
+    const controlAccess = repositories.control;
+    if (controlAccess !== "read" && controlAccess !== "write") {
+      return { reason: "step_unsupported", field: "repositories", detail: "artifacts-exist gates require control repository access as read or write" };
+    }
+    for (const [repoId, access] of Object.entries(repositories)) {
+      if (repoId !== "control" && access !== "none") {
+        return { reason: "step_unsupported", field: "repositories", detail: "artifacts-exist gates require other repositories to have access 'none'" };
+      }
+    }
+  } else if (definition.kind === "command") {
+    const controlAccess = repositories.control;
+    if (controlAccess !== "write") {
+      return { reason: "step_unsupported", field: "repositories", detail: "command gates require control repository access as write" };
+    }
+    for (const [repoId, access] of Object.entries(repositories)) {
+      if (repoId !== "control" && access !== "none") {
+        return { reason: "step_unsupported", field: "repositories", detail: "command gates require other repositories to have access 'none'" };
+      }
+    }
+  }
+
+  // Check outcomes constraints
+  const expectPass = step.expect === "pass";
+  const requiredOutcomes = expectPass ? ["passed", "implementation-failure"] : ["repro-missing", "implementation-failure"];
+
+  for (const outcome of requiredOutcomes) {
+    if (!step.outcomes.includes(outcome)) {
+      return { reason: "gate_outcome_undeclared", field: "outcomes", detail: `step expects ${expectPass ? 'pass' : 'fail'} but missing required outcome ${outcome}; spell it as '${outcome}'` };
+    }
+  }
+
+  // Check control root match
+  if (context && projectRuntimeKey(context.projectRoot) !== envelope.gates.controlRoot.projectKey) {
+    throw runtimeError("run_owner_mismatch", plan.workflowId, `gate control root does not match project`);
+  }
+
+  // Check expect constraint for artifacts-exist
+  if (definition.kind === "artifacts-exist" && step.expect === "fail") {
+    return { reason: "step_unsupported", field: "expect", detail: "artifacts-exist gates cannot expect fail" };
+  }
+
   return undefined;
 }
 
@@ -776,6 +1026,265 @@ function pinnedGatesForCompiledPlan(
     definitions: definitions as VnextPinnedGates["definitions"],
     controlRoot: { repositoryId: "control", projectKey: projectRuntimeKey(projectRoot) },
   };
+}
+
+export interface GateRecoveryPreflightResult {
+  owned: number;
+  blocking: Array<{ runId: string; attemptId: string }>;
+}
+
+export function gateRecoveryPreflight(context: VnextRuntimeContext): GateRecoveryPreflightResult {
+  const attempts = context.eventStore.gateAttemptsForProject(context.projectId);
+  const capabilities = context.eventStore.issuedOrRevokedCapabilities();
+  const seenAttempts = new Set<string>();
+  const blocking: Array<{ runId: string; attemptId: string }> = [];
+  let owned = 0;
+
+  for (const row of attempts) {
+    seenAttempts.add(row.attemptId);
+    const classified = classifyRecoverableGateAttempt(context, row, context.eventStore.capabilityByAttempt(row.attemptId));
+    if (classified === "owned") owned += 1;
+    else if (classified === "blocking") blocking.push({ runId: row.runId, attemptId: row.attemptId });
+  }
+
+  for (const capability of capabilities) {
+    if (seenAttempts.has(capability.attemptId)) continue;
+    const row = context.eventStore.gateAttempt(capability.attemptId);
+    if (capability.producerId === "driver-simulated") {
+      if (row) {
+        throw runtimeError(
+          "gate_recovery_corrupt",
+          capability.attemptId,
+          "gate recovery preflight: capability producer contradicts gate attempt",
+        );
+      }
+      continue;
+    }
+    if (capability.producerId !== "kxm-gate") {
+      throw runtimeError(
+        "gate_recovery_corrupt",
+        capability.attemptId,
+        `gate recovery preflight: unknown capability producer ${capability.producerId}`,
+      );
+    }
+    if (!row) {
+      throw runtimeError("gate_recovery_corrupt", capability.attemptId, "gate recovery preflight: missing gate_attempts row");
+    }
+    const classified = classifyRecoverableGateAttempt(context, row, capability);
+    if (classified === "owned") owned += 1;
+    else if (classified === "blocking") blocking.push({ runId: row.runId, attemptId: row.attemptId });
+  }
+
+  return { owned, blocking };
+}
+
+function classifyRecoverableGateAttempt(
+  context: VnextRuntimeContext,
+  row: VnextGateAttemptRow,
+  capability: VnextAttemptCapabilityRow | undefined,
+): "excluded" | "owned" | "blocking" {
+  if (row.producerId !== "kxm-gate") {
+    throw runtimeError(
+      "gate_recovery_corrupt",
+      row.attemptId,
+      "gate recovery preflight: capability producer contradicts gate attempt",
+    );
+  }
+  if (capability && capability.producerId !== "kxm-gate") {
+    throw runtimeError(
+      "gate_recovery_corrupt",
+      row.attemptId,
+      "gate recovery preflight: capability producer contradicts gate attempt",
+    );
+  }
+  if (
+    capability
+    && (
+      row.runId !== capability.runId
+      || row.assignmentId !== capability.assignmentId
+      || row.stepId !== capability.stepId
+      || row.stepAttempt !== capability.stepAttempt
+      || row.attemptId !== capability.attemptId
+    )
+  ) {
+    throw runtimeError("gate_recovery_corrupt", capability.attemptId, "gate recovery preflight: capability identity does not match gate attempt");
+  }
+  const run = context.eventStore.run(row.runId);
+  if (!run) {
+    throw runtimeError("gate_recovery_corrupt", row.runId, "gate recovery preflight: run does not exist");
+  }
+  if (run.projectId !== context.projectId || row.projectId !== context.projectId) {
+    throw runtimeError("gate_recovery_corrupt", row.runId, "gate recovery preflight: run project mismatch");
+  }
+  let state;
+  try {
+    state = foldStoredVnextRun(context, run);
+  } catch (error) {
+    throw runtimeError(
+      "gate_recovery_corrupt",
+      row.runId,
+      `gate recovery preflight: fold error: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const observation = context.eventStore.gateObservationForAttempt(row.attemptId);
+  const evidence = context.eventStore.gateEvidenceForAttempt(row.attemptId);
+  const events = context.eventStore.events(row.runId, 0, 1_000_000);
+  if (isExcludedTerminalProof(state, row, observation, evidence, events)) return "excluded";
+  if (isEvaluatedSettledProof(row, observation, evidence)) {
+    if (
+      capability
+      && (capability.state === "issued" || capability.state === "revoked")
+      && state.currentStep?.attemptId === row.attemptId
+      && state.currentStep.effectState === "settled"
+    ) {
+      throw runtimeError(
+        "gate_recovery_corrupt",
+        row.runId,
+        "gate recovery preflight: capability remains issued or revoked after evaluated settlement",
+      );
+    }
+    return "excluded";
+  }
+  if (
+    !capability
+    || capability.producerId !== "kxm-gate"
+    || (capability.state !== "issued" && capability.state !== "revoked")
+  ) {
+    throw runtimeError(
+      "gate_recovery_corrupt",
+      row.attemptId,
+      "gate recovery preflight: unfinished gate attempt is missing issued or revoked kxm-gate capability",
+    );
+  }
+  const current = state.currentStep;
+  const sameAttempt = current?.attemptId === row.attemptId
+    && current.assignmentId === row.assignmentId
+    && current.effectId === row.effectId
+    && current.stepId === row.stepId;
+  const controller = vnextAttemptController(context.eventStore.path, row.runId);
+  const ownedHere = run.homeRuntimeId === context.homeRuntimeId
+    && sameAttempt
+    && controller?.attemptId === row.attemptId
+    && current?.effectState !== "blocked_uncertain";
+  if (ownedHere) return "owned";
+  return "blocking";
+}
+
+function gateRowIdentityMatches(
+  row: { attemptId: string; assignmentId: string; effectId: string; stepId: string; runId: string },
+  other: { attemptId: string; assignmentId: string; effectId: string; stepId: string; runId: string },
+): boolean {
+  return other.attemptId === row.attemptId
+    && other.assignmentId === row.assignmentId
+    && other.effectId === row.effectId
+    && other.stepId === row.stepId
+    && other.runId === row.runId;
+}
+
+function isEvaluatedSettledProof(
+  row: { attemptId: string; assignmentId: string; effectId: string; stepId: string; runId: string },
+  observation: VnextGateObservationRow | undefined,
+  evidence: VnextGateEvidenceRow | undefined,
+): boolean {
+  if (!evidence || !observation) return false;
+  if (!gateRowIdentityMatches(row, observation) || !gateRowIdentityMatches(row, evidence)) return false;
+  if (evidence.observationId !== observation.observationId) return false;
+  return observation.completeness === "complete";
+}
+
+function proofOnlySettledEvent(
+  events: readonly VnextRunEvent[],
+  row: { attemptId: string; assignmentId: string; effectId: string; stepId: string; runId: string },
+): VnextRunEvent | undefined {
+  return events.find((event) => {
+    if (event.eventType !== "effect.settled" || event.runId !== row.runId) return false;
+    if (
+      event.payload.attemptId !== row.attemptId
+      || event.payload.assignmentId !== row.assignmentId
+      || event.payload.effectId !== row.effectId
+      || event.payload.stepId !== row.stepId
+    ) {
+      return false;
+    }
+    const refs = event.payload.evidenceRefs;
+    return !Array.isArray(refs) || refs.length === 0;
+  });
+}
+
+function isExcludedTerminalProof(
+  state: VnextRunState,
+  row: { attemptId: string; assignmentId: string; effectId: string; stepId: string; runId: string },
+  observation: VnextGateObservationRow | undefined,
+  evidence: VnextGateEvidenceRow | undefined,
+  events: readonly VnextRunEvent[],
+): boolean {
+  if (evidence) return false;
+  if (!observation) return false;
+  if (!gateRowIdentityMatches(row, observation)) return false;
+  if (observation.completeness !== "no-start" && observation.completeness !== "complete") return false;
+  if (proofOnlySettledEvent(events, row)) {
+    return observation.completeness === "no-start" || observation.completeness === "complete";
+  }
+  const current = state.currentStep;
+  if (current) {
+    if (
+      current.attemptId !== row.attemptId
+      || current.assignmentId !== row.assignmentId
+      || current.effectId !== row.effectId
+      || current.stepId !== row.stepId
+      || current.effectState !== "settled-proof"
+    ) {
+      return false;
+    }
+    if (observation.completeness === "no-start" && current.observationCompleteness === "no-start") return true;
+    return observation.completeness === "complete"
+      && current.observationCompleteness === "complete"
+      && current.status === "cancelled";
+  }
+  if (observation.completeness === "no-start" && (state.status === "failed" || state.status === "cancelled")) return true;
+  return observation.completeness === "complete" && state.status === "cancelled";
+}
+
+function settlePreparedGate(
+  context: VnextRuntimeContext,
+  prepared: VnextPreparedGateDispatch,
+  observation: VnextGateObservationInput,
+) {
+  const run = requireRun(context, prepared.run.runId);
+  const folded = foldStoredVnextRun(context, run);
+  const current = folded.currentStep;
+  if (
+    !current
+    || current.stepId !== prepared.stepId
+    || current.stepAttempt !== prepared.stepAttempt
+    || current.assignmentId !== prepared.assignmentId
+    || current.attemptId !== prepared.attemptId
+    || current.effectId !== prepared.effectId
+  ) {
+    throw runtimeError("run_events_illegal", run.runId, "settlement identity does not match the prepared gate attempt");
+  }
+  const capability = context.eventStore.capabilityByAttempt(prepared.attemptId);
+  if (
+    !capability
+    || capability.runId !== run.runId
+    || capability.attemptId !== prepared.attemptId
+    || capability.assignmentId !== prepared.assignmentId
+    || capability.stepId !== prepared.stepId
+    || capability.stepAttempt !== prepared.stepAttempt
+    || capability.producerId !== "kxm-gate"
+    || (capability.state !== "issued" && capability.state !== "revoked")
+  ) {
+    throw runtimeError("run_events_illegal", run.runId, "prepared gate capability is not the issued or revoked attempt");
+  }
+  const cancelled = folded.status === "cancelling" || capability.state === "revoked";
+  if (observation.completeness !== "complete") {
+    throw runtimeError("gate_row_invalid", run.runId, "artifacts evaluation must produce a complete observation");
+  }
+  const settled = cancelled
+    ? recordGateCancelObservedInTransaction(context, run, prepared.envelope, prepared.stepId, observation)
+    : recordGateSettlementInTransaction(context, run, prepared.envelope, prepared.stepId, observation);
+  vnextGateDispatchSeams.afterObservationWrite?.(prepared);
+  return settled;
 }
 
 function requireRun(context: VnextRuntimeContext, runId: string): VnextRunRecord {

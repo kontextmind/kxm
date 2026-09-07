@@ -202,6 +202,19 @@ It does not replace the phase gates below.
   transition budget is exhausted. Proven no-start settles truthfully without
   an executing event; uncertain observations freeze without evidence. The
   engine still refuses gate dispatch; #89 remains open.
+- **D3 S3 artifacts-exist dispatch and orphan-visible preflight:** drive, step,
+  and scheduler admit once and evaluate `artifacts-exist` under control
+  `.kxm/assets` with lexical+realpath containment. Every pinned path is
+  checked; missing root is a complete failed observation. Command gates still
+  refuse before intent/spawn. Recovery enumerates project `gate_attempts`
+  without a row limit and unions orphan-visible issued/revoked capabilities,
+  then fold/replays exact identity before excluding evaluated settled and
+  proof-only no-start/cancelled terminals. Simulated producers are skipped
+  only when no gate row exists; an unfinished gate requires an issued or
+  revoked `kxm-gate` capability. Settlement revalidates the prepared attempt;
+  a revoked capability keeps the complete observation as proof-only cancel.
+  Evaluation errors after checks begin keep T1 unresolved. S4 command
+  execution, D4 recovery, and #89 remain open.
 - **Issue 127 complete (PR #129, `50c8482`):** native writer, fixed witness,
   independent Fable/Sol reviews, acceptance, and all five PR CI jobs passed.
   The parent-alias regression owns its temporary symlink on Mac/Linux;
@@ -540,17 +553,17 @@ It does not replace the phase gates below.
 - Slim live `default` workflow for this repo (no bulk migrate of jira/provenance/v04).
 - YAML-editing enable/disable UI (Phase 4 `/kxm` settings or `kxm dash` config
   tab). Do not add a preferences overlay.
-- Phase 3 engine remainder: S3 artifact gates and preflight, and S4 command
-  execution with attempt-bound evidence. Registry configuration and `expect`
-  compilation are implemented in S1; envelope pins, store rows, and
-  bidirectional replay are implemented in S2. Actual gate evaluation is still
-  unsupported. D4 joins, approval, waits, duration/cost budgets,
-  `blocked_uncertain` recovery, and producer drain follow. Then the full
-  model-free driver must complete `default.yaml` and `fix.yaml`. D3/D4 must
-  honor declared `assignments` and `join` on non-agent steps or fail closed.
-  Neither the agent-only loop nor the merged developer runner closes Phase 3.
-  Issue #89 stays open until real gate execution/evidence passes its tests;
-  live Pi execution remains Phase 4.
+- Phase 3 engine remainder: S4 command execution with attempt-bound evidence.
+  Registry configuration and `expect` compilation are implemented in S1;
+  envelope pins, store rows, and bidirectional replay are implemented in S2;
+  artifacts-exist evaluation and orphan-visible command preflight are
+  implemented in S3. Command spawn, holds, and D4 `blocked_uncertain` recovery
+  remain open. D4 joins, approval, waits, duration/cost budgets, and producer
+  drain follow. Then the full model-free driver must complete `default.yaml`
+  and `fix.yaml`. D3/D4 must honor declared `assignments` and `join` on
+  non-agent steps or fail closed. Neither the agent-only loop nor the merged
+  developer runner closes Phase 3. Issue #89 stays open until command
+  execution/evidence passes its tests; live Pi execution remains Phase 4.
 - Version 1 and 2 run event stores and `kxm.run-plan.v1` envelopes are refused
   with `runtime_schema_outdated` / `run_plan_corrupt`; there is no migration
   lane, and backup/restore remain E6. Coordinated rewriting of an envelope, its
@@ -722,8 +735,20 @@ uncertainty, and bidirectional replay on every production read, cancel,
 settlement and recovery path. Evaluated settlement applies the same
 transition-budget failure as agent settlement and does not drop a committed
 complete observation. Closed observation facts and evidence identity/expect
-are checked on insert and replay. Gate dispatch, artifact checks and command
-execution remain S3/S4; no execution or evidence gate is claimed passed.
+are checked on insert and replay.
+
+**D3 S3 (implemented, unreleased):** artifacts-exist gates run through drive,
+step, and scheduler on the admitted token. Paths are pinned portable relatives
+under control `.kxm/assets`; every path is checked, and a missing assets root
+is a complete failed result. Unsupported declarations and command gates refuse
+before intent. Recovery preflight enumerates durable project gate-attempt
+history without a row limit, unions orphan-visible issued/revoked
+capabilities, fails closed on missing rows, producer/state contradictions, or
+identity/pin/replay mismatch, and blocks new command gates when an unowned or
+uncertain attempt remains. Owned non-uncertain controllers are ordinary
+concurrency. Cross-process revoke keeps a complete observation as proof-only
+cancel. S4 command spawn and D4 recovery stay deferred; no execution or
+evidence gate is claimed passed.
 
 **Developer prerequisite (PR #129 merged, #127 closed):** the assignment runner
 has native assignment records, fixed witnesses, exact-commit acceptance and

@@ -1,0 +1,18 @@
+schema: kxm.workflow.v1
+description: Command gate declared for S3 refusal and recovery preflight.
+coordinator: coordinator
+limits:
+  maxTransitions: 4
+steps:
+  - id: check
+    kind: gate
+    gate: test
+    repositories:
+      control: write
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      implementation-failure:
+        target: $terminal
+        terminalStatus: failed
