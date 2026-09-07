@@ -892,12 +892,17 @@ test("unmerged index refuses", () => {
     writeFileSync(join(root, "README.md"), "side-c\n");
     git(root, ["add", "README.md"]);
     git(root, ["-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "c"]);
-    const merge = spawnSync("git", ["-C", root, "merge", "--no-commit", "--no-ff", "other"], {
+    const merge = spawnSync("git", ["-C", root, "-c", "user.name=Test", "-c", "user.email=test@example.test", "merge", "--no-commit", "--no-ff", "other"], {
       encoding: "utf8",
       windowsHide: true,
     });
-    assert.notEqual(merge.status, 0);
+    assert.notEqual(merge.status, 0, `${merge.stdout}${merge.stderr}`);
+    assert.match(`${merge.stdout}${merge.stderr}`, /CONFLICT/);
+    assert.doesNotMatch(merge.stderr, /Please tell me who you are|unable to auto-detect|useConfigOnly/);
     const head = git(root, ["rev-parse", "HEAD"]);
+    // Prove the unmerged index actually exists before exercising the validator
+    assert.match(git(root, ['ls-files', '-u']), /README\.md/);
+    assert.equal(git(root, ['rev-parse', '-q', '--verify', 'MERGE_HEAD']).length, 40);
     const manifest = writerManifest(root, head, taskDir);
     const beforeWorktree = worktreeSnapshot(root);
     const beforeGit = gitSnapshot(root);

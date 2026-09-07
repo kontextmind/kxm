@@ -15,11 +15,11 @@ concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# CI jobs run on the ARC scale set kontextmind-doks (org-wide, 0..4 pods).
 jobs:
   changes:
     name: Classify changes
-    # Aux jobs share the DOKS self-hosted Linux pool with the validate linux legs.
-    runs-on: [self-hosted, Linux, X64, doks]
+    runs-on: kontextmind-doks
     timeout-minutes: 5
     outputs:
       code: ${{ steps.classify.outputs.code }}
@@ -63,8 +63,7 @@ jobs:
 
   docs:
     name: Docs lint
-    # Aux jobs share the DOKS self-hosted Linux pool with the validate linux legs.
-    runs-on: [self-hosted, Linux, X64, doks]
+    runs-on: kontextmind-doks
     timeout-minutes: 10
     steps:
       - name: Check out repository
@@ -85,19 +84,19 @@ jobs:
   validate:
     name: Validate (${{ matrix.runner.name }}, Node ${{ matrix.node }})
     needs: changes
-    runs-on: ${{ matrix.runner.labels }}
+    runs-on: kontextmind-doks
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         node: [22.19.0, 24]
-        # Linux runs on the DOKS self-hosted runner. Windows legs are paused
-        # by operator decision on 2026-09-05, not removed as a supported
+        # Linux runs on the ARC scale set. Windows legs are paused by
+        # operator decision on 2026-09-05, not removed as a supported
         # target. Job names are pinned by the protect-main ruleset, so change
-        # name and ruleset together.
+        # name and ruleset together. Resuming Windows reintroduces a
+        # per-runner selector and a ruleset update.
         runner:
           - name: linux
-            labels: [self-hosted, Linux, X64, doks]
 
     steps:
       - name: Check out repository
@@ -131,7 +130,7 @@ jobs:
   plugin:
     name: Plugin validation
     needs: changes
-    runs-on: ubuntu-latest
+    runs-on: kontextmind-doks
     timeout-minutes: 15
     permissions:
       contents: read
