@@ -805,6 +805,7 @@ export function normalizeAgy(payload) {
     tokensOut: usage.output_tokens,
     cacheReadTokens: usage.cache_read_tokens,
     reasoningTokens: usage.thinking_tokens,
+    totalTokens: usage.total_tokens,
     tokenBasis: TOKEN_BASIS,
     costBasis: "unmetered",
     ...(payload.structured_output !== undefined ? { structuredOutput: payload.structured_output } : {}),
@@ -1054,6 +1055,7 @@ const PUBLIC_TOKEN_KEYS = Object.freeze([
   "cacheReadTokens",
   "cacheCreationTokens",
   "reasoningTokens",
+  "totalTokens",
 ]);
 const PUBLIC_COST_KEYS = Object.freeze(["costUsd", "providerReportedCostUsd"]);
 const PUBLIC_BYTE_KEYS = Object.freeze(["answerBytes", "stderrBytes", "errorBytes"]);

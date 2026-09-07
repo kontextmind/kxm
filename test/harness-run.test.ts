@@ -637,6 +637,7 @@ test("agy JSON status is trusted over exit code; timeout, unmetered, and denied_
     assert.equal(fields.tokensOut, 4);
     assert.equal(fields.reasoningTokens, 2);
     assert.equal(fields.cacheReadTokens, 3);
+    assert.equal(fields.totalTokens, 19);
     assert.equal(fields.costBasis, "unmetered");
     assert.equal(fields.costUsd, undefined);
     assert.equal(fields.effectiveModel, undefined);
