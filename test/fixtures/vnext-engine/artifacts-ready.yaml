@@ -1,0 +1,18 @@
+schema: kxm.workflow.v1
+description: Artifacts-exist gate with control read access.
+coordinator: coordinator
+limits:
+  maxTransitions: 4
+steps:
+  - id: check
+    kind: gate
+    gate: artifacts
+    repositories:
+      control: read
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      implementation-failure:
+        target: $terminal
+        terminalStatus: failed

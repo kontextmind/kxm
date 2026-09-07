@@ -1043,6 +1043,34 @@ export class VnextRunEventStore {
     return rows.map(gateAttemptFromSql);
   }
 
+  gateAttemptsForProject(projectId: string): VnextGateAttemptRow[] {
+    const rows = this.database.prepare(`
+      SELECT attempt_id, run_id, project_id, home_runtime_id, step_id, step_attempt, assignment_id, effect_id,
+        gate_id, gate_kind, expect, gate_definition_hash, registry_hash, run_plan_hash, control_project_key,
+        producer_id, intent_event_id, content_hash
+      FROM gate_attempts WHERE project_id = ? ORDER BY run_id ASC, step_attempt ASC, attempt_id ASC
+    `).all(projectId) as GateAttemptSql[];
+    return rows.map(gateAttemptFromSql);
+  }
+
+  issuedOrRevokedCapabilities(): VnextAttemptCapabilityRow[] {
+    const rows = this.database.prepare(`
+      SELECT attempt_id, run_id, assignment_id, step_id, step_attempt, producer_id, capability_hash, state
+      FROM attempt_capabilities
+      WHERE state IN ('issued','revoked')
+      ORDER BY run_id ASC, step_attempt ASC, attempt_id ASC
+    `).all() as CapabilitySqlRow[];
+    const mapped: VnextAttemptCapabilityRow[] = [];
+    for (const row of rows) {
+      const capability = capabilityFromRow(row);
+      if (!capability) {
+        throw runtimeError("gate_recovery_corrupt", "attempt_capabilities", "issued or revoked capability row could not be read");
+      }
+      mapped.push(capability);
+    }
+    return mapped;
+  }
+
   gateObservationForAttempt(attemptId: string): VnextGateObservationRow | undefined {
     const row = this.database.prepare(`
       SELECT observation_id, attempt_id, run_id, project_id, home_runtime_id, step_id, step_attempt, assignment_id,
