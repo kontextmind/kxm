@@ -308,7 +308,7 @@ KXM never runs login, install, proxy start, or paid requests for you.
   recordedAt/source/units/models), and per-model capacity plus four finite
   nonnegative rates. Verified zeros are allowed; unverified zeros, stale
   pins (older than 30 days), missing units, or a bad hash exclude data.
-  Per-context tiers register at the upper bound.
+  Per-context source tiers are folded into a labeled upper bound.
 
 Public GET `https://inference-api.nousresearch.com/v1/models` catalog fields
 are observed: `context_length`, `top_provider.max_completion_tokens`,
@@ -317,9 +317,14 @@ are observed: `context_length`, `top_provider.max_completion_tokens`,
 `input_cache_write` as per-token decimal strings plus `pricing.overrides[]`
 (`min_prompt_tokens` and its own prices). Those rates convert once to
 `usd_per_million_tokens`. `pricing.original` and a blanket discount are never
-applied. Incomplete or malformed rates exclude the model rather than dropping
-a costly tier or guessing zero. Context tiers may register at the highest
-per-component bound while preserving every valid tier and cache rate.
-Source URL, fetch date, and raw SHA stay on the discovery report. Streaming
-compatibility flags remain unverified. Assumed OpenAI-style fixtures under
-`test/fixtures/nous/` still cover the older numeric `cost` shape.
+applied. Incomplete or malformed live rates exclude the model rather than
+dropping a costly tier or guessing zero, unless a matching dated pin supplies
+verified rates and capacity. Context tiers are represented as the highest
+per-component bound. That bound is what Pi `calculateCost` sees: source tiers
+stay discovery/build metadata and are not registered as a `cost.tiers`
+schedule that can underquote at an exact threshold. Upper-bound estimates are
+labeled in both `nous/*` and `nous-proxy/*` display names (proxy keeps
+`subscription proxy, market ref`). Source URL, fetch date, and raw SHA stay
+on the discovery report. Streaming compatibility flags remain unverified.
+Assumed OpenAI-style fixtures under `test/fixtures/nous/` still cover the
+older numeric `cost` shape.

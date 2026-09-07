@@ -309,6 +309,7 @@ test("live public catalog registers observed metadata, upper-bound rates, and di
   assert.match(report.direct.provenance?.rawSha256 ?? "", /^sha256:[a-f0-9]{64}$/);
   const models = pi.providers.get(NOUS_DIRECT_ID)?.models as Array<{
     id: string;
+    name: string;
     reasoning: boolean;
     input: string[];
     cost: { input: number; output: number; cacheRead: number; cacheWrite: number; tiers?: Array<{ inputTokensAbove: number; input: number; output: number }> };
@@ -322,13 +323,56 @@ test("live public catalog registers observed metadata, upper-bound rates, and di
   assert.equal(qwen?.maxTokens, 65536);
   assert.equal(qwen?.cost.input, 1.95);
   assert.equal(qwen?.cost.output, 9.75);
-  assert.deepEqual(qwen?.cost.tiers?.map((tier) => tier.inputTokensAbove), [32000, 128000]);
+  assert.equal(qwen?.cost.tiers, undefined);
+  assert.match(qwen?.name ?? "", /upper-bound market ref/);
   const sol = models.find((model) => model.id === "openai/gpt-5.6-sol");
   assert.equal(sol?.reasoning, true);
   assert.deepEqual(sol?.input, ["text", "image"]);
   assert.equal(sol?.cost.input, 4);
   assert.equal(sol?.cost.output, 15);
+  assert.match(sol?.name ?? "", /upper-bound market ref/);
   assert.equal(report.direct.registered, 4);
+});
+
+test("Pi calculateCost keeps a constant Qwen upper bound at exact tier thresholds", async () => {
+  const pi = fakePi();
+  await registerNousProviders(pi.api, {
+    env: { KXM_NOUS_PROVIDERS: "direct", NOUS_API_KEY: "k" },
+    fetch: async () => jsonResponse(livePublic),
+  });
+  const models = pi.providers.get(NOUS_DIRECT_ID)?.models as Array<{
+    id: string;
+    cost: { input: number; output: number; cacheRead: number; cacheWrite: number; tiers?: unknown };
+  }>;
+  const qwen = models.find((model) => model.id === "qwen/qwen3-coder-plus");
+  assert.ok(qwen);
+  assert.equal(qwen?.cost.input, 1.95);
+  assert.equal(qwen?.cost.output, 9.75);
+  assert.equal(qwen?.cost.tiers, undefined);
+  const piAi = await import(pathToFileURL(PI_AI).href) as {
+    calculateCost: (
+      model: { cost: { input: number; output: number; cacheRead: number; cacheWrite: number } },
+      usage: {
+        input: number;
+        output: number;
+        cacheRead: number;
+        cacheWrite: number;
+        cost: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number };
+      },
+    ) => { input: number; output: number; cacheRead: number; cacheWrite: number; total: number };
+  };
+  for (const input of [31999, 32000, 32001, 127999, 128000, 128001]) {
+    const usage = {
+      input,
+      output: 1000,
+      cacheRead: 0,
+      cacheWrite: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    };
+    const cost = piAi.calculateCost({ cost: qwen!.cost }, usage);
+    assert.equal(cost.input, (1.95 / 1_000_000) * input, `input ${input}`);
+    assert.equal(cost.output, (9.75 / 1_000_000) * 1000, `output at ${input}`);
+  }
 });
 
 test("helper brake still refuses nous/* and nous-proxy/*", () => {

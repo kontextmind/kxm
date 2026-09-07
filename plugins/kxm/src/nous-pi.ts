@@ -253,9 +253,13 @@ function registerLegacy(
       name: model.name,
       reasoning: model.reasoning === true,
       input: model.input && model.input.length > 0 ? model.input : ["text"],
-      cost: model.tiers && model.tiers.length > 0
-        ? { ...model.cost, tiers: model.tiers }
-        : model.cost,
+      // Upper-bound rates only: Pi cost.tiers uses strict > and can underquote.
+      cost: {
+        input: model.cost.input,
+        output: model.cost.output,
+        cacheRead: model.cost.cacheRead,
+        cacheWrite: model.cost.cacheWrite,
+      },
       contextWindow: model.contextWindow,
       maxTokens: model.maxTokens,
     })),

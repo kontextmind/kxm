@@ -466,11 +466,11 @@ export function buildModelConfigs(
       skipped.push({ id: item.id, reason: `excluded: ${item.capabilityIssue}` });
       continue;
     }
-    if (item.pricingIssue) {
+    const fromPin = pin?.models[item.id];
+    if (item.pricingIssue && !fromPin) {
       skipped.push({ id: item.id, reason: `unpriced, not registered: ${item.pricingIssue}` });
       continue;
     }
-    const fromPin = pin?.models[item.id];
     const capacity = {
       contextWindow: fromPin?.contextWindow ?? item.contextWindow,
       maxTokens: fromPin?.maxTokens ?? item.maxTokens,
@@ -521,9 +521,7 @@ export function buildModelConfigs(
       skipped.push({ id: item.id, reason: `excluded: billing ${billing} is not valid for ${route}` });
       continue;
     }
-    const display = route === "proxy"
-      ? `${fromPin?.name ?? item.name ?? item.id} (subscription proxy, market ref)`
-      : (fromPin?.name ?? item.name ?? item.id);
+    const display = labeledModelName(fromPin?.name ?? item.name ?? item.id, route, priceBasis);
     registered.push({
       id: item.id,
       name: display,
@@ -598,6 +596,15 @@ export function guidanceFor(input: {
     });
   }
   return messages.map((item) => ({ ...item, message: sanitizeNousText(item.message) }));
+}
+
+function labeledModelName(base: string, route: NousProviderKind, priceBasis: NousPriceBasis): string {
+  if (route === "proxy") {
+    return priceBasis === "upper-bound"
+      ? `${base} (subscription proxy, market ref; upper-bound)`
+      : `${base} (subscription proxy, market ref)`;
+  }
+  return priceBasis === "upper-bound" ? `${base} (upper-bound market ref)` : base;
 }
 
 function parseLivePricing(pricing: Record<string, unknown>): { cost: NousCostRates; tiers: NousCostTier[] } | undefined {

@@ -758,11 +758,11 @@ function buildModelConfigs(discovered, pin, route) {
       skipped.push({ id: item.id, reason: `excluded: ${item.capabilityIssue}` });
       continue;
     }
-    if (item.pricingIssue) {
+    const fromPin = pin?.models[item.id];
+    if (item.pricingIssue && !fromPin) {
       skipped.push({ id: item.id, reason: `unpriced, not registered: ${item.pricingIssue}` });
       continue;
     }
-    const fromPin = pin?.models[item.id];
     const capacity = {
       contextWindow: fromPin?.contextWindow ?? item.contextWindow,
       maxTokens: fromPin?.maxTokens ?? item.maxTokens
@@ -813,7 +813,7 @@ function buildModelConfigs(discovered, pin, route) {
       skipped.push({ id: item.id, reason: `excluded: billing ${billing} is not valid for ${route}` });
       continue;
     }
-    const display = route === "proxy" ? `${fromPin?.name ?? item.name ?? item.id} (subscription proxy, market ref)` : fromPin?.name ?? item.name ?? item.id;
+    const display = labeledModelName(fromPin?.name ?? item.name ?? item.id, route, priceBasis);
     registered.push({
       id: item.id,
       name: display,
@@ -879,6 +879,12 @@ function guidanceFor(input) {
     });
   }
   return messages.map((item) => ({ ...item, message: sanitizeNousText(item.message) }));
+}
+function labeledModelName(base, route, priceBasis) {
+  if (route === "proxy") {
+    return priceBasis === "upper-bound" ? `${base} (subscription proxy, market ref; upper-bound)` : `${base} (subscription proxy, market ref)`;
+  }
+  return priceBasis === "upper-bound" ? `${base} (upper-bound market ref)` : base;
 }
 function parseLivePricing(pricing) {
   const cost = parseLiveRates(pricing);
@@ -1137,7 +1143,13 @@ function registerLegacy(pi, id, baseUrl, apiKey, models) {
       name: model.name,
       reasoning: model.reasoning === true,
       input: model.input && model.input.length > 0 ? model.input : ["text"],
-      cost: model.tiers && model.tiers.length > 0 ? { ...model.cost, tiers: model.tiers } : model.cost,
+      // Upper-bound rates only: Pi cost.tiers uses strict > and can underquote.
+      cost: {
+        input: model.cost.input,
+        output: model.cost.output,
+        cacheRead: model.cost.cacheRead,
+        cacheWrite: model.cost.cacheWrite
+      },
       contextWindow: model.contextWindow,
       maxTokens: model.maxTokens
     }))

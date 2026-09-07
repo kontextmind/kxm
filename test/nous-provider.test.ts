@@ -125,6 +125,7 @@ test("catalog pin supplies capacity and preserves upper-bound plus verified zero
   assert.equal(tiered.registered[0]?.priceBasis, "upper-bound");
   assert.equal(tiered.registered[0]?.cost.input, 3);
   assert.equal(tiered.registered[0]?.cost.output, 6);
+  assert.match(tiered.registered[0]?.name ?? "", /upper-bound market ref/);
 });
 
 test("malformed, stale, unit-less, and unverified-zero pins fail closed", () => {
@@ -280,6 +281,9 @@ test("live public catalog converts per-token strings, keeps override tiers, and 
   assert.equal(qwenBuilt.registered[0]?.cost.cacheRead, 0.39);
   assert.equal(qwenBuilt.registered[0]?.cost.cacheWrite, 2.4375);
   assert.equal(qwenBuilt.registered[0]?.tiers?.length, 2);
+  assert.match(qwenBuilt.registered[0]?.name ?? "", /upper-bound market ref/);
+  const qwenProxy = buildModelConfigs([qwen!], undefined, "proxy");
+  assert.match(qwenProxy.registered[0]?.name ?? "", /subscription proxy, market ref; upper-bound/);
 
   const sol = parsed.models.find((model) => model.id === "openai/gpt-5.6-sol");
   assert.ok(sol);
@@ -347,6 +351,58 @@ test("malformed live overrides and incomplete rates exclude the model instead of
   assert.ok(built.skipped.some((item) => item.id === "missing-cache" && /malformed|incomplete/.test(item.reason)));
   assert.ok(built.skipped.some((item) => item.id === "file-only" && /modalities/.test(item.reason)));
   assert.equal(parsed.models.find((model) => model.id === "broken-override")?.cost, undefined);
+});
+
+test("matching catalog pin supplies rates and capacity when live pricing is malformed", () => {
+  const models = {
+    "broken-override": {
+      contextWindow: 64000,
+      maxTokens: 4096,
+      cost: { input: 1.95, output: 9.75, cacheRead: 0.39, cacheWrite: 2.4375 },
+      priceBasis: "upper-bound",
+      billing: "metered",
+      verified: true,
+      name: "Pinned Qwen",
+    },
+  };
+  const pinBody = {
+    schema: NOUS_CATALOG_SCHEMA,
+    recordedAt: "2026-09-07T00:00:00.000Z",
+    source: "operator pin for malformed live pricing fallback",
+    units: NOUS_PRICE_UNITS,
+    models,
+  };
+  const loaded = parseCatalogPin({ ...pinBody, hash: catalogHash(pinBody) });
+  assert.equal(loaded.ok, true);
+  if (!loaded.ok) return;
+  const parsed = parseModelsResponse({
+    data: [{
+      id: "broken-override",
+      context_length: 1000,
+      top_provider: { max_completion_tokens: 100 },
+      architecture: { input_modalities: ["text"] },
+      pricing: {
+        prompt: "0.000001",
+        completion: "0.000002",
+        input_cache_read: "0.0000001",
+        input_cache_write: "0.0000002",
+        overrides: [{ min_prompt_tokens: 128000, prompt: "0.000009" }],
+      },
+    }],
+  });
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+  assert.ok(parsed.models[0]?.pricingIssue);
+  const built = buildModelConfigs(parsed.models, loaded.pin, "direct");
+  assert.equal(built.registered.length, 1);
+  assert.equal(built.skipped.length, 0);
+  assert.equal(built.registered[0]?.id, "broken-override");
+  assert.equal(built.registered[0]?.contextWindow, 64000);
+  assert.equal(built.registered[0]?.maxTokens, 4096);
+  assert.equal(built.registered[0]?.cost.input, 1.95);
+  assert.equal(built.registered[0]?.cost.output, 9.75);
+  assert.equal(built.registered[0]?.priceBasis, "upper-bound");
+  assert.match(built.registered[0]?.name ?? "", /Pinned Qwen \(upper-bound market ref\)/);
 });
 
 test("live fetch records source URL, fetched date, and raw SHA without billing original rates", async () => {
