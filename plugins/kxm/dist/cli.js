@@ -28913,6 +28913,7 @@ import { spawnSync as spawnSync2 } from "node:child_process";
 var DEFAULT_HARNESS = "pi";
 var UNKNOWN_AUTH_HARNESSES = /* @__PURE__ */ new Set(["kimi", "gemini", "deepseek"]);
 var GROK_LOGIN_LINE = "You are logged in with grok.com.";
+var AGY_MODEL_ROW = /^[a-z0-9][a-z0-9.+_-]*\t+\S/im;
 var CODEX_CHATGPT_LINE = "Logged in using ChatGPT";
 var CODEX_API_KEY_PREFIX = "Logged in using an API key";
 var CODEX_NEGATIVE_LINE = "Not logged in";
@@ -28986,6 +28987,16 @@ var BUILTIN_HARNESSES = Object.freeze([
     default: false,
     mode: "either",
     commands: ["grok"],
+    versionArgs: ["--version"],
+    authArgs: ["models"],
+    update: { self: ["update"] }
+  },
+  {
+    id: "agy",
+    label: "Antigravity CLI",
+    default: false,
+    mode: "either",
+    commands: ["agy"],
     versionArgs: ["--version"],
     authArgs: ["models"],
     update: { self: ["update"] }
@@ -29084,6 +29095,15 @@ function interpretAuth(id, result) {
   }
   if (id === "grok") {
     if (commandSucceeded(result) && lines.some((line) => line === GROK_LOGIN_LINE)) return { authenticated: true, issues: [] };
+    return { authenticated: null, issues: ["auth_unparsed"] };
+  }
+  if (id === "agy") {
+    const text = `${result.stdout}
+${result.stderr}`;
+    if (!commandSucceeded(result) || !text.trim()) {
+      return { authenticated: false, issues: ["not_authenticated"] };
+    }
+    if (AGY_MODEL_ROW.test(text)) return { authenticated: true, issues: [] };
     return { authenticated: null, issues: ["auth_unparsed"] };
   }
   return { authenticated: null, issues: ["auth_unparsed"] };

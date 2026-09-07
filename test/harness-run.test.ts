@@ -5,6 +5,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync }
 import { delimiter, join, resolve } from "node:path";
 import test from "node:test";
 import {
+  agyAuth,
   authFixture,
   claudeAuth,
   codexAuth,
@@ -28,6 +29,7 @@ import {
   diagnoseHarnessResult,
   formatRunCost,
   formatRunListing,
+  normalizeAgy,
   normalizeClaudeOrGrok,
   normalizeCodex,
   normalizePi,
@@ -214,6 +216,55 @@ test("preflight refuses role, mode, pair, and native-provider Pi routes before s
       }),
       /not allowlisted/,
     );
+    preflightRequest({
+      schema: REQUEST_SCHEMA,
+      harness: "agy",
+      role: "writer",
+      model: "gemini-3.8-flash-low",
+      permission: "edit",
+      prompt_file: prompt,
+    });
+    preflightRequest({
+      schema: REQUEST_SCHEMA,
+      harness: "agy",
+      role: "experiment",
+      model: "gemini-3.1-pro-high",
+      permission: "edit",
+      prompt_file: prompt,
+    });
+    assert.throws(
+      () => preflightRequest({
+        schema: REQUEST_SCHEMA,
+        harness: "agy",
+        role: "writer",
+        model: "claude-sonnet-4-6",
+        permission: "edit",
+        prompt_file: prompt,
+      }),
+      /does not accept model/,
+    );
+    assert.throws(
+      () => preflightRequest({
+        schema: REQUEST_SCHEMA,
+        harness: "agy",
+        role: "planner",
+        model: "gemini-3.8-flash-low",
+        permission: "edit",
+        prompt_file: prompt,
+      }),
+      /does not accept role/,
+    );
+    assert.throws(
+      () => preflightRequest({
+        schema: REQUEST_SCHEMA,
+        harness: "agy",
+        role: "writer",
+        model: "gemini-3.8-flash-low",
+        permission: "read-only",
+        prompt_file: prompt,
+      }),
+      /does not accept permission/,
+    );
     assert.deepEqual([...PI_ALLOWED_PROVIDERS], ["openrouter", "nous-portal"]);
     assert.equal(piProviderOf(PI_NOUS_PORTAL_HY4), "nous-portal");
     assert.equal(piModelId(PI_NOUS_PORTAL_HY4), "tencent/hy4-preview");
@@ -283,6 +334,33 @@ test("grok and codex argv match verified A4 flags", () => {
   assert.equal(codex.at(-1), "-");
 });
 
+test("agy argv uses prompt text, json schema path, effort, and print-timeout; no prompt-file or stdin", () => {
+  const argv = buildArgv({
+    harness: "agy",
+    model: "gemini-3.8-flash-low",
+    effort: "medium",
+    permission: "edit",
+    prompt_file: "/tmp/brief.md",
+    timeout_ms: 45000,
+  }, {
+    promptText: "brief body",
+    schemaPath: "/tmp/schema.json",
+  });
+  assert.deepEqual(argv, [
+    "-p", "brief body",
+    "--output-format", "json",
+    "--dangerously-skip-permissions",
+    "--model", "gemini-3.8-flash-low",
+    "--effort", "medium",
+    "--json-schema", "/tmp/schema.json",
+    "--print-timeout", "45000ms",
+  ]);
+  assert(!argv.includes("--prompt-file"));
+  const { effort, clamped } = clampEffort("agy", "xhigh");
+  assert.equal(effort, "high");
+  assert.equal(clamped, "xhigh");
+});
+
 test("auth parse: success, logout, and garbage fail closed", () => {
   const grok = parseAuth("grok", authFixture("grok") as { stdout: string; stderr: string; exitCode: number }, { observedAt: "2026-09-05" });
   assert.deepEqual(grok, { loggedIn: true, method: "grok.com", observedAt: "2026-09-05" });
@@ -322,6 +400,10 @@ test("auth parse: success, logout, and garbage fail closed", () => {
     () => parseAuth("pi", { stdout: "openrouter  ready\n", stderr: "", exitCode: 0 }, { provider: "nous-portal" }),
     /could not be determined/,
   );
+  const agy = parseAuth("agy", authFixture("agy") as { stdout: string; stderr: string; exitCode: number }, { observedAt: "2026-09-08" });
+  assert.deepEqual(agy, { loggedIn: true, method: "antigravity-oauth", observedAt: "2026-09-08" });
+  assert.throws(() => parseAuth("agy", { stdout: "Fetching available models...\n", stderr: "", exitCode: 0 }), /models list/);
+  assert.throws(() => parseAuth("agy", { stdout: "", stderr: "", exitCode: 0 }), /models list/);
 });
 
 test("subscription billed cost is unmetered; list estimate stays separate; missing cost is unknown", async () => {
@@ -519,6 +601,130 @@ test("native error payloads fail even when the CLI exits 0", async () => {
     assert.equal(empty.result.ok, false);
     assert.equal(empty.result.errorCode, "empty_payload");
     assert.equal(empty.result.harnessError, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function agyPayload(overrides: Record<string, unknown> = {}) {
+  return {
+    conversation_id: "agy-1",
+    status: "SUCCESS",
+    response: "files written",
+    duration_seconds: 1.2,
+    num_turns: 1,
+    usage: {
+      input_tokens: 10,
+      output_tokens: 4,
+      thinking_tokens: 2,
+      cache_read_tokens: 3,
+      total_tokens: 19,
+    },
+    ...overrides,
+  };
+}
+
+test("agy JSON status is trusted over exit code; timeout, unmetered, and denied_actions map", async () => {
+  const dir = tempDir();
+  try {
+    const prompt = promptFile(dir, "agy brief");
+    const schema = join(dir, "schema.json");
+    writeFileSync(schema, JSON.stringify({ type: "object", additionalProperties: false }));
+    const fields = normalizeAgy(agyPayload());
+    assert.equal(fields.text, "files written");
+    assert.equal(fields.sessionId, "agy-1");
+    assert.equal(fields.tokensIn, 10);
+    assert.equal(fields.tokensOut, 4);
+    assert.equal(fields.reasoningTokens, 2);
+    assert.equal(fields.cacheReadTokens, 3);
+    assert.equal(fields.costBasis, "unmetered");
+    assert.equal(fields.costUsd, undefined);
+    assert.equal(fields.effectiveModel, undefined);
+    assert.equal(normalizeAgy(agyPayload({ model: "gemini-3.8-flash-low" })).effectiveModel, "gemini-3.8-flash-low");
+
+    const ok = await dispatch({
+      schema: REQUEST_SCHEMA,
+      harness: "agy",
+      role: "writer",
+      model: "gemini-3.8-flash-low",
+      effort: "low",
+      permission: "edit",
+      prompt_file: prompt,
+      output_schema: schema,
+      timeout_ms: 30_000,
+      output_dir: join(dir, "ok"),
+    }, { stdout: `${JSON.stringify(agyPayload())}\n`, exitCode: 0 }, agyAuth());
+    assert.equal(ok.result.ok, true);
+    assert.equal(ok.result.status, "completed");
+    assert.equal(ok.result.costBasis, "unmetered");
+    assert.equal(ok.result.costUsd, undefined);
+    assert.equal(ok.result.effectiveModel, undefined);
+    assert.equal(ok.result.tokensIn, 10);
+    assert.equal(ok.result.reasoningTokens, 2);
+    assert.doesNotMatch(JSON.stringify(ok.result), /"costUsd":0/);
+    assert.equal(ok.spawns[0]?.options.shell, false);
+    const stdio = ok.spawns[0]?.options.stdio;
+    assert(Array.isArray(stdio));
+    assert.equal(stdio[0], "ignore");
+    const argv = ok.spawns[0]?.argv ?? [];
+    assert.equal(argv[0], "-p");
+    assert.equal(argv[1], "agy brief");
+    assert(!argv.includes("--prompt-file"));
+    assert(argv.includes("--dangerously-skip-permissions"));
+    const schemaAt = argv.indexOf("--json-schema");
+    assert.equal(argv[schemaAt + 1], schema);
+    const timeoutAt = argv.indexOf("--print-timeout");
+    assert.equal(argv[timeoutAt + 1], "30000ms");
+
+    const modelErr = await dispatch({
+      schema: REQUEST_SCHEMA,
+      harness: "agy",
+      role: "writer",
+      model: "gemini-3.8-flash-low",
+      permission: "edit",
+      prompt_file: prompt,
+      output_dir: join(dir, "err"),
+    }, {
+      stdout: `${JSON.stringify(agyPayload({ status: "ERROR", error: "unknown model", response: "" }))}\n`,
+      exitCode: 0,
+    }, agyAuth());
+    assert.equal(modelErr.result.ok, false);
+    assert.equal(modelErr.result.exitCode, 0);
+    assert.equal(modelErr.result.errorCode, "model_error");
+    assert.match(readFileSync(modelErr.result.errorPath as string, "utf8"), /unknown model/);
+
+    const timed = await dispatch({
+      schema: REQUEST_SCHEMA,
+      harness: "agy",
+      role: "experiment",
+      model: "gemini-3.1-pro-low",
+      permission: "edit",
+      prompt_file: prompt,
+      output_dir: join(dir, "to"),
+    }, {
+      stdout: `${JSON.stringify(agyPayload({ status: "ERROR", error: "timeout waiting for response", response: "" }))}\n`,
+      exitCode: 0,
+    }, agyAuth());
+    assert.equal(timed.result.ok, false);
+    assert.equal(timed.result.errorCode, "timed_out");
+    assert.equal(timed.result.exitCode, 0);
+
+    const denied = await dispatch({
+      schema: REQUEST_SCHEMA,
+      harness: "agy",
+      role: "writer",
+      model: "gemini-3.8-flash-medium",
+      permission: "edit",
+      prompt_file: prompt,
+      output_dir: join(dir, "denied"),
+    }, {
+      stdout: `${JSON.stringify(agyPayload({ denied_actions: ["write_file", "command"] }))}\n`,
+      exitCode: 0,
+    }, agyAuth());
+    assert.equal(denied.result.ok, false);
+    assert.equal(denied.result.errorCode, "turn_failed");
+    assert.match(readFileSync(denied.result.errorPath as string, "utf8"), /write_file/);
+    assert.doesNotMatch(JSON.stringify(denied.result), /write_file/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -743,6 +949,21 @@ const inputHarnesses: Array<{
   assignment: { stdout: string };
 }> = [
   {
+    harness: "agy",
+    role: "writer",
+    model: "gemini-3.8-flash-low",
+    permission: "edit",
+    auth: agyAuth,
+    assignment: {
+      stdout: `${JSON.stringify({
+        conversation_id: "agy-rel",
+        status: "SUCCESS",
+        response: "ok",
+        usage: { input_tokens: 1, output_tokens: 1, thinking_tokens: 0, cache_read_tokens: 0, total_tokens: 2 },
+      })}\n`,
+    },
+  },
+  {
     harness: "grok",
     role: "writer",
     model: "grok-4.6",
@@ -904,6 +1125,14 @@ test("relative prompt and schema resolve from invocation cwd, not request.cwd", 
       });
       assert.equal(spawns.length, 1, spec.harness);
       const argv = spawns[0]?.argv ?? [];
+      if (spec.harness === "agy") {
+        assert.equal(argv[argv.indexOf("-p") + 1], briefBody, spec.harness);
+        assert(!argv.includes("--prompt-file"), spec.harness);
+        assert.equal(stdinText, "", spec.harness);
+        const schemaAt = argv.indexOf("--json-schema");
+        assert.notEqual(schemaAt, -1, spec.harness);
+        assert.equal(argv[schemaAt + 1], expectedSchema, spec.harness);
+      }
       if (spec.harness === "grok" || spec.harness === "pi") {
         const promptToken = spec.harness === "grok"
           ? argv[argv.indexOf("--prompt-file") + 1]

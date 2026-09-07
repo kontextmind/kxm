@@ -25,7 +25,7 @@ It does not replace the phase gates below.
   Workflows, Plans, Inbox, Procs. Wide terminals use list+detail panes.
 - Agent/model config is Git YAML. Omit `harness` (and `defaultHarness`) for
   **Pi**. Other harness ids (`claude`, `kimi`, `codex`, `gemini`, `deepseek`,
-  `grok`, and later others) are declared on the agent. No second enable/disable
+  `grok`, `agy`, and later others) are declared on the agent. No second enable/disable
   preferences file.
 - A harness only runs models it actually hosts (Claude ≠ Grok; Codex ≠ Kimi).
   Only Pi is the long-lived headless worker. Other CLIs may be interactive or
@@ -48,6 +48,11 @@ It does not replace the phase gates below.
   one-shot headless writer, not a supervised long-lived worker. The repo
   `scripts/harness-run.mjs` helper is a bounded dev dispatcher (auth preflight,
   verified pairs, private sidecars), not a Phase 11 product adapter.
+  **agy (Antigravity CLI, 2026-09-08):** admitted native Google subscription
+  writer/experiment edit route for Gemini kebab ids only. One-shot headless
+  CLI, not a worker. Starting rotation unchanged (Grok remains first).
+  Deprecated `gemini` CLI catalog entry is not removed or braked in this
+  slice.
 - **Developer assignment runner (issue 127, unreleased):** normal entry is
   `just assign` with a closed `kxm.assignment.v1` manifest and
   `task_dir/plan-current.json`. Fixed `just witness` verifies the exact
@@ -185,6 +190,18 @@ It does not replace the phase gates below.
 - **Workflow taxonomy (operator, 2026-09-07):** [`docs/openrouter-model-workforce-guide.md`](../openrouter-model-workforce-guide.md) is organized Area -> Workflow -> Stage -> Assigned role across seven areas (`software-engineering`, `design-experience`, `media-production`, `data-analytics`, `research-strategy`, `business-operations`, `security-reliability`) and 21 workflows with declared kebab-case documentation slugs. Slugs are documentation identity only: no runtime config, role admission, schema field, CLI behavior, or alias lane. Inherited candidate lists are dated research requiring live verification before dispatch, not certified prices or an eligibility grant. Model/harness, platform, modality, tools, and personal/work context are routing attributes, not area trees; area grouping never pools unrelated role quality into one global model ranking. Fable and Sol critics remain required for the developer runner. No phase gate changes.
 
 ### Landed in this tree (unreleased)
+
+- **agy (Antigravity CLI) helper admission:** `scripts/harness-run.mjs`
+  `ROUTES.agy` is a writer/experiment **edit** route (provider `google`,
+  Gemini kebab ids only) with argv `-p` prompt transport (no `--prompt-file`,
+  no stdin), JSON `status` parsing (never the exit code), unmetered
+  subscription cost, and non-empty `denied_actions` as `turn_failed`. Catalog
+  `id: agy` is observational (`mode: either`, `authArgs: ["models"]`,
+  `update.self: ["update"]`). Auth success is a non-empty models list from
+  `agy models` (method `antigravity-oauth`). Not a Pi-style RPC worker;
+  starting writer rotation is unchanged. Deprecated `gemini` CLI catalog
+  entry stays. Read-only agy roles and agy-hosted non-Google models remain
+  deferred.
 
 - **ARC scale-set CI selectors:** all `ci.yml` / `release.yml` / `smoke.yml`
   `runs-on` values are the scalar scale-set name `kontextmind-doks`. The

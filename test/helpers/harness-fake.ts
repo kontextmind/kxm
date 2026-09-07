@@ -76,6 +76,11 @@ export function grokAuth() {
   return { status: 0, stdout: String(fixture.stdout), stderr: "", error: undefined };
 }
 
+export function agyAuth() {
+  const fixture = authFixture("agy");
+  return { status: 0, stdout: String(fixture.stdout), stderr: String(fixture.stderr ?? ""), error: undefined };
+}
+
 export function claudeAuth() {
   const fixture = authFixture("claude");
   return {
@@ -106,13 +111,13 @@ export async function dispatch(request: Record<string, unknown>, assignment: {
   exitCode?: number | null;
   hang?: boolean;
 }, auth = grokAuth(), extras: Record<string, unknown> = {}) {
-  const spawns: Array<{ command: string; argv: string[]; options: { shell?: boolean } }> = [];
+  const spawns: Array<{ command: string; argv: string[]; options: { shell?: boolean; stdio?: unknown } }> = [];
   const result = await runHarness(request as never, {
     platform: extras.platform ?? process.platform,
     env: { PATH: extras.pathEnv ?? "/tmp/kxm-harness-bin", ...(extras.env as object ?? {}) },
     existsSync: extras.existsSync ?? ((path: string) => String(path).includes(String(request.harness))),
     spawnSync: () => auth,
-    spawn: (command: string, argv: string[], options: { shell?: boolean }) => {
+    spawn: (command: string, argv: string[], options: { shell?: boolean; stdio?: unknown }) => {
       spawns.push({ command, argv, options });
       return fakeChild(assignment);
     },

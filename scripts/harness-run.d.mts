@@ -53,6 +53,7 @@ export function parseAuth(harness: string, stdio: {
 export function buildArgv(request: Record<string, unknown>, ctx?: {
   mcpConfigPath?: string;
   promptPath?: string;
+  promptText?: string;
   schemaPath?: string;
   schemaText?: string;
 }): string[];
@@ -68,6 +69,7 @@ export function diagnoseHarnessResult(payload: unknown, filePath?: string): {
 export function formatRunListing(payload: unknown, filePath?: string): string;
 export function normalizePi(stdout: string): Record<string, any>;
 export function normalizeCodex(stdout: string): Record<string, any>;
+export function normalizeAgy(payload: unknown): Record<string, any>;
 export function resolveModelUsage(modelUsage: Record<string, unknown>, requestedModel?: string): {
   effectiveModel?: string;
   primary?: Record<string, unknown>;

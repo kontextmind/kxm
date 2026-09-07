@@ -53,6 +53,8 @@ export interface HarnessInventory {
 
 const UNKNOWN_AUTH_HARNESSES = new Set(["kimi", "gemini", "deepseek"]);
 const GROK_LOGIN_LINE = "You are logged in with grok.com.";
+/** Tab-separated `id<TAB>label` rows from the committed `agy models` probe. */
+const AGY_MODEL_ROW = /^[a-z0-9][a-z0-9.+_-]*\t+\S/im;
 const CODEX_CHATGPT_LINE = "Logged in using ChatGPT";
 const CODEX_API_KEY_PREFIX = "Logged in using an API key";
 const CODEX_NEGATIVE_LINE = "Not logged in";
@@ -138,6 +140,16 @@ export const BUILTIN_HARNESSES: readonly HarnessCatalogEntry[] = Object.freeze([
     default: false,
     mode: "either",
     commands: ["grok"],
+    versionArgs: ["--version"],
+    authArgs: ["models"],
+    update: { self: ["update"] },
+  },
+  {
+    id: "agy",
+    label: "Antigravity CLI",
+    default: false,
+    mode: "either",
+    commands: ["agy"],
     versionArgs: ["--version"],
     authArgs: ["models"],
     update: { self: ["update"] },
@@ -248,6 +260,14 @@ function interpretAuth(id: string, result: HarnessCommandResult): { authenticate
   }
   if (id === "grok") {
     if (commandSucceeded(result) && lines.some((line) => line === GROK_LOGIN_LINE)) return { authenticated: true, issues: [] };
+    return { authenticated: null, issues: ["auth_unparsed"] };
+  }
+  if (id === "agy") {
+    const text = `${result.stdout}\n${result.stderr}`;
+    if (!commandSucceeded(result) || !text.trim()) {
+      return { authenticated: false, issues: ["not_authenticated"] };
+    }
+    if (AGY_MODEL_ROW.test(text)) return { authenticated: true, issues: [] };
     return { authenticated: null, issues: ["auth_unparsed"] };
   }
   return { authenticated: null, issues: ["auth_unparsed"] };
