@@ -941,6 +941,7 @@ const RESULT_PUBLIC_KEYS = Object.freeze([
   "cacheReadTokens",
   "cacheCreationTokens",
   "reasoningTokens",
+  "totalTokens",
   "costUsd",
   "costBasis",
   "providerReportedCostUsd",
@@ -993,6 +994,7 @@ const PROVIDER_METADATA_KEYS = Object.freeze([
   "cacheReadTokens",
   "cacheCreationTokens",
   "reasoningTokens",
+  "totalTokens",
   "tokenBasis",
 ]);
 
@@ -2001,7 +2003,7 @@ function buildTransportResult(input) {
   const { capped, metadata } = applyRoutingCap(fields);
   const usagePresent = [
     capped.tokensIn, capped.tokensOut, capped.cacheReadTokens, capped.cacheCreationTokens,
-    capped.reasoningTokens, fields.costUsd, fields.providerReportedCostUsd, metadata.tokensIn,
+    capped.reasoningTokens, capped.totalTokens, fields.costUsd, fields.providerReportedCostUsd, metadata.tokensIn,
   ].some((value) => value !== undefined);
   const usagePartial = status !== "completed" && usagePresent;
   const publicErrorCode = status === "completed" ? undefined : errorCode;

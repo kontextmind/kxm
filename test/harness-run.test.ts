@@ -662,6 +662,7 @@ test("agy JSON status is trusted over exit code; timeout, unmetered, and denied_
     assert.equal(ok.result.effectiveModel, undefined);
     assert.equal(ok.result.tokensIn, 10);
     assert.equal(ok.result.reasoningTokens, 2);
+    assert.equal(ok.result.totalTokens, 19);
     assert.doesNotMatch(JSON.stringify(ok.result), /"costUsd":0/);
     assert.equal(ok.spawns[0]?.options.shell, false);
     const stdio = ok.spawns[0]?.options.stdio;
