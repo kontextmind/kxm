@@ -1,0 +1,16 @@
+schema: kxm.workflow.v1
+description: Single command gate with evaluated outcomes.
+coordinator: coordinator
+limits:
+  maxTransitions: 4
+steps:
+  - id: check
+    kind: gate
+    gate: test
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      implementation-failure:
+        target: $terminal
+        terminalStatus: failed

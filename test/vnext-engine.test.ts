@@ -1017,7 +1017,7 @@ function processAlive(pid: number | undefined): boolean {
   }
 }
 
-test("store brakes: registry v1 stays valid; event store v2; v1/v99/shape fail closed", () => {
+test("store brakes: registry v1 stays valid; event store v3; v1/v2/v99/shape fail closed", () => {
   const { root, stateRoot } = engineProject("kxm-engine-store-");
   try {
     const paths = vnextRuntimePaths({ stateRoot });
@@ -1041,7 +1041,13 @@ test("store brakes: registry v1 stays valid; event store v2; v1/v99/shape fail c
       PRAGMA user_version = 1;
     `);
     old.close();
-    assert.throws(() => new VnextRunEventStore(v1), /runtime_schema_outdated[\s\S]*E6/);
+    assert.throws(() => new VnextRunEventStore(v1), /runtime_schema_outdated[\s\S]*older than 3[\s\S]*E6/);
+
+    const v2 = join(stateRoot, "v2-events.db");
+    const prior = new DatabaseSync(v2);
+    prior.exec("PRAGMA user_version = 2");
+    prior.close();
+    assert.throws(() => new VnextRunEventStore(v2), /runtime_schema_outdated[\s\S]*older than 3[\s\S]*no migration lane/);
 
     const newer = join(stateRoot, "v99-events.db");
     const bump = new DatabaseSync(newer);

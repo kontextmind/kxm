@@ -34599,7 +34599,7 @@ function openDatabase(file, description, spec) {
       throw runtimeError(
         "runtime_schema_outdated",
         file,
-        `${description} schema version ${version} is older than ${spec.version}; backup, restore, and migration remain E6`
+        `${description} schema version ${version} is older than ${spec.version}; no migration lane, backup and restore remain E6`
       );
     } else {
       verifyExpectedTables(database, file, description, spec.tables);

@@ -1,0 +1,17 @@
+schema: kxm.workflow.v1
+description: Gate retry that exhausts an edge budget.
+coordinator: coordinator
+limits:
+  maxTransitions: 8
+steps:
+  - id: check
+    kind: gate
+    gate: test
+    maxAttempts: 3
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      implementation-failure:
+        target: check
+        maxTransitions: 1

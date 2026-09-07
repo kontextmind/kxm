@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { vnextCanonicalJson, type JsonObject, type JsonValue } from "./vnext-config.ts";
+import { vnextCanonicalJson, vnextPortablePath, type JsonObject, type JsonValue } from "./vnext-config.ts";
 import {
   VNEXT_COMPILED_WORKFLOW_SCHEMA,
   type VnextCompiledAssignments,
@@ -17,14 +17,18 @@ import {
   type VnextRunRecord,
 } from "./vnext-runtime-store.ts";
 
-export const VNEXT_RUN_PLAN_SCHEMA = "kxm.run-plan.v1";
+export const VNEXT_RUN_PLAN_SCHEMA = "kxm.run-plan.v2";
 const SUPPORTED_KINDS = new Set(["agent", "moa", "gate", "approval", "wait"]);
 const TERMINAL = new Set(["completed", "failed", "cancelled"]);
 const JOIN_STRATEGIES = new Set(["all", "all-settled", "quorum", "first-success"]);
 const EVIDENCE_KINDS = new Set(["assignment-result", "gate", "receipt", "approval", "artifact"]);
 const REPOSITORY_ACCESS = new Set(["none", "read", "write"]);
 const DISTINCT_BY = new Set(["provider", "model", "profile"]);
-const ENVELOPE_REQUIRED = ["schema", "runId", "projectId", "homeRuntimeId", "workflowId", "revisions", "projectLimits", "plan"] as const;
+const ENVELOPE_REQUIRED = ["schema", "runId", "projectId", "homeRuntimeId", "workflowId", "revisions", "projectLimits", "plan", "gates"] as const;
+const GATES_REQUIRED = ["registry", "definitions", "controlRoot"] as const;
+const REGISTRY_PIN_REQUIRED = ["schema", "hash"] as const;
+const CONTROL_ROOT_REQUIRED = ["repositoryId", "projectKey"] as const;
+const GATE_REGISTRY_SCHEMA = "kxm.gate-registry.v1";
 const REVISION_REQUIRED = ["config", "executorPolicy", "toolPolicy", "memory"] as const;
 const PROJECT_LIMIT_REQUIRED = ["maxConcurrentRuns"] as const;
 const PROJECT_LIMIT_OPTIONAL = ["maxRunDurationMs", "maxAgentTimeMs"] as const;
@@ -54,6 +58,17 @@ const JOIN_OPTIONAL = ["minimumPassed", "cancelRemaining"] as const;
 const EVIDENCE_REQUIRED = ["key", "kind", "minimum", "reusableAcrossAttempts"] as const;
 const EVIDENCE_OPTIONAL = ["producerPolicy"] as const;
 
+export type VnextGateDefinition =
+  | { readonly kind: "command"; readonly argv: readonly string[]; readonly timeoutMs: number; readonly cwd?: "control" }
+  | { readonly kind: "artifacts-exist"; readonly paths: readonly string[] }
+  | { readonly kind: "reserved" };
+
+export interface VnextPinnedGates {
+  readonly registry: { readonly schema: typeof GATE_REGISTRY_SCHEMA; readonly hash: string } | null;
+  readonly definitions: Readonly<Record<string, VnextGateDefinition>>;
+  readonly controlRoot: { readonly repositoryId: "control"; readonly projectKey: string };
+}
+
 export interface VnextRunPlanEnvelope {
   readonly schema: typeof VNEXT_RUN_PLAN_SCHEMA;
   readonly runId: string;
@@ -72,6 +87,7 @@ export interface VnextRunPlanEnvelope {
     readonly maxAgentTimeMs?: number;
   };
   readonly plan: VnextCompiledPlan;
+  readonly gates: VnextPinnedGates;
 }
 
 export function vnextSha256(input: string): string {
@@ -165,7 +181,7 @@ function parseEnvelope(parsed: unknown, run: VnextRunRecord): VnextRunPlanEnvelo
   const value = asObject(parsed, run.runId, "run plan envelope");
   assertExactKeys(value, ENVELOPE_REQUIRED, [], run.runId, "run plan envelope");
   if (value.schema !== VNEXT_RUN_PLAN_SCHEMA) {
-    throw runtimeError("run_plan_corrupt", run.runId, "run plan envelope schema is not kxm.run-plan.v1");
+    throw runtimeError("run_plan_corrupt", run.runId, "schema is not kxm.run-plan.v2");
   }
   const runId = asString(value.runId, run.runId, "runId");
   const projectId = asString(value.projectId, run.runId, "projectId");
@@ -197,6 +213,7 @@ function parseEnvelope(parsed: unknown, run: VnextRunRecord): VnextRunPlanEnvelo
     ...(limitsValue.maxRunDurationMs !== undefined ? { maxRunDurationMs: asDuration(limitsValue.maxRunDurationMs, run.runId, "projectLimits.maxRunDurationMs") } : {}),
     ...(limitsValue.maxAgentTimeMs !== undefined ? { maxAgentTimeMs: asDuration(limitsValue.maxAgentTimeMs, run.runId, "projectLimits.maxAgentTimeMs") } : {}),
   };
+  const plan = freezeVnextCompiledPlan(parseCompiledPlan(value.plan, run.runId));
   return {
     schema: VNEXT_RUN_PLAN_SCHEMA,
     runId,
@@ -205,8 +222,134 @@ function parseEnvelope(parsed: unknown, run: VnextRunRecord): VnextRunPlanEnvelo
     workflowId,
     revisions,
     projectLimits,
-    plan: freezeVnextCompiledPlan(parseCompiledPlan(value.plan, run.runId)),
+    plan,
+    gates: freezeGates(parseGates(value.gates, plan, run.runId)),
   };
+}
+
+function parseGates(raw: unknown, plan: VnextCompiledPlan, runId: string): VnextPinnedGates {
+  const value = asObject(raw, runId, "gates");
+  assertExactKeys(value, GATES_REQUIRED, [], runId, "gates");
+  const referenced = new Set<string>();
+  for (const stepId of plan.order) {
+    const step = plan.steps[stepId];
+    if (step?.kind === "gate") referenced.add(step.gate);
+  }
+  const registry = parseRegistryPin(value.registry, runId, referenced.size > 0);
+  const controlRoot = parseControlRoot(value.controlRoot, runId);
+  const definitionsValue = asObject(value.definitions, runId, "gates.definitions");
+  const defined = Object.keys(definitionsValue);
+  for (const stepId of plan.order) {
+    const step = plan.steps[stepId];
+    if (step?.kind !== "gate") continue;
+    if (!(step.gate in definitionsValue)) {
+      throw runtimeError("run_plan_corrupt", runId, `gate step ${stepId} has no pinned definition`);
+    }
+  }
+  for (const gateId of defined) {
+    if (!referenced.has(gateId)) {
+      throw runtimeError("run_plan_corrupt", runId, `definition ${gateId} is not referenced`);
+    }
+  }
+  const definitions = Object.create(null) as Record<string, VnextGateDefinition>;
+  for (const gateId of defined) {
+    definitions[gateId] = parseGateDefinition(definitionsValue[gateId], gateId, runId);
+  }
+  return { registry, definitions, controlRoot };
+}
+
+function parseRegistryPin(raw: unknown, runId: string, required: boolean): VnextPinnedGates["registry"] {
+  if (raw === null) {
+    if (required) throw runtimeError("run_plan_corrupt", runId, "gate steps require a non-null registry pin");
+    return null;
+  }
+  const value = asObject(raw, runId, "gates.registry");
+  assertExactKeys(value, REGISTRY_PIN_REQUIRED, [], runId, "gates.registry");
+  if (value.schema !== GATE_REGISTRY_SCHEMA) {
+    throw runtimeError("run_plan_corrupt", runId, "gates.registry.schema is not kxm.gate-registry.v1");
+  }
+  const hash = asString(value.hash, runId, "gates.registry.hash");
+  if (!/^sha256:[a-f0-9]{64}$/.test(hash)) {
+    throw runtimeError("run_plan_corrupt", runId, "gates.registry.hash is not a sha256 digest");
+  }
+  return { schema: GATE_REGISTRY_SCHEMA, hash };
+}
+
+function parseControlRoot(raw: unknown, runId: string): VnextPinnedGates["controlRoot"] {
+  const value = asObject(raw, runId, "gates.controlRoot");
+  assertExactKeys(value, CONTROL_ROOT_REQUIRED, [], runId, "gates.controlRoot");
+  const repositoryId = asString(value.repositoryId, runId, "gates.controlRoot.repositoryId");
+  if (repositoryId !== "control") {
+    throw runtimeError("run_plan_corrupt", runId, "gates.controlRoot.repositoryId must be control");
+  }
+  return { repositoryId: "control", projectKey: asString(value.projectKey, runId, "gates.controlRoot.projectKey") };
+}
+
+export function parseGateDefinition(raw: unknown, gateId: string, runId: string): VnextGateDefinition {
+  const value = asObject(raw, runId, `gates.definitions.${gateId}`);
+  const kind = asString(value.kind, runId, `gates.definitions.${gateId}.kind`);
+  if (kind === "command") {
+    assertExactKeys(value, ["kind", "argv", "timeoutMs"], ["cwd"], runId, `gates.definitions.${gateId}`);
+    const argv = asStringArray(value.argv, runId, `gates.definitions.${gateId}.argv`);
+    if (argv.length < 1 || argv.length > 64) {
+      throw runtimeError("run_plan_corrupt", runId, `gates.definitions.${gateId}.argv length is invalid`);
+    }
+    for (const [index, entry] of argv.entries()) {
+      if (entry.length === 0 || entry.length > 4096 || entry.includes("\u0000")) {
+        throw runtimeError("run_plan_corrupt", runId, `gates.definitions.${gateId}.argv[${index}] is invalid`);
+      }
+    }
+    const executable = argv[0]!;
+    if (executable === "." || executable === ".." || executable.includes("\\") || (!executable.startsWith("/") && executable.includes("/"))) {
+      throw runtimeError("run_plan_corrupt", runId, `gates.definitions.${gateId} argv[0] must be a bare executable or absolute POSIX path`);
+    }
+    const timeoutMs = value.timeoutMs;
+    if (typeof timeoutMs !== "number" || !Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 2_147_483_647) {
+      throw runtimeError("run_plan_corrupt", runId, `gates.definitions.${gateId}.timeoutMs is invalid`);
+    }
+    if (value.cwd !== undefined && value.cwd !== "control") {
+      throw runtimeError("run_plan_corrupt", runId, `gates.definitions.${gateId}.cwd is invalid`);
+    }
+    return {
+      kind: "command",
+      argv,
+      timeoutMs,
+      ...(value.cwd === "control" ? { cwd: "control" as const } : {}),
+    };
+  }
+  if (kind === "artifacts-exist") {
+    assertExactKeys(value, ["kind", "paths"], [], runId, `gates.definitions.${gateId}`);
+    const paths = asStringArray(value.paths, runId, `gates.definitions.${gateId}.paths`);
+    if (paths.length < 1 || paths.length > 64) {
+      throw runtimeError("run_plan_corrupt", runId, `gates.definitions.${gateId}.paths length is invalid`);
+    }
+    if (new Set(paths).size !== paths.length) {
+      throw runtimeError("run_plan_corrupt", runId, `gates.definitions.${gateId}.paths are not unique`);
+    }
+    for (const path of paths) {
+      if (path === "." || !vnextPortablePath(path) || path.startsWith("/") || path.includes("\\")) {
+        throw runtimeError("run_plan_corrupt", runId, `gates.definitions.${gateId} path is not a portable relative path`);
+      }
+    }
+    return { kind: "artifacts-exist", paths };
+  }
+  if (kind === "reserved") {
+    assertExactKeys(value, ["kind"], [], runId, `gates.definitions.${gateId}`);
+    return { kind: "reserved" };
+  }
+  throw runtimeError("run_plan_corrupt", runId, `gates.definitions.${gateId} kind is invalid`);
+}
+
+function freezeGates(gates: VnextPinnedGates): VnextPinnedGates {
+  const definitions = Object.create(null) as Record<string, VnextGateDefinition>;
+  for (const [id, definition] of Object.entries(gates.definitions)) {
+    definitions[id] = deepFreeze({ ...definition, ...(definition.kind === "command" ? { argv: [...definition.argv] } : {}), ...(definition.kind === "artifacts-exist" ? { paths: [...definition.paths] } : {}) } as VnextGateDefinition);
+  }
+  return deepFreeze({
+    registry: gates.registry ? { ...gates.registry } : null,
+    definitions,
+    controlRoot: { ...gates.controlRoot },
+  });
 }
 
 function parseCompiledPlan(raw: unknown, runId: string): VnextCompiledPlan {

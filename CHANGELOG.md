@@ -14,8 +14,11 @@ All notable user-facing changes are documented here. The project follows [Semant
   `producer_rejected` without leaking the attempt capability. A process
   restart of an executing attempt is unreconciled; operator cancel before pin
   still rebuilds. Duration/cost limits and the default/fix driver gate stay
-  fail-closed for later slices. Event store is schema v2; version-1 files are
-  refused (E6).
+  fail-closed for later slices. Event store is schema v3 with immutable gate
+  rows; version-1 and version-2 files and `kxm.run-plan.v1` envelopes are
+  refused (E6). Gate dispatch stays S3/S4. Evaluated gate settlement applies
+  transition-budget failure, and complete/no-start observation facts are
+  closed on both insert and replay.
 - Pure vNext workflow compile (`vnext-engine-compile.ts`) turns a validated
   `kxm.workflow.v1` into a frozen JSON plan. Compile is not execution; D3/D4
   remain open.

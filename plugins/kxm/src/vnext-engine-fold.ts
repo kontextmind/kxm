@@ -45,6 +45,24 @@ const ATTEMPT_EDGES: Readonly<Record<string, ReadonlySet<string>>> = {
   settling: new Set(["terminal"]),
 };
 
+export type VnextRunEffectState =
+  | "intent"
+  | "dispatched"
+  | "observed-complete"
+  | "observed-no-start"
+  | "observed-unknown"
+  | "blocked_uncertain"
+  | "settled"
+  | "settled-proof";
+
+export interface VnextFoldOptions {
+  readonly observationLookup?: (
+    attemptId: string,
+    observationId: string,
+  ) => { completeness: "complete" | "incomplete" | "no-start" } | undefined;
+  readonly gateKind?: (stepId: string) => string | undefined;
+}
+
 export interface VnextRunCurrentStep {
   readonly stepId: string;
   readonly stepAttempt: number;
@@ -54,6 +72,13 @@ export interface VnextRunCurrentStep {
   readonly assignmentStatus?: string | undefined;
   readonly attemptStatus?: string | undefined;
   readonly outcome?: string | undefined;
+  readonly effectId?: string | undefined;
+  readonly effectState?: VnextRunEffectState | undefined;
+  readonly observationId?: string | undefined;
+  readonly observationHash?: string | undefined;
+  readonly observationCompleteness?: "complete" | "no-start" | "unknown" | undefined;
+  readonly settledOutcome?: string | undefined;
+  readonly evidenceRefs?: readonly { id: string; kind: string; hash: string; status: string }[] | undefined;
 }
 
 export interface VnextRunState {
@@ -85,6 +110,13 @@ interface MutableState {
     assignmentStatus?: string | undefined;
     attemptStatus?: string | undefined;
     outcome?: string | undefined;
+    effectId?: string | undefined;
+    effectState?: VnextRunEffectState | undefined;
+    observationId?: string | undefined;
+    observationHash?: string | undefined;
+    observationCompleteness?: "complete" | "no-start" | "unknown" | undefined;
+    settledOutcome?: string | undefined;
+    evidenceRefs?: Array<{ id: string; kind: string; hash: string; status: string }> | undefined;
   } | undefined;
   stepAttempts: Record<string, number>;
   edgeTransitions: Record<string, number>;
@@ -104,6 +136,7 @@ export function foldVnextRunState(
   run: VnextRunRecord,
   plan: VnextCompiledPlan | undefined,
   events: readonly VnextRunEvent[],
+  options: VnextFoldOptions = {},
 ): VnextRunState {
   if (events.length === 0) {
     throw runtimeError("run_events_illegal", run.runId, "run has no events");
@@ -137,10 +170,28 @@ export function foldVnextRunState(
       }
     }
     if (
-      (event.eventType.startsWith("step.") || event.eventType.startsWith("assignment.") || event.eventType.startsWith("attempt."))
+      (
+        event.eventType.startsWith("step.")
+        || event.eventType.startsWith("assignment.")
+        || event.eventType.startsWith("attempt.")
+        || event.eventType.startsWith("effect.")
+      )
       && !plan
     ) {
       throw runtimeError("run_plan_missing", run.runId, "step events require a pinned run plan");
+    }
+    if (state.currentStep?.effectState === "blocked_uncertain") {
+      const namesFrozen = event.payload.stepId === state.currentStep.stepId
+        || event.payload.attemptId === state.currentStep.attemptId
+        || event.payload.assignmentId === state.currentStep.assignmentId
+        || (event.payload.effect !== undefined && typeof event.payload.effect === "object" && event.payload.effect !== null && "id" in event.payload.effect && (event.payload.effect as { id?: unknown }).id === state.currentStep.effectId);
+      const blockedFamily = event.eventType.startsWith("step.")
+        || event.eventType.startsWith("assignment.")
+        || event.eventType.startsWith("attempt.")
+        || event.eventType.startsWith("effect.");
+      if (blockedFamily && namesFrozen) {
+        throw runtimeError("run_events_illegal", run.runId, "blocked_uncertain freezes the gate attempt");
+      }
     }
     switch (event.eventType) {
       case "run.created":
@@ -186,7 +237,22 @@ export function foldVnextRunState(
         foldAttemptCreated(state, event);
         break;
       case "attempt.status_changed":
-        foldAttemptStatus(state, event);
+        foldAttemptStatus(state, plan!, event);
+        break;
+      case "effect.intent_recorded":
+        foldEffectIntent(state, plan!, event);
+        break;
+      case "effect.dispatched":
+        foldEffectDispatched(state, plan!, event);
+        break;
+      case "effect.observed":
+        foldEffectObserved(state, plan!, event, options);
+        break;
+      case "effect.settled":
+        foldEffectSettled(state, plan!, event);
+        break;
+      case "effect.blocked_uncertain":
+        foldEffectUncertain(state, plan!, event);
         break;
       default:
         throw runtimeError("run_events_illegal", run.runId, `event type ${event.eventType} is not legal in this engine slice`);
@@ -295,7 +361,13 @@ function assertTerminalRunStatus(
   if (status === "failed") {
     if (state.lastTerminalTransition === "failed") return;
     if (isProvenFailure(state, plan)) return;
-    if (event.payload.reason === "executing_unrecorded" && state.currentStep?.attemptStatus === "starting") return;
+    if (event.payload.reason === "executing_unrecorded" && state.currentStep?.attemptStatus === "starting") {
+      const step = plan?.steps[state.currentStep.stepId];
+      if (step?.kind === "gate") {
+        throw runtimeError("run_events_illegal", state.runId, "executing_unrecorded is illegal on a gate step");
+      }
+      return;
+    }
     throw runtimeError("run_events_illegal", state.runId, "failed requires a selected failed terminal or proven rejection/budget facts");
   }
 }
@@ -525,8 +597,13 @@ function foldAssignmentAdvance(state: MutableState, plan: VnextCompiledPlan, eve
   if (!ASSIGNMENT_STATUSES.has(next)) {
     throw runtimeError("run_events_illegal", state.runId, `illegal assignment status ${next}`);
   }
+  const step = requireStep(plan, current.stepId, state.runId);
   const allowed = ASSIGNMENT_EDGES[current.assignmentStatus];
-  if (!allowed?.has(next)) {
+  const noStartProof = step.kind === "gate"
+    && current.assignmentStatus === "dispatched"
+    && next === "result_recorded"
+    && (current.effectState === "observed-no-start" || current.effectState === "settled-proof");
+  if (!allowed?.has(next) && !noStartProof) {
     throw runtimeError("run_events_illegal", state.runId, `illegal assignment transition ${current.assignmentStatus} -> ${next}`);
   }
   if (next === "dispatched") {
@@ -539,14 +616,32 @@ function foldAssignmentAdvance(state: MutableState, plan: VnextCompiledPlan, eve
     }
     if (resultClass === "outcome") {
       const outcome = stringPayload(event, "outcome");
-      const step = requireStep(plan, current.stepId, state.runId);
       if (!step.outcomes.includes(outcome)) {
         throw runtimeError("run_events_illegal", state.runId, `outcome ${outcome} is not declared for ${current.stepId}`);
+      }
+      if (step.kind === "gate") {
+        if (current.effectState !== "settled") {
+          throw runtimeError("run_events_illegal", state.runId, "gate outcome requires evaluated effect.settled");
+        }
+        if (outcome !== current.settledOutcome) {
+          throw runtimeError("run_events_illegal", state.runId, "gate result outcome does not match settledOutcome");
+        }
       }
       state.recordedOutcome = outcome;
     } else if (event.payload.outcome !== undefined) {
       throw runtimeError("run_events_illegal", state.runId, "non-outcome resultClass must not set outcome");
     } else {
+      if (step.kind === "gate") {
+        if (resultClass === "outcome_unknown") {
+          throw runtimeError("run_events_illegal", state.runId, "outcome_unknown is illegal on a gate step");
+        }
+        if (current.effectState !== "settled-proof") {
+          throw runtimeError("run_events_illegal", state.runId, "gate producer_rejected or cancelled requires proof-only effect.settled");
+        }
+        if (resultClass === "producer_rejected" && current.observationCompleteness !== "no-start") {
+          throw runtimeError("run_events_illegal", state.runId, "producer_rejected requires a no-start observation");
+        }
+      }
       state.recordedOutcome = undefined;
     }
     state.recordedResultClass = resultClass;
@@ -587,7 +682,7 @@ function foldAttemptCreated(state: MutableState, event: VnextRunEvent): void {
   state.currentStep = { ...current, attemptId, attemptStatus: "created" };
 }
 
-function foldAttemptStatus(state: MutableState, event: VnextRunEvent): void {
+function foldAttemptStatus(state: MutableState, plan: VnextCompiledPlan, event: VnextRunEvent): void {
   requireActiveStep(state, "attempt.status_changed");
   const current = state.currentStep!;
   if (!current.attemptId || !current.attemptStatus) {
@@ -602,10 +697,190 @@ function foldAttemptStatus(state: MutableState, event: VnextRunEvent): void {
     throw runtimeError("run_events_illegal", state.runId, `illegal attempt status ${status}`);
   }
   const allowed = ATTEMPT_EDGES[current.attemptStatus];
-  if (!allowed?.has(status)) {
+  const step = requireStep(plan, current.stepId, state.runId);
+  const noStartSettling = step.kind === "gate"
+    && current.attemptStatus === "starting"
+    && status === "settling"
+    && (current.effectState === "observed-no-start" || current.effectState === "settled-proof");
+  if (!allowed?.has(status) && !noStartSettling) {
     throw runtimeError("run_events_illegal", state.runId, `illegal attempt transition ${current.attemptStatus} -> ${status}`);
   }
   state.currentStep = { ...current, attemptStatus: status };
+}
+
+function requireGateEffect(state: MutableState, plan: VnextCompiledPlan, event: VnextRunEvent): NonNullable<MutableState["currentStep"]> {
+  requireActiveStep(state, event.eventType);
+  const current = state.currentStep!;
+  const step = requireStep(plan, current.stepId, state.runId);
+  if (step.kind !== "gate") {
+    throw runtimeError("run_events_illegal", state.runId, "agent steps reject effect events");
+  }
+  assertEffectIdentity(state, event, current);
+  return current;
+}
+
+function assertEffectIdentity(state: MutableState, event: VnextRunEvent, current: NonNullable<MutableState["currentStep"]>): void {
+  const effect = event.payload.effect;
+  if (!effect || typeof effect !== "object" || Array.isArray(effect)) {
+    throw runtimeError("run_events_illegal", state.runId, `${event.eventType} is missing effect`);
+  }
+  const effectId = (effect as { id?: unknown }).id;
+  if (typeof effectId !== "string" || effectId.length === 0) {
+    throw runtimeError("run_events_illegal", state.runId, `${event.eventType} is missing effect.id`);
+  }
+  const stepId = stringPayload(event, "stepId");
+  const stepAttempt = integerPayload(event, "stepAttempt");
+  const assignmentId = stringPayload(event, "assignmentId");
+  const attemptId = stringPayload(event, "attemptId");
+  if (stepId !== current.stepId || stepAttempt !== current.stepAttempt || assignmentId !== current.assignmentId || attemptId !== current.attemptId) {
+    throw runtimeError("run_events_illegal", state.runId, `${event.eventType} identity does not match the active attempt`);
+  }
+  if (current.effectId && current.effectId !== effectId) {
+    throw runtimeError("run_events_illegal", state.runId, `${event.eventType} effect.id does not match the active effect`);
+  }
+}
+
+function foldEffectIntent(state: MutableState, plan: VnextCompiledPlan, event: VnextRunEvent): void {
+  const current = requireGateEffect(state, plan, event);
+  if (current.attemptStatus !== "starting" || current.effectState) {
+    throw runtimeError("run_events_illegal", state.runId, "effect.intent_recorded requires a starting attempt with no effect");
+  }
+  const effectId = ((event.payload.effect as { id: string }).id);
+  state.currentStep = { ...current, effectId, effectState: "intent" };
+}
+
+function foldEffectDispatched(state: MutableState, plan: VnextCompiledPlan, event: VnextRunEvent): void {
+  const current = requireGateEffect(state, plan, event);
+  if (current.effectState !== "intent") {
+    throw runtimeError("run_events_illegal", state.runId, "effect.dispatched requires effect intent");
+  }
+  if (current.assignmentStatus !== "executing" || current.attemptStatus !== "executing") {
+    throw runtimeError("run_events_illegal", state.runId, "effect.dispatched requires executing assignment and attempt");
+  }
+  state.currentStep = { ...current, effectState: "dispatched" };
+}
+
+function foldEffectObserved(state: MutableState, plan: VnextCompiledPlan, event: VnextRunEvent, options: VnextFoldOptions): void {
+  const current = requireGateEffect(state, plan, event);
+  if (current.effectState === "observed-complete" || current.effectState === "observed-no-start" || current.effectState === "observed-unknown") {
+    throw runtimeError("run_events_illegal", state.runId, "a completed observation cannot be rewritten");
+  }
+  if (current.effectState !== "intent" && current.effectState !== "dispatched") {
+    throw runtimeError("run_events_illegal", state.runId, "effect.observed is not legal from this effect state");
+  }
+  const receipt = event.payload.receipt;
+  if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) {
+    throw runtimeError("run_events_illegal", state.runId, "effect.observed is missing receipt");
+  }
+  const receiptId = (receipt as { id?: unknown }).id;
+  const receiptHash = (receipt as { hash?: unknown }).hash;
+  const provider = (receipt as { provider?: unknown }).provider;
+  const kind = (receipt as { kind?: unknown }).kind;
+  if (typeof receiptId !== "string" || receiptId.length === 0) {
+    throw runtimeError("run_events_illegal", state.runId, "effect.observed receipt.id is invalid");
+  }
+  if (provider !== "kxm-gate") {
+    throw runtimeError("run_events_illegal", state.runId, "effect.observed receipt.provider must be kxm-gate");
+  }
+  const expectedKind = options.gateKind?.(current.stepId);
+  if (expectedKind && kind !== expectedKind) {
+    throw runtimeError("run_events_illegal", state.runId, "effect.observed receipt.kind does not match the pinned definition");
+  }
+  const looked = options.observationLookup?.(current.attemptId!, receiptId);
+  let effectState: VnextRunEffectState = "observed-unknown";
+  if (looked) {
+    if (looked.completeness === "complete") {
+      if (current.effectState === "intent" && expectedKind !== "artifacts-exist") {
+        throw runtimeError("run_events_illegal", state.runId, "complete command observations require effect.dispatched");
+      }
+      effectState = "observed-complete";
+    } else if (looked.completeness === "no-start") {
+      if (current.effectState !== "intent") {
+        throw runtimeError("run_events_illegal", state.runId, "no-start observations are only legal from intent");
+      }
+      effectState = "observed-no-start";
+    } else {
+      throw runtimeError("run_events_illegal", state.runId, "effect.observed cannot record an incomplete observation");
+    }
+  }
+  state.currentStep = {
+    ...current,
+    effectState,
+    observationId: receiptId,
+    observationCompleteness: effectState === "observed-complete" ? "complete" : effectState === "observed-no-start" ? "no-start" : "unknown",
+    ...(typeof receiptHash === "string" ? { observationHash: receiptHash } : {}),
+  };
+}
+
+function foldEffectSettled(state: MutableState, plan: VnextCompiledPlan, event: VnextRunEvent): void {
+  const current = requireGateEffect(state, plan, event);
+  const hasOutcome = event.payload.outcome !== undefined;
+  const hasEvidence = event.payload.evidenceRefs !== undefined;
+  const receipt = event.payload.receipt;
+  if (hasOutcome || hasEvidence) {
+    if (current.effectState !== "observed-complete") {
+      throw runtimeError("run_events_illegal", state.runId, "evaluated effect.settled requires observed-complete");
+    }
+    const outcome = stringPayload(event, "outcome");
+    if (outcome !== "passed" && outcome !== "implementation-failure" && outcome !== "repro-missing") {
+      throw runtimeError("run_events_illegal", state.runId, "evaluated effect.settled outcome is invalid");
+    }
+    const step = requireStep(plan, current.stepId, state.runId);
+    if (!step.outcomes.includes(outcome)) {
+      throw runtimeError("run_events_illegal", state.runId, `outcome ${outcome} is not declared for ${current.stepId}`);
+    }
+    const refs = event.payload.evidenceRefs;
+    if (!Array.isArray(refs) || refs.length !== 1) {
+      throw runtimeError("run_events_illegal", state.runId, "evaluated effect.settled requires exactly one evidenceRef");
+    }
+    const ref = refs[0] as { id?: unknown; kind?: unknown; hash?: unknown; status?: unknown };
+    if (typeof ref.id !== "string" || ref.kind !== "gate" || typeof ref.hash !== "string" || !/^sha256:[a-f0-9]{64}$/.test(ref.hash) || ref.status !== "settled") {
+      throw runtimeError("run_events_illegal", state.runId, "evaluated effect.settled evidenceRef is invalid");
+    }
+    state.currentStep = {
+      ...current,
+      effectState: "settled",
+      settledOutcome: outcome,
+      evidenceRefs: [{ id: ref.id, kind: "gate", hash: ref.hash, status: "settled" }],
+    };
+    return;
+  }
+  if (current.effectState !== "observed-complete" && current.effectState !== "observed-no-start") {
+    throw runtimeError("run_events_illegal", state.runId, "proof-only effect.settled requires a prior observation");
+  }
+  if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) {
+    throw runtimeError("run_events_illegal", state.runId, "proof-only effect.settled is missing observation receipt");
+  }
+  const receiptId = (receipt as { id?: unknown }).id;
+  const receiptHash = (receipt as { hash?: unknown }).hash;
+  if (receiptId !== current.observationId || (current.observationHash && receiptHash !== current.observationHash)) {
+    throw runtimeError("run_events_illegal", state.runId, "proof-only effect.settled does not bind the prior observation");
+  }
+  state.currentStep = { ...current, effectState: "settled-proof" };
+}
+
+function foldEffectUncertain(state: MutableState, plan: VnextCompiledPlan, event: VnextRunEvent): void {
+  const current = requireGateEffect(state, plan, event);
+  if (current.effectState === "observed-complete" || current.effectState === "observed-no-start" || current.effectState === "observed-unknown") {
+    throw runtimeError("run_events_illegal", state.runId, "blocked_uncertain after an observation is illegal");
+  }
+  if (current.effectState !== "intent" && current.effectState !== "dispatched") {
+    throw runtimeError("run_events_illegal", state.runId, "effect.blocked_uncertain is not legal from this effect state");
+  }
+  const reason = stringPayload(event, "reason");
+  const allowed = new Set(["timeout", "cancel", "stream-error", "stop-error", "lost-close", "signal-termination", "recording-error"]);
+  if (!allowed.has(reason)) {
+    throw runtimeError("run_events_illegal", state.runId, "effect.blocked_uncertain reason is invalid");
+  }
+  const receipt = event.payload.receipt;
+  if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) {
+    throw runtimeError("run_events_illegal", state.runId, "effect.blocked_uncertain is missing receipt");
+  }
+  const receiptId = (receipt as { id?: unknown }).id;
+  if (typeof receiptId !== "string" || receiptId.length === 0) {
+    throw runtimeError("run_events_illegal", state.runId, "effect.blocked_uncertain receipt.id is invalid");
+  }
+  state.currentStep = { ...current, effectState: "blocked_uncertain", observationId: receiptId };
 }
 
 function requireActiveStep(state: MutableState, eventType: string): void {

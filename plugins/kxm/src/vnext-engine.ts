@@ -1,14 +1,17 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { compileVnextWorkflow, type VnextCompiledPlan, type VnextCompiledStep } from "./vnext-engine-compile.ts";
-import { foldVnextRunState, isTerminalRunStatus, type VnextRunState } from "./vnext-engine-fold.ts";
+import { isTerminalRunStatus, type VnextRunState } from "./vnext-engine-fold.ts";
 import {
   VNEXT_RUN_PLAN_SCHEMA,
   freezeVnextCompiledPlan,
   hashVnextRunPlanEnvelope,
   loadVnextRunPlanEnvelope,
+  parseGateDefinition,
   rehydrateVnextCompiledPlanFromStore,
+  type VnextPinnedGates,
   type VnextRunPlanEnvelope,
 } from "./vnext-engine-plan.ts";
+import { gateRegistryHash } from "./vnext-gate-hash.ts";
 import {
   admitVnextRun,
   bindVnextSchedulerPolicy,
@@ -33,6 +36,7 @@ import {
   newVnextAssignmentId,
   newVnextAttemptId,
   newVnextEventId,
+  projectRuntimeKey,
   runtimeError,
   type VnextAttemptCapabilityRow,
   type VnextRunEvent,
@@ -110,9 +114,13 @@ function hashCapabilitySecret(secret: string): string {
   return `sha256:${createHash("sha256").update(`${CAPABILITY_PREFIX}${secret}`, "utf8").digest("hex")}`;
 }
 
-function mintCapabilitySecret(): { secret: string; hash: string } {
+export function mintVnextCapabilitySecret(): { secret: string; hash: string } {
   const secret = `kxmcap_${randomBytes(32).toString("base64url")}`;
   return { secret, hash: hashCapabilitySecret(secret) };
+}
+
+function mintCapabilitySecret(): { secret: string; hash: string } {
+  return mintVnextCapabilitySecret();
 }
 
 export function pinVnextCompiledPlan(
@@ -158,6 +166,7 @@ export function pinVnextCompiledPlan(
       },
       projectLimits: vnextProjectAdmissionLimits(bundle),
       plan: compiled,
+      gates: pinnedGatesForCompiledPlan(compiled, bundle, context.projectRoot),
     };
     const runPlanHash = hashVnextRunPlanEnvelope(envelope);
     const existing = context.eventStore.runPlan(runId);
@@ -186,7 +195,7 @@ export function pinVnextCompiledPlan(
       pinnedSequence: sequence,
     });
     context.eventStore.appendEvent(event);
-    const state = foldVnextRunState(run, compiled, [...context.eventStore.events(runId, 0, 1_000_000)]);
+    const state = foldStoredVnextRun(context, run);
     persistVnextRunState(context, runId, state, sequence);
     context.eventStore.updateRunStatus(runId, "preparing", now);
     return { plan: compiled, runPlanHash, idempotent: false, event };
@@ -220,7 +229,7 @@ export function startVnextRun(context: VnextRuntimeContext, runId: string): Vnex
       payload: { status: "running" },
     };
     context.eventStore.appendEvent(event);
-    const next = foldVnextRunState(run, envelope.plan, [...context.eventStore.events(runId, 0, 1_000_000)]);
+    const next = foldStoredVnextRun(context, run);
     persistVnextRunState(context, runId, next, sequence);
     context.eventStore.updateRunStatus(runId, "running", now);
     return { state: next };
@@ -490,7 +499,7 @@ function prepareDispatch(
     capabilityHash: minted.hash,
     state: "issued",
   });
-  const next = foldVnextRunState(run, plan, [...context.eventStore.events(runId, 0, 1_000_000)]);
+  const next = foldStoredVnextRun(context, run);
   persistVnextRunState(context, runId, next, events[events.length - 1]!.sequence);
   const request: VnextProducerRequest = {
     runId,
@@ -544,7 +553,7 @@ function appendExecuting(context: VnextRuntimeContext, dispatch: PreparedDispatc
     },
   ];
   for (const event of events) context.eventStore.appendEvent(event);
-  const next = foldVnextRunState(run, dispatch.plan, [...context.eventStore.events(run.runId, 0, 1_000_000)]);
+  const next = foldStoredVnextRun(context, run);
   persistVnextRunState(context, run.runId, next, events[events.length - 1]!.sequence);
 }
 
@@ -585,7 +594,7 @@ function settleAttempt(
     push("run.status_changed", { status: "cancelled", reason: "operator_cancel" });
     context.eventStore.settleCapability(dispatch.attemptId, "settled");
     for (const event of events) context.eventStore.appendEvent(event);
-    const next = foldVnextRunState(run, dispatch.plan, [...context.eventStore.events(run.runId, 0, 1_000_000)]);
+    const next = foldStoredVnextRun(context, run);
     persistVnextRunState(context, run.runId, next, events[events.length - 1]!.sequence);
     context.eventStore.updateRunStatus(run.runId, "cancelled", now);
     return { state: next };
@@ -601,7 +610,7 @@ function settleAttempt(
     push("run.status_changed", { status: "failed", reason: "outcome_unknown", stepId: dispatch.stepId });
     context.eventStore.settleCapability(dispatch.attemptId, "settled");
     for (const event of events) context.eventStore.appendEvent(event);
-    const next = foldVnextRunState(run, dispatch.plan, [...context.eventStore.events(run.runId, 0, 1_000_000)]);
+    const next = foldStoredVnextRun(context, run);
     persistVnextRunState(context, run.runId, next, events[events.length - 1]!.sequence);
     context.eventStore.updateRunStatus(run.runId, "failed", now);
     return { state: next };
@@ -620,7 +629,7 @@ function settleAttempt(
     push("run.status_changed", { status: "failed", reason: budget, stepId: dispatch.stepId, outcome });
     context.eventStore.settleCapability(dispatch.attemptId, "settled");
     for (const event of events) context.eventStore.appendEvent(event);
-    const next = foldVnextRunState(run, dispatch.plan, [...context.eventStore.events(run.runId, 0, 1_000_000)]);
+    const next = foldStoredVnextRun(context, run);
     persistVnextRunState(context, run.runId, next, events[events.length - 1]!.sequence);
     context.eventStore.updateRunStatus(run.runId, "failed", now);
     return { state: next };
@@ -634,7 +643,7 @@ function settleAttempt(
   }
   context.eventStore.settleCapability(dispatch.attemptId, "settled");
   for (const event of events) context.eventStore.appendEvent(event);
-  const next = foldVnextRunState(run, dispatch.plan, [...context.eventStore.events(run.runId, 0, 1_000_000)]);
+  const next = foldStoredVnextRun(context, run);
   persistVnextRunState(context, run.runId, next, events[events.length - 1]!.sequence);
   context.eventStore.updateRunStatus(run.runId, next.status as VnextRunStatus, now);
   return { state: next };
@@ -658,7 +667,7 @@ function failBudget(
     payload: { status: "failed", reason, stepId },
   };
   context.eventStore.appendEvent(event);
-  const next = foldVnextRunState(run, plan, [...context.eventStore.events(run.runId, 0, 1_000_000)]);
+  const next = foldStoredVnextRun(context, run);
   persistVnextRunState(context, run.runId, next, sequence);
   context.eventStore.updateRunStatus(run.runId, "failed", now);
   void state;
@@ -678,9 +687,13 @@ function hardStopUnrecorded(context: VnextRuntimeContext, dispatch: PreparedDisp
   };
   context.eventStore.appendEvent(event);
   context.eventStore.settleCapability(dispatch.attemptId, "revoked");
-  const next = foldVnextRunState(run, dispatch.plan, [...context.eventStore.events(run.runId, 0, 1_000_000)]);
+  const next = foldStoredVnextRun(context, run);
   persistVnextRunState(context, run.runId, next, sequence);
   context.eventStore.updateRunStatus(run.runId, "failed", now);
+}
+
+export function vnextTransitionBudgetFailure(plan: VnextCompiledPlan, state: VnextRunState, fromStepId: string, outcome: string): string | undefined {
+  return transitionBudgetFailure(plan, state, fromStepId, outcome);
 }
 
 function transitionBudgetFailure(plan: VnextCompiledPlan, state: VnextRunState, fromStepId: string, outcome: string): string | undefined {
@@ -735,6 +748,34 @@ function unsupportedStep(plan: VnextCompiledPlan, step: VnextCompiledStep): Omit
   if (plan.reproOracle?.stageId === step.id) return { reason: "step_unsupported", field: "reproOracle", detail: "repro oracle is not executed in this slice" };
   if (plan.planHash?.stageId === step.id) return { reason: "step_unsupported", field: "planHash", detail: "plan hash oracle is not executed in this slice" };
   return undefined;
+}
+
+function pinnedGatesForCompiledPlan(
+  plan: VnextCompiledPlan,
+  bundle: VnextProjectBundle,
+  projectRoot: string,
+): VnextPinnedGates {
+  const referenced = new Set<string>();
+  for (const step of Object.values(plan.steps)) {
+    if (step.kind === "gate") referenced.add(step.gate);
+  }
+  const definitions = Object.create(null) as VnextPinnedGates["definitions"] extends Readonly<infer T> ? T : Record<string, never>;
+  const registryValue = bundle.gateRegistry?.value;
+  const gatesObject = registryValue && typeof registryValue.gates === "object" && registryValue.gates && !Array.isArray(registryValue.gates)
+    ? registryValue.gates as Record<string, unknown>
+    : {};
+  for (const gateId of referenced) {
+    (definitions as Record<string, unknown>)[gateId] = parseGateDefinition(gatesObject[gateId], gateId, plan.workflowId);
+  }
+  return {
+    registry: referenced.size > 0 && bundle.gateRegistry
+      ? { schema: "kxm.gate-registry.v1", hash: gateRegistryHash(bundle.gateRegistry.value) }
+      : bundle.gateRegistry && referenced.size === 0
+      ? { schema: "kxm.gate-registry.v1", hash: gateRegistryHash(bundle.gateRegistry.value) }
+      : null,
+    definitions: definitions as VnextPinnedGates["definitions"],
+    controlRoot: { repositoryId: "control", projectKey: projectRuntimeKey(projectRoot) },
+  };
 }
 
 function requireRun(context: VnextRuntimeContext, runId: string): VnextRunRecord {

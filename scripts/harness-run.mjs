@@ -120,7 +120,7 @@ export const ROUTES = Object.freeze({
   },
   pi: {
     provider: "openrouter",
-    roles: Object.freeze(["experiment", "planner", "reviewer-arch", "reviewer-cli"]),
+    roles: Object.freeze(["experiment", "planner", "reviewer-arch", "reviewer-cli", "writer"]),
     permissions: Object.freeze(["read-only", "edit"]),
     models: Object.freeze([]),
     efforts: EFFORT,
@@ -1270,8 +1270,8 @@ export function preflightRequest(request) {
   if (!route.permissions.includes(request.permission)) {
     throw failClosed(`${harness} does not accept permission ${request.permission}; allowed: ${route.permissions.join(", ")}`);
   }
-  if (harness === "pi" && request.permission === "edit" && request.role !== "experiment") {
-    throw failClosed(`pi ${request.role} cannot edit; only experiment may use permission edit`);
+  if (harness === "pi" && request.permission === "edit" && !["experiment", "writer"].includes(request.role)) {
+    throw failClosed(`pi ${request.role} cannot edit; only experiment or admitted writer may use permission edit`);
   }
   if (harness !== "pi" && !route.models.includes(request.model)) {
     throw failClosed(`${harness} does not accept model ${request.model}; allowed: ${route.models.join(", ")}`);
@@ -1287,8 +1287,8 @@ export function preflightRequest(request) {
     if (provider !== "openrouter") {
       throw failClosed(`pi helper allows only openrouter/*; ${provider} is not a native CLI and is not allowlisted`);
     }
-    if (request.role === "writer") {
-      throw failClosed("pi is not a Grok writer fallback; native grok must be logged in");
+    if (request.role === "writer" && (request.model !== "openrouter/qwen/qwen3-coder-plus" || request.permission !== "edit")) {
+      throw failClosed("pi writer refuses unsupported route; allows only authenticated openrouter/qwen/qwen3-coder-plus with edit permission; other models need reviewed route admission");
     }
   }
   if (harness === "claude") {
@@ -1395,7 +1395,7 @@ export async function runHarness(request, deps = {}) {
   const authArgs = request.harness === "claude"
     ? [...claudeIsolationArgs(mcpConfigPath), ...route.auth.args]
     : request.harness === "pi"
-      ? [...route.auth.args, "--provider", "openrouter"]
+      ? [...route.auth.args, "--provider", "openrouter", ...(request.role === "writer" ? ["--model", request.model.slice("openrouter/".length), "--json"] : [])]
       : [...route.auth.args];
   const auth = spawnSyncImpl(resolved, authArgs, {
     cwd,
@@ -1414,6 +1414,13 @@ export async function runHarness(request, deps = {}) {
     stderr: auth.stderr?.toString?.() ?? "",
     exitCode: auth.status ?? (auth.error ? -1 : 0),
   }, { observedAt: deps.observedAt });
+
+  if (request.harness === "pi" && request.role === "writer") {
+    const proof = parseJson(auth.stdout?.toString?.() ?? "");
+    if (proof?.provider !== "openrouter" || proof?.status !== "ready") {
+      throw failClosed("pi writer requires exact provider/model auth readiness", "auth");
+    }
+  }
 
   const stdinPrompt = request.harness === "claude" || request.harness === "codex";
   const started = now();

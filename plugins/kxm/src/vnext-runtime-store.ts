@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { VnextConfigError, validateRunEvent, type VnextConfigIssue, type VnextConfigOptions } from "./vnext-config.ts";
+import { VnextConfigError, validateRunEvent, vnextCanonicalJson, type JsonValue, type VnextConfigIssue, type VnextConfigOptions } from "./vnext-config.ts";
 import { vnextUserStateRoot } from "./vnext-bindings.ts";
 
 /* ------------------------------------------------------------------ *
@@ -127,7 +127,7 @@ function openDatabase(file: string, description: string, spec: VnextDatabaseSche
       throw runtimeError(
         "runtime_schema_outdated",
         file,
-        `${description} schema version ${version} is older than ${spec.version}; backup, restore, and migration remain E6`,
+        `${description} schema version ${version} is older than ${spec.version}; no migration lane, backup and restore remain E6`,
       );
     } else {
       verifyExpectedTables(database, file, description, spec.tables);
@@ -454,6 +454,95 @@ export interface VnextAttemptCapabilityRow {
   state: "issued" | "settled" | "revoked";
 }
 
+export type VnextGateKind = "command" | "artifacts-exist";
+export type VnextGateExpect = "pass" | "fail";
+export type VnextGateCompleteness = "complete" | "incomplete" | "no-start";
+export type VnextGateStopCause = "none" | "timeout" | "cancel" | "error";
+export type VnextGateSignalsAttempted = "none" | "term" | "term-kill";
+export type VnextGateErrorClass = "validation" | "spawn-error" | "stream-error" | "stop-error" | "recording-error" | "lost-close";
+export type VnextGateEvidenceOutcome = "passed" | "implementation-failure" | "repro-missing";
+
+export interface VnextGateAttemptRow {
+  attemptId: string;
+  runId: string;
+  projectId: string;
+  homeRuntimeId: string;
+  stepId: string;
+  stepAttempt: number;
+  assignmentId: string;
+  effectId: string;
+  gateId: string;
+  gateKind: VnextGateKind;
+  expect: VnextGateExpect;
+  gateDefinitionHash: string;
+  registryHash: string;
+  runPlanHash: string;
+  controlProjectKey: string;
+  producerId: "kxm-gate";
+  intentEventId: string;
+  contentHash: string;
+}
+
+export interface VnextGateObservationRow {
+  observationId: string;
+  attemptId: string;
+  runId: string;
+  projectId: string;
+  homeRuntimeId: string;
+  stepId: string;
+  stepAttempt: number;
+  assignmentId: string;
+  effectId: string;
+  completeness: VnextGateCompleteness;
+  spawned: 0 | 1;
+  pid: number | null;
+  exitCode: number | null;
+  signal: string | null;
+  exitObserved: 0 | 1;
+  closeObserved: 0 | 1;
+  stopCause: VnextGateStopCause;
+  signalsAttempted: VnextGateSignalsAttempted;
+  errorClass: VnextGateErrorClass | null;
+  stdoutSha256: string | null;
+  stdoutBytes: number | null;
+  stdoutComplete: 0 | 1 | null;
+  stderrSha256: string | null;
+  stderrBytes: number | null;
+  stderrComplete: 0 | 1 | null;
+  checkedCount: number | null;
+  failedCount: number | null;
+  elapsedMs: number;
+  startedAt: string;
+  finishedAt: string | null;
+  recordedEventId: string;
+  contentHash: string;
+}
+
+export interface VnextGateEvidenceRow {
+  evidenceId: string;
+  attemptId: string;
+  observationId: string;
+  runId: string;
+  projectId: string;
+  homeRuntimeId: string;
+  stepId: string;
+  stepAttempt: number;
+  assignmentId: string;
+  effectId: string;
+  evidenceKey: string | null;
+  kind: "gate";
+  expect: VnextGateExpect;
+  outcome: VnextGateEvidenceOutcome;
+  settledEventId: string;
+  contentHash: string;
+}
+
+export interface VnextGateRowCounts {
+  attempts: number;
+  observations: number;
+  evidence: number;
+}
+
 export interface VnextCommandRecord {
   commandId: string;
   runId: string;
@@ -462,7 +551,7 @@ export interface VnextCommandRecord {
   recordedAt: string;
 }
 
-export const VNEXT_EVENT_STORE_SCHEMA_VERSION = 2;
+export const VNEXT_EVENT_STORE_SCHEMA_VERSION = 3;
 
 const EVENT_STORE_TABLES = {
   runs: ["run_id", "project_id", "home_runtime_id", "workflow_id", "prompt_sha256", "status", "config_revision", "memory_revision", "executor_policy_revision", "tool_policy_revision", "created_at", "updated_at"],
@@ -471,6 +560,22 @@ const EVENT_STORE_TABLES = {
   run_plans: ["run_id", "run_plan_hash", "envelope", "pinned_sequence"],
   run_state: ["run_id", "last_sequence", "state"],
   attempt_capabilities: ["attempt_id", "run_id", "assignment_id", "step_id", "step_attempt", "producer_id", "capability_hash", "state"],
+  gate_attempts: [
+    "attempt_id", "run_id", "project_id", "home_runtime_id", "step_id", "step_attempt", "assignment_id", "effect_id",
+    "gate_id", "gate_kind", "expect", "gate_definition_hash", "registry_hash", "run_plan_hash", "control_project_key",
+    "producer_id", "intent_event_id", "content_hash",
+  ],
+  gate_observations: [
+    "observation_id", "attempt_id", "run_id", "project_id", "home_runtime_id", "step_id", "step_attempt", "assignment_id",
+    "effect_id", "completeness", "spawned", "pid", "exit_code", "signal", "exit_observed", "close_observed", "stop_cause",
+    "signals_attempted", "error_class", "stdout_sha256", "stdout_bytes", "stdout_complete", "stderr_sha256", "stderr_bytes",
+    "stderr_complete", "checked_count", "failed_count", "elapsed_ms", "started_at", "finished_at", "recorded_event_id",
+    "content_hash",
+  ],
+  gate_evidence: [
+    "evidence_id", "attempt_id", "observation_id", "run_id", "project_id", "home_runtime_id", "step_id", "step_attempt",
+    "assignment_id", "effect_id", "evidence_key", "kind", "expect", "outcome", "settled_event_id", "content_hash",
+  ],
 } as const;
 
 const EVENT_STORE_SCHEMA = `
@@ -536,6 +641,83 @@ CREATE TABLE attempt_capabilities (
   capability_hash TEXT NOT NULL UNIQUE,
   state TEXT NOT NULL CHECK (state IN ('issued','settled','revoked'))
 ) STRICT;
+CREATE TABLE gate_attempts (
+  attempt_id TEXT PRIMARY KEY REFERENCES attempt_capabilities(attempt_id),
+  run_id TEXT NOT NULL REFERENCES runs(run_id),
+  project_id TEXT NOT NULL,
+  home_runtime_id TEXT NOT NULL,
+  step_id TEXT NOT NULL,
+  step_attempt INTEGER NOT NULL,
+  assignment_id TEXT NOT NULL,
+  effect_id TEXT NOT NULL UNIQUE,
+  gate_id TEXT NOT NULL,
+  gate_kind TEXT NOT NULL CHECK (gate_kind IN ('command','artifacts-exist')),
+  expect TEXT NOT NULL CHECK (expect IN ('pass','fail')),
+  gate_definition_hash TEXT NOT NULL,
+  registry_hash TEXT NOT NULL,
+  run_plan_hash TEXT NOT NULL,
+  control_project_key TEXT NOT NULL,
+  producer_id TEXT NOT NULL CHECK (producer_id = 'kxm-gate'),
+  intent_event_id TEXT NOT NULL UNIQUE REFERENCES events(event_id),
+  content_hash TEXT NOT NULL
+) STRICT;
+CREATE INDEX gate_attempts_run ON gate_attempts(run_id);
+CREATE INDEX gate_attempts_project ON gate_attempts(project_id);
+CREATE TABLE gate_observations (
+  observation_id TEXT PRIMARY KEY,
+  attempt_id TEXT NOT NULL UNIQUE REFERENCES gate_attempts(attempt_id),
+  run_id TEXT NOT NULL REFERENCES runs(run_id),
+  project_id TEXT NOT NULL,
+  home_runtime_id TEXT NOT NULL,
+  step_id TEXT NOT NULL,
+  step_attempt INTEGER NOT NULL,
+  assignment_id TEXT NOT NULL,
+  effect_id TEXT NOT NULL,
+  completeness TEXT NOT NULL CHECK (completeness IN ('complete','incomplete','no-start')),
+  spawned INTEGER NOT NULL CHECK (spawned IN (0, 1)),
+  pid INTEGER,
+  exit_code INTEGER,
+  signal TEXT,
+  exit_observed INTEGER NOT NULL CHECK (exit_observed IN (0, 1)),
+  close_observed INTEGER NOT NULL CHECK (close_observed IN (0, 1)),
+  stop_cause TEXT NOT NULL CHECK (stop_cause IN ('none','timeout','cancel','error')),
+  signals_attempted TEXT NOT NULL CHECK (signals_attempted IN ('none','term','term-kill')),
+  error_class TEXT CHECK (error_class IN ('validation','spawn-error','stream-error','stop-error','recording-error','lost-close')),
+  stdout_sha256 TEXT,
+  stdout_bytes INTEGER,
+  stdout_complete INTEGER CHECK (stdout_complete IN (0, 1)),
+  stderr_sha256 TEXT,
+  stderr_bytes INTEGER,
+  stderr_complete INTEGER CHECK (stderr_complete IN (0, 1)),
+  checked_count INTEGER,
+  failed_count INTEGER,
+  elapsed_ms INTEGER NOT NULL,
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  recorded_event_id TEXT NOT NULL UNIQUE REFERENCES events(event_id),
+  content_hash TEXT NOT NULL
+) STRICT;
+CREATE INDEX gate_observations_run ON gate_observations(run_id);
+CREATE TABLE gate_evidence (
+  evidence_id TEXT PRIMARY KEY,
+  attempt_id TEXT NOT NULL UNIQUE REFERENCES gate_attempts(attempt_id),
+  observation_id TEXT NOT NULL UNIQUE REFERENCES gate_observations(observation_id),
+  run_id TEXT NOT NULL REFERENCES runs(run_id),
+  project_id TEXT NOT NULL,
+  home_runtime_id TEXT NOT NULL,
+  step_id TEXT NOT NULL,
+  step_attempt INTEGER NOT NULL,
+  assignment_id TEXT NOT NULL,
+  effect_id TEXT NOT NULL,
+  evidence_key TEXT,
+  kind TEXT NOT NULL CHECK (kind = 'gate'),
+  expect TEXT NOT NULL CHECK (expect IN ('pass','fail')),
+  outcome TEXT NOT NULL CHECK (outcome IN ('passed','implementation-failure','repro-missing')),
+  settled_event_id TEXT NOT NULL UNIQUE REFERENCES events(event_id),
+  content_hash TEXT NOT NULL
+) STRICT;
+CREATE UNIQUE INDEX gate_evidence_key ON gate_evidence(run_id, step_id, step_attempt, evidence_key) WHERE evidence_key IS NOT NULL;
+CREATE INDEX gate_evidence_run ON gate_evidence(run_id);
 `;
 
 export class VnextRunEventStore {
@@ -769,6 +951,153 @@ export class VnextRunEventStore {
       throw runtimeError("capability_unknown", attemptId, "attempt capability does not exist");
     }
   }
+
+  insertGateAttempt(row: VnextGateAttemptRow): void {
+    assertGateAttemptRow(row);
+    this.assertEventType(row.runId, row.intentEventId, ["effect.intent_recorded"]);
+    const capability = this.capabilityByAttempt(row.attemptId);
+    if (
+      !capability
+      || capability.runId !== row.runId
+      || capability.assignmentId !== row.assignmentId
+      || capability.stepId !== row.stepId
+      || capability.stepAttempt !== row.stepAttempt
+    ) {
+      throw gateRowInvalid(row.attemptId, "gate attempt identity does not match attempt_capabilities");
+    }
+    this.database.prepare(`
+      INSERT INTO gate_attempts (
+        attempt_id, run_id, project_id, home_runtime_id, step_id, step_attempt, assignment_id, effect_id,
+        gate_id, gate_kind, expect, gate_definition_hash, registry_hash, run_plan_hash, control_project_key,
+        producer_id, intent_event_id, content_hash
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      row.attemptId, row.runId, row.projectId, row.homeRuntimeId, row.stepId, row.stepAttempt, row.assignmentId, row.effectId,
+      row.gateId, row.gateKind, row.expect, row.gateDefinitionHash, row.registryHash, row.runPlanHash, row.controlProjectKey,
+      row.producerId, row.intentEventId, row.contentHash,
+    );
+  }
+
+  insertGateObservation(row: VnextGateObservationRow): void {
+    assertGateObservationRow(row);
+    this.assertEventType(row.runId, row.recordedEventId, ["effect.observed", "effect.blocked_uncertain"]);
+    const attempt = this.gateAttempt(row.attemptId);
+    if (!attempt) throw gateRowInvalid(row.attemptId, "gate observation has no matching gate attempt");
+    assertSharedIdentity(row, attempt, row.observationId);
+    assertClosedGateObservation(attempt.gateKind, row, row.observationId);
+    this.database.prepare(`
+      INSERT INTO gate_observations (
+        observation_id, attempt_id, run_id, project_id, home_runtime_id, step_id, step_attempt, assignment_id, effect_id,
+        completeness, spawned, pid, exit_code, signal, exit_observed, close_observed, stop_cause, signals_attempted,
+        error_class, stdout_sha256, stdout_bytes, stdout_complete, stderr_sha256, stderr_bytes, stderr_complete,
+        checked_count, failed_count, elapsed_ms, started_at, finished_at, recorded_event_id, content_hash
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      row.observationId, row.attemptId, row.runId, row.projectId, row.homeRuntimeId, row.stepId, row.stepAttempt,
+      row.assignmentId, row.effectId, row.completeness, row.spawned, row.pid, row.exitCode, row.signal, row.exitObserved,
+      row.closeObserved, row.stopCause, row.signalsAttempted, row.errorClass, row.stdoutSha256, row.stdoutBytes,
+      row.stdoutComplete, row.stderrSha256, row.stderrBytes, row.stderrComplete, row.checkedCount, row.failedCount,
+      row.elapsedMs, row.startedAt, row.finishedAt, row.recordedEventId, row.contentHash,
+    );
+  }
+
+  insertGateEvidence(row: VnextGateEvidenceRow): void {
+    assertGateEvidenceRow(row);
+    this.assertEventType(row.runId, row.settledEventId, ["effect.settled"]);
+    const attempt = this.gateAttempt(row.attemptId);
+    if (!attempt) throw gateRowInvalid(row.attemptId, "gate evidence has no matching gate attempt");
+    assertSharedIdentity(row, attempt, row.evidenceId);
+    const observation = this.gateObservationForAttempt(row.attemptId);
+    if (!observation || observation.observationId !== row.observationId) {
+      throw gateRowInvalid(row.evidenceId, "gate evidence observation_id does not match the attempt observation");
+    }
+    this.database.prepare(`
+      INSERT INTO gate_evidence (
+        evidence_id, attempt_id, observation_id, run_id, project_id, home_runtime_id, step_id, step_attempt,
+        assignment_id, effect_id, evidence_key, kind, expect, outcome, settled_event_id, content_hash
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      row.evidenceId, row.attemptId, row.observationId, row.runId, row.projectId, row.homeRuntimeId, row.stepId,
+      row.stepAttempt, row.assignmentId, row.effectId, row.evidenceKey, row.kind, row.expect, row.outcome,
+      row.settledEventId, row.contentHash,
+    );
+  }
+
+  gateAttempt(attemptId: string): VnextGateAttemptRow | undefined {
+    const row = this.database.prepare(`
+      SELECT attempt_id, run_id, project_id, home_runtime_id, step_id, step_attempt, assignment_id, effect_id,
+        gate_id, gate_kind, expect, gate_definition_hash, registry_hash, run_plan_hash, control_project_key,
+        producer_id, intent_event_id, content_hash
+      FROM gate_attempts WHERE attempt_id = ?
+    `).get(attemptId) as GateAttemptSql | undefined;
+    return row ? gateAttemptFromSql(row) : undefined;
+  }
+
+  gateAttemptsForRun(runId: string): VnextGateAttemptRow[] {
+    const rows = this.database.prepare(`
+      SELECT attempt_id, run_id, project_id, home_runtime_id, step_id, step_attempt, assignment_id, effect_id,
+        gate_id, gate_kind, expect, gate_definition_hash, registry_hash, run_plan_hash, control_project_key,
+        producer_id, intent_event_id, content_hash
+      FROM gate_attempts WHERE run_id = ? ORDER BY step_attempt ASC, attempt_id ASC
+    `).all(runId) as GateAttemptSql[];
+    return rows.map(gateAttemptFromSql);
+  }
+
+  gateObservationForAttempt(attemptId: string): VnextGateObservationRow | undefined {
+    const row = this.database.prepare(`
+      SELECT observation_id, attempt_id, run_id, project_id, home_runtime_id, step_id, step_attempt, assignment_id,
+        effect_id, completeness, spawned, pid, exit_code, signal, exit_observed, close_observed, stop_cause,
+        signals_attempted, error_class, stdout_sha256, stdout_bytes, stdout_complete, stderr_sha256, stderr_bytes,
+        stderr_complete, checked_count, failed_count, elapsed_ms, started_at, finished_at, recorded_event_id, content_hash
+      FROM gate_observations WHERE attempt_id = ?
+    `).get(attemptId) as GateObservationSql | undefined;
+    return row ? gateObservationFromSql(row) : undefined;
+  }
+
+  gateObservationsForRun(runId: string): VnextGateObservationRow[] {
+    const rows = this.database.prepare(`
+      SELECT observation_id, attempt_id, run_id, project_id, home_runtime_id, step_id, step_attempt, assignment_id,
+        effect_id, completeness, spawned, pid, exit_code, signal, exit_observed, close_observed, stop_cause,
+        signals_attempted, error_class, stdout_sha256, stdout_bytes, stdout_complete, stderr_sha256, stderr_bytes,
+        stderr_complete, checked_count, failed_count, elapsed_ms, started_at, finished_at, recorded_event_id, content_hash
+      FROM gate_observations WHERE run_id = ? ORDER BY step_attempt ASC, observation_id ASC
+    `).all(runId) as GateObservationSql[];
+    return rows.map(gateObservationFromSql);
+  }
+
+  gateEvidenceForRun(runId: string): VnextGateEvidenceRow[] {
+    const rows = this.database.prepare(`
+      SELECT evidence_id, attempt_id, observation_id, run_id, project_id, home_runtime_id, step_id, step_attempt,
+        assignment_id, effect_id, evidence_key, kind, expect, outcome, settled_event_id, content_hash
+      FROM gate_evidence WHERE run_id = ? ORDER BY step_attempt ASC, evidence_id ASC
+    `).all(runId) as GateEvidenceSql[];
+    return rows.map(gateEvidenceFromSql);
+  }
+
+  gateEvidenceForAttempt(attemptId: string): VnextGateEvidenceRow | undefined {
+    const row = this.database.prepare(`
+      SELECT evidence_id, attempt_id, observation_id, run_id, project_id, home_runtime_id, step_id, step_attempt,
+        assignment_id, effect_id, evidence_key, kind, expect, outcome, settled_event_id, content_hash
+      FROM gate_evidence WHERE attempt_id = ?
+    `).get(attemptId) as GateEvidenceSql | undefined;
+    return row ? gateEvidenceFromSql(row) : undefined;
+  }
+
+  gateRowCounts(runId: string): VnextGateRowCounts {
+    const attempts = this.database.prepare("SELECT COUNT(*) AS n FROM gate_attempts WHERE run_id = ?").get(runId) as { n: number };
+    const observations = this.database.prepare("SELECT COUNT(*) AS n FROM gate_observations WHERE run_id = ?").get(runId) as { n: number };
+    const evidence = this.database.prepare("SELECT COUNT(*) AS n FROM gate_evidence WHERE run_id = ?").get(runId) as { n: number };
+    return { attempts: Number(attempts.n), observations: Number(observations.n), evidence: Number(evidence.n) };
+  }
+
+  private assertEventType(runId: string, eventId: string, allowed: readonly string[]): void {
+    const row = this.database.prepare("SELECT run_id, event_type FROM events WHERE event_id = ?").get(eventId) as
+      | { run_id: string; event_type: string }
+      | undefined;
+    if (!row || row.run_id !== runId || !allowed.includes(row.event_type)) {
+      throw gateRowInvalid(eventId, `referenced event is not ${allowed.join("|")} for this run`);
+    }
+  }
 }
 
 function runFromRow(row: {
@@ -823,6 +1152,444 @@ export function newVnextAssignmentId(): string {
 
 export function newVnextAttemptId(): string {
   return `att_${randomUUID().replaceAll("-", "")}`;
+}
+
+export function newVnextEffectId(): string {
+  return `eff_${randomUUID().replaceAll("-", "")}`;
+}
+
+export function newVnextObservationId(): string {
+  return `obs_${randomUUID().replaceAll("-", "")}`;
+}
+
+export function newVnextEvidenceId(): string {
+  return `gev_${randomUUID().replaceAll("-", "")}`;
+}
+
+const SHA256 = /^sha256:[a-f0-9]{64}$/;
+const OPAQUE = /^[a-z][a-z0-9]{1,15}_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$/;
+const FORBIDDEN_TEXT_KEYS = new Set(["stdout", "stderr", "error", "errorText", "stdoutText", "stderrText", "errorMessage", "message"]);
+const GATE_ATTEMPT_KEYS = [
+  "attemptId", "runId", "projectId", "homeRuntimeId", "stepId", "stepAttempt", "assignmentId", "effectId",
+  "gateId", "gateKind", "expect", "gateDefinitionHash", "registryHash", "runPlanHash", "controlProjectKey",
+  "producerId", "intentEventId", "contentHash",
+] as const;
+const GATE_OBSERVATION_KEYS = [
+  "observationId", "attemptId", "runId", "projectId", "homeRuntimeId", "stepId", "stepAttempt", "assignmentId",
+  "effectId", "completeness", "spawned", "pid", "exitCode", "signal", "exitObserved", "closeObserved", "stopCause",
+  "signalsAttempted", "errorClass", "stdoutSha256", "stdoutBytes", "stdoutComplete", "stderrSha256", "stderrBytes",
+  "stderrComplete", "checkedCount", "failedCount", "elapsedMs", "startedAt", "finishedAt", "recordedEventId", "contentHash",
+] as const;
+const GATE_EVIDENCE_KEYS = [
+  "evidenceId", "attemptId", "observationId", "runId", "projectId", "homeRuntimeId", "stepId", "stepAttempt",
+  "assignmentId", "effectId", "evidenceKey", "kind", "expect", "outcome", "settledEventId", "contentHash",
+] as const;
+
+export function gateRowContentHash(table: "gate_attempts" | "gate_observations" | "gate_evidence", row: object): string {
+  const copy = { ...(row as Record<string, unknown>) };
+  delete copy.contentHash;
+  void table;
+  return `sha256:${createHash("sha256").update(vnextCanonicalJson(copy as JsonValue), "utf8").digest("hex")}`;
+}
+
+export type VnextGateObservationFacts = Pick<
+  VnextGateObservationRow,
+  | "completeness"
+  | "spawned"
+  | "pid"
+  | "exitCode"
+  | "signal"
+  | "exitObserved"
+  | "closeObserved"
+  | "stopCause"
+  | "signalsAttempted"
+  | "errorClass"
+  | "stdoutSha256"
+  | "stdoutBytes"
+  | "stdoutComplete"
+  | "stderrSha256"
+  | "stderrBytes"
+  | "stderrComplete"
+  | "checkedCount"
+  | "failedCount"
+>;
+
+export function assertClosedGateObservation(
+  kind: VnextGateKind,
+  row: VnextGateObservationFacts,
+  id = "observation",
+): void {
+  if (row.completeness === "incomplete") return;
+  if (row.completeness === "no-start") {
+    const legitimateStartFailure = (row.errorClass === "validation" || row.errorClass === "spawn-error") && row.stopCause === "none";
+    const requestedStop = row.stopCause === "cancel" && row.errorClass === null;
+    if (
+      row.spawned !== 0
+      || row.pid !== null
+      || row.exitCode !== null
+      || row.signal !== null
+      || row.exitObserved !== 0
+      || row.closeObserved !== 0
+      || row.signalsAttempted !== "none"
+      || row.stdoutSha256 !== null
+      || row.stdoutBytes !== null
+      || row.stdoutComplete !== null
+      || row.stderrSha256 !== null
+      || row.stderrBytes !== null
+      || row.stderrComplete !== null
+      || row.checkedCount !== null
+      || row.failedCount !== null
+      || (!legitimateStartFailure && !requestedStop)
+    ) {
+      throw gateRowInvalid(id, "no-start observation forbids PID/exit/close/stream/check facts and requires a legitimate no-start cause");
+    }
+    return;
+  }
+  if (kind === "command") {
+    if (
+      row.spawned !== 1
+      || typeof row.pid !== "number"
+      || typeof row.exitCode !== "number"
+      || row.signal !== null
+      || row.exitObserved !== 1
+      || row.closeObserved !== 1
+      || row.stopCause !== "none"
+      || row.signalsAttempted !== "none"
+      || row.stdoutComplete !== 1
+      || row.stderrComplete !== 1
+      || typeof row.stdoutSha256 !== "string"
+      || typeof row.stderrSha256 !== "string"
+      || typeof row.stdoutBytes !== "number"
+      || typeof row.stderrBytes !== "number"
+      || row.checkedCount !== null
+      || row.failedCount !== null
+    ) {
+      throw gateRowInvalid(id, "complete command observation requires spawn, numeric exit, no signal, exit/close, complete streams, and stopCause none");
+    }
+    return;
+  }
+  if (
+    row.spawned !== 0
+    || row.pid !== null
+    || row.exitCode !== null
+    || row.signal !== null
+    || row.exitObserved !== 0
+    || row.closeObserved !== 0
+    || row.stopCause !== "none"
+    || row.signalsAttempted !== "none"
+    || row.stdoutSha256 !== null
+    || row.stdoutBytes !== null
+    || row.stdoutComplete !== null
+    || row.stderrSha256 !== null
+    || row.stderrBytes !== null
+    || row.stderrComplete !== null
+    || typeof row.checkedCount !== "number"
+    || typeof row.failedCount !== "number"
+    || row.checkedCount < 0
+    || row.failedCount < 0
+    || row.failedCount > row.checkedCount
+  ) {
+    throw gateRowInvalid(id, "complete artifacts observation requires consistent counts and no command facts");
+  }
+}
+
+export function computeGateEvidenceOutcome(
+  kind: VnextGateKind,
+  expect: VnextGateExpect,
+  observation: VnextGateObservationFacts,
+): VnextGateEvidenceOutcome {
+  assertClosedGateObservation(kind, observation);
+  if (observation.completeness !== "complete") {
+    throw gateRowInvalid("observation", "evaluated settlement requires a complete observation");
+  }
+  if (kind === "artifacts-exist") {
+    if (expect === "fail") throw gateRowInvalid("artifacts-exist", "artifacts-exist cannot expect fail");
+    return observation.failedCount === 0 ? "passed" : "implementation-failure";
+  }
+  if (expect === "pass") return observation.exitCode === 0 ? "passed" : "implementation-failure";
+  return observation.exitCode === 0 ? "repro-missing" : "passed";
+}
+
+function gateRowInvalid(file: string, message: string): VnextConfigError {
+  return runtimeError("gate_row_invalid", file, message);
+}
+
+function assertExactRowKeys(row: object, keys: readonly string[], id: string): void {
+  const actual = Object.keys(row);
+  if (actual.length !== keys.length || keys.some((key) => !Object.prototype.hasOwnProperty.call(row, key))) {
+    throw gateRowInvalid(id, "gate row does not have the exact key set");
+  }
+  for (const key of actual) {
+    if (FORBIDDEN_TEXT_KEYS.has(key)) throw gateRowInvalid(id, "gate row must not carry raw stdout/stderr/error text");
+  }
+}
+
+function assertId(value: string, prefix: string, id: string, label: string): void {
+  if (typeof value !== "string" || !value.startsWith(prefix) || !OPAQUE.test(value)) {
+    throw gateRowInvalid(id, `${label} is not a valid ${prefix} opaque id`);
+  }
+}
+
+function assertSha(value: string, id: string, label: string): void {
+  if (typeof value !== "string" || !SHA256.test(value)) throw gateRowInvalid(id, `${label} is not a sha256 hash`);
+}
+
+function assertFlag(value: unknown, id: string, label: string): asserts value is 0 | 1 {
+  if (value !== 0 && value !== 1) throw gateRowInvalid(id, `${label} must be 0 or 1`);
+}
+
+function assertNullInt(value: unknown, id: string, label: string): void {
+  if (value !== null && (typeof value !== "number" || !Number.isInteger(value))) {
+    throw gateRowInvalid(id, `${label} must be an integer or null`);
+  }
+}
+
+function assertGateAttemptRow(row: VnextGateAttemptRow): void {
+  assertExactRowKeys(row, GATE_ATTEMPT_KEYS, row.attemptId);
+  assertId(row.attemptId, "att_", row.attemptId, "attemptId");
+  assertId(row.effectId, "eff_", row.attemptId, "effectId");
+  assertId(row.intentEventId, "evt_", row.attemptId, "intentEventId");
+  assertSha(row.gateDefinitionHash, row.attemptId, "gateDefinitionHash");
+  assertSha(row.registryHash, row.attemptId, "registryHash");
+  assertSha(row.runPlanHash, row.attemptId, "runPlanHash");
+  if (row.producerId !== "kxm-gate") throw gateRowInvalid(row.attemptId, "producerId must be kxm-gate");
+  if (row.gateKind !== "command" && row.gateKind !== "artifacts-exist") {
+    throw gateRowInvalid(row.attemptId, "gateKind is invalid");
+  }
+  if (row.expect !== "pass" && row.expect !== "fail") throw gateRowInvalid(row.attemptId, "expect is invalid");
+  if (row.gateKind === "artifacts-exist" && row.expect === "fail") {
+    throw gateRowInvalid(row.attemptId, "artifacts-exist cannot expect fail");
+  }
+  if (typeof row.controlProjectKey !== "string" || row.controlProjectKey.length === 0) {
+    throw gateRowInvalid(row.attemptId, "controlProjectKey is required");
+  }
+  if (gateRowContentHash("gate_attempts", row) !== row.contentHash) {
+    throw gateRowInvalid(row.attemptId, "contentHash does not match the canonical row");
+  }
+}
+
+function assertGateObservationRow(row: VnextGateObservationRow): void {
+  assertExactRowKeys(row, GATE_OBSERVATION_KEYS, row.observationId);
+  assertId(row.observationId, "obs_", row.observationId, "observationId");
+  assertId(row.attemptId, "att_", row.observationId, "attemptId");
+  assertId(row.effectId, "eff_", row.observationId, "effectId");
+  assertId(row.recordedEventId, "evt_", row.observationId, "recordedEventId");
+  if (!["complete", "incomplete", "no-start"].includes(row.completeness)) {
+    throw gateRowInvalid(row.observationId, "completeness is invalid");
+  }
+  assertFlag(row.spawned, row.observationId, "spawned");
+  assertFlag(row.exitObserved, row.observationId, "exitObserved");
+  assertFlag(row.closeObserved, row.observationId, "closeObserved");
+  assertNullInt(row.pid, row.observationId, "pid");
+  assertNullInt(row.exitCode, row.observationId, "exitCode");
+  assertNullInt(row.stdoutBytes, row.observationId, "stdoutBytes");
+  assertNullInt(row.stderrBytes, row.observationId, "stderrBytes");
+  assertNullInt(row.checkedCount, row.observationId, "checkedCount");
+  assertNullInt(row.failedCount, row.observationId, "failedCount");
+  if (typeof row.elapsedMs !== "number" || !Number.isInteger(row.elapsedMs) || row.elapsedMs < 0) {
+    throw gateRowInvalid(row.observationId, "elapsedMs is invalid");
+  }
+  if (row.stdoutSha256 !== null) assertSha(row.stdoutSha256, row.observationId, "stdoutSha256");
+  if (row.stderrSha256 !== null) assertSha(row.stderrSha256, row.observationId, "stderrSha256");
+  if (row.stdoutComplete !== null && row.stdoutComplete !== 0 && row.stdoutComplete !== 1) {
+    throw gateRowInvalid(row.observationId, "stdoutComplete must be 0, 1, or null");
+  }
+  if (row.stderrComplete !== null && row.stderrComplete !== 0 && row.stderrComplete !== 1) {
+    throw gateRowInvalid(row.observationId, "stderrComplete must be 0, 1, or null");
+  }
+  if (gateRowContentHash("gate_observations", row) !== row.contentHash) {
+    throw gateRowInvalid(row.observationId, "contentHash does not match the canonical row");
+  }
+}
+
+function assertGateEvidenceRow(row: VnextGateEvidenceRow): void {
+  assertExactRowKeys(row, GATE_EVIDENCE_KEYS, row.evidenceId);
+  assertId(row.evidenceId, "gev_", row.evidenceId, "evidenceId");
+  assertId(row.attemptId, "att_", row.evidenceId, "attemptId");
+  assertId(row.observationId, "obs_", row.evidenceId, "observationId");
+  assertId(row.effectId, "eff_", row.evidenceId, "effectId");
+  assertId(row.settledEventId, "evt_", row.evidenceId, "settledEventId");
+  if (row.kind !== "gate") throw gateRowInvalid(row.evidenceId, "kind must be gate");
+  if (!["passed", "implementation-failure", "repro-missing"].includes(row.outcome)) {
+    throw gateRowInvalid(row.evidenceId, "outcome is invalid");
+  }
+  if (gateRowContentHash("gate_evidence", row) !== row.contentHash) {
+    throw gateRowInvalid(row.evidenceId, "contentHash does not match the canonical row");
+  }
+}
+
+function assertSharedIdentity(
+  row: { runId: string; projectId: string; homeRuntimeId: string; stepId: string; stepAttempt: number; assignmentId: string; effectId: string },
+  attempt: VnextGateAttemptRow,
+  id: string,
+): void {
+  if (
+    row.runId !== attempt.runId
+    || row.projectId !== attempt.projectId
+    || row.homeRuntimeId !== attempt.homeRuntimeId
+    || row.stepId !== attempt.stepId
+    || row.stepAttempt !== attempt.stepAttempt
+    || row.assignmentId !== attempt.assignmentId
+    || row.effectId !== attempt.effectId
+  ) {
+    throw gateRowInvalid(id, "row identity does not match the gate attempt");
+  }
+}
+
+type GateAttemptSql = {
+  attempt_id: string;
+  run_id: string;
+  project_id: string;
+  home_runtime_id: string;
+  step_id: string;
+  step_attempt: number;
+  assignment_id: string;
+  effect_id: string;
+  gate_id: string;
+  gate_kind: VnextGateKind;
+  expect: VnextGateExpect;
+  gate_definition_hash: string;
+  registry_hash: string;
+  run_plan_hash: string;
+  control_project_key: string;
+  producer_id: "kxm-gate";
+  intent_event_id: string;
+  content_hash: string;
+};
+
+function gateAttemptFromSql(row: GateAttemptSql): VnextGateAttemptRow {
+  return {
+    attemptId: row.attempt_id,
+    runId: row.run_id,
+    projectId: row.project_id,
+    homeRuntimeId: row.home_runtime_id,
+    stepId: row.step_id,
+    stepAttempt: row.step_attempt,
+    assignmentId: row.assignment_id,
+    effectId: row.effect_id,
+    gateId: row.gate_id,
+    gateKind: row.gate_kind,
+    expect: row.expect,
+    gateDefinitionHash: row.gate_definition_hash,
+    registryHash: row.registry_hash,
+    runPlanHash: row.run_plan_hash,
+    controlProjectKey: row.control_project_key,
+    producerId: row.producer_id,
+    intentEventId: row.intent_event_id,
+    contentHash: row.content_hash,
+  };
+}
+
+type GateObservationSql = {
+  observation_id: string;
+  attempt_id: string;
+  run_id: string;
+  project_id: string;
+  home_runtime_id: string;
+  step_id: string;
+  step_attempt: number;
+  assignment_id: string;
+  effect_id: string;
+  completeness: VnextGateCompleteness;
+  spawned: number;
+  pid: number | null;
+  exit_code: number | null;
+  signal: string | null;
+  exit_observed: number;
+  close_observed: number;
+  stop_cause: VnextGateStopCause;
+  signals_attempted: VnextGateSignalsAttempted;
+  error_class: VnextGateErrorClass | null;
+  stdout_sha256: string | null;
+  stdout_bytes: number | null;
+  stdout_complete: number | null;
+  stderr_sha256: string | null;
+  stderr_bytes: number | null;
+  stderr_complete: number | null;
+  checked_count: number | null;
+  failed_count: number | null;
+  elapsed_ms: number;
+  started_at: string;
+  finished_at: string | null;
+  recorded_event_id: string;
+  content_hash: string;
+};
+
+function gateObservationFromSql(row: GateObservationSql): VnextGateObservationRow {
+  return {
+    observationId: row.observation_id,
+    attemptId: row.attempt_id,
+    runId: row.run_id,
+    projectId: row.project_id,
+    homeRuntimeId: row.home_runtime_id,
+    stepId: row.step_id,
+    stepAttempt: row.step_attempt,
+    assignmentId: row.assignment_id,
+    effectId: row.effect_id,
+    completeness: row.completeness,
+    spawned: row.spawned === 1 ? 1 : 0,
+    pid: row.pid,
+    exitCode: row.exit_code,
+    signal: row.signal,
+    exitObserved: row.exit_observed === 1 ? 1 : 0,
+    closeObserved: row.close_observed === 1 ? 1 : 0,
+    stopCause: row.stop_cause,
+    signalsAttempted: row.signals_attempted,
+    errorClass: row.error_class,
+    stdoutSha256: row.stdout_sha256,
+    stdoutBytes: row.stdout_bytes,
+    stdoutComplete: row.stdout_complete === null ? null : row.stdout_complete === 1 ? 1 : 0,
+    stderrSha256: row.stderr_sha256,
+    stderrBytes: row.stderr_bytes,
+    stderrComplete: row.stderr_complete === null ? null : row.stderr_complete === 1 ? 1 : 0,
+    checkedCount: row.checked_count,
+    failedCount: row.failed_count,
+    elapsedMs: row.elapsed_ms,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+    recordedEventId: row.recorded_event_id,
+    contentHash: row.content_hash,
+  };
+}
+
+type GateEvidenceSql = {
+  evidence_id: string;
+  attempt_id: string;
+  observation_id: string;
+  run_id: string;
+  project_id: string;
+  home_runtime_id: string;
+  step_id: string;
+  step_attempt: number;
+  assignment_id: string;
+  effect_id: string;
+  evidence_key: string | null;
+  kind: "gate";
+  expect: VnextGateExpect;
+  outcome: VnextGateEvidenceOutcome;
+  settled_event_id: string;
+  content_hash: string;
+};
+
+function gateEvidenceFromSql(row: GateEvidenceSql): VnextGateEvidenceRow {
+  return {
+    evidenceId: row.evidence_id,
+    attemptId: row.attempt_id,
+    observationId: row.observation_id,
+    runId: row.run_id,
+    projectId: row.project_id,
+    homeRuntimeId: row.home_runtime_id,
+    stepId: row.step_id,
+    stepAttempt: row.step_attempt,
+    assignmentId: row.assignment_id,
+    effectId: row.effect_id,
+    evidenceKey: row.evidence_key,
+    kind: row.kind,
+    expect: row.expect,
+    outcome: row.outcome,
+    settledEventId: row.settled_event_id,
+    contentHash: row.content_hash,
+  };
 }
 
 type CapabilitySqlRow = {
