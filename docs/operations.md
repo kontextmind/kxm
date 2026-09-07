@@ -83,7 +83,14 @@ POSIX shell:
 KXM_SMOKE=1 KXM_SMOKE_MODELS='xai/grok-4.6,anthropic/claude-sonnet-4-5' node scripts/smoke-multi-pi.mjs
 ```
 
-For GitHub Actions, configure `KXM_SMOKE_RUNNER` with the self-hosted runner label and `KXM_SMOKE_MODELS` with the two model IDs as repository variables. A manual dispatch can override the model variable with its `models` input. Model credentials stay on the runner and are never workflow inputs.
+For GitHub Actions, smoke runs on the ARC scale set `kontextmind-doks`. Set
+repository variable `KXM_SMOKE_RUNNER` exactly to `kontextmind-doks` and
+`KXM_SMOKE_MODELS` to the two model IDs. Any other value skips the job. A
+manual dispatch can override the model variable with its `models` input.
+Readiness means Pi credentials are provisioned to ephemeral ARC pods and
+pass `pi auth check`, not general CI readiness. Credentials are never
+workflow inputs. The variable is currently unset, so the workflow is
+intentionally disabled.
 
 ## Health, readiness, and metrics
 

@@ -9,9 +9,14 @@ on:
         type: string
 
 jobs:
+  # Readiness is Pi credentials provisioned into ephemeral ARC pods and
+  # passing `pi auth check`, not general CI readiness. KXM_SMOKE_RUNNER is
+  # currently unset, so this job is skipped. Do not dispatch until that
+  # credential path exists.
   smoke:
-    if: ${{ vars.KXM_SMOKE_RUNNER != '' }}
-    runs-on: ${{ vars.KXM_SMOKE_RUNNER }}
+    name: Real Pi smoke
+    if: ${{ vars.KXM_SMOKE_RUNNER == 'kontextmind-doks' }}
+    runs-on: kontextmind-doks
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7

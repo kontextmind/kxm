@@ -6,8 +6,44 @@ import { kxmReleaseAssetName } from "../plugins/kxm/src/kxm-update.ts";
 
 const releaseText = readFileSync(".github/workflows/release.yml", "utf8");
 const ciText = readFileSync(".github/workflows/ci.yml", "utf8");
+const smokeText = readFileSync(".github/workflows/smoke.yml", "utf8");
 const template = readFileSync(".github/pull_request_template.md", "utf8");
 const pkg = JSON.parse(readFileSync("package.json", "utf8")) as { scripts?: Record<string, string> };
+const ARC_RUNNER = "kontextmind-doks";
+const SMOKE_IF = "${{ vars.KXM_SMOKE_RUNNER == 'kontextmind-doks' }}";
+
+type WorkflowJobs = Record<
+  string,
+  {
+    name?: string;
+    if?: unknown;
+    "runs-on"?: unknown;
+    "timeout-minutes"?: unknown;
+    steps?: Array<{ run?: string }>;
+  }
+>;
+
+type WorkflowDoc = {
+  on?: Record<string, { inputs?: { models?: { required?: unknown } } }>;
+  jobs?: WorkflowJobs;
+};
+
+function runsOnValues(doc: WorkflowDoc): unknown[] {
+  return Object.values(doc.jobs ?? {}).map((job) => job["runs-on"]);
+}
+
+function assertArcScaleSetSelectors(docs: WorkflowDoc[]): void {
+  const values = docs.flatMap(runsOnValues);
+  assert.ok(values.length > 0);
+  assert.deepEqual(new Set(values), new Set([ARC_RUNNER]));
+  for (const value of values) {
+    assert.equal(typeof value, "string");
+  }
+}
+
+function assertSmokeEqualityGate(doc: WorkflowDoc): void {
+  assert.equal(doc.jobs?.smoke?.if, SMOKE_IF);
+}
 
 test("npm pack asset name in release.yml is kxmReleaseAssetName", () => {
   assert.match(releaseText, /KXM_ASSET=kxm-\$\{version\}\.tgz/);
@@ -23,13 +59,15 @@ test("release workflow is tag-triggered, fail-closed drafts, and npm publish sta
   const doc = parse(releaseText) as {
     on?: { push?: { tags?: string[] } };
     permissions?: { contents?: string };
-    jobs?: Record<string, { if?: unknown; permissions?: { contents?: string } }>;
+    jobs?: Record<string, { if?: unknown; permissions?: { contents?: string }; "runs-on"?: unknown }>;
   };
   assert.deepEqual(doc.on?.push?.tags, ["v*"]);
   assert.equal(doc.permissions?.contents, "read");
   assert.equal(doc.jobs?.release?.permissions?.contents, "write");
   assert.equal(doc.jobs?.release?.if, false);
   assert.equal(doc.jobs?.["publish-npm"]?.if, false);
+  assert.equal(doc.jobs?.release?.["runs-on"], ARC_RUNNER);
+  assert.equal(doc.jobs?.["publish-npm"]?.["runs-on"], ARC_RUNNER);
   assert.match(releaseText, /draft: false/);
   assert.match(releaseText, /npm-publish/);
 });
@@ -39,6 +77,7 @@ type CiJobs = Record<
   {
     name?: string;
     if?: unknown;
+    "runs-on"?: unknown;
     steps?: Array<{ run?: string }>;
     strategy?: { matrix?: { node?: unknown[]; runner?: Array<{ name?: string }> } };
   }
@@ -74,7 +113,12 @@ test("CI required jobs are unconditional, two linux Validate names match the rul
   assert.equal(nameTemplate, "Validate (${{ matrix.runner.name }}, Node ${{ matrix.node }})");
   const nodes = doc.jobs?.validate?.strategy?.matrix?.node ?? [];
   const runners = doc.jobs?.validate?.strategy?.matrix?.runner ?? [];
+  assert.equal(doc.jobs?.changes?.["runs-on"], ARC_RUNNER);
+  assert.equal(doc.jobs?.docs?.["runs-on"], ARC_RUNNER);
+  assert.equal(doc.jobs?.validate?.["runs-on"], ARC_RUNNER);
+  assert.equal(doc.jobs?.plugin?.["runs-on"], ARC_RUNNER);
   assert.deepEqual(nodes.map(String), ["22.19.0", "24"]);
+  assert.deepEqual(runners, [{ name: "linux" }]);
   assert.equal(runners.some((r) => r.name === "windows"), false);
   const expanded = runners.flatMap((runner) =>
     nodes.map((node) =>
@@ -118,4 +162,41 @@ test("PR template asks for slice issue and verify, not a local plugin checkbox",
   assert.match(template, /npm run verify/);
   assert.doesNotMatch(template, /validate:claude/);
   assert.doesNotMatch(template, /npm pack --dry-run/);
+});
+
+test("all workflow selectors are the ARC scale set and old labels fail closed", () => {
+  const ci = parse(ciText) as WorkflowDoc;
+  const release = parse(releaseText) as WorkflowDoc;
+  const smoke = parse(smokeText) as WorkflowDoc;
+  assertArcScaleSetSelectors([ci, release, smoke]);
+  assertSmokeEqualityGate(smoke);
+  for (const text of [ciText, releaseText, smokeText]) {
+    assert.doesNotMatch(text, /self-hosted/);
+    assert.doesNotMatch(text, /ubuntu-latest/);
+    assert.doesNotMatch(text, /km-gh-rn01/);
+    assert.doesNotMatch(text, /\[[^\]]*doks[^\]]*\]/);
+    assert.doesNotMatch(text, /runs-on:\s*\$\{\{\s*vars\./);
+  }
+  const mutatedCi = structuredClone(ci);
+  assert.ok(mutatedCi.jobs?.validate);
+  mutatedCi.jobs.validate["runs-on"] = ["self-hosted", "Linux", "X64", "doks"];
+  assert.throws(() => assertArcScaleSetSelectors([mutatedCi, release, smoke]));
+  const mutatedSmoke = structuredClone(smoke);
+  assert.ok(mutatedSmoke.jobs?.smoke);
+  mutatedSmoke.jobs.smoke.if = "${{ vars.KXM_SMOKE_RUNNER != '' }}";
+  assert.throws(() => assertSmokeEqualityGate(mutatedSmoke));
+});
+
+test("smoke workflow is manual, equality-gated, keeps model inputs", () => {
+  const doc = parse(smokeText) as WorkflowDoc;
+  assert.deepEqual(Object.keys(doc.on ?? {}), ["workflow_dispatch"]);
+  assert.equal(doc.on?.workflow_dispatch?.inputs?.models?.required, false);
+  assert.equal(doc.jobs?.smoke?.if, SMOKE_IF);
+  assert.equal(doc.jobs?.smoke?.["runs-on"], ARC_RUNNER);
+  assert.equal(doc.jobs?.smoke?.["timeout-minutes"], 20);
+  const stepText = JSON.stringify(doc.jobs?.smoke?.steps ?? []);
+  assert.match(stepText, /node scripts\/smoke-multi-pi\.mjs/);
+  assert.match(smokeText, /KXM_SMOKE: "1"/);
+  assert.match(smokeText, /inputs\.models \|\| vars\.KXM_SMOKE_MODELS/);
+  assert.doesNotMatch(smokeText, /secrets\./);
 });
