@@ -56,21 +56,23 @@ test("npm pack asset name in release.yml is kxmReleaseAssetName", () => {
   assert.doesNotMatch(releaseText, /--clobber/);
 });
 
-test("release workflow is tag-triggered, fail-closed drafts, and npm publish stays if: false", () => {
+test("release workflow is tag-triggered, fail-closed drafts, and npm publish is unlatched with npm-publish environment", () => {
   const doc = parse(releaseText) as {
     on?: { push?: { tags?: string[] } };
     permissions?: { contents?: string };
-    jobs?: Record<string, { if?: unknown; permissions?: { contents?: string }; "runs-on"?: unknown }>;
+    jobs?: Record<string, { if?: unknown; permissions?: { contents?: string }; "runs-on"?: unknown; environment?: string }>;
   };
   assert.deepEqual(doc.on?.push?.tags, ["v*"]);
   assert.equal(doc.permissions?.contents, "read");
   assert.equal(doc.jobs?.release?.permissions?.contents, "write");
   assert.equal(doc.jobs?.release?.if, undefined);
-  assert.equal(doc.jobs?.["publish-npm"]?.if, false);
+  assert.equal(doc.jobs?.["publish-npm"]?.if, undefined);
+  assert.equal(doc.jobs?.["publish-npm"]?.environment, "npm-publish");
   assert.equal(doc.jobs?.release?.["runs-on"], ARC_RUNNER);
   assert.equal(doc.jobs?.["publish-npm"]?.["runs-on"], ARC_RUNNER);
   assert.match(releaseText, /draft: false/);
   assert.match(releaseText, /npm-publish/);
+  assert.match(releaseText, /scripts\/kxm-publish-npm\.mjs/);
 });
 
 type CiJobs = Record<

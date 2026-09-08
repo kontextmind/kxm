@@ -4,6 +4,16 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ## Unreleased
 
+### Added
+
+- **Public npm release automation unlatched (E7):** Unlatched `publish-npm` job
+  in `.github/workflows/release.yml` with `environment: npm-publish`. Added
+  `scripts/kxm-publish-npm.mjs` to enforce fail-closed verification: requires the
+  GitHub release for the tag to be published (`draft: false`), validates the
+  release asset presence and SHA-256 digest against the release manifest, and
+  executes `npm publish --access public`. Added `publishConfig.access: "public"`
+  in root `package.json` and unit test suite `test/core/kxm-publish-npm.test.ts`.
+
 ## 0.6.0 - 2026-09-08
 
 ### Added
