@@ -12,6 +12,32 @@ export interface HarnessCommandResult {
   error?: string;
 }
 
+export type OneShotPromptVia = "stdin" | "arg";
+
+export interface OneShotUsage {
+  tokensIn?: number | null | undefined;
+  tokensOut?: number | null | undefined;
+  cacheReadTokens?: number | null | undefined;
+  cacheWriteTokens?: number | null | undefined;
+  contextTokens?: number | null | undefined;
+  costUsd?: number | null | undefined;
+}
+
+export interface OneShotParsedOutput {
+  text: string;
+  usage?: OneShotUsage | undefined;
+  outcome?: string | undefined;
+  isError?: boolean | undefined;
+  errorMessage?: string | undefined;
+}
+
+export interface HarnessOneShotConfig {
+  argv: readonly string[];
+  promptVia: OneShotPromptVia;
+  outputFormat: "json" | "text";
+  usageParser: (stdout: string, stderr: string) => OneShotParsedOutput;
+}
+
 export interface HarnessCatalogEntry {
   id: string;
   label: string;
@@ -25,6 +51,7 @@ export interface HarnessCatalogEntry {
     extensions?: readonly string[];
     models?: readonly string[];
   };
+  oneShot?: HarnessOneShotConfig | undefined;
 }
 
 export interface HarnessProbeOptions {
@@ -109,6 +136,150 @@ export interface HarnessUpdateStep {
   detail?: string;
 }
 
+export function parseClaudeOneShotUsage(stdout: string, stderr: string): OneShotParsedOutput {
+  const trimmed = stdout.trim();
+  if (!trimmed) {
+    return {
+      text: "",
+      isError: true,
+      errorMessage: stderr.trim() || "empty stdout from claude",
+    };
+  }
+  try {
+    const payload = JSON.parse(trimmed) as Record<string, unknown>;
+    const usage = (payload.usage as Record<string, unknown> | undefined) ?? {};
+    let modelUsageDetail: Record<string, unknown> | undefined;
+    if (payload.modelUsage && typeof payload.modelUsage === "object") {
+      const values = Object.values(payload.modelUsage as Record<string, unknown>);
+      if (values.length > 0 && values[0] && typeof values[0] === "object") {
+        modelUsageDetail = values[0] as Record<string, unknown>;
+      }
+    }
+    const tokensIn = (typeof modelUsageDetail?.inputTokens === "number" ? modelUsageDetail.inputTokens : undefined)
+      ?? (typeof usage.input_tokens === "number" ? usage.input_tokens : null);
+    const tokensOut = (typeof modelUsageDetail?.outputTokens === "number" ? modelUsageDetail.outputTokens : undefined)
+      ?? (typeof usage.output_tokens === "number" ? usage.output_tokens : null);
+    const cacheReadTokens = (typeof modelUsageDetail?.cacheReadInputTokens === "number" ? modelUsageDetail.cacheReadInputTokens : undefined)
+      ?? (typeof usage.cache_read_input_tokens === "number" ? usage.cache_read_input_tokens : null);
+    const cacheWriteTokens = (typeof modelUsageDetail?.cacheCreationInputTokens === "number" ? modelUsageDetail.cacheCreationInputTokens : undefined)
+      ?? (typeof usage.cache_creation_input_tokens === "number" ? usage.cache_creation_input_tokens : null);
+    const costUsd = typeof payload.total_cost_usd === "number"
+      ? payload.total_cost_usd
+      : (typeof modelUsageDetail?.costUSD === "number" ? modelUsageDetail.costUSD : null);
+
+    const isError = Boolean(payload.is_error || payload.error);
+    const text = typeof payload.result === "string" ? payload.result : (typeof payload.text === "string" ? payload.text : "");
+    const errorMessage = isError
+      ? (typeof payload.error === "string"
+        ? payload.error
+        : (typeof (payload.error as Record<string, unknown> | undefined)?.message === "string"
+          ? ((payload.error as Record<string, unknown>).message as string)
+          : text))
+      : undefined;
+
+    return {
+      text,
+      isError,
+      errorMessage,
+      usage: {
+        tokensIn,
+        tokensOut,
+        cacheReadTokens,
+        cacheWriteTokens,
+        contextTokens: tokensIn,
+        costUsd,
+      },
+    };
+  } catch {
+    return {
+      text: trimmed,
+      usage: {},
+    };
+  }
+}
+
+export function parseCodexOneShotUsage(stdout: string, stderr: string): OneShotParsedOutput {
+  const lines = stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (lines.length === 0) {
+    return {
+      text: "",
+      isError: true,
+      errorMessage: stderr.trim() || "empty stdout from codex",
+    };
+  }
+  const events: Record<string, unknown>[] = [];
+  for (const line of lines) {
+    try {
+      const parsed = JSON.parse(line);
+      if (parsed && typeof parsed === "object") events.push(parsed as Record<string, unknown>);
+    } catch {
+      // non-json line ignored
+    }
+  }
+
+  const messageTexts: string[] = [];
+  let usage: Record<string, unknown> | undefined;
+  let hasError = false;
+  let errorMessage: string | undefined;
+
+  for (const ev of events) {
+    if (ev.type === "turn.failed" || ev.type === "error") {
+      hasError = true;
+      errorMessage = typeof ev.message === "string"
+        ? ev.message
+        : (typeof (ev.error as Record<string, unknown> | undefined)?.message === "string"
+          ? ((ev.error as Record<string, unknown>).message as string)
+          : "turn_failed");
+    }
+    if (ev.item && typeof ev.item === "object" && (ev.item as Record<string, unknown>).type === "agent_message") {
+      const t = (ev.item as Record<string, unknown>).text;
+      if (typeof t === "string") messageTexts.push(t);
+    }
+    if (ev.type === "turn.completed" && ev.usage && typeof ev.usage === "object") {
+      usage = ev.usage as Record<string, unknown>;
+    }
+  }
+
+  const text = messageTexts.join("\n").trim();
+  const tokensIn = typeof usage?.input_tokens === "number" ? usage.input_tokens : null;
+  const tokensOut = typeof usage?.output_tokens === "number" ? usage.output_tokens : null;
+  const cacheReadTokens = typeof usage?.cached_input_tokens === "number" ? usage.cached_input_tokens : null;
+  const cacheWriteTokens = typeof usage?.cache_write_input_tokens === "number" ? usage.cache_write_input_tokens : null;
+
+  return {
+    text,
+    isError: hasError,
+    errorMessage,
+    usage: {
+      tokensIn,
+      tokensOut,
+      cacheReadTokens,
+      cacheWriteTokens,
+      contextTokens: tokensIn,
+      costUsd: null,
+    },
+  };
+}
+
+export function parseGenericOneShotUsage(stdout: string, _stderr: string): OneShotParsedOutput {
+  const trimmed = stdout.trim();
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const rec = parsed as Record<string, unknown>;
+      const text = typeof rec.result === "string"
+        ? rec.result
+        : (typeof rec.text === "string"
+          ? rec.text
+          : (typeof rec.response === "string" ? rec.response : trimmed));
+      return { text, usage: {} };
+    }
+  } catch {
+    // not json
+  }
+  return { text: trimmed, usage: {} };
+}
+
 /** Built-in harnesses. Unknown ids fail closed. Model lists live in `.kxm/models/*.yaml`, not here. */
 export const BUILTIN_HARNESSES: readonly HarnessCatalogEntry[] = Object.freeze([
   {
@@ -123,6 +294,12 @@ export const BUILTIN_HARNESSES: readonly HarnessCatalogEntry[] = Object.freeze([
       extensions: ["update", "--extensions"],
       models: ["update", "--models"],
     },
+    oneShot: {
+      argv: ["-p", "--mode", "json"],
+      promptVia: "arg",
+      outputFormat: "json",
+      usageParser: parseGenericOneShotUsage,
+    },
   },
   {
     id: "claude",
@@ -136,6 +313,12 @@ export const BUILTIN_HARNESSES: readonly HarnessCatalogEntry[] = Object.freeze([
       self: ["update"],
       extensions: ["plugin", "update", "kxm", "-y"],
     },
+    oneShot: {
+      argv: ["-p", "--output-format", "json"],
+      promptVia: "stdin",
+      outputFormat: "json",
+      usageParser: parseClaudeOneShotUsage,
+    },
   },
   {
     id: "kimi",
@@ -145,6 +328,12 @@ export const BUILTIN_HARNESSES: readonly HarnessCatalogEntry[] = Object.freeze([
     commands: ["kimi"],
     versionArgs: ["--version"],
     update: { self: ["upgrade"] },
+    oneShot: {
+      argv: ["--json"],
+      promptVia: "stdin",
+      outputFormat: "json",
+      usageParser: parseGenericOneShotUsage,
+    },
   },
   {
     id: "codex",
@@ -155,6 +344,12 @@ export const BUILTIN_HARNESSES: readonly HarnessCatalogEntry[] = Object.freeze([
     versionArgs: ["--version"],
     authArgs: ["login", "status"],
     update: { self: ["update"] },
+    oneShot: {
+      argv: ["exec", "--json", "-"],
+      promptVia: "stdin",
+      outputFormat: "json",
+      usageParser: parseCodexOneShotUsage,
+    },
   },
   {
     id: "gemini",
@@ -164,6 +359,12 @@ export const BUILTIN_HARNESSES: readonly HarnessCatalogEntry[] = Object.freeze([
     commands: ["gemini"],
     versionArgs: ["--version"],
     update: { self: ["update"] },
+    oneShot: {
+      argv: ["--json"],
+      promptVia: "stdin",
+      outputFormat: "json",
+      usageParser: parseGenericOneShotUsage,
+    },
   },
   {
     id: "deepseek",
@@ -173,6 +374,12 @@ export const BUILTIN_HARNESSES: readonly HarnessCatalogEntry[] = Object.freeze([
     commands: ["deepseek"],
     versionArgs: ["--version"],
     update: { self: ["update"] },
+    oneShot: {
+      argv: ["--json"],
+      promptVia: "stdin",
+      outputFormat: "json",
+      usageParser: parseGenericOneShotUsage,
+    },
   },
   {
     id: "grok",
@@ -183,6 +390,12 @@ export const BUILTIN_HARNESSES: readonly HarnessCatalogEntry[] = Object.freeze([
     versionArgs: ["--version"],
     authArgs: ["models"],
     update: { self: ["update"] },
+    oneShot: {
+      argv: ["--output-format", "json"],
+      promptVia: "stdin",
+      outputFormat: "json",
+      usageParser: parseClaudeOneShotUsage,
+    },
   },
   {
     id: "agy",
@@ -193,6 +406,12 @@ export const BUILTIN_HARNESSES: readonly HarnessCatalogEntry[] = Object.freeze([
     versionArgs: ["--version"],
     authArgs: ["models"],
     update: { self: ["update"] },
+    oneShot: {
+      argv: ["-p", "--output-format", "json"],
+      promptVia: "stdin",
+      outputFormat: "json",
+      usageParser: parseGenericOneShotUsage,
+    },
   },
 ]);
 

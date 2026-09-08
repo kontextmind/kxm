@@ -102,6 +102,7 @@ export interface VnextProducerRequest {
   readonly provider?: string | undefined;
   readonly thinking?: string | undefined;
   readonly agentRole?: string | undefined;
+  readonly harness?: string | undefined;
 }
 
 export interface VnextProducerResult {
@@ -126,7 +127,7 @@ export interface VnextProducerResult {
 }
 
 export interface VnextProducer {
-  readonly id: "driver-simulated" | "pi";
+  readonly id: "driver-simulated" | "pi" | "oneshot" | string;
   produce(request: VnextProducerRequest): Promise<VnextProducerResult>;
 }
 
@@ -437,7 +438,7 @@ export function verifyVnextAttemptCapability(
     && row.state === "issued"
     && row.runId === expected.runId
     && row.attemptId === expected.attemptId
-    && (row.producerId === "driver-simulated" || row.producerId === "pi")
+    && (row.producerId === "driver-simulated" || row.producerId === "pi" || row.producerId === "oneshot")
     && folded
     && folded.status === "running"
     && folded.currentStep
@@ -2037,7 +2038,7 @@ export function gateRecoveryPreflight(context: VnextRuntimeContext): GateRecover
   for (const capability of capabilities) {
     if (seenAttempts.has(capability.attemptId)) continue;
     const row = context.eventStore.gateAttempt(capability.attemptId);
-    if (capability.producerId === "driver-simulated" || capability.producerId === "pi") {
+    if (capability.producerId === "driver-simulated" || capability.producerId === "pi" || capability.producerId === "oneshot") {
       if (row) {
         throw runtimeError(
           "gate_recovery_corrupt",

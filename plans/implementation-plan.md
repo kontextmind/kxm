@@ -193,6 +193,20 @@ It does not replace the phase gates below.
 
 ### Landed in this tree (unreleased)
 
+- **E4b one-shot adapter: Claude and Codex (issue #94):** Implemented generic
+  one-shot CLI producer in `plugins/kxm/src/vnext-oneshot-producer.ts` driving
+  planner, reviewer, and other roles through Claude, Codex, and catalog-configured
+  CLIs. Extended `HarnessCatalogEntry` with `oneShot` config and added usage parsers
+  (`parseClaudeOneShotUsage`, `parseCodexOneShotUsage`, `parseGenericOneShotUsage`)
+  in `plugins/kxm/src/vnext-harness.ts`. Enforces fail-closed auth preflight
+  (`<harness>_not_authenticated`), prompt delivery via stdin or arguments, process
+  cancellation via AbortSignal, token and context parsing, and cost accounting
+  (`metered` when cataloged in `.kxm/prices.yaml`, else `unmetered` with
+  `priceRef: subscription:<harness>`). Emits `.agents/skills` and marker-delimited
+  `AGENTS.md` block (`scripts/emit-codex-artifacts.mjs`) so Codex discovers KXM
+  commands, protected by `scripts/check-generated.mjs`. Exported in
+  `plugins/kxm/src/runtime.ts` and verified with mock spawn tests, auth failure,
+  and end-to-end vNext engine drive (`test/vnext-oneshot-producer.test.ts`).
 - **E4 Pi dispatch (issue #93):** Implemented Pi RPC producer in
   `plugins/kxm/src/vnext-pi-producer.ts` running implementer (and other agent
   roles) through the vNext engine driver over Pi RPC protocol (`--mode rpc`).

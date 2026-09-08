@@ -14,6 +14,10 @@ export const GENERATED_ARTIFACTS = [
   "plugins/kxm/dist/runtime.js",
   "plugins/kxm/dist/client.js",
   "plugins/kxm/dist/extension.js",
+  ".agents/skills/kxm/SKILL.md",
+  ".agents/skills/kxm/references/protocol.md",
+  ".agents/skills/kxm-session/SKILL.md",
+  "AGENTS.md",
 ];
 
 function runGit(repository, args, allowFailure = false) {

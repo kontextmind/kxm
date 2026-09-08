@@ -171,6 +171,46 @@ open the MR, enable auto-merge, watch CI on a background worker. Fix failures
 and conflicts until green. After merge: update local `main`, delete the branch
 (and worktree if used).
 
+<!-- kxm:codex:commands:start -->
+## KXM agent commands
+
+The `kxm` CLI is the unified agent surface for peer collaboration and workflow stages. Every command supports `--json`.
+
+### Peer messaging (`kxm peer <verb> --json`)
+
+| Command | Purpose | Key options |
+|---|---|---|
+| `kxm peer list` | List online peer agents and purposes | `--json` |
+| `kxm peer send [target] [content]` | Send a focused request to a peer | `--target`, `--content`, `--delivery <steer\|followUp\|nextTurn>`, `--correlation-id`, `--idempotency-key`, `--workflow-context <json>`, `--ttl-ms` |
+| `kxm peer get [messageId]` | Check request status without blocking | `--message-id` |
+| `kxm peer await [messageId]` | Wait for reply (capped at 60 seconds) | `--message-id`, `--timeout-ms` (max 60000) |
+| `kxm peer cancel [messageId]` | Cancel a queued or delivered request | `--message-id` |
+| `kxm peer fanout` | Send same request to 1–3 peers | `--targets <t1,t2>`, `--content`, `--timeout-ms`, `--workflow-context <json>` |
+| `kxm peer inbox` | List inbound requests awaiting a reply | `--json` |
+| `kxm peer reply [messageId] [content]` | Reply to an inbound request | `--message-id`, `--content` |
+
+### Workflow lifecycle (`kxm workflow <verb> --json`)
+
+| Command | Purpose | Key options |
+|---|---|---|
+| `kxm workflow checkpoint [runId] [stageId] [status] [summary]` | Record stage result with verified evidence | `--run-id`, `--stage-id`, `--status <passed\|warning\|failed>`, `--summary`, `--evidence <json>`, `--evidence-refs <json>` |
+| `kxm workflow record [runId] [category] [area] [summary]` | Record plans, decisions, contradictions, errors, lessons | `--run-id`, `--category <plan\|decision\|contradiction\|error\|lesson>`, `--area`, `--severity <info\|warning\|error>`, `--details`, `--evidence <items...>` |
+| `kxm workflow wait [runId] [stageId] [signalKey] [summary]` | Pause stage until an external signed signal arrives | `--run-id`, `--stage-id`, `--signal-key`, `--summary`, `--evidence <json>`, `--evidence-refs <json>`, `--timeout-ms` |
+| `kxm workflow signal <runId> <signalKey> <status> <summary>` | Resume or unblock a waiting stage or vNext run | `[evidence...]`, `--delivery-id` |
+| `kxm workflow list` | List local workflow runs | `--json` |
+| `kxm workflow get <runId>` | Get stages and journal for a run | `--json` |
+
+### Context operating system (`kxm context <verb> --json`)
+
+| Command | Purpose | Key options |
+|---|---|---|
+| `kxm context get <project>` | Assemble role-aware context packet | `--role`, `--task`, `--run`, `--stage`, `--budget` |
+| `kxm context recall <project>` | Search durable context metadata | `--query`, `--kinds`, `--limit` |
+| `kxm context state <project> <key>` | Query authoritative temporal state | `--as-of <timestamp>` |
+| `kxm context episode <project>` | Query workflow learning episodes | `--run` |
+| `kxm context promote <project> <key>` | Propose temporal state change | `--summary`, `--authority`, `--confidence`, `--evidence` |
+<!-- kxm:codex:commands:end -->
+
 ## Do not
 
 - Bulk-migrate jira / provenance / v04 just to “set up”
