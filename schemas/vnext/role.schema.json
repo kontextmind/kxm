@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.kxm.dev/vnext/role.schema.json",
+  "title": "KXM role definition",
+  "description": "The filename determines the role identity unless explicitly declared.",
+  "type": "object",
+  "required": ["schema", "description"],
+  "properties": {
+    "schema": { "const": "kxm.role.v1" },
+    "id": { "$ref": "common.schema.json#/$defs/identifier" },
+    "description": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "skills": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1, "maxLength": 128 },
+      "maxItems": 64
+    },
+    "tools": {
+      "type": "object",
+      "properties": {
+        "preset": { "type": "string" },
+        "allow": { "type": "array", "items": { "type": "string" } },
+        "deny": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "produces": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["template"],
+        "properties": {
+          "template": { "type": "string" },
+          "schema": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "consumes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["template"],
+        "properties": {
+          "template": { "type": "string" },
+          "schema": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "roster": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["harness", "model"],
+        "properties": {
+          "harness": { "$ref": "common.schema.json#/$defs/identifier" },
+          "model": { "$ref": "common.schema.json#/$defs/modelSelector" },
+          "provider": { "type": "string" },
+          "effort": { "enum": ["low", "medium", "high", "xhigh"] },
+          "mode": { "enum": ["headless", "interactive", "either"] }
+        },
+        "additionalProperties": false
+      }
+    },
+    "policy": {
+      "type": "object",
+      "properties": {
+        "vendorIndependenceRequired": { "type": "boolean" },
+        "maxTransitions": { "type": "integer", "minimum": 1 },
+        "requiresGateVerification": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
