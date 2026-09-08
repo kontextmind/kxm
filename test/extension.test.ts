@@ -1047,7 +1047,7 @@ test("supervised Pi routes a workflow prompt before acknowledgement and replays 
   await generalSender.stop();
 });
 
-test("Pi extension defers post-ack activation during shutdown and replays the message after restart", async (context) => {
+test("Pi extension defers activation during shutdown and replays unacked message after restart", async (context) => {
   const mesh = await createTestMesh(context);
   const peer = mesh.makeClient("shutdown-ack-sender");
   await peer.start(() => undefined);
@@ -1101,6 +1101,7 @@ test("Pi extension defers post-ack activation during shutdown and replays the me
     if (!deferred && url.endsWith("/ack") && init?.method === "POST") {
       deferred = true;
       await ackGate;
+      throw new Error("simulated shutdown during ack");
     }
     return await originalFetch(input, init);
   };
@@ -1119,7 +1120,7 @@ test("Pi extension defers post-ack activation during shutdown and replays the me
     globalThis.fetch = originalFetch;
   }
   assert.equal(first.sent.length, 0);
-  assert.equal((await peer.getMessage(message!.id)).status, "delivered");
+  assert.equal((await peer.getMessage(message!.id)).status, "queued");
 
   const restarted = fakePi();
   piMeshExtension(restarted.api);

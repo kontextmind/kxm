@@ -10,7 +10,7 @@ Read this first. Then follow
 - Future work is not backwards-compatible. Fix leftovers with **brakes** (fail
   closed on old names), not dual Mesh/KXM aliases.
 - Hub process: `kxm hub start` · `kxm hub view` · `kxm hub stop`
-- Live screens: `kxm dash` (optional `--screen agents|tasks|workflows|plans|inbox|procs`)
+- Live screens: `kxm dash` (optional `--screen agents|tasks|workflows|plans|inbox|procs|spend`)
 - Hub-local session: `kxm session brief`; Pi TUI `/kxm` picker + status line.
   `kxm hub bind <url>` binds this host to a running hub; `kxm init` is project-only.
 - DB: `.kxm/state/kxm.db`

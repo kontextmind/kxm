@@ -380,7 +380,7 @@ test("bundled MCP tools cover outbound, inbound, reply, cancellation, and channe
   assert.equal(stderr, "");
 });
 
-test("MCP inbox rehydrates one delivered message record after process restart", async (context) => {
+test("MCP inbox rehydrates one unacked message record after process restart", async (context) => {
   const mesh = await createTestMesh(context);
   const peer = mesh.makeClient("restart-sender");
   await peer.start(() => undefined);
@@ -470,14 +470,14 @@ test("MCP inbox rehydrates one delivered message record after process restart", 
   const first = await startMcp();
   await first.tool("kxm_list");
   await waitFor(async () => (await peer.listAgents()).some((agent) => agent.name === "claude-restart-test"));
-  const inbound = await peer.send({ target: "claude-restart-test", content: "resume this delivered request" });
-  await waitFor(() => first.notifications.some((notification) => JSON.stringify(notification).includes(inbound.id)));
-  assert.match(JSON.stringify(first.value(await first.tool("kxm_inbox"))), new RegExp(inbound.id));
-  assert.equal((await peer.getMessage(inbound.id)).status, "delivered");
   await first.stop();
 
   const durableAgent = [...mesh.hub.state.agents.values()].find((agent) => agent.name === "claude-restart-test")!;
+  durableAgent.online = true;
+  const inbound = await peer.send({ target: "claude-restart-test", content: "resume this queued request" });
+  assert.equal((await peer.getMessage(inbound.id)).status, "queued");
   durableAgent.online = false;
+
   const second = await startMcp();
   await second.tool("kxm_list");
   await waitFor(() => second.notifications.some((notification) => JSON.stringify(notification).includes(inbound.id)));

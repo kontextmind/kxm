@@ -1324,7 +1324,7 @@ async function cmdStatus(runtime: Runtime): Promise<number> {
 async function cmdDash(runtime: Runtime, options: { screen?: string } = {}): Promise<number> {
   const requested = options.screen?.trim();
   if (requested && !(MESH_TUI_PANELS as readonly string[]).includes(requested)) {
-    print(runtime.io, runtime.json, { ok: false, command: "dash", error: "unknown_screen" }, `unknown screen ${requested}; use agents, tasks, workflows, plans, inbox, or procs`);
+    print(runtime.io, runtime.json, { ok: false, command: "dash", error: "unknown_screen" }, `unknown screen ${requested}; use agents, tasks, workflows, plans, inbox, procs, or spend`);
     return 2;
   }
   const screen = requested as MeshTuiPanel | undefined;
@@ -1351,6 +1351,7 @@ async function cmdDash(runtime: Runtime, options: { screen?: string } = {}): Pro
     dataPath,
     stateDir: runtime.dirs.state,
     project,
+    env: runtime.env,
     ...(authToken ? { authToken } : {}),
     ...(screen ? { screen } : {}),
     fetchImpl: runtime.fetchImpl,
@@ -3029,7 +3030,7 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     });
   addGlobalOptions(hub.command("unbind").description("Remove this machine's hub binding")).action(bind(cmdHubUnbind));
   addGlobalOptions(program.command("dash").description("Live screens for headless agents, tasks, workflows, and plans")
-    .option("--screen <name>", "agents, tasks, workflows, plans, inbox, or procs"))
+    .option("--screen <name>", "agents, tasks, workflows, plans, inbox, procs, or spend"))
     .action(async function dashAction(this: Command, options: { screen?: string }) {
       result.code = await cmdDash(runtimeFrom(ctx, this), options);
     });

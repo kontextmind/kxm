@@ -1,8 +1,11 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { homedir } from "node:os";
+import { isAbsolute, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { AgentRecord, MessageRecord } from "./protocol.ts";
 import type { WorkflowRun } from "./workflow.ts";
+import { readRoutingRecords } from "./telemetry.ts";
+import type { RoutingRecord, RoutingRecordV2 } from "./routing.ts";
 
 export interface MeshTuiPidClaim {
   file: string;
@@ -42,6 +45,7 @@ export interface MeshTuiPlan {
 export type MeshTuiOpenMessage = Pick<MessageRecord, "id" | "status" | "fromName" | "toName" | "delivery" | "createdAt" | "correlationId">;
 
 export interface LocalMeshSnapshot {
+  source?: "legacy" | "vnext" | "both" | undefined;
   agents: AgentRecord[];
   openMessages: MeshTuiOpenMessage[];
   openMessageTotal: number;
@@ -49,6 +53,7 @@ export interface LocalMeshSnapshot {
   runTotal: number;
   plans: MeshTuiPlan[];
   pids: MeshTuiPidClaim[];
+  spend?: Array<{ recordedAt: string; routing: RoutingRecord | RoutingRecordV2 }> | undefined;
 }
 
 function processExists(pid: number): boolean {
@@ -200,26 +205,141 @@ export function resolveKxmSnapshotPaths(cwd: string, env: NodeJS.ProcessEnv = pr
   return { dataPath, stateDir };
 }
 
-export function loadLocalMeshSnapshot(dataPath: string, stateDir: string): LocalMeshSnapshot {
+function resolveVnextStateRoot(
+  stateDir: string,
+  options?: { env?: NodeJS.ProcessEnv; vnextStateRoot?: string },
+): string | undefined {
+  if (options?.vnextStateRoot && existsSync(options.vnextStateRoot)) {
+    return resolve(options.vnextStateRoot);
+  }
+  if (existsSync(join(stateDir, "runtime", "registry.db")) || existsSync(join(stateDir, "runtime", "projects"))) {
+    return stateDir;
+  }
+  const env = options?.env ?? process.env;
+  const explicit = env.KXM_STATE_HOME?.trim() || env.KXM_USER_STATE_DIR?.trim() || env.KXM_STATE_ROOT?.trim();
+  if (explicit && isAbsolute(explicit) && existsSync(resolve(explicit))) {
+    return resolve(explicit);
+  }
+  let base: string;
+  if (process.platform === "win32") {
+    const localAppData = env.LOCALAPPDATA?.trim();
+    base = localAppData && isAbsolute(localAppData) ? localAppData : join(homedir(), "AppData", "Local");
+    base = resolve(base, "KXM");
+  } else if (process.platform === "darwin") {
+    base = resolve(homedir(), "Library", "Application Support", "KXM");
+  } else {
+    const xdgState = env.XDG_STATE_HOME?.trim();
+    base = xdgState && isAbsolute(xdgState) ? xdgState : join(homedir(), ".local", "state");
+    base = resolve(base, "kxm");
+  }
+  if (existsSync(base)) return base;
+  return undefined;
+}
+
+export function loadLocalMeshSnapshot(
+  dataPath: string,
+  stateDir: string,
+  options?: { env?: NodeJS.ProcessEnv; projectRoot?: string; vnextStateRoot?: string },
+): LocalMeshSnapshot {
+  let hasLegacy = false;
   let agents: AgentRecord[] = [];
   let openMessages: MeshTuiOpenMessage[] = [];
   let openMessageTotal = 0;
-  let runs: WorkflowRun[] = [];
-  let runTotal = 0;
+  let legacyRuns: WorkflowRun[] = [];
+  let legacyRunTotal = 0;
   let plans: MeshTuiPlan[] = [];
   if (existsSync(dataPath)) {
+    hasLegacy = true;
     const database = new DatabaseSync(dataPath, { readOnly: true });
     try {
+      database.exec("PRAGMA busy_timeout = 5000");
       agents = readJsonRows<AgentRecord>(database, "SELECT record FROM agents");
       openMessages = readOpenMessageMetadata(database);
       openMessageTotal = countRows(database, "messages", " WHERE json_extract(record, '$.status') IN ('queued', 'delivered')");
-      runs = readJsonRows<WorkflowRun>(database, "SELECT record FROM workflow_runs ORDER BY rowid DESC LIMIT 8");
-      runTotal = countRows(database, "workflow_runs");
+      legacyRuns = readJsonRows<WorkflowRun>(database, "SELECT record FROM workflow_runs ORDER BY rowid DESC LIMIT 8");
+      legacyRunTotal = countRows(database, "workflow_runs");
       plans = readPlanMetadata(database);
     } finally {
       database.close();
     }
   }
+
+  // vNext discovery
+  let hasVnext = false;
+  const vnextRuns: MeshTuiRun[] = [];
+  let vnextRunTotal = 0;
+  const vnextStateRoot = resolveVnextStateRoot(stateDir, options);
+  if (vnextStateRoot) {
+    const runtimeDir = join(vnextStateRoot, "runtime");
+    const registryDbPath = join(runtimeDir, "registry.db");
+    const projectsDir = join(runtimeDir, "projects");
+
+    const projectKeys = new Set<string>();
+
+    if (existsSync(registryDbPath)) {
+      hasVnext = true;
+      try {
+        const regDb = new DatabaseSync(registryDbPath, { readOnly: true });
+        try {
+          regDb.exec("PRAGMA busy_timeout = 5000");
+          const pRows = regDb.prepare("SELECT project_key FROM projects").all() as Array<{ project_key: string }>;
+          for (const row of pRows) {
+            if (row.project_key) projectKeys.add(row.project_key);
+          }
+        } finally {
+          regDb.close();
+        }
+      } catch { /* registry error */ }
+    }
+
+    if (existsSync(projectsDir)) {
+      try {
+        for (const entry of readdirSync(projectsDir, { withFileTypes: true })) {
+          if (entry.isDirectory()) {
+            projectKeys.add(entry.name);
+          }
+        }
+      } catch { /* projectsDir unreadable */ }
+    }
+
+    for (const key of projectKeys) {
+      const eventDbPath = join(projectsDir, key, "run-events.db");
+      if (existsSync(eventDbPath)) {
+        hasVnext = true;
+        try {
+          const eventDb = new DatabaseSync(eventDbPath, { readOnly: true });
+          try {
+            eventDb.exec("PRAGMA busy_timeout = 5000");
+            const runRows = eventDb.prepare(`
+              SELECT run_id, project_id, workflow_id, status, created_at, updated_at
+              FROM runs ORDER BY created_at DESC, run_id DESC LIMIT 8
+            `).all() as Array<{
+              run_id: string;
+              project_id: string;
+              workflow_id: string;
+              status: string;
+              created_at: string;
+              updated_at: string;
+            }>;
+            const countRow = eventDb.prepare("SELECT COUNT(*) AS total FROM runs").get() as { total: number } | undefined;
+            vnextRunTotal += Number(countRow?.total ?? runRows.length);
+            for (const r of runRows) {
+              vnextRuns.push({
+                id: r.run_id,
+                status: r.status,
+                definitionId: r.workflow_id,
+                project: r.project_id,
+                updatedAt: r.updated_at || r.created_at,
+              });
+            }
+          } finally {
+            eventDb.close();
+          }
+        } catch { /* eventDb unreadable */ }
+      }
+    }
+  }
+
   const pids: MeshTuiPidClaim[] = [];
   if (existsSync(stateDir)) {
     for (const file of readdirSync(stateDir).filter((name) => name.endsWith(".pid"))) {
@@ -236,13 +356,51 @@ export function loadLocalMeshSnapshot(dataPath: string, stateDir: string): Local
       }
     }
   }
+
+  // Combine runs
+  const combinedRuns = [
+    ...legacyRuns.map((run) => summarizeMeshRun(run)),
+    ...vnextRuns,
+  ];
+  const seenIds = new Set<string>();
+  const uniqueRuns: MeshTuiRun[] = [];
+  for (const run of combinedRuns) {
+    if (!seenIds.has(run.id)) {
+      seenIds.add(run.id);
+      uniqueRuns.push(run);
+    }
+  }
+  uniqueRuns.sort((a, b) => {
+    const at = a.updatedAt ? Date.parse(a.updatedAt) : 0;
+    const bt = b.updatedAt ? Date.parse(b.updatedAt) : 0;
+    return bt - at;
+  });
+  const runs = uniqueRuns.slice(0, 16);
+  const runTotal = legacyRunTotal + vnextRunTotal;
+
+  // Source determination
+  let source: "legacy" | "vnext" | "both";
+  if (hasLegacy && hasVnext) {
+    source = "both";
+  } else if (hasVnext) {
+    source = "vnext";
+  } else {
+    source = "legacy";
+  }
+
+  // Spend from telemetry
+  const telemetryFile = join(stateDir, "telemetry.jsonl");
+  const spend = existsSync(telemetryFile) ? readRoutingRecords(telemetryFile) : [];
+
   return {
+    source,
     agents: agents.sort((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name)),
     openMessages,
     openMessageTotal,
-    runs: runs.map((run) => summarizeMeshRun(run)),
+    runs,
     runTotal,
     plans,
     pids,
+    spend,
   };
 }

@@ -2224,9 +2224,47 @@ import { existsSync as existsSync4, mkdirSync as mkdirSync4, readFileSync as rea
 import { join as join5 } from "node:path";
 
 // plugins/kxm/src/local-snapshot.ts
-import { existsSync, readdirSync, readFileSync as readFileSync2 } from "node:fs";
-import { join as join2, resolve } from "node:path";
+import { existsSync, readdirSync, readFileSync as readFileSync3 } from "node:fs";
+import { homedir } from "node:os";
+import { isAbsolute, join as join2, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+
+// plugins/kxm/src/telemetry.ts
+import { appendFileSync, mkdirSync, readFileSync as readFileSync2 } from "node:fs";
+function readRoutingRecords(path) {
+  const records = [];
+  try {
+    const raw = readFileSync2(path, "utf8");
+    for (const line of raw.split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      try {
+        const parsed = JSON.parse(line);
+        let routingObj;
+        const recordedAt = typeof parsed.recordedAt === "string" ? parsed.recordedAt : typeof parsed.timestamp === "string" ? parsed.timestamp : (/* @__PURE__ */ new Date()).toISOString();
+        if (parsed.schema === "kxm.routing-record.v2" || parsed.schema === "kxm.routing-record.v1") {
+          routingObj = parsed;
+        } else if (parsed.routing && typeof parsed.routing === "object") {
+          routingObj = parsed.routing;
+        } else if (parsed.envelope && typeof parsed.envelope === "object" && parsed.envelope.routing) {
+          routingObj = parsed.envelope.routing;
+        } else if (parsed.eventType === "routing.attempt.recorded" && parsed.payload && typeof parsed.payload === "object") {
+          routingObj = parsed.payload.routing;
+        }
+        if (routingObj && typeof routingObj === "object") {
+          const r = routingObj;
+          if (r.schema === "kxm.routing-record.v2" || r.schema === "kxm.routing-record.v1") {
+            records.push({ recordedAt, routing: r });
+          }
+        }
+      } catch {
+      }
+    }
+  } catch {
+  }
+  return records;
+}
+
+// plugins/kxm/src/local-snapshot.ts
 function processExists(pid) {
   try {
     process.kill(pid, 0);
@@ -2351,31 +2389,127 @@ function resolveKxmSnapshotPaths(cwd, env = process.env) {
   const dataPath = configured ? resolve(cwd, configured) : join2(stateDir, "kxm.db");
   return { dataPath, stateDir };
 }
-function loadLocalMeshSnapshot(dataPath, stateDir) {
+function resolveVnextStateRoot(stateDir, options) {
+  if (options?.vnextStateRoot && existsSync(options.vnextStateRoot)) {
+    return resolve(options.vnextStateRoot);
+  }
+  if (existsSync(join2(stateDir, "runtime", "registry.db")) || existsSync(join2(stateDir, "runtime", "projects"))) {
+    return stateDir;
+  }
+  const env = options?.env ?? process.env;
+  const explicit = env.KXM_STATE_HOME?.trim() || env.KXM_USER_STATE_DIR?.trim() || env.KXM_STATE_ROOT?.trim();
+  if (explicit && isAbsolute(explicit) && existsSync(resolve(explicit))) {
+    return resolve(explicit);
+  }
+  let base;
+  if (process.platform === "win32") {
+    const localAppData = env.LOCALAPPDATA?.trim();
+    base = localAppData && isAbsolute(localAppData) ? localAppData : join2(homedir(), "AppData", "Local");
+    base = resolve(base, "KXM");
+  } else if (process.platform === "darwin") {
+    base = resolve(homedir(), "Library", "Application Support", "KXM");
+  } else {
+    const xdgState = env.XDG_STATE_HOME?.trim();
+    base = xdgState && isAbsolute(xdgState) ? xdgState : join2(homedir(), ".local", "state");
+    base = resolve(base, "kxm");
+  }
+  if (existsSync(base)) return base;
+  return void 0;
+}
+function loadLocalMeshSnapshot(dataPath, stateDir, options) {
+  let hasLegacy = false;
   let agents = [];
   let openMessages = [];
   let openMessageTotal = 0;
-  let runs = [];
-  let runTotal = 0;
+  let legacyRuns = [];
+  let legacyRunTotal = 0;
   let plans = [];
   if (existsSync(dataPath)) {
+    hasLegacy = true;
     const database = new DatabaseSync(dataPath, { readOnly: true });
     try {
+      database.exec("PRAGMA busy_timeout = 5000");
       agents = readJsonRows(database, "SELECT record FROM agents");
       openMessages = readOpenMessageMetadata(database);
       openMessageTotal = countRows(database, "messages", " WHERE json_extract(record, '$.status') IN ('queued', 'delivered')");
-      runs = readJsonRows(database, "SELECT record FROM workflow_runs ORDER BY rowid DESC LIMIT 8");
-      runTotal = countRows(database, "workflow_runs");
+      legacyRuns = readJsonRows(database, "SELECT record FROM workflow_runs ORDER BY rowid DESC LIMIT 8");
+      legacyRunTotal = countRows(database, "workflow_runs");
       plans = readPlanMetadata(database);
     } finally {
       database.close();
+    }
+  }
+  let hasVnext = false;
+  const vnextRuns = [];
+  let vnextRunTotal = 0;
+  const vnextStateRoot = resolveVnextStateRoot(stateDir, options);
+  if (vnextStateRoot) {
+    const runtimeDir = join2(vnextStateRoot, "runtime");
+    const registryDbPath = join2(runtimeDir, "registry.db");
+    const projectsDir = join2(runtimeDir, "projects");
+    const projectKeys = /* @__PURE__ */ new Set();
+    if (existsSync(registryDbPath)) {
+      hasVnext = true;
+      try {
+        const regDb = new DatabaseSync(registryDbPath, { readOnly: true });
+        try {
+          regDb.exec("PRAGMA busy_timeout = 5000");
+          const pRows = regDb.prepare("SELECT project_key FROM projects").all();
+          for (const row of pRows) {
+            if (row.project_key) projectKeys.add(row.project_key);
+          }
+        } finally {
+          regDb.close();
+        }
+      } catch {
+      }
+    }
+    if (existsSync(projectsDir)) {
+      try {
+        for (const entry of readdirSync(projectsDir, { withFileTypes: true })) {
+          if (entry.isDirectory()) {
+            projectKeys.add(entry.name);
+          }
+        }
+      } catch {
+      }
+    }
+    for (const key of projectKeys) {
+      const eventDbPath = join2(projectsDir, key, "run-events.db");
+      if (existsSync(eventDbPath)) {
+        hasVnext = true;
+        try {
+          const eventDb = new DatabaseSync(eventDbPath, { readOnly: true });
+          try {
+            eventDb.exec("PRAGMA busy_timeout = 5000");
+            const runRows = eventDb.prepare(`
+              SELECT run_id, project_id, workflow_id, status, created_at, updated_at
+              FROM runs ORDER BY created_at DESC, run_id DESC LIMIT 8
+            `).all();
+            const countRow = eventDb.prepare("SELECT COUNT(*) AS total FROM runs").get();
+            vnextRunTotal += Number(countRow?.total ?? runRows.length);
+            for (const r of runRows) {
+              vnextRuns.push({
+                id: r.run_id,
+                status: r.status,
+                definitionId: r.workflow_id,
+                project: r.project_id,
+                updatedAt: r.updated_at || r.created_at
+              });
+            }
+          } finally {
+            eventDb.close();
+          }
+        } catch {
+        }
+      }
     }
   }
   const pids = [];
   if (existsSync(stateDir)) {
     for (const file of readdirSync(stateDir).filter((name) => name.endsWith(".pid"))) {
       try {
-        const record = JSON.parse(readFileSync2(join2(stateDir, file), "utf8"));
+        const record = JSON.parse(readFileSync3(join2(stateDir, file), "utf8"));
         pids.push({
           file,
           ...record.role ? { role: record.role } : {},
@@ -2387,19 +2521,50 @@ function loadLocalMeshSnapshot(dataPath, stateDir) {
       }
     }
   }
+  const combinedRuns = [
+    ...legacyRuns.map((run) => summarizeMeshRun(run)),
+    ...vnextRuns
+  ];
+  const seenIds = /* @__PURE__ */ new Set();
+  const uniqueRuns = [];
+  for (const run of combinedRuns) {
+    if (!seenIds.has(run.id)) {
+      seenIds.add(run.id);
+      uniqueRuns.push(run);
+    }
+  }
+  uniqueRuns.sort((a, b) => {
+    const at = a.updatedAt ? Date.parse(a.updatedAt) : 0;
+    const bt = b.updatedAt ? Date.parse(b.updatedAt) : 0;
+    return bt - at;
+  });
+  const runs = uniqueRuns.slice(0, 16);
+  const runTotal = legacyRunTotal + vnextRunTotal;
+  let source;
+  if (hasLegacy && hasVnext) {
+    source = "both";
+  } else if (hasVnext) {
+    source = "vnext";
+  } else {
+    source = "legacy";
+  }
+  const telemetryFile = join2(stateDir, "telemetry.jsonl");
+  const spend = existsSync(telemetryFile) ? readRoutingRecords(telemetryFile) : [];
   return {
+    source,
     agents: agents.sort((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name)),
     openMessages,
     openMessageTotal,
-    runs: runs.map((run) => summarizeMeshRun(run)),
+    runs,
     runTotal,
     plans,
-    pids
+    pids,
+    spend
   };
 }
 
 // plugins/kxm/src/kxm-update.ts
-import { existsSync as existsSync2, readFileSync as readFileSync3, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync as existsSync2, readFileSync as readFileSync4, writeFileSync, mkdirSync as mkdirSync2 } from "node:fs";
 import { join as join3 } from "node:path";
 var KXM_UPDATE_CACHE = "update-check.json";
 var CACHE_TTL_MS = 6 * 60 * 60 * 1e3;
@@ -2407,7 +2572,7 @@ function readUpdateCache(stateDir, now = Date.now()) {
   const path = join3(stateDir, KXM_UPDATE_CACHE);
   if (!existsSync2(path)) return void 0;
   try {
-    const row = JSON.parse(readFileSync3(path, "utf8"));
+    const row = JSON.parse(readFileSync4(path, "utf8"));
     if (typeof row.checkedAt !== "number" || !row.notice || now - row.checkedAt > CACHE_TTL_MS) return void 0;
     if (typeof row.notice.current !== "string" || typeof row.notice.available !== "boolean") return void 0;
     return row.notice;
@@ -2417,9 +2582,9 @@ function readUpdateCache(stateDir, now = Date.now()) {
 }
 
 // plugins/kxm/src/hub-binding.ts
-import { existsSync as existsSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync4, renameSync as renameSync2, rmSync as rmSync2, writeFileSync as writeFileSync2 } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, isAbsolute, join as join4, resolve as resolve2 } from "node:path";
+import { existsSync as existsSync3, mkdirSync as mkdirSync3, readFileSync as readFileSync5, renameSync as renameSync2, rmSync as rmSync2, writeFileSync as writeFileSync2 } from "node:fs";
+import { homedir as homedir2 } from "node:os";
+import { dirname, isAbsolute as isAbsolute2, join as join4, resolve as resolve2 } from "node:path";
 var HUB_BINDING_SCHEMA = "kxm.hub-binding.v1";
 var HUB_HEALTH_PROBE_MS = 300;
 var HubBindingError = class extends Error {
@@ -2431,17 +2596,17 @@ var HubBindingError = class extends Error {
 function resolveUserStateRoot(env) {
   const explicit = env.KXM_STATE_HOME?.trim();
   if (explicit) {
-    if (!isAbsolute(explicit)) throw new HubBindingError("local_state_root_not_absolute");
+    if (!isAbsolute2(explicit)) throw new HubBindingError("local_state_root_not_absolute");
     return resolve2(explicit);
   }
   if (process.platform === "win32") {
     const localAppData = env.LOCALAPPDATA?.trim();
-    const base2 = localAppData && isAbsolute(localAppData) ? localAppData : join4(homedir(), "AppData", "Local");
+    const base2 = localAppData && isAbsolute2(localAppData) ? localAppData : join4(homedir2(), "AppData", "Local");
     return resolve2(base2, "KXM");
   }
-  if (process.platform === "darwin") return resolve2(homedir(), "Library", "Application Support", "KXM");
+  if (process.platform === "darwin") return resolve2(homedir2(), "Library", "Application Support", "KXM");
   const xdgState = env.XDG_STATE_HOME?.trim();
-  const base = xdgState && isAbsolute(xdgState) ? xdgState : join4(homedir(), ".local", "state");
+  const base = xdgState && isAbsolute2(xdgState) ? xdgState : join4(homedir2(), ".local", "state");
   return resolve2(base, "kxm");
 }
 function hubBindingFile(env = process.env) {
@@ -2473,7 +2638,7 @@ function readHubBinding(env = process.env) {
   if (!existsSync3(file)) return void 0;
   let parsed;
   try {
-    parsed = JSON.parse(readFileSync4(file, "utf8"));
+    parsed = JSON.parse(readFileSync5(file, "utf8"));
   } catch {
     throw new HubBindingError(`malformed hub binding at ${file}`);
   }
@@ -2517,41 +2682,6 @@ async function probeHubHealth(url, fetchImpl, timeoutMs = HUB_HEALTH_PROBE_MS) {
   }
 }
 
-// plugins/kxm/src/telemetry.ts
-import { appendFileSync, mkdirSync as mkdirSync3, readFileSync as readFileSync5 } from "node:fs";
-function readRoutingRecords(path) {
-  const records = [];
-  try {
-    const raw = readFileSync5(path, "utf8");
-    for (const line of raw.split(/\r?\n/)) {
-      if (!line.trim()) continue;
-      try {
-        const parsed = JSON.parse(line);
-        let routingObj;
-        const recordedAt = typeof parsed.recordedAt === "string" ? parsed.recordedAt : typeof parsed.timestamp === "string" ? parsed.timestamp : (/* @__PURE__ */ new Date()).toISOString();
-        if (parsed.schema === "kxm.routing-record.v2" || parsed.schema === "kxm.routing-record.v1") {
-          routingObj = parsed;
-        } else if (parsed.routing && typeof parsed.routing === "object") {
-          routingObj = parsed.routing;
-        } else if (parsed.envelope && typeof parsed.envelope === "object" && parsed.envelope.routing) {
-          routingObj = parsed.envelope.routing;
-        } else if (parsed.eventType === "routing.attempt.recorded" && parsed.payload && typeof parsed.payload === "object") {
-          routingObj = parsed.payload.routing;
-        }
-        if (routingObj && typeof routingObj === "object") {
-          const r = routingObj;
-          if (r.schema === "kxm.routing-record.v2" || r.schema === "kxm.routing-record.v1") {
-            records.push({ recordedAt, routing: r });
-          }
-        }
-      } catch {
-      }
-    }
-  } catch {
-  }
-  return records;
-}
-
 // plugins/kxm/src/session-work.ts
 var SESSION_BRIEF_SKIP_LABEL = "Skip \u2014 start a fresh session";
 var MAX_SESSION_BRIEF_TASKS = 5;
@@ -2592,8 +2722,12 @@ function planItem(plan) {
   return { kind: "plan", id: plan.id, runId: plan.runId, label, detail: plan.summary, prompt };
 }
 function recentTasks(runs) {
-  const active = runs.filter((run) => run.status === "running" || run.status === "waiting");
-  const rest = runs.filter((run) => run.status !== "running" && run.status !== "waiting");
+  const active = runs.filter(
+    (run) => run.status === "running" || run.status === "waiting" || run.status === "created" || run.status === "preparing"
+  );
+  const rest = runs.filter(
+    (run) => run.status !== "running" && run.status !== "waiting" && run.status !== "created" && run.status !== "preparing"
+  );
   return [...active, ...rest].slice(0, MAX_SESSION_BRIEF_TASKS);
 }
 function formatShipLine(ship) {
@@ -2671,8 +2805,11 @@ function formatSessionWidget(stats, current, hub, ship, updateLatest, cost) {
   if (updateLatest) lines.push(`update  ${updateLatest} available \xB7 kxm update --kxm`);
   return lines;
 }
-function buildSessionBrief(snapshot, current, hub, ship, updateLatest, cost, sessionToken, source = "legacy", staleSeconds = DEFAULT_SESSION_BRIEF_STALE_SECONDS) {
-  const active = snapshot.runs.filter((run) => run.status === "running" || run.status === "waiting");
+function buildSessionBrief(snapshot, current, hub, ship, updateLatest, cost, sessionToken, source, staleSeconds = DEFAULT_SESSION_BRIEF_STALE_SECONDS) {
+  const resolvedSource = source ?? snapshot.source ?? "legacy";
+  const active = snapshot.runs.filter(
+    (run) => run.status === "running" || run.status === "waiting" || run.status === "created" || run.status === "preparing"
+  );
   const stats = {
     activeTasks: active.length,
     waitingTasks: snapshot.runs.filter((run) => run.status === "waiting").length,
@@ -2690,7 +2827,7 @@ function buildSessionBrief(snapshot, current, hub, ship, updateLatest, cost, ses
     schema: SESSION_BRIEF_SCHEMA,
     generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
     staleSeconds,
-    source,
+    source: resolvedSource,
     hub: resolvedHub,
     stats,
     tasks,
@@ -2813,14 +2950,16 @@ function loadSessionBrief(cwd, env = process.env, current, hub, options = {}) {
     const cachedUpdate = readUpdateCache(paths.stateDir);
     const updateLatest = options.updateLatest ?? (cachedUpdate?.available ? cachedUpdate.latest : void 0);
     const cost = options.cost ?? estimateSessionCost(paths.stateDir);
+    const snapshot = loadLocalMeshSnapshot(paths.dataPath, paths.stateDir, { env });
     brief = buildSessionBrief(
-      loadLocalMeshSnapshot(paths.dataPath, paths.stateDir),
+      snapshot,
       current,
       hub,
       ship,
       updateLatest,
       cost,
-      options.sessionToken
+      options.sessionToken,
+      snapshot.source
     );
   } catch {
     brief = buildSessionBrief(
