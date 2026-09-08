@@ -16,6 +16,7 @@ This documentation is organized by task. Start with the guide that matches what 
 | [Continuous improvement](continuous-improvement.md) | Product and engineering leads | Turn run evidence into reviewed workflow improvements |
 | [Workflow guide](workflow-guide.md) | Workflow designers and operators | Area -> Workflow -> Stage -> Role taxonomy with documentation slugs, dated research candidates, and selection policy |
 | [Agent Envelopes & Quality Gates](agent-communication-envelopes-and-gates.md) | Multi-agent workflow engineers | Production communication envelopes, quality gates, and work loops |
+| [Assignment runner](assignment-runner.md) | Maintainers and developers | Native developer assignments, deterministic witness verification, and multi-vendor dual-critic acceptance |
 | [vNext contract package](vnext/README.md) | Maintainers and reviewers | Review the accepted local-first target architecture and implementation contracts |
 
 Project-level policies live at the repository root:

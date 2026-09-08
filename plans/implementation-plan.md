@@ -188,7 +188,7 @@ It does not replace the phase gates below.
   scheduled, the v1 report underquote fix, and remaining report
   implementation — not for those superseded instructions.
 - **Workflow taxonomy (operator, 2026-09-07; path 2026-09-08):** [`docs/workflow-guide.md`](../docs/workflow-guide.md) is organized Area -> Workflow -> Stage -> Assigned role across seven areas (`software-engineering`, `design-experience`, `media-production`, `data-analytics`, `research-strategy`, `business-operations`, `security-reliability`) and 21 workflows with declared kebab-case documentation slugs. The taxonomy is route-agnostic for native harness subscriptions and API-key Pi providers. Slugs are documentation identity only: no runtime config, role admission, schema field, CLI behavior, or alias lane. Inherited candidate lists are dated research requiring live verification before dispatch, not certified prices or an eligibility grant. Model/harness, platform, modality, tools, and personal/work context are routing attributes, not area trees; area grouping never pools unrelated role quality into one global model ranking. Fable and Sol critics remain required for the developer runner. No phase gate changes.
-- **Developer roster U1a foundation (2026-09-07):** An unwired synchronous helper loader reads a committed, clean policy only from a control checkout at or behind the fixed trusted main ref. It pins commit/blob/raw SHA256, validates source-bound model origins and code-owned role/permission/vendor ceilings, and replays historical policy from Git objects. Pi provider validation follows the accepted helper’s shared provider ceiling, without adding a production Nous route. Config validity is not live harness/model capability or auth evidence: the existing dispatch brakes remain in force, including native model checks. This foundation does not change live routing, grant auth, or pass a product Phase 4 gate. U1b dispatch/critic/acceptance binding and CLAUDE/PR131 replacement remain open.
+- **Developer roster U1a foundation & U1b live binding (2026-09-07, 2026-09-08):** An unwired synchronous helper loader reads a committed, clean policy only from a control checkout at or behind the fixed trusted main ref. It pins commit/blob/raw SHA256, validates source-bound model origins and code-owned role/permission/vendor ceilings, and replays historical policy from Git objects. Pi provider validation follows the accepted helper’s shared provider ceiling, without adding a production Nous route. U1b completes live dispatch validation, dynamic critic resolution, and acceptance binding in `scripts/assignment-run.mjs`, enforcing lineup admission and permissions for all roles, as well as strict vendor independence between writer and critics and pairwise among critics. Stored manifest binding validation fails closed on unadmitted routes. Config validity is not live harness/model capability or auth evidence: dispatch brakes remain in force. This is developer orchestration policy for the issue 127 runner and does not pass a product Phase 4 gate.
 - **Planning home and workflow guide (operator, 2026-09-08):** `.kxm/` is the KXM tool's own workspace (state, logs, workflow outputs). Project planning documents live in `plans/` at the repo root. `docs/workflow-guide.md` is the route-agnostic Area → Workflow → Stage → Role taxonomy for native harness subscriptions and API-key Pi providers.
 
 ### Landed in this tree (unreleased)
@@ -205,6 +205,7 @@ It does not replace the phase gates below.
   entry stays. Read-only agy roles and agy-hosted non-Google models remain
   deferred.
 - **Docs audit slice (issue #144):** planning docs moved to `plans/` (implementation plan, v05 design record, v04/provenance history and 2026-09-04 reviews); `docs/workflow-guide.md` renamed and retitled; docs brake widened (`docs/**`, plugin READMEs, skills, AGENTS.md, CLAUDE.md, `.claude/**/*.md`; `plans/` exempt); stale copy, env-var classification, context OS coverage including `kxm context explain`, README workflow-slug index, and phase-neutral `kxm run` help. No product behavior change beyond CLI help wording.
+- **Assignment runner maintainer guide:** [`docs/assignment-runner.md`](../docs/assignment-runner.md) documents the developer assignment runner lifecycle (`just assign`, `witness`, `accept`, `attribute`, `observe-cost`, `change-report`), roster lineup admission, dual-critic quorum, vendor independence invariants, failure codes, and task directory layout. Linked in `docs/README.md`.
 
 - **ARC scale-set CI selectors:** all `ci.yml` / `release.yml` / `smoke.yml`
   `runs-on` values are the scalar scale-set name `kontextmind-doks`. The
@@ -612,7 +613,6 @@ It does not replace the phase gates below.
 ### Still open
 
 - **E3 schema ids:** rename `pi-mesh.*` wire identifiers (issue #96). Current docs cite the live ids; do not alias.
-- **Maintainers doc** for the assignment runner (`just assign` / witness / accept).
 - **After merge:** rewrite `Source:` links in slice issues #84–#103 to the moved plan paths.
 - **Windows resumption (deferred):** restore the two Windows Validate legs and
   their ruleset contexts, and diagnose the Node 24 package cleanup failure, in
@@ -622,10 +622,6 @@ It does not replace the phase gates below.
 - **Release resumption (deferred):** remove the `release` job latch and
   re-enable the Release workflow in a reviewed change that updates Tracking,
   tests, and settings together. Independent of Windows resumption.
-- **U1b dispatch/critic/acceptance binding:** Complete the live dispatch,
-  critic review, and acceptance binding to replace CLAUDE/PR131. This
-  includes connecting the loader to the actual routing/assignment logic.
-  U1a supplies the unwired trusted loader foundation; it does not change live assignment eligibility.
 - First real draft-to-published release after B2 (later release phase).
   `kxm update --kxm` end to end from a published asset. Temporary draft proof
   does not replace this. No sidecar `.sha256`.
@@ -914,9 +910,7 @@ all-settled degradation. Pi/CLI executions do not satisfy this gate.
 
 ## Phase 4: Pi adapter and Pi-native UX
 
-Developer roster U1a adds an unwired trusted policy loader and Git replay tests.
-Live developer assignment binding remains U1b; this does not satisfy the
-product adapter gate below.
+Developer roster U1a/U1b add trusted policy loading, Git replay, live assignment lineup dispatch, and critic acceptance binding. This is developer orchestration policy for the issue 127 runner and does not satisfy the product adapter gate below.
 
 Implement Pi model/auth discovery, supervised RPC sessions, per-run
 coordinators, scope epochs, tool presets, model profile/tag resolution, the Pi

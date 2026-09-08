@@ -17,3 +17,4 @@ export interface PolicyIdentity { readonly commit: string; readonly blob: string
 export interface LoadedPolicy { readonly identity: PolicyIdentity; readonly policy: RosterPolicy }
 export function loadTrustedRosterPolicy(): LoadedPolicy;
 export function resolveBoundPolicy(identity: PolicyIdentity): LoadedPolicy;
+export function canonicalVendor(value: string): string;

@@ -3252,3 +3252,91 @@ test("Qwen relief remains a bound writer assignment with fixed witness and hones
     assert.throws(() => validateAssignmentManifest({ ...manifest, model: "openrouter/x-ai/grok-4.6" }), /pi writer/);
   } finally { cleanup(root, taskDir); }
 });
+
+test("unadmitted roster route or permission mismatch fails closed on manifest validation", () => {
+  const { root, commit } = initRepo();
+  const taskDir = initTask();
+  try {
+    const unadmittedWriter = writerManifest(root, commit, taskDir, {
+      harness: "agy",
+      model: "gemini-3.7-flash-high",
+    });
+    assert.throws(
+      () => validateAssignmentManifest(unadmittedWriter),
+      (error: unknown) => {
+        assert.equal((error as { runnerCode?: string }).runnerCode, "route_invalid");
+        assert.match((error as Error).message, /not admitted in lineup for writer/);
+        return true;
+      },
+    );
+
+    const readOnlyLineupPolicy = {
+      schema: "kxm.roster-policy.v1",
+      routes: {
+        "grok-readonly": {
+          harness: "grok",
+          model: "grok-4.6",
+          vendor: "xai",
+          roles: ["writer"],
+          permissions: ["read-only"],
+          status: "admitted",
+          efforts: ["low", "medium", "high"],
+        },
+      },
+      lineup: {
+        writer: ["grok-readonly"],
+        planner: [],
+        "reviewer-arch": [],
+        "reviewer-cli": [],
+      },
+    };
+    assert.throws(
+      () => validateAssignmentManifest(writerManifest(root, commit, taskDir), { rosterPolicy: readOnlyLineupPolicy }),
+      (error: unknown) => {
+        assert.equal((error as { runnerCode?: string }).runnerCode, "route_invalid");
+        assert.match((error as Error).message, /does not permit edit/);
+        return true;
+      },
+    );
+
+    const customPolicy = {
+      schema: "kxm.roster-policy.v1",
+      routes: {
+        "custom-writer": {
+          harness: "grok",
+          model: "grok-4.6",
+          vendor: "xai",
+          roles: ["writer"],
+          permissions: ["edit"],
+          status: "admitted",
+          efforts: ["low", "medium", "high"],
+        },
+      },
+      lineup: {
+        writer: ["custom-writer"],
+        planner: [],
+        "reviewer-arch": [],
+        "reviewer-cli": [],
+      },
+    };
+    const validManifest = writerManifest(root, commit, taskDir);
+    const validated = validateAssignmentManifest(validManifest, { rosterPolicy: customPolicy });
+    assert.equal(validated.role, "writer");
+
+    const emptyLineupPolicy = {
+      ...customPolicy,
+      lineup: { ...customPolicy.lineup, writer: [] },
+    };
+    assert.throws(
+      () => validateAssignmentManifest(validManifest, { rosterPolicy: emptyLineupPolicy }),
+      (error: unknown) => {
+        assert.equal((error as { runnerCode?: string }).runnerCode, "route_invalid");
+        assert.match((error as Error).message, /no admitted lineup for role writer/);
+        return true;
+      },
+    );
+  } finally {
+    cleanup(root, taskDir);
+  }
+});
+

@@ -26,6 +26,14 @@ export const REQUIRED_ACCEPT_CRITICS: Readonly<Record<string, Readonly<{
   model: string;
   role: string;
 }>>>;
+export function resolveRequiredCritics(policy: unknown): Readonly<Record<string, Readonly<{
+  harness: string;
+  model: string;
+  role: string;
+  vendor: string;
+  route_id?: string;
+}>>>;
+export function getRosterPolicy(deps?: Record<string, unknown>): unknown;
 export const ASSIGNMENT_KINDS: readonly string[];
 export const KIND_ROLES: Readonly<Record<string, string>>;
 export const REVIEW_KINDS: readonly string[];
@@ -79,6 +87,8 @@ export function validateAssignmentManifest(manifest: unknown, deps?: {
   realpathSync?: typeof import("node:fs").realpathSync;
   lstatSync?: typeof import("node:fs").lstatSync;
   statSync?: typeof import("node:fs").statSync;
+  rosterPolicy?: unknown;
+  loadTrustedRosterPolicy?: () => unknown;
 }): ValidatedAssignment;
 
 export interface AssignmentCompletion {
