@@ -4,14 +4,17 @@ import { readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { HubHttpError } from "../plugins/kxm/src/client.ts";
 import {
   AGENT_COMMANDS_MAP,
   enforceToolPolicy,
+  getCliAgentCommands,
   isToolAllowed,
   mintAttemptToken,
   mintSessionToken,
   parseAttemptToken,
   parseSessionToken,
+  reconcileInbox,
 } from "../plugins/kxm/src/commands.ts";
 import { runCli as runCliImplementation, type CliIo } from "../plugins/kxm/src/cli.ts";
 import { initializeVnextProject } from "../plugins/kxm/src/vnext-init.ts";
@@ -252,5 +255,177 @@ test("kxm workflow wait and signal support dry-run binding for vNext runs", asyn
     assert.match(signalRes.stdout, /would post signal to vNext run/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("token parsing and pattern matching error branches fail safely", () => {
+  assert.equal(getCliAgentCommands().length, 19);
+  assert.equal(parseAttemptToken("not-base64"), undefined);
+  assert.equal(parseAttemptToken(Buffer.from("not json").toString("base64url")), undefined);
+  assert.equal(parseAttemptToken(Buffer.from(JSON.stringify({ notSchema: 1 })).toString("base64url")), undefined);
+  assert.equal(parseSessionToken("not-base64"), undefined);
+  assert.equal(parseSessionToken(Buffer.from("not json").toString("base64url")), undefined);
+  assert.equal(parseSessionToken(Buffer.from(JSON.stringify({ notSchema: 1 })).toString("base64url")), undefined);
+
+  // Wildcard tool matching
+  assert.equal(isToolAllowed("kxm_custom", { allow: ["kxm_*"] }), true);
+  assert.equal(isToolAllowed("kxm_custom", { allow: ["other_*"] }), false);
+  assert.equal(isToolAllowed("kxm_custom", { deny: ["kxm_*"] }), false);
+  assert.equal(isToolAllowed("kxm_custom", { allow: ["*"] }), true);
+});
+
+test("workflowContext validation enforces integer attempts between 1 and 20", async () => {
+  const sendCmd = AGENT_COMMANDS_MAP.get("kxm_send")!;
+  assert.ok(sendCmd);
+
+  const mockClient = {
+    async send() {
+      return { id: "m1", status: "delivered", toName: "agent-2" };
+    },
+  };
+
+  // Missing required parameters
+  await assert.rejects(async () => {
+    await sendCmd.execute(mockClient as any, {});
+  }, /target is required/);
+
+  await assert.rejects(async () => {
+    await sendCmd.execute(mockClient as any, { target: "t" });
+  }, /content is required/);
+
+  // Invalid attempts
+  await assert.rejects(async () => {
+    await sendCmd.execute(mockClient as any, {
+      target: "t",
+      content: "c",
+      workflowContext: { runId: "r", stageId: "s", requirementKey: "k", attempt: 0 },
+    });
+  }, /must be an integer between 1 and 20/);
+
+  await assert.rejects(async () => {
+    await sendCmd.execute(mockClient as any, {
+      target: "t",
+      content: "c",
+      workflowContext: { runId: "r", stageId: "s", requirementKey: "k", attempt: 21 },
+    });
+  }, /must be an integer between 1 and 20/);
+
+  await assert.rejects(async () => {
+    await sendCmd.execute(mockClient as any, {
+      target: "t",
+      content: "c",
+      workflowContext: { runId: "r", stageId: "s", requirementKey: "k", attempt: 1.5 },
+    });
+  }, /must be an integer between 1 and 20/);
+
+  // Valid attempt succeeds
+  const res = await sendCmd.execute(mockClient as any, {
+    target: "t",
+    content: "c",
+    workflowContext: { runId: "r", stageId: "s", requirementKey: "k", attempt: 2 },
+  });
+  assert.deepEqual(res, { messageId: "m1", status: "delivered", target: "agent-2" });
+});
+
+test("inbox reconciliation and reply handle terminal statuses and error branches", async () => {
+  const inbox = new Map<string, any>();
+  const notifiedInbox = new Set<string>();
+
+  inbox.set("msg_replied", { id: "msg_replied", status: "pending" });
+  inbox.set("msg_cancelled", { id: "msg_cancelled", status: "pending" });
+  inbox.set("msg_expired", { id: "msg_expired", status: "pending" });
+  inbox.set("msg_error", { id: "msg_error", status: "pending" });
+  inbox.set("msg_active", { id: "msg_active", status: "pending" });
+  inbox.set("msg_not_found", { id: "msg_not_found", status: "pending" });
+
+  notifiedInbox.add("msg_replied");
+  notifiedInbox.add("msg_not_found");
+
+  const mockClient = {
+    async getMessage(id: string) {
+      if (id === "msg_replied") return { id, status: "replied" };
+      if (id === "msg_cancelled") return { id, status: "cancelled" };
+      if (id === "msg_expired") return { id, status: "expired" };
+      if (id === "msg_error") return { id, status: "error" };
+      if (id === "msg_active") return { id, status: "delivered" };
+      if (id === "msg_not_found") {
+        const err = new Error("not found") as any;
+        err.name = "HubHttpError";
+        err.statusCode = 404;
+        err.code = "message_not_found";
+        Object.setPrototypeOf(err, HubHttpError.prototype);
+        throw err;
+      }
+      throw new Error("unexpected id");
+    },
+  };
+
+  await reconcileInbox(mockClient as any, inbox, notifiedInbox);
+  assert.equal(inbox.has("msg_replied"), false);
+  assert.equal(inbox.has("msg_cancelled"), false);
+  assert.equal(inbox.has("msg_expired"), false);
+  assert.equal(inbox.has("msg_error"), false);
+  assert.equal(inbox.has("msg_not_found"), false);
+  assert.equal(inbox.has("msg_active"), true);
+  assert.equal(notifiedInbox.has("msg_replied"), false);
+  assert.equal(notifiedInbox.has("msg_not_found"), false);
+
+  // kxm_inbox and kxm_reply with execution context
+  const inboxCmd = AGENT_COMMANDS_MAP.get("kxm_inbox")!;
+  const replyCmd = AGENT_COMMANDS_MAP.get("kxm_reply")!;
+
+  const listed = await inboxCmd.execute(mockClient as any, {}, { inbox, notifiedInbox }) as { messages: any[] };
+  assert.equal(listed.messages.length, 1);
+  assert.equal(listed.messages[0].id, "msg_active");
+
+  const emptyInbox = await inboxCmd.execute(mockClient as any, {}) as { messages: any[] };
+  assert.deepEqual(emptyInbox.messages, []);
+
+  // kxm_reply deletes from context inbox
+  const mockReplyClient = {
+    async reply(id: string, content: string) {
+      return { id, status: "replied", fromName: "sender" };
+    },
+  };
+  const replyRes = await replyCmd.execute(mockReplyClient as any, { messageId: "msg_active", content: "ok" }, { inbox, notifiedInbox });
+  assert.deepEqual(replyRes, { messageId: "msg_active", status: "replied", recipient: "sender" });
+  assert.equal(inbox.has("msg_active"), false);
+});
+
+test("CLI subcommands and options parse thoroughly in dry-run mode", async () => {
+  // Invalid payload JSON
+  const badPayload = await runCli(["peer", "list", "--payload", "bad-json", "--dry-run", "--json"]);
+  assert.equal(badPayload.exit, 2);
+  assert.match(badPayload.stderr, /invalid_payload/);
+
+  // Valid payload JSON
+  const goodPayload = await runCli(["peer", "list", "--payload", '{"custom":"val"}', "--dry-run", "--json"]);
+  assert.equal(goodPayload.exit, 0);
+  assert.match(goodPayload.stdout, /"dryRun":true/);
+
+  // All peer subcommands with options
+  for (const args of [
+    ["peer", "list", "--dry-run", "--json"],
+    ["peer", "send", "target-agent", "hello", "--delivery", "steer", "--correlation-id", "corr-1", "--idempotency-key", "idem-1", "--ttl-ms", "5000", "--workflow-context", '{"runId":"r1","stageId":"s1","requirementKey":"k1","attempt":1}', "--dry-run", "--json"],
+    ["peer", "get", "msg_1", "--dry-run", "--json"],
+    ["peer", "await", "msg_1", "--timeout-ms", "3000", "--dry-run", "--json"],
+    ["peer", "cancel", "msg_1", "--dry-run", "--json"],
+    ["peer", "fanout", "--targets", "a,b", "--content", "hi", "--ttl-ms", "5000", "--timeout-ms", "3000", "--dry-run", "--json"],
+    ["peer", "inbox", "--dry-run", "--json"],
+    ["peer", "reply", "msg_1", "reply content", "--dry-run", "--json"],
+  ]) {
+    const res = await runCli(args);
+    assert.equal(res.exit, 0, `Command failed: ${args.join(" ")}`);
+    assert.match(res.stdout, /"dryRun":true/);
+  }
+
+  // Workflow agent subcommands with options
+  for (const args of [
+    ["workflow", "checkpoint", "--run-id", "r1", "--stage-id", "s1", "--status", "passed", "--summary", "checkpoint summary", "--evidence", '{"check":"pass"}', "--dry-run", "--json"],
+    ["workflow", "record", "--run-id", "r1", "--category", "bug", "--area", "implementation", "--severity", "info", "--summary", "fixed bug", "--dry-run", "--json"],
+  ]) {
+    const res = await runCli(args);
+    assert.equal(res.exit, 0, `Command failed: ${args.join(" ")}`);
+    assert.match(res.stdout, /"dryRun":true/);
   }
 });

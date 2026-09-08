@@ -389,7 +389,7 @@ async function startVnextRuntimeSupervisorInner(
           return;
         }
 
-        const runMatch = /^\/v1\/runs\/([A-Za-z0-9_-]+)(?:\/(events|cancel))?$/.exec(url.pathname);
+        const runMatch = /^\/v1\/runs\/([A-Za-z0-9_-]+)(?:\/(events|cancel|signal|wait))?$/.exec(url.pathname);
         if (runMatch) {
           const runId = runMatch[1] as string;
           const sub = runMatch[2];
