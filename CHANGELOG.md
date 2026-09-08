@@ -6,6 +6,16 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Added
 
+- **Improvement report and candidates (E8, issue #97):** Replaced gate-count
+  bucketing in `improve.ts` with routing record grouping by
+  `(workflowHash, step, agentRole, promptHash)`. Rows compute recurrence, mean cost,
+  mean latency, verify-pass rate, and rework; high recurrence with high pass rate
+  emits coded-repeat candidates. Single candidate format `kxm.candidate.v1` in
+  tracked `.kxm/candidates/` with kind (`gate`, `skill`, `workflow-step`), evidence refs,
+  baseline metrics, declared outcome, measure, and proposed diff patch. Skills carry
+  standard YAML frontmatter (`name`, `description`). `skills promote` emits a unified diff
+  patch (`.patch`) instead of moving a directory. Added `improve.yaml` workflow in
+  `examples/vnext/.kxm/workflows/` completing on the driver. Un-gitignored retrospective exports.
 - **Database backup, restore, and migrations (E6, issue #102):** Unified SQLite
   lifecycle via `openDatabase` with fail-closed schema checks, WAL journal mode with
   retry loop, busy timeout, and transaction helper with a nesting guard. Stepwise

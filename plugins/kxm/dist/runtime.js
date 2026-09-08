@@ -2986,7 +2986,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve6.call(this, root, ref);
+      let _sch = resolve7.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a = root.localRefs) === null || _a === void 0 ? void 0 : _a[ref];
         const { schemaId } = this.opts;
@@ -3013,7 +3013,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve6(root, ref) {
+    function resolve7(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3838,7 +3838,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve6(baseURI, relativeURI, options) {
+    function resolve7(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const {
         parsed: baseParsed,
@@ -3871,49 +3871,49 @@ var require_fast_uri = __commonJS({
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
-    function resolveComponent(base, relative3, options, skipNormalization) {
+    function resolveComponent(base, relative4, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
         base = parse3(serialize(base, options), options);
-        relative3 = parse3(serialize(relative3, options), options);
+        relative4 = parse3(serialize(relative4, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative3.scheme) {
-        target.scheme = relative3.scheme;
-        target.userinfo = relative3.userinfo;
-        target.host = relative3.host;
-        target.port = relative3.port;
-        target.path = removeDotSegments(relative3.path || "");
-        target.query = relative3.query;
+      if (!options.tolerant && relative4.scheme) {
+        target.scheme = relative4.scheme;
+        target.userinfo = relative4.userinfo;
+        target.host = relative4.host;
+        target.port = relative4.port;
+        target.path = removeDotSegments(relative4.path || "");
+        target.query = relative4.query;
       } else {
-        if (relative3.userinfo !== void 0 || relative3.host !== void 0 || relative3.port !== void 0) {
-          target.userinfo = relative3.userinfo;
-          target.host = relative3.host;
-          target.port = relative3.port;
-          target.path = removeDotSegments(relative3.path || "");
-          target.query = relative3.query;
+        if (relative4.userinfo !== void 0 || relative4.host !== void 0 || relative4.port !== void 0) {
+          target.userinfo = relative4.userinfo;
+          target.host = relative4.host;
+          target.port = relative4.port;
+          target.path = removeDotSegments(relative4.path || "");
+          target.query = relative4.query;
         } else {
-          if (!relative3.path) {
+          if (!relative4.path) {
             target.path = base.path;
-            if (relative3.query !== void 0) {
-              target.query = relative3.query;
+            if (relative4.query !== void 0) {
+              target.query = relative4.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative3.path[0] === "/") {
-              target.path = removeDotSegments(relative3.path);
+            if (relative4.path[0] === "/") {
+              target.path = removeDotSegments(relative4.path);
             } else {
               if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) {
-                target.path = "/" + relative3.path;
+                target.path = "/" + relative4.path;
               } else if (!base.path) {
-                target.path = relative3.path;
+                target.path = relative4.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative3.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative4.path;
               }
               target.path = removeDotSegments(target.path);
             }
-            target.query = relative3.query;
+            target.query = relative4.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -3921,7 +3921,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative3.fragment;
+      target.fragment = relative4.fragment;
       return target;
     }
     function equal(uriA, uriB, options) {
@@ -4200,7 +4200,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve: resolve6,
+      resolve: resolve7,
       resolveComponent,
       equal,
       serialize,
@@ -16607,8 +16607,8 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
       const writable = Object.values(objectValue(step.repositories) ?? {}).filter((access) => access === "write").length;
       if (maxWriteRepositories > writable) issues.push(issue("semantic", "write_repository_bound_invalid", file, `${stepId} maxWriteRepositories exceeds writable repository scope`));
     }
-    const join9 = objectValue(step.join);
-    const minimumPassed = join9 && typeof join9.minimumPassed === "number" ? join9.minimumPassed : void 0;
+    const join10 = objectValue(step.join);
+    const minimumPassed = join10 && typeof join10.minimumPassed === "number" ? join10.minimumPassed : void 0;
     if (minimumPassed !== void 0 && minimumPassed > maximum) issues.push(issue("semantic", "join_impossible", file, `${stepId} minimumPassed exceeds assignment maximum`));
     const distinctBy = names(assignment?.distinctBy);
     if (distinctBy.length > 0) {
@@ -22183,8 +22183,8 @@ var PiSession = class {
     }
     const id = `cmd_${++this.commandCounter}`;
     const payload = { ...command, id };
-    return new Promise((resolve6, reject) => {
-      this.pendingCommands.set(id, { resolve: resolve6, reject });
+    return new Promise((resolve7, reject) => {
+      this.pendingCommands.set(id, { resolve: resolve7, reject });
       try {
         this.process.stdin.write(JSON.stringify(payload) + "\n");
       } catch (err) {
@@ -22205,7 +22205,7 @@ var PiSession = class {
       return { outcome, text: "aborted", usage: {} };
     }
     this.status = "busy";
-    return new Promise((resolve6, reject) => {
+    return new Promise((resolve7, reject) => {
       let signalCleanup;
       if (signal) {
         const onAbort = () => {
@@ -22219,7 +22219,7 @@ var PiSession = class {
         signalCleanup = () => signal.removeEventListener("abort", onAbort);
       }
       this.activePrompt = {
-        resolve: resolve6,
+        resolve: resolve7,
         reject,
         allowedOutcomes,
         text: "",
@@ -22473,7 +22473,7 @@ function determineOutcome2(text, allowedOutcomes) {
   return allowedOutcomes[0] ?? "completed";
 }
 function defaultSpawn(command, args, options) {
-  return new Promise((resolve6) => {
+  return new Promise((resolve7) => {
     let stdout = "";
     let stderr = "";
     let killed = false;
@@ -22486,7 +22486,7 @@ function defaultSpawn(command, args, options) {
     if (options.signal) {
       if (options.signal.aborted) {
         child.kill();
-        return resolve6({ stdout: "", stderr: "aborted", code: null, error: new Error("process_aborted") });
+        return resolve7({ stdout: "", stderr: "aborted", code: null, error: new Error("process_aborted") });
       }
       const onAbort = () => {
         killed = true;
@@ -22509,10 +22509,10 @@ function defaultSpawn(command, args, options) {
       stderr += chunk.toString();
     });
     child.on("error", (err) => {
-      resolve6({ stdout, stderr, code: null, error: err });
+      resolve7({ stdout, stderr, code: null, error: err });
     });
     child.on("close", (code) => {
-      resolve6({
+      resolve7({
         stdout,
         stderr,
         code,
@@ -22930,12 +22930,297 @@ function createLogger(options) {
   });
   return logFn;
 }
+
+// plugins/kxm/src/improve.ts
+import { createHash as createHash8 } from "node:crypto";
+import { existsSync as existsSync8, mkdirSync as mkdirSync5, writeFileSync as writeFileSync3 } from "node:fs";
+import { join as join9, relative as relative3, resolve as resolve6 } from "node:path";
+
+// plugins/kxm/src/protocol.ts
+var DEFAULT_MESSAGE_TTL_MS = 24 * 60 * 6e4;
+var MAX_MESSAGE_TTL_MS = 7 * 24 * 60 * 6e4;
+var DEFAULT_MESSAGE_RETENTION_MS = 7 * 24 * 60 * 6e4;
+var MAX_BODY_BYTES = 256 * 1024;
+function nowIso() {
+  return (/* @__PURE__ */ new Date()).toISOString();
+}
+
+// plugins/kxm/src/improve.ts
+var CANDIDATE_SCHEMA = "kxm.candidate.v1";
+var IMPROVEMENT_REPORT_SCHEMA = "kxm.improvement-report.v2";
+var IMPROVEMENT_REPORT_V1_SCHEMA = "kxm.improvement-report.v1";
+function classifyCandidateKind(stepId, agentRole) {
+  const s = stepId.toLowerCase();
+  const r = agentRole.toLowerCase();
+  if (s.includes("verify") || s.includes("gate") || s.includes("test") || s.includes("check") || s.includes("lint") || r === "verifier") {
+    return "gate";
+  }
+  if (s.includes("plan") || s.includes("review") || s.includes("repro") || r === "planner" || r === "reviewer" || r === "critic") {
+    return "skill";
+  }
+  return "workflow-step";
+}
+function generateCandidateDiff(kind, stepId, agentRole, workflowHash) {
+  const safeSlug = stepId.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "step";
+  if (kind === "gate") {
+    const diff2 = [
+      "diff --git a/.kxm/gates.yaml b/.kxm/gates.yaml",
+      "--- a/.kxm/gates.yaml",
+      "+++ b/.kxm/gates.yaml",
+      "@@ -1,3 +1,7 @@",
+      " schema: kxm.gate-registry.v1",
+      " gates:",
+      `+  ${safeSlug}:`,
+      `+    kind: command`,
+      `+    argv: [npm, run, ${safeSlug}]`,
+      `+    timeoutMs: 3600000`,
+      ""
+    ].join("\n");
+    return {
+      diff: diff2,
+      declaredOutcome: `Deterministic exit-code verification replacing LLM turn for ${stepId}`,
+      measure: `100% reduction in LLM inference cost and latency for ${stepId}`,
+      summary: `Promote deterministic check '${stepId}' (${agentRole}) to coded gate`
+    };
+  }
+  if (kind === "skill") {
+    const rel2 = `.kxm/skills/candidates/${safeSlug}/SKILL.md`;
+    const skillContent = [
+      "---",
+      `name: ${safeSlug}`,
+      `description: Governed repeat skill for ${stepId}`,
+      "---",
+      "",
+      `# ${stepId}`,
+      "",
+      `Reusable skill instructions for ${stepId} (${agentRole}).`,
+      ""
+    ].join("\n");
+    const diff2 = [
+      `diff --git a/${rel2} b/${rel2}`,
+      "new file mode 100644",
+      "--- /dev/null",
+      `+++ b/${rel2}`,
+      `@@ -0,0 +1,${skillContent.split("\n").length} @@`,
+      ...skillContent.split("\n").map((l) => `+${l}`),
+      ""
+    ].join("\n");
+    return {
+      diff: diff2,
+      declaredOutcome: `Governed reusable skill for ${stepId}`,
+      measure: `Reduced prompt drift and consistent model guidance for ${stepId}`,
+      summary: `Promote repeated instructions for '${stepId}' (${agentRole}) to governed skill`
+    };
+  }
+  const rel = `.kxm/workflows/${safeSlug}.yaml`;
+  const diff = [
+    `diff --git a/${rel} b/${rel}`,
+    `--- a/${rel}`,
+    `+++ b/${rel}`,
+    "@@ -1,3 +1,6 @@",
+    " steps:",
+    `+  - id: ${stepId}`,
+    `+    kind: agent`,
+    `+    agent: ${agentRole}`,
+    ""
+  ].join("\n");
+  return {
+    diff,
+    declaredOutcome: `Dedicated workflow step with typed inputs and transitions for ${stepId}`,
+    measure: `Reduced manual coordination and faster stage transitions for ${stepId}`,
+    summary: `Automate repetitive step '${stepId}' (${agentRole}) in workflow`
+  };
+}
+function groupRoutingRecords(records, options = {}) {
+  const minRecurrence = options.minRecurrence ?? 2;
+  const minPassRate = options.minPassRate ?? 0.75;
+  const map = /* @__PURE__ */ new Map();
+  for (const r of records) {
+    const raw = r;
+    const providerMeta = raw.providerMetadata && typeof raw.providerMetadata === "object" ? raw.providerMetadata : {};
+    const workflowHash = raw.workflowDefinitionSha256 || providerMeta.workflowDefinitionSha256 || raw.workflowRunId || raw.runId || "standalone";
+    const stepId = raw.stepId || raw.stageId || "unknown";
+    const agentRole = raw.agentRole?.trim() || "agent";
+    const promptHash = raw.rolePromptSha256?.trim() || providerMeta.rolePromptSha256?.trim() || "none";
+    const key = `${workflowHash}:${stepId}:${agentRole}:${promptHash}`;
+    let group = map.get(key);
+    if (!group) {
+      group = {
+        workflowHash,
+        stepId,
+        agentRole,
+        promptHash,
+        costs: [],
+        latencies: [],
+        passedCount: 0,
+        reworkCount: 0,
+        evidenceRefs: /* @__PURE__ */ new Set(),
+        total: 0
+      };
+      map.set(key, group);
+    }
+    group.total += 1;
+    const cost = raw.costUsd;
+    if (typeof cost === "number" && !Number.isNaN(cost) && cost >= 0) {
+      group.costs.push(cost);
+    }
+    const latency = raw.latencyMs;
+    if (typeof latency === "number" && !Number.isNaN(latency) && latency >= 0) {
+      group.latencies.push(latency);
+    }
+    const verifierOutcome = raw.verifierOutcome;
+    const finalOutcome = raw.finalOutcome;
+    if (verifierOutcome === "passed" || finalOutcome === "accepted" || finalOutcome === "completed") {
+      group.passedCount += 1;
+    }
+    const retries = raw.retries;
+    if (typeof retries === "number") {
+      group.reworkCount += retries;
+    }
+    const ref = raw.attemptId || raw.runId || raw.workflowRunId || raw.behavioralSha256;
+    if (ref && group.evidenceRefs.size < 16) {
+      group.evidenceRefs.add(ref);
+    }
+  }
+  const rows = [];
+  for (const group of map.values()) {
+    const recurrence = group.total;
+    const meanCost = group.costs.length > 0 ? Number((group.costs.reduce((a, b) => a + b, 0) / group.costs.length).toFixed(4)) : 0;
+    const meanLatency = group.latencies.length > 0 ? Math.round(group.latencies.reduce((a, b) => a + b, 0) / group.latencies.length) : 0;
+    const verifyPassRate = recurrence > 0 ? Number((group.passedCount / recurrence).toFixed(3)) : 0;
+    const rework = group.reworkCount;
+    const isCandidate = recurrence >= minRecurrence && verifyPassRate >= minPassRate;
+    const candidateKind = isCandidate ? classifyCandidateKind(group.stepId, group.agentRole) : void 0;
+    const safeSlug = group.stepId.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 16) || "step";
+    const keyHash = createHash8("sha256").update(`${group.workflowHash}:${group.stepId}:${group.agentRole}:${group.promptHash}`).digest("hex").slice(0, 10);
+    const candidateId = isCandidate && candidateKind ? `cand_${candidateKind.replace(/-/g, "_")}_${safeSlug}_${keyHash}` : void 0;
+    rows.push({
+      workflowHash: group.workflowHash,
+      stepId: group.stepId,
+      agentRole: group.agentRole,
+      promptHash: group.promptHash,
+      recurrence,
+      meanCost,
+      meanLatency,
+      verifyPassRate,
+      rework,
+      evidenceRefs: [...group.evidenceRefs],
+      isCandidate,
+      ...candidateKind !== void 0 ? { candidateKind } : {},
+      ...candidateId !== void 0 ? { candidateId } : {}
+    });
+  }
+  return rows.sort((a, b) => {
+    if (a.isCandidate !== b.isCandidate) return a.isCandidate ? -1 : 1;
+    if (b.recurrence !== a.recurrence) return b.recurrence - a.recurrence;
+    return a.stepId.localeCompare(b.stepId);
+  });
+}
+function buildImprovementReport(records, options = {}) {
+  const projectRoot = options.projectRoot ? resolve6(options.projectRoot) : process.cwd();
+  const candidatesDir = options.candidatesDir ? resolve6(options.candidatesDir) : join9(projectRoot, ".kxm", "candidates");
+  const groups = groupRoutingRecords(records, options);
+  const candidates = [];
+  for (const group of groups) {
+    if (!group.isCandidate || !group.candidateKind || !group.candidateId) continue;
+    const { diff, declaredOutcome, measure, summary } = generateCandidateDiff(
+      group.candidateKind,
+      group.stepId,
+      group.agentRole,
+      group.workflowHash
+    );
+    const diffFileName = `${group.candidateId}.diff`;
+    const diffFilePath = join9(candidatesDir, diffFileName);
+    const relDiffPath = relative3(projectRoot, diffFilePath).replace(/\\/g, "/");
+    const candidate = {
+      schema: CANDIDATE_SCHEMA,
+      id: group.candidateId,
+      kind: group.candidateKind,
+      summary,
+      evidenceRefs: group.evidenceRefs.length > 0 ? group.evidenceRefs : ["evidence:telemetry"],
+      baselineMetrics: {
+        recurrence: group.recurrence,
+        meanCost: group.meanCost,
+        meanLatency: group.meanLatency,
+        verifyPassRate: group.verifyPassRate,
+        rework: group.rework
+      },
+      declaredOutcome,
+      measure,
+      proposedDiffPath: relDiffPath,
+      status: "proposed",
+      createdAt: nowIso()
+    };
+    if (!options.dryRun) {
+      if (!existsSync8(candidatesDir)) {
+        mkdirSync5(candidatesDir, { recursive: true });
+      }
+      writeFileSync3(diffFilePath, diff, "utf8");
+      const jsonFilePath = join9(candidatesDir, `${group.candidateId}.json`);
+      writeFileSync3(jsonFilePath, JSON.stringify(candidate, null, 2) + "\n", "utf8");
+    }
+    candidates.push(candidate);
+  }
+  return {
+    schema: IMPROVEMENT_REPORT_SCHEMA,
+    createdAt: nowIso(),
+    reviewDecision: "proposed",
+    recordsCount: records.length,
+    groups,
+    candidates
+  };
+}
+function writeImprovementReport(improvementsDir, report, dryRun = false) {
+  const stamp = report.createdAt.replace(/[:.]/g, "-");
+  const path = join9(improvementsDir, `${stamp}.json`);
+  if (!dryRun) {
+    mkdirSync5(improvementsDir, { recursive: true });
+    writeFileSync3(path, `${JSON.stringify(report, null, 2)}
+`, { encoding: "utf8" });
+  }
+  return path;
+}
+function formatImprovementReport(report) {
+  const lines = [
+    `Improvement Report (${report.recordsCount} record(s), ${report.groups.length} group(s), ${report.candidates.length} candidate(s))`,
+    "",
+    "Workflow       Step         Role         Prompt       Recurrence  Cost ($)  Latency (ms)  Pass Rate  Rework  Candidate",
+    "-------------------------------------------------------------------------------------------------------------------------"
+  ];
+  for (const g of report.groups) {
+    const wf = g.workflowHash.slice(0, 12).padEnd(14);
+    const step = g.stepId.slice(0, 11).padEnd(12);
+    const role = g.agentRole.slice(0, 11).padEnd(12);
+    const prompt = g.promptHash.slice(0, 10).padEnd(12);
+    const rec = String(g.recurrence).padStart(10);
+    const cost = g.meanCost.toFixed(3).padStart(9);
+    const lat = String(g.meanLatency).padStart(13);
+    const pass = `${(g.verifyPassRate * 100).toFixed(0)}%`.padStart(10);
+    const rework = String(g.rework).padStart(7);
+    const cand = g.isCandidate ? `yes (${g.candidateKind})` : "no";
+    lines.push(`${wf} ${step} ${role} ${prompt} ${rec} ${cost} ${lat} ${pass} ${rework}  ${cand}`);
+  }
+  if (report.candidates.length > 0) {
+    lines.push("");
+    lines.push("Emitted Coded-Repeat Candidates:");
+    for (const c of report.candidates) {
+      lines.push(`  - ${c.id} [${c.kind}]: ${c.summary}`);
+      lines.push(`    Outcome: ${c.declaredOutcome}`);
+      lines.push(`    Measure: ${c.measure}`);
+      lines.push(`    Proposed diff: ${c.proposedDiffPath}`);
+    }
+  }
+  return lines.join("\n");
+}
 export {
   BUILTIN_HARNESSES,
   BUILTIN_HARNESS_IDS,
+  CANDIDATE_SCHEMA,
   DEFAULT_HARNESS,
   DEFAULT_LOG_MAX_BYTES,
   DEFAULT_LOG_MAX_FILES,
+  IMPROVEMENT_REPORT_SCHEMA,
+  IMPROVEMENT_REPORT_V1_SCHEMA,
   LOG_LEVEL_PRIORITY,
   NATIVE_HARNESS_PROVIDERS,
   PI_ALLOWED_PROVIDERS,
@@ -22951,10 +23236,12 @@ export {
   assertClosedGateObservation,
   assertVnextConfigError,
   backupDatabaseFile,
+  buildImprovementReport,
   cancelVnextRun,
   checkIntegrity,
   checkedParent,
   checkpointWal,
+  classifyCandidateKind,
   closeVnextRuntimeContext,
   computeGateEvidenceOutcome,
   computeVnextMemoryRevision,
@@ -22972,9 +23259,11 @@ export {
   foldStoredVnextRun,
   formatHarnessInventory,
   formatHarnessUpdate,
+  formatImprovementReport,
   formatPiSessionDisplayName,
   formatPiSessionKey,
   gateRowContentHash,
+  groupRoutingRecords,
   hashVnextSupervisorToken,
   hashVnextTokenProof,
   isKnownHarnessId,
@@ -23030,5 +23319,6 @@ export {
   vnextSupervisorStatus,
   vnextSupervisorTokenFile,
   vnextToolPolicyRevision,
-  withDatabaseTransaction
+  withDatabaseTransaction,
+  writeImprovementReport
 };
