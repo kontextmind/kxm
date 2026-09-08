@@ -30,7 +30,7 @@ Existing claims inside preserved candidate lines are research claims, not dispat
 
 ## Selection Policy
 
-Candidate selection is measured per role. Filter stages are optional and are not mandatory Tier-0 gating. Prefer a provider-native authenticated subscription when Tracking says that harness is eligible. Evidence and review remain workflow-specific. Both the Fable architecture critic and the Sol CLI critic remain required for this developer assignment runner.
+Candidate selection is measured per role. Filter stages are optional and are not mandatory Tier-0 gating. Prefer a provider-native authenticated subscription when Tracking says that harness is eligible. For Gemini candidates (`google/*`), the admitted native subscription harness on this runner is `agy` (Antigravity CLI, `agy -p`), not the OpenRouter provider id, when Tracking lists agy as eligible. Do not change the candidate ids themselves (they are dated research). Evidence and review remain workflow-specific. Both the Fable architecture critic and the Sol CLI critic remain required for this developer assignment runner.
 
 ### Cost band reference (dated candidates)
 
@@ -40,6 +40,50 @@ Candidate selection is measured per role. Filter stages are optional and are not
 | **Tier 1: Workhorse & Engine** | $0.30 - $1.00 / M | 262k - 1.05M | Gemini-3.8-Flash, Qwen-3-Coder-Plus, DeepSeek-V4-Pro, Devstral-2512 | Routine code generation, multimodal visual QA, Text-to-SQL, AST diff patching, and fast tool dispatching. |
 | **Tier 2: Precision & Critic** | $1.25 - $4.00 / M | 200k - 1.05M | GPT-5.6-Sol, Grok-4.6, Claude Sonnet 5, OpenAI o3, DeepSeek-R1, Codex 5.3 | Primary code writing, formal contract generation, concurrency race diagnosis, and causal inference. |
 | **Tier 3: Sovereign Architecture** | $5.00 - $15.00 / M | 1.0M - 1.05M | Claude Fable 5.1, Claude Opus 5, GPT-6-Astra-Pro (Escalation only) | Designated architecture critic, executive brief, high-stakes legal redlining, and sovereign RFC review. |
+
+### Developer runner loop
+
+The developer assignment runner executes a gated loop with rework across every software engineering workflow. This is not a seventh stage or an informal convention; it is the enforced loop for every software engineering workflow on this runner:
+
+```text
+plan (claude/fable)
+  │
+  ▼
+implement (grok-native)
+  │
+  ▼
+witness (fixed gate: npm run verify)
+  │
+  ▼
+dual critics (review-arch: fable + review-cli: sol)
+  │
+  ├─ If either critic BLOCK ──────────────┐
+  │                                        ▼
+  │                                repair (rework_of binding;
+  │                                        failover to next eligible
+  │                                        authenticated writer)
+  │                                        │
+  │                                        └─ re-witness + fresh dual review
+  │
+  ▼ (both critics PASS on exact tree)
+accept (just accept binds commit + both PASS records)
+  │
+  ▼
+pull request (five CI jobs: 2 Linux validate, classify, docs, plugin)
+```
+
+**Runner loop invariants:**
+
+- **Roles and rotation:** The runner strictly maps assignments to authenticated roster roles (`AGENTS.md` and `.kxm/roster.json`):
+  - **Implement / write code (`writer`):** **Grok** (`grok --model grok-4.6`, headless). Currently admitted native writer on this runner. Failover follows attempts-and-relief: after an empty or failed attempt, immediately fail over to the next eligible authenticated writer in the roster (**Qwen** `openrouter/qwen/qwen3-coder-plus` via Pi).
+  - **Plan (`planner`):** **Claude Fable** (`claude --model fable`), read-only architecture and permissions planning.
+  - **Review architecture (`reviewer-arch`):** **Claude Fable** (`claude --model fable`), designated architecture and permissions critic.
+  - **Review CLI / contracts (`reviewer-cli`):** **Codex Sol** (`codex` `gpt-5.6-sol`), designated CLI, protocol, and documentation critic.
+- **Fixed witness gate:** `npm run verify` (incorporating tests, typecheck, docs lint, version checks, and generated `dist` match) runs deterministically as the witness gate before critics review. Deterministic gates beat a third model; models propose, gates hold the line. Model critics review contracts, architecture, and documentation; they never replace the deterministic compiler or test runner.
+- **Dual-critic quorum:** PR acceptance strictly requires **both** designated critics (**Fable** for architecture/permissions and **Sol** for CLI/contracts) to record a `PASS`. A single critic is at most preliminary triage; neither critic may share a provider with each other or with the writer.
+- **Repair back-edge and rework:** If either critic records a `BLOCK`, the runner emits a `repair` assignment bound to the prior attempt via `rework_of`. Every repair round re-runs the fixed witness gate and requires **fresh** dual critic reviews on the resulting tree.
+- **Attempts and relief:** Never stop solely because attempts are exhausted or failed. Immediately try the next suggested eligible authenticated model and transfer findings while preserving every attempt, candidate, failed check, and cost record (`AGENTS.md`).
+- **Acceptance and auto-merge:** `just accept` binds the exact candidate commit hash and independent Fable + Sol PASS records. Changes are pushed to a feature branch and merged via pull request with auto-merge after all five CI jobs pass.
 
 ---
 
@@ -69,6 +113,7 @@ These slugs imply no runtime config, role admission, schema field, CLI behavior,
 | Software Engineering | Refactor and Repair Regressions | `refactor-repair-regressions` |
 | Software Engineering | Stabilize Flaky Tests | `stabilize-flaky-tests` |
 | Software Engineering | Design Software System | `design-software-system` |
+| Software Engineering | Maintain Documentation | `maintain-documentation` |
 | Design & Experience | Build Design System | `build-design-system` |
 | Design & Experience | Engineer Mobile Interactions | `engineer-mobile-interactions` |
 | Design & Experience | Engineer Terminal Interfaces | `engineer-terminal-interfaces` |
@@ -99,6 +144,7 @@ These slugs imply no runtime config, role admission, schema field, CLI behavior,
 2. **Refactor and Repair Regressions:** Codebase Smell Analysis $\to$ Modular Decomposition $\to$ Surgical Multi-File AST Transforms $\to$ Static Typing & Contract Verification.
 3. **Stabilize Flaky Tests:** Flakiness Root-Cause Extraction $\to$ Deterministic Mock/Async Hardening.
 4. **Design Software System:** NFR/SLA Ingestion $\to$ System Topology & Trade-Offs $\to$ Technical RFC Authoring $\to$ STRIDE Threat Modeling $\to$ Storage/Sharding Design $\to$ IaC Cloud Topology $\to$ Chaos/DR Review $\to$ Independent Critic Quorum.
+5. **Maintain Documentation:** Accuracy Audit $\to$ Documentation Write $\to$ Witness Gate $\to$ Dual Review Quorum.
 
 ---
 
@@ -216,13 +262,13 @@ These slugs imply no runtime config, role admission, schema field, CLI behavior,
 
 *Slug:* `semantic-equivalence-verifier` | *Stage:* Equivalence verification
 
-*Domain:* Verifies public contract compliance, runs compiler diagnostics (`tsc --noEmit`), and ensures zero regressions.
+*Domain:* Critic-with-gate. Deterministic checks (`tsc --noEmit`, `npm test`, `npm run check`, generated `dist` match) serve as the fixed witness gate and are never delegated to an LLM; the model role reviews public contract compliance, CLI behavior, and behavioral equivalence without replacing the gate ("Deterministic gates beat a third model… models propose; gates hold the line").
 
-1. **`openai/gpt-5.6-sol`** (1.05M ctx | $2.00 / $10.00) — Designated CLI/spec critic; resolves compiler and type-checker cascades.
+1. **`openai/gpt-5.6-sol`** (1.05M ctx | $2.00 / $10.00) — Designated CLI/spec critic; reviews compiler cascades and type-checker cascades against API contracts.
 2. **`openai/o3-mini-high`** (200k ctx | $1.10 / $4.40) — Deep symbolic verification that AST refactors maintain behavioral equivalence.
-3. **`deepseek/deepseek-v4-pro-0813`** (1.05M ctx | $0.58 / $1.74) — Full-repo type-check and semantic regression verification.
+3. **`deepseek/deepseek-v4-pro-0813`** (1.05M ctx | $0.58 / $1.74) — Type-cascade and semantic regression review across package boundaries.
 4. **`anthropic/claude-opus-5`** (1M ctx | $5.00 / $25.00) — Verifies backwards compatibility and deprecation notices across public APIs.
-5. **`mistralai/devstral-2512`** (262k ctx | $0.40 / $2.00) — Fast lint and compiler-error verification.
+5. **`mistralai/devstral-2512`** (262k ctx | $0.40 / $2.00) — Fast lint rule and syntax compliance review.
 
 ---
 
@@ -323,6 +369,50 @@ These slugs imply no runtime config, role admission, schema field, CLI behavior,
 3. **`z-ai/glm-5.3`** (1.31M ctx | $1.40 / $4.40) — 1.31M context full-stack protocol audit.
 4. **`openai/gpt-6-astra-pro`** (1.05M ctx | $10.00 / $50.00) — Enterprise RFC compliance verification.
 5. **`qwen/qwen3.8-max-0902`** (1M ctx | $2.00 / $6.00) — Independent open-weights architectural validation.
+
+---
+
+### Workflow: Maintain Documentation
+
+*Slug:* `maintain-documentation`
+
+**Stages:** Accuracy audit → Documentation write → Review
+
+#### Role: Documentation Accuracy Auditor
+
+*Slug:* `documentation-accuracy-auditor` | *Stage:* Accuracy audit
+
+*Domain:* Read-only planner; audits developer and operator documentation against CLI `--help` outputs, source environment variables, tool schemas, and repository configuration before documentation authoring begins.
+
+1. **`anthropic/claude-fable-5.1`** (1M ctx | $10.00 / $50.00) — Designated architecture and permissions planner; audits authority, permissions, and lifecycle models against reality.
+2. **`deepseek/deepseek-v4-pro-0813`** (1.05M ctx | $0.58 / $1.74) — High-throughput cross-referencing between source code symbols and markdown documentation.
+3. **`openai/gpt-5.6-sol`** (1.05M ctx | $2.00 / $10.00) — Precision auditing of CLI commands, flags, schema definitions, and environment variables.
+4. **`qwen/qwen3.8-max-0902`** (1M ctx | $2.00 / $6.00) — Broad codebase auditing against guides, tutorials, and operational manuals.
+5. **`z-ai/glm-5.3`** (1.31M ctx | $1.40 / $4.40) — Long-context consistency verification across multi-document doc trees.
+
+#### Role: Documentation Writer
+
+*Slug:* `documentation-writer` | *Stage:* Documentation write
+
+*Domain:* Authors concise, accurate developer and operator documentation, ensuring clear terminology, correct command flags, and consistent formatting without marketing drift.
+
+1. **`x-ai/grok-4.6`** (500k ctx | $2.00 / $6.00) — Admitted native writer; rapid, structured markdown authoring adhering to strict repository conventions.
+2. **`qwen/qwen3-coder-plus`** (1M ctx | $0.65 / $3.25) — High-context technical writer; coordinates cross-file references across large documentation sets.
+3. **`anthropic/claude-sonnet-5`** (1M ctx | $2.00 / $10.00) — Fluid technical documentation authoring with clear instructional hierarchy.
+4. **`openai/gpt-5.3-codex`** (400k ctx | $1.75 / $14.00) — Accurate technical guides, CLI flag references, and runnable examples.
+5. **`deepseek/deepseek-v4-pro-0813`** (1.05M ctx | $0.58 / $1.74) — Cost-effective multi-page documentation generation and reference expansion.
+
+#### Role: Documentation Reviewer
+
+*Slug:* `documentation-reviewer` | *Stage:* Review
+
+*Domain:* Critic-with-gate. Deterministic gates (`npm run lint:docs`, `test/docs-copy.test.ts` docs brake, and `npm run check`) serve as the fixed witness gate and are never replaced by LLMs; critics conduct independent peer review where the architecture critic verifies authority and permission wording, and the CLI critic verifies command/flag accuracy and documentation linting.
+
+1. **`anthropic/claude-fable-5.1`** (1M ctx | $10.00 / $50.00) — **Designated Architecture & Permissions Critic** (Mandatory for PR acceptance); verifies security, governance, and authority wording.
+2. **`openai/gpt-5.6-sol`** (1.05M ctx | $2.00 / $10.00) — **Designated CLI, Protocol & Contracts Critic** (Mandatory for PR acceptance); verifies CLI command accuracy, flag syntax, and documentation formatting.
+3. **`anthropic/claude-opus-5`** (1M ctx | $5.00 / $25.00) — Rigorous editorial review for clarity, technical completeness, and tone consistency.
+4. **`deepseek/deepseek-v4-pro-0813`** (1.05M ctx | $0.58 / $1.74) — Systematic verification of cross-document links and anchor consistency.
+5. **`mistralai/devstral-2512`** (262k ctx | $0.40 / $2.00) — Rapid lint rule compliance and syntax verification.
 
 ---
 
