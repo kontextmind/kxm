@@ -269,7 +269,15 @@ function isAbsoluteOn(path, platform) {
   return path.startsWith("/");
 }
 
-export function resolveLauncher(cliId, options = {}) {
+/** Allowlisted npm-global inner launchers, relative to the directory that contains `name.cmd`. */
+export const WIN_NPM_INNER_EXE = Object.freeze({
+  claude: Object.freeze(["node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe"]),
+});
+export const WIN_NPM_INNER_NODE_SCRIPT = Object.freeze({
+  pi: Object.freeze(["node_modules", "@earendil-works", "pi-coding-agent", "dist", "bundle", "cli.js"]),
+});
+
+export function resolveLaunch(cliId, options = {}) {
   const platform = options.platform ?? process.platform;
   const pathEnv = options.pathEnv ?? process.env.PATH ?? "";
   const exists = options.existsSync ?? existsSync;
@@ -282,31 +290,67 @@ export function resolveLauncher(cliId, options = {}) {
   if (cliId.includes("\0")) throw failClosed("launcher id is invalid");
 
   const explicit = cliId.includes("/") || cliId.includes("\\") || isAbsoluteOn(cliId, platform);
-  if (explicit) return assertWinExecutable(cliId, platform, options);
+  if (explicit) return { command: assertWinExecutable(cliId, platform, options), args: [] };
 
   const dirs = pathEnv.split(delim).filter(Boolean);
   let rejectedShim;
-  for (const dir of dirs) {
-    if (platform === "win32") {
-      const exeName = cliId.toLowerCase().endsWith(".exe") ? cliId : `${cliId}.exe`;
+  if (platform === "win32") {
+    const exeName = cliId.toLowerCase().endsWith(".exe") ? cliId : `${cliId}.exe`;
+    for (const dir of dirs) {
       const exe = path.join(dir, exeName);
-      if (exists(exe)) return canonicalize(exe, { ...options, platform });
-      for (const ext of [".cmd", ".bat", ".ps1", ""]) {
-        const shim = path.join(dir, `${cliId}${ext}`);
-        if (exists(shim)) {
-          rejectedShim = shim;
-          break;
+      if (exists(exe)) return { command: canonicalize(exe, { ...options, platform }), args: [] };
+    }
+    for (const dir of dirs) {
+      const cmdShim = path.join(dir, `${cliId}.cmd`);
+      if (!exists(cmdShim)) continue;
+      const exeSegs = WIN_NPM_INNER_EXE[cliId];
+      if (exeSegs) {
+        const inner = path.join(dir, ...exeSegs);
+        if (exists(inner)) {
+          return { command: assertWinExecutable(inner, platform, options), args: [] };
         }
       }
-      if (rejectedShim) break;
-    } else if (exists(path.join(dir, cliId))) {
-      return canonicalize(path.join(dir, cliId), { ...options, platform });
+      const scriptSegs = WIN_NPM_INNER_NODE_SCRIPT[cliId];
+      if (scriptSegs) {
+        const script = path.join(dir, ...scriptSegs);
+        const nodeExe = options.execPath ?? process.execPath;
+        if (exists(script) && exists(nodeExe)) {
+          return {
+            command: canonicalize(nodeExe, { ...options, platform: process.platform }),
+            args: [canonicalize(script, { ...options, platform })],
+          };
+        }
+      }
+      rejectedShim = cmdShim;
+      break;
+    }
+    if (!rejectedShim) {
+      for (const dir of dirs) {
+        for (const ext of [".bat", ".ps1", ""]) {
+          const shim = path.join(dir, `${cliId}${ext}`);
+          if (exists(shim)) {
+            rejectedShim = shim;
+            break;
+          }
+        }
+        if (rejectedShim) break;
+      }
+    }
+  } else {
+    for (const dir of dirs) {
+      if (exists(path.join(dir, cliId))) {
+        return { command: canonicalize(path.join(dir, cliId), { ...options, platform }), args: [] };
+      }
     }
   }
   if (rejectedShim) {
     throw failClosed(unsupportedLauncherMessage(rejectedShim, platform));
   }
   throw failClosed(`missing binary ${cliId}; install and authenticate the native CLI`);
+}
+
+export function resolveLauncher(cliId, options = {}) {
+  return resolveLaunch(cliId, options).command;
 }
 
 function canonicalize(target, options = {}) {
@@ -1572,19 +1616,22 @@ export async function runHarness(request, deps = {}) {
     schemaText: schemaInput?.text,
   });
   const cliId = request.harness;
-  const resolved = resolveLauncher(cliId, {
+  const launch = resolveLaunch(cliId, {
     platform,
     pathEnv: env.PATH,
     existsSync: exists,
     realpathSync: deps.realpathSync,
+    execPath: deps.execPath ?? process.execPath,
   });
+  const resolved = launch.command;
+  const launchArgs = launch.args;
 
   const authArgs = request.harness === "claude"
     ? [...claudeIsolationArgs(mcpConfigPath), ...route.auth.args]
     : request.harness === "pi"
       ? piAuthCheckArgs(request)
       : [...route.auth.args];
-  const auth = spawnSyncImpl(resolved, authArgs, {
+  const auth = spawnSyncImpl(resolved, [...launchArgs, ...authArgs], {
     cwd,
     env,
     encoding: "utf8",
@@ -1628,7 +1675,7 @@ export async function runHarness(request, deps = {}) {
   let killRequest;
   let child;
   try {
-    child = spawnImpl(resolved, argv, {
+    child = spawnImpl(resolved, [...launchArgs, ...argv], {
       cwd,
       env,
       shell: false,

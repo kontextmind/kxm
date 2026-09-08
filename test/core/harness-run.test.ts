@@ -38,6 +38,7 @@ import {
   piModelId,
   piProviderOf,
   preflightRequest,
+  resolveLaunch,
   resolveLauncher,
   resolveModelUsage,
   runHarness,
@@ -862,6 +863,60 @@ test("win32 launcher rejects .cmd/.bat/.ps1/extensionless without spawn", () => 
   const exe = resolveLauncher(String.raw`C:\Tools\grok.exe`, { platform: "win32", existsSync: () => true });
   assert.equal(exe, String.raw`C:\Tools\grok.exe`);
   assert.match(unsupportedLauncherMessage("pi.cmd", "win32"), /pi.cmd/);
+});
+
+test("win32 launcher unwraps npm inner claude.exe and pi node script", () => {
+  const npmDir = String.raw`C:\Users\me\AppData\Roaming\npm`;
+  const claudeCmd = String.raw`C:\Users\me\AppData\Roaming\npm\claude.cmd`;
+  const claudeExe = String.raw`C:\Users\me\AppData\Roaming\npm\node_modules\@anthropic-ai\claude-code\bin\claude.exe`;
+  const piCmd = String.raw`C:\Users\me\AppData\Roaming\npm\pi.cmd`;
+  const piScript = String.raw`C:\Users\me\AppData\Roaming\npm\node_modules\@earendil-works\pi-coding-agent\dist\bundle\cli.js`;
+  const nodeExe = String.raw`C:\Program Files\nodejs\node.exe`;
+  const present = new Set([claudeCmd, claudeExe, piCmd, piScript, nodeExe]);
+  const exists = (path: string) => present.has(path);
+
+  const claude = resolveLaunch("claude", {
+    platform: "win32",
+    pathEnv: npmDir,
+    existsSync: exists,
+  });
+  assert.equal(claude.command, claudeExe);
+  assert.deepEqual(claude.args, []);
+  assert.equal(resolveLauncher("claude", {
+    platform: "win32",
+    pathEnv: npmDir,
+    existsSync: exists,
+  }), claudeExe);
+
+  const pi = resolveLaunch("pi", {
+    platform: "win32",
+    pathEnv: npmDir,
+    existsSync: exists,
+    execPath: nodeExe,
+  });
+  assert.equal(pi.command, nodeExe);
+  assert.deepEqual(pi.args, [piScript]);
+
+  assert.throws(
+    () => resolveLaunch("claude", {
+      platform: "win32",
+      pathEnv: npmDir,
+      existsSync: (path: string) => path === claudeCmd,
+    }),
+    /unsupported-launcher/,
+  );
+
+  const binDir = String.raw`C:\Users\me\bin`;
+  const exeDir = String.raw`C:\Users\me\AppData\Local\Programs\OpenAI\Codex\bin`;
+  const codexCmd = String.raw`C:\Users\me\bin\codex.cmd`;
+  const codexExe = String.raw`C:\Users\me\AppData\Local\Programs\OpenAI\Codex\bin\codex.exe`;
+  const shadowed = resolveLaunch("codex", {
+    platform: "win32",
+    pathEnv: `${binDir};${exeDir}`,
+    existsSync: (path: string) => path === codexCmd || path === codexExe,
+  });
+  assert.equal(shadowed.command, codexExe);
+  assert.deepEqual(shadowed.args, []);
 });
 
 test("shell:false argv transport keeps metacharacters literal via process.execPath", () => {

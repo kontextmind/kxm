@@ -12,6 +12,7 @@ import {
   BUILTIN_HARNESSES,
   DEFAULT_HARNESS,
   eligibleHarnesses,
+  findWinNpmInnerExe,
   formatHarnessInventory,
   harnessCommandCandidates,
   harnessSpawnUsesShell,
@@ -153,6 +154,58 @@ test("win32 assignment probe uses the npm .cmd shim for Claude Code", () => {
   assert.equal(probed.command, "claude.cmd");
   assert.equal(probed.authenticated, true);
   assert(probed.issues.includes("windows_shim"));
+});
+
+test("win32 probe prefers the npm-package claude.exe over the .cmd shim", () => {
+  const npmDir = String.raw`C:\Users\me\AppData\Roaming\npm`;
+  const inner = String.raw`C:\Users\me\AppData\Roaming\npm\node_modules\@anthropic-ai\claude-code\bin\claude.exe`;
+  const cmdShim = String.raw`C:\Users\me\AppData\Roaming\npm\claude.cmd`;
+  assert.equal(
+    findWinNpmInnerExe("claude", {
+      platform: "win32",
+      pathEnv: npmDir,
+      existsSync: (path) => path === cmdShim || path === inner,
+    }),
+    inner,
+  );
+  assert.equal(
+    findWinNpmInnerExe("claude", {
+      platform: "linux",
+      pathEnv: npmDir,
+      existsSync: () => true,
+    }),
+    undefined,
+  );
+
+  const recorded = recordingRunner({
+    "claude --version": { ok: false, code: null, stdout: "", stderr: "", error: "ENOENT" },
+    "claude.exe --version": { ok: false, code: null, stdout: "", stderr: "", error: "ENOENT" },
+    [`${inner} --version`]: { ok: true, code: 0, stdout: "2.1.263 (Claude Code)\n", stderr: "" },
+    [`${inner} auth status`]: {
+      ok: true,
+      code: 0,
+      stdout: JSON.stringify({ loggedIn: true, authMethod: "claude.ai" }),
+      stderr: "",
+    },
+  });
+  const inventory = probeHarnesses({
+    platform: "win32",
+    env: { PATH: npmDir },
+    existsSync: (path) => path === cmdShim || path === inner,
+    runCommand: recorded.runCommand,
+  });
+  const claude = status(inventory, "claude");
+  assert.equal(claude.detected, true);
+  assert.equal(claude.command, inner);
+  assert.equal(claude.authenticated, true);
+  assert.equal(claude.dispatch?.status, "yes");
+  assert.equal(claude.issues.includes("windows_shim"), false);
+  assert.deepEqual(recorded.calls.filter((call) => call.includes("claude")), [
+    "claude --version",
+    "claude.exe --version",
+    `${inner} --version`,
+    `${inner} auth status`,
+  ]);
 });
 
 test("probe reports detect/auth without a preferences overlay", () => {

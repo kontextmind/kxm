@@ -111,10 +111,15 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 - **Windows Claude Code / npm shim detection (issue #168):** `kxm harness list`
   treated Claude Code as `not_detected` when the CLI was only an npm
-  `claude.cmd` shim (no `claude.exe`). The probe now tries `.exe` then `.cmd`
-  on win32, runs allowlisted `name.cmd` probes with `shell: true`, and records
-  `windows_shim`. Auth still requires parseable `claude auth status`. Headless
-  assignment dispatch continues to refuse unverified `.cmd` launchers.
+  `claude.cmd` shim (no `claude.exe` on `PATH`). The probe now tries `.exe`,
+  then the allowlisted inner package `claude.exe` next to `claude.cmd`, then
+  `.cmd` on win32. Allowlisted `name.cmd` probes still use `shell: true` and
+  record `windows_shim` when that is what answered. Auth still requires
+  parseable `claude auth status`. Headless assignment (`just assign` /
+  `harness-run`) scans every PATH directory for `name.exe` before any `.cmd`
+  (so a user-bin `codex.cmd` cannot hide `codex.exe`), then unwraps the inner
+  npm `claude.exe` and Pi's `node.exe` plus `cli.js`, without running
+  unverified `.cmd` launchers through a shell.
 - Concurrent Runtime registry and event-store initialization now checks and
   creates the schema under one write transaction, preventing duplicate-table
   failures when a supervisor and status reader first open the same database.
