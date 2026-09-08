@@ -287,3 +287,84 @@ test("cleanupMergedRunBranch removes worktree, deletes branch and remote (Decisi
   assert.ok(remoteDelete);
   assert.deepEqual(remoteDelete?.args, ["push", "origin", "--delete", "kxm/run-01-fix"]);
 });
+
+test("ExternalEffectsLedger abortEffect and heartbeat validation", () => {
+  const ledger = new ExternalEffectsLedger(":memory:");
+  const claim = ledger.claimEffect({
+    runId: "run_abort",
+    stepId: "step_01",
+    attemptId: "att_01",
+    actionKind: "git-branch",
+    targetRef: "kxm/run-abort",
+  });
+  assert.equal(claim.ok, true);
+  if (!claim.ok) return;
+
+  ledger.abortEffect(claim.effectKey, "operator_cancelled");
+  const aborted = ledger.getReceipt(claim.effectKey);
+  assert.equal(aborted?.status, "aborted");
+  assert.equal(aborted?.receiptPayload["error"], "operator_cancelled");
+
+  // Heartbeat on aborted effect fails
+  const hbRes = ledger.heartbeatEffect(claim.effectKey);
+  assert.equal(hbRes.ok, false);
+  if (!hbRes.ok) {
+    assert.match(hbRes.error, /effect_not_in_flight/);
+  }
+  ledger.close();
+});
+
+test("cleanupMergedRunBranch handles failure modes gracefully", () => {
+  // 1. Worktree removal failure
+  const failWtRemove = cleanupMergedRunBranch("/repo", "kxm/run-wt-fail", {
+    removeWorktree: true,
+    execFn: (cmd, args) => {
+      if (args[0] === "worktree" && args[1] === "list") {
+        return { status: 0, stdout: "worktree /tmp/wt\nbranch refs/heads/kxm/run-wt-fail\n\n", stderr: "" };
+      }
+      if (args[0] === "worktree" && args[1] === "remove") {
+        return { status: 1, stdout: "", stderr: "permission denied" };
+      }
+      return { status: 0, stdout: "", stderr: "" };
+    },
+  });
+  assert.equal(failWtRemove.ok, false);
+  assert.match(failWtRemove.error || "", /failed_to_remove_worktree/);
+
+  // 2. Worktree inspection throws
+  const throwWtInspect = cleanupMergedRunBranch("/repo", "kxm/run-throw", {
+    removeWorktree: true,
+    execFn: (cmd, args) => {
+      if (args[0] === "worktree" && args[1] === "list") throw new Error("git binary not found");
+      return { status: 0, stdout: "", stderr: "" };
+    },
+  });
+  assert.equal(throwWtInspect.ok, false);
+  assert.match(throwWtInspect.error || "", /worktree_inspection_failed/);
+
+  // 3. Local branch delete failure
+  const failBranchDel = cleanupMergedRunBranch("/repo", "kxm/run-del-fail", {
+    removeWorktree: false,
+    execFn: (cmd, args) => {
+      if (args[0] === "rev-parse") return { status: 0, stdout: "abc", stderr: "" };
+      if (args[0] === "branch" && args[1] === "-D") return { status: 1, stdout: "", stderr: "branch is locked" };
+      return { status: 0, stdout: "", stderr: "" };
+    },
+  });
+  assert.equal(failBranchDel.ok, false);
+  assert.match(failBranchDel.error || "", /failed_to_delete_local_branch/);
+
+  // 4. Remote branch delete failure
+  const failRemoteDel = cleanupMergedRunBranch("/repo", "kxm/run-remote-fail", {
+    removeWorktree: false,
+    deleteRemote: true,
+    execFn: (cmd, args) => {
+      if (args[0] === "rev-parse") return { status: 1, stdout: "", stderr: "" };
+      if (args[0] === "push" && args[2] === "--delete") return { status: 1, stdout: "", stderr: "remote rejected" };
+      return { status: 0, stdout: "", stderr: "" };
+    },
+  });
+  assert.equal(failRemoteDel.ok, false);
+  assert.match(failRemoteDel.error || "", /failed_to_delete_remote_branch/);
+});
+

@@ -39959,9 +39959,11 @@ function generateStudioLayout(plan, state) {
   }
   for (const [sourceId, step] of Object.entries(plan.steps)) {
     for (const transition2 of Object.values(step.transitions)) {
-      if (transition2.to && plan.steps[transition2.to]) {
-        adj[sourceId].push(transition2.to);
-        inDegree[transition2.to] = (inDegree[transition2.to] ?? 0) + 1;
+      if (transition2.edge === "back") continue;
+      const targetStepId = transition2.target ?? (transition2.to !== "step" && transition2.to !== "terminal" ? transition2.to : void 0);
+      if (targetStepId && plan.steps[targetStepId]) {
+        adj[sourceId].push(targetStepId);
+        inDegree[targetStepId] = (inDegree[targetStepId] ?? 0) + 1;
       }
     }
   }
@@ -39978,13 +39980,17 @@ function generateStudioLayout(plan, state) {
       }
     }
   }
-  while (queue.length > 0) {
+  let iterations = 0;
+  const maxIterations = stepIds.length * 4;
+  while (queue.length > 0 && iterations++ < maxIterations) {
     const current = queue.shift();
     const curLevel = levels[current] ?? 0;
     for (const neighbor of adj[current] ?? []) {
       const nextLevel = Math.max(levels[neighbor] ?? 0, curLevel + 1);
-      levels[neighbor] = nextLevel;
-      queue.push(neighbor);
+      if (levels[neighbor] === void 0 || nextLevel > levels[neighbor]) {
+        levels[neighbor] = nextLevel;
+        queue.push(neighbor);
+      }
     }
   }
   for (const id of stepIds) {
@@ -40047,11 +40053,12 @@ function generateStudioLayout(plan, state) {
         position: { x: x2, y: y2 }
       });
       for (const [outcome, transition2] of Object.entries(step.transitions)) {
-        if (transition2.to && plan.steps[transition2.to]) {
+        const targetStepId = transition2.target ?? (transition2.to !== "step" && transition2.to !== "terminal" ? transition2.to : void 0);
+        if (targetStepId && plan.steps[targetStepId]) {
           edges.push({
-            id: `e_${stepId}_to_${transition2.to}_${outcome}`,
+            id: `e_${stepId}_to_${targetStepId}_${outcome}`,
             source: stepId,
-            target: transition2.to,
+            target: targetStepId,
             label: outcome !== "passed" && outcome !== "completed" ? outcome : void 0,
             animated: status === "running",
             style: {
@@ -40257,6 +40264,10 @@ function createStudioServer(options = {}) {
       });
     }),
     close: () => new Promise((resolveClose, rejectClose) => {
+      try {
+        server.closeAllConnections?.();
+      } catch {
+      }
       server.close((err) => {
         if (err) rejectClose(err);
         else resolveClose();
