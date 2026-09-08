@@ -193,6 +193,22 @@ It does not replace the phase gates below.
 
 ### Landed in this tree (unreleased)
 
+- **E4 Pi dispatch (issue #93):** Implemented Pi RPC producer in
+  `plugins/kxm/src/vnext-pi-producer.ts` running implementer (and other agent
+  roles) through the vNext engine driver over Pi RPC protocol (`--mode rpc`).
+  Maintains per-run coordinator sessions (`coordinator:${runId}`) and keys
+  agent sessions by `{runId, agentId, instance, scopeEpoch}`
+  (`${agentId}@${shortRun}#${instance}.${scopeEpoch}`). Enforces fail-closed
+  auth preflight (`checkPiAuth` requiring `detected: true` and
+  `authenticated: true`, failing closed with `pi_not_authenticated`). Binds
+  harness `pi`, extracts token and context stats (`tokensIn`, `tokensOut`,
+  `cacheReadTokens`, `cacheWriteTokens`, `contextTokens`, `latencyMs`), and
+  calculates metered costs via `.kxm/prices.yaml` price catalog (with Grok and
+  GLM catalog rows, setting `costBasis: metered` or `unknown`). Propagates
+  abort signals to Pi RPC abort commands and cancellation outcomes. Exported in
+  `plugins/kxm/src/runtime.ts` and verified with comprehensive mock RPC tests,
+  fail-closed auth, and end-to-end vNext engine drive
+  (`test/vnext-pi-producer.test.ts`).
 - **D6 agent CLI surface (issue #92):** Centralized 19 agent commands in
   `plugins/kxm/src/commands.ts` as the single source of truth for parameter
   schemas, command metadata, and execution over `HubClient`; eliminated

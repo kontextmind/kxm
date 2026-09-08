@@ -3834,7 +3834,7 @@ var require_fast_uri = __commonJS({
         normalizeString(uri, options);
       } else if (typeof uri === "object") {
         uri = /** @type {T} */
-        parse2(serialize(uri, options), options);
+        parse3(serialize(uri, options), options);
       }
       return uri;
     }
@@ -3874,8 +3874,8 @@ var require_fast_uri = __commonJS({
     function resolveComponent(base, relative3, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
-        base = parse2(serialize(base, options), options);
-        relative3 = parse2(serialize(relative3, options), options);
+        base = parse3(serialize(base, options), options);
+        relative3 = parse3(serialize(relative3, options), options);
       }
       options = options || {};
       if (!options.tolerant && relative3.scheme) {
@@ -4167,7 +4167,7 @@ var require_fast_uri = __commonJS({
       }
       return { parsed, malformedAuthorityOrPort, malformedPercentEncoding, malformedSchemeSpecific, malformedHost, malformedScheme };
     }
-    function parse2(uri, opts) {
+    function parse3(uri, opts) {
       return parseWithStatus(uri, opts).parsed;
     }
     function normalizeString(uri, opts) {
@@ -4204,7 +4204,7 @@ var require_fast_uri = __commonJS({
       resolveComponent,
       equal,
       serialize,
-      parse: parse2
+      parse: parse3
     };
     module.exports = fastUri;
     module.exports.default = fastUri;
@@ -14674,7 +14674,7 @@ var require_public_api = __commonJS({
       }
       return doc;
     }
-    function parse2(src, reviver, options) {
+    function parse3(src, reviver, options) {
       let _reviver = void 0;
       if (typeof reviver === "function") {
         _reviver = reviver;
@@ -14715,7 +14715,7 @@ var require_public_api = __commonJS({
         return value.toString(options);
       return new Document.Document(value, _replacer, options).toString(options);
     }
-    exports.parse = parse2;
+    exports.parse = parse3;
     exports.parseAllDocuments = parseAllDocuments;
     exports.parseDocument = parseDocument2;
     exports.stringify = stringify2;
@@ -14781,7 +14781,7 @@ import { join as join4 } from "node:path";
 // plugins/kxm/src/vnext-config.ts
 var import__ = __toESM(require__(), 1);
 var import_yaml2 = __toESM(require_dist(), 1);
-import { spawnSync } from "node:child_process";
+import { spawnSync as spawnSync2 } from "node:child_process";
 import { createHash as createHash2 } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -14987,7 +14987,14 @@ function resolveVnextTemplateBaseline(value) {
 }
 
 // plugins/kxm/src/vnext-harness.ts
+import { spawnSync } from "node:child_process";
 var DEFAULT_HARNESS = "pi";
+var UNKNOWN_AUTH_HARNESSES = /* @__PURE__ */ new Set(["kimi", "gemini", "deepseek"]);
+var GROK_LOGIN_LINE = "You are logged in with grok.com.";
+var AGY_MODEL_ROW = /^[a-z0-9][a-z0-9.+_-]*\t+\S/im;
+var CODEX_CHATGPT_LINE = "Logged in using ChatGPT";
+var CODEX_API_KEY_PREFIX = "Logged in using an API key";
+var CODEX_NEGATIVE_LINE = "Not logged in";
 var NATIVE_HARNESS_PROVIDERS = Object.freeze({
   claude: "anthropic",
   codex: "openai",
@@ -15097,6 +15104,368 @@ var BUILTIN_HARNESSES = Object.freeze([
   }
 ]);
 var BUILTIN_HARNESS_IDS = BUILTIN_HARNESSES.map((entry) => entry.id);
+function isKnownHarnessId(id, extra = []) {
+  if (BUILTIN_HARNESS_IDS.includes(id)) return true;
+  for (const candidate of extra) if (candidate === id) return true;
+  return false;
+}
+function defaultRunner(env) {
+  return (command, args, timeoutMs) => {
+    try {
+      const result = spawnSync(command, [...args], {
+        encoding: "utf8",
+        timeout: timeoutMs,
+        windowsHide: true,
+        env
+      });
+      if (result.error) {
+        const code = result.error.code;
+        return { ok: false, code: result.status, stdout: "", stderr: result.stderr?.toString() ?? "", error: code ?? result.error.message };
+      }
+      return {
+        ok: result.status === 0,
+        code: result.status,
+        stdout: result.stdout?.toString() ?? "",
+        stderr: result.stderr?.toString() ?? ""
+      };
+    } catch (error) {
+      return { ok: false, code: null, stdout: "", stderr: "", error: error instanceof Error ? error.message : "spawn_failed" };
+    }
+  };
+}
+function firstLine(text) {
+  const line = text.split(/\r?\n/).map((candidate) => candidate.trim()).find(Boolean);
+  return line && line.length <= 200 ? line : void 0;
+}
+function authLines(result) {
+  return `${result.stdout}
+${result.stderr}`.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+}
+function parseJsonObject(text) {
+  try {
+    const value = JSON.parse(text.trim());
+    if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  } catch {
+  }
+  return void 0;
+}
+function authConflictIssue(result) {
+  const fields = [];
+  const okTrue = result.ok === true;
+  const codeZero = result.code === 0;
+  if (okTrue !== codeZero) fields.push("ok", "code");
+  if (okTrue && result.error) {
+    if (!fields.includes("ok")) fields.push("ok");
+    fields.push("error");
+  }
+  return fields.length > 0 ? `auth_conflict:${fields.join(",")}` : void 0;
+}
+function commandSucceeded(result) {
+  return result.ok === true && result.code === 0 && !result.error;
+}
+function isCodexApiKeyLine(line) {
+  return line === CODEX_API_KEY_PREFIX || line.startsWith(`${CODEX_API_KEY_PREFIX} - `);
+}
+function interpretAuth(id, result) {
+  const conflict = authConflictIssue(result);
+  if (conflict) return { authenticated: null, issues: [conflict] };
+  if (result.error) return { authenticated: null, issues: ["auth_probe_error"] };
+  const lines = authLines(result);
+  if (id === "claude") {
+    const payload = parseJsonObject(result.stdout);
+    if (payload && payload.loggedIn === false) return { authenticated: false, issues: ["not_authenticated"] };
+    if (commandSucceeded(result) && payload && payload.loggedIn === true) return { authenticated: true, issues: [] };
+    return { authenticated: null, issues: ["auth_unparsed"] };
+  }
+  if (id === "codex") {
+    if (lines.some((line) => line === CODEX_NEGATIVE_LINE || line.startsWith(`${CODEX_NEGATIVE_LINE} `))) {
+      return { authenticated: false, issues: ["not_authenticated"] };
+    }
+    if (commandSucceeded(result) && lines.some((line) => line === CODEX_CHATGPT_LINE)) {
+      return { authenticated: true, issues: [] };
+    }
+    if (commandSucceeded(result) && lines.some((line) => isCodexApiKeyLine(line))) {
+      return { authenticated: true, issues: ["auth_api_key"] };
+    }
+    return { authenticated: null, issues: ["auth_unparsed"] };
+  }
+  if (id === "grok") {
+    if (commandSucceeded(result) && lines.some((line) => line === GROK_LOGIN_LINE)) return { authenticated: true, issues: [] };
+    return { authenticated: null, issues: ["auth_unparsed"] };
+  }
+  if (id === "agy") {
+    const text = `${result.stdout}
+${result.stderr}`;
+    if (!commandSucceeded(result) || !text.trim()) {
+      return { authenticated: false, issues: ["not_authenticated"] };
+    }
+    if (AGY_MODEL_ROW.test(text)) return { authenticated: true, issues: [] };
+    return { authenticated: null, issues: ["auth_unparsed"] };
+  }
+  return { authenticated: null, issues: ["auth_unparsed"] };
+}
+function probeEntry(entry, runCommand, timeoutMs) {
+  const issues = [];
+  let detected = false;
+  let command;
+  let version;
+  for (const candidate of entry.commands) {
+    const result = runCommand(candidate, entry.versionArgs, timeoutMs);
+    if (result.error === "ENOENT") continue;
+    if (result.error && result.code === null && !result.stdout && !result.stderr) continue;
+    detected = true;
+    command = candidate;
+    version = firstLine(result.stdout) ?? firstLine(result.stderr);
+    break;
+  }
+  let authenticated = null;
+  if (!detected) authenticated = false;
+  else if (entry.id === "pi") {
+    authenticated = null;
+    issues.push("auth_context_required");
+  } else if (UNKNOWN_AUTH_HARNESSES.has(entry.id) || !entry.authArgs) {
+    authenticated = null;
+    if (UNKNOWN_AUTH_HARNESSES.has(entry.id)) issues.push("auth_unknown");
+  } else if (command) {
+    const parsed = interpretAuth(entry.id, runCommand(command, entry.authArgs, timeoutMs));
+    authenticated = parsed.authenticated;
+    issues.push(...parsed.issues);
+  }
+  return {
+    id: entry.id,
+    label: entry.label,
+    default: entry.default,
+    mode: entry.mode,
+    detected,
+    authenticated,
+    ...command ? { command } : {},
+    ...version ? { version } : {},
+    canUpdate: {
+      self: Boolean(entry.update.self.length),
+      extensions: Boolean(entry.update.extensions?.length),
+      models: Boolean(entry.update.models?.length)
+    },
+    issues
+  };
+}
+function validateHarnessModelPair(harnessId, modelSpec) {
+  if (!isKnownHarnessId(harnessId)) {
+    return { valid: false, issue: "harness_unknown", message: `unknown harness: ${harnessId}` };
+  }
+  let provider;
+  let model;
+  if (typeof modelSpec === "string") {
+    const trimmed = modelSpec.trim();
+    if (trimmed.includes("/")) {
+      const idx = trimmed.indexOf("/");
+      provider = trimmed.slice(0, idx).toLowerCase();
+      model = trimmed.slice(idx + 1);
+    } else {
+      model = trimmed;
+    }
+  } else {
+    provider = modelSpec.provider?.trim().toLowerCase();
+    model = modelSpec.model?.trim();
+  }
+  if (harnessId === "claude") {
+    if (provider && provider !== "anthropic") {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness claude does not host provider ${provider}` };
+    }
+    if (model && /^(gpt|o1|o3|grok|gemini|kimi|moonshot|deepseek|qwen)-/i.test(model)) {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness claude does not host model ${model}` };
+    }
+    return { valid: true };
+  }
+  if (harnessId === "codex") {
+    if (provider && provider !== "openai") {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness codex does not host provider ${provider}` };
+    }
+    if (model && /^(claude|fable|grok|gemini|kimi|moonshot|deepseek|qwen)-/i.test(model)) {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness codex does not host model ${model}` };
+    }
+    return { valid: true };
+  }
+  if (harnessId === "grok") {
+    if (provider && provider !== "xai") {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness grok does not host provider ${provider}` };
+    }
+    if (model && !/^grok-/i.test(model)) {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness grok only hosts grok models, received ${model}` };
+    }
+    return { valid: true };
+  }
+  if (harnessId === "agy" || harnessId === "gemini") {
+    if (provider && provider !== "google") {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness ${harnessId} does not host provider ${provider}` };
+    }
+    if (model && !/^gemini-/i.test(model)) {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness ${harnessId} only hosts gemini models, received ${model}` };
+    }
+    return { valid: true };
+  }
+  if (harnessId === "kimi") {
+    if (provider && provider !== "moonshot") {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness kimi does not host provider ${provider}` };
+    }
+    if (model && !/^(kimi|moonshot)-/i.test(model)) {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness kimi only hosts kimi/moonshot models, received ${model}` };
+    }
+    return { valid: true };
+  }
+  if (harnessId === "deepseek") {
+    if (provider && provider !== "deepseek") {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness deepseek does not host provider ${provider}` };
+    }
+    if (model && !/^deepseek-/i.test(model)) {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness deepseek only hosts deepseek models, received ${model}` };
+    }
+    return { valid: true };
+  }
+  if (harnessId === "pi") {
+    if (provider && PI_NATIVE_BRAKE_PROVIDERS.includes(provider)) {
+      return {
+        valid: false,
+        issue: "pi_native_impersonation_blocked",
+        message: `pi must not impersonate native provider ${provider}; use the native harness`
+      };
+    }
+    if (!provider && model && PI_NATIVE_BRAKE_PROVIDERS.some((p) => model.toLowerCase().startsWith(`${p}/`))) {
+      return {
+        valid: false,
+        issue: "pi_native_impersonation_blocked",
+        message: `pi must not impersonate native model ${model}; use the native harness`
+      };
+    }
+    return { valid: true };
+  }
+  return { valid: true };
+}
+function probeHarnessAssignment(options) {
+  const timeoutMs = options.timeoutMs ?? 3e3;
+  const runCommand = options.runCommand ?? defaultRunner(options.env ?? process.env);
+  const entry = BUILTIN_HARNESSES.find((candidate) => candidate.id === options.harness);
+  if (!entry) {
+    return {
+      id: options.harness,
+      label: options.harness,
+      default: false,
+      mode: "either",
+      detected: false,
+      authenticated: false,
+      canUpdate: { self: false, extensions: false, models: false },
+      issues: ["harness_unknown"]
+    };
+  }
+  if (options.provider || options.model) {
+    const validation = validateHarnessModelPair(options.harness, { provider: options.provider, model: options.model });
+    if (!validation.valid) {
+      return {
+        id: entry.id,
+        label: entry.label,
+        default: entry.default,
+        mode: entry.mode,
+        detected: false,
+        authenticated: false,
+        canUpdate: {
+          self: Boolean(entry.update.self.length),
+          extensions: Boolean(entry.update.extensions?.length),
+          models: Boolean(entry.update.models?.length)
+        },
+        issues: [validation.issue ?? "harness_unhosted_model"]
+      };
+    }
+  }
+  let detected = false;
+  let command;
+  let version;
+  for (const candidate of entry.commands) {
+    const result = runCommand(candidate, entry.versionArgs, timeoutMs);
+    if (result.error === "ENOENT") continue;
+    if (result.error && result.code === null && !result.stdout && !result.stderr) continue;
+    detected = true;
+    command = candidate;
+    version = firstLine(result.stdout) ?? firstLine(result.stderr);
+    break;
+  }
+  if (!detected || !command) {
+    return {
+      id: entry.id,
+      label: entry.label,
+      default: entry.default,
+      mode: entry.mode,
+      detected: false,
+      authenticated: false,
+      canUpdate: {
+        self: Boolean(entry.update.self.length),
+        extensions: Boolean(entry.update.extensions?.length),
+        models: Boolean(entry.update.models?.length)
+      },
+      issues: []
+    };
+  }
+  if (entry.id === "pi") {
+    if (!options.provider && !options.model) {
+      return {
+        id: entry.id,
+        label: entry.label,
+        default: entry.default,
+        mode: entry.mode,
+        detected: true,
+        authenticated: null,
+        command,
+        ...version ? { version } : {},
+        canUpdate: {
+          self: Boolean(entry.update.self.length),
+          extensions: Boolean(entry.update.extensions?.length),
+          models: Boolean(entry.update.models?.length)
+        },
+        issues: ["auth_context_required"]
+      };
+    }
+    const authArgs = ["auth", "check"];
+    if (options.model) {
+      authArgs.push("--model", options.model);
+    } else if (options.provider) {
+      authArgs.push("--provider", options.provider);
+    }
+    authArgs.push("--json");
+    const result = runCommand(command, authArgs, timeoutMs);
+    const parsed = parseJsonObject(result.stdout);
+    let authenticated = false;
+    const issues = [];
+    if (result.error) {
+      issues.push("auth_probe_error");
+    } else if (parsed && parsed.status === "ready") {
+      authenticated = true;
+    } else if (parsed && parsed.status === "not_ready") {
+      authenticated = false;
+      issues.push("not_authenticated");
+    } else if (commandSucceeded(result) && /\bready\b/i.test(`${result.stdout}
+${result.stderr}`)) {
+      authenticated = true;
+    } else {
+      authenticated = false;
+      issues.push("not_authenticated");
+    }
+    return {
+      id: entry.id,
+      label: entry.label,
+      default: entry.default,
+      mode: entry.mode,
+      detected: true,
+      authenticated,
+      command,
+      ...version ? { version } : {},
+      canUpdate: {
+        self: Boolean(entry.update.self.length),
+        extensions: Boolean(entry.update.extensions?.length),
+        models: Boolean(entry.update.models?.length)
+      },
+      issues
+    };
+  }
+  return probeEntry(entry, runCommand, timeoutMs);
+}
 
 // plugins/kxm/src/vnext-config.ts
 var VNEXT_YAML_LIMITS = Object.freeze({
@@ -15822,8 +16191,8 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
       const writable = Object.values(objectValue(step.repositories) ?? {}).filter((access) => access === "write").length;
       if (maxWriteRepositories > writable) issues.push(issue("semantic", "write_repository_bound_invalid", file, `${stepId} maxWriteRepositories exceeds writable repository scope`));
     }
-    const join6 = objectValue(step.join);
-    const minimumPassed = join6 && typeof join6.minimumPassed === "number" ? join6.minimumPassed : void 0;
+    const join8 = objectValue(step.join);
+    const minimumPassed = join8 && typeof join8.minimumPassed === "number" ? join8.minimumPassed : void 0;
     if (minimumPassed !== void 0 && minimumPassed > maximum) issues.push(issue("semantic", "join_impossible", file, `${stepId} minimumPassed exceeds assignment maximum`));
     const distinctBy = names(assignment?.distinctBy);
     if (distinctBy.length > 0) {
@@ -16038,7 +16407,7 @@ function gitEnvironment() {
 function discoverGitRoot(start = process.cwd()) {
   let current = resolve(start);
   if (existsSync(current) && !lstatSync(current).isDirectory()) current = dirname(current);
-  const result = spawnSync("git", ["-C", current, "rev-parse", "--show-toplevel"], {
+  const result = spawnSync2("git", ["-C", current, "rev-parse", "--show-toplevel"], {
     encoding: "utf8",
     env: gitEnvironment(),
     timeout: 5e3,
@@ -20117,6 +20486,10 @@ import { dirname as dirname4, isAbsolute as isAbsolute3, join as join5, resolve 
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // plugins/kxm/src/vnext-engine.ts
+var trustedProducers = /* @__PURE__ */ new WeakSet();
+function registerTrustedProducer(producer) {
+  trustedProducers.add(producer);
+}
 function requireRun(context, runId) {
   const run = context.eventStore.run(runId);
   if (!run) throw runtimeError("run_unknown", runId, "run does not exist in this event store");
@@ -20672,7 +21045,609 @@ async function vnextRuntimeRequest(handle, method, path, body) {
   }
   return payload;
 }
+
+// plugins/kxm/src/vnext-pi-producer.ts
+import { spawn as spawn2 } from "node:child_process";
+import { join as join7 } from "node:path";
+import { StringDecoder } from "node:string_decoder";
+
+// plugins/kxm/src/prices.ts
+var import_yaml3 = __toESM(require_dist(), 1);
+import { existsSync as existsSync4, readFileSync as readFileSync3 } from "node:fs";
+import { join as join6 } from "node:path";
+var PRICES_SCHEMA = "kxm.prices.v1";
+function parsePriceCatalog(text) {
+  const parsed = (0, import_yaml3.parse)(text);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("price catalog must be an object");
+  }
+  if (parsed.schema !== PRICES_SCHEMA) {
+    throw new Error(`price catalog schema must be ${PRICES_SCHEMA}`);
+  }
+  if (typeof parsed.date !== "string" || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(parsed.date)) {
+    throw new Error("price catalog date must be YYYY-MM-DD");
+  }
+  if (typeof parsed.sha256 !== "string" || !/^(?:sha256:)?[a-f0-9]{64}$/.test(parsed.sha256)) {
+    throw new Error("price catalog sha256 must be a 64-character hex digest");
+  }
+  if (!Array.isArray(parsed.models) || parsed.models.length === 0) {
+    throw new Error("price catalog models must be a non-empty array");
+  }
+  const models = parsed.models.map((item, index) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new Error(`price catalog model at index ${index} must be an object`);
+    }
+    const m = item;
+    if (typeof m.id !== "string" || !m.id) {
+      throw new Error(`price catalog model at index ${index} must have a non-empty id`);
+    }
+    if (typeof m.provider !== "string" || !m.provider) {
+      throw new Error(`price catalog model at index ${index} must have a non-empty provider`);
+    }
+    if (typeof m.model !== "string" || !m.model) {
+      throw new Error(`price catalog model at index ${index} must have a non-empty model`);
+    }
+    const aliases = Array.isArray(m.aliases) ? m.aliases.filter((a) => typeof a === "string" && Boolean(a)) : void 0;
+    if (!Array.isArray(m.tiers) || m.tiers.length === 0) {
+      throw new Error(`price catalog model ${m.id} must have at least one tier`);
+    }
+    const tiers = m.tiers.map((tItem, tIndex) => {
+      if (!tItem || typeof tItem !== "object" || Array.isArray(tItem)) {
+        throw new Error(`tier at index ${tIndex} for model ${m.id} must be an object`);
+      }
+      const t = tItem;
+      const inputRate = typeof t.inputPerMillion === "number" ? t.inputPerMillion : typeof t.input === "number" ? t.input : void 0;
+      const outputRate = typeof t.outputPerMillion === "number" ? t.outputPerMillion : typeof t.output === "number" ? t.output : void 0;
+      if (inputRate === void 0 || inputRate < 0) {
+        throw new Error(`tier at index ${tIndex} for model ${m.id} must have a non-negative inputPerMillion`);
+      }
+      if (outputRate === void 0 || outputRate < 0) {
+        throw new Error(`tier at index ${tIndex} for model ${m.id} must have a non-negative outputPerMillion`);
+      }
+      return {
+        upToContextTokens: typeof t.upToContextTokens === "number" ? t.upToContextTokens : null,
+        inputPerMillion: inputRate,
+        outputPerMillion: outputRate,
+        cacheReadPerMillion: typeof t.cacheReadPerMillion === "number" ? t.cacheReadPerMillion : typeof t.cacheRead === "number" ? t.cacheRead : null,
+        cacheWritePerMillion: typeof t.cacheWritePerMillion === "number" ? t.cacheWritePerMillion : typeof t.cacheWrite === "number" ? t.cacheWrite : null
+      };
+    });
+    return {
+      id: m.id,
+      provider: m.provider,
+      model: m.model,
+      aliases,
+      tiers
+    };
+  });
+  return {
+    schema: PRICES_SCHEMA,
+    date: parsed.date,
+    sha256: parsed.sha256.replace(/^sha256:/, ""),
+    currency: typeof parsed.currency === "string" ? parsed.currency : "USD",
+    models
+  };
+}
+function loadPriceCatalog(rootOrPath) {
+  const candidatePath = existsSync4(join6(rootOrPath, ".kxm", "prices.yaml")) ? join6(rootOrPath, ".kxm", "prices.yaml") : existsSync4(join6(rootOrPath, "prices.yaml")) ? join6(rootOrPath, "prices.yaml") : existsSync4(rootOrPath) && !rootOrPath.endsWith("/") ? rootOrPath : void 0;
+  if (!candidatePath || !existsSync4(candidatePath)) {
+    return void 0;
+  }
+  const content = readFileSync3(candidatePath, "utf8");
+  return parsePriceCatalog(content);
+}
+function findModelPrice(catalog, model, provider) {
+  const normalizedModel = model.trim().toLowerCase();
+  const normalizedProvider = provider?.trim().toLowerCase();
+  for (const entry of catalog.models) {
+    if (normalizedProvider && entry.provider.toLowerCase() !== normalizedProvider) {
+      const matchesAlias = entry.aliases?.some((a) => a.toLowerCase() === normalizedModel);
+      if (!matchesAlias) continue;
+    }
+    if (entry.id.toLowerCase() === normalizedModel || entry.model.toLowerCase() === normalizedModel) {
+      return entry;
+    }
+    if (entry.aliases?.some((a) => a.toLowerCase() === normalizedModel)) {
+      return entry;
+    }
+  }
+  return void 0;
+}
+function calculateModelCost(catalog, params) {
+  const row = findModelPrice(catalog, params.model, params.provider);
+  if (!row || row.tiers.length === 0) return void 0;
+  const context = params.contextTokens ?? params.tokensIn ?? 0;
+  let selectedTier = row.tiers[0];
+  for (const tier of row.tiers) {
+    if (tier.upToContextTokens !== void 0 && tier.upToContextTokens !== null && context > tier.upToContextTokens) {
+      continue;
+    }
+    selectedTier = tier;
+    break;
+  }
+  const tokensIn = params.tokensIn ?? 0;
+  const tokensOut = params.tokensOut ?? 0;
+  const cacheRead = params.cacheReadTokens ?? 0;
+  const cacheWrite = params.cacheWriteTokens ?? 0;
+  const cost = tokensIn / 1e6 * selectedTier.inputPerMillion + tokensOut / 1e6 * selectedTier.outputPerMillion + cacheRead / 1e6 * (selectedTier.cacheReadPerMillion ?? 0) + cacheWrite / 1e6 * (selectedTier.cacheWritePerMillion ?? 0);
+  const priceRef = `${catalog.date}#${row.id}`;
+  return {
+    costUsd: Math.round(cost * 1e6) / 1e6,
+    priceRef
+  };
+}
+
+// plugins/kxm/src/vnext-pi-producer.ts
+function formatPiSessionKey(params) {
+  if (params.agentId === "coordinator") {
+    return `coordinator:${params.runId}`;
+  }
+  return `${params.runId}:${params.agentId}:${params.instanceNo ?? 1}:${params.scopeEpoch ?? 1}`;
+}
+function formatPiSessionDisplayName(params) {
+  const shortRun = params.runId.length > 8 ? params.runId.slice(0, 8) : params.runId;
+  if (params.agentId === "coordinator") {
+    return `coordinator@${shortRun}`;
+  }
+  return `${params.agentId}@${shortRun}#${params.instanceNo ?? 1}.${params.scopeEpoch ?? 1}`;
+}
+function extractText(content) {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map((part) => typeof part === "object" && part && "text" in part && typeof part.text === "string" ? part.text : "").join("\n");
+  }
+  return "";
+}
+function determineOutcome(text, allowedOutcomes) {
+  const normalized = text.trim();
+  const jsonMatch = /"outcome"\s*:\s*"([^"]+)"/.exec(normalized);
+  if (jsonMatch && allowedOutcomes.includes(jsonMatch[1])) {
+    return jsonMatch[1];
+  }
+  for (const outcome of allowedOutcomes) {
+    const regex = new RegExp(`\\b${outcome}\\b`, "i");
+    if (regex.test(normalized)) {
+      return outcome;
+    }
+  }
+  if (allowedOutcomes.includes("passed")) return "passed";
+  return allowedOutcomes[0] ?? "completed";
+}
+var PiSession = class {
+  key;
+  displayName;
+  runId;
+  agentId;
+  instanceNo;
+  scopeEpoch;
+  sessionDir;
+  model;
+  process;
+  status = "idle";
+  commandCounter = 0;
+  pendingCommands = /* @__PURE__ */ new Map();
+  activePrompt;
+  lineDecoder = new StringDecoder("utf8");
+  lineBuffer = "";
+  constructor(params) {
+    this.key = params.key;
+    this.displayName = params.displayName;
+    this.runId = params.runId;
+    this.agentId = params.agentId;
+    this.instanceNo = params.instanceNo;
+    this.scopeEpoch = params.scopeEpoch;
+    this.sessionDir = params.sessionDir;
+    this.model = params.model;
+    this.process = params.process;
+    this.attachStdout();
+    this.attachProcessEvents();
+  }
+  isClosed() {
+    return this.status === "closed";
+  }
+  isBusy() {
+    return this.status === "busy";
+  }
+  attachStdout() {
+    this.process.stdout.on("data", (chunk) => {
+      this.lineBuffer += this.lineDecoder.write(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+      let newlineIdx;
+      while ((newlineIdx = this.lineBuffer.indexOf("\n")) !== -1) {
+        let line = this.lineBuffer.slice(0, newlineIdx);
+        this.lineBuffer = this.lineBuffer.slice(newlineIdx + 1);
+        if (line.endsWith("\r")) line = line.slice(0, -1);
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const parsed = JSON.parse(trimmed);
+          this.handleRpcMessage(parsed);
+        } catch {
+        }
+      }
+    });
+  }
+  attachProcessEvents() {
+    this.process.on("close", (code, signal) => {
+      this.status = "closed";
+      const err = new Error(`pi_process_closed: code=${code ?? "null"} signal=${signal ?? "null"}`);
+      for (const pending of this.pendingCommands.values()) {
+        pending.reject(err);
+      }
+      this.pendingCommands.clear();
+      if (this.activePrompt) {
+        this.activePrompt.signalCleanup?.();
+        this.activePrompt.reject(err);
+        this.activePrompt = void 0;
+      }
+    });
+    this.process.on("error", (err) => {
+      this.status = "closed";
+      for (const pending of this.pendingCommands.values()) {
+        pending.reject(err);
+      }
+      this.pendingCommands.clear();
+      if (this.activePrompt) {
+        this.activePrompt.signalCleanup?.();
+        this.activePrompt.reject(err);
+        this.activePrompt = void 0;
+      }
+    });
+  }
+  handleRpcMessage(msg) {
+    if (msg.type === "response" && typeof msg.id === "string") {
+      const pending = this.pendingCommands.get(msg.id);
+      if (pending) {
+        this.pendingCommands.delete(msg.id);
+        if (msg.success === false) {
+          pending.reject(new Error(typeof msg.error === "string" ? msg.error : "rpc_command_failed"));
+        } else {
+          pending.resolve(msg);
+        }
+      }
+      return;
+    }
+    if (!this.activePrompt) return;
+    if (msg.type === "message_update") {
+      if (msg.usage && typeof msg.usage === "object") {
+        this.updateUsage(msg.usage);
+      }
+    } else if (msg.type === "turn_end") {
+      const message = msg.message;
+      if (message && message.content !== void 0) {
+        this.activePrompt.text += `${extractText(message.content)}
+`;
+      }
+      if (message && message.usage && typeof message.usage === "object") {
+        this.updateUsage(message.usage);
+      }
+    } else if (msg.type === "agent_end") {
+      const messages = msg.messages;
+      if (Array.isArray(messages)) {
+        for (const m of messages) {
+          if (m && typeof m === "object" && m.role === "assistant") {
+            const content = m.content;
+            if (content) this.activePrompt.text += `${extractText(content)}
+`;
+            const usage = m.usage;
+            if (usage && typeof usage === "object") this.updateUsage(usage);
+          }
+        }
+      }
+    } else if (msg.type === "agent_settled") {
+      const active = this.activePrompt;
+      this.activePrompt = void 0;
+      this.status = "idle";
+      active.signalCleanup?.();
+      const isAborted = active.aborted || active.signal?.aborted;
+      let outcome;
+      if (isAborted) {
+        outcome = active.allowedOutcomes.includes("cancelled") ? "cancelled" : active.allowedOutcomes.includes("failed") ? "failed" : active.allowedOutcomes[0];
+      } else {
+        outcome = determineOutcome(active.text, active.allowedOutcomes);
+      }
+      active.resolve({
+        outcome,
+        text: active.text.trim() || (isAborted ? "aborted" : ""),
+        usage: active.usage
+      });
+    }
+  }
+  updateUsage(raw) {
+    if (!this.activePrompt) return;
+    const u = this.activePrompt.usage;
+    if (typeof raw.input === "number") u.input = raw.input;
+    if (typeof raw.output === "number") u.output = raw.output;
+    if (typeof raw.cacheRead === "number") u.cacheRead = raw.cacheRead;
+    if (typeof raw.cacheWrite === "number") u.cacheWrite = raw.cacheWrite;
+    if (typeof raw.totalTokens === "number") u.totalTokens = raw.totalTokens;
+    if (raw.contextUsage && typeof raw.contextUsage === "object") {
+      const cu = raw.contextUsage;
+      u.contextUsage = {
+        tokens: typeof cu.tokens === "number" ? cu.tokens : void 0,
+        contextWindow: typeof cu.contextWindow === "number" ? cu.contextWindow : void 0,
+        percent: typeof cu.percent === "number" ? cu.percent : void 0
+      };
+    }
+  }
+  async sendCommand(command) {
+    if (this.status === "closed") {
+      throw new Error("pi_session_closed");
+    }
+    const id = `cmd_${++this.commandCounter}`;
+    const payload = { ...command, id };
+    return new Promise((resolve5, reject) => {
+      this.pendingCommands.set(id, { resolve: resolve5, reject });
+      try {
+        this.process.stdin.write(JSON.stringify(payload) + "\n");
+      } catch (err) {
+        this.pendingCommands.delete(id);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    });
+  }
+  async prompt(message, allowedOutcomes, signal) {
+    if (this.status === "closed") {
+      throw new Error("pi_session_closed");
+    }
+    if (this.status === "busy") {
+      throw new Error("pi_session_busy");
+    }
+    if (signal?.aborted) {
+      const outcome = allowedOutcomes.includes("cancelled") ? "cancelled" : allowedOutcomes.includes("failed") ? "failed" : allowedOutcomes[0];
+      return { outcome, text: "aborted", usage: {} };
+    }
+    this.status = "busy";
+    return new Promise((resolve5, reject) => {
+      let signalCleanup;
+      if (signal) {
+        const onAbort = () => {
+          if (this.activePrompt) {
+            this.activePrompt.aborted = true;
+          }
+          void this.abort().catch(() => {
+          });
+        };
+        signal.addEventListener("abort", onAbort, { once: true });
+        signalCleanup = () => signal.removeEventListener("abort", onAbort);
+      }
+      this.activePrompt = {
+        resolve: resolve5,
+        reject,
+        allowedOutcomes,
+        text: "",
+        usage: {},
+        signal,
+        signalCleanup,
+        aborted: false
+      };
+      this.sendCommand({ type: "prompt", message }).catch((err) => {
+        if (this.activePrompt) {
+          this.activePrompt.signalCleanup?.();
+          this.activePrompt = void 0;
+          this.status = "idle";
+        }
+        reject(err);
+      });
+    });
+  }
+  async abort() {
+    if (this.status === "closed") return;
+    if (this.activePrompt) {
+      this.activePrompt.aborted = true;
+    }
+    try {
+      await this.sendCommand({ type: "abort" });
+    } catch {
+    }
+  }
+  async close() {
+    if (this.status === "closed") return;
+    this.status = "closed";
+    try {
+      this.process.kill();
+    } catch {
+    }
+  }
+};
+function createVnextPiProducer(options = {}) {
+  const sessions = /* @__PURE__ */ new Map();
+  const defaultModel = options.defaultModel ?? "xai/grok-4.6";
+  const defaultProvider = options.defaultProvider ?? "xai";
+  function parseModelString(spec) {
+    const trimmed = spec.trim();
+    if (trimmed.includes("/")) {
+      const idx = trimmed.indexOf("/");
+      return { provider: trimmed.slice(0, idx).toLowerCase(), model: trimmed.slice(idx + 1) };
+    }
+    return { provider: defaultProvider, model: trimmed };
+  }
+  function resolveModelForRequest(request) {
+    if (request.model) {
+      const parsed2 = parseModelString(request.model);
+      return {
+        provider: request.provider?.toLowerCase() ?? parsed2.provider,
+        model: parsed2.model,
+        thinking: request.thinking
+      };
+    }
+    if (options.resolveModel) {
+      const resolved = options.resolveModel(request.agentId, request.runId);
+      if (resolved && resolved.model) {
+        const parsed2 = parseModelString(resolved.model);
+        return {
+          provider: resolved.provider?.toLowerCase() ?? parsed2.provider,
+          model: parsed2.model,
+          thinking: resolved.thinking
+        };
+      }
+    }
+    const parsed = parseModelString(defaultModel);
+    return { provider: parsed.provider, model: parsed.model };
+  }
+  function checkPiAuth(provider, model) {
+    if (options.inventory) {
+      const piEntry = options.inventory.harnesses.find((h) => h.id === "pi");
+      if (!piEntry || !piEntry.detected || piEntry.authenticated === false) {
+        throw new Error("pi_not_authenticated: pi harness not authenticated in inventory");
+      }
+    }
+    const probeFn = options.probeHarness ?? probeHarnessAssignment;
+    const probe = probeFn({
+      harness: "pi",
+      provider,
+      model,
+      env: options.env
+    });
+    if (!probe.detected) {
+      throw new Error(`pi_not_authenticated: pi harness not detected (${probe.issues.join(", ")})`);
+    }
+    if (probe.authenticated !== true) {
+      throw new Error(`pi_not_authenticated: pi not authenticated for provider ${provider} (${probe.issues.join(", ")})`);
+    }
+  }
+  async function getOrCreateSession(request, model) {
+    const key = formatPiSessionKey({
+      runId: request.runId,
+      agentId: request.agentId,
+      instanceNo: request.instanceNo,
+      scopeEpoch: request.scopeEpoch
+    });
+    const existing = sessions.get(key);
+    if (existing && !existing.isClosed()) {
+      return existing;
+    }
+    const displayName = formatPiSessionDisplayName({
+      runId: request.runId,
+      agentId: request.agentId,
+      instanceNo: request.instanceNo,
+      scopeEpoch: request.scopeEpoch
+    });
+    const command = options.piCommand ?? "pi";
+    const args = ["--mode", "rpc", "--name", displayName];
+    if (options.sessionDir) {
+      const safeDirName = key.replace(/[^a-zA-Z0-9_-]/g, "_");
+      args.push("--session-dir", join7(options.sessionDir, request.runId, safeDirName));
+    }
+    if (model) {
+      args.push("--model", model);
+    }
+    let proc;
+    if (options.spawnProcess) {
+      proc = options.spawnProcess(command, args, { env: options.env ?? process.env });
+    } else {
+      const child = spawn2(command, args, {
+        env: options.env ?? process.env,
+        stdio: ["pipe", "pipe", "pipe"]
+      });
+      proc = {
+        stdin: child.stdin,
+        stdout: child.stdout,
+        stderr: child.stderr ?? void 0,
+        kill: (sig) => child.kill(sig),
+        on: (ev, listener) => {
+          child.on(ev, listener);
+          return proc;
+        }
+      };
+    }
+    const session = new PiSession({
+      key,
+      displayName,
+      runId: request.runId,
+      agentId: request.agentId,
+      instanceNo: request.instanceNo ?? 1,
+      scopeEpoch: request.scopeEpoch ?? 1,
+      sessionDir: options.sessionDir,
+      model,
+      process: proc
+    });
+    sessions.set(key, session);
+    return session;
+  }
+  const producer = {
+    id: "pi",
+    get sessions() {
+      return sessions;
+    },
+    async produce(request) {
+      const startTime = Date.now();
+      const resolved = resolveModelForRequest(request);
+      checkPiAuth(resolved.provider, resolved.model);
+      const session = await getOrCreateSession(request, resolved.model);
+      const promptMessage = request.prompt ?? `Execute step ${request.stepId} (attempt ${request.stepAttempt}) for agent ${request.agentId}. Allowed outcomes: ${request.allowedOutcomes.join(", ")}.`;
+      let promptResult;
+      try {
+        promptResult = await session.prompt(promptMessage, request.allowedOutcomes, request.signal);
+      } catch (err) {
+        return Promise.reject(err);
+      }
+      const latencyMs = Math.max(0, Date.now() - startTime);
+      const usage = promptResult.usage;
+      const tokensIn = typeof usage?.input === "number" ? usage.input : null;
+      const tokensOut = typeof usage?.output === "number" ? usage.output : null;
+      const cacheReadTokens = typeof usage?.cacheRead === "number" ? usage.cacheRead : null;
+      const cacheWriteTokens = typeof usage?.cacheWrite === "number" ? usage.cacheWrite : null;
+      const contextTokens = typeof usage?.contextUsage?.tokens === "number" ? usage.contextUsage.tokens : tokensIn;
+      const catalog = options.priceCatalog ?? loadPriceCatalog(options.projectRoot ?? process.cwd());
+      let costBasis = "unknown";
+      let costUsd = null;
+      let priceRef;
+      if (catalog) {
+        const calculated = calculateModelCost(catalog, {
+          model: resolved.model,
+          provider: resolved.provider,
+          tokensIn,
+          tokensOut,
+          cacheReadTokens,
+          cacheWriteTokens,
+          contextTokens
+        });
+        if (calculated) {
+          costBasis = "metered";
+          costUsd = calculated.costUsd;
+          priceRef = calculated.priceRef;
+        }
+      }
+      return {
+        outcome: promptResult.outcome,
+        costBasis,
+        costUsd,
+        tokensIn,
+        tokensOut,
+        cacheReadTokens,
+        cacheWriteTokens,
+        contextTokens,
+        latencyMs,
+        harness: "pi",
+        provider: resolved.provider,
+        requestedModel: resolved.model,
+        effectiveModel: resolved.model,
+        ...resolved.thinking !== void 0 ? { thinking: resolved.thinking } : {},
+        agentRole: request.agentRole ?? request.agentId,
+        ...priceRef !== void 0 ? { priceRef } : {}
+      };
+    },
+    async closeRun(runId) {
+      const toClose = [];
+      for (const [key, session] of sessions.entries()) {
+        if (session.runId === runId) {
+          toClose.push(session);
+          sessions.delete(key);
+        }
+      }
+      await Promise.all(toClose.map((s) => s.close()));
+    },
+    async close() {
+      const toClose = [...sessions.values()];
+      sessions.clear();
+      await Promise.all(toClose.map((s) => s.close()));
+    }
+  };
+  registerTrustedProducer(producer);
+  return producer;
+}
 export {
+  PiSession,
   VNEXT_ABSENT_MEMORY_REVISION,
   VNEXT_EVENT_STORE_SCHEMA_VERSION,
   VNEXT_REGISTRY_SCHEMA_VERSION,
@@ -20685,8 +21660,11 @@ export {
   cancelVnextRun,
   closeVnextRuntimeContext,
   computeGateEvidenceOutcome,
+  createVnextPiProducer,
   ensureVnextSupervisor,
   foldStoredVnextRun,
+  formatPiSessionDisplayName,
+  formatPiSessionKey,
   gateRowContentHash,
   hashVnextSupervisorToken,
   hashVnextTokenProof,
