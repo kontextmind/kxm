@@ -17910,6 +17910,8 @@ function foldVnextRunState(run, plan, events, options = {}) {
       case "effect.blocked_uncertain":
         foldEffectUncertain(state, plan, event);
         break;
+      case "routing.attempt.recorded":
+        break;
       default:
         throw runtimeError("run_events_illegal", run.runId, `event type ${event.eventType} is not legal in this engine slice`);
     }
@@ -18016,6 +18018,9 @@ function assertTerminalRunStatus(state, plan, status, event) {
   if (status === "failed") {
     if (state.lastTerminalTransition === "failed") return;
     if (isProvenFailure(state, plan)) return;
+    if (event.payload.reason === "budget_model_cost" || event.payload.reason === "budget_unmetered_attempts" || event.payload.reason === "budget_step_attempts") {
+      return;
+    }
     if (state.status === "blocked_uncertain" || state.currentStep?.effectState === "blocked_uncertain") return;
     const currentStep = state.currentStep;
     if (event.payload.reason === "executing_unrecorded" && currentStep && currentStep.panel.order.length === 1 && panelAttempt(currentStep)?.status === "starting") {
@@ -18712,7 +18717,8 @@ function freezeState(state) {
     edgeTransitions: Object.freeze({ ...state.edgeTransitions }),
     transitionsUsed: state.transitionsUsed,
     cancelRequested: state.cancelRequested,
-    ...state.terminalReason !== void 0 ? { terminalReason: state.terminalReason } : {}
+    ...state.terminalReason !== void 0 ? { terminalReason: state.terminalReason } : {},
+    ...state.terminalReason !== void 0 && state.status === "failed" ? { failureReason: state.terminalReason } : {}
   };
   return Object.freeze(frozen);
 }

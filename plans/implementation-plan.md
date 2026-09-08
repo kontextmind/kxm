@@ -193,6 +193,16 @@ It does not replace the phase gates below.
 
 ### Landed in this tree (unreleased)
 
+- **D5 routing records v2 and price catalog (issue #91):** defined
+  `kxm.routing-record.v2` contract in `plugins/kxm/src/routing.ts` and updated
+  schemas `schemas/vnext/common.schema.json` and
+  `schemas/vnext/run-event.schema.json`; created price catalog schema
+  `schemas/vnext/prices.schema.json` (`kxm.prices.v1`) and price catalog loader/calculator
+  `plugins/kxm/src/prices.ts`; added dated, hashed price catalog
+  `.kxm/prices.yaml` (Claude, Codex, Grok, GLM, Kimi, Qwen); engine settlement
+  requires `costBasis` and records `routing.attempt.recorded` event on every member
+  settlement; run plan enforces metered `limits.maxModelCost` cap before dispatch
+  (`budget_model_cost`); fold handles routing records and terminal failure reasons.
 - **Workflow guide loop & maintain-documentation (issue #145):** documented developer runner loop (`plan` → `implement` → fixed witness gate `npm run verify` → dual critics Fable + Sol → `accept` → PR with auto-merge) and repair back-edge (`rework_of`, fresh dual review, attempts-and-relief failover); reclassified `semantic-equivalence-verifier` as critic-with-gate (deterministic checks are the witness; model role reviews contracts and does not replace tests); added `maintain-documentation` workflow to Slug Registry and Software Engineering; noted `agy` native subscription harness for Gemini candidates; rebound `.kxm/roster.json` sha256 hash.
 - **agy (Antigravity CLI) helper admission:** `scripts/harness-run.mjs`
   `ROUTES.agy` is a writer/experiment **edit** route (provider `google`,
@@ -940,15 +950,16 @@ admission remains Phase 4 work.
 **Harness/model assignment validation & Pi probe (implemented, unreleased):**
 Unhosted harness/model pair rejection at assignment and exact-context Pi auth probing (`validateHarnessModelPair`, `probeHarnessAssignment`, `probeHarnessesForModel` in `vnext-harness.ts`) enforce provider hosting boundaries, reject native-provider Pi impersonation, and probe exact requested provider/model credentials via `pi auth check`.
 
+**Routing records v2 and price catalog (implemented via D5 / issue #91, unreleased):**
+`routing.attempt.recorded` events carry `kxm.routing-record.v2` (harness, provider, model, tokens, latency, cost basis, cost USD); missing `costBasis` fails closed at attempt settlement; run plan enforces metered `limits.maxModelCost` cap before dispatch (`budget_model_cost`); dated and hashed price catalog `.kxm/prices.yaml` (`kxm.prices.v1`).
+
 **Still this phase:** Pi RPC adapter, per-run sessions, the rest of the `/kxm`
 menu (hub/workflows/agents completions wrapping CLI), validated YAML editors
 (enable/disable harnesses and models by editing Git files, not a parallel
-store), live assignment dispatch that binds harness from auth inventory
+store), and live assignment dispatch that binds harness from auth inventory
 (`eligibleHarnesses` filters detected and authenticated ids only; it does
 not take a provider/model pair; `scripts/assignment-run.mjs` is not that
-layer), unhosted harness/model pair rejection at
-assignment (separate from that auth filter), and routing
-records that always include harness+cost. Hub-local session brief and Pi status
+layer). Hub-local session brief and Pi status
 line are in tree with a deterministic `startup`/`new`/`fork` readiness test.
 The Phase 4 assignment probe supplies the exact requested provider/model
 before any Pi readiness claim.

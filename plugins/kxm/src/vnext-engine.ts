@@ -75,6 +75,12 @@ import {
   recordGateUncertainInTransaction,
   type VnextGateObservationInput,
 } from "./vnext-engine-gate-records.ts";
+import {
+  ROUTING_RECORD_V2_SCHEMA,
+  type RoutingRecordV2,
+  parseRoutingRecordV2,
+  behavioralConfigHash,
+} from "./routing.ts";
 
 const trustedProducers = new WeakSet<object>();
 const CAPABILITY_PREFIX = "kxm-attempt-capability\0";
@@ -93,6 +99,23 @@ export interface VnextProducerRequest {
 
 export interface VnextProducerResult {
   readonly outcome: string;
+  readonly costBasis?: "metered" | "unmetered" | "unknown";
+  readonly costUsd?: number | null;
+  readonly tokensIn?: number | null;
+  readonly tokensOut?: number | null;
+  readonly cacheReadTokens?: number | null;
+  readonly cacheWriteTokens?: number | null;
+  readonly contextTokens?: number | null;
+  readonly latencyMs?: number;
+  readonly harness?: string;
+  readonly provider?: string;
+  readonly requestedModel?: string;
+  readonly effectiveModel?: string;
+  readonly thinking?: string;
+  readonly agentRole?: string;
+  readonly behavioralSha256?: string;
+  readonly priceRef?: string;
+  readonly providerMetadata?: Record<string, string | number | boolean>;
 }
 
 export interface VnextProducer {
@@ -123,9 +146,20 @@ export function createVnextSimulatedProducer(
 ): VnextProducer {
   const producer = Object.freeze({
     id: "driver-simulated" as const,
-    produce(request: VnextProducerRequest): Promise<VnextProducerResult> {
+    async produce(request: VnextProducerRequest): Promise<VnextProducerResult> {
+      const start = Date.now();
       try {
-        return Promise.resolve(script(request));
+        const raw = await script(request);
+        const latencyMs = typeof raw.latencyMs === "number" ? raw.latencyMs : Math.max(0, Date.now() - start);
+        return {
+          costBasis: "unmetered",
+          tokensIn: null,
+          tokensOut: null,
+          cacheReadTokens: null,
+          cacheWriteTokens: null,
+          ...raw,
+          latencyMs,
+        };
       } catch (error) {
         return Promise.reject(error);
       }
@@ -893,6 +927,29 @@ function prepareDispatch(
   const step = plan.steps[stepId];
   if (!step) throw runtimeError("run_events_illegal", runId, `unknown pending step ${stepId}`);
 
+  const allEvents = context.eventStore.events(runId, 0, 100000);
+  let accumulatedMeteredCost = 0;
+  let unmeteredOrUnknownAttempts = 0;
+  for (const ev of allEvents) {
+    if (ev.eventType === "routing.attempt.recorded") {
+      const routing = (ev.payload as { routing?: RoutingRecordV2 })?.routing;
+      if (routing?.costBasis === "metered" && typeof routing.costUsd === "number") {
+        accumulatedMeteredCost += routing.costUsd;
+      } else if (routing?.costBasis === "unmetered" || routing?.costBasis === "unknown") {
+        unmeteredOrUnknownAttempts += 1;
+      }
+    }
+  }
+
+  if (plan.limits.maxModelCost !== undefined && accumulatedMeteredCost >= plan.limits.maxModelCost) {
+    return { kind: "return", ...failBudget(context, run, plan, state, "budget_model_cost", stepId) };
+  }
+
+  const maxUnmeteredAttempts = 100;
+  if (unmeteredOrUnknownAttempts >= maxUnmeteredAttempts) {
+    return { kind: "return", ...failBudget(context, run, plan, state, "budget_unmetered_attempts", stepId) };
+  }
+
   if (step.kind === "gate") {
     const envelope = loadVnextRunPlanEnvelope(context.eventStore, run);
     const unsupported = unsupportedGateStep(plan, step, envelope, context);
@@ -1283,7 +1340,10 @@ async function drivePanel(
         settleMember(context, member, produced.result, produced.error);
       });
       return true;
-    } catch {
+    } catch (err) {
+      if (err instanceof Error && /costBasis/.test(err.message)) {
+        throw err;
+      }
       settlementFailed = true;
       stopBirths = true;
       return false;
@@ -1435,13 +1495,102 @@ function settleMember(
     push("assignment.result_recorded", { assignmentId: dispatch.assignmentId, resultClass: "cancelled", status: "result_recorded" });
     push("attempt.status_changed", { attemptId: dispatch.attemptId, status: "terminal" });
     push("assignment.terminal", { assignmentId: dispatch.assignmentId, outcome: "cancelled", status: "terminal" });
+  } else if (produceError) {
+    const envelope = loadVnextRunPlanEnvelope(context.eventStore, run);
+    const rawHash = result?.behavioralSha256 ?? behavioralConfigHash({
+      requestedModel: result?.requestedModel ?? "simulated",
+      effectiveModel: result?.effectiveModel ?? result?.requestedModel ?? "simulated",
+      agentRole: dispatch.step.kind === "agent" || dispatch.step.kind === "moa" ? dispatch.step.agent : undefined,
+      toolPolicyVersion: envelope.revisions.toolPolicy,
+    });
+    const behavioralSha256 = rawHash.startsWith("sha256:") ? rawHash : `sha256:${rawHash}`;
+
+    const routingRecord: RoutingRecordV2 = {
+      schema: ROUTING_RECORD_V2_SCHEMA,
+      recordedAt: now,
+      project: run.projectId,
+      runId: run.runId,
+      stepId: dispatch.stepId,
+      assignmentId: dispatch.assignmentId,
+      attemptId: dispatch.attemptId,
+      harness: result?.harness ?? "driver-simulated",
+      provider: result?.provider ?? "simulated",
+      requestedModel: result?.requestedModel ?? "simulated",
+      effectiveModel: result?.effectiveModel ?? result?.requestedModel ?? "simulated",
+      behavioralSha256,
+      latencyMs: typeof result?.latencyMs === "number" ? result.latencyMs : 0,
+      costBasis: "unknown",
+      costUsd: null,
+      retries: Math.max(0, dispatch.stepAttempt - 1),
+    };
+    push("routing.attempt.recorded", { routing: parseRoutingRecordV2(routingRecord) });
+
+    push("assignment.result_recorded", {
+      assignmentId: dispatch.assignmentId,
+      resultClass: "producer_rejected",
+      status: "result_recorded",
+    });
+    push("attempt.status_changed", { attemptId: dispatch.attemptId, status: "terminal" });
+    push("assignment.terminal", { assignmentId: dispatch.assignmentId, outcome: "failed", status: "terminal" });
   } else {
-    const outcome = !produceError && result && typeof result.outcome === "string" ? result.outcome : undefined;
+    if (!result || result.costBasis === undefined || result.costBasis === null) {
+      throw runtimeError("settle_missing_cost_basis", run.runId, `attempt settlement rejected: missing required costBasis for attempt ${dispatch.attemptId}`);
+    }
+    if (result.costBasis !== "metered" && result.costBasis !== "unmetered" && result.costBasis !== "unknown") {
+      throw runtimeError("settle_invalid_cost_basis", run.runId, `attempt settlement rejected: invalid costBasis ${String(result.costBasis)}`);
+    }
+    if (result.costBasis === "metered") {
+      if (typeof result.costUsd !== "number" || !Number.isFinite(result.costUsd) || result.costUsd < 0) {
+        throw runtimeError("settle_invalid_cost", run.runId, "attempt settlement rejected: metered costBasis requires non-negative finite costUsd");
+      }
+    }
+
+    const envelope = loadVnextRunPlanEnvelope(context.eventStore, run);
+    const rawHash = result.behavioralSha256 ?? behavioralConfigHash({
+      requestedModel: result.requestedModel ?? "simulated",
+      effectiveModel: result.effectiveModel ?? result.requestedModel ?? "simulated",
+      agentRole: dispatch.step.kind === "agent" || dispatch.step.kind === "moa" ? dispatch.step.agent : undefined,
+      toolPolicyVersion: envelope.revisions.toolPolicy,
+    });
+    const behavioralSha256 = rawHash.startsWith("sha256:") ? rawHash : `sha256:${rawHash}`;
+
+    const routingRecord: RoutingRecordV2 = {
+      schema: ROUTING_RECORD_V2_SCHEMA,
+      recordedAt: now,
+      project: run.projectId,
+      runId: run.runId,
+      stepId: dispatch.stepId,
+      assignmentId: dispatch.assignmentId,
+      attemptId: dispatch.attemptId,
+      harness: result.harness ?? "driver-simulated",
+      provider: result.provider ?? "simulated",
+      requestedModel: result.requestedModel ?? "simulated",
+      effectiveModel: result.effectiveModel ?? result.requestedModel ?? "simulated",
+      behavioralSha256,
+      latencyMs: typeof result.latencyMs === "number" ? result.latencyMs : 0,
+      costBasis: result.costBasis,
+      costUsd: result.costBasis === "metered" ? (result.costUsd ?? 0) : (result.costUsd ?? null),
+      retries: Math.max(0, dispatch.stepAttempt - 1),
+    };
+
+    if (result.thinking !== undefined) routingRecord.thinking = result.thinking;
+    if (result.agentRole !== undefined) routingRecord.agentRole = result.agentRole;
+    if (result.contextTokens !== undefined) routingRecord.contextTokens = result.contextTokens;
+    if (result.tokensIn !== undefined) routingRecord.tokensIn = result.tokensIn;
+    if (result.tokensOut !== undefined) routingRecord.tokensOut = result.tokensOut;
+    if (result.cacheReadTokens !== undefined) routingRecord.cacheReadTokens = result.cacheReadTokens;
+    if (result.cacheWriteTokens !== undefined) routingRecord.cacheWriteTokens = result.cacheWriteTokens;
+    if (result.priceRef !== undefined) routingRecord.priceRef = result.priceRef;
+    if (result.providerMetadata !== undefined) routingRecord.providerMetadata = result.providerMetadata;
+
+    push("routing.attempt.recorded", { routing: parseRoutingRecordV2(routingRecord) });
+
+    const outcome = typeof result.outcome === "string" ? result.outcome : undefined;
     const known = outcome !== undefined && dispatch.step.outcomes.includes(outcome);
     if (!known) {
       push("assignment.result_recorded", {
         assignmentId: dispatch.assignmentId,
-        resultClass: produceError ? "producer_rejected" : "outcome_unknown",
+        resultClass: "outcome_unknown",
         status: "result_recorded",
       });
       push("attempt.status_changed", { attemptId: dispatch.attemptId, status: "terminal" });
@@ -1626,9 +1775,6 @@ function unsupportedLimit(envelope: VnextRunPlanEnvelope): VnextRunHandoff | und
   }
   if (envelope.plan.limits.maxAgentTimeMs !== undefined) {
     return { reason: "limit_unsupported", field: "limits.maxAgentTimeMs", detail: "agent-time budget enforcement is not available in this slice" };
-  }
-  if (envelope.plan.limits.maxModelCost !== undefined) {
-    return { reason: "limit_unsupported", field: "limits.maxModelCost", detail: "cost budget enforcement is not available in this slice" };
   }
   if (envelope.projectLimits.maxRunDurationMs !== undefined) {
     return { reason: "limit_unsupported", field: "project.limits.maxRunDurationMs", detail: "duration budget enforcement is not available in this slice" };
