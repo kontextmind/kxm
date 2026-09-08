@@ -193,6 +193,7 @@ It does not replace the phase gates below.
 
 ### Landed in this tree (unreleased)
 
+- **Public npm publishing unlatched & configured (2026-09-08):** Configured the `npm-publish` deployment environment in GitHub with `NPM_TOKEN` secret. Added `scripts/kxm-publish-npm.mjs` to enforce fail-closed verification (requires GitHub release with `draft: false`, validates asset presence and SHA-256 digest, and runs `npm publish --access public`). Unlatched `publish-npm` job in `.github/workflows/release.yml`, added `test/core/kxm-publish-npm.test.ts`, updated `test/core/ci-contract.test.ts`, and set `publishConfig.access: "public"` in `package.json`.
 - **0.6.0 release cut and release automation unlatched (2026-09-08):** Version bumped to `0.6.0` across all seven package surfaces (root package, package lock, plugin package, Claude manifest, marketplace entry, MCP server, and dist bundle). Removed the `if: false` job latch on the draft release job in `.github/workflows/release.yml` and updated `test/core/ci-contract.test.ts`; `publish-npm` stays `if: false` until a published release and `npm-publish` environment exist. CHANGELOG promoted.
 - **Control plane, 5-layer memory, and external idempotency (2026-09-08):**
   - **Memory Arbiter & `_shared` scope:** Updated `plugins/kxm/src/context.ts` to allow `_shared` defaults alongside project identifiers without tripping `context_isolation_violation`; updated `plugins/kxm/src/arbiter.ts` to rank project-specific knowledge ahead of shared defaults; added `memoryRecordToContextItem()` and connected `.kxm/memory/` into `plugins/kxm/src/hub.ts:projectContextPool()`. Verified in `test/core/arbiter.test.ts`.
@@ -795,10 +796,10 @@ It does not replace the phase gates below.
   a reviewed change that updates Tracking, tests, and settings together. D3
   Windows-specific success remains unverified and deferred. Active work
   continues on Linux and local Mac.
-- **Release resumption (unlatched for 0.6.0):** Removed the `release` job latch
-  in `.github/workflows/release.yml` and updated `test/core/ci-contract.test.ts`.
-  First real draft-to-published release and public npm publish remain to be verified
-  upon tag push. Independent of Windows resumption.
+- **Release resumption (unlatched for 0.6.0):** Removed the `release` and `publish-npm`
+  job latches in `.github/workflows/release.yml`, configured `npm-publish` environment secret,
+  and added fail-closed verification via `scripts/kxm-publish-npm.mjs`. Draft release `v0.6.0`
+  minted on GitHub; publishing release will trigger npm publication. Independent of Windows resumption.
 - **After public npm:** wiki-compile this project from hub context; npm as
   `kxm update` source. Not before.
 - Coverage only lists modules some test loaded; a future source file with zero
