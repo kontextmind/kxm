@@ -34,7 +34,7 @@ export interface OneShotParsedOutput {
 export interface HarnessOneShotConfig {
   argv: readonly string[];
   promptVia: OneShotPromptVia;
-  outputFormat: "json" | "text";
+  outputFormat: "json" | "text" | "stream-json" | "jsonl";
   usageParser: (stdout: string, stderr: string) => OneShotParsedOutput;
 }
 
@@ -60,6 +60,12 @@ export interface HarnessProbeOptions {
   timeoutMs?: number;
 }
 
+export interface HarnessDispatchStatus {
+  status: "yes" | "no";
+  supported: boolean;
+  reason?: string | undefined;
+}
+
 export interface HarnessStatus {
   id: string;
   label: string;
@@ -67,6 +73,7 @@ export interface HarnessStatus {
   mode: HarnessMode;
   detected: boolean;
   authenticated: boolean | null;
+  dispatch?: HarnessDispatchStatus | undefined;
   command?: string;
   version?: string;
   canUpdate: { self: boolean; extensions: boolean; models: boolean };
@@ -280,6 +287,99 @@ export function parseGenericOneShotUsage(stdout: string, _stderr: string): OneSh
   return { text: trimmed, usage: {} };
 }
 
+export function parseKimiOneShotUsage(stdout: string, _stderr: string): OneShotParsedOutput {
+  const trimmed = stdout.trim();
+  const assistantTexts: string[] = [];
+  let isError = false;
+  let errorMessage: string | undefined;
+
+  for (const line of trimmed.split("\n")) {
+    const lineTrimmed = line.trim();
+    if (!lineTrimmed) continue;
+    try {
+      const parsed = JSON.parse(lineTrimmed);
+      if (parsed && typeof parsed === "object") {
+        const rec = parsed as Record<string, unknown>;
+        if (rec.role === "assistant" && typeof rec.content === "string") {
+          assistantTexts.push(rec.content);
+        } else if (rec.role === "error" || rec.type === "error") {
+          isError = true;
+          errorMessage = typeof rec.message === "string" ? rec.message : (typeof rec.content === "string" ? rec.content : "kimi_error");
+        }
+      }
+    } catch {
+      // non-JSON line (e.g. startup banner or markdown)
+    }
+  }
+
+  const text = assistantTexts.length > 0 ? assistantTexts.join("\n") : trimmed;
+  return {
+    text,
+    isError,
+    errorMessage,
+    usage: {
+      tokensIn: null,
+      tokensOut: null,
+      cacheReadTokens: null,
+      cacheWriteTokens: null,
+      contextTokens: null,
+      costUsd: null,
+    },
+  };
+}
+
+export function parseAgyOneShotUsage(stdout: string, _stderr: string): OneShotParsedOutput {
+  const trimmed = stdout.trim();
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const rec = parsed as Record<string, unknown>;
+      const text = typeof rec.response === "string"
+        ? rec.response
+        : (typeof rec.result === "string" ? rec.result : trimmed);
+      const isError = rec.status === "ERROR";
+      const rawError = rec.error;
+      const errorMessage = isError
+        ? (typeof rawError === "string"
+          ? rawError
+          : (typeof (rawError as any)?.message === "string" ? (rawError as any).message : "agy_error"))
+        : undefined;
+
+      const usageRec = rec.usage && typeof rec.usage === "object" ? rec.usage as Record<string, unknown> : {};
+      const tokensIn = typeof usageRec.input_tokens === "number" ? usageRec.input_tokens : null;
+      const tokensOut = typeof usageRec.output_tokens === "number" ? usageRec.output_tokens : null;
+      const cacheReadTokens = typeof usageRec.cache_read_tokens === "number" ? usageRec.cache_read_tokens : null;
+      const contextTokens = typeof usageRec.total_tokens === "number" ? usageRec.total_tokens : tokensIn;
+
+      return {
+        text,
+        isError,
+        errorMessage,
+        usage: {
+          tokensIn,
+          tokensOut,
+          cacheReadTokens,
+          cacheWriteTokens: null,
+          contextTokens,
+          costUsd: null,
+        },
+      };
+    }
+  } catch {
+    // not json
+  }
+  return {
+    text: trimmed,
+    usage: {
+      tokensIn: null,
+      tokensOut: null,
+      cacheReadTokens: null,
+      cacheWriteTokens: null,
+      contextTokens: null,
+    },
+  };
+}
+
 /** Built-in harnesses. Unknown ids fail closed. Model lists live in `.kxm/models/*.yaml`, not here. */
 export const BUILTIN_HARNESSES: readonly HarnessCatalogEntry[] = Object.freeze([
   {
@@ -329,10 +429,10 @@ export const BUILTIN_HARNESSES: readonly HarnessCatalogEntry[] = Object.freeze([
     versionArgs: ["--version"],
     update: { self: ["upgrade"] },
     oneShot: {
-      argv: ["--json"],
-      promptVia: "stdin",
-      outputFormat: "json",
-      usageParser: parseGenericOneShotUsage,
+      argv: ["--output-format", "stream-json", "-p"],
+      promptVia: "arg",
+      outputFormat: "stream-json",
+      usageParser: parseKimiOneShotUsage,
     },
   },
   {
@@ -359,12 +459,6 @@ export const BUILTIN_HARNESSES: readonly HarnessCatalogEntry[] = Object.freeze([
     commands: ["gemini"],
     versionArgs: ["--version"],
     update: { self: ["update"] },
-    oneShot: {
-      argv: ["--json"],
-      promptVia: "stdin",
-      outputFormat: "json",
-      usageParser: parseGenericOneShotUsage,
-    },
   },
   {
     id: "deepseek",
@@ -407,10 +501,10 @@ export const BUILTIN_HARNESSES: readonly HarnessCatalogEntry[] = Object.freeze([
     authArgs: ["models"],
     update: { self: ["update"] },
     oneShot: {
-      argv: ["-p", "--output-format", "json"],
-      promptVia: "stdin",
+      argv: ["--output-format", "json", "-p"],
+      promptVia: "arg",
       outputFormat: "json",
-      usageParser: parseGenericOneShotUsage,
+      usageParser: parseAgyOneShotUsage,
     },
   },
 ]);
@@ -532,6 +626,31 @@ function interpretAuth(id: string, result: HarnessCommandResult): { authenticate
   return { authenticated: null, issues: ["auth_unparsed"] };
 }
 
+export function resolveDispatchStatus(
+  entry: HarnessCatalogEntry,
+  detected: boolean,
+  authenticated: boolean | null,
+  issues: readonly string[],
+): HarnessDispatchStatus {
+  if (!detected) {
+    return { status: "no", supported: false, reason: "not_detected" };
+  }
+  if (entry.id !== "pi" && !entry.oneShot) {
+    return {
+      status: "no",
+      supported: false,
+      reason: entry.id === "gemini" ? "deprecated_client" : "no_headless_mode",
+    };
+  }
+  if (authenticated === false) {
+    return { status: "no", supported: false, reason: "not_authenticated" };
+  }
+  if (authenticated === null) {
+    return { status: "no", supported: false, reason: issues[0] ?? "auth_unknown" };
+  }
+  return { status: "yes", supported: true };
+}
+
 function probeEntry(
   entry: HarnessCatalogEntry,
   runCommand: (command: string, args: readonly string[], timeoutMs: number) => HarnessCommandResult,
@@ -563,6 +682,7 @@ function probeEntry(
     authenticated = parsed.authenticated;
     issues.push(...parsed.issues);
   }
+  const dispatch = resolveDispatchStatus(entry, detected, authenticated, issues);
   return {
     id: entry.id,
     label: entry.label,
@@ -570,6 +690,7 @@ function probeEntry(
     mode: entry.mode,
     detected,
     authenticated,
+    dispatch,
     ...(command ? { command } : {}),
     ...(version ? { version } : {}),
     canUpdate: {
@@ -723,6 +844,7 @@ export function probeHarnessAssignment(options: HarnessAssignmentProbeOptions): 
       mode: "either",
       detected: false,
       authenticated: false,
+      dispatch: { status: "no", supported: false, reason: "harness_unknown" },
       canUpdate: { self: false, extensions: false, models: false },
       issues: ["harness_unknown"],
     };
@@ -738,6 +860,7 @@ export function probeHarnessAssignment(options: HarnessAssignmentProbeOptions): 
         mode: entry.mode,
         detected: false,
         authenticated: false,
+        dispatch: { status: "no", supported: false, reason: validation.issue ?? "harness_unhosted_model" },
         canUpdate: {
           self: Boolean(entry.update.self.length),
           extensions: Boolean(entry.update.extensions?.length),
@@ -769,6 +892,7 @@ export function probeHarnessAssignment(options: HarnessAssignmentProbeOptions): 
       mode: entry.mode,
       detected: false,
       authenticated: false,
+      dispatch: { status: "no", supported: false, reason: "not_detected" },
       canUpdate: {
         self: Boolean(entry.update.self.length),
         extensions: Boolean(entry.update.extensions?.length),
@@ -787,6 +911,7 @@ export function probeHarnessAssignment(options: HarnessAssignmentProbeOptions): 
         mode: entry.mode,
         detected: true,
         authenticated: null,
+        dispatch: { status: "no", supported: false, reason: "auth_context_required" },
         command,
         ...(version ? { version } : {}),
         canUpdate: {
@@ -823,6 +948,8 @@ export function probeHarnessAssignment(options: HarnessAssignmentProbeOptions): 
       issues.push("not_authenticated");
     }
 
+    const dispatch = resolveDispatchStatus(entry, true, authenticated, issues);
+
     return {
       id: entry.id,
       label: entry.label,
@@ -830,6 +957,7 @@ export function probeHarnessAssignment(options: HarnessAssignmentProbeOptions): 
       mode: entry.mode,
       detected: true,
       authenticated,
+      dispatch,
       command,
       ...(version ? { version } : {}),
       canUpdate: {
@@ -954,9 +1082,19 @@ export function runHarnessUpdate(
 }
 
 export function formatHarnessInventory(inventory: HarnessInventory): string {
-  const header = "id        default  detected  auth     updates";
+  const header = [
+    "id".padEnd(9),
+    "default".padEnd(8),
+    "detected".padEnd(9),
+    "auth".padEnd(8),
+    "dispatch".padEnd(26),
+    "updates",
+  ].join(" ");
   const rows = inventory.harnesses.map((entry) => {
     const auth = entry.authenticated === true ? "yes" : entry.authenticated === false ? "no" : "unknown";
+    const dispatchText = entry.dispatch
+      ? (entry.dispatch.status === "yes" ? "yes" : `no (${entry.dispatch.reason ?? "unsupported"})`)
+      : (entry.authenticated === true ? "yes" : "no");
     const updates = [
       entry.canUpdate.self ? "self" : undefined,
       entry.canUpdate.extensions ? "extensions" : undefined,
@@ -965,9 +1103,10 @@ export function formatHarnessInventory(inventory: HarnessInventory): string {
     const apiKeyNote = entry.issues.includes("auth_api_key") ? " API key" : "";
     return [
       entry.id.padEnd(9),
-      (entry.default ? "yes" : "no").padEnd(7),
-      (entry.detected ? "yes" : "no").padEnd(8),
+      (entry.default ? "yes" : "no").padEnd(8),
+      (entry.detected ? "yes" : "no").padEnd(9),
       auth.padEnd(8),
+      dispatchText.padEnd(26),
       `${updates}${apiKeyNote}`,
     ].join(" ");
   });

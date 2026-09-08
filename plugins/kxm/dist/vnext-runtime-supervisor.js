@@ -15129,6 +15129,85 @@ function parseGenericOneShotUsage(stdout, _stderr) {
   }
   return { text: trimmed, usage: {} };
 }
+function parseKimiOneShotUsage(stdout, _stderr) {
+  const trimmed = stdout.trim();
+  const assistantTexts = [];
+  let isError = false;
+  let errorMessage;
+  for (const line of trimmed.split("\n")) {
+    const lineTrimmed = line.trim();
+    if (!lineTrimmed) continue;
+    try {
+      const parsed = JSON.parse(lineTrimmed);
+      if (parsed && typeof parsed === "object") {
+        const rec = parsed;
+        if (rec.role === "assistant" && typeof rec.content === "string") {
+          assistantTexts.push(rec.content);
+        } else if (rec.role === "error" || rec.type === "error") {
+          isError = true;
+          errorMessage = typeof rec.message === "string" ? rec.message : typeof rec.content === "string" ? rec.content : "kimi_error";
+        }
+      }
+    } catch {
+    }
+  }
+  const text = assistantTexts.length > 0 ? assistantTexts.join("\n") : trimmed;
+  return {
+    text,
+    isError,
+    errorMessage,
+    usage: {
+      tokensIn: null,
+      tokensOut: null,
+      cacheReadTokens: null,
+      cacheWriteTokens: null,
+      contextTokens: null,
+      costUsd: null
+    }
+  };
+}
+function parseAgyOneShotUsage(stdout, _stderr) {
+  const trimmed = stdout.trim();
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const rec = parsed;
+      const text = typeof rec.response === "string" ? rec.response : typeof rec.result === "string" ? rec.result : trimmed;
+      const isError = rec.status === "ERROR";
+      const rawError = rec.error;
+      const errorMessage = isError ? typeof rawError === "string" ? rawError : typeof rawError?.message === "string" ? rawError.message : "agy_error" : void 0;
+      const usageRec = rec.usage && typeof rec.usage === "object" ? rec.usage : {};
+      const tokensIn = typeof usageRec.input_tokens === "number" ? usageRec.input_tokens : null;
+      const tokensOut = typeof usageRec.output_tokens === "number" ? usageRec.output_tokens : null;
+      const cacheReadTokens = typeof usageRec.cache_read_tokens === "number" ? usageRec.cache_read_tokens : null;
+      const contextTokens = typeof usageRec.total_tokens === "number" ? usageRec.total_tokens : tokensIn;
+      return {
+        text,
+        isError,
+        errorMessage,
+        usage: {
+          tokensIn,
+          tokensOut,
+          cacheReadTokens,
+          cacheWriteTokens: null,
+          contextTokens,
+          costUsd: null
+        }
+      };
+    }
+  } catch {
+  }
+  return {
+    text: trimmed,
+    usage: {
+      tokensIn: null,
+      tokensOut: null,
+      cacheReadTokens: null,
+      cacheWriteTokens: null,
+      contextTokens: null
+    }
+  };
+}
 var BUILTIN_HARNESSES = Object.freeze([
   {
     id: "pi",
@@ -15177,10 +15256,10 @@ var BUILTIN_HARNESSES = Object.freeze([
     versionArgs: ["--version"],
     update: { self: ["upgrade"] },
     oneShot: {
-      argv: ["--json"],
-      promptVia: "stdin",
-      outputFormat: "json",
-      usageParser: parseGenericOneShotUsage
+      argv: ["--output-format", "stream-json", "-p"],
+      promptVia: "arg",
+      outputFormat: "stream-json",
+      usageParser: parseKimiOneShotUsage
     }
   },
   {
@@ -15206,13 +15285,7 @@ var BUILTIN_HARNESSES = Object.freeze([
     mode: "either",
     commands: ["gemini"],
     versionArgs: ["--version"],
-    update: { self: ["update"] },
-    oneShot: {
-      argv: ["--json"],
-      promptVia: "stdin",
-      outputFormat: "json",
-      usageParser: parseGenericOneShotUsage
-    }
+    update: { self: ["update"] }
   },
   {
     id: "deepseek",
@@ -15255,10 +15328,10 @@ var BUILTIN_HARNESSES = Object.freeze([
     authArgs: ["models"],
     update: { self: ["update"] },
     oneShot: {
-      argv: ["-p", "--output-format", "json"],
-      promptVia: "stdin",
+      argv: ["--output-format", "json", "-p"],
+      promptVia: "arg",
       outputFormat: "json",
-      usageParser: parseGenericOneShotUsage
+      usageParser: parseAgyOneShotUsage
     }
   }
 ]);
