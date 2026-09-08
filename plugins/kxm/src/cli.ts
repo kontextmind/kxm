@@ -2636,6 +2636,26 @@ async function cmdStudioServe(
       host,
       projectRoot: runtime.cwd,
       sessionToken,
+      planProvider: () => {
+        try {
+          const wfDir = join(runtime.cwd, ".kxm", "workflows");
+          const defaultPath = join(wfDir, "default.yaml");
+          let targetPath = existsSync(defaultPath) ? defaultPath : undefined;
+          if (!targetPath && existsSync(wfDir)) {
+            const yml = readdirSync(wfDir).find((f) => f.endsWith(".yaml") || f.endsWith(".yml"));
+            if (yml) targetPath = join(wfDir, yml);
+          }
+          if (targetPath && existsSync(targetPath)) {
+            const raw = readFileSync(targetPath, "utf8");
+            const parsed = parseYaml(raw) as any;
+            const wfId = basename(targetPath).replace(/\.(yaml|yml)$/, "");
+            return compileVnextWorkflow({ id: wfId, value: parsed });
+          }
+        } catch {
+          // fallback
+        }
+        return undefined;
+      },
     });
     const actualPort = await serverHandle.listen();
     const info = {

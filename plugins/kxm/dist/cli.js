@@ -40940,14 +40940,439 @@ function createStudioServer(options = {}) {
   <title>KXM Web Studio</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 24px; }
-    h1 { font-size: 20px; font-weight: 600; color: #38bdf8; margin: 0 0 16px 0; }
-    .badge { display: inline-block; padding: 4px 8px; border-radius: 4px; background: #1e293b; color: #94a3b8; font-size: 12px; }
+    :root {
+      --bg: #0b0f19;
+      --panel-bg: #111827;
+      --card-bg: #1f2937;
+      --border: #374151;
+      --text: #f9fafb;
+      --text-muted: #9ca3af;
+      --primary: #38bdf8;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+    header {
+      background: var(--panel-bg);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    h1 { font-size: 18px; font-weight: 700; color: var(--primary); margin: 0; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 8px;
+      border-radius: 9999px;
+      background: #1e293b;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .dot-live { width: 8px; height: 8px; border-radius: 50%; background: var(--success); }
+    .telemetry-bar {
+      display: flex;
+      gap: 16px;
+      font-size: 13px;
+      color: var(--text-muted);
+      font-family: ui-monospace, monospace;
+    }
+    .telemetry-val { color: var(--text); font-weight: 600; }
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding: 16px 24px;
+      gap: 16px;
+    }
+    .panel {
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .panel-title {
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin: 0 0 12px 0;
+      font-weight: 600;
+    }
+    /* Stepper */
+    .stepper-container {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 4px 0;
+    }
+    .step-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      border-radius: 6px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      font-size: 13px;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+    .step-badge.active {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 1px var(--primary);
+      color: var(--primary);
+    }
+    .step-badge.completed { border-color: var(--success); color: var(--success); }
+    .step-badge.failed { border-color: var(--danger); color: var(--danger); }
+    .stepper-arrow { color: var(--text-muted); font-size: 14px; }
+    /* Middle row */
+    .middle-row {
+      flex: 1;
+      display: flex;
+      gap: 16px;
+      overflow: hidden;
+    }
+    /* DAG Canvas */
+    .dag-panel {
+      flex: 3;
+      position: relative;
+      overflow: auto;
+      background: #0d1321;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+    #dagCanvas {
+      position: relative;
+      min-width: 100%;
+      min-height: 100%;
+      padding: 32px;
+    }
+    .dag-node {
+      position: absolute;
+      width: 220px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3);
+      cursor: pointer;
+      transition: border-color 0.2s, transform 0.2s;
+    }
+    .dag-node:hover {
+      border-color: var(--primary);
+      transform: translateY(-2px);
+    }
+    .dag-node.active { border-color: var(--primary); }
+    .dag-node.passed { border-color: var(--success); }
+    .dag-node.failed { border-color: var(--danger); }
+    .dag-node-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .dag-node-title { font-size: 14px; font-weight: 600; color: var(--text); }
+    .dag-node-kind {
+      font-size: 10px;
+      text-transform: uppercase;
+      padding: 2px 6px;
+      background: #374151;
+      border-radius: 4px;
+      color: #94a3b8;
+    }
+    .dag-node-body { font-size: 12px; color: var(--text-muted); display: flex; flex-direction: column; gap: 4px; }
+    /* Side Panel */
+    .side-panel {
+      flex: 2;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow-y: auto;
+    }
+    /* Swimlanes */
+    .timeline-track {
+      margin-bottom: 8px;
+    }
+    .track-label { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+    .track-bar-container {
+      background: var(--card-bg);
+      height: 20px;
+      border-radius: 4px;
+      position: relative;
+      overflow: hidden;
+    }
+    .track-bar {
+      position: absolute;
+      top: 2px;
+      bottom: 2px;
+      background: var(--primary);
+      border-radius: 3px;
+      opacity: 0.85;
+    }
+    /* Mutation Actions */
+    .mutation-form {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .form-group { display: flex; flex-direction: column; gap: 4px; }
+    label { font-size: 12px; color: var(--text-muted); }
+    input, select, textarea {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      padding: 8px;
+      font-size: 12px;
+      font-family: inherit;
+    }
+    button.btn {
+      background: #0284c7;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 8px 12px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button.btn:hover { background: #0369a1; }
+    .status-msg {
+      font-size: 12px;
+      padding: 8px;
+      border-radius: 4px;
+      font-family: monospace;
+    }
+    .status-ok { background: #064e3b; color: #a7f3d0; }
+    .status-err { background: #7f1d1d; color: #fecaca; }
   </style>
 </head>
 <body>
-  <h1>KXM Web Studio</h1>
-  <div class="badge">Port ${targetPort} \xB7 Embedded Hub Host</div>
+  <header>
+    <div class="brand">
+      <h1>KXM Web Studio</h1>
+      <span class="badge"><span class="dot-live"></span> Port ${targetPort} \xB7 Embedded Hub Host</span>
+    </div>
+    <div class="telemetry-bar">
+      <div>Run: <span id="runIdVal" class="telemetry-val">-</span></div>
+      <div>Workflow: <span id="wfIdVal" class="telemetry-val">default</span></div>
+      <div>Status: <span id="statusVal" class="telemetry-val">READY</span></div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Stepper Section -->
+    <div class="panel">
+      <div class="panel-title">Workflow Stage Progress Stepper (Decision D14)</div>
+      <div class="stepper-container" id="stepperContainer">
+        <div class="step-badge">[\u25B6 implement]</div>
+        <div class="stepper-arrow">\u2500\u2500></div>
+        <div class="step-badge">[\u29D7 review-arch]</div>
+        <div class="stepper-arrow">\u2500\u2500></div>
+        <div class="step-badge">[\u25CB review-cli]</div>
+        <div class="stepper-arrow">\u2500\u2500></div>
+        <div class="step-badge">[\u25CB verify]</div>
+      </div>
+    </div>
+
+    <!-- Middle: DAG Canvas + Side Swimlanes/Mutations -->
+    <div class="middle-row">
+      <!-- DAG Panel -->
+      <div class="dag-panel">
+        <svg id="svgEdges" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:1;"></svg>
+        <div id="dagCanvas">
+          <!-- Dynamically injected nodes -->
+        </div>
+      </div>
+
+      <!-- Side Panel: Swimlanes & Mutation Actions -->
+      <div class="side-panel">
+        <div class="panel">
+          <div class="panel-title">Temporal Activity Swimlanes</div>
+          <div id="swimlanesContainer">
+            <div class="timeline-track">
+              <div class="track-label">implement (Grok)</div>
+              <div class="track-bar-container"><div class="track-bar" style="left:5%; width:40%;"></div></div>
+            </div>
+            <div class="timeline-track">
+              <div class="track-label">review-arch (Claude Fable)</div>
+              <div class="track-bar-container"><div class="track-bar" style="left:48%; width:30%; background: #a855f7;"></div></div>
+            </div>
+            <div class="timeline-track">
+              <div class="track-label">verify (verify-gate)</div>
+              <div class="track-bar-container"><div class="track-bar" style="left:80%; width:15%; background: #10b981;"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">Audited CLI Mutations (1:1 Audit Parity)</div>
+          <form class="mutation-form" id="mutationForm" onsubmit="handleMutate(event)">
+            <div class="form-group">
+              <label>Command (1:1 CLI audit mapping)</label>
+              <select id="mutateCmd">
+                <option value="workflow.signal">workflow.signal</option>
+                <option value="workflow.checkpoint">workflow.checkpoint</option>
+                <option value="workflow.wait">workflow.wait</option>
+                <option value="gate.signal">gate.signal</option>
+                <option value="gate.degrade">gate.degrade</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Arguments (JSON)</label>
+              <textarea id="mutateArgs" rows="3" style="font-family: monospace;">{"signalKey": "approval", "status": "passed"}</textarea>
+            </div>
+            <div class="form-group">
+              <label>Session Token (Authorization)</label>
+              <input type="password" id="sessionTokenInput" placeholder="Optional if not authenticated">
+            </div>
+            <button type="submit" class="btn">Execute Audited Mutation</button>
+            <div id="mutateResult" style="display:none;" class="status-msg"></div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    async function loadLayout() {
+      try {
+        const res = await fetch('/api/layout');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.ok || !data.layout) return;
+        const layout = data.layout;
+
+        document.getElementById('wfIdVal').textContent = layout.workflowId || 'default';
+        if (layout.runId) document.getElementById('runIdVal').textContent = layout.runId;
+
+        // Render Stepper
+        if (layout.stepper && layout.stepper.length > 0) {
+          const container = document.getElementById('stepperContainer');
+          container.innerHTML = '';
+          layout.stepper.forEach((step, idx) => {
+            const el = document.createElement('div');
+            el.className = 'step-badge ' + (step.status || 'pending');
+            let icon = '\u25CB';
+            if (step.status === 'completed') icon = '\u2714';
+            else if (step.status === 'active') icon = '\u25B6';
+            else if (step.status === 'failed') icon = '\u2716';
+            el.textContent = icon + ' ' + (step.label || step.id);
+            container.appendChild(el);
+
+            if (idx < layout.stepper.length - 1) {
+              const arrow = document.createElement('div');
+              arrow.className = 'stepper-arrow';
+              arrow.textContent = '\u2500\u2500>';
+              container.appendChild(arrow);
+            }
+          });
+        }
+
+        // Render DAG Nodes
+        if (layout.dag && layout.dag.nodes) {
+          const canvas = document.getElementById('dagCanvas');
+          canvas.innerHTML = '';
+          layout.dag.nodes.forEach(node => {
+            const div = document.createElement('div');
+            div.className = 'dag-node ' + (node.data.status || 'pending');
+            div.style.left = (node.position.x + 32) + 'px';
+            div.style.top = (node.position.y + 32) + 'px';
+            div.innerHTML = '<div class="dag-node-header">' +
+              '<span class="dag-node-title">' + (node.data.label || node.id) + '</span>' +
+              '<span class="dag-node-kind">' + node.data.kind + '</span>' +
+              '</div>' +
+              '<div class="dag-node-body">' +
+              (node.data.role ? '<div>Role: <b>' + node.data.role + '</b></div>' : '') +
+              (node.data.gate ? '<div>Gate: <b>' + node.data.gate + '</b></div>' : '') +
+              '<div>Status: ' + node.data.status + '</div>' +
+              '</div>';
+            canvas.appendChild(div);
+          });
+        }
+
+        // Render Swimlanes
+        if (layout.temporalSwimlanes && layout.temporalSwimlanes.length > 0) {
+          const container = document.getElementById('swimlanesContainer');
+          container.innerHTML = '';
+          layout.temporalSwimlanes.forEach(lane => {
+            const div = document.createElement('div');
+            div.className = 'timeline-track';
+            div.innerHTML = '<div class="track-label">' + lane.laneId + (lane.role ? ' (' + lane.role + ')' : '') + '</div>' +
+              '<div class="track-bar-container"><div class="track-bar" style="left:10%; width:70%;"></div></div>';
+            container.appendChild(div);
+          });
+        }
+      } catch (err) {
+        console.error("Layout polling error:", err);
+      }
+    }
+
+    async function handleMutate(e) {
+      e.preventDefault();
+      const cmd = document.getElementById('mutateCmd').value;
+      const argsRaw = document.getElementById('mutateArgs').value;
+      const token = document.getElementById('sessionTokenInput').value;
+      const resDiv = document.getElementById('mutateResult');
+
+      let args = {};
+      try {
+        args = JSON.parse(argsRaw);
+      } catch {
+        resDiv.style.display = 'block';
+        resDiv.className = 'status-msg status-err';
+        resDiv.textContent = 'Malformed JSON arguments';
+        return;
+      }
+
+      try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = 'Bearer ' + token;
+        const res = await fetch('/api/mutate', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ command: cmd, args })
+        });
+        const out = await res.json();
+        resDiv.style.display = 'block';
+        if (res.ok && out.ok) {
+          resDiv.className = 'status-msg status-ok';
+          resDiv.textContent = 'Mutation applied (Audit ID: ' + out.mutationId + ')';
+          loadLayout();
+        } else {
+          resDiv.className = 'status-msg status-err';
+          resDiv.textContent = 'Mutation failed: ' + (out.message || out.error || res.status);
+        }
+      } catch (err) {
+        resDiv.style.display = 'block';
+        resDiv.className = 'status-msg status-err';
+        resDiv.textContent = 'Network error: ' + err.message;
+      }
+    }
+
+    loadLayout();
+    setInterval(loadLayout, 3000);
+  </script>
 </body>
 </html>`);
       return;
@@ -43792,7 +44217,26 @@ async function cmdStudioServe(runtime, options) {
       port,
       host,
       projectRoot: runtime.cwd,
-      sessionToken
+      sessionToken,
+      planProvider: () => {
+        try {
+          const wfDir = join33(runtime.cwd, ".kxm", "workflows");
+          const defaultPath = join33(wfDir, "default.yaml");
+          let targetPath = existsSync26(defaultPath) ? defaultPath : void 0;
+          if (!targetPath && existsSync26(wfDir)) {
+            const yml = readdirSync10(wfDir).find((f) => f.endsWith(".yaml") || f.endsWith(".yml"));
+            if (yml) targetPath = join33(wfDir, yml);
+          }
+          if (targetPath && existsSync26(targetPath)) {
+            const raw = readFileSync25(targetPath, "utf8");
+            const parsed = (0, import_yaml12.parse)(raw);
+            const wfId = basename6(targetPath).replace(/\.(yaml|yml)$/, "");
+            return compileVnextWorkflow({ id: wfId, value: parsed });
+          }
+        } catch {
+        }
+        return void 0;
+      }
     });
     const actualPort = await serverHandle.listen();
     const info = {
