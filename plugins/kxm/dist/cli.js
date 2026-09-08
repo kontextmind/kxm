@@ -29058,6 +29058,119 @@ var PI_NATIVE_BRAKE_PROVIDERS = Object.freeze([
   "google",
   "deepseek"
 ]);
+function parseClaudeOneShotUsage(stdout, stderr) {
+  const trimmed = stdout.trim();
+  if (!trimmed) {
+    return {
+      text: "",
+      isError: true,
+      errorMessage: stderr.trim() || "empty stdout from claude"
+    };
+  }
+  try {
+    const payload = JSON.parse(trimmed);
+    const usage = payload.usage ?? {};
+    let modelUsageDetail;
+    if (payload.modelUsage && typeof payload.modelUsage === "object") {
+      const values = Object.values(payload.modelUsage);
+      if (values.length > 0 && values[0] && typeof values[0] === "object") {
+        modelUsageDetail = values[0];
+      }
+    }
+    const tokensIn = (typeof modelUsageDetail?.inputTokens === "number" ? modelUsageDetail.inputTokens : void 0) ?? (typeof usage.input_tokens === "number" ? usage.input_tokens : null);
+    const tokensOut = (typeof modelUsageDetail?.outputTokens === "number" ? modelUsageDetail.outputTokens : void 0) ?? (typeof usage.output_tokens === "number" ? usage.output_tokens : null);
+    const cacheReadTokens = (typeof modelUsageDetail?.cacheReadInputTokens === "number" ? modelUsageDetail.cacheReadInputTokens : void 0) ?? (typeof usage.cache_read_input_tokens === "number" ? usage.cache_read_input_tokens : null);
+    const cacheWriteTokens = (typeof modelUsageDetail?.cacheCreationInputTokens === "number" ? modelUsageDetail.cacheCreationInputTokens : void 0) ?? (typeof usage.cache_creation_input_tokens === "number" ? usage.cache_creation_input_tokens : null);
+    const costUsd = typeof payload.total_cost_usd === "number" ? payload.total_cost_usd : typeof modelUsageDetail?.costUSD === "number" ? modelUsageDetail.costUSD : null;
+    const isError = Boolean(payload.is_error || payload.error);
+    const text = typeof payload.result === "string" ? payload.result : typeof payload.text === "string" ? payload.text : "";
+    const errorMessage = isError ? typeof payload.error === "string" ? payload.error : typeof payload.error?.message === "string" ? payload.error.message : text : void 0;
+    return {
+      text,
+      isError,
+      errorMessage,
+      usage: {
+        tokensIn,
+        tokensOut,
+        cacheReadTokens,
+        cacheWriteTokens,
+        contextTokens: tokensIn,
+        costUsd
+      }
+    };
+  } catch {
+    return {
+      text: trimmed,
+      usage: {}
+    };
+  }
+}
+function parseCodexOneShotUsage(stdout, stderr) {
+  const lines = stdout.split(/\r?\n/).map((l3) => l3.trim()).filter(Boolean);
+  if (lines.length === 0) {
+    return {
+      text: "",
+      isError: true,
+      errorMessage: stderr.trim() || "empty stdout from codex"
+    };
+  }
+  const events = [];
+  for (const line of lines) {
+    try {
+      const parsed = JSON.parse(line);
+      if (parsed && typeof parsed === "object") events.push(parsed);
+    } catch {
+    }
+  }
+  const messageTexts = [];
+  let usage;
+  let hasError = false;
+  let errorMessage;
+  for (const ev of events) {
+    if (ev.type === "turn.failed" || ev.type === "error") {
+      hasError = true;
+      errorMessage = typeof ev.message === "string" ? ev.message : typeof ev.error?.message === "string" ? ev.error.message : "turn_failed";
+    }
+    if (ev.item && typeof ev.item === "object" && ev.item.type === "agent_message") {
+      const t = ev.item.text;
+      if (typeof t === "string") messageTexts.push(t);
+    }
+    if (ev.type === "turn.completed" && ev.usage && typeof ev.usage === "object") {
+      usage = ev.usage;
+    }
+  }
+  const text = messageTexts.join("\n").trim();
+  const tokensIn = typeof usage?.input_tokens === "number" ? usage.input_tokens : null;
+  const tokensOut = typeof usage?.output_tokens === "number" ? usage.output_tokens : null;
+  const cacheReadTokens = typeof usage?.cached_input_tokens === "number" ? usage.cached_input_tokens : null;
+  const cacheWriteTokens = typeof usage?.cache_write_input_tokens === "number" ? usage.cache_write_input_tokens : null;
+  return {
+    text,
+    isError: hasError,
+    errorMessage,
+    usage: {
+      tokensIn,
+      tokensOut,
+      cacheReadTokens,
+      cacheWriteTokens,
+      contextTokens: tokensIn,
+      costUsd: null
+    }
+  };
+}
+function parseGenericOneShotUsage(stdout, _stderr) {
+  const trimmed = stdout.trim();
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const rec = parsed;
+      const text = typeof rec.result === "string" ? rec.result : typeof rec.text === "string" ? rec.text : typeof rec.response === "string" ? rec.response : trimmed;
+      return { text, usage: {} };
+    }
+  } catch {
+  }
+  return { text: trimmed, usage: {} };
+}
 var BUILTIN_HARNESSES = Object.freeze([
   {
     id: "pi",
@@ -29070,6 +29183,12 @@ var BUILTIN_HARNESSES = Object.freeze([
       self: ["update", "--self"],
       extensions: ["update", "--extensions"],
       models: ["update", "--models"]
+    },
+    oneShot: {
+      argv: ["-p", "--mode", "json"],
+      promptVia: "arg",
+      outputFormat: "json",
+      usageParser: parseGenericOneShotUsage
     }
   },
   {
@@ -29083,6 +29202,12 @@ var BUILTIN_HARNESSES = Object.freeze([
     update: {
       self: ["update"],
       extensions: ["plugin", "update", "kxm", "-y"]
+    },
+    oneShot: {
+      argv: ["-p", "--output-format", "json"],
+      promptVia: "stdin",
+      outputFormat: "json",
+      usageParser: parseClaudeOneShotUsage
     }
   },
   {
@@ -29092,7 +29217,13 @@ var BUILTIN_HARNESSES = Object.freeze([
     mode: "either",
     commands: ["kimi"],
     versionArgs: ["--version"],
-    update: { self: ["upgrade"] }
+    update: { self: ["upgrade"] },
+    oneShot: {
+      argv: ["--json"],
+      promptVia: "stdin",
+      outputFormat: "json",
+      usageParser: parseGenericOneShotUsage
+    }
   },
   {
     id: "codex",
@@ -29102,7 +29233,13 @@ var BUILTIN_HARNESSES = Object.freeze([
     commands: ["codex"],
     versionArgs: ["--version"],
     authArgs: ["login", "status"],
-    update: { self: ["update"] }
+    update: { self: ["update"] },
+    oneShot: {
+      argv: ["exec", "--json", "-"],
+      promptVia: "stdin",
+      outputFormat: "json",
+      usageParser: parseCodexOneShotUsage
+    }
   },
   {
     id: "gemini",
@@ -29111,7 +29248,13 @@ var BUILTIN_HARNESSES = Object.freeze([
     mode: "either",
     commands: ["gemini"],
     versionArgs: ["--version"],
-    update: { self: ["update"] }
+    update: { self: ["update"] },
+    oneShot: {
+      argv: ["--json"],
+      promptVia: "stdin",
+      outputFormat: "json",
+      usageParser: parseGenericOneShotUsage
+    }
   },
   {
     id: "deepseek",
@@ -29120,7 +29263,13 @@ var BUILTIN_HARNESSES = Object.freeze([
     mode: "either",
     commands: ["deepseek"],
     versionArgs: ["--version"],
-    update: { self: ["update"] }
+    update: { self: ["update"] },
+    oneShot: {
+      argv: ["--json"],
+      promptVia: "stdin",
+      outputFormat: "json",
+      usageParser: parseGenericOneShotUsage
+    }
   },
   {
     id: "grok",
@@ -29130,7 +29279,13 @@ var BUILTIN_HARNESSES = Object.freeze([
     commands: ["grok"],
     versionArgs: ["--version"],
     authArgs: ["models"],
-    update: { self: ["update"] }
+    update: { self: ["update"] },
+    oneShot: {
+      argv: ["--output-format", "json"],
+      promptVia: "stdin",
+      outputFormat: "json",
+      usageParser: parseClaudeOneShotUsage
+    }
   },
   {
     id: "agy",
@@ -29140,7 +29295,13 @@ var BUILTIN_HARNESSES = Object.freeze([
     commands: ["agy"],
     versionArgs: ["--version"],
     authArgs: ["models"],
-    update: { self: ["update"] }
+    update: { self: ["update"] },
+    oneShot: {
+      argv: ["-p", "--output-format", "json"],
+      promptVia: "stdin",
+      outputFormat: "json",
+      usageParser: parseGenericOneShotUsage
+    }
   }
 ]);
 var BUILTIN_HARNESS_IDS = BUILTIN_HARNESSES.map((entry) => entry.id);

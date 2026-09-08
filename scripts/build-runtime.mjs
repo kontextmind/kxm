@@ -47,3 +47,6 @@ if (runtimeLibraryText.startsWith(shebang)) {
   throw new Error(`library bundle must not have an executable shebang: ${runtimeLibrary}`);
 }
 writeFileSync(runtimeLibrary, `${createRequire}${runtimeLibraryText}`);
+
+const { emitCodexArtifacts } = await import("./emit-codex-artifacts.mjs");
+emitCodexArtifacts();

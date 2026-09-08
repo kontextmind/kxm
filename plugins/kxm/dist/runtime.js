@@ -15018,6 +15018,119 @@ var PI_NATIVE_BRAKE_PROVIDERS = Object.freeze([
   "google",
   "deepseek"
 ]);
+function parseClaudeOneShotUsage(stdout, stderr) {
+  const trimmed = stdout.trim();
+  if (!trimmed) {
+    return {
+      text: "",
+      isError: true,
+      errorMessage: stderr.trim() || "empty stdout from claude"
+    };
+  }
+  try {
+    const payload = JSON.parse(trimmed);
+    const usage = payload.usage ?? {};
+    let modelUsageDetail;
+    if (payload.modelUsage && typeof payload.modelUsage === "object") {
+      const values = Object.values(payload.modelUsage);
+      if (values.length > 0 && values[0] && typeof values[0] === "object") {
+        modelUsageDetail = values[0];
+      }
+    }
+    const tokensIn = (typeof modelUsageDetail?.inputTokens === "number" ? modelUsageDetail.inputTokens : void 0) ?? (typeof usage.input_tokens === "number" ? usage.input_tokens : null);
+    const tokensOut = (typeof modelUsageDetail?.outputTokens === "number" ? modelUsageDetail.outputTokens : void 0) ?? (typeof usage.output_tokens === "number" ? usage.output_tokens : null);
+    const cacheReadTokens = (typeof modelUsageDetail?.cacheReadInputTokens === "number" ? modelUsageDetail.cacheReadInputTokens : void 0) ?? (typeof usage.cache_read_input_tokens === "number" ? usage.cache_read_input_tokens : null);
+    const cacheWriteTokens = (typeof modelUsageDetail?.cacheCreationInputTokens === "number" ? modelUsageDetail.cacheCreationInputTokens : void 0) ?? (typeof usage.cache_creation_input_tokens === "number" ? usage.cache_creation_input_tokens : null);
+    const costUsd = typeof payload.total_cost_usd === "number" ? payload.total_cost_usd : typeof modelUsageDetail?.costUSD === "number" ? modelUsageDetail.costUSD : null;
+    const isError = Boolean(payload.is_error || payload.error);
+    const text = typeof payload.result === "string" ? payload.result : typeof payload.text === "string" ? payload.text : "";
+    const errorMessage = isError ? typeof payload.error === "string" ? payload.error : typeof payload.error?.message === "string" ? payload.error.message : text : void 0;
+    return {
+      text,
+      isError,
+      errorMessage,
+      usage: {
+        tokensIn,
+        tokensOut,
+        cacheReadTokens,
+        cacheWriteTokens,
+        contextTokens: tokensIn,
+        costUsd
+      }
+    };
+  } catch {
+    return {
+      text: trimmed,
+      usage: {}
+    };
+  }
+}
+function parseCodexOneShotUsage(stdout, stderr) {
+  const lines = stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (lines.length === 0) {
+    return {
+      text: "",
+      isError: true,
+      errorMessage: stderr.trim() || "empty stdout from codex"
+    };
+  }
+  const events = [];
+  for (const line of lines) {
+    try {
+      const parsed = JSON.parse(line);
+      if (parsed && typeof parsed === "object") events.push(parsed);
+    } catch {
+    }
+  }
+  const messageTexts = [];
+  let usage;
+  let hasError = false;
+  let errorMessage;
+  for (const ev of events) {
+    if (ev.type === "turn.failed" || ev.type === "error") {
+      hasError = true;
+      errorMessage = typeof ev.message === "string" ? ev.message : typeof ev.error?.message === "string" ? ev.error.message : "turn_failed";
+    }
+    if (ev.item && typeof ev.item === "object" && ev.item.type === "agent_message") {
+      const t = ev.item.text;
+      if (typeof t === "string") messageTexts.push(t);
+    }
+    if (ev.type === "turn.completed" && ev.usage && typeof ev.usage === "object") {
+      usage = ev.usage;
+    }
+  }
+  const text = messageTexts.join("\n").trim();
+  const tokensIn = typeof usage?.input_tokens === "number" ? usage.input_tokens : null;
+  const tokensOut = typeof usage?.output_tokens === "number" ? usage.output_tokens : null;
+  const cacheReadTokens = typeof usage?.cached_input_tokens === "number" ? usage.cached_input_tokens : null;
+  const cacheWriteTokens = typeof usage?.cache_write_input_tokens === "number" ? usage.cache_write_input_tokens : null;
+  return {
+    text,
+    isError: hasError,
+    errorMessage,
+    usage: {
+      tokensIn,
+      tokensOut,
+      cacheReadTokens,
+      cacheWriteTokens,
+      contextTokens: tokensIn,
+      costUsd: null
+    }
+  };
+}
+function parseGenericOneShotUsage(stdout, _stderr) {
+  const trimmed = stdout.trim();
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const rec = parsed;
+      const text = typeof rec.result === "string" ? rec.result : typeof rec.text === "string" ? rec.text : typeof rec.response === "string" ? rec.response : trimmed;
+      return { text, usage: {} };
+    }
+  } catch {
+  }
+  return { text: trimmed, usage: {} };
+}
 var BUILTIN_HARNESSES = Object.freeze([
   {
     id: "pi",
@@ -15030,6 +15143,12 @@ var BUILTIN_HARNESSES = Object.freeze([
       self: ["update", "--self"],
       extensions: ["update", "--extensions"],
       models: ["update", "--models"]
+    },
+    oneShot: {
+      argv: ["-p", "--mode", "json"],
+      promptVia: "arg",
+      outputFormat: "json",
+      usageParser: parseGenericOneShotUsage
     }
   },
   {
@@ -15043,6 +15162,12 @@ var BUILTIN_HARNESSES = Object.freeze([
     update: {
       self: ["update"],
       extensions: ["plugin", "update", "kxm", "-y"]
+    },
+    oneShot: {
+      argv: ["-p", "--output-format", "json"],
+      promptVia: "stdin",
+      outputFormat: "json",
+      usageParser: parseClaudeOneShotUsage
     }
   },
   {
@@ -15052,7 +15177,13 @@ var BUILTIN_HARNESSES = Object.freeze([
     mode: "either",
     commands: ["kimi"],
     versionArgs: ["--version"],
-    update: { self: ["upgrade"] }
+    update: { self: ["upgrade"] },
+    oneShot: {
+      argv: ["--json"],
+      promptVia: "stdin",
+      outputFormat: "json",
+      usageParser: parseGenericOneShotUsage
+    }
   },
   {
     id: "codex",
@@ -15062,7 +15193,13 @@ var BUILTIN_HARNESSES = Object.freeze([
     commands: ["codex"],
     versionArgs: ["--version"],
     authArgs: ["login", "status"],
-    update: { self: ["update"] }
+    update: { self: ["update"] },
+    oneShot: {
+      argv: ["exec", "--json", "-"],
+      promptVia: "stdin",
+      outputFormat: "json",
+      usageParser: parseCodexOneShotUsage
+    }
   },
   {
     id: "gemini",
@@ -15071,7 +15208,13 @@ var BUILTIN_HARNESSES = Object.freeze([
     mode: "either",
     commands: ["gemini"],
     versionArgs: ["--version"],
-    update: { self: ["update"] }
+    update: { self: ["update"] },
+    oneShot: {
+      argv: ["--json"],
+      promptVia: "stdin",
+      outputFormat: "json",
+      usageParser: parseGenericOneShotUsage
+    }
   },
   {
     id: "deepseek",
@@ -15080,7 +15223,13 @@ var BUILTIN_HARNESSES = Object.freeze([
     mode: "either",
     commands: ["deepseek"],
     versionArgs: ["--version"],
-    update: { self: ["update"] }
+    update: { self: ["update"] },
+    oneShot: {
+      argv: ["--json"],
+      promptVia: "stdin",
+      outputFormat: "json",
+      usageParser: parseGenericOneShotUsage
+    }
   },
   {
     id: "grok",
@@ -15090,7 +15239,13 @@ var BUILTIN_HARNESSES = Object.freeze([
     commands: ["grok"],
     versionArgs: ["--version"],
     authArgs: ["models"],
-    update: { self: ["update"] }
+    update: { self: ["update"] },
+    oneShot: {
+      argv: ["--output-format", "json"],
+      promptVia: "stdin",
+      outputFormat: "json",
+      usageParser: parseClaudeOneShotUsage
+    }
   },
   {
     id: "agy",
@@ -15100,7 +15255,13 @@ var BUILTIN_HARNESSES = Object.freeze([
     commands: ["agy"],
     versionArgs: ["--version"],
     authArgs: ["models"],
-    update: { self: ["update"] }
+    update: { self: ["update"] },
+    oneShot: {
+      argv: ["-p", "--output-format", "json"],
+      promptVia: "stdin",
+      outputFormat: "json",
+      usageParser: parseGenericOneShotUsage
+    }
   }
 ]);
 var BUILTIN_HARNESS_IDS = BUILTIN_HARNESSES.map((entry) => entry.id);
@@ -21646,6 +21807,294 @@ function createVnextPiProducer(options = {}) {
   registerTrustedProducer(producer);
   return producer;
 }
+
+// plugins/kxm/src/vnext-oneshot-producer.ts
+import { spawn as spawn3 } from "node:child_process";
+function determineOutcome2(text, allowedOutcomes) {
+  const normalized = text.trim();
+  const jsonMatch = /"outcome"\s*:\s*"([^"]+)"/.exec(normalized);
+  if (jsonMatch && allowedOutcomes.includes(jsonMatch[1])) {
+    return jsonMatch[1];
+  }
+  for (const outcome of allowedOutcomes) {
+    const regex = new RegExp(`\\b${outcome}\\b`, "i");
+    if (regex.test(normalized)) {
+      return outcome;
+    }
+  }
+  if (allowedOutcomes.includes("passed")) return "passed";
+  return allowedOutcomes[0] ?? "completed";
+}
+function defaultSpawn(command, args, options) {
+  return new Promise((resolve5) => {
+    let stdout = "";
+    let stderr = "";
+    let killed = false;
+    const child = spawn3(command, [...args], {
+      cwd: options.cwd,
+      env: options.env ?? process.env,
+      stdio: ["pipe", "pipe", "pipe"],
+      windowsHide: true
+    });
+    if (options.signal) {
+      if (options.signal.aborted) {
+        child.kill();
+        return resolve5({ stdout: "", stderr: "aborted", code: null, error: new Error("process_aborted") });
+      }
+      const onAbort = () => {
+        killed = true;
+        child.kill();
+      };
+      options.signal.addEventListener("abort", onAbort, { once: true });
+      child.on("close", () => options.signal?.removeEventListener("abort", onAbort));
+    }
+    if (options.timeoutMs && options.timeoutMs > 0) {
+      const timer = setTimeout(() => {
+        killed = true;
+        child.kill();
+      }, options.timeoutMs);
+      child.on("close", () => clearTimeout(timer));
+    }
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", (err) => {
+      resolve5({ stdout, stderr, code: null, error: err });
+    });
+    child.on("close", (code) => {
+      resolve5({
+        stdout,
+        stderr,
+        code,
+        ...killed ? { error: new Error("process_aborted") } : {}
+      });
+    });
+    if (options.input !== void 0) {
+      child.stdin.write(options.input);
+      child.stdin.end();
+    } else {
+      child.stdin.end();
+    }
+  });
+}
+function createVnextOneShotProducer(options = {}) {
+  const defaultHarness = options.defaultHarness ?? "claude";
+  function resolveHarnessForRequest(request) {
+    if (request.harness) return request.harness;
+    if (options.resolveHarness) {
+      const resolved = options.resolveHarness(request.agentId, request.runId);
+      if (resolved) return resolved;
+    }
+    if (options.resolveModel) {
+      const resolved = options.resolveModel(request.agentId, request.runId);
+      if (resolved?.harness) return resolved.harness;
+    }
+    return defaultHarness;
+  }
+  function parseModelString(spec, harness) {
+    const trimmed = spec.trim();
+    if (trimmed.includes("/")) {
+      const idx = trimmed.indexOf("/");
+      return { provider: trimmed.slice(0, idx).toLowerCase(), model: trimmed.slice(idx + 1) };
+    }
+    const fallbackProvider = NATIVE_HARNESS_PROVIDERS[harness] ?? options.defaultProvider ?? "anthropic";
+    return { provider: fallbackProvider, model: trimmed };
+  }
+  function resolveModelForRequest(request, harness) {
+    if (request.model) {
+      const parsed2 = parseModelString(request.model, harness);
+      return {
+        provider: request.provider?.toLowerCase() ?? parsed2.provider,
+        model: parsed2.model,
+        thinking: request.thinking
+      };
+    }
+    if (options.resolveModel) {
+      const resolved = options.resolveModel(request.agentId, request.runId);
+      if (resolved && resolved.model) {
+        const parsed2 = parseModelString(resolved.model, harness);
+        return {
+          provider: resolved.provider?.toLowerCase() ?? parsed2.provider,
+          model: parsed2.model,
+          thinking: resolved.thinking
+        };
+      }
+    }
+    const defaultModel = options.defaultModel ?? (harness === "codex" ? "gpt-5.6-sol" : "claude-3-7-sonnet");
+    const parsed = parseModelString(defaultModel, harness);
+    return { provider: parsed.provider, model: parsed.model, thinking: request.thinking };
+  }
+  function checkAuth(harness, provider, model) {
+    if (options.inventory) {
+      const entry = options.inventory.harnesses.find((h) => h.id === harness);
+      if (!entry || !entry.detected || entry.authenticated !== true) {
+        throw new Error(`${harness}_not_authenticated: ${harness} harness not authenticated in inventory`);
+      }
+    }
+    const probeFn = options.probeHarness ?? probeHarnessAssignment;
+    const probe = probeFn({
+      harness,
+      provider,
+      model,
+      env: options.env
+    });
+    if (!probe.detected) {
+      throw new Error(`${harness}_not_authenticated: ${harness} harness not detected (${probe.issues.join(", ")})`);
+    }
+    if (probe.authenticated !== true) {
+      throw new Error(`${harness}_not_authenticated: ${harness} not authenticated (${probe.issues.join(", ")})`);
+    }
+  }
+  const producer = {
+    id: "oneshot",
+    async produce(request) {
+      const startTime = Date.now();
+      const harness = resolveHarnessForRequest(request);
+      const resolved = resolveModelForRequest(request, harness);
+      checkAuth(harness, resolved.provider, resolved.model);
+      const catalogEntry = (options.catalog ?? BUILTIN_HARNESSES).find((h) => h.id === harness);
+      if (!catalogEntry || !catalogEntry.oneShot) {
+        throw new Error(`oneshot_harness_unsupported: ${harness}`);
+      }
+      const command = catalogEntry.commands[0] ?? harness;
+      const oneShot = catalogEntry.oneShot;
+      let args;
+      if (harness === "claude") {
+        args = [
+          "-p",
+          "--model",
+          resolved.model,
+          ...resolved.thinking ? ["--effort", resolved.thinking] : [],
+          "--output-format",
+          "json"
+        ];
+      } else if (harness === "codex") {
+        args = [
+          "exec",
+          "-m",
+          resolved.model,
+          ...resolved.thinking ? ["-c", `model_reasoning_effort="${resolved.thinking}"`] : [],
+          "--json",
+          "-"
+        ];
+      } else {
+        args = [
+          ...oneShot.argv,
+          "--model",
+          resolved.model,
+          ...resolved.thinking ? ["--thinking", resolved.thinking] : []
+        ];
+      }
+      const promptMessage = request.prompt ?? `Execute step ${request.stepId} (attempt ${request.stepAttempt}) for agent ${request.agentId}. Allowed outcomes: ${request.allowedOutcomes.join(", ")}.`;
+      let input;
+      if (oneShot.promptVia === "stdin") {
+        input = promptMessage;
+      } else {
+        args.push(promptMessage);
+      }
+      if (request.signal?.aborted) {
+        const outcome2 = request.allowedOutcomes.includes("cancelled") ? "cancelled" : request.allowedOutcomes.includes("failed") ? "failed" : request.allowedOutcomes[0];
+        return {
+          outcome: outcome2,
+          costBasis: "unknown",
+          costUsd: null,
+          latencyMs: 0,
+          harness,
+          provider: resolved.provider,
+          requestedModel: resolved.model,
+          effectiveModel: resolved.model,
+          agentRole: request.agentRole ?? request.agentId
+        };
+      }
+      const spawnFn = options.spawnProcess ?? defaultSpawn;
+      const procResult = await spawnFn(command, args, {
+        cwd: options.projectRoot ?? process.cwd(),
+        env: options.env,
+        input,
+        timeoutMs: options.timeoutMs,
+        signal: request.signal
+      });
+      if (request.signal?.aborted || procResult.error?.message === "process_aborted") {
+        const outcome2 = request.allowedOutcomes.includes("cancelled") ? "cancelled" : request.allowedOutcomes.includes("failed") ? "failed" : request.allowedOutcomes[0];
+        return {
+          outcome: outcome2,
+          costBasis: "unknown",
+          costUsd: null,
+          latencyMs: Math.max(0, Date.now() - startTime),
+          harness,
+          provider: resolved.provider,
+          requestedModel: resolved.model,
+          effectiveModel: resolved.model,
+          agentRole: request.agentRole ?? request.agentId
+        };
+      }
+      const parsed = oneShot.usageParser(procResult.stdout, procResult.stderr);
+      let outcome;
+      if (parsed.isError) {
+        outcome = request.allowedOutcomes.includes("failed") ? "failed" : request.allowedOutcomes[0];
+      } else {
+        outcome = determineOutcome2(parsed.text || procResult.stdout, request.allowedOutcomes);
+      }
+      const latencyMs = Math.max(0, Date.now() - startTime);
+      const usage = parsed.usage;
+      const tokensIn = typeof usage?.tokensIn === "number" ? usage.tokensIn : null;
+      const tokensOut = typeof usage?.tokensOut === "number" ? usage.tokensOut : null;
+      const cacheReadTokens = typeof usage?.cacheReadTokens === "number" ? usage.cacheReadTokens : null;
+      const cacheWriteTokens = typeof usage?.cacheWriteTokens === "number" ? usage.cacheWriteTokens : null;
+      const contextTokens = typeof usage?.contextTokens === "number" ? usage.contextTokens : tokensIn;
+      const catalog = options.priceCatalog ?? loadPriceCatalog(options.projectRoot ?? process.cwd());
+      let costBasis = "unknown";
+      let costUsd = null;
+      let priceRef;
+      if (catalog) {
+        const calculated = calculateModelCost(catalog, {
+          model: resolved.model,
+          provider: resolved.provider,
+          tokensIn,
+          tokensOut,
+          cacheReadTokens,
+          cacheWriteTokens,
+          contextTokens
+        });
+        if (calculated) {
+          costBasis = "metered";
+          costUsd = calculated.costUsd;
+          priceRef = calculated.priceRef;
+        }
+      }
+      if (costBasis === "unknown" && (harness === "claude" || harness === "codex")) {
+        costBasis = "unmetered";
+        costUsd = null;
+        priceRef = `subscription:${harness}`;
+      }
+      return {
+        outcome,
+        costBasis,
+        costUsd,
+        tokensIn,
+        tokensOut,
+        cacheReadTokens,
+        cacheWriteTokens,
+        contextTokens,
+        latencyMs,
+        harness,
+        provider: resolved.provider,
+        requestedModel: resolved.model,
+        effectiveModel: resolved.model,
+        ...resolved.thinking !== void 0 ? { thinking: resolved.thinking } : {},
+        agentRole: request.agentRole ?? request.agentId,
+        ...priceRef !== void 0 ? { priceRef } : {}
+      };
+    },
+    async close() {
+    }
+  };
+  registerTrustedProducer(producer);
+  return producer;
+}
 export {
   PiSession,
   VNEXT_ABSENT_MEMORY_REVISION,
@@ -21660,7 +22109,9 @@ export {
   cancelVnextRun,
   closeVnextRuntimeContext,
   computeGateEvidenceOutcome,
+  createVnextOneShotProducer,
   createVnextPiProducer,
+  defaultSpawn,
   ensureVnextSupervisor,
   foldStoredVnextRun,
   formatPiSessionDisplayName,
