@@ -13,6 +13,9 @@ import {
   DEFAULT_HARNESS,
   eligibleHarnesses,
   formatHarnessInventory,
+  harnessCommandCandidates,
+  harnessSpawnUsesShell,
+  isWindowsHarnessShim,
   planHarnessUpdate,
   probeHarnessAssignment,
   probeHarnesses,
@@ -67,6 +70,89 @@ function issueCodes(error: unknown): string[] {
 test("builtin catalog defaults to headless Pi and lists known harnesses", () => {
   assert.equal(DEFAULT_HARNESS, "pi");
   assert.deepEqual([...BUILTIN_HARNESS_IDS], ["pi", "claude", "kimi", "codex", "gemini", "deepseek", "grok", "agy"]);
+});
+
+test("win32 harness probe tries .exe then npm .cmd after a missing bare command", () => {
+  assert.deepEqual([...harnessCommandCandidates("claude", "linux")], ["claude"]);
+  assert.deepEqual([...harnessCommandCandidates("claude", "win32")], ["claude", "claude.exe", "claude.cmd"]);
+  assert.deepEqual([...harnessCommandCandidates("claude.exe", "win32")], ["claude.exe"]);
+  assert.equal(harnessSpawnUsesShell("claude", "win32"), false);
+  assert.equal(harnessSpawnUsesShell("claude.cmd", "win32"), true);
+  assert.equal(harnessSpawnUsesShell("claude.cmd", "linux"), false);
+  assert.equal(harnessSpawnUsesShell("claude.cmd & calc.exe", "win32"), false);
+  assert.equal(isWindowsHarnessShim("claude.cmd"), true);
+  assert.equal(isWindowsHarnessShim("claude"), false);
+
+  const recorded = recordingRunner({
+    "claude --version": { ok: false, code: null, stdout: "", stderr: "", error: "ENOENT" },
+    "claude.exe --version": { ok: false, code: null, stdout: "", stderr: "", error: "ENOENT" },
+    "claude.cmd --version": { ok: true, code: 0, stdout: "2.1.263 (Claude Code)\n", stderr: "" },
+    "claude.cmd auth status": {
+      ok: true,
+      code: 0,
+      stdout: JSON.stringify({ loggedIn: true, authMethod: "claude.ai" }),
+      stderr: "",
+    },
+  });
+  const inventory = probeHarnesses({
+    platform: "win32",
+    runCommand: recorded.runCommand,
+  });
+  const claude = status(inventory, "claude");
+  assert.equal(claude.detected, true);
+  assert.equal(claude.command, "claude.cmd");
+  assert.equal(claude.authenticated, true);
+  assert.equal(claude.dispatch?.status, "yes");
+  assert(claude.issues.includes("windows_shim"));
+  const piShim = probeHarnesses({
+    platform: "win32",
+    runCommand: runner({
+      "pi --version": { ok: false, code: null, stdout: "", stderr: "", error: "ENOENT" },
+      "pi.exe --version": { ok: false, code: null, stdout: "", stderr: "", error: "ENOENT" },
+      "pi.cmd --version": { ok: true, code: 0, stdout: "0.85.1\n", stderr: "" },
+    }),
+  });
+  assert.equal(status(piShim, "pi").detected, true);
+  assert.equal(status(piShim, "pi").command, "pi.cmd");
+  assert.equal(status(piShim, "pi").dispatch?.reason, "auth_context_required");
+  assert(status(piShim, "pi").issues.includes("windows_shim"));
+  assert.deepEqual(recorded.calls.filter((call) => call.startsWith("claude")), [
+    "claude --version",
+    "claude.exe --version",
+    "claude.cmd --version",
+    "claude.cmd auth status",
+  ]);
+
+  const linux = probeHarnesses({
+    platform: "linux",
+    runCommand: runner({
+      "claude --version": { ok: false, code: null, stdout: "", stderr: "", error: "ENOENT" },
+    }),
+  });
+  assert.equal(status(linux, "claude").detected, false);
+  assert.equal(status(linux, "claude").dispatch?.reason, "not_detected");
+});
+
+test("win32 assignment probe uses the npm .cmd shim for Claude Code", () => {
+  const probed = probeHarnessAssignment({
+    harness: "claude",
+    platform: "win32",
+    runCommand: runner({
+      "claude --version": { ok: false, code: null, stdout: "", stderr: "", error: "ENOENT" },
+      "claude.exe --version": { ok: false, code: null, stdout: "", stderr: "", error: "ENOENT" },
+      "claude.cmd --version": { ok: true, code: 0, stdout: "2.1.263\n", stderr: "" },
+      "claude.cmd auth status": {
+        ok: true,
+        code: 0,
+        stdout: JSON.stringify({ loggedIn: true, authMethod: "console" }),
+        stderr: "",
+      },
+    }),
+  });
+  assert.equal(probed.detected, true);
+  assert.equal(probed.command, "claude.cmd");
+  assert.equal(probed.authenticated, true);
+  assert(probed.issues.includes("windows_shim"));
 });
 
 test("probe reports detect/auth without a preferences overlay", () => {
