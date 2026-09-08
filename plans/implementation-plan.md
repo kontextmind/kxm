@@ -709,6 +709,8 @@ It does not replace the phase gates below.
 
 - **SQLite sidecar symlink TOCTOU race (issue #115):** Replaced two-call `existsSync` + `lstatSync` checks on SQLite database files and `-wal`/`-shm` sidecars in `plugins/kxm/src/vnext-runtime-store.ts` and supervisor token/error files in `plugins/kxm/src/vnext-runtime-supervisor.ts` with atomic `lstatSync(..., { throwIfNoEntry: false })`. Closes TOCTOU race where SQLite deletes ephemeral sidecars on connection close, crashing with `ENOENT` during concurrent status reads. Verified symlink rejections on main database, sidecars, and token files.
 
+- **E1: session brief contract (issue #98):** Schema `kxm.session-brief.v1` (`schemas/vnext/session-brief.schema.json`) with `schema`, `generatedAt`, `staleSeconds`, `source`, `hub` (state + evidence kind), `stats`, `tasks`, `plans`, `statusLine`, `widgetLines`, optional `cost`, and optional `sessionToken`. One renderer `renderStatusLine` capped at 80 columns with `…` truncation; three callers (`kxm session brief --status`, Pi status slot, and `/kxm status`) produce identical status lines. Hub probe with 300 ms abort to `unknown` returns in under 1 s on blackholed URLs. Cached at `.kxm/state/session-brief.json` with 5 s TTL. Git ship counts against merge base (`origin/HEAD`, `main`, `master`) when no upstream is configured (renders `2 local` on fresh branch). Second status key retired; repaints on `turn_end`. Claude plugin `statusLine` command and `SessionStart` command hook. `kxm session brief --token` issues interactive session token with `operator` preset.
+
 ### Still open
 
 - **After merge:** rewrite `Source:` links in slice issues #84–#103 to the moved plan paths.
