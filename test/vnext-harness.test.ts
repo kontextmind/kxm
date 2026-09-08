@@ -692,3 +692,60 @@ test("probeHarnessesForModel supplies model context across inventory and satisfi
   assert.deepEqual([...eligible], ["pi"]);
 });
 
+test("probeHarnesses reports dispatch status with reasons across inventory", () => {
+  const inventory = probeHarnesses({
+    runCommand: runner({
+      "pi --version": { ok: true, code: 0, stdout: "0.85.1\n", stderr: "" },
+      "claude --version": { ok: true, code: 0, stdout: "2.1.260\n", stderr: "" },
+      "claude auth status": { ok: true, code: 0, stdout: JSON.stringify({ loggedIn: true }), stderr: "" },
+      "kimi --version": { ok: true, code: 0, stdout: "1.0.0\n", stderr: "" },
+      "codex --version": { ok: true, code: 0, stdout: "0.1.0\n", stderr: "" },
+      "codex login status": { ok: true, code: 0, stdout: "", stderr: "Logged in using ChatGPT\n" },
+      "gemini --version": { ok: true, code: 0, stdout: "0.1.0\n", stderr: "" },
+      "grok --version": { ok: true, code: 0, stdout: "0.1.0\n", stderr: "" },
+      "grok models": { ok: true, code: 0, stdout: "You are logged in with grok.com.\nAvailable models:\ngrok-4.6\n", stderr: "" },
+      "agy --version": { ok: true, code: 0, stdout: "1.0.0\n", stderr: "" },
+      "agy models": { ok: true, code: 0, stdout: "gemini-2.5-pro\tGemini 2.5 Pro\n", stderr: "" },
+    }),
+  });
+
+  const pi = status(inventory, "pi");
+  assert.equal(pi.dispatch?.status, "no");
+  assert.equal(pi.dispatch?.reason, "auth_context_required");
+
+  const claude = status(inventory, "claude");
+  assert.equal(claude.dispatch?.status, "yes");
+  assert.equal(claude.dispatch?.supported, true);
+
+  const kimi = status(inventory, "kimi");
+  assert.equal(kimi.dispatch?.status, "no");
+  assert.equal(kimi.dispatch?.reason, "auth_unknown");
+
+  const codex = status(inventory, "codex");
+  assert.equal(codex.dispatch?.status, "yes");
+  assert.equal(codex.dispatch?.supported, true);
+
+  const gemini = status(inventory, "gemini");
+  assert.equal(gemini.dispatch?.status, "no");
+  assert.equal(gemini.dispatch?.reason, "deprecated_client");
+
+  const deepseek = status(inventory, "deepseek");
+  assert.equal(deepseek.dispatch?.status, "no");
+  assert.equal(deepseek.dispatch?.reason, "not_detected");
+
+  const grok = status(inventory, "grok");
+  assert.equal(grok.dispatch?.status, "yes");
+  assert.equal(grok.dispatch?.supported, true);
+
+  const agy = status(inventory, "agy");
+  assert.equal(agy.dispatch?.status, "yes");
+  assert.equal(agy.dispatch?.supported, true);
+
+  const formatted = formatHarnessInventory(inventory);
+  assert.match(formatted, /dispatch/);
+  assert.match(formatted, /gemini\s+no\s+yes\s+unknown\s+no \(deprecated_client\)/);
+  assert.match(formatted, /deepseek\s+no\s+no\s+no\s+no \(not_detected\)/);
+  assert.match(formatted, /agy\s+no\s+yes\s+yes\s+yes/);
+});
+
+

@@ -193,6 +193,21 @@ It does not replace the phase gates below.
 
 ### Landed in this tree (unreleased)
 
+- **E4c Kimi CLI and agy verification (issue #95):** Verified Kimi CLI and
+  Antigravity CLI (`agy`) as one-shot adapter members. Added `HarnessDispatchStatus`
+  (`status: "yes" | "no"`, `supported: boolean`, `reason?: string`) across
+  `HarnessStatus` and formatted table output in `kxm harness list` (and `--json`),
+  transparently reporting dispatchability and reason per harness. Implemented
+  `parseKimiOneShotUsage` handling stream-json NDJSON assistant/meta chunks with
+  null tokens and `costBasis: "unknown"`. Implemented `parseAgyOneShotUsage`
+  handling Antigravity JSON payloads (`status`, `response`, `error`, `usage: {
+  input_tokens, output_tokens, cache_read_tokens, total_tokens }`), mapping
+  unmetered runs to `subscription:agy`. Deprecated `gemini` CLI remains
+  fail-closed without `oneShot` configuration and non-dispatchable with reason
+  `deprecated_client` ("Gemini CLI is deprecated; use agy for Google models").
+  Exported harness definitions in `plugins/kxm/src/runtime.ts` and verified with
+  mock spawn tests, fake dispatch, auth refusal, and comprehensive inventory
+  dispatch reporting (`test/vnext-harness.test.ts`, `test/vnext-oneshot-producer.test.ts`).
 - **E4b one-shot adapter: Claude and Codex (issue #94):** Implemented generic
   one-shot CLI producer in `plugins/kxm/src/vnext-oneshot-producer.ts` driving
   planner, reviewer, and other roles through Claude, Codex, and catalog-configured

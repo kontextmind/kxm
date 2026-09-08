@@ -244,7 +244,8 @@ export function createVnextOneShotProducer(options: VnextOneShotProducerOptions 
 
       const catalogEntry = (options.catalog ?? BUILTIN_HARNESSES).find((h) => h.id === harness);
       if (!catalogEntry || !catalogEntry.oneShot) {
-        throw new Error(`oneshot_harness_unsupported: ${harness}`);
+        const hint = harness === "gemini" ? " (Gemini CLI is deprecated; use agy for Google models)" : "";
+        throw new Error(`oneshot_harness_unsupported: ${harness}${hint}`);
       }
 
       const command = catalogEntry.commands[0] ?? harness;
@@ -268,6 +269,23 @@ export function createVnextOneShotProducer(options: VnextOneShotProducerOptions 
           ...(resolved.thinking ? ["-c", `model_reasoning_effort="${resolved.thinking}"`] : []),
           "--json",
           "-",
+        ];
+      } else if (harness === "kimi") {
+        args = [
+          "--output-format",
+          "stream-json",
+          "-m",
+          resolved.model,
+          "-p",
+        ];
+      } else if (harness === "agy") {
+        args = [
+          "--output-format",
+          "json",
+          ...(resolved.thinking ? ["--effort", resolved.thinking] : []),
+          "--model",
+          resolved.model,
+          "-p",
         ];
       } else {
         args = [
@@ -370,7 +388,7 @@ export function createVnextOneShotProducer(options: VnextOneShotProducerOptions 
         }
       }
 
-      if (costBasis === "unknown" && (harness === "claude" || harness === "codex")) {
+      if (costBasis === "unknown" && (harness === "claude" || harness === "codex" || harness === "agy")) {
         costBasis = "unmetered";
         costUsd = null;
         priceRef = `subscription:${harness}`;

@@ -15131,6 +15131,85 @@ function parseGenericOneShotUsage(stdout, _stderr) {
   }
   return { text: trimmed, usage: {} };
 }
+function parseKimiOneShotUsage(stdout, _stderr) {
+  const trimmed = stdout.trim();
+  const assistantTexts = [];
+  let isError = false;
+  let errorMessage;
+  for (const line of trimmed.split("\n")) {
+    const lineTrimmed = line.trim();
+    if (!lineTrimmed) continue;
+    try {
+      const parsed = JSON.parse(lineTrimmed);
+      if (parsed && typeof parsed === "object") {
+        const rec = parsed;
+        if (rec.role === "assistant" && typeof rec.content === "string") {
+          assistantTexts.push(rec.content);
+        } else if (rec.role === "error" || rec.type === "error") {
+          isError = true;
+          errorMessage = typeof rec.message === "string" ? rec.message : typeof rec.content === "string" ? rec.content : "kimi_error";
+        }
+      }
+    } catch {
+    }
+  }
+  const text = assistantTexts.length > 0 ? assistantTexts.join("\n") : trimmed;
+  return {
+    text,
+    isError,
+    errorMessage,
+    usage: {
+      tokensIn: null,
+      tokensOut: null,
+      cacheReadTokens: null,
+      cacheWriteTokens: null,
+      contextTokens: null,
+      costUsd: null
+    }
+  };
+}
+function parseAgyOneShotUsage(stdout, _stderr) {
+  const trimmed = stdout.trim();
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const rec = parsed;
+      const text = typeof rec.response === "string" ? rec.response : typeof rec.result === "string" ? rec.result : trimmed;
+      const isError = rec.status === "ERROR";
+      const rawError = rec.error;
+      const errorMessage = isError ? typeof rawError === "string" ? rawError : typeof rawError?.message === "string" ? rawError.message : "agy_error" : void 0;
+      const usageRec = rec.usage && typeof rec.usage === "object" ? rec.usage : {};
+      const tokensIn = typeof usageRec.input_tokens === "number" ? usageRec.input_tokens : null;
+      const tokensOut = typeof usageRec.output_tokens === "number" ? usageRec.output_tokens : null;
+      const cacheReadTokens = typeof usageRec.cache_read_tokens === "number" ? usageRec.cache_read_tokens : null;
+      const contextTokens = typeof usageRec.total_tokens === "number" ? usageRec.total_tokens : tokensIn;
+      return {
+        text,
+        isError,
+        errorMessage,
+        usage: {
+          tokensIn,
+          tokensOut,
+          cacheReadTokens,
+          cacheWriteTokens: null,
+          contextTokens,
+          costUsd: null
+        }
+      };
+    }
+  } catch {
+  }
+  return {
+    text: trimmed,
+    usage: {
+      tokensIn: null,
+      tokensOut: null,
+      cacheReadTokens: null,
+      cacheWriteTokens: null,
+      contextTokens: null
+    }
+  };
+}
 var BUILTIN_HARNESSES = Object.freeze([
   {
     id: "pi",
@@ -15179,10 +15258,10 @@ var BUILTIN_HARNESSES = Object.freeze([
     versionArgs: ["--version"],
     update: { self: ["upgrade"] },
     oneShot: {
-      argv: ["--json"],
-      promptVia: "stdin",
-      outputFormat: "json",
-      usageParser: parseGenericOneShotUsage
+      argv: ["--output-format", "stream-json", "-p"],
+      promptVia: "arg",
+      outputFormat: "stream-json",
+      usageParser: parseKimiOneShotUsage
     }
   },
   {
@@ -15208,13 +15287,7 @@ var BUILTIN_HARNESSES = Object.freeze([
     mode: "either",
     commands: ["gemini"],
     versionArgs: ["--version"],
-    update: { self: ["update"] },
-    oneShot: {
-      argv: ["--json"],
-      promptVia: "stdin",
-      outputFormat: "json",
-      usageParser: parseGenericOneShotUsage
-    }
+    update: { self: ["update"] }
   },
   {
     id: "deepseek",
@@ -15257,10 +15330,10 @@ var BUILTIN_HARNESSES = Object.freeze([
     authArgs: ["models"],
     update: { self: ["update"] },
     oneShot: {
-      argv: ["-p", "--output-format", "json"],
-      promptVia: "stdin",
+      argv: ["--output-format", "json", "-p"],
+      promptVia: "arg",
       outputFormat: "json",
-      usageParser: parseGenericOneShotUsage
+      usageParser: parseAgyOneShotUsage
     }
   }
 ]);
@@ -15297,6 +15370,11 @@ function defaultRunner(env) {
 function firstLine(text) {
   const line = text.split(/\r?\n/).map((candidate) => candidate.trim()).find(Boolean);
   return line && line.length <= 200 ? line : void 0;
+}
+function boundText(text, max = 4e3) {
+  const trimmed = text.trim();
+  if (!trimmed) return void 0;
+  return trimmed.length <= max ? trimmed : `${trimmed.slice(0, max)}\u2026`;
 }
 function authLines(result) {
   return `${result.stdout}
@@ -15365,6 +15443,25 @@ ${result.stderr}`;
   }
   return { authenticated: null, issues: ["auth_unparsed"] };
 }
+function resolveDispatchStatus(entry, detected, authenticated, issues) {
+  if (!detected) {
+    return { status: "no", supported: false, reason: "not_detected" };
+  }
+  if (entry.id !== "pi" && !entry.oneShot) {
+    return {
+      status: "no",
+      supported: false,
+      reason: entry.id === "gemini" ? "deprecated_client" : "no_headless_mode"
+    };
+  }
+  if (authenticated === false) {
+    return { status: "no", supported: false, reason: "not_authenticated" };
+  }
+  if (authenticated === null) {
+    return { status: "no", supported: false, reason: issues[0] ?? "auth_unknown" };
+  }
+  return { status: "yes", supported: true };
+}
 function probeEntry(entry, runCommand, timeoutMs) {
   const issues = [];
   let detected = false;
@@ -15392,6 +15489,7 @@ function probeEntry(entry, runCommand, timeoutMs) {
     authenticated = parsed.authenticated;
     issues.push(...parsed.issues);
   }
+  const dispatch = resolveDispatchStatus(entry, detected, authenticated, issues);
   return {
     id: entry.id,
     label: entry.label,
@@ -15399,6 +15497,7 @@ function probeEntry(entry, runCommand, timeoutMs) {
     mode: entry.mode,
     detected,
     authenticated,
+    dispatch,
     ...command ? { command } : {},
     ...version ? { version } : {},
     canUpdate: {
@@ -15408,6 +15507,19 @@ function probeEntry(entry, runCommand, timeoutMs) {
     },
     issues
   };
+}
+function probeHarnesses(options = {}) {
+  const timeoutMs = options.timeoutMs ?? 3e3;
+  const runCommand = options.runCommand ?? defaultRunner(options.env ?? process.env);
+  return {
+    defaultHarness: DEFAULT_HARNESS,
+    harnesses: BUILTIN_HARNESSES.map((entry) => probeEntry(entry, runCommand, timeoutMs))
+  };
+}
+function eligibleHarnesses(inventory) {
+  const eligible = inventory.harnesses.filter((entry) => entry.detected && entry.authenticated === true).map((entry) => entry.id);
+  if (eligible.length === 0) throw new Error("no_authenticated_harness");
+  return eligible;
 }
 function validateHarnessModelPair(harnessId, modelSpec) {
   if (!isKnownHarnessId(harnessId)) {
@@ -15513,6 +15625,7 @@ function probeHarnessAssignment(options) {
       mode: "either",
       detected: false,
       authenticated: false,
+      dispatch: { status: "no", supported: false, reason: "harness_unknown" },
       canUpdate: { self: false, extensions: false, models: false },
       issues: ["harness_unknown"]
     };
@@ -15527,6 +15640,7 @@ function probeHarnessAssignment(options) {
         mode: entry.mode,
         detected: false,
         authenticated: false,
+        dispatch: { status: "no", supported: false, reason: validation.issue ?? "harness_unhosted_model" },
         canUpdate: {
           self: Boolean(entry.update.self.length),
           extensions: Boolean(entry.update.extensions?.length),
@@ -15556,6 +15670,7 @@ function probeHarnessAssignment(options) {
       mode: entry.mode,
       detected: false,
       authenticated: false,
+      dispatch: { status: "no", supported: false, reason: "not_detected" },
       canUpdate: {
         self: Boolean(entry.update.self.length),
         extensions: Boolean(entry.update.extensions?.length),
@@ -15573,6 +15688,7 @@ function probeHarnessAssignment(options) {
         mode: entry.mode,
         detected: true,
         authenticated: null,
+        dispatch: { status: "no", supported: false, reason: "auth_context_required" },
         command,
         ...version ? { version } : {},
         canUpdate: {
@@ -15608,6 +15724,7 @@ ${result.stderr}`)) {
       authenticated = false;
       issues.push("not_authenticated");
     }
+    const dispatch = resolveDispatchStatus(entry, true, authenticated, issues);
     return {
       id: entry.id,
       label: entry.label,
@@ -15615,6 +15732,7 @@ ${result.stderr}`)) {
       mode: entry.mode,
       detected: true,
       authenticated,
+      dispatch,
       command,
       ...version ? { version } : {},
       canUpdate: {
@@ -15626,6 +15744,142 @@ ${result.stderr}`)) {
     };
   }
   return probeEntry(entry, runCommand, timeoutMs);
+}
+function probeHarnessesForModel(modelSpec, options = {}) {
+  const timeoutMs = options.timeoutMs ?? 3e3;
+  const runCommand = options.runCommand ?? defaultRunner(options.env ?? process.env);
+  return {
+    defaultHarness: DEFAULT_HARNESS,
+    harnesses: BUILTIN_HARNESSES.map(
+      (entry) => probeHarnessAssignment({
+        harness: entry.id,
+        provider: modelSpec.provider,
+        model: modelSpec.model,
+        runCommand,
+        timeoutMs
+      })
+    )
+  };
+}
+function scopesFor(scope, entry) {
+  if (scope === "self") return ["self"];
+  if (scope === "extensions") return entry.update.extensions ? ["extensions"] : [];
+  if (scope === "models") return entry.update.models ? ["models"] : [];
+  return [
+    ...entry.update.self.length ? ["self"] : [],
+    ...entry.update.extensions ? ["extensions"] : [],
+    ...entry.update.models ? ["models"] : []
+  ];
+}
+function argsFor(entry, scope) {
+  if (scope === "self") return entry.update.self;
+  if (scope === "extensions") return entry.update.extensions;
+  return entry.update.models;
+}
+function planHarnessUpdate(inventory, requested) {
+  const selected = requested.harness ? inventory.harnesses.filter((entry) => entry.id === requested.harness) : inventory.harnesses.filter((entry) => entry.detected);
+  if (requested.harness && selected.length === 0) {
+    return [{
+      harness: requested.harness,
+      scope: "self",
+      command: requested.harness,
+      args: [],
+      outcome: "skipped",
+      detail: isKnownHarnessId(requested.harness) ? "not_detected" : "unknown_harness"
+    }];
+  }
+  const steps = [];
+  for (const status of selected) {
+    const entry = BUILTIN_HARNESSES.find((candidate) => candidate.id === status.id);
+    if (!entry) continue;
+    const scopes = scopesFor(requested.scope, entry);
+    if (scopes.length === 0) {
+      steps.push({
+        harness: status.id,
+        scope: requested.scope === "all" ? "self" : requested.scope,
+        command: status.command ?? entry.commands[0],
+        args: [],
+        outcome: "skipped",
+        detail: "no_updater"
+      });
+      continue;
+    }
+    if (!status.detected || !status.command) {
+      steps.push({
+        harness: status.id,
+        scope: scopes[0],
+        command: entry.commands[0],
+        args: argsFor(entry, scopes[0]) ?? [],
+        outcome: "skipped",
+        detail: "not_detected"
+      });
+      continue;
+    }
+    for (const scope of scopes) {
+      const args = argsFor(entry, scope) ?? [];
+      steps.push({ harness: status.id, scope, command: status.command, args, outcome: "would" });
+    }
+  }
+  return steps;
+}
+function runHarnessUpdate(steps, options = {}) {
+  if (options.dryRun) return steps.map((step) => ({ ...step, outcome: step.outcome === "would" ? "would" : step.outcome }));
+  const timeoutMs = options.updateTimeoutMs ?? 18e4;
+  const runCommand = options.runCommand ?? defaultRunner(options.env ?? process.env);
+  return steps.map((step) => {
+    if (step.outcome !== "would") return step;
+    const result = runCommand(step.command, step.args, timeoutMs);
+    const detail = boundText(result.stderr) ?? boundText(result.stdout) ?? result.error;
+    return {
+      ...step,
+      outcome: result.ok ? "passed" : "failed",
+      ...result.code !== void 0 && result.code !== null ? { code: result.code } : {},
+      ...detail ? { detail } : {}
+    };
+  });
+}
+function formatHarnessInventory(inventory) {
+  const header = [
+    "id".padEnd(9),
+    "default".padEnd(8),
+    "detected".padEnd(9),
+    "auth".padEnd(8),
+    "dispatch".padEnd(26),
+    "updates"
+  ].join(" ");
+  const rows = inventory.harnesses.map((entry) => {
+    const auth = entry.authenticated === true ? "yes" : entry.authenticated === false ? "no" : "unknown";
+    const dispatchText = entry.dispatch ? entry.dispatch.status === "yes" ? "yes" : `no (${entry.dispatch.reason ?? "unsupported"})` : entry.authenticated === true ? "yes" : "no";
+    const updates = [
+      entry.canUpdate.self ? "self" : void 0,
+      entry.canUpdate.extensions ? "extensions" : void 0,
+      entry.canUpdate.models ? "models" : void 0
+    ].filter(Boolean).join(",") || "none";
+    const apiKeyNote = entry.issues.includes("auth_api_key") ? " API key" : "";
+    return [
+      entry.id.padEnd(9),
+      (entry.default ? "yes" : "no").padEnd(8),
+      (entry.detected ? "yes" : "no").padEnd(9),
+      auth.padEnd(8),
+      dispatchText.padEnd(26),
+      `${updates}${apiKeyNote}`
+    ].join(" ");
+  });
+  return [
+    `default harness: ${inventory.defaultHarness} (omit agent harness: to use headless Pi)`,
+    "enable/disable = Git YAML (.kxm/agents, .kxm/models) or the harness's own plugin CLI",
+    "governed kxm skills are not auto-updated",
+    header,
+    ...rows
+  ].join("\n");
+}
+function formatHarnessUpdate(steps) {
+  if (steps.length === 0) return "nothing to update";
+  return steps.map((step) => {
+    const argv = [step.command, ...step.args].join(" ");
+    const detail = step.detail ? ` (${step.detail})` : "";
+    return `${step.harness} ${step.scope}: ${step.outcome} ${argv}${detail}`;
+  }).join("\n");
 }
 
 // plugins/kxm/src/vnext-config.ts
@@ -21957,7 +22211,8 @@ function createVnextOneShotProducer(options = {}) {
       checkAuth(harness, resolved.provider, resolved.model);
       const catalogEntry = (options.catalog ?? BUILTIN_HARNESSES).find((h) => h.id === harness);
       if (!catalogEntry || !catalogEntry.oneShot) {
-        throw new Error(`oneshot_harness_unsupported: ${harness}`);
+        const hint = harness === "gemini" ? " (Gemini CLI is deprecated; use agy for Google models)" : "";
+        throw new Error(`oneshot_harness_unsupported: ${harness}${hint}`);
       }
       const command = catalogEntry.commands[0] ?? harness;
       const oneShot = catalogEntry.oneShot;
@@ -21979,6 +22234,23 @@ function createVnextOneShotProducer(options = {}) {
           ...resolved.thinking ? ["-c", `model_reasoning_effort="${resolved.thinking}"`] : [],
           "--json",
           "-"
+        ];
+      } else if (harness === "kimi") {
+        args = [
+          "--output-format",
+          "stream-json",
+          "-m",
+          resolved.model,
+          "-p"
+        ];
+      } else if (harness === "agy") {
+        args = [
+          "--output-format",
+          "json",
+          ...resolved.thinking ? ["--effort", resolved.thinking] : [],
+          "--model",
+          resolved.model,
+          "-p"
         ];
       } else {
         args = [
@@ -22065,7 +22337,7 @@ function createVnextOneShotProducer(options = {}) {
           priceRef = calculated.priceRef;
         }
       }
-      if (costBasis === "unknown" && (harness === "claude" || harness === "codex")) {
+      if (costBasis === "unknown" && (harness === "claude" || harness === "codex" || harness === "agy")) {
         costBasis = "unmetered";
         costUsd = null;
         priceRef = `subscription:${harness}`;
@@ -22096,6 +22368,12 @@ function createVnextOneShotProducer(options = {}) {
   return producer;
 }
 export {
+  BUILTIN_HARNESSES,
+  BUILTIN_HARNESS_IDS,
+  DEFAULT_HARNESS,
+  NATIVE_HARNESS_PROVIDERS,
+  PI_ALLOWED_PROVIDERS,
+  PI_NATIVE_BRAKE_PROVIDERS,
   PiSession,
   VNEXT_ABSENT_MEMORY_REVISION,
   VNEXT_EVENT_STORE_SCHEMA_VERSION,
@@ -22112,13 +22390,17 @@ export {
   createVnextOneShotProducer,
   createVnextPiProducer,
   defaultSpawn,
+  eligibleHarnesses,
   ensureVnextSupervisor,
   foldStoredVnextRun,
+  formatHarnessInventory,
+  formatHarnessUpdate,
   formatPiSessionDisplayName,
   formatPiSessionKey,
   gateRowContentHash,
   hashVnextSupervisorToken,
   hashVnextTokenProof,
+  isKnownHarnessId,
   isVnextRuntimeContextClosed,
   newVnextAssignmentId,
   newVnextAttemptId,
@@ -22129,14 +22411,26 @@ export {
   newVnextObservationId,
   newVnextRunId,
   openVnextRuntimeContext,
+  parseAgyOneShotUsage,
+  parseClaudeOneShotUsage,
+  parseCodexOneShotUsage,
+  parseGenericOneShotUsage,
+  parseKimiOneShotUsage,
   persistVnextRunState,
+  planHarnessUpdate,
+  probeHarnessAssignment,
+  probeHarnesses,
+  probeHarnessesForModel,
   projectRuntimeKey,
   readVnextRunStatus,
   readVnextSupervisorToken,
   rebuildVnextRunProjection,
   registerVnextRuntimeCloseHook,
+  resolveDispatchStatus,
+  runHarnessUpdate,
   runtimeError,
   startVnextRuntimeSupervisor,
+  validateHarnessModelPair,
   vnextDeclaredExecutorIds,
   vnextDeclaredRepositoryIds,
   vnextEventBase,

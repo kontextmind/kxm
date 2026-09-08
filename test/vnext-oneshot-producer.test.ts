@@ -24,6 +24,9 @@ import {
   parseClaudeOneShotUsage,
   parseCodexOneShotUsage,
   parseGenericOneShotUsage,
+  parseKimiOneShotUsage,
+  parseAgyOneShotUsage,
+  resolveDispatchStatus,
 } from "../plugins/kxm/src/vnext-harness.ts";
 import { loadPriceCatalog } from "../plugins/kxm/src/prices.ts";
 import { emitCodexArtifacts } from "../scripts/emit-codex-artifacts.mjs";
@@ -736,6 +739,271 @@ test("One-shot producer defaultSpawn integration and option fallbacks", async ()
   await slashProducer.close();
 });
 
+test("parseKimiOneShotUsage parses stream-json events, plain text, and errors", () => {
+  // Multiple stream-json lines with assistant chunks
+  const streamOutput = [
+    JSON.stringify({ role: "meta", type: "system.version", version: "0.41.0" }),
+    JSON.stringify({ role: "assistant", content: "First part of answer." }),
+    JSON.stringify({ role: "assistant", content: "Second part of answer." }),
+    JSON.stringify({ role: "meta", type: "session.resume_hint", session_id: "s1" }),
+  ].join("\n");
+
+  const parsed = parseKimiOneShotUsage(streamOutput, "");
+  assert.equal(parsed.isError, false);
+  assert.equal(parsed.text, "First part of answer.\nSecond part of answer.");
+  assert.equal(parsed.usage?.tokensIn, null);
+  assert.equal(parsed.usage?.tokensOut, null);
+  assert.equal(parsed.usage?.cacheReadTokens, null);
+
+  // Error stream
+  const errorOutput = JSON.stringify({ role: "error", message: "model rate limit reached" });
+  const errorParsed = parseKimiOneShotUsage(errorOutput, "");
+  assert.equal(errorParsed.isError, true);
+  assert.equal(errorParsed.errorMessage, "model rate limit reached");
+
+  // Fallback plain text
+  const plainParsed = parseKimiOneShotUsage("Plain text answer from kimi", "");
+  assert.equal(plainParsed.text, "Plain text answer from kimi");
+  assert.equal(plainParsed.isError, false);
+  assert.equal(plainParsed.usage?.tokensIn, null);
+});
+
+test("parseAgyOneShotUsage parses Antigravity JSON payload, usage, and errors", () => {
+  const successOutput = JSON.stringify({
+    conversation_id: "agy-conv-123",
+    status: "SUCCESS",
+    response: "Analysis complete. All requirements satisfied.",
+    duration_seconds: 2.5,
+    num_turns: 1,
+    usage: {
+      input_tokens: 45,
+      output_tokens: 30,
+      cache_read_tokens: 15,
+      total_tokens: 90,
+    },
+  });
+
+  const parsed = parseAgyOneShotUsage(successOutput, "");
+  assert.equal(parsed.isError, false);
+  assert.equal(parsed.text, "Analysis complete. All requirements satisfied.");
+  assert.equal(parsed.usage?.tokensIn, 45);
+  assert.equal(parsed.usage?.tokensOut, 30);
+  assert.equal(parsed.usage?.cacheReadTokens, 15);
+  assert.equal(parsed.usage?.contextTokens, 90);
+
+  // Error output
+  const errorOutput = JSON.stringify({
+    conversation_id: "agy-err",
+    status: "ERROR",
+    error: "timeout waiting for response",
+    response: "",
+  });
+  const errorParsed = parseAgyOneShotUsage(errorOutput, "");
+  assert.equal(errorParsed.isError, true);
+  assert.equal(errorParsed.errorMessage, "timeout waiting for response");
+
+  // Fallback plain text
+  const plainParsed = parseAgyOneShotUsage("Plain text agy response", "");
+  assert.equal(plainParsed.text, "Plain text agy response");
+  assert.equal(plainParsed.usage?.tokensIn, null);
+});
+
+test("Kimi one-shot producer dispatches with stream-json and marks tokens null / cost unknown", async () => {
+  const fakeAuth = () => ({ detected: true, authenticated: true as const, issues: [] });
+
+  let capturedArgs: readonly string[] = [];
+  const kimiProducer = createVnextOneShotProducer({
+    defaultHarness: "kimi",
+    probeHarness: fakeAuth as any,
+    spawnProcess: async (cmd, args) => {
+      capturedArgs = args;
+      return {
+        stdout: [
+          JSON.stringify({ role: "meta", type: "system.version", version: "0.41.0" }),
+          JSON.stringify({ role: "assistant", content: '{"outcome": "passed"}' }),
+        ].join("\n"),
+        stderr: "",
+        code: 0,
+      };
+    },
+  });
+
+  try {
+    const res = await kimiProducer.produce({
+      runId: "run_kimi_1",
+      stepId: "step_kimi",
+      stepAttempt: 1,
+      assignmentId: "asg_kimi",
+      attemptId: "att_kimi",
+      agentId: "portability_reviewer",
+      capability: "secret",
+      allowedOutcomes: ["passed", "failed"],
+      model: "kimi-k2",
+      prompt: "Review Windows path portability",
+      signal: new AbortController().signal,
+    });
+
+    assert.equal(res.harness, "kimi");
+    assert.equal(res.outcome, "passed");
+    assert.equal(res.tokensIn, null);
+    assert.equal(res.tokensOut, null);
+    assert.equal(res.costBasis, "unknown");
+    assert.equal(res.costUsd, null);
+
+    // Verify args sent to kimi CLI: -m kimi-k2 -p <prompt>
+    assert.ok(capturedArgs.includes("-m"));
+    assert.ok(capturedArgs.includes("kimi-k2"));
+    assert.ok(capturedArgs.includes("-p"));
+    assert.ok(capturedArgs.includes("Review Windows path portability"));
+  } finally {
+    await kimiProducer.close();
+  }
+});
+
+test("agy (Antigravity) one-shot producer dispatches with JSON and records tokens and subscription pricing", async () => {
+  const fakeAuth = () => ({ detected: true, authenticated: true as const, issues: [] });
+
+  let capturedArgs: readonly string[] = [];
+  const agyProducer = createVnextOneShotProducer({
+    defaultHarness: "agy",
+    probeHarness: fakeAuth as any,
+    spawnProcess: async (cmd, args) => {
+      capturedArgs = args;
+      return {
+        stdout: JSON.stringify({
+          conversation_id: "agy-conv-test",
+          status: "SUCCESS",
+          response: '{"outcome": "passed"}',
+          usage: {
+            input_tokens: 50,
+            output_tokens: 25,
+            cache_read_tokens: 10,
+            total_tokens: 85,
+          },
+        }),
+        stderr: "",
+        code: 0,
+      };
+    },
+  });
+
+  try {
+    const res = await agyProducer.produce({
+      runId: "run_agy_1",
+      stepId: "step_agy",
+      stepAttempt: 1,
+      assignmentId: "asg_agy",
+      attemptId: "att_agy",
+      agentId: "writer",
+      capability: "secret",
+      allowedOutcomes: ["passed", "failed"],
+      model: "gemini-3.8-flash-high",
+      thinking: "medium",
+      prompt: "Implement feature in repository",
+      signal: new AbortController().signal,
+    });
+
+    assert.equal(res.harness, "agy");
+    assert.equal(res.outcome, "passed");
+    assert.equal(res.tokensIn, 50);
+    assert.equal(res.tokensOut, 25);
+    assert.equal(res.cacheReadTokens, 10);
+    assert.equal(res.costBasis, "unmetered");
+    assert.equal(res.priceRef, "subscription:agy");
+
+    // Verify args sent to agy CLI: --effort medium --model gemini-3.8-flash-high -p <prompt>
+    assert.ok(capturedArgs.includes("--effort"));
+    assert.ok(capturedArgs.includes("medium"));
+    assert.ok(capturedArgs.includes("--model"));
+    assert.ok(capturedArgs.includes("gemini-3.8-flash-high"));
+    assert.ok(capturedArgs.includes("-p"));
+    assert.ok(capturedArgs.includes("Implement feature in repository"));
+  } finally {
+    await agyProducer.close();
+  }
+});
+
+test("Gemini CLI is non-dispatchable and fails closed with clear message", async () => {
+  const fakeAuth = () => ({ detected: true, authenticated: true as const, issues: [] });
+
+  const geminiProducer = createVnextOneShotProducer({
+    defaultHarness: "gemini",
+    probeHarness: fakeAuth as any,
+    spawnProcess: async () => ({ stdout: "", stderr: "", code: 0 }),
+  });
+
+  await assert.rejects(
+    async () => {
+      await geminiProducer.produce({
+        runId: "run_gemini_1",
+        stepId: "step_gemini",
+        stepAttempt: 1,
+        assignmentId: "asg_gem",
+        attemptId: "att_gem",
+        agentId: "writer",
+        capability: "secret",
+        allowedOutcomes: ["passed"],
+        signal: new AbortController().signal,
+      });
+    },
+    /oneshot_harness_unsupported: gemini/,
+  );
+  await geminiProducer.close();
+});
+
+test("resolveDispatchStatus calculates dispatch availability and reason accurately", () => {
+  const catalogEntryWithOneShot = {
+    id: "test_harness",
+    label: "Test",
+    default: false,
+    mode: "either" as const,
+    commands: ["test"],
+    versionArgs: ["--version"],
+    update: { self: [] },
+    oneShot: {
+      argv: ["-p"],
+      promptVia: "arg" as const,
+      outputFormat: "json" as const,
+      usageParser: () => ({ text: "", usage: {} }),
+    },
+  };
+
+  const catalogEntryWithoutOneShot = {
+    id: "gemini",
+    label: "Gemini CLI",
+    default: false,
+    mode: "either" as const,
+    commands: ["gemini"],
+    versionArgs: ["--version"],
+    update: { self: [] },
+  };
+
+  // Undetected
+  const notDetected = resolveDispatchStatus(catalogEntryWithOneShot, false, true, []);
+  assert.equal(notDetected.status, "no");
+  assert.equal(notDetected.reason, "not_detected");
+
+  // Deprecated / no headless mode
+  const noHeadless = resolveDispatchStatus(catalogEntryWithoutOneShot, true, true, []);
+  assert.equal(noHeadless.status, "no");
+  assert.equal(noHeadless.reason, "deprecated_client");
+
+  // Not authenticated
+  const unauthenticated = resolveDispatchStatus(catalogEntryWithOneShot, true, false, ["not_authenticated"]);
+  assert.equal(unauthenticated.status, "no");
+  assert.equal(unauthenticated.reason, "not_authenticated");
+
+  // Auth unknown
+  const authUnknown = resolveDispatchStatus(catalogEntryWithOneShot, true, null, ["auth_unknown"]);
+  assert.equal(authUnknown.status, "no");
+  assert.equal(authUnknown.reason, "auth_unknown");
+
+  // Ready and dispatchable
+  const ready = resolveDispatchStatus(catalogEntryWithOneShot, true, true, []);
+  assert.equal(ready.status, "yes");
+  assert.equal(ready.supported, true);
+});
+
 // Opt-in real test behind KXM_SMOKE
 const smokeTest = process.env.KXM_SMOKE ? test : test.skip;
 smokeTest("real Claude one-shot dispatch behind KXM_SMOKE", async () => {
@@ -754,6 +1022,51 @@ smokeTest("real Claude one-shot dispatch behind KXM_SMOKE", async () => {
       signal: controller.signal,
     });
     assert.equal(result.harness, "claude");
+  } finally {
+    await producer.close();
+  }
+});
+
+smokeTest("real Kimi one-shot dispatch behind KXM_SMOKE", async () => {
+  const producer = createVnextOneShotProducer({ defaultHarness: "kimi" });
+  try {
+    const controller = new AbortController();
+    const result = await producer.produce({
+      runId: "smoke_kimi_1",
+      stepId: "smoke_step",
+      stepAttempt: 1,
+      assignmentId: "asg_smoke_kimi",
+      attemptId: "att_smoke_kimi",
+      agentId: "portability",
+      capability: "secret",
+      allowedOutcomes: ["completed"],
+      prompt: "respond with completed",
+      signal: controller.signal,
+    });
+    assert.equal(result.harness, "kimi");
+  } finally {
+    await producer.close();
+  }
+});
+
+smokeTest("real agy one-shot dispatch behind KXM_SMOKE", async () => {
+  const producer = createVnextOneShotProducer({ defaultHarness: "agy" });
+  try {
+    const controller = new AbortController();
+    const result = await producer.produce({
+      runId: "smoke_agy_1",
+      stepId: "smoke_step",
+      stepAttempt: 1,
+      assignmentId: "asg_smoke_agy",
+      attemptId: "att_smoke_agy",
+      agentId: "writer",
+      capability: "secret",
+      model: "gemini-3.8-flash-high",
+      allowedOutcomes: ["completed"],
+      prompt: "respond with completed",
+      signal: controller.signal,
+    });
+    assert.equal(result.harness, "agy");
   } finally {
     await producer.close();
   }
