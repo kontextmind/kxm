@@ -95,6 +95,13 @@ export interface VnextProducerRequest {
   readonly capability: string;
   readonly allowedOutcomes: readonly string[];
   readonly signal: AbortSignal;
+  readonly instanceNo?: number | undefined;
+  readonly scopeEpoch?: number | undefined;
+  readonly prompt?: string | undefined;
+  readonly model?: string | undefined;
+  readonly provider?: string | undefined;
+  readonly thinking?: string | undefined;
+  readonly agentRole?: string | undefined;
 }
 
 export interface VnextProducerResult {
@@ -119,7 +126,7 @@ export interface VnextProducerResult {
 }
 
 export interface VnextProducer {
-  readonly id: "driver-simulated";
+  readonly id: "driver-simulated" | "pi";
   produce(request: VnextProducerRequest): Promise<VnextProducerResult>;
 }
 
@@ -169,9 +176,13 @@ export function createVnextSimulatedProducer(
   return producer;
 }
 
+export function registerTrustedProducer(producer: VnextProducer): void {
+  trustedProducers.add(producer);
+}
+
 function requireTrustedProducer(producer: VnextProducer): void {
   if (!trustedProducers.has(producer)) {
-    throw runtimeError("engine_producer_untrusted", "producer", "producer is not a driver-simulated factory instance");
+    throw runtimeError("engine_producer_untrusted", "producer", "producer is not a trusted factory instance");
   }
 }
 
@@ -426,7 +437,7 @@ export function verifyVnextAttemptCapability(
     && row.state === "issued"
     && row.runId === expected.runId
     && row.attemptId === expected.attemptId
-    && row.producerId === "driver-simulated"
+    && (row.producerId === "driver-simulated" || row.producerId === "pi")
     && folded
     && folded.status === "running"
     && folded.currentStep
@@ -487,7 +498,7 @@ export interface VnextGateDispatchSeams {
 export const vnextGateDispatchSeams: VnextGateDispatchSeams = {};
 
 async function stepLocked(context: VnextRuntimeContext, runId: string, producer: VnextProducer, token: string): Promise<VnextRunDriveResult> {
-  const prepared = context.eventStore.transaction(() => prepareDispatch(context, runId));
+  const prepared = context.eventStore.transaction(() => prepareDispatch(context, runId, producer.id));
   if (prepared.kind === "return") {
     return prepared.handoff ? { state: prepared.state, handoff: prepared.handoff } : { state: prepared.state };
   }
@@ -812,6 +823,7 @@ interface PreparedDispatch {
   attemptId: string;
   agentId: string;
   capabilityHash: string;
+  producerId: string;
   request: VnextProducerRequest;
   controller: AbortController;
   state: VnextRunState;
@@ -864,6 +876,7 @@ function unreconciledPanelAttemptId(state: VnextRunState): string | undefined {
 function prepareDispatch(
   context: VnextRuntimeContext,
   runId: string,
+  producerId?: "driver-simulated" | "pi" | string,
 ): { kind: "panel"; panel: PreparedPanel } | { kind: "return"; state: VnextRunState; handoff?: VnextRunHandoff } | ({ kind: "gate" } & VnextPreparedGateDispatch) {
   const run = requireRun(context, runId);
   const plan = rehydrateVnextCompiledPlanFromStore(context.eventStore, run);
@@ -1031,6 +1044,7 @@ function prepareDispatch(
     stepId,
     stepAttempt,
     enterRunning: true,
+    producerId,
   });
   return {
     kind: "panel",
@@ -1087,7 +1101,8 @@ function birthMember(
     step: VnextCompiledStep;
     stepId: string;
     stepAttempt: number;
-    enterRunning?: boolean;
+    enterRunning?: boolean | undefined;
+    producerId?: ("driver-simulated" | "pi" | string) | undefined;
   },
 ): PreparedDispatch {
   const run = requireRun(context, input.run.runId);
@@ -1133,7 +1148,7 @@ function birthMember(
     assignmentId,
     stepId: input.stepId,
     stepAttempt: input.stepAttempt,
-    producerId: "driver-simulated",
+    producerId: input.producerId ?? "driver-simulated",
     capabilityHash: minted.hash,
     state: "issued",
   });
@@ -1149,6 +1164,7 @@ function birthMember(
     attemptId,
     agentId,
     capabilityHash: minted.hash,
+    producerId: input.producerId ?? "driver-simulated",
     request: {
       runId: run.runId,
       stepId: input.stepId,
@@ -1156,6 +1172,8 @@ function birthMember(
       assignmentId,
       attemptId,
       agentId,
+      instanceNo: born + 1,
+      scopeEpoch: 1,
       capability: minted.secret,
       allowedOutcomes: input.step.outcomes,
       signal: controller.signal,
@@ -1224,6 +1242,7 @@ function capabilityMatchesDispatch(
   capability: VnextAttemptCapabilityRow | undefined,
   member: PreparedDispatch,
   allowedStates: ReadonlyArray<VnextAttemptCapabilityRow["state"]>,
+  expectedProducerId?: string,
 ): boolean {
   return Boolean(
     capability
@@ -1233,7 +1252,7 @@ function capabilityMatchesDispatch(
     && capability.stepAttempt === member.stepAttempt
     && capability.assignmentId === member.assignmentId
     && capability.attemptId === member.attemptId
-    && capability.producerId === "driver-simulated"
+    && capability.producerId === (expectedProducerId ?? member.producerId ?? "driver-simulated")
     && allowedStates.includes(capability.state),
   );
 }
@@ -1274,7 +1293,7 @@ async function drivePanel(
           if (
             state.cancelRequested
             || state.status === "cancelling"
-            || !capabilityMatchesDispatch(capability, member, ["issued"])
+            || !capabilityMatchesDispatch(capability, member, ["issued"], producer.id)
             || !located
             || located.assignmentId !== member.assignmentId
             || located.attempt.status !== "starting"
@@ -1293,7 +1312,7 @@ async function drivePanel(
           if (
             state.cancelRequested
             || state.status === "cancelling"
-            || !capabilityMatchesDispatch(capability, member, ["issued"])
+            || !capabilityMatchesDispatch(capability, member, ["issued"], producer.id)
             || !located
             || located.assignmentId !== member.assignmentId
             || located.attempt.status !== "executing"
@@ -1327,6 +1346,7 @@ async function drivePanel(
         step: panel.step,
         stepId: panel.stepId,
         stepAttempt: panel.stepAttempt,
+        producerId: producer.id,
       });
     });
   };
@@ -1513,7 +1533,7 @@ function settleMember(
       stepId: dispatch.stepId,
       assignmentId: dispatch.assignmentId,
       attemptId: dispatch.attemptId,
-      harness: result?.harness ?? "driver-simulated",
+      harness: result?.harness ?? (dispatch.producerId === "pi" ? "pi" : "driver-simulated"),
       provider: result?.provider ?? "simulated",
       requestedModel: result?.requestedModel ?? "simulated",
       effectiveModel: result?.effectiveModel ?? result?.requestedModel ?? "simulated",
@@ -1562,7 +1582,7 @@ function settleMember(
       stepId: dispatch.stepId,
       assignmentId: dispatch.assignmentId,
       attemptId: dispatch.attemptId,
-      harness: result.harness ?? "driver-simulated",
+      harness: result.harness ?? (dispatch.producerId === "pi" ? "pi" : "driver-simulated"),
       provider: result.provider ?? "simulated",
       requestedModel: result.requestedModel ?? "simulated",
       effectiveModel: result.effectiveModel ?? result.requestedModel ?? "simulated",
@@ -2017,7 +2037,7 @@ export function gateRecoveryPreflight(context: VnextRuntimeContext): GateRecover
   for (const capability of capabilities) {
     if (seenAttempts.has(capability.attemptId)) continue;
     const row = context.eventStore.gateAttempt(capability.attemptId);
-    if (capability.producerId === "driver-simulated") {
+    if (capability.producerId === "driver-simulated" || capability.producerId === "pi") {
       if (row) {
         throw runtimeError(
           "gate_recovery_corrupt",
