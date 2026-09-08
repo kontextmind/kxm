@@ -59,122 +59,14 @@ function checkedParent(path: string, description: string): void {
   }
 }
 
-export interface VnextDatabaseSchema {
-  schema: string;
-  version: number;
-  tables: Readonly<Record<string, readonly string[]>>;
-}
+import {
+  openDatabase,
+  withDatabaseTransaction,
+  type DatabaseSchemaSpec,
+} from "./database.ts";
 
-function userTables(database: DatabaseSync): string[] {
-  const rows = database.prepare(
-    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
-  ).all() as Array<{ name: string }>;
-  return rows.map((row) => row.name);
-}
-
-function tableColumns(database: DatabaseSync, table: string): string[] {
-  const rows = database.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
-  return rows.map((row) => row.name).sort();
-}
-
-function verifyExpectedTables(database: DatabaseSync, file: string, description: string, expected: Readonly<Record<string, readonly string[]>>): void {
-  const present = new Set(userTables(database));
-  for (const [table, columns] of Object.entries(expected)) {
-    if (!present.has(table)) {
-      throw runtimeError("runtime_schema_shape_invalid", file, `${description} is missing table ${table}`);
-    }
-    const actual = tableColumns(database, table);
-    const missing = columns.filter((column) => !actual.includes(column));
-    if (missing.length > 0) {
-      throw runtimeError("runtime_schema_shape_invalid", file, `${description} table ${table} is missing columns ${missing.join(", ")}`);
-    }
-  }
-}
-
-function ensureWalJournalMode(database: DatabaseSync, file: string, description: string, timeoutMs = 5000): void {
-  const deadline = Date.now() + timeoutMs;
-  const sleeper = new Int32Array(new SharedArrayBuffer(4));
-  while (true) {
-    try {
-      const current = database.prepare("PRAGMA journal_mode").get() as { journal_mode?: string } | undefined;
-      if (current?.journal_mode === "wal") {
-        return;
-      }
-      const updated = database.prepare("PRAGMA journal_mode = WAL").get() as { journal_mode?: string } | undefined;
-      if (updated?.journal_mode === "wal") {
-        return;
-      }
-    } catch (error) {
-      const sqliteError = error as { code?: string; errcode?: number };
-      if (sqliteError.code === "ERR_SQLITE_ERROR" && sqliteError.errcode === 5 && Date.now() < deadline) {
-        Atomics.wait(sleeper, 0, 0, 10);
-        continue;
-      }
-      throw error;
-    }
-    if (Date.now() >= deadline) {
-      throw runtimeError("runtime_timeout", file, `${description} timed out enabling WAL journal mode`);
-    }
-    Atomics.wait(sleeper, 0, 0, 10);
-  }
-}
-
-function openDatabase(file: string, description: string, spec: VnextDatabaseSchema): DatabaseSync {
-  checkedParent(file, description);
-  const stat = lstatSync(file, { throwIfNoEntry: false });
-  if (stat) {
-    if (stat.isSymbolicLink() || !stat.isFile()) {
-      throw runtimeError("runtime_path_invalid", description, `${description} must be a regular file, not a link or directory`);
-    }
-  }
-  for (const sidecar of [`${file}-wal`, `${file}-shm`]) {
-    const info = lstatSync(sidecar, { throwIfNoEntry: false });
-    if (info?.isSymbolicLink()) {
-      throw runtimeError("runtime_path_invalid", description, `${description} sidecar must not be a link`);
-    }
-  }
-  const database = new DatabaseSync(file);
-  let transaction = false;
-  try {
-    database.exec("PRAGMA busy_timeout = 5000");
-    ensureWalJournalMode(database, file, description);
-    database.exec("PRAGMA synchronous = NORMAL");
-    database.exec("PRAGMA foreign_keys = ON");
-    // Inspect the schema only after serializing concurrent first-open callers.
-    database.exec("BEGIN IMMEDIATE");
-    transaction = true;
-    const row = database.prepare("PRAGMA user_version").get() as { user_version: number } | undefined;
-    const version = row?.user_version ?? 0;
-    if (version > spec.version) {
-      throw runtimeError("runtime_schema_newer", file, `${description} schema version ${version} is newer than this runtime supports`);
-    }
-    if (version === 0) {
-      const existing = userTables(database);
-      if (existing.length > 0) {
-        throw runtimeError("runtime_schema_shape_invalid", file, `${description} has tables at schema version 0`);
-      }
-      database.exec(spec.schema);
-      database.exec(`PRAGMA user_version = ${spec.version}`);
-    } else if (version < spec.version) {
-      throw runtimeError(
-        "runtime_schema_outdated",
-        file,
-        `${description} schema version ${version} is older than ${spec.version}; no migration lane, backup and restore remain E6`,
-      );
-    } else {
-      verifyExpectedTables(database, file, description, spec.tables);
-    }
-    database.exec("COMMIT");
-    transaction = false;
-    return database;
-  } catch (error) {
-    if (transaction) {
-      try { database.exec("ROLLBACK"); } catch { /* already rolled back */ }
-    }
-    database.close();
-    throw error;
-  }
-}
+export type VnextDatabaseSchema = DatabaseSchemaSpec;
+export { openDatabase };
 
 /* ----------------------------- registry ---------------------------- */
 
@@ -768,15 +660,7 @@ export class VnextRunEventStore {
 
   /** Run one immutable transaction, rolling back on any failure. */
   transaction<T>(work: () => T): T {
-    this.database.exec("BEGIN IMMEDIATE");
-    try {
-      const result = work();
-      this.database.exec("COMMIT");
-      return result;
-    } catch (error) {
-      try { this.database.exec("ROLLBACK"); } catch { /* already rolled back */ }
-      throw error;
-    }
+    return withDatabaseTransaction(this.database, work);
   }
 
   command(commandId: string): VnextCommandRecord | undefined {

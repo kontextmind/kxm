@@ -13,6 +13,7 @@ import {
   syncHarnessMemory,
   type MemoryScope,
 } from "./memory.ts";
+import { createBackup, restoreBackup } from "./database.ts";
 import { verifyArtifactExists } from "./artifacts-exist.ts";
 import { canonicalWorkflowEvidenceKey, parseWorkflowDefinitions } from "./workflow.ts";
 import { postWorkflowSignal, watchGithubChecks } from "./github-watch.ts";
@@ -743,6 +744,64 @@ async function cmdVnextMigrateVerify(runtime: Runtime): Promise<number> {
   }
   print(runtime.io, runtime.json, payload, `migration verification failed:\n${result.issues.map((issue) => `  - ${issue.file}: ${issue.code}: ${issue.message}`).join("\n")}`);
   return 1;
+}
+
+async function cmdBackup(runtime: Runtime, options: { out?: string }): Promise<number> {
+  try {
+    const { manifest, outDir } = createBackup({
+      projectRoot: runtime.cwd,
+      ...(options.out ? { outDir: resolve(runtime.cwd, options.out) } : {}),
+    });
+    const payload = {
+      ok: true,
+      command: "backup",
+      backupId: manifest.backupId,
+      outDir,
+      manifest,
+    };
+    const summary = [
+      `Created SQLite backup with ${manifest.stores.length} store(s):`,
+      ...manifest.stores.map((s) => `  - ${s.storeId}: ${s.sourcePath} -> ${s.backupFile} (schema v${s.schemaVersion}, ${s.bytes} bytes, sha256 ${s.sha256.slice(0, 12)}...)`),
+      `Manifest: ${join(outDir, "manifest.json")}`,
+    ].join("\n");
+    print(runtime.io, runtime.json, payload, summary);
+    return 0;
+  } catch (error) {
+    if (error instanceof VnextConfigError) {
+      print(runtime.io, runtime.json, { ok: false, command: "backup", error: "backup_failed", issues: error.issues }, `backup failed: ${error.message}`);
+      return 1;
+    }
+    print(runtime.io, runtime.json, { ok: false, command: "backup", error: "backup_failed", message: error instanceof Error ? error.message : String(error) }, `backup failed: ${error instanceof Error ? error.message : String(error)}`);
+    return 1;
+  }
+}
+
+async function cmdRestore(runtime: Runtime, manifestArg: string): Promise<number> {
+  try {
+    const result = restoreBackup(resolve(runtime.cwd, manifestArg), {
+      projectRoot: runtime.cwd,
+    });
+    const payload = {
+      ok: true,
+      command: "restore",
+      backupId: result.backupId,
+      manifestPath: result.manifestPath,
+      restoredStores: result.restoredStores,
+    };
+    const summary = [
+      `Restored ${result.restoredStores.length} SQLite store(s) from ${result.manifestPath}:`,
+      ...result.restoredStores.map((s) => `  - ${s.storeId}: -> ${s.sourcePath} (schema v${s.schemaVersion}, integrity ${s.integrity})`),
+    ].join("\n");
+    print(runtime.io, runtime.json, payload, summary);
+    return 0;
+  } catch (error) {
+    if (error instanceof VnextConfigError) {
+      print(runtime.io, runtime.json, { ok: false, command: "restore", error: "restore_failed", issues: error.issues }, `restore failed: ${error.message}`);
+      return 1;
+    }
+    print(runtime.io, runtime.json, { ok: false, command: "restore", error: "restore_failed", message: error instanceof Error ? error.message : String(error) }, `restore failed: ${error instanceof Error ? error.message : String(error)}`);
+    return 1;
+  }
 }
 
 async function cmdVnextTrust(runtime: Runtime, check: boolean, options: { base?: string }): Promise<number> {
@@ -2604,6 +2663,17 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
   addGlobalOptions(migrate.command("verify").description("Verify a migration receipt against current sources and target bundle"))
     .action(async function migrateVerifyAction(this: Command) {
       result.code = await cmdVnextMigrateVerify(runtimeFrom(ctx, this));
+    });
+
+  addGlobalOptions(program.command("backup").description("Create a verified SQLite backup of all stores with a hashed manifest"))
+    .option("--out <dir>", "Directory to write backup and manifest")
+    .action(async function backupAction(this: Command, options: { out?: string }) {
+      result.code = await cmdBackup(runtimeFrom(ctx, this), options);
+    });
+
+  addGlobalOptions(program.command("restore <manifest>").description("Restore SQLite stores from a verified backup manifest"))
+    .action(async function restoreAction(this: Command, manifest: string) {
+      result.code = await cmdRestore(runtimeFrom(ctx, this), manifest);
     });
 
   addGlobalOptions(program.command("run").description("Create a vNext run (offline-first; no steps execute until the run engine lands)")

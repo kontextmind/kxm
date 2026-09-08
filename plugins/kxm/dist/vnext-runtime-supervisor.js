@@ -2987,7 +2987,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve5.call(this, root, ref);
+      let _sch = resolve6.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a = root.localRefs) === null || _a === void 0 ? void 0 : _a[ref];
         const { schemaId } = this.opts;
@@ -3014,7 +3014,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve5(root, ref) {
+    function resolve6(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3839,7 +3839,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve5(baseURI, relativeURI, options) {
+    function resolve6(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const {
         parsed: baseParsed,
@@ -4201,7 +4201,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve: resolve5,
+      resolve: resolve6,
       resolveComponent,
       equal,
       serialize,
@@ -14778,9 +14778,9 @@ var require_dist = __commonJS({
 // plugins/kxm/src/vnext-runtime-supervisor.ts
 import { spawn } from "node:child_process";
 import { createHash as createHash6, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { chmodSync, existsSync as existsSync4, lstatSync as lstatSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync3, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync as chmodSync2, existsSync as existsSync5, lstatSync as lstatSync4, mkdirSync as mkdirSync3, readFileSync as readFileSync4, renameSync, rmSync, writeFileSync as writeFileSync2 } from "node:fs";
 import { createServer } from "node:http";
-import { dirname as dirname4, isAbsolute as isAbsolute3, join as join5, resolve as resolve4 } from "node:path";
+import { dirname as dirname5, isAbsolute as isAbsolute3, join as join6, resolve as resolve5 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // plugins/kxm/src/vnext-config.ts
@@ -16061,8 +16061,8 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
       const writable = Object.values(objectValue(step.repositories) ?? {}).filter((access) => access === "write").length;
       if (maxWriteRepositories > writable) issues.push(issue("semantic", "write_repository_bound_invalid", file, `${stepId} maxWriteRepositories exceeds writable repository scope`));
     }
-    const join6 = objectValue(step.join);
-    const minimumPassed = join6 && typeof join6.minimumPassed === "number" ? join6.minimumPassed : void 0;
+    const join7 = objectValue(step.join);
+    const minimumPassed = join7 && typeof join7.minimumPassed === "number" ? join7.minimumPassed : void 0;
     if (minimumPassed !== void 0 && minimumPassed > maximum) issues.push(issue("semantic", "join_impossible", file, `${stepId} minimumPassed exceeds assignment maximum`));
     const distinctBy = names(assignment?.distinctBy);
     if (distinctBy.length > 0) {
@@ -16538,9 +16538,8 @@ function readVnextMigrationReceipt(root, options = {}) {
 
 // plugins/kxm/src/vnext-runtime-store.ts
 import { createHash as createHash3, randomUUID } from "node:crypto";
-import { existsSync as existsSync2, lstatSync as lstatSync2, mkdirSync, realpathSync as realpathSync2 } from "node:fs";
-import { dirname as dirname3, join as join3, resolve as resolve3 } from "node:path";
-import { DatabaseSync as DatabaseSync2 } from "node:sqlite";
+import { existsSync as existsSync3, lstatSync as lstatSync3, mkdirSync as mkdirSync2, realpathSync as realpathSync2 } from "node:fs";
+import { dirname as dirname4, join as join4, resolve as resolve4 } from "node:path";
 
 // plugins/kxm/src/vnext-bindings.ts
 import { homedir } from "node:os";
@@ -16574,39 +16573,30 @@ function vnextUserStateRoot(options = {}) {
   return resolve2(base, "kxm");
 }
 
-// plugins/kxm/src/vnext-runtime-store.ts
-function vnextRuntimePaths(options = {}) {
-  const stateRoot = options.stateRoot ? resolve3(options.stateRoot) : vnextUserStateRoot({ ...options.env ? { env: options.env } : {}, ...options.homeDir ? { homeDir: options.homeDir } : {} });
-  const runtimeDir = join3(stateRoot, "runtime");
-  return {
-    stateRoot,
-    runtimeDir,
-    registryDb: join3(runtimeDir, "registry.db"),
-    projectsDir: join3(runtimeDir, "projects")
-  };
-}
-function runtimeIssue(phase, code, file, message) {
-  return { phase, code, file, message };
-}
-function runtimeError(code, file, message) {
-  return new VnextConfigError([runtimeIssue("semantic", code, file, message)]);
-}
-function projectRuntimeKey(projectRoot) {
-  let canonical;
-  try {
-    canonical = realpathSync2.native(resolve3(projectRoot));
-  } catch {
-    canonical = resolve3(projectRoot);
-  }
-  const folded = process.platform === "win32" ? canonical.toLocaleLowerCase("en-US") : canonical;
-  return createHash3("sha256").update(folded, "utf8").digest("hex").slice(0, 24);
+// plugins/kxm/src/database.ts
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync as existsSync2,
+  lstatSync as lstatSync2,
+  mkdirSync,
+  readdirSync as readdirSync2,
+  readFileSync as readFileSync2,
+  unlinkSync,
+  writeFileSync
+} from "node:fs";
+import { basename as basename2, dirname as dirname3, join as join3, resolve as resolve3 } from "node:path";
+import { DatabaseSync as DatabaseSync2 } from "node:sqlite";
+function databaseError(code, file, message) {
+  const issue2 = { phase: "semantic", code, file, message };
+  return new VnextConfigError([issue2]);
 }
 function checkedParent(path, description) {
   const parent = dirname3(path);
   if (!existsSync2(parent)) mkdirSync(parent, { recursive: true, mode: 448 });
   const stat = lstatSync2(parent, { throwIfNoEntry: false });
   if (!stat || stat.isSymbolicLink() || !stat.isDirectory()) {
-    throw runtimeError("runtime_path_invalid", description, `${description} parent must be a regular directory, not a link`);
+    throw databaseError("runtime_path_invalid", description, `${description} parent must be a regular directory, not a link`);
   }
 }
 function userTables(database) {
@@ -16623,12 +16613,12 @@ function verifyExpectedTables(database, file, description, expected) {
   const present = new Set(userTables(database));
   for (const [table, columns] of Object.entries(expected)) {
     if (!present.has(table)) {
-      throw runtimeError("runtime_schema_shape_invalid", file, `${description} is missing table ${table}`);
+      throw databaseError("runtime_schema_shape_invalid", file, `${description} is missing table ${table}`);
     }
     const actual = tableColumns(database, table);
     const missing = columns.filter((column) => !actual.includes(column));
     if (missing.length > 0) {
-      throw runtimeError("runtime_schema_shape_invalid", file, `${description} table ${table} is missing columns ${missing.join(", ")}`);
+      throw databaseError("runtime_schema_shape_invalid", file, `${description} table ${table} is missing columns ${missing.join(", ")}`);
     }
   }
 }
@@ -16654,30 +16644,35 @@ function ensureWalJournalMode(database, file, description, timeoutMs = 5e3) {
       throw error;
     }
     if (Date.now() >= deadline) {
-      throw runtimeError("runtime_timeout", file, `${description} timed out enabling WAL journal mode`);
+      throw databaseError("runtime_timeout", file, `${description} timed out enabling WAL journal mode`);
     }
     Atomics.wait(sleeper, 0, 0, 10);
   }
 }
 function openDatabase(file, description, spec) {
-  checkedParent(file, description);
-  const stat = lstatSync2(file, { throwIfNoEntry: false });
-  if (stat) {
-    if (stat.isSymbolicLink() || !stat.isFile()) {
-      throw runtimeError("runtime_path_invalid", description, `${description} must be a regular file, not a link or directory`);
+  const isMemory = file === ":memory:";
+  if (!isMemory) {
+    checkedParent(file, description);
+    const stat = lstatSync2(file, { throwIfNoEntry: false });
+    if (stat) {
+      if (stat.isSymbolicLink() || !stat.isFile()) {
+        throw databaseError("runtime_path_invalid", description, `${description} must be a regular file, not a link or directory`);
+      }
     }
-  }
-  for (const sidecar of [`${file}-wal`, `${file}-shm`]) {
-    const info = lstatSync2(sidecar, { throwIfNoEntry: false });
-    if (info?.isSymbolicLink()) {
-      throw runtimeError("runtime_path_invalid", description, `${description} sidecar must not be a link`);
+    for (const sidecar of [`${file}-wal`, `${file}-shm`]) {
+      const info = lstatSync2(sidecar, { throwIfNoEntry: false });
+      if (info?.isSymbolicLink()) {
+        throw databaseError("runtime_path_invalid", description, `${description} sidecar must not be a link`);
+      }
     }
   }
   const database = new DatabaseSync2(file);
   let transaction = false;
   try {
-    database.exec("PRAGMA busy_timeout = 5000");
-    ensureWalJournalMode(database, file, description);
+    database.exec(`PRAGMA busy_timeout = ${spec.timeoutMs ?? 5e3}`);
+    if (!isMemory) {
+      ensureWalJournalMode(database, file, description, spec.timeoutMs);
+    }
     database.exec("PRAGMA synchronous = NORMAL");
     database.exec("PRAGMA foreign_keys = ON");
     database.exec("BEGIN IMMEDIATE");
@@ -16685,22 +16680,32 @@ function openDatabase(file, description, spec) {
     const row = database.prepare("PRAGMA user_version").get();
     const version = row?.user_version ?? 0;
     if (version > spec.version) {
-      throw runtimeError("runtime_schema_newer", file, `${description} schema version ${version} is newer than this runtime supports`);
+      throw databaseError("runtime_schema_newer", file, `${description} schema version ${version} is newer than this runtime supports`);
     }
     if (version === 0) {
       const existing = userTables(database);
       if (existing.length > 0) {
-        throw runtimeError("runtime_schema_shape_invalid", file, `${description} has tables at schema version 0`);
+        throw databaseError("runtime_schema_shape_invalid", file, `${description} has tables at schema version 0`);
       }
       database.exec(spec.schema);
       database.exec(`PRAGMA user_version = ${spec.version}`);
     } else if (version < spec.version) {
-      throw runtimeError(
-        "runtime_schema_outdated",
-        file,
-        `${description} schema version ${version} is older than ${spec.version}; no migration lane, backup and restore remain E6`
-      );
-    } else {
+      let currentVersion = version;
+      while (currentVersion < spec.version) {
+        const step = spec.migrations?.find((m) => m.fromVersion === currentVersion);
+        if (!step) {
+          throw databaseError(
+            "runtime_schema_outdated",
+            file,
+            `${description} schema version ${version} is older than ${spec.version}; no migration lane, backup and restore remain E6`
+          );
+        }
+        step.migrate(database);
+        currentVersion = step.toVersion;
+        database.exec(`PRAGMA user_version = ${currentVersion}`);
+      }
+    }
+    if (spec.tables) {
       verifyExpectedTables(database, file, description, spec.tables);
     }
     database.exec("COMMIT");
@@ -16716,6 +16721,55 @@ function openDatabase(file, description, spec) {
     database.close();
     throw error;
   }
+}
+var activeTransactions = /* @__PURE__ */ new WeakSet();
+function withDatabaseTransaction(database, work, mode = "IMMEDIATE") {
+  if (activeTransactions.has(database)) {
+    throw databaseError("runtime_transaction_nested", "transaction", "nested transactions are not allowed");
+  }
+  activeTransactions.add(database);
+  database.exec(`BEGIN ${mode}`);
+  try {
+    const result = work();
+    database.exec("COMMIT");
+    return result;
+  } catch (error) {
+    try {
+      database.exec("ROLLBACK");
+    } catch {
+    }
+    throw error;
+  } finally {
+    activeTransactions.delete(database);
+  }
+}
+
+// plugins/kxm/src/vnext-runtime-store.ts
+function vnextRuntimePaths(options = {}) {
+  const stateRoot = options.stateRoot ? resolve4(options.stateRoot) : vnextUserStateRoot({ ...options.env ? { env: options.env } : {}, ...options.homeDir ? { homeDir: options.homeDir } : {} });
+  const runtimeDir = join4(stateRoot, "runtime");
+  return {
+    stateRoot,
+    runtimeDir,
+    registryDb: join4(runtimeDir, "registry.db"),
+    projectsDir: join4(runtimeDir, "projects")
+  };
+}
+function runtimeIssue(phase, code, file, message) {
+  return { phase, code, file, message };
+}
+function runtimeError(code, file, message) {
+  return new VnextConfigError([runtimeIssue("semantic", code, file, message)]);
+}
+function projectRuntimeKey(projectRoot) {
+  let canonical;
+  try {
+    canonical = realpathSync2.native(resolve4(projectRoot));
+  } catch {
+    canonical = resolve4(projectRoot);
+  }
+  const folded = process.platform === "win32" ? canonical.toLocaleLowerCase("en-US") : canonical;
+  return createHash3("sha256").update(folded, "utf8").digest("hex").slice(0, 24);
 }
 var VNEXT_REGISTRY_SCHEMA_VERSION = 1;
 var REGISTRY_TABLES = {
@@ -16746,7 +16800,7 @@ var VnextRuntimeRegistry = class {
   path;
   database;
   constructor(path) {
-    this.path = resolve3(path);
+    this.path = resolve4(path);
     this.database = openDatabase(this.path, "runtime registry", {
       schema: REGISTRY_SCHEMA,
       version: VNEXT_REGISTRY_SCHEMA_VERSION,
@@ -16836,7 +16890,7 @@ var VnextRuntimeRegistry = class {
   }
   /** Register or revalidate a project's home binding. Home Runtime is immutable. */
   registerProject(registration) {
-    const projectRoot = resolve3(registration.projectRoot);
+    const projectRoot = resolve4(registration.projectRoot);
     const projectKey = projectRuntimeKey(projectRoot);
     this.database.exec("BEGIN IMMEDIATE");
     try {
@@ -17135,7 +17189,7 @@ var VnextRunEventStore = class {
   path;
   database;
   constructor(path) {
-    this.path = resolve3(path);
+    this.path = resolve4(path);
     this.database = openDatabase(this.path, "run event store", {
       schema: EVENT_STORE_SCHEMA,
       version: VNEXT_EVENT_STORE_SCHEMA_VERSION,
@@ -17147,18 +17201,7 @@ var VnextRunEventStore = class {
   }
   /** Run one immutable transaction, rolling back on any failure. */
   transaction(work) {
-    this.database.exec("BEGIN IMMEDIATE");
-    try {
-      const result = work();
-      this.database.exec("COMMIT");
-      return result;
-    } catch (error) {
-      try {
-        this.database.exec("ROLLBACK");
-      } catch {
-      }
-      throw error;
-    }
+    return withDatabaseTransaction(this.database, work);
   }
   command(commandId) {
     const row = this.database.prepare("SELECT command_id, run_id, kind, result, recorded_at FROM commands WHERE command_id = ?").get(commandId);
@@ -17849,8 +17892,8 @@ function capabilityFromRow(row) {
 
 // plugins/kxm/src/vnext-runtime.ts
 import { createHash as createHash5 } from "node:crypto";
-import { existsSync as existsSync3, readdirSync as readdirSync2, readFileSync as readFileSync2 } from "node:fs";
-import { join as join4 } from "node:path";
+import { existsSync as existsSync4, readdirSync as readdirSync3, readFileSync as readFileSync3 } from "node:fs";
+import { join as join5 } from "node:path";
 
 // plugins/kxm/src/vnext-engine-fold.ts
 var VNEXT_RUN_STATE_SCHEMA = "kxm.run-state.v2";
@@ -19985,11 +20028,11 @@ function vnextToolPolicyRevision(bundle) {
   return sha256Of(vnextCanonicalJson({ policies, gateRegistry: bundle.gateRegistry?.value ?? null }));
 }
 function collectMemoryFiles(dir, baseDir, ignoreSubdirs = /* @__PURE__ */ new Set()) {
-  if (!existsSync3(dir)) return [];
-  const entries = readdirSync2(dir, { withFileTypes: true });
+  if (!existsSync4(dir)) return [];
+  const entries = readdirSync3(dir, { withFileTypes: true });
   const results = [];
   for (const entry of entries) {
-    const fullPath = join4(dir, entry.name);
+    const fullPath = join5(dir, entry.name);
     if (entry.isDirectory()) {
       if (ignoreSubdirs.has(entry.name)) continue;
       results.push(...collectMemoryFiles(fullPath, baseDir, ignoreSubdirs));
@@ -20002,19 +20045,19 @@ function collectMemoryFiles(dir, baseDir, ignoreSubdirs = /* @__PURE__ */ new Se
 }
 function computeVnextMemoryRevision(bundle, options = {}) {
   const hash = createHash5("sha256");
-  const memoryDir = options.memoryDir ?? join4(bundle.projectRoot, ".kxm", "memory");
+  const memoryDir = options.memoryDir ?? join5(bundle.projectRoot, ".kxm", "memory");
   const memoryFiles = collectMemoryFiles(memoryDir, memoryDir, /* @__PURE__ */ new Set(["candidates"])).sort((left, right) => compareCodeUnits3(left.relPath, right.relPath));
   for (const file of memoryFiles) {
     hash.update(`memory:${file.relPath}\0`, "utf8");
-    hash.update(readFileSync2(file.fullPath));
+    hash.update(readFileSync3(file.fullPath));
     hash.update("\0", "utf8");
   }
-  const skillsDir = options.skillsDir ?? join4(bundle.projectRoot, ".kxm", "skills");
-  const promotedSkillsDir = join4(skillsDir, "promoted");
+  const skillsDir = options.skillsDir ?? join5(bundle.projectRoot, ".kxm", "skills");
+  const promotedSkillsDir = join5(skillsDir, "promoted");
   const skillFiles = collectMemoryFiles(promotedSkillsDir, promotedSkillsDir).sort((left, right) => compareCodeUnits3(left.relPath, right.relPath));
   for (const file of skillFiles) {
     hash.update(`skill:${file.relPath}\0`, "utf8");
-    hash.update(readFileSync2(file.fullPath));
+    hash.update(readFileSync3(file.fullPath));
     hash.update("\0", "utf8");
   }
   if (options.promotedState && options.promotedState.length > 0) {
@@ -20059,7 +20102,7 @@ function openVnextRuntimeContext(projectRoot, options) {
       configRevision: bundle.configRevision,
       now: options.now ?? (/* @__PURE__ */ new Date()).toISOString()
     });
-    const eventStore = new VnextRunEventStore(join4(paths.projectsDir, registration.projectKey, "run-events.db"));
+    const eventStore = new VnextRunEventStore(join5(paths.projectsDir, registration.projectKey, "run-events.db"));
     registerVnextRuntimeHandle(eventStore.path);
     return {
       registry,
@@ -20471,23 +20514,23 @@ function recoverVnextRun(context, runId, request) {
 }
 
 // plugins/kxm/src/vnext-runtime-supervisor.ts
-var repoRoot = resolve4(fileURLToPath2(new URL("../../../", import.meta.url)));
+var repoRoot = resolve5(fileURLToPath2(new URL("../../../", import.meta.url)));
 function vnextSupervisorTokenFile(paths) {
-  return join5(paths.runtimeDir, "supervisor.token");
+  return join6(paths.runtimeDir, "supervisor.token");
 }
 function publishVnextSupervisorToken(paths, token) {
   const file = vnextSupervisorTokenFile(paths);
-  mkdirSync2(dirname4(file), { recursive: true, mode: 448 });
+  mkdirSync3(dirname5(file), { recursive: true, mode: 448 });
   const temp = `${file}.${process.pid}.tmp`;
-  writeFileSync(temp, `${token}
+  writeFileSync2(temp, `${token}
 `, { encoding: "utf8", mode: 384 });
   try {
-    chmodSync(temp, 384);
+    chmodSync2(temp, 384);
   } catch {
   }
   renameSync(temp, file);
   try {
-    chmodSync(file, 384);
+    chmodSync2(file, 384);
   } catch {
   }
 }
@@ -20496,12 +20539,12 @@ function hashVnextSupervisorToken(token) {
 }
 function readVnextSupervisorToken(paths) {
   const file = vnextSupervisorTokenFile(paths);
-  const stat = lstatSync3(file, { throwIfNoEntry: false });
+  const stat = lstatSync4(file, { throwIfNoEntry: false });
   if (!stat) return void 0;
   if (stat.isSymbolicLink() || !stat.isFile()) {
     throw runtimeError("runtime_path_invalid", file, "supervisor token file must be a regular file, not a link");
   }
-  const token = readFileSync3(file, "utf8").trim();
+  const token = readFileSync4(file, "utf8").trim();
   return token.length >= 32 ? token : void 0;
 }
 function processAlive(pid) {
@@ -20515,34 +20558,34 @@ function processAlive(pid) {
 var HEARTBEAT_STALE_MS = 15e3;
 var SUPERVISOR_ERROR_MAX_AGE_MS = 3e4;
 function supervisorErrorFile(paths) {
-  return join5(paths.runtimeDir, "supervisor.error");
+  return join6(paths.runtimeDir, "supervisor.error");
 }
 function clearSupervisorError(paths) {
   const file = supervisorErrorFile(paths);
-  if (existsSync4(file)) rmSync(file, { force: true });
+  if (existsSync5(file)) rmSync(file, { force: true });
 }
 function recordSupervisorError(paths, message) {
   try {
-    mkdirSync2(paths.runtimeDir, { recursive: true, mode: 448 });
-    writeFileSync(supervisorErrorFile(paths), `${message}
+    mkdirSync3(paths.runtimeDir, { recursive: true, mode: 448 });
+    writeFileSync2(supervisorErrorFile(paths), `${message}
 `, { encoding: "utf8", mode: 384 });
   } catch {
   }
 }
 function readRecentSupervisorError(paths) {
   const file = supervisorErrorFile(paths);
-  const stat = lstatSync3(file, { throwIfNoEntry: false });
+  const stat = lstatSync4(file, { throwIfNoEntry: false });
   if (!stat) return void 0;
   const ageMs = Date.now() - stat.mtimeMs;
   if (ageMs > SUPERVISOR_ERROR_MAX_AGE_MS) return void 0;
   try {
-    return readFileSync3(file, "utf8").trim();
+    return readFileSync4(file, "utf8").trim();
   } catch {
     return void 0;
   }
 }
 function vnextSupervisorStatus(paths) {
-  if (!existsSync4(paths.registryDb)) return { running: false };
+  if (!existsSync5(paths.registryDb)) return { running: false };
   const registry = new VnextRuntimeRegistry(paths.registryDb);
   try {
     const record2 = registry.supervisor();
@@ -20603,7 +20646,7 @@ async function ensureVnextSupervisor(options = {}) {
     throw runtimeError("runtime_supervisor_unreachable", paths.registryDb, `runtime supervisor pid ${status.pid} is registered as running but cannot be probed`);
   }
   clearSupervisorError(paths);
-  const scriptPath = join5(repoRoot, "scripts", "kxm-runtime-supervisor.mjs");
+  const scriptPath = join6(repoRoot, "scripts", "kxm-runtime-supervisor.mjs");
   const spawnImpl = options.spawnImpl ?? ((script, env) => {
     const child = spawn(process.execPath, [script], {
       detached: true,
@@ -20680,8 +20723,8 @@ async function startVnextRuntimeSupervisor(options = {}) {
   }
 }
 async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now) {
-  mkdirSync2(paths.runtimeDir, { recursive: true, mode: 448 });
-  mkdirSync2(paths.projectsDir, { recursive: true, mode: 448 });
+  mkdirSync3(paths.runtimeDir, { recursive: true, mode: 448 });
+  mkdirSync3(paths.projectsDir, { recursive: true, mode: 448 });
   const token = randomBytes(32).toString("hex");
   const tokenHash = hashVnextSupervisorToken(token);
   const registry = new VnextRuntimeRegistry(paths.registryDb);
