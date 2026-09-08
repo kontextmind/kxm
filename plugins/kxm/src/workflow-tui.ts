@@ -61,7 +61,7 @@ export function loadActiveWorkflowProgress(
       row = db.prepare("SELECT record FROM workflow_runs WHERE id = ?").get(targetRunId) as { record: string } | undefined;
     } else {
       row = db.prepare(
-        "SELECT record FROM workflow_runs ORDER BY CASE status WHEN 'running' THEN 1 WHEN 'waiting' THEN 2 ELSE 3 END, json_extract(record, '$.updatedAt') DESC LIMIT 1",
+        "SELECT record FROM workflow_runs ORDER BY CASE json_extract(record, '$.status') WHEN 'running' THEN 1 WHEN 'waiting' THEN 2 ELSE 3 END, json_extract(record, '$.updatedAt') DESC LIMIT 1",
       ).get() as { record: string } | undefined;
     }
 

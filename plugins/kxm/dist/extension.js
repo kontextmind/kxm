@@ -10490,7 +10490,7 @@ function loadActiveWorkflowProgress(repoRoot = process.cwd(), targetRunId) {
       row = db.prepare("SELECT record FROM workflow_runs WHERE id = ?").get(targetRunId);
     } else {
       row = db.prepare(
-        "SELECT record FROM workflow_runs ORDER BY CASE status WHEN 'running' THEN 1 WHEN 'waiting' THEN 2 ELSE 3 END, json_extract(record, '$.updatedAt') DESC LIMIT 1"
+        "SELECT record FROM workflow_runs ORDER BY CASE json_extract(record, '$.status') WHEN 'running' THEN 1 WHEN 'waiting' THEN 2 ELSE 3 END, json_extract(record, '$.updatedAt') DESC LIMIT 1"
       ).get();
     }
     if (!row) return void 0;
