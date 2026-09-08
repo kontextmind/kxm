@@ -6,6 +6,8 @@ import {
   buildFormalContextPacket,
   formatContextPacketForPrompt,
   buildHandoffManifest,
+  pruneContextPacket,
+  estimateContextPacketTokens,
 } from "../../plugins/kxm/src/context-packet.ts";
 import type { ContextItem } from "../../plugins/kxm/src/context.ts";
 
@@ -135,4 +137,134 @@ test("structured handoff manifest builds valid kxm.handoff-manifest.v1 structure
   assert.equal(manifest.intent, "request_review");
   assert.equal(manifest.verificationEvidence.witnessPassed, true);
   assert.equal(manifest.openQuestions?.length, 1);
+});
+
+test("pruneContextPacket strictly executes Decision Q4 pruning hierarchy: L1 Defaults -> L2 Episodes -> L2 Docs -> L5 Artifacts with inviolable L3", () => {
+  const sharedDefaults = [
+    { id: "def_1", summary: "Default system rule: always lint before push with deterministic gates" },
+    { id: "def_2", summary: "Default system rule: always preserve test evidence and witness proofs" },
+  ];
+  const projectKnowledge: ContextItem[] = [
+    {
+      id: "doc_1",
+      project: "kxm",
+      kind: "knowledge",
+      authority: "instruction",
+      summary: "Documentation on hub routing table architecture and failover mechanisms",
+      confidence: "verified",
+      provenance: { sourceType: "git" },
+      evidenceRefs: [],
+    },
+  ];
+  const currentState: ContextItem[] = [
+    {
+      id: "ep_1",
+      project: "kxm",
+      kind: "episode",
+      authority: "evidence",
+      summary: "Historical episode: worker timeout on large diff caused retry loop in previous run",
+      confidence: "verified",
+      provenance: { sourceType: "workflow" },
+      evidenceRefs: [],
+    },
+    {
+      id: "state_1",
+      project: "kxm",
+      kind: "state",
+      authority: "policy",
+      summary: "Current run state active",
+      confidence: "verified",
+      provenance: { sourceType: "workflow" },
+      evidenceRefs: [],
+    },
+  ];
+  const predecessors = [
+    {
+      stepId: "step_plan",
+      role: "planner",
+      status: "passed" as const,
+      summary: "Plan settled with 3 steps and strict CAS leasing",
+      settledAt: new Date().toISOString(),
+      artifacts: [
+        {
+          name: "plan-spec",
+          kind: "plan" as const,
+          artifactRef: "artifact:plan.md",
+          contentSnippet: "Step 1: Security\nStep 2: Context\nStep 3: Effects",
+        },
+      ],
+      decisions: ["Use Node 22 native SQLite"],
+    },
+  ];
+
+  const packet = buildFormalContextPacket({
+    project: "kxm",
+    targetRole: "writer",
+    task: {
+      taskId: "task_prune",
+      stepId: "step_write",
+      stepAttempt: 1,
+      objective: "Implement token budget pruning engine",
+      allowedOutcomes: ["passed", "failed"],
+      permissionCeiling: "edit",
+    },
+    acceptanceCriteria: [
+      { id: "ac_1", description: "All pruning stages verified", verificationKind: "witness", required: true },
+    ],
+    plan: {
+      planHash: "plan_hash_1",
+      activeStepIndex: 1,
+      totalSteps: 2,
+      settledDecisions: [],
+    },
+    predecessors,
+    environment: {
+      sharedDefaults,
+      projectKnowledge,
+      currentState,
+      contradictions: [],
+      activeSkills: [],
+    },
+  });
+
+  const fullTokens = estimateContextPacketTokens(packet);
+  assert.ok(fullTokens > 100);
+
+  // Case 1: Budget ample -> no pruning
+  const noPrune = pruneContextPacket(packet, fullTokens + 50);
+  assert.equal(noPrune.audit.prunedStages.length, 0);
+  assert.equal(noPrune.packet.environment.sharedDefaults.length, 2);
+
+  // Case 2: Budget slightly below -> stage 1 L1 defaults pruned first
+  const tightL1Budget = fullTokens - 15;
+  const prunedL1 = pruneContextPacket(packet, tightL1Budget);
+  assert.ok(prunedL1.audit.prunedStages.includes("L1_defaults"));
+  assert.ok(prunedL1.packet.environment.sharedDefaults.length < 2);
+
+  // Case 3: Budget forces through L1 and L2 (Episodes & Docs)
+  const tightL2Budget = fullTokens - 60;
+  const prunedL2 = pruneContextPacket(packet, tightL2Budget);
+  assert.ok(prunedL2.audit.prunedStages.includes("L1_defaults"));
+  assert.ok(prunedL2.audit.prunedStages.includes("L2_episodes") || prunedL2.audit.prunedStages.includes("L2_docs"));
+
+  // Case 4: Severe budget pruning L1, L2, and L5 (Artifacts)
+  const severeBudget = 60;
+  const prunedSevere = pruneContextPacket(packet, severeBudget);
+  assert.ok(prunedSevere.audit.prunedStages.includes("L1_defaults"));
+  assert.ok(prunedSevere.audit.prunedStages.includes("L5_artifacts"));
+  for (const pred of prunedSevere.packet.predecessors) {
+    for (const art of pred.artifacts) {
+      assert.equal(art.contentSnippet, undefined);
+    }
+  }
+
+  // Case 5: L3 Task Objective Inviolable
+  // Even with impossible budget (5 tokens), task objective, plan, and acceptance criteria are NEVER stripped
+  const impossibleBudget = 5;
+  const prunedImpossible = pruneContextPacket(packet, impossibleBudget);
+  assert.equal(prunedImpossible.packet.task.objective, "Implement token budget pruning engine");
+  assert.equal(prunedImpossible.packet.task.taskId, "task_prune");
+  assert.equal(prunedImpossible.packet.plan.planHash, "plan_hash_1");
+  assert.equal(prunedImpossible.packet.acceptanceCriteria.length, 1);
+  assert.ok(prunedImpossible.audit.unresolvedGaps.includes("context_budget_exceeded_task_inviolable"));
 });

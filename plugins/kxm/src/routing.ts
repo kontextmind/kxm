@@ -532,7 +532,104 @@ export interface RoutingReport {
 export interface GenerateRoutingReportOptions {
   catalog?: PriceCatalog | undefined;
   includeEquivalentListCost?: boolean | undefined;
+  halfLifeDays?: number | undefined;
   now?: () => string;
+}
+
+/**
+ * Calculates exponential decay weight for historical telemetry (Decision Q14).
+ * Weight w = 2^(-delta_t / halfLifeDays).
+ */
+export function computeDecayedWeight(
+  recordedAt: string | number,
+  halfLifeDays: number = 14,
+  now: number = Date.now(),
+): number {
+  const ts = typeof recordedAt === "number" ? recordedAt : Date.parse(recordedAt);
+  if (!Number.isFinite(ts)) return 1.0;
+  const deltaMs = Math.max(0, now - ts);
+  const halfLifeMs = halfLifeDays * 24 * 60 * 60 * 1000;
+  return Math.pow(2, -deltaMs / halfLifeMs);
+}
+
+export interface RouteCircuitStatus {
+  status: "healthy" | "demoted" | "quarantined";
+  consecutiveFailures: number;
+  penaltyMultiplier: number;
+  reason?: string | undefined;
+}
+
+/**
+ * Evaluates route health against the circuit breaker policy (Decision Q13).
+ * Detects failure streaks in the observation window and applies soft demotion or quarantine.
+ */
+export function evaluateCircuitBreaker(
+  records: Array<RoutingRecord | RoutingRecordV2>,
+  route: { harness: string; model: string },
+  config?: {
+    mode?: "soft_demotion" | "quarantine" | undefined;
+    failureThreshold?: number | undefined;
+    windowSeconds?: number | undefined;
+    penaltyMultiplier?: number | undefined;
+  },
+  now: number = Date.now(),
+): RouteCircuitStatus {
+  const mode = config?.mode ?? "soft_demotion";
+  const failureThreshold = config?.failureThreshold ?? 3;
+  const windowSeconds = config?.windowSeconds ?? 3600;
+  const penaltyMultiplier = config?.penaltyMultiplier ?? 5.0;
+  const windowMs = windowSeconds * 1000;
+
+  const matching = records.filter((r) => {
+    const isV2 = r.schema === ROUTING_RECORD_V2_SCHEMA;
+    const harness = isV2 ? (r as RoutingRecordV2).harness : (r.providerMetadata?.harness as string | undefined);
+    const model = isV2
+      ? ((r as RoutingRecordV2).effectiveModel || (r as RoutingRecordV2).requestedModel)
+      : (r.effectiveModel || r.requestedModel);
+    if (harness !== route.harness || model !== route.model) return false;
+
+    const recAt = (r as any).recordedAt;
+    const ts = typeof recAt === "string" ? Date.parse(recAt) : 0;
+    return ts >= (now - windowMs);
+  });
+
+  matching.sort((a, b) => {
+    const ta = typeof (a as any).recordedAt === "string" ? Date.parse((a as any).recordedAt) : 0;
+    const tb = typeof (b as any).recordedAt === "string" ? Date.parse((b as any).recordedAt) : 0;
+    return tb - ta;
+  });
+
+  let consecutiveFailures = 0;
+  for (const r of matching) {
+    const passed = r.verifierOutcome === "passed" || r.finalOutcome === "accepted" || r.finalOutcome === "completed";
+    if (passed && (r.retries ?? 0) === 0) {
+      break;
+    }
+    consecutiveFailures++;
+  }
+
+  if (consecutiveFailures >= failureThreshold) {
+    if (mode === "quarantine") {
+      return {
+        status: "quarantined",
+        consecutiveFailures,
+        penaltyMultiplier,
+        reason: `Route quarantined after ${consecutiveFailures} consecutive failures within ${windowSeconds}s`,
+      };
+    }
+    return {
+      status: "demoted",
+      consecutiveFailures,
+      penaltyMultiplier,
+      reason: `Route demoted with ${penaltyMultiplier}x penalty after ${consecutiveFailures} consecutive failures`,
+    };
+  }
+
+  return {
+    status: "healthy",
+    consecutiveFailures,
+    penaltyMultiplier: 1.0,
+  };
 }
 
 export function generateRoutingReport(

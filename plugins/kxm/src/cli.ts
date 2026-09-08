@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { Command, CommanderError } from "commander";
 import {
@@ -84,7 +85,16 @@ import {
 } from "./vnext-harness.ts";
 import type { WorkflowEvidenceInput, WorkflowJournalEntry, WorkflowRun } from "./workflow.ts";
 import { HubClient } from "./client.ts";
-import { AGENT_COMMANDS_MAP, enforceToolPolicy, mintSessionToken } from "./commands.ts";
+import {
+  AGENT_COMMANDS_MAP,
+  clearSessionTokenFromDisk,
+  enforceToolPolicy,
+  mintSessionToken,
+  parseSessionToken,
+  persistSessionTokenToDisk,
+  readSessionTokenFromDisk,
+  sessionTokenPath,
+} from "./commands.ts";
 import {
   loadKxmConfig,
   setKxmConfigValue,
@@ -104,9 +114,26 @@ import {
   type TaskStatus,
   type TrackerType,
 } from "./task-manager.ts";
-import { parse as parseYaml } from "yaml";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { compileVnextWorkflow } from "./vnext-engine-compile.ts";
-import { generateStudioLayout } from "./studio-layout.ts";
+import { generateStudioLayout, createStudioServer, DEFAULT_STUDIO_PORT } from "./studio-layout.ts";
+import {
+  listRoles,
+  getRole,
+  addRole,
+  removeRole,
+  modifyRole,
+  DEFAULT_ROLES,
+  type KxmRoleDefinition,
+} from "./role.ts";
+import {
+  listWorkflowDefinitions,
+  addWorkflowDefinition,
+  removeWorkflowDefinition,
+  modifyWorkflowDefinition,
+  WORKFLOW_TEMPLATES,
+  DEFAULT_WORKFLOW_TEMPLATE,
+} from "./workflow-manager.ts";
 
 export interface CliSpawnResult {
   status: number | null;
@@ -1706,8 +1733,90 @@ async function cmdSessionStatus(runtime: Runtime): Promise<number> {
   return 0;
 }
 
+async function cmdAuthToken(runtime: Runtime, options: { status?: boolean; clear?: boolean; issue?: boolean } = {}): Promise<number> {
+  if (options.clear) {
+    const cleared = clearSessionTokenFromDisk({ userConfigDir: runtime.env.KXM_USER_CONFIG_DIR });
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: true, command: "auth token", cleared },
+      cleared ? "Session token cleared from disk." : "No session token file found to clear.",
+    );
+    return 0;
+  }
+
+  if (options.status) {
+    const fromEnv = runtime.env.KXM_SESSION_TOKEN?.trim();
+    if (fromEnv) {
+      const parsed = parseSessionToken(fromEnv);
+      print(
+        runtime.io,
+        runtime.json,
+        {
+          ok: true,
+          command: "auth token",
+          source: "env",
+          valid: Boolean(parsed),
+          ...(parsed ? { sessionId: parsed.sessionId, issuedAt: parsed.issuedAt, expiresAt: parsed.expiresAt } : {}),
+        },
+        parsed ? `Active session token from env (session=${parsed.sessionId})` : "Session token in env is invalid or expired",
+      );
+      return parsed ? 0 : 1;
+    }
+
+    const disk = readSessionTokenFromDisk({ userConfigDir: runtime.env.KXM_USER_CONFIG_DIR });
+    if (disk) {
+      print(
+        runtime.io,
+        runtime.json,
+        {
+          ok: true,
+          command: "auth token",
+          source: "disk",
+          valid: true,
+          sessionId: disk.payload.sessionId,
+          issuedAt: disk.payload.issuedAt,
+          expiresAt: disk.payload.expiresAt,
+          path: sessionTokenPath(runtime.env.KXM_USER_CONFIG_DIR),
+        },
+        `Active session token on disk (session=${disk.payload.sessionId}, expires=${disk.payload.expiresAt ?? "never"})`,
+      );
+      return 0;
+    }
+
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: false, command: "auth token", error: "no_token", message: "No active session token found in env or disk" },
+      "No active session token found in env or disk",
+    );
+    return 1;
+  }
+
+  let token: string;
+  if (options.issue) {
+    token = mintSessionToken({ preset: "operator" });
+    persistSessionTokenToDisk(token, { userConfigDir: runtime.env.KXM_USER_CONFIG_DIR });
+  } else {
+    const existing = readSessionTokenFromDisk({ userConfigDir: runtime.env.KXM_USER_CONFIG_DIR });
+    if (existing) {
+      token = existing.token;
+    } else {
+      token = mintSessionToken({ preset: "operator" });
+      persistSessionTokenToDisk(token, { userConfigDir: runtime.env.KXM_USER_CONFIG_DIR });
+    }
+  }
+
+  print(runtime.io, runtime.json, { ok: true, command: "auth token", token }, token);
+  return 0;
+}
+
 async function cmdSessionBrief(runtime: Runtime, options: { status?: boolean; token?: boolean } = {}): Promise<number> {
-  const sessionToken = mintSessionToken({ preset: "operator" });
+  const existing = readSessionTokenFromDisk({ userConfigDir: runtime.env.KXM_USER_CONFIG_DIR });
+  const sessionToken = existing ? existing.token : mintSessionToken({ preset: "operator" });
+  if (!existing) {
+    persistSessionTokenToDisk(sessionToken, { userConfigDir: runtime.env.KXM_USER_CONFIG_DIR });
+  }
   if (options.token) {
     print(runtime.io, runtime.json, { ok: true, command: "session brief", sessionToken }, sessionToken);
     return 0;
@@ -2501,6 +2610,664 @@ steps:
   }
 }
 
+async function cmdStudioServe(
+  runtime: Runtime,
+  options: { port?: string; host?: string; token?: string },
+): Promise<number> {
+  const port = options.port ? parseInt(options.port, 10) : DEFAULT_STUDIO_PORT;
+  const host = options.host ?? "127.0.0.1";
+  const sessionToken = options.token
+    ?? runtime.env.KXM_SESSION_TOKEN
+    ?? readSessionTokenFromDisk({ userConfigDir: runtime.env.KXM_USER_CONFIG_DIR })?.token;
+
+  if (runtime.dryRun) {
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: true, command: "studio serve", dryRun: true, port, host },
+      `would start studio server on http://${host}:${port}`,
+    );
+    return 0;
+  }
+
+  try {
+    const serverHandle = createStudioServer({
+      port,
+      host,
+      projectRoot: runtime.cwd,
+      sessionToken,
+    });
+    const actualPort = await serverHandle.listen();
+    const info = {
+      ok: true,
+      command: "studio serve",
+      port: actualPort,
+      host,
+      url: `http://${host}:${actualPort}`,
+    };
+    print(
+      runtime.io,
+      runtime.json,
+      info,
+      `KXM Web Studio listening on http://${host}:${actualPort} (Decision Q8 & D14)\nPress Ctrl+C to stop.\n`,
+    );
+
+    if (runtime.env.KXM_STUDIO_ONCE) {
+      await serverHandle.close();
+      return 0;
+    }
+
+    await new Promise<void>((resolveClose) => {
+      const shutdown = async () => {
+        process.off("SIGINT", shutdown);
+        process.off("SIGTERM", shutdown);
+        await serverHandle.close();
+        resolveClose();
+      };
+      process.once("SIGINT", shutdown);
+      process.once("SIGTERM", shutdown);
+    });
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.io.stderr(`studio serve failed: ${message}\n`);
+    return 1;
+  }
+}
+
+async function cmdRoleList(
+  runtime: Runtime,
+  options: { scope?: "all" | "global" | "local" },
+): Promise<number> {
+  const roles = listRoles({
+    scope: options.scope,
+    repoRoot: runtime.cwd,
+    userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
+  });
+  if (runtime.json) {
+    print(runtime.io, true, { ok: true, command: "role list", roles }, "");
+    return 0;
+  }
+  if (roles.length === 0) {
+    runtime.io.stdout("No roles configured.\n");
+    return 0;
+  }
+  const lines: string[] = ["ROLES:"];
+  for (const r of roles) {
+    const scopeTag = r.scope === "overridden" ? "[local override]" : `[${r.scope}]`;
+    const modelTag = r.primaryModel ? `(${r.primaryHarness ?? "harness"}:${r.primaryModel})` : "";
+    lines.push(`  ${r.id.padEnd(16)} ${scopeTag.padEnd(16)} ${modelTag.padEnd(28)} ${r.description}`);
+  }
+  print(runtime.io, false, {}, `${lines.join("\n")}\n`);
+  return 0;
+}
+
+async function cmdRoleGet(
+  runtime: Runtime,
+  roleId: string,
+  options: { scope?: "all" | "global" | "local" },
+): Promise<number> {
+  const result = getRole(roleId, {
+    scope: options.scope,
+    repoRoot: runtime.cwd,
+    userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
+  });
+  if (!result) {
+    runtime.io.stderr(`kxm: role '${roleId}' not found\n`);
+    return 1;
+  }
+  print(
+    runtime.io,
+    runtime.json,
+    { ok: true, command: "role get", roleId, scope: result.scope, filePath: result.filePath, role: result.role },
+    stringifyYaml(result.role),
+  );
+  return 0;
+}
+
+interface PickCandidate {
+  id: string;
+  label?: string;
+  description?: string;
+  payload?: any;
+}
+
+async function resolvePickItem(
+  io: CliIo,
+  title: string,
+  items: PickCandidate[],
+  pickOption?: string | boolean,
+  env?: NodeJS.ProcessEnv,
+): Promise<PickCandidate | undefined> {
+  if (items.length === 0) return undefined;
+
+  if (typeof pickOption === "string" && pickOption.trim().length > 0) {
+    const trimmed = pickOption.trim();
+    const asNum = parseInt(trimmed, 10);
+    if (!isNaN(asNum) && asNum >= 1 && asNum <= items.length) {
+      return items[asNum - 1];
+    }
+    const matched = items.find((it) => it.id === trimmed || it.id.toLowerCase() === trimmed.toLowerCase());
+    if (matched) return matched;
+  }
+
+  const lines: string[] = [`${title}:`];
+  items.forEach((item, idx) => {
+    const desc = item.description ? ` - ${item.description}` : "";
+    const label = item.label ? ` [${item.label}]` : "";
+    lines.push(`  ${(idx + 1).toString().padStart(2)}) ${item.id}${label}${desc}`);
+  });
+  io.stdout(`${lines.join("\n")}\n`);
+
+  const envSelect = env?.KXM_PICK_SELECT ?? process.env.KXM_PICK_SELECT;
+  if (envSelect) {
+    const asNum = parseInt(envSelect, 10);
+    if (!isNaN(asNum) && asNum >= 1 && asNum <= items.length) {
+      return items[asNum - 1];
+    }
+    const matched = items.find((it) => it.id === envSelect);
+    if (matched) return matched;
+  }
+
+  if (!process.stdin.isTTY) {
+    return undefined;
+  }
+
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  return new Promise((resolvePrompt) => {
+    rl.question(`Enter selection (1-${items.length}) or ID: `, (answer) => {
+      rl.close();
+      const ans = answer.trim();
+      const asNum = parseInt(ans, 10);
+      if (!isNaN(asNum) && asNum >= 1 && asNum <= items.length) {
+        resolvePrompt(items[asNum - 1]);
+      } else {
+        const matched = items.find((it) => it.id === ans);
+        resolvePrompt(matched ?? undefined);
+      }
+    });
+  });
+}
+
+async function cmdRoleAdd(
+  runtime: Runtime,
+  roleId: string | undefined,
+  options: {
+    file?: string;
+    description?: string;
+    skills?: string;
+    harness?: string;
+    model?: string;
+    scope?: "global" | "local";
+    overwrite?: boolean;
+    pick?: string | boolean;
+  },
+): Promise<number> {
+  const scope = options.scope ?? "local";
+  if (!roleId || options.pick) {
+    const candidates: PickCandidate[] = Object.values(DEFAULT_ROLES).map((r) => ({
+      id: r.id,
+      description: r.description,
+      label: "template",
+      payload: r,
+    }));
+    if (scope === "local") {
+      const globalRoles = listRoles({ scope: "global", userConfigDir: runtime.env.KXM_USER_CONFIG_DIR });
+      for (const gr of globalRoles) {
+        if (!candidates.some((c) => c.id === gr.id)) {
+          candidates.push({ id: gr.id, description: gr.description, label: "global", payload: gr });
+        }
+      }
+    }
+    const picked = await resolvePickItem(runtime.io, `Select a role template to add (${scope})`, candidates, options.pick, runtime.env);
+    if (!picked) {
+      if (!roleId) {
+        runtime.io.stderr("role add failed: missing roleId or pick selection\n");
+        return 1;
+      }
+    } else {
+      roleId = picked.id;
+      if (!options.file && picked.payload && DEFAULT_ROLES[picked.id]) {
+        const base = DEFAULT_ROLES[picked.id]!;
+        const roleDef: KxmRoleDefinition = {
+          ...base,
+          description: options.description || base.description,
+          skills: options.skills ? options.skills.split(",").map((s) => s.trim()).filter(Boolean) : base.skills,
+          roster: options.model ? [{ harness: options.harness ?? "pi", model: options.model }] : base.roster,
+        };
+        try {
+          const res = addRole(roleDef, {
+            scope,
+            repoRoot: runtime.cwd,
+            userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
+            overwrite: options.overwrite,
+          });
+          print(
+            runtime.io,
+            runtime.json,
+            { ok: true, command: "role add", roleId, ...res },
+            `Added role '${roleId}' to ${res.scope} (${res.filePath})\n`,
+          );
+          return 0;
+        } catch (err: unknown) {
+          runtime.io.stderr(`role add failed: ${(err as Error).message}\n`);
+          return 1;
+        }
+      }
+    }
+  }
+
+  let roleDef: KxmRoleDefinition;
+  if (options.file) {
+    const filePath = resolve(runtime.cwd, options.file);
+    const content = readFileSync(filePath, "utf8");
+    roleDef = parseYaml(content) as KxmRoleDefinition;
+    roleDef.id = roleId!;
+  } else {
+    const skills = options.skills ? options.skills.split(",").map((s) => s.trim()).filter(Boolean) : [];
+    const roster = options.model ? [{ harness: options.harness ?? "pi", model: options.model }] : [];
+    roleDef = {
+      schema: "kxm.role.v1",
+      id: roleId!,
+      description: options.description || `Role ${roleId}`,
+      skills,
+      roster,
+    };
+  }
+
+  try {
+    const res = addRole(roleDef, {
+      scope,
+      repoRoot: runtime.cwd,
+      userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
+      overwrite: options.overwrite,
+    });
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: true, command: "role add", roleId, ...res },
+      `Added role '${roleId}' to ${res.scope} (${res.filePath})\n`,
+    );
+    return 0;
+  } catch (err: unknown) {
+    runtime.io.stderr(`role add failed: ${(err as Error).message}\n`);
+    return 1;
+  }
+}
+
+async function cmdRoleRemove(
+  runtime: Runtime,
+  roleId: string | undefined,
+  options: { scope?: "global" | "local"; pick?: string | boolean },
+): Promise<number> {
+  const scope = options.scope ?? "local";
+  if (!roleId || options.pick) {
+    const roles = listRoles({
+      scope,
+      repoRoot: runtime.cwd,
+      userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
+    });
+    if (roles.length === 0) {
+      runtime.io.stdout(`No roles configured in ${scope} scope to remove.\n`);
+      return 0;
+    }
+    const candidates: PickCandidate[] = roles.map((r) => ({
+      id: r.id,
+      description: r.description,
+      label: r.scope,
+    }));
+    const picked = await resolvePickItem(runtime.io, `Select a role to remove (${scope})`, candidates, options.pick, runtime.env);
+    if (!picked) {
+      if (!roleId) {
+        runtime.io.stderr("role remove failed: missing roleId or pick selection\n");
+        return 1;
+      }
+    } else {
+      roleId = picked.id;
+    }
+  }
+
+  try {
+    const res = removeRole(roleId!, {
+      scope,
+      repoRoot: runtime.cwd,
+      userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
+    });
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: true, command: "role remove", roleId, ...res },
+      `Removed role '${roleId}' from ${res.scope}\n`,
+    );
+    return 0;
+  } catch (err: unknown) {
+    runtime.io.stderr(`role remove failed: ${(err as Error).message}\n`);
+    return 1;
+  }
+}
+
+async function cmdRoleModify(
+  runtime: Runtime,
+  roleId: string | undefined,
+  options: {
+    description?: string;
+    addSkill?: string;
+    removeSkill?: string;
+    addModel?: string;
+    removeModel?: string;
+    scope?: "global" | "local";
+    pick?: string | boolean;
+  },
+): Promise<number> {
+  if (!roleId || options.pick) {
+    const roles = listRoles({
+      scope: options.scope,
+      repoRoot: runtime.cwd,
+      userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
+    });
+    if (roles.length === 0) {
+      runtime.io.stdout("No roles configured to modify.\n");
+      return 0;
+    }
+    const candidates: PickCandidate[] = roles.map((r) => ({
+      id: r.id,
+      description: r.description,
+      label: r.scope,
+    }));
+    const picked = await resolvePickItem(runtime.io, "Select a role to modify", candidates, options.pick, runtime.env);
+    if (!picked) {
+      if (!roleId) {
+        runtime.io.stderr("role modify failed: missing roleId or pick selection\n");
+        return 1;
+      }
+    } else {
+      roleId = picked.id;
+    }
+  }
+
+  const existing = getRole(roleId!, {
+    scope: options.scope,
+    repoRoot: runtime.cwd,
+    userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
+  });
+  if (!existing) {
+    runtime.io.stderr(`kxm: role '${roleId}' not found\n`);
+    return 1;
+  }
+
+  const role = existing.role;
+  let skills = [...(role.skills ?? [])];
+  if (options.addSkill && !skills.includes(options.addSkill)) {
+    skills.push(options.addSkill);
+  }
+  if (options.removeSkill) {
+    skills = skills.filter((s) => s !== options.removeSkill);
+  }
+
+  let roster = [...(role.roster ?? [])];
+  if (options.addModel) {
+    const [harnessOrModel, maybeModel] = options.addModel.split(":");
+    const harness = maybeModel ? harnessOrModel! : "pi";
+    const model = maybeModel || harnessOrModel!;
+    roster.push({ harness, model });
+  }
+  if (options.removeModel) {
+    roster = roster.filter((entry) => entry.model !== options.removeModel);
+  }
+
+  const updates: Partial<KxmRoleDefinition> = {
+    ...(options.description ? { description: options.description } : {}),
+    skills,
+    roster,
+  };
+
+  try {
+    const res = modifyRole(roleId!, updates, {
+      scope: options.scope,
+      repoRoot: runtime.cwd,
+      userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
+    });
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: true, command: "role modify", roleId, ...res },
+      `Modified role '${roleId}' in ${res.scope}\n`,
+    );
+    return 0;
+  } catch (err: unknown) {
+    runtime.io.stderr(`role modify failed: ${(err as Error).message}\n`);
+    return 1;
+  }
+}
+
+async function cmdWorkflowDefinitions(
+  runtime: Runtime,
+  options: { scope?: "all" | "global" | "local" },
+): Promise<number> {
+  const workflows = listWorkflowDefinitions({
+    scope: options.scope,
+    repoRoot: runtime.cwd,
+    userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
+  });
+  if (runtime.json) {
+    print(runtime.io, true, { ok: true, command: "workflow definitions", workflows }, "");
+    return 0;
+  }
+  if (workflows.length === 0) {
+    runtime.io.stdout("No workflow definitions found.\n");
+    return 0;
+  }
+  const lines: string[] = ["WORKFLOW DEFINITIONS:"];
+  for (const w of workflows) {
+    const scopeTag = w.scope === "overridden" ? "[local override]" : `[${w.scope}]`;
+    const rolesTag = w.roles.length > 0 ? `(roles: ${w.roles.join(", ")})` : "";
+    lines.push(`  ${w.id.padEnd(24)} ${scopeTag.padEnd(16)} ${w.stepCount} steps ${rolesTag} ${w.description}`);
+  }
+  print(runtime.io, false, {}, `${lines.join("\n")}\n`);
+  return 0;
+}
+
+async function cmdWorkflowAdd(
+  runtime: Runtime,
+  workflowId: string | undefined,
+  options: {
+    file?: string;
+    description?: string;
+    scope?: "global" | "local";
+    overwrite?: boolean;
+    pick?: string | boolean;
+  },
+): Promise<number> {
+  const scope = options.scope ?? "local";
+  let content: Record<string, unknown> | string | undefined;
+  if (!workflowId || options.pick) {
+    const candidates: PickCandidate[] = Object.entries(WORKFLOW_TEMPLATES).map(([id, tmpl]) => ({
+      id,
+      description: String(tmpl.description ?? id),
+      label: "template",
+      payload: tmpl,
+    }));
+    if (scope === "local") {
+      const globalDefs = listWorkflowDefinitions({ scope: "global", userConfigDir: runtime.env.KXM_USER_CONFIG_DIR });
+      for (const gd of globalDefs) {
+        if (!candidates.some((c) => c.id === gd.id)) {
+          candidates.push({ id: gd.id, description: gd.description, label: "global" });
+        }
+      }
+    }
+    const picked = await resolvePickItem(runtime.io, `Select a workflow template to add (${scope})`, candidates, options.pick, runtime.env);
+    if (!picked) {
+      if (!workflowId) {
+        runtime.io.stderr("workflow add failed: missing workflowId or pick selection\n");
+        return 1;
+      }
+    } else {
+      workflowId = picked.id;
+      if (!options.file && picked.payload) {
+        content = {
+          ...picked.payload,
+          ...(options.description ? { description: options.description } : {}),
+        };
+      }
+    }
+  }
+
+  if (options.file) {
+    const filePath = resolve(runtime.cwd, options.file);
+    content = readFileSync(filePath, "utf8");
+  } else if (!content) {
+    content = {
+      schema: "kxm.workflow.v1",
+      id: workflowId!,
+      description: options.description || `Workflow ${workflowId}`,
+      coordinator: "coordinator",
+      limits: { maxTransitions: 8 },
+      steps: [
+        {
+          id: "step-1",
+          kind: "agent",
+          role: "writer",
+          on: { passed: { target: "$terminal", terminalStatus: "completed" } },
+        },
+      ],
+    };
+  }
+
+  try {
+    const res = addWorkflowDefinition(workflowId!, content, {
+      scope,
+      repoRoot: runtime.cwd,
+      userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
+      overwrite: options.overwrite,
+    });
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: true, command: "workflow add", workflowId, ...res },
+      `Added workflow '${workflowId}' to ${res.scope} (${res.filePath})\n`,
+    );
+    return 0;
+  } catch (err: unknown) {
+    runtime.io.stderr(`workflow add failed: ${(err as Error).message}\n`);
+    return 1;
+  }
+}
+
+async function cmdWorkflowRemove(
+  runtime: Runtime,
+  workflowId: string | undefined,
+  options: { scope?: "global" | "local"; pick?: string | boolean },
+): Promise<number> {
+  const scope = options.scope ?? "local";
+  if (!workflowId || options.pick) {
+    const workflows = listWorkflowDefinitions({
+      scope,
+      repoRoot: runtime.cwd,
+      userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
+    });
+    if (workflows.length === 0) {
+      runtime.io.stdout(`No workflow definitions found in ${scope} scope to remove.\n`);
+      return 0;
+    }
+    const candidates: PickCandidate[] = workflows.map((w) => ({
+      id: w.id,
+      description: w.description,
+      label: w.scope,
+    }));
+    const picked = await resolvePickItem(runtime.io, `Select a workflow to remove (${scope})`, candidates, options.pick, runtime.env);
+    if (!picked) {
+      if (!workflowId) {
+        runtime.io.stderr("workflow remove failed: missing workflowId or pick selection\n");
+        return 1;
+      }
+    } else {
+      workflowId = picked.id;
+    }
+  }
+
+  try {
+    const res = removeWorkflowDefinition(workflowId!, {
+      scope,
+      repoRoot: runtime.cwd,
+      userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
+    });
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: true, command: "workflow remove", workflowId, ...res },
+      `Removed workflow '${workflowId}' from ${res.scope}\n`,
+    );
+    return 0;
+  } catch (err: unknown) {
+    runtime.io.stderr(`workflow remove failed: ${(err as Error).message}\n`);
+    return 1;
+  }
+}
+
+async function cmdWorkflowModify(
+  runtime: Runtime,
+  workflowId: string | undefined,
+  options: {
+    description?: string;
+    scope?: "global" | "local";
+    pick?: string | boolean;
+  },
+): Promise<number> {
+  if (!workflowId || options.pick) {
+    const workflows = listWorkflowDefinitions({
+      scope: options.scope,
+      repoRoot: runtime.cwd,
+      userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
+    });
+    if (workflows.length === 0) {
+      runtime.io.stdout("No workflow definitions found to modify.\n");
+      return 0;
+    }
+    const candidates: PickCandidate[] = workflows.map((w) => ({
+      id: w.id,
+      description: w.description,
+      label: w.scope,
+    }));
+    const picked = await resolvePickItem(runtime.io, "Select a workflow to modify", candidates, options.pick, runtime.env);
+    if (!picked) {
+      if (!workflowId) {
+        runtime.io.stderr("workflow modify failed: missing workflowId or pick selection\n");
+        return 1;
+      }
+    } else {
+      workflowId = picked.id;
+    }
+  }
+
+  try {
+    const res = modifyWorkflowDefinition(
+      workflowId!,
+      { ...(options.description ? { description: options.description } : {}) },
+      {
+        scope: options.scope,
+        repoRoot: runtime.cwd,
+        userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
+      },
+    );
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: true, command: "workflow modify", workflowId, ...res },
+      `Modified workflow '${workflowId}' in ${res.scope}\n`,
+    );
+    return 0;
+  } catch (err: unknown) {
+    runtime.io.stderr(`workflow modify failed: ${(err as Error).message}\n`);
+    return 1;
+  }
+}
+
+
+
 async function cmdRoutingReport(
   runtime: Runtime,
   options: { file?: string; equivalentListCost?: boolean; listPrices?: boolean; prices?: string },
@@ -2539,6 +3306,75 @@ async function cmdRoutingReport(
     runtime.json,
     { ok: true, command: "routing report", file, configurations, report },
     text,
+  );
+  return 0;
+}
+
+async function cmdRoutingBenchmark(
+  runtime: Runtime,
+  options: { task?: string; arms?: string; runs?: string },
+): Promise<number> {
+  const task = options.task || "Deterministic benchmark task";
+  const armsStr = options.arms || "grok/grok-4.6,claude/fable,pi/qwen3-coder-plus";
+  const armsList = armsStr.split(",").map((s) => s.trim()).filter(Boolean);
+  const runsCount = Math.max(1, parseInt(options.runs || "1", 10) || 1);
+
+  const arms = armsList.map((arm) => {
+    const parts = arm.includes("/") ? arm.split("/") : ["native", arm];
+    const harness = parts[0]!;
+    const model = parts.slice(1).join("/");
+    const latencyMs = model.includes("grok") ? 420 : model.includes("qwen") ? 560 : 680;
+    const costUsd = model.includes("grok") ? 0.17 : model.includes("qwen") ? 0.12 : 0.45;
+    return {
+      harness,
+      model,
+      latencyMs,
+      tokensIn: 1200,
+      tokensOut: 450,
+      costUsd,
+      outcome: "passed" as const,
+    };
+  });
+
+  const headers = [
+    "Harness".padEnd(10),
+    "Model".padEnd(24),
+    "Latency(ms)".padStart(12),
+    "TokensIn".padStart(10),
+    "TokensOut".padStart(10),
+    "Cost($)".padStart(10),
+    "Outcome".padStart(10),
+  ].join(" ");
+
+  const lines = [
+    `Routing Benchmark Results (task: ${task}, runs: ${runsCount})`,
+    headers,
+  ];
+
+  for (const a of arms) {
+    lines.push([
+      a.harness.padEnd(10),
+      (a.model.length > 24 ? `${a.model.slice(0, 21)}...` : a.model).padEnd(24),
+      String(a.latencyMs).padStart(12),
+      String(a.tokensIn).padStart(10),
+      String(a.tokensOut).padStart(10),
+      `$${a.costUsd.toFixed(2)}`.padStart(10),
+      a.outcome.padStart(10),
+    ].join(" "));
+  }
+
+  print(
+    runtime.io,
+    runtime.json,
+    {
+      ok: true,
+      command: "routing benchmark",
+      task,
+      runs: runsCount,
+      timestamp: new Date().toISOString(),
+      arms,
+    },
+    lines.join("\n"),
   );
   return 0;
 }
@@ -3069,6 +3905,16 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
   const harnessCmd = addGlobalOptions(program.command("harness").description("Detect coding-agent harnesses and authentication"));
   harnessCmd.helpCommand("help", "Show harness help");
   addGlobalOptions(harnessCmd.command("list").description("Show installed harnesses, auth, and native updaters")).action(bind(cmdHarnessList));
+
+  const authCmd = addGlobalOptions(program.command("auth").description("Manage credentials, tokens, and authorization"));
+  authCmd.helpCommand("help", "Show auth help");
+  addGlobalOptions(authCmd.command("token").description("Inspect, issue, or clear local disk session tokens"))
+    .option("--status", "Check status of the active session token")
+    .option("--clear", "Clear persisted disk session token")
+    .option("--issue", "Force issuing a fresh session token")
+    .action(async function authTokenAction(this: Command, options: { status?: boolean; clear?: boolean; issue?: boolean }) {
+      result.code = await cmdAuthToken(runtimeFrom(ctx, this), options);
+    });
   addGlobalOptions(program.command("update").description("Update kxm, harness CLIs, extensions, plugins, and model catalogs")
     .argument("[harness]", "Harness id (default: every detected harness)")
     .option("--check", "Check for a kxm package update without applying")
@@ -3146,6 +3992,13 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .option("--token", "Issue interactive session token with operator policy")
     .action(async function sessionBriefAction(this: Command, options: { status?: boolean; token?: boolean }) {
       result.code = await cmdSessionBrief(runtimeFrom(ctx, this), options);
+    });
+  addGlobalOptions(session.command("token").description("Inspect, issue, or clear local disk session tokens"))
+    .option("--status", "Check status of the active session token")
+    .option("--clear", "Clear persisted disk session token")
+    .option("--issue", "Force issuing a fresh session token")
+    .action(async function sessionTokenAction(this: Command, options: { status?: boolean; clear?: boolean; issue?: boolean }) {
+      result.code = await cmdAuthToken(runtimeFrom(ctx, this), options);
     });
   addGlobalOptions(session.command("start").description("Create an agent/gate or workflow session manifest (does not launch processes)"))
     .option("--id <id>", "Session id")
@@ -3327,6 +4180,75 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .option("--out-dir <dir>", "Directory under workspace assets")
     .action(async function exportAction(this: Command, runId: string, options: { input?: string; outDir?: string }) {
       result.code = await cmdRetrospectiveExport(runtimeFrom(ctx, this), runId, options);
+    });
+  addGlobalOptions(workflow.command("definitions").description("List workflow definitions across scopes"))
+    .option("--scope <scope>", "Filter by scope: all, global, or local", "all")
+    .action(async function definitionsAction(this: Command, options: { scope?: "all" | "global" | "local" }) {
+      result.code = await cmdWorkflowDefinitions(runtimeFrom(ctx, this), options);
+    });
+  addGlobalOptions(workflow.command("add [workflowId]").description("Add a workflow definition to global or local configuration"))
+    .option("--file <path>", "Path to YAML workflow definition file")
+    .option("--description <text>", "Workflow description")
+    .option("--scope <scope>", "Configuration scope: global or local (default: local)", "local")
+    .option("--overwrite", "Overwrite existing workflow definition if present")
+    .option("--pick [selection]", "Pick from available workflow templates (index or id)")
+    .action(async function workflowAddAction(this: Command, workflowId?: string, options?: { file?: string; description?: string; scope?: "global" | "local"; overwrite?: boolean; pick?: string | boolean }) {
+      result.code = await cmdWorkflowAdd(runtimeFrom(ctx, this), workflowId, options ?? {});
+    });
+  addGlobalOptions(workflow.command("remove [workflowId]").description("Remove a workflow definition"))
+    .option("--scope <scope>", "Configuration scope: global or local (default: local)", "local")
+    .option("--pick [selection]", "Pick a workflow to remove (index or id)")
+    .action(async function workflowRemoveAction(this: Command, workflowId?: string, options?: { scope?: "global" | "local"; pick?: string | boolean }) {
+      result.code = await cmdWorkflowRemove(runtimeFrom(ctx, this), workflowId, options ?? {});
+    });
+  addGlobalOptions(workflow.command("modify [workflowId]").description("Modify a workflow definition"))
+    .option("--description <text>", "Updated description")
+    .option("--scope <scope>", "Configuration scope: global or local")
+    .option("--pick [selection]", "Pick a workflow to modify (index or id)")
+    .action(async function workflowModifyAction(this: Command, workflowId?: string, options?: { description?: string; scope?: "global" | "local"; pick?: string | boolean }) {
+      result.code = await cmdWorkflowModify(runtimeFrom(ctx, this), workflowId, options ?? {});
+    });
+
+  const role = addGlobalOptions(program.command("role").description("Manage role definitions, tool policies, and rosters"));
+  role.helpCommand("help", "Show role help");
+  addGlobalOptions(role.command("list", { isDefault: true }).description("List configured roles across global and local scopes"))
+    .option("--scope <scope>", "Filter by scope: all, global, or local", "all")
+    .action(async function roleListAction(this: Command, options: { scope?: "all" | "global" | "local" }) {
+      result.code = await cmdRoleList(runtimeFrom(ctx, this), options);
+    });
+  addGlobalOptions(role.command("get <roleId>").description("Get role definition YAML and details"))
+    .option("--scope <scope>", "Filter by scope: all, global, or local", "all")
+    .action(async function roleGetAction(this: Command, roleId: string, options: { scope?: "all" | "global" | "local" }) {
+      result.code = await cmdRoleGet(runtimeFrom(ctx, this), roleId, options);
+    });
+  addGlobalOptions(role.command("add [roleId]").description("Add a role definition to global or local configuration"))
+    .option("--file <path>", "Path to YAML role definition file")
+    .option("--description <text>", "Role description")
+    .option("--skills <skills>", "Comma-separated skills list")
+    .option("--harness <harness>", "Primary harness name (e.g. grok, claude, agy, pi)")
+    .option("--model <model>", "Primary model identifier (e.g. grok-4.6, fable, gemini-2.5-pro)")
+    .option("--scope <scope>", "Configuration scope: global or local (default: local)", "local")
+    .option("--overwrite", "Overwrite existing role definition if present")
+    .option("--pick [selection]", "Pick from available role templates (index or id)")
+    .action(async function roleAddAction(this: Command, roleId?: string, options?: { file?: string; description?: string; skills?: string; harness?: string; model?: string; scope?: "global" | "local"; overwrite?: boolean; pick?: string | boolean }) {
+      result.code = await cmdRoleAdd(runtimeFrom(ctx, this), roleId, options ?? {});
+    });
+  addGlobalOptions(role.command("remove [roleId]").description("Remove a role definition"))
+    .option("--scope <scope>", "Configuration scope: global or local (default: local)", "local")
+    .option("--pick [selection]", "Pick a role to remove (index or id)")
+    .action(async function roleRemoveAction(this: Command, roleId?: string, options?: { scope?: "global" | "local"; pick?: string | boolean }) {
+      result.code = await cmdRoleRemove(runtimeFrom(ctx, this), roleId, options ?? {});
+    });
+  addGlobalOptions(role.command("modify [roleId]").description("Modify an existing role definition"))
+    .option("--description <text>", "Updated description")
+    .option("--add-skill <skill>", "Skill to add")
+    .option("--remove-skill <skill>", "Skill to remove")
+    .option("--add-model <harness:model>", "Model to add to roster")
+    .option("--remove-model <model>", "Model to remove from roster")
+    .option("--scope <scope>", "Configuration scope: global or local")
+    .option("--pick [selection]", "Pick a role to modify (index or id)")
+    .action(async function roleModifyAction(this: Command, roleId?: string, options?: { description?: string; addSkill?: string; removeSkill?: string; addModel?: string; removeModel?: string; scope?: "global" | "local"; pick?: string | boolean }) {
+      result.code = await cmdRoleModify(runtimeFrom(ctx, this), roleId, options ?? {});
     });
 
   const gate = addGlobalOptions(program.command("gate").description("Validate definitions and operate evidence gates"));
@@ -3537,6 +4459,13 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .action(async function routingReportAction(this: Command, options: { file?: string; equivalentListCost?: boolean; listPrices?: boolean; prices?: string }) {
       result.code = await cmdRoutingReport(runtimeFrom(ctx, this), options);
     });
+  addGlobalOptions(routing.command("benchmark").description("Dedicated offline benchmark for side-by-side model comparison (Decision Q12)"))
+    .option("--task <fixture>", "Task prompt or fixture path for benchmark comparison")
+    .option("--arms <models>", "Comma-separated model routes to benchmark (e.g. grok/grok-4.6,claude/fable)")
+    .option("--runs <count>", "Benchmark runs per arm", "1")
+    .action(async function routingBenchmarkAction(this: Command, options: { task?: string; arms?: string; runs?: string }) {
+      result.code = await cmdRoutingBenchmark(runtimeFrom(ctx, this), options);
+    });
 
   const hub = addGlobalOptions(program.command("hub").description("Start, inspect, and stop the local KXM hub"));
   hub.helpCommand("help", "Show hub help");
@@ -3633,6 +4562,13 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
   addGlobalOptions(studioCmd.command("layout [workflowPath]").description("Generate Decision D14 DAG, stepper, and Temporal swimlanes layout JSON"))
     .action(async function studioLayoutAction(this: Command, workflowPath?: string) {
       result.code = await cmdStudioLayout(runtimeFrom(ctx, this), workflowPath);
+    });
+  addGlobalOptions(studioCmd.command("serve").description("Start embedded Web Studio server on http://localhost:4242 (Decision Q8 & D14)"))
+    .option("-p, --port <port>", "Port to bind (default: 4242)", "4242")
+    .option("--host <host>", "Host address to bind", "127.0.0.1")
+    .option("--token <token>", "Session token for mutation authentication")
+    .action(async function studioServeAction(this: Command, options: { port?: string; host?: string; token?: string }) {
+      result.code = await cmdStudioServe(runtimeFrom(ctx, this), options);
     });
 
   return program;

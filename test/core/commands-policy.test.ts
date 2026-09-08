@@ -1,20 +1,26 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { readFileSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { HubHttpError } from "../../plugins/kxm/src/client.ts";
 import {
   AGENT_COMMANDS_MAP,
+  clearSessionTokenFromDisk,
   enforceToolPolicy,
   getCliAgentCommands,
+  isSessionTokenExpired,
   isToolAllowed,
   mintAttemptToken,
   mintSessionToken,
   parseAttemptToken,
   parseSessionToken,
+  persistSessionTokenToDisk,
+  readSessionTokenFromDisk,
   reconcileInbox,
+  sessionTokenPath,
+  timingSafeStringCompare,
 } from "../../plugins/kxm/src/commands.ts";
 import { runCli as runCliImplementation, type CliIo } from "../../plugins/kxm/src/cli.ts";
 import { initializeVnextProject } from "../../plugins/kxm/src/vnext-init.ts";
@@ -427,5 +433,179 @@ test("CLI subcommands and options parse thoroughly in dry-run mode", async () =>
     const res = await runCli(args);
     assert.equal(res.exit, 0, `Command failed: ${args.join(" ")}`);
     assert.match(res.stdout, /"dryRun":true/);
+  }
+});
+
+test("timingSafeStringCompare evaluates equality without timing leaks", () => {
+  assert.equal(timingSafeStringCompare("super-secret-token", "super-secret-token"), true);
+  assert.equal(timingSafeStringCompare("super-secret-token", "wrong-secret-token"), false);
+  assert.equal(timingSafeStringCompare("short", "much-longer-token-string"), false);
+  assert.equal(timingSafeStringCompare("", ""), true);
+  assert.equal(timingSafeStringCompare(undefined, "expected"), false);
+  assert.equal(timingSafeStringCompare("actual", undefined), false);
+  assert.equal(timingSafeStringCompare(undefined, undefined), false);
+});
+
+test("mintSessionToken defaults to 24-hour expiration and detects expired tokens", () => {
+  const token = mintSessionToken({ sessionId: "sess_ttl_test" });
+  const parsed = parseSessionToken(token);
+  assert.ok(parsed);
+  assert.equal(parsed.sessionId, "sess_ttl_test");
+  assert.ok(parsed.issuedAt);
+  assert.ok(parsed.expiresAt);
+
+  const issuedMs = new Date(parsed.issuedAt).getTime();
+  const expiresMs = new Date(parsed.expiresAt).getTime();
+  const diffMs = expiresMs - issuedMs;
+  // Should be ~24 hours (86,400,000 ms)
+  assert.ok(diffMs >= 86_390_000 && diffMs <= 86_410_000, `diffMs was ${diffMs}`);
+  assert.equal(isSessionTokenExpired(token), false);
+  assert.equal(isSessionTokenExpired(parsed), false);
+
+  // Expired token
+  const expiredToken = mintSessionToken({
+    sessionId: "sess_expired",
+    expiresAt: new Date(Date.now() - 5000).toISOString(),
+  });
+  assert.equal(isSessionTokenExpired(expiredToken), true);
+  assert.equal(parseSessionToken(expiredToken), undefined); // fails closed
+});
+
+test("session.token disk persistence honors 0600 permissions, auto-load, and cleanup", () => {
+  const tmpDir = mkdtempSync(join(tmpdir(), "kxm-session-token-test-"));
+  try {
+    const token = mintSessionToken({ sessionId: "sess_disk_1" });
+    const savedPath = persistSessionTokenToDisk(token, { userConfigDir: tmpDir });
+    assert.equal(savedPath, sessionTokenPath(tmpDir));
+
+    // Verify permissions mode 0600
+    try {
+      const mode = statSync(savedPath).mode & 0o777;
+      assert.equal(mode, 0o600);
+    } catch {
+      // Ignored if platform doesn't support mode
+    }
+
+    // Read token from disk
+    const diskRead = readSessionTokenFromDisk({ userConfigDir: tmpDir });
+    assert.ok(diskRead);
+    assert.equal(diskRead.token, token);
+    assert.equal(diskRead.payload.sessionId, "sess_disk_1");
+
+    // Clear token
+    const cleared = clearSessionTokenFromDisk({ userConfigDir: tmpDir });
+    assert.equal(cleared, true);
+    assert.equal(readSessionTokenFromDisk({ userConfigDir: tmpDir }), undefined);
+  } finally {
+    rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("enforceToolPolicy auto-loads valid disk token and enforces AttemptToken privilege boundaries", () => {
+  const tmpDir = mkdtempSync(join(tmpdir(), "kxm-policy-disk-test-"));
+  const originalEnvSession = process.env.KXM_SESSION_TOKEN;
+  const originalEnvAttempt = process.env.KXM_ATTEMPT_TOKEN;
+  const originalConfigDir = process.env.KXM_USER_CONFIG_DIR;
+
+  try {
+    delete process.env.KXM_SESSION_TOKEN;
+    delete process.env.KXM_ATTEMPT_TOKEN;
+    process.env.KXM_USER_CONFIG_DIR = tmpDir;
+
+    // 1. Persist a read-only session token to disk
+    const diskToken = mintSessionToken({ sessionId: "sess_disk_ro", preset: "read-only" });
+    persistSessionTokenToDisk(diskToken, { userConfigDir: tmpDir });
+
+    // With env unset, enforceToolPolicy auto-loads disk token
+    const allowedRead = enforceToolPolicy("kxm_list");
+    assert.equal(allowedRead.allowed, true);
+
+    const deniedMutate = enforceToolPolicy("kxm_send");
+    assert.equal(deniedMutate.allowed, false);
+    assert.equal(deniedMutate.error, "tool_policy_denied");
+
+    // 2. Clear disk token and persist expired token
+    clearSessionTokenFromDisk({ userConfigDir: tmpDir });
+    const expiredToken = mintSessionToken({
+      sessionId: "sess_disk_exp",
+      expiresAt: new Date(Date.now() - 10000).toISOString(),
+    });
+    persistSessionTokenToDisk(expiredToken, { userConfigDir: tmpDir });
+
+    // Expired disk token fails closed as session_token_invalid
+    const expiredCheck = enforceToolPolicy("kxm_list");
+    assert.equal(expiredCheck.allowed, false);
+    assert.equal(expiredCheck.error, "session_token_invalid");
+
+    clearSessionTokenFromDisk({ userConfigDir: tmpDir });
+
+    // 3. AttemptToken boundary: ephemeral workers cannot execute kxm_promote without explicit grant
+    process.env.KXM_ATTEMPT_TOKEN = mintAttemptToken({
+      runId: "run_wk_1",
+      stepId: "step-1",
+      attempt: 1,
+    });
+
+    const attemptPromoteDenied = enforceToolPolicy("kxm_promote");
+    assert.equal(attemptPromoteDenied.allowed, false);
+    assert.equal(attemptPromoteDenied.error, "attempt_token_admin_denied");
+
+    // 4. AttemptToken scope: mismatched runId fails closed
+    const scopedOk = enforceToolPolicy("kxm_list", process.env, { runId: "run_wk_1" });
+    assert.equal(scopedOk.allowed, true);
+
+    const scopedMismatch = enforceToolPolicy("kxm_list", process.env, { runId: "run_wk_different" });
+    assert.equal(scopedMismatch.allowed, false);
+    assert.equal(scopedMismatch.error, "attempt_token_scope_violation");
+  } finally {
+    if (originalEnvSession !== undefined) process.env.KXM_SESSION_TOKEN = originalEnvSession;
+    else delete process.env.KXM_SESSION_TOKEN;
+    if (originalEnvAttempt !== undefined) process.env.KXM_ATTEMPT_TOKEN = originalEnvAttempt;
+    else delete process.env.KXM_ATTEMPT_TOKEN;
+    if (originalConfigDir !== undefined) process.env.KXM_USER_CONFIG_DIR = originalConfigDir;
+    else delete process.env.KXM_USER_CONFIG_DIR;
+    rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("CLI auth token and session token manage disk tokens and report status", async () => {
+  const tmpDir = mkdtempSync(join(tmpdir(), "kxm-cli-auth-token-"));
+  try {
+    // 1. Issue fresh token via kxm auth token
+    const issueRes = await runCli(["auth", "token", "--json"], { KXM_USER_CONFIG_DIR: tmpDir });
+    assert.equal(issueRes.exit, 0);
+    const parsedIssue = JSON.parse(issueRes.stdout.trim());
+    assert.equal(parsedIssue.ok, true);
+    assert.ok(parsedIssue.token);
+
+    // 2. Status via kxm auth token --status
+    const statusRes = await runCli(["auth", "token", "--status", "--json"], { KXM_USER_CONFIG_DIR: tmpDir });
+    assert.equal(statusRes.exit, 0);
+    const parsedStatus = JSON.parse(statusRes.stdout.trim());
+    assert.equal(parsedStatus.ok, true);
+    assert.equal(parsedStatus.source, "disk");
+    assert.equal(parsedStatus.valid, true);
+
+    // 3. Status via session token alias
+    const sessionTokenStatus = await runCli(["session", "token", "--status", "--json"], { KXM_USER_CONFIG_DIR: tmpDir });
+    assert.equal(sessionTokenStatus.exit, 0);
+    const parsedSessionStatus = JSON.parse(sessionTokenStatus.stdout.trim());
+    assert.equal(parsedSessionStatus.ok, true);
+
+    // 4. Clear token
+    const clearRes = await runCli(["auth", "token", "--clear", "--json"], { KXM_USER_CONFIG_DIR: tmpDir });
+    assert.equal(clearRes.exit, 0);
+    const parsedClear = JSON.parse(clearRes.stdout.trim());
+    assert.equal(parsedClear.ok, true);
+    assert.equal(parsedClear.cleared, true);
+
+    // 5. Status after clear reports no token
+    const noTokenRes = await runCli(["auth", "token", "--status", "--json"], { KXM_USER_CONFIG_DIR: tmpDir });
+    assert.equal(noTokenRes.exit, 1);
+    const parsedNoToken = JSON.parse((noTokenRes.stderr || noTokenRes.stdout).trim());
+    assert.equal(parsedNoToken.ok, false);
+    assert.equal(parsedNoToken.error, "no_token");
+  } finally {
+    rmSync(tmpDir, { recursive: true, force: true });
   }
 });

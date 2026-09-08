@@ -46,6 +46,7 @@ test("kxm routes agent, session, workflow, and gate tooling", async () => {
   assert.match(help.read().stdout, /\bsession\b/);
   assert.match(help.read().stdout, /\bworkflow\b/);
   assert.match(help.read().stdout, /\bgate\b/);
+  assert.match(help.read().stdout, /\brole\b/);
   const agentHelp = capture();
   assert.equal(await runCli(["agent", "help"], {}, agentHelp), 0);
   assert.match(agentHelp.read().stdout, /Usage: kxm agent/);
@@ -53,6 +54,9 @@ test("kxm routes agent, session, workflow, and gate tooling", async () => {
   assert.equal(await runCli(["session", "help"], {}, sessionHelp), 0);
   assert.match(sessionHelp.read().stdout, /Usage: kxm session/);
   assert.match(sessionHelp.read().stdout, /brief/);
+  const roleHelp = capture();
+  assert.equal(await runCli(["role", "help"], {}, roleHelp), 0);
+  assert.match(roleHelp.read().stdout, /Usage: kxm role/);
 
   const unknownTool = capture();
   assert.equal(await runCli(["nope"], {}, unknownTool), 2);

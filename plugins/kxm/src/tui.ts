@@ -15,7 +15,11 @@ import {
   type Terminal,
   type TUI,
 } from "@earendil-works/pi-tui";
+import { mkdirSync } from "node:fs";
+import { join, resolve, dirname } from "node:path";
+import { spawnSync } from "node:child_process";
 import type { AgentRecord } from "./protocol.ts";
+import { slugifyBranchPart } from "./external-effects.ts";
 import {
   loadLocalMeshSnapshot,
   summarizeMeshRun,
@@ -136,6 +140,114 @@ export function applyMeshTuiKey(view: MeshTuiView, key: string, itemCount = 0): 
     };
   }
   return view;
+}
+
+export interface DegradeWorktreeResult {
+  ok: boolean;
+  branchName: string;
+  worktreePath: string;
+  jumpCommand: string;
+  copiedToClipboard: boolean;
+  error?: string | undefined;
+}
+
+export function copyToClipboard(text: string): boolean {
+  try {
+    if (process.platform === "darwin") {
+      const proc = spawnSync("pbcopy", { input: text, encoding: "utf8", windowsHide: true });
+      return proc.status === 0;
+    }
+    if (process.platform === "win32") {
+      const proc = spawnSync("clip", { input: text, encoding: "utf8", windowsHide: true });
+      return proc.status === 0;
+    }
+    const wl = spawnSync("wl-copy", [text], { encoding: "utf8", windowsHide: true });
+    if (wl.status === 0) return true;
+    const xclip = spawnSync("xclip", ["-selection", "clipboard"], { input: text, encoding: "utf8", windowsHide: true });
+    return xclip.status === 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Automated Degrade Worktree Spawn (Decision Q1).
+ * Spawns an isolated git worktree for human operator intervention on key 'd'.
+ * Detaches the AI worker, copies directory path to clipboard, and prints jump command.
+ */
+export function spawnDegradeWorktree(
+  repoRoot: string,
+  runId: string,
+  options?: {
+    description?: string | undefined;
+    execFn?: ((cmd: string, args: string[]) => { status: number; stdout: string; stderr: string }) | undefined;
+    clipboardFn?: ((text: string) => boolean) | undefined;
+  },
+): DegradeWorktreeResult {
+  const runner = options?.execFn ?? ((cmd: string, args: string[]) => {
+    const res = spawnSync(cmd, args, {
+      cwd: repoRoot,
+      encoding: "utf8",
+      windowsHide: true,
+      env: Object.fromEntries(
+        Object.entries(process.env).filter(([name]) => !name.toUpperCase().startsWith("GIT_")),
+      ),
+    });
+    return {
+      status: res.status ?? 1,
+      stdout: res.stdout || "",
+      stderr: res.stderr || "",
+    };
+  });
+
+  const cleanRunId = runId.replace(/^run_/, "");
+  const desc = options?.description ? slugifyBranchPart(options.description, 30) : "degrade";
+  const branchName = `kxm/run-${cleanRunId}-${desc}`;
+  const relativeWtPath = join(".kxm", "worktrees", `run-${cleanRunId}-${desc}`);
+  const absoluteWtPath = resolve(repoRoot, relativeWtPath);
+  const jumpCommand = `cd "${absoluteWtPath}"`;
+
+  try {
+    mkdirSync(dirname(absoluteWtPath), { recursive: true });
+
+    const branchCheck = runner("git", ["rev-parse", "--verify", `refs/heads/${branchName}`]);
+    let wtRes: { status: number; stdout: string; stderr: string };
+    if (branchCheck.status === 0) {
+      wtRes = runner("git", ["worktree", "add", absoluteWtPath, branchName]);
+    } else {
+      wtRes = runner("git", ["worktree", "add", "-b", branchName, absoluteWtPath]);
+    }
+
+    if (wtRes.status !== 0) {
+      return {
+        ok: false,
+        branchName,
+        worktreePath: absoluteWtPath,
+        jumpCommand,
+        copiedToClipboard: false,
+        error: `failed_to_add_worktree: ${wtRes.stderr.trim() || wtRes.stdout.trim()}`,
+      };
+    }
+
+    const clipFn = options?.clipboardFn ?? copyToClipboard;
+    const copied = clipFn(absoluteWtPath);
+    return {
+      ok: true,
+      branchName,
+      worktreePath: absoluteWtPath,
+      jumpCommand,
+      copiedToClipboard: copied,
+    };
+  } catch (err: unknown) {
+    return {
+      ok: false,
+      branchName,
+      worktreePath: absoluteWtPath,
+      jumpCommand,
+      copiedToClipboard: false,
+      error: `degrade_worktree_spawn_error: ${(err as Error).message}`,
+    };
+  }
 }
 
 export interface MeshTuiSnapshot extends LocalMeshSnapshot {
@@ -534,6 +646,12 @@ export class KxmDashboard implements Component {
     this.requestRender();
   }
 
+  setStatusMessage(message: string): void {
+    this.view = { ...this.view, statusMessage: message };
+    this.rebuild();
+    this.requestRender();
+  }
+
   private activeScroll(): ScrollView {
     return this.view.pane === "detail" ? this.detailScroll : this.listScroll;
   }
@@ -886,6 +1004,28 @@ export async function runMeshTui(input: {
             body: JSON.stringify({ signalKey: "operator-approval", status: "failed", summary: "Rejected by operator in kxm dash" }),
             signal: abort.signal,
           });
+        } else if (action.action === "degrade") {
+          await input.fetchImpl(`${base}/v1/runs/${encodeURIComponent(targetId)}/signal?project=${encodeURIComponent(input.project)}`, {
+            method: "POST",
+            headers: headers(),
+            body: JSON.stringify({ signalKey: "operator-degrade", status: "degraded", summary: "Degraded to operator worktree from kxm dash" }),
+            signal: abort.signal,
+          });
+          const repoRoot = process.cwd();
+          const degradeRes = spawnDegradeWorktree(repoRoot, targetId, {
+            description: "operator-degrade",
+          });
+          if (dashboard) {
+            if (degradeRes.ok) {
+              dashboard.setStatusMessage(
+                `[DEGRADE] Worktree: ${degradeRes.worktreePath} (cd command copied to clipboard)`,
+              );
+            } else {
+              dashboard.setStatusMessage(
+                `[DEGRADE] Signal sent, worktree failed: ${degradeRes.error}`,
+              );
+            }
+          }
         }
       } catch {
         // fail-soft on dashboard network errors during key press

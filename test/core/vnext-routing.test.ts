@@ -668,4 +668,31 @@ test("E3 Gate: Report formatting and snapshot test", () => {
   assert.equal(fableRow.equivalentListCostUsd, 0.12);
 });
 
+test("Dynamic effort stepping sets low thinking on attempt 1 and medium on attempt 2 (Decision Q10)", async () => {
+  const env = setupRoutingEnv("kxm-effort-stepping-");
+  try {
+    const bundle = loadVnextProject(env.root);
+    const context = openVnextRuntimeContext(env.root, { stateRoot: env.stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "default", prompt: "effort stepping test" });
+      pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+      startVnextRun(context, accepted.run.runId, { allowLimits: true });
+
+      const observedThinking: Array<string | undefined> = [];
+      const producer = createVnextSimulatedProducer(async (req) => {
+        observedThinking.push(req.thinking);
+        return { outcome: "passed", costBasis: "metered", costUsd: 0.05 };
+      });
+
+      await stepVnextRun(context, accepted.run.runId, producer);
+      assert.equal(observedThinking[0], "low");
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    env.cleanup();
+  }
+});
+
+
 

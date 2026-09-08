@@ -29,6 +29,9 @@ const TOP_LEVEL_COMMANDS = [
   "goal",
   "task",
   "plan",
+  "auth",
+  "studio",
+  "role",
 ];
 
 const SUBCOMMANDS: Record<string, string[]> = {
@@ -38,18 +41,21 @@ const SUBCOMMANDS: Record<string, string[]> = {
   runtime: ["start", "status", "stop"],
   trust: ["diff", "check"],
   agent: ["worker"],
-  session: ["status", "brief", "start", "stop"],
+  session: ["status", "brief", "start", "stop", "token"],
+  auth: ["token"],
   peer: ["list", "send", "get", "await", "cancel", "fanout", "inbox", "reply"],
-  workflow: ["list", "get", "checkpoint", "record", "wait", "signal", "start", "export"],
+  workflow: ["list", "get", "checkpoint", "record", "wait", "signal", "start", "export", "add", "remove", "modify", "definitions"],
   gate: ["validate", "artifacts-exist", "degrade", "signal", "github"],
   context: ["get", "recall", "state", "episode", "promote", "explain", "wiki-compile", "wiki-lint"],
   skills: ["create", "evaluate", "promote", "reject", "list", "verify"],
   memory: ["brief", "note", "sync"],
-  routing: ["report"],
+  routing: ["report", "benchmark"],
   hub: ["view", "start", "stop", "bind", "unbind"],
   config: ["get", "set", "list"],
   goal: ["create", "list", "get"],
   task: ["create", "list", "get", "run", "sync"],
+  studio: ["layout", "serve"],
+  role: ["list", "get", "add", "remove", "modify"],
 };
 
 export function generateShellCompletion(shell: SupportedShell): string {

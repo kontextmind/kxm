@@ -381,3 +381,75 @@ export function formatImprovementReport(report: ImprovementReport): string {
 
   return lines.join("\n");
 }
+
+export interface PromotionDecision {
+  eligible: boolean;
+  policy: "manual_pr" | "critic_quorum" | "auto_threshold";
+  authorized: boolean;
+  reason: string;
+}
+
+/**
+ * Evaluates candidate promotion policy (Decision Q11).
+ * Supports:
+ * - manual_pr: strict operator signoff via Git PR / CLI (fail-closed anti-privilege-escalation)
+ * - critic_quorum: requires dual critic approval before auto-promotion
+ * - auto_threshold: requires candidate to exceed recurrence and verifyPassRate thresholds
+ */
+export function evaluatePromotionPolicy(
+  candidate: ImprovementCandidate,
+  policy: "manual_pr" | "critic_quorum" | "auto_threshold" = "manual_pr",
+  options?: {
+    criticApprovals?: string[] | undefined;
+    autoThreshold?: {
+      minRuns: number;
+      minPassRate: number;
+      minCostSavings?: number | undefined;
+    } | undefined;
+  },
+): PromotionDecision {
+  if (policy === "manual_pr") {
+    return {
+      eligible: true,
+      policy,
+      authorized: false,
+      reason: "Manual PR review and signoff required by policy (fail-closed anti-privilege-escalation)",
+    };
+  }
+
+  if (policy === "critic_quorum") {
+    const approvals = options?.criticApprovals ?? [];
+    const hasQuorum = approvals.length >= 2;
+    return {
+      eligible: true,
+      policy,
+      authorized: hasQuorum,
+      reason: hasQuorum
+        ? `Authorized by critic quorum (${approvals.join(", ")})`
+        : `Requires dual critic quorum; current approvals: ${approvals.length}/2`,
+    };
+  }
+
+  if (policy === "auto_threshold") {
+    const threshold = options?.autoThreshold ?? { minRuns: 10, minPassRate: 0.95 };
+    const recurrence = candidate.baselineMetrics.recurrence;
+    const passRate = candidate.baselineMetrics.verifyPassRate;
+    const meetsThreshold = recurrence >= threshold.minRuns && passRate >= threshold.minPassRate;
+
+    return {
+      eligible: true,
+      policy,
+      authorized: meetsThreshold,
+      reason: meetsThreshold
+        ? `Authorized by auto-threshold (runs=${recurrence}>=${threshold.minRuns}, passRate=${passRate}>=${threshold.minPassRate})`
+        : `Auto-threshold not met: runs=${recurrence}/${threshold.minRuns}, passRate=${passRate}/${threshold.minPassRate}`,
+    };
+  }
+
+  return {
+    eligible: false,
+    policy,
+    authorized: false,
+    reason: `Unknown promotion policy: ${String(policy)}`,
+  };
+}

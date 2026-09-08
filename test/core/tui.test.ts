@@ -6,7 +6,16 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import type { Terminal } from "@earendil-works/pi-tui";
 import { runCli as runCliImplementation, type CliIo } from "../../plugins/kxm/src/cli.ts";
-import { applyMeshTuiKey, defaultMeshTuiView, loadLocalMeshSnapshot, KxmDashboard, renderMeshTui, runMeshTui, type MeshTuiSnapshot } from "../../plugins/kxm/src/tui.ts";
+import {
+  applyMeshTuiKey,
+  defaultMeshTuiView,
+  loadLocalMeshSnapshot,
+  KxmDashboard,
+  renderMeshTui,
+  runMeshTui,
+  spawnDegradeWorktree,
+  type MeshTuiSnapshot,
+} from "../../plugins/kxm/src/tui.ts";
 
 async function runCli(argv: string[], env: NodeJS.ProcessEnv, io: CliIo, cwd = process.cwd()): Promise<number> {
   const isolatedState = mkdtempSync(join(tmpdir(), "kxm-tui-state-"));
@@ -434,3 +443,50 @@ test("dashboard supports interactive access control plane actions (a/r/d/s/c)", 
     assert.match(cancelled.statusMessage ?? "", /CANCEL/);
   }
 });
+
+test("spawnDegradeWorktree creates isolated worktree branch and copies path (Decision Q1)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "kxm-degrade-"));
+  try {
+    const executed: Array<{ cmd: string; args: string[] }> = [];
+    let copiedText: string | undefined;
+
+    const mockRunner = (cmd: string, args: string[]) => {
+      executed.push({ cmd, args });
+      return { status: 0, stdout: "", stderr: "" };
+    };
+
+    const mockClipboard = (text: string) => {
+      copiedText = text;
+      return true;
+    };
+
+    const res = spawnDegradeWorktree(tempDir, "run_test123", {
+      description: "fix-failing-tests",
+      execFn: mockRunner,
+      clipboardFn: mockClipboard,
+    });
+
+    assert.equal(res.ok, true);
+    assert.equal(res.branchName, "kxm/run-test123-fix-failing-tests");
+    assert.match(res.worktreePath, /\.kxm\/worktrees\/run-test123-fix-failing-tests/);
+    assert.match(res.jumpCommand, /cd ".*\.kxm\/worktrees\/run-test123-fix-failing-tests"/);
+    assert.equal(res.copiedToClipboard, true);
+    assert.equal(copiedText, res.worktreePath);
+
+    // Verify git worktree add was called
+    const wtAdd = executed.find((c) => c.cmd === "git" && c.args[0] === "worktree" && c.args[1] === "add");
+    assert.ok(wtAdd);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("KxmDashboard supports dynamic setStatusMessage", () => {
+  let renders = 0;
+  const dashboard = new KxmDashboard(snapshot, defaultMeshTuiView(), false, () => renders++, () => {});
+  dashboard.setStatusMessage("[CUSTOM] Alert message");
+  const rendered = dashboard.render(100).join("\n");
+  assert.match(rendered, /\[CUSTOM\] Alert message/);
+  assert.ok(renders >= 1);
+});
+

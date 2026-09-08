@@ -20951,6 +20951,14 @@ function computeVnextMemoryRevision(bundle, options = {}) {
   }
   return `ctxrev_${hash.digest("hex")}`;
 }
+function checkMemoryRevisionDrift(pinnedRevision, bundle, options) {
+  const currentRevision = computeVnextMemoryRevision(bundle, options);
+  return {
+    drifted: currentRevision !== pinnedRevision,
+    currentRevision,
+    pinnedRevision
+  };
+}
 function vnextPolicyRevisions(bundle, options) {
   return {
     configRevision: bundle.configRevision,
@@ -23269,6 +23277,44 @@ function formatImprovementReport(report) {
   }
   return lines.join("\n");
 }
+function evaluatePromotionPolicy(candidate, policy = "manual_pr", options) {
+  if (policy === "manual_pr") {
+    return {
+      eligible: true,
+      policy,
+      authorized: false,
+      reason: "Manual PR review and signoff required by policy (fail-closed anti-privilege-escalation)"
+    };
+  }
+  if (policy === "critic_quorum") {
+    const approvals = options?.criticApprovals ?? [];
+    const hasQuorum = approvals.length >= 2;
+    return {
+      eligible: true,
+      policy,
+      authorized: hasQuorum,
+      reason: hasQuorum ? `Authorized by critic quorum (${approvals.join(", ")})` : `Requires dual critic quorum; current approvals: ${approvals.length}/2`
+    };
+  }
+  if (policy === "auto_threshold") {
+    const threshold = options?.autoThreshold ?? { minRuns: 10, minPassRate: 0.95 };
+    const recurrence = candidate.baselineMetrics.recurrence;
+    const passRate = candidate.baselineMetrics.verifyPassRate;
+    const meetsThreshold = recurrence >= threshold.minRuns && passRate >= threshold.minPassRate;
+    return {
+      eligible: true,
+      policy,
+      authorized: meetsThreshold,
+      reason: meetsThreshold ? `Authorized by auto-threshold (runs=${recurrence}>=${threshold.minRuns}, passRate=${passRate}>=${threshold.minPassRate})` : `Auto-threshold not met: runs=${recurrence}/${threshold.minRuns}, passRate=${passRate}/${threshold.minPassRate}`
+    };
+  }
+  return {
+    eligible: false,
+    policy,
+    authorized: false,
+    reason: `Unknown promotion policy: ${String(policy)}`
+  };
+}
 export {
   BUILTIN_HARNESSES,
   BUILTIN_HARNESS_IDS,
@@ -23297,6 +23343,7 @@ export {
   buildImprovementReport,
   cancelVnextRun,
   checkIntegrity,
+  checkMemoryRevisionDrift,
   checkedParent,
   checkpointWal,
   classifyCandidateKind,
@@ -23313,6 +23360,7 @@ export {
   eligibleHarnesses,
   ensureVnextSupervisor,
   ensureWalJournalMode,
+  evaluatePromotionPolicy,
   fileSha256,
   foldStoredVnextRun,
   formatHarnessInventory,

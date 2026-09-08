@@ -1,7 +1,9 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import {
   buildFormalContextPacket,
+  buildHandoffManifest,
   formatContextPacketForPrompt,
+  pruneContextPacket,
   type FormalContextPacketV2,
   type HandoffManifestV1,
 } from "./context-packet.ts";
@@ -1165,7 +1167,7 @@ function birthMember(
   });
   const next = foldStoredVnextRun(context, run);
   persistVnextRunState(context, run.runId, next, events[events.length - 1]!.sequence);
-  const contextPacket = buildFormalContextPacket({
+  const rawContextPacket = buildFormalContextPacket({
     project: run.projectId,
     targetRole: agentId,
     task: {
@@ -1189,6 +1191,7 @@ function birthMember(
       settledDecisions: [],
     },
   });
+  const { packet: contextPacket } = pruneContextPacket(rawContextPacket);
   const generatedPrompt = formatContextPacketForPrompt(contextPacket);
 
   const member: PreparedDispatch = {
@@ -1215,6 +1218,7 @@ function birthMember(
       allowedOutcomes: input.step.outcomes,
       signal: controller.signal,
       prompt: input.step.instructions ? `${input.step.instructions}\n\n${generatedPrompt}` : generatedPrompt,
+      thinking: input.stepAttempt <= 1 ? "low" : "medium",
       contextPacket,
     },
     controller,
@@ -1633,6 +1637,7 @@ function settleMember(
     };
 
     if (result.thinking !== undefined) routingRecord.thinking = result.thinking;
+    else if (dispatch.request.thinking !== undefined) routingRecord.thinking = dispatch.request.thinking;
     if (result.agentRole !== undefined) routingRecord.agentRole = result.agentRole;
     if (result.contextTokens !== undefined) routingRecord.contextTokens = result.contextTokens;
     if (result.tokensIn !== undefined) routingRecord.tokensIn = result.tokensIn;

@@ -291,6 +291,178 @@ export function formatContextPacketForPrompt(packet: FormalContextPacketV2): str
   return sections.join("\n").trim();
 }
 
+export interface PruningAudit {
+  initialTokens: number;
+  finalTokens: number;
+  budgetTokens: number;
+  prunedStages: Array<"L1_defaults" | "L2_episodes" | "L2_docs" | "L5_artifacts">;
+  prunedItemCounts: {
+    sharedDefaults: number;
+    episodes: number;
+    docs: number;
+    artifactSnippets: number;
+  };
+  unresolvedGaps: string[];
+}
+
+export function estimateContextPacketTokens(packet: FormalContextPacketV2): number {
+  const prompt = formatContextPacketForPrompt(packet);
+  return Math.ceil(prompt.length / 4);
+}
+
+/**
+ * Deterministic Pruning Hierarchy (Decision Q4):
+ * L1 Defaults -> L2 Historical Episodes -> L2 Project Docs -> L5 Artifacts; L3 Task Objective is inviolable.
+ */
+export function pruneContextPacket(
+  packet: FormalContextPacketV2,
+  tokenBudget?: number,
+): { packet: FormalContextPacketV2; audit: PruningAudit } {
+  const budget = tokenBudget ?? packet.budget.allocatedTokens;
+  let currentTokens = estimateContextPacketTokens(packet);
+  const initialTokens = currentTokens;
+
+  const prunedStages: Array<"L1_defaults" | "L2_episodes" | "L2_docs" | "L5_artifacts"> = [];
+  const prunedItemCounts = {
+    sharedDefaults: 0,
+    episodes: 0,
+    docs: 0,
+    artifactSnippets: 0,
+  };
+  const unresolvedGaps: string[] = [...packet.budget.unresolvedGaps];
+
+  if (currentTokens <= budget) {
+    return {
+      packet: {
+        ...packet,
+        budget: {
+          ...packet.budget,
+          allocatedTokens: budget,
+          estimatedTokens: currentTokens,
+        },
+      },
+      audit: {
+        initialTokens,
+        finalTokens: currentTokens,
+        budgetTokens: budget,
+        prunedStages,
+        prunedItemCounts,
+        unresolvedGaps,
+      },
+    };
+  }
+
+  // Clone packet environment and predecessors to prune deterministically
+  const environment: ContextPacketEnvironment = {
+    sharedDefaults: [...packet.environment.sharedDefaults],
+    projectKnowledge: [...packet.environment.projectKnowledge],
+    currentState: [...packet.environment.currentState],
+    contradictions: [...packet.environment.contradictions],
+    activeSkills: [...packet.environment.activeSkills],
+  };
+  const predecessors: ContextPacketPredecessor[] = packet.predecessors.map((p) => ({
+    ...p,
+    artifacts: p.artifacts.map((a) => ({ ...a })),
+  }));
+
+  const workingPacket: FormalContextPacketV2 = {
+    ...packet,
+    environment,
+    predecessors,
+    budget: { ...packet.budget, allocatedTokens: budget },
+  };
+
+  // Stage 1 (L1 Defaults): Drop shared defaults first
+  if (environment.sharedDefaults.length > 0 && currentTokens > budget) {
+    prunedStages.push("L1_defaults");
+    while (environment.sharedDefaults.length > 0 && currentTokens > budget) {
+      environment.sharedDefaults.pop();
+      prunedItemCounts.sharedDefaults += 1;
+      currentTokens = estimateContextPacketTokens(workingPacket);
+    }
+  }
+
+  // Stage 2 (L2 Historical Episodes): Drop episode state items
+  if (currentTokens > budget) {
+    const episodeIndices: number[] = [];
+    for (let i = environment.currentState.length - 1; i >= 0; i--) {
+      if (environment.currentState[i]?.kind === "episode") {
+        episodeIndices.push(i);
+      }
+    }
+    if (episodeIndices.length > 0) {
+      prunedStages.push("L2_episodes");
+      for (const idx of episodeIndices) {
+        if (currentTokens <= budget) break;
+        environment.currentState.splice(idx, 1);
+        prunedItemCounts.episodes += 1;
+        currentTokens = estimateContextPacketTokens(workingPacket);
+      }
+    }
+  }
+
+  // Stage 3 (L2 Project Docs / Knowledge): Drop project knowledge/doc items
+  if (currentTokens > budget && environment.projectKnowledge.length > 0) {
+    prunedStages.push("L2_docs");
+    while (environment.projectKnowledge.length > 0 && currentTokens > budget) {
+      environment.projectKnowledge.pop();
+      prunedItemCounts.docs += 1;
+      currentTokens = estimateContextPacketTokens(workingPacket);
+    }
+  }
+
+  // Stage 4 (L5 Artifacts): Prune artifact content snippets, then artifact entries if still overflowing
+  if (currentTokens > budget) {
+    const hasArtifacts = predecessors.some((p) => p.artifacts.length > 0);
+    if (hasArtifacts) {
+      prunedStages.push("L5_artifacts");
+      // First strip snippets
+      for (const p of predecessors) {
+        for (const a of p.artifacts) {
+          if (a.contentSnippet) {
+            a.contentSnippet = undefined;
+            prunedItemCounts.artifactSnippets += 1;
+          }
+        }
+      }
+      currentTokens = estimateContextPacketTokens(workingPacket);
+
+      // If still overflowing, prune artifacts list
+      if (currentTokens > budget) {
+        for (const p of predecessors) {
+          p.artifacts = [];
+        }
+        currentTokens = estimateContextPacketTokens(workingPacket);
+      }
+    }
+  }
+
+  // L3 Task Objective Inviolable:
+  // task, plan, and acceptance criteria are inviolable and never stripped.
+  if (currentTokens > budget) {
+    unresolvedGaps.push("context_budget_exceeded_task_inviolable");
+  }
+
+  workingPacket.budget = {
+    ...packet.budget,
+    allocatedTokens: budget,
+    estimatedTokens: currentTokens,
+    unresolvedGaps,
+  };
+
+  return {
+    packet: workingPacket,
+    audit: {
+      initialTokens,
+      finalTokens: currentTokens,
+      budgetTokens: budget,
+      prunedStages,
+      prunedItemCounts,
+      unresolvedGaps,
+    },
+  };
+}
+
 /**
  * Builds a structured handoff manifest between workflow roles.
  */

@@ -2984,7 +2984,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve.call(this, root, ref);
+      let _sch = resolve2.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a3 = root.localRefs) === null || _a3 === void 0 ? void 0 : _a3[ref];
         const { schemaId } = this.opts;
@@ -3011,7 +3011,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve(root, ref) {
+    function resolve2(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3836,7 +3836,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve(baseURI, relativeURI, options) {
+    function resolve2(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const {
         parsed: baseParsed,
@@ -4198,7 +4198,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve,
+      resolve: resolve2,
       resolveComponent,
       equal,
       serialize,
@@ -14508,7 +14508,7 @@ var Protocol = class {
           return;
         }
         const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-        await new Promise((resolve) => setTimeout(resolve, pollInterval));
+        await new Promise((resolve2) => setTimeout(resolve2, pollInterval));
         options?.signal?.throwIfAborted();
       }
     } catch (error2) {
@@ -14525,7 +14525,7 @@ var Protocol = class {
    */
   request(request, resultSchema, options) {
     const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve2, reject) => {
       const earlyReject = (error2) => {
         reject(error2);
       };
@@ -14603,7 +14603,7 @@ var Protocol = class {
           if (!parseResult.success) {
             reject(parseResult.error);
           } else {
-            resolve(parseResult.data);
+            resolve2(parseResult.data);
           }
         } catch (error2) {
           reject(error2);
@@ -14864,12 +14864,12 @@ var Protocol = class {
       }
     } catch {
     }
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve2, reject) => {
       if (signal.aborted) {
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
         return;
       }
-      const timeoutId = setTimeout(resolve, interval);
+      const timeoutId = setTimeout(resolve2, interval);
       signal.addEventListener("abort", () => {
         clearTimeout(timeoutId);
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
@@ -15745,12 +15745,12 @@ var StdioServerTransport = class {
     this.onclose?.();
   }
   send(message) {
-    return new Promise((resolve) => {
+    return new Promise((resolve2) => {
       const json = serializeMessage(message);
       if (this._stdout.write(json)) {
-        resolve();
+        resolve2();
       } else {
-        this._stdout.once("drain", resolve);
+        this._stdout.once("drain", resolve2);
       }
     });
   }
@@ -16025,7 +16025,7 @@ var HubClient = class {
       if (signal?.aborted) throw new MeshWaitError("aborted", messageId);
       const message = await this.getMessage(messageId);
       if (["replied", "cancelled", "expired", "error"].includes(message.status)) return message;
-      await new Promise((resolve, reject) => {
+      await new Promise((resolve2, reject) => {
         const onAbort = () => {
           signal?.removeEventListener("abort", onAbort);
           clearTimeout(timer);
@@ -16033,7 +16033,7 @@ var HubClient = class {
         };
         const timer = setTimeout(() => {
           signal?.removeEventListener("abort", onAbort);
-          resolve();
+          resolve2();
         }, Math.min(500, Math.max(1, deadline - Date.now())));
         signal?.addEventListener("abort", onAbort, { once: true });
         if (signal?.aborted) onAbort();
@@ -16088,7 +16088,7 @@ var HubClient = class {
       } catch (error2) {
         if (this.stopped || error2 instanceof Error && error2.name === "AbortError") return;
       }
-      if (!this.stopped) await new Promise((resolve) => setTimeout(resolve, this.options.reconnectMs));
+      if (!this.stopped) await new Promise((resolve2) => setTimeout(resolve2, this.options.reconnectMs));
     }
   }
   headers(includeIdentity = true) {
@@ -16170,6 +16170,9 @@ var HubClient = class {
 };
 
 // plugins/kxm/src/commands.ts
+import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 function requiredString(value, name) {
   if (typeof value !== "string" || value.trim() === "") throw new Error(`${name} is required`);
   return value.trim();
@@ -16890,12 +16893,25 @@ function parseSessionToken(token) {
     const raw = Buffer.from(token.trim(), "base64url").toString("utf8");
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === "object" && parsed.schema === "kxm.session-token.v1" && typeof parsed.sessionId === "string") {
+      if (parsed.expiresAt) {
+        const expiryTime = new Date(parsed.expiresAt).getTime();
+        if (!Number.isNaN(expiryTime) && Date.now() >= expiryTime) {
+          return void 0;
+        }
+      }
       return parsed;
     }
   } catch {
     return void 0;
   }
   return void 0;
+}
+function resolveUserConfigDirectory(overrideDir) {
+  if (overrideDir) return resolve(overrideDir);
+  return resolve(process.env.KXM_USER_CONFIG_DIR?.trim() || join(homedir(), ".config", "kxm"));
+}
+function sessionTokenPath(userConfigDir) {
+  return join(resolveUserConfigDirectory(userConfigDir), "session.token");
 }
 function matchToolPattern(pattern, toolName) {
   if (pattern === "*" || pattern === toolName) return true;
@@ -16939,7 +16955,7 @@ function isToolAllowed(commandName, policy) {
   }
   return true;
 }
-function enforceToolPolicy(commandName, env = process.env) {
+function enforceToolPolicy(commandName, env = process.env, options) {
   const attemptTokenRaw = env.KXM_ATTEMPT_TOKEN?.trim();
   if (attemptTokenRaw) {
     const attempt = parseAttemptToken(attemptTokenRaw);
@@ -16953,13 +16969,51 @@ function enforceToolPolicy(commandName, env = process.env) {
         detail: `command ${commandName} is denied by attempt tool policy`
       };
     }
+    if (commandName === "kxm_promote" || commandName === "promote") {
+      const explicitAllow = attempt.toolPolicy?.allow ?? attempt.toolPolicy?.allowedTools;
+      if (!Array.isArray(explicitAllow) || !explicitAllow.includes("kxm_promote") && !explicitAllow.includes("promote") && !explicitAllow.includes("*")) {
+        return {
+          allowed: false,
+          error: "attempt_token_admin_denied",
+          detail: "AttemptToken worker cannot perform operator state promotion without explicit policy grant"
+        };
+      }
+    }
+    if (options?.runId && attempt.runId && options.runId !== attempt.runId) {
+      return {
+        allowed: false,
+        error: "attempt_token_scope_violation",
+        detail: `attempt token runId ${attempt.runId} does not match request runId ${options.runId}`
+      };
+    }
     return { allowed: true };
   }
-  const sessionTokenRaw = env.KXM_SESSION_TOKEN?.trim();
-  if (sessionTokenRaw) {
-    const session = parseSessionToken(sessionTokenRaw);
+  const envSessionRaw = env.KXM_SESSION_TOKEN?.trim();
+  if (envSessionRaw) {
+    const session = parseSessionToken(envSessionRaw);
     if (!session) {
-      return { allowed: false, error: "session_token_invalid", detail: "KXM_SESSION_TOKEN is malformed" };
+      return { allowed: false, error: "session_token_invalid", detail: "KXM_SESSION_TOKEN is malformed or expired" };
+    }
+    if (!isToolAllowed(commandName, session.toolPolicy)) {
+      return {
+        allowed: false,
+        error: "tool_policy_denied",
+        detail: `command ${commandName} is denied by session tool policy`
+      };
+    }
+    return { allowed: true };
+  }
+  const tokenFile = sessionTokenPath(env.KXM_USER_CONFIG_DIR);
+  if (existsSync(tokenFile)) {
+    let tokenRaw;
+    try {
+      tokenRaw = readFileSync(tokenFile, "utf8").trim();
+    } catch {
+      return { allowed: false, error: "session_token_invalid", detail: "Session token file on disk could not be read" };
+    }
+    const session = tokenRaw ? parseSessionToken(tokenRaw) : void 0;
+    if (!session) {
+      return { allowed: false, error: "session_token_invalid", detail: "Session token on disk is malformed or expired" };
     }
     if (!isToolAllowed(commandName, session.toolPolicy)) {
       return {

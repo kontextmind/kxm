@@ -7364,7 +7364,7 @@ var require_dist = __commonJS({
 });
 
 // plugins/kxm/src/hub.ts
-import { createHash as createHash3, createHmac, timingSafeEqual } from "node:crypto";
+import { createHash as createHash4, createHmac } from "node:crypto";
 import { existsSync as existsSync4 } from "node:fs";
 import { createServer } from "node:http";
 import { isIP } from "node:net";
@@ -7439,6 +7439,1688 @@ function workflowScopeExtras(operation, assignedCoordinatorName) {
     assignedCoordinatorName,
     nextAction: "use_assigned_coordinator"
   };
+}
+
+// plugins/kxm/src/commands.ts
+import { createHash as createHash2, randomUUID as randomUUID2, timingSafeEqual } from "node:crypto";
+
+// plugins/kxm/src/workflow.ts
+import { createHash } from "node:crypto";
+var JOURNAL_CATEGORIES = [
+  "plan",
+  "decision",
+  "contradiction",
+  "error",
+  "lesson",
+  "observation",
+  "hypothesis",
+  "experiment",
+  "state-change",
+  "skill-candidate"
+];
+var EVIDENCE_REQUIRED_JOURNAL_CATEGORIES = ["lesson", "skill-candidate"];
+var PROMOTABLE_JOURNAL_CATEGORIES = ["skill-candidate", "hypothesis", "experiment"];
+function parseJournalCategory(value) {
+  if (typeof value !== "string" || !JOURNAL_CATEGORIES.includes(value)) {
+    throw new ProtocolError(
+      400,
+      `invalid journal category: must be one of ${JOURNAL_CATEGORIES.join(", ")}`,
+      "invalid_journal_category"
+    );
+  }
+  return value;
+}
+function journalEvidenceRequired(category) {
+  return EVIDENCE_REQUIRED_JOURNAL_CATEGORIES.includes(category);
+}
+var WORKFLOW_TERMINAL_TARGET = "$terminal";
+function normalizeOutcomeValue(value, field) {
+  if (typeof value === "string") return { target: value };
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${field} must be a stage ID, "$terminal", or a { target, maxTransitions } rule`);
+  }
+  const rule = value;
+  if (typeof rule.target !== "string" || !rule.target.trim()) {
+    throw new Error(`${field}.target must be a non-empty stage ID or "$terminal"`);
+  }
+  if (rule.maxTransitions !== void 0 && (!Number.isInteger(rule.maxTransitions) || rule.maxTransitions < 1 || rule.maxTransitions > 100)) {
+    throw new Error(`${field}.maxTransitions must be an integer between 1 and 100`);
+  }
+  return { target: rule.target, ...rule.maxTransitions !== void 0 ? { maxTransitions: rule.maxTransitions } : {} };
+}
+function journalPromotionState(entry) {
+  if (!PROMOTABLE_JOURNAL_CATEGORIES.includes(entry.category)) return void 0;
+  const records = entry.promotion ?? [];
+  return records.length === 0 ? "proposed" : records[records.length - 1]?.to;
+}
+function applyJournalPromotion(entry, decision, decidedAt) {
+  if (!PROMOTABLE_JOURNAL_CATEGORIES.includes(entry.category)) {
+    throw new ProtocolError(
+      400,
+      `journal entries of category ${entry.category} do not participate in promotion`,
+      "journal_promotion_invalid"
+    );
+  }
+  if (decision.decidedBy === entry.agentId) {
+    throw new ProtocolError(
+      400,
+      "the author of a journal entry cannot decide its promotion",
+      "journal_promotion_invalid"
+    );
+  }
+  if (!Array.isArray(decision.evidenceRefs) || decision.evidenceRefs.length < 1 || decision.evidenceRefs.some((ref) => typeof ref !== "string" || !ref.trim())) {
+    throw new ProtocolError(
+      400,
+      "journal promotion requires at least one durable evidence reference",
+      "journal_promotion_invalid"
+    );
+  }
+  const current = journalPromotionState(entry);
+  if (current !== "proposed") {
+    throw new ProtocolError(
+      400,
+      `journal entry promotion already reached terminal state ${current}`,
+      "journal_promotion_invalid"
+    );
+  }
+  const record = {
+    schema: "kxm.journal-promotion.v1",
+    from: "proposed",
+    to: decision.to,
+    evidenceRefs: decision.evidenceRefs.map((ref) => ref.trim()),
+    decidedBy: decision.decidedBy,
+    reason: decision.reason,
+    decidedAt
+  };
+  return { ...entry, promotion: [...entry.promotion ?? [], record] };
+}
+function improvementReport(entries) {
+  const areas = [
+    "harness",
+    "gates",
+    "implementation",
+    "workflow",
+    "documentation",
+    "security",
+    "other"
+  ];
+  const severityWeight = { error: 3, warning: 2, info: 1 };
+  return areas.map((area) => {
+    const matching = entries.filter((entry) => entry.area === area);
+    const priorities = [...matching].filter((entry) => entry.category === "error" || entry.category === "contradiction" || entry.category === "lesson" || entry.category === "skill-candidate").sort((left, right) => severityWeight[right.severity] - severityWeight[left.severity]).slice(0, 10);
+    return {
+      area,
+      total: matching.length,
+      errors: matching.filter((entry) => entry.category === "error").length,
+      contradictions: matching.filter((entry) => entry.category === "contradiction").length,
+      lessons: matching.filter((entry) => entry.category === "lesson").length,
+      priorities
+    };
+  }).filter((report) => report.total > 0);
+}
+function object(value, name) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${name} must be an object`);
+  return value;
+}
+function stringArray(value, name) {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || !item.trim())) {
+    throw new Error(`${name} must be an array of non-empty strings`);
+  }
+  return value.map((item) => item.trim());
+}
+function canonicalWorkflowEvidenceKey(value) {
+  return value.trim().replace(/\s+/gu, " ").toLowerCase();
+}
+function normalizeWorkflowEvidence(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const normalized = /* @__PURE__ */ new Map();
+  for (const [requirement, candidate] of Object.entries(value)) {
+    const key = canonicalWorkflowEvidenceKey(requirement);
+    if (!key) continue;
+    const values = Array.isArray(candidate) ? candidate : [candidate];
+    const safeValues = values.filter((item) => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim());
+    if (safeValues.length > 0) {
+      normalized.set(key, [.../* @__PURE__ */ new Set([...normalized.get(key) ?? [], ...safeValues])]);
+    }
+  }
+  return Object.fromEntries(normalized);
+}
+function normalizeVerifiedWorkflowEvidence(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const result = /* @__PURE__ */ new Map();
+  for (const [rawRequirement, rawSnapshots] of Object.entries(value)) {
+    const requirement = canonicalWorkflowEvidenceKey(rawRequirement);
+    if (!requirement || !Array.isArray(rawSnapshots)) continue;
+    const snapshots = rawSnapshots.filter((candidate) => {
+      if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return false;
+      const snapshot = candidate;
+      return snapshot.schema === "pi-mesh.verified-peer-evidence.v1" && typeof snapshot.messageId === "string" && typeof snapshot.producerId === "string" && typeof snapshot.producerName === "string" && snapshot.status === "replied" && typeof snapshot.requestSha256 === "string" && typeof snapshot.replySha256 === "string" && typeof snapshot.createdAt === "string" && typeof snapshot.replyCreatedAt === "string" && typeof snapshot.repliedAt === "string" && typeof snapshot.verifiedAt === "string" && snapshot.context?.schema === "pi-mesh.workflow-message-context.v1";
+    });
+    if (snapshots.length) result.set(requirement, snapshots);
+  }
+  return Object.fromEntries(result);
+}
+function mergeVerifiedWorkflowEvidence(current, incoming = {}) {
+  const merged = new Map(Object.entries(normalizeVerifiedWorkflowEvidence(current)));
+  for (const [rawRequirement, snapshots] of Object.entries(incoming)) {
+    const requirement = canonicalWorkflowEvidenceKey(rawRequirement);
+    if (!requirement) continue;
+    const values = [...merged.get(requirement) ?? []];
+    for (const snapshot of snapshots) {
+      if (!values.some((candidate) => candidate.messageId === snapshot.messageId)) values.push(snapshot);
+    }
+    if (values.length) merged.set(requirement, values);
+  }
+  return Object.fromEntries(merged);
+}
+function mergeWorkflowEvidence(current, incoming = {}) {
+  const merged = new Map(Object.entries(normalizeWorkflowEvidence(current)));
+  const seen = /* @__PURE__ */ new Set();
+  for (const [rawRequirement, rawValue] of Object.entries(incoming)) {
+    const requirement = canonicalWorkflowEvidenceKey(rawRequirement);
+    if (!requirement || typeof rawValue !== "string" || !rawValue.trim()) {
+      throw new ProtocolError(400, "evidence must contain non-empty keyed string values", "invalid_workflow_evidence");
+    }
+    if (seen.has(requirement)) {
+      throw new ProtocolError(
+        400,
+        `evidence contains duplicate normalized requirement identity: ${requirement}`,
+        "invalid_workflow_evidence"
+      );
+    }
+    seen.add(requirement);
+    const value = rawValue.trim();
+    const values = merged.get(requirement) ?? [];
+    if (!values.includes(value)) values.push(value);
+    merged.set(requirement, values);
+  }
+  return Object.fromEntries(merged);
+}
+function workflowEvidenceStrings(evidence) {
+  return Object.entries(evidence).flatMap(([requirement, candidate]) => {
+    const values = Array.isArray(candidate) ? candidate : [candidate];
+    return values.map((value) => `${requirement}: ${value}`);
+  });
+}
+function activeWorkflowAttempt(stage) {
+  return stage.attempts + 1;
+}
+function validIsoTimestamp(value) {
+  if (!value) return void 0;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : void 0;
+}
+function verifyWorkflowEvidenceReferences(run, stage, references, lookup, verifiedAt) {
+  const expectedAttempt = activeWorkflowAttempt(stage);
+  const result = /* @__PURE__ */ new Map();
+  const seenRequirements = /* @__PURE__ */ new Set();
+  const seenMessageIds = /* @__PURE__ */ new Set();
+  for (const [rawRequirement, reference] of Object.entries(references)) {
+    const requirementKey = canonicalWorkflowEvidenceKey(rawRequirement);
+    if (!requirementKey || seenRequirements.has(requirementKey)) {
+      throw new ProtocolError(
+        400,
+        `evidenceRefs contains duplicate or empty requirement identity: ${requirementKey || "(empty)"}`,
+        "invalid_workflow_evidence_refs"
+      );
+    }
+    seenRequirements.add(requirementKey);
+    const policy = stage.resolvedEvidencePolicies?.[requirementKey];
+    if (!policy) {
+      throw new ProtocolError(
+        400,
+        `requirement ${requirementKey} does not declare a resolved peer evidence policy`,
+        "workflow_evidence_policy_missing"
+      );
+    }
+    if (!reference || !Array.isArray(reference.messageIds) || reference.messageIds.length < 1 || reference.messageIds.length > 16) {
+      throw new ProtocolError(
+        400,
+        `evidenceRefs.${requirementKey}.messageIds must contain between 1 and 16 message IDs`,
+        "invalid_workflow_evidence_refs"
+      );
+    }
+    const eligibleProducerIds = new Set(policy.eligibleProducers.map((producer) => producer.id));
+    const snapshots = [];
+    for (const rawMessageId of reference.messageIds) {
+      const messageId = typeof rawMessageId === "string" ? rawMessageId.trim() : "";
+      if (!messageId || seenMessageIds.has(messageId)) {
+        throw new ProtocolError(
+          400,
+          `evidenceRefs contains an empty or duplicate message ID: ${messageId || "(empty)"}`,
+          "invalid_workflow_evidence_refs"
+        );
+      }
+      seenMessageIds.add(messageId);
+      const message = lookup.getMessage(messageId);
+      if (!message) {
+        throw new ProtocolError(400, `peer evidence message not found: ${messageId}`, "workflow_provenance_invalid");
+      }
+      const context = message.workflowContext;
+      if (context?.schema !== "pi-mesh.workflow-message-context.v1" || context.runId !== run.id || context.stageId !== stage.id || context.requirementKey !== requirementKey || context.attempt !== expectedAttempt) {
+        throw new ProtocolError(
+          400,
+          `peer evidence message ${messageId} is not bound to ${run.id}/${stage.id}/${requirementKey}/attempt-${expectedAttempt}`,
+          "workflow_provenance_invalid"
+        );
+      }
+      if (message.project !== run.project || message.from !== run.targetAgentId || message.to === run.targetAgentId) {
+        throw new ProtocolError(
+          400,
+          `peer evidence message ${messageId} has an invalid project or direction`,
+          "workflow_provenance_invalid"
+        );
+      }
+      if (!eligibleProducerIds.has(message.to)) {
+        throw new ProtocolError(
+          400,
+          `peer evidence producer ${message.toName} is not eligible for ${requirementKey}`,
+          "workflow_provenance_invalid"
+        );
+      }
+      if (message.correlationId !== run.id || message.status !== "replied" || !message.reply?.content.trim()) {
+        throw new ProtocolError(
+          400,
+          `peer evidence message ${messageId} is not a replied message for run ${run.id}`,
+          "workflow_provenance_invalid"
+        );
+      }
+      const createdAt = validIsoTimestamp(message.createdAt);
+      const deliveredAt = message.deliveredAt === void 0 ? void 0 : validIsoTimestamp(message.deliveredAt);
+      const replyCreatedAt = validIsoTimestamp(message.reply.createdAt);
+      const repliedAt = validIsoTimestamp(message.repliedAt);
+      if (createdAt === void 0 || replyCreatedAt === void 0 || repliedAt === void 0 || message.deliveredAt !== void 0 && deliveredAt === void 0 || deliveredAt !== void 0 && (deliveredAt < createdAt || deliveredAt > repliedAt) || replyCreatedAt < createdAt || repliedAt < replyCreatedAt) {
+        throw new ProtocolError(
+          400,
+          `peer evidence message ${messageId} has incoherent reply timestamps`,
+          "workflow_provenance_invalid"
+        );
+      }
+      snapshots.push({
+        schema: "pi-mesh.verified-peer-evidence.v1",
+        messageId: message.id,
+        producerId: message.to,
+        producerName: message.toName,
+        context: { ...context },
+        status: "replied",
+        requestSha256: createHash("sha256").update(message.content, "utf8").digest("hex"),
+        replySha256: createHash("sha256").update(message.reply.content, "utf8").digest("hex"),
+        createdAt: message.createdAt,
+        replyCreatedAt: message.reply.createdAt,
+        repliedAt: message.repliedAt,
+        verifiedAt
+      });
+    }
+    result.set(requirementKey, snapshots);
+  }
+  return Object.fromEntries(result);
+}
+function peerEvidenceRequirementStatus(stage, requirementKey, runId, verifiedEvidence = normalizeVerifiedWorkflowEvidence(stage.verifiedEvidence)) {
+  const canonicalKey = canonicalWorkflowEvidenceKey(requirementKey);
+  const policy = stage.resolvedEvidencePolicies?.[canonicalKey];
+  if (!policy) return void 0;
+  const attempt = activeWorkflowAttempt(stage);
+  const eligibleIds = new Set(policy.eligibleProducers.map((producer) => producer.id));
+  const producers = /* @__PURE__ */ new Set();
+  for (const snapshot of verifiedEvidence[canonicalKey] ?? []) {
+    if (snapshot.schema === "pi-mesh.verified-peer-evidence.v1" && snapshot.status === "replied" && snapshot.context?.schema === "pi-mesh.workflow-message-context.v1" && snapshot.context.runId === runId && snapshot.context.stageId === stage.id && snapshot.context.requirementKey === canonicalKey && snapshot.context.attempt === attempt && eligibleIds.has(snapshot.producerId) && /^[a-f0-9]{64}$/.test(snapshot.requestSha256) && /^[a-f0-9]{64}$/.test(snapshot.replySha256) && validIsoTimestamp(snapshot.createdAt) !== void 0 && validIsoTimestamp(snapshot.replyCreatedAt) !== void 0 && validIsoTimestamp(snapshot.repliedAt) !== void 0 && validIsoTimestamp(snapshot.verifiedAt) !== void 0) producers.add(snapshot.producerId);
+  }
+  const approval = stage.degradationApprovals?.find(
+    (candidate) => candidate.requirementKey === canonicalKey && candidate.attempt === attempt
+  );
+  const effectiveMinProducers = approval?.approvedMinProducers ?? policy.minProducers;
+  return {
+    requirementKey: canonicalKey,
+    policyMinProducers: policy.minProducers,
+    effectiveMinProducers,
+    producers: [...producers],
+    met: producers.size >= effectiveMinProducers,
+    degraded: Boolean(approval && producers.size < policy.minProducers && producers.size >= effectiveMinProducers),
+    ...approval ? { approval } : {}
+  };
+}
+function requireCompleteEvidence(stage, evidence, verifiedEvidence, runId) {
+  const missing = [];
+  const peerStatuses = [];
+  for (const rawRequirement of stage.requiredEvidence) {
+    const requirement = canonicalWorkflowEvidenceKey(rawRequirement);
+    const peerStatus = peerEvidenceRequirementStatus(stage, requirement, runId, verifiedEvidence);
+    if (peerStatus) {
+      peerStatuses.push(peerStatus);
+      if (!peerStatus.met) missing.push(requirement);
+    } else if (stage.evidencePolicies?.[requirement]) {
+      throw new ProtocolError(
+        409,
+        `stage ${stage.id} evidence policy ${requirement} was not resolved when the run started`,
+        "workflow_evidence_policy_unresolved"
+      );
+    } else if (!evidence[requirement]?.length) {
+      missing.push(requirement);
+    }
+  }
+  if (missing.length === 0) return peerStatuses;
+  throw new ProtocolError(
+    400,
+    `stage ${stage.id} is missing required evidence: ${missing.join(", ")}`,
+    "workflow_evidence_incomplete",
+    {
+      missingRequirements: missing,
+      providedRequirements: Object.keys(evidence),
+      peerRequirements: peerStatuses
+    }
+  );
+}
+function parseWorkflowEvidencePolicies(value, stageId, requiredEvidence, workflowId, targetName, warn) {
+  if (value === void 0) return void 0;
+  const rawPolicies = object(value, `stage ${stageId} evidencePolicies`);
+  const policies = /* @__PURE__ */ new Map();
+  for (const [rawRequirement, rawPolicy] of Object.entries(rawPolicies)) {
+    const requirementKey = canonicalWorkflowEvidenceKey(
+      requireString(rawRequirement, `stage ${stageId} evidencePolicies requirement`, { max: 128 })
+    );
+    if (!requiredEvidence.includes(requirementKey)) {
+      throw new Error(`stage ${stageId} evidence policy ${requirementKey} must match requiredEvidence`);
+    }
+    if (policies.has(requirementKey)) {
+      throw new Error(`stage ${stageId} evidencePolicies keys must be unique after normalization`);
+    }
+    const policy = object(rawPolicy, `stage ${stageId} evidencePolicies.${requirementKey}`);
+    const supportedPolicyFields = /* @__PURE__ */ new Set([
+      "kind",
+      "minProducers",
+      "eligibleAgents",
+      "acceptedStatuses",
+      "degradation"
+    ]);
+    const unsupportedPolicyFields = Object.keys(policy).filter((field) => !supportedPolicyFields.has(field));
+    if (unsupportedPolicyFields.length) {
+      throw new Error(
+        `stage ${stageId} evidencePolicies.${requirementKey} contains unsupported fields: ${unsupportedPolicyFields.join(", ")}`
+      );
+    }
+    if (policy.kind !== "peer-reply") {
+      throw new Error(`stage ${stageId} evidencePolicies.${requirementKey}.kind must be peer-reply`);
+    }
+    const minProducers = policy.minProducers;
+    if (!Number.isInteger(minProducers) || minProducers < 1 || minProducers > 8) {
+      throw new Error(`stage ${stageId} evidencePolicies.${requirementKey}.minProducers must be an integer between 1 and 8`);
+    }
+    const eligibleAgents = stringArray(
+      policy.eligibleAgents,
+      `stage ${stageId} evidencePolicies.${requirementKey}.eligibleAgents`
+    );
+    if (eligibleAgents.length < 1 || eligibleAgents.length > 16) {
+      throw new Error(`stage ${stageId} evidencePolicies.${requirementKey}.eligibleAgents must contain between 1 and 16 selectors`);
+    }
+    const normalizedSelectors = eligibleAgents.map((selector) => selector.toLowerCase());
+    if (new Set(normalizedSelectors).size !== normalizedSelectors.length) {
+      throw new Error(`stage ${stageId} evidencePolicies.${requirementKey}.eligibleAgents must be unique`);
+    }
+    if (normalizedSelectors.includes(targetName)) {
+      throw new Error(
+        `workflow ${workflowId} stage ${stageId} evidencePolicies.${requirementKey}.eligibleAgents must not include the workflow target ${targetName}: the target cannot produce peer evidence for its own run`
+      );
+    }
+    if (minProducers > normalizedSelectors.length) {
+      throw new Error(`stage ${stageId} evidencePolicies.${requirementKey}.minProducers exceeds eligibleAgents`);
+    }
+    if (policy.acceptedStatuses !== void 0) {
+      const statuses = stringArray(
+        policy.acceptedStatuses,
+        `stage ${stageId} evidencePolicies.${requirementKey}.acceptedStatuses`
+      );
+      if (statuses.length !== 1 || statuses[0] !== "replied") {
+        throw new Error(`stage ${stageId} evidencePolicies.${requirementKey}.acceptedStatuses must be ["replied"]`);
+      }
+    }
+    let degradation;
+    if (policy.degradation !== void 0) {
+      const rawDegradation = object(
+        policy.degradation,
+        `stage ${stageId} evidencePolicies.${requirementKey}.degradation`
+      );
+      const unsupportedDegradationFields = Object.keys(rawDegradation).filter((field) => field !== "minProducers");
+      if (unsupportedDegradationFields.length) {
+        throw new Error(
+          `stage ${stageId} evidencePolicies.${requirementKey}.degradation contains unsupported fields: ${unsupportedDegradationFields.join(", ")}`
+        );
+      }
+      const degradedMin = rawDegradation.minProducers;
+      if (!Number.isInteger(degradedMin) || degradedMin < 1 || degradedMin >= minProducers) {
+        throw new Error(
+          `stage ${stageId} evidencePolicies.${requirementKey}.degradation.minProducers must be at least 1 and lower than minProducers`
+        );
+      }
+      degradation = { minProducers: degradedMin };
+      if (degradation.minProducers < 2) {
+        warn(
+          `workflow ${workflowId} stage ${stageId} evidence policy ${requirementKey}: degradation.minProducers is ${degradation.minProducers} (< 2); a single producer can satisfy the degraded peer-reply quorum`
+        );
+      }
+    }
+    policies.set(requirementKey, {
+      kind: "peer-reply",
+      minProducers,
+      eligibleAgents,
+      acceptedStatuses: ["replied"],
+      ...degradation ? { degradation } : {}
+    });
+  }
+  return policies.size ? Object.fromEntries(policies) : void 0;
+}
+function parseWorkflowDefinitions(raw, environment = process.env, onWarning) {
+  if (!raw?.trim()) return [];
+  const parsed = JSON.parse(raw);
+  if (!Array.isArray(parsed)) throw new Error("KXM_WEBHOOK_WORKFLOWS must be a JSON array");
+  const warn = (message) => {
+    onWarning?.(message);
+  };
+  const ids = /* @__PURE__ */ new Set();
+  return parsed.map((entry, definitionIndex) => {
+    const value = object(entry, `workflow ${definitionIndex}`);
+    const id = requireString(value.id, "workflow.id", { max: 64 });
+    if (ids.has(id)) throw new Error(`duplicate workflow id: ${id}`);
+    ids.add(id);
+    const source = value.source ?? "generic";
+    if (source !== "jira" && source !== "github" && source !== "generic") {
+      throw new Error(`workflow ${id} source must be jira, github, or generic`);
+    }
+    const delivery = value.delivery ?? "followUp";
+    if (delivery !== "steer" && delivery !== "followUp") {
+      throw new Error(`workflow ${id} delivery must be steer or followUp`);
+    }
+    const secretEnv = value.secretEnv === void 0 ? void 0 : requireString(value.secretEnv, "workflow.secretEnv", { max: 128 });
+    if (value.secret !== void 0 && secretEnv) {
+      throw new Error(`workflow ${id} must configure only one of secret or secretEnv`);
+    }
+    const secret = requireString(secretEnv ? environment[secretEnv] : value.secret, "workflow.secret", { max: 512 });
+    if (secret.length < 16) throw new Error(`workflow ${id} secret must contain at least 16 characters`);
+    const signalSecretEnv = value.signalSecretEnv === void 0 ? void 0 : requireString(value.signalSecretEnv, "workflow.signalSecretEnv", { max: 128 });
+    if (value.signalSecret !== void 0 && signalSecretEnv) {
+      throw new Error(`workflow ${id} must configure only one of signalSecret or signalSecretEnv`);
+    }
+    const signalSecret = signalSecretEnv ? requireString(environment[signalSecretEnv], "workflow.signalSecret", { max: 512 }) : value.signalSecret === void 0 ? void 0 : requireString(value.signalSecret, "workflow.signalSecret", { max: 512 });
+    if (signalSecret && signalSecret.length < 16) {
+      throw new Error(`workflow ${id} signalSecret must contain at least 16 characters`);
+    }
+    const target = requireString(value.target, "workflow.target", { max: 80 });
+    const targetName = target.toLowerCase();
+    if (!Array.isArray(value.stages) || value.stages.length === 0 || value.stages.length > 32) {
+      throw new Error(`workflow ${id} must define between 1 and 32 stages`);
+    }
+    const stageIds = /* @__PURE__ */ new Set();
+    const stages = value.stages.map((stageEntry, stageIndex) => {
+      const stage = object(stageEntry, `workflow ${id} stage ${stageIndex}`);
+      const stageId = requireString(stage.id, "stage.id", { max: 64 });
+      if (stageIds.has(stageId)) throw new Error(`duplicate stage id ${stageId} in workflow ${id}`);
+      stageIds.add(stageId);
+      const maxAttempts = stage.maxAttempts ?? 3;
+      if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 20) {
+        throw new Error(`stage ${stageId} maxAttempts must be an integer between 1 and 20`);
+      }
+      const area = stage.area ? requireString(stage.area, "stage.area", { max: 24 }) : void 0;
+      if (area && !["harness", "gates", "implementation", "workflow", "documentation", "security", "other"].includes(area)) {
+        throw new Error(`stage ${stageId} area is invalid`);
+      }
+      const requiredEvidence = stringArray(stage.requiredEvidence ?? [], "stage.requiredEvidence").map((requirement, requirementIndex) => canonicalWorkflowEvidenceKey(
+        requireString(requirement, `stage.requiredEvidence[${requirementIndex}]`, { max: 128 })
+      ));
+      if (requiredEvidence.length > 32) throw new Error(`stage ${stageId} may require at most 32 evidence keys`);
+      if (new Set(requiredEvidence).size !== requiredEvidence.length) {
+        throw new Error(`stage ${stageId} requiredEvidence keys must be unique`);
+      }
+      const evidencePolicies = parseWorkflowEvidencePolicies(
+        stage.evidencePolicies,
+        stageId,
+        requiredEvidence,
+        id,
+        targetName,
+        warn
+      );
+      const on = parseOutcomeMap(stageId, stage.on);
+      const stageMaxTransitions = stage.maxTransitions;
+      if (stageMaxTransitions !== void 0 && (!Number.isInteger(stageMaxTransitions) || stageMaxTransitions < 1 || stageMaxTransitions > 100)) {
+        throw new Error(`stage ${stageId} maxTransitions must be an integer between 1 and 100`);
+      }
+      return {
+        id: stageId,
+        label: requireString(stage.label ?? stageId, "stage.label", { max: 128 }),
+        instructions: requireString(stage.instructions, "stage.instructions", { max: 4e3 }),
+        requiredEvidence,
+        maxAttempts,
+        ...area ? { area } : {},
+        ...evidencePolicies ? { evidencePolicies } : {},
+        ...on ? { on } : {},
+        ...stageMaxTransitions !== void 0 ? { maxTransitions: stageMaxTransitions } : {}
+      };
+    });
+    const definitionMaxTransitions = value.maxTransitions;
+    if (definitionMaxTransitions !== void 0) validateWorkflowTransitions({ id, stages, maxTransitions: definitionMaxTransitions });
+    else validateWorkflowTransitions({ id, stages });
+    const stageIdSet = new Set(stages.map((stage) => stage.id));
+    const parseOracleConfig = (raw2, field) => {
+      if (raw2 === void 0) return void 0;
+      const candidate = object(raw2, `workflow ${id} ${field}`);
+      const stageId = requireString(candidate.stageId, `workflow ${id} ${field}.stageId`, { max: 64 });
+      if (!stageIdSet.has(stageId)) {
+        throw new Error(`workflow ${id} ${field}.stageId references unknown stage ${stageId}`);
+      }
+      const evidenceKey = canonicalWorkflowEvidenceKey(requireString(candidate.evidenceKey, `workflow ${id} ${field}.evidenceKey`, { max: 128 }));
+      return { stageId, evidenceKey };
+    };
+    const reproOracle = parseOracleConfig(value.reproOracle, "reproOracle");
+    const planHash = parseOracleConfig(value.planHash, "planHash");
+    let requirePlanHash;
+    if (value.requirePlanHash !== void 0) {
+      const required = stringArray(value.requirePlanHash, `workflow ${id} requirePlanHash`);
+      for (const stageId of required) {
+        if (!stageIdSet.has(stageId)) {
+          throw new Error(`workflow ${id} requirePlanHash references unknown stage ${stageId}`);
+        }
+      }
+      requirePlanHash = [...new Set(required)].sort();
+    }
+    let filter;
+    if (value.filter !== void 0) {
+      const candidate = object(value.filter, `workflow ${id} filter`);
+      filter = {
+        path: requireString(candidate.path, "filter.path", { max: 256 }),
+        equals: requireString(candidate.equals, "filter.equals", { max: 512 })
+      };
+    }
+    if (value.ttlMs !== void 0 && (!Number.isInteger(value.ttlMs) || value.ttlMs < MIN_MESSAGE_TTL_MS || value.ttlMs > MAX_MESSAGE_TTL_MS)) {
+      throw new Error(`workflow ${id} ttlMs must be an integer between ${MIN_MESSAGE_TTL_MS} and ${MAX_MESSAGE_TTL_MS}`);
+    }
+    return {
+      id,
+      source,
+      project: requireString(value.project, "workflow.project", { max: 128 }),
+      target,
+      secret,
+      ...signalSecret ? { signalSecret } : {},
+      ...value.event ? { event: requireString(value.event, "workflow.event", { max: 128 }) } : {},
+      ...filter ? { filter } : {},
+      delivery,
+      ...value.ttlMs !== void 0 ? { ttlMs: value.ttlMs } : {},
+      ...value.maxTransitions !== void 0 ? { maxTransitions: value.maxTransitions } : {},
+      ...reproOracle ? { reproOracle } : {},
+      ...planHash ? { planHash } : {},
+      ...requirePlanHash ? { requirePlanHash } : {},
+      promptTemplate: requireString(value.promptTemplate, "workflow.promptTemplate", { max: 2e4 }),
+      stages
+    };
+  });
+}
+function validateWorkflowTransitions(definition) {
+  const stageIndex = new Map(definition.stages.map((stage, index) => [stage.id, index]));
+  let hasBackEdge = false;
+  for (const stage of definition.stages) {
+    if (!stage.on) continue;
+    for (const [outcome, rawValue] of Object.entries(stage.on)) {
+      if (!outcome.trim()) throw new Error(`stage ${stage.id} declares an empty outcome key`);
+      const rule = normalizeOutcomeValue(rawValue, `stage ${stage.id} on.${outcome}`);
+      if (rule.target === WORKFLOW_TERMINAL_TARGET) continue;
+      const targetIndex = stageIndex.get(rule.target);
+      if (targetIndex === void 0) {
+        throw new Error(`stage ${stage.id} on.${outcome} targets unknown stage ${rule.target}`);
+      }
+      const sourceIndex = stageIndex.get(stage.id);
+      if (targetIndex > sourceIndex + 1) {
+        throw new Error(
+          `stage ${stage.id} on.${outcome} skips intermediate stages by targeting ${rule.target}; forward transitions must target the next stage so approvals and gates cannot be bypassed`
+        );
+      }
+      if (targetIndex <= sourceIndex) hasBackEdge = true;
+    }
+  }
+  if (definition.maxTransitions !== void 0 && (!Number.isInteger(definition.maxTransitions) || definition.maxTransitions < 1 || definition.maxTransitions > 200)) {
+    throw new Error(`workflow ${definition.id} maxTransitions must be an integer between 1 and 200`);
+  }
+  if (hasBackEdge && (definition.maxTransitions === void 0 || definition.maxTransitions < 1)) {
+    throw new Error(`workflow ${definition.id} declares a back-edge but no maxTransitions budget; cycles without budgets are rejected`);
+  }
+}
+function parseOutcomeMap(stageId, raw) {
+  if (raw === void 0) return void 0;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error(`stage ${stageId} on must be an object`);
+  }
+  const map = {};
+  for (const [outcome, value] of Object.entries(raw)) {
+    map[outcome] = normalizeOutcomeValue(value, `stage ${stageId} on.${outcome}`);
+  }
+  return map;
+}
+function valueAtPath(payload, path) {
+  let current = payload;
+  for (const part of path.split(".")) {
+    if (!current || typeof current !== "object" || Array.isArray(current)) return void 0;
+    current = current[part];
+  }
+  return current;
+}
+function renderWorkflowPrompt(template, payload) {
+  return template.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_match, path) => {
+    const value = valueAtPath(payload, path);
+    if (value === void 0 || value === null) return "";
+    return typeof value === "object" ? JSON.stringify(value) : String(value);
+  });
+}
+function canonicalizeForHash(value) {
+  if (Array.isArray(value)) return value.map(canonicalizeForHash);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).filter(([, candidate]) => candidate !== void 0).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0).map(([key, candidate]) => [key, canonicalizeForHash(candidate)])
+    );
+  }
+  return value;
+}
+function canonicalWorkflowDefinitionJson(definition) {
+  const { secret: _secret, signalSecret: _signalSecret, ...publicDefinition } = definition;
+  return JSON.stringify(canonicalizeForHash(publicDefinition));
+}
+function workflowDefinitionHash(definition) {
+  return createHash("sha256").update(canonicalWorkflowDefinitionJson(definition), "utf8").digest("hex");
+}
+function resolveOutcomeRule(stage, outcomeKey) {
+  const raw = stage.on?.[outcomeKey];
+  return raw === void 0 ? void 0 : normalizeOutcomeValue(raw, `stage ${stage.id} on.${outcomeKey}`);
+}
+function transitionCounts(run, fromStage, outcome, target) {
+  const records = run.transitions ?? [];
+  return {
+    total: records.length,
+    fromStage: records.filter((record) => record.fromStage === fromStage).length,
+    forEdge: records.filter((record) => record.fromStage === fromStage && record.outcome === outcome && record.toStage === target).length
+  };
+}
+function recordTransition(run, fromStage, rule, outcome, attempt, evidenceKeys, timestamp) {
+  const record = {
+    id: newId("trans"),
+    fromStage,
+    toStage: rule.target,
+    outcome,
+    attempt,
+    evidenceKeys,
+    at: timestamp
+  };
+  run.transitions = [...run.transitions ?? [], record];
+  return record;
+}
+function enterStage(run, stage, timestamp) {
+  stage.status = "in_progress";
+  stage.attempts = 0;
+  stage.evidence = {};
+  stage.verifiedEvidence = {};
+  stage.startedAt = timestamp;
+  stage.updatedAt = timestamp;
+  delete stage.summary;
+  run.currentStage = stage.id;
+  run.updatedAt = timestamp;
+}
+function takeDeclaredTransition(run, stage, rule, outcome, summary, attempt, timestamp, evidenceKeys) {
+  const definitionBudget = run.maxTransitions;
+  const counts = transitionCounts(run, stage.id, outcome, rule.target);
+  const edgeExhausted = rule.maxTransitions !== void 0 && counts.forEdge >= rule.maxTransitions;
+  const stageExhausted = stage.maxTransitions !== void 0 && counts.fromStage >= stage.maxTransitions;
+  const globalExhausted = definitionBudget !== void 0 && counts.total >= definitionBudget;
+  if (edgeExhausted || stageExhausted || globalExhausted) {
+    stage.completedAt = timestamp;
+    run.status = "failed";
+    delete run.currentStage;
+    run.updatedAt = timestamp;
+    return {
+      retry: false,
+      completed: false,
+      run,
+      exhausted: true
+    };
+  }
+  const record = recordTransition(run, stage.id, rule, outcome, attempt, evidenceKeys.slice(0, 32), timestamp);
+  if (rule.target === WORKFLOW_TERMINAL_TARGET) {
+    stage.completedAt = timestamp;
+    run.status = "completed";
+    delete run.currentStage;
+    run.completedAt = timestamp;
+    run.updatedAt = timestamp;
+    return { retry: false, completed: true, run, transition: record };
+  }
+  const target = run.stages.find((candidate) => candidate.id === rule.target);
+  if (!target) {
+    run.status = "failed";
+    delete run.currentStage;
+    return { retry: false, completed: false, run, exhausted: true };
+  }
+  stage.summary = summary;
+  enterStage(run, target, timestamp);
+  return { retry: false, completed: false, run, transition: record };
+}
+function evidenceValueSha256(evidence, key) {
+  const values = evidence[canonicalWorkflowEvidenceKey(key)];
+  if (!values || values.length === 0) return void 0;
+  return createHash("sha256").update([...values].sort().join("\n"), "utf8").digest("hex");
+}
+function enforceOracles(run, stageId, evidence) {
+  if (run.oracle) {
+    const presented = evidenceValueSha256(evidence, run.oracle.evidenceKey);
+    if (presented !== void 0 && presented !== run.oracle.sha256) {
+      throw new ProtocolError(
+        400,
+        `evidence ${run.oracle.evidenceKey} does not match the immutable reproduction oracle captured at ${run.oracle.capturedAt}; the confirmed reproduction may not be weakened`,
+        "weakened_reproduction"
+      );
+    }
+  }
+  if (run.requirePlanHash?.includes(stageId) && !run.planHash) {
+    throw new ProtocolError(
+      400,
+      `stage ${stageId} requires an approved plan hash before it can checkpoint`,
+      "plan_hash_required"
+    );
+  }
+}
+function captureOracles(run, stageId, evidence, timestamp) {
+  if (run.reproOracle?.stageId === stageId) {
+    const sha256 = evidenceValueSha256(evidence, run.reproOracle.evidenceKey);
+    if (sha256 !== void 0) {
+      run.oracle = { evidenceKey: run.reproOracle.evidenceKey, sha256, capturedAt: timestamp };
+    }
+  }
+  if (run.planHashConfig?.stageId === stageId) {
+    const sha256 = evidenceValueSha256(evidence, run.planHashConfig.evidenceKey);
+    if (sha256 !== void 0) {
+      run.planHash = { evidenceKey: run.planHashConfig.evidenceKey, sha256, capturedAt: timestamp };
+    }
+  }
+}
+function checkpointRun(run, stageId, status, summary, evidence, timestamp, verifiedEvidence = {}, outcome) {
+  if (run.status !== "running") throw new ProtocolError(409, `workflow is ${run.status}`, "workflow_terminal");
+  const stage = run.stages.find((candidate) => candidate.id === stageId);
+  if (!stage) throw new ProtocolError(404, `workflow stage not found: ${stageId}`, "workflow_stage_not_found");
+  if (stage.id !== run.currentStage || stage.status !== "in_progress") {
+    throw new ProtocolError(409, `stage ${stageId} is not currently active`, "workflow_stage_out_of_order");
+  }
+  const accumulatedEvidence = mergeWorkflowEvidence(stage.evidence, evidence);
+  const accumulatedVerifiedEvidence = mergeVerifiedWorkflowEvidence(stage.verifiedEvidence, verifiedEvidence);
+  enforceOracles(run, stageId, accumulatedEvidence);
+  const peerStatuses = status === "passed" ? requireCompleteEvidence(stage, accumulatedEvidence, accumulatedVerifiedEvidence, run.id) : [];
+  const degradedRequirements = peerStatuses.filter((peerStatus) => peerStatus.degraded);
+  stage.attempts += 1;
+  stage.summary = summary;
+  if (status === "passed") {
+    stage.evidence = accumulatedEvidence;
+    if (Object.keys(accumulatedVerifiedEvidence).length) stage.verifiedEvidence = accumulatedVerifiedEvidence;
+    captureOracles(run, stageId, accumulatedEvidence, timestamp);
+    if (degradedRequirements.length) {
+      stage.degraded = true;
+      stage.degradedRequirements = degradedRequirements.map((peerStatus) => peerStatus.requirementKey);
+    }
+  }
+  stage.updatedAt = timestamp;
+  run.updatedAt = timestamp;
+  if (status !== "passed") {
+    stage.status = status;
+    if (stage.attempts >= stage.maxAttempts) {
+      stage.completedAt = timestamp;
+      run.status = "failed";
+      delete run.currentStage;
+      return { retry: false, completed: false, run };
+    }
+    const outcomeKey = outcome ?? status;
+    const rule = resolveOutcomeRule(stage, outcomeKey);
+    if (rule && stage.attempts < stage.maxAttempts) {
+      const result = takeDeclaredTransition(run, stage, rule, outcomeKey, summary, stage.attempts, timestamp, Object.keys(accumulatedEvidence));
+      if (result.transition !== void 0 && !result.completed && rule.target !== stage.id) {
+        stage.status = "pending";
+      }
+      return result;
+    }
+    stage.status = "in_progress";
+    return { retry: true, completed: false, run };
+  }
+  stage.status = "passed";
+  stage.completedAt = timestamp;
+  const passedRule = resolveOutcomeRule(stage, outcome ?? "passed");
+  if (passedRule) {
+    return takeDeclaredTransition(run, stage, passedRule, outcome ?? "passed", summary, stage.attempts, timestamp, Object.keys(accumulatedEvidence));
+  }
+  const next = run.stages.find((candidate) => candidate.status === "pending");
+  if (next) {
+    next.status = "in_progress";
+    next.startedAt = timestamp;
+    next.updatedAt = timestamp;
+    run.currentStage = next.id;
+    return {
+      retry: false,
+      completed: false,
+      run,
+      ...degradedRequirements.length ? { degraded: true } : {}
+    };
+  }
+  run.status = "completed";
+  delete run.currentStage;
+  run.completedAt = timestamp;
+  return {
+    retry: false,
+    completed: true,
+    run,
+    ...degradedRequirements.length ? { degraded: true } : {}
+  };
+}
+function waitForWorkflowSignal(run, stageId, signalKey, summary, timestamp, expiresAt, evidence = {}, verifiedEvidence = {}) {
+  if (run.status !== "running") throw new ProtocolError(409, `workflow is ${run.status}`, "workflow_not_running");
+  const stage = run.stages.find((candidate) => candidate.id === stageId);
+  if (!stage) throw new ProtocolError(404, `workflow stage not found: ${stageId}`, "workflow_stage_not_found");
+  if (stage.id !== run.currentStage || stage.status !== "in_progress") {
+    throw new ProtocolError(409, `stage ${stageId} is not currently active`, "workflow_stage_out_of_order");
+  }
+  if (Date.parse(expiresAt) <= Date.parse(timestamp)) {
+    throw new ProtocolError(400, "workflow signal expiry must be in the future", "workflow_wait_invalid");
+  }
+  stage.evidence = mergeWorkflowEvidence(stage.evidence, evidence);
+  const accumulatedVerifiedEvidence = mergeVerifiedWorkflowEvidence(stage.verifiedEvidence, verifiedEvidence);
+  if (Object.keys(accumulatedVerifiedEvidence).length) stage.verifiedEvidence = accumulatedVerifiedEvidence;
+  stage.status = "waiting";
+  stage.updatedAt = timestamp;
+  run.status = "waiting";
+  run.waiting = { stageId, signalKey, summary, createdAt: timestamp, expiresAt };
+  run.updatedAt = timestamp;
+  return run;
+}
+function resumeWorkflowFromSignal(run, signalKey, status, summary, evidence, timestamp) {
+  if (run.status !== "waiting" || !run.waiting) {
+    throw new ProtocolError(409, `workflow is ${run.status}`, "workflow_not_waiting");
+  }
+  if (run.waiting.signalKey !== signalKey) {
+    throw new ProtocolError(409, `workflow is waiting for ${run.waiting.signalKey}`, "workflow_signal_mismatch");
+  }
+  const stageId = run.waiting.stageId;
+  const stage = run.stages.find((candidate) => candidate.id === stageId);
+  if (!stage || stage.id !== run.currentStage || stage.status !== "waiting") {
+    throw new ProtocolError(409, "workflow wait state is inconsistent", "workflow_wait_inconsistent");
+  }
+  const accumulatedEvidence = mergeWorkflowEvidence(stage.evidence, evidence);
+  if (status === "passed") {
+    requireCompleteEvidence(
+      stage,
+      accumulatedEvidence,
+      normalizeVerifiedWorkflowEvidence(stage.verifiedEvidence),
+      run.id
+    );
+  }
+  run.status = "running";
+  stage.status = "in_progress";
+  delete run.waiting;
+  const result = checkpointRun(run, stageId, status, summary, evidence, timestamp);
+  return { ...result, stageId };
+}
+function approveWorkflowDegradation(run, stageId, requirement, reason, approvalId, timestamp) {
+  if (run.status !== "running" && run.status !== "waiting") {
+    throw new ProtocolError(409, `workflow is ${run.status}`, "workflow_terminal");
+  }
+  const stage = run.stages.find((candidate) => candidate.id === stageId);
+  if (!stage) throw new ProtocolError(404, `workflow stage not found: ${stageId}`, "workflow_stage_not_found");
+  if (stage.id !== run.currentStage || stage.status !== "in_progress" && stage.status !== "waiting") {
+    throw new ProtocolError(409, `stage ${stageId} is not currently active`, "workflow_stage_out_of_order");
+  }
+  const requirementKey = canonicalWorkflowEvidenceKey(requirement);
+  const policy = stage.resolvedEvidencePolicies?.[requirementKey];
+  if (!policy?.degradation) {
+    throw new ProtocolError(
+      400,
+      `requirement ${requirementKey} does not permit degraded quorum`,
+      "workflow_degradation_forbidden"
+    );
+  }
+  const attempt = activeWorkflowAttempt(stage);
+  const existing = stage.degradationApprovals?.find(
+    (candidate) => candidate.requirementKey === requirementKey && candidate.attempt === attempt
+  );
+  if (existing) {
+    if (existing.reason !== reason.trim()) {
+      throw new ProtocolError(
+        409,
+        `degradation was already approved for ${requirementKey} attempt ${attempt}`,
+        "workflow_degradation_conflict"
+      );
+    }
+    return { run, approval: existing, created: false };
+  }
+  const approval = {
+    schema: "pi-mesh.workflow-degradation-approval.v1",
+    id: approvalId,
+    requirementKey,
+    attempt,
+    policyMinProducers: policy.minProducers,
+    approvedMinProducers: policy.degradation.minProducers,
+    approvedBy: "kxm-admin",
+    reason: requireString(reason, "reason", { max: 1e3 }),
+    approvedAt: timestamp
+  };
+  (stage.degradationApprovals ??= []).push(approval);
+  stage.updatedAt = timestamp;
+  run.updatedAt = timestamp;
+  return { run, approval, created: true };
+}
+
+// plugins/kxm/src/client.ts
+var HubHttpError = class extends Error {
+  statusCode;
+  code;
+  requestId;
+  extras;
+  constructor(statusCode, message, code, requestId, extras) {
+    super(message);
+    this.name = "HubHttpError";
+    this.statusCode = statusCode;
+    if (code) this.code = code;
+    if (requestId) this.requestId = requestId;
+    if (extras) this.extras = extras;
+  }
+};
+
+// plugins/kxm/src/commands.ts
+function requiredString(value, name) {
+  if (typeof value !== "string" || value.trim() === "") throw new Error(`${name} is required`);
+  return value.trim();
+}
+function optionalString2(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : void 0;
+}
+function asRecord(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+function optionalWorkflowContext(value) {
+  if (value === void 0) return void 0;
+  const context = asRecord(value);
+  if (!Number.isInteger(context.attempt) || context.attempt < 1 || context.attempt > 20) {
+    throw new Error("workflowContext.attempt must be an integer between 1 and 20");
+  }
+  return {
+    runId: requiredString(context.runId, "workflowContext.runId"),
+    stageId: requiredString(context.stageId, "workflowContext.stageId"),
+    requirementKey: requiredString(context.requirementKey, "workflowContext.requirementKey"),
+    attempt: context.attempt
+  };
+}
+function optionalEvidenceRefs(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : void 0;
+}
+function isTerminalMessageError(error) {
+  return error instanceof HubHttpError && (error.statusCode === 409 || error.statusCode === 404 && error.code === "message_not_found");
+}
+function isTerminalMessage(message) {
+  return message.status === "replied" || message.status === "cancelled" || message.status === "expired" || message.status === "error";
+}
+async function reconcileInbox(client, inbox, notifiedInbox) {
+  await Promise.all(
+    [...inbox.keys()].map(async (messageId) => {
+      try {
+        const current = await client.getMessage(messageId);
+        if (isTerminalMessage(current)) {
+          inbox.delete(messageId);
+          notifiedInbox?.delete(messageId);
+        } else {
+          inbox.set(messageId, current);
+        }
+      } catch (error) {
+        if (isTerminalMessageError(error)) {
+          inbox.delete(messageId);
+          notifiedInbox?.delete(messageId);
+          return;
+        }
+        throw error;
+      }
+    })
+  );
+}
+function resolveProject(client, projectArg) {
+  const proj = optionalString2(projectArg) ?? client.agent?.project;
+  if (!proj) {
+    throw new Error('missing required parameter "project"');
+  }
+  return proj;
+}
+var AGENT_COMMANDS = [
+  {
+    name: "kxm_list",
+    group: "peer",
+    verb: "list",
+    label: "List hub peers",
+    description: "List online peer agents in this project's hub pool, including their names and purposes.",
+    parameters: {
+      type: "object",
+      properties: {},
+      additionalProperties: false
+    },
+    async execute(client) {
+      return { agents: await client.listAgents() };
+    }
+  },
+  {
+    name: "kxm_send",
+    group: "peer",
+    verb: "send",
+    label: "Send peer request",
+    description: "Send a focused request to a peer agent. Returns a message ID for kxm_get or kxm_await. For durable peer evidence, workflowContext is the hub-authorized provenance scope; correlation and idempotency are transport concerns and do not establish evidence provenance.",
+    parameters: {
+      type: "object",
+      properties: {
+        target: { type: "string", description: "Peer name or agent ID" },
+        content: { type: "string", description: "Focused request with the expected response or artifact" },
+        delivery: {
+          type: "string",
+          enum: ["steer", "followUp", "nextTurn"],
+          default: "followUp",
+          description: "followUp is the safe default; use steer only for active blockers"
+        },
+        correlationId: {
+          type: "string",
+          description: "Optional task grouping; the hub binds it to runId when workflowContext is supplied"
+        },
+        idempotencyKey: {
+          type: "string",
+          description: "Retry/deduplication key only; not a workflow security or evidence binding"
+        },
+        workflowContext: {
+          type: "object",
+          description: "Requested provenance scope; the hub authorizes and persists the canonical binding",
+          properties: {
+            runId: { type: "string", description: "Active durable workflow run ID" },
+            stageId: { type: "string", description: "Active workflow stage ID" },
+            requirementKey: { type: "string", description: "Required evidence identity this peer reply may satisfy" },
+            attempt: { type: "integer", minimum: 1, maximum: 20, description: "Current one-based stage attempt" }
+          },
+          required: ["runId", "stageId", "requirementKey", "attempt"],
+          additionalProperties: false
+        },
+        ttlMs: { type: "number", minimum: 1e3, maximum: 6048e5, description: "Message TTL in milliseconds" }
+      },
+      required: ["target", "content"],
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      const delivery = optionalString2(args.delivery);
+      const correlationId = optionalString2(args.correlationId);
+      const idempotencyKey = optionalString2(args.idempotencyKey);
+      const workflowContext = optionalWorkflowContext(args.workflowContext);
+      const message = await client.send({
+        target: requiredString(args.target, "target"),
+        content: requiredString(args.content, "content"),
+        ...delivery ? { delivery } : {},
+        ...correlationId ? { correlationId } : {},
+        ...idempotencyKey ? { idempotencyKey } : {},
+        ...workflowContext ? { workflowContext } : {},
+        ...typeof args.ttlMs === "number" ? { ttlMs: args.ttlMs } : {}
+      });
+      return { messageId: message.id, status: message.status, target: message.toName };
+    }
+  },
+  {
+    name: "kxm_get",
+    group: "peer",
+    verb: "get",
+    label: "Get peer request",
+    description: "Check the status and optional reply for a previously sent request.",
+    parameters: {
+      type: "object",
+      properties: {
+        messageId: { type: "string", description: "Message ID of the sent request" }
+      },
+      required: ["messageId"],
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.getMessage(requiredString(args.messageId, "messageId"));
+    }
+  },
+  {
+    name: "kxm_fanout",
+    group: "peer",
+    verb: "fanout",
+    label: "Fanout peer requests",
+    description: "Ask one through three peers independently and return replies for comparison and synthesis. A local timeout or request cancellation returns a pending response with a durable messageId for kxm_get or an exact retry.",
+    parameters: {
+      type: "object",
+      properties: {
+        targets: {
+          type: "array",
+          items: { type: "string" },
+          minItems: 1,
+          maxItems: 3,
+          description: "One through three target peer names or agent IDs"
+        },
+        content: { type: "string", description: "Task description sent to all targets" },
+        correlationId: {
+          type: "string",
+          description: "Optional task grouping; the hub binds it to runId when workflowContext is supplied"
+        },
+        idempotencyKeyPrefix: {
+          type: "string",
+          description: "Stable retry/deduplication prefix only; not a workflow security or evidence binding"
+        },
+        workflowContext: {
+          type: "object",
+          description: "Requested provenance scope shared by each request",
+          properties: {
+            runId: { type: "string", description: "Active durable workflow run ID" },
+            stageId: { type: "string", description: "Active workflow stage ID" },
+            requirementKey: { type: "string", description: "Required evidence identity these peer replies may satisfy" },
+            attempt: { type: "integer", minimum: 1, maximum: 20, description: "Current one-based stage attempt" }
+          },
+          required: ["runId", "stageId", "requirementKey", "attempt"],
+          additionalProperties: false
+        },
+        ttlMs: { type: "number", minimum: 1e3, maximum: 6048e5, description: "Message TTL in milliseconds" },
+        timeoutMs: { type: "number", minimum: 100, maximum: 18e5, description: "Client wait timeout in milliseconds" }
+      },
+      required: ["targets", "content"],
+      additionalProperties: false
+    },
+    async execute(client, args, context) {
+      const targets = Array.isArray(args.targets) ? args.targets.map((t) => requiredString(t, "target")) : [];
+      return {
+        responses: await client.fanout({
+          targets,
+          content: requiredString(args.content, "content"),
+          ...optionalString2(args.correlationId) ? { correlationId: optionalString2(args.correlationId) } : {},
+          ...optionalString2(args.idempotencyKeyPrefix) ? { idempotencyKeyPrefix: optionalString2(args.idempotencyKeyPrefix) } : {},
+          ...optionalWorkflowContext(args.workflowContext) ? { workflowContext: optionalWorkflowContext(args.workflowContext) } : {},
+          ...typeof args.ttlMs === "number" ? { ttlMs: args.ttlMs } : {},
+          ...typeof args.timeoutMs === "number" ? { timeoutMs: args.timeoutMs } : {},
+          ...context?.signal ? { signal: context.signal } : {}
+        })
+      };
+    }
+  },
+  {
+    name: "kxm_await",
+    group: "peer",
+    verb: "await",
+    label: "Await peer response",
+    description: "Wait until a sent request receives a reply or reaches a terminal error. Capped at 60 seconds (60000ms); longer waits are workflow wait steps.",
+    parameters: {
+      type: "object",
+      properties: {
+        messageId: { type: "string", description: "Message ID of the sent request" },
+        timeoutMs: {
+          type: "number",
+          minimum: 100,
+          maximum: 6e4,
+          default: 6e4,
+          description: "Timeout in milliseconds (capped at 60 seconds)"
+        }
+      },
+      required: ["messageId"],
+      additionalProperties: false
+    },
+    async execute(client, args, context) {
+      const timeoutMs = Math.min(
+        typeof args.timeoutMs === "number" ? args.timeoutMs : 6e4,
+        6e4
+      );
+      return await client.awaitResponse(
+        requiredString(args.messageId, "messageId"),
+        timeoutMs,
+        context?.signal
+      );
+    }
+  },
+  {
+    name: "kxm_cancel",
+    group: "peer",
+    verb: "cancel",
+    label: "Cancel peer request",
+    description: "Cancel a queued or delivered request sent by this agent.",
+    parameters: {
+      type: "object",
+      properties: {
+        messageId: { type: "string", description: "Message ID of the request to cancel" }
+      },
+      required: ["messageId"],
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.cancel(requiredString(args.messageId, "messageId"));
+    }
+  },
+  {
+    name: "kxm_inbox",
+    group: "peer",
+    verb: "inbox",
+    label: "List inbound requests",
+    description: "List inbound peer requests awaiting a reply.",
+    parameters: {
+      type: "object",
+      properties: {},
+      additionalProperties: false
+    },
+    async execute(client, _args, context) {
+      if (context?.inbox) {
+        await reconcileInbox(client, context.inbox, context.notifiedInbox);
+        return { messages: [...context.inbox.values()] };
+      }
+      return { messages: [] };
+    }
+  },
+  {
+    name: "kxm_reply",
+    group: "peer",
+    verb: "reply",
+    label: "Reply to peer request",
+    description: "Reply to an inbound peer request using its message ID.",
+    parameters: {
+      type: "object",
+      properties: {
+        messageId: { type: "string", description: "Message ID of the inbound request" },
+        content: { type: "string", description: "Final response with evidence and remaining risks" }
+      },
+      required: ["messageId", "content"],
+      additionalProperties: false
+    },
+    async execute(client, args, context) {
+      const messageId = requiredString(args.messageId, "messageId");
+      try {
+        const message = await client.reply(messageId, requiredString(args.content, "content"));
+        if (context?.inbox) {
+          context.inbox.delete(messageId);
+          context.notifiedInbox?.delete(messageId);
+        }
+        return { messageId, status: message.status, recipient: message.fromName };
+      } catch (error) {
+        if (context?.inbox && isTerminalMessageError(error)) {
+          context.inbox.delete(messageId);
+          context.notifiedInbox?.delete(messageId);
+        }
+        throw error;
+      }
+    }
+  },
+  {
+    name: "kxm_workflow_list",
+    group: "workflow",
+    verb: "runs",
+    label: "List workflow runs",
+    description: "List durable webhook workflows assigned to this agent.",
+    parameters: {
+      type: "object",
+      properties: {},
+      additionalProperties: false
+    },
+    async execute(client) {
+      return { runs: await client.listWorkflows() };
+    }
+  },
+  {
+    name: "kxm_workflow_get",
+    group: "workflow",
+    verb: "run",
+    label: "Get workflow run",
+    description: "Get a workflow's stages and journal of plans, decisions, contradictions, errors, and lessons.",
+    parameters: {
+      type: "object",
+      properties: {
+        runId: { type: "string", description: "Workflow run ID" }
+      },
+      required: ["runId"],
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.getWorkflow(requiredString(args.runId, "runId"));
+    }
+  },
+  {
+    name: "kxm_workflow_checkpoint",
+    group: "workflow",
+    verb: "checkpoint",
+    label: "Checkpoint workflow stage",
+    description: "Record a stage result with evidence keyed by the stage's required evidence identities. Cite peer-reply requirements through evidenceRefs so the hub can verify provenance and quorum; caller-authored evidence strings cannot satisfy those policies. Warnings and failures require another attempt until passed or exhausted.",
+    parameters: {
+      type: "object",
+      properties: {
+        runId: { type: "string", description: "Active durable workflow run ID" },
+        stageId: { type: "string", description: "Active stage ID" },
+        status: { type: "string", enum: ["passed", "warning", "failed"], description: "Stage outcome" },
+        summary: { type: "string", description: "Summary of changes, verification, and remaining risks" },
+        evidence: {
+          type: "object",
+          additionalProperties: { type: "string" },
+          maxProperties: 64,
+          description: "Key-value evidence mapping required keys to proof strings"
+        },
+        evidenceRefs: {
+          type: "object",
+          description: "Peer evidence references keyed by required evidence identity",
+          patternProperties: {
+            "^(.*)$": {
+              type: "object",
+              properties: {
+                messageIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 16 }
+              },
+              required: ["messageIds"],
+              additionalProperties: false
+            }
+          },
+          additionalProperties: {
+            type: "object",
+            properties: {
+              messageIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 16 }
+            },
+            required: ["messageIds"],
+            additionalProperties: false
+          },
+          maxProperties: 32
+        }
+      },
+      required: ["runId", "stageId", "status", "summary"],
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.checkpointWorkflow(requiredString(args.runId, "runId"), {
+        stageId: requiredString(args.stageId, "stageId"),
+        status: requiredString(args.status, "status"),
+        summary: requiredString(args.summary, "summary"),
+        ...args.evidence && typeof args.evidence === "object" && !Array.isArray(args.evidence) ? { evidence: args.evidence } : {},
+        ...optionalEvidenceRefs(args.evidenceRefs) ? { evidenceRefs: optionalEvidenceRefs(args.evidenceRefs) } : {}
+      });
+    }
+  },
+  {
+    name: "kxm_workflow_record",
+    group: "workflow",
+    verb: "record",
+    label: "Record workflow journal entry",
+    description: "Record a plan, decision, contradiction, error, or lesson for continuous improvement.",
+    parameters: {
+      type: "object",
+      properties: {
+        runId: { type: "string", description: "Active durable workflow run ID" },
+        category: {
+          type: "string",
+          enum: ["plan", "decision", "contradiction", "error", "lesson"],
+          description: "Category of journal entry"
+        },
+        area: {
+          type: "string",
+          enum: ["harness", "gates", "implementation", "workflow", "documentation", "security", "other"],
+          description: "System area"
+        },
+        severity: {
+          type: "string",
+          enum: ["info", "warning", "error"],
+          default: "info",
+          description: "Severity level"
+        },
+        summary: { type: "string", description: "Concise description of the observation or decision" },
+        details: { type: "string", description: "Extended details, context, and reasoning" },
+        evidence: {
+          type: "array",
+          items: { type: "string" },
+          maxItems: 32,
+          description: "Durable evidence strings or URIs"
+        },
+        relatedEntryIds: {
+          type: "array",
+          items: { type: "string" },
+          maxItems: 16,
+          description: "Related previous journal entry IDs"
+        }
+      },
+      required: ["runId", "category", "area", "summary"],
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.recordWorkflowEntry(requiredString(args.runId, "runId"), {
+        category: requiredString(args.category, "category"),
+        area: requiredString(args.area, "area"),
+        ...optionalString2(args.severity) ? { severity: optionalString2(args.severity) } : {},
+        summary: requiredString(args.summary, "summary"),
+        ...optionalString2(args.details) ? { details: optionalString2(args.details) } : {},
+        ...Array.isArray(args.evidence) ? { evidence: args.evidence } : {},
+        ...Array.isArray(args.relatedEntryIds) ? { relatedEntryIds: args.relatedEntryIds } : {}
+      });
+    }
+  },
+  {
+    name: "kxm_workflow_wait",
+    group: "workflow",
+    verb: "wait",
+    label: "Wait for workflow signal",
+    description: "Pause the active stage until a signed external callback checkpoints it and resumes the coordinator. Cite peer-reply requirements through evidenceRefs so the hub can verify provenance and quorum; verified evidence is accumulated with callback evidence.",
+    parameters: {
+      type: "object",
+      properties: {
+        runId: { type: "string", description: "Active durable workflow run ID" },
+        stageId: { type: "string", description: "Active stage ID" },
+        signalKey: { type: "string", description: "Stable callback key, such as github-pr-42-checks" },
+        summary: { type: "string", description: "What is running externally and what result is expected" },
+        evidence: {
+          type: "object",
+          additionalProperties: { type: "string" },
+          maxProperties: 64,
+          description: "Evidence gathered before the wait"
+        },
+        evidenceRefs: {
+          type: "object",
+          description: "Peer evidence references verified before waiting",
+          patternProperties: {
+            "^(.*)$": {
+              type: "object",
+              properties: {
+                messageIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 16 }
+              },
+              required: ["messageIds"],
+              additionalProperties: false
+            }
+          },
+          additionalProperties: {
+            type: "object",
+            properties: {
+              messageIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 16 }
+            },
+            required: ["messageIds"],
+            additionalProperties: false
+          },
+          maxProperties: 32
+        },
+        timeoutMs: {
+          type: "number",
+          minimum: 1e3,
+          maximum: 2592e6,
+          description: "Maximum wait duration in milliseconds"
+        }
+      },
+      required: ["runId", "stageId", "signalKey", "summary"],
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.waitForWorkflowSignal(requiredString(args.runId, "runId"), {
+        stageId: requiredString(args.stageId, "stageId"),
+        signalKey: requiredString(args.signalKey, "signalKey"),
+        summary: requiredString(args.summary, "summary"),
+        ...args.evidence && typeof args.evidence === "object" && !Array.isArray(args.evidence) ? { evidence: args.evidence } : {},
+        ...optionalEvidenceRefs(args.evidenceRefs) ? { evidenceRefs: optionalEvidenceRefs(args.evidenceRefs) } : {},
+        ...typeof args.timeoutMs === "number" ? { timeoutMs: args.timeoutMs } : {}
+      });
+    }
+  },
+  {
+    name: "kxm_improvement_report",
+    group: "workflow",
+    verb: "improve-report",
+    label: "Summarize improvement report",
+    description: "Summarize workflow errors, contradictions, and lessons by improvement area.",
+    parameters: {
+      type: "object",
+      properties: {},
+      additionalProperties: false
+    },
+    async execute(client) {
+      return await client.improvementReport();
+    }
+  },
+  {
+    name: "kxm_context",
+    group: "context",
+    verb: "get",
+    label: "Get KXM context packet",
+    description: "Normal entry point for KXM context. Assembles a token-budgeted role-aware context packet from durable journal evidence, temporal state, knowledge, episodes, and skills. Superseded and rejected records are excluded. Use KXM context tools instead of provider-specific memory APIs.",
+    parameters: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Project scope (must be the client's project)" },
+        role: {
+          type: "string",
+          description: "Requesting role: repro, planner, critic, implementer, verifier, or custom"
+        },
+        task: { type: "string", description: "What the role is trying to accomplish" },
+        workflowRunId: { type: "string", description: "Workflow run scope" },
+        stageId: { type: "string", description: "Workflow stage scope" },
+        budgetTokens: { type: "integer", description: "Token budget; defaults to the role policy" },
+        includeKinds: {
+          type: "array",
+          items: { type: "string", enum: ["evidence", "state", "episode", "knowledge", "skill"] },
+          description: "Restrict packet to these item kinds"
+        }
+      },
+      required: ["role", "task"],
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.contextGet({
+        project: resolveProject(client, args.project),
+        role: requiredString(args.role, "role"),
+        task: requiredString(args.task, "task"),
+        ...optionalString2(args.workflowRunId) ? { workflowRunId: optionalString2(args.workflowRunId) } : {},
+        ...optionalString2(args.stageId) ? { stageId: optionalString2(args.stageId) } : {},
+        ...typeof args.budgetTokens === "number" ? { budgetTokens: args.budgetTokens } : {},
+        ...Array.isArray(args.includeKinds) ? { includeKinds: args.includeKinds } : {}
+      });
+    }
+  },
+  {
+    name: "kxm_recall",
+    group: "context",
+    verb: "recall",
+    label: "Recall context metadata",
+    description: "Search durable context records for a project by query; returns bounded metadata only.",
+    parameters: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Project identifier" },
+        query: { type: "string", description: "Query string" },
+        kinds: { type: "array", items: { type: "string" }, description: "Kinds filter" },
+        limit: { type: "integer", minimum: 1, maximum: 100, description: "Maximum results" }
+      },
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.contextRecall({
+        project: resolveProject(client, args.project),
+        ...optionalString2(args.query) ? { query: optionalString2(args.query) } : {},
+        ...Array.isArray(args.kinds) ? { kinds: args.kinds } : {},
+        ...typeof args.limit === "number" ? { limit: args.limit } : {}
+      });
+    }
+  },
+  {
+    name: "kxm_state",
+    group: "context",
+    verb: "state",
+    label: "Get temporal state",
+    description: "Current value for one temporal state key, optionally as of a historical timestamp.",
+    parameters: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Project identifier" },
+        key: { type: "string", description: "State key" },
+        asOf: { type: "string", description: "ISO-8601 timestamp for historical queries" }
+      },
+      required: ["key"],
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.contextState({
+        project: resolveProject(client, args.project),
+        key: requiredString(args.key, "key"),
+        ...optionalString2(args.asOf) ? { asOf: optionalString2(args.asOf) } : {}
+      });
+    }
+  },
+  {
+    name: "kxm_episode",
+    group: "context",
+    verb: "episode",
+    label: "Get workflow episodes",
+    description: "Episodic learning from workflow journals: errors, lessons, observations, experiments for a project.",
+    parameters: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Project identifier" },
+        workflowRunId: { type: "string", description: "Optional workflow run scope" }
+      },
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.contextEpisode({
+        project: resolveProject(client, args.project),
+        ...optionalString2(args.workflowRunId) ? { workflowRunId: optionalString2(args.workflowRunId) } : {}
+      });
+    }
+  },
+  {
+    name: "kxm_promote",
+    group: "context",
+    verb: "promote",
+    label: "Propose state promotion",
+    description: "Propose a change to one authoritative state key. Promotion requires durable evidence.",
+    parameters: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Project identifier" },
+        key: { type: "string", description: "State key to promote" },
+        summary: { type: "string", description: "Promotion summary" },
+        authority: {
+          type: "string",
+          enum: ["policy", "instruction", "evidence", "hypothesis"],
+          description: "Authority class"
+        },
+        confidence: {
+          type: "string",
+          enum: ["verified", "probable", "uncertain"],
+          description: "Confidence level"
+        },
+        evidenceRefs: {
+          type: "array",
+          items: { type: "string" },
+          minItems: 1,
+          maxItems: 32,
+          description: "Evidence item references backing the promotion"
+        }
+      },
+      required: ["key", "summary", "authority", "confidence", "evidenceRefs"],
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.contextStatePropose({
+        project: resolveProject(client, args.project),
+        key: requiredString(args.key, "key"),
+        summary: requiredString(args.summary, "summary"),
+        authority: requiredString(args.authority, "authority"),
+        confidence: requiredString(args.confidence, "confidence"),
+        evidenceRefs: Array.isArray(args.evidenceRefs) ? args.evidenceRefs : []
+      });
+    }
+  }
+];
+var AGENT_COMMANDS_MAP = new Map(
+  AGENT_COMMANDS.map((cmd) => [cmd.name, cmd])
+);
+function timingSafeStringCompare(a, b) {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  const hashA = createHash2("sha256").update(a).digest();
+  const hashB = createHash2("sha256").update(b).digest();
+  return timingSafeEqual(hashA, hashB);
 }
 
 // plugins/kxm/src/redact.ts
@@ -8330,7 +10012,7 @@ function boundedRefs(value, field) {
 
 // plugins/kxm/src/skills.ts
 var import_yaml2 = __toESM(require_dist(), 1);
-import { createHash } from "node:crypto";
+import { createHash as createHash3 } from "node:crypto";
 import { existsSync as existsSync2, mkdirSync as mkdirSync2, readdirSync as readdirSync2, readFileSync as readFileSync2, renameSync, rmSync, statSync, writeFileSync as writeFileSync2 } from "node:fs";
 import { join as join2 } from "node:path";
 var SKILL_CANDIDATE_SCHEMA = "kxm.skill-candidate.v1";
@@ -8355,7 +10037,7 @@ var SkillLifecycleError = class extends Error {
   }
 };
 function skillContentSha256(content) {
-  return createHash("sha256").update(content, "utf8").digest("hex");
+  return createHash3("sha256").update(content, "utf8").digest("hex");
 }
 function skillIdFor(name, contentSha256) {
   const slug = name.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
@@ -8908,967 +10590,6 @@ function lintKnowledgeWiki(pages, pool) {
 // plugins/kxm/src/retrospective.ts
 import { mkdirSync as mkdirSync3, renameSync as renameSync2, writeFileSync as writeFileSync3 } from "node:fs";
 import { resolve as resolve2 } from "node:path";
-
-// plugins/kxm/src/workflow.ts
-import { createHash as createHash2 } from "node:crypto";
-var JOURNAL_CATEGORIES = [
-  "plan",
-  "decision",
-  "contradiction",
-  "error",
-  "lesson",
-  "observation",
-  "hypothesis",
-  "experiment",
-  "state-change",
-  "skill-candidate"
-];
-var EVIDENCE_REQUIRED_JOURNAL_CATEGORIES = ["lesson", "skill-candidate"];
-var PROMOTABLE_JOURNAL_CATEGORIES = ["skill-candidate", "hypothesis", "experiment"];
-function parseJournalCategory(value) {
-  if (typeof value !== "string" || !JOURNAL_CATEGORIES.includes(value)) {
-    throw new ProtocolError(
-      400,
-      `invalid journal category: must be one of ${JOURNAL_CATEGORIES.join(", ")}`,
-      "invalid_journal_category"
-    );
-  }
-  return value;
-}
-function journalEvidenceRequired(category) {
-  return EVIDENCE_REQUIRED_JOURNAL_CATEGORIES.includes(category);
-}
-var WORKFLOW_TERMINAL_TARGET = "$terminal";
-function normalizeOutcomeValue(value, field) {
-  if (typeof value === "string") return { target: value };
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`${field} must be a stage ID, "$terminal", or a { target, maxTransitions } rule`);
-  }
-  const rule = value;
-  if (typeof rule.target !== "string" || !rule.target.trim()) {
-    throw new Error(`${field}.target must be a non-empty stage ID or "$terminal"`);
-  }
-  if (rule.maxTransitions !== void 0 && (!Number.isInteger(rule.maxTransitions) || rule.maxTransitions < 1 || rule.maxTransitions > 100)) {
-    throw new Error(`${field}.maxTransitions must be an integer between 1 and 100`);
-  }
-  return { target: rule.target, ...rule.maxTransitions !== void 0 ? { maxTransitions: rule.maxTransitions } : {} };
-}
-function journalPromotionState(entry) {
-  if (!PROMOTABLE_JOURNAL_CATEGORIES.includes(entry.category)) return void 0;
-  const records = entry.promotion ?? [];
-  return records.length === 0 ? "proposed" : records[records.length - 1]?.to;
-}
-function applyJournalPromotion(entry, decision, decidedAt) {
-  if (!PROMOTABLE_JOURNAL_CATEGORIES.includes(entry.category)) {
-    throw new ProtocolError(
-      400,
-      `journal entries of category ${entry.category} do not participate in promotion`,
-      "journal_promotion_invalid"
-    );
-  }
-  if (decision.decidedBy === entry.agentId) {
-    throw new ProtocolError(
-      400,
-      "the author of a journal entry cannot decide its promotion",
-      "journal_promotion_invalid"
-    );
-  }
-  if (!Array.isArray(decision.evidenceRefs) || decision.evidenceRefs.length < 1 || decision.evidenceRefs.some((ref) => typeof ref !== "string" || !ref.trim())) {
-    throw new ProtocolError(
-      400,
-      "journal promotion requires at least one durable evidence reference",
-      "journal_promotion_invalid"
-    );
-  }
-  const current = journalPromotionState(entry);
-  if (current !== "proposed") {
-    throw new ProtocolError(
-      400,
-      `journal entry promotion already reached terminal state ${current}`,
-      "journal_promotion_invalid"
-    );
-  }
-  const record = {
-    schema: "kxm.journal-promotion.v1",
-    from: "proposed",
-    to: decision.to,
-    evidenceRefs: decision.evidenceRefs.map((ref) => ref.trim()),
-    decidedBy: decision.decidedBy,
-    reason: decision.reason,
-    decidedAt
-  };
-  return { ...entry, promotion: [...entry.promotion ?? [], record] };
-}
-function improvementReport(entries) {
-  const areas = [
-    "harness",
-    "gates",
-    "implementation",
-    "workflow",
-    "documentation",
-    "security",
-    "other"
-  ];
-  const severityWeight = { error: 3, warning: 2, info: 1 };
-  return areas.map((area) => {
-    const matching = entries.filter((entry) => entry.area === area);
-    const priorities = [...matching].filter((entry) => entry.category === "error" || entry.category === "contradiction" || entry.category === "lesson" || entry.category === "skill-candidate").sort((left, right) => severityWeight[right.severity] - severityWeight[left.severity]).slice(0, 10);
-    return {
-      area,
-      total: matching.length,
-      errors: matching.filter((entry) => entry.category === "error").length,
-      contradictions: matching.filter((entry) => entry.category === "contradiction").length,
-      lessons: matching.filter((entry) => entry.category === "lesson").length,
-      priorities
-    };
-  }).filter((report) => report.total > 0);
-}
-function object(value, name) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${name} must be an object`);
-  return value;
-}
-function stringArray(value, name) {
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || !item.trim())) {
-    throw new Error(`${name} must be an array of non-empty strings`);
-  }
-  return value.map((item) => item.trim());
-}
-function canonicalWorkflowEvidenceKey(value) {
-  return value.trim().replace(/\s+/gu, " ").toLowerCase();
-}
-function normalizeWorkflowEvidence(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  const normalized = /* @__PURE__ */ new Map();
-  for (const [requirement, candidate] of Object.entries(value)) {
-    const key = canonicalWorkflowEvidenceKey(requirement);
-    if (!key) continue;
-    const values = Array.isArray(candidate) ? candidate : [candidate];
-    const safeValues = values.filter((item) => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim());
-    if (safeValues.length > 0) {
-      normalized.set(key, [.../* @__PURE__ */ new Set([...normalized.get(key) ?? [], ...safeValues])]);
-    }
-  }
-  return Object.fromEntries(normalized);
-}
-function normalizeVerifiedWorkflowEvidence(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  const result = /* @__PURE__ */ new Map();
-  for (const [rawRequirement, rawSnapshots] of Object.entries(value)) {
-    const requirement = canonicalWorkflowEvidenceKey(rawRequirement);
-    if (!requirement || !Array.isArray(rawSnapshots)) continue;
-    const snapshots = rawSnapshots.filter((candidate) => {
-      if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return false;
-      const snapshot = candidate;
-      return snapshot.schema === "pi-mesh.verified-peer-evidence.v1" && typeof snapshot.messageId === "string" && typeof snapshot.producerId === "string" && typeof snapshot.producerName === "string" && snapshot.status === "replied" && typeof snapshot.requestSha256 === "string" && typeof snapshot.replySha256 === "string" && typeof snapshot.createdAt === "string" && typeof snapshot.replyCreatedAt === "string" && typeof snapshot.repliedAt === "string" && typeof snapshot.verifiedAt === "string" && snapshot.context?.schema === "pi-mesh.workflow-message-context.v1";
-    });
-    if (snapshots.length) result.set(requirement, snapshots);
-  }
-  return Object.fromEntries(result);
-}
-function mergeVerifiedWorkflowEvidence(current, incoming = {}) {
-  const merged = new Map(Object.entries(normalizeVerifiedWorkflowEvidence(current)));
-  for (const [rawRequirement, snapshots] of Object.entries(incoming)) {
-    const requirement = canonicalWorkflowEvidenceKey(rawRequirement);
-    if (!requirement) continue;
-    const values = [...merged.get(requirement) ?? []];
-    for (const snapshot of snapshots) {
-      if (!values.some((candidate) => candidate.messageId === snapshot.messageId)) values.push(snapshot);
-    }
-    if (values.length) merged.set(requirement, values);
-  }
-  return Object.fromEntries(merged);
-}
-function mergeWorkflowEvidence(current, incoming = {}) {
-  const merged = new Map(Object.entries(normalizeWorkflowEvidence(current)));
-  const seen = /* @__PURE__ */ new Set();
-  for (const [rawRequirement, rawValue] of Object.entries(incoming)) {
-    const requirement = canonicalWorkflowEvidenceKey(rawRequirement);
-    if (!requirement || typeof rawValue !== "string" || !rawValue.trim()) {
-      throw new ProtocolError(400, "evidence must contain non-empty keyed string values", "invalid_workflow_evidence");
-    }
-    if (seen.has(requirement)) {
-      throw new ProtocolError(
-        400,
-        `evidence contains duplicate normalized requirement identity: ${requirement}`,
-        "invalid_workflow_evidence"
-      );
-    }
-    seen.add(requirement);
-    const value = rawValue.trim();
-    const values = merged.get(requirement) ?? [];
-    if (!values.includes(value)) values.push(value);
-    merged.set(requirement, values);
-  }
-  return Object.fromEntries(merged);
-}
-function workflowEvidenceStrings(evidence) {
-  return Object.entries(evidence).flatMap(([requirement, candidate]) => {
-    const values = Array.isArray(candidate) ? candidate : [candidate];
-    return values.map((value) => `${requirement}: ${value}`);
-  });
-}
-function activeWorkflowAttempt(stage) {
-  return stage.attempts + 1;
-}
-function validIsoTimestamp(value) {
-  if (!value) return void 0;
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : void 0;
-}
-function verifyWorkflowEvidenceReferences(run, stage, references, lookup, verifiedAt) {
-  const expectedAttempt = activeWorkflowAttempt(stage);
-  const result = /* @__PURE__ */ new Map();
-  const seenRequirements = /* @__PURE__ */ new Set();
-  const seenMessageIds = /* @__PURE__ */ new Set();
-  for (const [rawRequirement, reference] of Object.entries(references)) {
-    const requirementKey = canonicalWorkflowEvidenceKey(rawRequirement);
-    if (!requirementKey || seenRequirements.has(requirementKey)) {
-      throw new ProtocolError(
-        400,
-        `evidenceRefs contains duplicate or empty requirement identity: ${requirementKey || "(empty)"}`,
-        "invalid_workflow_evidence_refs"
-      );
-    }
-    seenRequirements.add(requirementKey);
-    const policy = stage.resolvedEvidencePolicies?.[requirementKey];
-    if (!policy) {
-      throw new ProtocolError(
-        400,
-        `requirement ${requirementKey} does not declare a resolved peer evidence policy`,
-        "workflow_evidence_policy_missing"
-      );
-    }
-    if (!reference || !Array.isArray(reference.messageIds) || reference.messageIds.length < 1 || reference.messageIds.length > 16) {
-      throw new ProtocolError(
-        400,
-        `evidenceRefs.${requirementKey}.messageIds must contain between 1 and 16 message IDs`,
-        "invalid_workflow_evidence_refs"
-      );
-    }
-    const eligibleProducerIds = new Set(policy.eligibleProducers.map((producer) => producer.id));
-    const snapshots = [];
-    for (const rawMessageId of reference.messageIds) {
-      const messageId = typeof rawMessageId === "string" ? rawMessageId.trim() : "";
-      if (!messageId || seenMessageIds.has(messageId)) {
-        throw new ProtocolError(
-          400,
-          `evidenceRefs contains an empty or duplicate message ID: ${messageId || "(empty)"}`,
-          "invalid_workflow_evidence_refs"
-        );
-      }
-      seenMessageIds.add(messageId);
-      const message = lookup.getMessage(messageId);
-      if (!message) {
-        throw new ProtocolError(400, `peer evidence message not found: ${messageId}`, "workflow_provenance_invalid");
-      }
-      const context = message.workflowContext;
-      if (context?.schema !== "pi-mesh.workflow-message-context.v1" || context.runId !== run.id || context.stageId !== stage.id || context.requirementKey !== requirementKey || context.attempt !== expectedAttempt) {
-        throw new ProtocolError(
-          400,
-          `peer evidence message ${messageId} is not bound to ${run.id}/${stage.id}/${requirementKey}/attempt-${expectedAttempt}`,
-          "workflow_provenance_invalid"
-        );
-      }
-      if (message.project !== run.project || message.from !== run.targetAgentId || message.to === run.targetAgentId) {
-        throw new ProtocolError(
-          400,
-          `peer evidence message ${messageId} has an invalid project or direction`,
-          "workflow_provenance_invalid"
-        );
-      }
-      if (!eligibleProducerIds.has(message.to)) {
-        throw new ProtocolError(
-          400,
-          `peer evidence producer ${message.toName} is not eligible for ${requirementKey}`,
-          "workflow_provenance_invalid"
-        );
-      }
-      if (message.correlationId !== run.id || message.status !== "replied" || !message.reply?.content.trim()) {
-        throw new ProtocolError(
-          400,
-          `peer evidence message ${messageId} is not a replied message for run ${run.id}`,
-          "workflow_provenance_invalid"
-        );
-      }
-      const createdAt = validIsoTimestamp(message.createdAt);
-      const deliveredAt = message.deliveredAt === void 0 ? void 0 : validIsoTimestamp(message.deliveredAt);
-      const replyCreatedAt = validIsoTimestamp(message.reply.createdAt);
-      const repliedAt = validIsoTimestamp(message.repliedAt);
-      if (createdAt === void 0 || replyCreatedAt === void 0 || repliedAt === void 0 || message.deliveredAt !== void 0 && deliveredAt === void 0 || deliveredAt !== void 0 && (deliveredAt < createdAt || deliveredAt > repliedAt) || replyCreatedAt < createdAt || repliedAt < replyCreatedAt) {
-        throw new ProtocolError(
-          400,
-          `peer evidence message ${messageId} has incoherent reply timestamps`,
-          "workflow_provenance_invalid"
-        );
-      }
-      snapshots.push({
-        schema: "pi-mesh.verified-peer-evidence.v1",
-        messageId: message.id,
-        producerId: message.to,
-        producerName: message.toName,
-        context: { ...context },
-        status: "replied",
-        requestSha256: createHash2("sha256").update(message.content, "utf8").digest("hex"),
-        replySha256: createHash2("sha256").update(message.reply.content, "utf8").digest("hex"),
-        createdAt: message.createdAt,
-        replyCreatedAt: message.reply.createdAt,
-        repliedAt: message.repliedAt,
-        verifiedAt
-      });
-    }
-    result.set(requirementKey, snapshots);
-  }
-  return Object.fromEntries(result);
-}
-function peerEvidenceRequirementStatus(stage, requirementKey, runId, verifiedEvidence = normalizeVerifiedWorkflowEvidence(stage.verifiedEvidence)) {
-  const canonicalKey = canonicalWorkflowEvidenceKey(requirementKey);
-  const policy = stage.resolvedEvidencePolicies?.[canonicalKey];
-  if (!policy) return void 0;
-  const attempt = activeWorkflowAttempt(stage);
-  const eligibleIds = new Set(policy.eligibleProducers.map((producer) => producer.id));
-  const producers = /* @__PURE__ */ new Set();
-  for (const snapshot of verifiedEvidence[canonicalKey] ?? []) {
-    if (snapshot.schema === "pi-mesh.verified-peer-evidence.v1" && snapshot.status === "replied" && snapshot.context?.schema === "pi-mesh.workflow-message-context.v1" && snapshot.context.runId === runId && snapshot.context.stageId === stage.id && snapshot.context.requirementKey === canonicalKey && snapshot.context.attempt === attempt && eligibleIds.has(snapshot.producerId) && /^[a-f0-9]{64}$/.test(snapshot.requestSha256) && /^[a-f0-9]{64}$/.test(snapshot.replySha256) && validIsoTimestamp(snapshot.createdAt) !== void 0 && validIsoTimestamp(snapshot.replyCreatedAt) !== void 0 && validIsoTimestamp(snapshot.repliedAt) !== void 0 && validIsoTimestamp(snapshot.verifiedAt) !== void 0) producers.add(snapshot.producerId);
-  }
-  const approval = stage.degradationApprovals?.find(
-    (candidate) => candidate.requirementKey === canonicalKey && candidate.attempt === attempt
-  );
-  const effectiveMinProducers = approval?.approvedMinProducers ?? policy.minProducers;
-  return {
-    requirementKey: canonicalKey,
-    policyMinProducers: policy.minProducers,
-    effectiveMinProducers,
-    producers: [...producers],
-    met: producers.size >= effectiveMinProducers,
-    degraded: Boolean(approval && producers.size < policy.minProducers && producers.size >= effectiveMinProducers),
-    ...approval ? { approval } : {}
-  };
-}
-function requireCompleteEvidence(stage, evidence, verifiedEvidence, runId) {
-  const missing = [];
-  const peerStatuses = [];
-  for (const rawRequirement of stage.requiredEvidence) {
-    const requirement = canonicalWorkflowEvidenceKey(rawRequirement);
-    const peerStatus = peerEvidenceRequirementStatus(stage, requirement, runId, verifiedEvidence);
-    if (peerStatus) {
-      peerStatuses.push(peerStatus);
-      if (!peerStatus.met) missing.push(requirement);
-    } else if (stage.evidencePolicies?.[requirement]) {
-      throw new ProtocolError(
-        409,
-        `stage ${stage.id} evidence policy ${requirement} was not resolved when the run started`,
-        "workflow_evidence_policy_unresolved"
-      );
-    } else if (!evidence[requirement]?.length) {
-      missing.push(requirement);
-    }
-  }
-  if (missing.length === 0) return peerStatuses;
-  throw new ProtocolError(
-    400,
-    `stage ${stage.id} is missing required evidence: ${missing.join(", ")}`,
-    "workflow_evidence_incomplete",
-    {
-      missingRequirements: missing,
-      providedRequirements: Object.keys(evidence),
-      peerRequirements: peerStatuses
-    }
-  );
-}
-function parseWorkflowEvidencePolicies(value, stageId, requiredEvidence, workflowId, targetName, warn) {
-  if (value === void 0) return void 0;
-  const rawPolicies = object(value, `stage ${stageId} evidencePolicies`);
-  const policies = /* @__PURE__ */ new Map();
-  for (const [rawRequirement, rawPolicy] of Object.entries(rawPolicies)) {
-    const requirementKey = canonicalWorkflowEvidenceKey(
-      requireString(rawRequirement, `stage ${stageId} evidencePolicies requirement`, { max: 128 })
-    );
-    if (!requiredEvidence.includes(requirementKey)) {
-      throw new Error(`stage ${stageId} evidence policy ${requirementKey} must match requiredEvidence`);
-    }
-    if (policies.has(requirementKey)) {
-      throw new Error(`stage ${stageId} evidencePolicies keys must be unique after normalization`);
-    }
-    const policy = object(rawPolicy, `stage ${stageId} evidencePolicies.${requirementKey}`);
-    const supportedPolicyFields = /* @__PURE__ */ new Set([
-      "kind",
-      "minProducers",
-      "eligibleAgents",
-      "acceptedStatuses",
-      "degradation"
-    ]);
-    const unsupportedPolicyFields = Object.keys(policy).filter((field) => !supportedPolicyFields.has(field));
-    if (unsupportedPolicyFields.length) {
-      throw new Error(
-        `stage ${stageId} evidencePolicies.${requirementKey} contains unsupported fields: ${unsupportedPolicyFields.join(", ")}`
-      );
-    }
-    if (policy.kind !== "peer-reply") {
-      throw new Error(`stage ${stageId} evidencePolicies.${requirementKey}.kind must be peer-reply`);
-    }
-    const minProducers = policy.minProducers;
-    if (!Number.isInteger(minProducers) || minProducers < 1 || minProducers > 8) {
-      throw new Error(`stage ${stageId} evidencePolicies.${requirementKey}.minProducers must be an integer between 1 and 8`);
-    }
-    const eligibleAgents = stringArray(
-      policy.eligibleAgents,
-      `stage ${stageId} evidencePolicies.${requirementKey}.eligibleAgents`
-    );
-    if (eligibleAgents.length < 1 || eligibleAgents.length > 16) {
-      throw new Error(`stage ${stageId} evidencePolicies.${requirementKey}.eligibleAgents must contain between 1 and 16 selectors`);
-    }
-    const normalizedSelectors = eligibleAgents.map((selector) => selector.toLowerCase());
-    if (new Set(normalizedSelectors).size !== normalizedSelectors.length) {
-      throw new Error(`stage ${stageId} evidencePolicies.${requirementKey}.eligibleAgents must be unique`);
-    }
-    if (normalizedSelectors.includes(targetName)) {
-      throw new Error(
-        `workflow ${workflowId} stage ${stageId} evidencePolicies.${requirementKey}.eligibleAgents must not include the workflow target ${targetName}: the target cannot produce peer evidence for its own run`
-      );
-    }
-    if (minProducers > normalizedSelectors.length) {
-      throw new Error(`stage ${stageId} evidencePolicies.${requirementKey}.minProducers exceeds eligibleAgents`);
-    }
-    if (policy.acceptedStatuses !== void 0) {
-      const statuses = stringArray(
-        policy.acceptedStatuses,
-        `stage ${stageId} evidencePolicies.${requirementKey}.acceptedStatuses`
-      );
-      if (statuses.length !== 1 || statuses[0] !== "replied") {
-        throw new Error(`stage ${stageId} evidencePolicies.${requirementKey}.acceptedStatuses must be ["replied"]`);
-      }
-    }
-    let degradation;
-    if (policy.degradation !== void 0) {
-      const rawDegradation = object(
-        policy.degradation,
-        `stage ${stageId} evidencePolicies.${requirementKey}.degradation`
-      );
-      const unsupportedDegradationFields = Object.keys(rawDegradation).filter((field) => field !== "minProducers");
-      if (unsupportedDegradationFields.length) {
-        throw new Error(
-          `stage ${stageId} evidencePolicies.${requirementKey}.degradation contains unsupported fields: ${unsupportedDegradationFields.join(", ")}`
-        );
-      }
-      const degradedMin = rawDegradation.minProducers;
-      if (!Number.isInteger(degradedMin) || degradedMin < 1 || degradedMin >= minProducers) {
-        throw new Error(
-          `stage ${stageId} evidencePolicies.${requirementKey}.degradation.minProducers must be at least 1 and lower than minProducers`
-        );
-      }
-      degradation = { minProducers: degradedMin };
-      if (degradation.minProducers < 2) {
-        warn(
-          `workflow ${workflowId} stage ${stageId} evidence policy ${requirementKey}: degradation.minProducers is ${degradation.minProducers} (< 2); a single producer can satisfy the degraded peer-reply quorum`
-        );
-      }
-    }
-    policies.set(requirementKey, {
-      kind: "peer-reply",
-      minProducers,
-      eligibleAgents,
-      acceptedStatuses: ["replied"],
-      ...degradation ? { degradation } : {}
-    });
-  }
-  return policies.size ? Object.fromEntries(policies) : void 0;
-}
-function parseWorkflowDefinitions(raw, environment = process.env, onWarning) {
-  if (!raw?.trim()) return [];
-  const parsed = JSON.parse(raw);
-  if (!Array.isArray(parsed)) throw new Error("KXM_WEBHOOK_WORKFLOWS must be a JSON array");
-  const warn = (message) => {
-    onWarning?.(message);
-  };
-  const ids = /* @__PURE__ */ new Set();
-  return parsed.map((entry, definitionIndex) => {
-    const value = object(entry, `workflow ${definitionIndex}`);
-    const id = requireString(value.id, "workflow.id", { max: 64 });
-    if (ids.has(id)) throw new Error(`duplicate workflow id: ${id}`);
-    ids.add(id);
-    const source = value.source ?? "generic";
-    if (source !== "jira" && source !== "github" && source !== "generic") {
-      throw new Error(`workflow ${id} source must be jira, github, or generic`);
-    }
-    const delivery = value.delivery ?? "followUp";
-    if (delivery !== "steer" && delivery !== "followUp") {
-      throw new Error(`workflow ${id} delivery must be steer or followUp`);
-    }
-    const secretEnv = value.secretEnv === void 0 ? void 0 : requireString(value.secretEnv, "workflow.secretEnv", { max: 128 });
-    if (value.secret !== void 0 && secretEnv) {
-      throw new Error(`workflow ${id} must configure only one of secret or secretEnv`);
-    }
-    const secret = requireString(secretEnv ? environment[secretEnv] : value.secret, "workflow.secret", { max: 512 });
-    if (secret.length < 16) throw new Error(`workflow ${id} secret must contain at least 16 characters`);
-    const signalSecretEnv = value.signalSecretEnv === void 0 ? void 0 : requireString(value.signalSecretEnv, "workflow.signalSecretEnv", { max: 128 });
-    if (value.signalSecret !== void 0 && signalSecretEnv) {
-      throw new Error(`workflow ${id} must configure only one of signalSecret or signalSecretEnv`);
-    }
-    const signalSecret = signalSecretEnv ? requireString(environment[signalSecretEnv], "workflow.signalSecret", { max: 512 }) : value.signalSecret === void 0 ? void 0 : requireString(value.signalSecret, "workflow.signalSecret", { max: 512 });
-    if (signalSecret && signalSecret.length < 16) {
-      throw new Error(`workflow ${id} signalSecret must contain at least 16 characters`);
-    }
-    const target = requireString(value.target, "workflow.target", { max: 80 });
-    const targetName = target.toLowerCase();
-    if (!Array.isArray(value.stages) || value.stages.length === 0 || value.stages.length > 32) {
-      throw new Error(`workflow ${id} must define between 1 and 32 stages`);
-    }
-    const stageIds = /* @__PURE__ */ new Set();
-    const stages = value.stages.map((stageEntry, stageIndex) => {
-      const stage = object(stageEntry, `workflow ${id} stage ${stageIndex}`);
-      const stageId = requireString(stage.id, "stage.id", { max: 64 });
-      if (stageIds.has(stageId)) throw new Error(`duplicate stage id ${stageId} in workflow ${id}`);
-      stageIds.add(stageId);
-      const maxAttempts = stage.maxAttempts ?? 3;
-      if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 20) {
-        throw new Error(`stage ${stageId} maxAttempts must be an integer between 1 and 20`);
-      }
-      const area = stage.area ? requireString(stage.area, "stage.area", { max: 24 }) : void 0;
-      if (area && !["harness", "gates", "implementation", "workflow", "documentation", "security", "other"].includes(area)) {
-        throw new Error(`stage ${stageId} area is invalid`);
-      }
-      const requiredEvidence = stringArray(stage.requiredEvidence ?? [], "stage.requiredEvidence").map((requirement, requirementIndex) => canonicalWorkflowEvidenceKey(
-        requireString(requirement, `stage.requiredEvidence[${requirementIndex}]`, { max: 128 })
-      ));
-      if (requiredEvidence.length > 32) throw new Error(`stage ${stageId} may require at most 32 evidence keys`);
-      if (new Set(requiredEvidence).size !== requiredEvidence.length) {
-        throw new Error(`stage ${stageId} requiredEvidence keys must be unique`);
-      }
-      const evidencePolicies = parseWorkflowEvidencePolicies(
-        stage.evidencePolicies,
-        stageId,
-        requiredEvidence,
-        id,
-        targetName,
-        warn
-      );
-      const on = parseOutcomeMap(stageId, stage.on);
-      const stageMaxTransitions = stage.maxTransitions;
-      if (stageMaxTransitions !== void 0 && (!Number.isInteger(stageMaxTransitions) || stageMaxTransitions < 1 || stageMaxTransitions > 100)) {
-        throw new Error(`stage ${stageId} maxTransitions must be an integer between 1 and 100`);
-      }
-      return {
-        id: stageId,
-        label: requireString(stage.label ?? stageId, "stage.label", { max: 128 }),
-        instructions: requireString(stage.instructions, "stage.instructions", { max: 4e3 }),
-        requiredEvidence,
-        maxAttempts,
-        ...area ? { area } : {},
-        ...evidencePolicies ? { evidencePolicies } : {},
-        ...on ? { on } : {},
-        ...stageMaxTransitions !== void 0 ? { maxTransitions: stageMaxTransitions } : {}
-      };
-    });
-    const definitionMaxTransitions = value.maxTransitions;
-    if (definitionMaxTransitions !== void 0) validateWorkflowTransitions({ id, stages, maxTransitions: definitionMaxTransitions });
-    else validateWorkflowTransitions({ id, stages });
-    const stageIdSet = new Set(stages.map((stage) => stage.id));
-    const parseOracleConfig = (raw2, field) => {
-      if (raw2 === void 0) return void 0;
-      const candidate = object(raw2, `workflow ${id} ${field}`);
-      const stageId = requireString(candidate.stageId, `workflow ${id} ${field}.stageId`, { max: 64 });
-      if (!stageIdSet.has(stageId)) {
-        throw new Error(`workflow ${id} ${field}.stageId references unknown stage ${stageId}`);
-      }
-      const evidenceKey = canonicalWorkflowEvidenceKey(requireString(candidate.evidenceKey, `workflow ${id} ${field}.evidenceKey`, { max: 128 }));
-      return { stageId, evidenceKey };
-    };
-    const reproOracle = parseOracleConfig(value.reproOracle, "reproOracle");
-    const planHash = parseOracleConfig(value.planHash, "planHash");
-    let requirePlanHash;
-    if (value.requirePlanHash !== void 0) {
-      const required = stringArray(value.requirePlanHash, `workflow ${id} requirePlanHash`);
-      for (const stageId of required) {
-        if (!stageIdSet.has(stageId)) {
-          throw new Error(`workflow ${id} requirePlanHash references unknown stage ${stageId}`);
-        }
-      }
-      requirePlanHash = [...new Set(required)].sort();
-    }
-    let filter;
-    if (value.filter !== void 0) {
-      const candidate = object(value.filter, `workflow ${id} filter`);
-      filter = {
-        path: requireString(candidate.path, "filter.path", { max: 256 }),
-        equals: requireString(candidate.equals, "filter.equals", { max: 512 })
-      };
-    }
-    if (value.ttlMs !== void 0 && (!Number.isInteger(value.ttlMs) || value.ttlMs < MIN_MESSAGE_TTL_MS || value.ttlMs > MAX_MESSAGE_TTL_MS)) {
-      throw new Error(`workflow ${id} ttlMs must be an integer between ${MIN_MESSAGE_TTL_MS} and ${MAX_MESSAGE_TTL_MS}`);
-    }
-    return {
-      id,
-      source,
-      project: requireString(value.project, "workflow.project", { max: 128 }),
-      target,
-      secret,
-      ...signalSecret ? { signalSecret } : {},
-      ...value.event ? { event: requireString(value.event, "workflow.event", { max: 128 }) } : {},
-      ...filter ? { filter } : {},
-      delivery,
-      ...value.ttlMs !== void 0 ? { ttlMs: value.ttlMs } : {},
-      ...value.maxTransitions !== void 0 ? { maxTransitions: value.maxTransitions } : {},
-      ...reproOracle ? { reproOracle } : {},
-      ...planHash ? { planHash } : {},
-      ...requirePlanHash ? { requirePlanHash } : {},
-      promptTemplate: requireString(value.promptTemplate, "workflow.promptTemplate", { max: 2e4 }),
-      stages
-    };
-  });
-}
-function validateWorkflowTransitions(definition) {
-  const stageIndex = new Map(definition.stages.map((stage, index) => [stage.id, index]));
-  let hasBackEdge = false;
-  for (const stage of definition.stages) {
-    if (!stage.on) continue;
-    for (const [outcome, rawValue] of Object.entries(stage.on)) {
-      if (!outcome.trim()) throw new Error(`stage ${stage.id} declares an empty outcome key`);
-      const rule = normalizeOutcomeValue(rawValue, `stage ${stage.id} on.${outcome}`);
-      if (rule.target === WORKFLOW_TERMINAL_TARGET) continue;
-      const targetIndex = stageIndex.get(rule.target);
-      if (targetIndex === void 0) {
-        throw new Error(`stage ${stage.id} on.${outcome} targets unknown stage ${rule.target}`);
-      }
-      const sourceIndex = stageIndex.get(stage.id);
-      if (targetIndex > sourceIndex + 1) {
-        throw new Error(
-          `stage ${stage.id} on.${outcome} skips intermediate stages by targeting ${rule.target}; forward transitions must target the next stage so approvals and gates cannot be bypassed`
-        );
-      }
-      if (targetIndex <= sourceIndex) hasBackEdge = true;
-    }
-  }
-  if (definition.maxTransitions !== void 0 && (!Number.isInteger(definition.maxTransitions) || definition.maxTransitions < 1 || definition.maxTransitions > 200)) {
-    throw new Error(`workflow ${definition.id} maxTransitions must be an integer between 1 and 200`);
-  }
-  if (hasBackEdge && (definition.maxTransitions === void 0 || definition.maxTransitions < 1)) {
-    throw new Error(`workflow ${definition.id} declares a back-edge but no maxTransitions budget; cycles without budgets are rejected`);
-  }
-}
-function parseOutcomeMap(stageId, raw) {
-  if (raw === void 0) return void 0;
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    throw new Error(`stage ${stageId} on must be an object`);
-  }
-  const map = {};
-  for (const [outcome, value] of Object.entries(raw)) {
-    map[outcome] = normalizeOutcomeValue(value, `stage ${stageId} on.${outcome}`);
-  }
-  return map;
-}
-function valueAtPath(payload, path) {
-  let current = payload;
-  for (const part of path.split(".")) {
-    if (!current || typeof current !== "object" || Array.isArray(current)) return void 0;
-    current = current[part];
-  }
-  return current;
-}
-function renderWorkflowPrompt(template, payload) {
-  return template.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_match, path) => {
-    const value = valueAtPath(payload, path);
-    if (value === void 0 || value === null) return "";
-    return typeof value === "object" ? JSON.stringify(value) : String(value);
-  });
-}
-function canonicalizeForHash(value) {
-  if (Array.isArray(value)) return value.map(canonicalizeForHash);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value).filter(([, candidate]) => candidate !== void 0).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0).map(([key, candidate]) => [key, canonicalizeForHash(candidate)])
-    );
-  }
-  return value;
-}
-function canonicalWorkflowDefinitionJson(definition) {
-  const { secret: _secret, signalSecret: _signalSecret, ...publicDefinition } = definition;
-  return JSON.stringify(canonicalizeForHash(publicDefinition));
-}
-function workflowDefinitionHash(definition) {
-  return createHash2("sha256").update(canonicalWorkflowDefinitionJson(definition), "utf8").digest("hex");
-}
-function resolveOutcomeRule(stage, outcomeKey) {
-  const raw = stage.on?.[outcomeKey];
-  return raw === void 0 ? void 0 : normalizeOutcomeValue(raw, `stage ${stage.id} on.${outcomeKey}`);
-}
-function transitionCounts(run, fromStage, outcome, target) {
-  const records = run.transitions ?? [];
-  return {
-    total: records.length,
-    fromStage: records.filter((record) => record.fromStage === fromStage).length,
-    forEdge: records.filter((record) => record.fromStage === fromStage && record.outcome === outcome && record.toStage === target).length
-  };
-}
-function recordTransition(run, fromStage, rule, outcome, attempt, evidenceKeys, timestamp) {
-  const record = {
-    id: newId("trans"),
-    fromStage,
-    toStage: rule.target,
-    outcome,
-    attempt,
-    evidenceKeys,
-    at: timestamp
-  };
-  run.transitions = [...run.transitions ?? [], record];
-  return record;
-}
-function enterStage(run, stage, timestamp) {
-  stage.status = "in_progress";
-  stage.attempts = 0;
-  stage.evidence = {};
-  stage.verifiedEvidence = {};
-  stage.startedAt = timestamp;
-  stage.updatedAt = timestamp;
-  delete stage.summary;
-  run.currentStage = stage.id;
-  run.updatedAt = timestamp;
-}
-function takeDeclaredTransition(run, stage, rule, outcome, summary, attempt, timestamp, evidenceKeys) {
-  const definitionBudget = run.maxTransitions;
-  const counts = transitionCounts(run, stage.id, outcome, rule.target);
-  const edgeExhausted = rule.maxTransitions !== void 0 && counts.forEdge >= rule.maxTransitions;
-  const stageExhausted = stage.maxTransitions !== void 0 && counts.fromStage >= stage.maxTransitions;
-  const globalExhausted = definitionBudget !== void 0 && counts.total >= definitionBudget;
-  if (edgeExhausted || stageExhausted || globalExhausted) {
-    stage.completedAt = timestamp;
-    run.status = "failed";
-    delete run.currentStage;
-    run.updatedAt = timestamp;
-    return {
-      retry: false,
-      completed: false,
-      run,
-      exhausted: true
-    };
-  }
-  const record = recordTransition(run, stage.id, rule, outcome, attempt, evidenceKeys.slice(0, 32), timestamp);
-  if (rule.target === WORKFLOW_TERMINAL_TARGET) {
-    stage.completedAt = timestamp;
-    run.status = "completed";
-    delete run.currentStage;
-    run.completedAt = timestamp;
-    run.updatedAt = timestamp;
-    return { retry: false, completed: true, run, transition: record };
-  }
-  const target = run.stages.find((candidate) => candidate.id === rule.target);
-  if (!target) {
-    run.status = "failed";
-    delete run.currentStage;
-    return { retry: false, completed: false, run, exhausted: true };
-  }
-  stage.summary = summary;
-  enterStage(run, target, timestamp);
-  return { retry: false, completed: false, run, transition: record };
-}
-function evidenceValueSha256(evidence, key) {
-  const values = evidence[canonicalWorkflowEvidenceKey(key)];
-  if (!values || values.length === 0) return void 0;
-  return createHash2("sha256").update([...values].sort().join("\n"), "utf8").digest("hex");
-}
-function enforceOracles(run, stageId, evidence) {
-  if (run.oracle) {
-    const presented = evidenceValueSha256(evidence, run.oracle.evidenceKey);
-    if (presented !== void 0 && presented !== run.oracle.sha256) {
-      throw new ProtocolError(
-        400,
-        `evidence ${run.oracle.evidenceKey} does not match the immutable reproduction oracle captured at ${run.oracle.capturedAt}; the confirmed reproduction may not be weakened`,
-        "weakened_reproduction"
-      );
-    }
-  }
-  if (run.requirePlanHash?.includes(stageId) && !run.planHash) {
-    throw new ProtocolError(
-      400,
-      `stage ${stageId} requires an approved plan hash before it can checkpoint`,
-      "plan_hash_required"
-    );
-  }
-}
-function captureOracles(run, stageId, evidence, timestamp) {
-  if (run.reproOracle?.stageId === stageId) {
-    const sha256 = evidenceValueSha256(evidence, run.reproOracle.evidenceKey);
-    if (sha256 !== void 0) {
-      run.oracle = { evidenceKey: run.reproOracle.evidenceKey, sha256, capturedAt: timestamp };
-    }
-  }
-  if (run.planHashConfig?.stageId === stageId) {
-    const sha256 = evidenceValueSha256(evidence, run.planHashConfig.evidenceKey);
-    if (sha256 !== void 0) {
-      run.planHash = { evidenceKey: run.planHashConfig.evidenceKey, sha256, capturedAt: timestamp };
-    }
-  }
-}
-function checkpointRun(run, stageId, status, summary, evidence, timestamp, verifiedEvidence = {}, outcome) {
-  if (run.status !== "running") throw new ProtocolError(409, `workflow is ${run.status}`, "workflow_terminal");
-  const stage = run.stages.find((candidate) => candidate.id === stageId);
-  if (!stage) throw new ProtocolError(404, `workflow stage not found: ${stageId}`, "workflow_stage_not_found");
-  if (stage.id !== run.currentStage || stage.status !== "in_progress") {
-    throw new ProtocolError(409, `stage ${stageId} is not currently active`, "workflow_stage_out_of_order");
-  }
-  const accumulatedEvidence = mergeWorkflowEvidence(stage.evidence, evidence);
-  const accumulatedVerifiedEvidence = mergeVerifiedWorkflowEvidence(stage.verifiedEvidence, verifiedEvidence);
-  enforceOracles(run, stageId, accumulatedEvidence);
-  const peerStatuses = status === "passed" ? requireCompleteEvidence(stage, accumulatedEvidence, accumulatedVerifiedEvidence, run.id) : [];
-  const degradedRequirements = peerStatuses.filter((peerStatus) => peerStatus.degraded);
-  stage.attempts += 1;
-  stage.summary = summary;
-  if (status === "passed") {
-    stage.evidence = accumulatedEvidence;
-    if (Object.keys(accumulatedVerifiedEvidence).length) stage.verifiedEvidence = accumulatedVerifiedEvidence;
-    captureOracles(run, stageId, accumulatedEvidence, timestamp);
-    if (degradedRequirements.length) {
-      stage.degraded = true;
-      stage.degradedRequirements = degradedRequirements.map((peerStatus) => peerStatus.requirementKey);
-    }
-  }
-  stage.updatedAt = timestamp;
-  run.updatedAt = timestamp;
-  if (status !== "passed") {
-    stage.status = status;
-    if (stage.attempts >= stage.maxAttempts) {
-      stage.completedAt = timestamp;
-      run.status = "failed";
-      delete run.currentStage;
-      return { retry: false, completed: false, run };
-    }
-    const outcomeKey = outcome ?? status;
-    const rule = resolveOutcomeRule(stage, outcomeKey);
-    if (rule && stage.attempts < stage.maxAttempts) {
-      const result = takeDeclaredTransition(run, stage, rule, outcomeKey, summary, stage.attempts, timestamp, Object.keys(accumulatedEvidence));
-      if (result.transition !== void 0 && !result.completed && rule.target !== stage.id) {
-        stage.status = "pending";
-      }
-      return result;
-    }
-    stage.status = "in_progress";
-    return { retry: true, completed: false, run };
-  }
-  stage.status = "passed";
-  stage.completedAt = timestamp;
-  const passedRule = resolveOutcomeRule(stage, outcome ?? "passed");
-  if (passedRule) {
-    return takeDeclaredTransition(run, stage, passedRule, outcome ?? "passed", summary, stage.attempts, timestamp, Object.keys(accumulatedEvidence));
-  }
-  const next = run.stages.find((candidate) => candidate.status === "pending");
-  if (next) {
-    next.status = "in_progress";
-    next.startedAt = timestamp;
-    next.updatedAt = timestamp;
-    run.currentStage = next.id;
-    return {
-      retry: false,
-      completed: false,
-      run,
-      ...degradedRequirements.length ? { degraded: true } : {}
-    };
-  }
-  run.status = "completed";
-  delete run.currentStage;
-  run.completedAt = timestamp;
-  return {
-    retry: false,
-    completed: true,
-    run,
-    ...degradedRequirements.length ? { degraded: true } : {}
-  };
-}
-function waitForWorkflowSignal(run, stageId, signalKey, summary, timestamp, expiresAt, evidence = {}, verifiedEvidence = {}) {
-  if (run.status !== "running") throw new ProtocolError(409, `workflow is ${run.status}`, "workflow_not_running");
-  const stage = run.stages.find((candidate) => candidate.id === stageId);
-  if (!stage) throw new ProtocolError(404, `workflow stage not found: ${stageId}`, "workflow_stage_not_found");
-  if (stage.id !== run.currentStage || stage.status !== "in_progress") {
-    throw new ProtocolError(409, `stage ${stageId} is not currently active`, "workflow_stage_out_of_order");
-  }
-  if (Date.parse(expiresAt) <= Date.parse(timestamp)) {
-    throw new ProtocolError(400, "workflow signal expiry must be in the future", "workflow_wait_invalid");
-  }
-  stage.evidence = mergeWorkflowEvidence(stage.evidence, evidence);
-  const accumulatedVerifiedEvidence = mergeVerifiedWorkflowEvidence(stage.verifiedEvidence, verifiedEvidence);
-  if (Object.keys(accumulatedVerifiedEvidence).length) stage.verifiedEvidence = accumulatedVerifiedEvidence;
-  stage.status = "waiting";
-  stage.updatedAt = timestamp;
-  run.status = "waiting";
-  run.waiting = { stageId, signalKey, summary, createdAt: timestamp, expiresAt };
-  run.updatedAt = timestamp;
-  return run;
-}
-function resumeWorkflowFromSignal(run, signalKey, status, summary, evidence, timestamp) {
-  if (run.status !== "waiting" || !run.waiting) {
-    throw new ProtocolError(409, `workflow is ${run.status}`, "workflow_not_waiting");
-  }
-  if (run.waiting.signalKey !== signalKey) {
-    throw new ProtocolError(409, `workflow is waiting for ${run.waiting.signalKey}`, "workflow_signal_mismatch");
-  }
-  const stageId = run.waiting.stageId;
-  const stage = run.stages.find((candidate) => candidate.id === stageId);
-  if (!stage || stage.id !== run.currentStage || stage.status !== "waiting") {
-    throw new ProtocolError(409, "workflow wait state is inconsistent", "workflow_wait_inconsistent");
-  }
-  const accumulatedEvidence = mergeWorkflowEvidence(stage.evidence, evidence);
-  if (status === "passed") {
-    requireCompleteEvidence(
-      stage,
-      accumulatedEvidence,
-      normalizeVerifiedWorkflowEvidence(stage.verifiedEvidence),
-      run.id
-    );
-  }
-  run.status = "running";
-  stage.status = "in_progress";
-  delete run.waiting;
-  const result = checkpointRun(run, stageId, status, summary, evidence, timestamp);
-  return { ...result, stageId };
-}
-function approveWorkflowDegradation(run, stageId, requirement, reason, approvalId, timestamp) {
-  if (run.status !== "running" && run.status !== "waiting") {
-    throw new ProtocolError(409, `workflow is ${run.status}`, "workflow_terminal");
-  }
-  const stage = run.stages.find((candidate) => candidate.id === stageId);
-  if (!stage) throw new ProtocolError(404, `workflow stage not found: ${stageId}`, "workflow_stage_not_found");
-  if (stage.id !== run.currentStage || stage.status !== "in_progress" && stage.status !== "waiting") {
-    throw new ProtocolError(409, `stage ${stageId} is not currently active`, "workflow_stage_out_of_order");
-  }
-  const requirementKey = canonicalWorkflowEvidenceKey(requirement);
-  const policy = stage.resolvedEvidencePolicies?.[requirementKey];
-  if (!policy?.degradation) {
-    throw new ProtocolError(
-      400,
-      `requirement ${requirementKey} does not permit degraded quorum`,
-      "workflow_degradation_forbidden"
-    );
-  }
-  const attempt = activeWorkflowAttempt(stage);
-  const existing = stage.degradationApprovals?.find(
-    (candidate) => candidate.requirementKey === requirementKey && candidate.attempt === attempt
-  );
-  if (existing) {
-    if (existing.reason !== reason.trim()) {
-      throw new ProtocolError(
-        409,
-        `degradation was already approved for ${requirementKey} attempt ${attempt}`,
-        "workflow_degradation_conflict"
-      );
-    }
-    return { run, approval: existing, created: false };
-  }
-  const approval = {
-    schema: "pi-mesh.workflow-degradation-approval.v1",
-    id: approvalId,
-    requirementKey,
-    attempt,
-    policyMinProducers: policy.minProducers,
-    approvedMinProducers: policy.degradation.minProducers,
-    approvedBy: "kxm-admin",
-    reason: requireString(reason, "reason", { max: 1e3 }),
-    approvedAt: timestamp
-  };
-  (stage.degradationApprovals ??= []).push(approval);
-  stage.updatedAt = timestamp;
-  run.updatedAt = timestamp;
-  return { run, approval, created: true };
-}
-
-// plugins/kxm/src/retrospective.ts
 var MAX_RETROSPECTIVE_ENTRIES = 500;
 var SAFE_RUN_ID = /^run_[A-Za-z0-9_-]{1,120}$/;
 function durationMs(startedAt, completedAt) {
@@ -11235,10 +11956,7 @@ function publicAgent(agent) {
   return record;
 }
 function safeTokenEqual(actual, expected) {
-  if (!actual) return false;
-  const actualHash = createHash3("sha256").update(actual).digest();
-  const expectedHash = createHash3("sha256").update(expected).digest();
-  return timingSafeEqual(actualHash, expectedHash);
+  return timingSafeStringCompare(actual, expected);
 }
 function bearerToken(request) {
   const header = request.headers.authorization;
@@ -12158,7 +12876,7 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
         }
         const deliveryHeader = request.headers["x-atlassian-webhook-identifier"] ?? request.headers["x-github-delivery"] ?? request.headers["x-kxm-delivery-id"];
         const deliveryId = requireString(deliveryHeader, "webhook delivery identifier", { max: 128 });
-        const payloadHash = createHash3("sha256").update(rawBody).digest("hex");
+        const payloadHash = createHash4("sha256").update(rawBody).digest("hex");
         const existingReceipt = run.signalReceipts?.find((receipt2) => receipt2.deliveryId === deliveryId);
         if (existingReceipt) {
           if (existingReceipt.signalKey !== signalKey || existingReceipt.payloadHash !== payloadHash) {
@@ -12368,7 +13086,7 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
           definitionId: definition.id,
           source: definition.source,
           deliveryId,
-          payloadHash: createHash3("sha256").update(rawBody).digest("hex"),
+          payloadHash: createHash4("sha256").update(rawBody).digest("hex"),
           definitionHash: workflowDefinitionHash(definition),
           ...event ? { event } : {},
           project: definition.project,
