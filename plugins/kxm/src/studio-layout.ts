@@ -92,11 +92,13 @@ export function generateStudioLayout(
 
   for (const [sourceId, step] of Object.entries(plan.steps)) {
     for (const transition of Object.values(step.transitions)) {
-      if (transition.edge === "back") continue; // Back-edges are cycles (retries), ignore for DAG forward rank
-      const targetStepId = transition.target ?? (transition.to !== "step" && transition.to !== "terminal" ? transition.to : undefined);
-      if (targetStepId && plan.steps[targetStepId]) {
-        adj[sourceId]!.push(targetStepId);
-        inDegree[targetStepId] = (inDegree[targetStepId] ?? 0) + 1;
+      if (transition.to === "step") {
+        if (transition.edge === "back") continue; // Back-edges are cycles (retries), ignore for DAG forward rank
+        const targetStepId = transition.target;
+        if (plan.steps[targetStepId]) {
+          adj[sourceId]!.push(targetStepId);
+          inDegree[targetStepId] = (inDegree[targetStepId] ?? 0) + 1;
+        }
       }
     }
   }
@@ -204,18 +206,20 @@ export function generateStudioLayout(
 
       // Build edges
       for (const [outcome, transition] of Object.entries(step.transitions)) {
-        const targetStepId = transition.target ?? (transition.to !== "step" && transition.to !== "terminal" ? transition.to : undefined);
-        if (targetStepId && plan.steps[targetStepId]) {
-          edges.push({
-            id: `e_${stepId}_to_${targetStepId}_${outcome}`,
-            source: stepId,
-            target: targetStepId,
-            label: outcome !== "passed" && outcome !== "completed" ? outcome : undefined,
-            animated: status === "running",
-            style: {
-              stroke: outcome === "failed" ? "#ef4444" : outcome === "warning" ? "#f59e0b" : "#64748b",
-            },
-          });
+        if (transition.to === "step") {
+          const targetStepId = transition.target;
+          if (plan.steps[targetStepId]) {
+            edges.push({
+              id: `e_${stepId}_to_${targetStepId}_${outcome}`,
+              source: stepId,
+              target: targetStepId,
+              label: outcome !== "passed" && outcome !== "completed" ? outcome : undefined,
+              animated: status === "running",
+              style: {
+                stroke: outcome === "failed" ? "#ef4444" : outcome === "warning" ? "#f59e0b" : "#64748b",
+              },
+            });
+          }
         }
       }
     });

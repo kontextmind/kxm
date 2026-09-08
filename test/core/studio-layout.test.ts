@@ -325,4 +325,40 @@ test("CLI studio serve supports dry-run flag", async () => {
   assert.equal(parsed.dryRun, true);
 });
 
+test("CLI studio serve launches server and handles error gracefully", async () => {
+  const { runCli } = await import("../../plugins/kxm/src/cli.ts");
+
+  // 1. Launch with KXM_STUDIO_ONCE
+  let stdoutData = "";
+  const io = {
+    stdout: (text: string) => { stdoutData += text; },
+    stderr: () => {},
+  };
+  const exitCode = await runCli(
+    ["--json", "studio", "serve", "--port", "0"],
+    { KXM_STUDIO_ONCE: "1" },
+    io,
+  );
+  assert.equal(exitCode, 0);
+  const parsed = JSON.parse(stdoutData);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.command, "studio serve");
+  assert.ok(parsed.port > 0);
+
+  // 2. Launch with invalid port triggers error and exits 1
+  let stderrData = "";
+  const errIo = {
+    stdout: () => {},
+    stderr: (text: string) => { stderrData += text; },
+  };
+  const errCode = await runCli(
+    ["studio", "serve", "--port", "-1"],
+    {},
+    errIo,
+  );
+  assert.equal(errCode, 1);
+  assert.ok(stderrData.includes("studio serve failed"));
+});
+
+
 

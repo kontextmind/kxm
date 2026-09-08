@@ -2634,6 +2634,11 @@ async function cmdStudioServe(
       `KXM Web Studio listening on http://${host}:${actualPort} (Decision Q8 & D14)\nPress Ctrl+C to stop.\n`,
     );
 
+    if (runtime.env.KXM_STUDIO_ONCE) {
+      await serverHandle.close();
+      return 0;
+    }
+
     await new Promise<void>((resolveClose) => {
       const shutdown = async () => {
         process.off("SIGINT", shutdown);

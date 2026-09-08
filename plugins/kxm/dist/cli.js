@@ -39959,11 +39959,13 @@ function generateStudioLayout(plan, state) {
   }
   for (const [sourceId, step] of Object.entries(plan.steps)) {
     for (const transition2 of Object.values(step.transitions)) {
-      if (transition2.edge === "back") continue;
-      const targetStepId = transition2.target ?? (transition2.to !== "step" && transition2.to !== "terminal" ? transition2.to : void 0);
-      if (targetStepId && plan.steps[targetStepId]) {
-        adj[sourceId].push(targetStepId);
-        inDegree[targetStepId] = (inDegree[targetStepId] ?? 0) + 1;
+      if (transition2.to === "step") {
+        if (transition2.edge === "back") continue;
+        const targetStepId = transition2.target;
+        if (plan.steps[targetStepId]) {
+          adj[sourceId].push(targetStepId);
+          inDegree[targetStepId] = (inDegree[targetStepId] ?? 0) + 1;
+        }
       }
     }
   }
@@ -40053,18 +40055,20 @@ function generateStudioLayout(plan, state) {
         position: { x: x2, y: y2 }
       });
       for (const [outcome, transition2] of Object.entries(step.transitions)) {
-        const targetStepId = transition2.target ?? (transition2.to !== "step" && transition2.to !== "terminal" ? transition2.to : void 0);
-        if (targetStepId && plan.steps[targetStepId]) {
-          edges.push({
-            id: `e_${stepId}_to_${targetStepId}_${outcome}`,
-            source: stepId,
-            target: targetStepId,
-            label: outcome !== "passed" && outcome !== "completed" ? outcome : void 0,
-            animated: status === "running",
-            style: {
-              stroke: outcome === "failed" ? "#ef4444" : outcome === "warning" ? "#f59e0b" : "#64748b"
-            }
-          });
+        if (transition2.to === "step") {
+          const targetStepId = transition2.target;
+          if (plan.steps[targetStepId]) {
+            edges.push({
+              id: `e_${stepId}_to_${targetStepId}_${outcome}`,
+              source: stepId,
+              target: targetStepId,
+              label: outcome !== "passed" && outcome !== "completed" ? outcome : void 0,
+              animated: status === "running",
+              style: {
+                stroke: outcome === "failed" ? "#ef4444" : outcome === "warning" ? "#f59e0b" : "#64748b"
+              }
+            });
+          }
         }
       }
     });
@@ -42560,6 +42564,10 @@ async function cmdStudioServe(runtime, options) {
 Press Ctrl+C to stop.
 `
     );
+    if (runtime.env.KXM_STUDIO_ONCE) {
+      await serverHandle.close();
+      return 0;
+    }
     await new Promise((resolveClose) => {
       const shutdown = async () => {
         process.off("SIGINT", shutdown);
