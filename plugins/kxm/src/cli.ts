@@ -115,7 +115,7 @@ import {
 } from "./task-manager.ts";
 import { parse as parseYaml } from "yaml";
 import { compileVnextWorkflow } from "./vnext-engine-compile.ts";
-import { generateStudioLayout } from "./studio-layout.ts";
+import { generateStudioLayout, createStudioServer, DEFAULT_STUDIO_PORT } from "./studio-layout.ts";
 
 export interface CliSpawnResult {
   status: number | null;
@@ -2592,6 +2592,67 @@ steps:
   }
 }
 
+async function cmdStudioServe(
+  runtime: Runtime,
+  options: { port?: string; host?: string; token?: string },
+): Promise<number> {
+  const port = options.port ? parseInt(options.port, 10) : DEFAULT_STUDIO_PORT;
+  const host = options.host ?? "127.0.0.1";
+  const sessionToken = options.token
+    ?? runtime.env.KXM_SESSION_TOKEN
+    ?? readSessionTokenFromDisk({ userConfigDir: runtime.env.KXM_USER_CONFIG_DIR })?.token;
+
+  if (runtime.dryRun) {
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: true, command: "studio serve", dryRun: true, port, host },
+      `would start studio server on http://${host}:${port}`,
+    );
+    return 0;
+  }
+
+  try {
+    const serverHandle = createStudioServer({
+      port,
+      host,
+      projectRoot: runtime.cwd,
+      sessionToken,
+    });
+    const actualPort = await serverHandle.listen();
+    const info = {
+      ok: true,
+      command: "studio serve",
+      port: actualPort,
+      host,
+      url: `http://${host}:${actualPort}`,
+    };
+    print(
+      runtime.io,
+      runtime.json,
+      info,
+      `KXM Web Studio listening on http://${host}:${actualPort} (Decision Q8 & D14)\nPress Ctrl+C to stop.\n`,
+    );
+
+    await new Promise<void>((resolveClose) => {
+      const shutdown = async () => {
+        process.off("SIGINT", shutdown);
+        process.off("SIGTERM", shutdown);
+        await serverHandle.close();
+        resolveClose();
+      };
+      process.once("SIGINT", shutdown);
+      process.once("SIGTERM", shutdown);
+    });
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.io.stderr(`studio serve failed: ${message}\n`);
+    return 1;
+  }
+}
+
+
 async function cmdRoutingReport(
   runtime: Runtime,
   options: { file?: string; equivalentListCost?: boolean; listPrices?: boolean; prices?: string },
@@ -3817,6 +3878,13 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
   addGlobalOptions(studioCmd.command("layout [workflowPath]").description("Generate Decision D14 DAG, stepper, and Temporal swimlanes layout JSON"))
     .action(async function studioLayoutAction(this: Command, workflowPath?: string) {
       result.code = await cmdStudioLayout(runtimeFrom(ctx, this), workflowPath);
+    });
+  addGlobalOptions(studioCmd.command("serve").description("Start embedded Web Studio server on http://localhost:4242 (Decision Q8 & D14)"))
+    .option("-p, --port <port>", "Port to bind (default: 4242)", "4242")
+    .option("--host <host>", "Host address to bind", "127.0.0.1")
+    .option("--token <token>", "Session token for mutation authentication")
+    .action(async function studioServeAction(this: Command, options: { port?: string; host?: string; token?: string }) {
+      result.code = await cmdStudioServe(runtimeFrom(ctx, this), options);
     });
 
   return program;

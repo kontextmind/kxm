@@ -30,6 +30,7 @@ const TOP_LEVEL_COMMANDS = [
   "task",
   "plan",
   "auth",
+  "studio",
 ];
 
 const SUBCOMMANDS: Record<string, string[]> = {
@@ -52,6 +53,7 @@ const SUBCOMMANDS: Record<string, string[]> = {
   config: ["get", "set", "list"],
   goal: ["create", "list", "get"],
   task: ["create", "list", "get", "run", "sync"],
+  studio: ["layout", "serve"],
 };
 
 export function generateShellCompletion(shell: SupportedShell): string {

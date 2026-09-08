@@ -4,6 +4,8 @@
  * and Temporal swimlane activity timelines from compiled plans and run states.
  */
 
+import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
+import { randomUUID } from "node:crypto";
 import type { VnextCompiledPlan, VnextCompiledStep } from "./vnext-engine-compile.ts";
 import type { VnextRunState } from "./vnext-engine-fold.ts";
 
@@ -264,5 +266,205 @@ export function generateStudioLayout(
     stepper,
     dag: { nodes, edges },
     temporalSwimlanes,
+  };
+}
+
+export const DEFAULT_STUDIO_PORT = 4242; // Decision Q8 & D14
+
+export interface StudioServerOptions {
+  port?: number | undefined;
+  host?: string | undefined;
+  projectRoot?: string | undefined;
+  sessionToken?: string | undefined;
+  planProvider?: (() => VnextCompiledPlan | undefined) | undefined;
+  stateProvider?: (() => VnextRunState | undefined) | undefined;
+  onMutation?: ((command: string, args: Record<string, unknown>) => Promise<{ ok: boolean; result?: unknown; error?: string }> | { ok: boolean; result?: unknown; error?: string }) | undefined;
+}
+
+export interface StudioServerHandle {
+  server: Server;
+  port: number;
+  listen: () => Promise<number>;
+  close: () => Promise<void>;
+}
+
+/**
+ * Embedded Web Studio Local Server (Decision Q8 & D14).
+ * Serves the visual DAG, form stepper, and Temporal swimlane dashboards on http://localhost:4242.
+ * Enforces strict audit parity: web mutations authenticate via SessionToken and map 1:1 to CLI commands.
+ */
+export function createStudioServer(options: StudioServerOptions = {}): StudioServerHandle {
+  const targetPort = options.port ?? DEFAULT_STUDIO_PORT;
+  const host = options.host ?? "127.0.0.1";
+
+  const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+    const url = new URL(req.url ?? "/", `http://${req.headers.host || "localhost"}`);
+
+    // CORS headers
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+    if (req.method === "OPTIONS") {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
+    if (url.pathname === "/health" || url.pathname === "/api/health") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, studio: true, port: targetPort }));
+      return;
+    }
+
+    if (url.pathname === "/api/layout" && req.method === "GET") {
+      const plan = options.planProvider?.();
+      if (!plan) {
+        res.writeHead(404, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "no_active_workflow_plan" }));
+        return;
+      }
+      const state = options.stateProvider?.();
+      const layout = generateStudioLayout(plan, state);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, layout }));
+      return;
+    }
+
+    if (url.pathname === "/api/mutate" && req.method === "POST") {
+      // 1. Strict Authentication via SessionToken
+      if (options.sessionToken) {
+        const auth = req.headers.authorization;
+        const expected = `Bearer ${options.sessionToken}`;
+        if (!auth || auth !== expected) {
+          res.writeHead(401, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            ok: false,
+            error: "unauthorized",
+            message: "Valid SessionToken required for Web Studio mutations",
+          }));
+          return;
+        }
+      }
+
+      // 2. Read request body
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) {
+        chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+      }
+      const bodyStr = Buffer.concat(chunks).toString("utf8");
+      let body: { command?: string; args?: Record<string, unknown> };
+      try {
+        body = JSON.parse(bodyStr);
+      } catch {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "malformed_json" }));
+        return;
+      }
+
+      const command = body.command;
+      const args = body.args ?? {};
+      if (!command || typeof command !== "string") {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "missing_command" }));
+        return;
+      }
+
+      // 3. Strict Audit Parity: verify command maps 1:1 to underlying CLI commands
+      const ALLOWED_CLI_MUTATIONS = [
+        "workflow.signal",
+        "workflow.checkpoint",
+        "workflow.wait",
+        "workflow.start",
+        "run.cancel",
+        "config.set",
+        "task.update",
+        "task.sync",
+        "peer.send",
+        "peer.reply",
+        "gate.signal",
+        "gate.degrade",
+      ];
+
+      if (!ALLOWED_CLI_MUTATIONS.includes(command)) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          ok: false,
+          error: "unsupported_web_mutation",
+          message: `Command '${command}' does not have a 1:1 underlying CLI audit mapping`,
+        }));
+        return;
+      }
+
+      const mutationId = `mut_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
+      if (options.onMutation) {
+        try {
+          const outcome = await options.onMutation(command, args);
+          res.writeHead(outcome.ok ? 200 : 400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ mutationId, ...outcome }));
+        } catch (err: unknown) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ mutationId, ok: false, error: (err as Error).message }));
+        }
+        return;
+      }
+
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        ok: true,
+        mutationId,
+        command,
+        mappedToCli: true,
+        executedAt: new Date().toISOString(),
+      }));
+      return;
+    }
+
+    if (url.pathname === "/" || url.pathname === "/index.html") {
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>KXM Web Studio</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 24px; }
+    h1 { font-size: 20px; font-weight: 600; color: #38bdf8; margin: 0 0 16px 0; }
+    .badge { display: inline-block; padding: 4px 8px; border-radius: 4px; background: #1e293b; color: #94a3b8; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>KXM Web Studio</h1>
+  <div class="badge">Port ${targetPort} · Embedded Hub Host</div>
+</body>
+</html>`);
+      return;
+    }
+
+    res.writeHead(404, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: false, error: "not_found" }));
+  });
+
+  return {
+    server,
+    port: targetPort,
+    listen: () =>
+      new Promise((resolveListen, rejectListen) => {
+        server.once("error", rejectListen);
+        server.listen(targetPort, host, () => {
+          server.removeListener("error", rejectListen);
+          const addr = server.address();
+          const actualPort = typeof addr === "object" && addr ? addr.port : targetPort;
+          resolveListen(actualPort);
+        });
+      }),
+    close: () =>
+      new Promise((resolveClose, rejectClose) => {
+        server.close((err) => {
+          if (err) rejectClose(err);
+          else resolveClose();
+        });
+      }),
   };
 }

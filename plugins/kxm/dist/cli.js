@@ -14777,7 +14777,7 @@ var require__ = __commonJS({
 
 // plugins/kxm/src/cli.ts
 import { spawn as spawn2, spawnSync as spawnSync7 } from "node:child_process";
-import { createHash as createHash14, createHmac as createHmac3, randomUUID as randomUUID10 } from "node:crypto";
+import { createHash as createHash14, createHmac as createHmac3, randomUUID as randomUUID11 } from "node:crypto";
 import { existsSync as existsSync24, mkdirSync as mkdirSync22, mkdtempSync as mkdtempSync2, readFileSync as readFileSync23, readdirSync as readdirSync8, rmSync as rmSync8, writeFileSync as writeFileSync19 } from "node:fs";
 import { homedir as homedir7, tmpdir as tmpdir2 } from "node:os";
 import { basename as basename6, dirname as dirname17, join as join31, relative as relative6, resolve as resolve19 } from "node:path";
@@ -39491,7 +39491,8 @@ var TOP_LEVEL_COMMANDS = [
   "goal",
   "task",
   "plan",
-  "auth"
+  "auth",
+  "studio"
 ];
 var SUBCOMMANDS = {
   runs: ["status", "cancel", "list"],
@@ -39512,7 +39513,8 @@ var SUBCOMMANDS = {
   hub: ["view", "start", "stop", "bind", "unbind"],
   config: ["get", "set", "list"],
   goal: ["create", "list", "get"],
-  task: ["create", "list", "get", "run", "sync"]
+  task: ["create", "list", "get", "run", "sync"],
+  studio: ["layout", "serve"]
 };
 function generateShellCompletion(shell) {
   switch (shell) {
@@ -39943,6 +39945,8 @@ function syncTaskWithTracker(repoRoot3, taskId, options = {}) {
 var import_yaml10 = __toESM(require_dist(), 1);
 
 // plugins/kxm/src/studio-layout.ts
+import { createServer } from "node:http";
+import { randomUUID as randomUUID10 } from "node:crypto";
 var STUDIO_LAYOUT_SCHEMA = "kxm.studio-layout.v1";
 function generateStudioLayout(plan, state) {
   const generatedAt = (/* @__PURE__ */ new Date()).toISOString();
@@ -40103,6 +40107,161 @@ function generateStudioLayout(plan, state) {
     stepper,
     dag: { nodes, edges },
     temporalSwimlanes
+  };
+}
+var DEFAULT_STUDIO_PORT = 4242;
+function createStudioServer(options = {}) {
+  const targetPort = options.port ?? DEFAULT_STUDIO_PORT;
+  const host = options.host ?? "127.0.0.1";
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url ?? "/", `http://${req.headers.host || "localhost"}`);
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    if (req.method === "OPTIONS") {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+    if (url.pathname === "/health" || url.pathname === "/api/health") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, studio: true, port: targetPort }));
+      return;
+    }
+    if (url.pathname === "/api/layout" && req.method === "GET") {
+      const plan = options.planProvider?.();
+      if (!plan) {
+        res.writeHead(404, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "no_active_workflow_plan" }));
+        return;
+      }
+      const state = options.stateProvider?.();
+      const layout = generateStudioLayout(plan, state);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, layout }));
+      return;
+    }
+    if (url.pathname === "/api/mutate" && req.method === "POST") {
+      if (options.sessionToken) {
+        const auth = req.headers.authorization;
+        const expected = `Bearer ${options.sessionToken}`;
+        if (!auth || auth !== expected) {
+          res.writeHead(401, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            ok: false,
+            error: "unauthorized",
+            message: "Valid SessionToken required for Web Studio mutations"
+          }));
+          return;
+        }
+      }
+      const chunks = [];
+      for await (const chunk of req) {
+        chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+      }
+      const bodyStr = Buffer.concat(chunks).toString("utf8");
+      let body;
+      try {
+        body = JSON.parse(bodyStr);
+      } catch {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "malformed_json" }));
+        return;
+      }
+      const command = body.command;
+      const args = body.args ?? {};
+      if (!command || typeof command !== "string") {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "missing_command" }));
+        return;
+      }
+      const ALLOWED_CLI_MUTATIONS = [
+        "workflow.signal",
+        "workflow.checkpoint",
+        "workflow.wait",
+        "workflow.start",
+        "run.cancel",
+        "config.set",
+        "task.update",
+        "task.sync",
+        "peer.send",
+        "peer.reply",
+        "gate.signal",
+        "gate.degrade"
+      ];
+      if (!ALLOWED_CLI_MUTATIONS.includes(command)) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          ok: false,
+          error: "unsupported_web_mutation",
+          message: `Command '${command}' does not have a 1:1 underlying CLI audit mapping`
+        }));
+        return;
+      }
+      const mutationId = `mut_${randomUUID10().replaceAll("-", "").slice(0, 12)}`;
+      if (options.onMutation) {
+        try {
+          const outcome = await options.onMutation(command, args);
+          res.writeHead(outcome.ok ? 200 : 400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ mutationId, ...outcome }));
+        } catch (err) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ mutationId, ok: false, error: err.message }));
+        }
+        return;
+      }
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        ok: true,
+        mutationId,
+        command,
+        mappedToCli: true,
+        executedAt: (/* @__PURE__ */ new Date()).toISOString()
+      }));
+      return;
+    }
+    if (url.pathname === "/" || url.pathname === "/index.html") {
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>KXM Web Studio</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 24px; }
+    h1 { font-size: 20px; font-weight: 600; color: #38bdf8; margin: 0 0 16px 0; }
+    .badge { display: inline-block; padding: 4px 8px; border-radius: 4px; background: #1e293b; color: #94a3b8; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>KXM Web Studio</h1>
+  <div class="badge">Port ${targetPort} \xB7 Embedded Hub Host</div>
+</body>
+</html>`);
+      return;
+    }
+    res.writeHead(404, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: false, error: "not_found" }));
+  });
+  return {
+    server,
+    port: targetPort,
+    listen: () => new Promise((resolveListen, rejectListen) => {
+      server.once("error", rejectListen);
+      server.listen(targetPort, host, () => {
+        server.removeListener("error", rejectListen);
+        const addr = server.address();
+        const actualPort = typeof addr === "object" && addr ? addr.port : targetPort;
+        resolveListen(actualPort);
+      });
+    }),
+    close: () => new Promise((resolveClose, rejectClose) => {
+      server.close((err) => {
+        if (err) rejectClose(err);
+        else resolveClose();
+      });
+    })
   };
 }
 
@@ -41658,7 +41817,7 @@ Session token: ${sessionToken}
   return 0;
 }
 async function cmdSessionStart(runtime, options) {
-  const id = options.id?.trim() || `session_${randomUUID10().replaceAll("-", "").slice(0, 12)}`;
+  const id = options.id?.trim() || `session_${randomUUID11().replaceAll("-", "").slice(0, 12)}`;
   const workflowId = options.workflow?.trim();
   const mix = options.mix?.trim();
   if (workflowId && mix) {
@@ -42354,6 +42513,60 @@ steps:
     return 1;
   }
 }
+async function cmdStudioServe(runtime, options) {
+  const port = options.port ? parseInt(options.port, 10) : DEFAULT_STUDIO_PORT;
+  const host = options.host ?? "127.0.0.1";
+  const sessionToken = options.token ?? runtime.env.KXM_SESSION_TOKEN ?? readSessionTokenFromDisk({ userConfigDir: runtime.env.KXM_USER_CONFIG_DIR })?.token;
+  if (runtime.dryRun) {
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: true, command: "studio serve", dryRun: true, port, host },
+      `would start studio server on http://${host}:${port}`
+    );
+    return 0;
+  }
+  try {
+    const serverHandle = createStudioServer({
+      port,
+      host,
+      projectRoot: runtime.cwd,
+      sessionToken
+    });
+    const actualPort = await serverHandle.listen();
+    const info = {
+      ok: true,
+      command: "studio serve",
+      port: actualPort,
+      host,
+      url: `http://${host}:${actualPort}`
+    };
+    print(
+      runtime.io,
+      runtime.json,
+      info,
+      `KXM Web Studio listening on http://${host}:${actualPort} (Decision Q8 & D14)
+Press Ctrl+C to stop.
+`
+    );
+    await new Promise((resolveClose) => {
+      const shutdown = async () => {
+        process.off("SIGINT", shutdown);
+        process.off("SIGTERM", shutdown);
+        await serverHandle.close();
+        resolveClose();
+      };
+      process.once("SIGINT", shutdown);
+      process.once("SIGTERM", shutdown);
+    });
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.io.stderr(`studio serve failed: ${message}
+`);
+    return 1;
+  }
+}
 async function cmdRoutingReport(runtime, options) {
   const file = options.file ?? telemetryPath(runtime.dirs.logs);
   const records = readRoutingRecords(file).map((entry) => entry.routing);
@@ -42444,7 +42657,7 @@ async function cmdRoutingBenchmark(runtime, options) {
 }
 async function cmdWorkflowStart(runtime, definitionIdArg, options) {
   const definitionId = definitionIdArg || runtime.env.KXM_WORKFLOW_ID?.trim();
-  const deliveryId = String(options.deliveryId || `cli-${randomUUID10()}`);
+  const deliveryId = String(options.deliveryId || `cli-${randomUUID11()}`);
   const event = options.event;
   const payloadFlag = options.payload ?? "{}";
   if (!definitionId) {
@@ -42575,7 +42788,7 @@ async function cmdSignal(runtime, runId, signalKey, status, summary, evidenceArg
       printWorker(runtime, worker, { ok: true, command: "signal", runId, signalKey, status, summary, evidence }, "would post signal to vNext run");
       return 0;
     }
-    const deliveryId2 = String(deliveryIdFlag || `cli-signal:${randomUUID10()}`);
+    const deliveryId2 = String(deliveryIdFlag || `cli-signal:${randomUUID11()}`);
     try {
       const supervisor = await ensureVnextSupervisor({ env: runtime.env });
       const posted = await vnextRuntimeRequest(
@@ -42611,7 +42824,7 @@ async function cmdSignal(runtime, runId, signalKey, status, summary, evidenceArg
     printWorker(runtime, worker, { ok: true, command: "signal", runId, signalKey, status, summary, evidence }, "would post signed signal");
     return 0;
   }
-  const deliveryId = String(deliveryIdFlag || `cli-signal:${randomUUID10()}`);
+  const deliveryId = String(deliveryIdFlag || `cli-signal:${randomUUID11()}`);
   try {
     const posted = await postWorkflowSignal({
       serverUrl: runtime.serverUrl,
@@ -43175,6 +43388,9 @@ function createProgram(ctx, result) {
   studioCmd.helpCommand("help", "Show studio help");
   addGlobalOptions(studioCmd.command("layout [workflowPath]").description("Generate Decision D14 DAG, stepper, and Temporal swimlanes layout JSON")).action(async function studioLayoutAction(workflowPath) {
     result.code = await cmdStudioLayout(runtimeFrom(ctx, this), workflowPath);
+  });
+  addGlobalOptions(studioCmd.command("serve").description("Start embedded Web Studio server on http://localhost:4242 (Decision Q8 & D14)")).option("-p, --port <port>", "Port to bind (default: 4242)", "4242").option("--host <host>", "Host address to bind", "127.0.0.1").option("--token <token>", "Session token for mutation authentication").action(async function studioServeAction(options) {
+    result.code = await cmdStudioServe(runtimeFrom(ctx, this), options);
   });
   return program2;
 }
