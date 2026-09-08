@@ -19058,6 +19058,19 @@ function isKnownHarnessId(id, extra = []) {
   for (const candidate of extra) if (candidate === id) return true;
   return false;
 }
+var SAFE_HARNESS_COMMAND_ID = /^[A-Za-z][A-Za-z0-9_-]*$/;
+function harnessCommandCandidates(command, platform = process.platform) {
+  if (platform !== "win32" || !SAFE_HARNESS_COMMAND_ID.test(command)) return [command];
+  return [command, `${command}.exe`, `${command}.cmd`];
+}
+function isWindowsHarnessShim(command) {
+  return /\.(cmd|bat)$/i.test(command.replace(/\\/g, "/").split("/").pop() ?? command);
+}
+function harnessSpawnUsesShell(command, platform = process.platform) {
+  if (platform !== "win32") return false;
+  const base = command.replace(/\\/g, "/").split("/").pop() ?? "";
+  return /^[A-Za-z][A-Za-z0-9_-]*\.cmd$/i.test(base);
+}
 function defaultRunner(env) {
   return (command, args, timeoutMs) => {
     try {
@@ -19065,7 +19078,8 @@ function defaultRunner(env) {
         encoding: "utf8",
         timeout: timeoutMs,
         windowsHide: true,
-        env
+        env,
+        shell: harnessSpawnUsesShell(command)
       });
       if (result.error) {
         const code = result.error.code;
@@ -19185,24 +19199,31 @@ function resolveDispatchStatus(entry, detected, authenticated, issues) {
     return { status: "no", supported: false, reason: "not_authenticated" };
   }
   if (authenticated === null) {
-    return { status: "no", supported: false, reason: issues[0] ?? "auth_unknown" };
+    const authIssue = issues.find((issue2) => issue2 === "auth_context_required" || issue2 === "auth_unknown" || issue2 === "auth_unparsed" || issue2.startsWith("auth_"));
+    return { status: "no", supported: false, reason: authIssue ?? issues[0] ?? "auth_unknown" };
   }
   return { status: "yes", supported: true };
 }
-function probeEntry(entry, runCommand, timeoutMs) {
-  const issues = [];
-  let detected = false;
-  let command;
-  let version;
-  for (const candidate of entry.commands) {
-    const result = runCommand(candidate, entry.versionArgs, timeoutMs);
-    if (result.error === "ENOENT") continue;
-    if (result.error && result.code === null && !result.stdout && !result.stderr) continue;
-    detected = true;
-    command = candidate;
-    version = firstLine(result.stdout) ?? firstLine(result.stderr);
-    break;
+function detectHarnessCommand(entry, runCommand, timeoutMs, platform) {
+  for (const base of entry.commands) {
+    for (const candidate of harnessCommandCandidates(base, platform)) {
+      const result = runCommand(candidate, entry.versionArgs, timeoutMs);
+      if (result.error === "ENOENT") continue;
+      if (result.error && result.code === null && !result.stdout && !result.stderr) continue;
+      return {
+        command: candidate,
+        version: firstLine(result.stdout) ?? firstLine(result.stderr)
+      };
+    }
   }
+  return void 0;
+}
+function probeEntry(entry, runCommand, timeoutMs, platform) {
+  const issues = [];
+  const found = detectHarnessCommand(entry, runCommand, timeoutMs, platform);
+  const detected = Boolean(found);
+  const command = found?.command;
+  const version = found?.version;
   let authenticated = null;
   if (!detected) authenticated = false;
   else if (entry.id === "pi") {
@@ -19216,6 +19237,7 @@ function probeEntry(entry, runCommand, timeoutMs) {
     authenticated = parsed.authenticated;
     issues.push(...parsed.issues);
   }
+  if (command && isWindowsHarnessShim(command)) issues.push("windows_shim");
   const dispatch = resolveDispatchStatus(entry, detected, authenticated, issues);
   return {
     id: entry.id,
@@ -19238,9 +19260,10 @@ function probeEntry(entry, runCommand, timeoutMs) {
 function probeHarnesses(options = {}) {
   const timeoutMs = options.timeoutMs ?? 3e3;
   const runCommand = options.runCommand ?? defaultRunner(options.env ?? process.env);
+  const platform = options.platform ?? process.platform;
   return {
     defaultHarness: DEFAULT_HARNESS,
-    harnesses: BUILTIN_HARNESSES.map((entry) => probeEntry(entry, runCommand, timeoutMs))
+    harnesses: BUILTIN_HARNESSES.map((entry) => probeEntry(entry, runCommand, timeoutMs, platform))
   };
 }
 function validateHarnessModelPair(harnessId, modelSpec) {

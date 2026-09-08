@@ -52,6 +52,22 @@ Do not delete or rewrite the database. Start the package version that created it
 
 Another process owns the port. Stop that process or choose another port, then update every agent's `KXM_SERVER_URL`.
 
+### `kxm harness list` says Claude Code is `not_detected` on Windows
+
+npm installs Claude Code as `claude.cmd` (and an extensionless shim), not
+`claude.exe`. Older probes spawned `claude` without a shell, got `ENOENT` or
+`EINVAL`, and reported the CLI missing even when `claude --version` worked in
+cmd or Git Bash.
+
+Current `kxm harness list` retries `claude.exe` then `claude.cmd` on win32 and
+sets `issues: ["windows_shim"]` when the npm shim is what answered. If the
+entry is still `not_detected`, confirm `%AppData%\Roaming\npm` is on `PATH`
+for the same process that runs `kxm`, then `claude --version` and
+`claude auth status`. Assignment dispatch (`just assign` / `harness-run`)
+still refuses `.cmd` shims until a `.exe` launcher exists.
+
+The same npm-shim miss can appear for `pi` on Windows.
+
 ### Pi shows `hub:off`
 
 - Confirm the hub is reachable from the Pi terminal.

@@ -58,6 +58,7 @@ export interface HarnessProbeOptions {
   env?: NodeJS.ProcessEnv;
   runCommand?: (command: string, args: readonly string[], timeoutMs: number) => HarnessCommandResult;
   timeoutMs?: number;
+  platform?: NodeJS.Platform;
 }
 
 export interface HarnessDispatchStatus {
@@ -518,6 +519,28 @@ export function isKnownHarnessId(id: string, extra: Iterable<string> = []): bool
   return false;
 }
 
+/** Bare catalog command ids only; never a path or shell metacharacter. */
+export const SAFE_HARNESS_COMMAND_ID = /^[A-Za-z][A-Za-z0-9_-]*$/;
+
+export function harnessCommandCandidates(
+  command: string,
+  platform: NodeJS.Platform = process.platform,
+): readonly string[] {
+  if (platform !== "win32" || !SAFE_HARNESS_COMMAND_ID.test(command)) return [command];
+  return [command, `${command}.exe`, `${command}.cmd`];
+}
+
+export function isWindowsHarnessShim(command: string): boolean {
+  return /\.(cmd|bat)$/i.test(command.replace(/\\/g, "/").split("/").pop() ?? command);
+}
+
+/** Shell only for allowlisted `name.cmd` on win32. Bare ids stay spawn-without-shell. */
+export function harnessSpawnUsesShell(command: string, platform: NodeJS.Platform = process.platform): boolean {
+  if (platform !== "win32") return false;
+  const base = command.replace(/\\/g, "/").split("/").pop() ?? "";
+  return /^[A-Za-z][A-Za-z0-9_-]*\.cmd$/i.test(base);
+}
+
 function defaultRunner(env: NodeJS.ProcessEnv): (command: string, args: readonly string[], timeoutMs: number) => HarnessCommandResult {
   return (command, args, timeoutMs) => {
     try {
@@ -526,6 +549,7 @@ function defaultRunner(env: NodeJS.ProcessEnv): (command: string, args: readonly
         timeout: timeoutMs,
         windowsHide: true,
         env,
+        shell: harnessSpawnUsesShell(command),
       });
       if (result.error) {
         const code = (result.error as NodeJS.ErrnoException).code;
@@ -659,29 +683,43 @@ export function resolveDispatchStatus(
     return { status: "no", supported: false, reason: "not_authenticated" };
   }
   if (authenticated === null) {
-    return { status: "no", supported: false, reason: issues[0] ?? "auth_unknown" };
+    const authIssue = issues.find((issue) => issue === "auth_context_required" || issue === "auth_unknown" || issue === "auth_unparsed" || issue.startsWith("auth_"));
+    return { status: "no", supported: false, reason: authIssue ?? issues[0] ?? "auth_unknown" };
   }
   return { status: "yes", supported: true };
+}
+
+function detectHarnessCommand(
+  entry: HarnessCatalogEntry,
+  runCommand: (command: string, args: readonly string[], timeoutMs: number) => HarnessCommandResult,
+  timeoutMs: number,
+  platform: NodeJS.Platform,
+): { command: string; version: string | undefined } | undefined {
+  for (const base of entry.commands) {
+    for (const candidate of harnessCommandCandidates(base, platform)) {
+      const result = runCommand(candidate, entry.versionArgs, timeoutMs);
+      if (result.error === "ENOENT") continue;
+      if (result.error && result.code === null && !result.stdout && !result.stderr) continue;
+      return {
+        command: candidate,
+        version: firstLine(result.stdout) ?? firstLine(result.stderr),
+      };
+    }
+  }
+  return undefined;
 }
 
 function probeEntry(
   entry: HarnessCatalogEntry,
   runCommand: (command: string, args: readonly string[], timeoutMs: number) => HarnessCommandResult,
   timeoutMs: number,
+  platform: NodeJS.Platform,
 ): HarnessStatus {
   const issues: string[] = [];
-  let detected = false;
-  let command: string | undefined;
-  let version: string | undefined;
-  for (const candidate of entry.commands) {
-    const result = runCommand(candidate, entry.versionArgs, timeoutMs);
-    if (result.error === "ENOENT") continue;
-    if (result.error && result.code === null && !result.stdout && !result.stderr) continue;
-    detected = true;
-    command = candidate;
-    version = firstLine(result.stdout) ?? firstLine(result.stderr);
-    break;
-  }
+  const found = detectHarnessCommand(entry, runCommand, timeoutMs, platform);
+  const detected = Boolean(found);
+  const command = found?.command;
+  const version = found?.version;
   let authenticated: boolean | null = null;
   if (!detected) authenticated = false;
   else if (entry.id === "pi") {
@@ -695,6 +733,7 @@ function probeEntry(
     authenticated = parsed.authenticated;
     issues.push(...parsed.issues);
   }
+  if (command && isWindowsHarnessShim(command)) issues.push("windows_shim");
   const dispatch = resolveDispatchStatus(entry, detected, authenticated, issues);
   return {
     id: entry.id,
@@ -718,9 +757,10 @@ function probeEntry(
 export function probeHarnesses(options: HarnessProbeOptions = {}): HarnessInventory {
   const timeoutMs = options.timeoutMs ?? 3000;
   const runCommand = options.runCommand ?? defaultRunner(options.env ?? process.env);
+  const platform = options.platform ?? process.platform;
   return {
     defaultHarness: DEFAULT_HARNESS,
-    harnesses: BUILTIN_HARNESSES.map((entry) => probeEntry(entry, runCommand, timeoutMs)),
+    harnesses: BUILTIN_HARNESSES.map((entry) => probeEntry(entry, runCommand, timeoutMs, platform)),
   };
 }
 
@@ -843,11 +883,13 @@ export interface HarnessAssignmentProbeOptions {
   env?: NodeJS.ProcessEnv | undefined;
   runCommand?: ((command: string, args: readonly string[], timeoutMs: number) => HarnessCommandResult) | undefined;
   timeoutMs?: number | undefined;
+  platform?: NodeJS.Platform | undefined;
 }
 
 export function probeHarnessAssignment(options: HarnessAssignmentProbeOptions): HarnessStatus {
   const timeoutMs = options.timeoutMs ?? 3000;
   const runCommand = options.runCommand ?? defaultRunner(options.env ?? process.env);
+  const platform = options.platform ?? process.platform;
   const entry = BUILTIN_HARNESSES.find((candidate) => candidate.id === options.harness);
   if (!entry) {
     return {
@@ -884,18 +926,11 @@ export function probeHarnessAssignment(options: HarnessAssignmentProbeOptions): 
     }
   }
 
-  let detected = false;
-  let command: string | undefined;
-  let version: string | undefined;
-  for (const candidate of entry.commands) {
-    const result = runCommand(candidate, entry.versionArgs, timeoutMs);
-    if (result.error === "ENOENT") continue;
-    if (result.error && result.code === null && !result.stdout && !result.stderr) continue;
-    detected = true;
-    command = candidate;
-    version = firstLine(result.stdout) ?? firstLine(result.stderr);
-    break;
-  }
+  const found = detectHarnessCommand(entry, runCommand, timeoutMs, platform);
+  const detected = Boolean(found);
+  const command = found?.command;
+  const version = found?.version;
+  const shimIssue = command && isWindowsHarnessShim(command) ? ["windows_shim"] : [];
 
   if (!detected || !command) {
     return {
@@ -932,7 +967,7 @@ export function probeHarnessAssignment(options: HarnessAssignmentProbeOptions): 
           extensions: Boolean(entry.update.extensions?.length),
           models: Boolean(entry.update.models?.length),
         },
-        issues: ["auth_context_required"],
+        issues: ["auth_context_required", ...shimIssue],
       };
     }
 
@@ -960,6 +995,7 @@ export function probeHarnessAssignment(options: HarnessAssignmentProbeOptions): 
       authenticated = false;
       issues.push("not_authenticated");
     }
+    issues.push(...shimIssue);
 
     const dispatch = resolveDispatchStatus(entry, true, authenticated, issues);
 
@@ -982,7 +1018,7 @@ export function probeHarnessAssignment(options: HarnessAssignmentProbeOptions): 
     };
   }
 
-  return probeEntry(entry, runCommand, timeoutMs);
+  return probeEntry(entry, runCommand, timeoutMs, platform);
 }
 
 export function probeHarnessesForModel(
@@ -991,6 +1027,7 @@ export function probeHarnessesForModel(
 ): HarnessInventory {
   const timeoutMs = options.timeoutMs ?? 3000;
   const runCommand = options.runCommand ?? defaultRunner(options.env ?? process.env);
+  const platform = options.platform ?? process.platform;
   return {
     defaultHarness: DEFAULT_HARNESS,
     harnesses: BUILTIN_HARNESSES.map((entry) =>
@@ -1000,6 +1037,7 @@ export function probeHarnessesForModel(
         model: modelSpec.model,
         runCommand,
         timeoutMs,
+        platform,
       })
     ),
   };

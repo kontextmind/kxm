@@ -109,6 +109,12 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Fixed
 
+- **Windows Claude Code / npm shim detection (issue #168):** `kxm harness list`
+  treated Claude Code as `not_detected` when the CLI was only an npm
+  `claude.cmd` shim (no `claude.exe`). The probe now tries `.exe` then `.cmd`
+  on win32, runs allowlisted `name.cmd` probes with `shell: true`, and records
+  `windows_shim`. Auth still requires parseable `claude auth status`. Headless
+  assignment dispatch continues to refuse unverified `.cmd` launchers.
 - Concurrent Runtime registry and event-store initialization now checks and
   creates the schema under one write transaction, preventing duplicate-table
   failures when a supervisor and status reader first open the same database.
