@@ -7,7 +7,7 @@ import { AGENT_COMMANDS_MAP, enforceToolPolicy, getMcpTools, reconcileInbox } fr
 import { deliverInboxNotification } from "./inbox.ts";
 import type { HubEvent, MessageRecord } from "./protocol.ts";
 
-const VERSION = "0.5.1";
+const VERSION = "0.6.0";
 const inbox = new Map<string, MessageRecord>();
 const notifiedInbox = new Set<string>();
 let meshClient: HubClient | undefined;

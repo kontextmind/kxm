@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.kxm.dev/vnext/context-packet.schema.json",
+  "title": "KXM formal context packet v2",
+  "type": "object",
+  "required": [
+    "schema",
+    "packetId",
+    "project",
+    "generatedAt",
+    "targetRole",
+    "task",
+    "acceptanceCriteria",
+    "plan",
+    "predecessors",
+    "environment",
+    "budget"
+  ],
+  "properties": {
+    "schema": {
+      "const": "kxm.context-packet.v2"
+    },
+    "packetId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "project": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "generatedAt": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    },
+    "targetRole": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "task": {
+      "type": "object",
+      "required": [
+        "taskId",
+        "stepId",
+        "stepAttempt",
+        "objective",
+        "allowedOutcomes",
+        "permissionCeiling"
+      ],
+      "properties": {
+        "taskId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "stepId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "stepAttempt": { "type": "integer", "minimum": 1 },
+        "objective": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "allowedOutcomes": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1, "maxLength": 64 }
+        },
+        "permissionCeiling": {
+          "enum": ["read-only", "edit", "admin"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "acceptanceCriteria": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "description", "verificationKind", "required"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "description": { "type": "string", "minLength": 1, "maxLength": 1000 },
+          "verificationKind": {
+            "enum": ["gate", "witness", "critic", "human"]
+          },
+          "targetRef": { "type": "string", "maxLength": 256 },
+          "required": { "type": "boolean" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "plan": {
+      "type": "object",
+      "required": ["planHash", "activeStepIndex", "totalSteps", "settledDecisions"],
+      "properties": {
+        "planHash": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "activeStepIndex": { "type": "integer", "minimum": 0 },
+        "totalSteps": { "type": "integer", "minimum": 1 },
+        "settledDecisions": {
+          "type": "array",
+          "items": { "type": "string", "maxLength": 500 }
+        }
+      },
+      "additionalProperties": false
+    },
+    "predecessors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["stepId", "role", "status", "summary", "settledAt", "artifacts", "decisions"],
+        "properties": {
+          "stepId": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "role": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "status": {
+            "enum": ["passed", "warning", "failed", "settled"]
+          },
+          "summary": { "type": "string", "maxLength": 4000 },
+          "settledAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "kind", "artifactRef"],
+              "properties": {
+                "name": { "type": "string", "maxLength": 256 },
+                "kind": { "enum": ["patch", "report", "log", "plan", "repro_script", "doc"] },
+                "artifactRef": { "type": "string", "maxLength": 256 },
+                "contentSnippet": { "type": "string", "maxLength": 8000 }
+              },
+              "additionalProperties": false
+            }
+          },
+          "decisions": {
+            "type": "array",
+            "items": { "type": "string", "maxLength": 500 }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "environment": {
+      "type": "object",
+      "required": [
+        "sharedDefaults",
+        "projectKnowledge",
+        "currentState",
+        "contradictions",
+        "activeSkills"
+      ],
+      "properties": {
+        "sharedDefaults": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "summary"],
+            "properties": {
+              "id": { "type": "string" },
+              "summary": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "projectKnowledge": {
+          "type": "array",
+          "items": { "type": "object" }
+        },
+        "currentState": {
+          "type": "array",
+          "items": { "type": "object" }
+        },
+        "contradictions": {
+          "type": "array",
+          "items": { "type": "object" }
+        },
+        "activeSkills": {
+          "type": "array",
+          "items": { "type": "object" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "budget": {
+      "type": "object",
+      "required": ["allocatedTokens", "estimatedTokens", "unresolvedGaps", "provenanceSummary"],
+      "properties": {
+        "allocatedTokens": { "type": "integer", "minimum": 1 },
+        "estimatedTokens": { "type": "integer", "minimum": 0 },
+        "unresolvedGaps": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "provenanceSummary": {
+          "type": "object",
+          "additionalProperties": { "type": "integer" }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

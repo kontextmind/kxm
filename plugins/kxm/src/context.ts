@@ -340,7 +340,7 @@ export function validateContextPacketContents(request: ContextRequest, packet: C
   }
   const allowed = request.includeKinds ? new Set(request.includeKinds) : undefined;
   for (const item of items) {
-    if (item.project !== request.project) {
+    if (item.project !== request.project && item.project !== "_shared") {
       throw new ProtocolError(
         400,
         `context packet contains cross-project item ${item.id}`,

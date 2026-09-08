@@ -49,11 +49,19 @@ export const MESH_TUI_TAB_LABELS: Record<MeshTuiPanel, string> = {
   spend: "Spend",
 };
 
+export interface DashboardAction {
+  action: "approve" | "reject" | "degrade" | "signal" | "cancel";
+  at: string;
+  targetId?: string | undefined;
+}
+
 export interface MeshTuiView {
   tab: MeshTuiPanel;
   selected: number;
   pane: "list" | "detail";
   help: boolean;
+  statusMessage?: string | undefined;
+  lastAction?: DashboardAction | undefined;
 }
 
 export function defaultMeshTuiView(screen?: MeshTuiPanel): MeshTuiView {
@@ -91,6 +99,41 @@ export function applyMeshTuiKey(view: MeshTuiView, key: string, itemCount = 0): 
   }
   if (matchesKey(key, Key.down)) {
     return { ...view, selected: Math.min(Math.max(0, itemCount - 1), view.selected + 1), pane: "list", help: false };
+  }
+  if (matchesKey(key, "a")) {
+    return {
+      ...view,
+      statusMessage: `[APPROVE] Queued approval for ${view.tab} item #${view.selected + 1}`,
+      lastAction: { action: "approve", at: new Date().toISOString() },
+    };
+  }
+  if (matchesKey(key, "r")) {
+    return {
+      ...view,
+      statusMessage: `[REJECT] Marked ${view.tab} item #${view.selected + 1} for rework`,
+      lastAction: { action: "reject", at: new Date().toISOString() },
+    };
+  }
+  if (matchesKey(key, "d")) {
+    return {
+      ...view,
+      statusMessage: `[DEGRADE] Degraded ${view.tab} item #${view.selected + 1} to operator`,
+      lastAction: { action: "degrade", at: new Date().toISOString() },
+    };
+  }
+  if (matchesKey(key, "s")) {
+    return {
+      ...view,
+      statusMessage: `[SIGNAL] Signal dispatched for ${view.tab} item #${view.selected + 1}`,
+      lastAction: { action: "signal", at: new Date().toISOString() },
+    };
+  }
+  if (matchesKey(key, "c")) {
+    return {
+      ...view,
+      statusMessage: `[CANCEL] Cancellation requested for ${view.tab} item #${view.selected + 1}`,
+      lastAction: { action: "cancel", at: new Date().toISOString() },
+    };
   }
   return view;
 }
@@ -464,6 +507,7 @@ export class KxmDashboard implements Component {
   private readonly requestRender: () => void;
   private readonly onQuit: () => void;
   private readonly getWidth: () => number;
+  private readonly onAction?: ((action: DashboardAction, snapshot: MeshTuiSnapshot, view: MeshTuiView) => Promise<void> | void) | undefined;
 
   constructor(
     snapshot: MeshTuiSnapshot,
@@ -472,6 +516,7 @@ export class KxmDashboard implements Component {
     requestRender: () => void,
     onQuit: () => void,
     getWidth: () => number = () => 120,
+    onAction?: ((action: DashboardAction, snapshot: MeshTuiSnapshot, view: MeshTuiView) => Promise<void> | void) | undefined,
   ) {
     this.snapshot = snapshot;
     this.view = view;
@@ -479,6 +524,7 @@ export class KxmDashboard implements Component {
     this.requestRender = requestRender;
     this.onQuit = onQuit;
     this.getWidth = getWidth;
+    this.onAction = onAction;
     this.rebuild();
   }
 
@@ -543,7 +589,7 @@ export class KxmDashboard implements Component {
     const body = this.view.help
       ? (() => {
         const help = new Box(1, 0, theme.panelBg);
-        help.addChild(new Text(`${theme.accent("kxm dash")}\n1–6 or Tab/[ ] switch tabs · ←→ list/detail · ↑↓ select · PgUp/PgDn scroll · h help · q quit\nAgents, Tasks, Workflows, Plans, Inbox, Procs. Split pane on wide terminals. No message bodies.`, 0, 0));
+        help.addChild(new Text(`${theme.accent("kxm dash")}\n1–7 or Tab/[ ] switch tabs · ←→ list/detail · ↑↓ select · PgUp/PgDn scroll · h help · q quit\nAccess Control Plane: [a] approve · [r] reject · [d] degrade · [s] signal · [c] cancel\nAgents, Tasks, Workflows, Plans, Inbox, Procs, Spend. Split pane on wide terminals. No message bodies.`, 0, 0));
         return help;
       })()
       : split
@@ -555,8 +601,9 @@ export class KxmDashboard implements Component {
 
     const error = this.snapshot.error ? `  ${theme.error(`ERROR ${this.snapshot.error}`)}` : "";
     const feed = this.snapshot.metadataMode === "legacy" ? "presence + local" : "live";
+    const actionNotice = this.view.statusMessage ? `  ${theme.accent(this.view.statusMessage)}` : "";
     const footer = new TruncatedText(
-      `${theme.dim(`tab ${MESH_TUI_TAB_LABELS[this.view.tab]} · ${this.view.pane} · 1–6 tabs · ←→ panes · h help · q quit · ${feed}`)}${error}`,
+      `${theme.dim(`tab ${MESH_TUI_TAB_LABELS[this.view.tab]} · ${this.view.pane} · 1–7 tabs · h help · a/r/d/s/c · q quit · ${feed}`)}${actionNotice}${error}`,
       1,
       0,
     );
@@ -588,6 +635,9 @@ export class KxmDashboard implements Component {
     }
     if (next !== this.view) {
       this.view = next;
+      if (next.lastAction && this.onAction) {
+        void this.onAction(next.lastAction, this.snapshot, next);
+      }
       this.rebuild();
       this.requestRender();
     }
@@ -803,6 +853,45 @@ export async function runMeshTui(input: {
 
     const terminal = input.terminal ?? new ProcessTerminal();
     const tui = new TuiAltScreen(terminal, false, undefined, { mouse: true });
+    const onAction = async (action: DashboardAction, currentSnapshot: MeshTuiSnapshot, currentView: MeshTuiView) => {
+      let targetId: string | undefined;
+      if (currentView.tab === "workflows" || currentView.tab === "tasks") {
+        const runs = currentView.tab === "tasks"
+          ? currentSnapshot.runs.filter((r) => r.status === "running" || r.status === "waiting")
+          : currentSnapshot.runs;
+        targetId = runs[currentView.selected]?.id;
+      } else if (currentView.tab === "inbox") {
+        targetId = currentSnapshot.openMessages[currentView.selected]?.id;
+      }
+      if (!targetId) return;
+
+      try {
+        if (action.action === "cancel") {
+          await input.fetchImpl(`${base}/v1/runs/${encodeURIComponent(targetId)}/cancel?project=${encodeURIComponent(input.project)}`, {
+            method: "POST",
+            headers: headers(),
+            signal: abort.signal,
+          });
+        } else if (action.action === "approve" || action.action === "signal") {
+          await input.fetchImpl(`${base}/v1/runs/${encodeURIComponent(targetId)}/signal?project=${encodeURIComponent(input.project)}`, {
+            method: "POST",
+            headers: headers(),
+            body: JSON.stringify({ signalKey: "operator-approval", status: "passed", summary: "Interactive operator approval from kxm dash" }),
+            signal: abort.signal,
+          });
+        } else if (action.action === "reject") {
+          await input.fetchImpl(`${base}/v1/runs/${encodeURIComponent(targetId)}/signal?project=${encodeURIComponent(input.project)}`, {
+            method: "POST",
+            headers: headers(),
+            body: JSON.stringify({ signalKey: "operator-approval", status: "failed", summary: "Rejected by operator in kxm dash" }),
+            signal: abort.signal,
+          });
+        }
+      } catch {
+        // fail-soft on dashboard network errors during key press
+      }
+    };
+
     const dashboard = new KxmDashboard(
       snapshot,
       view,
@@ -810,6 +899,7 @@ export async function runMeshTui(input: {
       () => tui.requestRender(),
       () => abort.abort(),
       () => terminal.columns,
+      onAction,
     );
     interactive = { tui, dashboard };
     tui.setLayoutRoot(dashboard.root);

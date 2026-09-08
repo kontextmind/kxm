@@ -193,6 +193,16 @@ It does not replace the phase gates below.
 
 ### Landed in this tree (unreleased)
 
+- **0.6.0 release cut and release automation unlatched (2026-09-08):** Version bumped to `0.6.0` across all seven package surfaces (root package, package lock, plugin package, Claude manifest, marketplace entry, MCP server, and dist bundle). Removed the `if: false` job latch on the draft release job in `.github/workflows/release.yml` and updated `test/core/ci-contract.test.ts`; `publish-npm` stays `if: false` until a published release and `npm-publish` environment exist. CHANGELOG promoted.
+- **Control plane, 5-layer memory, and external idempotency (2026-09-08):**
+  - **Memory Arbiter & `_shared` scope:** Updated `plugins/kxm/src/context.ts` to allow `_shared` defaults alongside project identifiers without tripping `context_isolation_violation`; updated `plugins/kxm/src/arbiter.ts` to rank project-specific knowledge ahead of shared defaults; added `memoryRecordToContextItem()` and connected `.kxm/memory/` into `plugins/kxm/src/hub.ts:projectContextPool()`. Verified in `test/core/arbiter.test.ts`.
+  - **Formal Context Packet & Structured Handoffs:** Added schemas `schemas/vnext/context-packet.schema.json` (`kxm.context-packet.v2`) and `schemas/vnext/handoff-manifest.schema.json` (`kxm.handoff-manifest.v1`). Added builder and clean markdown prompt formatting in `plugins/kxm/src/context-packet.ts`. Integrated formal packets and antecedent handoffs directly into `plugins/kxm/src/vnext-engine.ts:birthMember`. Verified in `test/core/context-packet.test.ts`.
+  - **External Side-Effect Idempotency & Branch Determinism:** Implemented `plugins/kxm/src/external-effects.ts` with deterministic branch generation (`kxm/run-<id>`), preflight Check-And-Set (CAS) leasing (`claimEffect`), commit/abort lifecycle, and SQLite `external_effects` receipts store via Node 22 native `DatabaseSync` (`node:sqlite`). Verified in `test/core/external-effects.test.ts`.
+  - **Interactive TUI Access Control (`kxm dash`):** Extended `plugins/kxm/src/tui.ts` with interactive Blessed/Blessings control actions (`a` approve, `r` reject, `d` degrade, `s` signal, `c` cancel) dispatching authenticated callbacks to hub endpoints `/v1/runs/:id/signal` and `/cancel`. Verified in `test/core/tui.test.ts`.
+  - **Web Studio Layout Engine (Decision D14):** Created `plugins/kxm/src/studio-layout.ts` providing form/stepper stage derivation, ELK/React Flow DAG node/edge positioning, and Temporal activity Gantt swimlanes without manual YAML coordinates; exposed via `kxm studio layout <workflowPath>`. Verified in `test/core/studio-layout.test.ts`.
+  - **Developer Workflow Tooling & Alignment Config:** Created `plugins/kxm/src/config.ts` (`kxm.config.v1` loader/writer), `plugins/kxm/src/autocomplete.ts` (bash/zsh/fish shell completion scripts), `plugins/kxm/src/suggest.ts` (keyword & skill workflow matching mapped to `docs/workflow-guide.md` and authenticated harnesses), and `plugins/kxm/src/task-manager.ts` (`kxm goal` / `kxm task` with GitHub and Jira tracker synchronization). Settled all 15 architectural questions with operator in `plans/control-plane-memory-questionnaire.md`, including configurable promotion policies (`manual_pr` default), shadow execution sampling (`routing.shadowExecution`), soft demotion penalty weighting (`routing.circuitBreaker`), 14-day telemetry exponential decay (`improvement.telemetryHalfLifeDays`), and anonymized federated metrics (`telemetry.federated`). Verified in `test/core/cli-experience.test.ts`.
+  - **Self-Improving & Recommendation Telemetry:** Clustered 152 historical attempts from `.kxm/logs/telemetry.jsonl` ($26.58 spend, 24.11M tokens), validating native Grok 4.6 low-thinking ($0.17/attempt, 84% pass rate) vs medium-thinking ($0.60/attempt, 86.7% pass rate) with 72% cost savings and 4.5x speedup; Pi wrapper suffered 100% rework. Implemented `plugins/kxm/src/improve.ts` clustering by `(workflowId, stepId, role, intent)` for automated gate promotion and dynamic effort stepping. Verified in `test/core/improve.test.ts`.
+  - **Optimized Execution Roadmap:** Re-ordered implementation into 6 dependency-stratified phases in `plans/control-plane-memory-questionnaire.md`: Phase 1 Security & Config Foundation $\rightarrow$ Phase 2 Context Substrate & 5-Layer Memory $\rightarrow$ Phase 3 Execution Determinism & Side-Effects $\rightarrow$ Phase 4 Operator Control & CLI Tools $\rightarrow$ Phase 5 Spend Protection & Self-Improvement $\rightarrow$ Phase 6 Web Studio & DAG Visualization.
 - **B3 three failing rule tests and auth probes (issue #84):** Three failing-first
   loop rule tests in `test/core/vnext-loop-rules.test.ts` (unhosted harness/model
   pair rejected with `harness_unhosted_model`; pure inventory eligibility fails
@@ -785,12 +795,10 @@ It does not replace the phase gates below.
   a reviewed change that updates Tracking, tests, and settings together. D3
   Windows-specific success remains unverified and deferred. Active work
   continues on Linux and local Mac.
-- **Release resumption (deferred):** remove the `release` job latch and
-  re-enable the Release workflow in a reviewed change that updates Tracking,
-  tests, and settings together. Independent of Windows resumption.
-- First real draft-to-published release after B2 (later release phase).
-  `kxm update --kxm` end to end from a published asset. Temporary draft proof
-  does not replace this. No sidecar `.sha256`.
+- **Release resumption (unlatched for 0.6.0):** Removed the `release` job latch
+  in `.github/workflows/release.yml` and updated `test/core/ci-contract.test.ts`.
+  First real draft-to-published release and public npm publish remain to be verified
+  upon tag push. Independent of Windows resumption.
 - **After public npm:** wiki-compile this project from hub context; npm as
   `kxm update` source. Not before.
 - Coverage only lists modules some test loaded; a future source file with zero

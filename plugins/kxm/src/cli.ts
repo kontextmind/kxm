@@ -85,6 +85,28 @@ import {
 import type { WorkflowEvidenceInput, WorkflowJournalEntry, WorkflowRun } from "./workflow.ts";
 import { HubClient } from "./client.ts";
 import { AGENT_COMMANDS_MAP, enforceToolPolicy, mintSessionToken } from "./commands.ts";
+import {
+  loadKxmConfig,
+  setKxmConfigValue,
+  getKxmConfigValue,
+  formatKxmConfig,
+} from "./config.ts";
+import { generateShellCompletion, type SupportedShell } from "./autocomplete.ts";
+import { suggestWorkflowAndRoles } from "./suggest.ts";
+import {
+  createGoal,
+  createTask,
+  listGoals,
+  listTasks,
+  getTask,
+  updateTaskStatus,
+  syncTaskWithTracker,
+  type TaskStatus,
+  type TrackerType,
+} from "./task-manager.ts";
+import { parse as parseYaml } from "yaml";
+import { compileVnextWorkflow } from "./vnext-engine-compile.ts";
+import { generateStudioLayout } from "./studio-layout.ts";
 
 export interface CliSpawnResult {
   status: number | null;
@@ -2150,6 +2172,335 @@ async function cmdMemorySync(runtime: Runtime): Promise<number> {
   }
 }
 
+async function cmdConfigGet(runtime: Runtime, key: string): Promise<number> {
+  try {
+    const config = loadKxmConfig(runtime.cwd);
+    const value = getKxmConfigValue(config, key);
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: true, command: "config get", key, value },
+      value !== undefined ? String(value) : "(undefined)",
+    );
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.io.stderr(`config get failed: ${message}\n`);
+    return 1;
+  }
+}
+
+async function cmdConfigSet(
+  runtime: Runtime,
+  key: string,
+  value: string,
+  options: { scope: string },
+): Promise<number> {
+  try {
+    const scope = options.scope === "user" ? "user" : "project";
+    let parsedVal: unknown = value;
+    try {
+      parsedVal = JSON.parse(value);
+    } catch {
+      // keep string
+    }
+    setKxmConfigValue(runtime.cwd, key, parsedVal, { scope });
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: true, command: "config set", key, value: parsedVal, scope },
+      `Set ${key} = ${value} in ${scope} config`,
+    );
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.io.stderr(`config set failed: ${message}\n`);
+    return 1;
+  }
+}
+
+async function cmdConfigList(runtime: Runtime): Promise<number> {
+  try {
+    const config = loadKxmConfig(runtime.cwd);
+    const text = formatKxmConfig(config);
+    print(runtime.io, runtime.json, { ok: true, command: "config list", config }, text);
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.io.stderr(`config list failed: ${message}\n`);
+    return 1;
+  }
+}
+
+async function cmdCompletion(runtime: Runtime, shell: string): Promise<number> {
+  try {
+    if (shell !== "bash" && shell !== "zsh" && shell !== "fish") {
+      runtime.io.stderr(`unsupported shell: ${shell}; must be bash, zsh, or fish\n`);
+      return 1;
+    }
+    const script = generateShellCompletion(shell as SupportedShell);
+    runtime.io.stdout(script);
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.io.stderr(`completion generation failed: ${message}\n`);
+    return 1;
+  }
+}
+
+async function cmdSuggest(runtime: Runtime, promptParts: string[]): Promise<number> {
+  try {
+    const prompt = promptParts.join(" ").trim();
+    if (!prompt) {
+      runtime.io.stderr("prompt must be non-empty\n");
+      return 2;
+    }
+    const inventory = probeHarnesses({ env: runtime.env });
+    const availableHarnesses = inventory.harnesses.map((h) => ({
+      harness: h.id,
+      auth: h.authenticated === true ? "authenticated" : "unauthenticated",
+    }));
+    const suggestion = suggestWorkflowAndRoles(prompt, { availableHarnesses });
+
+    const text = [
+      `Suggested Workflow: ${suggestion.workflowId} (${suggestion.area})`,
+      `Confidence: ${(suggestion.confidence * 100).toFixed(0)}%`,
+      `Reasons: ${suggestion.reasons.join("; ")}`,
+      `Suggested Skills: ${suggestion.suggestedSkills.join(", ") || "none"}`,
+      `Roles:`,
+      `  Planner:     ${suggestion.roles.planner.harness} (${suggestion.roles.planner.model})`,
+      `  Writer:      ${suggestion.roles.writer.harness} (${suggestion.roles.writer.model})`,
+      `  Critics:     ${suggestion.roles.critics.map((c) => `${c.harness}:${c.model}`).join(", ")}`,
+      `  Verifier:    ${suggestion.roles.verifier.command}`,
+      ``,
+      `Execute with:`,
+      `  ${suggestion.suggestedCommand}`,
+    ].join("\n");
+
+    print(runtime.io, runtime.json, { ok: true, command: "suggest", prompt, ...suggestion }, text);
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.io.stderr(`suggest failed: ${message}\n`);
+    return 1;
+  }
+}
+
+async function cmdGoalCreate(
+  runtime: Runtime,
+  title: string,
+  options: { area?: string; metric?: string[]; targetDate?: string },
+): Promise<number> {
+  try {
+    const goal = createGoal(runtime.cwd, {
+      title,
+      area: options.area,
+      successMetrics: options.metric,
+      targetDate: options.targetDate,
+    });
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: true, command: "goal create", goal },
+      `Created goal ${goal.id}: ${goal.title}`,
+    );
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.io.stderr(`goal create failed: ${message}\n`);
+    return 1;
+  }
+}
+
+async function cmdGoalList(runtime: Runtime): Promise<number> {
+  try {
+    const goals = listGoals(runtime.cwd);
+    const text = goals.length === 0
+      ? "No goals recorded in .kxm/goals/"
+      : goals.map((g) => `[${g.status}] ${g.id}: ${g.title} (${g.area})`).join("\n");
+    print(runtime.io, runtime.json, { ok: true, command: "goal list", count: goals.length, goals }, text);
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.io.stderr(`goal list failed: ${message}\n`);
+    return 1;
+  }
+}
+
+async function cmdTaskCreate(
+  runtime: Runtime,
+  title: string,
+  options: { goal?: string; objective?: string; workflow?: string; tracker?: string; issue?: string },
+): Promise<number> {
+  try {
+    const task = createTask(runtime.cwd, {
+      title,
+      goalId: options.goal,
+      objective: options.objective ?? title,
+      assignedWorkflow: options.workflow,
+      trackerSync: options.tracker && options.issue
+        ? { tracker: options.tracker as TrackerType, issueKey: options.issue }
+        : undefined,
+    });
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: true, command: "task create", task },
+      `Created task ${task.id}: ${task.title} [${task.status}]`,
+    );
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.io.stderr(`task create failed: ${message}\n`);
+    return 1;
+  }
+}
+
+async function cmdTaskList(
+  runtime: Runtime,
+  options: { goal?: string; status?: string },
+): Promise<number> {
+  try {
+    const tasks = listTasks(runtime.cwd, {
+      goalId: options.goal,
+      status: options.status as TaskStatus | undefined,
+    });
+    const text = tasks.length === 0
+      ? "No tasks recorded in .kxm/tasks/"
+      : tasks.map((t) => `[${t.status}] ${t.id}: ${t.title}${t.assignedWorkflow ? ` -> ${t.assignedWorkflow}` : ""}`).join("\n");
+    print(runtime.io, runtime.json, { ok: true, command: "task list", count: tasks.length, tasks }, text);
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.io.stderr(`task list failed: ${message}\n`);
+    return 1;
+  }
+}
+
+async function cmdTaskGet(runtime: Runtime, taskId: string): Promise<number> {
+  try {
+    const task = getTask(runtime.cwd, taskId);
+    if (!task) {
+      runtime.io.stderr(`Task ${taskId} not found\n`);
+      return 1;
+    }
+    const text = [
+      `Task: ${task.id}`,
+      `Title: ${task.title}`,
+      `Status: ${task.status}`,
+      `Objective: ${task.objective}`,
+      task.assignedWorkflow ? `Workflow: ${task.assignedWorkflow}` : "",
+      task.workflowRunId ? `Active Run: ${task.workflowRunId}` : "",
+      task.trackerSync ? `Tracker: ${task.trackerSync.tracker} (#${task.trackerSync.issueKey}) [${task.trackerSync.syncStatus}]` : "",
+    ].filter(Boolean).join("\n");
+    print(runtime.io, runtime.json, { ok: true, command: "task get", task }, text);
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.io.stderr(`task get failed: ${message}\n`);
+    return 1;
+  }
+}
+
+async function cmdTaskRun(runtime: Runtime, taskId: string): Promise<number> {
+  try {
+    const task = getTask(runtime.cwd, taskId);
+    if (!task) {
+      runtime.io.stderr(`Task ${taskId} not found\n`);
+      return 1;
+    }
+    const workflow = task.assignedWorkflow ?? "software-engineering/feature-implementation";
+    const exitCode = await cmdVnextRun(runtime, workflow, [task.objective]);
+    if (exitCode === 0) {
+      updateTaskStatus(runtime.cwd, taskId, "in_progress");
+    }
+    return exitCode;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.io.stderr(`task run failed: ${message}\n`);
+    return 1;
+  }
+}
+
+async function cmdTaskSync(runtime: Runtime, taskId: string): Promise<number> {
+  try {
+    const synced = syncTaskWithTracker(runtime.cwd, taskId);
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: true, command: "task sync", task: synced },
+      `Synced task ${taskId} with ${synced.trackerSync?.tracker} #${synced.trackerSync?.issueKey}`,
+    );
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.io.stderr(`task sync failed: ${message}\n`);
+    return 1;
+  }
+}
+
+async function cmdStudioLayout(runtime: Runtime, workflowPath?: string): Promise<number> {
+  try {
+    const projectRoot = discoverVnextProjectRoot(runtime.cwd) ?? runtime.cwd;
+    let filePath = workflowPath;
+    if (!filePath) {
+      filePath = resolve(projectRoot, ".kxm", "workflows", "feature-implementation.yaml");
+    }
+    let yamlContent: string;
+    let workflowId = "software-engineering/feature-implementation";
+    if (existsSync(filePath)) {
+      yamlContent = readFileSync(filePath, "utf8");
+    } else {
+      yamlContent = `schema: kxm.workflow.v1
+description: Feature implementation workflow
+coordinator: coordinator
+limits:
+  maxTransitions: 12
+steps:
+  - id: plan
+    kind: agent
+    agent: planner
+    maxAttempts: 2
+    on:
+      passed: implement
+      failed:
+        target: $terminal
+        terminalStatus: failed
+  - id: implement
+    kind: agent
+    agent: writer
+    maxAttempts: 3
+    on:
+      passed: verify
+      failed:
+        target: $terminal
+        terminalStatus: failed
+  - id: verify
+    kind: gate
+    gate: verify-gate
+    expect: pass
+    maxAttempts: 2
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: implement
+        maxTransitions: 2
+`;
+    }
+    const parsedYaml = parseYaml(yamlContent) as any;
+    const plan = compileVnextWorkflow({ id: workflowId, value: parsedYaml });
+    const layout = generateStudioLayout(plan);
+    print(runtime.io, runtime.json, { ok: true, command: "studio layout", layout }, JSON.stringify(layout, null, 2));
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.io.stderr(`studio layout failed: ${message}\n`);
+    return 1;
+  }
+}
+
 async function cmdRoutingReport(
   runtime: Runtime,
   options: { file?: string; equivalentListCost?: boolean; listPrices?: boolean; prices?: string },
@@ -3205,6 +3556,83 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .option("--screen <name>", "agents, tasks, workflows, plans, inbox, procs, or spend"))
     .action(async function dashAction(this: Command, options: { screen?: string }) {
       result.code = await cmdDash(runtimeFrom(ctx, this), options);
+    });
+
+  const configCmd = addGlobalOptions(program.command("config").description("Inspect and update personalization and workflow configuration"));
+  configCmd.helpCommand("help", "Show config help");
+  addGlobalOptions(configCmd.command("get <key>").description("Get a configuration value by key"))
+    .action(async function configGetAction(this: Command, key: string) {
+      result.code = await cmdConfigGet(runtimeFrom(ctx, this), key);
+    });
+  addGlobalOptions(configCmd.command("set <key> <value>").description("Set a configuration value"))
+    .option("--scope <scope>", "Configuration scope: user or project (default: project)", "project")
+    .action(async function configSetAction(this: Command, key: string, value: string, options: { scope: string }) {
+      result.code = await cmdConfigSet(runtimeFrom(ctx, this), key, value, options);
+    });
+  addGlobalOptions(configCmd.command("list", { isDefault: true }).description("List resolved configuration values"))
+    .action(async function configListAction(this: Command) {
+      result.code = await cmdConfigList(runtimeFrom(ctx, this));
+    });
+
+  addGlobalOptions(program.command("completion <shell>").description("Generate shell completion script (bash, zsh, fish)"))
+    .action(async function completionAction(this: Command, shell: string) {
+      result.code = await cmdCompletion(runtimeFrom(ctx, this), shell);
+    });
+
+  addGlobalOptions(program.command("suggest <prompt...>").description("Recommend workflow, area, roles, and skills from a prompt or issue description"))
+    .action(async function suggestAction(this: Command, promptParts: string[]) {
+      result.code = await cmdSuggest(runtimeFrom(ctx, this), promptParts);
+    });
+
+  const goalCmd = addGlobalOptions(program.command("goal").description("Internal project goal management"));
+  goalCmd.helpCommand("help", "Show goal help");
+  addGlobalOptions(goalCmd.command("create <title>").description("Create a project goal"))
+    .option("--area <area>", "Workflow area (e.g. software-engineering, security-reliability)")
+    .option("--metric <metric...>", "Success metrics for this goal")
+    .option("--target-date <date>", "Target achievement date (ISO-8601 or YYYY-MM-DD)")
+    .action(async function goalCreateAction(this: Command, title: string, options: { area?: string; metric?: string[]; targetDate?: string }) {
+      result.code = await cmdGoalCreate(runtimeFrom(ctx, this), title, options);
+    });
+  addGlobalOptions(goalCmd.command("list", { isDefault: true }).description("List project goals"))
+    .action(async function goalListAction(this: Command) {
+      result.code = await cmdGoalList(runtimeFrom(ctx, this));
+    });
+
+  const taskCmd = addGlobalOptions(program.command("task").description("Project task management driving workflows and issue board synchronization"));
+  taskCmd.helpCommand("help", "Show task help");
+  addGlobalOptions(taskCmd.command("create <title>").description("Create a task"))
+    .option("--goal <goalId>", "Parent goal ID")
+    .option("--objective <text>", "Task objective")
+    .option("--workflow <id>", "Assigned workflow ID")
+    .option("--tracker <tracker>", "Issue tracker (github or jira)")
+    .option("--issue <key>", "Issue number or Jira key")
+    .action(async function taskCreateAction(this: Command, title: string, options: { goal?: string; objective?: string; workflow?: string; tracker?: string; issue?: string }) {
+      result.code = await cmdTaskCreate(runtimeFrom(ctx, this), title, options);
+    });
+  addGlobalOptions(taskCmd.command("list", { isDefault: true }).description("List project tasks"))
+    .option("--goal <goalId>", "Filter by goal ID")
+    .option("--status <status>", "Filter by status: todo, in_progress, blocked, in_review, done")
+    .action(async function taskListAction(this: Command, options: { goal?: string; status?: string }) {
+      result.code = await cmdTaskList(runtimeFrom(ctx, this), options);
+    });
+  addGlobalOptions(taskCmd.command("get <taskId>").description("Get task details and linked workflow status"))
+    .action(async function taskGetAction(this: Command, taskId: string) {
+      result.code = await cmdTaskGet(runtimeFrom(ctx, this), taskId);
+    });
+  addGlobalOptions(taskCmd.command("run <taskId>").description("Launch a workflow run driven by this task"))
+    .action(async function taskRunAction(this: Command, taskId: string) {
+      result.code = await cmdTaskRun(runtimeFrom(ctx, this), taskId);
+    });
+  addGlobalOptions(taskCmd.command("sync <taskId>").description("Sync task status and evidence with its linked issue board"))
+    .action(async function taskSyncAction(this: Command, taskId: string) {
+      result.code = await cmdTaskSync(runtimeFrom(ctx, this), taskId);
+    });
+
+  const studioCmd = addGlobalOptions(program.command("studio").description("KXM Web Studio layout and inspection utilities"));
+  studioCmd.helpCommand("help", "Show studio help");
+  addGlobalOptions(studioCmd.command("layout [workflowPath]").description("Generate Decision D14 DAG, stepper, and Temporal swimlanes layout JSON"))
+    .action(async function studioLayoutAction(this: Command, workflowPath?: string) {
+      result.code = await cmdStudioLayout(runtimeFrom(ctx, this), workflowPath);
     });
 
   return program;

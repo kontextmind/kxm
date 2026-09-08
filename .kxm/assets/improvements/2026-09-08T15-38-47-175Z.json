@@ -1,0 +1,2274 @@
+{
+  "schema": "kxm.improvement-report.v2",
+  "createdAt": "2026-09-08T15:38:47.175Z",
+  "reviewDecision": "proposed",
+  "recordsCount": 152,
+  "groups": [
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "portability-mapper",
+      "promptHash": "bb573645d774faa2ccd4cbfb62ceb9d86564354d3c68c16a33b9e5ef8aad942b",
+      "recurrence": 2,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 1,
+      "evidenceRefs": [
+        "1c6674866773a311ce1e843784836229dbd2b878ab7fa000a9d0d469f9dbd9e6"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "8f9d9eee061703a5cf0fde805d50ab980c9d8ead448e8f55dd174e270577c039",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "8f9d9eee061703a5cf0fde805d50ab980c9d8ead448e8f55dd174e270577c039"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "e75b907979d838f4374d18fc101b8c83c1e96386987a6e7900423506738fcc2b",
+      "recurrence": 1,
+      "meanCost": 1.29,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "e75b907979d838f4374d18fc101b8c83c1e96386987a6e7900423506738fcc2b"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "75f8a6d40ad79959f9027b5edaf398d0f590081f1f097efd46c85ead279d7839",
+      "recurrence": 1,
+      "meanCost": 1.5844,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 1,
+      "evidenceRefs": [
+        "75f8a6d40ad79959f9027b5edaf398d0f590081f1f097efd46c85ead279d7839"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "abb7cb269c00d91e597fd67517ae0c9e2486b5a59d435cdd0ba98d4e2855f641",
+      "recurrence": 1,
+      "meanCost": 0.1886,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "abb7cb269c00d91e597fd67517ae0c9e2486b5a59d435cdd0ba98d4e2855f641"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "none",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "a209d177738f80412dcf286c66adf043693bfcb1c31c46feeb9d72864a068091"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "23c1e6fd11d0a3a2f5159f3a392da47ce2d910b4838139e5825814a84fd70679",
+      "recurrence": 1,
+      "meanCost": 0.7654,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 1,
+      "evidenceRefs": [
+        "23c1e6fd11d0a3a2f5159f3a392da47ce2d910b4838139e5825814a84fd70679"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "c7ab11a027615098e363c8a8a67191966c68fa44ed432ea9863d153709e517be",
+      "recurrence": 1,
+      "meanCost": 0.3016,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "c7ab11a027615098e363c8a8a67191966c68fa44ed432ea9863d153709e517be"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "ci-monitor",
+      "promptHash": "none",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "9083032bb2e727e528c43ca47a92fc2f0c7b60b8faf464b0847dc1c525f45950"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "f56ce676c19cc4070d9bb44cb2593ced9b63af31675ccd9c8968b76da0085cfc",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "811a3d6ea31a8123458d704b26778b031c837e32937b7323447f9c913dbb614e"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "9c1c2f8656109b43f5eb6ba8b580e7a017050c62c5562e34a2f4aac7bd2e132d",
+      "recurrence": 1,
+      "meanCost": 0.2965,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "2f657643abe2a39eb7762e10c959323b9e6f2b124f5e11341b9b5ee8125f1756"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "7b6d6f8a6224dfe83a3a427e31be07f96fad8a52b71bf5905d46f588f9e9f752",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "d83eaf2fb62c16336aaad3a49ea0cd6d44d72f76a0275068384c7fcc5f1e5e0e"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "3af43c153a73e1b7855cf74ae99b8311a89552904bddfbbd0100683847ca56ca",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "b0deaa067d87cb1f851664ff9c76255d1eb573ee6185b45753201335c7fe6a33"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "eb0814485c5e3a6fbbcc626e0c6e8b926df2b0cec504ee30ce8343dc747ec8d4",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 1,
+      "evidenceRefs": [
+        "15667877500f074f8f28c049eac6234e37fc9bed416513778235cdebf48e6bcb"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "b83ce9856fdf64aac1fe7e72bbf6bcd919adaae16c8fdd28a2bce2306f916e26",
+      "recurrence": 1,
+      "meanCost": 0.2513,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "9a52abca934e53aca966f6ad68403745d90c623330e0cbb93139492ce4e1967d"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "75b749e755c19f9b9cd979424efd104427b589a7224fb1b39ae5d678bfa53da6",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "bdd9c9f89fd264753243608878a67ee2e8746a6f7586e7b5581f59f6bfd19464"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "40780b88e6f3f865bf9b0562498c14ce61be0e3999715c479ebb553affb59fc9",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "dcf4201a36c77e420a4f4eab64b86b0c742e6573481e22f024e17ef7ee366790"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "86309f1ea485c51471c93bee3e2e0af4e6ec83a1f5d6c31dc347c851072039db",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "721fe0c59649abeb815b7c1111954f251afcaddea7f416a5e8ff7efd5313ddea"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "cf3b3ee88427cf93772802bfe0dc230349c2aae29f7ea3b473aa7297bd02407f",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "e1273d25dffda32d31a32bd55447cd36be4273f59428194c76889e769af5b9be"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "f2c1f93da26b7bd57dc4bac41a9a71f1736b6d1f6d076812f13fc319766e5b56",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "07fbaa673a8ca1b07c9767f731fb55f6f40ddf84230178014bc06608ee602317"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "40a96261bf7c9c2b4c9d14384ab41d29b2751a77cea019aa8a1d5776099a53e3",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "0ffede1dbb2e717688d2cfab6daee36271f3f4455e02576edb3b3b7a67fb2bbe"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "af03aef91f3407df14097d696d49df9ca2f0a9974427fdf81114d1c3d1abcf28",
+      "recurrence": 1,
+      "meanCost": 1.0072,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 0,
+      "evidenceRefs": [
+        "94b8dea215b9e543d7ed4f66b818987c458deb8e2bc6d9d52486bada5d734d87"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "f84902e059e2c8acc36e813152be9469ff3ad19ff41563d81c5cfb00c53f8d79",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "5d711ac9b00f236e0fda875bb950683c5879938437f7218389bc6dc26a2deb2b"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "fff9088c08968a8b0cb99873fc6c6ca65afaf53fa7e66248cff06038c3aae18a",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "dfc682134e24b947e6493cd53ffe2e058f3c563d78b71cd541bfb06a76ec7154"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "0e8a9c47851b234a94bfe1106e1a6cb148bd1a66147be09b32a8a2bd5afeb8a2",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "bacce21da60a7479e3d7fe16808669aed8293832c9ddbe0461c91ccff5eeb999"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "bd9d66d5786e38298f80b8ef743a6a951f2830808524d7bb8a316ed20937198c",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "760f62af2cda305bb7d32c47b3b705ddf97de052b808d97ed855c134aede371d"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "7b2761b0955bbdfc36160cc860933c105d9054155ba8e82731d937c6399c4d4b",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "a15f0dcd98ac044930756d8b8c2f05a097ed2ae6212c428eb011b4aaacf39812"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "7657bee743016ae06d610127b409f31fada805ae62e406526244c5857c57e9f2",
+      "recurrence": 1,
+      "meanCost": 0.5803,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "9f7f7aaf4d8c95b358a862f70f38bbc9d084400cb8677e959c5ba6ce6e5cfead"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "0b0b2cb6d49e1e3efe10b1ef9beb7b67732e9f7e809b1cf1601a22ad904af92d",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 1,
+      "evidenceRefs": [
+        "4af369750dfc74fb2f46eb284dd3c32fd8f92ee0b02b987afbed5defea3bc282"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "b34a9b88bb05dd65c1689bcd704d11ae64fbe26d181d2202542a2d4e0fd1c866",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 1,
+      "evidenceRefs": [
+        "5de451e2086d40fd231beb4ca9f9e257a68751e388b9e319205dd7ba3ebc2019"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "6004c58ef7c415dcebdd4d6ca30482f89adebc9a40cdadd588fbdd4f8be679e6",
+      "recurrence": 1,
+      "meanCost": 0.7975,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 0,
+      "evidenceRefs": [
+        "67ff857a523a5ffdb9d5f1c376340c9650c3c50628a3ba68c0a7cf91f01b26fc"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "75c3c5453a15a3a9a21a3d4699e7e84e1cf620d5ccd02d4f6bc484ae248234ce",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "a8b970a8750eedd464c43562f400849dee587086f17e54b6f348c77340faeeda"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "7350bc934485996b91e9c4fd380e3632acb40203f0d1b339fffc46d27860c036",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "5b9d166bddba2cc8070caef1be7bc568e9208f937170837a7ef0ee985010aed9"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "1308ce03c0a7b5b103b581bd2a42cc4f3261b30f782f61864cb0619369e65a4a",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "4d76cff022d6630e52f60a04abc1df158a06b13ba8c9954cb4dbe1cd485964cf"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "ca7aa9a429fd983add39b881abdc606236e4f54e0d7d566cbcf78f4e89f0309b",
+      "recurrence": 1,
+      "meanCost": 0.3905,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "7056a0b2d1d52439a0ae80d799d103e8169348e7498ff0684e13f7a08791486c"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "9fa969cae78ba776299690ee171faed8fcd938a04fac8a2aecdc7c328fcf145b",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "88ecb17a75db52c0b32e39977fb72e3add59f15ee966b97fed14af754592ad21"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "f6efc04cfada07e24ea496bea39f8558e3dcfc1f57b2a390ee781b3a76f5467d",
+      "recurrence": 1,
+      "meanCost": 0.3367,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "a5cbbe334774c6fbb3aebb62ade64ea118c3caa2c9c415c25920522862572911"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "5feddb2f7de48d4074e87386629375e58b4e2ca040dc9eaf3865c8e13a917099",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 1,
+      "evidenceRefs": [
+        "7e01494c2006f3ccf193e96d7629dfb7ca9f54badfccde260c859234dcc8419a"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "03ea9c83819c58b67e287ec89b11c151ac482893a144aa292f5e083c146236a2",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 1,
+      "evidenceRefs": [
+        "eb8855ecf493e9a7b441253e37db2d50871f49df00e69fbaa369f99f3afbd98b"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "8e10675047f27dc55011d0fc7ee23a226f371c30dd53509b1b10b07058b2ba68",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "f813bb3c53ad60dca5f4036cbb52005dc40c4bda1f29ba38be7d0326ec54bce4"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "34433c4ce01552b3ccf5f9e781de41a29895de32723bdaedb9666c29ef975905",
+      "recurrence": 1,
+      "meanCost": 0.1938,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "505cd09e39a730389d60fe0d1a9ce2b3663d19b105367a7e81203d3cf01f57b0"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "c2022a852ddba65c89fa606cfe23ec517f908319f5910e42da64e0661d1a3140",
+      "recurrence": 1,
+      "meanCost": 0.1424,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "e9fff6bc47b9a84789b1a28e0eb0869ab3d42c677a8d6451cc3b816204477015"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "49f09ce02fd0e356da2f5e2878dc5f3970760ad540567cd2e5ae2e687812bb0d",
+      "recurrence": 1,
+      "meanCost": 0.0929,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "25e1cc1b10216024d4cee3d73d8a243817518ae9c4c4f4858e6e4b325af2ed60"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "39b73f2aab56008b511a76f8b230f1785e5d95a5b52335490c77ee5962a4fe05",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "9506061b4505168da7400d515f61270e72c3c2dac1a8e328f645dd2c7b303248"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "f84270322f54f637f0dd0953474e926f96b39ee3a52217b13055c8555a0d50d6",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "462338b0e97c0f954e755ef5368d6a82b3dd80fa238b41b8c7bd1e30fe3b9bf0"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "6e7ff54132ce4b33067f81b08b4d1825c5514d833573b1fd01ec4abcc1fa0c70",
+      "recurrence": 1,
+      "meanCost": 0.0684,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "6fc4b09b8e2d0bd27e50ffca6c51186b308bf7fcc66ace606e822cc6f2a319a7"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "7dd1b33c88001ef0e36f06b6ee6eaaba63633fdae21696e37bbbd4e9fe588aa6",
+      "recurrence": 1,
+      "meanCost": 0.1447,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "e22f01c4a84425d70521c30b1625eb4c7c3760d2fb839dfa00a4fec1a0a4b2bf"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "90b733d3d37f9223e2765e9a5e38c59b4f7e1d36bee8abea37621ba82d0f5ea9",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "09195c0c3818c067b16ef8de5ed89729938fad4ad688703544a9261ca02bd707"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "156f91d472d610e151c8a9d8c06ed83bc7477bed5f0fa8569ca9a20fd480f9d0",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "548e39941b31ef385df650d8acde300f561a52b92b552bae991db09fee55423b"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "ee05068e54ce1aef93e62c2a27c34c0445ff21b3a859a05afd03f22b7d66d3e8",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "5e8ad6014319fa875b35fb9ba935e375d9dca104090dd9448b73d44082f24a28"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "52de801c04c320bece52eeac2a590480b354a7e206d568ee4426f628d5a638d5",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "c52784baa3179222aaff59d9d7a00feb51ce415363fc5c2416628559d527b51d"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "f9c8e56205f4af38cbd19bd5a328f8242d2c0388ba65c2b8b8b1721a228f0e6e",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "427f7ff4d72dd07e022335a457500d3e40659bdc76df4aa54e331929ef72f192"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "07bd75a7e501400da7f32d46f6a6627d43bec7662700be8c609770674e93ae4b",
+      "recurrence": 1,
+      "meanCost": 0.32,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 0,
+      "evidenceRefs": [
+        "ce73df01b2dfcfa1a3388e587b32831cd3fbda2a4b0ecaa5f67209870b3a9c93"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "862bfefe3b0ffde2b834e383014be40a22e795da43ba02dddcc8543b654db07b",
+      "recurrence": 1,
+      "meanCost": 0.0815,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "42319051267c7f1e5b185c8f822511a3b6f90628a52a5662dd17b537f30d196e"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "857a07cf1287ad9a06f890639062a0f1f75a9dcbc935dff9d274107c62012e47",
+      "recurrence": 1,
+      "meanCost": 0.2444,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "9ab2da8c0a8988c358a1414aa1b04e3f71571952b946f29e1d13f825df33edae"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "8dd4af5d1778deeed59d53d8c374d004648bddf434345c884a337f602cb08967",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "d7dbb29fd1b15848c46db3f811e8c012d5abfc1087e75ce963c6fc21dac8fe0b"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "ac692b77a1fc39822f1fe1245d9369aa699b92aa4dc975f182e77fe57a5d4807",
+      "recurrence": 1,
+      "meanCost": 0.1956,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 0,
+      "evidenceRefs": [
+        "e37099bfe506c42dabaaefe49f82d16199b2b856e695adc2e71f0f273715daf3"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "15faf37e6915d93cc0bf4e5666a3a4b1925733e8faca463351775b5f0a8507ca",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "3651480f8ce2b133649b093846a45e83ac040d0c56e7d7d547e3087378f323a3"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "244ca4766016617e7015c143225848c3b97d448f30f96b90c346953f28624d04",
+      "recurrence": 1,
+      "meanCost": 0.2086,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "03426ec061e2dbe0f5b10970938186f20d076957795c881e2a7ddbd20ab2cee7"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "818669d8debfb13d948492670170fedb24bf5bc2e0f43ca971f7a542a15dba68",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "9bbdaeb4feff8590582996988e42ba49c12988da565d13623e37cb07523ab2b6"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "4d4646888bcb93c49dda190065a854ef8f37c6d52c0eb645c37274438b612aeb",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "85aaee91f17cd9ce783c0209feba2481437ff5c1245d59f92ed6e475840403ff"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "ad6c1ccd7f20faef643e4e230aafbed8897d94912a08011d2d288381f1e7e5b8",
+      "recurrence": 1,
+      "meanCost": 0.7108,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 0,
+      "evidenceRefs": [
+        "58b4fb130d63d9789543c2dc303bb4e74a8380e719d9d5f04206c658eb508944"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "882d0d0311adf376204f73432c87d51056d85b79582e3d53d475dab254135288",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "9110df267abaae6579d6e47f147ce145e3f9f1966dba7c413e73ea198f8615cc"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "cf2a4f9fdfb9cfb5e3b7e02f3731f083fa78a245b360f627d3384f77882030ac",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "74a28943b2fc3daed25afad283549d985ef1e5a2d7b99db100ac8579f155f296"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "8db732dbf819b1c6edf9eba7c18825f74ccc5497443dcb740b8c84bddb69dbb7",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "22ca65eca5c6949d34f3d17661aec4f95b72608a124dfe2d5c6d19f6122566f0"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "6aa4dc4d1a9a95e88cf53e751fdb0780fbccba36102515e52ed361d84d2d8816",
+      "recurrence": 1,
+      "meanCost": 0.2718,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "8af94d17fd0a6b11ed05952d0d8ba12e5076fcfcd9fb4f01607801a6f2fc2b50"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "1dcaa19a16b3f8573efb8b8b44ddbae8081a67cd05988aed94c12a3b21363305",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "9ed94432cb735ee27d3044f23f19b843c9dbc035e94fe126b12734837c675358"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "53b728a3ef7397a5547ee2215b49f62e60cfbfc5b96d8f6467515dd53eff0b1d",
+      "recurrence": 1,
+      "meanCost": 0.1952,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "75f4692fddc7a420c925b1ce8859f4d729ce56739a0525fa28afd64a0e8d64c9"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "c77d96ae5b70523eccbf8794a1a6b70120b79578f0c0a6f4bf2b0dbf259fd59c",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "2224e3b5e30084039a806b91b907d0ce43df8f16e820d5f0e43a63ced0c24f89"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "ae9059c092355222e84742e9faa36aa0593bdb66b491759f7c15320a67caceb0",
+      "recurrence": 1,
+      "meanCost": 0.1718,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 0,
+      "evidenceRefs": [
+        "4d266f294201dc7ba5f1ffab430563d743f20f8d133e00fec1642f1e60271787"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "0b97bce25a5eccb7c444aff26108c21f35018a6b58ebb72fd7b9b9c2f780e237",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "7378aa1b7f4a05c7fb7d83ce3451c2b27081759a4d023e5967f0daa182b859d8"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "83e09fa17dce1ee60686e2e15bd38549fbe46eabefa22233e177de54473a7394",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "f799821a7c1c0ab0862b1eb434acd1dcf6d32ddee7069713cc3f452fffa5e01a"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "972b37b84b777bbc21db5f53b19303107bb54038e3695512110897e5310d44be",
+      "recurrence": 1,
+      "meanCost": 0.079,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "15df0cea219a9465441f3d8d21deaa1d46023ebecc052d747c10a76d860c0a75"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "a704e94510b3d0e6ad6187c02b203ad3fd45275790c08e9d99f7ba16831e2ecd",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "51b6e1aed293e2002924a5c41063d609f80d649d0f6f847dc9c0598fc68b76a9"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "1cdaa9683028e678dda66c14ce8417473f19af838d81971ae3491b8dada5bbd0",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "7c99691f4612d271c0c170461a5748f66e901583ea6252fb66196d0b9beacefd"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "d697a2c77c3fe03315b52fe3aa38f7dc699e270a82be3b38dbfb77ac6e4388a5",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "b30c1be2d0a0c1323b664bf4a4b9c51ab565cc9816917576a9d59d7a7e018cfb"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "e268677821c11a91dc4451530729bfdbd767e02ee12b4a0803068cc503f438f2",
+      "recurrence": 1,
+      "meanCost": 0.3339,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 0,
+      "evidenceRefs": [
+        "51bfc11ca922e6530fd0ef8073cdee0a9d0e5ba18d309d3ed1f4bd4a02b0f1aa"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "d69112c8272d379adde549d3a2ccddc9b80a0512914b6b7a7396427cd30b896f",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "51638de1c448ff03fa3e3cd17433a77a8d87ce4b7e5404cf52dbfad05cbf94ca"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "6f603f80a3413e24bf124659931a92a62209864f39d2996284d21605ea5a9717",
+      "recurrence": 1,
+      "meanCost": 0.8989,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "468c277283e6c2268145e2c1b28cf784e0fe062edcf5a7aef7ed6540486e9576"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "79dcd07ce5a5e124f70f62677dc0bfe9ac163bda3baaae08d04414fca2a88725",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "4c823122523f0e5d1b1cc01e0b4743f6c89ca0ff4bcbce99b2fec78fbdb77559"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "4bac7fc5eadef461918134bbac21070d7762070cb806299ccc83eda6bab63199",
+      "recurrence": 1,
+      "meanCost": 0.1229,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "4af2113c8ac6812014dec9751044426e42a8fc532580a7c64378ec473a1b2b0f"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "ab90a14a9be1d0a8b3c2460900b3a31c77cc9dabae9edb35e0ba393cc11732a7",
+      "recurrence": 1,
+      "meanCost": 0.1819,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "d6f70797ef93ee81ec9ddc2da573437d484aba91c1d98b1943cda26ca2d01a5a"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "af5d131dde7b416ba9433bfe7767d99a87339dfcae1bf3a079b84d02b6ae7fb9",
+      "recurrence": 1,
+      "meanCost": 0.0553,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "3c5c6231b9d34d551f1f224242908ea2f9cadd4bbf586dc4eef5c81b0f8df11f"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "1d9de76db1f737bfe4710324b7cb434ebae2280c5e2fdeb6a39504db241ca944",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "a2f31ffcdbbb993cdbdde8ee351c1bfbef71f9a8e85ffc2ae1b3d51ddbcc72bd"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "5b1dd55a4401607bfb41920ef750833576c22a0630cc0a19a7bfba74436deb0c",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "c55ad67df63d4072c4c48e41b01d44788a5945e2947656daabb21e4be2a4f1b3"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "9a48722c705cc0730b5da134984d401ec2cd8089ff229cb58de2544e32214108",
+      "recurrence": 1,
+      "meanCost": 0.0931,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 1,
+      "evidenceRefs": [
+        "da1e279acec4a3078016dfb2231bb29b1db985ed5b8664bf24b582426ccbd49b"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "03203305d474e54f03576e7aa5bfed0faa996616089a3010feb62c7dfa93ad8b",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "347a0fd1666a280a4bbbe40c210b45a006c98015fd7e4a37cb91731eed53a1f7"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "62419bd741db02e7d75609ad911b66f7ae38b67268cbf0628e7804b050e9072c",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "f6c986ed7d6b21150bb8aae624fb31e2678997b40417fb97496ee6df81b3b78f"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "9b493117cd3d2c534677ba88fc96d7363793f27b980a310cbd1d0794d33295fe",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "1a53173b0abac62152908e9a5378868254bf2d1d324df7c3d2ad5a560f460f1c"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "20bf0f55b07b7bcc772f9286e5a9a480ce596478e7fafb1519d8d3ac2641f616",
+      "recurrence": 1,
+      "meanCost": 0.0783,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 0,
+      "evidenceRefs": [
+        "3a12280d3e35f5a0075e3aad84e0f55869572392339724e189df1af7845a2fda"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "8533bc395d94c11d48459894af817e84005e4d8b62efe86f1f4c00728914d642",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "ca25e482ce8b3e04ae70f87432202e33956a0771301a1b713be9889fdea05bd4"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "85f7486c11c8104c76d270c2d844ad23f6bc1a89b91849cd2835830bc3cda463",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "5ec113262ba244599fc1f4338fd7dc7146279abe4a0cecf5352c2b86b5dcdf4c"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "9362340fed342bbc6f62c245de6a62205308a130d9ff4324521f1381cdea7073",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "d16f01988e12805a2f15756428b1d87497beaeafd3dbbe2331bf1d5abfb986ab"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "506cce753f43baab3aef9fb773a043cb7cf963dbd4e8d6e197629bd6058b50ce",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "d26cfd44aa0b677d389a11987bacb16a9de477f81e47c6fbdc7807dad698f42d"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "00647ff5e3bdeab704b61011c69c6321e9fb34e545867eb829a1cf2a41daeefb",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "2dd7c3c7d97b65522d2043c177a1cf12e48a4dc5ba72ba40386818a441a2e7df"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "f070d50f8971bde65b96690577c249f8d7b310a18997357fdb7c23e77da8c2a8",
+      "recurrence": 1,
+      "meanCost": 0.5049,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "8a00db796676b76207d1afc000837120146645e017c377d923b867211640a66e"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "d15c5aa72f3334e5fcdc98792ab0e0f78477f61a7dfa507dbdf2cdd393515065",
+      "recurrence": 1,
+      "meanCost": 0.1219,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 0,
+      "evidenceRefs": [
+        "dd46506a2e780f0fb77f5eae3281cb478f32c1f9e6bc21d1555b1f3c2e525cad"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "b3ccf5815dd7a8e826497eb9c3a93fd6f639198daba5a6def366889db285d99a",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "a1f83433898424ae5c70eaf23014d4e3ef4ae2cd568ecec679ddb8856b83fc3e"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "efd8d1c505ac8ee26478cd7849c654757b9ea58f08bcf12d518646ce95556856",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "0c78263d7634a8a4513cee168f347a46ebc4d3c3097103a48eafd15e85355424"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "e2f271f8d0d867a776331c3ebc80e19d69e03294db3b9aebf29b6360bd3a2106",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "adbf57d5d61db49e57f3acb575fcd02ae0834e29c0378728e7c37b0d9e7f1900"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "451a1be47af490d134ca2b3c8287f413fa8f1af6d99c1427d4d427cd78f3727e",
+      "recurrence": 1,
+      "meanCost": 0.1715,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "48e96da24a6a5dfb1e8e2b7cc053563a3438f363094baf88721e98864961268e"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "874737a3b2af71f8c4fc5b1a9ce60b1a16eec0db9e6a88ed00584d5e5efc28f8",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "05d24926c80a8630a2e25a6e1a1637ee549726abc5c165ca7aa01392c10b1a32"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "3f89855379945ef6e5d15bb99aa18a7317f9585da6f4c8f8165bffa195cea313",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "62691ff70b61515308f01a51f896f21fdcc4dc50f0d30041f036770f9bc60968"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "d503d1dc706fd50638dffd8f3876388aecbeb50092ff678f34695593ca560c8c",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "abcc31265761e7028ff6ce4aad55d2d02c6f7c0a4423353ca711cb2b14eaff63"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "4a12557fb0b98af665f21aa14527a3025dc58420bd26e860321b547f0ef7d0b1",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "9af3bccb7a4a6a96a7ca8034ece350ff9108fa3845b0285fe192c15845ded179"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "f473dfdc0f12e51bf2127edee185dfd1ff25a3670793f35c0469f0398aa49992",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "57fa56d219b44650de5a25bfc2d268de88006aeaa59d7681e04f9d2b9d6402e5"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "e3c0707140be172fd36275977da0f8cc90fb333dab985eb0363bc32df5334f31",
+      "recurrence": 1,
+      "meanCost": 2.194,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 1,
+      "evidenceRefs": [
+        "f1f83bf2f41acb094fae67fc2d3172354a51f741e2662ea8873686f6f2db872a"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "bcd32af145e42cf5119c1e720cb35736fce8307d79e1d760bc126db427dbf8e1",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "0054ad7e5e15eea4c8495f5393ebe3c251c3d84bd23ff5e1c34fa68aae0812a6"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "34c4312b9f061136c4c2f54b4b2f456d59e9deeaf25ba1a0f3c02ee41c4acc8f",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "ef51d0fed5c4dd6878543fe9e5cd9fdf0b2b73cf37c0863c989052d9c151b9a7"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "ce5809dc8b557856793f7fb148b13d472c2439e24bc597ae840e0dc477660d84",
+      "recurrence": 1,
+      "meanCost": 0.8134,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 1,
+      "evidenceRefs": [
+        "c2e38f1e01e3da2fccb9823bbc69a1a7ee32729bab8e1297d24aaa0a35d8b34c"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "5b3b527d6d0ed5ceb64b2df046bddcb18fc7842e0a0f6cd7d258771aee2bfe25",
+      "recurrence": 1,
+      "meanCost": 0.9754,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "3dff1e7484966299730cf7d82d9c9e2c29b5f2b3a33713f82b7e03c95f792224"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "0ce0905633e45ad9d9b518b694df47a4c6a8e5a8c5da2f6ae4f7effcec51202d",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 1,
+      "evidenceRefs": [
+        "eda08ffc59983bbe6ab962ff57949f905ccdc24b0c3d255513ca702784afb199"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "93220caa78ec54e5c24f7d167151fcc889d97ccfa57ce762c7068397ffd5d508",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 1,
+      "evidenceRefs": [
+        "103eeac2e454229d0c3ca631cc1b36b22ed26f84f1c61dea01d60bff71663985"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "895791bd00e25a2b1b6d404a5552902961addf48e90dfc6c9b0d97bd1e70c1bb",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "401795522238defa390a5843e42f76cf396af13b5cf247d287095b682260954b"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "58210ad0cf539d17a7a865265b93fb3c0e11b508bf5316c1bfcf28ea35510c59",
+      "recurrence": 1,
+      "meanCost": 0.2455,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "d5e51fabf7f829f32dbb5ecc1f9e5b00e1e6ba2f4f794c22a8c440a4ff688337"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "34605ad859879641866569d53d259dceffb9a5ed9b45e88f5bcf772ddd563bb0",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "d8b0645525d95425d065f50c7e11a7bdf9db18706e65a28aba0603dc11547738"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "7b41971d9c1e8da53c42a86cff4fb23ac50d986fa4db2355d99285c8c29d9d8c",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "90111564cabf3c783bccd4bbfe1cd41d96daf824f1d2487ca0153cfb5ac84284"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "334f8f84db2c52da6a3eb097710d6b31026636ba3188e30f05aeaf7b20d8f1ad",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "3fc1a78f27955da1ff90e1fb9f426b500981f496b00740df41f93463f80cc811"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "98a2aa85a183a732133b404da0be3e4cfc18a3c043a54b6091613877b1fe7b90",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "1d9c7b821b540d992cc14991eae2ce6646bfd21c726b9f3c205d1874fb217700"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "a44444bf50e951a1f161b663aaaa20069b9b70ebe642b410d034ba9ff764f72f",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 1,
+      "evidenceRefs": [
+        "834344a6b790cf3f7863c68d69982899f6656cdf8c76f841f90eae8949dfd3ee"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "41525edf632e69af210f264cb829752c67a4822396c358ac22a6e74d32b2fe29",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 1,
+      "evidenceRefs": [
+        "6e012c38838bc9027cb99a1b56e8f2d98fd1b45ac443133bad0d2c2b9912e165"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "c9fcc1d2d85d4739b275d5b1941fef6741e81f0ad81faeea17fdd248aadb9867",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "4e6adae2f1e8e1d3eee0cfc7bec03045bb273d392484e76ad99bea9baba6c10e"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "de037afc56b22c5f892ca4b423fb10d238c7021af16a3a3399d0fa856497f103",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "d78c987d7106503a6c0bc081522afecb5db05b911be00a7c55adc319e6bd4c2c"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "e0da9b8489bf927a515b5608277ebb80a2ab9bd0b21b22ce844c1f4101537512",
+      "recurrence": 1,
+      "meanCost": 0.9034,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "731f7e1f8d5f1a5b5a720ac79a1a7631147848239970b8a6d5d59c916144eda4"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "3ef1a5b5219c635d98a5d6cfb9d5f4ee79c966270c6db15499655ea3fdfd9ec6",
+      "recurrence": 1,
+      "meanCost": 0.2246,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "037c76bc437686963d9495114576c0d207e37273f43e4c0ac7461b7359bbb49e"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "3a636c7e36e8d754df0788f5fb595e1e26f949b51d2251764f19e3886e6c7106",
+      "recurrence": 1,
+      "meanCost": 0.1144,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "c4ab9174725c8e80f2b49dd9c1ff80f1ab4bd91e909745cc0ddb771959432c03"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "3e32ad3a0c4812487efaef0587e44327c92e1419dd201a0e154456977abe0537",
+      "recurrence": 1,
+      "meanCost": 0.0661,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "ca3e77b68d2d19f8b69c8554dbd497b664958eeb1cc555a015f1c6c083bdfdfb"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "746d852059b64c4461f7e87d82c48411f552ed6c70b2a414076f3f6ad552ec35",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "a8d7ecb217920be5a737aff9926e02479718b3ba6b8fa70eac59b6f0f191a2aa"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "162a48f55f352e6f14a4b904a73656806e503477d80051e2de398ddbe9808b67",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "3f8ffaaa4fee38691a23f870347d966445d0f54dcdbb3aa34d1b96933ca17162"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "7aca94b704ca8cc0e8d2eaa981148cf37dfcd88ecff544add5b38b138e9a59de",
+      "recurrence": 1,
+      "meanCost": 0.1198,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "2023060cb9ffcd4de74c8e47f79a1034e1f1e8c3d37e7310620aa0a80fbe2419"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "320b1ee424ee0cb5415f9dc7fc3278ce475402e29b460ca4f867edb3cad63aa6",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 1,
+      "evidenceRefs": [
+        "1248b4ab7db379658291ff4cf4db2c0eb6ecf4f1e13aa8cc4f41ee62ba6b24e8"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "reviewer",
+      "promptHash": "1bcb48a5fbd423279316ae483646e9d4de7920af60310867208761b8b562dedf",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 1,
+      "evidenceRefs": [
+        "1295f26e154ee56ba291b00bc77f3f978381dc992ccdc2ef6747fa1e6ce9cded"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "b230691f7a420fc522e50cbb811c19c2b17309c426bca7ff8d6f667e139af8e8",
+      "recurrence": 1,
+      "meanCost": 0.6942,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "a2170679fc57229d228253e437cfbca605c086e9bb6a654dce10f2801d3a8821"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "e74c4c0015f5f26baa5f7d7d217ee2ff90f86e5f69b00fc7b966efa07720cf43",
+      "recurrence": 1,
+      "meanCost": 0.5579,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "44ca9040e9b464757bf239fb814188d1b32b5873c2f7d883edbf6076d05d2e2e"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "4a367e61d064c440e2807b0e63fe0cba3702a2941cfe2bb86d1cb1e2c603151f",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 0,
+      "evidenceRefs": [
+        "d0afe7018050557bd964cc73de96f97f4fec8b201a8b0094244b8bf4b73038ec"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "3aaa8494201f11ce64d8bad65fbcf6eb99a48b7a59f892e74ba7301a38fbe411",
+      "recurrence": 1,
+      "meanCost": 0.248,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "ed2f08706c799f5726dbf0ca72b2520dfecf6e7f91313a36df49d55c931d7b23"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "007cbf5944741622c5f0256b9ee7e8e9a3690f9e6bd0fe34dd687909578a292c",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 1,
+      "evidenceRefs": [
+        "1ac08c7d5a7993991618e48b6e76a19d809aeaa39759d2e4e78b2f3c96f85b85"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "1b4caf88b003b70385120115c92f3dca5b8e2759d67f691959dac7235d3be42a",
+      "recurrence": 1,
+      "meanCost": 0.1743,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "f07a7040a0c8b94b15450133b1f363ba4e4d5027e80c8498ef2236fa03200029"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "71d24ff6cd800ec3b35649a6292cb7921b948a41ae84a9f2181a61ba48993a78",
+      "recurrence": 1,
+      "meanCost": 0.2522,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 0,
+      "evidenceRefs": [
+        "e64e86092b6e699384b26e51c0ad03c33d7ab01795f9d17b6550790b43a61e97"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "8ccf4d0940774c126916642ef5b8447cb5630a51d17fcc44b5425502fd8e3985",
+      "recurrence": 1,
+      "meanCost": 0.4252,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "56bec56547df219e02ce728cdb493ae8a12c896915c015b3ee4780d445952a6f"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "be7977e3a49ea1517bc9f9d6ce7080188c2dba799fb40e8296522cf1d9239f43",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 1,
+      "evidenceRefs": [
+        "ea6f269d1bd477e6f455d54e82964ac9adf9b8103f73d6a353b9615c5c3a1039"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "0ce4b2918ce28f87ffa68944a57244877e18d07c98d636bd9ba847a7c04d77c2",
+      "recurrence": 1,
+      "meanCost": 0.3854,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "fa1dd63f8e655a7df31b92a9a5319c8e63b9040027898ffc32a3c73d4561a4e3"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "19379efb2b855ee830d884f2789fa623f424f8b22e7572138a9d8f1a5ac51afc",
+      "recurrence": 1,
+      "meanCost": 0.7296,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "048c49e6aee2d7f6ceb862c4407a96c360a2aa342607f08757911cee7b6f8062"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "403a380b05ac75c78808cbb37c97ebf1bee1481b3b54fed3af07f2a2bffc09bf",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 1,
+      "evidenceRefs": [
+        "bf39ad13b21c77075e14b1e7301757e5bb756246cd0d61773bd2c8185e0b8ebf"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "planner",
+      "promptHash": "31f95079c764089064429f7e9cc0ba3f32491d65db73905e2ba3bf1632e37474",
+      "recurrence": 1,
+      "meanCost": 0,
+      "meanLatency": 0,
+      "verifyPassRate": 0,
+      "rework": 1,
+      "evidenceRefs": [
+        "9930aa05dd12e8ec930a2dc07aa0bb3590a35bf7a38d898188b28486d0b8a2ed"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "5619f4a3bc37d99254de8c1893081594717d8429bb7b8e173e12a44f102d0ca4",
+      "recurrence": 1,
+      "meanCost": 1.0086,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "6a1f9fce08950b2cfa090ac0390f081ea162ac8b11eedf02d615828a8c946d0d"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "6e82fe97e6965b6326960fc34445ac17a1f9f790c328b5a99482393167828654",
+      "recurrence": 1,
+      "meanCost": 0.458,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "9618f82c1a819367d84a4965f592e0bedcdf6c62bd7509fcc888cdee406e0924"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "a6ce230b24829a0f621b1e103e1e497fcb8dcb704d36d6e6a7a6c0ee9a2ef6cb",
+      "recurrence": 1,
+      "meanCost": 0.3646,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "9a52dd4ea63f93149c5c078308ba29d333aeb7c30243d86048c3ac9abac591bb"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "af4e698c39aa9d64a3968c569727a878f1ec9ddd217bbe207501497e1894b225",
+      "recurrence": 1,
+      "meanCost": 1.271,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "670a9bafd9093c28795abd6f4aa084bd5d38ba50a13b05c5831e60c8e84c87c7"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "9be785cc4365ae8f5a703fd9126c8a198513095f9730f6f337c00f181e25bd21",
+      "recurrence": 1,
+      "meanCost": 0.6246,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "43da743c7196c5652183c3a11dd6e430c5115a84dd7eca887b42ef2da7467c90"
+      ],
+      "isCandidate": false
+    },
+    {
+      "workflowHash": "standalone",
+      "stepId": "unknown",
+      "agentRole": "implementer",
+      "promptHash": "6482918dccb1be2b36b4be7b85b3d28a3dff7a33e6b417b3975b625c197b7f51",
+      "recurrence": 1,
+      "meanCost": 0.2579,
+      "meanLatency": 0,
+      "verifyPassRate": 1,
+      "rework": 1,
+      "evidenceRefs": [
+        "92dba530d76cfea91a37e4b3833b9d7ba4b3bfbb73a01c2e09b4bcc99ea8a053"
+      ],
+      "isCandidate": false
+    }
+  ],
+  "candidates": []
+}
