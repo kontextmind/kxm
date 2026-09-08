@@ -23,6 +23,9 @@ import {
   ROUTING_RECORD_V2_SCHEMA,
   type RoutingRecordV2,
   parseRoutingRecordV2,
+  generateRoutingReport,
+  formatRoutingReport,
+  ROUTING_REPORT_SCHEMA,
 } from "../plugins/kxm/src/routing.ts";
 import {
   loadPriceCatalog,
@@ -309,4 +312,360 @@ test("D5 Routing Parser: validates v2 schema fields and fails closed", () => {
     parseRoutingRecordV2({ ...valid, costBasis: "invalid-basis" });
   }, /costBasis/);
 });
+
+test("E3 Gate: Routing Report groups by (harness, model, thinking, role), computes metrics, and ranks quality first", () => {
+  const records: RoutingRecordV2[] = [
+    // Route A: pi / grok-4.6 / medium / implement - 2 attempts, both pass, 0 transitions, metered $0.05 each
+    {
+      schema: ROUTING_RECORD_V2_SCHEMA,
+      recordedAt: "2026-09-08T00:00:00.000Z",
+      project: "kxm",
+      runId: "run-1",
+      stepId: "impl",
+      assignmentId: "asg-1",
+      attemptId: "att-1",
+      harness: "pi",
+      provider: "xai",
+      requestedModel: "grok-4.6",
+      effectiveModel: "grok-4.6",
+      thinking: "medium",
+      agentRole: "implement",
+      behavioralSha256: "a".repeat(64),
+      latencyMs: 1000,
+      tokensIn: 5000,
+      tokensOut: 1000,
+      contextTokens: 5000,
+      costBasis: "metered",
+      costUsd: 0.05,
+      verifierOutcome: "passed",
+      finalOutcome: "accepted",
+      retries: 0,
+      transitions: 0,
+    },
+    {
+      schema: ROUTING_RECORD_V2_SCHEMA,
+      recordedAt: "2026-09-08T00:01:00.000Z",
+      project: "kxm",
+      runId: "run-2",
+      stepId: "impl",
+      assignmentId: "asg-2",
+      attemptId: "att-2",
+      harness: "pi",
+      provider: "xai",
+      requestedModel: "grok-4.6",
+      effectiveModel: "grok-4.6",
+      thinking: "medium",
+      agentRole: "implement",
+      behavioralSha256: "a".repeat(64),
+      latencyMs: 2000,
+      tokensIn: 7000,
+      tokensOut: 1200,
+      contextTokens: 7000,
+      costBasis: "metered",
+      costUsd: 0.05,
+      verifierOutcome: "passed",
+      finalOutcome: "accepted",
+      retries: 0,
+      transitions: 0,
+    },
+    // Route B: claude / fable / medium / plan - 2 attempts, both pass, 1 back-edge re-entry (transitions: 1), unmetered
+    {
+      schema: ROUTING_RECORD_V2_SCHEMA,
+      recordedAt: "2026-09-08T00:02:00.000Z",
+      project: "kxm",
+      runId: "run-3",
+      stepId: "plan",
+      assignmentId: "asg-3",
+      attemptId: "att-3",
+      harness: "claude",
+      provider: "anthropic",
+      requestedModel: "fable",
+      effectiveModel: "fable",
+      thinking: "medium",
+      agentRole: "plan",
+      behavioralSha256: "b".repeat(64),
+      latencyMs: 3000,
+      tokensIn: 10000,
+      tokensOut: 2000,
+      contextTokens: 10000,
+      costBasis: "unmetered",
+      verifierOutcome: "passed",
+      finalOutcome: "accepted",
+      retries: 0,
+      transitions: 0,
+    },
+    {
+      schema: ROUTING_RECORD_V2_SCHEMA,
+      recordedAt: "2026-09-08T00:03:00.000Z",
+      project: "kxm",
+      runId: "run-4",
+      stepId: "plan",
+      assignmentId: "asg-4",
+      attemptId: "att-4",
+      harness: "claude",
+      provider: "anthropic",
+      requestedModel: "fable",
+      effectiveModel: "fable",
+      thinking: "medium",
+      agentRole: "plan",
+      behavioralSha256: "b".repeat(64),
+      latencyMs: 4000,
+      tokensIn: 12000,
+      tokensOut: 2500,
+      contextTokens: 12000,
+      costBasis: "unmetered",
+      verifierOutcome: "passed",
+      finalOutcome: "accepted",
+      retries: 0,
+      transitions: 1, // back-edge re-entry
+    },
+    // Route C: pi / qwen3-coder-plus / none / implement - 1 attempt, failed, quota exhausted, unknown cost
+    {
+      schema: ROUTING_RECORD_V2_SCHEMA,
+      recordedAt: "2026-09-08T00:04:00.000Z",
+      project: "kxm",
+      runId: "run-5",
+      stepId: "impl",
+      assignmentId: "asg-5",
+      attemptId: "att-5",
+      harness: "pi",
+      provider: "alibaba",
+      requestedModel: "qwen3-coder-plus",
+      effectiveModel: "qwen3-coder-plus",
+      thinking: "none",
+      agentRole: "implement",
+      behavioralSha256: "c".repeat(64),
+      latencyMs: 500,
+      tokensIn: 2000,
+      tokensOut: 100,
+      contextTokens: 2000,
+      costBasis: "unknown",
+      verifierOutcome: "failed",
+      finalOutcome: "failed",
+      retries: 1,
+      transitions: 0, // intra-stage retry does not count as rework
+      providerMetadata: {
+        quota_exhausted: true,
+      },
+    },
+  ];
+
+  const report = generateRoutingReport(records, {
+    now: () => "2026-09-08T01:00:00.000Z",
+  });
+
+  assert.equal(report.schema, ROUTING_REPORT_SCHEMA);
+  assert.equal(report.totalAttempts, 5);
+  assert.equal(report.rows.length, 3);
+
+  // Group 1 (ranked #1): pi / grok-4.6 / medium / implement
+  // verifyPassRate 1.0, reworkRate 0.0 beats Route B's reworkRate 0.5
+  const rowA = report.rows[0]!;
+  assert.equal(rowA.harness, "pi");
+  assert.equal(rowA.model, "grok-4.6");
+  assert.equal(rowA.thinking, "medium");
+  assert.equal(rowA.role, "implement");
+  assert.equal(rowA.attempts, 2);
+  assert.equal(rowA.verifyPassRate, 1.0);
+  assert.equal(rowA.reworkRate, 0.0);
+  assert.equal(rowA.latencyP50Ms, 1500);
+  assert.equal(rowA.latencyP95Ms, 1950);
+  assert.equal(rowA.medianContextTokens, 6000);
+  assert.equal(rowA.meteredCostUsd, 0.1);
+  assert.equal(rowA.costPerAcceptedUsd, 0.05);
+  assert.equal(rowA.unmeteredAttempts, 0);
+  assert.equal(rowA.unknownCostAttempts, 0);
+  assert.equal(rowA.quotaExhaustedAttempts, 0);
+  assert.equal(rowA.flagged, false);
+
+  // Group 2 (ranked #2): claude / fable / medium / plan
+  // verifyPassRate 1.0, reworkRate 0.5
+  const rowB = report.rows[1]!;
+  assert.equal(rowB.harness, "claude");
+  assert.equal(rowB.model, "fable");
+  assert.equal(rowB.attempts, 2);
+  assert.equal(rowB.verifyPassRate, 1.0);
+  assert.equal(rowB.reworkRate, 0.5); // 1 out of 2 had transitions > 0
+  assert.equal(rowB.latencyP50Ms, 3500);
+  assert.equal(rowB.latencyP95Ms, 3950);
+  assert.equal(rowB.medianContextTokens, 11000);
+  assert.equal(rowB.unmeteredAttempts, 2);
+  assert.equal(rowB.unknownCostAttempts, 0);
+  assert.equal(rowB.quotaExhaustedAttempts, 0);
+  assert.equal(rowB.flagged, false);
+
+  // Group 3 (ranked #3): pi / qwen3-coder-plus / none / implement
+  // verifyPassRate 0.0, reworkRate 0.0 (retries > 0 but transitions === 0)
+  const rowC = report.rows[2]!;
+  assert.equal(rowC.harness, "pi");
+  assert.equal(rowC.model, "qwen3-coder-plus");
+  assert.equal(rowC.attempts, 1);
+  assert.equal(rowC.verifyPassRate, 0.0);
+  assert.equal(rowC.reworkRate, 0.0);
+  assert.equal(rowC.unmeteredAttempts, 0);
+  assert.equal(rowC.unknownCostAttempts, 1);
+  assert.equal(rowC.quotaExhaustedAttempts, 1);
+  assert.equal(rowC.flagged, true);
+});
+
+test("E3 Gate: unknown cost is never ranked cheaper than metered cost", () => {
+  const records: RoutingRecordV2[] = [
+    // Route X: quality 1.0, metered cost $0.50
+    {
+      schema: ROUTING_RECORD_V2_SCHEMA,
+      recordedAt: "2026-09-08T00:00:00.000Z",
+      project: "kxm",
+      runId: "run-x",
+      stepId: "step",
+      assignmentId: "asg-x",
+      attemptId: "att-x",
+      harness: "pi",
+      provider: "p",
+      requestedModel: "model-metered",
+      effectiveModel: "model-metered",
+      thinking: "medium",
+      agentRole: "implement",
+      behavioralSha256: "x".repeat(64),
+      latencyMs: 1000,
+      costBasis: "metered",
+      costUsd: 0.50,
+      verifierOutcome: "passed",
+      finalOutcome: "accepted",
+      retries: 0,
+    },
+    // Route Y: quality 1.0, unknown cost (flagged, never ranked cheaper)
+    {
+      schema: ROUTING_RECORD_V2_SCHEMA,
+      recordedAt: "2026-09-08T00:00:00.000Z",
+      project: "kxm",
+      runId: "run-y",
+      stepId: "step",
+      assignmentId: "asg-y",
+      attemptId: "att-y",
+      harness: "pi",
+      provider: "p",
+      requestedModel: "model-unknown",
+      effectiveModel: "model-unknown",
+      thinking: "medium",
+      agentRole: "implement",
+      behavioralSha256: "y".repeat(64),
+      latencyMs: 1000,
+      costBasis: "unknown",
+      verifierOutcome: "passed",
+      finalOutcome: "accepted",
+      retries: 0,
+    },
+  ];
+
+  const report = generateRoutingReport(records);
+  assert.equal(report.rows.length, 2);
+  // Metered route ranks before unknown route despite having $0.50 vs unknown cost
+  assert.equal(report.rows[0]?.model, "model-metered");
+  assert.equal(report.rows[1]?.model, "model-unknown");
+  assert.equal(report.rows[1]?.flagged, true);
+});
+
+test("E3 Gate: Report formatting and snapshot test", () => {
+  const catalog = loadPriceCatalog(repoRoot);
+  const records: RoutingRecordV2[] = [
+    {
+      schema: ROUTING_RECORD_V2_SCHEMA,
+      recordedAt: "2026-09-08T00:00:00.000Z",
+      project: "kxm",
+      runId: "run-1",
+      stepId: "impl",
+      assignmentId: "asg-1",
+      attemptId: "att-1",
+      harness: "grok",
+      provider: "xai",
+      requestedModel: "grok-4.6",
+      effectiveModel: "grok-4.6",
+      thinking: "medium",
+      agentRole: "implement",
+      behavioralSha256: "1".repeat(64),
+      latencyMs: 1200,
+      tokensIn: 10000,
+      tokensOut: 2000,
+      contextTokens: 10000,
+      costBasis: "metered",
+      costUsd: 0.04,
+      verifierOutcome: "passed",
+      finalOutcome: "accepted",
+      retries: 0,
+      transitions: 0,
+    },
+    {
+      schema: ROUTING_RECORD_V2_SCHEMA,
+      recordedAt: "2026-09-08T00:01:00.000Z",
+      project: "kxm",
+      runId: "run-2",
+      stepId: "plan",
+      assignmentId: "asg-2",
+      attemptId: "att-2",
+      harness: "claude",
+      provider: "anthropic",
+      requestedModel: "fable",
+      effectiveModel: "fable",
+      thinking: "medium",
+      agentRole: "plan",
+      behavioralSha256: "2".repeat(64),
+      latencyMs: 2500,
+      tokensIn: 20000,
+      tokensOut: 4000,
+      contextTokens: 20000,
+      costBasis: "unmetered",
+      verifierOutcome: "passed",
+      finalOutcome: "accepted",
+      retries: 0,
+      transitions: 1,
+    },
+    {
+      schema: ROUTING_RECORD_V2_SCHEMA,
+      recordedAt: "2026-09-08T00:02:00.000Z",
+      project: "kxm",
+      runId: "run-3",
+      stepId: "review",
+      assignmentId: "asg-3",
+      attemptId: "att-3",
+      harness: "pi",
+      provider: "openai",
+      requestedModel: "gpt-5.6-sol",
+      effectiveModel: "gpt-5.6-sol",
+      thinking: "low",
+      agentRole: "review",
+      behavioralSha256: "3".repeat(64),
+      latencyMs: 800,
+      tokensIn: 5000,
+      tokensOut: 500,
+      contextTokens: 5000,
+      costBasis: "unknown",
+      verifierOutcome: "passed",
+      finalOutcome: "accepted",
+      retries: 0,
+      transitions: 0,
+    },
+  ];
+
+  const report = generateRoutingReport(records, {
+    catalog,
+    includeEquivalentListCost: true,
+  });
+
+  const formatted = formatRoutingReport(report, { equivalentListCost: true });
+  assert.ok(formatted.includes("Routing Telemetry Report (3 attempt(s) across 3 route(s), quality-first ranking)"));
+  assert.ok(formatted.includes("Harness    Model"));
+  assert.ok(formatted.includes("ListEquiv($)"));
+  assert.ok(formatted.includes("grok       grok-4.6"));
+  assert.ok(formatted.includes("claude     fable"));
+  assert.ok(formatted.includes("pi         gpt-5.6-sol"));
+  assert.ok(formatted.includes("* = unknown-cost attempts present (never ranked cheapest)"));
+
+  // Check equivalent list cost calculation for unmetered fable route
+  // Fable list prices: input $3.00/1M, output $15.00/1M
+  // 20,000 in * $3.00/1M = $0.06; 4,000 out * $15.00/1M = $0.06; total = $0.12
+  const fableRow = report.rows.find((r) => r.model === "fable");
+  assert.ok(fableRow);
+  assert.equal(fableRow.equivalentListCostUsd, 0.12);
+});
+
 

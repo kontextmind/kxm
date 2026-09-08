@@ -257,7 +257,29 @@ test("kxm routing report aggregates telemetry by behavioral configuration", asyn
     const championRow = report.configurations.find((row) => row.behavioralSha256 === champion)!;
     assert.equal(championRow.runs, 2);
     assert.equal(championRow.verifiedCompletions, 2);
+
+    // Also verify report object is present in JSON output
+    const jsonOutput = JSON.parse(stdout) as { report: { schema: string; totalAttempts: number; rows: any[] } };
+    assert.equal(jsonOutput.report.schema, "kxm.routing-report.v1");
+    assert.equal(jsonOutput.report.totalAttempts, 3);
+    assert.ok(jsonOutput.report.rows.length > 0);
+
+    // Run in text mode to verify table formatting
+    let textStdout = "";
+    const textIo = {
+      stdout: (text: string) => {
+        textStdout += text;
+      },
+      stderr: () => undefined,
+    };
+    const textExit = await runCli(["routing", "report", "--file", path], {}, textIo, cwd);
+    assert.equal(textExit, 0);
+    assert.ok(textStdout.includes("Routing Telemetry Report"));
+    assert.ok(textStdout.includes("Harness"));
+    assert.ok(textStdout.includes("Model"));
+    assert.ok(textStdout.includes("Pass%"));
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
 });
+

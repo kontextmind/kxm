@@ -72,12 +72,45 @@ export function makeTelemetryEvent(input: {
   };
 }
 
-/** Routing records carried additively on result envelopes (v0.5). */
-export function readRoutingRecords(path: string): Array<{ recordedAt: string; routing: import("./routing.ts").RoutingRecord }> {
-  const records: Array<{ recordedAt: string; routing: import("./routing.ts").RoutingRecord }> = [];
-  for (const event of readTelemetry(path)) {
-    const routing = (event.envelope as { routing?: import("./routing.ts").RoutingRecord }).routing;
-    if (routing) records.push({ recordedAt: event.recordedAt, routing });
+type RoutingRecord = import("./routing.ts").RoutingRecord;
+type RoutingRecordV2 = import("./routing.ts").RoutingRecordV2;
+
+/** Routing records carried additively on result envelopes (v0.5) or emitted directly (v2). */
+export function readRoutingRecords(path: string): Array<{ recordedAt: string; routing: RoutingRecord | RoutingRecordV2 }> {
+  const records: Array<{ recordedAt: string; routing: RoutingRecord | RoutingRecordV2 }> = [];
+  try {
+    const raw = readFileSync(path, "utf8");
+    for (const line of raw.split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      try {
+        const parsed = JSON.parse(line) as Record<string, unknown>;
+        let routingObj: unknown;
+        const recordedAt = typeof parsed.recordedAt === "string"
+          ? parsed.recordedAt
+          : (typeof parsed.timestamp === "string" ? parsed.timestamp : new Date().toISOString());
+
+        if (parsed.schema === "kxm.routing-record.v2" || parsed.schema === "kxm.routing-record.v1") {
+          routingObj = parsed;
+        } else if (parsed.routing && typeof parsed.routing === "object") {
+          routingObj = parsed.routing;
+        } else if (parsed.envelope && typeof parsed.envelope === "object" && (parsed.envelope as Record<string, unknown>).routing) {
+          routingObj = (parsed.envelope as Record<string, unknown>).routing;
+        } else if (parsed.eventType === "routing.attempt.recorded" && parsed.payload && typeof parsed.payload === "object") {
+          routingObj = (parsed.payload as Record<string, unknown>).routing;
+        }
+
+        if (routingObj && typeof routingObj === "object") {
+          const r = routingObj as Record<string, unknown>;
+          if (r.schema === "kxm.routing-record.v2" || r.schema === "kxm.routing-record.v1") {
+            records.push({ recordedAt, routing: r as unknown as (RoutingRecord | RoutingRecordV2) });
+          }
+        }
+      } catch {
+        // skip malformed lines
+      }
+    }
+  } catch {
+    // file unreadable
   }
   return records;
 }

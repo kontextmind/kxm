@@ -15,7 +15,8 @@ import { SkillLifecycle, type SkillEvaluationKind, type SkillState } from "./ski
 import { writeCompiledWiki } from "./wiki.ts";
 import { agentWorker, gateWorker, workerResult, type Worker, type WorkerOutcome } from "./envelope.ts";
 import { appendTelemetry, inferImprovementTarget, makeTelemetryEvent, readTelemetry, readRoutingRecords, telemetryPath } from "./telemetry.ts";
-import { behavioralConfigHash, compareRoutingRecords, groupByBehavior } from "./routing.ts";
+import { behavioralConfigHash, compareRoutingRecords, groupByBehavior, generateRoutingReport, formatRoutingReport } from "./routing.ts";
+import { loadPriceCatalog, type PriceCatalog } from "./prices.ts";
 import { createSession, loadNamedWorkers, rosterNames, sessionAssetDirs, workflowAssetDirs, writeSession } from "./session.ts";
 import { buildImprovementReport, writeImprovementReport } from "./improve.ts";
 import { MESH_TUI_PANELS, runMeshTui, type MeshTuiPanel } from "./tui.ts";
@@ -2000,17 +2001,45 @@ async function cmdSkillsVerify(runtime: Runtime, skillId: string, options: { sta
   }
 }
 
-async function cmdRoutingReport(runtime: Runtime, options: { file?: string }): Promise<number> {
+async function cmdRoutingReport(
+  runtime: Runtime,
+  options: { file?: string; equivalentListCost?: boolean; listPrices?: boolean; prices?: string },
+): Promise<number> {
   const file = options.file ?? telemetryPath(runtime.dirs.logs);
   const records = readRoutingRecords(file).map((entry) => entry.routing);
+  const includeEquivalentListCost = Boolean(options.equivalentListCost || options.listPrices);
+
+  let catalog: PriceCatalog | undefined;
+  if (includeEquivalentListCost) {
+    try {
+      const pricesPath = options.prices ? resolve(runtime.cwd, options.prices) : join(runtime.dirs.workspace, "prices.yaml");
+      catalog = loadPriceCatalog(pricesPath);
+    } catch {
+      // price catalog optional / best effort
+    }
+  }
+
+  const report = generateRoutingReport(records, { catalog, includeEquivalentListCost });
+
   if (records.length === 0) {
-    print(runtime.io, runtime.json, { ok: true, command: "routing report", file, configurations: [] }, "no routing records in telemetry");
+    print(runtime.io, runtime.json, { ok: true, command: "routing report", file, configurations: [], report }, "no routing records in telemetry");
     return 0;
   }
-  const configurations = [...groupByBehavior(records).entries()]
-    .map(([hash, group]) => ({ ...compareRoutingRecords(group), behavioralSha256: hash }))
-    .sort((left, right) => right.runs - left.runs || left.behavioralSha256.localeCompare(right.behavioralSha256));
-  print(runtime.io, runtime.json, { ok: true, command: "routing report", file, configurations }, `${configurations.length} behavioral configuration(s) across ${records.length} routing record(s)`);
+
+  const v1Records = records.filter((r) => r.schema === "kxm.routing-record.v1") as any[];
+  const configurations = v1Records.length > 0
+    ? [...groupByBehavior(v1Records).entries()]
+        .map(([hash, group]) => ({ ...compareRoutingRecords(group), behavioralSha256: hash }))
+        .sort((left, right) => right.runs - left.runs || left.behavioralSha256.localeCompare(right.behavioralSha256))
+    : [];
+
+  const text = formatRoutingReport(report, { equivalentListCost: includeEquivalentListCost });
+  print(
+    runtime.io,
+    runtime.json,
+    { ok: true, command: "routing report", file, configurations, report },
+    text,
+  );
   return 0;
 }
 
@@ -2966,8 +2995,11 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
   const routing = addGlobalOptions(program.command("routing").description("Model/harness routing telemetry and behavioral comparisons"));
   routing.helpCommand("help", "Show routing help");
   addGlobalOptions(routing.command("report").description("Compare verified completion, cost, and rework per behavioral configuration"))
-    .option("--file <path>", "Telemetry JSONL file (default: workspace telemetry)")
-    .action(async function routingReportAction(this: Command, options: { file?: string }) {
+    .option("-f, --file <path>", "Telemetry or event log JSONL file (default: workspace telemetry)")
+    .option("-l, --equivalent-list-cost", "Include equivalent list price column using price catalog")
+    .option("--list-prices", "Alias for --equivalent-list-cost")
+    .option("--prices <path>", "Path to price catalog (default: .kxm/prices.yaml)")
+    .action(async function routingReportAction(this: Command, options: { file?: string; equivalentListCost?: boolean; listPrices?: boolean; prices?: string }) {
       result.code = await cmdRoutingReport(runtimeFrom(ctx, this), options);
     });
 

@@ -84,7 +84,13 @@ test("health, readiness, metrics, request IDs, and security headers are operatio
   assert.equal(denied.status, 401);
   const metrics = await fetch(`${address.url}/metrics`, { headers: { authorization: `Bearer ${token}` } });
   assert.equal(metrics.status, 200);
-  assert.match(await metrics.text(), /pi_mesh_requests_total/);
+  const metricsText = await metrics.text();
+  assert.match(metricsText, /kxm_requests_total/);
+  assert.doesNotMatch(metricsText, /pi_mesh_/);
+  assert.doesNotMatch(metricsText, /pi_kxm_/);
+  assert.match(metricsText, /kxm_context_requests_total/);
+  assert.match(metricsText, /kxm_attempt_latency_seconds_total/);
+  assert.match(metricsText, /kxm_metered_cost_usd_total/);
 });
 
 test("registration validates content type, JSON shape, required fields, and size", async (context) => {
@@ -291,7 +297,9 @@ test("terminal messages are removed after the configured retention window", asyn
   const metrics = await fetch(`${mesh.address.url}/metrics`, {
     headers: { authorization: `Bearer ${mesh.token}` },
   }).then((response) => response.text());
-  assert.match(metrics, /pi_mesh_messages_purged_total 1/);
+  assert.match(metrics, /kxm_messages_purged_total 1/);
+  assert.doesNotMatch(metrics, /pi_mesh_/);
+  assert.doesNotMatch(metrics, /pi_kxm_/);
 });
 
 test("idempotency keys deduplicate exact retries and reject conflicting reuse", async (context) => {

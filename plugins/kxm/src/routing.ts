@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { calculateModelCost, type PriceCatalog } from "./price-calc.ts";
 
 /**
  * Model/harness routing telemetry (v0.5, issue #40).
@@ -370,8 +371,9 @@ export function parseRoutingRecordV2(value: unknown): RoutingRecordV2 {
   if (input.thinking !== undefined && input.thinking !== null) {
     record.thinking = boundedString(input.thinking, "thinking", 64);
   }
-  if (input.agentRole !== undefined && input.agentRole !== null) {
-    record.agentRole = boundedString(input.agentRole, "agentRole", 64);
+  const rawRole = input.agentRole ?? (input as Record<string, unknown>).role;
+  if (rawRole !== undefined && rawRole !== null) {
+    record.agentRole = boundedString(rawRole, "agentRole", 64);
   }
   if (input.contextTokens !== undefined) {
     record.contextTokens = boundedInt(input.contextTokens, "contextTokens") ?? null;
@@ -467,4 +469,362 @@ export function groupByBehavior(records: RoutingRecord[]): Map<string, RoutingRe
     groups.set(record.behavioralSha256, bucket);
   }
   return groups;
+}
+
+export const ROUTING_REPORT_SCHEMA = "kxm.routing-report.v1" as const;
+
+export function isQuotaExhausted(record: RoutingRecord | RoutingRecordV2): boolean {
+  if ("providerMetadata" in record && record.providerMetadata) {
+    const meta = record.providerMetadata;
+    if (meta.failureClass === "quota" || meta.errorCode === "provider_quota" || meta.stopReason === "quota_exhausted" || meta.quotaExhausted === true || meta.quota_exhausted === true) {
+      return true;
+    }
+    for (const [key, val] of Object.entries(meta)) {
+      if (/quota/i.test(key) && val === true) return true;
+      if (typeof val === "string" && /\b(quota reached|quota exceeded|rate limit(?:ed)?|too many requests|resource exhausted|http 429|quota_exhausted)\b/i.test(val)) {
+        return true;
+      }
+    }
+  }
+  if (record.finalOutcome === "quota" || record.finalOutcome === "quota_exhausted") return true;
+  return false;
+}
+
+function computePercentile(sorted: number[], p: number): number {
+  if (sorted.length === 0) return 0;
+  if (sorted.length === 1) return sorted[0]!;
+  const pos = p * (sorted.length - 1);
+  const base = Math.floor(pos);
+  const rest = pos - base;
+  if (sorted[base + 1] !== undefined) {
+    return Math.round(sorted[base]! + rest * (sorted[base + 1]! - sorted[base]!));
+  }
+  return sorted[base]!;
+}
+
+export interface RoutingReportRow {
+  harness: string;
+  model: string;
+  thinking: string;
+  role: string;
+  attempts: number;
+  verifyPassRate: number;
+  reworkRate: number;
+  latencyP50Ms: number;
+  latencyP95Ms: number;
+  medianContextTokens: number | null;
+  meteredCostUsd: number;
+  costPerAcceptedUsd: number | null;
+  unmeteredAttempts: number;
+  unknownCostAttempts: number;
+  quotaExhaustedAttempts: number;
+  flagged: boolean;
+  equivalentListCostUsd?: number | null | undefined;
+}
+
+export interface RoutingReport {
+  schema: typeof ROUTING_REPORT_SCHEMA;
+  generatedAt: string;
+  totalAttempts: number;
+  rows: RoutingReportRow[];
+}
+
+export interface GenerateRoutingReportOptions {
+  catalog?: PriceCatalog | undefined;
+  includeEquivalentListCost?: boolean | undefined;
+  now?: () => string;
+}
+
+export function generateRoutingReport(
+  records: Array<RoutingRecord | RoutingRecordV2>,
+  options: GenerateRoutingReportOptions = {},
+): RoutingReport {
+  const generatedAt = options.now ? options.now() : new Date().toISOString();
+  if (records.length === 0) {
+    return {
+      schema: ROUTING_REPORT_SCHEMA,
+      generatedAt,
+      totalAttempts: 0,
+      rows: [],
+    };
+  }
+
+  // Group by (harness, model, thinking, role)
+  const groups = new Map<string, Array<RoutingRecord | RoutingRecordV2>>();
+  for (const record of records) {
+    const isV2 = record.schema === ROUTING_RECORD_V2_SCHEMA;
+    const harness = (isV2 ? (record as RoutingRecordV2).harness : (record.providerMetadata?.harness as string | undefined)) || "unknown";
+    const model = (isV2 ? ((record as RoutingRecordV2).effectiveModel || (record as RoutingRecordV2).requestedModel) : (record.effectiveModel || record.requestedModel)) || "unknown";
+    const thinking = (isV2 ? (record as RoutingRecordV2).thinking : record.reasoningEffort) || "none";
+    const role = (record as any).role || record.agentRole || "unknown";
+
+    const key = `${harness}\0${model}\0${thinking}\0${role}`;
+    let bucket = groups.get(key);
+    if (!bucket) {
+      bucket = [];
+      groups.set(key, bucket);
+    }
+    bucket.push(record);
+  }
+
+  const rows: RoutingReportRow[] = [];
+
+  for (const [key, groupRecords] of groups.entries()) {
+    const [harness, model, thinking, role] = key.split("\0") as [string, string, string, string];
+    const attempts = groupRecords.length;
+
+    let verifyPassedCount = 0;
+    let reworkCount = 0;
+    let acceptedCount = 0;
+    let meteredCostTotal = 0;
+    let unmeteredAttempts = 0;
+    let unknownCostAttempts = 0;
+    let quotaExhaustedAttempts = 0;
+
+    const latencies: number[] = [];
+    const contextVals: number[] = [];
+
+    for (const r of groupRecords) {
+      const isV2 = r.schema === ROUTING_RECORD_V2_SCHEMA;
+      const v2 = isV2 ? (r as RoutingRecordV2) : undefined;
+
+      // Verification pass
+      if (r.verifierOutcome === "passed" || (!r.verifierOutcome && r.finalOutcome === "accepted")) {
+        verifyPassedCount++;
+      }
+
+      // Rework: back-edge re-entries only
+      if ((r.transitions ?? 0) > 0) {
+        reworkCount++;
+      }
+
+      // Accepted attempts
+      if (r.finalOutcome === "accepted" || r.verifierOutcome === "passed") {
+        acceptedCount++;
+      }
+
+      // Cost basis
+      const costBasis = v2 ? v2.costBasis : (typeof r.costUsd === "number" ? "metered" : "unknown");
+      if (costBasis === "metered") {
+        if (typeof r.costUsd === "number" && Number.isFinite(r.costUsd)) {
+          meteredCostTotal += r.costUsd;
+        }
+      } else if (costBasis === "unmetered") {
+        unmeteredAttempts++;
+      } else {
+        unknownCostAttempts++;
+      }
+
+      // Quota exhausted
+      if (isQuotaExhausted(r)) {
+        quotaExhaustedAttempts++;
+      }
+
+      // Latencies
+      const lat = v2 ? v2.latencyMs : (typeof r.providerMetadata?.latencyMs === "number" ? (r.providerMetadata.latencyMs as number) : undefined);
+      if (typeof lat === "number" && Number.isFinite(lat) && lat >= 0) {
+        latencies.push(lat);
+      }
+
+      // Context tokens
+      const ctx = v2 ? (v2.contextTokens ?? v2.tokensIn) : (r.tokensIn);
+      if (typeof ctx === "number" && Number.isFinite(ctx) && ctx >= 0) {
+        contextVals.push(ctx);
+      }
+    }
+
+    const verifyPassRate = attempts > 0 ? Math.round((verifyPassedCount / attempts) * 1000) / 1000 : 0;
+    const reworkRate = attempts > 0 ? Math.round((reworkCount / attempts) * 1000) / 1000 : 0;
+
+    latencies.sort((a, b) => a - b);
+    const latencyP50Ms = computePercentile(latencies, 0.50);
+    const latencyP95Ms = computePercentile(latencies, 0.95);
+
+    contextVals.sort((a, b) => a - b);
+    let medianContextTokens: number | null = null;
+    if (contextVals.length > 0) {
+      const mid = Math.floor(contextVals.length / 2);
+      medianContextTokens = contextVals.length % 2 !== 0
+        ? contextVals[mid]!
+        : Math.round((contextVals[mid - 1]! + contextVals[mid]!) / 2);
+    }
+
+    const meteredCostUsd = Math.round(meteredCostTotal * 10_000) / 10_000;
+    const costPerAcceptedUsd = acceptedCount > 0
+      ? (meteredCostUsd > 0 || unmeteredAttempts > 0
+          ? Math.round((meteredCostUsd / acceptedCount) * 10_000) / 10_000
+          : (unknownCostAttempts === attempts ? null : 0))
+      : null;
+
+    const flagged = unknownCostAttempts > 0;
+
+    let equivalentListCostUsd: number | null | undefined = undefined;
+    if (options.includeEquivalentListCost && options.catalog) {
+      let equivTotal = 0;
+      let calculatedAll = true;
+      for (const r of groupRecords) {
+        const isV2 = r.schema === ROUTING_RECORD_V2_SCHEMA;
+        const v2 = isV2 ? (r as RoutingRecordV2) : undefined;
+        const costBasis = v2 ? v2.costBasis : (typeof r.costUsd === "number" ? "metered" : "unknown");
+        if (costBasis === "metered" && typeof r.costUsd === "number") {
+          equivTotal += r.costUsd;
+        } else {
+          const calc = calculateModelCost(options.catalog, {
+            model,
+            ...(v2?.provider ? { provider: v2.provider } : {}),
+            tokensIn: r.tokensIn ?? null,
+            tokensOut: r.tokensOut ?? null,
+            cacheReadTokens: r.cacheReadTokens ?? null,
+            contextTokens: (v2?.contextTokens ?? r.tokensIn) ?? null,
+          });
+          if (calc) {
+            equivTotal += calc.costUsd;
+          } else {
+            calculatedAll = false;
+          }
+        }
+      }
+      equivalentListCostUsd = calculatedAll ? Math.round(equivTotal * 10_000) / 10_000 : null;
+    }
+
+    rows.push({
+      harness,
+      model,
+      thinking,
+      role,
+      attempts,
+      verifyPassRate,
+      reworkRate,
+      latencyP50Ms,
+      latencyP95Ms,
+      medianContextTokens,
+      meteredCostUsd,
+      costPerAcceptedUsd,
+      unmeteredAttempts,
+      unknownCostAttempts,
+      quotaExhaustedAttempts,
+      flagged,
+      ...(options.includeEquivalentListCost ? { equivalentListCostUsd } : {}),
+    });
+  }
+
+  // Sort quality then cost; unknown is never ranked cheapest
+  rows.sort((a, b) => {
+    // 1. Quality: higher verifyPassRate is better
+    if (a.verifyPassRate !== b.verifyPassRate) {
+      return b.verifyPassRate - a.verifyPassRate;
+    }
+    // Lower reworkRate is better
+    if (a.reworkRate !== b.reworkRate) {
+      return a.reworkRate - b.reworkRate;
+    }
+
+    // 2. Cost: unknown is never ranked cheapest
+    const aCostUnknown = a.costPerAcceptedUsd === null && a.unknownCostAttempts > 0 && a.meteredCostUsd === 0;
+    const bCostUnknown = b.costPerAcceptedUsd === null && b.unknownCostAttempts > 0 && b.meteredCostUsd === 0;
+    if (aCostUnknown && !bCostUnknown) return 1;
+    if (!aCostUnknown && bCostUnknown) return -1;
+
+    if (a.costPerAcceptedUsd !== null && b.costPerAcceptedUsd !== null) {
+      if (a.costPerAcceptedUsd !== b.costPerAcceptedUsd) {
+        return a.costPerAcceptedUsd - b.costPerAcceptedUsd;
+      }
+    } else if (a.costPerAcceptedUsd !== null) {
+      return -1;
+    } else if (b.costPerAcceptedUsd !== null) {
+      return 1;
+    }
+
+    if (a.meteredCostUsd !== b.meteredCostUsd) {
+      return a.meteredCostUsd - b.meteredCostUsd;
+    }
+
+    // 3. Tiebreakers
+    if (a.attempts !== b.attempts) {
+      return b.attempts - a.attempts;
+    }
+    const cmpH = a.harness.localeCompare(b.harness);
+    if (cmpH !== 0) return cmpH;
+    const cmpM = a.model.localeCompare(b.model);
+    if (cmpM !== 0) return cmpM;
+    return a.role.localeCompare(b.role);
+  });
+
+  return {
+    schema: ROUTING_REPORT_SCHEMA,
+    generatedAt,
+    totalAttempts: records.length,
+    rows,
+  };
+}
+
+export function formatRoutingReport(
+  report: RoutingReport,
+  options: { equivalentListCost?: boolean } = {},
+): string {
+  if (report.rows.length === 0) {
+    return "no routing records to report";
+  }
+
+  const showListCost = Boolean(options.equivalentListCost);
+  const headers = [
+    "Harness".padEnd(10),
+    "Model".padEnd(24),
+    "Effort".padEnd(8),
+    "Role".padEnd(14),
+    "Att".padStart(4),
+    "Pass%".padStart(7),
+    "Rwk%".padStart(6),
+    "p50(ms)".padStart(8),
+    "p95(ms)".padStart(8),
+    "CtxTok".padStart(8),
+    "Metered($)".padStart(11),
+    "$/Acc".padStart(9),
+    "Unm".padStart(4),
+    "Unk".padStart(5),
+    "Quota".padStart(6),
+    ...(showListCost ? ["ListEquiv($)".padStart(13)] : []),
+  ].join(" ");
+
+  const lines: string[] = [
+    `Routing Telemetry Report (${report.totalAttempts} attempt(s) across ${report.rows.length} route(s), quality-first ranking)`,
+    headers,
+  ];
+
+  for (const row of report.rows) {
+    const passPct = `${(row.verifyPassRate * 100).toFixed(1)}%`;
+    const rwkPct = `${(row.reworkRate * 100).toFixed(1)}%`;
+    const p50 = `${row.latencyP50Ms}`;
+    const p95 = `${row.latencyP95Ms}`;
+    const ctx = row.medianContextTokens !== null ? `${row.medianContextTokens}` : "-";
+    const metered = `$${row.meteredCostUsd.toFixed(4)}`;
+    const perAcc = row.costPerAcceptedUsd !== null ? `$${row.costPerAcceptedUsd.toFixed(4)}` : "-";
+    const unkText = `${row.unknownCostAttempts}${row.flagged ? "*" : ""}`;
+
+    const cells = [
+      row.harness.padEnd(10),
+      (row.model.length > 24 ? `${row.model.slice(0, 21)}...` : row.model).padEnd(24),
+      row.thinking.padEnd(8),
+      (row.role.length > 14 ? `${row.role.slice(0, 11)}...` : row.role).padEnd(14),
+      String(row.attempts).padStart(4),
+      passPct.padStart(7),
+      rwkPct.padStart(6),
+      p50.padStart(8),
+      p95.padStart(8),
+      ctx.padStart(8),
+      metered.padStart(11),
+      perAcc.padStart(9),
+      String(row.unmeteredAttempts).padStart(4),
+      unkText.padStart(5),
+      String(row.quotaExhaustedAttempts).padStart(6),
+      ...(showListCost ? [(row.equivalentListCostUsd !== undefined && row.equivalentListCostUsd !== null ? `$${row.equivalentListCostUsd.toFixed(4)}` : "-").padStart(13)] : []),
+    ];
+    lines.push(cells.join(" "));
+  }
+
+  if (report.rows.some((r) => r.flagged)) {
+    lines.push("* = unknown-cost attempts present (never ranked cheapest)");
+  }
+
+  return lines.join("\n");
 }
