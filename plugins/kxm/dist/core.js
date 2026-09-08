@@ -742,7 +742,10 @@ function redactStringList(values, maxItems = 32) {
 }
 
 // plugins/kxm/src/commands.ts
-import { randomUUID as randomUUID2 } from "node:crypto";
+import { createHash as createHash2, randomUUID as randomUUID2, timingSafeEqual } from "node:crypto";
+import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 
 // plugins/kxm/src/client.ts
 var HubHttpError = class extends Error {
@@ -1508,32 +1511,109 @@ function parseAttemptToken(token) {
   }
   return void 0;
 }
+function timingSafeStringCompare(a, b) {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  const hashA = createHash2("sha256").update(a).digest();
+  const hashB = createHash2("sha256").update(b).digest();
+  return timingSafeEqual(hashA, hashB);
+}
 function mintSessionToken(input) {
   const toolPolicy = input?.toolPolicy ?? (input?.allowedTools || input?.deniedTools || input?.preset ? {
     ...input?.preset ? { preset: input.preset } : {},
-    ...input?.allowedTools ? { allow: input.allowedTools } : {},
-    ...input?.deniedTools ? { deny: input.deniedTools } : {}
+    ...input?.allowedTools ? { allow: input.allowedTools, allowedTools: input.allowedTools } : {},
+    ...input?.deniedTools ? { deny: input.deniedTools, deniedTools: input.deniedTools } : {}
   } : void 0);
+  const issuedAt = (/* @__PURE__ */ new Date()).toISOString();
+  const defaultTtlMs = 24 * 60 * 60 * 1e3;
+  const ttlMs = typeof input?.ttlMs === "number" && input.ttlMs > 0 ? input.ttlMs : defaultTtlMs;
+  const expiresAt = input?.expiresAt ?? new Date(Date.now() + ttlMs).toISOString();
   const payload = {
     schema: "kxm.session-token.v1",
     sessionId: input?.sessionId ?? `session-${randomUUID2()}`,
-    issuedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    issuedAt,
+    expiresAt,
     ...input?.agentName ? { agentName: input.agentName } : {},
     ...toolPolicy ? { toolPolicy } : {}
   };
   return Buffer.from(JSON.stringify(payload)).toString("base64url");
+}
+function isSessionTokenExpired(payloadOrToken) {
+  let payload;
+  if (typeof payloadOrToken === "string") {
+    try {
+      const raw = Buffer.from(payloadOrToken.trim(), "base64url").toString("utf8");
+      payload = JSON.parse(raw);
+    } catch {
+      return true;
+    }
+  } else {
+    payload = payloadOrToken;
+  }
+  if (!payload || !payload.expiresAt) return false;
+  const expiryTime = new Date(payload.expiresAt).getTime();
+  if (Number.isNaN(expiryTime)) return true;
+  return Date.now() >= expiryTime;
 }
 function parseSessionToken(token) {
   try {
     const raw = Buffer.from(token.trim(), "base64url").toString("utf8");
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === "object" && parsed.schema === "kxm.session-token.v1" && typeof parsed.sessionId === "string") {
+      if (parsed.expiresAt) {
+        const expiryTime = new Date(parsed.expiresAt).getTime();
+        if (!Number.isNaN(expiryTime) && Date.now() >= expiryTime) {
+          return void 0;
+        }
+      }
       return parsed;
     }
   } catch {
     return void 0;
   }
   return void 0;
+}
+function resolveUserConfigDirectory(overrideDir) {
+  if (overrideDir) return resolve(overrideDir);
+  return resolve(process.env.KXM_USER_CONFIG_DIR?.trim() || join(homedir(), ".config", "kxm"));
+}
+function sessionTokenPath(userConfigDir) {
+  return join(resolveUserConfigDirectory(userConfigDir), "session.token");
+}
+function persistSessionTokenToDisk(token, options) {
+  const filePath = sessionTokenPath(options?.userConfigDir);
+  const dir = dirname(filePath);
+  mkdirSync(dir, { recursive: true, mode: 448 });
+  const mode = options?.mode ?? 384;
+  writeFileSync(filePath, `${token.trim()}
+`, { encoding: "utf8", mode });
+  try {
+    chmodSync(filePath, mode);
+  } catch {
+  }
+  return filePath;
+}
+function readSessionTokenFromDisk(options) {
+  const filePath = sessionTokenPath(options?.userConfigDir);
+  if (!existsSync(filePath)) return void 0;
+  try {
+    const token = readFileSync(filePath, "utf8").trim();
+    if (!token) return void 0;
+    const payload = parseSessionToken(token);
+    if (!payload) return void 0;
+    return { token, payload };
+  } catch {
+    return void 0;
+  }
+}
+function clearSessionTokenFromDisk(options) {
+  const filePath = sessionTokenPath(options?.userConfigDir);
+  if (!existsSync(filePath)) return false;
+  try {
+    unlinkSync(filePath);
+    return true;
+  } catch {
+    return false;
+  }
 }
 function matchToolPattern(pattern, toolName) {
   if (pattern === "*" || pattern === toolName) return true;
@@ -1577,7 +1657,7 @@ function isToolAllowed(commandName, policy) {
   }
   return true;
 }
-function enforceToolPolicy(commandName, env = process.env) {
+function enforceToolPolicy(commandName, env = process.env, options) {
   const attemptTokenRaw = env.KXM_ATTEMPT_TOKEN?.trim();
   if (attemptTokenRaw) {
     const attempt = parseAttemptToken(attemptTokenRaw);
@@ -1591,13 +1671,51 @@ function enforceToolPolicy(commandName, env = process.env) {
         detail: `command ${commandName} is denied by attempt tool policy`
       };
     }
+    if (commandName === "kxm_promote" || commandName === "promote") {
+      const explicitAllow = attempt.toolPolicy?.allow ?? attempt.toolPolicy?.allowedTools;
+      if (!Array.isArray(explicitAllow) || !explicitAllow.includes("kxm_promote") && !explicitAllow.includes("promote") && !explicitAllow.includes("*")) {
+        return {
+          allowed: false,
+          error: "attempt_token_admin_denied",
+          detail: "AttemptToken worker cannot perform operator state promotion without explicit policy grant"
+        };
+      }
+    }
+    if (options?.runId && attempt.runId && options.runId !== attempt.runId) {
+      return {
+        allowed: false,
+        error: "attempt_token_scope_violation",
+        detail: `attempt token runId ${attempt.runId} does not match request runId ${options.runId}`
+      };
+    }
     return { allowed: true };
   }
-  const sessionTokenRaw = env.KXM_SESSION_TOKEN?.trim();
-  if (sessionTokenRaw) {
-    const session = parseSessionToken(sessionTokenRaw);
+  const envSessionRaw = env.KXM_SESSION_TOKEN?.trim();
+  if (envSessionRaw) {
+    const session = parseSessionToken(envSessionRaw);
     if (!session) {
-      return { allowed: false, error: "session_token_invalid", detail: "KXM_SESSION_TOKEN is malformed" };
+      return { allowed: false, error: "session_token_invalid", detail: "KXM_SESSION_TOKEN is malformed or expired" };
+    }
+    if (!isToolAllowed(commandName, session.toolPolicy)) {
+      return {
+        allowed: false,
+        error: "tool_policy_denied",
+        detail: `command ${commandName} is denied by session tool policy`
+      };
+    }
+    return { allowed: true };
+  }
+  const tokenFile = sessionTokenPath(env.KXM_USER_CONFIG_DIR);
+  if (existsSync(tokenFile)) {
+    let tokenRaw;
+    try {
+      tokenRaw = readFileSync(tokenFile, "utf8").trim();
+    } catch {
+      return { allowed: false, error: "session_token_invalid", detail: "Session token file on disk could not be read" };
+    }
+    const session = tokenRaw ? parseSessionToken(tokenRaw) : void 0;
+    if (!session) {
+      return { allowed: false, error: "session_token_invalid", detail: "Session token on disk is malformed or expired" };
     }
     if (!isToolAllowed(commandName, session.toolPolicy)) {
       return {
@@ -1612,8 +1730,8 @@ function enforceToolPolicy(commandName, env = process.env) {
 }
 
 // plugins/kxm/src/logger.ts
-import { appendFileSync, existsSync, mkdirSync, renameSync, statSync, unlinkSync } from "node:fs";
-import { dirname } from "node:path";
+import { appendFileSync, existsSync as existsSync2, mkdirSync as mkdirSync2, renameSync, statSync, unlinkSync as unlinkSync2 } from "node:fs";
+import { dirname as dirname2 } from "node:path";
 var LOG_LEVEL_PRIORITY = {
   debug: 10,
   info: 20,
@@ -1650,10 +1768,10 @@ function redactLogValue(val, key) {
 function rotateLogFiles(filePath, maxFiles) {
   for (let i = maxFiles; i >= 1; i--) {
     const current = `${filePath}.${i}`;
-    if (existsSync(current)) {
+    if (existsSync2(current)) {
       if (i >= maxFiles) {
         try {
-          unlinkSync(current);
+          unlinkSync2(current);
         } catch {
         }
       } else {
@@ -1664,7 +1782,7 @@ function rotateLogFiles(filePath, maxFiles) {
       }
     }
   }
-  if (existsSync(filePath)) {
+  if (existsSync2(filePath)) {
     try {
       renameSync(filePath, `${filePath}.1`);
     } catch {
@@ -1681,7 +1799,7 @@ function createLogger(options) {
   const shouldStdout = options.stdout ?? !isDaemon;
   const correlationDefaults = options.correlation ?? {};
   let currentSize = 0;
-  if (filePath && existsSync(filePath)) {
+  if (filePath && existsSync2(filePath)) {
     try {
       currentSize = statSync(filePath).size;
     } catch {
@@ -1719,7 +1837,7 @@ function createLogger(options) {
         currentSize = 0;
       }
       try {
-        mkdirSync(dirname(filePath), { recursive: true });
+        mkdirSync2(dirname2(filePath), { recursive: true });
         appendFileSync(filePath, line, { encoding: "utf8", mode: 384 });
         currentSize += lineBytes;
       } catch {
@@ -1789,6 +1907,7 @@ export {
   WORKER_SCHEMA,
   agentWorker,
   behavioralConfigHash,
+  clearSessionTokenFromDisk,
   compareRoutingRecords,
   createLogger,
   enforceToolPolicy,
@@ -1800,6 +1919,7 @@ export {
   getPiToolDefinitions,
   groupByBehavior,
   isQuotaExhausted,
+  isSessionTokenExpired,
   isToolAllowed,
   looksLikeSecret,
   mintAttemptToken,
@@ -1813,11 +1933,15 @@ export {
   parseRoutingRecord,
   parseRoutingRecordV2,
   parseSessionToken,
+  persistSessionTokenToDisk,
+  readSessionTokenFromDisk,
   reconcileInbox,
   redactLogValue,
   redactSecrets,
   redactStringList,
   requireString,
   rotateLogFiles,
+  sessionTokenPath,
+  timingSafeStringCompare,
   workerResult
 };

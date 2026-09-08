@@ -29,6 +29,7 @@ const TOP_LEVEL_COMMANDS = [
   "goal",
   "task",
   "plan",
+  "auth",
 ];
 
 const SUBCOMMANDS: Record<string, string[]> = {
@@ -38,7 +39,8 @@ const SUBCOMMANDS: Record<string, string[]> = {
   runtime: ["start", "status", "stop"],
   trust: ["diff", "check"],
   agent: ["worker"],
-  session: ["status", "brief", "start", "stop"],
+  session: ["status", "brief", "start", "stop", "token"],
+  auth: ["token"],
   peer: ["list", "send", "get", "await", "cancel", "fanout", "inbox", "reply"],
   workflow: ["list", "get", "checkpoint", "record", "wait", "signal", "start", "export"],
   gate: ["validate", "artifacts-exist", "degrade", "signal", "github"],

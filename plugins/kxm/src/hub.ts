@@ -29,6 +29,7 @@ import {
   type WorkflowMessageContext,
 } from "./protocol.ts";
 import { workflowScopeExtras } from "./diagnostics.ts";
+import { timingSafeStringCompare } from "./commands.ts";
 import { arbitrate, explainContextItem, journalEntryToContextItem, memoryRecordToContextItem, rolePolicy } from "./arbiter.ts";
 import { loadAuthoredMemory } from "./memory.ts";
 import { contextItemAuditMetadata, CONTEXT_AUTHORITIES, CONTEXT_CONFIDENCES, type ContextAuthority, type ContextConfidence, type ContextItem } from "./context.ts";
@@ -123,10 +124,7 @@ function publicAgent(agent: StoredAgent): AgentRecord {
 }
 
 function safeTokenEqual(actual: string | undefined, expected: string): boolean {
-  if (!actual) return false;
-  const actualHash = createHash("sha256").update(actual).digest();
-  const expectedHash = createHash("sha256").update(expected).digest();
-  return timingSafeEqual(actualHash, expectedHash);
+  return timingSafeStringCompare(actual, expected);
 }
 
 function bearerToken(request: IncomingMessage): string | undefined {

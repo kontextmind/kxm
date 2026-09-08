@@ -84,7 +84,16 @@ import {
 } from "./vnext-harness.ts";
 import type { WorkflowEvidenceInput, WorkflowJournalEntry, WorkflowRun } from "./workflow.ts";
 import { HubClient } from "./client.ts";
-import { AGENT_COMMANDS_MAP, enforceToolPolicy, mintSessionToken } from "./commands.ts";
+import {
+  AGENT_COMMANDS_MAP,
+  clearSessionTokenFromDisk,
+  enforceToolPolicy,
+  mintSessionToken,
+  parseSessionToken,
+  persistSessionTokenToDisk,
+  readSessionTokenFromDisk,
+  sessionTokenPath,
+} from "./commands.ts";
 import {
   loadKxmConfig,
   setKxmConfigValue,
@@ -1706,8 +1715,90 @@ async function cmdSessionStatus(runtime: Runtime): Promise<number> {
   return 0;
 }
 
+async function cmdAuthToken(runtime: Runtime, options: { status?: boolean; clear?: boolean; issue?: boolean } = {}): Promise<number> {
+  if (options.clear) {
+    const cleared = clearSessionTokenFromDisk({ userConfigDir: runtime.env.KXM_USER_CONFIG_DIR });
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: true, command: "auth token", cleared },
+      cleared ? "Session token cleared from disk." : "No session token file found to clear.",
+    );
+    return 0;
+  }
+
+  if (options.status) {
+    const fromEnv = runtime.env.KXM_SESSION_TOKEN?.trim();
+    if (fromEnv) {
+      const parsed = parseSessionToken(fromEnv);
+      print(
+        runtime.io,
+        runtime.json,
+        {
+          ok: true,
+          command: "auth token",
+          source: "env",
+          valid: Boolean(parsed),
+          ...(parsed ? { sessionId: parsed.sessionId, issuedAt: parsed.issuedAt, expiresAt: parsed.expiresAt } : {}),
+        },
+        parsed ? `Active session token from env (session=${parsed.sessionId})` : "Session token in env is invalid or expired",
+      );
+      return parsed ? 0 : 1;
+    }
+
+    const disk = readSessionTokenFromDisk({ userConfigDir: runtime.env.KXM_USER_CONFIG_DIR });
+    if (disk) {
+      print(
+        runtime.io,
+        runtime.json,
+        {
+          ok: true,
+          command: "auth token",
+          source: "disk",
+          valid: true,
+          sessionId: disk.payload.sessionId,
+          issuedAt: disk.payload.issuedAt,
+          expiresAt: disk.payload.expiresAt,
+          path: sessionTokenPath(runtime.env.KXM_USER_CONFIG_DIR),
+        },
+        `Active session token on disk (session=${disk.payload.sessionId}, expires=${disk.payload.expiresAt ?? "never"})`,
+      );
+      return 0;
+    }
+
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: false, command: "auth token", error: "no_token", message: "No active session token found in env or disk" },
+      "No active session token found in env or disk",
+    );
+    return 1;
+  }
+
+  let token: string;
+  if (options.issue) {
+    token = mintSessionToken({ preset: "operator" });
+    persistSessionTokenToDisk(token, { userConfigDir: runtime.env.KXM_USER_CONFIG_DIR });
+  } else {
+    const existing = readSessionTokenFromDisk({ userConfigDir: runtime.env.KXM_USER_CONFIG_DIR });
+    if (existing) {
+      token = existing.token;
+    } else {
+      token = mintSessionToken({ preset: "operator" });
+      persistSessionTokenToDisk(token, { userConfigDir: runtime.env.KXM_USER_CONFIG_DIR });
+    }
+  }
+
+  print(runtime.io, runtime.json, { ok: true, command: "auth token", token }, token);
+  return 0;
+}
+
 async function cmdSessionBrief(runtime: Runtime, options: { status?: boolean; token?: boolean } = {}): Promise<number> {
-  const sessionToken = mintSessionToken({ preset: "operator" });
+  const existing = readSessionTokenFromDisk({ userConfigDir: runtime.env.KXM_USER_CONFIG_DIR });
+  const sessionToken = existing ? existing.token : mintSessionToken({ preset: "operator" });
+  if (!existing) {
+    persistSessionTokenToDisk(sessionToken, { userConfigDir: runtime.env.KXM_USER_CONFIG_DIR });
+  }
   if (options.token) {
     print(runtime.io, runtime.json, { ok: true, command: "session brief", sessionToken }, sessionToken);
     return 0;
@@ -3069,6 +3160,16 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
   const harnessCmd = addGlobalOptions(program.command("harness").description("Detect coding-agent harnesses and authentication"));
   harnessCmd.helpCommand("help", "Show harness help");
   addGlobalOptions(harnessCmd.command("list").description("Show installed harnesses, auth, and native updaters")).action(bind(cmdHarnessList));
+
+  const authCmd = addGlobalOptions(program.command("auth").description("Manage credentials, tokens, and authorization"));
+  authCmd.helpCommand("help", "Show auth help");
+  addGlobalOptions(authCmd.command("token").description("Inspect, issue, or clear local disk session tokens"))
+    .option("--status", "Check status of the active session token")
+    .option("--clear", "Clear persisted disk session token")
+    .option("--issue", "Force issuing a fresh session token")
+    .action(async function authTokenAction(this: Command, options: { status?: boolean; clear?: boolean; issue?: boolean }) {
+      result.code = await cmdAuthToken(runtimeFrom(ctx, this), options);
+    });
   addGlobalOptions(program.command("update").description("Update kxm, harness CLIs, extensions, plugins, and model catalogs")
     .argument("[harness]", "Harness id (default: every detected harness)")
     .option("--check", "Check for a kxm package update without applying")
@@ -3146,6 +3247,13 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .option("--token", "Issue interactive session token with operator policy")
     .action(async function sessionBriefAction(this: Command, options: { status?: boolean; token?: boolean }) {
       result.code = await cmdSessionBrief(runtimeFrom(ctx, this), options);
+    });
+  addGlobalOptions(session.command("token").description("Inspect, issue, or clear local disk session tokens"))
+    .option("--status", "Check status of the active session token")
+    .option("--clear", "Clear persisted disk session token")
+    .option("--issue", "Force issuing a fresh session token")
+    .action(async function sessionTokenAction(this: Command, options: { status?: boolean; clear?: boolean; issue?: boolean }) {
+      result.code = await cmdAuthToken(runtimeFrom(ctx, this), options);
     });
   addGlobalOptions(session.command("start").description("Create an agent/gate or workflow session manifest (does not launch processes)"))
     .option("--id <id>", "Session id")

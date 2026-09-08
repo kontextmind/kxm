@@ -1,4 +1,7 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { HubClient, HubHttpError } from "./client.ts";
 import type {
   DeliveryMode,
@@ -62,6 +65,7 @@ export interface SessionTokenPayload {
   agentName?: string;
   toolPolicy?: ToolPolicy;
   issuedAt: string;
+  expiresAt?: string;
 }
 
 export interface CommandExecutionContext {
@@ -930,6 +934,13 @@ export function parseAttemptToken(token: string): AttemptTokenPayload | undefine
   return undefined;
 }
 
+export function timingSafeStringCompare(a: string | undefined, b: string | undefined): boolean {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  const hashA = createHash("sha256").update(a).digest();
+  const hashB = createHash("sha256").update(b).digest();
+  return timingSafeEqual(hashA, hashB);
+}
+
 export function mintSessionToken(input?: {
   sessionId?: string;
   agentName?: string;
@@ -937,24 +948,51 @@ export function mintSessionToken(input?: {
   preset?: string;
   allowedTools?: string[];
   deniedTools?: string[];
+  expiresAt?: string;
+  ttlMs?: number;
 }): string {
   const toolPolicy: ToolPolicy | undefined = input?.toolPolicy ?? (
     input?.allowedTools || input?.deniedTools || input?.preset
       ? {
           ...(input?.preset ? { preset: input.preset } : {}),
-          ...(input?.allowedTools ? { allow: input.allowedTools } : {}),
-          ...(input?.deniedTools ? { deny: input.deniedTools } : {}),
+          ...(input?.allowedTools ? { allow: input.allowedTools, allowedTools: input.allowedTools } : {}),
+          ...(input?.deniedTools ? { deny: input.deniedTools, deniedTools: input.deniedTools } : {}),
         }
       : undefined
   );
+  const issuedAt = new Date().toISOString();
+  // Decision Q2: Default 24-hour TTL for disk SessionToken
+  const defaultTtlMs = 24 * 60 * 60 * 1000;
+  const ttlMs = typeof input?.ttlMs === "number" && input.ttlMs > 0 ? input.ttlMs : defaultTtlMs;
+  const expiresAt = input?.expiresAt ?? new Date(Date.now() + ttlMs).toISOString();
+
   const payload: SessionTokenPayload = {
     schema: "kxm.session-token.v1",
     sessionId: input?.sessionId ?? `session-${randomUUID()}`,
-    issuedAt: new Date().toISOString(),
+    issuedAt,
+    expiresAt,
     ...(input?.agentName ? { agentName: input.agentName } : {}),
     ...(toolPolicy ? { toolPolicy } : {}),
   };
   return Buffer.from(JSON.stringify(payload)).toString("base64url");
+}
+
+export function isSessionTokenExpired(payloadOrToken: SessionTokenPayload | string): boolean {
+  let payload: SessionTokenPayload | undefined;
+  if (typeof payloadOrToken === "string") {
+    try {
+      const raw = Buffer.from(payloadOrToken.trim(), "base64url").toString("utf8");
+      payload = JSON.parse(raw) as SessionTokenPayload;
+    } catch {
+      return true;
+    }
+  } else {
+    payload = payloadOrToken;
+  }
+  if (!payload || !payload.expiresAt) return false;
+  const expiryTime = new Date(payload.expiresAt).getTime();
+  if (Number.isNaN(expiryTime)) return true;
+  return Date.now() >= expiryTime;
 }
 
 export function parseSessionToken(token: string): SessionTokenPayload | undefined {
@@ -967,12 +1005,73 @@ export function parseSessionToken(token: string): SessionTokenPayload | undefine
       && parsed.schema === "kxm.session-token.v1"
       && typeof parsed.sessionId === "string"
     ) {
+      if (parsed.expiresAt) {
+        const expiryTime = new Date(parsed.expiresAt).getTime();
+        if (!Number.isNaN(expiryTime) && Date.now() >= expiryTime) {
+          return undefined; // Expired token fails closed
+        }
+      }
       return parsed as SessionTokenPayload;
     }
   } catch {
     return undefined;
   }
   return undefined;
+}
+
+function resolveUserConfigDirectory(overrideDir?: string | undefined): string {
+  if (overrideDir) return resolve(overrideDir);
+  return resolve(process.env.KXM_USER_CONFIG_DIR?.trim() || join(homedir(), ".config", "kxm"));
+}
+
+export function sessionTokenPath(userConfigDir?: string | undefined): string {
+  return join(resolveUserConfigDirectory(userConfigDir), "session.token");
+}
+
+export function persistSessionTokenToDisk(
+  token: string,
+  options?: { userConfigDir?: string | undefined; mode?: number | undefined } | undefined,
+): string {
+  const filePath = sessionTokenPath(options?.userConfigDir);
+  const dir = dirname(filePath);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const mode = options?.mode ?? 0o600;
+  writeFileSync(filePath, `${token.trim()}\n`, { encoding: "utf8", mode });
+  try {
+    chmodSync(filePath, mode);
+  } catch {
+    // Ignore permissions error on filesystems that do not support POSIX modes
+  }
+  return filePath;
+}
+
+export function readSessionTokenFromDisk(options?: {
+  userConfigDir?: string | undefined;
+} | undefined): { token: string; payload: SessionTokenPayload } | undefined {
+  const filePath = sessionTokenPath(options?.userConfigDir);
+  if (!existsSync(filePath)) return undefined;
+  try {
+    const token = readFileSync(filePath, "utf8").trim();
+    if (!token) return undefined;
+    const payload = parseSessionToken(token);
+    if (!payload) return undefined;
+    return { token, payload };
+  } catch {
+    return undefined;
+  }
+}
+
+export function clearSessionTokenFromDisk(options?: {
+  userConfigDir?: string | undefined;
+} | undefined): boolean {
+  const filePath = sessionTokenPath(options?.userConfigDir);
+  if (!existsSync(filePath)) return false;
+  try {
+    unlinkSync(filePath);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function matchToolPattern(pattern: string, toolName: string): boolean {
@@ -1026,6 +1125,7 @@ export function isToolAllowed(commandName: string, policy?: ToolPolicy): boolean
 export function enforceToolPolicy(
   commandName: string,
   env: NodeJS.ProcessEnv = process.env,
+  options?: { runId?: string; stageId?: string },
 ): { allowed: boolean; error?: string; detail?: string } {
   const attemptTokenRaw = env.KXM_ATTEMPT_TOKEN?.trim();
   if (attemptTokenRaw) {
@@ -1040,14 +1140,56 @@ export function enforceToolPolicy(
         detail: `command ${commandName} is denied by attempt tool policy`,
       };
     }
+    // AttemptToken boundary: AttemptTokens are strictly worker tokens.
+    // They cannot execute administrative state promotion unless explicitly allowed in toolPolicy
+    if (commandName === "kxm_promote" || commandName === "promote") {
+      const explicitAllow = attempt.toolPolicy?.allow ?? attempt.toolPolicy?.allowedTools;
+      if (!Array.isArray(explicitAllow) || (!explicitAllow.includes("kxm_promote") && !explicitAllow.includes("promote") && !explicitAllow.includes("*"))) {
+        return {
+          allowed: false,
+          error: "attempt_token_admin_denied",
+          detail: "AttemptToken worker cannot perform operator state promotion without explicit policy grant",
+        };
+      }
+    }
+    // AttemptToken boundary: Scoped strictly to runId if provided in execution options
+    if (options?.runId && attempt.runId && options.runId !== attempt.runId) {
+      return {
+        allowed: false,
+        error: "attempt_token_scope_violation",
+        detail: `attempt token runId ${attempt.runId} does not match request runId ${options.runId}`,
+      };
+    }
     return { allowed: true };
   }
 
-  const sessionTokenRaw = env.KXM_SESSION_TOKEN?.trim();
-  if (sessionTokenRaw) {
-    const session = parseSessionToken(sessionTokenRaw);
+  const envSessionRaw = env.KXM_SESSION_TOKEN?.trim();
+  if (envSessionRaw) {
+    const session = parseSessionToken(envSessionRaw);
     if (!session) {
-      return { allowed: false, error: "session_token_invalid", detail: "KXM_SESSION_TOKEN is malformed" };
+      return { allowed: false, error: "session_token_invalid", detail: "KXM_SESSION_TOKEN is malformed or expired" };
+    }
+    if (!isToolAllowed(commandName, session.toolPolicy)) {
+      return {
+        allowed: false,
+        error: "tool_policy_denied",
+        detail: `command ${commandName} is denied by session tool policy`,
+      };
+    }
+    return { allowed: true };
+  }
+
+  const tokenFile = sessionTokenPath(env.KXM_USER_CONFIG_DIR);
+  if (existsSync(tokenFile)) {
+    let tokenRaw: string | undefined;
+    try {
+      tokenRaw = readFileSync(tokenFile, "utf8").trim();
+    } catch {
+      return { allowed: false, error: "session_token_invalid", detail: "Session token file on disk could not be read" };
+    }
+    const session = tokenRaw ? parseSessionToken(tokenRaw) : undefined;
+    if (!session) {
+      return { allowed: false, error: "session_token_invalid", detail: "Session token on disk is malformed or expired" };
     }
     if (!isToolAllowed(commandName, session.toolPolicy)) {
       return {
