@@ -14776,6 +14776,7 @@ var require_dist = __commonJS({
 
 // plugins/kxm/src/vnext-runtime.ts
 import { createHash as createHash5 } from "node:crypto";
+import { existsSync as existsSync3, readdirSync as readdirSync2, readFileSync as readFileSync2 } from "node:fs";
 import { join as join4 } from "node:path";
 
 // plugins/kxm/src/vnext-config.ts
@@ -17177,6 +17178,33 @@ function verifyExpectedTables(database, file, description, expected) {
     }
   }
 }
+function ensureWalJournalMode(database, file, description, timeoutMs = 5e3) {
+  const deadline = Date.now() + timeoutMs;
+  const sleeper = new Int32Array(new SharedArrayBuffer(4));
+  while (true) {
+    try {
+      const current = database.prepare("PRAGMA journal_mode").get();
+      if (current?.journal_mode === "wal") {
+        return;
+      }
+      const updated = database.prepare("PRAGMA journal_mode = WAL").get();
+      if (updated?.journal_mode === "wal") {
+        return;
+      }
+    } catch (error) {
+      const sqliteError = error;
+      if (sqliteError.code === "ERR_SQLITE_ERROR" && sqliteError.errcode === 5 && Date.now() < deadline) {
+        Atomics.wait(sleeper, 0, 0, 10);
+        continue;
+      }
+      throw error;
+    }
+    if (Date.now() >= deadline) {
+      throw runtimeError("runtime_timeout", file, `${description} timed out enabling WAL journal mode`);
+    }
+    Atomics.wait(sleeper, 0, 0, 10);
+  }
+}
 function openDatabase(file, description, spec) {
   checkedParent(file, description);
   const stat = lstatSync2(file, { throwIfNoEntry: false });
@@ -17195,6 +17223,9 @@ function openDatabase(file, description, spec) {
   let transaction = false;
   try {
     database.exec("PRAGMA busy_timeout = 5000");
+    ensureWalJournalMode(database, file, description);
+    database.exec("PRAGMA synchronous = NORMAL");
+    database.exec("PRAGMA foreign_keys = ON");
     database.exec("BEGIN IMMEDIATE");
     transaction = true;
     const row = database.prepare("PRAGMA user_version").get();
@@ -17220,9 +17251,6 @@ function openDatabase(file, description, spec) {
     }
     database.exec("COMMIT");
     transaction = false;
-    database.exec("PRAGMA journal_mode = WAL");
-    database.exec("PRAGMA synchronous = NORMAL");
-    database.exec("PRAGMA foreign_keys = ON");
     return database;
   } catch (error) {
     if (transaction) {
@@ -20478,6 +20506,9 @@ function pump(storePath, owner) {
 }
 
 // plugins/kxm/src/vnext-runtime.ts
+function compareCodeUnits3(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
 function sha256Of(input) {
   return `sha256:${createHash5("sha256").update(input, "utf8").digest("hex")}`;
 }
@@ -20510,10 +20541,53 @@ function vnextToolPolicyRevision(bundle) {
   }
   return sha256Of(vnextCanonicalJson({ policies, gateRegistry: bundle.gateRegistry?.value ?? null }));
 }
-function vnextPolicyRevisions(bundle) {
+function collectMemoryFiles(dir, baseDir, ignoreSubdirs = /* @__PURE__ */ new Set()) {
+  if (!existsSync3(dir)) return [];
+  const entries = readdirSync2(dir, { withFileTypes: true });
+  const results = [];
+  for (const entry of entries) {
+    const fullPath = join4(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (ignoreSubdirs.has(entry.name)) continue;
+      results.push(...collectMemoryFiles(fullPath, baseDir, ignoreSubdirs));
+    } else if (entry.isFile()) {
+      const relPath = fullPath.slice(baseDir.length + 1).replace(/\\/g, "/");
+      results.push({ relPath, fullPath });
+    }
+  }
+  return results;
+}
+function computeVnextMemoryRevision(bundle, options = {}) {
+  const hash = createHash5("sha256");
+  const memoryDir = options.memoryDir ?? join4(bundle.projectRoot, ".kxm", "memory");
+  const memoryFiles = collectMemoryFiles(memoryDir, memoryDir, /* @__PURE__ */ new Set(["candidates"])).sort((left, right) => compareCodeUnits3(left.relPath, right.relPath));
+  for (const file of memoryFiles) {
+    hash.update(`memory:${file.relPath}\0`, "utf8");
+    hash.update(readFileSync2(file.fullPath));
+    hash.update("\0", "utf8");
+  }
+  const skillsDir = options.skillsDir ?? join4(bundle.projectRoot, ".kxm", "skills");
+  const promotedSkillsDir = join4(skillsDir, "promoted");
+  const skillFiles = collectMemoryFiles(promotedSkillsDir, promotedSkillsDir).sort((left, right) => compareCodeUnits3(left.relPath, right.relPath));
+  for (const file of skillFiles) {
+    hash.update(`skill:${file.relPath}\0`, "utf8");
+    hash.update(readFileSync2(file.fullPath));
+    hash.update("\0", "utf8");
+  }
+  if (options.promotedState && options.promotedState.length > 0) {
+    const currentItems = options.promotedState.filter((item) => !item.status || item.status === "current").slice().sort((left, right) => compareCodeUnits3(left.id, right.id));
+    for (const item of currentItems) {
+      hash.update(`state:${item.id}\0`, "utf8");
+      hash.update(vnextCanonicalJson(item), "utf8");
+      hash.update("\0", "utf8");
+    }
+  }
+  return `ctxrev_${hash.digest("hex")}`;
+}
+function vnextPolicyRevisions(bundle, options) {
   return {
     configRevision: bundle.configRevision,
-    memoryRevision: VNEXT_ABSENT_MEMORY_REVISION,
+    memoryRevision: computeVnextMemoryRevision(bundle, options),
     executorPolicyRevision: vnextExecutorPolicyRevision(bundle),
     toolPolicyRevision: vnextToolPolicyRevision(bundle)
   };
@@ -20631,7 +20705,8 @@ function acceptVnextRun(context, bundle, request, options = {}) {
   if (!workflow) {
     throw runtimeError("run_workflow_unknown", ".kxm/workflows", `workflow ${request.workflowId} does not exist in this project`);
   }
-  const revisions = vnextPolicyRevisions(bundle);
+  const revisions = vnextPolicyRevisions(bundle, options);
+  const memoryRevision = options.memoryRevision ?? revisions.memoryRevision;
   const promptSha256 = `sha256:${createHash5("sha256").update(request.prompt, "utf8").digest("hex")}`;
   return context.eventStore.transaction(() => {
     const prior = context.eventStore.command(commandId);
@@ -20669,7 +20744,7 @@ function acceptVnextRun(context, bundle, request, options = {}) {
       recordedAt: now,
       monotonicNs,
       configRevision: revisions.configRevision,
-      memoryRevision: revisions.memoryRevision,
+      memoryRevision,
       executorPolicyRevision: revisions.executorPolicyRevision,
       toolPolicyRevision: revisions.toolPolicyRevision,
       payload
@@ -20682,7 +20757,7 @@ function acceptVnextRun(context, bundle, request, options = {}) {
       promptSha256,
       status: "created",
       configRevision: revisions.configRevision,
-      memoryRevision: revisions.memoryRevision,
+      memoryRevision,
       executorPolicyRevision: revisions.executorPolicyRevision,
       toolPolicyRevision: revisions.toolPolicyRevision,
       createdAt: now,
@@ -20896,7 +20971,7 @@ function assertVnextConfigError(error) {
 // plugins/kxm/src/vnext-runtime-supervisor.ts
 import { spawn } from "node:child_process";
 import { createHash as createHash6, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { chmodSync, existsSync as existsSync3, lstatSync as lstatSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync2, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync as existsSync4, lstatSync as lstatSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync3, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { dirname as dirname4, isAbsolute as isAbsolute3, join as join5, resolve as resolve4 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
@@ -21078,7 +21153,7 @@ function readVnextSupervisorToken(paths) {
   if (stat.isSymbolicLink() || !stat.isFile()) {
     throw runtimeError("runtime_path_invalid", file, "supervisor token file must be a regular file, not a link");
   }
-  const token = readFileSync2(file, "utf8").trim();
+  const token = readFileSync3(file, "utf8").trim();
   return token.length >= 32 ? token : void 0;
 }
 function processAlive(pid) {
@@ -21096,7 +21171,7 @@ function supervisorErrorFile(paths) {
 }
 function clearSupervisorError(paths) {
   const file = supervisorErrorFile(paths);
-  if (existsSync3(file)) rmSync(file, { force: true });
+  if (existsSync4(file)) rmSync(file, { force: true });
 }
 function recordSupervisorError(paths, message) {
   try {
@@ -21113,13 +21188,13 @@ function readRecentSupervisorError(paths) {
   const ageMs = Date.now() - stat.mtimeMs;
   if (ageMs > SUPERVISOR_ERROR_MAX_AGE_MS) return void 0;
   try {
-    return readFileSync2(file, "utf8").trim();
+    return readFileSync3(file, "utf8").trim();
   } catch {
     return void 0;
   }
 }
 function vnextSupervisorStatus(paths) {
-  if (!existsSync3(paths.registryDb)) return { running: false };
+  if (!existsSync4(paths.registryDb)) return { running: false };
   const registry = new VnextRuntimeRegistry(paths.registryDb);
   try {
     const record2 = registry.supervisor();
@@ -21517,7 +21592,7 @@ import { StringDecoder } from "node:string_decoder";
 
 // plugins/kxm/src/prices.ts
 var import_yaml3 = __toESM(require_dist(), 1);
-import { existsSync as existsSync4, readFileSync as readFileSync3 } from "node:fs";
+import { existsSync as existsSync5, readFileSync as readFileSync4 } from "node:fs";
 import { join as join6 } from "node:path";
 function parsePriceCatalog(text) {
   const parsed = (0, import_yaml3.parse)(text);
@@ -21592,11 +21667,11 @@ function parsePriceCatalog(text) {
   };
 }
 function loadPriceCatalog(rootOrPath) {
-  const candidatePath = existsSync4(join6(rootOrPath, ".kxm", "prices.yaml")) ? join6(rootOrPath, ".kxm", "prices.yaml") : existsSync4(join6(rootOrPath, "prices.yaml")) ? join6(rootOrPath, "prices.yaml") : existsSync4(rootOrPath) && !rootOrPath.endsWith("/") ? rootOrPath : void 0;
-  if (!candidatePath || !existsSync4(candidatePath)) {
+  const candidatePath = existsSync5(join6(rootOrPath, ".kxm", "prices.yaml")) ? join6(rootOrPath, ".kxm", "prices.yaml") : existsSync5(join6(rootOrPath, "prices.yaml")) ? join6(rootOrPath, "prices.yaml") : existsSync5(rootOrPath) && !rootOrPath.endsWith("/") ? rootOrPath : void 0;
+  if (!candidatePath || !existsSync5(candidatePath)) {
     return void 0;
   }
-  const content = readFileSync3(candidatePath, "utf8");
+  const content = readFileSync4(candidatePath, "utf8");
   return parsePriceCatalog(content);
 }
 
@@ -22377,7 +22452,7 @@ function createVnextOneShotProducer(options = {}) {
 }
 
 // plugins/kxm/src/logger.ts
-import { appendFileSync, existsSync as existsSync5, mkdirSync as mkdirSync3, renameSync as renameSync2, statSync, unlinkSync } from "node:fs";
+import { appendFileSync, existsSync as existsSync6, mkdirSync as mkdirSync3, renameSync as renameSync2, statSync, unlinkSync } from "node:fs";
 import { dirname as dirname5 } from "node:path";
 
 // plugins/kxm/src/redact.ts
@@ -22436,7 +22511,7 @@ function redactLogValue(val, key) {
 function rotateLogFiles(filePath, maxFiles) {
   for (let i = maxFiles; i >= 1; i--) {
     const current = `${filePath}.${i}`;
-    if (existsSync5(current)) {
+    if (existsSync6(current)) {
       if (i >= maxFiles) {
         try {
           unlinkSync(current);
@@ -22450,7 +22525,7 @@ function rotateLogFiles(filePath, maxFiles) {
       }
     }
   }
-  if (existsSync5(filePath)) {
+  if (existsSync6(filePath)) {
     try {
       renameSync2(filePath, `${filePath}.1`);
     } catch {
@@ -22467,7 +22542,7 @@ function createLogger(options) {
   const shouldStdout = options.stdout ?? !isDaemon;
   const correlationDefaults = options.correlation ?? {};
   let currentSize = 0;
-  if (filePath && existsSync5(filePath)) {
+  if (filePath && existsSync6(filePath)) {
     try {
       currentSize = statSync(filePath).size;
     } catch {
@@ -22568,6 +22643,7 @@ export {
   cancelVnextRun,
   closeVnextRuntimeContext,
   computeGateEvidenceOutcome,
+  computeVnextMemoryRevision,
   createLogger,
   createVnextOneShotProducer,
   createVnextPiProducer,

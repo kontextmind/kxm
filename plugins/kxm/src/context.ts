@@ -1,4 +1,5 @@
 import { ProtocolError, newId, requireString } from "./protocol.ts";
+import { redactSecrets } from "./redact.ts";
 
 /** Core KXM v0.5 context schemas. The context layer is additive to the v0.4
  * mesh/workflow plane: nothing here changes hub or workflow behavior until a
@@ -93,6 +94,9 @@ export const CONTEXT_AUTHORITIES: readonly ContextAuthority[] = ["policy", "inst
 export type ContextConfidence = "verified" | "probable" | "uncertain";
 export const CONTEXT_CONFIDENCES: readonly ContextConfidence[] = ["verified", "probable", "uncertain"];
 
+export type ContextScope = "agent" | "project" | "run" | "operator";
+export const CONTEXT_SCOPES: readonly ContextScope[] = ["agent", "project", "run", "operator"];
+
 export type ContextItemStatus = "current" | "superseded" | "proposed" | "rejected";
 
 /** Immutable content origin. Once written, provenance fields never change for
@@ -105,6 +109,7 @@ export interface ContextProvenance {
 
 export interface ContextItem {
   id: string;
+  scope?: ContextScope;
   kind: ContextItemKind;
   project: string;
   summary: string;
@@ -218,11 +223,14 @@ export function parseContextItem(value: unknown): ContextItem {
     id: requireString(input.id, "context item id", { max: 128 }),
     kind: oneOf(input.kind, "context item kind", CONTEXT_ITEM_KINDS),
     project: requireString(input.project, "context item project", { max: 200 }),
-    summary: requireString(input.summary, "context item summary", { max: MAX_CONTEXT_SUMMARY_CHARS }),
+    summary: redactSecrets(requireString(input.summary, "context item summary", { max: MAX_CONTEXT_SUMMARY_CHARS })),
     provenance: parseContextProvenance(input.provenance),
     authority: oneOf(input.authority, "context item authority", CONTEXT_AUTHORITIES),
     confidence: oneOf(input.confidence, "context item confidence", CONTEXT_CONFIDENCES),
   };
+  if (input.scope !== undefined && input.scope !== null) {
+    item.scope = oneOf(input.scope, "context item scope", CONTEXT_SCOPES);
+  }
   const observedAt = optionalIsoTimestamp(input.observedAt, "context item observedAt");
   const validFrom = optionalIsoTimestamp(input.validFrom, "context item validFrom");
   const validUntil = optionalIsoTimestamp(input.validUntil, "context item validUntil");
@@ -273,7 +281,7 @@ export function parseContextProvenance(value: unknown): ContextProvenance {
   const sourceRef = input.sourceRef === undefined || input.sourceRef === null
     ? undefined
     : requireString(input.sourceRef, "context provenance sourceRef", { max: 512 });
-  if (sourceRef !== undefined) provenance.sourceRef = sourceRef;
+  if (sourceRef !== undefined) provenance.sourceRef = redactSecrets(sourceRef);
   const derivedFrom = idRefs(input.derivedFrom, "context provenance derivedFrom");
   if (derivedFrom !== undefined) provenance.derivedFrom = derivedFrom;
   return provenance;
@@ -381,21 +389,6 @@ export function derivedAuthority(claimed: ContextAuthority, lineage: ContextItem
   const claimedRank = authorityRank(claimed);
   if (claimedRank > floor) return "evidence";
   return claimed;
-}
-
-/** Transitive derivation lineage: every ancestor ID reachable through
- * `derivedFrom` links, deduplicated and sorted. */
-export function lineageOf(item: ContextItem): string[] {
-  const ids = new Set<string>();
-  const walk = (candidate: ContextItem) => {
-    for (const ancestorId of candidate.provenance.derivedFrom ?? []) {
-      if (!ids.has(ancestorId)) {
-        ids.add(ancestorId);
-      }
-    }
-  };
-  walk(item);
-  return [...ids].sort();
 }
 
 /** Mint a new derived context item with provenance that cannot exceed its

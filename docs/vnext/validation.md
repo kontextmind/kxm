@@ -287,7 +287,7 @@ revision.
 
 ## Machine-verifiable fixture
 
-[`test/contracts-vnext.test.ts`](../../test/contracts-vnext.test.ts) parses the
+[`test/core/contracts-vnext.test.ts`](../../test/core/contracts-vnext.test.ts) parses the
 committed YAML example with the restricted parser profile and validates each
 resource plus representative event/result/delivery/candidate records against
 the committed JSON Schemas.

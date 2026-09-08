@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { ContextItem } from "./context.ts";
 import {
   VnextConfigError,
   loadVnextProject,
@@ -44,6 +46,16 @@ export interface VnextPolicyRevisions {
   toolPolicyRevision: string;
 }
 
+export interface VnextMemoryRevisionOptions {
+  promotedState?: readonly ContextItem[];
+  memoryDir?: string;
+  skillsDir?: string;
+}
+
+function compareCodeUnits(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 function sha256Of(input: string): string {
   return `sha256:${createHash("sha256").update(input, "utf8").digest("hex")}`;
 }
@@ -82,10 +94,78 @@ export function vnextToolPolicyRevision(bundle: VnextProjectBundle): string {
   return sha256Of(vnextCanonicalJson({ policies, gateRegistry: bundle.gateRegistry?.value ?? null }));
 }
 
-export function vnextPolicyRevisions(bundle: VnextProjectBundle): VnextPolicyRevisions {
+function collectMemoryFiles(dir: string, baseDir: string, ignoreSubdirs: Set<string> = new Set()): { relPath: string; fullPath: string }[] {
+  if (!existsSync(dir)) return [];
+  const entries = readdirSync(dir, { withFileTypes: true });
+  const results: { relPath: string; fullPath: string }[] = [];
+  for (const entry of entries) {
+    const fullPath = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (ignoreSubdirs.has(entry.name)) continue;
+      results.push(...collectMemoryFiles(fullPath, baseDir, ignoreSubdirs));
+    } else if (entry.isFile()) {
+      const relPath = fullPath.slice(baseDir.length + 1).replace(/\\/g, "/");
+      results.push({ relPath, fullPath });
+    }
+  }
+  return results;
+}
+
+/**
+ * Compute the memory revision pinned at run creation as the SHA-256 hash of the
+ * Git-authored set (.kxm/memory, excluding candidates; .kxm/skills/promoted) plus
+ * the promoted-state snapshot.
+ */
+export function computeVnextMemoryRevision(
+  bundle: VnextProjectBundle,
+  options: VnextMemoryRevisionOptions = {},
+): string {
+  const hash = createHash("sha256");
+
+  // 1. Git-authored memory files (.kxm/memory), excluding candidates
+  const memoryDir = options.memoryDir ?? join(bundle.projectRoot, ".kxm", "memory");
+  const memoryFiles = collectMemoryFiles(memoryDir, memoryDir, new Set(["candidates"]))
+    .sort((left, right) => compareCodeUnits(left.relPath, right.relPath));
+  for (const file of memoryFiles) {
+    hash.update(`memory:${file.relPath}\0`, "utf8");
+    hash.update(readFileSync(file.fullPath));
+    hash.update("\0", "utf8");
+  }
+
+  // 2. Promoted skills (.kxm/skills/promoted)
+  const skillsDir = options.skillsDir ?? join(bundle.projectRoot, ".kxm", "skills");
+  const promotedSkillsDir = join(skillsDir, "promoted");
+  const skillFiles = collectMemoryFiles(promotedSkillsDir, promotedSkillsDir)
+    .sort((left, right) => compareCodeUnits(left.relPath, right.relPath));
+  for (const file of skillFiles) {
+    hash.update(`skill:${file.relPath}\0`, "utf8");
+    hash.update(readFileSync(file.fullPath));
+    hash.update("\0", "utf8");
+  }
+
+  // 3. Promoted-state snapshot
+  if (options.promotedState && options.promotedState.length > 0) {
+    const currentItems = options.promotedState
+      .filter((item) => !item.status || item.status === "current")
+      .slice()
+      .sort((left, right) => compareCodeUnits(left.id, right.id));
+    for (const item of currentItems) {
+      hash.update(`state:${item.id}\0`, "utf8");
+      hash.update(vnextCanonicalJson(item as unknown as JsonValue), "utf8");
+      hash.update("\0", "utf8");
+    }
+  }
+
+  return `ctxrev_${hash.digest("hex")}`;
+}
+
+export function vnextPolicyRevisions(
+  bundle: VnextProjectBundle,
+  options?: VnextMemoryRevisionOptions,
+): VnextPolicyRevisions {
   return {
     configRevision: bundle.configRevision,
-    memoryRevision: VNEXT_ABSENT_MEMORY_REVISION,
+    memoryRevision: computeVnextMemoryRevision(bundle, options),
     executorPolicyRevision: vnextExecutorPolicyRevision(bundle),
     toolPolicyRevision: vnextToolPolicyRevision(bundle),
   };
@@ -250,12 +330,21 @@ export function vnextEventBase(context: VnextRuntimeContext, run: VnextRunRecord
   };
 }
 
+export interface VnextRunAcceptanceOptions {
+  now?: string;
+  monotonicNs?: string;
+  memoryRevision?: string;
+  promotedState?: readonly ContextItem[];
+  memoryDir?: string;
+  skillsDir?: string;
+}
+
 /** Accept a run idempotently: a repeated commandId returns the prior acceptance. */
 export function acceptVnextRun(
   context: VnextRuntimeContext,
   bundle: VnextProjectBundle,
   request: VnextRunAcceptanceRequest,
-  options: { now?: string; monotonicNs?: string } = {},
+  options: VnextRunAcceptanceOptions = {},
 ): VnextRunAcceptance {
   const commandId = request.commandId ?? newVnextCommandId();
   const now = options.now ?? new Date().toISOString();
@@ -265,7 +354,8 @@ export function acceptVnextRun(
   if (!workflow) {
     throw runtimeError("run_workflow_unknown", ".kxm/workflows", `workflow ${request.workflowId} does not exist in this project`);
   }
-  const revisions = vnextPolicyRevisions(bundle);
+  const revisions = vnextPolicyRevisions(bundle, options);
+  const memoryRevision = options.memoryRevision ?? revisions.memoryRevision;
   const promptSha256 = `sha256:${createHash("sha256").update(request.prompt, "utf8").digest("hex")}`;
 
   return context.eventStore.transaction(() => {
@@ -305,7 +395,7 @@ export function acceptVnextRun(
       recordedAt: now,
       monotonicNs,
       configRevision: revisions.configRevision,
-      memoryRevision: revisions.memoryRevision,
+      memoryRevision,
       executorPolicyRevision: revisions.executorPolicyRevision,
       toolPolicyRevision: revisions.toolPolicyRevision,
       payload,
@@ -318,7 +408,7 @@ export function acceptVnextRun(
       promptSha256,
       status: "created",
       configRevision: revisions.configRevision,
-      memoryRevision: revisions.memoryRevision,
+      memoryRevision,
       executorPolicyRevision: revisions.executorPolicyRevision,
       toolPolicyRevision: revisions.toolPolicyRevision,
       createdAt: now,

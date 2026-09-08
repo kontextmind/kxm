@@ -12,6 +12,7 @@ import {
   type ContextRequest,
 } from "./context.ts";
 import { ProtocolError } from "./protocol.ts";
+import type { SkillLifecycle } from "./skills.ts";
 import type { JournalCategory, WorkflowJournalEntry } from "./workflow.ts";
 
 /**
@@ -92,6 +93,8 @@ export interface ArbiterOptions {
   /** Pool item IDs that represent open contradictions; they are routed to the
    * packet's contradictions section instead of their kind's section. */
   contradictionIds?: string[];
+  /** Governed skill lifecycle to read and verify promoted skills by hash. */
+  skillLifecycle?: SkillLifecycle;
 }
 
 export interface ArbiterOutcome {
@@ -140,6 +143,29 @@ export function arbitrate(
       continue;
     }
     candidates.push(candidate);
+  }
+
+  if (options.skillLifecycle) {
+    for (const metadata of options.skillLifecycle.list("promoted")) {
+      try {
+        options.skillLifecycle.verify("promoted", metadata.id);
+        candidates.push(parseContextItem({
+          id: `skill_${metadata.id}`,
+          kind: "skill",
+          project: request.project,
+          summary: metadata.description ? `${metadata.name}: ${metadata.description}` : metadata.name,
+          provenance: {
+            sourceType: "git",
+            sourceRef: `skill:${metadata.id}@${metadata.contentSha256}`,
+          },
+          authority: "instruction",
+          confidence: "verified",
+          status: "current",
+        }));
+      } catch {
+        // Tampered or invalid promoted skill: omit by hash check
+      }
+    }
   }
 
   const kindRank = new Map<string, number>();
@@ -193,7 +219,7 @@ export function arbitrate(
     currentState: bySection("state").filter((item) => item.status === "current" || item.status === undefined),
     knowledge: bySection("knowledge"),
     episodes: bySection("episode"),
-    skills: bySection("skill"),
+    skills: bySection("skill").filter((item) => item.status !== "proposed"),
     contradictions: selected.filter((item) => contradictions.has(item.id)),
     unresolvedGaps,
     provenanceSummary: provenanceSummaryOf(selected),

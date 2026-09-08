@@ -47,6 +47,7 @@ import {
   vnextMonotonicNs,
   vnextPolicyRevisions,
   vnextProjectAdmissionLimits,
+  type VnextMemoryRevisionOptions,
   type VnextRuntimeContext,
 } from "./vnext-runtime.ts";
 import {
@@ -204,6 +205,7 @@ export function pinVnextCompiledPlan(
   context: VnextRuntimeContext,
   bundle: VnextProjectBundle,
   runId: string,
+  options?: VnextMemoryRevisionOptions,
 ): { plan: VnextCompiledPlan; runPlanHash: string; idempotent: boolean; event?: VnextRunEvent } {
   return context.eventStore.transaction(() => {
     const run = requireRun(context, runId);
@@ -215,7 +217,7 @@ export function pinVnextCompiledPlan(
     }
     const workflow = bundle.workflows.get(run.workflowId);
     if (!workflow) throw runtimeError("run_workflow_unknown", run.workflowId, `workflow ${run.workflowId} does not exist in this project`);
-    const revisions = vnextPolicyRevisions(bundle);
+    const revisions = vnextPolicyRevisions(bundle, options);
     if (
       revisions.configRevision !== run.configRevision
       || revisions.executorPolicyRevision !== run.executorPolicyRevision
