@@ -20,7 +20,7 @@ import { loadPriceCatalog, type PriceCatalog } from "./prices.ts";
 import { createSession, loadNamedWorkers, rosterNames, sessionAssetDirs, workflowAssetDirs, writeSession } from "./session.ts";
 import { buildImprovementReport, writeImprovementReport } from "./improve.ts";
 import { MESH_TUI_PANELS, runMeshTui, type MeshTuiPanel } from "./tui.ts";
-import { formatSessionBriefText, loadSessionBrief } from "./session-work.ts";
+import { formatSessionBriefText, loadSessionBrief, loadSessionBriefAsync, type SessionHubStatus } from "./session-work.ts";
 import {
   HUB_BINDING_SCHEMA,
   HubBindingError,
@@ -1617,37 +1617,47 @@ async function cmdSessionStatus(runtime: Runtime): Promise<number> {
   return 0;
 }
 
-async function cmdSessionBrief(runtime: Runtime, options: { status?: boolean } = {}): Promise<number> {
+async function cmdSessionBrief(runtime: Runtime, options: { status?: boolean; token?: boolean } = {}): Promise<number> {
+  const sessionToken = mintSessionToken({ preset: "operator" });
+  if (options.token) {
+    print(runtime.io, runtime.json, { ok: true, command: "session brief", sessionToken }, sessionToken);
+    return 0;
+  }
+
   const dataPath = resolve(runtime.dirs.workdir, runtime.env.KXM_DATA_PATH?.trim() || join(runtime.dirs.state, "kxm.db"));
   const env = {
     ...runtime.env,
     KXM_STATE_DIR: runtime.dirs.state,
     KXM_DATA_PATH: runtime.env.KXM_DATA_PATH?.trim() || dataPath,
   };
-  let hub: { online: boolean } | undefined;
-  if (runtime.env.KXM_SERVER_URL?.trim() || runtime.boundHubUrl) {
-    const health = await hubGet(`${runtime.serverUrl}/health`, runtime.fetchImpl);
-    hub = { online: health.ok };
+
+  let hub: SessionHubStatus | undefined;
+  const targetUrl = runtime.env.KXM_SERVER_URL?.trim() || runtime.boundHubUrl || readHubBinding(runtime.env)?.url;
+  if (targetUrl) {
+    const { health } = await probeHubHealth(targetUrl, runtime.fetchImpl, 300);
+    hub = {
+      state: health,
+      evidence: health === "unknown" ? "timeout" : "probed",
+      online: health === "on",
+      url: targetUrl,
+    };
+  } else {
+    hub = { state: "off", evidence: "unconfigured", online: false };
   }
-  const brief = loadSessionBrief(runtime.dirs.workdir, env, undefined, hub);
-  const sessionToken = mintSessionToken();
+
+  const brief = await loadSessionBriefAsync(runtime.dirs.workdir, env, undefined, hub, {
+    fetchImpl: runtime.fetchImpl,
+    sessionToken,
+  });
+
   if (options.status) {
-    print(runtime.io, runtime.json, { ok: true, command: "session brief", sessionToken, statusLine: brief.statusLine, stats: brief.stats, hub }, brief.statusLine);
+    print(runtime.io, runtime.json, brief, brief.statusLine);
     return 0;
   }
   print(
     runtime.io,
     runtime.json,
-    {
-      ok: true,
-      command: "session brief",
-      sessionToken,
-      statusLine: brief.statusLine,
-      stats: brief.stats,
-      tasks: brief.tasks,
-      plans: brief.plans,
-      ...(hub ? { hub } : {}),
-    },
+    brief,
     `${formatSessionBriefText(brief)}\n\nSession token: ${sessionToken}\n`,
   );
   return 0;
@@ -2632,7 +2642,8 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
   addGlobalOptions(session.command("status").description("Show session claims and recovery envelopes")).action(bind(cmdSessionStatus));
   addGlobalOptions(session.command("brief").description("Show recent hub tasks and plans for a new session (read-only)"))
     .option("--status", "Print only the status line")
-    .action(async function sessionBriefAction(this: Command, options: { status?: boolean }) {
+    .option("--token", "Issue interactive session token with operator policy")
+    .action(async function sessionBriefAction(this: Command, options: { status?: boolean; token?: boolean }) {
       result.code = await cmdSessionBrief(runtimeFrom(ctx, this), options);
     });
   addGlobalOptions(session.command("start").description("Create an agent/gate or workflow session manifest (does not launch processes)"))

@@ -199,7 +199,7 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
     model: { provider: "test", id: "model" },
     ui,
   });
-  assert.ok(statuses.includes("hub:pi-under-test"));
+  assert.ok(statuses.some((s) => s.startsWith("kxm hub:on")));
   await waitFor(async () => (await peer.listAgents()).some((agent) => agent.name === "pi-under-test"));
 
   const listed = await fake.tools.get("kxm_list")!.execute("call-list", {});

@@ -940,13 +940,30 @@ test("init and validate work in an isolated workspace", async () => {
     const briefIo = capture();
     assert.equal(await runCli(["session", "--json", "--workspace", isolated, "brief"], {}, briefIo, cwd), 0);
     const briefOut = briefIo.read().stdout;
-    assert.match(briefOut, /"command":"session brief"/);
+    assert.match(briefOut, /"schema":"kxm\.session-brief\.v1"/);
     assert.match(briefOut, /run_brief1/);
     assert.match(briefOut, /Hub local session brief/);
     assert.doesNotMatch(briefOut, /SECRET BODY MUST NOT LOAD/);
+
     const briefStatus = capture();
     assert.equal(await runCli(["session", "--json", "--workspace", isolated, "brief", "--status"], {}, briefStatus, cwd), 0);
     assert.match(briefStatus.read().stdout, /statusLine/);
+
+    const briefTextStatus = capture();
+    assert.equal(await runCli(["session", "--workspace", isolated, "brief", "--status"], {}, briefTextStatus, cwd), 0);
+    const statusText = briefTextStatus.read().stdout.trim();
+    assert.match(statusText, /^kxm hub:off/);
+    assert.ok(statusText.length <= 80);
+
+    const tokenIo = capture();
+    assert.equal(await runCli(["session", "--workspace", isolated, "brief", "--token"], {}, tokenIo, cwd), 0);
+    const tokenRaw = tokenIo.read().stdout.trim();
+    const tokenPayload = JSON.parse(Buffer.from(tokenRaw, "base64url").toString("utf8")) as {
+      schema: string;
+      toolPolicy?: { preset?: string };
+    };
+    assert.equal(tokenPayload.schema, "kxm.session-token.v1");
+    assert.equal(tokenPayload.toolPolicy?.preset, "operator");
 
     const sessionIo = capture();
     assert.equal(await runCli([
