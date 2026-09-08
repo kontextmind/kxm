@@ -1218,6 +1218,7 @@ function birthMember(
       allowedOutcomes: input.step.outcomes,
       signal: controller.signal,
       prompt: input.step.instructions ? `${input.step.instructions}\n\n${generatedPrompt}` : generatedPrompt,
+      thinking: input.stepAttempt <= 1 ? "low" : "medium",
       contextPacket,
     },
     controller,
@@ -1636,6 +1637,7 @@ function settleMember(
     };
 
     if (result.thinking !== undefined) routingRecord.thinking = result.thinking;
+    else if (dispatch.request.thinking !== undefined) routingRecord.thinking = dispatch.request.thinking;
     if (result.agentRole !== undefined) routingRecord.agentRole = result.agentRole;
     if (result.contextTokens !== undefined) routingRecord.contextTokens = result.contextTokens;
     if (result.tokensIn !== undefined) routingRecord.tokensIn = result.tokensIn;

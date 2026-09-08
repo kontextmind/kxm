@@ -435,6 +435,63 @@ function computePercentile(sorted, p) {
   }
   return sorted[base];
 }
+function computeDecayedWeight(recordedAt, halfLifeDays = 14, now = Date.now()) {
+  const ts = typeof recordedAt === "number" ? recordedAt : Date.parse(recordedAt);
+  if (!Number.isFinite(ts)) return 1;
+  const deltaMs = Math.max(0, now - ts);
+  const halfLifeMs = halfLifeDays * 24 * 60 * 60 * 1e3;
+  return Math.pow(2, -deltaMs / halfLifeMs);
+}
+function evaluateCircuitBreaker(records, route, config, now = Date.now()) {
+  const mode = config?.mode ?? "soft_demotion";
+  const failureThreshold = config?.failureThreshold ?? 3;
+  const windowSeconds = config?.windowSeconds ?? 3600;
+  const penaltyMultiplier = config?.penaltyMultiplier ?? 5;
+  const windowMs = windowSeconds * 1e3;
+  const matching = records.filter((r) => {
+    const isV2 = r.schema === ROUTING_RECORD_V2_SCHEMA;
+    const harness = isV2 ? r.harness : r.providerMetadata?.harness;
+    const model = isV2 ? r.effectiveModel || r.requestedModel : r.effectiveModel || r.requestedModel;
+    if (harness !== route.harness || model !== route.model) return false;
+    const recAt = r.recordedAt;
+    const ts = typeof recAt === "string" ? Date.parse(recAt) : 0;
+    return ts >= now - windowMs;
+  });
+  matching.sort((a, b) => {
+    const ta = typeof a.recordedAt === "string" ? Date.parse(a.recordedAt) : 0;
+    const tb = typeof b.recordedAt === "string" ? Date.parse(b.recordedAt) : 0;
+    return tb - ta;
+  });
+  let consecutiveFailures = 0;
+  for (const r of matching) {
+    const passed = r.verifierOutcome === "passed" || r.finalOutcome === "accepted" || r.finalOutcome === "completed";
+    if (passed && (r.retries ?? 0) === 0) {
+      break;
+    }
+    consecutiveFailures++;
+  }
+  if (consecutiveFailures >= failureThreshold) {
+    if (mode === "quarantine") {
+      return {
+        status: "quarantined",
+        consecutiveFailures,
+        penaltyMultiplier,
+        reason: `Route quarantined after ${consecutiveFailures} consecutive failures within ${windowSeconds}s`
+      };
+    }
+    return {
+      status: "demoted",
+      consecutiveFailures,
+      penaltyMultiplier,
+      reason: `Route demoted with ${penaltyMultiplier}x penalty after ${consecutiveFailures} consecutive failures`
+    };
+  }
+  return {
+    status: "healthy",
+    consecutiveFailures,
+    penaltyMultiplier: 1
+  };
+}
 function generateRoutingReport(records, options = {}) {
   const generatedAt = options.now ? options.now() : (/* @__PURE__ */ new Date()).toISOString();
   if (records.length === 0) {
@@ -1909,8 +1966,10 @@ export {
   behavioralConfigHash,
   clearSessionTokenFromDisk,
   compareRoutingRecords,
+  computeDecayedWeight,
   createLogger,
   enforceToolPolicy,
+  evaluateCircuitBreaker,
   formatRoutingReport,
   gateWorker,
   generateRoutingReport,

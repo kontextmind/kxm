@@ -47,7 +47,7 @@ const SUBCOMMANDS: Record<string, string[]> = {
   context: ["get", "recall", "state", "episode", "promote", "explain", "wiki-compile", "wiki-lint"],
   skills: ["create", "evaluate", "promote", "reject", "list", "verify"],
   memory: ["brief", "note", "sync"],
-  routing: ["report"],
+  routing: ["report", "benchmark"],
   hub: ["view", "start", "stop", "bind", "unbind"],
   config: ["get", "set", "list"],
   goal: ["create", "list", "get"],

@@ -12,6 +12,7 @@ import {
   formatImprovementReport,
   groupRoutingRecords,
   writeImprovementReport,
+  evaluatePromotionPolicy,
   CANDIDATE_SCHEMA,
   type ImprovementCandidate,
 } from "../../plugins/kxm/src/improve.ts";
@@ -20,7 +21,15 @@ import {
   parseSkillFrontmatter,
   SkillLifecycle,
 } from "../../plugins/kxm/src/skills.ts";
-import type { RoutingRecordV2 } from "../../plugins/kxm/src/routing.ts";
+import {
+  computeDecayedWeight,
+  evaluateCircuitBreaker,
+  type RoutingRecordV2,
+} from "../../plugins/kxm/src/routing.ts";
+import {
+  exportFederatedTelemetry,
+  readFederatedTelemetry,
+} from "../../plugins/kxm/src/telemetry.ts";
 import type { CliIo } from "../../plugins/kxm/src/cli.ts";
 import { loadVnextProject } from "../../plugins/kxm/src/vnext-config.ts";
 import {
@@ -410,3 +419,220 @@ gates:
     rmSync(stateRoot, { recursive: true, force: true });
   }
 });
+
+test("computeDecayedWeight applies 14-day half-life exponential decay (Decision Q14)", () => {
+  const now = Date.now();
+  const dayMs = 24 * 60 * 60 * 1000;
+
+  // At 0 days elapsed, weight is 1.0
+  const w0 = computeDecayedWeight(now, 14, now);
+  assert.equal(w0, 1.0);
+
+  // At 14 days elapsed, weight is 0.5
+  const w14 = computeDecayedWeight(now - 14 * dayMs, 14, now);
+  assert.equal(Math.round(w14 * 1000) / 1000, 0.5);
+
+  // At 28 days elapsed, weight is 0.25
+  const w28 = computeDecayedWeight(now - 28 * dayMs, 14, now);
+  assert.equal(Math.round(w28 * 1000) / 1000, 0.25);
+});
+
+test("evaluateCircuitBreaker soft-demotes or quarantines degraded routes (Decision Q13)", () => {
+  const now = Date.now();
+  const failingRecords: RoutingRecordV2[] = [
+    sampleRoutingRecord({
+      harness: "pi",
+      effectiveModel: "flaky-model",
+      verifierOutcome: "failed",
+      finalOutcome: "failed",
+      retries: 1,
+      recordedAt: new Date(now - 60_000).toISOString(),
+    }),
+    sampleRoutingRecord({
+      harness: "pi",
+      effectiveModel: "flaky-model",
+      verifierOutcome: "failed",
+      finalOutcome: "failed",
+      retries: 1,
+      recordedAt: new Date(now - 120_000).toISOString(),
+    }),
+    sampleRoutingRecord({
+      harness: "pi",
+      effectiveModel: "flaky-model",
+      verifierOutcome: "failed",
+      finalOutcome: "failed",
+      retries: 1,
+      recordedAt: new Date(now - 180_000).toISOString(),
+    }),
+  ];
+
+  // Soft demotion mode (default)
+  const softStatus = evaluateCircuitBreaker(
+    failingRecords,
+    { harness: "pi", model: "flaky-model" },
+    { mode: "soft_demotion", failureThreshold: 3, windowSeconds: 3600, penaltyMultiplier: 5.0 },
+    now,
+  );
+  assert.equal(softStatus.status, "demoted");
+  assert.equal(softStatus.penaltyMultiplier, 5.0);
+  assert.equal(softStatus.consecutiveFailures, 3);
+
+  // Quarantine mode
+  const quarantineStatus = evaluateCircuitBreaker(
+    failingRecords,
+    { harness: "pi", model: "flaky-model" },
+    { mode: "quarantine", failureThreshold: 3, windowSeconds: 3600 },
+    now,
+  );
+  assert.equal(quarantineStatus.status, "quarantined");
+
+  // Healthy route with passing record
+  const passingRecords = [
+    sampleRoutingRecord({
+      harness: "grok",
+      effectiveModel: "grok-4.6",
+      verifierOutcome: "passed",
+      finalOutcome: "accepted",
+      retries: 0,
+      recordedAt: new Date(now - 60_000).toISOString(),
+    }),
+  ];
+  const healthyStatus = evaluateCircuitBreaker(
+    passingRecords,
+    { harness: "grok", model: "grok-4.6" },
+    {},
+    now,
+  );
+  assert.equal(healthyStatus.status, "healthy");
+  assert.equal(healthyStatus.penaltyMultiplier, 1.0);
+});
+
+test("exportFederatedTelemetry and readFederatedTelemetry isolate code and prompts (Decision Q15)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "kxm-federated-telemetry-"));
+  try {
+    const records = [
+      sampleRoutingRecord({
+        harness: "grok",
+        effectiveModel: "grok-4.6",
+        latencyMs: 350,
+        tokensIn: 800,
+        tokensOut: 200,
+        costUsd: 0.17,
+        verifierOutcome: "passed",
+      }),
+      sampleRoutingRecord({
+        harness: "claude",
+        effectiveModel: "fable",
+        latencyMs: 500,
+        tokensIn: 1500,
+        tokensOut: 400,
+        costUsd: 0.45,
+        verifierOutcome: "passed",
+      }),
+    ];
+
+    const exported = exportFederatedTelemetry(records, tempDir);
+    assert.equal(exported, 2);
+
+    const readBack = readFederatedTelemetry(tempDir);
+    assert.equal(readBack.length, 2);
+    assert.equal(readBack[0]?.model, "grok-4.6");
+    assert.equal(readBack[0]?.latencyMs, 350);
+    assert.equal(readBack[0]?.costUsd, 0.17);
+
+    // Ensure raw prompts, runIds, and project names are NOT in federated export
+    const rawFile = readFileSync(join(tempDir, "telemetry", "model-metrics.jsonl"), "utf8");
+    assert.doesNotMatch(rawFile, /prompt_hash|wf_hash_sample|run_sample_1/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("evaluatePromotionPolicy enforces governed promotion policies (Decision Q11)", () => {
+  const candidate: ImprovementCandidate = {
+    schema: CANDIDATE_SCHEMA,
+    id: "cand_gate_test_01",
+    kind: "gate",
+    summary: "Promote test gate",
+    evidenceRefs: ["ref_1"],
+    baselineMetrics: {
+      recurrence: 12,
+      meanCost: 0.05,
+      meanLatency: 400,
+      verifyPassRate: 0.98,
+      rework: 0,
+    },
+    declaredOutcome: "Deterministic verification",
+    measure: "100% cost reduction",
+    proposedDiffPath: ".kxm/gates.yaml",
+    status: "proposed",
+    createdAt: new Date().toISOString(),
+  };
+
+  // manual_pr requires PR signoff
+  const manualDec = evaluatePromotionPolicy(candidate, "manual_pr");
+  assert.equal(manualDec.eligible, true);
+  assert.equal(manualDec.authorized, false);
+  assert.match(manualDec.reason, /Manual PR review/);
+
+  // critic_quorum requires 2 critic approvals
+  const unapprovedQuorum = evaluatePromotionPolicy(candidate, "critic_quorum", { criticApprovals: ["fable"] });
+  assert.equal(unapprovedQuorum.authorized, false);
+
+  const approvedQuorum = evaluatePromotionPolicy(candidate, "critic_quorum", { criticApprovals: ["fable", "astra"] });
+  assert.equal(approvedQuorum.authorized, true);
+
+  // auto_threshold requires recurrence >= 10 and passRate >= 0.95
+  const autoApproved = evaluatePromotionPolicy(candidate, "auto_threshold", {
+    autoThreshold: { minRuns: 10, minPassRate: 0.95 },
+  });
+  assert.equal(autoApproved.authorized, true);
+
+  const autoFailing = evaluatePromotionPolicy(
+    {
+      ...candidate,
+      baselineMetrics: { ...candidate.baselineMetrics, verifyPassRate: 0.80 },
+    },
+    "auto_threshold",
+    { autoThreshold: { minRuns: 10, minPassRate: 0.95 } },
+  );
+  assert.equal(autoFailing.authorized, false);
+});
+
+test("kxm routing benchmark command executes side-by-side comparison (Decision Q12)", async () => {
+  const { runCli: runCliImpl } = await import("../../plugins/kxm/src/cli.ts");
+  const capture = () => {
+    let stdout = "";
+    let stderr = "";
+    return {
+      stdout: (text: string) => { stdout += text; },
+      stderr: (text: string) => { stderr += text; },
+      read: () => ({ stdout, stderr }),
+    };
+  };
+
+  const io = capture();
+  const code = await runCliImpl(
+    ["--json", "routing", "benchmark", "--arms", "grok/grok-4.6,claude/fable", "--runs", "1"],
+    {},
+    io,
+  );
+  assert.equal(code, 0);
+  const json = JSON.parse(io.read().stdout);
+  assert.equal(json.ok, true);
+  assert.equal(json.command, "routing benchmark");
+  assert.equal(json.arms.length, 2);
+  assert.equal(json.arms[0].model, "grok-4.6");
+  assert.equal(json.arms[1].model, "fable");
+
+  const tableIo = capture();
+  const tableCode = await runCliImpl(
+    ["routing", "benchmark", "--arms", "grok/grok-4.6,claude/fable"],
+    {},
+    tableIo,
+  );
+  assert.equal(tableCode, 0);
+  assert.match(tableIo.read().stdout, /Routing Benchmark Results/);
+  assert.match(tableIo.read().stdout, /grok-4\.6/);
+});
+
