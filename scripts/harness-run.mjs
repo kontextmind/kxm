@@ -316,7 +316,7 @@ export function resolveLaunch(cliId, options = {}) {
         const nodeExe = options.execPath ?? process.execPath;
         if (exists(script) && exists(nodeExe)) {
           return {
-            command: canonicalize(nodeExe, { ...options, platform: process.platform }),
+            command: canonicalize(nodeExe, { ...options, platform }),
             args: [canonicalize(script, { ...options, platform })],
           };
         }
