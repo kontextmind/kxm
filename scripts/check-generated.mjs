@@ -18,6 +18,8 @@ export const GENERATED_ARTIFACTS = [
   ".agents/skills/kxm/references/protocol.md",
   ".agents/skills/kxm-session/SKILL.md",
   "AGENTS.md",
+  "CLAUDE.md",
+  "GEMINI.md",
 ];
 
 function runGit(repository, args, allowFailure = false) {

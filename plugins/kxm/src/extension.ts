@@ -1,4 +1,5 @@
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { AGENT_COMMANDS, enforceToolPolicy } from "./commands.ts";
@@ -866,7 +867,22 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
         return;
       }
       if (command === "help") {
-        ctx.ui.notify("kxm: /kxm | /kxm status | /kxm hub | /kxm help. CLI: kxm session brief, kxm hub view", "info");
+        ctx.ui.notify("kxm: /kxm | /kxm status | /kxm hub | /kxm memory | /kxm help. CLI: kxm session brief, kxm hub view, kxm memory brief", "info");
+        return;
+      }
+      if (command === "memory") {
+        const cwd = typeof ctx.cwd === "string" ? ctx.cwd : process.cwd();
+        const kxmBin = process.env.KXM_BIN || "kxm";
+        const res = spawnSync(kxmBin, ["memory", "brief"], { cwd, encoding: "utf8", windowsHide: true });
+        let memText = res.status === 0 && res.stdout ? res.stdout.trim() : "";
+        if (!memText) {
+          const script = join(cwd, "scripts", "kxm.mjs");
+          if (existsSync(script)) {
+            const scriptRes = spawnSync(process.execPath, [script, "memory", "brief"], { cwd, encoding: "utf8", windowsHide: true });
+            if (scriptRes.status === 0 && scriptRes.stdout) memText = scriptRes.stdout.trim();
+          }
+        }
+        ctx.ui.notify(memText || "No active project memory facts.", "info");
         return;
       }
       await applySessionChrome(ctx, { reason: "new" }, command === "brief");

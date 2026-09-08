@@ -50,3 +50,6 @@ writeFileSync(runtimeLibrary, `${createRequire}${runtimeLibraryText}`);
 
 const { emitCodexArtifacts } = await import("./emit-codex-artifacts.mjs");
 emitCodexArtifacts();
+
+const { syncHarnessMemory } = await import("../plugins/kxm/src/memory.ts");
+syncHarnessMemory(process.cwd());

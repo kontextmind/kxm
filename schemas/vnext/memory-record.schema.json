@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.kxm.dev/vnext/memory-record.schema.json",
+  "title": "KXM harness-agnostic memory record",
+  "type": "object",
+  "required": [
+    "schema",
+    "id",
+    "scope",
+    "kind",
+    "summary",
+    "provenance",
+    "authority",
+    "confidence",
+    "lifecycle",
+    "evidenceRefs"
+  ],
+  "properties": {
+    "schema": { "const": "kxm.memory.v1" },
+    "id": { "$ref": "common.schema.json#/$defs/identifier" },
+    "scope": { "enum": ["agent", "project", "run", "operator"] },
+    "kind": { "$ref": "common.schema.json#/$defs/identifier" },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "provenance": {
+      "type": "object",
+      "required": ["sourceType"],
+      "properties": {
+        "sourceType": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "sourceRef": { "type": "string", "maxLength": 256 },
+        "runId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+        "timestamp": { "$ref": "common.schema.json#/$defs/timestamp" }
+      },
+      "additionalProperties": false
+    },
+    "authority": { "enum": ["instruction", "evidence", "promoted"] },
+    "confidence": { "enum": ["verified", "probable", "uncertain"] },
+    "lifecycle": { "enum": ["active", "deprecated", "superseded"] },
+    "evidenceRefs": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/evidenceRef" },
+      "maxItems": 64
+    }
+  },
+  "additionalProperties": false
+}

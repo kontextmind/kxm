@@ -6,6 +6,13 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Added
 
+- **Harness-agnostic Git memory (E5b, issue #101):** Project memory authored in
+  `.kxm/memory/` using schema `kxm.memory.v1` with YAML frontmatter. Memory notes
+  recorded to `.kxm/memory/candidates/` with evidence authority, promoted exclusively
+  via PR/commit. Projections regenerated across `AGENTS.md`, `CLAUDE.md`, and
+  `GEMINI.md` via `kxm memory sync` with drift checks enforced in CI. Unified memory
+  brief available via `kxm memory brief [--json]`, Claude Code `SessionStart` hook,
+  and Pi `/kxm memory` slash command.
 - **E5 memory floor and test tiering (issue #100):** Enforced memory security rules
   (Rule 1 admin-authenticated state promotion without loopback bypass; Rule 2
   exclusion of proposed candidates from currentState and content-hashed promoted
