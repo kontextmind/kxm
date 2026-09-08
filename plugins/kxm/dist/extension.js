@@ -1,6 +1,6 @@
 // plugins/kxm/src/extension.ts
-import { mkdirSync as mkdirSync2, readFileSync as readFileSync4, renameSync as renameSync2, rmSync as rmSync2, writeFileSync as writeFileSync2 } from "node:fs";
-import { basename, dirname, join as join4 } from "node:path";
+import { mkdirSync as mkdirSync5, readFileSync as readFileSync7, renameSync as renameSync4, rmSync as rmSync3, writeFileSync as writeFileSync4 } from "node:fs";
+import { basename, dirname as dirname2, join as join6 } from "node:path";
 
 // plugins/kxm/src/client.ts
 import { createHash } from "node:crypto";
@@ -272,7 +272,7 @@ var HubClient = class {
       if (signal?.aborted) throw new MeshWaitError("aborted", messageId);
       const message = await this.getMessage(messageId);
       if (["replied", "cancelled", "expired", "error"].includes(message.status)) return message;
-      await new Promise((resolve2, reject) => {
+      await new Promise((resolve3, reject) => {
         const onAbort = () => {
           signal?.removeEventListener("abort", onAbort);
           clearTimeout(timer);
@@ -280,7 +280,7 @@ var HubClient = class {
         };
         const timer = setTimeout(() => {
           signal?.removeEventListener("abort", onAbort);
-          resolve2();
+          resolve3();
         }, Math.min(500, Math.max(1, deadline - Date.now())));
         signal?.addEventListener("abort", onAbort, { once: true });
         if (signal?.aborted) onAbort();
@@ -335,7 +335,7 @@ var HubClient = class {
       } catch (error) {
         if (this.stopped || error instanceof Error && error.name === "AbortError") return;
       }
-      if (!this.stopped) await new Promise((resolve2) => setTimeout(resolve2, this.options.reconnectMs));
+      if (!this.stopped) await new Promise((resolve3) => setTimeout(resolve3, this.options.reconnectMs));
     }
   }
   headers(includeIdentity = true) {
@@ -2219,6 +2219,9 @@ async function consumeWorkerRecoveryEnvelope(client, stateDir, agentName, projec
 
 // plugins/kxm/src/session-work.ts
 import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { existsSync as existsSync4, mkdirSync as mkdirSync4, readFileSync as readFileSync6, renameSync as renameSync3, writeFileSync as writeFileSync3 } from "node:fs";
+import { join as join5 } from "node:path";
 
 // plugins/kxm/src/local-snapshot.ts
 import { existsSync, readdirSync, readFileSync as readFileSync2 } from "node:fs";
@@ -2413,13 +2416,152 @@ function readUpdateCache(stateDir, now = Date.now()) {
   }
 }
 
+// plugins/kxm/src/hub-binding.ts
+import { existsSync as existsSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync4, renameSync as renameSync2, rmSync as rmSync2, writeFileSync as writeFileSync2 } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, isAbsolute, join as join4, resolve as resolve2 } from "node:path";
+var HUB_BINDING_SCHEMA = "kxm.hub-binding.v1";
+var HUB_HEALTH_PROBE_MS = 300;
+var HubBindingError = class extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "HubBindingError";
+  }
+};
+function resolveUserStateRoot(env) {
+  const explicit = env.KXM_STATE_HOME?.trim();
+  if (explicit) {
+    if (!isAbsolute(explicit)) throw new HubBindingError("local_state_root_not_absolute");
+    return resolve2(explicit);
+  }
+  if (process.platform === "win32") {
+    const localAppData = env.LOCALAPPDATA?.trim();
+    const base2 = localAppData && isAbsolute(localAppData) ? localAppData : join4(homedir(), "AppData", "Local");
+    return resolve2(base2, "KXM");
+  }
+  if (process.platform === "darwin") return resolve2(homedir(), "Library", "Application Support", "KXM");
+  const xdgState = env.XDG_STATE_HOME?.trim();
+  const base = xdgState && isAbsolute(xdgState) ? xdgState : join4(homedir(), ".local", "state");
+  return resolve2(base, "kxm");
+}
+function hubBindingFile(env = process.env) {
+  return join4(resolveUserStateRoot(env), "hub-binding.json");
+}
+function validateHubUrl(raw) {
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new HubBindingError("hub_url_invalid");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:" || parsed.username !== "" || parsed.password !== "" || parsed.search !== "" || parsed.hash !== "" || raw.includes("?") || raw.includes("#")) {
+    throw new HubBindingError("hub_url_invalid");
+  }
+  return parsed.href.replace(/\/$/, "");
+}
+function isIsoTimestamp(value) {
+  if (Number.isNaN(Date.parse(value))) return false;
+  return value === new Date(value).toISOString();
+}
+function isAbortError2(error) {
+  return Boolean(
+    error && typeof error === "object" && ("name" in error && error.name === "AbortError" || "code" in error && error.code === "ABORT_ERR")
+  );
+}
+function readHubBinding(env = process.env) {
+  const file = hubBindingFile(env);
+  if (!existsSync3(file)) return void 0;
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync4(file, "utf8"));
+  } catch {
+    throw new HubBindingError(`malformed hub binding at ${file}`);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new HubBindingError(`malformed hub binding at ${file}`);
+  }
+  const row = parsed;
+  const keys = Object.keys(row);
+  if (keys.length !== 3 || row.schema !== HUB_BINDING_SCHEMA || typeof row.url !== "string" || typeof row.boundAt !== "string" || !isIsoTimestamp(row.boundAt)) {
+    throw new HubBindingError(`malformed hub binding at ${file}`);
+  }
+  let url;
+  try {
+    url = validateHubUrl(row.url);
+  } catch {
+    throw new HubBindingError(`malformed hub binding at ${file}`);
+  }
+  return { schema: HUB_BINDING_SCHEMA, url, boundAt: row.boundAt };
+}
+async function probeHubHealth(url, fetchImpl, timeoutMs = HUB_HEALTH_PROBE_MS) {
+  const started = Date.now();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetchImpl(`${url}/health`, { signal: controller.signal });
+    if (!response.ok) return { health: "unknown", probeMs: Date.now() - started };
+    let body;
+    try {
+      body = await response.json();
+    } catch {
+      return { health: "unknown", probeMs: Date.now() - started };
+    }
+    if (body && typeof body === "object" && body.ok === true) {
+      return { health: "on", probeMs: Date.now() - started };
+    }
+    return { health: "unknown", probeMs: Date.now() - started };
+  } catch (error) {
+    return { health: isAbortError2(error) ? "unknown" : "off", probeMs: Date.now() - started };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// plugins/kxm/src/telemetry.ts
+import { appendFileSync, mkdirSync as mkdirSync3, readFileSync as readFileSync5 } from "node:fs";
+function readRoutingRecords(path) {
+  const records = [];
+  try {
+    const raw = readFileSync5(path, "utf8");
+    for (const line of raw.split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      try {
+        const parsed = JSON.parse(line);
+        let routingObj;
+        const recordedAt = typeof parsed.recordedAt === "string" ? parsed.recordedAt : typeof parsed.timestamp === "string" ? parsed.timestamp : (/* @__PURE__ */ new Date()).toISOString();
+        if (parsed.schema === "kxm.routing-record.v2" || parsed.schema === "kxm.routing-record.v1") {
+          routingObj = parsed;
+        } else if (parsed.routing && typeof parsed.routing === "object") {
+          routingObj = parsed.routing;
+        } else if (parsed.envelope && typeof parsed.envelope === "object" && parsed.envelope.routing) {
+          routingObj = parsed.envelope.routing;
+        } else if (parsed.eventType === "routing.attempt.recorded" && parsed.payload && typeof parsed.payload === "object") {
+          routingObj = parsed.payload.routing;
+        }
+        if (routingObj && typeof routingObj === "object") {
+          const r = routingObj;
+          if (r.schema === "kxm.routing-record.v2" || r.schema === "kxm.routing-record.v1") {
+            records.push({ recordedAt, routing: r });
+          }
+        }
+      } catch {
+      }
+    }
+  } catch {
+  }
+  return records;
+}
+
 // plugins/kxm/src/session-work.ts
 var SESSION_BRIEF_SKIP_LABEL = "Skip \u2014 start a fresh session";
 var MAX_SESSION_BRIEF_TASKS = 5;
 var MAX_SESSION_BRIEF_PLANS = 5;
+var SESSION_BRIEF_SCHEMA = "kxm.session-brief.v1";
+var DEFAULT_SESSION_BRIEF_STALE_SECONDS = 5;
 function hubPrefix(hub) {
-  if (hub?.online === true) return "kxm hub:on";
-  if (hub?.online === false) return "kxm hub:off";
+  if (hub?.state === "on" || hub?.state === void 0 && hub?.online === true) return "kxm hub:on";
+  if (hub?.state === "off" || hub?.state === void 0 && hub?.online === false) return "kxm hub:off";
+  if (hub?.state === "unknown") return "kxm hub:unknown";
   return "kxm";
 }
 function truncate(value, width) {
@@ -2464,21 +2606,42 @@ function readGitShip(cwd) {
   try {
     const dirty = spawnSync("git", ["-C", cwd, "status", "--porcelain"], { encoding: "utf8", windowsHide: true });
     if (dirty.status !== 0) return void 0;
-    const ahead = spawnSync("git", ["-C", cwd, "rev-list", "--count", "@{u}..HEAD"], { encoding: "utf8", windowsHide: true });
+    const isDirty = dirty.stdout.trim().length > 0;
+    const upstream = spawnSync("git", ["-C", cwd, "rev-list", "--count", "@{u}..HEAD"], { encoding: "utf8", windowsHide: true });
+    if (upstream.status === 0) {
+      return {
+        dirty: isDirty,
+        ahead: Number.parseInt(upstream.stdout.trim(), 10) || 0
+      };
+    }
+    for (const baseRef of ["origin/HEAD", "main", "origin/main", "master", "origin/master"]) {
+      const mb = spawnSync("git", ["-C", cwd, "merge-base", baseRef, "HEAD"], { encoding: "utf8", windowsHide: true });
+      if (mb.status === 0 && mb.stdout.trim()) {
+        const count = spawnSync("git", ["-C", cwd, "rev-list", "--count", `${mb.stdout.trim()}..HEAD`], { encoding: "utf8", windowsHide: true });
+        if (count.status === 0) {
+          return {
+            dirty: isDirty,
+            ahead: Number.parseInt(count.stdout.trim(), 10) || 0
+          };
+        }
+      }
+    }
     return {
-      dirty: dirty.stdout.trim().length > 0,
-      ahead: ahead.status === 0 ? Number.parseInt(ahead.stdout.trim(), 10) || 0 : 0
+      dirty: isDirty,
+      ahead: 0
     };
   } catch {
     return void 0;
   }
 }
-function formatSessionStatusLine(stats, current, hub, ship, updateLatest) {
+function formatSessionStatusLine(stats, current, hub, ship, updateLatest, cost) {
   const head = hubPrefix(hub);
   if (!current && stats.activeTasks === 0 && stats.planCount === 0 && stats.inbox === 0) {
-    const idle = hub?.online === void 0 ? "kxm idle" : `${head} \xB7 idle`;
-    const withShip = ship?.dirty ? `${idle} \xB7 dirty` : idle;
-    return updateLatest ? `${withShip} \xB7 upd ${updateLatest}` : withShip;
+    const idle = hub?.online === void 0 && hub?.state === void 0 ? "kxm idle" : `${head} \xB7 idle`;
+    const withShip = ship?.dirty ? `${idle} \xB7 dirty` : ship && ship.ahead > 0 ? `${idle} \xB7 ${ship.ahead} local` : idle;
+    const withCost = cost ? `${withShip} \xB7 ${cost}` : withShip;
+    const finalLine = updateLatest ? `${withCost} \xB7 upd ${updateLatest}` : withCost;
+    return finalLine.length <= 80 ? finalLine : `${finalLine.slice(0, 79)}\u2026`;
   }
   const parts = [];
   if (current?.kind === "task") parts.push(`${head} ${current.detail}`);
@@ -2490,12 +2653,13 @@ function formatSessionStatusLine(stats, current, hub, ship, updateLatest) {
   if (stats.inbox > 0) parts.push(`inbox ${stats.inbox}`);
   if (ship?.dirty) parts.push("dirty");
   else if (ship && ship.ahead > 0) parts.push(`${ship.ahead} local`);
+  if (cost) parts.push(cost);
   if (updateLatest) parts.push(`upd ${updateLatest}`);
   const line = parts.join(" \xB7 ");
   return line.length <= 80 ? line : `${line.slice(0, 79)}\u2026`;
 }
-function formatSessionWidget(stats, current, hub, ship, updateLatest) {
-  const hubMark = hub?.online === true ? "hub:on  " : hub?.online === false ? "hub:off  " : "";
+function formatSessionWidget(stats, current, hub, ship, updateLatest, cost) {
+  const hubMark = hub?.state === "on" || hub?.online === true ? "hub:on  " : hub?.state === "off" || hub?.online === false ? "hub:off  " : hub?.state === "unknown" ? "hub:unknown  " : "";
   const lines = [
     `KXM  ${hubMark}${stats.activeTasks} tasks  ${stats.waitingTasks} waiting  ${stats.planCount} plans  inbox ${stats.inbox}`
   ];
@@ -2503,10 +2667,11 @@ function formatSessionWidget(stats, current, hub, ship, updateLatest) {
   else if (stats.latestPlan) lines.push(`plan ${truncate(stats.latestPlan, 60)}`);
   else lines.push("now  no selected work");
   lines.push(formatShipLine(ship));
+  if (cost) lines.push(`cost  ${cost}`);
   if (updateLatest) lines.push(`update  ${updateLatest} available \xB7 kxm update --kxm`);
   return lines;
 }
-function buildSessionBrief(snapshot, current, hub, ship, updateLatest) {
+function buildSessionBrief(snapshot, current, hub, ship, updateLatest, cost, sessionToken, source = "legacy", staleSeconds = DEFAULT_SESSION_BRIEF_STALE_SECONDS) {
   const active = snapshot.runs.filter((run) => run.status === "running" || run.status === "waiting");
   const stats = {
     activeTasks: active.length,
@@ -2518,13 +2683,200 @@ function buildSessionBrief(snapshot, current, hub, ship, updateLatest) {
   };
   const tasks = uniqueLabels(recentTasks(snapshot.runs).map(taskItem));
   const plans = uniqueLabels(snapshot.plans.slice(0, MAX_SESSION_BRIEF_PLANS).map(planItem));
+  const resolvedHub = hub ?? { state: "off", evidence: "unconfigured", online: false };
+  const statusLine = formatSessionStatusLine(stats, current, resolvedHub, ship, updateLatest, cost);
+  const widgetLines = formatSessionWidget(stats, current, resolvedHub, ship, updateLatest, cost);
   return {
+    schema: SESSION_BRIEF_SCHEMA,
+    generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    staleSeconds,
+    source,
+    hub: resolvedHub,
     stats,
     tasks,
     plans,
-    statusLine: formatSessionStatusLine(stats, current, hub, ship, updateLatest),
-    widgetLines: formatSessionWidget(stats, current, hub, ship, updateLatest)
+    statusLine,
+    widgetLines,
+    ...cost ? { cost } : {},
+    ...sessionToken ? { sessionToken } : {}
   };
+}
+function readCachedSessionBrief(stateDir) {
+  const file = join5(stateDir, "session-brief.json");
+  try {
+    if (!existsSync4(file)) return void 0;
+    const raw = readFileSync6(file, "utf8");
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.schema === "kxm.session-brief.v1" && typeof parsed.generatedAt === "string") {
+      const ageMs = Date.now() - Date.parse(parsed.generatedAt);
+      const ttlMs = (parsed.staleSeconds ?? DEFAULT_SESSION_BRIEF_STALE_SECONDS) * 1e3;
+      if (ageMs >= 0 && ageMs < ttlMs) {
+        return parsed;
+      }
+    }
+  } catch {
+  }
+  return void 0;
+}
+function writeCachedSessionBrief(stateDir, brief) {
+  try {
+    mkdirSync4(stateDir, { recursive: true, mode: 448 });
+    const file = join5(stateDir, "session-brief.json");
+    const tmp = `${file}.tmp.${randomUUID().slice(0, 8)}`;
+    writeFileSync3(tmp, JSON.stringify(brief, null, 2), { encoding: "utf8", mode: 384 });
+    renameSync3(tmp, file);
+  } catch {
+  }
+}
+function estimateSessionCost(stateDir) {
+  try {
+    const telemetryFile = join5(stateDir, "telemetry.jsonl");
+    if (!existsSync4(telemetryFile)) return void 0;
+    const records = readRoutingRecords(telemetryFile);
+    if (records.length === 0) return void 0;
+    let totalCost = 0;
+    let hasMetered = false;
+    let latestModel;
+    let latestHarness;
+    for (const { routing } of records) {
+      const r = routing;
+      const costBasis = r.costBasis ?? (typeof r.costUsd === "number" ? "metered" : "unmetered");
+      if (costBasis === "metered" && typeof r.costUsd === "number") {
+        totalCost += r.costUsd;
+        hasMetered = true;
+      }
+      latestModel = r.effectiveModel ?? r.requestedModel ?? latestModel;
+      latestHarness = r.harness ?? latestHarness;
+    }
+    if (!hasMetered) return "unknown";
+    const route = latestHarness && latestModel ? `${latestHarness}/${latestModel}` : latestModel;
+    return `$${totalCost.toFixed(2)} sess${route ? ` \xB7 ${route}` : ""}`;
+  } catch {
+    return void 0;
+  }
+}
+async function resolveSessionHubStatus(url, fetchImpl = fetch, timeoutMs = 300) {
+  if (!url || !url.trim()) {
+    return { state: "off", evidence: "unconfigured", online: false };
+  }
+  try {
+    const { health } = await probeHubHealth(url.trim(), fetchImpl, timeoutMs);
+    if (health === "on") {
+      return { state: "on", evidence: "probed", online: true, url: url.trim() };
+    }
+    if (health === "off") {
+      return { state: "off", evidence: "probed", online: false, url: url.trim() };
+    }
+    return { state: "unknown", evidence: "timeout", online: false, url: url.trim() };
+  } catch {
+    return { state: "unknown", evidence: "timeout", online: false, url: url.trim() };
+  }
+}
+function loadSessionBrief(cwd, env = process.env, current, hub, options = {}) {
+  const paths = resolveKxmSnapshotPaths(cwd, env);
+  if (!options.force) {
+    const cached = readCachedSessionBrief(paths.stateDir);
+    if (cached) {
+      if (current || hub || options.cost) {
+        const effectiveHub = hub ?? cached.hub;
+        const effectiveCost = options.cost ?? cached.cost;
+        const statusLine = formatSessionStatusLine(
+          cached.stats,
+          current,
+          effectiveHub,
+          options.ship,
+          options.updateLatest,
+          effectiveCost
+        );
+        const widgetLines = formatSessionWidget(
+          cached.stats,
+          current,
+          effectiveHub,
+          options.ship,
+          options.updateLatest,
+          effectiveCost
+        );
+        return {
+          ...cached,
+          hub: effectiveHub,
+          ...effectiveCost ? { cost: effectiveCost } : {},
+          statusLine,
+          widgetLines
+        };
+      }
+      return cached;
+    }
+  }
+  const ship = options.ship ?? readGitShip(cwd);
+  let brief;
+  try {
+    const cachedUpdate = readUpdateCache(paths.stateDir);
+    const updateLatest = options.updateLatest ?? (cachedUpdate?.available ? cachedUpdate.latest : void 0);
+    const cost = options.cost ?? estimateSessionCost(paths.stateDir);
+    brief = buildSessionBrief(
+      loadLocalMeshSnapshot(paths.dataPath, paths.stateDir),
+      current,
+      hub,
+      ship,
+      updateLatest,
+      cost,
+      options.sessionToken
+    );
+  } catch {
+    brief = buildSessionBrief(
+      { runs: [], plans: [], openMessageTotal: 0, runTotal: 0 },
+      current,
+      hub,
+      ship,
+      options.updateLatest,
+      options.cost,
+      options.sessionToken
+    );
+  }
+  writeCachedSessionBrief(paths.stateDir, brief);
+  return brief;
+}
+async function loadSessionBriefAsync(cwd, env = process.env, current, hub, options = {}) {
+  const paths = resolveKxmSnapshotPaths(cwd, env);
+  if (!options.force) {
+    const cached = readCachedSessionBrief(paths.stateDir);
+    if (cached) {
+      if (current || hub || options.cost) {
+        const effectiveHub = hub ?? cached.hub;
+        const effectiveCost = options.cost ?? cached.cost;
+        const statusLine = formatSessionStatusLine(
+          cached.stats,
+          current,
+          effectiveHub,
+          options.ship,
+          void 0,
+          effectiveCost
+        );
+        const widgetLines = formatSessionWidget(
+          cached.stats,
+          current,
+          effectiveHub,
+          options.ship,
+          void 0,
+          effectiveCost
+        );
+        return {
+          ...cached,
+          hub: effectiveHub,
+          ...effectiveCost ? { cost: effectiveCost } : {},
+          statusLine,
+          widgetLines
+        };
+      }
+      return cached;
+    }
+  }
+  let resolvedHub = hub;
+  if (!resolvedHub) {
+    const serverUrl = env.KXM_SERVER_URL?.trim() || readHubBinding(env)?.url;
+    resolvedHub = await resolveSessionHubStatus(serverUrl, options.fetchImpl, 300);
+  }
+  return loadSessionBrief(cwd, env, current, resolvedHub, options);
 }
 function sessionBriefChoices(brief) {
   return [SESSION_BRIEF_SKIP_LABEL, ...brief.tasks.map((item) => item.label), ...brief.plans.map((item) => item.label)];
@@ -2532,17 +2884,6 @@ function sessionBriefChoices(brief) {
 function itemFromChoice(brief, choice) {
   if (!choice || choice === SESSION_BRIEF_SKIP_LABEL) return void 0;
   return [...brief.tasks, ...brief.plans].find((item) => item.label === choice);
-}
-function loadSessionBrief(cwd, env = process.env, current, hub) {
-  const ship = readGitShip(cwd);
-  try {
-    const paths = resolveKxmSnapshotPaths(cwd, env);
-    const cached = readUpdateCache(paths.stateDir);
-    const updateLatest = cached?.available ? cached.latest : void 0;
-    return buildSessionBrief(loadLocalMeshSnapshot(paths.dataPath, paths.stateDir), current, hub, ship, updateLatest);
-  } catch {
-    return buildSessionBrief({ runs: [], plans: [], openMessageTotal: 0, runTotal: 0 }, current, hub, ship);
-  }
 }
 function sessionBriefPickerEnabled(input) {
   if (input.env?.KXM_SESSION_BRIEF?.trim() === "off") return false;
@@ -2689,12 +3030,12 @@ function piMeshExtension(pi) {
   let currentSessionBinding = { kind: "default" };
   function recoveryContextPath() {
     if (!stateDir || !agentName || !projectName) return void 0;
-    return join4(stateDir, `worker-context-${workerStateKey(projectName, agentName)}.json`);
+    return join6(stateDir, `worker-context-${workerStateKey(projectName, agentName)}.json`);
   }
   function sessionRouteRequestPath() {
     const workerKey = process.env.KXM_WORKER_IDENTITY_KEY?.trim();
     if (!stateDir || !workerKey) return void 0;
-    return join4(stateDir, `worker-session-request-${workerKey}.json`);
+    return join6(stateDir, `worker-session-request-${workerKey}.json`);
   }
   function requestSessionRoute(message, target) {
     if (process.env.KXM_WORKER_SESSION_ISOLATION !== "workflow" || sameBinding(currentSessionBinding, target)) {
@@ -2720,21 +3061,21 @@ function piMeshExtension(pi) {
       messageId: message.id,
       createdAt: (/* @__PURE__ */ new Date()).toISOString()
     };
-    mkdirSync2(dirname(path), { recursive: true });
+    mkdirSync5(dirname2(path), { recursive: true });
     const tmp = `${path}.${process.pid}.tmp`;
-    writeFileSync2(tmp, `${JSON.stringify(request)}
+    writeFileSync4(tmp, `${JSON.stringify(request)}
 `, { encoding: "utf8", mode: 384 });
-    renameSync2(tmp, path);
+    renameSync4(tmp, path);
     return true;
   }
   function removeMatchingLegacyRecoveryContext() {
     if (!stateDir || !agentName || !projectName) return;
-    const legacy = join4(stateDir, `worker-context-${agentName.replace(/[^A-Za-z0-9_.-]/g, "_")}.json`);
+    const legacy = join6(stateDir, `worker-context-${agentName.replace(/[^A-Za-z0-9_.-]/g, "_")}.json`);
     if (legacy === recoveryContextPath()) return;
     try {
-      const candidate = JSON.parse(readFileSync4(legacy, "utf8"));
+      const candidate = JSON.parse(readFileSync7(legacy, "utf8"));
       if (candidate.version === 1 && candidate.agentName === agentName && candidate.project === projectName) {
-        rmSync2(legacy, { force: true });
+        rmSync3(legacy, { force: true });
       }
     } catch {
     }
@@ -2747,15 +3088,15 @@ function piMeshExtension(pi) {
     const activeMessageIds = [activeInbound?.id, awaitingActivation?.id, activatingInbound?.id].filter((id) => Boolean(id)).slice(0, 3);
     const pendingMessageIds = [...activeMessageIds, ...pending.map((message) => message.id)].filter((id, index, values) => Boolean(id) && values.indexOf(id) === index).slice(0, 16);
     if (!runId && pendingMessageIds.length === 0) {
-      rmSync2(path, { force: true });
+      rmSync3(path, { force: true });
       removeMatchingLegacyRecoveryContext();
       return;
     }
-    mkdirSync2(dirname(path), { recursive: true });
+    mkdirSync5(dirname2(path), { recursive: true });
     const tmp = `${path}.${process.pid}.tmp`;
-    writeFileSync2(tmp, `${JSON.stringify({ version: 1, agentName, project: projectName, runId: runId ?? null, stageId: recoveryStageId ?? null, activeMessageIds, pendingMessageIds, artifactPointers: recoveryArtifacts.slice(0, 16), updatedAt: (/* @__PURE__ */ new Date()).toISOString() })}
+    writeFileSync4(tmp, `${JSON.stringify({ version: 1, agentName, project: projectName, runId: runId ?? null, stageId: recoveryStageId ?? null, activeMessageIds, pendingMessageIds, artifactPointers: recoveryArtifacts.slice(0, 16), updatedAt: (/* @__PURE__ */ new Date()).toISOString() })}
 `, { encoding: "utf8", mode: 384 });
-    renameSync2(tmp, path);
+    renameSync4(tmp, path);
     removeMatchingLegacyRecoveryContext();
   }
   async function workflowCall(operation) {
@@ -2776,8 +3117,8 @@ function piMeshExtension(pi) {
   let currentWork;
   async function applySessionChrome(ctx, event, offerPicker) {
     const cwd = typeof ctx.cwd === "string" ? ctx.cwd : process.cwd();
-    const hub = process.env.KXM_SERVER_URL?.trim() ? { online: Boolean(client?.agent) } : void 0;
-    const brief = loadSessionBrief(cwd, process.env, currentWork, hub);
+    const hub = client?.agent ? { state: "on", evidence: "process", online: true } : void 0;
+    const brief = await loadSessionBriefAsync(cwd, process.env, currentWork, hub);
     ctx.ui.setStatus?.("kxm", brief.statusLine);
     ctx.ui.setWidget?.("kxm-work", brief.widgetLines);
     if (!offerPicker || !sessionBriefPickerEnabled({
@@ -2791,7 +3132,7 @@ function piMeshExtension(pi) {
     const item = itemFromChoice(brief, choice);
     if (!item) return;
     currentWork = item;
-    const selected = loadSessionBrief(cwd, process.env, item, hub);
+    const selected = await loadSessionBriefAsync(cwd, process.env, item, hub);
     ctx.ui.setStatus?.("kxm", selected.statusLine);
     ctx.ui.setWidget?.("kxm-work", selected.widgetLines);
     ctx.ui.setEditorText?.(item.prompt);
@@ -3077,7 +3418,7 @@ function piMeshExtension(pi) {
     try {
       currentSessionBinding = bindingFromEnvironment();
     } catch (error) {
-      ctx.ui.setStatus("kxm", "kxm hub:off");
+      await applySessionChrome(ctx, event, false);
       ctx.ui.notify(`kxm session routing configuration failed: ${error instanceof Error ? error.message : String(error)}`, "error");
       void ctx.shutdown();
       return;
@@ -3106,7 +3447,6 @@ function piMeshExtension(pi) {
     };
     try {
       const agent = await client.start(receive);
-      ctx.ui.setStatus("kxm", `hub:${agent.name}`);
       ctx.ui.notify(`Connected to the KXM hub as ${agent.name}`, "info");
       const recovered = stateDir ? await consumeWorkerRecoveryEnvelope(client, stateDir, agent.name, project) : void 0;
       const recoveryReplayIds = recovered?.activeMessageIds ?? recovered?.pendingMessageIds ?? [];
@@ -3127,7 +3467,6 @@ function piMeshExtension(pi) {
       }
     } catch (error) {
       client = void 0;
-      ctx.ui.setStatus("kxm", "kxm hub:off");
       ctx.ui.notify(`kxm connection failed: ${error instanceof Error ? error.message : String(error)}`, "error");
     }
     await applySessionChrome(ctx, event, true);
@@ -3241,6 +3580,9 @@ function piMeshExtension(pi) {
     notify = void 0;
     requestWorkerRestart = void 0;
   });
+  pi.on("turn_end", async (_event, ctx) => {
+    await applySessionChrome(ctx, { reason: "turn_end" }, false);
+  });
   for (const cmd of AGENT_COMMANDS) {
     pi.registerTool({
       name: cmd.name,
@@ -3270,6 +3612,15 @@ function piMeshExtension(pi) {
       const command = parseKxmSlashArgs(typeof args === "string" ? args : void 0);
       if (command === "hub") {
         await showKxmHub(ctx);
+        return;
+      }
+      if (command === "status") {
+        const cwd = typeof ctx.cwd === "string" ? ctx.cwd : process.cwd();
+        const hub = client?.agent ? { state: "on", evidence: "process", online: true } : void 0;
+        const brief = await loadSessionBriefAsync(cwd, process.env, currentWork, hub);
+        ctx.ui.setStatus?.("kxm", brief.statusLine);
+        ctx.ui.setWidget?.("kxm-work", brief.widgetLines);
+        ctx.ui.notify(brief.statusLine, "info");
         return;
       }
       if (command === "help") {

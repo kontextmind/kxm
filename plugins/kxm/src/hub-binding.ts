@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { vnextUserStateRoot } from "./vnext-bindings.ts";
+import { homedir } from "node:os";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 
 export const HUB_BINDING_SCHEMA = "kxm.hub-binding.v1" as const;
 export const HUB_HEALTH_PROBE_MS = 300;
@@ -20,8 +20,25 @@ export class HubBindingError extends Error {
   }
 }
 
+function resolveUserStateRoot(env: NodeJS.ProcessEnv): string {
+  const explicit = env.KXM_STATE_HOME?.trim();
+  if (explicit) {
+    if (!isAbsolute(explicit)) throw new HubBindingError("local_state_root_not_absolute");
+    return resolve(explicit);
+  }
+  if (process.platform === "win32") {
+    const localAppData = env.LOCALAPPDATA?.trim();
+    const base = localAppData && isAbsolute(localAppData) ? localAppData : join(homedir(), "AppData", "Local");
+    return resolve(base, "KXM");
+  }
+  if (process.platform === "darwin") return resolve(homedir(), "Library", "Application Support", "KXM");
+  const xdgState = env.XDG_STATE_HOME?.trim();
+  const base = xdgState && isAbsolute(xdgState) ? xdgState : join(homedir(), ".local", "state");
+  return resolve(base, "kxm");
+}
+
 export function hubBindingFile(env: NodeJS.ProcessEnv = process.env): string {
-  return join(vnextUserStateRoot({ env }), "hub-binding.json");
+  return join(resolveUserStateRoot(env), "hub-binding.json");
 }
 
 export function validateHubUrl(raw: string): string {

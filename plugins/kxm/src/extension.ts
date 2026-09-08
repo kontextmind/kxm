@@ -16,9 +16,11 @@ import {
   itemFromChoice,
   kxmSlashCompletions,
   loadSessionBrief,
+  loadSessionBriefAsync,
   parseKxmSlashArgs,
   sessionBriefChoices,
   sessionBriefPickerEnabled,
+  type SessionHubStatus,
   type SessionWorkItem,
 } from "./session-work.ts";
 
@@ -294,8 +296,10 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
     offerPicker: boolean,
   ): Promise<void> {
     const cwd = typeof ctx.cwd === "string" ? ctx.cwd : process.cwd();
-    const hub = process.env.KXM_SERVER_URL?.trim() ? { online: Boolean(client?.agent) } : undefined;
-    const brief = loadSessionBrief(cwd, process.env, currentWork, hub);
+    const hub: SessionHubStatus | undefined = client?.agent
+      ? { state: "on", evidence: "process", online: true }
+      : undefined;
+    const brief = await loadSessionBriefAsync(cwd, process.env, currentWork, hub);
     ctx.ui.setStatus?.("kxm", brief.statusLine);
     ctx.ui.setWidget?.("kxm-work", brief.widgetLines);
     if (!offerPicker || !sessionBriefPickerEnabled({
@@ -309,7 +313,7 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
     const item = itemFromChoice(brief, choice);
     if (!item) return;
     currentWork = item;
-    const selected = loadSessionBrief(cwd, process.env, item, hub);
+    const selected = await loadSessionBriefAsync(cwd, process.env, item, hub);
     ctx.ui.setStatus?.("kxm", selected.statusLine);
     ctx.ui.setWidget?.("kxm-work", selected.widgetLines);
     ctx.ui.setEditorText?.(item.prompt);
@@ -636,7 +640,7 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
     try {
       currentSessionBinding = bindingFromEnvironment();
     } catch (error) {
-      ctx.ui.setStatus("kxm", "kxm hub:off");
+      await applySessionChrome(ctx, event, false);
       ctx.ui.notify(`kxm session routing configuration failed: ${error instanceof Error ? error.message : String(error)}`, "error");
       void ctx.shutdown();
       return;
@@ -663,7 +667,6 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
     requestWorkerRestart = () => { void ctx.shutdown(); };
     try {
       const agent = await client.start(receive);
-      ctx.ui.setStatus("kxm", `hub:${agent.name}`);
       ctx.ui.notify(`Connected to the KXM hub as ${agent.name}`, "info");
       const recovered = stateDir ? await consumeWorkerRecoveryEnvelope(client, stateDir, agent.name, project) : undefined;
       const recoveryReplayIds = recovered?.activeMessageIds ?? recovered?.pendingMessageIds ?? [];
@@ -685,7 +688,6 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
       }
     } catch (error) {
       client = undefined;
-      ctx.ui.setStatus("kxm", "kxm hub:off");
       ctx.ui.notify(`kxm connection failed: ${error instanceof Error ? error.message : String(error)}`, "error");
     }
     await applySessionChrome(ctx, event, true);
@@ -816,6 +818,10 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
     requestWorkerRestart = undefined;
   });
 
+  pi.on("turn_end", async (_event, ctx) => {
+    await applySessionChrome(ctx, { reason: "turn_end" }, false);
+  });
+
   for (const cmd of AGENT_COMMANDS) {
     pi.registerTool({
       name: cmd.name,
@@ -846,6 +852,17 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
       const command = parseKxmSlashArgs(typeof args === "string" ? args : undefined);
       if (command === "hub") {
         await showKxmHub(ctx);
+        return;
+      }
+      if (command === "status") {
+        const cwd = typeof ctx.cwd === "string" ? ctx.cwd : process.cwd();
+        const hub: SessionHubStatus | undefined = client?.agent
+          ? { state: "on", evidence: "process", online: true }
+          : undefined;
+        const brief = await loadSessionBriefAsync(cwd, process.env, currentWork, hub);
+        ctx.ui.setStatus?.("kxm", brief.statusLine);
+        ctx.ui.setWidget?.("kxm-work", brief.widgetLines);
+        ctx.ui.notify(brief.statusLine, "info");
         return;
       }
       if (command === "help") {
