@@ -298,6 +298,20 @@ It does not replace the phase gates below.
   approvals, waits, budgets, and recovery remain open. Operator-prioritized
   roster/routing planning is next after this slice is accepted; it is not
   implemented here and does not pass a product Phase 4 gate.
+- **Phase 3 engine & model-free driver complete (implemented, unreleased):**
+  D4 `blocked_uncertain` recovery after S4 command execution (`recoverVnextRun`
+  supporting `retry`, `fail`, `cancel`, `unblock`), gate hold resolution, and
+  incomplete attempt exclusion in `gateRecoveryPreflight`. Step admission
+  expanded for declared workflow kinds (`agent`, `moa`, `approval`, `wait`, `gate`),
+  `all-settled` join evaluation with `minimumPassed`, `distinctBy: [provider]`,
+  `maxAttemptsPerAssignment <= 2`, repository write declarations, and evidence
+  types. The model-free driver in `test/vnext-driver.test.ts` completes and
+  recovers `examples/vnext/.kxm/workflows/default.yaml` (plan → implement → verify → ready → completed;
+  rework loop; gate uncertainty recovery via retry, fail, cancel) and `fix.yaml`
+  (all 13 stages; approval pass/rejection rework; two-producer MOA `all-settled` joins;
+  critics rework back-edge to plan; approval rework back-edge to plan; command gates;
+  wait signal step) without illegal transitions or evidence reuse. Caller-authored
+  replies fail closed. Fulfills the Phase 3 Gate sentence.
 - **Issue 127 complete (PR #129, `50c8482`):** native writer, fixed witness,
   independent Fable/Sol reviews, acceptance, and all five PR CI jobs passed.
   The parent-alias regression owns its temporary symlink on Mac/Linux;
@@ -641,33 +655,6 @@ It does not replace the phase gates below.
 - Slim live `default` workflow for this repo (no bulk migrate of jira/provenance/v04).
 - YAML-editing enable/disable UI (Phase 4 `/kxm` settings or `kxm dash` config
   tab). Do not add a preferences overlay.
-- Phase 3 engine remainder: D4 `blocked_uncertain` recovery after S4 command
-  execution. Registry configuration and `expect` compilation are implemented
-  in S1; envelope pins, store rows, and bidirectional replay are implemented
-  in S2; artifacts-exist evaluation and orphan-visible command preflight are
-  implemented in S3; POSIX command spawn, exact admission holds, hashed
-  stream observations, and real process facts are implemented in S4
-  (unreleased). D4 U1 (unreleased, partial foundation only) folds a bound-1
-  authoritative panel as `kxm.run-state.v2` and owns controllers by exact
-  attempt id; stale v1 projections fail closed without rewrite. D4 U2a-1
-  (unreleased, fold only) derives join-all from per-assignment current
-  attempt results, bounds agent/moa `all` panels by compiled
-  `assignments.maximum` (other kinds/strategies stay 1), and checks
-  `maxParallel` before a next `starting`. D4 U2a-2 (implemented,
-  unreleased) adds model-free agent/moa join-all dispatch: target-bounded
-  sequential births, maxParallel window, per-member settlement separated
-  from one join commit, membership freeze at outcome/terminal/cancel
-  intent, fail-closed capability/settlement, exact pending-owner drain, and
-  minted capability-hash bind through invoke. Full D4, default/fix
-  driver gate, evidence, retries, approvals, waits, budgets, and recovery
-  remain open. Roster/routing planning follows this slice; it is not a
-  Phase 4 product gate.
-  Then the full model-free driver must complete `default.yaml` and
-  `fix.yaml`. D3/D4 must honor declared `assignments` and `join` on non-agent
-  steps or fail closed. Neither the agent-only loop nor the merged developer
-  runner closes Phase 3. Issue #89 stays open until this command-execution
-  slice is accepted; live Pi execution remains Phase 4. D4/fullgate remain
-  open.
 - Version 1 and 2 run event stores and `kxm.run-plan.v1` envelopes are refused
   with `runtime_schema_outdated` / `run_plan_corrupt`; there is no migration
   lane, and backup/restore remain E6. Coordinated rewriting of an envelope, its
@@ -900,6 +887,21 @@ bootstrap verification, a candidate-bound fixed-command witness, fresh Fable/Sol
 reviews, and final-head CI. It is not native assignment acceptance or hub
 approval. The repair changes Phase 2 storage only; this exception does not
 satisfy, advance, or weaken the Phase 3 gate, D3 S2–S4, or issue #89.
+
+**Phase 3 engine recovery and model-free driver (implemented, unreleased):** D4
+`blocked_uncertain` recovery after S4 command execution (`recoverVnextRun`
+supporting `retry`, `fail`, `cancel`, `unblock`), gate hold resolution, and
+incomplete attempt exclusion in `gateRecoveryPreflight`. Step admission
+expanded for declared workflow kinds (`agent`, `moa`, `approval`, `wait`, `gate`),
+`all-settled` join evaluation with `minimumPassed`, `distinctBy: [provider]`,
+`maxAttemptsPerAssignment <= 2`, repository write declarations, and evidence
+types. The model-free driver in `test/vnext-driver.test.ts` completes and
+recovers `examples/vnext/.kxm/workflows/default.yaml` (plan → implement → verify → ready → completed;
+rework loop; gate uncertainty recovery via retry, fail, cancel) and `fix.yaml`
+(all 13 stages; approval pass/rejection rework; two-producer MOA `all-settled` joins;
+critics rework back-edge to plan; approval rework back-edge to plan; command gates;
+wait signal step) without illegal transitions or evidence reuse. Caller-authored
+replies fail closed. Fulfills the Phase 3 Gate sentence. Live Pi execution remains Phase 4.
 
 **Gate:** a model-free test driver completes and recovers
 `examples/vnext/.kxm/workflows/default.yaml` (plan → implement → verify → ready)

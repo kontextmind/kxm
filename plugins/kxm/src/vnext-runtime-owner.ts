@@ -241,6 +241,25 @@ export function dropVnextGateStopHook(storePath: string, runId: string, attemptI
   delete hold.stop;
 }
 
+export function resolveVnextGateHold(storePath: string, runId: string, attemptId: string): void {
+  const owner = owners.get(storePath);
+  if (!owner) return;
+  const current = owner.admitted.get(runId);
+  if (!current) return;
+  const hold = current.gateHold;
+  if (!hold || hold.attemptId !== attemptId) return;
+  try {
+    hold.stop?.();
+  } catch {
+    // ignore cleanup errors
+  }
+  delete current.gateHold;
+  owner.admitted.delete(runId);
+  pump(storePath, owner);
+  clearImplicitIfIdle(owner);
+  maybeDelete(storePath, owner);
+}
+
 export function vnextGateHold(storePath: string, runId: string): VnextGateHoldView | undefined {
   const hold = owners.get(storePath)?.admitted.get(runId)?.gateHold;
   if (!hold) return undefined;
