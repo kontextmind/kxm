@@ -16169,6 +16169,810 @@ var HubClient = class {
   }
 };
 
+// plugins/kxm/src/commands.ts
+function requiredString(value, name) {
+  if (typeof value !== "string" || value.trim() === "") throw new Error(`${name} is required`);
+  return value.trim();
+}
+function optionalString(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : void 0;
+}
+function asRecord(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+function optionalWorkflowContext(value) {
+  if (value === void 0) return void 0;
+  const context = asRecord(value);
+  if (!Number.isInteger(context.attempt) || context.attempt < 1 || context.attempt > 20) {
+    throw new Error("workflowContext.attempt must be an integer between 1 and 20");
+  }
+  return {
+    runId: requiredString(context.runId, "workflowContext.runId"),
+    stageId: requiredString(context.stageId, "workflowContext.stageId"),
+    requirementKey: requiredString(context.requirementKey, "workflowContext.requirementKey"),
+    attempt: context.attempt
+  };
+}
+function optionalEvidenceRefs(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : void 0;
+}
+function isTerminalMessageError(error2) {
+  return error2 instanceof HubHttpError && (error2.statusCode === 409 || error2.statusCode === 404 && error2.code === "message_not_found");
+}
+function isTerminalMessage(message) {
+  return message.status === "replied" || message.status === "cancelled" || message.status === "expired" || message.status === "error";
+}
+async function reconcileInbox(client, inbox2, notifiedInbox2) {
+  await Promise.all(
+    [...inbox2.keys()].map(async (messageId) => {
+      try {
+        const current = await client.getMessage(messageId);
+        if (isTerminalMessage(current)) {
+          inbox2.delete(messageId);
+          notifiedInbox2?.delete(messageId);
+        } else {
+          inbox2.set(messageId, current);
+        }
+      } catch (error2) {
+        if (isTerminalMessageError(error2)) {
+          inbox2.delete(messageId);
+          notifiedInbox2?.delete(messageId);
+          return;
+        }
+        throw error2;
+      }
+    })
+  );
+}
+function resolveProject(client, projectArg) {
+  const proj = optionalString(projectArg) ?? client.agent?.project;
+  if (!proj) {
+    throw new Error('missing required parameter "project"');
+  }
+  return proj;
+}
+var AGENT_COMMANDS = [
+  {
+    name: "kxm_list",
+    group: "peer",
+    verb: "list",
+    label: "List hub peers",
+    description: "List online peer agents in this project's hub pool, including their names and purposes.",
+    parameters: {
+      type: "object",
+      properties: {},
+      additionalProperties: false
+    },
+    async execute(client) {
+      return { agents: await client.listAgents() };
+    }
+  },
+  {
+    name: "kxm_send",
+    group: "peer",
+    verb: "send",
+    label: "Send peer request",
+    description: "Send a focused request to a peer agent. Returns a message ID for kxm_get or kxm_await. For durable peer evidence, workflowContext is the hub-authorized provenance scope; correlation and idempotency are transport concerns and do not establish evidence provenance.",
+    parameters: {
+      type: "object",
+      properties: {
+        target: { type: "string", description: "Peer name or agent ID" },
+        content: { type: "string", description: "Focused request with the expected response or artifact" },
+        delivery: {
+          type: "string",
+          enum: ["steer", "followUp", "nextTurn"],
+          default: "followUp",
+          description: "followUp is the safe default; use steer only for active blockers"
+        },
+        correlationId: {
+          type: "string",
+          description: "Optional task grouping; the hub binds it to runId when workflowContext is supplied"
+        },
+        idempotencyKey: {
+          type: "string",
+          description: "Retry/deduplication key only; not a workflow security or evidence binding"
+        },
+        workflowContext: {
+          type: "object",
+          description: "Requested provenance scope; the hub authorizes and persists the canonical binding",
+          properties: {
+            runId: { type: "string", description: "Active durable workflow run ID" },
+            stageId: { type: "string", description: "Active workflow stage ID" },
+            requirementKey: { type: "string", description: "Required evidence identity this peer reply may satisfy" },
+            attempt: { type: "integer", minimum: 1, maximum: 20, description: "Current one-based stage attempt" }
+          },
+          required: ["runId", "stageId", "requirementKey", "attempt"],
+          additionalProperties: false
+        },
+        ttlMs: { type: "number", minimum: 1e3, maximum: 6048e5, description: "Message TTL in milliseconds" }
+      },
+      required: ["target", "content"],
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      const delivery = optionalString(args.delivery);
+      const correlationId = optionalString(args.correlationId);
+      const idempotencyKey = optionalString(args.idempotencyKey);
+      const workflowContext = optionalWorkflowContext(args.workflowContext);
+      const message = await client.send({
+        target: requiredString(args.target, "target"),
+        content: requiredString(args.content, "content"),
+        ...delivery ? { delivery } : {},
+        ...correlationId ? { correlationId } : {},
+        ...idempotencyKey ? { idempotencyKey } : {},
+        ...workflowContext ? { workflowContext } : {},
+        ...typeof args.ttlMs === "number" ? { ttlMs: args.ttlMs } : {}
+      });
+      return { messageId: message.id, status: message.status, target: message.toName };
+    }
+  },
+  {
+    name: "kxm_get",
+    group: "peer",
+    verb: "get",
+    label: "Get peer request",
+    description: "Check the status and optional reply for a previously sent request.",
+    parameters: {
+      type: "object",
+      properties: {
+        messageId: { type: "string", description: "Message ID of the sent request" }
+      },
+      required: ["messageId"],
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.getMessage(requiredString(args.messageId, "messageId"));
+    }
+  },
+  {
+    name: "kxm_fanout",
+    group: "peer",
+    verb: "fanout",
+    label: "Fanout peer requests",
+    description: "Ask one through three peers independently and return replies for comparison and synthesis. A local timeout or request cancellation returns a pending response with a durable messageId for kxm_get or an exact retry.",
+    parameters: {
+      type: "object",
+      properties: {
+        targets: {
+          type: "array",
+          items: { type: "string" },
+          minItems: 1,
+          maxItems: 3,
+          description: "One through three target peer names or agent IDs"
+        },
+        content: { type: "string", description: "Task description sent to all targets" },
+        correlationId: {
+          type: "string",
+          description: "Optional task grouping; the hub binds it to runId when workflowContext is supplied"
+        },
+        idempotencyKeyPrefix: {
+          type: "string",
+          description: "Stable retry/deduplication prefix only; not a workflow security or evidence binding"
+        },
+        workflowContext: {
+          type: "object",
+          description: "Requested provenance scope shared by each request",
+          properties: {
+            runId: { type: "string", description: "Active durable workflow run ID" },
+            stageId: { type: "string", description: "Active workflow stage ID" },
+            requirementKey: { type: "string", description: "Required evidence identity these peer replies may satisfy" },
+            attempt: { type: "integer", minimum: 1, maximum: 20, description: "Current one-based stage attempt" }
+          },
+          required: ["runId", "stageId", "requirementKey", "attempt"],
+          additionalProperties: false
+        },
+        ttlMs: { type: "number", minimum: 1e3, maximum: 6048e5, description: "Message TTL in milliseconds" },
+        timeoutMs: { type: "number", minimum: 100, maximum: 18e5, description: "Client wait timeout in milliseconds" }
+      },
+      required: ["targets", "content"],
+      additionalProperties: false
+    },
+    async execute(client, args, context) {
+      const targets = Array.isArray(args.targets) ? args.targets.map((t) => requiredString(t, "target")) : [];
+      return {
+        responses: await client.fanout({
+          targets,
+          content: requiredString(args.content, "content"),
+          ...optionalString(args.correlationId) ? { correlationId: optionalString(args.correlationId) } : {},
+          ...optionalString(args.idempotencyKeyPrefix) ? { idempotencyKeyPrefix: optionalString(args.idempotencyKeyPrefix) } : {},
+          ...optionalWorkflowContext(args.workflowContext) ? { workflowContext: optionalWorkflowContext(args.workflowContext) } : {},
+          ...typeof args.ttlMs === "number" ? { ttlMs: args.ttlMs } : {},
+          ...typeof args.timeoutMs === "number" ? { timeoutMs: args.timeoutMs } : {},
+          ...context?.signal ? { signal: context.signal } : {}
+        })
+      };
+    }
+  },
+  {
+    name: "kxm_await",
+    group: "peer",
+    verb: "await",
+    label: "Await peer response",
+    description: "Wait until a sent request receives a reply or reaches a terminal error. Capped at 60 seconds (60000ms); longer waits are workflow wait steps.",
+    parameters: {
+      type: "object",
+      properties: {
+        messageId: { type: "string", description: "Message ID of the sent request" },
+        timeoutMs: {
+          type: "number",
+          minimum: 100,
+          maximum: 6e4,
+          default: 6e4,
+          description: "Timeout in milliseconds (capped at 60 seconds)"
+        }
+      },
+      required: ["messageId"],
+      additionalProperties: false
+    },
+    async execute(client, args, context) {
+      const timeoutMs = Math.min(
+        typeof args.timeoutMs === "number" ? args.timeoutMs : 6e4,
+        6e4
+      );
+      return await client.awaitResponse(
+        requiredString(args.messageId, "messageId"),
+        timeoutMs,
+        context?.signal
+      );
+    }
+  },
+  {
+    name: "kxm_cancel",
+    group: "peer",
+    verb: "cancel",
+    label: "Cancel peer request",
+    description: "Cancel a queued or delivered request sent by this agent.",
+    parameters: {
+      type: "object",
+      properties: {
+        messageId: { type: "string", description: "Message ID of the request to cancel" }
+      },
+      required: ["messageId"],
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.cancel(requiredString(args.messageId, "messageId"));
+    }
+  },
+  {
+    name: "kxm_inbox",
+    group: "peer",
+    verb: "inbox",
+    label: "List inbound requests",
+    description: "List inbound peer requests awaiting a reply.",
+    parameters: {
+      type: "object",
+      properties: {},
+      additionalProperties: false
+    },
+    async execute(client, _args, context) {
+      if (context?.inbox) {
+        await reconcileInbox(client, context.inbox, context.notifiedInbox);
+        return { messages: [...context.inbox.values()] };
+      }
+      return { messages: [] };
+    }
+  },
+  {
+    name: "kxm_reply",
+    group: "peer",
+    verb: "reply",
+    label: "Reply to peer request",
+    description: "Reply to an inbound peer request using its message ID.",
+    parameters: {
+      type: "object",
+      properties: {
+        messageId: { type: "string", description: "Message ID of the inbound request" },
+        content: { type: "string", description: "Final response with evidence and remaining risks" }
+      },
+      required: ["messageId", "content"],
+      additionalProperties: false
+    },
+    async execute(client, args, context) {
+      const messageId = requiredString(args.messageId, "messageId");
+      try {
+        const message = await client.reply(messageId, requiredString(args.content, "content"));
+        if (context?.inbox) {
+          context.inbox.delete(messageId);
+          context.notifiedInbox?.delete(messageId);
+        }
+        return { messageId, status: message.status, recipient: message.fromName };
+      } catch (error2) {
+        if (context?.inbox && isTerminalMessageError(error2)) {
+          context.inbox.delete(messageId);
+          context.notifiedInbox?.delete(messageId);
+        }
+        throw error2;
+      }
+    }
+  },
+  {
+    name: "kxm_workflow_list",
+    group: "workflow",
+    verb: "runs",
+    label: "List workflow runs",
+    description: "List durable webhook workflows assigned to this agent.",
+    parameters: {
+      type: "object",
+      properties: {},
+      additionalProperties: false
+    },
+    async execute(client) {
+      return { runs: await client.listWorkflows() };
+    }
+  },
+  {
+    name: "kxm_workflow_get",
+    group: "workflow",
+    verb: "run",
+    label: "Get workflow run",
+    description: "Get a workflow's stages and journal of plans, decisions, contradictions, errors, and lessons.",
+    parameters: {
+      type: "object",
+      properties: {
+        runId: { type: "string", description: "Workflow run ID" }
+      },
+      required: ["runId"],
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.getWorkflow(requiredString(args.runId, "runId"));
+    }
+  },
+  {
+    name: "kxm_workflow_checkpoint",
+    group: "workflow",
+    verb: "checkpoint",
+    label: "Checkpoint workflow stage",
+    description: "Record a stage result with evidence keyed by the stage's required evidence identities. Cite peer-reply requirements through evidenceRefs so the hub can verify provenance and quorum; caller-authored evidence strings cannot satisfy those policies. Warnings and failures require another attempt until passed or exhausted.",
+    parameters: {
+      type: "object",
+      properties: {
+        runId: { type: "string", description: "Active durable workflow run ID" },
+        stageId: { type: "string", description: "Active stage ID" },
+        status: { type: "string", enum: ["passed", "warning", "failed"], description: "Stage outcome" },
+        summary: { type: "string", description: "Summary of changes, verification, and remaining risks" },
+        evidence: {
+          type: "object",
+          additionalProperties: { type: "string" },
+          maxProperties: 64,
+          description: "Key-value evidence mapping required keys to proof strings"
+        },
+        evidenceRefs: {
+          type: "object",
+          description: "Peer evidence references keyed by required evidence identity",
+          patternProperties: {
+            "^(.*)$": {
+              type: "object",
+              properties: {
+                messageIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 16 }
+              },
+              required: ["messageIds"],
+              additionalProperties: false
+            }
+          },
+          additionalProperties: {
+            type: "object",
+            properties: {
+              messageIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 16 }
+            },
+            required: ["messageIds"],
+            additionalProperties: false
+          },
+          maxProperties: 32
+        }
+      },
+      required: ["runId", "stageId", "status", "summary"],
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.checkpointWorkflow(requiredString(args.runId, "runId"), {
+        stageId: requiredString(args.stageId, "stageId"),
+        status: requiredString(args.status, "status"),
+        summary: requiredString(args.summary, "summary"),
+        ...args.evidence && typeof args.evidence === "object" && !Array.isArray(args.evidence) ? { evidence: args.evidence } : {},
+        ...optionalEvidenceRefs(args.evidenceRefs) ? { evidenceRefs: optionalEvidenceRefs(args.evidenceRefs) } : {}
+      });
+    }
+  },
+  {
+    name: "kxm_workflow_record",
+    group: "workflow",
+    verb: "record",
+    label: "Record workflow journal entry",
+    description: "Record a plan, decision, contradiction, error, or lesson for continuous improvement.",
+    parameters: {
+      type: "object",
+      properties: {
+        runId: { type: "string", description: "Active durable workflow run ID" },
+        category: {
+          type: "string",
+          enum: ["plan", "decision", "contradiction", "error", "lesson"],
+          description: "Category of journal entry"
+        },
+        area: {
+          type: "string",
+          enum: ["harness", "gates", "implementation", "workflow", "documentation", "security", "other"],
+          description: "System area"
+        },
+        severity: {
+          type: "string",
+          enum: ["info", "warning", "error"],
+          default: "info",
+          description: "Severity level"
+        },
+        summary: { type: "string", description: "Concise description of the observation or decision" },
+        details: { type: "string", description: "Extended details, context, and reasoning" },
+        evidence: {
+          type: "array",
+          items: { type: "string" },
+          maxItems: 32,
+          description: "Durable evidence strings or URIs"
+        },
+        relatedEntryIds: {
+          type: "array",
+          items: { type: "string" },
+          maxItems: 16,
+          description: "Related previous journal entry IDs"
+        }
+      },
+      required: ["runId", "category", "area", "summary"],
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.recordWorkflowEntry(requiredString(args.runId, "runId"), {
+        category: requiredString(args.category, "category"),
+        area: requiredString(args.area, "area"),
+        ...optionalString(args.severity) ? { severity: optionalString(args.severity) } : {},
+        summary: requiredString(args.summary, "summary"),
+        ...optionalString(args.details) ? { details: optionalString(args.details) } : {},
+        ...Array.isArray(args.evidence) ? { evidence: args.evidence } : {},
+        ...Array.isArray(args.relatedEntryIds) ? { relatedEntryIds: args.relatedEntryIds } : {}
+      });
+    }
+  },
+  {
+    name: "kxm_workflow_wait",
+    group: "workflow",
+    verb: "wait",
+    label: "Wait for workflow signal",
+    description: "Pause the active stage until a signed external callback checkpoints it and resumes the coordinator. Cite peer-reply requirements through evidenceRefs so the hub can verify provenance and quorum; verified evidence is accumulated with callback evidence.",
+    parameters: {
+      type: "object",
+      properties: {
+        runId: { type: "string", description: "Active durable workflow run ID" },
+        stageId: { type: "string", description: "Active stage ID" },
+        signalKey: { type: "string", description: "Stable callback key, such as github-pr-42-checks" },
+        summary: { type: "string", description: "What is running externally and what result is expected" },
+        evidence: {
+          type: "object",
+          additionalProperties: { type: "string" },
+          maxProperties: 64,
+          description: "Evidence gathered before the wait"
+        },
+        evidenceRefs: {
+          type: "object",
+          description: "Peer evidence references verified before waiting",
+          patternProperties: {
+            "^(.*)$": {
+              type: "object",
+              properties: {
+                messageIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 16 }
+              },
+              required: ["messageIds"],
+              additionalProperties: false
+            }
+          },
+          additionalProperties: {
+            type: "object",
+            properties: {
+              messageIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 16 }
+            },
+            required: ["messageIds"],
+            additionalProperties: false
+          },
+          maxProperties: 32
+        },
+        timeoutMs: {
+          type: "number",
+          minimum: 1e3,
+          maximum: 2592e6,
+          description: "Maximum wait duration in milliseconds"
+        }
+      },
+      required: ["runId", "stageId", "signalKey", "summary"],
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.waitForWorkflowSignal(requiredString(args.runId, "runId"), {
+        stageId: requiredString(args.stageId, "stageId"),
+        signalKey: requiredString(args.signalKey, "signalKey"),
+        summary: requiredString(args.summary, "summary"),
+        ...args.evidence && typeof args.evidence === "object" && !Array.isArray(args.evidence) ? { evidence: args.evidence } : {},
+        ...optionalEvidenceRefs(args.evidenceRefs) ? { evidenceRefs: optionalEvidenceRefs(args.evidenceRefs) } : {},
+        ...typeof args.timeoutMs === "number" ? { timeoutMs: args.timeoutMs } : {}
+      });
+    }
+  },
+  {
+    name: "kxm_improvement_report",
+    group: "workflow",
+    verb: "improve-report",
+    label: "Summarize improvement report",
+    description: "Summarize workflow errors, contradictions, and lessons by improvement area.",
+    parameters: {
+      type: "object",
+      properties: {},
+      additionalProperties: false
+    },
+    async execute(client) {
+      return await client.improvementReport();
+    }
+  },
+  {
+    name: "kxm_context",
+    group: "context",
+    verb: "get",
+    label: "Get KXM context packet",
+    description: "Normal entry point for KXM context. Assembles a token-budgeted role-aware context packet from durable journal evidence, temporal state, knowledge, episodes, and skills. Superseded and rejected records are excluded. Use KXM context tools instead of provider-specific memory APIs.",
+    parameters: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Project scope (must be the client's project)" },
+        role: {
+          type: "string",
+          description: "Requesting role: repro, planner, critic, implementer, verifier, or custom"
+        },
+        task: { type: "string", description: "What the role is trying to accomplish" },
+        workflowRunId: { type: "string", description: "Workflow run scope" },
+        stageId: { type: "string", description: "Workflow stage scope" },
+        budgetTokens: { type: "integer", description: "Token budget; defaults to the role policy" },
+        includeKinds: {
+          type: "array",
+          items: { type: "string", enum: ["evidence", "state", "episode", "knowledge", "skill"] },
+          description: "Restrict packet to these item kinds"
+        }
+      },
+      required: ["role", "task"],
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.contextGet({
+        project: resolveProject(client, args.project),
+        role: requiredString(args.role, "role"),
+        task: requiredString(args.task, "task"),
+        ...optionalString(args.workflowRunId) ? { workflowRunId: optionalString(args.workflowRunId) } : {},
+        ...optionalString(args.stageId) ? { stageId: optionalString(args.stageId) } : {},
+        ...typeof args.budgetTokens === "number" ? { budgetTokens: args.budgetTokens } : {},
+        ...Array.isArray(args.includeKinds) ? { includeKinds: args.includeKinds } : {}
+      });
+    }
+  },
+  {
+    name: "kxm_recall",
+    group: "context",
+    verb: "recall",
+    label: "Recall context metadata",
+    description: "Search durable context records for a project by query; returns bounded metadata only.",
+    parameters: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Project identifier" },
+        query: { type: "string", description: "Query string" },
+        kinds: { type: "array", items: { type: "string" }, description: "Kinds filter" },
+        limit: { type: "integer", minimum: 1, maximum: 100, description: "Maximum results" }
+      },
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.contextRecall({
+        project: resolveProject(client, args.project),
+        ...optionalString(args.query) ? { query: optionalString(args.query) } : {},
+        ...Array.isArray(args.kinds) ? { kinds: args.kinds } : {},
+        ...typeof args.limit === "number" ? { limit: args.limit } : {}
+      });
+    }
+  },
+  {
+    name: "kxm_state",
+    group: "context",
+    verb: "state",
+    label: "Get temporal state",
+    description: "Current value for one temporal state key, optionally as of a historical timestamp.",
+    parameters: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Project identifier" },
+        key: { type: "string", description: "State key" },
+        asOf: { type: "string", description: "ISO-8601 timestamp for historical queries" }
+      },
+      required: ["key"],
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.contextState({
+        project: resolveProject(client, args.project),
+        key: requiredString(args.key, "key"),
+        ...optionalString(args.asOf) ? { asOf: optionalString(args.asOf) } : {}
+      });
+    }
+  },
+  {
+    name: "kxm_episode",
+    group: "context",
+    verb: "episode",
+    label: "Get workflow episodes",
+    description: "Episodic learning from workflow journals: errors, lessons, observations, experiments for a project.",
+    parameters: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Project identifier" },
+        workflowRunId: { type: "string", description: "Optional workflow run scope" }
+      },
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.contextEpisode({
+        project: resolveProject(client, args.project),
+        ...optionalString(args.workflowRunId) ? { workflowRunId: optionalString(args.workflowRunId) } : {}
+      });
+    }
+  },
+  {
+    name: "kxm_promote",
+    group: "context",
+    verb: "promote",
+    label: "Propose state promotion",
+    description: "Propose a change to one authoritative state key. Promotion requires durable evidence.",
+    parameters: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Project identifier" },
+        key: { type: "string", description: "State key to promote" },
+        summary: { type: "string", description: "Promotion summary" },
+        authority: {
+          type: "string",
+          enum: ["policy", "instruction", "evidence", "hypothesis"],
+          description: "Authority class"
+        },
+        confidence: {
+          type: "string",
+          enum: ["verified", "probable", "uncertain"],
+          description: "Confidence level"
+        },
+        evidenceRefs: {
+          type: "array",
+          items: { type: "string" },
+          minItems: 1,
+          maxItems: 32,
+          description: "Evidence item references backing the promotion"
+        }
+      },
+      required: ["key", "summary", "authority", "confidence", "evidenceRefs"],
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.contextStatePropose({
+        project: resolveProject(client, args.project),
+        key: requiredString(args.key, "key"),
+        summary: requiredString(args.summary, "summary"),
+        authority: requiredString(args.authority, "authority"),
+        confidence: requiredString(args.confidence, "confidence"),
+        evidenceRefs: Array.isArray(args.evidenceRefs) ? args.evidenceRefs : []
+      });
+    }
+  }
+];
+var AGENT_COMMANDS_MAP = new Map(
+  AGENT_COMMANDS.map((cmd) => [cmd.name, cmd])
+);
+function getMcpTools() {
+  return AGENT_COMMANDS.map((cmd) => ({
+    name: cmd.name,
+    description: cmd.description,
+    inputSchema: cmd.parameters
+  }));
+}
+function parseAttemptToken(token) {
+  try {
+    const raw = Buffer.from(token.trim(), "base64url").toString("utf8");
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && parsed.schema === "kxm.attempt-token.v1" && typeof parsed.runId === "string") {
+      return parsed;
+    }
+  } catch {
+    return void 0;
+  }
+  return void 0;
+}
+function parseSessionToken(token) {
+  try {
+    const raw = Buffer.from(token.trim(), "base64url").toString("utf8");
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && parsed.schema === "kxm.session-token.v1" && typeof parsed.sessionId === "string") {
+      return parsed;
+    }
+  } catch {
+    return void 0;
+  }
+  return void 0;
+}
+function matchToolPattern(pattern, toolName) {
+  if (pattern === "*" || pattern === toolName) return true;
+  if (pattern.endsWith("*")) {
+    const prefix = pattern.slice(0, -1);
+    return toolName.startsWith(prefix);
+  }
+  return false;
+}
+function isToolAllowed(commandName, policy) {
+  if (!policy) return true;
+  const canonical = commandName.startsWith("kxm_") ? commandName : `kxm_${commandName}`;
+  const bare = commandName.replace(/^kxm_/, "");
+  const denyList = policy.deny ?? policy.deniedTools;
+  if (Array.isArray(denyList)) {
+    for (const d of denyList) {
+      if (d === canonical || d === commandName || d === bare || matchToolPattern(d, canonical)) {
+        return false;
+      }
+    }
+  }
+  const allowList = policy.allow ?? policy.allowedTools;
+  if (Array.isArray(allowList) && allowList.length > 0) {
+    const matched = allowList.some(
+      (a) => a === canonical || a === commandName || a === bare || a === "*" || matchToolPattern(a, canonical)
+    );
+    if (!matched) return false;
+  }
+  if (policy.preset === "read-only") {
+    const mutating = [
+      "kxm_send",
+      "kxm_reply",
+      "kxm_cancel",
+      "kxm_fanout",
+      "kxm_workflow_checkpoint",
+      "kxm_workflow_record",
+      "kxm_workflow_wait",
+      "kxm_promote"
+    ];
+    if (mutating.includes(canonical)) return false;
+  }
+  return true;
+}
+function enforceToolPolicy(commandName, env = process.env) {
+  const attemptTokenRaw = env.KXM_ATTEMPT_TOKEN?.trim();
+  if (attemptTokenRaw) {
+    const attempt = parseAttemptToken(attemptTokenRaw);
+    if (!attempt) {
+      return { allowed: false, error: "attempt_token_invalid", detail: "KXM_ATTEMPT_TOKEN is malformed" };
+    }
+    if (!isToolAllowed(commandName, attempt.toolPolicy)) {
+      return {
+        allowed: false,
+        error: "tool_policy_denied",
+        detail: `command ${commandName} is denied by attempt tool policy`
+      };
+    }
+    return { allowed: true };
+  }
+  const sessionTokenRaw = env.KXM_SESSION_TOKEN?.trim();
+  if (sessionTokenRaw) {
+    const session = parseSessionToken(sessionTokenRaw);
+    if (!session) {
+      return { allowed: false, error: "session_token_invalid", detail: "KXM_SESSION_TOKEN is malformed" };
+    }
+    if (!isToolAllowed(commandName, session.toolPolicy)) {
+      return {
+        allowed: false,
+        error: "tool_policy_denied",
+        detail: `command ${commandName} is denied by session tool policy`
+      };
+    }
+    return { allowed: true };
+  }
+  return { allowed: true };
+}
+
 // plugins/kxm/src/inbox.ts
 async function deliverInboxNotification(messageId, delivered, notify) {
   if (delivered.has(messageId)) return false;
@@ -16202,55 +17006,11 @@ var mcp = new Server(
 function textResult(value) {
   return { content: [{ type: "text", text: JSON.stringify(value, null, 2) }] };
 }
-function requiredString(value, name) {
-  if (typeof value !== "string" || value.trim() === "") throw new Error(`${name} is required`);
-  return value.trim();
-}
-function optionalString(value) {
+function optionalString2(value) {
   return typeof value === "string" && value.trim() ? value.trim() : void 0;
 }
-function asRecord(value) {
+function asRecord2(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
-}
-function optionalWorkflowContext(value) {
-  if (value === void 0) return void 0;
-  const context = asRecord(value);
-  if (!Number.isInteger(context.attempt) || context.attempt < 1 || context.attempt > 20) {
-    throw new Error("workflowContext.attempt must be an integer between 1 and 20");
-  }
-  return {
-    runId: requiredString(context.runId, "workflowContext.runId"),
-    stageId: requiredString(context.stageId, "workflowContext.stageId"),
-    requirementKey: requiredString(context.requirementKey, "workflowContext.requirementKey"),
-    attempt: context.attempt
-  };
-}
-function optionalEvidenceRefs(value) {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : void 0;
-}
-function isTerminalMessageError(error2) {
-  return error2 instanceof HubHttpError && (error2.statusCode === 409 || error2.statusCode === 404 && error2.code === "message_not_found");
-}
-function isTerminalMessage(message) {
-  return message.status === "replied" || message.status === "cancelled" || message.status === "expired" || message.status === "error";
-}
-async function reconcileInbox(client) {
-  await Promise.all([...inbox.keys()].map(async (messageId) => {
-    try {
-      const current = await client.getMessage(messageId);
-      if (isTerminalMessage(current)) {
-        inbox.delete(messageId);
-        notifiedInbox.delete(messageId);
-      } else inbox.set(messageId, current);
-    } catch (error2) {
-      if (isTerminalMessageError(error2)) {
-        inbox.delete(messageId);
-        notifiedInbox.delete(messageId);
-        return;
-      }
-      throw error2;
-    }
-  }));
 }
 async function onHubEvent(event) {
   if (event.type === "cancelled" || event.type === "expired") {
@@ -16290,7 +17050,7 @@ async function ensureClient() {
   if (starting) return starting;
   starting = (async () => {
     const projectDir = process.env.KXM_PROJECT_DIR || process.env.CLAUDE_PROJECT_DIR || process.cwd();
-    const authToken = optionalString(process.env.KXM_AUTH_TOKEN);
+    const authToken = optionalString2(process.env.KXM_AUTH_TOKEN);
     const candidate = new HubClient({
       serverUrl: process.env.KXM_SERVER_URL?.trim() || "http://127.0.0.1:7331",
       name: process.env.KXM_AGENT_NAME?.trim() || `claude-${process.pid}`,
@@ -16314,414 +17074,20 @@ async function ensureClient() {
     starting = void 0;
   }
 }
-var tools = [
-  {
-    name: "kxm_list",
-    description: "List online peer agents in the current hub project.",
-    inputSchema: { type: "object", properties: {}, additionalProperties: false }
-  },
-  {
-    name: "kxm_send",
-    description: "Send a focused request to a peer. Returns a message ID for kxm_get or kxm_await. For durable peer evidence, workflowContext is the hub-authorized provenance scope; correlation and idempotency are transport concerns and do not establish evidence provenance.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        target: { type: "string", description: "Peer name or agent ID" },
-        content: { type: "string", description: "Focused request and expected result" },
-        delivery: { type: "string", enum: ["steer", "followUp", "nextTurn"], default: "followUp" },
-        correlationId: { type: "string", description: "Optional task grouping; the hub binds it to runId when workflowContext is supplied" },
-        idempotencyKey: { type: "string", description: "Retry/deduplication key only; not a workflow security or evidence binding" },
-        workflowContext: {
-          type: "object",
-          description: "Requested provenance scope; the hub authorizes and persists the canonical binding",
-          properties: {
-            runId: { type: "string", description: "Active durable workflow run ID" },
-            stageId: { type: "string", description: "Active workflow stage ID" },
-            requirementKey: { type: "string", description: "Required evidence identity this peer reply may satisfy" },
-            attempt: { type: "integer", minimum: 1, maximum: 20, description: "Current one-based stage attempt" }
-          },
-          required: ["runId", "stageId", "requirementKey", "attempt"],
-          additionalProperties: false
-        },
-        ttlMs: { type: "number", minimum: 1e3, maximum: 6048e5 }
-      },
-      required: ["target", "content"],
-      additionalProperties: false
-    }
-  },
-  {
-    name: "kxm_get",
-    description: "Check the status and optional reply for a previously sent request.",
-    inputSchema: {
-      type: "object",
-      properties: { messageId: { type: "string" } },
-      required: ["messageId"],
-      additionalProperties: false
-    }
-  },
-  {
-    name: "kxm_fanout",
-    description: "Ask one through three peers independently and return replies for comparison and synthesis. A local timeout or request cancellation returns a pending response with a durable messageId for kxm_get or an exact retry. For durable peer evidence, supply workflowContext; correlation and idempotency are transport concerns and do not establish evidence provenance.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        targets: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 3 },
-        content: { type: "string" },
-        correlationId: { type: "string", description: "Optional task grouping; the hub binds it to runId when workflowContext is supplied" },
-        idempotencyKeyPrefix: { type: "string", description: "Stable retry/deduplication prefix only; not a workflow security or evidence binding" },
-        workflowContext: {
-          type: "object",
-          description: "Requested provenance scope shared by each request; the hub authorizes and persists the canonical binding",
-          properties: {
-            runId: { type: "string", description: "Active durable workflow run ID" },
-            stageId: { type: "string", description: "Active workflow stage ID" },
-            requirementKey: { type: "string", description: "Required evidence identity these peer replies may satisfy" },
-            attempt: { type: "integer", minimum: 1, maximum: 20, description: "Current one-based stage attempt" }
-          },
-          required: ["runId", "stageId", "requirementKey", "attempt"],
-          additionalProperties: false
-        },
-        ttlMs: { type: "number", minimum: 1e3, maximum: 6048e5 },
-        timeoutMs: { type: "number", minimum: 100, maximum: 18e5 }
-      },
-      required: ["targets", "content"],
-      additionalProperties: false
-    }
-  },
-  {
-    name: "kxm_await",
-    description: "Wait until a sent request receives a reply or reaches a terminal error.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        messageId: { type: "string" },
-        timeoutMs: { type: "number", minimum: 100, maximum: 18e5, default: 18e5 }
-      },
-      required: ["messageId"],
-      additionalProperties: false
-    }
-  },
-  {
-    name: "kxm_cancel",
-    description: "Cancel a queued or delivered request sent by this agent.",
-    inputSchema: {
-      type: "object",
-      properties: { messageId: { type: "string" } },
-      required: ["messageId"],
-      additionalProperties: false
-    }
-  },
-  {
-    name: "kxm_inbox",
-    description: "List inbound peer requests awaiting a reply. Use when Claude channel delivery is unavailable.",
-    inputSchema: { type: "object", properties: {}, additionalProperties: false }
-  },
-  {
-    name: "kxm_reply",
-    description: "Reply to an inbound peer request using its message ID.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        messageId: { type: "string" },
-        content: { type: "string", description: "Final response with evidence and remaining risks" }
-      },
-      required: ["messageId", "content"],
-      additionalProperties: false
-    }
-  },
-  {
-    name: "kxm_workflow_list",
-    description: "List durable webhook workflows assigned to this agent.",
-    inputSchema: { type: "object", properties: {}, additionalProperties: false }
-  },
-  {
-    name: "kxm_workflow_get",
-    description: "Get one workflow run and its structured journal.",
-    inputSchema: {
-      type: "object",
-      properties: { runId: { type: "string" } },
-      required: ["runId"],
-      additionalProperties: false
-    }
-  },
-  {
-    name: "kxm_workflow_checkpoint",
-    description: "Checkpoint the active workflow stage with evidence keyed by required evidence identity. Cite peer-reply requirements through evidenceRefs so the hub can verify provenance and quorum; caller-authored evidence strings cannot satisfy those policies. Warnings and failures must be retried.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        runId: { type: "string" },
-        stageId: { type: "string" },
-        status: { type: "string", enum: ["passed", "warning", "failed"] },
-        summary: { type: "string" },
-        evidence: { type: "object", additionalProperties: { type: "string" }, maxProperties: 64 },
-        evidenceRefs: {
-          type: "object",
-          description: "Peer evidence references keyed by required evidence identity; the hub verifies messages and derives producer metadata",
-          additionalProperties: {
-            type: "object",
-            properties: {
-              messageIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 16 }
-            },
-            required: ["messageIds"],
-            additionalProperties: false
-          },
-          maxProperties: 32
-        }
-      },
-      required: ["runId", "stageId", "status", "summary"],
-      additionalProperties: false
-    }
-  },
-  {
-    name: "kxm_workflow_record",
-    description: "Record a plan, decision, contradiction, error, or lesson for continuous improvement.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        runId: { type: "string" },
-        category: { type: "string", enum: ["plan", "decision", "contradiction", "error", "lesson"] },
-        area: {
-          type: "string",
-          enum: ["harness", "gates", "implementation", "workflow", "documentation", "security", "other"]
-        },
-        severity: { type: "string", enum: ["info", "warning", "error"], default: "info" },
-        summary: { type: "string" },
-        details: { type: "string" },
-        evidence: { type: "array", items: { type: "string" }, maxItems: 32 },
-        relatedEntryIds: { type: "array", items: { type: "string" }, maxItems: 16 }
-      },
-      required: ["runId", "category", "area", "summary"],
-      additionalProperties: false
-    }
-  },
-  {
-    name: "kxm_workflow_wait",
-    description: "Pause the active stage until a signed external callback checkpoints it and resumes the coordinator. Cite peer-reply requirements through evidenceRefs so the hub can verify provenance and quorum; verified evidence is accumulated with callback evidence.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        runId: { type: "string" },
-        stageId: { type: "string" },
-        signalKey: { type: "string", description: "Stable callback key, such as github-pr-42-checks" },
-        summary: { type: "string", description: "What is running externally and what result is expected" },
-        evidence: { type: "object", additionalProperties: { type: "string" }, maxProperties: 64 },
-        evidenceRefs: {
-          type: "object",
-          description: "Peer evidence references keyed by required evidence identity; the hub verifies messages and derives producer metadata",
-          additionalProperties: {
-            type: "object",
-            properties: {
-              messageIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 16 }
-            },
-            required: ["messageIds"],
-            additionalProperties: false
-          },
-          maxProperties: 32
-        },
-        timeoutMs: { type: "number", minimum: 1e3, maximum: 2592e6 }
-      },
-      required: ["runId", "stageId", "signalKey", "summary"],
-      additionalProperties: false
-    }
-  },
-  {
-    name: "kxm_improvement_report",
-    description: "Summarize workflow errors, contradictions, and lessons by improvement area.",
-    inputSchema: { type: "object", properties: {}, additionalProperties: false }
-  },
-  {
-    name: "kxm_context",
-    description: "Normal entry point for KXM context. Assembles a token-budgeted role-aware context packet from durable journal evidence, temporal state, knowledge, episodes, and skills. Superseded and rejected records are excluded. Use KXM context tools instead of provider-specific memory APIs.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project: { type: "string", description: "Project scope (must be the client's project)" },
-        role: { type: "string", description: "Requesting role: repro, planner, critic, implementer, verifier, or custom" },
-        task: { type: "string", description: "What the role is trying to accomplish" },
-        workflowRunId: { type: "string", description: "Workflow run scope" },
-        stageId: { type: "string", description: "Workflow stage scope" },
-        budgetTokens: { type: "integer", description: "Token budget; defaults to the role policy" },
-        includeKinds: { type: "array", items: { type: "string", enum: ["evidence", "state", "episode", "knowledge", "skill"] }, description: "Restrict packet to these item kinds" }
-      },
-      required: ["project", "role", "task"],
-      additionalProperties: false
-    }
-  },
-  {
-    name: "kxm_recall",
-    description: "Search durable context records for a project by query; returns bounded metadata only.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project: { type: "string" },
-        query: { type: "string" },
-        kinds: { type: "array", items: { type: "string" } },
-        limit: { type: "integer", minimum: 1, maximum: 100 }
-      },
-      required: ["project"],
-      additionalProperties: false
-    }
-  },
-  {
-    name: "kxm_state",
-    description: "Current value for one temporal state key, optionally as of a historical timestamp.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project: { type: "string" },
-        key: { type: "string" },
-        asOf: { type: "string", description: "ISO-8601 timestamp for historical queries" }
-      },
-      required: ["project", "key"],
-      additionalProperties: false
-    }
-  },
-  {
-    name: "kxm_episode",
-    description: "Episodic learning from workflow journals: errors, lessons, observations, experiments for a project, optionally scoped to one run.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project: { type: "string" },
-        workflowRunId: { type: "string" }
-      },
-      required: ["project"],
-      additionalProperties: false
-    }
-  },
-  {
-    name: "kxm_promote",
-    description: "Propose a change to one authoritative state key. Proposing changes nothing: promotion requires durable evidence and an authorized control-plane decision.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project: { type: "string" },
-        key: { type: "string" },
-        summary: { type: "string" },
-        authority: { type: "string", enum: ["policy", "instruction", "evidence", "hypothesis"] },
-        confidence: { type: "string", enum: ["verified", "probable", "uncertain"] },
-        evidenceRefs: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 32 }
-      },
-      required: ["project", "key", "summary", "authority", "confidence", "evidenceRefs"],
-      additionalProperties: false
-    }
-  }
-];
+var tools = getMcpTools();
 mcp.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
 mcp.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
   try {
-    const client = await ensureClient();
-    const args = asRecord(request.params.arguments);
-    switch (request.params.name) {
-      case "kxm_list":
-        return textResult({ agents: await client.listAgents() });
-      case "kxm_send": {
-        const delivery = optionalString(args.delivery);
-        const correlationId = optionalString(args.correlationId);
-        const idempotencyKey = optionalString(args.idempotencyKey);
-        const workflowContext = optionalWorkflowContext(args.workflowContext);
-        const message = await client.send({
-          target: requiredString(args.target, "target"),
-          content: requiredString(args.content, "content"),
-          ...delivery ? { delivery } : {},
-          ...correlationId ? { correlationId } : {},
-          ...idempotencyKey ? { idempotencyKey } : {},
-          ...workflowContext ? { workflowContext } : {},
-          ...typeof args.ttlMs === "number" ? { ttlMs: args.ttlMs } : {}
-        });
-        return textResult({ messageId: message.id, status: message.status, target: message.toName });
-      }
-      case "kxm_get":
-        return textResult(await client.getMessage(requiredString(args.messageId, "messageId")));
-      case "kxm_fanout":
-        return textResult({ responses: await client.fanout({
-          targets: Array.isArray(args.targets) ? args.targets.map((target) => requiredString(target, "target")) : [],
-          content: requiredString(args.content, "content"),
-          ...optionalString(args.correlationId) ? { correlationId: optionalString(args.correlationId) } : {},
-          ...optionalString(args.idempotencyKeyPrefix) ? {
-            idempotencyKeyPrefix: optionalString(args.idempotencyKeyPrefix)
-          } : {},
-          ...optionalWorkflowContext(args.workflowContext) ? {
-            workflowContext: optionalWorkflowContext(args.workflowContext)
-          } : {},
-          ...typeof args.ttlMs === "number" ? { ttlMs: args.ttlMs } : {},
-          ...typeof args.timeoutMs === "number" ? { timeoutMs: args.timeoutMs } : {},
-          signal: extra.signal
-        }) });
-      case "kxm_await":
-        return textResult(await client.awaitResponse(
-          requiredString(args.messageId, "messageId"),
-          typeof args.timeoutMs === "number" ? args.timeoutMs : 18e5
-        ));
-      case "kxm_cancel":
-        return textResult(await client.cancel(requiredString(args.messageId, "messageId")));
-      case "kxm_inbox":
-        await reconcileInbox(client);
-        return textResult({ messages: [...inbox.values()] });
-      case "kxm_reply": {
-        const messageId = requiredString(args.messageId, "messageId");
-        try {
-          const message = await client.reply(messageId, requiredString(args.content, "content"));
-          inbox.delete(messageId);
-          notifiedInbox.delete(messageId);
-          return textResult({ messageId, status: message.status, recipient: message.fromName });
-        } catch (error2) {
-          if (isTerminalMessageError(error2)) {
-            inbox.delete(messageId);
-            notifiedInbox.delete(messageId);
-          }
-          throw error2;
-        }
-      }
-      case "kxm_workflow_list":
-        return textResult({ runs: await client.listWorkflows() });
-      case "kxm_workflow_get":
-        return textResult(await client.getWorkflow(requiredString(args.runId, "runId")));
-      case "kxm_workflow_checkpoint":
-        return textResult(await client.checkpointWorkflow(requiredString(args.runId, "runId"), {
-          stageId: requiredString(args.stageId, "stageId"),
-          status: requiredString(args.status, "status"),
-          summary: requiredString(args.summary, "summary"),
-          ...args.evidence && typeof args.evidence === "object" && !Array.isArray(args.evidence) ? { evidence: args.evidence } : {},
-          ...optionalEvidenceRefs(args.evidenceRefs) ? { evidenceRefs: optionalEvidenceRefs(args.evidenceRefs) } : {}
-        }));
-      case "kxm_workflow_wait":
-        return textResult(await client.waitForWorkflowSignal(requiredString(args.runId, "runId"), {
-          stageId: requiredString(args.stageId, "stageId"),
-          signalKey: requiredString(args.signalKey, "signalKey"),
-          summary: requiredString(args.summary, "summary"),
-          ...args.evidence && typeof args.evidence === "object" && !Array.isArray(args.evidence) ? { evidence: args.evidence } : {},
-          ...optionalEvidenceRefs(args.evidenceRefs) ? { evidenceRefs: optionalEvidenceRefs(args.evidenceRefs) } : {},
-          ...typeof args.timeoutMs === "number" ? { timeoutMs: args.timeoutMs } : {}
-        }));
-      case "kxm_workflow_record":
-        return textResult(await client.recordWorkflowEntry(requiredString(args.runId, "runId"), {
-          category: requiredString(args.category, "category"),
-          area: requiredString(args.area, "area"),
-          ...optionalString(args.severity) ? {
-            severity: optionalString(args.severity)
-          } : {},
-          summary: requiredString(args.summary, "summary"),
-          ...optionalString(args.details) ? { details: optionalString(args.details) } : {},
-          ...Array.isArray(args.evidence) ? { evidence: args.evidence } : {},
-          ...Array.isArray(args.relatedEntryIds) ? { relatedEntryIds: args.relatedEntryIds } : {}
-        }));
-      case "kxm_improvement_report":
-        return textResult(await client.improvementReport());
-      case "kxm_context":
-        return textResult(await client.contextGet(asRecord(args)));
-      case "kxm_recall":
-        return textResult(await client.contextRecall(asRecord(args)));
-      case "kxm_state":
-        return textResult(await client.contextState(asRecord(args)));
-      case "kxm_episode":
-        return textResult(await client.contextEpisode(asRecord(args)));
-      case "kxm_promote":
-        return textResult(await client.contextStatePropose(asRecord(args)));
-      default:
-        throw new Error(`unknown tool: ${request.params.name}`);
+    const policy = enforceToolPolicy(request.params.name);
+    if (!policy.allowed) {
+      throw new Error(`tool_policy_denied: ${policy.detail ?? policy.error}`);
     }
+    const client = await ensureClient();
+    const cmd = AGENT_COMMANDS_MAP.get(request.params.name);
+    if (!cmd) throw new Error(`unknown tool: ${request.params.name}`);
+    const args = asRecord2(request.params.arguments);
+    const result = await cmd.execute(client, args, { signal: extra.signal, inbox, notifiedInbox });
+    return textResult(result);
   } catch (error2) {
     return {
       content: [{ type: "text", text: error2 instanceof Error ? error2.message : String(error2) }],

@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { AGENT_COMMANDS, enforceToolPolicy } from "./commands.ts";
 import { HubClient, HubHttpError } from "./client.ts";
 import { nousFactoryWork, type NousRegistrationReport } from "./nous-pi.ts";
 import { areaForTool, classifyFailure, diagnosticEvidence, diagnosticSummary, type Diagnostic } from "./diagnostics.ts";
@@ -9,12 +9,8 @@ import {
   MAX_CONTENT_CHARS,
   type DeliveryMode,
   type HubEvent,
-  type ImprovementArea,
-  type JournalCategory,
   type MessageRecord,
-  type WorkflowCheckpointStatus,
 } from "./protocol.ts";
-import type { ContextItemKind } from "./context.ts";
 import { consumeWorkerRecoveryEnvelope, workerStateKey } from "./recovery.ts";
 import {
   itemFromChoice,
@@ -820,384 +816,25 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
     requestWorkerRestart = undefined;
   });
 
-  pi.registerTool({
-    name: "kxm_list",
-    label: "List hub peers",
-    description: "List online peer agents in this project's hub pool, including their names and purposes.",
-    parameters: Type.Object({}),
-    async execute() {
-      return result({ agents: await requireClient().listAgents() });
-    },
-  });
-
-  pi.registerTool({
-    name: "kxm_send",
-    label: "Send peer request",
-    description: "Send a focused request to a peer agent. Returns a message ID for kxm_get or kxm_await. For durable peer evidence, workflowContext is the hub-authorized provenance scope; correlation and idempotency are transport concerns and do not establish evidence provenance.",
-    parameters: Type.Object({
-      target: Type.String({ description: "Peer name or agent ID" }),
-      content: Type.String({ description: "Focused request with the expected response or artifact" }),
-      delivery: Type.Optional(Type.Union([
-        Type.Literal("steer"),
-        Type.Literal("followUp"),
-        Type.Literal("nextTurn"),
-      ], { description: "followUp is the safe default; use steer only for active blockers" })),
-      correlationId: Type.Optional(Type.String({ description: "Optional task grouping; the hub binds it to runId when workflowContext is supplied" })),
-      idempotencyKey: Type.Optional(Type.String({ description: "Retry/deduplication key only; not a workflow security or evidence binding" })),
-      workflowContext: Type.Optional(Type.Object({
-        runId: Type.String({ description: "Active durable workflow run ID" }),
-        stageId: Type.String({ description: "Active workflow stage ID" }),
-        requirementKey: Type.String({ description: "Required evidence identity this peer reply may satisfy" }),
-        attempt: Type.Integer({ minimum: 1, maximum: 20, description: "Current one-based stage attempt" }),
-      }, {
-        additionalProperties: false,
-        description: "Requested provenance scope; the hub authorizes and persists the canonical binding",
-      })),
-      ttlMs: Type.Optional(Type.Number({ minimum: 1_000, maximum: 604_800_000 })),
-    }),
-    async execute(_toolCallId, params) {
-      const message = await requireClient().send({
-        target: params.target,
-        content: params.content,
-        ...(params.delivery ? { delivery: params.delivery as DeliveryMode } : {}),
-        ...(params.correlationId ? { correlationId: params.correlationId } : {}),
-        ...(params.idempotencyKey ? { idempotencyKey: params.idempotencyKey } : {}),
-        ...(params.workflowContext ? { workflowContext: params.workflowContext } : {}),
-        ...(params.ttlMs ? { ttlMs: params.ttlMs } : {}),
-      });
-      return result({ messageId: message.id, status: message.status, target: message.toName });
-    },
-  });
-
-  pi.registerTool({
-    name: "kxm_get",
-    label: "Get peer response",
-    description: "Check a peer request without blocking. Returns its current status and optional reply.",
-    parameters: Type.Object({ messageId: Type.String() }),
-    async execute(_toolCallId, params) {
-      return result(await requireClient().getMessage(params.messageId));
-    },
-  });
-
-  pi.registerTool({
-    name: "kxm_fanout",
-    label: "Ask planning panel",
-    description: "Send the same independent request to one through three peers and return replies for comparison and synthesis. A local timeout or prompt interruption returns a pending response with a durable messageId for kxm_get or an exact retry. For durable peer evidence, supply workflowContext; correlation and idempotency are transport concerns and do not establish evidence provenance.",
-    parameters: Type.Object({
-      targets: Type.Array(Type.String(), { minItems: 1, maxItems: 3 }),
-      content: Type.String(),
-      correlationId: Type.Optional(Type.String({ description: "Optional task grouping; the hub binds it to runId when workflowContext is supplied" })),
-      idempotencyKeyPrefix: Type.Optional(Type.String({ description: "Stable retry/deduplication prefix only; not a workflow security or evidence binding" })),
-      workflowContext: Type.Optional(Type.Object({
-        runId: Type.String({ description: "Active durable workflow run ID" }),
-        stageId: Type.String({ description: "Active workflow stage ID" }),
-        requirementKey: Type.String({ description: "Required evidence identity these peer replies may satisfy" }),
-        attempt: Type.Integer({ minimum: 1, maximum: 20, description: "Current one-based stage attempt" }),
-      }, {
-        additionalProperties: false,
-        description: "Requested provenance scope shared by each request; the hub authorizes and persists the canonical binding",
-      })),
-      ttlMs: Type.Optional(Type.Number({ minimum: 1_000, maximum: 604_800_000 })),
-      timeoutMs: Type.Optional(Type.Number({ minimum: 100, maximum: 1_800_000 })),
-    }),
-    async execute(_toolCallId, params, signal) {
-      return result({ responses: await requireClient().fanout({
-        targets: params.targets,
-        content: params.content,
-        ...(params.correlationId ? { correlationId: params.correlationId } : {}),
-        ...(params.idempotencyKeyPrefix ? { idempotencyKeyPrefix: params.idempotencyKeyPrefix } : {}),
-        ...(params.workflowContext ? { workflowContext: params.workflowContext } : {}),
-        ...(params.ttlMs ? { ttlMs: params.ttlMs } : {}),
-        ...(params.timeoutMs ? { timeoutMs: params.timeoutMs } : {}),
-        ...(signal ? { signal } : {}),
-      }) });
-    },
-  });
-
-  pi.registerTool({
-    name: "kxm_await",
-    label: "Await peer response",
-    description: "Wait for a peer request to receive a reply. Prefer kxm_get when useful work can continue meanwhile.",
-    parameters: Type.Object({
-      messageId: Type.String(),
-      timeoutMs: Type.Optional(Type.Number({ minimum: 100, maximum: 1_800_000 })),
-    }),
-    async execute(_toolCallId, params, signal) {
-      return result(await requireClient().awaitResponse(params.messageId, params.timeoutMs, signal));
-    },
-  });
-
-  pi.registerTool({
-    name: "kxm_cancel",
-    label: "Cancel peer request",
-    description: "Cancel a queued or delivered request that this agent sent.",
-    parameters: Type.Object({ messageId: Type.String() }),
-    async execute(_toolCallId, params) {
-      return result(await requireClient().cancel(params.messageId));
-    },
-  });
-
-  pi.registerTool({
-    name: "kxm_workflow_list",
-    label: "List workflow runs",
-    description: "List durable webhook workflow runs assigned to this long-lived agent.",
-    parameters: Type.Object({}),
-    async execute() {
-      return result({ runs: await workflowCall(() => requireClient().listWorkflows()) });
-    },
-  });
-
-  pi.registerTool({
-    name: "kxm_workflow_get",
-    label: "Get workflow run",
-    description: "Get a workflow's stages and journal of plans, decisions, contradictions, errors, and lessons.",
-    parameters: Type.Object({ runId: Type.String() }),
-    async execute(_toolCallId, params) {
-      return result(await workflowCall(() => requireClient().getWorkflow(params.runId)));
-    },
-  });
-
-  pi.registerTool({
-    name: "kxm_workflow_checkpoint",
-    label: "Checkpoint workflow stage",
-    description: "Record a stage result with evidence keyed by the stage's required evidence identities. Cite peer-reply requirements through evidenceRefs so the hub can verify provenance and quorum; caller-authored evidence strings cannot satisfy those policies. Warnings and failures require another attempt until passed or exhausted.",
-    parameters: Type.Object({
-      runId: Type.String(),
-      stageId: Type.String(),
-      status: Type.Union([Type.Literal("passed"), Type.Literal("warning"), Type.Literal("failed")]),
-      summary: Type.String(),
-      evidence: Type.Optional(Type.Record(Type.String(), Type.String(), { maxProperties: 64 })),
-      evidenceRefs: Type.Optional(Type.Record(
-        Type.String(),
-        Type.Object({
-          messageIds: Type.Array(Type.String(), { minItems: 1, maxItems: 16 }),
-        }, { additionalProperties: false }),
-        {
-          maxProperties: 32,
-          description: "Peer evidence references keyed by required evidence identity; the hub verifies messages and derives producer metadata",
-        },
-      )),
-    }),
-    async execute(_toolCallId, params) {
-      return result(await workflowCall(() => requireClient().checkpointWorkflow(params.runId, {
-        stageId: params.stageId,
-        status: params.status as WorkflowCheckpointStatus,
-        summary: params.summary,
-        ...(params.evidence ? { evidence: params.evidence } : {}),
-        ...(params.evidenceRefs ? { evidenceRefs: params.evidenceRefs } : {}),
-      })));
-    },
-  });
-
-  pi.registerTool({
-    name: "kxm_workflow_wait",
-    label: "Wait for workflow signal",
-    description: "Pause the active workflow stage until a signed external callback reports its result. Supply caller-authored evidence by key and cite peer-reply requirements through evidenceRefs so the hub can verify provenance and quorum. Verified evidence is accumulated with callback evidence. The current agent turn may settle after this succeeds.",
-    parameters: Type.Object({
-      runId: Type.String(),
-      stageId: Type.String(),
-      signalKey: Type.String({ description: "Stable callback key, such as github-pr-42-checks" }),
-      summary: Type.String({ description: "What is running externally and what result is expected" }),
-      evidence: Type.Optional(Type.Record(Type.String(), Type.String(), { maxProperties: 64 })),
-      evidenceRefs: Type.Optional(Type.Record(
-        Type.String(),
-        Type.Object({
-          messageIds: Type.Array(Type.String(), { minItems: 1, maxItems: 16 }),
-        }, { additionalProperties: false }),
-        {
-          maxProperties: 32,
-          description: "Peer evidence references keyed by required evidence identity; the hub verifies messages and derives producer metadata",
-        },
-      )),
-      timeoutMs: Type.Optional(Type.Integer({ minimum: 1_000, maximum: 2_592_000_000 })),
-    }),
-    async execute(_toolCallId, params) {
-      return result(await workflowCall(() => requireClient().waitForWorkflowSignal(params.runId, {
-        stageId: params.stageId,
-        signalKey: params.signalKey,
-        summary: params.summary,
-        ...(params.evidence ? { evidence: params.evidence } : {}),
-        ...(params.evidenceRefs ? { evidenceRefs: params.evidenceRefs } : {}),
-        ...(params.timeoutMs ? { timeoutMs: params.timeoutMs } : {}),
-      })));
-    },
-  });
-
-  pi.registerTool({
-    name: "kxm_workflow_record",
-    label: "Record workflow knowledge",
-    description: "Capture a plan, decision, contradiction, error, or lesson as evidence for workflow improvement.",
-    parameters: Type.Object({
-      runId: Type.String(),
-      category: Type.Union([
-        Type.Literal("plan"),
-        Type.Literal("decision"),
-        Type.Literal("contradiction"),
-        Type.Literal("error"),
-        Type.Literal("lesson"),
-      ]),
-      area: Type.Union([
-        Type.Literal("harness"),
-        Type.Literal("gates"),
-        Type.Literal("implementation"),
-        Type.Literal("workflow"),
-        Type.Literal("documentation"),
-        Type.Literal("security"),
-        Type.Literal("other"),
-      ]),
-      severity: Type.Optional(Type.Union([
-        Type.Literal("info"),
-        Type.Literal("warning"),
-        Type.Literal("error"),
-      ])),
-      summary: Type.String(),
-      details: Type.Optional(Type.String()),
-      evidence: Type.Optional(Type.Array(Type.String(), { maxItems: 32 })),
-      relatedEntryIds: Type.Optional(Type.Array(Type.String(), { maxItems: 16 })),
-    }),
-    async execute(_toolCallId, params) {
-      return result(await workflowCall(() => requireClient().recordWorkflowEntry(params.runId, {
-        category: params.category as JournalCategory,
-        area: params.area as ImprovementArea,
-        ...(params.severity ? { severity: params.severity as "info" | "warning" | "error" } : {}),
-        summary: params.summary,
-        ...(params.details ? { details: params.details } : {}),
-        ...(params.evidence ? { evidence: params.evidence } : {}),
-        ...(params.relatedEntryIds ? { relatedEntryIds: params.relatedEntryIds } : {}),
-      })));
-    },
-  });
-
-  pi.registerTool({
-    name: "kxm_improvement_report",
-    label: "Review workflow improvements",
-    description: "Summarize recorded errors, contradictions, and lessons by improvement area across this project.",
-    parameters: Type.Object({}),
-    async execute() {
-      return result(await workflowCall(() => requireClient().improvementReport()));
-    },
-  });
-
-  // ----- KXM context operating system (v0.5) -----
-
-  pi.registerTool({
-    name: "kxm_context",
-    label: "Assemble role-aware context packet",
-    description: "Normal entry point for KXM context. Assembles a token-budgeted context packet for your role and task from durable journal evidence, temporal state, knowledge, episodes, and skills. Superseded and rejected records are excluded. Do not query memory providers directly; use KXM context tools.",
-    parameters: Type.Object({
-      role: Type.String({ description: "Your role for this task: repro, planner, critic, implementer, verifier, or a custom role" }),
-      task: Type.String({ description: "What you are trying to accomplish" }),
-      workflowRunId: Type.Optional(Type.String({ description: "Workflow run scope, when working a run" })),
-      stageId: Type.Optional(Type.String({ description: "Workflow stage scope" })),
-      budgetTokens: Type.Optional(Type.Integer({ description: "Token budget; defaults to the role policy" })),
-      includeKinds: Type.Optional(Type.Array(Type.Union([
-        Type.Literal("evidence"),
-        Type.Literal("state"),
-        Type.Literal("episode"),
-        Type.Literal("knowledge"),
-        Type.Literal("skill"),
-      ]), { description: "Restrict packet to these item kinds" })),
-    }),
-    async execute(_toolCallId, params) {
-      const client = requireClient();
-      return result(await workflowCall(() => client.contextGet({
-        project: client.agent!.project,
-        role: params.role,
-        task: params.task,
-        ...(params.workflowRunId ? { workflowRunId: params.workflowRunId } : {}),
-        ...(params.stageId ? { stageId: params.stageId } : {}),
-        ...(params.budgetTokens !== undefined ? { budgetTokens: params.budgetTokens } : {}),
-        ...(params.includeKinds ? { includeKinds: params.includeKinds } : {}),
-      })));
-    },
-  });
-
-  pi.registerTool({
-    name: "kxm_recall",
-    label: "Recall durable context records",
-    description: "Search durable context records for this project by query. Returns bounded metadata only; use kxm_context for role-aware packets.",
-    parameters: Type.Object({
-      query: Type.Optional(Type.String({ description: "Substring query against summaries and state keys" })),
-      kinds: Type.Optional(Type.Array(Type.String(), { description: "Item kinds to include" })),
-      limit: Type.Optional(Type.Integer({ description: "Maximum results (1-100)" })),
-    }),
-    async execute(_toolCallId, params) {
-      const client = requireClient();
-      return result(await workflowCall(() => client.contextRecall({
-        project: client.agent!.project,
-        ...(params.query ? { query: params.query } : {}),
-        ...(params.kinds ? { kinds: params.kinds as ContextItemKind[] } : {}),
-        ...(params.limit !== undefined ? { limit: params.limit } : {}),
-      })));
-    },
-  });
-
-  pi.registerTool({
-    name: "kxm_state",
-    label: "Query authoritative project state",
-    description: "Current value for one temporal state key, optionally as of a historical timestamp. Superseded values never appear as current.",
-    parameters: Type.Object({
-      key: Type.String({ description: "State key" }),
-      asOf: Type.Optional(Type.String({ description: "ISO-8601 timestamp for historical queries" })),
-    }),
-    async execute(_toolCallId, params) {
-      const client = requireClient();
-      return result(await workflowCall(() => client.contextState({
-        project: client.agent!.project,
-        key: params.key,
-        ...(params.asOf ? { asOf: params.asOf } : {}),
-      })));
-    },
-  });
-
-  pi.registerTool({
-    name: "kxm_episode",
-    label: "Recall episodic learning records",
-    description: "Episodic learning from workflow journals: errors, lessons, observations, and experiments for this project, optionally scoped to one run.",
-    parameters: Type.Object({
-      workflowRunId: Type.Optional(Type.String({ description: "Limit to one workflow run" })),
-    }),
-    async execute(_toolCallId, params) {
-      const client = requireClient();
-      return result(await workflowCall(() => client.contextEpisode({
-        project: client.agent!.project,
-        ...(params.workflowRunId ? { workflowRunId: params.workflowRunId } : {}),
-      })));
-    },
-  });
-
-  pi.registerTool({
-    name: "kxm_promote",
-    label: "Propose temporal state change",
-    description: "Propose a change to one authoritative state key. Proposing changes nothing: promotion requires durable evidence and an authorized control-plane decision. Peers can claim evidence authority at most.",
-    parameters: Type.Object({
-      key: Type.String({ description: "State key to propose a change for" }),
-      summary: Type.String({ description: "Proposed value and rationale" }),
-      authority: Type.Union([
-        Type.Literal("policy"),
-        Type.Literal("instruction"),
-        Type.Literal("evidence"),
-        Type.Literal("hypothesis"),
-      ]),
-      confidence: Type.Union([
-        Type.Literal("verified"),
-        Type.Literal("probable"),
-        Type.Literal("uncertain"),
-      ]),
-      evidenceRefs: Type.Array(Type.String(), { minItems: 1, maxItems: 32, description: "Durable references backing the proposal" }),
-    }),
-    async execute(_toolCallId, params) {
-      const client = requireClient();
-      return result(await workflowCall(() => client.contextStatePropose({
-        project: client.agent!.project,
-        key: params.key,
-        summary: params.summary,
-        authority: params.authority,
-        confidence: params.confidence,
-        evidenceRefs: params.evidenceRefs,
-      })));
-    },
-  });
+  for (const cmd of AGENT_COMMANDS) {
+    pi.registerTool({
+      name: cmd.name,
+      label: cmd.label,
+      description: cmd.description,
+      parameters: cmd.parameters as unknown as Record<string, unknown>,
+      async execute(_toolCallId, params, signal) {
+        const policy = enforceToolPolicy(cmd.name);
+        if (!policy.allowed) {
+          throw new Error(`tool_policy_denied: ${policy.detail ?? policy.error}`);
+        }
+        return result(
+          await workflowCall(() =>
+            cmd.execute(requireClient(), (params ?? {}) as Record<string, unknown>, { signal }),
+          ),
+        );
+      },
+    });
+  }
 
   pi.registerCommand("kxm", {
     description: "Hub session brief, status line, and hub view",
