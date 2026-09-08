@@ -14993,6 +14993,29 @@ function resolveVnextTemplateBaseline(value) {
 
 // plugins/kxm/src/vnext-harness.ts
 var DEFAULT_HARNESS = "pi";
+var NATIVE_HARNESS_PROVIDERS = Object.freeze({
+  claude: "anthropic",
+  codex: "openai",
+  grok: "xai",
+  agy: "google",
+  gemini: "google",
+  kimi: "moonshot",
+  deepseek: "deepseek"
+});
+var PI_ALLOWED_PROVIDERS = Object.freeze([
+  "openrouter",
+  "nous-portal",
+  "nous",
+  "nous-proxy"
+]);
+var PI_NATIVE_BRAKE_PROVIDERS = Object.freeze([
+  "anthropic",
+  "openai",
+  "xai",
+  "moonshot",
+  "google",
+  "deepseek"
+]);
 var BUILTIN_HARNESSES = Object.freeze([
   {
     id: "pi",

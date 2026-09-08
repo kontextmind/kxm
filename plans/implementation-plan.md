@@ -312,6 +312,16 @@ It does not replace the phase gates below.
   critics rework back-edge to plan; approval rework back-edge to plan; command gates;
   wait signal step) without illegal transitions or evidence reuse. Caller-authored
   replies fail closed. Fulfills the Phase 3 Gate sentence.
+- **Phase 4 harness/model assignment validation & Pi auth probe (implemented, unreleased):**
+  `validateHarnessModelPair` enforces unhosted harness/model pair rejection at
+  assignment, rejecting models not hosted by the selected harness (Claude ≠ Grok,
+  Codex ≠ Gemini, etc.) and enforcing native Pi brake rules (blocking direct
+  native-provider impersonation through Pi without allowlisted aggregator prefixes
+  `openrouter/*`, `nous-portal/*`, `nous/*`, `nous-proxy/*`). `probeHarnessAssignment`
+  and `probeHarnessesForModel` supply exact requested provider/model context to
+  Pi (`pi auth check [--provider <p>] [--model <m>] --json`) before claiming Pi
+  readiness, enabling `eligibleHarnesses` to dynamically filter authenticated
+  harnesses for a specific assignment candidate without static YAML matrices.
 - **Issue 127 complete (PR #129, `50c8482`):** native writer, fixed witness,
   independent Fable/Sol reviews, acceptance, and all five PR CI jobs passed.
   The parent-alias regression owns its temporary symlink on Mac/Linux;
@@ -925,6 +935,9 @@ Extension-registered opt-in Nous providers exist, with live public catalog
 normalization into labeled USD/M upper bounds (no Pi `cost.tiers` schedule)
 plus provenance on the discovery report; assignment-time provider/model
 admission remains Phase 4 work.
+
+**Harness/model assignment validation & Pi probe (implemented, unreleased):**
+Unhosted harness/model pair rejection at assignment and exact-context Pi auth probing (`validateHarnessModelPair`, `probeHarnessAssignment`, `probeHarnessesForModel` in `vnext-harness.ts`) enforce provider hosting boundaries, reject native-provider Pi impersonation, and probe exact requested provider/model credentials via `pi auth check`.
 
 **Still this phase:** Pi RPC adapter, per-run sessions, the rest of the `/kxm`
 menu (hub/workflows/agents completions wrapping CLI), validated YAML editors

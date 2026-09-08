@@ -59,6 +59,46 @@ const CODEX_CHATGPT_LINE = "Logged in using ChatGPT";
 const CODEX_API_KEY_PREFIX = "Logged in using an API key";
 const CODEX_NEGATIVE_LINE = "Not logged in";
 
+/** Providers that have a dedicated native harness rule. */
+export const NATIVE_HARNESS_PROVIDERS: Readonly<Record<string, string>> = Object.freeze({
+  claude: "anthropic",
+  codex: "openai",
+  grok: "xai",
+  agy: "google",
+  gemini: "google",
+  kimi: "moonshot",
+  deepseek: "deepseek",
+});
+
+/** Allowlisted Pi aggregator provider prefixes. */
+export const PI_ALLOWED_PROVIDERS: readonly string[] = Object.freeze([
+  "openrouter",
+  "nous-portal",
+  "nous",
+  "nous-proxy",
+]);
+
+/** Native providers Pi must not impersonate directly unless allowlisted aggregator prefix is used. */
+export const PI_NATIVE_BRAKE_PROVIDERS: readonly string[] = Object.freeze([
+  "anthropic",
+  "openai",
+  "xai",
+  "moonshot",
+  "google",
+  "deepseek",
+]);
+
+export interface HarnessModelSpec {
+  provider?: string | undefined;
+  model?: string | undefined;
+}
+
+export interface HarnessModelValidation {
+  valid: boolean;
+  issue?: "harness_unknown" | "harness_unhosted_model" | "pi_native_impersonation_blocked";
+  message?: string;
+}
+
 export interface HarnessUpdateStep {
   harness: string;
   scope: Exclude<HarnessUpdateScope, "all">;
@@ -337,6 +377,272 @@ export function eligibleHarnesses(inventory: HarnessInventory): readonly string[
     .map((entry) => entry.id);
   if (eligible.length === 0) throw new Error("no_authenticated_harness");
   return eligible;
+}
+
+export function validateHarnessModelPair(
+  harnessId: string,
+  modelSpec: string | HarnessModelSpec,
+): HarnessModelValidation {
+  if (!isKnownHarnessId(harnessId)) {
+    return { valid: false, issue: "harness_unknown", message: `unknown harness: ${harnessId}` };
+  }
+  let provider: string | undefined;
+  let model: string | undefined;
+  if (typeof modelSpec === "string") {
+    const trimmed = modelSpec.trim();
+    if (trimmed.includes("/")) {
+      const idx = trimmed.indexOf("/");
+      provider = trimmed.slice(0, idx).toLowerCase();
+      model = trimmed.slice(idx + 1);
+    } else {
+      model = trimmed;
+    }
+  } else {
+    provider = modelSpec.provider?.trim().toLowerCase();
+    model = modelSpec.model?.trim();
+  }
+
+  if (harnessId === "claude") {
+    if (provider && provider !== "anthropic") {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness claude does not host provider ${provider}` };
+    }
+    if (model && /^(gpt|o1|o3|grok|gemini|kimi|moonshot|deepseek|qwen)-/i.test(model)) {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness claude does not host model ${model}` };
+    }
+    return { valid: true };
+  }
+
+  if (harnessId === "codex") {
+    if (provider && provider !== "openai") {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness codex does not host provider ${provider}` };
+    }
+    if (model && /^(claude|fable|grok|gemini|kimi|moonshot|deepseek|qwen)-/i.test(model)) {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness codex does not host model ${model}` };
+    }
+    return { valid: true };
+  }
+
+  if (harnessId === "grok") {
+    if (provider && provider !== "xai") {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness grok does not host provider ${provider}` };
+    }
+    if (model && !/^grok-/i.test(model)) {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness grok only hosts grok models, received ${model}` };
+    }
+    return { valid: true };
+  }
+
+  if (harnessId === "agy" || harnessId === "gemini") {
+    if (provider && provider !== "google") {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness ${harnessId} does not host provider ${provider}` };
+    }
+    if (model && !/^gemini-/i.test(model)) {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness ${harnessId} only hosts gemini models, received ${model}` };
+    }
+    return { valid: true };
+  }
+
+  if (harnessId === "kimi") {
+    if (provider && provider !== "moonshot") {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness kimi does not host provider ${provider}` };
+    }
+    if (model && !/^(kimi|moonshot)-/i.test(model)) {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness kimi only hosts kimi/moonshot models, received ${model}` };
+    }
+    return { valid: true };
+  }
+
+  if (harnessId === "deepseek") {
+    if (provider && provider !== "deepseek") {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness deepseek does not host provider ${provider}` };
+    }
+    if (model && !/^deepseek-/i.test(model)) {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness deepseek only hosts deepseek models, received ${model}` };
+    }
+    return { valid: true };
+  }
+
+  if (harnessId === "pi") {
+    if (provider && PI_NATIVE_BRAKE_PROVIDERS.includes(provider)) {
+      return {
+        valid: false,
+        issue: "pi_native_impersonation_blocked",
+        message: `pi must not impersonate native provider ${provider}; use the native harness`,
+      };
+    }
+    if (!provider && model && PI_NATIVE_BRAKE_PROVIDERS.some((p) => model!.toLowerCase().startsWith(`${p}/`))) {
+      return {
+        valid: false,
+        issue: "pi_native_impersonation_blocked",
+        message: `pi must not impersonate native model ${model}; use the native harness`,
+      };
+    }
+    return { valid: true };
+  }
+
+  return { valid: true };
+}
+
+export interface HarnessAssignmentProbeOptions {
+  harness: string;
+  provider?: string | undefined;
+  model?: string | undefined;
+  env?: NodeJS.ProcessEnv | undefined;
+  runCommand?: ((command: string, args: readonly string[], timeoutMs: number) => HarnessCommandResult) | undefined;
+  timeoutMs?: number | undefined;
+}
+
+export function probeHarnessAssignment(options: HarnessAssignmentProbeOptions): HarnessStatus {
+  const timeoutMs = options.timeoutMs ?? 3000;
+  const runCommand = options.runCommand ?? defaultRunner(options.env ?? process.env);
+  const entry = BUILTIN_HARNESSES.find((candidate) => candidate.id === options.harness);
+  if (!entry) {
+    return {
+      id: options.harness,
+      label: options.harness,
+      default: false,
+      mode: "either",
+      detected: false,
+      authenticated: false,
+      canUpdate: { self: false, extensions: false, models: false },
+      issues: ["harness_unknown"],
+    };
+  }
+
+  if (options.provider || options.model) {
+    const validation = validateHarnessModelPair(options.harness, { provider: options.provider, model: options.model });
+    if (!validation.valid) {
+      return {
+        id: entry.id,
+        label: entry.label,
+        default: entry.default,
+        mode: entry.mode,
+        detected: false,
+        authenticated: false,
+        canUpdate: {
+          self: Boolean(entry.update.self.length),
+          extensions: Boolean(entry.update.extensions?.length),
+          models: Boolean(entry.update.models?.length),
+        },
+        issues: [validation.issue ?? "harness_unhosted_model"],
+      };
+    }
+  }
+
+  let detected = false;
+  let command: string | undefined;
+  let version: string | undefined;
+  for (const candidate of entry.commands) {
+    const result = runCommand(candidate, entry.versionArgs, timeoutMs);
+    if (result.error === "ENOENT") continue;
+    if (result.error && result.code === null && !result.stdout && !result.stderr) continue;
+    detected = true;
+    command = candidate;
+    version = firstLine(result.stdout) ?? firstLine(result.stderr);
+    break;
+  }
+
+  if (!detected || !command) {
+    return {
+      id: entry.id,
+      label: entry.label,
+      default: entry.default,
+      mode: entry.mode,
+      detected: false,
+      authenticated: false,
+      canUpdate: {
+        self: Boolean(entry.update.self.length),
+        extensions: Boolean(entry.update.extensions?.length),
+        models: Boolean(entry.update.models?.length),
+      },
+      issues: [],
+    };
+  }
+
+  if (entry.id === "pi") {
+    if (!options.provider && !options.model) {
+      return {
+        id: entry.id,
+        label: entry.label,
+        default: entry.default,
+        mode: entry.mode,
+        detected: true,
+        authenticated: null,
+        command,
+        ...(version ? { version } : {}),
+        canUpdate: {
+          self: Boolean(entry.update.self.length),
+          extensions: Boolean(entry.update.extensions?.length),
+          models: Boolean(entry.update.models?.length),
+        },
+        issues: ["auth_context_required"],
+      };
+    }
+
+    const authArgs = ["auth", "check"];
+    if (options.model) {
+      authArgs.push("--model", options.model);
+    } else if (options.provider) {
+      authArgs.push("--provider", options.provider);
+    }
+    authArgs.push("--json");
+    const result = runCommand(command, authArgs, timeoutMs);
+    const parsed = parseJsonObject(result.stdout);
+    let authenticated: boolean | null = false;
+    const issues: string[] = [];
+    if (result.error) {
+      issues.push("auth_probe_error");
+    } else if (parsed && parsed.status === "ready") {
+      authenticated = true;
+    } else if (parsed && parsed.status === "not_ready") {
+      authenticated = false;
+      issues.push("not_authenticated");
+    } else if (commandSucceeded(result) && /\bready\b/i.test(`${result.stdout}\n${result.stderr}`)) {
+      authenticated = true;
+    } else {
+      authenticated = false;
+      issues.push("not_authenticated");
+    }
+
+    return {
+      id: entry.id,
+      label: entry.label,
+      default: entry.default,
+      mode: entry.mode,
+      detected: true,
+      authenticated,
+      command,
+      ...(version ? { version } : {}),
+      canUpdate: {
+        self: Boolean(entry.update.self.length),
+        extensions: Boolean(entry.update.extensions?.length),
+        models: Boolean(entry.update.models?.length),
+      },
+      issues,
+    };
+  }
+
+  return probeEntry(entry, runCommand, timeoutMs);
+}
+
+export function probeHarnessesForModel(
+  modelSpec: HarnessModelSpec,
+  options: HarnessProbeOptions = {},
+): HarnessInventory {
+  const timeoutMs = options.timeoutMs ?? 3000;
+  const runCommand = options.runCommand ?? defaultRunner(options.env ?? process.env);
+  return {
+    defaultHarness: DEFAULT_HARNESS,
+    harnesses: BUILTIN_HARNESSES.map((entry) =>
+      probeHarnessAssignment({
+        harness: entry.id,
+        provider: modelSpec.provider,
+        model: modelSpec.model,
+        runCommand,
+        timeoutMs,
+      })
+    ),
+  };
 }
 
 function scopesFor(scope: HarnessUpdateScope, entry: HarnessCatalogEntry): Exclude<HarnessUpdateScope, "all">[] {
