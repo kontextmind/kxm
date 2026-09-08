@@ -15,10 +15,44 @@ import { createHash } from "node:crypto";
  */
 
 export const ROUTING_RECORD_SCHEMA = "kxm.routing-record.v1" as const;
+export const ROUTING_RECORD_V2_SCHEMA = "kxm.routing-record.v2" as const;
 export const BEHAVIORAL_HASH_VERSION = 1;
 
+export type RoutingCostBasis = "metered" | "unmetered" | "unknown";
 export type RoutingVerifierOutcome = "passed" | "warning" | "failed";
 export type RoutingFinalOutcome = "accepted" | "blocked" | "failed" | "pending";
+
+export interface RoutingRecordV2 {
+  schema: typeof ROUTING_RECORD_V2_SCHEMA;
+  recordedAt: string;
+  project: string;
+  runId: string;
+  stepId: string;
+  assignmentId: string;
+  attemptId: string;
+  harness: string;
+  provider: string;
+  requestedModel: string;
+  effectiveModel: string;
+  thinking?: string | undefined;
+  agentRole?: string | undefined;
+  behavioralSha256: string;
+  contextTokens?: number | null | undefined;
+  tokensIn?: number | null | undefined;
+  tokensOut?: number | null | undefined;
+  cacheReadTokens?: number | null | undefined;
+  cacheWriteTokens?: number | null | undefined;
+  latencyMs: number;
+  costBasis: RoutingCostBasis;
+  costUsd?: number | null | undefined;
+  priceRef?: string | null | undefined;
+  verifierOutcome?: RoutingVerifierOutcome | undefined;
+  finalOutcome?: RoutingFinalOutcome | string | undefined;
+  retries: number;
+  transitions?: number | undefined;
+  humanInterventions?: number | undefined;
+  providerMetadata?: Record<string, string | number | boolean> | undefined;
+}
 
 export interface SkillVersionRef {
   id: string;
@@ -27,25 +61,25 @@ export interface SkillVersionRef {
 
 export interface BehavioralConfigInput {
   /** Requested model route (e.g. "pi/kimi-k3"), normalized. */
-  requestedModel?: string;
+  requestedModel?: string | undefined;
   /** Effective model after fallback/rotation, normalized. */
-  effectiveModel?: string;
+  effectiveModel?: string | undefined;
   /** Reasoning effort identifier (e.g. "high"). */
-  reasoningEffort?: string;
+  reasoningEffort?: string | undefined;
   /** Agent role (repro, planner, ...). */
-  agentRole?: string;
+  agentRole?: string | undefined;
   /** Role prompt/config content hash. */
-  rolePromptSha256?: string;
+  rolePromptSha256?: string | undefined;
   /** Selected skills with pinned content hashes. */
-  skills?: SkillVersionRef[];
+  skills?: SkillVersionRef[] | undefined;
   /** Context/retrieval policy version. */
-  contextPolicyVersion?: string;
+  contextPolicyVersion?: string | undefined;
   /** Tool policy/schema version. */
-  toolPolicyVersion?: string;
+  toolPolicyVersion?: string | undefined;
   /** Workflow definition hash. */
-  workflowDefinitionSha256?: string;
+  workflowDefinitionSha256?: string | undefined;
   /** Verifier configuration hash. */
-  verifierConfigSha256?: string;
+  verifierConfigSha256?: string | undefined;
 }
 
 export interface RoutingRecord {
@@ -128,13 +162,19 @@ function boundedString(value: unknown, field: string, max: number): string | und
 
 /** Parse and validate a routing record from untrusted input. Metadata only:
  * fail closed on unbounded fields, invalid identifiers, or negative costs. */
-export function parseRoutingRecord(value: unknown): RoutingRecord {
+export function parseRoutingRecord(value: { schema: typeof ROUTING_RECORD_V2_SCHEMA } & Record<string, unknown>): RoutingRecordV2;
+export function parseRoutingRecord(value: { schema: typeof ROUTING_RECORD_SCHEMA } & Record<string, unknown>): RoutingRecord;
+export function parseRoutingRecord(value: unknown): RoutingRecord | RoutingRecordV2;
+export function parseRoutingRecord(value: unknown): RoutingRecord | RoutingRecordV2 {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("routing record must be an object");
   }
   const input = value as Record<string, unknown>;
+  if (input.schema === ROUTING_RECORD_V2_SCHEMA) {
+    return parseRoutingRecordV2(value);
+  }
   if (input.schema !== ROUTING_RECORD_SCHEMA) {
-    throw new Error(`routing record schema must be ${ROUTING_RECORD_SCHEMA}`);
+    throw new Error(`routing record schema must be ${ROUTING_RECORD_SCHEMA} or ${ROUTING_RECORD_V2_SCHEMA}`);
   }
   const skills = input.skills === undefined || input.skills === null
     ? []
@@ -246,6 +286,130 @@ export function parseRoutingRecord(value: unknown): RoutingRecord {
   if (verifierOutcome !== undefined) record.verifierOutcome = verifierOutcome;
   if (finalOutcome !== undefined) record.finalOutcome = finalOutcome;
   if (providerMetadata !== undefined) record.providerMetadata = providerMetadata;
+  return record;
+}
+
+export function parseRoutingRecordV2(value: unknown): RoutingRecordV2 {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("routing record v2 must be an object");
+  }
+  const input = value as Record<string, unknown>;
+  if (input.schema !== ROUTING_RECORD_V2_SCHEMA) {
+    throw new Error(`routing record v2 schema must be ${ROUTING_RECORD_V2_SCHEMA}`);
+  }
+  const costBasis = input.costBasis;
+  if (costBasis !== "metered" && costBasis !== "unmetered" && costBasis !== "unknown") {
+    throw new Error("routing record v2 costBasis must be metered, unmetered, or unknown");
+  }
+  let costUsd: number | null | undefined = undefined;
+  if (costBasis === "metered") {
+    if (typeof input.costUsd !== "number" || !Number.isFinite(input.costUsd) || input.costUsd < 0 || input.costUsd > 1_000_000) {
+      throw new Error("routing record v2 costUsd must be a non-negative finite number when costBasis is metered");
+    }
+    costUsd = input.costUsd;
+  } else if (input.costUsd !== undefined && input.costUsd !== null) {
+    if (typeof input.costUsd !== "number" || !Number.isFinite(input.costUsd) || input.costUsd < 0) {
+      throw new Error("routing record v2 costUsd must be a non-negative finite number when present");
+    }
+    costUsd = input.costUsd;
+  } else {
+    costUsd = null;
+  }
+
+  const rawHash = boundedString(input.behavioralSha256, "behavioralSha256", 72) ?? "";
+  if (!/^(?:sha256:)?[a-f0-9]{64}$/.test(rawHash)) {
+    throw new Error("routing record v2 behavioralSha256 must be a sha256 hex digest");
+  }
+  const behavioralSha256 = rawHash.startsWith("sha256:") ? rawHash : `sha256:${rawHash}`;
+
+  const latencyMs = input.latencyMs;
+  if (typeof latencyMs !== "number" || !Number.isFinite(latencyMs) || latencyMs < 0) {
+    throw new Error("routing record v2 latencyMs must be a non-negative number");
+  }
+
+  const providerMetadata = input.providerMetadata === undefined || input.providerMetadata === null
+    ? undefined
+    : (() => {
+      if (!input.providerMetadata || typeof input.providerMetadata !== "object" || Array.isArray(input.providerMetadata)) {
+        throw new Error("routing providerMetadata must be an object");
+      }
+      const entries = Object.entries(input.providerMetadata as Record<string, unknown>);
+      if (entries.length > MAX_PROVIDER_METADATA_FIELDS) {
+        throw new Error(`routing providerMetadata may carry at most ${MAX_PROVIDER_METADATA_FIELDS} fields`);
+      }
+      const normalized: Record<string, string | number | boolean> = {};
+      for (const [key, field] of entries) {
+        if (typeof key !== "string" || key.length > 64 || /prompt|body|content|message/i.test(key)
+          || (typeof field !== "string" && typeof field !== "number" && typeof field !== "boolean")) {
+          throw new Error("routing providerMetadata values must be bounded strings, numbers, or booleans; raw bodies are rejected");
+        }
+        normalized[key] = typeof field === "string" ? field.slice(0, 200) : field;
+      }
+      return normalized;
+    })();
+
+  const record: RoutingRecordV2 = {
+    schema: ROUTING_RECORD_V2_SCHEMA,
+    recordedAt: boundedString(input.recordedAt, "recordedAt", 64) ?? new Date().toISOString(),
+    project: boundedString(input.project, "project", 128) ?? "",
+    runId: boundedString(input.runId, "runId", 128) ?? "",
+    stepId: boundedString(input.stepId, "stepId", 128) ?? "",
+    assignmentId: boundedString(input.assignmentId, "assignmentId", 128) ?? "",
+    attemptId: boundedString(input.attemptId, "attemptId", 128) ?? "",
+    harness: boundedString(input.harness, "harness", 64) ?? "",
+    provider: boundedString(input.provider, "provider", 64) ?? "",
+    requestedModel: normalizeModel(boundedString(input.requestedModel, "requestedModel", 200)) ?? "",
+    effectiveModel: normalizeModel(boundedString(input.effectiveModel, "effectiveModel", 200)) ?? "",
+    behavioralSha256,
+    latencyMs,
+    costBasis,
+    costUsd,
+    retries: boundedInt(input.retries, "retries") ?? 0,
+  };
+
+  if (input.thinking !== undefined && input.thinking !== null) {
+    record.thinking = boundedString(input.thinking, "thinking", 64);
+  }
+  if (input.agentRole !== undefined && input.agentRole !== null) {
+    record.agentRole = boundedString(input.agentRole, "agentRole", 64);
+  }
+  if (input.contextTokens !== undefined) {
+    record.contextTokens = boundedInt(input.contextTokens, "contextTokens") ?? null;
+  }
+  if (input.tokensIn !== undefined) {
+    record.tokensIn = boundedInt(input.tokensIn, "tokensIn") ?? null;
+  }
+  if (input.tokensOut !== undefined) {
+    record.tokensOut = boundedInt(input.tokensOut, "tokensOut") ?? null;
+  }
+  if (input.cacheReadTokens !== undefined) {
+    record.cacheReadTokens = boundedInt(input.cacheReadTokens, "cacheReadTokens") ?? null;
+  }
+  if (input.cacheWriteTokens !== undefined) {
+    record.cacheWriteTokens = boundedInt(input.cacheWriteTokens, "cacheWriteTokens") ?? null;
+  }
+  if (input.priceRef !== undefined && input.priceRef !== null) {
+    record.priceRef = boundedString(input.priceRef, "priceRef", 128);
+  }
+  if (input.verifierOutcome !== undefined && input.verifierOutcome !== null) {
+    if (input.verifierOutcome !== "passed" && input.verifierOutcome !== "warning" && input.verifierOutcome !== "failed") {
+      throw new Error("routing verifierOutcome must be passed, warning, or failed");
+    }
+    record.verifierOutcome = input.verifierOutcome;
+  }
+  if (input.finalOutcome !== undefined && input.finalOutcome !== null) {
+    record.finalOutcome = typeof input.finalOutcome === "string" ? input.finalOutcome.slice(0, 64) : undefined;
+  }
+  if (input.transitions !== undefined) {
+    record.transitions = boundedInt(input.transitions, "transitions");
+  }
+  if (input.humanInterventions !== undefined) {
+    record.humanInterventions = boundedInt(input.humanInterventions, "humanInterventions");
+  }
+  if (providerMetadata !== undefined) {
+    record.providerMetadata = providerMetadata;
+  }
+
   return record;
 }
 

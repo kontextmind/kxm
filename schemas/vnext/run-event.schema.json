@@ -270,6 +270,14 @@
           "payload": { "type": "object", "required": ["lease"] }
         }
       }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "routing.attempt.recorded" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["routing"] }
+        }
+      }
     }
   ],
   "additionalProperties": false,
@@ -391,7 +399,60 @@
           "propertyNames": { "$ref": "common.schema.json#/$defs/identifier" },
           "additionalProperties": { "type": "integer", "minimum": 0 },
           "maxProperties": 32
-        }
+        },
+        "routing": { "$ref": "#/$defs/routingRecordV2" }
+      },
+      "additionalProperties": false
+    },
+    "routingRecordV2": {
+      "type": "object",
+      "required": [
+        "schema",
+        "recordedAt",
+        "project",
+        "runId",
+        "stepId",
+        "assignmentId",
+        "attemptId",
+        "harness",
+        "provider",
+        "requestedModel",
+        "effectiveModel",
+        "behavioralSha256",
+        "latencyMs",
+        "costBasis",
+        "retries"
+      ],
+      "properties": {
+        "schema": { "const": "kxm.routing-record.v2" },
+        "recordedAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+        "project": { "type": "string" },
+        "runId": { "type": "string" },
+        "stepId": { "type": "string" },
+        "assignmentId": { "type": "string" },
+        "attemptId": { "type": "string" },
+        "harness": { "type": "string" },
+        "provider": { "type": "string" },
+        "requestedModel": { "type": "string" },
+        "effectiveModel": { "type": "string" },
+        "thinking": { "type": "string" },
+        "agentRole": { "type": "string" },
+        "behavioralSha256": { "$ref": "common.schema.json#/$defs/sha256" },
+        "contextTokens": { "type": ["integer", "null"], "minimum": 0 },
+        "tokensIn": { "type": ["integer", "null"], "minimum": 0 },
+        "tokensOut": { "type": ["integer", "null"], "minimum": 0 },
+        "cacheReadTokens": { "type": ["integer", "null"], "minimum": 0 },
+        "cacheWriteTokens": { "type": ["integer", "null"], "minimum": 0 },
+        "latencyMs": { "type": "number", "minimum": 0 },
+        "costBasis": { "enum": ["metered", "unmetered", "unknown"] },
+        "costUsd": { "type": ["number", "null"], "minimum": 0 },
+        "priceRef": { "type": ["string", "null"] },
+        "verifierOutcome": { "enum": ["passed", "warning", "failed"] },
+        "finalOutcome": { "type": "string" },
+        "retries": { "type": "integer", "minimum": 0 },
+        "transitions": { "type": "integer", "minimum": 0 },
+        "humanInterventions": { "type": "integer", "minimum": 0 },
+        "providerMetadata": { "type": "object" }
       },
       "additionalProperties": false
     }

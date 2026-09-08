@@ -19308,6 +19308,7 @@ function writeCompiledWiki(root, wiki) {
 
 // plugins/kxm/src/routing.ts
 var ROUTING_RECORD_SCHEMA = "kxm.routing-record.v1";
+var ROUTING_RECORD_V2_SCHEMA = "kxm.routing-record.v2";
 var BEHAVIORAL_HASH_VERSION = 1;
 var MAX_CONTEXT_ITEM_IDS = 256;
 var MAX_SKILL_REFS = 32;
@@ -19336,8 +19337,11 @@ function parseRoutingRecord(value) {
     throw new Error("routing record must be an object");
   }
   const input = value;
+  if (input.schema === ROUTING_RECORD_V2_SCHEMA) {
+    return parseRoutingRecordV2(value);
+  }
   if (input.schema !== ROUTING_RECORD_SCHEMA) {
-    throw new Error(`routing record schema must be ${ROUTING_RECORD_SCHEMA}`);
+    throw new Error(`routing record schema must be ${ROUTING_RECORD_SCHEMA} or ${ROUTING_RECORD_V2_SCHEMA}`);
   }
   const skills = input.skills === void 0 || input.skills === null ? [] : (() => {
     if (!Array.isArray(input.skills) || input.skills.length > MAX_SKILL_REFS) {
@@ -19434,6 +19438,120 @@ function parseRoutingRecord(value) {
   if (verifierOutcome !== void 0) record.verifierOutcome = verifierOutcome;
   if (finalOutcome !== void 0) record.finalOutcome = finalOutcome;
   if (providerMetadata !== void 0) record.providerMetadata = providerMetadata;
+  return record;
+}
+function parseRoutingRecordV2(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("routing record v2 must be an object");
+  }
+  const input = value;
+  if (input.schema !== ROUTING_RECORD_V2_SCHEMA) {
+    throw new Error(`routing record v2 schema must be ${ROUTING_RECORD_V2_SCHEMA}`);
+  }
+  const costBasis = input.costBasis;
+  if (costBasis !== "metered" && costBasis !== "unmetered" && costBasis !== "unknown") {
+    throw new Error("routing record v2 costBasis must be metered, unmetered, or unknown");
+  }
+  let costUsd = void 0;
+  if (costBasis === "metered") {
+    if (typeof input.costUsd !== "number" || !Number.isFinite(input.costUsd) || input.costUsd < 0 || input.costUsd > 1e6) {
+      throw new Error("routing record v2 costUsd must be a non-negative finite number when costBasis is metered");
+    }
+    costUsd = input.costUsd;
+  } else if (input.costUsd !== void 0 && input.costUsd !== null) {
+    if (typeof input.costUsd !== "number" || !Number.isFinite(input.costUsd) || input.costUsd < 0) {
+      throw new Error("routing record v2 costUsd must be a non-negative finite number when present");
+    }
+    costUsd = input.costUsd;
+  } else {
+    costUsd = null;
+  }
+  const rawHash = boundedString(input.behavioralSha256, "behavioralSha256", 72) ?? "";
+  if (!/^(?:sha256:)?[a-f0-9]{64}$/.test(rawHash)) {
+    throw new Error("routing record v2 behavioralSha256 must be a sha256 hex digest");
+  }
+  const behavioralSha256 = rawHash.startsWith("sha256:") ? rawHash : `sha256:${rawHash}`;
+  const latencyMs = input.latencyMs;
+  if (typeof latencyMs !== "number" || !Number.isFinite(latencyMs) || latencyMs < 0) {
+    throw new Error("routing record v2 latencyMs must be a non-negative number");
+  }
+  const providerMetadata = input.providerMetadata === void 0 || input.providerMetadata === null ? void 0 : (() => {
+    if (!input.providerMetadata || typeof input.providerMetadata !== "object" || Array.isArray(input.providerMetadata)) {
+      throw new Error("routing providerMetadata must be an object");
+    }
+    const entries = Object.entries(input.providerMetadata);
+    if (entries.length > MAX_PROVIDER_METADATA_FIELDS) {
+      throw new Error(`routing providerMetadata may carry at most ${MAX_PROVIDER_METADATA_FIELDS} fields`);
+    }
+    const normalized = {};
+    for (const [key, field] of entries) {
+      if (typeof key !== "string" || key.length > 64 || /prompt|body|content|message/i.test(key) || typeof field !== "string" && typeof field !== "number" && typeof field !== "boolean") {
+        throw new Error("routing providerMetadata values must be bounded strings, numbers, or booleans; raw bodies are rejected");
+      }
+      normalized[key] = typeof field === "string" ? field.slice(0, 200) : field;
+    }
+    return normalized;
+  })();
+  const record = {
+    schema: ROUTING_RECORD_V2_SCHEMA,
+    recordedAt: boundedString(input.recordedAt, "recordedAt", 64) ?? (/* @__PURE__ */ new Date()).toISOString(),
+    project: boundedString(input.project, "project", 128) ?? "",
+    runId: boundedString(input.runId, "runId", 128) ?? "",
+    stepId: boundedString(input.stepId, "stepId", 128) ?? "",
+    assignmentId: boundedString(input.assignmentId, "assignmentId", 128) ?? "",
+    attemptId: boundedString(input.attemptId, "attemptId", 128) ?? "",
+    harness: boundedString(input.harness, "harness", 64) ?? "",
+    provider: boundedString(input.provider, "provider", 64) ?? "",
+    requestedModel: normalizeModel(boundedString(input.requestedModel, "requestedModel", 200)) ?? "",
+    effectiveModel: normalizeModel(boundedString(input.effectiveModel, "effectiveModel", 200)) ?? "",
+    behavioralSha256,
+    latencyMs,
+    costBasis,
+    costUsd,
+    retries: boundedInt(input.retries, "retries") ?? 0
+  };
+  if (input.thinking !== void 0 && input.thinking !== null) {
+    record.thinking = boundedString(input.thinking, "thinking", 64);
+  }
+  if (input.agentRole !== void 0 && input.agentRole !== null) {
+    record.agentRole = boundedString(input.agentRole, "agentRole", 64);
+  }
+  if (input.contextTokens !== void 0) {
+    record.contextTokens = boundedInt(input.contextTokens, "contextTokens") ?? null;
+  }
+  if (input.tokensIn !== void 0) {
+    record.tokensIn = boundedInt(input.tokensIn, "tokensIn") ?? null;
+  }
+  if (input.tokensOut !== void 0) {
+    record.tokensOut = boundedInt(input.tokensOut, "tokensOut") ?? null;
+  }
+  if (input.cacheReadTokens !== void 0) {
+    record.cacheReadTokens = boundedInt(input.cacheReadTokens, "cacheReadTokens") ?? null;
+  }
+  if (input.cacheWriteTokens !== void 0) {
+    record.cacheWriteTokens = boundedInt(input.cacheWriteTokens, "cacheWriteTokens") ?? null;
+  }
+  if (input.priceRef !== void 0 && input.priceRef !== null) {
+    record.priceRef = boundedString(input.priceRef, "priceRef", 128);
+  }
+  if (input.verifierOutcome !== void 0 && input.verifierOutcome !== null) {
+    if (input.verifierOutcome !== "passed" && input.verifierOutcome !== "warning" && input.verifierOutcome !== "failed") {
+      throw new Error("routing verifierOutcome must be passed, warning, or failed");
+    }
+    record.verifierOutcome = input.verifierOutcome;
+  }
+  if (input.finalOutcome !== void 0 && input.finalOutcome !== null) {
+    record.finalOutcome = typeof input.finalOutcome === "string" ? input.finalOutcome.slice(0, 64) : void 0;
+  }
+  if (input.transitions !== void 0) {
+    record.transitions = boundedInt(input.transitions, "transitions");
+  }
+  if (input.humanInterventions !== void 0) {
+    record.humanInterventions = boundedInt(input.humanInterventions, "humanInterventions");
+  }
+  if (providerMetadata !== void 0) {
+    record.providerMetadata = providerMetadata;
+  }
   return record;
 }
 function compareRoutingRecords(records) {

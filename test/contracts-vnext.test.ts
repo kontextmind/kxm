@@ -115,6 +115,7 @@ function validateResource(
     "kxm.environment.v1": "environment",
     "kxm.workflow.v1": "workflow",
     "kxm.gate-registry.v1": "gate-registry",
+    "kxm.prices.v1": "prices",
   };
   const name = schemaName[identity];
   assert(name, `unknown resource schema ${identity} in ${relative(root, resource.file)}`);
