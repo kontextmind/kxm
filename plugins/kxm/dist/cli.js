@@ -18703,7 +18703,7 @@ function resolveVnextTemplateBaseline(value) {
 // plugins/kxm/src/vnext-harness.ts
 import { spawnSync } from "node:child_process";
 var DEFAULT_HARNESS = "pi";
-var UNKNOWN_AUTH_HARNESSES = /* @__PURE__ */ new Set(["kimi", "gemini", "deepseek"]);
+var UNKNOWN_AUTH_HARNESSES = /* @__PURE__ */ new Set(["gemini", "deepseek"]);
 var GROK_LOGIN_LINE = "You are logged in with grok.com.";
 var AGY_MODEL_ROW = /^[a-z0-9][a-z0-9.+_-]*\t+\S/im;
 var CODEX_CHATGPT_LINE = "Logged in using ChatGPT";
@@ -18970,6 +18970,7 @@ var BUILTIN_HARNESSES = Object.freeze([
     mode: "either",
     commands: ["kimi"],
     versionArgs: ["--version"],
+    authArgs: ["provider", "list"],
     update: { self: ["upgrade"] },
     oneShot: {
       argv: ["--output-format", "stream-json", "-p"],
@@ -19155,6 +19156,18 @@ ${result.stderr}`;
     if (AGY_MODEL_ROW.test(text)) return { authenticated: true, issues: [] };
     return { authenticated: null, issues: ["auth_unparsed"] };
   }
+  if (id === "kimi") {
+    if (!commandSucceeded(result)) {
+      return { authenticated: false, issues: ["not_authenticated"] };
+    }
+    if (lines.some((line) => /not logged in|no provider/i.test(line))) {
+      return { authenticated: false, issues: ["not_authenticated"] };
+    }
+    if (lines.some((line) => line.includes("managed:kimi") || line.includes("type=kimi") || line.includes("Default model:"))) {
+      return { authenticated: true, issues: [] };
+    }
+    return { authenticated: null, issues: ["auth_unparsed"] };
+  }
   return { authenticated: null, issues: ["auth_unparsed"] };
 }
 function resolveDispatchStatus(entry, detected, authenticated, issues) {
@@ -19229,6 +19242,98 @@ function probeHarnesses(options = {}) {
     defaultHarness: DEFAULT_HARNESS,
     harnesses: BUILTIN_HARNESSES.map((entry) => probeEntry(entry, runCommand, timeoutMs))
   };
+}
+function validateHarnessModelPair(harnessId, modelSpec) {
+  if (!isKnownHarnessId(harnessId)) {
+    return { valid: false, issue: "harness_unknown", message: `unknown harness: ${harnessId}` };
+  }
+  let provider;
+  let model;
+  if (typeof modelSpec === "string") {
+    const trimmed = modelSpec.trim();
+    if (trimmed.includes("/")) {
+      const idx = trimmed.indexOf("/");
+      provider = trimmed.slice(0, idx).toLowerCase();
+      model = trimmed.slice(idx + 1);
+    } else {
+      model = trimmed;
+    }
+  } else {
+    provider = modelSpec.provider?.trim().toLowerCase();
+    model = modelSpec.model?.trim();
+  }
+  if (harnessId === "claude") {
+    if (provider && provider !== "anthropic") {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness claude does not host provider ${provider}` };
+    }
+    if (model && /^(gpt|o1|o3|grok|gemini|kimi|moonshot|deepseek|qwen)-/i.test(model)) {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness claude does not host model ${model}` };
+    }
+    return { valid: true };
+  }
+  if (harnessId === "codex") {
+    if (provider && provider !== "openai") {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness codex does not host provider ${provider}` };
+    }
+    if (model && /^(claude|fable|grok|gemini|kimi|moonshot|deepseek|qwen)-/i.test(model)) {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness codex does not host model ${model}` };
+    }
+    return { valid: true };
+  }
+  if (harnessId === "grok") {
+    if (provider && provider !== "xai") {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness grok does not host provider ${provider}` };
+    }
+    if (model && !/^grok-/i.test(model)) {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness grok only hosts grok models, received ${model}` };
+    }
+    return { valid: true };
+  }
+  if (harnessId === "agy" || harnessId === "gemini") {
+    if (provider && provider !== "google") {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness ${harnessId} does not host provider ${provider}` };
+    }
+    if (model && !/^gemini-/i.test(model)) {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness ${harnessId} only hosts gemini models, received ${model}` };
+    }
+    return { valid: true };
+  }
+  if (harnessId === "kimi") {
+    if (provider && provider !== "moonshot") {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness kimi does not host provider ${provider}` };
+    }
+    if (model && !/^(kimi|moonshot)-/i.test(model)) {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness kimi only hosts kimi/moonshot models, received ${model}` };
+    }
+    return { valid: true };
+  }
+  if (harnessId === "deepseek") {
+    if (provider && provider !== "deepseek") {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness deepseek does not host provider ${provider}` };
+    }
+    if (model && !/^deepseek-/i.test(model)) {
+      return { valid: false, issue: "harness_unhosted_model", message: `harness deepseek only hosts deepseek models, received ${model}` };
+    }
+    return { valid: true };
+  }
+  if (harnessId === "pi") {
+    if (provider && PI_NATIVE_BRAKE_PROVIDERS.includes(provider)) {
+      return {
+        valid: false,
+        issue: "pi_native_impersonation_blocked",
+        message: `pi must not impersonate native provider ${provider}; use the native harness`
+      };
+    }
+    if (!provider && model && PI_NATIVE_BRAKE_PROVIDERS.some((p) => model.toLowerCase().startsWith(`${p}/`))) {
+      return {
+        valid: false,
+        issue: "pi_native_impersonation_blocked",
+        message: `pi must not impersonate native model ${model}; use the native harness`
+      };
+    }
+    return { valid: true };
+  }
+  return { valid: true };
 }
 function scopesFor(scope, entry) {
   if (scope === "self") return ["self"];
@@ -20154,6 +20259,19 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
   if (hasBackEdge && typeof objectValue(workflow.value.limits)?.maxTransitions !== "number") {
     issues.push(issue("semantic", "workflow_cycle_unbounded", file, "workflow with back-edges requires limits.maxTransitions"));
   }
+  const readyIndex = stepIndex.get("ready");
+  const verifyIndex = stepIndex.get("verify");
+  if (readyIndex !== void 0 && verifyIndex !== void 0) {
+    const verifyTargets = adjacency[verifyIndex] ?? /* @__PURE__ */ new Set();
+    if (!verifyTargets.has(readyIndex)) {
+      issues.push(issue("semantic", "verify_must_precede_ready", file, "verify must transition to ready"));
+    }
+    for (const [srcIndex, targets] of adjacency.entries()) {
+      if (targets.has(readyIndex) && srcIndex !== verifyIndex) {
+        issues.push(issue("semantic", "verify_must_precede_ready", file, `step ${String(steps[srcIndex]?.id)} transitions to ready bypassing verify`));
+      }
+    }
+  }
   if (steps.length > 0) {
     const reachable = /* @__PURE__ */ new Set([0]);
     const queue = [0];
@@ -20276,7 +20394,18 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
     for (const repositoryId of Object.keys(objectValue(agent.value.repositories) ?? {})) {
       if (!repositoryIds.has(repositoryId)) issues.push(issue("reference", "repository_unknown", agent.logicalPath, `references unknown repository ${repositoryId}`));
     }
-    selectorCandidates(agent.value.model, models, agent.logicalPath, "model", issues);
+    const candidates = selectorCandidates(agent.value.model, models, agent.logicalPath, "model", issues);
+    const declaredHarness = stringValue(agent.value.harness);
+    if (declaredHarness && harnesses.has(declaredHarness)) {
+      for (const candidate of candidates) {
+        const candidateProvider = stringValue(candidate.value.provider);
+        const candidateModel = stringValue(candidate.value.model);
+        const validation = validateHarnessModelPair(declaredHarness, { provider: candidateProvider, model: candidateModel });
+        if (!validation.valid) {
+          issues.push(issue("semantic", validation.issue ?? "harness_unhosted_model", agent.logicalPath, validation.message ?? `harness ${declaredHarness} cannot host model ${candidateModel ?? candidate.logicalPath}`));
+        }
+      }
+    }
   }
   validateModelReferences(models, issues);
   const defaultWorkflow = stringValue(project.value.defaultWorkflow) ?? "default";

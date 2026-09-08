@@ -469,7 +469,7 @@ test("agy catalog is observational either-mode and parses the committed models p
   assert.deepEqual([...eligible], ["agy"]);
 });
 
-test("kimi gemini and deepseek stay unknown without secret-bearing config-list commands", () => {
+test("gemini and deepseek stay unknown without secret-bearing config-list commands", () => {
   const recorded = recordingRunner({
     "kimi --version": { ok: true, code: 0, stdout: "kimi 0.1\n", stderr: "" },
     "gemini --version": { ok: true, code: 0, stdout: "gemini 0.1\n", stderr: "" },
@@ -479,15 +479,20 @@ test("kimi gemini and deepseek stay unknown without secret-bearing config-list c
     "gemini": { ok: true, code: 0, stdout: "interactive\n", stderr: "" },
   });
   const inventory = probeHarnesses({ runCommand: recorded.runCommand });
-  for (const id of ["kimi", "gemini", "deepseek"] as const) {
+  const kimiEntry = status(inventory, "kimi");
+  assert.equal(kimiEntry.detected, true);
+  assert.equal(kimiEntry.authenticated, true);
+  assert.match(formatHarnessInventory(inventory), /^kimi\s+no\s+yes\s+yes\b/m);
+
+  for (const id of ["gemini", "deepseek"] as const) {
     const entry = status(inventory, id);
     assert.equal(entry.detected, true);
     assert.equal(entry.authenticated, null);
     assert(entry.issues.includes("auth_unknown"));
     assert.match(formatHarnessInventory(inventory), new RegExp(`^${id}\\s+no\\s+yes\\s+unknown\\b`, "m"));
   }
-  assert(!recorded.calls.some((call) => call.includes("provider list") || call.includes("doctor") || call === "gemini"));
-  assert.doesNotMatch(JSON.stringify(inventory), /sk-secret|apiKey|oauth/);
+  assert(!recorded.calls.some((call) => call.includes("--json") || call.includes("doctor") || call === "gemini"));
+  assert.doesNotMatch(JSON.stringify(inventory), /sk-secret|apiKey/);
 });
 
 test("eligibleHarnesses is pure inventory filtering and fail-closes when empty", () => {
@@ -537,7 +542,7 @@ test("harness inventory JSON and text never echo raw auth output", () => {
   assert.doesNotMatch(formatHarnessInventory(inventory), /\bn\/a\b/);
 });
 
-test("config with a Grok model under harness claude loads without a static matrix code", () => {
+test("config with a Grok model under harness claude is rejected at validation", () => {
   const root = mkdtempSync(join(tmpdir(), "kxm-harness-matrix-"));
   try {
     cpSync(join(repoRoot, "examples/vnext"), root, { recursive: true });
@@ -546,12 +551,7 @@ test("config with a Grok model under harness claude loads without a static matri
     makeGitRoot(join(root, "repositories", "web"));
     const agentFile = join(root, ".kxm", "agents", "critic-2.yaml");
     writeFileSync(agentFile, `${readFileSync(agentFile, "utf8").trimEnd()}\nharness: claude\n`);
-    const bundle = loadVnextProject(root);
-    assert.equal(bundle.agents.get("critic-2")?.value.harness, "claude");
-    assert.equal((bundle.agents.get("critic-2")?.value.model as { profile?: string }).profile, "critic-grok");
-  } catch (error) {
-    assert(!issueCodes(error).includes("harness_model_incompatible"));
-    throw error;
+    assert.throws(() => loadVnextProject(root), (error: unknown) => issueCodes(error).includes("harness_unhosted_model"));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -699,6 +699,7 @@ test("probeHarnesses reports dispatch status with reasons across inventory", () 
       "claude --version": { ok: true, code: 0, stdout: "2.1.260\n", stderr: "" },
       "claude auth status": { ok: true, code: 0, stdout: JSON.stringify({ loggedIn: true }), stderr: "" },
       "kimi --version": { ok: true, code: 0, stdout: "1.0.0\n", stderr: "" },
+      "kimi provider list": { ok: true, code: 0, stdout: "managed:kimi-code type=kimi models=4 source=oauth\nDefault model: kimi-code/kimi-for-coding\n", stderr: "" },
       "codex --version": { ok: true, code: 0, stdout: "0.1.0\n", stderr: "" },
       "codex login status": { ok: true, code: 0, stdout: "", stderr: "Logged in using ChatGPT\n" },
       "gemini --version": { ok: true, code: 0, stdout: "0.1.0\n", stderr: "" },
@@ -718,8 +719,8 @@ test("probeHarnesses reports dispatch status with reasons across inventory", () 
   assert.equal(claude.dispatch?.supported, true);
 
   const kimi = status(inventory, "kimi");
-  assert.equal(kimi.dispatch?.status, "no");
-  assert.equal(kimi.dispatch?.reason, "auth_unknown");
+  assert.equal(kimi.dispatch?.status, "yes");
+  assert.equal(kimi.dispatch?.supported, true);
 
   const codex = status(inventory, "codex");
   assert.equal(codex.dispatch?.status, "yes");

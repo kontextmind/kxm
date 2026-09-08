@@ -85,7 +85,7 @@ export interface HarnessInventory {
   harnesses: readonly HarnessStatus[];
 }
 
-const UNKNOWN_AUTH_HARNESSES = new Set(["kimi", "gemini", "deepseek"]);
+const UNKNOWN_AUTH_HARNESSES = new Set(["gemini", "deepseek"]);
 const GROK_LOGIN_LINE = "You are logged in with grok.com.";
 /** Tab-separated `id<TAB>label` rows from the committed `agy models` probe. */
 const AGY_MODEL_ROW = /^[a-z0-9][a-z0-9.+_-]*\t+\S/im;
@@ -427,6 +427,7 @@ export const BUILTIN_HARNESSES: readonly HarnessCatalogEntry[] = Object.freeze([
     mode: "either",
     commands: ["kimi"],
     versionArgs: ["--version"],
+    authArgs: ["provider", "list"],
     update: { self: ["upgrade"] },
     oneShot: {
       argv: ["--output-format", "stream-json", "-p"],
@@ -621,6 +622,18 @@ function interpretAuth(id: string, result: HarnessCommandResult): { authenticate
       return { authenticated: false, issues: ["not_authenticated"] };
     }
     if (AGY_MODEL_ROW.test(text)) return { authenticated: true, issues: [] };
+    return { authenticated: null, issues: ["auth_unparsed"] };
+  }
+  if (id === "kimi") {
+    if (!commandSucceeded(result)) {
+      return { authenticated: false, issues: ["not_authenticated"] };
+    }
+    if (lines.some((line) => /not logged in|no provider/i.test(line))) {
+      return { authenticated: false, issues: ["not_authenticated"] };
+    }
+    if (lines.some((line) => line.includes("managed:kimi") || line.includes("type=kimi") || line.includes("Default model:"))) {
+      return { authenticated: true, issues: [] };
+    }
     return { authenticated: null, issues: ["auth_unparsed"] };
   }
   return { authenticated: null, issues: ["auth_unparsed"] };

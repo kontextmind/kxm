@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { Ajv2020, type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
 import { isAlias, isCollection, isMap, isScalar, parseDocument, visit } from "yaml";
 import { resolveVnextTemplateBaseline } from "./vnext-template.ts";
-import { BUILTIN_HARNESS_IDS, DEFAULT_HARNESS } from "./vnext-harness.ts";
+import { BUILTIN_HARNESS_IDS, DEFAULT_HARNESS, validateHarnessModelPair } from "./vnext-harness.ts";
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 export type JsonObject = { [key: string]: JsonValue };
@@ -1036,6 +1036,20 @@ function validateWorkflow(
   if (hasBackEdge && typeof objectValue(workflow.value.limits)?.maxTransitions !== "number") {
     issues.push(issue("semantic", "workflow_cycle_unbounded", file, "workflow with back-edges requires limits.maxTransitions"));
   }
+
+  const readyIndex = stepIndex.get("ready");
+  const verifyIndex = stepIndex.get("verify");
+  if (readyIndex !== undefined && verifyIndex !== undefined) {
+    const verifyTargets = adjacency[verifyIndex] ?? new Set();
+    if (!verifyTargets.has(readyIndex)) {
+      issues.push(issue("semantic", "verify_must_precede_ready", file, "verify must transition to ready"));
+    }
+    for (const [srcIndex, targets] of adjacency.entries()) {
+      if (targets.has(readyIndex) && srcIndex !== verifyIndex) {
+        issues.push(issue("semantic", "verify_must_precede_ready", file, `step ${String(steps[srcIndex]?.id)} transitions to ready bypassing verify`));
+      }
+    }
+  }
   if (steps.length > 0) {
     const reachable = new Set<number>([0]);
     const queue = [0];
@@ -1168,7 +1182,18 @@ function validateBundle(
     for (const repositoryId of Object.keys(objectValue(agent.value.repositories) ?? {})) {
       if (!repositoryIds.has(repositoryId)) issues.push(issue("reference", "repository_unknown", agent.logicalPath, `references unknown repository ${repositoryId}`));
     }
-    selectorCandidates(agent.value.model, models, agent.logicalPath, "model", issues);
+    const candidates = selectorCandidates(agent.value.model, models, agent.logicalPath, "model", issues);
+    const declaredHarness = stringValue(agent.value.harness);
+    if (declaredHarness && harnesses.has(declaredHarness)) {
+      for (const candidate of candidates) {
+        const candidateProvider = stringValue(candidate.value.provider);
+        const candidateModel = stringValue(candidate.value.model);
+        const validation = validateHarnessModelPair(declaredHarness, { provider: candidateProvider, model: candidateModel });
+        if (!validation.valid) {
+          issues.push(issue("semantic", validation.issue ?? "harness_unhosted_model", agent.logicalPath, validation.message ?? `harness ${declaredHarness} cannot host model ${candidateModel ?? candidate.logicalPath}`));
+        }
+      }
+    }
   }
   validateModelReferences(models, issues);
 

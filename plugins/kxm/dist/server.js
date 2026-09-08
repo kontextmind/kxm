@@ -10233,6 +10233,7 @@ var BUILTIN_HARNESSES = Object.freeze([
     mode: "either",
     commands: ["kimi"],
     versionArgs: ["--version"],
+    authArgs: ["provider", "list"],
     update: { self: ["upgrade"] },
     oneShot: {
       argv: ["--output-format", "stream-json", "-p"],
