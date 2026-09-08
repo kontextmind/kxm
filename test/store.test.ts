@@ -5,8 +5,28 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { MeshStore } from "../plugins/kxm/src/store.ts";
+import type { ContextItem } from "../plugins/kxm/src/context.ts";
 import type { MessageRecord } from "../plugins/kxm/src/protocol.ts";
 import type { WorkflowJournalEntry, WorkflowRun } from "../plugins/kxm/src/workflow.ts";
+
+function makeTestMessage(id: string, overrides: Partial<MessageRecord> = {}): MessageRecord {
+  return {
+    id,
+    project: "proj-1",
+    from: "s1",
+    fromName: "s1",
+    to: "agt-1",
+    toName: "agt-1",
+    content: "c",
+    delivery: "followUp",
+    hops: 0,
+    maxHops: 5,
+    status: "queued",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    expiresAt: "2026-01-02T00:00:00.000Z",
+    ...overrides,
+  };
+}
 
 test("store supports memory mode and health checks", () => {
   const store = new MeshStore();
@@ -283,5 +303,154 @@ test("workflow transitions commit run, message, and journal atomically and roll 
     third.close();
   } finally {
     rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("store queries open and expiring messages on demand in SQLite and memory", () => {
+  const storeMem = new MeshStore();
+  storeMem.saveMessage(makeTestMessage("m-open-1", { status: "queued", idempotencyKey: "k1" }));
+  storeMem.saveMessage(makeTestMessage("m-open-2", { status: "delivered", expiresAt: "2026-01-01T00:00:30.000Z" }));
+  storeMem.saveMessage(makeTestMessage("m-closed", { status: "replied" }));
+  assert.equal(storeMem.getOpenMessages("proj-1").length, 2);
+  assert.equal(storeMem.getExpiringMessages(Date.parse("2026-01-01T00:00:40.000Z")).length, 1);
+  assert.equal(storeMem.findMessageByIdempotency("s1", "k1")?.id, "m-open-1");
+  assert.equal(storeMem.findMessageByIdempotency("s1", "missing"), undefined);
+  storeMem.close();
+
+  const dir = mkdtempSync(join(tmpdir(), "pi-mesh-store-queries-"));
+  const path = join(dir, "kxm.db");
+  try {
+    const storeDb = new MeshStore(path);
+    storeDb.saveMessage(makeTestMessage("m-open-1", { status: "queued", idempotencyKey: "k1" }));
+    storeDb.saveMessage(makeTestMessage("m-open-2", { status: "delivered", expiresAt: "2026-01-01T00:00:30.000Z" }));
+    storeDb.saveMessage(makeTestMessage("m-closed", { status: "replied" }));
+
+    assert.equal(storeDb.getOpenMessages("proj-1").length, 2);
+    assert.equal(storeDb.getOpenMessages("proj-other").length, 0);
+    assert.equal(storeDb.getExpiringMessages(Date.parse("2026-01-01T00:00:40.000Z")).length, 1);
+    assert.equal(storeDb.findMessageByIdempotency("s1", "k1")?.id, "m-open-1");
+    assert.equal(storeDb.findMessageByIdempotency("s1", "missing"), undefined);
+
+    // MessageMap iterations
+    assert.ok([...storeDb.messages.entries()].length >= 3);
+    let forEachCount = 0;
+    storeDb.messages.forEach(() => { forEachCount += 1; });
+    assert.ok(forEachCount >= 3);
+    assert.equal(storeDb.hasMessage("m-open-1"), true);
+    assert.equal(storeDb.hasMessage("m-missing"), false);
+
+    storeDb.messages.clear();
+    assert.equal(storeDb.messages.cachedSize, 0);
+    assert.equal(storeDb.countMessages(), 3);
+    storeDb.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("store sweeps retention and deletes runs, journal entries, and context items in SQLite", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-mesh-store-retention-"));
+  const path = join(dir, "kxm.db");
+  try {
+    const store = new MeshStore(path);
+    const run: WorkflowRun = {
+      id: "run-terminal-1",
+      definitionId: "d1",
+      source: "generic",
+      deliveryId: "del-1",
+      payloadHash: "hash",
+      project: "p1",
+      targetAgentId: "agt-1",
+      targetAgentName: "agt",
+      messageId: "m-1",
+      status: "completed",
+      stages: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    store.saveWorkflowRun(run);
+    store.saveJournalEntry({
+      id: "j-run-1",
+      runId: "run-terminal-1",
+      agentId: "agt-1",
+      category: "decision",
+      area: "implementation",
+      severity: "info",
+      summary: "test",
+      evidence: [],
+      relatedEntryIds: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    store.saveJournalEntry({
+      id: "j-orphan-1",
+      runId: "run-nonexistent",
+      agentId: "agt-1",
+      category: "error",
+      area: "implementation",
+      severity: "warning",
+      summary: "orphan",
+      evidence: [],
+      relatedEntryIds: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    const supersededItem: ContextItem = {
+      id: "ctx-superseded-1",
+      project: "p1",
+      kind: "state",
+      summary: "superseded",
+      provenance: { sourceType: "tool" },
+      authority: "instruction",
+      confidence: "probable",
+      status: "superseded",
+      observedAt: "2026-01-01T00:00:00.000Z",
+      validUntil: "2026-01-01T00:00:00.000Z",
+    };
+    store.saveContextItem(supersededItem);
+
+    const now = Date.parse("2026-01-10T00:00:00.000Z");
+    const swept = store.sweepRetention(86_400_000, 86_400_000, now);
+    assert.ok(swept.purgedRuns.includes("run-terminal-1"));
+    assert.ok(swept.purgedJournal.includes("j-run-1"));
+    assert.ok(swept.purgedJournal.includes("j-orphan-1"));
+    assert.ok(swept.purgedContextItems.includes("ctx-superseded-1"));
+
+    // Direct delete methods
+    store.saveWorkflowRun({ ...run, id: "run-manual-del", deliveryId: "del-manual" });
+    store.deleteWorkflowRun("run-manual-del");
+    assert.equal(store.workflowRuns.has("run-manual-del"), false);
+
+    store.saveJournalEntry({
+      id: "j-manual-del",
+      runId: "run-terminal-1",
+      agentId: "agt-1",
+      category: "decision",
+      area: "implementation",
+      severity: "info",
+      summary: "test",
+      evidence: [],
+      relatedEntryIds: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    store.deleteJournalEntry("j-manual-del");
+    assert.equal(store.journal.has("j-manual-del"), false);
+
+    const manualDeleteItem: ContextItem = {
+      id: "ctx-manual-del",
+      project: "p1",
+      kind: "state",
+      summary: "active",
+      provenance: { sourceType: "tool" },
+      authority: "instruction",
+      confidence: "probable",
+      status: "current",
+      observedAt: "2026-01-01T00:00:00.000Z",
+    };
+    store.saveContextItem(manualDeleteItem);
+    store.deleteContextItem("ctx-manual-del");
+    assert.equal(store.contextItems.has("ctx-manual-del"), false);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
