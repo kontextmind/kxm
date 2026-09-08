@@ -57,11 +57,11 @@ export interface HarnessCatalogEntry {
 }
 
 export interface HarnessProbeOptions {
-  env?: NodeJS.ProcessEnv;
-  runCommand?: (command: string, args: readonly string[], timeoutMs: number) => HarnessCommandResult;
-  timeoutMs?: number;
-  platform?: NodeJS.Platform;
-  existsSync?: (path: string) => boolean;
+  env?: NodeJS.ProcessEnv | undefined;
+  runCommand?: ((command: string, args: readonly string[], timeoutMs: number) => HarnessCommandResult) | undefined;
+  timeoutMs?: number | undefined;
+  platform?: NodeJS.Platform | undefined;
+  existsSync?: ((path: string) => boolean) | undefined;
 }
 
 export interface HarnessDispatchStatus {
@@ -552,9 +552,9 @@ export const WIN_NPM_INNER_EXE: Readonly<Record<string, readonly string[]>> = Ob
 export function findWinNpmInnerExe(
   cliId: string,
   options: {
-    platform?: NodeJS.Platform;
-    pathEnv?: string;
-    existsSync?: (path: string) => boolean;
+    platform?: NodeJS.Platform | undefined;
+    pathEnv?: string | undefined;
+    existsSync?: ((path: string) => boolean) | undefined;
   } = {},
 ): string | undefined {
   if ((options.platform ?? process.platform) !== "win32") return undefined;
