@@ -1,16 +1,15 @@
 # Routing and cost telemetry
 
-> **Status.** `kxm.routing-record.v1` is **shipped and parse-only**. Dev-helper
-> telemetry (`kxm.harness-request.v1` / `kxm.harness-result.v2` from
-> `scripts/harness-run.mjs`) is a **shipped development tool**, not a product
-> producer of routing records. The issue 127 assignment runner
-> (`scripts/assignment-run.mjs`, `just assign`) is **implemented/unreleased**:
-> it writes helper telemetry and a bookkeeping routing record per assignment,
-> not product event-settle. **Planned and unimplemented:** v2 records,
-> engine event-settle write, ranked `kxm routing report`, and a dated hashed
-> price catalog. M5 docs/defaults are in this tree; runner adoption and
-> retirement of scratch recipes still need native writer plus Fable/Sol
-> review smoke. This is not a Phase 4 assignment layer or a Phase 11 adapter.
+> **Status.** `kxm.routing-record.v1` is parse-only for legacy records.
+> `kxm.routing-record.v2` is **implemented and active**: emitted at engine
+> attempt settlement (`routing.attempt.recorded` event in `plugins/kxm/src/vnext-engine.ts`),
+> enforced with fail-closed `costBasis` requirement. Price catalog `.kxm/prices.yaml`
+> (`kxm.prices.v1`) is implemented, dated, and hashed. `kxm routing report`
+> is implemented (`plugins/kxm/src/routing.ts`) and ranks routes quality-first,
+> then cost per accepted attempt, never ranking unknown cost cheapest and
+> reporting metered, unmetered, and unknown populations separately. Dev-helper
+> telemetry (`scripts/harness-run.mjs`) and the issue 127 assignment runner
+> (`scripts/assignment-run.mjs`, `just assign`) are implemented developer tools.
 
 This document describes what the tree does today versus what Tracking still
 plans. It does not invent prices or close product enums.
@@ -153,54 +152,29 @@ and both designated native reviews. PR/CI/merge complete issue 127. This
 document does not assert those gates have passed. Low-level
 `just impl|plan|review-arch|review-cli` recipes remain harness transport.
 
-## Planned: v2 record
+## Implemented: v2 record
 
-Proposed (from the 2026-09-04 review field list; **unimplemented**): schema,
-`recordedAt`; project/run/stage/assignment/attempt; harness, provider;
-requested/effective model; thinking (`none` when unset); agentRole;
-behavioralSha256; context tokens actually sent; tokens in/out; cache read/write
-(null when not reported); latencyMs; costBasis; `costUsd` only when metered;
-optional `priceRef`; outcomes; retries; humanInterventions; bounded
-providerMetadata.
+Schema id: `kxm.routing-record.v2` (`plugins/kxm/src/routing.ts`).
 
-Engine settle-transaction write (`routing.attempt.recorded`) is planned with
-the engine. Harness plus cost fields remain the Phase 4 “Still this phase”
-item. This is **not** a Phase 3 gate.
+Fields carried on `RoutingRecordV2`:
 
-**Unresolved proposal:** product routing-record v2 cost-basis vocabulary.
-Review D10 proposed `metered | unmetered | unknown`. The shipped helper now
-emits `provider-reported | list | unmetered | unknown` and does not emit
-`billed`. That helper set is not the product enum. Neither candidate is
-invoice-reconciled. Product vocabulary stays open until a later D5 design
-choice. No new prices or enums are chosen here.
+- Identity & scoping: `schema`, `recordedAt`, `project`, `runId`, `stepId`, `assignmentId`, `attemptId`.
+- Routing configuration: `harness`, `provider`, `requestedModel`, `effectiveModel`, optional `thinking`, optional `agentRole`, `behavioralSha256`.
+- Execution metrics: `latencyMs`, `contextTokens`, `tokensIn`, `tokensOut`, `cacheReadTokens`, `cacheWriteTokens`.
+- Outcomes: `verifierOutcome` (`passed` | `warning` | `failed`), `finalOutcome` (`accepted` | `blocked` | `failed` | `pending`), `retries`, optional `transitions`, optional `humanInterventions`, optional `providerMetadata`.
+- Cost accounting: `costBasis` (`"metered" | "unmetered" | "unknown"`), `costUsd` (required when metered), optional `priceRef`.
 
-## Planned: report and catalog
+The vNext engine settle transaction appends a `routing.attempt.recorded` event carrying the v2 record and refuses to settle without a valid `costBasis`. Attempt dispatch enforces `limits.maxModelCost` against metered cost before invocation (`budget_model_cost`).
 
-Until v2 and separated cost populations land:
+## Implemented: report and price catalog
 
-- Helper cost populations today: provider-reported, list, unmetered,
-  unknown; billed is not a helper emission. Product ranking still waits
-  for v2 records. `unknown` is never cheapest.
-- Dated hashed catalog for model ids and list prices; until that feed exists,
-  list prices are `unknown`. Do not invent prices.
-- Ranking is catalog ∩ authenticated harnesses plus real spend/quality/latency
-  from a future report — not v1 run-count sort.
-- API budgets and rollover remain later, not this phase.
-
-Pi numeric cost for `nous-proxy/*` is a market-reference value from a dated
-operator catalog pin or converted live list rates (display suffix
-`subscription proxy, market ref`), not billed spend. Direct `nous/*` uses
-verified numeric USD/M rates when present: live public catalog prices are
-per-token decimal strings converted once, never `pricing.original` and never
-a guessed 20% haircut. Incomplete live tiers are excluded, not zeroed, unless
-a matching dated pin supplies rates and capacity. Context tiers register as a
-labeled componentwise upper bound without a Pi `cost.tiers` schedule (exact
-tier scheduling is later). Direct and proxy display names show `upper-bound`
-when that bound is used; proxy still keeps subscription/market-ref identity.
-`COST_BASIS` is unchanged; true unmetered labelling for subscription proxy
-usage is a routing v2 item. Extra usage beyond a subscription stays unknown
-unless a provider actually reports it. The dated hashed product catalog feed
-is still planned; this live mapping is not that overlay.
+- **Price catalog:** `.kxm/prices.yaml` (`kxm.prices.v1`, dated and hashed) defines input, output, cache-read, cache-write rates, and context tiers for active models. Missing rows or uncataloged models evaluate to `costBasis: "unknown"`.
+- **Ranked report:** `kxm routing report` (`plugins/kxm/src/routing.ts`, CLI command `kxm routing report`) groups records by `(harness, model, thinking, role)`.
+- **Ranking order:** Quality first (`verifyPassRate` descending, then `reworkRate` ascending where rework measures back-edge re-entries `transitions > 0`), followed by `costPerAcceptedUsd` ascending.
+- **Underquote prevention:** Routes with unknown cost are flagged (`*`) and **never ranked cheapest**, eliminating silent underquoting.
+- **Population separation:** Reports metered cost, unmetered attempt counts, unknown-cost attempt counts, and quota-exhausted attempt counts as separate metrics rather than a single misleading total.
+- **List prices flag:** Supports `--equivalent-list-cost` / `--list-prices` to display estimated list rates for comparison alongside actual recorded spend.
+- **Post-MVP:** Dynamic catalog price feeds (`kxm update --models`), budget roll-over, and automated promotion of repeat successes into workflow gates.
 
 ## Precedence
 

@@ -193,6 +193,15 @@ It does not replace the phase gates below.
 
 ### Landed in this tree (unreleased)
 
+- **B3 three failing rule tests and auth probes (issue #84):** Three failing-first
+  loop rule tests in `test/core/vnext-loop-rules.test.ts` (unhosted harness/model
+  pair rejected with `harness_unhosted_model`; pure inventory eligibility fails
+  closed on empty/unknown; `verify_must_precede_ready` enforced in workflow
+  validation). Official CLI auth probe for Kimi (`kimi provider list` non-mutating
+  stdout parser without `--json`); `gemini` and `deepseek` remain `unknown`
+  (`null`) without secret leakage; `kxm harness list` reports status for pi,
+  claude, codex, kimi. All 990 unit/simulation tests passed; coverage floors met
+  (Lines 92.09%, Branches 80.87%, Functions 93.23%).
 - **E6 backup, restore, migrations (issue #102):** Implemented database rules and
   lifecycle commands per Decision D11. Created `plugins/kxm/src/database.ts` providing
   a shared `openDatabase` helper enforcing WAL journal mode with retry, `busy_timeout`
@@ -767,9 +776,10 @@ It does not replace the phase gates below.
 
 - **E8: improvement report and candidates (issue #97):** `kxm improve report` reads routing records and emits candidates grouped by `(workflowHash, step, agentRole, promptHash)`. Rows carry recurrence, mean cost, mean latency, verify-pass rate, and rework; high recurrence with high pass rate emits coded-repeat candidates. Single candidate format `kxm.candidate.v1` in tracked `.kxm/candidates/`: `kind` (`gate`, `skill`, `workflow-step`), `evidenceRefs`, `baselineMetrics`, `declaredOutcome`, `measure`, `proposedDiffPath`. Skill candidates carry standard YAML frontmatter (`name`, `description`). `skills promote` emits a unified diff patch (`.patch`) instead of moving a directory. Workflow `examples/vnext/.kxm/workflows/improve.yaml` runs and completes on the vNext driver. Retrospective exports are un-gitignored.
 
+- **B3: three failing rule tests and auth probes (issue #84):** Three failing-first loop rule tests in `test/core/vnext-loop-rules.test.ts` (unhosted harness/model pair rejected with `harness_unhosted_model`; pure inventory eligibility fails closed on empty/unknown; `verify_must_precede_ready` enforced in workflow validation). Official CLI auth probe for Kimi (`kimi provider list` non-mutating stdout parser without `--json`); `gemini` and `deepseek` remain `unknown` (`null`) without secret leakage; `kxm harness list` reports status for pi, claude, codex, kimi.
+
 ### Still open
 
-- **After merge:** rewrite `Source:` links in slice issues #84–#103 to the moved plan paths.
 - **Windows resumption (deferred):** restore the two Windows Validate legs and
   their ruleset contexts, and diagnose the Node 24 package cleanup failure, in
   a reviewed change that updates Tracking, tests, and settings together. D3
@@ -786,8 +796,6 @@ It does not replace the phase gates below.
 - Coverage only lists modules some test loaded; a future source file with zero
   imports from tests will not drag the number down. A test that imports every
   non-excluded module belongs before the next ratchet raise, not as a B1 add.
-- **Issue #115 (open):** unrelated SQLite race. No speculative fix in this
-  slice.
 - Docs sweep: operator pages updated to `kxm hub start|view|stop` and `kxm dash`;
   CHANGELOG history may still mention old names.
 - Remaining Mesh-named internals (`MeshHub`, `createMeshHub`, `MeshStore`,
@@ -803,11 +811,6 @@ It does not replace the phase gates below.
   does not detect it.
 - Non-Pi dispatch adapters (Phase 11). Listing a harness does not execute it.
   The `scripts/harness-run.mjs` dev helper is not that adapter.
-- **Issue 84 completed (B3):** Kimi read-only auth-status probe uses official
-  non-mutating `kimi provider list` CLI command; unhosted harness/model pair rejection
-  is enforced in `vnext-config.ts` agent validation; verify precedes ready is
-  enforced in workflow validation and loop rule tests; `kxm harness list` reports
-  status for pi, claude, codex, kimi; gemini and deepseek report unknown.
 - No `types` export condition until declaration emit exists.
 - MCP factory API waits for a second consumer (D13); `./mcp` stays an
   executable path.
