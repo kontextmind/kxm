@@ -6,14 +6,18 @@ import {
   parseContextRequest,
   provenanceSummaryOf,
   validateContextPacketContents,
+  CONTEXT_SOURCE_TYPES,
+  type ContextAuthority,
   type ContextItem,
   type ContextItemKind,
   type ContextPacket,
   type ContextRequest,
+  type ContextSourceType,
 } from "./context.ts";
 import { ProtocolError } from "./protocol.ts";
 import type { SkillLifecycle } from "./skills.ts";
 import type { JournalCategory, WorkflowJournalEntry } from "./workflow.ts";
+import type { MemoryRecord } from "./memory.ts";
 
 /**
  * Role-aware context arbiter (v0.5, issue #34).
@@ -129,7 +133,7 @@ export function arbitrate(
   const candidates: ContextItem[] = [];
   let excludedSuperseded = 0;
   for (const candidate of pool) {
-    if (candidate.project !== request.project) {
+    if (candidate.project !== request.project && candidate.project !== "_shared") {
       // Defense in depth: the hub pre-filters by project, so a foreign item
       // in the pool is a bug — fail closed rather than silently filter.
       throw new ProtocolError(
@@ -178,6 +182,7 @@ export function arbitrate(
 
   const ordered = [...candidates].sort((left, right) =>
     (contradictions.has(right.id) ? 1 : 0) - (contradictions.has(left.id) ? 1 : 0)
+    || (left.project === request.project ? 0 : 1) - (right.project === request.project ? 0 : 1)
     || kindPreference(left) - kindPreference(right)
     || CONFIDENCE_RANK[right.confidence] - CONFIDENCE_RANK[left.confidence]
     || AUTHORITY_WEIGHT[right.authority] - AUTHORITY_WEIGHT[left.authority]
@@ -276,6 +281,39 @@ export function journalEntryToContextItem(entry: WorkflowJournalEntry, project: 
   if (entry.stageId !== undefined) item.observedAt = entry.createdAt;
   if (kind === "skill") item.status = "proposed";
   return parseContextItem(item);
+}
+
+/** Convert an authored memory record into a pool context item. Git-authored
+ * records have instruction authority. Records scoped to 'operator' are placed
+ * in the '_shared' project namespace so they can be consumed cross-project
+ * as shared defaults without violating project boundaries. */
+export function memoryRecordToContextItem(record: MemoryRecord, project: string): ContextItem {
+  let authority: ContextAuthority = "instruction";
+  if (record.authority === "evidence") {
+    authority = "evidence";
+  }
+
+  const sourceType: ContextSourceType = CONTEXT_SOURCE_TYPES.includes(record.provenance?.sourceType as ContextSourceType)
+    ? (record.provenance.sourceType as ContextSourceType)
+    : "git";
+
+  const targetProject = record.scope === "operator" ? "_shared" : project;
+
+  return parseContextItem({
+    id: `mem_${record.id}`,
+    kind: "knowledge",
+    scope: record.scope,
+    project: targetProject,
+    summary: record.summary,
+    provenance: {
+      sourceType,
+      sourceRef: record.provenance?.sourceRef ?? `memory:${record.id}.md`,
+    },
+    authority,
+    confidence: record.confidence,
+    status: record.lifecycle === "active" ? "current" : "superseded",
+    evidenceRefs: record.evidenceRefs && record.evidenceRefs.length > 0 ? record.evidenceRefs : undefined,
+  });
 }
 
 /** Which pool records support a claim: the item itself plus its full

@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.kxm.dev/vnext/handoff-manifest.schema.json",
+  "title": "KXM structured handoff manifest v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "handoffId",
+    "taskId",
+    "workflowRunId",
+    "source",
+    "target",
+    "intent",
+    "status",
+    "baseCommit",
+    "deliverables",
+    "verificationEvidence",
+    "createdAt"
+  ],
+  "properties": {
+    "schema": {
+      "const": "kxm.handoff-manifest.v1"
+    },
+    "handoffId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "taskId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "workflowRunId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "reworkOf": {
+      "type": ["string", "null"]
+    },
+    "source": {
+      "type": "object",
+      "required": ["role", "agentId", "harness", "stepId", "attemptId"],
+      "properties": {
+        "role": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "agentId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "harness": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "model": { "type": "string", "maxLength": 128 },
+        "stepId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "attemptId": { "type": "string", "minLength": 1, "maxLength": 128 }
+      },
+      "additionalProperties": false
+    },
+    "target": {
+      "type": "object",
+      "required": ["role", "permission"],
+      "properties": {
+        "role": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "permission": {
+          "enum": ["read-only", "edit", "admin"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "intent": {
+      "enum": ["request_review", "dispatch_fix", "request_approval", "complete_workflow"]
+    },
+    "status": {
+      "enum": ["pending", "accepted", "rejected", "superseded"]
+    },
+    "baseCommit": {
+      "type": "string",
+      "maxLength": 64
+    },
+    "candidateTreeHash": {
+      "type": "string",
+      "maxLength": 64
+    },
+    "deliverables": {
+      "type": "object",
+      "required": ["patches", "reports", "artifacts"],
+      "properties": {
+        "patches": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "reports": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "artifactRef"],
+            "properties": {
+              "name": { "type": "string" },
+              "artifactRef": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "verificationEvidence": {
+      "type": "object",
+      "required": ["witnessExitCode", "witnessPassed", "criticVerdicts"],
+      "properties": {
+        "witnessExitCode": { "type": "integer" },
+        "witnessPassed": { "type": "boolean" },
+        "criticVerdicts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["critic", "verdict"],
+            "properties": {
+              "critic": { "type": "string" },
+              "verdict": { "enum": ["PASS", "FAIL", "WARN", "UNKNOWN"] },
+              "summary": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "openQuestions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "suggestedNextStep": {
+      "type": "object",
+      "properties": {
+        "stepId": { "type": "string" },
+        "action": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "createdAt": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    }
+  },
+  "additionalProperties": false
+}

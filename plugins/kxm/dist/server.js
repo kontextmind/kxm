@@ -1504,7 +1504,7 @@ var require_stringify = __commonJS({
         props.push(doc.directives.tagString(tag));
       return props.join(" ");
     }
-    function stringify2(item, ctx, onComment, onChompKeep) {
+    function stringify3(item, ctx, onComment, onChompKeep) {
       if (identity.isPair(item))
         return item.toString(ctx, onComment, onChompKeep);
       if (identity.isAlias(item)) {
@@ -1533,7 +1533,7 @@ var require_stringify = __commonJS({
 ${ctx.indent}${str}`;
     }
     exports.createStringifyContext = createStringifyContext;
-    exports.stringify = stringify2;
+    exports.stringify = stringify3;
   }
 });
 
@@ -1543,7 +1543,7 @@ var require_stringifyPair = __commonJS({
     "use strict";
     var identity = require_identity();
     var Scalar = require_Scalar();
-    var stringify2 = require_stringify();
+    var stringify3 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyPair({ key, value }, ctx, onComment, onChompKeep) {
       const { allNullValues, doc, indent, indentStep, options: { commentString, indentSeq, simpleKeys } } = ctx;
@@ -1565,7 +1565,7 @@ var require_stringifyPair = __commonJS({
       });
       let keyCommentDone = false;
       let chompKeep = false;
-      let str = stringify2.stringify(key, ctx, () => keyCommentDone = true, () => chompKeep = true);
+      let str = stringify3.stringify(key, ctx, () => keyCommentDone = true, () => chompKeep = true);
       if (!explicitKey && !ctx.inFlow && str.length > 1024) {
         if (simpleKeys)
           throw new Error("With simple keys, single line scalar must not span more than 1024 characters");
@@ -1617,7 +1617,7 @@ ${indent}:`;
         ctx.indent = ctx.indent.substring(2);
       }
       let valueCommentDone = false;
-      const valueStr = stringify2.stringify(value, ctx, () => valueCommentDone = true, () => chompKeep = true);
+      const valueStr = stringify3.stringify(value, ctx, () => valueCommentDone = true, () => chompKeep = true);
       let ws = " ";
       if (keyComment || vsb || vcb) {
         ws = vsb ? "\n" : "";
@@ -1758,7 +1758,7 @@ var require_addPairToJSMap = __commonJS({
     "use strict";
     var log = require_log();
     var merge = require_merge();
-    var stringify2 = require_stringify();
+    var stringify3 = require_stringify();
     var identity = require_identity();
     var toJS = require_toJS();
     function addPairToJSMap(ctx, map, { key, value }) {
@@ -1794,7 +1794,7 @@ var require_addPairToJSMap = __commonJS({
       if (typeof jsKey !== "object")
         return String(jsKey);
       if (identity.isNode(key) && ctx?.doc) {
-        const strCtx = stringify2.createStringifyContext(ctx.doc, {});
+        const strCtx = stringify3.createStringifyContext(ctx.doc, {});
         strCtx.anchors = /* @__PURE__ */ new Set();
         for (const node of ctx.anchors.keys())
           strCtx.anchors.add(node.anchor);
@@ -1861,12 +1861,12 @@ var require_stringifyCollection = __commonJS({
   "node_modules/yaml/dist/stringify/stringifyCollection.js"(exports) {
     "use strict";
     var identity = require_identity();
-    var stringify2 = require_stringify();
+    var stringify3 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyCollection(collection, ctx, options) {
       const flow = ctx.inFlow ?? collection.flow;
-      const stringify3 = flow ? stringifyFlowCollection : stringifyBlockCollection;
-      return stringify3(collection, ctx, options);
+      const stringify4 = flow ? stringifyFlowCollection : stringifyBlockCollection;
+      return stringify4(collection, ctx, options);
     }
     function stringifyBlockCollection({ comment, items }, ctx, { blockItemPrefix, flowChars, itemIndent, onChompKeep, onComment }) {
       const { indent, options: { commentString } } = ctx;
@@ -1891,7 +1891,7 @@ var require_stringifyCollection = __commonJS({
           }
         }
         chompKeep = false;
-        let str2 = stringify2.stringify(item, itemCtx, () => comment2 = null, () => chompKeep = true);
+        let str2 = stringify3.stringify(item, itemCtx, () => comment2 = null, () => chompKeep = true);
         if (comment2)
           str2 += stringifyComment.lineComment(str2, itemIndent, commentString(comment2));
         if (chompKeep && comment2)
@@ -1958,7 +1958,7 @@ ${indent}${line}` : "\n";
         }
         if (comment)
           reqNewline = true;
-        let str = stringify2.stringify(item, itemCtx, () => comment = null);
+        let str = stringify3.stringify(item, itemCtx, () => comment = null);
         reqNewline || (reqNewline = lines.length > linesAtValue || str.includes("\n"));
         if (i < items.length - 1) {
           str += ",";
@@ -3319,7 +3319,7 @@ var require_stringifyDocument = __commonJS({
   "node_modules/yaml/dist/stringify/stringifyDocument.js"(exports) {
     "use strict";
     var identity = require_identity();
-    var stringify2 = require_stringify();
+    var stringify3 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyDocument(doc, options) {
       const lines = [];
@@ -3334,7 +3334,7 @@ var require_stringifyDocument = __commonJS({
       }
       if (hasDirectives)
         lines.push("---");
-      const ctx = stringify2.createStringifyContext(doc, options);
+      const ctx = stringify3.createStringifyContext(doc, options);
       const { commentString } = ctx.options;
       if (doc.commentBefore) {
         if (lines.length !== 1)
@@ -3356,7 +3356,7 @@ var require_stringifyDocument = __commonJS({
           contentComment = doc.contents.comment;
         }
         const onChompKeep = contentComment ? void 0 : () => chompKeep = true;
-        let body = stringify2.stringify(doc.contents, ctx, () => contentComment = null, onChompKeep);
+        let body = stringify3.stringify(doc.contents, ctx, () => contentComment = null, onChompKeep);
         if (contentComment)
           body += stringifyComment.lineComment(body, "", commentString(contentComment));
         if ((body[0] === "|" || body[0] === ">") && lines[lines.length - 1] === "---") {
@@ -3364,7 +3364,7 @@ var require_stringifyDocument = __commonJS({
         } else
           lines.push(body);
       } else {
-        lines.push(stringify2.stringify(doc.contents, ctx));
+        lines.push(stringify3.stringify(doc.contents, ctx));
       }
       if (doc.directives?.docEnd) {
         if (doc.comment) {
@@ -5499,7 +5499,7 @@ var require_cst_scalar = __commonJS({
 var require_cst_stringify = __commonJS({
   "node_modules/yaml/dist/parse/cst-stringify.js"(exports) {
     "use strict";
-    var stringify2 = (cst) => "type" in cst ? stringifyToken(cst) : stringifyItem(cst);
+    var stringify3 = (cst) => "type" in cst ? stringifyToken(cst) : stringifyItem(cst);
     function stringifyToken(token) {
       switch (token.type) {
         case "block-scalar": {
@@ -5552,7 +5552,7 @@ var require_cst_stringify = __commonJS({
         res += stringifyToken(value);
       return res;
     }
-    exports.stringify = stringify2;
+    exports.stringify = stringify3;
   }
 });
 
@@ -7263,7 +7263,7 @@ var require_public_api = __commonJS({
       }
       return doc;
     }
-    function parse2(src, reviver, options) {
+    function parse3(src, reviver, options) {
       let _reviver = void 0;
       if (typeof reviver === "function") {
         _reviver = reviver;
@@ -7282,7 +7282,7 @@ var require_public_api = __commonJS({
       }
       return doc.toJS(Object.assign({ reviver: _reviver }, options));
     }
-    function stringify2(value, replacer, options) {
+    function stringify3(value, replacer, options) {
       let _replacer = null;
       if (typeof replacer === "function" || Array.isArray(replacer)) {
         _replacer = replacer;
@@ -7304,10 +7304,10 @@ var require_public_api = __commonJS({
         return value.toString(options);
       return new Document.Document(value, _replacer, options).toString(options);
     }
-    exports.parse = parse2;
+    exports.parse = parse3;
     exports.parseAllDocuments = parseAllDocuments;
     exports.parseDocument = parseDocument2;
-    exports.stringify = stringify2;
+    exports.stringify = stringify3;
   }
 });
 
@@ -7365,10 +7365,10 @@ var require_dist = __commonJS({
 
 // plugins/kxm/src/hub.ts
 import { createHash as createHash3, createHmac, timingSafeEqual } from "node:crypto";
-import { existsSync as existsSync3 } from "node:fs";
+import { existsSync as existsSync4 } from "node:fs";
 import { createServer } from "node:http";
 import { isIP } from "node:net";
-import { join as join4 } from "node:path";
+import { dirname as dirname4, join as join5, resolve as resolve6 } from "node:path";
 
 // plugins/kxm/src/protocol.ts
 import { randomUUID } from "node:crypto";
@@ -7672,7 +7672,7 @@ function validateContextPacketContents(request, packet) {
   }
   const allowed = request.includeKinds ? new Set(request.includeKinds) : void 0;
   for (const item of items) {
-    if (item.project !== request.project) {
+    if (item.project !== request.project && item.project !== "_shared") {
       throw new ProtocolError(
         400,
         `context packet contains cross-project item ${item.id}`,
@@ -7790,7 +7790,7 @@ function arbitrate(requestInput, pool, options = {}) {
   const candidates = [];
   let excludedSuperseded = 0;
   for (const candidate of pool) {
-    if (candidate.project !== request.project) {
+    if (candidate.project !== request.project && candidate.project !== "_shared") {
       throw new ProtocolError(
         403,
         `context pool contains cross-project item ${candidate.id}`,
@@ -7832,7 +7832,7 @@ function arbitrate(requestInput, pool, options = {}) {
     return rank === void 0 ? requestedKinds.length : rank;
   };
   const ordered = [...candidates].sort(
-    (left, right) => (contradictions.has(right.id) ? 1 : 0) - (contradictions.has(left.id) ? 1 : 0) || kindPreference(left) - kindPreference(right) || CONFIDENCE_RANK[right.confidence] - CONFIDENCE_RANK[left.confidence] || AUTHORITY_WEIGHT[right.authority] - AUTHORITY_WEIGHT[left.authority] || left.id.localeCompare(right.id)
+    (left, right) => (contradictions.has(right.id) ? 1 : 0) - (contradictions.has(left.id) ? 1 : 0) || (left.project === request.project ? 0 : 1) - (right.project === request.project ? 0 : 1) || kindPreference(left) - kindPreference(right) || CONFIDENCE_RANK[right.confidence] - CONFIDENCE_RANK[left.confidence] || AUTHORITY_WEIGHT[right.authority] - AUTHORITY_WEIGHT[left.authority] || left.id.localeCompare(right.id)
   );
   const kindAllowed = (item) => (request.includeKinds ?? policy.kinds).includes(item.kind) || contradictions.has(item.id);
   const selected = [];
@@ -7910,6 +7910,29 @@ function journalEntryToContextItem(entry, project) {
   if (kind === "skill") item.status = "proposed";
   return parseContextItem(item);
 }
+function memoryRecordToContextItem(record, project) {
+  let authority = "instruction";
+  if (record.authority === "evidence") {
+    authority = "evidence";
+  }
+  const sourceType = CONTEXT_SOURCE_TYPES.includes(record.provenance?.sourceType) ? record.provenance.sourceType : "git";
+  const targetProject = record.scope === "operator" ? "_shared" : project;
+  return parseContextItem({
+    id: `mem_${record.id}`,
+    kind: "knowledge",
+    scope: record.scope,
+    project: targetProject,
+    summary: record.summary,
+    provenance: {
+      sourceType,
+      sourceRef: record.provenance?.sourceRef ?? `memory:${record.id}.md`
+    },
+    authority,
+    confidence: record.confidence,
+    status: record.lifecycle === "active" ? "current" : "superseded",
+    evidenceRefs: record.evidenceRefs && record.evidenceRefs.length > 0 ? record.evidenceRefs : void 0
+  });
+}
 function explainContextItem(id, pool) {
   const byId = new Map(pool.map((item2) => [item2.id, item2]));
   const item = byId.get(id);
@@ -7937,6 +7960,134 @@ function explainContextItem(id, pool) {
     evidenceRefs: item.evidenceRefs ?? [],
     sources
   };
+}
+
+// plugins/kxm/src/memory.ts
+var import_yaml = __toESM(require_dist(), 1);
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { extname, join, resolve } from "node:path";
+var MEMORY_SCHEMA = "kxm.memory.v1";
+var VALID_SCOPES = /* @__PURE__ */ new Set(["agent", "project", "run", "operator"]);
+var VALID_AUTHORITIES = /* @__PURE__ */ new Set(["instruction", "evidence", "promoted"]);
+var VALID_CONFIDENCES = /* @__PURE__ */ new Set(["verified", "probable", "uncertain"]);
+var VALID_LIFECYCLES = /* @__PURE__ */ new Set(["active", "deprecated", "superseded"]);
+var BANNED_CONTROL_PLANE_FIELDS = /* @__PURE__ */ new Set([
+  "permissions",
+  "tools",
+  "allow",
+  "deny",
+  "grants",
+  "approval",
+  "policy",
+  "scopes",
+  "credentials",
+  "secrets",
+  "token",
+  "apiKey",
+  "password"
+]);
+function parseFrontmatter(content) {
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+  if (!match) {
+    throw new Error("memory file must contain YAML frontmatter enclosed in '---'");
+  }
+  return { frontmatter: match[1] ?? "", body: match[2]?.trim() ?? "" };
+}
+function parseMemoryRecord(raw, filename = "memory.md") {
+  const { frontmatter, body } = parseFrontmatter(raw);
+  const data = (0, import_yaml.parse)(frontmatter);
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error(`invalid YAML frontmatter in ${filename}`);
+  }
+  for (const field of BANNED_CONTROL_PLANE_FIELDS) {
+    if (field in data) {
+      throw new Error(`memory record ${filename} may not carry control-plane field '${field}'`);
+    }
+  }
+  if (data.schema !== MEMORY_SCHEMA) {
+    throw new Error(`memory record ${filename} has unsupported schema: expected ${MEMORY_SCHEMA}, got ${String(data.schema)}`);
+  }
+  const id = typeof data.id === "string" ? data.id.trim() : "";
+  if (!id || !/^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$/i.test(id)) {
+    throw new Error(`memory record ${filename} has invalid id: ${String(data.id)}`);
+  }
+  const scope = data.scope;
+  if (!VALID_SCOPES.has(scope)) {
+    throw new Error(`memory record ${filename} has invalid scope: must be one of agent, project, run, operator`);
+  }
+  const kind = typeof data.kind === "string" ? data.kind.trim() : "";
+  if (!kind) {
+    throw new Error(`memory record ${filename} is missing kind`);
+  }
+  const rawSummary = typeof data.summary === "string" ? data.summary.trim() : "";
+  if (!rawSummary) {
+    throw new Error(`memory record ${filename} is missing summary`);
+  }
+  const summary = redactSecrets(rawSummary);
+  const rawProv = data.provenance;
+  if (!rawProv || typeof rawProv !== "object" || typeof rawProv.sourceType !== "string" || !rawProv.sourceType.trim()) {
+    throw new Error(`memory record ${filename} is missing provenance.sourceType`);
+  }
+  const provenance = {
+    sourceType: rawProv.sourceType.trim(),
+    ...typeof rawProv.sourceRef === "string" ? { sourceRef: redactSecrets(rawProv.sourceRef.trim()) } : {},
+    ...typeof rawProv.runId === "string" ? { runId: rawProv.runId.trim() } : {},
+    ...typeof rawProv.timestamp === "string" ? { timestamp: rawProv.timestamp.trim() } : {}
+  };
+  const authority = data.authority;
+  if (!VALID_AUTHORITIES.has(authority)) {
+    throw new Error(`memory record ${filename} has invalid authority: ${String(data.authority)}`);
+  }
+  const confidence = data.confidence;
+  if (!VALID_CONFIDENCES.has(confidence)) {
+    throw new Error(`memory record ${filename} has invalid confidence: ${String(data.confidence)}`);
+  }
+  const lifecycle = data.lifecycle;
+  if (!VALID_LIFECYCLES.has(lifecycle)) {
+    throw new Error(`memory record ${filename} has invalid lifecycle: ${String(data.lifecycle)}`);
+  }
+  const rawRefs = Array.isArray(data.evidenceRefs) ? data.evidenceRefs : [];
+  const evidenceRefs = rawRefs.map(String);
+  return {
+    schema: MEMORY_SCHEMA,
+    id,
+    scope,
+    kind,
+    summary,
+    provenance,
+    authority,
+    confidence,
+    lifecycle,
+    evidenceRefs,
+    ...body ? { body } : {}
+  };
+}
+function memoryDirectories(repoRoot) {
+  const root = resolve(repoRoot);
+  const memoryDir = join(root, ".kxm", "memory");
+  const candidatesDir = join(memoryDir, "candidates");
+  return { memoryDir, candidatesDir };
+}
+function loadAuthoredMemory(repoRoot) {
+  const { memoryDir } = memoryDirectories(repoRoot);
+  if (!existsSync(memoryDir)) return [];
+  const records = [];
+  const entries = readdirSync(memoryDir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isFile() && extname(entry.name) === ".md") {
+      const fullPath = join(memoryDir, entry.name);
+      try {
+        const text2 = readFileSync(fullPath, "utf8");
+        const record = parseMemoryRecord(text2, entry.name);
+        if (record.lifecycle === "active") {
+          records.push(record);
+        }
+      } catch (error) {
+        throw new Error(`failed to parse authored memory file ${entry.name}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+  return records.sort((left, right) => left.id.localeCompare(right.id));
 }
 
 // plugins/kxm/src/state.ts
@@ -8178,10 +8329,10 @@ function boundedRefs(value, field) {
 }
 
 // plugins/kxm/src/skills.ts
-var import_yaml = __toESM(require_dist(), 1);
+var import_yaml2 = __toESM(require_dist(), 1);
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync as existsSync2, mkdirSync as mkdirSync2, readdirSync as readdirSync2, readFileSync as readFileSync2, renameSync, rmSync, statSync, writeFileSync as writeFileSync2 } from "node:fs";
+import { join as join2 } from "node:path";
 var SKILL_CANDIDATE_SCHEMA = "kxm.skill-candidate.v1";
 var SKILL_EVALUATION_SCHEMA = "kxm.skill-evaluation.v1";
 var SKILL_DECISION_SCHEMA = "kxm.skill-decision.v1";
@@ -8222,7 +8373,7 @@ function parseSkillFrontmatter(content) {
     return { frontmatter: null, body: content };
   }
   try {
-    const parsed = (0, import_yaml.parse)(rawFm);
+    const parsed = (0, import_yaml2.parse)(rawFm);
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       return { frontmatter: parsed, body: rawBody };
     }
@@ -8275,47 +8426,47 @@ var SkillLifecycle = class {
     this.allowOptimizationEvals = options.allowOptimizationEvals === true;
   }
   dir(state) {
-    return join(this.root, state === "candidate" ? "candidates" : `${state}s`.replace("rejecteds", "rejected").replace("promoteds", "promoted"));
+    return join2(this.root, state === "candidate" ? "candidates" : `${state}s`.replace("rejecteds", "rejected").replace("promoteds", "promoted"));
   }
   historyFile(id) {
-    return join(this.root, "history", `${id}.jsonl`);
+    return join2(this.root, "history", `${id}.jsonl`);
   }
   paths(state, id) {
-    const dir = join(this.dir(state), id);
-    return { dir, metadata: join(dir, "metadata.json"), skill: join(dir, "SKILL.md") };
+    const dir = join2(this.dir(state), id);
+    return { dir, metadata: join2(dir, "metadata.json"), skill: join2(dir, "SKILL.md") };
   }
   appendHistory(id, record) {
-    mkdirSync(join(this.root, "history"), { recursive: true });
+    mkdirSync2(join2(this.root, "history"), { recursive: true });
     const line = `${JSON.stringify(record)}
 `;
-    if (existsSync(this.historyFile(id))) {
-      const existing = readFileSync(this.historyFile(id), "utf8");
+    if (existsSync2(this.historyFile(id))) {
+      const existing = readFileSync2(this.historyFile(id), "utf8");
       const lines = existing.split("\n").filter((entry) => entry.trim());
-      writeFileSync(this.historyFile(id), [...lines.slice(-499), line.trim()].join("\n") + "\n");
+      writeFileSync2(this.historyFile(id), [...lines.slice(-499), line.trim()].join("\n") + "\n");
     } else {
-      writeFileSync(this.historyFile(id), line);
+      writeFileSync2(this.historyFile(id), line);
     }
   }
   history(id) {
     const file = this.historyFile(id);
-    if (!existsSync(file)) return [];
-    return readFileSync(file, "utf8").split("\n").filter((line) => line.trim()).map((line) => JSON.parse(line));
+    if (!existsSync2(file)) return [];
+    return readFileSync2(file, "utf8").split("\n").filter((line) => line.trim()).map((line) => JSON.parse(line));
   }
   readMetadata(state, id) {
     const { metadata } = this.paths(state, id);
-    if (!existsSync(metadata)) {
+    if (!existsSync2(metadata)) {
       throw new SkillLifecycleError("skill_not_found", `skill ${id} not found in ${state}`);
     }
-    return JSON.parse(readFileSync(metadata, "utf8"));
+    return JSON.parse(readFileSync2(metadata, "utf8"));
   }
   move(from, to, id) {
-    const fromDir = join(this.dir(from), id);
-    const toDir = join(this.dir(to), id);
-    if (!existsSync(fromDir)) {
+    const fromDir = join2(this.dir(from), id);
+    const toDir = join2(this.dir(to), id);
+    if (!existsSync2(fromDir)) {
       throw new SkillLifecycleError("skill_not_found", `skill ${id} not found in ${from}`);
     }
-    mkdirSync(this.dir(to), { recursive: true });
-    if (existsSync(toDir)) rmSync(toDir, { recursive: true, force: true });
+    mkdirSync2(this.dir(to), { recursive: true });
+    if (existsSync2(toDir)) rmSync(toDir, { recursive: true, force: true });
     renameSync(fromDir, toDir);
   }
   /** Submit a new skill candidate. Content is redacted of secret material at
@@ -8358,7 +8509,7 @@ var SkillLifecycle = class {
     const contentSha256 = skillContentSha256(content);
     const id = skillIdFor(name, contentSha256);
     const { dir, metadata, skill } = this.paths("candidate", id);
-    if (existsSync(metadata)) {
+    if (existsSync2(metadata)) {
       throw new SkillLifecycleError(
         "skill_candidate_exists",
         `identical candidate ${id} already exists; changed behavior requires changed content`
@@ -8377,9 +8528,9 @@ var SkillLifecycle = class {
       createdAt: this.now(),
       ...input.supersedes ? { supersedes: input.supersedes } : {}
     };
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(skill, content);
-    writeFileSync(metadata, `${JSON.stringify(record, null, 2)}
+    mkdirSync2(dir, { recursive: true });
+    writeFileSync2(skill, content);
+    writeFileSync2(metadata, `${JSON.stringify(record, null, 2)}
 `);
     this.appendHistory(id, { schema: "kxm.skill-history-event.v1", event: "candidate_created", by: createdBy, supersedes: input.supersedes, at: record.createdAt });
     return record;
@@ -8468,18 +8619,18 @@ var SkillLifecycle = class {
     };
     const candidatePaths = this.paths("candidate", candidateId);
     const promotedPaths = this.paths("promoted", candidateId);
-    mkdirSync(promotedPaths.dir, { recursive: true });
-    const skillContent = readFileSync(candidatePaths.skill, "utf8");
-    const metadataContent = readFileSync(candidatePaths.metadata, "utf8");
-    writeFileSync(promotedPaths.skill, skillContent);
-    writeFileSync(promotedPaths.metadata, metadataContent);
-    const patchesDir = join(this.root, "patches");
-    mkdirSync(patchesDir, { recursive: true });
-    const patchPath = join(patchesDir, `${candidateId}.patch`);
+    mkdirSync2(promotedPaths.dir, { recursive: true });
+    const skillContent = readFileSync2(candidatePaths.skill, "utf8");
+    const metadataContent = readFileSync2(candidatePaths.metadata, "utf8");
+    writeFileSync2(promotedPaths.skill, skillContent);
+    writeFileSync2(promotedPaths.metadata, metadataContent);
+    const patchesDir = join2(this.root, "patches");
+    mkdirSync2(patchesDir, { recursive: true });
+    const patchPath = join2(patchesDir, `${candidateId}.patch`);
     const relSkillPath = `.kxm/skills/promoted/${candidateId}/SKILL.md`;
     const relMetaPath = `.kxm/skills/promoted/${candidateId}/metadata.json`;
     const patch = `${createUnifiedPatch(relSkillPath, skillContent)}${createUnifiedPatch(relMetaPath, metadataContent)}`;
-    writeFileSync(patchPath, patch, "utf8");
+    writeFileSync2(patchPath, patch, "utf8");
     this.appendHistory(candidateId, record);
     return { ...metadata, patch, patchPath };
   }
@@ -8503,7 +8654,7 @@ var SkillLifecycle = class {
   verify(state, id) {
     const metadata = this.readMetadata(state, id);
     const { skill } = this.paths(state, id);
-    const content = readFileSync(skill, "utf8");
+    const content = readFileSync2(skill, "utf8");
     if (skillContentSha256(content) !== metadata.contentSha256) {
       throw new SkillLifecycleError(
         "skill_integrity_violation",
@@ -8521,7 +8672,7 @@ var SkillLifecycle = class {
   }
   list(state) {
     const dir = this.dir(state);
-    if (!existsSync(dir)) return [];
+    if (!existsSync2(dir)) return [];
     const ids = readdirSorted(dir);
     return ids.map((id) => {
       try {
@@ -8534,7 +8685,7 @@ var SkillLifecycle = class {
   read(state, id) {
     const metadata = this.readMetadata(state, id);
     const { skill } = this.paths(state, id);
-    return { metadata, content: readFileSync(skill, "utf8") };
+    return { metadata, content: readFileSync2(skill, "utf8") };
   }
 };
 function boundedList(value, field) {
@@ -8549,7 +8700,7 @@ function boundedList(value, field) {
   return [...new Set(refs)];
 }
 function readdirSorted(dir) {
-  return readdirSync(dir).filter((entry) => statSync(join(dir, entry)).isDirectory()).sort();
+  return readdirSync2(dir).filter((entry) => statSync(join2(dir, entry)).isDirectory()).sort();
 }
 
 // plugins/kxm/src/wiki.ts
@@ -8755,8 +8906,8 @@ function lintKnowledgeWiki(pages, pool) {
 }
 
 // plugins/kxm/src/retrospective.ts
-import { mkdirSync as mkdirSync2, renameSync as renameSync2, writeFileSync as writeFileSync2 } from "node:fs";
-import { resolve } from "node:path";
+import { mkdirSync as mkdirSync3, renameSync as renameSync2, writeFileSync as writeFileSync3 } from "node:fs";
+import { resolve as resolve2 } from "node:path";
 
 // plugins/kxm/src/workflow.ts
 import { createHash as createHash2 } from "node:crypto";
@@ -9929,47 +10080,47 @@ function renderRetrospectiveMarkdown(doc) {
 }
 function writeRetrospective(outDir, doc) {
   if (!SAFE_RUN_ID.test(doc.runId)) throw new Error("invalid retrospective run id");
-  mkdirSync2(outDir, { recursive: true });
-  const root = resolve(outDir);
-  const jsonPath = resolve(root, `${doc.runId}.json`);
-  const mdPath = resolve(root, `${doc.runId}.md`);
+  mkdirSync3(outDir, { recursive: true });
+  const root = resolve2(outDir);
+  const jsonPath = resolve2(root, `${doc.runId}.json`);
+  const mdPath = resolve2(root, `${doc.runId}.md`);
   const prefix = `${root}${process.platform === "win32" ? "\\" : "/"}`;
   if (!jsonPath.startsWith(prefix) || !mdPath.startsWith(prefix)) throw new Error("retrospective path escaped output directory");
   const jsonTmp = `${jsonPath}.tmp`;
   const mdTmp = `${mdPath}.tmp`;
-  writeFileSync2(jsonTmp, `${JSON.stringify(doc, null, 2)}
+  writeFileSync3(jsonTmp, `${JSON.stringify(doc, null, 2)}
 `, { encoding: "utf8", mode: 384 });
-  writeFileSync2(mdTmp, renderRetrospectiveMarkdown(doc), { encoding: "utf8", mode: 384 });
+  writeFileSync3(mdTmp, renderRetrospectiveMarkdown(doc), { encoding: "utf8", mode: 384 });
   renameSync2(jsonTmp, jsonPath);
   renameSync2(mdTmp, mdPath);
   return { jsonPath, mdPath };
 }
 
 // plugins/kxm/src/store.ts
-import { resolve as resolve4 } from "node:path";
+import { resolve as resolve5 } from "node:path";
 
 // plugins/kxm/src/database.ts
 import {
   chmodSync,
   copyFileSync,
-  existsSync as existsSync2,
+  existsSync as existsSync3,
   lstatSync,
-  mkdirSync as mkdirSync3,
-  readdirSync as readdirSync2,
-  readFileSync as readFileSync2,
+  mkdirSync as mkdirSync4,
+  readdirSync as readdirSync3,
+  readFileSync as readFileSync3,
   unlinkSync,
-  writeFileSync as writeFileSync3
+  writeFileSync as writeFileSync4
 } from "node:fs";
-import { basename as basename2, dirname as dirname2, join as join3, resolve as resolve3 } from "node:path";
+import { basename as basename3, dirname as dirname3, join as join4, resolve as resolve4 } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 // plugins/kxm/src/vnext-config.ts
-import { basename, dirname, extname, isAbsolute, join as join2, relative, resolve as resolve2, sep } from "node:path";
+import { basename as basename2, dirname as dirname2, extname as extname2, isAbsolute, join as join3, relative, resolve as resolve3, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-var import_yaml3 = __toESM(require_dist(), 1);
+var import_yaml4 = __toESM(require_dist(), 1);
 
 // plugins/kxm/src/vnext-template.ts
-var import_yaml2 = __toESM(require_dist(), 1);
+var import_yaml3 = __toESM(require_dist(), 1);
 
 // plugins/kxm/src/vnext-harness.ts
 var NATIVE_HARNESS_PROVIDERS = Object.freeze({
@@ -10335,8 +10486,8 @@ var VnextConfigError = class extends Error {
     this.issues = sorted;
   }
 };
-var PACKAGE_ROOT = resolve2(dirname(fileURLToPath(import.meta.url)), "../../..");
-var DEFAULT_SCHEMA_DIR = join2(PACKAGE_ROOT, "schemas", "vnext");
+var PACKAGE_ROOT = resolve3(dirname2(fileURLToPath(import.meta.url)), "../../..");
+var DEFAULT_SCHEMA_DIR = join3(PACKAGE_ROOT, "schemas", "vnext");
 var RESOURCE_SCHEMA = Object.freeze({
   project: { identity: "kxm.project.v1", file: "project.schema.json" },
   repository: { identity: "kxm.repository.v1", file: "repository.schema.json" },
@@ -10359,8 +10510,8 @@ function databaseError(code, file, message) {
   return new VnextConfigError([issue]);
 }
 function checkedParent(path, description) {
-  const parent = dirname2(path);
-  if (!existsSync2(parent)) mkdirSync3(parent, { recursive: true, mode: 448 });
+  const parent = dirname3(path);
+  if (!existsSync3(parent)) mkdirSync4(parent, { recursive: true, mode: 448 });
   const stat = lstatSync(parent, { throwIfNoEntry: false });
   if (!stat || stat.isSymbolicLink() || !stat.isDirectory()) {
     throw databaseError("runtime_path_invalid", description, `${description} parent must be a regular directory, not a link`);
@@ -10706,7 +10857,7 @@ var MeshStore = class {
   constructor(path) {
     this.messages = new MessageMap(this);
     if (!path) return;
-    this.path = path === ":memory:" ? path : resolve4(path);
+    this.path = path === ":memory:" ? path : resolve5(path);
     this.database = openDatabase(this.path, "hub database", HUB_STORE_SCHEMA_SPEC);
     this.load();
   }
@@ -11307,6 +11458,7 @@ function createMeshHub(options = {}) {
   const webhookWorkflows2 = new Map((options.webhookWorkflows ?? []).map((workflow) => [workflow.id, workflow]));
   const logger = options.logger ?? (() => void 0);
   const assetsDir2 = options.assetsDir;
+  const hubRepoRoot = options.repoRoot ?? (options.dataPath && options.dataPath !== ":memory:" ? resolve6(dirname4(dirname4(options.dataPath))) : process.cwd());
   const store = new MeshStore(options.dataPath);
   const agents = store.agents;
   const messages = store.messages;
@@ -11331,7 +11483,7 @@ function createMeshHub(options = {}) {
   const workflowRuns = store.workflowRuns;
   const journal = store.journal;
   const stateProvider = new NativeStateProvider(store);
-  const skillLifecycle = options.skillLifecycle ?? (options.skillsDir || existsSync3(join4(process.cwd(), ".kxm", "skills")) ? new SkillLifecycle(options.skillsDir ?? join4(process.cwd(), ".kxm", "skills")) : void 0);
+  const skillLifecycle = options.skillLifecycle ?? (options.skillsDir || existsSync4(join5(process.cwd(), ".kxm", "skills")) ? new SkillLifecycle(options.skillsDir ?? join5(process.cwd(), ".kxm", "skills")) : void 0);
   const streams = /* @__PURE__ */ new Map();
   const opsStreams = /* @__PURE__ */ new Set();
   const rateBuckets = /* @__PURE__ */ new Map();
@@ -11941,6 +12093,13 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
     try {
       let projectContextPool2 = function(project, journalCategories) {
         const pool = store.listContextItems(project);
+        try {
+          const authored = loadAuthoredMemory(hubRepoRoot);
+          for (const rec of authored) {
+            pool.push(memoryRecordToContextItem(rec, project));
+          }
+        } catch {
+        }
         const categoryFilter = journalCategories ? new Set(journalCategories) : void 0;
         const runIds = new Set(
           [...workflowRuns.values()].filter((run) => run.project === project).map((run) => run.id)
@@ -13169,11 +13328,11 @@ data: ${JSON.stringify({ agent: publicAgent(current) })}
     state: { agents, messages, workflowRuns, journal, persistent: store.persistent },
     async start() {
       if (closed) throw new Error("hub is closed");
-      await new Promise((resolve6, reject) => {
+      await new Promise((resolve8, reject) => {
         server.once("error", reject);
         server.listen(port2, host2, () => {
           server.off("error", reject);
-          resolve6();
+          resolve8();
         });
       });
       cleanupTimer = setInterval(() => {
@@ -13203,7 +13362,7 @@ data: ${JSON.stringify({ agent: publicAgent(current) })}
       if (closed) return;
       closed = true;
       if (cleanupTimer) clearInterval(cleanupTimer);
-      const serverClosed = server.listening ? new Promise((resolve6, reject) => server.close((error) => error ? reject(error) : resolve6())) : Promise.resolve();
+      const serverClosed = server.listening ? new Promise((resolve8, reject) => server.close((error) => error ? reject(error) : resolve8())) : Promise.resolve();
       const forceClose = setTimeout(() => server.closeAllConnections(), shutdownGraceMs);
       forceClose.unref();
       for (const clients of streams.values()) {
@@ -13230,12 +13389,12 @@ data: ${JSON.stringify({ agent: publicAgent(current) })}
 }
 
 // plugins/kxm/src/server.ts
-import { mkdirSync as mkdirSync5, readFileSync as readFileSync3 } from "node:fs";
-import { dirname as dirname4, join as join5, resolve as resolve5 } from "node:path";
+import { mkdirSync as mkdirSync6, readFileSync as readFileSync4 } from "node:fs";
+import { dirname as dirname6, join as join6, resolve as resolve7 } from "node:path";
 
 // plugins/kxm/src/logger.ts
-import { appendFileSync, existsSync as existsSync4, mkdirSync as mkdirSync4, renameSync as renameSync3, statSync as statSync2, unlinkSync as unlinkSync2 } from "node:fs";
-import { dirname as dirname3 } from "node:path";
+import { appendFileSync, existsSync as existsSync5, mkdirSync as mkdirSync5, renameSync as renameSync3, statSync as statSync2, unlinkSync as unlinkSync2 } from "node:fs";
+import { dirname as dirname5 } from "node:path";
 var LOG_LEVEL_PRIORITY = {
   debug: 10,
   info: 20,
@@ -13272,7 +13431,7 @@ function redactLogValue(val, key) {
 function rotateLogFiles(filePath, maxFiles) {
   for (let i = maxFiles; i >= 1; i--) {
     const current = `${filePath}.${i}`;
-    if (existsSync4(current)) {
+    if (existsSync5(current)) {
       if (i >= maxFiles) {
         try {
           unlinkSync2(current);
@@ -13286,7 +13445,7 @@ function rotateLogFiles(filePath, maxFiles) {
       }
     }
   }
-  if (existsSync4(filePath)) {
+  if (existsSync5(filePath)) {
     try {
       renameSync3(filePath, `${filePath}.1`);
     } catch {
@@ -13303,7 +13462,7 @@ function createLogger(options) {
   const shouldStdout = options.stdout ?? !isDaemon;
   const correlationDefaults = options.correlation ?? {};
   let currentSize = 0;
-  if (filePath && existsSync4(filePath)) {
+  if (filePath && existsSync5(filePath)) {
     try {
       currentSize = statSync2(filePath).size;
     } catch {
@@ -13341,7 +13500,7 @@ function createLogger(options) {
         currentSize = 0;
       }
       try {
-        mkdirSync4(dirname3(filePath), { recursive: true });
+        mkdirSync5(dirname5(filePath), { recursive: true });
         appendFileSync(filePath, line, { encoding: "utf8", mode: 384 });
         currentSize += lineBytes;
       } catch {
@@ -13386,14 +13545,14 @@ function createLogger(options) {
 var host = process.env.KXM_HOST ?? "127.0.0.1";
 var port = Number.parseInt(process.env.KXM_PORT ?? String(DEFAULT_PORT), 10);
 var authToken = process.env.KXM_AUTH_TOKEN;
-var workspaceDir = resolve5(process.env.KXM_WORKSPACE_DIR?.trim() || ".kxm");
-var configDir = resolve5(process.env.KXM_CONFIG_DIR?.trim() || join5(workspaceDir, "config"));
-var logsDir = resolve5(process.env.KXM_LOGS_DIR?.trim() || join5(workspaceDir, "logs"));
-var assetsDir = resolve5(process.env.KXM_ASSETS_DIR?.trim() || join5(workspaceDir, "assets"));
-var stateDir = resolve5(process.env.KXM_STATE_DIR?.trim() || join5(workspaceDir, "state"));
+var workspaceDir = resolve7(process.env.KXM_WORKSPACE_DIR?.trim() || ".kxm");
+var configDir = resolve7(process.env.KXM_CONFIG_DIR?.trim() || join6(workspaceDir, "config"));
+var logsDir = resolve7(process.env.KXM_LOGS_DIR?.trim() || join6(workspaceDir, "logs"));
+var assetsDir = resolve7(process.env.KXM_ASSETS_DIR?.trim() || join6(workspaceDir, "assets"));
+var stateDir = resolve7(process.env.KXM_STATE_DIR?.trim() || join6(workspaceDir, "state"));
 var dataPathValue = process.env.KXM_DATA_PATH?.trim();
-var dataPath = dataPathValue === ":memory:" ? dataPathValue : resolve5(dataPathValue || join5(stateDir, "kxm.db"));
-var logPath = resolve5(process.env.KXM_LOG_PATH?.trim() || join5(logsDir, "kxm-hub.jsonl"));
+var dataPath = dataPathValue === ":memory:" ? dataPathValue : resolve7(dataPathValue || join6(stateDir, "kxm.db"));
+var logPath = resolve7(process.env.KXM_LOG_PATH?.trim() || join6(logsDir, "kxm-hub.jsonl"));
 var messageTtlMs = Number.parseInt(process.env.KXM_MESSAGE_TTL_MS ?? String(DEFAULT_MESSAGE_TTL_MS), 10);
 var messageRetentionMs = Number.parseInt(
   process.env.KXM_MESSAGE_RETENTION_MS ?? String(DEFAULT_MESSAGE_RETENTION_MS),
@@ -13404,8 +13563,8 @@ var rateLimitWindowMs = Number.parseInt(
   process.env.KXM_RATE_LIMIT_WINDOW_MS ?? String(DEFAULT_RATE_LIMIT_WINDOW_MS),
   10
 );
-for (const directory of [configDir, logsDir, assetsDir, stateDir, dirname4(logPath)]) {
-  mkdirSync5(directory, { recursive: true });
+for (const directory of [configDir, logsDir, assetsDir, stateDir, dirname6(logPath)]) {
+  mkdirSync6(directory, { recursive: true });
 }
 var structuredLog = createLogger({
   component: "hub",
@@ -13437,7 +13596,7 @@ if (inlineWorkflows && workflowFile) {
   throw new Error("configure only one of KXM_WEBHOOK_WORKFLOWS or KXM_WEBHOOK_WORKFLOWS_FILE");
 }
 var webhookWorkflows = parseWorkflowDefinitions(
-  workflowFile ? readFileSync3(resolve5(workflowFile), "utf8") : inlineWorkflows
+  workflowFile ? readFileSync4(resolve7(workflowFile), "utf8") : inlineWorkflows
 );
 var hub = createMeshHub({
   host,

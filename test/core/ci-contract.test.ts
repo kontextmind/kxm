@@ -65,7 +65,7 @@ test("release workflow is tag-triggered, fail-closed drafts, and npm publish sta
   assert.deepEqual(doc.on?.push?.tags, ["v*"]);
   assert.equal(doc.permissions?.contents, "read");
   assert.equal(doc.jobs?.release?.permissions?.contents, "write");
-  assert.equal(doc.jobs?.release?.if, false);
+  assert.equal(doc.jobs?.release?.if, undefined);
   assert.equal(doc.jobs?.["publish-npm"]?.if, false);
   assert.equal(doc.jobs?.release?.["runs-on"], ARC_RUNNER);
   assert.equal(doc.jobs?.["publish-npm"]?.["runs-on"], ARC_RUNNER);

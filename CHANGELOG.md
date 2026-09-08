@@ -4,6 +4,8 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ## Unreleased
 
+## 0.6.0 - 2026-09-08
+
 ### Added
 
 - **Improvement report and candidates (E8, issue #97):** Replaced gate-count

@@ -5,6 +5,7 @@ import {
   arbitrate,
   explainContextItem,
   journalEntryToContextItem,
+  memoryRecordToContextItem,
   rolePolicy,
   type RoleContextPolicy,
 } from "../../plugins/kxm/src/arbiter.ts";
@@ -127,6 +128,54 @@ test("arbitrate fails closed on cross-project pool content", () => {
     () => arbitrate({ project: "kxm", role: "planner", task: "plan" }, [foreign]),
     /cross-project/,
   );
+});
+
+test("arbitrate allows _shared items and ranks project items ahead of shared items", () => {
+  const sharedItem = poolItem({
+    id: "ctx_shared",
+    project: "_shared",
+    summary: "shared default preference",
+  });
+  const projectItem = poolItem({
+    id: "ctx_proj",
+    project: "kxm",
+    summary: "project specific knowledge",
+  });
+  const outcome = arbitrate(
+    { project: "kxm", role: "planner", task: "plan", budgetTokens: 16_000 },
+    [sharedItem, projectItem],
+  );
+  assert.equal(outcome.packet.knowledge.length, 2);
+  // Project item comes before shared item
+  assert.equal(outcome.packet.knowledge[0]?.id, "ctx_proj");
+  assert.equal(outcome.packet.knowledge[1]?.id, "ctx_shared");
+});
+
+test("memoryRecordToContextItem converts authored memory records correctly", () => {
+  const record = {
+    schema: "kxm.memory.v1" as const,
+    id: "arch_dec_1",
+    scope: "project" as const,
+    kind: "decision",
+    summary: "Use WAL journal mode for SQLite databases",
+    provenance: { sourceType: "git", sourceRef: "memory:arch_dec_1.md" },
+    authority: "instruction" as const,
+    confidence: "verified" as const,
+    lifecycle: "active" as const,
+    evidenceRefs: ["evidence:e6"],
+  };
+  const item = memoryRecordToContextItem(record, "kxm");
+  assert.equal(item.id, "mem_arch_dec_1");
+  assert.equal(item.project, "kxm");
+  assert.equal(item.kind, "knowledge");
+  assert.equal(item.authority, "instruction");
+  assert.equal(item.confidence, "verified");
+  assert.equal(item.status, "current");
+
+  // Operator scope routes to _shared project
+  const opRecord = { ...record, scope: "operator" as const, id: "op_pref_1" };
+  const opItem = memoryRecordToContextItem(opRecord, "kxm");
+  assert.equal(opItem.project, "_shared");
 });
 
 test("journal entries convert to evidence and knowledge context items", () => {

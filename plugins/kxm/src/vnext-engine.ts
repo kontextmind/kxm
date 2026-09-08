@@ -1,4 +1,10 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import {
+  buildFormalContextPacket,
+  formatContextPacketForPrompt,
+  type FormalContextPacketV2,
+  type HandoffManifestV1,
+} from "./context-packet.ts";
 import { compileVnextWorkflow, type VnextCompiledPlan, type VnextCompiledStep } from "./vnext-engine-compile.ts";
 import {
   isTerminalRunStatus,
@@ -104,6 +110,8 @@ export interface VnextProducerRequest {
   readonly thinking?: string | undefined;
   readonly agentRole?: string | undefined;
   readonly harness?: string | undefined;
+  readonly contextPacket?: FormalContextPacketV2 | undefined;
+  readonly handoffManifest?: HandoffManifestV1 | undefined;
 }
 
 export interface VnextProducerResult {
@@ -1157,6 +1165,32 @@ function birthMember(
   });
   const next = foldStoredVnextRun(context, run);
   persistVnextRunState(context, run.runId, next, events[events.length - 1]!.sequence);
+  const contextPacket = buildFormalContextPacket({
+    project: run.projectId,
+    targetRole: agentId,
+    task: {
+      taskId: run.runId,
+      stepId: input.stepId,
+      stepAttempt: input.stepAttempt,
+      objective: input.step.description ?? input.step.instructions ?? input.stepId,
+      allowedOutcomes: [...input.step.outcomes],
+      permissionCeiling: "edit",
+    },
+    acceptanceCriteria: input.step.requiredEvidence.map((ev) => ({
+      id: ev.key,
+      description: `Provide ${ev.kind} evidence for ${ev.key}`,
+      verificationKind: "witness",
+      required: true,
+    })),
+    plan: {
+      planHash: input.plan.planHash?.stageId ?? "default",
+      activeStepIndex: input.step.index,
+      totalSteps: input.plan.order.length,
+      settledDecisions: [],
+    },
+  });
+  const generatedPrompt = formatContextPacketForPrompt(contextPacket);
+
   const member: PreparedDispatch = {
     run,
     plan: input.plan,
@@ -1180,6 +1214,8 @@ function birthMember(
       capability: minted.secret,
       allowedOutcomes: input.step.outcomes,
       signal: controller.signal,
+      prompt: input.step.instructions ? `${input.step.instructions}\n\n${generatedPrompt}` : generatedPrompt,
+      contextPacket,
     },
     controller,
     state: next,

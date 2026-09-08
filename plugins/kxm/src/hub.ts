@@ -2,7 +2,7 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { existsSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { isIP } from "node:net";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import {
   DEFAULT_MAX_HOPS,
   DEFAULT_MESSAGE_RETENTION_MS,
@@ -29,7 +29,8 @@ import {
   type WorkflowMessageContext,
 } from "./protocol.ts";
 import { workflowScopeExtras } from "./diagnostics.ts";
-import { arbitrate, explainContextItem, journalEntryToContextItem, rolePolicy } from "./arbiter.ts";
+import { arbitrate, explainContextItem, journalEntryToContextItem, memoryRecordToContextItem, rolePolicy } from "./arbiter.ts";
+import { loadAuthoredMemory } from "./memory.ts";
 import { contextItemAuditMetadata, CONTEXT_AUTHORITIES, CONTEXT_CONFIDENCES, type ContextAuthority, type ContextConfidence, type ContextItem } from "./context.ts";
 import { NativeStateProvider } from "./state.ts";
 import { SkillLifecycle } from "./skills.ts";
@@ -86,6 +87,7 @@ export interface MeshHubOptions {
   logger?: (entry: Record<string, unknown>) => void;
   skillsDir?: string;
   skillLifecycle?: SkillLifecycle;
+  repoRoot?: string;
 }
 
 export interface MeshHub {
@@ -399,6 +401,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
   const webhookWorkflows = new Map((options.webhookWorkflows ?? []).map((workflow) => [workflow.id, workflow]));
   const logger = options.logger ?? (() => undefined);
   const assetsDir = options.assetsDir;
+  const hubRepoRoot = options.repoRoot ?? (options.dataPath && options.dataPath !== ":memory:" ? resolve(dirname(dirname(options.dataPath))) : process.cwd());
   const store = new MeshStore(options.dataPath);
   const agents = store.agents;
   const messages = store.messages;
@@ -1528,6 +1531,14 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
        * mapped to context items. Agents never see provider internals. */
       function projectContextPool(project: string, journalCategories?: JournalCategory[]): { pool: ContextItem[]; contradictionIds: string[] } {
         const pool = store.listContextItems(project);
+        try {
+          const authored = loadAuthoredMemory(hubRepoRoot);
+          for (const rec of authored) {
+            pool.push(memoryRecordToContextItem(rec, project));
+          }
+        } catch {
+          // ignore if .kxm/memory does not exist
+        }
         const categoryFilter = journalCategories ? new Set<string>(journalCategories) : undefined;
         const runIds = new Set(
           [...workflowRuns.values()].filter((run) => run.project === project).map((run) => run.id),

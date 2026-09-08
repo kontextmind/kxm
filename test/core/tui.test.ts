@@ -396,3 +396,41 @@ test("SQLite snapshot projects message metadata without retaining bodies", () =>
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("dashboard supports interactive access control plane actions (a/r/d/s/c)", () => {
+  const initial = defaultMeshTuiView("workflows");
+  const approved = applyMeshTuiKey(initial, "a", 3);
+  assert.notEqual(approved, "quit");
+  if (approved !== "quit") {
+    assert.equal(approved.lastAction?.action, "approve");
+    assert.match(approved.statusMessage ?? "", /APPROVE/);
+  }
+
+  const rejected = applyMeshTuiKey(initial, "r", 3);
+  assert.notEqual(rejected, "quit");
+  if (rejected !== "quit") {
+    assert.equal(rejected.lastAction?.action, "reject");
+    assert.match(rejected.statusMessage ?? "", /REJECT/);
+  }
+
+  const degraded = applyMeshTuiKey(initial, "d", 3);
+  assert.notEqual(degraded, "quit");
+  if (degraded !== "quit") {
+    assert.equal(degraded.lastAction?.action, "degrade");
+    assert.match(degraded.statusMessage ?? "", /DEGRADE/);
+  }
+
+  const signalled = applyMeshTuiKey(initial, "s", 3);
+  assert.notEqual(signalled, "quit");
+  if (signalled !== "quit") {
+    assert.equal(signalled.lastAction?.action, "signal");
+    assert.match(signalled.statusMessage ?? "", /SIGNAL/);
+  }
+
+  const cancelled = applyMeshTuiKey(initial, "c", 3);
+  assert.notEqual(cancelled, "quit");
+  if (cancelled !== "quit") {
+    assert.equal(cancelled.lastAction?.action, "cancel");
+    assert.match(cancelled.statusMessage ?? "", /CANCEL/);
+  }
+});
