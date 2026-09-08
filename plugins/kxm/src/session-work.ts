@@ -103,8 +103,12 @@ function planItem(plan: MeshTuiPlan): SessionWorkItem {
 }
 
 function recentTasks(runs: MeshTuiRun[]): MeshTuiRun[] {
-  const active = runs.filter((run) => run.status === "running" || run.status === "waiting");
-  const rest = runs.filter((run) => run.status !== "running" && run.status !== "waiting");
+  const active = runs.filter((run) =>
+    run.status === "running" || run.status === "waiting" || run.status === "created" || run.status === "preparing"
+  );
+  const rest = runs.filter((run) =>
+    run.status !== "running" && run.status !== "waiting" && run.status !== "created" && run.status !== "preparing"
+  );
   return [...active, ...rest].slice(0, MAX_SESSION_BRIEF_TASKS);
 }
 
@@ -253,17 +257,20 @@ export function formatSessionWidget(
 }
 
 export function buildSessionBrief(
-  snapshot: Pick<LocalMeshSnapshot, "runs" | "plans" | "openMessageTotal" | "runTotal">,
+  snapshot: Pick<LocalMeshSnapshot, "runs" | "plans" | "openMessageTotal" | "runTotal"> & { source?: "legacy" | "vnext" | "both" | undefined },
   current?: SessionWorkItem,
   hub?: SessionHubStatus,
   ship?: SessionShipStatus,
   updateLatest?: string,
   cost?: string,
   sessionToken?: string,
-  source: "legacy" | "vnext" | "both" = "legacy",
+  source?: "legacy" | "vnext" | "both" | undefined,
   staleSeconds = DEFAULT_SESSION_BRIEF_STALE_SECONDS,
 ): SessionBrief {
-  const active = snapshot.runs.filter((run) => run.status === "running" || run.status === "waiting");
+  const resolvedSource = source ?? snapshot.source ?? "legacy";
+  const active = snapshot.runs.filter((run) =>
+    run.status === "running" || run.status === "waiting" || run.status === "created" || run.status === "preparing"
+  );
   const stats: SessionWorkStats = {
     activeTasks: active.length,
     waitingTasks: snapshot.runs.filter((run) => run.status === "waiting").length,
@@ -281,7 +288,7 @@ export function buildSessionBrief(
     schema: SESSION_BRIEF_SCHEMA,
     generatedAt: new Date().toISOString(),
     staleSeconds,
-    source,
+    source: resolvedSource,
     hub: resolvedHub,
     stats,
     tasks,
@@ -428,14 +435,16 @@ export function loadSessionBrief(
     const cachedUpdate = readUpdateCache(paths.stateDir);
     const updateLatest = options.updateLatest ?? (cachedUpdate?.available ? cachedUpdate.latest : undefined);
     const cost = options.cost ?? estimateSessionCost(paths.stateDir);
+    const snapshot = loadLocalMeshSnapshot(paths.dataPath, paths.stateDir, { env });
     brief = buildSessionBrief(
-      loadLocalMeshSnapshot(paths.dataPath, paths.stateDir),
+      snapshot,
       current,
       hub,
       ship,
       updateLatest,
       cost,
       options.sessionToken,
+      snapshot.source,
     );
   } catch {
     brief = buildSessionBrief(

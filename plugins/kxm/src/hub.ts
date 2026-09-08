@@ -481,13 +481,6 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
     agent.online = false;
     store.saveAgent(agent);
   }
-  for (const message of messages.values()) {
-    const legacy = message as MessageRecord & { expiresAt?: string };
-    if (!legacy.expiresAt) {
-      legacy.expiresAt = new Date(Date.parse(message.createdAt) + defaultMessageTtlMs).toISOString();
-      store.saveMessage(message);
-    }
-  }
 
   function expectedProjectToken(project: string): string | undefined {
     return projectTokens[project] || authToken;
@@ -608,9 +601,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
       .filter((agent) => agent.project === project)
       .map(publicAgent)
       .sort((left, right) => Number(right.online) - Number(left.online) || left.name.localeCompare(right.name));
-    const open = [...messages.values()]
-      .filter((message) => message.project === project && (message.status === "queued" || message.status === "delivered"))
-      .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
+    const open = store.getOpenMessages(project);
     const projectRuns = [...workflowRuns.values()]
       .filter((run) => run.project === project)
       .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
@@ -872,6 +863,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
       "Review the run with kxm_workflow_get and keep recording material plans, decisions, contradictions, errors, and lessons.",
       "Do not claim the workflow is complete until the checkpoint response reports completed=true.",
     ].join("\n"), "workflow resume prompt", { max: MAX_CONTENT_CHARS });
+    const seq = store.nextAgentSequence(run.targetAgentId);
     const message: MessageRecord = {
       id: newId("msg"),
       project: run.project,
@@ -883,6 +875,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
       delivery: definition.delivery,
       hops: 0,
       maxHops: DEFAULT_MAX_HOPS,
+      seq,
       correlationId: run.id,
       workflowRunId: run.id,
       idempotencyKey: `${definition.id}:signal:${deliveryId}`,
@@ -932,6 +925,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         MIN_MESSAGE_TTL_MS,
         MAX_MESSAGE_TTL_MS,
       );
+      const seq = store.nextAgentSequence(transition.targetAgentId);
       const message: MessageRecord = {
         id: newId("msg"),
         project: transition.project,
@@ -949,6 +943,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         delivery: definition?.delivery ?? "followUp",
         hops: 0,
         maxHops: DEFAULT_MAX_HOPS,
+        seq,
         correlationId: transition.id,
         workflowRunId: transition.id,
         idempotencyKey: `${transition.definitionId}:timeout:${waiting.signalKey}:${waiting.expiresAt}`,
@@ -978,16 +973,16 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
 
   function flushPending(agentId: string): void {
     expireMessages();
-    for (const message of messages.values()) {
-      if (message.to === agentId && (message.status === "queued" || message.status === "delivered")) {
-        publish(agentId, { type: "message", message });
-      }
+    const cursor = store.getConsumerCursor(agentId);
+    const pending = store.getPendingMessages(agentId, cursor);
+    for (const message of pending) {
+      publish(agentId, { type: "message", message });
     }
   }
 
   function expireMessages(): void {
     const now = Date.now();
-    for (const message of messages.values()) {
+    for (const message of store.getExpiringMessages(now)) {
       if ((message.status === "queued" || message.status === "delivered") && Date.parse(message.expiresAt) <= now) {
         message.status = "expired";
         message.error = "message expired before a reply was received";
@@ -1027,19 +1022,14 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
   }
 
   function purgeTerminalMessages(): void {
-    const cutoff = Date.now() - messageRetentionMs;
-    for (const message of messages.values()) {
-      const terminal = message.status === "replied"
-        || message.status === "cancelled"
-        || message.status === "expired"
-        || message.status === "error";
-      if (!terminal) continue;
-      const terminalAt = message.repliedAt ?? message.cancelledAt ?? message.expiresAt ?? message.createdAt;
-      if (Date.parse(terminalAt) > cutoff) continue;
-      store.deleteMessage(message.id);
+    const swept = store.sweepRetention(messageRetentionMs);
+    for (const message of swept.purgedMessages) {
       publishOps(message.project, "messages");
       counters.messagesPurged += 1;
       logger({ event: "message_purged", messageId: message.id, ...messageLog(message, message.from, message.fromName, message.to, message.toName) });
+    }
+    for (const runId of swept.purgedRuns) {
+      logger({ event: "workflow_run_purged", runId });
     }
   }
 
@@ -1051,7 +1041,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
       `kxm_online_agents ${onlineAgents}`,
       "# HELP kxm_messages Current retained message count.",
       "# TYPE kxm_messages gauge",
-      `kxm_messages ${messages.size}`,
+      `kxm_messages ${store.countMessages()}`,
       "# TYPE kxm_requests_total counter",
       `kxm_requests_total ${counters.requests}`,
       "# TYPE kxm_errors_total counter",
@@ -1311,6 +1301,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         const content = requireString(workflowPrompt(definition, runId, payload), "workflow prompt", {
           max: MAX_CONTENT_CHARS,
         });
+        const seq = store.nextAgentSequence(target.id);
         const message: MessageRecord = {
           id: newId("msg"),
           project: definition.project,
@@ -1322,6 +1313,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           delivery: definition.delivery,
           hops: 0,
           maxHops: DEFAULT_MAX_HOPS,
+          seq,
           correlationId: runId,
           workflowRunId: runId,
           idempotencyKey: `${definition.id}:${deliveryId}`,
@@ -2207,9 +2199,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         );
         const idempotencyKey = optionalString(body.idempotencyKey, "idempotencyKey", 128);
         if (idempotencyKey) {
-          const existing = [...messages.values()].find(
-            (message) => message.from === sender.id && message.idempotencyKey === idempotencyKey,
-          );
+          const existing = store.findMessageByIdempotency(sender.id, idempotencyKey);
           if (existing) {
             if (!sameIdempotentRequest(
               existing,
@@ -2234,6 +2224,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           throw new ProtocolError(400, "cannot send a request to yourself", "self_target");
         }
         const createdAt = nowIso();
+        const seq = store.nextAgentSequence(target.id);
         const message: MessageRecord = {
           id: newId("msg"),
           project: sender.project,
@@ -2245,6 +2236,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           delivery,
           hops,
           maxHops,
+          seq,
           ...(correlationId ? { correlationId } : {}),
           ...(replyTo ? { replyTo } : {}),
           ...(idempotencyKey ? { idempotencyKey } : {}),
@@ -2283,6 +2275,9 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           message.deliveredAt = nowIso();
           store.saveMessage(message);
           publishOps(message.project, "messages");
+        }
+        if (typeof message.seq === "number") {
+          store.advanceCursor(receiver.id, message.seq);
         }
         json(response, 200, { message });
         return;

@@ -36,7 +36,7 @@ export {
   type MeshTuiRunStage,
 };
 
-export const MESH_TUI_PANELS = ["agents", "tasks", "workflows", "plans", "inbox", "procs"] as const;
+export const MESH_TUI_PANELS = ["agents", "tasks", "workflows", "plans", "inbox", "procs", "spend"] as const;
 export type MeshTuiPanel = typeof MESH_TUI_PANELS[number];
 
 export const MESH_TUI_TAB_LABELS: Record<MeshTuiPanel, string> = {
@@ -46,6 +46,7 @@ export const MESH_TUI_TAB_LABELS: Record<MeshTuiPanel, string> = {
   plans: "Plans",
   inbox: "Inbox",
   procs: "Procs",
+  spend: "Spend",
 };
 
 export interface MeshTuiView {
@@ -70,6 +71,7 @@ export function applyMeshTuiKey(view: MeshTuiView, key: string, itemCount = 0): 
     "4": "plans",
     "5": "inbox",
     "6": "procs",
+    "7": "spend",
   };
   const tab = byNumber[key];
   if (tab) return { tab, selected: 0, pane: "list", help: false };
@@ -181,6 +183,20 @@ function panelMetric(snapshot: MeshTuiSnapshot, panel: MeshTuiPanel): string {
   if (panel === "workflows") return snapshot.runs.length === snapshot.runTotal ? String(snapshot.runTotal) : `${snapshot.runs.length}/${snapshot.runTotal}`;
   if (panel === "plans") return String(snapshot.plans.length);
   if (panel === "inbox") return snapshot.openMessages.length === snapshot.openMessageTotal ? String(snapshot.openMessageTotal) : `${snapshot.openMessages.length}/${snapshot.openMessageTotal}`;
+  if (panel === "spend") {
+    const spend = snapshot.spend ?? [];
+    let totalCost = 0;
+    let hasMetered = false;
+    for (const item of spend) {
+      const r = item.routing as unknown as Record<string, unknown>;
+      const costBasis = (r.costBasis as string | undefined) ?? (typeof r.costUsd === "number" ? "metered" : "unmetered");
+      if (costBasis === "metered" && typeof r.costUsd === "number") {
+        totalCost += r.costUsd;
+        hasMetered = true;
+      }
+    }
+    return hasMetered ? `$${totalCost.toFixed(2)}` : String(spend.length);
+  }
   return `${snapshot.pids.filter((claim) => claim.live).length}/${snapshot.pids.length}`;
 }
 
@@ -238,6 +254,25 @@ function panelRows(snapshot: MeshTuiSnapshot, panel: MeshTuiPanel, theme: MeshTu
       ...(snapshot.openMessageTotal > snapshot.openMessages.length ? [theme.dim(`… +${snapshot.openMessageTotal - snapshot.openMessages.length} more`)] : []),
     ];
   }
+  if (panel === "spend") {
+    const spend = snapshot.spend ?? [];
+    if (spend.length === 0) return [];
+    return [
+      theme.dim(`${pad("age", 4)} ${pad("harness/model", 22)} ${pad("cost", 8)} ${pad("tokens", 14)} outcome`),
+      ...spend.slice().reverse().map((entry) => {
+        const r = entry.routing as unknown as Record<string, unknown>;
+        const model = (r.effectiveModel as string | undefined) ?? (r.requestedModel as string | undefined) ?? "-";
+        const harness = (r.harness as string | undefined) ?? "-";
+        const route = `${harness}/${model}`;
+        const cost = typeof r.costUsd === "number" ? `$${r.costUsd.toFixed(3)}` : ((r.costBasis as string) ?? "-");
+        const tokensIn = typeof r.tokensIn === "number" ? r.tokensIn : 0;
+        const tokensOut = typeof r.tokensOut === "number" ? r.tokensOut : 0;
+        const tokens = `${tokensIn}+${tokensOut}`;
+        const outcome = (r.verifierOutcome as string | undefined) ?? (r.finalOutcome as string | undefined) ?? "-";
+        return `${pad(age(entry.recordedAt, now), 4)} ${pad(route, 22)} ${pad(cost, 8)} ${pad(tokens, 14)} ${outcome}`;
+      }),
+    ];
+  }
   return snapshot.pids.map((claim) => `${claim.live ? theme.success("live") : theme.error("dead")}  ${pad(claim.role ?? "-", 8)} pid=${claim.pid ?? "-"}  ${claim.file}`);
 }
 
@@ -247,6 +282,7 @@ function tabItemCount(snapshot: MeshTuiSnapshot, tab: MeshTuiPanel): number {
   if (tab === "workflows") return snapshot.runs.length;
   if (tab === "plans") return snapshot.plans.length;
   if (tab === "inbox") return snapshot.openMessages.length;
+  if (tab === "spend") return snapshot.spend?.length ?? 0;
   return snapshot.pids.length;
 }
 
@@ -286,6 +322,18 @@ function listLines(snapshot: MeshTuiSnapshot, view: MeshTuiView, theme: MeshTuiT
     return snapshot.openMessages.map((message, index) => (
       `${mark(index)}${pad(message.status, 9)} ${pad(message.fromName, 10)} → ${pad(message.toName, 10)} ${pad(age(message.createdAt, now), 4)}`
     ));
+  }
+  if (view.tab === "spend") {
+    const spend = (snapshot.spend ?? []).slice().reverse();
+    return spend.map((entry, index) => {
+      const r = entry.routing as unknown as Record<string, unknown>;
+      const model = (r.effectiveModel as string | undefined) ?? (r.requestedModel as string | undefined) ?? "-";
+      const harness = (r.harness as string | undefined) ?? "-";
+      const route = `${harness}/${model}`;
+      const cost = typeof r.costUsd === "number" ? `$${r.costUsd.toFixed(3)}` : ((r.costBasis as string) ?? "-");
+      const outcome = (r.verifierOutcome as string | undefined) ?? (r.finalOutcome as string | undefined) ?? "-";
+      return `${mark(index)}${pad(age(entry.recordedAt, now), 4)} ${pad(route, 16)} ${pad(cost, 8)} ${outcome}`;
+    });
   }
   return snapshot.pids.map((claim, index) => (
     `${mark(index)}${claim.live ? theme.success("live") : theme.error("dead")}  ${pad(claim.role ?? "-", 8)} pid=${claim.pid ?? "-"}`
@@ -350,6 +398,28 @@ function detailLines(snapshot: MeshTuiSnapshot, view: MeshTuiView, theme: MeshTu
       `${message.fromName} → ${message.toName}`,
       age(message.createdAt, now),
       message.correlationId ? `corr ${message.correlationId}` : theme.dim("bodies never shown"),
+    ];
+  }
+  if (view.tab === "spend") {
+    const spend = (snapshot.spend ?? []).slice().reverse();
+    const entry = spend[view.selected];
+    if (!entry) return [theme.dim("No spend record selected")];
+    const r = entry.routing as unknown as Record<string, unknown>;
+    const model = (r.effectiveModel as string | undefined) ?? (r.requestedModel as string | undefined) ?? "-";
+    const harness = (r.harness as string | undefined) ?? "-";
+    const cost = typeof r.costUsd === "number" ? `$${r.costUsd.toFixed(4)}` : ((r.costBasis as string) ?? "-");
+    const tokensIn = typeof r.tokensIn === "number" ? r.tokensIn : 0;
+    const tokensOut = typeof r.tokensOut === "number" ? r.tokensOut : 0;
+    const cacheRead = typeof r.cacheReadTokens === "number" ? r.cacheReadTokens : 0;
+    const outcome = (r.verifierOutcome as string | undefined) ?? (r.finalOutcome as string | undefined) ?? "-";
+    return [
+      theme.accent(`${harness}/${model}`),
+      `cost ${cost} (${(r.costBasis as string) ?? "unknown"})`,
+      `tokens: in=${tokensIn} out=${tokensOut} cacheRead=${cacheRead}`,
+      `outcome: ${outcome}`,
+      `recorded ${age(entry.recordedAt, now)} ago (${entry.recordedAt})`,
+      ...((r.runId || r.workflowRunId) ? [`run ${((r.runId ?? r.workflowRunId) as string)}`] : []),
+      ...((r.stepId || r.stageId) ? [`stage ${((r.stepId ?? r.stageId) as string)}`] : []),
     ];
   }
   const claim = snapshot.pids[view.selected];
@@ -570,6 +640,7 @@ export async function runMeshTui(input: {
   terminal?: Terminal;
   reconnectMs?: number;
   screen?: MeshTuiPanel;
+  env?: Record<string, string | undefined>;
 }): Promise<number> {
   const base = input.serverUrl.replace(/\/$/, "");
   const headers = (identity?: { id: string; key: string }): Record<string, string> => ({
@@ -615,7 +686,7 @@ export async function runMeshTui(input: {
     } catch {
       error = error ?? "hub_unreachable";
     }
-    let local = loadLocalMeshSnapshot(input.dataPath, input.stateDir);
+    let local = loadLocalMeshSnapshot(input.dataPath, input.stateDir, { env: input.env ?? process.env });
     if (useOpsStream) {
       try {
         const ops = await input.fetchImpl(`${base}/v1/ops/snapshot?project=${encodeURIComponent(input.project)}`, {
@@ -844,7 +915,7 @@ export async function runMeshTui(input: {
               paint(snapshot);
             } else if ("type" in parsed && parsed.type === "presence" && parsed.agent) {
               applyPresence(parsed.agent);
-              const local = loadLocalMeshSnapshot(input.dataPath, input.stateDir);
+              const local = loadLocalMeshSnapshot(input.dataPath, input.stateDir, { env: input.env ?? process.env });
               snapshot = {
                 ...snapshot,
                 openMessages: local.openMessages,
@@ -852,6 +923,8 @@ export async function runMeshTui(input: {
                 runs: local.runs,
                 runTotal: local.runTotal,
                 pids: local.pids,
+                spend: local.spend,
+                source: local.source,
               };
               paint(snapshot);
             }

@@ -14779,7 +14779,7 @@ var require__ = __commonJS({
 import { spawn as spawn2, spawnSync as spawnSync6 } from "node:child_process";
 import { createHash as createHash11, createHmac as createHmac3, randomUUID as randomUUID8 } from "node:crypto";
 import { existsSync as existsSync18, mkdirSync as mkdirSync16, mkdtempSync as mkdtempSync2, readFileSync as readFileSync17, readdirSync as readdirSync5, rmSync as rmSync8, writeFileSync as writeFileSync14 } from "node:fs";
-import { homedir as homedir4, tmpdir as tmpdir2 } from "node:os";
+import { homedir as homedir5, tmpdir as tmpdir2 } from "node:os";
 import { basename as basename3, dirname as dirname11, join as join25, resolve as resolve12 } from "node:path";
 import { DatabaseSync as DatabaseSync4 } from "node:sqlite";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
@@ -28061,7 +28061,8 @@ var MAX_RENDER_WRITE_CHARS = 1024 * 1024;
 
 // plugins/kxm/src/local-snapshot.ts
 import { existsSync as existsSync4, readdirSync as readdirSync2, readFileSync as readFileSync5 } from "node:fs";
-import { join as join11, resolve as resolve3 } from "node:path";
+import { homedir as homedir2 } from "node:os";
+import { isAbsolute as isAbsolute2, join as join11, resolve as resolve3 } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 function processExists(pid) {
   try {
@@ -28187,24 +28188,120 @@ function resolveKxmSnapshotPaths(cwd, env = process.env) {
   const dataPath = configured ? resolve3(cwd, configured) : join11(stateDir, "kxm.db");
   return { dataPath, stateDir };
 }
-function loadLocalMeshSnapshot(dataPath, stateDir) {
+function resolveVnextStateRoot(stateDir, options) {
+  if (options?.vnextStateRoot && existsSync4(options.vnextStateRoot)) {
+    return resolve3(options.vnextStateRoot);
+  }
+  if (existsSync4(join11(stateDir, "runtime", "registry.db")) || existsSync4(join11(stateDir, "runtime", "projects"))) {
+    return stateDir;
+  }
+  const env = options?.env ?? process.env;
+  const explicit = env.KXM_STATE_HOME?.trim() || env.KXM_USER_STATE_DIR?.trim() || env.KXM_STATE_ROOT?.trim();
+  if (explicit && isAbsolute2(explicit) && existsSync4(resolve3(explicit))) {
+    return resolve3(explicit);
+  }
+  let base;
+  if (process.platform === "win32") {
+    const localAppData = env.LOCALAPPDATA?.trim();
+    base = localAppData && isAbsolute2(localAppData) ? localAppData : join11(homedir2(), "AppData", "Local");
+    base = resolve3(base, "KXM");
+  } else if (process.platform === "darwin") {
+    base = resolve3(homedir2(), "Library", "Application Support", "KXM");
+  } else {
+    const xdgState = env.XDG_STATE_HOME?.trim();
+    base = xdgState && isAbsolute2(xdgState) ? xdgState : join11(homedir2(), ".local", "state");
+    base = resolve3(base, "kxm");
+  }
+  if (existsSync4(base)) return base;
+  return void 0;
+}
+function loadLocalMeshSnapshot(dataPath, stateDir, options) {
+  let hasLegacy = false;
   let agents = [];
   let openMessages = [];
   let openMessageTotal = 0;
-  let runs = [];
-  let runTotal = 0;
+  let legacyRuns = [];
+  let legacyRunTotal = 0;
   let plans = [];
   if (existsSync4(dataPath)) {
+    hasLegacy = true;
     const database = new DatabaseSync(dataPath, { readOnly: true });
     try {
+      database.exec("PRAGMA busy_timeout = 5000");
       agents = readJsonRows(database, "SELECT record FROM agents");
       openMessages = readOpenMessageMetadata(database);
       openMessageTotal = countRows(database, "messages", " WHERE json_extract(record, '$.status') IN ('queued', 'delivered')");
-      runs = readJsonRows(database, "SELECT record FROM workflow_runs ORDER BY rowid DESC LIMIT 8");
-      runTotal = countRows(database, "workflow_runs");
+      legacyRuns = readJsonRows(database, "SELECT record FROM workflow_runs ORDER BY rowid DESC LIMIT 8");
+      legacyRunTotal = countRows(database, "workflow_runs");
       plans = readPlanMetadata(database);
     } finally {
       database.close();
+    }
+  }
+  let hasVnext = false;
+  const vnextRuns = [];
+  let vnextRunTotal = 0;
+  const vnextStateRoot = resolveVnextStateRoot(stateDir, options);
+  if (vnextStateRoot) {
+    const runtimeDir = join11(vnextStateRoot, "runtime");
+    const registryDbPath = join11(runtimeDir, "registry.db");
+    const projectsDir = join11(runtimeDir, "projects");
+    const projectKeys = /* @__PURE__ */ new Set();
+    if (existsSync4(registryDbPath)) {
+      hasVnext = true;
+      try {
+        const regDb = new DatabaseSync(registryDbPath, { readOnly: true });
+        try {
+          regDb.exec("PRAGMA busy_timeout = 5000");
+          const pRows = regDb.prepare("SELECT project_key FROM projects").all();
+          for (const row of pRows) {
+            if (row.project_key) projectKeys.add(row.project_key);
+          }
+        } finally {
+          regDb.close();
+        }
+      } catch {
+      }
+    }
+    if (existsSync4(projectsDir)) {
+      try {
+        for (const entry of readdirSync2(projectsDir, { withFileTypes: true })) {
+          if (entry.isDirectory()) {
+            projectKeys.add(entry.name);
+          }
+        }
+      } catch {
+      }
+    }
+    for (const key of projectKeys) {
+      const eventDbPath = join11(projectsDir, key, "run-events.db");
+      if (existsSync4(eventDbPath)) {
+        hasVnext = true;
+        try {
+          const eventDb = new DatabaseSync(eventDbPath, { readOnly: true });
+          try {
+            eventDb.exec("PRAGMA busy_timeout = 5000");
+            const runRows = eventDb.prepare(`
+              SELECT run_id, project_id, workflow_id, status, created_at, updated_at
+              FROM runs ORDER BY created_at DESC, run_id DESC LIMIT 8
+            `).all();
+            const countRow = eventDb.prepare("SELECT COUNT(*) AS total FROM runs").get();
+            vnextRunTotal += Number(countRow?.total ?? runRows.length);
+            for (const r of runRows) {
+              vnextRuns.push({
+                id: r.run_id,
+                status: r.status,
+                definitionId: r.workflow_id,
+                project: r.project_id,
+                updatedAt: r.updated_at || r.created_at
+              });
+            }
+          } finally {
+            eventDb.close();
+          }
+        } catch {
+        }
+      }
     }
   }
   const pids = [];
@@ -28223,26 +28320,58 @@ function loadLocalMeshSnapshot(dataPath, stateDir) {
       }
     }
   }
+  const combinedRuns = [
+    ...legacyRuns.map((run) => summarizeMeshRun(run)),
+    ...vnextRuns
+  ];
+  const seenIds = /* @__PURE__ */ new Set();
+  const uniqueRuns = [];
+  for (const run of combinedRuns) {
+    if (!seenIds.has(run.id)) {
+      seenIds.add(run.id);
+      uniqueRuns.push(run);
+    }
+  }
+  uniqueRuns.sort((a, b2) => {
+    const at = a.updatedAt ? Date.parse(a.updatedAt) : 0;
+    const bt = b2.updatedAt ? Date.parse(b2.updatedAt) : 0;
+    return bt - at;
+  });
+  const runs = uniqueRuns.slice(0, 16);
+  const runTotal = legacyRunTotal + vnextRunTotal;
+  let source;
+  if (hasLegacy && hasVnext) {
+    source = "both";
+  } else if (hasVnext) {
+    source = "vnext";
+  } else {
+    source = "legacy";
+  }
+  const telemetryFile = join11(stateDir, "telemetry.jsonl");
+  const spend = existsSync4(telemetryFile) ? readRoutingRecords(telemetryFile) : [];
   return {
+    source,
     agents: agents.sort((a, b2) => Number(b2.online) - Number(a.online) || a.name.localeCompare(b2.name)),
     openMessages,
     openMessageTotal,
-    runs: runs.map((run) => summarizeMeshRun(run)),
+    runs,
     runTotal,
     plans,
-    pids
+    pids,
+    spend
   };
 }
 
 // plugins/kxm/src/tui.ts
-var MESH_TUI_PANELS = ["agents", "tasks", "workflows", "plans", "inbox", "procs"];
+var MESH_TUI_PANELS = ["agents", "tasks", "workflows", "plans", "inbox", "procs", "spend"];
 var MESH_TUI_TAB_LABELS = {
   agents: "Agents",
   tasks: "Tasks",
   workflows: "Workflows",
   plans: "Plans",
   inbox: "Inbox",
-  procs: "Procs"
+  procs: "Procs",
+  spend: "Spend"
 };
 function defaultMeshTuiView(screen) {
   return { tab: screen ?? "agents", selected: 0, pane: "list", help: false };
@@ -28257,7 +28386,8 @@ function applyMeshTuiKey(view, key, itemCount = 0) {
     "3": "workflows",
     "4": "plans",
     "5": "inbox",
-    "6": "procs"
+    "6": "procs",
+    "7": "spend"
   };
   const tab = byNumber[key];
   if (tab) return { tab, selected: 0, pane: "list", help: false };
@@ -28338,6 +28468,20 @@ function panelMetric(snapshot, panel) {
   if (panel === "workflows") return snapshot.runs.length === snapshot.runTotal ? String(snapshot.runTotal) : `${snapshot.runs.length}/${snapshot.runTotal}`;
   if (panel === "plans") return String(snapshot.plans.length);
   if (panel === "inbox") return snapshot.openMessages.length === snapshot.openMessageTotal ? String(snapshot.openMessageTotal) : `${snapshot.openMessages.length}/${snapshot.openMessageTotal}`;
+  if (panel === "spend") {
+    const spend = snapshot.spend ?? [];
+    let totalCost = 0;
+    let hasMetered = false;
+    for (const item of spend) {
+      const r = item.routing;
+      const costBasis = r.costBasis ?? (typeof r.costUsd === "number" ? "metered" : "unmetered");
+      if (costBasis === "metered" && typeof r.costUsd === "number") {
+        totalCost += r.costUsd;
+        hasMetered = true;
+      }
+    }
+    return hasMetered ? `$${totalCost.toFixed(2)}` : String(spend.length);
+  }
   return `${snapshot.pids.filter((claim) => claim.live).length}/${snapshot.pids.length}`;
 }
 function tabItemCount(snapshot, tab) {
@@ -28346,6 +28490,7 @@ function tabItemCount(snapshot, tab) {
   if (tab === "workflows") return snapshot.runs.length;
   if (tab === "plans") return snapshot.plans.length;
   if (tab === "inbox") return snapshot.openMessages.length;
+  if (tab === "spend") return snapshot.spend?.length ?? 0;
   return snapshot.pids.length;
 }
 function tabSplits(tab) {
@@ -28374,6 +28519,18 @@ function listLines(snapshot, view, theme) {
   }
   if (view.tab === "inbox") {
     return snapshot.openMessages.map((message, index) => `${mark(index)}${pad(message.status, 9)} ${pad(message.fromName, 10)} \u2192 ${pad(message.toName, 10)} ${pad(age(message.createdAt, now), 4)}`);
+  }
+  if (view.tab === "spend") {
+    const spend = (snapshot.spend ?? []).slice().reverse();
+    return spend.map((entry, index) => {
+      const r = entry.routing;
+      const model = r.effectiveModel ?? r.requestedModel ?? "-";
+      const harness = r.harness ?? "-";
+      const route = `${harness}/${model}`;
+      const cost = typeof r.costUsd === "number" ? `$${r.costUsd.toFixed(3)}` : r.costBasis ?? "-";
+      const outcome = r.verifierOutcome ?? r.finalOutcome ?? "-";
+      return `${mark(index)}${pad(age(entry.recordedAt, now), 4)} ${pad(route, 16)} ${pad(cost, 8)} ${outcome}`;
+    });
   }
   return snapshot.pids.map((claim, index) => `${mark(index)}${claim.live ? theme.success("live") : theme.error("dead")}  ${pad(claim.role ?? "-", 8)} pid=${claim.pid ?? "-"}`);
 }
@@ -28433,6 +28590,28 @@ function detailLines(snapshot, view, theme) {
       `${message.fromName} \u2192 ${message.toName}`,
       age(message.createdAt, now),
       message.correlationId ? `corr ${message.correlationId}` : theme.dim("bodies never shown")
+    ];
+  }
+  if (view.tab === "spend") {
+    const spend = (snapshot.spend ?? []).slice().reverse();
+    const entry = spend[view.selected];
+    if (!entry) return [theme.dim("No spend record selected")];
+    const r = entry.routing;
+    const model = r.effectiveModel ?? r.requestedModel ?? "-";
+    const harness = r.harness ?? "-";
+    const cost = typeof r.costUsd === "number" ? `$${r.costUsd.toFixed(4)}` : r.costBasis ?? "-";
+    const tokensIn = typeof r.tokensIn === "number" ? r.tokensIn : 0;
+    const tokensOut = typeof r.tokensOut === "number" ? r.tokensOut : 0;
+    const cacheRead = typeof r.cacheReadTokens === "number" ? r.cacheReadTokens : 0;
+    const outcome = r.verifierOutcome ?? r.finalOutcome ?? "-";
+    return [
+      theme.accent(`${harness}/${model}`),
+      `cost ${cost} (${r.costBasis ?? "unknown"})`,
+      `tokens: in=${tokensIn} out=${tokensOut} cacheRead=${cacheRead}`,
+      `outcome: ${outcome}`,
+      `recorded ${age(entry.recordedAt, now)} ago (${entry.recordedAt})`,
+      ...r.runId || r.workflowRunId ? [`run ${r.runId ?? r.workflowRunId}`] : [],
+      ...r.stepId || r.stageId ? [`stage ${r.stepId ?? r.stageId}`] : []
     ];
   }
   const claim = snapshot.pids[view.selected];
@@ -28634,7 +28813,7 @@ async function runMeshTui(input) {
     } catch {
       error = error ?? "hub_unreachable";
     }
-    let local = loadLocalMeshSnapshot(input.dataPath, input.stateDir);
+    let local = loadLocalMeshSnapshot(input.dataPath, input.stateDir, { env: input.env ?? process.env });
     if (useOpsStream) {
       try {
         const ops = await input.fetchImpl(`${base}/v1/ops/snapshot?project=${encodeURIComponent(input.project)}`, {
@@ -28847,14 +29026,16 @@ async function runMeshTui(input) {
               paint(snapshot);
             } else if ("type" in parsed && parsed.type === "presence" && parsed.agent) {
               applyPresence(parsed.agent);
-              const local = loadLocalMeshSnapshot(input.dataPath, input.stateDir);
+              const local = loadLocalMeshSnapshot(input.dataPath, input.stateDir, { env: input.env ?? process.env });
               snapshot = {
                 ...snapshot,
                 openMessages: local.openMessages,
                 openMessageTotal: local.openMessageTotal,
                 runs: local.runs,
                 runTotal: local.runTotal,
-                pids: local.pids
+                pids: local.pids,
+                spend: local.spend,
+                source: local.source
               };
               paint(snapshot);
             }
@@ -29072,8 +29253,8 @@ function planKxmPackageUpdate(source, latest, releaseDir, asset) {
 
 // plugins/kxm/src/hub-binding.ts
 import { existsSync as existsSync6, mkdirSync as mkdirSync8, readFileSync as readFileSync7, renameSync as renameSync3, rmSync as rmSync2, writeFileSync as writeFileSync7 } from "node:fs";
-import { homedir as homedir2 } from "node:os";
-import { dirname as dirname3, isAbsolute as isAbsolute2, join as join13, resolve as resolve4 } from "node:path";
+import { homedir as homedir3 } from "node:os";
+import { dirname as dirname3, isAbsolute as isAbsolute3, join as join13, resolve as resolve4 } from "node:path";
 var HUB_BINDING_SCHEMA = "kxm.hub-binding.v1";
 var HUB_HEALTH_PROBE_MS = 300;
 var HubBindingError = class extends Error {
@@ -29085,17 +29266,17 @@ var HubBindingError = class extends Error {
 function resolveUserStateRoot(env) {
   const explicit = env.KXM_STATE_HOME?.trim();
   if (explicit) {
-    if (!isAbsolute2(explicit)) throw new HubBindingError("local_state_root_not_absolute");
+    if (!isAbsolute3(explicit)) throw new HubBindingError("local_state_root_not_absolute");
     return resolve4(explicit);
   }
   if (process.platform === "win32") {
     const localAppData = env.LOCALAPPDATA?.trim();
-    const base2 = localAppData && isAbsolute2(localAppData) ? localAppData : join13(homedir2(), "AppData", "Local");
+    const base2 = localAppData && isAbsolute3(localAppData) ? localAppData : join13(homedir3(), "AppData", "Local");
     return resolve4(base2, "KXM");
   }
-  if (process.platform === "darwin") return resolve4(homedir2(), "Library", "Application Support", "KXM");
+  if (process.platform === "darwin") return resolve4(homedir3(), "Library", "Application Support", "KXM");
   const xdgState = env.XDG_STATE_HOME?.trim();
-  const base = xdgState && isAbsolute2(xdgState) ? xdgState : join13(homedir2(), ".local", "state");
+  const base = xdgState && isAbsolute3(xdgState) ? xdgState : join13(homedir3(), ".local", "state");
   return resolve4(base, "kxm");
 }
 function hubBindingFile(env = process.env) {
@@ -29233,8 +29414,12 @@ function planItem(plan) {
   return { kind: "plan", id: plan.id, runId: plan.runId, label, detail: plan.summary, prompt };
 }
 function recentTasks(runs) {
-  const active = runs.filter((run) => run.status === "running" || run.status === "waiting");
-  const rest = runs.filter((run) => run.status !== "running" && run.status !== "waiting");
+  const active = runs.filter(
+    (run) => run.status === "running" || run.status === "waiting" || run.status === "created" || run.status === "preparing"
+  );
+  const rest = runs.filter(
+    (run) => run.status !== "running" && run.status !== "waiting" && run.status !== "created" && run.status !== "preparing"
+  );
   return [...active, ...rest].slice(0, MAX_SESSION_BRIEF_TASKS);
 }
 function formatShipLine(ship) {
@@ -29312,8 +29497,11 @@ function formatSessionWidget(stats, current, hub, ship, updateLatest, cost) {
   if (updateLatest) lines.push(`update  ${updateLatest} available \xB7 kxm update --kxm`);
   return lines;
 }
-function buildSessionBrief(snapshot, current, hub, ship, updateLatest, cost, sessionToken, source = "legacy", staleSeconds = DEFAULT_SESSION_BRIEF_STALE_SECONDS) {
-  const active = snapshot.runs.filter((run) => run.status === "running" || run.status === "waiting");
+function buildSessionBrief(snapshot, current, hub, ship, updateLatest, cost, sessionToken, source, staleSeconds = DEFAULT_SESSION_BRIEF_STALE_SECONDS) {
+  const resolvedSource = source ?? snapshot.source ?? "legacy";
+  const active = snapshot.runs.filter(
+    (run) => run.status === "running" || run.status === "waiting" || run.status === "created" || run.status === "preparing"
+  );
   const stats = {
     activeTasks: active.length,
     waitingTasks: snapshot.runs.filter((run) => run.status === "waiting").length,
@@ -29331,7 +29519,7 @@ function buildSessionBrief(snapshot, current, hub, ship, updateLatest, cost, ses
     schema: SESSION_BRIEF_SCHEMA,
     generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
     staleSeconds,
-    source,
+    source: resolvedSource,
     hub: resolvedHub,
     stats,
     tasks,
@@ -29454,14 +29642,16 @@ function loadSessionBrief(cwd, env = process.env, current, hub, options = {}) {
     const cachedUpdate = readUpdateCache(paths.stateDir);
     const updateLatest = options.updateLatest ?? (cachedUpdate?.available ? cachedUpdate.latest : void 0);
     const cost = options.cost ?? estimateSessionCost(paths.stateDir);
+    const snapshot = loadLocalMeshSnapshot(paths.dataPath, paths.stateDir, { env });
     brief = buildSessionBrief(
-      loadLocalMeshSnapshot(paths.dataPath, paths.stateDir),
+      snapshot,
       current,
       hub,
       ship,
       updateLatest,
       cost,
-      options.sessionToken
+      options.sessionToken,
+      snapshot.source
     );
   } catch {
     brief = buildSessionBrief(
@@ -29559,9 +29749,9 @@ import {
   rmSync as rmSync3,
   writeFileSync as writeFileSync9
 } from "node:fs";
-import { homedir as homedir3 } from "node:os";
+import { homedir as homedir4 } from "node:os";
 import { DatabaseSync as DatabaseSync2 } from "node:sqlite";
-import { dirname as dirname5, isAbsolute as isAbsolute4, join as join16, parse as parse2, relative as relative3, resolve as resolve6, sep as sep2 } from "node:path";
+import { dirname as dirname5, isAbsolute as isAbsolute5, join as join16, parse as parse2, relative as relative3, resolve as resolve6, sep as sep2 } from "node:path";
 
 // plugins/kxm/src/vnext-config.ts
 var import__ = __toESM(require__(), 1);
@@ -29569,7 +29759,7 @@ var import_yaml3 = __toESM(require_dist(), 1);
 import { spawnSync as spawnSync3 } from "node:child_process";
 import { createHash as createHash4 } from "node:crypto";
 import { existsSync as existsSync8, lstatSync as lstatSync2, readFileSync as readFileSync9, readdirSync as readdirSync3, realpathSync as realpathSync2 } from "node:fs";
-import { basename, dirname as dirname4, extname, isAbsolute as isAbsolute3, join as join15, relative as relative2, resolve as resolve5, sep } from "node:path";
+import { basename, dirname as dirname4, extname, isAbsolute as isAbsolute4, join as join15, relative as relative2, resolve as resolve5, sep } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // plugins/kxm/src/vnext-template.ts
@@ -30696,7 +30886,7 @@ function sameHostPath(left, right) {
 }
 function containedHostPath(root, candidate) {
   const path5 = relative2(root, candidate);
-  return path5 === "" || !isAbsolute3(path5) && path5 !== ".." && !path5.startsWith(`..${sep}`);
+  return path5 === "" || !isAbsolute4(path5) && path5 !== ".." && !path5.startsWith(`..${sep}`);
 }
 function portableBindingIssue(root, pathHint, repositoryId) {
   let current = root;
@@ -31457,7 +31647,7 @@ function loadVnextProject(projectRoot, options = {}) {
     if (!repositoryId) continue;
     const hasLocalBinding = Object.hasOwn(options.repositoryBindings ?? {}, repositoryId);
     const localBinding = options.repositoryBindings?.[repositoryId];
-    if (hasLocalBinding && (!localBinding || !isAbsolute3(localBinding))) {
+    if (hasLocalBinding && (!localBinding || !isAbsolute4(localBinding))) {
       loadIssues.push(issue("path", "repository_binding_not_absolute", ".kxm/project.yaml", `host-local binding for ${repositoryId} must be absolute`));
       continue;
     }
@@ -31591,7 +31781,7 @@ function verifyVnextMigrationReceiptTarget(root, receipt, resources, configRevis
 }
 function relativePortable(root, absolute) {
   const rel = relative2(root, absolute);
-  if (!rel || isAbsolute3(rel) || rel === ".." || rel.startsWith(`..${sep}`)) return void 0;
+  if (!rel || isAbsolute4(rel) || rel === ".." || rel.startsWith(`..${sep}`)) return void 0;
   return rel.split(sep).join("/");
 }
 function legacyInputsAt(root) {
@@ -31757,20 +31947,20 @@ function sameHostPath2(left, right, platform = process.platform) {
 function vnextUserStateRoot(options = {}) {
   const env = options.env ?? process.env;
   const platform = options.platform ?? process.platform;
-  const home = options.homeDir ?? homedir3();
+  const home = options.homeDir ?? homedir4();
   const explicit = options.stateRoot ?? env.KXM_STATE_HOME?.trim();
   if (explicit) {
-    if (!isAbsolute4(explicit)) bindingError("path", "local_state_root_not_absolute", "KXM_STATE_HOME must be an absolute host-local path");
+    if (!isAbsolute5(explicit)) bindingError("path", "local_state_root_not_absolute", "KXM_STATE_HOME must be an absolute host-local path");
     return resolve6(explicit);
   }
   if (platform === "win32") {
     const localAppData = env.LOCALAPPDATA?.trim();
-    const base2 = localAppData && isAbsolute4(localAppData) ? localAppData : join16(home, "AppData", "Local");
+    const base2 = localAppData && isAbsolute5(localAppData) ? localAppData : join16(home, "AppData", "Local");
     return resolve6(base2, "KXM");
   }
   if (platform === "darwin") return resolve6(home, "Library", "Application Support", "KXM");
   const xdgState = env.XDG_STATE_HOME?.trim();
-  const base = xdgState && isAbsolute4(xdgState) ? xdgState : join16(home, ".local", "state");
+  const base = xdgState && isAbsolute5(xdgState) ? xdgState : join16(home, ".local", "state");
   return resolve6(base, "kxm");
 }
 function projectBindingKey(projectRoot, platform = process.platform) {
@@ -31831,7 +32021,7 @@ function readVnextLocalBindings(projectRoot, options = {}) {
 }
 function normalizedRecord(projectRoot, projectId, repositories, schemasDir) {
   const normalizedRepositories = Object.fromEntries(Object.entries(repositories).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0).map(([repositoryId, path5]) => {
-    if (!isAbsolute4(path5)) bindingError("path", "repository_binding_not_absolute", `host-local binding for ${repositoryId} must be absolute`);
+    if (!isAbsolute5(path5)) bindingError("path", "repository_binding_not_absolute", `host-local binding for ${repositoryId} must be absolute`);
     return [repositoryId, canonicalHostPath2(path5)];
   }));
   const value = {
@@ -32156,7 +32346,7 @@ import {
   rmSync as rmSync5,
   writeFileSync as writeFileSync11
 } from "node:fs";
-import { dirname as dirname8, isAbsolute as isAbsolute5, join as join20, relative as relative4, resolve as resolve8 } from "node:path";
+import { dirname as dirname8, isAbsolute as isAbsolute6, join as join20, relative as relative4, resolve as resolve8 } from "node:path";
 
 // plugins/kxm/src/vnext-permission.ts
 import { spawnSync as spawnSync5 } from "node:child_process";
@@ -32977,7 +33167,7 @@ function backupFile(projectRoot, portablePath2) {
   return join20(transactionRoot(projectRoot), "backups", ...portablePath2.split("/"));
 }
 function portableManagedPath(path5) {
-  return path5.startsWith(".kxm/") && path5 !== VNEXT_TEMPLATE_PROVENANCE_PATH && path5.length <= 1024 && !path5.includes("\\") && !isAbsolute5(path5) && PORTABLE_PATH.test(path5) && !/[<>:"|?*]/.test(path5);
+  return path5.startsWith(".kxm/") && path5 !== VNEXT_TEMPLATE_PROVENANCE_PATH && path5.length <= 1024 && !path5.includes("\\") && !isAbsolute6(path5) && PORTABLE_PATH.test(path5) && !/[<>:"|?*]/.test(path5);
 }
 function readRegularBounded(file, label) {
   const stat = lstatSync4(file);
@@ -33208,7 +33398,7 @@ function readOperation(projectRoot, schemasDir) {
     seen.add(folded);
     prior = entry.path;
   }
-  if (!isAbsolute5(operation.projectRoot)) fail2("init_transaction_project_root_invalid", TRANSACTION_NAME, "operation project root must be absolute", "path");
+  if (!isAbsolute6(operation.projectRoot)) fail2("init_transaction_project_root_invalid", TRANSACTION_NAME, "operation project root must be absolute", "path");
   validateOperationIntent(projectRoot, operation);
   return operation;
 }
@@ -35561,7 +35751,7 @@ function verifyVnextMigration(projectRoot, options = {}) {
 import { spawn } from "node:child_process";
 import { createHash as createHash9, createHmac as createHmac2, randomBytes, timingSafeEqual } from "node:crypto";
 import { chmodSync as chmodSync4, existsSync as existsSync17, lstatSync as lstatSync7, mkdirSync as mkdirSync15, readFileSync as readFileSync16, renameSync as renameSync8, rmSync as rmSync7, writeFileSync as writeFileSync13 } from "node:fs";
-import { dirname as dirname10, isAbsolute as isAbsolute6, join as join24, resolve as resolve11 } from "node:path";
+import { dirname as dirname10, isAbsolute as isAbsolute7, join as join24, resolve as resolve11 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 
 // plugins/kxm/src/vnext-runtime-store.ts
@@ -37986,7 +38176,7 @@ function installProbeFrom(runtime) {
   return {
     moduleDir: partial.moduleDir ?? dirname11(fileURLToPath4(import.meta.url)),
     repoRoot: partial.repoRoot ?? repoRoot2,
-    homeDir: partial.homeDir ?? homedir4(),
+    homeDir: partial.homeDir ?? homedir5(),
     platform: partial.platform ?? process.platform,
     env: partial.env ?? runtime.env
   };
@@ -38342,7 +38532,7 @@ async function cmdStatus(runtime) {
 async function cmdDash(runtime, options = {}) {
   const requested = options.screen?.trim();
   if (requested && !MESH_TUI_PANELS.includes(requested)) {
-    print(runtime.io, runtime.json, { ok: false, command: "dash", error: "unknown_screen" }, `unknown screen ${requested}; use agents, tasks, workflows, plans, inbox, or procs`);
+    print(runtime.io, runtime.json, { ok: false, command: "dash", error: "unknown_screen" }, `unknown screen ${requested}; use agents, tasks, workflows, plans, inbox, procs, or spend`);
     return 2;
   }
   const screen = requested;
@@ -38369,6 +38559,7 @@ async function cmdDash(runtime, options = {}) {
     dataPath,
     stateDir: runtime.dirs.state,
     project,
+    env: runtime.env,
     ...authToken ? { authToken } : {},
     ...screen ? { screen } : {},
     fetchImpl: runtime.fetchImpl,
@@ -39677,7 +39868,7 @@ function createProgram(ctx, result) {
     result.code = await cmdHubBind(runtimeFrom(ctx, this), url);
   });
   addGlobalOptions(hub.command("unbind").description("Remove this machine's hub binding")).action(bind(cmdHubUnbind));
-  addGlobalOptions(program2.command("dash").description("Live screens for headless agents, tasks, workflows, and plans").option("--screen <name>", "agents, tasks, workflows, plans, inbox, or procs")).action(async function dashAction(options) {
+  addGlobalOptions(program2.command("dash").description("Live screens for headless agents, tasks, workflows, and plans").option("--screen <name>", "agents, tasks, workflows, plans, inbox, procs, or spend")).action(async function dashAction(options) {
     result.code = await cmdDash(runtimeFrom(ctx, this), options);
   });
   return program2;

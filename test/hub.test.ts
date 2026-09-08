@@ -57,7 +57,7 @@ test("agents discover peers and complete a request/reply round trip", async () =
   assert.equal(completed.delivery, "followUp");
 });
 
-test("delivered work replays after recipient restart with the same message record", async () => {
+test("unacked work replays after recipient restart with the same message record", async () => {
   const { makeClient } = await setup();
   const planner = makeClient("restart-planner");
   const firstReviewer = makeClient("restart-reviewer");
@@ -66,13 +66,13 @@ test("delivered work replays after recipient restart with the same message recor
   await firstReviewer.start(async (event) => {
     if (event.type !== "message" || firstMessageId) return;
     firstMessageId = event.message.id;
-    await firstReviewer.acknowledge(event.message.id);
+    // Disconnect without acknowledging
   });
 
   const sent = await planner.send({ target: "restart-reviewer", content: "finish after restart" });
   await planner.awaitResponse(sent.id, 100).catch(() => undefined);
   assert.equal(firstMessageId, sent.id);
-  assert.equal((await planner.getMessage(sent.id)).status, "delivered");
+  assert.equal((await planner.getMessage(sent.id)).status, "queued");
   await firstReviewer.stop();
 
   const resumedReviewer = makeClient("restart-reviewer");
@@ -80,11 +80,12 @@ test("delivered work replays after recipient restart with the same message recor
   await resumedReviewer.start(async (event) => {
     if (event.type !== "message" || event.message.id !== sent.id) return;
     replayedStatus = event.message.status;
+    await resumedReviewer.acknowledge(event.message.id);
     await resumedReviewer.reply(event.message.id, "restart recovery complete");
   });
 
   const completed = await planner.awaitResponse(sent.id, 2_000);
-  assert.equal(replayedStatus, "delivered");
+  assert.equal(replayedStatus, "queued");
   assert.equal(completed.reply?.content, "restart recovery complete");
   assert.equal(completed.id, sent.id);
 });

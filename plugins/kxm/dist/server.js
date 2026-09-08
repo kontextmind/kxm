@@ -2184,15 +2184,44 @@ function writeRetrospective(outDir, doc) {
 import { mkdirSync as mkdirSync2 } from "node:fs";
 import { dirname, resolve as resolve2 } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+var MessageMap = class extends Map {
+  store;
+  constructor(store) {
+    super();
+    this.store = store;
+  }
+  get(id) {
+    const cached = super.get(id);
+    if (cached) return cached;
+    return this.store.loadMessageFromDb(id);
+  }
+  has(id) {
+    if (super.has(id)) return true;
+    return this.store.hasMessage(id);
+  }
+  delete(id) {
+    this.store.deleteMessage(id);
+    return super.delete(id);
+  }
+  get size() {
+    return this.store.countMessages();
+  }
+  get cachedSize() {
+    return super.size;
+  }
+};
 var MeshStore = class {
   agents = /* @__PURE__ */ new Map();
-  messages = /* @__PURE__ */ new Map();
+  messages;
   workflowRuns = /* @__PURE__ */ new Map();
   journal = /* @__PURE__ */ new Map();
   contextItems = /* @__PURE__ */ new Map();
   path;
   database;
+  agentSequences = /* @__PURE__ */ new Map();
+  consumerCursors = /* @__PURE__ */ new Map();
   constructor(path) {
+    this.messages = new MessageMap(this);
     if (!path) return;
     this.path = path === ":memory:" ? path : resolve2(path);
     if (this.path !== ":memory:") mkdirSync2(dirname(this.path), { recursive: true });
@@ -2214,6 +2243,24 @@ var MeshStore = class {
       CREATE TABLE IF NOT EXISTS messages (
         id TEXT PRIMARY KEY,
         record TEXT NOT NULL
+      ) STRICT;
+      CREATE UNIQUE INDEX IF NOT EXISTS messages_from_idempotency
+      ON messages(
+        json_extract(record, '$.from'),
+        json_extract(record, '$.idempotencyKey')
+      ) WHERE json_extract(record, '$.idempotencyKey') IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS messages_to_seq
+      ON messages(
+        json_extract(record, '$.to'),
+        COALESCE(json_extract(record, '$.seq'), 0)
+      );
+      CREATE TABLE IF NOT EXISTS consumer_cursors (
+        agent_id TEXT PRIMARY KEY,
+        cursor INTEGER NOT NULL
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS agent_sequences (
+        agent_id TEXT PRIMARY KEY,
+        next_seq INTEGER NOT NULL
       ) STRICT;
       CREATE TABLE IF NOT EXISTS workflow_runs (
         id TEXT PRIMARY KEY,
@@ -2252,15 +2299,267 @@ var MeshStore = class {
     `).run(agent.id, JSON.stringify(agent));
   }
   saveMessage(message) {
-    this.messages.set(message.id, message);
+    Map.prototype.set.call(this.messages, message.id, message);
     this.database?.prepare(`
       INSERT INTO messages (id, record) VALUES (?, ?)
       ON CONFLICT(id) DO UPDATE SET record = excluded.record
     `).run(message.id, JSON.stringify(message));
   }
   deleteMessage(messageId) {
-    this.messages.delete(messageId);
+    Map.prototype.delete.call(this.messages, messageId);
     this.database?.prepare("DELETE FROM messages WHERE id = ?").run(messageId);
+  }
+  loadMessageFromDb(id) {
+    if (!this.database) return void 0;
+    const row = this.database.prepare("SELECT record FROM messages WHERE id = ?").get(id);
+    if (!row) return void 0;
+    try {
+      const msg = JSON.parse(row.record);
+      Map.prototype.set.call(this.messages, msg.id, msg);
+      return msg;
+    } catch {
+      return void 0;
+    }
+  }
+  hasMessage(id) {
+    if (Map.prototype.has.call(this.messages, id)) return true;
+    if (!this.database) return false;
+    const row = this.database.prepare("SELECT 1 AS ok FROM messages WHERE id = ?").get(id);
+    return Boolean(row?.ok);
+  }
+  countMessages() {
+    if (!this.database) return [...Map.prototype.keys.call(this.messages)].length;
+    const row = this.database.prepare("SELECT COUNT(*) AS total FROM messages").get();
+    return Number(row?.total ?? 0);
+  }
+  nextAgentSequence(agentId) {
+    if (!this.database) {
+      const current = this.agentSequences.get(agentId) ?? 0;
+      const next = current + 1;
+      this.agentSequences.set(agentId, next);
+      return next;
+    }
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      const row = this.database.prepare("SELECT next_seq FROM agent_sequences WHERE agent_id = ?").get(agentId);
+      let next = row?.next_seq;
+      if (next === void 0) {
+        const maxRow = this.database.prepare(`
+          SELECT COALESCE(MAX(json_extract(record, '$.seq')), 0) AS max_seq
+          FROM messages WHERE json_extract(record, '$.to') = ?
+        `).get(agentId);
+        next = Number(maxRow?.max_seq ?? 0) + 1;
+      }
+      this.database.prepare(`
+        INSERT INTO agent_sequences (agent_id, next_seq) VALUES (?, ?)
+        ON CONFLICT(agent_id) DO UPDATE SET next_seq = excluded.next_seq
+      `).run(agentId, next + 1);
+      this.database.exec("COMMIT");
+      this.agentSequences.set(agentId, next + 1);
+      return next;
+    } catch (err) {
+      try {
+        this.database.exec("ROLLBACK");
+      } catch {
+      }
+      throw err;
+    }
+  }
+  getConsumerCursor(agentId) {
+    if (!this.database) {
+      return this.consumerCursors.get(agentId) ?? 0;
+    }
+    const row = this.database.prepare("SELECT cursor FROM consumer_cursors WHERE agent_id = ?").get(agentId);
+    const cursor = Number(row?.cursor ?? 0);
+    this.consumerCursors.set(agentId, cursor);
+    return cursor;
+  }
+  advanceCursor(agentId, seq) {
+    if (!this.database) {
+      const current = this.consumerCursors.get(agentId) ?? 0;
+      const next = Math.max(current, seq);
+      this.consumerCursors.set(agentId, next);
+      return next;
+    }
+    this.database.prepare(`
+      INSERT INTO consumer_cursors (agent_id, cursor) VALUES (?, ?)
+      ON CONFLICT(agent_id) DO UPDATE SET cursor = MAX(consumer_cursors.cursor, excluded.cursor)
+    `).run(agentId, seq);
+    return this.getConsumerCursor(agentId);
+  }
+  getPendingMessages(agentId, cursor = 0) {
+    if (!this.database) {
+      return [...Map.prototype.values.call(this.messages)].filter((m) => m.to === agentId && (m.status === "queued" || m.status === "delivered") && (m.seq ?? 0) > cursor).sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
+    }
+    const rows = this.database.prepare(`
+      SELECT record FROM messages
+      WHERE json_extract(record, '$.to') = ?
+        AND json_extract(record, '$.status') IN ('queued', 'delivered')
+        AND COALESCE(json_extract(record, '$.seq'), 0) > ?
+      ORDER BY COALESCE(json_extract(record, '$.seq'), 0) ASC
+    `).all(agentId, cursor);
+    const result = [];
+    for (const row of rows) {
+      try {
+        const msg = JSON.parse(row.record);
+        Map.prototype.set.call(this.messages, msg.id, msg);
+        result.push(msg);
+      } catch {
+      }
+    }
+    return result;
+  }
+  findMessageByIdempotency(fromId, idempotencyKey) {
+    for (const m of Map.prototype.values.call(this.messages)) {
+      if (m.from === fromId && m.idempotencyKey === idempotencyKey) return m;
+    }
+    if (!this.database) return void 0;
+    const row = this.database.prepare(`
+      SELECT record FROM messages
+      WHERE json_extract(record, '$.from') = ? AND json_extract(record, '$.idempotencyKey') = ?
+    `).get(fromId, idempotencyKey);
+    if (!row) return void 0;
+    try {
+      const msg = JSON.parse(row.record);
+      Map.prototype.set.call(this.messages, msg.id, msg);
+      return msg;
+    } catch {
+      return void 0;
+    }
+  }
+  getOpenMessages(project) {
+    if (!this.database) {
+      return [...Map.prototype.values.call(this.messages)].filter((m) => m.project === project && (m.status === "queued" || m.status === "delivered")).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+    }
+    const rows = this.database.prepare(`
+      SELECT record FROM messages
+      WHERE json_extract(record, '$.project') = ?
+        AND json_extract(record, '$.status') IN ('queued', 'delivered')
+      ORDER BY json_extract(record, '$.createdAt') DESC
+    `).all(project);
+    const result = [];
+    for (const row of rows) {
+      try {
+        const msg = JSON.parse(row.record);
+        Map.prototype.set.call(this.messages, msg.id, msg);
+        result.push(msg);
+      } catch {
+      }
+    }
+    return result;
+  }
+  getExpiringMessages(nowMs = Date.now()) {
+    const nowIso2 = new Date(nowMs).toISOString();
+    if (!this.database) {
+      return [...Map.prototype.values.call(this.messages)].filter((m) => (m.status === "queued" || m.status === "delivered") && Date.parse(m.expiresAt) <= nowMs);
+    }
+    const rows = this.database.prepare(`
+      SELECT record FROM messages
+      WHERE json_extract(record, '$.status') IN ('queued', 'delivered')
+        AND json_extract(record, '$.expiresAt') <= ?
+    `).all(nowIso2);
+    const result = [];
+    for (const row of rows) {
+      try {
+        const msg = JSON.parse(row.record);
+        Map.prototype.set.call(this.messages, msg.id, msg);
+        result.push(msg);
+      } catch {
+      }
+    }
+    return result;
+  }
+  deleteWorkflowRun(runId) {
+    this.workflowRuns.delete(runId);
+    this.database?.prepare("DELETE FROM workflow_runs WHERE id = ?").run(runId);
+  }
+  deleteJournalEntry(id) {
+    this.journal.delete(id);
+    this.database?.prepare("DELETE FROM workflow_journal WHERE id = ?").run(id);
+  }
+  deleteContextItem(id) {
+    this.contextItems.delete(id);
+    this.database?.prepare("DELETE FROM context_items WHERE id = ?").run(id);
+  }
+  sweepRetention(messageRetentionMs2, runRetentionMs = 7 * 864e5, nowMs = Date.now()) {
+    const messageCutoffMs = nowMs - messageRetentionMs2;
+    const messageCutoffIso = new Date(messageCutoffMs).toISOString();
+    const runCutoffMs = nowMs - runRetentionMs;
+    const purgedMessages = [];
+    const purgedRuns = [];
+    const purgedJournal = [];
+    const purgedContextItems = [];
+    if (!this.database) {
+      for (const m of [...Map.prototype.values.call(this.messages)]) {
+        const terminal = m.status === "replied" || m.status === "cancelled" || m.status === "expired" || m.status === "error";
+        if (!terminal) continue;
+        const terminalAt = m.repliedAt ?? m.cancelledAt ?? m.expiresAt ?? m.createdAt;
+        if (Date.parse(terminalAt) <= messageCutoffMs) {
+          Map.prototype.delete.call(this.messages, m.id);
+          purgedMessages.push(m);
+        }
+      }
+    } else {
+      const rows = this.database.prepare(`
+        SELECT record FROM messages
+        WHERE json_extract(record, '$.status') IN ('replied', 'cancelled', 'expired', 'error')
+          AND COALESCE(json_extract(record, '$.repliedAt'), json_extract(record, '$.cancelledAt'), json_extract(record, '$.expiresAt'), json_extract(record, '$.createdAt')) <= ?
+      `).all(messageCutoffIso);
+      for (const row of rows) {
+        try {
+          const msg = JSON.parse(row.record);
+          Map.prototype.delete.call(this.messages, msg.id);
+          this.database.prepare("DELETE FROM messages WHERE id = ?").run(msg.id);
+          purgedMessages.push(msg);
+        } catch {
+        }
+      }
+    }
+    const terminalRunsToPurge = [];
+    for (const run of this.workflowRuns.values()) {
+      const terminal = run.status === "completed" || run.status === "failed";
+      if (!terminal) continue;
+      const terminalAt = run.updatedAt ?? run.createdAt;
+      if (Date.parse(terminalAt) <= runCutoffMs) {
+        terminalRunsToPurge.push(run.id);
+      }
+    }
+    for (const runId of terminalRunsToPurge) {
+      this.deleteWorkflowRun(runId);
+      purgedRuns.push(runId);
+      const toDeleteJournal = [];
+      for (const entry of this.journal.values()) {
+        if (entry.runId === runId) toDeleteJournal.push(entry.id);
+      }
+      for (const jid of toDeleteJournal) {
+        this.deleteJournalEntry(jid);
+        purgedJournal.push(jid);
+      }
+    }
+    const orphanJournal = [];
+    for (const entry of this.journal.values()) {
+      if (Date.parse(entry.createdAt) <= runCutoffMs && !this.workflowRuns.has(entry.runId)) {
+        orphanJournal.push(entry.id);
+      }
+    }
+    for (const jid of orphanJournal) {
+      this.deleteJournalEntry(jid);
+      purgedJournal.push(jid);
+    }
+    const contextItemsToPurge = [];
+    for (const item of this.contextItems.values()) {
+      const terminal = item.status === "superseded" || item.status === "rejected" || item.validUntil !== void 0 && Date.parse(item.validUntil) <= runCutoffMs;
+      if (!terminal) continue;
+      const terminalAt = item.validUntil ?? item.observedAt;
+      if (terminalAt && Date.parse(terminalAt) <= runCutoffMs) {
+        contextItemsToPurge.push(item.id);
+      }
+    }
+    for (const id of contextItemsToPurge) {
+      this.deleteContextItem(id);
+      purgedContextItems.push(id);
+    }
+    return { purgedMessages, purgedRuns, purgedJournal, purgedContextItems };
   }
   saveWorkflowRun(run) {
     this.workflowRuns.set(run.id, run);
@@ -2276,9 +2575,6 @@ var MeshStore = class {
       ON CONFLICT(id) DO UPDATE SET record = excluded.record
     `).run(entry.id, entry.runId, entry.category, entry.area, JSON.stringify(entry));
   }
-  /** Persist a context item. Items are immutable by convention: saving an
-   * existing ID replaces the record, and lifecycle corrections must mint a
-   * new item with a `supersedes` link rather than rewriting provenance. */
   saveContextItem(item) {
     this.contextItems.set(item.id, item);
     this.database?.prepare(`
@@ -2292,9 +2588,6 @@ var MeshStore = class {
     if (project !== void 0 && item.project !== project) return void 0;
     return item;
   }
-  /** Project-scoped listing. Never returns items from other projects; the
-   * optional project filter fails closed to an empty result rather than
-   * leaking cross-project context. */
   listContextItems(project, kinds) {
     const wanted = kinds ? new Set(kinds) : void 0;
     return [...this.contextItems.values()].filter((item) => item.project === project).filter((item) => wanted === void 0 || wanted.has(item.kind)).sort((left, right) => left.id.localeCompare(right.id));
@@ -2325,7 +2618,7 @@ var MeshStore = class {
         throw error;
       }
     }
-    if (message) this.messages.set(message.id, message);
+    if (message) Map.prototype.set.call(this.messages, message.id, message);
     if (entry) this.journal.set(entry.id, entry);
     this.workflowRuns.set(run.id, run);
   }
@@ -2339,17 +2632,12 @@ var MeshStore = class {
   load() {
     if (!this.database) return;
     const agentRows = this.database.prepare("SELECT record FROM agents").all();
-    const messageRows = this.database.prepare("SELECT record FROM messages").all();
     const workflowRows = this.database.prepare("SELECT record FROM workflow_runs").all();
     const journalRows = this.database.prepare("SELECT record FROM workflow_journal").all();
     const contextRows = this.database.prepare("SELECT record FROM context_items").all();
     for (const row of agentRows) {
       const agent = JSON.parse(row.record);
       this.agents.set(agent.id, agent);
-    }
-    for (const row of messageRows) {
-      const message = JSON.parse(row.record);
-      this.messages.set(message.id, message);
     }
     for (const row of workflowRows) {
       const run = JSON.parse(row.record);
@@ -2681,13 +2969,6 @@ function createMeshHub(options = {}) {
     agent.online = false;
     store.saveAgent(agent);
   }
-  for (const message of messages.values()) {
-    const legacy = message;
-    if (!legacy.expiresAt) {
-      legacy.expiresAt = new Date(Date.parse(message.createdAt) + defaultMessageTtlMs).toISOString();
-      store.saveMessage(message);
-    }
-  }
   function expectedProjectToken(project) {
     return projectTokens2[project] || authToken2;
   }
@@ -2795,7 +3076,7 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
   }
   function opsSnapshot(project) {
     const projectAgents = [...agents.values()].filter((agent) => agent.project === project).map(publicAgent).sort((left, right) => Number(right.online) - Number(left.online) || left.name.localeCompare(right.name));
-    const open = [...messages.values()].filter((message) => message.project === project && (message.status === "queued" || message.status === "delivered")).sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
+    const open = store.getOpenMessages(project);
     const projectRuns = [...workflowRuns.values()].filter((run) => run.project === project).sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
     return {
       project,
@@ -3018,6 +3299,7 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
       "Review the run with kxm_workflow_get and keep recording material plans, decisions, contradictions, errors, and lessons.",
       "Do not claim the workflow is complete until the checkpoint response reports completed=true."
     ].join("\n"), "workflow resume prompt", { max: MAX_CONTENT_CHARS });
+    const seq = store.nextAgentSequence(run.targetAgentId);
     const message = {
       id: newId("msg"),
       project: run.project,
@@ -3029,6 +3311,7 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
       delivery: definition.delivery,
       hops: 0,
       maxHops: DEFAULT_MAX_HOPS,
+      seq,
       correlationId: run.id,
       workflowRunId: run.id,
       idempotencyKey: `${definition.id}:signal:${deliveryId}`,
@@ -3077,6 +3360,7 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
         MIN_MESSAGE_TTL_MS,
         MAX_MESSAGE_TTL_MS
       );
+      const seq = store.nextAgentSequence(transition.targetAgentId);
       const message = {
         id: newId("msg"),
         project: transition.project,
@@ -3094,6 +3378,7 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
         delivery: definition?.delivery ?? "followUp",
         hops: 0,
         maxHops: DEFAULT_MAX_HOPS,
+        seq,
         correlationId: transition.id,
         workflowRunId: transition.id,
         idempotencyKey: `${transition.definitionId}:timeout:${waiting.signalKey}:${waiting.expiresAt}`,
@@ -3122,15 +3407,15 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
   }
   function flushPending(agentId) {
     expireMessages();
-    for (const message of messages.values()) {
-      if (message.to === agentId && (message.status === "queued" || message.status === "delivered")) {
-        publish(agentId, { type: "message", message });
-      }
+    const cursor = store.getConsumerCursor(agentId);
+    const pending = store.getPendingMessages(agentId, cursor);
+    for (const message of pending) {
+      publish(agentId, { type: "message", message });
     }
   }
   function expireMessages() {
     const now = Date.now();
-    for (const message of messages.values()) {
+    for (const message of store.getExpiringMessages(now)) {
       if ((message.status === "queued" || message.status === "delivered") && Date.parse(message.expiresAt) <= now) {
         message.status = "expired";
         message.error = "message expired before a reply was received";
@@ -3169,16 +3454,14 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
     }
   }
   function purgeTerminalMessages() {
-    const cutoff = Date.now() - messageRetentionMs2;
-    for (const message of messages.values()) {
-      const terminal = message.status === "replied" || message.status === "cancelled" || message.status === "expired" || message.status === "error";
-      if (!terminal) continue;
-      const terminalAt = message.repliedAt ?? message.cancelledAt ?? message.expiresAt ?? message.createdAt;
-      if (Date.parse(terminalAt) > cutoff) continue;
-      store.deleteMessage(message.id);
+    const swept = store.sweepRetention(messageRetentionMs2);
+    for (const message of swept.purgedMessages) {
       publishOps(message.project, "messages");
       counters.messagesPurged += 1;
       logger({ event: "message_purged", messageId: message.id, ...messageLog(message, message.from, message.fromName, message.to, message.toName) });
+    }
+    for (const runId of swept.purgedRuns) {
+      logger({ event: "workflow_run_purged", runId });
     }
   }
   function metricsBody() {
@@ -3189,7 +3472,7 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
       `kxm_online_agents ${onlineAgents}`,
       "# HELP kxm_messages Current retained message count.",
       "# TYPE kxm_messages gauge",
-      `kxm_messages ${messages.size}`,
+      `kxm_messages ${store.countMessages()}`,
       "# TYPE kxm_requests_total counter",
       `kxm_requests_total ${counters.requests}`,
       "# TYPE kxm_errors_total counter",
@@ -3470,6 +3753,7 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
         const content = requireString(workflowPrompt(definition, runId, payload), "workflow prompt", {
           max: MAX_CONTENT_CHARS
         });
+        const seq = store.nextAgentSequence(target.id);
         const message = {
           id: newId("msg"),
           project: definition.project,
@@ -3481,6 +3765,7 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
           delivery: definition.delivery,
           hops: 0,
           maxHops: DEFAULT_MAX_HOPS,
+          seq,
           correlationId: runId,
           workflowRunId: runId,
           idempotencyKey: `${definition.id}:${deliveryId}`,
@@ -4261,9 +4546,7 @@ data: ${JSON.stringify({ agent: publicAgent(current) })}
         );
         const idempotencyKey = optionalString(body.idempotencyKey, "idempotencyKey", 128);
         if (idempotencyKey) {
-          const existing = [...messages.values()].find(
-            (message2) => message2.from === sender.id && message2.idempotencyKey === idempotencyKey
-          );
+          const existing = store.findMessageByIdempotency(sender.id, idempotencyKey);
           if (existing) {
             if (!sameIdempotentRequest(
               existing,
@@ -4288,6 +4571,7 @@ data: ${JSON.stringify({ agent: publicAgent(current) })}
           throw new ProtocolError(400, "cannot send a request to yourself", "self_target");
         }
         const createdAt = nowIso();
+        const seq = store.nextAgentSequence(target.id);
         const message = {
           id: newId("msg"),
           project: sender.project,
@@ -4299,6 +4583,7 @@ data: ${JSON.stringify({ agent: publicAgent(current) })}
           delivery,
           hops,
           maxHops,
+          seq,
           ...correlationId ? { correlationId } : {},
           ...replyTo ? { replyTo } : {},
           ...idempotencyKey ? { idempotencyKey } : {},
@@ -4336,6 +4621,9 @@ data: ${JSON.stringify({ agent: publicAgent(current) })}
           message.deliveredAt = nowIso();
           store.saveMessage(message);
           publishOps(message.project, "messages");
+        }
+        if (typeof message.seq === "number") {
+          store.advanceCursor(receiver.id, message.seq);
         }
         json(response, 200, { message });
         return;
