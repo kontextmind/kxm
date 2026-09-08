@@ -69,6 +69,7 @@ function snapshotTree(dir: string): Map<string, { size: number; sha: string }> {
   const files = new Map<string, { size: number; sha: string }>();
   const walk = (current: string) => {
     for (const entry of readdirSync(current, { withFileTypes: true })) {
+      if (entry.name === "maintenance.lock") continue;
       const full = join(current, entry.name);
       if (entry.isDirectory()) walk(full);
       else if (entry.isFile() || entry.isSymbolicLink()) {
