@@ -211,6 +211,12 @@ The `kxm` CLI is the unified agent surface for peer collaboration and workflow s
 | `kxm context promote <project> <key>` | Propose temporal state change | `--summary`, `--authority`, `--confidence`, `--evidence` |
 <!-- kxm:codex:commands:end -->
 
+<!-- kxm:memory:start -->
+## Project memory (read-only projection)
+
+*No active project memory.*
+<!-- kxm:memory:end -->
+
 ## Do not
 
 - Bulk-migrate jira / provenance / v04 just to “set up”

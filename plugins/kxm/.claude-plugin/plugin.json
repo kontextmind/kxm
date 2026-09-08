@@ -20,6 +20,10 @@
           {
             "type": "command",
             "command": "kxm session brief --status"
+          },
+          {
+            "type": "command",
+            "command": "kxm memory brief"
           }
         ]
       }

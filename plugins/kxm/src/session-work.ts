@@ -553,13 +553,13 @@ export function sessionBriefPickerEnabled(input: { env?: NodeJS.ProcessEnv; mode
   return reason === "startup" || reason === "new" || reason === "fork";
 }
 
-export const KXM_SLASH_SUBCOMMANDS = ["status", "hub", "help"] as const;
+export const KXM_SLASH_SUBCOMMANDS = ["status", "hub", "memory", "help"] as const;
 export type KxmSlashCommand = "brief" | typeof KXM_SLASH_SUBCOMMANDS[number];
 
 export function parseKxmSlashArgs(args: string | undefined): KxmSlashCommand {
   const raw = String(args ?? "").trim().toLowerCase();
   if (raw === "" || raw === "brief") return "brief";
-  if (raw === "status" || raw === "hub" || raw === "help") return raw;
+  if (raw === "status" || raw === "hub" || raw === "memory" || raw === "help") return raw;
   return "help";
 }
 

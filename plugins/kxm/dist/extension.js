@@ -1,5 +1,6 @@
 // plugins/kxm/src/extension.ts
-import { mkdirSync as mkdirSync5, readFileSync as readFileSync7, renameSync as renameSync4, rmSync as rmSync3, writeFileSync as writeFileSync4 } from "node:fs";
+import { spawnSync as spawnSync2 } from "node:child_process";
+import { existsSync as existsSync5, mkdirSync as mkdirSync5, readFileSync as readFileSync7, renameSync as renameSync4, rmSync as rmSync3, writeFileSync as writeFileSync4 } from "node:fs";
 import { basename, dirname as dirname2, join as join6 } from "node:path";
 
 // plugins/kxm/src/client.ts
@@ -3030,11 +3031,11 @@ function sessionBriefPickerEnabled(input) {
   const reason = input.reason ?? "startup";
   return reason === "startup" || reason === "new" || reason === "fork";
 }
-var KXM_SLASH_SUBCOMMANDS = ["status", "hub", "help"];
+var KXM_SLASH_SUBCOMMANDS = ["status", "hub", "memory", "help"];
 function parseKxmSlashArgs(args) {
   const raw = String(args ?? "").trim().toLowerCase();
   if (raw === "" || raw === "brief") return "brief";
-  if (raw === "status" || raw === "hub" || raw === "help") return raw;
+  if (raw === "status" || raw === "hub" || raw === "memory" || raw === "help") return raw;
   return "help";
 }
 function kxmSlashCompletions(prefix) {
@@ -3763,7 +3764,22 @@ function piMeshExtension(pi) {
         return;
       }
       if (command === "help") {
-        ctx.ui.notify("kxm: /kxm | /kxm status | /kxm hub | /kxm help. CLI: kxm session brief, kxm hub view", "info");
+        ctx.ui.notify("kxm: /kxm | /kxm status | /kxm hub | /kxm memory | /kxm help. CLI: kxm session brief, kxm hub view, kxm memory brief", "info");
+        return;
+      }
+      if (command === "memory") {
+        const cwd = typeof ctx.cwd === "string" ? ctx.cwd : process.cwd();
+        const kxmBin = process.env.KXM_BIN || "kxm";
+        const res = spawnSync2(kxmBin, ["memory", "brief"], { cwd, encoding: "utf8", windowsHide: true });
+        let memText = res.status === 0 && res.stdout ? res.stdout.trim() : "";
+        if (!memText) {
+          const script = join6(cwd, "scripts", "kxm.mjs");
+          if (existsSync5(script)) {
+            const scriptRes = spawnSync2(process.execPath, [script, "memory", "brief"], { cwd, encoding: "utf8", windowsHide: true });
+            if (scriptRes.status === 0 && scriptRes.stdout) memText = scriptRes.stdout.trim();
+          }
+        }
+        ctx.ui.notify(memText || "No active project memory facts.", "info");
         return;
       }
       await applySessionChrome(ctx, { reason: "new" }, command === "brief");

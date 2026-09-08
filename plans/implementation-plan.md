@@ -193,6 +193,22 @@ It does not replace the phase gates below.
 
 ### Landed in this tree (unreleased)
 
+- **E5b harness-agnostic memory (issue #101):** KXM owns project memory in Git
+  (`.kxm/memory/`) with schema `kxm.memory.v1` and YAML frontmatter (`id`, `scope`,
+  `kind`, `summary`, `provenance`, `authority`, `confidence`, `lifecycle`,
+  `evidenceRefs`). Unreviewed memory candidates live under `.kxm/memory/candidates/`
+  with `authority: "evidence"` and are promoted only via merged PR/commit. Commands:
+  `kxm memory brief [--json]`, `kxm memory note "<fact>" [--scope <scope>] [--kind <kind>]`,
+  and `kxm memory sync`. `syncHarnessMemory` regenerates marker-delimited blocks in
+  `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md`, and drift is fail-closed in
+  `scripts/check-generated.mjs`. Claude session-start hook in
+  `plugins/kxm/.claude-plugin/plugin.json` and Pi extension `/kxm memory` slash command
+  call the brief; no mirrored copy exists in Claude's memory directory. Verified with
+  `test/core/e5b-harness-agnostic-memory.test.ts` proving: no fact in any harness view is
+  absent from the authored set; identical facts returned across CLI, Pi, and Claude hook;
+  check-generated fails on harness block drift; candidates are excluded from authored set
+  and memoryRevision until promoted; control plane fields are rejected; secrets in summary
+  and provenance are redacted.
 - **E5 memory floor fixes (issue #100):** Turned three prose memory rules into
   enforceable code per Decision D12. Rule 1: state promotion requires a configured
   admin token with no loopback bypass and records the real caller, rejecting

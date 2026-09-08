@@ -2,10 +2,17 @@ import { spawn, spawnSync } from "node:child_process";
 import { createHash, createHmac, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { Command, CommanderError } from "commander";
+import {
+  createMemoryNote,
+  formatMemoryBriefText,
+  generateMemoryBrief,
+  syncHarnessMemory,
+  type MemoryScope,
+} from "./memory.ts";
 import { verifyArtifactExists } from "./artifacts-exist.ts";
 import { canonicalWorkflowEvidenceKey, parseWorkflowDefinitions } from "./workflow.ts";
 import { postWorkflowSignal, watchGithubChecks } from "./github-watch.ts";
@@ -2012,6 +2019,62 @@ async function cmdSkillsVerify(runtime: Runtime, skillId: string, options: { sta
   }
 }
 
+async function cmdMemoryBrief(runtime: Runtime): Promise<number> {
+  try {
+    const brief = generateMemoryBrief(runtime.cwd);
+    const text = formatMemoryBriefText(brief);
+    print(runtime.io, runtime.json, { ok: true, command: "memory brief", brief }, text);
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.io.stderr(`memory brief failed: ${message}\n`);
+    return 1;
+  }
+}
+
+async function cmdMemoryNote(
+  runtime: Runtime,
+  fact: string,
+  options: { scope?: string; kind?: string; body?: string },
+): Promise<number> {
+  try {
+    const { record, path } = createMemoryNote(runtime.cwd, fact, {
+      scope: (options.scope ?? "project") as MemoryScope,
+      ...(options.kind !== undefined ? { kind: options.kind } : {}),
+      ...(options.body !== undefined ? { body: options.body } : {}),
+    });
+    const relPath = relative(runtime.cwd, path);
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: true, command: "memory note", candidate: record, path: relPath },
+      `Recorded memory candidate ${record.id} in ${relPath} (promoted via PR)`,
+    );
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.io.stderr(`memory note failed: ${message}\n`);
+    return 1;
+  }
+}
+
+async function cmdMemorySync(runtime: Runtime): Promise<number> {
+  try {
+    const result = syncHarnessMemory(runtime.cwd);
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: true, command: "memory sync", ...result },
+      `Synced project memory across AGENTS.md, CLAUDE.md, and GEMINI.md`,
+    );
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.io.stderr(`memory sync failed: ${message}\n`);
+    return 1;
+  }
+}
+
 async function cmdRoutingReport(
   runtime: Runtime,
   options: { file?: string; equivalentListCost?: boolean; listPrices?: boolean; prices?: string },
@@ -3002,6 +3065,25 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .option("--state <state>", "candidate, promoted, quarantined, or rejected", "promoted")
     .action(async function skillsVerifyAction(this: Command, skillId: string, options: { state: string }) {
       result.code = await cmdSkillsVerify(runtimeFrom(ctx, this), skillId, options);
+    });
+
+  const memory = addGlobalOptions(program.command("memory").description("Harness-agnostic Git memory operations"));
+  memory.helpCommand("help", "Show memory help");
+  addGlobalOptions(memory.command("brief").description("Show active project memory facts for harness context"))
+    .action(async function memoryBriefAction(this: Command) {
+      result.code = await cmdMemoryBrief(runtimeFrom(ctx, this));
+    });
+  addGlobalOptions(memory.command("note").description("Record an evidence-based memory candidate (promoted via PR)"))
+    .argument("<fact>", "Summary of the observed fact or learning")
+    .option("--scope <scope>", "Scope: agent, project, run, or operator (default: project)")
+    .option("--kind <kind>", "Kind: decision, architecture, convention, policy, learning (default: learning)")
+    .option("--body <text>", "Detailed markdown context for the fact")
+    .action(async function memoryNoteAction(this: Command, fact: string, options: { scope?: string; kind?: string; body?: string }) {
+      result.code = await cmdMemoryNote(runtimeFrom(ctx, this), fact, options);
+    });
+  addGlobalOptions(memory.command("sync").description("Regenerate memory projection blocks across AGENTS.md, CLAUDE.md, and GEMINI.md"))
+    .action(async function memorySyncAction(this: Command) {
+      result.code = await cmdMemorySync(runtimeFrom(ctx, this));
     });
 
   const routing = addGlobalOptions(program.command("routing").description("Model/harness routing telemetry and behavioral comparisons"));
