@@ -2246,13 +2246,13 @@ test("U2a-2 moa join-all step dispatches like agent", async () => {
   }
 });
 
-test("U2a-2 engine hands off cancelRemaining, minimumPassed, maxAttemptsPerAssignment 2 as step_unsupported", async () => {
+test("U2a-2 engine hands off cancelRemaining, minimumPassed, maxAttemptsPerAssignment 3 as step_unsupported", async () => {
   const { root, stateRoot } = engineProject("kxm-engine-u2a2-n8-");
   try {
     const cases = [
       { name: "panel-minpass", extraJoin: "minimumPassed: 1", field: "join.minimumPassed" },
       { name: "panel-cancel-rem", extraJoin: "cancelRemaining: true", field: "join.cancelRemaining" },
-      { name: "panel-retry", extraAssignments: "maxAttemptsPerAssignment: 2", field: "assignments.maxAttemptsPerAssignment" },
+      { name: "panel-retry", extraAssignments: "maxAttemptsPerAssignment: 3", field: "assignments.maxAttemptsPerAssignment" },
     ];
     const bundleBase = loadVnextProject(root);
     void bundleBase;

@@ -52,6 +52,11 @@ import {
   preflightRequest,
   runHarness,
 } from "./harness-run.mjs";
+import {
+  canonicalVendor,
+  loadTrustedRosterPolicy,
+  resolveBoundPolicy,
+} from "./roster-policy.mjs";
 
 const resolvePath = nodePath.resolve;
 const { join, basename, dirname, relative } = nodePath;
@@ -741,7 +746,74 @@ function validateRework(reworkOf, taskDir, taskId, assignmentId, deps) {
   return priorId;
 }
 
-function validateRoute(manifest) {
+let cachedDiskPolicy = null;
+export function getRosterPolicy(deps = {}) {
+  if (deps.rosterPolicy) {
+    return deps.rosterPolicy.policy ?? deps.rosterPolicy;
+  }
+  if (typeof deps.loadTrustedRosterPolicy === "function") {
+    const loaded = deps.loadTrustedRosterPolicy();
+    return loaded?.policy ?? loaded;
+  }
+  try {
+    return loadTrustedRosterPolicy().policy;
+  } catch (error) {
+    // When executing in a local development checkout where git status has dirty
+    // uncommitted edits or during unit tests running against in-flight code,
+    // fallback to parsing the local .kxm/roster.json.
+    if (!cachedDiskPolicy) {
+      try {
+        const diskPath = join(fileURLToPath(new URL(".", import.meta.url)), "..", ".kxm/roster.json");
+        cachedDiskPolicy = Object.freeze(JSON.parse(readFileSync(diskPath, "utf8")));
+      } catch {
+        throw failClosed(error?.message ?? "roster policy unavailable", "route_invalid");
+      }
+    }
+    return cachedDiskPolicy;
+  }
+}
+
+function findLineupRoute(policy, role, harness, model) {
+  const lineup = policy?.lineup?.[role];
+  if (!Array.isArray(lineup)) return null;
+  for (const routeId of lineup) {
+    const route = policy.routes?.[routeId];
+    if (route && route.status === "admitted" && route.harness === harness && route.model === model) {
+      return { routeId, route };
+    }
+  }
+  return null;
+}
+
+function assertAdmittedLineupRoute(manifest, role, policy) {
+  if (!policy || typeof policy !== "object" || !policy.routes || !policy.lineup) {
+    throw failClosed("roster policy is invalid or unparsed", "route_invalid");
+  }
+  const lineup = policy.lineup[role];
+  if (!Array.isArray(lineup) || lineup.length === 0) {
+    throw failClosed(`no admitted lineup for role ${role}`, "route_invalid");
+  }
+  const matched = findLineupRoute(policy, role, manifest.harness, manifest.model);
+  if (!matched) {
+    throw failClosed(
+      `route ${manifest.harness}/${manifest.model} is not admitted in lineup for ${role}`,
+      "route_invalid",
+    );
+  }
+  const { routeId, route } = matched;
+  if (!Array.isArray(route.roles) || !route.roles.includes(role)) {
+    throw failClosed(`route ${routeId} does not admit role ${role}`, "route_invalid");
+  }
+  if (!Array.isArray(route.permissions) || !route.permissions.includes(manifest.permission)) {
+    throw failClosed(
+      `route ${routeId} does not permit ${manifest.permission}; allowed: ${Array.isArray(route.permissions) ? route.permissions.join(", ") : "none"}`,
+      "route_invalid",
+    );
+  }
+  return matched;
+}
+
+function validateRoute(manifest, deps = {}) {
   const role = KIND_ROLES[manifest.kind];
   if (!role) {
     throw failClosed(`unknown kind ${manifest.kind}`, "route_invalid");
@@ -770,6 +842,13 @@ function validateRoute(manifest) {
   if (!route.efforts.includes(effort)) {
     throw failClosed(`${manifest.harness} does not accept effort ${effort}; allowed: ${route.efforts.join(", ")}`, "route_invalid");
   }
+  let policy;
+  try {
+    policy = getRosterPolicy(deps);
+  } catch (error) {
+    throw failClosed(error?.message ?? "roster policy unavailable", "route_invalid");
+  }
+  assertAdmittedLineupRoute(manifest, role, policy);
   return { role, route, effort };
 }
 
@@ -802,7 +881,7 @@ export function validateAssignmentManifest(manifest, deps = {}) {
     throw failClosed(`cwd does not exist: ${cwd}`, "base_invalid");
   }
   const taskDir = validateTaskDir(manifest.task_dir, taskId, exists, statImpl, realpathImpl);
-  const { role, effort } = validateRoute(manifest);
+  const { role, effort } = validateRoute(manifest, deps);
   const gitState = inspectWorktree(cwd, spawnSyncImpl, realpathImpl);
   const proven = validateBase(manifest.base, manifest.kind, gitState, spawnSyncImpl, cwd);
   if (!isPlainObject(manifest.plan_ref) || !PLAN_REF_KINDS.includes(manifest.plan_ref.kind)) {
@@ -917,6 +996,8 @@ function ioDeps(deps = {}) {
     rmSync: deps.rmSync ?? rmSync,
     manifestBytes: deps.manifestBytes,
     now: deps.now,
+    rosterPolicy: deps.rosterPolicy,
+    loadTrustedRosterPolicy: deps.loadTrustedRosterPolicy,
   };
 }
 
@@ -2406,7 +2487,7 @@ function validateStoredManifestBinding(manifest, recordDir, io) {
     throw failClosed(`stored cwd does not exist: ${cwd}`, "witness_binding_invalid");
   }
   const taskDir = validateTaskDir(manifest.task_dir, taskId, io.existsSync, io.statSync, io.realpathSync);
-  const { role, effort } = validateRoute(manifest);
+  const { role, effort } = validateRoute(manifest, io);
   const contract = validateContract(manifest.contract, manifest.kind);
   const requestedOutputDir = resolvePath(taskDir, requireNonemptyString(manifest.output_dir, "stored output_dir", "witness_binding_invalid"));
   const identityDir = assignmentRecordDir(taskDir, assignmentId);
@@ -3291,7 +3372,36 @@ function closedObserved(pr, ci) {
   return Object.freeze(observed);
 }
 
-function assertEligibleWriter(bound) {
+export function resolveRequiredCritics(policy) {
+  if (!policy || typeof policy !== "object" || !policy.required_critics || !policy.routes) {
+    return REQUIRED_ACCEPT_CRITICS;
+  }
+  const result = {};
+  for (const [kind, routeId] of Object.entries(policy.required_critics)) {
+    const route = policy.routes[routeId];
+    if (!route || route.status !== "admitted") {
+      throw failClosed(`required critic route ${routeId} is not admitted`, "critic_invalid");
+    }
+    const role = KIND_ROLES[kind];
+    if (!role || !Array.isArray(route.roles) || !route.roles.includes(role)) {
+      throw failClosed(`required critic route ${routeId} does not admit role ${role}`, "critic_invalid");
+    }
+    result[kind] = Object.freeze({
+      harness: route.harness,
+      model: route.model,
+      role,
+      vendor: canonicalVendor(route.vendor),
+      route_id: routeId,
+    });
+  }
+  const criticVendors = Object.values(result).map((spec) => spec.vendor);
+  if (new Set(criticVendors).size !== criticVendors.length) {
+    throw failClosed("critics must have independent vendors", "critic_invalid");
+  }
+  return Object.freeze(result);
+}
+
+function assertEligibleWriter(bound, policy) {
   if (!WRITER_KINDS.includes(bound.identity.kind)) {
     throw failClosed("acceptance writer must be implement or repair", "witness_binding_invalid");
   }
@@ -3299,10 +3409,16 @@ function assertEligibleWriter(bound) {
   if (!(transport?.status === "completed" && transport?.ok === true)) {
     throw failClosed("writer transport is not completed/ok", "witness_binding_invalid");
   }
+  if (policy?.lineup?.writer && policy?.routes) {
+    const matched = findLineupRoute(policy, "writer", bound.identity.harness, bound.identity.model);
+    if (!matched) {
+      throw failClosed(`writer ${bound.identity.harness}/${bound.identity.model} is not admitted in lineup`, "witness_binding_invalid");
+    }
+  }
 }
 
-function requiredCriticSpec(kind) {
-  const spec = REQUIRED_ACCEPT_CRITICS[kind];
+function requiredCriticSpec(kind, criticSpecs = REQUIRED_ACCEPT_CRITICS) {
+  const spec = criticSpecs[kind];
   if (!spec) {
     throw failClosed(`unsupported critic kind ${kind}`, "critic_invalid");
   }
@@ -3325,9 +3441,9 @@ function declaredReviewedTree(identity, spawnSyncImpl) {
   return tree;
 }
 
-function assertEligibleCritic(bound, acceptedTree, io, writer) {
+function assertEligibleCritic(bound, acceptedTree, io, writer, criticSpecs = REQUIRED_ACCEPT_CRITICS) {
   const kind = bound.identity.kind;
-  const spec = requiredCriticSpec(kind);
+  const spec = requiredCriticSpec(kind, criticSpecs);
   if (bound.identity.harness !== spec.harness || bound.identity.model !== spec.model || bound.identity.role !== spec.role) {
     throw failClosed(`critic ${kind} must use ${spec.harness}/${spec.model}`, "critic_invalid");
   }
@@ -3486,7 +3602,7 @@ function reworkAncestorIds(assignmentId, byId) {
   return seen;
 }
 
-function assertNoUnresolvedBlock(taskDir, critics, acceptedTree, expectedTaskId, io) {
+function assertNoUnresolvedBlock(taskDir, critics, acceptedTree, expectedTaskId, io, criticSpecs = REQUIRED_ACCEPT_CRITICS) {
   const dirs = listDirectAssignmentDirs(taskDir, io);
   const reviews = [];
   for (const dir of dirs) {
@@ -3495,7 +3611,7 @@ function assertNoUnresolvedBlock(taskDir, critics, acceptedTree, expectedTaskId,
     reviews.push(bound);
   }
   const byId = new Map(reviews.map((item) => [item.identity.assignment_id, item]));
-  for (const kind of Object.keys(REQUIRED_ACCEPT_CRITICS)) {
+  for (const kind of Object.keys(criticSpecs)) {
     const supplied = critics.find((item) => item.kind === kind);
     if (!supplied) {
       throw failClosed(`missing designated ${kind} critic`, "critic_invalid");
@@ -3553,19 +3669,27 @@ export async function acceptAssignment(request, deps = {}) {
     const commitValue = request?.commit;
     const writerRecordValue = request?.recordDir ?? request?.record_dir;
     const criticValues = request?.critics;
-    if (!Array.isArray(criticValues) || criticValues.length !== 2) {
-      throw failClosed("accept requires exactly two --critic record directories", "manifest_invalid");
+    let policy;
+    try {
+      policy = getRosterPolicy(deps);
+    } catch {
+      policy = null;
+    }
+    const criticSpecs = resolveRequiredCritics(policy);
+    const requiredKinds = Object.keys(criticSpecs);
+    if (!Array.isArray(criticValues) || criticValues.length !== requiredKinds.length) {
+      throw failClosed(`accept requires exactly ${requiredKinds.length} --critic record directories`, "manifest_invalid");
     }
     taskDir = requireAbsoluteExistingDir(taskDirValue, "--task-dir", "manifest_invalid", io);
     const writerDir = assertCanonicalRecordDir(taskDir, writerRecordValue, "--record-dir", io);
     const criticDirs = criticValues.map((value, index) => (
       assertCanonicalRecordDir(taskDir, value, `--critic[${index}]`, io)
     ));
-    if (new Set([writerDir, ...criticDirs]).size !== 3) {
+    if (new Set([writerDir, ...criticDirs]).size !== (1 + requiredKinds.length)) {
       throw failClosed("writer and critic record directories must be distinct", "critic_invalid");
     }
     const writer = loadBoundAssignment(writerDir, taskDir, io);
-    assertEligibleWriter(writer);
+    assertEligibleWriter(writer, policy);
     const witness = loadLatestPassedWitness(
       writerDir,
       writer.identity,
@@ -3587,18 +3711,29 @@ export async function acceptAssignment(request, deps = {}) {
     }
     const criticEvidence = criticDirs.map((dir) => {
       const bound = loadBoundAssignment(dir, taskDir, io);
-      return assertEligibleCritic(bound, proven.tree, io, writer);
+      return assertEligibleCritic(bound, proven.tree, io, writer, criticSpecs);
     });
     const kinds = criticEvidence.map((item) => item.kind);
-    if (new Set(kinds).size !== 2) {
-      throw failClosed("critics must be distinct review-arch and review-cli roles", "critic_invalid");
+    if (new Set(kinds).size !== requiredKinds.length) {
+      throw failClosed(`critics must be distinct ${requiredKinds.join(" and ")} roles`, "critic_invalid");
     }
-    for (const kind of Object.keys(REQUIRED_ACCEPT_CRITICS)) {
+    for (const kind of requiredKinds) {
       if (!kinds.includes(kind)) {
         throw failClosed(`missing designated ${kind} critic`, "critic_invalid");
       }
     }
-    assertNoUnresolvedBlock(taskDir, criticEvidence, proven.tree, writer.identity.task_id, io);
+    if (policy?.routes) {
+      const writerMatch = findLineupRoute(policy, "writer", writer.identity.harness, writer.identity.model);
+      const writerVendor = writerMatch ? canonicalVendor(writerMatch.route.vendor) : null;
+      const criticVendors = Object.values(criticSpecs).map((spec) => canonicalVendor(spec.vendor));
+      if (new Set(criticVendors).size !== criticVendors.length) {
+        throw failClosed("critics must have independent vendors", "critic_invalid");
+      }
+      if (writerVendor && criticVendors.includes(writerVendor)) {
+        throw failClosed("writer and critics must have independent vendors", "critic_invalid");
+      }
+    }
+    assertNoUnresolvedBlock(taskDir, criticEvidence, proven.tree, writer.identity.task_id, io, criticSpecs);
     const observed = closedObserved(
       observedId(request.observedPr ?? request.observed_pr, "--observed-pr"),
       observedId(request.observedCi ?? request.observed_ci, "--observed-ci"),

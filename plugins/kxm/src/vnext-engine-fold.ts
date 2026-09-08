@@ -15,11 +15,11 @@ const STEP_STATUSES = new Set(["pending", "preparing", "running", "passed", "fai
 const ASSIGNMENT_STATUSES = new Set(["created", "accepted", "dispatched", "executing", "result_recorded", "terminal"]);
 const ATTEMPT_STATUSES = new Set(["created", "starting", "executing", "settling", "terminal"]);
 const RESULT_CLASSES = new Set(["outcome", "outcome_unknown", "producer_rejected", "cancelled"]);
-const SLICE_BLOCKED_RUN = new Set<VnextRunStatus>(["waiting", "blocked_uncertain"]);
+const SLICE_BLOCKED_RUN = new Set<VnextRunStatus>(["waiting"]);
 const RUN_EDGES: Readonly<Record<string, ReadonlySet<VnextRunStatus>>> = {
   created: new Set(["preparing", "cancelled", "failed"]),
   preparing: new Set(["running", "cancelled", "failed"]),
-  running: new Set(["cancelling", "cancelled", "completed", "failed"]),
+  running: new Set(["blocked_uncertain", "cancelling", "cancelled", "completed", "failed"]),
   waiting: new Set(["running", "blocked_uncertain", "cancelling", "completed", "failed", "cancelled"]),
   blocked_uncertain: new Set(["running", "cancelling", "failed"]),
   cancelling: new Set(["cancelled", "failed"]),
@@ -223,7 +223,7 @@ function findPanelAttempt(
 function panelAssignmentBound(plan: VnextCompiledPlan | undefined, current: MutableCurrentStep): number {
   const step = plan?.steps[current.stepId];
   if (!step) return FOLD_PANEL_BOUND;
-  if ((step.kind === "agent" || step.kind === "moa") && step.join.strategy === "all") {
+  if ((step.kind === "agent" || step.kind === "moa") && (step.join.strategy === "all" || step.join.strategy === "all-settled")) {
     return step.assignments.maximum;
   }
   return FOLD_PANEL_BOUND;
@@ -340,6 +340,25 @@ export function vnextJoinAll(step: VnextCompiledStep, panel: VnextFoldPanel | Mu
     return { tag: "rejected" };
   }
   if (members.every((member) => member.resultClass === "cancelled")) return { tag: "cancelled" };
+  if (step.join.strategy === "all-settled") {
+    const passedCount = members.filter((m) => m.resultClass === "outcome" && m.outcome === "passed").length;
+    const minPassed = step.join.minimumPassed ?? step.assignments.minimum;
+    if (passedCount >= minPassed) {
+      return { tag: "outcome", outcome: "passed" };
+    }
+    const nonPassedGroups = new Map<string, number>();
+    for (const m of members) {
+      if (m.resultClass === "outcome" && m.outcome && m.outcome !== "passed") {
+        nonPassedGroups.set(m.outcome, (nonPassedGroups.get(m.outcome) ?? 0) + 1);
+      }
+    }
+    for (const [outcome, count] of nonPassedGroups) {
+      if (count >= minPassed) {
+        return { tag: "outcome", outcome };
+      }
+    }
+    return { tag: "outcome", outcome: "quorum-not-met" };
+  }
   if (members.every((member) => member.resultClass === "outcome")) {
     const outcome = members[0]?.outcome;
     if (typeof outcome === "string" && members.every((member) => member.outcome === outcome)) {
@@ -552,6 +571,17 @@ function foldRunStatus(state: MutableState, plan: VnextCompiledPlan | undefined,
       throw runtimeError("run_events_illegal", state.runId, "cancelling requires run.cancel_requested");
     }
   }
+  if (status === "blocked_uncertain") {
+    if (state.currentStep?.effectState !== "blocked_uncertain") {
+      throw runtimeError("run_events_illegal", state.runId, "blocked_uncertain requires an uncertain step effect");
+    }
+  }
+  if (status === "running" && state.status === "blocked_uncertain") {
+    if (state.currentStep) {
+      state.pendingStepId = state.currentStep.stepId;
+      state.currentStep = undefined;
+    }
+  }
   if (status === "preparing") {
     const hash = event.payload.runPlanHash;
     if (typeof hash !== "string") {
@@ -594,12 +624,16 @@ function assertTerminalRunStatus(
       if (state.currentStep.status === "cancelled" && panelIssuedAttemptsTerminal(state.currentStep)) {
         return;
       }
+      if (state.currentStep.effectState === "blocked_uncertain") {
+        return;
+      }
     }
     throw runtimeError("run_events_illegal", state.runId, "cancelled requires a selected terminal or a settled operator cancel");
   }
   if (status === "failed") {
     if (state.lastTerminalTransition === "failed") return;
     if (isProvenFailure(state, plan)) return;
+    if (state.status === "blocked_uncertain" || state.currentStep?.effectState === "blocked_uncertain") return;
     const currentStep = state.currentStep;
     if (event.payload.reason === "executing_unrecorded" && currentStep && currentStep.panel.order.length === 1 && panelAttempt(currentStep)?.status === "starting") {
       const step = plan?.steps[currentStep.stepId];

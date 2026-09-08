@@ -11,10 +11,14 @@ import {
   BUILTIN_HARNESS_IDS,
   BUILTIN_HARNESSES,
   DEFAULT_HARNESS,
+  eligibleHarnesses,
   formatHarnessInventory,
   planHarnessUpdate,
+  probeHarnessAssignment,
   probeHarnesses,
+  probeHarnessesForModel,
   runHarnessUpdate,
+  validateHarnessModelPair,
   type HarnessCommandResult,
   type HarnessInventory,
   type HarnessStatus,
@@ -552,3 +556,139 @@ test("config with a Grok model under harness claude loads without a static matri
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("validateHarnessModelPair rejects unhosted models and native Pi impersonation", () => {
+  // Unknown harness
+  assert.equal(validateHarnessModelPair("unknown", "model").valid, false);
+  assert.equal(validateHarnessModelPair("unknown", "model").issue, "harness_unknown");
+
+  // Claude: only Anthropic
+  assert.equal(validateHarnessModelPair("claude", { provider: "anthropic", model: "fable" }).valid, true);
+  assert.equal(validateHarnessModelPair("claude", "claude-3-5-sonnet").valid, true);
+  assert.equal(validateHarnessModelPair("claude", { provider: "xai", model: "grok-4.6" }).valid, false);
+  assert.equal(validateHarnessModelPair("claude", { provider: "xai", model: "grok-4.6" }).issue, "harness_unhosted_model");
+  assert.equal(validateHarnessModelPair("claude", "grok-4.6").valid, false);
+
+  // Codex: only OpenAI
+  assert.equal(validateHarnessModelPair("codex", { provider: "openai", model: "gpt-5.6-sol" }).valid, true);
+  assert.equal(validateHarnessModelPair("codex", "gpt-4o").valid, true);
+  assert.equal(validateHarnessModelPair("codex", { provider: "google", model: "gemini-3.8-flash-high" }).valid, false);
+  assert.equal(validateHarnessModelPair("codex", "gemini-3.8-flash-high").valid, false);
+
+  // Grok: only xAI
+  assert.equal(validateHarnessModelPair("grok", { provider: "xai", model: "grok-4.6" }).valid, true);
+  assert.equal(validateHarnessModelPair("grok", "grok-4.6").valid, true);
+  assert.equal(validateHarnessModelPair("grok", { provider: "anthropic", model: "fable" }).valid, false);
+  assert.equal(validateHarnessModelPair("grok", "claude-3-5-sonnet").valid, false);
+
+  // Agy: only Google Gemini
+  assert.equal(validateHarnessModelPair("agy", { provider: "google", model: "gemini-3.8-flash-high" }).valid, true);
+  assert.equal(validateHarnessModelPair("agy", "gemini-3.8-flash-high").valid, true);
+  assert.equal(validateHarnessModelPair("agy", { provider: "openai", model: "gpt-5.6-sol" }).valid, false);
+  assert.equal(validateHarnessModelPair("agy", "gpt-5.6-sol").valid, false);
+
+  // Pi: allowed aggregators vs native brake
+  assert.equal(validateHarnessModelPair("pi", { provider: "openrouter", model: "qwen/qwen3-coder-plus" }).valid, true);
+  assert.equal(validateHarnessModelPair("pi", "openrouter/qwen/qwen3-coder-plus").valid, true);
+  assert.equal(validateHarnessModelPair("pi", { provider: "nous-portal", model: "tencent/hy4-preview" }).valid, true);
+  assert.equal(validateHarnessModelPair("pi", "nous-portal/tencent/hy4-preview").valid, true);
+  assert.equal(validateHarnessModelPair("pi", { provider: "anthropic", model: "claude-sonnet-4-6" }).valid, false);
+  assert.equal(validateHarnessModelPair("pi", { provider: "anthropic", model: "claude-sonnet-4-6" }).issue, "pi_native_impersonation_blocked");
+  assert.equal(validateHarnessModelPair("pi", { provider: "xai", model: "grok-4.6" }).valid, false);
+  assert.equal(validateHarnessModelPair("pi", { provider: "xai", model: "grok-4.6" }).issue, "pi_native_impersonation_blocked");
+  assert.equal(validateHarnessModelPair("pi", "anthropic/claude-sonnet-4-6").valid, false);
+});
+
+test("probeHarnessAssignment supplies exact provider/model context to Pi and validates hosting", () => {
+  const runCommand = runner({
+    "pi --version": { ok: true, code: 0, stdout: "0.85.1\n", stderr: "" },
+    "pi auth check --provider openrouter --json": {
+      ok: true,
+      code: 0,
+      stdout: JSON.stringify({ status: "ready", provider: "openrouter", authType: "api_key" }),
+      stderr: "",
+    },
+    "pi auth check --provider unavailable --json": {
+      ok: false,
+      code: 1,
+      stdout: JSON.stringify({ status: "not_ready", provider: "unavailable", reason: "provider_not_found" }),
+      stderr: "",
+    },
+    "claude --version": { ok: true, code: 0, stdout: "2.1.260\n", stderr: "" },
+    "claude auth status": {
+      ok: true,
+      code: 0,
+      stdout: JSON.stringify({ loggedIn: true, authMethod: "claude.ai" }),
+      stderr: "",
+    },
+  });
+
+  // Pi without context reports auth_context_required
+  const piNoContext = probeHarnessAssignment({ harness: "pi", runCommand });
+  assert.equal(piNoContext.detected, true);
+  assert.equal(piNoContext.authenticated, null);
+  assert.deepEqual([...piNoContext.issues], ["auth_context_required"]);
+
+  // Pi with openrouter context reports authenticated: true
+  const piOpenRouter = probeHarnessAssignment({ harness: "pi", provider: "openrouter", runCommand });
+  assert.equal(piOpenRouter.detected, true);
+  assert.equal(piOpenRouter.authenticated, true);
+  assert.deepEqual([...piOpenRouter.issues], []);
+
+  // Pi with unavailable provider reports authenticated: false
+  const piUnavailable = probeHarnessAssignment({ harness: "pi", provider: "unavailable", runCommand });
+  assert.equal(piUnavailable.detected, true);
+  assert.equal(piUnavailable.authenticated, false);
+  assert.deepEqual([...piUnavailable.issues], ["not_authenticated"]);
+
+  // Pi with direct anthropic model triggers native brake and does not spawn
+  const piAnthropic = probeHarnessAssignment({ harness: "pi", provider: "anthropic", model: "claude-sonnet-4-6", runCommand });
+  assert.equal(piAnthropic.authenticated, false);
+  assert.deepEqual([...piAnthropic.issues], ["pi_native_impersonation_blocked"]);
+
+  // Claude with unhosted model fails closed without spawning auth
+  const claudeUnhosted = probeHarnessAssignment({ harness: "claude", provider: "xai", model: "grok-4.6", runCommand });
+  assert.equal(claudeUnhosted.authenticated, false);
+  assert.deepEqual([...claudeUnhosted.issues], ["harness_unhosted_model"]);
+
+  // Claude with hosted model probes auth normally
+  const claudeHosted = probeHarnessAssignment({ harness: "claude", provider: "anthropic", model: "fable", runCommand });
+  assert.equal(claudeHosted.detected, true);
+  assert.equal(claudeHosted.authenticated, true);
+  assert.deepEqual([...claudeHosted.issues], []);
+});
+
+test("probeHarnessesForModel supplies model context across inventory and satisfies eligibleHarnesses", () => {
+  const inventory = probeHarnessesForModel(
+    { provider: "openrouter", model: "qwen/qwen3-coder-plus" },
+    {
+      runCommand: runner({
+        "pi --version": { ok: true, code: 0, stdout: "0.85.1\n", stderr: "" },
+        "pi auth check --model qwen/qwen3-coder-plus --json": {
+          ok: true,
+          code: 0,
+          stdout: JSON.stringify({ status: "ready", provider: "openrouter", authType: "api_key" }),
+          stderr: "",
+        },
+        "claude --version": { ok: true, code: 0, stdout: "2.1.260\n", stderr: "" },
+        "grok --version": { ok: true, code: 0, stdout: "grok 0.1\n", stderr: "" },
+      }),
+    },
+  );
+
+  const pi = inventory.harnesses.find((h) => h.id === "pi");
+  assert.equal(pi?.detected, true);
+  assert.equal(pi?.authenticated, true);
+
+  const claude = inventory.harnesses.find((h) => h.id === "claude");
+  assert.equal(claude?.authenticated, false);
+  assert.deepEqual([...(claude?.issues ?? [])], ["harness_unhosted_model"]);
+
+  const grok = inventory.harnesses.find((h) => h.id === "grok");
+  assert.equal(grok?.authenticated, false);
+  assert.deepEqual([...(grok?.issues ?? [])], ["harness_unhosted_model"]);
+
+  const eligible = eligibleHarnesses(inventory);
+  assert.deepEqual([...eligible], ["pi"]);
+});
+

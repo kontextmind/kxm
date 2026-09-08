@@ -18,7 +18,12 @@ const git = (...args) => {
   catch { return refuse(`Git evidence unavailable (${args[0]})`); }
 };
 const gitText = (...args) => git(...args).toString('utf8').trim();
-const canonical = value => ALIASES[value] ?? value;
+export const canonicalVendor = value => {
+  if (typeof value !== 'string') return '';
+  const lower = value.toLowerCase();
+  return ALIASES[lower] ?? lower;
+};
+const canonical = canonicalVendor;
 const own = (obj, key) => Object.hasOwn(obj, key);
 function record(value, label) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) refuse(`${label} must be an object`);

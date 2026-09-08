@@ -14988,6 +14988,29 @@ function resolveVnextTemplateBaseline(value) {
 
 // plugins/kxm/src/vnext-harness.ts
 var DEFAULT_HARNESS = "pi";
+var NATIVE_HARNESS_PROVIDERS = Object.freeze({
+  claude: "anthropic",
+  codex: "openai",
+  grok: "xai",
+  agy: "google",
+  gemini: "google",
+  kimi: "moonshot",
+  deepseek: "deepseek"
+});
+var PI_ALLOWED_PROVIDERS = Object.freeze([
+  "openrouter",
+  "nous-portal",
+  "nous",
+  "nous-proxy"
+]);
+var PI_NATIVE_BRAKE_PROVIDERS = Object.freeze([
+  "anthropic",
+  "openai",
+  "xai",
+  "moonshot",
+  "google",
+  "deepseek"
+]);
 var BUILTIN_HARNESSES = Object.freeze([
   {
     id: "pi",
@@ -17582,11 +17605,11 @@ var STEP_STATUSES = /* @__PURE__ */ new Set(["pending", "preparing", "running", 
 var ASSIGNMENT_STATUSES = /* @__PURE__ */ new Set(["created", "accepted", "dispatched", "executing", "result_recorded", "terminal"]);
 var ATTEMPT_STATUSES = /* @__PURE__ */ new Set(["created", "starting", "executing", "settling", "terminal"]);
 var RESULT_CLASSES = /* @__PURE__ */ new Set(["outcome", "outcome_unknown", "producer_rejected", "cancelled"]);
-var SLICE_BLOCKED_RUN = /* @__PURE__ */ new Set(["waiting", "blocked_uncertain"]);
+var SLICE_BLOCKED_RUN = /* @__PURE__ */ new Set(["waiting"]);
 var RUN_EDGES = {
   created: /* @__PURE__ */ new Set(["preparing", "cancelled", "failed"]),
   preparing: /* @__PURE__ */ new Set(["running", "cancelled", "failed"]),
-  running: /* @__PURE__ */ new Set(["cancelling", "cancelled", "completed", "failed"]),
+  running: /* @__PURE__ */ new Set(["blocked_uncertain", "cancelling", "cancelled", "completed", "failed"]),
   waiting: /* @__PURE__ */ new Set(["running", "blocked_uncertain", "cancelling", "completed", "failed", "cancelled"]),
   blocked_uncertain: /* @__PURE__ */ new Set(["running", "cancelling", "failed"]),
   cancelling: /* @__PURE__ */ new Set(["cancelled", "failed"]),
@@ -17641,7 +17664,7 @@ function findPanelAttempt(panel, attemptId) {
 function panelAssignmentBound(plan, current) {
   const step = plan?.steps[current.stepId];
   if (!step) return FOLD_PANEL_BOUND;
-  if ((step.kind === "agent" || step.kind === "moa") && step.join.strategy === "all") {
+  if ((step.kind === "agent" || step.kind === "moa") && (step.join.strategy === "all" || step.join.strategy === "all-settled")) {
     return step.assignments.maximum;
   }
   return FOLD_PANEL_BOUND;
@@ -17738,6 +17761,25 @@ function vnextJoinAll(step, panel) {
     return { tag: "rejected" };
   }
   if (members.every((member) => member.resultClass === "cancelled")) return { tag: "cancelled" };
+  if (step.join.strategy === "all-settled") {
+    const passedCount = members.filter((m) => m.resultClass === "outcome" && m.outcome === "passed").length;
+    const minPassed = step.join.minimumPassed ?? step.assignments.minimum;
+    if (passedCount >= minPassed) {
+      return { tag: "outcome", outcome: "passed" };
+    }
+    const nonPassedGroups = /* @__PURE__ */ new Map();
+    for (const m of members) {
+      if (m.resultClass === "outcome" && m.outcome && m.outcome !== "passed") {
+        nonPassedGroups.set(m.outcome, (nonPassedGroups.get(m.outcome) ?? 0) + 1);
+      }
+    }
+    for (const [outcome, count] of nonPassedGroups) {
+      if (count >= minPassed) {
+        return { tag: "outcome", outcome };
+      }
+    }
+    return { tag: "outcome", outcome: "quorum-not-met" };
+  }
   if (members.every((member) => member.resultClass === "outcome")) {
     const outcome = members[0]?.outcome;
     if (typeof outcome === "string" && members.every((member) => member.outcome === outcome)) {
@@ -17918,6 +17960,17 @@ function foldRunStatus(state, plan, event) {
       throw runtimeError("run_events_illegal", state.runId, "cancelling requires run.cancel_requested");
     }
   }
+  if (status === "blocked_uncertain") {
+    if (state.currentStep?.effectState !== "blocked_uncertain") {
+      throw runtimeError("run_events_illegal", state.runId, "blocked_uncertain requires an uncertain step effect");
+    }
+  }
+  if (status === "running" && state.status === "blocked_uncertain") {
+    if (state.currentStep) {
+      state.pendingStepId = state.currentStep.stepId;
+      state.currentStep = void 0;
+    }
+  }
   if (status === "preparing") {
     const hash = event.payload.runPlanHash;
     if (typeof hash !== "string") {
@@ -17954,12 +18007,16 @@ function assertTerminalRunStatus(state, plan, status, event) {
       if (state.currentStep.status === "cancelled" && panelIssuedAttemptsTerminal(state.currentStep)) {
         return;
       }
+      if (state.currentStep.effectState === "blocked_uncertain") {
+        return;
+      }
     }
     throw runtimeError("run_events_illegal", state.runId, "cancelled requires a selected terminal or a settled operator cancel");
   }
   if (status === "failed") {
     if (state.lastTerminalTransition === "failed") return;
     if (isProvenFailure(state, plan)) return;
+    if (state.status === "blocked_uncertain" || state.currentStep?.effectState === "blocked_uncertain") return;
     const currentStep = state.currentStep;
     if (event.payload.reason === "executing_unrecorded" && currentStep && currentStep.panel.order.length === 1 && panelAttempt(currentStep)?.status === "starting") {
       const step = plan?.steps[currentStep.stepId];
@@ -19505,6 +19562,7 @@ function stringField(event, field) {
 }
 
 // plugins/kxm/src/vnext-runtime-owner.ts
+import { randomUUID as randomUUID2 } from "node:crypto";
 var owners = /* @__PURE__ */ new Map();
 function record(storePath) {
   const existing = owners.get(storePath);
@@ -19523,6 +19581,14 @@ function maybeDelete(storePath, owner) {
     owners.delete(storePath);
   }
 }
+function activePolicy(owner) {
+  return owner.scheduler ?? owner.implicit;
+}
+function clearImplicitIfIdle(owner) {
+  if (owner.admitted.size === 0 && owner.queue.length === 0) {
+    delete owner.implicit;
+  }
+}
 function registerVnextRuntimeHandle(storePath) {
   record(storePath).handles += 1;
 }
@@ -19536,6 +19602,78 @@ function vnextAttemptControllers(storePath, runId) {
   const runAttempts = owners.get(storePath)?.attempts.get(runId);
   if (!runAttempts) return [];
   return [...runAttempts.values()];
+}
+function admitVnextRun(storePath, runId, envelopeRevision, envelopeBound) {
+  const owner = record(storePath);
+  if (owner.admitted.has(runId)) {
+    throw runtimeError("run_busy", runId, `run ${runId} is already admitted`);
+  }
+  if (owner.queue.some((item) => item.runId === runId)) {
+    throw runtimeError("run_busy", runId, `run ${runId} is already queued`);
+  }
+  const policy = activePolicy(owner);
+  if (policy) {
+    if (policy.configRevision !== envelopeRevision) {
+      throw runtimeError("scheduler_policy_conflict", runId, "run envelope revision does not match the active admission policy");
+    }
+    if (policy.bound !== envelopeBound) {
+      throw runtimeError("scheduler_policy_conflict", runId, "run envelope bound does not match the active admission policy");
+    }
+  } else {
+    owner.implicit = { bound: envelopeBound, configRevision: envelopeRevision };
+  }
+  const bound = activePolicy(owner).bound;
+  if (owner.admitted.size >= bound) {
+    throw runtimeError("run_admission_exceeded", runId, `project already has ${bound} admitted runs`);
+  }
+  const token = randomUUID2();
+  owner.admitted.set(runId, { token, configRevision: envelopeRevision });
+  return token;
+}
+function releaseVnextRun(storePath, runId, token) {
+  const owner = owners.get(storePath);
+  if (!owner) return;
+  const current = owner.admitted.get(runId);
+  if (!current || current.token !== token) return;
+  if (current.gateHold) return;
+  owner.admitted.delete(runId);
+  pump(storePath, owner);
+  clearImplicitIfIdle(owner);
+  maybeDelete(storePath, owner);
+}
+function resolveVnextGateHold(storePath, runId, attemptId) {
+  const owner = owners.get(storePath);
+  if (!owner) return;
+  const current = owner.admitted.get(runId);
+  if (!current) return;
+  const hold = current.gateHold;
+  if (!hold || hold.attemptId !== attemptId) return;
+  try {
+    hold.stop?.();
+  } catch {
+  }
+  delete current.gateHold;
+  owner.admitted.delete(runId);
+  pump(storePath, owner);
+  clearImplicitIfIdle(owner);
+  maybeDelete(storePath, owner);
+}
+function pump(storePath, owner) {
+  const bound = activePolicy(owner)?.bound ?? 1;
+  while (owner.admitted.size < bound && owner.queue.length > 0) {
+    const next = owner.queue.shift();
+    if (!next) break;
+    let token;
+    try {
+      token = admitVnextRun(storePath, next.runId, next.configRevision, next.bound);
+    } catch (error) {
+      next.fail(error);
+      continue;
+    }
+    void next.start(token).finally(() => {
+      releaseVnextRun(storePath, next.runId, token);
+    });
+  }
 }
 
 // plugins/kxm/src/vnext-runtime.ts
@@ -19906,6 +20044,21 @@ function cancelVnextRun(context, runId, options = {}) {
       for (const owned of vnextAttemptControllers(context.eventStore.path, runId)) {
         abortControllers.push(owned.controller);
       }
+    } else if (folded.status === "blocked_uncertain") {
+      push("run.status_changed", { status: "cancelling", reason: "operator_cancel" });
+      const attemptId = folded.currentStep?.attemptId;
+      if (attemptId) {
+        const capability = context.eventStore.capabilityByAttempt(attemptId);
+        if (capability && (capability.state === "issued" || capability.state === "revoked")) {
+          context.eventStore.settleCapability(attemptId, "revoked");
+        }
+        resolveVnextGateHold(context.eventStore.path, runId, attemptId);
+      }
+      for (const owned of vnextAttemptControllers(context.eventStore.path, runId)) {
+        abortControllers.push(owned.controller);
+      }
+      push("run.status_changed", { status: "cancelled", reason: "operator_cancel" });
+      status = "cancelled";
     } else if (folded.status === "running" && !activeAttempt) {
       push("run.status_changed", { status: "cancelling", reason: "operator_cancel" });
       push("run.status_changed", { status: "cancelled", reason: "operator_cancel" });

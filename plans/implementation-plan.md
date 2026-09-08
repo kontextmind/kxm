@@ -188,7 +188,7 @@ It does not replace the phase gates below.
   scheduled, the v1 report underquote fix, and remaining report
   implementation — not for those superseded instructions.
 - **Workflow taxonomy (operator, 2026-09-07; path 2026-09-08):** [`docs/workflow-guide.md`](../docs/workflow-guide.md) is organized Area -> Workflow -> Stage -> Assigned role across seven areas (`software-engineering`, `design-experience`, `media-production`, `data-analytics`, `research-strategy`, `business-operations`, `security-reliability`) and 21 workflows with declared kebab-case documentation slugs. The taxonomy is route-agnostic for native harness subscriptions and API-key Pi providers. Slugs are documentation identity only: no runtime config, role admission, schema field, CLI behavior, or alias lane. Inherited candidate lists are dated research requiring live verification before dispatch, not certified prices or an eligibility grant. Model/harness, platform, modality, tools, and personal/work context are routing attributes, not area trees; area grouping never pools unrelated role quality into one global model ranking. Fable and Sol critics remain required for the developer runner. No phase gate changes.
-- **Developer roster U1a foundation (2026-09-07):** An unwired synchronous helper loader reads a committed, clean policy only from a control checkout at or behind the fixed trusted main ref. It pins commit/blob/raw SHA256, validates source-bound model origins and code-owned role/permission/vendor ceilings, and replays historical policy from Git objects. Pi provider validation follows the accepted helper’s shared provider ceiling, without adding a production Nous route. Config validity is not live harness/model capability or auth evidence: the existing dispatch brakes remain in force, including native model checks. This foundation does not change live routing, grant auth, or pass a product Phase 4 gate. U1b dispatch/critic/acceptance binding and CLAUDE/PR131 replacement remain open.
+- **Developer roster U1a foundation & U1b live binding (2026-09-07, 2026-09-08):** An unwired synchronous helper loader reads a committed, clean policy only from a control checkout at or behind the fixed trusted main ref. It pins commit/blob/raw SHA256, validates source-bound model origins and code-owned role/permission/vendor ceilings, and replays historical policy from Git objects. Pi provider validation follows the accepted helper’s shared provider ceiling, without adding a production Nous route. U1b completes live dispatch validation, dynamic critic resolution, and acceptance binding in `scripts/assignment-run.mjs`, enforcing lineup admission and permissions for all roles, as well as strict vendor independence between writer and critics and pairwise among critics. Stored manifest binding validation fails closed on unadmitted routes. Config validity is not live harness/model capability or auth evidence: dispatch brakes remain in force. This is developer orchestration policy for the issue 127 runner and does not pass a product Phase 4 gate.
 - **Planning home and workflow guide (operator, 2026-09-08):** `.kxm/` is the KXM tool's own workspace (state, logs, workflow outputs). Project planning documents live in `plans/` at the repo root. `docs/workflow-guide.md` is the route-agnostic Area → Workflow → Stage → Role taxonomy for native harness subscriptions and API-key Pi providers.
 
 ### Landed in this tree (unreleased)
@@ -205,6 +205,7 @@ It does not replace the phase gates below.
   entry stays. Read-only agy roles and agy-hosted non-Google models remain
   deferred.
 - **Docs audit slice (issue #144):** planning docs moved to `plans/` (implementation plan, v05 design record, v04/provenance history and 2026-09-04 reviews); `docs/workflow-guide.md` renamed and retitled; docs brake widened (`docs/**`, plugin READMEs, skills, AGENTS.md, CLAUDE.md, `.claude/**/*.md`; `plans/` exempt); stale copy, env-var classification, context OS coverage including `kxm context explain`, README workflow-slug index, and phase-neutral `kxm run` help. No product behavior change beyond CLI help wording.
+- **Assignment runner maintainer guide:** [`docs/assignment-runner.md`](../docs/assignment-runner.md) documents the developer assignment runner lifecycle (`just assign`, `witness`, `accept`, `attribute`, `observe-cost`, `change-report`), roster lineup admission, dual-critic quorum, vendor independence invariants, failure codes, and task directory layout. Linked in `docs/README.md`.
 
 - **ARC scale-set CI selectors:** all `ci.yml` / `release.yml` / `smoke.yml`
   `runs-on` values are the scalar scale-set name `kontextmind-doks`. The
@@ -297,6 +298,30 @@ It does not replace the phase gates below.
   approvals, waits, budgets, and recovery remain open. Operator-prioritized
   roster/routing planning is next after this slice is accepted; it is not
   implemented here and does not pass a product Phase 4 gate.
+- **Phase 3 engine & model-free driver complete (implemented, unreleased):**
+  D4 `blocked_uncertain` recovery after S4 command execution (`recoverVnextRun`
+  supporting `retry`, `fail`, `cancel`, `unblock`), gate hold resolution, and
+  incomplete attempt exclusion in `gateRecoveryPreflight`. Step admission
+  expanded for declared workflow kinds (`agent`, `moa`, `approval`, `wait`, `gate`),
+  `all-settled` join evaluation with `minimumPassed`, `distinctBy: [provider]`,
+  `maxAttemptsPerAssignment <= 2`, repository write declarations, and evidence
+  types. The model-free driver in `test/vnext-driver.test.ts` completes and
+  recovers `examples/vnext/.kxm/workflows/default.yaml` (plan → implement → verify → ready → completed;
+  rework loop; gate uncertainty recovery via retry, fail, cancel) and `fix.yaml`
+  (all 13 stages; approval pass/rejection rework; two-producer MOA `all-settled` joins;
+  critics rework back-edge to plan; approval rework back-edge to plan; command gates;
+  wait signal step) without illegal transitions or evidence reuse. Caller-authored
+  replies fail closed. Fulfills the Phase 3 Gate sentence.
+- **Phase 4 harness/model assignment validation & Pi auth probe (implemented, unreleased):**
+  `validateHarnessModelPair` enforces unhosted harness/model pair rejection at
+  assignment, rejecting models not hosted by the selected harness (Claude ≠ Grok,
+  Codex ≠ Gemini, etc.) and enforcing native Pi brake rules (blocking direct
+  native-provider impersonation through Pi without allowlisted aggregator prefixes
+  `openrouter/*`, `nous-portal/*`, `nous/*`, `nous-proxy/*`). `probeHarnessAssignment`
+  and `probeHarnessesForModel` supply exact requested provider/model context to
+  Pi (`pi auth check [--provider <p>] [--model <m>] --json`) before claiming Pi
+  readiness, enabling `eligibleHarnesses` to dynamically filter authenticated
+  harnesses for a specific assignment candidate without static YAML matrices.
 - **Issue 127 complete (PR #129, `50c8482`):** native writer, fixed witness,
   independent Fable/Sol reviews, acceptance, and all five PR CI jobs passed.
   The parent-alias regression owns its temporary symlink on Mac/Linux;
@@ -612,7 +637,6 @@ It does not replace the phase gates below.
 ### Still open
 
 - **E3 schema ids:** rename `pi-mesh.*` wire identifiers (issue #96). Current docs cite the live ids; do not alias.
-- **Maintainers doc** for the assignment runner (`just assign` / witness / accept).
 - **After merge:** rewrite `Source:` links in slice issues #84–#103 to the moved plan paths.
 - **Windows resumption (deferred):** restore the two Windows Validate legs and
   their ruleset contexts, and diagnose the Node 24 package cleanup failure, in
@@ -622,10 +646,6 @@ It does not replace the phase gates below.
 - **Release resumption (deferred):** remove the `release` job latch and
   re-enable the Release workflow in a reviewed change that updates Tracking,
   tests, and settings together. Independent of Windows resumption.
-- **U1b dispatch/critic/acceptance binding:** Complete the live dispatch,
-  critic review, and acceptance binding to replace CLAUDE/PR131. This
-  includes connecting the loader to the actual routing/assignment logic.
-  U1a supplies the unwired trusted loader foundation; it does not change live assignment eligibility.
 - First real draft-to-published release after B2 (later release phase).
   `kxm update --kxm` end to end from a published asset. Temporary draft proof
   does not replace this. No sidecar `.sha256`.
@@ -645,33 +665,6 @@ It does not replace the phase gates below.
 - Slim live `default` workflow for this repo (no bulk migrate of jira/provenance/v04).
 - YAML-editing enable/disable UI (Phase 4 `/kxm` settings or `kxm dash` config
   tab). Do not add a preferences overlay.
-- Phase 3 engine remainder: D4 `blocked_uncertain` recovery after S4 command
-  execution. Registry configuration and `expect` compilation are implemented
-  in S1; envelope pins, store rows, and bidirectional replay are implemented
-  in S2; artifacts-exist evaluation and orphan-visible command preflight are
-  implemented in S3; POSIX command spawn, exact admission holds, hashed
-  stream observations, and real process facts are implemented in S4
-  (unreleased). D4 U1 (unreleased, partial foundation only) folds a bound-1
-  authoritative panel as `kxm.run-state.v2` and owns controllers by exact
-  attempt id; stale v1 projections fail closed without rewrite. D4 U2a-1
-  (unreleased, fold only) derives join-all from per-assignment current
-  attempt results, bounds agent/moa `all` panels by compiled
-  `assignments.maximum` (other kinds/strategies stay 1), and checks
-  `maxParallel` before a next `starting`. D4 U2a-2 (implemented,
-  unreleased) adds model-free agent/moa join-all dispatch: target-bounded
-  sequential births, maxParallel window, per-member settlement separated
-  from one join commit, membership freeze at outcome/terminal/cancel
-  intent, fail-closed capability/settlement, exact pending-owner drain, and
-  minted capability-hash bind through invoke. Full D4, default/fix
-  driver gate, evidence, retries, approvals, waits, budgets, and recovery
-  remain open. Roster/routing planning follows this slice; it is not a
-  Phase 4 product gate.
-  Then the full model-free driver must complete `default.yaml` and
-  `fix.yaml`. D3/D4 must honor declared `assignments` and `join` on non-agent
-  steps or fail closed. Neither the agent-only loop nor the merged developer
-  runner closes Phase 3. Issue #89 stays open until this command-execution
-  slice is accepted; live Pi execution remains Phase 4. D4/fullgate remain
-  open.
 - Version 1 and 2 run event stores and `kxm.run-plan.v1` envelopes are refused
   with `runtime_schema_outdated` / `run_plan_corrupt`; there is no migration
   lane, and backup/restore remain E6. Coordinated rewriting of an envelope, its
@@ -905,6 +898,21 @@ reviews, and final-head CI. It is not native assignment acceptance or hub
 approval. The repair changes Phase 2 storage only; this exception does not
 satisfy, advance, or weaken the Phase 3 gate, D3 S2–S4, or issue #89.
 
+**Phase 3 engine recovery and model-free driver (implemented, unreleased):** D4
+`blocked_uncertain` recovery after S4 command execution (`recoverVnextRun`
+supporting `retry`, `fail`, `cancel`, `unblock`), gate hold resolution, and
+incomplete attempt exclusion in `gateRecoveryPreflight`. Step admission
+expanded for declared workflow kinds (`agent`, `moa`, `approval`, `wait`, `gate`),
+`all-settled` join evaluation with `minimumPassed`, `distinctBy: [provider]`,
+`maxAttemptsPerAssignment <= 2`, repository write declarations, and evidence
+types. The model-free driver in `test/vnext-driver.test.ts` completes and
+recovers `examples/vnext/.kxm/workflows/default.yaml` (plan → implement → verify → ready → completed;
+rework loop; gate uncertainty recovery via retry, fail, cancel) and `fix.yaml`
+(all 13 stages; approval pass/rejection rework; two-producer MOA `all-settled` joins;
+critics rework back-edge to plan; approval rework back-edge to plan; command gates;
+wait signal step) without illegal transitions or evidence reuse. Caller-authored
+replies fail closed. Fulfills the Phase 3 Gate sentence. Live Pi execution remains Phase 4.
+
 **Gate:** a model-free test driver completes and recovers
 `examples/vnext/.kxm/workflows/default.yaml` (plan → implement → verify → ready)
 and `fix.yaml` (approval, two-producer join, rework) without illegal transitions
@@ -914,9 +922,7 @@ all-settled degradation. Pi/CLI executions do not satisfy this gate.
 
 ## Phase 4: Pi adapter and Pi-native UX
 
-Developer roster U1a adds an unwired trusted policy loader and Git replay tests.
-Live developer assignment binding remains U1b; this does not satisfy the
-product adapter gate below.
+Developer roster U1a/U1b add trusted policy loading, Git replay, live assignment lineup dispatch, and critic acceptance binding. This is developer orchestration policy for the issue 127 runner and does not satisfy the product adapter gate below.
 
 Implement Pi model/auth discovery, supervised RPC sessions, per-run
 coordinators, scope epochs, tool presets, model profile/tag resolution, the Pi
@@ -929,6 +935,9 @@ Extension-registered opt-in Nous providers exist, with live public catalog
 normalization into labeled USD/M upper bounds (no Pi `cost.tiers` schedule)
 plus provenance on the discovery report; assignment-time provider/model
 admission remains Phase 4 work.
+
+**Harness/model assignment validation & Pi probe (implemented, unreleased):**
+Unhosted harness/model pair rejection at assignment and exact-context Pi auth probing (`validateHarnessModelPair`, `probeHarnessAssignment`, `probeHarnessesForModel` in `vnext-harness.ts`) enforce provider hosting boundaries, reject native-provider Pi impersonation, and probe exact requested provider/model credentials via `pi auth check`.
 
 **Still this phase:** Pi RPC adapter, per-run sessions, the rest of the `/kxm`
 menu (hub/workflows/agents completions wrapping CLI), validated YAML editors

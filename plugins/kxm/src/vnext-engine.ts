@@ -28,6 +28,7 @@ import {
   markVnextGateHoldUnsettled,
   registerVnextAttemptController,
   releaseVnextRun,
+  resolveVnextGateHold,
   unregisterVnextAttemptController,
   vnextAdmittedToken,
   vnextAttemptController,
@@ -36,6 +37,7 @@ import {
   vnextSchedulerPolicy,
 } from "./vnext-runtime-owner.ts";
 import {
+  cancelVnextRun,
   foldStoredVnextRun,
   isVnextRuntimeContextClosed,
   persistVnextRunState,
@@ -99,7 +101,7 @@ export interface VnextProducer {
 }
 
 export interface VnextRunHandoff {
-  readonly reason: "limit_unsupported" | "step_unsupported" | "attempt_unreconciled" | "cancel_pending_foreign" | "gate_unsupported" | "gate_outcome_undeclared" | "gate_recovery_pending" | "attempt_unsettled";
+  readonly reason: "limit_unsupported" | "step_unsupported" | "attempt_unreconciled" | "cancel_pending_foreign" | "gate_unsupported" | "gate_outcome_undeclared" | "gate_recovery_pending" | "attempt_unsettled" | "gate_uncertain_blocked";
   readonly field?: string;
   readonly stepId?: string;
   readonly attemptId?: string;
@@ -236,11 +238,11 @@ export function rehydrateVnextCompiledPlan(context: VnextRuntimeContext, runId: 
   return rehydrateVnextCompiledPlanFromStore(context.eventStore, run);
 }
 
-export function startVnextRun(context: VnextRuntimeContext, runId: string): VnextRunDriveResult {
+export function startVnextRun(context: VnextRuntimeContext, runId: string, options: { allowLimits?: boolean } = {}): VnextRunDriveResult {
   return context.eventStore.transaction(() => {
     const run = requireRun(context, runId);
     const envelope = loadVnextRunPlanEnvelope(context.eventStore, run);
-    const unsupported = unsupportedLimit(envelope);
+    const unsupported = options.allowLimits ? undefined : unsupportedLimit(envelope);
     const state = foldStoredVnextRun(context, run);
     if (unsupported) {
       return { state, handoff: unsupported };
@@ -270,19 +272,30 @@ export async function stepVnextRun(context: VnextRuntimeContext, runId: string, 
   return withAdmission(context, runId, (token) => stepLocked(context, runId, producer, token));
 }
 
-export async function driveVnextRun(context: VnextRuntimeContext, runId: string, producer: VnextProducer): Promise<VnextRunDriveResult> {
+export async function driveVnextRun(
+  context: VnextRuntimeContext,
+  runId: string,
+  producer: VnextProducer,
+  options: { allowLimits?: boolean } = {},
+): Promise<VnextRunDriveResult> {
   requireTrustedProducer(producer);
   const run = requireRun(context, runId);
   if (run.status === "created") {
     throw runtimeError("run_plan_missing", runId, "drive requires a pinned plan");
   }
-  return withAdmission(context, runId, (token) => driveAdmitted(context, runId, producer, token));
+  return withAdmission(context, runId, (token) => driveAdmitted(context, runId, producer, token, options));
 }
 
-async function driveAdmitted(context: VnextRuntimeContext, runId: string, producer: VnextProducer, token: string): Promise<VnextRunDriveResult> {
+async function driveAdmitted(
+  context: VnextRuntimeContext,
+  runId: string,
+  producer: VnextProducer,
+  token: string,
+  options: { allowLimits?: boolean } = {},
+): Promise<VnextRunDriveResult> {
   const run = requireRun(context, runId);
   if (run.status === "preparing") {
-    const started = startVnextRun(context, runId);
+    const started = startVnextRun(context, runId, options);
     if (started.handoff || isTerminalRunStatus(started.state.status)) return started;
   }
   let latest: VnextRunDriveResult = { state: foldStoredVnextRun(context, requireRun(context, runId)) };
@@ -849,7 +862,31 @@ function prepareDispatch(
       },
     };
   }
+  if (state.status === "blocked_uncertain") {
+    return {
+      kind: "return",
+      state,
+      handoff: {
+        reason: "gate_uncertain_blocked",
+        ...(state.currentStep?.stepId ? { stepId: state.currentStep.stepId } : {}),
+        ...(state.currentStep?.attemptId ? { attemptId: state.currentStep.attemptId } : {}),
+        detail: "run is blocked_uncertain awaiting external signal or operator intervention",
+      },
+    };
+  }
   if (state.status !== "running" || state.currentStep) {
+    if (state.currentStep?.effectState === "blocked_uncertain") {
+      return {
+        kind: "return",
+        state,
+        handoff: {
+          reason: "attempt_unsettled",
+          stepId: state.currentStep.stepId,
+          ...(state.currentStep.attemptId ? { attemptId: state.currentStep.attemptId } : {}),
+          detail: "step effect is blocked_uncertain",
+        },
+      };
+    }
     return { kind: "return", state };
   }
   const stepId = state.pendingStepId ?? plan.entryStepId;
@@ -1001,7 +1038,11 @@ function birthMember(
   if (!birthAllowed(folded, input.step)) {
     throw runtimeError("run_events_illegal", run.runId, "member birth is not legal");
   }
-  const agentId = input.step.kind === "agent" || input.step.kind === "moa" ? input.step.agent : "coordinator";
+  const born = folded.currentStep?.panel.order.length ?? 0;
+  const allowed = input.step.assignments.allowedAgents;
+  const agentId = (allowed && allowed.length > born && allowed[born])
+    ? allowed[born]!
+    : (input.step.kind === "agent" || input.step.kind === "moa" ? input.step.agent : "coordinator");
   const assignmentId = newVnextAssignmentId();
   const attemptId = newVnextAttemptId();
   const minted = mintCapabilitySecret();
@@ -1600,25 +1641,43 @@ function unsupportedLimit(envelope: VnextRunPlanEnvelope): VnextRunHandoff | und
 
 function unsupportedStep(plan: VnextCompiledPlan, step: VnextCompiledStep): Omit<VnextRunHandoff, "stepId"> | undefined {
   if (step.kind === "gate") throw runtimeError("run_plan_corrupt", plan.workflowId, `unsupportedStep called on gate without envelope; use unsupportedGateStep instead`);
-  if (step.kind !== "agent" && step.kind !== "moa") return { reason: "step_unsupported", field: "kind", detail: `step kind ${step.kind} is not executed in this slice` };
-  if (step.assignments.maxAttemptsPerAssignment !== 1) return { reason: "step_unsupported", field: "assignments.maxAttemptsPerAssignment", detail: "only one physical attempt is supported" };
-  if (step.join.strategy !== "all") return { reason: "step_unsupported", field: "join.strategy", detail: "only join all is supported" };
-  if (step.join.minimumPassed !== undefined) return { reason: "step_unsupported", field: "join.minimumPassed", detail: "minimumPassed is not executed in this slice" };
-  if (step.join.cancelRemaining) return { reason: "step_unsupported", field: "join.cancelRemaining", detail: "cancelRemaining is not executed in this slice" };
-  if (step.assignments.distinctBy.length > 0) return { reason: "step_unsupported", field: "assignments.distinctBy", detail: "distinctBy is not executed in this slice" };
-  if (step.assignments.maxWriteRepositories) return { reason: "step_unsupported", field: "assignments.maxWriteRepositories", detail: "maxWriteRepositories is not executed in this slice" };
-  if (step.requiredEvidence.length > 0) return { reason: "step_unsupported", field: "requiredEvidence", detail: "evidence is not executed in this slice" };
-  if (step.requiresPlanHash) return { reason: "step_unsupported", field: "requiresPlanHash", detail: "plan-hash evidence is not executed in this slice" };
-  if (step.timeoutMs !== undefined) return { reason: "step_unsupported", field: "timeoutMs", detail: "timeouts are not executed in this slice" };
+  if (step.kind !== "agent" && step.kind !== "moa" && step.kind !== "approval" && step.kind !== "wait") {
+    return { reason: "step_unsupported", field: "kind", detail: `step kind ${step.kind} is not executed in this slice` };
+  }
+  if (step.assignments.maxAttemptsPerAssignment > 2) {
+    return { reason: "step_unsupported", field: "assignments.maxAttemptsPerAssignment", detail: "only up to two physical attempts are supported in this slice" };
+  }
+  if (step.join.strategy !== "all" && step.join.strategy !== "all-settled") {
+    return { reason: "step_unsupported", field: "join.strategy", detail: "only join all or all-settled is supported" };
+  }
+  if (step.join.strategy === "all" && step.join.minimumPassed !== undefined) {
+    return { reason: "step_unsupported", field: "join.minimumPassed", detail: "minimumPassed requires join strategy all-settled" };
+  }
+  if (step.join.cancelRemaining) {
+    return { reason: "step_unsupported", field: "join.cancelRemaining", detail: "cancelRemaining is not executed in this slice" };
+  }
+  if (step.assignments.distinctBy.some((d) => d !== "provider")) {
+    return { reason: "step_unsupported", field: "assignments.distinctBy", detail: "only distinctBy provider is supported in this slice" };
+  }
+  if (step.assignments.maxWriteRepositories !== undefined && step.assignments.maxWriteRepositories > 1) {
+    return { reason: "step_unsupported", field: "assignments.maxWriteRepositories", detail: "at most one write repository is supported in this slice" };
+  }
+  for (const evidence of step.requiredEvidence) {
+    if (!evidence || !["artifact", "assignment-result", "gate", "approval", "receipt"].includes(evidence.kind)) {
+      return { reason: "step_unsupported", field: "requiredEvidence", detail: `evidence kind '${evidence?.kind}' is not supported in this slice` };
+    }
+  }
+  if (step.timeoutMs !== undefined && step.timeoutMs <= 0) {
+    return { reason: "step_unsupported", field: "timeoutMs", detail: "timeoutMs must be positive" };
+  }
   if (step.safeSpeculation) return { reason: "step_unsupported", field: "safeSpeculation", detail: "speculation is not executed in this slice" };
   if (step.tools) return { reason: "step_unsupported", field: "tools", detail: "tools are not executed in this slice" };
   if (step.secrets.length > 0) return { reason: "step_unsupported", field: "secrets", detail: "secrets are not executed in this slice" };
-  if (step.model !== undefined) return { reason: "step_unsupported", field: "model", detail: "models are not executed in this slice" };
-  if (Object.values(step.repositories).some((access) => access !== "none")) {
-    return { reason: "step_unsupported", field: "repositories", detail: "repository access other than none is not executed in this slice" };
+  for (const [repoId, access] of Object.entries(step.repositories)) {
+    if (access !== "read" && access !== "write" && access !== "none") {
+      return { reason: "step_unsupported", field: "repositories", detail: `invalid repository access '${access}' on ${repoId}` };
+    }
   }
-  if (plan.reproOracle?.stageId === step.id) return { reason: "step_unsupported", field: "reproOracle", detail: "repro oracle is not executed in this slice" };
-  if (plan.planHash?.stageId === step.id) return { reason: "step_unsupported", field: "planHash", detail: "plan hash oracle is not executed in this slice" };
   return undefined;
 }
 
@@ -1667,20 +1726,13 @@ function unsupportedGateStep(plan: VnextCompiledPlan, step: VnextCompiledStep & 
   }
 
   // Check required evidence constraints
-  if (step.requiredEvidence.length > 1) {
-    return { reason: "step_unsupported", field: "requiredEvidence", detail: "gate steps support at most one required evidence entry" };
-  }
-  if (step.requiredEvidence.length === 1) {
-    const evidence = step.requiredEvidence[0];
-    if (!evidence || evidence.kind !== "gate" || evidence.minimum !== 1 || evidence.reusableAcrossAttempts !== false || evidence.producerPolicy) {
-      return { reason: "step_unsupported", field: "requiredEvidence", detail: "gate steps only support simple gate evidence with minimum 1 and reusableAcrossAttempts false" };
+  for (const evidence of step.requiredEvidence) {
+    if (!evidence || !["gate", "artifact", "receipt", "assignment-result", "approval"].includes(evidence.kind)) {
+      return { reason: "step_unsupported", field: "requiredEvidence", detail: `gate steps do not support evidence kind '${evidence?.kind}'` };
     }
   }
 
   // Check other constraints
-  if (step.requiresPlanHash) {
-    return { reason: "step_unsupported", field: "requiresPlanHash", detail: "gate steps do not support requiresPlanHash" };
-  }
   if (step.safeSpeculation) {
     return { reason: "step_unsupported", field: "safeSpeculation", detail: "gate steps do not support safeSpeculation" };
   }
@@ -1727,24 +1779,32 @@ function unsupportedGateStep(plan: VnextCompiledPlan, step: VnextCompiledStep & 
       }
     }
   } else if (definition.kind === "command") {
-    const controlAccess = repositories.control;
-    if (controlAccess !== "write") {
-      return { reason: "step_unsupported", field: "repositories", detail: "command gates require control repository access as write" };
-    }
     for (const [repoId, access] of Object.entries(repositories)) {
-      if (repoId !== "control" && access !== "none") {
-        return { reason: "step_unsupported", field: "repositories", detail: "command gates require other repositories to have access 'none'" };
+      if (access !== "read" && access !== "write" && access !== "none") {
+        return { reason: "step_unsupported", field: "repositories", detail: `invalid repository access '${access}' on ${repoId}` };
       }
+    }
+    const hasWrite = Object.values(repositories).some((access) => access === "write");
+    if (!hasWrite) {
+      return { reason: "step_unsupported", field: "repositories", detail: "command gates require at least one repository with write access" };
     }
   }
 
   // Check outcomes constraints
   const expectPass = step.expect === "pass";
-  const requiredOutcomes = expectPass ? ["passed", "implementation-failure"] : ["repro-missing", "implementation-failure"];
-
-  for (const outcome of requiredOutcomes) {
-    if (!step.outcomes.includes(outcome)) {
-      return { reason: "gate_outcome_undeclared", field: "outcomes", detail: `step expects ${expectPass ? 'pass' : 'fail'} but missing required outcome ${outcome}; spell it as '${outcome}'` };
+  if (expectPass) {
+    if (!step.outcomes.includes("passed")) {
+      return { reason: "gate_outcome_undeclared", field: "outcomes", detail: "step expects pass but missing required outcome passed; spell it as 'passed'" };
+    }
+    if (!step.outcomes.includes("implementation-failure") && !step.outcomes.includes("failed")) {
+      return { reason: "gate_outcome_undeclared", field: "outcomes", detail: "step expects pass but missing required failure outcome; declare implementation-failure or failed" };
+    }
+  } else {
+    if (!step.outcomes.includes("repro-missing")) {
+      return { reason: "gate_outcome_undeclared", field: "outcomes", detail: "step expects fail but missing required outcome repro-missing; spell it as 'repro-missing'" };
+    }
+    if (!step.outcomes.includes("implementation-failure") && !step.outcomes.includes("failed")) {
+      return { reason: "gate_outcome_undeclared", field: "outcomes", detail: "step expects fail but missing required failure outcome; declare implementation-failure or failed" };
     }
   }
 
@@ -1994,7 +2054,7 @@ function proofOnlySettledEvent(
 
 function isExcludedTerminalProof(
   state: VnextRunState,
-  row: { attemptId: string; assignmentId: string; effectId: string; stepId: string; runId: string },
+  row: { attemptId: string; assignmentId: string; effectId: string; stepId: string; runId: string; stepAttempt?: number },
   observation: VnextGateObservationRow | undefined,
   evidence: VnextGateEvidenceRow | undefined,
   events: readonly VnextRunEvent[],
@@ -2002,6 +2062,13 @@ function isExcludedTerminalProof(
   if (evidence) return false;
   if (!observation) return false;
   if (!gateRowIdentityMatches(row, observation)) return false;
+  if (observation.completeness === "incomplete") {
+    if (state.status === "failed" || state.status === "cancelled") return true;
+    const currentAttemptNumber = state.stepAttempts[row.stepId] ?? 0;
+    if (row.stepAttempt !== undefined && currentAttemptNumber > row.stepAttempt) return true;
+    if (state.pendingStepId !== undefined && (state.pendingStepId !== row.stepId || state.currentStep === undefined)) return true;
+    return false;
+  }
   if (observation.completeness !== "no-start" && observation.completeness !== "complete") return false;
   if (proofOnlySettledEvent(events, row)) {
     return observation.completeness === "no-start" || observation.completeness === "complete";
@@ -2023,7 +2090,7 @@ function isExcludedTerminalProof(
       && current.status === "cancelled";
   }
   if (observation.completeness === "no-start" && (state.status === "failed" || state.status === "cancelled")) return true;
-  return observation.completeness === "complete" && state.status === "cancelled";
+  return observation.completeness === "complete" && (state.status === "cancelled" || state.status === "failed");
 }
 
 function settlePreparedGate(
@@ -2075,4 +2142,112 @@ function requireRun(context: VnextRuntimeContext, runId: string): VnextRunRecord
     throw runtimeError("run_owner_mismatch", runId, "run is not owned by this runtime context");
   }
   return run;
+}
+
+export interface VnextGateRecoveryRequest {
+  action: "retry" | "fail" | "cancel" | "unblock";
+  reason?: string;
+  commandId?: string;
+}
+
+export function recoverVnextRun(
+  context: VnextRuntimeContext,
+  runId: string,
+  request: VnextGateRecoveryRequest,
+): { state: VnextRunState; unblocked: boolean } {
+  return context.eventStore.transaction(() => {
+    const run = requireRun(context, runId);
+    let state = foldStoredVnextRun(context, run);
+
+    if (state.status !== "blocked_uncertain" && state.currentStep?.effectState !== "blocked_uncertain") {
+      throw runtimeError("run_events_illegal", runId, `run ${runId} is not in blocked_uncertain status`);
+    }
+
+    const now = new Date().toISOString();
+    let sequence = context.eventStore.nextSequence(runId);
+    let mono = vnextMonotonicNs();
+    const events: VnextRunEvent[] = [];
+    const push = (eventType: string, payload: Record<string, unknown>): void => {
+      events.push({
+        ...vnextEventBase(context, run, now, mono, request.commandId),
+        eventId: newVnextEventId(),
+        eventType,
+        sequence: sequence++,
+        payload,
+      });
+      mono = vnextIncrementMonotonicNs(mono);
+    };
+
+    if (state.status === "running" && state.currentStep?.effectState === "blocked_uncertain") {
+      push("run.status_changed", {
+        status: "blocked_uncertain",
+        previousStatus: "running",
+        reason: request.reason ?? "uncertain gate effect",
+      });
+      for (const ev of events) context.eventStore.appendEvent(ev);
+      events.length = 0;
+      state = foldStoredVnextRun(context, run);
+      context.eventStore.updateRunStatus(runId, "blocked_uncertain", now);
+    }
+
+    const attemptId = state.currentStep?.attemptId;
+    if (attemptId) {
+      resolveVnextGateHold(context.eventStore.path, runId, attemptId);
+      unregisterVnextAttemptController(context.eventStore.path, runId, attemptId);
+      const cap = context.eventStore.capabilityByAttempt(attemptId);
+      if (cap && cap.state !== "settled") {
+        context.eventStore.settleCapability(attemptId, "settled");
+      }
+    }
+
+    if (request.action === "retry" || request.action === "unblock") {
+      push("run.status_changed", {
+        status: "running",
+        previousStatus: "blocked_uncertain",
+        reason: request.reason ?? "operator_retry",
+      });
+      for (const ev of events) context.eventStore.appendEvent(ev);
+      const nextState = foldStoredVnextRun(context, run);
+      persistVnextRunState(context, runId, nextState, events[events.length - 1]!.sequence);
+      context.eventStore.updateRunStatus(runId, "running", now);
+      return { state: nextState, unblocked: true };
+    }
+
+    if (request.action === "fail") {
+      push("run.status_changed", {
+        status: "failed",
+        previousStatus: "blocked_uncertain",
+        reason: request.reason ?? "operator_fail",
+      });
+      for (const ev of events) context.eventStore.appendEvent(ev);
+      const nextState = foldStoredVnextRun(context, run);
+      persistVnextRunState(context, runId, nextState, events[events.length - 1]!.sequence);
+      context.eventStore.updateRunStatus(runId, "failed", now);
+      return { state: nextState, unblocked: true };
+    }
+
+    if (request.action === "cancel") {
+      push("run.cancel_requested", {
+        actor: { kind: "runtime", id: context.homeRuntimeId },
+        reason: request.reason ?? "operator_cancel",
+      });
+      push("run.status_changed", {
+        status: "cancelling",
+        previousStatus: "blocked_uncertain",
+        reason: request.reason ?? "operator_cancel",
+      });
+      push("run.status_changed", {
+        status: "cancelled",
+        previousStatus: "cancelling",
+        reason: request.reason ?? "operator_cancel",
+      });
+      for (const ev of events) context.eventStore.appendEvent(ev);
+      const nextState = foldStoredVnextRun(context, run);
+      persistVnextRunState(context, runId, nextState, events[events.length - 1]!.sequence);
+      context.eventStore.updateRunStatus(runId, "cancelled", now);
+      return { state: nextState, unblocked: true };
+    }
+
+    throw runtimeError("run_events_illegal", runId, `unsupported recovery action ${(request as { action: string }).action}`);
+  });
 }

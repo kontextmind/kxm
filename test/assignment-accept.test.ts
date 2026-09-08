@@ -28,6 +28,7 @@ import {
   acceptAssignment,
   main as assignmentMain,
   observeAssignment,
+  resolveRequiredCritics,
   runAssignment,
   witnessAssignment,
   writeCurrentPlan,
@@ -1219,3 +1220,207 @@ test("foreign task completion with local record path is excluded from BLOCK reso
     cleanup(world.root, world.taskDir);
   }
 });
+
+test("resolveRequiredCritics resolves policy required_critics or falls back to defaults", () => {
+  const fallback = resolveRequiredCritics(null);
+  assert.equal(fallback["review-arch"]?.harness, "claude");
+  assert.equal(fallback["review-cli"]?.harness, "codex");
+
+  const policy = {
+    schema: "kxm.roster-policy.v1",
+    routes: {
+      "arch-route": {
+        harness: "claude",
+        model: "fable",
+        vendor: "anthropic",
+        roles: ["reviewer-arch"],
+        status: "admitted",
+      },
+      "cli-route": {
+        harness: "codex",
+        model: "gpt-5.6-sol",
+        vendor: "openai",
+        roles: ["reviewer-cli"],
+        status: "admitted",
+      },
+    },
+    required_critics: {
+      "review-arch": "arch-route",
+      "review-cli": "cli-route",
+    },
+  };
+  const resolved = resolveRequiredCritics(policy);
+  assert.equal(resolved["review-arch"]?.route_id, "arch-route");
+  assert.equal(resolved["review-arch"]?.vendor, "anthropic");
+  assert.equal(resolved["review-cli"]?.route_id, "cli-route");
+  assert.equal(resolved["review-cli"]?.vendor, "openai");
+});
+
+test("writer unadmitted in roster policy lineup refuses acceptance", async () => {
+  const world = await prepareAcceptedWorld();
+  try {
+    const customPolicy = {
+      schema: "kxm.roster-policy.v1",
+      routes: {
+        "qwen-writer": {
+          harness: "pi",
+          model: "openrouter/qwen/qwen3-coder-plus",
+          vendor: "alibaba",
+          roles: ["writer"],
+          permissions: ["edit"],
+          status: "admitted",
+        },
+        "arch-route": {
+          harness: "claude",
+          model: "fable",
+          vendor: "anthropic",
+          roles: ["reviewer-arch"],
+          permissions: ["read-only"],
+          status: "admitted",
+        },
+        "cli-route": {
+          harness: "codex",
+          model: "gpt-5.6-sol",
+          vendor: "openai",
+          roles: ["reviewer-cli"],
+          permissions: ["read-only"],
+          status: "admitted",
+        },
+      },
+      lineup: {
+        writer: ["qwen-writer"],
+        planner: [],
+        "reviewer-arch": ["arch-route"],
+        "reviewer-cli": ["cli-route"],
+      },
+      required_critics: {
+        "review-arch": "arch-route",
+        "review-cli": "cli-route",
+      },
+    };
+    await assert.rejects(
+      () => acceptAssignment({
+        taskDir: world.taskDir,
+        commit: world.commit,
+        recordDir: world.writerDir,
+        critics: [world.archDir, world.cliDir],
+      }, { rosterPolicy: customPolicy }),
+      rejectCode("route_invalid"),
+    );
+  } finally {
+    cleanup(world.root, world.taskDir);
+  }
+});
+
+test("vendor collision between writer and critics refuses acceptance", async () => {
+  const world = await prepareAcceptedWorld();
+  try {
+    const collidingPolicy = {
+      schema: "kxm.roster-policy.v1",
+      routes: {
+        "grok-writer": {
+          harness: "grok",
+          model: "grok-4.6",
+          vendor: "xai",
+          roles: ["writer"],
+          permissions: ["edit"],
+          status: "admitted",
+        },
+        "colliding-arch": {
+          harness: "claude",
+          model: "fable",
+          vendor: "xai",
+          roles: ["reviewer-arch"],
+          permissions: ["read-only"],
+          status: "admitted",
+        },
+        "cli-route": {
+          harness: "codex",
+          model: "gpt-5.6-sol",
+          vendor: "openai",
+          roles: ["reviewer-cli"],
+          permissions: ["read-only"],
+          status: "admitted",
+        },
+      },
+      lineup: {
+        writer: ["grok-writer"],
+        planner: [],
+        "reviewer-arch": ["colliding-arch"],
+        "reviewer-cli": ["cli-route"],
+      },
+      required_critics: {
+        "review-arch": "colliding-arch",
+        "review-cli": "cli-route",
+      },
+    };
+    await assert.rejects(
+      () => acceptAssignment({
+        taskDir: world.taskDir,
+        commit: world.commit,
+        recordDir: world.writerDir,
+        critics: [world.archDir, world.cliDir],
+      }, { rosterPolicy: collidingPolicy }),
+      rejectCode("critic_invalid"),
+    );
+  } finally {
+    cleanup(world.root, world.taskDir);
+  }
+});
+
+test("vendor collision between critics refuses acceptance", async () => {
+  const world = await prepareAcceptedWorld();
+  try {
+    const collidingCriticsPolicy = {
+      schema: "kxm.roster-policy.v1",
+      routes: {
+        "grok-writer": {
+          harness: "grok",
+          model: "grok-4.6",
+          vendor: "xai",
+          roles: ["writer"],
+          permissions: ["edit"],
+          status: "admitted",
+        },
+        "arch-route": {
+          harness: "claude",
+          model: "fable",
+          vendor: "anthropic",
+          roles: ["reviewer-arch"],
+          permissions: ["read-only"],
+          status: "admitted",
+        },
+        "cli-route": {
+          harness: "codex",
+          model: "gpt-5.6-sol",
+          vendor: "anthropic",
+          roles: ["reviewer-cli"],
+          permissions: ["read-only"],
+          status: "admitted",
+        },
+      },
+      lineup: {
+        writer: ["grok-writer"],
+        planner: [],
+        "reviewer-arch": ["arch-route"],
+        "reviewer-cli": ["cli-route"],
+      },
+      required_critics: {
+        "review-arch": "arch-route",
+        "review-cli": "cli-route",
+      },
+    };
+    await assert.rejects(
+      () => acceptAssignment({
+        taskDir: world.taskDir,
+        commit: world.commit,
+        recordDir: world.writerDir,
+        critics: [world.archDir, world.cliDir],
+      }, { rosterPolicy: collidingCriticsPolicy }),
+      rejectCode("critic_invalid"),
+    );
+  } finally {
+    cleanup(world.root, world.taskDir);
+  }
+});
+

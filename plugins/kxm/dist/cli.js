@@ -28917,6 +28917,29 @@ var AGY_MODEL_ROW = /^[a-z0-9][a-z0-9.+_-]*\t+\S/im;
 var CODEX_CHATGPT_LINE = "Logged in using ChatGPT";
 var CODEX_API_KEY_PREFIX = "Logged in using an API key";
 var CODEX_NEGATIVE_LINE = "Not logged in";
+var NATIVE_HARNESS_PROVIDERS = Object.freeze({
+  claude: "anthropic",
+  codex: "openai",
+  grok: "xai",
+  agy: "google",
+  gemini: "google",
+  kimi: "moonshot",
+  deepseek: "deepseek"
+});
+var PI_ALLOWED_PROVIDERS = Object.freeze([
+  "openrouter",
+  "nous-portal",
+  "nous",
+  "nous-proxy"
+]);
+var PI_NATIVE_BRAKE_PROVIDERS = Object.freeze([
+  "anthropic",
+  "openai",
+  "xai",
+  "moonshot",
+  "google",
+  "deepseek"
+]);
 var BUILTIN_HARNESSES = Object.freeze([
   {
     id: "pi",

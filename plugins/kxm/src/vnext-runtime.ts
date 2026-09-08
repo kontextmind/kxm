@@ -14,6 +14,7 @@ import { verifyVnextGateEvidence } from "./vnext-engine-evidence.ts";
 import { loadVnextRunPlanEnvelope } from "./vnext-engine-plan.ts";
 import {
   registerVnextRuntimeHandle,
+  resolveVnextGateHold,
   unregisterVnextRuntimeHandle,
   vnextAttemptControllers,
 } from "./vnext-runtime-owner.ts";
@@ -514,6 +515,21 @@ export function cancelVnextRun(
       for (const owned of vnextAttemptControllers(context.eventStore.path, runId)) {
         abortControllers.push(owned.controller);
       }
+    } else if (folded.status === "blocked_uncertain") {
+      push("run.status_changed", { status: "cancelling", reason: "operator_cancel" });
+      const attemptId = folded.currentStep?.attemptId;
+      if (attemptId) {
+        const capability = context.eventStore.capabilityByAttempt(attemptId);
+        if (capability && (capability.state === "issued" || capability.state === "revoked")) {
+          context.eventStore.settleCapability(attemptId, "revoked");
+        }
+        resolveVnextGateHold(context.eventStore.path, runId, attemptId);
+      }
+      for (const owned of vnextAttemptControllers(context.eventStore.path, runId)) {
+        abortControllers.push(owned.controller);
+      }
+      push("run.status_changed", { status: "cancelled", reason: "operator_cancel" });
+      status = "cancelled";
     } else if (folded.status === "running" && !activeAttempt) {
       push("run.status_changed", { status: "cancelling", reason: "operator_cancel" });
       push("run.status_changed", { status: "cancelled", reason: "operator_cancel" });
