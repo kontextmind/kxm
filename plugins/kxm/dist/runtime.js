@@ -20951,6 +20951,14 @@ function computeVnextMemoryRevision(bundle, options = {}) {
   }
   return `ctxrev_${hash.digest("hex")}`;
 }
+function checkMemoryRevisionDrift(pinnedRevision, bundle, options) {
+  const currentRevision = computeVnextMemoryRevision(bundle, options);
+  return {
+    drifted: currentRevision !== pinnedRevision,
+    currentRevision,
+    pinnedRevision
+  };
+}
 function vnextPolicyRevisions(bundle, options) {
   return {
     configRevision: bundle.configRevision,
@@ -23297,6 +23305,7 @@ export {
   buildImprovementReport,
   cancelVnextRun,
   checkIntegrity,
+  checkMemoryRevisionDrift,
   checkedParent,
   checkpointWal,
   classifyCandidateKind,

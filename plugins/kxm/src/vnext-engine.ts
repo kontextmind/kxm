@@ -1,7 +1,9 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import {
   buildFormalContextPacket,
+  buildHandoffManifest,
   formatContextPacketForPrompt,
+  pruneContextPacket,
   type FormalContextPacketV2,
   type HandoffManifestV1,
 } from "./context-packet.ts";
@@ -1165,7 +1167,7 @@ function birthMember(
   });
   const next = foldStoredVnextRun(context, run);
   persistVnextRunState(context, run.runId, next, events[events.length - 1]!.sequence);
-  const contextPacket = buildFormalContextPacket({
+  const rawContextPacket = buildFormalContextPacket({
     project: run.projectId,
     targetRole: agentId,
     task: {
@@ -1189,6 +1191,7 @@ function birthMember(
       settledDecisions: [],
     },
   });
+  const { packet: contextPacket } = pruneContextPacket(rawContextPacket);
   const generatedPrompt = formatContextPacketForPrompt(contextPacket);
 
   const member: PreparedDispatch = {

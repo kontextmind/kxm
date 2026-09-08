@@ -159,6 +159,19 @@ export function computeVnextMemoryRevision(
   return `ctxrev_${hash.digest("hex")}`;
 }
 
+export function checkMemoryRevisionDrift(
+  pinnedRevision: string,
+  bundle: VnextProjectBundle,
+  options?: VnextMemoryRevisionOptions,
+): { drifted: boolean; currentRevision: string; pinnedRevision: string } {
+  const currentRevision = computeVnextMemoryRevision(bundle, options);
+  return {
+    drifted: currentRevision !== pinnedRevision,
+    currentRevision,
+    pinnedRevision,
+  };
+}
+
 export function vnextPolicyRevisions(
   bundle: VnextProjectBundle,
   options?: VnextMemoryRevisionOptions,
