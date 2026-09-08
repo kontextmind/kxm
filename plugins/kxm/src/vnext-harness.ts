@@ -1,4 +1,6 @@
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { win32 as win32Path } from "node:path";
 
 export const DEFAULT_HARNESS = "pi";
 export type HarnessMode = "headless" | "either";
@@ -59,6 +61,7 @@ export interface HarnessProbeOptions {
   runCommand?: (command: string, args: readonly string[], timeoutMs: number) => HarnessCommandResult;
   timeoutMs?: number;
   platform?: NodeJS.Platform;
+  existsSync?: (path: string) => boolean;
 }
 
 export interface HarnessDispatchStatus {
@@ -541,6 +544,32 @@ export function harnessSpawnUsesShell(command: string, platform: NodeJS.Platform
   return /^[A-Za-z][A-Za-z0-9_-]*\.cmd$/i.test(base);
 }
 
+/** Allowlisted npm-global inner `.exe`, relative to the directory that contains `name.cmd`. */
+export const WIN_NPM_INNER_EXE: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  claude: Object.freeze(["node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe"]),
+});
+
+export function findWinNpmInnerExe(
+  cliId: string,
+  options: {
+    platform?: NodeJS.Platform;
+    pathEnv?: string;
+    existsSync?: (path: string) => boolean;
+  } = {},
+): string | undefined {
+  if ((options.platform ?? process.platform) !== "win32") return undefined;
+  const segments = WIN_NPM_INNER_EXE[cliId];
+  if (!segments) return undefined;
+  const exists = options.existsSync ?? existsSync;
+  const pathEnv = options.pathEnv ?? process.env.PATH ?? "";
+  for (const dir of pathEnv.split(";").filter(Boolean)) {
+    if (!exists(win32Path.join(dir, `${cliId}.cmd`))) continue;
+    const inner = win32Path.join(dir, ...segments);
+    if (exists(inner)) return inner;
+  }
+  return undefined;
+}
+
 function defaultRunner(env: NodeJS.ProcessEnv): (command: string, args: readonly string[], timeoutMs: number) => HarnessCommandResult {
   return (command, args, timeoutMs) => {
     try {
@@ -689,22 +718,47 @@ export function resolveDispatchStatus(
   return { status: "yes", supported: true };
 }
 
+function tryHarnessCommand(
+  candidate: string,
+  entry: HarnessCatalogEntry,
+  runCommand: (command: string, args: readonly string[], timeoutMs: number) => HarnessCommandResult,
+  timeoutMs: number,
+): { command: string; version: string | undefined } | undefined {
+  const result = runCommand(candidate, entry.versionArgs, timeoutMs);
+  if (result.error === "ENOENT") return undefined;
+  if (result.error && result.code === null && !result.stdout && !result.stderr) return undefined;
+  return {
+    command: candidate,
+    version: firstLine(result.stdout) ?? firstLine(result.stderr),
+  };
+}
+
 function detectHarnessCommand(
   entry: HarnessCatalogEntry,
   runCommand: (command: string, args: readonly string[], timeoutMs: number) => HarnessCommandResult,
   timeoutMs: number,
   platform: NodeJS.Platform,
+  probe: Pick<HarnessProbeOptions, "env" | "existsSync"> = {},
 ): { command: string; version: string | undefined } | undefined {
-  for (const base of entry.commands) {
-    for (const candidate of harnessCommandCandidates(base, platform)) {
-      const result = runCommand(candidate, entry.versionArgs, timeoutMs);
-      if (result.error === "ENOENT") continue;
-      if (result.error && result.code === null && !result.stdout && !result.stderr) continue;
-      return {
-        command: candidate,
-        version: firstLine(result.stdout) ?? firstLine(result.stderr),
-      };
-    }
+  const candidates = entry.commands.flatMap((base) => [...harnessCommandCandidates(base, platform)]);
+  for (const candidate of candidates) {
+    if (isWindowsHarnessShim(candidate)) continue;
+    const found = tryHarnessCommand(candidate, entry, runCommand, timeoutMs);
+    if (found) return found;
+  }
+  const inner = findWinNpmInnerExe(entry.id, {
+    platform,
+    pathEnv: probe.env?.PATH ?? process.env.PATH ?? "",
+    existsSync: probe.existsSync,
+  });
+  if (inner) {
+    const found = tryHarnessCommand(inner, entry, runCommand, timeoutMs);
+    if (found) return found;
+  }
+  for (const candidate of candidates) {
+    if (!isWindowsHarnessShim(candidate)) continue;
+    const found = tryHarnessCommand(candidate, entry, runCommand, timeoutMs);
+    if (found) return found;
   }
   return undefined;
 }
@@ -714,9 +768,10 @@ function probeEntry(
   runCommand: (command: string, args: readonly string[], timeoutMs: number) => HarnessCommandResult,
   timeoutMs: number,
   platform: NodeJS.Platform,
+  probe: Pick<HarnessProbeOptions, "env" | "existsSync"> = {},
 ): HarnessStatus {
   const issues: string[] = [];
-  const found = detectHarnessCommand(entry, runCommand, timeoutMs, platform);
+  const found = detectHarnessCommand(entry, runCommand, timeoutMs, platform, probe);
   const detected = Boolean(found);
   const command = found?.command;
   const version = found?.version;
@@ -760,7 +815,7 @@ export function probeHarnesses(options: HarnessProbeOptions = {}): HarnessInvent
   const platform = options.platform ?? process.platform;
   return {
     defaultHarness: DEFAULT_HARNESS,
-    harnesses: BUILTIN_HARNESSES.map((entry) => probeEntry(entry, runCommand, timeoutMs, platform)),
+    harnesses: BUILTIN_HARNESSES.map((entry) => probeEntry(entry, runCommand, timeoutMs, platform, options)),
   };
 }
 
@@ -884,6 +939,7 @@ export interface HarnessAssignmentProbeOptions {
   runCommand?: ((command: string, args: readonly string[], timeoutMs: number) => HarnessCommandResult) | undefined;
   timeoutMs?: number | undefined;
   platform?: NodeJS.Platform | undefined;
+  existsSync?: ((path: string) => boolean) | undefined;
 }
 
 export function probeHarnessAssignment(options: HarnessAssignmentProbeOptions): HarnessStatus {
@@ -926,7 +982,7 @@ export function probeHarnessAssignment(options: HarnessAssignmentProbeOptions): 
     }
   }
 
-  const found = detectHarnessCommand(entry, runCommand, timeoutMs, platform);
+  const found = detectHarnessCommand(entry, runCommand, timeoutMs, platform, options);
   const detected = Boolean(found);
   const command = found?.command;
   const version = found?.version;
@@ -1038,6 +1094,8 @@ export function probeHarnessesForModel(
         runCommand,
         timeoutMs,
         platform,
+        env: options.env,
+        existsSync: options.existsSync,
       })
     ),
   };

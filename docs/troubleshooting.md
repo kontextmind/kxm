@@ -55,16 +55,19 @@ Another process owns the port. Stop that process or choose another port, then up
 ### `kxm harness list` says Claude Code is `not_detected` on Windows
 
 npm installs Claude Code as `claude.cmd` (and an extensionless shim), not
-`claude.exe`. Older probes spawned `claude` without a shell, got `ENOENT` or
-`EINVAL`, and reported the CLI missing even when `claude --version` worked in
-cmd or Git Bash.
+`claude.exe` on `PATH`. The native binary lives next to the shim at
+`%AppData%\Roaming\npm\node_modules\@anthropic-ai\claude-code\bin\claude.exe`.
+Older probes spawned `claude` without a shell, got `ENOENT` or `EINVAL`, and
+reported the CLI missing even when `claude --version` worked in cmd or Git Bash.
 
-Current `kxm harness list` retries `claude.exe` then `claude.cmd` on win32 and
-sets `issues: ["windows_shim"]` when the npm shim is what answered. If the
-entry is still `not_detected`, confirm `%AppData%\Roaming\npm` is on `PATH`
-for the same process that runs `kxm`, then `claude --version` and
-`claude auth status`. Assignment dispatch (`just assign` / `harness-run`)
-still refuses `.cmd` shims until a `.exe` launcher exists.
+Current `kxm harness list` retries `claude.exe`, then that inner package
+`.exe`, then `claude.cmd` on win32. It sets `issues: ["windows_shim"]` only
+when the npm shim is what answered. If the entry is still `not_detected`,
+confirm `%AppData%\Roaming\npm` is on `PATH` for the same process that runs
+`kxm`, then `claude --version` and `claude auth status`. Assignment dispatch
+(`just assign` / `harness-run`) follows the inner `claude.exe` (and Pi's
+`node.exe` plus `cli.js`) with `shell: false`; unverified `.cmd` launchers
+are still refused.
 
 The same npm-shim miss can appear for `pi` on Windows.
 
