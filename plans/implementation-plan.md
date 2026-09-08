@@ -707,6 +707,8 @@ It does not replace the phase gates below.
 
 - **E3: routing report, logger, metrics (issue #96):** `kxm routing report` groups attempts by `(harness, model, thinking, role)`, reporting attempts, verifyPassRate, reworkRate (back-edge re-entries only: transitions > 0), p50 and p95 latency (linear interpolation), medianContextTokens, meteredCostUsd, costPerAcceptedUsd, and separate counts for unmetered, unknown, and quotaExhausted. Quality-first sorting (verifyPassRate desc, reworkRate asc) then cost per accepted attempt; routes with unknown cost are flagged (`*`) and never ranked cheapest. Equivalent list cost column supported via `--equivalent-list-cost` / `--list-prices`. Unified `logger.ts` with structured JSONL formatting, level priority filtering, child loggers, size-capped file rotation, redaction on write (secrets and sensitive keys), and daemonized stdout suppression. Prometheus metrics renamed to `kxm_*`, exported orphaned `kxm_context_requests_total`, added `kxm_attempt_latency_seconds_total` and `kxm_metered_cost_usd_total`. Zero `pi_mesh_*` or `pi_kxm_*` metric names remain.
 
+- **SQLite sidecar symlink TOCTOU race (issue #115):** Replaced two-call `existsSync` + `lstatSync` checks on SQLite database files and `-wal`/`-shm` sidecars in `plugins/kxm/src/vnext-runtime-store.ts` and supervisor token/error files in `plugins/kxm/src/vnext-runtime-supervisor.ts` with atomic `lstatSync(..., { throwIfNoEntry: false })`. Closes TOCTOU race where SQLite deletes ephemeral sidecars on connection close, crashing with `ENOENT` during concurrent status reads. Verified symlink rejections on main database, sidecars, and token files.
+
 ### Still open
 
 - **After merge:** rewrite `Source:` links in slice issues #84–#103 to the moved plan paths.

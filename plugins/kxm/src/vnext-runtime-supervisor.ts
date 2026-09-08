@@ -50,8 +50,8 @@ export function hashVnextSupervisorToken(token: string): string {
 
 export function readVnextSupervisorToken(paths: VnextRuntimePaths): string | undefined {
   const file = vnextSupervisorTokenFile(paths);
-  if (!existsSync(file)) return undefined;
-  const stat = lstatSync(file);
+  const stat = lstatSync(file, { throwIfNoEntry: false });
+  if (!stat) return undefined;
   if (stat.isSymbolicLink() || !stat.isFile()) {
     throw runtimeError("runtime_path_invalid", file, "supervisor token file must be a regular file, not a link");
   }
@@ -103,10 +103,15 @@ function recordSupervisorError(paths: VnextRuntimePaths, message: string): void 
 
 function readRecentSupervisorError(paths: VnextRuntimePaths): string | undefined {
   const file = supervisorErrorFile(paths);
-  if (!existsSync(file)) return undefined;
-  const ageMs = Date.now() - lstatSync(file).mtimeMs;
+  const stat = lstatSync(file, { throwIfNoEntry: false });
+  if (!stat) return undefined;
+  const ageMs = Date.now() - stat.mtimeMs;
   if (ageMs > SUPERVISOR_ERROR_MAX_AGE_MS) return undefined;
-  return readFileSync(file, "utf8").trim();
+  try {
+    return readFileSync(file, "utf8").trim();
+  } catch {
+    return undefined;
+  }
 }
 
 export function vnextSupervisorStatus(paths: VnextRuntimePaths): VnextSupervisorStatus {

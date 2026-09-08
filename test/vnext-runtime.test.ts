@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -34,7 +34,7 @@ import {
   vnextSupervisorStatus,
   vnextSupervisorTokenFile,
 } from "../plugins/kxm/src/vnext-runtime-supervisor.ts";
-import { loadVnextProject } from "../plugins/kxm/src/vnext-config.ts";
+import { loadVnextProject, VnextConfigError } from "../plugins/kxm/src/vnext-config.ts";
 
 function cleanup(...paths: string[]): void {
   removeTempDir(...paths);
@@ -686,5 +686,61 @@ test("ensureVnextSupervisor auto-starts a detached supervisor and reuses it", as
       await new Promise((resolveWait) => setTimeout(resolveWait, 400));
     }
     cleanup(stateRoot);
+  }
+});
+
+test("runtime store rejects database file and sidecars that are symbolic links", () => {
+  const dir = mkdtempSync(join(tmpdir(), "kxm-runtime-symlink-"));
+  try {
+    const target = join(dir, "target.db");
+    const linkDb = join(dir, "link.db");
+    writeFileSync(target, "");
+    try {
+      symlinkSync(target, linkDb);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EPERM") return; // Skip on Windows without symlink privileges
+      throw error;
+    }
+    assert.throws(
+      () => new VnextRuntimeRegistry(linkDb),
+      (err: unknown) => err instanceof VnextConfigError && err.issues[0]?.code === "runtime_path_invalid" && err.message.includes("must be a regular file, not a link"),
+    );
+
+    for (const suffix of ["-wal", "-shm"]) {
+      const realDb = join(dir, `real${suffix}.db`);
+      const sidecar = `${realDb}${suffix}`;
+      const sidecarTarget = join(dir, `target${suffix}`);
+      writeFileSync(sidecarTarget, "");
+      symlinkSync(sidecarTarget, sidecar);
+      assert.throws(
+        () => new VnextRuntimeRegistry(realDb),
+        (err: unknown) => err instanceof VnextConfigError && err.issues[0]?.code === "runtime_path_invalid" && err.message.includes("sidecar must not be a link"),
+      );
+    }
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test("supervisor token reader rejects token file if it is a symbolic link", () => {
+  const dir = mkdtempSync(join(tmpdir(), "kxm-supervisor-token-symlink-"));
+  try {
+    const paths = vnextRuntimePaths({ stateRoot: dir });
+    const target = join(dir, "real-token");
+    writeFileSync(target, "a".repeat(32));
+    const tokenFile = vnextSupervisorTokenFile(paths);
+    mkdirSync(dirname(tokenFile), { recursive: true });
+    try {
+      symlinkSync(target, tokenFile);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EPERM") return;
+      throw error;
+    }
+    assert.throws(
+      () => readVnextSupervisorToken(paths),
+      (err: unknown) => err instanceof VnextConfigError && err.issues[0]?.code === "runtime_path_invalid" && err.message.includes("supervisor token file must be a regular file, not a link"),
+    );
+  } finally {
+    cleanup(dir);
   }
 });

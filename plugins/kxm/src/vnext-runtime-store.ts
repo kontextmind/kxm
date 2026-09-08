@@ -53,8 +53,8 @@ export function projectRuntimeKey(projectRoot: string): string {
 function checkedParent(path: string, description: string): void {
   const parent = dirname(path);
   if (!existsSync(parent)) mkdirSync(parent, { recursive: true, mode: 0o700 });
-  const stat = lstatSync(parent);
-  if (stat.isSymbolicLink() || !stat.isDirectory()) {
+  const stat = lstatSync(parent, { throwIfNoEntry: false });
+  if (!stat || stat.isSymbolicLink() || !stat.isDirectory()) {
     throw runtimeError("runtime_path_invalid", description, `${description} parent must be a regular directory, not a link`);
   }
 }
@@ -93,14 +93,15 @@ function verifyExpectedTables(database: DatabaseSync, file: string, description:
 
 function openDatabase(file: string, description: string, spec: VnextDatabaseSchema): DatabaseSync {
   checkedParent(file, description);
-  if (existsSync(file)) {
-    const stat = lstatSync(file);
+  const stat = lstatSync(file, { throwIfNoEntry: false });
+  if (stat) {
     if (stat.isSymbolicLink() || !stat.isFile()) {
       throw runtimeError("runtime_path_invalid", description, `${description} must be a regular file, not a link or directory`);
     }
   }
   for (const sidecar of [`${file}-wal`, `${file}-shm`]) {
-    if (existsSync(sidecar) && lstatSync(sidecar).isSymbolicLink()) {
+    const info = lstatSync(sidecar, { throwIfNoEntry: false });
+    if (info?.isSymbolicLink()) {
       throw runtimeError("runtime_path_invalid", description, `${description} sidecar must not be a link`);
     }
   }
