@@ -2645,7 +2645,9 @@ function createMeshHub(options = {}) {
     workflowWaitTimeouts: 0,
     workflowDegradations: 0,
     journalEntries: 0,
-    contextRequests: 0
+    contextRequests: 0,
+    attemptLatencySecondsTotal: 0,
+    meteredCostUsdTotal: 0
   };
   let cleanupTimer;
   let closed = false;
@@ -3182,42 +3184,48 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
   function metricsBody() {
     const onlineAgents = [...agents.values()].filter((agent) => agent.online).length;
     return [
-      "# HELP pi_mesh_online_agents Current online agent count.",
-      "# TYPE pi_mesh_online_agents gauge",
-      `pi_mesh_online_agents ${onlineAgents}`,
-      "# HELP pi_mesh_messages Current retained message count.",
-      "# TYPE pi_mesh_messages gauge",
-      `pi_mesh_messages ${messages.size}`,
-      "# TYPE pi_mesh_requests_total counter",
-      `pi_mesh_requests_total ${counters.requests}`,
-      "# TYPE pi_mesh_errors_total counter",
-      `pi_mesh_errors_total ${counters.errors}`,
-      "# TYPE pi_mesh_registrations_total counter",
-      `pi_mesh_registrations_total ${counters.registrations}`,
-      "# TYPE pi_mesh_messages_sent_total counter",
-      `pi_mesh_messages_sent_total ${counters.messagesSent}`,
-      "# TYPE pi_mesh_messages_replied_total counter",
-      `pi_mesh_messages_replied_total ${counters.messagesReplied}`,
-      "# TYPE pi_mesh_messages_cancelled_total counter",
-      `pi_mesh_messages_cancelled_total ${counters.messagesCancelled}`,
-      "# TYPE pi_mesh_messages_expired_total counter",
-      `pi_mesh_messages_expired_total ${counters.messagesExpired}`,
-      "# TYPE pi_mesh_messages_purged_total counter",
-      `pi_mesh_messages_purged_total ${counters.messagesPurged}`,
-      "# TYPE pi_mesh_webhooks_accepted_total counter",
-      `pi_mesh_webhooks_accepted_total ${counters.webhooksAccepted}`,
-      "# TYPE pi_kxm_workflow_checkpoints_total counter",
-      `pi_kxm_workflow_checkpoints_total ${counters.workflowCheckpoints}`,
-      "# TYPE pi_kxm_workflow_waits_total counter",
-      `pi_kxm_workflow_waits_total ${counters.workflowWaits}`,
-      "# TYPE pi_mesh_workflow_signals_total counter",
-      `pi_mesh_workflow_signals_total ${counters.workflowSignals}`,
-      "# TYPE pi_kxm_workflow_wait_timeouts_total counter",
-      `pi_kxm_workflow_wait_timeouts_total ${counters.workflowWaitTimeouts}`,
-      "# TYPE pi_mesh_workflow_degradations_total counter",
-      `pi_mesh_workflow_degradations_total ${counters.workflowDegradations}`,
-      "# TYPE pi_mesh_workflow_journal_entries_total counter",
-      `pi_mesh_workflow_journal_entries_total ${counters.journalEntries}`,
+      "# HELP kxm_online_agents Current online agent count.",
+      "# TYPE kxm_online_agents gauge",
+      `kxm_online_agents ${onlineAgents}`,
+      "# HELP kxm_messages Current retained message count.",
+      "# TYPE kxm_messages gauge",
+      `kxm_messages ${messages.size}`,
+      "# TYPE kxm_requests_total counter",
+      `kxm_requests_total ${counters.requests}`,
+      "# TYPE kxm_errors_total counter",
+      `kxm_errors_total ${counters.errors}`,
+      "# TYPE kxm_registrations_total counter",
+      `kxm_registrations_total ${counters.registrations}`,
+      "# TYPE kxm_messages_sent_total counter",
+      `kxm_messages_sent_total ${counters.messagesSent}`,
+      "# TYPE kxm_messages_replied_total counter",
+      `kxm_messages_replied_total ${counters.messagesReplied}`,
+      "# TYPE kxm_messages_cancelled_total counter",
+      `kxm_messages_cancelled_total ${counters.messagesCancelled}`,
+      "# TYPE kxm_messages_expired_total counter",
+      `kxm_messages_expired_total ${counters.messagesExpired}`,
+      "# TYPE kxm_messages_purged_total counter",
+      `kxm_messages_purged_total ${counters.messagesPurged}`,
+      "# TYPE kxm_webhooks_accepted_total counter",
+      `kxm_webhooks_accepted_total ${counters.webhooksAccepted}`,
+      "# TYPE kxm_workflow_checkpoints_total counter",
+      `kxm_workflow_checkpoints_total ${counters.workflowCheckpoints}`,
+      "# TYPE kxm_workflow_waits_total counter",
+      `kxm_workflow_waits_total ${counters.workflowWaits}`,
+      "# TYPE kxm_workflow_signals_total counter",
+      `kxm_workflow_signals_total ${counters.workflowSignals}`,
+      "# TYPE kxm_workflow_wait_timeouts_total counter",
+      `kxm_workflow_wait_timeouts_total ${counters.workflowWaitTimeouts}`,
+      "# TYPE kxm_workflow_degradations_total counter",
+      `kxm_workflow_degradations_total ${counters.workflowDegradations}`,
+      "# TYPE kxm_workflow_journal_entries_total counter",
+      `kxm_workflow_journal_entries_total ${counters.journalEntries}`,
+      "# TYPE kxm_context_requests_total counter",
+      `kxm_context_requests_total ${counters.contextRequests}`,
+      "# TYPE kxm_attempt_latency_seconds_total counter",
+      `kxm_attempt_latency_seconds_total ${counters.attemptLatencySecondsTotal}`,
+      "# TYPE kxm_metered_cost_usd_total counter",
+      `kxm_metered_cost_usd_total ${counters.meteredCostUsdTotal}`,
       ""
     ].join("\n");
   }
@@ -4510,8 +4518,159 @@ data: ${JSON.stringify({ agent: publicAgent(current) })}
 }
 
 // plugins/kxm/src/server.ts
-import { createWriteStream, mkdirSync as mkdirSync3, readFileSync } from "node:fs";
-import { dirname as dirname2, join, resolve as resolve3 } from "node:path";
+import { mkdirSync as mkdirSync4, readFileSync } from "node:fs";
+import { dirname as dirname3, join, resolve as resolve3 } from "node:path";
+
+// plugins/kxm/src/logger.ts
+import { appendFileSync, existsSync, mkdirSync as mkdirSync3, renameSync as renameSync2, statSync, unlinkSync } from "node:fs";
+import { dirname as dirname2 } from "node:path";
+var LOG_LEVEL_PRIORITY = {
+  debug: 10,
+  info: 20,
+  warn: 30,
+  error: 40
+};
+var DEFAULT_LOG_MAX_BYTES = 10 * 1024 * 1024;
+var DEFAULT_LOG_MAX_FILES = 3;
+var SENSITIVE_KEY_PATTERN = /(?:^|_)(?:token|secret|password|apiKey|api_key|authorization|bearer)(?:$|_)/i;
+var ALLOWED_EXACT_KEYS = /* @__PURE__ */ new Set(["auth", "authType", "authMethod", "authArgs", "canUpdate", "status"]);
+function redactLogValue(val, key) {
+  if (val === null || val === void 0) return val;
+  if (typeof val === "string") {
+    if (key && SENSITIVE_KEY_PATTERN.test(key) && !ALLOWED_EXACT_KEYS.has(key)) {
+      return "[redacted]";
+    }
+    return redactSecrets(val);
+  }
+  if (typeof val === "number" || typeof val === "boolean") {
+    return val;
+  }
+  if (Array.isArray(val)) {
+    return val.map((item) => redactLogValue(item, key));
+  }
+  if (typeof val === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(val)) {
+      out[k] = redactLogValue(v, k);
+    }
+    return out;
+  }
+  return String(val);
+}
+function rotateLogFiles(filePath, maxFiles) {
+  for (let i = maxFiles; i >= 1; i--) {
+    const current = `${filePath}.${i}`;
+    if (existsSync(current)) {
+      if (i >= maxFiles) {
+        try {
+          unlinkSync(current);
+        } catch {
+        }
+      } else {
+        try {
+          renameSync2(current, `${filePath}.${i + 1}`);
+        } catch {
+        }
+      }
+    }
+  }
+  if (existsSync(filePath)) {
+    try {
+      renameSync2(filePath, `${filePath}.1`);
+    } catch {
+    }
+  }
+}
+function createLogger(options) {
+  const component = options.component;
+  const filePath = options.path;
+  const maxBytes = Math.max(100, options.maxBytes ?? DEFAULT_LOG_MAX_BYTES);
+  const maxFiles = Math.max(1, options.maxFiles ?? DEFAULT_LOG_MAX_FILES);
+  const configuredLevel = options.level ?? "info";
+  const isDaemon = Boolean(options.daemon ?? (process.env.KXM_DAEMON === "1" || process.env.KXM_DAEMON === "true"));
+  const shouldStdout = options.stdout ?? !isDaemon;
+  const correlationDefaults = options.correlation ?? {};
+  let currentSize = 0;
+  if (filePath && existsSync(filePath)) {
+    try {
+      currentSize = statSync(filePath).size;
+    } catch {
+      currentSize = 0;
+    }
+  }
+  function emit(level, entryOrEvent, extra) {
+    const minPriority = LOG_LEVEL_PRIORITY[configuredLevel] ?? LOG_LEVEL_PRIORITY.info;
+    const currentPriority = LOG_LEVEL_PRIORITY[level] ?? LOG_LEVEL_PRIORITY.info;
+    if (currentPriority < minPriority) return;
+    let base;
+    if (typeof entryOrEvent === "string") {
+      base = { event: entryOrEvent, ...extra };
+    } else {
+      base = { ...entryOrEvent, ...extra };
+    }
+    const timestamp = typeof base.timestamp === "string" ? base.timestamp : (/* @__PURE__ */ new Date()).toISOString();
+    delete base.timestamp;
+    delete base.level;
+    delete base.component;
+    const payload = {
+      timestamp,
+      level,
+      component,
+      ...correlationDefaults,
+      ...base
+    };
+    const sanitized = redactLogValue(payload);
+    const line = `${JSON.stringify(sanitized)}
+`;
+    if (filePath) {
+      const lineBytes = Buffer.byteLength(line, "utf8");
+      if (currentSize + lineBytes > maxBytes) {
+        rotateLogFiles(filePath, maxFiles);
+        currentSize = 0;
+      }
+      try {
+        mkdirSync3(dirname2(filePath), { recursive: true });
+        appendFileSync(filePath, line, { encoding: "utf8", mode: 384 });
+        currentSize += lineBytes;
+      } catch {
+      }
+    }
+    if (shouldStdout) {
+      process.stdout.write(line);
+    }
+  }
+  const logFn = ((entryOrEvent, extra) => {
+    let lvl = "info";
+    if (typeof entryOrEvent === "object" && entryOrEvent !== null && typeof entryOrEvent.level === "string") {
+      const candidate = entryOrEvent.level.toLowerCase();
+      if (candidate === "debug" || candidate === "info" || candidate === "warn" || candidate === "error") {
+        lvl = candidate;
+      }
+    }
+    emit(lvl, entryOrEvent, extra);
+  });
+  logFn.info = (entryOrEvent, extra) => emit("info", entryOrEvent, extra);
+  logFn.warn = (entryOrEvent, extra) => emit("warn", entryOrEvent, extra);
+  logFn.error = (entryOrEvent, extra) => emit("error", entryOrEvent, extra);
+  logFn.debug = (entryOrEvent, extra) => emit("debug", entryOrEvent, extra);
+  logFn.child = (sub) => {
+    return createLogger({
+      ...options,
+      component: sub.component ? `${component}.${sub.component}` : component,
+      correlation: { ...correlationDefaults, ...sub.correlation }
+    });
+  };
+  logFn.close = () => {
+  };
+  Object.defineProperty(logFn, "options", {
+    value: Object.freeze({ ...options }),
+    writable: false,
+    enumerable: true
+  });
+  return logFn;
+}
+
+// plugins/kxm/src/server.ts
 var host = process.env.KXM_HOST ?? "127.0.0.1";
 var port = Number.parseInt(process.env.KXM_PORT ?? String(DEFAULT_PORT), 10);
 var authToken = process.env.KXM_AUTH_TOKEN;
@@ -4533,16 +4692,13 @@ var rateLimitWindowMs = Number.parseInt(
   process.env.KXM_RATE_LIMIT_WINDOW_MS ?? String(DEFAULT_RATE_LIMIT_WINDOW_MS),
   10
 );
-for (const directory of [configDir, logsDir, assetsDir, stateDir, dirname2(logPath)]) {
-  mkdirSync3(directory, { recursive: true });
+for (const directory of [configDir, logsDir, assetsDir, stateDir, dirname3(logPath)]) {
+  mkdirSync4(directory, { recursive: true });
 }
-var logStream = createWriteStream(logPath, { flags: "a", encoding: "utf8", mode: 384 });
-function structuredLog(entry) {
-  const line = `${JSON.stringify({ timestamp: (/* @__PURE__ */ new Date()).toISOString(), ...entry })}
-`;
-  logStream.write(line);
-  process.stdout.write(line);
-}
+var structuredLog = createLogger({
+  component: "hub",
+  path: logPath
+});
 function projectTokens() {
   const raw = process.env.KXM_PROJECT_TOKENS?.trim();
   if (!raw) return void 0;
@@ -4598,7 +4754,7 @@ function shutdown(signal) {
   shutdownPromise = (async () => {
     structuredLog({ event: "hub_stopping", signal });
     await hub.close();
-    await new Promise((resolveLog) => logStream.end(resolveLog));
+    structuredLog.close();
     process.exit(0);
   })();
   return shutdownPromise;

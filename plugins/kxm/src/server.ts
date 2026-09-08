@@ -27,6 +27,8 @@ const messageRetentionMs = Number.parseInt(
   10,
 );
 const rateLimitMax = Number.parseInt(process.env.KXM_RATE_LIMIT_MAX ?? String(DEFAULT_RATE_LIMIT_MAX), 10);
+import { createLogger } from "./logger.ts";
+
 const rateLimitWindowMs = Number.parseInt(
   process.env.KXM_RATE_LIMIT_WINDOW_MS ?? String(DEFAULT_RATE_LIMIT_WINDOW_MS),
   10,
@@ -35,13 +37,10 @@ const rateLimitWindowMs = Number.parseInt(
 for (const directory of [configDir, logsDir, assetsDir, stateDir, dirname(logPath)]) {
   mkdirSync(directory, { recursive: true });
 }
-const logStream = createWriteStream(logPath, { flags: "a", encoding: "utf8", mode: 0o600 });
-
-function structuredLog(entry: Record<string, unknown>): void {
-  const line = `${JSON.stringify({ timestamp: new Date().toISOString(), ...entry })}\n`;
-  logStream.write(line);
-  process.stdout.write(line);
-}
+const structuredLog = createLogger({
+  component: "hub",
+  path: logPath,
+});
 
 function projectTokens(): Record<string, string> | undefined {
   const raw = process.env.KXM_PROJECT_TOKENS?.trim();
@@ -102,7 +101,7 @@ function shutdown(signal: string): Promise<void> {
   shutdownPromise = (async () => {
     structuredLog({ event: "hub_stopping", signal });
     await hub.close();
-    await new Promise<void>((resolveLog) => logStream.end(resolveLog));
+    structuredLog.close();
     process.exit(0);
   })();
   return shutdownPromise;

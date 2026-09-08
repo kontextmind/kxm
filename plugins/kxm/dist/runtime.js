@@ -20900,6 +20900,49 @@ import { createServer } from "node:http";
 import { dirname as dirname4, isAbsolute as isAbsolute3, join as join5, resolve as resolve4 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
+// plugins/kxm/src/price-calc.ts
+var PRICES_SCHEMA = "kxm.prices.v1";
+function findModelPrice(catalog, model, provider) {
+  const normalizedModel = model.trim().toLowerCase();
+  const normalizedProvider = provider?.trim().toLowerCase();
+  for (const entry of catalog.models) {
+    if (normalizedProvider && entry.provider.toLowerCase() !== normalizedProvider) {
+      const matchesAlias = entry.aliases?.some((a) => a.toLowerCase() === normalizedModel);
+      if (!matchesAlias) continue;
+    }
+    if (entry.id.toLowerCase() === normalizedModel || entry.model.toLowerCase() === normalizedModel) {
+      return entry;
+    }
+    if (entry.aliases?.some((a) => a.toLowerCase() === normalizedModel)) {
+      return entry;
+    }
+  }
+  return void 0;
+}
+function calculateModelCost(catalog, params) {
+  const row = findModelPrice(catalog, params.model, params.provider);
+  if (!row || row.tiers.length === 0) return void 0;
+  const context = params.contextTokens ?? params.tokensIn ?? 0;
+  let selectedTier = row.tiers[0];
+  for (const tier of row.tiers) {
+    if (tier.upToContextTokens !== void 0 && tier.upToContextTokens !== null && context > tier.upToContextTokens) {
+      continue;
+    }
+    selectedTier = tier;
+    break;
+  }
+  const tokensIn = params.tokensIn ?? 0;
+  const tokensOut = params.tokensOut ?? 0;
+  const cacheRead = params.cacheReadTokens ?? 0;
+  const cacheWrite = params.cacheWriteTokens ?? 0;
+  const cost = tokensIn / 1e6 * selectedTier.inputPerMillion + tokensOut / 1e6 * selectedTier.outputPerMillion + cacheRead / 1e6 * (selectedTier.cacheReadPerMillion ?? 0) + cacheWrite / 1e6 * (selectedTier.cacheWritePerMillion ?? 0);
+  const priceRef = `${catalog.date}#${row.id}`;
+  return {
+    costUsd: Math.round(cost * 1e6) / 1e6,
+    priceRef
+  };
+}
+
 // plugins/kxm/src/vnext-engine.ts
 var trustedProducers = /* @__PURE__ */ new WeakSet();
 function registerTrustedProducer(producer) {
@@ -21470,7 +21513,6 @@ import { StringDecoder } from "node:string_decoder";
 var import_yaml3 = __toESM(require_dist(), 1);
 import { existsSync as existsSync4, readFileSync as readFileSync3 } from "node:fs";
 import { join as join6 } from "node:path";
-var PRICES_SCHEMA = "kxm.prices.v1";
 function parsePriceCatalog(text) {
   const parsed = (0, import_yaml3.parse)(text);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
@@ -21550,46 +21592,6 @@ function loadPriceCatalog(rootOrPath) {
   }
   const content = readFileSync3(candidatePath, "utf8");
   return parsePriceCatalog(content);
-}
-function findModelPrice(catalog, model, provider) {
-  const normalizedModel = model.trim().toLowerCase();
-  const normalizedProvider = provider?.trim().toLowerCase();
-  for (const entry of catalog.models) {
-    if (normalizedProvider && entry.provider.toLowerCase() !== normalizedProvider) {
-      const matchesAlias = entry.aliases?.some((a) => a.toLowerCase() === normalizedModel);
-      if (!matchesAlias) continue;
-    }
-    if (entry.id.toLowerCase() === normalizedModel || entry.model.toLowerCase() === normalizedModel) {
-      return entry;
-    }
-    if (entry.aliases?.some((a) => a.toLowerCase() === normalizedModel)) {
-      return entry;
-    }
-  }
-  return void 0;
-}
-function calculateModelCost(catalog, params) {
-  const row = findModelPrice(catalog, params.model, params.provider);
-  if (!row || row.tiers.length === 0) return void 0;
-  const context = params.contextTokens ?? params.tokensIn ?? 0;
-  let selectedTier = row.tiers[0];
-  for (const tier of row.tiers) {
-    if (tier.upToContextTokens !== void 0 && tier.upToContextTokens !== null && context > tier.upToContextTokens) {
-      continue;
-    }
-    selectedTier = tier;
-    break;
-  }
-  const tokensIn = params.tokensIn ?? 0;
-  const tokensOut = params.tokensOut ?? 0;
-  const cacheRead = params.cacheReadTokens ?? 0;
-  const cacheWrite = params.cacheWriteTokens ?? 0;
-  const cost = tokensIn / 1e6 * selectedTier.inputPerMillion + tokensOut / 1e6 * selectedTier.outputPerMillion + cacheRead / 1e6 * (selectedTier.cacheReadPerMillion ?? 0) + cacheWrite / 1e6 * (selectedTier.cacheWritePerMillion ?? 0);
-  const priceRef = `${catalog.date}#${row.id}`;
-  return {
-    costUsd: Math.round(cost * 1e6) / 1e6,
-    priceRef
-  };
 }
 
 // plugins/kxm/src/vnext-pi-producer.ts
@@ -22367,10 +22369,183 @@ function createVnextOneShotProducer(options = {}) {
   registerTrustedProducer(producer);
   return producer;
 }
+
+// plugins/kxm/src/logger.ts
+import { appendFileSync, existsSync as existsSync5, mkdirSync as mkdirSync3, renameSync as renameSync2, statSync, unlinkSync } from "node:fs";
+import { dirname as dirname5 } from "node:path";
+
+// plugins/kxm/src/redact.ts
+var SECRET_PATTERNS = [
+  /\bsk-[A-Za-z0-9_-]{8,}\b/g,
+  /\bghp_[A-Za-z0-9_]{20,}\b/g,
+  /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
+  /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/gi,
+  /\bBearer\s+[A-Za-z0-9._~+/=-]+\b/gi,
+  /\bKXM_[A-Z0-9_]*(TOKEN|SECRET|KEY)[A-Z0-9_]*=\S+/gi,
+  /\b(GITHUB_TOKEN|GH_TOKEN|KXM_AUTH_TOKEN|KXM_WORKFLOW_SIGNAL_SECRET)=\S+/gi,
+  /\b[A-Fa-f0-9]{64}\b/g
+];
+function redactSecrets(value) {
+  let result = value;
+  for (const pattern of SECRET_PATTERNS) {
+    result = result.replace(pattern, "[redacted]");
+  }
+  return result;
+}
+
+// plugins/kxm/src/logger.ts
+var LOG_LEVEL_PRIORITY = {
+  debug: 10,
+  info: 20,
+  warn: 30,
+  error: 40
+};
+var DEFAULT_LOG_MAX_BYTES = 10 * 1024 * 1024;
+var DEFAULT_LOG_MAX_FILES = 3;
+var SENSITIVE_KEY_PATTERN = /(?:^|_)(?:token|secret|password|apiKey|api_key|authorization|bearer)(?:$|_)/i;
+var ALLOWED_EXACT_KEYS = /* @__PURE__ */ new Set(["auth", "authType", "authMethod", "authArgs", "canUpdate", "status"]);
+function redactLogValue(val, key) {
+  if (val === null || val === void 0) return val;
+  if (typeof val === "string") {
+    if (key && SENSITIVE_KEY_PATTERN.test(key) && !ALLOWED_EXACT_KEYS.has(key)) {
+      return "[redacted]";
+    }
+    return redactSecrets(val);
+  }
+  if (typeof val === "number" || typeof val === "boolean") {
+    return val;
+  }
+  if (Array.isArray(val)) {
+    return val.map((item) => redactLogValue(item, key));
+  }
+  if (typeof val === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(val)) {
+      out[k] = redactLogValue(v, k);
+    }
+    return out;
+  }
+  return String(val);
+}
+function rotateLogFiles(filePath, maxFiles) {
+  for (let i = maxFiles; i >= 1; i--) {
+    const current = `${filePath}.${i}`;
+    if (existsSync5(current)) {
+      if (i >= maxFiles) {
+        try {
+          unlinkSync(current);
+        } catch {
+        }
+      } else {
+        try {
+          renameSync2(current, `${filePath}.${i + 1}`);
+        } catch {
+        }
+      }
+    }
+  }
+  if (existsSync5(filePath)) {
+    try {
+      renameSync2(filePath, `${filePath}.1`);
+    } catch {
+    }
+  }
+}
+function createLogger(options) {
+  const component = options.component;
+  const filePath = options.path;
+  const maxBytes = Math.max(100, options.maxBytes ?? DEFAULT_LOG_MAX_BYTES);
+  const maxFiles = Math.max(1, options.maxFiles ?? DEFAULT_LOG_MAX_FILES);
+  const configuredLevel = options.level ?? "info";
+  const isDaemon = Boolean(options.daemon ?? (process.env.KXM_DAEMON === "1" || process.env.KXM_DAEMON === "true"));
+  const shouldStdout = options.stdout ?? !isDaemon;
+  const correlationDefaults = options.correlation ?? {};
+  let currentSize = 0;
+  if (filePath && existsSync5(filePath)) {
+    try {
+      currentSize = statSync(filePath).size;
+    } catch {
+      currentSize = 0;
+    }
+  }
+  function emit(level, entryOrEvent, extra) {
+    const minPriority = LOG_LEVEL_PRIORITY[configuredLevel] ?? LOG_LEVEL_PRIORITY.info;
+    const currentPriority = LOG_LEVEL_PRIORITY[level] ?? LOG_LEVEL_PRIORITY.info;
+    if (currentPriority < minPriority) return;
+    let base;
+    if (typeof entryOrEvent === "string") {
+      base = { event: entryOrEvent, ...extra };
+    } else {
+      base = { ...entryOrEvent, ...extra };
+    }
+    const timestamp = typeof base.timestamp === "string" ? base.timestamp : (/* @__PURE__ */ new Date()).toISOString();
+    delete base.timestamp;
+    delete base.level;
+    delete base.component;
+    const payload = {
+      timestamp,
+      level,
+      component,
+      ...correlationDefaults,
+      ...base
+    };
+    const sanitized = redactLogValue(payload);
+    const line = `${JSON.stringify(sanitized)}
+`;
+    if (filePath) {
+      const lineBytes = Buffer.byteLength(line, "utf8");
+      if (currentSize + lineBytes > maxBytes) {
+        rotateLogFiles(filePath, maxFiles);
+        currentSize = 0;
+      }
+      try {
+        mkdirSync3(dirname5(filePath), { recursive: true });
+        appendFileSync(filePath, line, { encoding: "utf8", mode: 384 });
+        currentSize += lineBytes;
+      } catch {
+      }
+    }
+    if (shouldStdout) {
+      process.stdout.write(line);
+    }
+  }
+  const logFn = ((entryOrEvent, extra) => {
+    let lvl = "info";
+    if (typeof entryOrEvent === "object" && entryOrEvent !== null && typeof entryOrEvent.level === "string") {
+      const candidate = entryOrEvent.level.toLowerCase();
+      if (candidate === "debug" || candidate === "info" || candidate === "warn" || candidate === "error") {
+        lvl = candidate;
+      }
+    }
+    emit(lvl, entryOrEvent, extra);
+  });
+  logFn.info = (entryOrEvent, extra) => emit("info", entryOrEvent, extra);
+  logFn.warn = (entryOrEvent, extra) => emit("warn", entryOrEvent, extra);
+  logFn.error = (entryOrEvent, extra) => emit("error", entryOrEvent, extra);
+  logFn.debug = (entryOrEvent, extra) => emit("debug", entryOrEvent, extra);
+  logFn.child = (sub) => {
+    return createLogger({
+      ...options,
+      component: sub.component ? `${component}.${sub.component}` : component,
+      correlation: { ...correlationDefaults, ...sub.correlation }
+    });
+  };
+  logFn.close = () => {
+  };
+  Object.defineProperty(logFn, "options", {
+    value: Object.freeze({ ...options }),
+    writable: false,
+    enumerable: true
+  });
+  return logFn;
+}
 export {
   BUILTIN_HARNESSES,
   BUILTIN_HARNESS_IDS,
   DEFAULT_HARNESS,
+  DEFAULT_LOG_MAX_BYTES,
+  DEFAULT_LOG_MAX_FILES,
+  LOG_LEVEL_PRIORITY,
   NATIVE_HARNESS_PROVIDERS,
   PI_ALLOWED_PROVIDERS,
   PI_NATIVE_BRAKE_PROVIDERS,
@@ -22387,6 +22562,7 @@ export {
   cancelVnextRun,
   closeVnextRuntimeContext,
   computeGateEvidenceOutcome,
+  createLogger,
   createVnextOneShotProducer,
   createVnextPiProducer,
   defaultSpawn,
@@ -22425,8 +22601,10 @@ export {
   readVnextRunStatus,
   readVnextSupervisorToken,
   rebuildVnextRunProjection,
+  redactLogValue,
   registerVnextRuntimeCloseHook,
   resolveDispatchStatus,
+  rotateLogFiles,
   runHarnessUpdate,
   runtimeError,
   startVnextRuntimeSupervisor,
