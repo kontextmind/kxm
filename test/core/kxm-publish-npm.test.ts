@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   bufferSha256,
+  fetchPublishedRelease,
   fileSha256,
   findPublishedAsset,
   interpretPublishedReleaseLookup,
@@ -59,6 +60,27 @@ test("interpretPublishedReleaseLookup accepts published releases", () => {
   assert.equal(result.assets?.length, 1);
 });
 
+test("fetchPublishedRelease checks listReleases if getReleaseByTag returns 404", async () => {
+  const mockApiWithDraft = {
+    getReleaseByTag: async () => ({ status: 404 }),
+    listReleases: async () => ({
+      status: 200,
+      body: [{ id: 77, tag_name: "v0.6.0", draft: true }],
+    }),
+  };
+  const draftResult = await fetchPublishedRelease(mockApiWithDraft, "v0.6.0");
+  assert.equal(draftResult.ok, false);
+  assert.equal(draftResult.code, "release_still_draft");
+
+  const mockApiNotFound = {
+    getReleaseByTag: async () => ({ status: 404 }),
+    listReleases: async () => ({ status: 200, body: [] }),
+  };
+  const notFoundResult = await fetchPublishedRelease(mockApiNotFound, "v0.6.0");
+  assert.equal(notFoundResult.ok, false);
+  assert.equal(notFoundResult.code, "release_not_found");
+});
+
 test("findPublishedAsset finds asset by name or fails closed", () => {
   const asset = { id: 10, name: ASSET, digest: `sha256:${HEX_A}` };
   assert.deepEqual(findPublishedAsset([asset], ASSET), { ok: true, asset });
@@ -107,6 +129,7 @@ test("runKxmNpmPublish fails closed when release is draft", async () => {
         repo: "org/repo",
         assetName: ASSET,
         api: mockApi,
+        waitMs: 0,
       }),
     (err) => hasCode(err, "release_still_draft"),
   );

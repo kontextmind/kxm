@@ -68,6 +68,27 @@ export function interpretPublishedReleaseLookup(result) {
   return { ok: true, id: body.id, draft: false, assets };
 }
 
+export async function fetchPublishedRelease(api, tag) {
+  const lookupRaw = await api.getReleaseByTag(tag);
+  const lookup = interpretPublishedReleaseLookup(lookupRaw);
+  if (lookup.ok) return lookup;
+  if (lookup.code === "release_not_found" && typeof api.listReleases === "function") {
+    const listRaw = await api.listReleases(1);
+    if (Array.isArray(listRaw?.body)) {
+      const match = listRaw.body.find((item) => item?.tag_name === tag);
+      if (match?.draft === true) {
+        return {
+          ok: false,
+          code: "release_still_draft",
+          id: match.id,
+          message: "GitHub release is still a draft; must be published (draft: false) before npm publish",
+        };
+      }
+    }
+  }
+  return lookup;
+}
+
 export function findPublishedAsset(assets, assetName) {
   if (!Array.isArray(assets)) {
     return { ok: false, code: "asset_not_found", message: "assets must be an array" };
@@ -90,6 +111,15 @@ export function createGithubReleaseApi({ token, repo }) {
     async getReleaseByTag(tag) {
       try {
         const res = await fetch(`https://api.github.com/repos/${repo}/releases/tags/${encodeURIComponent(tag)}`, { headers });
+        const body = res.status === 204 ? null : await res.json().catch(() => null);
+        return { status: res.status, body };
+      } catch (err) {
+        return { error: "network", cause: err };
+      }
+    },
+    async listReleases(page = 1) {
+      try {
+        const res = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=100&page=${page}`, { headers });
         const body = res.status === 204 ? null : await res.json().catch(() => null);
         return { status: res.status, body };
       } catch (err) {
@@ -161,10 +191,22 @@ export async function runKxmNpmPublish(input) {
   const api = input.api ?? createGithubReleaseApi({ token, repo });
   const publishFn = input.publishFn ?? defaultNpmPublish;
 
-  // Step 1: Verify release is published (draft: false)
-  const lookupRaw = await api.getReleaseByTag(tag);
-  const lookup = interpretPublishedReleaseLookup(lookupRaw);
-  if (!lookup.ok) {
+  const waitMs = typeof input.waitMs === "number" ? Math.max(0, input.waitMs) : 0;
+  const pollIntervalMs = typeof input.pollIntervalMs === "number" ? Math.max(500, input.pollIntervalMs) : 5000;
+  const deadline = Date.now() + waitMs;
+
+  // Step 1: Verify release is published (draft: false), with optional polling window
+  let lookup;
+  while (true) {
+    lookup = await fetchPublishedRelease(api, tag);
+    if (lookup.ok) break;
+    if (lookup.code === "release_still_draft" && Date.now() + pollIntervalMs <= deadline) {
+      if (typeof input.onWait === "function") {
+        input.onWait({ tag, remainingMs: Math.max(0, deadline - Date.now()) });
+      }
+      await new Promise((r) => setTimeout(r, pollIntervalMs));
+      continue;
+    }
     throw new KxmPublishNpmError(lookup.code, lookup.message, lookup);
   }
 
@@ -238,6 +280,7 @@ export async function main(env = process.env, stdout = process.stdout, stderr = 
   const assetPath = env.KXM_ASSET_PATH;
   const declaredSha256 = env.KXM_ASSET_SHA256;
   const tempDir = env.RUNNER_TEMP || tmpdir();
+  const waitMs = env.KXM_PUBLISH_WAIT_MS ? Number(env.KXM_PUBLISH_WAIT_MS) : 180000; // default 3 min in CI
 
   if (!repo || !tag || !assetName) {
     stderr.write("npm publish requires GITHUB_REPOSITORY, tag (GITHUB_REF_NAME), and KXM_ASSET\n");
@@ -262,6 +305,11 @@ export async function main(env = process.env, stdout = process.stdout, stderr = 
       assetPath,
       declaredSha256,
       tempDir,
+      waitMs,
+      onWait: ({ remainingMs }) => {
+        const sec = Math.round(remainingMs / 1000);
+        stdout.write(`release ${tag} is currently a draft; waiting for publish (${sec}s remaining)...\n`);
+      },
     });
     stdout.write(`${JSON.stringify(result)}\n`);
     return 0;
