@@ -91,6 +91,34 @@ function verifyExpectedTables(database: DatabaseSync, file: string, description:
   }
 }
 
+function ensureWalJournalMode(database: DatabaseSync, file: string, description: string, timeoutMs = 5000): void {
+  const deadline = Date.now() + timeoutMs;
+  const sleeper = new Int32Array(new SharedArrayBuffer(4));
+  while (true) {
+    try {
+      const current = database.prepare("PRAGMA journal_mode").get() as { journal_mode?: string } | undefined;
+      if (current?.journal_mode === "wal") {
+        return;
+      }
+      const updated = database.prepare("PRAGMA journal_mode = WAL").get() as { journal_mode?: string } | undefined;
+      if (updated?.journal_mode === "wal") {
+        return;
+      }
+    } catch (error) {
+      const sqliteError = error as { code?: string; errcode?: number };
+      if (sqliteError.code === "ERR_SQLITE_ERROR" && sqliteError.errcode === 5 && Date.now() < deadline) {
+        Atomics.wait(sleeper, 0, 0, 10);
+        continue;
+      }
+      throw error;
+    }
+    if (Date.now() >= deadline) {
+      throw runtimeError("runtime_timeout", file, `${description} timed out enabling WAL journal mode`);
+    }
+    Atomics.wait(sleeper, 0, 0, 10);
+  }
+}
+
 function openDatabase(file: string, description: string, spec: VnextDatabaseSchema): DatabaseSync {
   checkedParent(file, description);
   const stat = lstatSync(file, { throwIfNoEntry: false });
@@ -109,6 +137,9 @@ function openDatabase(file: string, description: string, spec: VnextDatabaseSche
   let transaction = false;
   try {
     database.exec("PRAGMA busy_timeout = 5000");
+    ensureWalJournalMode(database, file, description);
+    database.exec("PRAGMA synchronous = NORMAL");
+    database.exec("PRAGMA foreign_keys = ON");
     // Inspect the schema only after serializing concurrent first-open callers.
     database.exec("BEGIN IMMEDIATE");
     transaction = true;
@@ -135,9 +166,6 @@ function openDatabase(file: string, description: string, spec: VnextDatabaseSche
     }
     database.exec("COMMIT");
     transaction = false;
-    database.exec("PRAGMA journal_mode = WAL");
-    database.exec("PRAGMA synchronous = NORMAL");
-    database.exec("PRAGMA foreign_keys = ON");
     return database;
   } catch (error) {
     if (transaction) {

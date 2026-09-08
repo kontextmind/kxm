@@ -16632,6 +16632,33 @@ function verifyExpectedTables(database, file, description, expected) {
     }
   }
 }
+function ensureWalJournalMode(database, file, description, timeoutMs = 5e3) {
+  const deadline = Date.now() + timeoutMs;
+  const sleeper = new Int32Array(new SharedArrayBuffer(4));
+  while (true) {
+    try {
+      const current = database.prepare("PRAGMA journal_mode").get();
+      if (current?.journal_mode === "wal") {
+        return;
+      }
+      const updated = database.prepare("PRAGMA journal_mode = WAL").get();
+      if (updated?.journal_mode === "wal") {
+        return;
+      }
+    } catch (error) {
+      const sqliteError = error;
+      if (sqliteError.code === "ERR_SQLITE_ERROR" && sqliteError.errcode === 5 && Date.now() < deadline) {
+        Atomics.wait(sleeper, 0, 0, 10);
+        continue;
+      }
+      throw error;
+    }
+    if (Date.now() >= deadline) {
+      throw runtimeError("runtime_timeout", file, `${description} timed out enabling WAL journal mode`);
+    }
+    Atomics.wait(sleeper, 0, 0, 10);
+  }
+}
 function openDatabase(file, description, spec) {
   checkedParent(file, description);
   const stat = lstatSync2(file, { throwIfNoEntry: false });
@@ -16650,6 +16677,9 @@ function openDatabase(file, description, spec) {
   let transaction = false;
   try {
     database.exec("PRAGMA busy_timeout = 5000");
+    ensureWalJournalMode(database, file, description);
+    database.exec("PRAGMA synchronous = NORMAL");
+    database.exec("PRAGMA foreign_keys = ON");
     database.exec("BEGIN IMMEDIATE");
     transaction = true;
     const row = database.prepare("PRAGMA user_version").get();
@@ -16675,9 +16705,6 @@ function openDatabase(file, description, spec) {
     }
     database.exec("COMMIT");
     transaction = false;
-    database.exec("PRAGMA journal_mode = WAL");
-    database.exec("PRAGMA synchronous = NORMAL");
-    database.exec("PRAGMA foreign_keys = ON");
     return database;
   } catch (error) {
     if (transaction) {
