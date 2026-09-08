@@ -32,11 +32,19 @@ export function parseJson(text: string): unknown;
 export function piProviderOf(model?: string): string | undefined;
 export function piModelId(model?: string): string | undefined;
 export function piAuthCheckArgs(request: { model: string; role: string }): string[];
+export function resolveLaunch(cliId: string, options?: {
+  platform?: NodeJS.Platform | string | undefined;
+  pathEnv?: string | undefined;
+  existsSync?: ((path: string) => boolean) | undefined;
+  realpathSync?: ((path: string) => string) | undefined;
+  execPath?: string | undefined;
+}): { command: string; args: string[] };
 export function resolveLauncher(cliId: string, options?: {
-  platform?: NodeJS.Platform | string;
-  pathEnv?: string;
-  existsSync?: (path: string) => boolean;
-  realpathSync?: (path: string) => string;
+  platform?: NodeJS.Platform | string | undefined;
+  pathEnv?: string | undefined;
+  existsSync?: ((path: string) => boolean) | undefined;
+  realpathSync?: ((path: string) => string) | undefined;
+  execPath?: string | undefined;
 }): string;
 export function unsupportedLauncherMessage(target: string, platform?: string): string;
 export function parseAuth(harness: string, stdio: {
