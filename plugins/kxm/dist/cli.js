@@ -35376,8 +35376,8 @@ function projectRuntimeKey(projectRoot) {
 function checkedParent(path5, description) {
   const parent = dirname9(path5);
   if (!existsSync15(parent)) mkdirSync13(parent, { recursive: true, mode: 448 });
-  const stat = lstatSync6(parent);
-  if (stat.isSymbolicLink() || !stat.isDirectory()) {
+  const stat = lstatSync6(parent, { throwIfNoEntry: false });
+  if (!stat || stat.isSymbolicLink() || !stat.isDirectory()) {
     throw runtimeError("runtime_path_invalid", description, `${description} parent must be a regular directory, not a link`);
   }
 }
@@ -35406,14 +35406,15 @@ function verifyExpectedTables(database, file, description, expected) {
 }
 function openDatabase(file, description, spec) {
   checkedParent(file, description);
-  if (existsSync15(file)) {
-    const stat = lstatSync6(file);
+  const stat = lstatSync6(file, { throwIfNoEntry: false });
+  if (stat) {
     if (stat.isSymbolicLink() || !stat.isFile()) {
       throw runtimeError("runtime_path_invalid", description, `${description} must be a regular file, not a link or directory`);
     }
   }
   for (const sidecar of [`${file}-wal`, `${file}-shm`]) {
-    if (existsSync15(sidecar) && lstatSync6(sidecar).isSymbolicLink()) {
+    const info = lstatSync6(sidecar, { throwIfNoEntry: false });
+    if (info?.isSymbolicLink()) {
       throw runtimeError("runtime_path_invalid", description, `${description} sidecar must not be a link`);
     }
   }
@@ -35663,8 +35664,8 @@ function vnextSupervisorTokenFile(paths) {
 }
 function readVnextSupervisorToken(paths) {
   const file = vnextSupervisorTokenFile(paths);
-  if (!existsSync16(file)) return void 0;
-  const stat = lstatSync7(file);
+  const stat = lstatSync7(file, { throwIfNoEntry: false });
+  if (!stat) return void 0;
   if (stat.isSymbolicLink() || !stat.isFile()) {
     throw runtimeError("runtime_path_invalid", file, "supervisor token file must be a regular file, not a link");
   }
@@ -35690,10 +35691,15 @@ function clearSupervisorError(paths) {
 }
 function readRecentSupervisorError(paths) {
   const file = supervisorErrorFile(paths);
-  if (!existsSync16(file)) return void 0;
-  const ageMs = Date.now() - lstatSync7(file).mtimeMs;
+  const stat = lstatSync7(file, { throwIfNoEntry: false });
+  if (!stat) return void 0;
+  const ageMs = Date.now() - stat.mtimeMs;
   if (ageMs > SUPERVISOR_ERROR_MAX_AGE_MS) return void 0;
-  return readFileSync15(file, "utf8").trim();
+  try {
+    return readFileSync15(file, "utf8").trim();
+  } catch {
+    return void 0;
+  }
 }
 function vnextSupervisorStatus(paths) {
   if (!existsSync16(paths.registryDb)) return { running: false };
