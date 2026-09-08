@@ -14990,7 +14990,7 @@ function resolveVnextTemplateBaseline(value) {
 // plugins/kxm/src/vnext-harness.ts
 import { spawnSync } from "node:child_process";
 var DEFAULT_HARNESS = "pi";
-var UNKNOWN_AUTH_HARNESSES = /* @__PURE__ */ new Set(["kimi", "gemini", "deepseek"]);
+var UNKNOWN_AUTH_HARNESSES = /* @__PURE__ */ new Set(["gemini", "deepseek"]);
 var GROK_LOGIN_LINE = "You are logged in with grok.com.";
 var AGY_MODEL_ROW = /^[a-z0-9][a-z0-9.+_-]*\t+\S/im;
 var CODEX_CHATGPT_LINE = "Logged in using ChatGPT";
@@ -15257,6 +15257,7 @@ var BUILTIN_HARNESSES = Object.freeze([
     mode: "either",
     commands: ["kimi"],
     versionArgs: ["--version"],
+    authArgs: ["provider", "list"],
     update: { self: ["upgrade"] },
     oneShot: {
       argv: ["--output-format", "stream-json", "-p"],
@@ -15440,6 +15441,18 @@ ${result.stderr}`;
       return { authenticated: false, issues: ["not_authenticated"] };
     }
     if (AGY_MODEL_ROW.test(text)) return { authenticated: true, issues: [] };
+    return { authenticated: null, issues: ["auth_unparsed"] };
+  }
+  if (id === "kimi") {
+    if (!commandSucceeded(result)) {
+      return { authenticated: false, issues: ["not_authenticated"] };
+    }
+    if (lines.some((line) => /not logged in|no provider/i.test(line))) {
+      return { authenticated: false, issues: ["not_authenticated"] };
+    }
+    if (lines.some((line) => line.includes("managed:kimi") || line.includes("type=kimi") || line.includes("Default model:"))) {
+      return { authenticated: true, issues: [] };
+    }
     return { authenticated: null, issues: ["auth_unparsed"] };
   }
   return { authenticated: null, issues: ["auth_unparsed"] };
@@ -16669,6 +16682,19 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
   if (hasBackEdge && typeof objectValue(workflow.value.limits)?.maxTransitions !== "number") {
     issues.push(issue("semantic", "workflow_cycle_unbounded", file, "workflow with back-edges requires limits.maxTransitions"));
   }
+  const readyIndex = stepIndex.get("ready");
+  const verifyIndex = stepIndex.get("verify");
+  if (readyIndex !== void 0 && verifyIndex !== void 0) {
+    const verifyTargets = adjacency[verifyIndex] ?? /* @__PURE__ */ new Set();
+    if (!verifyTargets.has(readyIndex)) {
+      issues.push(issue("semantic", "verify_must_precede_ready", file, "verify must transition to ready"));
+    }
+    for (const [srcIndex, targets] of adjacency.entries()) {
+      if (targets.has(readyIndex) && srcIndex !== verifyIndex) {
+        issues.push(issue("semantic", "verify_must_precede_ready", file, `step ${String(steps[srcIndex]?.id)} transitions to ready bypassing verify`));
+      }
+    }
+  }
   if (steps.length > 0) {
     const reachable = /* @__PURE__ */ new Set([0]);
     const queue = [0];
@@ -16791,7 +16817,18 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
     for (const repositoryId of Object.keys(objectValue(agent.value.repositories) ?? {})) {
       if (!repositoryIds.has(repositoryId)) issues.push(issue("reference", "repository_unknown", agent.logicalPath, `references unknown repository ${repositoryId}`));
     }
-    selectorCandidates(agent.value.model, models, agent.logicalPath, "model", issues);
+    const candidates = selectorCandidates(agent.value.model, models, agent.logicalPath, "model", issues);
+    const declaredHarness = stringValue(agent.value.harness);
+    if (declaredHarness && harnesses.has(declaredHarness)) {
+      for (const candidate of candidates) {
+        const candidateProvider = stringValue(candidate.value.provider);
+        const candidateModel = stringValue(candidate.value.model);
+        const validation = validateHarnessModelPair(declaredHarness, { provider: candidateProvider, model: candidateModel });
+        if (!validation.valid) {
+          issues.push(issue("semantic", validation.issue ?? "harness_unhosted_model", agent.logicalPath, validation.message ?? `harness ${declaredHarness} cannot host model ${candidateModel ?? candidate.logicalPath}`));
+        }
+      }
+    }
   }
   validateModelReferences(models, issues);
   const defaultWorkflow = stringValue(project.value.defaultWorkflow) ?? "default";

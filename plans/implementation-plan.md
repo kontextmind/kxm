@@ -803,12 +803,11 @@ It does not replace the phase gates below.
   does not detect it.
 - Non-Pi dispatch adapters (Phase 11). Listing a harness does not execute it.
   The `scripts/harness-run.mjs` dev helper is not that adapter.
-- **Issue 84 remainder:** Kimi read-only auth-status probe: no non-mutating
-  CLI status command found. Managed provider status requires the server API,
-  which this slice does not start. Deferred, named probe. Verify-before-ready
-  execution enforcement is a Phase 3 engine gate, not this auth/inventory
-  slice. Unhosted harness/model pair rejection lands in the Phase 4 assignment
-  layer (and Phase 11 adapters). Do not treat B3 as blanket-complete.
+- **Issue 84 completed (B3):** Kimi read-only auth-status probe uses official
+  non-mutating `kimi provider list` CLI command; unhosted harness/model pair rejection
+  is enforced in `vnext-config.ts` agent validation; verify precedes ready is
+  enforced in workflow validation and loop rule tests; `kxm harness list` reports
+  status for pi, claude, codex, kimi; gemini and deepseek report unknown.
 - No `types` export condition until declaration emit exists.
 - MCP factory API waits for a second consumer (D13); `./mcp` stays an
   executable path.

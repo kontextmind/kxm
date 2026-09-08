@@ -94,7 +94,7 @@ test("eligibility selection over an inventory returns only authenticated harness
 
   // Unknown and null are never eligible; fails closed on empty set
   const emptyInventory = {
-    defaultHarness: DEFAULT_HARNESS,
+    defaultHarness: DEFAULT_HARNESS as typeof DEFAULT_HARNESS,
     harnesses: [geminiStatus!, deepseekStatus!],
   };
   assert.throws(() => eligibleHarnesses(emptyInventory), /no_authenticated_harness/);
