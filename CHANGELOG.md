@@ -6,6 +6,13 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Added
 
+- **Database backup, restore, and migrations (E6, issue #102):** Unified SQLite
+  lifecycle via `openDatabase` with fail-closed schema checks, WAL journal mode with
+  retry loop, busy timeout, and transaction helper with a nesting guard. Stepwise
+  legacy migrations for `MeshStore` (v1 -> v2, v2 -> v3) replace unconditional version
+  stamping. Added `kxm backup [--out <dir>]` and `kxm restore <manifest>` utilizing
+  SQLite's backup API (`VACUUM INTO`), WAL checkpoint, PRAGMA integrity checks, and
+  hashed manifest generation (`kxm.backup-manifest.v1`).
 - **Harness-agnostic Git memory (E5b, issue #101):** Project memory authored in
   `.kxm/memory/` using schema `kxm.memory.v1` with YAML frontmatter. Memory notes
   recorded to `.kxm/memory/candidates/` with evidence authority, promoted exclusively

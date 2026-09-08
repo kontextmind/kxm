@@ -34,6 +34,7 @@ const createRequire = "import { createRequire as __kxmCreateRequire } from 'node
 // unsupported in ESM output; provide createRequire for every runtime bundle.
 for (const bundlePath of [
   "plugins/kxm/dist/cli.js",
+  "plugins/kxm/dist/server.js",
   "plugins/kxm/dist/vnext-runtime-supervisor.js",
 ]) {
   const bundled = readFileSync(bundlePath, "utf8");

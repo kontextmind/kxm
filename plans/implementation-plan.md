@@ -193,6 +193,19 @@ It does not replace the phase gates below.
 
 ### Landed in this tree (unreleased)
 
+- **E6 backup, restore, migrations (issue #102):** Implemented database rules and
+  lifecycle commands per Decision D11. Created `plugins/kxm/src/database.ts` providing
+  a shared `openDatabase` helper enforcing WAL journal mode with retry, `busy_timeout`
+  (5000ms), `synchronous = NORMAL`, `foreign_keys = ON`, `BEGIN IMMEDIATE` serialization,
+  and fail-closed `user_version` inspection across all SQLite stores (`MeshStore`,
+  `VnextRuntimeRegistry`, `VnextRunEventStore`). Implemented `withDatabaseTransaction`
+  featuring an active-transaction nesting guard. Implemented stepwise legacy migrations
+  (v1 -> v2, v2 -> v3) replacing the unconditional version stamp, ensuring a v2 fixture
+  migrates to v3 or is refused without ever being silently relabelled. Implemented
+  `kxm backup [--out <dir>]` and `kxm restore <manifest>` using SQLite's backup API
+  (`VACUUM INTO`) with WAL checkpoint (`TRUNCATE`), PRAGMA integrity checks before and
+  after backup/restore, schema version stamping, and hashed manifest generation
+  (`kxm.backup-manifest.v1` schema). Verified with `test/core/e6-backup-restore-migrations.test.ts`.
 - **E5b harness-agnostic memory (issue #101):** KXM owns project memory in Git
   (`.kxm/memory/`) with schema `kxm.memory.v1` and YAML frontmatter (`id`, `scope`,
   `kind`, `summary`, `provenance`, `authority`, `confidence`, `lifecycle`,
