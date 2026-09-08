@@ -19609,6 +19609,16 @@ function vnextAttemptControllers(storePath, runId) {
   if (!runAttempts) return [];
   return [...runAttempts.values()];
 }
+function unregisterVnextAttemptController(storePath, runId, attemptId) {
+  const owner = owners.get(storePath);
+  if (!owner) return;
+  const runAttempts = owner.attempts.get(runId);
+  if (!runAttempts) return;
+  if (!runAttempts.has(attemptId)) return;
+  runAttempts.delete(attemptId);
+  if (runAttempts.size === 0) owner.attempts.delete(runId);
+  maybeDelete(storePath, owner);
+}
 function admitVnextRun(storePath, runId, envelopeRevision, envelopeBound) {
   const owner = record(storePath);
   if (owner.admitted.has(runId)) {
@@ -20105,6 +20115,107 @@ import { chmodSync, existsSync as existsSync3, lstatSync as lstatSync3, mkdirSyn
 import { createServer } from "node:http";
 import { dirname as dirname4, isAbsolute as isAbsolute3, join as join5, resolve as resolve4 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
+
+// plugins/kxm/src/vnext-engine.ts
+function requireRun(context, runId) {
+  const run = context.eventStore.run(runId);
+  if (!run) throw runtimeError("run_unknown", runId, "run does not exist in this event store");
+  if (run.projectId !== context.projectId || run.homeRuntimeId !== context.homeRuntimeId) {
+    throw runtimeError("run_owner_mismatch", runId, "run is not owned by this runtime context");
+  }
+  return run;
+}
+function recoverVnextRun(context, runId, request) {
+  return context.eventStore.transaction(() => {
+    const run = requireRun(context, runId);
+    let state = foldStoredVnextRun(context, run);
+    if (state.status !== "blocked_uncertain" && state.currentStep?.effectState !== "blocked_uncertain") {
+      throw runtimeError("run_events_illegal", runId, `run ${runId} is not in blocked_uncertain status`);
+    }
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    let sequence = context.eventStore.nextSequence(runId);
+    let mono = vnextMonotonicNs();
+    const events = [];
+    const push = (eventType, payload) => {
+      events.push({
+        ...vnextEventBase(context, run, now, mono, request.commandId),
+        eventId: newVnextEventId(),
+        eventType,
+        sequence: sequence++,
+        payload
+      });
+      mono = vnextIncrementMonotonicNs(mono);
+    };
+    if (state.status === "running" && state.currentStep?.effectState === "blocked_uncertain") {
+      push("run.status_changed", {
+        status: "blocked_uncertain",
+        previousStatus: "running",
+        reason: request.reason ?? "uncertain gate effect"
+      });
+      for (const ev of events) context.eventStore.appendEvent(ev);
+      events.length = 0;
+      state = foldStoredVnextRun(context, run);
+      context.eventStore.updateRunStatus(runId, "blocked_uncertain", now);
+    }
+    const attemptId = state.currentStep?.attemptId;
+    if (attemptId) {
+      resolveVnextGateHold(context.eventStore.path, runId, attemptId);
+      unregisterVnextAttemptController(context.eventStore.path, runId, attemptId);
+      const cap = context.eventStore.capabilityByAttempt(attemptId);
+      if (cap && cap.state !== "settled") {
+        context.eventStore.settleCapability(attemptId, "settled");
+      }
+    }
+    if (request.action === "retry" || request.action === "unblock") {
+      push("run.status_changed", {
+        status: "running",
+        previousStatus: "blocked_uncertain",
+        reason: request.reason ?? "operator_retry"
+      });
+      for (const ev of events) context.eventStore.appendEvent(ev);
+      const nextState = foldStoredVnextRun(context, run);
+      persistVnextRunState(context, runId, nextState, events[events.length - 1].sequence);
+      context.eventStore.updateRunStatus(runId, "running", now);
+      return { state: nextState, unblocked: true };
+    }
+    if (request.action === "fail") {
+      push("run.status_changed", {
+        status: "failed",
+        previousStatus: "blocked_uncertain",
+        reason: request.reason ?? "operator_fail"
+      });
+      for (const ev of events) context.eventStore.appendEvent(ev);
+      const nextState = foldStoredVnextRun(context, run);
+      persistVnextRunState(context, runId, nextState, events[events.length - 1].sequence);
+      context.eventStore.updateRunStatus(runId, "failed", now);
+      return { state: nextState, unblocked: true };
+    }
+    if (request.action === "cancel") {
+      push("run.cancel_requested", {
+        actor: { kind: "runtime", id: context.homeRuntimeId },
+        reason: request.reason ?? "operator_cancel"
+      });
+      push("run.status_changed", {
+        status: "cancelling",
+        previousStatus: "blocked_uncertain",
+        reason: request.reason ?? "operator_cancel"
+      });
+      push("run.status_changed", {
+        status: "cancelled",
+        previousStatus: "cancelling",
+        reason: request.reason ?? "operator_cancel"
+      });
+      for (const ev of events) context.eventStore.appendEvent(ev);
+      const nextState = foldStoredVnextRun(context, run);
+      persistVnextRunState(context, runId, nextState, events[events.length - 1].sequence);
+      context.eventStore.updateRunStatus(runId, "cancelled", now);
+      return { state: nextState, unblocked: true };
+    }
+    throw runtimeError("run_events_illegal", runId, `unsupported recovery action ${request.action}`);
+  });
+}
+
+// plugins/kxm/src/vnext-runtime-supervisor.ts
 var repoRoot = resolve4(fileURLToPath2(new URL("../../../", import.meta.url)));
 function vnextSupervisorTokenFile(paths) {
   return join5(paths.runtimeDir, "supervisor.token");
@@ -20386,7 +20497,7 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
           });
           return;
         }
-        const runMatch = /^\/v1\/runs\/([A-Za-z0-9_-]+)(?:\/(events|cancel))?$/.exec(url.pathname);
+        const runMatch = /^\/v1\/runs\/([A-Za-z0-9_-]+)(?:\/(events|cancel|signal|wait))?$/.exec(url.pathname);
         if (runMatch) {
           const runId = runMatch[1];
           const sub = runMatch[2];
@@ -20413,6 +20524,29 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
               ...typeof body.commandId === "string" && body.commandId.length > 0 ? { commandId: body.commandId } : {}
             });
             sendJson(response, 200, { ok: true, idempotent: result.idempotent, run: result.run, events: result.events });
+            return;
+          }
+          if (request.method === "POST" && sub === "signal") {
+            const body = await readJsonBody(request);
+            const run = context.eventStore.run(runId);
+            if (!run) throw runtimeError("run_unknown", runId, "run not found");
+            const state = foldStoredVnextRun(context, run);
+            let unblocked = false;
+            if (state.status === "blocked_uncertain" || state.currentStep?.effectState === "blocked_uncertain") {
+              const rec = recoverVnextRun(context, runId, {
+                action: "unblock",
+                reason: typeof body.summary === "string" ? body.summary : `signal_${body.signalKey ?? "callback"}`
+              });
+              unblocked = rec.unblocked;
+            }
+            sendJson(response, 200, { ok: true, runId, signalKey: body.signalKey, status: body.status, unblocked });
+            return;
+          }
+          if (request.method === "POST" && sub === "wait") {
+            const body = await readJsonBody(request);
+            const run = context.eventStore.run(runId);
+            if (!run) throw runtimeError("run_unknown", runId, "run not found");
+            sendJson(response, 200, { ok: true, runId, stageId: body.stageId, signalKey: body.signalKey, waiting: true });
             return;
           }
         }

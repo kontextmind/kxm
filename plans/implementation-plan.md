@@ -193,6 +193,21 @@ It does not replace the phase gates below.
 
 ### Landed in this tree (unreleased)
 
+- **D6 agent CLI surface (issue #92):** Centralized 19 agent commands in
+  `plugins/kxm/src/commands.ts` as the single source of truth for parameter
+  schemas, command metadata, and execution over `HubClient`; eliminated
+  duplicated TypeBox definitions in `plugins/kxm/src/extension.ts` and tool tables
+  in `plugins/kxm/src/mcp-server.ts`; generated `kxm peer` subcommands (`list`,
+  `send`, `get`, `await`, `cancel`, `fanout`, `inbox`, `reply`) and `kxm workflow`
+  subcommands (`checkpoint`, `record`, `wait`, `signal`) with `--json` outputs;
+  enforced tool policy via engine-issued `KXM_ATTEMPT_TOKEN` and session-issued
+  `KXM_SESSION_TOKEN`, failing closed on denied commands with
+  `tool_policy_denied`; strictly capped `peer await` at 60s in both parameter
+  schema and execution; bound `workflow wait` and `signal` to vNext runs and
+  supervisor; added drift assertions across CLI, MCP, and Pi surfaces
+  (`test/commands-drift.test.ts`), policy tests (`test/commands-policy.test.ts`),
+  and rewrote `plugins/kxm/skills/kxm/SKILL.md` to teach CLI commands with zero
+  `mesh_` and zero MCP-only instructions.
 - **D5 routing records v2 and price catalog (issue #91):** defined
   `kxm.routing-record.v2` contract in `plugins/kxm/src/routing.ts` and updated
   schemas `schemas/vnext/common.schema.json` and

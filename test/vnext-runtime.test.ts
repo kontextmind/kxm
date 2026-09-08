@@ -260,6 +260,20 @@ test("supervisor lifecycle: start, API, auth, runs, graceful stop", async () => 
     const events = await vnextRuntimeRequest(handle, "GET", `/v1/runs/${run.runId}/events?projectRoot=${encodeURIComponent(root)}`);
     assert.equal((events.events as unknown[]).length, 1);
 
+    const wait = await vnextRuntimeRequest(handle, "POST", `/v1/runs/${run.runId}/wait?projectRoot=${encodeURIComponent(root)}`, {
+      stageId: "stage-1",
+      signalKey: "sig-1",
+    }) as { ok: boolean; waiting: boolean };
+    assert.equal(wait.ok, true);
+    assert.equal(wait.waiting, true);
+
+    const signal = await vnextRuntimeRequest(handle, "POST", `/v1/runs/${run.runId}/signal?projectRoot=${encodeURIComponent(root)}`, {
+      signalKey: "sig-1",
+      status: "passed",
+      summary: "signal complete",
+    }) as { ok: boolean; unblocked: boolean };
+    assert.equal(signal.ok, true);
+
     const cancel = await vnextRuntimeRequest(handle, "POST", `/v1/runs/${run.runId}/cancel?projectRoot=${encodeURIComponent(root)}`, {});
     assert.equal((cancel.run as { status: string }).status, "cancelled");
 

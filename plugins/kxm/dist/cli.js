@@ -14777,7 +14777,7 @@ var require_dist = __commonJS({
 
 // plugins/kxm/src/cli.ts
 import { spawn as spawn2, spawnSync as spawnSync6 } from "node:child_process";
-import { createHash as createHash10, createHmac as createHmac3, randomUUID as randomUUID6 } from "node:crypto";
+import { createHash as createHash11, createHmac as createHmac3, randomUUID as randomUUID7 } from "node:crypto";
 import { existsSync as existsSync16, mkdirSync as mkdirSync15, mkdtempSync as mkdtempSync2, readFileSync as readFileSync15, readdirSync as readdirSync5, rmSync as rmSync8, writeFileSync as writeFileSync13 } from "node:fs";
 import { homedir as homedir3, tmpdir as tmpdir2 } from "node:os";
 import { basename as basename3, dirname as dirname11, join as join23, resolve as resolve11 } from "node:path";
@@ -35129,6 +35129,1219 @@ async function vnextRuntimeRequest(handle, method, path5, body) {
   return payload;
 }
 
+// plugins/kxm/src/client.ts
+import { createHash as createHash10 } from "node:crypto";
+var MeshWaitError = class extends Error {
+  waitStatus;
+  constructor(waitStatus, messageId) {
+    super(waitStatus === "aborted" ? "await cancelled" : `timed out waiting for ${messageId}`);
+    this.name = "MeshWaitError";
+    this.waitStatus = waitStatus;
+  }
+};
+function completedFanoutResult(target, message) {
+  if (message.status === "queued" || message.status === "delivered") {
+    throw new Error(`message ${message.id} is not complete`);
+  }
+  return {
+    target,
+    messageId: message.id,
+    status: message.status,
+    ...message.reply ? { reply: message.reply.content } : {},
+    ...message.error ? { error: message.error } : {}
+  };
+}
+function fanoutIdempotencyKey(prefix, target, correlationId, workflowContext) {
+  const scope = JSON.stringify(workflowContext ? {
+    prefix,
+    correlationId: correlationId ?? null,
+    target: target.toLowerCase(),
+    workflowContext: {
+      runId: workflowContext.runId,
+      stageId: workflowContext.stageId,
+      requirementKey: canonicalWorkflowEvidenceKey(workflowContext.requirementKey),
+      attempt: workflowContext.attempt
+    }
+  } : {
+    prefix,
+    correlationId: correlationId ?? null,
+    target: target.toLowerCase()
+  });
+  return `fanout:${createHash10("sha256").update(scope).digest("hex")}`;
+}
+var HubHttpError = class extends Error {
+  statusCode;
+  code;
+  requestId;
+  extras;
+  constructor(statusCode, message, code, requestId, extras) {
+    super(message);
+    this.name = "HubHttpError";
+    this.statusCode = statusCode;
+    if (code) this.code = code;
+    if (requestId) this.requestId = requestId;
+    if (extras) this.extras = extras;
+  }
+};
+var HubClient = class {
+  options;
+  agent;
+  agentKey;
+  heartbeatTimer;
+  eventsAbort;
+  stopped = true;
+  onEvent;
+  registration;
+  eventLoop;
+  constructor(options) {
+    this.options = { heartbeatMs: 1e4, reconnectMs: 1e3, requestTimeoutMs: 15e3, ...options };
+  }
+  async start(onEvent) {
+    if (!this.stopped) throw new Error("hub client is already started");
+    this.stopped = false;
+    this.onEvent = onEvent;
+    try {
+      await this.register();
+    } catch (error) {
+      this.stopped = true;
+      throw error;
+    }
+    this.heartbeatTimer = setInterval(() => void this.heartbeat(), this.options.heartbeatMs);
+    this.heartbeatTimer.unref();
+    this.eventLoop = this.runEventLoop();
+    return this.agent;
+  }
+  async stop() {
+    if (this.stopped) return;
+    this.stopped = true;
+    this.eventsAbort?.abort();
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    await this.eventLoop;
+    if (this.agent) {
+      try {
+        await this.request(`/v1/agents/${encodeURIComponent(this.agent.id)}`, { method: "DELETE" });
+      } catch {
+      }
+    }
+    this.agent = void 0;
+    this.agentKey = void 0;
+    this.onEvent = void 0;
+    this.eventLoop = void 0;
+  }
+  async listAgents() {
+    const result = await this.request("/v1/agents");
+    return result.agents;
+  }
+  async send(options) {
+    const result = await this.request("/v1/messages", {
+      method: "POST",
+      body: JSON.stringify(options)
+    });
+    return result.message;
+  }
+  async fanout(options) {
+    const targets = [...new Set(options.targets.map((target) => target.trim().toLowerCase()).filter(Boolean))];
+    if (targets.length < 1 || targets.length > 3) throw new Error("fanout requires between one and three unique targets");
+    return await Promise.all(targets.map(async (target) => {
+      let message;
+      try {
+        message = await this.send({
+          target,
+          content: options.content,
+          delivery: "followUp",
+          ...options.correlationId ? { correlationId: options.correlationId } : {},
+          ...options.workflowContext ? { workflowContext: options.workflowContext } : {},
+          ...options.idempotencyKeyPrefix ? {
+            idempotencyKey: fanoutIdempotencyKey(
+              options.idempotencyKeyPrefix,
+              target,
+              options.correlationId,
+              options.workflowContext
+            )
+          } : {},
+          ...options.ttlMs ? { ttlMs: options.ttlMs } : {}
+        });
+        const completed = await this.awaitResponse(
+          message.id,
+          options.timeoutMs ?? 30 * 6e4,
+          options.signal
+        );
+        return completedFanoutResult(target, completed);
+      } catch (error) {
+        if (message && error instanceof MeshWaitError) {
+          try {
+            const current = await this.getMessage(message.id);
+            if (current.status === "queued" || current.status === "delivered") {
+              return {
+                target,
+                messageId: current.id,
+                status: "pending",
+                messageStatus: current.status,
+                expiresAt: current.expiresAt,
+                waitStatus: error.waitStatus
+              };
+            }
+            return completedFanoutResult(target, current);
+          } catch (finalError) {
+            return {
+              target,
+              messageId: message.id,
+              status: "error",
+              error: finalError instanceof Error ? finalError.message : String(finalError)
+            };
+          }
+        }
+        return {
+          target,
+          ...message ? { messageId: message.id } : {},
+          status: "error",
+          error: error instanceof Error ? error.message : String(error)
+        };
+      }
+    }));
+  }
+  async getMessage(messageId) {
+    const result = await this.request(`/v1/messages/${encodeURIComponent(messageId)}`);
+    return result.message;
+  }
+  async acknowledge(messageId) {
+    const result = await this.request(
+      `/v1/messages/${encodeURIComponent(messageId)}/ack`,
+      { method: "POST", body: "{}" }
+    );
+    return result.message;
+  }
+  async reply(messageId, content) {
+    const result = await this.request(
+      `/v1/messages/${encodeURIComponent(messageId)}/reply`,
+      { method: "POST", body: JSON.stringify({ content }) }
+    );
+    return result.message;
+  }
+  async cancel(messageId) {
+    const result = await this.request(
+      `/v1/messages/${encodeURIComponent(messageId)}`,
+      { method: "DELETE" }
+    );
+    return result.message;
+  }
+  async listWorkflows() {
+    const result = await this.request("/v1/workflows");
+    return result.runs;
+  }
+  async getWorkflow(runId) {
+    return await this.request(`/v1/workflows/${encodeURIComponent(runId)}`);
+  }
+  async checkpointWorkflow(runId, input) {
+    return await this.request(`/v1/workflows/${encodeURIComponent(runId)}/checkpoints`, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  }
+  async waitForWorkflowSignal(runId, input) {
+    return await this.request(`/v1/workflows/${encodeURIComponent(runId)}/waits`, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  }
+  async recordWorkflowEntry(runId, input) {
+    const result = await this.request(
+      `/v1/workflows/${encodeURIComponent(runId)}/journal`,
+      { method: "POST", body: JSON.stringify(input) }
+    );
+    return result.entry;
+  }
+  async improvementReport() {
+    return await this.request("/v1/improvements");
+  }
+  // ----- Context operating-system API (v0.5, issue #34) -----
+  async contextGet(input) {
+    return await this.request("/v1/context/get", { method: "POST", body: JSON.stringify(input) });
+  }
+  async contextRecall(input) {
+    return await this.request("/v1/context/recall", { method: "POST", body: JSON.stringify(input) });
+  }
+  async contextState(input) {
+    return await this.request("/v1/context/state", { method: "POST", body: JSON.stringify(input) });
+  }
+  async contextStatePropose(input) {
+    return await this.request("/v1/context/state/propose", { method: "POST", body: JSON.stringify(input) });
+  }
+  async contextStatePromote(input) {
+    return await this.request("/v1/context/state/promote", { method: "POST", body: JSON.stringify(input) });
+  }
+  async contextEpisode(input) {
+    return await this.request("/v1/context/episode", { method: "POST", body: JSON.stringify(input) });
+  }
+  async contextExplain(input) {
+    return await this.request("/v1/context/explain", { method: "POST", body: JSON.stringify(input) });
+  }
+  async contextWikiCompile(input) {
+    return await this.request("/v1/context/wiki/compile", { method: "POST", body: JSON.stringify(input) });
+  }
+  async awaitResponse(messageId, timeoutMs = 30 * 6e4, signal) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (signal?.aborted) throw new MeshWaitError("aborted", messageId);
+      const message = await this.getMessage(messageId);
+      if (["replied", "cancelled", "expired", "error"].includes(message.status)) return message;
+      await new Promise((resolve12, reject) => {
+        const onAbort = () => {
+          signal?.removeEventListener("abort", onAbort);
+          clearTimeout(timer);
+          reject(new MeshWaitError("aborted", messageId));
+        };
+        const timer = setTimeout(() => {
+          signal?.removeEventListener("abort", onAbort);
+          resolve12();
+        }, Math.min(500, Math.max(1, deadline - Date.now())));
+        signal?.addEventListener("abort", onAbort, { once: true });
+        if (signal?.aborted) onAbort();
+        timer.unref();
+      });
+    }
+    throw new MeshWaitError("timed_out", messageId);
+  }
+  async heartbeat() {
+    if (this.stopped || !this.agent) return;
+    try {
+      await this.request(`/v1/agents/${encodeURIComponent(this.agent.id)}/heartbeat`, {
+        method: "POST",
+        body: "{}"
+      });
+    } catch (error) {
+      if (error instanceof HubHttpError && error.statusCode === 401) void this.recoverRegistration();
+    }
+  }
+  async runEventLoop() {
+    while (!this.stopped && this.agent) {
+      this.eventsAbort = new AbortController();
+      try {
+        const response = await fetch(
+          `${this.options.serverUrl.replace(/\/$/, "")}/v1/events?agentId=${encodeURIComponent(this.agent.id)}`,
+          {
+            headers: this.headers(),
+            signal: this.eventsAbort.signal
+          }
+        );
+        if (response.status === 401) {
+          await response.body?.cancel();
+          await this.recoverRegistration();
+          continue;
+        }
+        if (!response.ok || !response.body) throw new Error(`event stream failed with HTTP ${response.status}`);
+        const decoder = new TextDecoder();
+        let buffer = "";
+        for await (const chunk of response.body) {
+          if (this.stopped) break;
+          buffer += decoder.decode(chunk, { stream: true }).replaceAll("\r\n", "\n");
+          let boundary;
+          while ((boundary = buffer.indexOf("\n\n")) >= 0) {
+            const frame = buffer.slice(0, boundary);
+            buffer = buffer.slice(boundary + 2);
+            const data = frame.split("\n").filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart()).join("\n");
+            if (!data) continue;
+            const parsed = JSON.parse(data);
+            if ("type" in parsed) await this.onEvent?.(parsed);
+          }
+        }
+      } catch (error) {
+        if (this.stopped || error instanceof Error && error.name === "AbortError") return;
+      }
+      if (!this.stopped) await new Promise((resolve12) => setTimeout(resolve12, this.options.reconnectMs));
+    }
+  }
+  headers(includeIdentity = true) {
+    const headers = { "content-type": "application/json" };
+    if (this.options.authToken) headers.authorization = `Bearer ${this.options.authToken}`;
+    if (includeIdentity && this.agent && this.agentKey) {
+      headers["x-kxm-agent-id"] = this.agent.id;
+      headers["x-kxm-agent-key"] = this.agentKey;
+    }
+    return headers;
+  }
+  async register() {
+    if (this.registration) return this.registration;
+    this.registration = (async () => {
+      const registration = await this.request("/v1/agents/register", {
+        method: "POST",
+        body: JSON.stringify({
+          name: this.options.name,
+          purpose: this.options.purpose,
+          project: this.options.project,
+          model: this.options.model
+        })
+      }, false);
+      this.agent = registration.agent;
+      this.agentKey = registration.agentKey;
+      return registration.agent;
+    })();
+    try {
+      return await this.registration;
+    } finally {
+      this.registration = void 0;
+    }
+  }
+  async recoverRegistration() {
+    if (this.stopped) return;
+    this.agent = void 0;
+    this.agentKey = void 0;
+    await this.register();
+  }
+  async request(path5, init = {}, includeIdentity = true) {
+    const requestTimeoutMs = this.options.requestTimeoutMs ?? 15e3;
+    const timeoutSignal = AbortSignal.timeout(requestTimeoutMs);
+    const signal = init.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal;
+    let response;
+    try {
+      response = await fetch(`${this.options.serverUrl.replace(/\/$/, "")}${path5}`, {
+        ...init,
+        signal,
+        headers: { ...this.headers(includeIdentity), ...init.headers ?? {} }
+      });
+    } catch (error) {
+      if (timeoutSignal.aborted) throw new Error(`request timed out after ${requestTimeoutMs}ms`);
+      throw error;
+    }
+    const text = await response.text();
+    let body = {};
+    if (text) {
+      try {
+        body = JSON.parse(text);
+      } catch {
+        throw new Error(`hub returned invalid JSON with HTTP ${response.status}`);
+      }
+    }
+    if (!response.ok) {
+      const extras = {};
+      for (const key of ["operation", "nextAction", "assignedCoordinatorName"]) {
+        if (typeof body[key] === "string") extras[key] = body[key];
+      }
+      throw new HubHttpError(
+        response.status,
+        String(body.error ?? `HTTP ${response.status}`),
+        typeof body.code === "string" ? body.code : void 0,
+        response.headers.get("x-request-id") ?? void 0,
+        Object.keys(extras).length > 0 ? extras : void 0
+      );
+    }
+    return body;
+  }
+};
+
+// plugins/kxm/src/commands.ts
+import { randomUUID as randomUUID6 } from "node:crypto";
+function requiredString(value, name) {
+  if (typeof value !== "string" || value.trim() === "") throw new Error(`${name} is required`);
+  return value.trim();
+}
+function optionalString(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : void 0;
+}
+function asRecord2(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+function optionalWorkflowContext(value) {
+  if (value === void 0) return void 0;
+  const context = asRecord2(value);
+  if (!Number.isInteger(context.attempt) || context.attempt < 1 || context.attempt > 20) {
+    throw new Error("workflowContext.attempt must be an integer between 1 and 20");
+  }
+  return {
+    runId: requiredString(context.runId, "workflowContext.runId"),
+    stageId: requiredString(context.stageId, "workflowContext.stageId"),
+    requirementKey: requiredString(context.requirementKey, "workflowContext.requirementKey"),
+    attempt: context.attempt
+  };
+}
+function optionalEvidenceRefs(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : void 0;
+}
+function isTerminalMessageError(error) {
+  return error instanceof HubHttpError && (error.statusCode === 409 || error.statusCode === 404 && error.code === "message_not_found");
+}
+function isTerminalMessage(message) {
+  return message.status === "replied" || message.status === "cancelled" || message.status === "expired" || message.status === "error";
+}
+async function reconcileInbox(client, inbox, notifiedInbox) {
+  await Promise.all(
+    [...inbox.keys()].map(async (messageId) => {
+      try {
+        const current = await client.getMessage(messageId);
+        if (isTerminalMessage(current)) {
+          inbox.delete(messageId);
+          notifiedInbox?.delete(messageId);
+        } else {
+          inbox.set(messageId, current);
+        }
+      } catch (error) {
+        if (isTerminalMessageError(error)) {
+          inbox.delete(messageId);
+          notifiedInbox?.delete(messageId);
+          return;
+        }
+        throw error;
+      }
+    })
+  );
+}
+function resolveProject(client, projectArg) {
+  const proj = optionalString(projectArg) ?? client.agent?.project;
+  if (!proj) {
+    throw new Error('missing required parameter "project"');
+  }
+  return proj;
+}
+var AGENT_COMMANDS = [
+  {
+    name: "kxm_list",
+    group: "peer",
+    verb: "list",
+    label: "List hub peers",
+    description: "List online peer agents in this project's hub pool, including their names and purposes.",
+    parameters: {
+      type: "object",
+      properties: {},
+      additionalProperties: false
+    },
+    async execute(client) {
+      return { agents: await client.listAgents() };
+    }
+  },
+  {
+    name: "kxm_send",
+    group: "peer",
+    verb: "send",
+    label: "Send peer request",
+    description: "Send a focused request to a peer agent. Returns a message ID for kxm_get or kxm_await. For durable peer evidence, workflowContext is the hub-authorized provenance scope; correlation and idempotency are transport concerns and do not establish evidence provenance.",
+    parameters: {
+      type: "object",
+      properties: {
+        target: { type: "string", description: "Peer name or agent ID" },
+        content: { type: "string", description: "Focused request with the expected response or artifact" },
+        delivery: {
+          type: "string",
+          enum: ["steer", "followUp", "nextTurn"],
+          default: "followUp",
+          description: "followUp is the safe default; use steer only for active blockers"
+        },
+        correlationId: {
+          type: "string",
+          description: "Optional task grouping; the hub binds it to runId when workflowContext is supplied"
+        },
+        idempotencyKey: {
+          type: "string",
+          description: "Retry/deduplication key only; not a workflow security or evidence binding"
+        },
+        workflowContext: {
+          type: "object",
+          description: "Requested provenance scope; the hub authorizes and persists the canonical binding",
+          properties: {
+            runId: { type: "string", description: "Active durable workflow run ID" },
+            stageId: { type: "string", description: "Active workflow stage ID" },
+            requirementKey: { type: "string", description: "Required evidence identity this peer reply may satisfy" },
+            attempt: { type: "integer", minimum: 1, maximum: 20, description: "Current one-based stage attempt" }
+          },
+          required: ["runId", "stageId", "requirementKey", "attempt"],
+          additionalProperties: false
+        },
+        ttlMs: { type: "number", minimum: 1e3, maximum: 6048e5, description: "Message TTL in milliseconds" }
+      },
+      required: ["target", "content"],
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      const delivery = optionalString(args.delivery);
+      const correlationId = optionalString(args.correlationId);
+      const idempotencyKey = optionalString(args.idempotencyKey);
+      const workflowContext = optionalWorkflowContext(args.workflowContext);
+      const message = await client.send({
+        target: requiredString(args.target, "target"),
+        content: requiredString(args.content, "content"),
+        ...delivery ? { delivery } : {},
+        ...correlationId ? { correlationId } : {},
+        ...idempotencyKey ? { idempotencyKey } : {},
+        ...workflowContext ? { workflowContext } : {},
+        ...typeof args.ttlMs === "number" ? { ttlMs: args.ttlMs } : {}
+      });
+      return { messageId: message.id, status: message.status, target: message.toName };
+    }
+  },
+  {
+    name: "kxm_get",
+    group: "peer",
+    verb: "get",
+    label: "Get peer request",
+    description: "Check the status and optional reply for a previously sent request.",
+    parameters: {
+      type: "object",
+      properties: {
+        messageId: { type: "string", description: "Message ID of the sent request" }
+      },
+      required: ["messageId"],
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.getMessage(requiredString(args.messageId, "messageId"));
+    }
+  },
+  {
+    name: "kxm_fanout",
+    group: "peer",
+    verb: "fanout",
+    label: "Fanout peer requests",
+    description: "Ask one through three peers independently and return replies for comparison and synthesis. A local timeout or request cancellation returns a pending response with a durable messageId for kxm_get or an exact retry.",
+    parameters: {
+      type: "object",
+      properties: {
+        targets: {
+          type: "array",
+          items: { type: "string" },
+          minItems: 1,
+          maxItems: 3,
+          description: "One through three target peer names or agent IDs"
+        },
+        content: { type: "string", description: "Task description sent to all targets" },
+        correlationId: {
+          type: "string",
+          description: "Optional task grouping; the hub binds it to runId when workflowContext is supplied"
+        },
+        idempotencyKeyPrefix: {
+          type: "string",
+          description: "Stable retry/deduplication prefix only; not a workflow security or evidence binding"
+        },
+        workflowContext: {
+          type: "object",
+          description: "Requested provenance scope shared by each request",
+          properties: {
+            runId: { type: "string", description: "Active durable workflow run ID" },
+            stageId: { type: "string", description: "Active workflow stage ID" },
+            requirementKey: { type: "string", description: "Required evidence identity these peer replies may satisfy" },
+            attempt: { type: "integer", minimum: 1, maximum: 20, description: "Current one-based stage attempt" }
+          },
+          required: ["runId", "stageId", "requirementKey", "attempt"],
+          additionalProperties: false
+        },
+        ttlMs: { type: "number", minimum: 1e3, maximum: 6048e5, description: "Message TTL in milliseconds" },
+        timeoutMs: { type: "number", minimum: 100, maximum: 18e5, description: "Client wait timeout in milliseconds" }
+      },
+      required: ["targets", "content"],
+      additionalProperties: false
+    },
+    async execute(client, args, context) {
+      const targets = Array.isArray(args.targets) ? args.targets.map((t) => requiredString(t, "target")) : [];
+      return {
+        responses: await client.fanout({
+          targets,
+          content: requiredString(args.content, "content"),
+          ...optionalString(args.correlationId) ? { correlationId: optionalString(args.correlationId) } : {},
+          ...optionalString(args.idempotencyKeyPrefix) ? { idempotencyKeyPrefix: optionalString(args.idempotencyKeyPrefix) } : {},
+          ...optionalWorkflowContext(args.workflowContext) ? { workflowContext: optionalWorkflowContext(args.workflowContext) } : {},
+          ...typeof args.ttlMs === "number" ? { ttlMs: args.ttlMs } : {},
+          ...typeof args.timeoutMs === "number" ? { timeoutMs: args.timeoutMs } : {},
+          ...context?.signal ? { signal: context.signal } : {}
+        })
+      };
+    }
+  },
+  {
+    name: "kxm_await",
+    group: "peer",
+    verb: "await",
+    label: "Await peer response",
+    description: "Wait until a sent request receives a reply or reaches a terminal error. Capped at 60 seconds (60000ms); longer waits are workflow wait steps.",
+    parameters: {
+      type: "object",
+      properties: {
+        messageId: { type: "string", description: "Message ID of the sent request" },
+        timeoutMs: {
+          type: "number",
+          minimum: 100,
+          maximum: 6e4,
+          default: 6e4,
+          description: "Timeout in milliseconds (capped at 60 seconds)"
+        }
+      },
+      required: ["messageId"],
+      additionalProperties: false
+    },
+    async execute(client, args, context) {
+      const timeoutMs = Math.min(
+        typeof args.timeoutMs === "number" ? args.timeoutMs : 6e4,
+        6e4
+      );
+      return await client.awaitResponse(
+        requiredString(args.messageId, "messageId"),
+        timeoutMs,
+        context?.signal
+      );
+    }
+  },
+  {
+    name: "kxm_cancel",
+    group: "peer",
+    verb: "cancel",
+    label: "Cancel peer request",
+    description: "Cancel a queued or delivered request sent by this agent.",
+    parameters: {
+      type: "object",
+      properties: {
+        messageId: { type: "string", description: "Message ID of the request to cancel" }
+      },
+      required: ["messageId"],
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.cancel(requiredString(args.messageId, "messageId"));
+    }
+  },
+  {
+    name: "kxm_inbox",
+    group: "peer",
+    verb: "inbox",
+    label: "List inbound requests",
+    description: "List inbound peer requests awaiting a reply.",
+    parameters: {
+      type: "object",
+      properties: {},
+      additionalProperties: false
+    },
+    async execute(client, _args, context) {
+      if (context?.inbox) {
+        await reconcileInbox(client, context.inbox, context.notifiedInbox);
+        return { messages: [...context.inbox.values()] };
+      }
+      return { messages: [] };
+    }
+  },
+  {
+    name: "kxm_reply",
+    group: "peer",
+    verb: "reply",
+    label: "Reply to peer request",
+    description: "Reply to an inbound peer request using its message ID.",
+    parameters: {
+      type: "object",
+      properties: {
+        messageId: { type: "string", description: "Message ID of the inbound request" },
+        content: { type: "string", description: "Final response with evidence and remaining risks" }
+      },
+      required: ["messageId", "content"],
+      additionalProperties: false
+    },
+    async execute(client, args, context) {
+      const messageId = requiredString(args.messageId, "messageId");
+      try {
+        const message = await client.reply(messageId, requiredString(args.content, "content"));
+        if (context?.inbox) {
+          context.inbox.delete(messageId);
+          context.notifiedInbox?.delete(messageId);
+        }
+        return { messageId, status: message.status, recipient: message.fromName };
+      } catch (error) {
+        if (context?.inbox && isTerminalMessageError(error)) {
+          context.inbox.delete(messageId);
+          context.notifiedInbox?.delete(messageId);
+        }
+        throw error;
+      }
+    }
+  },
+  {
+    name: "kxm_workflow_list",
+    group: "workflow",
+    verb: "runs",
+    label: "List workflow runs",
+    description: "List durable webhook workflows assigned to this agent.",
+    parameters: {
+      type: "object",
+      properties: {},
+      additionalProperties: false
+    },
+    async execute(client) {
+      return { runs: await client.listWorkflows() };
+    }
+  },
+  {
+    name: "kxm_workflow_get",
+    group: "workflow",
+    verb: "run",
+    label: "Get workflow run",
+    description: "Get a workflow's stages and journal of plans, decisions, contradictions, errors, and lessons.",
+    parameters: {
+      type: "object",
+      properties: {
+        runId: { type: "string", description: "Workflow run ID" }
+      },
+      required: ["runId"],
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.getWorkflow(requiredString(args.runId, "runId"));
+    }
+  },
+  {
+    name: "kxm_workflow_checkpoint",
+    group: "workflow",
+    verb: "checkpoint",
+    label: "Checkpoint workflow stage",
+    description: "Record a stage result with evidence keyed by the stage's required evidence identities. Cite peer-reply requirements through evidenceRefs so the hub can verify provenance and quorum; caller-authored evidence strings cannot satisfy those policies. Warnings and failures require another attempt until passed or exhausted.",
+    parameters: {
+      type: "object",
+      properties: {
+        runId: { type: "string", description: "Active durable workflow run ID" },
+        stageId: { type: "string", description: "Active stage ID" },
+        status: { type: "string", enum: ["passed", "warning", "failed"], description: "Stage outcome" },
+        summary: { type: "string", description: "Summary of changes, verification, and remaining risks" },
+        evidence: {
+          type: "object",
+          additionalProperties: { type: "string" },
+          maxProperties: 64,
+          description: "Key-value evidence mapping required keys to proof strings"
+        },
+        evidenceRefs: {
+          type: "object",
+          description: "Peer evidence references keyed by required evidence identity",
+          patternProperties: {
+            "^(.*)$": {
+              type: "object",
+              properties: {
+                messageIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 16 }
+              },
+              required: ["messageIds"],
+              additionalProperties: false
+            }
+          },
+          additionalProperties: {
+            type: "object",
+            properties: {
+              messageIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 16 }
+            },
+            required: ["messageIds"],
+            additionalProperties: false
+          },
+          maxProperties: 32
+        }
+      },
+      required: ["runId", "stageId", "status", "summary"],
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.checkpointWorkflow(requiredString(args.runId, "runId"), {
+        stageId: requiredString(args.stageId, "stageId"),
+        status: requiredString(args.status, "status"),
+        summary: requiredString(args.summary, "summary"),
+        ...args.evidence && typeof args.evidence === "object" && !Array.isArray(args.evidence) ? { evidence: args.evidence } : {},
+        ...optionalEvidenceRefs(args.evidenceRefs) ? { evidenceRefs: optionalEvidenceRefs(args.evidenceRefs) } : {}
+      });
+    }
+  },
+  {
+    name: "kxm_workflow_record",
+    group: "workflow",
+    verb: "record",
+    label: "Record workflow journal entry",
+    description: "Record a plan, decision, contradiction, error, or lesson for continuous improvement.",
+    parameters: {
+      type: "object",
+      properties: {
+        runId: { type: "string", description: "Active durable workflow run ID" },
+        category: {
+          type: "string",
+          enum: ["plan", "decision", "contradiction", "error", "lesson"],
+          description: "Category of journal entry"
+        },
+        area: {
+          type: "string",
+          enum: ["harness", "gates", "implementation", "workflow", "documentation", "security", "other"],
+          description: "System area"
+        },
+        severity: {
+          type: "string",
+          enum: ["info", "warning", "error"],
+          default: "info",
+          description: "Severity level"
+        },
+        summary: { type: "string", description: "Concise description of the observation or decision" },
+        details: { type: "string", description: "Extended details, context, and reasoning" },
+        evidence: {
+          type: "array",
+          items: { type: "string" },
+          maxItems: 32,
+          description: "Durable evidence strings or URIs"
+        },
+        relatedEntryIds: {
+          type: "array",
+          items: { type: "string" },
+          maxItems: 16,
+          description: "Related previous journal entry IDs"
+        }
+      },
+      required: ["runId", "category", "area", "summary"],
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.recordWorkflowEntry(requiredString(args.runId, "runId"), {
+        category: requiredString(args.category, "category"),
+        area: requiredString(args.area, "area"),
+        ...optionalString(args.severity) ? { severity: optionalString(args.severity) } : {},
+        summary: requiredString(args.summary, "summary"),
+        ...optionalString(args.details) ? { details: optionalString(args.details) } : {},
+        ...Array.isArray(args.evidence) ? { evidence: args.evidence } : {},
+        ...Array.isArray(args.relatedEntryIds) ? { relatedEntryIds: args.relatedEntryIds } : {}
+      });
+    }
+  },
+  {
+    name: "kxm_workflow_wait",
+    group: "workflow",
+    verb: "wait",
+    label: "Wait for workflow signal",
+    description: "Pause the active stage until a signed external callback checkpoints it and resumes the coordinator. Cite peer-reply requirements through evidenceRefs so the hub can verify provenance and quorum; verified evidence is accumulated with callback evidence.",
+    parameters: {
+      type: "object",
+      properties: {
+        runId: { type: "string", description: "Active durable workflow run ID" },
+        stageId: { type: "string", description: "Active stage ID" },
+        signalKey: { type: "string", description: "Stable callback key, such as github-pr-42-checks" },
+        summary: { type: "string", description: "What is running externally and what result is expected" },
+        evidence: {
+          type: "object",
+          additionalProperties: { type: "string" },
+          maxProperties: 64,
+          description: "Evidence gathered before the wait"
+        },
+        evidenceRefs: {
+          type: "object",
+          description: "Peer evidence references verified before waiting",
+          patternProperties: {
+            "^(.*)$": {
+              type: "object",
+              properties: {
+                messageIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 16 }
+              },
+              required: ["messageIds"],
+              additionalProperties: false
+            }
+          },
+          additionalProperties: {
+            type: "object",
+            properties: {
+              messageIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 16 }
+            },
+            required: ["messageIds"],
+            additionalProperties: false
+          },
+          maxProperties: 32
+        },
+        timeoutMs: {
+          type: "number",
+          minimum: 1e3,
+          maximum: 2592e6,
+          description: "Maximum wait duration in milliseconds"
+        }
+      },
+      required: ["runId", "stageId", "signalKey", "summary"],
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.waitForWorkflowSignal(requiredString(args.runId, "runId"), {
+        stageId: requiredString(args.stageId, "stageId"),
+        signalKey: requiredString(args.signalKey, "signalKey"),
+        summary: requiredString(args.summary, "summary"),
+        ...args.evidence && typeof args.evidence === "object" && !Array.isArray(args.evidence) ? { evidence: args.evidence } : {},
+        ...optionalEvidenceRefs(args.evidenceRefs) ? { evidenceRefs: optionalEvidenceRefs(args.evidenceRefs) } : {},
+        ...typeof args.timeoutMs === "number" ? { timeoutMs: args.timeoutMs } : {}
+      });
+    }
+  },
+  {
+    name: "kxm_improvement_report",
+    group: "workflow",
+    verb: "improve-report",
+    label: "Summarize improvement report",
+    description: "Summarize workflow errors, contradictions, and lessons by improvement area.",
+    parameters: {
+      type: "object",
+      properties: {},
+      additionalProperties: false
+    },
+    async execute(client) {
+      return await client.improvementReport();
+    }
+  },
+  {
+    name: "kxm_context",
+    group: "context",
+    verb: "get",
+    label: "Get KXM context packet",
+    description: "Normal entry point for KXM context. Assembles a token-budgeted role-aware context packet from durable journal evidence, temporal state, knowledge, episodes, and skills. Superseded and rejected records are excluded. Use KXM context tools instead of provider-specific memory APIs.",
+    parameters: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Project scope (must be the client's project)" },
+        role: {
+          type: "string",
+          description: "Requesting role: repro, planner, critic, implementer, verifier, or custom"
+        },
+        task: { type: "string", description: "What the role is trying to accomplish" },
+        workflowRunId: { type: "string", description: "Workflow run scope" },
+        stageId: { type: "string", description: "Workflow stage scope" },
+        budgetTokens: { type: "integer", description: "Token budget; defaults to the role policy" },
+        includeKinds: {
+          type: "array",
+          items: { type: "string", enum: ["evidence", "state", "episode", "knowledge", "skill"] },
+          description: "Restrict packet to these item kinds"
+        }
+      },
+      required: ["role", "task"],
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.contextGet({
+        project: resolveProject(client, args.project),
+        role: requiredString(args.role, "role"),
+        task: requiredString(args.task, "task"),
+        ...optionalString(args.workflowRunId) ? { workflowRunId: optionalString(args.workflowRunId) } : {},
+        ...optionalString(args.stageId) ? { stageId: optionalString(args.stageId) } : {},
+        ...typeof args.budgetTokens === "number" ? { budgetTokens: args.budgetTokens } : {},
+        ...Array.isArray(args.includeKinds) ? { includeKinds: args.includeKinds } : {}
+      });
+    }
+  },
+  {
+    name: "kxm_recall",
+    group: "context",
+    verb: "recall",
+    label: "Recall context metadata",
+    description: "Search durable context records for a project by query; returns bounded metadata only.",
+    parameters: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Project identifier" },
+        query: { type: "string", description: "Query string" },
+        kinds: { type: "array", items: { type: "string" }, description: "Kinds filter" },
+        limit: { type: "integer", minimum: 1, maximum: 100, description: "Maximum results" }
+      },
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.contextRecall({
+        project: resolveProject(client, args.project),
+        ...optionalString(args.query) ? { query: optionalString(args.query) } : {},
+        ...Array.isArray(args.kinds) ? { kinds: args.kinds } : {},
+        ...typeof args.limit === "number" ? { limit: args.limit } : {}
+      });
+    }
+  },
+  {
+    name: "kxm_state",
+    group: "context",
+    verb: "state",
+    label: "Get temporal state",
+    description: "Current value for one temporal state key, optionally as of a historical timestamp.",
+    parameters: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Project identifier" },
+        key: { type: "string", description: "State key" },
+        asOf: { type: "string", description: "ISO-8601 timestamp for historical queries" }
+      },
+      required: ["key"],
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.contextState({
+        project: resolveProject(client, args.project),
+        key: requiredString(args.key, "key"),
+        ...optionalString(args.asOf) ? { asOf: optionalString(args.asOf) } : {}
+      });
+    }
+  },
+  {
+    name: "kxm_episode",
+    group: "context",
+    verb: "episode",
+    label: "Get workflow episodes",
+    description: "Episodic learning from workflow journals: errors, lessons, observations, experiments for a project.",
+    parameters: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Project identifier" },
+        workflowRunId: { type: "string", description: "Optional workflow run scope" }
+      },
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.contextEpisode({
+        project: resolveProject(client, args.project),
+        ...optionalString(args.workflowRunId) ? { workflowRunId: optionalString(args.workflowRunId) } : {}
+      });
+    }
+  },
+  {
+    name: "kxm_promote",
+    group: "context",
+    verb: "promote",
+    label: "Propose state promotion",
+    description: "Propose a change to one authoritative state key. Promotion requires durable evidence.",
+    parameters: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Project identifier" },
+        key: { type: "string", description: "State key to promote" },
+        summary: { type: "string", description: "Promotion summary" },
+        authority: {
+          type: "string",
+          enum: ["policy", "instruction", "evidence", "hypothesis"],
+          description: "Authority class"
+        },
+        confidence: {
+          type: "string",
+          enum: ["verified", "probable", "uncertain"],
+          description: "Confidence level"
+        },
+        evidenceRefs: {
+          type: "array",
+          items: { type: "string" },
+          minItems: 1,
+          maxItems: 32,
+          description: "Evidence item references backing the promotion"
+        }
+      },
+      required: ["key", "summary", "authority", "confidence", "evidenceRefs"],
+      additionalProperties: false
+    },
+    async execute(client, args) {
+      return await client.contextStatePropose({
+        project: resolveProject(client, args.project),
+        key: requiredString(args.key, "key"),
+        summary: requiredString(args.summary, "summary"),
+        authority: requiredString(args.authority, "authority"),
+        confidence: requiredString(args.confidence, "confidence"),
+        evidenceRefs: Array.isArray(args.evidenceRefs) ? args.evidenceRefs : []
+      });
+    }
+  }
+];
+var AGENT_COMMANDS_MAP = new Map(
+  AGENT_COMMANDS.map((cmd) => [cmd.name, cmd])
+);
+function parseAttemptToken(token) {
+  try {
+    const raw = Buffer.from(token.trim(), "base64url").toString("utf8");
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && parsed.schema === "kxm.attempt-token.v1" && typeof parsed.runId === "string") {
+      return parsed;
+    }
+  } catch {
+    return void 0;
+  }
+  return void 0;
+}
+function mintSessionToken(input) {
+  const toolPolicy = input?.toolPolicy ?? (input?.allowedTools || input?.deniedTools || input?.preset ? {
+    ...input?.preset ? { preset: input.preset } : {},
+    ...input?.allowedTools ? { allow: input.allowedTools } : {},
+    ...input?.deniedTools ? { deny: input.deniedTools } : {}
+  } : void 0);
+  const payload = {
+    schema: "kxm.session-token.v1",
+    sessionId: input?.sessionId ?? `session-${randomUUID6()}`,
+    issuedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    ...input?.agentName ? { agentName: input.agentName } : {},
+    ...toolPolicy ? { toolPolicy } : {}
+  };
+  return Buffer.from(JSON.stringify(payload)).toString("base64url");
+}
+function parseSessionToken(token) {
+  try {
+    const raw = Buffer.from(token.trim(), "base64url").toString("utf8");
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && parsed.schema === "kxm.session-token.v1" && typeof parsed.sessionId === "string") {
+      return parsed;
+    }
+  } catch {
+    return void 0;
+  }
+  return void 0;
+}
+function matchToolPattern(pattern, toolName) {
+  if (pattern === "*" || pattern === toolName) return true;
+  if (pattern.endsWith("*")) {
+    const prefix = pattern.slice(0, -1);
+    return toolName.startsWith(prefix);
+  }
+  return false;
+}
+function isToolAllowed(commandName, policy) {
+  if (!policy) return true;
+  const canonical2 = commandName.startsWith("kxm_") ? commandName : `kxm_${commandName}`;
+  const bare = commandName.replace(/^kxm_/, "");
+  const denyList = policy.deny ?? policy.deniedTools;
+  if (Array.isArray(denyList)) {
+    for (const d2 of denyList) {
+      if (d2 === canonical2 || d2 === commandName || d2 === bare || matchToolPattern(d2, canonical2)) {
+        return false;
+      }
+    }
+  }
+  const allowList = policy.allow ?? policy.allowedTools;
+  if (Array.isArray(allowList) && allowList.length > 0) {
+    const matched = allowList.some(
+      (a) => a === canonical2 || a === commandName || a === bare || a === "*" || matchToolPattern(a, canonical2)
+    );
+    if (!matched) return false;
+  }
+  if (policy.preset === "read-only") {
+    const mutating = [
+      "kxm_send",
+      "kxm_reply",
+      "kxm_cancel",
+      "kxm_fanout",
+      "kxm_workflow_checkpoint",
+      "kxm_workflow_record",
+      "kxm_workflow_wait",
+      "kxm_promote"
+    ];
+    if (mutating.includes(canonical2)) return false;
+  }
+  return true;
+}
+function enforceToolPolicy(commandName, env = process.env) {
+  const attemptTokenRaw = env.KXM_ATTEMPT_TOKEN?.trim();
+  if (attemptTokenRaw) {
+    const attempt = parseAttemptToken(attemptTokenRaw);
+    if (!attempt) {
+      return { allowed: false, error: "attempt_token_invalid", detail: "KXM_ATTEMPT_TOKEN is malformed" };
+    }
+    if (!isToolAllowed(commandName, attempt.toolPolicy)) {
+      return {
+        allowed: false,
+        error: "tool_policy_denied",
+        detail: `command ${commandName} is denied by attempt tool policy`
+      };
+    }
+    return { allowed: true };
+  }
+  const sessionTokenRaw = env.KXM_SESSION_TOKEN?.trim();
+  if (sessionTokenRaw) {
+    const session = parseSessionToken(sessionTokenRaw);
+    if (!session) {
+      return { allowed: false, error: "session_token_invalid", detail: "KXM_SESSION_TOKEN is malformed" };
+    }
+    if (!isToolAllowed(commandName, session.toolPolicy)) {
+      return {
+        allowed: false,
+        error: "tool_policy_denied",
+        detail: `command ${commandName} is denied by session tool policy`
+      };
+    }
+    return { allowed: true };
+  }
+  return { allowed: true };
+}
+
 // plugins/kxm/src/cli.ts
 var CLI_NAME = "kxm";
 var repoRoot2 = resolve11(fileURLToPath4(new URL("../../../", import.meta.url)));
@@ -35935,7 +37148,7 @@ function applyKxmPackageUpdate(runtime, notice) {
     for (const step of planned) {
       if (step.kind === "verify") {
         if (!verifyReleaseAssetDigest(step.path, step.sha256)) {
-          const actual = existsSync16(step.path) ? createHash10("sha256").update(readFileSync15(step.path)).digest("hex") : "missing";
+          const actual = existsSync16(step.path) ? createHash11("sha256").update(readFileSync15(step.path)).digest("hex") : "missing";
           return {
             ok: false,
             error: "release_digest_mismatch",
@@ -36516,8 +37729,9 @@ async function cmdSessionBrief(runtime, options = {}) {
     hub = { online: health.ok };
   }
   const brief = loadSessionBrief(runtime.dirs.workdir, env, void 0, hub);
+  const sessionToken = mintSessionToken();
   if (options.status) {
-    print(runtime.io, runtime.json, { ok: true, command: "session brief", statusLine: brief.statusLine, stats: brief.stats, hub }, brief.statusLine);
+    print(runtime.io, runtime.json, { ok: true, command: "session brief", sessionToken, statusLine: brief.statusLine, stats: brief.stats, hub }, brief.statusLine);
     return 0;
   }
   print(
@@ -36526,18 +37740,22 @@ async function cmdSessionBrief(runtime, options = {}) {
     {
       ok: true,
       command: "session brief",
+      sessionToken,
       statusLine: brief.statusLine,
       stats: brief.stats,
       tasks: brief.tasks,
       plans: brief.plans,
       ...hub ? { hub } : {}
     },
-    formatSessionBriefText(brief)
+    `${formatSessionBriefText(brief)}
+
+Session token: ${sessionToken}
+`
   );
   return 0;
 }
 async function cmdSessionStart(runtime, options) {
-  const id = options.id?.trim() || `session_${randomUUID6().replaceAll("-", "").slice(0, 12)}`;
+  const id = options.id?.trim() || `session_${randomUUID7().replaceAll("-", "").slice(0, 12)}`;
   const workflowId = options.workflow?.trim();
   const mix = options.mix?.trim();
   if (workflowId && mix) {
@@ -36877,7 +38095,7 @@ async function cmdRoutingReport(runtime, options) {
 }
 async function cmdWorkflowStart(runtime, definitionIdArg, options) {
   const definitionId = definitionIdArg || runtime.env.KXM_WORKFLOW_ID?.trim();
-  const deliveryId = String(options.deliveryId || `cli-${randomUUID6()}`);
+  const deliveryId = String(options.deliveryId || `cli-${randomUUID7()}`);
   const event = options.event;
   const payloadFlag = options.payload ?? "{}";
   if (!definitionId) {
@@ -37001,6 +38219,30 @@ async function cmdSignal(runtime, runId, signalKey, status, summary, evidenceArg
 `);
     return 2;
   }
+  const worker = gateOf(runtime, "signal");
+  const projectRoot = discoverVnextProjectRoot(runtime.cwd);
+  if (projectRoot && /^run_[a-f0-9]{32}$/i.test(runId)) {
+    if (runtime.dryRun) {
+      printWorker(runtime, worker, { ok: true, command: "signal", runId, signalKey, status, summary, evidence }, "would post signal to vNext run");
+      return 0;
+    }
+    const deliveryId2 = String(deliveryIdFlag || `cli-signal:${randomUUID7()}`);
+    try {
+      const supervisor = await ensureVnextSupervisor({ env: runtime.env });
+      const posted = await vnextRuntimeRequest(
+        supervisor,
+        "POST",
+        `/v1/runs/${encodeURIComponent(runId)}/signal?projectRoot=${encodeURIComponent(projectRoot)}`,
+        { signalKey, status, summary, evidence, deliveryId: deliveryId2 }
+      );
+      printWorker(runtime, worker, { ok: true, command: "signal", runId, signalKey, status, unblocked: posted.unblocked === true, deliveryId: deliveryId2 }, "posted signal to vNext run");
+      return 0;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "signal_failed";
+      printWorker(runtime, worker, { ok: false, command: "signal", error: "signal_failed", detail: msg, deliveryId: deliveryId2 }, "signal to vNext run failed");
+      return 1;
+    }
+  }
   const definitionId = runtime.env.KXM_WORKFLOW_ID?.trim();
   if (!definitionId) {
     runtime.io.stderr("signal requires KXM_WORKFLOW_ID\n");
@@ -37016,12 +38258,11 @@ async function cmdSignal(runtime, runId, signalKey, status, summary, evidenceArg
     runtime.io.stderr("signal requires KXM_WORKFLOW_SIGNAL_SECRET when no active definition source is configured\n");
     return 2;
   }
-  const worker = gateOf(runtime, "signal");
   if (runtime.dryRun) {
     printWorker(runtime, worker, { ok: true, command: "signal", runId, signalKey, status, summary, evidence }, "would post signed signal");
     return 0;
   }
-  const deliveryId = String(deliveryIdFlag || `cli-signal:${randomUUID6()}`);
+  const deliveryId = String(deliveryIdFlag || `cli-signal:${randomUUID7()}`);
   try {
     const posted = await postWorkflowSignal({
       serverUrl: runtime.serverUrl,
@@ -37143,6 +38384,124 @@ async function cmdRetrospectiveExport(runtime, runId, options) {
   print(runtime.io, runtime.json, { ok: true, command: "retrospective export", ...written, reviewDecision: doc.reviewDecision }, `exported ${written.jsonPath}`);
   return 0;
 }
+async function ensureCliClient(runtime) {
+  const serverUrl = runtime.serverUrl;
+  const project = runtime.env.KXM_PROJECT?.trim() || basename3(runtime.dirs.workspace || runtime.cwd);
+  const name = runtime.env.KXM_AGENT_NAME?.trim() || `cli-${process.pid}`;
+  const purpose = runtime.env.KXM_AGENT_PURPOSE?.trim() || "CLI agent client";
+  const authToken = runtime.env.KXM_AUTH_TOKEN?.trim();
+  const client = new HubClient({
+    serverUrl,
+    name,
+    project,
+    purpose,
+    ...authToken ? { authToken } : {}
+  });
+  await client.start(() => {
+  });
+  return client;
+}
+function parseJsonOption(val) {
+  if (typeof val === "string") {
+    const trimmed = val.trim();
+    if (trimmed.startsWith("{") && trimmed.endsWith("}") || trimmed.startsWith("[") && trimmed.endsWith("]")) {
+      try {
+        return JSON.parse(trimmed);
+      } catch {
+        return val;
+      }
+    }
+  }
+  return val;
+}
+async function dispatchAgentCliCommand(runtime, toolName, rawArgs) {
+  const policy = enforceToolPolicy(toolName, runtime.env);
+  if (!policy.allowed) {
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: false, error: policy.error ?? "tool_policy_denied", detail: policy.detail },
+      `tool_policy_denied: ${policy.detail ?? policy.error}`
+    );
+    return 1;
+  }
+  const cmd = AGENT_COMMANDS_MAP.get(toolName);
+  if (!cmd) {
+    print(runtime.io, runtime.json, { ok: false, error: "unknown_command", detail: toolName }, `unknown command: ${toolName}`);
+    return 2;
+  }
+  let args = {};
+  if (typeof rawArgs.payload === "string" && rawArgs.payload.trim()) {
+    try {
+      const parsed = JSON.parse(rawArgs.payload.trim());
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        args = { ...parsed };
+      }
+    } catch {
+      print(runtime.io, runtime.json, { ok: false, error: "invalid_payload", detail: "failed to parse --payload JSON" }, "invalid payload JSON");
+      return 2;
+    }
+  }
+  for (const [key, val] of Object.entries(rawArgs)) {
+    if (val !== void 0 && key !== "payload") {
+      if (key === "timeoutMs" || key === "ttlMs" || key === "attempt") {
+        args[key] = Number(val);
+      } else if (key === "targets" && typeof val === "string") {
+        args[key] = val.split(",").map((s) => s.trim()).filter(Boolean);
+      } else {
+        args[key] = parseJsonOption(val);
+      }
+    }
+  }
+  if (toolName === "kxm_workflow_wait") {
+    const runId = typeof args.runId === "string" ? args.runId : void 0;
+    const projectRoot = discoverVnextProjectRoot(runtime.cwd);
+    if (runId && projectRoot && /^run_[a-f0-9]{32}$/i.test(runId)) {
+      if (runtime.dryRun) {
+        print(runtime.io, runtime.json, { ok: true, command: "workflow wait", runId, dryRun: true }, `would wait for signal on vNext run ${runId}`);
+        return 0;
+      }
+      try {
+        const supervisor = await ensureVnextSupervisor({ env: runtime.env });
+        const result = await vnextRuntimeRequest(
+          supervisor,
+          "POST",
+          `/v1/runs/${encodeURIComponent(runId)}/wait?projectRoot=${encodeURIComponent(projectRoot)}`,
+          args
+        );
+        print(runtime.io, runtime.json, result, `waiting for signal on vNext run ${runId}`);
+        return 0;
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "vnext_wait_failed";
+        print(runtime.io, runtime.json, { ok: false, error: "vnext_wait_failed", detail: msg }, `vNext wait failed: ${msg}`);
+        return 1;
+      }
+    }
+  }
+  if (runtime.dryRun) {
+    print(runtime.io, runtime.json, { ok: true, command: `${cmd.group} ${cmd.verb}`, dryRun: true, args }, `would execute ${cmd.group} ${cmd.verb}`);
+    return 0;
+  }
+  let client;
+  try {
+    client = await ensureCliClient(runtime);
+    const output = await cmd.execute(client, args);
+    const payload = output && typeof output === "object" ? output : { result: output };
+    print(runtime.io, runtime.json, payload, JSON.stringify(output, null, 2));
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    print(runtime.io, runtime.json, { ok: false, error: "command_failed", detail: message }, `command failed: ${message}`);
+    return 1;
+  } finally {
+    if (client) {
+      try {
+        await client.stop();
+      } catch {
+      }
+    }
+  }
+}
 function createProgram(ctx, result) {
   const bind = (action) => {
     return async function commandAction(...args) {
@@ -37226,6 +38585,37 @@ function createProgram(ctx, result) {
   addGlobalOptions(session.command("stop").description("Request managed hub and worker session shutdown")).option("--wait-ms <ms>", "How long to wait for PID files to clear").action(async function sessionStopAction(options) {
     result.code = await cmdStop(runtimeFrom(ctx, this), options.waitMs);
   });
+  const peer = addGlobalOptions(program2.command("peer").description("Peer agent messaging and coordination"));
+  peer.helpCommand("help", "Show peer help");
+  addGlobalOptions(peer.command("list").description("List online peer agents in this project's hub pool")).option("--payload <json>", "JSON payload").action(async function peerListAction(opts) {
+    result.code = await dispatchAgentCliCommand(runtimeFrom(ctx, this), "kxm_list", opts ?? {});
+  });
+  addGlobalOptions(peer.command("send [target] [content]").description("Send a focused request to a peer agent")).option("--target <name>", "Peer name or agent ID").option("--content <text>", "Focused request content").option("--delivery <mode>", "steer, followUp, or nextTurn").option("--correlation-id <id>", "Task grouping ID").option("--idempotency-key <key>", "Deduplication key").option("--workflow-context <json>", "Workflow context JSON").option("--ttl-ms <ms>", "Message TTL in milliseconds").option("--payload <json>", "JSON payload").action(async function peerSendAction(target, content, opts) {
+    const options = { ...opts, ...target ? { target } : {}, ...content ? { content } : {} };
+    result.code = await dispatchAgentCliCommand(runtimeFrom(ctx, this), "kxm_send", options);
+  });
+  addGlobalOptions(peer.command("get [messageId]").description("Check a peer request status and reply")).option("--message-id <id>", "Message ID").option("--payload <json>", "JSON payload").action(async function peerGetAction(messageId, opts) {
+    const options = { ...opts, ...messageId ? { messageId } : {} };
+    result.code = await dispatchAgentCliCommand(runtimeFrom(ctx, this), "kxm_get", options);
+  });
+  addGlobalOptions(peer.command("await [messageId]").description("Wait for a peer request reply (capped at 60 seconds)")).option("--message-id <id>", "Message ID").option("--timeout-ms <ms>", "Timeout in milliseconds (max 60000)").option("--payload <json>", "JSON payload").action(async function peerAwaitAction(messageId, opts) {
+    const options = { ...opts, ...messageId ? { messageId } : {} };
+    result.code = await dispatchAgentCliCommand(runtimeFrom(ctx, this), "kxm_await", options);
+  });
+  addGlobalOptions(peer.command("cancel [messageId]").description("Cancel a sent peer request")).option("--message-id <id>", "Message ID").option("--payload <json>", "JSON payload").action(async function peerCancelAction(messageId, opts) {
+    const options = { ...opts, ...messageId ? { messageId } : {} };
+    result.code = await dispatchAgentCliCommand(runtimeFrom(ctx, this), "kxm_cancel", options);
+  });
+  addGlobalOptions(peer.command("fanout").description("Send the same request to one through three peers")).option("--targets <items...>", "Target peer names (1-3)").option("--content <text>", "Request content").option("--correlation-id <id>", "Task grouping ID").option("--idempotency-key-prefix <prefix>", "Idempotency prefix").option("--workflow-context <json>", "Workflow context JSON").option("--ttl-ms <ms>", "Message TTL in milliseconds").option("--timeout-ms <ms>", "Timeout in milliseconds").option("--payload <json>", "JSON payload").action(async function peerFanoutAction(opts) {
+    result.code = await dispatchAgentCliCommand(runtimeFrom(ctx, this), "kxm_fanout", opts ?? {});
+  });
+  addGlobalOptions(peer.command("inbox").description("List inbound peer requests")).option("--payload <json>", "JSON payload").action(async function peerInboxAction(opts) {
+    result.code = await dispatchAgentCliCommand(runtimeFrom(ctx, this), "kxm_inbox", opts ?? {});
+  });
+  addGlobalOptions(peer.command("reply [messageId] [content]").description("Reply to an inbound request")).option("--message-id <id>", "Message ID").option("--content <text>", "Reply content").option("--payload <json>", "JSON payload").action(async function peerReplyAction(messageId, content, opts) {
+    const options = { ...opts, ...messageId ? { messageId } : {}, ...content ? { content } : {} };
+    result.code = await dispatchAgentCliCommand(runtimeFrom(ctx, this), "kxm_reply", options);
+  });
   const workflow = addGlobalOptions(program2.command("workflow").description("Start and inspect workflow runs"));
   workflow.helpCommand("help", "Show workflow help");
   addGlobalOptions(workflow.command("list").description("List local workflow runs")).action(async function listAction() {
@@ -37233,6 +38623,39 @@ function createProgram(ctx, result) {
   });
   addGlobalOptions(workflow.command("get").description("Show one local workflow run")).argument("<runId>", "Workflow run ID").action(async function getAction(runId) {
     result.code = await cmdWorkflowInspect(runtimeFrom(ctx, this), "get", runId);
+  });
+  addGlobalOptions(workflow.command("checkpoint [runId] [stageId] [status] [summary]").description("Record a workflow stage checkpoint with evidence")).option("--run-id <id>", "Workflow run ID").option("--stage-id <id>", "Active stage ID").option("--status <status>", "passed, warning, or failed").option("--summary <text>", "Stage summary").option("--evidence <json>", "Key-value evidence JSON").option("--evidence-refs <json>", "Peer evidence references JSON").option("--payload <json>", "JSON payload").action(async function checkpointAction(runId, stageId, status, summary, opts) {
+    const options = {
+      ...opts,
+      ...runId ? { runId } : {},
+      ...stageId ? { stageId } : {},
+      ...status ? { status } : {},
+      ...summary ? { summary } : {}
+    };
+    result.code = await dispatchAgentCliCommand(runtimeFrom(ctx, this), "kxm_workflow_checkpoint", options);
+  });
+  addGlobalOptions(workflow.command("record [runId] [category] [area] [summary]").description("Record workflow journal knowledge")).option("--run-id <id>", "Workflow run ID").option("--category <category>", "plan, decision, contradiction, error, lesson").option("--area <area>", "harness, gates, implementation, workflow, documentation, security, other").option("--severity <level>", "info, warning, error").option("--summary <text>", "Entry summary").option("--details <text>", "Detailed text").option("--evidence <items...>", "Evidence strings").option("--related-entry-ids <ids...>", "Related entry IDs").option("--payload <json>", "JSON payload").action(async function recordAction(runId, category, area, summary, opts) {
+    const options = {
+      ...opts,
+      ...runId ? { runId } : {},
+      ...category ? { category } : {},
+      ...area ? { area } : {},
+      ...summary ? { summary } : {}
+    };
+    result.code = await dispatchAgentCliCommand(runtimeFrom(ctx, this), "kxm_workflow_record", options);
+  });
+  addGlobalOptions(workflow.command("wait [runId] [stageId] [signalKey] [summary]").description("Wait for a workflow signal callback")).option("--run-id <id>", "Workflow run ID").option("--stage-id <id>", "Active stage ID").option("--signal-key <key>", "Wait signal key").option("--summary <text>", "Expected result summary").option("--evidence <json>", "Evidence JSON").option("--evidence-refs <json>", "Peer evidence refs JSON").option("--timeout-ms <ms>", "Wait timeout in milliseconds").option("--payload <json>", "JSON payload").action(async function waitAction(runId, stageId, signalKey, summary, opts) {
+    const options = {
+      ...opts,
+      ...runId ? { runId } : {},
+      ...stageId ? { stageId } : {},
+      ...signalKey ? { signalKey } : {},
+      ...summary ? { summary } : {}
+    };
+    result.code = await dispatchAgentCliCommand(runtimeFrom(ctx, this), "kxm_workflow_wait", options);
+  });
+  addGlobalOptions(workflow.command("signal").description("Post a signed workflow callback or unblock a vNext run")).argument("<runId>", "Workflow run ID").argument("<signalKey>", "Wait signal key").argument("<status>", "passed, warning, or failed").argument("<summary>", "Callback summary").argument("[evidence...]", "required-key=evidence pairs").option("--delivery-id <id>", "Stable callback delivery ID").action(async function workflowSignalAction(runId, signalKey, status, summary, evidence, options) {
+    result.code = await cmdSignal(runtimeFrom(ctx, this), runId, signalKey, status, summary, evidence ?? [], options.deliveryId);
   });
   addGlobalOptions(workflow.command("start").description("POST a signed workflow-start webhook")).argument("[definitionId]", "Workflow definition ID").option("--payload <json>", "JSON object or @file", "{}").option("--delivery-id <id>", "Stable provider delivery ID").option("--event <name>", "Optional provider event name").action(async function startAction(definitionId, options) {
     result.code = await cmdWorkflowStart(runtimeFrom(ctx, this), definitionId, options);

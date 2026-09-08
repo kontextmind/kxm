@@ -18,10 +18,12 @@ import {
   acceptVnextRun,
   cancelVnextRun,
   closeVnextRuntimeContext,
+  foldStoredVnextRun,
   openVnextRuntimeContext,
   rebuildVnextRunProjection,
   type VnextRuntimeContext,
 } from "./vnext-runtime.ts";
+import { recoverVnextRun } from "./vnext-engine.ts";
 
 /* ------------------------------------------------------------------ *
  * Token management
@@ -387,7 +389,7 @@ async function startVnextRuntimeSupervisorInner(
           return;
         }
 
-        const runMatch = /^\/v1\/runs\/([A-Za-z0-9_-]+)(?:\/(events|cancel))?$/.exec(url.pathname);
+        const runMatch = /^\/v1\/runs\/([A-Za-z0-9_-]+)(?:\/(events|cancel|signal|wait))?$/.exec(url.pathname);
         if (runMatch) {
           const runId = runMatch[1] as string;
           const sub = runMatch[2];
@@ -414,6 +416,29 @@ async function startVnextRuntimeSupervisorInner(
               ...(typeof body.commandId === "string" && body.commandId.length > 0 ? { commandId: body.commandId } : {}),
             });
             sendJson(response, 200, { ok: true, idempotent: result.idempotent, run: result.run, events: result.events });
+            return;
+          }
+          if (request.method === "POST" && sub === "signal") {
+            const body = await readJsonBody(request);
+            const run = context.eventStore.run(runId);
+            if (!run) throw runtimeError("run_unknown", runId, "run not found");
+            const state = foldStoredVnextRun(context, run);
+            let unblocked = false;
+            if (state.status === "blocked_uncertain" || state.currentStep?.effectState === "blocked_uncertain") {
+              const rec = recoverVnextRun(context, runId, {
+                action: "unblock",
+                reason: typeof body.summary === "string" ? body.summary : `signal_${body.signalKey ?? "callback"}`,
+              });
+              unblocked = rec.unblocked;
+            }
+            sendJson(response, 200, { ok: true, runId, signalKey: body.signalKey, status: body.status, unblocked });
+            return;
+          }
+          if (request.method === "POST" && sub === "wait") {
+            const body = await readJsonBody(request);
+            const run = context.eventStore.run(runId);
+            if (!run) throw runtimeError("run_unknown", runId, "run not found");
+            sendJson(response, 200, { ok: true, runId, stageId: body.stageId, signalKey: body.signalKey, waiting: true });
             return;
           }
         }

@@ -74,6 +74,8 @@ import {
   type HarnessUpdateScope,
 } from "./vnext-harness.ts";
 import type { WorkflowEvidenceInput, WorkflowJournalEntry, WorkflowRun } from "./workflow.ts";
+import { HubClient } from "./client.ts";
+import { AGENT_COMMANDS_MAP, enforceToolPolicy, mintSessionToken } from "./commands.ts";
 
 export interface CliSpawnResult {
   status: number | null;
@@ -1627,8 +1629,9 @@ async function cmdSessionBrief(runtime: Runtime, options: { status?: boolean } =
     hub = { online: health.ok };
   }
   const brief = loadSessionBrief(runtime.dirs.workdir, env, undefined, hub);
+  const sessionToken = mintSessionToken();
   if (options.status) {
-    print(runtime.io, runtime.json, { ok: true, command: "session brief", statusLine: brief.statusLine, stats: brief.stats, hub }, brief.statusLine);
+    print(runtime.io, runtime.json, { ok: true, command: "session brief", sessionToken, statusLine: brief.statusLine, stats: brief.stats, hub }, brief.statusLine);
     return 0;
   }
   print(
@@ -1637,13 +1640,14 @@ async function cmdSessionBrief(runtime: Runtime, options: { status?: boolean } =
     {
       ok: true,
       command: "session brief",
+      sessionToken,
       statusLine: brief.statusLine,
       stats: brief.stats,
       tasks: brief.tasks,
       plans: brief.plans,
       ...(hub ? { hub } : {}),
     },
-    formatSessionBriefText(brief),
+    `${formatSessionBriefText(brief)}\n\nSession token: ${sessionToken}\n`,
   );
   return 0;
 }
@@ -2138,6 +2142,31 @@ async function cmdSignal(runtime: Runtime, runId: string, signalKey: string, sta
     runtime.io.stderr(`${error instanceof Error ? error.message : "invalid evidence"}\n`);
     return 2;
   }
+  const worker = gateOf(runtime, "signal");
+  const projectRoot = discoverVnextProjectRoot(runtime.cwd);
+  if (projectRoot && /^run_[a-f0-9]{32}$/i.test(runId)) {
+    if (runtime.dryRun) {
+      printWorker(runtime, worker, { ok: true, command: "signal", runId, signalKey, status, summary, evidence }, "would post signal to vNext run");
+      return 0;
+    }
+    const deliveryId = String(deliveryIdFlag || `cli-signal:${randomUUID()}`);
+    try {
+      const supervisor = await ensureVnextSupervisor({ env: runtime.env });
+      const posted = await vnextRuntimeRequest(
+        supervisor,
+        "POST",
+        `/v1/runs/${encodeURIComponent(runId)}/signal?projectRoot=${encodeURIComponent(projectRoot)}`,
+        { signalKey, status, summary, evidence, deliveryId },
+      );
+      printWorker(runtime, worker, { ok: true, command: "signal", runId, signalKey, status, unblocked: posted.unblocked === true, deliveryId }, "posted signal to vNext run");
+      return 0;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "signal_failed";
+      printWorker(runtime, worker, { ok: false, command: "signal", error: "signal_failed", detail: msg, deliveryId }, "signal to vNext run failed");
+      return 1;
+    }
+  }
+
   const definitionId = runtime.env.KXM_WORKFLOW_ID?.trim();
   if (!definitionId) {
     runtime.io.stderr("signal requires KXM_WORKFLOW_ID\n");
@@ -2153,7 +2182,6 @@ async function cmdSignal(runtime: Runtime, runId: string, signalKey: string, sta
     runtime.io.stderr("signal requires KXM_WORKFLOW_SIGNAL_SECRET when no active definition source is configured\n");
     return 2;
   }
-  const worker = gateOf(runtime, "signal");
   if (runtime.dryRun) {
     printWorker(runtime, worker, { ok: true, command: "signal", runId, signalKey, status, summary, evidence }, "would post signed signal");
     return 0;
@@ -2294,6 +2322,138 @@ async function cmdRetrospectiveExport(runtime: Runtime, runId: string, options: 
   const written = writeRetrospective(outDir, doc);
   print(runtime.io, runtime.json, { ok: true, command: "retrospective export", ...written, reviewDecision: doc.reviewDecision }, `exported ${written.jsonPath}`);
   return 0;
+}
+
+async function ensureCliClient(runtime: Runtime): Promise<HubClient> {
+  const serverUrl = runtime.serverUrl;
+  const project = runtime.env.KXM_PROJECT?.trim() || basename(runtime.dirs.workspace || runtime.cwd);
+  const name = runtime.env.KXM_AGENT_NAME?.trim() || `cli-${process.pid}`;
+  const purpose = runtime.env.KXM_AGENT_PURPOSE?.trim() || "CLI agent client";
+  const authToken = runtime.env.KXM_AUTH_TOKEN?.trim();
+  const client = new HubClient({
+    serverUrl,
+    name,
+    project,
+    purpose,
+    ...(authToken ? { authToken } : {}),
+  });
+  await client.start(() => {});
+  return client;
+}
+
+function parseJsonOption(val: unknown): unknown {
+  if (typeof val === "string") {
+    const trimmed = val.trim();
+    if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+      try {
+        return JSON.parse(trimmed);
+      } catch {
+        return val;
+      }
+    }
+  }
+  return val;
+}
+
+async function dispatchAgentCliCommand(
+  runtime: Runtime,
+  toolName: string,
+  rawArgs: Record<string, unknown>,
+): Promise<number> {
+  const policy = enforceToolPolicy(toolName, runtime.env);
+  if (!policy.allowed) {
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: false, error: policy.error ?? "tool_policy_denied", detail: policy.detail },
+      `tool_policy_denied: ${policy.detail ?? policy.error}`,
+    );
+    return 1;
+  }
+
+  const cmd = AGENT_COMMANDS_MAP.get(toolName);
+  if (!cmd) {
+    print(runtime.io, runtime.json, { ok: false, error: "unknown_command", detail: toolName }, `unknown command: ${toolName}`);
+    return 2;
+  }
+
+  let args: Record<string, unknown> = {};
+  if (typeof rawArgs.payload === "string" && rawArgs.payload.trim()) {
+    try {
+      const parsed = JSON.parse(rawArgs.payload.trim());
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        args = { ...parsed };
+      }
+    } catch {
+      print(runtime.io, runtime.json, { ok: false, error: "invalid_payload", detail: "failed to parse --payload JSON" }, "invalid payload JSON");
+      return 2;
+    }
+  }
+
+  for (const [key, val] of Object.entries(rawArgs)) {
+    if (val !== undefined && key !== "payload") {
+      if (key === "timeoutMs" || key === "ttlMs" || key === "attempt") {
+        args[key] = Number(val);
+      } else if (key === "targets" && typeof val === "string") {
+        args[key] = val.split(",").map((s) => s.trim()).filter(Boolean);
+      } else {
+        args[key] = parseJsonOption(val);
+      }
+    }
+  }
+
+  // Handle vNext run binding for workflow wait
+  if (toolName === "kxm_workflow_wait") {
+    const runId = typeof args.runId === "string" ? args.runId : undefined;
+    const projectRoot = discoverVnextProjectRoot(runtime.cwd);
+    if (runId && projectRoot && /^run_[a-f0-9]{32}$/i.test(runId)) {
+      if (runtime.dryRun) {
+        print(runtime.io, runtime.json, { ok: true, command: "workflow wait", runId, dryRun: true }, `would wait for signal on vNext run ${runId}`);
+        return 0;
+      }
+      try {
+        const supervisor = await ensureVnextSupervisor({ env: runtime.env });
+        const result = await vnextRuntimeRequest(
+          supervisor,
+          "POST",
+          `/v1/runs/${encodeURIComponent(runId)}/wait?projectRoot=${encodeURIComponent(projectRoot)}`,
+          args,
+        );
+        print(runtime.io, runtime.json, result, `waiting for signal on vNext run ${runId}`);
+        return 0;
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "vnext_wait_failed";
+        print(runtime.io, runtime.json, { ok: false, error: "vnext_wait_failed", detail: msg }, `vNext wait failed: ${msg}`);
+        return 1;
+      }
+    }
+  }
+
+  if (runtime.dryRun) {
+    print(runtime.io, runtime.json, { ok: true, command: `${cmd.group} ${cmd.verb}`, dryRun: true, args }, `would execute ${cmd.group} ${cmd.verb}`);
+    return 0;
+  }
+
+  let client: HubClient | undefined;
+  try {
+    client = await ensureCliClient(runtime);
+    const output = await cmd.execute(client, args);
+    const payload = (output && typeof output === "object" ? output : { result: output }) as object;
+    print(runtime.io, runtime.json, payload, JSON.stringify(output, null, 2));
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    print(runtime.io, runtime.json, { ok: false, error: "command_failed", detail: message }, `command failed: ${message}`);
+    return 1;
+  } finally {
+    if (client) {
+      try {
+        await client.stop();
+      } catch {
+        // best effort
+      }
+    }
+  }
 }
 
 function createProgram(ctx: CliContext, result: { code: number }): Command {
@@ -2459,6 +2619,82 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
       result.code = await cmdStop(runtimeFrom(ctx, this), options.waitMs);
     });
 
+  const peer = addGlobalOptions(program.command("peer").description("Peer agent messaging and coordination"));
+  peer.helpCommand("help", "Show peer help");
+
+  addGlobalOptions(peer.command("list").description("List online peer agents in this project's hub pool"))
+    .option("--payload <json>", "JSON payload")
+    .action(async function peerListAction(this: Command, opts?: Record<string, unknown>) {
+      result.code = await dispatchAgentCliCommand(runtimeFrom(ctx, this), "kxm_list", opts ?? {});
+    });
+
+  addGlobalOptions(peer.command("send [target] [content]").description("Send a focused request to a peer agent"))
+    .option("--target <name>", "Peer name or agent ID")
+    .option("--content <text>", "Focused request content")
+    .option("--delivery <mode>", "steer, followUp, or nextTurn")
+    .option("--correlation-id <id>", "Task grouping ID")
+    .option("--idempotency-key <key>", "Deduplication key")
+    .option("--workflow-context <json>", "Workflow context JSON")
+    .option("--ttl-ms <ms>", "Message TTL in milliseconds")
+    .option("--payload <json>", "JSON payload")
+    .action(async function peerSendAction(this: Command, target?: string, content?: string, opts?: Record<string, unknown>) {
+      const options = { ...opts, ...(target ? { target } : {}), ...(content ? { content } : {}) };
+      result.code = await dispatchAgentCliCommand(runtimeFrom(ctx, this), "kxm_send", options);
+    });
+
+  addGlobalOptions(peer.command("get [messageId]").description("Check a peer request status and reply"))
+    .option("--message-id <id>", "Message ID")
+    .option("--payload <json>", "JSON payload")
+    .action(async function peerGetAction(this: Command, messageId?: string, opts?: Record<string, unknown>) {
+      const options = { ...opts, ...(messageId ? { messageId } : {}) };
+      result.code = await dispatchAgentCliCommand(runtimeFrom(ctx, this), "kxm_get", options);
+    });
+
+  addGlobalOptions(peer.command("await [messageId]").description("Wait for a peer request reply (capped at 60 seconds)"))
+    .option("--message-id <id>", "Message ID")
+    .option("--timeout-ms <ms>", "Timeout in milliseconds (max 60000)")
+    .option("--payload <json>", "JSON payload")
+    .action(async function peerAwaitAction(this: Command, messageId?: string, opts?: Record<string, unknown>) {
+      const options = { ...opts, ...(messageId ? { messageId } : {}) };
+      result.code = await dispatchAgentCliCommand(runtimeFrom(ctx, this), "kxm_await", options);
+    });
+
+  addGlobalOptions(peer.command("cancel [messageId]").description("Cancel a sent peer request"))
+    .option("--message-id <id>", "Message ID")
+    .option("--payload <json>", "JSON payload")
+    .action(async function peerCancelAction(this: Command, messageId?: string, opts?: Record<string, unknown>) {
+      const options = { ...opts, ...(messageId ? { messageId } : {}) };
+      result.code = await dispatchAgentCliCommand(runtimeFrom(ctx, this), "kxm_cancel", options);
+    });
+
+  addGlobalOptions(peer.command("fanout").description("Send the same request to one through three peers"))
+    .option("--targets <items...>", "Target peer names (1-3)")
+    .option("--content <text>", "Request content")
+    .option("--correlation-id <id>", "Task grouping ID")
+    .option("--idempotency-key-prefix <prefix>", "Idempotency prefix")
+    .option("--workflow-context <json>", "Workflow context JSON")
+    .option("--ttl-ms <ms>", "Message TTL in milliseconds")
+    .option("--timeout-ms <ms>", "Timeout in milliseconds")
+    .option("--payload <json>", "JSON payload")
+    .action(async function peerFanoutAction(this: Command, opts?: Record<string, unknown>) {
+      result.code = await dispatchAgentCliCommand(runtimeFrom(ctx, this), "kxm_fanout", opts ?? {});
+    });
+
+  addGlobalOptions(peer.command("inbox").description("List inbound peer requests"))
+    .option("--payload <json>", "JSON payload")
+    .action(async function peerInboxAction(this: Command, opts?: Record<string, unknown>) {
+      result.code = await dispatchAgentCliCommand(runtimeFrom(ctx, this), "kxm_inbox", opts ?? {});
+    });
+
+  addGlobalOptions(peer.command("reply [messageId] [content]").description("Reply to an inbound request"))
+    .option("--message-id <id>", "Message ID")
+    .option("--content <text>", "Reply content")
+    .option("--payload <json>", "JSON payload")
+    .action(async function peerReplyAction(this: Command, messageId?: string, content?: string, opts?: Record<string, unknown>) {
+      const options = { ...opts, ...(messageId ? { messageId } : {}), ...(content ? { content } : {}) };
+      result.code = await dispatchAgentCliCommand(runtimeFrom(ctx, this), "kxm_reply", options);
+    });
+
   const workflow = addGlobalOptions(program.command("workflow").description("Start and inspect workflow runs"));
   workflow.helpCommand("help", "Show workflow help");
   addGlobalOptions(workflow.command("list").description("List local workflow runs")).action(async function listAction(this: Command) {
@@ -2468,6 +2704,73 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .argument("<runId>", "Workflow run ID")
     .action(async function getAction(this: Command, runId: string) {
       result.code = await cmdWorkflowInspect(runtimeFrom(ctx, this), "get", runId);
+    });
+  addGlobalOptions(workflow.command("checkpoint [runId] [stageId] [status] [summary]").description("Record a workflow stage checkpoint with evidence"))
+    .option("--run-id <id>", "Workflow run ID")
+    .option("--stage-id <id>", "Active stage ID")
+    .option("--status <status>", "passed, warning, or failed")
+    .option("--summary <text>", "Stage summary")
+    .option("--evidence <json>", "Key-value evidence JSON")
+    .option("--evidence-refs <json>", "Peer evidence references JSON")
+    .option("--payload <json>", "JSON payload")
+    .action(async function checkpointAction(this: Command, runId?: string, stageId?: string, status?: string, summary?: string, opts?: Record<string, unknown>) {
+      const options = {
+        ...opts,
+        ...(runId ? { runId } : {}),
+        ...(stageId ? { stageId } : {}),
+        ...(status ? { status } : {}),
+        ...(summary ? { summary } : {}),
+      };
+      result.code = await dispatchAgentCliCommand(runtimeFrom(ctx, this), "kxm_workflow_checkpoint", options);
+    });
+  addGlobalOptions(workflow.command("record [runId] [category] [area] [summary]").description("Record workflow journal knowledge"))
+    .option("--run-id <id>", "Workflow run ID")
+    .option("--category <category>", "plan, decision, contradiction, error, lesson")
+    .option("--area <area>", "harness, gates, implementation, workflow, documentation, security, other")
+    .option("--severity <level>", "info, warning, error")
+    .option("--summary <text>", "Entry summary")
+    .option("--details <text>", "Detailed text")
+    .option("--evidence <items...>", "Evidence strings")
+    .option("--related-entry-ids <ids...>", "Related entry IDs")
+    .option("--payload <json>", "JSON payload")
+    .action(async function recordAction(this: Command, runId?: string, category?: string, area?: string, summary?: string, opts?: Record<string, unknown>) {
+      const options = {
+        ...opts,
+        ...(runId ? { runId } : {}),
+        ...(category ? { category } : {}),
+        ...(area ? { area } : {}),
+        ...(summary ? { summary } : {}),
+      };
+      result.code = await dispatchAgentCliCommand(runtimeFrom(ctx, this), "kxm_workflow_record", options);
+    });
+  addGlobalOptions(workflow.command("wait [runId] [stageId] [signalKey] [summary]").description("Wait for a workflow signal callback"))
+    .option("--run-id <id>", "Workflow run ID")
+    .option("--stage-id <id>", "Active stage ID")
+    .option("--signal-key <key>", "Wait signal key")
+    .option("--summary <text>", "Expected result summary")
+    .option("--evidence <json>", "Evidence JSON")
+    .option("--evidence-refs <json>", "Peer evidence refs JSON")
+    .option("--timeout-ms <ms>", "Wait timeout in milliseconds")
+    .option("--payload <json>", "JSON payload")
+    .action(async function waitAction(this: Command, runId?: string, stageId?: string, signalKey?: string, summary?: string, opts?: Record<string, unknown>) {
+      const options = {
+        ...opts,
+        ...(runId ? { runId } : {}),
+        ...(stageId ? { stageId } : {}),
+        ...(signalKey ? { signalKey } : {}),
+        ...(summary ? { summary } : {}),
+      };
+      result.code = await dispatchAgentCliCommand(runtimeFrom(ctx, this), "kxm_workflow_wait", options);
+    });
+  addGlobalOptions(workflow.command("signal").description("Post a signed workflow callback or unblock a vNext run"))
+    .argument("<runId>", "Workflow run ID")
+    .argument("<signalKey>", "Wait signal key")
+    .argument("<status>", "passed, warning, or failed")
+    .argument("<summary>", "Callback summary")
+    .argument("[evidence...]", "required-key=evidence pairs")
+    .option("--delivery-id <id>", "Stable callback delivery ID")
+    .action(async function workflowSignalAction(this: Command, runId: string, signalKey: string, status: string, summary: string, evidence: string[], options: { deliveryId?: string }) {
+      result.code = await cmdSignal(runtimeFrom(ctx, this), runId, signalKey, status, summary, evidence ?? [], options.deliveryId);
     });
   addGlobalOptions(workflow.command("start").description("POST a signed workflow-start webhook"))
     .argument("[definitionId]", "Workflow definition ID")
