@@ -193,6 +193,27 @@ It does not replace the phase gates below.
 
 ### Landed in this tree (unreleased)
 
+- **E5 memory floor fixes (issue #100):** Turned three prose memory rules into
+  enforceable code per Decision D12. Rule 1: state promotion requires a configured
+  admin token with no loopback bypass and records the real caller, rejecting
+  self-promotion where author equals promoter (`state_promotion_invalid`). Rule 2:
+  proposed items never reach a packet's skills or current state; the arbiter reads
+  promoted skills from the governed store by content SHA-256 hash. Rule 3: context
+  items reject control-plane fields (`permissions`, `tools`, `allow`, `deny`,
+  `grants`, `approval`, `policy`, `scopes`, `credentials`, `secrets`, `token`,
+  `apiKey`, `password`), secrets in summary and provenance sourceRef are redacted
+  at parse, `scope` field (`agent | project | run | operator`) is validated on the
+  record, and dead shallow `lineageOf` is deleted. Memory revision is computed at
+  run creation (`computeVnextMemoryRevision`) from the SHA-256 hash of the
+  Git-authored set (`.kxm/memory` excluding `candidates`; `.kxm/skills/promoted`)
+  plus the promoted-state snapshot and written to `run.memoryRevision` and
+  `event.memoryRevision` with canonical prefix `ctxrev_`. Optimized test coverage
+  and execution speed: reorganized test suites into `test/core/` (essential PR unit/contract
+  suites) and `test/simulations/` (heavy subprocess/signal/timeout suites); added
+  `--test-concurrency=4` for parallel test coverage; established tiered gates with
+  `test:core` (essential PR gate) and `test:coverage:core` (92/80/93 floors) alongside
+  `test:complete` and `test:coverage:complete` (93/80/93 floors). Verified with
+  `test/core/e5-memory-floor.test.ts` and updated `test/core/ci-contract.test.ts`.
 - **E4c Kimi CLI and agy verification (issue #95):** Verified Kimi CLI and
   Antigravity CLI (`agy`) as one-shot adapter members. Added `HarnessDispatchStatus`
   (`status: "yes" | "no"`, `supported: boolean`, `reason?: string`) across

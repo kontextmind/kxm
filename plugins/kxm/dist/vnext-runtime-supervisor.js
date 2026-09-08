@@ -14778,7 +14778,7 @@ var require_dist = __commonJS({
 // plugins/kxm/src/vnext-runtime-supervisor.ts
 import { spawn } from "node:child_process";
 import { createHash as createHash6, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { chmodSync, existsSync as existsSync3, lstatSync as lstatSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync2, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync as existsSync4, lstatSync as lstatSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync3, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { dirname as dirname4, isAbsolute as isAbsolute3, join as join5, resolve as resolve4 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
@@ -16882,7 +16882,6 @@ var VnextRuntimeRegistry = class {
   }
 };
 var VNEXT_RUN_EVENT_SCHEMA = "kxm.run-event.v1";
-var VNEXT_ABSENT_MEMORY_REVISION = "ctxrev_absent";
 var VNEXT_EVENT_STORE_SCHEMA_VERSION = 3;
 var EVENT_STORE_TABLES = {
   runs: ["run_id", "project_id", "home_runtime_id", "workflow_id", "prompt_sha256", "status", "config_revision", "memory_revision", "executor_policy_revision", "tool_policy_revision", "created_at", "updated_at"],
@@ -17823,6 +17822,7 @@ function capabilityFromRow(row) {
 
 // plugins/kxm/src/vnext-runtime.ts
 import { createHash as createHash5 } from "node:crypto";
+import { existsSync as existsSync3, readdirSync as readdirSync2, readFileSync as readFileSync2 } from "node:fs";
 import { join as join4 } from "node:path";
 
 // plugins/kxm/src/vnext-engine-fold.ts
@@ -19922,6 +19922,9 @@ function pump(storePath, owner) {
 }
 
 // plugins/kxm/src/vnext-runtime.ts
+function compareCodeUnits3(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
 function sha256Of(input) {
   return `sha256:${createHash5("sha256").update(input, "utf8").digest("hex")}`;
 }
@@ -19954,10 +19957,53 @@ function vnextToolPolicyRevision(bundle) {
   }
   return sha256Of(vnextCanonicalJson({ policies, gateRegistry: bundle.gateRegistry?.value ?? null }));
 }
-function vnextPolicyRevisions(bundle) {
+function collectMemoryFiles(dir, baseDir, ignoreSubdirs = /* @__PURE__ */ new Set()) {
+  if (!existsSync3(dir)) return [];
+  const entries = readdirSync2(dir, { withFileTypes: true });
+  const results = [];
+  for (const entry of entries) {
+    const fullPath = join4(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (ignoreSubdirs.has(entry.name)) continue;
+      results.push(...collectMemoryFiles(fullPath, baseDir, ignoreSubdirs));
+    } else if (entry.isFile()) {
+      const relPath = fullPath.slice(baseDir.length + 1).replace(/\\/g, "/");
+      results.push({ relPath, fullPath });
+    }
+  }
+  return results;
+}
+function computeVnextMemoryRevision(bundle, options = {}) {
+  const hash = createHash5("sha256");
+  const memoryDir = options.memoryDir ?? join4(bundle.projectRoot, ".kxm", "memory");
+  const memoryFiles = collectMemoryFiles(memoryDir, memoryDir, /* @__PURE__ */ new Set(["candidates"])).sort((left, right) => compareCodeUnits3(left.relPath, right.relPath));
+  for (const file of memoryFiles) {
+    hash.update(`memory:${file.relPath}\0`, "utf8");
+    hash.update(readFileSync2(file.fullPath));
+    hash.update("\0", "utf8");
+  }
+  const skillsDir = options.skillsDir ?? join4(bundle.projectRoot, ".kxm", "skills");
+  const promotedSkillsDir = join4(skillsDir, "promoted");
+  const skillFiles = collectMemoryFiles(promotedSkillsDir, promotedSkillsDir).sort((left, right) => compareCodeUnits3(left.relPath, right.relPath));
+  for (const file of skillFiles) {
+    hash.update(`skill:${file.relPath}\0`, "utf8");
+    hash.update(readFileSync2(file.fullPath));
+    hash.update("\0", "utf8");
+  }
+  if (options.promotedState && options.promotedState.length > 0) {
+    const currentItems = options.promotedState.filter((item) => !item.status || item.status === "current").slice().sort((left, right) => compareCodeUnits3(left.id, right.id));
+    for (const item of currentItems) {
+      hash.update(`state:${item.id}\0`, "utf8");
+      hash.update(vnextCanonicalJson(item), "utf8");
+      hash.update("\0", "utf8");
+    }
+  }
+  return `ctxrev_${hash.digest("hex")}`;
+}
+function vnextPolicyRevisions(bundle, options) {
   return {
     configRevision: bundle.configRevision,
-    memoryRevision: VNEXT_ABSENT_MEMORY_REVISION,
+    memoryRevision: computeVnextMemoryRevision(bundle, options),
     executorPolicyRevision: vnextExecutorPolicyRevision(bundle),
     toolPolicyRevision: vnextToolPolicyRevision(bundle)
   };
@@ -20048,7 +20094,8 @@ function acceptVnextRun(context, bundle, request, options = {}) {
   if (!workflow) {
     throw runtimeError("run_workflow_unknown", ".kxm/workflows", `workflow ${request.workflowId} does not exist in this project`);
   }
-  const revisions = vnextPolicyRevisions(bundle);
+  const revisions = vnextPolicyRevisions(bundle, options);
+  const memoryRevision = options.memoryRevision ?? revisions.memoryRevision;
   const promptSha256 = `sha256:${createHash5("sha256").update(request.prompt, "utf8").digest("hex")}`;
   return context.eventStore.transaction(() => {
     const prior = context.eventStore.command(commandId);
@@ -20086,7 +20133,7 @@ function acceptVnextRun(context, bundle, request, options = {}) {
       recordedAt: now,
       monotonicNs,
       configRevision: revisions.configRevision,
-      memoryRevision: revisions.memoryRevision,
+      memoryRevision,
       executorPolicyRevision: revisions.executorPolicyRevision,
       toolPolicyRevision: revisions.toolPolicyRevision,
       payload
@@ -20099,7 +20146,7 @@ function acceptVnextRun(context, bundle, request, options = {}) {
       promptSha256,
       status: "created",
       configRevision: revisions.configRevision,
-      memoryRevision: revisions.memoryRevision,
+      memoryRevision,
       executorPolicyRevision: revisions.executorPolicyRevision,
       toolPolicyRevision: revisions.toolPolicyRevision,
       createdAt: now,
@@ -20427,7 +20474,7 @@ function readVnextSupervisorToken(paths) {
   if (stat.isSymbolicLink() || !stat.isFile()) {
     throw runtimeError("runtime_path_invalid", file, "supervisor token file must be a regular file, not a link");
   }
-  const token = readFileSync2(file, "utf8").trim();
+  const token = readFileSync3(file, "utf8").trim();
   return token.length >= 32 ? token : void 0;
 }
 function processAlive(pid) {
@@ -20445,7 +20492,7 @@ function supervisorErrorFile(paths) {
 }
 function clearSupervisorError(paths) {
   const file = supervisorErrorFile(paths);
-  if (existsSync3(file)) rmSync(file, { force: true });
+  if (existsSync4(file)) rmSync(file, { force: true });
 }
 function recordSupervisorError(paths, message) {
   try {
@@ -20462,13 +20509,13 @@ function readRecentSupervisorError(paths) {
   const ageMs = Date.now() - stat.mtimeMs;
   if (ageMs > SUPERVISOR_ERROR_MAX_AGE_MS) return void 0;
   try {
-    return readFileSync2(file, "utf8").trim();
+    return readFileSync3(file, "utf8").trim();
   } catch {
     return void 0;
   }
 }
 function vnextSupervisorStatus(paths) {
-  if (!existsSync3(paths.registryDb)) return { running: false };
+  if (!existsSync4(paths.registryDb)) return { running: false };
   const registry = new VnextRuntimeRegistry(paths.registryDb);
   try {
     const record2 = registry.supervisor();

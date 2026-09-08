@@ -6,6 +6,14 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Added
 
+- **E5 memory floor and test tiering (issue #100):** Enforced memory security rules
+  (Rule 1 admin-authenticated state promotion without loopback bypass; Rule 2
+  exclusion of proposed candidates from currentState and content-hashed promoted
+  skill verification; Rule 3 control-plane field rejection, secret redaction, and
+  `scope` validation). Pins canonical `memoryRevision` (`ctxrev_<sha256>`) at run
+  creation. Reorganized tests into `test/core/` (PR gate) and `test/simulations/`
+  (heavy simulations) with parallel `--test-concurrency=4` and scheduled nightly
+  coverage.
 - Agent-only vNext run loop (`vnext-engine.ts`): pins a D1 compiled plan in an
   immutable hashed envelope, folds schema-valid `kxm.run-event.v1` events with
   a run_state projection, and drives a model-free simulated producer under

@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 
 // plugins/kxm/src/hub.ts
-import { createHash as createHash2, createHmac, timingSafeEqual } from "node:crypto";
+import { createHash as createHash3, createHmac, timingSafeEqual } from "node:crypto";
+import { existsSync as existsSync2 } from "node:fs";
 import { createServer } from "node:http";
 import { isIP } from "node:net";
+import { join as join2 } from "node:path";
 
 // plugins/kxm/src/protocol.ts
 import { randomUUID } from "node:crypto";
@@ -76,6 +78,28 @@ function workflowScopeExtras(operation, assignedCoordinatorName) {
   };
 }
 
+// plugins/kxm/src/redact.ts
+var SECRET_PATTERNS = [
+  /\bsk-[A-Za-z0-9_-]{8,}\b/g,
+  /\bghp_[A-Za-z0-9_]{20,}\b/g,
+  /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
+  /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/gi,
+  /\bBearer\s+[A-Za-z0-9._~+/=-]+\b/gi,
+  /\bKXM_[A-Z0-9_]*(TOKEN|SECRET|KEY)[A-Z0-9_]*=\S+/gi,
+  /\b(GITHUB_TOKEN|GH_TOKEN|KXM_AUTH_TOKEN|KXM_WORKFLOW_SIGNAL_SECRET)=\S+/gi,
+  /\b[A-Fa-f0-9]{64}\b/g
+];
+function redactSecrets(value) {
+  let result = value;
+  for (const pattern of SECRET_PATTERNS) {
+    result = result.replace(pattern, "[redacted]");
+  }
+  return result;
+}
+function redactStringList(values, maxItems = 32) {
+  return values.slice(0, maxItems).map((value) => redactSecrets(value).slice(0, 500));
+}
+
 // plugins/kxm/src/context.ts
 var MAX_CONTEXT_SUMMARY_CHARS = 4e3;
 var MAX_CONTEXT_ID_REFS = 64;
@@ -124,6 +148,7 @@ var CONTEXT_SOURCE_TYPES = [
 ];
 var CONTEXT_AUTHORITIES = ["policy", "instruction", "evidence", "hypothesis"];
 var CONTEXT_CONFIDENCES = ["verified", "probable", "uncertain"];
+var CONTEXT_SCOPES = ["agent", "project", "run", "operator"];
 function oneOf(value, field, allowed) {
   if (typeof value !== "string" || !allowed.includes(value)) {
     throw new ProtocolError(400, `${field} must be one of ${allowed.join(", ")}`, "invalid_context_field");
@@ -182,11 +207,14 @@ function parseContextItem(value) {
     id: requireString(input.id, "context item id", { max: 128 }),
     kind: oneOf(input.kind, "context item kind", CONTEXT_ITEM_KINDS),
     project: requireString(input.project, "context item project", { max: 200 }),
-    summary: requireString(input.summary, "context item summary", { max: MAX_CONTEXT_SUMMARY_CHARS }),
+    summary: redactSecrets(requireString(input.summary, "context item summary", { max: MAX_CONTEXT_SUMMARY_CHARS })),
     provenance: parseContextProvenance(input.provenance),
     authority: oneOf(input.authority, "context item authority", CONTEXT_AUTHORITIES),
     confidence: oneOf(input.confidence, "context item confidence", CONTEXT_CONFIDENCES)
   };
+  if (input.scope !== void 0 && input.scope !== null) {
+    item.scope = oneOf(input.scope, "context item scope", CONTEXT_SCOPES);
+  }
   const observedAt = optionalIsoTimestamp(input.observedAt, "context item observedAt");
   const validFrom = optionalIsoTimestamp(input.validFrom, "context item validFrom");
   const validUntil = optionalIsoTimestamp(input.validUntil, "context item validUntil");
@@ -232,7 +260,7 @@ function parseContextProvenance(value) {
     sourceType: oneOf(input.sourceType, "context provenance sourceType", CONTEXT_SOURCE_TYPES)
   };
   const sourceRef = input.sourceRef === void 0 || input.sourceRef === null ? void 0 : requireString(input.sourceRef, "context provenance sourceRef", { max: 512 });
-  if (sourceRef !== void 0) provenance.sourceRef = sourceRef;
+  if (sourceRef !== void 0) provenance.sourceRef = redactSecrets(sourceRef);
   const derivedFrom = idRefs(input.derivedFrom, "context provenance derivedFrom");
   if (derivedFrom !== void 0) provenance.derivedFrom = derivedFrom;
   return provenance;
@@ -412,6 +440,27 @@ function arbitrate(requestInput, pool, options = {}) {
     }
     candidates.push(candidate);
   }
+  if (options.skillLifecycle) {
+    for (const metadata of options.skillLifecycle.list("promoted")) {
+      try {
+        options.skillLifecycle.verify("promoted", metadata.id);
+        candidates.push(parseContextItem({
+          id: `skill_${metadata.id}`,
+          kind: "skill",
+          project: request.project,
+          summary: metadata.description ? `${metadata.name}: ${metadata.description}` : metadata.name,
+          provenance: {
+            sourceType: "git",
+            sourceRef: `skill:${metadata.id}@${metadata.contentSha256}`
+          },
+          authority: "instruction",
+          confidence: "verified",
+          status: "current"
+        }));
+      } catch {
+      }
+    }
+  }
   const kindRank = /* @__PURE__ */ new Map();
   const requestedKinds = request.includeKinds ?? policy.kinds;
   requestedKinds.forEach((kind, index) => kindRank.set(kind, index));
@@ -451,7 +500,7 @@ function arbitrate(requestInput, pool, options = {}) {
     currentState: bySection("state").filter((item) => item.status === "current" || item.status === void 0),
     knowledge: bySection("knowledge"),
     episodes: bySection("episode"),
-    skills: bySection("skill"),
+    skills: bySection("skill").filter((item) => item.status !== "proposed"),
     contradictions: selected.filter((item) => contradictions.has(item.id)),
     unresolvedGaps,
     provenanceSummary: provenanceSummaryOf(selected),
@@ -765,26 +814,297 @@ function boundedRefs(value, field) {
   return value.map((ref) => requireNonEmpty(ref, `${field} entry`));
 }
 
-// plugins/kxm/src/redact.ts
-var SECRET_PATTERNS = [
-  /\bsk-[A-Za-z0-9_-]{8,}\b/g,
-  /\bghp_[A-Za-z0-9_]{20,}\b/g,
-  /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
-  /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/gi,
-  /\bBearer\s+[A-Za-z0-9._~+/=-]+\b/gi,
-  /\bKXM_[A-Z0-9_]*(TOKEN|SECRET|KEY)[A-Z0-9_]*=\S+/gi,
-  /\b(GITHUB_TOKEN|GH_TOKEN|KXM_AUTH_TOKEN|KXM_WORKFLOW_SIGNAL_SECRET)=\S+/gi,
-  /\b[A-Fa-f0-9]{64}\b/g
+// plugins/kxm/src/skills.ts
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+var SKILL_CANDIDATE_SCHEMA = "kxm.skill-candidate.v1";
+var SKILL_EVALUATION_SCHEMA = "kxm.skill-evaluation.v1";
+var SKILL_DECISION_SCHEMA = "kxm.skill-decision.v1";
+var MAX_SKILL_NAME_CHARS = 64;
+var MAX_SKILL_CONTENT_CHARS = 32e3;
+var MAX_SKILL_EVIDENCE_REFS = 32;
+var MAX_SKILL_MODELS = 16;
+var PROMOTION_REQUIRED_EVALUATIONS = [
+  "static-review",
+  "sandbox",
+  "functional",
+  "safety"
 ];
-function redactSecrets(value) {
-  let result = value;
-  for (const pattern of SECRET_PATTERNS) {
-    result = result.replace(pattern, "[redacted]");
+var SkillLifecycleError = class extends Error {
+  code;
+  constructor(code, message) {
+    super(message);
+    this.name = "SkillLifecycleError";
+    this.code = code;
   }
-  return result;
+};
+function skillContentSha256(content) {
+  return createHash("sha256").update(content, "utf8").digest("hex");
 }
-function redactStringList(values, maxItems = 32) {
-  return values.slice(0, maxItems).map((value) => redactSecrets(value).slice(0, 500));
+function skillIdFor(name, contentSha256) {
+  const slug = name.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+  if (!slug) throw new SkillLifecycleError("invalid_skill_name", "skill name must contain alphanumeric characters");
+  return `${slug}.${contentSha256.slice(0, 12)}`;
+}
+var SkillLifecycle = class {
+  root;
+  now;
+  allowOptimizationEvals;
+  constructor(root, options = {}) {
+    this.root = root;
+    this.now = options.now ?? (() => (/* @__PURE__ */ new Date()).toISOString());
+    this.allowOptimizationEvals = options.allowOptimizationEvals === true;
+  }
+  dir(state) {
+    return join(this.root, state === "candidate" ? "candidates" : `${state}s`.replace("rejecteds", "rejected").replace("promoteds", "promoted"));
+  }
+  historyFile(id) {
+    return join(this.root, "history", `${id}.jsonl`);
+  }
+  paths(state, id) {
+    const dir = join(this.dir(state), id);
+    return { dir, metadata: join(dir, "metadata.json"), skill: join(dir, "SKILL.md") };
+  }
+  appendHistory(id, record) {
+    mkdirSync(join(this.root, "history"), { recursive: true });
+    const line = `${JSON.stringify(record)}
+`;
+    if (existsSync(this.historyFile(id))) {
+      const existing = readFileSync(this.historyFile(id), "utf8");
+      const lines = existing.split("\n").filter((entry) => entry.trim());
+      writeFileSync(this.historyFile(id), [...lines.slice(-499), line.trim()].join("\n") + "\n");
+    } else {
+      writeFileSync(this.historyFile(id), line);
+    }
+  }
+  history(id) {
+    const file = this.historyFile(id);
+    if (!existsSync(file)) return [];
+    return readFileSync(file, "utf8").split("\n").filter((line) => line.trim()).map((line) => JSON.parse(line));
+  }
+  readMetadata(state, id) {
+    const { metadata } = this.paths(state, id);
+    if (!existsSync(metadata)) {
+      throw new SkillLifecycleError("skill_not_found", `skill ${id} not found in ${state}`);
+    }
+    return JSON.parse(readFileSync(metadata, "utf8"));
+  }
+  move(from, to, id) {
+    const fromDir = join(this.dir(from), id);
+    const toDir = join(this.dir(to), id);
+    if (!existsSync(fromDir)) {
+      throw new SkillLifecycleError("skill_not_found", `skill ${id} not found in ${from}`);
+    }
+    mkdirSync(this.dir(to), { recursive: true });
+    if (existsSync(toDir)) rmSync(toDir, { recursive: true, force: true });
+    renameSync(fromDir, toDir);
+  }
+  /** Submit a new skill candidate. Content is redacted of secret material at
+   * creation; the ID is derived from name + content hash. */
+  create(input) {
+    const name = input.name?.trim();
+    if (!name || name.length > MAX_SKILL_NAME_CHARS) {
+      throw new SkillLifecycleError("invalid_skill_name", `skill name must be 1-${MAX_SKILL_NAME_CHARS} characters`);
+    }
+    const content = redactSecrets(input.content ?? "");
+    if (!content.trim() || content.length > MAX_SKILL_CONTENT_CHARS) {
+      throw new SkillLifecycleError("invalid_skill_content", `skill content must be 1-${MAX_SKILL_CONTENT_CHARS} characters`);
+    }
+    const description = redactSecrets(input.description?.trim() ?? "");
+    const sources = {
+      runIds: boundedList(input.sources?.runIds, "runIds"),
+      journalEntryIds: boundedList(input.sources?.journalEntryIds, "journalEntryIds"),
+      evidenceReceipts: boundedList(input.sources?.evidenceReceipts, "evidenceReceipts")
+    };
+    if (sources.runIds.length === 0 && sources.journalEntryIds.length === 0 && sources.evidenceReceipts.length === 0) {
+      throw new SkillLifecycleError(
+        "skill_sources_required",
+        "a skill candidate must reference at least one source run, journal entry, or evidence receipt"
+      );
+    }
+    const createdBy = input.createdBy?.trim();
+    if (!createdBy) throw new SkillLifecycleError("invalid_skill_author", "createdBy is required");
+    const models = boundedList(input.compatibility?.models, "compatibility.models");
+    if (models.length === 0 || models.length > MAX_SKILL_MODELS) {
+      throw new SkillLifecycleError("invalid_skill_compatibility", `compatibility.models must list 1-${MAX_SKILL_MODELS} models`);
+    }
+    const harness = input.compatibility?.harness?.trim();
+    if (!harness) throw new SkillLifecycleError("invalid_skill_compatibility", "compatibility.harness is required");
+    const contentSha256 = skillContentSha256(content);
+    const id = skillIdFor(name, contentSha256);
+    const { dir, metadata, skill } = this.paths("candidate", id);
+    if (existsSync(metadata)) {
+      throw new SkillLifecycleError(
+        "skill_candidate_exists",
+        `identical candidate ${id} already exists; changed behavior requires changed content`
+      );
+    }
+    const record = {
+      schema: SKILL_CANDIDATE_SCHEMA,
+      id,
+      name,
+      description,
+      contentSha256,
+      version: input.version ?? 1,
+      sources,
+      compatibility: { harness, models },
+      createdBy,
+      createdAt: this.now(),
+      ...input.supersedes ? { supersedes: input.supersedes } : {}
+    };
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(skill, content);
+    writeFileSync(metadata, `${JSON.stringify(record, null, 2)}
+`);
+    this.appendHistory(id, { schema: "kxm.skill-history-event.v1", event: "candidate_created", by: createdBy, supersedes: input.supersedes, at: record.createdAt });
+    return record;
+  }
+  /** Record a protected evaluation. A failed functional or safety evaluation
+   * deterministically quarantines the candidate. */
+  evaluate(candidateId, input) {
+    if (input.kind === "optimization" && !this.allowOptimizationEvals) {
+      throw new SkillLifecycleError(
+        "skill_optimization_disabled",
+        "optimization evaluations are disabled; enable them explicitly behind protected evals"
+      );
+    }
+    const metadata = this.readMetadata("candidate", candidateId);
+    const evaluatorVersion = input.evaluatorVersion?.trim();
+    if (!evaluatorVersion) throw new SkillLifecycleError("invalid_skill_evaluation", "evaluatorVersion is required");
+    const evaluation = {
+      schema: SKILL_EVALUATION_SCHEMA,
+      candidateId,
+      kind: input.kind,
+      evaluatorVersion,
+      passed: input.passed === true,
+      ...input.score !== void 0 ? { score: input.score } : {},
+      ...input.details ? { details: redactSecrets(input.details.slice(0, 2e3)) } : {},
+      evaluatedAt: this.now()
+    };
+    this.appendHistory(candidateId, evaluation);
+    let quarantined = false;
+    if (!evaluation.passed && (input.kind === "functional" || input.kind === "safety")) {
+      const decision = {
+        schema: SKILL_DECISION_SCHEMA,
+        candidateId,
+        decision: "quarantined",
+        decidedBy: input.evaluatedBy?.trim() || `evaluator:${evaluatorVersion}`,
+        reason: `automatic quarantine: ${input.kind} evaluation failed (${evaluatorVersion})`,
+        evidenceRefs: [`evaluation:${input.kind}:${evaluatorVersion}`],
+        decidedAt: this.now()
+      };
+      this.move("candidate", "quarantined", candidateId);
+      this.appendHistory(candidateId, decision);
+      quarantined = true;
+    }
+    return { evaluation, quarantined };
+  }
+  evaluationsFor(candidateId) {
+    return this.history(candidateId).filter(
+      (record) => record.schema === SKILL_EVALUATION_SCHEMA
+    );
+  }
+  /** Promote a candidate that passed every protected evaluation. The
+   * promoter must differ from the author, cite durable evidence, and the
+   * promoted content is hash-pinned and immutable. */
+  promote(candidateId, decision) {
+    const metadata = this.readMetadata("candidate", candidateId);
+    const decidedBy = decision.decidedBy?.trim();
+    if (!decidedBy) throw new SkillLifecycleError("invalid_skill_decision", "decidedBy is required");
+    if (decidedBy === metadata.createdBy) {
+      throw new SkillLifecycleError("skill_promotion_invalid", "the author of a skill candidate cannot promote it");
+    }
+    const evidenceRefs = boundedList(decision.evidenceRefs, "evidenceRefs");
+    if (evidenceRefs.length === 0) {
+      throw new SkillLifecycleError("skill_promotion_invalid", "promotion requires durable evidence references");
+    }
+    const evaluations = this.evaluationsFor(candidateId);
+    const missing = [];
+    for (const kind of PROMOTION_REQUIRED_EVALUATIONS) {
+      const latest = [...evaluations].reverse().find((record2) => record2.kind === kind);
+      if (!latest || !latest.passed) missing.push(kind);
+    }
+    if (missing.length > 0) {
+      throw new SkillLifecycleError(
+        "skill_evaluations_incomplete",
+        `promotion requires passing ${missing.join(", ")} evaluations`
+      );
+    }
+    this.verify("candidate", candidateId);
+    const record = {
+      schema: SKILL_DECISION_SCHEMA,
+      candidateId,
+      decision: "promoted",
+      decidedBy,
+      reason: decision.reason?.trim() || "passed protected evaluation",
+      evidenceRefs,
+      decidedAt: this.now()
+    };
+    this.move("candidate", "promoted", candidateId);
+    this.appendHistory(candidateId, record);
+    return metadata;
+  }
+  reject(candidateId, decision) {
+    const metadata = this.readMetadata("candidate", candidateId);
+    const record = {
+      schema: SKILL_DECISION_SCHEMA,
+      candidateId,
+      decision: "rejected",
+      decidedBy: decision.decidedBy?.trim() || "kxm-admin",
+      reason: decision.reason?.trim() || "rejected",
+      evidenceRefs: [],
+      decidedAt: this.now()
+    };
+    this.move("candidate", "rejected", candidateId);
+    this.appendHistory(candidateId, record);
+    return metadata;
+  }
+  /** Verify content integrity of a stored skill (any state). Detects
+   * out-of-band edits to promoted skills. */
+  verify(state, id) {
+    const metadata = this.readMetadata(state, id);
+    const { skill } = this.paths(state, id);
+    const content = readFileSync(skill, "utf8");
+    if (skillContentSha256(content) !== metadata.contentSha256) {
+      throw new SkillLifecycleError(
+        "skill_integrity_violation",
+        `skill ${id} content does not match its pinned hash; promoted skills are immutable and require a new candidate/eval cycle`
+      );
+    }
+    return metadata;
+  }
+  list(state) {
+    const dir = this.dir(state);
+    if (!existsSync(dir)) return [];
+    const ids = readdirSorted(dir);
+    return ids.map((id) => {
+      try {
+        return this.readMetadata(state, id);
+      } catch {
+        return void 0;
+      }
+    }).filter((metadata) => metadata !== void 0);
+  }
+  read(state, id) {
+    const metadata = this.readMetadata(state, id);
+    const { skill } = this.paths(state, id);
+    return { metadata, content: readFileSync(skill, "utf8") };
+  }
+};
+function boundedList(value, field) {
+  if (value === void 0) return [];
+  if (!Array.isArray(value)) {
+    throw new SkillLifecycleError("invalid_skill_input", `${field} must be an array of strings`);
+  }
+  const refs = value.map((ref) => String(ref).trim()).filter((ref) => ref.length > 0);
+  if (refs.length > MAX_SKILL_EVIDENCE_REFS) {
+    throw new SkillLifecycleError("invalid_skill_input", `${field} exceeds ${MAX_SKILL_EVIDENCE_REFS} references`);
+  }
+  return [...new Set(refs)];
+}
+function readdirSorted(dir) {
+  return readdirSync(dir).filter((entry) => statSync(join(dir, entry)).isDirectory()).sort();
 }
 
 // plugins/kxm/src/wiki.ts
@@ -990,11 +1310,11 @@ function lintKnowledgeWiki(pages, pool) {
 }
 
 // plugins/kxm/src/retrospective.ts
-import { mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync as mkdirSync2, renameSync as renameSync2, writeFileSync as writeFileSync2 } from "node:fs";
 import { resolve } from "node:path";
 
 // plugins/kxm/src/workflow.ts
-import { createHash } from "node:crypto";
+import { createHash as createHash2 } from "node:crypto";
 var JOURNAL_CATEGORIES = [
   "plan",
   "decision",
@@ -1292,8 +1612,8 @@ function verifyWorkflowEvidenceReferences(run, stage, references, lookup, verifi
         producerName: message.toName,
         context: { ...context },
         status: "replied",
-        requestSha256: createHash("sha256").update(message.content, "utf8").digest("hex"),
-        replySha256: createHash("sha256").update(message.reply.content, "utf8").digest("hex"),
+        requestSha256: createHash2("sha256").update(message.content, "utf8").digest("hex"),
+        replySha256: createHash2("sha256").update(message.reply.content, "utf8").digest("hex"),
         createdAt: message.createdAt,
         replyCreatedAt: message.reply.createdAt,
         repliedAt: message.repliedAt,
@@ -1669,7 +1989,7 @@ function canonicalWorkflowDefinitionJson(definition) {
   return JSON.stringify(canonicalizeForHash(publicDefinition));
 }
 function workflowDefinitionHash(definition) {
-  return createHash("sha256").update(canonicalWorkflowDefinitionJson(definition), "utf8").digest("hex");
+  return createHash2("sha256").update(canonicalWorkflowDefinitionJson(definition), "utf8").digest("hex");
 }
 function resolveOutcomeRule(stage, outcomeKey) {
   const raw = stage.on?.[outcomeKey];
@@ -1747,7 +2067,7 @@ function takeDeclaredTransition(run, stage, rule, outcome, summary, attempt, tim
 function evidenceValueSha256(evidence, key) {
   const values = evidence[canonicalWorkflowEvidenceKey(key)];
   if (!values || values.length === 0) return void 0;
-  return createHash("sha256").update([...values].sort().join("\n"), "utf8").digest("hex");
+  return createHash2("sha256").update([...values].sort().join("\n"), "utf8").digest("hex");
 }
 function enforceOracles(run, stageId, evidence) {
   if (run.oracle) {
@@ -2164,7 +2484,7 @@ function renderRetrospectiveMarkdown(doc) {
 }
 function writeRetrospective(outDir, doc) {
   if (!SAFE_RUN_ID.test(doc.runId)) throw new Error("invalid retrospective run id");
-  mkdirSync(outDir, { recursive: true });
+  mkdirSync2(outDir, { recursive: true });
   const root = resolve(outDir);
   const jsonPath = resolve(root, `${doc.runId}.json`);
   const mdPath = resolve(root, `${doc.runId}.md`);
@@ -2172,16 +2492,16 @@ function writeRetrospective(outDir, doc) {
   if (!jsonPath.startsWith(prefix) || !mdPath.startsWith(prefix)) throw new Error("retrospective path escaped output directory");
   const jsonTmp = `${jsonPath}.tmp`;
   const mdTmp = `${mdPath}.tmp`;
-  writeFileSync(jsonTmp, `${JSON.stringify(doc, null, 2)}
+  writeFileSync2(jsonTmp, `${JSON.stringify(doc, null, 2)}
 `, { encoding: "utf8", mode: 384 });
-  writeFileSync(mdTmp, renderRetrospectiveMarkdown(doc), { encoding: "utf8", mode: 384 });
-  renameSync(jsonTmp, jsonPath);
-  renameSync(mdTmp, mdPath);
+  writeFileSync2(mdTmp, renderRetrospectiveMarkdown(doc), { encoding: "utf8", mode: 384 });
+  renameSync2(jsonTmp, jsonPath);
+  renameSync2(mdTmp, mdPath);
   return { jsonPath, mdPath };
 }
 
 // plugins/kxm/src/store.ts
-import { mkdirSync as mkdirSync2 } from "node:fs";
+import { mkdirSync as mkdirSync3 } from "node:fs";
 import { dirname, resolve as resolve2 } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 var MessageMap = class extends Map {
@@ -2224,7 +2544,7 @@ var MeshStore = class {
     this.messages = new MessageMap(this);
     if (!path) return;
     this.path = path === ":memory:" ? path : resolve2(path);
-    if (this.path !== ":memory:") mkdirSync2(dirname(this.path), { recursive: true });
+    if (this.path !== ":memory:") mkdirSync3(dirname(this.path), { recursive: true });
     this.database = new DatabaseSync(this.path);
     this.database.exec("PRAGMA busy_timeout = 5000");
     const schemaRow = this.database.prepare("PRAGMA user_version").get();
@@ -2668,8 +2988,8 @@ function publicAgent(agent) {
 }
 function safeTokenEqual(actual, expected) {
   if (!actual) return false;
-  const actualHash = createHash2("sha256").update(actual).digest();
-  const expectedHash = createHash2("sha256").update(expected).digest();
+  const actualHash = createHash3("sha256").update(actual).digest();
+  const expectedHash = createHash3("sha256").update(expected).digest();
   return timingSafeEqual(actualHash, expectedHash);
 }
 function bearerToken(request) {
@@ -2914,6 +3234,7 @@ function createMeshHub(options = {}) {
   const workflowRuns = store.workflowRuns;
   const journal = store.journal;
   const stateProvider = new NativeStateProvider(store);
+  const skillLifecycle = options.skillLifecycle ?? (options.skillsDir || existsSync2(join2(process.cwd(), ".kxm", "skills")) ? new SkillLifecycle(options.skillsDir ?? join2(process.cwd(), ".kxm", "skills")) : void 0);
   const streams = /* @__PURE__ */ new Map();
   const opsStreams = /* @__PURE__ */ new Set();
   const rateBuckets = /* @__PURE__ */ new Map();
@@ -2994,7 +3315,9 @@ function createMeshHub(options = {}) {
       return { project, caller: agent.id };
     }
     requireAdminAuth(request);
-    return { project, caller: "kxm-admin" };
+    const callerHeader = request.headers["x-kxm-caller-id"];
+    const caller = typeof callerHeader === "string" && callerHeader.trim() ? callerHeader.trim() : "kxm-admin";
+    return { project, caller };
   }
   function requireAdminAuth(request) {
     if (!authToken2 && isLoopback(host2)) return;
@@ -3579,7 +3902,7 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
         }
         const deliveryHeader = request.headers["x-atlassian-webhook-identifier"] ?? request.headers["x-github-delivery"] ?? request.headers["x-kxm-delivery-id"];
         const deliveryId = requireString(deliveryHeader, "webhook delivery identifier", { max: 128 });
-        const payloadHash = createHash2("sha256").update(rawBody).digest("hex");
+        const payloadHash = createHash3("sha256").update(rawBody).digest("hex");
         const existingReceipt = run.signalReceipts?.find((receipt2) => receipt2.deliveryId === deliveryId);
         if (existingReceipt) {
           if (existingReceipt.signalKey !== signalKey || existingReceipt.payloadHash !== payloadHash) {
@@ -3789,7 +4112,7 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
           definitionId: definition.id,
           source: definition.source,
           deliveryId,
-          payloadHash: createHash2("sha256").update(rawBody).digest("hex"),
+          payloadHash: createHash3("sha256").update(rawBody).digest("hex"),
           definitionHash: workflowDefinitionHash(definition),
           ...event ? { event } : {},
           project: definition.project,
@@ -3960,7 +4283,10 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
         const { project: callerProject, caller: callerId } = contextCallerProject(request, body.project);
         const policy = rolePolicy(typeof body.role === "string" ? body.role : "");
         const { pool, contradictionIds } = projectContextPool2(callerProject, policy.journalCategories);
-        const outcome = arbitrate(body, pool, { contradictionIds });
+        const outcome = arbitrate(body, pool, {
+          contradictionIds,
+          ...skillLifecycle ? { skillLifecycle } : {}
+        });
         counters.contextRequests += 1;
         logger({
           event: "context_packet_assembled",
@@ -4012,7 +4338,7 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
           authority: parseContextAuthority(body.authority),
           confidence: parseContextConfidence(body.confidence),
           evidenceRefs: boundedStringList(body.evidenceRefs, "evidenceRefs", 32),
-          proposedBy: callerId
+          proposedBy: typeof body.proposedBy === "string" && body.proposedBy.trim() ? body.proposedBy.trim() : callerId
         });
         counters.contextRequests += 1;
         publishOps(callerProject, "workflows");
@@ -4022,15 +4348,16 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
       }
       const contextStatePromoteMatch = url.pathname.match(/^\/v1\/context\/state\/promote$/);
       if (method === "POST" && contextStatePromoteMatch) {
-        requireAdminAuth(request);
+        requireConfiguredAdminAuth(request, "state promotion");
         const body = await readJson(request);
         const proposalId = requireString(body.proposalId, "proposalId", { max: 128 });
         const project = requireString(body.project, "project", { max: 200 });
         const evidence = boundedStringList(body.evidence, "evidence", 32);
-        const promoted = await stateProvider.promote(proposalId, evidence, "kxm-admin");
+        const promoter = typeof body.promotedBy === "string" && body.promotedBy.trim() ? body.promotedBy.trim() : typeof body.caller === "string" && body.caller.trim() ? body.caller.trim() : typeof request.headers["x-kxm-caller-id"] === "string" && request.headers["x-kxm-caller-id"].trim() ? request.headers["x-kxm-caller-id"].trim() : "kxm-admin";
+        const promoted = await stateProvider.promote(proposalId, evidence, promoter);
         counters.contextRequests += 1;
         publishOps(project, "workflows");
-        logger({ event: "context_state_promoted", project, proposalId, promotedId: promoted.id, stateKey: promoted.stateKey });
+        logger({ event: "context_state_promoted", project, proposalId, promotedId: promoted.id, stateKey: promoted.stateKey, promotedBy: promoter });
         json(response, 200, { state: promoted });
         return;
       }
@@ -4806,11 +5133,11 @@ data: ${JSON.stringify({ agent: publicAgent(current) })}
 }
 
 // plugins/kxm/src/server.ts
-import { mkdirSync as mkdirSync4, readFileSync } from "node:fs";
-import { dirname as dirname3, join, resolve as resolve3 } from "node:path";
+import { mkdirSync as mkdirSync5, readFileSync as readFileSync2 } from "node:fs";
+import { dirname as dirname3, join as join3, resolve as resolve3 } from "node:path";
 
 // plugins/kxm/src/logger.ts
-import { appendFileSync, existsSync, mkdirSync as mkdirSync3, renameSync as renameSync2, statSync, unlinkSync } from "node:fs";
+import { appendFileSync, existsSync as existsSync3, mkdirSync as mkdirSync4, renameSync as renameSync3, statSync as statSync2, unlinkSync } from "node:fs";
 import { dirname as dirname2 } from "node:path";
 var LOG_LEVEL_PRIORITY = {
   debug: 10,
@@ -4848,7 +5175,7 @@ function redactLogValue(val, key) {
 function rotateLogFiles(filePath, maxFiles) {
   for (let i = maxFiles; i >= 1; i--) {
     const current = `${filePath}.${i}`;
-    if (existsSync(current)) {
+    if (existsSync3(current)) {
       if (i >= maxFiles) {
         try {
           unlinkSync(current);
@@ -4856,15 +5183,15 @@ function rotateLogFiles(filePath, maxFiles) {
         }
       } else {
         try {
-          renameSync2(current, `${filePath}.${i + 1}`);
+          renameSync3(current, `${filePath}.${i + 1}`);
         } catch {
         }
       }
     }
   }
-  if (existsSync(filePath)) {
+  if (existsSync3(filePath)) {
     try {
-      renameSync2(filePath, `${filePath}.1`);
+      renameSync3(filePath, `${filePath}.1`);
     } catch {
     }
   }
@@ -4879,9 +5206,9 @@ function createLogger(options) {
   const shouldStdout = options.stdout ?? !isDaemon;
   const correlationDefaults = options.correlation ?? {};
   let currentSize = 0;
-  if (filePath && existsSync(filePath)) {
+  if (filePath && existsSync3(filePath)) {
     try {
-      currentSize = statSync(filePath).size;
+      currentSize = statSync2(filePath).size;
     } catch {
       currentSize = 0;
     }
@@ -4917,7 +5244,7 @@ function createLogger(options) {
         currentSize = 0;
       }
       try {
-        mkdirSync3(dirname2(filePath), { recursive: true });
+        mkdirSync4(dirname2(filePath), { recursive: true });
         appendFileSync(filePath, line, { encoding: "utf8", mode: 384 });
         currentSize += lineBytes;
       } catch {
@@ -4963,13 +5290,13 @@ var host = process.env.KXM_HOST ?? "127.0.0.1";
 var port = Number.parseInt(process.env.KXM_PORT ?? String(DEFAULT_PORT), 10);
 var authToken = process.env.KXM_AUTH_TOKEN;
 var workspaceDir = resolve3(process.env.KXM_WORKSPACE_DIR?.trim() || ".kxm");
-var configDir = resolve3(process.env.KXM_CONFIG_DIR?.trim() || join(workspaceDir, "config"));
-var logsDir = resolve3(process.env.KXM_LOGS_DIR?.trim() || join(workspaceDir, "logs"));
-var assetsDir = resolve3(process.env.KXM_ASSETS_DIR?.trim() || join(workspaceDir, "assets"));
-var stateDir = resolve3(process.env.KXM_STATE_DIR?.trim() || join(workspaceDir, "state"));
+var configDir = resolve3(process.env.KXM_CONFIG_DIR?.trim() || join3(workspaceDir, "config"));
+var logsDir = resolve3(process.env.KXM_LOGS_DIR?.trim() || join3(workspaceDir, "logs"));
+var assetsDir = resolve3(process.env.KXM_ASSETS_DIR?.trim() || join3(workspaceDir, "assets"));
+var stateDir = resolve3(process.env.KXM_STATE_DIR?.trim() || join3(workspaceDir, "state"));
 var dataPathValue = process.env.KXM_DATA_PATH?.trim();
-var dataPath = dataPathValue === ":memory:" ? dataPathValue : resolve3(dataPathValue || join(stateDir, "kxm.db"));
-var logPath = resolve3(process.env.KXM_LOG_PATH?.trim() || join(logsDir, "kxm-hub.jsonl"));
+var dataPath = dataPathValue === ":memory:" ? dataPathValue : resolve3(dataPathValue || join3(stateDir, "kxm.db"));
+var logPath = resolve3(process.env.KXM_LOG_PATH?.trim() || join3(logsDir, "kxm-hub.jsonl"));
 var messageTtlMs = Number.parseInt(process.env.KXM_MESSAGE_TTL_MS ?? String(DEFAULT_MESSAGE_TTL_MS), 10);
 var messageRetentionMs = Number.parseInt(
   process.env.KXM_MESSAGE_RETENTION_MS ?? String(DEFAULT_MESSAGE_RETENTION_MS),
@@ -4981,7 +5308,7 @@ var rateLimitWindowMs = Number.parseInt(
   10
 );
 for (const directory of [configDir, logsDir, assetsDir, stateDir, dirname3(logPath)]) {
-  mkdirSync4(directory, { recursive: true });
+  mkdirSync5(directory, { recursive: true });
 }
 var structuredLog = createLogger({
   component: "hub",
@@ -5013,7 +5340,7 @@ if (inlineWorkflows && workflowFile) {
   throw new Error("configure only one of KXM_WEBHOOK_WORKFLOWS or KXM_WEBHOOK_WORKFLOWS_FILE");
 }
 var webhookWorkflows = parseWorkflowDefinitions(
-  workflowFile ? readFileSync(resolve3(workflowFile), "utf8") : inlineWorkflows
+  workflowFile ? readFileSync2(resolve3(workflowFile), "utf8") : inlineWorkflows
 );
 var hub = createMeshHub({
   host,

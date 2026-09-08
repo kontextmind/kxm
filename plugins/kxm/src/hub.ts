@@ -1,6 +1,8 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { existsSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { isIP } from "node:net";
+import { join } from "node:path";
 import {
   DEFAULT_MAX_HOPS,
   DEFAULT_MESSAGE_RETENTION_MS,
@@ -30,6 +32,7 @@ import { workflowScopeExtras } from "./diagnostics.ts";
 import { arbitrate, explainContextItem, journalEntryToContextItem, rolePolicy } from "./arbiter.ts";
 import { contextItemAuditMetadata, CONTEXT_AUTHORITIES, CONTEXT_CONFIDENCES, type ContextAuthority, type ContextConfidence, type ContextItem } from "./context.ts";
 import { NativeStateProvider } from "./state.ts";
+import { SkillLifecycle } from "./skills.ts";
 import { compileKnowledgeWiki, lintKnowledgeWiki, type WikiSourcePool } from "./wiki.ts";
 import { buildRetrospective, writeRetrospective } from "./retrospective.ts";
 import { MeshStore, type StoredAgent } from "./store.ts";
@@ -81,6 +84,8 @@ export interface MeshHubOptions {
   rateLimit?: RateLimitOptions | false;
   webhookWorkflows?: WebhookWorkflowDefinition[];
   logger?: (entry: Record<string, unknown>) => void;
+  skillsDir?: string;
+  skillLifecycle?: SkillLifecycle;
 }
 
 export interface MeshHub {
@@ -418,6 +423,10 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
   const workflowRuns = store.workflowRuns;
   const journal = store.journal;
   const stateProvider = new NativeStateProvider(store);
+  const skillLifecycle = options.skillLifecycle
+    ?? (options.skillsDir || existsSync(join(process.cwd(), ".kxm", "skills"))
+      ? new SkillLifecycle(options.skillsDir ?? join(process.cwd(), ".kxm", "skills"))
+      : undefined);
   const streams = new Map<string, Set<SseClient>>();
   const opsStreams = new Set<OpsSseClient>();
   const rateBuckets = new Map<string, RateBucket>();
@@ -513,7 +522,11 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
       return { project, caller: agent.id };
     }
     requireAdminAuth(request);
-    return { project, caller: "kxm-admin" };
+    const callerHeader = request.headers["x-kxm-caller-id"];
+    const caller = typeof callerHeader === "string" && callerHeader.trim()
+      ? callerHeader.trim()
+      : "kxm-admin";
+    return { project, caller };
   }
 
   function requireAdminAuth(request: IncomingMessage): void {
@@ -1555,7 +1568,10 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         const { project: callerProject, caller: callerId } = contextCallerProject(request, body.project);
         const policy = rolePolicy(typeof body.role === "string" ? body.role : "");
         const { pool, contradictionIds } = projectContextPool(callerProject, policy.journalCategories);
-        const outcome = arbitrate(body, pool, { contradictionIds });
+        const outcome = arbitrate(body, pool, {
+          contradictionIds,
+          ...(skillLifecycle ? { skillLifecycle } : {}),
+        });
         counters.contextRequests += 1;
         logger({
           event: "context_packet_assembled",
@@ -1617,7 +1633,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           authority: parseContextAuthority(body.authority),
           confidence: parseContextConfidence(body.confidence),
           evidenceRefs: boundedStringList(body.evidenceRefs, "evidenceRefs", 32),
-          proposedBy: callerId,
+          proposedBy: (typeof body.proposedBy === "string" && body.proposedBy.trim()) ? body.proposedBy.trim() : callerId,
         });
         counters.contextRequests += 1;
         publishOps(callerProject, "workflows");
@@ -1630,15 +1646,22 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
       if (method === "POST" && contextStatePromoteMatch) {
         // Agents may propose state but never silently promote it: promotion is
         // an authorized control-plane decision with durable evidence.
-        requireAdminAuth(request);
+        requireConfiguredAdminAuth(request, "state promotion");
         const body = await readJson(request);
         const proposalId = requireString(body.proposalId, "proposalId", { max: 128 });
         const project = requireString(body.project, "project", { max: 200 });
         const evidence = boundedStringList(body.evidence, "evidence", 32);
-        const promoted = await stateProvider.promote(proposalId, evidence, "kxm-admin");
+        const promoter = (typeof body.promotedBy === "string" && body.promotedBy.trim())
+          ? body.promotedBy.trim()
+          : (typeof body.caller === "string" && body.caller.trim())
+            ? body.caller.trim()
+            : (typeof request.headers["x-kxm-caller-id"] === "string" && request.headers["x-kxm-caller-id"].trim())
+              ? request.headers["x-kxm-caller-id"].trim()
+              : "kxm-admin";
+        const promoted = await stateProvider.promote(proposalId, evidence, promoter);
         counters.contextRequests += 1;
         publishOps(project, "workflows");
-        logger({ event: "context_state_promoted", project, proposalId, promotedId: promoted.id, stateKey: promoted.stateKey });
+        logger({ event: "context_state_promoted", project, proposalId, promotedId: promoted.id, stateKey: promoted.stateKey, promotedBy: promoter });
         json(response, 200, { state: promoted });
         return;
       }
