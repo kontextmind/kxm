@@ -1,0 +1,57 @@
+schema: kxm.workflow.v1
+description: Propose improvements from telemetry routing records and create candidates.
+coordinator: coordinator
+limits:
+  maxTransitions: 8
+  maxRunDurationMs: 14400000
+  maxAgentTimeMs: 21600000
+steps:
+  - id: report
+    kind: agent
+    agent: planner
+    maxAttempts: 2
+    repositories:
+      control: read
+    requiredEvidence:
+      - key: candidate
+        kind: artifact
+    timeoutMs: 1200000
+    on:
+      passed: delivery
+      blocked:
+        target: $terminal
+        terminalStatus: failed
+
+  - id: delivery
+    kind: gate
+    gate: scm-delivery
+    maxAttempts: 2
+    repositories:
+      api: write
+    requiredEvidence:
+      - key: delivery-manifest
+        kind: artifact
+    timeoutMs: 1800000
+    on:
+      passed: ready
+      failed:
+        target: $terminal
+        terminalStatus: failed
+
+  - id: ready
+    kind: agent
+    agent: planner
+    maxAttempts: 2
+    repositories:
+      control: read
+    requiredEvidence:
+      - key: summary
+        kind: assignment-result
+    timeoutMs: 900000
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      blocked:
+        target: $terminal
+        terminalStatus: failed

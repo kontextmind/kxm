@@ -6,3 +6,4 @@ export * from "./vnext-oneshot-producer.ts";
 export * from "./vnext-harness.ts";
 export * from "./database.ts";
 export * from "./logger.ts";
+export * from "./improve.ts";

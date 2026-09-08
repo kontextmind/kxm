@@ -21,7 +21,7 @@ function candidateInput(overrides: Record<string, unknown> = {}): Parameters<Ski
   return {
     name: "flaky-gate-retry",
     description: "Retry flaky gates with bounded backoff",
-    content: "---\nname: flaky-gate-retry\n---\n\nRetry a flaky gate twice with jittered backoff before failing the stage.",
+    content: "---\nname: flaky-gate-retry\ndescription: Retry flaky gates with bounded backoff\n---\n\nRetry a flaky gate twice with jittered backoff before failing the stage.",
     createdBy: "agent_implementer",
     sources: {
       runIds: ["run_1"],
@@ -105,8 +105,10 @@ test("promotion requires all protected evaluations, durable evidence, and a non-
   const promotedRead = store.read("promoted", id);
   assert.equal(promotedRead.metadata.id, promoted.id);
   assert.match(promotedRead.content, /flaky gate/);
-  // Candidates dir is now empty for this lineage; promoted holds it.
-  assert.equal(store.list("candidate").length, 0);
+  // Promotion emits a unified diff patch and preserves the candidate directory.
+  assert.ok(promoted.patch);
+  assert.equal(existsSync(promoted.patchPath), true);
+  assert.equal(store.list("candidate").length, 1);
   assert.equal(store.list("promoted").length, 1);
   // The audit trail is queryable and reproducible.
   const history = store.history(id);

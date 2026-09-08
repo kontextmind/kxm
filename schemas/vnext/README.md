@@ -23,6 +23,7 @@ Runtime-local records, and JSON events/results for the planned vNext contract.
 | `assignment-result.schema.json` | `kxm.assignment-result.v1` |
 | `delivery-manifest.schema.json` | `kxm.delivery-manifest.v1` |
 | `context-candidate.schema.json` | `kxm.context-candidate.v1` |
+| `candidate.schema.json` | `kxm.candidate.v1` |
 
 `common.schema.json` supplies bounded shared definitions. JSON Schema is only
 one validation layer; cross-file references, state-machine semantics,

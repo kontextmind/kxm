@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { parse } from "yaml";
 import { redactSecrets } from "./redact.ts";
 
 /**
@@ -118,9 +119,64 @@ export function skillIdFor(name: string, contentSha256: string): string {
   return `${slug}.${contentSha256.slice(0, 12)}`;
 }
 
+export function parseSkillFrontmatter(content: string): {
+  frontmatter: Record<string, unknown> | null;
+  body: string;
+} {
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+  if (!match) {
+    return { frontmatter: null, body: content };
+  }
+  const rawFm = match[1];
+  const rawBody = match[2];
+  if (rawFm === undefined || rawBody === undefined) {
+    return { frontmatter: null, body: content };
+  }
+  try {
+    const parsed = parse(rawFm);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return { frontmatter: parsed as Record<string, unknown>, body: rawBody };
+    }
+  } catch {
+    // Malformed yaml frontmatter
+  }
+  return { frontmatter: null, body: content };
+}
+
+export function ensureSkillFrontmatter(content: string, name: string, description: string): string {
+  const parsed = parseSkillFrontmatter(content);
+  if (parsed.frontmatter) {
+    const fmName = typeof parsed.frontmatter.name === "string" && parsed.frontmatter.name.trim()
+      ? parsed.frontmatter.name.trim()
+      : name;
+    const fmDesc = typeof parsed.frontmatter.description === "string" && parsed.frontmatter.description.trim()
+      ? parsed.frontmatter.description.trim()
+      : (description || `Governed skill for ${fmName}`);
+    const rest = parsed.body.replace(/^(\r?\n)+/, "");
+    return `---\nname: ${fmName}\ndescription: ${fmDesc}\n---\n\n${rest}`;
+  }
+  const desc = description || `Governed skill for ${name}`;
+  const rest = content.replace(/^(\r?\n)+/, "");
+  return `---\nname: ${name}\ndescription: ${desc}\n---\n\n${rest}`;
+}
+
+export function createUnifiedPatch(relativePath: string, content: string): string {
+  const lines = content.split("\n");
+  const count = lines.length;
+  const header = [
+    `diff --git a/${relativePath} b/${relativePath}`,
+    "new file mode 100644",
+    "--- /dev/null",
+    `+++ b/${relativePath}`,
+    `@@ -0,0 +1,${count} @@`,
+  ];
+  const body = lines.map((l) => `+${l}`);
+  return [...header, ...body, ""].join("\n");
+}
+
 export interface CreateSkillInput {
   name: string;
-  description: string;
+  description?: string;
   content: string;
   sources: Partial<SkillSources>;
   compatibility: { harness: string; models: string[] };
@@ -208,11 +264,19 @@ export class SkillLifecycle {
     if (!name || name.length > MAX_SKILL_NAME_CHARS) {
       throw new SkillLifecycleError("invalid_skill_name", `skill name must be 1-${MAX_SKILL_NAME_CHARS} characters`);
     }
-    const content = redactSecrets(input.content ?? "");
-    if (!content.trim() || content.length > MAX_SKILL_CONTENT_CHARS) {
+    const rawContent = redactSecrets(input.content ?? "");
+    if (!rawContent.trim() || rawContent.length > MAX_SKILL_CONTENT_CHARS) {
       throw new SkillLifecycleError("invalid_skill_content", `skill content must be 1-${MAX_SKILL_CONTENT_CHARS} characters`);
     }
-    const description = redactSecrets(input.description?.trim() ?? "");
+    const rawDesc = redactSecrets(input.description?.trim() ?? "");
+    const content = ensureSkillFrontmatter(rawContent, name, rawDesc);
+    if (content.length > MAX_SKILL_CONTENT_CHARS) {
+      throw new SkillLifecycleError("invalid_skill_content", `skill content must be 1-${MAX_SKILL_CONTENT_CHARS} characters`);
+    }
+    const { frontmatter } = parseSkillFrontmatter(content);
+    const description = (typeof frontmatter?.description === "string" && frontmatter.description.trim())
+      ? frontmatter.description.trim()
+      : (rawDesc || `Governed skill for ${name}`);
     const sources: SkillSources = {
       runIds: boundedList(input.sources?.runIds, "runIds"),
       journalEntryIds: boundedList(input.sources?.journalEntryIds, "journalEntryIds"),
@@ -321,12 +385,13 @@ export class SkillLifecycle {
 
   /** Promote a candidate that passed every protected evaluation. The
    * promoter must differ from the author, cite durable evidence, and the
-   * promoted content is hash-pinned and immutable. */
+   * promoted content is hash-pinned and immutable. Emits a unified diff patch
+   * instead of moving the candidate directory. */
   promote(candidateId: string, decision: {
     decidedBy: string;
     reason: string;
     evidenceRefs: string[];
-  }): SkillCandidateMetadata {
+  }): SkillCandidateMetadata & { patch: string; patchPath: string } {
     const metadata = this.readMetadata("candidate", candidateId);
     const decidedBy = decision.decidedBy?.trim();
     if (!decidedBy) throw new SkillLifecycleError("invalid_skill_decision", "decidedBy is required");
@@ -360,9 +425,27 @@ export class SkillLifecycle {
       evidenceRefs,
       decidedAt: this.now(),
     };
-    this.move("candidate", "promoted", candidateId);
+
+    // Instead of moving directory, write promoted directory and generate patch
+    const candidatePaths = this.paths("candidate", candidateId);
+    const promotedPaths = this.paths("promoted", candidateId);
+    mkdirSync(promotedPaths.dir, { recursive: true });
+
+    const skillContent = readFileSync(candidatePaths.skill, "utf8");
+    const metadataContent = readFileSync(candidatePaths.metadata, "utf8");
+    writeFileSync(promotedPaths.skill, skillContent);
+    writeFileSync(promotedPaths.metadata, metadataContent);
+
+    const patchesDir = join(this.root, "patches");
+    mkdirSync(patchesDir, { recursive: true });
+    const patchPath = join(patchesDir, `${candidateId}.patch`);
+    const relSkillPath = `.kxm/skills/promoted/${candidateId}/SKILL.md`;
+    const relMetaPath = `.kxm/skills/promoted/${candidateId}/metadata.json`;
+    const patch = `${createUnifiedPatch(relSkillPath, skillContent)}${createUnifiedPatch(relMetaPath, metadataContent)}`;
+    writeFileSync(patchPath, patch, "utf8");
+
     this.appendHistory(candidateId, record);
-    return metadata;
+    return { ...metadata, patch, patchPath };
   }
 
   reject(candidateId: string, decision: { decidedBy: string; reason: string }): SkillCandidateMetadata {
@@ -384,7 +467,7 @@ export class SkillLifecycle {
   }
 
   /** Verify content integrity of a stored skill (any state). Detects
-   * out-of-band edits to promoted skills. */
+   * out-of-band edits to promoted skills and verifies standard YAML frontmatter. */
   verify(state: SkillState, id: string): SkillCandidateMetadata {
     const metadata = this.readMetadata(state, id);
     const { skill } = this.paths(state, id);
@@ -393,6 +476,19 @@ export class SkillLifecycle {
       throw new SkillLifecycleError(
         "skill_integrity_violation",
         `skill ${id} content does not match its pinned hash; promoted skills are immutable and require a new candidate/eval cycle`,
+      );
+    }
+    const { frontmatter } = parseSkillFrontmatter(content);
+    if (
+      !frontmatter ||
+      typeof frontmatter.name !== "string" ||
+      !frontmatter.name.trim() ||
+      typeof frontmatter.description !== "string" ||
+      !frontmatter.description.trim()
+    ) {
+      throw new SkillLifecycleError(
+        "invalid_skill_frontmatter",
+        `skill ${id} must contain valid YAML frontmatter with 'name' and 'description'`,
       );
     }
     return metadata;

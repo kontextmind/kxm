@@ -77,8 +77,8 @@ test("production vNext loader discovers and resolves the complete fixture determ
     assert.equal(first.configRevision, second.configRevision);
     assert.equal(first.project.value.id, "prj_01JPROJECT00000000000000000");
     assert.deepEqual([...first.repositories.keys()].sort(), ["api", "control", "web"]);
-    assert.deepEqual([...first.workflows.keys()].sort(), ["default", "fix"]);
-    assert.equal(first.resources.length, 22);
+    assert.deepEqual([...first.workflows.keys()].sort(), ["default", "fix", "improve"]);
+    assert.equal(first.resources.length, 23);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

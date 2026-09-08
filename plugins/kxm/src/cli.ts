@@ -26,7 +26,7 @@ import { appendTelemetry, inferImprovementTarget, makeTelemetryEvent, readTeleme
 import { behavioralConfigHash, compareRoutingRecords, groupByBehavior, generateRoutingReport, formatRoutingReport } from "./routing.ts";
 import { loadPriceCatalog, type PriceCatalog } from "./prices.ts";
 import { createSession, loadNamedWorkers, rosterNames, sessionAssetDirs, workflowAssetDirs, writeSession } from "./session.ts";
-import { buildImprovementReport, writeImprovementReport } from "./improve.ts";
+import { buildImprovementReport, formatImprovementReport, writeImprovementReport } from "./improve.ts";
 import { MESH_TUI_PANELS, runMeshTui, type MeshTuiPanel } from "./tui.ts";
 import { formatSessionBriefText, loadSessionBrief, loadSessionBriefAsync, type SessionHubStatus } from "./session-work.ts";
 import {
@@ -1782,22 +1782,38 @@ async function cmdSessionStart(runtime: Runtime, options: { id?: string; workflo
   return 0;
 }
 
-async function cmdImprove(runtime: Runtime, targetFlag?: string): Promise<number> {
-  const targets = targetFlag === "cli" || targetFlag === "project"
-    ? [targetFlag] as Array<"cli" | "project">
-    : ["cli", "project"] as Array<"cli" | "project">;
-  const events = readTelemetry(telemetryPath(runtime.dirs.logs));
-  const report = buildImprovementReport(events, targets);
-  const path = writeImprovementReport(join(runtime.dirs.assets, "improvements"), report, runtime.dryRun);
+async function cmdImprove(runtime: Runtime, options: { file?: string; target?: string; outDir?: string } = {}): Promise<number> {
+  const file = options.file ? resolve(runtime.cwd, options.file) : telemetryPath(runtime.dirs.logs);
+  const routingRecords = existsSync(file)
+    ? readRoutingRecords(file).map((entry) => entry.routing)
+    : [];
+
+  const candidatesDir = options.outDir
+    ? resolve(runtime.cwd, options.outDir)
+    : join(runtime.cwd, ".kxm", "candidates");
+
+  const report = buildImprovementReport(routingRecords, {
+    candidatesDir,
+    projectRoot: runtime.cwd,
+    dryRun: runtime.dryRun,
+  });
+
+  const reportDir = join(runtime.dirs.assets, "improvements");
+  const reportPath = writeImprovementReport(reportDir, report, runtime.dryRun);
+
+  const text = formatImprovementReport(report);
   print(runtime.io, runtime.json, {
     ok: true,
     command: "improve",
     dryRun: runtime.dryRun || undefined,
-    path,
-    events: report.events,
-    proposals: report.proposals.length,
+    path: reportPath,
+    events: report.recordsCount,
+    recordsCount: report.recordsCount,
+    groupsCount: report.groups.length,
+    candidatesCount: report.candidates.length,
+    candidates: report.candidates,
     report,
-  }, `proposed ${report.proposals.length} improvement(s) from ${report.events} event(s)`);
+  }, text);
   return 0;
 }
 
@@ -2016,12 +2032,12 @@ async function cmdSkillsEvaluate(runtime: Runtime, skillId: string, options: { k
 async function cmdSkillsPromote(runtime: Runtime, skillId: string, options: { decidedBy: string; evidence: string; reason?: string }): Promise<number> {
   const lifecycle = new SkillLifecycle(skillsRoot(runtime));
   try {
-    const metadata = lifecycle.promote(skillId, {
+    const promoted = lifecycle.promote(skillId, {
       decidedBy: options.decidedBy,
       reason: options.reason ?? "passed protected evaluation",
       evidenceRefs: csv(options.evidence) ?? [],
     });
-    print(runtime.io, runtime.json, { ok: true, command: "skills promote", skillId, metadata }, `promoted skill ${skillId}`);
+    print(runtime.io, runtime.json, { ok: true, command: "skills promote", skillId, metadata: promoted, patchPath: promoted.patchPath }, `promoted skill ${skillId} (patch: ${promoted.patchPath})`);
     return 0;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -3018,10 +3034,14 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
       result.code = await cmdGithubWatch(runtimeFrom(ctx, this), options);
     });
 
-  addGlobalOptions(program.command("improve").description("Propose CLI or project improvements from telemetry JSONL"))
+  const improve = addGlobalOptions(program.command("improve").description("Propose CLI or project improvements from routing records and telemetry"));
+  improve.helpCommand("help", "Show improve help");
+  addGlobalOptions(improve.command("report", { isDefault: true }).description("Generate improvement report and candidates from routing records"))
+    .option("--file <path>", "Telemetry JSONL file to read routing records from")
     .option("--target <cli|project>", "Limit proposals to cli or project")
-    .action(async function improveAction(this: Command, options: { target?: string }) {
-      result.code = await cmdImprove(runtimeFrom(ctx, this), options.target);
+    .option("--out-dir <path>", "Directory for candidates (default .kxm/candidates)")
+    .action(async function improveReportAction(this: Command, options: { file?: string; target?: string; outDir?: string }) {
+      result.code = await cmdImprove(runtimeFrom(ctx, this), options);
     });
 
   const context = addGlobalOptions(program.command("context").description("KXM context operating-system queries"));
