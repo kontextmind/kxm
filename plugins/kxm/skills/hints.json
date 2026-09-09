@@ -1,0 +1,73 @@
+{
+  "schema": "kxm.skill-hints.v1",
+  "universal": true,
+  "harnesses": ["any"],
+  "skills": [
+    {
+      "name": "kxm",
+      "argumentHint": "[peer|workflow|context] [verb]",
+      "triggers": ["peer", "fanout", "checkpoint", "workflow wait", "kxm_send", "kxm_await"],
+      "complete": ["peer list", "peer send", "peer await", "workflow checkpoint", "workflow record", "context get"]
+    },
+    {
+      "name": "kxm-session",
+      "argumentHint": "[brief|status|bind]",
+      "triggers": ["session brief", "hub bind", "status line", "kxm init"],
+      "complete": ["session brief", "session brief --status", "hub bind", "hub view"]
+    },
+    {
+      "name": "kxm-mind",
+      "argumentHint": "[intent]",
+      "triggers": ["kontextmind", "the mind", "km_", "harvest", "triage", "handoff", "insights", "reindex", "KM-Session"],
+      "complete": ["query", "harvest", "triage", "work", "insights", "projects", "setup", "protocol"]
+    },
+    {
+      "name": "kxm-query",
+      "argumentHint": "[question]",
+      "triggers": ["what do we know", "what did we decide", "how we test", "km_search", "km_read", "km_chat", "evidence pack"],
+      "complete": ["km_search", "km_read", "km_list", "km_graph", "km_chat", "kontext search", "kontext chat --deep"]
+    },
+    {
+      "name": "kxm-harvest",
+      "argumentHint": "[local|project|org]",
+      "triggers": ["harvest", "file a learning", "km_append", "close session", "checkpoint"],
+      "complete": ["km_append", "km_work_update", "km_handoff_save", "kontext append"]
+    },
+    {
+      "name": "kxm-triage",
+      "argumentHint": "[list|promote|skip|research|suspicious]",
+      "triggers": ["triage", "review queue", "promote draft", "km_review"],
+      "complete": ["km_review list", "km_review resolve", "kontext review list", "kontext review resolve"]
+    },
+    {
+      "name": "kxm-work",
+      "argumentHint": "[current|checkpoint|handoff]",
+      "triggers": ["in flight", "pick up", "handoff", "checkpoint", "km_work_current"],
+      "complete": ["km_work_current", "km_work_update", "km_handoff_save", "km_handoff_load"]
+    },
+    {
+      "name": "kxm-insights",
+      "argumentHint": "[list|dismiss]",
+      "triggers": ["insights", "loops", "gaps", "km_insights"],
+      "complete": ["km_insights list", "km_insights dismiss"]
+    },
+    {
+      "name": "kxm-projects",
+      "argumentHint": "[list|add|reindex|invite]",
+      "triggers": ["add project", "reindex", "invite steward", "km_projects"],
+      "complete": ["km_projects", "km_project_add", "km_reindex", "km_invite"]
+    },
+    {
+      "name": "kxm-setup",
+      "argumentHint": "[serve|login|init|doctor]",
+      "triggers": ["install", "serve", "login", "kontext init", "kontext doctor"],
+      "complete": ["npx kontextmind serve", "kontext login", "kontext init", "kontext doctor"]
+    },
+    {
+      "name": "kxm-protocol",
+      "argumentHint": "[trailers|trust|gates|authz|webhooks]",
+      "triggers": ["KM-Session", "trust mode", "secret gate", "RLS", "protocol"],
+      "complete": ["trailers", "trust", "gates", "authz", "webhooks"]
+    }
+  ]
+}

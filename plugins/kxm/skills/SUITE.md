@@ -1,3 +1,5 @@
-# Mind-plane skills (merged onto work/kxm-feature-skills-suite)
+# Mind-plane skills
 
-Shipped under `plugins/kxm/skills/` next to the existing `kxm` (peer/workflow) and `kxm-session` skills. The router is `kxm-mind` so it does not overwrite `kxm`.
+Universal Agent Skills (any harness with shell or MCP). Catalog for slash hints and autocomplete is `hints.json`.
+
+Router is `kxm-mind` so it does not overwrite `kxm` (peer/workflow) or `kxm-session`.
