@@ -60,6 +60,9 @@ kxm init
 ```
 
 `kxm init` never copies the package repository's dogfood roster or workflows into a consumer workspace.
+If a hub already created `.kxm/state`, `.kxm/logs`, or `.kxm/runtime`, init
+still creates project configuration beside that runtime state and leaves those
+bytes unchanged.
 
 ## 3. Start the hub in another terminal
 

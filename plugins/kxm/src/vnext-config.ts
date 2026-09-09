@@ -1479,9 +1479,121 @@ function legacyInputsAt(root: string): string[] {
     ".kxm/config/agents.json",
     ".kxm/config/gates.json",
     ".kxm/config/workflows",
-    ".kxm/state/kxm.db",
   ];
   return candidates.filter((candidate) => existsSync(join(root, ...candidate.split("/"))));
+}
+
+/** Project-local private runtime roots that create may merge beside and must never traverse. */
+export const KXM_PRIVATE_RUNTIME_ROOTS = ["logs", "runtime", "state"] as const;
+
+export type VnextCreateDestinationKind = "absent" | "compatible" | "incompatible";
+export type VnextCreateDestinationReason = "linked" | "linked-runtime-root" | "unknown-entry" | "not-directory";
+
+export interface VnextCreateDestinationInspection {
+  kind: VnextCreateDestinationKind;
+  reason?: VnextCreateDestinationReason;
+  path?: string;
+}
+
+function foldedRuntimeRootName(name: string): string | undefined {
+  const folded = process.platform === "win32" ? name.toLocaleLowerCase("en-US") : name;
+  return (KXM_PRIVATE_RUNTIME_ROOTS as readonly string[]).includes(folded) ? folded : undefined;
+}
+
+function lstatOrUndefined(path: string): ReturnType<typeof lstatSync> | undefined {
+  try {
+    return lstatSync(path);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Classify a destination `.kxm` for create. Without allowed managed paths, only
+ * an absent, empty, or private-runtime-only tree is compatible. Allowed paths
+ * are used during create apply/resume so already-installed template files are
+ * not treated as unknown collisions.
+ */
+export function inspectVnextCreateDestination(
+  projectRoot: string,
+  allowedManagedPaths?: readonly string[],
+): VnextCreateDestinationInspection {
+  const kxm = join(projectRoot, ".kxm");
+  const rootStat = lstatOrUndefined(kxm);
+  if (!rootStat) return { kind: "absent" };
+  if (rootStat.isSymbolicLink()) return { kind: "incompatible", reason: "linked", path: ".kxm" };
+  if (!rootStat.isDirectory()) return { kind: "incompatible", reason: "not-directory", path: ".kxm" };
+
+  const allowed = allowedManagedPaths ? new Set(allowedManagedPaths) : undefined;
+  const allowedDirs = new Set<string>();
+  if (allowed) {
+    for (const path of allowed) {
+      if (!path.startsWith(".kxm/")) continue;
+      const rel = path.slice(".kxm/".length);
+      const parts = rel.split("/");
+      let prefix = "";
+      for (let index = 0; index < parts.length - 1; index += 1) {
+        prefix = prefix ? `${prefix}/${parts[index]}` : parts[index]!;
+        allowedDirs.add(prefix);
+      }
+    }
+  }
+
+  const visit = (directory: string, relativeFromKxm: string): VnextCreateDestinationInspection | undefined => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const rel = relativeFromKxm ? `${relativeFromKxm}/${entry.name}` : entry.name;
+      const absolute = join(directory, entry.name);
+      const portable = `.kxm/${rel}`;
+      const stat = lstatOrUndefined(absolute);
+      if (!stat) continue;
+      if (stat.isSymbolicLink() || entry.isSymbolicLink()) {
+        if (!relativeFromKxm && foldedRuntimeRootName(entry.name)) {
+          return { kind: "incompatible", reason: "linked-runtime-root", path: portable };
+        }
+        return { kind: "incompatible", reason: "linked", path: portable };
+      }
+      if (!relativeFromKxm && foldedRuntimeRootName(entry.name)) {
+        if (!stat.isDirectory()) return { kind: "incompatible", reason: "unknown-entry", path: portable };
+        continue;
+      }
+      if (!allowed) return { kind: "incompatible", reason: "unknown-entry", path: portable };
+      if (stat.isDirectory()) {
+        if (!allowedDirs.has(rel)) return { kind: "incompatible", reason: "unknown-entry", path: portable };
+        const nested = visit(absolute, rel);
+        if (nested) return nested;
+        continue;
+      }
+      if (!stat.isFile() || !allowed.has(portable)) {
+        return { kind: "incompatible", reason: "unknown-entry", path: portable };
+      }
+    }
+    return undefined;
+  };
+
+  return visit(kxm, "") ?? { kind: "compatible" };
+}
+
+function createDestinationIssue(inspection: VnextCreateDestinationInspection): VnextConfigIssue {
+  if (inspection.reason === "linked") {
+    return issue("discovery", "kxm_workspace_link", inspection.path ?? ".kxm", "linked .kxm cannot be used as a create destination");
+  }
+  if (inspection.reason === "linked-runtime-root") {
+    return issue("discovery", "kxm_runtime_root_link", inspection.path ?? ".kxm", "linked private runtime root cannot be used as a create destination");
+  }
+  if (inspection.reason === "not-directory") {
+    return issue("discovery", "kxm_workspace_invalid", inspection.path ?? ".kxm", ".kxm must be a regular directory");
+  }
+  if (inspection.path === ".kxm/project.yaml") {
+    return issue("discovery", "project_definition_missing", ".kxm/project.yaml", "partial .kxm state has no authoritative project.yaml");
+  }
+  return issue(
+    "discovery",
+    inspection.path ? "kxm_workspace_unknown_entry" : "project_definition_missing",
+    inspection.path ?? ".kxm/project.yaml",
+    inspection.path
+      ? "unknown .kxm entry is not a private runtime root; create will not overwrite it"
+      : "partial .kxm state has no authoritative project.yaml",
+  );
 }
 
 export const VNEXT_MIGRATION_RECEIPT_PATH = ".kxm/migration-receipt.yaml";
@@ -1632,15 +1744,16 @@ export function planVnextInitialization(start = process.cwd(), options: VnextCon
   }
   const gitRoot = discoverGitRoot(inspectedFrom);
   const candidateRoot = gitRoot ?? inspectedFrom;
-  if (existsSync(join(candidateRoot, ".kxm"))) {
-    return {
-      mode: "repair",
-      inspectedFrom,
-      projectRoot: candidateRoot,
-      changesRequired: true,
-      issues: [issue("discovery", "project_definition_missing", ".kxm/project.yaml", "partial .kxm state has no authoritative project.yaml")],
-      legacyInputs: [],
-    };
+  const destination = inspectVnextCreateDestination(candidateRoot);
+  if (destination.kind === "compatible" || destination.kind === "absent") {
+    return { mode: "create", inspectedFrom, projectRoot: candidateRoot, changesRequired: true, issues: [], legacyInputs: [] };
   }
-  return { mode: "create", inspectedFrom, projectRoot: candidateRoot, changesRequired: true, issues: [], legacyInputs: [] };
+  return {
+    mode: "repair",
+    inspectedFrom,
+    projectRoot: candidateRoot,
+    changesRequired: true,
+    issues: [createDestinationIssue(destination)],
+    legacyInputs: [],
+  };
 }

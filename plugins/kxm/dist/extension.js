@@ -2650,7 +2650,7 @@ var HubBindingError = class extends Error {
     this.name = "HubBindingError";
   }
 };
-function resolveUserStateRoot(env) {
+function resolveUserStateRoot(env = process.env) {
   const explicit = env.KXM_STATE_HOME?.trim();
   if (explicit) {
     if (!isAbsolute2(explicit)) throw new HubBindingError("local_state_root_not_absolute");
@@ -3004,7 +3004,7 @@ function loadSessionBrief(cwd, env = process.env, current, hub, options = {}) {
   const ship = options.ship ?? readGitShip(cwd);
   let brief;
   try {
-    const cachedUpdate = readUpdateCache(paths.stateDir);
+    const cachedUpdate = readUpdateCache(resolveUserStateRoot(env));
     const updateLatest = options.updateLatest ?? (cachedUpdate?.available ? cachedUpdate.latest : void 0);
     const cost = options.cost ?? estimateSessionCost(paths.stateDir);
     const snapshot = loadLocalMeshSnapshot(paths.dataPath, paths.stateDir, { env });

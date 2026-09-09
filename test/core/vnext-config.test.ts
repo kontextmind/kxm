@@ -719,6 +719,178 @@ test("vNext project mutation lock rejects linked Git-metadata parents", () => {
   }
 });
 
+test("vNext create classifies empty and private-runtime-only .kxm and merges without touching runtime bytes", () => {
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-vnext-runtime-create-state-"));
+  const emptyRoot = mkdtempSync(join(tmpdir(), "kxm-vnext-empty-kxm-"));
+  const runtimeRoot = mkdtempSync(join(tmpdir(), "kxm-vnext-runtime-only-"));
+  const dbRoot = mkdtempSync(join(tmpdir(), "kxm-vnext-runtime-db-"));
+  const unknownRoot = mkdtempSync(join(tmpdir(), "kxm-vnext-unknown-kxm-"));
+  const linkedRoot = mkdtempSync(join(tmpdir(), "kxm-vnext-linked-kxm-"));
+  const linkedStateRoot = mkdtempSync(join(tmpdir(), "kxm-vnext-linked-state-"));
+  const linkedTarget = mkdtempSync(join(tmpdir(), "kxm-vnext-linked-target-"));
+  const collisionRoot = mkdtempSync(join(tmpdir(), "kxm-vnext-managed-collision-"));
+  try {
+    for (const root of [emptyRoot, runtimeRoot, dbRoot, unknownRoot, linkedRoot, linkedStateRoot, collisionRoot]) makeGitRoot(root);
+
+    mkdirSync(join(emptyRoot, ".kxm"));
+    assert.equal(planVnextInitialization(emptyRoot).mode, "create");
+    const emptyBefore = snapshotFiles(emptyRoot);
+    const emptyDry = initializeVnextProject(emptyRoot, { dryRun: true, localStateRoot: stateRoot });
+    assert.equal(emptyDry.action, "planned");
+    assert.deepEqual(snapshotFiles(emptyRoot), emptyBefore, "dry-run must not write into an empty .kxm");
+    const emptyCreated = initializeVnextProject(emptyRoot, {
+      projectId: "prj_01JEMPTYKXM000000000000000",
+      projectName: "Empty Kxm",
+      localStateRoot: stateRoot,
+    });
+    assert.equal(emptyCreated.action, "created");
+    assert.equal(existsSync(join(emptyRoot, ".kxm", "project.yaml")), true);
+
+    mkdirSync(join(runtimeRoot, ".kxm", "state"), { recursive: true });
+    mkdirSync(join(runtimeRoot, ".kxm", "logs"), { recursive: true });
+    mkdirSync(join(runtimeRoot, ".kxm", "runtime"), { recursive: true });
+    const cacheBytes = "project-local-cache-must-remain\n";
+    const dbBytes = "kxm-db-bytes-must-remain\n";
+    const nestedBytes = "nested-runtime-file\n";
+    writeFileSync(join(runtimeRoot, ".kxm", "state", "update-check.json"), cacheBytes);
+    writeFileSync(join(runtimeRoot, ".kxm", "state", "kxm.db"), dbBytes);
+    mkdirSync(join(runtimeRoot, ".kxm", "state", "pi-sessions"), { recursive: true });
+    writeFileSync(join(runtimeRoot, ".kxm", "state", "pi-sessions", "keep.txt"), nestedBytes);
+    writeFileSync(join(runtimeRoot, ".kxm", "logs", "hub.log"), "log-bytes\n");
+    assert.equal(planVnextInitialization(runtimeRoot).mode, "create");
+    const runtimeBefore = snapshotFiles(join(runtimeRoot, ".kxm"));
+    const runtimeDry = initializeVnextProject(runtimeRoot, { dryRun: true, localStateRoot: stateRoot });
+    assert.equal(runtimeDry.action, "planned");
+    assert.deepEqual(snapshotFiles(join(runtimeRoot, ".kxm")), runtimeBefore);
+    const runtimeCreated = initializeVnextProject(runtimeRoot, {
+      projectId: "prj_01JRUNTIMEONLY000000000000",
+      projectName: "Runtime Only",
+      localStateRoot: stateRoot,
+    });
+    assert.equal(runtimeCreated.action, "created");
+    assert.equal(readFileSync(join(runtimeRoot, ".kxm", "state", "update-check.json"), "utf8"), cacheBytes);
+    assert.equal(readFileSync(join(runtimeRoot, ".kxm", "state", "kxm.db"), "utf8"), dbBytes);
+    assert.equal(readFileSync(join(runtimeRoot, ".kxm", "state", "pi-sessions", "keep.txt"), "utf8"), nestedBytes);
+    assert.equal(readFileSync(join(runtimeRoot, ".kxm", "logs", "hub.log"), "utf8"), "log-bytes\n");
+    assert.equal(initializeVnextProject(runtimeRoot, { localStateRoot: stateRoot }).action, "validated");
+
+    mkdirSync(join(dbRoot, ".kxm", "state"), { recursive: true });
+    writeFileSync(join(dbRoot, ".kxm", "state", "kxm.db"), "hub-db\n");
+    assert.equal(planVnextInitialization(dbRoot).mode, "create", "a hub database is runtime state, not a migration source");
+
+    mkdirSync(join(unknownRoot, ".kxm"), { recursive: true });
+    writeFileSync(join(unknownRoot, ".kxm", "notes.txt"), "operator file\n");
+    const unknown = planVnextInitialization(unknownRoot);
+    assert.equal(unknown.mode, "repair");
+    assert(unknown.issues.some((item) => item.code === "kxm_workspace_unknown_entry"));
+    const unknownInit = initializeVnextProject(unknownRoot, {
+      projectId: "prj_01JUNKNOWNENTRY00000000000",
+      projectName: "Unknown Entry",
+      localStateRoot: stateRoot,
+    });
+    assert.equal(unknownInit.action, "planned");
+    assert.equal(unknownInit.plan.mode, "repair");
+    assert.equal(readFileSync(join(unknownRoot, ".kxm", "notes.txt"), "utf8"), "operator file\n");
+    assert.equal(existsSync(join(unknownRoot, ".kxm", "project.yaml")), false);
+
+    mkdirSync(join(collisionRoot, ".kxm", "agents"), { recursive: true });
+    writeFileSync(join(collisionRoot, ".kxm", "agents", "coordinator.yaml"), "user-managed\n");
+    const collision = planVnextInitialization(collisionRoot);
+    assert.equal(collision.mode, "repair");
+    const collisionInit = initializeVnextProject(collisionRoot, {
+      projectId: "prj_01JMANAGEDCOLLISION00000000",
+      projectName: "Managed Collision",
+      localStateRoot: stateRoot,
+    });
+    assert.equal(collisionInit.action, "planned");
+    assert.equal(readFileSync(join(collisionRoot, ".kxm", "agents", "coordinator.yaml"), "utf8"), "user-managed\n");
+
+    mkdirSync(join(linkedRoot, ".kxm-elsewhere"));
+    symlinkSync(join(linkedRoot, ".kxm-elsewhere"), join(linkedRoot, ".kxm"), process.platform === "win32" ? "junction" : "dir");
+    const linked = planVnextInitialization(linkedRoot);
+    assert.equal(linked.mode, "repair");
+    assert(linked.issues.some((item) => item.code === "kxm_workspace_link"));
+
+    mkdirSync(join(linkedStateRoot, ".kxm"));
+    mkdirSync(join(linkedTarget, "state-elsewhere"));
+    symlinkSync(join(linkedTarget, "state-elsewhere"), join(linkedStateRoot, ".kxm", "state"), process.platform === "win32" ? "junction" : "dir");
+    const linkedState = planVnextInitialization(linkedStateRoot);
+    assert.equal(linkedState.mode, "repair");
+    assert(linkedState.issues.some((item) => item.code === "kxm_runtime_root_link"));
+  } finally {
+    for (const root of [emptyRoot, runtimeRoot, dbRoot, unknownRoot, linkedRoot, linkedStateRoot, collisionRoot, linkedTarget, stateRoot]) {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+});
+
+test("vNext create merge resumes across crash points and rejects concurrent unknown files", () => {
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-vnext-merge-resume-state-"));
+  const preparedRoot = mkdtempSync(join(tmpdir(), "kxm-vnext-merge-prepared-"));
+  const firstRoot = mkdtempSync(join(tmpdir(), "kxm-vnext-merge-first-"));
+  const conflictRoot = mkdtempSync(join(tmpdir(), "kxm-vnext-merge-conflict-"));
+  try {
+    for (const root of [preparedRoot, firstRoot, conflictRoot]) {
+      makeGitRoot(root);
+      mkdirSync(join(root, ".kxm", "state"), { recursive: true });
+      writeFileSync(join(root, ".kxm", "state", "update-check.json"), `${root}-cache\n`);
+    }
+
+    assert.throws(
+      () => initializeVnextProject(preparedRoot, {
+        projectId: "prj_01JMERGERESUMEPREP00000000",
+        projectName: "Merge Prepared",
+        localStateRoot: stateRoot,
+        testFaultAt: "prepared",
+      }),
+      /injected init fault/,
+    );
+    assert.equal(existsSync(join(preparedRoot, ".kxm", "project.yaml")), false);
+    assert.equal(readFileSync(join(preparedRoot, ".kxm", "state", "update-check.json"), "utf8"), `${preparedRoot}-cache\n`);
+    const resumedPrepared = initializeVnextProject(preparedRoot, { localStateRoot: stateRoot });
+    assert.equal(resumedPrepared.action, "resumed");
+    assert.equal(resumedPrepared.transactionKind, "create");
+    assert.equal(readFileSync(join(preparedRoot, ".kxm", "state", "update-check.json"), "utf8"), `${preparedRoot}-cache\n`);
+    assert.equal(existsSync(vnextInitTransactionPath(preparedRoot)), false);
+
+    assert.throws(
+      () => initializeVnextProject(firstRoot, {
+        projectId: "prj_01JMERGERESUMEFIRST0000000",
+        projectName: "Merge First",
+        localStateRoot: stateRoot,
+        testFaultAt: "first-resource",
+      }),
+      /injected init fault/,
+    );
+    assert.equal(existsSync(join(firstRoot, ".kxm", "project.yaml")), false);
+    assert.equal(readFileSync(join(firstRoot, ".kxm", "state", "update-check.json"), "utf8"), `${firstRoot}-cache\n`);
+    const resumedFirst = initializeVnextProject(firstRoot, { localStateRoot: stateRoot });
+    assert.equal(resumedFirst.action, "resumed");
+    assert.equal(existsSync(join(firstRoot, ".kxm", "project.yaml")), true);
+    assert.equal(readFileSync(join(firstRoot, ".kxm", "state", "update-check.json"), "utf8"), `${firstRoot}-cache\n`);
+
+    assert.throws(
+      () => initializeVnextProject(conflictRoot, {
+        projectId: "prj_01JMERGECONFLICT0000000000",
+        projectName: "Merge Conflict",
+        localStateRoot: stateRoot,
+        testFaultAt: "first-resource",
+      }),
+      /injected init fault/,
+    );
+    writeFileSync(join(conflictRoot, ".kxm", "injected.txt"), "concurrent\n");
+    assert.throws(
+      () => initializeVnextProject(conflictRoot, { localStateRoot: stateRoot }),
+      (error) => issueCodes(error).includes("create_resume_conflict") || issueCodes(error).includes("kxm_workspace_unknown_entry"),
+    );
+    assert.equal(readFileSync(join(conflictRoot, ".kxm", "injected.txt"), "utf8"), "concurrent\n");
+    assert.equal(readFileSync(join(conflictRoot, ".kxm", "state", "update-check.json"), "utf8"), `${conflictRoot}-cache\n`);
+    assert.equal(existsSync(join(conflictRoot, ".kxm", "project.yaml")), false);
+  } finally {
+    for (const root of [preparedRoot, firstRoot, conflictRoot, stateRoot]) rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("vNext initialization planning is read-only and classifies create, migrate, ready, and repair", () => {
   const createRoot = mkdtempSync(join(tmpdir(), "kxm-vnext-create-"));
   const legacyRoot = mkdtempSync(join(tmpdir(), "kxm-vnext-legacy-"));

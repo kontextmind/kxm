@@ -20716,10 +20716,93 @@ function legacyInputsAt(root) {
   const candidates = [
     ".kxm/config/agents.json",
     ".kxm/config/gates.json",
-    ".kxm/config/workflows",
-    ".kxm/state/kxm.db"
+    ".kxm/config/workflows"
   ];
   return candidates.filter((candidate) => existsSync3(join2(root, ...candidate.split("/"))));
+}
+var KXM_PRIVATE_RUNTIME_ROOTS = ["logs", "runtime", "state"];
+function foldedRuntimeRootName(name) {
+  const folded = process.platform === "win32" ? name.toLocaleLowerCase("en-US") : name;
+  return KXM_PRIVATE_RUNTIME_ROOTS.includes(folded) ? folded : void 0;
+}
+function lstatOrUndefined(path5) {
+  try {
+    return lstatSync(path5);
+  } catch {
+    return void 0;
+  }
+}
+function inspectVnextCreateDestination(projectRoot, allowedManagedPaths) {
+  const kxm = join2(projectRoot, ".kxm");
+  const rootStat = lstatOrUndefined(kxm);
+  if (!rootStat) return { kind: "absent" };
+  if (rootStat.isSymbolicLink()) return { kind: "incompatible", reason: "linked", path: ".kxm" };
+  if (!rootStat.isDirectory()) return { kind: "incompatible", reason: "not-directory", path: ".kxm" };
+  const allowed = allowedManagedPaths ? new Set(allowedManagedPaths) : void 0;
+  const allowedDirs = /* @__PURE__ */ new Set();
+  if (allowed) {
+    for (const path5 of allowed) {
+      if (!path5.startsWith(".kxm/")) continue;
+      const rel = path5.slice(".kxm/".length);
+      const parts = rel.split("/");
+      let prefix = "";
+      for (let index = 0; index < parts.length - 1; index += 1) {
+        prefix = prefix ? `${prefix}/${parts[index]}` : parts[index];
+        allowedDirs.add(prefix);
+      }
+    }
+  }
+  const visit2 = (directory, relativeFromKxm) => {
+    for (const entry of readdirSync2(directory, { withFileTypes: true })) {
+      const rel = relativeFromKxm ? `${relativeFromKxm}/${entry.name}` : entry.name;
+      const absolute = join2(directory, entry.name);
+      const portable = `.kxm/${rel}`;
+      const stat = lstatOrUndefined(absolute);
+      if (!stat) continue;
+      if (stat.isSymbolicLink() || entry.isSymbolicLink()) {
+        if (!relativeFromKxm && foldedRuntimeRootName(entry.name)) {
+          return { kind: "incompatible", reason: "linked-runtime-root", path: portable };
+        }
+        return { kind: "incompatible", reason: "linked", path: portable };
+      }
+      if (!relativeFromKxm && foldedRuntimeRootName(entry.name)) {
+        if (!stat.isDirectory()) return { kind: "incompatible", reason: "unknown-entry", path: portable };
+        continue;
+      }
+      if (!allowed) return { kind: "incompatible", reason: "unknown-entry", path: portable };
+      if (stat.isDirectory()) {
+        if (!allowedDirs.has(rel)) return { kind: "incompatible", reason: "unknown-entry", path: portable };
+        const nested = visit2(absolute, rel);
+        if (nested) return nested;
+        continue;
+      }
+      if (!stat.isFile() || !allowed.has(portable)) {
+        return { kind: "incompatible", reason: "unknown-entry", path: portable };
+      }
+    }
+    return void 0;
+  };
+  return visit2(kxm, "") ?? { kind: "compatible" };
+}
+function createDestinationIssue(inspection) {
+  if (inspection.reason === "linked") {
+    return issue("discovery", "kxm_workspace_link", inspection.path ?? ".kxm", "linked .kxm cannot be used as a create destination");
+  }
+  if (inspection.reason === "linked-runtime-root") {
+    return issue("discovery", "kxm_runtime_root_link", inspection.path ?? ".kxm", "linked private runtime root cannot be used as a create destination");
+  }
+  if (inspection.reason === "not-directory") {
+    return issue("discovery", "kxm_workspace_invalid", inspection.path ?? ".kxm", ".kxm must be a regular directory");
+  }
+  if (inspection.path === ".kxm/project.yaml") {
+    return issue("discovery", "project_definition_missing", ".kxm/project.yaml", "partial .kxm state has no authoritative project.yaml");
+  }
+  return issue(
+    "discovery",
+    inspection.path ? "kxm_workspace_unknown_entry" : "project_definition_missing",
+    inspection.path ?? ".kxm/project.yaml",
+    inspection.path ? "unknown .kxm entry is not a private runtime root; create will not overwrite it" : "partial .kxm state has no authoritative project.yaml"
+  );
 }
 var VNEXT_MIGRATION_RECEIPT_PATH = ".kxm/migration-receipt.yaml";
 var LEGACY_CONFIG_FILES = [".kxm/config/agents.json", ".kxm/config/gates.json"];
@@ -20836,17 +20919,18 @@ function planVnextInitialization(start = process.cwd(), options = {}) {
   }
   const gitRoot = discoverGitRoot(inspectedFrom);
   const candidateRoot = gitRoot ?? inspectedFrom;
-  if (existsSync3(join2(candidateRoot, ".kxm"))) {
-    return {
-      mode: "repair",
-      inspectedFrom,
-      projectRoot: candidateRoot,
-      changesRequired: true,
-      issues: [issue("discovery", "project_definition_missing", ".kxm/project.yaml", "partial .kxm state has no authoritative project.yaml")],
-      legacyInputs: []
-    };
+  const destination = inspectVnextCreateDestination(candidateRoot);
+  if (destination.kind === "compatible" || destination.kind === "absent") {
+    return { mode: "create", inspectedFrom, projectRoot: candidateRoot, changesRequired: true, issues: [], legacyInputs: [] };
   }
-  return { mode: "create", inspectedFrom, projectRoot: candidateRoot, changesRequired: true, issues: [], legacyInputs: [] };
+  return {
+    mode: "repair",
+    inspectedFrom,
+    projectRoot: candidateRoot,
+    changesRequired: true,
+    issues: [createDestinationIssue(destination)],
+    legacyInputs: []
+  };
 }
 
 // plugins/kxm/src/database.ts
@@ -32737,7 +32821,7 @@ function readUpdateCache(stateDir, now = Date.now()) {
   }
 }
 function writeUpdateCache(stateDir, notice, now = Date.now()) {
-  mkdirSync10(stateDir, { recursive: true });
+  mkdirSync10(stateDir, { recursive: true, mode: 448 });
   writeFileSync8(join16(stateDir, KXM_UPDATE_CACHE), `${JSON.stringify({ checkedAt: now, notice })}
 `, { encoding: "utf8" });
 }
@@ -32824,7 +32908,7 @@ var HubBindingError = class extends Error {
     this.name = "HubBindingError";
   }
 };
-function resolveUserStateRoot(env) {
+function resolveUserStateRoot(env = process.env) {
   const explicit = env.KXM_STATE_HOME?.trim();
   if (explicit) {
     if (!isAbsolute4(explicit)) throw new HubBindingError("local_state_root_not_absolute");
@@ -33200,7 +33284,7 @@ function loadSessionBrief(cwd, env = process.env, current, hub, options = {}) {
   const ship = options.ship ?? readGitShip(cwd);
   let brief;
   try {
-    const cachedUpdate = readUpdateCache(paths.stateDir);
+    const cachedUpdate = readUpdateCache(resolveUserStateRoot(env));
     const updateLatest = options.updateLatest ?? (cachedUpdate?.available ? cachedUpdate.latest : void 0);
     const cost = options.cost ?? estimateSessionCost(paths.stateDir);
     const snapshot = loadLocalMeshSnapshot(paths.dataPath, paths.stateDir, { env });
@@ -35100,23 +35184,55 @@ function atomicInstallTarget(projectRoot, operation, entry) {
   }
   if (destinationSha(projectRoot, entry.path) !== entry.targetSha256) fail2("repair_install_verification_failed", entry.path, "installed target hash does not match the pinned operation");
 }
+function isPrivateRuntimeRootName(name) {
+  const folded = process.platform === "win32" ? name.toLocaleLowerCase("en-US") : name;
+  return KXM_PRIVATE_RUNTIME_ROOTS.includes(folded);
+}
+function failIncompatibleCreateDestination(inspection) {
+  const path5 = inspection.path ?? ".kxm";
+  if (inspection.reason === "linked" || inspection.reason === "linked-runtime-root") {
+    fail2("create_resume_link", path5, "create destination must not contain links", "path");
+  }
+  fail2("create_resume_conflict", path5, "existing project configuration does not match the pinned create operation");
+}
 function installedCreateMatches(projectRoot, operation) {
   const configRoot = join23(projectRoot, ".kxm");
   if (!existsSync17(configRoot)) return false;
   const actual = [];
-  const visit2 = (directory) => {
+  const visit2 = (directory, topLevel) => {
     for (const entry of readdirSync6(directory, { withFileTypes: true })) {
       const absolute = join23(directory, entry.name);
       if (entry.isSymbolicLink()) fail2("create_resume_link", relativeConfigPath(projectRoot, absolute), "created configuration must not contain links", "path");
-      if (entry.isDirectory()) visit2(absolute);
+      if (topLevel && isPrivateRuntimeRootName(entry.name)) {
+        if (!entry.isDirectory()) fail2("create_resume_file_invalid", relativeConfigPath(projectRoot, absolute), "private runtime root must be a regular directory", "path");
+        continue;
+      }
+      if (entry.isDirectory()) visit2(absolute, false);
       else if (entry.isFile()) actual.push(relativeConfigPath(projectRoot, absolute));
       else fail2("create_resume_file_invalid", relativeConfigPath(projectRoot, absolute), "created configuration contains a non-regular entry", "path");
     }
   };
-  visit2(configRoot);
+  visit2(configRoot, true);
   actual.sort(compareCodeUnits3);
   const expected = operation.files.map((entry) => entry.path).sort(compareCodeUnits3);
   return actual.length === expected.length && actual.every((path5, index) => path5 === expected[index]) && operation.files.every((entry) => destinationSha(projectRoot, entry.path) === entry.targetSha256);
+}
+function applyCreateMerge(projectRoot, operation, options) {
+  const inspection = inspectVnextCreateDestination(projectRoot, operation.files.map((entry) => entry.path));
+  if (inspection.kind === "incompatible") failIncompatibleCreateDestination(inspection);
+  if (installedCreateMatches(projectRoot, operation)) return;
+  const projectEntry = operation.files.find((entry) => entry.path === ".kxm/project.yaml");
+  const resources = operation.files.filter((entry) => entry.path !== ".kxm/project.yaml");
+  let installed = 0;
+  for (const entry of resources) {
+    atomicInstallTarget(projectRoot, operation, entry);
+    installed += 1;
+    if (installed === 1 && options.testFaultAt === "first-resource") throw new Error("injected init fault after first resource");
+  }
+  if (projectEntry) atomicInstallTarget(projectRoot, operation, projectEntry);
+  if (!installedCreateMatches(projectRoot, operation)) {
+    fail2("create_resume_conflict", ".kxm", "existing project configuration does not match the pinned create operation");
+  }
 }
 function relativeConfigPath(projectRoot, file) {
   return relative5(resolve12(projectRoot), file).replaceAll("\\", "/");
@@ -35152,12 +35268,18 @@ function applyOperation(projectRoot, original, options, resumed) {
   operation = updatePhase(projectRoot, operation, "applying");
   if (operation.kind === "create") {
     const destination = join23(projectRoot, ".kxm");
-    if (!existsSync17(destination)) {
+    let destinationStat;
+    try {
+      destinationStat = lstatSync5(destination);
+    } catch {
+      destinationStat = void 0;
+    }
+    if (!destinationStat) {
       rebuildCreateShadow(projectRoot, operation, effectiveOptions);
       renameSync6(join23(shadowRoot(projectRoot), ".kxm"), destination);
       syncDirectory2(projectRoot);
-    } else if (!installedCreateMatches(projectRoot, operation)) {
-      fail2("create_resume_conflict", ".kxm", "existing project configuration does not match the pinned create operation");
+    } else {
+      applyCreateMerge(projectRoot, operation, effectiveOptions);
     }
   } else {
     const resources = operation.files.filter((entry) => entry.path !== VNEXT_TEMPLATE_PROVENANCE_PATH && entry.action !== "none");
@@ -35629,8 +35751,9 @@ function initializeVnextProjectAtGitRoot(start, gitRoot, options, mutationLock) 
   const files = [...rendered.files.keys()];
   if (options.dryRun) return { action: "planned", plan, projectRoot: gitRoot, files };
   if (!mutationLock) throw new Error("project mutation lock is required to create configuration");
-  if (existsSync18(join24(gitRoot, ".kxm"))) {
-    throw new VnextConfigError([initIssue("workspace_changed", ".kxm", "workspace changed after planning; existing .kxm state was not overwritten")]);
+  const destination = inspectVnextCreateDestination(gitRoot);
+  if (destination.kind === "incompatible") {
+    throw new VnextConfigError([initIssue("workspace_changed", destination.path ?? ".kxm", "workspace changed after planning; existing .kxm state was not overwritten")]);
   }
   const created = prepareAndApplyVnextCreate(gitRoot, rendered, transactionOptions);
   commitVnextInitTransaction(gitRoot, options.schemasDir);
@@ -41705,7 +41828,7 @@ async function refreshKxmUpdateNotice(runtime, config) {
   const current = readInstalledKxmVersion(repoRoot2);
   const fetched = await fetchLatestKxmVersion(resolved.source, runtime.env, runtime.fetchImpl);
   const notice = noticeFromVersions(current, fetched.latest, resolved, fetched.error, fetched.asset);
-  writeUpdateCache(runtime.dirs.state, notice);
+  writeUpdateCache(vnextUserStateRoot({ env: runtime.env }), notice);
   return notice;
 }
 function applyKxmPackageUpdate(runtime, notice) {
@@ -42056,7 +42179,7 @@ async function cmdHub(runtime) {
     const probe = installProbeFrom(runtime);
     if (classifyInstallRoot(probe).kind !== "source") {
       warnIgnoredProjectUpdateYaml(runtime);
-      const cached = readUpdateCache(runtime.dirs.state);
+      const cached = readUpdateCache(vnextUserStateRoot({ env: runtime.env }));
       if (cached?.available) runtime.io.stderr(`${cached.message}
 `);
       let config;

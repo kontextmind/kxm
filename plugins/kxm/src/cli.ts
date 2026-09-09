@@ -1111,7 +1111,7 @@ async function refreshKxmUpdateNotice(runtime: Runtime, config?: KxmUpdateConfig
   const current = readInstalledKxmVersion(repoRoot);
   const fetched = await fetchLatestKxmVersion(resolved.source, runtime.env, runtime.fetchImpl);
   const notice = noticeFromVersions(current, fetched.latest, resolved, fetched.error, fetched.asset);
-  writeUpdateCache(runtime.dirs.state, notice);
+  writeUpdateCache(vnextUserStateRoot({ env: runtime.env }), notice);
   return notice;
 }
 
@@ -1482,7 +1482,7 @@ async function cmdHub(runtime: Runtime): Promise<number> {
     const probe = installProbeFrom(runtime);
     if (classifyInstallRoot(probe).kind !== "source") {
       warnIgnoredProjectUpdateYaml(runtime);
-      const cached = readUpdateCache(runtime.dirs.state);
+      const cached = readUpdateCache(vnextUserStateRoot({ env: runtime.env }));
       if (cached?.available) runtime.io.stderr(`${cached.message}\n`);
       let config: KxmUpdateConfig | undefined;
       try {

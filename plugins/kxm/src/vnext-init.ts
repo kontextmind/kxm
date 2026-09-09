@@ -4,6 +4,7 @@ import { basename, join } from "node:path";
 import {
   VnextConfigError,
   discoverGitRoot,
+  inspectVnextCreateDestination,
   loadVnextProject,
   assertNoRegisteredGates,
   planVnextInitialization,
@@ -394,8 +395,9 @@ function initializeVnextProjectAtGitRoot(
   const files = [...rendered.files.keys()];
   if (options.dryRun) return { action: "planned", plan, projectRoot: gitRoot, files };
   if (!mutationLock) throw new Error("project mutation lock is required to create configuration");
-  if (existsSync(join(gitRoot, ".kxm"))) {
-    throw new VnextConfigError([initIssue("workspace_changed", ".kxm", "workspace changed after planning; existing .kxm state was not overwritten")]);
+  const destination = inspectVnextCreateDestination(gitRoot);
+  if (destination.kind === "incompatible") {
+    throw new VnextConfigError([initIssue("workspace_changed", destination.path ?? ".kxm", "workspace changed after planning; existing .kxm state was not overwritten")]);
   }
   const created = prepareAndApplyVnextCreate(gitRoot, rendered, transactionOptions);
   commitVnextInitTransaction(gitRoot, options.schemasDir);

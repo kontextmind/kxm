@@ -369,6 +369,36 @@ test("vNext init creates and revalidates project configuration without legacy en
   }
 });
 
+test("vNext init CLI creates beside existing private runtime state", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "kxm-vnext-cli-runtime-init-"));
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-vnext-cli-runtime-init-state-"));
+  try {
+    makeGitRoot(cwd);
+    mkdirSync(join(cwd, ".kxm", "state"), { recursive: true });
+    writeFileSync(join(cwd, ".kxm", "state", "update-check.json"), "keep-me\n");
+    const dry = capture();
+    assert.equal(await runCli(["init", "--json", "--dry-run"], { KXM_STATE_HOME: stateRoot }, dry, cwd), 0);
+    const planned = JSON.parse(dry.read().stdout) as { action: string; mode: string };
+    assert.equal(planned.action, "planned");
+    assert.equal(planned.mode, "create");
+    assert.equal(readFileSync(join(cwd, ".kxm", "state", "update-check.json"), "utf8"), "keep-me\n");
+    assert.equal(existsSync(join(cwd, ".kxm", "project.yaml")), false);
+
+    const createdIo = capture();
+    assert.equal(await runCli([
+      "init", "--json", "--name", "Runtime Init", "--project-id", "prj_01JCLIRUNTIMEINIT000000000",
+    ], { KXM_STATE_HOME: stateRoot }, createdIo, cwd), 0);
+    const created = JSON.parse(createdIo.read().stdout) as { action: string; mode: string };
+    assert.equal(created.action, "created");
+    assert.equal(created.mode, "ready");
+    assert.equal(readFileSync(join(cwd, ".kxm", "state", "update-check.json"), "utf8"), "keep-me\n");
+    assert.equal(existsSync(join(cwd, ".kxm", "project.yaml")), true);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(stateRoot, { recursive: true, force: true });
+  }
+});
+
 test("vNext init CLI resumes a pinned interrupted create", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "kxm-vnext-cli-resume-"));
   const stateRoot = mkdtempSync(join(tmpdir(), "kxm-vnext-cli-resume-state-"));

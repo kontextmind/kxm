@@ -183,7 +183,7 @@ Workflow session isolation is a context-routing and accidental-cross-run safety 
 | `src/local-snapshot.ts` | Read-only hub SQLite snapshot (runs, plans, inbox metadata; no bodies) |
 | `src/session-work.ts` | Session brief, status line, and work-picker labels from that snapshot |
 | `src/hub-binding.ts` | host-level hub binding (Runtime-local, never Git) and 300 ms health probe |
-| `src/kxm-update.ts` | Operator package update check (GitHub releases now, npm later), release-asset digest, and notice cache |
+| `src/kxm-update.ts` | Operator package update check (GitHub releases now, npm later), release-asset digest, and notice cache under the per-user state root (`KXM_STATE_HOME`); project-local `.kxm/state/update-check.json` is ignored, not deleted |
 | `scripts/kxm-release-github.mjs` | Tag-triggered draft GitHub release helper: by-tag published guard, 404-then-list draft discovery with pagination fail-closed, no published-release mutation, digest idempotence |
 | `src/kxm-update-config.ts` | Per-user `update.yaml` under the host state root (`auto` is never read from the project) |
 | `src/kxm-install-kind.ts` | Install-kind classifier (npm-global / npm-local / pi-git / claude-marketplace / source / unknown) |

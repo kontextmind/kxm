@@ -144,7 +144,7 @@ export function readUpdateCache(stateDir: string, now = Date.now()): KxmUpdateNo
 }
 
 export function writeUpdateCache(stateDir: string, notice: KxmUpdateNotice, now = Date.now()): void {
-  mkdirSync(stateDir, { recursive: true });
+  mkdirSync(stateDir, { recursive: true, mode: 0o700 });
   writeFileSync(join(stateDir, KXM_UPDATE_CACHE), `${JSON.stringify({ checkedAt: now, notice })}\n`, { encoding: "utf8" });
 }
 

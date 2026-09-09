@@ -20,7 +20,9 @@ import {
   VnextSchemaRegistry,
   loadVnextProject,
   assertNoRegisteredGates,
+  inspectVnextCreateDestination,
   parseRestrictedYaml,
+  KXM_PRIVATE_RUNTIME_ROOTS,
   type JsonObject,
   type VnextConfigIssue,
   type VnextConfigOptions,
@@ -795,25 +797,64 @@ function atomicInstallTarget(projectRoot: string, operation: VnextInitOperation,
   if (destinationSha(projectRoot, entry.path) !== entry.targetSha256) fail("repair_install_verification_failed", entry.path, "installed target hash does not match the pinned operation");
 }
 
+function isPrivateRuntimeRootName(name: string): boolean {
+  const folded = process.platform === "win32" ? name.toLocaleLowerCase("en-US") : name;
+  return (KXM_PRIVATE_RUNTIME_ROOTS as readonly string[]).includes(folded);
+}
+
+function failIncompatibleCreateDestination(inspection: ReturnType<typeof inspectVnextCreateDestination>): never {
+  const path = inspection.path ?? ".kxm";
+  if (inspection.reason === "linked" || inspection.reason === "linked-runtime-root") {
+    fail("create_resume_link", path, "create destination must not contain links", "path");
+  }
+  fail("create_resume_conflict", path, "existing project configuration does not match the pinned create operation");
+}
+
 function installedCreateMatches(projectRoot: string, operation: VnextInitOperation): boolean {
   const configRoot = join(projectRoot, ".kxm");
   if (!existsSync(configRoot)) return false;
   const actual: string[] = [];
-  const visit = (directory: string): void => {
+  const visit = (directory: string, topLevel: boolean): void => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const absolute = join(directory, entry.name);
       if (entry.isSymbolicLink()) fail("create_resume_link", relativeConfigPath(projectRoot, absolute), "created configuration must not contain links", "path");
-      if (entry.isDirectory()) visit(absolute);
+      if (topLevel && isPrivateRuntimeRootName(entry.name)) {
+        if (!entry.isDirectory()) fail("create_resume_file_invalid", relativeConfigPath(projectRoot, absolute), "private runtime root must be a regular directory", "path");
+        continue;
+      }
+      if (entry.isDirectory()) visit(absolute, false);
       else if (entry.isFile()) actual.push(relativeConfigPath(projectRoot, absolute));
       else fail("create_resume_file_invalid", relativeConfigPath(projectRoot, absolute), "created configuration contains a non-regular entry", "path");
     }
   };
-  visit(configRoot);
+  visit(configRoot, true);
   actual.sort(compareCodeUnits);
   const expected = operation.files.map((entry) => entry.path).sort(compareCodeUnits);
   return actual.length === expected.length
     && actual.every((path, index) => path === expected[index])
     && operation.files.every((entry) => destinationSha(projectRoot, entry.path) === entry.targetSha256);
+}
+
+function applyCreateMerge(
+  projectRoot: string,
+  operation: VnextInitOperation,
+  options: VnextRepairRuntimeOptions,
+): void {
+  const inspection = inspectVnextCreateDestination(projectRoot, operation.files.map((entry) => entry.path));
+  if (inspection.kind === "incompatible") failIncompatibleCreateDestination(inspection);
+  if (installedCreateMatches(projectRoot, operation)) return;
+  const projectEntry = operation.files.find((entry) => entry.path === ".kxm/project.yaml");
+  const resources = operation.files.filter((entry) => entry.path !== ".kxm/project.yaml");
+  let installed = 0;
+  for (const entry of resources) {
+    atomicInstallTarget(projectRoot, operation, entry);
+    installed += 1;
+    if (installed === 1 && options.testFaultAt === "first-resource") throw new Error("injected init fault after first resource");
+  }
+  if (projectEntry) atomicInstallTarget(projectRoot, operation, projectEntry);
+  if (!installedCreateMatches(projectRoot, operation)) {
+    fail("create_resume_conflict", ".kxm", "existing project configuration does not match the pinned create operation");
+  }
 }
 
 function relativeConfigPath(projectRoot: string, file: string): string {
@@ -858,12 +899,14 @@ function applyOperation(
   operation = updatePhase(projectRoot, operation, "applying");
   if (operation.kind === "create") {
     const destination = join(projectRoot, ".kxm");
-    if (!existsSync(destination)) {
+    let destinationStat: ReturnType<typeof lstatSync> | undefined;
+    try { destinationStat = lstatSync(destination); } catch { destinationStat = undefined; }
+    if (!destinationStat) {
       rebuildCreateShadow(projectRoot, operation, effectiveOptions);
       renameSync(join(shadowRoot(projectRoot), ".kxm"), destination);
       syncDirectory(projectRoot);
-    } else if (!installedCreateMatches(projectRoot, operation)) {
-      fail("create_resume_conflict", ".kxm", "existing project configuration does not match the pinned create operation");
+    } else {
+      applyCreateMerge(projectRoot, operation, effectiveOptions);
     }
   } else {
     const resources = operation.files.filter((entry) => entry.path !== VNEXT_TEMPLATE_PROVENANCE_PATH && entry.action !== "none");

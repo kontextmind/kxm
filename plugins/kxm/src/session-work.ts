@@ -10,6 +10,7 @@ import {
   type MeshTuiRun,
 } from "./local-snapshot.ts";
 import { readUpdateCache } from "./kxm-update.ts";
+import { resolveUserStateRoot } from "./hub-binding.ts";
 import { probeHubHealth, readHubBinding } from "./hub-binding.ts";
 import { readRoutingRecords } from "./telemetry.ts";
 
@@ -432,7 +433,7 @@ export function loadSessionBrief(
   const ship = options.ship ?? readGitShip(cwd);
   let brief: SessionBrief;
   try {
-    const cachedUpdate = readUpdateCache(paths.stateDir);
+    const cachedUpdate = readUpdateCache(resolveUserStateRoot(env));
     const updateLatest = options.updateLatest ?? (cachedUpdate?.available ? cachedUpdate.latest : undefined);
     const cost = options.cost ?? estimateSessionCost(paths.stateDir);
     const snapshot = loadLocalMeshSnapshot(paths.dataPath, paths.stateDir, { env });

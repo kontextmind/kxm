@@ -20,7 +20,7 @@ export class HubBindingError extends Error {
   }
 }
 
-function resolveUserStateRoot(env: NodeJS.ProcessEnv): string {
+export function resolveUserStateRoot(env: NodeJS.ProcessEnv = process.env): string {
   const explicit = env.KXM_STATE_HOME?.trim();
   if (explicit) {
     if (!isAbsolute(explicit)) throw new HubBindingError("local_state_root_not_absolute");

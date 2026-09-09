@@ -37,6 +37,15 @@ only conflict-free template-only description/purpose changes after validating a
 complete shadow project. Any authority change, overlapping edit, template
 deletion, invalid shadow, or missing provenance remains planning-only.
 
+Create classifies an absent `.kxm`, an empty `.kxm`, or a `.kxm` that contains
+only regular private runtime roots (`state`, `logs`, `runtime`) as a new
+project. Linked `.kxm` trees, linked runtime roots, unknown top-level entries,
+legacy `.kxm/config` inputs, and managed-path collisions stay repair, migrate,
+or fail-closed. When `.kxm` is absent, create still installs with a whole-directory
+rename. When a compatible runtime-only tree already exists, create merges only
+pinned template paths, never traverses or replaces those runtime roots, writes
+`.kxm/project.yaml` last, and verifies the managed target before commit.
+
 A live create or repair uses the fixed `.kxm-init-transaction` sibling at the
 Git root. Its exact operation record pins target hashes; repair preimages are
 backed up there, each destination is checked immediately before atomic
@@ -225,7 +234,7 @@ The current hub command groups are `agent`, `session`, `workflow`, `gate`, `hub`
 
 | Command | Purpose |
 |---|---|
-| `kxm init` | Atomically create a provenance-tracked minimal vNext project, validate it without rewriting, resume a pinned interrupted create/repair, apply conflict-free non-authority template updates, or join an existing clone with repeatable `--repository <id=absolute-path>` member bindings stored outside Git. `--dry-run` performs no writes. Provenance-free/ambiguous repair and permission-expanding changes remain planning-only. These configuration slices do **not** activate a vNext Runtime. `kxm init` is project-only; bind a running hub with `kxm hub bind <url>` |
+| `kxm init` | Atomically create a provenance-tracked minimal vNext project (including merging into an existing private-runtime-only `.kxm`), validate it without rewriting, resume a pinned interrupted create/repair, apply conflict-free non-authority template updates, or join an existing clone with repeatable `--repository <id=absolute-path>` member bindings stored outside Git. `--dry-run` performs no writes. Provenance-free/ambiguous repair and permission-expanding changes remain planning-only. These configuration slices do **not** activate a vNext Runtime. `kxm init` is project-only; bind a running hub with `kxm hub bind <url>` |
 | `kxm migrate plan` | Convert legacy `.kxm/config` JSON (agents, gates, workflow definitions) into a deterministic, secret-free `kxm.migration-plan.v1` report: source/target hashes, decision-requiring ambiguities (terminal status, transition budgets, evidence-policy strengthening, secret drops, narrowed ceilings, foreign producers), hashed unmapped fields, and explicit identity renames. Performs no writes, locks, or staging |
 | `kxm migrate apply [--decisions <file>]` | Install a reviewed migration: re-checks the decision binding against current sources, validates the complete target bundle, refuses to overwrite existing paths, installs durably, and writes a self-hashed `kxm.migration-receipt.v1` that keeps legacy inputs read-only. Re-applying is an idempotent no-op. `--dry-run` performs no writes |
 | `kxm migrate verify` | Re-check the migration receipt against current legacy sources and the target bundle (self-hash, source hashes, configuration revision, resource bytes). Performs no writes |
@@ -251,7 +260,7 @@ The current hub command groups are `agent`, `session`, `workflow`, `gate`, `hub`
 | `kxm hub view` | Check `/health` and `/ready` |
 | `kxm hub bind <url>` | Bind this machine to a running hub |
 | `kxm hub unbind` | Remove this machine's hub binding |
-| `kxm update --check` / `kxm update --kxm` | Check or apply a kxm operator package update from an npm-global install only. Other install kinds (source checkout, Pi git, Claude marketplace, npm-local, unknown) refuse `--kxm` and skip auto-apply. Source checkouts neither fetch nor nag. Default source is GitHub release tarballs; the release asset `kxm-<v>.tgz` must carry a sha256 digest or install fails closed. `source: npm` is for after the public package exists. Optional per-user `update.yaml` (`kxm.update.v1`, `auto` boolean) under the host state root (`KXM_STATE_HOME` / `%LOCALAPPDATA%\KXM` / macOS Application Support / XDG state) enables auto-apply on `kxm update`. A project `.kxm/update.yaml` is ignored with a warning. Notice also prints on `kxm hub start` (not from source) and on the session widget from cache |
+| `kxm update --check` / `kxm update --kxm` | Check or apply a kxm operator package update from an npm-global install only. Other install kinds (source checkout, Pi git, Claude marketplace, npm-local, unknown) refuse `--kxm` and skip auto-apply. Source checkouts neither fetch nor nag. Default source is GitHub release tarballs; the release asset `kxm-<v>.tgz` must carry a sha256 digest or install fails closed. `source: npm` is for after the public package exists. Optional per-user `update.yaml` (`kxm.update.v1`, `auto` boolean) under the host state root (`KXM_STATE_HOME` / `%LOCALAPPDATA%\KXM` / macOS Application Support / XDG state) enables auto-apply on `kxm update`. A project `.kxm/update.yaml` is ignored with a warning. The notice cache is `update-check.json` in that same host state root; a leftover project `.kxm/state/update-check.json` is ignored, not deleted. Notice also prints on `kxm hub start` (not from source) and on the session widget from cache |
 | `kxm dash` | Open the read-only SSE observer dashboard; non-TTY output is one ANSI-free snapshot |
 | `kxm hub start` | Start the KXM hub in the foreground |
 | `kxm hub stop` | Request managed hub and worker shutdown |

@@ -148,7 +148,16 @@ function npmFetch(version = "99.0.0", status = 200): NonNullable<CliIo["fetchImp
   };
 }
 
-function existsUpdateCache(cwd: string): boolean {
+function existsUpdateCache(dir: string): boolean {
+  try {
+    readFileSync(join(dir, "update-check.json"), "utf8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function existsProjectUpdateCache(cwd: string): boolean {
   try {
     readFileSync(join(cwd, ".kxm", "state", "update-check.json"), "utf8");
     return true;
@@ -169,9 +178,10 @@ function writeGhTarball(args: readonly string[], body = TARBALL_BODY): CliSpawnR
 test("update --check reports a newer GitHub release", async () => {
   const cwd = tempProject();
   const fake = fakeNpmGlobal();
+  const stateHome = mkdtempSync(join(tmpdir(), "kxm-update-check-state-"));
   try {
     const io = capture();
-    assert.equal(await runCli(["update", "--json", "--check"], {}, withGlobal(io, fake, { fetchImpl: githubFetch("v99.0.0") }), cwd), 0);
+    assert.equal(await runCli(["update", "--json", "--check"], { KXM_STATE_HOME: stateHome }, withGlobal(io, fake, { fetchImpl: githubFetch("v99.0.0") }), cwd), 0);
     const payload = JSON.parse(io.read().stdout) as {
       command: string;
       available: boolean;
@@ -185,9 +195,11 @@ test("update --check reports a newer GitHub release", async () => {
     assert.equal(payload.available, true);
     assert.equal(payload.source, "github");
     assert.match(io.read().stdout, /kxm update --kxm/);
-    assert.equal(existsUpdateCache(cwd), true);
+    assert.equal(existsUpdateCache(stateHome), true);
+    assert.equal(existsProjectUpdateCache(cwd), false);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
+    rmSync(stateHome, { recursive: true, force: true });
     fake.cleanup();
   }
 });
@@ -521,11 +533,22 @@ test("update --kxm fails closed when kxm is not an npm global install", async ()
     assert.equal(unknownPayload.error, "install_kind_unknown");
 
     const sourceCwd = tempProject();
+    const sourceRoot = mkdtempSync(join(tmpdir(), "kxm-source-root-"));
     try {
+      mkdirSync(join(sourceRoot, ".git"));
+      writeFileSync(join(sourceRoot, "package.json"), `${JSON.stringify({ name: "@kontextmind/kxm", version: "0.0.1" })}\n`);
+      const sourceProbe = {
+        moduleDir: join(sourceRoot, "plugins", "kxm", "dist"),
+        repoRoot: sourceRoot,
+        homeDir: home,
+        platform: process.platform,
+        env: {},
+      };
       const sourceCheck = capture();
       let sourceFetch = 0;
       assert.equal(await runCli(["update", "--json", "--check"], {}, {
         ...sourceCheck,
+        installProbe: sourceProbe,
         fetchImpl: async () => {
           sourceFetch += 1;
           throw new Error("source check must not fetch");
@@ -535,7 +558,7 @@ test("update --kxm fails closed when kxm is not an npm global install", async ()
       const sourcePayload = JSON.parse(sourceCheck.read().stdout) as { installKind: string; message: string };
       assert.equal(sourcePayload.installKind, "source");
       assert.match(sourcePayload.message, /running from source/);
-      assert.equal(existsUpdateCache(sourceCwd), false);
+      assert.equal(existsProjectUpdateCache(sourceCwd), false);
 
       const availableNotice = noticeFromVersions(currentVersion, "99.0.0", {
         schema: "kxm.update.v1",
@@ -546,6 +569,7 @@ test("update --kxm fails closed when kxm is not an npm global install", async ()
       const hubIo = capture();
       assert.equal(await runCli(["hub", "start"], {}, {
         ...hubIo,
+        installProbe: sourceProbe,
         spawnHub: () => 0,
         fetchImpl: async () => {
           throw new Error("source hub start must not fetch");
@@ -554,6 +578,7 @@ test("update --kxm fails closed when kxm is not an npm global install", async ()
       assert.equal(hubIo.read().stderr, "");
     } finally {
       rmSync(sourceCwd, { recursive: true, force: true });
+      rmSync(sourceRoot, { recursive: true, force: true });
     }
   } finally {
     rmSync(cwd, { recursive: true, force: true });
@@ -880,7 +905,6 @@ test("hub start prints an available update notice", async () => {
     assert.equal(spawned, 1);
     assert.match(io.read().stderr, /99\.0\.0 available/);
 
-    rmSync(join(cwd, ".kxm", "state", "update-check.json"), { force: true });
     const current = capture();
     assert.equal(await runCli(["hub", "start"], {}, withGlobal(current, fake, {
       fetchImpl: githubFetch(`v${currentVersion}`),
@@ -926,7 +950,8 @@ test("hub start warns on malformed update.yaml and still spawns", async () => {
     const yamlPath = join(stateHome, "update.yaml");
     assert.match(io.read().stderr, /kxm: update\.yaml schema must be kxm\.update\.v1; update check skipped; fix or remove /);
     assert.ok(io.read().stderr.includes(yamlPath));
-    assert.equal(existsUpdateCache(cwd), false);
+    assert.equal(existsUpdateCache(stateHome), false);
+    assert.equal(existsProjectUpdateCache(cwd), false);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
     rmSync(stateHome, { recursive: true, force: true });
@@ -937,17 +962,18 @@ test("hub start warns on malformed update.yaml and still spawns", async () => {
 test("hub start prints the cached notice before spawning and refreshes in the background", async () => {
   const cwd = tempProject();
   const fake = fakeNpmGlobal();
+  const stateHome = mkdtempSync(join(tmpdir(), "kxm-update-cache-home-"));
   try {
     const availableNotice = noticeFromVersions(currentVersion, "99.0.0", {
       schema: "kxm.update.v1",
       auto: false,
       source: "github",
     });
-    writeUpdateCache(join(cwd, ".kxm", "state"), availableNotice);
+    writeUpdateCache(stateHome, availableNotice);
     const io = capture();
     let spawnedAt = 0;
     let fetchResolvedAt = 0;
-    assert.equal(await runCli(["hub", "start"], {}, withGlobal(io, fake, {
+    assert.equal(await runCli(["hub", "start"], { KXM_STATE_HOME: stateHome }, withGlobal(io, fake, {
       fetchImpl: async () => {
         await new Promise((resolve) => setTimeout(resolve, 200));
         fetchResolvedAt = Date.now();
@@ -963,6 +989,43 @@ test("hub start prints the cached notice before spawning and refreshes in the ba
     assert.equal(io.read().stderr, `${availableNotice.message}\n`);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
+    rmSync(stateHome, { recursive: true, force: true });
+    fake.cleanup();
+  }
+});
+
+test("hub start ignores a project-local update cache", async () => {
+  const cwd = tempProject();
+  const fake = fakeNpmGlobal();
+  const stateHome = mkdtempSync(join(tmpdir(), "kxm-update-ignore-project-"));
+  try {
+    const availableNotice = noticeFromVersions(currentVersion, "99.0.0", {
+      schema: "kxm.update.v1",
+      auto: false,
+      source: "github",
+    });
+    writeUpdateCache(join(cwd, ".kxm", "state"), availableNotice);
+    const io = capture();
+    let spawnedAt = 0;
+    let fetchResolvedAt = 0;
+    assert.equal(await runCli(["hub", "start"], { KXM_STATE_HOME: stateHome }, withGlobal(io, fake, {
+      fetchImpl: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        fetchResolvedAt = Date.now();
+        return new Response(JSON.stringify({ tag_name: `v${currentVersion}` }), { status: 200 });
+      },
+      spawnHub: () => {
+        spawnedAt = Date.now();
+        return 0;
+      },
+    }), cwd), 0);
+    assert.ok(spawnedAt > 0 && fetchResolvedAt > 0);
+    assert.ok(spawnedAt < fetchResolvedAt);
+    assert.doesNotMatch(io.read().stderr, /99\.0\.0 available/);
+    assert.equal(readFileSync(join(cwd, ".kxm", "state", "update-check.json"), "utf8").includes("99.0.0"), true);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(stateHome, { recursive: true, force: true });
     fake.cleanup();
   }
 });
