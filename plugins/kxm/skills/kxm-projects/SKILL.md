@@ -2,9 +2,12 @@
 name: kxm-projects
 description: KontextMind projects and org admin — list/register mind repos, reindex against git HEAD, invite members. Use when asked to add a project, list projects, reindex, invite a steward/member, km_projects, km_project_add, km_reindex, or km_invite.
 license: Apache-2.0
+compatibility: Any agent that can run a shell or MCP client. No vendor-only tools.
 metadata:
   workflow: projects-org
-  version: "0.1.0"
+  version: "0.1.1"
+  argument-hint: "[list|add|reindex|invite]"
+  complete: "km_projects, km_project_add, km_reindex, km_invite"
   suite: kxm
 ---
 
@@ -30,3 +33,11 @@ If the tool returns a role error, stop and tell the user they need steward/owner
 - Git is canonical. Reindex repairs the disposable index; it does not rewrite history.
 - Report drift plainly (`head_sha` vs `indexed_sha`).
 - Invites are links. Hand the URL to the human; do not invent email send.
+
+## Autocomplete
+
+Slash hint — `[list|add|reindex|invite]`
+
+Complete — `km_projects, km_project_add, km_reindex, km_invite`
+
+Works on any harness. Catalog — `plugins/kxm/skills/hints.json`.

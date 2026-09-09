@@ -2,9 +2,12 @@
 name: kxm-setup
 description: Connect a machine or repo to KontextMind — serve, login, init, doctor. Use when asked to install kxm, start the local server, OAuth login, stamp MCP/hooks/AGENTS.md, run kontext doctor, or wire an agent to the mind.
 license: Apache-2.0
+compatibility: Any agent that can run a shell or MCP client. No vendor-only tools.
 metadata:
   workflow: setup
-  version: "0.1.0"
+  version: "0.1.1"
+  argument-hint: "[serve|login|init|doctor]"
+  complete: "npx kontextmind serve, kontext login, kontext init, kontext doctor"
   suite: kxm
 ---
 
@@ -42,3 +45,11 @@ Token order — `KM_TOKEN` → stored OAuth (auto-refresh) → demo default. Ove
 ## Doctor failures
 
 Report the exact check that failed (server unreachable, auth 401, hook missing, version lag). Do not edit hook scripts into forging trailers. Do not weaken secret gates to "make it work".
+
+## Autocomplete
+
+Slash hint — `[serve|login|init|doctor]`
+
+Complete — `npx kontextmind serve, kontext login, kontext init, kontext doctor`
+
+Works on any harness. Catalog — `plugins/kxm/skills/hints.json`.

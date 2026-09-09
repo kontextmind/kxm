@@ -2,9 +2,12 @@
 name: kxm-protocol
 description: KontextMind contracts — km_ tool shapes, KM-Session evidence trailers, trust modes, secret gates, webhooks, authz. Use when implementing or debugging protocol, trailers, OAuth, RLS, consistency, or threat-model questions.
 license: Apache-2.0
+compatibility: Any agent that can run a shell or MCP client. No vendor-only tools.
 metadata:
   workflow: protocol
-  version: "0.1.0"
+  version: "0.1.1"
+  argument-hint: "[trailers|trust|gates|authz|webhooks]"
+  complete: "trailers, trust, gates, authz, webhooks"
   suite: kxm
 ---
 
@@ -53,3 +56,11 @@ Projects — `km_projects` `km_project_add` `km_reindex` `km_invite`
 Work — `km_work_current` `km_work_update` `km_handoff_save` `km_handoff_load`
 
 Intelligence — `km_insights`
+
+## Autocomplete
+
+Slash hint — `[trailers|trust|gates|authz|webhooks]`
+
+Complete — `trailers, trust, gates, authz, webhooks`
+
+Works on any harness. Catalog — `plugins/kxm/skills/hints.json`.
