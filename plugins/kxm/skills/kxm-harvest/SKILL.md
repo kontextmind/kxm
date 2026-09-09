@@ -2,9 +2,12 @@
 name: kxm-harvest
 description: Extract durable KontextMind learnings at session end. Use when asked to harvest, close session, file a learning, km_append, save a checkpoint, or write a handoff. Redacts secrets first, dedupes against the mind, then drafts to local/project/org.
 license: Apache-2.0
+compatibility: Any agent that can run a shell or MCP client. No vendor-only tools.
 metadata:
   workflow: memory-harvest
-  version: "0.1.0"
+  version: "0.1.1"
+  argument-hint: "[local|project|org]"
+  complete: "km_append, km_work_update, km_handoff_save, kontext append"
   suite: kxm
 ---
 
@@ -35,3 +38,11 @@ CLI — `kontext append --title --content [--org] [--supersedes]`.
 - Label uncertainty (`Assumption:`, `Open:`).
 - ADD-only.
 - Tell the human what was filed and where.
+
+## Autocomplete
+
+Slash hint — `[local|project|org]`
+
+Complete — `km_append, km_work_update, km_handoff_save, kontext append`
+
+Works on any harness. Catalog — `plugins/kxm/skills/hints.json`.

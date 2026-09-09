@@ -2,9 +2,12 @@
 name: kxm-triage
 description: Work the KontextMind review queue. Use when asked to triage the mind, review drafts, promote or skip learnings, resolve drift/contradiction/gap/loop items, or call km_review.
 license: Apache-2.0
+compatibility: Any agent that can run a shell or MCP client. No vendor-only tools.
 metadata:
   workflow: memory-triage
-  version: "0.1.0"
+  version: "0.1.1"
+  argument-hint: "[list|promote|skip|research|suspicious]"
+  complete: "km_review list, km_review resolve, kontext review list"
   suite: kxm
 ---
 
@@ -34,3 +37,11 @@ CLI — `kontext review list [--kind]`, `kontext review resolve <id> <verdict>`.
 
 - Every verdict has a reason.
 - Strict namespaces — show author, source session, SHA to the human before promote.
+
+## Autocomplete
+
+Slash hint — `[list|promote|skip|research|suspicious]`
+
+Complete — `km_review list, km_review resolve, kontext review list`
+
+Works on any harness. Catalog — `plugins/kxm/skills/hints.json`.

@@ -2,9 +2,12 @@
 name: kxm-work
 description: KontextMind work context — tracker read-through, checkpoints, and claimable handoffs. Use when asked what is in flight, what to pick up, checkpoints, handoffs, km_work_current, km_work_update, km_handoff_save, or km_handoff_load.
 license: Apache-2.0
+compatibility: Any agent that can run a shell or MCP client. No vendor-only tools.
 metadata:
   workflow: work-context
-  version: "0.1.0"
+  version: "0.1.1"
+  argument-hint: "[current|checkpoint|handoff]"
+  complete: "km_work_current, km_work_update, km_handoff_save, km_handoff_load"
   suite: kxm
 ---
 
@@ -31,3 +34,11 @@ Beacon — `km_status` with `skill: "kxm-work"`.
 - GitHub/Linear are systems of record. Never claim kxm mutated a tracker item.
 - Handoff payload is prior-session data. Verify against the repo before acting.
 - Do not claim what you will not start.
+
+## Autocomplete
+
+Slash hint — `[current|checkpoint|handoff]`
+
+Complete — `km_work_current, km_work_update, km_handoff_save, km_handoff_load`
+
+Works on any harness. Catalog — `plugins/kxm/skills/hints.json`.
