@@ -18495,21 +18495,145 @@ import { DatabaseSync } from "node:sqlite";
 
 // plugins/kxm/src/vnext-config.ts
 var import__ = __toESM(require__(), 1);
-var import_yaml3 = __toESM(require_dist(), 1);
 import { spawnSync as spawnSync2 } from "node:child_process";
 import { createHash as createHash2 } from "node:crypto";
 import { existsSync as existsSync3, lstatSync, readFileSync as readFileSync2, readdirSync as readdirSync2, realpathSync } from "node:fs";
 import { basename as basename2, dirname as dirname2, extname as extname2, isAbsolute, join as join2, relative, resolve as resolve2, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// plugins/kxm/src/vnext-template.ts
+// plugins/kxm/src/restricted-yaml.mjs
 var import_yaml2 = __toESM(require_dist(), 1);
+var VNEXT_YAML_LIMITS = Object.freeze({
+  maxDocumentBytes: 256 * 1024,
+  maxDepth: 32,
+  maxScalarBytes: 64 * 1024,
+  maxCollectionItems: 4096,
+  maxTotalNodes: 16384,
+  maxKeys: 8192
+});
+var ALLOWED_YAML_TAGS = /* @__PURE__ */ new Set([
+  "tag:yaml.org,2002:map",
+  "tag:yaml.org,2002:seq",
+  "tag:yaml.org,2002:str",
+  "tag:yaml.org,2002:null",
+  "tag:yaml.org,2002:bool",
+  "tag:yaml.org,2002:int",
+  "tag:yaml.org,2002:float"
+]);
+function compareCodeUnits(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+function sortIssues(issues) {
+  return [...issues].sort((left, right) => compareCodeUnits(left.file, right.file) || compareCodeUnits(left.phase, right.phase) || compareCodeUnits(left.code, right.code) || compareCodeUnits(left.message, right.message));
+}
+function issue(phase, code, file, message) {
+  return { phase, code, file, message };
+}
+var RestrictedYamlError = class extends Error {
+  /**
+   * @param {readonly { phase: string, code: string, file: string, message: string }[]} issues
+   */
+  constructor(issues) {
+    const sorted = sortIssues(issues);
+    super(sorted.map((entry) => `${entry.file}: ${entry.code}: ${entry.message}`).join("\n"));
+    this.name = "RestrictedYamlError";
+    this.issues = sorted;
+  }
+};
+function fail(phase, code, file, message) {
+  throw new RestrictedYamlError([issue(phase, code, file, message)]);
+}
+function decodeUtf8(input, label) {
+  if (typeof input === "string") return input;
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(input);
+  } catch {
+    fail("parse", "invalid_utf8", label, "document is not valid UTF-8");
+  }
+}
+function isJsonObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function assertJsonValue(value, label, path5 = "$", seen = /* @__PURE__ */ new Set()) {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) fail("parse", "non_json_number", label, `${path5} is not a finite JSON number`);
+    return;
+  }
+  if (!value || typeof value !== "object") fail("parse", "non_json_value", label, `${path5} is not JSON-compatible`);
+  if (seen.has(value)) fail("parse", "cyclic_value", label, `${path5} is cyclic`);
+  seen.add(value);
+  if (Array.isArray(value)) {
+    for (const [index, candidate] of value.entries()) assertJsonValue(candidate, label, `${path5}[${index}]`, seen);
+  } else {
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      fail("parse", "constructed_object", label, `${path5} has a forbidden constructed type`);
+    }
+    for (const [key, candidate] of Object.entries(value)) assertJsonValue(candidate, label, `${path5}.${key}`, seen);
+  }
+  seen.delete(value);
+}
+function parseRestrictedYaml(input, label = "<yaml>", limits = VNEXT_YAML_LIMITS) {
+  const byteLength = typeof input === "string" ? Buffer.byteLength(input, "utf8") : input.byteLength;
+  if (byteLength > limits.maxDocumentBytes) {
+    fail("parse", "document_too_large", label, `document exceeds ${limits.maxDocumentBytes} bytes`);
+  }
+  const text = decodeUtf8(input, label);
+  const document = (0, import_yaml2.parseDocument)(text, {
+    customTags: [],
+    strict: true,
+    uniqueKeys: true
+  });
+  if (document.errors.length > 0) {
+    fail("parse", "invalid_yaml", label, document.errors.map((error) => error.message).join("; "));
+  }
+  if (document.warnings.length > 0) {
+    fail("parse", "yaml_warning", label, document.warnings.map((warning) => warning.message).join("; "));
+  }
+  let nodes = 0;
+  let keys = 0;
+  (0, import_yaml2.visit)(document, (_key, node, path5) => {
+    nodes += 1;
+    if (nodes > limits.maxTotalNodes) fail("parse", "node_limit", label, `document exceeds ${limits.maxTotalNodes} nodes`);
+    if (path5.length > limits.maxDepth) fail("parse", "depth_limit", label, `document exceeds nesting depth ${limits.maxDepth}`);
+    if ((0, import_yaml2.isAlias)(node)) fail("parse", "alias_forbidden", label, "aliases are forbidden");
+    if (node && typeof node === "object" && "anchor" in node && typeof node.anchor === "string") {
+      fail("parse", "anchor_forbidden", label, "anchors are forbidden");
+    }
+    if ((0, import_yaml2.isCollection)(node) && node.items.length > limits.maxCollectionItems) {
+      fail("parse", "collection_limit", label, `collection exceeds ${limits.maxCollectionItems} items`);
+    }
+    if ((0, import_yaml2.isMap)(node)) {
+      keys += node.items.length;
+      if (keys > limits.maxKeys) fail("parse", "key_limit", label, `document exceeds ${limits.maxKeys} mapping keys`);
+      for (const pair of node.items) {
+        if (!(0, import_yaml2.isScalar)(pair.key) || typeof pair.key.value !== "string") {
+          fail("parse", "non_string_key", label, "mapping keys must be strings");
+        }
+      }
+    }
+    if ((0, import_yaml2.isScalar)(node) && typeof node.value === "string" && Buffer.byteLength(node.value, "utf8") > limits.maxScalarBytes) {
+      fail("parse", "scalar_limit", label, `scalar exceeds ${limits.maxScalarBytes} bytes`);
+    }
+    if (node && typeof node === "object" && "tag" in node && typeof node.tag === "string" && !ALLOWED_YAML_TAGS.has(node.tag)) {
+      fail("parse", "tag_forbidden", label, `tag ${node.tag} is forbidden`);
+    }
+  });
+  const value = document.toJS({ maxAliasCount: 0 });
+  assertJsonValue(value, label);
+  if (!isJsonObject(value)) fail("parse", "root_not_object", label, "resource root must be a mapping");
+  return value;
+}
+
+// plugins/kxm/src/vnext-template.ts
+var import_yaml3 = __toESM(require_dist(), 1);
 import { createHash } from "node:crypto";
 var VNEXT_TEMPLATE_ID = "builtin-minimal";
 var VNEXT_TEMPLATE_PROVENANCE_PATH = ".kxm/template-provenance.yaml";
 var CURRENT_VNEXT_TEMPLATE_VARIANT = "v4-registry";
 var SUPPORTED_VNEXT_TEMPLATE_VARIANTS = ["v1", "v2", "v3-policy", "v4-registry"];
-function compareCodeUnits(left, right) {
+function compareCodeUnits2(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 function canonicalJson(value) {
@@ -18517,7 +18641,7 @@ function canonicalJson(value) {
     return JSON.stringify(value);
   }
   if (Array.isArray(value)) return `[${value.map((candidate) => canonicalJson(candidate)).join(",")}]`;
-  return `{${Object.keys(value).sort(compareCodeUnits).map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+  return `{${Object.keys(value).sort(compareCodeUnits2).map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
 }
 function vnextContentSha256(input) {
   return `sha256:${createHash("sha256").update(input).digest("hex")}`;
@@ -18658,7 +18782,7 @@ function renderVnextTemplate(projectId, projectName, variant = CURRENT_VNEXT_TEM
   const values = coreTemplate(projectId, projectName, variant);
   const coreFiles = /* @__PURE__ */ new Map();
   const records = [...values.entries()].map(([path5, value]) => {
-    const bytes = Buffer.from((0, import_yaml2.stringify)(value, { lineWidth: 0 }), "utf8");
+    const bytes = Buffer.from((0, import_yaml3.stringify)(value, { lineWidth: 0 }), "utf8");
     coreFiles.set(path5, bytes);
     return {
       path: path5,
@@ -18666,7 +18790,7 @@ function renderVnextTemplate(projectId, projectName, variant = CURRENT_VNEXT_TEM
       authoritySha256: vnextAuthoritySha256(value),
       bytes: bytes.byteLength
     };
-  }).sort((left, right) => compareCodeUnits(left.path, right.path));
+  }).sort((left, right) => compareCodeUnits2(left.path, right.path));
   const templateRevision = provenanceRevision(records);
   const provenance = {
     schema: "kxm.template-provenance.v1",
@@ -18678,9 +18802,9 @@ function renderVnextTemplate(projectId, projectName, variant = CURRENT_VNEXT_TEM
   const fileEntries = [...coreFiles.entries()];
   fileEntries.push([
     VNEXT_TEMPLATE_PROVENANCE_PATH,
-    Buffer.from((0, import_yaml2.stringify)(provenance, { lineWidth: 0 }), "utf8")
+    Buffer.from((0, import_yaml3.stringify)(provenance, { lineWidth: 0 }), "utf8")
   ]);
-  fileEntries.sort(([left], [right]) => compareCodeUnits(left, right));
+  fileEntries.sort(([left], [right]) => compareCodeUnits2(left, right));
   const files = new Map(fileEntries);
   return { projectId, projectName, templateRevision, provenance, files, values };
 }
@@ -19218,7 +19342,7 @@ function resolveDispatchStatus(entry, detected, authenticated, issues) {
     return { status: "no", supported: false, reason: "not_authenticated" };
   }
   if (authenticated === null) {
-    const authIssue = issues.find((issue2) => issue2 === "auth_context_required" || issue2 === "auth_unknown" || issue2 === "auth_unparsed" || issue2.startsWith("auth_"));
+    const authIssue = issues.find((issue3) => issue3 === "auth_context_required" || issue3 === "auth_unknown" || issue3 === "auth_unparsed" || issue3.startsWith("auth_"));
     return { status: "no", supported: false, reason: authIssue ?? issues[0] ?? "auth_unknown" };
   }
   return { status: "yes", supported: true };
@@ -19517,19 +19641,11 @@ function formatHarnessUpdate(steps) {
 }
 
 // plugins/kxm/src/vnext-config.ts
-var VNEXT_YAML_LIMITS = Object.freeze({
-  maxDocumentBytes: 256 * 1024,
-  maxDepth: 32,
-  maxScalarBytes: 64 * 1024,
-  maxCollectionItems: 4096,
-  maxTotalNodes: 16384,
-  maxKeys: 8192
-});
 var VnextConfigError = class extends Error {
   issues;
   constructor(issues) {
-    const sorted = sortIssues(issues);
-    super(sorted.map((issue2) => `${issue2.file}: ${issue2.code}: ${issue2.message}`).join("\n"));
+    const sorted = sortIssues2(issues);
+    super(sorted.map((issue3) => `${issue3.file}: ${issue3.code}: ${issue3.message}`).join("\n"));
     this.name = "VnextConfigError";
     this.issues = sorted;
   }
@@ -19557,108 +19673,28 @@ var SECRET_VALUE_PATTERNS = [
   /\bAKIA[A-Z0-9]{16}\b/,
   /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/
 ];
-var ALLOWED_YAML_TAGS = /* @__PURE__ */ new Set([
-  "tag:yaml.org,2002:map",
-  "tag:yaml.org,2002:seq",
-  "tag:yaml.org,2002:str",
-  "tag:yaml.org,2002:null",
-  "tag:yaml.org,2002:bool",
-  "tag:yaml.org,2002:int",
-  "tag:yaml.org,2002:float"
-]);
-function compareCodeUnits2(left, right) {
+function compareCodeUnits3(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
-function sortIssues(issues) {
-  return [...issues].sort((left, right) => compareCodeUnits2(left.file, right.file) || compareCodeUnits2(left.phase, right.phase) || compareCodeUnits2(left.code, right.code) || compareCodeUnits2(left.message, right.message));
+function sortIssues2(issues) {
+  return [...issues].sort((left, right) => compareCodeUnits3(left.file, right.file) || compareCodeUnits3(left.phase, right.phase) || compareCodeUnits3(left.code, right.code) || compareCodeUnits3(left.message, right.message));
 }
-function issue(phase, code, file, message) {
+function issue2(phase, code, file, message) {
   return { phase, code, file, message };
 }
-function fail(phase, code, file, message) {
-  throw new VnextConfigError([issue(phase, code, file, message)]);
+function fail2(phase, code, file, message) {
+  throw new VnextConfigError([issue2(phase, code, file, message)]);
 }
-function decodeUtf8(input, label) {
-  if (typeof input === "string") return input;
-  try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(input);
-  } catch {
-    fail("parse", "invalid_utf8", label, "document is not valid UTF-8");
-  }
-}
-function isJsonObject(value) {
+function isJsonObject2(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
-function assertJsonValue(value, label, path5 = "$", seen = /* @__PURE__ */ new Set()) {
-  if (value === null || typeof value === "string" || typeof value === "boolean") return;
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) fail("parse", "non_json_number", label, `${path5} is not a finite JSON number`);
-    return;
+function parseRestrictedYaml2(input, label = "<yaml>", limits = VNEXT_YAML_LIMITS) {
+  try {
+    return parseRestrictedYaml(input, label, limits);
+  } catch (error) {
+    if (error instanceof RestrictedYamlError) throw new VnextConfigError(error.issues);
+    throw error;
   }
-  if (!value || typeof value !== "object") fail("parse", "non_json_value", label, `${path5} is not JSON-compatible`);
-  if (seen.has(value)) fail("parse", "cyclic_value", label, `${path5} is cyclic`);
-  seen.add(value);
-  if (Array.isArray(value)) {
-    for (const [index, candidate] of value.entries()) assertJsonValue(candidate, label, `${path5}[${index}]`, seen);
-  } else {
-    const prototype = Object.getPrototypeOf(value);
-    if (prototype !== Object.prototype && prototype !== null) {
-      fail("parse", "constructed_object", label, `${path5} has a forbidden constructed type`);
-    }
-    for (const [key, candidate] of Object.entries(value)) assertJsonValue(candidate, label, `${path5}.${key}`, seen);
-  }
-  seen.delete(value);
-}
-function parseRestrictedYaml(input, label = "<yaml>", limits = VNEXT_YAML_LIMITS) {
-  const byteLength = typeof input === "string" ? Buffer.byteLength(input, "utf8") : input.byteLength;
-  if (byteLength > limits.maxDocumentBytes) {
-    fail("parse", "document_too_large", label, `document exceeds ${limits.maxDocumentBytes} bytes`);
-  }
-  const text = decodeUtf8(input, label);
-  const document = (0, import_yaml3.parseDocument)(text, {
-    customTags: [],
-    strict: true,
-    uniqueKeys: true
-  });
-  if (document.errors.length > 0) {
-    fail("parse", "invalid_yaml", label, document.errors.map((error) => error.message).join("; "));
-  }
-  if (document.warnings.length > 0) {
-    fail("parse", "yaml_warning", label, document.warnings.map((warning) => warning.message).join("; "));
-  }
-  let nodes = 0;
-  let keys = 0;
-  (0, import_yaml3.visit)(document, (_key, node, path5) => {
-    nodes += 1;
-    if (nodes > limits.maxTotalNodes) fail("parse", "node_limit", label, `document exceeds ${limits.maxTotalNodes} nodes`);
-    if (path5.length > limits.maxDepth) fail("parse", "depth_limit", label, `document exceeds nesting depth ${limits.maxDepth}`);
-    if ((0, import_yaml3.isAlias)(node)) fail("parse", "alias_forbidden", label, "aliases are forbidden");
-    if (node && typeof node === "object" && "anchor" in node && typeof node.anchor === "string") {
-      fail("parse", "anchor_forbidden", label, "anchors are forbidden");
-    }
-    if ((0, import_yaml3.isCollection)(node) && node.items.length > limits.maxCollectionItems) {
-      fail("parse", "collection_limit", label, `collection exceeds ${limits.maxCollectionItems} items`);
-    }
-    if ((0, import_yaml3.isMap)(node)) {
-      keys += node.items.length;
-      if (keys > limits.maxKeys) fail("parse", "key_limit", label, `document exceeds ${limits.maxKeys} mapping keys`);
-      for (const pair of node.items) {
-        if (!(0, import_yaml3.isScalar)(pair.key) || typeof pair.key.value !== "string") {
-          fail("parse", "non_string_key", label, "mapping keys must be strings");
-        }
-      }
-    }
-    if ((0, import_yaml3.isScalar)(node) && typeof node.value === "string" && Buffer.byteLength(node.value, "utf8") > limits.maxScalarBytes) {
-      fail("parse", "scalar_limit", label, `scalar exceeds ${limits.maxScalarBytes} bytes`);
-    }
-    if (node && typeof node === "object" && "tag" in node && typeof node.tag === "string" && !ALLOWED_YAML_TAGS.has(node.tag)) {
-      fail("parse", "tag_forbidden", label, `tag ${node.tag} is forbidden`);
-    }
-  });
-  const value = document.toJS({ maxAliasCount: 0 });
-  assertJsonValue(value, label);
-  if (!isJsonObject(value)) fail("parse", "root_not_object", label, "resource root must be a mapping");
-  return value;
 }
 function readJsonObject(file) {
   const parsed = JSON.parse(readFileSync2(file, "utf8"));
@@ -19734,7 +19770,7 @@ var VnextSchemaRegistry = class {
   validate(kind, value, file) {
     const definition = RESOURCE_SCHEMA[kind];
     if (value.schema !== definition.identity) {
-      return [issue("schema", "schema_identity_mismatch", file, `expected ${definition.identity}, received ${String(value.schema)}`)];
+      return [issue2("schema", "schema_identity_mismatch", file, `expected ${definition.identity}, received ${String(value.schema)}`)];
     }
     const validator = this.validators.get(kind);
     if (!validator) throw new Error(`missing vNext validator for ${kind}`);
@@ -19764,7 +19800,7 @@ var VnextSchemaRegistry = class {
   }
   validateAuxiliary(value, file, identity, validator) {
     if (value.schema !== identity) {
-      return [issue("schema", "schema_identity_mismatch", file, `expected ${identity}, received ${String(value.schema)}`)];
+      return [issue2("schema", "schema_identity_mismatch", file, `expected ${identity}, received ${String(value.schema)}`)];
     }
     if (validator(value)) return [];
     return (validator.errors ?? []).map((error) => schemaIssue(file, error));
@@ -19773,7 +19809,7 @@ var VnextSchemaRegistry = class {
 function schemaIssue(file, error) {
   const location = error.instancePath || "/";
   const suffix = error.params && "additionalProperty" in error.params ? ` (${String(error.params.additionalProperty)})` : "";
-  return issue("schema", `schema_${error.keyword}`, file, `${location} ${error.message ?? "is invalid"}${suffix}`);
+  return issue2("schema", `schema_${error.keyword}`, file, `${location} ${error.message ?? "is invalid"}${suffix}`);
 }
 function canonicalHostPath(path5) {
   const resolved = resolve2(path5);
@@ -19799,7 +19835,7 @@ function portableBindingIssue(root, pathHint, repositoryId) {
     if (!existsSync3(current)) break;
     const stat = lstatSync(current);
     if (stat.isSymbolicLink()) {
-      return issue("path", "repository_binding_path_link", ".kxm/project.yaml", `portable pathHint for ${repositoryId} traverses a symbolic link or junction`);
+      return issue2("path", "repository_binding_path_link", ".kxm/project.yaml", `portable pathHint for ${repositoryId} traverses a symbolic link or junction`);
     }
   }
   const binding = resolve2(root, ...pathHint.split("/"));
@@ -19807,7 +19843,7 @@ function portableBindingIssue(root, pathHint, repositoryId) {
     const realRoot = canonicalHostPath(root);
     const realBinding = canonicalHostPath(binding);
     if (!containedHostPath(realRoot, realBinding)) {
-      return issue("path", "repository_binding_outside_project", ".kxm/project.yaml", `portable pathHint for ${repositoryId} resolves outside the authoritative project root`);
+      return issue2("path", "repository_binding_outside_project", ".kxm/project.yaml", `portable pathHint for ${repositoryId} resolves outside the authoritative project root`);
     }
   }
   return void 0;
@@ -19837,24 +19873,24 @@ function readResource(registry, root, file, logicalPath, kind, id, containmentRo
   try {
     stat = lstatSync(file);
   } catch {
-    fail("discovery", "resource_missing", label, "resource does not exist");
+    fail2("discovery", "resource_missing", label, "resource does not exist");
   }
-  if (stat.isSymbolicLink()) fail("path", "resource_symlink", label, "configuration resources must not be symbolic links");
+  if (stat.isSymbolicLink()) fail2("path", "resource_symlink", label, "configuration resources must not be symbolic links");
   const boundary = resolve2(containmentRoot);
   let parent = dirname2(file);
   while (parent !== boundary) {
-    if (parent === dirname2(parent)) fail("path", "resource_outside_project", label, "resource escapes the project root");
+    if (parent === dirname2(parent)) fail2("path", "resource_outside_project", label, "resource escapes the project root");
     let parentStat;
     try {
       parentStat = lstatSync(parent);
     } catch {
-      fail("discovery", "resource_parent_missing", label, "resource parent does not exist");
+      fail2("discovery", "resource_parent_missing", label, "resource parent does not exist");
     }
-    if (parentStat.isSymbolicLink()) fail("path", "resource_parent_symlink", label, "configuration resource parents must not be symbolic links");
+    if (parentStat.isSymbolicLink()) fail2("path", "resource_parent_symlink", label, "configuration resource parents must not be symbolic links");
     parent = dirname2(parent);
   }
-  if (!stat.isFile()) fail("path", "resource_not_file", label, "configuration resource must be a regular file");
-  const value = parseRestrictedYaml(readFileSync2(file), label);
+  if (!stat.isFile()) fail2("path", "resource_not_file", label, "configuration resource must be a regular file");
+  const value = parseRestrictedYaml2(readFileSync2(file), label);
   const issues = registry.validate(kind, value, label);
   if (issues.length > 0) throw new VnextConfigError(issues);
   return { kind, ...id === void 0 ? {} : { id }, file, logicalPath, value };
@@ -19865,23 +19901,23 @@ function readTemplateProvenance(registry, root) {
   const label = ".kxm/template-provenance.yaml";
   const stat = lstatSync(file);
   if (stat.isSymbolicLink() || !stat.isFile()) {
-    fail("path", "resource_not_file", label, "template provenance must be a regular file, not a link or directory");
+    fail2("path", "resource_not_file", label, "template provenance must be a regular file, not a link or directory");
   }
   const configRoot = join2(root, ".kxm");
   let parent = dirname2(file);
   while (parent !== root) {
     const parentStat = lstatSync(parent);
     if (parentStat.isSymbolicLink() || !parentStat.isDirectory()) {
-      fail("path", "resource_parent_symlink", label, "template provenance parents must be regular directories");
+      fail2("path", "resource_parent_symlink", label, "template provenance parents must be regular directories");
     }
     if (parent === configRoot) break;
     parent = dirname2(parent);
   }
-  const value = parseRestrictedYaml(readFileSync2(file), label);
+  const value = parseRestrictedYaml2(readFileSync2(file), label);
   const issues = registry.validateTemplateProvenance(value, label);
   if (issues.length > 0) throw new VnextConfigError(issues);
   if (!resolveVnextTemplateBaseline(value)) {
-    fail("semantic", "template_provenance_revision_invalid", label, "template provenance does not exactly match a supported built-in baseline");
+    fail2("semantic", "template_provenance_revision_invalid", label, "template provenance does not exactly match a supported built-in baseline");
   }
   const files = Array.isArray(value.files) ? value.files : [];
   const seen = /* @__PURE__ */ new Set();
@@ -19894,15 +19930,15 @@ function readTemplateProvenance(registry, root) {
     managedBytes += typeof record.bytes === "number" ? record.bytes : 0;
     const folded = path5.toLocaleLowerCase("en-US");
     if (!path5.startsWith(".kxm/") || path5 === label || !portablePath(path5)) {
-      fail("path", "template_provenance_path_invalid", label, `managed path ${path5} is not a portable project-configuration path`);
+      fail2("path", "template_provenance_path_invalid", label, `managed path ${path5} is not a portable project-configuration path`);
     }
-    if (seen.has(folded)) fail("path", "template_provenance_path_collision", label, `managed path ${path5} collides after case folding`);
-    if (prior && compareCodeUnits2(prior, path5) >= 0) fail("semantic", "template_provenance_order_invalid", label, "managed file entries must use strict code-unit order");
+    if (seen.has(folded)) fail2("path", "template_provenance_path_collision", label, `managed path ${path5} collides after case folding`);
+    if (prior && compareCodeUnits3(prior, path5) >= 0) fail2("semantic", "template_provenance_order_invalid", label, "managed file entries must use strict code-unit order");
     seen.add(folded);
     prior = path5;
   }
   if (managedBytes > 8 * 1024 * 1024) {
-    fail("parse", "template_provenance_bounds_exceeded", label, "managed template manifest exceeds 8388608 bytes");
+    fail2("parse", "template_provenance_bounds_exceeded", label, "managed template manifest exceeds 8388608 bytes");
   }
   return value;
 }
@@ -19911,28 +19947,28 @@ function listNamedResources(registry, root, directory, logicalDirectory, kind) {
   if (!existsSync3(directory)) return resources;
   const stat = lstatSync(directory);
   if (stat.isSymbolicLink() || !stat.isDirectory()) {
-    fail("path", "resource_directory_invalid", displayPath(root, directory), "resource directory must be a regular directory");
+    fail2("path", "resource_directory_invalid", displayPath(root, directory), "resource directory must be a regular directory");
   }
   const issues = [];
-  const entries = readdirSync2(directory, { withFileTypes: true }).sort((left, right) => compareCodeUnits2(left.name, right.name));
+  const entries = readdirSync2(directory, { withFileTypes: true }).sort((left, right) => compareCodeUnits3(left.name, right.name));
   for (const entry of entries) {
     if (entry.isDirectory()) {
-      issues.push(issue("path", "nested_resource_directory", displayPath(root, join2(directory, entry.name)), "nested resource directories are not allowed"));
+      issues.push(issue2("path", "nested_resource_directory", displayPath(root, join2(directory, entry.name)), "nested resource directories are not allowed"));
       continue;
     }
     if (!entry.name.toLowerCase().endsWith(".yaml") && !entry.name.toLowerCase().endsWith(".yml")) continue;
     if (!entry.isFile() || extname2(entry.name) !== ".yaml") {
-      issues.push(issue("path", "resource_filename_invalid", displayPath(root, join2(directory, entry.name)), "resource must be a regular file with the exact .yaml extension"));
+      issues.push(issue2("path", "resource_filename_invalid", displayPath(root, join2(directory, entry.name)), "resource must be a regular file with the exact .yaml extension"));
       continue;
     }
     const id = basename2(entry.name, ".yaml");
     if (!resourceIdentifier(id)) {
-      issues.push(issue("path", "resource_id_invalid", displayPath(root, join2(directory, entry.name)), `filename-derived identity ${id} is invalid or platform-reserved`));
+      issues.push(issue2("path", "resource_id_invalid", displayPath(root, join2(directory, entry.name)), `filename-derived identity ${id} is invalid or platform-reserved`));
       continue;
     }
     const collision = [...resources.keys()].find((candidate) => candidate.toLocaleLowerCase("en-US") === id.toLocaleLowerCase("en-US"));
     if (collision) {
-      issues.push(issue("path", "resource_id_collision", displayPath(root, join2(directory, entry.name)), `${id} case-folds to existing ${collision}`));
+      issues.push(issue2("path", "resource_id_collision", displayPath(root, join2(directory, entry.name)), `${id} case-folds to existing ${collision}`));
       continue;
     }
     try {
@@ -19951,7 +19987,7 @@ function valuesOf(object2, field) {
   return Array.isArray(value) ? value : [];
 }
 function objectValue(value) {
-  return value !== void 0 && isJsonObject(value) ? value : void 0;
+  return value !== void 0 && isJsonObject2(value) ? value : void 0;
 }
 function stringValue(value) {
   return typeof value === "string" ? value : void 0;
@@ -19967,7 +20003,7 @@ function mapResource(resource, map, issues) {
   if (!id) return;
   const collision = [...map.keys()].find((candidate) => candidate.toLocaleLowerCase("en-US") === id.toLocaleLowerCase("en-US"));
   if (collision) {
-    issues.push(issue("path", "resource_id_collision", resource.logicalPath, `${id} case-folds to existing ${collision}`));
+    issues.push(issue2("path", "resource_id_collision", resource.logicalPath, `${id} case-folds to existing ${collision}`));
     return;
   }
   map.set(id, resource);
@@ -19991,7 +20027,7 @@ function validatePortablePaths(resource, issues) {
   }
   for (const candidate of candidates) {
     if (!portablePath(candidate.path)) {
-      issues.push(issue("path", "portable_path_invalid", resource.logicalPath, `${candidate.label} is not a normalized forward-slash relative path: ${candidate.path}`));
+      issues.push(issue2("path", "portable_path_invalid", resource.logicalPath, `${candidate.label} is not a normalized forward-slash relative path: ${candidate.path}`));
     }
   }
 }
@@ -20001,14 +20037,14 @@ function selectorCandidates(selectorValue, models, file, label, issues) {
   const profile = stringValue(selector.profile);
   if (profile) {
     const model = models.get(profile);
-    if (!model) issues.push(issue("reference", "model_profile_unknown", file, `${label} references unknown model profile ${profile}`));
+    if (!model) issues.push(issue2("reference", "model_profile_unknown", file, `${label} references unknown model profile ${profile}`));
     return model ? [model] : [];
   }
   const tag = stringValue(selector.tag);
   if (!tag) return [];
   const capabilities = new Set(names(selector.capabilities));
   const candidates = [...models.values()].filter((model) => names(model.value.tags).includes(tag) && [...capabilities].every((capability) => names(model.value.capabilities).includes(capability)));
-  if (candidates.length === 0) issues.push(issue("reference", "model_tag_unresolved", file, `${label} selector tag ${tag} has no matching profile`));
+  if (candidates.length === 0) issues.push(issue2("reference", "model_tag_unresolved", file, `${label} selector tag ${tag} has no matching profile`));
   return candidates;
 }
 function modelCandidates(selectorValue, models) {
@@ -20063,13 +20099,13 @@ function validateEnvironment(resource, issues) {
     const secret = objectValue(candidate);
     const name = secret && stringValue(secret.name);
     if (!name) continue;
-    if (secretNames.has(name)) issues.push(issue("semantic", "secret_name_duplicate", resource.logicalPath, `secret environment name ${name} is duplicated`));
+    if (secretNames.has(name)) issues.push(issue2("semantic", "secret_name_duplicate", resource.logicalPath, `secret environment name ${name} is duplicated`));
     secretNames.add(name);
-    if (Object.hasOwn(values, name)) issues.push(issue("semantic", "environment_name_conflict", resource.logicalPath, `${name} appears in both values and secrets`));
+    if (Object.hasOwn(values, name)) issues.push(issue2("semantic", "environment_name_conflict", resource.logicalPath, `${name} appears in both values and secrets`));
   }
   for (const [name, value] of Object.entries(values)) {
     if (typeof value === "string" && SECRET_VALUE_PATTERNS.some((pattern) => pattern.test(value))) {
-      issues.push(issue("semantic", "probable_secret_value", resource.logicalPath, `${name} resembles a credential and must be represented by secrets[].ref`));
+      issues.push(issue2("semantic", "probable_secret_value", resource.logicalPath, `${name} resembles a credential and must be represented by secrets[].ref`));
     }
   }
 }
@@ -20081,29 +20117,29 @@ function validateToolScope(agent, step, file, stepId, issues) {
   if (!requested) return;
   const ceiling = objectValue(agent.value.tools);
   if (!ceiling) {
-    issues.push(issue("semantic", "tool_scope_expansion", file, `${stepId} requests tools but agent ${agent.id ?? "unknown"} declares no tool ceiling`));
+    issues.push(issue2("semantic", "tool_scope_expansion", file, `${stepId} requests tools but agent ${agent.id ?? "unknown"} declares no tool ceiling`));
     return;
   }
   const requestedPreset = stringValue(requested.preset);
   const ceilingPreset = stringValue(ceiling.preset);
   if (requestedPreset !== ceilingPreset) {
-    issues.push(issue("semantic", "tool_scope_expansion", file, `${stepId} tool preset ${String(requestedPreset)} does not preserve agent ${agent.id ?? "unknown"} preset ${String(ceilingPreset)}`));
+    issues.push(issue2("semantic", "tool_scope_expansion", file, `${stepId} tool preset ${String(requestedPreset)} does not preserve agent ${agent.id ?? "unknown"} preset ${String(ceilingPreset)}`));
   }
   const allowed = new Set(names(ceiling.allow));
   const denied = new Set(names(ceiling.deny));
   for (const tool of names(requested.allow)) {
-    if (!allowed.has(tool) || denied.has(tool)) issues.push(issue("semantic", "tool_scope_expansion", file, `${stepId} requests tool ${tool} beyond agent ${agent.id ?? "unknown"} explicit allowlist`));
+    if (!allowed.has(tool) || denied.has(tool)) issues.push(issue2("semantic", "tool_scope_expansion", file, `${stepId} requests tool ${tool} beyond agent ${agent.id ?? "unknown"} explicit allowlist`));
   }
   const requestedDenied = new Set(names(requested.deny));
   for (const tool of denied) {
-    if (!requestedDenied.has(tool)) issues.push(issue("semantic", "tool_scope_expansion", file, `${stepId} drops agent ${agent.id ?? "unknown"} denial for ${tool}`));
+    if (!requestedDenied.has(tool)) issues.push(issue2("semantic", "tool_scope_expansion", file, `${stepId} drops agent ${agent.id ?? "unknown"} denial for ${tool}`));
   }
 }
 function validateToolPolicy(resource, policy, label, issues) {
   if (!policy) return;
   const allowed = new Set(names(policy.allow));
   for (const tool of names(policy.deny)) {
-    if (allowed.has(tool)) issues.push(issue("semantic", "tool_policy_contradiction", resource.logicalPath, `${label} both allows and denies ${tool}`));
+    if (allowed.has(tool)) issues.push(issue2("semantic", "tool_policy_contradiction", resource.logicalPath, `${label} both allows and denies ${tool}`));
   }
 }
 function validateVnextResources(resources, options = {}) {
@@ -20132,7 +20168,7 @@ function validateVnextResources(resources, options = {}) {
     else if (resource.kind === "environment") environments.push(made);
     else if (resource.kind === "gate-registry") gateRegistry = made;
   }
-  if (!project) return [issue("discovery", "project_definition_missing", ".kxm/project.yaml", "resource set has no project definition")];
+  if (!project) return [issue2("discovery", "project_definition_missing", ".kxm/project.yaml", "resource set has no project definition")];
   return validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry);
 }
 function validateAgentScope(agent, step, repositories, file, stepId, issues) {
@@ -20143,14 +20179,14 @@ function validateAgentScope(agent, step, repositories, file, stepId, issues) {
     if (!repositories.has(repositoryId)) continue;
     const ceiling = agentRepositories[repositoryId] ?? defaultAccess ?? "none";
     if (accessRank(requested) > accessRank(ceiling)) {
-      issues.push(issue("semantic", "repository_scope_expansion", file, `${stepId} requests ${String(requested)} access to ${repositoryId} beyond agent ${agent.id ?? "unknown"} ceiling ${String(ceiling)}`));
+      issues.push(issue2("semantic", "repository_scope_expansion", file, `${stepId} requests ${String(requested)} access to ${repositoryId} beyond agent ${agent.id ?? "unknown"} ceiling ${String(ceiling)}`));
     }
   }
   const grants = new Set(valuesOf(agent.value, "secrets").map((candidate) => objectValue(candidate)).filter((candidate) => Boolean(candidate)).map((candidate) => stringValue(candidate.ref)).filter((candidate) => Boolean(candidate)));
   for (const candidate of valuesOf(step, "secrets")) {
     const reference = stringValue(objectValue(candidate)?.ref);
     if (reference && !grants.has(reference)) {
-      issues.push(issue("semantic", "secret_scope_expansion", file, `${stepId} requests secret ${reference} beyond agent ${agent.id ?? "unknown"} ceiling`));
+      issues.push(issue2("semantic", "secret_scope_expansion", file, `${stepId} requests secret ${reference} beyond agent ${agent.id ?? "unknown"} ceiling`));
     }
   }
 }
@@ -20168,13 +20204,13 @@ function transition(value) {
 function validateWorkflow(workflow, agents, models, repositories, gates, issues) {
   const file = workflow.logicalPath;
   const coordinator = stringValue(workflow.value.coordinator) ?? "coordinator";
-  if (!agents.has(coordinator)) issues.push(issue("reference", "coordinator_unknown", file, `coordinator ${coordinator} does not exist`));
+  if (!agents.has(coordinator)) issues.push(issue2("reference", "coordinator_unknown", file, `coordinator ${coordinator} does not exist`));
   const steps = valuesOf(workflow.value, "steps").map((candidate) => objectValue(candidate)).filter((candidate) => Boolean(candidate));
   const stepIndex = /* @__PURE__ */ new Map();
   for (const [index, step] of steps.entries()) {
     const id = stringValue(step.id);
     if (!id) continue;
-    if (stepIndex.has(id)) issues.push(issue("semantic", "step_id_duplicate", file, `step ${id} is duplicated`));
+    if (stepIndex.has(id)) issues.push(issue2("semantic", "step_id_duplicate", file, `step ${id} is duplicated`));
     else stepIndex.set(id, index);
   }
   for (const field of ["reproOracle", "planHash"]) {
@@ -20184,16 +20220,16 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
     const evidenceKey = stringValue(oracle.evidenceKey);
     const index = stageId === void 0 ? void 0 : stepIndex.get(stageId);
     if (index === void 0) {
-      issues.push(issue("reference", "oracle_stage_unknown", file, `${field} references unknown stage ${String(stageId)}`));
+      issues.push(issue2("reference", "oracle_stage_unknown", file, `${field} references unknown stage ${String(stageId)}`));
       continue;
     }
     const evidence = new Set(valuesOf(steps[index] ?? {}, "requiredEvidence").map((candidate) => stringValue(objectValue(candidate)?.key)).filter((candidate) => Boolean(candidate)));
-    if (!evidenceKey || !evidence.has(evidenceKey)) issues.push(issue("reference", "oracle_evidence_unknown", file, `${field} references undeclared evidence ${String(evidenceKey)} in ${stageId}`));
+    if (!evidenceKey || !evidence.has(evidenceKey)) issues.push(issue2("reference", "oracle_evidence_unknown", file, `${field} references undeclared evidence ${String(evidenceKey)} in ${stageId}`));
   }
   const planStages = new Set(names(workflow.value.requirePlanHash));
-  if (planStages.size > 0 && !objectValue(workflow.value.planHash)) issues.push(issue("semantic", "plan_hash_missing", file, "requirePlanHash requires planHash"));
+  if (planStages.size > 0 && !objectValue(workflow.value.planHash)) issues.push(issue2("semantic", "plan_hash_missing", file, "requirePlanHash requires planHash"));
   for (const stageId of planStages) {
-    if (!stepIndex.has(stageId)) issues.push(issue("reference", "plan_hash_stage_unknown", file, `requirePlanHash references unknown stage ${stageId}`));
+    if (!stepIndex.has(stageId)) issues.push(issue2("reference", "plan_hash_stage_unknown", file, `requirePlanHash references unknown stage ${stageId}`));
   }
   const adjacency = steps.map(() => /* @__PURE__ */ new Set());
   const terminalReachable = /* @__PURE__ */ new Set();
@@ -20205,21 +20241,21 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
     validateToolPolicy(workflow, objectValue(step.tools), `${stepId}.tools`, issues);
     const primaryAgentId = stringValue(step.agent);
     if ((kind === "agent" || kind === "moa") && primaryAgentId && !agents.has(primaryAgentId)) {
-      issues.push(issue("reference", "agent_unknown", file, `${stepId} references unknown agent ${primaryAgentId}`));
+      issues.push(issue2("reference", "agent_unknown", file, `${stepId} references unknown agent ${primaryAgentId}`));
     }
     const gate = stringValue(step.gate);
     if (kind === "gate" && gate) {
-      if (!gates) issues.push(issue("reference", "gate_registry_missing", file, `${stepId} requires .kxm/gates.yaml`));
-      else if (!gates.has(gate)) issues.push(issue("reference", "gate_unknown", file, `${stepId} references unregistered gate ${gate}`));
+      if (!gates) issues.push(issue2("reference", "gate_registry_missing", file, `${stepId} requires .kxm/gates.yaml`));
+      else if (!gates.has(gate)) issues.push(issue2("reference", "gate_unknown", file, `${stepId} references unregistered gate ${gate}`));
     }
     if (step.expect !== void 0 && (kind !== "gate" || !["pass", "fail"].includes(String(step.expect)))) {
-      issues.push(issue("semantic", "gate_expect_invalid", file, `${stepId} expect is gate-only pass or fail`));
+      issues.push(issue2("semantic", "gate_expect_invalid", file, `${stepId} expect is gate-only pass or fail`));
     }
     if (kind === "gate" && Object.keys(objectValue(step.on) ?? {}).some((outcome) => outcome === "implementation_failure" || outcome === "repro_missing")) {
-      issues.push(issue("semantic", "gate_outcome_renamed", file, `${stepId} must use implementation-failure and repro-missing`));
+      issues.push(issue2("semantic", "gate_outcome_renamed", file, `${stepId} must use implementation-failure and repro-missing`));
     }
     for (const repositoryId of Object.keys(objectValue(step.repositories) ?? {})) {
-      if (!repositories.has(repositoryId)) issues.push(issue("reference", "repository_unknown", file, `${stepId} references unknown repository ${repositoryId}`));
+      if (!repositories.has(repositoryId)) issues.push(issue2("reference", "repository_unknown", file, `${stepId} references unknown repository ${repositoryId}`));
     }
     selectorCandidates(step.model, models, file, `${stepId}.model`, issues);
     const assignment = objectValue(step.assignments);
@@ -20227,7 +20263,7 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
     const allowedAgents = declaredAgents.length > 0 ? declaredAgents : primaryAgentId ? [primaryAgentId] : [];
     for (const agentId of allowedAgents) {
       const agent = agents.get(agentId);
-      if (!agent) issues.push(issue("reference", "assignment_agent_unknown", file, `${stepId} allows unknown agent ${agentId}`));
+      if (!agent) issues.push(issue2("reference", "assignment_agent_unknown", file, `${stepId} allows unknown agent ${agentId}`));
       else {
         validateAgentScope(agent, step, repositories, file, stepId, issues);
         if (step.model !== void 0 && agent.value.model !== void 0) {
@@ -20235,37 +20271,37 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
           const ceilingModels = modelCandidates(agent.value.model, models);
           const effectiveModels = requestedModels.filter((requested) => ceilingModels.some((ceiling) => compatibleModel(requested, ceiling)));
           if (requestedModels.length > 0 && effectiveModels.length === 0) {
-            issues.push(issue("semantic", "model_selector_incompatible", file, `${stepId} model selector has no candidate within agent ${agentId} ceiling`));
+            issues.push(issue2("semantic", "model_selector_incompatible", file, `${stepId} model selector has no candidate within agent ${agentId} ceiling`));
           }
         }
       }
     }
     if (primaryAgentId && allowedAgents.length > 0 && !allowedAgents.includes(primaryAgentId)) {
-      issues.push(issue("semantic", "primary_agent_ineligible", file, `${stepId} primary agent ${primaryAgentId} is not in allowedAgents`));
+      issues.push(issue2("semantic", "primary_agent_ineligible", file, `${stepId} primary agent ${primaryAgentId} is not in allowedAgents`));
     }
     const minimum = numberValue(assignment?.minimum, 1);
     const target = numberValue(assignment?.target, minimum);
     const maximum = numberValue(assignment?.maximum, target);
     const maxParallel = numberValue(assignment?.maxParallel, maximum);
-    if (!(minimum <= target && target <= maximum)) issues.push(issue("semantic", "assignment_bounds_invalid", file, `${stepId} must satisfy minimum <= target <= maximum`));
-    if (maxParallel > maximum) issues.push(issue("semantic", "assignment_parallelism_invalid", file, `${stepId} maxParallel exceeds maximum`));
+    if (!(minimum <= target && target <= maximum)) issues.push(issue2("semantic", "assignment_bounds_invalid", file, `${stepId} must satisfy minimum <= target <= maximum`));
+    if (maxParallel > maximum) issues.push(issue2("semantic", "assignment_parallelism_invalid", file, `${stepId} maxParallel exceeds maximum`));
     if (assignment && allowedAgents.length > 0 && maximum > allowedAgents.length && kind === "moa") {
-      issues.push(issue("semantic", "assignment_pool_too_small", file, `${stepId} maximum ${maximum} exceeds ${allowedAgents.length} eligible agents`));
+      issues.push(issue2("semantic", "assignment_pool_too_small", file, `${stepId} maximum ${maximum} exceeds ${allowedAgents.length} eligible agents`));
     }
     const maxWriteRepositories = assignment && typeof assignment.maxWriteRepositories === "number" ? assignment.maxWriteRepositories : void 0;
     if (maxWriteRepositories !== void 0) {
       const writable = Object.values(objectValue(step.repositories) ?? {}).filter((access) => access === "write").length;
-      if (maxWriteRepositories > writable) issues.push(issue("semantic", "write_repository_bound_invalid", file, `${stepId} maxWriteRepositories exceeds writable repository scope`));
+      if (maxWriteRepositories > writable) issues.push(issue2("semantic", "write_repository_bound_invalid", file, `${stepId} maxWriteRepositories exceeds writable repository scope`));
     }
     const join34 = objectValue(step.join);
     const minimumPassed = join34 && typeof join34.minimumPassed === "number" ? join34.minimumPassed : void 0;
-    if (minimumPassed !== void 0 && minimumPassed > maximum) issues.push(issue("semantic", "join_impossible", file, `${stepId} minimumPassed exceeds assignment maximum`));
+    if (minimumPassed !== void 0 && minimumPassed > maximum) issues.push(issue2("semantic", "join_impossible", file, `${stepId} minimumPassed exceeds assignment maximum`));
     const distinctBy = names(assignment?.distinctBy);
     if (distinctBy.length > 0) {
       const candidates = diversityCandidates(step.model, allowedAgents, agents, models);
       for (const dimension of distinctBy) {
         const distinct = new Set(candidates.map((candidate) => candidate[dimension]).filter((value) => Boolean(value)));
-        if (distinct.size < target) issues.push(issue("semantic", "model_diversity_impossible", file, `${stepId} requires ${target} distinct ${dimension} values but resolves ${distinct.size}`));
+        if (distinct.size < target) issues.push(issue2("semantic", "model_diversity_impossible", file, `${stepId} requires ${target} distinct ${dimension} values but resolves ${distinct.size}`));
       }
     }
     const evidenceKeys = /* @__PURE__ */ new Set();
@@ -20274,29 +20310,29 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
       if (!requirement) continue;
       const key = stringValue(requirement.key);
       if (key) {
-        if (evidenceKeys.has(key)) issues.push(issue("semantic", "evidence_key_duplicate", file, `${stepId} evidence key ${key} is duplicated`));
+        if (evidenceKeys.has(key)) issues.push(issue2("semantic", "evidence_key_duplicate", file, `${stepId} evidence key ${key} is duplicated`));
         evidenceKeys.add(key);
       }
       const policy = objectValue(requirement.producerPolicy);
       if (!policy) continue;
       const eligible = names(policy.eligibleAgents);
       const producerMinimum = numberValue(policy.minimumProducers, 1);
-      if (producerMinimum > target || producerMinimum > eligible.length) issues.push(issue("semantic", "producer_minimum_impossible", file, `${stepId}.${String(key)} producer minimum exceeds its eligible or target pool`));
+      if (producerMinimum > target || producerMinimum > eligible.length) issues.push(issue2("semantic", "producer_minimum_impossible", file, `${stepId}.${String(key)} producer minimum exceeds its eligible or target pool`));
       for (const agentId of eligible) {
-        if (!agents.has(agentId)) issues.push(issue("reference", "producer_agent_unknown", file, `${stepId}.${String(key)} references unknown producer ${agentId}`));
-        if (allowedAgents.length > 0 && !allowedAgents.includes(agentId)) issues.push(issue("semantic", "producer_agent_ineligible", file, `${stepId}.${String(key)} producer ${agentId} is outside allowedAgents`));
+        if (!agents.has(agentId)) issues.push(issue2("reference", "producer_agent_unknown", file, `${stepId}.${String(key)} references unknown producer ${agentId}`));
+        if (allowedAgents.length > 0 && !allowedAgents.includes(agentId)) issues.push(issue2("semantic", "producer_agent_ineligible", file, `${stepId}.${String(key)} producer ${agentId} is outside allowedAgents`));
       }
       const degradation = objectValue(policy.degradation);
-      if (degradation && numberValue(degradation.minimumProducers, 1) >= producerMinimum) issues.push(issue("semantic", "producer_degradation_invalid", file, `${stepId}.${String(key)} degradation must lower minimumProducers`));
+      if (degradation && numberValue(degradation.minimumProducers, 1) >= producerMinimum) issues.push(issue2("semantic", "producer_degradation_invalid", file, `${stepId}.${String(key)} degradation must lower minimumProducers`));
     }
     const writes = Object.values(objectValue(step.repositories) ?? {}).some((access) => access === "write");
     const planHashStage = stringValue(objectValue(workflow.value.planHash)?.stageId);
     const planHashIndex = planHashStage === void 0 ? void 0 : stepIndex.get(planHashStage);
     if (writes && planHashIndex !== void 0 && index > planHashIndex && !planStages.has(stepId)) {
-      issues.push(issue("semantic", "mutation_missing_plan_hash", file, `${stepId} mutates after the approved-plan stage but is absent from requirePlanHash`));
+      issues.push(issue2("semantic", "mutation_missing_plan_hash", file, `${stepId} mutates after the approved-plan stage but is absent from requirePlanHash`));
     }
     const outcomes = objectValue(step.on) ?? {};
-    if (Object.keys(outcomes).length === 0) issues.push(issue("semantic", "step_transitions_missing", file, `${stepId} has no declared transitions`));
+    if (Object.keys(outcomes).length === 0) issues.push(issue2("semantic", "step_transitions_missing", file, `${stepId} has no declared transitions`));
     for (const [outcome, rawTransition] of Object.entries(outcomes)) {
       const parsed = transition(rawTransition);
       if (parsed.target === "$terminal") {
@@ -20306,29 +20342,29 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
       }
       const targetIndex = parsed.target === void 0 ? void 0 : stepIndex.get(parsed.target);
       if (targetIndex === void 0) {
-        issues.push(issue("reference", "transition_target_unknown", file, `${stepId}.${outcome} references unknown target ${String(parsed.target)}`));
+        issues.push(issue2("reference", "transition_target_unknown", file, `${stepId}.${outcome} references unknown target ${String(parsed.target)}`));
         continue;
       }
       adjacency[index]?.add(targetIndex);
       if (targetIndex <= index) {
         hasBackEdge = true;
-        if (parsed.maxTransitions === void 0) issues.push(issue("semantic", "back_edge_unbounded", file, `${stepId}.${outcome} back-edge requires maxTransitions`));
+        if (parsed.maxTransitions === void 0) issues.push(issue2("semantic", "back_edge_unbounded", file, `${stepId}.${outcome} back-edge requires maxTransitions`));
       }
     }
   }
   if (hasBackEdge && typeof objectValue(workflow.value.limits)?.maxTransitions !== "number") {
-    issues.push(issue("semantic", "workflow_cycle_unbounded", file, "workflow with back-edges requires limits.maxTransitions"));
+    issues.push(issue2("semantic", "workflow_cycle_unbounded", file, "workflow with back-edges requires limits.maxTransitions"));
   }
   const readyIndex = stepIndex.get("ready");
   const verifyIndex = stepIndex.get("verify");
   if (readyIndex !== void 0 && verifyIndex !== void 0) {
     const verifyTargets = adjacency[verifyIndex] ?? /* @__PURE__ */ new Set();
     if (!verifyTargets.has(readyIndex)) {
-      issues.push(issue("semantic", "verify_must_precede_ready", file, "verify must transition to ready"));
+      issues.push(issue2("semantic", "verify_must_precede_ready", file, "verify must transition to ready"));
     }
     for (const [srcIndex, targets] of adjacency.entries()) {
       if (targets.has(readyIndex) && srcIndex !== verifyIndex) {
-        issues.push(issue("semantic", "verify_must_precede_ready", file, `step ${String(steps[srcIndex]?.id)} transitions to ready bypassing verify`));
+        issues.push(issue2("semantic", "verify_must_precede_ready", file, `step ${String(steps[srcIndex]?.id)} transitions to ready bypassing verify`));
       }
     }
   }
@@ -20343,7 +20379,7 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
         queue.push(target);
       }
     }
-    for (const [index, step] of steps.entries()) if (!reachable.has(index)) issues.push(issue("semantic", "step_unreachable", file, `step ${String(step.id)} is unreachable from the first step`));
+    for (const [index, step] of steps.entries()) if (!reachable.has(index)) issues.push(issue2("semantic", "step_unreachable", file, `step ${String(step.id)} is unreachable from the first step`));
     for (const [requiredIndex, requiredStep] of steps.entries()) {
       if (requiredStep.kind !== "gate" && requiredStep.kind !== "approval") continue;
       const reachableWithoutRequired = /* @__PURE__ */ new Set();
@@ -20359,7 +20395,7 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
         }
       }
       if ([...completedTerminalSources].some((source) => source !== requiredIndex && reachableWithoutRequired.has(source))) {
-        issues.push(issue("semantic", "required_step_bypass", file, `a completed path can bypass required ${String(requiredStep.id)}`));
+        issues.push(issue2("semantic", "required_step_bypass", file, `a completed path can bypass required ${String(requiredStep.id)}`));
       }
     }
     const canTerminate = new Set(terminalReachable);
@@ -20373,7 +20409,7 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
         }
       }
     }
-    for (const index of reachable) if (!canTerminate.has(index)) issues.push(issue("semantic", "step_cannot_terminate", file, `step ${String(steps[index]?.id)} has no path to a terminal transition`));
+    for (const index of reachable) if (!canTerminate.has(index)) issues.push(issue2("semantic", "step_cannot_terminate", file, `step ${String(steps[index]?.id)} has no path to a terminal transition`));
   }
 }
 function validateModelReferences(models, issues) {
@@ -20386,7 +20422,7 @@ function validateModelReferences(models, issues) {
   const visited = /* @__PURE__ */ new Set();
   const walk = (id, path5) => {
     if (visiting.has(id)) {
-      issues.push(issue("semantic", "model_fallback_cycle", models.get(id)?.logicalPath ?? ".kxm/models", `fallback profile cycle: ${[...path5, id].join(" -> ")}`));
+      issues.push(issue2("semantic", "model_fallback_cycle", models.get(id)?.logicalPath ?? ".kxm/models", `fallback profile cycle: ${[...path5, id].join(" -> ")}`));
       return;
     }
     if (visited.has(id)) return;
@@ -20414,17 +20450,17 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
     if (!id) continue;
     const folded = id.toLocaleLowerCase("en-US");
     const previous = foldedRepositories.get(folded);
-    if (previous) issues.push(issue("path", "repository_id_collision", project.logicalPath, `${id} case-folds to existing ${previous}`));
+    if (previous) issues.push(issue2("path", "repository_id_collision", project.logicalPath, `${id} case-folds to existing ${previous}`));
     else foldedRepositories.set(folded, id);
     repositoryIds.add(id);
     if (entry.role === "control") controls += 1;
   }
-  if (controls !== 1) issues.push(issue("semantic", "control_repository_count", project.logicalPath, `expected exactly one control repository, received ${controls}`));
+  if (controls !== 1) issues.push(issue2("semantic", "control_repository_count", project.logicalPath, `expected exactly one control repository, received ${controls}`));
   for (const repository of repositories.values()) {
-    if (repository.value.projectId !== project.value.id) issues.push(issue("reference", "repository_project_mismatch", repository.logicalPath, "projectId does not match the authoritative project"));
+    if (repository.value.projectId !== project.value.id) issues.push(issue2("reference", "repository_project_mismatch", repository.logicalPath, "projectId does not match the authoritative project"));
     const id = stringValue(repository.value.repositoryId);
-    if (!id || !repositoryIds.has(id)) issues.push(issue("reference", "repository_definition_unknown", repository.logicalPath, `repositoryId ${String(id)} is not bound by project.yaml`));
-    if (repository.id !== id) issues.push(issue("reference", "repository_binding_identity_mismatch", repository.logicalPath, `binding ${String(repository.id)} declares repositoryId ${String(id)}`));
+    if (!id || !repositoryIds.has(id)) issues.push(issue2("reference", "repository_definition_unknown", repository.logicalPath, `repositoryId ${String(id)} is not bound by project.yaml`));
+    if (repository.id !== id) issues.push(issue2("reference", "repository_binding_identity_mismatch", repository.logicalPath, `binding ${String(repository.id)} declares repositoryId ${String(id)}`));
   }
   for (const resource of [project, ...environments]) validatePortablePaths(resource, issues);
   for (const environment of environments) validateEnvironment(environment, issues);
@@ -20434,25 +20470,25 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
     const definition = objectValue(value);
     const executable = Array.isArray(definition?.argv) ? definition.argv[0] : void 0;
     if (definition?.kind === "command" && typeof executable === "string" && (executable === "." || executable === ".." || executable.includes("\\") || !executable.startsWith("/") && executable.includes("/"))) {
-      issues.push(issue("semantic", "gate_executable_invalid", ".kxm/gates.yaml", `${id} argv[0] must be a bare executable or absolute POSIX path`));
+      issues.push(issue2("semantic", "gate_executable_invalid", ".kxm/gates.yaml", `${id} argv[0] must be a bare executable or absolute POSIX path`));
     }
   }
   const presets = new Set(options.registeredToolPresets ?? BUILTIN_TOOL_PRESETS);
   const harnesses = new Set(options.registeredHarnesses ?? BUILTIN_HARNESS_IDS);
   const defaultExecutor = stringValue(project.value.defaultExecutor);
-  if (defaultExecutor && !executors.has(defaultExecutor)) issues.push(issue("reference", "executor_unknown", project.logicalPath, `defaultExecutor ${defaultExecutor} is not registered`));
+  if (defaultExecutor && !executors.has(defaultExecutor)) issues.push(issue2("reference", "executor_unknown", project.logicalPath, `defaultExecutor ${defaultExecutor} is not registered`));
   const defaultHarness = stringValue(project.value.defaultHarness) ?? DEFAULT_HARNESS;
-  if (!harnesses.has(defaultHarness)) issues.push(issue("reference", "harness_unknown", project.logicalPath, `defaultHarness ${defaultHarness} is not registered`));
+  if (!harnesses.has(defaultHarness)) issues.push(issue2("reference", "harness_unknown", project.logicalPath, `defaultHarness ${defaultHarness} is not registered`));
   for (const agent of agents.values()) {
     validateToolPolicy(agent, objectValue(agent.value.tools), "tools", issues);
     const executor = stringValue(agent.value.executor);
-    if (executor && !executors.has(executor)) issues.push(issue("reference", "executor_unknown", agent.logicalPath, `executor ${executor} is not registered`));
+    if (executor && !executors.has(executor)) issues.push(issue2("reference", "executor_unknown", agent.logicalPath, `executor ${executor} is not registered`));
     const harness = stringValue(agent.value.harness) ?? defaultHarness;
-    if (!harnesses.has(harness)) issues.push(issue("reference", "harness_unknown", agent.logicalPath, `harness ${harness} is not registered`));
+    if (!harnesses.has(harness)) issues.push(issue2("reference", "harness_unknown", agent.logicalPath, `harness ${harness} is not registered`));
     const preset = stringValue(objectValue(agent.value.tools)?.preset);
-    if (preset && !presets.has(preset)) issues.push(issue("reference", "tool_preset_unknown", agent.logicalPath, `tool preset ${preset} is not registered`));
+    if (preset && !presets.has(preset)) issues.push(issue2("reference", "tool_preset_unknown", agent.logicalPath, `tool preset ${preset} is not registered`));
     for (const repositoryId of Object.keys(objectValue(agent.value.repositories) ?? {})) {
-      if (!repositoryIds.has(repositoryId)) issues.push(issue("reference", "repository_unknown", agent.logicalPath, `references unknown repository ${repositoryId}`));
+      if (!repositoryIds.has(repositoryId)) issues.push(issue2("reference", "repository_unknown", agent.logicalPath, `references unknown repository ${repositoryId}`));
     }
     const candidates = selectorCandidates(agent.value.model, models, agent.logicalPath, "model", issues);
     const declaredHarness = stringValue(agent.value.harness);
@@ -20462,16 +20498,16 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
         const candidateModel = stringValue(candidate.value.model);
         const validation = validateHarnessModelPair(declaredHarness, { provider: candidateProvider, model: candidateModel });
         if (!validation.valid) {
-          issues.push(issue("semantic", validation.issue ?? "harness_unhosted_model", agent.logicalPath, validation.message ?? `harness ${declaredHarness} cannot host model ${candidateModel ?? candidate.logicalPath}`));
+          issues.push(issue2("semantic", validation.issue ?? "harness_unhosted_model", agent.logicalPath, validation.message ?? `harness ${declaredHarness} cannot host model ${candidateModel ?? candidate.logicalPath}`));
         }
       }
     }
   }
   validateModelReferences(models, issues);
   const defaultWorkflow = stringValue(project.value.defaultWorkflow) ?? "default";
-  if (!workflows.has(defaultWorkflow)) issues.push(issue("reference", "default_workflow_unknown", project.logicalPath, `default workflow ${defaultWorkflow} does not exist`));
+  if (!workflows.has(defaultWorkflow)) issues.push(issue2("reference", "default_workflow_unknown", project.logicalPath, `default workflow ${defaultWorkflow} does not exist`));
   for (const workflow of workflows.values()) validateWorkflow(workflow, agents, models, repositoryIds, gates, issues);
-  return sortIssues(issues);
+  return sortIssues2(issues);
 }
 function vnextCanonicalJson(value) {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -20483,7 +20519,7 @@ function canonicalize(value) {
 }
 function bundleRevision(resources) {
   const hash = createHash2("sha256");
-  for (const resource of [...resources].sort((left, right) => compareCodeUnits2(left.logicalPath, right.logicalPath))) {
+  for (const resource of [...resources].sort((left, right) => compareCodeUnits3(left.logicalPath, right.logicalPath))) {
     hash.update(resource.logicalPath, "utf8");
     hash.update("\0", "utf8");
     hash.update(canonicalize(resource.value), "utf8");
@@ -20513,7 +20549,7 @@ function discoverVnextProjectRoot(start = process.cwd()) {
 }
 function assertNoRegisteredGates(options) {
   if ("registeredGates" in options) {
-    throw new VnextConfigError([issue("semantic", "registered_gates_removed", ".kxm/gates.yaml", "registeredGates was removed; declare gates in .kxm/gates.yaml")]);
+    throw new VnextConfigError([issue2("semantic", "registered_gates_removed", ".kxm/gates.yaml", "registeredGates was removed; declare gates in .kxm/gates.yaml")]);
   }
 }
 function loadVnextProject(projectRoot, options = {}) {
@@ -20533,18 +20569,18 @@ function loadVnextProject(projectRoot, options = {}) {
   if (templateProvenance && templateProvenance.inputs && typeof templateProvenance.inputs === "object" && !Array.isArray(templateProvenance.inputs)) {
     const provenanceProjectId = stringValue(templateProvenance.inputs.projectId);
     if (provenanceProjectId !== stringValue(project.value.id)) {
-      earlyIssues.push(issue("semantic", "template_provenance_project_mismatch", ".kxm/template-provenance.yaml", "template provenance belongs to a different project identity"));
+      earlyIssues.push(issue2("semantic", "template_provenance_project_mismatch", ".kxm/template-provenance.yaml", "template provenance belongs to a different project identity"));
     }
   }
   if (migrationReceipt && stringValue(migrationReceipt.projectId) !== stringValue(project.value.id)) {
-    earlyIssues.push(issue("semantic", "migration_project_mismatch", VNEXT_MIGRATION_RECEIPT_PATH, "migration receipt belongs to a different project identity"));
+    earlyIssues.push(issue2("semantic", "migration_project_mismatch", VNEXT_MIGRATION_RECEIPT_PATH, "migration receipt belongs to a different project identity"));
   }
   const declaredRepositoryIds = new Set(valuesOf(project.value, "repositories").map((candidate) => stringValue(objectValue(candidate)?.id)).filter((candidate) => candidate !== void 0));
-  for (const repositoryId of Object.keys(options.repositoryBindings ?? {}).sort(compareCodeUnits2)) {
+  for (const repositoryId of Object.keys(options.repositoryBindings ?? {}).sort(compareCodeUnits3)) {
     if (!resourceIdentifier(repositoryId)) {
-      earlyIssues.push(issue("path", "repository_binding_id_invalid", ".kxm/project.yaml", `host-local binding identity ${repositoryId} is invalid`));
+      earlyIssues.push(issue2("path", "repository_binding_id_invalid", ".kxm/project.yaml", `host-local binding identity ${repositoryId} is invalid`));
     } else if (!declaredRepositoryIds.has(repositoryId)) {
-      earlyIssues.push(issue("reference", "repository_binding_unknown", ".kxm/project.yaml", `host-local binding references unknown repository ${repositoryId}`));
+      earlyIssues.push(issue2("reference", "repository_binding_unknown", ".kxm/project.yaml", `host-local binding references unknown repository ${repositoryId}`));
     }
   }
   if (earlyIssues.length > 0) throw new VnextConfigError(earlyIssues);
@@ -20576,15 +20612,15 @@ function loadVnextProject(projectRoot, options = {}) {
     const hasLocalBinding = Object.hasOwn(options.repositoryBindings ?? {}, repositoryId);
     const localBinding = options.repositoryBindings?.[repositoryId];
     if (hasLocalBinding && (!localBinding || !isAbsolute(localBinding))) {
-      loadIssues.push(issue("path", "repository_binding_not_absolute", ".kxm/project.yaml", `host-local binding for ${repositoryId} must be absolute`));
+      loadIssues.push(issue2("path", "repository_binding_not_absolute", ".kxm/project.yaml", `host-local binding for ${repositoryId} must be absolute`));
       continue;
     }
     if (role === "control" && localBinding && !sameHostPath(localBinding, root)) {
-      loadIssues.push(issue("path", "control_repository_binding_invalid", ".kxm/project.yaml", `control repository ${repositoryId} must bind to the authoritative project root`));
+      loadIssues.push(issue2("path", "control_repository_binding_invalid", ".kxm/project.yaml", `control repository ${repositoryId} must bind to the authoritative project root`));
       continue;
     }
     if (role === "control" && pathHint !== void 0 && pathHint !== ".") {
-      loadIssues.push(issue("path", "control_repository_path_invalid", ".kxm/project.yaml", `control repository ${repositoryId} must use pathHint .`));
+      loadIssues.push(issue2("path", "control_repository_path_invalid", ".kxm/project.yaml", `control repository ${repositoryId} must use pathHint .`));
       continue;
     }
     if (!hasLocalBinding && role !== "control" && pathHint && portablePath(pathHint)) {
@@ -20596,29 +20632,29 @@ function loadVnextProject(projectRoot, options = {}) {
     }
     const binding = hasLocalBinding && localBinding ? resolve2(localBinding) : role === "control" ? root : pathHint && portablePath(pathHint) ? resolve2(root, ...pathHint.split("/")) : void 0;
     if (!binding) {
-      if (required) loadIssues.push(issue("discovery", "repository_binding_missing", ".kxm/project.yaml", `required repository ${repositoryId} has no portable pathHint or host-local binding`));
+      if (required) loadIssues.push(issue2("discovery", "repository_binding_missing", ".kxm/project.yaml", `required repository ${repositoryId} has no portable pathHint or host-local binding`));
       continue;
     }
     if (!existsSync3(binding)) {
-      if (required || hasLocalBinding) loadIssues.push(issue("discovery", "repository_binding_unavailable", ".kxm/project.yaml", `${hasLocalBinding ? "explicit" : "required"} repository binding ${repositoryId} is unavailable`));
+      if (required || hasLocalBinding) loadIssues.push(issue2("discovery", "repository_binding_unavailable", ".kxm/project.yaml", `${hasLocalBinding ? "explicit" : "required"} repository binding ${repositoryId} is unavailable`));
       continue;
     }
     const bindingStat = lstatSync(binding);
     if (bindingStat.isSymbolicLink() || !bindingStat.isDirectory()) {
-      loadIssues.push(issue("path", "repository_binding_invalid", ".kxm/project.yaml", `repository binding ${repositoryId} must be a regular directory`));
+      loadIssues.push(issue2("path", "repository_binding_invalid", ".kxm/project.yaml", `repository binding ${repositoryId} must be a regular directory`));
       continue;
     }
     if (role === "member") {
       const repositoryGitRoot = discoverGitRoot(binding);
       if (!repositoryGitRoot || !sameHostPath(repositoryGitRoot, binding)) {
-        loadIssues.push(issue("discovery", "repository_git_root_invalid", ".kxm/project.yaml", `member repository ${repositoryId} must bind to its authoritative Git worktree root`));
+        loadIssues.push(issue2("discovery", "repository_git_root_invalid", ".kxm/project.yaml", `member repository ${repositoryId} must bind to its authoritative Git worktree root`));
         continue;
       }
     }
     const foldedBinding = canonicalHostPath(binding).toLocaleLowerCase("en-US");
     const priorBinding = seenBindings.get(foldedBinding);
     if (priorBinding && priorBinding !== repositoryId) {
-      loadIssues.push(issue("path", "repository_binding_collision", ".kxm/project.yaml", `${repositoryId} and ${priorBinding} use the same repository binding`));
+      loadIssues.push(issue2("path", "repository_binding_collision", ".kxm/project.yaml", `${repositoryId} and ${priorBinding} use the same repository binding`));
       continue;
     }
     seenBindings.set(foldedBinding, repositoryId);
@@ -20628,7 +20664,7 @@ function loadVnextProject(projectRoot, options = {}) {
       try {
         const resource = readResource(registry, root, repositoryFile, `.kxm/repositories/${repositoryId}/repo.yaml`, "repository", repositoryId, binding);
         if (resource.value.repositoryId !== repositoryId) {
-          loadIssues.push(issue("reference", "repository_binding_identity_mismatch", resource.logicalPath, `binding ${repositoryId} declares repositoryId ${String(resource.value.repositoryId)}`));
+          loadIssues.push(issue2("reference", "repository_binding_identity_mismatch", resource.logicalPath, `binding ${repositoryId} declares repositoryId ${String(resource.value.repositoryId)}`));
         } else {
           mapResource(resource, repositories, loadIssues);
           definitionValidated = repositories.get(repositoryId) === resource;
@@ -20638,12 +20674,12 @@ function loadVnextProject(projectRoot, options = {}) {
         else throw error;
       }
     } else if (required || hasLocalBinding) {
-      loadIssues.push(issue("discovery", "repository_definition_missing", `.kxm/repositories/${repositoryId}/repo.yaml`, `${hasLocalBinding ? "explicit" : "required"} repository ${repositoryId} has no repo.yaml`));
+      loadIssues.push(issue2("discovery", "repository_definition_missing", `.kxm/repositories/${repositoryId}/repo.yaml`, `${hasLocalBinding ? "explicit" : "required"} repository ${repositoryId} has no repo.yaml`));
     }
     const environmentFile = join2(binding, ".kxm", "repo", "env.yaml");
     if (existsSync3(environmentFile)) {
       if (!definitionValidated) {
-        loadIssues.push(issue("reference", "repository_environment_without_definition", `.kxm/repositories/${repositoryId}/env.yaml`, `repository ${repositoryId} environment requires a validated matching repo.yaml`));
+        loadIssues.push(issue2("reference", "repository_environment_without_definition", `.kxm/repositories/${repositoryId}/env.yaml`, `repository ${repositoryId} environment requires a validated matching repo.yaml`));
       } else {
         try {
           environments.push(readResource(registry, root, environmentFile, `.kxm/repositories/${repositoryId}/env.yaml`, "environment", void 0, binding));
@@ -20657,7 +20693,7 @@ function loadVnextProject(projectRoot, options = {}) {
   if (loadIssues.length > 0) throw new VnextConfigError(loadIssues);
   const issues = validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry);
   if (issues.length > 0) throw new VnextConfigError(issues);
-  const resources = [project, ...repositories.values(), ...agents.values(), ...models.values(), ...workflows.values(), ...environments, ...gateRegistry ? [gateRegistry] : []].sort((left, right) => compareCodeUnits2(left.logicalPath, right.logicalPath));
+  const resources = [project, ...repositories.values(), ...agents.values(), ...models.values(), ...workflows.values(), ...environments, ...gateRegistry ? [gateRegistry] : []].sort((left, right) => compareCodeUnits3(left.logicalPath, right.logicalPath));
   return {
     projectRoot: root,
     project,
@@ -20676,7 +20712,7 @@ function loadVnextProject(projectRoot, options = {}) {
 function verifyVnextMigrationReceiptTarget(root, receipt, resources, configRevision) {
   const issues = [];
   if (receipt.configRevision !== configRevision) {
-    issues.push(issue("semantic", "migration_target_changed", VNEXT_MIGRATION_RECEIPT_PATH, "target configuration revision no longer matches the migration receipt"));
+    issues.push(issue2("semantic", "migration_target_changed", VNEXT_MIGRATION_RECEIPT_PATH, "target configuration revision no longer matches the migration receipt"));
   }
   const declared = /* @__PURE__ */ new Map();
   for (const candidate of Array.isArray(receipt.resources) ? receipt.resources : []) {
@@ -20692,20 +20728,20 @@ function verifyVnextMigrationReceiptTarget(root, receipt, resources, configRevis
     installedPaths.add(relative7);
     const record = declared.get(relative7);
     if (!record) {
-      issues.push(issue("semantic", "migration_target_unreceipted", relative7, "installed resource is not covered by the migration receipt"));
+      issues.push(issue2("semantic", "migration_target_unreceipted", relative7, "installed resource is not covered by the migration receipt"));
       continue;
     }
     const current = hashFileRecord(root, relative7);
     if (!current || current.sha256 !== record.sha256 || current.bytes !== record.bytes) {
-      issues.push(issue("semantic", "migration_target_modified", relative7, "installed resource bytes differ from the migration receipt"));
+      issues.push(issue2("semantic", "migration_target_modified", relative7, "installed resource bytes differ from the migration receipt"));
     }
   }
   for (const path5 of declared.keys()) {
     if (!installedPaths.has(path5)) {
-      issues.push(issue("semantic", "migration_target_missing", path5, "receipt-covered resource is not part of the validated configuration"));
+      issues.push(issue2("semantic", "migration_target_missing", path5, "receipt-covered resource is not part of the validated configuration"));
     }
   }
-  return sortIssues(issues);
+  return sortIssues2(issues);
 }
 function relativePortable(root, absolute) {
   const rel = relative(root, absolute);
@@ -20740,7 +20776,7 @@ function legacyConfigFilesAt(root) {
       return files;
     }
     if (stat.isDirectory()) {
-      for (const entry of readdirSync2(workflowsDir, { withFileTypes: true }).filter((candidate) => (candidate.isFile() || candidate.isSymbolicLink()) && candidate.name.endsWith(".json")).sort((left, right) => compareCodeUnits2(left.name, right.name))) {
+      for (const entry of readdirSync2(workflowsDir, { withFileTypes: true }).filter((candidate) => (candidate.isFile() || candidate.isSymbolicLink()) && candidate.name.endsWith(".json")).sort((left, right) => compareCodeUnits3(left.name, right.name))) {
         files.push(`.kxm/config/workflows/${entry.name}`);
       }
     }
@@ -20766,16 +20802,16 @@ function readVnextMigrationReceipt(root, options = {}) {
   const legacyFiles = legacyConfigFilesAt(root);
   if (!existsSync3(receiptPath)) {
     return {
-      issues: legacyFiles.map((file) => issue("semantic", "legacy_vnext_conflict", file, "legacy and vNext configuration cannot coexist before an accepted migration receipt"))
+      issues: legacyFiles.map((file) => issue2("semantic", "legacy_vnext_conflict", file, "legacy and vNext configuration cannot coexist before an accepted migration receipt"))
     };
   }
   const receiptStat = lstatSync(receiptPath);
   if (receiptStat.isSymbolicLink() || !receiptStat.isFile()) {
-    return { issues: [issue("path", "migration_receipt_invalid", VNEXT_MIGRATION_RECEIPT_PATH, "migration receipt must be a regular file, not a link")] };
+    return { issues: [issue2("path", "migration_receipt_invalid", VNEXT_MIGRATION_RECEIPT_PATH, "migration receipt must be a regular file, not a link")] };
   }
   let receipt;
   try {
-    receipt = parseRestrictedYaml(readFileSync2(receiptPath), VNEXT_MIGRATION_RECEIPT_PATH);
+    receipt = parseRestrictedYaml2(readFileSync2(receiptPath), VNEXT_MIGRATION_RECEIPT_PATH);
   } catch (error) {
     if (error instanceof VnextConfigError) return { issues: [...error.issues] };
     throw error;
@@ -20784,25 +20820,25 @@ function readVnextMigrationReceipt(root, options = {}) {
   const schemaIssues = registry.validateMigrationReceipt(receipt, VNEXT_MIGRATION_RECEIPT_PATH);
   if (schemaIssues.length > 0) return { issues: schemaIssues };
   if (receipt.receiptSha256 !== migrationReceiptSelfHash(receipt)) {
-    return { issues: [issue("semantic", "migration_receipt_hash_mismatch", VNEXT_MIGRATION_RECEIPT_PATH, "receipt self-hash does not match its content")] };
+    return { issues: [issue2("semantic", "migration_receipt_hash_mismatch", VNEXT_MIGRATION_RECEIPT_PATH, "receipt self-hash does not match its content")] };
   }
-  const sources = (Array.isArray(receipt.sources) ? receipt.sources : []).map((candidate) => candidate && typeof candidate === "object" && !Array.isArray(candidate) ? candidate.path : void 0).filter((candidate) => typeof candidate === "string").sort(compareCodeUnits2);
+  const sources = (Array.isArray(receipt.sources) ? receipt.sources : []).map((candidate) => candidate && typeof candidate === "object" && !Array.isArray(candidate) ? candidate.path : void 0).filter((candidate) => typeof candidate === "string").sort(compareCodeUnits3);
   const issues = [];
   const declared = new Set(sources);
   for (const file of legacyFiles) {
     if (!declared.has(file)) {
-      issues.push(issue("semantic", "migration_source_unmigrated", file, "legacy configuration file is not covered by the migration receipt"));
+      issues.push(issue2("semantic", "migration_source_unmigrated", file, "legacy configuration file is not covered by the migration receipt"));
       continue;
     }
     const record = (Array.isArray(receipt.sources) ? receipt.sources : []).map((candidate) => candidate && typeof candidate === "object" && !Array.isArray(candidate) ? candidate : void 0).find((candidate) => candidate?.path === file);
     const current = hashFileRecord(root, file);
     if (!current || current.sha256 !== record?.sha256 || current.bytes !== record?.bytes) {
-      issues.push(issue("semantic", "migration_source_changed", file, "legacy configuration changed after the migration receipt was issued"));
+      issues.push(issue2("semantic", "migration_source_changed", file, "legacy configuration changed after the migration receipt was issued"));
     }
   }
   for (const file of sources) {
     if (!legacyFiles.includes(file)) {
-      issues.push(issue("semantic", "migration_source_missing", file, "receipt covers a legacy configuration file that no longer exists"));
+      issues.push(issue2("semantic", "migration_source_missing", file, "receipt covers a legacy configuration file that no longer exists"));
     }
   }
   return issues.length > 0 ? { issues } : { receipt, issues: [] };
@@ -20842,7 +20878,7 @@ function planVnextInitialization(start = process.cwd(), options = {}) {
       inspectedFrom,
       projectRoot: candidateRoot,
       changesRequired: true,
-      issues: [issue("discovery", "project_definition_missing", ".kxm/project.yaml", "partial .kxm state has no authoritative project.yaml")],
+      issues: [issue2("discovery", "project_definition_missing", ".kxm/project.yaml", "partial .kxm state has no authoritative project.yaml")],
       legacyInputs: []
     };
   }
@@ -20851,8 +20887,8 @@ function planVnextInitialization(start = process.cwd(), options = {}) {
 
 // plugins/kxm/src/database.ts
 function databaseError(code, file, message) {
-  const issue2 = { phase: "semantic", code, file, message };
-  return new VnextConfigError([issue2]);
+  const issue3 = { phase: "semantic", code, file, message };
+  return new VnextConfigError([issue3]);
 }
 function checkedParent(path5, description) {
   const parent = dirname3(path5);
@@ -33407,7 +33443,7 @@ function readVnextLocalBindings(projectRoot, options = {}) {
   if (stat.size > MAX_BINDING_RECORD_BYTES) {
     bindingError("parse", "local_binding_file_too_large", `binding record exceeds ${MAX_BINDING_RECORD_BYTES} bytes`);
   }
-  const parsed = parseRestrictedYaml(readFileSync13(file), BINDING_LABEL);
+  const parsed = parseRestrictedYaml2(readFileSync13(file), BINDING_LABEL);
   return asRecord(parsed, file, root, options.schemasDir);
 }
 function normalizedRecord(projectRoot, projectId, repositories, schemasDir) {
@@ -34415,7 +34451,7 @@ function portableMemberPathHint(pathHint) {
 }
 function loadBaseProjectDeclarations(projectFile) {
   if (!existsSync16(projectFile)) return [];
-  const value = parseRestrictedYaml(readFileSync16(projectFile, "utf8"), ".kxm/project.yaml");
+  const value = parseRestrictedYaml2(readFileSync16(projectFile, "utf8"), ".kxm/project.yaml");
   const repositories = Array.isArray(value?.repositories) ? value.repositories : [];
   const members = [];
   for (const entry of repositories) {
@@ -34482,13 +34518,13 @@ var MAX_MANAGED_FILES = 128;
 var MAX_MANAGED_FILE_BYTES = 256 * 1024;
 var MAX_MANAGED_TOTAL_BYTES = 8 * 1024 * 1024;
 var PORTABLE_PATH = /^(?:\.|(?!.*(?:^|\/)\.{1,2}(?:\/|$))(?!.*\/\/)(?!.*[. ](?:\/|$))[^/\\\u0000-\u001F]+(?:\/[^/\\\u0000-\u001F]+)*)$/;
-function compareCodeUnits3(left, right) {
+function compareCodeUnits4(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 function repairIssue(code, file, message, phase = "semantic") {
   return { phase, code, file, message };
 }
-function fail2(code, file, message, phase = "semantic") {
+function fail3(code, file, message, phase = "semantic") {
   throw new VnextConfigError([repairIssue(code, file, message, phase)]);
 }
 function syncDirectory2(path5) {
@@ -34562,8 +34598,8 @@ function portableManagedPath(path5) {
 }
 function readRegularBounded(file, label) {
   const stat = lstatSync5(file);
-  if (stat.isSymbolicLink() || !stat.isFile()) fail2("repair_file_invalid", label, "managed file must be a regular file, not a link or directory", "path");
-  if (stat.size > MAX_MANAGED_FILE_BYTES) fail2("repair_file_too_large", label, `managed file exceeds ${MAX_MANAGED_FILE_BYTES} bytes`, "parse");
+  if (stat.isSymbolicLink() || !stat.isFile()) fail3("repair_file_invalid", label, "managed file must be a regular file, not a link or directory", "path");
+  if (stat.size > MAX_MANAGED_FILE_BYTES) fail3("repair_file_too_large", label, `managed file exceeds ${MAX_MANAGED_FILE_BYTES} bytes`, "parse");
   return readFileSync17(file);
 }
 function readOptionalManaged(projectRoot, path5) {
@@ -34573,7 +34609,7 @@ function readOptionalManaged(projectRoot, path5) {
   const boundary = resolve12(projectRoot);
   while (parent !== boundary) {
     const stat = lstatSync5(parent);
-    if (stat.isSymbolicLink() || !stat.isDirectory()) fail2("repair_parent_invalid", path5, "managed file parents must be regular directories", "path");
+    if (stat.isSymbolicLink() || !stat.isDirectory()) fail3("repair_parent_invalid", path5, "managed file parents must be regular directories", "path");
     parent = dirname12(parent);
   }
   return readRegularBounded(file, path5);
@@ -34585,8 +34621,8 @@ function readProjectAndProvenance(projectRoot, schemasDir) {
   const projectBytes = readOptionalManaged(projectRoot, ".kxm/project.yaml");
   const provenanceBytes = readOptionalManaged(projectRoot, VNEXT_TEMPLATE_PROVENANCE_PATH);
   if (!projectBytes || !provenanceBytes) return void 0;
-  const project = parseRestrictedYaml(projectBytes, ".kxm/project.yaml");
-  const provenanceValue = parseRestrictedYaml(provenanceBytes, VNEXT_TEMPLATE_PROVENANCE_PATH);
+  const project = parseRestrictedYaml2(projectBytes, ".kxm/project.yaml");
+  const provenanceValue = parseRestrictedYaml2(provenanceBytes, VNEXT_TEMPLATE_PROVENANCE_PATH);
   const registry = new VnextSchemaRegistry(schemasDir);
   const issues = [
     ...registry.validate("project", project, ".kxm/project.yaml"),
@@ -34594,24 +34630,24 @@ function readProjectAndProvenance(projectRoot, schemasDir) {
   ];
   if (issues.length > 0) throw new VnextConfigError(issues);
   const provenance = resolveVnextTemplateBaseline(provenanceValue);
-  if (!provenance) fail2("template_provenance_revision_invalid", VNEXT_TEMPLATE_PROVENANCE_PATH, "template provenance does not exactly match a supported built-in baseline");
+  if (!provenance) fail3("template_provenance_revision_invalid", VNEXT_TEMPLATE_PROVENANCE_PATH, "template provenance does not exactly match a supported built-in baseline");
   if (project.id !== provenance.inputs.projectId) {
-    fail2("template_provenance_project_mismatch", VNEXT_TEMPLATE_PROVENANCE_PATH, "template provenance belongs to a different project identity");
+    fail3("template_provenance_project_mismatch", VNEXT_TEMPLATE_PROVENANCE_PATH, "template provenance belongs to a different project identity");
   }
   const seen = /* @__PURE__ */ new Set();
   let prior = "";
   let totalBytes = 0;
   for (const record of provenance.files) {
-    if (!portableManagedPath(record.path)) fail2("template_provenance_path_invalid", VNEXT_TEMPLATE_PROVENANCE_PATH, `managed path ${record.path} is invalid`, "path");
+    if (!portableManagedPath(record.path)) fail3("template_provenance_path_invalid", VNEXT_TEMPLATE_PROVENANCE_PATH, `managed path ${record.path} is invalid`, "path");
     const folded = record.path.toLocaleLowerCase("en-US");
-    if (seen.has(folded)) fail2("template_provenance_path_collision", VNEXT_TEMPLATE_PROVENANCE_PATH, `managed path ${record.path} collides after case folding`, "path");
-    if (prior && compareCodeUnits3(prior, record.path) >= 0) fail2("template_provenance_order_invalid", VNEXT_TEMPLATE_PROVENANCE_PATH, "managed files are not in strict code-unit order");
+    if (seen.has(folded)) fail3("template_provenance_path_collision", VNEXT_TEMPLATE_PROVENANCE_PATH, `managed path ${record.path} collides after case folding`, "path");
+    if (prior && compareCodeUnits4(prior, record.path) >= 0) fail3("template_provenance_order_invalid", VNEXT_TEMPLATE_PROVENANCE_PATH, "managed files are not in strict code-unit order");
     totalBytes += record.bytes;
     seen.add(folded);
     prior = record.path;
   }
   if (provenance.files.length > MAX_MANAGED_FILES || totalBytes > MAX_MANAGED_TOTAL_BYTES) {
-    fail2("template_provenance_bounds_exceeded", VNEXT_TEMPLATE_PROVENANCE_PATH, "managed template manifest exceeds bounded file or byte limits", "parse");
+    fail3("template_provenance_bounds_exceeded", VNEXT_TEMPLATE_PROVENANCE_PATH, "managed template manifest exceeds bounded file or byte limits", "parse");
   }
   return { project, provenance, provenanceBytes };
 }
@@ -34627,7 +34663,7 @@ function planVnextTemplateRepair(projectRoot, options = {}) {
   );
   const baseByPath = new Map(source.provenance.files.map((record) => [record.path, record]));
   const targetByPath = new Map(target.provenance.files.map((record) => [record.path, record]));
-  const paths = [.../* @__PURE__ */ new Set([...baseByPath.keys(), ...targetByPath.keys()])].sort(compareCodeUnits3);
+  const paths = [.../* @__PURE__ */ new Set([...baseByPath.keys(), ...targetByPath.keys()])].sort(compareCodeUnits4);
   const sourceRenderer = SUPPORTED_VNEXT_TEMPLATE_VARIANTS.map((variant) => renderVnextTemplate(source.provenance.inputs.projectId, source.provenance.inputs.projectName, variant)).find((candidate) => candidate.templateRevision === source.provenance.templateRevision);
   const expectedProvenance = sourceRenderer?.files.get(VNEXT_TEMPLATE_PROVENANCE_PATH);
   const issues = [];
@@ -34645,7 +34681,7 @@ function planVnextTemplateRepair(projectRoot, options = {}) {
     const localSha256 = local && vnextContentSha256(local);
     const baseSha256 = base?.sha256;
     if (base && localSha256 === base.sha256 && local?.byteLength !== base.bytes) {
-      fail2("template_provenance_bytes_invalid", VNEXT_TEMPLATE_PROVENANCE_PATH, `recorded byte count for ${path5} does not match its baseline content`);
+      fail3("template_provenance_bytes_invalid", VNEXT_TEMPLATE_PROVENANCE_PATH, `recorded byte count for ${path5} does not match its baseline content`);
     }
     const targetSha256 = targetRecord?.sha256;
     if (baseSha256 === localSha256 && localSha256 === targetSha256) {
@@ -34764,32 +34800,32 @@ function readOperation(projectRoot, schemasDir) {
   const root = transactionRoot(projectRoot);
   if (!existsSync17(root)) return void 0;
   const stat = lstatSync5(root);
-  if (stat.isSymbolicLink() || !stat.isDirectory()) fail2("init_transaction_invalid", TRANSACTION_NAME, "initialization transaction must be a regular directory", "path");
+  if (stat.isSymbolicLink() || !stat.isDirectory()) fail3("init_transaction_invalid", TRANSACTION_NAME, "initialization transaction must be a regular directory", "path");
   const file = operationFile(projectRoot);
   if (!existsSync17(file)) {
     const entries = readdirSync6(root, { withFileTypes: true });
     const recoverable = entries.every((entry) => entry.isFile() && /^\.operation-op_[a-f0-9]{32}-[a-f0-9-]{36}\.tmp$/.test(entry.name));
     if (recoverable) return void 0;
-    fail2("init_transaction_record_missing", TRANSACTION_NAME, "initialization transaction without an operation record contains unrecognized state");
+    fail3("init_transaction_record_missing", TRANSACTION_NAME, "initialization transaction without an operation record contains unrecognized state");
   }
-  const value = parseRestrictedYaml(readRegularBounded(file, `${TRANSACTION_NAME}/${OPERATION_FILE}`), `${TRANSACTION_NAME}/${OPERATION_FILE}`);
+  const value = parseRestrictedYaml2(readRegularBounded(file, `${TRANSACTION_NAME}/${OPERATION_FILE}`), `${TRANSACTION_NAME}/${OPERATION_FILE}`);
   const registry = new VnextSchemaRegistry(schemasDir);
   const issues = registry.validateInitOperation(value, `${TRANSACTION_NAME}/${OPERATION_FILE}`);
   if (issues.length > 0) throw new VnextConfigError(issues);
   const operation = value;
-  if (!sameHostPath3(operation.projectRoot, projectRoot)) fail2("init_transaction_project_mismatch", TRANSACTION_NAME, "operation belongs to a different project root");
+  if (!sameHostPath3(operation.projectRoot, projectRoot)) fail3("init_transaction_project_mismatch", TRANSACTION_NAME, "operation belongs to a different project root");
   const expectedPlanSha = operationPlanSha(operation);
-  if (operation.planSha256 !== expectedPlanSha) fail2("init_transaction_plan_hash_invalid", TRANSACTION_NAME, "operation plan hash does not match its immutable intent");
+  if (operation.planSha256 !== expectedPlanSha) fail3("init_transaction_plan_hash_invalid", TRANSACTION_NAME, "operation plan hash does not match its immutable intent");
   let prior = "";
   const seen = /* @__PURE__ */ new Set();
   for (const entry of operation.files) {
-    if (!entry.path.startsWith(".kxm/") || !PORTABLE_PATH.test(entry.path)) fail2("init_transaction_path_invalid", TRANSACTION_NAME, `operation path ${entry.path} is invalid`, "path");
+    if (!entry.path.startsWith(".kxm/") || !PORTABLE_PATH.test(entry.path)) fail3("init_transaction_path_invalid", TRANSACTION_NAME, `operation path ${entry.path} is invalid`, "path");
     const folded = entry.path.toLocaleLowerCase("en-US");
-    if (seen.has(folded) || prior && compareCodeUnits3(prior, entry.path) >= 0) fail2("init_transaction_order_invalid", TRANSACTION_NAME, "operation paths must be unique and use strict code-unit order", "path");
+    if (seen.has(folded) || prior && compareCodeUnits4(prior, entry.path) >= 0) fail3("init_transaction_order_invalid", TRANSACTION_NAME, "operation paths must be unique and use strict code-unit order", "path");
     seen.add(folded);
     prior = entry.path;
   }
-  if (!isAbsolute6(operation.projectRoot)) fail2("init_transaction_project_root_invalid", TRANSACTION_NAME, "operation project root must be absolute", "path");
+  if (!isAbsolute6(operation.projectRoot)) fail3("init_transaction_project_root_invalid", TRANSACTION_NAME, "operation project root must be absolute", "path");
   validateOperationIntent(projectRoot, operation);
   return operation;
 }
@@ -34800,7 +34836,7 @@ function readTarget(projectRoot, path5) {
   return readOptionalManaged(join23(transactionRoot(projectRoot), "targets"), path5);
 }
 function writeTarget(projectRoot, path5, bytes) {
-  if (bytes.byteLength > MAX_MANAGED_FILE_BYTES) fail2("template_target_too_large", path5, `target exceeds ${MAX_MANAGED_FILE_BYTES} bytes`);
+  if (bytes.byteLength > MAX_MANAGED_FILE_BYTES) fail3("template_target_too_large", path5, `target exceeds ${MAX_MANAGED_FILE_BYTES} bytes`);
   const file = targetFile(projectRoot, path5);
   mkdirSync15(dirname12(file), { recursive: true, mode: 448 });
   writeDurableNew(file, bytes, 384);
@@ -34811,7 +34847,7 @@ function writeAndVerifyBackups(projectRoot, operation) {
     if (entry.observedSha256 === null) continue;
     const current = readOptionalManaged(projectRoot, entry.path);
     if (!current || vnextContentSha256(current) !== entry.observedSha256) {
-      fail2("repair_preimage_changed", entry.path, "destination changed before transaction preparation; local bytes were preserved");
+      fail3("repair_preimage_changed", entry.path, "destination changed before transaction preparation; local bytes were preserved");
     }
     const file = backupFile(projectRoot, entry.path);
     mkdirSync15(dirname12(file), { recursive: true, mode: 448 });
@@ -34821,12 +34857,12 @@ function writeAndVerifyBackups(projectRoot, operation) {
 function writeKnownBackups(projectRoot, operation) {
   if (operation.kind !== "repair" || !operation.sourceTemplateRevision) return;
   const source = rendererForRevision(operation, operation.sourceTemplateRevision);
-  if (!source) fail2("init_transaction_source_unknown", TRANSACTION_NAME, "operation source is not a supported built-in template");
+  if (!source) fail3("init_transaction_source_unknown", TRANSACTION_NAME, "operation source is not a supported built-in template");
   for (const entry of operation.files) {
     if (entry.observedSha256 === null) continue;
     const bytes = source.files.get(entry.path);
     if (!bytes || vnextContentSha256(bytes) !== entry.observedSha256) {
-      fail2("init_transaction_backup_source_invalid", entry.path, "supported source template cannot reproduce the pinned preimage");
+      fail3("init_transaction_backup_source_invalid", entry.path, "supported source template cannot reproduce the pinned preimage");
     }
     const file = backupFile(projectRoot, entry.path);
     mkdirSync15(dirname12(file), { recursive: true, mode: 448 });
@@ -34839,7 +34875,7 @@ function verifyBackups(projectRoot, operation) {
     if (entry.observedSha256 === null) continue;
     const bytes = readOptionalManaged(join23(transactionRoot(projectRoot), "backups"), entry.path);
     if (!bytes || vnextContentSha256(bytes) !== entry.observedSha256) {
-      fail2("init_transaction_backup_invalid", entry.path, "pinned preimage backup is missing or corrupt");
+      fail3("init_transaction_backup_invalid", entry.path, "pinned preimage backup is missing or corrupt");
     }
   }
 }
@@ -34847,11 +34883,11 @@ function verifyTargetArtifacts(projectRoot, operation) {
   let total = 0;
   for (const entry of operation.files) {
     const bytes = readTarget(projectRoot, entry.path);
-    if (!bytes) fail2("init_transaction_target_missing", entry.path, "pinned target artifact is missing");
+    if (!bytes) fail3("init_transaction_target_missing", entry.path, "pinned target artifact is missing");
     total += bytes.byteLength;
-    if (vnextContentSha256(bytes) !== entry.targetSha256) fail2("init_transaction_target_mismatch", entry.path, "pinned target artifact hash does not match the operation");
+    if (vnextContentSha256(bytes) !== entry.targetSha256) fail3("init_transaction_target_mismatch", entry.path, "pinned target artifact hash does not match the operation");
   }
-  if (operation.files.length > MAX_MANAGED_FILES || total > MAX_MANAGED_TOTAL_BYTES) fail2("init_transaction_bounds_exceeded", TRANSACTION_NAME, "operation exceeds bounded file or byte limits", "parse");
+  if (operation.files.length > MAX_MANAGED_FILES || total > MAX_MANAGED_TOTAL_BYTES) fail3("init_transaction_bounds_exceeded", TRANSACTION_NAME, "operation exceeds bounded file or byte limits", "parse");
 }
 function loaderOptions(options) {
   assertNoRegisteredGates(options);
@@ -34876,15 +34912,15 @@ function sourceConfigFiles(projectRoot) {
     const absolute = join23(projectRoot, ".kxm", directory);
     if (!existsSync17(absolute)) continue;
     const stat = lstatSync5(absolute);
-    if (stat.isSymbolicLink() || !stat.isDirectory()) fail2("repair_directory_invalid", `.kxm/${directory}`, "configuration directory must be regular", "path");
+    if (stat.isSymbolicLink() || !stat.isDirectory()) fail3("repair_directory_invalid", `.kxm/${directory}`, "configuration directory must be regular", "path");
     for (const entry of readdirSync6(absolute, { withFileTypes: true })) {
-      if (entry.isDirectory()) fail2("repair_nested_directory", `.kxm/${directory}/${entry.name}`, "nested configuration directories are not repairable", "path");
+      if (entry.isDirectory()) fail3("repair_nested_directory", `.kxm/${directory}/${entry.name}`, "nested configuration directories are not repairable", "path");
       const lower = entry.name.toLocaleLowerCase("en-US");
       if (lower.endsWith(".yaml") || lower.endsWith(".yml")) files.push(`.kxm/${directory}/${entry.name}`);
     }
   }
-  const ordered = [...new Set(files)].sort(compareCodeUnits3);
-  if (ordered.length > MAX_MANAGED_FILES) fail2("repair_snapshot_too_many_files", ".kxm", `configuration snapshot exceeds ${MAX_MANAGED_FILES} files`, "parse");
+  const ordered = [...new Set(files)].sort(compareCodeUnits4);
+  if (ordered.length > MAX_MANAGED_FILES) fail3("repair_snapshot_too_many_files", ".kxm", `configuration snapshot exceeds ${MAX_MANAGED_FILES} files`, "parse");
   return ordered;
 }
 function absoluteMemberBindings(projectRoot, project, explicit = {}) {
@@ -34908,29 +34944,29 @@ function prepareShadow(projectRoot, operation, options) {
   if (operation.kind === "repair") {
     for (const path5 of sourceConfigFiles(projectRoot)) {
       const bytes = readOptionalManaged(projectRoot, path5);
-      if (!bytes) fail2("repair_snapshot_file_missing", path5, "configuration changed during shadow preparation");
+      if (!bytes) fail3("repair_snapshot_file_missing", path5, "configuration changed during shadow preparation");
       total += bytes.byteLength;
       const source = join23(projectRoot, ...path5.split("/"));
       const destination = join23(shadow, ...path5.split("/"));
       mkdirSync15(dirname12(destination), { recursive: true, mode: 448 });
       writeDurableNew(destination, bytes, lstatSync5(source).mode & 511);
-      if (total > MAX_MANAGED_TOTAL_BYTES) fail2("repair_snapshot_too_large", ".kxm", `configuration snapshot exceeds ${MAX_MANAGED_TOTAL_BYTES} bytes`, "parse");
+      if (total > MAX_MANAGED_TOTAL_BYTES) fail3("repair_snapshot_too_large", ".kxm", `configuration snapshot exceeds ${MAX_MANAGED_TOTAL_BYTES} bytes`, "parse");
     }
   }
   for (const entry of operation.files) {
     const bytes = readTarget(projectRoot, entry.path);
-    if (!bytes) fail2("init_transaction_target_missing", entry.path, "pinned target artifact is missing");
+    if (!bytes) fail3("init_transaction_target_missing", entry.path, "pinned target artifact is missing");
     const destination = join23(shadow, ...entry.path.split("/"));
     mkdirSync15(dirname12(destination), { recursive: true, mode: 448 });
     const mode = existsSync17(destination) ? lstatSync5(destination).mode & 511 : 420;
     writeDurable(destination, bytes, mode);
   }
-  const project = parseRestrictedYaml(readFileSync17(join23(shadow, ".kxm", "project.yaml")), ".kxm/project.yaml");
+  const project = parseRestrictedYaml2(readFileSync17(join23(shadow, ".kxm", "project.yaml")), ".kxm/project.yaml");
   const bound = absoluteMemberBindings(projectRoot, project, options.repositoryBindings);
   loadVnextProject(shadow, { ...loaderOptions(options), repositoryBindings: bound });
   const provenance = readProjectAndProvenance(shadow, options.schemasDir)?.provenance;
   if (!provenance || provenance.templateRevision !== operation.targetTemplateRevision) {
-    fail2("repair_shadow_provenance_invalid", VNEXT_TEMPLATE_PROVENANCE_PATH, "prospective template provenance does not match the pinned target");
+    fail3("repair_shadow_provenance_invalid", VNEXT_TEMPLATE_PROVENANCE_PATH, "prospective template provenance does not match the pinned target");
   }
 }
 function createOperation(projectRoot, kind, rendered, files, sourceTemplateRevision) {
@@ -34945,7 +34981,7 @@ function createOperation(projectRoot, kind, rendered, files, sourceTemplateRevis
     templateId: VNEXT_TEMPLATE_ID,
     sourceTemplateRevision,
     targetTemplateRevision: rendered.templateRevision,
-    files: [...files].sort((left, right) => compareCodeUnits3(left.path, right.path))
+    files: [...files].sort((left, right) => compareCodeUnits4(left.path, right.path))
   };
   return {
     ...operationWithoutHash,
@@ -34955,7 +34991,7 @@ function createOperation(projectRoot, kind, rendered, files, sourceTemplateRevis
 }
 function validateOperationRecord(operation, schemasDir) {
   const label = `${TRANSACTION_NAME}/${OPERATION_FILE}`;
-  const value = parseRestrictedYaml(Buffer.from(JSON.stringify(operation), "utf8"), label);
+  const value = parseRestrictedYaml2(Buffer.from(JSON.stringify(operation), "utf8"), label);
   const issues = new VnextSchemaRegistry(schemasDir).validateInitOperation(value, label);
   if (issues.length > 0) throw new VnextConfigError(issues);
 }
@@ -34963,14 +34999,14 @@ function prepareOperation(projectRoot, operation, rendered, options) {
   const transaction = transactionRoot(projectRoot);
   validateOperationRecord(operation, options.schemasDir);
   validateOperationIntent(projectRoot, operation);
-  if (existsSync17(transaction)) fail2("init_transaction_exists", TRANSACTION_NAME, "an initialization transaction already exists and must be resumed");
+  if (existsSync17(transaction)) fail3("init_transaction_exists", TRANSACTION_NAME, "an initialization transaction already exists and must be resumed");
   mkdirSync15(transaction, { mode: 448 });
   syncDirectory2(projectRoot);
   writeOperation(projectRoot, operation);
   try {
     for (const entry of operation.files) {
       const bytes = rendered.files.get(entry.path);
-      if (!bytes || vnextContentSha256(bytes) !== entry.targetSha256) fail2("template_target_unavailable", entry.path, "renderer cannot reproduce the pinned target bytes");
+      if (!bytes || vnextContentSha256(bytes) !== entry.targetSha256) fail3("template_target_unavailable", entry.path, "renderer cannot reproduce the pinned target bytes");
       writeTarget(projectRoot, entry.path, bytes);
     }
     writeAndVerifyBackups(projectRoot, operation);
@@ -34992,7 +35028,7 @@ function ensureDestinationParents(projectRoot, path5) {
     current = join23(current, segment);
     if (!existsSync17(current)) mkdirSync15(current, { mode: 448 });
     const stat = lstatSync5(current);
-    if (stat.isSymbolicLink() || !stat.isDirectory()) fail2("repair_destination_parent_invalid", path5, "destination parent must be a regular directory", "path");
+    if (stat.isSymbolicLink() || !stat.isDirectory()) fail3("repair_destination_parent_invalid", path5, "destination parent must be a regular directory", "path");
   }
 }
 function destinationSha(projectRoot, path5) {
@@ -35009,7 +35045,7 @@ function requireConditionalLinkSupport(directory, operationId, path5) {
     try {
       linkSync(source, target);
     } catch {
-      fail2("repair_hard_link_unsupported", path5, "filesystem does not support the conditional hard-link install required for safe repair");
+      fail3("repair_hard_link_unsupported", path5, "filesystem does not support the conditional hard-link install required for safe repair");
     }
   } finally {
     rmSync5(target, { force: true });
@@ -35026,15 +35062,15 @@ function atomicInstallTarget(projectRoot, operation, entry) {
   const displaced = join23(directory, `${temporaryPrefix}${pathKey}.preimage`);
   if (existsSync17(displaced)) {
     const stat = lstatSync5(displaced);
-    if (stat.isSymbolicLink() || !stat.isFile()) fail2("repair_preimage_temporary_invalid", entry.path, "stale displaced preimage is not a regular file", "path");
+    if (stat.isSymbolicLink() || !stat.isFile()) fail3("repair_preimage_temporary_invalid", entry.path, "stale displaced preimage is not a regular file", "path");
     if (entry.observedSha256 === null || vnextContentSha256(readFileSync17(displaced)) !== entry.observedSha256) {
-      fail2("repair_preimage_temporary_mismatch", entry.path, "stale displaced preimage does not match the pinned operation");
+      fail3("repair_preimage_temporary_mismatch", entry.path, "stale displaced preimage does not match the pinned operation");
     }
     if (!existsSync17(destination)) {
       try {
         linkSync(displaced, destination);
       } catch {
-        fail2("repair_preimage_restore_blocked", entry.path, "could not conditionally restore a displaced preimage");
+        fail3("repair_preimage_restore_blocked", entry.path, "could not conditionally restore a displaced preimage");
       }
       syncDirectory2(directory);
     }
@@ -35044,17 +35080,17 @@ function atomicInstallTarget(projectRoot, operation, entry) {
   for (const candidate of readdirSync6(directory, { withFileTypes: true })) {
     const owned = candidate.name.startsWith(temporaryPrefix) && (candidate.name.endsWith(".tmp") || candidate.name.endsWith(".link-source") || candidate.name.endsWith(".link-target"));
     if (!owned) continue;
-    if (!candidate.isFile()) fail2("repair_temporary_invalid", entry.path, "stale operation temporary is not a regular file", "path");
+    if (!candidate.isFile()) fail3("repair_temporary_invalid", entry.path, "stale operation temporary is not a regular file", "path");
     rmSync5(join23(directory, candidate.name), { force: true });
   }
   const current = destinationSha(projectRoot, entry.path);
   if (current === entry.targetSha256) return;
   if (current !== (entry.observedSha256 ?? void 0)) {
-    fail2("repair_preimage_changed", entry.path, "destination changed after planning; pinned target was not installed");
+    fail3("repair_preimage_changed", entry.path, "destination changed after planning; pinned target was not installed");
   }
   requireConditionalLinkSupport(directory, operation.operationId, entry.path);
   const bytes = readTarget(projectRoot, entry.path);
-  if (!bytes) fail2("init_transaction_target_missing", entry.path, "pinned target artifact is missing");
+  if (!bytes) fail3("init_transaction_target_missing", entry.path, "pinned target artifact is missing");
   const temporary = join23(directory, `${temporaryPrefix}${randomUUID5()}.tmp`);
   const mode = existsSync17(destination) ? lstatSync5(destination).mode & 511 : 420;
   try {
@@ -35067,13 +35103,13 @@ function atomicInstallTarget(projectRoot, operation, entry) {
           try {
             linkSync(displaced, destination);
           } catch {
-            fail2("repair_preimage_restore_blocked", entry.path, "changed destination was displaced but could not be conditionally restored; its bytes remain in the operation preimage file");
+            fail3("repair_preimage_restore_blocked", entry.path, "changed destination was displaced but could not be conditionally restored; its bytes remain in the operation preimage file");
           }
           syncDirectory2(directory);
           rmSync5(displaced, { force: true });
           syncDirectory2(directory);
         }
-        fail2("repair_preimage_changed", entry.path, "destination changed at replacement time; concurrent bytes were preserved at the destination or in the operation preimage file");
+        fail3("repair_preimage_changed", entry.path, "destination changed at replacement time; concurrent bytes were preserved at the destination or in the operation preimage file");
       }
     }
     try {
@@ -35083,13 +35119,13 @@ function atomicInstallTarget(projectRoot, operation, entry) {
         try {
           linkSync(displaced, destination);
         } catch {
-          fail2("repair_preimage_restore_blocked", entry.path, "target install failed and the displaced preimage could not be conditionally restored");
+          fail3("repair_preimage_restore_blocked", entry.path, "target install failed and the displaced preimage could not be conditionally restored");
         }
         syncDirectory2(directory);
       }
       rmSync5(displaced, { force: true });
       syncDirectory2(directory);
-      fail2("repair_destination_recreated", entry.path, "destination was recreated concurrently or conditional install is unsupported; pinned target was not installed");
+      fail3("repair_destination_recreated", entry.path, "destination was recreated concurrently or conditional install is unsupported; pinned target was not installed");
     }
     syncDirectory2(directory);
     rmSync5(temporary, { force: true });
@@ -35098,7 +35134,7 @@ function atomicInstallTarget(projectRoot, operation, entry) {
   } finally {
     rmSync5(temporary, { force: true });
   }
-  if (destinationSha(projectRoot, entry.path) !== entry.targetSha256) fail2("repair_install_verification_failed", entry.path, "installed target hash does not match the pinned operation");
+  if (destinationSha(projectRoot, entry.path) !== entry.targetSha256) fail3("repair_install_verification_failed", entry.path, "installed target hash does not match the pinned operation");
 }
 function installedCreateMatches(projectRoot, operation) {
   const configRoot = join23(projectRoot, ".kxm");
@@ -35107,15 +35143,15 @@ function installedCreateMatches(projectRoot, operation) {
   const visit2 = (directory) => {
     for (const entry of readdirSync6(directory, { withFileTypes: true })) {
       const absolute = join23(directory, entry.name);
-      if (entry.isSymbolicLink()) fail2("create_resume_link", relativeConfigPath(projectRoot, absolute), "created configuration must not contain links", "path");
+      if (entry.isSymbolicLink()) fail3("create_resume_link", relativeConfigPath(projectRoot, absolute), "created configuration must not contain links", "path");
       if (entry.isDirectory()) visit2(absolute);
       else if (entry.isFile()) actual.push(relativeConfigPath(projectRoot, absolute));
-      else fail2("create_resume_file_invalid", relativeConfigPath(projectRoot, absolute), "created configuration contains a non-regular entry", "path");
+      else fail3("create_resume_file_invalid", relativeConfigPath(projectRoot, absolute), "created configuration contains a non-regular entry", "path");
     }
   };
   visit2(configRoot);
-  actual.sort(compareCodeUnits3);
-  const expected = operation.files.map((entry) => entry.path).sort(compareCodeUnits3);
+  actual.sort(compareCodeUnits4);
+  const expected = operation.files.map((entry) => entry.path).sort(compareCodeUnits4);
   return actual.length === expected.length && actual.every((path5, index) => path5 === expected[index]) && operation.files.every((entry) => destinationSha(projectRoot, entry.path) === entry.targetSha256);
 }
 function relativeConfigPath(projectRoot, file) {
@@ -35139,7 +35175,7 @@ function rebuildCreateShadow(projectRoot, operation, options) {
   prepareShadow(projectRoot, operation, options);
   const stat = lstatSync5(shadow);
   if (stat.isSymbolicLink() || !stat.isDirectory() || !installedCreateMatches(shadow, operation)) {
-    fail2("create_shadow_invalid", TRANSACTION_NAME, "reconstructed create shadow does not exactly match pinned target files", "path");
+    fail3("create_shadow_invalid", TRANSACTION_NAME, "reconstructed create shadow does not exactly match pinned target files", "path");
   }
   syncTreeDirectories(join23(shadow, ".kxm"));
 }
@@ -35157,7 +35193,7 @@ function applyOperation(projectRoot, original, options, resumed) {
       renameSync6(join23(shadowRoot(projectRoot), ".kxm"), destination);
       syncDirectory2(projectRoot);
     } else if (!installedCreateMatches(projectRoot, operation)) {
-      fail2("create_resume_conflict", ".kxm", "existing project configuration does not match the pinned create operation");
+      fail3("create_resume_conflict", ".kxm", "existing project configuration does not match the pinned create operation");
     }
   } else {
     const resources = operation.files.filter((entry) => entry.path !== VNEXT_TEMPLATE_PROVENANCE_PATH && entry.action !== "none");
@@ -35169,14 +35205,14 @@ function applyOperation(projectRoot, original, options, resumed) {
     }
     loadVnextProject(projectRoot, loaderOptions(effectiveOptions));
     const provenance = operation.files.find((entry) => entry.path === VNEXT_TEMPLATE_PROVENANCE_PATH);
-    if (!provenance) fail2("repair_provenance_target_missing", TRANSACTION_NAME, "repair operation has no final provenance target");
+    if (!provenance) fail3("repair_provenance_target_missing", TRANSACTION_NAME, "repair operation has no final provenance target");
     atomicInstallTarget(projectRoot, operation, provenance);
     if (options.testFaultAt === "provenance") throw new Error("injected init fault after provenance");
   }
   const bundle = loadVnextProject(projectRoot, loaderOptions(effectiveOptions));
   const source = readProjectAndProvenance(projectRoot, effectiveOptions.schemasDir);
   if (!source || source.provenance.templateRevision !== operation.targetTemplateRevision) {
-    fail2("init_operation_verification_failed", VNEXT_TEMPLATE_PROVENANCE_PATH, "installed provenance does not match the pinned transaction");
+    fail3("init_operation_verification_failed", VNEXT_TEMPLATE_PROVENANCE_PATH, "installed provenance does not match the pinned transaction");
   }
   operation = updatePhase(projectRoot, operation, "verified");
   if (options.testFaultAt === "verified") throw new Error("injected init fault after verification");
@@ -35200,14 +35236,14 @@ function prepareAndApplyVnextCreate(projectRoot, rendered, options = {}) {
 }
 function prepareAndApplyVnextRepair(plan, options = {}) {
   assertNoRegisteredGates(options);
-  if (!plan.canApply) fail2("template_repair_not_applicable", ".kxm", "template repair has conflicts, policy changes, or no safe template-only update");
+  if (!plan.canApply) fail3("template_repair_not_applicable", ".kxm", "template repair has conflicts, policy changes, or no safe template-only update");
   const rendered = renderVnextTemplate(plan.projectId, plan.projectName, options.templateVariant ?? CURRENT_VNEXT_TEMPLATE_VARIANT);
-  if (rendered.templateRevision !== plan.targetTemplateRevision) fail2("template_repair_target_changed", ".kxm", "template target changed after planning");
+  if (rendered.templateRevision !== plan.targetTemplateRevision) fail3("template_repair_target_changed", ".kxm", "template target changed after planning");
   const actionable = plan.changes.filter((change) => change.classification === "template-only");
   const provenanceBytes = rendered.files.get(VNEXT_TEMPLATE_PROVENANCE_PATH);
-  if (!provenanceBytes) fail2("template_provenance_target_missing", VNEXT_TEMPLATE_PROVENANCE_PATH, "renderer did not produce provenance");
+  if (!provenanceBytes) fail3("template_provenance_target_missing", VNEXT_TEMPLATE_PROVENANCE_PATH, "renderer did not produce provenance");
   const sourceProvenance = readOptionalManaged(plan.projectRoot, VNEXT_TEMPLATE_PROVENANCE_PATH);
-  if (!sourceProvenance) fail2("template_provenance_missing", VNEXT_TEMPLATE_PROVENANCE_PATH, "repair requires recorded provenance");
+  if (!sourceProvenance) fail3("template_provenance_missing", VNEXT_TEMPLATE_PROVENANCE_PATH, "repair requires recorded provenance");
   const files = actionable.map((change) => ({
     path: change.path,
     observedSha256: change.localSha256 ?? null,
@@ -35239,36 +35275,36 @@ function rendererForOperation(operation) {
 }
 function validateOperationIntent(projectRoot, operation) {
   const target = rendererForOperation(operation);
-  if (!target) fail2("init_transaction_target_unknown", TRANSACTION_NAME, "operation target is not a supported built-in template");
+  if (!target) fail3("init_transaction_target_unknown", TRANSACTION_NAME, "operation target is not a supported built-in template");
   const entries = new Map(operation.files.map((entry) => [entry.path, entry]));
   if (operation.kind === "create") {
     if (operation.sourceTemplateRevision !== null) {
-      fail2("init_transaction_create_invalid", TRANSACTION_NAME, "create operation has a source revision");
+      fail3("init_transaction_create_invalid", TRANSACTION_NAME, "create operation has a source revision");
     }
-    if (entries.size !== target.files.size) fail2("init_transaction_create_files_invalid", TRANSACTION_NAME, "create operation does not contain the exact built-in target file set");
+    if (entries.size !== target.files.size) fail3("init_transaction_create_files_invalid", TRANSACTION_NAME, "create operation does not contain the exact built-in target file set");
     for (const [path5, bytes] of target.files) {
       const entry = entries.get(path5);
       if (!entry || entry.observedSha256 !== null || entry.targetSha256 !== vnextContentSha256(bytes) || entry.classification !== "template-only" || entry.action !== "create") {
-        fail2("init_transaction_create_file_invalid", path5, "create operation file does not match its built-in target");
+        fail3("init_transaction_create_file_invalid", path5, "create operation file does not match its built-in target");
       }
     }
     return;
   }
   if (!operation.sourceTemplateRevision || operation.sourceTemplateRevision === operation.targetTemplateRevision) {
-    fail2("init_transaction_repair_revision_invalid", TRANSACTION_NAME, "repair operation requires distinct supported source and target revisions");
+    fail3("init_transaction_repair_revision_invalid", TRANSACTION_NAME, "repair operation requires distinct supported source and target revisions");
   }
   const source = rendererForRevision(operation, operation.sourceTemplateRevision);
-  if (!source) fail2("init_transaction_source_unknown", TRANSACTION_NAME, "operation source is not a supported built-in template");
+  if (!source) fail3("init_transaction_source_unknown", TRANSACTION_NAME, "operation source is not a supported built-in template");
   const sourceRecords = new Map(source.provenance.files.map((record) => [record.path, record]));
   const targetRecords = new Map(target.provenance.files.map((record) => [record.path, record]));
   if (sourceRecords.size !== targetRecords.size || [...sourceRecords.keys()].some((path5) => !targetRecords.has(path5))) {
-    fail2("init_transaction_template_shape_changed", TRANSACTION_NAME, "automatic repair cannot add or delete managed template paths");
+    fail3("init_transaction_template_shape_changed", TRANSACTION_NAME, "automatic repair cannot add or delete managed template paths");
   }
   const safeChangedPaths = [];
   for (const [path5, base] of sourceRecords) {
     const next = targetRecords.get(path5);
     if (base.authoritySha256 !== next.authoritySha256) {
-      fail2("init_transaction_authority_change", path5, "automatic repair operation changes an authority projection");
+      fail3("init_transaction_authority_change", path5, "automatic repair operation changes an authority projection");
     }
     if (base.sha256 !== next.sha256) safeChangedPaths.push(path5);
   }
@@ -35276,31 +35312,31 @@ function validateOperationIntent(projectRoot, operation) {
   const sourceProvenanceBytes = source.files.get(VNEXT_TEMPLATE_PROVENANCE_PATH);
   const targetProvenanceBytes = target.files.get(VNEXT_TEMPLATE_PROVENANCE_PATH);
   if (!provenanceEntry || provenanceEntry.observedSha256 !== vnextContentSha256(sourceProvenanceBytes) || provenanceEntry.targetSha256 !== vnextContentSha256(targetProvenanceBytes) || provenanceEntry.classification !== "template-only" || provenanceEntry.action !== "replace") {
-    fail2("init_transaction_provenance_intent_invalid", VNEXT_TEMPLATE_PROVENANCE_PATH, "repair provenance action does not match supported source and target templates");
+    fail3("init_transaction_provenance_intent_invalid", VNEXT_TEMPLATE_PROVENANCE_PATH, "repair provenance action does not match supported source and target templates");
   }
   for (const [path5, entry] of entries) {
     if (path5 === VNEXT_TEMPLATE_PROVENANCE_PATH) continue;
     const base = sourceRecords.get(path5);
     const next = targetRecords.get(path5);
     if (!base || !next || base.sha256 === next.sha256 || entry.observedSha256 !== base.sha256 || entry.targetSha256 !== next.sha256 || entry.classification !== "template-only" || entry.action !== "replace") {
-      fail2("init_transaction_repair_file_invalid", path5, "repair operation file is not a safe built-in template-only replacement");
+      fail3("init_transaction_repair_file_invalid", path5, "repair operation file is not a safe built-in template-only replacement");
     }
   }
   for (const path5 of safeChangedPaths) {
     if (!entries.has(path5) && destinationSha(projectRoot, path5) !== targetRecords.get(path5)?.sha256) {
-      fail2("init_transaction_repair_file_missing", path5, "repair operation omitted a changed file that has not converged to the target");
+      fail3("init_transaction_repair_file_missing", path5, "repair operation omitted a changed file that has not converged to the target");
     }
   }
 }
 function finishPreparingOperation(projectRoot, operation, options) {
   const rendered = rendererForOperation(operation);
-  if (!rendered) fail2("init_transaction_renderer_unavailable", TRANSACTION_NAME, "this binary cannot reproduce the pinned pre-application target");
+  if (!rendered) fail3("init_transaction_renderer_unavailable", TRANSACTION_NAME, "this binary cannot reproduce the pinned pre-application target");
   for (const directory of ["targets", "backups", "shadow"]) {
     rmSync5(join23(transactionRoot(projectRoot), directory), { recursive: true, force: true });
   }
   for (const entry of operation.files) {
     const bytes = rendered.files.get(entry.path);
-    if (!bytes || vnextContentSha256(bytes) !== entry.targetSha256) fail2("template_target_unavailable", entry.path, "renderer cannot reproduce the pinned target bytes");
+    if (!bytes || vnextContentSha256(bytes) !== entry.targetSha256) fail3("template_target_unavailable", entry.path, "renderer cannot reproduce the pinned target bytes");
     writeTarget(projectRoot, entry.path, bytes);
   }
   writeKnownBackups(projectRoot, operation);
@@ -35328,7 +35364,7 @@ function resumeVnextInitTransaction(projectRoot, options = {}) {
 function commitVnextInitTransaction(projectRoot, schemasDir) {
   const operation = readOperation(projectRoot, schemasDir);
   if (!operation || operation.phase !== "verified") {
-    fail2("init_transaction_not_verified", TRANSACTION_NAME, "initialization transaction cannot commit before installed state is verified");
+    fail3("init_transaction_not_verified", TRANSACTION_NAME, "initialization transaction cannot commit before installed state is verified");
   }
   const transaction = transactionRoot(projectRoot);
   const retired = join23(projectRoot, `${TRANSACTION_NAME}-cleanup-${operation.operationId}-${randomUUID5()}`);
@@ -35880,7 +35916,7 @@ var KNOWN_WORKFLOW_FIELDS = /* @__PURE__ */ new Set([
 var KNOWN_STAGE_FIELDS = /* @__PURE__ */ new Set(["id", "label", "instructions", "requiredEvidence", "maxAttempts", "area", "evidencePolicies", "on", "maxTransitions"]);
 var KNOWN_POLICY_FIELDS = /* @__PURE__ */ new Set(["kind", "minProducers", "eligibleAgents", "acceptedStatuses", "degradation"]);
 var KNOWN_TRANSITION_FIELDS = /* @__PURE__ */ new Set(["target", "maxTransitions"]);
-function compareCodeUnits4(left, right) {
+function compareCodeUnits5(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 function asObject2(value) {
@@ -35917,7 +35953,7 @@ function recordUnmapped(plan, sourcePath, pointer, value, sensitive) {
   });
 }
 function recordUnknownFields(plan, sourcePath, pointer, record, known) {
-  for (const key of Object.keys(record).sort(compareCodeUnits4)) {
+  for (const key of Object.keys(record).sort(compareCodeUnits5)) {
     if (!known.has(key)) recordUnmapped(plan, sourcePath, `${pointer}/${pointerEscape2(key)}`, record[key], false);
   }
 }
@@ -36373,7 +36409,7 @@ function convertWorkflowFile(plan, source, decisions, agentIds, agentRawNames, p
           "identity",
           source.path,
           `workflow ${workflowId} target ${JSON.stringify(rawTarget === void 0 ? "" : elide(rawTarget, 200))} is not a migrated agent; choose the roster agent that executes its steps`,
-          [...agentIds.keys()].sort(compareCodeUnits4).slice(0, 64),
+          [...agentIds.keys()].sort(compareCodeUnits5).slice(0, 64),
           decisions
         );
         if (typeof chosen === "string" && agentIds.has(chosen)) {
@@ -36389,7 +36425,7 @@ function convertWorkflowFile(plan, source, decisions, agentIds, agentRawNames, p
               category: "identity",
               sourcePath: source.path,
               message: `decision value ${JSON.stringify(typeof chosen === "string" ? elide(chosen, 200) : chosen)} for workflow ${workflowId} is not a migrated agent`,
-              allowedValues: [...agentIds.keys()].sort(compareCodeUnits4).slice(0, 64)
+              allowedValues: [...agentIds.keys()].sort(compareCodeUnits5).slice(0, 64)
             });
           }
           stepAgent = normalizedTarget && IDENTIFIER2.test(normalizedTarget) && normalizedTarget.length <= 64 ? normalizedTarget : "coordinator";
@@ -36499,7 +36535,7 @@ function convertWorkflowFile(plan, source, decisions, agentIds, agentRawNames, p
       const policies = asObject2(stage.evidencePolicies);
       if (policies) {
         const seenPolicies = /* @__PURE__ */ new Set();
-        for (const [rawPolicyKey, policyEntry] of Object.entries(policies).sort(([left], [right]) => compareCodeUnits4(left, right))) {
+        for (const [rawPolicyKey, policyEntry] of Object.entries(policies).sort(([left], [right]) => compareCodeUnits5(left, right))) {
           const policy = asObject2(policyEntry);
           const policyKey = normalizeIdentifier(rawPolicyKey);
           if (seenPolicies.has(policyKey)) {
@@ -36557,7 +36593,7 @@ function convertWorkflowFile(plan, source, decisions, agentIds, agentRawNames, p
               "evidence-policy",
               source.path,
               `evidence policy on ${stepId}.${policyKey} names producer ${JSON.stringify(elide(rawName, 200))} which is not a migrated agent; choose the roster agent that takes this producer role`,
-              [...agentIds.keys()].sort(compareCodeUnits4).slice(0, 64),
+              [...agentIds.keys()].sort(compareCodeUnits5).slice(0, 64),
               decisions
             );
             if (typeof mapped === "string" && agentIds.has(mapped)) {
@@ -36573,7 +36609,7 @@ function convertWorkflowFile(plan, source, decisions, agentIds, agentRawNames, p
                   category: "evidence-policy",
                   sourcePath: source.path,
                   message: `decision value ${JSON.stringify(typeof mapped === "string" ? elide(mapped, 200) : mapped)} for producer ${JSON.stringify(elide(rawName, 200))} is not a migrated agent`,
-                  allowedValues: [...agentIds.keys()].sort(compareCodeUnits4).slice(0, 64)
+                  allowedValues: [...agentIds.keys()].sort(compareCodeUnits5).slice(0, 64)
                 });
               }
             }
@@ -36648,7 +36684,7 @@ function convertWorkflowFile(plan, source, decisions, agentIds, agentRawNames, p
       }
       if (requiredEvidence.length > 0) step.requiredEvidence = requiredEvidence;
       if (policyProducers.size > 0) {
-        const pool = [stepAgent, ...[...policyProducers].filter((candidate) => candidate !== stepAgent).sort(compareCodeUnits4)];
+        const pool = [stepAgent, ...[...policyProducers].filter((candidate) => candidate !== stepAgent).sort(compareCodeUnits5)];
         step.assignments = {
           allowedAgents: pool,
           minimum: 1,
@@ -36661,7 +36697,7 @@ function convertWorkflowFile(plan, source, decisions, agentIds, agentRawNames, p
       const transitions = {};
       if (on) {
         const seenOutcomes = /* @__PURE__ */ new Set();
-        for (const [rawOutcome, rawTransition] of Object.entries(on).sort(([left], [right]) => compareCodeUnits4(left, right))) {
+        for (const [rawOutcome, rawTransition] of Object.entries(on).sort(([left], [right]) => compareCodeUnits5(left, right))) {
           const outcome = normalizeIdentifier(rawOutcome);
           if (!IDENTIFIER2.test(outcome) || outcome.length > 64) {
             recordUnmapped(plan, source.path, `${pointer}/on/${pointerEscape2(rawOutcome)}`, rawTransition, false);
@@ -36767,7 +36803,7 @@ function convertWorkflowFile(plan, source, decisions, agentIds, agentRawNames, p
         }
         mapped.push(mappedStage ?? normalizeIdentifier(rawStage));
       }
-      if (mapped.length > 0) workflow.requirePlanHash = [...new Set(mapped)].sort(compareCodeUnits4);
+      if (mapped.length > 0) workflow.requirePlanHash = [...new Set(mapped)].sort(compareCodeUnits5);
     }
     workflows.set(workflowId, workflow);
   }
@@ -36775,7 +36811,7 @@ function convertWorkflowFile(plan, source, decisions, agentIds, agentRawNames, p
 }
 var PROJECT_ID2 = /^prj_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$/;
 function sortedRecord(map, prefix) {
-  return new Map([...map.entries()].sort(([left], [right]) => compareCodeUnits4(left, right)).map(([key, value]) => [`${prefix}${key}.yaml`, value]));
+  return new Map([...map.entries()].sort(([left], [right]) => compareCodeUnits5(left, right)).map(([key, value]) => [`${prefix}${key}.yaml`, value]));
 }
 function migrationGitRoot(start) {
   const root = discoverGitRoot(start);
@@ -36838,7 +36874,7 @@ function planVnextMigration(projectRoot, options = {}) {
     schema: "kxm.project.v1",
     id: projectId,
     name: projectName,
-    ...workflows.size > 0 ? { defaultWorkflow: [...workflows.keys()].sort(compareCodeUnits4)[0] } : {},
+    ...workflows.size > 0 ? { defaultWorkflow: [...workflows.keys()].sort(compareCodeUnits5)[0] } : {},
     defaultExecutor: "local",
     repositories: [{ id: "control", role: "control", required: true, pathHint: "." }],
     workspace: {
@@ -36862,7 +36898,7 @@ function planVnextMigration(projectRoot, options = {}) {
   const kindOf = (path5) => path5 === ".kxm/project.yaml" ? "project" : path5.endsWith("repo.yaml") ? "repository" : path5.startsWith(".kxm/agents/") ? "agent" : path5.startsWith(".kxm/models/") ? "model" : "workflow";
   const idOf = (path5) => path5 === ".kxm/project.yaml" || path5.endsWith("repo.yaml") ? void 0 : path5.slice(path5.lastIndexOf("/") + 1, -".yaml".length);
   const semanticResources = /* @__PURE__ */ new Map();
-  for (const [path5, value] of [...resources.entries()].sort(([left], [right]) => compareCodeUnits4(left, right))) {
+  for (const [path5, value] of [...resources.entries()].sort(([left], [right]) => compareCodeUnits5(left, right))) {
     const kind = kindOf(path5);
     schemaIssues.push(...registry.validate(kind, value, path5));
     const id = idOf(path5);
@@ -36879,20 +36915,20 @@ function planVnextMigration(projectRoot, options = {}) {
     projectName,
     sourceDigest: legacySourceDigest(sources),
     sources: sources.map((source) => ({ path: source.path, sha256: source.sha256, bytes: source.bytes })),
-    resources: [...resources.keys()].sort(compareCodeUnits4).map((path5) => {
+    resources: [...resources.keys()].sort(compareCodeUnits5).map((path5) => {
       const bytes = Buffer.from((0, import_yaml7.stringify)(resources.get(path5), { lineWidth: 0 }), "utf8");
       return { path: path5, sha256: sha256Of(bytes), bytes: bytes.byteLength };
     }),
-    ambiguities: [...plan.ambiguities].sort((left, right) => compareCodeUnits4(left.key, right.key)).map((ambiguity) => ({
+    ambiguities: [...plan.ambiguities].sort((left, right) => compareCodeUnits5(left.key, right.key)).map((ambiguity) => ({
       key: ambiguity.key,
       category: ambiguity.category,
       sourcePath: ambiguity.sourcePath,
       message: ambiguity.message,
       allowedValues: [...ambiguity.allowedValues]
     })),
-    unmapped: [...plan.unmapped].sort((left, right) => compareCodeUnits4(left.sourcePath, right.sourcePath) || compareCodeUnits4(left.jsonPointer, right.jsonPointer)).map((entry) => ({ ...entry })),
-    renames: [...new Map(plan.renames.map((rename) => [JSON.stringify([rename.kind, rename.from, rename.to]), rename])).values()].sort((left, right) => compareCodeUnits4(left.kind, right.kind) || compareCodeUnits4(left.from, right.from)).map((entry) => ({ ...entry })),
-    permissionChanges: [...plan.permissionChanges].sort((left, right) => compareCodeUnits4(left.decisionKey, right.decisionKey)).map((entry) => ({ ...entry })),
+    unmapped: [...plan.unmapped].sort((left, right) => compareCodeUnits5(left.sourcePath, right.sourcePath) || compareCodeUnits5(left.jsonPointer, right.jsonPointer)).map((entry) => ({ ...entry })),
+    renames: [...new Map(plan.renames.map((rename) => [JSON.stringify([rename.kind, rename.from, rename.to]), rename])).values()].sort((left, right) => compareCodeUnits5(left.kind, right.kind) || compareCodeUnits5(left.from, right.from)).map((entry) => ({ ...entry })),
+    permissionChanges: [...plan.permissionChanges].sort((left, right) => compareCodeUnits5(left.decisionKey, right.decisionKey)).map((entry) => ({ ...entry })),
     canApply: plan.ambiguities.length === 0
   };
   const planIssues = registry.validateMigrationPlan(planRecord, "kxm.migration-plan.v1");
@@ -36913,7 +36949,7 @@ function readVnextMigrationDecisions(path5, schemasDir) {
     throw new VnextConfigError([migrateIssue("discovery", "decisions_missing", path5, "migration decisions file does not exist")]);
   }
   const registry = new VnextSchemaRegistry(schemasDir);
-  const value = parseRestrictedYaml(readFileSync18(path5), path5);
+  const value = parseRestrictedYaml2(readFileSync18(path5), path5);
   const issues = registry.validateMigrationDecision(value, path5);
   if (issues.length > 0) throw new VnextConfigError(issues);
   return value;
@@ -37007,9 +37043,9 @@ function applyVnextMigration(projectRoot, options = {}) {
         }
       }
       if (unknown.length > 0) {
-        throw new VnextConfigError(unknown.sort(compareCodeUnits4).map((key) => migrateIssue("semantic", "decision_unknown", key, "decision key does not match any current ambiguity")));
+        throw new VnextConfigError(unknown.sort(compareCodeUnits5).map((key) => migrateIssue("semantic", "decision_unknown", key, "decision key does not match any current ambiguity")));
       }
-      const allInvalid = [.../* @__PURE__ */ new Set([...invalid, ...first.invalidDecisions])].sort(compareCodeUnits4);
+      const allInvalid = [.../* @__PURE__ */ new Set([...invalid, ...first.invalidDecisions])].sort(compareCodeUnits5);
       if (allInvalid.length > 0) {
         throw new VnextConfigError(allInvalid.map((key) => migrateIssue("semantic", "decision_value_invalid", key, "decision value is not one of the plan's allowed values")));
       }
@@ -37017,7 +37053,7 @@ function applyVnextMigration(projectRoot, options = {}) {
     if (first.ambiguities.length > 0) {
       return { action: "planned", projectRoot: root, files: [], plan: first.plan };
     }
-    const files = [...first.resources.entries()].sort(([left], [right]) => compareCodeUnits4(left, right)).map(([path5, value]) => ({ path: path5, bytes: Buffer.from((0, import_yaml7.stringify)(value, { lineWidth: 0 }), "utf8") }));
+    const files = [...first.resources.entries()].sort(([left], [right]) => compareCodeUnits5(left, right)).map(([path5, value]) => ({ path: path5, bytes: Buffer.from((0, import_yaml7.stringify)(value, { lineWidth: 0 }), "utf8") }));
     const collisions = files.filter((file) => existsSync19(join25(root, ...file.path.split("/"))));
     if (collisions.length > 0) {
       throw new VnextConfigError(collisions.map((file) => migrateIssue("semantic", "migration_target_exists", file.path, "target resource already exists; refusing to overwrite")));
@@ -37381,8 +37417,8 @@ var BANNED_RUNTIME_HINT = "not yet supported";
 var VnextEngineCompileError = class extends Error {
   issues;
   constructor(issues) {
-    const sorted = sortIssues2(issues);
-    super(sorted.map((issue2) => `${issue2.workflowId}: ${issue2.code}: ${issue2.message}`).join("\n"));
+    const sorted = sortIssues3(issues);
+    super(sorted.map((issue3) => `${issue3.workflowId}: ${issue3.code}: ${issue3.message}`).join("\n"));
     this.name = "VnextEngineCompileError";
     this.issues = sorted;
   }
@@ -37518,7 +37554,7 @@ function compileStep(step, index, stepIndex, requirePlanHash, sink) {
   const join34 = compileJoin(step, id, sink);
   const requiredEvidence = compileEvidence(step, id, sink);
   const transitions = compileTransitions(step, id, index, stepIndex, sink);
-  const outcomes = Object.keys(transitions).sort(compareCodeUnits5);
+  const outcomes = Object.keys(transitions).sort(compareCodeUnits6);
   const orderedTransitions = /* @__PURE__ */ Object.create(null);
   for (const outcome of outcomes) {
     const transition2 = transitions[outcome];
@@ -37535,7 +37571,7 @@ function compileStep(step, index, stepIndex, requirePlanHash, sink) {
     ...timeoutMs !== void 0 ? { timeoutMs } : {},
     safeSpeculation: step.safeSpeculation === true,
     repositories: compileRepositories(step.repositories),
-    ...isJsonObject2(step.tools) ? { tools: cloneJsonObject(step.tools) } : {},
+    ...isJsonObject3(step.tools) ? { tools: cloneJsonObject(step.tools) } : {},
     secrets: compileSecrets(step.secrets),
     ...step.model !== void 0 ? { model: cloneJsonValue(step.model) } : {},
     requiredEvidence,
@@ -37813,11 +37849,11 @@ function isCost(value) {
 function isStepId(value) {
   return value.length >= 1 && value.length <= 64 && STEP_ID_PATTERN.test(value);
 }
-function isJsonObject2(value) {
+function isJsonObject3(value) {
   return value !== void 0 && value !== null && typeof value === "object" && !Array.isArray(value);
 }
 function objectValue2(value) {
-  return isJsonObject2(value) ? value : void 0;
+  return isJsonObject3(value) ? value : void 0;
 }
 function stringValue3(value) {
   return typeof value === "string" ? value : void 0;
@@ -37832,7 +37868,7 @@ function names2(value) {
 function cloneJsonValue(value) {
   if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
   if (Array.isArray(value)) return value.map((entry) => cloneJsonValue(entry));
-  return cloneJsonObject(isJsonObject2(value) ? value : {});
+  return cloneJsonObject(isJsonObject3(value) ? value : {});
 }
 function cloneJsonObject(value) {
   const copy = {};
@@ -37848,26 +37884,26 @@ function deepFreeze(value) {
   }
   return Object.freeze(value);
 }
-function compareCodeUnits5(left, right) {
+function compareCodeUnits6(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 function compareOptional(left, right) {
   if (left === right) return 0;
   if (left === void 0) return -1;
   if (right === void 0) return 1;
-  return compareCodeUnits5(left, right);
+  return compareCodeUnits6(left, right);
 }
-function sortIssues2(issues) {
+function sortIssues3(issues) {
   return [...issues].sort((left, right) => {
     const byStep = compareOptional(left.stepId, right.stepId);
     if (byStep !== 0) return byStep;
     const byOutcome = compareOptional(left.outcome, right.outcome);
     if (byOutcome !== 0) return byOutcome;
-    return compareCodeUnits5(left.code, right.code);
+    return compareCodeUnits6(left.code, right.code);
   });
 }
-function pushIssue(sink, issue2) {
-  sink.issues.push({ workflowId: sink.workflowId, ...issue2 });
+function pushIssue(sink, issue3) {
+  sink.issues.push({ workflowId: sink.workflowId, ...issue3 });
 }
 
 // plugins/kxm/src/vnext-runtime.ts
@@ -41402,7 +41438,7 @@ async function cmdVnextMigrateVerify(runtime) {
     return 0;
   }
   print(runtime.io, runtime.json, payload, `migration verification failed:
-${result.issues.map((issue2) => `  - ${issue2.file}: ${issue2.code}: ${issue2.message}`).join("\n")}`);
+${result.issues.map((issue3) => `  - ${issue3.file}: ${issue3.code}: ${issue3.message}`).join("\n")}`);
   return 1;
 }
 async function cmdBackup(runtime, options) {
@@ -42627,7 +42663,7 @@ async function cmdContextWikiLint(runtime, project) {
   const compiled = response.body;
   const issues = compiled.lint;
   print(runtime.io, runtime.json, { ok: issues.length === 0, command: "context wiki-lint", project, issues, audit: compiled.audit }, issues.length === 0 ? "wiki lint clean" : `wiki lint found ${issues.length} issue(s)`);
-  return issues.every((issue2) => issue2.severity !== "error") ? 0 : 1;
+  return issues.every((issue3) => issue3.severity !== "error") ? 0 : 1;
 }
 function skillStateFromFlag(value) {
   if (value === "candidate" || value === "promoted" || value === "quarantined" || value === "rejected") return value;
