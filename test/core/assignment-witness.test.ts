@@ -25,10 +25,10 @@ import {
   VERIFY_WITNESS_ID,
   WITNESS_LATEST_SCHEMA,
   WITNESS_SCHEMA,
-  main as assignmentMain,
+  main as assignmentMainImpl,
   observeAssignment,
-  runAssignment,
-  witnessAssignment,
+  runAssignment as runAssignmentImpl,
+  witnessAssignment as witnessAssignmentImpl,
 } from "../../scripts/assignment-run.mjs";
 import {
   claudeAuth,
@@ -36,6 +36,26 @@ import {
   grokAuth,
 } from "../helpers/harness-fake.ts";
 import { makeGitRoot } from "../helpers/git-root.ts";
+import { withRosterPolicy } from "../helpers/roster-policy.ts";
+
+function runAssignment(manifest: unknown, deps: Record<string, unknown> = {}) {
+  return runAssignmentImpl(manifest, withRosterPolicy(deps));
+}
+
+function witnessAssignment(recordDir: string, deps: Record<string, unknown> = {}) {
+  return witnessAssignmentImpl(recordDir, withRosterPolicy(deps));
+}
+
+function assignmentMain(
+  argv: string[],
+  io: NonNullable<Parameters<typeof assignmentMainImpl>[1]> = {
+    stdin: process.stdin,
+    stdout: process.stdout,
+    stderr: process.stderr,
+  },
+) {
+  return assignmentMainImpl(argv, withRosterPolicy(io));
+}
 
 function sha256(content: string | Buffer): string {
   return createHash("sha256").update(content).digest("hex");

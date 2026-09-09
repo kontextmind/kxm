@@ -369,28 +369,57 @@ test("E5b: computeVnextMemoryRevision pins revision from authored memory and ign
 
 test("E5b: gate - generated-file check fails when a harness block drifts", () => {
   const checker = resolve(repoRoot, "scripts/check-generated.mjs");
-  const { GENERATED_ARTIFACTS: artifacts } = JSON.parse(
+  const { STATIC_GENERATED_ARTIFACTS: staticArtifacts } = JSON.parse(
     spawnSync(process.execPath, [
       "--input-type=module",
       "-e",
-      "import { GENERATED_ARTIFACTS } from './scripts/check-generated.mjs'; console.log(JSON.stringify({ GENERATED_ARTIFACTS }))",
+      "import { STATIC_GENERATED_ARTIFACTS } from './scripts/check-generated.mjs'; console.log(JSON.stringify({ STATIC_GENERATED_ARTIFACTS }))",
     ], { cwd: repoRoot, encoding: "utf8" }).stdout,
-  ) as { GENERATED_ARTIFACTS: string[] };
+  ) as { STATIC_GENERATED_ARTIFACTS: string[] };
 
   const dir = mkdtempSync(join(tmpdir(), "kxm-e5b-drift-"));
+  const write = (path: string, body: string): void => {
+    const target = join(dir, path);
+    mkdirSync(resolve(target, ".."), { recursive: true });
+    writeFileSync(target, body, "utf8");
+  };
   try {
     spawnSync("git", ["init", "--quiet"], { cwd: dir });
-    for (const artifact of artifacts) {
-      const target = join(dir, artifact);
-      mkdirSync(resolve(target, ".."), { recursive: true });
-      writeFileSync(target, `# Baseline for ${artifact}\n`, "utf8");
+    for (const [index, artifact] of staticArtifacts.entries()) {
+      write(artifact, `# Baseline for ${artifact} ${index}\n`);
     }
-    spawnSync("git", ["add", "--", ...artifacts], { cwd: dir });
+    const skillBody = "---\nname: alpha\ndescription: Alpha fixture skill\n---\n\n# Alpha\n";
+    const noteBody = "note\n";
+    write("plugins/kxm/skill-suite.json", `${JSON.stringify({
+      id: "fixture-suite",
+      version: "1.0.0",
+      name: "Fixture suite",
+      description: "Manifest-backed generated artifact fixture",
+      skills: [{
+        name: "alpha",
+        path: "./skills/alpha",
+        ownedCommands: ["init"],
+        intent: "Fixture skill alpha for generated checks",
+      }],
+    }, null, 2)}\n`);
+    write("plugins/kxm/skills/alpha/SKILL.md", skillBody);
+    write("plugins/kxm/skills/alpha/references/note.md", noteBody);
+    write(".agents/skills/alpha/SKILL.md", skillBody);
+    write(".agents/skills/alpha/references/note.md", noteBody);
+    const tracked = [
+      ...staticArtifacts,
+      "plugins/kxm/skill-suite.json",
+      "plugins/kxm/skills/alpha/SKILL.md",
+      "plugins/kxm/skills/alpha/references/note.md",
+      ".agents/skills/alpha/SKILL.md",
+      ".agents/skills/alpha/references/note.md",
+    ];
+    spawnSync("git", ["add", "--", ...tracked], { cwd: dir });
     spawnSync("git", ["-c", "user.name=Test", "-c", "user.email=test@test.local", "commit", "-m", "init"], { cwd: dir });
 
-    // Baseline check succeeds
+    // Baseline check succeeds when the fixture supplies a valid suite
     const okRes = spawnSync(process.execPath, [checker], { cwd: dir, encoding: "utf8" });
-    assert.equal(okRes.status, 0);
+    assert.equal(okRes.status, 0, `baseline checker failed: ${okRes.stderr}`);
 
     // Drifting CLAUDE.md causes check-generated to fail
     writeFileSync(join(dir, "CLAUDE.md"), "# Hand-edited memory block drift\n", "utf8");

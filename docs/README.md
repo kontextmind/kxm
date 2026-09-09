@@ -8,6 +8,7 @@ This documentation is organized by task. Start with the guide that matches what 
 | [Getting started](getting-started.md) | Pi and Claude Code users | Complete the first successful multi-agent exchange |
 | [Configuration](configuration.md) | Users and operators | Understand every supported setting and default |
 | [Architecture](architecture.md) | Maintainers and integrators | Learn the component boundaries and message lifecycle |
+| [Agent Skills](agent-skills.md) | Users and integrators | Comprehensive skill suite covering all KXM commands with progressive disclosure |
 | [Operations](operations.md) | Hub operators | Run, monitor, secure, and recover the service |
 | [Troubleshooting](troubleshooting.md) | Everyone | Diagnose common installation and delivery failures |
 | [Test matrix](test-matrix.md) | Users and maintainers | Map features and use cases to automated evidence |

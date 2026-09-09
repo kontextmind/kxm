@@ -214,6 +214,7 @@ The hub routes messages; it does not merge contexts, choose tasks, or bypass too
 | Complete a Pi-to-Pi or Pi-to-Claude setup | [Getting started](docs/getting-started.md) |
 | Configure the hub or an agent | [Configuration reference](docs/configuration.md) |
 | Understand components and message flow | [Architecture](docs/architecture.md) |
+| Learn about agent skills | [Agent Skills](docs/agent-skills.md) |
 | Run the hub responsibly | [Operations guide](docs/operations.md) |
 | Fix connection or delivery problems | [Troubleshooting](docs/troubleshooting.md) |
 | See which behaviors and examples are verified | [Test matrix](docs/test-matrix.md) |

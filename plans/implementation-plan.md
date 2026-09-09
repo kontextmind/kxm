@@ -352,7 +352,7 @@ It does not replace the phase gates below.
   entry stays. Read-only agy roles and agy-hosted non-Google models remain
   deferred.
 - **Docs audit slice (issue #144):** planning docs moved to `plans/` (implementation plan, v05 design record, v04/provenance history and 2026-09-04 reviews); `docs/workflow-guide.md` renamed and retitled; docs brake widened (`docs/**`, plugin READMEs, skills, AGENTS.md, CLAUDE.md, `.claude/**/*.md`; `plans/` exempt); stale copy, env-var classification, context OS coverage including `kxm context explain`, README workflow-slug index, and phase-neutral `kxm run` help. No product behavior change beyond CLI help wording.
-- **Assignment runner maintainer guide:** [`docs/assignment-runner.md`](../docs/assignment-runner.md) documents the developer assignment runner lifecycle (`just assign`, `witness`, `accept`, `attribute`, `observe-cost`, `change-report`), roster lineup admission, dual-critic quorum, vendor independence invariants, failure codes, and task directory layout. Linked in `docs/README.md`.
+- **Assignment runner maintainer guide:** [`docs/assignment-runner.md`](../docs/assignment-runner.md) documents the developer assignment runner lifecycle (`just assign`, `witness`, `accept`, `attribute`, `observe-cost`, `change-report`), roster lineup admission, dual-critic quorum, vendor independence invariants, failure codes, and task directory layout. Trusted roster policy is loaded from control Git; raw-disk and null-policy acceptance are refused. Linked in `docs/README.md`. Unified YAML policy migration is not landed.
 
 - **ARC scale-set CI selectors:** all `ci.yml` / `release.yml` / `smoke.yml`
   `runs-on` values are the scalar scale-set name `kontextmind-doks`. The
@@ -779,6 +779,8 @@ It does not replace the phase gates below.
   classify/docs/plugin) before the pause; the post-merge main Windows Node 24
   package-cleanup failure in run `34006194862` is unresolved and deferred.
 
+- **KXM Agent Skills Suite plus trusted-policy brakes (candidate, not YAML cutover):** One authored suite under `plugins/kxm/skills/` with generated `.agents/skills` mirror and `plugins/kxm/skill-suite.json`. Skills document current CLI verbs only; they do not claim runtime YAML authority or new writer admission. `emit-codex-artifacts` / `check-generated` require a valid manifest, refuse path/symlink escape, copy owned skills recursively, and preserve unrelated `.agents/skills` entries. **Prerequisite repair:** `getRosterPolicy` no longer reads raw working-tree `.kxm/roster.json` after a trusted-loader error; missing, empty, or malformed policy is `route_invalid`. Acceptance no longer catch-to-nulls policy; required critic specs come from loaded policy, not a null-policy default. Unified YAML role/project/workflow authority remains open.
+
 - **Nous opt-in Pi providers:** opt-in `nous/*` (direct API) and `nous-proxy/*` (Hermes subscription proxy) via `KXM_NOUS_PROVIDERS`, with fail-closed catalog/price boundary, bounded factory-time discovery, and env-only direct auth (`NOUS_API_KEY`). No router, no writer admission. Public `/v1/models` catalog fields are observed (`context_length`, `top_provider.max_completion_tokens`, `architecture.input_modalities`, `supported_parameters`, per-token `pricing` plus `overrides`); convert once to USD/M and never apply `original` or a blanket discount. Matching dated pins supply rates/capacity when live pricing is incomplete. Context tiers emit a labeled componentwise upper bound without a Pi `cost.tiers` schedule. **Verified 2026-09-07:** tests verified one streamed tool call plus usage on `qwen/qwen3-coder-plus` for the direct API and an OAuth-backed Hermes proxy, with exact model auth. Other models, automatic auth refresh, exact quota, and extra charges remain unverified. Routing v2 and persisted catalog deferrals remain.
 
 - **E3: routing report, logger, metrics (issue #96):** `kxm routing report` groups attempts by `(harness, model, thinking, role)`, reporting attempts, verifyPassRate, reworkRate (back-edge re-entries only: transitions > 0), p50 and p95 latency (linear interpolation), medianContextTokens, meteredCostUsd, costPerAcceptedUsd, and separate counts for unmetered, unknown, and quotaExhausted. Quality-first sorting (verifyPassRate desc, reworkRate asc) then cost per accepted attempt; routes with unknown cost are flagged (`*`) and never ranked cheapest. Equivalent list cost column supported via `--equivalent-list-cost` / `--list-prices`. Unified `logger.ts` with structured JSONL formatting, level priority filtering, child loggers, size-capped file rotation, redaction on write (secrets and sensitive keys), and daemonized stdout suppression. Prometheus metrics renamed to `kxm_*`, exported orphaned `kxm_context_requests_total`, added `kxm_attempt_latency_seconds_total` and `kxm_metered_cost_usd_total`. Zero `pi_mesh_*` or `pi_kxm_*` metric names remain.
@@ -797,6 +799,11 @@ It does not replace the phase gates below.
 
 ### Still open
 
+- **Unified YAML policy authority:** shared current role/project/workflow YAML
+  consumed by runtime and the developer runner, replacing live `roster.json`
+  without dual live authorities, raw-disk fallback, or null-policy acceptance.
+  Historical JSON evidence stays JSON. Not landed by the skills-suite /
+  trusted-loader prerequisite slice.
 - **Windows resumption (deferred):** restore the two Windows Validate legs and
   their ruleset contexts, and diagnose the Node 24 package cleanup failure, in
   a reviewed change that updates Tracking, tests, and settings together. D3
