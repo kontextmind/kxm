@@ -14,7 +14,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import {
   VnextConfigError,
   VnextSchemaRegistry,
@@ -22,7 +22,6 @@ import {
   assertNoRegisteredGates,
   inspectVnextCreateDestination,
   parseRestrictedYaml,
-  KXM_PRIVATE_RUNTIME_ROOTS,
   type JsonObject,
   type VnextConfigIssue,
   type VnextConfigOptions,
@@ -797,11 +796,6 @@ function atomicInstallTarget(projectRoot: string, operation: VnextInitOperation,
   if (destinationSha(projectRoot, entry.path) !== entry.targetSha256) fail("repair_install_verification_failed", entry.path, "installed target hash does not match the pinned operation");
 }
 
-function isPrivateRuntimeRootName(name: string): boolean {
-  const folded = process.platform === "win32" ? name.toLocaleLowerCase("en-US") : name;
-  return (KXM_PRIVATE_RUNTIME_ROOTS as readonly string[]).includes(folded);
-}
-
 function failIncompatibleCreateDestination(inspection: ReturnType<typeof inspectVnextCreateDestination>): never {
   const path = inspection.path ?? ".kxm";
   if (inspection.reason === "linked" || inspection.reason === "linked-runtime-root") {
@@ -811,28 +805,10 @@ function failIncompatibleCreateDestination(inspection: ReturnType<typeof inspect
 }
 
 function installedCreateMatches(projectRoot: string, operation: VnextInitOperation): boolean {
-  const configRoot = join(projectRoot, ".kxm");
-  if (!existsSync(configRoot)) return false;
-  const actual: string[] = [];
-  const visit = (directory: string, topLevel: boolean): void => {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      const absolute = join(directory, entry.name);
-      if (entry.isSymbolicLink()) fail("create_resume_link", relativeConfigPath(projectRoot, absolute), "created configuration must not contain links", "path");
-      if (topLevel && isPrivateRuntimeRootName(entry.name)) {
-        if (!entry.isDirectory()) fail("create_resume_file_invalid", relativeConfigPath(projectRoot, absolute), "private runtime root must be a regular directory", "path");
-        continue;
-      }
-      if (entry.isDirectory()) visit(absolute, false);
-      else if (entry.isFile()) actual.push(relativeConfigPath(projectRoot, absolute));
-      else fail("create_resume_file_invalid", relativeConfigPath(projectRoot, absolute), "created configuration contains a non-regular entry", "path");
-    }
-  };
-  visit(configRoot, true);
-  actual.sort(compareCodeUnits);
-  const expected = operation.files.map((entry) => entry.path).sort(compareCodeUnits);
-  return actual.length === expected.length
-    && actual.every((path, index) => path === expected[index])
-    && operation.files.every((entry) => destinationSha(projectRoot, entry.path) === entry.targetSha256);
+  const inspection = inspectVnextCreateDestination(projectRoot, operation.files.map((entry) => entry.path));
+  if (inspection.kind === "incompatible") failIncompatibleCreateDestination(inspection);
+  if (inspection.kind === "absent") return false;
+  return operation.files.every((entry) => destinationSha(projectRoot, entry.path) === entry.targetSha256);
 }
 
 function applyCreateMerge(
@@ -855,10 +831,6 @@ function applyCreateMerge(
   if (!installedCreateMatches(projectRoot, operation)) {
     fail("create_resume_conflict", ".kxm", "existing project configuration does not match the pinned create operation");
   }
-}
-
-function relativeConfigPath(projectRoot: string, file: string): string {
-  return relative(resolve(projectRoot), file).replaceAll("\\", "/");
 }
 
 function syncTreeDirectories(root: string): void {

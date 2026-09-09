@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
@@ -8,6 +8,7 @@ import {
   VnextConfigError,
   discoverGitRoot,
   discoverVnextProjectRoot,
+  inspectVnextCreateDestination,
   loadVnextProject,
   parseRestrictedYaml,
   planVnextInitialization,
@@ -729,8 +730,10 @@ test("vNext create classifies empty and private-runtime-only .kxm and merges wit
   const linkedStateRoot = mkdtempSync(join(tmpdir(), "kxm-vnext-linked-state-"));
   const linkedTarget = mkdtempSync(join(tmpdir(), "kxm-vnext-linked-target-"));
   const collisionRoot = mkdtempSync(join(tmpdir(), "kxm-vnext-managed-collision-"));
+  const emptyDirRoot = mkdtempSync(join(tmpdir(), "kxm-vnext-empty-dir-kxm-"));
+  const inspectErrorRoot = mkdtempSync(join(tmpdir(), "kxm-vnext-inspect-error-"));
   try {
-    for (const root of [emptyRoot, runtimeRoot, dbRoot, unknownRoot, linkedRoot, linkedStateRoot, collisionRoot]) makeGitRoot(root);
+    for (const root of [emptyRoot, runtimeRoot, dbRoot, unknownRoot, linkedRoot, linkedStateRoot, collisionRoot, emptyDirRoot]) makeGitRoot(root);
 
     mkdirSync(join(emptyRoot, ".kxm"));
     assert.equal(planVnextInitialization(emptyRoot).mode, "create");
@@ -778,6 +781,20 @@ test("vNext create classifies empty and private-runtime-only .kxm and merges wit
     writeFileSync(join(dbRoot, ".kxm", "state", "kxm.db"), "hub-db\n");
     assert.equal(planVnextInitialization(dbRoot).mode, "create", "a hub database is runtime state, not a migration source");
 
+    mkdirSync(join(emptyDirRoot, ".kxm", "orphan"), { recursive: true });
+    const emptyDir = planVnextInitialization(emptyDirRoot);
+    assert.equal(emptyDir.mode, "repair", "an unknown empty directory is not a create destination");
+    assert(emptyDir.issues.some((item) => item.code === "kxm_workspace_unknown_entry"));
+    const emptyDirInit = initializeVnextProject(emptyDirRoot, {
+      projectId: "prj_01JEMPTYDIRENTRY0000000000",
+      projectName: "Empty Dir Entry",
+      localStateRoot: stateRoot,
+    });
+    assert.equal(emptyDirInit.action, "planned");
+    assert.equal(emptyDirInit.plan.mode, "repair");
+    assert.equal(existsSync(join(emptyDirRoot, ".kxm", "orphan")), true);
+    assert.equal(existsSync(join(emptyDirRoot, ".kxm", "project.yaml")), false);
+
     mkdirSync(join(unknownRoot, ".kxm"), { recursive: true });
     writeFileSync(join(unknownRoot, ".kxm", "notes.txt"), "operator file\n");
     const unknown = planVnextInitialization(unknownRoot);
@@ -817,8 +834,48 @@ test("vNext create classifies empty and private-runtime-only .kxm and merges wit
     const linkedState = planVnextInitialization(linkedStateRoot);
     assert.equal(linkedState.mode, "repair");
     assert(linkedState.issues.some((item) => item.code === "kxm_runtime_root_link"));
+
+    const fileRoot = join(inspectErrorRoot, "not-a-directory");
+    writeFileSync(fileRoot, "not-a-directory\n");
+    assert.throws(
+      () => inspectVnextCreateDestination(fileRoot),
+      (error) => issueCodes(error).includes("kxm_workspace_unreadable"),
+      "non-ENOENT lstat of .kxm must not classify as an absent create destination",
+    );
+
+    if (process.platform !== "win32") {
+      const blockedParent = join(inspectErrorRoot, "blocked-parent");
+      mkdirSync(blockedParent);
+      mkdirSync(join(blockedParent, ".kxm"));
+      chmodSync(blockedParent, 0o600);
+      try {
+        assert.throws(
+          () => inspectVnextCreateDestination(blockedParent),
+          (error) => issueCodes(error).includes("kxm_workspace_unreadable"),
+        );
+      } finally {
+        chmodSync(blockedParent, 0o700);
+      }
+
+      const unreadableKxm = join(inspectErrorRoot, "unreadable-kxm");
+      makeGitRoot(unreadableKxm);
+      mkdirSync(join(unreadableKxm, ".kxm"));
+      chmodSync(join(unreadableKxm, ".kxm"), 0o000);
+      try {
+        assert.throws(
+          () => inspectVnextCreateDestination(unreadableKxm),
+          (error) => issueCodes(error).includes("kxm_workspace_unreadable"),
+        );
+        assert.throws(
+          () => planVnextInitialization(unreadableKxm),
+          (error) => issueCodes(error).includes("kxm_workspace_unreadable"),
+        );
+      } finally {
+        chmodSync(join(unreadableKxm, ".kxm"), 0o700);
+      }
+    }
   } finally {
-    for (const root of [emptyRoot, runtimeRoot, dbRoot, unknownRoot, linkedRoot, linkedStateRoot, collisionRoot, linkedTarget, stateRoot]) {
+    for (const root of [emptyRoot, runtimeRoot, dbRoot, unknownRoot, linkedRoot, linkedStateRoot, collisionRoot, emptyDirRoot, inspectErrorRoot, linkedTarget, stateRoot]) {
       rmSync(root, { recursive: true, force: true });
     }
   }
@@ -829,8 +886,10 @@ test("vNext create merge resumes across crash points and rejects concurrent unkn
   const preparedRoot = mkdtempSync(join(tmpdir(), "kxm-vnext-merge-prepared-"));
   const firstRoot = mkdtempSync(join(tmpdir(), "kxm-vnext-merge-first-"));
   const conflictRoot = mkdtempSync(join(tmpdir(), "kxm-vnext-merge-conflict-"));
+  const emptyConflictRoot = mkdtempSync(join(tmpdir(), "kxm-vnext-merge-empty-conflict-"));
+  const nestedEmptyRoot = mkdtempSync(join(tmpdir(), "kxm-vnext-merge-nested-empty-"));
   try {
-    for (const root of [preparedRoot, firstRoot, conflictRoot]) {
+    for (const root of [preparedRoot, firstRoot, conflictRoot, emptyConflictRoot, nestedEmptyRoot]) {
       makeGitRoot(root);
       mkdirSync(join(root, ".kxm", "state"), { recursive: true });
       writeFileSync(join(root, ".kxm", "state", "update-check.json"), `${root}-cache\n`);
@@ -886,8 +945,44 @@ test("vNext create merge resumes across crash points and rejects concurrent unkn
     assert.equal(readFileSync(join(conflictRoot, ".kxm", "injected.txt"), "utf8"), "concurrent\n");
     assert.equal(readFileSync(join(conflictRoot, ".kxm", "state", "update-check.json"), "utf8"), `${conflictRoot}-cache\n`);
     assert.equal(existsSync(join(conflictRoot, ".kxm", "project.yaml")), false);
+
+    assert.throws(
+      () => initializeVnextProject(emptyConflictRoot, {
+        projectId: "prj_01JMERGEEMPTYCONFLICT00000",
+        projectName: "Merge Empty Conflict",
+        localStateRoot: stateRoot,
+        testFaultAt: "first-resource",
+      }),
+      /injected init fault/,
+    );
+    mkdirSync(join(emptyConflictRoot, ".kxm", "orphan-empty"));
+    assert.throws(
+      () => initializeVnextProject(emptyConflictRoot, { localStateRoot: stateRoot }),
+      (error) => issueCodes(error).includes("create_resume_conflict") || issueCodes(error).includes("kxm_workspace_unknown_entry"),
+    );
+    assert.equal(existsSync(join(emptyConflictRoot, ".kxm", "orphan-empty")), true);
+    assert.equal(readFileSync(join(emptyConflictRoot, ".kxm", "state", "update-check.json"), "utf8"), `${emptyConflictRoot}-cache\n`);
+    assert.equal(existsSync(join(emptyConflictRoot, ".kxm", "project.yaml")), false);
+
+    assert.throws(
+      () => initializeVnextProject(nestedEmptyRoot, {
+        projectId: "prj_01JMERGENESTEDEMPTY0000000",
+        projectName: "Merge Nested Empty",
+        localStateRoot: stateRoot,
+        testFaultAt: "first-resource",
+      }),
+      /injected init fault/,
+    );
+    mkdirSync(join(nestedEmptyRoot, ".kxm", "agents", "injected-empty"), { recursive: true });
+    assert.throws(
+      () => initializeVnextProject(nestedEmptyRoot, { localStateRoot: stateRoot }),
+      (error) => issueCodes(error).includes("create_resume_conflict") || issueCodes(error).includes("kxm_workspace_unknown_entry"),
+    );
+    assert.equal(existsSync(join(nestedEmptyRoot, ".kxm", "agents", "injected-empty")), true);
+    assert.equal(readFileSync(join(nestedEmptyRoot, ".kxm", "state", "update-check.json"), "utf8"), `${nestedEmptyRoot}-cache\n`);
+    assert.equal(existsSync(join(nestedEmptyRoot, ".kxm", "project.yaml")), false);
   } finally {
-    for (const root of [preparedRoot, firstRoot, conflictRoot, stateRoot]) rmSync(root, { recursive: true, force: true });
+    for (const root of [preparedRoot, firstRoot, conflictRoot, emptyConflictRoot, nestedEmptyRoot, stateRoot]) rmSync(root, { recursive: true, force: true });
   }
 });
 

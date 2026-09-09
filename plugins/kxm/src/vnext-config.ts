@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync, type Dirent } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Ajv2020, type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
@@ -1500,14 +1500,6 @@ function foldedRuntimeRootName(name: string): string | undefined {
   return (KXM_PRIVATE_RUNTIME_ROOTS as readonly string[]).includes(folded) ? folded : undefined;
 }
 
-function lstatOrUndefined(path: string): ReturnType<typeof lstatSync> | undefined {
-  try {
-    return lstatSync(path);
-  } catch {
-    return undefined;
-  }
-}
-
 /**
  * Classify a destination `.kxm` for create. Without allowed managed paths, only
  * an absent, empty, or private-runtime-only tree is compatible. Allowed paths
@@ -1519,8 +1511,13 @@ export function inspectVnextCreateDestination(
   allowedManagedPaths?: readonly string[],
 ): VnextCreateDestinationInspection {
   const kxm = join(projectRoot, ".kxm");
-  const rootStat = lstatOrUndefined(kxm);
-  if (!rootStat) return { kind: "absent" };
+  let rootStat: ReturnType<typeof lstatSync>;
+  try {
+    rootStat = lstatSync(kxm);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { kind: "absent" };
+    fail("discovery", "kxm_workspace_unreadable", ".kxm", "create destination could not be inspected");
+  }
   if (rootStat.isSymbolicLink()) return { kind: "incompatible", reason: "linked", path: ".kxm" };
   if (!rootStat.isDirectory()) return { kind: "incompatible", reason: "not-directory", path: ".kxm" };
 
@@ -1540,12 +1537,23 @@ export function inspectVnextCreateDestination(
   }
 
   const visit = (directory: string, relativeFromKxm: string): VnextCreateDestinationInspection | undefined => {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const portableDir = relativeFromKxm ? `.kxm/${relativeFromKxm}` : ".kxm";
+    let entries: Dirent[];
+    try {
+      entries = readdirSync(directory, { withFileTypes: true });
+    } catch {
+      fail("discovery", "kxm_workspace_unreadable", portableDir, "create destination could not be inspected");
+    }
+    for (const entry of entries) {
       const rel = relativeFromKxm ? `${relativeFromKxm}/${entry.name}` : entry.name;
       const absolute = join(directory, entry.name);
       const portable = `.kxm/${rel}`;
-      const stat = lstatOrUndefined(absolute);
-      if (!stat) continue;
+      let stat: ReturnType<typeof lstatSync>;
+      try {
+        stat = lstatSync(absolute);
+      } catch {
+        fail("discovery", "kxm_workspace_unreadable", portable, "create destination could not be inspected");
+      }
       if (stat.isSymbolicLink() || entry.isSymbolicLink()) {
         if (!relativeFromKxm && foldedRuntimeRootName(entry.name)) {
           return { kind: "incompatible", reason: "linked-runtime-root", path: portable };

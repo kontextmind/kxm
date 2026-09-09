@@ -11199,49 +11199,49 @@ var require_fast_uri = __commonJS({
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
-    function resolveComponent(base, relative7, options, skipNormalization) {
+    function resolveComponent(base, relative6, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
         base = parse9(serialize(base, options), options);
-        relative7 = parse9(serialize(relative7, options), options);
+        relative6 = parse9(serialize(relative6, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative7.scheme) {
-        target.scheme = relative7.scheme;
-        target.userinfo = relative7.userinfo;
-        target.host = relative7.host;
-        target.port = relative7.port;
-        target.path = removeDotSegments(relative7.path || "");
-        target.query = relative7.query;
+      if (!options.tolerant && relative6.scheme) {
+        target.scheme = relative6.scheme;
+        target.userinfo = relative6.userinfo;
+        target.host = relative6.host;
+        target.port = relative6.port;
+        target.path = removeDotSegments(relative6.path || "");
+        target.query = relative6.query;
       } else {
-        if (relative7.userinfo !== void 0 || relative7.host !== void 0 || relative7.port !== void 0) {
-          target.userinfo = relative7.userinfo;
-          target.host = relative7.host;
-          target.port = relative7.port;
-          target.path = removeDotSegments(relative7.path || "");
-          target.query = relative7.query;
+        if (relative6.userinfo !== void 0 || relative6.host !== void 0 || relative6.port !== void 0) {
+          target.userinfo = relative6.userinfo;
+          target.host = relative6.host;
+          target.port = relative6.port;
+          target.path = removeDotSegments(relative6.path || "");
+          target.query = relative6.query;
         } else {
-          if (!relative7.path) {
+          if (!relative6.path) {
             target.path = base.path;
-            if (relative7.query !== void 0) {
-              target.query = relative7.query;
+            if (relative6.query !== void 0) {
+              target.query = relative6.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative7.path[0] === "/") {
-              target.path = removeDotSegments(relative7.path);
+            if (relative6.path[0] === "/") {
+              target.path = removeDotSegments(relative6.path);
             } else {
               if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) {
-                target.path = "/" + relative7.path;
+                target.path = "/" + relative6.path;
               } else if (!base.path) {
-                target.path = relative7.path;
+                target.path = relative6.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative7.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative6.path;
               }
               target.path = removeDotSegments(target.path);
             }
-            target.query = relative7.query;
+            target.query = relative6.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -11249,7 +11249,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative7.fragment;
+      target.fragment = relative6.fragment;
       return target;
     }
     function equal(uriA, uriB, options) {
@@ -14780,7 +14780,7 @@ import { spawn as spawn2, spawnSync as spawnSync7 } from "node:child_process";
 import { createHash as createHash14, createHmac as createHmac3, randomUUID as randomUUID11 } from "node:crypto";
 import { existsSync as existsSync27, mkdirSync as mkdirSync24, mkdtempSync as mkdtempSync2, readFileSync as readFileSync25, readdirSync as readdirSync10, rmSync as rmSync10, writeFileSync as writeFileSync21 } from "node:fs";
 import { homedir as homedir7, tmpdir as tmpdir2 } from "node:os";
-import { basename as basename6, dirname as dirname19, join as join33, relative as relative6, resolve as resolve21 } from "node:path";
+import { basename as basename6, dirname as dirname19, join as join33, relative as relative5, resolve as resolve21 } from "node:path";
 import { DatabaseSync as DatabaseSync5 } from "node:sqlite";
 import { createInterface } from "node:readline";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
@@ -20687,17 +20687,17 @@ function verifyVnextMigrationReceiptTarget(root, receipt, resources, configRevis
   }
   const installedPaths = /* @__PURE__ */ new Set();
   for (const resource of resources) {
-    const relative7 = resource.file.startsWith(root) ? relativePortable(root, resource.file) : void 0;
-    if (!relative7) continue;
-    installedPaths.add(relative7);
-    const record = declared.get(relative7);
+    const relative6 = resource.file.startsWith(root) ? relativePortable(root, resource.file) : void 0;
+    if (!relative6) continue;
+    installedPaths.add(relative6);
+    const record = declared.get(relative6);
     if (!record) {
-      issues.push(issue("semantic", "migration_target_unreceipted", relative7, "installed resource is not covered by the migration receipt"));
+      issues.push(issue("semantic", "migration_target_unreceipted", relative6, "installed resource is not covered by the migration receipt"));
       continue;
     }
-    const current = hashFileRecord(root, relative7);
+    const current = hashFileRecord(root, relative6);
     if (!current || current.sha256 !== record.sha256 || current.bytes !== record.bytes) {
-      issues.push(issue("semantic", "migration_target_modified", relative7, "installed resource bytes differ from the migration receipt"));
+      issues.push(issue("semantic", "migration_target_modified", relative6, "installed resource bytes differ from the migration receipt"));
     }
   }
   for (const path5 of declared.keys()) {
@@ -20725,17 +20725,15 @@ function foldedRuntimeRootName(name) {
   const folded = process.platform === "win32" ? name.toLocaleLowerCase("en-US") : name;
   return KXM_PRIVATE_RUNTIME_ROOTS.includes(folded) ? folded : void 0;
 }
-function lstatOrUndefined(path5) {
-  try {
-    return lstatSync(path5);
-  } catch {
-    return void 0;
-  }
-}
 function inspectVnextCreateDestination(projectRoot, allowedManagedPaths) {
   const kxm = join2(projectRoot, ".kxm");
-  const rootStat = lstatOrUndefined(kxm);
-  if (!rootStat) return { kind: "absent" };
+  let rootStat;
+  try {
+    rootStat = lstatSync(kxm);
+  } catch (error) {
+    if (error.code === "ENOENT") return { kind: "absent" };
+    fail("discovery", "kxm_workspace_unreadable", ".kxm", "create destination could not be inspected");
+  }
   if (rootStat.isSymbolicLink()) return { kind: "incompatible", reason: "linked", path: ".kxm" };
   if (!rootStat.isDirectory()) return { kind: "incompatible", reason: "not-directory", path: ".kxm" };
   const allowed = allowedManagedPaths ? new Set(allowedManagedPaths) : void 0;
@@ -20753,12 +20751,23 @@ function inspectVnextCreateDestination(projectRoot, allowedManagedPaths) {
     }
   }
   const visit2 = (directory, relativeFromKxm) => {
-    for (const entry of readdirSync2(directory, { withFileTypes: true })) {
+    const portableDir = relativeFromKxm ? `.kxm/${relativeFromKxm}` : ".kxm";
+    let entries;
+    try {
+      entries = readdirSync2(directory, { withFileTypes: true });
+    } catch {
+      fail("discovery", "kxm_workspace_unreadable", portableDir, "create destination could not be inspected");
+    }
+    for (const entry of entries) {
       const rel = relativeFromKxm ? `${relativeFromKxm}/${entry.name}` : entry.name;
       const absolute = join2(directory, entry.name);
       const portable = `.kxm/${rel}`;
-      const stat = lstatOrUndefined(absolute);
-      if (!stat) continue;
+      let stat;
+      try {
+        stat = lstatSync(absolute);
+      } catch {
+        fail("discovery", "kxm_workspace_unreadable", portable, "create destination could not be inspected");
+      }
       if (stat.isSymbolicLink() || entry.isSymbolicLink()) {
         if (!relativeFromKxm && foldedRuntimeRootName(entry.name)) {
           return { kind: "incompatible", reason: "linked-runtime-root", path: portable };
@@ -33821,7 +33830,7 @@ import {
   rmSync as rmSync5,
   writeFileSync as writeFileSync13
 } from "node:fs";
-import { dirname as dirname12, isAbsolute as isAbsolute6, join as join23, relative as relative5, resolve as resolve12 } from "node:path";
+import { dirname as dirname12, isAbsolute as isAbsolute6, join as join23, resolve as resolve12 } from "node:path";
 
 // plugins/kxm/src/vnext-permission.ts
 import { spawnSync as spawnSync6 } from "node:child_process";
@@ -35184,10 +35193,6 @@ function atomicInstallTarget(projectRoot, operation, entry) {
   }
   if (destinationSha(projectRoot, entry.path) !== entry.targetSha256) fail2("repair_install_verification_failed", entry.path, "installed target hash does not match the pinned operation");
 }
-function isPrivateRuntimeRootName(name) {
-  const folded = process.platform === "win32" ? name.toLocaleLowerCase("en-US") : name;
-  return KXM_PRIVATE_RUNTIME_ROOTS.includes(folded);
-}
 function failIncompatibleCreateDestination(inspection) {
   const path5 = inspection.path ?? ".kxm";
   if (inspection.reason === "linked" || inspection.reason === "linked-runtime-root") {
@@ -35196,26 +35201,10 @@ function failIncompatibleCreateDestination(inspection) {
   fail2("create_resume_conflict", path5, "existing project configuration does not match the pinned create operation");
 }
 function installedCreateMatches(projectRoot, operation) {
-  const configRoot = join23(projectRoot, ".kxm");
-  if (!existsSync17(configRoot)) return false;
-  const actual = [];
-  const visit2 = (directory, topLevel) => {
-    for (const entry of readdirSync6(directory, { withFileTypes: true })) {
-      const absolute = join23(directory, entry.name);
-      if (entry.isSymbolicLink()) fail2("create_resume_link", relativeConfigPath(projectRoot, absolute), "created configuration must not contain links", "path");
-      if (topLevel && isPrivateRuntimeRootName(entry.name)) {
-        if (!entry.isDirectory()) fail2("create_resume_file_invalid", relativeConfigPath(projectRoot, absolute), "private runtime root must be a regular directory", "path");
-        continue;
-      }
-      if (entry.isDirectory()) visit2(absolute, false);
-      else if (entry.isFile()) actual.push(relativeConfigPath(projectRoot, absolute));
-      else fail2("create_resume_file_invalid", relativeConfigPath(projectRoot, absolute), "created configuration contains a non-regular entry", "path");
-    }
-  };
-  visit2(configRoot, true);
-  actual.sort(compareCodeUnits3);
-  const expected = operation.files.map((entry) => entry.path).sort(compareCodeUnits3);
-  return actual.length === expected.length && actual.every((path5, index) => path5 === expected[index]) && operation.files.every((entry) => destinationSha(projectRoot, entry.path) === entry.targetSha256);
+  const inspection = inspectVnextCreateDestination(projectRoot, operation.files.map((entry) => entry.path));
+  if (inspection.kind === "incompatible") failIncompatibleCreateDestination(inspection);
+  if (inspection.kind === "absent") return false;
+  return operation.files.every((entry) => destinationSha(projectRoot, entry.path) === entry.targetSha256);
 }
 function applyCreateMerge(projectRoot, operation, options) {
   const inspection = inspectVnextCreateDestination(projectRoot, operation.files.map((entry) => entry.path));
@@ -35233,9 +35222,6 @@ function applyCreateMerge(projectRoot, operation, options) {
   if (!installedCreateMatches(projectRoot, operation)) {
     fail2("create_resume_conflict", ".kxm", "existing project configuration does not match the pinned create operation");
   }
-}
-function relativeConfigPath(projectRoot, file) {
-  return relative5(resolve12(projectRoot), file).replaceAll("\\", "/");
 }
 function syncTreeDirectories(root) {
   if (!existsSync17(root)) return;
@@ -42897,7 +42883,7 @@ async function cmdMemoryNote(runtime, fact, options) {
       ...options.kind !== void 0 ? { kind: options.kind } : {},
       ...options.body !== void 0 ? { body: options.body } : {}
     });
-    const relPath = relative6(runtime.cwd, path5);
+    const relPath = relative5(runtime.cwd, path5);
     print(
       runtime.io,
       runtime.json,
