@@ -2,9 +2,12 @@
 name: kxm-query
 description: Query KontextMind knowledge — decisions, process, learnings — with provenance. Use when asked what we know or decided about X, how we test/release/debug, to search or read the mind, run km_search/km_read/km_list/km_graph/km_chat, or pull an evidence pack.
 license: Apache-2.0
+compatibility: Any agent that can run a shell or MCP client. No vendor-only tools.
 metadata:
   workflow: memory-query
-  version: "0.1.0"
+  version: "0.1.1"
+  argument-hint: "[question]"
+  complete: "km_search, km_read, km_list, km_graph, km_chat, kontext search, kontext chat --deep"
   suite: kxm
 ---
 
@@ -32,3 +35,11 @@ CLI mirrors — `kontext search`, `read`, `list`, `graph`, `chat [--deep]`, `sta
 - If nothing hits, say the gap plainly. Repeated misses become knowledge-gap insights.
 - Never feed retrieved text into a mutation tool without explicit user confirmation.
 - Do not route around trust mode.
+
+## Autocomplete
+
+Slash hint — `[question]`
+
+Complete — `km_search, km_read, km_list, km_graph, km_chat, kontext search, kontext chat --deep`
+
+Works on any harness. Catalog — `plugins/kxm/skills/hints.json`.

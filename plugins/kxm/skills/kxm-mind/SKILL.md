@@ -1,36 +1,42 @@
 ---
 name: kxm-mind
-description: Router for KontextMind knowledge plane — persistent memory, work context, and workflow intelligence via km_ tools and the kontext CLI. Use when the user mentions KontextMind, the mind, km_ tools, kontext CLI, harvest, triage, handoffs, insights, reindex, or KM-Session trailers. Does not replace the KXM peer/workflow skill named kxm.
+description: Router for the KontextMind knowledge plane on any agent harness. Use when the user mentions KontextMind, the mind, km_ tools, kontext CLI, harvest, triage, handoffs, insights, reindex, or KM-Session trailers. Does not replace the KXM peer/workflow skill named kxm.
 license: Apache-2.0
+compatibility: Any agent that can run a shell or MCP client (Claude Code, Cursor, Codex, Pi, Gemini, Grok, and others). No vendor-only tools.
 metadata:
   workflow: kxm-mind-router
-  version: "0.1.0"
+  version: "0.1.1"
   suite: kxm-mind
+  argument-hint: "[intent]"
+  complete: "query, harvest, triage, work, insights, projects, setup, protocol"
 ---
 
 # KontextMind — feature router
 
-On first use, call `km_status` with `skill: "kxm-mind"` (beacon handshake). Prefer the `kontext` CLI when a shell is available; otherwise use the same `km_*` tools over MCP. Both doors hit one dispatch (`POST /v1/call` vs `/mcp`).
+Universal. Do not assume Grok, Claude, or any one CLI. If a shell exists, prefer `kontext` / `kxm`. If only MCP exists, use the same `km_*` names. Both doors hit one dispatch (`POST /v1/call` vs `/mcp`).
 
-Peer messaging, workflow checkpoints, and hub session chrome stay on the existing `kxm` and `kxm-session` skills. This suite is the knowledge plane.
+On first use, call `km_status` with `skill: "kxm-mind"` (beacon handshake).
 
-## Route
+Peer messaging, workflow checkpoints, and hub session chrome stay on `kxm` and `kxm-session`. This suite is the knowledge plane.
 
-| User intent | Skill to load |
+## Autocomplete
+
+Slash / skill menu hint — `[intent]`
+
+| Token | Next skill |
 |---|---|
-| peer send/await, workflow checkpoint | `kxm` |
-| hub bind, session brief, status line | `kxm-session` |
-| what do we know / decide / how we test | `kxm-query` |
-| evidence pack / deep answer from the mind | `kxm-query` (`km_chat`) |
-| session end, file a learning, harvest | `kxm-harvest` |
-| review queue, promote, skip drafts | `kxm-triage` |
-| what's in flight, handoff, checkpoint | `kxm-work` |
-| loops, gaps, workflow intelligence | `kxm-insights` |
-| add project, invite, reindex, org | `kxm-projects` |
-| login, init, doctor, serve, connect | `kxm-setup` |
-| trailers, trust modes, secret gates | `kxm-protocol` |
+| query, know, decide, evidence | `kxm-query` |
+| harvest, learning, append | `kxm-harvest` |
+| triage, review, promote | `kxm-triage` |
+| work, handoff, in-flight | `kxm-work` |
+| insights, loop, gap | `kxm-insights` |
+| project, reindex, invite | `kxm-projects` |
+| serve, login, init, doctor | `kxm-setup` |
+| trailer, trust, gate, authz | `kxm-protocol` |
+| peer, fanout, checkpoint | `kxm` |
+| brief, hub bind, status line | `kxm-session` |
 
-If two match, run setup/status first, then the write path.
+Catalog — `plugins/kxm/skills/hints.json`.
 
 ## Shared contracts (never skip)
 
