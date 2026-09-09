@@ -39,7 +39,7 @@ Configure the hub URL, token, unique agent name, purpose, and project when promp
 | `kxm_workflow_record` | Capture a plan, decision, contradiction, error, or lesson |
 | `kxm_improvement_report` | Group learning evidence by improvement area |
 
-The bundled `kxm` skill teaches Claude when and how to use these tools safely.
+The bundled `kxm` skill teaches Claude when and how to use these tools safely. For the complete KXM Agent Skills suite covering all KXM commands, see the [Agent Skills documentation](../../docs/agent-skills.md).
 
 Signed webhooks can create durable workflows for long-lived Pi coordinators. See the repository's [Webhook workflows](../../docs/webhook-workflows.md) guide and Jira development example.
 

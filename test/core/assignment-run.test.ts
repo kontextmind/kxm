@@ -30,11 +30,12 @@ import {
   appendAssignmentTelemetry,
   assignmentOutputSchema,
   assignmentTelemetryPath,
-  main as assignmentMain,
+  main as assignmentMainImpl,
   observeAssignment,
   renderAssignmentPrompt,
-  runAssignment,
-  validateAssignmentManifest,
+  getRosterPolicy,
+  runAssignment as runAssignmentImpl,
+  validateAssignmentManifest as validateAssignmentManifestImpl,
 } from "../../scripts/assignment-run.mjs";
 import {
   claudeAuth,
@@ -43,6 +44,29 @@ import {
   grokAuth,
 } from "../helpers/harness-fake.ts";
 import { makeGitRoot } from "../helpers/git-root.ts";
+import { withRosterPolicy } from "../helpers/roster-policy.ts";
+
+function validateAssignmentManifest(
+  manifest: unknown,
+  deps: Record<string, unknown> = {},
+) {
+  return validateAssignmentManifestImpl(manifest, withRosterPolicy(deps));
+}
+
+function runAssignment(manifest: unknown, deps: Record<string, unknown> = {}) {
+  return runAssignmentImpl(manifest, withRosterPolicy(deps));
+}
+
+function assignmentMain(
+  argv: string[],
+  io: NonNullable<Parameters<typeof assignmentMainImpl>[1]> = {
+    stdin: process.stdin,
+    stdout: process.stdout,
+    stderr: process.stderr,
+  },
+) {
+  return assignmentMainImpl(argv, withRosterPolicy(io));
+}
 import { readRoutingRecords, readTelemetry } from "../../plugins/kxm/src/telemetry.ts";
 
 function sha256(content: string | Buffer): string {
@@ -3339,5 +3363,42 @@ test("unadmitted roster route or permission mismatch fails closed on manifest va
   } finally {
     cleanup(root, taskDir);
   }
+});
+
+function routeInvalid(error: unknown): boolean {
+  assert.equal((error as { runnerCode?: string }).runnerCode, "route_invalid");
+  return true;
+}
+
+test("throwing trusted loader refuses even when local disk roster looks valid", () => {
+  assert.equal(existsSync(join(process.cwd(), ".kxm/roster.json")), true);
+  assert.throws(
+    () => getRosterPolicy({
+      loadTrustedRosterPolicy: () => {
+        throw new Error("Roster policy refused: dirty or untracked control source");
+      },
+    }),
+    (error: unknown) => {
+      routeInvalid(error);
+      assert.match((error as Error).message, /dirty or untracked control source/);
+      return true;
+    },
+  );
+});
+
+test("null and malformed trusted loader results refuse", () => {
+  assert.throws(() => getRosterPolicy({ loadTrustedRosterPolicy: () => null }), routeInvalid);
+  assert.throws(() => getRosterPolicy({ loadTrustedRosterPolicy: () => undefined }), routeInvalid);
+  assert.throws(() => getRosterPolicy({ loadTrustedRosterPolicy: () => ({}) }), routeInvalid);
+  assert.throws(() => getRosterPolicy({ rosterPolicy: null }), routeInvalid);
+  assert.throws(() => getRosterPolicy({ rosterPolicy: { policy: null } }), routeInvalid);
+  assert.throws(() => getRosterPolicy({ rosterPolicy: { routes: {}, lineup: {} } }), routeInvalid);
+});
+
+test("explicit injected admitted policy remains valid", () => {
+  const policy = getRosterPolicy(withRosterPolicy());
+  assert.equal(policy.schema, "kxm.developer-roster.v1");
+  assert.ok(policy.routes["grok-native"]);
+  assert.deepEqual(policy.lineup.writer, ["grok-native", "qwen-openrouter-pi"]);
 });
 

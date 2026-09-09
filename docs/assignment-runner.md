@@ -35,6 +35,14 @@ and models are admitted with strict permission and vendor boundaries:
   a requested harness/model is not in the admitted role lineup, or if permissions
   exceed the admitted ceiling (e.g. attempting to give edit permissions to a
   read-only reviewer).
+- **Trusted roster policy:** Assign, witness, and accept load
+  `.kxm/roster.json` through the trusted control Git loader
+  (`loadTrustedRosterPolicy`). Loader errors, missing/empty policy, and
+  malformed policy fail closed with `route_invalid`. There is no raw working-tree
+  JSON fallback and no null-policy acceptance. Tests may inject an explicit
+  policy object; that seam is not a CLI or environment bypass. Unified YAML
+  role/project/workflow authority is still open and is not this runner's live
+  source.
 - **Deterministic witness beats extra models:** Implementers run `npm run verify`.
   Root re-runs the fixed witness. Reviewers verify candidate trees; they do not
   replace tests.
@@ -145,14 +153,16 @@ node scripts/assignment-run.mjs accept \
 
 `accept` validates all acceptance invariants:
 
-1. The commit exists and its tree matches the witness index tree.
-2. The writer record matches the latest passed witness.
-3. Both required critic roles (`review-arch` and `review-cli`) are present.
-4. Both critics judged the exact accepted tree and issued `PASS`.
-5. No unresolved `BLOCK` review exists for the tree in the task directory (unless
+1. Trusted roster policy is loaded and valid **before** acceptance artifacts are
+   written. Failure to obtain required policy refuses acceptance.
+2. The commit exists and its tree matches the witness index tree.
+3. The writer record matches the latest passed witness.
+4. Both required critic roles (`review-arch` and `review-cli`) are present.
+5. Both critics judged the exact accepted tree and issued `PASS`.
+6. No unresolved `BLOCK` review exists for the tree in the task directory (unless
    superseded by an unbroken `rework_of` lineage).
-6. The writer and all critics satisfy pairwise vendor independence.
-7. Writes `accepted.json` (`kxm.task-accepted.v1`) into the task directory.
+7. The writer and all critics satisfy pairwise vendor independence.
+8. Writes `accepted.json` (`kxm.task-accepted.v1`) into the task directory.
 
 ---
 
@@ -206,7 +216,7 @@ The runner fails closed with bounded error codes defined in `RUNNER_CODES`:
 
 | Code | Trigger condition | Remedy |
 |---|---|---|
-| `route_invalid` | Harness/model not admitted in lineup for the requested role, or permission exceeds route ceiling. | Check `.kxm/roster.json` lineup and permissions for the role. |
+| `route_invalid` | Harness/model not admitted in lineup for the requested role, permission exceeds route ceiling, or trusted roster policy cannot be loaded/validated. | Use a trusted clean control checkout; do not dispatch from a dirty implementation branch. Check `.kxm/roster.json` lineup and permissions for the role. |
 | `critic_invalid` | Missing required critic role, duplicate roles, wrong model, or vendor collision between writer and critics. | Ensure independent critics (Fable + Sol) from distinct providers. |
 | `critic_block` | An unresolved `BLOCK` verdict exists for the target tree. | Rework the changes, address findings, and pass review with a `rework_of` link. |
 | `commit_tree_mismatch` | Git commit tree does not equal the witnessed tree. | Commit the exact candidate tree verified by the witness before running accept. |

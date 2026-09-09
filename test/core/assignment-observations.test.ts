@@ -5,8 +5,17 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpath
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { attributeAssignment, changeReport, writeCurrentPlan, COST_OBSERVATION_SCHEMA, observeAssignmentCost, runAssignment, witnessAssignment, type CostObservation } from "../../scripts/assignment-run.mjs";
+import { attributeAssignment, changeReport, writeCurrentPlan, COST_OBSERVATION_SCHEMA, observeAssignmentCost, runAssignment as runAssignmentImpl, witnessAssignment as witnessAssignmentImpl, type CostObservation } from "../../scripts/assignment-run.mjs";
 import { makeGitRoot } from "../helpers/git-root.ts";
+import { withRosterPolicy } from "../helpers/roster-policy.ts";
+
+function runAssignment(manifest: unknown, deps: Record<string, unknown> = {}) {
+  return runAssignmentImpl(manifest, withRosterPolicy(deps));
+}
+
+function witnessAssignment(recordDir: string, deps: Record<string, unknown> = {}) {
+  return witnessAssignmentImpl(recordDir, withRosterPolicy(deps));
+}
 
 const digest = (bytes: string | Buffer) => createHash("sha256").update(bytes).digest("hex");
 const read = (path: string) => JSON.parse(readFileSync(path, "utf8"));

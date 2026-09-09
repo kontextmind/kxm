@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync, mkdtempSync, rmSync, statSync } from "node:fs";
+import { readFileSync, mkdtempSync, rmSync, statSync, readdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -213,21 +213,104 @@ test("kxm peer and workflow CLI commands fail closed when tool policy denies", a
   assert.equal(parsed.error, "tool_policy_denied");
 });
 
-test("SKILL.md teaches kxm peer and workflow commands with zero mesh_ or MCP-only instructions", () => {
-  const skillPath = join(process.cwd(), "plugins/kxm/skills/kxm/SKILL.md");
-  const content = readFileSync(skillPath, "utf8");
+test("context promote help documents proposalId and required evidence, not proposal-creation flags", async () => {
+  const help = await runCli(["context", "promote", "--help"]);
+  assert.equal(help.exit, 0, `${help.stderr}\n${help.stdout}`);
+  const text = `${help.stdout}\n${help.stderr}`;
+  assert.match(text, /<project>/);
+  assert.match(text, /<proposalId>/);
+  assert.match(text, /--evidence <refs>/);
+  assert.match(text, /approved state proposal/i);
+  assert.doesNotMatch(text, /<key>/);
+  assert.doesNotMatch(text, /--summary/);
+  assert.doesNotMatch(text, /--authority/);
+  assert.doesNotMatch(text, /--confidence/);
+});
 
-  // Zero occurrences of legacy mesh_
-  assert.equal(content.includes("mesh_"), false, "SKILL.md must not contain mesh_");
+test("role and memory skill commands correspond to registered CLI subcommands", () => {
+  const source = readFileSync(join(process.cwd(), "plugins/kxm/src/cli.ts"), "utf8");
+  const suite = JSON.parse(readFileSync(join(process.cwd(), "plugins/kxm/skill-suite.json"), "utf8")) as {
+    skills: Array<{ name: string; ownedCommands: string[] }>;
+  };
+  const varToGroup = new Map<string, string>();
+  const registeredByGroup = new Map<string, Set<string>>();
+  for (const match of source.matchAll(/program\.command\("([a-z][a-z0-9-]*)/g)) {
+    registeredByGroup.set(match[1]!, registeredByGroup.get(match[1]!) ?? new Set());
+  }
+  for (const match of source.matchAll(/const (\w+) = addGlobalOptions\(program\.command\("([a-z][a-z0-9-]*)/g)) {
+    varToGroup.set(match[1]!, match[2]!);
+  }
+  for (const match of source.matchAll(/const (\w+) = addGlobalOptions\((\w+)\.command\("([a-z][a-z0-9-]*)/g)) {
+    varToGroup.set(match[1]!, match[3]!);
+    const parent = varToGroup.get(match[2]!) ?? match[2]!;
+    const names = registeredByGroup.get(parent) ?? new Set<string>();
+    names.add(match[3]!);
+    registeredByGroup.set(parent, names);
+  }
+  for (const match of source.matchAll(/(\w+)\.command\("([a-z][a-z0-9-]*)/g)) {
+    if (match[1] === "program") continue;
+    const group = varToGroup.get(match[1]!) ?? match[1]!;
+    const names = registeredByGroup.get(group) ?? new Set<string>();
+    names.add(match[2]!);
+    registeredByGroup.set(group, names);
+  }
+  for (const skill of suite.skills) {
+    const skillPath = join(process.cwd(), "plugins/kxm/skills", skill.name, "SKILL.md");
+    const text = readFileSync(skillPath, "utf8");
+    for (const group of skill.ownedCommands) {
+      const registered = registeredByGroup.get(group) ?? new Set<string>();
+      if (registered.size === 0) continue;
+      const taught = [...text.matchAll(new RegExp(`kxm ${group} ([a-z][a-z0-9-]*)`, "g"))].map((match) => match[1]!);
+      for (const command of taught) {
+        assert.ok(registered.has(command), `unregistered ${group} command in ${skill.name}: ${command}`);
+      }
+    }
+  }
+});
 
-  // Zero occurrences of MCP-only mcp__
-  assert.equal(content.includes("mcp__"), false, "SKILL.md must not contain mcp__");
+test("SKILL.md files teach kxm peer and workflow commands with zero mesh_ or MCP-only instructions", () => {
+  const skillsDir = join(process.cwd(), "plugins/kxm/skills");
 
-  // Teaches kxm peer and kxm workflow
-  assert.match(content, /kxm peer/);
-  assert.match(content, /kxm workflow/);
-  assert.match(content, /tool_policy_denied/);
-  assert.match(content, /60 second/);
+  if (!existsSync(skillsDir)) return;
+
+  const skillDirs = readdirSync(skillsDir, { withFileTypes: true })
+    .filter(dirent => dirent.isDirectory())
+    .map(dirent => dirent.name);
+
+  const allContent = [];
+
+  for (const skillDir of skillDirs) {
+    const skillPath = join(skillsDir, skillDir, "SKILL.md");
+    if (!existsSync(skillPath)) continue;
+    const content = readFileSync(skillPath, "utf8");
+    allContent.push(content);
+
+    // Zero occurrences of legacy mesh_
+    assert.equal(content.includes("mesh_"), false, `SKILL.md in ${skillDir} must not contain mesh_`);
+
+    // Zero occurrences of MCP-only mcp__
+    assert.equal(content.includes("mcp__"), false, `SKILL.md in ${skillDir} must not contain mcp__`);
+  }
+
+  const suiteContent = allContent.join("\n");
+  assert.match(suiteContent, /kxm peer/, "Suite should teach kxm peer commands");
+  assert.match(suiteContent, /kxm workflow/, "Suite should teach kxm workflow commands");
+  assert.match(suiteContent, /tool_policy_denied/, "Suite should mention tool_policy_denied");
+  assert.match(suiteContent, /60 second/, "Suite should mention the 60 second peer await cap");
+});
+
+test("kxm router skill scopes tool_policy_denied to agent-command and MCP/extension surfaces", () => {
+  const router = readFileSync(join(process.cwd(), "plugins/kxm/skills/kxm/SKILL.md"), "utf8");
+  assert.match(router, /tool_policy_denied/);
+  assert.match(router, /[Aa]gent-command dispatch/);
+  assert.match(router, /MCP\/extension/);
+  assert.match(router, /explicit authorization/);
+  assert.doesNotMatch(router, /All operations fail closed with `tool_policy_denied`/);
+  assert.doesNotMatch(router, /All KXM operations enforce/);
+  assert.doesNotMatch(
+    router,
+    /All operations fail closed with `tool_policy_denied` if not explicitly permitted by active tool policy/,
+  );
 });
 
 test("kxm workflow wait and signal support dry-run binding for vNext runs", async () => {

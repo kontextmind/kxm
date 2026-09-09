@@ -90,6 +90,7 @@ Prefer additive changes. Breaking changes require a major version or an explicit
 - Use **hub**, **agent**, **peer**, **project**, **request**, and **reply** consistently.
 - State the single-node production boundary precisely; do not imply clustering or exactly-once execution.
 - Never put live tokens, credentials, or private prompts in examples.
+- For agent skills, refer to the [Agent Skills documentation](docs/agent-skills.md) for the comprehensive skill suite and development guidelines.
 
 ## Pull requests
 

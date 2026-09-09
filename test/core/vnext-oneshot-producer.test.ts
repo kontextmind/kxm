@@ -481,9 +481,28 @@ gates:
 
 test("Codex artifacts: skills directory and AGENTS.md block are emitted and match check", () => {
   const result = emitCodexArtifacts(repoRoot);
-  assert.ok(existsSync(join(repoRoot, ".agents", "skills", "kxm", "SKILL.md")));
-  assert.ok(existsSync(join(repoRoot, ".agents", "skills", "kxm-session", "SKILL.md")));
-  assert.ok(existsSync(join(repoRoot, ".agents", "skills", "kxm", "references", "protocol.md")));
+
+  // Check that the suite manifest exists
+  assert.ok(existsSync(join(repoRoot, "plugins", "kxm", "skill-suite.json")));
+
+  // Load the suite manifest to verify it covers all expected skills
+  const suiteManifest = JSON.parse(readFileSync(join(repoRoot, "plugins", "kxm", "skill-suite.json"), "utf8"));
+  assert.ok(Array.isArray(suiteManifest.skills));
+  assert.ok(suiteManifest.skills.length > 0);
+
+  // Check that all skills from the manifest exist in both authored and generated locations
+  for (const skill of suiteManifest.skills) {
+    const authoredSkillPath = join(repoRoot, "plugins", "kxm", "skills", skill.name, "SKILL.md");
+    const generatedSkillPath = join(repoRoot, ".agents", "skills", skill.name, "SKILL.md");
+
+    assert.ok(existsSync(authoredSkillPath), `Authored skill file should exist: ${authoredSkillPath}`);
+    assert.ok(existsSync(generatedSkillPath), `Generated skill file should exist: ${generatedSkillPath}`);
+  }
+
+  // Check that the protocol reference exists if it's part of a skill
+  if (existsSync(join(repoRoot, "plugins", "kxm", "skills", "kxm", "references", "protocol.md"))) {
+    assert.ok(existsSync(join(repoRoot, ".agents", "skills", "kxm", "references", "protocol.md")));
+  }
 
   const agentsContent = readFileSync(join(repoRoot, "AGENTS.md"), "utf8");
   assert.ok(agentsContent.includes("<!-- kxm:codex:commands:start -->"));

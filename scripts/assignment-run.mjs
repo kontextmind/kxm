@@ -746,30 +746,35 @@ function validateRework(reworkOf, taskDir, taskId, assignmentId, deps) {
   return priorId;
 }
 
-let cachedDiskPolicy = null;
+function requireRosterPolicyShape(policy) {
+  if (!policy || typeof policy !== "object" || Array.isArray(policy)) {
+    throw failClosed("roster policy is invalid or unparsed", "route_invalid");
+  }
+  if (!policy.routes || typeof policy.routes !== "object" || Array.isArray(policy.routes) || Object.keys(policy.routes).length === 0) {
+    throw failClosed("roster policy is invalid or unparsed", "route_invalid");
+  }
+  if (!policy.lineup || typeof policy.lineup !== "object" || Array.isArray(policy.lineup)) {
+    throw failClosed("roster policy is invalid or unparsed", "route_invalid");
+  }
+  return policy;
+}
+
+function unwrapRosterPolicy(loaded) {
+  return requireRosterPolicyShape(loaded?.policy ?? loaded);
+}
+
 export function getRosterPolicy(deps = {}) {
-  if (deps.rosterPolicy) {
-    return deps.rosterPolicy.policy ?? deps.rosterPolicy;
-  }
-  if (typeof deps.loadTrustedRosterPolicy === "function") {
-    const loaded = deps.loadTrustedRosterPolicy();
-    return loaded?.policy ?? loaded;
-  }
   try {
-    return loadTrustedRosterPolicy().policy;
-  } catch (error) {
-    // When executing in a local development checkout where git status has dirty
-    // uncommitted edits or during unit tests running against in-flight code,
-    // fallback to parsing the local .kxm/roster.json.
-    if (!cachedDiskPolicy) {
-      try {
-        const diskPath = join(fileURLToPath(new URL(".", import.meta.url)), "..", ".kxm/roster.json");
-        cachedDiskPolicy = Object.freeze(JSON.parse(readFileSync(diskPath, "utf8")));
-      } catch {
-        throw failClosed(error?.message ?? "roster policy unavailable", "route_invalid");
-      }
+    if (Object.hasOwn(deps, "rosterPolicy")) {
+      return unwrapRosterPolicy(deps.rosterPolicy);
     }
-    return cachedDiskPolicy;
+    if (typeof deps.loadTrustedRosterPolicy === "function") {
+      return unwrapRosterPolicy(deps.loadTrustedRosterPolicy());
+    }
+    return unwrapRosterPolicy(loadTrustedRosterPolicy());
+  } catch (error) {
+    if (error?.runnerCode === "route_invalid") throw error;
+    throw failClosed(error?.message ?? "roster policy unavailable", "route_invalid");
   }
 }
 
@@ -979,6 +984,15 @@ const MODEL_CLAIM_OVERRIDE_KEYS = Object.freeze([
   "usage",
   "transport",
 ]);
+function injectedPolicyDeps(source = {}) {
+  const deps = {};
+  if (Object.hasOwn(source, "rosterPolicy")) deps.rosterPolicy = source.rosterPolicy;
+  if (typeof source.loadTrustedRosterPolicy === "function") {
+    deps.loadTrustedRosterPolicy = source.loadTrustedRosterPolicy;
+  }
+  return deps;
+}
+
 function ioDeps(deps = {}) {
   return {
     spawnSync: deps.spawnSync ?? spawnSync,
@@ -996,8 +1010,7 @@ function ioDeps(deps = {}) {
     rmSync: deps.rmSync ?? rmSync,
     manifestBytes: deps.manifestBytes,
     now: deps.now,
-    rosterPolicy: deps.rosterPolicy,
-    loadTrustedRosterPolicy: deps.loadTrustedRosterPolicy,
+    ...injectedPolicyDeps(deps),
   };
 }
 
@@ -3374,7 +3387,7 @@ function closedObserved(pr, ci) {
 
 export function resolveRequiredCritics(policy) {
   if (!policy || typeof policy !== "object" || !policy.required_critics || !policy.routes) {
-    return REQUIRED_ACCEPT_CRITICS;
+    throw failClosed("roster policy is invalid or unparsed", "route_invalid");
   }
   const result = {};
   for (const [kind, routeId] of Object.entries(policy.required_critics)) {
@@ -3409,11 +3422,10 @@ function assertEligibleWriter(bound, policy) {
   if (!(transport?.status === "completed" && transport?.ok === true)) {
     throw failClosed("writer transport is not completed/ok", "witness_binding_invalid");
   }
-  if (policy?.lineup?.writer && policy?.routes) {
-    const matched = findLineupRoute(policy, "writer", bound.identity.harness, bound.identity.model);
-    if (!matched) {
-      throw failClosed(`writer ${bound.identity.harness}/${bound.identity.model} is not admitted in lineup`, "witness_binding_invalid");
-    }
+  requireRosterPolicyShape(policy);
+  const matched = findLineupRoute(policy, "writer", bound.identity.harness, bound.identity.model);
+  if (!matched) {
+    throw failClosed(`writer ${bound.identity.harness}/${bound.identity.model} is not admitted in lineup`, "witness_binding_invalid");
   }
 }
 
@@ -3669,12 +3681,7 @@ export async function acceptAssignment(request, deps = {}) {
     const commitValue = request?.commit;
     const writerRecordValue = request?.recordDir ?? request?.record_dir;
     const criticValues = request?.critics;
-    let policy;
-    try {
-      policy = getRosterPolicy(deps);
-    } catch {
-      policy = null;
-    }
+    const policy = getRosterPolicy(deps);
     const criticSpecs = resolveRequiredCritics(policy);
     const requiredKinds = Object.keys(criticSpecs);
     if (!Array.isArray(criticValues) || criticValues.length !== requiredKinds.length) {
@@ -4337,6 +4344,7 @@ export async function main(argv = process.argv, io = { stdin: process.stdin, std
         spawnSync: io.spawnSync ?? spawnSync,
         env: io.env,
         now: io.now,
+        ...injectedPolicyDeps(io),
       });
       io.stdout.write(`${JSON.stringify(accepted, undefined, 2)}\n`);
       process.exitCode = 0;
@@ -4395,6 +4403,7 @@ export async function main(argv = process.argv, io = { stdin: process.stdin, std
         spawnSync: io.spawnSync ?? spawnSync,
         env: io.env,
         now: io.now,
+        ...injectedPolicyDeps(io),
       });
       io.stdout.write(`${JSON.stringify(receipt, undefined, 2)}\n`);
       process.exitCode = receipt.result === "passed" ? 0 : 1;
@@ -4418,7 +4427,7 @@ export async function main(argv = process.argv, io = { stdin: process.stdin, std
   const bytes = readFileSync(manifestPath);
   const manifest = parseJsonFile(manifestPath, bytes, "assignment manifest");
   try {
-    const completion = await runAssignment(manifest, { manifestBytes: bytes });
+    const completion = await runAssignment(manifest, { manifestBytes: bytes, ...injectedPolicyDeps(io) });
     io.stdout.write(`${JSON.stringify(completion, undefined, 2)}\n`);
     process.exitCode = completion.transport?.ok === true && completion.recording?.status === "ok" ? 0 : 1;
     return completion;
