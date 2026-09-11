@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { VnextConfigError, validateRunEvent, vnextCanonicalJson, type JsonValue, type VnextConfigIssue, type VnextConfigOptions } from "./vnext-config.ts";
@@ -656,6 +656,40 @@ export class VnextRunEventStore {
 
   close(): void {
     this.database.close();
+  }
+
+  /** Persist the accepted prompt outside the event log (hashed in events only). */
+  putRunPrompt(runId: string, prompt: string): void {
+    const all = this.readRunPrompts();
+    all[runId] = prompt;
+    this.writeRunPrompts(all);
+  }
+
+  getRunPrompt(runId: string): string | undefined {
+    const value = this.readRunPrompts()[runId];
+    return typeof value === "string" ? value : undefined;
+  }
+
+  private runPromptSidecarPath(): string {
+    return `${this.path}.run-prompts.json`;
+  }
+
+  private readRunPrompts(): Record<string, string> {
+    const sidecar = this.runPromptSidecarPath();
+    if (!existsSync(sidecar)) return {};
+    try {
+      const parsed = JSON.parse(readFileSync(sidecar, "utf8")) as unknown;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+      return Object.fromEntries(
+        Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+      );
+    } catch {
+      return {};
+    }
+  }
+
+  private writeRunPrompts(all: Record<string, string>): void {
+    writeFileSync(this.runPromptSidecarPath(), `${JSON.stringify(all)}\n`, { encoding: "utf8", mode: 0o600 });
   }
 
   /** Run one immutable transaction, rolling back on any failure. */

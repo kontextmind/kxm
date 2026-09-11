@@ -1218,11 +1218,9 @@ function birthMember(
   if (!birthAllowed(folded, input.step)) {
     throw runtimeError("run_events_illegal", run.runId, "member birth is not legal");
   }
-  const createdEvents = context.eventStore.events(run.runId, 0, 1);
-  const createdEvent = createdEvents.find((e) => e.eventType === "run.created");
-  const promptText = typeof createdEvent?.payload?.prompt === "string" ? createdEvent.payload.prompt : undefined;
+  const promptText = context.eventStore.getRunPrompt(run.runId);
   if (promptText === undefined) {
-    throw runtimeError("run_prompt_mismatch", run.runId, "prompt text missing from run.created event");
+    throw runtimeError("run_prompt_mismatch", run.runId, "prompt text missing from accepted run prompt store");
   }
   const promptHash = createHash("sha256").update(promptText, "utf8").digest("hex");
   const expectedHash = run.promptSha256.replace(/^sha256:/, "");

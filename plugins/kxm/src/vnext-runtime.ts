@@ -392,7 +392,6 @@ export function acceptVnextRun(
       workflowId: request.workflowId,
       status: "created",
       promptHash: promptSha256,
-      prompt: request.prompt,
       repositoryIds: vnextDeclaredRepositoryIds(bundle),
       executorIds: vnextDeclaredExecutorIds(bundle),
     };
@@ -437,6 +436,7 @@ export function acceptVnextRun(
       result: { runId, homeRuntimeId: context.homeRuntimeId, status: "created" },
       recordedAt: now,
     });
+    context.eventStore.putRunPrompt(runId, request.prompt);
     return { accepted: true, idempotent: false, run, event };
   });
 }

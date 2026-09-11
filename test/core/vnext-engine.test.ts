@@ -2669,13 +2669,7 @@ test("objective propagation: birth fails closed if stored prompt is tampered or 
       const accepted = acceptVnextRun(context, bundle, { workflowId: "one-step", prompt });
       pinVnextCompiledPlan(context, bundle, accepted.run.runId);
 
-      const db = new DatabaseSync(context.eventStore.path);
-      const events = db.prepare("SELECT event_id, payload FROM events WHERE run_id = ? AND event_type = 'run.created'").all(accepted.run.runId) as Array<{ event_id: string; payload: string }>;
-      assert.equal(events.length, 1);
-      const payload = JSON.parse(events[0]!.payload);
-      payload.prompt = "Tampered prompt";
-      db.prepare("UPDATE events SET payload = ? WHERE event_id = ?").run(JSON.stringify(payload), events[0]!.event_id);
-      db.close();
+      context.eventStore.putRunPrompt(accepted.run.runId, "Tampered prompt");
 
       const producer = createVnextSimulatedProducer(async () => ({ outcome: "passed" }));
       await assert.rejects(

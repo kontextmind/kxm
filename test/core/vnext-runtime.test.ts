@@ -120,6 +120,7 @@ test("run acceptance is immutable, idempotent, and pins revisions", () => {
       assert.equal(first.event.memoryRevision, revisions.memoryRevision);
       assert.equal(first.run.memoryRevision, revisions.memoryRevision);
       assert(!JSON.stringify(first.event.payload).includes("fix the bug"), "prompt content is never stored");
+      assert(!JSON.stringify(context.eventStore.events(first.run.runId, 0, 10)).includes("fix the bug"), "prompt content is never stored");
 
       const second = acceptVnextRun(context, bundle, { commandId, workflowId: "default", prompt: "fix the bug" });
       assert.equal(second.idempotent, true, "repeated commandId returns the prior acceptance");

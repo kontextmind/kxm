@@ -14776,7 +14776,7 @@ var require_dist = __commonJS({
 
 // plugins/kxm/src/vnext-runtime.ts
 import { createHash as createHash6 } from "node:crypto";
-import { existsSync as existsSync5, readdirSync as readdirSync3, readFileSync as readFileSync3 } from "node:fs";
+import { existsSync as existsSync5, readdirSync as readdirSync3, readFileSync as readFileSync4 } from "node:fs";
 import { join as join5 } from "node:path";
 
 // plugins/kxm/src/vnext-config.ts
@@ -17415,7 +17415,7 @@ function readVnextMigrationReceipt(root, options = {}) {
 
 // plugins/kxm/src/vnext-runtime-store.ts
 import { createHash as createHash4, randomUUID } from "node:crypto";
-import { existsSync as existsSync4, lstatSync as lstatSync3, mkdirSync as mkdirSync2, realpathSync as realpathSync2 } from "node:fs";
+import { existsSync as existsSync4, lstatSync as lstatSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync3, realpathSync as realpathSync2, writeFileSync as writeFileSync2 } from "node:fs";
 import { dirname as dirname4, join as join4, resolve as resolve4 } from "node:path";
 
 // plugins/kxm/src/vnext-bindings.ts
@@ -18343,6 +18343,36 @@ var VnextRunEventStore = class {
   }
   close() {
     this.database.close();
+  }
+  /** Persist the accepted prompt outside the event log (hashed in events only). */
+  putRunPrompt(runId, prompt) {
+    const all = this.readRunPrompts();
+    all[runId] = prompt;
+    this.writeRunPrompts(all);
+  }
+  getRunPrompt(runId) {
+    const value = this.readRunPrompts()[runId];
+    return typeof value === "string" ? value : void 0;
+  }
+  runPromptSidecarPath() {
+    return `${this.path}.run-prompts.json`;
+  }
+  readRunPrompts() {
+    const sidecar = this.runPromptSidecarPath();
+    if (!existsSync4(sidecar)) return {};
+    try {
+      const parsed = JSON.parse(readFileSync3(sidecar, "utf8"));
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+      return Object.fromEntries(
+        Object.entries(parsed).filter((entry) => typeof entry[1] === "string")
+      );
+    } catch {
+      return {};
+    }
+  }
+  writeRunPrompts(all) {
+    writeFileSync2(this.runPromptSidecarPath(), `${JSON.stringify(all)}
+`, { encoding: "utf8", mode: 384 });
   }
   /** Run one immutable transaction, rolling back on any failure. */
   transaction(work) {
@@ -21785,7 +21815,7 @@ function computeVnextMemoryRevision(bundle, options = {}) {
   const memoryFiles = collectMemoryFiles(memoryDir, memoryDir, /* @__PURE__ */ new Set(["candidates"])).sort((left, right) => compareCodeUnits5(left.relPath, right.relPath));
   for (const file of memoryFiles) {
     hash.update(`memory:${file.relPath}\0`, "utf8");
-    hash.update(readFileSync3(file.fullPath));
+    hash.update(readFileSync4(file.fullPath));
     hash.update("\0", "utf8");
   }
   const skillsDir = options.skillsDir ?? join5(bundle.projectRoot, ".kxm", "skills");
@@ -21793,7 +21823,7 @@ function computeVnextMemoryRevision(bundle, options = {}) {
   const skillFiles = collectMemoryFiles(promotedSkillsDir, promotedSkillsDir).sort((left, right) => compareCodeUnits5(left.relPath, right.relPath));
   for (const file of skillFiles) {
     hash.update(`skill:${file.relPath}\0`, "utf8");
-    hash.update(readFileSync3(file.fullPath));
+    hash.update(readFileSync4(file.fullPath));
     hash.update("\0", "utf8");
   }
   if (options.promotedState && options.promotedState.length > 0) {
@@ -21958,7 +21988,6 @@ function acceptVnextRun(context, bundle, request, options = {}) {
       workflowId: request.workflowId,
       status: "created",
       promptHash: promptSha256,
-      prompt: request.prompt,
       repositoryIds: vnextDeclaredRepositoryIds(bundle),
       executorIds: vnextDeclaredExecutorIds(bundle)
     };
@@ -22003,6 +22032,7 @@ function acceptVnextRun(context, bundle, request, options = {}) {
       result: { runId, homeRuntimeId: context.homeRuntimeId, status: "created" },
       recordedAt: now
     });
+    context.eventStore.putRunPrompt(runId, request.prompt);
     return { accepted: true, idempotent: false, run, event };
   });
 }
@@ -22202,7 +22232,7 @@ function assertVnextConfigError(error) {
 // plugins/kxm/src/vnext-runtime-supervisor.ts
 import { spawn as spawn3 } from "node:child_process";
 import { createHash as createHash12, createHmac, randomBytes as randomBytes3, timingSafeEqual as timingSafeEqual2 } from "node:crypto";
-import { chmodSync as chmodSync2, existsSync as existsSync9, lstatSync as lstatSync5, mkdirSync as mkdirSync4, readFileSync as readFileSync7, renameSync, rmSync, writeFileSync as writeFileSync3 } from "node:fs";
+import { chmodSync as chmodSync2, existsSync as existsSync9, lstatSync as lstatSync5, mkdirSync as mkdirSync4, readFileSync as readFileSync8, renameSync, rmSync, writeFileSync as writeFileSync4 } from "node:fs";
 import { createServer } from "node:http";
 import { dirname as dirname5, isAbsolute as isAbsolute4, join as join12, resolve as resolve6 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
@@ -22308,7 +22338,7 @@ async function beginOneShotEvidence(root, intent, sensitive) {
 // plugins/kxm/src/prices.ts
 var import_yaml3 = __toESM(require_dist(), 1);
 import { createHash as createHash8 } from "node:crypto";
-import { existsSync as existsSync6, readFileSync as readFileSync4, statSync } from "node:fs";
+import { existsSync as existsSync6, readFileSync as readFileSync5, statSync } from "node:fs";
 import { join as join7 } from "node:path";
 
 // plugins/kxm/src/price-calc.ts
@@ -22465,25 +22495,25 @@ function loadPriceCatalog(rootOrPath) {
   if (!candidatePath || !existsSync6(candidatePath)) {
     return void 0;
   }
-  const content = readFileSync4(candidatePath, "utf8");
+  const content = readFileSync5(candidatePath, "utf8");
   return parsePriceCatalog(content);
 }
 
 // plugins/kxm/src/vnext-engine.ts
 var import_yaml5 = __toESM(require_dist(), 1);
 import { createHash as createHash11, randomBytes as randomBytes2, timingSafeEqual } from "node:crypto";
-import { existsSync as existsSync8, readFileSync as readFileSync6 } from "node:fs";
+import { existsSync as existsSync8, readFileSync as readFileSync7 } from "node:fs";
 import { join as join10 } from "node:path";
 
 // plugins/kxm/src/producers.ts
 var import_yaml4 = __toESM(require_dist(), 1);
-import { existsSync as existsSync7, readFileSync as readFileSync5, mkdirSync as mkdirSync3, writeFileSync as writeFileSync2, readdirSync as readdirSync4 } from "node:fs";
+import { existsSync as existsSync7, readFileSync as readFileSync6, mkdirSync as mkdirSync3, writeFileSync as writeFileSync3, readdirSync as readdirSync4 } from "node:fs";
 import { join as join8 } from "node:path";
 var empty = () => ({ schema: "kxm.producers.v1", updatedAt: (/* @__PURE__ */ new Date()).toISOString(), promoted: [], demoted: [], enabled: [], disabled: [], roles: {} });
 function loadProducerPolicy(root) {
   const path = join8(root, ".kxm", "producers.yaml");
   if (!existsSync7(path)) return empty();
-  const value = (0, import_yaml4.parse)(readFileSync5(path, "utf8"));
+  const value = (0, import_yaml4.parse)(readFileSync6(path, "utf8"));
   if (value?.schema !== "kxm.producers.v1" || !Array.isArray(value.promoted) || !Array.isArray(value.demoted)) throw new Error("invalid .kxm/producers.yaml");
   return { schema: "kxm.producers.v1", updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : (/* @__PURE__ */ new Date()).toISOString(), promoted: value.promoted.filter((x) => typeof x === "string"), demoted: value.demoted.filter((x) => typeof x === "string"), enabled: Array.isArray(value.enabled) ? value.enabled.filter((x) => typeof x === "string") : [], disabled: Array.isArray(value.disabled) ? value.disabled.filter((x) => typeof x === "string") : [], roles: value.roles && typeof value.roles === "object" ? Object.fromEntries(Object.entries(value.roles).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [k, v.filter((x) => typeof x === "string")])) : {} };
 }
@@ -22493,7 +22523,7 @@ function listRoleBindings(root) {
   if (!existsSync7(dir)) return result;
   for (const file of readdirSync4(dir).filter((name) => name.endsWith(".yaml"))) {
     const role = file.slice(0, -5);
-    const value = (0, import_yaml4.parse)(readFileSync5(join8(dir, file), "utf8"));
+    const value = (0, import_yaml4.parse)(readFileSync6(join8(dir, file), "utf8"));
     result[role] = (value.roster ?? []).map((entry) => entry.model).filter((model) => typeof model === "string");
   }
   return result;
@@ -24316,7 +24346,7 @@ function resolveProducerRoute(projectRoot, step, agentId) {
   const agentFile = join10(projectRoot, ".kxm", "agents", `${agentId}.yaml`);
   if (existsSync8(agentFile)) {
     try {
-      const parsed = (0, import_yaml5.parse)(readFileSync6(agentFile, "utf8"));
+      const parsed = (0, import_yaml5.parse)(readFileSync7(agentFile, "utf8"));
       if (typeof parsed?.model === "string") {
         agentModel = parsed.model;
       }
@@ -24588,11 +24618,9 @@ function birthMember(context, input) {
   if (!birthAllowed(folded, input.step)) {
     throw runtimeError("run_events_illegal", run.runId, "member birth is not legal");
   }
-  const createdEvents = context.eventStore.events(run.runId, 0, 1);
-  const createdEvent = createdEvents.find((e) => e.eventType === "run.created");
-  const promptText = typeof createdEvent?.payload?.prompt === "string" ? createdEvent.payload.prompt : void 0;
+  const promptText = context.eventStore.getRunPrompt(run.runId);
   if (promptText === void 0) {
-    throw runtimeError("run_prompt_mismatch", run.runId, "prompt text missing from run.created event");
+    throw runtimeError("run_prompt_mismatch", run.runId, "prompt text missing from accepted run prompt store");
   }
   const promptHash = createHash11("sha256").update(promptText, "utf8").digest("hex");
   const expectedHash = run.promptSha256.replace(/^sha256:/, "");
@@ -26028,7 +26056,7 @@ function publishVnextSupervisorToken(paths, token) {
   const file = vnextSupervisorTokenFile(paths);
   mkdirSync4(dirname5(file), { recursive: true, mode: 448 });
   const temp = `${file}.${process.pid}.tmp`;
-  writeFileSync3(temp, `${token}
+  writeFileSync4(temp, `${token}
 `, { encoding: "utf8", mode: 384 });
   try {
     chmodSync2(temp, 384);
@@ -26050,7 +26078,7 @@ function readVnextSupervisorToken(paths) {
   if (stat.isSymbolicLink() || !stat.isFile()) {
     throw runtimeError("runtime_path_invalid", file, "supervisor token file must be a regular file, not a link");
   }
-  const token = readFileSync7(file, "utf8").trim();
+  const token = readFileSync8(file, "utf8").trim();
   return token.length >= 32 ? token : void 0;
 }
 function processAlive(pid) {
@@ -26073,7 +26101,7 @@ function clearSupervisorError(paths) {
 function recordSupervisorError(paths, message) {
   try {
     mkdirSync4(paths.runtimeDir, { recursive: true, mode: 448 });
-    writeFileSync3(supervisorErrorFile(paths), `${message}
+    writeFileSync4(supervisorErrorFile(paths), `${message}
 `, { encoding: "utf8", mode: 384 });
   } catch {
   }
@@ -26085,7 +26113,7 @@ function readRecentSupervisorError(paths) {
   const ageMs = Date.now() - stat.mtimeMs;
   if (ageMs > SUPERVISOR_ERROR_MAX_AGE_MS) return void 0;
   try {
-    return readFileSync7(file, "utf8").trim();
+    return readFileSync8(file, "utf8").trim();
   } catch {
     return void 0;
   }
@@ -27174,7 +27202,7 @@ function createLogger(options) {
 
 // plugins/kxm/src/improve.ts
 import { createHash as createHash13 } from "node:crypto";
-import { existsSync as existsSync11, mkdirSync as mkdirSync6, writeFileSync as writeFileSync4 } from "node:fs";
+import { existsSync as existsSync11, mkdirSync as mkdirSync6, writeFileSync as writeFileSync5 } from "node:fs";
 import { join as join14, relative as relative4, resolve as resolve7 } from "node:path";
 
 // plugins/kxm/src/protocol.ts
@@ -27396,9 +27424,9 @@ function buildImprovementReport(records, options = {}) {
       if (!existsSync11(candidatesDir)) {
         mkdirSync6(candidatesDir, { recursive: true });
       }
-      writeFileSync4(diffFilePath, diff, "utf8");
+      writeFileSync5(diffFilePath, diff, "utf8");
       const jsonFilePath = join14(candidatesDir, `${group.candidateId}.json`);
-      writeFileSync4(jsonFilePath, JSON.stringify(candidate, null, 2) + "\n", "utf8");
+      writeFileSync5(jsonFilePath, JSON.stringify(candidate, null, 2) + "\n", "utf8");
     }
     candidates.push(candidate);
   }
@@ -27416,7 +27444,7 @@ function writeImprovementReport(improvementsDir, report, dryRun = false) {
   const path = join14(improvementsDir, `${stamp}.json`);
   if (!dryRun) {
     mkdirSync6(improvementsDir, { recursive: true });
-    writeFileSync4(path, `${JSON.stringify(report, null, 2)}
+    writeFileSync5(path, `${JSON.stringify(report, null, 2)}
 `, { encoding: "utf8" });
   }
   return path;

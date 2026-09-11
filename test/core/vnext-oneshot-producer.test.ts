@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import test, { before, after } from "node:test";
 import { isolateSessionEnvironment } from "../helpers/session-env.ts";
@@ -34,7 +33,8 @@ import {
 } from "../../plugins/kxm/src/vnext-harness.ts";
 import { loadPriceCatalog } from "../../plugins/kxm/src/prices.ts";
 import { emitCodexArtifacts } from "../../scripts/emit-codex-artifacts.mjs";
-import { makeGitRoot } from "../helpers/git-root.ts";
+import { admitDefaultWriterRoute, engineProject } from "../helpers/vnext-project.ts";
+import { removeTempDir } from "../helpers.ts";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const HOME = "rtm_01JDRIVER0000000000000000";
@@ -425,32 +425,9 @@ test("One-shot producer handles pre-aborted signal and abort during execution", 
 
 for (const cacheReadTokens of [10, 1_000_001]) {
 test(`One-shot producer settles in engine with ${cacheReadTokens} cumulative cache-read tokens`, async () => {
-  const root = mkdtempSync(join(tmpdir(), "kxm-oneshot-driver-"));
-  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-oneshot-driver-state-"));
+  const { root, stateRoot } = engineProject("kxm-oneshot-driver-");
   try {
-    cpSync(join(repoRoot, "examples/vnext"), root, { recursive: true });
-    makeGitRoot(root);
-    makeGitRoot(join(root, "repositories", "api"));
-    makeGitRoot(join(root, "repositories", "web"));
-
-    const gateScriptPath = join(root, "gate-script.cjs");
-    writeFileSync(gateScriptPath, "process.exit(0);\n");
-
-    writeFileSync(
-      join(root, ".kxm", "gates.yaml"),
-      `schema: kxm.gate-registry.v1
-gates:
-  test:
-    kind: command
-    argv: [${JSON.stringify(process.execPath)}, ${JSON.stringify(gateScriptPath)}]
-    timeoutMs: 3600000
-  scm-delivery:
-    kind: command
-    argv: [${JSON.stringify(process.execPath)}, ${JSON.stringify(gateScriptPath)}]
-    timeoutMs: 1800000
-`,
-    );
-
+    admitDefaultWriterRoute(root);
     const bundle = loadVnextProject(root);
     const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
 
@@ -472,7 +449,7 @@ gates:
     });
 
     try {
-      const accepted = acceptVnextRun(context, bundle, { workflowId: "default", prompt: "test prompt" });
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "one-step", prompt: "test prompt" });
       pinVnextCompiledPlan(context, bundle, accepted.run.runId);
 
       const result = await driveVnextRun(context, accepted.run.runId, producer, { allowLimits: true });
@@ -495,8 +472,7 @@ gates:
       closeVnextRuntimeContext(context);
     }
   } finally {
-    rmSync(root, { recursive: true, force: true });
-    rmSync(stateRoot, { recursive: true, force: true });
+    removeTempDir(root, stateRoot);
   }
 });
 }
