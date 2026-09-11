@@ -21,6 +21,7 @@ import {
   createVnextSimulatedProducer,
   driveVnextRun,
   pinVnextCompiledPlan,
+  registerTrustedProducer,
   rehydrateVnextCompiledPlan,
   startVnextRun,
   stepVnextRun,
@@ -2680,6 +2681,134 @@ test("objective propagation: birth fails closed if stored prompt is tampered or 
         () => driveVnextRun(context, accepted.run.runId, producer),
         /run_prompt_mismatch/,
       );
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("permission ceiling: steps without write repository receive read-only ceiling", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-perm-ro-");
+  try {
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "one-step", prompt: "Test read-only ceiling" });
+      pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+      let capturedCeiling: string | undefined;
+      const producer = createVnextSimulatedProducer(async (request) => {
+        capturedCeiling = request.contextPacket?.task.permissionCeiling;
+        return { outcome: "passed" };
+      });
+      const driven = await driveVnextRun(context, accepted.run.runId, producer);
+      assert.equal(driven.state.status, "completed");
+      assert.equal(capturedCeiling, "read-only");
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("permission ceiling: write step with simulated producer receives edit ceiling", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-perm-wr-sim-");
+  try {
+    writeFileSync(join(root, ".kxm", "workflows", "write-step.yaml"), `schema: kxm.workflow.v1
+description: Write step workflow
+coordinator: coordinator
+limits:
+  maxTransitions: 2
+steps:
+  - id: write-step
+    kind: agent
+    agent: implementer
+    repositories:
+      control: write
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: $terminal
+        terminalStatus: failed
+`);
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "write-step", prompt: "Test write step" });
+      pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+      let capturedCeiling: string | undefined;
+      const producer = createVnextSimulatedProducer(async (request) => {
+        capturedCeiling = request.contextPacket?.task.permissionCeiling;
+        return { outcome: "passed" };
+      });
+      const driven = await driveVnextRun(context, accepted.run.runId, producer);
+      assert.equal(driven.state.status, "completed");
+      assert.equal(capturedCeiling, "edit");
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("permission ceiling: live write step fails closed with step_unsupported handoff before birth", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-perm-wr-live-");
+  try {
+    writeFileSync(join(root, ".kxm", "workflows", "write-step.yaml"), `schema: kxm.workflow.v1
+description: Write step workflow
+coordinator: coordinator
+limits:
+  maxTransitions: 2
+steps:
+  - id: write-step
+    kind: agent
+    agent: implementer
+    repositories:
+      control: write
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: $terminal
+        terminalStatus: failed
+`);
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "write-step", prompt: "Test live write" });
+      pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+
+      const liveProducer = {
+        id: "oneshot" as const,
+        async produce() {
+          return {
+            outcome: "passed" as const,
+            costBasis: "unmetered" as const,
+            tokensIn: null,
+            tokensOut: null,
+            cacheReadTokens: null,
+            cacheWriteTokens: null,
+            latencyMs: 10,
+          };
+        },
+      };
+      registerTrustedProducer(liveProducer as never);
+
+      const result = await driveVnextRun(context, accepted.run.runId, liveProducer as never);
+      assert.equal(result.handoff?.reason, "step_unsupported");
+      assert.equal(result.handoff?.field, "repositories");
+      assert.equal(result.handoff?.stepId, "write-step");
+
+      // Verify zero assignment.created events
+      const events = context.eventStore.events(accepted.run.runId, 0, 100);
+      const assignmentCreated = events.filter((e) => e.eventType === "assignment.created");
+      assert.equal(assignmentCreated.length, 0);
     } finally {
       closeVnextRuntimeContext(context);
     }

@@ -23956,7 +23956,7 @@ function prepareDispatch(context, runId, producerId) {
       state: result.state
     };
   }
-  const unsupported = unsupportedStep(plan, step);
+  const unsupported = unsupportedStep(plan, step, producerId);
   if (unsupported) return { kind: "return", state, handoff: { ...unsupported, stepId } };
   const used = state.stepAttempts[stepId] ?? 0;
   if (used >= step.maxAttempts) {
@@ -24099,7 +24099,7 @@ function birthMember(context, input) {
       stepAttempt: input.stepAttempt,
       objective: promptText,
       allowedOutcomes: [...input.step.outcomes],
-      permissionCeiling: "edit"
+      permissionCeiling: Object.values(input.step.repositories).some((access) => access === "write") ? "edit" : "read-only"
     },
     acceptanceCriteria: input.step.requiredEvidence.map((ev) => ({
       id: ev.key,
@@ -24691,7 +24691,7 @@ function unsupportedLimit(envelope) {
   }
   return void 0;
 }
-function unsupportedStep(plan, step) {
+function unsupportedStep(plan, step, producerId) {
   if (step.kind === "gate") throw runtimeError("run_plan_corrupt", plan.workflowId, `unsupportedStep called on gate without envelope; use unsupportedGateStep instead`);
   if (step.kind !== "agent" && step.kind !== "moa" && step.kind !== "approval" && step.kind !== "wait") {
     return { reason: "step_unsupported", field: "kind", detail: `step kind ${step.kind} is not executed in this slice` };
@@ -24729,6 +24729,13 @@ function unsupportedStep(plan, step) {
     if (access !== "read" && access !== "write" && access !== "none") {
       return { reason: "step_unsupported", field: "repositories", detail: `invalid repository access '${access}' on ${repoId}` };
     }
+  }
+  if (producerId !== "driver-simulated" && Object.values(step.repositories).some((access) => access === "write")) {
+    return {
+      reason: "step_unsupported",
+      field: "repositories",
+      detail: "live write steps are unsupported until writer sandboxing witness passes"
+    };
   }
   return void 0;
 }
