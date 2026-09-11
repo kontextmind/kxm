@@ -392,6 +392,7 @@ export function acceptVnextRun(
       workflowId: request.workflowId,
       status: "created",
       promptHash: promptSha256,
+      prompt: request.prompt,
       repositoryIds: vnextDeclaredRepositoryIds(bundle),
       executorIds: vnextDeclaredExecutorIds(bundle),
     };
