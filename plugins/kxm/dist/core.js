@@ -68,10 +68,7 @@ function findModelPrice(catalog, model, provider) {
   const normalizedModel = model.trim().toLowerCase();
   const normalizedProvider = provider?.trim().toLowerCase();
   for (const entry of catalog.models) {
-    if (normalizedProvider && entry.provider.toLowerCase() !== normalizedProvider) {
-      const matchesAlias = entry.aliases?.some((a) => a.toLowerCase() === normalizedModel);
-      if (!matchesAlias) continue;
-    }
+    if (normalizedProvider && entry.provider.toLowerCase() !== normalizedProvider) continue;
     if (entry.id.toLowerCase() === normalizedModel || entry.model.toLowerCase() === normalizedModel) {
       return entry;
     }
@@ -84,20 +81,19 @@ function findModelPrice(catalog, model, provider) {
 function calculateModelCost(catalog, params) {
   const row = findModelPrice(catalog, params.model, params.provider);
   if (!row || row.tiers.length === 0) return void 0;
-  const context = params.contextTokens ?? params.tokensIn ?? 0;
-  let selectedTier = row.tiers[0];
-  for (const tier of row.tiers) {
-    if (tier.upToContextTokens !== void 0 && tier.upToContextTokens !== null && context > tier.upToContextTokens) {
-      continue;
-    }
-    selectedTier = tier;
-    break;
-  }
-  const tokensIn = params.tokensIn ?? 0;
-  const tokensOut = params.tokensOut ?? 0;
-  const cacheRead = params.cacheReadTokens ?? 0;
-  const cacheWrite = params.cacheWriteTokens ?? 0;
+  if (catalog.currency !== void 0 && catalog.currency !== "USD") return void 0;
+  const validCount = (n) => typeof n === "number" && Number.isSafeInteger(n) && n >= 0;
+  const tokensIn = params.tokensIn;
+  const tokensOut = params.tokensOut;
+  const cacheRead = params.cacheReadTokens;
+  const cacheWrite = params.cacheWriteTokens;
+  if (!validCount(tokensIn) || !validCount(tokensOut) || !validCount(cacheRead) || !validCount(cacheWrite)) return void 0;
+  const context = params.contextTokens;
+  if (context != null && !validCount(context)) return void 0;
+  const selectedTier = context == null ? row.tiers.length === 1 && row.tiers[0].upToContextTokens == null ? row.tiers[0] : void 0 : row.tiers.find((tier) => tier.upToContextTokens == null || context <= tier.upToContextTokens);
+  if (!selectedTier || cacheRead > 0 && selectedTier.cacheReadPerMillion == null || cacheWrite > 0 && selectedTier.cacheWritePerMillion == null) return void 0;
   const cost = tokensIn / 1e6 * selectedTier.inputPerMillion + tokensOut / 1e6 * selectedTier.outputPerMillion + cacheRead / 1e6 * (selectedTier.cacheReadPerMillion ?? 0) + cacheWrite / 1e6 * (selectedTier.cacheWritePerMillion ?? 0);
+  if (!Number.isFinite(cost) || cost < 0) return void 0;
   const priceRef = `${catalog.date}#${row.id}`;
   return {
     costUsd: Math.round(cost * 1e6) / 1e6,
@@ -595,7 +591,8 @@ function generateRoutingReport(records, options = {}) {
             tokensIn: r.tokensIn ?? null,
             tokensOut: r.tokensOut ?? null,
             cacheReadTokens: r.cacheReadTokens ?? null,
-            contextTokens: v2?.contextTokens ?? r.tokensIn ?? null
+            cacheWriteTokens: v2?.cacheWriteTokens ?? null,
+            contextTokens: v2?.contextTokens ?? null
           });
           if (calc) {
             equivTotal += calc.costUsd;

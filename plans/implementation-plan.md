@@ -11,6 +11,12 @@ It does not replace the phase gates below.
 
 ### Decided
 
+- **Plan source of truth (2026-09-10):** `plans/implementation-plan.md` is the
+  only active execution tracker. `control-plane-memory-questionnaire.md` is a
+  closed design record; `v05-context-os.md` is a superseded design record.
+  Neither document may create work, alter a phase gate, or keep a slice in an
+  ambiguous in-review state. Deferred work must be listed here under **Still
+  open** with an owner/trigger or remain historical.
 - Product name is **KXM**. Do not present Mesh or pi-extensions as the product.
   Plugin, marketplace, and npm identity are `kxm` / `@kontextmind/kxm`.
 - **Future slices are not backwards-compatible.** Do not add upgrade shims or
@@ -24,7 +30,7 @@ It does not replace the phase gates below.
 - Live operator screens: `kxm dash` (not TUI/watch). Tabs: Agents, Tasks,
   Workflows, Plans, Inbox, Procs. Wide terminals use list+detail panes.
 - Agent/model config is Git YAML. Omit `harness` (and `defaultHarness`) for
-  **Pi**. Other harness ids (`claude`, `kimi`, `codex`, `gemini`, `deepseek`,
+  **Pi**. Other harness ids (`claude`, `kimi`, `codex`, `deepseek`,
   `grok`, `agy`, and later others) are declared on the agent. No second enable/disable
   preferences file.
 - A harness only runs models it actually hosts (Claude ≠ Grok; Codex ≠ Kimi).
@@ -51,8 +57,7 @@ It does not replace the phase gates below.
   **agy (Antigravity CLI, 2026-09-08):** admitted native Google subscription
   writer/experiment edit route for Gemini kebab ids only. One-shot headless
   CLI, not a worker. Starting rotation unchanged (Grok remains first).
-  Deprecated `gemini` CLI catalog entry is not removed or braked in this
-  slice.
+  The deprecated Gemini CLI is removed; AGY is the sole Google harness.
 - **Developer assignment runner (issue 127, unreleased):** normal entry is
   `just assign` with a closed `kxm.assignment.v1` manifest and
   `task_dir/plan-current.json`. Fixed `just witness` verifies the exact
@@ -201,6 +206,16 @@ It does not replace the phase gates below.
   - Verified with 100% line coverage in `test/core/role-and-workflow-manager.test.ts` and updated CLI help assertions in `test/core/cli.test.ts`. All 1,049 tests pass; coverage floors met (Lines 92.07%, Branches 80.28%, Functions 93.12%).
 - **Public npm publishing unlatched & configured (2026-09-08):** Configured the `npm-publish` deployment environment in GitHub with `NPM_TOKEN` secret. Added `scripts/kxm-publish-npm.mjs` to enforce fail-closed verification (requires GitHub release with `draft: false`, validates asset presence and SHA-256 digest, and runs `npm publish --access public`). Unlatched `publish-npm` job in `.github/workflows/release.yml`, added `test/core/kxm-publish-npm.test.ts`, updated `test/core/ci-contract.test.ts`, and set `publishConfig.access: "public"` in `package.json`.
 - **0.6.0 release cut and release automation unlatched (2026-09-08):** Version bumped to `0.6.0` across all seven package surfaces (root package, package lock, plugin package, Claude manifest, marketplace entry, MCP server, and dist bundle). Removed the `if: false` job latch on the draft release job in `.github/workflows/release.yml` and updated `test/core/ci-contract.test.ts`; `publish-npm` stays `if: false` until a published release and `npm-publish` environment exist. CHANGELOG promoted.
+- **Workflow progress TUI and Web Studio dashboard (2026-09-10):** Added active
+  workflow progress loading from legacy SQLite records, JSON-safe status
+  extraction, stage stepper/token telemetry rendering, `/kxm progress` and
+  `/workflow` extension surfaces, and dashboard refresh integration. Web
+  Studio now exposes the active workflow layout/state dashboard while keeping
+  mutations on the authenticated command API. Verified by
+  `test/core/workflow-tui.test.ts`, `test/core/tui.test.ts`,
+  `test/core/studio-layout.test.ts`, and CLI experience tests (72 targeted
+  tests passed). This closes the recent progress-visibility slice; it does not
+  claim the Phase 4 live Pi adapter gate.
 - **Control plane, 5-layer memory, and external idempotency (2026-09-08):**
   - **Memory Arbiter & `_shared` scope:** Updated `plugins/kxm/src/context.ts` to allow `_shared` defaults alongside project identifiers without tripping `context_isolation_violation`; updated `plugins/kxm/src/arbiter.ts` to rank project-specific knowledge ahead of shared defaults; added `memoryRecordToContextItem()` and connected `.kxm/memory/` into `plugins/kxm/src/hub.ts:projectContextPool()`. Verified in `test/core/arbiter.test.ts`.
   - **Formal Context Packet & Structured Handoffs:** Added schemas `schemas/vnext/context-packet.schema.json` (`kxm.context-packet.v2`) and `schemas/vnext/handoff-manifest.schema.json` (`kxm.handoff-manifest.v1`). Added builder and clean markdown prompt formatting in `plugins/kxm/src/context-packet.ts`. Integrated formal packets and antecedent handoffs directly into `plugins/kxm/src/vnext-engine.ts:birthMember`. Verified in `test/core/context-packet.test.ts`.
@@ -278,9 +293,8 @@ It does not replace the phase gates below.
   null tokens and `costBasis: "unknown"`. Implemented `parseAgyOneShotUsage`
   handling Antigravity JSON payloads (`status`, `response`, `error`, `usage: {
   input_tokens, output_tokens, cache_read_tokens, total_tokens }`), mapping
-  unmetered runs to `subscription:agy`. Deprecated `gemini` CLI remains
-  fail-closed without `oneShot` configuration and non-dispatchable with reason
-  `deprecated_client` ("Gemini CLI is deprecated; use agy for Google models").
+  unmetered runs to `subscription:agy`. AGY is the sole Google harness and
+  owns the Google model route.
   Exported harness definitions in `plugins/kxm/src/runtime.ts` and verified with
   mock spawn tests, fake dispatch, auth refusal, and comprehensive inventory
   dispatch reporting (`test/vnext-harness.test.ts`, `test/vnext-oneshot-producer.test.ts`).
@@ -291,13 +305,27 @@ It does not replace the phase gates below.
   (`parseClaudeOneShotUsage`, `parseCodexOneShotUsage`, `parseGenericOneShotUsage`)
   in `plugins/kxm/src/vnext-harness.ts`. Enforces fail-closed auth preflight
   (`<harness>_not_authenticated`), prompt delivery via stdin or arguments, process
-  cancellation via AbortSignal, token and context parsing, and cost accounting
-  (`metered` when cataloged in `.kxm/prices.yaml`, else `unmetered` with
-  `priceRef: subscription:<harness>`). Emits `.agents/skills` and marker-delimited
+  cancellation via AbortSignal and usage parsing. The initial implementation's
+  catalog-as-bill and absent-catalog-as-subscription classifications were wrong:
+  billing is now `unmetered` only with observed subscription auth, otherwise
+  `unknown`, with null billed cost. Provider-reported amounts and eligible list
+  estimates are separate metadata; cumulative input is not context occupancy.
+  Lifecycle/permission acceptance remains blocked below. Emits `.agents/skills` and marker-delimited
   `AGENTS.md` block (`scripts/emit-codex-artifacts.mjs`) so Codex discovers KXM
   commands, protected by `scripts/check-generated.mjs`. Exported in
   `plugins/kxm/src/runtime.ts` and verified with mock spawn tests, auth failure,
   and end-to-end vNext engine drive (`test/vnext-oneshot-producer.test.ts`).
+- **Codex launch-flag repair (2026-09-10, Phase 11 partial slice):** Audited
+  official CLI, noninteractive, approval/security, and config references against
+  installed Codex 0.153.4. Product/catalog/helper launches explicitly request
+  `--sandbox read-only --ignore-user-config -c 'approval_policy="never"'`,
+  retain exec-policy rules, and use JSONL plus stdin `-`. Native-critic now
+  shares the helper builder, including its requested model/effort. Regression
+  tests cover each path. Native Sol transport completed in 18.962 seconds;
+  Fable's narrow flag review completed in 35.824 seconds. Both critiques said
+  PASS for flags only; Fable's additional catalog/native-critic argv coverage
+  is now present. These are private bootstrap artifacts, not exact-commit
+  acceptance, effective Codex model identity, or proof of MCP/plugin isolation.
 - **E4 Pi dispatch (issue #93):** Implemented Pi RPC producer in
   `plugins/kxm/src/vnext-pi-producer.ts` running implementer (and other agent
   roles) through the vNext engine driver over Pi RPC protocol (`--mode rpc`).
@@ -348,9 +376,8 @@ It does not replace the phase gates below.
   `id: agy` is observational (`mode: either`, `authArgs: ["models"]`,
   `update.self: ["update"]`). Auth success is a non-empty models list from
   `agy models` (method `antigravity-oauth`). Not a Pi-style RPC worker;
-  starting writer rotation is unchanged. Deprecated `gemini` CLI catalog
-  entry stays. Read-only agy roles and agy-hosted non-Google models remain
-  deferred.
+  starting writer rotation is unchanged. AGY is the sole Google harness;
+  read-only agy roles and agy-hosted non-Google models remain deferred.
 - **Docs audit slice (issue #144):** planning docs moved to `plans/` (implementation plan, v05 design record, v04/provenance history and 2026-09-04 reviews); `docs/workflow-guide.md` renamed and retitled; docs brake widened (`docs/**`, plugin READMEs, skills, AGENTS.md, CLAUDE.md, `.claude/**/*.md`; `plans/` exempt); stale copy, env-var classification, context OS coverage including `kxm context explain`, README workflow-slug index, and phase-neutral `kxm run` help. No product behavior change beyond CLI help wording.
 - **Assignment runner maintainer guide:** [`docs/assignment-runner.md`](../docs/assignment-runner.md) documents the developer assignment runner lifecycle (`just assign`, `witness`, `accept`, `attribute`, `observe-cost`, `change-report`), roster lineup admission, dual-critic quorum, vendor independence invariants, failure codes, and task directory layout. Dispatch and accept load trusted roster policy from control Git; the witness verifies the bound candidate and does not itself call the policy loader today. Raw-disk and null-policy acceptance are refused. Linked in `docs/README.md`. Unified YAML policy cutover is not landed.
 
@@ -801,12 +828,57 @@ It does not replace the phase gates below.
 
 ### Still open
 
-- **Unified YAML policy authority:** shared parser and pure draft validation
-  exist as non-authoritative scaffolding. Still open: live YAML policy cutover,
-  `.kxm/roster.json` removal, global-role migration, mandatory bindings, runtime
-  admission, and new writer admission. Runtime and the developer runner must
-  not gain dual live authorities, raw-disk fallback, or null-policy acceptance.
-  Historical JSON evidence stays JSON. Not a Phase 4/11 product gate.
+- **One-shot lifecycle and settlement (Phase 11, release blocker):** Strict
+  final JSON outcomes now reject nonzero/signaled/error/empty/prose results;
+  pre-abort, bounded output/drain/reap, SIGTERM escalation, stdin errors, and
+  partial cancellation usage have regressions. Oversized cumulative counters
+  now become null bounded fields with raw values in metadata: the failed-first
+  1,000,001 cache-read reproduction now settles without relaxing routing bounds.
+  Unobserved direct-child exit stops new births without forging sibling settlement.
+  Focused engine/harness/routing/process run: 117 passed, 3 explicit live skips;
+  typecheck passed. Native isolated arithmetic witnesses completed and settled:
+  Fable 14.575 seconds, Grok 37.433 seconds. These do not prove write restrictions,
+  a repository task, recovery, or release acceptance. Grok's observed modelUsage
+  decoding was subsequently repaired with a sanitized native fixture; old routing
+  evidence remains unchanged. Two fixture-preflight failures are preserved as
+  unbilled orchestration errors, not model failures; root bootstrap cost is unknown.
+  Both designated native critics returned scoped FAIL: remove event-loop-blocking
+  auth probes, keep escalation alive after direct-child close, conservatively
+  handle unverified descendant effects, witness Claude write refusal, reject
+  unaudited permission profiles, retain private bounded/redacted process evidence,
+  and verify price-catalog integrity before estimates. Also decouple HTTP drive
+  response lifetime from workflow/gate budgets without another scheduler. A prior
+  Fable failure at about 219 seconds remains unexplained by elapsed time alone.
+  Full verify and commit-bound acceptance remain outstanding. Issue-127
+  retirement/acceptance contradictions are separate blockers; npm is not ready.
+- **Model inventory refresh command:** `kxm models refresh` writes the live
+  `.kxm/models/inventory.yaml` union from detected Pi/Grok/AGY catalogs and
+  OpenRouter/Nous `/v1/models` feeds. OpenRouter rates are recorded as
+  standard and Nous rates as discount, each with source and fetch status;
+  missing or dynamic rates remain null. Native catalogs do not establish
+  authentication or dispatch eligibility.
+- **Legacy configuration retirement and harness discovery (2026-09-10):** Retired
+  tracked legacy `.kxm/config` agent/workflow authority and `.kxm/roster.json`
+  in favor of the initialized vNext project resources. `kxm init --dry-run`
+  reports `ready` with no legacy inputs, and `workflow definitions` resolves
+  the local `default.yaml`. Native discovery verified AGY (14 models), Claude
+  (authenticated), Grok (2 models), Codex (authenticated), and Pi exact
+  provider/model auth (`pi auth check --provider xai --model grok-4.6`). Grok
+  currently exposes only two native models and Claude exposes no model-list
+  command; Pi global inventory remains intentionally unknown without exact
+  provider/model context. These are explicit coverage limits, not fabricated
+  three-model claims. Harness parser tests pass 22/22.
+- **Local vNext dispatch (implemented, not accepted):** Authenticated Runtime
+  `POST /v1/runs/:runId/drive` and `kxm runs drive` now exist; created runs pin
+  their compiled plan before starting. Explicit simulation is not live evidence.
+  Current writer must prove authoritative pinned agent/role/policy resolution
+  on every dispatch path; a rejected route must not fall through to a default
+  model. Required acceptance coverage remains endpoint auth and owner binding,
+  created/preparing/running transitions, duplicate drive exclusion, cancellation,
+  producer rejection, restart recovery, and no-progress refusal. Historical
+  unreconciled/cancelling runs are not successful recovery witnesses. Do not
+  replay them blindly, bypass exact attempt identity, or relax sibling settlement
+  invariants to force progress.
 - **Windows resumption (deferred):** restore the two Windows Validate legs and
   their ruleset contexts, and diagnose the Node 24 package cleanup failure, in
   a reviewed change that updates Tracking, tests, and settings together. D3
@@ -1204,7 +1276,7 @@ API; no web-only workflow logic exists.
 
 ## Phase 11: harnesses and strong isolation
 
-Add Claude Code, Codex, Gemini, Kimi, DeepSeek, and generic process adapters;
+Add Claude Code, Codex, Grok, AGY (Google), Kimi, DeepSeek, and generic process adapters;
 container/OS isolation; persistent outbound remote Runtimes; multi-user RBAC;
 and explicit high-availability/takeover fencing.
 
@@ -1214,8 +1286,21 @@ Earlier Claude CLI use is allowed; CLI output is not hub peer evidence.
 `scripts/harness-run.mjs` and `scripts/assignment-run.mjs` are not these
 adapters.
 
+**Implemented partial slice:** Codex headless argv now explicitly requests
+read-only, never-approve execution with user config ignored and exec-policy
+rules retained. Product/catalog/helper/native-critic paths have regression
+coverage; a native Sol invocation exercised the helper flags successfully.
+This does not establish full customization isolation or exact-commit acceptance.
+One-shot outcome, usage, cancellation-accounting, and bounded process regressions
+now pass alongside isolated native Fable/Grok settlement witnesses. Both critics
+still require async auth, termination/evidence hardening, and permission witnesses;
+HTTP lifetime and pinned admission remain open in Tracking. No Phase 11 gate PASS.
+
 **Gate:** unsupported capabilities fail explicitly and no adapter weakens the
-common result, effect, secret, or recovery contracts.
+common result, effect, secret, or recovery contracts. One-shot adapters must
+prove bounded termination and truthful failure/usage settlement with deterministic
+regressions and isolated authenticated live witnesses; a flag audit alone does
+not pass this gate.
 
 ## Cross-cutting test gates
 

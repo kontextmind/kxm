@@ -1,3 +1,5 @@
+# Synthetic historical test fixture. Rates/aliases are NOT vendor quotations,
+# current models, admission evidence, or billable prices. Never deploy this file.
 schema: kxm.prices.v1
 date: "2026-09-08"
 sha256: 949aac1795e626204a093b7a70a398412c6128e241adf012652ca7abe79018ae

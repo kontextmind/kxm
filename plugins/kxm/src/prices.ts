@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
 
@@ -40,6 +40,10 @@ export function parsePriceCatalog(text: string): PriceCatalog {
   if (typeof parsed.date !== "string" || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(parsed.date)) {
     throw new Error("price catalog date must be YYYY-MM-DD");
   }
+  if (!Number.isFinite(Date.parse(parsed.date)) || new Date(parsed.date).toISOString().slice(0, 10) !== parsed.date) {
+    throw new Error("price catalog date must be a valid calendar date");
+  }
+  if (parsed.currency !== undefined && parsed.currency !== "USD") throw new Error("price catalog currency must be USD");
   if (typeof parsed.sha256 !== "string" || !/^(?:sha256:)?[a-f0-9]{64}$/.test(parsed.sha256)) {
     throw new Error("price catalog sha256 must be a 64-character hex digest");
   }
@@ -66,25 +70,34 @@ export function parsePriceCatalog(text: string): PriceCatalog {
     if (!Array.isArray(m.tiers) || m.tiers.length === 0) {
       throw new Error(`price catalog model ${m.id} must have at least one tier`);
     }
-    const tiers: PriceTier[] = m.tiers.map((tItem, tIndex) => {
+    const rawTiers = m.tiers;
+    let previousBound = 0;
+    const tiers: PriceTier[] = rawTiers.map((tItem, tIndex) => {
       if (!tItem || typeof tItem !== "object" || Array.isArray(tItem)) {
         throw new Error(`tier at index ${tIndex} for model ${m.id} must be an object`);
       }
       const t = tItem as Record<string, unknown>;
-      const inputRate = typeof t.inputPerMillion === "number" ? t.inputPerMillion : (typeof t.input === "number" ? t.input : undefined);
-      const outputRate = typeof t.outputPerMillion === "number" ? t.outputPerMillion : (typeof t.output === "number" ? t.output : undefined);
-      if (inputRate === undefined || inputRate < 0) {
-        throw new Error(`tier at index ${tIndex} for model ${m.id} must have a non-negative inputPerMillion`);
-      }
-      if (outputRate === undefined || outputRate < 0) {
-        throw new Error(`tier at index ${tIndex} for model ${m.id} must have a non-negative outputPerMillion`);
+      const rate = (field: string, short: string, required = false): number | null => {
+        const value = t[field] !== undefined ? t[field] : t[short];
+        if (value == null && !required) return null;
+        if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+          throw new Error(`tier ${tIndex} for model ${m.id} requires finite non-negative ${field}`);
+        }
+        return value;
+      };
+      const bound = t.upToContextTokens ?? null;
+      if (bound === null) {
+        if (tIndex !== rawTiers.length - 1) throw new Error("unbounded price tier must be last");
+      } else {
+        if (typeof bound !== "number" || !Number.isSafeInteger(bound) || bound <= previousBound) throw new Error("price tier bounds must be positive and strictly increasing");
+        previousBound = bound;
       }
       return {
-        upToContextTokens: typeof t.upToContextTokens === "number" ? t.upToContextTokens : null,
-        inputPerMillion: inputRate,
-        outputPerMillion: outputRate,
-        cacheReadPerMillion: typeof t.cacheReadPerMillion === "number" ? t.cacheReadPerMillion : (typeof t.cacheRead === "number" ? t.cacheRead : null),
-        cacheWritePerMillion: typeof t.cacheWritePerMillion === "number" ? t.cacheWritePerMillion : (typeof t.cacheWrite === "number" ? t.cacheWrite : null),
+        upToContextTokens: bound,
+        inputPerMillion: rate("inputPerMillion", "input", true)!,
+        outputPerMillion: rate("outputPerMillion", "output", true)!,
+        cacheReadPerMillion: rate("cacheReadPerMillion", "cacheRead"),
+        cacheWritePerMillion: rate("cacheWritePerMillion", "cacheWrite"),
       };
     });
     return {
@@ -96,13 +109,16 @@ export function parsePriceCatalog(text: string): PriceCatalog {
     };
   });
 
-  return {
+  const catalog: PriceCatalog = {
     schema: PRICES_SCHEMA,
     date: parsed.date,
     sha256: parsed.sha256.replace(/^sha256:/, ""),
     currency: typeof parsed.currency === "string" ? parsed.currency : "USD",
     models,
   };
+  if (new Set(models.map((row) => row.id)).size !== models.length) throw new Error("duplicate price catalog model id");
+  if (hashPriceCatalog(catalog) !== catalog.sha256) throw new Error("price catalog hash mismatch");
+  return catalog;
 }
 
 export function loadPriceCatalog(rootOrPath: string): PriceCatalog | undefined {
@@ -110,7 +126,7 @@ export function loadPriceCatalog(rootOrPath: string): PriceCatalog | undefined {
     ? join(rootOrPath, ".kxm", "prices.yaml")
     : (existsSync(join(rootOrPath, "prices.yaml"))
       ? join(rootOrPath, "prices.yaml")
-      : (existsSync(rootOrPath) && !rootOrPath.endsWith("/") ? rootOrPath : undefined));
+      : (existsSync(rootOrPath) && statSync(rootOrPath).isFile() ? rootOrPath : undefined));
 
   if (!candidatePath || !existsSync(candidatePath)) {
     return undefined;

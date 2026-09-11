@@ -8,7 +8,9 @@ writer.
 
 Snapshot date: **2026-09-08** (agy helper admission). Catalog/auth rows below
 are corrected from `plugins/kxm/src/vnext-harness.ts` and helper argv (M5
-docs). Re-probe after any CLI update; these surfaces change without notice.
+docs). Codex flags were re-audited against official online docs and installed
+CLI **0.153.4 on 2026-09-10**; that does not refresh the other rows. Re-probe
+after any CLI update; these surfaces change without notice.
 Installed ≠ auth-verified ≠ helper-eligible.
 
 ## Installed vs auth-verified
@@ -17,7 +19,7 @@ Installed ≠ auth-verified ≠ helper-eligible.
 |---|---|---|---|
 | `pi` | 0.85.0 | `pi auth check --provider <p>`; OpenRouter or Nous Portal may be `ready`; native-lab prefixes are braked | OpenRouter or Nous Portal, after JSONL usage parse |
 | `claude` | 2.1.261 | `claude auth status` → `claude.ai` | read-only plan/review (`fable`) |
-| `codex` | 0.153.3 | `codex login status` → ChatGPT | read-only CLI/docs review (`gpt-5.6-sol`) |
+| `codex` | 0.153.4 | `codex login status` → ChatGPT | read-only CLI/docs review (`gpt-5.6-sol`) |
 | `grok` | 1.0.5 | `grok models` → logged in with grok.com | writer only (`grok-4.6`) |
 | `kimi` | 0.40.1 | oauth via `kimi provider list` | **no** — unverified helper dispatch |
 | `gemini` | 0.56.0 | **unknown** (installed only) | **no** — deprecated individual-tier CLI; catalog stays |
@@ -38,7 +40,7 @@ Phase 11 adapter.
 |---|---|---|---|---|---|---|
 | **pi** | `-p` | `@file` | `--model openrouter/<id>` or `--model nous-portal/<id>` | `--thinking` ladder | `-a` (experiment edit only) or `--tools read,grep,find,ls --no-extensions --no-skills --no-prompt-templates` | `--mode json` |
 | **claude** | `-p` | **stdin** | `--model` | `--effort` (verified) | read-only: `--tools Read,Glob,Grep --safe-mode --strict-mcp-config --disable-slash-commands` | `--output-format json` |
-| **codex** | `exec` | stdin `-` | `-m` | `-c model_reasoning_effort=...` (verified) | `--sandbox read-only --ignore-user-config` | `--json` (JSONL) |
+| **codex** | `exec` | stdin `-` | `-m` | `-c model_reasoning_effort=...` (verified) | `--sandbox read-only --ignore-user-config -c 'approval_policy="never"'` | `--json` (JSONL) |
 | **grok** | `--prompt-file` | file | `-m` | `--reasoning-effort` | `--always-approve --no-subagents --disable-web-search` | `--output-format json` |
 | **agy** | `-p <text>` | argv (no `--prompt-file`, stdin is extra only) | `--model` (Gemini kebab ids; model id already embeds a tier) | `--effort` (also pass; do not dedupe with the id) | `--dangerously-skip-permissions` | `--output-format json` |
 
@@ -57,7 +59,7 @@ implementation, planning, and architecture review; **low** for CLI review.
 | Implement / write | `grok --prompt-file <brief> -m grok-4.6 --reasoning-effort medium --always-approve --no-subagents --disable-web-search --output-format json` |
 | Plan | `cat <brief> \| claude -p --model fable --effort medium --tools Read,Glob,Grep --safe-mode --strict-mcp-config --mcp-config <empty.json> --disable-slash-commands --output-format json` |
 | Review: architecture, permissions | same as Plan |
-| Review: CLI, docs | `codex exec -m gpt-5.6-sol -c model_reasoning_effort="low" -C <dir> --sandbox read-only --ignore-user-config --json - < <brief>` |
+| Review: CLI, docs | `codex exec -m gpt-5.6-sol -c 'model_reasoning_effort="low"' -C <dir> --sandbox read-only --ignore-user-config -c 'approval_policy="never"' --json - < <brief>` |
 
 `just impl|plan|review-arch|review-cli` are **low-level harness transport**.
 They do not mint assignment, witness, or acceptance proof. Normal entry is
@@ -118,10 +120,22 @@ an RPC worker.
   `--max-turns` with `--json-schema` is unproven here; later native smoke
   must show it.
 - **codex**: pass the prompt as `-` on stdin. `turn.failed` is `ok:false`
-  even on exit 0. ChatGPT login is `unmetered`. Helper passes
-  `--ignore-user-config`. Top-level `codex --help` omits that flag; `codex exec
-  --help` and a parser probe (`codex exec --ignore-user-config --help` exit 0)
-  record it. Help presence is not combination proof.
+  in the native helper even on exit 0. ChatGPT login is `unmetered`. The
+  helper and product launch explicitly set read-only sandboxing and
+  `approval_policy="never"` (no interactive approval or sandbox escalation).
+  `--ignore-user-config` skips `$CODEX_HOME/config.toml`, **not auth**, project
+  configuration, all plugins, or all MCP connections. Shell sandboxing is not
+  complete customization/network isolation. Exec-policy rules remain enabled.
+  Do not use `--ignore-rules`, deprecated `--full-auto`, `--approve-for-me`, or
+  sandbox-bypass flags for a critic. `--ephemeral` is optional rollout retention,
+  not a timeout fix; KXM retains its own private transport artifacts either way.
+  Top-level help omits `--ignore-user-config`; use `codex exec --help`.
+  A parser probe is not live combination or model-identity proof.
+  Official references (read 2026-09-10): [CLI commands and flags](https://learn.chatgpt.com/docs/developer-commands?surface=cli#cli-codex-exec),
+  [non-interactive mode](https://learn.chatgpt.com/docs/non-interactive-mode),
+  [approvals and security](https://learn.chatgpt.com/docs/agent-approvals-security),
+  [configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference).
+  The old `/codex/security` URL now describes the separate Codex Security product.
 - **results**: helper stdout is `kxm.harness-result.v2` only. `just runs`
   diagnoses obsolete `kxm.harness-result.v1` files (path, observed known
   schema or `unrecognized`, obsolete id) and does not parse or upgrade

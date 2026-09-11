@@ -118,6 +118,8 @@ export interface VnextProducerRequest {
 
 export interface VnextProducerResult {
   readonly outcome: string;
+  /** Host cannot attest termination; retain the issued attempt, never replay or settle it. */
+  readonly effectUncertain?: true;
   readonly costBasis?: "metered" | "unmetered" | "unknown";
   readonly costUsd?: number | null;
   readonly tokensIn?: number | null;
@@ -473,7 +475,7 @@ export function verifyVnextAttemptCapability(
 function invokeProducer(
   producer: VnextProducer,
   request: VnextProducerRequest,
-): Promise<{ result?: VnextProducerResult; error: boolean }> {
+): Promise<{ result?: VnextProducerResult; error: boolean; errorCode?: string }> {
   let pending: Promise<VnextProducerResult>;
   try {
     pending = Promise.resolve(producer.produce(request));
@@ -1395,6 +1397,11 @@ async function drivePanel(
   };
 
   const settleInvoked = (member: PreparedDispatch, produced: { result?: VnextProducerResult; error: boolean }): boolean => {
+    if (produced.result?.effectUncertain) {
+      settlementFailed = true;
+      stopBirths = true;
+      return false;
+    }
     try {
       context.eventStore.transaction(() => {
         if (vnextPanelDispatchSeams.failSettleMember?.(member)) {
@@ -1519,6 +1526,43 @@ async function drivePanel(
   }
 }
 
+function producerRoutingRecord(context: VnextRuntimeContext, dispatch: PreparedDispatch, result: VnextProducerResult, now: string): RoutingRecordV2 {
+  const run = requireRun(context, dispatch.run.runId);
+  if (result.costBasis === undefined || result.costBasis === null) {
+    throw runtimeError("settle_missing_cost_basis", run.runId, `attempt settlement rejected: missing required costBasis for attempt ${dispatch.attemptId}`);
+  }
+  if (result.costBasis !== "metered" && result.costBasis !== "unmetered" && result.costBasis !== "unknown") {
+    throw runtimeError("settle_invalid_cost_basis", run.runId, `attempt settlement rejected: invalid costBasis ${String(result.costBasis)}`);
+  }
+  if (result.costBasis === "metered" && (typeof result.costUsd !== "number" || !Number.isFinite(result.costUsd) || result.costUsd < 0)) {
+    throw runtimeError("settle_invalid_cost", run.runId, "attempt settlement rejected: metered costBasis requires non-negative finite costUsd");
+  }
+  const envelope = loadVnextRunPlanEnvelope(context.eventStore, run);
+  const rawHash = result.behavioralSha256 ?? behavioralConfigHash({
+    requestedModel: result.requestedModel ?? "simulated",
+    effectiveModel: result.effectiveModel ?? result.requestedModel ?? "simulated",
+    agentRole: dispatch.step.kind === "agent" || dispatch.step.kind === "moa" ? dispatch.step.agent : undefined,
+    toolPolicyVersion: envelope.revisions.toolPolicy,
+  });
+  const record: Record<string, unknown> = {
+    schema: ROUTING_RECORD_V2_SCHEMA, recordedAt: now,
+    project: run.projectId, runId: run.runId, stepId: dispatch.stepId,
+    assignmentId: dispatch.assignmentId, attemptId: dispatch.attemptId,
+    harness: result.harness ?? (dispatch.producerId === "pi" ? "pi" : "driver-simulated"),
+    provider: result.provider ?? "simulated", requestedModel: result.requestedModel ?? "simulated",
+    effectiveModel: result.effectiveModel ?? result.requestedModel ?? "simulated",
+    behavioralSha256: rawHash.startsWith("sha256:") ? rawHash : `sha256:${rawHash}`,
+    latencyMs: typeof result.latencyMs === "number" ? result.latencyMs : 0,
+    costBasis: result.costBasis, costUsd: result.costUsd ?? null,
+    retries: Math.max(0, dispatch.stepAttempt - 1),
+    thinking: result.thinking ?? dispatch.request.thinking,
+  };
+  for (const field of ["agentRole", "contextTokens", "tokensIn", "tokensOut", "cacheReadTokens", "cacheWriteTokens", "priceRef", "providerMetadata"] as const) {
+    if (result[field] !== undefined) record[field] = result[field];
+  }
+  return parseRoutingRecordV2(record);
+}
+
 function settleMember(
   context: VnextRuntimeContext,
   dispatch: PreparedDispatch,
@@ -1555,6 +1599,8 @@ function settleMember(
   };
   push("attempt.status_changed", { attemptId: dispatch.attemptId, status: "settling" });
   if (cancelling) {
+    push("routing.attempt.recorded", { routing: producerRoutingRecord(context, dispatch,
+      result ?? { outcome: "cancelled", costBasis: "unknown", costUsd: null }, now) });
     push("assignment.result_recorded", { assignmentId: dispatch.assignmentId, resultClass: "cancelled", status: "result_recorded" });
     push("attempt.status_changed", { attemptId: dispatch.attemptId, status: "terminal" });
     push("assignment.terminal", { assignmentId: dispatch.assignmentId, outcome: "cancelled", status: "terminal" });
@@ -1596,58 +1642,10 @@ function settleMember(
     push("attempt.status_changed", { attemptId: dispatch.attemptId, status: "terminal" });
     push("assignment.terminal", { assignmentId: dispatch.assignmentId, outcome: "failed", status: "terminal" });
   } else {
-    if (!result || result.costBasis === undefined || result.costBasis === null) {
+    if (!result) {
       throw runtimeError("settle_missing_cost_basis", run.runId, `attempt settlement rejected: missing required costBasis for attempt ${dispatch.attemptId}`);
     }
-    if (result.costBasis !== "metered" && result.costBasis !== "unmetered" && result.costBasis !== "unknown") {
-      throw runtimeError("settle_invalid_cost_basis", run.runId, `attempt settlement rejected: invalid costBasis ${String(result.costBasis)}`);
-    }
-    if (result.costBasis === "metered") {
-      if (typeof result.costUsd !== "number" || !Number.isFinite(result.costUsd) || result.costUsd < 0) {
-        throw runtimeError("settle_invalid_cost", run.runId, "attempt settlement rejected: metered costBasis requires non-negative finite costUsd");
-      }
-    }
-
-    const envelope = loadVnextRunPlanEnvelope(context.eventStore, run);
-    const rawHash = result.behavioralSha256 ?? behavioralConfigHash({
-      requestedModel: result.requestedModel ?? "simulated",
-      effectiveModel: result.effectiveModel ?? result.requestedModel ?? "simulated",
-      agentRole: dispatch.step.kind === "agent" || dispatch.step.kind === "moa" ? dispatch.step.agent : undefined,
-      toolPolicyVersion: envelope.revisions.toolPolicy,
-    });
-    const behavioralSha256 = rawHash.startsWith("sha256:") ? rawHash : `sha256:${rawHash}`;
-
-    const routingRecord: RoutingRecordV2 = {
-      schema: ROUTING_RECORD_V2_SCHEMA,
-      recordedAt: now,
-      project: run.projectId,
-      runId: run.runId,
-      stepId: dispatch.stepId,
-      assignmentId: dispatch.assignmentId,
-      attemptId: dispatch.attemptId,
-      harness: result.harness ?? (dispatch.producerId === "pi" ? "pi" : "driver-simulated"),
-      provider: result.provider ?? "simulated",
-      requestedModel: result.requestedModel ?? "simulated",
-      effectiveModel: result.effectiveModel ?? result.requestedModel ?? "simulated",
-      behavioralSha256,
-      latencyMs: typeof result.latencyMs === "number" ? result.latencyMs : 0,
-      costBasis: result.costBasis,
-      costUsd: result.costBasis === "metered" ? (result.costUsd ?? 0) : (result.costUsd ?? null),
-      retries: Math.max(0, dispatch.stepAttempt - 1),
-    };
-
-    if (result.thinking !== undefined) routingRecord.thinking = result.thinking;
-    else if (dispatch.request.thinking !== undefined) routingRecord.thinking = dispatch.request.thinking;
-    if (result.agentRole !== undefined) routingRecord.agentRole = result.agentRole;
-    if (result.contextTokens !== undefined) routingRecord.contextTokens = result.contextTokens;
-    if (result.tokensIn !== undefined) routingRecord.tokensIn = result.tokensIn;
-    if (result.tokensOut !== undefined) routingRecord.tokensOut = result.tokensOut;
-    if (result.cacheReadTokens !== undefined) routingRecord.cacheReadTokens = result.cacheReadTokens;
-    if (result.cacheWriteTokens !== undefined) routingRecord.cacheWriteTokens = result.cacheWriteTokens;
-    if (result.priceRef !== undefined) routingRecord.priceRef = result.priceRef;
-    if (result.providerMetadata !== undefined) routingRecord.providerMetadata = result.providerMetadata;
-
-    push("routing.attempt.recorded", { routing: parseRoutingRecordV2(routingRecord) });
+    push("routing.attempt.recorded", { routing: producerRoutingRecord(context, dispatch, result, now) });
 
     const outcome = typeof result.outcome === "string" ? result.outcome : undefined;
     const known = outcome !== undefined && dispatch.step.outcomes.includes(outcome);
@@ -2369,8 +2367,11 @@ export function recoverVnextRun(
     const run = requireRun(context, runId);
     let state = foldStoredVnextRun(context, run);
 
-    if (state.status !== "blocked_uncertain" && state.currentStep?.effectState !== "blocked_uncertain") {
+    if (state.status !== "blocked_uncertain" && state.status !== "cancelling" && state.currentStep?.effectState !== "blocked_uncertain") {
       throw runtimeError("run_events_illegal", runId, `run ${runId} is not in blocked_uncertain status`);
+    }
+    if (state.status === "cancelling" && state.currentStep?.effectState === "blocked_uncertain") {
+      state = { ...state, status: "blocked_uncertain" };
     }
 
     const now = new Date().toISOString();

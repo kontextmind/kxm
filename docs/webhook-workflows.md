@@ -21,7 +21,7 @@ The hub stores a SHA-256 payload hash and the rendered coordinator prompt, not t
 
 ## Configure the Jira example
 
-The included [`jira-development.json`](../.kxm/config/workflows/jira-development.json) workspace configuration models this path:
+The included [`jira-development.json`](../.kxm/workflows/default.yaml) workspace configuration models this path:
 
 1. Jira issue enters **In Progress**.
 2. Reproduce the defect and create deterministic evidence.
@@ -41,7 +41,7 @@ Load it without storing its secret in the JSON file:
 ```powershell
 $env:JIRA_WEBHOOK_SECRET = "replace-with-a-high-entropy-secret"
 $env:WORKFLOW_SIGNAL_SECRET = "replace-with-a-separate-callback-secret"
-$env:KXM_WEBHOOK_WORKFLOWS_FILE = ".kxm/config/workflows/jira-development.json"
+$env:KXM_WEBHOOK_WORKFLOWS_FILE = ".kxm/workflows/default.yaml"
 kxm hub start
 ```
 

@@ -46,7 +46,7 @@ async function runCli(argv: string[], env: NodeJS.ProcessEnv = {}, io?: CliIo, c
   try {
     const exit = await runCliImplementation(
       argv,
-      { KXM_LOGS_DIR: isolatedLogs, KXM_STATE_HOME: isolatedLogs, ...env },
+      { KXM_LOGS_DIR: isolatedLogs, KXM_STATE_HOME: isolatedLogs, KXM_USER_CONFIG_DIR: isolatedLogs, ...env },
       actualIo,
       cwd,
     );
@@ -122,7 +122,11 @@ test("isToolAllowed enforces explicit allowedTools, deniedTools, and read-only p
 test("enforceToolPolicy reads KXM_ATTEMPT_TOKEN and fails closed with tool_policy_denied", () => {
   const originalAttempt = process.env.KXM_ATTEMPT_TOKEN;
   const originalSession = process.env.KXM_SESSION_TOKEN;
+  const originalConfigDir = process.env.KXM_USER_CONFIG_DIR;
+  const isolatedConfig = mkdtempSync(join(tmpdir(), "kxm-env-policy-"));
   try {
+    // No environment token must also mean no ambient on-disk user token.
+    process.env.KXM_USER_CONFIG_DIR = isolatedConfig;
     delete process.env.KXM_ATTEMPT_TOKEN;
     delete process.env.KXM_SESSION_TOKEN;
 
@@ -164,6 +168,9 @@ test("enforceToolPolicy reads KXM_ATTEMPT_TOKEN and fails closed with tool_polic
     else delete process.env.KXM_ATTEMPT_TOKEN;
     if (originalSession !== undefined) process.env.KXM_SESSION_TOKEN = originalSession;
     else delete process.env.KXM_SESSION_TOKEN;
+    if (originalConfigDir !== undefined) process.env.KXM_USER_CONFIG_DIR = originalConfigDir;
+    else delete process.env.KXM_USER_CONFIG_DIR;
+    rmSync(isolatedConfig, { recursive: true, force: true });
   }
 });
 

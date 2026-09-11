@@ -50,6 +50,12 @@ function claimPidFile() {
       if (existing?.version === 1 && existing.role === "hub" && Number.isInteger(existing.pid) && processExists(existing.pid)) {
         throw new Error(`KXM hub is already managed by PID ${existing.pid}`);
       }
+      // A well-formed claim whose owner is dead is safe to reclaim. Keep
+      // malformed claims fail-closed because they may belong to another tool.
+      if (existing?.version === 1 && existing.role === "hub" && Number.isInteger(existing.pid) && !processExists(existing.pid)) {
+        rmSync(pidPath, { force: true });
+        continue;
+      }
       throw new Error(
         `KXM hub PID claim is stale at ${pidPath}; remove it only after verifying no hub process is running`,
       );
