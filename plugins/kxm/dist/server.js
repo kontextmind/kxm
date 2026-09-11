@@ -10918,7 +10918,45 @@ import {
   writeFileSync as writeFileSync4
 } from "node:fs";
 import { basename as basename3, dirname as dirname3, join as join4, resolve as resolve4 } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+
+// plugins/kxm/src/sqlite.ts
+import { createRequire } from "node:module";
+var requireFromHere = createRequire(import.meta.url);
+function loadNative() {
+  try {
+    const mod = requireFromHere("node:sqlite");
+    if (mod.DatabaseSync) return { Ctor: mod.DatabaseSync, bun: false };
+  } catch {
+  }
+  try {
+    const mod = requireFromHere("bun:sqlite");
+    const Ctor = mod?.DatabaseSync ?? mod?.Database;
+    if (Ctor) return { Ctor, bun: true };
+  } catch {
+  }
+  throw new Error("kxm: no supported sqlite module found (need node:sqlite or bun:sqlite)");
+}
+var native = loadNative();
+var DatabaseSync = class {
+  inner;
+  constructor(path, options) {
+    let normalized = options;
+    if (native.bun && options) {
+      const { readOnly, ...rest } = options;
+      normalized = readOnly === void 0 ? rest : { ...rest, readonly: readOnly };
+    }
+    this.inner = normalized === void 0 ? new native.Ctor(path) : new native.Ctor(path, normalized);
+  }
+  prepare(sql) {
+    return this.inner.prepare(sql);
+  }
+  exec(sql) {
+    return this.inner.exec(sql);
+  }
+  close() {
+    this.inner.close();
+  }
+};
 
 // plugins/kxm/src/vnext-config.ts
 import { basename as basename2, dirname as dirname2, extname as extname2, isAbsolute, join as join3, relative, resolve as resolve3, sep } from "node:path";

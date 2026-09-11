@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import type { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "./sqlite.ts";
 import type { AgentRecord, MessageRecord } from "./protocol.ts";
 import type { ContextItem } from "./context.ts";
 import type { WorkflowJournalEntry, WorkflowRun } from "./workflow.ts";
