@@ -76,6 +76,7 @@ test("release workflow is tag- and dispatch-triggered, fail-closed, and npm publ
   assert.match(releaseText, /npm-publish/);
   assert.match(releaseText, /scripts\/kxm-publish-npm\.mjs/);
   assert.match(releaseText, /KXM_RELEASE_TAG/);
+  assert.match(releaseText, /path: \.kxm-release-tools/);
   assert.match(releaseText, /registry\.npmjs\.org/);
 });
 
