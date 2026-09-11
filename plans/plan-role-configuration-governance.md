@@ -1,7 +1,7 @@
 # Plan: Role Configuration, Host Decoupling, and Typed Governance
 
-Task Reference: `task_role_governance`  
-Status: Draft / Proposed  
+Task Reference: `task_d3e634858295`  
+Status: In Progress  
 Tracking: [`plans/implementation-plan.md`](implementation-plan.md)
 
 ## 1. Objective
@@ -46,7 +46,7 @@ In KXM today:
 flowchart TD
     subgraph RoleConfig["Role Configuration & Seats"]
         Seats[Role Seats: planner, writer, critic-arch, critic-cli, auditor]
-        HostMap["Host Mapping: ~/.kxm/role-hosts.json<br/>(--host flag or persistent binding)"]
+        HostMap["Host Mapping: .kxm/role-hosts.yaml<br/>(--host flag or persistent binding)"]
         Seats --> HostMap
     end
 
@@ -70,30 +70,35 @@ Define formal role seats with explicit tool, permission, and validation requirem
 
 ```typescript
 export interface RoleSeatDefinition {
-  seatId: "planner" | "writer" | "critic-arch" | "critic-cli" | "doctor" | "fixer";
-  description: string;
-  defaultModel: string;
-  defaultHost: "pi" | "grok" | "agy" | "claude" | "codex" | "ssh";
-  allowedTools: readonly string[];
-  requiredEvidenceKind: "test_run" | "git_diff" | "architecture_review" | "cli_review";
+  seatId: "planner" | "writer" | "critic-arch" | "critic-cli" | "doctor" | "fixer" | string;
+  description?: string;
+  defaultModel?: string;
+  defaultHost?: "pi" | "grok" | "agy" | "claude" | "codex" | "ssh" | string;
+  allowedTools?: readonly string[];
+  requiredEvidenceKind?: "test_run" | "git_diff" | "architecture_review" | "cli_review" | string;
 }
 ```
 
-Store persistent host and provider bindings in `.kxm/role-hosts.json`:
+Store persistent host and provider bindings in `.kxm/role-hosts.yaml` (with backward-compatible fallback for `.json`):
 
-```json
-{
-  "seats": {
-    "planner": { "model": "anthropic/claude-fable-5.1", "host": "pi" },
-    "writer": { "model": "x-ai/grok-4.6", "host": "grok" },
-    "critic-arch": { "model": "anthropic/claude-fable-5.1", "host": "pi" },
-    "critic-cli": { "model": "openai/gpt-5.6-sol", "host": "pi" }
-  },
-  "hostProviders": {
-    "hermes": "openrouter",
-    "remote-worker": "pi"
-  }
-}
+```yaml
+schema: kxm.role-hosts.v1
+seats:
+  planner:
+    model: anthropic/claude-fable-5.1
+    host: pi
+  writer:
+    model: x-ai/grok-4.6
+    host: grok
+  critic-arch:
+    model: anthropic/claude-fable-5.1
+    host: pi
+  critic-cli:
+    model: openai/gpt-5.6-sol
+    host: pi
+hostProviders:
+  hermes: openrouter
+  remote-worker: pi
 ```
 
 ### 2. Typed Terminal Receipts (`plugins/kxm/src/protocol.ts`)

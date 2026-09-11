@@ -14777,7 +14777,7 @@ var require__ = __commonJS({
 
 // plugins/kxm/src/cli.ts
 import { spawn as spawn2, spawnSync as spawnSync8 } from "node:child_process";
-import { createHash as createHash15, createHmac as createHmac3, randomUUID as randomUUID11 } from "node:crypto";
+import { createHash as createHash16, createHmac as createHmac3, randomUUID as randomUUID12 } from "node:crypto";
 import { existsSync as existsSync28, mkdirSync as mkdirSync26, mkdtempSync as mkdtempSync2, readFileSync as readFileSync27, readdirSync as readdirSync11, rmSync as rmSync10, writeFileSync as writeFileSync24 } from "node:fs";
 import { homedir as homedir6, tmpdir as tmpdir2 } from "node:os";
 import { basename as basename6, dirname as dirname19, join as join34, relative as relative6, resolve as resolve21 } from "node:path";
@@ -21389,7 +21389,11 @@ function verifyArtifactExists(rootInput, pathInput) {
   }
 }
 
+// plugins/kxm/src/workflow.ts
+import { createHash as createHash4 } from "node:crypto";
+
 // plugins/kxm/src/protocol.ts
+import { randomUUID as randomUUID2 } from "node:crypto";
 var DEFAULT_MESSAGE_TTL_MS = 24 * 60 * 6e4;
 var MIN_MESSAGE_TTL_MS = 1e3;
 var MAX_MESSAGE_TTL_MS = 7 * 24 * 60 * 6e4;
@@ -21410,6 +21414,9 @@ var ProtocolError = class extends Error {
 function nowIso() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }
+function newId(prefix) {
+  return `${prefix}_${randomUUID2().replaceAll("-", "")}`;
+}
 function requireString(value, field, options = {}) {
   if (typeof value !== "string") {
     throw new ProtocolError(400, `${field} must be a string`);
@@ -21422,6 +21429,65 @@ function requireString(value, field, options = {}) {
     throw new ProtocolError(400, `${field} exceeds ${options.max} characters`);
   }
   return result;
+}
+function optionalString(value, field, max) {
+  if (value === void 0 || value === null || value === "") return void 0;
+  return requireString(value, field, { max });
+}
+var TERMINAL_RECEIPT_SCHEMA = "kxm.terminal-receipt.v1";
+var VALID_TERMINAL_STATUSES = /* @__PURE__ */ new Set(["accepted", "audit_escalation", "rejected", "error"]);
+function validateTerminalReceipt(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new ProtocolError(400, "terminal receipt must be an object", "invalid_terminal_receipt");
+  }
+  const record = value;
+  if (record.schema !== void 0 && record.schema !== TERMINAL_RECEIPT_SCHEMA) {
+    throw new ProtocolError(400, `terminal receipt schema must be ${TERMINAL_RECEIPT_SCHEMA}`, "invalid_terminal_receipt");
+  }
+  const status = record.status;
+  if (!status || !VALID_TERMINAL_STATUSES.has(status)) {
+    throw new ProtocolError(
+      400,
+      `terminal receipt status must be one of: ${Array.from(VALID_TERMINAL_STATUSES).join(", ")}`,
+      "invalid_terminal_receipt"
+    );
+  }
+  const seat = requireString(record.seat, "seat", { max: 64 });
+  const runId = requireString(record.runId, "runId", { max: 128 });
+  const stageId = requireString(record.stageId, "stageId", { max: 128 });
+  const timestamp = requireString(record.timestamp, "timestamp", { max: 64 });
+  const host = requireString(record.host, "host", { max: 64 });
+  const model = requireString(record.model, "model", { max: 128 });
+  let evidence;
+  if (record.evidence !== void 0) {
+    if (!record.evidence || typeof record.evidence !== "object" || Array.isArray(record.evidence)) {
+      throw new ProtocolError(400, "terminal receipt evidence must be an object", "invalid_terminal_receipt");
+    }
+    evidence = record.evidence;
+  }
+  let metrics;
+  if (record.metrics !== void 0) {
+    if (!record.metrics || typeof record.metrics !== "object" || Array.isArray(record.metrics)) {
+      throw new ProtocolError(400, "terminal receipt metrics must be an object", "invalid_terminal_receipt");
+    }
+    metrics = record.metrics;
+  }
+  const escalationReason = optionalString(record.escalationReason, "escalationReason", 1024);
+  const ruling = optionalString(record.ruling, "ruling", 2048);
+  return {
+    schema: TERMINAL_RECEIPT_SCHEMA,
+    status,
+    seat,
+    runId,
+    stageId,
+    timestamp,
+    host,
+    model,
+    ...evidence ? { evidence } : {},
+    ...metrics ? { metrics } : {},
+    ...escalationReason ? { escalationReason } : {},
+    ...ruling ? { ruling } : {}
+  };
 }
 
 // plugins/kxm/src/workflow.ts
@@ -21459,6 +21525,20 @@ function stringArray(value, name) {
 function canonicalWorkflowEvidenceKey(value) {
   return value.trim().replace(/\s+/gu, " ").toLowerCase();
 }
+function normalizeWorkflowEvidence(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const normalized = /* @__PURE__ */ new Map();
+  for (const [requirement, candidate] of Object.entries(value)) {
+    const key = canonicalWorkflowEvidenceKey(requirement);
+    if (!key) continue;
+    const values = Array.isArray(candidate) ? candidate : [candidate];
+    const safeValues = values.filter((item) => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim());
+    if (safeValues.length > 0) {
+      normalized.set(key, [.../* @__PURE__ */ new Set([...normalized.get(key) ?? [], ...safeValues])]);
+    }
+  }
+  return Object.fromEntries(normalized);
+}
 function normalizeVerifiedWorkflowEvidence(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   const result = /* @__PURE__ */ new Map();
@@ -21473,6 +21553,105 @@ function normalizeVerifiedWorkflowEvidence(value) {
     if (snapshots.length) result.set(requirement, snapshots);
   }
   return Object.fromEntries(result);
+}
+function mergeVerifiedWorkflowEvidence(current, incoming = {}) {
+  const merged = new Map(Object.entries(normalizeVerifiedWorkflowEvidence(current)));
+  for (const [rawRequirement, snapshots] of Object.entries(incoming)) {
+    const requirement = canonicalWorkflowEvidenceKey(rawRequirement);
+    if (!requirement) continue;
+    const values = [...merged.get(requirement) ?? []];
+    for (const snapshot of snapshots) {
+      if (!values.some((candidate) => candidate.messageId === snapshot.messageId)) values.push(snapshot);
+    }
+    if (values.length) merged.set(requirement, values);
+  }
+  return Object.fromEntries(merged);
+}
+function mergeWorkflowEvidence(current, incoming = {}) {
+  const merged = new Map(Object.entries(normalizeWorkflowEvidence(current)));
+  const seen = /* @__PURE__ */ new Set();
+  for (const [rawRequirement, rawValue] of Object.entries(incoming)) {
+    const requirement = canonicalWorkflowEvidenceKey(rawRequirement);
+    if (!requirement || typeof rawValue !== "string" || !rawValue.trim()) {
+      throw new ProtocolError(400, "evidence must contain non-empty keyed string values", "invalid_workflow_evidence");
+    }
+    if (seen.has(requirement)) {
+      throw new ProtocolError(
+        400,
+        `evidence contains duplicate normalized requirement identity: ${requirement}`,
+        "invalid_workflow_evidence"
+      );
+    }
+    seen.add(requirement);
+    const value = rawValue.trim();
+    const values = merged.get(requirement) ?? [];
+    if (!values.includes(value)) values.push(value);
+    merged.set(requirement, values);
+  }
+  return Object.fromEntries(merged);
+}
+function activeWorkflowAttempt(stage) {
+  return stage.attempts + 1;
+}
+function validIsoTimestamp(value) {
+  if (!value) return void 0;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : void 0;
+}
+function peerEvidenceRequirementStatus(stage, requirementKey, runId, verifiedEvidence = normalizeVerifiedWorkflowEvidence(stage.verifiedEvidence)) {
+  const canonicalKey = canonicalWorkflowEvidenceKey(requirementKey);
+  const policy = stage.resolvedEvidencePolicies?.[canonicalKey];
+  if (!policy) return void 0;
+  const attempt = activeWorkflowAttempt(stage);
+  const eligibleIds = new Set(policy.eligibleProducers.map((producer) => producer.id));
+  const producers = /* @__PURE__ */ new Set();
+  for (const snapshot of verifiedEvidence[canonicalKey] ?? []) {
+    if (snapshot.schema === "pi-mesh.verified-peer-evidence.v1" && snapshot.status === "replied" && snapshot.context?.schema === "pi-mesh.workflow-message-context.v1" && snapshot.context.runId === runId && snapshot.context.stageId === stage.id && snapshot.context.requirementKey === canonicalKey && snapshot.context.attempt === attempt && eligibleIds.has(snapshot.producerId) && /^[a-f0-9]{64}$/.test(snapshot.requestSha256) && /^[a-f0-9]{64}$/.test(snapshot.replySha256) && validIsoTimestamp(snapshot.createdAt) !== void 0 && validIsoTimestamp(snapshot.replyCreatedAt) !== void 0 && validIsoTimestamp(snapshot.repliedAt) !== void 0 && validIsoTimestamp(snapshot.verifiedAt) !== void 0) producers.add(snapshot.producerId);
+  }
+  const approval = stage.degradationApprovals?.find(
+    (candidate) => candidate.requirementKey === canonicalKey && candidate.attempt === attempt
+  );
+  const effectiveMinProducers = approval?.approvedMinProducers ?? policy.minProducers;
+  return {
+    requirementKey: canonicalKey,
+    policyMinProducers: policy.minProducers,
+    effectiveMinProducers,
+    producers: [...producers],
+    met: producers.size >= effectiveMinProducers,
+    degraded: Boolean(approval && producers.size < policy.minProducers && producers.size >= effectiveMinProducers),
+    ...approval ? { approval } : {}
+  };
+}
+function requireCompleteEvidence(stage, evidence, verifiedEvidence, runId) {
+  const missing = [];
+  const peerStatuses = [];
+  for (const rawRequirement of stage.requiredEvidence) {
+    const requirement = canonicalWorkflowEvidenceKey(rawRequirement);
+    const peerStatus = peerEvidenceRequirementStatus(stage, requirement, runId, verifiedEvidence);
+    if (peerStatus) {
+      peerStatuses.push(peerStatus);
+      if (!peerStatus.met) missing.push(requirement);
+    } else if (stage.evidencePolicies?.[requirement]) {
+      throw new ProtocolError(
+        409,
+        `stage ${stage.id} evidence policy ${requirement} was not resolved when the run started`,
+        "workflow_evidence_policy_unresolved"
+      );
+    } else if (!evidence[requirement]?.length) {
+      missing.push(requirement);
+    }
+  }
+  if (missing.length === 0) return peerStatuses;
+  throw new ProtocolError(
+    400,
+    `stage ${stage.id} is missing required evidence: ${missing.join(", ")}`,
+    "workflow_evidence_incomplete",
+    {
+      missingRequirements: missing,
+      providedRequirements: Object.keys(evidence),
+      peerRequirements: peerStatuses
+    }
+  );
 }
 function parseWorkflowEvidencePolicies(value, stageId, requiredEvidence, workflowId, targetName, warn) {
   if (value === void 0) return void 0;
@@ -21646,12 +21825,17 @@ function parseWorkflowDefinitions(raw, environment = process.env, onWarning) {
       if (stageMaxTransitions !== void 0 && (!Number.isInteger(stageMaxTransitions) || stageMaxTransitions < 1 || stageMaxTransitions > 100)) {
         throw new Error(`stage ${stageId} maxTransitions must be an integer between 1 and 100`);
       }
+      const autoResumeLimit = stage.autoResumeLimit;
+      if (autoResumeLimit !== void 0 && (!Number.isInteger(autoResumeLimit) || autoResumeLimit < 1 || autoResumeLimit > 20)) {
+        throw new Error(`stage ${stageId} autoResumeLimit must be an integer between 1 and 20`);
+      }
       return {
         id: stageId,
         label: requireString(stage.label ?? stageId, "stage.label", { max: 128 }),
         instructions: requireString(stage.instructions, "stage.instructions", { max: 4e3 }),
         requiredEvidence,
         maxAttempts,
+        ...autoResumeLimit !== void 0 ? { autoResumeLimit } : {},
         ...area ? { area } : {},
         ...evidencePolicies ? { evidencePolicies } : {},
         ...on ? { on } : {},
@@ -21755,9 +21939,298 @@ function parseOutcomeMap(stageId, raw) {
   }
   return map;
 }
+function resolveOutcomeRule(stage, outcomeKey) {
+  const raw = stage.on?.[outcomeKey];
+  return raw === void 0 ? void 0 : normalizeOutcomeValue(raw, `stage ${stage.id} on.${outcomeKey}`);
+}
+function transitionCounts(run, fromStage, outcome, target) {
+  const records = run.transitions ?? [];
+  return {
+    total: records.length,
+    fromStage: records.filter((record) => record.fromStage === fromStage).length,
+    forEdge: records.filter((record) => record.fromStage === fromStage && record.outcome === outcome && record.toStage === target).length
+  };
+}
+function recordTransition(run, fromStage, rule, outcome, attempt, evidenceKeys, timestamp) {
+  const record = {
+    id: newId("trans"),
+    fromStage,
+    toStage: rule.target,
+    outcome,
+    attempt,
+    evidenceKeys,
+    at: timestamp
+  };
+  run.transitions = [...run.transitions ?? [], record];
+  return record;
+}
+function enterStage(run, stage, timestamp) {
+  stage.status = "in_progress";
+  stage.attempts = 0;
+  stage.evidence = {};
+  stage.verifiedEvidence = {};
+  stage.startedAt = timestamp;
+  stage.updatedAt = timestamp;
+  delete stage.summary;
+  run.currentStage = stage.id;
+  run.updatedAt = timestamp;
+}
+function takeDeclaredTransition(run, stage, rule, outcome, summary, attempt, timestamp, evidenceKeys) {
+  const definitionBudget = run.maxTransitions;
+  const counts = transitionCounts(run, stage.id, outcome, rule.target);
+  const edgeExhausted = rule.maxTransitions !== void 0 && counts.forEdge >= rule.maxTransitions;
+  const stageExhausted = stage.maxTransitions !== void 0 && counts.fromStage >= stage.maxTransitions;
+  const globalExhausted = definitionBudget !== void 0 && counts.total >= definitionBudget;
+  if (edgeExhausted || stageExhausted || globalExhausted) {
+    stage.completedAt = timestamp;
+    run.status = "failed";
+    delete run.currentStage;
+    run.updatedAt = timestamp;
+    return {
+      retry: false,
+      completed: false,
+      run,
+      exhausted: true
+    };
+  }
+  const record = recordTransition(run, stage.id, rule, outcome, attempt, evidenceKeys.slice(0, 32), timestamp);
+  if (rule.target === WORKFLOW_TERMINAL_TARGET) {
+    stage.completedAt = timestamp;
+    run.status = "completed";
+    delete run.currentStage;
+    run.completedAt = timestamp;
+    run.updatedAt = timestamp;
+    return { retry: false, completed: true, run, transition: record };
+  }
+  const target = run.stages.find((candidate) => candidate.id === rule.target);
+  if (!target) {
+    run.status = "failed";
+    delete run.currentStage;
+    return { retry: false, completed: false, run, exhausted: true };
+  }
+  stage.summary = summary;
+  enterStage(run, target, timestamp);
+  return { retry: false, completed: false, run, transition: record };
+}
+function evidenceValueSha256(evidence, key) {
+  const values = evidence[canonicalWorkflowEvidenceKey(key)];
+  if (!values || values.length === 0) return void 0;
+  return createHash4("sha256").update([...values].sort().join("\n"), "utf8").digest("hex");
+}
+function enforceOracles(run, stageId, evidence) {
+  if (run.oracle) {
+    const presented = evidenceValueSha256(evidence, run.oracle.evidenceKey);
+    if (presented !== void 0 && presented !== run.oracle.sha256) {
+      throw new ProtocolError(
+        400,
+        `evidence ${run.oracle.evidenceKey} does not match the immutable reproduction oracle captured at ${run.oracle.capturedAt}; the confirmed reproduction may not be weakened`,
+        "weakened_reproduction"
+      );
+    }
+  }
+  if (run.requirePlanHash?.includes(stageId) && !run.planHash) {
+    throw new ProtocolError(
+      400,
+      `stage ${stageId} requires an approved plan hash before it can checkpoint`,
+      "plan_hash_required"
+    );
+  }
+}
+function captureOracles(run, stageId, evidence, timestamp) {
+  if (run.reproOracle?.stageId === stageId) {
+    const sha256 = evidenceValueSha256(evidence, run.reproOracle.evidenceKey);
+    if (sha256 !== void 0) {
+      run.oracle = { evidenceKey: run.reproOracle.evidenceKey, sha256, capturedAt: timestamp };
+    }
+  }
+  if (run.planHashConfig?.stageId === stageId) {
+    const sha256 = evidenceValueSha256(evidence, run.planHashConfig.evidenceKey);
+    if (sha256 !== void 0) {
+      run.planHash = { evidenceKey: run.planHashConfig.evidenceKey, sha256, capturedAt: timestamp };
+    }
+  }
+}
+function checkpointRun(run, stageId, status, summary, evidence, timestamp, verifiedEvidence = {}, outcome) {
+  if (run.status !== "running") throw new ProtocolError(409, `workflow is ${run.status}`, "workflow_terminal");
+  const stage = run.stages.find((candidate) => candidate.id === stageId);
+  if (!stage) throw new ProtocolError(404, `workflow stage not found: ${stageId}`, "workflow_stage_not_found");
+  if (stage.id !== run.currentStage || stage.status !== "in_progress") {
+    throw new ProtocolError(409, `stage ${stageId} is not currently active`, "workflow_stage_out_of_order");
+  }
+  const accumulatedEvidence = mergeWorkflowEvidence(stage.evidence, evidence);
+  const accumulatedVerifiedEvidence = mergeVerifiedWorkflowEvidence(stage.verifiedEvidence, verifiedEvidence);
+  enforceOracles(run, stageId, accumulatedEvidence);
+  const peerStatuses = status === "passed" ? requireCompleteEvidence(stage, accumulatedEvidence, accumulatedVerifiedEvidence, run.id) : [];
+  const degradedRequirements = peerStatuses.filter((peerStatus) => peerStatus.degraded);
+  stage.attempts += 1;
+  stage.summary = summary;
+  if (status === "passed") {
+    stage.evidence = accumulatedEvidence;
+    if (Object.keys(accumulatedVerifiedEvidence).length) stage.verifiedEvidence = accumulatedVerifiedEvidence;
+    captureOracles(run, stageId, accumulatedEvidence, timestamp);
+    if (degradedRequirements.length) {
+      stage.degraded = true;
+      stage.degradedRequirements = degradedRequirements.map((peerStatus) => peerStatus.requirementKey);
+    }
+  }
+  stage.updatedAt = timestamp;
+  run.updatedAt = timestamp;
+  if (status !== "passed") {
+    stage.status = status;
+    if (stage.attempts >= stage.maxAttempts) {
+      stage.completedAt = timestamp;
+      run.status = "failed";
+      delete run.currentStage;
+      return { retry: false, completed: false, run };
+    }
+    if (stage.autoResumeLimit !== void 0 && stage.attempts >= stage.autoResumeLimit) {
+      stage.status = "in_progress";
+      const reason = summary || `autoResumeLimit of ${stage.autoResumeLimit} reached on stage ${stage.id}`;
+      const receipt = validateTerminalReceipt({
+        schema: TERMINAL_RECEIPT_SCHEMA,
+        status: "audit_escalation",
+        seat: stage.id,
+        runId: run.id,
+        stageId: stage.id,
+        timestamp,
+        host: "pi",
+        model: "default",
+        escalationReason: reason
+      });
+      const expiresAt = new Date(Date.parse(timestamp) + 24 * 60 * 60 * 1e3).toISOString();
+      waitForWorkflowSignal(run, stage.id, "audit_escalation", reason, timestamp, expiresAt);
+      stage.receipt = receipt;
+      stage.auditEscalation = {
+        reason,
+        timestamp,
+        receipt
+      };
+      return { retry: false, completed: false, run };
+    }
+    stage.status = status;
+    const outcomeKey = outcome ?? status;
+    const rule = resolveOutcomeRule(stage, outcomeKey);
+    if (rule && stage.attempts < stage.maxAttempts) {
+      const result = takeDeclaredTransition(run, stage, rule, outcomeKey, summary, stage.attempts, timestamp, Object.keys(accumulatedEvidence));
+      if (result.transition !== void 0 && !result.completed && rule.target !== stage.id) {
+        stage.status = "pending";
+      }
+      return result;
+    }
+    stage.status = "in_progress";
+    return { retry: true, completed: false, run };
+  }
+  stage.status = "passed";
+  stage.completedAt = timestamp;
+  const passedRule = resolveOutcomeRule(stage, outcome ?? "passed");
+  if (passedRule) {
+    return takeDeclaredTransition(run, stage, passedRule, outcome ?? "passed", summary, stage.attempts, timestamp, Object.keys(accumulatedEvidence));
+  }
+  const next = run.stages.find((candidate) => candidate.status === "pending");
+  if (next) {
+    next.status = "in_progress";
+    next.startedAt = timestamp;
+    next.updatedAt = timestamp;
+    run.currentStage = next.id;
+    return {
+      retry: false,
+      completed: false,
+      run,
+      ...degradedRequirements.length ? { degraded: true } : {}
+    };
+  }
+  run.status = "completed";
+  delete run.currentStage;
+  run.completedAt = timestamp;
+  return {
+    retry: false,
+    completed: true,
+    run,
+    ...degradedRequirements.length ? { degraded: true } : {}
+  };
+}
+function waitForWorkflowSignal(run, stageId, signalKey, summary, timestamp, expiresAt, evidence = {}, verifiedEvidence = {}) {
+  if (run.status !== "running") throw new ProtocolError(409, `workflow is ${run.status}`, "workflow_not_running");
+  const stage = run.stages.find((candidate) => candidate.id === stageId);
+  if (!stage) throw new ProtocolError(404, `workflow stage not found: ${stageId}`, "workflow_stage_not_found");
+  if (stage.id !== run.currentStage || stage.status !== "in_progress") {
+    throw new ProtocolError(409, `stage ${stageId} is not currently active`, "workflow_stage_out_of_order");
+  }
+  if (Date.parse(expiresAt) <= Date.parse(timestamp)) {
+    throw new ProtocolError(400, "workflow signal expiry must be in the future", "workflow_wait_invalid");
+  }
+  stage.evidence = mergeWorkflowEvidence(stage.evidence, evidence);
+  const accumulatedVerifiedEvidence = mergeVerifiedWorkflowEvidence(stage.verifiedEvidence, verifiedEvidence);
+  if (Object.keys(accumulatedVerifiedEvidence).length) stage.verifiedEvidence = accumulatedVerifiedEvidence;
+  stage.status = "waiting";
+  stage.updatedAt = timestamp;
+  run.status = "waiting";
+  run.waiting = { stageId, signalKey, summary, createdAt: timestamp, expiresAt };
+  run.updatedAt = timestamp;
+  return run;
+}
+function resumeWorkflowFromSignal(run, signalKey, status, summary, evidence, timestamp) {
+  if (run.status !== "waiting" || !run.waiting) {
+    throw new ProtocolError(409, `workflow is ${run.status}`, "workflow_not_waiting");
+  }
+  if (run.waiting.signalKey !== signalKey) {
+    throw new ProtocolError(409, `workflow is waiting for ${run.waiting.signalKey}`, "workflow_signal_mismatch");
+  }
+  const stageId = run.waiting.stageId;
+  const stage = run.stages.find((candidate) => candidate.id === stageId);
+  if (!stage || stage.id !== run.currentStage || stage.status !== "waiting") {
+    throw new ProtocolError(409, "workflow wait state is inconsistent", "workflow_wait_inconsistent");
+  }
+  const accumulatedEvidence = mergeWorkflowEvidence(stage.evidence, evidence);
+  if (status === "passed") {
+    requireCompleteEvidence(
+      stage,
+      accumulatedEvidence,
+      normalizeVerifiedWorkflowEvidence(stage.verifiedEvidence),
+      run.id
+    );
+  }
+  run.status = "running";
+  stage.status = "in_progress";
+  delete run.waiting;
+  const result = checkpointRun(run, stageId, status, summary, evidence, timestamp);
+  return { ...result, stageId };
+}
+function resumeWorkflowFromRuling(run, ruling, timestamp, options = {}) {
+  if (run.status !== "waiting" || !run.waiting) {
+    throw new ProtocolError(409, `workflow is ${run.status}`, "workflow_not_waiting");
+  }
+  if (run.waiting.signalKey !== "audit_escalation") {
+    throw new ProtocolError(
+      409,
+      `workflow is waiting for signal '${run.waiting.signalKey}', not 'audit_escalation'`,
+      "workflow_signal_mismatch"
+    );
+  }
+  const stageId = run.waiting.stageId;
+  const stage = run.stages.find((s) => s.id === stageId);
+  if (!stage) throw new ProtocolError(404, `workflow stage not found: ${stageId}`, "workflow_stage_not_found");
+  const status = options.status ?? "passed";
+  const evidence = options.evidence ?? {};
+  if (stage.auditEscalation) {
+    stage.auditEscalation.ruling = ruling;
+    if (stage.auditEscalation.receipt) {
+      stage.auditEscalation.receipt.ruling = ruling;
+    }
+  }
+  stage.summary = `Resumed by operator ruling: ${ruling}`;
+  return resumeWorkflowFromSignal(
+    run,
+    "audit_escalation",
+    status,
+    `Resumed: ${ruling}`,
+    evidence,
+    timestamp
+  );
+}
 
 // plugins/kxm/src/github-watch.ts
-import { createHmac, randomUUID as randomUUID2 } from "node:crypto";
+import { createHmac, randomUUID as randomUUID3 } from "node:crypto";
 async function fetchWithTimeout(fetchImpl, input, init, timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), Math.max(1, timeoutMs));
@@ -21856,7 +22329,7 @@ async function watchGithubChecks(input) {
     "workflow.signal": input.signalKey
   };
   const explicitDeliveryId = input.deliveryId?.trim();
-  const deliveryGeneration = randomUUID2();
+  const deliveryGeneration = randomUUID3();
   let deliveryId = explicitDeliveryId || `github-watch:${deliveryGeneration}:pr-${input.pr}`;
   const deliver = async (status, summary, evidence) => {
     const boundedEvidence = Object.fromEntries(Object.entries({ ...contextEvidence, ...evidence }).slice(0, 64));
@@ -22172,7 +22645,7 @@ function writeRetrospective(outDir, doc) {
 
 // plugins/kxm/src/skills.ts
 var import_yaml4 = __toESM(require_dist(), 1);
-import { createHash as createHash4 } from "node:crypto";
+import { createHash as createHash5 } from "node:crypto";
 import { existsSync as existsSync5, mkdirSync as mkdirSync4, readdirSync as readdirSync4, readFileSync as readFileSync4, renameSync as renameSync2, rmSync, statSync as statSync2, writeFileSync as writeFileSync4 } from "node:fs";
 import { join as join4 } from "node:path";
 var SKILL_CANDIDATE_SCHEMA = "kxm.skill-candidate.v1";
@@ -22197,7 +22670,7 @@ var SkillLifecycleError = class extends Error {
   }
 };
 function skillContentSha256(content) {
-  return createHash4("sha256").update(content, "utf8").digest("hex");
+  return createHash5("sha256").update(content, "utf8").digest("hex");
 }
 function skillIdFor(name, contentSha256) {
   const slug = name.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
@@ -23258,7 +23731,7 @@ function readRoutingRecords(path4) {
 
 // plugins/kxm/src/prices.ts
 var import_yaml5 = __toESM(require_dist(), 1);
-import { createHash as createHash5 } from "node:crypto";
+import { createHash as createHash6 } from "node:crypto";
 import { existsSync as existsSync6, readFileSync as readFileSync6, statSync as statSync3 } from "node:fs";
 import { join as join7 } from "node:path";
 function hashPriceCatalog(catalog) {
@@ -23280,7 +23753,7 @@ function hashPriceCatalog(catalog) {
       }))
     })).sort((a, b2) => a.id.localeCompare(b2.id))
   };
-  return createHash5("sha256").update(JSON.stringify(canonical2), "utf8").digest("hex");
+  return createHash6("sha256").update(JSON.stringify(canonical2), "utf8").digest("hex");
 }
 function parsePriceCatalog(text) {
   const parsed = (0, import_yaml5.parse)(text);
@@ -23676,7 +24149,7 @@ function writeSession(assetsDir, session, dryRun = false) {
 }
 
 // plugins/kxm/src/improve.ts
-import { createHash as createHash6 } from "node:crypto";
+import { createHash as createHash7 } from "node:crypto";
 import { existsSync as existsSync9, mkdirSync as mkdirSync10, writeFileSync as writeFileSync9 } from "node:fs";
 import { join as join11, relative as relative3, resolve as resolve6 } from "node:path";
 var CANDIDATE_SCHEMA = "kxm.candidate.v1";
@@ -23824,7 +24297,7 @@ function groupRoutingRecords(records, options = {}) {
     const isCandidate = recurrence >= minRecurrence && verifyPassRate >= minPassRate;
     const candidateKind = isCandidate ? classifyCandidateKind(group.stepId, group.agentRole) : void 0;
     const safeSlug = group.stepId.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 16) || "step";
-    const keyHash = createHash6("sha256").update(`${group.workflowHash}:${group.stepId}:${group.agentRole}:${group.promptHash}`).digest("hex").slice(0, 10);
+    const keyHash = createHash7("sha256").update(`${group.workflowHash}:${group.stepId}:${group.agentRole}:${group.promptHash}`).digest("hex").slice(0, 10);
     const candidateId = isCandidate && candidateKind ? `cand_${candidateKind.replace(/-/g, "_")}_${safeSlug}_${keyHash}` : void 0;
     rows.push({
       workflowHash: group.workflowHash,
@@ -33548,12 +34021,12 @@ async function runMeshTui(input) {
 
 // plugins/kxm/src/session-work.ts
 import { spawnSync as spawnSync5 } from "node:child_process";
-import { randomUUID as randomUUID3 } from "node:crypto";
+import { randomUUID as randomUUID4 } from "node:crypto";
 import { existsSync as existsSync13, mkdirSync as mkdirSync14, readFileSync as readFileSync13, renameSync as renameSync4, writeFileSync as writeFileSync12 } from "node:fs";
 import { join as join19 } from "node:path";
 
 // plugins/kxm/src/kxm-update.ts
-import { createHash as createHash7 } from "node:crypto";
+import { createHash as createHash8 } from "node:crypto";
 import { existsSync as existsSync11, readFileSync as readFileSync11, writeFileSync as writeFileSync10, mkdirSync as mkdirSync12 } from "node:fs";
 import { join as join17 } from "node:path";
 var KXM_UPDATE_SCHEMA = "kxm.update.v1";
@@ -33706,7 +34179,7 @@ async function fetchLatestKxmVersion(source, env, fetchImpl = fetch) {
 function verifyReleaseAssetDigest(path4, sha256) {
   if (!existsSync11(path4)) return false;
   try {
-    const actual = createHash7("sha256").update(readFileSync11(path4)).digest("hex");
+    const actual = createHash8("sha256").update(readFileSync11(path4)).digest("hex");
     return actual === sha256.toLowerCase();
   } catch {
     return false;
@@ -34031,7 +34504,7 @@ function writeCachedSessionBrief(stateDir, brief) {
   try {
     mkdirSync14(stateDir, { recursive: true, mode: 448 });
     const file = join19(stateDir, "session-brief.json");
-    const tmp = `${file}.tmp.${randomUUID3().slice(0, 8)}`;
+    const tmp = `${file}.tmp.${randomUUID4().slice(0, 8)}`;
     writeFileSync12(tmp, JSON.stringify(brief, null, 2), { encoding: "utf8", mode: 384 });
     renameSync4(tmp, file);
   } catch {
@@ -34214,7 +34687,7 @@ import { join as join21 } from "node:path";
 
 // plugins/kxm/src/vnext-bindings.ts
 import { spawnSync as spawnSync6 } from "node:child_process";
-import { createHash as createHash8, randomUUID as randomUUID4 } from "node:crypto";
+import { createHash as createHash9, randomUUID as randomUUID5 } from "node:crypto";
 import {
   chmodSync as chmodSync2,
   closeSync,
@@ -34276,7 +34749,7 @@ function vnextUserStateRoot(options = {}) {
 function projectBindingKey(projectRoot, platform = process.platform) {
   const canonical2 = canonicalHostPath2(projectRoot);
   const keyInput = platform === "win32" ? canonical2.toLocaleLowerCase("en-US") : canonical2;
-  return createHash8("sha256").update(keyInput, "utf8").digest("hex");
+  return createHash9("sha256").update(keyInput, "utf8").digest("hex");
 }
 function vnextLocalBindingFile(projectRoot, options = {}) {
   const stateRoot = vnextUserStateRoot(options);
@@ -34503,7 +34976,7 @@ function writeVnextLocalBindings(projectRoot, projectId, repositories, options =
   const { file, record } = planned;
   if (!planned.written) return planned;
   ensureBindingDirectory(file, vnextUserStateRoot(options));
-  const temporary = join20(dirname9(file), `.repository-bindings-${process.pid}-${randomUUID4()}.tmp`);
+  const temporary = join20(dirname9(file), `.repository-bindings-${process.pid}-${randomUUID5()}.tmp`);
   let descriptor;
   try {
     descriptor = openSync(temporary, "wx", 384);
@@ -34635,12 +35108,12 @@ function resolveInstallKind(probe, npmGlobalRoot) {
 }
 
 // plugins/kxm/src/vnext-init.ts
-import { randomUUID as randomUUID6 } from "node:crypto";
+import { randomUUID as randomUUID7 } from "node:crypto";
 import { existsSync as existsSync19 } from "node:fs";
 import { basename as basename5, join as join25 } from "node:path";
 
 // plugins/kxm/src/vnext-repair.ts
-import { randomUUID as randomUUID5 } from "node:crypto";
+import { randomUUID as randomUUID6 } from "node:crypto";
 import {
   chmodSync as chmodSync3,
   closeSync as closeSync2,
@@ -34660,7 +35133,7 @@ import { dirname as dirname12, isAbsolute as isAbsolute6, join as join24, relati
 
 // plugins/kxm/src/vnext-permission.ts
 import { spawnSync as spawnSync7 } from "node:child_process";
-import { createHash as createHash9 } from "node:crypto";
+import { createHash as createHash10 } from "node:crypto";
 import { existsSync as existsSync17, mkdtempSync, mkdirSync as mkdirSync16, readFileSync as readFileSync17, rmSync as rmSync4, writeFileSync as writeFileSync14 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname as dirname11, join as join23, resolve as resolve11, sep as sep3 } from "node:path";
@@ -34866,7 +35339,7 @@ function vnextProseEntries(resource) {
   return entries;
 }
 function valueHash(canonicalValue) {
-  return `sha256:${createHash9("sha256").update(canonicalValue, "utf8").digest("hex")}`;
+  return `sha256:${createHash10("sha256").update(canonicalValue, "utf8").digest("hex")}`;
 }
 function rankDirection(rank, baseValue, candidateValue) {
   const base = JSON.parse(baseValue);
@@ -35186,7 +35659,7 @@ function loadVnextProjectAtRevision(root, revision, options = {}) {
   const paths = listing.split("\0").filter((line) => line.length > 0 && (line.startsWith(".kxm/") || line.includes("/.kxm/")));
   const shadow = mkdtempSync(join23(tmpdir(), "kxm-permission-base-"));
   const shadowResolved = resolve11(shadow);
-  const shadowMembersDir = `.kxm-shadow-members-${createHash9("sha256").update(shadowResolved, "utf8").digest("hex").slice(0, 8)}`;
+  const shadowMembersDir = `.kxm-shadow-members-${createHash10("sha256").update(shadowResolved, "utf8").digest("hex").slice(0, 8)}`;
   try {
     for (const path4 of paths) {
       const segments = path4.split("/");
@@ -35664,7 +36137,7 @@ function operationPlanSha(operation) {
 function writeOperation(projectRoot, operation) {
   const root = transactionRoot(projectRoot);
   const file = operationFile(projectRoot);
-  const temporary = join24(root, `.operation-${operation.operationId}-${randomUUID5()}.tmp`);
+  const temporary = join24(root, `.operation-${operation.operationId}-${randomUUID6()}.tmp`);
   try {
     writeDurableNew(temporary, Buffer.from(`${JSON.stringify(operation, null, 2)}
 `, "utf8"), 384);
@@ -35856,7 +36329,7 @@ function createOperation(projectRoot, kind, rendered, files, sourceTemplateRevis
   const root = resolve12(projectRoot);
   const operationWithoutHash = {
     schema: "kxm.init-operation.v1",
-    operationId: `op_${randomUUID5().replaceAll("-", "")}`,
+    operationId: `op_${randomUUID6().replaceAll("-", "")}`,
     kind,
     projectRoot: root,
     projectId: rendered.projectId,
@@ -35920,7 +36393,7 @@ function destinationSha(projectRoot, path4) {
   return vnextContentSha256(readRegularBounded(file, path4));
 }
 function requireConditionalLinkSupport(directory, operationId, path4) {
-  const nonce = randomUUID5();
+  const nonce = randomUUID6();
   const source = join24(directory, `.kxm-repair-${operationId}-${nonce}.link-source`);
   const target = join24(directory, `.kxm-repair-${operationId}-${nonce}.link-target`);
   try {
@@ -35974,7 +36447,7 @@ function atomicInstallTarget(projectRoot, operation, entry) {
   requireConditionalLinkSupport(directory, operation.operationId, entry.path);
   const bytes = readTarget(projectRoot, entry.path);
   if (!bytes) fail3("init_transaction_target_missing", entry.path, "pinned target artifact is missing");
-  const temporary = join24(directory, `${temporaryPrefix}${randomUUID5()}.tmp`);
+  const temporary = join24(directory, `${temporaryPrefix}${randomUUID6()}.tmp`);
   const mode = existsSync18(destination) ? lstatSync5(destination).mode & 511 : 420;
   try {
     writeDurableNew(temporary, bytes, mode);
@@ -36250,7 +36723,7 @@ function commitVnextInitTransaction(projectRoot, schemasDir) {
     fail3("init_transaction_not_verified", TRANSACTION_NAME, "initialization transaction cannot commit before installed state is verified");
   }
   const transaction = transactionRoot(projectRoot);
-  const retired = join24(projectRoot, `${TRANSACTION_NAME}-cleanup-${operation.operationId}-${randomUUID5()}`);
+  const retired = join24(projectRoot, `${TRANSACTION_NAME}-cleanup-${operation.operationId}-${randomUUID6()}`);
   renameSync6(transaction, retired);
   syncDirectory2(projectRoot);
   rmSync5(retired, { recursive: true, force: true });
@@ -36278,7 +36751,7 @@ function normalizedProjectName(root, requested) {
   return name;
 }
 function generatedProjectId(requested) {
-  const id = requested?.trim() || `prj_${randomUUID6().replaceAll("-", "")}`;
+  const id = requested?.trim() || `prj_${randomUUID7().replaceAll("-", "")}`;
   if (!PROJECT_ID.test(id) || id.length > 144) {
     throw new VnextConfigError([initIssue("project_id_invalid", ".kxm/project.yaml", "project ID must satisfy the kxm.project.v1 opaque ID grammar and use the prj_ prefix")]);
   }
@@ -36579,7 +37052,7 @@ function initializeVnextProject(start = process.cwd(), options = {}) {
 
 // plugins/kxm/src/vnext-migrate.ts
 var import_yaml9 = __toESM(require_dist(), 1);
-import { createHash as createHash10 } from "node:crypto";
+import { createHash as createHash11 } from "node:crypto";
 import { chmodSync as chmodSync4, closeSync as closeSync3, existsSync as existsSync20, fsyncSync as fsyncSync3, lstatSync as lstatSync6, mkdirSync as mkdirSync18, openSync as openSync3, readFileSync as readFileSync19, renameSync as renameSync7, rmSync as rmSync6, writeFileSync as writeFileSync16 } from "node:fs";
 import { join as join26 } from "node:path";
 var MAX_LEGACY_JSON_BYTES = 1024 * 1024;
@@ -36742,7 +37215,7 @@ function detectDuplicateKeys(text, label) {
   if (index !== length) migrateFail("invalid_json", label, `trailing content at byte ${index}`);
 }
 function sha256Of(input) {
-  return `sha256:${createHash10("sha256").update(input).digest("hex")}`;
+  return `sha256:${createHash11("sha256").update(input).digest("hex")}`;
 }
 function readVnextLegacySources(root) {
   const files = legacyConfigFilesAt(root);
@@ -36814,7 +37287,7 @@ function normalizeIdentifier(raw) {
 function pointerEscape2(segment) {
   const escaped = segment.replace(/~/g, "~0").replace(/\//g, "~1");
   if (escaped.length <= 200) return escaped;
-  const digest = createHash10("sha256").update(segment, "utf8").digest("hex").slice(0, 8);
+  const digest = createHash11("sha256").update(segment, "utf8").digest("hex").slice(0, 8);
   return `${escaped.slice(0, 180)}~digest-${digest}`;
 }
 function elide(raw, max = 120) {
@@ -36823,7 +37296,7 @@ function elide(raw, max = 120) {
 function keyFragment(raw) {
   const full = normalizeIdentifier(raw) || "unnamed";
   const normalized = full.length > 96 ? `${full.slice(0, 96)}-${full.length}` : full;
-  const digest = createHash10("sha256").update(raw, "utf8").digest("hex").slice(0, 8);
+  const digest = createHash11("sha256").update(raw, "utf8").digest("hex").slice(0, 8);
   return `${normalized}-${digest}`;
 }
 function recordUnmapped(plan, sourcePath, pointer, value, sensitive) {
@@ -37230,7 +37703,7 @@ function convertWorkflowFile(plan, source, decisions, agentIds, agentRawNames, p
     const rawId = asString(definition.id) ?? `${fileStem}-${definitionIndex}`;
     const workflowIdentity = mapIdentity(plan, source.path, rawId, "workflow", workflowNames, decisions, basePointer || "/", definition);
     if (workflowIdentity.status === "dropped") continue;
-    const workflowId = workflowIdentity.status === "adopted" ? workflowIdentity.id : `preview-${(normalizeIdentifier(rawId) || "unnamed").slice(0, 46).replace(/[-_]+$/u, "")}-${createHash10("sha256").update(`${rawId}#${source.path}#${definitionIndex}`, "utf8").digest("hex").slice(0, 8)}`;
+    const workflowId = workflowIdentity.status === "adopted" ? workflowIdentity.id : `preview-${(normalizeIdentifier(rawId) || "unnamed").slice(0, 46).replace(/[-_]+$/u, "")}-${createHash11("sha256").update(`${rawId}#${source.path}#${definitionIndex}`, "utf8").digest("hex").slice(0, 8)}`;
     const workflowKey = keyFragment(rawId);
     for (const field of ["source", "project", "event", "filter", "delivery", "ttlMs", "promptTemplate"]) {
       if (definition[field] !== void 0) recordUnmapped(plan, source.path, `${basePointer}/${field}`, definition[field], false);
@@ -37340,7 +37813,7 @@ function convertWorkflowFile(plan, source, decisions, agentIds, agentRawNames, p
         droppedStageIndexes.add(stageIndex);
         continue;
       }
-      const stepId = stepIdentity.status === "adopted" ? stepIdentity.id : `preview-${(normalizeIdentifier(rawStageId) || "unnamed").slice(0, 46).replace(/[-_]+$/u, "")}-${createHash10("sha256").update(`${rawStageId}#${stageIndex}`, "utf8").digest("hex").slice(0, 8)}`;
+      const stepId = stepIdentity.status === "adopted" ? stepIdentity.id : `preview-${(normalizeIdentifier(rawStageId) || "unnamed").slice(0, 46).replace(/[-_]+$/u, "")}-${createHash11("sha256").update(`${rawStageId}#${stageIndex}`, "utf8").digest("hex").slice(0, 8)}`;
       const stepKey = keyFragment(rawStageId);
       stageKeyByRaw.set(rawStageId, stepKey);
       if (!asString(stage.instructions)) {
@@ -37855,7 +38328,7 @@ function syncDirectory3(path4) {
   }
 }
 function writeDurable2(path4, content) {
-  const temp = `${path4}.kxm-migration-tmp-${process.pid}-${createHash10("sha256").update(`${path4}${Date.now()}${Math.random()}`, "utf8").digest("hex").slice(0, 12)}`;
+  const temp = `${path4}.kxm-migration-tmp-${process.pid}-${createHash11("sha256").update(`${path4}${Date.now()}${Math.random()}`, "utf8").digest("hex").slice(0, 12)}`;
   let created = false;
   try {
     const descriptor = openSync3(temp, "wx", 384);
@@ -38059,13 +38532,13 @@ function verifyVnextMigration(projectRoot, options = {}) {
 
 // plugins/kxm/src/vnext-runtime-supervisor.ts
 import { spawn } from "node:child_process";
-import { createHash as createHash12, createHmac as createHmac2, randomBytes as randomBytes2, timingSafeEqual } from "node:crypto";
+import { createHash as createHash13, createHmac as createHmac2, randomBytes as randomBytes2, timingSafeEqual } from "node:crypto";
 import { chmodSync as chmodSync5, existsSync as existsSync22, lstatSync as lstatSync8, mkdirSync as mkdirSync20, readFileSync as readFileSync21, renameSync as renameSync8, rmSync as rmSync7, writeFileSync as writeFileSync18 } from "node:fs";
 import { dirname as dirname14, isAbsolute as isAbsolute7, join as join28, resolve as resolve15 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 
 // plugins/kxm/src/vnext-runtime-store.ts
-import { createHash as createHash11, randomUUID as randomUUID7 } from "node:crypto";
+import { createHash as createHash12, randomUUID as randomUUID8 } from "node:crypto";
 import { existsSync as existsSync21, lstatSync as lstatSync7, mkdirSync as mkdirSync19, readFileSync as readFileSync20, realpathSync as realpathSync4, writeFileSync as writeFileSync17 } from "node:fs";
 import { dirname as dirname13, join as join27, resolve as resolve14 } from "node:path";
 function vnextRuntimePaths(options = {}) {
@@ -38092,7 +38565,7 @@ function projectRuntimeKey(projectRoot) {
     canonical2 = resolve14(projectRoot);
   }
   const folded = process.platform === "win32" ? canonical2.toLocaleLowerCase("en-US") : canonical2;
-  return createHash11("sha256").update(folded, "utf8").digest("hex").slice(0, 24);
+  return createHash12("sha256").update(folded, "utf8").digest("hex").slice(0, 24);
 }
 var VNEXT_REGISTRY_SCHEMA_VERSION = 1;
 var REGISTRY_TABLES = {
@@ -38972,7 +39445,7 @@ async function vnextRuntimeRequest(handle, method, path4, body) {
 }
 
 // plugins/kxm/src/client.ts
-import { createHash as createHash13 } from "node:crypto";
+import { createHash as createHash14 } from "node:crypto";
 var MeshWaitError = class extends Error {
   waitStatus;
   constructor(waitStatus, messageId) {
@@ -39009,7 +39482,7 @@ function fanoutIdempotencyKey(prefix, target, correlationId, workflowContext) {
     correlationId: correlationId ?? null,
     target: target.toLowerCase()
   });
-  return `fanout:${createHash13("sha256").update(scope).digest("hex")}`;
+  return `fanout:${createHash14("sha256").update(scope).digest("hex")}`;
 }
 var HubHttpError = class extends Error {
   statusCode;
@@ -39372,7 +39845,7 @@ var HubClient = class {
 };
 
 // plugins/kxm/src/commands.ts
-import { createHash as createHash14, randomUUID as randomUUID8, timingSafeEqual as timingSafeEqual2 } from "node:crypto";
+import { createHash as createHash15, randomUUID as randomUUID9, timingSafeEqual as timingSafeEqual2 } from "node:crypto";
 import { chmodSync as chmodSync6, existsSync as existsSync23, mkdirSync as mkdirSync21, readFileSync as readFileSync22, unlinkSync as unlinkSync2, writeFileSync as writeFileSync19 } from "node:fs";
 import { homedir as homedir4 } from "node:os";
 import { dirname as dirname15, join as join29, resolve as resolve16 } from "node:path";
@@ -39380,7 +39853,7 @@ function requiredString(value, name) {
   if (typeof value !== "string" || value.trim() === "") throw new Error(`${name} is required`);
   return value.trim();
 }
-function optionalString(value) {
+function optionalString2(value) {
   return typeof value === "string" && value.trim() ? value.trim() : void 0;
 }
 function asRecord2(value) {
@@ -39431,7 +39904,7 @@ async function reconcileInbox(client, inbox, notifiedInbox) {
   );
 }
 function resolveProject(client, projectArg) {
-  const proj = optionalString(projectArg) ?? client.agent?.project;
+  const proj = optionalString2(projectArg) ?? client.agent?.project;
   if (!proj) {
     throw new Error('missing required parameter "project"');
   }
@@ -39496,9 +39969,9 @@ var AGENT_COMMANDS = [
       additionalProperties: false
     },
     async execute(client, args) {
-      const delivery = optionalString(args.delivery);
-      const correlationId = optionalString(args.correlationId);
-      const idempotencyKey = optionalString(args.idempotencyKey);
+      const delivery = optionalString2(args.delivery);
+      const correlationId = optionalString2(args.correlationId);
+      const idempotencyKey = optionalString2(args.idempotencyKey);
       const workflowContext = optionalWorkflowContext(args.workflowContext);
       const message = await client.send({
         target: requiredString(args.target, "target"),
@@ -39579,8 +40052,8 @@ var AGENT_COMMANDS = [
         responses: await client.fanout({
           targets,
           content: requiredString(args.content, "content"),
-          ...optionalString(args.correlationId) ? { correlationId: optionalString(args.correlationId) } : {},
-          ...optionalString(args.idempotencyKeyPrefix) ? { idempotencyKeyPrefix: optionalString(args.idempotencyKeyPrefix) } : {},
+          ...optionalString2(args.correlationId) ? { correlationId: optionalString2(args.correlationId) } : {},
+          ...optionalString2(args.idempotencyKeyPrefix) ? { idempotencyKeyPrefix: optionalString2(args.idempotencyKeyPrefix) } : {},
           ...optionalWorkflowContext(args.workflowContext) ? { workflowContext: optionalWorkflowContext(args.workflowContext) } : {},
           ...typeof args.ttlMs === "number" ? { ttlMs: args.ttlMs } : {},
           ...typeof args.timeoutMs === "number" ? { timeoutMs: args.timeoutMs } : {},
@@ -39829,9 +40302,9 @@ var AGENT_COMMANDS = [
       return await client.recordWorkflowEntry(requiredString(args.runId, "runId"), {
         category: requiredString(args.category, "category"),
         area: requiredString(args.area, "area"),
-        ...optionalString(args.severity) ? { severity: optionalString(args.severity) } : {},
+        ...optionalString2(args.severity) ? { severity: optionalString2(args.severity) } : {},
         summary: requiredString(args.summary, "summary"),
-        ...optionalString(args.details) ? { details: optionalString(args.details) } : {},
+        ...optionalString2(args.details) ? { details: optionalString2(args.details) } : {},
         ...Array.isArray(args.evidence) ? { evidence: args.evidence } : {},
         ...Array.isArray(args.relatedEntryIds) ? { relatedEntryIds: args.relatedEntryIds } : {}
       });
@@ -39947,8 +40420,8 @@ var AGENT_COMMANDS = [
         project: resolveProject(client, args.project),
         role: requiredString(args.role, "role"),
         task: requiredString(args.task, "task"),
-        ...optionalString(args.workflowRunId) ? { workflowRunId: optionalString(args.workflowRunId) } : {},
-        ...optionalString(args.stageId) ? { stageId: optionalString(args.stageId) } : {},
+        ...optionalString2(args.workflowRunId) ? { workflowRunId: optionalString2(args.workflowRunId) } : {},
+        ...optionalString2(args.stageId) ? { stageId: optionalString2(args.stageId) } : {},
         ...typeof args.budgetTokens === "number" ? { budgetTokens: args.budgetTokens } : {},
         ...Array.isArray(args.includeKinds) ? { includeKinds: args.includeKinds } : {}
       });
@@ -39973,7 +40446,7 @@ var AGENT_COMMANDS = [
     async execute(client, args) {
       return await client.contextRecall({
         project: resolveProject(client, args.project),
-        ...optionalString(args.query) ? { query: optionalString(args.query) } : {},
+        ...optionalString2(args.query) ? { query: optionalString2(args.query) } : {},
         ...Array.isArray(args.kinds) ? { kinds: args.kinds } : {},
         ...typeof args.limit === "number" ? { limit: args.limit } : {}
       });
@@ -39999,7 +40472,7 @@ var AGENT_COMMANDS = [
       return await client.contextState({
         project: resolveProject(client, args.project),
         key: requiredString(args.key, "key"),
-        ...optionalString(args.asOf) ? { asOf: optionalString(args.asOf) } : {}
+        ...optionalString2(args.asOf) ? { asOf: optionalString2(args.asOf) } : {}
       });
     }
   },
@@ -40020,7 +40493,7 @@ var AGENT_COMMANDS = [
     async execute(client, args) {
       return await client.contextEpisode({
         project: resolveProject(client, args.project),
-        ...optionalString(args.workflowRunId) ? { workflowRunId: optionalString(args.workflowRunId) } : {}
+        ...optionalString2(args.workflowRunId) ? { workflowRunId: optionalString2(args.workflowRunId) } : {}
       });
     }
   },
@@ -40096,7 +40569,7 @@ function mintSessionToken(input) {
   const expiresAt = input?.expiresAt ?? new Date(Date.now() + ttlMs).toISOString();
   const payload = {
     schema: "kxm.session-token.v1",
-    sessionId: input?.sessionId ?? `session-${randomUUID8()}`,
+    sessionId: input?.sessionId ?? `session-${randomUUID9()}`,
     issuedAt,
     expiresAt,
     ...input?.agentName ? { agentName: input.agentName } : {},
@@ -40499,7 +40972,7 @@ var SUBCOMMANDS = {
   goal: ["create", "list", "get"],
   task: ["create", "list", "get", "run", "sync"],
   studio: ["layout", "serve"],
-  role: ["list", "get", "add", "remove", "modify"]
+  role: ["list", "get", "add", "remove", "modify", "hosts", "set-host", "resume"]
 };
 function generateShellCompletion(shell) {
   switch (shell) {
@@ -40788,7 +41261,7 @@ function suggestWorkflowAndRoles(prompt, options = {}) {
 
 // plugins/kxm/src/task-manager.ts
 var import_yaml12 = __toESM(require_dist(), 1);
-import { randomUUID as randomUUID9 } from "node:crypto";
+import { randomUUID as randomUUID10 } from "node:crypto";
 import { existsSync as existsSync25, mkdirSync as mkdirSync23, readFileSync as readFileSync24, readdirSync as readdirSync8, writeFileSync as writeFileSync21 } from "node:fs";
 import { join as join31, resolve as resolve18 } from "node:path";
 var GOAL_SCHEMA = "kxm.goal.v1";
@@ -40802,7 +41275,7 @@ function tasksDirectory(repoRoot3) {
 function createGoal(repoRoot3, input) {
   const dir = goalsDirectory(repoRoot3);
   mkdirSync23(dir, { recursive: true });
-  const id = `goal_${randomUUID9().replaceAll("-", "").slice(0, 12)}`;
+  const id = `goal_${randomUUID10().replaceAll("-", "").slice(0, 12)}`;
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const record = {
     schema: GOAL_SCHEMA,
@@ -40839,7 +41312,7 @@ function listGoals(repoRoot3) {
 function createTask(repoRoot3, input) {
   const dir = tasksDirectory(repoRoot3);
   mkdirSync23(dir, { recursive: true });
-  const id = `task_${randomUUID9().replaceAll("-", "").slice(0, 12)}`;
+  const id = `task_${randomUUID10().replaceAll("-", "").slice(0, 12)}`;
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const record = {
     schema: TASK_SCHEMA,
@@ -40931,7 +41404,7 @@ var import_yaml15 = __toESM(require_dist(), 1);
 
 // plugins/kxm/src/studio-layout.ts
 import { createServer } from "node:http";
-import { randomUUID as randomUUID10 } from "node:crypto";
+import { randomUUID as randomUUID11 } from "node:crypto";
 var STUDIO_LAYOUT_SCHEMA = "kxm.studio-layout.v1";
 function generateStudioLayout(plan, state) {
   const generatedAt = (/* @__PURE__ */ new Date()).toISOString();
@@ -41194,7 +41667,7 @@ function createStudioServer(options = {}) {
         }));
         return;
       }
-      const mutationId = `mut_${randomUUID10().replaceAll("-", "").slice(0, 12)}`;
+      const mutationId = `mut_${randomUUID11().replaceAll("-", "").slice(0, 12)}`;
       if (options.onMutation) {
         try {
           const outcome = await options.onMutation(command, args);
@@ -41928,6 +42401,227 @@ function modifyRole(roleId, updates, options = {}) {
   const filePath = join32(dir, `${roleId}.yaml`);
   writeFileSync22(filePath, (0, import_yaml13.stringify)(updated), "utf8");
   return { id: roleId, role: updated, filePath, scope };
+}
+var KXM_ROLE_HOSTS_SCHEMA = "kxm.role-hosts.v1";
+var DEFAULT_ROLE_SEATS = {
+  planner: {
+    seatId: "planner",
+    description: "Architecture breakdown, requirement decomposition, and safety boundary definition.",
+    defaultModel: "anthropic/claude-fable-5.1",
+    defaultHost: "pi",
+    allowedTools: ["view_file", "grep_search", "find_by_name", "list_dir"],
+    requiredEvidenceKind: "architecture_review"
+  },
+  writer: {
+    seatId: "writer",
+    description: "Primary implementation agent. Writes code, refactors components, and authors unit tests.",
+    defaultModel: "x-ai/grok-4.6",
+    defaultHost: "grok",
+    allowedTools: ["view_file", "replace_file_content", "write_to_file", "run_command"],
+    requiredEvidenceKind: "git_diff"
+  },
+  "critic-arch": {
+    seatId: "critic-arch",
+    description: "Independent critic reviewing implementation diffs for architectural integrity.",
+    defaultModel: "anthropic/claude-fable-5.1",
+    defaultHost: "pi",
+    allowedTools: ["view_file", "grep_search"],
+    requiredEvidenceKind: "architecture_review"
+  },
+  "critic-cli": {
+    seatId: "critic-cli",
+    description: "CLI, documentation, and developer ergonomics critic.",
+    defaultModel: "openai/gpt-5.6-sol",
+    defaultHost: "pi",
+    allowedTools: ["view_file", "grep_search"],
+    requiredEvidenceKind: "cli_review"
+  },
+  verifier: {
+    seatId: "verifier",
+    description: "Deterministic gate evaluation runner.",
+    defaultModel: "evaluator",
+    defaultHost: "pi",
+    allowedTools: ["run_command"],
+    requiredEvidenceKind: "test_run"
+  }
+};
+function findExistingRoleHostsFile(scope, repoRoot3 = process.cwd(), userConfigDir) {
+  const dir = scope === "global" ? userConfigDirectory(userConfigDir) : repoConfigDirectory(repoRoot3);
+  const yamlPath = join32(dir, "role-hosts.yaml");
+  const ymlPath = join32(dir, "role-hosts.yml");
+  const jsonPath = join32(dir, "role-hosts.json");
+  if (existsSync26(yamlPath)) return { filePath: yamlPath, exists: true, format: "yaml" };
+  if (existsSync26(ymlPath)) return { filePath: ymlPath, exists: true, format: "yaml" };
+  if (existsSync26(jsonPath)) return { filePath: jsonPath, exists: true, format: "json" };
+  return { filePath: yamlPath, exists: false, format: "yaml" };
+}
+function parseRoleHostsFile(filePath) {
+  if (!existsSync26(filePath)) return void 0;
+  try {
+    const raw = readFileSync25(filePath, "utf8");
+    const parsed = (0, import_yaml13.parse)(raw);
+    if (!parsed || typeof parsed !== "object") return void 0;
+    if (parsed.schema && parsed.schema !== KXM_ROLE_HOSTS_SCHEMA) return void 0;
+    return {
+      schema: KXM_ROLE_HOSTS_SCHEMA,
+      seats: parsed.seats && typeof parsed.seats === "object" ? parsed.seats : {},
+      hostProviders: parsed.hostProviders && typeof parsed.hostProviders === "object" ? parsed.hostProviders : {}
+    };
+  } catch {
+    return void 0;
+  }
+}
+function loadRoleHostsConfig(options = {}) {
+  const scopeFilter = options.scope ?? "all";
+  const repoRoot3 = options.repoRoot ?? process.cwd();
+  let localConfig;
+  let localPath;
+  if (scopeFilter !== "global") {
+    const localFound = findExistingRoleHostsFile("local", repoRoot3, options.userConfigDir);
+    if (localFound.exists) {
+      localConfig = parseRoleHostsFile(localFound.filePath);
+      localPath = localFound.filePath;
+    }
+  }
+  let globalConfig;
+  let globalPath;
+  if (scopeFilter !== "local") {
+    const globalFound = findExistingRoleHostsFile("global", repoRoot3, options.userConfigDir);
+    if (globalFound.exists) {
+      globalConfig = parseRoleHostsFile(globalFound.filePath);
+      globalPath = globalFound.filePath;
+    }
+  }
+  if (scopeFilter === "local") {
+    return {
+      config: localConfig ?? { schema: KXM_ROLE_HOSTS_SCHEMA, seats: {}, hostProviders: {} },
+      filePath: localPath,
+      scope: localPath ? "local" : "default"
+    };
+  }
+  if (scopeFilter === "global") {
+    return {
+      config: globalConfig ?? { schema: KXM_ROLE_HOSTS_SCHEMA, seats: {}, hostProviders: {} },
+      filePath: globalPath,
+      scope: globalPath ? "global" : "default"
+    };
+  }
+  const mergedSeats = {
+    ...globalConfig?.seats ?? {},
+    ...localConfig?.seats ?? {}
+  };
+  const mergedHostProviders = {
+    ...globalConfig?.hostProviders ?? {},
+    ...localConfig?.hostProviders ?? {}
+  };
+  const primaryPath = localPath ?? globalPath;
+  const primaryScope = localPath ? "local" : globalPath ? "global" : "default";
+  return {
+    config: {
+      schema: KXM_ROLE_HOSTS_SCHEMA,
+      seats: mergedSeats,
+      hostProviders: mergedHostProviders
+    },
+    filePath: primaryPath,
+    scope: primaryScope
+  };
+}
+function saveRoleHostsConfig(config, options = {}) {
+  const scope = options.scope ?? "local";
+  const repoRoot3 = options.repoRoot ?? process.cwd();
+  const dir = scope === "global" ? userConfigDirectory(options.userConfigDir) : repoConfigDirectory(repoRoot3);
+  if (!existsSync26(dir)) {
+    mkdirSync24(dir, { recursive: true });
+  }
+  const format = options.format ?? "yaml";
+  const filePath = join32(dir, format === "json" ? "role-hosts.json" : "role-hosts.yaml");
+  const payload = {
+    schema: KXM_ROLE_HOSTS_SCHEMA,
+    seats: config.seats ?? {},
+    ...config.hostProviders && Object.keys(config.hostProviders).length > 0 ? { hostProviders: config.hostProviders } : {}
+  };
+  const content = format === "json" ? JSON.stringify(payload, null, 2) + "\n" : (0, import_yaml13.stringify)(payload);
+  writeFileSync22(filePath, content, "utf8");
+  return { filePath, scope };
+}
+function setRoleSeatHost(seatId, host, options = {}) {
+  const scope = options.scope ?? "local";
+  const current = loadRoleHostsConfig({
+    scope,
+    repoRoot: options.repoRoot,
+    userConfigDir: options.userConfigDir
+  });
+  const seats = { ...current.config.seats ?? {} };
+  const existing = seats[seatId] ?? {};
+  const binding = {
+    ...existing,
+    host,
+    ...options.model !== void 0 ? { model: options.model } : {},
+    ...options.effort !== void 0 ? { effort: options.effort } : {}
+  };
+  seats[seatId] = binding;
+  const updatedConfig = {
+    ...current.config,
+    schema: KXM_ROLE_HOSTS_SCHEMA,
+    seats
+  };
+  const saved = saveRoleHostsConfig(updatedConfig, {
+    scope,
+    repoRoot: options.repoRoot,
+    userConfigDir: options.userConfigDir,
+    format: options.format
+  });
+  return { filePath: saved.filePath, seatId, binding, scope };
+}
+function resolveRoleSeat(seatId, options = {}) {
+  const hostsConfig = loadRoleHostsConfig({
+    scope: "all",
+    repoRoot: options.repoRoot,
+    userConfigDir: options.userConfigDir
+  }).config;
+  const configuredSeat = hostsConfig.seats?.[seatId];
+  const defaultSeat = DEFAULT_ROLE_SEATS[seatId];
+  const roleDef = getRole(seatId, {
+    scope: "all",
+    repoRoot: options.repoRoot,
+    userConfigDir: options.userConfigDir
+  })?.role ?? DEFAULT_ROLES[seatId];
+  const primaryRoster = roleDef?.roster?.[0];
+  let host = "pi";
+  let source = "fallback";
+  if (options.hostOverride) {
+    host = options.hostOverride;
+    source = "override";
+  } else if (configuredSeat?.host) {
+    host = configuredSeat.host;
+    source = "role-hosts";
+  } else if (defaultSeat?.defaultHost) {
+    host = defaultSeat.defaultHost;
+    source = "seat-default";
+  } else if (primaryRoster?.harness) {
+    host = primaryRoster.harness;
+    source = "role-roster";
+  }
+  let model;
+  if (options.modelOverride) {
+    model = options.modelOverride;
+  } else if (configuredSeat?.model) {
+    model = configuredSeat.model;
+  } else if (defaultSeat?.defaultModel) {
+    model = defaultSeat.defaultModel;
+  } else if (primaryRoster?.model) {
+    model = primaryRoster.model;
+  }
+  const provider = hostsConfig.hostProviders?.[host] ?? roleDef?.roster?.find((r) => r.harness === host)?.provider;
+  const effort = configuredSeat?.effort ?? roleDef?.roster?.find((r) => r.harness === host)?.effort;
+  return {
+    seatId,
+    host,
+    model,
+    provider,
+    effort,
+    source
+  };
 }
 
 // plugins/kxm/src/workflow-manager.ts
@@ -43123,7 +43817,7 @@ function applyKxmPackageUpdate(runtime, notice) {
     for (const step of planned) {
       if (step.kind === "verify") {
         if (!verifyReleaseAssetDigest(step.path, step.sha256)) {
-          const actual = existsSync28(step.path) ? createHash15("sha256").update(readFileSync27(step.path)).digest("hex") : "missing";
+          const actual = existsSync28(step.path) ? createHash16("sha256").update(readFileSync27(step.path)).digest("hex") : "missing";
           return {
             ok: false,
             error: "release_digest_mismatch",
@@ -43879,7 +44573,7 @@ Session token: ${sessionToken}
   return 0;
 }
 async function cmdSessionStart(runtime, options) {
-  const id = options.id?.trim() || `session_${randomUUID11().replaceAll("-", "").slice(0, 12)}`;
+  const id = options.id?.trim() || `session_${randomUUID12().replaceAll("-", "").slice(0, 12)}`;
   const workflowId = options.workflow?.trim();
   const mix = options.mix?.trim();
   if (workflowId && mix) {
@@ -44965,6 +45659,203 @@ async function cmdRoleModify(runtime, roleId, options) {
     return 1;
   }
 }
+async function cmdRoleHosts(runtime, options = {}) {
+  const hostsConfig = loadRoleHostsConfig({
+    scope: options.scope,
+    repoRoot: runtime.cwd,
+    userConfigDir: runtime.env.KXM_USER_CONFIG_DIR
+  });
+  const seatIds = Array.from(
+    /* @__PURE__ */ new Set([
+      ...Object.keys(DEFAULT_ROLE_SEATS),
+      ...Object.keys(hostsConfig.config.seats ?? {})
+    ])
+  ).sort();
+  const seats = seatIds.map((seatId) => {
+    const resolved = resolveRoleSeat(seatId, {
+      repoRoot: runtime.cwd,
+      userConfigDir: runtime.env.KXM_USER_CONFIG_DIR
+    });
+    return {
+      seatId,
+      host: resolved.host,
+      model: resolved.model,
+      provider: resolved.provider,
+      effort: resolved.effort,
+      source: resolved.source,
+      configuredHost: hostsConfig.config.seats?.[seatId]?.host,
+      configuredModel: hostsConfig.config.seats?.[seatId]?.model
+    };
+  });
+  if (runtime.json) {
+    print(
+      runtime.io,
+      true,
+      {
+        ok: true,
+        command: "role hosts",
+        scope: hostsConfig.scope,
+        filePath: hostsConfig.filePath,
+        seats,
+        hostProviders: hostsConfig.config.hostProviders ?? {}
+      },
+      ""
+    );
+    return 0;
+  }
+  const lines = [
+    `ROLE SEATS (${hostsConfig.scope}${hostsConfig.filePath ? ` at ${hostsConfig.filePath}` : ""}):`
+  ];
+  for (const s of seats) {
+    const modelStr = s.model ? ` [${s.model}]` : "";
+    const sourceTag = `(via ${s.source})`;
+    lines.push(`  ${s.seatId.padEnd(16)} -> host: ${s.host.padEnd(12)} ${modelStr.padEnd(30)} ${sourceTag}`);
+  }
+  if (hostsConfig.config.hostProviders && Object.keys(hostsConfig.config.hostProviders).length > 0) {
+    lines.push("\nHOST PROVIDERS:");
+    for (const [h, p] of Object.entries(hostsConfig.config.hostProviders)) {
+      lines.push(`  ${h.padEnd(16)} -> provider: ${p}`);
+    }
+  }
+  print(runtime.io, false, {}, `${lines.join("\n")}
+`);
+  return 0;
+}
+async function cmdRoleSetHost(runtime, seatId, host, options = {}) {
+  if (!seatId || !host) {
+    runtime.io.stderr("kxm role set-host requires <seatId> and <host>\n");
+    return 1;
+  }
+  try {
+    const result = setRoleSeatHost(seatId, host, {
+      model: options.model,
+      effort: options.effort,
+      scope: options.scope ?? "local",
+      repoRoot: runtime.cwd,
+      userConfigDir: runtime.env.KXM_USER_CONFIG_DIR
+    });
+    print(
+      runtime.io,
+      runtime.json,
+      {
+        ok: true,
+        command: "role set-host",
+        seatId,
+        host,
+        binding: result.binding,
+        filePath: result.filePath,
+        scope: result.scope
+      },
+      `Bound seat '${seatId}' to host '${host}' in ${result.filePath}
+`
+    );
+    return 0;
+  } catch (err) {
+    runtime.io.stderr(`role set-host failed: ${err.message}
+`);
+    return 1;
+  }
+}
+async function cmdRoleResume(runtime, runId, ruling) {
+  if (!runId) {
+    runtime.io.stderr("kxm role resume requires <runId>\n");
+    return 1;
+  }
+  const effectiveRuling = ruling?.trim() || "operator_ruling: waived and resumed";
+  const projectRoot = discoverVnextProjectRoot(runtime.cwd);
+  if (projectRoot && /^run_[a-f0-9]{32}$/i.test(runId)) {
+    if (runtime.dryRun) {
+      print(runtime.io, runtime.json, { ok: true, command: "role resume", runId, ruling: effectiveRuling }, `would resume vNext run ${runId}`);
+      return 0;
+    }
+    try {
+      const supervisor = await ensureVnextSupervisor({ env: runtime.env });
+      const posted = await vnextRuntimeRequest(
+        supervisor,
+        "POST",
+        `/v1/runs/${encodeURIComponent(runId)}/signal?projectRoot=${encodeURIComponent(projectRoot)}`,
+        {
+          signalKey: "audit_escalation",
+          status: "passed",
+          summary: effectiveRuling,
+          action: "unblock"
+        }
+      );
+      print(
+        runtime.io,
+        runtime.json,
+        { ok: true, command: "role resume", runId, ruling: effectiveRuling, unblocked: posted.unblocked === true },
+        `Resumed vNext run ${runId} with ruling: ${effectiveRuling}
+`
+      );
+      return 0;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "resume_failed";
+      print(runtime.io, runtime.json, { ok: false, command: "role resume", error: "resume_failed", detail: msg }, `resume vNext run failed: ${msg}
+`);
+      return 1;
+    }
+  }
+  const dbPath = join34(runtime.cwd, ".kxm", "state", "kxm.db");
+  if (existsSync28(dbPath)) {
+    try {
+      const database = new DatabaseSync5(dbPath);
+      try {
+        const row = database.prepare("SELECT record FROM workflow_runs WHERE id = ?").get(runId);
+        if (!row) {
+          runtime.io.stderr(`kxm: workflow run '${runId}' not found in ${dbPath}
+`);
+          return 1;
+        }
+        const run = JSON.parse(row.record);
+        const now = (/* @__PURE__ */ new Date()).toISOString();
+        const resumeResult = resumeWorkflowFromRuling(run, effectiveRuling, now);
+        database.prepare("UPDATE workflow_runs SET record = ? WHERE id = ?").run(
+          JSON.stringify(resumeResult.run),
+          runId
+        );
+        const journalId = randomUUID12();
+        const journalPayload = {
+          id: journalId,
+          runId,
+          stageId: resumeResult.stageId,
+          category: "decision",
+          area: "workflow",
+          summary: `Role resume ruling: ${effectiveRuling}`,
+          details: { ruling: effectiveRuling },
+          evidence: {},
+          createdAt: now
+        };
+        database.prepare(
+          "INSERT INTO workflow_journal (id, run_id, category, area, record) VALUES (?, ?, ?, ?, ?)"
+        ).run(
+          journalId,
+          runId,
+          "decision",
+          "workflow",
+          JSON.stringify(journalPayload)
+        );
+        print(
+          runtime.io,
+          runtime.json,
+          { ok: true, command: "role resume", runId, stageId: resumeResult.stageId, ruling: effectiveRuling, status: resumeResult.run.status },
+          `Resumed workflow run ${runId} (stage: ${resumeResult.stageId}) with ruling: ${effectiveRuling}
+`
+        );
+        return 0;
+      } finally {
+        database.close();
+      }
+    } catch (err) {
+      runtime.io.stderr(`role resume failed: ${err.message}
+`);
+      return 1;
+    }
+  }
+  runtime.io.stderr(`kxm: no active run store or database found for run '${runId}'
+`);
+  return 1;
+}
 async function cmdWorkflowDefinitions(runtime, options) {
   const workflows = listWorkflowDefinitions({
     scope: options.scope,
@@ -45252,7 +46143,7 @@ async function cmdRoutingBenchmark(runtime, options) {
 }
 async function cmdWorkflowStart(runtime, definitionIdArg, options) {
   const definitionId = definitionIdArg || runtime.env.KXM_WORKFLOW_ID?.trim();
-  const deliveryId = String(options.deliveryId || `cli-${randomUUID11()}`);
+  const deliveryId = String(options.deliveryId || `cli-${randomUUID12()}`);
   const event = options.event;
   const payloadFlag = options.payload ?? "{}";
   if (!definitionId) {
@@ -45383,7 +46274,7 @@ async function cmdSignal(runtime, runId, signalKey, status, summary, evidenceArg
       printWorker(runtime, worker, { ok: true, command: "signal", runId, signalKey, status, summary, evidence }, "would post signal to vNext run");
       return 0;
     }
-    const deliveryId2 = String(deliveryIdFlag || `cli-signal:${randomUUID11()}`);
+    const deliveryId2 = String(deliveryIdFlag || `cli-signal:${randomUUID12()}`);
     try {
       const supervisor = await ensureVnextSupervisor({ env: runtime.env });
       const posted = await vnextRuntimeRequest(
@@ -45419,7 +46310,7 @@ async function cmdSignal(runtime, runId, signalKey, status, summary, evidenceArg
     printWorker(runtime, worker, { ok: true, command: "signal", runId, signalKey, status, summary, evidence }, "would post signed signal");
     return 0;
   }
-  const deliveryId = String(deliveryIdFlag || `cli-signal:${randomUUID11()}`);
+  const deliveryId = String(deliveryIdFlag || `cli-signal:${randomUUID12()}`);
   try {
     const posted = await postWorkflowSignal({
       serverUrl: runtime.serverUrl,
@@ -45883,6 +46774,15 @@ function createProgram(ctx, result) {
   });
   addGlobalOptions(role.command("modify [roleId]").description("Modify an existing role definition")).option("--description <text>", "Updated description").option("--add-skill <skill>", "Skill to add").option("--remove-skill <skill>", "Skill to remove").option("--add-model <harness:model>", "Model to add to roster").option("--remove-model <model>", "Model to remove from roster").option("--scope <scope>", "Configuration scope: global or local").option("--pick [selection]", "Pick a role to modify (index or id)").action(async function roleModifyAction(roleId, options) {
     result.code = await cmdRoleModify(runtimeFrom(ctx, this), roleId, options ?? {});
+  });
+  addGlobalOptions(role.command("hosts").description("List role seats and resolved execution hosts from .kxm/role-hosts.yaml")).option("--scope <scope>", "Filter by scope: all, global, or local", "all").action(async function roleHostsAction(options) {
+    result.code = await cmdRoleHosts(runtimeFrom(ctx, this), options);
+  });
+  addGlobalOptions(role.command("set-host <seatId> <host>").description("Bind a role seat to a host in .kxm/role-hosts.yaml")).option("--model <model>", "Model identifier for this seat").option("--effort <effort>", "Effort level: low, medium, high, xhigh").option("--scope <scope>", "Configuration scope: global or local (default: local)", "local").action(async function roleSetHostAction(seatId, host, options) {
+    result.code = await cmdRoleSetHost(runtimeFrom(ctx, this), seatId, host, options);
+  });
+  addGlobalOptions(role.command("resume <runId> [ruling]").description("Resume an audit-escalated role run with an operator directive")).action(async function roleResumeAction(runId, ruling) {
+    result.code = await cmdRoleResume(runtimeFrom(ctx, this), runId, ruling);
   });
   const gate = addGlobalOptions(program2.command("gate").description("Validate definitions and operate evidence gates"));
   gate.helpCommand("help", "Show gate help");

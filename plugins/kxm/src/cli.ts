@@ -16,7 +16,7 @@ import {
 } from "./memory.ts";
 import { createBackup, restoreBackup } from "./database.ts";
 import { verifyArtifactExists } from "./artifacts-exist.ts";
-import { canonicalWorkflowEvidenceKey, parseWorkflowDefinitions } from "./workflow.ts";
+import { canonicalWorkflowEvidenceKey, parseWorkflowDefinitions, resumeWorkflowFromRuling } from "./workflow.ts";
 import { postWorkflowSignal, watchGithubChecks } from "./github-watch.ts";
 import { buildRetrospective, writeRetrospective } from "./retrospective.ts";
 import { redactSecrets } from "./redact.ts";
@@ -126,6 +126,10 @@ import {
   removeRole,
   modifyRole,
   DEFAULT_ROLES,
+  DEFAULT_ROLE_SEATS,
+  loadRoleHostsConfig,
+  setRoleSeatHost,
+  resolveRoleSeat,
   type KxmRoleDefinition,
 } from "./role.ts";
 import {
@@ -3152,6 +3156,229 @@ async function cmdRoleModify(
   }
 }
 
+async function cmdRoleHosts(
+  runtime: Runtime,
+  options: { scope?: "all" | "global" | "local" } = {},
+): Promise<number> {
+  const hostsConfig = loadRoleHostsConfig({
+    scope: options.scope,
+    repoRoot: runtime.cwd,
+    userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
+  });
+
+  const seatIds = Array.from(
+    new Set([
+      ...Object.keys(DEFAULT_ROLE_SEATS),
+      ...Object.keys(hostsConfig.config.seats ?? {}),
+    ]),
+  ).sort();
+
+  const seats = seatIds.map((seatId) => {
+    const resolved = resolveRoleSeat(seatId, {
+      repoRoot: runtime.cwd,
+      userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
+    });
+    return {
+      seatId,
+      host: resolved.host,
+      model: resolved.model,
+      provider: resolved.provider,
+      effort: resolved.effort,
+      source: resolved.source,
+      configuredHost: hostsConfig.config.seats?.[seatId]?.host,
+      configuredModel: hostsConfig.config.seats?.[seatId]?.model,
+    };
+  });
+
+  if (runtime.json) {
+    print(
+      runtime.io,
+      true,
+      {
+        ok: true,
+        command: "role hosts",
+        scope: hostsConfig.scope,
+        filePath: hostsConfig.filePath,
+        seats,
+        hostProviders: hostsConfig.config.hostProviders ?? {},
+      },
+      "",
+    );
+    return 0;
+  }
+
+  const lines: string[] = [
+    `ROLE SEATS (${hostsConfig.scope}${hostsConfig.filePath ? ` at ${hostsConfig.filePath}` : ""}):`,
+  ];
+  for (const s of seats) {
+    const modelStr = s.model ? ` [${s.model}]` : "";
+    const sourceTag = `(via ${s.source})`;
+    lines.push(`  ${s.seatId.padEnd(16)} -> host: ${s.host.padEnd(12)} ${modelStr.padEnd(30)} ${sourceTag}`);
+  }
+  if (hostsConfig.config.hostProviders && Object.keys(hostsConfig.config.hostProviders).length > 0) {
+    lines.push("\nHOST PROVIDERS:");
+    for (const [h, p] of Object.entries(hostsConfig.config.hostProviders)) {
+      lines.push(`  ${h.padEnd(16)} -> provider: ${p}`);
+    }
+  }
+  print(runtime.io, false, {}, `${lines.join("\n")}\n`);
+  return 0;
+}
+
+async function cmdRoleSetHost(
+  runtime: Runtime,
+  seatId: string,
+  host: string,
+  options: {
+    model?: string;
+    effort?: "low" | "medium" | "high" | "xhigh";
+    scope?: "global" | "local";
+  } = {},
+): Promise<number> {
+  if (!seatId || !host) {
+    runtime.io.stderr("kxm role set-host requires <seatId> and <host>\n");
+    return 1;
+  }
+
+  try {
+    const result = setRoleSeatHost(seatId, host, {
+      model: options.model,
+      effort: options.effort,
+      scope: options.scope ?? "local",
+      repoRoot: runtime.cwd,
+      userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
+    });
+
+    print(
+      runtime.io,
+      runtime.json,
+      {
+        ok: true,
+        command: "role set-host",
+        seatId,
+        host,
+        binding: result.binding,
+        filePath: result.filePath,
+        scope: result.scope,
+      },
+      `Bound seat '${seatId}' to host '${host}' in ${result.filePath}\n`,
+    );
+    return 0;
+  } catch (err: unknown) {
+    runtime.io.stderr(`role set-host failed: ${(err as Error).message}\n`);
+    return 1;
+  }
+}
+
+async function cmdRoleResume(
+  runtime: Runtime,
+  runId: string,
+  ruling?: string,
+): Promise<number> {
+  if (!runId) {
+    runtime.io.stderr("kxm role resume requires <runId>\n");
+    return 1;
+  }
+
+  const effectiveRuling = ruling?.trim() || "operator_ruling: waived and resumed";
+
+  // Check if it's a vNext run
+  const projectRoot = discoverVnextProjectRoot(runtime.cwd);
+  if (projectRoot && /^run_[a-f0-9]{32}$/i.test(runId)) {
+    if (runtime.dryRun) {
+      print(runtime.io, runtime.json, { ok: true, command: "role resume", runId, ruling: effectiveRuling }, `would resume vNext run ${runId}`);
+      return 0;
+    }
+    try {
+      const supervisor = await ensureVnextSupervisor({ env: runtime.env });
+      const posted = await vnextRuntimeRequest(
+        supervisor,
+        "POST",
+        `/v1/runs/${encodeURIComponent(runId)}/signal?projectRoot=${encodeURIComponent(projectRoot)}`,
+        {
+          signalKey: "audit_escalation",
+          status: "passed",
+          summary: effectiveRuling,
+          action: "unblock",
+        },
+      );
+      print(
+        runtime.io,
+        runtime.json,
+        { ok: true, command: "role resume", runId, ruling: effectiveRuling, unblocked: posted.unblocked === true },
+        `Resumed vNext run ${runId} with ruling: ${effectiveRuling}\n`,
+      );
+      return 0;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "resume_failed";
+      print(runtime.io, runtime.json, { ok: false, command: "role resume", error: "resume_failed", detail: msg }, `resume vNext run failed: ${msg}\n`);
+      return 1;
+    }
+  }
+
+  // Workflow run: check local state database (.kxm/state/kxm.db)
+  const dbPath = join(runtime.cwd, ".kxm", "state", "kxm.db");
+  if (existsSync(dbPath)) {
+    try {
+      const database = new DatabaseSync(dbPath);
+      try {
+        const row = database.prepare("SELECT record FROM workflow_runs WHERE id = ?").get(runId) as { record: string } | undefined;
+        if (!row) {
+          runtime.io.stderr(`kxm: workflow run '${runId}' not found in ${dbPath}\n`);
+          return 1;
+        }
+        const run = JSON.parse(row.record) as WorkflowRun;
+        const now = new Date().toISOString();
+        const resumeResult = resumeWorkflowFromRuling(run, effectiveRuling, now);
+
+        database.prepare("UPDATE workflow_runs SET record = ? WHERE id = ?").run(
+          JSON.stringify(resumeResult.run),
+          runId,
+        );
+
+        const journalId = randomUUID();
+        const journalPayload = {
+          id: journalId,
+          runId,
+          stageId: resumeResult.stageId,
+          category: "decision" as const,
+          area: "workflow" as const,
+          summary: `Role resume ruling: ${effectiveRuling}`,
+          details: { ruling: effectiveRuling },
+          evidence: {},
+          createdAt: now,
+        };
+
+        database.prepare(
+          "INSERT INTO workflow_journal (id, run_id, category, area, record) VALUES (?, ?, ?, ?, ?)",
+        ).run(
+          journalId,
+          runId,
+          "decision",
+          "workflow",
+          JSON.stringify(journalPayload),
+        );
+
+        print(
+          runtime.io,
+          runtime.json,
+          { ok: true, command: "role resume", runId, stageId: resumeResult.stageId, ruling: effectiveRuling, status: resumeResult.run.status },
+          `Resumed workflow run ${runId} (stage: ${resumeResult.stageId}) with ruling: ${effectiveRuling}\n`,
+        );
+        return 0;
+      } finally {
+        database.close();
+      }
+    } catch (err: unknown) {
+      runtime.io.stderr(`role resume failed: ${(err as Error).message}\n`);
+      return 1;
+    }
+  }
+
+  runtime.io.stderr(`kxm: no active run store or database found for run '${runId}'\n`);
+  return 1;
+}
+
 async function cmdWorkflowDefinitions(
   runtime: Runtime,
   options: { scope?: "all" | "global" | "local" },
@@ -4378,6 +4605,22 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .option("--pick [selection]", "Pick a role to modify (index or id)")
     .action(async function roleModifyAction(this: Command, roleId?: string, options?: { description?: string; addSkill?: string; removeSkill?: string; addModel?: string; removeModel?: string; scope?: "global" | "local"; pick?: string | boolean }) {
       result.code = await cmdRoleModify(runtimeFrom(ctx, this), roleId, options ?? {});
+    });
+  addGlobalOptions(role.command("hosts").description("List role seats and resolved execution hosts from .kxm/role-hosts.yaml"))
+    .option("--scope <scope>", "Filter by scope: all, global, or local", "all")
+    .action(async function roleHostsAction(this: Command, options: { scope?: "all" | "global" | "local" }) {
+      result.code = await cmdRoleHosts(runtimeFrom(ctx, this), options);
+    });
+  addGlobalOptions(role.command("set-host <seatId> <host>").description("Bind a role seat to a host in .kxm/role-hosts.yaml"))
+    .option("--model <model>", "Model identifier for this seat")
+    .option("--effort <effort>", "Effort level: low, medium, high, xhigh")
+    .option("--scope <scope>", "Configuration scope: global or local (default: local)", "local")
+    .action(async function roleSetHostAction(this: Command, seatId: string, host: string, options: { model?: string; effort?: "low" | "medium" | "high" | "xhigh"; scope?: "global" | "local" }) {
+      result.code = await cmdRoleSetHost(runtimeFrom(ctx, this), seatId, host, options);
+    });
+  addGlobalOptions(role.command("resume <runId> [ruling]").description("Resume an audit-escalated role run with an operator directive"))
+    .action(async function roleResumeAction(this: Command, runId: string, ruling?: string) {
+      result.code = await cmdRoleResume(runtimeFrom(ctx, this), runId, ruling);
     });
 
   const gate = addGlobalOptions(program.command("gate").description("Validate definitions and operate evidence gates"));

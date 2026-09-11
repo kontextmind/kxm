@@ -373,3 +373,338 @@ export function modifyRole(
   writeFileSync(filePath, stringify(updated), "utf8");
   return { id: roleId, role: updated, filePath, scope };
 }
+
+// ---------------------------------------------------------------------------
+// Role Seat & Host Mapping Governance (kxm.role-hosts.v1)
+// ---------------------------------------------------------------------------
+
+export const KXM_ROLE_HOSTS_SCHEMA = "kxm.role-hosts.v1" as const;
+
+export interface RoleSeatDefinition {
+  seatId: string;
+  description?: string | undefined;
+  defaultModel?: string | undefined;
+  defaultHost?: string | undefined;
+  allowedTools?: readonly string[] | undefined;
+  requiredEvidenceKind?: string | undefined;
+}
+
+export interface RoleSeatBinding {
+  model?: string | undefined;
+  host?: string | undefined;
+  effort?: "low" | "medium" | "high" | "xhigh" | undefined;
+}
+
+export interface RoleHostsConfig {
+  schema: typeof KXM_ROLE_HOSTS_SCHEMA;
+  seats?: Record<string, RoleSeatBinding> | undefined;
+  hostProviders?: Record<string, string> | undefined;
+}
+
+export const DEFAULT_ROLE_SEATS: Record<string, RoleSeatDefinition> = {
+  planner: {
+    seatId: "planner",
+    description: "Architecture breakdown, requirement decomposition, and safety boundary definition.",
+    defaultModel: "anthropic/claude-fable-5.1",
+    defaultHost: "pi",
+    allowedTools: ["view_file", "grep_search", "find_by_name", "list_dir"],
+    requiredEvidenceKind: "architecture_review",
+  },
+  writer: {
+    seatId: "writer",
+    description: "Primary implementation agent. Writes code, refactors components, and authors unit tests.",
+    defaultModel: "x-ai/grok-4.6",
+    defaultHost: "grok",
+    allowedTools: ["view_file", "replace_file_content", "write_to_file", "run_command"],
+    requiredEvidenceKind: "git_diff",
+  },
+  "critic-arch": {
+    seatId: "critic-arch",
+    description: "Independent critic reviewing implementation diffs for architectural integrity.",
+    defaultModel: "anthropic/claude-fable-5.1",
+    defaultHost: "pi",
+    allowedTools: ["view_file", "grep_search"],
+    requiredEvidenceKind: "architecture_review",
+  },
+  "critic-cli": {
+    seatId: "critic-cli",
+    description: "CLI, documentation, and developer ergonomics critic.",
+    defaultModel: "openai/gpt-5.6-sol",
+    defaultHost: "pi",
+    allowedTools: ["view_file", "grep_search"],
+    requiredEvidenceKind: "cli_review",
+  },
+  verifier: {
+    seatId: "verifier",
+    description: "Deterministic gate evaluation runner.",
+    defaultModel: "evaluator",
+    defaultHost: "pi",
+    allowedTools: ["run_command"],
+    requiredEvidenceKind: "test_run",
+  },
+};
+
+export function roleHostsFilePath(
+  scope: "global" | "local",
+  repoRoot = process.cwd(),
+  userConfigDir?: string,
+  preferJson = false,
+): string {
+  const dir = scope === "global" ? userConfigDirectory(userConfigDir) : repoConfigDirectory(repoRoot);
+  return join(dir, preferJson ? "role-hosts.json" : "role-hosts.yaml");
+}
+
+export function findExistingRoleHostsFile(
+  scope: "global" | "local",
+  repoRoot = process.cwd(),
+  userConfigDir?: string,
+): { filePath: string; exists: boolean; format: "yaml" | "json" } {
+  const dir = scope === "global" ? userConfigDirectory(userConfigDir) : repoConfigDirectory(repoRoot);
+  const yamlPath = join(dir, "role-hosts.yaml");
+  const ymlPath = join(dir, "role-hosts.yml");
+  const jsonPath = join(dir, "role-hosts.json");
+
+  if (existsSync(yamlPath)) return { filePath: yamlPath, exists: true, format: "yaml" };
+  if (existsSync(ymlPath)) return { filePath: ymlPath, exists: true, format: "yaml" };
+  if (existsSync(jsonPath)) return { filePath: jsonPath, exists: true, format: "json" };
+  return { filePath: yamlPath, exists: false, format: "yaml" };
+}
+
+export function parseRoleHostsFile(filePath: string): RoleHostsConfig | undefined {
+  if (!existsSync(filePath)) return undefined;
+  try {
+    const raw = readFileSync(filePath, "utf8");
+    const parsed = parse(raw) as Partial<RoleHostsConfig>;
+    if (!parsed || typeof parsed !== "object") return undefined;
+    if (parsed.schema && parsed.schema !== KXM_ROLE_HOSTS_SCHEMA) return undefined;
+    return {
+      schema: KXM_ROLE_HOSTS_SCHEMA,
+      seats: parsed.seats && typeof parsed.seats === "object" ? parsed.seats : {},
+      hostProviders: parsed.hostProviders && typeof parsed.hostProviders === "object" ? parsed.hostProviders : {},
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+export function loadRoleHostsConfig(options: {
+  scope?: "all" | "global" | "local" | undefined;
+  repoRoot?: string | undefined;
+  userConfigDir?: string | undefined;
+} = {}): { config: RoleHostsConfig; filePath?: string | undefined; scope: "local" | "global" | "default" } {
+  const scopeFilter = options.scope ?? "all";
+  const repoRoot = options.repoRoot ?? process.cwd();
+
+  let localConfig: RoleHostsConfig | undefined;
+  let localPath: string | undefined;
+  if (scopeFilter !== "global") {
+    const localFound = findExistingRoleHostsFile("local", repoRoot, options.userConfigDir);
+    if (localFound.exists) {
+      localConfig = parseRoleHostsFile(localFound.filePath);
+      localPath = localFound.filePath;
+    }
+  }
+
+  let globalConfig: RoleHostsConfig | undefined;
+  let globalPath: string | undefined;
+  if (scopeFilter !== "local") {
+    const globalFound = findExistingRoleHostsFile("global", repoRoot, options.userConfigDir);
+    if (globalFound.exists) {
+      globalConfig = parseRoleHostsFile(globalFound.filePath);
+      globalPath = globalFound.filePath;
+    }
+  }
+
+  if (scopeFilter === "local") {
+    return {
+      config: localConfig ?? { schema: KXM_ROLE_HOSTS_SCHEMA, seats: {}, hostProviders: {} },
+      filePath: localPath,
+      scope: localPath ? "local" : "default",
+    };
+  }
+
+  if (scopeFilter === "global") {
+    return {
+      config: globalConfig ?? { schema: KXM_ROLE_HOSTS_SCHEMA, seats: {}, hostProviders: {} },
+      filePath: globalPath,
+      scope: globalPath ? "global" : "default",
+    };
+  }
+
+  // Merge: local seats override global seats; local hostProviders merge over global hostProviders
+  const mergedSeats: Record<string, RoleSeatBinding> = {
+    ...(globalConfig?.seats ?? {}),
+    ...(localConfig?.seats ?? {}),
+  };
+  const mergedHostProviders: Record<string, string> = {
+    ...(globalConfig?.hostProviders ?? {}),
+    ...(localConfig?.hostProviders ?? {}),
+  };
+
+  const primaryPath = localPath ?? globalPath;
+  const primaryScope = localPath ? "local" : (globalPath ? "global" : "default");
+
+  return {
+    config: {
+      schema: KXM_ROLE_HOSTS_SCHEMA,
+      seats: mergedSeats,
+      hostProviders: mergedHostProviders,
+    },
+    filePath: primaryPath,
+    scope: primaryScope,
+  };
+}
+
+export function saveRoleHostsConfig(
+  config: RoleHostsConfig,
+  options: {
+    scope?: "global" | "local" | undefined;
+    repoRoot?: string | undefined;
+    userConfigDir?: string | undefined;
+    format?: "yaml" | "json" | undefined;
+  } = {},
+): { filePath: string; scope: "global" | "local" } {
+  const scope = options.scope ?? "local";
+  const repoRoot = options.repoRoot ?? process.cwd();
+  const dir = scope === "global" ? userConfigDirectory(options.userConfigDir) : repoConfigDirectory(repoRoot);
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+
+  const format = options.format ?? "yaml";
+  const filePath = join(dir, format === "json" ? "role-hosts.json" : "role-hosts.yaml");
+  const payload: RoleHostsConfig = {
+    schema: KXM_ROLE_HOSTS_SCHEMA,
+    seats: config.seats ?? {},
+    ...(config.hostProviders && Object.keys(config.hostProviders).length > 0 ? { hostProviders: config.hostProviders } : {}),
+  };
+
+  const content = format === "json" ? JSON.stringify(payload, null, 2) + "\n" : stringify(payload);
+  writeFileSync(filePath, content, "utf8");
+  return { filePath, scope };
+}
+
+export function setRoleSeatHost(
+  seatId: string,
+  host: string,
+  options: {
+    model?: string | undefined;
+    effort?: "low" | "medium" | "high" | "xhigh" | undefined;
+    scope?: "global" | "local" | undefined;
+    repoRoot?: string | undefined;
+    userConfigDir?: string | undefined;
+    format?: "yaml" | "json" | undefined;
+  } = {},
+): { filePath: string; seatId: string; binding: RoleSeatBinding; scope: "global" | "local" } {
+  const scope = options.scope ?? "local";
+  const current = loadRoleHostsConfig({
+    scope,
+    repoRoot: options.repoRoot,
+    userConfigDir: options.userConfigDir,
+  });
+
+  const seats = { ...(current.config.seats ?? {}) };
+  const existing = seats[seatId] ?? {};
+  const binding: RoleSeatBinding = {
+    ...existing,
+    host,
+    ...(options.model !== undefined ? { model: options.model } : {}),
+    ...(options.effort !== undefined ? { effort: options.effort } : {}),
+  };
+  seats[seatId] = binding;
+
+  const updatedConfig: RoleHostsConfig = {
+    ...current.config,
+    schema: KXM_ROLE_HOSTS_SCHEMA,
+    seats,
+  };
+
+  const saved = saveRoleHostsConfig(updatedConfig, {
+    scope,
+    repoRoot: options.repoRoot,
+    userConfigDir: options.userConfigDir,
+    format: options.format,
+  });
+
+  return { filePath: saved.filePath, seatId, binding, scope };
+}
+
+export function resolveRoleSeat(
+  seatId: string,
+  options: {
+    hostOverride?: string | undefined;
+    modelOverride?: string | undefined;
+    repoRoot?: string | undefined;
+    userConfigDir?: string | undefined;
+  } = {},
+): {
+  seatId: string;
+  host: string;
+  model?: string | undefined;
+  provider?: string | undefined;
+  effort?: "low" | "medium" | "high" | "xhigh" | undefined;
+  source: "override" | "role-hosts" | "seat-default" | "role-roster" | "fallback";
+} {
+  const hostsConfig = loadRoleHostsConfig({
+    scope: "all",
+    repoRoot: options.repoRoot,
+    userConfigDir: options.userConfigDir,
+  }).config;
+
+  const configuredSeat = hostsConfig.seats?.[seatId];
+  const defaultSeat = DEFAULT_ROLE_SEATS[seatId];
+  const roleDef = getRole(seatId, {
+    scope: "all",
+    repoRoot: options.repoRoot,
+    userConfigDir: options.userConfigDir,
+  })?.role ?? DEFAULT_ROLES[seatId];
+  const primaryRoster = roleDef?.roster?.[0];
+
+  // Resolve host
+  let host = "pi";
+  let source: "override" | "role-hosts" | "seat-default" | "role-roster" | "fallback" = "fallback";
+
+  if (options.hostOverride) {
+    host = options.hostOverride;
+    source = "override";
+  } else if (configuredSeat?.host) {
+    host = configuredSeat.host;
+    source = "role-hosts";
+  } else if (defaultSeat?.defaultHost) {
+    host = defaultSeat.defaultHost;
+    source = "seat-default";
+  } else if (primaryRoster?.harness) {
+    host = primaryRoster.harness;
+    source = "role-roster";
+  }
+
+  // Resolve model
+  let model: string | undefined;
+  if (options.modelOverride) {
+    model = options.modelOverride;
+  } else if (configuredSeat?.model) {
+    model = configuredSeat.model;
+  } else if (defaultSeat?.defaultModel) {
+    model = defaultSeat.defaultModel;
+  } else if (primaryRoster?.model) {
+    model = primaryRoster.model;
+  }
+
+  // Resolve provider
+  const provider = hostsConfig.hostProviders?.[host]
+    ?? roleDef?.roster?.find((r) => r.harness === host)?.provider;
+
+  // Resolve effort
+  const effort = configuredSeat?.effort
+    ?? roleDef?.roster?.find((r) => r.harness === host)?.effort;
+
+  return {
+    seatId,
+    host,
+    model,
+    provider,
+    effort,
+    source,
+  };
+}
+
