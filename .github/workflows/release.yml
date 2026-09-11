@@ -57,6 +57,18 @@ jobs:
           ref: ${{ steps.tag.outputs.tag }}
           fetch-depth: 0
 
+      # Release tags can predate fixes to the API helpers. Keep the package
+      # contents pinned to the tag while taking the release tools from main.
+      - name: Check out release helpers
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          path: .kxm-release-tools
+          fetch-depth: 1
+          sparse-checkout: |
+            scripts/kxm-bump-version.mjs
+            scripts/kxm-release-github.mjs
+
       - name: Use Node.js 22.19.0
         uses: actions/setup-node@v7
         with:
@@ -79,7 +91,7 @@ jobs:
         run: |
           set -euo pipefail
           version="${TAG#v}"
-          node scripts/kxm-bump-version.mjs "$version"
+          node .kxm-release-tools/scripts/kxm-bump-version.mjs "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "KXM_ASSET=kxm-${version}.tgz" >> "$GITHUB_ENV"
 
@@ -143,7 +155,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           KXM_RELEASE_TAG: ${{ steps.tag.outputs.tag }}
-        run: node scripts/kxm-release-github.mjs
+        run: node .kxm-release-tools/scripts/kxm-release-github.mjs
 
       - name: Publish draft release
         if: steps.existing.outputs.published != 'true'
@@ -163,9 +175,26 @@ jobs:
             "Content-Type": "application/json",
             "User-Agent": "kxm-release",
           };
-          const lookup = await fetch(`https://api.github.com/repos/${repo}/releases/tags/${tag}`, { headers });
-          if (!lookup.ok) throw new Error(`release lookup failed: ${lookup.status}`);
-          const release = await lookup.json();
+          async function releaseForTag() {
+            const lookup = await fetch(`https://api.github.com/repos/${repo}/releases/tags/${tag}`, { headers });
+            if (lookup.ok) return lookup.json();
+            if (lookup.status !== 404) throw new Error(`release lookup failed: ${lookup.status}`);
+            // GitHub does not expose draft releases through /releases/tags.
+            for (let page = 1; page <= 100; page += 1) {
+              const response = await fetch(
+                `https://api.github.com/repos/${repo}/releases?per_page=100&page=${page}`,
+                { headers },
+              );
+              if (!response.ok) throw new Error(`release list failed: ${response.status}`);
+              const releases = await response.json();
+              if (!Array.isArray(releases)) throw new Error("release list returned invalid body");
+              const match = releases.find((item) => item && item.tag_name === tag);
+              if (match) return match;
+              if (releases.length < 100) break;
+            }
+            throw new Error(`release not found for tag ${tag}`);
+          }
+          const release = await releaseForTag();
           if (!release.draft) {
             console.log(`Release ${tag} is already published`);
           } else {
@@ -193,6 +222,16 @@ jobs:
         with:
           ref: ${{ needs.release.outputs.tag }}
 
+      - name: Check out release helpers
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          path: .kxm-release-tools
+          fetch-depth: 1
+          sparse-checkout: |
+            scripts/kxm-bump-version.mjs
+            scripts/kxm-publish-npm.mjs
+
       - name: Use Node.js 22.19.0
         uses: actions/setup-node@v7
         with:
@@ -207,7 +246,7 @@ jobs:
         run: |
           set -euo pipefail
           version="${TAG#v}"
-          node scripts/kxm-bump-version.mjs "$version"
+          node .kxm-release-tools/scripts/kxm-bump-version.mjs "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "KXM_ASSET=kxm-${version}.tgz" >> "$GITHUB_ENV"
 
@@ -245,7 +284,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           KXM_RELEASE_TAG: ${{ needs.release.outputs.tag }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: node scripts/kxm-publish-npm.mjs
+        run: node .kxm-release-tools/scripts/kxm-publish-npm.mjs
 
       - name: Report idempotent npm publish
         if: steps.published.outputs.already == 'true'
