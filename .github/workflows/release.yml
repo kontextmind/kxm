@@ -75,6 +75,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/kxm-release-github.mjs
 
+      - name: Publish draft release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # Mark the draft release as published so npm-publish can proceed
+          gh release edit "$TAG" --draft=false
+          echo "Published release $TAG"
+
   # npm publish job is gated behind the npm-publish environment and verifies
   # that the release lookup returns draft: false before publishing.
   publish-npm:
