@@ -17303,7 +17303,47 @@ import { dirname as dirname4, join as join4, resolve as resolve4 } from "node:pa
 
 // plugins/kxm/src/vnext-bindings.ts
 import { homedir } from "node:os";
-import { DatabaseSync } from "node:sqlite";
+
+// plugins/kxm/src/sqlite.ts
+import { createRequire } from "node:module";
+var requireFromHere = createRequire(import.meta.url);
+function loadNative() {
+  try {
+    const mod = requireFromHere("node:sqlite");
+    if (mod.DatabaseSync) return { Ctor: mod.DatabaseSync, bun: false };
+  } catch {
+  }
+  try {
+    const mod = requireFromHere("bun:sqlite");
+    const Ctor = mod?.DatabaseSync ?? mod?.Database;
+    if (Ctor) return { Ctor, bun: true };
+  } catch {
+  }
+  throw new Error("kxm: no supported sqlite module found (need node:sqlite or bun:sqlite)");
+}
+var native = loadNative();
+var DatabaseSync = class {
+  inner;
+  constructor(path, options) {
+    let normalized = options;
+    if (native.bun && options) {
+      const { readOnly, ...rest } = options;
+      normalized = readOnly === void 0 ? rest : { ...rest, readonly: readOnly };
+    }
+    this.inner = normalized === void 0 ? new native.Ctor(path) : new native.Ctor(path, normalized);
+  }
+  prepare(sql) {
+    return this.inner.prepare(sql);
+  }
+  exec(sql) {
+    return this.inner.exec(sql);
+  }
+  close() {
+    this.inner.close();
+  }
+};
+
+// plugins/kxm/src/vnext-bindings.ts
 import { dirname as dirname2, isAbsolute as isAbsolute2, join as join2, parse, relative as relative2, resolve as resolve2, sep as sep2 } from "node:path";
 var MAX_BINDING_RECORD_BYTES = 256 * 1024;
 var BINDING_LABEL = "Runtime-local repository bindings";
@@ -17346,7 +17386,6 @@ import {
   writeFileSync
 } from "node:fs";
 import { basename as basename2, dirname as dirname3, join as join3, resolve as resolve3 } from "node:path";
-import { DatabaseSync as DatabaseSync2 } from "node:sqlite";
 function databaseError(code, file, message) {
   const issue3 = { phase: "semantic", code, file, message };
   return new VnextConfigError([issue3]);
@@ -17426,7 +17465,7 @@ function openDatabase(file, description, spec) {
       }
     }
   }
-  const database = new DatabaseSync2(file);
+  const database = new DatabaseSync(file);
   let transaction = false;
   try {
     database.exec(`PRAGMA busy_timeout = ${spec.timeoutMs ?? 5e3}`);

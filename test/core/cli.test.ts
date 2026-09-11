@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -1401,6 +1401,51 @@ test("invalid and unavailable operator commands fail safely with stable exit cod
     assert.equal(await runCli(["workflow", "--json", "export", "run_missing", "--input", join(cwd, "missing.json")], {}, capture(), cwd), 1);
     assert.equal(await runCli(["mesh"], {}, capture(), cwd), 2);
   } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("hub stop recovers an orphaned hub server whose wrapper died", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "kxm-cli-orphan-stop-"));
+  const stateDir = join(cwd, "state");
+  mkdirSync(stateDir, { recursive: true });
+  // A real long-lived process stands in for the orphaned hub server child.
+  const fixture = join(cwd, "hold.cjs");
+  writeFileSync(fixture, "setInterval(() => {}, 1000); process.on('SIGTERM', () => process.exit(0)); process.on('SIGKILL', () => process.exit(0));\n");
+  const orphan = spawn(process.execPath, [fixture], { stdio: "ignore" });
+  if (typeof orphan.pid !== "number") throw new Error("orphan spawn did not assign a pid");
+  try {
+    // Claim shape written by the wrapper: wrapper pid points at a dead pid,
+    // serverPid at the still-running orphan.
+    const deadWrapperPid = 2_147_483_000;
+    const pidPath = join(stateDir, "hub.pid");
+    writeFileSync(pidPath, `${JSON.stringify({
+      version: 1,
+      pid: deadWrapperPid,
+      serverPid: orphan.pid,
+      role: "hub",
+      startedAt: "2026-09-11T00:00:00.000Z",
+      controlFile: "hub.stop",
+    })}\n`);
+    const stopped = capture();
+    assert.equal(await runCli(["hub", "--json", "--workspace", cwd, "stop"], {}, stopped, cwd), 0);
+    const result = JSON.parse(stopped.read().stdout) as { ok: boolean; orphans?: string[]; stopped?: string[] };
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.orphans, ["hub.pid"]);
+    assert.ok(result.stopped?.includes("hub.pid"));
+    // The orphan was signaled and the stale claim removed.
+    const exited = await new Promise<boolean>((resolveExit) => {
+      const deadline = Date.now() + 10_000;
+      const check = () => {
+        try { process.kill(orphan.pid!, 0); if (Date.now() > deadline) { resolveExit(false); return; } } catch { resolveExit(true); return; }
+        setTimeout(check, 50);
+      };
+      check();
+    });
+    assert.equal(exited, true, "orphaned server was stopped");
+    assert.equal(existsSync(pidPath), false, "stale claim removed after orphan cleanup");
+  } finally {
+    try { orphan.kill("SIGKILL"); } catch { /* already exited */ }
     rmSync(cwd, { recursive: true, force: true });
   }
 });

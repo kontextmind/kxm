@@ -928,6 +928,23 @@ not create work or alter a phase gate.
   standard and Nous rates as discount, each with source and fetch status;
   missing or dynamic rates remain null. Native catalogs do not establish
   authentication or dispatch eligibility.
+- **Interactive workflow-guide setup at init (working tree, not a release):**
+  after the completion offer, an interactive `kxm init` (created/joined only)
+  offers to install software-engineering workflows and roles transcribed from
+  `docs/workflow-guide.md`. Harnesses are probed at offer time; each role is
+  bound to its first guide candidate whose harness is installed AND
+  authenticated (fail closed — no candidate is admitted on detection alone).
+  Native-vendor candidates never fall back to OpenRouter when their native
+  harness is unavailable (no silent cross-billing). Non-native vendors route
+  via the Pi OpenRouter provider. The setup writes only current vNext project
+  resources: `.kxm/agents/<role>.yaml` (`kxm.agent.v1`) and
+  `.kxm/workflows/<slug>.yaml` (`kxm.workflow.v1`). It never writes retired
+  legacy authority (`.kxm/config`, `.kxm/roster.json`) and does not use the
+  `kxm.role.v1` subsystem. Uncovered stages are reported as skipped; existing
+  files are never overwritten. Suppress with `KXM_SKIP_GUIDE_SETUP_PROMPT=1`.
+  Coverage: the five software-engineering guide workflows; extending the
+  catalog to other areas is a data-only addition to
+  `plugins/kxm/src/init-guide-setup.ts`.
 - **Legacy configuration retirement and harness discovery (2026-09-10):** Retired
   tracked legacy `.kxm/config` agent/workflow authority and `.kxm/roster.json`
   in favor of the initialized vNext project resources. `kxm init --dry-run`

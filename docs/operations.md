@@ -21,9 +21,33 @@ These operator commands assume the packed release CLI installation from
 [Getting started](getting-started.md#install-the-operator-command). From a
 source clone, use `npm run hub` instead.
 
+When `KXM_AUTH_TOKEN` is not set, `kxm hub start` loads the persisted hub
+credential file (schema `kxm.hub-env.v1`) under the user state root
+(`~/.local/state/kxm/hub-env.json` on Linux, honoring `KXM_STATE_HOME` and
+platform equivalents). If no persisted token exists, a long random
+administrative token is generated, saved there with `0600` permissions, and
+used. The hub therefore never silently starts with `auth=none` because a
+token was forgotten; a missing token is created once and reused by every
+later restart, worker, and dashboard on the same machine. Explicit
+`KXM_AUTH_TOKEN` / `KXM_PROJECT_TOKENS` environment values always win and are
+persisted so restarts keep them. The generated value is never printed in
+full; kxm only reports which file it came from.
+
 Stop with `Ctrl+C` or `SIGTERM`. The hub stops accepting connections, closes SSE streams, waits for active HTTP connections, and closes SQLite.
 
 For unattended service, use a supervisor that sets a stable working directory, injects secrets, captures stdout, restarts after failure, and allows at least five seconds for graceful shutdown.
+
+### PID claims and restart recovery
+
+The hub wrapper records its own PID and the server child PID in
+`.kxm/state/hub.pid`. A claim whose wrapper is dead is reclaimed automatically
+on the next `kxm hub start`; when the dead wrapper left an orphaned server
+child behind (for example after `SIGKILL` or a machine crash), the new
+wrapper terminates that orphan before reclaiming. `kxm hub stop` also
+recovers orphans directly: it signals a still-running recorded server child
+of a dead wrapper, waits for exit, and removes the stale claim. Malformed or
+foreign PID claims stay fail-closed; remove those only after verifying no
+hub process is running.
 
 Run each long-lived coordinator with `kxm agent worker --name <stable-name> --project <project> [--model <provider/model>] [--fallback-models <provider/model,...>] [--tools <name,...>]` under a separate service-manager unit. Use distinct worktrees for concurrent writers, explicit CPU and memory limits, and restart throttling outside the built-in bounded backoff. Enforce role ownership with the Pi tool allowlist: omit `bash`, `edit`, and `write` from read-only reviewers, even if their prompt also says not to edit. The worker launches Pi RPC mode and retains the most recent session unless configured otherwise. Use `--fresh-start` for a clean first session that may still resume after a later provider failure; reserve `--no-continue` for a worker that must never resume. For release verification, configure the [exact extension and skill sets](configuration.md#long-lived-worker-settings), including every required provider extension; configured categories disable discovery and fail closed on invalid paths. `kxm hub stop` writes a generation-matched control request; the worker asks Pi RPC to abort, waits for confirmation and state flush, and only force-stops the process tree after the bounded drain deadline. A final provider error leaves the inbound hub message delivered, gracefully restarts Pi, rotates to an unused fallback model, and preserves the session; Pi's own automatic retries always finish first. A tool that exceeds `KXM_WORKER_TOOL_TIMEOUT_MS` follows the same durable restart path without changing models. If `--continue` reports an invalid tool-result session, the worker retries once fresh, journals a redacted recovery envelope, and injects a bounded resume instruction for the durable run and stage. Do not copy `pi-agent-*.log` into journals or retrospectives.
 

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync } from "./sqlite.ts";
 import { VnextConfigError, validateRunEvent, vnextCanonicalJson, type JsonValue, type VnextConfigIssue, type VnextConfigOptions } from "./vnext-config.ts";
 import { vnextUserStateRoot } from "./vnext-bindings.ts";
 
