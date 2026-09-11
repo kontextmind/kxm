@@ -7263,7 +7263,7 @@ var require_public_api = __commonJS({
       }
       return doc;
     }
-    function parse10(src, reviver, options) {
+    function parse11(src, reviver, options) {
       let _reviver = void 0;
       if (typeof reviver === "function") {
         _reviver = reviver;
@@ -7304,7 +7304,7 @@ var require_public_api = __commonJS({
         return value.toString(options);
       return new Document.Document(value, _replacer, options).toString(options);
     }
-    exports.parse = parse10;
+    exports.parse = parse11;
     exports.parseAllDocuments = parseAllDocuments;
     exports.parseDocument = parseDocument2;
     exports.stringify = stringify10;
@@ -11162,7 +11162,7 @@ var require_fast_uri = __commonJS({
         normalizeString(uri, options);
       } else if (typeof uri === "object") {
         uri = /** @type {T} */
-        parse10(serialize(uri, options), options);
+        parse11(serialize(uri, options), options);
       }
       return uri;
     }
@@ -11202,8 +11202,8 @@ var require_fast_uri = __commonJS({
     function resolveComponent(base, relative7, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
-        base = parse10(serialize(base, options), options);
-        relative7 = parse10(serialize(relative7, options), options);
+        base = parse11(serialize(base, options), options);
+        relative7 = parse11(serialize(relative7, options), options);
       }
       options = options || {};
       if (!options.tolerant && relative7.scheme) {
@@ -11495,7 +11495,7 @@ var require_fast_uri = __commonJS({
       }
       return { parsed, malformedAuthorityOrPort, malformedPercentEncoding, malformedSchemeSpecific, malformedHost, malformedScheme };
     }
-    function parse10(uri, opts) {
+    function parse11(uri, opts) {
       return parseWithStatus(uri, opts).parsed;
     }
     function normalizeString(uri, opts) {
@@ -11532,7 +11532,7 @@ var require_fast_uri = __commonJS({
       resolveComponent,
       equal,
       serialize,
-      parse: parse10
+      parse: parse11
     };
     module.exports = fastUri;
     module.exports.default = fastUri;
@@ -38142,6 +38142,9 @@ var RUNTIME_EPOCH_NS = process.hrtime.bigint();
 var TEXT_LIMIT = 4 * 1024 * 1024;
 var RECORD_LIMIT = 16 * 1024 * 1024;
 
+// plugins/kxm/src/vnext-engine.ts
+var import_yaml10 = __toESM(require_dist(), 1);
+
 // plugins/kxm/src/vnext-runtime-supervisor.ts
 var repoRoot = resolve15(fileURLToPath3(new URL("../../../", import.meta.url)));
 function vnextSupervisorTokenFile(paths) {
@@ -39608,7 +39611,7 @@ function enforceToolPolicy(commandName, env = process.env, options) {
 }
 
 // plugins/kxm/src/config.ts
-var import_yaml10 = __toESM(require_dist(), 1);
+var import_yaml11 = __toESM(require_dist(), 1);
 import { existsSync as existsSync24, mkdirSync as mkdirSync22, readFileSync as readFileSync22, writeFileSync as writeFileSync19 } from "node:fs";
 import { homedir as homedir6 } from "node:os";
 import { dirname as dirname16, join as join31, resolve as resolve17 } from "node:path";
@@ -39689,7 +39692,7 @@ function loadKxmConfig(repoRoot3 = process.cwd(), options = {}) {
   if (existsSync24(userConfigFile)) {
     try {
       const text = readFileSync22(userConfigFile, "utf8");
-      userRaw = (0, import_yaml10.parse)(text) ?? {};
+      userRaw = (0, import_yaml11.parse)(text) ?? {};
       userLoadedPath = userConfigFile;
     } catch (error) {
       throw new Error(`invalid user config YAML at ${userConfigFile}`, { cause: error });
@@ -39700,7 +39703,7 @@ function loadKxmConfig(repoRoot3 = process.cwd(), options = {}) {
   if (existsSync24(repoConfigFile)) {
     try {
       const text = readFileSync22(repoConfigFile, "utf8");
-      repoRaw = (0, import_yaml10.parse)(text) ?? {};
+      repoRaw = (0, import_yaml11.parse)(text) ?? {};
       repoLoadedPath = repoConfigFile;
     } catch (error) {
       throw new Error(`invalid project config YAML at ${repoConfigFile}`, { cause: error });
@@ -39740,7 +39743,7 @@ function setKxmConfigValue(repoRoot3, keyPath, value, options = {}) {
   let existing = {};
   if (existsSync24(targetFile2)) {
     try {
-      existing = (0, import_yaml10.parse)(readFileSync22(targetFile2, "utf8")) ?? {};
+      existing = (0, import_yaml11.parse)(readFileSync22(targetFile2, "utf8")) ?? {};
     } catch {
       existing = {};
     }
@@ -39758,7 +39761,7 @@ function setKxmConfigValue(repoRoot3, keyPath, value, options = {}) {
     cursor2 = cursor2[p];
   }
   cursor2[parts[parts.length - 1]] = value;
-  writeFileSync19(targetFile2, (0, import_yaml10.stringify)(existing).trim() + "\n", "utf8");
+  writeFileSync19(targetFile2, (0, import_yaml11.stringify)(existing).trim() + "\n", "utf8");
 }
 function formatKxmConfig(config) {
   const display = {
@@ -39769,7 +39772,7 @@ function formatKxmConfig(config) {
     sync: config.sync,
     loadedFrom: config.loadedFrom
   };
-  return (0, import_yaml10.stringify)(display).trim();
+  return (0, import_yaml11.stringify)(display).trim();
 }
 
 // plugins/kxm/src/autocomplete.ts
@@ -40115,7 +40118,7 @@ function suggestWorkflowAndRoles(prompt, options = {}) {
 }
 
 // plugins/kxm/src/task-manager.ts
-var import_yaml11 = __toESM(require_dist(), 1);
+var import_yaml12 = __toESM(require_dist(), 1);
 import { randomUUID as randomUUID9 } from "node:crypto";
 import { existsSync as existsSync25, mkdirSync as mkdirSync23, readFileSync as readFileSync23, readdirSync as readdirSync8, writeFileSync as writeFileSync20 } from "node:fs";
 import { join as join32, resolve as resolve18 } from "node:path";
@@ -40144,7 +40147,7 @@ function createGoal(repoRoot3, input) {
     updatedAt: now
   };
   const filePath = join32(dir, `${id}.yaml`);
-  writeFileSync20(filePath, (0, import_yaml11.stringify)(record).trim() + "\n", "utf8");
+  writeFileSync20(filePath, (0, import_yaml12.stringify)(record).trim() + "\n", "utf8");
   return record;
 }
 function listGoals(repoRoot3) {
@@ -40156,7 +40159,7 @@ function listGoals(repoRoot3) {
     if (entry.isFile() && (entry.name.endsWith(".yaml") || entry.name.endsWith(".yml"))) {
       try {
         const text = readFileSync23(join32(dir, entry.name), "utf8");
-        const doc = (0, import_yaml11.parse)(text);
+        const doc = (0, import_yaml12.parse)(text);
         if (doc && doc.schema === GOAL_SCHEMA) goals.push(doc);
       } catch {
       }
@@ -40189,7 +40192,7 @@ function createTask(repoRoot3, input) {
     updatedAt: now
   };
   const filePath = join32(dir, `${id}.yaml`);
-  writeFileSync20(filePath, (0, import_yaml11.stringify)(record).trim() + "\n", "utf8");
+  writeFileSync20(filePath, (0, import_yaml12.stringify)(record).trim() + "\n", "utf8");
   return record;
 }
 function listTasks(repoRoot3, options = {}) {
@@ -40201,7 +40204,7 @@ function listTasks(repoRoot3, options = {}) {
     if (entry.isFile() && (entry.name.endsWith(".yaml") || entry.name.endsWith(".yml"))) {
       try {
         const text = readFileSync23(join32(dir, entry.name), "utf8");
-        const doc = (0, import_yaml11.parse)(text);
+        const doc = (0, import_yaml12.parse)(text);
         if (doc && doc.schema === TASK_SCHEMA) {
           if (options.goalId && doc.goalId !== options.goalId) continue;
           if (options.status && doc.status !== options.status) continue;
@@ -40219,7 +40222,7 @@ function getTask(repoRoot3, taskId) {
   if (!existsSync25(filePath)) return void 0;
   try {
     const text = readFileSync23(filePath, "utf8");
-    const doc = (0, import_yaml11.parse)(text);
+    const doc = (0, import_yaml12.parse)(text);
     return doc && doc.schema === TASK_SCHEMA ? doc : void 0;
   } catch {
     return void 0;
@@ -40234,7 +40237,7 @@ function updateTaskStatus(repoRoot3, taskId, status, options = {}) {
   if (options.workflowRunId) task.workflowRunId = options.workflowRunId;
   task.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
   const filePath = join32(tasksDirectory(repoRoot3), `${taskId}.yaml`);
-  writeFileSync20(filePath, (0, import_yaml11.stringify)(task).trim() + "\n", "utf8");
+  writeFileSync20(filePath, (0, import_yaml12.stringify)(task).trim() + "\n", "utf8");
   return task;
 }
 function syncTaskWithTracker(repoRoot3, taskId, options = {}) {
@@ -40250,12 +40253,12 @@ function syncTaskWithTracker(repoRoot3, taskId, options = {}) {
   task.trackerSync.lastSyncedAt = now;
   task.updatedAt = now;
   const filePath = join32(tasksDirectory(repoRoot3), `${taskId}.yaml`);
-  writeFileSync20(filePath, (0, import_yaml11.stringify)(task).trim() + "\n", "utf8");
+  writeFileSync20(filePath, (0, import_yaml12.stringify)(task).trim() + "\n", "utf8");
   return task;
 }
 
 // plugins/kxm/src/cli.ts
-var import_yaml14 = __toESM(require_dist(), 1);
+var import_yaml15 = __toESM(require_dist(), 1);
 
 // plugins/kxm/src/studio-layout.ts
 import { createServer } from "node:http";
@@ -41019,7 +41022,7 @@ function createStudioServer(options = {}) {
 }
 
 // plugins/kxm/src/role.ts
-var import_yaml12 = __toESM(require_dist(), 1);
+var import_yaml13 = __toESM(require_dist(), 1);
 import { existsSync as existsSync26, mkdirSync as mkdirSync24, readdirSync as readdirSync9, readFileSync as readFileSync24, rmSync as rmSync8, writeFileSync as writeFileSync21 } from "node:fs";
 import { join as join33 } from "node:path";
 var KXM_ROLE_SCHEMA = "kxm.role.v1";
@@ -41115,7 +41118,7 @@ function parseRoleFile(filePath) {
   if (!existsSync26(filePath)) return void 0;
   try {
     const raw = readFileSync24(filePath, "utf8");
-    const parsed = (0, import_yaml12.parse)(raw);
+    const parsed = (0, import_yaml13.parse)(raw);
     if (!parsed || typeof parsed !== "object" || parsed.schema !== KXM_ROLE_SCHEMA) {
       return void 0;
     }
@@ -41224,7 +41227,7 @@ function addRole(role, options = {}) {
   if (existsSync26(filePath) && !options.overwrite) {
     throw new Error(`role_already_exists: role '${role.id}' already exists at ${filePath}`);
   }
-  writeFileSync21(filePath, (0, import_yaml12.stringify)(role), "utf8");
+  writeFileSync21(filePath, (0, import_yaml13.stringify)(role), "utf8");
   return { id: role.id, filePath, scope };
 }
 function removeRole(roleId, options = {}) {
@@ -41254,12 +41257,12 @@ function modifyRole(roleId, updates, options = {}) {
   const repoRoot3 = options.repoRoot ?? process.cwd();
   const dir = ensureRolesDirectory(scope, repoRoot3, options.userConfigDir);
   const filePath = join33(dir, `${roleId}.yaml`);
-  writeFileSync21(filePath, (0, import_yaml12.stringify)(updated), "utf8");
+  writeFileSync21(filePath, (0, import_yaml13.stringify)(updated), "utf8");
   return { id: roleId, role: updated, filePath, scope };
 }
 
 // plugins/kxm/src/workflow-manager.ts
-var import_yaml13 = __toESM(require_dist(), 1);
+var import_yaml14 = __toESM(require_dist(), 1);
 import { existsSync as existsSync27, mkdirSync as mkdirSync25, readdirSync as readdirSync10, readFileSync as readFileSync25, rmSync as rmSync9, writeFileSync as writeFileSync22 } from "node:fs";
 import { join as join34 } from "node:path";
 var WORKFLOW_TEMPLATES = {
@@ -41427,7 +41430,7 @@ function parseWorkflowFile(filePath) {
   if (!existsSync27(filePath)) return void 0;
   try {
     const raw = readFileSync25(filePath, "utf8");
-    const parsed = (0, import_yaml13.parse)(raw);
+    const parsed = (0, import_yaml14.parse)(raw);
     if (!parsed || typeof parsed !== "object") return void 0;
     return parsed;
   } catch {
@@ -41532,7 +41535,7 @@ function addWorkflowDefinition(workflowId, content = DEFAULT_WORKFLOW_TEMPLATE, 
   if (existsSync27(filePath) && !options.overwrite) {
     throw new Error(`workflow_already_exists: workflow '${workflowId}' already exists at ${filePath}`);
   }
-  const payload = typeof content === "string" ? content : (0, import_yaml13.stringify)(content);
+  const payload = typeof content === "string" ? content : (0, import_yaml14.stringify)(content);
   writeFileSync22(filePath, payload, "utf8");
   return { id: workflowId, filePath, scope };
 }
@@ -41560,7 +41563,7 @@ function modifyWorkflowDefinition(workflowId, updates, options = {}) {
   const repoRoot3 = options.repoRoot ?? process.cwd();
   const dir = ensureWorkflowsDirectory(scope, repoRoot3, options.userConfigDir);
   const filePath = join34(dir, `${workflowId}.yaml`);
-  writeFileSync22(filePath, (0, import_yaml13.stringify)(updated), "utf8");
+  writeFileSync22(filePath, (0, import_yaml14.stringify)(updated), "utf8");
   return { id: workflowId, workflow: updated, filePath, scope };
 }
 
@@ -43891,7 +43894,7 @@ steps:
         maxTransitions: 2
 `;
     }
-    const parsedYaml = (0, import_yaml14.parse)(yamlContent);
+    const parsedYaml = (0, import_yaml15.parse)(yamlContent);
     const plan = compileVnextWorkflow({ id: workflowId, value: parsedYaml });
     const layout = generateStudioLayout(plan);
     print(runtime.io, runtime.json, { ok: true, command: "studio layout", layout }, JSON.stringify(layout, null, 2));
@@ -43933,7 +43936,7 @@ async function cmdStudioServe(runtime, options) {
           }
           if (targetPath && existsSync28(targetPath)) {
             const raw = readFileSync26(targetPath, "utf8");
-            const parsed = (0, import_yaml14.parse)(raw);
+            const parsed = (0, import_yaml15.parse)(raw);
             const wfId = basename6(targetPath).replace(/\.(yaml|yml)$/, "");
             return compileVnextWorkflow({ id: wfId, value: parsed });
           }
@@ -44019,7 +44022,7 @@ async function cmdRoleGet(runtime, roleId, options) {
     runtime.io,
     runtime.json,
     { ok: true, command: "role get", roleId, scope: result.scope, filePath: result.filePath, role: result.role },
-    (0, import_yaml14.stringify)(result.role)
+    (0, import_yaml15.stringify)(result.role)
   );
   return 0;
 }
@@ -44132,7 +44135,7 @@ async function cmdRoleAdd(runtime, roleId, options) {
   if (options.file) {
     const filePath = resolve21(runtime.cwd, options.file);
     const content = readFileSync26(filePath, "utf8");
-    roleDef = (0, import_yaml14.parse)(content);
+    roleDef = (0, import_yaml15.parse)(content);
     roleDef.id = roleId;
   } else {
     const skills = options.skills ? options.skills.split(",").map((s) => s.trim()).filter(Boolean) : [];
