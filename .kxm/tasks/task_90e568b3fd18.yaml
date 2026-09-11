@@ -12,7 +12,7 @@ acceptanceCriteria:
   - Enforce authority validation brake between .kxm/roles/writer.yaml and .kxm/agents/implementer.yaml
   - Mandate raw byte fidelity (RTK bypass) for verification gates and critics
   - Enforce pinned SSH host key verification policy
-status: in_progress
+status: done
 assignedWorkflow: default
 createdAt: 2026-09-11T09:24:26.312Z
-updatedAt: 2026-09-11T09:40:30.000Z
+updatedAt: 2026-09-11T09:49:15.000Z
