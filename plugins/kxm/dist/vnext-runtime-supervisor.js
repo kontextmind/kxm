@@ -14785,21 +14785,145 @@ import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // plugins/kxm/src/vnext-config.ts
 var import__ = __toESM(require__(), 1);
-var import_yaml2 = __toESM(require_dist(), 1);
 import { spawnSync } from "node:child_process";
 import { createHash as createHash2 } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// plugins/kxm/src/vnext-template.ts
+// plugins/kxm/src/restricted-yaml.mjs
 var import_yaml = __toESM(require_dist(), 1);
+var VNEXT_YAML_LIMITS = Object.freeze({
+  maxDocumentBytes: 256 * 1024,
+  maxDepth: 32,
+  maxScalarBytes: 64 * 1024,
+  maxCollectionItems: 4096,
+  maxTotalNodes: 16384,
+  maxKeys: 8192
+});
+var ALLOWED_YAML_TAGS = /* @__PURE__ */ new Set([
+  "tag:yaml.org,2002:map",
+  "tag:yaml.org,2002:seq",
+  "tag:yaml.org,2002:str",
+  "tag:yaml.org,2002:null",
+  "tag:yaml.org,2002:bool",
+  "tag:yaml.org,2002:int",
+  "tag:yaml.org,2002:float"
+]);
+function compareCodeUnits(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+function sortIssues(issues) {
+  return [...issues].sort((left, right) => compareCodeUnits(left.file, right.file) || compareCodeUnits(left.phase, right.phase) || compareCodeUnits(left.code, right.code) || compareCodeUnits(left.message, right.message));
+}
+function issue(phase, code, file, message) {
+  return { phase, code, file, message };
+}
+var RestrictedYamlError = class extends Error {
+  /**
+   * @param {readonly { phase: string, code: string, file: string, message: string }[]} issues
+   */
+  constructor(issues) {
+    const sorted = sortIssues(issues);
+    super(sorted.map((entry) => `${entry.file}: ${entry.code}: ${entry.message}`).join("\n"));
+    this.name = "RestrictedYamlError";
+    this.issues = sorted;
+  }
+};
+function fail(phase, code, file, message) {
+  throw new RestrictedYamlError([issue(phase, code, file, message)]);
+}
+function decodeUtf8(input, label) {
+  if (typeof input === "string") return input;
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(input);
+  } catch {
+    fail("parse", "invalid_utf8", label, "document is not valid UTF-8");
+  }
+}
+function isJsonObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function assertJsonValue(value, label, path = "$", seen = /* @__PURE__ */ new Set()) {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) fail("parse", "non_json_number", label, `${path} is not a finite JSON number`);
+    return;
+  }
+  if (!value || typeof value !== "object") fail("parse", "non_json_value", label, `${path} is not JSON-compatible`);
+  if (seen.has(value)) fail("parse", "cyclic_value", label, `${path} is cyclic`);
+  seen.add(value);
+  if (Array.isArray(value)) {
+    for (const [index, candidate] of value.entries()) assertJsonValue(candidate, label, `${path}[${index}]`, seen);
+  } else {
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      fail("parse", "constructed_object", label, `${path} has a forbidden constructed type`);
+    }
+    for (const [key, candidate] of Object.entries(value)) assertJsonValue(candidate, label, `${path}.${key}`, seen);
+  }
+  seen.delete(value);
+}
+function parseRestrictedYaml(input, label = "<yaml>", limits = VNEXT_YAML_LIMITS) {
+  const byteLength = typeof input === "string" ? Buffer.byteLength(input, "utf8") : input.byteLength;
+  if (byteLength > limits.maxDocumentBytes) {
+    fail("parse", "document_too_large", label, `document exceeds ${limits.maxDocumentBytes} bytes`);
+  }
+  const text = decodeUtf8(input, label);
+  const document = (0, import_yaml.parseDocument)(text, {
+    customTags: [],
+    strict: true,
+    uniqueKeys: true
+  });
+  if (document.errors.length > 0) {
+    fail("parse", "invalid_yaml", label, document.errors.map((error) => error.message).join("; "));
+  }
+  if (document.warnings.length > 0) {
+    fail("parse", "yaml_warning", label, document.warnings.map((warning) => warning.message).join("; "));
+  }
+  let nodes = 0;
+  let keys = 0;
+  (0, import_yaml.visit)(document, (_key, node, path) => {
+    nodes += 1;
+    if (nodes > limits.maxTotalNodes) fail("parse", "node_limit", label, `document exceeds ${limits.maxTotalNodes} nodes`);
+    if (path.length > limits.maxDepth) fail("parse", "depth_limit", label, `document exceeds nesting depth ${limits.maxDepth}`);
+    if ((0, import_yaml.isAlias)(node)) fail("parse", "alias_forbidden", label, "aliases are forbidden");
+    if (node && typeof node === "object" && "anchor" in node && typeof node.anchor === "string") {
+      fail("parse", "anchor_forbidden", label, "anchors are forbidden");
+    }
+    if ((0, import_yaml.isCollection)(node) && node.items.length > limits.maxCollectionItems) {
+      fail("parse", "collection_limit", label, `collection exceeds ${limits.maxCollectionItems} items`);
+    }
+    if ((0, import_yaml.isMap)(node)) {
+      keys += node.items.length;
+      if (keys > limits.maxKeys) fail("parse", "key_limit", label, `document exceeds ${limits.maxKeys} mapping keys`);
+      for (const pair of node.items) {
+        if (!(0, import_yaml.isScalar)(pair.key) || typeof pair.key.value !== "string") {
+          fail("parse", "non_string_key", label, "mapping keys must be strings");
+        }
+      }
+    }
+    if ((0, import_yaml.isScalar)(node) && typeof node.value === "string" && Buffer.byteLength(node.value, "utf8") > limits.maxScalarBytes) {
+      fail("parse", "scalar_limit", label, `scalar exceeds ${limits.maxScalarBytes} bytes`);
+    }
+    if (node && typeof node === "object" && "tag" in node && typeof node.tag === "string" && !ALLOWED_YAML_TAGS.has(node.tag)) {
+      fail("parse", "tag_forbidden", label, `tag ${node.tag} is forbidden`);
+    }
+  });
+  const value = document.toJS({ maxAliasCount: 0 });
+  assertJsonValue(value, label);
+  if (!isJsonObject(value)) fail("parse", "root_not_object", label, "resource root must be a mapping");
+  return value;
+}
+
+// plugins/kxm/src/vnext-template.ts
+var import_yaml2 = __toESM(require_dist(), 1);
 import { createHash } from "node:crypto";
 var VNEXT_TEMPLATE_ID = "builtin-minimal";
 var VNEXT_TEMPLATE_PROVENANCE_PATH = ".kxm/template-provenance.yaml";
 var CURRENT_VNEXT_TEMPLATE_VARIANT = "v4-registry";
 var SUPPORTED_VNEXT_TEMPLATE_VARIANTS = ["v1", "v2", "v3-policy", "v4-registry"];
-function compareCodeUnits(left, right) {
+function compareCodeUnits2(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 function canonicalJson(value) {
@@ -14807,7 +14931,7 @@ function canonicalJson(value) {
     return JSON.stringify(value);
   }
   if (Array.isArray(value)) return `[${value.map((candidate) => canonicalJson(candidate)).join(",")}]`;
-  return `{${Object.keys(value).sort(compareCodeUnits).map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+  return `{${Object.keys(value).sort(compareCodeUnits2).map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
 }
 function vnextContentSha256(input) {
   return `sha256:${createHash("sha256").update(input).digest("hex")}`;
@@ -14948,7 +15072,7 @@ function renderVnextTemplate(projectId, projectName, variant = CURRENT_VNEXT_TEM
   const values = coreTemplate(projectId, projectName, variant);
   const coreFiles = /* @__PURE__ */ new Map();
   const records = [...values.entries()].map(([path, value]) => {
-    const bytes = Buffer.from((0, import_yaml.stringify)(value, { lineWidth: 0 }), "utf8");
+    const bytes = Buffer.from((0, import_yaml2.stringify)(value, { lineWidth: 0 }), "utf8");
     coreFiles.set(path, bytes);
     return {
       path,
@@ -14956,7 +15080,7 @@ function renderVnextTemplate(projectId, projectName, variant = CURRENT_VNEXT_TEM
       authoritySha256: vnextAuthoritySha256(value),
       bytes: bytes.byteLength
     };
-  }).sort((left, right) => compareCodeUnits(left.path, right.path));
+  }).sort((left, right) => compareCodeUnits2(left.path, right.path));
   const templateRevision = provenanceRevision(records);
   const provenance = {
     schema: "kxm.template-provenance.v1",
@@ -14968,9 +15092,9 @@ function renderVnextTemplate(projectId, projectName, variant = CURRENT_VNEXT_TEM
   const fileEntries = [...coreFiles.entries()];
   fileEntries.push([
     VNEXT_TEMPLATE_PROVENANCE_PATH,
-    Buffer.from((0, import_yaml.stringify)(provenance, { lineWidth: 0 }), "utf8")
+    Buffer.from((0, import_yaml2.stringify)(provenance, { lineWidth: 0 }), "utf8")
   ]);
-  fileEntries.sort(([left], [right]) => compareCodeUnits(left, right));
+  fileEntries.sort(([left], [right]) => compareCodeUnits2(left, right));
   const files = new Map(fileEntries);
   return { projectId, projectName, templateRevision, provenance, files, values };
 }
@@ -15439,19 +15563,11 @@ function validateHarnessModelPair(harnessId, modelSpec) {
 }
 
 // plugins/kxm/src/vnext-config.ts
-var VNEXT_YAML_LIMITS = Object.freeze({
-  maxDocumentBytes: 256 * 1024,
-  maxDepth: 32,
-  maxScalarBytes: 64 * 1024,
-  maxCollectionItems: 4096,
-  maxTotalNodes: 16384,
-  maxKeys: 8192
-});
 var VnextConfigError = class extends Error {
   issues;
   constructor(issues) {
-    const sorted = sortIssues(issues);
-    super(sorted.map((issue2) => `${issue2.file}: ${issue2.code}: ${issue2.message}`).join("\n"));
+    const sorted = sortIssues2(issues);
+    super(sorted.map((issue3) => `${issue3.file}: ${issue3.code}: ${issue3.message}`).join("\n"));
     this.name = "VnextConfigError";
     this.issues = sorted;
   }
@@ -15479,108 +15595,28 @@ var SECRET_VALUE_PATTERNS = [
   /\bAKIA[A-Z0-9]{16}\b/,
   /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/
 ];
-var ALLOWED_YAML_TAGS = /* @__PURE__ */ new Set([
-  "tag:yaml.org,2002:map",
-  "tag:yaml.org,2002:seq",
-  "tag:yaml.org,2002:str",
-  "tag:yaml.org,2002:null",
-  "tag:yaml.org,2002:bool",
-  "tag:yaml.org,2002:int",
-  "tag:yaml.org,2002:float"
-]);
-function compareCodeUnits2(left, right) {
+function compareCodeUnits3(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
-function sortIssues(issues) {
-  return [...issues].sort((left, right) => compareCodeUnits2(left.file, right.file) || compareCodeUnits2(left.phase, right.phase) || compareCodeUnits2(left.code, right.code) || compareCodeUnits2(left.message, right.message));
+function sortIssues2(issues) {
+  return [...issues].sort((left, right) => compareCodeUnits3(left.file, right.file) || compareCodeUnits3(left.phase, right.phase) || compareCodeUnits3(left.code, right.code) || compareCodeUnits3(left.message, right.message));
 }
-function issue(phase, code, file, message) {
+function issue2(phase, code, file, message) {
   return { phase, code, file, message };
 }
-function fail(phase, code, file, message) {
-  throw new VnextConfigError([issue(phase, code, file, message)]);
+function fail2(phase, code, file, message) {
+  throw new VnextConfigError([issue2(phase, code, file, message)]);
 }
-function decodeUtf8(input, label) {
-  if (typeof input === "string") return input;
-  try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(input);
-  } catch {
-    fail("parse", "invalid_utf8", label, "document is not valid UTF-8");
-  }
-}
-function isJsonObject(value) {
+function isJsonObject2(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
-function assertJsonValue(value, label, path = "$", seen = /* @__PURE__ */ new Set()) {
-  if (value === null || typeof value === "string" || typeof value === "boolean") return;
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) fail("parse", "non_json_number", label, `${path} is not a finite JSON number`);
-    return;
+function parseRestrictedYaml2(input, label = "<yaml>", limits = VNEXT_YAML_LIMITS) {
+  try {
+    return parseRestrictedYaml(input, label, limits);
+  } catch (error) {
+    if (error instanceof RestrictedYamlError) throw new VnextConfigError(error.issues);
+    throw error;
   }
-  if (!value || typeof value !== "object") fail("parse", "non_json_value", label, `${path} is not JSON-compatible`);
-  if (seen.has(value)) fail("parse", "cyclic_value", label, `${path} is cyclic`);
-  seen.add(value);
-  if (Array.isArray(value)) {
-    for (const [index, candidate] of value.entries()) assertJsonValue(candidate, label, `${path}[${index}]`, seen);
-  } else {
-    const prototype = Object.getPrototypeOf(value);
-    if (prototype !== Object.prototype && prototype !== null) {
-      fail("parse", "constructed_object", label, `${path} has a forbidden constructed type`);
-    }
-    for (const [key, candidate] of Object.entries(value)) assertJsonValue(candidate, label, `${path}.${key}`, seen);
-  }
-  seen.delete(value);
-}
-function parseRestrictedYaml(input, label = "<yaml>", limits = VNEXT_YAML_LIMITS) {
-  const byteLength = typeof input === "string" ? Buffer.byteLength(input, "utf8") : input.byteLength;
-  if (byteLength > limits.maxDocumentBytes) {
-    fail("parse", "document_too_large", label, `document exceeds ${limits.maxDocumentBytes} bytes`);
-  }
-  const text = decodeUtf8(input, label);
-  const document = (0, import_yaml2.parseDocument)(text, {
-    customTags: [],
-    strict: true,
-    uniqueKeys: true
-  });
-  if (document.errors.length > 0) {
-    fail("parse", "invalid_yaml", label, document.errors.map((error) => error.message).join("; "));
-  }
-  if (document.warnings.length > 0) {
-    fail("parse", "yaml_warning", label, document.warnings.map((warning) => warning.message).join("; "));
-  }
-  let nodes = 0;
-  let keys = 0;
-  (0, import_yaml2.visit)(document, (_key, node, path) => {
-    nodes += 1;
-    if (nodes > limits.maxTotalNodes) fail("parse", "node_limit", label, `document exceeds ${limits.maxTotalNodes} nodes`);
-    if (path.length > limits.maxDepth) fail("parse", "depth_limit", label, `document exceeds nesting depth ${limits.maxDepth}`);
-    if ((0, import_yaml2.isAlias)(node)) fail("parse", "alias_forbidden", label, "aliases are forbidden");
-    if (node && typeof node === "object" && "anchor" in node && typeof node.anchor === "string") {
-      fail("parse", "anchor_forbidden", label, "anchors are forbidden");
-    }
-    if ((0, import_yaml2.isCollection)(node) && node.items.length > limits.maxCollectionItems) {
-      fail("parse", "collection_limit", label, `collection exceeds ${limits.maxCollectionItems} items`);
-    }
-    if ((0, import_yaml2.isMap)(node)) {
-      keys += node.items.length;
-      if (keys > limits.maxKeys) fail("parse", "key_limit", label, `document exceeds ${limits.maxKeys} mapping keys`);
-      for (const pair of node.items) {
-        if (!(0, import_yaml2.isScalar)(pair.key) || typeof pair.key.value !== "string") {
-          fail("parse", "non_string_key", label, "mapping keys must be strings");
-        }
-      }
-    }
-    if ((0, import_yaml2.isScalar)(node) && typeof node.value === "string" && Buffer.byteLength(node.value, "utf8") > limits.maxScalarBytes) {
-      fail("parse", "scalar_limit", label, `scalar exceeds ${limits.maxScalarBytes} bytes`);
-    }
-    if (node && typeof node === "object" && "tag" in node && typeof node.tag === "string" && !ALLOWED_YAML_TAGS.has(node.tag)) {
-      fail("parse", "tag_forbidden", label, `tag ${node.tag} is forbidden`);
-    }
-  });
-  const value = document.toJS({ maxAliasCount: 0 });
-  assertJsonValue(value, label);
-  if (!isJsonObject(value)) fail("parse", "root_not_object", label, "resource root must be a mapping");
-  return value;
 }
 function readJsonObject(file) {
   const parsed = JSON.parse(readFileSync(file, "utf8"));
@@ -15656,7 +15692,7 @@ var VnextSchemaRegistry = class {
   validate(kind, value, file) {
     const definition = RESOURCE_SCHEMA[kind];
     if (value.schema !== definition.identity) {
-      return [issue("schema", "schema_identity_mismatch", file, `expected ${definition.identity}, received ${String(value.schema)}`)];
+      return [issue2("schema", "schema_identity_mismatch", file, `expected ${definition.identity}, received ${String(value.schema)}`)];
     }
     const validator = this.validators.get(kind);
     if (!validator) throw new Error(`missing vNext validator for ${kind}`);
@@ -15686,7 +15722,7 @@ var VnextSchemaRegistry = class {
   }
   validateAuxiliary(value, file, identity, validator) {
     if (value.schema !== identity) {
-      return [issue("schema", "schema_identity_mismatch", file, `expected ${identity}, received ${String(value.schema)}`)];
+      return [issue2("schema", "schema_identity_mismatch", file, `expected ${identity}, received ${String(value.schema)}`)];
     }
     if (validator(value)) return [];
     return (validator.errors ?? []).map((error) => schemaIssue(file, error));
@@ -15696,7 +15732,7 @@ var cachedRunEventRegistry;
 function validateRunEvent(value, file) {
   const registry = cachedRunEventRegistry ??= new VnextSchemaRegistry();
   if (!registry.runEventValidator(value)) {
-    throw new VnextConfigError([issue(
+    throw new VnextConfigError([issue2(
       "schema",
       "run_event_invalid",
       file,
@@ -15707,7 +15743,7 @@ function validateRunEvent(value, file) {
 function schemaIssue(file, error) {
   const location = error.instancePath || "/";
   const suffix = error.params && "additionalProperty" in error.params ? ` (${String(error.params.additionalProperty)})` : "";
-  return issue("schema", `schema_${error.keyword}`, file, `${location} ${error.message ?? "is invalid"}${suffix}`);
+  return issue2("schema", `schema_${error.keyword}`, file, `${location} ${error.message ?? "is invalid"}${suffix}`);
 }
 function canonicalHostPath(path) {
   const resolved = resolve(path);
@@ -15733,7 +15769,7 @@ function portableBindingIssue(root, pathHint, repositoryId) {
     if (!existsSync(current)) break;
     const stat = lstatSync(current);
     if (stat.isSymbolicLink()) {
-      return issue("path", "repository_binding_path_link", ".kxm/project.yaml", `portable pathHint for ${repositoryId} traverses a symbolic link or junction`);
+      return issue2("path", "repository_binding_path_link", ".kxm/project.yaml", `portable pathHint for ${repositoryId} traverses a symbolic link or junction`);
     }
   }
   const binding = resolve(root, ...pathHint.split("/"));
@@ -15741,7 +15777,7 @@ function portableBindingIssue(root, pathHint, repositoryId) {
     const realRoot = canonicalHostPath(root);
     const realBinding = canonicalHostPath(binding);
     if (!containedHostPath(realRoot, realBinding)) {
-      return issue("path", "repository_binding_outside_project", ".kxm/project.yaml", `portable pathHint for ${repositoryId} resolves outside the authoritative project root`);
+      return issue2("path", "repository_binding_outside_project", ".kxm/project.yaml", `portable pathHint for ${repositoryId} resolves outside the authoritative project root`);
     }
   }
   return void 0;
@@ -15771,24 +15807,24 @@ function readResource(registry, root, file, logicalPath, kind, id, containmentRo
   try {
     stat = lstatSync(file);
   } catch {
-    fail("discovery", "resource_missing", label, "resource does not exist");
+    fail2("discovery", "resource_missing", label, "resource does not exist");
   }
-  if (stat.isSymbolicLink()) fail("path", "resource_symlink", label, "configuration resources must not be symbolic links");
+  if (stat.isSymbolicLink()) fail2("path", "resource_symlink", label, "configuration resources must not be symbolic links");
   const boundary = resolve(containmentRoot);
   let parent = dirname(file);
   while (parent !== boundary) {
-    if (parent === dirname(parent)) fail("path", "resource_outside_project", label, "resource escapes the project root");
+    if (parent === dirname(parent)) fail2("path", "resource_outside_project", label, "resource escapes the project root");
     let parentStat;
     try {
       parentStat = lstatSync(parent);
     } catch {
-      fail("discovery", "resource_parent_missing", label, "resource parent does not exist");
+      fail2("discovery", "resource_parent_missing", label, "resource parent does not exist");
     }
-    if (parentStat.isSymbolicLink()) fail("path", "resource_parent_symlink", label, "configuration resource parents must not be symbolic links");
+    if (parentStat.isSymbolicLink()) fail2("path", "resource_parent_symlink", label, "configuration resource parents must not be symbolic links");
     parent = dirname(parent);
   }
-  if (!stat.isFile()) fail("path", "resource_not_file", label, "configuration resource must be a regular file");
-  const value = parseRestrictedYaml(readFileSync(file), label);
+  if (!stat.isFile()) fail2("path", "resource_not_file", label, "configuration resource must be a regular file");
+  const value = parseRestrictedYaml2(readFileSync(file), label);
   const issues = registry.validate(kind, value, label);
   if (issues.length > 0) throw new VnextConfigError(issues);
   return { kind, ...id === void 0 ? {} : { id }, file, logicalPath, value };
@@ -15799,23 +15835,23 @@ function readTemplateProvenance(registry, root) {
   const label = ".kxm/template-provenance.yaml";
   const stat = lstatSync(file);
   if (stat.isSymbolicLink() || !stat.isFile()) {
-    fail("path", "resource_not_file", label, "template provenance must be a regular file, not a link or directory");
+    fail2("path", "resource_not_file", label, "template provenance must be a regular file, not a link or directory");
   }
   const configRoot = join(root, ".kxm");
   let parent = dirname(file);
   while (parent !== root) {
     const parentStat = lstatSync(parent);
     if (parentStat.isSymbolicLink() || !parentStat.isDirectory()) {
-      fail("path", "resource_parent_symlink", label, "template provenance parents must be regular directories");
+      fail2("path", "resource_parent_symlink", label, "template provenance parents must be regular directories");
     }
     if (parent === configRoot) break;
     parent = dirname(parent);
   }
-  const value = parseRestrictedYaml(readFileSync(file), label);
+  const value = parseRestrictedYaml2(readFileSync(file), label);
   const issues = registry.validateTemplateProvenance(value, label);
   if (issues.length > 0) throw new VnextConfigError(issues);
   if (!resolveVnextTemplateBaseline(value)) {
-    fail("semantic", "template_provenance_revision_invalid", label, "template provenance does not exactly match a supported built-in baseline");
+    fail2("semantic", "template_provenance_revision_invalid", label, "template provenance does not exactly match a supported built-in baseline");
   }
   const files = Array.isArray(value.files) ? value.files : [];
   const seen = /* @__PURE__ */ new Set();
@@ -15828,15 +15864,15 @@ function readTemplateProvenance(registry, root) {
     managedBytes += typeof record2.bytes === "number" ? record2.bytes : 0;
     const folded = path.toLocaleLowerCase("en-US");
     if (!path.startsWith(".kxm/") || path === label || !portablePath(path)) {
-      fail("path", "template_provenance_path_invalid", label, `managed path ${path} is not a portable project-configuration path`);
+      fail2("path", "template_provenance_path_invalid", label, `managed path ${path} is not a portable project-configuration path`);
     }
-    if (seen.has(folded)) fail("path", "template_provenance_path_collision", label, `managed path ${path} collides after case folding`);
-    if (prior && compareCodeUnits2(prior, path) >= 0) fail("semantic", "template_provenance_order_invalid", label, "managed file entries must use strict code-unit order");
+    if (seen.has(folded)) fail2("path", "template_provenance_path_collision", label, `managed path ${path} collides after case folding`);
+    if (prior && compareCodeUnits3(prior, path) >= 0) fail2("semantic", "template_provenance_order_invalid", label, "managed file entries must use strict code-unit order");
     seen.add(folded);
     prior = path;
   }
   if (managedBytes > 8 * 1024 * 1024) {
-    fail("parse", "template_provenance_bounds_exceeded", label, "managed template manifest exceeds 8388608 bytes");
+    fail2("parse", "template_provenance_bounds_exceeded", label, "managed template manifest exceeds 8388608 bytes");
   }
   return value;
 }
@@ -15845,28 +15881,28 @@ function listNamedResources(registry, root, directory, logicalDirectory, kind) {
   if (!existsSync(directory)) return resources;
   const stat = lstatSync(directory);
   if (stat.isSymbolicLink() || !stat.isDirectory()) {
-    fail("path", "resource_directory_invalid", displayPath(root, directory), "resource directory must be a regular directory");
+    fail2("path", "resource_directory_invalid", displayPath(root, directory), "resource directory must be a regular directory");
   }
   const issues = [];
-  const entries = readdirSync(directory, { withFileTypes: true }).sort((left, right) => compareCodeUnits2(left.name, right.name));
+  const entries = readdirSync(directory, { withFileTypes: true }).sort((left, right) => compareCodeUnits3(left.name, right.name));
   for (const entry of entries) {
     if (entry.isDirectory()) {
-      issues.push(issue("path", "nested_resource_directory", displayPath(root, join(directory, entry.name)), "nested resource directories are not allowed"));
+      issues.push(issue2("path", "nested_resource_directory", displayPath(root, join(directory, entry.name)), "nested resource directories are not allowed"));
       continue;
     }
     if (!entry.name.toLowerCase().endsWith(".yaml") && !entry.name.toLowerCase().endsWith(".yml")) continue;
     if (!entry.isFile() || extname(entry.name) !== ".yaml") {
-      issues.push(issue("path", "resource_filename_invalid", displayPath(root, join(directory, entry.name)), "resource must be a regular file with the exact .yaml extension"));
+      issues.push(issue2("path", "resource_filename_invalid", displayPath(root, join(directory, entry.name)), "resource must be a regular file with the exact .yaml extension"));
       continue;
     }
     const id = basename(entry.name, ".yaml");
     if (!resourceIdentifier(id)) {
-      issues.push(issue("path", "resource_id_invalid", displayPath(root, join(directory, entry.name)), `filename-derived identity ${id} is invalid or platform-reserved`));
+      issues.push(issue2("path", "resource_id_invalid", displayPath(root, join(directory, entry.name)), `filename-derived identity ${id} is invalid or platform-reserved`));
       continue;
     }
     const collision = [...resources.keys()].find((candidate) => candidate.toLocaleLowerCase("en-US") === id.toLocaleLowerCase("en-US"));
     if (collision) {
-      issues.push(issue("path", "resource_id_collision", displayPath(root, join(directory, entry.name)), `${id} case-folds to existing ${collision}`));
+      issues.push(issue2("path", "resource_id_collision", displayPath(root, join(directory, entry.name)), `${id} case-folds to existing ${collision}`));
       continue;
     }
     try {
@@ -15885,7 +15921,7 @@ function valuesOf(object, field) {
   return Array.isArray(value) ? value : [];
 }
 function objectValue(value) {
-  return value !== void 0 && isJsonObject(value) ? value : void 0;
+  return value !== void 0 && isJsonObject2(value) ? value : void 0;
 }
 function stringValue(value) {
   return typeof value === "string" ? value : void 0;
@@ -15901,7 +15937,7 @@ function mapResource(resource, map, issues) {
   if (!id) return;
   const collision = [...map.keys()].find((candidate) => candidate.toLocaleLowerCase("en-US") === id.toLocaleLowerCase("en-US"));
   if (collision) {
-    issues.push(issue("path", "resource_id_collision", resource.logicalPath, `${id} case-folds to existing ${collision}`));
+    issues.push(issue2("path", "resource_id_collision", resource.logicalPath, `${id} case-folds to existing ${collision}`));
     return;
   }
   map.set(id, resource);
@@ -15925,7 +15961,7 @@ function validatePortablePaths(resource, issues) {
   }
   for (const candidate of candidates) {
     if (!portablePath(candidate.path)) {
-      issues.push(issue("path", "portable_path_invalid", resource.logicalPath, `${candidate.label} is not a normalized forward-slash relative path: ${candidate.path}`));
+      issues.push(issue2("path", "portable_path_invalid", resource.logicalPath, `${candidate.label} is not a normalized forward-slash relative path: ${candidate.path}`));
     }
   }
 }
@@ -15935,14 +15971,14 @@ function selectorCandidates(selectorValue, models, file, label, issues) {
   const profile = stringValue(selector.profile);
   if (profile) {
     const model = models.get(profile);
-    if (!model) issues.push(issue("reference", "model_profile_unknown", file, `${label} references unknown model profile ${profile}`));
+    if (!model) issues.push(issue2("reference", "model_profile_unknown", file, `${label} references unknown model profile ${profile}`));
     return model ? [model] : [];
   }
   const tag = stringValue(selector.tag);
   if (!tag) return [];
   const capabilities = new Set(names(selector.capabilities));
   const candidates = [...models.values()].filter((model) => names(model.value.tags).includes(tag) && [...capabilities].every((capability) => names(model.value.capabilities).includes(capability)));
-  if (candidates.length === 0) issues.push(issue("reference", "model_tag_unresolved", file, `${label} selector tag ${tag} has no matching profile`));
+  if (candidates.length === 0) issues.push(issue2("reference", "model_tag_unresolved", file, `${label} selector tag ${tag} has no matching profile`));
   return candidates;
 }
 function modelCandidates(selectorValue, models) {
@@ -15997,13 +16033,13 @@ function validateEnvironment(resource, issues) {
     const secret = objectValue(candidate);
     const name = secret && stringValue(secret.name);
     if (!name) continue;
-    if (secretNames.has(name)) issues.push(issue("semantic", "secret_name_duplicate", resource.logicalPath, `secret environment name ${name} is duplicated`));
+    if (secretNames.has(name)) issues.push(issue2("semantic", "secret_name_duplicate", resource.logicalPath, `secret environment name ${name} is duplicated`));
     secretNames.add(name);
-    if (Object.hasOwn(values, name)) issues.push(issue("semantic", "environment_name_conflict", resource.logicalPath, `${name} appears in both values and secrets`));
+    if (Object.hasOwn(values, name)) issues.push(issue2("semantic", "environment_name_conflict", resource.logicalPath, `${name} appears in both values and secrets`));
   }
   for (const [name, value] of Object.entries(values)) {
     if (typeof value === "string" && SECRET_VALUE_PATTERNS.some((pattern) => pattern.test(value))) {
-      issues.push(issue("semantic", "probable_secret_value", resource.logicalPath, `${name} resembles a credential and must be represented by secrets[].ref`));
+      issues.push(issue2("semantic", "probable_secret_value", resource.logicalPath, `${name} resembles a credential and must be represented by secrets[].ref`));
     }
   }
 }
@@ -16015,29 +16051,29 @@ function validateToolScope(agent, step, file, stepId, issues) {
   if (!requested) return;
   const ceiling = objectValue(agent.value.tools);
   if (!ceiling) {
-    issues.push(issue("semantic", "tool_scope_expansion", file, `${stepId} requests tools but agent ${agent.id ?? "unknown"} declares no tool ceiling`));
+    issues.push(issue2("semantic", "tool_scope_expansion", file, `${stepId} requests tools but agent ${agent.id ?? "unknown"} declares no tool ceiling`));
     return;
   }
   const requestedPreset = stringValue(requested.preset);
   const ceilingPreset = stringValue(ceiling.preset);
   if (requestedPreset !== ceilingPreset) {
-    issues.push(issue("semantic", "tool_scope_expansion", file, `${stepId} tool preset ${String(requestedPreset)} does not preserve agent ${agent.id ?? "unknown"} preset ${String(ceilingPreset)}`));
+    issues.push(issue2("semantic", "tool_scope_expansion", file, `${stepId} tool preset ${String(requestedPreset)} does not preserve agent ${agent.id ?? "unknown"} preset ${String(ceilingPreset)}`));
   }
   const allowed = new Set(names(ceiling.allow));
   const denied = new Set(names(ceiling.deny));
   for (const tool of names(requested.allow)) {
-    if (!allowed.has(tool) || denied.has(tool)) issues.push(issue("semantic", "tool_scope_expansion", file, `${stepId} requests tool ${tool} beyond agent ${agent.id ?? "unknown"} explicit allowlist`));
+    if (!allowed.has(tool) || denied.has(tool)) issues.push(issue2("semantic", "tool_scope_expansion", file, `${stepId} requests tool ${tool} beyond agent ${agent.id ?? "unknown"} explicit allowlist`));
   }
   const requestedDenied = new Set(names(requested.deny));
   for (const tool of denied) {
-    if (!requestedDenied.has(tool)) issues.push(issue("semantic", "tool_scope_expansion", file, `${stepId} drops agent ${agent.id ?? "unknown"} denial for ${tool}`));
+    if (!requestedDenied.has(tool)) issues.push(issue2("semantic", "tool_scope_expansion", file, `${stepId} drops agent ${agent.id ?? "unknown"} denial for ${tool}`));
   }
 }
 function validateToolPolicy(resource, policy, label, issues) {
   if (!policy) return;
   const allowed = new Set(names(policy.allow));
   for (const tool of names(policy.deny)) {
-    if (allowed.has(tool)) issues.push(issue("semantic", "tool_policy_contradiction", resource.logicalPath, `${label} both allows and denies ${tool}`));
+    if (allowed.has(tool)) issues.push(issue2("semantic", "tool_policy_contradiction", resource.logicalPath, `${label} both allows and denies ${tool}`));
   }
 }
 function validateAgentScope(agent, step, repositories, file, stepId, issues) {
@@ -16048,14 +16084,14 @@ function validateAgentScope(agent, step, repositories, file, stepId, issues) {
     if (!repositories.has(repositoryId)) continue;
     const ceiling = agentRepositories[repositoryId] ?? defaultAccess ?? "none";
     if (accessRank(requested) > accessRank(ceiling)) {
-      issues.push(issue("semantic", "repository_scope_expansion", file, `${stepId} requests ${String(requested)} access to ${repositoryId} beyond agent ${agent.id ?? "unknown"} ceiling ${String(ceiling)}`));
+      issues.push(issue2("semantic", "repository_scope_expansion", file, `${stepId} requests ${String(requested)} access to ${repositoryId} beyond agent ${agent.id ?? "unknown"} ceiling ${String(ceiling)}`));
     }
   }
   const grants = new Set(valuesOf(agent.value, "secrets").map((candidate) => objectValue(candidate)).filter((candidate) => Boolean(candidate)).map((candidate) => stringValue(candidate.ref)).filter((candidate) => Boolean(candidate)));
   for (const candidate of valuesOf(step, "secrets")) {
     const reference = stringValue(objectValue(candidate)?.ref);
     if (reference && !grants.has(reference)) {
-      issues.push(issue("semantic", "secret_scope_expansion", file, `${stepId} requests secret ${reference} beyond agent ${agent.id ?? "unknown"} ceiling`));
+      issues.push(issue2("semantic", "secret_scope_expansion", file, `${stepId} requests secret ${reference} beyond agent ${agent.id ?? "unknown"} ceiling`));
     }
   }
 }
@@ -16073,13 +16109,13 @@ function transition(value) {
 function validateWorkflow(workflow, agents, models, repositories, gates, issues) {
   const file = workflow.logicalPath;
   const coordinator = stringValue(workflow.value.coordinator) ?? "coordinator";
-  if (!agents.has(coordinator)) issues.push(issue("reference", "coordinator_unknown", file, `coordinator ${coordinator} does not exist`));
+  if (!agents.has(coordinator)) issues.push(issue2("reference", "coordinator_unknown", file, `coordinator ${coordinator} does not exist`));
   const steps = valuesOf(workflow.value, "steps").map((candidate) => objectValue(candidate)).filter((candidate) => Boolean(candidate));
   const stepIndex = /* @__PURE__ */ new Map();
   for (const [index, step] of steps.entries()) {
     const id = stringValue(step.id);
     if (!id) continue;
-    if (stepIndex.has(id)) issues.push(issue("semantic", "step_id_duplicate", file, `step ${id} is duplicated`));
+    if (stepIndex.has(id)) issues.push(issue2("semantic", "step_id_duplicate", file, `step ${id} is duplicated`));
     else stepIndex.set(id, index);
   }
   for (const field of ["reproOracle", "planHash"]) {
@@ -16089,16 +16125,16 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
     const evidenceKey = stringValue(oracle.evidenceKey);
     const index = stageId === void 0 ? void 0 : stepIndex.get(stageId);
     if (index === void 0) {
-      issues.push(issue("reference", "oracle_stage_unknown", file, `${field} references unknown stage ${String(stageId)}`));
+      issues.push(issue2("reference", "oracle_stage_unknown", file, `${field} references unknown stage ${String(stageId)}`));
       continue;
     }
     const evidence = new Set(valuesOf(steps[index] ?? {}, "requiredEvidence").map((candidate) => stringValue(objectValue(candidate)?.key)).filter((candidate) => Boolean(candidate)));
-    if (!evidenceKey || !evidence.has(evidenceKey)) issues.push(issue("reference", "oracle_evidence_unknown", file, `${field} references undeclared evidence ${String(evidenceKey)} in ${stageId}`));
+    if (!evidenceKey || !evidence.has(evidenceKey)) issues.push(issue2("reference", "oracle_evidence_unknown", file, `${field} references undeclared evidence ${String(evidenceKey)} in ${stageId}`));
   }
   const planStages = new Set(names(workflow.value.requirePlanHash));
-  if (planStages.size > 0 && !objectValue(workflow.value.planHash)) issues.push(issue("semantic", "plan_hash_missing", file, "requirePlanHash requires planHash"));
+  if (planStages.size > 0 && !objectValue(workflow.value.planHash)) issues.push(issue2("semantic", "plan_hash_missing", file, "requirePlanHash requires planHash"));
   for (const stageId of planStages) {
-    if (!stepIndex.has(stageId)) issues.push(issue("reference", "plan_hash_stage_unknown", file, `requirePlanHash references unknown stage ${stageId}`));
+    if (!stepIndex.has(stageId)) issues.push(issue2("reference", "plan_hash_stage_unknown", file, `requirePlanHash references unknown stage ${stageId}`));
   }
   const adjacency = steps.map(() => /* @__PURE__ */ new Set());
   const terminalReachable = /* @__PURE__ */ new Set();
@@ -16110,21 +16146,21 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
     validateToolPolicy(workflow, objectValue(step.tools), `${stepId}.tools`, issues);
     const primaryAgentId = stringValue(step.agent);
     if ((kind === "agent" || kind === "moa") && primaryAgentId && !agents.has(primaryAgentId)) {
-      issues.push(issue("reference", "agent_unknown", file, `${stepId} references unknown agent ${primaryAgentId}`));
+      issues.push(issue2("reference", "agent_unknown", file, `${stepId} references unknown agent ${primaryAgentId}`));
     }
     const gate = stringValue(step.gate);
     if (kind === "gate" && gate) {
-      if (!gates) issues.push(issue("reference", "gate_registry_missing", file, `${stepId} requires .kxm/gates.yaml`));
-      else if (!gates.has(gate)) issues.push(issue("reference", "gate_unknown", file, `${stepId} references unregistered gate ${gate}`));
+      if (!gates) issues.push(issue2("reference", "gate_registry_missing", file, `${stepId} requires .kxm/gates.yaml`));
+      else if (!gates.has(gate)) issues.push(issue2("reference", "gate_unknown", file, `${stepId} references unregistered gate ${gate}`));
     }
     if (step.expect !== void 0 && (kind !== "gate" || !["pass", "fail"].includes(String(step.expect)))) {
-      issues.push(issue("semantic", "gate_expect_invalid", file, `${stepId} expect is gate-only pass or fail`));
+      issues.push(issue2("semantic", "gate_expect_invalid", file, `${stepId} expect is gate-only pass or fail`));
     }
     if (kind === "gate" && Object.keys(objectValue(step.on) ?? {}).some((outcome) => outcome === "implementation_failure" || outcome === "repro_missing")) {
-      issues.push(issue("semantic", "gate_outcome_renamed", file, `${stepId} must use implementation-failure and repro-missing`));
+      issues.push(issue2("semantic", "gate_outcome_renamed", file, `${stepId} must use implementation-failure and repro-missing`));
     }
     for (const repositoryId of Object.keys(objectValue(step.repositories) ?? {})) {
-      if (!repositories.has(repositoryId)) issues.push(issue("reference", "repository_unknown", file, `${stepId} references unknown repository ${repositoryId}`));
+      if (!repositories.has(repositoryId)) issues.push(issue2("reference", "repository_unknown", file, `${stepId} references unknown repository ${repositoryId}`));
     }
     selectorCandidates(step.model, models, file, `${stepId}.model`, issues);
     const assignment = objectValue(step.assignments);
@@ -16132,7 +16168,7 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
     const allowedAgents = declaredAgents.length > 0 ? declaredAgents : primaryAgentId ? [primaryAgentId] : [];
     for (const agentId of allowedAgents) {
       const agent = agents.get(agentId);
-      if (!agent) issues.push(issue("reference", "assignment_agent_unknown", file, `${stepId} allows unknown agent ${agentId}`));
+      if (!agent) issues.push(issue2("reference", "assignment_agent_unknown", file, `${stepId} allows unknown agent ${agentId}`));
       else {
         validateAgentScope(agent, step, repositories, file, stepId, issues);
         if (step.model !== void 0 && agent.value.model !== void 0) {
@@ -16140,37 +16176,37 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
           const ceilingModels = modelCandidates(agent.value.model, models);
           const effectiveModels = requestedModels.filter((requested) => ceilingModels.some((ceiling) => compatibleModel(requested, ceiling)));
           if (requestedModels.length > 0 && effectiveModels.length === 0) {
-            issues.push(issue("semantic", "model_selector_incompatible", file, `${stepId} model selector has no candidate within agent ${agentId} ceiling`));
+            issues.push(issue2("semantic", "model_selector_incompatible", file, `${stepId} model selector has no candidate within agent ${agentId} ceiling`));
           }
         }
       }
     }
     if (primaryAgentId && allowedAgents.length > 0 && !allowedAgents.includes(primaryAgentId)) {
-      issues.push(issue("semantic", "primary_agent_ineligible", file, `${stepId} primary agent ${primaryAgentId} is not in allowedAgents`));
+      issues.push(issue2("semantic", "primary_agent_ineligible", file, `${stepId} primary agent ${primaryAgentId} is not in allowedAgents`));
     }
     const minimum = numberValue(assignment?.minimum, 1);
     const target = numberValue(assignment?.target, minimum);
     const maximum = numberValue(assignment?.maximum, target);
     const maxParallel = numberValue(assignment?.maxParallel, maximum);
-    if (!(minimum <= target && target <= maximum)) issues.push(issue("semantic", "assignment_bounds_invalid", file, `${stepId} must satisfy minimum <= target <= maximum`));
-    if (maxParallel > maximum) issues.push(issue("semantic", "assignment_parallelism_invalid", file, `${stepId} maxParallel exceeds maximum`));
+    if (!(minimum <= target && target <= maximum)) issues.push(issue2("semantic", "assignment_bounds_invalid", file, `${stepId} must satisfy minimum <= target <= maximum`));
+    if (maxParallel > maximum) issues.push(issue2("semantic", "assignment_parallelism_invalid", file, `${stepId} maxParallel exceeds maximum`));
     if (assignment && allowedAgents.length > 0 && maximum > allowedAgents.length && kind === "moa") {
-      issues.push(issue("semantic", "assignment_pool_too_small", file, `${stepId} maximum ${maximum} exceeds ${allowedAgents.length} eligible agents`));
+      issues.push(issue2("semantic", "assignment_pool_too_small", file, `${stepId} maximum ${maximum} exceeds ${allowedAgents.length} eligible agents`));
     }
     const maxWriteRepositories = assignment && typeof assignment.maxWriteRepositories === "number" ? assignment.maxWriteRepositories : void 0;
     if (maxWriteRepositories !== void 0) {
       const writable = Object.values(objectValue(step.repositories) ?? {}).filter((access) => access === "write").length;
-      if (maxWriteRepositories > writable) issues.push(issue("semantic", "write_repository_bound_invalid", file, `${stepId} maxWriteRepositories exceeds writable repository scope`));
+      if (maxWriteRepositories > writable) issues.push(issue2("semantic", "write_repository_bound_invalid", file, `${stepId} maxWriteRepositories exceeds writable repository scope`));
     }
     const join7 = objectValue(step.join);
     const minimumPassed = join7 && typeof join7.minimumPassed === "number" ? join7.minimumPassed : void 0;
-    if (minimumPassed !== void 0 && minimumPassed > maximum) issues.push(issue("semantic", "join_impossible", file, `${stepId} minimumPassed exceeds assignment maximum`));
+    if (minimumPassed !== void 0 && minimumPassed > maximum) issues.push(issue2("semantic", "join_impossible", file, `${stepId} minimumPassed exceeds assignment maximum`));
     const distinctBy = names(assignment?.distinctBy);
     if (distinctBy.length > 0) {
       const candidates = diversityCandidates(step.model, allowedAgents, agents, models);
       for (const dimension of distinctBy) {
         const distinct = new Set(candidates.map((candidate) => candidate[dimension]).filter((value) => Boolean(value)));
-        if (distinct.size < target) issues.push(issue("semantic", "model_diversity_impossible", file, `${stepId} requires ${target} distinct ${dimension} values but resolves ${distinct.size}`));
+        if (distinct.size < target) issues.push(issue2("semantic", "model_diversity_impossible", file, `${stepId} requires ${target} distinct ${dimension} values but resolves ${distinct.size}`));
       }
     }
     const evidenceKeys = /* @__PURE__ */ new Set();
@@ -16179,29 +16215,29 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
       if (!requirement) continue;
       const key = stringValue(requirement.key);
       if (key) {
-        if (evidenceKeys.has(key)) issues.push(issue("semantic", "evidence_key_duplicate", file, `${stepId} evidence key ${key} is duplicated`));
+        if (evidenceKeys.has(key)) issues.push(issue2("semantic", "evidence_key_duplicate", file, `${stepId} evidence key ${key} is duplicated`));
         evidenceKeys.add(key);
       }
       const policy = objectValue(requirement.producerPolicy);
       if (!policy) continue;
       const eligible = names(policy.eligibleAgents);
       const producerMinimum = numberValue(policy.minimumProducers, 1);
-      if (producerMinimum > target || producerMinimum > eligible.length) issues.push(issue("semantic", "producer_minimum_impossible", file, `${stepId}.${String(key)} producer minimum exceeds its eligible or target pool`));
+      if (producerMinimum > target || producerMinimum > eligible.length) issues.push(issue2("semantic", "producer_minimum_impossible", file, `${stepId}.${String(key)} producer minimum exceeds its eligible or target pool`));
       for (const agentId of eligible) {
-        if (!agents.has(agentId)) issues.push(issue("reference", "producer_agent_unknown", file, `${stepId}.${String(key)} references unknown producer ${agentId}`));
-        if (allowedAgents.length > 0 && !allowedAgents.includes(agentId)) issues.push(issue("semantic", "producer_agent_ineligible", file, `${stepId}.${String(key)} producer ${agentId} is outside allowedAgents`));
+        if (!agents.has(agentId)) issues.push(issue2("reference", "producer_agent_unknown", file, `${stepId}.${String(key)} references unknown producer ${agentId}`));
+        if (allowedAgents.length > 0 && !allowedAgents.includes(agentId)) issues.push(issue2("semantic", "producer_agent_ineligible", file, `${stepId}.${String(key)} producer ${agentId} is outside allowedAgents`));
       }
       const degradation = objectValue(policy.degradation);
-      if (degradation && numberValue(degradation.minimumProducers, 1) >= producerMinimum) issues.push(issue("semantic", "producer_degradation_invalid", file, `${stepId}.${String(key)} degradation must lower minimumProducers`));
+      if (degradation && numberValue(degradation.minimumProducers, 1) >= producerMinimum) issues.push(issue2("semantic", "producer_degradation_invalid", file, `${stepId}.${String(key)} degradation must lower minimumProducers`));
     }
     const writes = Object.values(objectValue(step.repositories) ?? {}).some((access) => access === "write");
     const planHashStage = stringValue(objectValue(workflow.value.planHash)?.stageId);
     const planHashIndex = planHashStage === void 0 ? void 0 : stepIndex.get(planHashStage);
     if (writes && planHashIndex !== void 0 && index > planHashIndex && !planStages.has(stepId)) {
-      issues.push(issue("semantic", "mutation_missing_plan_hash", file, `${stepId} mutates after the approved-plan stage but is absent from requirePlanHash`));
+      issues.push(issue2("semantic", "mutation_missing_plan_hash", file, `${stepId} mutates after the approved-plan stage but is absent from requirePlanHash`));
     }
     const outcomes = objectValue(step.on) ?? {};
-    if (Object.keys(outcomes).length === 0) issues.push(issue("semantic", "step_transitions_missing", file, `${stepId} has no declared transitions`));
+    if (Object.keys(outcomes).length === 0) issues.push(issue2("semantic", "step_transitions_missing", file, `${stepId} has no declared transitions`));
     for (const [outcome, rawTransition] of Object.entries(outcomes)) {
       const parsed = transition(rawTransition);
       if (parsed.target === "$terminal") {
@@ -16211,29 +16247,29 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
       }
       const targetIndex = parsed.target === void 0 ? void 0 : stepIndex.get(parsed.target);
       if (targetIndex === void 0) {
-        issues.push(issue("reference", "transition_target_unknown", file, `${stepId}.${outcome} references unknown target ${String(parsed.target)}`));
+        issues.push(issue2("reference", "transition_target_unknown", file, `${stepId}.${outcome} references unknown target ${String(parsed.target)}`));
         continue;
       }
       adjacency[index]?.add(targetIndex);
       if (targetIndex <= index) {
         hasBackEdge = true;
-        if (parsed.maxTransitions === void 0) issues.push(issue("semantic", "back_edge_unbounded", file, `${stepId}.${outcome} back-edge requires maxTransitions`));
+        if (parsed.maxTransitions === void 0) issues.push(issue2("semantic", "back_edge_unbounded", file, `${stepId}.${outcome} back-edge requires maxTransitions`));
       }
     }
   }
   if (hasBackEdge && typeof objectValue(workflow.value.limits)?.maxTransitions !== "number") {
-    issues.push(issue("semantic", "workflow_cycle_unbounded", file, "workflow with back-edges requires limits.maxTransitions"));
+    issues.push(issue2("semantic", "workflow_cycle_unbounded", file, "workflow with back-edges requires limits.maxTransitions"));
   }
   const readyIndex = stepIndex.get("ready");
   const verifyIndex = stepIndex.get("verify");
   if (readyIndex !== void 0 && verifyIndex !== void 0) {
     const verifyTargets = adjacency[verifyIndex] ?? /* @__PURE__ */ new Set();
     if (!verifyTargets.has(readyIndex)) {
-      issues.push(issue("semantic", "verify_must_precede_ready", file, "verify must transition to ready"));
+      issues.push(issue2("semantic", "verify_must_precede_ready", file, "verify must transition to ready"));
     }
     for (const [srcIndex, targets] of adjacency.entries()) {
       if (targets.has(readyIndex) && srcIndex !== verifyIndex) {
-        issues.push(issue("semantic", "verify_must_precede_ready", file, `step ${String(steps[srcIndex]?.id)} transitions to ready bypassing verify`));
+        issues.push(issue2("semantic", "verify_must_precede_ready", file, `step ${String(steps[srcIndex]?.id)} transitions to ready bypassing verify`));
       }
     }
   }
@@ -16248,7 +16284,7 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
         queue.push(target);
       }
     }
-    for (const [index, step] of steps.entries()) if (!reachable.has(index)) issues.push(issue("semantic", "step_unreachable", file, `step ${String(step.id)} is unreachable from the first step`));
+    for (const [index, step] of steps.entries()) if (!reachable.has(index)) issues.push(issue2("semantic", "step_unreachable", file, `step ${String(step.id)} is unreachable from the first step`));
     for (const [requiredIndex, requiredStep] of steps.entries()) {
       if (requiredStep.kind !== "gate" && requiredStep.kind !== "approval") continue;
       const reachableWithoutRequired = /* @__PURE__ */ new Set();
@@ -16264,7 +16300,7 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
         }
       }
       if ([...completedTerminalSources].some((source) => source !== requiredIndex && reachableWithoutRequired.has(source))) {
-        issues.push(issue("semantic", "required_step_bypass", file, `a completed path can bypass required ${String(requiredStep.id)}`));
+        issues.push(issue2("semantic", "required_step_bypass", file, `a completed path can bypass required ${String(requiredStep.id)}`));
       }
     }
     const canTerminate = new Set(terminalReachable);
@@ -16278,7 +16314,7 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
         }
       }
     }
-    for (const index of reachable) if (!canTerminate.has(index)) issues.push(issue("semantic", "step_cannot_terminate", file, `step ${String(steps[index]?.id)} has no path to a terminal transition`));
+    for (const index of reachable) if (!canTerminate.has(index)) issues.push(issue2("semantic", "step_cannot_terminate", file, `step ${String(steps[index]?.id)} has no path to a terminal transition`));
   }
 }
 function validateModelReferences(models, issues) {
@@ -16291,7 +16327,7 @@ function validateModelReferences(models, issues) {
   const visited = /* @__PURE__ */ new Set();
   const walk = (id, path) => {
     if (visiting.has(id)) {
-      issues.push(issue("semantic", "model_fallback_cycle", models.get(id)?.logicalPath ?? ".kxm/models", `fallback profile cycle: ${[...path, id].join(" -> ")}`));
+      issues.push(issue2("semantic", "model_fallback_cycle", models.get(id)?.logicalPath ?? ".kxm/models", `fallback profile cycle: ${[...path, id].join(" -> ")}`));
       return;
     }
     if (visited.has(id)) return;
@@ -16319,17 +16355,17 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
     if (!id) continue;
     const folded = id.toLocaleLowerCase("en-US");
     const previous = foldedRepositories.get(folded);
-    if (previous) issues.push(issue("path", "repository_id_collision", project.logicalPath, `${id} case-folds to existing ${previous}`));
+    if (previous) issues.push(issue2("path", "repository_id_collision", project.logicalPath, `${id} case-folds to existing ${previous}`));
     else foldedRepositories.set(folded, id);
     repositoryIds.add(id);
     if (entry.role === "control") controls += 1;
   }
-  if (controls !== 1) issues.push(issue("semantic", "control_repository_count", project.logicalPath, `expected exactly one control repository, received ${controls}`));
+  if (controls !== 1) issues.push(issue2("semantic", "control_repository_count", project.logicalPath, `expected exactly one control repository, received ${controls}`));
   for (const repository of repositories.values()) {
-    if (repository.value.projectId !== project.value.id) issues.push(issue("reference", "repository_project_mismatch", repository.logicalPath, "projectId does not match the authoritative project"));
+    if (repository.value.projectId !== project.value.id) issues.push(issue2("reference", "repository_project_mismatch", repository.logicalPath, "projectId does not match the authoritative project"));
     const id = stringValue(repository.value.repositoryId);
-    if (!id || !repositoryIds.has(id)) issues.push(issue("reference", "repository_definition_unknown", repository.logicalPath, `repositoryId ${String(id)} is not bound by project.yaml`));
-    if (repository.id !== id) issues.push(issue("reference", "repository_binding_identity_mismatch", repository.logicalPath, `binding ${String(repository.id)} declares repositoryId ${String(id)}`));
+    if (!id || !repositoryIds.has(id)) issues.push(issue2("reference", "repository_definition_unknown", repository.logicalPath, `repositoryId ${String(id)} is not bound by project.yaml`));
+    if (repository.id !== id) issues.push(issue2("reference", "repository_binding_identity_mismatch", repository.logicalPath, `binding ${String(repository.id)} declares repositoryId ${String(id)}`));
   }
   for (const resource of [project, ...environments]) validatePortablePaths(resource, issues);
   for (const environment of environments) validateEnvironment(environment, issues);
@@ -16339,25 +16375,25 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
     const definition = objectValue(value);
     const executable = Array.isArray(definition?.argv) ? definition.argv[0] : void 0;
     if (definition?.kind === "command" && typeof executable === "string" && (executable === "." || executable === ".." || executable.includes("\\") || !executable.startsWith("/") && executable.includes("/"))) {
-      issues.push(issue("semantic", "gate_executable_invalid", ".kxm/gates.yaml", `${id} argv[0] must be a bare executable or absolute POSIX path`));
+      issues.push(issue2("semantic", "gate_executable_invalid", ".kxm/gates.yaml", `${id} argv[0] must be a bare executable or absolute POSIX path`));
     }
   }
   const presets = new Set(options.registeredToolPresets ?? BUILTIN_TOOL_PRESETS);
   const harnesses = new Set(options.registeredHarnesses ?? BUILTIN_HARNESS_IDS);
   const defaultExecutor = stringValue(project.value.defaultExecutor);
-  if (defaultExecutor && !executors.has(defaultExecutor)) issues.push(issue("reference", "executor_unknown", project.logicalPath, `defaultExecutor ${defaultExecutor} is not registered`));
+  if (defaultExecutor && !executors.has(defaultExecutor)) issues.push(issue2("reference", "executor_unknown", project.logicalPath, `defaultExecutor ${defaultExecutor} is not registered`));
   const defaultHarness = stringValue(project.value.defaultHarness) ?? DEFAULT_HARNESS;
-  if (!harnesses.has(defaultHarness)) issues.push(issue("reference", "harness_unknown", project.logicalPath, `defaultHarness ${defaultHarness} is not registered`));
+  if (!harnesses.has(defaultHarness)) issues.push(issue2("reference", "harness_unknown", project.logicalPath, `defaultHarness ${defaultHarness} is not registered`));
   for (const agent of agents.values()) {
     validateToolPolicy(agent, objectValue(agent.value.tools), "tools", issues);
     const executor = stringValue(agent.value.executor);
-    if (executor && !executors.has(executor)) issues.push(issue("reference", "executor_unknown", agent.logicalPath, `executor ${executor} is not registered`));
+    if (executor && !executors.has(executor)) issues.push(issue2("reference", "executor_unknown", agent.logicalPath, `executor ${executor} is not registered`));
     const harness = stringValue(agent.value.harness) ?? defaultHarness;
-    if (!harnesses.has(harness)) issues.push(issue("reference", "harness_unknown", agent.logicalPath, `harness ${harness} is not registered`));
+    if (!harnesses.has(harness)) issues.push(issue2("reference", "harness_unknown", agent.logicalPath, `harness ${harness} is not registered`));
     const preset = stringValue(objectValue(agent.value.tools)?.preset);
-    if (preset && !presets.has(preset)) issues.push(issue("reference", "tool_preset_unknown", agent.logicalPath, `tool preset ${preset} is not registered`));
+    if (preset && !presets.has(preset)) issues.push(issue2("reference", "tool_preset_unknown", agent.logicalPath, `tool preset ${preset} is not registered`));
     for (const repositoryId of Object.keys(objectValue(agent.value.repositories) ?? {})) {
-      if (!repositoryIds.has(repositoryId)) issues.push(issue("reference", "repository_unknown", agent.logicalPath, `references unknown repository ${repositoryId}`));
+      if (!repositoryIds.has(repositoryId)) issues.push(issue2("reference", "repository_unknown", agent.logicalPath, `references unknown repository ${repositoryId}`));
     }
     const candidates = selectorCandidates(agent.value.model, models, agent.logicalPath, "model", issues);
     const declaredHarness = stringValue(agent.value.harness);
@@ -16367,16 +16403,16 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
         const candidateModel = stringValue(candidate.value.model);
         const validation = validateHarnessModelPair(declaredHarness, { provider: candidateProvider, model: candidateModel });
         if (!validation.valid) {
-          issues.push(issue("semantic", validation.issue ?? "harness_unhosted_model", agent.logicalPath, validation.message ?? `harness ${declaredHarness} cannot host model ${candidateModel ?? candidate.logicalPath}`));
+          issues.push(issue2("semantic", validation.issue ?? "harness_unhosted_model", agent.logicalPath, validation.message ?? `harness ${declaredHarness} cannot host model ${candidateModel ?? candidate.logicalPath}`));
         }
       }
     }
   }
   validateModelReferences(models, issues);
   const defaultWorkflow = stringValue(project.value.defaultWorkflow) ?? "default";
-  if (!workflows.has(defaultWorkflow)) issues.push(issue("reference", "default_workflow_unknown", project.logicalPath, `default workflow ${defaultWorkflow} does not exist`));
+  if (!workflows.has(defaultWorkflow)) issues.push(issue2("reference", "default_workflow_unknown", project.logicalPath, `default workflow ${defaultWorkflow} does not exist`));
   for (const workflow of workflows.values()) validateWorkflow(workflow, agents, models, repositoryIds, gates, issues);
-  return sortIssues(issues);
+  return sortIssues2(issues);
 }
 function vnextCanonicalJson(value) {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -16388,7 +16424,7 @@ function canonicalize(value) {
 }
 function bundleRevision(resources) {
   const hash = createHash2("sha256");
-  for (const resource of [...resources].sort((left, right) => compareCodeUnits2(left.logicalPath, right.logicalPath))) {
+  for (const resource of [...resources].sort((left, right) => compareCodeUnits3(left.logicalPath, right.logicalPath))) {
     hash.update(resource.logicalPath, "utf8");
     hash.update("\0", "utf8");
     hash.update(canonicalize(resource.value), "utf8");
@@ -16414,7 +16450,7 @@ function discoverGitRoot(start = process.cwd()) {
 }
 function assertNoRegisteredGates(options) {
   if ("registeredGates" in options) {
-    throw new VnextConfigError([issue("semantic", "registered_gates_removed", ".kxm/gates.yaml", "registeredGates was removed; declare gates in .kxm/gates.yaml")]);
+    throw new VnextConfigError([issue2("semantic", "registered_gates_removed", ".kxm/gates.yaml", "registeredGates was removed; declare gates in .kxm/gates.yaml")]);
   }
 }
 function loadVnextProject(projectRoot, options = {}) {
@@ -16434,18 +16470,18 @@ function loadVnextProject(projectRoot, options = {}) {
   if (templateProvenance && templateProvenance.inputs && typeof templateProvenance.inputs === "object" && !Array.isArray(templateProvenance.inputs)) {
     const provenanceProjectId = stringValue(templateProvenance.inputs.projectId);
     if (provenanceProjectId !== stringValue(project.value.id)) {
-      earlyIssues.push(issue("semantic", "template_provenance_project_mismatch", ".kxm/template-provenance.yaml", "template provenance belongs to a different project identity"));
+      earlyIssues.push(issue2("semantic", "template_provenance_project_mismatch", ".kxm/template-provenance.yaml", "template provenance belongs to a different project identity"));
     }
   }
   if (migrationReceipt && stringValue(migrationReceipt.projectId) !== stringValue(project.value.id)) {
-    earlyIssues.push(issue("semantic", "migration_project_mismatch", VNEXT_MIGRATION_RECEIPT_PATH, "migration receipt belongs to a different project identity"));
+    earlyIssues.push(issue2("semantic", "migration_project_mismatch", VNEXT_MIGRATION_RECEIPT_PATH, "migration receipt belongs to a different project identity"));
   }
   const declaredRepositoryIds = new Set(valuesOf(project.value, "repositories").map((candidate) => stringValue(objectValue(candidate)?.id)).filter((candidate) => candidate !== void 0));
-  for (const repositoryId of Object.keys(options.repositoryBindings ?? {}).sort(compareCodeUnits2)) {
+  for (const repositoryId of Object.keys(options.repositoryBindings ?? {}).sort(compareCodeUnits3)) {
     if (!resourceIdentifier(repositoryId)) {
-      earlyIssues.push(issue("path", "repository_binding_id_invalid", ".kxm/project.yaml", `host-local binding identity ${repositoryId} is invalid`));
+      earlyIssues.push(issue2("path", "repository_binding_id_invalid", ".kxm/project.yaml", `host-local binding identity ${repositoryId} is invalid`));
     } else if (!declaredRepositoryIds.has(repositoryId)) {
-      earlyIssues.push(issue("reference", "repository_binding_unknown", ".kxm/project.yaml", `host-local binding references unknown repository ${repositoryId}`));
+      earlyIssues.push(issue2("reference", "repository_binding_unknown", ".kxm/project.yaml", `host-local binding references unknown repository ${repositoryId}`));
     }
   }
   if (earlyIssues.length > 0) throw new VnextConfigError(earlyIssues);
@@ -16477,15 +16513,15 @@ function loadVnextProject(projectRoot, options = {}) {
     const hasLocalBinding = Object.hasOwn(options.repositoryBindings ?? {}, repositoryId);
     const localBinding = options.repositoryBindings?.[repositoryId];
     if (hasLocalBinding && (!localBinding || !isAbsolute(localBinding))) {
-      loadIssues.push(issue("path", "repository_binding_not_absolute", ".kxm/project.yaml", `host-local binding for ${repositoryId} must be absolute`));
+      loadIssues.push(issue2("path", "repository_binding_not_absolute", ".kxm/project.yaml", `host-local binding for ${repositoryId} must be absolute`));
       continue;
     }
     if (role === "control" && localBinding && !sameHostPath(localBinding, root)) {
-      loadIssues.push(issue("path", "control_repository_binding_invalid", ".kxm/project.yaml", `control repository ${repositoryId} must bind to the authoritative project root`));
+      loadIssues.push(issue2("path", "control_repository_binding_invalid", ".kxm/project.yaml", `control repository ${repositoryId} must bind to the authoritative project root`));
       continue;
     }
     if (role === "control" && pathHint !== void 0 && pathHint !== ".") {
-      loadIssues.push(issue("path", "control_repository_path_invalid", ".kxm/project.yaml", `control repository ${repositoryId} must use pathHint .`));
+      loadIssues.push(issue2("path", "control_repository_path_invalid", ".kxm/project.yaml", `control repository ${repositoryId} must use pathHint .`));
       continue;
     }
     if (!hasLocalBinding && role !== "control" && pathHint && portablePath(pathHint)) {
@@ -16497,29 +16533,29 @@ function loadVnextProject(projectRoot, options = {}) {
     }
     const binding = hasLocalBinding && localBinding ? resolve(localBinding) : role === "control" ? root : pathHint && portablePath(pathHint) ? resolve(root, ...pathHint.split("/")) : void 0;
     if (!binding) {
-      if (required) loadIssues.push(issue("discovery", "repository_binding_missing", ".kxm/project.yaml", `required repository ${repositoryId} has no portable pathHint or host-local binding`));
+      if (required) loadIssues.push(issue2("discovery", "repository_binding_missing", ".kxm/project.yaml", `required repository ${repositoryId} has no portable pathHint or host-local binding`));
       continue;
     }
     if (!existsSync(binding)) {
-      if (required || hasLocalBinding) loadIssues.push(issue("discovery", "repository_binding_unavailable", ".kxm/project.yaml", `${hasLocalBinding ? "explicit" : "required"} repository binding ${repositoryId} is unavailable`));
+      if (required || hasLocalBinding) loadIssues.push(issue2("discovery", "repository_binding_unavailable", ".kxm/project.yaml", `${hasLocalBinding ? "explicit" : "required"} repository binding ${repositoryId} is unavailable`));
       continue;
     }
     const bindingStat = lstatSync(binding);
     if (bindingStat.isSymbolicLink() || !bindingStat.isDirectory()) {
-      loadIssues.push(issue("path", "repository_binding_invalid", ".kxm/project.yaml", `repository binding ${repositoryId} must be a regular directory`));
+      loadIssues.push(issue2("path", "repository_binding_invalid", ".kxm/project.yaml", `repository binding ${repositoryId} must be a regular directory`));
       continue;
     }
     if (role === "member") {
       const repositoryGitRoot = discoverGitRoot(binding);
       if (!repositoryGitRoot || !sameHostPath(repositoryGitRoot, binding)) {
-        loadIssues.push(issue("discovery", "repository_git_root_invalid", ".kxm/project.yaml", `member repository ${repositoryId} must bind to its authoritative Git worktree root`));
+        loadIssues.push(issue2("discovery", "repository_git_root_invalid", ".kxm/project.yaml", `member repository ${repositoryId} must bind to its authoritative Git worktree root`));
         continue;
       }
     }
     const foldedBinding = canonicalHostPath(binding).toLocaleLowerCase("en-US");
     const priorBinding = seenBindings.get(foldedBinding);
     if (priorBinding && priorBinding !== repositoryId) {
-      loadIssues.push(issue("path", "repository_binding_collision", ".kxm/project.yaml", `${repositoryId} and ${priorBinding} use the same repository binding`));
+      loadIssues.push(issue2("path", "repository_binding_collision", ".kxm/project.yaml", `${repositoryId} and ${priorBinding} use the same repository binding`));
       continue;
     }
     seenBindings.set(foldedBinding, repositoryId);
@@ -16529,7 +16565,7 @@ function loadVnextProject(projectRoot, options = {}) {
       try {
         const resource = readResource(registry, root, repositoryFile, `.kxm/repositories/${repositoryId}/repo.yaml`, "repository", repositoryId, binding);
         if (resource.value.repositoryId !== repositoryId) {
-          loadIssues.push(issue("reference", "repository_binding_identity_mismatch", resource.logicalPath, `binding ${repositoryId} declares repositoryId ${String(resource.value.repositoryId)}`));
+          loadIssues.push(issue2("reference", "repository_binding_identity_mismatch", resource.logicalPath, `binding ${repositoryId} declares repositoryId ${String(resource.value.repositoryId)}`));
         } else {
           mapResource(resource, repositories, loadIssues);
           definitionValidated = repositories.get(repositoryId) === resource;
@@ -16539,12 +16575,12 @@ function loadVnextProject(projectRoot, options = {}) {
         else throw error;
       }
     } else if (required || hasLocalBinding) {
-      loadIssues.push(issue("discovery", "repository_definition_missing", `.kxm/repositories/${repositoryId}/repo.yaml`, `${hasLocalBinding ? "explicit" : "required"} repository ${repositoryId} has no repo.yaml`));
+      loadIssues.push(issue2("discovery", "repository_definition_missing", `.kxm/repositories/${repositoryId}/repo.yaml`, `${hasLocalBinding ? "explicit" : "required"} repository ${repositoryId} has no repo.yaml`));
     }
     const environmentFile = join(binding, ".kxm", "repo", "env.yaml");
     if (existsSync(environmentFile)) {
       if (!definitionValidated) {
-        loadIssues.push(issue("reference", "repository_environment_without_definition", `.kxm/repositories/${repositoryId}/env.yaml`, `repository ${repositoryId} environment requires a validated matching repo.yaml`));
+        loadIssues.push(issue2("reference", "repository_environment_without_definition", `.kxm/repositories/${repositoryId}/env.yaml`, `repository ${repositoryId} environment requires a validated matching repo.yaml`));
       } else {
         try {
           environments.push(readResource(registry, root, environmentFile, `.kxm/repositories/${repositoryId}/env.yaml`, "environment", void 0, binding));
@@ -16558,7 +16594,7 @@ function loadVnextProject(projectRoot, options = {}) {
   if (loadIssues.length > 0) throw new VnextConfigError(loadIssues);
   const issues = validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry);
   if (issues.length > 0) throw new VnextConfigError(issues);
-  const resources = [project, ...repositories.values(), ...agents.values(), ...models.values(), ...workflows.values(), ...environments, ...gateRegistry ? [gateRegistry] : []].sort((left, right) => compareCodeUnits2(left.logicalPath, right.logicalPath));
+  const resources = [project, ...repositories.values(), ...agents.values(), ...models.values(), ...workflows.values(), ...environments, ...gateRegistry ? [gateRegistry] : []].sort((left, right) => compareCodeUnits3(left.logicalPath, right.logicalPath));
   return {
     projectRoot: root,
     project,
@@ -16593,7 +16629,7 @@ function legacyConfigFilesAt(root) {
       return files;
     }
     if (stat.isDirectory()) {
-      for (const entry of readdirSync(workflowsDir, { withFileTypes: true }).filter((candidate) => (candidate.isFile() || candidate.isSymbolicLink()) && candidate.name.endsWith(".json")).sort((left, right) => compareCodeUnits2(left.name, right.name))) {
+      for (const entry of readdirSync(workflowsDir, { withFileTypes: true }).filter((candidate) => (candidate.isFile() || candidate.isSymbolicLink()) && candidate.name.endsWith(".json")).sort((left, right) => compareCodeUnits3(left.name, right.name))) {
         files.push(`.kxm/config/workflows/${entry.name}`);
       }
     }
@@ -16619,16 +16655,16 @@ function readVnextMigrationReceipt(root, options = {}) {
   const legacyFiles = legacyConfigFilesAt(root);
   if (!existsSync(receiptPath)) {
     return {
-      issues: legacyFiles.map((file) => issue("semantic", "legacy_vnext_conflict", file, "legacy and vNext configuration cannot coexist before an accepted migration receipt"))
+      issues: legacyFiles.map((file) => issue2("semantic", "legacy_vnext_conflict", file, "legacy and vNext configuration cannot coexist before an accepted migration receipt"))
     };
   }
   const receiptStat = lstatSync(receiptPath);
   if (receiptStat.isSymbolicLink() || !receiptStat.isFile()) {
-    return { issues: [issue("path", "migration_receipt_invalid", VNEXT_MIGRATION_RECEIPT_PATH, "migration receipt must be a regular file, not a link")] };
+    return { issues: [issue2("path", "migration_receipt_invalid", VNEXT_MIGRATION_RECEIPT_PATH, "migration receipt must be a regular file, not a link")] };
   }
   let receipt;
   try {
-    receipt = parseRestrictedYaml(readFileSync(receiptPath), VNEXT_MIGRATION_RECEIPT_PATH);
+    receipt = parseRestrictedYaml2(readFileSync(receiptPath), VNEXT_MIGRATION_RECEIPT_PATH);
   } catch (error) {
     if (error instanceof VnextConfigError) return { issues: [...error.issues] };
     throw error;
@@ -16637,25 +16673,25 @@ function readVnextMigrationReceipt(root, options = {}) {
   const schemaIssues = registry.validateMigrationReceipt(receipt, VNEXT_MIGRATION_RECEIPT_PATH);
   if (schemaIssues.length > 0) return { issues: schemaIssues };
   if (receipt.receiptSha256 !== migrationReceiptSelfHash(receipt)) {
-    return { issues: [issue("semantic", "migration_receipt_hash_mismatch", VNEXT_MIGRATION_RECEIPT_PATH, "receipt self-hash does not match its content")] };
+    return { issues: [issue2("semantic", "migration_receipt_hash_mismatch", VNEXT_MIGRATION_RECEIPT_PATH, "receipt self-hash does not match its content")] };
   }
-  const sources = (Array.isArray(receipt.sources) ? receipt.sources : []).map((candidate) => candidate && typeof candidate === "object" && !Array.isArray(candidate) ? candidate.path : void 0).filter((candidate) => typeof candidate === "string").sort(compareCodeUnits2);
+  const sources = (Array.isArray(receipt.sources) ? receipt.sources : []).map((candidate) => candidate && typeof candidate === "object" && !Array.isArray(candidate) ? candidate.path : void 0).filter((candidate) => typeof candidate === "string").sort(compareCodeUnits3);
   const issues = [];
   const declared = new Set(sources);
   for (const file of legacyFiles) {
     if (!declared.has(file)) {
-      issues.push(issue("semantic", "migration_source_unmigrated", file, "legacy configuration file is not covered by the migration receipt"));
+      issues.push(issue2("semantic", "migration_source_unmigrated", file, "legacy configuration file is not covered by the migration receipt"));
       continue;
     }
     const record2 = (Array.isArray(receipt.sources) ? receipt.sources : []).map((candidate) => candidate && typeof candidate === "object" && !Array.isArray(candidate) ? candidate : void 0).find((candidate) => candidate?.path === file);
     const current = hashFileRecord(root, file);
     if (!current || current.sha256 !== record2?.sha256 || current.bytes !== record2?.bytes) {
-      issues.push(issue("semantic", "migration_source_changed", file, "legacy configuration changed after the migration receipt was issued"));
+      issues.push(issue2("semantic", "migration_source_changed", file, "legacy configuration changed after the migration receipt was issued"));
     }
   }
   for (const file of sources) {
     if (!legacyFiles.includes(file)) {
-      issues.push(issue("semantic", "migration_source_missing", file, "receipt covers a legacy configuration file that no longer exists"));
+      issues.push(issue2("semantic", "migration_source_missing", file, "receipt covers a legacy configuration file that no longer exists"));
     }
   }
   return issues.length > 0 ? { issues } : { receipt, issues: [] };
@@ -16713,8 +16749,8 @@ import {
 import { basename as basename2, dirname as dirname3, join as join3, resolve as resolve3 } from "node:path";
 import { DatabaseSync as DatabaseSync2 } from "node:sqlite";
 function databaseError(code, file, message) {
-  const issue2 = { phase: "semantic", code, file, message };
-  return new VnextConfigError([issue2]);
+  const issue3 = { phase: "semantic", code, file, message };
+  return new VnextConfigError([issue3]);
 }
 function checkedParent(path, description) {
   const parent = dirname3(path);
@@ -20117,7 +20153,7 @@ function pump(storePath, owner) {
 }
 
 // plugins/kxm/src/vnext-runtime.ts
-function compareCodeUnits3(left, right) {
+function compareCodeUnits4(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 function sha256Of(input) {
@@ -20171,7 +20207,7 @@ function collectMemoryFiles(dir, baseDir, ignoreSubdirs = /* @__PURE__ */ new Se
 function computeVnextMemoryRevision(bundle, options = {}) {
   const hash = createHash5("sha256");
   const memoryDir = options.memoryDir ?? join5(bundle.projectRoot, ".kxm", "memory");
-  const memoryFiles = collectMemoryFiles(memoryDir, memoryDir, /* @__PURE__ */ new Set(["candidates"])).sort((left, right) => compareCodeUnits3(left.relPath, right.relPath));
+  const memoryFiles = collectMemoryFiles(memoryDir, memoryDir, /* @__PURE__ */ new Set(["candidates"])).sort((left, right) => compareCodeUnits4(left.relPath, right.relPath));
   for (const file of memoryFiles) {
     hash.update(`memory:${file.relPath}\0`, "utf8");
     hash.update(readFileSync3(file.fullPath));
@@ -20179,14 +20215,14 @@ function computeVnextMemoryRevision(bundle, options = {}) {
   }
   const skillsDir = options.skillsDir ?? join5(bundle.projectRoot, ".kxm", "skills");
   const promotedSkillsDir = join5(skillsDir, "promoted");
-  const skillFiles = collectMemoryFiles(promotedSkillsDir, promotedSkillsDir).sort((left, right) => compareCodeUnits3(left.relPath, right.relPath));
+  const skillFiles = collectMemoryFiles(promotedSkillsDir, promotedSkillsDir).sort((left, right) => compareCodeUnits4(left.relPath, right.relPath));
   for (const file of skillFiles) {
     hash.update(`skill:${file.relPath}\0`, "utf8");
     hash.update(readFileSync3(file.fullPath));
     hash.update("\0", "utf8");
   }
   if (options.promotedState && options.promotedState.length > 0) {
-    const currentItems = options.promotedState.filter((item) => !item.status || item.status === "current").slice().sort((left, right) => compareCodeUnits3(left.id, right.id));
+    const currentItems = options.promotedState.filter((item) => !item.status || item.status === "current").slice().sort((left, right) => compareCodeUnits4(left.id, right.id));
     for (const item of currentItems) {
       hash.update(`state:${item.id}\0`, "utf8");
       hash.update(vnextCanonicalJson(item), "utf8");
@@ -20841,7 +20877,7 @@ async function startVnextRuntimeSupervisor(options = {}) {
   try {
     return await startVnextRuntimeSupervisorInner(paths, options.port, now);
   } catch (error) {
-    if (!(error instanceof VnextConfigError && error.issues.some((issue2) => issue2.code === "runtime_supervisor_conflict"))) {
+    if (!(error instanceof VnextConfigError && error.issues.some((issue3) => issue3.code === "runtime_supervisor_conflict"))) {
       recordSupervisorError(paths, error.message);
     }
     throw error;

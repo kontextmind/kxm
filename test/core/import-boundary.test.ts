@@ -16,6 +16,15 @@ const { GENERATED_ARTIFACTS } = await import(
 ) as { GENERATED_ARTIFACTS: readonly string[] };
 
 const SRC_ROOT = resolve("plugins/kxm/src");
+const MJS_TSCONFIG = resolve("tsconfig.mjs.json");
+const PROBE_ROOT = resolve("test/fixtures/import-boundary");
+const MJS_PROBE = resolve(PROBE_ROOT, "mjs-probe.mjs");
+const DECOY_SPECIFIERS = [
+  "comment-string-not-imported",
+  "from-string-not-imported",
+  "line-comment-not-imported",
+  "block-comment-not-imported",
+];
 const SURFACE_FILES = [
   resolve(SRC_ROOT, "extension.ts"),
   resolve(SRC_ROOT, "mcp-server.ts"),
@@ -47,6 +56,12 @@ const PACKED_LIBRARY_PATHS = [
   "plugins/kxm/dist/extension.js",
   "plugins/kxm/src/core.ts",
   "plugins/kxm/src/runtime.ts",
+  "plugins/kxm/src/restricted-yaml.mjs",
+  "plugins/kxm/src/restricted-yaml.d.mts",
+  "plugins/kxm/src/policy-draft.mjs",
+  "plugins/kxm/src/policy-draft.d.mts",
+  "schemas/policy-draft/model.v2.schema.json",
+  "schemas/policy-draft/role.v2.schema.json",
 ];
 
 interface ModuleEdge {
@@ -141,6 +156,25 @@ function startsWithBannedPi(specifier: string): string | undefined {
   return PI_PREFIXES.find((prefix) => specifier === prefix || specifier.startsWith(`${prefix}/`));
 }
 
+function isUnder(root: string, path: string): boolean {
+  return path === root || path.startsWith(`${root}/`) || path.startsWith(`${root}\\`);
+}
+
+function isBoundarySource(path: string): boolean {
+  return path.endsWith(".ts") || path.endsWith(".mts") || path.endsWith(".mjs");
+}
+
+function ingestProject(edges: Map<string, ModuleEdge[]>, project: { program: { getSourceFileNames(): readonly string[]; getSourceFile(file: string): unknown } }): void {
+  for (const fileName of project.program.getSourceFileNames()) {
+    const resolved = resolve(fileName);
+    if (!isUnder(SRC_ROOT, resolved) && !isUnder(PROBE_ROOT, resolved)) continue;
+    if (!isBoundarySource(resolved)) continue;
+    const sourceFile = project.program.getSourceFile(fileName);
+    if (!sourceFile) continue;
+    edges.set(resolved, collectEdges(resolved, sourceFile as Node));
+  }
+}
+
 function surfaceModuleName(path: string): string | undefined {
   const name = basename(path);
   return BANNED_SURFACE.has(name) ? name.replace(/\.ts$/, "") : undefined;
@@ -178,18 +212,15 @@ function loadGraph(): Map<string, ModuleEdge[]> {
   if (graphCache) return graphCache;
   const api = new API({ cwd: process.cwd() });
   try {
-    const snapshot = api.updateSnapshot({ openProjects: [resolve("tsconfig.json")] });
-    const project = snapshot.getProjects()[0];
-    assert.ok(project, "tsconfig project did not load");
+    const tsconfig = resolve("tsconfig.json");
+    const snapshot = api.updateSnapshot({ openProjects: [tsconfig, MJS_TSCONFIG] });
+    const tsProject = snapshot.getProject(tsconfig);
+    const jsProject = snapshot.getProject(MJS_TSCONFIG);
+    assert.ok(tsProject, "tsconfig project did not load");
+    assert.ok(jsProject, "allowJs mjs project did not load");
     const edges = new Map<string, ModuleEdge[]>();
-    for (const fileName of project.program.getSourceFileNames()) {
-      const resolved = resolve(fileName);
-      if (resolved !== SRC_ROOT && !resolved.startsWith(`${SRC_ROOT}/`) && !resolved.startsWith(`${SRC_ROOT}\\`)) continue;
-      if (!resolved.endsWith(".ts")) continue;
-      const sourceFile = project.program.getSourceFile(fileName);
-      if (!sourceFile) continue;
-      edges.set(resolved, collectEdges(resolved, sourceFile as Node));
-    }
+    ingestProject(edges, tsProject);
+    ingestProject(edges, jsProject);
     graphCache = edges;
     return edges;
   } finally {
@@ -236,7 +267,10 @@ test("boundary parser collects every edge kind it relies on", () => {
   assert.ok(telemetryEdges.some((e) => e.kind === "import-type" && e.specifier === "./routing.ts"));
   const { files, edges } = walkClosure(LIBRARY_BARRELS, graph, false);
   assert.ok(files.has(resolve(SRC_ROOT, "vnext-harness.ts")));
-  assert.ok(edges.some((e) => e.specifier === "yaml"));
+  assert.ok(files.has(resolve(SRC_ROOT, "restricted-yaml.mjs")));
+  assert.ok(graph.has(resolve(SRC_ROOT, "restricted-yaml.mjs")));
+  assert.ok(graph.has(resolve(SRC_ROOT, "policy-draft.mjs")));
+  assert.ok(edges.some((e) => e.from === resolve(SRC_ROOT, "restricted-yaml.mjs") && e.kind === "import" && e.specifier === "yaml"));
 });
 
 test("boundary closure fails closed when a local module has no AST", () => {
@@ -250,6 +284,37 @@ test("boundary closure fails closed when a local module has no AST", () => {
     (error: unknown) => error instanceof assert.AssertionError
       && error.message.includes(`no parsed AST for local module ${missing}`),
   );
+});
+
+test("mjs modules contribute real AST edges including literal dynamic imports", () => {
+  const graph = loadGraph();
+  const yamlModule = resolve(SRC_ROOT, "restricted-yaml.mjs");
+  const yamlEdges = graph.get(yamlModule);
+  assert.ok(yamlEdges, "restricted-yaml.mjs must have a JS AST, not a regex fallback");
+  assert.deepEqual(yamlEdges.filter((edge) => !edge.isTypeOnly).map((edge) => ({ kind: edge.kind, specifier: edge.specifier })), [
+    { kind: "import", specifier: "yaml" },
+  ]);
+
+  const probeEdges = graph.get(MJS_PROBE);
+  assert.ok(probeEdges, "mjs probe must be parsed through the allowJs project");
+  assert.ok(probeEdges.some((e) => e.kind === "import" && e.specifier.endsWith("/restricted-yaml.mjs")));
+  assert.ok(probeEdges.some((e) => e.kind === "import" && e.specifier === "./side-effect.mjs"));
+  assert.ok(probeEdges.some((e) => e.kind === "export" && e.specifier === "./reexport-target.mjs"));
+  assert.ok(probeEdges.some((e) => e.kind === "dynamic-import" && e.specifier === "./dynamic-local.mjs"));
+  assert.ok(probeEdges.some((e) => e.kind === "dynamic-import" && e.specifier === "commander"));
+  for (const decoy of DECOY_SPECIFIERS) {
+    assert.equal(probeEdges.some((e) => e.specifier === decoy), false, `comment/string decoy treated as import: ${decoy}`);
+  }
+
+  const { files, edges } = walkClosure([MJS_PROBE], graph, false);
+  assert.ok(files.has(yamlModule));
+  assert.ok(files.has(resolve(PROBE_ROOT, "side-effect.mjs")));
+  assert.ok(files.has(resolve(PROBE_ROOT, "reexport-target.mjs")));
+  assert.ok(files.has(resolve(PROBE_ROOT, "dynamic-local.mjs")));
+  const banned = edges.find((e) => e.kind === "dynamic-import" && startsWithBannedPi(e.specifier));
+  assert.ok(banned, "literal dynamic import of a banned Pi package must be visible to the import boundary");
+  assert.equal(banned.specifier, "commander");
+  assert.equal(banned.from, MJS_PROBE);
 });
 
 test("extension and mcp never import hub, store, or workflow, including type-only", () => {

@@ -14,3 +14,7 @@ coverage/
 *.db-wal
 *.log
 nul
+
+# Pix Agent
+.pi/
+.pi-lens/

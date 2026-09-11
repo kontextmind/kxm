@@ -18,6 +18,7 @@ This documentation is organized by task. Start with the guide that matches what 
 | [Workflow guide](workflow-guide.md) | Workflow designers and operators | Area -> Workflow -> Stage -> Role taxonomy with documentation slugs, dated research candidates, and selection policy |
 | [Agent Envelopes & Quality Gates](agent-communication-envelopes-and-gates.md) | Multi-agent workflow engineers | Production communication envelopes, quality gates, and work loops |
 | [Assignment runner](assignment-runner.md) | Maintainers and developers | Native developer assignments, deterministic witness verification, and multi-vendor dual-critic acceptance |
+| [This host's Pi packages](operator-pi-packages.md) | Maintainers on this development host | Snapshot of operator `pi list` packages and file extensions; not a KXM install requirement |
 | [vNext contract package](vnext/README.md) | Maintainers and reviewers | Review the accepted local-first target architecture and implementation contracts |
 
 Project-level policies live at the repository root:

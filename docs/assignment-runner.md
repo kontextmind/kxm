@@ -35,14 +35,17 @@ and models are admitted with strict permission and vendor boundaries:
   a requested harness/model is not in the admitted role lineup, or if permissions
   exceed the admitted ceiling (e.g. attempting to give edit permissions to a
   read-only reviewer).
-- **Trusted roster policy:** Assign, witness, and accept load
+- **Trusted roster policy:** Dispatch (`assign` / `run`) and accept load
   `.kxm/roster.json` through the trusted control Git loader
   (`loadTrustedRosterPolicy`). Loader errors, missing/empty policy, and
   malformed policy fail closed with `route_invalid`. There is no raw working-tree
   JSON fallback and no null-policy acceptance. Tests may inject an explicit
-  policy object; that seam is not a CLI or environment bypass. Unified YAML
+  policy object; that seam is not a CLI or environment bypass. The witness
+  verifies the bound candidate against the fixed gate (`npm run verify`) and
+  does not itself call the policy loader today. Unified YAML
   role/project/workflow authority is still open and is not this runner's live
-  source.
+  source. Passive `schemas/policy-draft` / `validatePolicyDraft` scaffolding is
+  not operator settings and is not admission.
 - **Deterministic witness beats extra models:** Implementers run `npm run verify`.
   Root re-runs the fixed witness. Reviewers verify candidate trees; they do not
   replace tests.
