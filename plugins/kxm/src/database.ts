@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync } from "./sqlite.ts";
 import { VnextConfigError, type VnextConfigIssue } from "./vnext-config.ts";
 
 export interface DatabaseMigrationStep {

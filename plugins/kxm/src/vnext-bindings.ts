@@ -15,7 +15,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync } from "./sqlite.ts";
 import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import {
   VnextConfigError,

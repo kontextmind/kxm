@@ -3,7 +3,7 @@
  * Ensures deterministic branching, preflight CAS checks, and immutable receipts for external mutations.
  */
 
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync } from "./sqlite.ts";
 import { createHash } from "node:crypto";
 import {
   mkdirSync,
