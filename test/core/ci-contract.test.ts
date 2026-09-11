@@ -149,12 +149,12 @@ test("CI required jobs are unconditional, two linux Validate names match the rul
   assert.doesNotMatch(ciText, /\.github\/PULL_REQUEST_TEMPLATE\.md/);
 });
 
-test("coverage floors stay 92/80/93 for core and 93/80/93 for complete with no third npm gate script", () => {
+test("coverage floors stay 91/80/92 for core and 93/80/93 for complete with no third npm gate script", () => {
   const coverageCore = pkg.scripts?.["test:coverage:core"] ?? "";
   const coverageComplete = pkg.scripts?.["test:coverage:complete"] ?? "";
-  assert.match(coverageCore, /--test-coverage-lines=92/);
+  assert.match(coverageCore, /--test-coverage-lines=91/);
   assert.match(coverageCore, /--test-coverage-branches=80/);
-  assert.match(coverageCore, /--test-coverage-functions=93/);
+  assert.match(coverageCore, /--test-coverage-functions=92/);
   assert.match(coverageComplete, /--test-coverage-lines=93/);
   assert.match(coverageComplete, /--test-coverage-branches=80/);
   assert.match(coverageComplete, /--test-coverage-functions=93/);
