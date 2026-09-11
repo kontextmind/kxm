@@ -8,6 +8,7 @@ This documentation is organized by task. Start with the guide that matches what 
 | [Getting started](getting-started.md) | Pi and Claude Code users | Complete the first successful multi-agent exchange |
 | [Configuration](configuration.md) | Users and operators | Understand every supported setting and default |
 | [Architecture](architecture.md) | Maintainers and integrators | Learn the component boundaries and message lifecycle |
+| [Agent Skills](agent-skills.md) | Users and integrators | Comprehensive skill suite covering all KXM commands with progressive disclosure |
 | [Operations](operations.md) | Hub operators | Run, monitor, secure, and recover the service |
 | [Troubleshooting](troubleshooting.md) | Everyone | Diagnose common installation and delivery failures |
 | [Test matrix](test-matrix.md) | Users and maintainers | Map features and use cases to automated evidence |
@@ -17,6 +18,7 @@ This documentation is organized by task. Start with the guide that matches what 
 | [Workflow guide](workflow-guide.md) | Workflow designers and operators | Area -> Workflow -> Stage -> Role taxonomy with documentation slugs, dated research candidates, and selection policy |
 | [Agent Envelopes & Quality Gates](agent-communication-envelopes-and-gates.md) | Multi-agent workflow engineers | Production communication envelopes, quality gates, and work loops |
 | [Assignment runner](assignment-runner.md) | Maintainers and developers | Native developer assignments, deterministic witness verification, and multi-vendor dual-critic acceptance |
+| [This host's Pi packages](operator-pi-packages.md) | Maintainers on this development host | Snapshot of operator `pi list` packages and file extensions; not a KXM install requirement |
 | [vNext contract package](vnext/README.md) | Maintainers and reviewers | Review the accepted local-first target architecture and implementation contracts |
 
 Project-level policies live at the repository root:

@@ -22,6 +22,15 @@ The `schema` field is required. For agent, model, and workflow files, identity i
 the normalized filename without `.yaml`; an in-document identity field is
 forbidden.
 
+The shared implementation is `plugins/kxm/src/restricted-yaml.mjs`. Public
+`vnext-config` callers still receive `VnextConfigError` issue codes, paths, and
+messages.
+
+`schemas/policy-draft` (`kxm.model.v2`, `kxm.role.v2`) and
+`validatePolicyDraft` are non-authoritative scaffolding. They are not live
+registry identities, operator settings, or admission. Live model files remain
+`kxm.model.v1` under `schemas/vnext`.
+
 ## Validation pipeline
 
 ### 1. Parse validation

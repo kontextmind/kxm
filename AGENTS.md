@@ -208,7 +208,7 @@ The `kxm` CLI is the unified agent surface for peer collaboration and workflow s
 | `kxm context recall <project>` | Search durable context metadata | `--query`, `--kinds`, `--limit` |
 | `kxm context state <project> <key>` | Query authoritative temporal state | `--as-of <timestamp>` |
 | `kxm context episode <project>` | Query workflow learning episodes | `--run` |
-| `kxm context promote <project> <key>` | Propose temporal state change | `--summary`, `--authority`, `--confidence`, `--evidence` |
+| `kxm context promote <project> <proposalId>` | Promote an approved state proposal (control plane) | required `--evidence <refs>` |
 <!-- kxm:codex:commands:end -->
 
 <!-- kxm:memory:start -->
@@ -224,3 +224,5 @@ The `kxm` CLI is the unified agent surface for peer collaboration and workflow s
 - Bypass fail-closed identity checks
 - Weaken `/fix` independent repro-before-oracle
 - Add backwards-compat shims or dual product names; brake old names instead
+
+@RTK.md

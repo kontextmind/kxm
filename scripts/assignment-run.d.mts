@@ -33,7 +33,7 @@ export function resolveRequiredCritics(policy: unknown): Readonly<Record<string,
   vendor: string;
   route_id?: string;
 }>>>;
-export function getRosterPolicy(deps?: Record<string, unknown>): unknown;
+export function getRosterPolicy(deps?: Record<string, unknown>): import("./roster-policy.mjs").RosterPolicy;
 export const ASSIGNMENT_KINDS: readonly string[];
 export const KIND_ROLES: Readonly<Record<string, string>>;
 export const REVIEW_KINDS: readonly string[];

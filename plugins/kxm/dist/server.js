@@ -10838,10 +10838,20 @@ import { DatabaseSync } from "node:sqlite";
 // plugins/kxm/src/vnext-config.ts
 import { basename as basename2, dirname as dirname2, extname as extname2, isAbsolute, join as join3, relative, resolve as resolve3, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-var import_yaml4 = __toESM(require_dist(), 1);
+
+// plugins/kxm/src/restricted-yaml.mjs
+var import_yaml3 = __toESM(require_dist(), 1);
+var VNEXT_YAML_LIMITS = Object.freeze({
+  maxDocumentBytes: 256 * 1024,
+  maxDepth: 32,
+  maxScalarBytes: 64 * 1024,
+  maxCollectionItems: 4096,
+  maxTotalNodes: 16384,
+  maxKeys: 8192
+});
 
 // plugins/kxm/src/vnext-template.ts
-var import_yaml3 = __toESM(require_dist(), 1);
+var import_yaml4 = __toESM(require_dist(), 1);
 
 // plugins/kxm/src/vnext-harness.ts
 var NATIVE_HARNESS_PROVIDERS = Object.freeze({
@@ -11193,14 +11203,6 @@ var WIN_NPM_INNER_EXE = Object.freeze({
 });
 
 // plugins/kxm/src/vnext-config.ts
-var VNEXT_YAML_LIMITS = Object.freeze({
-  maxDocumentBytes: 256 * 1024,
-  maxDepth: 32,
-  maxScalarBytes: 64 * 1024,
-  maxCollectionItems: 4096,
-  maxTotalNodes: 16384,
-  maxKeys: 8192
-});
 var VnextConfigError = class extends Error {
   issues;
   constructor(issues) {

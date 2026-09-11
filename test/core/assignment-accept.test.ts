@@ -25,12 +25,12 @@ import {
   REQUIRED_ACCEPT_CRITICS,
   RUNNER_CODES,
   VERIFY_WITNESS_ID,
-  acceptAssignment,
-  main as assignmentMain,
+  acceptAssignment as acceptAssignmentImpl,
+  main as assignmentMainImpl,
   observeAssignment,
   resolveRequiredCritics,
-  runAssignment,
-  witnessAssignment,
+  runAssignment as runAssignmentImpl,
+  witnessAssignment as witnessAssignmentImpl,
   writeCurrentPlan,
 } from "../../scripts/assignment-run.mjs";
 import {
@@ -40,6 +40,33 @@ import {
   grokAuth,
 } from "../helpers/harness-fake.ts";
 import { makeGitRoot } from "../helpers/git-root.ts";
+import { withRosterPolicy } from "../helpers/roster-policy.ts";
+
+function runAssignment(manifest: unknown, deps: Record<string, unknown> = {}) {
+  return runAssignmentImpl(manifest, withRosterPolicy(deps));
+}
+
+function acceptAssignment(
+  request: Parameters<typeof acceptAssignmentImpl>[0],
+  deps: Record<string, unknown> = {},
+) {
+  return acceptAssignmentImpl(request, withRosterPolicy(deps));
+}
+
+function witnessAssignment(recordDir: string, deps: Record<string, unknown> = {}) {
+  return witnessAssignmentImpl(recordDir, withRosterPolicy(deps));
+}
+
+function assignmentMain(
+  argv: string[],
+  io: NonNullable<Parameters<typeof assignmentMainImpl>[1]> = {
+    stdin: process.stdin,
+    stdout: process.stdout,
+    stderr: process.stderr,
+  },
+) {
+  return assignmentMainImpl(argv, withRosterPolicy(io));
+}
 
 function sha256(content: string | Buffer): string {
   return createHash("sha256").update(content).digest("hex");
@@ -1221,10 +1248,14 @@ test("foreign task completion with local record path is excluded from BLOCK reso
   }
 });
 
-test("resolveRequiredCritics resolves policy required_critics or falls back to defaults", () => {
-  const fallback = resolveRequiredCritics(null);
-  assert.equal(fallback["review-arch"]?.harness, "claude");
-  assert.equal(fallback["review-cli"]?.harness, "codex");
+test("resolveRequiredCritics refuses null policy and resolves required_critics", () => {
+  assert.throws(
+    () => resolveRequiredCritics(null),
+    (error: unknown) => {
+      assert.equal((error as { runnerCode?: string }).runnerCode, "route_invalid");
+      return true;
+    },
+  );
 
   const policy = {
     schema: "kxm.roster-policy.v1",
@@ -1419,6 +1450,28 @@ test("vendor collision between critics refuses acceptance", async () => {
       }, { rosterPolicy: collidingCriticsPolicy }),
       rejectCode("critic_invalid"),
     );
+  } finally {
+    cleanup(world.root, world.taskDir);
+  }
+});
+
+test("acceptance trusted loader failure refuses before writing accepted.json", async () => {
+  const world = await prepareAcceptedWorld();
+  try {
+    await assert.rejects(
+      () => acceptAssignment({
+        taskDir: world.taskDir,
+        commit: world.commit,
+        recordDir: world.writerDir,
+        critics: [world.archDir, world.cliDir],
+      }, {
+        loadTrustedRosterPolicy: () => {
+          throw new Error("Roster policy refused: dirty or untrusted control source");
+        },
+      }),
+      rejectCode("route_invalid"),
+    );
+    assert.equal(existsSync(join(world.taskDir, "accepted.json")), false);
   } finally {
     cleanup(world.root, world.taskDir);
   }

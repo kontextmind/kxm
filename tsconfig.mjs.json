@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "maxNodeModuleJsDepth": 0,
+    "types": []
+  },
+  "include": [
+    "plugins/kxm/src/**/*.mjs",
+    "test/fixtures/import-boundary/**/*.mjs"
+  ]
+}

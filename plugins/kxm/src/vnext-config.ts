@@ -4,30 +4,19 @@ import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from "
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Ajv2020, type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
-import { isAlias, isCollection, isMap, isScalar, parseDocument, visit } from "yaml";
+import {
+  RestrictedYamlError,
+  VNEXT_YAML_LIMITS,
+  parseRestrictedYaml as parseRestrictedYamlShared,
+  type VnextYamlLimits,
+} from "./restricted-yaml.mjs";
 import { resolveVnextTemplateBaseline } from "./vnext-template.ts";
 import { BUILTIN_HARNESS_IDS, DEFAULT_HARNESS, validateHarnessModelPair } from "./vnext-harness.ts";
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 export type JsonObject = { [key: string]: JsonValue };
-
-export interface VnextYamlLimits {
-  maxDocumentBytes: number;
-  maxDepth: number;
-  maxScalarBytes: number;
-  maxCollectionItems: number;
-  maxTotalNodes: number;
-  maxKeys: number;
-}
-
-export const VNEXT_YAML_LIMITS: Readonly<VnextYamlLimits> = Object.freeze({
-  maxDocumentBytes: 256 * 1024,
-  maxDepth: 32,
-  maxScalarBytes: 64 * 1024,
-  maxCollectionItems: 4096,
-  maxTotalNodes: 16_384,
-  maxKeys: 8192,
-});
+export type { VnextYamlLimits };
+export { VNEXT_YAML_LIMITS };
 
 export type VnextValidationPhase = "discovery" | "parse" | "schema" | "path" | "reference" | "semantic";
 
@@ -120,16 +109,6 @@ const SECRET_VALUE_PATTERNS: readonly RegExp[] = [
   /\bAKIA[A-Z0-9]{16}\b/,
   /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/,
 ];
-const ALLOWED_YAML_TAGS = new Set([
-  "tag:yaml.org,2002:map",
-  "tag:yaml.org,2002:seq",
-  "tag:yaml.org,2002:str",
-  "tag:yaml.org,2002:null",
-  "tag:yaml.org,2002:bool",
-  "tag:yaml.org,2002:int",
-  "tag:yaml.org,2002:float",
-]);
-
 function compareCodeUnits(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
@@ -149,38 +128,8 @@ function fail(phase: VnextValidationPhase, code: string, file: string, message: 
   throw new VnextConfigError([issue(phase, code, file, message)]);
 }
 
-function decodeUtf8(input: string | Uint8Array, label: string): string {
-  if (typeof input === "string") return input;
-  try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(input);
-  } catch {
-    fail("parse", "invalid_utf8", label, "document is not valid UTF-8");
-  }
-}
-
 function isJsonObject(value: JsonValue): value is JsonObject {
   return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function assertJsonValue(value: unknown, label: string, path = "$", seen = new Set<unknown>()): asserts value is JsonValue {
-  if (value === null || typeof value === "string" || typeof value === "boolean") return;
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) fail("parse", "non_json_number", label, `${path} is not a finite JSON number`);
-    return;
-  }
-  if (!value || typeof value !== "object") fail("parse", "non_json_value", label, `${path} is not JSON-compatible`);
-  if (seen.has(value)) fail("parse", "cyclic_value", label, `${path} is cyclic`);
-  seen.add(value);
-  if (Array.isArray(value)) {
-    for (const [index, candidate] of value.entries()) assertJsonValue(candidate, label, `${path}[${index}]`, seen);
-  } else {
-    const prototype = Object.getPrototypeOf(value) as unknown;
-    if (prototype !== Object.prototype && prototype !== null) {
-      fail("parse", "constructed_object", label, `${path} has a forbidden constructed type`);
-    }
-    for (const [key, candidate] of Object.entries(value)) assertJsonValue(candidate, label, `${path}.${key}`, seen);
-  }
-  seen.delete(value);
 }
 
 /** Parse the restricted, JSON-compatible YAML profile used by all vNext configuration. */
@@ -189,57 +138,12 @@ export function parseRestrictedYaml(
   label = "<yaml>",
   limits: Readonly<VnextYamlLimits> = VNEXT_YAML_LIMITS,
 ): JsonObject {
-  const byteLength = typeof input === "string" ? Buffer.byteLength(input, "utf8") : input.byteLength;
-  if (byteLength > limits.maxDocumentBytes) {
-    fail("parse", "document_too_large", label, `document exceeds ${limits.maxDocumentBytes} bytes`);
+  try {
+    return parseRestrictedYamlShared(input, label, limits);
+  } catch (error) {
+    if (error instanceof RestrictedYamlError) throw new VnextConfigError(error.issues);
+    throw error;
   }
-  const text = decodeUtf8(input, label);
-  const document = parseDocument(text, {
-    customTags: [],
-    strict: true,
-    uniqueKeys: true,
-  });
-  if (document.errors.length > 0) {
-    fail("parse", "invalid_yaml", label, document.errors.map((error) => error.message).join("; "));
-  }
-  if (document.warnings.length > 0) {
-    fail("parse", "yaml_warning", label, document.warnings.map((warning) => warning.message).join("; "));
-  }
-
-  let nodes = 0;
-  let keys = 0;
-  visit(document, (_key, node, path) => {
-    nodes += 1;
-    if (nodes > limits.maxTotalNodes) fail("parse", "node_limit", label, `document exceeds ${limits.maxTotalNodes} nodes`);
-    if (path.length > limits.maxDepth) fail("parse", "depth_limit", label, `document exceeds nesting depth ${limits.maxDepth}`);
-    if (isAlias(node)) fail("parse", "alias_forbidden", label, "aliases are forbidden");
-    if (node && typeof node === "object" && "anchor" in node && typeof node.anchor === "string") {
-      fail("parse", "anchor_forbidden", label, "anchors are forbidden");
-    }
-    if (isCollection(node) && node.items.length > limits.maxCollectionItems) {
-      fail("parse", "collection_limit", label, `collection exceeds ${limits.maxCollectionItems} items`);
-    }
-    if (isMap(node)) {
-      keys += node.items.length;
-      if (keys > limits.maxKeys) fail("parse", "key_limit", label, `document exceeds ${limits.maxKeys} mapping keys`);
-      for (const pair of node.items) {
-        if (!isScalar(pair.key) || typeof pair.key.value !== "string") {
-          fail("parse", "non_string_key", label, "mapping keys must be strings");
-        }
-      }
-    }
-    if (isScalar(node) && typeof node.value === "string" && Buffer.byteLength(node.value, "utf8") > limits.maxScalarBytes) {
-      fail("parse", "scalar_limit", label, `scalar exceeds ${limits.maxScalarBytes} bytes`);
-    }
-    if (node && typeof node === "object" && "tag" in node && typeof node.tag === "string" && !ALLOWED_YAML_TAGS.has(node.tag)) {
-      fail("parse", "tag_forbidden", label, `tag ${node.tag} is forbidden`);
-    }
-  });
-
-  const value = document.toJS({ maxAliasCount: 0 }) as unknown;
-  assertJsonValue(value, label);
-  if (!isJsonObject(value)) fail("parse", "root_not_object", label, "resource root must be a mapping");
-  return value;
 }
 
 function readJsonObject(file: string): Record<string, unknown> {

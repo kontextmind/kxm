@@ -1,0 +1,86 @@
+{
+  "id": "kxm-agent-skills-suite",
+  "version": "1.0.0",
+  "name": "KXM Agent Skills Suite",
+  "description": "Comprehensive suite of agent skills covering all KXM top-level commands",
+  "skills": [
+    {
+      "name": "kxm",
+      "path": "./skills/kxm",
+      "ownedCommands": [],
+      "intent": "Select the right suite skill; state universal safety rules and portable CLI convention"
+    },
+    {
+      "name": "kxm-project-setup",
+      "path": "./skills/kxm-project-setup",
+      "ownedCommands": ["init", "migrate", "trust", "config", "completion"],
+      "intent": "Initialize, migrate, review permission changes, configure, and add shell completion"
+    },
+    {
+      "name": "kxm-harness-auth",
+      "path": "./skills/kxm-harness-auth",
+      "ownedCommands": ["harness", "auth", "update", "runtime", "agent"],
+      "intent": "Inspect authenticated harness capability and operate supported runtimes/workers without inventing fallback"
+    },
+    {
+      "name": "kxm-hub-ops",
+      "path": "./skills/kxm-hub-ops",
+      "ownedCommands": ["hub", "backup", "restore"],
+      "intent": "Run and protect the local hub and its durable SQLite state"
+    },
+    {
+      "name": "kxm-session",
+      "path": "./skills/kxm-session",
+      "ownedCommands": ["session", "dash", "studio"],
+      "intent": "Resume/inspect operator work and use only the UI capabilities each harness actually supports"
+    },
+    {
+      "name": "kxm-peer",
+      "path": "./skills/kxm-peer",
+      "ownedCommands": ["peer"],
+      "intent": "Discover, send, poll/await, cancel, fan out, inbox, and reply safely"
+    },
+    {
+      "name": "kxm-workflow",
+      "path": "./skills/kxm-workflow",
+      "ownedCommands": ["workflow", "gate"],
+      "intent": "Operate webhook workflows, waits/signals, evidence checkpoints, provenance, and deterministic gates"
+    },
+    {
+      "name": "kxm-definitions",
+      "path": "./skills/kxm-definitions",
+      "ownedCommands": ["role"],
+      "intent": "Manage role and workflow definitions through their configuration authority without permission expansion"
+    },
+    {
+      "name": "kxm-runs",
+      "path": "./skills/kxm-runs",
+      "ownedCommands": ["run", "runs"],
+      "intent": "Create and inspect local vNext runs while preserving current execution-status boundaries"
+    },
+    {
+      "name": "kxm-context-memory",
+      "path": "./skills/kxm-context-memory",
+      "ownedCommands": ["context", "memory"],
+      "intent": "Query role-aware context and manage Git-authored memory proposals without treating proposals as authority"
+    },
+    {
+      "name": "kxm-skill-lifecycle",
+      "path": "./skills/kxm-skill-lifecycle",
+      "ownedCommands": ["skills"],
+      "intent": "Govern candidate/evaluate/promote/quarantine/reject/verify lifecycle; distinguish this from bundled skills"
+    },
+    {
+      "name": "kxm-routing-improve",
+      "path": "./skills/kxm-routing-improve",
+      "ownedCommands": ["routing", "improve"],
+      "intent": "Inspect real route quality/cost and propose reviewed improvements without auto-routing or underquoting"
+    },
+    {
+      "name": "kxm-tasks",
+      "path": "./skills/kxm-tasks",
+      "ownedCommands": ["suggest", "goal", "task"],
+      "intent": "Recommend workflows and manage goals/tasks with explicit SCM/tracker boundaries"
+    }
+  ]
+}

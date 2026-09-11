@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.kxm.dev/policy-draft/model.v2.schema.json",
+  "title": "KXM policy-draft model route",
+  "description": "Passive kxm.model.v2 scaffolding. Not live registry selection, admission, or operator settings.",
+  "type": "object",
+  "required": ["schema", "harness", "model", "vendor", "status", "permissions"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "kxm.model.v2" },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "harness": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "model": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "vendor": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "status": { "enum": ["admitted", "candidate", "retired"] },
+    "permissions": {
+      "type": "array",
+      "items": { "enum": ["edit", "read-only"] },
+      "minItems": 1,
+      "maxItems": 2,
+      "uniqueItems": true
+    },
+    "origin": {
+      "type": "object",
+      "required": ["source", "sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "source": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "thinking": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$",
+        "minLength": 1,
+        "maxLength": 64
+      },
+      "uniqueItems": true,
+      "maxItems": 32
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$",
+        "minLength": 1,
+        "maxLength": 64
+      },
+      "uniqueItems": true,
+      "maxItems": 32
+    },
+    "priority": { "type": "integer", "minimum": -10000, "maximum": 10000 },
+    "fallbacks": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["profile"],
+            "additionalProperties": false,
+            "properties": {
+              "profile": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$",
+                "minLength": 1,
+                "maxLength": 64
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": ["tag"],
+            "additionalProperties": false,
+            "properties": {
+              "tag": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "capabilities": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "uniqueItems": true,
+                "maxItems": 32
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": ["provider", "model"],
+            "additionalProperties": false,
+            "properties": {
+              "provider": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "model": { "type": "string", "minLength": 1, "maxLength": 200 }
+            }
+          }
+        ]
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "contextTokens": { "type": "integer", "minimum": 1 },
+        "outputTokens": { "type": "integer", "minimum": 1 },
+        "timeoutMs": { "type": "integer", "minimum": 0, "maximum": 31536000000 }
+      }
+    }
+  },
+  "if": {
+    "properties": { "harness": { "const": "pi" } },
+    "required": ["harness"]
+  },
+  "then": { "required": ["origin"] }
+}

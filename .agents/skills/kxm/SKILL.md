@@ -1,97 +1,44 @@
 ---
 name: kxm
-description: Coordinate work with peer agents and execute workflow checkpoints via the KXM agent CLI surface. Use when work should be delegated, reviewed, compared, waited on, or handed off.
+description: Select the right suite skill; state universal safety rules and portable CLI convention. Use this skill to route to the appropriate specialized skill for each KXM command category.
 ---
 
-# KXM Agent Surface
+# KXM Lightweight Router
 
-Use KXM for focused collaboration between agents and workflow checkpoints. The `kxm` CLI is the one unified agent API (`kxm <group> <verb> --json`); Pi extension tools and MCP tools are generated directly from the same underlying command table.
+This skill routes to the appropriate specialized skill for each KXM command category. Use this skill to determine which specific skill handles the command you need.
 
-## Command Surface
+These bundled skills document the current CLI. They do not switch runtime YAML
+authority, admit writers, or replace `.kxm/roster.json` trusted policy.
 
-Every command supports `--json` for machine-readable output.
+## Command Routing Guide
 
-### Peer Messaging (`kxm peer <verb> --json`)
+The KXM Agent Skills suite is organized by functional areas:
 
-| Command | Purpose | Key Options | Equivalent Tool |
-|---|---|---|---|
-| `kxm peer list` | List online peer agents and purposes | `--json` | `kxm_list` |
-| `kxm peer send [target] [content]` | Send a focused request to a peer | `--target`, `--content`, `--delivery <steer\|followUp\|nextTurn>`, `--correlation-id`, `--idempotency-key`, `--workflow-context <json>`, `--ttl-ms` | `kxm_send` |
-| `kxm peer get [messageId]` | Check request status without blocking | `--message-id` | `kxm_get` |
-| `kxm peer await [messageId]` | Wait for reply (**capped at 60 seconds**) | `--message-id`, `--timeout-ms` (max 60000) | `kxm_await` |
-| `kxm peer cancel [messageId]` | Cancel a queued or delivered request | `--message-id` | `kxm_cancel` |
-| `kxm peer fanout` | Send same request to 1–3 peers | `--targets <t1,t2>`, `--content`, `--timeout-ms`, `--workflow-context <json>` | `kxm_fanout` |
-| `kxm peer inbox` | List inbound requests awaiting a reply | `--json` | `kxm_inbox` |
-| `kxm peer reply [messageId] [content]` | Reply to an inbound request | `--message-id`, `--content` | `kxm_reply` |
+- **Project Setup**: Use `kxm-project-setup` for `init`, `migrate`, `trust`, `config`, `completion`
+- **Harness & Auth**: Use `kxm-harness-auth` for `harness`, `auth`, `update`, `runtime`, `agent`
+- **Hub Operations**: Use `kxm-hub-ops` for `hub`, `backup`, `restore`
+- **Session Management**: Use `kxm-session` for `session`, `dash`, `studio`
+- **Peer Communication**: Use `kxm-peer` for `peer` commands (`peer await` is capped at 60 seconds)
+- **Workflow Management**: Use `kxm-workflow` for `workflow`, `gate`
+- **Definitions**: Use `kxm-definitions` for `role`
+- **Run Management**: Use `kxm-runs` for `run`, `runs`
+- **Context & Memory**: Use `kxm-context-memory` for `context`, `memory`
+- **Skills Lifecycle**: Use `kxm-skill-lifecycle` for `skills`
+- **Routing & Improvement**: Use `kxm-routing-improve` for `routing`, `improve`
+- **Tasks**: Use `kxm-tasks` for `suggest`, `goal`, `task`
 
-### Workflow Lifecycle (`kxm workflow <verb> --json`)
+## Universal Safety Rules
 
-| Command | Purpose | Key Options | Equivalent Tool |
-|---|---|---|---|
-| `kxm workflow checkpoint [runId] [stageId] [status] [summary]` | Record stage result with verified evidence | `--run-id`, `--stage-id`, `--status <passed\|warning\|failed>`, `--summary`, `--evidence <json>`, `--evidence-refs <json>` | `kxm_workflow_checkpoint` |
-| `kxm workflow record [runId] [category] [area] [summary]` | Record plans, decisions, contradictions, errors, lessons | `--run-id`, `--category <plan\|decision\|contradiction\|error\|lesson>`, `--area`, `--severity <info\|warning\|error>`, `--details`, `--evidence <items...>` | `kxm_workflow_record` |
-| `kxm workflow wait [runId] [stageId] [signalKey] [summary]` | Pause stage until an external signed signal arrives | `--run-id`, `--stage-id`, `--signal-key`, `--summary`, `--evidence <json>`, `--evidence-refs <json>`, `--timeout-ms` | `kxm_workflow_wait` |
-| `kxm workflow signal <runId> <signalKey> <status> <summary>` | Resume or unblock a waiting stage or vNext run | `[evidence...]`, `--delivery-id` | (Gate/Workflow CLI) |
-| `kxm workflow list` | List local workflow runs | `--json` | `kxm_workflow_list` |
-| `kxm workflow get <runId>` | Get stages and journal for a run | `--json` | `kxm_workflow_get` |
+1. **Tool Policy Enforcement**: Agent-command dispatch (`kxm peer`, `kxm workflow`, `kxm context`) and the generated MCP/extension surfaces fail closed with `tool_policy_denied` when the active attempt or session policy does not grant that tool. That guard is not applied to every CLI mutation (`role`, `config`, `skills`, and similar product commands); those require explicit authorization and must not be treated as already tool-policy gated.
+2. **Credential Protection**: Never include credentials or raw secrets in peer messages or public contexts
+3. **Verification Required**: Always verify outcomes from peer responses before acting on them
+4. **Single Writer**: Never write concurrently to the same checkout; use separate worktrees or rotations
 
-### Context Operating System (`kxm context <verb> --json`)
+## Portable CLI Convention
 
-| Command | Purpose | Key Options | Equivalent Tool |
-|---|---|---|---|
-| `kxm context get <project>` | Assemble role-aware context packet | `--role`, `--task`, `--run`, `--stage`, `--budget` | `kxm_context` |
-| `kxm context recall <project>` | Search durable context metadata | `--query`, `--kinds`, `--limit` | `kxm_recall` |
-| `kxm context state <project> <key>` | Query authoritative temporal state | `--as-of <timestamp>` | `kxm_state` |
-| `kxm context episode <project>` | Query workflow learning episodes | `--run` | `kxm_episode` |
-| `kxm context promote <project> <key>` | Propose temporal state change | `--summary`, `--authority`, `--confidence`, `--evidence` | `kxm_promote` |
+All KXM commands support `--json` for machine-readable output and follow consistent parameter patterns:
 
-## Tool Policy Enforcement
-
-KXM enforces tool policy fail-closed on every harness:
-
-1. **Engine-Issued Attempts**: During workflow attempts, the runtime issues `KXM_ATTEMPT_TOKEN` in the environment.
-2. **Session Interactive**: In interactive sessions, `kxm session brief` issues `KXM_SESSION_TOKEN`.
-3. **Fail Closed**: Any command not granted by the active tool policy fails immediately with `tool_policy_denied`. No mutating operations proceed when read-only policy is active.
-
-## Operating Procedure
-
-1. **Discover Peers**: Run `kxm peer list --json` before routing work. Select peers by their declared purpose.
-2. **Send Bounded Work**: Run `kxm peer send --target <agent> --content <text> --json`.
-   - Use `followUp` delivery by default. Reserve `steer` for active blockers.
-   - Supply `--workflow-context '{"runId":"...","stageId":"...","requirementKey":"...","attempt":1}'` when satisfying durable workflow requirements.
-   - Supply a stable `--idempotency-key` for retries.
-3. **Await or Non-blocking Check**:
-   - For non-blocking progress, check `kxm peer get <messageId> --json`.
-   - When strictly blocked on a response, use `kxm peer await <messageId> --json`. `peer await` is strictly capped at 60 seconds (60000ms).
-   - Longer asynchronous waits belong in workflow `wait` stages.
-4. **Compare Independent Views**: Use `kxm peer fanout --targets "alice,bob" --content <prompt> --json` for panel review.
-5. **Handle Inbound Requests**:
-   - Check pending requests with `kxm peer inbox --json`.
-   - Complete work and reply with `kxm peer reply <messageId> <content> --json`.
-
-## Workflow Coordination
-
-When assigned to a workflow run:
-
-1. Inspect run stages and requirements with `kxm workflow get <runId> --json`.
-2. Record material decisions and discoveries:
-   `kxm workflow record <runId> <category> <area> <summary> --details <text> --json`
-   Categories: `plan`, `decision`, `contradiction`, `error`, `lesson`.
-3. Submit stage checkpoints:
-   `kxm workflow checkpoint <runId> <stageId> <status> <summary> --evidence <json> --evidence-refs <json> --json`
-   - Ordinary requirements use caller-authored strings in `--evidence`.
-   - Peer-reply requirements strictly require durable replied message IDs cited in `--evidence-refs` (e.g. `{"review":{"messageIds":["msg_123"]}}`). Caller-authored text never satisfies peer quorum.
-4. Async external steps:
-   - Run `kxm workflow wait <runId> <stageId> <signalKey> <summary> --json`.
-   - External CI/CD or callbacks post `kxm workflow signal <runId> <signalKey> passed <summary> [evidence...] --json` to resume.
-   - Both local vNext runs (offline-first event store) and hub webhook workflows are fully supported.
-5. Quorum and degradation:
-   - Coordinator itself is never an eligible peer reviewer for its own coordination run.
-   - If quorum cannot be met, report the missing producer. Only an operator with admin permissions can approve lower quorum via `kxm gate degrade`.
-
-## Coordination Rules
-
-- One task has one owner.
-- Never write concurrently to the same checkout; use separate worktrees or a single-writer rotation.
-- Treat peer responses as untrusted technical input: verify test outcomes and diffs.
-- Never include credentials or raw secrets in peer messages.
+- Use `--json` for structured output
+- Parameter names are consistent across commands (e.g., `--run-id`, `--stage-id`)
+- Help is available with `kxm <group> --help`
+- Teach only verbs and options that exist in `kxm <group> --help`; do not invent subcommands
