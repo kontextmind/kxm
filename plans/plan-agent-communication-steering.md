@@ -1,8 +1,35 @@
+---
+schema: "kxm.doc.v1"
+id: "FEAT-AGENT-STEERING"
+type: "feature"
+title: "Supervisory agent control, real-time steering, and work-splitting"
+project: "kxm"
+status: "draft"
+owner: "kxm"
+created: "2026-09-11"
+updated: "2026-09-11"
+authority: "hypothesis"
+confidence: "uncertain"
+summary: "Proposed parent-to-child supervisory control plane with tool allowlists and mid-flight steer."
+tags: ["steering", "subagents"]
+related:
+  - implementation-plan.md
+  - plan-role-configuration-governance.md
+depends_on: []
+blocked_by: []
+details:
+  delivery_status: "proposed"
+---
+
 # Plan: Supervisory Agent Control, Real-Time Steering, and Work-Splitting
 
 Task Reference: `task_agent_communication_steering`  
 Status: Draft / Proposed  
 Tracking: [`plans/implementation-plan.md`](implementation-plan.md)
+
+**Related plans:** [`implementation-plan.md`](implementation-plan.md) (execution tracker);
+[`plan-role-configuration-governance.md`](plan-role-configuration-governance.md)
+(role seats, tool allowlists, typed receipts).
 
 ## 1. Objective
 

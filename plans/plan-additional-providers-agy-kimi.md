@@ -1,8 +1,38 @@
+---
+schema: "kxm.doc.v1"
+id: "FEAT-PROVIDERS-AGY-KIMI"
+type: "feature"
+title: "Native Pi providers for AGY and Kimi"
+project: "kxm"
+status: "draft"
+owner: "kxm"
+created: "2026-09-11"
+updated: "2026-09-11"
+authority: "hypothesis"
+confidence: "uncertain"
+summary: "Proposed native Pi providers for agy and kimi instead of one-shot CLI wrappers."
+tags: ["agy", "kimi", "providers"]
+related:
+  - implementation-plan.md
+  - plan-usage-cost-quota-tracking.md
+  - research-agent-producer-architecture.md
+depends_on: []
+blocked_by: []
+details:
+  delivery_status: "proposed"
+---
+
 # Plan: Native Pi Providers for AGY and Kimi
 
 Task Reference: `task_providers_agy_kimi`  
 Status: Draft / Proposed  
 Tracking: [`plans/implementation-plan.md`](implementation-plan.md)
+
+**Related plans:** [`implementation-plan.md`](implementation-plan.md) (execution tracker);
+[`plan-usage-cost-quota-tracking.md`](plan-usage-cost-quota-tracking.md)
+(Antigravity / Kimi quota surfaces);
+[`research-agent-producer-architecture.md`](research-agent-producer-architecture.md)
+(producer / Pi worker boundaries).
 
 ## 1. Objective
 
