@@ -206,7 +206,7 @@ test("D5 Gate: a run past its metered cap refuses the next dispatch", async () =
 });
 
 test("D5 Price Catalog: loads, verifies hash, and resolves models", () => {
-  const catalog = loadPriceCatalog(repoRoot);
+  const catalog = loadPriceCatalog(join(repoRoot, "test/fixtures/prices/catalog.yaml"));
   assert.ok(catalog, "catalog loaded from repo root");
   assert.equal(catalog.schema, "kxm.prices.v1");
   assert.equal(catalog.date, "2026-09-08");
@@ -245,8 +245,8 @@ test("D5 Price Catalog: loads, verifies hash, and resolves models", () => {
   assert.equal(unknown, undefined, "unlisted model returns undefined");
 });
 
-test("D5 Price Catalog: calculates metered cost with context tiers", () => {
-  const catalog = loadPriceCatalog(repoRoot);
+test("D5 Price Catalog: estimates cost from complete usage and observed context", () => {
+  const catalog = loadPriceCatalog(join(repoRoot, "test/fixtures/prices/catalog.yaml"));
   assert.ok(catalog);
 
   // Grok 4.6: $2.00 / 1M input, $10.00 / 1M output, $0.50 / 1M cache read
@@ -258,6 +258,8 @@ test("D5 Price Catalog: calculates metered cost with context tiers", () => {
     tokensIn: 100_000,
     tokensOut: 10_000,
     cacheReadTokens: 50_000,
+    cacheWriteTokens: 0,
+    contextTokens: 25_000,
   });
   assert.ok(result);
   assert.equal(result.costUsd, 0.325);
@@ -566,7 +568,7 @@ test("E3 Gate: unknown cost is never ranked cheaper than metered cost", () => {
 });
 
 test("E3 Gate: Report formatting and snapshot test", () => {
-  const catalog = loadPriceCatalog(repoRoot);
+  const catalog = loadPriceCatalog(join(repoRoot, "test/fixtures/prices/catalog.yaml"));
   const records: RoutingRecordV2[] = [
     {
       schema: ROUTING_RECORD_V2_SCHEMA,
@@ -612,6 +614,8 @@ test("E3 Gate: Report formatting and snapshot test", () => {
       latencyMs: 2500,
       tokensIn: 20000,
       tokensOut: 4000,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
       contextTokens: 20000,
       costBasis: "unmetered",
       verifierOutcome: "passed",

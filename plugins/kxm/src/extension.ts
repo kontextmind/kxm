@@ -24,6 +24,11 @@ import {
   type SessionHubStatus,
   type SessionWorkItem,
 } from "./session-work.ts";
+import {
+  loadActiveWorkflowProgress,
+  renderWorkflowTuiText,
+  renderWorkflowWidgetLines,
+} from "./workflow-tui.ts";
 
 const SETTLEMENT_RETRY_BASE_MS = 250;
 const SETTLEMENT_RETRY_MAX_MS = 30_000;
@@ -303,6 +308,10 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
     const brief = await loadSessionBriefAsync(cwd, process.env, currentWork, hub);
     ctx.ui.setStatus?.("kxm", brief.statusLine);
     ctx.ui.setWidget?.("kxm-work", brief.widgetLines);
+    const progress = loadActiveWorkflowProgress(cwd);
+    if (progress) {
+      ctx.ui.setWidget?.("kxm-progress", renderWorkflowWidgetLines(progress));
+    }
     if (!offerPicker || !sessionBriefPickerEnabled({
       env: process.env,
       ...(ctx.mode ? { mode: ctx.mode } : {}),
@@ -866,8 +875,20 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
         ctx.ui.notify(brief.statusLine, "info");
         return;
       }
+      if (command === "progress" || command === "workflow") {
+        const cwd = typeof ctx.cwd === "string" ? ctx.cwd : process.cwd();
+        const progress = loadActiveWorkflowProgress(cwd);
+        if (progress) {
+          const lines = renderWorkflowWidgetLines(progress);
+          ctx.ui.setWidget?.("kxm-progress", lines);
+          ctx.ui.notify(renderWorkflowTuiText(progress), "info");
+        } else {
+          ctx.ui.notify("kxm: no active workflow run found in state.", "info");
+        }
+        return;
+      }
       if (command === "help") {
-        ctx.ui.notify("kxm: /kxm | /kxm status | /kxm hub | /kxm memory | /kxm help. CLI: kxm session brief, kxm hub view, kxm memory brief", "info");
+        ctx.ui.notify("kxm: /kxm | /kxm status | /kxm progress | /kxm workflow | /kxm hub | /kxm memory | /kxm help. CLI: kxm session brief, kxm hub view, kxm memory brief", "info");
         return;
       }
       if (command === "memory") {
@@ -886,6 +907,20 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
         return;
       }
       await applySessionChrome(ctx, { reason: "new" }, command === "brief");
+    },
+  });
+
+  pi.registerCommand("workflow", {
+    description: "Display active KXM workflow stage progress, assigned roles, and model metrics",
+    handler: async (_args, ctx) => {
+      const cwd = typeof ctx.cwd === "string" ? ctx.cwd : process.cwd();
+      const progress = loadActiveWorkflowProgress(cwd);
+      if (progress) {
+        ctx.ui.setWidget?.("kxm-progress", renderWorkflowWidgetLines(progress));
+        ctx.ui.notify(renderWorkflowTuiText(progress), "info");
+      } else {
+        ctx.ui.notify("kxm: no active workflow run found in state.", "info");
+      }
     },
   });
 

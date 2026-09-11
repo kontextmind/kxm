@@ -193,8 +193,8 @@ export function loadKxmConfig(
       const text = readFileSync(userConfigFile, "utf8");
       userRaw = (parse(text) as Record<string, unknown>) ?? {};
       userLoadedPath = userConfigFile;
-    } catch {
-      // ignore parse error, fallback
+    } catch (error) {
+      throw new Error(`invalid user config YAML at ${userConfigFile}`, { cause: error });
     }
   }
 
@@ -205,8 +205,8 @@ export function loadKxmConfig(
       const text = readFileSync(repoConfigFile, "utf8");
       repoRaw = (parse(text) as Record<string, unknown>) ?? {};
       repoLoadedPath = repoConfigFile;
-    } catch {
-      // ignore parse error, fallback
+    } catch (error) {
+      throw new Error(`invalid project config YAML at ${repoConfigFile}`, { cause: error });
     }
   }
 
@@ -264,6 +264,9 @@ export function setKxmConfigValue(
   }
 
   const parts = keyPath.split(".");
+  if (parts.some((part) => !part || part === "__proto__" || part === "prototype" || part === "constructor")) {
+    throw new Error("invalid config key path");
+  }
   let cursor = existing;
   for (let i = 0; i < parts.length - 1; i++) {
     const p = parts[i]!;

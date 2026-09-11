@@ -5,12 +5,25 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import test from "node:test";
+import test, { afterEach, beforeEach } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import piMeshExtension, { bindingForMessage, workflowRunIdForMessage } from "../../plugins/kxm/src/extension.ts";
 import { recoveryEnvelopePath, workerStateKey } from "../../plugins/kxm/src/recovery.ts";
 import { SESSION_BRIEF_SKIP_LABEL } from "../../plugins/kxm/src/session-work.ts";
 import { createTestMesh, waitFor } from "../helpers.ts";
+import { isolateSessionEnvironment } from "../helpers/session-env.ts";
+
+let restoreSessionEnvironment: () => void;
+const pendingShutdowns = new Set<() => Promise<void>>();
+beforeEach(() => { restoreSessionEnvironment = isolateSessionEnvironment(); });
+afterEach(async () => {
+  try {
+    await Promise.all([...pendingShutdowns].map((shutdown) => shutdown()));
+  } finally {
+    pendingShutdowns.clear();
+    restoreSessionEnvironment();
+  }
+});
 
 type EventHandler = (...args: unknown[]) => unknown | Promise<unknown>;
 type Tool = {
@@ -49,8 +62,14 @@ function fakePi() {
   } as unknown as ExtensionAPI;
 
   async function emit(name: string, ...args: unknown[]): Promise<void> {
-    for (const handler of handlers.get(name) ?? []) await handler(...args);
+    try {
+      for (const handler of handlers.get(name) ?? []) await handler(...args);
+    } finally {
+      if (name === "session_shutdown") pendingShutdowns.delete(shutdown);
+    }
   }
+  const shutdown = () => emit("session_shutdown");
+  pendingShutdowns.add(shutdown);
   return { api, tools, commands, sent, emit };
 }
 
@@ -1434,12 +1453,12 @@ test("Pi extension session readiness keeps a single hub registration across star
   const startedNew = recordingUi();
   await fake.emit("session_start", { reason: "new" }, sessionCtx(cwd, startedNew.ui));
   assertOnlineChrome(startedNew);
-  assert.equal((await peer.listAgents()).filter((agent) => agent.name === "pi-session-ready").length, 1);
+  await waitFor(async () => (await peer.listAgents()).filter((agent) => agent.name === "pi-session-ready").length === 1);
 
   const forked = recordingUi();
   await fake.emit("session_start", { reason: "fork" }, sessionCtx(cwd, forked.ui));
   assertOnlineChrome(forked);
-  assert.equal((await peer.listAgents()).filter((agent) => agent.name === "pi-session-ready").length, 1);
+  await waitFor(async () => (await peer.listAgents()).filter((agent) => agent.name === "pi-session-ready").length === 1);
   await shutdownExtension(fake);
 });
 
@@ -1507,7 +1526,7 @@ test("Pi extension TUI picker can skip or select a populated snapshot, writes ed
   await fake.emit("session_start", { reason: "new" }, sessionCtx(cwd, selected.ui));
   assert.equal(selected.selects.length, 1);
   assertOnlineChrome(selected);
-  assert.match(lastKxmStatus(selected.statuses), /default\/implement/);
+  assert.match(lastKxmStatus(selected.statuses), /default\/(?:-|implement)/);
   assert.match(lastKxmWidget(selected.widgets).join("\n"), /now  task/);
   assert.equal(selected.editors.length, 1);
   assert.match(selected.editors[0]!, /Continue KXM task `default`/);

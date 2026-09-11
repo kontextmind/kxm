@@ -474,6 +474,7 @@ function listNamedResources(
       continue;
     }
     const id = basename(entry.name, ".yaml");
+    if (kind === "model" && id === "inventory") continue;
     if (!resourceIdentifier(id)) {
       issues.push(issue("path", "resource_id_invalid", displayPath(root, join(directory, entry.name)), `filename-derived identity ${id} is invalid or platform-reserved`));
       continue;

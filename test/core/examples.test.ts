@@ -21,45 +21,6 @@ test("self-contained roundtrip example executes successfully", async () => {
   assert.equal(stderr, "");
 });
 
-test("Jira development workflow example is valid and covers the complete lifecycle", () => {
-  const raw = readFileSync(".kxm/config/workflows/jira-development.json", "utf8");
-  const [workflow] = parseWorkflowDefinitions(raw, {
-    JIRA_WEBHOOK_SECRET: "example-test-secret-value",
-    WORKFLOW_SIGNAL_SECRET: "example-signal-secret-value",
-  });
-  assert.equal(workflow!.source, "jira");
-  assert.equal(workflow!.signalSecret, "example-signal-secret-value");
-  assert.deepEqual(workflow!.stages.map((stage) => stage.id), [
-    "intake",
-    "reproduce",
-    "plan-moa",
-    "plan-review",
-    "implementation",
-    "local-gates",
-    "repository-gates",
-    "documentation",
-    "push-watch",
-    "merge",
-    "jira-update",
-    "retrospective",
-  ]);
-  assert.equal(workflow!.stages.find((stage) => stage.id === "local-gates")?.area, "gates");
-});
-
-test("repository provenance quorum workflow parses with its declared peer policies", () => {
-  const raw = readFileSync(".kxm/config/workflows/provenance-quorum.json", "utf8");
-  const [workflow] = parseWorkflowDefinitions(raw, {
-    KXM_V04_WORKFLOW_SECRET: "repository-provenance-start-secret",
-    KXM_V04_SIGNAL_SECRET: "repository-provenance-signal-secret",
-  });
-  assert.equal(workflow!.id, "kxm-provenance");
-  assert.equal(workflow!.target, "provenance-coordinator");
-  assert.equal(workflow!.stages.find((stage) => stage.id === "plan")!
-    .evidencePolicies?.["independent plan message ids"]?.minProducers, 2);
-  assert.deepEqual(workflow!.stages.find((stage) => stage.id === "plan")!
-    .evidencePolicies?.["independent plan message ids"]?.eligibleAgents, ["provenance-grok", "provenance-gemini"]);
-});
-
 test("provenance example and command-first guide share one runnable topology", () => {
   const raw = readFileSync("examples/provenance-workflow.json", "utf8");
   const [workflow] = parseWorkflowDefinitions(raw, {

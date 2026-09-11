@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { delimiter, join, resolve } from "node:path";
 import test from "node:test";
+import { nativeCriticLaunch } from "../../scripts/native-critic.mjs";
 import {
   agyAuth,
   authFixture,
@@ -122,7 +123,7 @@ test("preflight refuses role, mode, pair, and native-provider Pi routes before s
       { harness: "codex", role: "reviewer-cli", model: "gpt-5", permission: "read-only", prompt_file: prompt },
       { harness: "grok", role: "writer", model: "grok-4.6", permission: "read-only", prompt_file: prompt },
       { harness: "kimi", role: "writer", model: "kimi-for-coding", permission: "edit", prompt_file: prompt },
-      { harness: "gemini", role: "planner", model: "gemini-3", permission: "read-only", prompt_file: prompt },
+      { harness: "agy", role: "planner", model: "gemini-3", permission: "read-only", prompt_file: prompt },
       { harness: "agy", role: "planner", model: "x", permission: "read-only", prompt_file: prompt },
       { harness: "pi", role: "experiment", model: "xai/grok-4.6", permission: "edit", prompt_file: prompt },
       { harness: "pi", role: "writer", model: "openrouter/nous", permission: "edit", prompt_file: prompt },
@@ -331,8 +332,25 @@ test("grok and codex argv match verified A4 flags", () => {
   assert.deepEqual(codex.slice(1, 5), ["-m", "gpt-5.6-sol", "-c", 'model_reasoning_effort="high"']);
   assert.deepEqual(codex.slice(5, 7), ["--sandbox", "read-only"]);
   assert(codex.includes("--ignore-user-config"));
+  assert(codex.includes('approval_policy="never"'));
+  assert(!codex.includes("--full-auto"));
+  assert(!codex.includes("--dangerously-bypass-approvals-and-sandbox"));
+  assert(!codex.includes("--ignore-rules"));
   assert(codex.includes("--json"));
   assert.equal(codex.at(-1), "-");
+});
+
+test("native Astra critic binds the requested model to safe Codex argv without launching on import", () => {
+  const launch = nativeCriticLaunch("astra");
+  assert.equal(launch.command, "codex");
+  assert.equal(launch.model, "gpt-6-astra");
+  assert.deepEqual(launch.args, [
+    "exec", "-m", "gpt-6-astra",
+    "-c", 'model_reasoning_effort="low"',
+    "--sandbox", "read-only", "--ignore-user-config",
+    "-c", 'approval_policy="never"', "--json", "-",
+  ]);
+  assert.throws(() => nativeCriticLaunch("unknown"), /usage:/);
 });
 
 test("agy argv uses prompt text, json schema path, effort, and print-timeout; no prompt-file or stdin", () => {
@@ -1268,15 +1286,15 @@ test("justfile no longer ships an impl-pi Grok fallback", () => {
   assert.doesNotMatch(just, /xai\/grok-4\.6/);
 });
 
-test("just transport recipes use evidence-informed effort defaults and stay distinct from assign", () => {
+test("just transport recipes use evidence-informed effort defaults without retired assignment transport", () => {
   const just = readFileSync(resolve("justfile"), "utf8");
   assert.match(just, /role:"writer",harness:"grok",model:"grok-4\.6",effort:"medium"/);
   assert.match(just, /role:"planner",harness:"claude",model:"fable",effort:"medium"/);
   assert.match(just, /role:"reviewer-arch",harness:"claude",model:"fable",effort:"medium"/);
   assert.match(just, /role:"reviewer-cli",harness:"codex",model:"gpt-5\.6-sol",effort:"low"/);
   assert.doesNotMatch(just, /effort:"high"/);
-  assert.match(just, /Normal assignment workflow \(not the impl\/plan\/review transport recipes\)/);
-  assert.match(just, /assignment-run\.mjs run --manifest "\$1"/);
+  assert.doesNotMatch(just, /Normal assignment workflow/);
+  assert.doesNotMatch(just, /assignment-run\.mjs/);
 });
 
 test("preflight requires routing fields, types, and Pi edit pair ceilings before spawn", async () => {

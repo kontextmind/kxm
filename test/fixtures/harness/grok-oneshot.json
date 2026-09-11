@@ -1,0 +1,24 @@
+{
+  "text": "{\"outcome\":\"passed\",\"answer\":323,\"summary\":\"17 times 19 equals 323.\"}",
+  "stopReason": "end_turn",
+  "usage": {
+    "input_tokens": 56020,
+    "cache_read_input_tokens": 1280,
+    "cache_creation_input_tokens": 0,
+    "output_tokens": 72,
+    "reasoning_tokens": 46,
+    "total_tokens": 57372
+  },
+  "num_turns": 1,
+  "total_cost_usd": 0.01922904,
+  "modelUsage": {
+    "grok-4.6-build": {
+      "inputTokens": 56020,
+      "outputTokens": 72,
+      "cacheReadInputTokens": 1280,
+      "cacheCreationInputTokens": 0,
+      "modelCalls": 1,
+      "costUSD": 0.01922904
+    }
+  }
+}

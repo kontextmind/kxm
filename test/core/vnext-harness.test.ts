@@ -70,7 +70,16 @@ function issueCodes(error: unknown): string[] {
 
 test("builtin catalog defaults to headless Pi and lists known harnesses", () => {
   assert.equal(DEFAULT_HARNESS, "pi");
-  assert.deepEqual([...BUILTIN_HARNESS_IDS], ["pi", "claude", "kimi", "codex", "gemini", "deepseek", "grok", "agy"]);
+  assert.deepEqual([...BUILTIN_HARNESS_IDS], ["pi", "claude", "kimi", "codex", "deepseek", "grok", "agy"]);
+});
+
+test("Codex catalog pins documented read-only noninteractive flags and keeps exec-policy rules", () => {
+  const entry = BUILTIN_HARNESSES.find((candidate) => candidate.id === "codex");
+  assert.deepEqual(entry?.oneShot?.argv, [
+    "exec", "--sandbox", "read-only", "--ignore-user-config",
+    "-c", 'approval_policy="never"', "--json", "-",
+  ]);
+  assert.equal(entry?.oneShot?.promptVia, "stdin");
 });
 
 test("win32 harness probe tries .exe then npm .cmd after a missing bare command", () => {
@@ -602,20 +611,17 @@ test("agy catalog is observational either-mode and parses the committed models p
     harnesses: [
       { id: "pi", label: "Pi", default: true, mode: "headless", detected: true, authenticated: null, canUpdate: { self: true, extensions: true, models: true }, issues: ["auth_context_required"] },
       { id: "agy", label: "Antigravity CLI", default: false, mode: "either", detected: true, authenticated: true, canUpdate: { self: true, extensions: false, models: false }, issues: [] },
-      { id: "gemini", label: "Gemini CLI", default: false, mode: "either", detected: true, authenticated: null, canUpdate: { self: true, extensions: false, models: false }, issues: ["auth_unknown"] },
     ],
   });
   assert.deepEqual([...eligible], ["agy"]);
 });
 
-test("gemini and deepseek stay unknown without secret-bearing config-list commands", () => {
+test("deepseek stays unknown without a secret-bearing config-list command", () => {
   const recorded = recordingRunner({
     "kimi --version": { ok: true, code: 0, stdout: "kimi 0.1\n", stderr: "" },
-    "gemini --version": { ok: true, code: 0, stdout: "gemini 0.1\n", stderr: "" },
     "deepseek --version": { ok: true, code: 0, stdout: "deepseek 0.1\n", stderr: "" },
     "kimi provider list": { ok: true, code: 0, stdout: "managed:kimi-code type=kimi models=4 source=oauth\n", stderr: "" },
     "kimi provider list --json": { ok: true, code: 0, stdout: "{\"apiKey\":\"sk-secret\"}\n", stderr: "" },
-    "gemini": { ok: true, code: 0, stdout: "interactive\n", stderr: "" },
   });
   const inventory = probeHarnesses({ runCommand: recorded.runCommand });
   const kimiEntry = status(inventory, "kimi");
@@ -623,7 +629,7 @@ test("gemini and deepseek stay unknown without secret-bearing config-list comman
   assert.equal(kimiEntry.authenticated, true);
   assert.match(formatHarnessInventory(inventory), /^kimi\s+no\s+yes\s+yes\b/m);
 
-  for (const id of ["gemini", "deepseek"] as const) {
+  for (const id of ["deepseek"] as const) {
     const entry = status(inventory, id);
     assert.equal(entry.detected, true);
     assert.equal(entry.authenticated, null);
@@ -841,7 +847,6 @@ test("probeHarnesses reports dispatch status with reasons across inventory", () 
       "kimi provider list": { ok: true, code: 0, stdout: "managed:kimi-code type=kimi models=4 source=oauth\nDefault model: kimi-code/kimi-for-coding\n", stderr: "" },
       "codex --version": { ok: true, code: 0, stdout: "0.1.0\n", stderr: "" },
       "codex login status": { ok: true, code: 0, stdout: "", stderr: "Logged in using ChatGPT\n" },
-      "gemini --version": { ok: true, code: 0, stdout: "0.1.0\n", stderr: "" },
       "grok --version": { ok: true, code: 0, stdout: "0.1.0\n", stderr: "" },
       "grok models": { ok: true, code: 0, stdout: "You are logged in with grok.com.\nAvailable models:\ngrok-4.6\n", stderr: "" },
       "agy --version": { ok: true, code: 0, stdout: "1.0.0\n", stderr: "" },
@@ -858,16 +863,13 @@ test("probeHarnesses reports dispatch status with reasons across inventory", () 
   assert.equal(claude.dispatch?.supported, true);
 
   const kimi = status(inventory, "kimi");
-  assert.equal(kimi.dispatch?.status, "yes");
-  assert.equal(kimi.dispatch?.supported, true);
+  assert.equal(kimi.dispatch?.status, "no");
+  assert.equal(kimi.dispatch?.reason, "permission_profile_unaudited");
+  assert.equal(kimi.dispatch?.supported, false);
 
   const codex = status(inventory, "codex");
   assert.equal(codex.dispatch?.status, "yes");
   assert.equal(codex.dispatch?.supported, true);
-
-  const gemini = status(inventory, "gemini");
-  assert.equal(gemini.dispatch?.status, "no");
-  assert.equal(gemini.dispatch?.reason, "deprecated_client");
 
   const deepseek = status(inventory, "deepseek");
   assert.equal(deepseek.dispatch?.status, "no");
@@ -878,14 +880,14 @@ test("probeHarnesses reports dispatch status with reasons across inventory", () 
   assert.equal(grok.dispatch?.supported, true);
 
   const agy = status(inventory, "agy");
-  assert.equal(agy.dispatch?.status, "yes");
-  assert.equal(agy.dispatch?.supported, true);
+  assert.equal(agy.dispatch?.status, "no");
+  assert.equal(agy.dispatch?.reason, "permission_profile_unaudited");
+  assert.equal(agy.dispatch?.supported, false);
 
   const formatted = formatHarnessInventory(inventory);
   assert.match(formatted, /dispatch/);
-  assert.match(formatted, /gemini\s+no\s+yes\s+unknown\s+no \(deprecated_client\)/);
   assert.match(formatted, /deepseek\s+no\s+no\s+no\s+no \(not_detected\)/);
-  assert.match(formatted, /agy\s+no\s+yes\s+yes\s+yes/);
+  assert.match(formatted, /agy\s+no\s+yes\s+yes\s+no \(permission_profile_unaudited\)/);
 });
 
 

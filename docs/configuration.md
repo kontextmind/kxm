@@ -269,7 +269,7 @@ Global flags: `--json`, `--dry-run`, `--workspace`. Project-root `kxm init` disc
 
 Configure either `KXM_WEBHOOK_WORKFLOWS` or `KXM_WEBHOOK_WORKFLOWS_FILE`, never both. A definition selects a provider source, project, coordinator, event and payload filters, prompt template, and ordered stages. Use `secretEnv` to resolve the workflow-start HMAC secret from another environment variable. Use the optional `signalSecretEnv` for a separate callback secret; otherwise external signals use the workflow-start secret. Do not store either secret in JSON.
 
-See [Webhook workflows](webhook-workflows.md) for the base schema and the complete Jira configuration under `.kxm/config/workflows`. See [Peer provenance and quorum gates](provenance-gates.md) for `evidencePolicies`, `workflowContext`, `evidenceRefs`, and explicit degradation.
+See [Webhook workflows](webhook-workflows.md) for the base schema and the complete Jira configuration under `.kxm/workflows`. See [Peer provenance and quorum gates](provenance-gates.md) for `evidencePolicies`, `workflowContext`, `evidenceRefs`, and explicit degradation.
 
 ## Delivery modes
 
@@ -279,7 +279,7 @@ See [Webhook workflows](webhook-workflows.md) for the base schema and the comple
 | `steer` | An active blocker requires a course change | Deliver at the next decision boundary |
 | `nextTurn` | Information should wait for a later turn | Queue context without immediate work |
 
-`followUp` is the safe default. Use [`.kxm/config/env.example`](../.kxm/config/env.example) as a reference, but load values through your shell, supervisor, container platform, or secret manager. Never commit real tokens.
+`followUp` is the safe default. Use [`.kxm/env.example`](../ .kxm/env.example) as a reference, but load values through your shell, supervisor, container platform, or secret manager. Never commit real tokens.
 
 ## Nous providers (opt-in)
 

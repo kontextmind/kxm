@@ -2,16 +2,29 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test from "node:test";
+import test, { afterEach, beforeEach } from "node:test";
 import { runCli as runCliImplementation, type CliIo } from "../../plugins/kxm/src/cli.ts";
 import piMeshExtension from "../../plugins/kxm/src/extension.ts";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createTestMesh } from "../helpers.ts";
+import { isolateSessionEnvironment } from "../helpers/session-env.ts";
+
+let restoreSessionEnvironment: () => void;
+const pendingShutdowns = new Set<() => Promise<void>>();
+beforeEach(() => { restoreSessionEnvironment = isolateSessionEnvironment(); });
+afterEach(async () => {
+  try {
+    await Promise.all([...pendingShutdowns].map((shutdown) => shutdown()));
+  } finally {
+    pendingShutdowns.clear();
+    restoreSessionEnvironment();
+  }
+});
 
 async function runCli(argv: string[], env: NodeJS.ProcessEnv, io: CliIo, cwd = process.cwd()): Promise<number> {
   const isolatedLogs = mkdtempSync(join(tmpdir(), "kxm-cli-context-"));
   try {
-    return await runCliImplementation(argv, { KXM_LOGS_DIR: isolatedLogs, KXM_STATE_HOME: isolatedLogs, ...env }, io, cwd);
+    return await runCliImplementation(argv, { KXM_LOGS_DIR: isolatedLogs, KXM_STATE_HOME: isolatedLogs, KXM_USER_CONFIG_DIR: isolatedLogs, ...env }, io, cwd);
   } finally {
     rmSync(isolatedLogs, { recursive: true, force: true });
   }
@@ -184,7 +197,13 @@ function fakePi() {
     },
   } as unknown as ExtensionAPI;
   async function emit(name: string, ...args: unknown[]): Promise<void> {
-    for (const handler of handlers.get(name) ?? []) await handler(...args);
+    try {
+      for (const handler of handlers.get(name) ?? []) await handler(...args);
+    } finally {
+      if (name === "session_shutdown") pendingShutdowns.delete(shutdown);
+    }
   }
+  const shutdown = () => emit("session_shutdown");
+  pendingShutdowns.add(shutdown);
   return { api, tools, emit };
 }

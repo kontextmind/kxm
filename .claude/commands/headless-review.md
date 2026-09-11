@@ -3,11 +3,13 @@ description: Dispatch review to a provider different from the writer (Fable and/
 argument-hint: [arch|cli|both] <what to review>
 ---
 
+# Headless review
+
 Dispatch review to a provider **different from whoever wrote the code**. Per
 `AGENTS.md`: Fable reviews architecture and permissions, Codex `gpt-5.6-sol` reviews
-CLI and docs. One critic is enough unless the change touches auth, workflow
-policy, or multiple packages — then use both. Read `.claude/harness-cli.md` for
-the invocation mechanics.
+CLI and docs. Both designated critics are required for acceptance on this
+runner; a single critic is preliminary triage only. Read `.claude/harness-cli.md`
+for the invocation mechanics.
 
 Review: $ARGUMENTS
 
@@ -26,7 +28,7 @@ Do this:
    - architecture / permissions:
      `cat <brief> | claude -p --model fable --tools Read,Glob,Grep --safe-mode --strict-mcp-config --mcp-config <empty.json> --disable-slash-commands --output-format json`
    - CLI / docs:
-     `codex exec -m gpt-5.6-sol -C <worktree> --sandbox read-only --json - < <brief>`
+     `codex exec -m gpt-5.6-sol -c 'model_reasoning_effort="low"' -C <worktree> --sandbox read-only --ignore-user-config -c 'approval_policy="never"' --json - < <brief>`
    Run both concurrently when the answer is `both`. Read `answerPath` from the
    helper result for the critique text.
 4. **Triage the findings yourself.** Verify each one against the code before
