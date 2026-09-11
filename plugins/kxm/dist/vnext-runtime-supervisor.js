@@ -3835,7 +3835,7 @@ var require_fast_uri = __commonJS({
         normalizeString(uri, options);
       } else if (typeof uri === "object") {
         uri = /** @type {T} */
-        parse4(serialize(uri, options), options);
+        parse5(serialize(uri, options), options);
       }
       return uri;
     }
@@ -3875,8 +3875,8 @@ var require_fast_uri = __commonJS({
     function resolveComponent(base, relative4, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
-        base = parse4(serialize(base, options), options);
-        relative4 = parse4(serialize(relative4, options), options);
+        base = parse5(serialize(base, options), options);
+        relative4 = parse5(serialize(relative4, options), options);
       }
       options = options || {};
       if (!options.tolerant && relative4.scheme) {
@@ -4168,7 +4168,7 @@ var require_fast_uri = __commonJS({
       }
       return { parsed, malformedAuthorityOrPort, malformedPercentEncoding, malformedSchemeSpecific, malformedHost, malformedScheme };
     }
-    function parse4(uri, opts) {
+    function parse5(uri, opts) {
       return parseWithStatus(uri, opts).parsed;
     }
     function normalizeString(uri, opts) {
@@ -4205,7 +4205,7 @@ var require_fast_uri = __commonJS({
       resolveComponent,
       equal,
       serialize,
-      parse: parse4
+      parse: parse5
     };
     module.exports = fastUri;
     module.exports.default = fastUri;
@@ -14675,7 +14675,7 @@ var require_public_api = __commonJS({
       }
       return doc;
     }
-    function parse4(src, reviver, options) {
+    function parse5(src, reviver, options) {
       let _reviver = void 0;
       if (typeof reviver === "function") {
         _reviver = reviver;
@@ -14716,7 +14716,7 @@ var require_public_api = __commonJS({
         return value.toString(options);
       return new Document.Document(value, _replacer, options).toString(options);
     }
-    exports.parse = parse4;
+    exports.parse = parse5;
     exports.parseAllDocuments = parseAllDocuments;
     exports.parseDocument = parseDocument2;
     exports.stringify = stringify3;
@@ -14778,9 +14778,9 @@ var require_dist = __commonJS({
 // plugins/kxm/src/vnext-runtime-supervisor.ts
 import { spawn as spawn3 } from "node:child_process";
 import { createHash as createHash11, createHmac, randomBytes as randomBytes2, timingSafeEqual as timingSafeEqual2 } from "node:crypto";
-import { chmodSync as chmodSync2, existsSync as existsSync8, lstatSync as lstatSync5, mkdirSync as mkdirSync4, readFileSync as readFileSync6, renameSync, rmSync, writeFileSync as writeFileSync3 } from "node:fs";
+import { chmodSync as chmodSync2, existsSync as existsSync9, lstatSync as lstatSync5, mkdirSync as mkdirSync4, readFileSync as readFileSync8, renameSync, rmSync, writeFileSync as writeFileSync4 } from "node:fs";
 import { createServer } from "node:http";
-import { dirname as dirname5, isAbsolute as isAbsolute4, join as join11, resolve as resolve6 } from "node:path";
+import { dirname as dirname5, isAbsolute as isAbsolute4, join as join12, resolve as resolve6 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // plugins/kxm/src/vnext-config.ts
@@ -16759,8 +16759,8 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
       const writable = Object.values(objectValue(step.repositories) ?? {}).filter((access) => access === "write").length;
       if (maxWriteRepositories > writable) issues.push(issue2("semantic", "write_repository_bound_invalid", file, `${stepId} maxWriteRepositories exceeds writable repository scope`));
     }
-    const join12 = objectValue(step.join);
-    const minimumPassed = join12 && typeof join12.minimumPassed === "number" ? join12.minimumPassed : void 0;
+    const join13 = objectValue(step.join);
+    const minimumPassed = join13 && typeof join13.minimumPassed === "number" ? join13.minimumPassed : void 0;
     if (minimumPassed !== void 0 && minimumPassed > maximum) issues.push(issue2("semantic", "join_impossible", file, `${stepId} minimumPassed exceeds assignment maximum`));
     const distinctBy = names(assignment?.distinctBy);
     if (distinctBy.length > 0) {
@@ -17260,7 +17260,7 @@ function readVnextMigrationReceipt(root, options = {}) {
 
 // plugins/kxm/src/vnext-runtime-store.ts
 import { createHash as createHash3, randomUUID } from "node:crypto";
-import { existsSync as existsSync4, lstatSync as lstatSync3, mkdirSync as mkdirSync2, realpathSync as realpathSync2 } from "node:fs";
+import { existsSync as existsSync4, lstatSync as lstatSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync3, realpathSync as realpathSync2, writeFileSync as writeFileSync2 } from "node:fs";
 import { dirname as dirname4, join as join4, resolve as resolve4 } from "node:path";
 
 // plugins/kxm/src/vnext-bindings.ts
@@ -17920,6 +17920,36 @@ var VnextRunEventStore = class {
   }
   close() {
     this.database.close();
+  }
+  /** Persist the accepted prompt outside the event log (hashed in events only). */
+  putRunPrompt(runId, prompt) {
+    const all = this.readRunPrompts();
+    all[runId] = prompt;
+    this.writeRunPrompts(all);
+  }
+  getRunPrompt(runId) {
+    const value = this.readRunPrompts()[runId];
+    return typeof value === "string" ? value : void 0;
+  }
+  runPromptSidecarPath() {
+    return `${this.path}.run-prompts.json`;
+  }
+  readRunPrompts() {
+    const sidecar = this.runPromptSidecarPath();
+    if (!existsSync4(sidecar)) return {};
+    try {
+      const parsed = JSON.parse(readFileSync3(sidecar, "utf8"));
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+      return Object.fromEntries(
+        Object.entries(parsed).filter((entry) => typeof entry[1] === "string")
+      );
+    } catch {
+      return {};
+    }
+  }
+  writeRunPrompts(all) {
+    writeFileSync2(this.runPromptSidecarPath(), `${JSON.stringify(all)}
+`, { encoding: "utf8", mode: 384 });
   }
   /** Run one immutable transaction, rolling back on any failure. */
   transaction(work) {
@@ -18629,7 +18659,7 @@ function capabilityFromRow(row) {
 
 // plugins/kxm/src/vnext-runtime.ts
 import { createHash as createHash5 } from "node:crypto";
-import { existsSync as existsSync5, readdirSync as readdirSync3, readFileSync as readFileSync3 } from "node:fs";
+import { existsSync as existsSync5, readdirSync as readdirSync3, readFileSync as readFileSync4 } from "node:fs";
 import { join as join5 } from "node:path";
 
 // plugins/kxm/src/vnext-engine-fold.ts
@@ -19929,7 +19959,7 @@ function compileStep(step, index, stepIndex, requirePlanHash, sink) {
   const maxAttempts = compileCountField(step.maxAttempts, 1, `${id}.maxAttempts`, id, sink);
   const timeoutMs = compileOptionalDuration(step.timeoutMs, `${id}.timeoutMs`, id, sink);
   const assignments = compileAssignments(step, id, agent, sink);
-  const join12 = compileJoin(step, id, sink);
+  const join13 = compileJoin(step, id, sink);
   const requiredEvidence = compileEvidence(step, id, sink);
   const transitions = compileTransitions(step, id, index, stepIndex, sink);
   const outcomes = Object.keys(transitions).sort(compareCodeUnits4);
@@ -19957,7 +19987,7 @@ function compileStep(step, index, stepIndex, requirePlanHash, sink) {
     transitions: orderedTransitions,
     requiresPlanHash: requirePlanHash.includes(id),
     assignments,
-    join: join12
+    join: join13
   };
   if (kind === "agent" || kind === "moa") {
     if (!agent) return void 0;
@@ -20007,15 +20037,15 @@ function compileAssignments(step, stepId, primaryAgentId, sink) {
   };
 }
 function compileJoin(step, stepId, sink) {
-  const join12 = objectValue2(step.join);
-  if (!join12) return { strategy: "all" };
-  const declared = stringValue2(join12.strategy);
+  const join13 = objectValue2(step.join);
+  if (!join13) return { strategy: "all" };
+  const declared = stringValue2(join13.strategy);
   const strategy = declared && JOIN_STRATEGIES.has(declared) ? declared : "all";
-  const minimumPassed = compileOptionalCount(join12.minimumPassed, `${stepId}.join.minimumPassed`, stepId, sink);
+  const minimumPassed = compileOptionalCount(join13.minimumPassed, `${stepId}.join.minimumPassed`, stepId, sink);
   const compiled = {
     strategy,
     ...minimumPassed !== void 0 ? { minimumPassed } : {},
-    ...typeof join12.cancelRemaining === "boolean" ? { cancelRemaining: join12.cancelRemaining } : {}
+    ...typeof join13.cancelRemaining === "boolean" ? { cancelRemaining: join13.cancelRemaining } : {}
   };
   return compiled;
 }
@@ -21367,7 +21397,7 @@ function computeVnextMemoryRevision(bundle, options = {}) {
   const memoryFiles = collectMemoryFiles(memoryDir, memoryDir, /* @__PURE__ */ new Set(["candidates"])).sort((left, right) => compareCodeUnits5(left.relPath, right.relPath));
   for (const file of memoryFiles) {
     hash.update(`memory:${file.relPath}\0`, "utf8");
-    hash.update(readFileSync3(file.fullPath));
+    hash.update(readFileSync4(file.fullPath));
     hash.update("\0", "utf8");
   }
   const skillsDir = options.skillsDir ?? join5(bundle.projectRoot, ".kxm", "skills");
@@ -21375,7 +21405,7 @@ function computeVnextMemoryRevision(bundle, options = {}) {
   const skillFiles = collectMemoryFiles(promotedSkillsDir, promotedSkillsDir).sort((left, right) => compareCodeUnits5(left.relPath, right.relPath));
   for (const file of skillFiles) {
     hash.update(`skill:${file.relPath}\0`, "utf8");
-    hash.update(readFileSync3(file.fullPath));
+    hash.update(readFileSync4(file.fullPath));
     hash.update("\0", "utf8");
   }
   if (options.promotedState && options.promotedState.length > 0) {
@@ -21576,6 +21606,7 @@ function acceptVnextRun(context, bundle, request, options = {}) {
       result: { runId, homeRuntimeId: context.homeRuntimeId, status: "created" },
       recordedAt: now
     });
+    context.eventStore.putRunPrompt(runId, request.prompt);
     return { accepted: true, idempotent: false, run, event };
   });
 }
@@ -21760,7 +21791,7 @@ function cancelVnextRun(context, runId, options = {}) {
 }
 
 // plugins/kxm/src/vnext-oneshot-producer.ts
-import { join as join9 } from "node:path";
+import { join as join11 } from "node:path";
 
 // plugins/kxm/src/vnext-oneshot-evidence.ts
 import { createHash as createHash6, randomUUID as randomUUID3 } from "node:crypto";
@@ -21860,7 +21891,7 @@ async function beginOneShotEvidence(root, intent, sensitive) {
 // plugins/kxm/src/prices.ts
 var import_yaml3 = __toESM(require_dist(), 1);
 import { createHash as createHash7 } from "node:crypto";
-import { existsSync as existsSync6, readFileSync as readFileSync4, statSync } from "node:fs";
+import { existsSync as existsSync6, readFileSync as readFileSync5, statSync } from "node:fs";
 import { join as join7 } from "node:path";
 
 // plugins/kxm/src/price-calc.ts
@@ -22017,12 +22048,43 @@ function loadPriceCatalog(rootOrPath) {
   if (!candidatePath || !existsSync6(candidatePath)) {
     return void 0;
   }
-  const content = readFileSync4(candidatePath, "utf8");
+  const content = readFileSync5(candidatePath, "utf8");
   return parsePriceCatalog(content);
 }
 
 // plugins/kxm/src/vnext-engine.ts
+var import_yaml5 = __toESM(require_dist(), 1);
 import { createHash as createHash10, randomBytes, timingSafeEqual } from "node:crypto";
+import { existsSync as existsSync8, readFileSync as readFileSync7 } from "node:fs";
+import { join as join10 } from "node:path";
+
+// plugins/kxm/src/producers.ts
+var import_yaml4 = __toESM(require_dist(), 1);
+import { existsSync as existsSync7, readFileSync as readFileSync6, mkdirSync as mkdirSync3, writeFileSync as writeFileSync3, readdirSync as readdirSync4 } from "node:fs";
+import { join as join8 } from "node:path";
+var empty = () => ({ schema: "kxm.producers.v1", updatedAt: (/* @__PURE__ */ new Date()).toISOString(), promoted: [], demoted: [], enabled: [], disabled: [], roles: {} });
+function loadProducerPolicy(root) {
+  const path = join8(root, ".kxm", "producers.yaml");
+  if (!existsSync7(path)) return empty();
+  const value = (0, import_yaml4.parse)(readFileSync6(path, "utf8"));
+  if (value?.schema !== "kxm.producers.v1" || !Array.isArray(value.promoted) || !Array.isArray(value.demoted)) throw new Error("invalid .kxm/producers.yaml");
+  return { schema: "kxm.producers.v1", updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : (/* @__PURE__ */ new Date()).toISOString(), promoted: value.promoted.filter((x) => typeof x === "string"), demoted: value.demoted.filter((x) => typeof x === "string"), enabled: Array.isArray(value.enabled) ? value.enabled.filter((x) => typeof x === "string") : [], disabled: Array.isArray(value.disabled) ? value.disabled.filter((x) => typeof x === "string") : [], roles: value.roles && typeof value.roles === "object" ? Object.fromEntries(Object.entries(value.roles).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [k, v.filter((x) => typeof x === "string")])) : {} };
+}
+function listRoleBindings(root) {
+  const dir = join8(root, ".kxm", "roles");
+  const result = {};
+  if (!existsSync7(dir)) return result;
+  for (const file of readdirSync4(dir).filter((name) => name.endsWith(".yaml"))) {
+    const role = file.slice(0, -5);
+    const value = (0, import_yaml4.parse)(readFileSync6(join8(dir, file), "utf8"));
+    result[role] = (value.roster ?? []).map((entry) => entry.model).filter((model) => typeof model === "string");
+  }
+  return result;
+}
+function isProducerAdmitted(root, modelId) {
+  const policy = loadProducerPolicy(root);
+  return policy.enabled.includes(modelId) && policy.promoted.includes(modelId) && !policy.disabled.includes(modelId) && !policy.demoted.includes(modelId);
+}
 
 // plugins/kxm/src/context-packet.ts
 import { randomUUID as randomUUID4 } from "node:crypto";
@@ -22285,7 +22347,7 @@ function pruneContextPacket(packet, tokenBudget) {
 }
 
 // plugins/kxm/src/vnext-engine-artifacts.ts
-import { join as join8 } from "node:path";
+import { join as join9 } from "node:path";
 
 // plugins/kxm/src/artifacts-exist.ts
 import { lstatSync as lstatSync4, realpathSync as realpathSync3, statSync as statSync2 } from "node:fs";
@@ -22332,14 +22394,14 @@ function verifyArtifactExists(rootInput, pathInput) {
 // plugins/kxm/src/vnext-engine-artifacts.ts
 var vnextArtifactsGateSeams = {};
 function evaluateArtifactsGate(context, definition) {
-  const root = join8(context.projectRoot, ".kxm", "assets");
+  const root = join9(context.projectRoot, ".kxm", "assets");
   const startedAt = (/* @__PURE__ */ new Date()).toISOString();
   const startTime = process.hrtime.bigint();
   let checkedCount = 0;
   let failedCount = 0;
   for (const [index, path] of definition.paths.entries()) {
     checkedCount += 1;
-    const result = verifyArtifactExists(root, join8(root, path));
+    const result = verifyArtifactExists(root, join9(root, path));
     if (!result.ok) failedCount += 1;
     vnextArtifactsGateSeams.afterPathChecked?.({ path, index, checkedCount, failedCount });
   }
@@ -23832,6 +23894,68 @@ function unreconciledPanelAttemptId(state) {
   }
   return void 0;
 }
+function resolveProducerRoute(projectRoot, step, agentId) {
+  let agentModel;
+  const agentFile = join10(projectRoot, ".kxm", "agents", `${agentId}.yaml`);
+  if (existsSync8(agentFile)) {
+    try {
+      const parsed = (0, import_yaml5.parse)(readFileSync7(agentFile, "utf8"));
+      if (typeof parsed?.model === "string") {
+        agentModel = parsed.model;
+      }
+    } catch {
+    }
+  }
+  let selector = typeof step.model === "string" ? step.model : agentModel;
+  if (!selector) {
+    if (agentId === "implementer") {
+      selector = "xai/grok-4.6";
+    }
+  }
+  if (!selector) {
+    return {
+      error: {
+        reason: "step_unsupported",
+        field: "model",
+        detail: "producer_route_unsupported: agent or step has no model declared"
+      }
+    };
+  }
+  const slash = selector.indexOf("/");
+  if (slash <= 0 || slash === selector.length - 1) {
+    return {
+      error: {
+        reason: "step_unsupported",
+        field: "model",
+        detail: `producer_route_unsupported: invalid selector '${selector}'`
+      }
+    };
+  }
+  if (!isProducerAdmitted(projectRoot, selector)) {
+    return {
+      error: {
+        reason: "step_unsupported",
+        field: "model",
+        detail: `producer_route_unsupported: model '${selector}' is not admitted`
+      }
+    };
+  }
+  const role = agentId === "implementer" ? "writer" : agentId;
+  const roleBindings = listRoleBindings(projectRoot);
+  const roster = roleBindings[role];
+  if (roster && !roster.includes(selector)) {
+    return {
+      error: {
+        reason: "step_unsupported",
+        field: "model",
+        detail: `producer_route_unsupported: model '${selector}' not in role '${role}' roster`
+      }
+    };
+  }
+  const provider = selector.slice(0, slash);
+  const model = selector.slice(slash + 1);
+  return { provider, model, selector };
+}
 function prepareDispatch(context, runId, producerId) {
   const run = requireRun(context, runId);
   const plan = rehydrateVnextCompiledPlanFromStore(context.eventStore, run);
@@ -23955,8 +24079,18 @@ function prepareDispatch(context, runId, producerId) {
       state: result.state
     };
   }
-  const unsupported = unsupportedStep(plan, step);
+  const unsupported = unsupportedStep(plan, step, producerId);
   if (unsupported) return { kind: "return", state, handoff: { ...unsupported, stepId } };
+  let resolvedRoute;
+  if (producerId !== "driver-simulated") {
+    const allowed = step.assignments.allowedAgents;
+    const agentId = allowed && allowed.length > 0 && allowed[0] ? allowed[0] : step.kind === "agent" || step.kind === "moa" ? step.agent : "coordinator";
+    const routeResult = resolveProducerRoute(context.projectRoot, step, agentId);
+    if ("error" in routeResult) {
+      return { kind: "return", state, handoff: { ...routeResult.error, stepId } };
+    }
+    resolvedRoute = routeResult;
+  }
   const used = state.stepAttempts[stepId] ?? 0;
   if (used >= step.maxAttempts) {
     return { kind: "return", ...failBudget(context, run, plan, state, "budget_step_attempts", stepId) };
@@ -23988,7 +24122,8 @@ function prepareDispatch(context, runId, producerId) {
     stepId,
     stepAttempt,
     enterRunning: true,
-    producerId
+    producerId,
+    resolvedRoute
   });
   return {
     kind: "panel",
@@ -24036,9 +24171,25 @@ function birthMember(context, input) {
   if (!birthAllowed(folded, input.step)) {
     throw runtimeError("run_events_illegal", run.runId, "member birth is not legal");
   }
+  const promptText = context.eventStore.getRunPrompt(run.runId);
+  if (promptText === void 0) {
+    throw runtimeError("run_prompt_mismatch", run.runId, "prompt text missing from accepted run prompt store");
+  }
+  const promptHash = createHash10("sha256").update(promptText, "utf8").digest("hex");
+  const expectedHash = run.promptSha256.replace(/^sha256:/, "");
+  if (promptHash !== expectedHash) {
+    throw runtimeError("run_prompt_mismatch", run.runId, "prompt text does not match accepted promptSha256");
+  }
   const born = folded.currentStep?.panel.order.length ?? 0;
   const allowed = input.step.assignments.allowedAgents;
   const agentId = allowed && allowed.length > born && allowed[born] ? allowed[born] : input.step.kind === "agent" || input.step.kind === "moa" ? input.step.agent : "coordinator";
+  let resolvedRoute = input.resolvedRoute;
+  if (!resolvedRoute && input.producerId && input.producerId !== "driver-simulated") {
+    const routeResult = resolveProducerRoute(context.projectRoot, input.step, agentId);
+    if (!("error" in routeResult)) {
+      resolvedRoute = routeResult;
+    }
+  }
   const assignmentId = newVnextAssignmentId();
   const attemptId = newVnextAttemptId();
   const minted = mintCapabilitySecret();
@@ -24060,7 +24211,12 @@ function birthMember(context, input) {
   push("assignment.created", { assignmentId, stepId: input.stepId, stepAttempt: input.stepAttempt, agentId, status: "created" });
   push("assignment.accepted", { assignmentId, status: "accepted" });
   push("attempt.created", { attemptId, assignmentId, status: "created" });
-  push("assignment.dispatched", { assignmentId, capabilityHash: minted.hash, status: "dispatched" });
+  push("assignment.dispatched", {
+    assignmentId,
+    capabilityHash: minted.hash,
+    status: "dispatched",
+    ...resolvedRoute ? { model: { provider: resolvedRoute.provider, model: resolvedRoute.model } } : {}
+  });
   push("attempt.status_changed", { attemptId, status: "starting" });
   if (input.enterRunning) {
     push("step.status_changed", { stepId: input.stepId, status: "running", previousStatus: "preparing" });
@@ -24085,9 +24241,9 @@ function birthMember(context, input) {
       taskId: run.runId,
       stepId: input.stepId,
       stepAttempt: input.stepAttempt,
-      objective: input.step.description ?? input.step.instructions ?? input.stepId,
+      objective: promptText,
       allowedOutcomes: [...input.step.outcomes],
-      permissionCeiling: "edit"
+      permissionCeiling: Object.values(input.step.repositories).some((access) => access === "write") ? "edit" : "read-only"
     },
     acceptanceCriteria: input.step.requiredEvidence.map((ev) => ({
       id: ev.key,
@@ -24131,7 +24287,8 @@ function birthMember(context, input) {
 
 ${generatedPrompt}` : generatedPrompt,
       thinking: input.stepAttempt <= 1 ? "low" : "medium",
-      contextPacket
+      contextPacket,
+      ...resolvedRoute ? { provider: resolvedRoute.provider, model: resolvedRoute.model } : {}
     },
     controller,
     state: next
@@ -24679,7 +24836,7 @@ function unsupportedLimit(envelope) {
   }
   return void 0;
 }
-function unsupportedStep(plan, step) {
+function unsupportedStep(plan, step, producerId) {
   if (step.kind === "gate") throw runtimeError("run_plan_corrupt", plan.workflowId, `unsupportedStep called on gate without envelope; use unsupportedGateStep instead`);
   if (step.kind !== "agent" && step.kind !== "moa" && step.kind !== "approval" && step.kind !== "wait") {
     return { reason: "step_unsupported", field: "kind", detail: `step kind ${step.kind} is not executed in this slice` };
@@ -24717,6 +24874,13 @@ function unsupportedStep(plan, step) {
     if (access !== "read" && access !== "write" && access !== "none") {
       return { reason: "step_unsupported", field: "repositories", detail: `invalid repository access '${access}' on ${repoId}` };
     }
+  }
+  if (producerId !== "driver-simulated" && Object.values(step.repositories).some((access) => access === "write")) {
+    return {
+      reason: "step_unsupported",
+      field: "repositories",
+      detail: "live write steps are unsupported until writer sandboxing witness passes"
+    };
   }
   return void 0;
 }
@@ -25295,7 +25459,7 @@ Return a final JSON object with an "outcome" field chosen from ${JSON.stringify(
     }
     const spawnFn = options.spawnProcess ?? defaultSpawn;
     const cwd = options.projectRoot ?? process.cwd();
-    const evidence = await beginOneShotEvidence(options.evidenceRoot ?? join9(vnextUserStateRoot(), "runtime", "oneshot-evidence"), {
+    const evidence = await beginOneShotEvidence(options.evidenceRoot ?? join11(vnextUserStateRoot(), "runtime", "oneshot-evidence"), {
       runId: request.runId,
       stepId: request.stepId,
       attemptId: request.attemptId,
@@ -25436,33 +25600,16 @@ Return a final JSON object with an "outcome" field chosen from ${JSON.stringify(
   return producer;
 }
 
-// plugins/kxm/src/producers.ts
-var import_yaml4 = __toESM(require_dist(), 1);
-import { existsSync as existsSync7, readFileSync as readFileSync5, mkdirSync as mkdirSync3, writeFileSync as writeFileSync2, readdirSync as readdirSync4 } from "node:fs";
-import { join as join10 } from "node:path";
-var empty = () => ({ schema: "kxm.producers.v1", updatedAt: (/* @__PURE__ */ new Date()).toISOString(), promoted: [], demoted: [], enabled: [], disabled: [], roles: {} });
-function loadProducerPolicy(root) {
-  const path = join10(root, ".kxm", "producers.yaml");
-  if (!existsSync7(path)) return empty();
-  const value = (0, import_yaml4.parse)(readFileSync5(path, "utf8"));
-  if (value?.schema !== "kxm.producers.v1" || !Array.isArray(value.promoted) || !Array.isArray(value.demoted)) throw new Error("invalid .kxm/producers.yaml");
-  return { schema: "kxm.producers.v1", updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : (/* @__PURE__ */ new Date()).toISOString(), promoted: value.promoted.filter((x) => typeof x === "string"), demoted: value.demoted.filter((x) => typeof x === "string"), enabled: Array.isArray(value.enabled) ? value.enabled.filter((x) => typeof x === "string") : [], disabled: Array.isArray(value.disabled) ? value.disabled.filter((x) => typeof x === "string") : [], roles: value.roles && typeof value.roles === "object" ? Object.fromEntries(Object.entries(value.roles).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [k, v.filter((x) => typeof x === "string")])) : {} };
-}
-function isProducerAdmitted(root, modelId) {
-  const policy = loadProducerPolicy(root);
-  return policy.enabled.includes(modelId) && policy.promoted.includes(modelId) && !policy.disabled.includes(modelId) && !policy.demoted.includes(modelId);
-}
-
 // plugins/kxm/src/vnext-runtime-supervisor.ts
 var repoRoot = resolve6(fileURLToPath2(new URL("../../../", import.meta.url)));
 function vnextSupervisorTokenFile(paths) {
-  return join11(paths.runtimeDir, "supervisor.token");
+  return join12(paths.runtimeDir, "supervisor.token");
 }
 function publishVnextSupervisorToken(paths, token) {
   const file = vnextSupervisorTokenFile(paths);
   mkdirSync4(dirname5(file), { recursive: true, mode: 448 });
   const temp = `${file}.${process.pid}.tmp`;
-  writeFileSync3(temp, `${token}
+  writeFileSync4(temp, `${token}
 `, { encoding: "utf8", mode: 384 });
   try {
     chmodSync2(temp, 384);
@@ -25484,7 +25631,7 @@ function readVnextSupervisorToken(paths) {
   if (stat.isSymbolicLink() || !stat.isFile()) {
     throw runtimeError("runtime_path_invalid", file, "supervisor token file must be a regular file, not a link");
   }
-  const token = readFileSync6(file, "utf8").trim();
+  const token = readFileSync8(file, "utf8").trim();
   return token.length >= 32 ? token : void 0;
 }
 function processAlive(pid) {
@@ -25498,16 +25645,16 @@ function processAlive(pid) {
 var HEARTBEAT_STALE_MS = 15e3;
 var SUPERVISOR_ERROR_MAX_AGE_MS = 3e4;
 function supervisorErrorFile(paths) {
-  return join11(paths.runtimeDir, "supervisor.error");
+  return join12(paths.runtimeDir, "supervisor.error");
 }
 function clearSupervisorError(paths) {
   const file = supervisorErrorFile(paths);
-  if (existsSync8(file)) rmSync(file, { force: true });
+  if (existsSync9(file)) rmSync(file, { force: true });
 }
 function recordSupervisorError(paths, message) {
   try {
     mkdirSync4(paths.runtimeDir, { recursive: true, mode: 448 });
-    writeFileSync3(supervisorErrorFile(paths), `${message}
+    writeFileSync4(supervisorErrorFile(paths), `${message}
 `, { encoding: "utf8", mode: 384 });
   } catch {
   }
@@ -25519,13 +25666,13 @@ function readRecentSupervisorError(paths) {
   const ageMs = Date.now() - stat.mtimeMs;
   if (ageMs > SUPERVISOR_ERROR_MAX_AGE_MS) return void 0;
   try {
-    return readFileSync6(file, "utf8").trim();
+    return readFileSync8(file, "utf8").trim();
   } catch {
     return void 0;
   }
 }
 function vnextSupervisorStatus(paths) {
-  if (!existsSync8(paths.registryDb)) return { running: false };
+  if (!existsSync9(paths.registryDb)) return { running: false };
   const registry = new VnextRuntimeRegistry(paths.registryDb);
   try {
     const record2 = registry.supervisor();
@@ -25586,7 +25733,7 @@ async function ensureVnextSupervisor(options = {}) {
     throw runtimeError("runtime_supervisor_unreachable", paths.registryDb, `runtime supervisor pid ${status.pid} is registered as running but cannot be probed`);
   }
   clearSupervisorError(paths);
-  const scriptPath = join11(repoRoot, "scripts", "kxm-runtime-supervisor.mjs");
+  const scriptPath = join12(repoRoot, "scripts", "kxm-runtime-supervisor.mjs");
   const spawnImpl = options.spawnImpl ?? ((script, env) => {
     const child = spawn3(process.execPath, [script], {
       detached: true,
@@ -25796,44 +25943,6 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
               const result = await driveVnextRun(context, runId, producer, { allowLimits: true });
               const recentEvents = context.eventStore.events(runId, Math.max(0, context.eventStore.nextSequence(runId) - 8), 8);
               sendJson(response, 200, { ok: true, mode: body.mode, run: result.state, handoff: result.handoff, events: recentEvents });
-            } finally {
-              if ("close" in producer && typeof producer.close === "function") await producer.close();
-            }
-            return;
-          }
-          if (request.method === "POST" && sub === "dispatch") {
-            const body = await readJsonBody(request);
-            const run = context.eventStore.run(runId);
-            if (!run) throw runtimeError("run_unknown", runId, "run not found");
-            if (run.status === "created") {
-              pinVnextCompiledPlan(context, bundle, runId);
-              const plan = startVnextRun(context, runId, { allowLimits: true });
-              if (plan.handoff) {
-                sendJson(response, 409, { ok: false, error: "run_handoff_required", handoff: plan.handoff });
-                return;
-              }
-            }
-            const producer = createVnextOneShotProducer({
-              projectRoot,
-              defaultHarness: String(bundle.project.value.defaultHarness ?? "pi"),
-              resolveHarness: (agentId) => {
-                const agent = bundle.agents.get(agentId);
-                return typeof agent?.value.harness === "string" ? agent.value.harness : void 0;
-              },
-              resolveModel: (agentId) => {
-                const agent = bundle.agents.get(agentId);
-                const model = agent?.value.model;
-                if (!model || typeof model !== "object" || Array.isArray(model)) return void 0;
-                const value = model;
-                const provider = typeof value.provider === "string" ? value.provider : void 0;
-                const modelName = typeof value.model === "string" ? value.model : void 0;
-                if (!provider || !modelName || !isProducerAdmitted(projectRoot, `${provider}/${modelName}`)) return void 0;
-                return { provider, model: modelName };
-              }
-            });
-            try {
-              const result = await driveVnextRun(context, runId, producer, { allowLimits: true });
-              sendJson(response, 200, { ok: true, run: result.state, handoff: result.handoff });
             } finally {
               if ("close" in producer && typeof producer.close === "function") await producer.close();
             }

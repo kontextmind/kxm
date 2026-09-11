@@ -4,6 +4,7 @@ import { cpSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { setModelState, updateProducer } from "../../plugins/kxm/src/producers.ts";
 import { initializeVnextProject } from "../../plugins/kxm/src/vnext-init.ts";
 import { makeGitRoot } from "./git-root.ts";
 
@@ -48,4 +49,10 @@ export function committedProject(prefix: string): { root: string; stateRoot: str
     projectId: "prj_01JRUNTIMETEST0000000000",
     projectName: "Runtime Test",
   });
+}
+
+/** Admit the implementer fallback selector so live oneshot/pi producers can complete. */
+export function admitDefaultWriterRoute(root: string): void {
+  setModelState(root, "xai/grok-4.6", "enabled", "writer");
+  updateProducer(root, "xai/grok-4.6", "promoted");
 }

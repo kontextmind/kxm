@@ -120,6 +120,7 @@ test("run acceptance is immutable, idempotent, and pins revisions", () => {
       assert.equal(first.event.memoryRevision, revisions.memoryRevision);
       assert.equal(first.run.memoryRevision, revisions.memoryRevision);
       assert(!JSON.stringify(first.event.payload).includes("fix the bug"), "prompt content is never stored");
+      assert(!JSON.stringify(context.eventStore.events(first.run.runId, 0, 10)).includes("fix the bug"), "prompt content is never stored");
 
       const second = acceptVnextRun(context, bundle, { commandId, workflowId: "default", prompt: "fix the bug" });
       assert.equal(second.idempotent, true, "repeated commandId returns the prior acceptance");
@@ -277,6 +278,12 @@ test("supervisor lifecycle: start, API, auth, runs, graceful stop", async () => 
 
     const cancel = await vnextRuntimeRequest(handle, "POST", `/v1/runs/${run.runId}/cancel?projectRoot=${encodeURIComponent(root)}`, {});
     assert.equal((cancel.run as { status: string }).status, "cancelled");
+
+    // Dead dispatch endpoint is braked and returns 404
+    await assert.rejects(
+      () => vnextRuntimeRequest(handle, "POST", `/v1/runs/${run.runId}/dispatch?projectRoot=${encodeURIComponent(root)}`, {}),
+      /not found|404/i,
+    );
 
     const list = await vnextRuntimeRequest(handle, "GET", `/v1/projects/prj_01JRUNTIMETEST0000000000/runs?projectRoot=${encodeURIComponent(root)}`);
     assert.equal((list.runs as unknown[]).length, 1);

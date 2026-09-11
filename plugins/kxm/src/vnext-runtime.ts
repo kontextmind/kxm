@@ -436,6 +436,7 @@ export function acceptVnextRun(
       result: { runId, homeRuntimeId: context.homeRuntimeId, status: "created" },
       recordedAt: now,
     });
+    context.eventStore.putRunPrompt(runId, request.prompt);
     return { accepted: true, idempotent: false, run, event };
   });
 }
