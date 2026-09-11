@@ -275,7 +275,9 @@ export async function main(env = process.env, stdout = process.stdout, stderr = 
   const token = env.GITHUB_TOKEN || env.GH_TOKEN;
   const npmToken = env.NODE_AUTH_TOKEN || env.NPM_TOKEN;
   const repo = env.GITHUB_REPOSITORY;
-  const tag = env.GITHUB_REF_NAME || env.TAG;
+  // KXM_RELEASE_TAG is explicit for workflow_dispatch runs; GITHUB_REF_NAME
+  // is the branch name for that event, not the requested release tag.
+  const tag = env.KXM_RELEASE_TAG || env.TAG || env.GITHUB_REF_NAME;
   const assetName = env.KXM_ASSET;
   const assetPath = env.KXM_ASSET_PATH;
   const declaredSha256 = env.KXM_ASSET_SHA256;
