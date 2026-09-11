@@ -24,7 +24,7 @@ import {
 } from "./vnext-runtime.ts";
 import { createVnextOneShotProducer } from "./vnext-oneshot-producer.ts";
 import { isProducerAdmitted } from "./producers.ts";
-import { createVnextSimulatedProducer, driveVnextRun, pinVnextCompiledPlan, recoverVnextRun, startVnextRun } from "./vnext-engine.ts";
+import { VnextRunScheduler, createVnextSimulatedProducer, driveVnextRun, pinVnextCompiledPlan, recoverVnextRun, startVnextRun } from "./vnext-engine.ts";
 
 /* ------------------------------------------------------------------ *
  * Token management
@@ -322,6 +322,7 @@ async function startVnextRuntimeSupervisorInner(
   const runtimeId = `rtm_${createHash("sha256").update(`${paths.stateRoot}\0${process.pid}\0${now()}\0${randomBytes(16).toString("hex")}`, "utf8").digest("hex").slice(0, 24)}`;
   const requestedPort = requestedPortOption ?? 0;
   let activeRuntimeId = runtimeId;
+  const activeDrives = new Map<string, Promise<unknown>>();
 
   const contexts = new Map<string, VnextRuntimeContext>();
   const contextFor = (projectRoot: string): VnextRuntimeContext => {
@@ -419,10 +420,27 @@ async function startVnextRuntimeSupervisorInner(
             }
             const run = context.eventStore.run(runId);
             if (!run) throw runtimeError("run_unknown", runId, "run not found");
+            if (activeDrives.has(runId)) {
+              sendJson(response, 409, { ok: false, error: "run_busy", message: `run ${runId} is already executing` });
+              return;
+            }
+            if (run.status === "completed" || run.status === "failed" || run.status === "cancelled" || run.status === "cancelling") {
+              sendJson(response, 409, { ok: false, error: "run_busy", message: `run ${runId} is already ${run.status}` });
+              return;
+            }
+            let releaseActive = () => {};
+            const activePromise = new Promise<void>((resolve) => { releaseActive = resolve; });
+            activeDrives.set(runId, activePromise);
+            const cleanupActive = () => {
+              activeDrives.delete(runId);
+              releaseActive();
+            };
+
             if (run.status === "created") {
               pinVnextCompiledPlan(context, bundle, runId);
               const plan = startVnextRun(context, runId, { allowLimits: true });
               if (plan.handoff) {
+                cleanupActive();
                 sendJson(response, 409, { ok: false, error: "run_handoff_required", handoff: plan.handoff });
                 return;
               }
@@ -448,14 +466,57 @@ async function startVnextRuntimeSupervisorInner(
                     return { provider, model: modelName };
                   },
                 })
-              : createVnextSimulatedProducer(async () => ({ outcome: "passed" }));
+              : (() => {
+                  const delayMs = typeof body.delayMs === "number" && body.delayMs > 0 ? body.delayMs : 0;
+                  return createVnextSimulatedProducer(async () => {
+                    if (delayMs > 0) {
+                      await new Promise((r) => setTimeout(r, delayMs));
+                    }
+                    return { outcome: "passed" };
+                  });
+                })();
+
+            let drivePromise: Promise<unknown>;
+            let earlyError: unknown;
             try {
-              const result = await driveVnextRun(context, runId, producer, { allowLimits: true });
-              const recentEvents = context.eventStore.events(runId, Math.max(0, context.eventStore.nextSequence(runId) - 8), 8);
-              sendJson(response, 200, { ok: true, mode: body.mode, run: result.state, handoff: result.handoff, events: recentEvents });
-            } finally {
-              if ("close" in producer && typeof producer.close === "function") await producer.close();
+              const scheduler = VnextRunScheduler.for(context, bundle);
+              drivePromise = scheduler.enqueue(runId, producer, { allowLimits: true, liveMode: body.mode === "live" });
+              drivePromise.catch((err) => { earlyError = err; });
+            } catch (err) {
+              earlyError = err;
+              drivePromise = Promise.reject(err);
             }
+
+            // Yield microtask to catch synchronous duplicate queue check (e.g. run_busy)
+            await Promise.resolve();
+
+            if (earlyError) {
+              cleanupActive();
+              const errStr = String(earlyError);
+              if (errStr.includes("run_busy") || errStr.includes("scheduler_policy_conflict")) {
+                if ("close" in producer && typeof producer.close === "function") {
+                  try { await producer.close(); } catch { /* ignore */ }
+                }
+                sendJson(response, 409, { ok: false, error: "run_busy", message: `run ${runId} is already admitted or queued` });
+                return;
+              }
+              throw earlyError;
+            }
+
+            void drivePromise.finally(async () => {
+              cleanupActive();
+              if ("close" in producer && typeof producer.close === "function") {
+                try { await producer.close(); } catch { /* ignore */ }
+              }
+            });
+
+            sendJson(response, 202, {
+              ok: true,
+              status: "accepted",
+              runId,
+              poll: `/v1/runs/${runId}`,
+              mode: body.mode,
+            });
             return;
           }
 
@@ -594,6 +655,9 @@ async function startVnextRuntimeSupervisorInner(
     stopping = true;
     clearInterval(heartbeat);
     try { registry.markStopping(process.pid, now()); } catch { /* best effort */ }
+    if (activeDrives.size > 0) {
+      await Promise.allSettled([...activeDrives.values()]);
+    }
     for (const context of contexts.values()) closeVnextRuntimeContext(context);
     contexts.clear();
     const closed = new Promise<void>((resolveStop) => server.close(() => resolveStop()));
