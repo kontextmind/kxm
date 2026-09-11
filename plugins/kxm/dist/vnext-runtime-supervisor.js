@@ -21532,6 +21532,7 @@ function acceptVnextRun(context, bundle, request, options = {}) {
       workflowId: request.workflowId,
       status: "created",
       promptHash: promptSha256,
+      prompt: request.prompt,
       repositoryIds: vnextDeclaredRepositoryIds(bundle),
       executorIds: vnextDeclaredExecutorIds(bundle)
     };
@@ -24036,6 +24037,17 @@ function birthMember(context, input) {
   if (!birthAllowed(folded, input.step)) {
     throw runtimeError("run_events_illegal", run.runId, "member birth is not legal");
   }
+  const createdEvents = context.eventStore.events(run.runId, 0, 1);
+  const createdEvent = createdEvents.find((e) => e.eventType === "run.created");
+  const promptText = typeof createdEvent?.payload?.prompt === "string" ? createdEvent.payload.prompt : void 0;
+  if (promptText === void 0) {
+    throw runtimeError("run_prompt_mismatch", run.runId, "prompt text missing from run.created event");
+  }
+  const promptHash = createHash10("sha256").update(promptText, "utf8").digest("hex");
+  const expectedHash = run.promptSha256.replace(/^sha256:/, "");
+  if (promptHash !== expectedHash) {
+    throw runtimeError("run_prompt_mismatch", run.runId, "prompt text does not match accepted promptSha256");
+  }
   const born = folded.currentStep?.panel.order.length ?? 0;
   const allowed = input.step.assignments.allowedAgents;
   const agentId = allowed && allowed.length > born && allowed[born] ? allowed[born] : input.step.kind === "agent" || input.step.kind === "moa" ? input.step.agent : "coordinator";
@@ -24085,7 +24097,7 @@ function birthMember(context, input) {
       taskId: run.runId,
       stepId: input.stepId,
       stepAttempt: input.stepAttempt,
-      objective: input.step.description ?? input.step.instructions ?? input.stepId,
+      objective: promptText,
       allowedOutcomes: [...input.step.outcomes],
       permissionCeiling: "edit"
     },
