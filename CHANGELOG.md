@@ -4,15 +4,36 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ## Unreleased
 
+## 0.7.0 - 2026-09-11
+
 ### Added
 
-- **Public npm release automation unlatched (E7):** Unlatched `publish-npm` job
-  in `.github/workflows/release.yml` with `environment: npm-publish`. Added
-  `scripts/kxm-publish-npm.mjs` to enforce fail-closed verification: requires the
-  GitHub release for the tag to be published (`draft: false`), validates the
-  release asset presence and SHA-256 digest against the release manifest, and
-  executes `npm publish --access public`. Added `publishConfig.access: "public"`
-  in root `package.json` and unit test suite `test/core/kxm-publish-npm.test.ts`.
+- **vNext Architecture Engine and Multi-Phase Isolation (Phases 0–4):**
+  - **Dead Route Brake (Phase 0):** Fails closed and asserts 404 on obsolete `/dispatch`
+    endpoint in supervisor API to eliminate legacy unmonitored dispatch routes.
+  - **Objective Propagation (Phase 1):** Propagates accepted run objectives into the producer
+    context packet with cryptographic SHA-256 hash validation against execution drift.
+  - **Dynamic Permission Ceilings (Phase 2):** Dynamically derives sandbox permissions from step
+    repository access declarations (`birthMember`), failing closed immediately on unauthorized
+    live write access outside declared repository scopes.
+  - **Pinned Route Admission & Roster Verification (Phase 3):** Strictly validates producer model
+    resolution (`step.model -> agent.model -> refuse`), enforcing model admission policies and role
+    roster alignment before birth.
+  - **Asynchronous Scheduler & Graceful Lifecycle (Phase 4):** Asynchronous `/drive` execution via
+    `VnextRunScheduler` returning `202 Accepted` with `/v1/runs/:id` poll endpoints, duplicate run
+    rejection (`409 Conflict`), and supervisor graceful shutdown that awaits active drives.
+- **Oneshot Harness Isolation, Pricing Safety & Async Probes:**
+  - Standardized one-shot harness execution across Anthropic Claude, OpenAI Codex, Kimi, and Google AGY
+    with unmetered subscription vs metered cost separation, process stdin piping, and timeout protection.
+- **Universal KontextMind Knowledge-Plane Skill Suite:**
+  - Portable, harness-agnostic skill suite under `.agents/skills/` including repository delivery skills,
+    context memory recall, and lifecycle governance.
+- **Pi Workflow Progress TUI & Studio Dashboard:**
+  - Interactive Pi extension workflow progress terminal user interface with live status bars and web studio layout.
+- **Public npm Release Automation Unlatched (E7):**
+  - Unlatched `publish-npm` job in `.github/workflows/release.yml` with `environment: npm-publish`.
+  - Added `scripts/kxm-publish-npm.mjs` verifying published GitHub release assets, digests, and
+    publishing to npm registry.
 
 ## 0.6.0 - 2026-09-08
 
