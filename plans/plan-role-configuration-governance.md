@@ -1,8 +1,41 @@
+---
+schema: "kxm.doc.v1"
+id: "FEAT-ROLE-GOVERNANCE"
+type: "feature"
+title: "Role configuration, host decoupling, and typed governance"
+project: "kxm"
+status: "draft"
+owner: "kxm"
+created: "2026-09-11"
+updated: "2026-09-11"
+authority: "hypothesis"
+confidence: "uncertain"
+summary: "Proposed role seats decoupled from hosts, typed receipts, and bounded auto-resume."
+tags: ["roles", "governance"]
+related:
+  - implementation-plan.md
+  - plan-agent-communication-steering.md
+  - plan-workflow-modes-selective-loading.md
+  - plan-ssh-remote-execution.md
+depends_on: []
+blocked_by: []
+details:
+  delivery_status: "proposed"
+---
+
 # Plan: Role Configuration, Host Decoupling, and Typed Governance
 
 Task Reference: `task_d3e634858295`  
 Status: In Progress  
 Tracking: [`plans/implementation-plan.md`](implementation-plan.md)
+
+**Related plans:** [`implementation-plan.md`](implementation-plan.md) (execution tracker);
+[`plan-agent-communication-steering.md`](plan-agent-communication-steering.md)
+(supervisory control);
+[`plan-workflow-modes-selective-loading.md`](plan-workflow-modes-selective-loading.md)
+(tool / context scoping);
+[`plan-ssh-remote-execution.md`](plan-ssh-remote-execution.md)
+(`--host` / remote workers).
 
 ## 1. Objective
 

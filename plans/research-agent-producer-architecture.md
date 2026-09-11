@@ -1,6 +1,38 @@
+---
+schema: "kxm.doc.v1"
+id: "RES-AGENT-PRODUCER"
+type: "research"
+title: "Agent, producer, writer, and Pi architecture"
+project: "kxm"
+status: "draft"
+owner: "kxm"
+created: "2026-09-11"
+updated: "2026-09-11"
+authority: "hypothesis"
+confidence: "uncertain"
+summary: "Open research on agent/producer/harness/writer boundaries; not an execution tracker."
+tags: ["research", "producers"]
+related:
+  - implementation-plan.md
+  - plan-additional-providers-agy-kimi.md
+  - plan-ssh-remote-execution.md
+depends_on: []
+blocked_by: []
+details:
+  research_status: "planned"
+  task: "task_f2d22a9993e4"
+---
+
 # Research: Agent, Producer, Writer, and Pi Architecture
 
-Task: `task_f2d22a9993e4`
+Task: `task_f2d22a9993e4`  
+Tracking: [`implementation-plan.md`](implementation-plan.md)
+
+**Related plans:** [`implementation-plan.md`](implementation-plan.md) (execution tracker);
+[`plan-additional-providers-agy-kimi.md`](plan-additional-providers-agy-kimi.md)
+(native Pi provider routes);
+[`plan-ssh-remote-execution.md`](plan-ssh-remote-execution.md)
+(multi-host / SSH-connected agents).
 
 ## Objective
 

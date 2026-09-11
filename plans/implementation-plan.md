@@ -1,3 +1,36 @@
+---
+schema: "kxm.doc.v1"
+id: "PLAN-IMPLEMENTATION"
+type: "architecture"
+title: "KXM vNext implementation plan"
+project: "kxm"
+status: "approved"
+owner: "kxm"
+created: "2026-09-02"
+updated: "2026-09-11"
+authority: "instruction"
+confidence: "verified"
+summary: "Sole active execution tracker for vNext phase gates, Tracking, and Still open work."
+tags: ["vnext", "tracking"]
+related:
+  - research-agent-producer-architecture.md
+  - plan-additional-providers-agy-kimi.md
+  - plan-agent-communication-steering.md
+  - plan-role-configuration-governance.md
+  - plan-ssh-remote-execution.md
+  - plan-token-reduction-rtk-ai.md
+  - plan-usage-cost-quota-tracking.md
+  - plan-workflow-modes-selective-loading.md
+  - history/control-plane-memory-questionnaire.md
+  - history/v05-context-os.md
+  - history/plan-safety-security-process-integrity.md
+depends_on: []
+blocked_by: []
+details:
+  describes: "current"
+  baseline_commit: "6157933"
+---
+
 # KXM vNext implementation plan
 
 This plan is ordered by contract dependency. A later phase MUST NOT weaken an
@@ -9,14 +42,39 @@ This section records product decisions and slices from operator review of the
 slow `/fix` loop, harness/YAML setup, live peek screens, and the KXM rename.
 It does not replace the phase gates below.
 
+### Related plans
+
+This file remains the only execution tracker. Drafts and research below do
+not create work or alter a phase gate.
+
+- Drafts: [`plan-additional-providers-agy-kimi.md`](plan-additional-providers-agy-kimi.md),
+  [`plan-agent-communication-steering.md`](plan-agent-communication-steering.md),
+  [`plan-role-configuration-governance.md`](plan-role-configuration-governance.md),
+  [`plan-ssh-remote-execution.md`](plan-ssh-remote-execution.md),
+  [`plan-token-reduction-rtk-ai.md`](plan-token-reduction-rtk-ai.md),
+  [`plan-usage-cost-quota-tracking.md`](plan-usage-cost-quota-tracking.md),
+  [`plan-workflow-modes-selective-loading.md`](plan-workflow-modes-selective-loading.md)
+- Open research: [`research-agent-producer-architecture.md`](research-agent-producer-architecture.md)
+- Archived / superseded (stubs remain at the old `plans/` paths):
+  [`control-plane-memory-questionnaire.md`](history/control-plane-memory-questionnaire.md)
+  (closed design record),
+  [`v05-context-os.md`](history/v05-context-os.md)
+  (superseded design record),
+  [`plan-safety-security-process-integrity.md`](history/plan-safety-security-process-integrity.md)
+  (complete, Stages 1–6 via #188/#189)
+
 ### Decided
 
-- **Plan source of truth (2026-09-10):** `plans/implementation-plan.md` is the
-  only active execution tracker. `control-plane-memory-questionnaire.md` is a
-  closed design record; `v05-context-os.md` is a superseded design record.
-  Neither document may create work, alter a phase gate, or keep a slice in an
-  ambiguous in-review state. Deferred work must be listed here under **Still
-  open** with an owner/trigger or remain historical.
+- **Plan source of truth (2026-09-10; archive 2026-09-11):**
+  `plans/implementation-plan.md` is the only active execution tracker. The
+  closed design record
+  [`control-plane-memory-questionnaire.md`](history/control-plane-memory-questionnaire.md)
+  and the superseded design record
+  [`v05-context-os.md`](history/v05-context-os.md) live under `plans/history/`;
+  thin stubs remain at the old paths. Neither document may create work, alter
+  a phase gate, or keep a slice in an ambiguous in-review state. Deferred work
+  must be listed here under **Still open** with an owner/trigger or remain
+  historical.
 - Product name is **KXM**. Do not present Mesh or pi-extensions as the product.
   Plugin, marketplace, and npm identity are `kxm` / `@kontextmind/kxm`.
 - **Future slices are not backwards-compatible.** Do not add upgrade shims or
@@ -163,7 +221,10 @@ It does not replace the phase gates below.
 - CLI Fable/Codex/Kimi critiques are artifacts plus human signoff, never
   hub `peer-reply` evidence.
 - Workflow fixture ids: `kxm-provenance`, `kxm-v04` (not `pi-extensions-*`).
-- **Safety, process integrity, and critic sandboxing (2026-09-11):** PR #188
+- **Safety, process integrity, and critic sandboxing (2026-09-11):** The
+  completed plan is
+  [`plan-safety-security-process-integrity.md`](history/plan-safety-security-process-integrity.md)
+  (`task_90e568b3fd18`, #188/#189; stub at the old path). PR #188
   closes critic read-only sandboxing holes by pinning `--mode plan --sandbox --disable-slash-commands`
   for `agy` and `--plan` for `kimi` in `READ_ONLY_ONESHOT_ARGS` and catalog entries;
   enforces literal destructive command seatbelts (`assertCommandSeatbelt`) blocking
@@ -232,9 +293,9 @@ It does not replace the phase gates below.
   - **External Side-Effect Idempotency & Branch Determinism:** Implemented `plugins/kxm/src/external-effects.ts` with deterministic branch generation (`kxm/run-<id>`), preflight Check-And-Set (CAS) leasing (`claimEffect`), commit/abort lifecycle, and SQLite `external_effects` receipts store via Node 22 native `DatabaseSync` (`node:sqlite`). Verified in `test/core/external-effects.test.ts`.
   - **Interactive TUI Access Control (`kxm dash`):** Extended `plugins/kxm/src/tui.ts` with interactive Blessed/Blessings control actions (`a` approve, `r` reject, `d` degrade, `s` signal, `c` cancel) dispatching authenticated callbacks to hub endpoints `/v1/runs/:id/signal` and `/cancel`. Verified in `test/core/tui.test.ts`.
   - **Web Studio Layout Engine & Embedded Server (Decision D14 & Q8, Phase 6):** Created `plugins/kxm/src/studio-layout.ts` providing form/stepper stage derivation, ELK/React Flow DAG node/edge positioning, and Temporal activity Gantt swimlanes without manual YAML coordinates; exposed via `kxm studio layout <workflowPath>` and embedded HTTP server `kxm studio serve` on `http://localhost:4242` with strict audit parity (SessionToken authentication, 1:1 CLI command mapping on `/api/mutate`). Verified in `test/core/studio-layout.test.ts`.
-  - **Developer Workflow Tooling & Alignment Config:** Created `plugins/kxm/src/config.ts` (`kxm.config.v1` loader/writer), `plugins/kxm/src/autocomplete.ts` (bash/zsh/fish shell completion scripts), `plugins/kxm/src/suggest.ts` (keyword & skill workflow matching mapped to `docs/workflow-guide.md` and authenticated harnesses), and `plugins/kxm/src/task-manager.ts` (`kxm goal` / `kxm task` with GitHub and Jira tracker synchronization). Settled all 15 architectural questions with operator in `plans/control-plane-memory-questionnaire.md`, including configurable promotion policies (`manual_pr` default), shadow execution sampling (`routing.shadowExecution`), soft demotion penalty weighting (`routing.circuitBreaker`), 14-day telemetry exponential decay (`improvement.telemetryHalfLifeDays`), and anonymized federated metrics (`telemetry.federated`). Verified in `test/core/cli-experience.test.ts`.
+  - **Developer Workflow Tooling & Alignment Config:** Created `plugins/kxm/src/config.ts` (`kxm.config.v1` loader/writer), `plugins/kxm/src/autocomplete.ts` (bash/zsh/fish shell completion scripts), `plugins/kxm/src/suggest.ts` (keyword & skill workflow matching mapped to `docs/workflow-guide.md` and authenticated harnesses), and `plugins/kxm/src/task-manager.ts` (`kxm goal` / `kxm task` with GitHub and Jira tracker synchronization). Settled all 15 architectural questions with operator in [`plans/history/control-plane-memory-questionnaire.md`](history/control-plane-memory-questionnaire.md), including configurable promotion policies (`manual_pr` default), shadow execution sampling (`routing.shadowExecution`), soft demotion penalty weighting (`routing.circuitBreaker`), 14-day telemetry exponential decay (`improvement.telemetryHalfLifeDays`), and anonymized federated metrics (`telemetry.federated`). Verified in `test/core/cli-experience.test.ts`.
   - **Self-Improving & Recommendation Telemetry:** Clustered 152 historical attempts from `.kxm/logs/telemetry.jsonl` ($26.58 spend, 24.11M tokens), validating native Grok 4.6 low-thinking ($0.17/attempt, 84% pass rate) vs medium-thinking ($0.60/attempt, 86.7% pass rate) with 72% cost savings and 4.5x speedup; Pi wrapper suffered 100% rework. Implemented `plugins/kxm/src/improve.ts` clustering by `(workflowId, stepId, role, intent)` for automated gate promotion and dynamic effort stepping. Verified in `test/core/improve.test.ts`.
-  - **Optimized Execution Roadmap:** Re-ordered implementation into 6 dependency-stratified phases in `plans/control-plane-memory-questionnaire.md`: Phase 1 Security & Config Foundation $\rightarrow$ Phase 2 Context Substrate & 5-Layer Memory $\rightarrow$ Phase 3 Execution Determinism & Side-Effects $\rightarrow$ Phase 4 Operator Control & CLI Tools $\rightarrow$ Phase 5 Spend Protection & Self-Improvement $\rightarrow$ Phase 6 Web Studio & DAG Visualization.
+  - **Optimized Execution Roadmap:** Re-ordered implementation into 6 dependency-stratified phases in [`plans/history/control-plane-memory-questionnaire.md`](history/control-plane-memory-questionnaire.md): Phase 1 Security & Config Foundation $\rightarrow$ Phase 2 Context Substrate & 5-Layer Memory $\rightarrow$ Phase 3 Execution Determinism & Side-Effects $\rightarrow$ Phase 4 Operator Control & CLI Tools $\rightarrow$ Phase 5 Spend Protection & Self-Improvement $\rightarrow$ Phase 6 Web Studio & DAG Visualization.
 - **B3 three failing rule tests and auth probes (issue #84):** Three failing-first
   loop rule tests in `test/core/vnext-loop-rules.test.ts` (unhosted harness/model
   pair rejected with `harness_unhosted_model`; pure inventory eligibility fails

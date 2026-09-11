@@ -1,8 +1,35 @@
+---
+schema: "kxm.doc.v1"
+id: "FEAT-USAGE-QUOTA"
+type: "feature"
+title: "Quota-aware usage, rolling windows, and cost limit tracking"
+project: "kxm"
+status: "draft"
+owner: "kxm"
+created: "2026-09-11"
+updated: "2026-09-11"
+authority: "hypothesis"
+confidence: "uncertain"
+summary: "Proposed rolling-window quota monitoring, cache-aware cost, and stage budget guardrails."
+tags: ["cost", "quota"]
+related:
+  - implementation-plan.md
+  - plan-additional-providers-agy-kimi.md
+depends_on: []
+blocked_by: []
+details:
+  delivery_status: "proposed"
+---
+
 # Plan: Quota-Aware Usage, Rolling Windows, and Cost Limit Tracking
 
 Task Reference: `task_quota_cost_tracking`  
 Status: Draft / Proposed  
 Tracking: [`plans/implementation-plan.md`](implementation-plan.md)
+
+**Related plans:** [`implementation-plan.md`](implementation-plan.md) (execution tracker);
+[`plan-additional-providers-agy-kimi.md`](plan-additional-providers-agy-kimi.md)
+(Antigravity / Kimi quota surfaces).
 
 ## 1. Objective
 
