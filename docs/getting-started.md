@@ -61,6 +61,14 @@ kxm init
 
 `kxm init` never copies the package repository's dogfood roster or workflows into a consumer workspace.
 
+When `kxm init` succeeds in an interactive terminal, it offers to install shell
+completion for the detected shell. Accepting writes the completion script
+under the user config directory, appends one idempotent stanza to the shell
+rc file, and, when the kxm bin directory is not already on `PATH`, adds a
+`PATH` export. Declining is safe: run `kxm completion install` later, or set
+`KXM_SKIP_COMPLETION_PROMPT=1` to suppress the offer. Non-interactive,
+`--json`, and `--dry-run` runs never prompt or write shell files.
+
 ## 3. Start the hub in another terminal
 
 `kxm hub start` is foreground. Keep that terminal running.

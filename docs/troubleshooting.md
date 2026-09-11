@@ -107,6 +107,19 @@ release asset through the authenticated `gh release download` flow in
 `node scripts/kxm.mjs` from a clone after `npm ci`. `npx kxm` and a
 global `git+https` npm install are not supported installation paths.
 
+For bash and zsh, `kxm completion install` can add the kxm bin directory to
+`PATH` in the shell rc file when it is missing; restart the shell afterwards.
+
+### Tab completion is not active
+
+Run `kxm completion install` for the detected shell, or pass
+`--shell bash|zsh|fish` explicitly. The install appends one guarded stanza to
+the shell rc file and is idempotent: rerunning never duplicates it. Fish needs
+no rc entry because fish auto-loads `~/.config/fish/completions`. After
+installing, start a new terminal or `source` the rc file. To inspect without
+writing, use `--dry-run`; to suppress the post-`kxm init` offer, set
+`KXM_SKIP_COMPLETION_PROMPT=1`.
+
 ### An expected peer is missing
 
 The two agents usually have different `KXM_PROJECT` values or one stopped sending heartbeats. Compare settings and check for an `agent_stale` event. Names and projects are case-sensitive for display; live-name uniqueness is case-insensitive.

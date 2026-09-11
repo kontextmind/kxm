@@ -104,6 +104,7 @@ import {
   formatKxmConfig,
 } from "./config.ts";
 import { generateShellCompletion, type SupportedShell } from "./autocomplete.ts";
+import { completionRcTarget, completionScriptPath, detectShell, installPathEntry, installShellCompletion, kxmBinDir } from "./completion-install.ts";
 import { suggestWorkflowAndRoles } from "./suggest.ts";
 import {
   createGoal,
@@ -629,9 +630,11 @@ async function cmdVnextInit(runtime: Runtime, options: { name?: string; projectI
       return code;
     };
     if (initialized.action === "created") {
+      await maybeOfferCompletionInstall(runtime);
       return finishInit(0, `initialized vNext project at ${initialized.projectRoot ?? runtime.cwd}`);
     }
     if (initialized.action === "joined") {
+      await maybeOfferCompletionInstall(runtime);
       return finishInit(0, `joined vNext project at ${initialized.projectRoot ?? runtime.cwd}`);
     }
     if (initialized.action === "repaired") {
@@ -2447,6 +2450,127 @@ async function cmdCompletion(runtime: Runtime, shell: string): Promise<number> {
     runtime.io.stderr(`completion generation failed: ${message}\n`);
     return 1;
   }
+}
+
+async function cmdCompletionInstall(
+  runtime: Runtime,
+  options: { shell?: string; path?: boolean },
+): Promise<number> {
+  const installOptions = {
+    env: runtime.env,
+    configDir: runtime.env.KXM_USER_CONFIG_DIR,
+    platform: process.platform as NodeJS.Platform,
+    dryRun: runtime.dryRun,
+  };
+  const report = installShellCompletion(options.shell, installOptions);
+  const pathReport = options.path === false ? undefined : installPathEntry(options.shell, installOptions);
+  if (!report.ok) {
+    print(runtime.io, runtime.json, {
+      ok: false,
+      command: "completion install",
+      error: report.reason ?? "shell_not_detected",
+    }, "could not detect your shell; pass --shell bash, zsh, or fish");
+    return 1;
+  }
+  const shellNote = report.shell;
+  const applyNote = runtime.dryRun
+    ? "planned; rerun without --dry-run to apply"
+    : report.alreadyInstalled
+      ? "already installed"
+      : "installed; restart your shell or open a new terminal to activate";
+  const pathNote = pathReport
+    ? pathReport.ok
+      ? runtime.dryRun
+        ? `; PATH entry for ${pathReport.binDir} planned`
+        : pathReport.alreadyInstalled
+          ? "; kxm already on PATH"
+          : `; PATH entry for ${pathReport.binDir} added to ${pathReport.rcFile}`
+      : undefined
+    : undefined;
+  print(runtime.io, runtime.json, {
+    ok: true,
+    command: "completion install",
+    shell: shellNote,
+    scriptPath: report.scriptPath,
+    ...(report.rcFile ? { rcFile: report.rcFile } : {}),
+    rcModified: report.rcModified,
+    alreadyInstalled: report.alreadyInstalled,
+    ...(pathReport ? { path: pathReport } : {}),
+    dryRun: runtime.dryRun === true,
+  }, `kxm ${shellNote} completion: ${applyNote}${report.rcFile ? ` (rc: ${report.rcFile})` : ""}${pathNote ?? ""}`);
+  return 0;
+}
+
+async function maybeOfferCompletionInstall(runtime: Runtime): Promise<void> {
+  if (runtime.json || runtime.dryRun) return;
+  if (!process.stdin.isTTY || !process.stdout.isTTY) return;
+  if (runtime.env.KXM_SKIP_COMPLETION_PROMPT?.trim()) return;
+  const shell = detectShell(runtime.env, process.platform);
+  if (shell !== "bash" && shell !== "zsh" && shell !== "fish") return;
+  const binDir = kxmBinDir(runtime.env);
+  const pathNeeded = shell !== "fish" && binDir && !(runtime.env.PATH ?? "").split(":").includes(binDir);
+  if (!pathNeeded) {
+    // completion-only offer; skip when already wired
+    const scriptPath = completionScriptPath(shell, { env: runtime.env, configDir: runtime.env.KXM_USER_CONFIG_DIR });
+    const { rcFile } = completionRcTarget(shell, { env: runtime.env });
+    if (rcFile && existsSync(rcFile)) {
+      try {
+        if (readFileSync(rcFile, "utf8").includes(scriptPath)) return; // already wired
+      } catch {
+        // unreadable rc: still offer
+      }
+    }
+  }
+  const question = pathNeeded
+    ? `\nInstall ${shell} tab completion for kxm and add ${binDir} to PATH? [Y/n] `
+    : `\nInstall ${shell} tab completion for kxm? [y/N] `;
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  await new Promise<void>((resolvePrompt) => {
+    rl.question(question, (answer) => {
+      rl.close();
+      const trimmed = answer.trim().toLowerCase();
+      const accept = pathNeeded ? trimmed !== "n" && trimmed !== "no" : trimmed === "y" || trimmed === "yes";
+      if (accept) {
+        try {
+          const report = installShellCompletion(shell, {
+            env: runtime.env,
+            configDir: runtime.env.KXM_USER_CONFIG_DIR,
+            platform: process.platform,
+          });
+          if (report.ok) {
+            runtime.io.stdout(`completion installed for ${report.shell}`);
+          } else {
+            runtime.io.stdout(`completion install skipped: ${report.reason ?? "unknown"}\n`);
+            resolvePrompt();
+            return;
+          }
+        } catch {
+          runtime.io.stdout("completion install skipped: local filesystem operation did not complete\n");
+          resolvePrompt();
+          return;
+        }
+        if (pathNeeded && binDir) {
+          try {
+            const pathReport = installPathEntry(shell, {
+              env: runtime.env,
+              configDir: runtime.env.KXM_USER_CONFIG_DIR,
+              platform: process.platform,
+              binDir,
+            });
+            runtime.io.stdout(pathReport.ok && pathReport.rcModified
+              ? `; ${binDir} added to PATH in ${pathReport.rcFile}`
+              : "; kxm already on PATH");
+          } catch {
+            runtime.io.stdout("; PATH entry skipped: local filesystem operation did not complete");
+          }
+        }
+        runtime.io.stdout("; restart your shell or open a new terminal to activate\n");
+      } else {
+        runtime.io.stdout("skipped; run `kxm completion install` anytime\n");
+      }
+      resolvePrompt();
+    });
+  });
 }
 
 async function cmdSuggest(runtime: Runtime, promptParts: string[]): Promise<number> {
@@ -4876,9 +5000,24 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
       result.code = await cmdConfigList(runtimeFrom(ctx, this));
     });
 
-  addGlobalOptions(program.command("completion <shell>").description("Generate shell completion script (bash, zsh, fish)"))
-    .action(async function completionAction(this: Command, shell: string) {
+  const completionCmd = addGlobalOptions(program.command("completion [shell]").description("Generate shell completion script, or install it into the current shell")).action(async function completionAction(this: Command, shell?: string) {
+    if (shell && shell !== "install") {
       result.code = await cmdCompletion(runtimeFrom(ctx, this), shell);
+      return;
+    }
+    if (shell === "install") {
+      result.code = await cmdCompletionInstall(runtimeFrom(ctx, this), this.opts<{ shell?: string; path?: boolean }>());
+      return;
+    }
+    ctx.io.stderr("usage: kxm completion <bash|zsh|fish> | kxm completion install [--shell <shell>] [--no-path]\n");
+    result.code = 2;
+  });
+  completionCmd.helpCommand("help", "Show completion help");
+  addGlobalOptions(completionCmd.command("install").description("Install tab completion for the detected or given shell and ensure kxm is on PATH"))
+    .option("--shell <shell>", "Shell to install for (bash, zsh, fish; default: detect from $SHELL)")
+    .option("--no-path", "Only install completion; do not add a PATH entry")
+    .action(async function completionInstallAction(this: Command, options: { shell?: string; path?: boolean }) {
+      result.code = await cmdCompletionInstall(runtimeFrom(ctx, this), options);
     });
 
   addGlobalOptions(program.command("suggest <prompt...>").description("Recommend workflow, area, roles, and skills from a prompt or issue description"))
