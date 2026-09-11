@@ -2,6 +2,8 @@
 
 KXM turns verified episodes and lessons into reusable Agent Skills through a governed lifecycle. Runtime experience never becomes promoted skill content automatically, and promoted skills never grant tool or permission authority.
 
+This page is the governed `kxm skills` lifecycle. For the bundled command-suite skills, see [Agent Skills](agent-skills.md). For converting a repository request into a delivery prompt, see [Repository work delivery](skills/repo-work-delivery.md).
+
 ## Lifecycle
 
 ```text

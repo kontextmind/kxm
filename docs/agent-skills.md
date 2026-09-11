@@ -89,7 +89,10 @@ The skills in this suite (`kxm-*`) are bundled and operational by default. They 
 
 Separately, `kxm skills` manages community or experimental candidates through
 create/evaluate/promote/reject/verify. Those governed skills are distinct from
-this bundled suite. Telemetry cannot auto-promote a skill.
+this bundled suite. Telemetry cannot auto-promote a skill. See
+[Skill candidate lifecycle](skills.md) for the full lifecycle, and
+[Repository work delivery](skills/repo-work-delivery.md) for converting a
+repository request into a delivery prompt.
 
 ## Development and Maintenance
 

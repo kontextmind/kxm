@@ -279,7 +279,7 @@ See [Webhook workflows](webhook-workflows.md) for the base schema and the comple
 | `steer` | An active blocker requires a course change | Deliver at the next decision boundary |
 | `nextTurn` | Information should wait for a later turn | Queue context without immediate work |
 
-`followUp` is the safe default. Use [`.kxm/env.example`](../ .kxm/env.example) as a reference, but load values through your shell, supervisor, container platform, or secret manager. Never commit real tokens.
+`followUp` is the safe default. Load values through your shell, supervisor, container platform, or secret manager using the variables documented on this page and in the [KXM Handbook](kxm-handbook.md). Never commit real tokens.
 
 ## Nous providers (opt-in)
 
