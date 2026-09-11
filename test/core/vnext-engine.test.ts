@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +10,7 @@ import { removeTempDir } from "../helpers.ts";
 import { engineProject } from "../helpers/vnext-project.ts";
 import { loadVnextProject, parseRestrictedYaml, validateRunEvent } from "../../plugins/kxm/src/vnext-config.ts";
 import { compileVnextWorkflow } from "../../plugins/kxm/src/vnext-engine-compile.ts";
+import { setModelState, updateProducer } from "../../plugins/kxm/src/producers.ts";
 import { FOLD_PANEL_BOUND, foldVnextRunState, vnextJoinAll } from "../../plugins/kxm/src/vnext-engine-fold.ts";
 import {
   hashVnextRunPlanEnvelope,
@@ -2809,6 +2810,177 @@ steps:
       const events = context.eventStore.events(accepted.run.runId, 0, 100);
       const assignmentCreated = events.filter((e) => e.eventType === "assignment.created");
       assert.equal(assignmentCreated.length, 0);
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("admission: agent without model returns handoff before birth", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-adm-no-model-");
+  try {
+    writeFileSync(join(root, ".kxm", "agents", "no-model-agent.yaml"), `schema: kxm.agent.v1
+purpose: Test agent without model
+harness: grok
+tools:
+  preset: read-only
+defaultRepositoryAccess: none
+network: provider-only
+resultSchema: kxm.assignment-result.v1
+`);
+    writeFileSync(join(root, ".kxm", "workflows", "no-model-flow.yaml"), `schema: kxm.workflow.v1
+description: Test flow
+coordinator: coordinator
+limits:
+  maxTransitions: 2
+steps:
+  - id: step1
+    kind: agent
+    agent: no-model-agent
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: $terminal
+        terminalStatus: failed
+`);
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "no-model-flow", prompt: "Test no model" });
+      pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+
+      const liveProducer = {
+        id: "oneshot" as const,
+        async produce() {
+          return { outcome: "passed" as const, costBasis: "unmetered" as const, latencyMs: 10 };
+        },
+      };
+      registerTrustedProducer(liveProducer as never);
+
+      const result = await driveVnextRun(context, accepted.run.runId, liveProducer as never);
+      assert.equal(result.handoff?.reason, "step_unsupported");
+      assert.equal(result.handoff?.field, "model");
+
+      const events = context.eventStore.events(accepted.run.runId, 0, 100);
+      assert.equal(events.filter((e) => e.eventType === "assignment.created").length, 0);
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("admission: demoted selector returns handoff before birth", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-adm-demoted-");
+  try {
+    // implementer has model xai/grok-4.6 in engineProject; explicitly demote it
+    updateProducer(root, "xai/grok-4.6", "demoted");
+
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "one-step", prompt: "Test demoted" });
+      pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+
+      const liveProducer = {
+        id: "oneshot" as const,
+        async produce() {
+          return { outcome: "passed" as const, costBasis: "unmetered" as const, latencyMs: 10 };
+        },
+      };
+      registerTrustedProducer(liveProducer as never);
+
+      const result = await driveVnextRun(context, accepted.run.runId, liveProducer as never);
+      assert.equal(result.handoff?.reason, "step_unsupported");
+      assert.equal(result.handoff?.field, "model");
+
+      const events = context.eventStore.events(accepted.run.runId, 0, 100);
+      assert.equal(events.filter((e) => e.eventType === "assignment.created").length, 0);
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("admission: role roster excludes model returns handoff before birth", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-adm-roster-");
+  try {
+    // Promote and enable model in producer policy
+    setModelState(root, "xai/grok-4.6", "enabled");
+    updateProducer(root, "xai/grok-4.6", "promoted");
+    // But write writer role roster without xai/grok-4.6
+    mkdirSync(join(root, ".kxm", "roles"), { recursive: true });
+    writeFileSync(join(root, ".kxm", "roles", "writer.yaml"), `schema: kxm.role.v1
+id: writer
+roster:
+  - model: other-provider/other-model
+    enabled: true
+`);
+
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "one-step", prompt: "Test roster exclusion" });
+      pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+
+      const liveProducer = {
+        id: "oneshot" as const,
+        async produce() {
+          return { outcome: "passed" as const, costBasis: "unmetered" as const, latencyMs: 10 };
+        },
+      };
+      registerTrustedProducer(liveProducer as never);
+
+      const result = await driveVnextRun(context, accepted.run.runId, liveProducer as never);
+      assert.equal(result.handoff?.reason, "step_unsupported");
+      assert.equal(result.handoff?.field, "model");
+
+      const events = context.eventStore.events(accepted.run.runId, 0, 100);
+      assert.equal(events.filter((e) => e.eventType === "assignment.created").length, 0);
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("admission: admitted route records producerId oneshot in capability row", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-adm-cap-oneshot-");
+  try {
+    // Ensure xai/grok-4.6 is enabled, promoted, and in writer roster
+    setModelState(root, "xai/grok-4.6", "enabled", "writer");
+    updateProducer(root, "xai/grok-4.6", "promoted");
+
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "one-step", prompt: "Test capability oneshot" });
+      pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+
+      const liveProducer = {
+        id: "oneshot" as const,
+        async produce() {
+          return { outcome: "passed" as const, costBasis: "unmetered" as const, latencyMs: 10 };
+        },
+      };
+      registerTrustedProducer(liveProducer as never);
+
+      const result = await driveVnextRun(context, accepted.run.runId, liveProducer as never);
+      assert.equal(result.state.status, "completed");
+
+      const db = new DatabaseSync(context.eventStore.path);
+      const row = db.prepare("SELECT producer_id FROM attempt_capabilities WHERE run_id = ?").get(accepted.run.runId) as { producer_id: string } | undefined;
+      db.close();
+
+      assert.equal(row?.producer_id, "oneshot");
     } finally {
       closeVnextRuntimeContext(context);
     }

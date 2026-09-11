@@ -1,4 +1,8 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { parse } from "yaml";
+import { isProducerAdmitted, listRoleBindings } from "./producers.ts";
 import {
   buildFormalContextPacket,
   buildHandoffManifest,
@@ -140,7 +144,7 @@ export interface VnextProducerResult {
 }
 
 export interface VnextProducer {
-  readonly id: "driver-simulated" | "pi" | "oneshot" | string;
+  readonly id: "driver-simulated" | "pi" | "oneshot";
   produce(request: VnextProducerRequest): Promise<VnextProducerResult>;
 }
 
@@ -888,6 +892,79 @@ function unreconciledPanelAttemptId(state: VnextRunState): string | undefined {
   return undefined;
 }
 
+function resolveProducerRoute(
+  projectRoot: string,
+  step: VnextCompiledStep,
+  agentId: string,
+): { provider: string; model: string; selector: string } | { error: Omit<VnextRunHandoff, "stepId"> } {
+  let agentModel: string | undefined;
+  const agentFile = join(projectRoot, ".kxm", "agents", `${agentId}.yaml`);
+  if (existsSync(agentFile)) {
+    try {
+      const parsed = parse(readFileSync(agentFile, "utf8")) as Record<string, unknown>;
+      if (typeof parsed?.model === "string") {
+        agentModel = parsed.model;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  let selector = typeof step.model === "string" ? step.model : agentModel;
+  if (!selector) {
+    if (agentId === "implementer") {
+      selector = "xai/grok-4.6";
+    }
+  }
+  if (!selector) {
+    return {
+      error: {
+        reason: "step_unsupported",
+        field: "model",
+        detail: "producer_route_unsupported: agent or step has no model declared",
+      },
+    };
+  }
+
+  const slash = selector.indexOf("/");
+  if (slash <= 0 || slash === selector.length - 1) {
+    return {
+      error: {
+        reason: "step_unsupported",
+        field: "model",
+        detail: `producer_route_unsupported: invalid selector '${selector}'`,
+      },
+    };
+  }
+
+  if (!isProducerAdmitted(projectRoot, selector)) {
+    return {
+      error: {
+        reason: "step_unsupported",
+        field: "model",
+        detail: `producer_route_unsupported: model '${selector}' is not admitted`,
+      },
+    };
+  }
+
+  const role = agentId === "implementer" ? "writer" : agentId;
+  const roleBindings = listRoleBindings(projectRoot);
+  const roster = roleBindings[role];
+  if (roster && !roster.includes(selector)) {
+    return {
+      error: {
+        reason: "step_unsupported",
+        field: "model",
+        detail: `producer_route_unsupported: model '${selector}' not in role '${role}' roster`,
+      },
+    };
+  }
+
+  const provider = selector.slice(0, slash);
+  const model = selector.slice(slash + 1);
+  return { provider, model, selector };
+}
+
 function prepareDispatch(
   context: VnextRuntimeContext,
   runId: string,
@@ -1028,6 +1105,20 @@ function prepareDispatch(
 
   const unsupported = unsupportedStep(plan, step, producerId);
   if (unsupported) return { kind: "return", state, handoff: { ...unsupported, stepId } };
+
+  let resolvedRoute: { provider: string; model: string; selector: string } | undefined;
+  if (producerId !== "driver-simulated") {
+    const allowed = step.assignments.allowedAgents;
+    const agentId = (allowed && allowed.length > 0 && allowed[0])
+      ? allowed[0]!
+      : (step.kind === "agent" || step.kind === "moa" ? step.agent : "coordinator");
+    const routeResult = resolveProducerRoute(context.projectRoot, step, agentId);
+    if ("error" in routeResult) {
+      return { kind: "return", state, handoff: { ...routeResult.error, stepId } };
+    }
+    resolvedRoute = routeResult;
+  }
+
   const used = state.stepAttempts[stepId] ?? 0;
   if (used >= step.maxAttempts) {
     return { kind: "return", ...failBudget(context, run, plan, state, "budget_step_attempts", stepId) };
@@ -1060,6 +1151,7 @@ function prepareDispatch(
     stepAttempt,
     enterRunning: true,
     producerId,
+    resolvedRoute,
   });
   return {
     kind: "panel",
@@ -1118,6 +1210,7 @@ function birthMember(
     stepAttempt: number;
     enterRunning?: boolean | undefined;
     producerId?: ("driver-simulated" | "pi" | string) | undefined;
+    resolvedRoute?: { provider: string; model: string; selector: string } | undefined;
   },
 ): PreparedDispatch {
   const run = requireRun(context, input.run.runId);
@@ -1141,6 +1234,13 @@ function birthMember(
   const agentId = (allowed && allowed.length > born && allowed[born])
     ? allowed[born]!
     : (input.step.kind === "agent" || input.step.kind === "moa" ? input.step.agent : "coordinator");
+  let resolvedRoute = input.resolvedRoute;
+  if (!resolvedRoute && input.producerId && input.producerId !== "driver-simulated") {
+    const routeResult = resolveProducerRoute(context.projectRoot, input.step, agentId);
+    if (!("error" in routeResult)) {
+      resolvedRoute = routeResult;
+    }
+  }
   const assignmentId = newVnextAssignmentId();
   const attemptId = newVnextAttemptId();
   const minted = mintCapabilitySecret();
@@ -1162,7 +1262,12 @@ function birthMember(
   push("assignment.created", { assignmentId, stepId: input.stepId, stepAttempt: input.stepAttempt, agentId, status: "created" });
   push("assignment.accepted", { assignmentId, status: "accepted" });
   push("attempt.created", { attemptId, assignmentId, status: "created" });
-  push("assignment.dispatched", { assignmentId, capabilityHash: minted.hash, status: "dispatched" });
+  push("assignment.dispatched", {
+    assignmentId,
+    capabilityHash: minted.hash,
+    status: "dispatched",
+    ...(resolvedRoute ? { model: { provider: resolvedRoute.provider, model: resolvedRoute.model } } : {}),
+  });
   push("attempt.status_changed", { attemptId, status: "starting" });
   if (input.enterRunning) {
     push("step.status_changed", { stepId: input.stepId, status: "running", previousStatus: "preparing" });
@@ -1233,6 +1338,7 @@ function birthMember(
       prompt: input.step.instructions ? `${input.step.instructions}\n\n${generatedPrompt}` : generatedPrompt,
       thinking: input.stepAttempt <= 1 ? "low" : "medium",
       contextPacket,
+      ...(resolvedRoute ? { provider: resolvedRoute.provider, model: resolvedRoute.model } : {}),
     },
     controller,
     state: next,
