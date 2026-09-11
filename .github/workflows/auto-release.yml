@@ -1,19 +1,15 @@
 name: Auto-Release
 
-# Two-phase auto-release on PR merge to main:
-#
-# Phase 1 (regular PR merge): Creates a version bump branch + PR, auto-merges it.
-# Phase 2 (version bump PR merge): Tags the merge commit and pushes the tag,
-#   which triggers release.yml to draft the GitHub release and publish to npm.
+# Single-phase auto-release: on PR merge to main, compute the next patch
+# version from the latest git tag, then create and push a new tag on the
+# merge commit. The tag push triggers release.yml which syncs all package
+# surfaces to the tag version, validates, packs, and publishes to npm.
 #
 # Skip conditions:
 #   - PR labeled "no-release"
-#   - PR head branch starts with "chore/release-auto-" and is NOT the one we created
-#     (prevents infinite loops from manually created release branches)
+#   - PR head branch starts with "chore/release-" (release chore PRs)
 #
-# Required secrets:
-#   - KXM_RELEASE_TOKEN: A PAT with contents:write and pull-requests:write.
-#     GITHUB_TOKEN cannot trigger downstream workflows or bypass branch protection.
+# Uses only GITHUB_TOKEN — no PAT required.
 
 on:
   pull_request:
@@ -22,198 +18,74 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
 
 concurrency:
   group: auto-release-main
   cancel-in-progress: false
 
 jobs:
-  auto-release:
-    name: Auto-release on merge
+  tag-release:
+    name: Tag next release
     if: github.event.pull_request.merged == true
     runs-on: kontextmind-doks
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          token: ${{ secrets.KXM_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
-
-      - name: Use Node.js 22.19.0
-        uses: actions/setup-node@v7
-        with:
-          node-version: 22.19.0
-          cache: npm
 
       - name: Classify merge
         id: classify
         env:
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
           HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
           MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
           set -euo pipefail
 
-          # Skip if labeled no-release
           if echo "$PR_LABELS" | grep -q '"no-release"'; then
-            echo "action=skip" >> "$GITHUB_OUTPUT"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "Skipping: PR labeled no-release"
             exit 0
           fi
 
-          # Phase 2: This is a version bump PR merge — tag it
-          if echo "$HEAD_BRANCH" | grep -qE '^chore/release-auto-'; then
-            echo "action=tag" >> "$GITHUB_OUTPUT"
-            echo "merge_sha=$MERGE_SHA" >> "$GITHUB_OUTPUT"
-            echo "Version bump PR merged; will tag"
+          if echo "$HEAD_BRANCH" | grep -qE '^chore/release-'; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Skipping: release chore branch"
             exit 0
           fi
 
-          # Phase 1: Regular PR merge — create version bump PR
-          echo "action=bump" >> "$GITHUB_OUTPUT"
-          echo "Regular PR merged; will create version bump PR"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "merge_sha=$MERGE_SHA" >> "$GITHUB_OUTPUT"
 
-      # ── Phase 1: Create version bump PR ──────────────────────────────
-
-      - name: Install locked dependencies
-        if: steps.classify.outputs.action == 'bump'
-        run: npm ci
-
-      - name: Bump patch version
-        if: steps.classify.outputs.action == 'bump'
-        id: bump
-        run: |
-          set -euo pipefail
-          old_version=$(node -p "require('./package.json').version")
-          node scripts/kxm-bump-version.mjs patch
-          new_version=$(node -p "require('./package.json').version")
-          echo "old=$old_version" >> "$GITHUB_OUTPUT"
-          echo "new=$new_version" >> "$GITHUB_OUTPUT"
-          echo "tag=v$new_version" >> "$GITHUB_OUTPUT"
-          echo "Bumped $old_version -> $new_version"
-
-      - name: Rebuild generated artifacts
-        if: steps.classify.outputs.action == 'bump'
-        run: npm run build
-
-      - name: Verify all version surfaces
-        if: steps.classify.outputs.action == 'bump'
-        run: npm run check:versions
-
-      - name: Create version bump branch and PR
-        if: steps.classify.outputs.action == 'bump'
-        env:
-          GH_TOKEN: ${{ secrets.KXM_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          NEW_VERSION: ${{ steps.bump.outputs.new }}
-          OLD_VERSION: ${{ steps.bump.outputs.old }}
-          TAG: ${{ steps.bump.outputs.tag }}
-          SOURCE_PR: ${{ github.event.pull_request.number }}
-        run: |
-          set -euo pipefail
-          export BRANCH="chore/release-auto-${NEW_VERSION}"
-
-          git config user.name "kxm-release[bot]"
-          git config user.email "kxm-release[bot]@users.noreply.github.com"
-
-          # Delete stale remote branch from a previous failed run
-          git push origin --delete "$BRANCH" 2>/dev/null || true
-
-          git checkout -b "$BRANCH"
-          git add -A
-          git commit -m "chore(release): bump version to ${NEW_VERSION}
-
-          Auto-release after PR #${SOURCE_PR}.
-          Tag ${TAG} will be created on merge."
-          git push -u origin "$BRANCH"
-
-          # Create PR + enable auto-merge via GitHub API (gh CLI not on runner)
-          node -e "
-            const repo = process.env.REPO;
-            const token = process.env.GH_TOKEN;
-            const branch = process.env.BRANCH;
-            const version = process.env.NEW_VERSION;
-            const sourcePr = process.env.SOURCE_PR;
-            const tag = process.env.TAG;
-            const headers = {
-              Authorization: \`Bearer \${token}\`,
-              Accept: 'application/vnd.github+json',
-              'Content-Type': 'application/json',
-              'User-Agent': 'kxm-auto-release',
-            };
-            async function api(path, method = 'GET', body) {
-              const res = await fetch(\`https://api.github.com/repos/\${repo}\${path}\`, {
-                method, headers, body: body ? JSON.stringify(body) : undefined,
-              });
-              const text = await res.text();
-              let data; try { data = JSON.parse(text); } catch { data = text; }
-              return { status: res.status, data };
-            }
-            async function main() {
-              // Create PR
-              const pr = await api('/pulls', 'POST', {
-                title: \`chore(release): bump version to \${version}\`,
-                body: \`Auto-release version bump after PR #\${sourcePr}.\\n\\nWhen this merges, tag \\\`\${tag}\\\` will be created and the release workflow will publish to npm.\`,
-                head: branch,
-                base: 'main',
-              });
-              if (pr.status !== 201) throw new Error(\`PR create failed: \${pr.status} \${JSON.stringify(pr.data)}\`);
-              const prNumber = pr.data.number;
-              console.log(\`Created PR #\${prNumber}\`);
-
-              // Enable auto-merge (squash)
-              const mergeRes = await api(\`/pulls/\${prNumber}/merge\`, 'PUT', {
-                merge_method: 'squash',
-              });
-              if (mergeRes.status === 200) {
-                console.log(\`PR #\${prNumber} merged immediately\`);
-              } else {
-                // Enable auto-merge via GraphQL (REST doesn't support it directly)
-                const nodeId = pr.data.node_id;
-                const gql = await fetch('https://api.github.com/graphql', {
-                  method: 'POST',
-                  headers,
-                  body: JSON.stringify({
-                    query: \`mutation { enablePullRequestAutoMerge(input: {pullRequestId: \"\${nodeId}\", mergeMethod: SQUASH}) { pullRequest { number autoMergeRequest { enabledAt } } } }\`,
-                  }),
-                });
-                const gqlData = await gql.json();
-                if (gqlData.errors) {
-                  console.log(\`Auto-merge setup: \${JSON.stringify(gqlData.errors)}\`);
-                } else {
-                  console.log(\`Auto-merge enabled for PR #\${prNumber}\`);
-                }
-              }
-            }
-            main().catch(e => { console.error(e.message); process.exit(1); });
-          "
-
-          echo "Created and queued auto-merge for version bump PR: $BRANCH"
-
-      # ── Phase 2: Tag the merged version bump ─────────────────────────
-
-      - name: Read version from merged main
-        if: steps.classify.outputs.action == 'tag'
+      - name: Compute next version from latest tag
+        if: steps.classify.outputs.skip == 'false'
         id: version
         run: |
           set -euo pipefail
-          version=$(node -p "require('./package.json').version")
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=v$version" >> "$GITHUB_OUTPUT"
-          echo "Will tag v$version"
+          latest=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+          if [ -z "$latest" ]; then
+            echo "No existing semver tag found; starting at v0.1.0"
+            next="0.1.0"
+          else
+            current="${latest#v}"
+            IFS='.' read -r major minor patch <<< "$current"
+            next="${major}.${minor}.$((patch + 1))"
+          fi
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          echo "next=$next" >> "$GITHUB_OUTPUT"
+          echo "tag=v$next" >> "$GITHUB_OUTPUT"
+          echo "Next version: $next (from $latest)"
 
       - name: Create and push tag
-        if: steps.classify.outputs.action == 'tag'
+        if: steps.classify.outputs.skip == 'false'
         env:
           TAG: ${{ steps.version.outputs.tag }}
           MERGE_SHA: ${{ steps.classify.outputs.merge_sha }}
         run: |
           set -euo pipefail
 
-          # Verify tag doesn't already exist
           if git rev-parse "$TAG" >/dev/null 2>&1; then
             echo "Tag $TAG already exists; skipping"
             exit 0
@@ -222,7 +94,6 @@ jobs:
           git config user.name "kxm-release[bot]"
           git config user.email "kxm-release[bot]@users.noreply.github.com"
 
-          # Tag the merge commit from the version bump PR
           git tag -a "$TAG" -m "release: $TAG" "$MERGE_SHA"
           git push origin "$TAG"
-          echo "Pushed tag $TAG at $MERGE_SHA"
+          echo "Tagged $TAG at $MERGE_SHA"
