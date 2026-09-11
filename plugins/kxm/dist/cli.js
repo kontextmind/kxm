@@ -113,17 +113,17 @@ var require_visit = __commonJS({
     visit2.BREAK = BREAK;
     visit2.SKIP = SKIP;
     visit2.REMOVE = REMOVE;
-    function visit_(key, node, visitor, path5) {
-      const ctrl = callVisitor(key, node, visitor, path5);
+    function visit_(key, node, visitor, path4) {
+      const ctrl = callVisitor(key, node, visitor, path4);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path5, ctrl);
-        return visit_(key, ctrl, visitor, path5);
+        replaceNode(key, path4, ctrl);
+        return visit_(key, ctrl, visitor, path4);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path5 = Object.freeze(path5.concat(node));
+          path4 = Object.freeze(path4.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = visit_(i, node.items[i], visitor, path5);
+            const ci = visit_(i, node.items[i], visitor, path4);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -134,13 +134,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path5 = Object.freeze(path5.concat(node));
-          const ck = visit_("key", node.key, visitor, path5);
+          path4 = Object.freeze(path4.concat(node));
+          const ck = visit_("key", node.key, visitor, path4);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = visit_("value", node.value, visitor, path5);
+          const cv = visit_("value", node.value, visitor, path4);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -161,17 +161,17 @@ var require_visit = __commonJS({
     visitAsync.BREAK = BREAK;
     visitAsync.SKIP = SKIP;
     visitAsync.REMOVE = REMOVE;
-    async function visitAsync_(key, node, visitor, path5) {
-      const ctrl = await callVisitor(key, node, visitor, path5);
+    async function visitAsync_(key, node, visitor, path4) {
+      const ctrl = await callVisitor(key, node, visitor, path4);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path5, ctrl);
-        return visitAsync_(key, ctrl, visitor, path5);
+        replaceNode(key, path4, ctrl);
+        return visitAsync_(key, ctrl, visitor, path4);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path5 = Object.freeze(path5.concat(node));
+          path4 = Object.freeze(path4.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = await visitAsync_(i, node.items[i], visitor, path5);
+            const ci = await visitAsync_(i, node.items[i], visitor, path4);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -182,13 +182,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path5 = Object.freeze(path5.concat(node));
-          const ck = await visitAsync_("key", node.key, visitor, path5);
+          path4 = Object.freeze(path4.concat(node));
+          const ck = await visitAsync_("key", node.key, visitor, path4);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = await visitAsync_("value", node.value, visitor, path5);
+          const cv = await visitAsync_("value", node.value, visitor, path4);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -215,23 +215,23 @@ var require_visit = __commonJS({
       }
       return visitor;
     }
-    function callVisitor(key, node, visitor, path5) {
+    function callVisitor(key, node, visitor, path4) {
       if (typeof visitor === "function")
-        return visitor(key, node, path5);
+        return visitor(key, node, path4);
       if (identity.isMap(node))
-        return visitor.Map?.(key, node, path5);
+        return visitor.Map?.(key, node, path4);
       if (identity.isSeq(node))
-        return visitor.Seq?.(key, node, path5);
+        return visitor.Seq?.(key, node, path4);
       if (identity.isPair(node))
-        return visitor.Pair?.(key, node, path5);
+        return visitor.Pair?.(key, node, path4);
       if (identity.isScalar(node))
-        return visitor.Scalar?.(key, node, path5);
+        return visitor.Scalar?.(key, node, path4);
       if (identity.isAlias(node))
-        return visitor.Alias?.(key, node, path5);
+        return visitor.Alias?.(key, node, path4);
       return void 0;
     }
-    function replaceNode(key, path5, node) {
-      const parent = path5[path5.length - 1];
+    function replaceNode(key, path4, node) {
+      const parent = path4[path4.length - 1];
       if (identity.isCollection(parent)) {
         parent.items[key] = node;
       } else if (identity.isPair(parent)) {
@@ -841,10 +841,10 @@ var require_Collection = __commonJS({
     var createNode = require_createNode();
     var identity = require_identity();
     var Node = require_Node();
-    function collectionFromPath(schema, path5, value) {
+    function collectionFromPath(schema, path4, value) {
       let v2 = value;
-      for (let i = path5.length - 1; i >= 0; --i) {
-        const k = path5[i];
+      for (let i = path4.length - 1; i >= 0; --i) {
+        const k = path4[i];
         if (typeof k === "number" && Number.isInteger(k) && k >= 0) {
           const a = [];
           a[k] = v2;
@@ -863,7 +863,7 @@ var require_Collection = __commonJS({
         sourceObjects: /* @__PURE__ */ new Map()
       });
     }
-    var isEmptyPath = (path5) => path5 == null || typeof path5 === "object" && !!path5[Symbol.iterator]().next().done;
+    var isEmptyPath = (path4) => path4 == null || typeof path4 === "object" && !!path4[Symbol.iterator]().next().done;
     var Collection = class extends Node.NodeBase {
       constructor(type, schema) {
         super(type);
@@ -893,11 +893,11 @@ var require_Collection = __commonJS({
        * be a Pair instance or a `{ key, value }` object, which may not have a key
        * that already exists in the map.
        */
-      addIn(path5, value) {
-        if (isEmptyPath(path5))
+      addIn(path4, value) {
+        if (isEmptyPath(path4))
           this.add(value);
         else {
-          const [key, ...rest] = path5;
+          const [key, ...rest] = path4;
           const node = this.get(key, true);
           if (identity.isCollection(node))
             node.addIn(rest, value);
@@ -911,8 +911,8 @@ var require_Collection = __commonJS({
        * Removes a value from the collection.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path5) {
-        const [key, ...rest] = path5;
+      deleteIn(path4) {
+        const [key, ...rest] = path4;
         if (rest.length === 0)
           return this.delete(key);
         const node = this.get(key, true);
@@ -926,8 +926,8 @@ var require_Collection = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path5, keepScalar) {
-        const [key, ...rest] = path5;
+      getIn(path4, keepScalar) {
+        const [key, ...rest] = path4;
         const node = this.get(key, true);
         if (rest.length === 0)
           return !keepScalar && identity.isScalar(node) ? node.value : node;
@@ -945,8 +945,8 @@ var require_Collection = __commonJS({
       /**
        * Checks if the collection includes a value with the key `key`.
        */
-      hasIn(path5) {
-        const [key, ...rest] = path5;
+      hasIn(path4) {
+        const [key, ...rest] = path4;
         if (rest.length === 0)
           return this.has(key);
         const node = this.get(key, true);
@@ -956,8 +956,8 @@ var require_Collection = __commonJS({
        * Sets a value in this collection. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path5, value) {
-        const [key, ...rest] = path5;
+      setIn(path4, value) {
+        const [key, ...rest] = path4;
         if (rest.length === 0) {
           this.set(key, value);
         } else {
@@ -3472,9 +3472,9 @@ var require_Document = __commonJS({
           this.contents.add(value);
       }
       /** Adds a value to the document. */
-      addIn(path5, value) {
+      addIn(path4, value) {
         if (assertCollection(this.contents))
-          this.contents.addIn(path5, value);
+          this.contents.addIn(path4, value);
       }
       /**
        * Create a new `Alias` node, ensuring that the target `node` has the required anchor.
@@ -3549,14 +3549,14 @@ var require_Document = __commonJS({
        * Removes a value from the document.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path5) {
-        if (Collection.isEmptyPath(path5)) {
+      deleteIn(path4) {
+        if (Collection.isEmptyPath(path4)) {
           if (this.contents == null)
             return false;
           this.contents = null;
           return true;
         }
-        return assertCollection(this.contents) ? this.contents.deleteIn(path5) : false;
+        return assertCollection(this.contents) ? this.contents.deleteIn(path4) : false;
       }
       /**
        * Returns item at `key`, or `undefined` if not found. By default unwraps
@@ -3571,10 +3571,10 @@ var require_Document = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path5, keepScalar) {
-        if (Collection.isEmptyPath(path5))
+      getIn(path4, keepScalar) {
+        if (Collection.isEmptyPath(path4))
           return !keepScalar && identity.isScalar(this.contents) ? this.contents.value : this.contents;
-        return identity.isCollection(this.contents) ? this.contents.getIn(path5, keepScalar) : void 0;
+        return identity.isCollection(this.contents) ? this.contents.getIn(path4, keepScalar) : void 0;
       }
       /**
        * Checks if the document includes a value with the key `key`.
@@ -3585,10 +3585,10 @@ var require_Document = __commonJS({
       /**
        * Checks if the document includes a value at `path`.
        */
-      hasIn(path5) {
-        if (Collection.isEmptyPath(path5))
+      hasIn(path4) {
+        if (Collection.isEmptyPath(path4))
           return this.contents !== void 0;
-        return identity.isCollection(this.contents) ? this.contents.hasIn(path5) : false;
+        return identity.isCollection(this.contents) ? this.contents.hasIn(path4) : false;
       }
       /**
        * Sets a value in this document. For `!!set`, `value` needs to be a
@@ -3605,13 +3605,13 @@ var require_Document = __commonJS({
        * Sets a value in this document. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path5, value) {
-        if (Collection.isEmptyPath(path5)) {
+      setIn(path4, value) {
+        if (Collection.isEmptyPath(path4)) {
           this.contents = value;
         } else if (this.contents == null) {
-          this.contents = Collection.collectionFromPath(this.schema, Array.from(path5), value);
+          this.contents = Collection.collectionFromPath(this.schema, Array.from(path4), value);
         } else if (assertCollection(this.contents)) {
-          this.contents.setIn(path5, value);
+          this.contents.setIn(path4, value);
         }
       }
       /**
@@ -5571,9 +5571,9 @@ var require_cst_visit = __commonJS({
     visit2.BREAK = BREAK;
     visit2.SKIP = SKIP;
     visit2.REMOVE = REMOVE;
-    visit2.itemAtPath = (cst, path5) => {
+    visit2.itemAtPath = (cst, path4) => {
       let item = cst;
-      for (const [field, index] of path5) {
+      for (const [field, index] of path4) {
         const tok = item?.[field];
         if (tok && "items" in tok) {
           item = tok.items[index];
@@ -5582,23 +5582,23 @@ var require_cst_visit = __commonJS({
       }
       return item;
     };
-    visit2.parentCollection = (cst, path5) => {
-      const parent = visit2.itemAtPath(cst, path5.slice(0, -1));
-      const field = path5[path5.length - 1][0];
+    visit2.parentCollection = (cst, path4) => {
+      const parent = visit2.itemAtPath(cst, path4.slice(0, -1));
+      const field = path4[path4.length - 1][0];
       const coll = parent?.[field];
       if (coll && "items" in coll)
         return coll;
       throw new Error("Parent collection not found");
     };
-    function _visit(path5, item, visitor) {
-      let ctrl = visitor(item, path5);
+    function _visit(path4, item, visitor) {
+      let ctrl = visitor(item, path4);
       if (typeof ctrl === "symbol")
         return ctrl;
       for (const field of ["key", "value"]) {
         const token = item[field];
         if (token && "items" in token) {
           for (let i = 0; i < token.items.length; ++i) {
-            const ci = _visit(Object.freeze(path5.concat([[field, i]])), token.items[i], visitor);
+            const ci = _visit(Object.freeze(path4.concat([[field, i]])), token.items[i], visitor);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -5609,10 +5609,10 @@ var require_cst_visit = __commonJS({
             }
           }
           if (typeof ctrl === "function" && field === "key")
-            ctrl = ctrl(item, path5);
+            ctrl = ctrl(item, path4);
         }
       }
-      return typeof ctrl === "function" ? ctrl(item, path5) : ctrl;
+      return typeof ctrl === "function" ? ctrl(item, path4) : ctrl;
     }
     exports.visit = visit2;
   }
@@ -10591,8 +10591,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path5) {
-      let input = path5;
+    function removeDotSegments(path4) {
+      let input = path4;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -10997,8 +10997,8 @@ var require_schemes = __commonJS({
       }
       if (wsComponent.resourceName) {
         const queryIndex = wsComponent.resourceName.indexOf("?");
-        const path5 = queryIndex === -1 ? wsComponent.resourceName : wsComponent.resourceName.slice(0, queryIndex);
-        wsComponent.path = path5 && path5 !== "/" ? path5 : void 0;
+        const path4 = queryIndex === -1 ? wsComponent.resourceName : wsComponent.resourceName.slice(0, queryIndex);
+        wsComponent.path = path4 && path4 !== "/" ? path4 : void 0;
         wsComponent.query = queryIndex === -1 ? void 0 : wsComponent.resourceName.slice(queryIndex + 1);
         wsComponent.resourceName = void 0;
       }
@@ -14779,8 +14779,8 @@ var require__ = __commonJS({
 import { spawn as spawn2, spawnSync as spawnSync8 } from "node:child_process";
 import { createHash as createHash15, createHmac as createHmac3, randomUUID as randomUUID11 } from "node:crypto";
 import { existsSync as existsSync28, mkdirSync as mkdirSync26, mkdtempSync as mkdtempSync2, readFileSync as readFileSync26, readdirSync as readdirSync11, rmSync as rmSync10, writeFileSync as writeFileSync23 } from "node:fs";
-import { homedir as homedir7, tmpdir as tmpdir2 } from "node:os";
-import { basename as basename6, dirname as dirname19, join as join35, relative as relative6, resolve as resolve21 } from "node:path";
+import { homedir as homedir6, tmpdir as tmpdir2 } from "node:os";
+import { basename as basename6, dirname as dirname19, join as join34, relative as relative6, resolve as resolve21 } from "node:path";
 import { DatabaseSync as DatabaseSync5 } from "node:sqlite";
 import { createInterface } from "node:readline";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
@@ -17896,9 +17896,9 @@ Expecting one of '${allowedValues.join("', '")}'`);
    * @param {string} [path]
    * @return {(string|null|Command)}
    */
-  executableDir(path5) {
-    if (path5 === void 0) return this._executableDir;
-    this._executableDir = path5;
+  executableDir(path4) {
+    if (path4 === void 0) return this._executableDir;
+    this._executableDir = path4;
     return this;
   }
   /**
@@ -18554,23 +18554,23 @@ function decodeUtf8(input, label) {
 function isJsonObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
-function assertJsonValue(value, label, path5 = "$", seen = /* @__PURE__ */ new Set()) {
+function assertJsonValue(value, label, path4 = "$", seen = /* @__PURE__ */ new Set()) {
   if (value === null || typeof value === "string" || typeof value === "boolean") return;
   if (typeof value === "number") {
-    if (!Number.isFinite(value)) fail("parse", "non_json_number", label, `${path5} is not a finite JSON number`);
+    if (!Number.isFinite(value)) fail("parse", "non_json_number", label, `${path4} is not a finite JSON number`);
     return;
   }
-  if (!value || typeof value !== "object") fail("parse", "non_json_value", label, `${path5} is not JSON-compatible`);
-  if (seen.has(value)) fail("parse", "cyclic_value", label, `${path5} is cyclic`);
+  if (!value || typeof value !== "object") fail("parse", "non_json_value", label, `${path4} is not JSON-compatible`);
+  if (seen.has(value)) fail("parse", "cyclic_value", label, `${path4} is cyclic`);
   seen.add(value);
   if (Array.isArray(value)) {
-    for (const [index, candidate] of value.entries()) assertJsonValue(candidate, label, `${path5}[${index}]`, seen);
+    for (const [index, candidate] of value.entries()) assertJsonValue(candidate, label, `${path4}[${index}]`, seen);
   } else {
     const prototype = Object.getPrototypeOf(value);
     if (prototype !== Object.prototype && prototype !== null) {
-      fail("parse", "constructed_object", label, `${path5} has a forbidden constructed type`);
+      fail("parse", "constructed_object", label, `${path4} has a forbidden constructed type`);
     }
-    for (const [key, candidate] of Object.entries(value)) assertJsonValue(candidate, label, `${path5}.${key}`, seen);
+    for (const [key, candidate] of Object.entries(value)) assertJsonValue(candidate, label, `${path4}.${key}`, seen);
   }
   seen.delete(value);
 }
@@ -18593,10 +18593,10 @@ function parseRestrictedYaml(input, label = "<yaml>", limits = VNEXT_YAML_LIMITS
   }
   let nodes = 0;
   let keys = 0;
-  (0, import_yaml2.visit)(document, (_key, node, path5) => {
+  (0, import_yaml2.visit)(document, (_key, node, path4) => {
     nodes += 1;
     if (nodes > limits.maxTotalNodes) fail("parse", "node_limit", label, `document exceeds ${limits.maxTotalNodes} nodes`);
-    if (path5.length > limits.maxDepth) fail("parse", "depth_limit", label, `document exceeds nesting depth ${limits.maxDepth}`);
+    if (path4.length > limits.maxDepth) fail("parse", "depth_limit", label, `document exceeds nesting depth ${limits.maxDepth}`);
     if ((0, import_yaml2.isAlias)(node)) fail("parse", "alias_forbidden", label, "aliases are forbidden");
     if (node && typeof node === "object" && "anchor" in node && typeof node.anchor === "string") {
       fail("parse", "anchor_forbidden", label, "anchors are forbidden");
@@ -18781,11 +18781,11 @@ function provenanceRevision(files) {
 function renderVnextTemplate(projectId, projectName, variant = CURRENT_VNEXT_TEMPLATE_VARIANT) {
   const values = coreTemplate(projectId, projectName, variant);
   const coreFiles = /* @__PURE__ */ new Map();
-  const records = [...values.entries()].map(([path5, value]) => {
+  const records = [...values.entries()].map(([path4, value]) => {
     const bytes = Buffer.from((0, import_yaml3.stringify)(value, { lineWidth: 0 }), "utf8");
-    coreFiles.set(path5, bytes);
+    coreFiles.set(path4, bytes);
     return {
-      path: path5,
+      path: path4,
       sha256: vnextContentSha256(bytes),
       authoritySha256: vnextAuthoritySha256(value),
       bytes: bytes.byteLength
@@ -19840,8 +19840,8 @@ function schemaIssue(file, error) {
   const suffix = error.params && "additionalProperty" in error.params ? ` (${String(error.params.additionalProperty)})` : "";
   return issue2("schema", `schema_${error.keyword}`, file, `${location} ${error.message ?? "is invalid"}${suffix}`);
 }
-function canonicalHostPath(path5) {
-  const resolved = resolve2(path5);
+function canonicalHostPath(path4) {
+  const resolved = resolve2(path4);
   try {
     return realpathSync.native(resolved);
   } catch {
@@ -19854,8 +19854,8 @@ function sameHostPath(left, right) {
   return process.platform === "win32" ? resolvedLeft.toLocaleLowerCase("en-US") === resolvedRight.toLocaleLowerCase("en-US") : resolvedLeft === resolvedRight;
 }
 function containedHostPath(root, candidate) {
-  const path5 = relative(root, candidate);
-  return path5 === "" || !isAbsolute(path5) && path5 !== ".." && !path5.startsWith(`..${sep}`);
+  const path4 = relative(root, candidate);
+  return path4 === "" || !isAbsolute(path4) && path4 !== ".." && !path4.startsWith(`..${sep}`);
 }
 function portableBindingIssue(root, pathHint, repositoryId) {
   let current = root;
@@ -19877,13 +19877,13 @@ function portableBindingIssue(root, pathHint, repositoryId) {
   }
   return void 0;
 }
-function vnextPortablePath(path5) {
-  return portablePath(path5);
+function vnextPortablePath(path4) {
+  return portablePath(path4);
 }
-function portablePath(path5) {
-  if (path5 === ".") return true;
-  if (path5.includes("\\") || path5.startsWith("/") || /^[A-Za-z]:/.test(path5) || /[<>:"|?*\u0000-\u001F]/.test(path5)) return false;
-  const segments = path5.split("/");
+function portablePath(path4) {
+  if (path4 === ".") return true;
+  if (path4.includes("\\") || path4.startsWith("/") || /^[A-Za-z]:/.test(path4) || /[<>:"|?*\u0000-\u001F]/.test(path4)) return false;
+  const segments = path4.split("/");
   return segments.every((segment) => segment.length > 0 && segment !== "." && segment !== ".." && !WINDOWS_RESERVED.test((segment.split(".")[0] ?? segment).replace(/[ .]+$/g, "")) && !segment.endsWith(".") && !segment.endsWith(" ") && !segment.includes(":"));
 }
 function vnextResourceIdentifier(id) {
@@ -19954,17 +19954,17 @@ function readTemplateProvenance(registry, root) {
   let managedBytes = 0;
   for (const candidate of files) {
     const record = objectValue(candidate);
-    const path5 = record && stringValue(record.path);
-    if (!path5) continue;
+    const path4 = record && stringValue(record.path);
+    if (!path4) continue;
     managedBytes += typeof record.bytes === "number" ? record.bytes : 0;
-    const folded = path5.toLocaleLowerCase("en-US");
-    if (!path5.startsWith(".kxm/") || path5 === label || !portablePath(path5)) {
-      fail2("path", "template_provenance_path_invalid", label, `managed path ${path5} is not a portable project-configuration path`);
+    const folded = path4.toLocaleLowerCase("en-US");
+    if (!path4.startsWith(".kxm/") || path4 === label || !portablePath(path4)) {
+      fail2("path", "template_provenance_path_invalid", label, `managed path ${path4} is not a portable project-configuration path`);
     }
-    if (seen.has(folded)) fail2("path", "template_provenance_path_collision", label, `managed path ${path5} collides after case folding`);
-    if (prior && compareCodeUnits3(prior, path5) >= 0) fail2("semantic", "template_provenance_order_invalid", label, "managed file entries must use strict code-unit order");
+    if (seen.has(folded)) fail2("path", "template_provenance_path_collision", label, `managed path ${path4} collides after case folding`);
+    if (prior && compareCodeUnits3(prior, path4) >= 0) fail2("semantic", "template_provenance_order_invalid", label, "managed file entries must use strict code-unit order");
     seen.add(folded);
-    prior = path5;
+    prior = path4;
   }
   if (managedBytes > 8 * 1024 * 1024) {
     fail2("parse", "template_provenance_bounds_exceeded", label, "managed template manifest exceeds 8388608 bytes");
@@ -20048,10 +20048,10 @@ function validatePortablePaths(resource, issues) {
     }
   }
   if (resource.kind === "environment") {
-    const path5 = objectValue(resource.value.path);
-    if (path5) {
+    const path4 = objectValue(resource.value.path);
+    if (path4) {
       for (const field of ["prepend", "append"]) {
-        for (const candidate of names(path5[field])) candidates.push({ path: candidate, label: `path.${field}[]` });
+        for (const candidate of names(path4[field])) candidates.push({ path: candidate, label: `path.${field}[]` });
       }
     }
   }
@@ -20323,8 +20323,8 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
       const writable = Object.values(objectValue(step.repositories) ?? {}).filter((access) => access === "write").length;
       if (maxWriteRepositories > writable) issues.push(issue2("semantic", "write_repository_bound_invalid", file, `${stepId} maxWriteRepositories exceeds writable repository scope`));
     }
-    const join36 = objectValue(step.join);
-    const minimumPassed = join36 && typeof join36.minimumPassed === "number" ? join36.minimumPassed : void 0;
+    const join35 = objectValue(step.join);
+    const minimumPassed = join35 && typeof join35.minimumPassed === "number" ? join35.minimumPassed : void 0;
     if (minimumPassed !== void 0 && minimumPassed > maximum) issues.push(issue2("semantic", "join_impossible", file, `${stepId} minimumPassed exceeds assignment maximum`));
     const distinctBy = names(assignment?.distinctBy);
     if (distinctBy.length > 0) {
@@ -20450,9 +20450,9 @@ function validateModelReferences(models, issues) {
   }
   const visiting = /* @__PURE__ */ new Set();
   const visited = /* @__PURE__ */ new Set();
-  const walk = (id, path5) => {
+  const walk = (id, path4) => {
     if (visiting.has(id)) {
-      issues.push(issue2("semantic", "model_fallback_cycle", models.get(id)?.logicalPath ?? ".kxm/models", `fallback profile cycle: ${[...path5, id].join(" -> ")}`));
+      issues.push(issue2("semantic", "model_fallback_cycle", models.get(id)?.logicalPath ?? ".kxm/models", `fallback profile cycle: ${[...path4, id].join(" -> ")}`));
       return;
     }
     if (visited.has(id)) return;
@@ -20461,7 +20461,7 @@ function validateModelReferences(models, issues) {
     if (model) {
       for (const fallback of valuesOf(model.value, "fallbacks")) {
         const profile = stringValue(objectValue(fallback)?.profile);
-        if (profile && models.has(profile)) walk(profile, [...path5, id]);
+        if (profile && models.has(profile)) walk(profile, [...path4, id]);
       }
     }
     visiting.delete(id);
@@ -20766,9 +20766,9 @@ function verifyVnextMigrationReceiptTarget(root, receipt, resources, configRevis
       issues.push(issue2("semantic", "migration_target_modified", relative7, "installed resource bytes differ from the migration receipt"));
     }
   }
-  for (const path5 of declared.keys()) {
-    if (!installedPaths.has(path5)) {
-      issues.push(issue2("semantic", "migration_target_missing", path5, "receipt-covered resource is not part of the validated configuration"));
+  for (const path4 of declared.keys()) {
+    if (!installedPaths.has(path4)) {
+      issues.push(issue2("semantic", "migration_target_missing", path4, "receipt-covered resource is not part of the validated configuration"));
     }
   }
   return sortIssues2(issues);
@@ -20920,8 +20920,8 @@ function databaseError(code, file, message) {
   const issue3 = { phase: "semantic", code, file, message };
   return new VnextConfigError([issue3]);
 }
-function checkedParent(path5, description) {
-  const parent = dirname3(path5);
+function checkedParent(path4, description) {
+  const parent = dirname3(path4);
   if (!existsSync4(parent)) mkdirSync2(parent, { recursive: true, mode: 448 });
   const stat = lstatSync2(parent, { throwIfNoEntry: false });
   if (!stat || stat.isSymbolicLink() || !stat.isDirectory()) {
@@ -23176,9 +23176,9 @@ function inferImprovementTarget(input) {
   const workflowId = (input.workflowId ?? "").trim();
   return project || workflowId ? "project" : "cli";
 }
-function appendTelemetry(path5, event) {
-  mkdirSync6(dirname4(path5), { recursive: true });
-  appendFileSync(path5, `${JSON.stringify(event)}
+function appendTelemetry(path4, event) {
+  mkdirSync6(dirname4(path4), { recursive: true });
+  appendFileSync(path4, `${JSON.stringify(event)}
 `, { encoding: "utf8", mode: 384 });
 }
 function telemetryPath(logsDir) {
@@ -23194,10 +23194,10 @@ function makeTelemetryEvent(input) {
     ...input.sessionId ? { sessionId: input.sessionId } : {}
   };
 }
-function readRoutingRecords(path5) {
+function readRoutingRecords(path4) {
   const records = [];
   try {
-    const raw = readFileSync5(path5, "utf8");
+    const raw = readFileSync5(path4, "utf8");
     for (const line of raw.split(/\r?\n/)) {
       if (!line.trim()) continue;
       try {
@@ -23451,9 +23451,9 @@ import { existsSync as existsSync7, readFileSync as readFileSync7, mkdirSync as 
 import { join as join9 } from "node:path";
 var empty = () => ({ schema: "kxm.producers.v1", updatedAt: (/* @__PURE__ */ new Date()).toISOString(), promoted: [], demoted: [], enabled: [], disabled: [], roles: {} });
 function loadProducerPolicy(root) {
-  const path5 = join9(root, ".kxm", "producers.yaml");
-  if (!existsSync7(path5)) return empty();
-  const value = (0, import_yaml7.parse)(readFileSync7(path5, "utf8"));
+  const path4 = join9(root, ".kxm", "producers.yaml");
+  if (!existsSync7(path4)) return empty();
+  const value = (0, import_yaml7.parse)(readFileSync7(path4, "utf8"));
   if (value?.schema !== "kxm.producers.v1" || !Array.isArray(value.promoted) || !Array.isArray(value.demoted)) throw new Error("invalid .kxm/producers.yaml");
   return { schema: "kxm.producers.v1", updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : (/* @__PURE__ */ new Date()).toISOString(), promoted: value.promoted.filter((x2) => typeof x2 === "string"), demoted: value.demoted.filter((x2) => typeof x2 === "string"), enabled: Array.isArray(value.enabled) ? value.enabled.filter((x2) => typeof x2 === "string") : [], disabled: Array.isArray(value.disabled) ? value.disabled.filter((x2) => typeof x2 === "string") : [], roles: value.roles && typeof value.roles === "object" ? Object.fromEntries(Object.entries(value.roles).filter(([, v2]) => Array.isArray(v2)).map(([k, v2]) => [k, v2.filter((x2) => typeof x2 === "string")])) : {} };
 }
@@ -23508,9 +23508,9 @@ function listRoleBindings(root) {
   return result;
 }
 function listInventoryModels(root) {
-  const path5 = join9(root, ".kxm", "models", "inventory.yaml");
-  if (!existsSync7(path5)) return [];
-  const value = (0, import_yaml7.parse)(readFileSync7(path5, "utf8"));
+  const path4 = join9(root, ".kxm", "models", "inventory.yaml");
+  if (!existsSync7(path4)) return [];
+  const value = (0, import_yaml7.parse)(readFileSync7(path4, "utf8"));
   return (value.models ?? []).map((m2) => m2.id).filter((id) => typeof id === "string");
 }
 
@@ -23581,8 +23581,8 @@ function workerFromRosterRow(name, row, project) {
 function loadRosterMap(configDir) {
   const byName = /* @__PURE__ */ new Map();
   for (const [file, key] of [["agents.json", "agents"], ["gates.json", "gates"]]) {
-    const path5 = join10(configDir, file);
-    for (const row of loadRoster(path5, key)) {
+    const path4 = join10(configDir, file);
+    for (const row of loadRoster(path4, key)) {
       const name = String(row.name).trim();
       const lowered = name.toLowerCase();
       if (byName.has(lowered)) {
@@ -23594,30 +23594,30 @@ function loadRosterMap(configDir) {
   }
   return byName;
 }
-function loadRoster(path5, key) {
-  if (!existsSync8(path5)) return [];
+function loadRoster(path4, key) {
+  if (!existsSync8(path4)) return [];
   let parsed;
   try {
-    parsed = JSON.parse(readFileSync8(path5, "utf8"));
+    parsed = JSON.parse(readFileSync8(path4, "utf8"));
   } catch (error) {
     throw new SessionConfigError(
-      `${key} roster at ${path5} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`
+      `${key} roster at ${path4} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`
     );
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new SessionConfigError(`${key} roster at ${path5} must be a JSON object`);
+    throw new SessionConfigError(`${key} roster at ${path4} must be a JSON object`);
   }
   const list = parsed[key];
   if (!Array.isArray(list)) {
-    throw new SessionConfigError(`${key} roster at ${path5} must contain a "${key}" array`);
+    throw new SessionConfigError(`${key} roster at ${path4} must contain a "${key}" array`);
   }
   return list.map((row, index) => {
     if (!row || typeof row !== "object" || Array.isArray(row)) {
-      throw new SessionConfigError(`${key} roster entry ${index} at ${path5} must be an object`);
+      throw new SessionConfigError(`${key} roster entry ${index} at ${path4} must be an object`);
     }
     const record = row;
     if (typeof record.name !== "string" || !record.name.trim()) {
-      throw new SessionConfigError(`${key} roster entry ${index} at ${path5} must have a non-empty name`);
+      throw new SessionConfigError(`${key} roster entry ${index} at ${path4} must have a non-empty name`);
     }
     return record;
   });
@@ -23637,13 +23637,13 @@ function createSession(input) {
 }
 function writeSession(assetsDir, session, dryRun = false) {
   const dir = join10(assetsDir, "sessions", session.id);
-  const path5 = join10(dir, "session.json");
+  const path4 = join10(dir, "session.json");
   if (!dryRun) {
     mkdirSync9(dir, { recursive: true });
-    writeFileSync8(path5, `${JSON.stringify(session, null, 2)}
+    writeFileSync8(path4, `${JSON.stringify(session, null, 2)}
 `, { encoding: "utf8" });
   }
-  return path5;
+  return path4;
 }
 
 // plugins/kxm/src/improve.ts
@@ -23875,13 +23875,13 @@ function buildImprovementReport(records, options = {}) {
 }
 function writeImprovementReport(improvementsDir, report2, dryRun = false) {
   const stamp = report2.createdAt.replace(/[:.]/g, "-");
-  const path5 = join11(improvementsDir, `${stamp}.json`);
+  const path4 = join11(improvementsDir, `${stamp}.json`);
   if (!dryRun) {
     mkdirSync10(improvementsDir, { recursive: true });
-    writeFileSync9(path5, `${JSON.stringify(report2, null, 2)}
+    writeFileSync9(path4, `${JSON.stringify(report2, null, 2)}
 `, { encoding: "utf8" });
   }
-  return path5;
+  return path4;
 }
 function formatImprovementReport(report2) {
   const lines = [
@@ -25155,1173 +25155,8 @@ var Xt = g.parseInline;
 var Vt = b.parse;
 var Yt = x.lex;
 
-// node_modules/get-east-asian-width/lookup-data.js
-var ambiguousMinimalCodePoint = 161;
-var ambiguousMaximumCodePoint = 1114109;
-var ambiguousRanges = [161, 161, 164, 164, 167, 168, 170, 170, 173, 174, 176, 180, 182, 186, 188, 191, 198, 198, 208, 208, 215, 216, 222, 225, 230, 230, 232, 234, 236, 237, 240, 240, 242, 243, 247, 250, 252, 252, 254, 254, 257, 257, 273, 273, 275, 275, 283, 283, 294, 295, 299, 299, 305, 307, 312, 312, 319, 322, 324, 324, 328, 331, 333, 333, 338, 339, 358, 359, 363, 363, 462, 462, 464, 464, 466, 466, 468, 468, 470, 470, 472, 472, 474, 474, 476, 476, 593, 593, 609, 609, 708, 708, 711, 711, 713, 715, 717, 717, 720, 720, 728, 731, 733, 733, 735, 735, 768, 879, 913, 929, 931, 937, 945, 961, 963, 969, 1025, 1025, 1040, 1103, 1105, 1105, 8208, 8208, 8211, 8214, 8216, 8217, 8220, 8221, 8224, 8226, 8228, 8231, 8240, 8240, 8242, 8243, 8245, 8245, 8251, 8251, 8254, 8254, 8308, 8308, 8319, 8319, 8321, 8324, 8364, 8364, 8451, 8451, 8453, 8453, 8457, 8457, 8467, 8467, 8470, 8470, 8481, 8482, 8486, 8486, 8491, 8491, 8531, 8532, 8539, 8542, 8544, 8555, 8560, 8569, 8585, 8585, 8592, 8601, 8632, 8633, 8658, 8658, 8660, 8660, 8679, 8679, 8704, 8704, 8706, 8707, 8711, 8712, 8715, 8715, 8719, 8719, 8721, 8721, 8725, 8725, 8730, 8730, 8733, 8736, 8739, 8739, 8741, 8741, 8743, 8748, 8750, 8750, 8756, 8759, 8764, 8765, 8776, 8776, 8780, 8780, 8786, 8786, 8800, 8801, 8804, 8807, 8810, 8811, 8814, 8815, 8834, 8835, 8838, 8839, 8853, 8853, 8857, 8857, 8869, 8869, 8895, 8895, 8978, 8978, 9312, 9449, 9451, 9547, 9552, 9587, 9600, 9615, 9618, 9621, 9632, 9633, 9635, 9641, 9650, 9651, 9654, 9655, 9660, 9661, 9664, 9665, 9670, 9672, 9675, 9675, 9678, 9681, 9698, 9701, 9711, 9711, 9733, 9734, 9737, 9737, 9742, 9743, 9756, 9756, 9758, 9758, 9792, 9792, 9794, 9794, 9824, 9825, 9827, 9829, 9831, 9834, 9836, 9837, 9839, 9839, 9886, 9887, 9919, 9919, 9926, 9933, 9935, 9939, 9941, 9953, 9955, 9955, 9960, 9961, 9963, 9969, 9972, 9972, 9974, 9977, 9979, 9980, 9982, 9983, 10045, 10045, 10102, 10111, 11094, 11097, 12872, 12879, 57344, 63743, 65024, 65039, 65533, 65533, 127232, 127242, 127248, 127277, 127280, 127337, 127344, 127373, 127375, 127376, 127387, 127404, 917760, 917999, 983040, 1048573, 1048576, 1114109];
-var fullwidthMinimalCodePoint = 12288;
-var fullwidthMaximumCodePoint = 65510;
-var fullwidthRanges = [12288, 12288, 65281, 65376, 65504, 65510];
-var wideMinimalCodePoint = 4352;
-var wideMaximumCodePoint = 262141;
-var wideRanges = [4352, 4447, 8986, 8987, 9001, 9002, 9193, 9196, 9200, 9200, 9203, 9203, 9725, 9726, 9748, 9749, 9776, 9783, 9800, 9811, 9855, 9855, 9866, 9871, 9875, 9875, 9889, 9889, 9898, 9899, 9917, 9918, 9924, 9925, 9934, 9934, 9940, 9940, 9962, 9962, 9970, 9971, 9973, 9973, 9978, 9978, 9981, 9981, 9989, 9989, 9994, 9995, 10024, 10024, 10060, 10060, 10062, 10062, 10067, 10069, 10071, 10071, 10133, 10135, 10160, 10160, 10175, 10175, 11035, 11036, 11088, 11088, 11093, 11093, 11904, 11929, 11931, 12019, 12032, 12245, 12272, 12287, 12289, 12350, 12353, 12438, 12441, 12543, 12549, 12591, 12593, 12686, 12688, 12773, 12783, 12830, 12832, 12871, 12880, 42124, 42128, 42182, 43360, 43388, 44032, 55203, 63744, 64255, 65040, 65049, 65072, 65106, 65108, 65126, 65128, 65131, 94176, 94180, 94192, 94198, 94208, 101589, 101631, 101662, 101760, 101874, 110576, 110579, 110581, 110587, 110589, 110590, 110592, 110882, 110898, 110898, 110928, 110930, 110933, 110933, 110948, 110951, 110960, 111355, 119552, 119638, 119648, 119670, 126980, 126980, 127183, 127183, 127374, 127374, 127377, 127386, 127488, 127490, 127504, 127547, 127552, 127560, 127568, 127569, 127584, 127589, 127744, 127776, 127789, 127797, 127799, 127868, 127870, 127891, 127904, 127946, 127951, 127955, 127968, 127984, 127988, 127988, 127992, 128062, 128064, 128064, 128066, 128252, 128255, 128317, 128331, 128334, 128336, 128359, 128378, 128378, 128405, 128406, 128420, 128420, 128507, 128591, 128640, 128709, 128716, 128716, 128720, 128722, 128725, 128728, 128732, 128735, 128747, 128748, 128756, 128764, 128992, 129003, 129008, 129008, 129292, 129338, 129340, 129349, 129351, 129535, 129648, 129660, 129664, 129674, 129678, 129734, 129736, 129736, 129741, 129756, 129759, 129770, 129775, 129784, 131072, 196605, 196608, 262141];
-
-// node_modules/get-east-asian-width/utilities.js
-var isInRange = (ranges, codePoint) => {
-  let low = 0;
-  let high = Math.floor(ranges.length / 2) - 1;
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2);
-    const i = mid * 2;
-    if (codePoint < ranges[i]) {
-      high = mid - 1;
-    } else if (codePoint > ranges[i + 1]) {
-      low = mid + 1;
-    } else {
-      return true;
-    }
-  }
-  return false;
-};
-
-// node_modules/get-east-asian-width/lookup.js
-var commonCjkCodePoint = 19968;
-var [wideFastPathStart, wideFastPathEnd] = /* @__PURE__ */ findWideFastPathRange(wideRanges);
-function findWideFastPathRange(ranges) {
-  let fastPathStart = ranges[0];
-  let fastPathEnd = ranges[1];
-  for (let index = 0; index < ranges.length; index += 2) {
-    const start = ranges[index];
-    const end = ranges[index + 1];
-    if (commonCjkCodePoint >= start && commonCjkCodePoint <= end) {
-      return [start, end];
-    }
-    if (end - start > fastPathEnd - fastPathStart) {
-      fastPathStart = start;
-      fastPathEnd = end;
-    }
-  }
-  return [fastPathStart, fastPathEnd];
-}
-var isAmbiguous = (codePoint) => {
-  if (codePoint < ambiguousMinimalCodePoint || codePoint > ambiguousMaximumCodePoint) {
-    return false;
-  }
-  return isInRange(ambiguousRanges, codePoint);
-};
-var isFullWidth = (codePoint) => {
-  if (codePoint < fullwidthMinimalCodePoint || codePoint > fullwidthMaximumCodePoint) {
-    return false;
-  }
-  return isInRange(fullwidthRanges, codePoint);
-};
-var isWide = (codePoint) => {
-  if (codePoint >= wideFastPathStart && codePoint <= wideFastPathEnd) {
-    return true;
-  }
-  if (codePoint < wideMinimalCodePoint || codePoint > wideMaximumCodePoint) {
-    return false;
-  }
-  return isInRange(wideRanges, codePoint);
-};
-
-// node_modules/get-east-asian-width/index.js
-function validate(codePoint) {
-  if (!Number.isSafeInteger(codePoint)) {
-    throw new TypeError(`Expected a code point, got \`${typeof codePoint}\`.`);
-  }
-}
-function eastAsianWidth(codePoint, { ambiguousAsWide = false } = {}) {
-  validate(codePoint);
-  if (isFullWidth(codePoint) || isWide(codePoint) || ambiguousAsWide && isAmbiguous(codePoint)) {
-    return 2;
-  }
-  return 1;
-}
-
-// node_modules/@earendil-works/pi-tui/dist/utils.js
-var graphemeSegmenter = new Intl.Segmenter(void 0, { granularity: "grapheme" });
-var wordSegmenter = new Intl.Segmenter(void 0, { granularity: "word" });
-function getGraphemeSegmenter() {
-  return graphemeSegmenter;
-}
-function getWordSegmenter() {
-  return wordSegmenter;
-}
-function couldBeEmoji(segment) {
-  const cp = segment.codePointAt(0);
-  return cp >= 126976 && cp <= 130047 || // Emoji and Pictograph
-  cp >= 8960 && cp <= 9215 || // Misc technical
-  cp >= 9728 && cp <= 10175 || // Misc symbols, dingbats
-  cp >= 11088 && cp <= 11093 || // Specific stars/circles
-  segment.includes("\uFE0F") || // Contains VS16 (emoji presentation selector)
-  segment.length > 2;
-}
-var zeroWidthRegex = new RegExp("^(?:\\p{Default_Ignorable_Code_Point}|\\p{Control}|\\p{Mark}|\\p{Surrogate})+$", "v");
-var leadingNonPrintingRegex = new RegExp("^[\\p{Default_Ignorable_Code_Point}\\p{Control}\\p{Format}\\p{Mark}\\p{Surrogate}]+", "v");
-var nonPrintingCharRegex = new RegExp("^(?:\\p{Default_Ignorable_Code_Point}|\\p{Control}|\\p{Format}|\\p{Mark}|\\p{Surrogate})$", "v");
-var markCharRegex = new RegExp("^\\p{Mark}$", "v");
-var terminalSpacingMarkRegex = new RegExp("^(?:[\\p{Spacing_Mark}--[\\u1734\\u302E\\u302F]]|[\\u065F\\u0F7F\\u102B\\u102C\\u1031\\u1033-\\u1035\\u1038\\u103A-\\u103E])+$", "v");
-var rgiEmojiRegex = new RegExp("^\\p{RGI_Emoji}$", "v");
-var WIDTH_CACHE_SIZE = 512;
-var widthCache = /* @__PURE__ */ new Map();
-var cjkBreakRegex = /[\p{Script_Extensions=Han}\p{Script_Extensions=Hiragana}\p{Script_Extensions=Katakana}\p{Script_Extensions=Hangul}\p{Script_Extensions=Bopomofo}]/u;
-function isPrintableAscii(str) {
-  for (let i = 0; i < str.length; i++) {
-    const code = str.charCodeAt(i);
-    if (code < 32 || code > 126) {
-      return false;
-    }
-  }
-  return true;
-}
-function truncateFragmentToWidth(text, maxWidth) {
-  if (maxWidth <= 0 || text.length === 0) {
-    return { text: "", width: 0 };
-  }
-  if (isPrintableAscii(text)) {
-    const clipped = text.slice(0, maxWidth);
-    return { text: clipped, width: clipped.length };
-  }
-  const hasAnsi = text.includes("\x1B");
-  const hasTabs = text.includes("	");
-  if (!hasAnsi && !hasTabs) {
-    let result2 = "";
-    let width2 = 0;
-    for (const { segment } of graphemeSegmenter.segment(text)) {
-      const w2 = graphemeWidth(segment);
-      if (width2 + w2 > maxWidth) {
-        break;
-      }
-      result2 += segment;
-      width2 += w2;
-    }
-    return { text: result2, width: width2 };
-  }
-  let result = "";
-  let width = 0;
-  let i = 0;
-  let pendingAnsi = "";
-  while (i < text.length) {
-    const ansi = extractAnsiCode(text, i);
-    if (ansi) {
-      pendingAnsi += ansi.code;
-      i += ansi.length;
-      continue;
-    }
-    if (text[i] === "	") {
-      if (width + 3 > maxWidth) {
-        break;
-      }
-      if (pendingAnsi) {
-        result += pendingAnsi;
-        pendingAnsi = "";
-      }
-      result += "	";
-      width += 3;
-      i++;
-      continue;
-    }
-    let end = i;
-    while (end < text.length && text[end] !== "	") {
-      const nextAnsi = extractAnsiCode(text, end);
-      if (nextAnsi) {
-        break;
-      }
-      end++;
-    }
-    for (const { segment } of graphemeSegmenter.segment(text.slice(i, end))) {
-      const w2 = graphemeWidth(segment);
-      if (width + w2 > maxWidth) {
-        return { text: result, width };
-      }
-      if (pendingAnsi) {
-        result += pendingAnsi;
-        pendingAnsi = "";
-      }
-      result += segment;
-      width += w2;
-    }
-    i = end;
-  }
-  return { text: result, width };
-}
-function finalizeTruncatedResult(prefix, prefixWidth, ellipsis, ellipsisWidth, maxWidth, pad2) {
-  const reset = "\x1B[0m";
-  const hyperlinkClose = getActiveOsc8Close(prefix);
-  const visibleWidth2 = prefixWidth + ellipsisWidth;
-  let result;
-  if (ellipsis.length > 0) {
-    result = `${prefix}${hyperlinkClose}${reset}${ellipsis}${reset}`;
-  } else {
-    result = `${prefix}${hyperlinkClose}${reset}`;
-  }
-  return pad2 ? result + " ".repeat(Math.max(0, maxWidth - visibleWidth2)) : result;
-}
-function graphemeWidth(segment) {
-  if (segment === "	") {
-    return 3;
-  }
-  if (terminalSpacingMarkRegex.test(segment)) {
-    return [...segment].length;
-  }
-  if (zeroWidthRegex.test(segment)) {
-    return 0;
-  }
-  if (couldBeEmoji(segment) && rgiEmojiRegex.test(segment)) {
-    return 2;
-  }
-  const base = segment.replace(leadingNonPrintingRegex, "");
-  const cp = base.codePointAt(0);
-  if (cp === void 0) {
-    return 0;
-  }
-  if (cp >= 127462 && cp <= 127487) {
-    return 2;
-  }
-  let width = eastAsianWidth(cp);
-  let followsMark = false;
-  const chars = [...base];
-  for (const char of chars.slice(1)) {
-    if (terminalSpacingMarkRegex.test(char)) {
-      width += 1;
-      followsMark = false;
-    } else if (markCharRegex.test(char)) {
-      followsMark = true;
-    } else if (!nonPrintingCharRegex.test(char)) {
-      const c = char.codePointAt(0);
-      if (followsMark || c >= 65280 && c <= 65519) {
-        width += eastAsianWidth(c);
-      } else if (c === 3635 || c === 3763) {
-        width += 1;
-      }
-      followsMark = false;
-    }
-  }
-  return width;
-}
-function visibleWidth(str) {
-  if (str.length === 0) {
-    return 0;
-  }
-  if (isPrintableAscii(str)) {
-    return str.length;
-  }
-  const cached = widthCache.get(str);
-  if (cached !== void 0) {
-    return cached;
-  }
-  let clean = str;
-  if (str.includes("	")) {
-    clean = clean.replace(/\t/g, "   ");
-  }
-  if (clean.includes("\x1B")) {
-    let stripped = "";
-    let i = 0;
-    while (i < clean.length) {
-      const ansi = extractAnsiCode(clean, i);
-      if (ansi) {
-        i += ansi.length;
-        continue;
-      }
-      stripped += clean[i];
-      i++;
-    }
-    clean = stripped;
-  }
-  let width = 0;
-  for (const { segment } of graphemeSegmenter.segment(clean)) {
-    width += graphemeWidth(segment);
-  }
-  if (widthCache.size >= WIDTH_CACHE_SIZE) {
-    const firstKey = widthCache.keys().next().value;
-    if (firstKey !== void 0) {
-      widthCache.delete(firstKey);
-    }
-  }
-  widthCache.set(str, width);
-  return width;
-}
-function stripTerminalSequences(str) {
-  if (!str.includes("\x1B"))
-    return str;
-  let result = "";
-  let i = 0;
-  while (i < str.length) {
-    const ansi = extractAnsiCode(str, i);
-    if (ansi) {
-      i += ansi.length;
-      continue;
-    }
-    result += str[i];
-    i++;
-  }
-  return result;
-}
-function getGraphemeCellRange(line, column) {
-  let currentCol = 0;
-  let i = 0;
-  while (i < line.length) {
-    const ansi = extractAnsiCode(line, i);
-    if (ansi) {
-      i += ansi.length;
-      continue;
-    }
-    let textEnd = i;
-    while (textEnd < line.length && !extractAnsiCode(line, textEnd))
-      textEnd++;
-    for (const { segment } of graphemeSegmenter.segment(line.slice(i, textEnd))) {
-      const width = graphemeWidth(segment);
-      if (width > 0 && column >= currentCol && column < currentCol + width) {
-        return { start: currentCol, end: currentCol + width };
-      }
-      currentCol += width;
-    }
-    i = textEnd;
-  }
-  return void 0;
-}
-function getOsc8LinkAtColumn(line, column) {
-  let activeUrl;
-  let currentCol = 0;
-  let i = 0;
-  while (i < line.length) {
-    const ansi = extractAnsiCode(line, i);
-    if (ansi) {
-      const hyperlink2 = /^\x1b\]8;[^;]*;([^\x07\x1b]*)(?:\x07|\x1b\\)$/.exec(ansi.code);
-      if (hyperlink2)
-        activeUrl = hyperlink2[1] || void 0;
-      i += ansi.length;
-      continue;
-    }
-    let textEnd = i;
-    while (textEnd < line.length && !extractAnsiCode(line, textEnd))
-      textEnd++;
-    for (const { segment } of graphemeSegmenter.segment(line.slice(i, textEnd))) {
-      const width = segment === "	" ? 3 : graphemeWidth(segment);
-      if (column >= currentCol && column < currentCol + width)
-        return activeUrl;
-      currentCol += width;
-    }
-    i = textEnd;
-  }
-  return void 0;
-}
-var THAI_LAO_AM_REGEX = /[\u0e33\u0eb3]/;
-var THAI_LAO_AM_GLOBAL_REGEX = /[\u0e33\u0eb3]/g;
-function normalizeTerminalOutput(str) {
-  let normalized = str;
-  if (THAI_LAO_AM_REGEX.test(normalized)) {
-    normalized = normalized.replace(THAI_LAO_AM_GLOBAL_REGEX, (char) => char === "\u0E33" ? "\u0E4D\u0E32" : "\u0ECD\u0EB2");
-  }
-  if (!normalized.includes("	"))
-    return normalized;
-  let result = "";
-  let i = 0;
-  while (i < normalized.length) {
-    const ansi = extractAnsiCode(normalized, i);
-    if (ansi) {
-      result += ansi.code;
-      i += ansi.length;
-      continue;
-    }
-    result += normalized[i] === "	" ? "   " : normalized[i];
-    i++;
-  }
-  return result;
-}
-function extractAnsiCode(str, pos) {
-  if (pos >= str.length || str[pos] !== "\x1B")
-    return null;
-  const next = str[pos + 1];
-  if (next === "[") {
-    let j2 = pos + 2;
-    while (j2 < str.length && !/[mGKHJ]/.test(str[j2]))
-      j2++;
-    if (j2 < str.length)
-      return { code: str.substring(pos, j2 + 1), length: j2 + 1 - pos };
-    return null;
-  }
-  if (next === "]") {
-    let j2 = pos + 2;
-    while (j2 < str.length) {
-      if (str[j2] === "\x07")
-        return { code: str.substring(pos, j2 + 1), length: j2 + 1 - pos };
-      if (str[j2] === "\x1B" && str[j2 + 1] === "\\")
-        return { code: str.substring(pos, j2 + 2), length: j2 + 2 - pos };
-      j2++;
-    }
-    return null;
-  }
-  if (next === "_") {
-    let j2 = pos + 2;
-    while (j2 < str.length) {
-      if (str[j2] === "\x07")
-        return { code: str.substring(pos, j2 + 1), length: j2 + 1 - pos };
-      if (str[j2] === "\x1B" && str[j2 + 1] === "\\")
-        return { code: str.substring(pos, j2 + 2), length: j2 + 2 - pos };
-      j2++;
-    }
-    return null;
-  }
-  return null;
-}
-function parseOsc8Hyperlink(ansiCode) {
-  if (!ansiCode.startsWith("\x1B]8;")) {
-    return void 0;
-  }
-  const terminator = ansiCode.endsWith("\x07") ? "\x07" : "\x1B\\";
-  const body = ansiCode.slice(4, terminator === "\x07" ? -1 : -2);
-  const separatorIndex = body.indexOf(";");
-  if (separatorIndex === -1) {
-    return void 0;
-  }
-  const params = body.slice(0, separatorIndex);
-  const url = body.slice(separatorIndex + 1);
-  if (!url) {
-    return null;
-  }
-  return { params, url, terminator };
-}
-function formatOsc8Hyperlink(hyperlink2) {
-  return `\x1B]8;${hyperlink2.params};${hyperlink2.url}${hyperlink2.terminator}`;
-}
-function formatOsc8Close(terminator) {
-  return `\x1B]8;;${terminator}`;
-}
-function getActiveOsc8Close(prefix) {
-  if (!prefix.includes("\x1B]8;")) {
-    return "";
-  }
-  let activeHyperlink = null;
-  let i = 0;
-  while (i < prefix.length) {
-    const ansi = extractAnsiCode(prefix, i);
-    if (ansi) {
-      const hyperlink2 = parseOsc8Hyperlink(ansi.code);
-      if (hyperlink2 !== void 0) {
-        activeHyperlink = hyperlink2;
-      }
-      i += ansi.length;
-    } else {
-      i++;
-    }
-  }
-  return activeHyperlink ? formatOsc8Close(activeHyperlink.terminator) : "";
-}
-var AnsiCodeTracker = class {
-  // Track individual attributes separately so we can reset them specifically
-  bold = false;
-  dim = false;
-  italic = false;
-  underline = false;
-  blink = false;
-  inverse = false;
-  hidden = false;
-  strikethrough = false;
-  fgColor = null;
-  // Stores the full code like "31" or "38;5;240"
-  bgColor = null;
-  // Stores the full code like "41" or "48;5;240"
-  activeHyperlink = null;
-  process(ansiCode) {
-    const hyperlink2 = parseOsc8Hyperlink(ansiCode);
-    if (hyperlink2 !== void 0) {
-      this.activeHyperlink = hyperlink2;
-      return;
-    }
-    if (!ansiCode.endsWith("m")) {
-      return;
-    }
-    const match = ansiCode.match(/\x1b\[([\d;]*)m/);
-    if (!match)
-      return;
-    const params = match[1];
-    if (params === "" || params === "0") {
-      this.reset();
-      return;
-    }
-    const parts = params.split(";");
-    let i = 0;
-    while (i < parts.length) {
-      const code = Number.parseInt(parts[i], 10);
-      if (code === 38 || code === 48) {
-        if (parts[i + 1] === "5" && parts[i + 2] !== void 0) {
-          const colorCode = `${parts[i]};${parts[i + 1]};${parts[i + 2]}`;
-          if (code === 38) {
-            this.fgColor = colorCode;
-          } else {
-            this.bgColor = colorCode;
-          }
-          i += 3;
-          continue;
-        } else if (parts[i + 1] === "2" && parts[i + 4] !== void 0) {
-          const colorCode = `${parts[i]};${parts[i + 1]};${parts[i + 2]};${parts[i + 3]};${parts[i + 4]}`;
-          if (code === 38) {
-            this.fgColor = colorCode;
-          } else {
-            this.bgColor = colorCode;
-          }
-          i += 5;
-          continue;
-        }
-      }
-      switch (code) {
-        case 0:
-          this.reset();
-          break;
-        case 1:
-          this.bold = true;
-          break;
-        case 2:
-          this.dim = true;
-          break;
-        case 3:
-          this.italic = true;
-          break;
-        case 4:
-          this.underline = true;
-          break;
-        case 5:
-          this.blink = true;
-          break;
-        case 7:
-          this.inverse = true;
-          break;
-        case 8:
-          this.hidden = true;
-          break;
-        case 9:
-          this.strikethrough = true;
-          break;
-        case 21:
-          this.bold = false;
-          break;
-        // Some terminals
-        case 22:
-          this.bold = false;
-          this.dim = false;
-          break;
-        case 23:
-          this.italic = false;
-          break;
-        case 24:
-          this.underline = false;
-          break;
-        case 25:
-          this.blink = false;
-          break;
-        case 27:
-          this.inverse = false;
-          break;
-        case 28:
-          this.hidden = false;
-          break;
-        case 29:
-          this.strikethrough = false;
-          break;
-        case 39:
-          this.fgColor = null;
-          break;
-        // Default fg
-        case 49:
-          this.bgColor = null;
-          break;
-        // Default bg
-        default:
-          if (code >= 30 && code <= 37 || code >= 90 && code <= 97) {
-            this.fgColor = String(code);
-          } else if (code >= 40 && code <= 47 || code >= 100 && code <= 107) {
-            this.bgColor = String(code);
-          }
-          break;
-      }
-      i++;
-    }
-  }
-  reset() {
-    this.bold = false;
-    this.dim = false;
-    this.italic = false;
-    this.underline = false;
-    this.blink = false;
-    this.inverse = false;
-    this.hidden = false;
-    this.strikethrough = false;
-    this.fgColor = null;
-    this.bgColor = null;
-  }
-  /** Clear all state for reuse. */
-  clear() {
-    this.reset();
-    this.activeHyperlink = null;
-  }
-  getActiveCodes() {
-    const codes = [];
-    if (this.bold)
-      codes.push("1");
-    if (this.dim)
-      codes.push("2");
-    if (this.italic)
-      codes.push("3");
-    if (this.underline)
-      codes.push("4");
-    if (this.blink)
-      codes.push("5");
-    if (this.inverse)
-      codes.push("7");
-    if (this.hidden)
-      codes.push("8");
-    if (this.strikethrough)
-      codes.push("9");
-    if (this.fgColor)
-      codes.push(this.fgColor);
-    if (this.bgColor)
-      codes.push(this.bgColor);
-    let result = codes.length > 0 ? `\x1B[${codes.join(";")}m` : "";
-    if (this.activeHyperlink) {
-      result += formatOsc8Hyperlink(this.activeHyperlink);
-    }
-    return result;
-  }
-  hasActiveCodes() {
-    return this.bold || this.dim || this.italic || this.underline || this.blink || this.inverse || this.hidden || this.strikethrough || this.fgColor !== null || this.bgColor !== null || this.activeHyperlink !== null;
-  }
-  /**
-   * Get reset codes for attributes that need to be turned off at line end.
-   * Underline must be closed to prevent bleeding into padding.
-   * Active OSC 8 hyperlinks must be closed and re-opened on the next line.
-   * Returns empty string if no attributes need closing.
-   */
-  getLineEndReset() {
-    let result = "";
-    if (this.underline) {
-      result += "\x1B[24m";
-    }
-    if (this.activeHyperlink) {
-      result += formatOsc8Close(this.activeHyperlink.terminator);
-    }
-    return result;
-  }
-};
-function updateTrackerFromText(text, tracker) {
-  let i = 0;
-  while (i < text.length) {
-    const ansiResult = extractAnsiCode(text, i);
-    if (ansiResult) {
-      tracker.process(ansiResult.code);
-      i += ansiResult.length;
-    } else {
-      i++;
-    }
-  }
-}
-function splitIntoTokensWithAnsi(text) {
-  const tokens = [];
-  let current = "";
-  let pendingAnsi = "";
-  let currentKind = null;
-  let i = 0;
-  const flushCurrent = () => {
-    if (!current) {
-      return;
-    }
-    tokens.push(current);
-    current = "";
-    currentKind = null;
-  };
-  while (i < text.length) {
-    const ansiResult = extractAnsiCode(text, i);
-    if (ansiResult) {
-      pendingAnsi += ansiResult.code;
-      i += ansiResult.length;
-      continue;
-    }
-    let end = i;
-    while (end < text.length && !extractAnsiCode(text, end)) {
-      end++;
-    }
-    for (const { segment } of graphemeSegmenter.segment(text.slice(i, end))) {
-      const segmentIsSpace = segment === " ";
-      if (!segmentIsSpace && cjkBreakRegex.test(segment)) {
-        flushCurrent();
-        const token = pendingAnsi + segment;
-        pendingAnsi = "";
-        tokens.push(token);
-        continue;
-      }
-      const segmentKind = segmentIsSpace ? "space" : "word";
-      if (current && currentKind !== segmentKind) {
-        flushCurrent();
-      }
-      if (pendingAnsi) {
-        current += pendingAnsi;
-        pendingAnsi = "";
-      }
-      currentKind = segmentKind;
-      current += segment;
-    }
-    i = end;
-  }
-  if (pendingAnsi) {
-    if (current) {
-      current += pendingAnsi;
-    } else if (tokens.length > 0) {
-      tokens[tokens.length - 1] += pendingAnsi;
-    } else {
-      current = pendingAnsi;
-    }
-  }
-  if (current) {
-    tokens.push(current);
-  }
-  return tokens;
-}
-function wrapTextWithAnsi(text, width) {
-  if (!text) {
-    return [""];
-  }
-  const inputLines = text.split(/\r\n|\r|\n/);
-  const result = [];
-  const tracker = new AnsiCodeTracker();
-  for (const inputLine of inputLines) {
-    const prefix = result.length > 0 ? tracker.getActiveCodes() : "";
-    const wrappedLines = wrapSingleLine(prefix + inputLine, width);
-    for (const wrappedLine of wrappedLines) {
-      result.push(wrappedLine);
-    }
-    updateTrackerFromText(inputLine, tracker);
-  }
-  return result.length > 0 ? result : [""];
-}
-function wrapSingleLine(line, width) {
-  if (!line) {
-    return [""];
-  }
-  const visibleLength = visibleWidth(line);
-  if (visibleLength <= width) {
-    return [line];
-  }
-  const wrapped = [];
-  const tracker = new AnsiCodeTracker();
-  const tokens = splitIntoTokensWithAnsi(line);
-  let currentLine = "";
-  let currentVisibleLength = 0;
-  for (const token of tokens) {
-    const tokenVisibleLength = visibleWidth(token);
-    const isWhitespace = token.trim() === "";
-    if (tokenVisibleLength > width && !isWhitespace) {
-      if (currentLine) {
-        const lineEndReset = tracker.getLineEndReset();
-        if (lineEndReset) {
-          currentLine += lineEndReset;
-        }
-        wrapped.push(currentLine);
-        currentLine = "";
-        currentVisibleLength = 0;
-      }
-      const broken = breakLongWord(token, width, tracker);
-      for (let i = 0; i < broken.length - 1; i++) {
-        wrapped.push(broken[i]);
-      }
-      currentLine = broken[broken.length - 1];
-      currentVisibleLength = visibleWidth(currentLine);
-      continue;
-    }
-    const totalNeeded = currentVisibleLength + tokenVisibleLength;
-    if (totalNeeded > width && currentVisibleLength > 0) {
-      let lineToWrap = currentLine.trimEnd();
-      const lineEndReset = tracker.getLineEndReset();
-      if (lineEndReset) {
-        lineToWrap += lineEndReset;
-      }
-      wrapped.push(lineToWrap);
-      if (isWhitespace) {
-        currentLine = tracker.getActiveCodes();
-        currentVisibleLength = 0;
-      } else {
-        currentLine = tracker.getActiveCodes() + token;
-        currentVisibleLength = tokenVisibleLength;
-      }
-    } else {
-      currentLine += token;
-      currentVisibleLength += tokenVisibleLength;
-    }
-    updateTrackerFromText(token, tracker);
-  }
-  if (currentLine) {
-    wrapped.push(currentLine);
-  }
-  return wrapped.length > 0 ? wrapped.map((line2) => line2.trimEnd()) : [""];
-}
-var PUNCTUATION_REGEX = /[(){}[\]<>.,;:'"!?+\-=*/\\|&%^$#@~`]/;
-function isWhitespaceChar(char) {
-  return /\s/.test(char);
-}
-function breakLongWord(word, width, tracker) {
-  const lines = [];
-  let currentLine = tracker.getActiveCodes();
-  let currentWidth = 0;
-  let i = 0;
-  const segments = [];
-  while (i < word.length) {
-    const ansiResult = extractAnsiCode(word, i);
-    if (ansiResult) {
-      segments.push({ type: "ansi", value: ansiResult.code });
-      i += ansiResult.length;
-    } else {
-      let end = i;
-      while (end < word.length) {
-        const nextAnsi = extractAnsiCode(word, end);
-        if (nextAnsi)
-          break;
-        end++;
-      }
-      const textPortion = word.slice(i, end);
-      for (const seg of graphemeSegmenter.segment(textPortion)) {
-        segments.push({ type: "grapheme", value: seg.segment });
-      }
-      i = end;
-    }
-  }
-  for (const seg of segments) {
-    if (seg.type === "ansi") {
-      currentLine += seg.value;
-      tracker.process(seg.value);
-      continue;
-    }
-    const grapheme = seg.value;
-    if (!grapheme)
-      continue;
-    const graphemeWidth2 = visibleWidth(grapheme);
-    if (currentWidth + graphemeWidth2 > width) {
-      const lineEndReset = tracker.getLineEndReset();
-      if (lineEndReset) {
-        currentLine += lineEndReset;
-      }
-      lines.push(currentLine);
-      currentLine = tracker.getActiveCodes();
-      currentWidth = 0;
-    }
-    currentLine += grapheme;
-    currentWidth += graphemeWidth2;
-  }
-  if (currentLine) {
-    lines.push(currentLine);
-  }
-  return lines.length > 0 ? lines : [""];
-}
-function applyBackgroundToLine(line, width, bgFn) {
-  const visibleLen = visibleWidth(line);
-  const paddingNeeded = Math.max(0, width - visibleLen);
-  const padding = " ".repeat(paddingNeeded);
-  const withPadding = line + padding;
-  return bgFn(withPadding);
-}
-function truncateToWidth(text, maxWidth, ellipsis = "...", pad2 = false) {
-  if (maxWidth <= 0) {
-    return "";
-  }
-  if (text.length === 0) {
-    return pad2 ? " ".repeat(maxWidth) : "";
-  }
-  const ellipsisWidth = visibleWidth(ellipsis);
-  if (ellipsisWidth >= maxWidth) {
-    const textWidth = visibleWidth(text);
-    if (textWidth <= maxWidth) {
-      return pad2 ? text + " ".repeat(maxWidth - textWidth) : text;
-    }
-    const clippedEllipsis = truncateFragmentToWidth(ellipsis, maxWidth);
-    if (clippedEllipsis.width === 0) {
-      return pad2 ? " ".repeat(maxWidth) : "";
-    }
-    return finalizeTruncatedResult("", 0, clippedEllipsis.text, clippedEllipsis.width, maxWidth, pad2);
-  }
-  if (isPrintableAscii(text)) {
-    if (text.length <= maxWidth) {
-      return pad2 ? text + " ".repeat(maxWidth - text.length) : text;
-    }
-    const targetWidth2 = maxWidth - ellipsisWidth;
-    return finalizeTruncatedResult(text.slice(0, targetWidth2), targetWidth2, ellipsis, ellipsisWidth, maxWidth, pad2);
-  }
-  const targetWidth = maxWidth - ellipsisWidth;
-  let result = "";
-  let pendingAnsi = "";
-  let visibleSoFar = 0;
-  let keptWidth = 0;
-  let keepContiguousPrefix = true;
-  let overflowed = false;
-  let exhaustedInput = false;
-  const hasAnsi = text.includes("\x1B");
-  const hasTabs = text.includes("	");
-  if (!hasAnsi && !hasTabs) {
-    for (const { segment } of graphemeSegmenter.segment(text)) {
-      const width = graphemeWidth(segment);
-      if (keepContiguousPrefix && keptWidth + width <= targetWidth) {
-        result += segment;
-        keptWidth += width;
-      } else {
-        keepContiguousPrefix = false;
-      }
-      visibleSoFar += width;
-      if (visibleSoFar > maxWidth) {
-        overflowed = true;
-        break;
-      }
-    }
-    exhaustedInput = !overflowed;
-  } else {
-    let i = 0;
-    while (i < text.length) {
-      const ansi = extractAnsiCode(text, i);
-      if (ansi) {
-        pendingAnsi += ansi.code;
-        i += ansi.length;
-        continue;
-      }
-      if (text[i] === "	") {
-        if (keepContiguousPrefix && keptWidth + 3 <= targetWidth) {
-          if (pendingAnsi) {
-            result += pendingAnsi;
-            pendingAnsi = "";
-          }
-          result += "	";
-          keptWidth += 3;
-        } else {
-          keepContiguousPrefix = false;
-          pendingAnsi = "";
-        }
-        visibleSoFar += 3;
-        if (visibleSoFar > maxWidth) {
-          overflowed = true;
-          break;
-        }
-        i++;
-        continue;
-      }
-      let end = i;
-      while (end < text.length && text[end] !== "	") {
-        const nextAnsi = extractAnsiCode(text, end);
-        if (nextAnsi) {
-          break;
-        }
-        end++;
-      }
-      for (const { segment } of graphemeSegmenter.segment(text.slice(i, end))) {
-        const width = graphemeWidth(segment);
-        if (keepContiguousPrefix && keptWidth + width <= targetWidth) {
-          if (pendingAnsi) {
-            result += pendingAnsi;
-            pendingAnsi = "";
-          }
-          result += segment;
-          keptWidth += width;
-        } else {
-          keepContiguousPrefix = false;
-          pendingAnsi = "";
-        }
-        visibleSoFar += width;
-        if (visibleSoFar > maxWidth) {
-          overflowed = true;
-          break;
-        }
-      }
-      if (overflowed) {
-        break;
-      }
-      i = end;
-    }
-    exhaustedInput = i >= text.length;
-  }
-  if (!overflowed && exhaustedInput) {
-    return pad2 ? text + " ".repeat(Math.max(0, maxWidth - visibleSoFar)) : text;
-  }
-  return finalizeTruncatedResult(result, keptWidth, ellipsis, ellipsisWidth, maxWidth, pad2);
-}
-function sliceByColumn(line, startCol, length, strict = false) {
-  return sliceWithWidth(line, startCol, length, strict).text;
-}
-function sliceWithWidth(line, startCol, length, strict = false) {
-  if (length <= 0)
-    return { text: "", width: 0 };
-  const endCol = startCol + length;
-  let result = "", resultWidth = 0, currentCol = 0, i = 0, pendingAnsi = "";
-  while (i < line.length) {
-    const ansi = extractAnsiCode(line, i);
-    if (ansi) {
-      if (currentCol >= startCol && currentCol < endCol)
-        result += ansi.code;
-      else if (currentCol < startCol)
-        pendingAnsi += ansi.code;
-      i += ansi.length;
-      continue;
-    }
-    let textEnd = i;
-    while (textEnd < line.length && !extractAnsiCode(line, textEnd))
-      textEnd++;
-    for (const { segment } of graphemeSegmenter.segment(line.slice(i, textEnd))) {
-      const w2 = graphemeWidth(segment);
-      const inRange = currentCol >= startCol && currentCol < endCol;
-      const fits = !strict || currentCol + w2 <= endCol;
-      if (inRange && fits) {
-        if (pendingAnsi) {
-          result += pendingAnsi;
-          pendingAnsi = "";
-        }
-        result += segment;
-        resultWidth += w2;
-      }
-      currentCol += w2;
-      if (currentCol >= endCol)
-        break;
-    }
-    i = textEnd;
-    if (currentCol >= endCol)
-      break;
-  }
-  return { text: result, width: resultWidth };
-}
-var pooledStyleTracker = new AnsiCodeTracker();
-function extractSegments(line, beforeEnd, afterStart, afterLen, strictAfter = false) {
-  let before = "", beforeWidth = 0, after = "", afterWidth = 0;
-  let currentCol = 0, i = 0;
-  let pendingAnsiBefore = "";
-  let afterStarted = false;
-  const afterEnd = afterStart + afterLen;
-  pooledStyleTracker.clear();
-  while (i < line.length) {
-    const ansi = extractAnsiCode(line, i);
-    if (ansi) {
-      pooledStyleTracker.process(ansi.code);
-      if (currentCol < beforeEnd) {
-        pendingAnsiBefore += ansi.code;
-      } else if (currentCol >= afterStart && currentCol < afterEnd && afterStarted) {
-        after += ansi.code;
-      }
-      i += ansi.length;
-      continue;
-    }
-    let textEnd = i;
-    while (textEnd < line.length && !extractAnsiCode(line, textEnd))
-      textEnd++;
-    for (const { segment } of graphemeSegmenter.segment(line.slice(i, textEnd))) {
-      const w2 = graphemeWidth(segment);
-      if (currentCol < beforeEnd && currentCol + w2 <= beforeEnd) {
-        if (pendingAnsiBefore) {
-          before += pendingAnsiBefore;
-          pendingAnsiBefore = "";
-        }
-        before += segment;
-        beforeWidth += w2;
-      } else if (currentCol >= afterStart && currentCol < afterEnd) {
-        const fits = !strictAfter || currentCol + w2 <= afterEnd;
-        if (fits) {
-          if (!afterStarted) {
-            after += pooledStyleTracker.getActiveCodes();
-            afterStarted = true;
-          }
-          after += segment;
-          afterWidth += w2;
-        }
-      }
-      currentCol += w2;
-      if (afterLen <= 0 ? currentCol >= beforeEnd : currentCol >= afterEnd)
-        break;
-    }
-    i = textEnd;
-    if (afterLen <= 0 ? currentCol >= beforeEnd : currentCol >= afterEnd)
-      break;
-  }
-  return { before, beforeWidth, after, afterWidth };
-}
-
-// node_modules/@earendil-works/pi-tui/dist/components/box.js
-var Box = class {
-  children = [];
-  paddingX;
-  paddingY;
-  bgFn;
-  // Cache for rendered output
-  cache;
-  constructor(paddingX = 1, paddingY = 1, bgFn) {
-    this.paddingX = paddingX;
-    this.paddingY = paddingY;
-    this.bgFn = bgFn;
-  }
-  addChild(component) {
-    this.children.push(component);
-    this.invalidateCache();
-  }
-  removeChild(component) {
-    const index = this.children.indexOf(component);
-    if (index !== -1) {
-      this.children.splice(index, 1);
-      this.invalidateCache();
-    }
-  }
-  clear() {
-    this.children = [];
-    this.invalidateCache();
-  }
-  setBgFn(bgFn) {
-    this.bgFn = bgFn;
-  }
-  invalidateCache() {
-    this.cache = void 0;
-  }
-  matchCache(width, childLines, bgSample) {
-    const cache = this.cache;
-    return !!cache && cache.width === width && cache.bgSample === bgSample && cache.childLines.length === childLines.length && cache.childLines.every((line, i) => line === childLines[i]);
-  }
-  invalidate() {
-    this.invalidateCache();
-    for (const child of this.children) {
-      child.invalidate?.();
-    }
-  }
-  render(width) {
-    if (this.children.length === 0) {
-      return [];
-    }
-    const contentWidth = Math.max(1, width - this.paddingX * 2);
-    const leftPad = " ".repeat(this.paddingX);
-    const childLines = [];
-    for (const child of this.children) {
-      const lines = child.render(contentWidth);
-      for (const line of lines) {
-        childLines.push(leftPad + line);
-      }
-    }
-    if (childLines.length === 0) {
-      return [];
-    }
-    const bgSample = this.bgFn ? this.bgFn("test") : void 0;
-    if (this.matchCache(width, childLines, bgSample)) {
-      return this.cache.lines;
-    }
-    const result = [];
-    for (let i = 0; i < this.paddingY; i++) {
-      result.push(this.applyBg("", width));
-    }
-    for (const line of childLines) {
-      result.push(this.applyBg(line, width));
-    }
-    for (let i = 0; i < this.paddingY; i++) {
-      result.push(this.applyBg("", width));
-    }
-    this.cache = { childLines, width, bgSample, lines: result };
-    return result;
-  }
-  applyBg(line, width) {
-    const visLen = visibleWidth(line);
-    const padNeeded = Math.max(0, width - visLen);
-    const padded = line + " ".repeat(padNeeded);
-    if (this.bgFn) {
-      return applyBackgroundToLine(padded, width, this.bgFn);
-    }
-    return padded;
-  }
-};
+// node_modules/@earendil-works/pi-tui/dist/tui.js
+import { performance } from "node:perf_hooks";
 
 // node_modules/@earendil-works/pi-tui/dist/keys.js
 var _kittyProtocolActive = false;
@@ -27015,355 +25850,6 @@ function decodeKittyPrintable(data) {
   }
 }
 
-// node_modules/@earendil-works/pi-tui/dist/keybindings.js
-var TUI_KEYBINDINGS = {
-  "tui.editor.cursorUp": { defaultKeys: "up", description: "Move cursor up" },
-  "tui.editor.cursorDown": { defaultKeys: "down", description: "Move cursor down" },
-  "tui.editor.historyPrevious": {
-    defaultKeys: [],
-    description: "Select previous prompt history entry"
-  },
-  "tui.editor.historyNext": {
-    defaultKeys: [],
-    description: "Select next prompt history entry"
-  },
-  "tui.editor.cursorLeft": {
-    defaultKeys: ["left", "ctrl+b"],
-    description: "Move cursor left"
-  },
-  "tui.editor.cursorRight": {
-    defaultKeys: ["right", "ctrl+f"],
-    description: "Move cursor right"
-  },
-  "tui.editor.cursorWordLeft": {
-    defaultKeys: ["alt+left", "ctrl+left", "alt+b"],
-    description: "Move cursor word left"
-  },
-  "tui.editor.cursorWordRight": {
-    defaultKeys: ["alt+right", "ctrl+right", "alt+f"],
-    description: "Move cursor word right"
-  },
-  "tui.editor.cursorLineStart": {
-    defaultKeys: ["home", "ctrl+home", "ctrl+a"],
-    description: "Move to line start"
-  },
-  "tui.editor.cursorLineEnd": {
-    defaultKeys: ["end", "ctrl+end", "ctrl+e"],
-    description: "Move to line end"
-  },
-  "tui.editor.jumpForward": {
-    defaultKeys: "ctrl+]",
-    description: "Jump forward to character"
-  },
-  "tui.editor.jumpBackward": {
-    defaultKeys: "ctrl+alt+]",
-    description: "Jump backward to character"
-  },
-  "tui.editor.pageUp": { defaultKeys: ["pageUp", "ctrl+pageUp"], description: "Page up" },
-  "tui.editor.pageDown": { defaultKeys: ["pageDown", "ctrl+pageDown"], description: "Page down" },
-  "tui.editor.deleteCharBackward": {
-    defaultKeys: "backspace",
-    description: "Delete character backward"
-  },
-  "tui.editor.deleteCharForward": {
-    defaultKeys: ["delete", "ctrl+d"],
-    description: "Delete character forward"
-  },
-  "tui.editor.deleteWordBackward": {
-    defaultKeys: ["ctrl+w", "alt+backspace"],
-    description: "Delete word backward"
-  },
-  "tui.editor.deleteWordForward": {
-    defaultKeys: ["alt+d", "alt+delete"],
-    description: "Delete word forward"
-  },
-  "tui.editor.deleteToLineStart": {
-    defaultKeys: "ctrl+u",
-    description: "Delete to line start"
-  },
-  "tui.editor.deleteToLineEnd": {
-    defaultKeys: "ctrl+k",
-    description: "Delete to line end"
-  },
-  "tui.editor.yank": { defaultKeys: "ctrl+y", description: "Yank" },
-  "tui.editor.yankPop": { defaultKeys: "alt+y", description: "Yank pop" },
-  "tui.editor.undo": { defaultKeys: "ctrl+-", description: "Undo" },
-  "tui.input.newLine": { defaultKeys: ["shift+enter", "ctrl+j"], description: "Insert newline" },
-  "tui.input.submit": { defaultKeys: "enter", description: "Submit input" },
-  "tui.input.tab": { defaultKeys: "tab", description: "Tab / autocomplete" },
-  "tui.input.copy": { defaultKeys: "ctrl+c", description: "Copy selection" },
-  "tui.select.up": { defaultKeys: "up", description: "Move selection up" },
-  "tui.select.down": { defaultKeys: "down", description: "Move selection down" },
-  "tui.select.pageUp": { defaultKeys: "pageUp", description: "Selection page up" },
-  "tui.select.pageDown": {
-    defaultKeys: "pageDown",
-    description: "Selection page down"
-  },
-  "tui.select.confirm": { defaultKeys: "enter", description: "Confirm selection" },
-  "tui.select.cancel": {
-    defaultKeys: ["escape", "ctrl+c"],
-    description: "Cancel selection"
-  },
-  // These intentionally shadow the unmodified editor bindings in fullscreen mode.
-  "tui.altScreen.pageUp": {
-    defaultKeys: "pageUp",
-    description: "Scroll viewport up one page"
-  },
-  "tui.altScreen.pageDown": {
-    defaultKeys: "pageDown",
-    description: "Scroll viewport down one page"
-  },
-  "tui.altScreen.halfPageUp": {
-    defaultKeys: [],
-    description: "Scroll viewport up half a page"
-  },
-  "tui.altScreen.halfPageDown": {
-    defaultKeys: [],
-    description: "Scroll viewport down half a page"
-  },
-  "tui.altScreen.lineUp": {
-    defaultKeys: [],
-    description: "Scroll viewport up one line"
-  },
-  "tui.altScreen.lineDown": {
-    defaultKeys: [],
-    description: "Scroll viewport down one line"
-  },
-  "tui.altScreen.previousPrompt": {
-    defaultKeys: ["ctrl+shift+up", "ctrl+up"],
-    description: "Jump to previous semantic prompt"
-  },
-  "tui.altScreen.nextPrompt": {
-    defaultKeys: ["ctrl+shift+down", "ctrl+down"],
-    description: "Jump to next semantic prompt"
-  },
-  "tui.altScreen.search": {
-    defaultKeys: "ctrl+shift+f",
-    description: "Search the primary scroll view"
-  },
-  "tui.altScreen.searchNext": {
-    defaultKeys: ["enter", "ctrl+g"],
-    description: "Select the next search match"
-  },
-  "tui.altScreen.searchPrevious": {
-    defaultKeys: ["shift+enter", "ctrl+shift+g"],
-    description: "Select the previous search match"
-  },
-  "tui.altScreen.searchClose": {
-    defaultKeys: "escape",
-    description: "Close transcript search"
-  },
-  "tui.altScreen.top": { defaultKeys: "home", description: "Scroll viewport to top" },
-  "tui.altScreen.bottom": { defaultKeys: "end", description: "Scroll viewport to bottom" }
-};
-function normalizeKeys(keys) {
-  if (keys === void 0)
-    return [];
-  const keyList = Array.isArray(keys) ? keys : [keys];
-  const seen = /* @__PURE__ */ new Set();
-  const result = [];
-  for (const key of keyList) {
-    if (!seen.has(key)) {
-      seen.add(key);
-      result.push(key);
-    }
-  }
-  return result;
-}
-var KeybindingsManager = class {
-  definitions;
-  userBindings;
-  keysById = /* @__PURE__ */ new Map();
-  conflicts = [];
-  constructor(definitions, userBindings = {}) {
-    this.definitions = definitions;
-    this.userBindings = userBindings;
-    this.rebuild();
-  }
-  rebuild() {
-    this.keysById.clear();
-    this.conflicts = [];
-    const userClaims = /* @__PURE__ */ new Map();
-    for (const [keybinding, keys] of Object.entries(this.userBindings)) {
-      if (!(keybinding in this.definitions))
-        continue;
-      for (const key of normalizeKeys(keys)) {
-        const claimants = userClaims.get(key) ?? /* @__PURE__ */ new Set();
-        claimants.add(keybinding);
-        userClaims.set(key, claimants);
-      }
-    }
-    for (const [key, keybindings] of userClaims) {
-      if (keybindings.size > 1) {
-        this.conflicts.push({ key, keybindings: [...keybindings] });
-      }
-    }
-    for (const [id, definition] of Object.entries(this.definitions)) {
-      const userKeys = this.userBindings[id];
-      const keys = userKeys === void 0 ? normalizeKeys(definition.defaultKeys) : normalizeKeys(userKeys);
-      this.keysById.set(id, keys);
-    }
-  }
-  matches(data, keybinding) {
-    const keys = this.keysById.get(keybinding) ?? [];
-    for (const key of keys) {
-      if (matchesKey(data, key))
-        return true;
-    }
-    return false;
-  }
-  getKeys(keybinding) {
-    return [...this.keysById.get(keybinding) ?? []];
-  }
-  getDefinition(keybinding) {
-    return this.definitions[keybinding];
-  }
-  getConflicts() {
-    return this.conflicts.map((conflict) => ({ ...conflict, keybindings: [...conflict.keybindings] }));
-  }
-  setUserBindings(userBindings) {
-    this.userBindings = userBindings;
-    this.rebuild();
-  }
-  getUserBindings() {
-    return { ...this.userBindings };
-  }
-  getResolvedBindings() {
-    const resolved = {};
-    for (const id of Object.keys(this.definitions)) {
-      const keys = this.keysById.get(id) ?? [];
-      resolved[id] = keys.length === 1 ? keys[0] : [...keys];
-    }
-    return resolved;
-  }
-};
-var globalKeybindings = null;
-function getKeybindings() {
-  if (!globalKeybindings) {
-    globalKeybindings = new KeybindingsManager(TUI_KEYBINDINGS);
-  }
-  return globalKeybindings;
-}
-
-// node_modules/@earendil-works/pi-tui/dist/components/text.js
-var Text = class {
-  text;
-  paddingX;
-  // Left/right padding
-  paddingY;
-  // Top/bottom padding
-  customBgFn;
-  // Cache for rendered output
-  cachedText;
-  cachedWidth;
-  cachedLines;
-  constructor(text = "", paddingX = 1, paddingY = 1, customBgFn) {
-    this.text = text;
-    this.paddingX = paddingX;
-    this.paddingY = paddingY;
-    this.customBgFn = customBgFn;
-  }
-  setText(text) {
-    this.text = text;
-    this.cachedText = void 0;
-    this.cachedWidth = void 0;
-    this.cachedLines = void 0;
-  }
-  setCustomBgFn(customBgFn) {
-    this.customBgFn = customBgFn;
-    this.cachedText = void 0;
-    this.cachedWidth = void 0;
-    this.cachedLines = void 0;
-  }
-  invalidate() {
-    this.cachedText = void 0;
-    this.cachedWidth = void 0;
-    this.cachedLines = void 0;
-  }
-  render(width) {
-    if (this.cachedLines && this.cachedText === this.text && this.cachedWidth === width) {
-      return this.cachedLines;
-    }
-    if (!this.text || this.text.trim() === "") {
-      const result2 = [];
-      this.cachedText = this.text;
-      this.cachedWidth = width;
-      this.cachedLines = result2;
-      return result2;
-    }
-    const normalizedText = this.text.replace(/\t/g, "   ");
-    const paddingX = Math.min(this.paddingX, Math.max(0, Math.floor((width - 1) / 2)));
-    const contentWidth = Math.max(1, width - paddingX * 2);
-    const wrappedLines = wrapTextWithAnsi(normalizedText, contentWidth);
-    const leftMargin = " ".repeat(paddingX);
-    const rightMargin = " ".repeat(paddingX);
-    const contentLines = [];
-    for (const line of wrappedLines) {
-      const lineWithMargins = leftMargin + line + rightMargin;
-      if (this.customBgFn) {
-        contentLines.push(applyBackgroundToLine(lineWithMargins, width, this.customBgFn));
-      } else {
-        const visibleLen = visibleWidth(lineWithMargins);
-        const paddingNeeded = Math.max(0, width - visibleLen);
-        contentLines.push(lineWithMargins + " ".repeat(paddingNeeded));
-      }
-    }
-    const emptyLine = " ".repeat(width);
-    const emptyLines = [];
-    for (let i = 0; i < this.paddingY; i++) {
-      const line = this.customBgFn ? applyBackgroundToLine(emptyLine, width, this.customBgFn) : emptyLine;
-      emptyLines.push(line);
-    }
-    const result = [...emptyLines, ...contentLines, ...emptyLines];
-    this.cachedText = this.text;
-    this.cachedWidth = width;
-    this.cachedLines = result;
-    return result.length > 0 ? result : [""];
-  }
-};
-
-// node_modules/@earendil-works/pi-tui/dist/kill-ring.js
-var KillRing = class {
-  ring = [];
-  /**
-   * Add text to the kill ring.
-   *
-   * @param text - The killed text to add
-   * @param opts - Push options
-   * @param opts.prepend - If accumulating, prepend (backward deletion) or append (forward deletion)
-   * @param opts.accumulate - Merge with the most recent entry instead of creating a new one
-   */
-  push(text, opts) {
-    if (!text)
-      return;
-    if (opts.accumulate && this.ring.length > 0) {
-      const last = this.ring.pop();
-      this.ring.push(opts.prepend ? text + last : last + text);
-    } else {
-      this.ring.push(text);
-    }
-  }
-  /** Get most recent entry without modifying the ring. */
-  peek() {
-    return this.ring.length > 0 ? this.ring[this.ring.length - 1] : void 0;
-  }
-  /** Move last entry to front (for yank-pop cycling). */
-  rotate() {
-    if (this.ring.length > 1) {
-      const last = this.ring.pop();
-      this.ring.unshift(last);
-    }
-  }
-  get length() {
-    return this.ring.length;
-  }
-};
-
-// node_modules/@earendil-works/pi-tui/dist/tui.js
-import * as os from "node:os";
-import * as path2 from "node:path";
-import { performance } from "node:perf_hooks";
-
 // node_modules/@earendil-works/pi-tui/dist/terminal-colors.js
 function hexToRgb(hex) {
   const normalized = hex.startsWith("#") ? hex.slice(1) : hex;
@@ -27475,10 +25961,7 @@ function detectCapabilitiesFromEnvironment(tmuxForwardsHyperlink) {
   if (process.env.WT_SESSION) {
     return { images: null, trueColor: true, hyperlinks: true };
   }
-  if (termProgram === "vscode") {
-    return { images: null, trueColor: true, hyperlinks: true };
-  }
-  if (termProgram === "alacritty") {
+  if (termProgram === "alacritty" || termProgram === "vscode" || termProgram === "zed") {
     return { images: null, trueColor: true, hyperlinks: true };
   }
   if (terminalEmulator === "jetbrains-jediterm") {
@@ -27624,7 +26107,1125 @@ function cropKittyImageLine(line, hiddenRows, visibleRows) {
   return `${line.slice(0, match.index)}\x1B_G${controls.join(",")};${line.slice(match.index + match[0].length)}`;
 }
 
+// node_modules/get-east-asian-width/lookup-data.js
+var ambiguousMinimalCodePoint = 161;
+var ambiguousMaximumCodePoint = 1114109;
+var ambiguousRanges = [161, 161, 164, 164, 167, 168, 170, 170, 173, 174, 176, 180, 182, 186, 188, 191, 198, 198, 208, 208, 215, 216, 222, 225, 230, 230, 232, 234, 236, 237, 240, 240, 242, 243, 247, 250, 252, 252, 254, 254, 257, 257, 273, 273, 275, 275, 283, 283, 294, 295, 299, 299, 305, 307, 312, 312, 319, 322, 324, 324, 328, 331, 333, 333, 338, 339, 358, 359, 363, 363, 462, 462, 464, 464, 466, 466, 468, 468, 470, 470, 472, 472, 474, 474, 476, 476, 593, 593, 609, 609, 708, 708, 711, 711, 713, 715, 717, 717, 720, 720, 728, 731, 733, 733, 735, 735, 768, 879, 913, 929, 931, 937, 945, 961, 963, 969, 1025, 1025, 1040, 1103, 1105, 1105, 8208, 8208, 8211, 8214, 8216, 8217, 8220, 8221, 8224, 8226, 8228, 8231, 8240, 8240, 8242, 8243, 8245, 8245, 8251, 8251, 8254, 8254, 8308, 8308, 8319, 8319, 8321, 8324, 8364, 8364, 8451, 8451, 8453, 8453, 8457, 8457, 8467, 8467, 8470, 8470, 8481, 8482, 8486, 8486, 8491, 8491, 8531, 8532, 8539, 8542, 8544, 8555, 8560, 8569, 8585, 8585, 8592, 8601, 8632, 8633, 8658, 8658, 8660, 8660, 8679, 8679, 8704, 8704, 8706, 8707, 8711, 8712, 8715, 8715, 8719, 8719, 8721, 8721, 8725, 8725, 8730, 8730, 8733, 8736, 8739, 8739, 8741, 8741, 8743, 8748, 8750, 8750, 8756, 8759, 8764, 8765, 8776, 8776, 8780, 8780, 8786, 8786, 8800, 8801, 8804, 8807, 8810, 8811, 8814, 8815, 8834, 8835, 8838, 8839, 8853, 8853, 8857, 8857, 8869, 8869, 8895, 8895, 8978, 8978, 9312, 9449, 9451, 9547, 9552, 9587, 9600, 9615, 9618, 9621, 9632, 9633, 9635, 9641, 9650, 9651, 9654, 9655, 9660, 9661, 9664, 9665, 9670, 9672, 9675, 9675, 9678, 9681, 9698, 9701, 9711, 9711, 9733, 9734, 9737, 9737, 9742, 9743, 9756, 9756, 9758, 9758, 9792, 9792, 9794, 9794, 9824, 9825, 9827, 9829, 9831, 9834, 9836, 9837, 9839, 9839, 9886, 9887, 9919, 9919, 9926, 9933, 9935, 9939, 9941, 9953, 9955, 9955, 9960, 9961, 9963, 9969, 9972, 9972, 9974, 9977, 9979, 9980, 9982, 9983, 10045, 10045, 10102, 10111, 11094, 11097, 12872, 12879, 57344, 63743, 65024, 65039, 65533, 65533, 127232, 127242, 127248, 127277, 127280, 127337, 127344, 127373, 127375, 127376, 127387, 127404, 917760, 917999, 983040, 1048573, 1048576, 1114109];
+var fullwidthMinimalCodePoint = 12288;
+var fullwidthMaximumCodePoint = 65510;
+var fullwidthRanges = [12288, 12288, 65281, 65376, 65504, 65510];
+var wideMinimalCodePoint = 4352;
+var wideMaximumCodePoint = 262141;
+var wideRanges = [4352, 4447, 8986, 8987, 9001, 9002, 9193, 9196, 9200, 9200, 9203, 9203, 9725, 9726, 9748, 9749, 9776, 9783, 9800, 9811, 9855, 9855, 9866, 9871, 9875, 9875, 9889, 9889, 9898, 9899, 9917, 9918, 9924, 9925, 9934, 9934, 9940, 9940, 9962, 9962, 9970, 9971, 9973, 9973, 9978, 9978, 9981, 9981, 9989, 9989, 9994, 9995, 10024, 10024, 10060, 10060, 10062, 10062, 10067, 10069, 10071, 10071, 10133, 10135, 10160, 10160, 10175, 10175, 11035, 11036, 11088, 11088, 11093, 11093, 11904, 11929, 11931, 12019, 12032, 12245, 12272, 12287, 12289, 12350, 12353, 12438, 12441, 12543, 12549, 12591, 12593, 12686, 12688, 12773, 12783, 12830, 12832, 12871, 12880, 42124, 42128, 42182, 43360, 43388, 44032, 55203, 63744, 64255, 65040, 65049, 65072, 65106, 65108, 65126, 65128, 65131, 94176, 94180, 94192, 94198, 94208, 101589, 101631, 101662, 101760, 101874, 110576, 110579, 110581, 110587, 110589, 110590, 110592, 110882, 110898, 110898, 110928, 110930, 110933, 110933, 110948, 110951, 110960, 111355, 119552, 119638, 119648, 119670, 126980, 126980, 127183, 127183, 127374, 127374, 127377, 127386, 127488, 127490, 127504, 127547, 127552, 127560, 127568, 127569, 127584, 127589, 127744, 127776, 127789, 127797, 127799, 127868, 127870, 127891, 127904, 127946, 127951, 127955, 127968, 127984, 127988, 127988, 127992, 128062, 128064, 128064, 128066, 128252, 128255, 128317, 128331, 128334, 128336, 128359, 128378, 128378, 128405, 128406, 128420, 128420, 128507, 128591, 128640, 128709, 128716, 128716, 128720, 128722, 128725, 128728, 128732, 128735, 128747, 128748, 128756, 128764, 128992, 129003, 129008, 129008, 129292, 129338, 129340, 129349, 129351, 129535, 129648, 129660, 129664, 129674, 129678, 129734, 129736, 129736, 129741, 129756, 129759, 129770, 129775, 129784, 131072, 196605, 196608, 262141];
+
+// node_modules/get-east-asian-width/utilities.js
+var isInRange = (ranges, codePoint) => {
+  let low = 0;
+  let high = Math.floor(ranges.length / 2) - 1;
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const i = mid * 2;
+    if (codePoint < ranges[i]) {
+      high = mid - 1;
+    } else if (codePoint > ranges[i + 1]) {
+      low = mid + 1;
+    } else {
+      return true;
+    }
+  }
+  return false;
+};
+
+// node_modules/get-east-asian-width/lookup.js
+var commonCjkCodePoint = 19968;
+var [wideFastPathStart, wideFastPathEnd] = /* @__PURE__ */ findWideFastPathRange(wideRanges);
+function findWideFastPathRange(ranges) {
+  let fastPathStart = ranges[0];
+  let fastPathEnd = ranges[1];
+  for (let index = 0; index < ranges.length; index += 2) {
+    const start = ranges[index];
+    const end = ranges[index + 1];
+    if (commonCjkCodePoint >= start && commonCjkCodePoint <= end) {
+      return [start, end];
+    }
+    if (end - start > fastPathEnd - fastPathStart) {
+      fastPathStart = start;
+      fastPathEnd = end;
+    }
+  }
+  return [fastPathStart, fastPathEnd];
+}
+var isAmbiguous = (codePoint) => {
+  if (codePoint < ambiguousMinimalCodePoint || codePoint > ambiguousMaximumCodePoint) {
+    return false;
+  }
+  return isInRange(ambiguousRanges, codePoint);
+};
+var isFullWidth = (codePoint) => {
+  if (codePoint < fullwidthMinimalCodePoint || codePoint > fullwidthMaximumCodePoint) {
+    return false;
+  }
+  return isInRange(fullwidthRanges, codePoint);
+};
+var isWide = (codePoint) => {
+  if (codePoint >= wideFastPathStart && codePoint <= wideFastPathEnd) {
+    return true;
+  }
+  if (codePoint < wideMinimalCodePoint || codePoint > wideMaximumCodePoint) {
+    return false;
+  }
+  return isInRange(wideRanges, codePoint);
+};
+
+// node_modules/get-east-asian-width/index.js
+function validate(codePoint) {
+  if (!Number.isSafeInteger(codePoint)) {
+    throw new TypeError(`Expected a code point, got \`${typeof codePoint}\`.`);
+  }
+}
+function eastAsianWidth(codePoint, { ambiguousAsWide = false } = {}) {
+  validate(codePoint);
+  if (isFullWidth(codePoint) || isWide(codePoint) || ambiguousAsWide && isAmbiguous(codePoint)) {
+    return 2;
+  }
+  return 1;
+}
+
+// node_modules/@earendil-works/pi-tui/dist/utils.js
+var graphemeSegmenter = new Intl.Segmenter(void 0, { granularity: "grapheme" });
+var wordSegmenter = new Intl.Segmenter(void 0, { granularity: "word" });
+function getGraphemeSegmenter() {
+  return graphemeSegmenter;
+}
+function getWordSegmenter() {
+  return wordSegmenter;
+}
+function couldBeEmoji(segment) {
+  const cp = segment.codePointAt(0);
+  return cp >= 126976 && cp <= 130047 || // Emoji and Pictograph
+  cp >= 8960 && cp <= 9215 || // Misc technical
+  cp >= 9728 && cp <= 10175 || // Misc symbols, dingbats
+  cp >= 11088 && cp <= 11093 || // Specific stars/circles
+  segment.includes("\uFE0F") || // Contains VS16 (emoji presentation selector)
+  segment.length > 2;
+}
+var zeroWidthRegex = new RegExp("^(?:\\p{Default_Ignorable_Code_Point}|\\p{Control}|\\p{Mark}|\\p{Surrogate})+$", "v");
+var leadingNonPrintingRegex = new RegExp("^[\\p{Default_Ignorable_Code_Point}\\p{Control}\\p{Format}\\p{Mark}\\p{Surrogate}]+", "v");
+var nonPrintingCharRegex = new RegExp("^(?:\\p{Default_Ignorable_Code_Point}|\\p{Control}|\\p{Format}|\\p{Mark}|\\p{Surrogate})$", "v");
+var markCharRegex = new RegExp("^\\p{Mark}$", "v");
+var terminalSpacingMarkRegex = new RegExp("^(?:[\\p{Spacing_Mark}--[\\u1734\\u302E\\u302F]]|[\\u065F\\u0F7F\\u102B\\u102C\\u1031\\u1033-\\u1035\\u1038\\u103A-\\u103E])+$", "v");
+var rgiEmojiRegex = new RegExp("^\\p{RGI_Emoji}$", "v");
+var WIDTH_CACHE_SIZE = 512;
+var widthCache = /* @__PURE__ */ new Map();
+var cjkBreakRegex = /[\p{Script_Extensions=Han}\p{Script_Extensions=Hiragana}\p{Script_Extensions=Katakana}\p{Script_Extensions=Hangul}\p{Script_Extensions=Bopomofo}]/u;
+function isPrintableAscii(str) {
+  for (let i = 0; i < str.length; i++) {
+    const code = str.charCodeAt(i);
+    if (code < 32 || code > 126) {
+      return false;
+    }
+  }
+  return true;
+}
+function truncateFragmentToWidth(text, maxWidth) {
+  if (maxWidth <= 0 || text.length === 0) {
+    return { text: "", width: 0 };
+  }
+  if (isPrintableAscii(text)) {
+    const clipped = text.slice(0, maxWidth);
+    return { text: clipped, width: clipped.length };
+  }
+  const hasAnsi = text.includes("\x1B");
+  const hasTabs = text.includes("	");
+  if (!hasAnsi && !hasTabs) {
+    let result2 = "";
+    let width2 = 0;
+    for (const { segment } of graphemeSegmenter.segment(text)) {
+      const w2 = graphemeWidth(segment);
+      if (width2 + w2 > maxWidth) {
+        break;
+      }
+      result2 += segment;
+      width2 += w2;
+    }
+    return { text: result2, width: width2 };
+  }
+  let result = "";
+  let width = 0;
+  let i = 0;
+  let pendingAnsi = "";
+  while (i < text.length) {
+    const ansi = extractAnsiCode(text, i);
+    if (ansi) {
+      pendingAnsi += ansi.code;
+      i += ansi.length;
+      continue;
+    }
+    if (text[i] === "	") {
+      if (width + 3 > maxWidth) {
+        break;
+      }
+      if (pendingAnsi) {
+        result += pendingAnsi;
+        pendingAnsi = "";
+      }
+      result += "	";
+      width += 3;
+      i++;
+      continue;
+    }
+    let end = i;
+    while (end < text.length && text[end] !== "	") {
+      const nextAnsi = extractAnsiCode(text, end);
+      if (nextAnsi) {
+        break;
+      }
+      end++;
+    }
+    for (const { segment } of graphemeSegmenter.segment(text.slice(i, end))) {
+      const w2 = graphemeWidth(segment);
+      if (width + w2 > maxWidth) {
+        return { text: result, width };
+      }
+      if (pendingAnsi) {
+        result += pendingAnsi;
+        pendingAnsi = "";
+      }
+      result += segment;
+      width += w2;
+    }
+    i = end;
+  }
+  return { text: result, width };
+}
+function finalizeTruncatedResult(prefix, prefixWidth, ellipsis, ellipsisWidth, maxWidth, pad2) {
+  const reset = "\x1B[0m";
+  const hyperlinkClose = getActiveOsc8Close(prefix);
+  const visibleWidth2 = prefixWidth + ellipsisWidth;
+  let result;
+  if (ellipsis.length > 0) {
+    result = `${prefix}${hyperlinkClose}${reset}${ellipsis}${reset}`;
+  } else {
+    result = `${prefix}${hyperlinkClose}${reset}`;
+  }
+  return pad2 ? result + " ".repeat(Math.max(0, maxWidth - visibleWidth2)) : result;
+}
+function graphemeWidth(segment) {
+  if (segment === "	") {
+    return 3;
+  }
+  if (terminalSpacingMarkRegex.test(segment)) {
+    return [...segment].length;
+  }
+  if (zeroWidthRegex.test(segment)) {
+    return 0;
+  }
+  if (couldBeEmoji(segment) && rgiEmojiRegex.test(segment)) {
+    return 2;
+  }
+  const base = segment.replace(leadingNonPrintingRegex, "");
+  const cp = base.codePointAt(0);
+  if (cp === void 0) {
+    return 0;
+  }
+  if (cp >= 127462 && cp <= 127487) {
+    return 2;
+  }
+  let width = eastAsianWidth(cp);
+  let followsMark = false;
+  const chars = [...base];
+  for (const char of chars.slice(1)) {
+    if (terminalSpacingMarkRegex.test(char)) {
+      width += 1;
+      followsMark = false;
+    } else if (markCharRegex.test(char)) {
+      followsMark = true;
+    } else if (!nonPrintingCharRegex.test(char)) {
+      const c = char.codePointAt(0);
+      if (followsMark || c >= 65280 && c <= 65519) {
+        width += eastAsianWidth(c);
+      } else if (c === 3635 || c === 3763) {
+        width += 1;
+      }
+      followsMark = false;
+    }
+  }
+  return width;
+}
+function visibleWidth(str) {
+  if (str.length === 0) {
+    return 0;
+  }
+  if (isPrintableAscii(str)) {
+    return str.length;
+  }
+  const cached = widthCache.get(str);
+  if (cached !== void 0) {
+    return cached;
+  }
+  let clean = str;
+  if (str.includes("	")) {
+    clean = clean.replace(/\t/g, "   ");
+  }
+  if (clean.includes("\x1B")) {
+    let stripped = "";
+    let i = 0;
+    while (i < clean.length) {
+      const ansi = extractAnsiCode(clean, i);
+      if (ansi) {
+        i += ansi.length;
+        continue;
+      }
+      stripped += clean[i];
+      i++;
+    }
+    clean = stripped;
+  }
+  let width = 0;
+  for (const { segment } of graphemeSegmenter.segment(clean)) {
+    width += graphemeWidth(segment);
+  }
+  if (widthCache.size >= WIDTH_CACHE_SIZE) {
+    const firstKey = widthCache.keys().next().value;
+    if (firstKey !== void 0) {
+      widthCache.delete(firstKey);
+    }
+  }
+  widthCache.set(str, width);
+  return width;
+}
+function stripTerminalSequences(str) {
+  if (!str.includes("\x1B"))
+    return str;
+  let result = "";
+  let i = 0;
+  while (i < str.length) {
+    const ansi = extractAnsiCode(str, i);
+    if (ansi) {
+      i += ansi.length;
+      continue;
+    }
+    result += str[i];
+    i++;
+  }
+  return result;
+}
+function getGraphemeCellRange(line, column) {
+  let currentCol = 0;
+  let i = 0;
+  while (i < line.length) {
+    const ansi = extractAnsiCode(line, i);
+    if (ansi) {
+      i += ansi.length;
+      continue;
+    }
+    let textEnd = i;
+    while (textEnd < line.length && !extractAnsiCode(line, textEnd))
+      textEnd++;
+    for (const { segment } of graphemeSegmenter.segment(line.slice(i, textEnd))) {
+      const width = graphemeWidth(segment);
+      if (width > 0 && column >= currentCol && column < currentCol + width) {
+        return { start: currentCol, end: currentCol + width };
+      }
+      currentCol += width;
+    }
+    i = textEnd;
+  }
+  return void 0;
+}
+function getOsc8LinkAtColumn(line, column) {
+  let activeUrl;
+  let currentCol = 0;
+  let i = 0;
+  while (i < line.length) {
+    const ansi = extractAnsiCode(line, i);
+    if (ansi) {
+      const hyperlink2 = /^\x1b\]8;[^;]*;([^\x07\x1b]*)(?:\x07|\x1b\\)$/.exec(ansi.code);
+      if (hyperlink2)
+        activeUrl = hyperlink2[1] || void 0;
+      i += ansi.length;
+      continue;
+    }
+    let textEnd = i;
+    while (textEnd < line.length && !extractAnsiCode(line, textEnd))
+      textEnd++;
+    for (const { segment } of graphemeSegmenter.segment(line.slice(i, textEnd))) {
+      const width = segment === "	" ? 3 : graphemeWidth(segment);
+      if (column >= currentCol && column < currentCol + width)
+        return activeUrl;
+      currentCol += width;
+    }
+    i = textEnd;
+  }
+  return void 0;
+}
+var THAI_LAO_AM_REGEX = /[\u0e33\u0eb3]/;
+var THAI_LAO_AM_GLOBAL_REGEX = /[\u0e33\u0eb3]/g;
+function normalizeTerminalOutput(str) {
+  let normalized = str;
+  if (THAI_LAO_AM_REGEX.test(normalized)) {
+    normalized = normalized.replace(THAI_LAO_AM_GLOBAL_REGEX, (char) => char === "\u0E33" ? "\u0E4D\u0E32" : "\u0ECD\u0EB2");
+  }
+  if (!normalized.includes("	"))
+    return normalized;
+  let result = "";
+  let i = 0;
+  while (i < normalized.length) {
+    const ansi = extractAnsiCode(normalized, i);
+    if (ansi) {
+      result += ansi.code;
+      i += ansi.length;
+      continue;
+    }
+    result += normalized[i] === "	" ? "   " : normalized[i];
+    i++;
+  }
+  return result;
+}
+function extractAnsiCode(str, pos) {
+  if (pos >= str.length || str[pos] !== "\x1B")
+    return null;
+  const next = str[pos + 1];
+  if (next === "[") {
+    let j2 = pos + 2;
+    while (j2 < str.length && !/[mGKHJ]/.test(str[j2]))
+      j2++;
+    if (j2 < str.length)
+      return { code: str.substring(pos, j2 + 1), length: j2 + 1 - pos };
+    return null;
+  }
+  if (next === "]") {
+    let j2 = pos + 2;
+    while (j2 < str.length) {
+      if (str[j2] === "\x07")
+        return { code: str.substring(pos, j2 + 1), length: j2 + 1 - pos };
+      if (str[j2] === "\x1B" && str[j2 + 1] === "\\")
+        return { code: str.substring(pos, j2 + 2), length: j2 + 2 - pos };
+      j2++;
+    }
+    return null;
+  }
+  if (next === "_") {
+    let j2 = pos + 2;
+    while (j2 < str.length) {
+      if (str[j2] === "\x07")
+        return { code: str.substring(pos, j2 + 1), length: j2 + 1 - pos };
+      if (str[j2] === "\x1B" && str[j2 + 1] === "\\")
+        return { code: str.substring(pos, j2 + 2), length: j2 + 2 - pos };
+      j2++;
+    }
+    return null;
+  }
+  return null;
+}
+function parseOsc8Hyperlink(ansiCode) {
+  if (!ansiCode.startsWith("\x1B]8;")) {
+    return void 0;
+  }
+  const terminator = ansiCode.endsWith("\x07") ? "\x07" : "\x1B\\";
+  const body = ansiCode.slice(4, terminator === "\x07" ? -1 : -2);
+  const separatorIndex = body.indexOf(";");
+  if (separatorIndex === -1) {
+    return void 0;
+  }
+  const params = body.slice(0, separatorIndex);
+  const url = body.slice(separatorIndex + 1);
+  if (!url) {
+    return null;
+  }
+  return { params, url, terminator };
+}
+function formatOsc8Hyperlink(hyperlink2) {
+  return `\x1B]8;${hyperlink2.params};${hyperlink2.url}${hyperlink2.terminator}`;
+}
+function formatOsc8Close(terminator) {
+  return `\x1B]8;;${terminator}`;
+}
+function getActiveOsc8Close(prefix) {
+  if (!prefix.includes("\x1B]8;")) {
+    return "";
+  }
+  let activeHyperlink = null;
+  let i = 0;
+  while (i < prefix.length) {
+    const ansi = extractAnsiCode(prefix, i);
+    if (ansi) {
+      const hyperlink2 = parseOsc8Hyperlink(ansi.code);
+      if (hyperlink2 !== void 0) {
+        activeHyperlink = hyperlink2;
+      }
+      i += ansi.length;
+    } else {
+      i++;
+    }
+  }
+  return activeHyperlink ? formatOsc8Close(activeHyperlink.terminator) : "";
+}
+var AnsiCodeTracker = class {
+  // Track individual attributes separately so we can reset them specifically
+  bold = false;
+  dim = false;
+  italic = false;
+  underline = false;
+  blink = false;
+  inverse = false;
+  hidden = false;
+  strikethrough = false;
+  fgColor = null;
+  // Stores the full code like "31" or "38;5;240"
+  bgColor = null;
+  // Stores the full code like "41" or "48;5;240"
+  activeHyperlink = null;
+  process(ansiCode) {
+    const hyperlink2 = parseOsc8Hyperlink(ansiCode);
+    if (hyperlink2 !== void 0) {
+      this.activeHyperlink = hyperlink2;
+      return;
+    }
+    if (!ansiCode.endsWith("m")) {
+      return;
+    }
+    const match = ansiCode.match(/\x1b\[([\d;]*)m/);
+    if (!match)
+      return;
+    const params = match[1];
+    if (params === "" || params === "0") {
+      this.reset();
+      return;
+    }
+    const parts = params.split(";");
+    let i = 0;
+    while (i < parts.length) {
+      const code = Number.parseInt(parts[i], 10);
+      if (code === 38 || code === 48) {
+        if (parts[i + 1] === "5" && parts[i + 2] !== void 0) {
+          const colorCode = `${parts[i]};${parts[i + 1]};${parts[i + 2]}`;
+          if (code === 38) {
+            this.fgColor = colorCode;
+          } else {
+            this.bgColor = colorCode;
+          }
+          i += 3;
+          continue;
+        } else if (parts[i + 1] === "2" && parts[i + 4] !== void 0) {
+          const colorCode = `${parts[i]};${parts[i + 1]};${parts[i + 2]};${parts[i + 3]};${parts[i + 4]}`;
+          if (code === 38) {
+            this.fgColor = colorCode;
+          } else {
+            this.bgColor = colorCode;
+          }
+          i += 5;
+          continue;
+        }
+      }
+      switch (code) {
+        case 0:
+          this.reset();
+          break;
+        case 1:
+          this.bold = true;
+          break;
+        case 2:
+          this.dim = true;
+          break;
+        case 3:
+          this.italic = true;
+          break;
+        case 4:
+          this.underline = true;
+          break;
+        case 5:
+          this.blink = true;
+          break;
+        case 7:
+          this.inverse = true;
+          break;
+        case 8:
+          this.hidden = true;
+          break;
+        case 9:
+          this.strikethrough = true;
+          break;
+        case 21:
+          this.bold = false;
+          break;
+        // Some terminals
+        case 22:
+          this.bold = false;
+          this.dim = false;
+          break;
+        case 23:
+          this.italic = false;
+          break;
+        case 24:
+          this.underline = false;
+          break;
+        case 25:
+          this.blink = false;
+          break;
+        case 27:
+          this.inverse = false;
+          break;
+        case 28:
+          this.hidden = false;
+          break;
+        case 29:
+          this.strikethrough = false;
+          break;
+        case 39:
+          this.fgColor = null;
+          break;
+        // Default fg
+        case 49:
+          this.bgColor = null;
+          break;
+        // Default bg
+        default:
+          if (code >= 30 && code <= 37 || code >= 90 && code <= 97) {
+            this.fgColor = String(code);
+          } else if (code >= 40 && code <= 47 || code >= 100 && code <= 107) {
+            this.bgColor = String(code);
+          }
+          break;
+      }
+      i++;
+    }
+  }
+  reset() {
+    this.bold = false;
+    this.dim = false;
+    this.italic = false;
+    this.underline = false;
+    this.blink = false;
+    this.inverse = false;
+    this.hidden = false;
+    this.strikethrough = false;
+    this.fgColor = null;
+    this.bgColor = null;
+  }
+  /** Clear all state for reuse. */
+  clear() {
+    this.reset();
+    this.activeHyperlink = null;
+  }
+  getActiveCodes() {
+    const codes = [];
+    if (this.bold)
+      codes.push("1");
+    if (this.dim)
+      codes.push("2");
+    if (this.italic)
+      codes.push("3");
+    if (this.underline)
+      codes.push("4");
+    if (this.blink)
+      codes.push("5");
+    if (this.inverse)
+      codes.push("7");
+    if (this.hidden)
+      codes.push("8");
+    if (this.strikethrough)
+      codes.push("9");
+    if (this.fgColor)
+      codes.push(this.fgColor);
+    if (this.bgColor)
+      codes.push(this.bgColor);
+    let result = codes.length > 0 ? `\x1B[${codes.join(";")}m` : "";
+    if (this.activeHyperlink) {
+      result += formatOsc8Hyperlink(this.activeHyperlink);
+    }
+    return result;
+  }
+  getActiveBackgroundCode() {
+    return this.bgColor ? `\x1B[${this.bgColor}m` : "";
+  }
+  hasActiveCodes() {
+    return this.bold || this.dim || this.italic || this.underline || this.blink || this.inverse || this.hidden || this.strikethrough || this.fgColor !== null || this.bgColor !== null || this.activeHyperlink !== null;
+  }
+  /**
+   * Get reset codes for attributes that need to be turned off at line end.
+   * Underline must be closed to prevent bleeding into padding.
+   * Active OSC 8 hyperlinks must be closed and re-opened on the next line.
+   * Returns empty string if no attributes need closing.
+   */
+  getLineEndReset() {
+    let result = "";
+    if (this.underline) {
+      result += "\x1B[24m";
+    }
+    if (this.activeHyperlink) {
+      result += formatOsc8Close(this.activeHyperlink.terminator);
+    }
+    return result;
+  }
+};
+function updateTrackerFromText(text, tracker) {
+  let i = 0;
+  while (i < text.length) {
+    const ansiResult = extractAnsiCode(text, i);
+    if (ansiResult) {
+      tracker.process(ansiResult.code);
+      i += ansiResult.length;
+    } else {
+      i++;
+    }
+  }
+}
+function getActiveBackgroundAnsi(text) {
+  const tracker = new AnsiCodeTracker();
+  updateTrackerFromText(text, tracker);
+  return tracker.getActiveBackgroundCode();
+}
+function splitIntoTokensWithAnsi(text) {
+  const tokens = [];
+  let current = "";
+  let pendingAnsi = "";
+  let currentKind = null;
+  let i = 0;
+  const flushCurrent = () => {
+    if (!current) {
+      return;
+    }
+    tokens.push(current);
+    current = "";
+    currentKind = null;
+  };
+  while (i < text.length) {
+    const ansiResult = extractAnsiCode(text, i);
+    if (ansiResult) {
+      pendingAnsi += ansiResult.code;
+      i += ansiResult.length;
+      continue;
+    }
+    let end = i;
+    while (end < text.length && !extractAnsiCode(text, end)) {
+      end++;
+    }
+    for (const { segment } of graphemeSegmenter.segment(text.slice(i, end))) {
+      const segmentIsSpace = segment === " ";
+      if (!segmentIsSpace && cjkBreakRegex.test(segment)) {
+        flushCurrent();
+        const token = pendingAnsi + segment;
+        pendingAnsi = "";
+        tokens.push(token);
+        continue;
+      }
+      const segmentKind = segmentIsSpace ? "space" : "word";
+      if (current && currentKind !== segmentKind) {
+        flushCurrent();
+      }
+      if (pendingAnsi) {
+        current += pendingAnsi;
+        pendingAnsi = "";
+      }
+      currentKind = segmentKind;
+      current += segment;
+    }
+    i = end;
+  }
+  if (pendingAnsi) {
+    if (current) {
+      current += pendingAnsi;
+    } else if (tokens.length > 0) {
+      tokens[tokens.length - 1] += pendingAnsi;
+    } else {
+      current = pendingAnsi;
+    }
+  }
+  if (current) {
+    tokens.push(current);
+  }
+  return tokens;
+}
+function wrapTextWithAnsi(text, width) {
+  if (!text) {
+    return [""];
+  }
+  const inputLines = text.split(/\r\n|\r|\n/);
+  const result = [];
+  const tracker = new AnsiCodeTracker();
+  for (const inputLine of inputLines) {
+    const prefix = result.length > 0 ? tracker.getActiveCodes() : "";
+    const wrappedLines = wrapSingleLine(prefix + inputLine, width);
+    for (const wrappedLine of wrappedLines) {
+      result.push(wrappedLine);
+    }
+    updateTrackerFromText(inputLine, tracker);
+  }
+  return result.length > 0 ? result : [""];
+}
+function wrapSingleLine(line, width) {
+  if (!line) {
+    return [""];
+  }
+  const visibleLength = visibleWidth(line);
+  if (visibleLength <= width) {
+    return [line];
+  }
+  const wrapped = [];
+  const tracker = new AnsiCodeTracker();
+  const tokens = splitIntoTokensWithAnsi(line);
+  let currentLine = "";
+  let currentVisibleLength = 0;
+  for (const token of tokens) {
+    const tokenVisibleLength = visibleWidth(token);
+    const isWhitespace = token.trim() === "";
+    if (tokenVisibleLength > width && !isWhitespace) {
+      if (currentLine) {
+        const lineEndReset = tracker.getLineEndReset();
+        if (lineEndReset) {
+          currentLine += lineEndReset;
+        }
+        wrapped.push(currentLine);
+        currentLine = "";
+        currentVisibleLength = 0;
+      }
+      const broken = breakLongWord(token, width, tracker);
+      for (let i = 0; i < broken.length - 1; i++) {
+        wrapped.push(broken[i]);
+      }
+      currentLine = broken[broken.length - 1];
+      currentVisibleLength = visibleWidth(currentLine);
+      continue;
+    }
+    const totalNeeded = currentVisibleLength + tokenVisibleLength;
+    if (totalNeeded > width && currentVisibleLength > 0) {
+      let lineToWrap = currentLine.trimEnd();
+      const lineEndReset = tracker.getLineEndReset();
+      if (lineEndReset) {
+        lineToWrap += lineEndReset;
+      }
+      wrapped.push(lineToWrap);
+      if (isWhitespace) {
+        currentLine = tracker.getActiveCodes();
+        currentVisibleLength = 0;
+      } else {
+        currentLine = tracker.getActiveCodes() + token;
+        currentVisibleLength = tokenVisibleLength;
+      }
+    } else {
+      currentLine += token;
+      currentVisibleLength += tokenVisibleLength;
+    }
+    updateTrackerFromText(token, tracker);
+  }
+  if (currentLine) {
+    wrapped.push(currentLine);
+  }
+  return wrapped.length > 0 ? wrapped.map((line2) => line2.trimEnd()) : [""];
+}
+var PUNCTUATION_REGEX = /[(){}[\]<>.,;:'"!?+\-=*/\\|&%^$#@~`]/;
+function isWhitespaceChar(char) {
+  return /\s/.test(char);
+}
+function breakLongWord(word, width, tracker) {
+  const lines = [];
+  let currentLine = tracker.getActiveCodes();
+  let currentWidth = 0;
+  let i = 0;
+  const segments = [];
+  while (i < word.length) {
+    const ansiResult = extractAnsiCode(word, i);
+    if (ansiResult) {
+      segments.push({ type: "ansi", value: ansiResult.code });
+      i += ansiResult.length;
+    } else {
+      let end = i;
+      while (end < word.length) {
+        const nextAnsi = extractAnsiCode(word, end);
+        if (nextAnsi)
+          break;
+        end++;
+      }
+      const textPortion = word.slice(i, end);
+      for (const seg of graphemeSegmenter.segment(textPortion)) {
+        segments.push({ type: "grapheme", value: seg.segment });
+      }
+      i = end;
+    }
+  }
+  for (const seg of segments) {
+    if (seg.type === "ansi") {
+      currentLine += seg.value;
+      tracker.process(seg.value);
+      continue;
+    }
+    const grapheme = seg.value;
+    if (!grapheme)
+      continue;
+    const graphemeWidth2 = visibleWidth(grapheme);
+    if (currentWidth + graphemeWidth2 > width) {
+      const lineEndReset = tracker.getLineEndReset();
+      if (lineEndReset) {
+        currentLine += lineEndReset;
+      }
+      lines.push(currentLine);
+      currentLine = tracker.getActiveCodes();
+      currentWidth = 0;
+    }
+    currentLine += grapheme;
+    currentWidth += graphemeWidth2;
+  }
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+  return lines.length > 0 ? lines : [""];
+}
+function applyBackgroundToLine(line, width, bgFn) {
+  const visibleLen = visibleWidth(line);
+  const paddingNeeded = Math.max(0, width - visibleLen);
+  const padding = " ".repeat(paddingNeeded);
+  const withPadding = line + padding;
+  return bgFn(withPadding);
+}
+function truncateToWidth(text, maxWidth, ellipsis = "...", pad2 = false) {
+  if (maxWidth <= 0) {
+    return "";
+  }
+  if (text.length === 0) {
+    return pad2 ? " ".repeat(maxWidth) : "";
+  }
+  const ellipsisWidth = visibleWidth(ellipsis);
+  if (ellipsisWidth >= maxWidth) {
+    const textWidth = visibleWidth(text);
+    if (textWidth <= maxWidth) {
+      return pad2 ? text + " ".repeat(maxWidth - textWidth) : text;
+    }
+    const clippedEllipsis = truncateFragmentToWidth(ellipsis, maxWidth);
+    if (clippedEllipsis.width === 0) {
+      return pad2 ? " ".repeat(maxWidth) : "";
+    }
+    return finalizeTruncatedResult("", 0, clippedEllipsis.text, clippedEllipsis.width, maxWidth, pad2);
+  }
+  if (isPrintableAscii(text)) {
+    if (text.length <= maxWidth) {
+      return pad2 ? text + " ".repeat(maxWidth - text.length) : text;
+    }
+    const targetWidth2 = maxWidth - ellipsisWidth;
+    return finalizeTruncatedResult(text.slice(0, targetWidth2), targetWidth2, ellipsis, ellipsisWidth, maxWidth, pad2);
+  }
+  const targetWidth = maxWidth - ellipsisWidth;
+  let result = "";
+  let pendingAnsi = "";
+  let visibleSoFar = 0;
+  let keptWidth = 0;
+  let keepContiguousPrefix = true;
+  let overflowed = false;
+  let exhaustedInput = false;
+  const hasAnsi = text.includes("\x1B");
+  const hasTabs = text.includes("	");
+  if (!hasAnsi && !hasTabs) {
+    for (const { segment } of graphemeSegmenter.segment(text)) {
+      const width = graphemeWidth(segment);
+      if (keepContiguousPrefix && keptWidth + width <= targetWidth) {
+        result += segment;
+        keptWidth += width;
+      } else {
+        keepContiguousPrefix = false;
+      }
+      visibleSoFar += width;
+      if (visibleSoFar > maxWidth) {
+        overflowed = true;
+        break;
+      }
+    }
+    exhaustedInput = !overflowed;
+  } else {
+    let i = 0;
+    while (i < text.length) {
+      const ansi = extractAnsiCode(text, i);
+      if (ansi) {
+        pendingAnsi += ansi.code;
+        i += ansi.length;
+        continue;
+      }
+      if (text[i] === "	") {
+        if (keepContiguousPrefix && keptWidth + 3 <= targetWidth) {
+          if (pendingAnsi) {
+            result += pendingAnsi;
+            pendingAnsi = "";
+          }
+          result += "	";
+          keptWidth += 3;
+        } else {
+          keepContiguousPrefix = false;
+          pendingAnsi = "";
+        }
+        visibleSoFar += 3;
+        if (visibleSoFar > maxWidth) {
+          overflowed = true;
+          break;
+        }
+        i++;
+        continue;
+      }
+      let end = i;
+      while (end < text.length && text[end] !== "	") {
+        const nextAnsi = extractAnsiCode(text, end);
+        if (nextAnsi) {
+          break;
+        }
+        end++;
+      }
+      for (const { segment } of graphemeSegmenter.segment(text.slice(i, end))) {
+        const width = graphemeWidth(segment);
+        if (keepContiguousPrefix && keptWidth + width <= targetWidth) {
+          if (pendingAnsi) {
+            result += pendingAnsi;
+            pendingAnsi = "";
+          }
+          result += segment;
+          keptWidth += width;
+        } else {
+          keepContiguousPrefix = false;
+          pendingAnsi = "";
+        }
+        visibleSoFar += width;
+        if (visibleSoFar > maxWidth) {
+          overflowed = true;
+          break;
+        }
+      }
+      if (overflowed) {
+        break;
+      }
+      i = end;
+    }
+    exhaustedInput = i >= text.length;
+  }
+  if (!overflowed && exhaustedInput) {
+    return pad2 ? text + " ".repeat(Math.max(0, maxWidth - visibleSoFar)) : text;
+  }
+  return finalizeTruncatedResult(result, keptWidth, ellipsis, ellipsisWidth, maxWidth, pad2);
+}
+function sliceByColumn(line, startCol, length, strict = false) {
+  return sliceWithWidth(line, startCol, length, strict).text;
+}
+function sliceWithWidth(line, startCol, length, strict = false) {
+  if (length <= 0)
+    return { text: "", width: 0 };
+  const endCol = startCol + length;
+  let result = "", resultWidth = 0, currentCol = 0, i = 0, pendingAnsi = "";
+  while (i < line.length) {
+    const ansi = extractAnsiCode(line, i);
+    if (ansi) {
+      if (currentCol >= startCol && currentCol < endCol)
+        result += ansi.code;
+      else if (currentCol < startCol)
+        pendingAnsi += ansi.code;
+      i += ansi.length;
+      continue;
+    }
+    let textEnd = i;
+    while (textEnd < line.length && !extractAnsiCode(line, textEnd))
+      textEnd++;
+    for (const { segment } of graphemeSegmenter.segment(line.slice(i, textEnd))) {
+      const w2 = graphemeWidth(segment);
+      const inRange = currentCol >= startCol && currentCol < endCol;
+      const fits = !strict || currentCol + w2 <= endCol;
+      if (inRange && fits) {
+        if (pendingAnsi) {
+          result += pendingAnsi;
+          pendingAnsi = "";
+        }
+        result += segment;
+        resultWidth += w2;
+      }
+      currentCol += w2;
+      if (currentCol >= endCol)
+        break;
+    }
+    i = textEnd;
+    if (currentCol >= endCol)
+      break;
+  }
+  return { text: result, width: resultWidth };
+}
+var pooledStyleTracker = new AnsiCodeTracker();
+function extractSegments(line, beforeEnd, afterStart, afterLen, strictAfter = false) {
+  let before = "", beforeWidth = 0, after = "", afterWidth = 0;
+  let currentCol = 0, i = 0;
+  let pendingAnsiBefore = "";
+  let afterStarted = false;
+  const afterEnd = afterStart + afterLen;
+  pooledStyleTracker.clear();
+  while (i < line.length) {
+    const ansi = extractAnsiCode(line, i);
+    if (ansi) {
+      pooledStyleTracker.process(ansi.code);
+      if (currentCol < beforeEnd) {
+        pendingAnsiBefore += ansi.code;
+      } else if (currentCol >= afterStart && currentCol < afterEnd && afterStarted) {
+        after += ansi.code;
+      }
+      i += ansi.length;
+      continue;
+    }
+    let textEnd = i;
+    while (textEnd < line.length && !extractAnsiCode(line, textEnd))
+      textEnd++;
+    for (const { segment } of graphemeSegmenter.segment(line.slice(i, textEnd))) {
+      const w2 = graphemeWidth(segment);
+      if (currentCol < beforeEnd && currentCol + w2 <= beforeEnd) {
+        if (pendingAnsiBefore) {
+          before += pendingAnsiBefore;
+          pendingAnsiBefore = "";
+        }
+        before += segment;
+        beforeWidth += w2;
+      } else if (currentCol >= afterStart && currentCol < afterEnd) {
+        const fits = !strictAfter || currentCol + w2 <= afterEnd;
+        if (fits) {
+          if (!afterStarted) {
+            after += pooledStyleTracker.getActiveCodes();
+            afterStarted = true;
+          }
+          after += segment;
+          afterWidth += w2;
+        }
+      }
+      currentCol += w2;
+      if (afterLen <= 0 ? currentCol >= beforeEnd : currentCol >= afterEnd)
+        break;
+    }
+    i = textEnd;
+    if (afterLen <= 0 ? currentCol >= beforeEnd : currentCol >= afterEnd)
+      break;
+  }
+  return { before, beforeWidth, after, afterWidth };
+}
+
 // node_modules/@earendil-works/pi-tui/dist/tui.js
+function dispatchMouseEvent(component, event) {
+  const result = component.handleMouse?.(event);
+  if (!result)
+    return void 0;
+  if ("target" in result)
+    return result;
+  if (!result.handled && !result.capture && !result.focus)
+    return void 0;
+  return {
+    ...result,
+    handled: true,
+    ...result.focus ? { focusTarget: component } : {},
+    target: {
+      component,
+      originX: event.screenX - event.x,
+      originY: event.screenY - event.y,
+      width: event.width,
+      height: event.height
+    }
+  };
+}
+function retargetMouseEvent(event, target) {
+  return {
+    ...event,
+    x: event.screenX - target.originX,
+    y: event.screenY - target.originY,
+    width: target.width,
+    height: target.height
+  };
+}
 function isFocusable(component) {
   return component !== null && "focused" in component;
 }
@@ -27642,6 +27243,7 @@ function parseSizeValue(value, referenceSize) {
 }
 var Container = class {
   children = [];
+  mouseLayout;
   addChild(component) {
     this.children.push(component);
   }
@@ -27659,14 +27261,37 @@ var Container = class {
       child.invalidate?.();
     }
   }
+  handleMouse(event) {
+    if (event.y < 0 || event.y >= event.height)
+      return void 0;
+    const mouseChildren = this.mouseLayout?.width === event.width ? this.mouseLayout.children : this.children.map((component) => ({ component, height: component.render(event.width).length }));
+    let childY = 0;
+    for (const { component: child, height: childHeight } of mouseChildren) {
+      if (event.y >= childY && event.y < childY + childHeight) {
+        const result = dispatchMouseEvent(child, {
+          ...event,
+          y: event.y - childY,
+          height: childHeight
+        });
+        if (result?.focus && this.handleInput)
+          return { ...result, focusTarget: this };
+        return result;
+      }
+      childY += childHeight;
+    }
+    return void 0;
+  }
   render(width) {
     const lines = [];
+    const mouseChildren = [];
     for (const child of this.children) {
       const childLines = child.render(width);
+      mouseChildren.push({ component: child, height: childLines.length });
       for (const line of childLines) {
         lines.push(line);
       }
     }
+    this.mouseLayout = { width, children: mouseChildren };
     return lines;
   }
 };
@@ -27698,18 +27323,20 @@ var TuiBase = class _TuiBase extends Container {
   renderTimer;
   lastRenderAt = 0;
   static MIN_RENDER_INTERVAL_MS = 16;
-  showHardwareCursor = process.env.PI_HARDWARE_CURSOR === "1";
-  clearOnShrink = process.env.PI_CLEAR_ON_SHRINK === "1";
+  showHardwareCursor = false;
+  clearOnShrink = false;
   fullRedrawCount = 0;
   stopped = false;
   pendingOsc11BackgroundReplies = 0;
   pendingOsc11BackgroundQueries = [];
   terminalColorSchemeListeners = /* @__PURE__ */ new Set();
   terminalColorSchemeNotificationsEnabled = false;
+  /** Directory for debug/crash logs. When undefined, debug logging is disabled and crash dumps fall back to the OS temp directory. */
   logDirectory;
   // Overlay stack for modal components rendered on top of base content
   focusOrderCounter = 0;
   overlayStack = [];
+  renderedOverlayLayouts = [];
   get hasOverlayEntries() {
     return this.overlayStack.length > 0;
   }
@@ -27717,7 +27344,7 @@ var TuiBase = class _TuiBase extends Container {
   constructor(terminal, showHardwareCursor, logDirectory) {
     super();
     this.terminal = terminal;
-    this.logDirectory = logDirectory ?? process.env.PI_CODING_AGENT_DIR ?? path2.join(os.homedir(), ".pi", "agent");
+    this.logDirectory = logDirectory;
     if (showHardwareCursor !== void 0) {
       this.showHardwareCursor = showHardwareCursor;
     }
@@ -27752,8 +27379,8 @@ var TuiBase = class _TuiBase extends Container {
   }
   /**
    * Set whether to trigger full re-render when content shrinks.
-   * When true (default), empty rows are cleared when content shrinks.
-   * When false, empty rows remain (reduces redraws on slower terminals).
+   * When true, empty rows are cleared when content shrinks.
+   * When false (default), empty rows remain (reduces redraws on slower terminals).
    */
   setClearOnShrink(enabled) {
     this.clearOnShrink = enabled;
@@ -27951,7 +27578,12 @@ var TuiBase = class _TuiBase extends Container {
         }
         this.requestRender();
       },
-      isFocused: () => this.focusedComponent === component
+      isFocused: () => this.focusedComponent === component,
+      getBounds: () => {
+        if (!this.overlayStack.includes(entry) || !this.isOverlayVisible(entry) || !entry.bounds)
+          return void 0;
+        return { ...entry.bounds };
+      }
     };
   }
   /** Hide the topmost overlay and restore previous focus. */
@@ -27977,6 +27609,37 @@ var TuiBase = class _TuiBase extends Container {
   /** Check if the focused component is a visible overlay */
   isOverlayFocused() {
     return this.overlayStack.some((entry) => entry.component === this.focusedComponent && this.isOverlayVisible(entry));
+  }
+  /** Keep overlay containers as keyboard focus owners when a nested control is clicked. */
+  resolveMouseFocusTarget(component) {
+    for (let index = this.overlayStack.length - 1; index >= 0; index--) {
+      const overlay = this.overlayStack[index];
+      if (this.isOverlayVisible(overlay) && this.containsComponent(overlay.component, component)) {
+        return overlay.component;
+      }
+    }
+    return component;
+  }
+  /** Dispatch to the visually topmost overlay under the pointer. */
+  dispatchMouseToOverlay(event) {
+    for (let index = this.renderedOverlayLayouts.length - 1; index >= 0; index--) {
+      const layout = this.renderedOverlayLayouts[index];
+      if (event.screenX < layout.col || event.screenX >= layout.col + layout.width || event.screenY < layout.row || event.screenY >= layout.row + layout.height) {
+        continue;
+      }
+      const result = dispatchMouseEvent(layout.entry.component, {
+        ...event,
+        x: event.screenX - layout.col,
+        y: event.screenY - layout.row,
+        width: layout.width,
+        height: layout.height
+      });
+      return result ? {
+        hit: true,
+        result: result.focus ? { ...result, focusTarget: layout.entry.component } : result
+      } : { hit: true };
+    }
+    return { hit: false };
   }
   /** Check if an overlay entry is currently visible */
   isOverlayVisible(entry) {
@@ -28326,9 +27989,13 @@ var TuiBase = class _TuiBase extends Container {
   }
   /** Composite all overlays into content lines (sorted by focusOrder, higher = on top). */
   compositeOverlays(lines, termWidth, termHeight) {
-    if (this.overlayStack.length === 0)
+    if (this.overlayStack.length === 0) {
+      this.renderedOverlayLayouts = [];
       return lines;
+    }
     const result = [...lines];
+    for (const entry of this.overlayStack)
+      entry.bounds = void 0;
     const rendered = [];
     let minLinesNeeded = result.length;
     const visibleEntries = this.overlayStack.filter((e) => this.isOverlayVisible(e));
@@ -28341,9 +28008,17 @@ var TuiBase = class _TuiBase extends Container {
         overlayLines = overlayLines.slice(0, maxHeight);
       }
       const { row, col } = this.resolveOverlayLayout(options, overlayLines.length, termWidth, termHeight);
-      rendered.push({ overlayLines, row, col, w: width });
+      entry.bounds = { row, col, width, height: overlayLines.length };
+      rendered.push({ entry, overlayLines, row, col, w: width });
       minLinesNeeded = Math.max(minLinesNeeded, row + overlayLines.length);
     }
+    this.renderedOverlayLayouts = rendered.map(({ entry, row, col, w: w2, overlayLines }) => ({
+      entry,
+      row,
+      col,
+      width: w2,
+      height: overlayLines.length
+    }));
     const workingHeight = Math.max(result.length, termHeight, minLinesNeeded);
     while (result.length < workingHeight) {
       result.push("");
@@ -28447,6 +28122,464 @@ var TuiBase = class _TuiBase extends Container {
       timer = setTimeout(() => settle(void 0), timeoutMs);
       this.terminal.write("\x1B[?996n");
     });
+  }
+};
+
+// node_modules/@earendil-works/pi-tui/dist/components/box.js
+var Box = class {
+  children = [];
+  paddingX;
+  paddingY;
+  bgFn;
+  // Cache for rendered output
+  cache;
+  mouseLayout;
+  constructor(paddingX = 1, paddingY = 1, bgFn) {
+    this.paddingX = paddingX;
+    this.paddingY = paddingY;
+    this.bgFn = bgFn;
+  }
+  addChild(component) {
+    this.children.push(component);
+    this.invalidateCache();
+  }
+  removeChild(component) {
+    const index = this.children.indexOf(component);
+    if (index !== -1) {
+      this.children.splice(index, 1);
+      this.invalidateCache();
+    }
+  }
+  clear() {
+    this.children = [];
+    this.invalidateCache();
+  }
+  setBgFn(bgFn) {
+    this.bgFn = bgFn;
+  }
+  invalidateCache() {
+    this.cache = void 0;
+  }
+  matchCache(width, childLines, bgSample) {
+    const cache = this.cache;
+    return !!cache && cache.width === width && cache.bgSample === bgSample && cache.childLines.length === childLines.length && cache.childLines.every((line, i) => line === childLines[i]);
+  }
+  invalidate() {
+    this.invalidateCache();
+    for (const child of this.children) {
+      child.invalidate?.();
+    }
+  }
+  handleMouse(event) {
+    const contentWidth = Math.max(1, event.width - this.paddingX * 2);
+    const contentY = event.y - this.paddingY;
+    const contentX = event.x - this.paddingX;
+    if (contentY < 0 || contentX < 0 || contentX >= contentWidth)
+      return void 0;
+    const mouseChildren = this.mouseLayout?.width === contentWidth ? this.mouseLayout.children : this.children.map((component) => ({ component, height: component.render(contentWidth).length }));
+    let childY = 0;
+    for (const { component: child, height: childHeight } of mouseChildren) {
+      if (contentY >= childY && contentY < childY + childHeight) {
+        return dispatchMouseEvent(child, {
+          ...event,
+          x: contentX,
+          y: contentY - childY,
+          width: contentWidth,
+          height: childHeight
+        });
+      }
+      childY += childHeight;
+    }
+    return void 0;
+  }
+  render(width) {
+    if (this.children.length === 0) {
+      return [];
+    }
+    const contentWidth = Math.max(1, width - this.paddingX * 2);
+    const leftPad = " ".repeat(this.paddingX);
+    const childLines = [];
+    const mouseChildren = [];
+    for (const child of this.children) {
+      const lines = child.render(contentWidth);
+      mouseChildren.push({ component: child, height: lines.length });
+      for (const line of lines) {
+        childLines.push(leftPad + line);
+      }
+    }
+    this.mouseLayout = { width: contentWidth, children: mouseChildren };
+    if (childLines.length === 0) {
+      return [];
+    }
+    const bgSample = this.bgFn ? this.bgFn("test") : void 0;
+    if (this.matchCache(width, childLines, bgSample)) {
+      return this.cache.lines;
+    }
+    const result = [];
+    for (let i = 0; i < this.paddingY; i++) {
+      result.push(this.applyBg("", width));
+    }
+    for (const line of childLines) {
+      result.push(this.applyBg(line, width));
+    }
+    for (let i = 0; i < this.paddingY; i++) {
+      result.push(this.applyBg("", width));
+    }
+    this.cache = { childLines, width, bgSample, lines: result };
+    return result;
+  }
+  applyBg(line, width) {
+    const visLen = visibleWidth(line);
+    const padNeeded = Math.max(0, width - visLen);
+    const padded = line + " ".repeat(padNeeded);
+    if (this.bgFn) {
+      return applyBackgroundToLine(padded, width, this.bgFn);
+    }
+    return padded;
+  }
+};
+
+// node_modules/@earendil-works/pi-tui/dist/keybindings.js
+var TUI_KEYBINDINGS = {
+  "tui.editor.cursorUp": { defaultKeys: "up", description: "Move cursor up" },
+  "tui.editor.cursorDown": { defaultKeys: "down", description: "Move cursor down" },
+  "tui.editor.historyPrevious": {
+    defaultKeys: [],
+    description: "Select previous prompt history entry"
+  },
+  "tui.editor.historyNext": {
+    defaultKeys: [],
+    description: "Select next prompt history entry"
+  },
+  "tui.editor.cursorLeft": {
+    defaultKeys: ["left", "ctrl+b"],
+    description: "Move cursor left"
+  },
+  "tui.editor.cursorRight": {
+    defaultKeys: ["right", "ctrl+f"],
+    description: "Move cursor right"
+  },
+  "tui.editor.cursorWordLeft": {
+    defaultKeys: ["alt+left", "ctrl+left", "alt+b"],
+    description: "Move cursor word left"
+  },
+  "tui.editor.cursorWordRight": {
+    defaultKeys: ["alt+right", "ctrl+right", "alt+f"],
+    description: "Move cursor word right"
+  },
+  "tui.editor.cursorLineStart": {
+    defaultKeys: ["home", "ctrl+home", "ctrl+a"],
+    description: "Move to line start"
+  },
+  "tui.editor.cursorLineEnd": {
+    defaultKeys: ["end", "ctrl+end", "ctrl+e"],
+    description: "Move to line end"
+  },
+  "tui.editor.jumpForward": {
+    defaultKeys: "ctrl+]",
+    description: "Jump forward to character"
+  },
+  "tui.editor.jumpBackward": {
+    defaultKeys: "ctrl+alt+]",
+    description: "Jump backward to character"
+  },
+  "tui.editor.pageUp": { defaultKeys: ["pageUp", "ctrl+pageUp"], description: "Page up" },
+  "tui.editor.pageDown": { defaultKeys: ["pageDown", "ctrl+pageDown"], description: "Page down" },
+  "tui.editor.deleteCharBackward": {
+    defaultKeys: "backspace",
+    description: "Delete character backward"
+  },
+  "tui.editor.deleteCharForward": {
+    defaultKeys: ["delete", "ctrl+d"],
+    description: "Delete character forward"
+  },
+  "tui.editor.deleteWordBackward": {
+    defaultKeys: ["ctrl+w", "alt+backspace"],
+    description: "Delete word backward"
+  },
+  "tui.editor.deleteWordForward": {
+    defaultKeys: ["alt+d", "alt+delete"],
+    description: "Delete word forward"
+  },
+  "tui.editor.deleteToLineStart": {
+    defaultKeys: "ctrl+u",
+    description: "Delete to line start"
+  },
+  "tui.editor.deleteToLineEnd": {
+    defaultKeys: "ctrl+k",
+    description: "Delete to line end"
+  },
+  "tui.editor.yank": { defaultKeys: "ctrl+y", description: "Yank" },
+  "tui.editor.yankPop": { defaultKeys: "alt+y", description: "Yank pop" },
+  "tui.editor.undo": { defaultKeys: "ctrl+-", description: "Undo" },
+  "tui.input.newLine": { defaultKeys: ["shift+enter", "ctrl+j"], description: "Insert newline" },
+  "tui.input.submit": { defaultKeys: "enter", description: "Submit input" },
+  "tui.input.tab": { defaultKeys: "tab", description: "Tab / autocomplete" },
+  "tui.input.copy": { defaultKeys: "ctrl+c", description: "Copy selection" },
+  "tui.select.up": { defaultKeys: "up", description: "Move selection up" },
+  "tui.select.down": { defaultKeys: "down", description: "Move selection down" },
+  "tui.select.pageUp": { defaultKeys: "pageUp", description: "Selection page up" },
+  "tui.select.pageDown": {
+    defaultKeys: "pageDown",
+    description: "Selection page down"
+  },
+  "tui.select.confirm": { defaultKeys: "enter", description: "Confirm selection" },
+  "tui.select.cancel": {
+    defaultKeys: ["escape", "ctrl+c"],
+    description: "Cancel selection"
+  },
+  // These intentionally shadow the unmodified editor bindings in fullscreen mode.
+  "tui.altScreen.pageUp": {
+    defaultKeys: "pageUp",
+    description: "Scroll viewport up one page"
+  },
+  "tui.altScreen.pageDown": {
+    defaultKeys: "pageDown",
+    description: "Scroll viewport down one page"
+  },
+  "tui.altScreen.halfPageUp": {
+    defaultKeys: [],
+    description: "Scroll viewport up half a page"
+  },
+  "tui.altScreen.halfPageDown": {
+    defaultKeys: [],
+    description: "Scroll viewport down half a page"
+  },
+  "tui.altScreen.lineUp": {
+    defaultKeys: [],
+    description: "Scroll viewport up one line"
+  },
+  "tui.altScreen.lineDown": {
+    defaultKeys: [],
+    description: "Scroll viewport down one line"
+  },
+  "tui.altScreen.previousPrompt": {
+    defaultKeys: ["ctrl+shift+up", "ctrl+up"],
+    description: "Jump to previous semantic prompt"
+  },
+  "tui.altScreen.nextPrompt": {
+    defaultKeys: ["ctrl+shift+down", "ctrl+down"],
+    description: "Jump to next semantic prompt"
+  },
+  "tui.altScreen.search": {
+    defaultKeys: "ctrl+shift+f",
+    description: "Search the primary scroll view"
+  },
+  "tui.altScreen.searchNext": {
+    defaultKeys: ["enter", "ctrl+g"],
+    description: "Select the next search match"
+  },
+  "tui.altScreen.searchPrevious": {
+    defaultKeys: ["shift+enter", "ctrl+shift+g"],
+    description: "Select the previous search match"
+  },
+  "tui.altScreen.searchClose": {
+    defaultKeys: "escape",
+    description: "Close transcript search"
+  },
+  "tui.altScreen.top": { defaultKeys: "home", description: "Scroll viewport to top" },
+  "tui.altScreen.bottom": { defaultKeys: "end", description: "Scroll viewport to bottom" }
+};
+function normalizeKeys(keys) {
+  if (keys === void 0)
+    return [];
+  const keyList = Array.isArray(keys) ? keys : [keys];
+  const seen = /* @__PURE__ */ new Set();
+  const result = [];
+  for (const key of keyList) {
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push(key);
+    }
+  }
+  return result;
+}
+var KeybindingsManager = class {
+  definitions;
+  userBindings;
+  keysById = /* @__PURE__ */ new Map();
+  conflicts = [];
+  constructor(definitions, userBindings = {}) {
+    this.definitions = definitions;
+    this.userBindings = userBindings;
+    this.rebuild();
+  }
+  rebuild() {
+    this.keysById.clear();
+    this.conflicts = [];
+    const userClaims = /* @__PURE__ */ new Map();
+    for (const [keybinding, keys] of Object.entries(this.userBindings)) {
+      if (!(keybinding in this.definitions))
+        continue;
+      for (const key of normalizeKeys(keys)) {
+        const claimants = userClaims.get(key) ?? /* @__PURE__ */ new Set();
+        claimants.add(keybinding);
+        userClaims.set(key, claimants);
+      }
+    }
+    for (const [key, keybindings] of userClaims) {
+      if (keybindings.size > 1) {
+        this.conflicts.push({ key, keybindings: [...keybindings] });
+      }
+    }
+    for (const [id, definition] of Object.entries(this.definitions)) {
+      const userKeys = this.userBindings[id];
+      const keys = userKeys === void 0 ? normalizeKeys(definition.defaultKeys) : normalizeKeys(userKeys);
+      this.keysById.set(id, keys);
+    }
+  }
+  matches(data, keybinding) {
+    const keys = this.keysById.get(keybinding) ?? [];
+    for (const key of keys) {
+      if (matchesKey(data, key))
+        return true;
+    }
+    return false;
+  }
+  getKeys(keybinding) {
+    return [...this.keysById.get(keybinding) ?? []];
+  }
+  getDefinition(keybinding) {
+    return this.definitions[keybinding];
+  }
+  getConflicts() {
+    return this.conflicts.map((conflict) => ({ ...conflict, keybindings: [...conflict.keybindings] }));
+  }
+  setUserBindings(userBindings) {
+    this.userBindings = userBindings;
+    this.rebuild();
+  }
+  getUserBindings() {
+    return { ...this.userBindings };
+  }
+  getResolvedBindings() {
+    const resolved = {};
+    for (const id of Object.keys(this.definitions)) {
+      const keys = this.keysById.get(id) ?? [];
+      resolved[id] = keys.length === 1 ? keys[0] : [...keys];
+    }
+    return resolved;
+  }
+};
+var globalKeybindings = null;
+function getKeybindings() {
+  if (!globalKeybindings) {
+    globalKeybindings = new KeybindingsManager(TUI_KEYBINDINGS);
+  }
+  return globalKeybindings;
+}
+
+// node_modules/@earendil-works/pi-tui/dist/components/text.js
+var Text = class {
+  text;
+  paddingX;
+  // Left/right padding
+  paddingY;
+  // Top/bottom padding
+  customBgFn;
+  // Cache for rendered output
+  cachedText;
+  cachedWidth;
+  cachedLines;
+  constructor(text = "", paddingX = 1, paddingY = 1, customBgFn) {
+    this.text = text;
+    this.paddingX = paddingX;
+    this.paddingY = paddingY;
+    this.customBgFn = customBgFn;
+  }
+  setText(text) {
+    this.text = text;
+    this.cachedText = void 0;
+    this.cachedWidth = void 0;
+    this.cachedLines = void 0;
+  }
+  setCustomBgFn(customBgFn) {
+    this.customBgFn = customBgFn;
+    this.cachedText = void 0;
+    this.cachedWidth = void 0;
+    this.cachedLines = void 0;
+  }
+  invalidate() {
+    this.cachedText = void 0;
+    this.cachedWidth = void 0;
+    this.cachedLines = void 0;
+  }
+  render(width) {
+    if (this.cachedLines && this.cachedText === this.text && this.cachedWidth === width) {
+      return this.cachedLines;
+    }
+    if (!this.text || this.text.trim() === "") {
+      const result2 = [];
+      this.cachedText = this.text;
+      this.cachedWidth = width;
+      this.cachedLines = result2;
+      return result2;
+    }
+    const normalizedText = this.text.replace(/\t/g, "   ");
+    const paddingX = Math.min(this.paddingX, Math.max(0, Math.floor((width - 1) / 2)));
+    const contentWidth = Math.max(1, width - paddingX * 2);
+    const wrappedLines = wrapTextWithAnsi(normalizedText, contentWidth);
+    const leftMargin = " ".repeat(paddingX);
+    const rightMargin = " ".repeat(paddingX);
+    const contentLines = [];
+    for (const line of wrappedLines) {
+      const lineWithMargins = leftMargin + line + rightMargin;
+      if (this.customBgFn) {
+        contentLines.push(applyBackgroundToLine(lineWithMargins, width, this.customBgFn));
+      } else {
+        const visibleLen = visibleWidth(lineWithMargins);
+        const paddingNeeded = Math.max(0, width - visibleLen);
+        contentLines.push(lineWithMargins + " ".repeat(paddingNeeded));
+      }
+    }
+    const emptyLine = " ".repeat(width);
+    const emptyLines = [];
+    for (let i = 0; i < this.paddingY; i++) {
+      const line = this.customBgFn ? applyBackgroundToLine(emptyLine, width, this.customBgFn) : emptyLine;
+      emptyLines.push(line);
+    }
+    const result = [...emptyLines, ...contentLines, ...emptyLines];
+    this.cachedText = this.text;
+    this.cachedWidth = width;
+    this.cachedLines = result;
+    return result.length > 0 ? result : [""];
+  }
+};
+
+// node_modules/@earendil-works/pi-tui/dist/kill-ring.js
+var KillRing = class {
+  ring = [];
+  /**
+   * Add text to the kill ring.
+   *
+   * @param text - The killed text to add
+   * @param opts - Push options
+   * @param opts.prepend - If accumulating, prepend (backward deletion) or append (forward deletion)
+   * @param opts.accumulate - Merge with the most recent entry instead of creating a new one
+   */
+  push(text, opts) {
+    if (!text)
+      return;
+    if (opts.accumulate && this.ring.length > 0) {
+      const last = this.ring.pop();
+      this.ring.push(opts.prepend ? text + last : last + text);
+    } else {
+      this.ring.push(text);
+    }
+  }
+  /** Get most recent entry without modifying the ring. */
+  peek() {
+    return this.ring.length > 0 ? this.ring[this.ring.length - 1] : void 0;
+  }
+  /** Move last entry to front (for yank-pop cycling). */
+  rotate() {
+    if (this.ring.length > 1) {
+      const last = this.ring.pop();
+      this.ring.unshift(last);
+    }
+  }
+  get length() {
+    return this.ring.length;
   }
 };
 
@@ -28697,6 +28830,10 @@ var Input = class {
   value = "";
   cursor = 0;
   // Cursor position in the value
+  prompt;
+  placeholder;
+  placeholderStyle;
+  renderedStartColumn = 0;
   onSubmit;
   onEscape;
   /** Focusable interface - set by TUI when focus changes */
@@ -28709,6 +28846,11 @@ var Input = class {
   lastAction = null;
   // Undo support
   undoStack = new UndoStack();
+  constructor(options = {}) {
+    this.prompt = options.prompt ?? "> ";
+    this.placeholder = options.placeholder ?? "";
+    this.placeholderStyle = options.placeholderStyle ?? ((text) => text);
+  }
   getValue() {
     return this.value;
   }
@@ -28834,6 +28976,24 @@ var Input = class {
     if (!hasControlChars) {
       this.insertCharacter(data);
     }
+  }
+  handleMouse(event) {
+    if (event.type !== "press" || event.button !== "left" || event.y !== 0)
+      return void 0;
+    const visibleColumn = Math.max(0, event.x - 2);
+    const targetColumn = this.renderedStartColumn + visibleColumn;
+    let currentColumn = 0;
+    this.cursor = this.value.length;
+    for (const grapheme of segmenter.segment(this.value)) {
+      const nextColumn = currentColumn + visibleWidth(grapheme.segment);
+      if (targetColumn < nextColumn) {
+        this.cursor = grapheme.index;
+        break;
+      }
+      currentColumn = nextColumn;
+    }
+    this.lastAction = null;
+    return { handled: true, focus: true };
   }
   insertCharacter(char) {
     if (isWhitespaceChar(char) || this.lastAction !== "type-word") {
@@ -28969,13 +29129,24 @@ var Input = class {
   invalidate() {
   }
   render(width) {
-    const prompt = "> ";
-    const availableWidth = width - prompt.length;
+    const availableWidth = width - visibleWidth(this.prompt);
     if (availableWidth <= 0) {
-      return [prompt];
+      return [truncateToWidth(this.prompt, width, "")];
+    }
+    if (this.value.length === 0 && this.placeholder) {
+      const placeholder = truncateToWidth(this.placeholder, availableWidth, "");
+      const graphemes2 = [...segmenter.segment(placeholder)];
+      const atCursor2 = graphemes2[0]?.segment ?? " ";
+      const afterCursor2 = placeholder.slice(atCursor2.length);
+      const marker2 = this.focused ? CURSOR_MARKER : "";
+      const cursorChar2 = `\x1B[7m${this.placeholderStyle(atCursor2)}\x1B[27m`;
+      const textWithCursor2 = marker2 + cursorChar2 + this.placeholderStyle(afterCursor2);
+      const padding2 = " ".repeat(Math.max(0, availableWidth - visibleWidth(textWithCursor2)));
+      return [this.prompt + textWithCursor2 + padding2];
     }
     let visibleText = "";
     let cursorDisplay = this.cursor;
+    this.renderedStartColumn = 0;
     const totalWidth = visibleWidth(this.value);
     if (totalWidth < availableWidth) {
       visibleText = this.value;
@@ -28992,6 +29163,7 @@ var Input = class {
         } else {
           startCol = Math.max(0, cursorCol - halfWidth);
         }
+        this.renderedStartColumn = startCol;
         visibleText = sliceByColumn(this.value, startCol, scrollWidth, true);
         const beforeCursor2 = sliceByColumn(this.value, startCol, Math.max(0, cursorCol - startCol), true);
         cursorDisplay = beforeCursor2.length;
@@ -29010,7 +29182,7 @@ var Input = class {
     const textWithCursor = beforeCursor + marker + cursorChar + afterCursor;
     const visualLength = visibleWidth(textWithCursor);
     const padding = " ".repeat(Math.max(0, availableWidth - visualLength));
-    const line = prompt + textWithCursor + padding;
+    const line = this.prompt + textWithCursor + padding;
     return [line];
   }
 };
@@ -29136,7 +29308,8 @@ var ScrollView = class extends Container {
   followEnd;
   primary;
   overscroll;
-  scrollbarStyle;
+  scrollbarTrackStyle;
+  scrollbarThumbStyle;
   currentScrollbar;
   scrollbarHideDelayMs;
   currentScrollTop = 0;
@@ -29160,7 +29333,8 @@ var ScrollView = class extends Container {
     this.primary = options.primary ?? false;
     this.overscroll = options.overscroll ?? "chain";
     this.currentScrollbar = options.scrollbar ?? "hidden";
-    this.scrollbarStyle = options.scrollbarStyle ?? ((text) => `\x1B[100m${text}\x1B[49m`);
+    this.scrollbarTrackStyle = options.scrollbarTrackStyle ?? ((text) => `\x1B[90m${text}\x1B[39m`);
+    this.scrollbarThumbStyle = options.scrollbarThumbStyle ?? ((text) => `\x1B[37m${text}\x1B[39m`);
     this.scrollbarHideDelayMs = Math.max(0, Math.floor(options.scrollbarHideDelayMs ?? 1e3));
   }
   get scrollTop() {
@@ -29179,6 +29353,9 @@ var ScrollView = class extends Container {
     if (this.scrollbar === "always")
       return this.currentViewportHeight > 0;
     return this.scrollbar === "auto" && this.contentHeight > this.currentViewportHeight && this.transientScrollbarVisible;
+  }
+  get isScrollbarActive() {
+    return this.scrollbarActive;
   }
   setScrollbar(scrollbar) {
     if (scrollbar === this.currentScrollbar)
@@ -29222,6 +29399,7 @@ var ScrollView = class extends Container {
       return;
     this.scrollbarActive = active;
     this.markScrollbarActivity();
+    this.requestRenderCallback?.();
   }
   scrollTo(scrollTop, options = {}) {
     const requested = Number.isFinite(scrollTop) ? Math.trunc(scrollTop) : this.currentScrollTop;
@@ -29661,15 +29839,15 @@ var StdinBuffer = class extends EventEmitter2 {
 // node_modules/@earendil-works/pi-tui/dist/terminal.js
 import * as fs2 from "node:fs";
 import { createRequire as createRequire3 } from "node:module";
-import * as path4 from "node:path";
+import * as path3 from "node:path";
 
 // node_modules/@earendil-works/pi-tui/dist/native-modifiers.js
 import { createRequire as createRequire2 } from "node:module";
-import * as path3 from "node:path";
+import * as path2 from "node:path";
 
 // node_modules/@earendil-works/pi-tui/dist/native-module-path.js
 import { createRequire } from "node:module";
-import { dirname as dirname6, join as join13 } from "node:path";
+import { dirname as dirname6, join as join12 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 var moduleRequire = createRequire(import.meta.url);
 var TUI_PACKAGE_NAME = "@earendil-works/pi-tui";
@@ -29678,10 +29856,10 @@ function getNativeModuleCandidates(nativePath, options = {}) {
   const candidates = [];
   try {
     const packageEntry = (options.resolvePackage ?? moduleRequire.resolve)(TUI_PACKAGE_NAME);
-    candidates.push(join13(dirname6(packageEntry), "..", nativePath));
+    candidates.push(join12(dirname6(packageEntry), "..", nativePath));
   } catch {
   }
-  candidates.push(join13(moduleDir, "..", nativePath), join13(moduleDir, nativePath), join13(dirname6(options.execPath ?? process.execPath), nativePath));
+  candidates.push(join12(moduleDir, "..", nativePath), join12(moduleDir, nativePath), join12(dirname6(options.execPath ?? process.execPath), nativePath));
   return Array.from(new Set(candidates));
 }
 
@@ -29703,9 +29881,9 @@ function loadNativeModifiersHelper() {
     return void 0;
   let nativePath;
   if (process.platform === "darwin") {
-    nativePath = path3.join("native", "darwin", "prebuilds", `darwin-${arch}`, "darwin-modifiers.node");
+    nativePath = path2.join("native", "darwin", "prebuilds", `darwin-${arch}`, "darwin-modifiers.node");
   } else if (process.platform === "win32") {
-    nativePath = path3.join("native", "win32", "prebuilds", `win32-${arch}`, "win32-console-mode.node");
+    nativePath = path2.join("native", "win32", "prebuilds", `win32-${arch}`, "win32-console-mode.node");
   } else {
     return void 0;
   }
@@ -29757,6 +29935,14 @@ function isKeyboardProtocolNegotiationSequencePrefix(sequence) {
 function isAppleTerminalSession() {
   return process.platform === "darwin" && process.env.TERM_PROGRAM === "Apple_Terminal";
 }
+function refreshTerminalDimensions() {
+  if (process.platform === "win32" || process.pid <= 0)
+    return;
+  try {
+    process.kill(process.pid, "SIGWINCH");
+  } catch {
+  }
+}
 function normalizeNativeShiftEnterInput(data, shouldDetectNativeShiftEnter, isShiftPressed) {
   if (shouldDetectNativeShiftEnter && data === "\r" && isShiftPressed)
     return NATIVE_SHIFT_ENTER_SEQUENCE;
@@ -29794,7 +29980,7 @@ var ProcessTerminal = class {
       if (fs2.statSync(env).isDirectory()) {
         const now = /* @__PURE__ */ new Date();
         const ts = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}_${String(now.getHours()).padStart(2, "0")}-${String(now.getMinutes()).padStart(2, "0")}-${String(now.getSeconds()).padStart(2, "0")}`;
-        return path4.join(env, `tui-${ts}-${process.pid}.log`);
+        return path3.join(env, `tui-${ts}-${process.pid}.log`);
       }
     } catch {
     }
@@ -29817,9 +30003,7 @@ var ProcessTerminal = class {
     process.stdin.resume();
     process.stdout.write("\x1B[?2004h");
     process.stdout.on("resize", this.resizeHandler);
-    if (process.platform !== "win32") {
-      process.kill(process.pid, "SIGWINCH");
-    }
+    refreshTerminalDimensions();
     this.enableWindowsVTInput();
     this.queryAndEnableKittyProtocol();
   }
@@ -29978,7 +30162,7 @@ var ProcessTerminal = class {
       const arch = process.arch;
       if (arch !== "x64" && arch !== "arm64")
         return;
-      const nativePath = path4.join("native", "win32", "prebuilds", `win32-${arch}`, "win32-console-mode.node");
+      const nativePath = path3.join("native", "win32", "prebuilds", `win32-${arch}`, "win32-console-mode.node");
       for (const modulePath of getNativeModuleCandidates(nativePath)) {
         try {
           const helper = cjsRequire2(modulePath);
@@ -30119,37 +30303,78 @@ var ProcessTerminal = class {
 
 // node_modules/@earendil-works/pi-tui/dist/alt-screen-search.js
 var segmenter2 = getGraphemeSegmenter();
-function appendMappedText(text, span, corpus) {
-  corpus.text += text;
-  for (let index = 0; index < text.length; index++)
-    corpus.source.push(span);
-}
+var PRINTABLE_ASCII = /^[\x20-\x7e]*$/;
 function buildSearchCorpus(lines) {
-  const corpus = { text: "", source: [] };
+  const chunks = [];
+  const spans = [];
+  let textLength = 0;
   let pendingSeparator = false;
+  const appendSeparator = () => {
+    if (!pendingSeparator)
+      return;
+    chunks.push(" ");
+    textLength += 1;
+    pendingSeparator = false;
+  };
   for (let row = 0; row < lines.length; row++) {
     const line = stripTerminalSequences(lines[row] ?? "");
     let column = 0;
-    for (const grapheme of segmenter2.segment(line)) {
-      const text = grapheme.segment;
-      const width = visibleWidth(text);
-      if (/^\s+$/u.test(text)) {
-        if (corpus.text.length > 0)
-          pendingSeparator = true;
+    if (PRINTABLE_ASCII.test(line)) {
+      let index = 0;
+      while (index < line.length) {
+        if (line.charCodeAt(index) === 32) {
+          if (textLength > 0)
+            pendingSeparator = true;
+          column += 1;
+          index += 1;
+          continue;
+        }
+        let end = index + 1;
+        while (end < line.length && line.charCodeAt(end) !== 32)
+          end += 1;
+        appendSeparator();
+        const text = line.slice(index, end);
+        chunks.push(text);
+        spans.push({
+          textStart: textLength,
+          textEnd: textLength + text.length,
+          row,
+          startCol: column,
+          endCol: column + text.length,
+          linearColumns: true
+        });
+        textLength += text.length;
+        column += text.length;
+        index = end;
+      }
+    } else {
+      for (const grapheme of segmenter2.segment(line)) {
+        const text = grapheme.segment;
+        const width = visibleWidth(text);
+        if (/^\s+$/u.test(text)) {
+          if (textLength > 0)
+            pendingSeparator = true;
+          column += width;
+          continue;
+        }
+        appendSeparator();
+        chunks.push(text);
+        spans.push({
+          textStart: textLength,
+          textEnd: textLength + text.length,
+          row,
+          startCol: column,
+          endCol: column + width,
+          linearColumns: false
+        });
+        textLength += text.length;
         column += width;
-        continue;
       }
-      if (pendingSeparator) {
-        appendMappedText(" ", void 0, corpus);
-        pendingSeparator = false;
-      }
-      appendMappedText(text, { row, startCol: column, endCol: column + width }, corpus);
-      column += width;
     }
-    if (corpus.text.length > 0)
+    if (textLength > 0)
       pendingSeparator = true;
   }
-  return corpus;
+  return { text: chunks.join(""), spans };
 }
 function normalizeQuery(query) {
   return query.replace(/\s+/gu, " ").trim();
@@ -30157,46 +30382,92 @@ function normalizeQuery(query) {
 function escapeRegExp(text) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
-function findAltScreenSearchMatches(lines, query) {
-  const normalizedQuery = normalizeQuery(query);
+function findSearchCorpusMatches(corpus, normalizedQuery) {
   if (!normalizedQuery)
     return [];
-  const corpus = buildSearchCorpus(lines);
   const expression = new RegExp(escapeRegExp(normalizedQuery), "giu");
   const matches = [];
+  let spanIndex = 0;
   for (const match of corpus.text.matchAll(expression)) {
     const start = match.index;
     const end = start + match[0].length;
+    while (spanIndex < corpus.spans.length && corpus.spans[spanIndex].textEnd <= start)
+      spanIndex += 1;
     const segments = [];
-    for (let index = start; index < end; index++) {
-      const span = corpus.source[index];
-      if (!span)
+    for (let index = spanIndex; index < corpus.spans.length; index++) {
+      const span = corpus.spans[index];
+      if (span.textStart >= end)
+        break;
+      if (span.textEnd <= start)
         continue;
+      const startCol = span.linearColumns ? span.startCol + Math.max(start, span.textStart) - span.textStart : span.startCol;
+      const endCol = span.linearColumns ? span.startCol + Math.min(end, span.textEnd) - span.textStart : span.endCol;
       const previous = segments[segments.length - 1];
-      if (previous && previous.row === span.row && span.startCol <= previous.endCol) {
-        previous.endCol = Math.max(previous.endCol, span.endCol);
+      if (previous && previous.row === span.row && startCol <= previous.endCol) {
+        previous.endCol = Math.max(previous.endCol, endCol);
       } else {
-        segments.push({ ...span });
+        segments.push({ row: span.row, startCol, endCol });
       }
     }
+    while (spanIndex < corpus.spans.length && corpus.spans[spanIndex].textEnd <= end)
+      spanIndex += 1;
     if (segments.length > 0)
       matches.push({ segments });
   }
   return matches;
 }
+var AltScreenSearchIndex = class {
+  sourceLines;
+  corpus;
+  normalizedQuery;
+  matches = [];
+  search(lines, query) {
+    let sourceChanged = this.sourceLines?.length !== lines.length;
+    if (!sourceChanged && this.sourceLines) {
+      for (let index = 0; index < lines.length; index++) {
+        if (this.sourceLines[index] === lines[index])
+          continue;
+        sourceChanged = true;
+        break;
+      }
+    }
+    if (sourceChanged || !this.corpus) {
+      this.sourceLines = Array.from(lines);
+      this.corpus = buildSearchCorpus(lines);
+    }
+    const normalizedQuery = normalizeQuery(query);
+    const changed = sourceChanged || normalizedQuery !== this.normalizedQuery;
+    if (changed) {
+      this.normalizedQuery = normalizedQuery;
+      this.matches = findSearchCorpusMatches(this.corpus, normalizedQuery);
+    }
+    return { matches: this.matches, changed };
+  }
+};
 function getAltScreenSearchMatchKey(match) {
   const first = match.segments[0];
   const last = match.segments[match.segments.length - 1];
   return first && last ? `${first.row}:${first.startCol}:${last.row}:${last.endCol}` : "";
 }
 var AltScreenSearchComponent = class {
-  input = new Input();
+  input = new Input({
+    prompt: " ",
+    placeholder: "Find in transcript",
+    placeholderStyle: (text) => `\x1B[2m${text}\x1B[22m`
+  });
   onQueryChange;
+  navigationButtonStyle;
   resultCount = 0;
   resultIndex = -1;
+  previousButtonStart = -1;
+  previousButtonEnd = -1;
+  nextButtonStart = -1;
+  nextButtonEnd = -1;
+  hoveredNavigationDirection;
   _focused = false;
-  constructor(onQueryChange) {
+  constructor(onQueryChange, navigationButtonStyle = (text) => text) {
     this.onQueryChange = onQueryChange;
+    this.navigationButtonStyle = navigationButtonStyle;
   }
   get focused() {
     return this._focused;
@@ -30208,6 +30479,21 @@ var AltScreenSearchComponent = class {
   setResult(index, count) {
     this.resultIndex = index;
     this.resultCount = count;
+  }
+  getNavigationDirectionAt(row, column) {
+    if (row !== 2)
+      return void 0;
+    if (column >= this.previousButtonStart && column < this.previousButtonEnd)
+      return -1;
+    if (column >= this.nextButtonStart && column < this.nextButtonEnd)
+      return 1;
+    return void 0;
+  }
+  setHoveredNavigationDirection(direction) {
+    if (direction === this.hoveredNavigationDirection)
+      return false;
+    this.hoveredNavigationDirection = direction;
+    return true;
   }
   handleInput(data) {
     const previous = this.input.getValue();
@@ -30221,15 +30507,53 @@ var AltScreenSearchComponent = class {
   }
   render(width) {
     const safeWidth = Math.max(1, width);
-    const label = " Find transcript";
+    const innerWidth = Math.max(0, safeWidth - 2);
+    const formatKey = (key) => key ? key.split("+").map((part) => {
+      if (process.platform === "darwin" && part.toLowerCase() === "alt")
+        return "Option";
+      return part.charAt(0).toUpperCase() + part.slice(1);
+    }).join("+") : "Unbound";
+    const keybindings = getKeybindings();
+    const previousKey = formatKey(keybindings.getKeys("tui.altScreen.searchPrevious")[0]);
+    const nextKey = formatKey(keybindings.getKeys("tui.altScreen.searchNext")[0]);
     const query = this.input.getValue();
-    const status = !query ? "" : this.resultCount === 0 ? "No matches " : `${this.resultIndex + 1}/${this.resultCount} `;
-    const labelWidth = visibleWidth(label);
-    const statusWidth = visibleWidth(status);
-    const gap = " ".repeat(Math.max(1, safeWidth - labelWidth - statusWidth));
-    const title = truncateToWidth(`${label}${gap}${status}`, safeWidth, "");
-    const padding = " ".repeat(Math.max(0, safeWidth - visibleWidth(title)));
-    return [`\x1B[7m${title}${padding}\x1B[27m`, ...this.input.render(safeWidth)];
+    const result = !query ? "" : this.resultCount === 0 ? "No matches" : `${this.resultIndex + 1}/${this.resultCount}`;
+    const resultSpace = Math.max(0, innerWidth - 3);
+    const visibleResult = truncateToWidth(result, resultSpace, "");
+    const resultText = visibleResult ? `\x1B[2m ${visibleResult} \x1B[22m` : "";
+    const inputWidth = Math.max(0, innerWidth - visibleWidth(resultText));
+    const inputLine = truncateToWidth(this.input.render(Math.max(1, inputWidth))[0] ?? "", inputWidth, "");
+    const inputPadding = " ".repeat(Math.max(0, inputWidth - visibleWidth(inputLine)));
+    const content = `${inputLine}${inputPadding}${resultText}`;
+    let previousButton = `\u2191 ${previousKey}`;
+    let nextButton = `\u2193 ${nextKey}`;
+    let separator = " \xB7 ";
+    const outerGapWidth = 1;
+    const availableControlsWidth = Math.max(0, innerWidth - outerGapWidth * 2 - 1);
+    let controlsWidth = visibleWidth(previousButton) + visibleWidth(separator) + visibleWidth(nextButton);
+    if (controlsWidth > availableControlsWidth) {
+      previousButton = "\u2191";
+      nextButton = "\u2193";
+      separator = " ";
+      controlsWidth = visibleWidth(previousButton) + visibleWidth(separator) + visibleWidth(nextButton);
+    }
+    const showButtons = controlsWidth <= availableControlsWidth;
+    const renderedButtons = showButtons ? this.navigationButtonStyle(previousButton, this.hoveredNavigationDirection === -1) + separator + this.navigationButtonStyle(nextButton, this.hoveredNavigationDirection === 1) : "";
+    const outerGapsWidth = showButtons ? outerGapWidth * 2 : 0;
+    const rightRuleWidth = renderedButtons && innerWidth > controlsWidth + outerGapsWidth ? 1 : 0;
+    const leftRuleWidth = Math.max(0, innerWidth - (showButtons ? controlsWidth : 0) - outerGapsWidth - rightRuleWidth);
+    const previousStart = 1 + leftRuleWidth + outerGapWidth;
+    this.previousButtonStart = showButtons ? previousStart : -1;
+    this.previousButtonEnd = showButtons ? previousStart + visibleWidth(previousButton) : -1;
+    this.nextButtonStart = showButtons ? this.previousButtonEnd + visibleWidth(separator) : -1;
+    this.nextButtonEnd = showButtons ? this.nextButtonStart + visibleWidth(nextButton) : -1;
+    if (safeWidth === 1)
+      return ["\u250C", "\u2502", "\u2514"];
+    return [
+      `\u250C${"\u2500".repeat(innerWidth)}\u2510`,
+      `\u2502${content}\u2502`,
+      `\u2514${"\u2500".repeat(leftRuleWidth)}${renderedButtons ? " " : ""}${renderedButtons}${renderedButtons ? " " : ""}${"\u2500".repeat(rightRuleWidth)}\u2518`
+    ];
   }
 };
 
@@ -30421,7 +30745,7 @@ function layoutComponent(context, component, x2, y2, width, height, clip) {
   }
   return box;
 }
-function styleScrollbarCell(line, column, totalWidth, style) {
+function replaceScrollbarCell(line, column, totalWidth, replacement, preserveTargetBackground) {
   if (isImageLine(line))
     return line;
   const graphemeRange = getGraphemeCellRange(line, column);
@@ -30439,15 +30763,20 @@ function styleScrollbarCell(line, column, totalWidth, style) {
     targetPrefix += ansi.code;
     targetIndex += ansi.length;
   }
-  const targetText = target.slice(targetIndex) || " ".repeat(end - start);
   const beforePadding = " ".repeat(Math.max(0, start - visibleWidth(before)));
-  return `${before}${beforePadding}${targetPrefix}${style(targetText)}${after}`;
+  const cellPaddingBefore = " ".repeat(Math.max(0, column - start));
+  const cellPaddingAfter = " ".repeat(Math.max(0, end - column - 1));
+  const targetStyle = `\x1B[0m\x1B]8;;\x07${preserveTargetBackground ? getActiveBackgroundAnsi(targetPrefix) : ""}`;
+  return `${before}${beforePadding}${targetStyle}${cellPaddingBefore}${replacement}${cellPaddingAfter}${after}`;
 }
-function getScrollbarGeometry(box) {
-  if (!box.scrollView?.isScrollbarVisible || box.rect.width <= 0 || box.rect.height <= 0)
+function getScrollbarGeometry(box, includeHiddenAuto = false) {
+  if (!box.scrollView || box.rect.width <= 0 || box.rect.height <= 0)
     return void 0;
   const contentHeight = box.children[0]?.rect.height ?? box.scrollContentLines?.length ?? 0;
   const trackHeight = box.rect.height;
+  const canRevealHiddenAuto = includeHiddenAuto && box.scrollView.scrollbar === "auto" && contentHeight > trackHeight;
+  if (!box.scrollView.isScrollbarVisible && !canRevealHiddenAuto)
+    return void 0;
   const minThumbHeight = Math.min(2, trackHeight);
   const thumbHeight = Math.max(minThumbHeight, Math.min(trackHeight, Math.round(trackHeight * trackHeight / contentHeight)));
   const maxScrollTop = Math.max(0, contentHeight - trackHeight);
@@ -30469,11 +30798,13 @@ function paintScrollbar(box, screen, totalWidth) {
   const geometry = getScrollbarGeometry(box);
   if (!geometry || !box.scrollView)
     return;
-  for (let offset = 0; offset < geometry.thumbHeight; offset++) {
-    const row = geometry.thumbTop + offset;
+  for (let offset = 0; offset < geometry.trackHeight; offset++) {
+    const row = geometry.trackTop + offset;
     if (row < box.clip.y || row >= box.clip.y + box.clip.height || row < 0 || row >= screen.length)
       continue;
-    screen[row] = styleScrollbarCell(screen[row] ?? "", geometry.column, totalWidth, box.scrollView.scrollbarStyle);
+    const isThumb = row >= geometry.thumbTop && row < geometry.thumbTop + geometry.thumbHeight;
+    const replacement = isThumb ? box.scrollView.scrollbarThumbStyle(box.scrollView.isScrollbarActive ? "\u2588" : "\u2503") : box.scrollView.scrollbarTrackStyle("\u2502");
+    screen[row] = replaceScrollbarCell(screen[row] ?? "", geometry.column, totalWidth, replacement, box.scrollView.scrollbar !== "always");
   }
 }
 function paintBox(box, screen, totalWidth) {
@@ -30550,6 +30881,19 @@ function renderLayoutFrame(root, width, height, requestRender) {
 function containsPoint(rect, x2, y2) {
   return x2 >= rect.x && x2 < rect.x + rect.width && y2 >= rect.y && y2 < rect.y + rect.height;
 }
+function getLayoutBoxesAt(frame, x2, y2) {
+  const result = [];
+  const visit2 = (box, depth) => {
+    if (!containsPoint(box.clip, x2, y2))
+      return;
+    result.push({ box, depth });
+    for (const child of box.children)
+      visit2(child, depth + 1);
+  };
+  visit2(frame.root, 0);
+  result.sort((a, b2) => b2.box.layer - a.box.layer || b2.depth - a.depth);
+  return result.map(({ box }) => box);
+}
 function getScrollViewBox(frame, scrollView) {
   const visit2 = (box) => {
     if (box.scrollView === scrollView)
@@ -30593,6 +30937,7 @@ var END_SYNCHRONIZED_OUTPUT = "\x1B[?2026l";
 var OSC133_ZONE_PREFIX2 = /^(?:\x1b\]133;[ABC](?:\x07|\x1b\\))+/;
 var OSC133_PROMPT_START = /^\x1b\]133;A(?:\x07|\x1b\\)/;
 var PAGE_SCROLL_OVERLAP = 4;
+var ALT_WHEEL_SCROLL_MULTIPLIER = 5;
 var MAX_CACHED_OFFSCREEN_KITTY_IMAGES = 16;
 var MAX_CACHED_OFFSCREEN_KITTY_TRANSMISSION_BYTES = 32 * 1024 * 1024;
 var MAX_CACHED_OFFSCREEN_KITTY_DECODED_BYTES = 64 * 1024 * 1024;
@@ -30626,13 +30971,21 @@ var TuiAltScreen = class extends TuiBase {
   selectionPressActive = false;
   scrollbarDrag;
   scrollbarHover;
+  scrollToEndIndicatorRect;
   activeSearch;
   pressedUrl;
   selectionDragged = false;
+  mouseCapture;
+  mousePressTarget;
+  mousePressPoint;
+  mousePressMoved = false;
+  lastComponentClick;
   wheelScrollLines;
   mouseEnabled;
   searchMatchStyle;
   searchCurrentMatchStyle;
+  searchNavigationButtonStyle;
+  scrollToEndIndicator;
   openUrl;
   onRightClickPaste;
   copyOnSelect;
@@ -30641,6 +30994,7 @@ var TuiAltScreen = class extends TuiBase {
     super(terminal, showHardwareCursor, logDirectory);
     this.implicitDocument = {
       render: (width) => super.render(width),
+      handleMouse: (event) => super.handleMouse(event),
       invalidate: () => {
         for (const child of this.children)
           child.invalidate();
@@ -30652,6 +31006,8 @@ var TuiAltScreen = class extends TuiBase {
     this.mouseEnabled = options.mouse ?? true;
     this.searchMatchStyle = options.searchMatchStyle ?? ((text) => `\x1B[4m${text}\x1B[24m`);
     this.searchCurrentMatchStyle = options.searchCurrentMatchStyle ?? ((text) => `\x1B[1;7m${text}\x1B[22;27m`);
+    this.searchNavigationButtonStyle = options.searchNavigationButtonStyle ?? ((text) => text);
+    this.scrollToEndIndicator = options.scrollToEndIndicator;
     this.openUrl = options.openUrl;
     this.onRightClickPaste = options.onRightClickPaste;
     this.copyOnSelect = options.copyOnSelect ?? true;
@@ -30720,6 +31076,8 @@ var TuiAltScreen = class extends TuiBase {
     this.lastClick = void 0;
     this.pressedUrl = void 0;
     this.selectionDragged = false;
+    this.clearComponentMouseGesture();
+    this.lastComponentClick = void 0;
     this.resetRenderState();
     const term = process.env.TERM?.toLowerCase() ?? "";
     const mouseSequence = process.env.TMUX !== void 0 || process.env.ZELLIJ !== void 0 || process.env.STY !== void 0 || term.startsWith("tmux") || term.startsWith("screen") ? ENABLE_BUTTON_MOTION_MOUSE : ENABLE_ALL_MOTION_MOUSE;
@@ -30731,6 +31089,7 @@ var TuiAltScreen = class extends TuiBase {
     this.selectionPressActive = false;
     this.stopScrollbarHover();
     this.stopScrollbarDrag();
+    this.clearComponentMouseGesture();
     this.flashes.dispose();
     if (!this.altScreenActive)
       return;
@@ -30841,14 +31200,15 @@ var TuiAltScreen = class extends TuiBase {
       return;
     }
   }
-  openSearch() {
+  toggleSearch() {
     if (this.activeSearch) {
-      this.activeSearch.overlay?.focus();
+      this.closeSearch();
       return;
     }
-    const component = new AltScreenSearchComponent((query) => this.updateSearchQuery(query));
+    const component = new AltScreenSearchComponent((query) => this.updateSearchQuery(query), this.searchNavigationButtonStyle);
     const search = {
       component,
+      index: new AltScreenSearchIndex(),
       query: "",
       matches: [],
       selectedIndex: -1,
@@ -30859,7 +31219,7 @@ var TuiAltScreen = class extends TuiBase {
     search.overlay = this.showOverlay(component, {
       anchor: "top-right",
       width: "40%",
-      minWidth: 24,
+      minWidth: 32,
       margin: 1
     });
   }
@@ -30889,6 +31249,29 @@ var TuiAltScreen = class extends TuiBase {
     search.selectionMode = direction < 0 ? "previous" : "next";
     this.requestRender();
   }
+  getSearchNavigationDirectionAt(x2, y2) {
+    const search = this.activeSearch;
+    const bounds = search?.overlay?.getBounds();
+    if (!search || !bounds)
+      return void 0;
+    if (x2 < bounds.col || x2 >= bounds.col + bounds.width || y2 < bounds.row || y2 >= bounds.row + bounds.height) {
+      return void 0;
+    }
+    return search.component.getNavigationDirectionAt(y2 - bounds.row, x2 - bounds.col);
+  }
+  handleSearchMouseEvent(event) {
+    const search = this.activeSearch;
+    if (!search)
+      return false;
+    const direction = this.getSearchNavigationDirectionAt(event.x, event.y);
+    if (search.component.setHoveredNavigationDirection(direction))
+      this.requestRender();
+    if (direction === void 0 || event.release || (event.button & 32) !== 0 || (event.button & 3) !== 0) {
+      return false;
+    }
+    this.navigateSearch(direction);
+    return true;
+  }
   refreshSearch(layout) {
     const search = this.activeSearch;
     if (!search)
@@ -30905,14 +31288,25 @@ var TuiAltScreen = class extends TuiBase {
       return false;
     }
     const shouldRevealSelection = search.selectionMode !== "retain";
-    const matches = findAltScreenSearchMatches(lines, search.query);
-    const exactIndex = search.selectedKey ? matches.findIndex((match) => getAltScreenSearchMatchKey(match) === search.selectedKey) : -1;
+    const result = search.index.search(lines, search.query);
+    const matches = result.matches;
+    search.matches = matches;
+    if (!result.changed && search.selectionMode === "retain")
+      return false;
+    const exactIndex = result.changed ? search.selectedKey ? matches.findIndex((match) => getAltScreenSearchMatchKey(match) === search.selectedKey) : -1 : search.selectedIndex;
     let selectedIndex = -1;
     if (matches.length > 0) {
       if (search.selectionMode === "query") {
-        selectedIndex = matches.findIndex((match) => (match.segments[0]?.row ?? 0) >= search.anchorRow);
-        if (selectedIndex < 0)
-          selectedIndex = 0;
+        let low = 0;
+        let high = matches.length;
+        while (low < high) {
+          const middle = low + Math.floor((high - low) / 2);
+          if ((matches[middle].segments[0]?.row ?? 0) < search.anchorRow)
+            low = middle + 1;
+          else
+            high = middle;
+        }
+        selectedIndex = low < matches.length ? low : 0;
       } else if (search.selectionMode === "next") {
         const baseIndex = exactIndex >= 0 ? exactIndex : Math.min(search.selectedIndex, matches.length - 1);
         selectedIndex = baseIndex < 0 ? 0 : (baseIndex + 1) % matches.length;
@@ -30923,7 +31317,6 @@ var TuiAltScreen = class extends TuiBase {
         selectedIndex = exactIndex >= 0 ? exactIndex : Math.min(Math.max(0, search.selectedIndex), matches.length - 1);
       }
     }
-    search.matches = matches;
     search.selectedIndex = selectedIndex;
     search.selectedKey = selectedIndex >= 0 ? getAltScreenSearchMatchKey(matches[selectedIndex]) : void 0;
     search.selectionMode = "retain";
@@ -30951,6 +31344,12 @@ var TuiAltScreen = class extends TuiBase {
   shouldDeferViewportInputToOverlay() {
     return this.isOverlayFocused() && this.activeSearch?.overlay?.isFocused() !== true;
   }
+  clearComponentMouseGesture() {
+    this.mouseCapture = void 0;
+    this.mousePressTarget = void 0;
+    this.mousePressPoint = void 0;
+    this.mousePressMoved = false;
+  }
   handleViewportInput(data) {
     if (data === FOCUS_OUT) {
       const hadActiveSelection = this.selectionPressActive;
@@ -30958,9 +31357,13 @@ var TuiAltScreen = class extends TuiBase {
       this.selectionPressActive = false;
       this.stopSelectionAutoScroll();
       this.stopScrollbarHover();
+      if (this.activeSearch?.component.setHoveredNavigationDirection(void 0))
+        this.requestRender();
       this.stopScrollbarDrag();
       this.pressedUrl = void 0;
       this.selectionDragged = false;
+      this.clearComponentMouseGesture();
+      this.lastComponentClick = void 0;
       if (hadActiveSelection) {
         this.selectionAnchor = void 0;
         this.selectionFocus = void 0;
@@ -30976,6 +31379,16 @@ var TuiAltScreen = class extends TuiBase {
       return { consume: true };
     const wheelEvent = this.parseWheelEvent(data);
     if (wheelEvent) {
+      const event = this.createMouseEvent("wheel", wheelEvent.button, wheelEvent.x, wheelEvent.y, {
+        wheelDelta: wheelEvent.direction * this.getWheelScrollLines(wheelEvent.button)
+      });
+      const overlay = this.dispatchMouseToOverlay(event);
+      const result = overlay.result ?? (overlay.hit ? void 0 : this.dispatchMouseToLayout(event));
+      if (result) {
+        if (this.applyMouseDispatchResult(event, result))
+          this.requestRender();
+        return { consume: true };
+      }
       if (this.shouldDeferViewportInputToOverlay())
         return void 0;
       this.routeWheel(wheelEvent);
@@ -30983,13 +31396,7 @@ var TuiAltScreen = class extends TuiBase {
     }
     const mouseEvent = this.parseSgrMouseEvent(data);
     if (mouseEvent) {
-      if (this.handleRightClickPaste(mouseEvent))
-        return { consume: true };
-      const handled = this.handleScrollbarMouseEvent(mouseEvent);
-      if (!this.scrollbarDrag)
-        this.updateScrollbarHover(mouseEvent.x, mouseEvent.y);
-      if (!handled)
-        this.handleSelectionMouseEvent(mouseEvent);
+      this.handleMouseEvent(mouseEvent);
       return { consume: true };
     }
     if (this.isMouseSequence(data))
@@ -30998,7 +31405,7 @@ var TuiAltScreen = class extends TuiBase {
     const isRelease = isKeyRelease(data);
     if (keybindings.matches(data, "tui.altScreen.search")) {
       if (!isRelease)
-        this.openSearch();
+        this.toggleSearch();
       return { consume: true };
     }
     if (this.activeSearch?.overlay?.isFocused()) {
@@ -31074,6 +31481,147 @@ var TuiAltScreen = class extends TuiBase {
     }
     return void 0;
   }
+  decodeMouseButton(button) {
+    switch (button & 3) {
+      case 0:
+        return "left";
+      case 1:
+        return "middle";
+      case 2:
+        return "right";
+      default:
+        return "none";
+    }
+  }
+  createMouseEvent(type, button, x2, y2, extra = {}) {
+    return {
+      type,
+      button: type === "wheel" ? "none" : this.decodeMouseButton(button),
+      x: x2,
+      y: y2,
+      screenX: x2,
+      screenY: y2,
+      width: Math.max(1, this.terminal.columns),
+      height: Math.max(1, this.terminal.rows),
+      shift: (button & 4) !== 0,
+      alt: (button & 8) !== 0,
+      ctrl: (button & 16) !== 0,
+      ...extra.wheelDelta === void 0 ? {} : { wheelDelta: extra.wheelDelta },
+      ...extra.clickCount === void 0 ? {} : { clickCount: extra.clickCount }
+    };
+  }
+  dispatchMouseToLayout(event) {
+    if (!this.currentLayout)
+      return void 0;
+    const visited = /* @__PURE__ */ new Set();
+    const boxes = getLayoutBoxesAt(this.currentLayout, event.screenX, event.screenY);
+    for (const box of boxes) {
+      if (visited.has(box.component))
+        continue;
+      if (getLayoutNode(box.component) && box.component.handleMouse === Container.prototype.handleMouse)
+        continue;
+      visited.add(box.component);
+      const result = dispatchMouseEvent(box.component, {
+        ...event,
+        x: event.screenX - box.rect.x,
+        y: event.screenY - box.rect.y,
+        width: box.rect.width,
+        height: box.rect.height
+      });
+      if (result)
+        return result;
+    }
+    return void 0;
+  }
+  applyMouseDispatchResult(event, result) {
+    const focusTarget = this.resolveMouseFocusTarget(result.focusTarget ?? result.target.component);
+    const focusChanged = result.focus === true && this.getFocusedComponent() !== focusTarget;
+    if (result.focus)
+      this.setFocus(focusTarget);
+    if (result.capture)
+      this.mouseCapture = result.target;
+    return result.render ?? (focusChanged || event.type === "press" || event.type === "click" || event.type === "drag" || event.type === "wheel");
+  }
+  dispatchMouseToTarget(event, target) {
+    return dispatchMouseEvent(target.component, retargetMouseEvent(event, target));
+  }
+  getComponentClickCount(target, x2, y2) {
+    const now = Date.now();
+    const previous = this.lastComponentClick;
+    const count = previous && now - previous.timestamp <= DOUBLE_CLICK_INTERVAL_MS && previous.component === target.component && previous.x === x2 && previous.y === y2 ? previous.count % 3 + 1 : 1;
+    this.lastComponentClick = { timestamp: now, count, component: target.component, x: x2, y: y2 };
+    return count;
+  }
+  clearTextSelection() {
+    this.stopSelectionAutoScroll();
+    this.selectionPressActive = false;
+    this.selectionAnchor = void 0;
+    this.selectionFocus = void 0;
+    this.selectionGranularity = "character";
+    this.selectionInitialRange = void 0;
+    this.pressedUrl = void 0;
+    this.selectionDragged = false;
+  }
+  handleMouseEvent(raw) {
+    const isMotion = (raw.button & 32) !== 0;
+    const type = raw.release ? "release" : isMotion ? this.decodeMouseButton(raw.button) === "none" ? "move" : "drag" : "press";
+    const event = this.createMouseEvent(type, raw.button, raw.x, raw.y);
+    if (this.mouseCapture || this.mousePressTarget) {
+      const target = this.mouseCapture ?? this.mousePressTarget;
+      if (this.mousePressPoint && (raw.x !== this.mousePressPoint.x || raw.y !== this.mousePressPoint.y)) {
+        this.mousePressMoved = true;
+        this.lastComponentClick = void 0;
+      }
+      let render = false;
+      const targetResult = this.dispatchMouseToTarget(event, target);
+      if (targetResult)
+        render = this.applyMouseDispatchResult(event, targetResult);
+      if (raw.release) {
+        if (!this.mousePressMoved && this.mousePressPoint?.x === raw.x && this.mousePressPoint.y === raw.y) {
+          const clickEvent = this.createMouseEvent("click", raw.button, raw.x, raw.y, {
+            clickCount: this.getComponentClickCount(target, raw.x, raw.y)
+          });
+          const clickResult = this.dispatchMouseToTarget(clickEvent, target);
+          if (clickResult)
+            render = this.applyMouseDispatchResult(clickEvent, clickResult) || render;
+        }
+        this.clearComponentMouseGesture();
+      }
+      if (render)
+        this.requestRender();
+      return;
+    }
+    if (this.handleSearchMouseEvent(raw))
+      return;
+    const overlay = this.dispatchMouseToOverlay(event);
+    if (!overlay.hit) {
+      if (this.handleScrollToEndIndicatorMouseEvent(raw))
+        return;
+      const scrollbarHandled = this.handleScrollbarMouseEvent(raw);
+      if (!this.scrollbarDrag)
+        this.updateScrollbarHover(raw.x, raw.y);
+      if (scrollbarHandled)
+        return;
+    } else {
+      this.stopScrollbarHover();
+    }
+    const result = overlay.result ?? (overlay.hit ? void 0 : this.dispatchMouseToLayout(event));
+    if (result) {
+      const render = this.applyMouseDispatchResult(event, result);
+      if (type === "press") {
+        this.clearTextSelection();
+        this.mousePressTarget = result.target;
+        this.mousePressPoint = { x: raw.x, y: raw.y };
+        this.mousePressMoved = false;
+      }
+      if (render)
+        this.requestRender();
+      return;
+    }
+    if (this.handleRightClickPaste(raw))
+      return;
+    this.handleSelectionMouseEvent(raw);
+  }
   parseWheelEvent(data) {
     const sgr = /^\x1b\[<(\d+);(\d+);(\d+)[Mm]$/.exec(data);
     if (sgr) {
@@ -31086,7 +31634,8 @@ var TuiAltScreen = class extends TuiBase {
       return {
         direction: direction === 0 ? -1 : 1,
         x: Number.parseInt(sgr[2], 10) - 1,
-        y: Number.parseInt(sgr[3], 10) - 1
+        y: Number.parseInt(sgr[3], 10) - 1,
+        button
       };
     }
     if (data.length === 6 && data.startsWith("\x1B[M")) {
@@ -31099,13 +31648,17 @@ var TuiAltScreen = class extends TuiBase {
       return {
         direction: direction === 0 ? -1 : 1,
         x: data.charCodeAt(4) - 33,
-        y: data.charCodeAt(5) - 33
+        y: data.charCodeAt(5) - 33,
+        button
       };
     }
     return void 0;
   }
+  getWheelScrollLines(button) {
+    return (button & 8) !== 0 ? this.wheelScrollLines * ALT_WHEEL_SCROLL_MULTIPLIER : this.wheelScrollLines;
+  }
   routeWheel(event) {
-    let remaining = event.direction * this.wheelScrollLines;
+    let remaining = event.direction * this.getWheelScrollLines(event.button);
     const seen = /* @__PURE__ */ new Set();
     for (const scrollView of this.currentLayout ? getScrollViewsAt(this.currentLayout, event.x, event.y) : []) {
       seen.add(scrollView);
@@ -31140,13 +31693,22 @@ var TuiAltScreen = class extends TuiBase {
     }
     return true;
   }
-  getScrollbarTargetAt(x2, y2) {
+  handleScrollToEndIndicatorMouseEvent(event) {
+    const rect = this.scrollToEndIndicatorRect;
+    if (!rect || event.release || (event.button & 32) !== 0 || (event.button & 3) !== 0)
+      return false;
+    if (event.y !== rect.row || event.x < rect.column || event.x >= rect.column + rect.width)
+      return false;
+    this.scrollToBottom();
+    return true;
+  }
+  getScrollbarTargetAt(x2, y2, includeHiddenAuto = false) {
     if (this.hasOverlay() || !this.currentLayout)
       return void 0;
     for (const scrollView of getScrollViewsAt(this.currentLayout, x2, y2)) {
       const box = getScrollViewBox(this.currentLayout, scrollView);
-      const geometry = box ? getScrollbarGeometry(box) : void 0;
-      if (geometry && x2 === geometry.column && y2 >= geometry.thumbTop && y2 < geometry.thumbTop + geometry.thumbHeight) {
+      const geometry = box ? getScrollbarGeometry(box, includeHiddenAuto) : void 0;
+      if (geometry && x2 === geometry.column && y2 >= geometry.trackTop && y2 < geometry.trackTop + geometry.trackHeight) {
         return { scrollView, geometry };
       }
     }
@@ -31160,10 +31722,16 @@ var TuiAltScreen = class extends TuiBase {
     this.scrollbarHover?.setScrollbarActive(true);
   }
   updateScrollbarHover(x2, y2) {
-    this.setScrollbarHover(this.getScrollbarTargetAt(x2, y2)?.scrollView);
+    this.setScrollbarHover(this.getScrollbarTargetAt(x2, y2, true)?.scrollView);
   }
   stopScrollbarHover() {
     this.setScrollbarHover(void 0);
+  }
+  scrollScrollbarToPointer(scrollView, geometry, pointerY, grabOffset) {
+    const maxThumbOffset = geometry.trackHeight - geometry.thumbHeight;
+    const thumbOffset = Math.max(0, Math.min(maxThumbOffset, pointerY - geometry.trackTop - grabOffset));
+    const scrollTop = maxThumbOffset === 0 ? 0 : Math.round(thumbOffset / maxThumbOffset * geometry.maxScrollTop);
+    scrollView.scrollTo(scrollTop);
   }
   handleScrollbarMouseEvent(event) {
     if (this.scrollbarDrag) {
@@ -31174,10 +31742,7 @@ var TuiAltScreen = class extends TuiBase {
       const box = this.currentLayout ? getScrollViewBox(this.currentLayout, this.scrollbarDrag.scrollView) : void 0;
       const geometry = box ? getScrollbarGeometry(box) : void 0;
       if (geometry) {
-        const maxThumbOffset = geometry.trackHeight - geometry.thumbHeight;
-        const thumbOffset = Math.max(0, Math.min(maxThumbOffset, event.y - geometry.trackTop - this.scrollbarDrag.grabOffset));
-        const scrollTop = maxThumbOffset === 0 ? 0 : Math.round(thumbOffset / maxThumbOffset * geometry.maxScrollTop);
-        this.scrollbarDrag.scrollView.scrollTo(scrollTop);
+        this.scrollScrollbarToPointer(this.scrollbarDrag.scrollView, geometry, event.y, this.scrollbarDrag.grabOffset);
       }
       return true;
     }
@@ -31196,9 +31761,13 @@ var TuiAltScreen = class extends TuiBase {
     this.pressedUrl = void 0;
     this.selectionDragged = false;
     this.setScrollbarHover(target.scrollView);
+    const onThumb = event.y >= target.geometry.thumbTop && event.y < target.geometry.thumbTop + target.geometry.thumbHeight;
+    const grabOffset = onThumb ? event.y - target.geometry.thumbTop : Math.floor(target.geometry.thumbHeight / 2);
+    if (!onThumb)
+      this.scrollScrollbarToPointer(target.scrollView, target.geometry, event.y, grabOffset);
     this.scrollbarDrag = {
       scrollView: target.scrollView,
-      grabOffset: event.y - target.geometry.thumbTop
+      grabOffset
     };
     return true;
   }
@@ -31371,7 +31940,8 @@ var TuiAltScreen = class extends TuiBase {
       if (!this.selectionAnchor)
         return;
       this.updateSelectionFocus(point);
-      const clickedUrl = !this.selectionDragged && this.selectionAnchor.scrollView === point.scrollView && this.selectionAnchor.row === point.row && this.selectionAnchor.col === point.col ? this.pressedUrl : void 0;
+      const isClick = !this.selectionDragged && this.selectionAnchor.scrollView === point.scrollView && this.selectionAnchor.row === point.row && this.selectionAnchor.col === point.col;
+      const clickedUrl = isClick ? this.pressedUrl : void 0;
       this.pressedUrl = void 0;
       if (clickedUrl && this.openUrl) {
         this.selectionAnchor = void 0;
@@ -31382,6 +31952,20 @@ var TuiAltScreen = class extends TuiBase {
         }
         this.requestRender();
         return;
+      }
+      if (isClick) {
+        const clickEvent = this.createMouseEvent("click", event.button, event.x, event.y, {
+          clickCount: this.lastClick?.count ?? 1
+        });
+        const overlay = this.dispatchMouseToOverlay(clickEvent);
+        const result = overlay.result ?? (overlay.hit ? void 0 : this.dispatchMouseToLayout(clickEvent));
+        if (result) {
+          const render = this.applyMouseDispatchResult(clickEvent, result);
+          this.clearTextSelection();
+          if (render)
+            this.requestRender();
+          return;
+        }
       }
       if (this.copyOnSelect)
         void this.copySelectionToClipboard();
@@ -31510,8 +32094,24 @@ var TuiAltScreen = class extends TuiBase {
     const maxRow = Math.min(screen.length, box.rect.y + box.rect.height, box.clip.y + box.clip.height);
     const minColumn = Math.max(0, box.rect.x, box.clip.x);
     const maxColumn = Math.min(this.terminal.columns, box.rect.x + box.rect.width, box.clip.x + box.clip.width, scrollbarColumn ?? Number.POSITIVE_INFINITY);
-    for (let matchIndex = 0; matchIndex < search.matches.length; matchIndex++) {
-      for (const segment of search.matches[matchIndex].segments) {
+    const minContentRow = scrollView.scrollTop + minRow - box.rect.y;
+    const maxContentRow = scrollView.scrollTop + maxRow - box.rect.y - 1;
+    let low = 0;
+    let high = search.matches.length;
+    while (low < high) {
+      const middle = low + Math.floor((high - low) / 2);
+      const match = search.matches[middle];
+      const lastRow = match.segments[match.segments.length - 1]?.row ?? -1;
+      if (lastRow < minContentRow)
+        low = middle + 1;
+      else
+        high = middle;
+    }
+    for (let matchIndex = low; matchIndex < search.matches.length; matchIndex++) {
+      const match = search.matches[matchIndex];
+      if ((match.segments[0]?.row ?? 0) > maxContentRow)
+        break;
+      for (const segment of match.segments) {
         const row = box.rect.y + segment.row - scrollView.scrollTop;
         if (row < minRow || row >= maxRow)
           continue;
@@ -31610,6 +32210,30 @@ var TuiAltScreen = class extends TuiBase {
   isMouseSequence(data) {
     return /^\x1b\[<\d+;\d+;\d+[Mm]$/.test(data) || data.length === 6 && data.startsWith("\x1B[M");
   }
+  compositeScrollToEndIndicator(screen, layout, width) {
+    this.scrollToEndIndicatorRect = void 0;
+    const scrollView = layout.primaryScrollView ?? this.implicitScrollView;
+    if (!this.scrollToEndIndicator || !scrollView.followEnd || scrollView.isFollowingEnd)
+      return screen;
+    const box = getScrollViewBox(layout, scrollView);
+    const clip = box?.clip;
+    if (!clip || clip.width <= 0 || clip.height <= 0)
+      return screen;
+    const row = clip.y + clip.height - 1;
+    if (row >= screen.length || isImageLine(screen[row] ?? ""))
+      return screen;
+    const scrollbarColumn = box ? getScrollbarGeometry(box)?.column : void 0;
+    const availableWidth = Math.max(0, (scrollbarColumn ?? clip.x + clip.width) - clip.x);
+    const text = truncateToWidth(this.scrollToEndIndicator(), availableWidth, "");
+    const textWidth = visibleWidth(text);
+    if (textWidth === 0)
+      return screen;
+    const column = clip.x + Math.floor((availableWidth - textWidth) / 2);
+    const result = [...screen];
+    result[row] = compositeTuiLine(result[row] ?? "", text, column, textWidth, width);
+    this.scrollToEndIndicatorRect = { row, column, width: textWidth };
+    return result;
+  }
   compositeFlashes(screen, width, height) {
     const flashLines = this.flashes.render(width).slice(-height);
     if (flashLines.length === 0)
@@ -31638,6 +32262,7 @@ var TuiAltScreen = class extends TuiBase {
     }
     let screen = nextLayout.lines.map((line) => line.replace(OSC133_ZONE_PREFIX2, ""));
     screen = this.applySearchHighlights(screen, nextLayout);
+    screen = this.compositeScrollToEndIndicator(screen, nextLayout, width);
     screen = this.compositeOverlays(screen, width, height);
     if (screen.length > height)
       screen = screen.slice(screen.length - height);
@@ -31691,7 +32316,7 @@ var MAX_RENDER_WRITE_CHARS = 1024 * 1024;
 
 // plugins/kxm/src/tui.ts
 import { mkdirSync as mkdirSync11 } from "node:fs";
-import { join as join17, resolve as resolve8, dirname as dirname7 } from "node:path";
+import { join as join16, resolve as resolve8, dirname as dirname7 } from "node:path";
 import { spawnSync as spawnSync4 } from "node:child_process";
 
 // plugins/kxm/src/external-effects.ts
@@ -31704,8 +32329,8 @@ function slugifyBranchPart(text, maxLength = 40) {
 
 // plugins/kxm/src/local-snapshot.ts
 import { existsSync as existsSync10, readdirSync as readdirSync6, readFileSync as readFileSync10 } from "node:fs";
-import { homedir as homedir2 } from "node:os";
-import { isAbsolute as isAbsolute3, join as join16, resolve as resolve7 } from "node:path";
+import { homedir } from "node:os";
+import { isAbsolute as isAbsolute3, join as join15, resolve as resolve7 } from "node:path";
 import { DatabaseSync as DatabaseSync3 } from "node:sqlite";
 function processExists(pid) {
   try {
@@ -31826,16 +32451,16 @@ function readOpenMessageMetadata(database) {
   return messages;
 }
 function resolveKxmSnapshotPaths(cwd, env = process.env) {
-  const stateDir = env.KXM_STATE_DIR?.trim() || join16(cwd, ".kxm", "state");
+  const stateDir = env.KXM_STATE_DIR?.trim() || join15(cwd, ".kxm", "state");
   const configured = env.KXM_DATA_PATH?.trim();
-  const dataPath = configured ? resolve7(cwd, configured) : join16(stateDir, "kxm.db");
+  const dataPath = configured ? resolve7(cwd, configured) : join15(stateDir, "kxm.db");
   return { dataPath, stateDir };
 }
 function resolveVnextStateRoot(stateDir, options) {
   if (options?.vnextStateRoot && existsSync10(options.vnextStateRoot)) {
     return resolve7(options.vnextStateRoot);
   }
-  if (existsSync10(join16(stateDir, "runtime", "registry.db")) || existsSync10(join16(stateDir, "runtime", "projects"))) {
+  if (existsSync10(join15(stateDir, "runtime", "registry.db")) || existsSync10(join15(stateDir, "runtime", "projects"))) {
     return stateDir;
   }
   const env = options?.env ?? process.env;
@@ -31846,13 +32471,13 @@ function resolveVnextStateRoot(stateDir, options) {
   let base;
   if (process.platform === "win32") {
     const localAppData = env.LOCALAPPDATA?.trim();
-    base = localAppData && isAbsolute3(localAppData) ? localAppData : join16(homedir2(), "AppData", "Local");
+    base = localAppData && isAbsolute3(localAppData) ? localAppData : join15(homedir(), "AppData", "Local");
     base = resolve7(base, "KXM");
   } else if (process.platform === "darwin") {
-    base = resolve7(homedir2(), "Library", "Application Support", "KXM");
+    base = resolve7(homedir(), "Library", "Application Support", "KXM");
   } else {
     const xdgState = env.XDG_STATE_HOME?.trim();
-    base = xdgState && isAbsolute3(xdgState) ? xdgState : join16(homedir2(), ".local", "state");
+    base = xdgState && isAbsolute3(xdgState) ? xdgState : join15(homedir(), ".local", "state");
     base = resolve7(base, "kxm");
   }
   if (existsSync10(base)) return base;
@@ -31886,9 +32511,9 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
   let vnextRunTotal = 0;
   const vnextStateRoot = resolveVnextStateRoot(stateDir, options);
   if (vnextStateRoot) {
-    const runtimeDir = join16(vnextStateRoot, "runtime");
-    const registryDbPath = join16(runtimeDir, "registry.db");
-    const projectsDir = join16(runtimeDir, "projects");
+    const runtimeDir = join15(vnextStateRoot, "runtime");
+    const registryDbPath = join15(runtimeDir, "registry.db");
+    const projectsDir = join15(runtimeDir, "projects");
     const projectKeys = /* @__PURE__ */ new Set();
     if (existsSync10(registryDbPath)) {
       hasVnext = true;
@@ -31917,7 +32542,7 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
       }
     }
     for (const key of projectKeys) {
-      const eventDbPath = join16(projectsDir, key, "run-events.db");
+      const eventDbPath = join15(projectsDir, key, "run-events.db");
       if (existsSync10(eventDbPath)) {
         hasVnext = true;
         try {
@@ -31951,7 +32576,7 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
   if (existsSync10(stateDir)) {
     for (const file of readdirSync6(stateDir).filter((name) => name.endsWith(".pid"))) {
       try {
-        const record = JSON.parse(readFileSync10(join16(stateDir, file), "utf8"));
+        const record = JSON.parse(readFileSync10(join15(stateDir, file), "utf8"));
         pids.push({
           file,
           ...record.role ? { role: record.role } : {},
@@ -31990,7 +32615,7 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
   } else {
     source = "legacy";
   }
-  const telemetryFile = join16(stateDir, "telemetry.jsonl");
+  const telemetryFile = join15(stateDir, "telemetry.jsonl");
   const spend = existsSync10(telemetryFile) ? readRoutingRecords(telemetryFile) : [];
   return {
     source,
@@ -32125,7 +32750,7 @@ function spawnDegradeWorktree(repoRoot3, runId, options) {
   const cleanRunId = runId.replace(/^run_/, "");
   const desc = options?.description ? slugifyBranchPart(options.description, 30) : "degrade";
   const branchName = `kxm/run-${cleanRunId}-${desc}`;
-  const relativeWtPath = join17(".kxm", "worktrees", `run-${cleanRunId}-${desc}`);
+  const relativeWtPath = join16(".kxm", "worktrees", `run-${cleanRunId}-${desc}`);
   const absoluteWtPath = resolve8(repoRoot3, relativeWtPath);
   const jumpCommand = `cd "${absoluteWtPath}"`;
   try {
@@ -32896,12 +33521,12 @@ async function runMeshTui(input) {
 import { spawnSync as spawnSync5 } from "node:child_process";
 import { randomUUID as randomUUID3 } from "node:crypto";
 import { existsSync as existsSync13, mkdirSync as mkdirSync14, readFileSync as readFileSync13, renameSync as renameSync4, writeFileSync as writeFileSync12 } from "node:fs";
-import { join as join20 } from "node:path";
+import { join as join19 } from "node:path";
 
 // plugins/kxm/src/kxm-update.ts
 import { createHash as createHash7 } from "node:crypto";
 import { existsSync as existsSync11, readFileSync as readFileSync11, writeFileSync as writeFileSync10, mkdirSync as mkdirSync12 } from "node:fs";
-import { join as join18 } from "node:path";
+import { join as join17 } from "node:path";
 var KXM_UPDATE_SCHEMA = "kxm.update.v1";
 var KXM_UPDATE_CACHE = "update-check.json";
 var CHECK_TIMEOUT_MS = 2500;
@@ -32918,7 +33543,7 @@ function kxmReleaseAssetName(version) {
   return `kxm-${version}.tgz`;
 }
 function readInstalledKxmVersion(root) {
-  const pkg = JSON.parse(readFileSync11(join18(root, "package.json"), "utf8"));
+  const pkg = JSON.parse(readFileSync11(join17(root, "package.json"), "utf8"));
   if (typeof pkg.version !== "string" || !parseSemver(pkg.version)) {
     throw new KxmUpdateConfigError("package.json version is missing or not a semver");
   }
@@ -32990,10 +33615,10 @@ function noticeFromVersions(current, latest, config, checkError, asset) {
   return available;
 }
 function readUpdateCache(stateDir, now = Date.now()) {
-  const path5 = join18(stateDir, KXM_UPDATE_CACHE);
-  if (!existsSync11(path5)) return void 0;
+  const path4 = join17(stateDir, KXM_UPDATE_CACHE);
+  if (!existsSync11(path4)) return void 0;
   try {
-    const row = JSON.parse(readFileSync11(path5, "utf8"));
+    const row = JSON.parse(readFileSync11(path4, "utf8"));
     if (typeof row.checkedAt !== "number" || !row.notice || now - row.checkedAt > CACHE_TTL_MS) return void 0;
     if (typeof row.notice.current !== "string" || typeof row.notice.available !== "boolean") return void 0;
     return row.notice;
@@ -33003,7 +33628,7 @@ function readUpdateCache(stateDir, now = Date.now()) {
 }
 function writeUpdateCache(stateDir, notice, now = Date.now()) {
   mkdirSync12(stateDir, { recursive: true });
-  writeFileSync10(join18(stateDir, KXM_UPDATE_CACHE), `${JSON.stringify({ checkedAt: now, notice })}
+  writeFileSync10(join17(stateDir, KXM_UPDATE_CACHE), `${JSON.stringify({ checkedAt: now, notice })}
 `, { encoding: "utf8" });
 }
 function githubReleaseAsset(assets, version) {
@@ -33049,10 +33674,10 @@ async function fetchLatestKxmVersion(source, env, fetchImpl = fetch) {
     clearTimeout(timer);
   }
 }
-function verifyReleaseAssetDigest(path5, sha256) {
-  if (!existsSync11(path5)) return false;
+function verifyReleaseAssetDigest(path4, sha256) {
+  if (!existsSync11(path4)) return false;
   try {
-    const actual = createHash7("sha256").update(readFileSync11(path5)).digest("hex");
+    const actual = createHash7("sha256").update(readFileSync11(path4)).digest("hex");
     return actual === sha256.toLowerCase();
   } catch {
     return false;
@@ -33071,16 +33696,16 @@ function planKxmPackageUpdate(source, latest, releaseDir, asset) {
     }
   ];
   if (asset?.sha256) {
-    steps.push({ kind: "verify", path: join18(releaseDir, name), sha256: asset.sha256 });
+    steps.push({ kind: "verify", path: join17(releaseDir, name), sha256: asset.sha256 });
   }
-  steps.push({ kind: "install", command: "npm", args: ["install", "--global", "--omit=peer", join18(releaseDir, name)] });
+  steps.push({ kind: "install", command: "npm", args: ["install", "--global", "--omit=peer", join17(releaseDir, name)] });
   return steps;
 }
 
 // plugins/kxm/src/hub-binding.ts
 import { existsSync as existsSync12, mkdirSync as mkdirSync13, readFileSync as readFileSync12, renameSync as renameSync3, rmSync as rmSync2, writeFileSync as writeFileSync11 } from "node:fs";
-import { homedir as homedir3 } from "node:os";
-import { dirname as dirname8, isAbsolute as isAbsolute4, join as join19, resolve as resolve9 } from "node:path";
+import { homedir as homedir2 } from "node:os";
+import { dirname as dirname8, isAbsolute as isAbsolute4, join as join18, resolve as resolve9 } from "node:path";
 var HUB_BINDING_SCHEMA = "kxm.hub-binding.v1";
 var HUB_HEALTH_PROBE_MS = 300;
 var HubBindingError = class extends Error {
@@ -33097,16 +33722,16 @@ function resolveUserStateRoot(env) {
   }
   if (process.platform === "win32") {
     const localAppData = env.LOCALAPPDATA?.trim();
-    const base2 = localAppData && isAbsolute4(localAppData) ? localAppData : join19(homedir3(), "AppData", "Local");
+    const base2 = localAppData && isAbsolute4(localAppData) ? localAppData : join18(homedir2(), "AppData", "Local");
     return resolve9(base2, "KXM");
   }
-  if (process.platform === "darwin") return resolve9(homedir3(), "Library", "Application Support", "KXM");
+  if (process.platform === "darwin") return resolve9(homedir2(), "Library", "Application Support", "KXM");
   const xdgState = env.XDG_STATE_HOME?.trim();
-  const base = xdgState && isAbsolute4(xdgState) ? xdgState : join19(homedir3(), ".local", "state");
+  const base = xdgState && isAbsolute4(xdgState) ? xdgState : join18(homedir2(), ".local", "state");
   return resolve9(base, "kxm");
 }
 function hubBindingFile(env = process.env) {
-  return join19(resolveUserStateRoot(env), "hub-binding.json");
+  return join18(resolveUserStateRoot(env), "hub-binding.json");
 }
 function validateHubUrl(raw) {
   let parsed;
@@ -33157,7 +33782,7 @@ function readHubBinding(env = process.env) {
 function writeHubBinding(record, env = process.env) {
   const file = hubBindingFile(env);
   mkdirSync13(dirname8(file), { recursive: true, mode: 448 });
-  const temporary = join19(dirname8(file), `.hub-binding-${process.pid}.tmp`);
+  const temporary = join18(dirname8(file), `.hub-binding-${process.pid}.tmp`);
   try {
     writeFileSync11(temporary, `${JSON.stringify(record, null, 2)}
 `, { encoding: "utf8", mode: 384 });
@@ -33357,7 +33982,7 @@ function buildSessionBrief(snapshot, current, hub, ship, updateLatest, cost, ses
   };
 }
 function readCachedSessionBrief(stateDir) {
-  const file = join20(stateDir, "session-brief.json");
+  const file = join19(stateDir, "session-brief.json");
   try {
     if (!existsSync13(file)) return void 0;
     const raw = readFileSync13(file, "utf8");
@@ -33376,7 +34001,7 @@ function readCachedSessionBrief(stateDir) {
 function writeCachedSessionBrief(stateDir, brief) {
   try {
     mkdirSync14(stateDir, { recursive: true, mode: 448 });
-    const file = join20(stateDir, "session-brief.json");
+    const file = join19(stateDir, "session-brief.json");
     const tmp = `${file}.tmp.${randomUUID3().slice(0, 8)}`;
     writeFileSync12(tmp, JSON.stringify(brief, null, 2), { encoding: "utf8", mode: 384 });
     renameSync4(tmp, file);
@@ -33385,7 +34010,7 @@ function writeCachedSessionBrief(stateDir, brief) {
 }
 function estimateSessionCost(stateDir) {
   try {
-    const telemetryFile = join20(stateDir, "telemetry.jsonl");
+    const telemetryFile = join19(stateDir, "telemetry.jsonl");
     if (!existsSync13(telemetryFile)) return void 0;
     const records = readRoutingRecords(telemetryFile);
     if (records.length === 0) return void 0;
@@ -33556,7 +34181,7 @@ function formatSessionBriefText(brief) {
 // plugins/kxm/src/kxm-update-config.ts
 var import_yaml8 = __toESM(require_dist(), 1);
 import { existsSync as existsSync15, readFileSync as readFileSync15 } from "node:fs";
-import { join as join22 } from "node:path";
+import { join as join21 } from "node:path";
 
 // plugins/kxm/src/vnext-bindings.ts
 import { spawnSync as spawnSync6 } from "node:child_process";
@@ -33575,9 +34200,9 @@ import {
   rmSync as rmSync3,
   writeFileSync as writeFileSync13
 } from "node:fs";
-import { homedir as homedir4 } from "node:os";
+import { homedir as homedir3 } from "node:os";
 import { DatabaseSync as DatabaseSync4 } from "node:sqlite";
-import { dirname as dirname9, isAbsolute as isAbsolute5, join as join21, parse as parse5, relative as relative4, resolve as resolve10, sep as sep2 } from "node:path";
+import { dirname as dirname9, isAbsolute as isAbsolute5, join as join20, parse as parse5, relative as relative4, resolve as resolve10, sep as sep2 } from "node:path";
 var MAX_BINDING_RECORD_BYTES = 256 * 1024;
 var BINDING_LABEL = "Runtime-local repository bindings";
 var activeLocks = /* @__PURE__ */ new WeakSet();
@@ -33587,8 +34212,8 @@ function bindingIssue(phase, code, message) {
 function bindingError(phase, code, message) {
   throw new VnextConfigError([bindingIssue(phase, code, message)]);
 }
-function canonicalHostPath2(path5) {
-  const absolute = resolve10(path5);
+function canonicalHostPath2(path4) {
+  const absolute = resolve10(path4);
   try {
     return realpathSync3.native(absolute);
   } catch {
@@ -33603,7 +34228,7 @@ function sameHostPath2(left, right, platform = process.platform) {
 function vnextUserStateRoot(options = {}) {
   const env = options.env ?? process.env;
   const platform = options.platform ?? process.platform;
-  const home = options.homeDir ?? homedir4();
+  const home = options.homeDir ?? homedir3();
   const explicit = options.stateRoot ?? env.KXM_STATE_HOME?.trim();
   if (explicit) {
     if (!isAbsolute5(explicit)) bindingError("path", "local_state_root_not_absolute", "KXM_STATE_HOME must be an absolute host-local path");
@@ -33611,12 +34236,12 @@ function vnextUserStateRoot(options = {}) {
   }
   if (platform === "win32") {
     const localAppData = env.LOCALAPPDATA?.trim();
-    const base2 = localAppData && isAbsolute5(localAppData) ? localAppData : join21(home, "AppData", "Local");
+    const base2 = localAppData && isAbsolute5(localAppData) ? localAppData : join20(home, "AppData", "Local");
     return resolve10(base2, "KXM");
   }
   if (platform === "darwin") return resolve10(home, "Library", "Application Support", "KXM");
   const xdgState = env.XDG_STATE_HOME?.trim();
-  const base = xdgState && isAbsolute5(xdgState) ? xdgState : join21(home, ".local", "state");
+  const base = xdgState && isAbsolute5(xdgState) ? xdgState : join20(home, ".local", "state");
   return resolve10(base, "kxm");
 }
 function projectBindingKey(projectRoot, platform = process.platform) {
@@ -33626,18 +34251,18 @@ function projectBindingKey(projectRoot, platform = process.platform) {
 }
 function vnextLocalBindingFile(projectRoot, options = {}) {
   const stateRoot = vnextUserStateRoot(options);
-  return join21(stateRoot, "projects", projectBindingKey(projectRoot, options.platform), "repository-bindings.json");
+  return join20(stateRoot, "projects", projectBindingKey(projectRoot, options.platform), "repository-bindings.json");
 }
-function checkedDirectory(path5, description) {
-  if (!existsSync14(path5)) return false;
-  const stat = lstatSync4(path5);
+function checkedDirectory(path4, description) {
+  if (!existsSync14(path4)) return false;
+  const stat = lstatSync4(path4);
   if (stat.isSymbolicLink() || !stat.isDirectory()) {
     bindingError("path", "local_binding_directory_invalid", `${description} must be a regular directory, not a link or file`);
   }
   return true;
 }
 function existingBindingDirectory(file, stateRoot) {
-  const projects = join21(stateRoot, "projects");
+  const projects = join20(stateRoot, "projects");
   const project = dirname9(file);
   if (!checkedDirectory(stateRoot, "local state root")) return false;
   if (!checkedDirectory(projects, "local projects directory")) return false;
@@ -33676,9 +34301,9 @@ function readVnextLocalBindings(projectRoot, options = {}) {
   return asRecord(parsed, file, root, options.schemasDir);
 }
 function normalizedRecord(projectRoot, projectId, repositories, schemasDir) {
-  const normalizedRepositories = Object.fromEntries(Object.entries(repositories).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0).map(([repositoryId, path5]) => {
-    if (!isAbsolute5(path5)) bindingError("path", "repository_binding_not_absolute", `host-local binding for ${repositoryId} must be absolute`);
-    return [repositoryId, canonicalHostPath2(path5)];
+  const normalizedRepositories = Object.fromEntries(Object.entries(repositories).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0).map(([repositoryId, path4]) => {
+    if (!isAbsolute5(path4)) bindingError("path", "repository_binding_not_absolute", `host-local binding for ${repositoryId} must be absolute`);
+    return [repositoryId, canonicalHostPath2(path4)];
   }));
   const value = {
     schema: "kxm.local-repository-bindings.v1",
@@ -33694,15 +34319,15 @@ function recordsEqual(left, right) {
   if (left.projectId !== right.projectId || !sameHostPath2(left.projectRoot, right.projectRoot)) return false;
   const leftEntries = Object.entries(left.repositories);
   const rightEntries = Object.entries(right.repositories);
-  return leftEntries.length === rightEntries.length && leftEntries.every(([id, path5], index) => {
+  return leftEntries.length === rightEntries.length && leftEntries.every(([id, path4], index) => {
     const other = rightEntries[index];
-    return other?.[0] === id && sameHostPath2(path5, other[1]);
+    return other?.[0] === id && sameHostPath2(path4, other[1]);
   });
 }
-function syncDirectory(path5) {
+function syncDirectory(path4) {
   let descriptor;
   try {
-    descriptor = openSync(path5, "r");
+    descriptor = openSync(path4, "r");
     fsyncSync(descriptor);
   } catch (error) {
     const code = error.code;
@@ -33711,18 +34336,18 @@ function syncDirectory(path5) {
     if (descriptor !== void 0) closeSync(descriptor);
   }
 }
-function createDirectoryIfMissing(path5) {
-  if (existsSync14(path5)) return;
+function createDirectoryIfMissing(path4) {
+  if (existsSync14(path4)) return;
   try {
-    mkdirSync15(path5, { mode: 448 });
-    syncDirectory(dirname9(path5));
+    mkdirSync15(path4, { mode: 448 });
+    syncDirectory(dirname9(path4));
   } catch (error) {
     if (error.code !== "EEXIST") throw error;
   }
 }
-function ensureDurableDirectory(path5, description) {
+function ensureDurableDirectory(path4, description) {
   const missing = [];
-  let current = resolve10(path5);
+  let current = resolve10(path4);
   while (!existsSync14(current)) {
     missing.push(current);
     const parent = dirname9(current);
@@ -33740,20 +34365,20 @@ function ensureBindingDirectory(file, stateRoot) {
   ensureDurableDirectory(stateRoot, "local state root");
   checkedDirectory(stateRoot, "local state root");
   syncDirectory(stateRoot);
-  const projects = join21(stateRoot, "projects");
+  const projects = join20(stateRoot, "projects");
   createDirectoryIfMissing(projects);
   checkedDirectory(projects, "local projects directory");
   const project = dirname9(file);
   createDirectoryIfMissing(project);
   checkedDirectory(project, "local project binding directory");
 }
-function assertNoLinkedDirectoryComponents(path5, description) {
-  const absolute = resolve10(path5);
+function assertNoLinkedDirectoryComponents(path4, description) {
+  const absolute = resolve10(path4);
   const filesystemRoot = parse5(absolute).root;
   let current = filesystemRoot;
   const remainder = relative4(filesystemRoot, absolute);
   for (const segment of remainder.split(sep2).filter(Boolean)) {
-    current = join21(current, segment);
+    current = join20(current, segment);
     const stat = lstatSync4(current);
     if (stat.isSymbolicLink() || !stat.isDirectory()) {
       bindingError("path", "project_operation_lock_parent_invalid", `${description} contains a linked or non-directory component`);
@@ -33780,7 +34405,7 @@ function projectOperationLockFile(projectRoot) {
   if (gitStat.isSymbolicLink() || !gitStat.isDirectory()) {
     bindingError("path", "project_operation_lock_parent_invalid", "authoritative Git metadata must resolve to a regular directory");
   }
-  const lockDirectory = join21(gitDirectory, "kxm");
+  const lockDirectory = join20(gitDirectory, "kxm");
   if (existsSync14(lockDirectory)) {
     const stat = lstatSync4(lockDirectory);
     if (stat.isSymbolicLink() || !stat.isDirectory()) {
@@ -33790,7 +34415,7 @@ function projectOperationLockFile(projectRoot) {
     mkdirSync15(lockDirectory, { mode: 448 });
     syncDirectory(gitDirectory);
   }
-  return join21(lockDirectory, "project-operation-lock.sqlite");
+  return join20(lockDirectory, "project-operation-lock.sqlite");
 }
 function withVnextLocalBindingLock(projectRoot, options, callback) {
   const root = resolve10(projectRoot);
@@ -33849,7 +34474,7 @@ function writeVnextLocalBindings(projectRoot, projectId, repositories, options =
   const { file, record } = planned;
   if (!planned.written) return planned;
   ensureBindingDirectory(file, vnextUserStateRoot(options));
-  const temporary = join21(dirname9(file), `.repository-bindings-${process.pid}-${randomUUID4()}.tmp`);
+  const temporary = join20(dirname9(file), `.repository-bindings-${process.pid}-${randomUUID4()}.tmp`);
   let descriptor;
   try {
     descriptor = openSync(temporary, "wx", 384);
@@ -33873,11 +34498,11 @@ function writeVnextLocalBindings(projectRoot, projectId, repositories, options =
 
 // plugins/kxm/src/kxm-update-config.ts
 function loadKxmUpdateConfig(env = process.env) {
-  const path5 = join22(vnextUserStateRoot({ env }), "update.yaml");
-  if (!existsSync15(path5)) return { schema: KXM_UPDATE_SCHEMA, auto: false, source: "github" };
+  const path4 = join21(vnextUserStateRoot({ env }), "update.yaml");
+  if (!existsSync15(path4)) return { schema: KXM_UPDATE_SCHEMA, auto: false, source: "github" };
   let parsed;
   try {
-    parsed = (0, import_yaml8.parse)(readFileSync15(path5, "utf8"));
+    parsed = (0, import_yaml8.parse)(readFileSync15(path4, "utf8"));
   } catch {
     throw new KxmUpdateConfigError("update.yaml is not valid YAML");
   }
@@ -33904,17 +34529,17 @@ function loadKxmUpdateConfig(env = process.env) {
 
 // plugins/kxm/src/kxm-install-kind.ts
 import { existsSync as existsSync16, readFileSync as readFileSync16 } from "node:fs";
-import { dirname as dirname10, join as join23 } from "node:path";
+import { dirname as dirname10, join as join22 } from "node:path";
 function packageIsKxm(root) {
   try {
-    const pkg = JSON.parse(readFileSync16(join23(root, "package.json"), "utf8"));
+    const pkg = JSON.parse(readFileSync16(join22(root, "package.json"), "utf8"));
     return pkg.name === "@kontextmind/kxm";
   } catch {
     return false;
   }
 }
-function pathSegments(path5) {
-  return canonicalHostPath2(path5).split(/[/\\]+/).filter((part) => part.length > 0);
+function pathSegments(path4) {
+  return canonicalHostPath2(path4).split(/[/\\]+/).filter((part) => part.length > 0);
 }
 function isUnder(child, parent, platform) {
   if (sameHostPath2(child, parent, platform)) return true;
@@ -33923,8 +34548,8 @@ function isUnder(child, parent, platform) {
   if (parentParts.length === 0 || childParts.length < parentParts.length) return false;
   return parentParts.every((part, i) => segmentEq(part, childParts[i], platform));
 }
-function lastSegments(path5) {
-  return pathSegments(path5).slice(-3);
+function lastSegments(path4) {
+  return pathSegments(path4).slice(-3);
 }
 function segmentEq(left, right, platform) {
   return platform === "win32" ? left.toLocaleLowerCase("en-US") === right.toLocaleLowerCase("en-US") : left === right;
@@ -33956,12 +34581,12 @@ function report(kind, root) {
   return { kind, root, instruction: installKindInstruction(kind, root) };
 }
 function classifyInstallRoot(probe) {
-  const piGitRoot = join23(probe.homeDir, ".pi", "agent", "git");
+  const piGitRoot = join22(probe.homeDir, ".pi", "agent", "git");
   if (isUnder(probe.repoRoot, piGitRoot, probe.platform)) return report("pi-git", probe.repoRoot);
-  const claudeHome = probe.env.CLAUDE_CONFIG_DIR?.trim() || join23(probe.homeDir, ".claude");
-  const pluginsRoot = join23(claudeHome, "plugins");
+  const claudeHome = probe.env.CLAUDE_CONFIG_DIR?.trim() || join22(probe.homeDir, ".claude");
+  const pluginsRoot = join22(claudeHome, "plugins");
   if (isUnder(probe.moduleDir, pluginsRoot, probe.platform)) return report("claude-marketplace", probe.moduleDir);
-  const hasGit = existsSync16(join23(probe.repoRoot, ".git"));
+  const hasGit = existsSync16(join22(probe.repoRoot, ".git"));
   if (hasGit && packageIsKxm(probe.repoRoot)) return report("source", probe.repoRoot);
   if (isNpmPackageLayout(probe.repoRoot, probe.platform) && packageIsKxm(probe.repoRoot) && !hasGit) {
     return report("npm-package", probe.repoRoot);
@@ -33983,7 +34608,7 @@ function resolveInstallKind(probe, npmGlobalRoot) {
 // plugins/kxm/src/vnext-init.ts
 import { randomUUID as randomUUID6 } from "node:crypto";
 import { existsSync as existsSync19 } from "node:fs";
-import { basename as basename5, join as join26 } from "node:path";
+import { basename as basename5, join as join25 } from "node:path";
 
 // plugins/kxm/src/vnext-repair.ts
 import { randomUUID as randomUUID5 } from "node:crypto";
@@ -34002,14 +34627,14 @@ import {
   rmSync as rmSync5,
   writeFileSync as writeFileSync15
 } from "node:fs";
-import { dirname as dirname12, isAbsolute as isAbsolute6, join as join25, relative as relative5, resolve as resolve12 } from "node:path";
+import { dirname as dirname12, isAbsolute as isAbsolute6, join as join24, relative as relative5, resolve as resolve12 } from "node:path";
 
 // plugins/kxm/src/vnext-permission.ts
 import { spawnSync as spawnSync7 } from "node:child_process";
 import { createHash as createHash9 } from "node:crypto";
 import { existsSync as existsSync17, mkdtempSync, mkdirSync as mkdirSync16, readFileSync as readFileSync17, rmSync as rmSync4, writeFileSync as writeFileSync14 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname as dirname11, join as join24, resolve as resolve11, sep as sep3 } from "node:path";
+import { dirname as dirname11, join as join23, resolve as resolve11, sep as sep3 } from "node:path";
 var PROSE_FIELDS = {
   project: /* @__PURE__ */ new Set(["name", "description"]),
   repository: /* @__PURE__ */ new Set(["description"]),
@@ -34053,8 +34678,8 @@ function secretGrantKeys(grants) {
 }
 function vnextAuthorityEntries(resource) {
   const entries = [];
-  const push = (path5, field, value2) => {
-    entries.push({ path: path5, field, value: canonical(value2) });
+  const push = (path4, field, value2) => {
+    entries.push({ path: path4, field, value: canonical(value2) });
   };
   const value = resource.value;
   switch (resource.kind) {
@@ -34143,12 +34768,12 @@ function vnextAuthorityEntries(resource) {
       const gates = asObject(value.gates) ?? {};
       for (const id of Object.keys(gates).sort()) {
         const definition = asObject(gates[id]);
-        const path5 = `/gates/${pointerEscape(id)}`;
+        const path4 = `/gates/${pointerEscape(id)}`;
         if (definition?.kind === "command") {
           const { timeoutMs, ...authority } = definition;
-          push(path5, "gate", authority);
-          push(`${path5}/timeoutMs`, "budget", timeoutMs);
-        } else push(path5, "gate", gates[id]);
+          push(path4, "gate", authority);
+          push(`${path4}/timeoutMs`, "budget", timeoutMs);
+        } else push(path4, "gate", gates[id]);
       }
       break;
     }
@@ -34382,9 +35007,9 @@ function classifyChange(field, baseValue, candidateValue, context) {
       return "expansion";
   }
 }
-function summarize(resource, path5, field, direction, baseValue, candidateValue) {
+function summarize(resource, path4, field, direction, baseValue, candidateValue) {
   const verb = baseValue === void 0 ? "added" : candidateValue === void 0 ? "removed" : "changed";
-  return `${resource} ${path5} ${field} ${verb} (${direction})`;
+  return `${resource} ${path4} ${field} ${verb} (${direction})`;
 }
 function computeVnextPermissionDiff(base, candidate) {
   const changes = [];
@@ -34436,11 +35061,11 @@ function diffResource(logicalPath, base, candidate, changes) {
   const baseEntries = new Map(vnextAuthorityEntries(base).map((entry) => [entry.path, entry]));
   const candidateEntries = new Map(vnextAuthorityEntries(candidate).map((entry) => [entry.path, entry]));
   const paths = [.../* @__PURE__ */ new Set([...baseEntries.keys(), ...candidateEntries.keys()])].sort();
-  for (const path5 of paths) {
-    const baseEntry = baseEntries.get(path5);
-    const candidateEntry = candidateEntries.get(path5);
+  for (const path4 of paths) {
+    const baseEntry = baseEntries.get(path4);
+    const candidateEntry = candidateEntries.get(path4);
     const field = (candidateEntry ?? baseEntry).field;
-    const context = field === "repository-access" && path5.startsWith("/repositories/") ? {
+    const context = field === "repository-access" && path4.startsWith("/repositories/") ? {
       fallbackRank: (() => {
         const fallback = stringValue2(candidate.value.defaultRepositoryAccess) ?? "none";
         return fallback in ACCESS_RANK ? ACCESS_RANK[fallback] : 0;
@@ -34454,26 +35079,26 @@ function diffResource(logicalPath, base, candidate, changes) {
     if (direction === "neutral") continue;
     changes.push({
       resource: logicalPath,
-      path: path5,
+      path: path4,
       field,
       direction,
-      summary: summarize(logicalPath, path5, field, direction, baseEntry?.value, candidateEntry?.value),
+      summary: summarize(logicalPath, path4, field, direction, baseEntry?.value, candidateEntry?.value),
       ...baseEntry && field !== "environment" ? { baseValueSha256: valueHash(baseEntry.value) } : {},
       ...candidateEntry && field !== "environment" ? { candidateValueSha256: valueHash(candidateEntry.value) } : {}
     });
   }
   const baseProse = vnextProseEntries(base);
   const candidateProse = vnextProseEntries(candidate);
-  for (const path5 of [.../* @__PURE__ */ new Set([...baseProse.keys(), ...candidateProse.keys()])].sort()) {
-    if (baseProse.get(path5) === candidateProse.get(path5)) continue;
+  for (const path4 of [.../* @__PURE__ */ new Set([...baseProse.keys(), ...candidateProse.keys()])].sort()) {
+    if (baseProse.get(path4) === candidateProse.get(path4)) continue;
     changes.push({
       resource: logicalPath,
-      path: path5,
+      path: path4,
       field: "resource-shape",
       direction: "neutral",
-      summary: `${logicalPath} ${path5} prose ${baseProse.has(path5) ? candidateProse.has(path5) ? "changed" : "removed" : "added"} (neutral)`,
-      ...baseProse.has(path5) ? { baseValueSha256: valueHash(baseProse.get(path5)) } : {},
-      ...candidateProse.has(path5) ? { candidateValueSha256: valueHash(candidateProse.get(path5)) } : {}
+      summary: `${logicalPath} ${path4} prose ${baseProse.has(path4) ? candidateProse.has(path4) ? "changed" : "removed" : "added"} (neutral)`,
+      ...baseProse.has(path4) ? { baseValueSha256: valueHash(baseProse.get(path4)) } : {},
+      ...candidateProse.has(path4) ? { candidateValueSha256: valueHash(candidateProse.get(path4)) } : {}
     });
   }
 }
@@ -34530,36 +35155,36 @@ function loadVnextProjectAtRevision(root, revision, options = {}) {
   const tree = resolveTreeRevision(root, revision);
   const listing = gitBuffer(root, ["ls-tree", "-r", "-z", "--name-only", tree]).toString("utf8");
   const paths = listing.split("\0").filter((line) => line.length > 0 && (line.startsWith(".kxm/") || line.includes("/.kxm/")));
-  const shadow = mkdtempSync(join24(tmpdir(), "kxm-permission-base-"));
+  const shadow = mkdtempSync(join23(tmpdir(), "kxm-permission-base-"));
   const shadowResolved = resolve11(shadow);
   const shadowMembersDir = `.kxm-shadow-members-${createHash9("sha256").update(shadowResolved, "utf8").digest("hex").slice(0, 8)}`;
   try {
-    for (const path5 of paths) {
-      const segments = path5.split("/");
+    for (const path4 of paths) {
+      const segments = path4.split("/");
       if (segments.some((segment) => segment === "" || segment === "." || segment === ".." || /[\\:]/.test(segment))) {
         throw new VnextConfigError([{
           phase: "path",
           code: "git_tree_path_invalid",
-          file: path5,
+          file: path4,
           message: "Git tree entry contains a traversal or non-portable segment"
         }]);
       }
-      const absolute = join24(shadowResolved, ...segments);
+      const absolute = join23(shadowResolved, ...segments);
       const resolved = resolve11(absolute);
       if (!resolved.startsWith(`${shadowResolved}${sep3}`)) {
         throw new VnextConfigError([{
           phase: "path",
           code: "git_tree_path_invalid",
-          file: path5,
+          file: path4,
           message: "Git tree entry escapes the shadow root"
         }]);
       }
-      const content = gitBuffer(root, ["cat-file", "blob", `${tree}:${path5}`]);
+      const content = gitBuffer(root, ["cat-file", "blob", `${tree}:${path4}`]);
       mkdirSync16(dirname11(absolute), { recursive: true });
       writeFileSync14(absolute, content);
     }
     initShadowGitRoot(shadowResolved);
-    const baseProjectFile = join24(shadowResolved, ".kxm", "project.yaml");
+    const baseProjectFile = join23(shadowResolved, ".kxm", "project.yaml");
     let baseProject;
     try {
       baseProject = loadBaseProjectDeclarations(baseProjectFile);
@@ -34637,7 +35262,7 @@ function loadVnextProjectAtRevision(root, revision, options = {}) {
       const memberTree = git(memberWorktree, ["rev-parse", "--verify", "--quiet", `${pinnedCommit}^{tree}`]).trim();
       const memberListing = gitBuffer(memberWorktree, ["ls-tree", "-r", "-z", "--name-only", memberTree]).toString("utf8");
       const memberPaths = memberListing.split("\0").filter((line) => line.length > 0 && (line.startsWith(".kxm/") || line.includes("/.kxm/")));
-      const memberShadowRoot = join24(shadowResolved, shadowMembersDir, member.repositoryId);
+      const memberShadowRoot = join23(shadowResolved, shadowMembersDir, member.repositoryId);
       if (!resolve11(memberShadowRoot).startsWith(`${resolve11(shadowResolved, shadowMembersDir)}${sep3}`)) {
         throw new VnextConfigError([{
           phase: "path",
@@ -34646,17 +35271,17 @@ function loadVnextProjectAtRevision(root, revision, options = {}) {
           message: `member repository ${member.repositoryId} shadow path escapes the member shadow root`
         }]);
       }
-      for (const path5 of memberPaths) {
-        const segments = path5.split("/");
+      for (const path4 of memberPaths) {
+        const segments = path4.split("/");
         if (segments.some((segment) => segment === "" || segment === "." || segment === ".." || /[\\:]/.test(segment))) {
-          throw new VnextConfigError([{ phase: "path", code: "git_tree_path_invalid", file: path5, message: "member Git tree entry contains a traversal or non-portable segment" }]);
+          throw new VnextConfigError([{ phase: "path", code: "git_tree_path_invalid", file: path4, message: "member Git tree entry contains a traversal or non-portable segment" }]);
         }
-        const absolute = join24(memberShadowRoot, ...segments);
+        const absolute = join23(memberShadowRoot, ...segments);
         const resolved = resolve11(absolute);
         if (!resolved.startsWith(`${resolve11(memberShadowRoot)}${sep3}`)) {
-          throw new VnextConfigError([{ phase: "path", code: "git_tree_path_invalid", file: path5, message: "member Git tree entry escapes the shadow root" }]);
+          throw new VnextConfigError([{ phase: "path", code: "git_tree_path_invalid", file: path4, message: "member Git tree entry escapes the shadow root" }]);
         }
-        const content = gitBuffer(memberWorktree, ["cat-file", "blob", `${memberTree}:${path5}`]);
+        const content = gitBuffer(memberWorktree, ["cat-file", "blob", `${memberTree}:${path4}`]);
         mkdirSync16(dirname11(absolute), { recursive: true });
         writeFileSync14(absolute, content);
       }
@@ -34732,13 +35357,13 @@ function formatVnextPermissionDiff(diff) {
 }
 
 // plugins/kxm/src/vnext-repair.ts
-function resourceKindForTemplatePath(path5) {
-  if (path5 === ".kxm/project.yaml") return "project";
-  if (path5 === ".kxm/gates.yaml") return "gate-registry";
-  if (path5.endsWith("repo.yaml")) return "repository";
-  if (path5.startsWith(".kxm/agents/")) return "agent";
-  if (path5.startsWith(".kxm/models/")) return "model";
-  if (path5.startsWith(".kxm/workflows/")) return "workflow";
+function resourceKindForTemplatePath(path4) {
+  if (path4 === ".kxm/project.yaml") return "project";
+  if (path4 === ".kxm/gates.yaml") return "gate-registry";
+  if (path4.endsWith("repo.yaml")) return "repository";
+  if (path4.startsWith(".kxm/agents/")) return "agent";
+  if (path4.startsWith(".kxm/models/")) return "model";
+  if (path4.startsWith(".kxm/workflows/")) return "workflow";
   return "environment";
 }
 var TRANSACTION_NAME = ".kxm-init-transaction";
@@ -34756,10 +35381,10 @@ function repairIssue(code, file, message, phase = "semantic") {
 function fail3(code, file, message, phase = "semantic") {
   throw new VnextConfigError([repairIssue(code, file, message, phase)]);
 }
-function syncDirectory2(path5) {
+function syncDirectory2(path4) {
   let descriptor;
   try {
-    descriptor = openSync2(path5, "r");
+    descriptor = openSync2(path4, "r");
     fsyncSync2(descriptor);
   } catch (error) {
     const code = error.code;
@@ -34808,22 +35433,22 @@ function sameHostPath3(left, right) {
   return process.platform === "win32" ? first.toLocaleLowerCase("en-US") === second.toLocaleLowerCase("en-US") : first === second;
 }
 function transactionRoot(projectRoot) {
-  return join25(resolve12(projectRoot), TRANSACTION_NAME);
+  return join24(resolve12(projectRoot), TRANSACTION_NAME);
 }
 function operationFile(projectRoot) {
-  return join25(transactionRoot(projectRoot), OPERATION_FILE);
+  return join24(transactionRoot(projectRoot), OPERATION_FILE);
 }
 function targetFile(projectRoot, portablePath2) {
-  return join25(transactionRoot(projectRoot), "targets", ...portablePath2.split("/"));
+  return join24(transactionRoot(projectRoot), "targets", ...portablePath2.split("/"));
 }
 function shadowRoot(projectRoot) {
-  return join25(transactionRoot(projectRoot), "shadow");
+  return join24(transactionRoot(projectRoot), "shadow");
 }
 function backupFile(projectRoot, portablePath2) {
-  return join25(transactionRoot(projectRoot), "backups", ...portablePath2.split("/"));
+  return join24(transactionRoot(projectRoot), "backups", ...portablePath2.split("/"));
 }
-function portableManagedPath(path5) {
-  return path5.startsWith(".kxm/") && path5 !== VNEXT_TEMPLATE_PROVENANCE_PATH && path5.length <= 1024 && !path5.includes("\\") && !isAbsolute6(path5) && PORTABLE_PATH.test(path5) && !/[<>:"|?*]/.test(path5);
+function portableManagedPath(path4) {
+  return path4.startsWith(".kxm/") && path4 !== VNEXT_TEMPLATE_PROVENANCE_PATH && path4.length <= 1024 && !path4.includes("\\") && !isAbsolute6(path4) && PORTABLE_PATH.test(path4) && !/[<>:"|?*]/.test(path4);
 }
 function readRegularBounded(file, label) {
   const stat = lstatSync5(file);
@@ -34831,21 +35456,21 @@ function readRegularBounded(file, label) {
   if (stat.size > MAX_MANAGED_FILE_BYTES) fail3("repair_file_too_large", label, `managed file exceeds ${MAX_MANAGED_FILE_BYTES} bytes`, "parse");
   return readFileSync18(file);
 }
-function readOptionalManaged(projectRoot, path5) {
-  const file = join25(projectRoot, ...path5.split("/"));
+function readOptionalManaged(projectRoot, path4) {
+  const file = join24(projectRoot, ...path4.split("/"));
   if (!existsSync18(file)) return void 0;
   let parent = dirname12(file);
   const boundary = resolve12(projectRoot);
   while (parent !== boundary) {
     const stat = lstatSync5(parent);
-    if (stat.isSymbolicLink() || !stat.isDirectory()) fail3("repair_parent_invalid", path5, "managed file parents must be regular directories", "path");
+    if (stat.isSymbolicLink() || !stat.isDirectory()) fail3("repair_parent_invalid", path4, "managed file parents must be regular directories", "path");
     parent = dirname12(parent);
   }
-  return readRegularBounded(file, path5);
+  return readRegularBounded(file, path4);
 }
 function readProjectAndProvenance(projectRoot, schemasDir) {
-  const projectFile = join25(projectRoot, ".kxm", "project.yaml");
-  const provenanceFile = join25(projectRoot, ...VNEXT_TEMPLATE_PROVENANCE_PATH.split("/"));
+  const projectFile = join24(projectRoot, ".kxm", "project.yaml");
+  const provenanceFile = join24(projectRoot, ...VNEXT_TEMPLATE_PROVENANCE_PATH.split("/"));
   if (!existsSync18(projectFile) || !existsSync18(provenanceFile)) return void 0;
   const projectBytes = readOptionalManaged(projectRoot, ".kxm/project.yaml");
   const provenanceBytes = readOptionalManaged(projectRoot, VNEXT_TEMPLATE_PROVENANCE_PATH);
@@ -34903,19 +35528,19 @@ function planVnextTemplateRepair(projectRoot, options = {}) {
       "template provenance formatting or bytes differ from the supported baseline and require review"
     ));
   }
-  const changes = paths.map((path5) => {
-    const base = baseByPath.get(path5);
-    const targetRecord = targetByPath.get(path5);
-    const local = readOptionalManaged(root, path5);
+  const changes = paths.map((path4) => {
+    const base = baseByPath.get(path4);
+    const targetRecord = targetByPath.get(path4);
+    const local = readOptionalManaged(root, path4);
     const localSha256 = local && vnextContentSha256(local);
     const baseSha256 = base?.sha256;
     if (base && localSha256 === base.sha256 && local?.byteLength !== base.bytes) {
-      fail3("template_provenance_bytes_invalid", VNEXT_TEMPLATE_PROVENANCE_PATH, `recorded byte count for ${path5} does not match its baseline content`);
+      fail3("template_provenance_bytes_invalid", VNEXT_TEMPLATE_PROVENANCE_PATH, `recorded byte count for ${path4} does not match its baseline content`);
     }
     const targetSha256 = targetRecord?.sha256;
     if (baseSha256 === localSha256 && localSha256 === targetSha256) {
       return {
-        path: path5,
+        path: path4,
         classification: "unchanged",
         ...baseSha256 ? { baseSha256 } : {},
         ...localSha256 ? { localSha256 } : {},
@@ -34925,21 +35550,21 @@ function planVnextTemplateRepair(projectRoot, options = {}) {
       };
     }
     if (localSha256 !== void 0 && localSha256 === targetSha256) {
-      return { path: path5, classification: "converged", ...baseSha256 ? { baseSha256 } : {}, localSha256, targetSha256, action: "none", policyReviewRequired: false };
+      return { path: path4, classification: "converged", ...baseSha256 ? { baseSha256 } : {}, localSha256, targetSha256, action: "none", policyReviewRequired: false };
     }
     if (localSha256 === baseSha256 && targetRecord) {
       const authorityChanged = base?.authoritySha256 !== targetRecord.authoritySha256;
       if (authorityChanged || !base) {
-        const baseValue = base ? sourceRenderer?.values.get(path5) : void 0;
-        const targetValue = target.values.get(path5);
-        const detail = baseValue && targetValue ? computeVnextResourcePermissionDiff(resourceKindForTemplatePath(path5), path5, baseValue, targetValue).map((change) => `${change.path} ${change.field} ${change.direction}`).join("; ") : "";
+        const baseValue = base ? sourceRenderer?.values.get(path4) : void 0;
+        const targetValue = target.values.get(path4);
+        const detail = baseValue && targetValue ? computeVnextResourcePermissionDiff(resourceKindForTemplatePath(path4), path4, baseValue, targetValue).map((change) => `${change.path} ${change.field} ${change.direction}`).join("; ") : "";
         issues.push(repairIssue(
           "template_policy_review_required",
-          path5,
+          path4,
           `template change alters or introduces an authority-bearing resource and requires reviewed permission-diff trust${detail ? `: ${detail}` : ""}`
         ));
         return {
-          path: path5,
+          path: path4,
           classification: "conflict",
           ...baseSha256 ? { baseSha256 } : {},
           ...localSha256 ? { localSha256 } : {},
@@ -34950,7 +35575,7 @@ function planVnextTemplateRepair(projectRoot, options = {}) {
         };
       }
       return {
-        path: path5,
+        path: path4,
         classification: "template-only",
         baseSha256,
         ...localSha256 ? { localSha256 } : {},
@@ -34961,7 +35586,7 @@ function planVnextTemplateRepair(projectRoot, options = {}) {
     }
     if (targetSha256 === baseSha256) {
       return {
-        path: path5,
+        path: path4,
         classification: "user-only",
         ...baseSha256 ? { baseSha256 } : {},
         ...localSha256 ? { localSha256 } : {},
@@ -34970,9 +35595,9 @@ function planVnextTemplateRepair(projectRoot, options = {}) {
         policyReviewRequired: false
       };
     }
-    issues.push(repairIssue("template_repair_conflict", path5, "both the user and template changed this managed file; local bytes were preserved"));
+    issues.push(repairIssue("template_repair_conflict", path4, "both the user and template changed this managed file; local bytes were preserved"));
     return {
-      path: path5,
+      path: path4,
       classification: "conflict",
       ...baseSha256 ? { baseSha256 } : {},
       ...localSha256 ? { localSha256 } : {},
@@ -35010,7 +35635,7 @@ function operationPlanSha(operation) {
 function writeOperation(projectRoot, operation) {
   const root = transactionRoot(projectRoot);
   const file = operationFile(projectRoot);
-  const temporary = join25(root, `.operation-${operation.operationId}-${randomUUID5()}.tmp`);
+  const temporary = join24(root, `.operation-${operation.operationId}-${randomUUID5()}.tmp`);
   try {
     writeDurableNew(temporary, Buffer.from(`${JSON.stringify(operation, null, 2)}
 `, "utf8"), 384);
@@ -35061,12 +35686,12 @@ function readOperation(projectRoot, schemasDir) {
 function hasVnextInitTransaction(projectRoot) {
   return existsSync18(transactionRoot(projectRoot));
 }
-function readTarget(projectRoot, path5) {
-  return readOptionalManaged(join25(transactionRoot(projectRoot), "targets"), path5);
+function readTarget(projectRoot, path4) {
+  return readOptionalManaged(join24(transactionRoot(projectRoot), "targets"), path4);
 }
-function writeTarget(projectRoot, path5, bytes) {
-  if (bytes.byteLength > MAX_MANAGED_FILE_BYTES) fail3("template_target_too_large", path5, `target exceeds ${MAX_MANAGED_FILE_BYTES} bytes`);
-  const file = targetFile(projectRoot, path5);
+function writeTarget(projectRoot, path4, bytes) {
+  if (bytes.byteLength > MAX_MANAGED_FILE_BYTES) fail3("template_target_too_large", path4, `target exceeds ${MAX_MANAGED_FILE_BYTES} bytes`);
+  const file = targetFile(projectRoot, path4);
   mkdirSync17(dirname12(file), { recursive: true, mode: 448 });
   writeDurableNew(file, bytes, 384);
 }
@@ -35102,7 +35727,7 @@ function verifyBackups(projectRoot, operation) {
   if (operation.kind !== "repair") return;
   for (const entry of operation.files) {
     if (entry.observedSha256 === null) continue;
-    const bytes = readOptionalManaged(join25(transactionRoot(projectRoot), "backups"), entry.path);
+    const bytes = readOptionalManaged(join24(transactionRoot(projectRoot), "backups"), entry.path);
     if (!bytes || vnextContentSha256(bytes) !== entry.observedSha256) {
       fail3("init_transaction_backup_invalid", entry.path, "pinned preimage backup is missing or corrupt");
     }
@@ -35136,9 +35761,9 @@ function sourceConfigFiles(projectRoot) {
     ".kxm/repo/repo.yaml",
     ".kxm/repo/env.yaml"
   ];
-  const files = fixed.filter((path5) => existsSync18(join25(projectRoot, ...path5.split("/"))));
+  const files = fixed.filter((path4) => existsSync18(join24(projectRoot, ...path4.split("/"))));
   for (const directory of ["agents", "models", "workflows"]) {
-    const absolute = join25(projectRoot, ".kxm", directory);
+    const absolute = join24(projectRoot, ".kxm", directory);
     if (!existsSync18(absolute)) continue;
     const stat = lstatSync5(absolute);
     if (stat.isSymbolicLink() || !stat.isDirectory()) fail3("repair_directory_invalid", `.kxm/${directory}`, "configuration directory must be regular", "path");
@@ -35171,12 +35796,12 @@ function prepareShadow(projectRoot, operation, options) {
   mkdirSync17(shadow, { recursive: true, mode: 448 });
   let total = 0;
   if (operation.kind === "repair") {
-    for (const path5 of sourceConfigFiles(projectRoot)) {
-      const bytes = readOptionalManaged(projectRoot, path5);
-      if (!bytes) fail3("repair_snapshot_file_missing", path5, "configuration changed during shadow preparation");
+    for (const path4 of sourceConfigFiles(projectRoot)) {
+      const bytes = readOptionalManaged(projectRoot, path4);
+      if (!bytes) fail3("repair_snapshot_file_missing", path4, "configuration changed during shadow preparation");
       total += bytes.byteLength;
-      const source = join25(projectRoot, ...path5.split("/"));
-      const destination = join25(shadow, ...path5.split("/"));
+      const source = join24(projectRoot, ...path4.split("/"));
+      const destination = join24(shadow, ...path4.split("/"));
       mkdirSync17(dirname12(destination), { recursive: true, mode: 448 });
       writeDurableNew(destination, bytes, lstatSync5(source).mode & 511);
       if (total > MAX_MANAGED_TOTAL_BYTES) fail3("repair_snapshot_too_large", ".kxm", `configuration snapshot exceeds ${MAX_MANAGED_TOTAL_BYTES} bytes`, "parse");
@@ -35185,12 +35810,12 @@ function prepareShadow(projectRoot, operation, options) {
   for (const entry of operation.files) {
     const bytes = readTarget(projectRoot, entry.path);
     if (!bytes) fail3("init_transaction_target_missing", entry.path, "pinned target artifact is missing");
-    const destination = join25(shadow, ...entry.path.split("/"));
+    const destination = join24(shadow, ...entry.path.split("/"));
     mkdirSync17(dirname12(destination), { recursive: true, mode: 448 });
     const mode = existsSync18(destination) ? lstatSync5(destination).mode & 511 : 420;
     writeDurable(destination, bytes, mode);
   }
-  const project = parseRestrictedYaml2(readFileSync18(join25(shadow, ".kxm", "project.yaml")), ".kxm/project.yaml");
+  const project = parseRestrictedYaml2(readFileSync18(join24(shadow, ".kxm", "project.yaml")), ".kxm/project.yaml");
   const bound = absoluteMemberBindings(projectRoot, project, options.repositoryBindings);
   loadVnextProject(shadow, { ...loaderOptions(options), repositoryBindings: bound });
   const provenance = readProjectAndProvenance(shadow, options.schemasDir)?.provenance;
@@ -35249,32 +35874,32 @@ function prepareOperation(projectRoot, operation, rendered, options) {
     throw error;
   }
 }
-function ensureDestinationParents(projectRoot, path5) {
+function ensureDestinationParents(projectRoot, path4) {
   const boundary = resolve12(projectRoot);
-  const segments = path5.split("/").slice(0, -1);
+  const segments = path4.split("/").slice(0, -1);
   let current = boundary;
   for (const segment of segments) {
-    current = join25(current, segment);
+    current = join24(current, segment);
     if (!existsSync18(current)) mkdirSync17(current, { mode: 448 });
     const stat = lstatSync5(current);
-    if (stat.isSymbolicLink() || !stat.isDirectory()) fail3("repair_destination_parent_invalid", path5, "destination parent must be a regular directory", "path");
+    if (stat.isSymbolicLink() || !stat.isDirectory()) fail3("repair_destination_parent_invalid", path4, "destination parent must be a regular directory", "path");
   }
 }
-function destinationSha(projectRoot, path5) {
-  const file = join25(projectRoot, ...path5.split("/"));
+function destinationSha(projectRoot, path4) {
+  const file = join24(projectRoot, ...path4.split("/"));
   if (!existsSync18(file)) return void 0;
-  return vnextContentSha256(readRegularBounded(file, path5));
+  return vnextContentSha256(readRegularBounded(file, path4));
 }
-function requireConditionalLinkSupport(directory, operationId, path5) {
+function requireConditionalLinkSupport(directory, operationId, path4) {
   const nonce = randomUUID5();
-  const source = join25(directory, `.kxm-repair-${operationId}-${nonce}.link-source`);
-  const target = join25(directory, `.kxm-repair-${operationId}-${nonce}.link-target`);
+  const source = join24(directory, `.kxm-repair-${operationId}-${nonce}.link-source`);
+  const target = join24(directory, `.kxm-repair-${operationId}-${nonce}.link-target`);
   try {
     writeDurableNew(source, Buffer.from("kxm-link-probe\n", "utf8"), 384);
     try {
       linkSync(source, target);
     } catch {
-      fail3("repair_hard_link_unsupported", path5, "filesystem does not support the conditional hard-link install required for safe repair");
+      fail3("repair_hard_link_unsupported", path4, "filesystem does not support the conditional hard-link install required for safe repair");
     }
   } finally {
     rmSync5(target, { force: true });
@@ -35283,12 +35908,12 @@ function requireConditionalLinkSupport(directory, operationId, path5) {
   }
 }
 function atomicInstallTarget(projectRoot, operation, entry) {
-  const destination = join25(projectRoot, ...entry.path.split("/"));
+  const destination = join24(projectRoot, ...entry.path.split("/"));
   ensureDestinationParents(projectRoot, entry.path);
   const directory = dirname12(destination);
   const temporaryPrefix = `.kxm-repair-${operation.operationId}-`;
   const pathKey = vnextContentSha256(entry.path).slice("sha256:".length, "sha256:".length + 16);
-  const displaced = join25(directory, `${temporaryPrefix}${pathKey}.preimage`);
+  const displaced = join24(directory, `${temporaryPrefix}${pathKey}.preimage`);
   if (existsSync18(displaced)) {
     const stat = lstatSync5(displaced);
     if (stat.isSymbolicLink() || !stat.isFile()) fail3("repair_preimage_temporary_invalid", entry.path, "stale displaced preimage is not a regular file", "path");
@@ -35310,7 +35935,7 @@ function atomicInstallTarget(projectRoot, operation, entry) {
     const owned = candidate.name.startsWith(temporaryPrefix) && (candidate.name.endsWith(".tmp") || candidate.name.endsWith(".link-source") || candidate.name.endsWith(".link-target"));
     if (!owned) continue;
     if (!candidate.isFile()) fail3("repair_temporary_invalid", entry.path, "stale operation temporary is not a regular file", "path");
-    rmSync5(join25(directory, candidate.name), { force: true });
+    rmSync5(join24(directory, candidate.name), { force: true });
   }
   const current = destinationSha(projectRoot, entry.path);
   if (current === entry.targetSha256) return;
@@ -35320,7 +35945,7 @@ function atomicInstallTarget(projectRoot, operation, entry) {
   requireConditionalLinkSupport(directory, operation.operationId, entry.path);
   const bytes = readTarget(projectRoot, entry.path);
   if (!bytes) fail3("init_transaction_target_missing", entry.path, "pinned target artifact is missing");
-  const temporary = join25(directory, `${temporaryPrefix}${randomUUID5()}.tmp`);
+  const temporary = join24(directory, `${temporaryPrefix}${randomUUID5()}.tmp`);
   const mode = existsSync18(destination) ? lstatSync5(destination).mode & 511 : 420;
   try {
     writeDurableNew(temporary, bytes, mode);
@@ -35366,12 +35991,12 @@ function atomicInstallTarget(projectRoot, operation, entry) {
   if (destinationSha(projectRoot, entry.path) !== entry.targetSha256) fail3("repair_install_verification_failed", entry.path, "installed target hash does not match the pinned operation");
 }
 function installedCreateMatches(projectRoot, operation) {
-  const configRoot = join25(projectRoot, ".kxm");
+  const configRoot = join24(projectRoot, ".kxm");
   if (!existsSync18(configRoot)) return false;
   const actual = [];
   const visit2 = (directory) => {
     for (const entry of readdirSync7(directory, { withFileTypes: true })) {
-      const absolute = join25(directory, entry.name);
+      const absolute = join24(directory, entry.name);
       if (entry.isSymbolicLink()) fail3("create_resume_link", relativeConfigPath(projectRoot, absolute), "created configuration must not contain links", "path");
       if (entry.isDirectory()) visit2(absolute);
       else if (entry.isFile()) actual.push(relativeConfigPath(projectRoot, absolute));
@@ -35381,7 +36006,7 @@ function installedCreateMatches(projectRoot, operation) {
   visit2(configRoot);
   actual.sort(compareCodeUnits4);
   const expected = operation.files.map((entry) => entry.path).sort(compareCodeUnits4);
-  return actual.length === expected.length && actual.every((path5, index) => path5 === expected[index]) && operation.files.every((entry) => destinationSha(projectRoot, entry.path) === entry.targetSha256);
+  return actual.length === expected.length && actual.every((path4, index) => path4 === expected[index]) && operation.files.every((entry) => destinationSha(projectRoot, entry.path) === entry.targetSha256);
 }
 function relativeConfigPath(projectRoot, file) {
   return relative5(resolve12(projectRoot), file).replaceAll("\\", "/");
@@ -35392,7 +36017,7 @@ function syncTreeDirectories(root) {
   const visit2 = (directory) => {
     directories.push(directory);
     for (const entry of readdirSync7(directory, { withFileTypes: true })) {
-      if (entry.isDirectory()) visit2(join25(directory, entry.name));
+      if (entry.isDirectory()) visit2(join24(directory, entry.name));
     }
   };
   visit2(root);
@@ -35406,7 +36031,7 @@ function rebuildCreateShadow(projectRoot, operation, options) {
   if (stat.isSymbolicLink() || !stat.isDirectory() || !installedCreateMatches(shadow, operation)) {
     fail3("create_shadow_invalid", TRANSACTION_NAME, "reconstructed create shadow does not exactly match pinned target files", "path");
   }
-  syncTreeDirectories(join25(shadow, ".kxm"));
+  syncTreeDirectories(join24(shadow, ".kxm"));
 }
 function applyOperation(projectRoot, original, options, resumed) {
   assertNoRegisteredGates(options);
@@ -35416,10 +36041,10 @@ function applyOperation(projectRoot, original, options, resumed) {
   verifyBackups(projectRoot, operation);
   operation = updatePhase(projectRoot, operation, "applying");
   if (operation.kind === "create") {
-    const destination = join25(projectRoot, ".kxm");
+    const destination = join24(projectRoot, ".kxm");
     if (!existsSync18(destination)) {
       rebuildCreateShadow(projectRoot, operation, effectiveOptions);
-      renameSync6(join25(shadowRoot(projectRoot), ".kxm"), destination);
+      renameSync6(join24(shadowRoot(projectRoot), ".kxm"), destination);
       syncDirectory2(projectRoot);
     } else if (!installedCreateMatches(projectRoot, operation)) {
       fail3("create_resume_conflict", ".kxm", "existing project configuration does not match the pinned create operation");
@@ -35446,13 +36071,13 @@ function applyOperation(projectRoot, original, options, resumed) {
   operation = updatePhase(projectRoot, operation, "verified");
   if (options.testFaultAt === "verified") throw new Error("injected init fault after verification");
   const files = operation.files.map((entry) => entry.path);
-  syncTreeDirectories(join25(projectRoot, ".kxm"));
+  syncTreeDirectories(join24(projectRoot, ".kxm"));
   return { kind: operation.kind, resumed, bundle, files };
 }
 function prepareAndApplyVnextCreate(projectRoot, rendered, options = {}) {
   assertNoRegisteredGates(options);
-  const files = [...rendered.files.entries()].map(([path5, bytes]) => ({
-    path: path5,
+  const files = [...rendered.files.entries()].map(([path4, bytes]) => ({
+    path: path4,
     observedSha256: null,
     targetSha256: vnextContentSha256(bytes),
     classification: "template-only",
@@ -35511,10 +36136,10 @@ function validateOperationIntent(projectRoot, operation) {
       fail3("init_transaction_create_invalid", TRANSACTION_NAME, "create operation has a source revision");
     }
     if (entries.size !== target.files.size) fail3("init_transaction_create_files_invalid", TRANSACTION_NAME, "create operation does not contain the exact built-in target file set");
-    for (const [path5, bytes] of target.files) {
-      const entry = entries.get(path5);
+    for (const [path4, bytes] of target.files) {
+      const entry = entries.get(path4);
       if (!entry || entry.observedSha256 !== null || entry.targetSha256 !== vnextContentSha256(bytes) || entry.classification !== "template-only" || entry.action !== "create") {
-        fail3("init_transaction_create_file_invalid", path5, "create operation file does not match its built-in target");
+        fail3("init_transaction_create_file_invalid", path4, "create operation file does not match its built-in target");
       }
     }
     return;
@@ -35526,16 +36151,16 @@ function validateOperationIntent(projectRoot, operation) {
   if (!source) fail3("init_transaction_source_unknown", TRANSACTION_NAME, "operation source is not a supported built-in template");
   const sourceRecords = new Map(source.provenance.files.map((record) => [record.path, record]));
   const targetRecords = new Map(target.provenance.files.map((record) => [record.path, record]));
-  if (sourceRecords.size !== targetRecords.size || [...sourceRecords.keys()].some((path5) => !targetRecords.has(path5))) {
+  if (sourceRecords.size !== targetRecords.size || [...sourceRecords.keys()].some((path4) => !targetRecords.has(path4))) {
     fail3("init_transaction_template_shape_changed", TRANSACTION_NAME, "automatic repair cannot add or delete managed template paths");
   }
   const safeChangedPaths = [];
-  for (const [path5, base] of sourceRecords) {
-    const next = targetRecords.get(path5);
+  for (const [path4, base] of sourceRecords) {
+    const next = targetRecords.get(path4);
     if (base.authoritySha256 !== next.authoritySha256) {
-      fail3("init_transaction_authority_change", path5, "automatic repair operation changes an authority projection");
+      fail3("init_transaction_authority_change", path4, "automatic repair operation changes an authority projection");
     }
-    if (base.sha256 !== next.sha256) safeChangedPaths.push(path5);
+    if (base.sha256 !== next.sha256) safeChangedPaths.push(path4);
   }
   const provenanceEntry = entries.get(VNEXT_TEMPLATE_PROVENANCE_PATH);
   const sourceProvenanceBytes = source.files.get(VNEXT_TEMPLATE_PROVENANCE_PATH);
@@ -35543,17 +36168,17 @@ function validateOperationIntent(projectRoot, operation) {
   if (!provenanceEntry || provenanceEntry.observedSha256 !== vnextContentSha256(sourceProvenanceBytes) || provenanceEntry.targetSha256 !== vnextContentSha256(targetProvenanceBytes) || provenanceEntry.classification !== "template-only" || provenanceEntry.action !== "replace") {
     fail3("init_transaction_provenance_intent_invalid", VNEXT_TEMPLATE_PROVENANCE_PATH, "repair provenance action does not match supported source and target templates");
   }
-  for (const [path5, entry] of entries) {
-    if (path5 === VNEXT_TEMPLATE_PROVENANCE_PATH) continue;
-    const base = sourceRecords.get(path5);
-    const next = targetRecords.get(path5);
+  for (const [path4, entry] of entries) {
+    if (path4 === VNEXT_TEMPLATE_PROVENANCE_PATH) continue;
+    const base = sourceRecords.get(path4);
+    const next = targetRecords.get(path4);
     if (!base || !next || base.sha256 === next.sha256 || entry.observedSha256 !== base.sha256 || entry.targetSha256 !== next.sha256 || entry.classification !== "template-only" || entry.action !== "replace") {
-      fail3("init_transaction_repair_file_invalid", path5, "repair operation file is not a safe built-in template-only replacement");
+      fail3("init_transaction_repair_file_invalid", path4, "repair operation file is not a safe built-in template-only replacement");
     }
   }
-  for (const path5 of safeChangedPaths) {
-    if (!entries.has(path5) && destinationSha(projectRoot, path5) !== targetRecords.get(path5)?.sha256) {
-      fail3("init_transaction_repair_file_missing", path5, "repair operation omitted a changed file that has not converged to the target");
+  for (const path4 of safeChangedPaths) {
+    if (!entries.has(path4) && destinationSha(projectRoot, path4) !== targetRecords.get(path4)?.sha256) {
+      fail3("init_transaction_repair_file_missing", path4, "repair operation omitted a changed file that has not converged to the target");
     }
   }
 }
@@ -35561,7 +36186,7 @@ function finishPreparingOperation(projectRoot, operation, options) {
   const rendered = rendererForOperation(operation);
   if (!rendered) fail3("init_transaction_renderer_unavailable", TRANSACTION_NAME, "this binary cannot reproduce the pinned pre-application target");
   for (const directory of ["targets", "backups", "shadow"]) {
-    rmSync5(join25(transactionRoot(projectRoot), directory), { recursive: true, force: true });
+    rmSync5(join24(transactionRoot(projectRoot), directory), { recursive: true, force: true });
   }
   for (const entry of operation.files) {
     const bytes = rendered.files.get(entry.path);
@@ -35596,7 +36221,7 @@ function commitVnextInitTransaction(projectRoot, schemasDir) {
     fail3("init_transaction_not_verified", TRANSACTION_NAME, "initialization transaction cannot commit before installed state is verified");
   }
   const transaction = transactionRoot(projectRoot);
-  const retired = join25(projectRoot, `${TRANSACTION_NAME}-cleanup-${operation.operationId}-${randomUUID5()}`);
+  const retired = join24(projectRoot, `${TRANSACTION_NAME}-cleanup-${operation.operationId}-${randomUUID5()}`);
   renameSync6(transaction, retired);
   syncDirectory2(projectRoot);
   rmSync5(retired, { recursive: true, force: true });
@@ -35705,7 +36330,7 @@ function validateBindingIdentities(bundle, persisted, explicit) {
 }
 function initializeVnextProjectAtGitRoot(start, gitRoot, options, mutationLock) {
   const storeOptions = bindingStoreOptions(options);
-  const persisted = existsSync19(join26(gitRoot, ".kxm", "project.yaml")) ? readVnextLocalBindings(gitRoot, storeOptions) : void 0;
+  const persisted = existsSync19(join25(gitRoot, ".kxm", "project.yaml")) ? readVnextLocalBindings(gitRoot, storeOptions) : void 0;
   const repositoryBindings = Object.fromEntries([
     ...Object.entries(persisted?.repositories ?? {}),
     ...Object.entries(options.repositoryBindings ?? {})
@@ -35894,7 +36519,7 @@ function initializeVnextProjectAtGitRoot(start, gitRoot, options, mutationLock) 
   const files = [...rendered.files.keys()];
   if (options.dryRun) return { action: "planned", plan, projectRoot: gitRoot, files };
   if (!mutationLock) throw new Error("project mutation lock is required to create configuration");
-  if (existsSync19(join26(gitRoot, ".kxm"))) {
+  if (existsSync19(join25(gitRoot, ".kxm"))) {
     throw new VnextConfigError([initIssue("workspace_changed", ".kxm", "workspace changed after planning; existing .kxm state was not overwritten")]);
   }
   const created = prepareAndApplyVnextCreate(gitRoot, rendered, transactionOptions);
@@ -35927,7 +36552,7 @@ function initializeVnextProject(start = process.cwd(), options = {}) {
 var import_yaml9 = __toESM(require_dist(), 1);
 import { createHash as createHash10 } from "node:crypto";
 import { chmodSync as chmodSync4, closeSync as closeSync3, existsSync as existsSync20, fsyncSync as fsyncSync3, lstatSync as lstatSync6, mkdirSync as mkdirSync18, openSync as openSync3, readFileSync as readFileSync19, renameSync as renameSync7, rmSync as rmSync6, writeFileSync as writeFileSync16 } from "node:fs";
-import { join as join27 } from "node:path";
+import { join as join26 } from "node:path";
 var MAX_LEGACY_JSON_BYTES = 1024 * 1024;
 var MAX_LEGACY_JSON_DEPTH = 32;
 var MAX_LEGACY_JSON_NODES = 32768;
@@ -35942,24 +36567,24 @@ function parseLegacyJson(text, label) {
   const bytes = Buffer.byteLength(text, "utf8");
   if (bytes > MAX_LEGACY_JSON_BYTES) migrateFail("document_too_large", label, `document exceeds ${MAX_LEGACY_JSON_BYTES} bytes`);
   const state = { nodes: 0 };
-  const parseNode = (value, path5, depth) => {
+  const parseNode = (value, path4, depth) => {
     state.nodes += 1;
     if (state.nodes > MAX_LEGACY_JSON_NODES) migrateFail("node_limit", label, `document exceeds ${MAX_LEGACY_JSON_NODES} nodes`);
     if (depth > MAX_LEGACY_JSON_DEPTH) migrateFail("depth_limit", label, `document exceeds nesting depth ${MAX_LEGACY_JSON_DEPTH}`);
     if (value === null || typeof value === "boolean" || typeof value === "string") return value;
     if (typeof value === "number") {
-      if (!Number.isFinite(value)) migrateFail("non_json_number", label, `${path5} is not a finite number`);
+      if (!Number.isFinite(value)) migrateFail("non_json_number", label, `${path4} is not a finite number`);
       return value;
     }
     if (Array.isArray(value)) {
-      return value.map((entry, index) => parseNode(entry, `${path5}[${index}]`, depth + 1));
+      return value.map((entry, index) => parseNode(entry, `${path4}[${index}]`, depth + 1));
     }
     if (value && typeof value === "object") {
       const record = {};
-      for (const [key, entry] of Object.entries(value)) record[key] = parseNode(entry, `${path5}.${key}`, depth + 1);
+      for (const [key, entry] of Object.entries(value)) record[key] = parseNode(entry, `${path4}.${key}`, depth + 1);
       return record;
     }
-    migrateFail("non_json_value", label, `${path5} is not JSON-compatible`);
+    migrateFail("non_json_value", label, `${path4} is not JSON-compatible`);
   };
   let raw;
   try {
@@ -36095,24 +36720,24 @@ function readVnextLegacySources(root) {
   if (files.length > MAX_LEGACY_SOURCES) {
     throw new VnextConfigError([migrateIssue("discovery", "legacy_source_limit", ".kxm/config", `legacy configuration exceeds ${MAX_LEGACY_SOURCES} files`)]);
   }
-  return files.map((path5) => {
-    const absolute = join27(root, ...path5.split("/"));
+  return files.map((path4) => {
+    const absolute = join26(root, ...path4.split("/"));
     const stat = lstatSync6(absolute);
     if (stat.isSymbolicLink() || !stat.isFile()) {
-      throw new VnextConfigError([migrateIssue("path", "legacy_source_invalid", path5, "legacy configuration must be a regular file, not a link")]);
+      throw new VnextConfigError([migrateIssue("path", "legacy_source_invalid", path4, "legacy configuration must be a regular file, not a link")]);
     }
     const buffer = readFileSync19(absolute);
     let text;
     try {
       text = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
     } catch {
-      throw new VnextConfigError([migrateIssue("parse", "invalid_utf8", path5, "document is not valid UTF-8")]);
+      throw new VnextConfigError([migrateIssue("parse", "invalid_utf8", path4, "document is not valid UTF-8")]);
     }
     return {
-      path: path5,
+      path: path4,
       sha256: sha256Of(buffer),
       bytes: buffer.byteLength,
-      value: parseLegacyJson(text, path5)
+      value: parseLegacyJson(text, path4)
     };
   });
 }
@@ -37120,18 +37745,18 @@ function planVnextMigration(projectRoot, options = {}) {
     description: "Authoritative project configuration and repository content.",
     defaultAccess: "write"
   });
-  for (const [path5, value] of sortedRecord(converted.agents, ".kxm/agents/")) resources.set(path5, value);
-  for (const [path5, value] of sortedRecord(converted.models, ".kxm/models/")) resources.set(path5, value);
-  for (const [path5, value] of sortedRecord(workflows, ".kxm/workflows/")) resources.set(path5, value);
+  for (const [path4, value] of sortedRecord(converted.agents, ".kxm/agents/")) resources.set(path4, value);
+  for (const [path4, value] of sortedRecord(converted.models, ".kxm/models/")) resources.set(path4, value);
+  for (const [path4, value] of sortedRecord(workflows, ".kxm/workflows/")) resources.set(path4, value);
   const schemaIssues = [];
-  const kindOf = (path5) => path5 === ".kxm/project.yaml" ? "project" : path5.endsWith("repo.yaml") ? "repository" : path5.startsWith(".kxm/agents/") ? "agent" : path5.startsWith(".kxm/models/") ? "model" : "workflow";
-  const idOf = (path5) => path5 === ".kxm/project.yaml" || path5.endsWith("repo.yaml") ? void 0 : path5.slice(path5.lastIndexOf("/") + 1, -".yaml".length);
+  const kindOf = (path4) => path4 === ".kxm/project.yaml" ? "project" : path4.endsWith("repo.yaml") ? "repository" : path4.startsWith(".kxm/agents/") ? "agent" : path4.startsWith(".kxm/models/") ? "model" : "workflow";
+  const idOf = (path4) => path4 === ".kxm/project.yaml" || path4.endsWith("repo.yaml") ? void 0 : path4.slice(path4.lastIndexOf("/") + 1, -".yaml".length);
   const semanticResources = /* @__PURE__ */ new Map();
-  for (const [path5, value] of [...resources.entries()].sort(([left], [right]) => compareCodeUnits5(left, right))) {
-    const kind = kindOf(path5);
-    schemaIssues.push(...registry.validate(kind, value, path5));
-    const id = idOf(path5);
-    semanticResources.set(path5, kind === "repository" ? { kind, id: "control", value } : { kind, ...id === void 0 ? {} : { id }, value });
+  for (const [path4, value] of [...resources.entries()].sort(([left], [right]) => compareCodeUnits5(left, right))) {
+    const kind = kindOf(path4);
+    schemaIssues.push(...registry.validate(kind, value, path4));
+    const id = idOf(path4);
+    semanticResources.set(path4, kind === "repository" ? { kind, id: "control", value } : { kind, ...id === void 0 ? {} : { id }, value });
   }
   if (schemaIssues.length > 0) throw new VnextConfigError(schemaIssues);
   if (plan.ambiguities.length === 0) {
@@ -37144,9 +37769,9 @@ function planVnextMigration(projectRoot, options = {}) {
     projectName,
     sourceDigest: legacySourceDigest(sources),
     sources: sources.map((source) => ({ path: source.path, sha256: source.sha256, bytes: source.bytes })),
-    resources: [...resources.keys()].sort(compareCodeUnits5).map((path5) => {
-      const bytes = Buffer.from((0, import_yaml9.stringify)(resources.get(path5), { lineWidth: 0 }), "utf8");
-      return { path: path5, sha256: sha256Of(bytes), bytes: bytes.byteLength };
+    resources: [...resources.keys()].sort(compareCodeUnits5).map((path4) => {
+      const bytes = Buffer.from((0, import_yaml9.stringify)(resources.get(path4), { lineWidth: 0 }), "utf8");
+      return { path: path4, sha256: sha256Of(bytes), bytes: bytes.byteLength };
     }),
     ambiguities: [...plan.ambiguities].sort((left, right) => compareCodeUnits5(left.key, right.key)).map((ambiguity) => ({
       key: ambiguity.key,
@@ -37173,13 +37798,13 @@ function planVnextMigration(projectRoot, options = {}) {
     sources
   };
 }
-function readVnextMigrationDecisions(path5, schemasDir) {
-  if (!existsSync20(path5)) {
-    throw new VnextConfigError([migrateIssue("discovery", "decisions_missing", path5, "migration decisions file does not exist")]);
+function readVnextMigrationDecisions(path4, schemasDir) {
+  if (!existsSync20(path4)) {
+    throw new VnextConfigError([migrateIssue("discovery", "decisions_missing", path4, "migration decisions file does not exist")]);
   }
   const registry = new VnextSchemaRegistry(schemasDir);
-  const value = parseRestrictedYaml2(readFileSync19(path5), path5);
-  const issues = registry.validateMigrationDecision(value, path5);
+  const value = parseRestrictedYaml2(readFileSync19(path4), path4);
+  const issues = registry.validateMigrationDecision(value, path4);
   if (issues.length > 0) throw new VnextConfigError(issues);
   return value;
 }
@@ -37188,10 +37813,10 @@ function resolutionsOf(decisions) {
   if (!resolutions || typeof resolutions !== "object" || Array.isArray(resolutions)) return {};
   return { ...resolutions };
 }
-function syncDirectory3(path5) {
+function syncDirectory3(path4) {
   let descriptor;
   try {
-    descriptor = openSync3(path5, "r");
+    descriptor = openSync3(path4, "r");
     fsyncSync3(descriptor);
   } catch (error) {
     const code = error.code;
@@ -37200,8 +37825,8 @@ function syncDirectory3(path5) {
     if (descriptor !== void 0) closeSync3(descriptor);
   }
 }
-function writeDurable2(path5, content) {
-  const temp = `${path5}.kxm-migration-tmp-${process.pid}-${createHash10("sha256").update(`${path5}${Date.now()}${Math.random()}`, "utf8").digest("hex").slice(0, 12)}`;
+function writeDurable2(path4, content) {
+  const temp = `${path4}.kxm-migration-tmp-${process.pid}-${createHash10("sha256").update(`${path4}${Date.now()}${Math.random()}`, "utf8").digest("hex").slice(0, 12)}`;
   let created = false;
   try {
     const descriptor = openSync3(temp, "wx", 384);
@@ -37212,12 +37837,12 @@ function writeDurable2(path5, content) {
     } finally {
       closeSync3(descriptor);
     }
-    renameSync7(temp, path5);
+    renameSync7(temp, path4);
     try {
-      chmodSync4(path5, 384);
+      chmodSync4(path4, 384);
     } catch {
     }
-    syncDirectory3(join27(path5, ".."));
+    syncDirectory3(join26(path4, ".."));
   } finally {
     if (created && existsSync20(temp)) rmSync6(temp, { force: true });
   }
@@ -37229,7 +37854,7 @@ function applyVnextMigration(projectRoot, options = {}) {
     ...options.schemasDir === void 0 ? {} : { schemasDir: options.schemasDir }
   };
   const execute = (lock) => {
-    const receiptAbsolute = join27(root, ...VNEXT_MIGRATION_RECEIPT_PATH.split("/"));
+    const receiptAbsolute = join26(root, ...VNEXT_MIGRATION_RECEIPT_PATH.split("/"));
     if (existsSync20(receiptAbsolute)) {
       const stat = lstatSync6(receiptAbsolute);
       if (stat.isSymbolicLink() || !stat.isFile()) {
@@ -37282,8 +37907,8 @@ function applyVnextMigration(projectRoot, options = {}) {
     if (first.ambiguities.length > 0) {
       return { action: "planned", projectRoot: root, files: [], plan: first.plan };
     }
-    const files = [...first.resources.entries()].sort(([left], [right]) => compareCodeUnits5(left, right)).map(([path5, value]) => ({ path: path5, bytes: Buffer.from((0, import_yaml9.stringify)(value, { lineWidth: 0 }), "utf8") }));
-    const collisions = files.filter((file) => existsSync20(join27(root, ...file.path.split("/"))));
+    const files = [...first.resources.entries()].sort(([left], [right]) => compareCodeUnits5(left, right)).map(([path4, value]) => ({ path: path4, bytes: Buffer.from((0, import_yaml9.stringify)(value, { lineWidth: 0 }), "utf8") }));
+    const collisions = files.filter((file) => existsSync20(join26(root, ...file.path.split("/"))));
     if (collisions.length > 0) {
       throw new VnextConfigError(collisions.map((file) => migrateIssue("semantic", "migration_target_exists", file.path, "target resource already exists; refusing to overwrite")));
     }
@@ -37292,7 +37917,7 @@ function applyVnextMigration(projectRoot, options = {}) {
       const segments = file.path.split("/");
       let current = root;
       for (const segment of segments.slice(0, -1)) {
-        current = join27(current, segment);
+        current = join26(current, segment);
         if (!existsSync20(current)) continue;
         const stat = lstatSync6(current);
         if (stat.isSymbolicLink() || !stat.isDirectory()) {
@@ -37309,8 +37934,8 @@ function applyVnextMigration(projectRoot, options = {}) {
     const written = [];
     try {
       for (const file of files) {
-        const absolute = join27(root, ...file.path.split("/"));
-        mkdirSync18(join27(absolute, ".."), { recursive: true });
+        const absolute = join26(root, ...file.path.split("/"));
+        mkdirSync18(join26(absolute, ".."), { recursive: true });
         written.push(absolute);
         writeDurable2(absolute, file.bytes);
       }
@@ -37356,7 +37981,7 @@ ${bundle.configRevision}`).slice(7, 39)}`,
 }
 function verifyVnextMigration(projectRoot, options = {}) {
   const root = migrationGitRoot(projectRoot);
-  const receiptAbsolute = join27(root, ...VNEXT_MIGRATION_RECEIPT_PATH.split("/"));
+  const receiptAbsolute = join26(root, ...VNEXT_MIGRATION_RECEIPT_PATH.split("/"));
   if (!existsSync20(receiptAbsolute)) {
     return {
       ok: false,
@@ -37407,21 +38032,21 @@ function verifyVnextMigration(projectRoot, options = {}) {
 import { spawn } from "node:child_process";
 import { createHash as createHash12, createHmac as createHmac2, randomBytes as randomBytes2, timingSafeEqual } from "node:crypto";
 import { chmodSync as chmodSync5, existsSync as existsSync22, lstatSync as lstatSync8, mkdirSync as mkdirSync20, readFileSync as readFileSync20, renameSync as renameSync8, rmSync as rmSync7, writeFileSync as writeFileSync17 } from "node:fs";
-import { dirname as dirname14, isAbsolute as isAbsolute7, join as join29, resolve as resolve15 } from "node:path";
+import { dirname as dirname14, isAbsolute as isAbsolute7, join as join28, resolve as resolve15 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 
 // plugins/kxm/src/vnext-runtime-store.ts
 import { createHash as createHash11, randomUUID as randomUUID7 } from "node:crypto";
 import { existsSync as existsSync21, lstatSync as lstatSync7, mkdirSync as mkdirSync19, realpathSync as realpathSync4 } from "node:fs";
-import { dirname as dirname13, join as join28, resolve as resolve14 } from "node:path";
+import { dirname as dirname13, join as join27, resolve as resolve14 } from "node:path";
 function vnextRuntimePaths(options = {}) {
   const stateRoot = options.stateRoot ? resolve14(options.stateRoot) : vnextUserStateRoot({ ...options.env ? { env: options.env } : {}, ...options.homeDir ? { homeDir: options.homeDir } : {} });
-  const runtimeDir = join28(stateRoot, "runtime");
+  const runtimeDir = join27(stateRoot, "runtime");
   return {
     stateRoot,
     runtimeDir,
-    registryDb: join28(runtimeDir, "registry.db"),
-    projectsDir: join28(runtimeDir, "projects")
+    registryDb: join27(runtimeDir, "registry.db"),
+    projectsDir: join27(runtimeDir, "projects")
   };
 }
 function runtimeIssue(phase, code, file, message) {
@@ -37468,8 +38093,8 @@ CREATE TABLE projects (
 var VnextRuntimeRegistry = class {
   path;
   database;
-  constructor(path5) {
-    this.path = resolve14(path5);
+  constructor(path4) {
+    this.path = resolve14(path4);
     this.database = openDatabase(this.path, "runtime registry", {
       schema: REGISTRY_SCHEMA,
       version: VNEXT_REGISTRY_SCHEMA_VERSION,
@@ -37780,7 +38405,7 @@ function compileStep(step, index, stepIndex, requirePlanHash, sink) {
   const maxAttempts = compileCountField(step.maxAttempts, 1, `${id}.maxAttempts`, id, sink);
   const timeoutMs = compileOptionalDuration(step.timeoutMs, `${id}.timeoutMs`, id, sink);
   const assignments = compileAssignments(step, id, agent, sink);
-  const join36 = compileJoin(step, id, sink);
+  const join35 = compileJoin(step, id, sink);
   const requiredEvidence = compileEvidence(step, id, sink);
   const transitions = compileTransitions(step, id, index, stepIndex, sink);
   const outcomes = Object.keys(transitions).sort(compareCodeUnits6);
@@ -37808,7 +38433,7 @@ function compileStep(step, index, stepIndex, requirePlanHash, sink) {
     transitions: orderedTransitions,
     requiresPlanHash: requirePlanHash.includes(id),
     assignments,
-    join: join36
+    join: join35
   };
   if (kind === "agent" || kind === "moa") {
     if (!agent) return void 0;
@@ -37858,15 +38483,15 @@ function compileAssignments(step, stepId, primaryAgentId, sink) {
   };
 }
 function compileJoin(step, stepId, sink) {
-  const join36 = objectValue2(step.join);
-  if (!join36) return { strategy: "all" };
-  const declared = stringValue3(join36.strategy);
+  const join35 = objectValue2(step.join);
+  if (!join35) return { strategy: "all" };
+  const declared = stringValue3(join35.strategy);
   const strategy = declared && JOIN_STRATEGIES.has(declared) ? declared : "all";
-  const minimumPassed = compileOptionalCount(join36.minimumPassed, `${stepId}.join.minimumPassed`, stepId, sink);
+  const minimumPassed = compileOptionalCount(join35.minimumPassed, `${stepId}.join.minimumPassed`, stepId, sink);
   const compiled = {
     strategy,
     ...minimumPassed !== void 0 ? { minimumPassed } : {},
-    ...typeof join36.cancelRemaining === "boolean" ? { cancelRemaining: join36.cancelRemaining } : {}
+    ...typeof join35.cancelRemaining === "boolean" ? { cancelRemaining: join35.cancelRemaining } : {}
   };
   return compiled;
 }
@@ -38043,27 +38668,27 @@ function compileSecrets(value) {
   if (!Array.isArray(value)) return [];
   return value.map(objectValue2).filter((entry) => Boolean(entry)).map(cloneJsonObject);
 }
-function compileCountField(value, fallback, path5, stepId, sink) {
+function compileCountField(value, fallback, path4, stepId, sink) {
   if (value === void 0) return fallback;
   if (isCount(value)) return value;
-  pushIssue(sink, { code: "count_invalid", stepId, message: `${path5} must be an integer >= 1` });
+  pushIssue(sink, { code: "count_invalid", stepId, message: `${path4} must be an integer >= 1` });
   return fallback;
 }
-function compileOptionalCount(value, path5, stepId, sink, outcome) {
+function compileOptionalCount(value, path4, stepId, sink, outcome) {
   if (value === void 0) return void 0;
   if (isCount(value)) return value;
   pushIssue(sink, {
     code: "count_invalid",
     stepId,
     ...outcome ? { outcome } : {},
-    message: `${path5} must be an integer >= 1`
+    message: `${path4} must be an integer >= 1`
   });
   return void 0;
 }
-function compileOptionalDuration(value, path5, stepId, sink) {
+function compileOptionalDuration(value, path4, stepId, sink) {
   if (value === void 0) return void 0;
   if (isDuration(value)) return value;
-  pushIssue(sink, { code: "duration_invalid", stepId, message: `${path5} must be an integer >= 0` });
+  pushIssue(sink, { code: "duration_invalid", stepId, message: `${path4} must be an integer >= 0` });
   return void 0;
 }
 function isCount(value) {
@@ -38145,7 +38770,7 @@ var RECORD_LIMIT = 16 * 1024 * 1024;
 // plugins/kxm/src/vnext-runtime-supervisor.ts
 var repoRoot = resolve15(fileURLToPath3(new URL("../../../", import.meta.url)));
 function vnextSupervisorTokenFile(paths) {
-  return join29(paths.runtimeDir, "supervisor.token");
+  return join28(paths.runtimeDir, "supervisor.token");
 }
 function readVnextSupervisorToken(paths) {
   const file = vnextSupervisorTokenFile(paths);
@@ -38168,7 +38793,7 @@ function processAlive(pid) {
 var HEARTBEAT_STALE_MS = 15e3;
 var SUPERVISOR_ERROR_MAX_AGE_MS = 3e4;
 function supervisorErrorFile(paths) {
-  return join29(paths.runtimeDir, "supervisor.error");
+  return join28(paths.runtimeDir, "supervisor.error");
 }
 function clearSupervisorError(paths) {
   const file = supervisorErrorFile(paths);
@@ -38248,7 +38873,7 @@ async function ensureVnextSupervisor(options = {}) {
     throw runtimeError("runtime_supervisor_unreachable", paths.registryDb, `runtime supervisor pid ${status.pid} is registered as running but cannot be probed`);
   }
   clearSupervisorError(paths);
-  const scriptPath = join29(repoRoot, "scripts", "kxm-runtime-supervisor.mjs");
+  const scriptPath = join28(repoRoot, "scripts", "kxm-runtime-supervisor.mjs");
   const spawnImpl = options.spawnImpl ?? ((script, env) => {
     const child = spawn(process.execPath, [script], {
       detached: true,
@@ -38281,8 +38906,8 @@ async function ensureVnextSupervisor(options = {}) {
   }
   throw runtimeError("runtime_supervisor_start_failed", scriptPath, `runtime supervisor (pid ${pid}) did not become ready in time`);
 }
-async function vnextRuntimeRequest(handle, method, path5, body) {
-  const response = await fetch(`http://127.0.0.1:${handle.port}${path5}`, {
+async function vnextRuntimeRequest(handle, method, path4, body) {
+  const response = await fetch(`http://127.0.0.1:${handle.port}${path4}`, {
     method,
     headers: {
       authorization: `Bearer ${handle.token}`,
@@ -38294,7 +38919,7 @@ async function vnextRuntimeRequest(handle, method, path5, body) {
   if (!response.ok) {
     const code = typeof payload.error === "string" ? payload.error : "runtime_request_failed";
     const message = typeof payload.message === "string" ? payload.message : `runtime request failed with HTTP ${response.status}`;
-    throw runtimeError(code, path5, message);
+    throw runtimeError(code, path4, message);
   }
   return payload;
 }
@@ -38658,13 +39283,13 @@ var HubClient = class {
     this.agentKey = void 0;
     await this.register();
   }
-  async request(path5, init = {}, includeIdentity = true) {
+  async request(path4, init = {}, includeIdentity = true) {
     const requestTimeoutMs = this.options.requestTimeoutMs ?? 15e3;
     const timeoutSignal = AbortSignal.timeout(requestTimeoutMs);
     const signal = init.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal;
     let response;
     try {
-      response = await fetch(`${this.options.serverUrl.replace(/\/$/, "")}${path5}`, {
+      response = await fetch(`${this.options.serverUrl.replace(/\/$/, "")}${path4}`, {
         ...init,
         signal,
         headers: { ...this.headers(includeIdentity), ...init.headers ?? {} }
@@ -38702,8 +39327,8 @@ var HubClient = class {
 // plugins/kxm/src/commands.ts
 import { createHash as createHash14, randomUUID as randomUUID8, timingSafeEqual as timingSafeEqual2 } from "node:crypto";
 import { chmodSync as chmodSync6, existsSync as existsSync23, mkdirSync as mkdirSync21, readFileSync as readFileSync21, unlinkSync as unlinkSync2, writeFileSync as writeFileSync18 } from "node:fs";
-import { homedir as homedir5 } from "node:os";
-import { dirname as dirname15, join as join30, resolve as resolve16 } from "node:path";
+import { homedir as homedir4 } from "node:os";
+import { dirname as dirname15, join as join29, resolve as resolve16 } from "node:path";
 function requiredString(value, name) {
   if (typeof value !== "string" || value.trim() === "") throw new Error(`${name} is required`);
   return value.trim();
@@ -39452,10 +40077,10 @@ function parseSessionToken(token) {
 }
 function resolveUserConfigDirectory(overrideDir) {
   if (overrideDir) return resolve16(overrideDir);
-  return resolve16(process.env.KXM_USER_CONFIG_DIR?.trim() || join30(homedir5(), ".config", "kxm"));
+  return resolve16(process.env.KXM_USER_CONFIG_DIR?.trim() || join29(homedir4(), ".config", "kxm"));
 }
 function sessionTokenPath(userConfigDir) {
-  return join30(resolveUserConfigDirectory(userConfigDir), "session.token");
+  return join29(resolveUserConfigDirectory(userConfigDir), "session.token");
 }
 function persistSessionTokenToDisk(token, options) {
   const filePath = sessionTokenPath(options?.userConfigDir);
@@ -39610,8 +40235,8 @@ function enforceToolPolicy(commandName, env = process.env, options) {
 // plugins/kxm/src/config.ts
 var import_yaml10 = __toESM(require_dist(), 1);
 import { existsSync as existsSync24, mkdirSync as mkdirSync22, readFileSync as readFileSync22, writeFileSync as writeFileSync19 } from "node:fs";
-import { homedir as homedir6 } from "node:os";
-import { dirname as dirname16, join as join31, resolve as resolve17 } from "node:path";
+import { homedir as homedir5 } from "node:os";
+import { dirname as dirname16, join as join30, resolve as resolve17 } from "node:path";
 var KXM_CONFIG_SCHEMA = "kxm.config.v1";
 var DEFAULT_KXM_CONFIG = {
   schema: KXM_CONFIG_SCHEMA,
@@ -39662,7 +40287,7 @@ var DEFAULT_KXM_CONFIG = {
 };
 function userConfigDirectory(overrideDir) {
   if (overrideDir) return resolve17(overrideDir);
-  return resolve17(process.env.KXM_USER_CONFIG_DIR?.trim() || join31(homedir6(), ".config", "kxm"));
+  return resolve17(process.env.KXM_USER_CONFIG_DIR?.trim() || join30(homedir5(), ".config", "kxm"));
 }
 function repoConfigDirectory(repoRoot3) {
   return resolve17(repoRoot3, ".kxm");
@@ -39681,9 +40306,9 @@ function deepMerge(target, source) {
 }
 function loadKxmConfig(repoRoot3 = process.cwd(), options = {}) {
   const userDir = userConfigDirectory(options.userConfigDir);
-  const userConfigFile = join31(userDir, "config.yaml");
+  const userConfigFile = join30(userDir, "config.yaml");
   const repoDir = repoConfigDirectory(repoRoot3);
-  const repoConfigFile = join31(repoDir, "config.yaml");
+  const repoConfigFile = join30(repoDir, "config.yaml");
   let userRaw = {};
   let userLoadedPath;
   if (existsSync24(userConfigFile)) {
@@ -39735,7 +40360,7 @@ function getKxmConfigValue(config, keyPath) {
 }
 function setKxmConfigValue(repoRoot3, keyPath, value, options = {}) {
   const scope = options.scope ?? "project";
-  const targetFile2 = scope === "user" ? join31(userConfigDirectory(options.userConfigDir), "config.yaml") : join31(repoConfigDirectory(repoRoot3), "config.yaml");
+  const targetFile2 = scope === "user" ? join30(userConfigDirectory(options.userConfigDir), "config.yaml") : join30(repoConfigDirectory(repoRoot3), "config.yaml");
   mkdirSync22(dirname16(targetFile2), { recursive: true });
   let existing = {};
   if (existsSync24(targetFile2)) {
@@ -40118,7 +40743,7 @@ function suggestWorkflowAndRoles(prompt, options = {}) {
 var import_yaml11 = __toESM(require_dist(), 1);
 import { randomUUID as randomUUID9 } from "node:crypto";
 import { existsSync as existsSync25, mkdirSync as mkdirSync23, readFileSync as readFileSync23, readdirSync as readdirSync8, writeFileSync as writeFileSync20 } from "node:fs";
-import { join as join32, resolve as resolve18 } from "node:path";
+import { join as join31, resolve as resolve18 } from "node:path";
 var GOAL_SCHEMA = "kxm.goal.v1";
 var TASK_SCHEMA = "kxm.task.v1";
 function goalsDirectory(repoRoot3) {
@@ -40143,7 +40768,7 @@ function createGoal(repoRoot3, input) {
     createdAt: now,
     updatedAt: now
   };
-  const filePath = join32(dir, `${id}.yaml`);
+  const filePath = join31(dir, `${id}.yaml`);
   writeFileSync20(filePath, (0, import_yaml11.stringify)(record).trim() + "\n", "utf8");
   return record;
 }
@@ -40155,7 +40780,7 @@ function listGoals(repoRoot3) {
   for (const entry of entries) {
     if (entry.isFile() && (entry.name.endsWith(".yaml") || entry.name.endsWith(".yml"))) {
       try {
-        const text = readFileSync23(join32(dir, entry.name), "utf8");
+        const text = readFileSync23(join31(dir, entry.name), "utf8");
         const doc = (0, import_yaml11.parse)(text);
         if (doc && doc.schema === GOAL_SCHEMA) goals.push(doc);
       } catch {
@@ -40188,7 +40813,7 @@ function createTask(repoRoot3, input) {
     createdAt: now,
     updatedAt: now
   };
-  const filePath = join32(dir, `${id}.yaml`);
+  const filePath = join31(dir, `${id}.yaml`);
   writeFileSync20(filePath, (0, import_yaml11.stringify)(record).trim() + "\n", "utf8");
   return record;
 }
@@ -40200,7 +40825,7 @@ function listTasks(repoRoot3, options = {}) {
   for (const entry of entries) {
     if (entry.isFile() && (entry.name.endsWith(".yaml") || entry.name.endsWith(".yml"))) {
       try {
-        const text = readFileSync23(join32(dir, entry.name), "utf8");
+        const text = readFileSync23(join31(dir, entry.name), "utf8");
         const doc = (0, import_yaml11.parse)(text);
         if (doc && doc.schema === TASK_SCHEMA) {
           if (options.goalId && doc.goalId !== options.goalId) continue;
@@ -40215,7 +40840,7 @@ function listTasks(repoRoot3, options = {}) {
 }
 function getTask(repoRoot3, taskId) {
   const dir = tasksDirectory(repoRoot3);
-  const filePath = join32(dir, `${taskId}.yaml`);
+  const filePath = join31(dir, `${taskId}.yaml`);
   if (!existsSync25(filePath)) return void 0;
   try {
     const text = readFileSync23(filePath, "utf8");
@@ -40233,7 +40858,7 @@ function updateTaskStatus(repoRoot3, taskId, status, options = {}) {
   task.status = status;
   if (options.workflowRunId) task.workflowRunId = options.workflowRunId;
   task.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-  const filePath = join32(tasksDirectory(repoRoot3), `${taskId}.yaml`);
+  const filePath = join31(tasksDirectory(repoRoot3), `${taskId}.yaml`);
   writeFileSync20(filePath, (0, import_yaml11.stringify)(task).trim() + "\n", "utf8");
   return task;
 }
@@ -40249,7 +40874,7 @@ function syncTaskWithTracker(repoRoot3, taskId, options = {}) {
   task.trackerSync.syncStatus = "synced";
   task.trackerSync.lastSyncedAt = now;
   task.updatedAt = now;
-  const filePath = join32(tasksDirectory(repoRoot3), `${taskId}.yaml`);
+  const filePath = join31(tasksDirectory(repoRoot3), `${taskId}.yaml`);
   writeFileSync20(filePath, (0, import_yaml11.stringify)(task).trim() + "\n", "utf8");
   return task;
 }
@@ -41021,7 +41646,7 @@ function createStudioServer(options = {}) {
 // plugins/kxm/src/role.ts
 var import_yaml12 = __toESM(require_dist(), 1);
 import { existsSync as existsSync26, mkdirSync as mkdirSync24, readdirSync as readdirSync9, readFileSync as readFileSync24, rmSync as rmSync8, writeFileSync as writeFileSync21 } from "node:fs";
-import { join as join33 } from "node:path";
+import { join as join32 } from "node:path";
 var KXM_ROLE_SCHEMA = "kxm.role.v1";
 var DEFAULT_ROLES = {
   writer: {
@@ -41100,9 +41725,9 @@ var DEFAULT_ROLES = {
 };
 function rolesDirectory(scope, repoRoot3 = process.cwd(), userConfigDir) {
   if (scope === "global") {
-    return join33(userConfigDirectory(userConfigDir), "roles");
+    return join32(userConfigDirectory(userConfigDir), "roles");
   }
-  return join33(repoConfigDirectory(repoRoot3), "roles");
+  return join32(repoConfigDirectory(repoRoot3), "roles");
 }
 function ensureRolesDirectory(scope, repoRoot3 = process.cwd(), userConfigDir) {
   const dir = rolesDirectory(scope, repoRoot3, userConfigDir);
@@ -41144,7 +41769,7 @@ function listRoles(options = {}) {
   if (scopeFilter !== "global" && existsSync26(localDir)) {
     for (const entry of readdirSync9(localDir)) {
       if (entry.endsWith(".yaml") || entry.endsWith(".yml")) {
-        const filePath = join33(localDir, entry);
+        const filePath = join32(localDir, entry);
         const parsed = parseRoleFile(filePath);
         if (parsed) {
           localRoles.set(parsed.id, { role: parsed, filePath });
@@ -41156,7 +41781,7 @@ function listRoles(options = {}) {
   if (scopeFilter !== "local" && existsSync26(globalDir)) {
     for (const entry of readdirSync9(globalDir)) {
       if (entry.endsWith(".yaml") || entry.endsWith(".yml")) {
-        const filePath = join33(globalDir, entry);
+        const filePath = join32(globalDir, entry);
         const parsed = parseRoleFile(filePath);
         if (parsed) {
           globalRoles.set(parsed.id, { role: parsed, filePath });
@@ -41204,13 +41829,13 @@ function getRole(roleId, options = {}) {
   const repoRoot3 = options.repoRoot ?? process.cwd();
   if (scope !== "global") {
     const localDir = rolesDirectory("local", repoRoot3, options.userConfigDir);
-    const localFile = join33(localDir, `${roleId}.yaml`);
+    const localFile = join32(localDir, `${roleId}.yaml`);
     const parsed = parseRoleFile(localFile);
     if (parsed) return { role: parsed, scope: "local", filePath: localFile };
   }
   if (scope !== "local") {
     const globalDir = rolesDirectory("global", repoRoot3, options.userConfigDir);
-    const globalFile = join33(globalDir, `${roleId}.yaml`);
+    const globalFile = join32(globalDir, `${roleId}.yaml`);
     const parsed = parseRoleFile(globalFile);
     if (parsed) return { role: parsed, scope: "global", filePath: globalFile };
   }
@@ -41220,7 +41845,7 @@ function addRole(role, options = {}) {
   const scope = options.scope ?? "local";
   const repoRoot3 = options.repoRoot ?? process.cwd();
   const dir = ensureRolesDirectory(scope, repoRoot3, options.userConfigDir);
-  const filePath = join33(dir, `${role.id}.yaml`);
+  const filePath = join32(dir, `${role.id}.yaml`);
   if (existsSync26(filePath) && !options.overwrite) {
     throw new Error(`role_already_exists: role '${role.id}' already exists at ${filePath}`);
   }
@@ -41231,7 +41856,7 @@ function removeRole(roleId, options = {}) {
   const scope = options.scope ?? "local";
   const repoRoot3 = options.repoRoot ?? process.cwd();
   const dir = rolesDirectory(scope, repoRoot3, options.userConfigDir);
-  const filePath = join33(dir, `${roleId}.yaml`);
+  const filePath = join32(dir, `${roleId}.yaml`);
   if (!existsSync26(filePath)) {
     throw new Error(`role_not_found: role '${roleId}' not found in ${scope} directory (${filePath})`);
   }
@@ -41253,7 +41878,7 @@ function modifyRole(roleId, updates, options = {}) {
   const scope = options.scope ?? target.scope;
   const repoRoot3 = options.repoRoot ?? process.cwd();
   const dir = ensureRolesDirectory(scope, repoRoot3, options.userConfigDir);
-  const filePath = join33(dir, `${roleId}.yaml`);
+  const filePath = join32(dir, `${roleId}.yaml`);
   writeFileSync21(filePath, (0, import_yaml12.stringify)(updated), "utf8");
   return { id: roleId, role: updated, filePath, scope };
 }
@@ -41261,7 +41886,7 @@ function modifyRole(roleId, updates, options = {}) {
 // plugins/kxm/src/workflow-manager.ts
 var import_yaml13 = __toESM(require_dist(), 1);
 import { existsSync as existsSync27, mkdirSync as mkdirSync25, readdirSync as readdirSync10, readFileSync as readFileSync25, rmSync as rmSync9, writeFileSync as writeFileSync22 } from "node:fs";
-import { join as join34 } from "node:path";
+import { join as join33 } from "node:path";
 var WORKFLOW_TEMPLATES = {
   "implement-and-verify": {
     schema: "kxm.workflow.v1",
@@ -41412,9 +42037,9 @@ var WORKFLOW_TEMPLATES = {
 var DEFAULT_WORKFLOW_TEMPLATE = WORKFLOW_TEMPLATES["implement-and-verify"];
 function workflowsDirectory(scope, repoRoot3 = process.cwd(), userConfigDir) {
   if (scope === "global") {
-    return join34(userConfigDirectory(userConfigDir), "workflows");
+    return join33(userConfigDirectory(userConfigDir), "workflows");
   }
-  return join34(repoConfigDirectory(repoRoot3), "workflows");
+  return join33(repoConfigDirectory(repoRoot3), "workflows");
 }
 function ensureWorkflowsDirectory(scope, repoRoot3 = process.cwd(), userConfigDir) {
   const dir = workflowsDirectory(scope, repoRoot3, userConfigDir);
@@ -41443,7 +42068,7 @@ function listWorkflowDefinitions(options = {}) {
   if (scopeFilter !== "global" && existsSync27(localDir)) {
     for (const entry of readdirSync10(localDir)) {
       if (entry.endsWith(".yaml") || entry.endsWith(".yml")) {
-        const filePath = join34(localDir, entry);
+        const filePath = join33(localDir, entry);
         const def = parseWorkflowFile(filePath);
         if (def) {
           const id = def.id || entry.replace(/\.ya?ml$/i, "");
@@ -41456,7 +42081,7 @@ function listWorkflowDefinitions(options = {}) {
   if (scopeFilter !== "local" && existsSync27(globalDir)) {
     for (const entry of readdirSync10(globalDir)) {
       if (entry.endsWith(".yaml") || entry.endsWith(".yml")) {
-        const filePath = join34(globalDir, entry);
+        const filePath = join33(globalDir, entry);
         const def = parseWorkflowFile(filePath);
         if (def) {
           const id = def.id || entry.replace(/\.ya?ml$/i, "");
@@ -41512,13 +42137,13 @@ function getWorkflowDefinition(workflowId, options = {}) {
   const repoRoot3 = options.repoRoot ?? process.cwd();
   if (scope !== "global") {
     const localDir = workflowsDirectory("local", repoRoot3, options.userConfigDir);
-    const localFile = join34(localDir, `${workflowId}.yaml`);
+    const localFile = join33(localDir, `${workflowId}.yaml`);
     const parsed = parseWorkflowFile(localFile);
     if (parsed) return { workflow: parsed, scope: "local", filePath: localFile };
   }
   if (scope !== "local") {
     const globalDir = workflowsDirectory("global", repoRoot3, options.userConfigDir);
-    const globalFile = join34(globalDir, `${workflowId}.yaml`);
+    const globalFile = join33(globalDir, `${workflowId}.yaml`);
     const parsed = parseWorkflowFile(globalFile);
     if (parsed) return { workflow: parsed, scope: "global", filePath: globalFile };
   }
@@ -41528,7 +42153,7 @@ function addWorkflowDefinition(workflowId, content = DEFAULT_WORKFLOW_TEMPLATE, 
   const scope = options.scope ?? "local";
   const repoRoot3 = options.repoRoot ?? process.cwd();
   const dir = ensureWorkflowsDirectory(scope, repoRoot3, options.userConfigDir);
-  const filePath = join34(dir, `${workflowId}.yaml`);
+  const filePath = join33(dir, `${workflowId}.yaml`);
   if (existsSync27(filePath) && !options.overwrite) {
     throw new Error(`workflow_already_exists: workflow '${workflowId}' already exists at ${filePath}`);
   }
@@ -41540,7 +42165,7 @@ function removeWorkflowDefinition(workflowId, options = {}) {
   const scope = options.scope ?? "local";
   const repoRoot3 = options.repoRoot ?? process.cwd();
   const dir = workflowsDirectory(scope, repoRoot3, options.userConfigDir);
-  const filePath = join34(dir, `${workflowId}.yaml`);
+  const filePath = join33(dir, `${workflowId}.yaml`);
   if (!existsSync27(filePath)) {
     throw new Error(`workflow_not_found: workflow '${workflowId}' not found in ${scope} directory (${filePath})`);
   }
@@ -41559,7 +42184,7 @@ function modifyWorkflowDefinition(workflowId, updates, options = {}) {
   const scope = options.scope ?? target.scope;
   const repoRoot3 = options.repoRoot ?? process.cwd();
   const dir = ensureWorkflowsDirectory(scope, repoRoot3, options.userConfigDir);
-  const filePath = join34(dir, `${workflowId}.yaml`);
+  const filePath = join33(dir, `${workflowId}.yaml`);
   writeFileSync22(filePath, (0, import_yaml13.stringify)(updated), "utf8");
   return { id: workflowId, workflow: updated, filePath, scope };
 }
@@ -41582,7 +42207,7 @@ var USAGE_ERROR_CODES = /* @__PURE__ */ new Set([
 ]);
 function spawnScript(scriptName, extraEnv = {}) {
   return new Promise((resolveExit) => {
-    const child = spawn2(process.execPath, [join35(repoRoot2, "scripts", scriptName)], {
+    const child = spawn2(process.execPath, [join34(repoRoot2, "scripts", scriptName)], {
       stdio: "inherit",
       env: { ...process.env, ...extraEnv }
     });
@@ -41672,10 +42297,10 @@ function workspaceDirs(cwd, workspaceFlag, env) {
   return {
     workdir,
     workspace,
-    config: derive ? join35(workspace, "config") : resolve21(workdir, env.KXM_CONFIG_DIR?.trim() || join35(workspace, "config")),
-    logs: derive ? join35(workspace, "logs") : resolve21(workdir, env.KXM_LOGS_DIR?.trim() || join35(workspace, "logs")),
-    assets: derive ? join35(workspace, "assets") : resolve21(workdir, env.KXM_ASSETS_DIR?.trim() || join35(workspace, "assets")),
-    state: derive ? join35(workspace, "state") : resolve21(workdir, env.KXM_STATE_DIR?.trim() || join35(workspace, "state"))
+    config: derive ? join34(workspace, "config") : resolve21(workdir, env.KXM_CONFIG_DIR?.trim() || join34(workspace, "config")),
+    logs: derive ? join34(workspace, "logs") : resolve21(workdir, env.KXM_LOGS_DIR?.trim() || join34(workspace, "logs")),
+    assets: derive ? join34(workspace, "assets") : resolve21(workdir, env.KXM_ASSETS_DIR?.trim() || join34(workspace, "assets")),
+    state: derive ? join34(workspace, "state") : resolve21(workdir, env.KXM_STATE_DIR?.trim() || join34(workspace, "state"))
   };
 }
 function maskEnvName(name) {
@@ -41880,8 +42505,8 @@ function explicitRepositoryBindings(values) {
   for (const value of values) {
     const separator = value.indexOf("=");
     const repositoryId = separator < 0 ? "" : value.slice(0, separator).trim();
-    const path5 = separator < 0 ? "" : value.slice(separator + 1).trim();
-    if (!repositoryId || !path5) {
+    const path4 = separator < 0 ? "" : value.slice(separator + 1).trim();
+    if (!repositoryId || !path4) {
       throw new VnextConfigError([{
         phase: "discovery",
         code: "repository_binding_argument_invalid",
@@ -41897,7 +42522,7 @@ function explicitRepositoryBindings(values) {
         message: `repository binding ${repositoryId} was supplied more than once`
       }]);
     }
-    result[repositoryId] = path5;
+    result[repositoryId] = path4;
   }
   return result;
 }
@@ -42120,7 +42745,7 @@ async function cmdBackup(runtime, options) {
     const summary = [
       `Created SQLite backup with ${manifest.stores.length} store(s):`,
       ...manifest.stores.map((s) => `  - ${s.storeId}: ${s.sourcePath} -> ${s.backupFile} (schema v${s.schemaVersion}, ${s.bytes} bytes, sha256 ${s.sha256.slice(0, 12)}...)`),
-      `Manifest: ${join35(outDir, "manifest.json")}`
+      `Manifest: ${join34(outDir, "manifest.json")}`
     ].join("\n");
     print(runtime.io, runtime.json, payload, summary);
     return 0;
@@ -42382,7 +43007,7 @@ function installProbeFrom(runtime) {
   return {
     moduleDir: partial.moduleDir ?? dirname19(fileURLToPath4(import.meta.url)),
     repoRoot: partial.repoRoot ?? repoRoot2,
-    homeDir: partial.homeDir ?? homedir7(),
+    homeDir: partial.homeDir ?? homedir6(),
     platform: partial.platform ?? process.platform,
     env: partial.env ?? runtime.env
   };
@@ -42411,9 +43036,9 @@ function npmGlobalRootFn(runtime) {
   };
 }
 function warnIgnoredProjectUpdateYaml(runtime) {
-  const projectFile = join35(runtime.dirs.workspace, "update.yaml");
+  const projectFile = join34(runtime.dirs.workspace, "update.yaml");
   if (!existsSync28(projectFile)) return;
-  const userFile = join35(vnextUserStateRoot({ env: runtime.env }), "update.yaml");
+  const userFile = join34(vnextUserStateRoot({ env: runtime.env }), "update.yaml");
   runtime.io.stderr(`kxm: ignoring .kxm/update.yaml in ${runtime.dirs.workdir}; update settings are read only from ${userFile}
 `);
 }
@@ -42442,7 +43067,7 @@ function applyKxmPackageUpdate(runtime, notice) {
       detail: `release v${notice.latest} has no sha256 digest for ${name}; refusing to install`
     };
   }
-  const releaseDir = mkdtempSync2(join35(tmpdir2(), "kxm-pkg-update-"));
+  const releaseDir = mkdtempSync2(join34(tmpdir2(), "kxm-pkg-update-"));
   try {
     const planned = planKxmPackageUpdate(notice.source, notice.latest, releaseDir, notice.asset);
     if (runtime.dryRun) {
@@ -42808,7 +43433,7 @@ async function cmdDash(runtime, options = {}) {
     return 2;
   }
   const screen = requested;
-  const dataPath = resolve21(runtime.dirs.workdir, runtime.env.KXM_DATA_PATH?.trim() || join35(runtime.dirs.state, "kxm.db"));
+  const dataPath = resolve21(runtime.dirs.workdir, runtime.env.KXM_DATA_PATH?.trim() || join34(runtime.dirs.state, "kxm.db"));
   if (runtime.dryRun) {
     print(runtime.io, runtime.json, {
       ok: true,
@@ -42854,7 +43479,7 @@ async function cmdHub(runtime) {
         config = loadKxmUpdateConfig(runtime.env);
       } catch (error) {
         if (error instanceof KxmUpdateConfigError) {
-          const yamlPath = join35(vnextUserStateRoot({ env: runtime.env }), "update.yaml");
+          const yamlPath = join34(vnextUserStateRoot({ env: runtime.env }), "update.yaml");
           runtime.io.stderr(`kxm: ${error.message}; update check skipped; fix or remove ${yamlPath}
 `);
         } else {
@@ -43004,14 +43629,14 @@ async function cmdStop(runtime, waitMsFlag) {
   const records = /* @__PURE__ */ new Map();
   for (const file of pids) {
     try {
-      const record = JSON.parse(readFileSync26(join35(runtime.dirs.state, file), "utf8"));
+      const record = JSON.parse(readFileSync26(join34(runtime.dirs.state, file), "utf8"));
       const expectedControl = file === "hub.pid" ? "hub.stop" : file.startsWith("worker-") ? `${file.slice(0, -4)}.stop` : void 0;
       const expectedRole = file === "hub.pid" ? "hub" : file.startsWith("worker-") ? "worker" : void 0;
       if (record.version !== 1 || !Number.isInteger(record.pid) || record.pid <= 0 || !record.startedAt || !expectedControl || record.controlFile !== expectedControl || record.role !== expectedRole || !processExists2(record.pid)) {
         ignored.push(file);
         continue;
       }
-      writeFileSync23(join35(runtime.dirs.state, record.controlFile), `${JSON.stringify({ startedAt: record.startedAt, ...record.generation ? { generation: record.generation } : {}, requestedAt: (/* @__PURE__ */ new Date()).toISOString() })}
+      writeFileSync23(join34(runtime.dirs.state, record.controlFile), `${JSON.stringify({ startedAt: record.startedAt, ...record.generation ? { generation: record.generation } : {}, requestedAt: (/* @__PURE__ */ new Date()).toISOString() })}
 `, { encoding: "utf8", mode: 384 });
       requested.push(file);
       records.set(file, { pid: record.pid, startedAt: record.startedAt, ...record.generation ? { generation: record.generation } : {} });
@@ -43029,7 +43654,7 @@ async function cmdStop(runtime, waitMsFlag) {
   while (Date.now() <= deadline && stopped.size < requested.length) {
     for (const [file, record] of records) {
       try {
-        const current = JSON.parse(readFileSync26(join35(runtime.dirs.state, file), "utf8"));
+        const current = JSON.parse(readFileSync26(join34(runtime.dirs.state, file), "utf8"));
         if (current.pid !== record.pid || current.startedAt !== record.startedAt || current.generation !== record.generation || !processExists2(record.pid)) stopped.add(file);
       } catch {
         stopped.add(file);
@@ -43048,7 +43673,7 @@ async function cmdSessionStatus(runtime) {
   const claims = [];
   for (const file of names3.filter((name) => name.endsWith(".pid"))) {
     try {
-      const record = JSON.parse(readFileSync26(join35(stateDir, file), "utf8"));
+      const record = JSON.parse(readFileSync26(join34(stateDir, file), "utf8"));
       claims.push({
         file,
         role: record.role,
@@ -43063,7 +43688,7 @@ async function cmdSessionStatus(runtime) {
   const recoveries = [];
   for (const file of names3.filter((name) => name.startsWith("worker-recovery-") && name.endsWith(".json"))) {
     try {
-      const envelope = JSON.parse(readFileSync26(join35(stateDir, file), "utf8"));
+      const envelope = JSON.parse(readFileSync26(join34(stateDir, file), "utf8"));
       recoveries.push({
         file,
         reason: envelope.reason,
@@ -43168,7 +43793,7 @@ async function cmdSessionBrief(runtime, options = {}) {
     print(runtime.io, runtime.json, { ok: true, command: "session brief", sessionToken }, sessionToken);
     return 0;
   }
-  const dataPath = resolve21(runtime.dirs.workdir, runtime.env.KXM_DATA_PATH?.trim() || join35(runtime.dirs.state, "kxm.db"));
+  const dataPath = resolve21(runtime.dirs.workdir, runtime.env.KXM_DATA_PATH?.trim() || join34(runtime.dirs.state, "kxm.db"));
   const env = {
     ...runtime.env,
     KXM_STATE_DIR: runtime.dirs.state,
@@ -43259,13 +43884,13 @@ async function cmdSessionStart(runtime, options) {
 async function cmdImprove(runtime, options = {}) {
   const file = options.file ? resolve21(runtime.cwd, options.file) : telemetryPath(runtime.dirs.logs);
   const routingRecords = existsSync28(file) ? readRoutingRecords(file).map((entry) => entry.routing) : [];
-  const candidatesDir = options.outDir ? resolve21(runtime.cwd, options.outDir) : join35(runtime.cwd, ".kxm", "candidates");
+  const candidatesDir = options.outDir ? resolve21(runtime.cwd, options.outDir) : join34(runtime.cwd, ".kxm", "candidates");
   const report2 = buildImprovementReport(routingRecords, {
     candidatesDir,
     projectRoot: runtime.cwd,
     dryRun: runtime.dryRun
   });
-  const reportDir = join35(runtime.dirs.assets, "improvements");
+  const reportDir = join34(runtime.dirs.assets, "improvements");
   const reportPath = writeImprovementReport(reportDir, report2, runtime.dryRun);
   const text = formatImprovementReport(report2);
   print(runtime.io, runtime.json, {
@@ -43424,7 +44049,7 @@ function skillStateFromFlag(value) {
   throw new Error(`invalid skill state ${value}`);
 }
 function skillsRoot(runtime) {
-  return join35(runtime.dirs.workdir, ".kxm", "skills");
+  return join34(runtime.dirs.workdir, ".kxm", "skills");
 }
 function csv(value) {
   if (!value) return void 0;
@@ -43559,12 +44184,12 @@ async function cmdMemoryBrief(runtime) {
 }
 async function cmdMemoryNote(runtime, fact, options) {
   try {
-    const { record, path: path5 } = createMemoryNote(runtime.cwd, fact, {
+    const { record, path: path4 } = createMemoryNote(runtime.cwd, fact, {
       scope: options.scope ?? "project",
       ...options.kind !== void 0 ? { kind: options.kind } : {},
       ...options.body !== void 0 ? { body: options.body } : {}
     });
-    const relPath = relative6(runtime.cwd, path5);
+    const relPath = relative6(runtime.cwd, path4);
     print(
       runtime.io,
       runtime.json,
@@ -43924,12 +44549,12 @@ async function cmdStudioServe(runtime, options) {
       sessionToken,
       planProvider: () => {
         try {
-          const wfDir = join35(runtime.cwd, ".kxm", "workflows");
-          const defaultPath = join35(wfDir, "default.yaml");
+          const wfDir = join34(runtime.cwd, ".kxm", "workflows");
+          const defaultPath = join34(wfDir, "default.yaml");
           let targetPath = existsSync28(defaultPath) ? defaultPath : void 0;
           if (!targetPath && existsSync28(wfDir)) {
             const yml = readdirSync11(wfDir).find((f) => f.endsWith(".yaml") || f.endsWith(".yml"));
-            if (yml) targetPath = join35(wfDir, yml);
+            if (yml) targetPath = join34(wfDir, yml);
           }
           if (targetPath && existsSync28(targetPath)) {
             const raw = readFileSync26(targetPath, "utf8");
@@ -44497,7 +45122,7 @@ async function cmdRoutingReport(runtime, options) {
   let catalog;
   if (includeEquivalentListCost) {
     try {
-      const pricesPath = options.prices ? resolve21(runtime.cwd, options.prices) : join35(runtime.dirs.workspace, "prices.yaml");
+      const pricesPath = options.prices ? resolve21(runtime.cwd, options.prices) : join34(runtime.dirs.workspace, "prices.yaml");
       catalog = loadPriceCatalog(pricesPath);
     } catch {
     }
@@ -44666,7 +45291,7 @@ async function cmdWorkflowDegrade(runtime, runId, stageId, options) {
   }
 }
 async function cmdWorkflowInspect(runtime, action, runId) {
-  const dataPath = resolve21(runtime.dirs.workdir, runtime.env.KXM_DATA_PATH?.trim() || join35(runtime.dirs.state, "kxm.db"));
+  const dataPath = resolve21(runtime.dirs.workdir, runtime.env.KXM_DATA_PATH?.trim() || join34(runtime.dirs.state, "kxm.db"));
   if (action === "get" && !runId) {
     runtime.io.stderr(`Usage: ${CLI_NAME} workflow get <runId>
 `);
@@ -44842,7 +45467,7 @@ async function cmdRetrospectiveExport(runtime, runId, options) {
       if (!existsSync28(snapshotPath)) throw new Error("snapshot_missing");
       snapshot = JSON.parse(readFileSync26(snapshotPath, "utf8"));
     } else {
-      const dataPath = resolve21(runtime.dirs.workdir, runtime.env.KXM_DATA_PATH?.trim() || join35(runtime.dirs.state, "kxm.db"));
+      const dataPath = resolve21(runtime.dirs.workdir, runtime.env.KXM_DATA_PATH?.trim() || join34(runtime.dirs.state, "kxm.db"));
       const local = localWorkflowSnapshot(dataPath, runId);
       if (!local.runs[0]) throw new Error("workflow_not_found");
       snapshot = { run: local.runs[0], journal: local.journal };
@@ -44854,7 +45479,7 @@ async function cmdRetrospectiveExport(runtime, runId, options) {
     return 1;
   }
   const doc = buildRetrospective(snapshot.run, snapshot.journal);
-  const outDir = resolve21(runtime.cwd, String(options.outDir || join35(runtime.dirs.assets, "retrospectives")));
+  const outDir = resolve21(runtime.cwd, String(options.outDir || join34(runtime.dirs.assets, "retrospectives")));
   const assetsRoot = resolve21(runtime.dirs.assets);
   const assetsPrefix = `${assetsRoot}${process.platform === "win32" ? "\\" : "/"}`;
   if (outDir !== assetsRoot && !outDir.startsWith(assetsPrefix)) {
