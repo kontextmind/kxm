@@ -107,16 +107,20 @@ jobs:
         if: steps.classify.outputs.action == 'bump'
         env:
           GH_TOKEN: ${{ secrets.KXM_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
           NEW_VERSION: ${{ steps.bump.outputs.new }}
           OLD_VERSION: ${{ steps.bump.outputs.old }}
           TAG: ${{ steps.bump.outputs.tag }}
           SOURCE_PR: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-          BRANCH="chore/release-auto-${NEW_VERSION}"
+          export BRANCH="chore/release-auto-${NEW_VERSION}"
 
           git config user.name "kxm-release[bot]"
           git config user.email "kxm-release[bot]@users.noreply.github.com"
+
+          # Delete stale remote branch from a previous failed run
+          git push origin --delete "$BRANCH" 2>/dev/null || true
 
           git checkout -b "$BRANCH"
           git add -A
@@ -126,17 +130,66 @@ jobs:
           Tag ${TAG} will be created on merge."
           git push -u origin "$BRANCH"
 
-          # Create PR with auto-merge
-          gh pr create \
-            --title "chore(release): bump version to ${NEW_VERSION}" \
-            --body "Auto-release version bump after PR #${SOURCE_PR}.
+          # Create PR + enable auto-merge via GitHub API (gh CLI not on runner)
+          node -e "
+            const repo = process.env.REPO;
+            const token = process.env.GH_TOKEN;
+            const branch = process.env.BRANCH;
+            const version = process.env.NEW_VERSION;
+            const sourcePr = process.env.SOURCE_PR;
+            const tag = process.env.TAG;
+            const headers = {
+              Authorization: \`Bearer \${token}\`,
+              Accept: 'application/vnd.github+json',
+              'Content-Type': 'application/json',
+              'User-Agent': 'kxm-auto-release',
+            };
+            async function api(path, method = 'GET', body) {
+              const res = await fetch(\`https://api.github.com/repos/\${repo}\${path}\`, {
+                method, headers, body: body ? JSON.stringify(body) : undefined,
+              });
+              const text = await res.text();
+              let data; try { data = JSON.parse(text); } catch { data = text; }
+              return { status: res.status, data };
+            }
+            async function main() {
+              // Create PR
+              const pr = await api('/pulls', 'POST', {
+                title: \`chore(release): bump version to \${version}\`,
+                body: \`Auto-release version bump after PR #\${sourcePr}.\\n\\nWhen this merges, tag \\\`\${tag}\\\` will be created and the release workflow will publish to npm.\`,
+                head: branch,
+                base: 'main',
+              });
+              if (pr.status !== 201) throw new Error(\`PR create failed: \${pr.status} \${JSON.stringify(pr.data)}\`);
+              const prNumber = pr.data.number;
+              console.log(\`Created PR #\${prNumber}\`);
 
-            When this merges, tag \`${TAG}\` will be created and the release workflow will publish to npm." \
-            --base main \
-            --label "no-release" || true
-
-          # Enable auto-merge (squash to keep history clean)
-          gh pr merge "$BRANCH" --auto --squash || true
+              // Enable auto-merge (squash)
+              const mergeRes = await api(\`/pulls/\${prNumber}/merge\`, 'PUT', {
+                merge_method: 'squash',
+              });
+              if (mergeRes.status === 200) {
+                console.log(\`PR #\${prNumber} merged immediately\`);
+              } else {
+                // Enable auto-merge via GraphQL (REST doesn't support it directly)
+                const nodeId = pr.data.node_id;
+                const gql = await fetch('https://api.github.com/graphql', {
+                  method: 'POST',
+                  headers,
+                  body: JSON.stringify({
+                    query: \`mutation { enablePullRequestAutoMerge(input: {pullRequestId: \"\${nodeId}\", mergeMethod: SQUASH}) { pullRequest { number autoMergeRequest { enabledAt } } } }\`,
+                  }),
+                });
+                const gqlData = await gql.json();
+                if (gqlData.errors) {
+                  console.log(\`Auto-merge setup: \${JSON.stringify(gqlData.errors)}\`);
+                } else {
+                  console.log(\`Auto-merge enabled for PR #\${prNumber}\`);
+                }
+              }
+            }
+            main().catch(e => { console.error(e.message); process.exit(1); });
+          "
 
           echo "Created and queued auto-merge for version bump PR: $BRANCH"
 
