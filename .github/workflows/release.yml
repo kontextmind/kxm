@@ -79,11 +79,31 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           # Mark the draft release as published so npm-publish can proceed
-          gh release edit "$TAG" --draft=false
-          echo "Published release $TAG"
+          node -e "
+            const tag = process.env.TAG;
+            const repo = process.env.REPO;
+            const token = process.env.GITHUB_TOKEN;
+            async function main() {
+              const res = await fetch(\`https://api.github.com/repos/\${repo}/releases/tags/\${tag}\`, {
+                headers: { Authorization: \`Bearer \${token}\`, Accept: 'application/vnd.github+json' }
+              });
+              if (!res.ok) throw new Error(\`release lookup failed: \${res.status}\`);
+              const release = await res.json();
+              if (!release.draft) { console.log('already published'); return; }
+              const patch = await fetch(\`https://api.github.com/repos/\${repo}/releases/\${release.id}\`, {
+                method: 'PATCH',
+                headers: { Authorization: \`Bearer \${token}\`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
+                body: JSON.stringify({ draft: false })
+              });
+              if (!patch.ok) throw new Error(\`publish failed: \${patch.status}\`);
+              console.log(\`Published release \${tag}\`);
+            }
+            main().catch(e => { console.error(e.message); process.exit(1); });
+          "
 
   # npm publish job is gated behind the npm-publish environment and verifies
   # that the release lookup returns draft: false before publishing.
