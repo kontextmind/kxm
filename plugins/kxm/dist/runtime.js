@@ -26248,44 +26248,6 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
             }
             return;
           }
-          if (request.method === "POST" && sub === "dispatch") {
-            const body = await readJsonBody(request);
-            const run = context.eventStore.run(runId);
-            if (!run) throw runtimeError("run_unknown", runId, "run not found");
-            if (run.status === "created") {
-              pinVnextCompiledPlan(context, bundle, runId);
-              const plan = startVnextRun(context, runId, { allowLimits: true });
-              if (plan.handoff) {
-                sendJson(response, 409, { ok: false, error: "run_handoff_required", handoff: plan.handoff });
-                return;
-              }
-            }
-            const producer = createVnextOneShotProducer({
-              projectRoot,
-              defaultHarness: String(bundle.project.value.defaultHarness ?? "pi"),
-              resolveHarness: (agentId) => {
-                const agent = bundle.agents.get(agentId);
-                return typeof agent?.value.harness === "string" ? agent.value.harness : void 0;
-              },
-              resolveModel: (agentId) => {
-                const agent = bundle.agents.get(agentId);
-                const model = agent?.value.model;
-                if (!model || typeof model !== "object" || Array.isArray(model)) return void 0;
-                const value = model;
-                const provider = typeof value.provider === "string" ? value.provider : void 0;
-                const modelName = typeof value.model === "string" ? value.model : void 0;
-                if (!provider || !modelName || !isProducerAdmitted(projectRoot, `${provider}/${modelName}`)) return void 0;
-                return { provider, model: modelName };
-              }
-            });
-            try {
-              const result = await driveVnextRun(context, runId, producer, { allowLimits: true });
-              sendJson(response, 200, { ok: true, run: result.state, handoff: result.handoff });
-            } finally {
-              if ("close" in producer && typeof producer.close === "function") await producer.close();
-            }
-            return;
-          }
           if (request.method === "GET" && sub === "events") {
             const after = Number.parseInt(url.searchParams.get("after") ?? "0", 10);
             const events = context.eventStore.events(runId, Number.isFinite(after) && after >= 0 ? after : 0, 500);
