@@ -11,7 +11,7 @@
       "name": "kxm",
       "source": "./plugins/kxm",
       "description": "Durable workflows, peer agents, and kxm tui",
-      "version": "0.7.0",
+      "version": "0.7.1",
       "category": "development",
       "tags": ["kxm", "multi-agent", "workflows", "mcp"]
     }

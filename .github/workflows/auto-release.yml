@@ -1,19 +1,19 @@
 name: Auto-Release
 
-# Triggers when a PR is merged to main. Bumps the patch version across all
-# package surfaces, commits, tags, and pushes — the tag push then triggers
-# the existing release.yml workflow which drafts the GitHub release and
-# publishes to npm.
+# Two-phase auto-release on PR merge to main:
 #
-# Skips if:
-#   - The PR is labeled "no-release" (for docs-only or chore PRs)
-#   - The head commit message starts with "chore(release)" (version bump commits)
-#   - The PR was merged from a branch starting with "chore/release-"
+# Phase 1 (regular PR merge): Creates a version bump branch + PR, auto-merges it.
+# Phase 2 (version bump PR merge): Tags the merge commit and pushes the tag,
+#   which triggers release.yml to draft the GitHub release and publish to npm.
+#
+# Skip conditions:
+#   - PR labeled "no-release"
+#   - PR head branch starts with "chore/release-auto-" and is NOT the one we created
+#     (prevents infinite loops from manually created release branches)
 #
 # Required secrets:
-#   - KXM_RELEASE_TOKEN: A PAT with contents:write and pull-requests:read
-#     (GITHUB_TOKEN cannot trigger downstream workflows, so a PAT is needed
-#     to push the tag that triggers release.yml)
+#   - KXM_RELEASE_TOKEN: A PAT with contents:write and pull-requests:write.
+#     GITHUB_TOKEN cannot trigger downstream workflows or bypass branch protection.
 
 on:
   pull_request:
@@ -22,18 +22,18 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 concurrency:
   group: auto-release-main
   cancel-in-progress: false
 
 jobs:
-  bump-and-tag:
-    name: Bump version and tag release
-    # Only run on merged PRs, not closed-without-merge
+  auto-release:
+    name: Auto-release on merge
     if: github.event.pull_request.merged == true
     runs-on: kontextmind-doks
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -47,39 +47,43 @@ jobs:
           node-version: 22.19.0
           cache: npm
 
-      - name: Check skip conditions
-        id: skip
+      - name: Classify merge
+        id: classify
         env:
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
-          HEAD_MESSAGE: ${{ github.event.pull_request.title }}
           HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
           set -euo pipefail
 
           # Skip if labeled no-release
           if echo "$PR_LABELS" | grep -q '"no-release"'; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "action=skip" >> "$GITHUB_OUTPUT"
             echo "Skipping: PR labeled no-release"
             exit 0
           fi
 
-          # Skip if this is itself a release chore PR
-          if echo "$HEAD_MESSAGE" | grep -qE '^chore\(release\)'; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Skipping: release chore PR"
-            exit 0
-          fi
-          if echo "$HEAD_BRANCH" | grep -qE '^chore/release-'; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Skipping: release branch"
+          # Phase 2: This is a version bump PR merge — tag it
+          if echo "$HEAD_BRANCH" | grep -qE '^chore/release-auto-'; then
+            echo "action=tag" >> "$GITHUB_OUTPUT"
+            echo "merge_sha=$MERGE_SHA" >> "$GITHUB_OUTPUT"
+            echo "Version bump PR merged; will tag"
             exit 0
           fi
 
-          echo "skip=false" >> "$GITHUB_OUTPUT"
-          echo "Will bump version and tag"
+          # Phase 1: Regular PR merge — create version bump PR
+          echo "action=bump" >> "$GITHUB_OUTPUT"
+          echo "Regular PR merged; will create version bump PR"
+
+      # ── Phase 1: Create version bump PR ──────────────────────────────
+
+      - name: Install locked dependencies
+        if: steps.classify.outputs.action == 'bump'
+        run: npm ci
 
       - name: Bump patch version
-        if: steps.skip.outputs.skip == 'false'
+        if: steps.classify.outputs.action == 'bump'
         id: bump
         run: |
           set -euo pipefail
@@ -92,31 +96,80 @@ jobs:
           echo "Bumped $old_version -> $new_version"
 
       - name: Rebuild generated artifacts
-        if: steps.skip.outputs.skip == 'false'
+        if: steps.classify.outputs.action == 'bump'
         run: npm run build
 
       - name: Verify all version surfaces
-        if: steps.skip.outputs.skip == 'false'
+        if: steps.classify.outputs.action == 'bump'
         run: npm run check:versions
 
-      - name: Commit version bump
-        if: steps.skip.outputs.skip == 'false'
+      - name: Create version bump branch and PR
+        if: steps.classify.outputs.action == 'bump'
         env:
+          GH_TOKEN: ${{ secrets.KXM_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
           NEW_VERSION: ${{ steps.bump.outputs.new }}
+          OLD_VERSION: ${{ steps.bump.outputs.old }}
+          TAG: ${{ steps.bump.outputs.tag }}
+          SOURCE_PR: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
+          BRANCH="chore/release-auto-${NEW_VERSION}"
+
           git config user.name "kxm-release[bot]"
           git config user.email "kxm-release[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "chore(release): bump version to ${NEW_VERSION}"
 
-      - name: Create and push tag
-        if: steps.skip.outputs.skip == 'false'
-        env:
-          TAG: ${{ steps.bump.outputs.tag }}
-          NEW_VERSION: ${{ steps.bump.outputs.new }}
+          git checkout -b "$BRANCH"
+          git add -A
+          git commit -m "chore(release): bump version to ${NEW_VERSION}
+
+          Auto-release after PR #${SOURCE_PR}.
+          Tag ${TAG} will be created on merge."
+          git push -u origin "$BRANCH"
+
+          # Create PR with auto-merge
+          gh pr create \
+            --title "chore(release): bump version to ${NEW_VERSION}" \
+            --body "Auto-release version bump after PR #${SOURCE_PR}.
+
+            When this merges, tag \`${TAG}\` will be created and the release workflow will publish to npm." \
+            --base main \
+            --label "no-release" || true
+
+          # Enable auto-merge (squash to keep history clean)
+          gh pr merge "$BRANCH" --auto --squash || true
+
+          echo "Created and queued auto-merge for version bump PR: $BRANCH"
+
+      # ── Phase 2: Tag the merged version bump ─────────────────────────
+
+      - name: Read version from merged main
+        if: steps.classify.outputs.action == 'tag'
+        id: version
         run: |
           set -euo pipefail
-          git tag -a "$TAG" -m "release: v${NEW_VERSION}"
-          git push origin main "$TAG"
-          echo "Pushed main + tag $TAG"
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "Will tag v$version"
+
+      - name: Create and push tag
+        if: steps.classify.outputs.action == 'tag'
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          MERGE_SHA: ${{ steps.classify.outputs.merge_sha }}
+        run: |
+          set -euo pipefail
+
+          # Verify tag doesn't already exist
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists; skipping"
+            exit 0
+          fi
+
+          git config user.name "kxm-release[bot]"
+          git config user.email "kxm-release[bot]@users.noreply.github.com"
+
+          # Tag the merge commit from the version bump PR
+          git tag -a "$TAG" -m "release: $TAG" "$MERGE_SHA"
+          git push origin "$TAG"
+          echo "Pushed tag $TAG at $MERGE_SHA"
