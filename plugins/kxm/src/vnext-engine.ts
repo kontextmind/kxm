@@ -340,7 +340,7 @@ export async function driveVnextRun(
   context: VnextRuntimeContext,
   runId: string,
   producer: VnextProducer,
-  options: { allowLimits?: boolean } = {},
+  options: { allowLimits?: boolean; liveMode?: boolean } = {},
 ): Promise<VnextRunDriveResult> {
   requireTrustedProducer(producer);
   const run = requireRun(context, runId);
@@ -355,7 +355,7 @@ async function driveAdmitted(
   runId: string,
   producer: VnextProducer,
   token: string,
-  options: { allowLimits?: boolean } = {},
+  options: { allowLimits?: boolean; liveMode?: boolean } = {},
 ): Promise<VnextRunDriveResult> {
   const run = requireRun(context, runId);
   if (run.status === "preparing") {
@@ -415,7 +415,11 @@ export class VnextRunScheduler {
     return new VnextRunScheduler(context, bundle.configRevision);
   }
 
-  enqueue(runId: string, producer: VnextProducer): Promise<VnextRunDriveResult> {
+  enqueue(
+    runId: string,
+    producer: VnextProducer,
+    options: { allowLimits?: boolean; liveMode?: boolean } = {},
+  ): Promise<VnextRunDriveResult> {
     requireTrustedProducer(producer);
     const policy = vnextSchedulerPolicy(this.context.eventStore.path);
     if (!policy || policy.configRevision !== this.configRevision) {
@@ -429,7 +433,7 @@ export class VnextRunScheduler {
         runId,
         envelope.revisions.config,
         envelope.projectLimits.maxConcurrentRuns,
-        (token) => driveAdmitted(this.context, runId, producer, token),
+        (token) => driveAdmitted(this.context, runId, producer, token, options),
       ) as Promise<VnextRunDriveResult>;
     } catch (error) {
       return Promise.reject(error);

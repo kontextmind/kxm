@@ -21633,6 +21633,20 @@ function unregisterVnextAttemptController(storePath, runId, attemptId) {
   if (runAttempts.size === 0) owner.attempts.delete(runId);
   maybeDelete(storePath, owner);
 }
+function bindVnextSchedulerPolicy(storePath, bound, configRevision) {
+  const owner = record(storePath);
+  const current = activePolicy(owner);
+  if (current && (current.configRevision !== configRevision || current.bound !== bound)) {
+    if (owner.admitted.size > 0 || owner.queue.length > 0) {
+      throw runtimeError("scheduler_policy_conflict", storePath, "queued or admitted work still uses the previous scheduler policy");
+    }
+  }
+  owner.scheduler = { bound, configRevision };
+  delete owner.implicit;
+}
+function vnextSchedulerPolicy(storePath) {
+  return owners.get(storePath)?.scheduler;
+}
 function admitVnextRun(storePath, runId, envelopeRevision, envelopeBound) {
   const owner = record(storePath);
   if (owner.admitted.has(runId)) {
@@ -21738,6 +21752,22 @@ function vnextGateHold(storePath, runId) {
 }
 function vnextAdmittedToken(storePath, runId) {
   return owners.get(storePath)?.admitted.get(runId)?.token;
+}
+function enqueueVnextScheduledRun(storePath, runId, configRevision, bound, start) {
+  const owner = record(storePath);
+  if (owner.admitted.has(runId) || owner.queue.some((item) => item.runId === runId)) {
+    return Promise.reject(runtimeError("run_busy", runId, `run ${runId} is already admitted or queued`));
+  }
+  return new Promise((resolve8, reject) => {
+    owner.queue.push({
+      runId,
+      configRevision,
+      bound,
+      start: (token) => start(token).then(resolve8, reject),
+      fail: (error) => reject(error)
+    });
+    pump(storePath, owner);
+  });
 }
 function pump(storePath, owner) {
   const bound = activePolicy(owner)?.bound ?? 1;
@@ -24025,14 +24055,6 @@ function startVnextRun(context, runId, options = {}) {
     return { state: next };
   });
 }
-async function driveVnextRun(context, runId, producer, options = {}) {
-  requireTrustedProducer(producer);
-  const run = requireRun(context, runId);
-  if (run.status === "created") {
-    throw runtimeError("run_plan_missing", runId, "drive requires a pinned plan");
-  }
-  return withAdmission(context, runId, (token) => driveAdmitted(context, runId, producer, token, options));
-}
 async function driveAdmitted(context, runId, producer, token, options = {}) {
   const run = requireRun(context, runId);
   if (run.status === "preparing") {
@@ -24053,24 +24075,42 @@ async function driveAdmitted(context, runId, producer, token, options = {}) {
   }
   return latest;
 }
-async function withAdmission(context, runId, fn) {
-  const token = admitPinnedRun(context, runId);
-  try {
-    return await fn(token);
-  } finally {
-    releaseVnextRun(context.eventStore.path, runId, token);
+var VnextRunScheduler = class _VnextRunScheduler {
+  context;
+  configRevision;
+  constructor(context, configRevision) {
+    this.context = context;
+    this.configRevision = configRevision;
   }
-}
-function admitPinnedRun(context, runId) {
-  const run = requireRun(context, runId);
-  const envelope = loadVnextRunPlanEnvelope(context.eventStore, run);
-  return admitVnextRun(
-    context.eventStore.path,
-    runId,
-    envelope.revisions.config,
-    envelope.projectLimits.maxConcurrentRuns
-  );
-}
+  static for(context, bundle) {
+    if (String(bundle.project.value.id) !== context.projectId) {
+      throw runtimeError("run_owner_mismatch", context.projectId, "scheduler bundle project does not match the runtime context");
+    }
+    const limits = vnextProjectAdmissionLimits(bundle);
+    bindVnextSchedulerPolicy(context.eventStore.path, limits.maxConcurrentRuns, bundle.configRevision);
+    return new _VnextRunScheduler(context, bundle.configRevision);
+  }
+  enqueue(runId, producer, options = {}) {
+    requireTrustedProducer(producer);
+    const policy = vnextSchedulerPolicy(this.context.eventStore.path);
+    if (!policy || policy.configRevision !== this.configRevision) {
+      return Promise.reject(runtimeError("scheduler_policy_conflict", runId, "scheduler handle does not match the active policy"));
+    }
+    try {
+      const run = requireRun(this.context, runId);
+      const envelope = loadVnextRunPlanEnvelope(this.context.eventStore, run);
+      return enqueueVnextScheduledRun(
+        this.context.eventStore.path,
+        runId,
+        envelope.revisions.config,
+        envelope.projectLimits.maxConcurrentRuns,
+        (token) => driveAdmitted(this.context, runId, producer, token, options)
+      );
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  }
+};
 function invokeProducer(producer, request) {
   let pending;
   try {
@@ -26265,6 +26305,7 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
   const runtimeId = `rtm_${createHash12("sha256").update(`${paths.stateRoot}\0${process.pid}\0${now()}\0${randomBytes3(16).toString("hex")}`, "utf8").digest("hex").slice(0, 24)}`;
   const requestedPort = requestedPortOption ?? 0;
   let activeRuntimeId = runtimeId;
+  const activeDrives = /* @__PURE__ */ new Map();
   const contexts = /* @__PURE__ */ new Map();
   const contextFor = (projectRoot) => {
     if (!isAbsolute4(projectRoot)) {
@@ -26358,10 +26399,29 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
             }
             const run = context.eventStore.run(runId);
             if (!run) throw runtimeError("run_unknown", runId, "run not found");
+            if (activeDrives.has(runId)) {
+              sendJson(response, 409, { ok: false, error: "run_busy", message: `run ${runId} is already executing` });
+              return;
+            }
+            if (run.status === "completed" || run.status === "failed" || run.status === "cancelled" || run.status === "cancelling") {
+              sendJson(response, 409, { ok: false, error: "run_busy", message: `run ${runId} is already ${run.status}` });
+              return;
+            }
+            let releaseActive = () => {
+            };
+            const activePromise = new Promise((resolve8) => {
+              releaseActive = resolve8;
+            });
+            activeDrives.set(runId, activePromise);
+            const cleanupActive = () => {
+              activeDrives.delete(runId);
+              releaseActive();
+            };
             if (run.status === "created") {
               pinVnextCompiledPlan(context, bundle, runId);
               const plan = startVnextRun(context, runId, { allowLimits: true });
               if (plan.handoff) {
+                cleanupActive();
                 sendJson(response, 409, { ok: false, error: "run_handoff_required", handoff: plan.handoff });
                 return;
               }
@@ -26385,14 +26445,59 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
                 }
                 return { provider, model: modelName };
               }
-            }) : createVnextSimulatedProducer(async () => ({ outcome: "passed" }));
+            }) : (() => {
+              const delayMs = typeof body.delayMs === "number" && body.delayMs > 0 ? body.delayMs : 0;
+              return createVnextSimulatedProducer(async () => {
+                if (delayMs > 0) {
+                  await new Promise((r) => setTimeout(r, delayMs));
+                }
+                return { outcome: "passed" };
+              });
+            })();
+            let drivePromise;
+            let earlyError;
             try {
-              const result = await driveVnextRun(context, runId, producer, { allowLimits: true });
-              const recentEvents = context.eventStore.events(runId, Math.max(0, context.eventStore.nextSequence(runId) - 8), 8);
-              sendJson(response, 200, { ok: true, mode: body.mode, run: result.state, handoff: result.handoff, events: recentEvents });
-            } finally {
-              if ("close" in producer && typeof producer.close === "function") await producer.close();
+              const scheduler = VnextRunScheduler.for(context, bundle);
+              drivePromise = scheduler.enqueue(runId, producer, { allowLimits: true, liveMode: body.mode === "live" });
+              drivePromise.catch((err) => {
+                earlyError = err;
+              });
+            } catch (err) {
+              earlyError = err;
+              drivePromise = Promise.reject(err);
             }
+            await Promise.resolve();
+            if (earlyError) {
+              cleanupActive();
+              const errStr = String(earlyError);
+              if (errStr.includes("run_busy") || errStr.includes("scheduler_policy_conflict")) {
+                if ("close" in producer && typeof producer.close === "function") {
+                  try {
+                    await producer.close();
+                  } catch {
+                  }
+                }
+                sendJson(response, 409, { ok: false, error: "run_busy", message: `run ${runId} is already admitted or queued` });
+                return;
+              }
+              throw earlyError;
+            }
+            void drivePromise.finally(async () => {
+              cleanupActive();
+              if ("close" in producer && typeof producer.close === "function") {
+                try {
+                  await producer.close();
+                } catch {
+                }
+              }
+            });
+            sendJson(response, 202, {
+              ok: true,
+              status: "accepted",
+              runId,
+              poll: `/v1/runs/${runId}`,
+              mode: body.mode
+            });
             return;
           }
           if (request.method === "GET" && sub === "events") {
@@ -26519,6 +26624,9 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
     try {
       registry.markStopping(process.pid, now());
     } catch {
+    }
+    if (activeDrives.size > 0) {
+      await Promise.allSettled([...activeDrives.values()]);
     }
     for (const context of contexts.values()) closeVnextRuntimeContext(context);
     contexts.clear();
