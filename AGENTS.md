@@ -224,3 +224,5 @@ The `kxm` CLI is the unified agent surface for peer collaboration and workflow s
 - Bypass fail-closed identity checks
 - Weaken `/fix` independent repro-before-oracle
 - Add backwards-compat shims or dual product names; brake old names instead
+
+@RTK.md
