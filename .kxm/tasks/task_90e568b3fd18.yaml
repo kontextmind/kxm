@@ -1,0 +1,18 @@
+schema: kxm.task.v1
+id: task_90e568b3fd18
+title: Implement Safety, Security & Process Integrity Safeguards
+objective: Enforce critic read-only sandboxing for agy/kimi
+  (READ_ONLY_ONESHOT_ARGS), destructive command seatbelts (rm -rf, git reset
+  --hard), robust process group termination to eliminate orphaned zombies, and
+  reconcile implementer authority across configs.
+acceptanceCriteria:
+  - Extend READ_ONLY_ONESHOT_ARGS and oneShot argv for agy and kimi
+  - Enforce DESTRUCTIVE_COMMAND_PATTERNS and assertCommandSeatbelt on command execution
+  - Implement and export killProcessTree for PGID process tree termination
+  - Enforce authority validation brake between .kxm/roles/writer.yaml and .kxm/agents/implementer.yaml
+  - Mandate raw byte fidelity (RTK bypass) for verification gates and critics
+  - Enforce pinned SSH host key verification policy
+status: in_progress
+assignedWorkflow: default
+createdAt: 2026-09-11T09:24:26.312Z
+updatedAt: 2026-09-11T09:40:30.000Z

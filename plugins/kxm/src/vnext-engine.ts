@@ -94,6 +94,21 @@ import {
   parseRoutingRecordV2,
   behavioralConfigHash,
 } from "./routing.ts";
+import {
+  assertCommandSeatbelt,
+  DESTRUCTIVE_COMMAND_PATTERNS,
+  isRtkBypassRequired,
+  assertPinnedSshHostKeyPolicy,
+  type RtkBypassContext,
+} from "./safety-integrity.ts";
+
+export {
+  assertCommandSeatbelt,
+  DESTRUCTIVE_COMMAND_PATTERNS,
+  isRtkBypassRequired,
+  assertPinnedSshHostKeyPolicy,
+  type RtkBypassContext,
+};
 
 const trustedProducers = new WeakSet<object>();
 const CAPABILITY_PREFIX = "kxm-attempt-capability\0";
@@ -557,6 +572,7 @@ async function runPreparedCommandGate(
   definition: { readonly kind: "command"; readonly argv: readonly string[]; readonly timeoutMs: number; readonly cwd?: "control" },
   token: string,
 ): Promise<VnextRunDriveResult> {
+  assertCommandSeatbelt(definition.argv.join(" "));
   const storePath = context.eventStore.path;
   const observer = createCommandObserver({
     definition,

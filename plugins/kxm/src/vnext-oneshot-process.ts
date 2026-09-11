@@ -26,6 +26,26 @@ const KILL_GRACE_MS = 250;
 const DRAIN_GRACE_MS = 500;
 const REAP_GRACE_MS = 1000;
 
+/**
+ * POSIX process-group tree kill with fallback to direct child kill.
+ * Ensures orphaned subshells, test workers, and background daemons are pruned on cancellation/timeout.
+ */
+export function killProcessTree(child: ReturnType<typeof spawn>, signal: NodeJS.Signals = "SIGKILL"): void {
+  if (process.platform !== "win32" && child.pid) {
+    try {
+      process.kill(-child.pid, signal);
+      return;
+    } catch {
+      // Fall through to direct child kill if process group is unavailable
+    }
+  }
+  try {
+    child.kill(signal);
+  } catch {
+    // Direct kill error if child already exited
+  }
+}
+
 /** Bound both execution and pipe drain. Observing exit is not proof of descendant death. */
 export function defaultSpawn(command: string, args: readonly string[], options: VnextOneShotSpawnOptions): Promise<VnextOneShotProcessResult> {
   if (options.signal?.aborted) {
@@ -63,10 +83,7 @@ export function defaultSpawn(command: string, args: readonly string[], options: 
       resolve({ stdout: Buffer.concat(stdout).toString("utf8"), stderr: Buffer.concat(stderr).toString("utf8"), code, signal, started, observedChildExit, terminationRequested: stopping, ...(error ? { error } : {}) });
     };
     const kill = (requested: NodeJS.Signals): void => {
-      try {
-        if (process.platform !== "win32" && child.pid) process.kill(-child.pid, requested);
-        else child.kill(requested);
-      } catch { /* Reaping, not kill() success, establishes direct-child exit. */ }
+      killProcessTree(child, requested);
     };
     const stop = (reason: string): void => {
       if (finished) return;

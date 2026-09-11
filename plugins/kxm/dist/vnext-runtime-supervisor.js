@@ -15126,6 +15126,19 @@ var OUTPUT_LIMIT = 8 * 1024 * 1024;
 var KILL_GRACE_MS = 250;
 var DRAIN_GRACE_MS = 500;
 var REAP_GRACE_MS = 1e3;
+function killProcessTree(child, signal = "SIGKILL") {
+  if (process.platform !== "win32" && child.pid) {
+    try {
+      process.kill(-child.pid, signal);
+      return;
+    } catch {
+    }
+  }
+  try {
+    child.kill(signal);
+  } catch {
+  }
+}
 function defaultSpawn(command, args, options) {
   if (options.signal?.aborted) {
     return Promise.resolve({ stdout: "", stderr: "", code: null, started: false, observedChildExit: false, error: new Error("process_aborted") });
@@ -15162,11 +15175,7 @@ function defaultSpawn(command, args, options) {
       resolve7({ stdout: Buffer.concat(stdout).toString("utf8"), stderr: Buffer.concat(stderr).toString("utf8"), code, signal, started, observedChildExit, terminationRequested: stopping, ...error ? { error } : {} });
     };
     const kill = (requested) => {
-      try {
-        if (process.platform !== "win32" && child.pid) process.kill(-child.pid, requested);
-        else child.kill(requested);
-      } catch {
-      }
+      killProcessTree(child, requested);
     };
     const stop = (reason) => {
       if (finished) return;
@@ -15493,7 +15502,9 @@ function parseAgyOneShotUsage(stdout, _stderr) {
 var READ_ONLY_ONESHOT_ARGS = Object.freeze({
   claude: Object.freeze(["--tools", "Read,Glob,Grep", "--restricted", "--safe-mode", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--disable-slash-commands", "--no-session-persistence"]),
   codex: Object.freeze(["--sandbox", "read-only", "--ignore-user-config", "-c", 'approval_policy="never"']),
-  grok: Object.freeze(["--sandbox", "read-only", "--permission-mode", "plan", "--tools", "Read,Glob,Grep", "--no-subagents", "--disable-web-search"])
+  grok: Object.freeze(["--sandbox", "read-only", "--permission-mode", "plan", "--tools", "Read,Glob,Grep", "--no-subagents", "--disable-web-search"]),
+  agy: Object.freeze(["--mode", "plan", "--sandbox", "--disable-slash-commands"]),
+  kimi: Object.freeze(["--plan"])
 });
 function oneShotReadOnlyArgs(harness) {
   return Object.hasOwn(READ_ONLY_ONESHOT_ARGS, harness) ? READ_ONLY_ONESHOT_ARGS[harness] : void 0;
@@ -15547,7 +15558,7 @@ var BUILTIN_HARNESSES = Object.freeze([
     authArgs: ["provider", "list"],
     update: { self: ["upgrade"] },
     oneShot: {
-      argv: ["--output-format", "stream-json", "-p"],
+      argv: [...oneShotReadOnlyArgs("kimi"), "--output-format", "stream-json", "-p"],
       promptVia: "arg",
       outputFormat: "stream-json",
       usageParser: parseKimiOneShotUsage
@@ -15610,7 +15621,7 @@ var BUILTIN_HARNESSES = Object.freeze([
     authArgs: ["models"],
     update: { self: ["update"] },
     oneShot: {
-      argv: ["--output-format", "json", "-p"],
+      argv: [...oneShotReadOnlyArgs("agy"), "--output-format", "json", "-p"],
       promptVia: "arg",
       outputFormat: "json",
       usageParser: parseAgyOneShotUsage
@@ -16905,7 +16916,7 @@ function validateModelReferences(models, issues) {
   };
   for (const id of models.keys()) walk(id, []);
 }
-function validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry) {
+function validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry, projectRoot) {
   const issues = [];
   const entries = valuesOf(project.value, "repositories").map((candidate) => objectValue(candidate)).filter((candidate) => Boolean(candidate));
   const repositoryIds = /* @__PURE__ */ new Set();
@@ -16973,6 +16984,33 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
   const defaultWorkflow = stringValue(project.value.defaultWorkflow) ?? "default";
   if (!workflows.has(defaultWorkflow)) issues.push(issue2("reference", "default_workflow_unknown", project.logicalPath, `default workflow ${defaultWorkflow} does not exist`));
   for (const workflow of workflows.values()) validateWorkflow(workflow, agents, models, repositoryIds, gates, issues);
+  if (projectRoot) {
+    const writerRolePath = join(projectRoot, ".kxm", "roles", "writer.yaml");
+    const implementerAgent = agents.get("implementer") ?? agents.get("writer");
+    if (existsSync2(writerRolePath) && implementerAgent) {
+      try {
+        const rawRole = parseRestrictedYaml2(readFileSync(writerRolePath, "utf8"));
+        const roleObj = objectValue(rawRole);
+        const rosterEntries = valuesOf(roleObj ?? {}, "roster").map((candidate) => objectValue(candidate)).filter((entry) => Boolean(entry));
+        const enabledRosterModels = rosterEntries.filter((entry) => entry.enabled !== false).map((entry) => stringValue(entry.model)).filter((m) => Boolean(m));
+        const agentModelObj = objectValue(implementerAgent.value.model);
+        const agentModelStr = stringValue(implementerAgent.value.model);
+        const agentProvider = agentModelObj ? stringValue(agentModelObj.provider) : void 0;
+        const agentModel = agentModelObj ? stringValue(agentModelObj.model) : agentModelStr;
+        const canonicalAgentModel = agentProvider && agentModel ? `${agentProvider}/${agentModel}` : agentModel;
+        if (enabledRosterModels.length > 0 && canonicalAgentModel) {
+          const matches = enabledRosterModels.some((rm) => rm === canonicalAgentModel || rm === agentModel || rm.endsWith(`/${agentModel}`));
+          if (!matches) {
+            issues.push(issue2("semantic", "role_roster_conflicts_with_agent", ".kxm/roles/writer.yaml", `role roster in .kxm/roles/writer.yaml does not include agent model ${canonicalAgentModel} from ${implementerAgent.logicalPath}`));
+          }
+        }
+      } catch (error) {
+        if (error instanceof VnextConfigError) {
+          issues.push(...error.issues);
+        }
+      }
+    }
+  }
   return sortIssues2(issues);
 }
 function vnextCanonicalJson(value) {
@@ -17153,7 +17191,7 @@ function loadVnextProject(projectRoot, options = {}) {
     }
   }
   if (loadIssues.length > 0) throw new VnextConfigError(loadIssues);
-  const issues = validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry);
+  const issues = validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry, root);
   if (issues.length > 0) throw new VnextConfigError(issues);
   const resources = [project, ...repositories.values(), ...agents.values(), ...models.values(), ...workflows.values(), ...environments, ...gateRegistry ? [gateRegistry] : []].sort((left, right) => compareCodeUnits3(left.logicalPath, right.logicalPath));
   return {
@@ -22465,6 +22503,32 @@ function evaluateArtifactsGate(context, definition) {
 // plugins/kxm/src/vnext-engine-command.ts
 import { spawn as spawn2 } from "node:child_process";
 import { createHash as createHash8 } from "node:crypto";
+
+// plugins/kxm/src/safety-integrity.ts
+var DESTRUCTIVE_COMMAND_PATTERNS = Object.freeze([
+  /^\s*rm\s+.*-[a-zA-Z]*r[a-zA-Z]*f/i,
+  /^\s*rm\s+.*-[a-zA-Z]*f[a-zA-Z]*r/i,
+  /^\s*rm\s+.*(-[a-zA-Z]*r[a-zA-Z]*\s+.*-[a-zA-Z]*f[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*\s+.*-[a-zA-Z]*r[a-zA-Z]*)/i,
+  /^\s*git\s+reset\s+--hard/i,
+  /^\s*git\s+clean\s+-[a-zA-Z]*f/i,
+  /^\s*git\s+checkout\s+--\s+/i,
+  /^\s*git\s+restore\s+(\.|\*|--staged\s+(\.|\*))/i
+]);
+function assertCommandSeatbelt(command) {
+  for (const pattern of DESTRUCTIVE_COMMAND_PATTERNS) {
+    if (pattern.test(command)) {
+      throw new Error(
+        `Command blocked by KXM safety seatbelt: "${command}". Destructive workspace mutations require explicit operator override.`
+      );
+    }
+  }
+}
+var INSECURE_SSH_HOST_KEY_PATTERNS = Object.freeze([
+  /StrictHostKeyChecking=(accept-new|no|off)/i,
+  /UserKnownHostsFile=\/dev\/null/i
+]);
+
+// plugins/kxm/src/vnext-engine-command.ts
 var MAX_DIRECT_TIMER_MS = 2147483647;
 var COMMAND_TERM_GRACE_MS = 2e3;
 var COMMAND_FINAL_WAIT_MS = 2e3;
@@ -22581,6 +22645,7 @@ var CommandObserver = class {
     if (!Number.isInteger(this.definition.timeoutMs) || this.definition.timeoutMs < 1 || this.definition.timeoutMs > MAX_DIRECT_TIMER_MS) {
       throw runtimeError("run_events_illegal", "command", "command timeoutMs exceeds the direct timer bound");
     }
+    assertCommandSeatbelt(this.definition.argv.join(" "));
     this.startedAt = (/* @__PURE__ */ new Date()).toISOString();
     let child;
     try {
@@ -23706,6 +23771,7 @@ async function stepLocked(context, runId, producer, token) {
   return drivePanel(context, prepared.panel, producer);
 }
 async function runPreparedCommandGate(context, prepared, definition, token) {
+  assertCommandSeatbelt(definition.argv.join(" "));
   const storePath = context.eventStore.path;
   const observer = createCommandObserver({
     definition,
@@ -25482,6 +25548,24 @@ function createVnextOneShotProducer(options = {}) {
         ...permissionArgs,
         "--output-format",
         "json"
+      ];
+    } else if (harness === "agy") {
+      args = [
+        "-m",
+        resolved.model,
+        ...permissionArgs,
+        "--output-format",
+        "json",
+        "-p"
+      ];
+    } else if (harness === "kimi") {
+      args = [
+        "-m",
+        resolved.model,
+        ...permissionArgs,
+        "--output-format",
+        "stream-json",
+        "-p"
       ];
     } else {
       throw new Error(`oneshot_harness_unsupported: ${harness} permission_profile_unaudited`);

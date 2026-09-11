@@ -11090,7 +11090,9 @@ function parseAgyOneShotUsage(stdout, _stderr) {
 var READ_ONLY_ONESHOT_ARGS = Object.freeze({
   claude: Object.freeze(["--tools", "Read,Glob,Grep", "--restricted", "--safe-mode", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--disable-slash-commands", "--no-session-persistence"]),
   codex: Object.freeze(["--sandbox", "read-only", "--ignore-user-config", "-c", 'approval_policy="never"']),
-  grok: Object.freeze(["--sandbox", "read-only", "--permission-mode", "plan", "--tools", "Read,Glob,Grep", "--no-subagents", "--disable-web-search"])
+  grok: Object.freeze(["--sandbox", "read-only", "--permission-mode", "plan", "--tools", "Read,Glob,Grep", "--no-subagents", "--disable-web-search"]),
+  agy: Object.freeze(["--mode", "plan", "--sandbox", "--disable-slash-commands"]),
+  kimi: Object.freeze(["--plan"])
 });
 function oneShotReadOnlyArgs(harness) {
   return Object.hasOwn(READ_ONLY_ONESHOT_ARGS, harness) ? READ_ONLY_ONESHOT_ARGS[harness] : void 0;
@@ -11144,7 +11146,7 @@ var BUILTIN_HARNESSES = Object.freeze([
     authArgs: ["provider", "list"],
     update: { self: ["upgrade"] },
     oneShot: {
-      argv: ["--output-format", "stream-json", "-p"],
+      argv: [...oneShotReadOnlyArgs("kimi"), "--output-format", "stream-json", "-p"],
       promptVia: "arg",
       outputFormat: "stream-json",
       usageParser: parseKimiOneShotUsage
@@ -11207,7 +11209,7 @@ var BUILTIN_HARNESSES = Object.freeze([
     authArgs: ["models"],
     update: { self: ["update"] },
     oneShot: {
-      argv: ["--output-format", "json", "-p"],
+      argv: [...oneShotReadOnlyArgs("agy"), "--output-format", "json", "-p"],
       promptVia: "arg",
       outputFormat: "json",
       usageParser: parseAgyOneShotUsage

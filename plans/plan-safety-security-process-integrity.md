@@ -1,7 +1,7 @@
 # Plan: Safety, Security, Process Integrity, and Authority Architecture
 
-Task Reference: `task_safety_security_process_integrity`  
-Status: Draft / Proposed  
+Task Reference: [`task_90e568b3fd18`](../.kxm/tasks/task_90e568b3fd18.yaml)  
+Status: Complete (Stages 1–6 Implemented)  
 Tracking: [`plans/implementation-plan.md`](implementation-plan.md)
 
 ## 1. Objective

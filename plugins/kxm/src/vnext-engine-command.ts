@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import type { VnextGateObservationInput } from "./vnext-engine-gate-records.ts";
 import type { VnextGateErrorClass, VnextGateStopCause } from "./vnext-runtime-store.ts";
 import { runtimeError } from "./vnext-runtime-store.ts";
+import { assertCommandSeatbelt } from "./safety-integrity.ts";
 
 const MAX_DIRECT_TIMER_MS = 2_147_483_647;
 export const COMMAND_TERM_GRACE_MS = 2000;
@@ -176,6 +177,7 @@ class CommandObserver implements VnextCommandObserver {
     ) {
       throw runtimeError("run_events_illegal", "command", "command timeoutMs exceeds the direct timer bound");
     }
+    assertCommandSeatbelt(this.definition.argv.join(" "));
     this.startedAt = new Date().toISOString();
     let child: ChildProcess;
     try {
