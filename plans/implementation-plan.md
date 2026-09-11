@@ -163,6 +163,16 @@ It does not replace the phase gates below.
 - CLI Fable/Codex/Kimi critiques are artifacts plus human signoff, never
   hub `peer-reply` evidence.
 - Workflow fixture ids: `kxm-provenance`, `kxm-v04` (not `pi-extensions-*`).
+- **Safety, process integrity, and critic sandboxing (2026-09-11):** PR #188
+  closes critic read-only sandboxing holes by pinning `--mode plan --sandbox --disable-slash-commands`
+  for `agy` and `--plan` for `kimi` in `READ_ONLY_ONESHOT_ARGS` and catalog entries;
+  enforces literal destructive command seatbelts (`assertCommandSeatbelt`) blocking
+  `rm -rf`, `git reset --hard`, `git clean -f`, and destructive checkout/restore;
+  exports `killProcessTree` for negative PGID tree termination on POSIX to prune
+  orphaned test and subshell daemons; implements authority validation brake
+  (`role_roster_conflicts_with_agent`) between `.kxm/roles/writer.yaml` and agent
+  definitions; mandates raw uncompressed byte fidelity (RTK bypass) for verification
+  gates and critics; and enforces strict pinned SSH host key policy rejecting TOFU.
 - **Hub local is MVP.** `kxm init` is project-only. `kxm hub bind <url>` binds
   this host to a running hub. Session brief, Pi status line, and `/kxm` read
   the local hub snapshot. Local Runtime in-harness insights and SSH/HTTPS hub
