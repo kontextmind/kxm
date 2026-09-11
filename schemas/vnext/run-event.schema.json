@@ -323,6 +323,7 @@
       "properties": {
         "workflowId": { "$ref": "common.schema.json#/$defs/identifier" },
         "displayTitle": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "prompt": { "type": "string", "maxLength": 64000 },
         "promptHash": { "$ref": "common.schema.json#/$defs/sha256" },
         "runPlanHash": { "$ref": "common.schema.json#/$defs/sha256" },
         "capabilityHash": { "$ref": "common.schema.json#/$defs/sha256" },
