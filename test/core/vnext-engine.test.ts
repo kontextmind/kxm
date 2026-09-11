@@ -2632,6 +2632,62 @@ test("stale v1 run_state fails closed on read, drive, and cancel without rewrite
   }
 });
 
+test("objective propagation: producer context packet receives accepted run prompt with sha256 integrity check", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-prompt-prop-");
+  try {
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const prompt = "Implement cryptographic hash integrity for objective propagation";
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "one-step", prompt });
+      pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+      let capturedObjective: string | undefined;
+      const producer = createVnextSimulatedProducer(async (request) => {
+        capturedObjective = request.contextPacket?.task.objective;
+        return { outcome: "passed" };
+      });
+      const driven = await driveVnextRun(context, accepted.run.runId, producer);
+      assert.equal(driven.state.status, "completed");
+      assert.equal(capturedObjective, prompt);
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("objective propagation: birth fails closed if stored prompt is tampered or missing", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-prompt-tamper-");
+  try {
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const prompt = "Original prompt";
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "one-step", prompt });
+      pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+
+      const db = new DatabaseSync(context.eventStore.path);
+      const events = db.prepare("SELECT event_id, payload FROM events WHERE run_id = ? AND event_type = 'run.created'").all(accepted.run.runId) as Array<{ event_id: string; payload: string }>;
+      assert.equal(events.length, 1);
+      const payload = JSON.parse(events[0]!.payload);
+      payload.prompt = "Tampered prompt";
+      db.prepare("UPDATE events SET payload = ? WHERE event_id = ?").run(JSON.stringify(payload), events[0]!.event_id);
+      db.close();
+
+      const producer = createVnextSimulatedProducer(async () => ({ outcome: "passed" }));
+      await assert.rejects(
+        () => driveVnextRun(context, accepted.run.runId, producer),
+        /run_prompt_mismatch/,
+      );
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
 test("full-shape rehydration rejects malformed envelopes with matching hashes", () => {
   const { root, stateRoot } = engineProject("kxm-engine-shape-");
   try {
