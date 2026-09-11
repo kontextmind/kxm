@@ -100,3 +100,8 @@ A prompt produced with this skill includes:
 12. PR, CI/review monitoring, bounded remediation, and merge gate
 13. Verified post-merge cleanup
 14. Completion report
+
+## Related
+
+- [Agent Skills](../agent-skills.md) — bundled command-suite skills
+- [Skill candidate lifecycle](../skills.md) — governed `kxm skills` candidates
