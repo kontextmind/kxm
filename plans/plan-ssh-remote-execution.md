@@ -1,8 +1,42 @@
+---
+schema: "kxm.doc.v1"
+id: "FEAT-SSH-REMOTE"
+type: "feature"
+title: "Multiplexed remote SSH execution and worker orchestration"
+project: "kxm"
+status: "draft"
+owner: "kxm"
+created: "2026-09-11"
+updated: "2026-09-11"
+authority: "hypothesis"
+confidence: "uncertain"
+summary: "Proposed ssh_run tool with ControlMaster multiplexing and in-memory credential masking."
+tags: ["ssh", "remote"]
+related:
+  - implementation-plan.md
+  - history/plan-safety-security-process-integrity.md
+  - research-agent-producer-architecture.md
+  - plan-role-configuration-governance.md
+depends_on:
+  - history/plan-safety-security-process-integrity.md
+blocked_by: []
+details:
+  delivery_status: "proposed"
+---
+
 # Plan: Multiplexed Remote SSH Execution and Worker Orchestration
 
 Task Reference: `task_ssh_remote_execution`  
 Status: Draft / Proposed  
 Tracking: [`plans/implementation-plan.md`](implementation-plan.md)
+
+**Related plans:** [`implementation-plan.md`](implementation-plan.md) (execution tracker);
+archived [`plan-safety-security-process-integrity.md`](history/plan-safety-security-process-integrity.md)
+(pinned SSH host keys);
+[`research-agent-producer-architecture.md`](research-agent-producer-architecture.md)
+(multi-host / SSH agents);
+[`plan-role-configuration-governance.md`](plan-role-configuration-governance.md)
+(host axis).
 
 ## 1. Objective
 

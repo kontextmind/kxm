@@ -1,8 +1,39 @@
+---
+schema: "kxm.doc.v1"
+id: "FEAT-TOKEN-REDUCTION"
+type: "feature"
+title: "Shell output token compression via rtk-ai"
+project: "kxm"
+status: "draft"
+owner: "kxm"
+created: "2026-09-11"
+updated: "2026-09-11"
+authority: "hypothesis"
+confidence: "uncertain"
+summary: "Proposed rtk-ai proxy for verbose shell output, subject to the archived gate/critic RTK brake."
+tags: ["rtk", "tokens"]
+related:
+  - implementation-plan.md
+  - history/plan-safety-security-process-integrity.md
+  - plan-workflow-modes-selective-loading.md
+depends_on:
+  - history/plan-safety-security-process-integrity.md
+blocked_by: []
+details:
+  delivery_status: "proposed"
+---
+
 # Plan: Shell Output Token Compression via `rtk-ai` (Rust Token Killer)
 
 Task Reference: `task_token_reduction_rtk`  
 Status: Draft / Proposed  
 Tracking: [`plans/implementation-plan.md`](implementation-plan.md)
+
+**Related plans:** [`implementation-plan.md`](implementation-plan.md) (execution tracker);
+archived [`plan-safety-security-process-integrity.md`](history/plan-safety-security-process-integrity.md)
+(RTK gate / critic bypass — honor that brake);
+[`plan-workflow-modes-selective-loading.md`](plan-workflow-modes-selective-loading.md)
+(prompt token scoping).
 
 ## 1. Objective
 

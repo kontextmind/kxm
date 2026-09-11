@@ -95,10 +95,6 @@ jobs:
           echo "tag=v$new_version" >> "$GITHUB_OUTPUT"
           echo "Bumped $old_version -> $new_version"
 
-      - name: Install locked dependencies
-        if: steps.skip.outputs.skip == 'false'
-        run: npm ci
-
       - name: Rebuild generated artifacts
         if: steps.classify.outputs.action == 'bump'
         run: npm run build
