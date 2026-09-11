@@ -1,6 +1,6 @@
 {
   "name": "@kontextmind/kxm",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "KXM local-first multi-agent orchestration and operator dashboard",
   "type": "module",
   "author": "KontextMind",
