@@ -28,7 +28,7 @@ Set `KXM_WORKER_TOOL_TIMEOUT_MS` above the longest legitimate tool call. Its 31-
 
 ### A hub or worker PID claim is stale
 
-Version 0.4.3 prevents a second wrapper from replacing a live hub or worker claim. `kxm hub stop` ignores an invalid, non-running, or ownership-mismatched record rather than guessing. If a crash or pre-0.4.3 process left one behind, inspect the exact `.pid` JSON and verify that its recorded PID is no longer running; for a hub, also verify the configured port has no listener. Then remove only that exact `.pid` and its recorded `.stop` control file before relaunching once. Worker filenames include a project/agent identity digest and their records include the exact names and generation, so do not substitute a similarly sanitized filename. Never delete the `.kxm/state` directory or SQLite database to clear a claim.
+Version 0.4.3 prevents a second wrapper from replacing a live hub or worker claim. `kxm hub stop` ignores an invalid, non-running, or ownership-mismatched record rather than guessing. A hub claim whose wrapper PID is dead is reclaimed automatically on the next `kxm hub start`; the wrapper also terminates an orphaned hub server child recorded by a dead wrapper (for example after `SIGKILL`) before reclaiming, and `kxm hub stop` can stop such an orphan directly. If a pre-0.4.3 process left a malformed claim behind, inspect the exact `.pid` JSON and verify that its recorded PID is no longer running; for a hub, also verify the configured port has no listener. Then remove only that exact `.pid` and its recorded `.stop` control file before relaunching once. Worker filenames include a project/agent identity digest and their records include the exact names and generation, so do not substitute a similarly sanitized filename. Never delete the `.kxm/state` directory or SQLite database to clear a claim.
 
 ### GitHub checks passed but the workflow is still waiting
 
@@ -43,6 +43,14 @@ Set `KXM_PORT` to a valid integer. Remove the variable to use `7331`.
 **`KXM_AUTH_TOKEN is required when binding beyond localhost`**
 
 Either restore `KXM_HOST=127.0.0.1` or configure a token before using a non-loopback interface.
+
+**`KXM hub env file is malformed`**
+
+The persisted credential file (`hub-env.json` under the user state root) failed
+validation. It holds only `KXM_AUTH_TOKEN` / `KXM_PROJECT_TOKENS` values in
+`kxm.hub-env.v1` schema; fix its JSON or delete it to have kxm generate a
+fresh admin token on the next start. To rotate the generated token, delete
+the file and run `kxm hub start` again.
 
 #### Database schema is newer than this runtime supports
 

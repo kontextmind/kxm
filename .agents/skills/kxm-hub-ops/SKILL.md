@@ -23,6 +23,15 @@ or backup subcommands.
 
 Durable hub SQLite default is `.kxm/state/kxm.db` (`KXM_DATA_PATH`).
 
+`kxm hub start` requires no token setup on a fresh machine: when
+`KXM_AUTH_TOKEN` is unset, a long random admin token is generated once and
+persisted in `hub-env.json` (schema `kxm.hub-env.v1`, `0600`) under the user
+state root, then reused by every restart, worker, and dashboard. Explicit
+`KXM_AUTH_TOKEN` / `KXM_PROJECT_TOKENS` values win and are persisted too.
+Hub PID claims record the wrapper and server child PID; a dead wrapper's
+claim is reclaimed automatically, an orphaned server is terminated first,
+and `kxm hub stop` recovers such orphans directly.
+
 ```bash
 kxm hub start
 kxm hub view --json

@@ -69,6 +69,19 @@ rc file, and, when the kxm bin directory is not already on `PATH`, adds a
 `KXM_SKIP_COMPLETION_PROMPT=1` to suppress the offer. Non-interactive,
 `--json`, and `--dry-run` runs never prompt or write shell files.
 
+After the completion offer, an interactive `kxm init` also offers to set up
+workflow-guide agents and workflows for the harnesses you have installed and
+authenticated. Accepting lists the software-engineering workflows from
+[`workflow-guide.md`](workflow-guide.md); pick by number or slug (`all` works
+too). kxm resolves each role's first guide candidate whose harness is
+authenticated and writes only current vNext project resources —
+`.kxm/agents/<role>.yaml` (`kxm.agent.v1`) and `.kxm/workflows/<slug>.yaml`
+(`kxm.workflow.v1`). It never writes retired legacy authority (`.kxm/config`,
+`.kxm/roster.json`). Roles whose candidates have no authenticated harness are
+reported as skipped, not silently downgraded. Guide candidates are dated
+research — verify them before dispatch. Declining is safe: set
+`KXM_SKIP_GUIDE_SETUP_PROMPT=1` to suppress the offer.
+
 ## 3. Start the hub in another terminal
 
 `kxm hub start` is foreground. Keep that terminal running.
