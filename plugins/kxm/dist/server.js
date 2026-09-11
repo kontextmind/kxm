@@ -7431,6 +7431,61 @@ function parseBoundedInteger(value, field, fallback, min, max) {
   }
   return value;
 }
+var TERMINAL_RECEIPT_SCHEMA = "kxm.terminal-receipt.v1";
+var VALID_TERMINAL_STATUSES = /* @__PURE__ */ new Set(["accepted", "audit_escalation", "rejected", "error"]);
+function validateTerminalReceipt(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new ProtocolError(400, "terminal receipt must be an object", "invalid_terminal_receipt");
+  }
+  const record = value;
+  if (record.schema !== void 0 && record.schema !== TERMINAL_RECEIPT_SCHEMA) {
+    throw new ProtocolError(400, `terminal receipt schema must be ${TERMINAL_RECEIPT_SCHEMA}`, "invalid_terminal_receipt");
+  }
+  const status = record.status;
+  if (!status || !VALID_TERMINAL_STATUSES.has(status)) {
+    throw new ProtocolError(
+      400,
+      `terminal receipt status must be one of: ${Array.from(VALID_TERMINAL_STATUSES).join(", ")}`,
+      "invalid_terminal_receipt"
+    );
+  }
+  const seat = requireString(record.seat, "seat", { max: 64 });
+  const runId = requireString(record.runId, "runId", { max: 128 });
+  const stageId = requireString(record.stageId, "stageId", { max: 128 });
+  const timestamp = requireString(record.timestamp, "timestamp", { max: 64 });
+  const host2 = requireString(record.host, "host", { max: 64 });
+  const model = requireString(record.model, "model", { max: 128 });
+  let evidence;
+  if (record.evidence !== void 0) {
+    if (!record.evidence || typeof record.evidence !== "object" || Array.isArray(record.evidence)) {
+      throw new ProtocolError(400, "terminal receipt evidence must be an object", "invalid_terminal_receipt");
+    }
+    evidence = record.evidence;
+  }
+  let metrics;
+  if (record.metrics !== void 0) {
+    if (!record.metrics || typeof record.metrics !== "object" || Array.isArray(record.metrics)) {
+      throw new ProtocolError(400, "terminal receipt metrics must be an object", "invalid_terminal_receipt");
+    }
+    metrics = record.metrics;
+  }
+  const escalationReason = optionalString(record.escalationReason, "escalationReason", 1024);
+  const ruling = optionalString(record.ruling, "ruling", 2048);
+  return {
+    schema: TERMINAL_RECEIPT_SCHEMA,
+    status,
+    seat,
+    runId,
+    stageId,
+    timestamp,
+    host: host2,
+    model,
+    ...evidence ? { evidence } : {},
+    ...metrics ? { metrics } : {},
+    ...escalationReason ? { escalationReason } : {},
+    ...ruling ? { ruling } : {}
+  };
+}
 
 // plugins/kxm/src/diagnostics.ts
 function workflowScopeExtras(operation, assignedCoordinatorName) {
@@ -7982,12 +8037,17 @@ function parseWorkflowDefinitions(raw, environment = process.env, onWarning) {
       if (stageMaxTransitions !== void 0 && (!Number.isInteger(stageMaxTransitions) || stageMaxTransitions < 1 || stageMaxTransitions > 100)) {
         throw new Error(`stage ${stageId} maxTransitions must be an integer between 1 and 100`);
       }
+      const autoResumeLimit = stage.autoResumeLimit;
+      if (autoResumeLimit !== void 0 && (!Number.isInteger(autoResumeLimit) || autoResumeLimit < 1 || autoResumeLimit > 20)) {
+        throw new Error(`stage ${stageId} autoResumeLimit must be an integer between 1 and 20`);
+      }
       return {
         id: stageId,
         label: requireString(stage.label ?? stageId, "stage.label", { max: 128 }),
         instructions: requireString(stage.instructions, "stage.instructions", { max: 4e3 }),
         requiredEvidence,
         maxAttempts,
+        ...autoResumeLimit !== void 0 ? { autoResumeLimit } : {},
         ...area ? { area } : {},
         ...evidencePolicies ? { evidencePolicies } : {},
         ...on ? { on } : {},
@@ -8266,6 +8326,31 @@ function checkpointRun(run, stageId, status, summary, evidence, timestamp, verif
       delete run.currentStage;
       return { retry: false, completed: false, run };
     }
+    if (stage.autoResumeLimit !== void 0 && stage.attempts >= stage.autoResumeLimit) {
+      stage.status = "in_progress";
+      const reason = summary || `autoResumeLimit of ${stage.autoResumeLimit} reached on stage ${stage.id}`;
+      const receipt = validateTerminalReceipt({
+        schema: TERMINAL_RECEIPT_SCHEMA,
+        status: "audit_escalation",
+        seat: stage.id,
+        runId: run.id,
+        stageId: stage.id,
+        timestamp,
+        host: "pi",
+        model: "default",
+        escalationReason: reason
+      });
+      const expiresAt = new Date(Date.parse(timestamp) + 24 * 60 * 60 * 1e3).toISOString();
+      waitForWorkflowSignal(run, stage.id, "audit_escalation", reason, timestamp, expiresAt);
+      stage.receipt = receipt;
+      stage.auditEscalation = {
+        reason,
+        timestamp,
+        receipt
+      };
+      return { retry: false, completed: false, run };
+    }
+    stage.status = status;
     const outcomeKey = outcome ?? status;
     const rule = resolveOutcomeRule(stage, outcomeKey);
     if (rule && stage.attempts < stage.maxAttempts) {

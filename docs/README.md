@@ -9,6 +9,7 @@ This documentation is organized by task. Start with the guide that matches what 
 | [Configuration](configuration.md) | Users and operators | Understand every supported setting and default |
 | [Architecture](architecture.md) | Maintainers and integrators | Learn the component boundaries and message lifecycle |
 | [Agent Skills](agent-skills.md) | Users and integrators | Comprehensive skill suite covering all KXM commands with progressive disclosure |
+| [Skills](skills.md) | Operators and skill authors | Governed candidate lifecycle; also the [repository work delivery](skills/repo-work-delivery.md) skill |
 | [Operations](operations.md) | Hub operators | Run, monitor, secure, and recover the service |
 | [Troubleshooting](troubleshooting.md) | Everyone | Diagnose common installation and delivery failures |
 | [Test matrix](test-matrix.md) | Users and maintainers | Map features and use cases to automated evidence |
@@ -16,6 +17,7 @@ This documentation is organized by task. Start with the guide that matches what 
 | [Peer provenance and quorum gates](provenance-gates.md) | Workflow authors and security reviewers | Require durable replies from eligible peer identities without overstating the trust guarantee |
 | [Continuous improvement](continuous-improvement.md) | Product and engineering leads | Turn run evidence into reviewed workflow improvements |
 | [Workflow guide](workflow-guide.md) | Workflow designers and operators | Area -> Workflow -> Stage -> Role taxonomy with documentation slugs, dated research candidates, and selection policy |
+| [Templates](templates/README.md) | Workflow authors | Markdown templates for features, ADRs, reviews, runbooks, and related artifacts |
 | [Agent Envelopes & Quality Gates](agent-communication-envelopes-and-gates.md) | Multi-agent workflow engineers | Production communication envelopes, quality gates, and work loops |
 | [Assignment runner](assignment-runner.md) | Maintainers and developers | Native developer assignments, deterministic witness verification, and multi-vendor dual-critic acceptance |
 | [This host's Pi packages](operator-pi-packages.md) | Maintainers on this development host | Snapshot of operator `pi list` packages and file extensions; not a KXM install requirement |

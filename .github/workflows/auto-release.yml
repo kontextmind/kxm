@@ -1,0 +1,122 @@
+name: Auto-Release
+
+# Triggers when a PR is merged to main. Bumps the patch version across all
+# package surfaces, commits, tags, and pushes — the tag push then triggers
+# the existing release.yml workflow which drafts the GitHub release and
+# publishes to npm.
+#
+# Skips if:
+#   - The PR is labeled "no-release" (for docs-only or chore PRs)
+#   - The head commit message starts with "chore(release)" (version bump commits)
+#   - The PR was merged from a branch starting with "chore/release-"
+#
+# Required secrets:
+#   - KXM_RELEASE_TOKEN: A PAT with contents:write and pull-requests:read
+#     (GITHUB_TOKEN cannot trigger downstream workflows, so a PAT is needed
+#     to push the tag that triggers release.yml)
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: auto-release-main
+  cancel-in-progress: false
+
+jobs:
+  bump-and-tag:
+    name: Bump version and tag release
+    # Only run on merged PRs, not closed-without-merge
+    if: github.event.pull_request.merged == true
+    runs-on: kontextmind-doks
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.KXM_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Use Node.js 22.19.0
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22.19.0
+          cache: npm
+
+      - name: Check skip conditions
+        id: skip
+        env:
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          HEAD_MESSAGE: ${{ github.event.pull_request.title }}
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+
+          # Skip if labeled no-release
+          if echo "$PR_LABELS" | grep -q '"no-release"'; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Skipping: PR labeled no-release"
+            exit 0
+          fi
+
+          # Skip if this is itself a release chore PR
+          if echo "$HEAD_MESSAGE" | grep -qE '^chore\(release\)'; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Skipping: release chore PR"
+            exit 0
+          fi
+          if echo "$HEAD_BRANCH" | grep -qE '^chore/release-'; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Skipping: release branch"
+            exit 0
+          fi
+
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "Will bump version and tag"
+
+      - name: Bump patch version
+        if: steps.skip.outputs.skip == 'false'
+        id: bump
+        run: |
+          set -euo pipefail
+          old_version=$(node -p "require('./package.json').version")
+          node scripts/kxm-bump-version.mjs patch
+          new_version=$(node -p "require('./package.json').version")
+          echo "old=$old_version" >> "$GITHUB_OUTPUT"
+          echo "new=$new_version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$new_version" >> "$GITHUB_OUTPUT"
+          echo "Bumped $old_version -> $new_version"
+
+      - name: Rebuild generated artifacts
+        if: steps.skip.outputs.skip == 'false'
+        run: npm run build
+
+      - name: Verify all version surfaces
+        if: steps.skip.outputs.skip == 'false'
+        run: npm run check:versions
+
+      - name: Commit version bump
+        if: steps.skip.outputs.skip == 'false'
+        env:
+          NEW_VERSION: ${{ steps.bump.outputs.new }}
+        run: |
+          set -euo pipefail
+          git config user.name "kxm-release[bot]"
+          git config user.email "kxm-release[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore(release): bump version to ${NEW_VERSION}"
+
+      - name: Create and push tag
+        if: steps.skip.outputs.skip == 'false'
+        env:
+          TAG: ${{ steps.bump.outputs.tag }}
+          NEW_VERSION: ${{ steps.bump.outputs.new }}
+        run: |
+          set -euo pipefail
+          git tag -a "$TAG" -m "release: v${NEW_VERSION}"
+          git push origin main "$TAG"
+          echo "Pushed main + tag $TAG"
