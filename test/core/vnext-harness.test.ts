@@ -82,6 +82,20 @@ test("Codex catalog pins documented read-only noninteractive flags and keeps exe
   assert.equal(entry?.oneShot?.promptVia, "stdin");
 });
 
+test("AGY and Kimi catalogs pin documented read-only sandboxed flags", () => {
+  const agyEntry = BUILTIN_HARNESSES.find((candidate) => candidate.id === "agy");
+  assert.deepEqual(agyEntry?.oneShot?.argv, [
+    "--mode", "plan", "--sandbox", "--disable-slash-commands", "--output-format", "json", "-p",
+  ]);
+  assert.equal(agyEntry?.oneShot?.promptVia, "arg");
+
+  const kimiEntry = BUILTIN_HARNESSES.find((candidate) => candidate.id === "kimi");
+  assert.deepEqual(kimiEntry?.oneShot?.argv, [
+    "--plan", "--output-format", "stream-json", "-p",
+  ]);
+  assert.equal(kimiEntry?.oneShot?.promptVia, "arg");
+});
+
 test("win32 harness probe tries .exe then npm .cmd after a missing bare command", () => {
   assert.deepEqual([...harnessCommandCandidates("claude", "linux")], ["claude"]);
   assert.deepEqual([...harnessCommandCandidates("claude", "win32")], ["claude", "claude.exe", "claude.cmd"]);
@@ -863,9 +877,8 @@ test("probeHarnesses reports dispatch status with reasons across inventory", () 
   assert.equal(claude.dispatch?.supported, true);
 
   const kimi = status(inventory, "kimi");
-  assert.equal(kimi.dispatch?.status, "no");
-  assert.equal(kimi.dispatch?.reason, "permission_profile_unaudited");
-  assert.equal(kimi.dispatch?.supported, false);
+  assert.equal(kimi.dispatch?.status, "yes");
+  assert.equal(kimi.dispatch?.supported, true);
 
   const codex = status(inventory, "codex");
   assert.equal(codex.dispatch?.status, "yes");
@@ -880,14 +893,13 @@ test("probeHarnesses reports dispatch status with reasons across inventory", () 
   assert.equal(grok.dispatch?.supported, true);
 
   const agy = status(inventory, "agy");
-  assert.equal(agy.dispatch?.status, "no");
-  assert.equal(agy.dispatch?.reason, "permission_profile_unaudited");
-  assert.equal(agy.dispatch?.supported, false);
+  assert.equal(agy.dispatch?.status, "yes");
+  assert.equal(agy.dispatch?.supported, true);
 
   const formatted = formatHarnessInventory(inventory);
   assert.match(formatted, /dispatch/);
   assert.match(formatted, /deepseek\s+no\s+no\s+no\s+no \(not_detected\)/);
-  assert.match(formatted, /agy\s+no\s+yes\s+yes\s+no \(permission_profile_unaudited\)/);
+  assert.match(formatted, /agy\s+no\s+yes\s+yes\s+yes/);
 });
 
 

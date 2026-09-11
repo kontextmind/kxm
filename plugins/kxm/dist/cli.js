@@ -19074,7 +19074,9 @@ function parseAgyOneShotUsage(stdout, _stderr) {
 var READ_ONLY_ONESHOT_ARGS = Object.freeze({
   claude: Object.freeze(["--tools", "Read,Glob,Grep", "--restricted", "--safe-mode", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--disable-slash-commands", "--no-session-persistence"]),
   codex: Object.freeze(["--sandbox", "read-only", "--ignore-user-config", "-c", 'approval_policy="never"']),
-  grok: Object.freeze(["--sandbox", "read-only", "--permission-mode", "plan", "--tools", "Read,Glob,Grep", "--no-subagents", "--disable-web-search"])
+  grok: Object.freeze(["--sandbox", "read-only", "--permission-mode", "plan", "--tools", "Read,Glob,Grep", "--no-subagents", "--disable-web-search"]),
+  agy: Object.freeze(["--mode", "plan", "--sandbox", "--disable-slash-commands"]),
+  kimi: Object.freeze(["--plan"])
 });
 function oneShotReadOnlyArgs(harness) {
   return Object.hasOwn(READ_ONLY_ONESHOT_ARGS, harness) ? READ_ONLY_ONESHOT_ARGS[harness] : void 0;
@@ -19128,7 +19130,7 @@ var BUILTIN_HARNESSES = Object.freeze([
     authArgs: ["provider", "list"],
     update: { self: ["upgrade"] },
     oneShot: {
-      argv: ["--output-format", "stream-json", "-p"],
+      argv: [...oneShotReadOnlyArgs("kimi"), "--output-format", "stream-json", "-p"],
       promptVia: "arg",
       outputFormat: "stream-json",
       usageParser: parseKimiOneShotUsage
@@ -19191,7 +19193,7 @@ var BUILTIN_HARNESSES = Object.freeze([
     authArgs: ["models"],
     update: { self: ["update"] },
     oneShot: {
-      argv: ["--output-format", "json", "-p"],
+      argv: [...oneShotReadOnlyArgs("agy"), "--output-format", "json", "-p"],
       promptVia: "arg",
       outputFormat: "json",
       usageParser: parseAgyOneShotUsage
@@ -20469,7 +20471,7 @@ function validateModelReferences(models, issues) {
   };
   for (const id of models.keys()) walk(id, []);
 }
-function validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry) {
+function validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry, projectRoot) {
   const issues = [];
   const entries = valuesOf(project.value, "repositories").map((candidate) => objectValue(candidate)).filter((candidate) => Boolean(candidate));
   const repositoryIds = /* @__PURE__ */ new Set();
@@ -20537,6 +20539,33 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
   const defaultWorkflow = stringValue(project.value.defaultWorkflow) ?? "default";
   if (!workflows.has(defaultWorkflow)) issues.push(issue2("reference", "default_workflow_unknown", project.logicalPath, `default workflow ${defaultWorkflow} does not exist`));
   for (const workflow of workflows.values()) validateWorkflow(workflow, agents, models, repositoryIds, gates, issues);
+  if (projectRoot) {
+    const writerRolePath = join2(projectRoot, ".kxm", "roles", "writer.yaml");
+    const implementerAgent = agents.get("implementer") ?? agents.get("writer");
+    if (existsSync3(writerRolePath) && implementerAgent) {
+      try {
+        const rawRole = parseRestrictedYaml2(readFileSync2(writerRolePath, "utf8"));
+        const roleObj = objectValue(rawRole);
+        const rosterEntries = valuesOf(roleObj ?? {}, "roster").map((candidate) => objectValue(candidate)).filter((entry) => Boolean(entry));
+        const enabledRosterModels = rosterEntries.filter((entry) => entry.enabled !== false).map((entry) => stringValue(entry.model)).filter((m2) => Boolean(m2));
+        const agentModelObj = objectValue(implementerAgent.value.model);
+        const agentModelStr = stringValue(implementerAgent.value.model);
+        const agentProvider = agentModelObj ? stringValue(agentModelObj.provider) : void 0;
+        const agentModel = agentModelObj ? stringValue(agentModelObj.model) : agentModelStr;
+        const canonicalAgentModel = agentProvider && agentModel ? `${agentProvider}/${agentModel}` : agentModel;
+        if (enabledRosterModels.length > 0 && canonicalAgentModel) {
+          const matches = enabledRosterModels.some((rm) => rm === canonicalAgentModel || rm === agentModel || rm.endsWith(`/${agentModel}`));
+          if (!matches) {
+            issues.push(issue2("semantic", "role_roster_conflicts_with_agent", ".kxm/roles/writer.yaml", `role roster in .kxm/roles/writer.yaml does not include agent model ${canonicalAgentModel} from ${implementerAgent.logicalPath}`));
+          }
+        }
+      } catch (error) {
+        if (error instanceof VnextConfigError) {
+          issues.push(...error.issues);
+        }
+      }
+    }
+  }
   return sortIssues2(issues);
 }
 function vnextCanonicalJson(value) {
@@ -20721,7 +20750,7 @@ function loadVnextProject(projectRoot, options = {}) {
     }
   }
   if (loadIssues.length > 0) throw new VnextConfigError(loadIssues);
-  const issues = validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry);
+  const issues = validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry, root);
   if (issues.length > 0) throw new VnextConfigError(issues);
   const resources = [project, ...repositories.values(), ...agents.values(), ...models.values(), ...workflows.values(), ...environments, ...gateRegistry ? [gateRegistry] : []].sort((left, right) => compareCodeUnits3(left.logicalPath, right.logicalPath));
   return {
@@ -38769,6 +38798,21 @@ var RECORD_LIMIT = 16 * 1024 * 1024;
 
 // plugins/kxm/src/vnext-engine.ts
 var import_yaml10 = __toESM(require_dist(), 1);
+
+// plugins/kxm/src/safety-integrity.ts
+var DESTRUCTIVE_COMMAND_PATTERNS = Object.freeze([
+  /^\s*rm\s+.*-[a-zA-Z]*r[a-zA-Z]*f/i,
+  /^\s*rm\s+.*-[a-zA-Z]*f[a-zA-Z]*r/i,
+  /^\s*rm\s+.*(-[a-zA-Z]*r[a-zA-Z]*\s+.*-[a-zA-Z]*f[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*\s+.*-[a-zA-Z]*r[a-zA-Z]*)/i,
+  /^\s*git\s+reset\s+--hard/i,
+  /^\s*git\s+clean\s+-[a-zA-Z]*f/i,
+  /^\s*git\s+checkout\s+--\s+/i,
+  /^\s*git\s+restore\s+(\.|\*|--staged\s+(\.|\*))/i
+]);
+var INSECURE_SSH_HOST_KEY_PATTERNS = Object.freeze([
+  /StrictHostKeyChecking=(accept-new|no|off)/i,
+  /UserKnownHostsFile=\/dev\/null/i
+]);
 
 // plugins/kxm/src/vnext-runtime-supervisor.ts
 var repoRoot = resolve15(fileURLToPath3(new URL("../../../", import.meta.url)));

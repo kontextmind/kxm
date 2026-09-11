@@ -1,0 +1,11 @@
+schema: kxm.task.v1
+id: task_8f3781bfe547
+title: Integrate RTK-AI for Terminal Output and Diff Token Compression
+objective: Integrate Rust Token Killer (rtk-ai) to compress verbose terminal
+  outputs (git diff, npm test) by 60-90%, reducing token bloat and preventing
+  agent headless print-timeouts.
+acceptanceCriteria: []
+status: todo
+assignedWorkflow: default
+createdAt: 2026-09-11T09:24:33.749Z
+updatedAt: 2026-09-11T09:24:33.749Z

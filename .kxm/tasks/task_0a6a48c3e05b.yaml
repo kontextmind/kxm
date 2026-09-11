@@ -1,0 +1,11 @@
+schema: kxm.task.v1
+id: task_0a6a48c3e05b
+title: Implement Real-Time Cost Tracking and Rolling Quota Window Awareness
+objective: Upgrade static token pricing to rolling rate-limit window tracking
+  (e.g. Anthropic 5h window, Codex fractions) to fail over proactively before
+  hitting HTTP 429 quota exhaustion, with comprehensive attribution.
+acceptanceCriteria: []
+status: todo
+assignedWorkflow: default
+createdAt: 2026-09-11T09:24:31.665Z
+updatedAt: 2026-09-11T09:24:31.665Z

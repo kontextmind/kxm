@@ -1,0 +1,11 @@
+schema: kxm.task.v1
+id: task_1ff1f80e66ef
+title: Implement Agent Peer Protocol Enhancements and In-Flight Steering
+objective: Extend kxm peer protocol with delivery semantics (steer vs followUp),
+  defining safe queueing for interactive workers and fail-closed behavior on
+  one-shots.
+acceptanceCriteria: []
+status: todo
+assignedWorkflow: default
+createdAt: 2026-09-11T09:24:43.273Z
+updatedAt: 2026-09-11T09:24:43.273Z

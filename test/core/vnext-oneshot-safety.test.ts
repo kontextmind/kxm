@@ -52,7 +52,7 @@ test("one-shot cancellation preserves reported usage and does not invent effecti
   assert.equal(res.effectiveModel, "unknown");
 });
 
-for (const harness of ["pi", "kimi", "agy", "deepseek"]) {
+for (const harness of ["pi", "deepseek"]) {
   test(`unaudited ${harness} one-shot permissions refuse before authentication and execution`, async () => {
     let probes = 0;
     let spawns = 0;
@@ -67,6 +67,57 @@ for (const harness of ["pi", "kimi", "agy", "deepseek"]) {
     } finally { await producer.close(); }
   });
 }
+
+test("audited agy and kimi one-shot dispatches apply sandboxed read-only flags", async () => {
+  let capturedAgyArgs: readonly string[] = [];
+  const agyProducer = createVnextOneShotProducer({
+    defaultHarness: "agy",
+    probeHarness: () => ({
+      id: "agy", label: "AGY", default: false, mode: "either" as const,
+      detected: true, authenticated: true as const, authMethod: "antigravity-oauth",
+      canUpdate: { self: false, extensions: false, models: false }, issues: [],
+    }),
+    spawnProcess: async (_cmd, args) => {
+      capturedAgyArgs = args;
+      return { stdout: reply(), stderr: "", code: 0 };
+    },
+  });
+  try {
+    const res = await agyProducer.produce(request({ model: "gemini-3.8-flash-high" }));
+    assert.equal(res.outcome, "passed");
+    assert.ok(capturedAgyArgs.includes("--mode"));
+    assert.ok(capturedAgyArgs.includes("plan"));
+    assert.ok(capturedAgyArgs.includes("--sandbox"));
+    assert.ok(capturedAgyArgs.includes("--disable-slash-commands"));
+  } finally {
+    await agyProducer.close();
+  }
+
+  let capturedKimiArgs: readonly string[] = [];
+  const kimiProducer = createVnextOneShotProducer({
+    defaultHarness: "kimi",
+    probeHarness: () => ({
+      id: "kimi", label: "Kimi", default: false, mode: "either" as const,
+      detected: true, authenticated: true as const,
+      canUpdate: { self: false, extensions: false, models: false }, issues: [],
+    }),
+    spawnProcess: async (_cmd, args) => {
+      capturedKimiArgs = args;
+      return {
+        stdout: JSON.stringify({ role: "assistant", content: '{"outcome":"passed"}' }) + "\n",
+        stderr: "",
+        code: 0,
+      };
+    },
+  });
+  try {
+    const res = await kimiProducer.produce(request({ model: "kimi-k2" }));
+    assert.equal(res.outcome, "passed");
+    assert.ok(capturedKimiArgs.includes("--plan"));
+  } finally {
+    await kimiProducer.close();
+  }
+});
 
 test("pre-aborted producer performs no authentication or execution", async () => {
   let probes = 0;

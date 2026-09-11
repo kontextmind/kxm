@@ -1033,6 +1033,7 @@ function validateBundle(
   environments: readonly VnextResource[],
   options: VnextConfigOptions,
   gateRegistry?: VnextResource,
+  projectRoot?: string,
 ): VnextConfigIssue[] {
   const issues: VnextConfigIssue[] = [];
   const entries = valuesOf(project.value, "repositories").map((candidate) => objectValue(candidate)).filter((candidate): candidate is JsonObject => Boolean(candidate));
@@ -1105,6 +1106,42 @@ function validateBundle(
   const defaultWorkflow = stringValue(project.value.defaultWorkflow) ?? "default";
   if (!workflows.has(defaultWorkflow)) issues.push(issue("reference", "default_workflow_unknown", project.logicalPath, `default workflow ${defaultWorkflow} does not exist`));
   for (const workflow of workflows.values()) validateWorkflow(workflow, agents, models, repositoryIds, gates, issues);
+
+  if (projectRoot) {
+    const writerRolePath = join(projectRoot, ".kxm", "roles", "writer.yaml");
+    const implementerAgent = agents.get("implementer") ?? agents.get("writer");
+    if (existsSync(writerRolePath) && implementerAgent) {
+      try {
+        const rawRole = parseRestrictedYaml(readFileSync(writerRolePath, "utf8"));
+        const roleObj = objectValue(rawRole);
+        const rosterEntries = valuesOf(roleObj ?? {}, "roster")
+          .map((candidate) => objectValue(candidate))
+          .filter((entry): entry is JsonObject => Boolean(entry));
+        const enabledRosterModels = rosterEntries
+          .filter((entry) => entry.enabled !== false)
+          .map((entry) => stringValue(entry.model))
+          .filter((m): m is string => Boolean(m));
+
+        const agentModelObj = objectValue(implementerAgent.value.model);
+        const agentModelStr = stringValue(implementerAgent.value.model);
+        const agentProvider = agentModelObj ? stringValue(agentModelObj.provider) : undefined;
+        const agentModel = agentModelObj ? stringValue(agentModelObj.model) : agentModelStr;
+        const canonicalAgentModel = agentProvider && agentModel ? `${agentProvider}/${agentModel}` : agentModel;
+
+        if (enabledRosterModels.length > 0 && canonicalAgentModel) {
+          const matches = enabledRosterModels.some((rm) => rm === canonicalAgentModel || rm === agentModel || rm.endsWith(`/${agentModel}`));
+          if (!matches) {
+            issues.push(issue("semantic", "role_roster_conflicts_with_agent", ".kxm/roles/writer.yaml", `role roster in .kxm/roles/writer.yaml does not include agent model ${canonicalAgentModel} from ${implementerAgent.logicalPath}`));
+          }
+        }
+      } catch (error) {
+        if (error instanceof VnextConfigError) {
+          issues.push(...error.issues);
+        }
+      }
+    }
+  }
+
   return sortIssues(issues);
 }
 
@@ -1306,7 +1343,7 @@ export function loadVnextProject(projectRoot: string, options: VnextConfigOption
   }
   if (loadIssues.length > 0) throw new VnextConfigError(loadIssues);
 
-  const issues = validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry);
+  const issues = validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry, root);
   if (issues.length > 0) throw new VnextConfigError(issues);
   const resources = [project, ...repositories.values(), ...agents.values(), ...models.values(), ...workflows.values(), ...environments, ...(gateRegistry ? [gateRegistry] : [])]
     .sort((left, right) => compareCodeUnits(left.logicalPath, right.logicalPath));

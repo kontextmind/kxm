@@ -1,5 +1,7 @@
 schema: kxm.role.v1
 id: writer
 roster:
+  - model: xai/grok-4.6
+    enabled: true
   - model: openrouter/qwen/qwen3-coder-plus
     enabled: true

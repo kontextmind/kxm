@@ -1,0 +1,11 @@
+schema: kxm.task.v1
+id: task_d3e634858295
+title: Consolidate Role Configuration Governance and Fail-Closed Roster Admission
+objective: Establish single source of truth for agent roles across .kxm/roles/,
+  .kxm/agents/, and .kxm/producers.yaml, enforcing strict schema validation and
+  fail-closed admission rules for role rosters.
+acceptanceCriteria: []
+status: todo
+assignedWorkflow: default
+createdAt: 2026-09-11T09:24:28.499Z
+updatedAt: 2026-09-11T09:24:28.499Z

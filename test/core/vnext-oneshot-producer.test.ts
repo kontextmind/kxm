@@ -822,7 +822,7 @@ test("parseAgyOneShotUsage parses Antigravity JSON payload, usage, and errors", 
   assert.equal(plainParsed.usage?.tokensIn, null);
 });
 
-test("Kimi one-shot execution refuses unaudited permissions despite authentication", async () => {
+test("Kimi one-shot execution applies sandboxed --plan flag with authenticated profile", async () => {
   const fakeAuth = () => ({ detected: true, authenticated: true as const, issues: [] });
 
   let capturedArgs: readonly string[] = [];
@@ -843,7 +843,7 @@ test("Kimi one-shot execution refuses unaudited permissions despite authenticati
   });
 
   try {
-    await assert.rejects(kimiProducer.produce({
+    const res = await kimiProducer.produce({
       runId: "run_kimi_1",
       stepId: "step_kimi",
       stepAttempt: 1,
@@ -855,14 +855,15 @@ test("Kimi one-shot execution refuses unaudited permissions despite authenticati
       model: "kimi-k2",
       prompt: "Review Windows path portability",
       signal: new AbortController().signal,
-    }), /permission_profile_unaudited/);
-    assert.deepEqual(capturedArgs, []);
+    });
+    assert.equal(res.outcome, "passed");
+    assert.ok(capturedArgs.includes("--plan"));
   } finally {
     await kimiProducer.close();
   }
 });
 
-test("AGY subscription auth does not authorize an unaudited one-shot permission profile", async () => {
+test("AGY subscription auth executes one-shot with sandboxed flags", async () => {
   const fakeAuth = () => ({ detected: true, authenticated: true as const, authMethod: "antigravity-oauth", issues: [] });
 
   let capturedArgs: readonly string[] = [];
@@ -890,7 +891,7 @@ test("AGY subscription auth does not authorize an unaudited one-shot permission 
   });
 
   try {
-    await assert.rejects(agyProducer.produce({
+    const res = await agyProducer.produce({
       runId: "run_agy_1",
       stepId: "step_agy",
       stepAttempt: 1,
@@ -903,8 +904,12 @@ test("AGY subscription auth does not authorize an unaudited one-shot permission 
       thinking: "medium",
       prompt: "Implement feature in repository",
       signal: new AbortController().signal,
-    }), /permission_profile_unaudited/);
-    assert.deepEqual(capturedArgs, []);
+    });
+    assert.equal(res.outcome, "passed");
+    assert.ok(capturedArgs.includes("--mode"));
+    assert.ok(capturedArgs.includes("plan"));
+    assert.ok(capturedArgs.includes("--sandbox"));
+    assert.ok(capturedArgs.includes("--disable-slash-commands"));
   } finally {
     await agyProducer.close();
   }

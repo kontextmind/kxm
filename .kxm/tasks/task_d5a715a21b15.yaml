@@ -1,0 +1,11 @@
+schema: kxm.task.v1
+id: task_d5a715a21b15
+title: Admit Additional Native Providers (agy/kimi) and Formalize Producer Abstraction
+objective: Formalize producer lifecycle interfaces across Pi RPC, one-shot CLIs,
+  and ACP; audit permission profiles and sandboxing for agy and kimi native
+  harness execution.
+acceptanceCriteria: []
+status: todo
+assignedWorkflow: default
+createdAt: 2026-09-11T09:24:40.827Z
+updatedAt: 2026-09-11T09:24:40.827Z

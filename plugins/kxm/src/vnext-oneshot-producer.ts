@@ -195,6 +195,24 @@ export function createVnextOneShotProducer(options: VnextOneShotProducerOptions 
         args = ["--model", resolved.model,
           ...(resolved.thinking ? ["--reasoning-effort", resolved.thinking] : []),
           ...permissionArgs, "--output-format", "json"];
+      } else if (harness === "agy") {
+        args = [
+          "-m",
+          resolved.model,
+          ...permissionArgs,
+          "--output-format",
+          "json",
+          "-p",
+        ];
+      } else if (harness === "kimi") {
+        args = [
+          "-m",
+          resolved.model,
+          ...permissionArgs,
+          "--output-format",
+          "stream-json",
+          "-p",
+        ];
       } else {
         throw new Error(`oneshot_harness_unsupported: ${harness} permission_profile_unaudited`);
       }

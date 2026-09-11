@@ -1,0 +1,11 @@
+schema: kxm.task.v1
+id: task_0706897478c7
+title: Implement Multiplexed SSH Remote Execution and Infrastructure Orchestration
+objective: Extend execution to remote machines via OpenSSH ControlMaster
+  multiplexing, ssh_run tool, and host key pinning with in-memory credential
+  masking.
+acceptanceCriteria: []
+status: todo
+assignedWorkflow: default
+createdAt: 2026-09-11T09:24:45.808Z
+updatedAt: 2026-09-11T09:24:45.808Z
