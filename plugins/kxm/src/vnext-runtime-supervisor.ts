@@ -459,49 +459,6 @@ async function startVnextRuntimeSupervisorInner(
             return;
           }
 
-          if (request.method === "POST" && sub === "dispatch") {
-            // Runtime-owned dispatch endpoint that uses project roster to resolve admitted producers
-            const body = await readJsonBody(request);
-            const run = context.eventStore.run(runId);
-            if (!run) throw runtimeError("run_unknown", runId, "run not found");
-
-            if (run.status === "created") {
-              pinVnextCompiledPlan(context, bundle, runId);
-              const plan = startVnextRun(context, runId, { allowLimits: true });
-              if (plan.handoff) {
-                sendJson(response, 409, { ok: false, error: "run_handoff_required", handoff: plan.handoff });
-                return;
-              }
-            }
-
-            // Create a producer that uses the project roster to resolve admitted producers
-            const producer = createVnextOneShotProducer({
-              projectRoot,
-              defaultHarness: String(bundle.project.value.defaultHarness ?? "pi"),
-              resolveHarness: (agentId) => {
-                const agent = bundle.agents.get(agentId);
-                return typeof agent?.value.harness === "string" ? agent.value.harness : undefined;
-              },
-              resolveModel: (agentId) => {
-                const agent = bundle.agents.get(agentId);
-                const model = agent?.value.model;
-                if (!model || typeof model !== "object" || Array.isArray(model)) return undefined;
-                const value = model as Record<string, unknown>;
-                const provider = typeof value.provider === "string" ? value.provider : undefined;
-                const modelName = typeof value.model === "string" ? value.model : undefined;
-                if (!provider || !modelName || !isProducerAdmitted(projectRoot, `${provider}/${modelName}`)) return undefined;
-                return { provider, model: modelName };
-              },
-            });
-
-            try {
-              const result = await driveVnextRun(context, runId, producer, { allowLimits: true });
-              sendJson(response, 200, { ok: true, run: result.state, handoff: result.handoff });
-            } finally {
-              if ("close" in producer && typeof producer.close === "function") await producer.close();
-            }
-            return;
-          }
           if (request.method === "GET" && sub === "events") {
             const after = Number.parseInt(url.searchParams.get("after") ?? "0", 10);
             const events = context.eventStore.events(runId, Number.isFinite(after) && after >= 0 ? after : 0, 500);
