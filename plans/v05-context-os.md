@@ -1,5 +1,11 @@
 # KXM v0.5 — Context Operating System
 
+> **Status: Superseded design record (2026-09-10).** The context operating
+> system was split across the current vNext phases. Do not schedule work from
+> this document: use [`implementation-plan.md`](implementation-plan.md), whose
+> Tracking and phase gates are authoritative. Items not landed there must be
+> explicitly listed as Still open before implementation.
+
 ## Goal
 
 Extend KXM from a durable multi-agent communication and workflow plane into a context operating system for long-running coding agents without replacing the existing hub, workflow journal, provenance, gate, and session-isolation foundations.
@@ -348,6 +354,11 @@ Do not log raw private context bodies by default.
 
 ## Migration strategy
 
+This migration sequence is retained for historical context only. The active
+sequence is the phase order and gates in `implementation-plan.md`; in
+particular, no compatibility or bulk-migration lane may be inferred from this
+older v0.5 proposal.
+
 1. Add schemas/interfaces without changing existing mesh/workflow behavior.
 2. Expose journal-backed `kxm context recall` and `kxm context episode`.
 3. Add native temporal state storage and `kxm context state`.
@@ -359,6 +370,10 @@ Do not log raw private context bodies by default.
 9. Evaluate optional Graphiti/Hindsight adapters behind feature flags.
 
 ## Acceptance criteria
+
+These criteria describe the original v0.5 proposal, not an acceptance gate for
+current work. A criterion is complete only when the corresponding current phase
+in `implementation-plan.md` says so and its tests provide the witness.
 
 - Existing 0.4 workflows continue to run unchanged.
 - Context tools enforce project/workflow isolation.

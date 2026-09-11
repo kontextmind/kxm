@@ -1,0 +1,5 @@
+schema: kxm.role.v1
+id: writer
+roster:
+  - model: openrouter/qwen/qwen3-coder-plus
+    enabled: true

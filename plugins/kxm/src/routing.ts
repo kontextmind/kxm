@@ -772,7 +772,8 @@ export function generateRoutingReport(
             tokensIn: r.tokensIn ?? null,
             tokensOut: r.tokensOut ?? null,
             cacheReadTokens: r.cacheReadTokens ?? null,
-            contextTokens: (v2?.contextTokens ?? r.tokensIn) ?? null,
+            cacheWriteTokens: v2?.cacheWriteTokens ?? null,
+            contextTokens: v2?.contextTokens ?? null,
           });
           if (calc) {
             equivTotal += calc.costUsd;

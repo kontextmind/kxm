@@ -83,10 +83,10 @@ var require_code = __commonJS({
       }
       get names() {
         var _a;
-        return (_a = this._names) !== null && _a !== void 0 ? _a : this._names = this._items.reduce((names2, c) => {
+        return (_a = this._names) !== null && _a !== void 0 ? _a : this._names = this._items.reduce((names3, c) => {
           if (c instanceof Name)
-            names2[c.str] = (names2[c.str] || 0) + 1;
-          return names2;
+            names3[c.str] = (names3[c.str] || 0) + 1;
+          return names3;
         }, {});
       }
     };
@@ -163,10 +163,10 @@ var require_code = __commonJS({
     function interpolate(x) {
       return typeof x == "number" || typeof x == "boolean" || x === null ? x : safeStringify(Array.isArray(x) ? x.join(",") : x);
     }
-    function stringify2(x) {
+    function stringify3(x) {
       return new _Code(safeStringify(x));
     }
-    exports.stringify = stringify2;
+    exports.stringify = stringify3;
     function safeStringify(x) {
       return JSON.stringify(x).replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
     }
@@ -412,11 +412,11 @@ var require_codegen = __commonJS({
         const rhs = this.rhs === void 0 ? "" : ` = ${this.rhs}`;
         return `${varKind} ${this.name}${rhs};` + _n;
       }
-      optimizeNames(names2, constants) {
-        if (!names2[this.name.str])
+      optimizeNames(names3, constants) {
+        if (!names3[this.name.str])
           return;
         if (this.rhs)
-          this.rhs = optimizeExpr(this.rhs, names2, constants);
+          this.rhs = optimizeExpr(this.rhs, names3, constants);
         return this;
       }
       get names() {
@@ -433,15 +433,15 @@ var require_codegen = __commonJS({
       render({ _n }) {
         return `${this.lhs} = ${this.rhs};` + _n;
       }
-      optimizeNames(names2, constants) {
-        if (this.lhs instanceof code_1.Name && !names2[this.lhs.str] && !this.sideEffects)
+      optimizeNames(names3, constants) {
+        if (this.lhs instanceof code_1.Name && !names3[this.lhs.str] && !this.sideEffects)
           return;
-        this.rhs = optimizeExpr(this.rhs, names2, constants);
+        this.rhs = optimizeExpr(this.rhs, names3, constants);
         return this;
       }
       get names() {
-        const names2 = this.lhs instanceof code_1.Name ? {} : { ...this.lhs.names };
-        return addExprNames(names2, this.rhs);
+        const names3 = this.lhs instanceof code_1.Name ? {} : { ...this.lhs.names };
+        return addExprNames(names3, this.rhs);
       }
     };
     var AssignOp = class extends Assign {
@@ -497,8 +497,8 @@ var require_codegen = __commonJS({
       optimizeNodes() {
         return `${this.code}` ? this : void 0;
       }
-      optimizeNames(names2, constants) {
-        this.code = optimizeExpr(this.code, names2, constants);
+      optimizeNames(names3, constants) {
+        this.code = optimizeExpr(this.code, names3, constants);
         return this;
       }
       get names() {
@@ -527,20 +527,20 @@ var require_codegen = __commonJS({
         }
         return nodes.length > 0 ? this : void 0;
       }
-      optimizeNames(names2, constants) {
+      optimizeNames(names3, constants) {
         const { nodes } = this;
         let i = nodes.length;
         while (i--) {
           const n = nodes[i];
-          if (n.optimizeNames(names2, constants))
+          if (n.optimizeNames(names3, constants))
             continue;
-          subtractNames(names2, n.names);
+          subtractNames(names3, n.names);
           nodes.splice(i, 1);
         }
         return nodes.length > 0 ? this : void 0;
       }
       get names() {
-        return this.nodes.reduce((names2, n) => addNames(names2, n.names), {});
+        return this.nodes.reduce((names3, n) => addNames(names3, n.names), {});
       }
     };
     var BlockNode = class extends ParentNode {
@@ -585,20 +585,20 @@ var require_codegen = __commonJS({
           return void 0;
         return this;
       }
-      optimizeNames(names2, constants) {
+      optimizeNames(names3, constants) {
         var _a;
-        this.else = (_a = this.else) === null || _a === void 0 ? void 0 : _a.optimizeNames(names2, constants);
-        if (!(super.optimizeNames(names2, constants) || this.else))
+        this.else = (_a = this.else) === null || _a === void 0 ? void 0 : _a.optimizeNames(names3, constants);
+        if (!(super.optimizeNames(names3, constants) || this.else))
           return;
-        this.condition = optimizeExpr(this.condition, names2, constants);
+        this.condition = optimizeExpr(this.condition, names3, constants);
         return this;
       }
       get names() {
-        const names2 = super.names;
-        addExprNames(names2, this.condition);
+        const names3 = super.names;
+        addExprNames(names3, this.condition);
         if (this.else)
-          addNames(names2, this.else.names);
-        return names2;
+          addNames(names3, this.else.names);
+        return names3;
       }
     };
     If.kind = "if";
@@ -613,10 +613,10 @@ var require_codegen = __commonJS({
       render(opts) {
         return `for(${this.iteration})` + super.render(opts);
       }
-      optimizeNames(names2, constants) {
-        if (!super.optimizeNames(names2, constants))
+      optimizeNames(names3, constants) {
+        if (!super.optimizeNames(names3, constants))
           return;
-        this.iteration = optimizeExpr(this.iteration, names2, constants);
+        this.iteration = optimizeExpr(this.iteration, names3, constants);
         return this;
       }
       get names() {
@@ -637,8 +637,8 @@ var require_codegen = __commonJS({
         return `for(${varKind} ${name}=${from}; ${name}<${to}; ${name}++)` + super.render(opts);
       }
       get names() {
-        const names2 = addExprNames(super.names, this.from);
-        return addExprNames(names2, this.to);
+        const names3 = addExprNames(super.names, this.from);
+        return addExprNames(names3, this.to);
       }
     };
     var ForIter = class extends For {
@@ -652,10 +652,10 @@ var require_codegen = __commonJS({
       render(opts) {
         return `for(${this.varKind} ${this.name} ${this.loop} ${this.iterable})` + super.render(opts);
       }
-      optimizeNames(names2, constants) {
-        if (!super.optimizeNames(names2, constants))
+      optimizeNames(names3, constants) {
+        if (!super.optimizeNames(names3, constants))
           return;
-        this.iterable = optimizeExpr(this.iterable, names2, constants);
+        this.iterable = optimizeExpr(this.iterable, names3, constants);
         return this;
       }
       get names() {
@@ -697,20 +697,20 @@ var require_codegen = __commonJS({
         (_b = this.finally) === null || _b === void 0 ? void 0 : _b.optimizeNodes();
         return this;
       }
-      optimizeNames(names2, constants) {
+      optimizeNames(names3, constants) {
         var _a, _b;
-        super.optimizeNames(names2, constants);
-        (_a = this.catch) === null || _a === void 0 ? void 0 : _a.optimizeNames(names2, constants);
-        (_b = this.finally) === null || _b === void 0 ? void 0 : _b.optimizeNames(names2, constants);
+        super.optimizeNames(names3, constants);
+        (_a = this.catch) === null || _a === void 0 ? void 0 : _a.optimizeNames(names3, constants);
+        (_b = this.finally) === null || _b === void 0 ? void 0 : _b.optimizeNames(names3, constants);
         return this;
       }
       get names() {
-        const names2 = super.names;
+        const names3 = super.names;
         if (this.catch)
-          addNames(names2, this.catch.names);
+          addNames(names3, this.catch.names);
         if (this.finally)
-          addNames(names2, this.finally.names);
-        return names2;
+          addNames(names3, this.finally.names);
+        return names3;
       }
     };
     var Catch = class extends BlockNode {
@@ -994,15 +994,15 @@ var require_codegen = __commonJS({
       }
     };
     exports.CodeGen = CodeGen;
-    function addNames(names2, from) {
+    function addNames(names3, from) {
       for (const n in from)
-        names2[n] = (names2[n] || 0) + (from[n] || 0);
-      return names2;
+        names3[n] = (names3[n] || 0) + (from[n] || 0);
+      return names3;
     }
-    function addExprNames(names2, from) {
-      return from instanceof code_1._CodeOrName ? addNames(names2, from.names) : names2;
+    function addExprNames(names3, from) {
+      return from instanceof code_1._CodeOrName ? addNames(names3, from.names) : names3;
     }
-    function optimizeExpr(expr, names2, constants) {
+    function optimizeExpr(expr, names3, constants) {
       if (expr instanceof code_1.Name)
         return replaceName(expr);
       if (!canOptimize(expr))
@@ -1018,18 +1018,18 @@ var require_codegen = __commonJS({
       }, []));
       function replaceName(n) {
         const c = constants[n.str];
-        if (c === void 0 || names2[n.str] !== 1)
+        if (c === void 0 || names3[n.str] !== 1)
           return n;
-        delete names2[n.str];
+        delete names3[n.str];
         return c;
       }
       function canOptimize(e) {
-        return e instanceof code_1._Code && e._items.some((c) => c instanceof code_1.Name && names2[c.str] === 1 && constants[c.str] !== void 0);
+        return e instanceof code_1._Code && e._items.some((c) => c instanceof code_1.Name && names3[c.str] === 1 && constants[c.str] !== void 0);
       }
     }
-    function subtractNames(names2, from) {
+    function subtractNames(names3, from) {
       for (const n in from)
-        names2[n] = (names2[n] || 0) - (from[n] || 0);
+        names3[n] = (names3[n] || 0) - (from[n] || 0);
     }
     function not(x) {
       return typeof x == "boolean" || typeof x == "number" || x === null ? !x : (0, code_1._)`!${par(x)}`;
@@ -1227,7 +1227,7 @@ var require_names = __commonJS({
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen();
-    var names2 = {
+    var names3 = {
       // validation function arguments
       data: new codegen_1.Name("data"),
       // data passed to validation function
@@ -1256,7 +1256,7 @@ var require_names = __commonJS({
       jsonLen: new codegen_1.Name("jsonLen"),
       jsonPart: new codegen_1.Name("jsonPart")
     };
-    exports.default = names2;
+    exports.default = names3;
   }
 });
 
@@ -2986,7 +2986,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve7.call(this, root, ref);
+      let _sch = resolve8.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a = root.localRefs) === null || _a === void 0 ? void 0 : _a[ref];
         const { schemaId } = this.opts;
@@ -3013,7 +3013,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve7(root, ref) {
+    function resolve8(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3834,11 +3834,11 @@ var require_fast_uri = __commonJS({
         normalizeString(uri, options);
       } else if (typeof uri === "object") {
         uri = /** @type {T} */
-        parse3(serialize(uri, options), options);
+        parse4(serialize(uri, options), options);
       }
       return uri;
     }
-    function resolve7(baseURI, relativeURI, options) {
+    function resolve8(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const {
         parsed: baseParsed,
@@ -3871,49 +3871,49 @@ var require_fast_uri = __commonJS({
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
-    function resolveComponent(base, relative4, options, skipNormalization) {
+    function resolveComponent(base, relative5, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
-        base = parse3(serialize(base, options), options);
-        relative4 = parse3(serialize(relative4, options), options);
+        base = parse4(serialize(base, options), options);
+        relative5 = parse4(serialize(relative5, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative4.scheme) {
-        target.scheme = relative4.scheme;
-        target.userinfo = relative4.userinfo;
-        target.host = relative4.host;
-        target.port = relative4.port;
-        target.path = removeDotSegments(relative4.path || "");
-        target.query = relative4.query;
+      if (!options.tolerant && relative5.scheme) {
+        target.scheme = relative5.scheme;
+        target.userinfo = relative5.userinfo;
+        target.host = relative5.host;
+        target.port = relative5.port;
+        target.path = removeDotSegments(relative5.path || "");
+        target.query = relative5.query;
       } else {
-        if (relative4.userinfo !== void 0 || relative4.host !== void 0 || relative4.port !== void 0) {
-          target.userinfo = relative4.userinfo;
-          target.host = relative4.host;
-          target.port = relative4.port;
-          target.path = removeDotSegments(relative4.path || "");
-          target.query = relative4.query;
+        if (relative5.userinfo !== void 0 || relative5.host !== void 0 || relative5.port !== void 0) {
+          target.userinfo = relative5.userinfo;
+          target.host = relative5.host;
+          target.port = relative5.port;
+          target.path = removeDotSegments(relative5.path || "");
+          target.query = relative5.query;
         } else {
-          if (!relative4.path) {
+          if (!relative5.path) {
             target.path = base.path;
-            if (relative4.query !== void 0) {
-              target.query = relative4.query;
+            if (relative5.query !== void 0) {
+              target.query = relative5.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative4.path[0] === "/") {
-              target.path = removeDotSegments(relative4.path);
+            if (relative5.path[0] === "/") {
+              target.path = removeDotSegments(relative5.path);
             } else {
               if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) {
-                target.path = "/" + relative4.path;
+                target.path = "/" + relative5.path;
               } else if (!base.path) {
-                target.path = relative4.path;
+                target.path = relative5.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative4.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative5.path;
               }
               target.path = removeDotSegments(target.path);
             }
-            target.query = relative4.query;
+            target.query = relative5.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -3921,7 +3921,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative4.fragment;
+      target.fragment = relative5.fragment;
       return target;
     }
     function equal(uriA, uriB, options) {
@@ -4167,7 +4167,7 @@ var require_fast_uri = __commonJS({
       }
       return { parsed, malformedAuthorityOrPort, malformedPercentEncoding, malformedSchemeSpecific, malformedHost, malformedScheme };
     }
-    function parse3(uri, opts) {
+    function parse4(uri, opts) {
       return parseWithStatus(uri, opts).parsed;
     }
     function normalizeString(uri, opts) {
@@ -4200,11 +4200,11 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve: resolve7,
+      resolve: resolve8,
       resolveComponent,
       equal,
       serialize,
-      parse: parse3
+      parse: parse4
     };
     module.exports = fastUri;
     module.exports.default = fastUri;
@@ -8915,7 +8915,7 @@ var require_stringify = __commonJS({
         props.push(doc.directives.tagString(tag));
       return props.join(" ");
     }
-    function stringify2(item, ctx, onComment, onChompKeep) {
+    function stringify3(item, ctx, onComment, onChompKeep) {
       if (identity.isPair(item))
         return item.toString(ctx, onComment, onChompKeep);
       if (identity.isAlias(item)) {
@@ -8944,7 +8944,7 @@ var require_stringify = __commonJS({
 ${ctx.indent}${str}`;
     }
     exports.createStringifyContext = createStringifyContext;
-    exports.stringify = stringify2;
+    exports.stringify = stringify3;
   }
 });
 
@@ -8954,7 +8954,7 @@ var require_stringifyPair = __commonJS({
     "use strict";
     var identity = require_identity();
     var Scalar = require_Scalar();
-    var stringify2 = require_stringify();
+    var stringify3 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyPair({ key, value }, ctx, onComment, onChompKeep) {
       const { allNullValues, doc, indent, indentStep, options: { commentString, indentSeq, simpleKeys } } = ctx;
@@ -8976,7 +8976,7 @@ var require_stringifyPair = __commonJS({
       });
       let keyCommentDone = false;
       let chompKeep = false;
-      let str = stringify2.stringify(key, ctx, () => keyCommentDone = true, () => chompKeep = true);
+      let str = stringify3.stringify(key, ctx, () => keyCommentDone = true, () => chompKeep = true);
       if (!explicitKey && !ctx.inFlow && str.length > 1024) {
         if (simpleKeys)
           throw new Error("With simple keys, single line scalar must not span more than 1024 characters");
@@ -9028,7 +9028,7 @@ ${indent}:`;
         ctx.indent = ctx.indent.substring(2);
       }
       let valueCommentDone = false;
-      const valueStr = stringify2.stringify(value, ctx, () => valueCommentDone = true, () => chompKeep = true);
+      const valueStr = stringify3.stringify(value, ctx, () => valueCommentDone = true, () => chompKeep = true);
       let ws = " ";
       if (keyComment || vsb || vcb) {
         ws = vsb ? "\n" : "";
@@ -9169,7 +9169,7 @@ var require_addPairToJSMap = __commonJS({
     "use strict";
     var log = require_log();
     var merge = require_merge();
-    var stringify2 = require_stringify();
+    var stringify3 = require_stringify();
     var identity = require_identity();
     var toJS = require_toJS();
     function addPairToJSMap(ctx, map, { key, value }) {
@@ -9205,7 +9205,7 @@ var require_addPairToJSMap = __commonJS({
       if (typeof jsKey !== "object")
         return String(jsKey);
       if (identity.isNode(key) && ctx?.doc) {
-        const strCtx = stringify2.createStringifyContext(ctx.doc, {});
+        const strCtx = stringify3.createStringifyContext(ctx.doc, {});
         strCtx.anchors = /* @__PURE__ */ new Set();
         for (const node of ctx.anchors.keys())
           strCtx.anchors.add(node.anchor);
@@ -9272,12 +9272,12 @@ var require_stringifyCollection = __commonJS({
   "node_modules/yaml/dist/stringify/stringifyCollection.js"(exports) {
     "use strict";
     var identity = require_identity();
-    var stringify2 = require_stringify();
+    var stringify3 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyCollection(collection, ctx, options) {
       const flow = ctx.inFlow ?? collection.flow;
-      const stringify3 = flow ? stringifyFlowCollection : stringifyBlockCollection;
-      return stringify3(collection, ctx, options);
+      const stringify4 = flow ? stringifyFlowCollection : stringifyBlockCollection;
+      return stringify4(collection, ctx, options);
     }
     function stringifyBlockCollection({ comment, items }, ctx, { blockItemPrefix, flowChars, itemIndent, onChompKeep, onComment }) {
       const { indent, options: { commentString } } = ctx;
@@ -9302,7 +9302,7 @@ var require_stringifyCollection = __commonJS({
           }
         }
         chompKeep = false;
-        let str2 = stringify2.stringify(item, itemCtx, () => comment2 = null, () => chompKeep = true);
+        let str2 = stringify3.stringify(item, itemCtx, () => comment2 = null, () => chompKeep = true);
         if (comment2)
           str2 += stringifyComment.lineComment(str2, itemIndent, commentString(comment2));
         if (chompKeep && comment2)
@@ -9369,7 +9369,7 @@ ${indent}${line}` : "\n";
         }
         if (comment)
           reqNewline = true;
-        let str = stringify2.stringify(item, itemCtx, () => comment = null);
+        let str = stringify3.stringify(item, itemCtx, () => comment = null);
         reqNewline || (reqNewline = lines.length > linesAtValue || str.includes("\n"));
         if (i < items.length - 1) {
           str += ",";
@@ -10730,7 +10730,7 @@ var require_stringifyDocument = __commonJS({
   "node_modules/yaml/dist/stringify/stringifyDocument.js"(exports) {
     "use strict";
     var identity = require_identity();
-    var stringify2 = require_stringify();
+    var stringify3 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyDocument(doc, options) {
       const lines = [];
@@ -10745,7 +10745,7 @@ var require_stringifyDocument = __commonJS({
       }
       if (hasDirectives)
         lines.push("---");
-      const ctx = stringify2.createStringifyContext(doc, options);
+      const ctx = stringify3.createStringifyContext(doc, options);
       const { commentString } = ctx.options;
       if (doc.commentBefore) {
         if (lines.length !== 1)
@@ -10767,7 +10767,7 @@ var require_stringifyDocument = __commonJS({
           contentComment = doc.contents.comment;
         }
         const onChompKeep = contentComment ? void 0 : () => chompKeep = true;
-        let body = stringify2.stringify(doc.contents, ctx, () => contentComment = null, onChompKeep);
+        let body = stringify3.stringify(doc.contents, ctx, () => contentComment = null, onChompKeep);
         if (contentComment)
           body += stringifyComment.lineComment(body, "", commentString(contentComment));
         if ((body[0] === "|" || body[0] === ">") && lines[lines.length - 1] === "---") {
@@ -10775,7 +10775,7 @@ var require_stringifyDocument = __commonJS({
         } else
           lines.push(body);
       } else {
-        lines.push(stringify2.stringify(doc.contents, ctx));
+        lines.push(stringify3.stringify(doc.contents, ctx));
       }
       if (doc.directives?.docEnd) {
         if (doc.comment) {
@@ -12910,7 +12910,7 @@ var require_cst_scalar = __commonJS({
 var require_cst_stringify = __commonJS({
   "node_modules/yaml/dist/parse/cst-stringify.js"(exports) {
     "use strict";
-    var stringify2 = (cst) => "type" in cst ? stringifyToken(cst) : stringifyItem(cst);
+    var stringify3 = (cst) => "type" in cst ? stringifyToken(cst) : stringifyItem(cst);
     function stringifyToken(token) {
       switch (token.type) {
         case "block-scalar": {
@@ -12963,7 +12963,7 @@ var require_cst_stringify = __commonJS({
         res += stringifyToken(value);
       return res;
     }
-    exports.stringify = stringify2;
+    exports.stringify = stringify3;
   }
 });
 
@@ -14674,7 +14674,7 @@ var require_public_api = __commonJS({
       }
       return doc;
     }
-    function parse3(src, reviver, options) {
+    function parse4(src, reviver, options) {
       let _reviver = void 0;
       if (typeof reviver === "function") {
         _reviver = reviver;
@@ -14693,7 +14693,7 @@ var require_public_api = __commonJS({
       }
       return doc.toJS(Object.assign({ reviver: _reviver }, options));
     }
-    function stringify2(value, replacer, options) {
+    function stringify3(value, replacer, options) {
       let _replacer = null;
       if (typeof replacer === "function" || Array.isArray(replacer)) {
         _replacer = replacer;
@@ -14715,10 +14715,10 @@ var require_public_api = __commonJS({
         return value.toString(options);
       return new Document.Document(value, _replacer, options).toString(options);
     }
-    exports.parse = parse3;
+    exports.parse = parse4;
     exports.parseAllDocuments = parseAllDocuments;
     exports.parseDocument = parseDocument2;
-    exports.stringify = stringify2;
+    exports.stringify = stringify3;
   }
 });
 
@@ -15115,10 +15115,144 @@ function resolveVnextTemplateBaseline(value) {
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { win32 as win32Path } from "node:path";
+
+// plugins/kxm/src/vnext-oneshot-process.ts
+import { spawn } from "node:child_process";
+var OUTPUT_LIMIT = 8 * 1024 * 1024;
+var KILL_GRACE_MS = 250;
+var DRAIN_GRACE_MS = 500;
+var REAP_GRACE_MS = 1e3;
+function defaultSpawn(command, args, options) {
+  if (options.signal?.aborted) {
+    return Promise.resolve({ stdout: "", stderr: "", code: null, started: false, observedChildExit: false, error: new Error("process_aborted") });
+  }
+  return new Promise((resolve8) => {
+    const stdout = [];
+    const stderr = [];
+    let outputBytes = 0;
+    let outputChunks = 0;
+    let code = null;
+    let signal = null;
+    let observedChildExit = false;
+    let finished = false;
+    let stopping = false;
+    let closed = false;
+    let killSent = false;
+    let error;
+    let wallTimer;
+    let killTimer;
+    let drainTimer;
+    let reapTimer;
+    let child;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      for (const timer of [wallTimer, killTimer, drainTimer, reapTimer]) clearTimeout(timer);
+      options.signal?.removeEventListener("abort", onAbort);
+      child?.stdin?.destroy();
+      child?.stdout?.destroy();
+      child?.stderr?.destroy();
+      child?.unref();
+      const started = Boolean(child?.pid);
+      if (started && !observedChildExit) error ??= new Error("process_exit_unobserved");
+      resolve8({ stdout: Buffer.concat(stdout).toString("utf8"), stderr: Buffer.concat(stderr).toString("utf8"), code, signal, started, observedChildExit, terminationRequested: stopping, ...error ? { error } : {} });
+    };
+    const kill = (requested) => {
+      try {
+        if (process.platform !== "win32" && child.pid) process.kill(-child.pid, requested);
+        else child.kill(requested);
+      } catch {
+      }
+    };
+    const stop = (reason) => {
+      if (finished) return;
+      error ??= new Error(reason);
+      if (stopping) return;
+      stopping = true;
+      clearTimeout(wallTimer);
+      kill("SIGTERM");
+      killTimer = setTimeout(() => {
+        kill("SIGKILL");
+        killSent = true;
+        if (closed) {
+          finish();
+          return;
+        }
+        reapTimer = setTimeout(() => {
+          if (!observedChildExit) error ??= new Error("process_exit_unobserved");
+          finish();
+        }, REAP_GRACE_MS);
+      }, KILL_GRACE_MS);
+    };
+    const onAbort = () => stop("process_aborted");
+    try {
+      child = spawn(command, [...args], {
+        cwd: options.cwd,
+        env: options.env ?? process.env,
+        stdio: ["pipe", "pipe", "pipe"],
+        shell: false,
+        windowsHide: true,
+        detached: process.platform !== "win32"
+      });
+    } catch (cause) {
+      error = cause instanceof Error ? cause : new Error("process_spawn_failed");
+      finish();
+      return;
+    }
+    const collect = (target, chunk) => {
+      if (finished) return;
+      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      const remaining = Math.max(0, OUTPUT_LIMIT - outputBytes);
+      if (remaining && outputChunks < 16384) {
+        const kept = bytes.subarray(0, remaining);
+        target.push(kept);
+        outputBytes += kept.length;
+        outputChunks++;
+      }
+      if (bytes.length > remaining || outputChunks >= 16384) stop("process_output_limit");
+    };
+    child.stdout.on("data", (chunk) => collect(stdout, chunk));
+    child.stderr.on("data", (chunk) => collect(stderr, chunk));
+    child.stdin.on("error", () => stop("process_stdin_error"));
+    child.stdout.on("error", () => stop("process_stdio_error"));
+    child.stderr.on("error", () => stop("process_stdio_error"));
+    child.on("error", (cause) => {
+      error ??= cause;
+      if (!child.pid) finish();
+      else stop("process_error");
+    });
+    child.on("exit", (exitCode, exitSignal) => {
+      if (finished) return;
+      observedChildExit = true;
+      code = exitCode;
+      signal = exitSignal;
+      clearTimeout(wallTimer);
+      drainTimer = setTimeout(() => stop("process_stdio_unclosed"), DRAIN_GRACE_MS);
+    });
+    child.on("close", (exitCode, exitSignal) => {
+      if (finished) return;
+      closed = true;
+      code = exitCode;
+      signal = exitSignal;
+      if (!stopping || killSent) finish();
+    });
+    options.signal?.addEventListener("abort", onAbort, { once: true });
+    if (options.signal?.aborted) onAbort();
+    const timeoutMs = options.timeoutMs ?? 12e4;
+    if (!stopping) wallTimer = setTimeout(() => stop("process_timeout"), timeoutMs > 0 && Number.isFinite(timeoutMs) ? timeoutMs : 12e4);
+    try {
+      child.stdin.end(options.input);
+    } catch {
+      stop("process_stdin_error");
+    }
+  });
+}
+
+// plugins/kxm/src/vnext-harness.ts
 var DEFAULT_HARNESS = "pi";
-var UNKNOWN_AUTH_HARNESSES = /* @__PURE__ */ new Set(["gemini", "deepseek"]);
+var UNKNOWN_AUTH_HARNESSES = /* @__PURE__ */ new Set(["deepseek"]);
 var GROK_LOGIN_LINE = "You are logged in with grok.com.";
-var AGY_MODEL_ROW = /^[a-z0-9][a-z0-9.+_-]*\t+\S/im;
+var AGY_MODEL_ROW = /^[a-z0-9]+(?:[._-][a-z0-9]+)+\s+\S/im;
 var CODEX_CHATGPT_LINE = "Logged in using ChatGPT";
 var CODEX_API_KEY_PREFIX = "Logged in using an API key";
 var CODEX_NEGATIVE_LINE = "Not logged in";
@@ -15127,7 +15261,6 @@ var NATIVE_HARNESS_PROVIDERS = Object.freeze({
   codex: "openai",
   grok: "xai",
   agy: "google",
-  gemini: "google",
   kimi: "moonshot",
   deepseek: "deepseek"
 });
@@ -15145,7 +15278,10 @@ var PI_NATIVE_BRAKE_PROVIDERS = Object.freeze([
   "google",
   "deepseek"
 ]);
-function parseClaudeOneShotUsage(stdout, stderr) {
+function reportedModelId(value) {
+  return typeof value === "string" && /^[a-z0-9][a-z0-9._:/-]{0,199}$/i.test(value) ? value : void 0;
+}
+function parseClaudeOneShotUsage(stdout, stderr, requestedModel) {
   const trimmed = stdout.trim();
   if (!trimmed) {
     return {
@@ -15157,23 +15293,22 @@ function parseClaudeOneShotUsage(stdout, stderr) {
   try {
     const payload = JSON.parse(trimmed);
     const usage = payload.usage ?? {};
-    let modelUsageDetail;
-    if (payload.modelUsage && typeof payload.modelUsage === "object") {
-      const values = Object.values(payload.modelUsage);
-      if (values.length > 0 && values[0] && typeof values[0] === "object") {
-        modelUsageDetail = values[0];
-      }
-    }
-    const tokensIn = (typeof modelUsageDetail?.inputTokens === "number" ? modelUsageDetail.inputTokens : void 0) ?? (typeof usage.input_tokens === "number" ? usage.input_tokens : null);
-    const tokensOut = (typeof modelUsageDetail?.outputTokens === "number" ? modelUsageDetail.outputTokens : void 0) ?? (typeof usage.output_tokens === "number" ? usage.output_tokens : null);
-    const cacheReadTokens = (typeof modelUsageDetail?.cacheReadInputTokens === "number" ? modelUsageDetail.cacheReadInputTokens : void 0) ?? (typeof usage.cache_read_input_tokens === "number" ? usage.cache_read_input_tokens : null);
-    const cacheWriteTokens = (typeof modelUsageDetail?.cacheCreationInputTokens === "number" ? modelUsageDetail.cacheCreationInputTokens : void 0) ?? (typeof usage.cache_creation_input_tokens === "number" ? usage.cache_creation_input_tokens : null);
+    const entries = payload.modelUsage && typeof payload.modelUsage === "object" && !Array.isArray(payload.modelUsage) ? Object.entries(payload.modelUsage).filter(([, value]) => value && typeof value === "object") : [];
+    const matches = entries.filter(([model]) => model === requestedModel || requestedModel && (model.startsWith(`${requestedModel}-`) || model.startsWith(`claude-${requestedModel}-`)));
+    const selected = matches.length === 1 ? matches[0] : entries.length === 1 ? entries[0] : void 0;
+    const modelUsageDetail = selected?.[1];
+    const effectiveModel = reportedModelId(payload.model) ?? reportedModelId(selected?.[0]);
+    const tokensIn = (typeof usage.input_tokens === "number" ? usage.input_tokens : void 0) ?? (typeof modelUsageDetail?.inputTokens === "number" ? modelUsageDetail.inputTokens : null);
+    const tokensOut = (typeof usage.output_tokens === "number" ? usage.output_tokens : void 0) ?? (typeof modelUsageDetail?.outputTokens === "number" ? modelUsageDetail.outputTokens : null);
+    const cacheReadTokens = (typeof usage.cache_read_input_tokens === "number" ? usage.cache_read_input_tokens : void 0) ?? (typeof modelUsageDetail?.cacheReadInputTokens === "number" ? modelUsageDetail.cacheReadInputTokens : null);
+    const cacheWriteTokens = (typeof usage.cache_creation_input_tokens === "number" ? usage.cache_creation_input_tokens : void 0) ?? (typeof modelUsageDetail?.cacheCreationInputTokens === "number" ? modelUsageDetail.cacheCreationInputTokens : null);
     const costUsd = typeof payload.total_cost_usd === "number" ? payload.total_cost_usd : typeof modelUsageDetail?.costUSD === "number" ? modelUsageDetail.costUSD : null;
-    const isError = Boolean(payload.is_error || payload.error);
+    const isError = Boolean(payload.is_error || payload.error || ["error", "aborted", "failed", "max_tokens", "length"].includes(String(payload.stopReason ?? payload.stop_reason ?? "")));
     const text = typeof payload.result === "string" ? payload.result : typeof payload.text === "string" ? payload.text : "";
     const errorMessage = isError ? typeof payload.error === "string" ? payload.error : typeof payload.error?.message === "string" ? payload.error.message : text : void 0;
     return {
       text,
+      effectiveModel,
       isError,
       errorMessage,
       usage: {
@@ -15181,16 +15316,21 @@ function parseClaudeOneShotUsage(stdout, stderr) {
         tokensOut,
         cacheReadTokens,
         cacheWriteTokens,
-        contextTokens: tokensIn,
+        contextTokens: null,
         costUsd
       }
     };
   } catch {
     return {
       text: trimmed,
+      isError: true,
+      errorMessage: "invalid Claude JSON response",
       usage: {}
     };
   }
+}
+function parseGrokOneShotUsage(stdout, stderr, requestedModel) {
+  return parseClaudeOneShotUsage(stdout, stderr, requestedModel);
 }
 function parseCodexOneShotUsage(stdout, stderr) {
   const lines = stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
@@ -15218,7 +15358,7 @@ function parseCodexOneShotUsage(stdout, stderr) {
       hasError = true;
       errorMessage = typeof ev.message === "string" ? ev.message : typeof ev.error?.message === "string" ? ev.error.message : "turn_failed";
     }
-    if (ev.item && typeof ev.item === "object" && ev.item.type === "agent_message") {
+    if (ev.type === "item.completed" && ev.item && typeof ev.item === "object" && ev.item.type === "agent_message") {
       const t = ev.item.text;
       if (typeof t === "string") messageTexts.push(t);
     }
@@ -15226,7 +15366,8 @@ function parseCodexOneShotUsage(stdout, stderr) {
       usage = ev.usage;
     }
   }
-  const text = messageTexts.join("\n").trim();
+  const text = (messageTexts.at(-1) ?? "").trim();
+  if (!events.some((event) => event.type === "turn.completed") || !text) hasError = true;
   const tokensIn = typeof usage?.input_tokens === "number" ? usage.input_tokens : null;
   const tokensOut = typeof usage?.output_tokens === "number" ? usage.output_tokens : null;
   const cacheReadTokens = typeof usage?.cached_input_tokens === "number" ? usage.cached_input_tokens : null;
@@ -15240,7 +15381,7 @@ function parseCodexOneShotUsage(stdout, stderr) {
       tokensOut,
       cacheReadTokens,
       cacheWriteTokens,
-      contextTokens: tokensIn,
+      contextTokens: null,
       costUsd: null
     }
   };
@@ -15252,7 +15393,15 @@ function parseGenericOneShotUsage(stdout, _stderr) {
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       const rec = parsed;
       const text = typeof rec.result === "string" ? rec.result : typeof rec.text === "string" ? rec.text : typeof rec.response === "string" ? rec.response : trimmed;
-      return { text, usage: {} };
+      const u = rec.usage && typeof rec.usage === "object" ? rec.usage : {};
+      return { text, effectiveModel: reportedModelId(rec.model), isError: Boolean(rec.is_error || rec.error || rec.success === false), usage: {
+        tokensIn: typeof u.input_tokens === "number" ? u.input_tokens : null,
+        tokensOut: typeof u.output_tokens === "number" ? u.output_tokens : null,
+        cacheReadTokens: typeof u.cache_read_input_tokens === "number" ? u.cache_read_input_tokens : null,
+        cacheWriteTokens: typeof u.cache_creation_input_tokens === "number" ? u.cache_creation_input_tokens : null,
+        contextTokens: null,
+        costUsd: typeof rec.total_cost_usd === "number" ? rec.total_cost_usd : null
+      } };
     }
   } catch {
   }
@@ -15337,6 +15486,14 @@ function parseAgyOneShotUsage(stdout, _stderr) {
     }
   };
 }
+var READ_ONLY_ONESHOT_ARGS = Object.freeze({
+  claude: Object.freeze(["--tools", "Read,Glob,Grep", "--restricted", "--safe-mode", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--disable-slash-commands", "--no-session-persistence"]),
+  codex: Object.freeze(["--sandbox", "read-only", "--ignore-user-config", "-c", 'approval_policy="never"']),
+  grok: Object.freeze(["--sandbox", "read-only", "--permission-mode", "plan", "--tools", "Read,Glob,Grep", "--no-subagents", "--disable-web-search"])
+});
+function oneShotReadOnlyArgs(harness) {
+  return Object.hasOwn(READ_ONLY_ONESHOT_ARGS, harness) ? READ_ONLY_ONESHOT_ARGS[harness] : void 0;
+}
 var BUILTIN_HARNESSES = Object.freeze([
   {
     id: "pi",
@@ -15370,7 +15527,7 @@ var BUILTIN_HARNESSES = Object.freeze([
       extensions: ["plugin", "update", "kxm", "-y"]
     },
     oneShot: {
-      argv: ["-p", "--output-format", "json"],
+      argv: ["-p", ...oneShotReadOnlyArgs("claude"), "--output-format", "json"],
       promptVia: "stdin",
       outputFormat: "json",
       usageParser: parseClaudeOneShotUsage
@@ -15402,20 +15559,11 @@ var BUILTIN_HARNESSES = Object.freeze([
     authArgs: ["login", "status"],
     update: { self: ["update"] },
     oneShot: {
-      argv: ["exec", "--json", "-"],
+      argv: ["exec", ...oneShotReadOnlyArgs("codex"), "--json", "-"],
       promptVia: "stdin",
       outputFormat: "json",
       usageParser: parseCodexOneShotUsage
     }
-  },
-  {
-    id: "gemini",
-    label: "Gemini CLI",
-    default: false,
-    mode: "either",
-    commands: ["gemini"],
-    versionArgs: ["--version"],
-    update: { self: ["update"] }
   },
   {
     id: "deepseek",
@@ -15442,10 +15590,10 @@ var BUILTIN_HARNESSES = Object.freeze([
     authArgs: ["models"],
     update: { self: ["update"] },
     oneShot: {
-      argv: ["--output-format", "json"],
-      promptVia: "stdin",
+      argv: [...oneShotReadOnlyArgs("grok"), "--output-format", "json", "--single"],
+      promptVia: "arg",
       outputFormat: "json",
-      usageParser: parseClaudeOneShotUsage
+      usageParser: parseGrokOneShotUsage
     }
   },
   {
@@ -15571,7 +15719,11 @@ function interpretAuth(id, result) {
   if (id === "claude") {
     const payload = parseJsonObject(result.stdout);
     if (payload && payload.loggedIn === false) return { authenticated: false, issues: ["not_authenticated"] };
-    if (commandSucceeded(result) && payload && payload.loggedIn === true) return { authenticated: true, issues: [] };
+    if (commandSucceeded(result) && payload && payload.loggedIn === true) return {
+      authenticated: true,
+      issues: [],
+      ...payload.authMethod === "claude.ai" || payload.authMethod === "api-key" ? { authMethod: payload.authMethod } : {}
+    };
     return { authenticated: null, issues: ["auth_unparsed"] };
   }
   if (id === "codex") {
@@ -15579,10 +15731,10 @@ function interpretAuth(id, result) {
       return { authenticated: false, issues: ["not_authenticated"] };
     }
     if (commandSucceeded(result) && lines.some((line) => line === CODEX_CHATGPT_LINE)) {
-      return { authenticated: true, issues: [] };
+      return { authenticated: true, authMethod: "ChatGPT", issues: [] };
     }
     if (commandSucceeded(result) && lines.some((line) => isCodexApiKeyLine(line))) {
-      return { authenticated: true, issues: ["auth_api_key"] };
+      return { authenticated: true, authMethod: "api-key", issues: ["auth_api_key"] };
     }
     return { authenticated: null, issues: ["auth_unparsed"] };
   }
@@ -15596,7 +15748,7 @@ ${result.stderr}`;
     if (!commandSucceeded(result) || !text.trim()) {
       return { authenticated: false, issues: ["not_authenticated"] };
     }
-    if (AGY_MODEL_ROW.test(text)) return { authenticated: true, issues: [] };
+    if (AGY_MODEL_ROW.test(text)) return { authenticated: true, authMethod: "antigravity-oauth", issues: [] };
     return { authenticated: null, issues: ["auth_unparsed"] };
   }
   if (id === "kimi") {
@@ -15621,8 +15773,11 @@ function resolveDispatchStatus(entry, detected, authenticated, issues) {
     return {
       status: "no",
       supported: false,
-      reason: entry.id === "gemini" ? "deprecated_client" : "no_headless_mode"
+      reason: "no_headless_mode"
     };
+  }
+  if (entry.id !== "pi" && !oneShotReadOnlyArgs(entry.id)) {
+    return { status: "no", supported: false, reason: "permission_profile_unaudited" };
   }
   if (authenticated === false) {
     return { status: "no", supported: false, reason: "not_authenticated" };
@@ -15672,6 +15827,7 @@ function probeEntry(entry, runCommand, timeoutMs, platform, probe = {}) {
   const command = found?.command;
   const version = found?.version;
   let authenticated = null;
+  let authMethod;
   if (!detected) authenticated = false;
   else if (entry.id === "pi") {
     authenticated = null;
@@ -15680,8 +15836,9 @@ function probeEntry(entry, runCommand, timeoutMs, platform, probe = {}) {
     authenticated = null;
     if (UNKNOWN_AUTH_HARNESSES.has(entry.id)) issues.push("auth_unknown");
   } else if (command) {
-    const parsed = interpretAuth(entry.id, runCommand(command, entry.authArgs, timeoutMs));
+    const parsed = interpretAuth(entry.id, runCommand(command, entry.authArgs, Math.max(timeoutMs, 1e4)));
     authenticated = parsed.authenticated;
+    authMethod = parsed.authMethod;
     issues.push(...parsed.issues);
   }
   if (command && isWindowsHarnessShim(command)) issues.push("windows_shim");
@@ -15693,6 +15850,7 @@ function probeEntry(entry, runCommand, timeoutMs, platform, probe = {}) {
     mode: entry.mode,
     detected,
     authenticated,
+    ...authMethod ? { authMethod } : {},
     dispatch,
     ...command ? { command } : {},
     ...version ? { version } : {},
@@ -15714,7 +15872,7 @@ function probeHarnesses(options = {}) {
   };
 }
 function eligibleHarnesses(inventory) {
-  const eligible = inventory.harnesses.filter((entry) => entry.detected && entry.authenticated === true).map((entry) => entry.id);
+  const eligible = inventory.harnesses.filter((entry) => entry !== void 0 && entry.detected && entry.authenticated === true).map((entry) => entry.id);
   if (eligible.length === 0) throw new Error("no_authenticated_harness");
   return eligible;
 }
@@ -15764,7 +15922,7 @@ function validateHarnessModelPair(harnessId, modelSpec) {
     }
     return { valid: true };
   }
-  if (harnessId === "agy" || harnessId === "gemini") {
+  if (harnessId === "agy") {
     if (provider && provider !== "google") {
       return { valid: false, issue: "harness_unhosted_model", message: `harness ${harnessId} does not host provider ${provider}` };
     }
@@ -15777,7 +15935,7 @@ function validateHarnessModelPair(harnessId, modelSpec) {
     if (provider && provider !== "moonshot") {
       return { valid: false, issue: "harness_unhosted_model", message: `harness kimi does not host provider ${provider}` };
     }
-    if (model && !/^(kimi|moonshot)-/i.test(model)) {
+    if (model && !/^(kimi|moonshot)(?:-|$)/i.test(model) && !/^kimi-for-coding(?:-|$)/i.test(model)) {
       return { valid: false, issue: "harness_unhosted_model", message: `harness kimi only hosts kimi/moonshot models, received ${model}` };
     }
     return { valid: true };
@@ -15936,6 +16094,47 @@ ${result.stderr}`)) {
     };
   }
   return probeEntry(entry, runCommand, timeoutMs, platform);
+}
+var PendingHarnessCommand = class {
+  command;
+  args;
+  timeoutMs;
+  key;
+  constructor(command, args, timeoutMs, key) {
+    this.command = command;
+    this.args = [...args];
+    this.timeoutMs = timeoutMs;
+    this.key = key;
+  }
+};
+async function probeHarnessAssignmentAsync(options) {
+  const observed = /* @__PURE__ */ new Map();
+  const run = options.runCommand ?? (async (command, args, timeoutMs) => {
+    const result = await defaultSpawn(command, args, { env: options.env, timeoutMs, signal: options.signal });
+    const error = result.error?.message ?? (result.observedChildExit !== true ? "auth_probe_exit_unobserved" : void 0);
+    return {
+      ok: result.code === 0 && !error,
+      code: result.code,
+      stdout: result.stdout,
+      stderr: result.stderr,
+      ...error ? { error } : {}
+    };
+  });
+  for (let commands = 0; commands <= 32; commands++) {
+    try {
+      return probeHarnessAssignment({ ...options, runCommand(command, args, timeoutMs) {
+        const key = JSON.stringify([command, args, timeoutMs]);
+        const result = observed.get(key);
+        if (result) return result;
+        throw new PendingHarnessCommand(command, args, timeoutMs, key);
+      } });
+    } catch (pending) {
+      if (!(pending instanceof PendingHarnessCommand)) throw pending;
+      if (commands === 32) throw new Error("auth_probe_command_limit");
+      observed.set(pending.key, await run(pending.command, pending.args, pending.timeoutMs));
+    }
+  }
+  throw new Error("auth_probe_command_limit");
 }
 function probeHarnessesForModel(modelSpec, options = {}) {
   const timeoutMs = options.timeoutMs ?? 3e3;
@@ -16412,6 +16611,7 @@ function listNamedResources(registry, root, directory, logicalDirectory, kind) {
       continue;
     }
     const id = basename(entry.name, ".yaml");
+    if (kind === "model" && id === "inventory") continue;
     if (!resourceIdentifier(id)) {
       issues.push(issue2("path", "resource_id_invalid", displayPath(root, join(directory, entry.name)), `filename-derived identity ${id} is invalid or platform-reserved`));
       continue;
@@ -16714,8 +16914,8 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
       const writable = Object.values(objectValue(step.repositories) ?? {}).filter((access) => access === "write").length;
       if (maxWriteRepositories > writable) issues.push(issue2("semantic", "write_repository_bound_invalid", file, `${stepId} maxWriteRepositories exceeds writable repository scope`));
     }
-    const join10 = objectValue(step.join);
-    const minimumPassed = join10 && typeof join10.minimumPassed === "number" ? join10.minimumPassed : void 0;
+    const join14 = objectValue(step.join);
+    const minimumPassed = join14 && typeof join14.minimumPassed === "number" ? join14.minimumPassed : void 0;
     if (minimumPassed !== void 0 && minimumPassed > maximum) issues.push(issue2("semantic", "join_impossible", file, `${stepId} minimumPassed exceeds assignment maximum`));
     const distinctBy = names(assignment?.distinctBy);
     if (distinctBy.length > 0) {
@@ -18907,6 +19107,15 @@ function panelAttempt(current) {
   const attemptId = assignment?.currentAttemptId;
   return attemptId ? assignment.attempts[attemptId] : void 0;
 }
+function vnextFoldPanelAttempt(step, attemptId) {
+  if (!step) return void 0;
+  for (const assignmentId of step.panel.order) {
+    const assignment = step.panel.assignments[assignmentId];
+    const attempt = assignment?.attempts[attemptId];
+    if (attempt) return { assignmentId, assignment, attempt };
+  }
+  return void 0;
+}
 function findPanelAttempt(panel, attemptId) {
   for (const assignmentId of panel.order) {
     const assignment = panel.assignments[assignmentId];
@@ -19992,15 +20201,515 @@ import { createHash as createHash5 } from "node:crypto";
 
 // plugins/kxm/src/vnext-engine-compile.ts
 var VNEXT_COMPILED_WORKFLOW_SCHEMA = "kxm.compiled-workflow.v1";
+var WORKFLOW_SCHEMA = "kxm.workflow.v1";
+var STEP_ID_PATTERN = /^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$/;
+var SUPPORTED_STEP_KINDS = /* @__PURE__ */ new Set(["agent", "moa", "gate", "approval", "wait"]);
+var TERMINAL_STATUSES = /* @__PURE__ */ new Set(["completed", "failed", "cancelled"]);
+var JOIN_STRATEGIES = /* @__PURE__ */ new Set(["all", "all-settled", "quorum", "first-success"]);
+var EVIDENCE_KINDS = /* @__PURE__ */ new Set(["assignment-result", "gate", "receipt", "approval", "artifact"]);
+var REPOSITORY_ACCESS = /* @__PURE__ */ new Set(["none", "read", "write"]);
+var DISTINCT_BY = /* @__PURE__ */ new Set(["provider", "model", "profile"]);
+var BANNED_RUNTIME_HINT = "not yet supported";
+var VnextEngineCompileError = class extends Error {
+  issues;
+  constructor(issues) {
+    const sorted = sortIssues3(issues);
+    super(sorted.map((issue3) => `${issue3.workflowId}: ${issue3.code}: ${issue3.message}`).join("\n"));
+    this.name = "VnextEngineCompileError";
+    this.issues = sorted;
+  }
+};
+function compileVnextWorkflow(input) {
+  const sink = { workflowId: input.id, issues: [] };
+  const value = input.value;
+  if (value.schema !== WORKFLOW_SCHEMA) {
+    pushIssue(sink, { code: "workflow_schema_unsupported", message: "schema is not kxm.workflow.v1" });
+  }
+  const rawSteps = valuesOf2(value, "steps").map(objectValue2).filter((step) => Boolean(step));
+  if (rawSteps.length === 0) {
+    pushIssue(sink, { code: "steps_empty", message: "workflow has no steps" });
+  }
+  const stepIndex = /* @__PURE__ */ new Map();
+  for (const [index, step] of rawSteps.entries()) {
+    const id = stringValue2(step.id);
+    if (!id || !isStepId(id)) {
+      pushIssue(sink, { code: "step_id_invalid", message: "step id is invalid", ...id ? { stepId: id } : {} });
+      continue;
+    }
+    if (stepIndex.has(id)) {
+      pushIssue(sink, { code: "step_id_duplicate", stepId: id, message: `step ${id} is duplicated` });
+      continue;
+    }
+    stepIndex.set(id, index);
+  }
+  const limitsObject = objectValue2(value.limits);
+  const limits = compileLimits(limitsObject, sink);
+  const requirePlanHash = names2(value.requirePlanHash);
+  const compiledSteps = [];
+  let hasBackEdges = false;
+  for (const [index, step] of rawSteps.entries()) {
+    const compiled = compileStep(step, index, stepIndex, requirePlanHash, sink);
+    if (!compiled) continue;
+    compiledSteps.push(compiled);
+    if (Object.values(compiled.transitions).some((transition2) => transition2.to === "step" && transition2.edge === "back")) {
+      hasBackEdges = true;
+    }
+  }
+  if (hasBackEdges && typeof limitsObject?.maxTransitions !== "number") {
+    pushIssue(sink, { code: "workflow_cycle_unbounded", message: "workflow with back-edges requires limits.maxTransitions" });
+  }
+  const reproOracle = compileOracle("reproOracle", objectValue2(value.reproOracle), compiledSteps, sink);
+  const planHash = compileOracle("planHash", objectValue2(value.planHash), compiledSteps, sink);
+  for (const stageId of requirePlanHash) {
+    if (!stepIndex.has(stageId)) {
+      pushIssue(sink, { code: "plan_hash_stage_unknown", message: `requirePlanHash references unknown stage ${stageId}` });
+    }
+  }
+  if (sink.issues.length > 0) throw new VnextEngineCompileError(sink.issues);
+  const order = compiledSteps.map((step) => step.id);
+  const steps = /* @__PURE__ */ Object.create(null);
+  for (const step of compiledSteps) steps[step.id] = step;
+  const entryStepId = order[0];
+  if (!entryStepId) throw new VnextEngineCompileError(sink.issues);
+  const coordinator = stringValue2(value.coordinator) ?? "coordinator";
+  const transitionBudget = limits.maxTransitions ?? order.length;
+  const plan = {
+    schema: VNEXT_COMPILED_WORKFLOW_SCHEMA,
+    workflowId: input.id,
+    ...input.logicalPath !== void 0 ? { sourcePath: input.logicalPath } : {},
+    coordinator,
+    limits,
+    transitionBudget,
+    hasBackEdges,
+    entryStepId,
+    order,
+    steps,
+    ...reproOracle ? { reproOracle } : {},
+    ...planHash ? { planHash } : {},
+    requirePlanHash: [...requirePlanHash]
+  };
+  return deepFreeze(plan);
+}
+function compileLimits(limits, sink) {
+  if (!limits) return {};
+  const compiled = {};
+  if (limits.maxTransitions !== void 0) {
+    if (isCount(limits.maxTransitions)) compiled.maxTransitions = limits.maxTransitions;
+    else pushIssue(sink, { code: "count_invalid", message: "limits.maxTransitions must be an integer >= 1" });
+  }
+  if (limits.maxRunDurationMs !== void 0) {
+    if (isDuration(limits.maxRunDurationMs)) compiled.maxRunDurationMs = limits.maxRunDurationMs;
+    else pushIssue(sink, { code: "duration_invalid", message: "limits.maxRunDurationMs must be an integer >= 0" });
+  }
+  if (limits.maxAgentTimeMs !== void 0) {
+    if (isDuration(limits.maxAgentTimeMs)) compiled.maxAgentTimeMs = limits.maxAgentTimeMs;
+    else pushIssue(sink, { code: "duration_invalid", message: "limits.maxAgentTimeMs must be an integer >= 0" });
+  }
+  if (limits.maxModelCost !== void 0) {
+    if (isCost(limits.maxModelCost)) compiled.maxModelCost = limits.maxModelCost;
+    else pushIssue(sink, { code: "cost_invalid", message: "limits.maxModelCost must be a finite number > 0" });
+  }
+  if (limits.currency !== void 0) {
+    if (typeof limits.currency === "string") compiled.currency = limits.currency;
+  }
+  return compiled;
+}
+function compileStep(step, index, stepIndex, requirePlanHash, sink) {
+  const id = stringValue2(step.id);
+  if (!id || !isStepId(id) || stepIndex.get(id) !== index) return void 0;
+  const kind = stringValue2(step.kind);
+  if (kind === "workflow") {
+    pushIssue(sink, { code: "step_kind_reserved", stepId: id, message: `kind workflow is ${BANNED_RUNTIME_HINT}` });
+    return void 0;
+  }
+  if (!kind || !SUPPORTED_STEP_KINDS.has(kind)) {
+    pushIssue(sink, { code: "step_kind_unknown", stepId: id, message: `kind ${String(kind)} is unknown` });
+    return void 0;
+  }
+  const agent = stringValue2(step.agent);
+  const gate = stringValue2(step.gate);
+  const signal = stringValue2(step.signal);
+  if ((kind === "agent" || kind === "moa") && !agent) {
+    pushIssue(sink, { code: "step_agent_missing", stepId: id, message: `${id} is missing agent` });
+  }
+  if (kind === "gate" && !gate) {
+    pushIssue(sink, { code: "step_gate_missing", stepId: id, message: `${id} is missing gate` });
+  }
+  if (kind === "wait" && !signal) {
+    pushIssue(sink, { code: "step_signal_missing", stepId: id, message: `${id} is missing signal` });
+  }
+  if (step.expect !== void 0 && (kind !== "gate" || step.expect !== "pass" && step.expect !== "fail")) {
+    pushIssue(sink, { code: "gate_expect_invalid", stepId: id, message: "expect is gate-only pass or fail" });
+  }
+  if (kind === "gate" && Object.keys(objectValue2(step.on) ?? {}).some((outcome) => outcome === "implementation_failure" || outcome === "repro_missing")) {
+    pushIssue(sink, { code: "gate_outcome_renamed", stepId: id, message: "use implementation-failure and repro-missing" });
+  }
+  const maxAttempts = compileCountField(step.maxAttempts, 1, `${id}.maxAttempts`, id, sink);
+  const timeoutMs = compileOptionalDuration(step.timeoutMs, `${id}.timeoutMs`, id, sink);
+  const assignments = compileAssignments(step, id, agent, sink);
+  const join14 = compileJoin(step, id, sink);
+  const requiredEvidence = compileEvidence(step, id, sink);
+  const transitions = compileTransitions(step, id, index, stepIndex, sink);
+  const outcomes = Object.keys(transitions).sort(compareCodeUnits4);
+  const orderedTransitions = /* @__PURE__ */ Object.create(null);
+  for (const outcome of outcomes) {
+    const transition2 = transitions[outcome];
+    if (transition2) orderedTransitions[outcome] = transition2;
+  }
+  const description = stringValue2(step.description);
+  const instructions = stringValue2(step.instructions);
+  const base = {
+    id,
+    index,
+    ...description !== void 0 ? { description } : {},
+    ...instructions !== void 0 ? { instructions } : {},
+    maxAttempts,
+    ...timeoutMs !== void 0 ? { timeoutMs } : {},
+    safeSpeculation: step.safeSpeculation === true,
+    repositories: compileRepositories(step.repositories),
+    ...isJsonObject3(step.tools) ? { tools: cloneJsonObject(step.tools) } : {},
+    secrets: compileSecrets(step.secrets),
+    ...step.model !== void 0 ? { model: cloneJsonValue(step.model) } : {},
+    requiredEvidence,
+    outcomes,
+    transitions: orderedTransitions,
+    requiresPlanHash: requirePlanHash.includes(id),
+    assignments,
+    join: join14
+  };
+  if (kind === "agent" || kind === "moa") {
+    if (!agent) return void 0;
+    return { ...base, kind, agent };
+  }
+  if (kind === "gate") {
+    if (!gate) return void 0;
+    return { ...base, kind, gate, expect: step.expect === "fail" ? "fail" : "pass" };
+  }
+  if (kind === "wait") {
+    if (!signal) return void 0;
+    return { ...base, kind, signal };
+  }
+  return { ...base, kind: "approval" };
+}
+function compileAssignments(step, stepId, primaryAgentId, sink) {
+  const assignment = objectValue2(step.assignments);
+  const declaredAgents = assignment ? names2(assignment.allowedAgents) : [];
+  const allowedAgents = declaredAgents.length > 0 ? declaredAgents : primaryAgentId ? [primaryAgentId] : [];
+  const minimum = compileCountField(assignment?.minimum, 1, `${stepId}.assignments.minimum`, stepId, sink);
+  const target = compileCountField(assignment?.target, minimum, `${stepId}.assignments.target`, stepId, sink);
+  const maximum = compileCountField(assignment?.maximum, target, `${stepId}.assignments.maximum`, stepId, sink);
+  const maxParallel = compileCountField(assignment?.maxParallel, maximum, `${stepId}.assignments.maxParallel`, stepId, sink);
+  const maxAttemptsPerAssignment = compileCountField(
+    assignment?.maxAttemptsPerAssignment,
+    1,
+    `${stepId}.assignments.maxAttemptsPerAssignment`,
+    stepId,
+    sink
+  );
+  const maxWriteRepositories = compileOptionalCount(
+    assignment?.maxWriteRepositories,
+    `${stepId}.assignments.maxWriteRepositories`,
+    stepId,
+    sink
+  );
+  const distinctBy = names2(assignment?.distinctBy).filter((value) => DISTINCT_BY.has(value));
+  return {
+    allowedAgents: [...allowedAgents],
+    minimum,
+    target,
+    maximum,
+    maxParallel,
+    maxAttemptsPerAssignment,
+    ...maxWriteRepositories !== void 0 ? { maxWriteRepositories } : {},
+    distinctBy
+  };
+}
+function compileJoin(step, stepId, sink) {
+  const join14 = objectValue2(step.join);
+  if (!join14) return { strategy: "all" };
+  const declared = stringValue2(join14.strategy);
+  const strategy = declared && JOIN_STRATEGIES.has(declared) ? declared : "all";
+  const minimumPassed = compileOptionalCount(join14.minimumPassed, `${stepId}.join.minimumPassed`, stepId, sink);
+  const compiled = {
+    strategy,
+    ...minimumPassed !== void 0 ? { minimumPassed } : {},
+    ...typeof join14.cancelRemaining === "boolean" ? { cancelRemaining: join14.cancelRemaining } : {}
+  };
+  return compiled;
+}
+function compileEvidence(step, stepId, sink) {
+  const evidence = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const candidate of valuesOf2(step, "requiredEvidence")) {
+    const requirement = objectValue2(candidate);
+    if (!requirement) continue;
+    const key = stringValue2(requirement.key);
+    if (!key) continue;
+    if (seen.has(key)) {
+      pushIssue(sink, { code: "evidence_key_duplicate", stepId, message: `${stepId} evidence key ${key} is duplicated` });
+      continue;
+    }
+    seen.add(key);
+    const kind = stringValue2(requirement.kind);
+    if (!kind || !EVIDENCE_KINDS.has(kind)) continue;
+    const minimum = compileCountField(requirement.minimum, 1, `${stepId}.${key}.minimum`, stepId, sink);
+    const producerPolicy = objectValue2(requirement.producerPolicy);
+    const compiled = {
+      key,
+      kind,
+      minimum,
+      reusableAcrossAttempts: requirement.reusableAcrossAttempts === true,
+      ...producerPolicy ? { producerPolicy: compileProducerPolicy(producerPolicy, stepId, key, sink) } : {}
+    };
+    evidence.push(compiled);
+  }
+  return evidence;
+}
+function compileProducerPolicy(policy, stepId, key, sink) {
+  const minimumProducers = compileCountField(
+    policy.minimumProducers,
+    1,
+    `${stepId}.${key}.producerPolicy.minimumProducers`,
+    stepId,
+    sink
+  );
+  const degradation = objectValue2(policy.degradation);
+  const degradationMinimum = compileOptionalCount(
+    degradation?.minimumProducers,
+    `${stepId}.${key}.producerPolicy.degradation.minimumProducers`,
+    stepId,
+    sink
+  );
+  return {
+    minimumProducers,
+    eligibleAgents: names2(policy.eligibleAgents),
+    acceptedStatuses: ["passed"],
+    ...degradationMinimum !== void 0 ? { degradation: { minimumProducers: degradationMinimum } } : {}
+  };
+}
+function compileTransitions(step, stepId, index, stepIndex, sink) {
+  const outcomes = objectValue2(step.on);
+  const compiled = /* @__PURE__ */ Object.create(null);
+  if (!outcomes || Object.keys(outcomes).length === 0) {
+    pushIssue(sink, { code: "transitions_missing", stepId, message: `${stepId} has no declared transitions` });
+    return compiled;
+  }
+  for (const [outcome, raw] of Object.entries(outcomes)) {
+    const parsed = parseTransition(raw);
+    const maxTransitions = compileOptionalCount(
+      parsed.maxTransitions,
+      `${stepId}.${outcome}.maxTransitions`,
+      stepId,
+      sink,
+      outcome
+    );
+    if (parsed.target === "$terminal") {
+      const status = parsed.terminalStatus;
+      if (status === void 0) {
+        pushIssue(sink, {
+          code: "transition_terminal_status_missing",
+          stepId,
+          outcome,
+          message: `${stepId}.${outcome} terminal transition requires terminalStatus`
+        });
+        continue;
+      }
+      if (!TERMINAL_STATUSES.has(status)) {
+        pushIssue(sink, {
+          code: "transition_terminal_status_invalid",
+          stepId,
+          outcome,
+          message: `${stepId}.${outcome} terminalStatus is invalid`
+        });
+        continue;
+      }
+      compiled[outcome] = {
+        to: "terminal",
+        terminalStatus: status,
+        ...maxTransitions !== void 0 ? { maxTransitions } : {}
+      };
+      continue;
+    }
+    if (parsed.terminalStatus !== void 0) {
+      pushIssue(sink, {
+        code: "transition_terminal_status_unexpected",
+        stepId,
+        outcome,
+        message: `${stepId}.${outcome} step target must not declare terminalStatus`
+      });
+    }
+    if (!parsed.target || !stepIndex.has(parsed.target)) {
+      pushIssue(sink, {
+        code: "transition_target_unknown",
+        stepId,
+        outcome,
+        message: `${stepId}.${outcome} references unknown target ${String(parsed.target)}`
+      });
+      continue;
+    }
+    const targetIndex = stepIndex.get(parsed.target);
+    const back = targetIndex <= index;
+    if (back && maxTransitions === void 0 && parsed.maxTransitions === void 0) {
+      pushIssue(sink, {
+        code: "back_edge_unbounded",
+        stepId,
+        outcome,
+        message: `${stepId}.${outcome} back-edge requires maxTransitions`
+      });
+    }
+    compiled[outcome] = {
+      to: "step",
+      target: parsed.target,
+      edge: back ? "back" : "forward",
+      ...maxTransitions !== void 0 ? { maxTransitions } : {}
+    };
+  }
+  return compiled;
+}
+function parseTransition(value) {
+  if (typeof value === "string") return { target: value };
+  const object = objectValue2(value);
+  if (!object) return {};
+  const target = stringValue2(object.target);
+  const terminalStatus = stringValue2(object.terminalStatus);
+  return {
+    ...target ? { target } : {},
+    ...object.maxTransitions !== void 0 ? { maxTransitions: object.maxTransitions } : {},
+    ...terminalStatus ? { terminalStatus } : {}
+  };
+}
+function compileOracle(field, oracle, steps, sink) {
+  if (!oracle) return void 0;
+  const stageId = stringValue2(oracle.stageId);
+  const evidenceKey = stringValue2(oracle.evidenceKey);
+  const step = stageId === void 0 ? void 0 : steps.find((candidate) => candidate.id === stageId);
+  if (!stageId || !step) {
+    pushIssue(sink, { code: "oracle_stage_unknown", message: `${field} references unknown stage ${String(stageId)}` });
+    return void 0;
+  }
+  if (!evidenceKey || !step.requiredEvidence.some((item) => item.key === evidenceKey)) {
+    pushIssue(sink, {
+      code: "oracle_evidence_unknown",
+      message: `${field} references undeclared evidence ${String(evidenceKey)} in ${stageId}`
+    });
+    return void 0;
+  }
+  return { stageId, evidenceKey };
+}
+function compileRepositories(value) {
+  const source = objectValue2(value) ?? {};
+  const repositories = {};
+  for (const [id, access] of Object.entries(source)) {
+    if (typeof access === "string" && REPOSITORY_ACCESS.has(access)) {
+      repositories[id] = access;
+    }
+  }
+  return repositories;
+}
+function compileSecrets(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map(objectValue2).filter((entry) => Boolean(entry)).map(cloneJsonObject);
+}
+function compileCountField(value, fallback, path, stepId, sink) {
+  if (value === void 0) return fallback;
+  if (isCount(value)) return value;
+  pushIssue(sink, { code: "count_invalid", stepId, message: `${path} must be an integer >= 1` });
+  return fallback;
+}
+function compileOptionalCount(value, path, stepId, sink, outcome) {
+  if (value === void 0) return void 0;
+  if (isCount(value)) return value;
+  pushIssue(sink, {
+    code: "count_invalid",
+    stepId,
+    ...outcome ? { outcome } : {},
+    message: `${path} must be an integer >= 1`
+  });
+  return void 0;
+}
+function compileOptionalDuration(value, path, stepId, sink) {
+  if (value === void 0) return void 0;
+  if (isDuration(value)) return value;
+  pushIssue(sink, { code: "duration_invalid", stepId, message: `${path} must be an integer >= 0` });
+  return void 0;
+}
+function isCount(value) {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1;
+}
+function isDuration(value) {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+function isCost(value) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+function isStepId(value) {
+  return value.length >= 1 && value.length <= 64 && STEP_ID_PATTERN.test(value);
+}
+function isJsonObject3(value) {
+  return value !== void 0 && value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function objectValue2(value) {
+  return isJsonObject3(value) ? value : void 0;
+}
+function stringValue2(value) {
+  return typeof value === "string" ? value : void 0;
+}
+function valuesOf2(object, field) {
+  const value = object[field];
+  return Array.isArray(value) ? value : [];
+}
+function names2(value) {
+  return Array.isArray(value) ? value.filter((candidate) => typeof candidate === "string") : [];
+}
+function cloneJsonValue(value) {
+  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
+  if (Array.isArray(value)) return value.map((entry) => cloneJsonValue(entry));
+  return cloneJsonObject(isJsonObject3(value) ? value : {});
+}
+function cloneJsonObject(value) {
+  const copy = {};
+  for (const [key, child] of Object.entries(value)) copy[key] = cloneJsonValue(child);
+  return copy;
+}
+function deepFreeze(value) {
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) {
+    for (const entry of value) deepFreeze(entry);
+  } else {
+    for (const entry of Object.values(value)) deepFreeze(entry);
+  }
+  return Object.freeze(value);
+}
+function compareCodeUnits4(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+function compareOptional(left, right) {
+  if (left === right) return 0;
+  if (left === void 0) return -1;
+  if (right === void 0) return 1;
+  return compareCodeUnits4(left, right);
+}
+function sortIssues3(issues) {
+  return [...issues].sort((left, right) => {
+    const byStep = compareOptional(left.stepId, right.stepId);
+    if (byStep !== 0) return byStep;
+    const byOutcome = compareOptional(left.outcome, right.outcome);
+    if (byOutcome !== 0) return byOutcome;
+    return compareCodeUnits4(left.code, right.code);
+  });
+}
+function pushIssue(sink, issue3) {
+  sink.issues.push({ workflowId: sink.workflowId, ...issue3 });
+}
 
 // plugins/kxm/src/vnext-engine-plan.ts
 var VNEXT_RUN_PLAN_SCHEMA = "kxm.run-plan.v2";
 var SUPPORTED_KINDS = /* @__PURE__ */ new Set(["agent", "moa", "gate", "approval", "wait"]);
 var TERMINAL = /* @__PURE__ */ new Set(["completed", "failed", "cancelled"]);
-var JOIN_STRATEGIES = /* @__PURE__ */ new Set(["all", "all-settled", "quorum", "first-success"]);
-var EVIDENCE_KINDS = /* @__PURE__ */ new Set(["assignment-result", "gate", "receipt", "approval", "artifact"]);
-var REPOSITORY_ACCESS = /* @__PURE__ */ new Set(["none", "read", "write"]);
-var DISTINCT_BY = /* @__PURE__ */ new Set(["provider", "model", "profile"]);
+var JOIN_STRATEGIES2 = /* @__PURE__ */ new Set(["all", "all-settled", "quorum", "first-success"]);
+var EVIDENCE_KINDS2 = /* @__PURE__ */ new Set(["assignment-result", "gate", "receipt", "approval", "artifact"]);
+var REPOSITORY_ACCESS2 = /* @__PURE__ */ new Set(["none", "read", "write"]);
+var DISTINCT_BY2 = /* @__PURE__ */ new Set(["provider", "model", "profile"]);
 var ENVELOPE_REQUIRED = ["schema", "runId", "projectId", "homeRuntimeId", "workflowId", "revisions", "projectLimits", "plan", "gates"];
 var GATES_REQUIRED = ["registry", "definitions", "controlRoot"];
 var REGISTRY_PIN_REQUIRED = ["schema", "hash"];
@@ -20047,7 +20756,7 @@ function freezeVnextCompiledPlan(plan) {
     if (!step) throw runtimeError("run_plan_corrupt", plan.workflowId, `compiled plan is missing step ${id}`);
     steps[id] = freezeStep(step);
   }
-  return deepFreeze({
+  return deepFreeze2({
     ...plan,
     steps,
     order: [...plan.order],
@@ -20063,7 +20772,7 @@ function freezeStep(step) {
   }
   const repositories = /* @__PURE__ */ Object.create(null);
   for (const [id, access] of Object.entries(step.repositories)) repositories[id] = access;
-  return deepFreeze({
+  return deepFreeze2({
     ...step,
     outcomes: [...step.outcomes],
     transitions,
@@ -20091,6 +20800,9 @@ function parseVnextRunPlanEnvelope(raw, run, expectedHash) {
     throw runtimeError("run_plan_corrupt", run.runId, "run plan envelope hash does not match");
   }
   return envelope;
+}
+function rehydrateVnextCompiledPlanFromStore(store, run) {
+  return loadPinnedEnvelope(store, run).plan;
 }
 function loadVnextRunPlanEnvelope(store, run) {
   return loadPinnedEnvelope(store, run);
@@ -20262,9 +20974,9 @@ function parseGateDefinition(raw, gateId, runId) {
 function freezeGates(gates) {
   const definitions = /* @__PURE__ */ Object.create(null);
   for (const [id, definition] of Object.entries(gates.definitions)) {
-    definitions[id] = deepFreeze({ ...definition, ...definition.kind === "command" ? { argv: [...definition.argv] } : {}, ...definition.kind === "artifacts-exist" ? { paths: [...definition.paths] } : {} });
+    definitions[id] = deepFreeze2({ ...definition, ...definition.kind === "command" ? { argv: [...definition.argv] } : {}, ...definition.kind === "artifacts-exist" ? { paths: [...definition.paths] } : {} });
   }
-  return deepFreeze({
+  return deepFreeze2({
     registry: gates.registry ? { ...gates.registry } : null,
     definitions,
     controlRoot: { ...gates.controlRoot }
@@ -20344,12 +21056,12 @@ function parseStep(raw, stepId, runId) {
   }
   const transitions = /* @__PURE__ */ Object.create(null);
   for (const outcome of outcomes) {
-    transitions[outcome] = parseTransition(transitionsValue[outcome], stepId, outcome, runId);
+    transitions[outcome] = parseTransition2(transitionsValue[outcome], stepId, outcome, runId);
   }
   const repositoriesValue = asObject(value.repositories, runId, `${stepId}.repositories`);
   const repositories = /* @__PURE__ */ Object.create(null);
   for (const [repositoryId, access] of Object.entries(repositoriesValue)) {
-    if (typeof access !== "string" || !REPOSITORY_ACCESS.has(access)) {
+    if (typeof access !== "string" || !REPOSITORY_ACCESS2.has(access)) {
       throw runtimeError("run_plan_corrupt", runId, `step ${stepId} repository ${repositoryId} has invalid access`);
     }
     repositories[repositoryId] = access;
@@ -20388,7 +21100,7 @@ function parseStep(raw, stepId, runId) {
   }
   return { ...base, kind: "approval" };
 }
-function parseTransition(raw, stepId, outcome, runId) {
+function parseTransition2(raw, stepId, outcome, runId) {
   const value = asObject(raw, runId, `${stepId}.${outcome}`);
   const to = asString(value.to, runId, `${stepId}.${outcome}.to`);
   const maxTransitions = value.maxTransitions !== void 0 ? asCount(value.maxTransitions, runId, `${stepId}.${outcome}.maxTransitions`) : void 0;
@@ -20423,7 +21135,7 @@ function parseAssignments(raw, stepId, runId) {
   const value = asObject(raw, runId, `${stepId}.assignments`);
   assertExactKeys(value, ASSIGNMENT_REQUIRED, ASSIGNMENT_OPTIONAL, runId, `${stepId}.assignments`);
   const distinctBy = asStringArray(value.distinctBy, runId, `${stepId}.assignments.distinctBy`);
-  if (distinctBy.some((entry) => !DISTINCT_BY.has(entry))) {
+  if (distinctBy.some((entry) => !DISTINCT_BY2.has(entry))) {
     throw runtimeError("run_plan_corrupt", runId, `step ${stepId} distinctBy is invalid`);
   }
   return {
@@ -20441,7 +21153,7 @@ function parseJoin(raw, stepId, runId) {
   const value = asObject(raw, runId, `${stepId}.join`);
   assertExactKeys(value, JOIN_REQUIRED, JOIN_OPTIONAL, runId, `${stepId}.join`);
   const strategy = asString(value.strategy, runId, `${stepId}.join.strategy`);
-  if (!JOIN_STRATEGIES.has(strategy)) {
+  if (!JOIN_STRATEGIES2.has(strategy)) {
     throw runtimeError("run_plan_corrupt", runId, `step ${stepId} join strategy is invalid`);
   }
   return {
@@ -20454,7 +21166,7 @@ function parseEvidence(raw, stepId, index, runId) {
   const value = asObject(raw, runId, `${stepId}.requiredEvidence[${index}]`);
   assertExactKeys(value, EVIDENCE_REQUIRED, EVIDENCE_OPTIONAL, runId, `${stepId}.requiredEvidence[${index}]`);
   const kind = asString(value.kind, runId, `${stepId}.requiredEvidence[${index}].kind`);
-  if (!EVIDENCE_KINDS.has(kind)) {
+  if (!EVIDENCE_KINDS2.has(kind)) {
     throw runtimeError("run_plan_corrupt", runId, `step ${stepId} evidence kind is invalid`);
   }
   return {
@@ -20578,12 +21290,12 @@ function sameSet(left, right) {
   const set = new Set(right);
   return left.every((entry) => set.has(entry));
 }
-function deepFreeze(value) {
+function deepFreeze2(value) {
   if (value === null || typeof value !== "object") return value;
   if (Array.isArray(value)) {
-    for (const entry of value) deepFreeze(entry);
+    for (const entry of value) deepFreeze2(entry);
   } else {
-    for (const entry of Object.values(value)) deepFreeze(entry);
+    for (const entry of Object.values(value)) deepFreeze2(entry);
   }
   return Object.freeze(value);
 }
@@ -20591,6 +21303,9 @@ function deepFreeze(value) {
 // plugins/kxm/src/vnext-gate-hash.ts
 function gateDefinitionHash(id, definition) {
   return vnextSha256(vnextCanonicalJson({ id, ...definition }));
+}
+function gateRegistryHash(registryValue) {
+  return vnextSha256(vnextCanonicalJson(registryValue));
 }
 
 // plugins/kxm/src/vnext-engine-evidence.ts
@@ -20858,6 +21573,21 @@ function unregisterVnextRuntimeHandle(storePath) {
   owner.handles = Math.max(0, owner.handles - 1);
   maybeDelete(storePath, owner);
 }
+function registerVnextAttemptController(storePath, runId, attempt) {
+  const owner = record(storePath);
+  let runAttempts = owner.attempts.get(runId);
+  if (!runAttempts) {
+    runAttempts = /* @__PURE__ */ new Map();
+    owner.attempts.set(runId, runAttempts);
+  }
+  if (runAttempts.has(attempt.attemptId)) {
+    throw runtimeError("attempt_controller_duplicate", attempt.attemptId, `attempt ${attempt.attemptId} is already registered`);
+  }
+  runAttempts.set(attempt.attemptId, attempt);
+}
+function vnextAttemptController(storePath, runId, attemptId) {
+  return owners.get(storePath)?.attempts.get(runId)?.get(attemptId);
+}
 function vnextAttemptControllers(storePath, runId) {
   const runAttempts = owners.get(storePath)?.attempts.get(runId);
   if (!runAttempts) return [];
@@ -20911,6 +21641,49 @@ function releaseVnextRun(storePath, runId, token) {
   clearImplicitIfIdle(owner);
   maybeDelete(storePath, owner);
 }
+function armVnextGateHold(storePath, runId, token, attemptId, stop) {
+  const owner = record(storePath);
+  const current = owner.admitted.get(runId);
+  if (!current || current.token !== token) {
+    throw runtimeError("run_events_illegal", runId, "gate hold requires the exact admitted token");
+  }
+  if (current.gateHold) {
+    throw runtimeError("run_events_illegal", runId, "admission already has a gate hold");
+  }
+  current.gateHold = { attemptId, token, state: "active", stop };
+}
+function markVnextGateHoldUnsettled(storePath, runId, token, attemptId) {
+  const owner = owners.get(storePath);
+  const current = owner?.admitted.get(runId);
+  if (!current || current.token !== token) {
+    throw runtimeError("run_events_illegal", runId, "unsettled hold requires the exact admitted token");
+  }
+  const hold = current.gateHold;
+  if (!hold || hold.attemptId !== attemptId || hold.token !== token) {
+    throw runtimeError("run_events_illegal", runId, "unsettled hold does not match the armed attempt");
+  }
+  hold.state = "unsettled";
+}
+function finishVnextOwnedGate(storePath, runId, token, attemptId) {
+  const owner = owners.get(storePath);
+  const current = owner?.admitted.get(runId);
+  if (!current || current.token !== token) {
+    throw runtimeError("run_events_illegal", runId, "owned gate finish requires the exact admitted token");
+  }
+  const hold = current.gateHold;
+  if (!hold || hold.attemptId !== attemptId || hold.token !== token) {
+    throw runtimeError("run_events_illegal", runId, "owned gate finish does not match the armed attempt");
+  }
+  if (hold.state === "unsettled") {
+    throw runtimeError("run_events_illegal", runId, "unsettled gate hold cannot be finished");
+  }
+  delete current.gateHold;
+}
+function dropVnextGateStopHook(storePath, runId, attemptId) {
+  const hold = owners.get(storePath)?.admitted.get(runId)?.gateHold;
+  if (!hold || hold.attemptId !== attemptId) return;
+  delete hold.stop;
+}
 function resolveVnextGateHold(storePath, runId, attemptId) {
   const owner = owners.get(storePath);
   if (!owner) return;
@@ -20927,6 +21700,14 @@ function resolveVnextGateHold(storePath, runId, attemptId) {
   pump(storePath, owner);
   clearImplicitIfIdle(owner);
   maybeDelete(storePath, owner);
+}
+function vnextGateHold(storePath, runId) {
+  const hold = owners.get(storePath)?.admitted.get(runId)?.gateHold;
+  if (!hold) return void 0;
+  return { attemptId: hold.attemptId, token: hold.token, state: hold.state };
+}
+function vnextAdmittedToken(storePath, runId) {
+  return owners.get(storePath)?.admitted.get(runId)?.token;
 }
 function pump(storePath, owner) {
   const bound = activePolicy(owner)?.bound ?? 1;
@@ -20947,13 +21728,13 @@ function pump(storePath, owner) {
 }
 
 // plugins/kxm/src/vnext-runtime.ts
-function compareCodeUnits4(left, right) {
+function compareCodeUnits5(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 function sha256Of(input) {
   return `sha256:${createHash6("sha256").update(input, "utf8").digest("hex")}`;
 }
-function objectValue2(value) {
+function objectValue3(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value : void 0;
 }
 function vnextExecutorPolicyRevision(bundle) {
@@ -20969,14 +21750,14 @@ function vnextExecutorPolicyRevision(bundle) {
 function vnextToolPolicyRevision(bundle) {
   const policies = [];
   for (const agent of [...bundle.agents.values()].sort((left, right) => String(left.id).localeCompare(String(right.id)))) {
-    policies.push({ agent: agent.id ?? "unknown", tools: objectValue2(agent.value.tools) ?? null });
+    policies.push({ agent: agent.id ?? "unknown", tools: objectValue3(agent.value.tools) ?? null });
   }
   for (const workflow of [...bundle.workflows.values()].sort((left, right) => String(left.id).localeCompare(String(right.id)))) {
     const steps = Array.isArray(workflow.value.steps) ? workflow.value.steps : [];
     for (const step of steps) {
-      const record2 = objectValue2(step);
+      const record2 = objectValue3(step);
       if (record2?.tools !== void 0) {
-        policies.push({ workflow: workflow.id ?? "unknown", step: record2.id ?? null, tools: objectValue2(record2.tools) ?? null });
+        policies.push({ workflow: workflow.id ?? "unknown", step: record2.id ?? null, tools: objectValue3(record2.tools) ?? null });
       }
     }
   }
@@ -21001,7 +21782,7 @@ function collectMemoryFiles(dir, baseDir, ignoreSubdirs = /* @__PURE__ */ new Se
 function computeVnextMemoryRevision(bundle, options = {}) {
   const hash = createHash6("sha256");
   const memoryDir = options.memoryDir ?? join5(bundle.projectRoot, ".kxm", "memory");
-  const memoryFiles = collectMemoryFiles(memoryDir, memoryDir, /* @__PURE__ */ new Set(["candidates"])).sort((left, right) => compareCodeUnits4(left.relPath, right.relPath));
+  const memoryFiles = collectMemoryFiles(memoryDir, memoryDir, /* @__PURE__ */ new Set(["candidates"])).sort((left, right) => compareCodeUnits5(left.relPath, right.relPath));
   for (const file of memoryFiles) {
     hash.update(`memory:${file.relPath}\0`, "utf8");
     hash.update(readFileSync3(file.fullPath));
@@ -21009,14 +21790,14 @@ function computeVnextMemoryRevision(bundle, options = {}) {
   }
   const skillsDir = options.skillsDir ?? join5(bundle.projectRoot, ".kxm", "skills");
   const promotedSkillsDir = join5(skillsDir, "promoted");
-  const skillFiles = collectMemoryFiles(promotedSkillsDir, promotedSkillsDir).sort((left, right) => compareCodeUnits4(left.relPath, right.relPath));
+  const skillFiles = collectMemoryFiles(promotedSkillsDir, promotedSkillsDir).sort((left, right) => compareCodeUnits5(left.relPath, right.relPath));
   for (const file of skillFiles) {
     hash.update(`skill:${file.relPath}\0`, "utf8");
     hash.update(readFileSync3(file.fullPath));
     hash.update("\0", "utf8");
   }
   if (options.promotedState && options.promotedState.length > 0) {
-    const currentItems = options.promotedState.filter((item) => !item.status || item.status === "current").slice().sort((left, right) => compareCodeUnits4(left.id, right.id));
+    const currentItems = options.promotedState.filter((item) => !item.status || item.status === "current").slice().sort((left, right) => compareCodeUnits5(left.id, right.id));
     for (const item of currentItems) {
       hash.update(`state:${item.id}\0`, "utf8");
       hash.update(vnextCanonicalJson(item), "utf8");
@@ -21051,7 +21832,7 @@ function vnextDeclaredExecutorIds(bundle) {
   ].filter((value) => value !== void 0))].sort();
 }
 function vnextProjectAdmissionLimits(bundle) {
-  const limits = objectValue2(bundle.project.value.limits);
+  const limits = objectValue3(bundle.project.value.limits);
   const maxConcurrentRuns = typeof limits?.maxConcurrentRuns === "number" && Number.isInteger(limits.maxConcurrentRuns) && limits.maxConcurrentRuns >= 1 ? limits.maxConcurrentRuns : 1;
   return {
     maxConcurrentRuns,
@@ -21418,12 +22199,116 @@ function assertVnextConfigError(error) {
 }
 
 // plugins/kxm/src/vnext-runtime-supervisor.ts
-import { spawn } from "node:child_process";
-import { createHash as createHash7, createHmac, randomBytes as randomBytes2, timingSafeEqual } from "node:crypto";
-import { chmodSync as chmodSync2, existsSync as existsSync6, lstatSync as lstatSync4, mkdirSync as mkdirSync3, readFileSync as readFileSync4, renameSync, rmSync, writeFileSync as writeFileSync2 } from "node:fs";
+import { spawn as spawn3 } from "node:child_process";
+import { createHash as createHash12, createHmac, randomBytes as randomBytes3, timingSafeEqual as timingSafeEqual2 } from "node:crypto";
+import { chmodSync as chmodSync2, existsSync as existsSync8, lstatSync as lstatSync5, mkdirSync as mkdirSync4, readFileSync as readFileSync6, renameSync, rmSync, writeFileSync as writeFileSync3 } from "node:fs";
 import { createServer } from "node:http";
-import { dirname as dirname5, isAbsolute as isAbsolute3, join as join6, resolve as resolve5 } from "node:path";
+import { dirname as dirname5, isAbsolute as isAbsolute4, join as join11, resolve as resolve6 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
+
+// plugins/kxm/src/vnext-oneshot-producer.ts
+import { join as join9 } from "node:path";
+
+// plugins/kxm/src/vnext-oneshot-evidence.ts
+import { createHash as createHash7, randomUUID as randomUUID3 } from "node:crypto";
+import { lstat, mkdir, open, rename } from "node:fs/promises";
+import { join as join6 } from "node:path";
+var TEXT_LIMIT = 4 * 1024 * 1024;
+var RECORD_LIMIT = 16 * 1024 * 1024;
+var digest = (value) => `sha256:${createHash7("sha256").update(value).digest("hex")}`;
+async function beginOneShotEvidence(root, intent, sensitive) {
+  await mkdir(root, { recursive: true, mode: 448 });
+  const stat = await lstat(root);
+  if (!stat.isDirectory() || stat.isSymbolicLink() || process.platform !== "win32" && ((stat.mode & 63) !== 0 || stat.uid !== process.getuid?.())) {
+    throw new Error("oneshot_evidence_root_not_private");
+  }
+  const id = `evd_${randomUUID3().replaceAll("-", "")}`;
+  const dir = join6(root, id);
+  await mkdir(dir, { mode: 448 });
+  const secrets = [...new Set(sensitive.filter((value) => value.length >= 8))].sort((a, b) => b.length - a.length);
+  const redact = (value) => {
+    let text = value;
+    for (const secret of secrets) text = text.replaceAll(secret, "[REDACTED]");
+    return text.replace(/(\b(?:authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret)\b["']?\s*[:=]\s*["']?)(?:Bearer\s+)?[^\s"',;}]+/gi, "$1[REDACTED]");
+  };
+  const bounded = (value) => {
+    const bytes = Buffer.from(redact(value));
+    return { text: bytes.subarray(0, TEXT_LIMIT).toString("utf8"), truncated: bytes.length > TEXT_LIMIT, sha256: digest(value) };
+  };
+  const write = async (name, value) => {
+    const current = await lstat(dir);
+    if (!current.isDirectory() || current.isSymbolicLink() || process.platform !== "win32" && ((current.mode & 63) !== 0 || current.uid !== process.getuid?.())) {
+      throw new Error("oneshot_evidence_directory_changed");
+    }
+    const bytes = JSON.stringify(value);
+    if (Buffer.byteLength(bytes) > RECORD_LIMIT) throw new Error("oneshot_evidence_record_limit");
+    const target = join6(dir, name);
+    const partial = `${target}.partial`;
+    const file = await open(partial, "wx", 384);
+    try {
+      await file.writeFile(bytes);
+      await file.sync();
+    } finally {
+      await file.close();
+    }
+    await rename(partial, target);
+    if (process.platform !== "win32") {
+      const directory = await open(dir, "r");
+      try {
+        await directory.sync();
+      } finally {
+        await directory.close();
+      }
+    }
+    return digest(bytes);
+  };
+  await write("intent.json", {
+    schema: "kxm.oneshot-evidence.v1",
+    id,
+    recordedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    runId: intent.runId,
+    stepId: intent.stepId,
+    attemptId: intent.attemptId,
+    assignmentId: intent.assignmentId,
+    harness: intent.harness,
+    provider: intent.provider,
+    requestedModel: intent.model,
+    cwd: intent.cwd,
+    command: intent.command,
+    argv: bounded(JSON.stringify(intent.args)),
+    stdin: intent.input === void 0 ? null : bounded(intent.input),
+    acceptance: false
+  });
+  let finished = false;
+  return {
+    id,
+    async finish(result, observation) {
+      if (finished) throw new Error("oneshot_evidence_already_finished");
+      finished = true;
+      return write("result.json", {
+        schema: "kxm.oneshot-evidence.v1",
+        id,
+        recordedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        stdout: bounded(result.stdout),
+        stderr: bounded(result.stderr),
+        code: result.code,
+        signal: result.signal ?? null,
+        started: result.started ?? null,
+        observedChildExit: result.observedChildExit ?? null,
+        terminationRequested: result.terminationRequested ?? null,
+        error: result.error ? bounded(result.error.message) : null,
+        observation: bounded(JSON.stringify(observation)),
+        acceptance: false
+      });
+    }
+  };
+}
+
+// plugins/kxm/src/prices.ts
+var import_yaml3 = __toESM(require_dist(), 1);
+import { createHash as createHash8 } from "node:crypto";
+import { existsSync as existsSync6, readFileSync as readFileSync4, statSync } from "node:fs";
+import { join as join7 } from "node:path";
 
 // plugins/kxm/src/price-calc.ts
 var PRICES_SCHEMA = "kxm.prices.v1";
@@ -21431,10 +22316,7 @@ function findModelPrice(catalog, model, provider) {
   const normalizedModel = model.trim().toLowerCase();
   const normalizedProvider = provider?.trim().toLowerCase();
   for (const entry of catalog.models) {
-    if (normalizedProvider && entry.provider.toLowerCase() !== normalizedProvider) {
-      const matchesAlias = entry.aliases?.some((a) => a.toLowerCase() === normalizedModel);
-      if (!matchesAlias) continue;
-    }
+    if (normalizedProvider && entry.provider.toLowerCase() !== normalizedProvider) continue;
     if (entry.id.toLowerCase() === normalizedModel || entry.model.toLowerCase() === normalizedModel) {
       return entry;
     }
@@ -21447,20 +22329,19 @@ function findModelPrice(catalog, model, provider) {
 function calculateModelCost(catalog, params) {
   const row = findModelPrice(catalog, params.model, params.provider);
   if (!row || row.tiers.length === 0) return void 0;
-  const context = params.contextTokens ?? params.tokensIn ?? 0;
-  let selectedTier = row.tiers[0];
-  for (const tier of row.tiers) {
-    if (tier.upToContextTokens !== void 0 && tier.upToContextTokens !== null && context > tier.upToContextTokens) {
-      continue;
-    }
-    selectedTier = tier;
-    break;
-  }
-  const tokensIn = params.tokensIn ?? 0;
-  const tokensOut = params.tokensOut ?? 0;
-  const cacheRead = params.cacheReadTokens ?? 0;
-  const cacheWrite = params.cacheWriteTokens ?? 0;
+  if (catalog.currency !== void 0 && catalog.currency !== "USD") return void 0;
+  const validCount = (n) => typeof n === "number" && Number.isSafeInteger(n) && n >= 0;
+  const tokensIn = params.tokensIn;
+  const tokensOut = params.tokensOut;
+  const cacheRead = params.cacheReadTokens;
+  const cacheWrite = params.cacheWriteTokens;
+  if (!validCount(tokensIn) || !validCount(tokensOut) || !validCount(cacheRead) || !validCount(cacheWrite)) return void 0;
+  const context = params.contextTokens;
+  if (context != null && !validCount(context)) return void 0;
+  const selectedTier = context == null ? row.tiers.length === 1 && row.tiers[0].upToContextTokens == null ? row.tiers[0] : void 0 : row.tiers.find((tier) => tier.upToContextTokens == null || context <= tier.upToContextTokens);
+  if (!selectedTier || cacheRead > 0 && selectedTier.cacheReadPerMillion == null || cacheWrite > 0 && selectedTier.cacheWritePerMillion == null) return void 0;
   const cost = tokensIn / 1e6 * selectedTier.inputPerMillion + tokensOut / 1e6 * selectedTier.outputPerMillion + cacheRead / 1e6 * (selectedTier.cacheReadPerMillion ?? 0) + cacheWrite / 1e6 * (selectedTier.cacheWritePerMillion ?? 0);
+  if (!Number.isFinite(cost) || cost < 0) return void 0;
   const priceRef = `${catalog.date}#${row.id}`;
   return {
     costUsd: Math.round(cost * 1e6) / 1e6,
@@ -21468,10 +22349,3141 @@ function calculateModelCost(catalog, params) {
   };
 }
 
+// plugins/kxm/src/prices.ts
+function hashPriceCatalog(catalog) {
+  const canonical = {
+    schema: catalog.schema,
+    date: catalog.date,
+    currency: catalog.currency ?? "USD",
+    models: catalog.models.map((m) => ({
+      id: m.id,
+      provider: m.provider,
+      model: m.model,
+      aliases: m.aliases ? [...m.aliases].sort() : [],
+      tiers: m.tiers.map((t) => ({
+        upToContextTokens: t.upToContextTokens ?? null,
+        inputPerMillion: t.inputPerMillion,
+        outputPerMillion: t.outputPerMillion,
+        cacheReadPerMillion: t.cacheReadPerMillion ?? null,
+        cacheWritePerMillion: t.cacheWritePerMillion ?? null
+      }))
+    })).sort((a, b) => a.id.localeCompare(b.id))
+  };
+  return createHash8("sha256").update(JSON.stringify(canonical), "utf8").digest("hex");
+}
+function parsePriceCatalog(text) {
+  const parsed = (0, import_yaml3.parse)(text);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("price catalog must be an object");
+  }
+  if (parsed.schema !== PRICES_SCHEMA) {
+    throw new Error(`price catalog schema must be ${PRICES_SCHEMA}`);
+  }
+  if (typeof parsed.date !== "string" || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(parsed.date)) {
+    throw new Error("price catalog date must be YYYY-MM-DD");
+  }
+  if (!Number.isFinite(Date.parse(parsed.date)) || new Date(parsed.date).toISOString().slice(0, 10) !== parsed.date) {
+    throw new Error("price catalog date must be a valid calendar date");
+  }
+  if (parsed.currency !== void 0 && parsed.currency !== "USD") throw new Error("price catalog currency must be USD");
+  if (typeof parsed.sha256 !== "string" || !/^(?:sha256:)?[a-f0-9]{64}$/.test(parsed.sha256)) {
+    throw new Error("price catalog sha256 must be a 64-character hex digest");
+  }
+  if (!Array.isArray(parsed.models) || parsed.models.length === 0) {
+    throw new Error("price catalog models must be a non-empty array");
+  }
+  const models = parsed.models.map((item, index) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new Error(`price catalog model at index ${index} must be an object`);
+    }
+    const m = item;
+    if (typeof m.id !== "string" || !m.id) {
+      throw new Error(`price catalog model at index ${index} must have a non-empty id`);
+    }
+    if (typeof m.provider !== "string" || !m.provider) {
+      throw new Error(`price catalog model at index ${index} must have a non-empty provider`);
+    }
+    if (typeof m.model !== "string" || !m.model) {
+      throw new Error(`price catalog model at index ${index} must have a non-empty model`);
+    }
+    const aliases = Array.isArray(m.aliases) ? m.aliases.filter((a) => typeof a === "string" && Boolean(a)) : void 0;
+    if (!Array.isArray(m.tiers) || m.tiers.length === 0) {
+      throw new Error(`price catalog model ${m.id} must have at least one tier`);
+    }
+    const rawTiers = m.tiers;
+    let previousBound = 0;
+    const tiers = rawTiers.map((tItem, tIndex) => {
+      if (!tItem || typeof tItem !== "object" || Array.isArray(tItem)) {
+        throw new Error(`tier at index ${tIndex} for model ${m.id} must be an object`);
+      }
+      const t = tItem;
+      const rate = (field, short, required = false) => {
+        const value = t[field] !== void 0 ? t[field] : t[short];
+        if (value == null && !required) return null;
+        if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+          throw new Error(`tier ${tIndex} for model ${m.id} requires finite non-negative ${field}`);
+        }
+        return value;
+      };
+      const bound = t.upToContextTokens ?? null;
+      if (bound === null) {
+        if (tIndex !== rawTiers.length - 1) throw new Error("unbounded price tier must be last");
+      } else {
+        if (typeof bound !== "number" || !Number.isSafeInteger(bound) || bound <= previousBound) throw new Error("price tier bounds must be positive and strictly increasing");
+        previousBound = bound;
+      }
+      return {
+        upToContextTokens: bound,
+        inputPerMillion: rate("inputPerMillion", "input", true),
+        outputPerMillion: rate("outputPerMillion", "output", true),
+        cacheReadPerMillion: rate("cacheReadPerMillion", "cacheRead"),
+        cacheWritePerMillion: rate("cacheWritePerMillion", "cacheWrite")
+      };
+    });
+    return {
+      id: m.id,
+      provider: m.provider,
+      model: m.model,
+      aliases,
+      tiers
+    };
+  });
+  const catalog = {
+    schema: PRICES_SCHEMA,
+    date: parsed.date,
+    sha256: parsed.sha256.replace(/^sha256:/, ""),
+    currency: typeof parsed.currency === "string" ? parsed.currency : "USD",
+    models
+  };
+  if (new Set(models.map((row) => row.id)).size !== models.length) throw new Error("duplicate price catalog model id");
+  if (hashPriceCatalog(catalog) !== catalog.sha256) throw new Error("price catalog hash mismatch");
+  return catalog;
+}
+function loadPriceCatalog(rootOrPath) {
+  const candidatePath = existsSync6(join7(rootOrPath, ".kxm", "prices.yaml")) ? join7(rootOrPath, ".kxm", "prices.yaml") : existsSync6(join7(rootOrPath, "prices.yaml")) ? join7(rootOrPath, "prices.yaml") : existsSync6(rootOrPath) && statSync(rootOrPath).isFile() ? rootOrPath : void 0;
+  if (!candidatePath || !existsSync6(candidatePath)) {
+    return void 0;
+  }
+  const content = readFileSync4(candidatePath, "utf8");
+  return parsePriceCatalog(content);
+}
+
+// plugins/kxm/src/vnext-engine.ts
+import { createHash as createHash11, randomBytes as randomBytes2, timingSafeEqual } from "node:crypto";
+
+// plugins/kxm/src/context-packet.ts
+import { randomUUID as randomUUID4 } from "node:crypto";
+var CONTEXT_PACKET_SCHEMA = "kxm.context-packet.v2";
+function buildFormalContextPacket(input) {
+  const packetId = `ctxpkt_${randomUUID4().replaceAll("-", "").slice(0, 16)}`;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const items = input.arbitratedItems ?? [];
+  const sharedDefaults = [];
+  const projectKnowledge = [];
+  const currentState = [];
+  const contradictions = [];
+  const activeSkills = [];
+  const provenanceSummary = {};
+  for (const item of items) {
+    provenanceSummary[item.kind] = (provenanceSummary[item.kind] ?? 0) + 1;
+    if (item.project === "_shared") {
+      sharedDefaults.push({ id: item.id, summary: item.summary });
+    } else if (item.kind === "knowledge") {
+      projectKnowledge.push(item);
+    } else if (item.kind === "state" || item.kind === "episode") {
+      currentState.push(item);
+    } else if (item.kind === "skill") {
+      activeSkills.push(item);
+    } else {
+      projectKnowledge.push(item);
+    }
+  }
+  if (input.environment) {
+    if (input.environment.sharedDefaults) sharedDefaults.push(...input.environment.sharedDefaults);
+    if (input.environment.projectKnowledge) projectKnowledge.push(...input.environment.projectKnowledge);
+    if (input.environment.currentState) currentState.push(...input.environment.currentState);
+    if (input.environment.contradictions) contradictions.push(...input.environment.contradictions);
+    if (input.environment.activeSkills) activeSkills.push(...input.environment.activeSkills);
+  }
+  const allocatedTokens = input.tokenBudget ?? 16e3;
+  const estimatedTokens = Math.ceil(
+    (JSON.stringify(input.task).length + JSON.stringify(input.plan).length + JSON.stringify(input.predecessors ?? []).length + JSON.stringify(items).length) / 4
+  );
+  return {
+    schema: CONTEXT_PACKET_SCHEMA,
+    packetId,
+    project: input.project,
+    generatedAt: now,
+    targetRole: input.targetRole,
+    task: input.task,
+    acceptanceCriteria: input.acceptanceCriteria ?? [],
+    plan: input.plan,
+    predecessors: input.predecessors ?? [],
+    environment: {
+      sharedDefaults,
+      projectKnowledge,
+      currentState,
+      contradictions,
+      activeSkills
+    },
+    budget: {
+      allocatedTokens,
+      estimatedTokens,
+      unresolvedGaps: [],
+      provenanceSummary
+    }
+  };
+}
+function formatContextPacketForPrompt(packet) {
+  const sections = [];
+  sections.push(`# Context Packet [${packet.packetId}]`);
+  sections.push(`**Project:** ${packet.project} | **Role:** ${packet.targetRole} | **Step:** ${packet.task.stepId} (Attempt ${packet.task.stepAttempt})`);
+  sections.push(`**Permission:** ${packet.task.permissionCeiling} | **Allowed Outcomes:** ${packet.task.allowedOutcomes.join(", ")}`);
+  sections.push("");
+  sections.push(`## 1. Objective`);
+  sections.push(packet.task.objective);
+  sections.push("");
+  if (packet.acceptanceCriteria.length > 0) {
+    sections.push(`## 2. Acceptance Criteria`);
+    for (const c of packet.acceptanceCriteria) {
+      sections.push(`- [ ] **${c.id}** (${c.verificationKind}${c.required ? ", required" : ""}): ${c.description}${c.targetRef ? ` [${c.targetRef}]` : ""}`);
+    }
+    sections.push("");
+  }
+  sections.push(`## 3. Plan Pointer`);
+  sections.push(`Plan Hash: \`${packet.plan.planHash}\` | Step ${packet.plan.activeStepIndex + 1} of ${packet.plan.totalSteps}`);
+  if (packet.plan.settledDecisions.length > 0) {
+    sections.push(`Settled Decisions:`);
+    for (const d of packet.plan.settledDecisions) {
+      sections.push(`  - ${d}`);
+    }
+  }
+  sections.push("");
+  if (packet.predecessors.length > 0) {
+    sections.push(`## 4. Predecessor Outputs`);
+    for (const p of packet.predecessors) {
+      sections.push(`### Predecessor: ${p.stepId} (${p.role}) - ${p.status}`);
+      sections.push(p.summary);
+      if (p.artifacts.length > 0) {
+        sections.push(`Artifacts:`);
+        for (const a of p.artifacts) {
+          sections.push(`  - \`${a.name}\` [${a.kind}] (${a.artifactRef})`);
+          if (a.contentSnippet) {
+            sections.push(`    \`\`\`
+    ${a.contentSnippet.trim()}
+    \`\`\``);
+          }
+        }
+      }
+    }
+    sections.push("");
+  }
+  if (packet.environment.projectKnowledge.length > 0 || packet.environment.sharedDefaults.length > 0) {
+    sections.push(`## 5. Environment & Memory`);
+    if (packet.environment.sharedDefaults.length > 0) {
+      sections.push(`### Shared Defaults`);
+      for (const d of packet.environment.sharedDefaults) {
+        sections.push(`- ${d.summary}`);
+      }
+    }
+    if (packet.environment.projectKnowledge.length > 0) {
+      sections.push(`### Project Knowledge`);
+      for (const k of packet.environment.projectKnowledge.slice(0, 5)) {
+        sections.push(`- [${k.authority}] ${k.summary}`);
+      }
+    }
+    if (packet.environment.contradictions.length > 0) {
+      sections.push(`### Active Contradictions`);
+      for (const c of packet.environment.contradictions) {
+        sections.push(`- \u26A0\uFE0F ${c.summary}`);
+      }
+    }
+    sections.push("");
+  }
+  return sections.join("\n").trim();
+}
+function estimateContextPacketTokens(packet) {
+  const prompt = formatContextPacketForPrompt(packet);
+  return Math.ceil(prompt.length / 4);
+}
+function pruneContextPacket(packet, tokenBudget) {
+  const budget = tokenBudget ?? packet.budget.allocatedTokens;
+  let currentTokens = estimateContextPacketTokens(packet);
+  const initialTokens = currentTokens;
+  const prunedStages = [];
+  const prunedItemCounts = {
+    sharedDefaults: 0,
+    episodes: 0,
+    docs: 0,
+    artifactSnippets: 0
+  };
+  const unresolvedGaps = [...packet.budget.unresolvedGaps];
+  if (currentTokens <= budget) {
+    return {
+      packet: {
+        ...packet,
+        budget: {
+          ...packet.budget,
+          allocatedTokens: budget,
+          estimatedTokens: currentTokens
+        }
+      },
+      audit: {
+        initialTokens,
+        finalTokens: currentTokens,
+        budgetTokens: budget,
+        prunedStages,
+        prunedItemCounts,
+        unresolvedGaps
+      }
+    };
+  }
+  const environment = {
+    sharedDefaults: [...packet.environment.sharedDefaults],
+    projectKnowledge: [...packet.environment.projectKnowledge],
+    currentState: [...packet.environment.currentState],
+    contradictions: [...packet.environment.contradictions],
+    activeSkills: [...packet.environment.activeSkills]
+  };
+  const predecessors = packet.predecessors.map((p) => ({
+    ...p,
+    artifacts: p.artifacts.map((a) => ({ ...a }))
+  }));
+  const workingPacket = {
+    ...packet,
+    environment,
+    predecessors,
+    budget: { ...packet.budget, allocatedTokens: budget }
+  };
+  if (environment.sharedDefaults.length > 0 && currentTokens > budget) {
+    prunedStages.push("L1_defaults");
+    while (environment.sharedDefaults.length > 0 && currentTokens > budget) {
+      environment.sharedDefaults.pop();
+      prunedItemCounts.sharedDefaults += 1;
+      currentTokens = estimateContextPacketTokens(workingPacket);
+    }
+  }
+  if (currentTokens > budget) {
+    const episodeIndices = [];
+    for (let i = environment.currentState.length - 1; i >= 0; i--) {
+      if (environment.currentState[i]?.kind === "episode") {
+        episodeIndices.push(i);
+      }
+    }
+    if (episodeIndices.length > 0) {
+      prunedStages.push("L2_episodes");
+      for (const idx of episodeIndices) {
+        if (currentTokens <= budget) break;
+        environment.currentState.splice(idx, 1);
+        prunedItemCounts.episodes += 1;
+        currentTokens = estimateContextPacketTokens(workingPacket);
+      }
+    }
+  }
+  if (currentTokens > budget && environment.projectKnowledge.length > 0) {
+    prunedStages.push("L2_docs");
+    while (environment.projectKnowledge.length > 0 && currentTokens > budget) {
+      environment.projectKnowledge.pop();
+      prunedItemCounts.docs += 1;
+      currentTokens = estimateContextPacketTokens(workingPacket);
+    }
+  }
+  if (currentTokens > budget) {
+    const hasArtifacts = predecessors.some((p) => p.artifacts.length > 0);
+    if (hasArtifacts) {
+      prunedStages.push("L5_artifacts");
+      for (const p of predecessors) {
+        for (const a of p.artifacts) {
+          if (a.contentSnippet) {
+            a.contentSnippet = void 0;
+            prunedItemCounts.artifactSnippets += 1;
+          }
+        }
+      }
+      currentTokens = estimateContextPacketTokens(workingPacket);
+      if (currentTokens > budget) {
+        for (const p of predecessors) {
+          p.artifacts = [];
+        }
+        currentTokens = estimateContextPacketTokens(workingPacket);
+      }
+    }
+  }
+  if (currentTokens > budget) {
+    unresolvedGaps.push("context_budget_exceeded_task_inviolable");
+  }
+  workingPacket.budget = {
+    ...packet.budget,
+    allocatedTokens: budget,
+    estimatedTokens: currentTokens,
+    unresolvedGaps
+  };
+  return {
+    packet: workingPacket,
+    audit: {
+      initialTokens,
+      finalTokens: currentTokens,
+      budgetTokens: budget,
+      prunedStages,
+      prunedItemCounts,
+      unresolvedGaps
+    }
+  };
+}
+
+// plugins/kxm/src/vnext-engine-artifacts.ts
+import { join as join8 } from "node:path";
+
+// plugins/kxm/src/artifacts-exist.ts
+import { lstatSync as lstatSync4, realpathSync as realpathSync3, statSync as statSync2 } from "node:fs";
+import { isAbsolute as isAbsolute3, relative as relative3, resolve as resolve5 } from "node:path";
+function staysUnder(root, candidate) {
+  const child = relative3(root, candidate);
+  return child === "" || !isAbsolute3(child) && child !== ".." && !child.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`);
+}
+function verifyArtifactExists(rootInput, pathInput) {
+  const lexicalRoot = resolve5(rootInput);
+  const lexicalPath = resolve5(pathInput);
+  if (!staysUnder(lexicalRoot, lexicalPath)) {
+    return { ok: false, error: "artifact_outside_workspace_assets", path: lexicalPath };
+  }
+  let realRoot;
+  let realPath;
+  try {
+    realRoot = realpathSync3(lexicalRoot);
+  } catch {
+    return { ok: false, error: "artifact_unreadable", path: lexicalPath };
+  }
+  try {
+    realPath = realpathSync3(lexicalPath);
+  } catch {
+    return { ok: false, error: "artifact_missing", path: lexicalPath };
+  }
+  if (!staysUnder(realRoot, realPath)) {
+    return { ok: false, error: "artifact_outside_workspace_assets", path: lexicalPath };
+  }
+  try {
+    const link = lstatSync4(lexicalPath);
+    if (link.isSymbolicLink()) {
+      return { ok: false, error: "artifact_outside_workspace_assets", path: lexicalPath };
+    }
+    const artifact = statSync2(realPath);
+    if (!artifact.isFile()) return { ok: false, error: "artifact_not_file", path: lexicalPath };
+    if (artifact.size < 1) return { ok: false, error: "artifact_empty", path: lexicalPath };
+    return { ok: true, path: realPath, bytes: artifact.size };
+  } catch {
+    return { ok: false, error: "artifact_unreadable", path: lexicalPath };
+  }
+}
+
+// plugins/kxm/src/vnext-engine-artifacts.ts
+var vnextArtifactsGateSeams = {};
+function evaluateArtifactsGate(context, definition) {
+  const root = join8(context.projectRoot, ".kxm", "assets");
+  const startedAt = (/* @__PURE__ */ new Date()).toISOString();
+  const startTime = process.hrtime.bigint();
+  let checkedCount = 0;
+  let failedCount = 0;
+  for (const [index, path] of definition.paths.entries()) {
+    checkedCount += 1;
+    const result = verifyArtifactExists(root, join8(root, path));
+    if (!result.ok) failedCount += 1;
+    vnextArtifactsGateSeams.afterPathChecked?.({ path, index, checkedCount, failedCount });
+  }
+  const elapsedNs = process.hrtime.bigint() - startTime;
+  const finishedAt = (/* @__PURE__ */ new Date()).toISOString();
+  return {
+    completeness: "complete",
+    spawned: 0,
+    pid: null,
+    exitCode: null,
+    signal: null,
+    exitObserved: 0,
+    closeObserved: 0,
+    stopCause: "none",
+    signalsAttempted: "none",
+    errorClass: null,
+    stdoutSha256: null,
+    stdoutBytes: null,
+    stdoutComplete: null,
+    stderrSha256: null,
+    stderrBytes: null,
+    stderrComplete: null,
+    checkedCount,
+    failedCount,
+    elapsedMs: Math.max(0, Math.floor(Number(elapsedNs) / 1e6)),
+    startedAt,
+    finishedAt
+  };
+}
+
+// plugins/kxm/src/vnext-engine-command.ts
+import { spawn as spawn2 } from "node:child_process";
+import { createHash as createHash9 } from "node:crypto";
+var MAX_DIRECT_TIMER_MS = 2147483647;
+var COMMAND_TERM_GRACE_MS = 2e3;
+var COMMAND_FINAL_WAIT_MS = 2e3;
+var COMMAND_LINGER_MS = 2e3;
+var vnextCommandGateSeams = {};
+var POST_SPAWN_CHILD_ERROR_CLASS = "stream-error";
+function createCommandObserver(input) {
+  return new CommandObserver(input);
+}
+var StreamDigest = class {
+  hash = createHash9("sha256");
+  bytes = 0;
+  complete = 0;
+  digest() {
+    return `sha256:${this.hash.copy().digest("hex")}`;
+  }
+  write(chunk) {
+    this.hash.update(chunk);
+    this.bytes += chunk.length;
+  }
+  end() {
+    this.complete = 1;
+  }
+};
+var CommandObserver = class {
+  definition;
+  cwd;
+  signal;
+  onSpawned;
+  termGraceMs;
+  finalWaitMs;
+  lingerMs;
+  child;
+  observedPid;
+  canSignal = true;
+  handedOff = false;
+  cleanupStarted = false;
+  spawnSeen = 0;
+  exitObserved = 0;
+  closeObserved = 0;
+  exitCode = null;
+  signalName = null;
+  stopCause = "none";
+  signalsAttempted = "none";
+  errorClass = null;
+  startedAt;
+  finishedAt = null;
+  startedMono = process.hrtime.bigint();
+  stdout = new StreamDigest();
+  stderr = new StreamDigest();
+  timeoutTimer;
+  termTimer;
+  finalTimer;
+  lingerTimer;
+  resolveOutcome;
+  abortListener;
+  constructor(input) {
+    this.definition = input.definition;
+    this.cwd = input.cwd;
+    this.signal = input.signal;
+    this.onSpawned = input.onSpawned;
+    const timing = vnextCommandGateSeams.timing;
+    this.termGraceMs = clampTimer(timing?.termGraceMs ?? COMMAND_TERM_GRACE_MS);
+    this.finalWaitMs = clampTimer(timing?.finalWaitMs ?? COMMAND_FINAL_WAIT_MS);
+    this.lingerMs = clampTimer(timing?.lingerMs ?? COMMAND_LINGER_MS);
+    this.startedAt = (/* @__PURE__ */ new Date()).toISOString();
+    this.abortListener = () => this.requestStop("cancel");
+  }
+  requestStop(cause, errorClass) {
+    if (cause === "none") return;
+    if (this.stopCause === "none") {
+      this.stopCause = cause;
+      if (errorClass && this.errorClass === null) this.errorClass = errorClass;
+      vnextCommandGateSeams.afterStopRequested?.(cause);
+      this.clearTimer("linger");
+      this.beginSignalSequence();
+      return;
+    }
+    if (errorClass && this.errorClass === null) this.errorClass = errorClass;
+  }
+  beginBoundedCleanup() {
+    this.cleanupStarted = true;
+    this.requestStop("error", "lost-close");
+  }
+  run() {
+    return new Promise((resolve8) => {
+      this.resolveOutcome = resolve8;
+      try {
+        this.start();
+      } catch (error) {
+        if (this.child !== void 0 || this.spawnSeen === 1 || this.observedPid !== void 0) {
+          this.requestStop("error", "stop-error");
+          return;
+        }
+        this.finishNoStart("validation", error);
+      }
+    });
+  }
+  start() {
+    if (this.signal.aborted || this.cleanupStarted) {
+      this.finishNoStart(this.signal.aborted ? "cancel" : "lost-close");
+      return;
+    }
+    try {
+      vnextCommandGateSeams.beforeSpawn?.(this.definition);
+    } catch {
+      this.finishNoStart("validation");
+      return;
+    }
+    if (this.signal.aborted || this.cleanupStarted) {
+      this.finishNoStart(this.signal.aborted ? "cancel" : "lost-close");
+      return;
+    }
+    if (!Number.isInteger(this.definition.timeoutMs) || this.definition.timeoutMs < 1 || this.definition.timeoutMs > MAX_DIRECT_TIMER_MS) {
+      throw runtimeError("run_events_illegal", "command", "command timeoutMs exceeds the direct timer bound");
+    }
+    this.startedAt = (/* @__PURE__ */ new Date()).toISOString();
+    let child;
+    try {
+      child = spawn2(this.definition.argv[0], this.definition.argv.slice(1), {
+        cwd: this.cwd,
+        env: process.env,
+        shell: false,
+        detached: true,
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true
+      });
+    } catch {
+      this.finishNoStart("validation");
+      return;
+    }
+    this.child = child;
+    this.observePid(child.pid);
+    this.armTimeout();
+    this.signal.addEventListener("abort", this.abortListener);
+    this.attachChild(child);
+  }
+  attachChild(child) {
+    child.stdout?.on("data", (chunk) => {
+      if (this.handedOff) return;
+      try {
+        this.stdout.write(chunk);
+      } catch {
+        this.requestStop("error", "stream-error");
+      }
+    });
+    child.stderr?.on("data", (chunk) => {
+      if (this.handedOff) return;
+      try {
+        this.stderr.write(chunk);
+      } catch {
+        this.requestStop("error", "stream-error");
+      }
+    });
+    child.stdout?.on("end", () => {
+      if (this.handedOff) return;
+      try {
+        this.stdout.end();
+      } catch {
+        this.requestStop("error", "stream-error");
+      }
+    });
+    child.stderr?.on("end", () => {
+      if (this.handedOff) return;
+      try {
+        this.stderr.end();
+      } catch {
+        this.requestStop("error", "stream-error");
+      }
+    });
+    child.stdout?.on("error", () => this.requestStop("error", "stream-error"));
+    child.stderr?.on("error", () => this.requestStop("error", "stream-error"));
+    child.once("spawn", () => {
+      this.spawnSeen = 1;
+      this.observePid(child.pid);
+      if (this.observedPid !== void 0) {
+        this.notifySpawned();
+      } else {
+        this.requestStop("error", POST_SPAWN_CHILD_ERROR_CLASS);
+      }
+    });
+    child.once("error", () => {
+      if (this.spawnSeen === 0 && child.pid == null && this.observedPid === void 0) {
+        this.finishNoStart("spawn-error");
+        return;
+      }
+      if (this.spawnSeen === 0) {
+        this.spawnSeen = 1;
+        this.observePid(child.pid);
+        this.notifySpawned();
+      }
+      this.requestStop("error", POST_SPAWN_CHILD_ERROR_CLASS);
+    });
+    child.once("exit", (code, signal) => {
+      this.exitObserved = 1;
+      this.exitCode = code;
+      this.signalName = signal;
+      if (this.closeObserved === 1) {
+        this.handoff();
+        return;
+      }
+      this.armLinger();
+    });
+    child.once("close", () => {
+      this.closeObserved = 1;
+      this.finishedAt = (/* @__PURE__ */ new Date()).toISOString();
+      this.canSignal = false;
+      this.clearTimer("term");
+      this.clearTimer("final");
+      this.clearTimer("linger");
+      this.clearTimer("timeout");
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+      dropVnextCommandStopCapability(this);
+      try {
+        vnextCommandGateSeams.afterChildClose?.();
+      } catch {
+      }
+      this.handoff();
+    });
+  }
+  notifiedSpawned = false;
+  observePid(pid) {
+    if (this.observedPid === void 0 && typeof pid === "number" && pid > 0) {
+      this.observedPid = pid;
+    }
+  }
+  notifySpawned() {
+    if (this.notifiedSpawned || this.observedPid === void 0) return;
+    this.notifiedSpawned = true;
+    try {
+      this.onSpawned(this.observedPid);
+    } catch {
+      this.requestStop("error", "recording-error");
+    }
+    try {
+      vnextCommandGateSeams.afterSpawned?.(this.observedPid);
+    } catch {
+      this.requestStop("error", "recording-error");
+    }
+  }
+  armTimeout() {
+    this.timeoutTimer = schedule(this.definition.timeoutMs, () => {
+      this.requestStop("timeout");
+    });
+  }
+  armLinger() {
+    if (this.stopCause !== "none") return;
+    if (this.lingerTimer || this.closeObserved === 1) return;
+    this.lingerTimer = schedule(this.lingerMs, () => {
+      this.requestStop("error", "lost-close");
+    });
+  }
+  beginSignalSequence() {
+    if (this.closeObserved === 1 || this.handedOff) {
+      this.handoff();
+      return;
+    }
+    const pid = this.observedPid;
+    if (!this.canSignal || pid === void 0) {
+      this.armFinal();
+      return;
+    }
+    this.signalGroup(pid, "SIGTERM", "term");
+    this.termTimer = schedule(this.termGraceMs, () => {
+      if (this.closeObserved === 1 || this.handedOff) return;
+      if (!this.canSignal || this.observedPid === void 0) {
+        this.armFinal();
+        return;
+      }
+      this.signalGroup(this.observedPid, "SIGKILL", "term-kill");
+      this.armFinal();
+    });
+  }
+  signalGroup(pid, signal, attempted) {
+    if (!this.canSignal || this.closeObserved === 1 || pid <= 0) return;
+    try {
+      process.kill(-pid, signal);
+      this.signalsAttempted = attempted;
+    } catch (error) {
+      const code = error.code;
+      if (code === "ESRCH") {
+        this.canSignal = false;
+        return;
+      }
+      if (this.errorClass === null) this.errorClass = "stop-error";
+    }
+  }
+  armFinal() {
+    if (this.finalTimer) return;
+    this.finalTimer = schedule(this.finalWaitMs, () => {
+      this.canSignal = false;
+      this.handoff();
+    });
+  }
+  finishNoStart(kind, _error) {
+    if (this.handedOff) return;
+    if (kind === "lost-close" && this.spawnSeen === 1) {
+      this.requestStop("error", "lost-close");
+      return;
+    }
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const cancel = kind === "cancel";
+    this.handoffWith({
+      kind: "no-start",
+      observation: this.baseObservation({
+        completeness: "no-start",
+        spawned: 0,
+        pid: null,
+        exitCode: null,
+        signal: null,
+        exitObserved: 0,
+        closeObserved: 0,
+        stopCause: cancel ? "cancel" : "none",
+        signalsAttempted: "none",
+        errorClass: cancel ? null : kind === "spawn-error" ? "spawn-error" : "validation",
+        stdoutSha256: null,
+        stdoutBytes: null,
+        stdoutComplete: null,
+        stderrSha256: null,
+        stderrBytes: null,
+        stderrComplete: null,
+        finishedAt: now
+      })
+    });
+  }
+  handoff() {
+    if (this.handedOff) return;
+    if (this.spawnSeen === 0 && this.observedPid === void 0) {
+      if (this.stopCause === "cancel" || this.signal.aborted) {
+        this.finishNoStart("cancel");
+        return;
+      }
+      if (this.errorClass === "spawn-error") {
+        this.finishNoStart("spawn-error");
+        return;
+      }
+      this.finishNoStart("validation");
+      return;
+    }
+    const observation = this.snapshot();
+    if (isCompleteNormal(observation)) {
+      this.handoffWith({ kind: "complete", observation });
+      return;
+    }
+    this.handoffWith({
+      kind: "uncertain",
+      reason: this.uncertaintyReason(observation),
+      observation: { ...observation, completeness: "incomplete" }
+    });
+  }
+  uncertaintyReason(observation) {
+    if (this.stopCause === "timeout") return "timeout";
+    if (this.stopCause === "cancel") return "cancel";
+    if (this.errorClass === "recording-error") return "recording-error";
+    if (this.errorClass === "lost-close" || this.exitObserved === 1 && this.closeObserved === 0) return "lost-close";
+    if (this.errorClass === "stop-error") return "stop-error";
+    if (this.errorClass === "stream-error") return "stream-error";
+    if (this.stopCause === "error") return "stream-error";
+    if (observation.signal !== null) return "signal-termination";
+    return "stop-error";
+  }
+  snapshot() {
+    return this.baseObservation({
+      completeness: "complete",
+      spawned: this.spawnSeen,
+      pid: this.observedPid ?? null,
+      exitCode: this.signalName !== null ? null : this.exitCode,
+      signal: this.signalName,
+      exitObserved: this.exitObserved,
+      closeObserved: this.closeObserved,
+      stopCause: this.stopCause,
+      signalsAttempted: this.signalsAttempted,
+      errorClass: this.errorClass,
+      stdoutSha256: this.stdout.digest(),
+      stdoutBytes: this.stdout.bytes,
+      stdoutComplete: this.stdout.complete,
+      stderrSha256: this.stderr.digest(),
+      stderrBytes: this.stderr.bytes,
+      stderrComplete: this.stderr.complete,
+      finishedAt: this.finishedAt
+    });
+  }
+  baseObservation(facts) {
+    const elapsedNs = process.hrtime.bigint() - this.startedMono;
+    return {
+      ...facts,
+      checkedCount: null,
+      failedCount: null,
+      elapsedMs: facts.elapsedMs ?? Math.max(0, Math.floor(Number(elapsedNs) / 1e6)),
+      startedAt: facts.startedAt ?? this.startedAt
+    };
+  }
+  handoffWith(outcome) {
+    if (this.handedOff) return;
+    this.handedOff = true;
+    this.canSignal = false;
+    this.signal.removeEventListener("abort", this.abortListener);
+    this.clearTimer("timeout");
+    this.clearTimer("term");
+    this.clearTimer("final");
+    this.clearTimer("linger");
+    this.child?.unref();
+    dropVnextCommandStopCapability(this);
+    this.resolveOutcome?.(outcome);
+  }
+  clearTimer(name) {
+    const current = this[`${name}Timer`];
+    if (current) clearTimeout(current);
+    this[`${name}Timer`] = void 0;
+  }
+};
+function dropVnextCommandStopCapability(observer) {
+  observer.requestStop = () => void 0;
+}
+function isCompleteNormal(observation) {
+  return observation.completeness === "complete" && observation.spawned === 1 && typeof observation.pid === "number" && typeof observation.exitCode === "number" && observation.signal === null && observation.exitObserved === 1 && observation.closeObserved === 1 && observation.stopCause === "none" && observation.signalsAttempted === "none" && observation.errorClass === null && observation.stdoutComplete === 1 && observation.stderrComplete === 1 && typeof observation.stdoutSha256 === "string" && typeof observation.stderrSha256 === "string";
+}
+function clampTimer(ms) {
+  if (!Number.isInteger(ms) || ms < 0 || ms > MAX_DIRECT_TIMER_MS) {
+    throw runtimeError("run_events_illegal", "command", "command timer is outside the direct timer bound");
+  }
+  return ms;
+}
+function schedule(ms, fn) {
+  return setTimeout(fn, clampTimer(ms));
+}
+
+// plugins/kxm/src/vnext-engine-gate-records.ts
+function recordGateIntentInTransaction(context, run, envelope, stepId) {
+  const step = requireGateStep(envelope, stepId, run.runId);
+  const definition = envelope.gates.definitions[step.gate];
+  if (!definition || definition.kind === "reserved") {
+    throw runtimeError("gate_row_invalid", run.runId, "reserved gates cannot record intent in this slice");
+  }
+  const folded = foldStoredVnextRun(context, run);
+  const used = folded.stepAttempts[stepId] ?? 0;
+  const stepAttempt = used + 1;
+  const assignmentId = newVnextAssignmentId();
+  const attemptId = newVnextAttemptId();
+  const effectId = newVnextEffectId();
+  const minted = mintVnextCapabilitySecret();
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const seq = sequencer(context, run, now);
+  seq.push("step.entered", { stepId, stepAttempt, status: "pending" });
+  seq.push("step.status_changed", { stepId, status: "preparing", previousStatus: "pending" });
+  seq.push("assignment.created", { assignmentId, stepId, stepAttempt, agentId: "coordinator", status: "created" });
+  seq.push("assignment.accepted", { assignmentId, stepId, stepAttempt, attemptId, status: "accepted" });
+  seq.push("attempt.created", { attemptId, assignmentId, stepId, stepAttempt, status: "created" });
+  seq.push("assignment.dispatched", { assignmentId, stepId, stepAttempt, attemptId, capabilityHash: minted.hash, status: "dispatched" });
+  seq.push("attempt.status_changed", { attemptId, assignmentId, stepId, stepAttempt, status: "starting" });
+  seq.push("step.status_changed", { stepId, status: "running", previousStatus: "preparing" });
+  const policyClass = definition.kind === "artifacts-exist" ? "read-only" : "unknown";
+  const intent = seq.push("effect.intent_recorded", {
+    effect: { id: effectId, policy: { class: policyClass, sharedMutable: false } },
+    stepId,
+    stepAttempt,
+    assignmentId,
+    attemptId
+  });
+  for (const event of seq.events) context.eventStore.appendEvent(event);
+  context.eventStore.insertCapability({
+    attemptId,
+    runId: run.runId,
+    assignmentId,
+    stepId,
+    stepAttempt,
+    producerId: "kxm-gate",
+    capabilityHash: minted.hash,
+    state: "issued"
+  });
+  const attemptRow = {
+    attemptId,
+    runId: run.runId,
+    projectId: run.projectId,
+    homeRuntimeId: run.homeRuntimeId,
+    stepId,
+    stepAttempt,
+    assignmentId,
+    effectId,
+    gateId: step.gate,
+    gateKind: definition.kind,
+    expect: step.expect,
+    gateDefinitionHash: gateDefinitionHash(step.gate, definition),
+    registryHash: envelope.gates.registry.hash,
+    runPlanHash: envelope && folded.runPlanHash ? folded.runPlanHash : hashFromStore(context, run.runId),
+    controlProjectKey: envelope.gates.controlRoot.projectKey,
+    producerId: "kxm-gate",
+    intentEventId: intent.eventId,
+    contentHash: ""
+  };
+  attemptRow.runPlanHash = context.eventStore.runPlan(run.runId).runPlanHash;
+  const withHash = { ...attemptRow, contentHash: gateRowContentHash("gate_attempts", { ...attemptRow, contentHash: "" }) };
+  context.eventStore.insertGateAttempt(withHash);
+  return persist(context, run, now, seq.events.at(-1).sequence);
+}
+function recordGateSpawnedInTransaction(context, run, envelope, stepId) {
+  const ids = requireIntent(context, run, envelope, stepId);
+  if (ids.gateKind !== "command") throw runtimeError("gate_row_invalid", run.runId, "effect.dispatched is command-only");
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const seq = sequencer(context, run, now);
+  seq.push("assignment.executing", { assignmentId: ids.assignmentId, stepId, stepAttempt: ids.stepAttempt, attemptId: ids.attemptId, status: "executing" });
+  seq.push("attempt.status_changed", { attemptId: ids.attemptId, assignmentId: ids.assignmentId, stepId, stepAttempt: ids.stepAttempt, status: "executing" });
+  seq.push("effect.dispatched", {
+    effect: { id: ids.effectId, policy: { class: "unknown", sharedMutable: false } },
+    stepId,
+    stepAttempt: ids.stepAttempt,
+    assignmentId: ids.assignmentId,
+    attemptId: ids.attemptId
+  });
+  for (const event of seq.events) context.eventStore.appendEvent(event);
+  return persist(context, run, now, seq.events.at(-1).sequence);
+}
+function recordGateSettlementInTransaction(context, run, envelope, stepId, observation) {
+  const ids = requireIntent(context, run, envelope, stepId);
+  assertClosedGateObservation(ids.gateKind, observation);
+  const outcome = computeGateEvidenceOutcome(ids.gateKind, ids.expect, observation);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const seq = sequencer(context, run, now);
+  if (ids.gateKind === "artifacts-exist") {
+    seq.push("assignment.executing", { assignmentId: ids.assignmentId, stepId, stepAttempt: ids.stepAttempt, attemptId: ids.attemptId, status: "executing" });
+    seq.push("attempt.status_changed", { attemptId: ids.attemptId, assignmentId: ids.assignmentId, stepId, stepAttempt: ids.stepAttempt, status: "executing" });
+    seq.push("effect.dispatched", {
+      effect: { id: ids.effectId, policy: { class: "read-only", sharedMutable: false } },
+      stepId,
+      stepAttempt: ids.stepAttempt,
+      assignmentId: ids.assignmentId,
+      attemptId: ids.attemptId
+    });
+  }
+  seq.push("attempt.status_changed", { attemptId: ids.attemptId, assignmentId: ids.assignmentId, stepId, stepAttempt: ids.stepAttempt, status: "settling" });
+  const observationId = newVnextObservationId();
+  const observed = seq.push("effect.observed", {
+    effect: { id: ids.effectId, policy: { class: ids.gateKind === "artifacts-exist" ? "read-only" : "unknown", sharedMutable: false } },
+    stepId,
+    stepAttempt: ids.stepAttempt,
+    assignmentId: ids.assignmentId,
+    attemptId: ids.attemptId,
+    receipt: placeholderReceipt(observationId, ids.gateKind, now)
+  });
+  const observationRow = buildObservation(ids, observation, observationId, observed.eventId);
+  patchReceipt(observed, observationRow);
+  const evidenceId = newVnextEvidenceId();
+  const evidenceDraft = {
+    evidenceId,
+    attemptId: ids.attemptId,
+    observationId,
+    runId: run.runId,
+    projectId: run.projectId,
+    homeRuntimeId: run.homeRuntimeId,
+    stepId,
+    stepAttempt: ids.stepAttempt,
+    assignmentId: ids.assignmentId,
+    effectId: ids.effectId,
+    evidenceKey: evidenceKeyFor(envelope, stepId),
+    kind: "gate",
+    expect: ids.expect,
+    outcome,
+    settledEventId: "evt_pending00000000000000000000000",
+    contentHash: ""
+  };
+  const settled = seq.push("effect.settled", {
+    effect: { id: ids.effectId, policy: { class: ids.gateKind === "artifacts-exist" ? "read-only" : "unknown", sharedMutable: false } },
+    stepId,
+    stepAttempt: ids.stepAttempt,
+    assignmentId: ids.assignmentId,
+    attemptId: ids.attemptId,
+    outcome,
+    evidenceRefs: [{ id: evidenceId, kind: "gate", hash: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", status: "settled" }]
+  });
+  evidenceDraft.settledEventId = settled.eventId;
+  evidenceDraft.contentHash = gateRowContentHash("gate_evidence", { ...evidenceDraft, contentHash: "" });
+  settled.payload.evidenceRefs[0].hash = evidenceDraft.contentHash;
+  appendEvaluatedTail(seq, envelope, ids, stepId, outcome);
+  for (const event of seq.events) context.eventStore.appendEvent(event);
+  context.eventStore.insertGateObservation(observationRow);
+  context.eventStore.insertGateEvidence(evidenceDraft);
+  context.eventStore.settleCapability(ids.attemptId, "settled");
+  return persist(context, run, now, seq.events.at(-1).sequence);
+}
+function recordGateNoStartInTransaction(context, run, envelope, stepId, observation) {
+  const ids = requireIntent(context, run, envelope, stepId);
+  assertClosedGateObservation(ids.gateKind, observation);
+  if (observation.completeness !== "no-start") {
+    throw runtimeError("gate_row_invalid", run.runId, "no-start proof requires spawned 0 and completeness no-start");
+  }
+  const cancelled = observation.stopCause === "cancel";
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const seq = sequencer(context, run, now);
+  if (cancelled) ensureOperatorCancel(seq, ids.state, run);
+  const observationId = newVnextObservationId();
+  const observed = seq.push("effect.observed", {
+    effect: { id: ids.effectId, policy: { class: ids.gateKind === "artifacts-exist" ? "read-only" : "unknown", sharedMutable: false } },
+    stepId,
+    stepAttempt: ids.stepAttempt,
+    assignmentId: ids.assignmentId,
+    attemptId: ids.attemptId,
+    receipt: placeholderReceipt(observationId, ids.gateKind, now)
+  });
+  const observationRow = buildObservation(ids, observation, observationId, observed.eventId);
+  patchReceipt(observed, observationRow);
+  seq.push("attempt.status_changed", { attemptId: ids.attemptId, assignmentId: ids.assignmentId, stepId, stepAttempt: ids.stepAttempt, status: "settling" });
+  seq.push("effect.settled", {
+    effect: { id: ids.effectId, policy: { class: ids.gateKind === "artifacts-exist" ? "read-only" : "unknown", sharedMutable: false } },
+    stepId,
+    stepAttempt: ids.stepAttempt,
+    assignmentId: ids.assignmentId,
+    attemptId: ids.attemptId,
+    receipt: {
+      provider: "kxm-gate",
+      kind: ids.gateKind,
+      id: observationId,
+      hash: observationRow.contentHash,
+      observedAt: now
+    }
+  });
+  if (cancelled) {
+    seq.push("assignment.result_recorded", { assignmentId: ids.assignmentId, resultClass: "cancelled", status: "result_recorded" });
+    seq.push("attempt.status_changed", { attemptId: ids.attemptId, status: "terminal" });
+    seq.push("assignment.terminal", { assignmentId: ids.assignmentId, outcome: "cancelled", status: "terminal" });
+    seq.push("step.status_changed", { stepId, status: "cancelled", previousStatus: "running" });
+    seq.push("run.status_changed", { status: "cancelled", reason: "operator_cancel", stepId });
+  } else {
+    seq.push("assignment.result_recorded", { assignmentId: ids.assignmentId, resultClass: "producer_rejected", status: "result_recorded" });
+    seq.push("attempt.status_changed", { attemptId: ids.attemptId, status: "terminal" });
+    seq.push("assignment.terminal", { assignmentId: ids.assignmentId, outcome: "failed", status: "terminal" });
+    seq.push("step.status_changed", { stepId, status: "failed", previousStatus: "running" });
+    seq.push("run.status_changed", { status: "failed", reason: "gate_start_failed", stepId });
+  }
+  for (const event of seq.events) context.eventStore.appendEvent(event);
+  context.eventStore.insertGateObservation(observationRow);
+  context.eventStore.settleCapability(ids.attemptId, "settled");
+  return persist(context, run, now, seq.events.at(-1).sequence);
+}
+function recordGateUncertainInTransaction(context, run, envelope, stepId, reason, observation) {
+  const ids = requireIntent(context, run, envelope, stepId);
+  if (observation.completeness !== "incomplete") {
+    throw runtimeError("gate_row_invalid", run.runId, "uncertainty observation must be incomplete");
+  }
+  const effectState = ids.state.currentStep?.effectState;
+  if (effectState === "observed-complete" || effectState === "observed-no-start" || effectState === "observed-unknown" || effectState === "settled" || effectState === "settled-proof") {
+    throw runtimeError("run_events_illegal", run.runId, "blocked_uncertain after an observation is illegal");
+  }
+  if (context.eventStore.gateObservationForAttempt(ids.attemptId)) {
+    throw runtimeError("run_events_illegal", run.runId, "a completed observation cannot be rewritten");
+  }
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const seq = sequencer(context, run, now);
+  const observationId = newVnextObservationId();
+  const blocked = seq.push("effect.blocked_uncertain", {
+    effect: { id: ids.effectId, policy: { class: ids.gateKind === "artifacts-exist" ? "read-only" : "unknown", sharedMutable: false } },
+    stepId,
+    stepAttempt: ids.stepAttempt,
+    assignmentId: ids.assignmentId,
+    attemptId: ids.attemptId,
+    reason,
+    receipt: placeholderReceipt(observationId, ids.gateKind, now)
+  });
+  const observationRow = buildObservation(ids, observation, observationId, blocked.eventId);
+  patchReceipt(blocked, observationRow);
+  for (const event of seq.events) context.eventStore.appendEvent(event);
+  context.eventStore.insertGateObservation(observationRow);
+  return persist(context, run, now, seq.events.at(-1).sequence);
+}
+function recordGateCancelObservedInTransaction(context, run, envelope, stepId, observation) {
+  const ids = requireIntent(context, run, envelope, stepId);
+  assertClosedGateObservation(ids.gateKind, observation);
+  if (observation.completeness !== "complete") {
+    throw runtimeError("gate_row_invalid", run.runId, "cancel-after-observation requires a complete observation");
+  }
+  if (ids.gateKind === "command" && ids.state.currentStep?.effectState !== "dispatched") {
+    throw runtimeError("run_events_illegal", run.runId, "complete command observations require effect.dispatched");
+  }
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const seq = sequencer(context, run, now);
+  ensureOperatorCancel(seq, ids.state, run);
+  if (ids.gateKind === "artifacts-exist") {
+    seq.push("assignment.executing", { assignmentId: ids.assignmentId, stepId, stepAttempt: ids.stepAttempt, attemptId: ids.attemptId, status: "executing" });
+    seq.push("attempt.status_changed", { attemptId: ids.attemptId, assignmentId: ids.assignmentId, stepId, stepAttempt: ids.stepAttempt, status: "executing" });
+    seq.push("effect.dispatched", {
+      effect: { id: ids.effectId, policy: { class: "read-only", sharedMutable: false } },
+      stepId,
+      stepAttempt: ids.stepAttempt,
+      assignmentId: ids.assignmentId,
+      attemptId: ids.attemptId
+    });
+  }
+  seq.push("attempt.status_changed", { attemptId: ids.attemptId, assignmentId: ids.assignmentId, stepId, stepAttempt: ids.stepAttempt, status: "settling" });
+  const observationId = newVnextObservationId();
+  const policyClass = ids.gateKind === "artifacts-exist" ? "read-only" : "unknown";
+  const observed = seq.push("effect.observed", {
+    effect: { id: ids.effectId, policy: { class: policyClass, sharedMutable: false } },
+    stepId,
+    stepAttempt: ids.stepAttempt,
+    assignmentId: ids.assignmentId,
+    attemptId: ids.attemptId,
+    receipt: placeholderReceipt(observationId, ids.gateKind, now)
+  });
+  const observationRow = buildObservation(ids, observation, observationId, observed.eventId);
+  patchReceipt(observed, observationRow);
+  seq.push("effect.settled", {
+    effect: { id: ids.effectId, policy: { class: policyClass, sharedMutable: false } },
+    stepId,
+    stepAttempt: ids.stepAttempt,
+    assignmentId: ids.assignmentId,
+    attemptId: ids.attemptId,
+    receipt: {
+      provider: "kxm-gate",
+      kind: ids.gateKind,
+      id: observationId,
+      hash: observationRow.contentHash,
+      observedAt: now
+    }
+  });
+  seq.push("assignment.result_recorded", { assignmentId: ids.assignmentId, resultClass: "cancelled", status: "result_recorded" });
+  seq.push("attempt.status_changed", { attemptId: ids.attemptId, status: "terminal" });
+  seq.push("assignment.terminal", { assignmentId: ids.assignmentId, outcome: "cancelled", status: "terminal" });
+  seq.push("step.status_changed", { stepId, status: "cancelled", previousStatus: "running" });
+  seq.push("run.status_changed", { status: "cancelled", reason: "operator_cancel", stepId });
+  for (const event of seq.events) context.eventStore.appendEvent(event);
+  context.eventStore.insertGateObservation(observationRow);
+  context.eventStore.settleCapability(ids.attemptId, "settled");
+  return persist(context, run, now, seq.events.at(-1).sequence);
+}
+function appendEvaluatedTail(seq, envelope, ids, stepId, outcome) {
+  const mapped = outcome === "passed" ? "passed" : outcome === "repro-missing" ? "failed" : "failed";
+  seq.push("assignment.result_recorded", { assignmentId: ids.assignmentId, resultClass: "outcome", outcome, status: "result_recorded" });
+  seq.push("attempt.status_changed", { attemptId: ids.attemptId, status: "terminal" });
+  seq.push("assignment.terminal", { assignmentId: ids.assignmentId, outcome, status: "terminal" });
+  seq.push("step.outcome_recorded", { stepId, stepAttempt: ids.stepAttempt, outcome });
+  seq.push("step.status_changed", { stepId, status: mapped, previousStatus: "running" });
+  const selected = envelope.plan.steps[stepId].transitions[outcome];
+  if (!selected) {
+    seq.push("run.status_changed", { status: "failed", reason: "outcome_unknown", stepId, outcome });
+    return;
+  }
+  const budget = vnextTransitionBudgetFailure(envelope.plan, ids.state, stepId, outcome);
+  if (budget) {
+    seq.push("run.status_changed", { status: "failed", reason: budget, stepId, outcome });
+    return;
+  }
+  if (selected.to === "step") {
+    seq.push("step.transitioned", { fromStepId: stepId, toStepId: selected.target, outcome });
+  } else {
+    seq.push("step.transitioned", { fromStepId: stepId, status: selected.terminalStatus, outcome });
+    seq.push("run.status_changed", { status: selected.terminalStatus });
+  }
+}
+function evidenceKeyFor(envelope, stepId) {
+  const required = envelope.plan.steps[stepId]?.requiredEvidence.filter((item) => item.kind === "gate") ?? [];
+  return required.length === 1 ? required[0].key : null;
+}
+function placeholderReceipt(observationId, kind, now) {
+  return {
+    provider: "kxm-gate",
+    kind,
+    id: observationId,
+    hash: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    observedAt: now
+  };
+}
+function patchReceipt(event, row) {
+  const receipt = event.payload.receipt;
+  receipt.hash = row.contentHash;
+}
+function buildObservation(ids, observation, observationId, recordedEventId) {
+  const row = {
+    observationId,
+    attemptId: ids.attemptId,
+    runId: ids.runId,
+    projectId: ids.projectId,
+    homeRuntimeId: ids.homeRuntimeId,
+    stepId: ids.stepId,
+    stepAttempt: ids.stepAttempt,
+    assignmentId: ids.assignmentId,
+    effectId: ids.effectId,
+    ...observation,
+    recordedEventId,
+    contentHash: ""
+  };
+  return { ...row, contentHash: gateRowContentHash("gate_observations", { ...row, contentHash: "" }) };
+}
+function requireGateStep(envelope, stepId, runId) {
+  const step = envelope.plan.steps[stepId];
+  if (!step || step.kind !== "gate") throw runtimeError("run_events_illegal", runId, `step ${stepId} is not a gate`);
+  return step;
+}
+function requireIntent(context, run, envelope, stepId) {
+  const step = requireGateStep(envelope, stepId, run.runId);
+  const folded = foldStoredVnextRun(context, run);
+  const attemptId = folded.currentStep?.attemptId;
+  if (!attemptId || folded.currentStep?.stepId !== stepId) {
+    throw runtimeError("run_events_illegal", run.runId, "gate intent has not been recorded");
+  }
+  const row = context.eventStore.gateAttempt(attemptId);
+  if (!row) throw runtimeError("gate_row_invalid", run.runId, "missing gate attempt");
+  return {
+    ...row,
+    gateKind: row.gateKind,
+    expect: step.expect,
+    state: folded
+  };
+}
+function ensureOperatorCancel(seq, state, run) {
+  if (state.status === "cancelling") return;
+  if (state.status !== "running") {
+    throw runtimeError("run_events_illegal", run.runId, "cancelled gate proof requires a running or cancelling run");
+  }
+  seq.push("run.cancel_requested", {
+    actor: { kind: "runtime", id: run.homeRuntimeId },
+    reason: "operator_cancel"
+  });
+  seq.push("run.status_changed", { status: "cancelling", reason: "operator_cancel" });
+}
+function sequencer(context, run, now) {
+  let sequence = context.eventStore.nextSequence(run.runId);
+  let mono = vnextMonotonicNs();
+  const events = [];
+  return {
+    events,
+    push(eventType, payload) {
+      const event = {
+        ...vnextEventBase(context, run, now, mono),
+        eventId: newVnextEventId(),
+        eventType,
+        sequence: sequence++,
+        payload
+      };
+      mono = vnextIncrementMonotonicNs(mono);
+      events.push(event);
+      return event;
+    }
+  };
+}
+function persist(context, run, now, lastSequence) {
+  const next = foldStoredVnextRun(context, run);
+  persistVnextRunState(context, run.runId, next, lastSequence);
+  context.eventStore.updateRunStatus(run.runId, next.status, now);
+  return { state: next, run: { ...run, status: next.status, updatedAt: now } };
+}
+function hashFromStore(context, runId) {
+  return context.eventStore.runPlan(runId).runPlanHash;
+}
+
+// plugins/kxm/src/routing.ts
+import { createHash as createHash10 } from "node:crypto";
+var ROUTING_RECORD_V2_SCHEMA = "kxm.routing-record.v2";
+var BEHAVIORAL_HASH_VERSION = 1;
+var MAX_PROVIDER_METADATA_FIELDS = 32;
+function normalizeModel(value) {
+  if (value === void 0) return void 0;
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, "-");
+  return normalized === "" ? void 0 : normalized;
+}
+function behavioralConfigHash(input) {
+  const canonical = {
+    version: BEHAVIORAL_HASH_VERSION,
+    requestedModel: normalizeModel(input.requestedModel) ?? null,
+    effectiveModel: normalizeModel(input.effectiveModel) ?? null,
+    reasoningEffort: input.reasoningEffort?.trim() ?? null,
+    agentRole: input.agentRole ? input.agentRole.trim().toLowerCase().replace(/\s+/g, "-") : null,
+    rolePromptSha256: input.rolePromptSha256?.trim() ?? null,
+    skills: (input.skills ?? []).map((skill) => ({ id: skill.id.trim(), sha: skill.contentSha256.trim() })).sort((left, right) => left.id.localeCompare(right.id) || left.sha.localeCompare(right.sha)),
+    contextPolicyVersion: input.contextPolicyVersion?.trim() ?? null,
+    toolPolicyVersion: input.toolPolicyVersion?.trim() ?? null,
+    workflowDefinitionSha256: input.workflowDefinitionSha256?.trim() ?? null,
+    verifierConfigSha256: input.verifierConfigSha256?.trim() ?? null
+  };
+  return createHash10("sha256").update(JSON.stringify(canonical), "utf8").digest("hex");
+}
+function boundedInt(value, field) {
+  if (value === void 0 || value === null) return void 0;
+  if (!Number.isInteger(value) || value < 0 || value > 1e6) {
+    throw new Error(`${field} must be an integer between 0 and 1000000`);
+  }
+  return value;
+}
+function boundedString(value, field, max) {
+  if (value === void 0 || value === null) return void 0;
+  if (typeof value !== "string" || value.length > max) {
+    throw new Error(`${field} must be a string of at most ${max} characters`);
+  }
+  return value;
+}
+function parseRoutingRecordV2(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("routing record v2 must be an object");
+  }
+  const input = value;
+  if (input.schema !== ROUTING_RECORD_V2_SCHEMA) {
+    throw new Error(`routing record v2 schema must be ${ROUTING_RECORD_V2_SCHEMA}`);
+  }
+  const costBasis = input.costBasis;
+  if (costBasis !== "metered" && costBasis !== "unmetered" && costBasis !== "unknown") {
+    throw new Error("routing record v2 costBasis must be metered, unmetered, or unknown");
+  }
+  let costUsd = void 0;
+  if (costBasis === "metered") {
+    if (typeof input.costUsd !== "number" || !Number.isFinite(input.costUsd) || input.costUsd < 0 || input.costUsd > 1e6) {
+      throw new Error("routing record v2 costUsd must be a non-negative finite number when costBasis is metered");
+    }
+    costUsd = input.costUsd;
+  } else if (input.costUsd !== void 0 && input.costUsd !== null) {
+    if (typeof input.costUsd !== "number" || !Number.isFinite(input.costUsd) || input.costUsd < 0) {
+      throw new Error("routing record v2 costUsd must be a non-negative finite number when present");
+    }
+    costUsd = input.costUsd;
+  } else {
+    costUsd = null;
+  }
+  const rawHash = boundedString(input.behavioralSha256, "behavioralSha256", 72) ?? "";
+  if (!/^(?:sha256:)?[a-f0-9]{64}$/.test(rawHash)) {
+    throw new Error("routing record v2 behavioralSha256 must be a sha256 hex digest");
+  }
+  const behavioralSha256 = rawHash.startsWith("sha256:") ? rawHash : `sha256:${rawHash}`;
+  const latencyMs = input.latencyMs;
+  if (typeof latencyMs !== "number" || !Number.isFinite(latencyMs) || latencyMs < 0) {
+    throw new Error("routing record v2 latencyMs must be a non-negative number");
+  }
+  const providerMetadata = input.providerMetadata === void 0 || input.providerMetadata === null ? void 0 : (() => {
+    if (!input.providerMetadata || typeof input.providerMetadata !== "object" || Array.isArray(input.providerMetadata)) {
+      throw new Error("routing providerMetadata must be an object");
+    }
+    const entries = Object.entries(input.providerMetadata);
+    if (entries.length > MAX_PROVIDER_METADATA_FIELDS) {
+      throw new Error(`routing providerMetadata may carry at most ${MAX_PROVIDER_METADATA_FIELDS} fields`);
+    }
+    const normalized = {};
+    for (const [key, field] of entries) {
+      if (typeof key !== "string" || key.length > 64 || /prompt|body|content|message/i.test(key) || typeof field !== "string" && typeof field !== "number" && typeof field !== "boolean") {
+        throw new Error("routing providerMetadata values must be bounded strings, numbers, or booleans; raw bodies are rejected");
+      }
+      normalized[key] = typeof field === "string" ? field.slice(0, 200) : field;
+    }
+    return normalized;
+  })();
+  const record2 = {
+    schema: ROUTING_RECORD_V2_SCHEMA,
+    recordedAt: boundedString(input.recordedAt, "recordedAt", 64) ?? (/* @__PURE__ */ new Date()).toISOString(),
+    project: boundedString(input.project, "project", 128) ?? "",
+    runId: boundedString(input.runId, "runId", 128) ?? "",
+    stepId: boundedString(input.stepId, "stepId", 128) ?? "",
+    assignmentId: boundedString(input.assignmentId, "assignmentId", 128) ?? "",
+    attemptId: boundedString(input.attemptId, "attemptId", 128) ?? "",
+    harness: boundedString(input.harness, "harness", 64) ?? "",
+    provider: boundedString(input.provider, "provider", 64) ?? "",
+    requestedModel: normalizeModel(boundedString(input.requestedModel, "requestedModel", 200)) ?? "",
+    effectiveModel: normalizeModel(boundedString(input.effectiveModel, "effectiveModel", 200)) ?? "",
+    behavioralSha256,
+    latencyMs,
+    costBasis,
+    costUsd,
+    retries: boundedInt(input.retries, "retries") ?? 0
+  };
+  if (input.thinking !== void 0 && input.thinking !== null) {
+    record2.thinking = boundedString(input.thinking, "thinking", 64);
+  }
+  const rawRole = input.agentRole ?? input.role;
+  if (rawRole !== void 0 && rawRole !== null) {
+    record2.agentRole = boundedString(rawRole, "agentRole", 64);
+  }
+  if (input.contextTokens !== void 0) {
+    record2.contextTokens = boundedInt(input.contextTokens, "contextTokens") ?? null;
+  }
+  if (input.tokensIn !== void 0) {
+    record2.tokensIn = boundedInt(input.tokensIn, "tokensIn") ?? null;
+  }
+  if (input.tokensOut !== void 0) {
+    record2.tokensOut = boundedInt(input.tokensOut, "tokensOut") ?? null;
+  }
+  if (input.cacheReadTokens !== void 0) {
+    record2.cacheReadTokens = boundedInt(input.cacheReadTokens, "cacheReadTokens") ?? null;
+  }
+  if (input.cacheWriteTokens !== void 0) {
+    record2.cacheWriteTokens = boundedInt(input.cacheWriteTokens, "cacheWriteTokens") ?? null;
+  }
+  if (input.priceRef !== void 0 && input.priceRef !== null) {
+    record2.priceRef = boundedString(input.priceRef, "priceRef", 128);
+  }
+  if (input.verifierOutcome !== void 0 && input.verifierOutcome !== null) {
+    if (input.verifierOutcome !== "passed" && input.verifierOutcome !== "warning" && input.verifierOutcome !== "failed") {
+      throw new Error("routing verifierOutcome must be passed, warning, or failed");
+    }
+    record2.verifierOutcome = input.verifierOutcome;
+  }
+  if (input.finalOutcome !== void 0 && input.finalOutcome !== null) {
+    record2.finalOutcome = typeof input.finalOutcome === "string" ? input.finalOutcome.slice(0, 64) : void 0;
+  }
+  if (input.transitions !== void 0) {
+    record2.transitions = boundedInt(input.transitions, "transitions");
+  }
+  if (input.humanInterventions !== void 0) {
+    record2.humanInterventions = boundedInt(input.humanInterventions, "humanInterventions");
+  }
+  if (providerMetadata !== void 0) {
+    record2.providerMetadata = providerMetadata;
+  }
+  return record2;
+}
+
 // plugins/kxm/src/vnext-engine.ts
 var trustedProducers = /* @__PURE__ */ new WeakSet();
+var CAPABILITY_PREFIX = "kxm-attempt-capability\0";
+function createVnextSimulatedProducer(script) {
+  const producer = Object.freeze({
+    id: "driver-simulated",
+    async produce(request) {
+      const start = Date.now();
+      try {
+        const raw = await script(request);
+        const latencyMs = typeof raw.latencyMs === "number" ? raw.latencyMs : Math.max(0, Date.now() - start);
+        return {
+          costBasis: "unmetered",
+          tokensIn: null,
+          tokensOut: null,
+          cacheReadTokens: null,
+          cacheWriteTokens: null,
+          ...raw,
+          latencyMs
+        };
+      } catch (error) {
+        return Promise.reject(error);
+      }
+    }
+  });
+  trustedProducers.add(producer);
+  return producer;
+}
 function registerTrustedProducer(producer) {
   trustedProducers.add(producer);
+}
+function requireTrustedProducer(producer) {
+  if (!trustedProducers.has(producer)) {
+    throw runtimeError("engine_producer_untrusted", "producer", "producer is not a trusted factory instance");
+  }
+}
+function hashCapabilitySecret(secret) {
+  return `sha256:${createHash11("sha256").update(`${CAPABILITY_PREFIX}${secret}`, "utf8").digest("hex")}`;
+}
+function mintVnextCapabilitySecret() {
+  const secret = `kxmcap_${randomBytes2(32).toString("base64url")}`;
+  return { secret, hash: hashCapabilitySecret(secret) };
+}
+function mintCapabilitySecret() {
+  return mintVnextCapabilitySecret();
+}
+function pinVnextCompiledPlan(context, bundle, runId, options) {
+  return context.eventStore.transaction(() => {
+    const run = requireRun(context, runId);
+    if (run.projectId !== context.projectId || run.homeRuntimeId !== context.homeRuntimeId) {
+      throw runtimeError("run_owner_mismatch", runId, "run is not owned by this runtime context");
+    }
+    if (String(bundle.project.value.id) !== run.projectId) {
+      throw runtimeError("run_owner_mismatch", runId, "bundle project does not match the run");
+    }
+    const workflow = bundle.workflows.get(run.workflowId);
+    if (!workflow) throw runtimeError("run_workflow_unknown", run.workflowId, `workflow ${run.workflowId} does not exist in this project`);
+    const revisions = vnextPolicyRevisions(bundle, options);
+    if (revisions.configRevision !== run.configRevision || revisions.executorPolicyRevision !== run.executorPolicyRevision || revisions.toolPolicyRevision !== run.toolPolicyRevision || revisions.memoryRevision !== run.memoryRevision) {
+      throw runtimeError("run_revision_drift", runId, "bundle revisions do not match the accepted run");
+    }
+    const compiled = freezeVnextCompiledPlan(compileVnextWorkflow({
+      id: run.workflowId,
+      value: workflow.value,
+      ...workflow.logicalPath !== void 0 ? { logicalPath: workflow.logicalPath } : {}
+    }));
+    const envelope = {
+      schema: VNEXT_RUN_PLAN_SCHEMA,
+      runId: run.runId,
+      projectId: run.projectId,
+      homeRuntimeId: run.homeRuntimeId,
+      workflowId: run.workflowId,
+      revisions: {
+        config: run.configRevision,
+        executorPolicy: run.executorPolicyRevision,
+        toolPolicy: run.toolPolicyRevision,
+        memory: run.memoryRevision
+      },
+      projectLimits: vnextProjectAdmissionLimits(bundle),
+      plan: compiled,
+      gates: pinnedGatesForCompiledPlan(compiled, bundle, context.projectRoot)
+    };
+    const runPlanHash = hashVnextRunPlanEnvelope(envelope);
+    const existing = context.eventStore.runPlan(runId);
+    if (existing) {
+      if (existing.runPlanHash !== runPlanHash) {
+        throw runtimeError("run_plan_pinned", runId, "run already has a different pinned plan");
+      }
+      return { plan: compiled, runPlanHash, idempotent: true };
+    }
+    if (run.status !== "created") {
+      throw runtimeError("run_plan_pinned", runId, "a plan can only be pinned from created");
+    }
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const sequence = context.eventStore.nextSequence(runId);
+    const event = {
+      ...vnextEventBase(context, run, now, vnextMonotonicNs()),
+      eventId: newVnextEventId(),
+      eventType: "run.status_changed",
+      sequence,
+      payload: { status: "preparing", runPlanHash }
+    };
+    context.eventStore.insertRunPlan({
+      runId,
+      runPlanHash,
+      envelope: vnextCanonicalJson(envelope),
+      pinnedSequence: sequence
+    });
+    context.eventStore.appendEvent(event);
+    const state = foldStoredVnextRun(context, run);
+    persistVnextRunState(context, runId, state, sequence);
+    context.eventStore.updateRunStatus(runId, "preparing", now);
+    return { plan: compiled, runPlanHash, idempotent: false, event };
+  });
+}
+function startVnextRun(context, runId, options = {}) {
+  return context.eventStore.transaction(() => {
+    const run = requireRun(context, runId);
+    const envelope = loadVnextRunPlanEnvelope(context.eventStore, run);
+    const unsupported = options.allowLimits ? void 0 : unsupportedLimit(envelope);
+    const state = foldStoredVnextRun(context, run);
+    if (unsupported) {
+      return { state, handoff: unsupported };
+    }
+    if (state.status !== "preparing") {
+      return { state };
+    }
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const sequence = context.eventStore.nextSequence(runId);
+    const event = {
+      ...vnextEventBase(context, run, now, vnextMonotonicNs()),
+      eventId: newVnextEventId(),
+      eventType: "run.status_changed",
+      sequence,
+      payload: { status: "running" }
+    };
+    context.eventStore.appendEvent(event);
+    const next = foldStoredVnextRun(context, run);
+    persistVnextRunState(context, runId, next, sequence);
+    context.eventStore.updateRunStatus(runId, "running", now);
+    return { state: next };
+  });
+}
+async function driveVnextRun(context, runId, producer, options = {}) {
+  requireTrustedProducer(producer);
+  const run = requireRun(context, runId);
+  if (run.status === "created") {
+    throw runtimeError("run_plan_missing", runId, "drive requires a pinned plan");
+  }
+  return withAdmission(context, runId, (token) => driveAdmitted(context, runId, producer, token, options));
+}
+async function driveAdmitted(context, runId, producer, token, options = {}) {
+  const run = requireRun(context, runId);
+  if (run.status === "preparing") {
+    const started = startVnextRun(context, runId, options);
+    if (started.handoff || isTerminalRunStatus(started.state.status)) return started;
+  }
+  let latest = { state: foldStoredVnextRun(context, requireRun(context, runId)) };
+  while (latest.state.status === "running") {
+    const before = context.eventStore.runState(runId)?.lastSequence;
+    latest = await stepLocked(context, runId, producer, token);
+    if (latest.handoff) return latest;
+    if (latest.state.status === "running") {
+      const after = context.eventStore.runState(runId)?.lastSequence;
+      if (after === before) {
+        throw runtimeError("run_events_illegal", runId, "drive made no progress");
+      }
+    }
+  }
+  return latest;
+}
+async function withAdmission(context, runId, fn) {
+  const token = admitPinnedRun(context, runId);
+  try {
+    return await fn(token);
+  } finally {
+    releaseVnextRun(context.eventStore.path, runId, token);
+  }
+}
+function admitPinnedRun(context, runId) {
+  const run = requireRun(context, runId);
+  const envelope = loadVnextRunPlanEnvelope(context.eventStore, run);
+  return admitVnextRun(
+    context.eventStore.path,
+    runId,
+    envelope.revisions.config,
+    envelope.projectLimits.maxConcurrentRuns
+  );
+}
+function invokeProducer(producer, request) {
+  let pending;
+  try {
+    pending = Promise.resolve(producer.produce(request));
+  } catch {
+    return Promise.resolve({ error: true });
+  }
+  return pending.then(
+    (result) => ({ result, error: false }),
+    () => ({ error: true })
+  );
+}
+var vnextGateDispatchSeams = {};
+async function stepLocked(context, runId, producer, token) {
+  const prepared = context.eventStore.transaction(() => prepareDispatch(context, runId, producer.id));
+  if (prepared.kind === "return") {
+    return prepared.handoff ? { state: prepared.state, handoff: prepared.handoff } : { state: prepared.state };
+  }
+  if (prepared.kind === "gate") {
+    const step = prepared.envelope.plan.steps[prepared.stepId];
+    if (!step || step.kind !== "gate") {
+      throw runtimeError("run_events_illegal", prepared.run.runId, "prepared gate step is not a gate");
+    }
+    const definition = prepared.envelope.gates.definitions[step.gate];
+    if (definition?.kind === "command") {
+      return runPreparedCommandGate(context, prepared, definition, token);
+    }
+    if (!definition || definition.kind !== "artifacts-exist") {
+      throw runtimeError("run_events_illegal", prepared.run.runId, "prepared gate is not artifacts-exist");
+    }
+    registerVnextAttemptController(context.eventStore.path, runId, { attemptId: prepared.attemptId, controller: prepared.controller });
+    try {
+      const observation = evaluateArtifactsGate(context, definition);
+      vnextGateDispatchSeams.afterEvaluate?.(prepared);
+      return context.eventStore.transaction(() => settlePreparedGate(context, prepared, observation));
+    } finally {
+      unregisterVnextAttemptController(context.eventStore.path, runId, prepared.attemptId);
+    }
+  }
+  return drivePanel(context, prepared.panel, producer);
+}
+async function runPreparedCommandGate(context, prepared, definition, token) {
+  const storePath = context.eventStore.path;
+  const observer = createCommandObserver({
+    definition,
+    cwd: context.projectRoot,
+    signal: prepared.controller.signal,
+    onSpawned: () => {
+      if (isVnextRuntimeContextClosed(context)) return;
+      try {
+        context.eventStore.transaction(() => {
+          recordGateSpawnedInTransaction(context, prepared.run, prepared.envelope, prepared.stepId);
+          vnextGateDispatchSeams.afterSpawnRecord?.(prepared);
+        });
+      } catch (error) {
+        try {
+          markVnextGateHoldUnsettled(storePath, prepared.run.runId, token, prepared.attemptId);
+        } catch {
+        }
+        throw error;
+      }
+    }
+  });
+  armVnextGateHold(storePath, prepared.run.runId, token, prepared.attemptId, () => observer.requestStop("cancel"));
+  registerVnextAttemptController(storePath, prepared.run.runId, { attemptId: prepared.attemptId, controller: prepared.controller });
+  const unhookClose = registerVnextRuntimeCloseHook(context, () => {
+    try {
+      markVnextGateHoldUnsettled(storePath, prepared.run.runId, token, prepared.attemptId);
+    } catch {
+    }
+    dropVnextGateStopHook(storePath, prepared.run.runId, prepared.attemptId);
+    observer.beginBoundedCleanup();
+  });
+  try {
+    vnextGateDispatchSeams.beforeCommandSpawn?.(prepared);
+    const outcome = await observer.run();
+    dropVnextGateStopHook(storePath, prepared.run.runId, prepared.attemptId);
+    if (isVnextRuntimeContextClosed(context)) {
+      try {
+        markVnextGateHoldUnsettled(storePath, prepared.run.runId, token, prepared.attemptId);
+      } catch {
+      }
+      return closedCommandHandoff(context, prepared, outcome.kind === "uncertain" ? outcome.reason : "lost-close");
+    }
+    if (outcome.kind === "no-start") {
+      return commitOwnedCommandSettlement(context, prepared, token, () => recordGateNoStartInTransaction(context, prepared.run, prepared.envelope, prepared.stepId, outcome.observation), outcome.observation);
+    }
+    if (outcome.kind === "complete") {
+      try {
+        vnextGateDispatchSeams.beforeCommandSettle?.(prepared);
+      } catch (error) {
+        return recoverCommandRecordingFailure(context, prepared, token, outcome.observation, error);
+      }
+      if (isVnextRuntimeContextClosed(context)) {
+        try {
+          markVnextGateHoldUnsettled(storePath, prepared.run.runId, token, prepared.attemptId);
+        } catch {
+        }
+        return closedCommandHandoff(context, prepared, "lost-close");
+      }
+      return commitOwnedCommandSettlement(context, prepared, token, () => settlePreparedGate(context, prepared, outcome.observation), outcome.observation);
+    }
+    return commitCommandUncertainty(context, prepared, token, outcome.reason, outcome.observation);
+  } finally {
+    unhookClose();
+    unregisterVnextAttemptController(storePath, prepared.run.runId, prepared.attemptId);
+  }
+}
+function closedCommandHandoff(context, prepared, reason) {
+  let state;
+  try {
+    state = foldStoredVnextRun(context, requireRun(context, prepared.run.runId));
+  } catch {
+    state = prepared.state;
+  }
+  return {
+    state,
+    handoff: {
+      reason: "attempt_unsettled",
+      stepId: prepared.stepId,
+      attemptId: prepared.attemptId,
+      detail: reason
+    }
+  };
+}
+function commitOwnedCommandSettlement(context, prepared, token, write, observation) {
+  let committed;
+  try {
+    committed = context.eventStore.transaction(() => write());
+  } catch (error) {
+    return recoverCommandRecordingFailure(context, prepared, token, observation, error);
+  }
+  try {
+    vnextGateDispatchSeams.afterSettlementCommit?.(prepared);
+  } catch (error) {
+    return retainCommittedCommandProof(context, prepared, token, error);
+  }
+  try {
+    finishVnextOwnedGate(context.eventStore.path, prepared.run.runId, token, prepared.attemptId);
+  } catch (error) {
+    return retainCommittedCommandProof(context, prepared, token, error);
+  }
+  return committed;
+}
+function retainCommittedCommandProof(context, prepared, token, error) {
+  try {
+    finishOwnedGateAfterCommittedTerminalProof(context, prepared, token);
+  } catch {
+  }
+  throw error;
+}
+function finishOwnedGateAfterCommittedTerminalProof(context, prepared, token) {
+  if (isVnextRuntimeContextClosed(context)) return;
+  const run = context.eventStore.run(prepared.run.runId);
+  if (!run || run.projectId !== context.projectId || run.homeRuntimeId !== context.homeRuntimeId) return;
+  const row = context.eventStore.gateAttempt(prepared.attemptId);
+  const preparedIdentity = {
+    runId: prepared.run.runId,
+    attemptId: prepared.attemptId,
+    assignmentId: prepared.assignmentId,
+    effectId: prepared.effectId,
+    stepId: prepared.stepId
+  };
+  if (!row || !gateRowIdentityMatches(row, preparedIdentity) || row.projectId !== context.projectId || row.homeRuntimeId !== context.homeRuntimeId) {
+    return;
+  }
+  const observation = context.eventStore.gateObservationForAttempt(prepared.attemptId);
+  const evidence = context.eventStore.gateEvidenceForAttempt(prepared.attemptId);
+  const events = context.eventStore.events(prepared.run.runId, 0, 1e6);
+  let state;
+  try {
+    state = foldStoredVnextRun(context, run);
+  } catch {
+    return;
+  }
+  const capability = context.eventStore.capabilityByAttempt(prepared.attemptId);
+  if (!capability || capability.state !== "settled" || capability.runId !== prepared.run.runId || capability.attemptId !== prepared.attemptId || capability.assignmentId !== prepared.assignmentId || capability.stepId !== prepared.stepId || capability.stepAttempt !== prepared.stepAttempt) {
+    return;
+  }
+  const terminalProof = isEvaluatedSettledProof(row, observation, evidence) || isExcludedTerminalProof(state, row, observation, evidence, events);
+  if (!terminalProof) return;
+  const hold = vnextGateHold(context.eventStore.path, prepared.run.runId);
+  const admittedToken = vnextAdmittedToken(context.eventStore.path, prepared.run.runId);
+  if (!hold || hold.state !== "active" || hold.attemptId !== prepared.attemptId || hold.token !== token || admittedToken !== token) {
+    return;
+  }
+  finishVnextOwnedGate(context.eventStore.path, prepared.run.runId, token, prepared.attemptId);
+}
+function recoverCommandRecordingFailure(context, prepared, token, observation, error) {
+  markVnextGateHoldUnsettled(context.eventStore.path, prepared.run.runId, token, prepared.attemptId);
+  if (isVnextRuntimeContextClosed(context)) {
+    throw error;
+  }
+  const existing = context.eventStore.gateObservationForAttempt(prepared.attemptId);
+  if (existing) {
+    throw runtimeError(
+      "run_events_illegal",
+      prepared.run.runId,
+      `command observation recording failed after committed proof: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+  const folded = foldStoredVnextRun(context, requireRun(context, prepared.run.runId));
+  if (folded.currentStep?.attemptId === prepared.attemptId && folded.currentStep.observationId) {
+    throw runtimeError(
+      "run_events_illegal",
+      prepared.run.runId,
+      "command observation recording failed after committed proof"
+    );
+  }
+  const incomplete = {
+    ...observation,
+    completeness: "incomplete",
+    errorClass: observation.errorClass ?? "recording-error",
+    stopCause: observation.stopCause === "none" ? "error" : observation.stopCause
+  };
+  return commitCommandUncertainty(context, prepared, token, "recording-error", incomplete, error);
+}
+function commitCommandUncertainty(context, prepared, token, reason, observation, priorError) {
+  try {
+    markVnextGateHoldUnsettled(context.eventStore.path, prepared.run.runId, token, prepared.attemptId);
+  } catch {
+  }
+  if (isVnextRuntimeContextClosed(context)) {
+    if (priorError) throw priorError;
+    return closedCommandHandoff(context, prepared, reason);
+  }
+  const existing = context.eventStore.gateObservationForAttempt(prepared.attemptId);
+  if (existing) {
+    throw runtimeError(
+      "run_events_illegal",
+      prepared.run.runId,
+      "command observation already committed; uncertainty cannot replace it"
+    );
+  }
+  const incomplete = { ...observation, completeness: "incomplete" };
+  try {
+    const written = context.eventStore.transaction(() => {
+      const result = recordGateUncertainInTransaction(context, prepared.run, prepared.envelope, prepared.stepId, reason, incomplete);
+      vnextGateDispatchSeams.afterUncertaintyWrite?.(prepared);
+      return result;
+    });
+    return {
+      state: written.state,
+      handoff: {
+        reason: "attempt_unsettled",
+        stepId: prepared.stepId,
+        attemptId: prepared.attemptId,
+        detail: reason
+      }
+    };
+  } catch (error) {
+    if (priorError) throw priorError;
+    throw error;
+  }
+}
+var vnextPanelDispatchSeams = {};
+function unreconciledPanelAttemptId(state) {
+  const current = state.currentStep;
+  if (!current) return void 0;
+  for (const assignmentId of current.panel.order) {
+    const assignment = current.panel.assignments[assignmentId];
+    if (!assignment) continue;
+    for (const [attemptId, attempt] of Object.entries(assignment.attempts)) {
+      if (attempt.status === "starting" || attempt.status === "executing" || attempt.status === "settling") {
+        return attemptId;
+      }
+    }
+  }
+  return void 0;
+}
+function prepareDispatch(context, runId, producerId) {
+  const run = requireRun(context, runId);
+  const plan = rehydrateVnextCompiledPlanFromStore(context.eventStore, run);
+  const state = foldStoredVnextRun(context, run);
+  if (state.status === "cancelling" && vnextAttemptControllers(context.eventStore.path, runId).length === 0) {
+    return {
+      kind: "return",
+      state,
+      handoff: {
+        reason: "cancel_pending_foreign",
+        detail: "cancellation is pending in another process",
+        ...state.currentStep?.attemptId ? { attemptId: state.currentStep.attemptId } : {}
+      }
+    };
+  }
+  const unreconciledAttemptId = unreconciledPanelAttemptId(state);
+  if (unreconciledAttemptId) {
+    const currentStepId = state.currentStep?.stepId;
+    if (currentStepId === void 0) {
+      throw runtimeError("run_events_illegal", runId, "unreconciled attempt is missing step identity");
+    }
+    return {
+      kind: "return",
+      state,
+      handoff: {
+        reason: "attempt_unreconciled",
+        attemptId: unreconciledAttemptId,
+        stepId: currentStepId,
+        detail: "issued attempt is not held by this process"
+      }
+    };
+  }
+  if (state.status === "blocked_uncertain") {
+    return {
+      kind: "return",
+      state,
+      handoff: {
+        reason: "gate_uncertain_blocked",
+        ...state.currentStep?.stepId ? { stepId: state.currentStep.stepId } : {},
+        ...state.currentStep?.attemptId ? { attemptId: state.currentStep.attemptId } : {},
+        detail: "run is blocked_uncertain awaiting external signal or operator intervention"
+      }
+    };
+  }
+  if (state.status !== "running" || state.currentStep) {
+    if (state.currentStep?.effectState === "blocked_uncertain") {
+      return {
+        kind: "return",
+        state,
+        handoff: {
+          reason: "attempt_unsettled",
+          stepId: state.currentStep.stepId,
+          ...state.currentStep.attemptId ? { attemptId: state.currentStep.attemptId } : {},
+          detail: "step effect is blocked_uncertain"
+        }
+      };
+    }
+    return { kind: "return", state };
+  }
+  const stepId = state.pendingStepId ?? plan.entryStepId;
+  const step = plan.steps[stepId];
+  if (!step) throw runtimeError("run_events_illegal", runId, `unknown pending step ${stepId}`);
+  const allEvents = context.eventStore.events(runId, 0, 1e5);
+  let accumulatedMeteredCost = 0;
+  let unmeteredOrUnknownAttempts = 0;
+  for (const ev of allEvents) {
+    if (ev.eventType === "routing.attempt.recorded") {
+      const routing = ev.payload?.routing;
+      if (routing?.costBasis === "metered" && typeof routing.costUsd === "number") {
+        accumulatedMeteredCost += routing.costUsd;
+      } else if (routing?.costBasis === "unmetered" || routing?.costBasis === "unknown") {
+        unmeteredOrUnknownAttempts += 1;
+      }
+    }
+  }
+  if (plan.limits.maxModelCost !== void 0 && accumulatedMeteredCost >= plan.limits.maxModelCost) {
+    return { kind: "return", ...failBudget(context, run, plan, state, "budget_model_cost", stepId) };
+  }
+  const maxUnmeteredAttempts = 100;
+  if (unmeteredOrUnknownAttempts >= maxUnmeteredAttempts) {
+    return { kind: "return", ...failBudget(context, run, plan, state, "budget_unmetered_attempts", stepId) };
+  }
+  if (step.kind === "gate") {
+    const envelope = loadVnextRunPlanEnvelope(context.eventStore, run);
+    const unsupported2 = unsupportedGateStep(plan, step, envelope, context);
+    if (unsupported2) return { kind: "return", state, handoff: { ...unsupported2, stepId } };
+    const definition = envelope.gates.definitions[step.gate];
+    if (definition?.kind === "command") {
+      const preflightResult = gateRecoveryPreflight(context);
+      const firstBlocking = preflightResult.blocking[0];
+      if (firstBlocking) {
+        return {
+          kind: "return",
+          state,
+          handoff: {
+            reason: "gate_recovery_pending",
+            attemptId: firstBlocking.attemptId,
+            detail: `${preflightResult.blocking.length} unfinished gate attempt(s) in project`
+          }
+        };
+      }
+    }
+    const result = recordGateIntentInTransaction(context, run, envelope, stepId);
+    const current = result.state.currentStep;
+    const attemptId = current?.attemptId;
+    const assignmentId = current?.assignmentId;
+    const effectId = current?.effectId;
+    if (!current || current.stepId !== stepId || attemptId === void 0 || assignmentId === void 0 || effectId === void 0) {
+      throw runtimeError("run_events_illegal", runId, "gate intent did not bind exact attempt identity");
+    }
+    return {
+      kind: "gate",
+      run,
+      envelope,
+      stepId,
+      stepAttempt: current.stepAttempt,
+      assignmentId,
+      attemptId,
+      effectId,
+      controller: new AbortController(),
+      state: result.state
+    };
+  }
+  const unsupported = unsupportedStep(plan, step);
+  if (unsupported) return { kind: "return", state, handoff: { ...unsupported, stepId } };
+  const used = state.stepAttempts[stepId] ?? 0;
+  if (used >= step.maxAttempts) {
+    return { kind: "return", ...failBudget(context, run, plan, state, "budget_step_attempts", stepId) };
+  }
+  const stepAttempt = used + 1;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  let sequence = context.eventStore.nextSequence(runId);
+  let mono = vnextMonotonicNs();
+  const events = [];
+  const push = (eventType, payload) => {
+    events.push({
+      ...vnextEventBase(context, run, now, mono),
+      eventId: newVnextEventId(),
+      eventType,
+      sequence: sequence++,
+      payload
+    });
+    mono = vnextIncrementMonotonicNs(mono);
+  };
+  push("step.entered", { stepId, stepAttempt, status: "pending" });
+  push("step.status_changed", { stepId, status: "preparing", previousStatus: "pending" });
+  for (const event of events) context.eventStore.appendEvent(event);
+  const entered = foldStoredVnextRun(context, run);
+  persistVnextRunState(context, runId, entered, events[events.length - 1].sequence);
+  const first = birthMember(context, {
+    run,
+    plan,
+    step,
+    stepId,
+    stepAttempt,
+    enterRunning: true,
+    producerId
+  });
+  return {
+    kind: "panel",
+    panel: {
+      run,
+      plan,
+      step,
+      stepId,
+      stepAttempt,
+      target: step.assignments.target,
+      maxParallel: step.assignments.maxParallel,
+      first,
+      state: first.state
+    }
+  };
+}
+function panelInFlight(state) {
+  const current = state.currentStep;
+  if (!current) return 0;
+  let count = 0;
+  for (const assignmentId of current.panel.order) {
+    const assignment = current.panel.assignments[assignmentId];
+    if (!assignment) continue;
+    for (const attempt of Object.values(assignment.attempts)) {
+      if (attempt.status === "starting" || attempt.status === "executing" || attempt.status === "settling") count += 1;
+    }
+  }
+  return count;
+}
+function panelFrozenState(state) {
+  const current = state.currentStep;
+  if (!current) return true;
+  return current.outcome !== void 0 || current.status === "passed" || current.status === "failed" || current.status === "cancelled";
+}
+function birthAllowed(state, step) {
+  if (state.status !== "running" || state.cancelRequested || panelFrozenState(state)) return false;
+  const born = state.currentStep?.panel.order.length ?? 0;
+  if (born >= step.assignments.target) return false;
+  if (panelInFlight(state) >= step.assignments.maxParallel) return false;
+  return true;
+}
+function birthMember(context, input) {
+  const run = requireRun(context, input.run.runId);
+  const folded = foldStoredVnextRun(context, run);
+  if (!birthAllowed(folded, input.step)) {
+    throw runtimeError("run_events_illegal", run.runId, "member birth is not legal");
+  }
+  const born = folded.currentStep?.panel.order.length ?? 0;
+  const allowed = input.step.assignments.allowedAgents;
+  const agentId = allowed && allowed.length > born && allowed[born] ? allowed[born] : input.step.kind === "agent" || input.step.kind === "moa" ? input.step.agent : "coordinator";
+  const assignmentId = newVnextAssignmentId();
+  const attemptId = newVnextAttemptId();
+  const minted = mintCapabilitySecret();
+  const controller = new AbortController();
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  let sequence = context.eventStore.nextSequence(run.runId);
+  let mono = vnextMonotonicNs();
+  const events = [];
+  const push = (eventType, payload) => {
+    events.push({
+      ...vnextEventBase(context, run, now, mono),
+      eventId: newVnextEventId(),
+      eventType,
+      sequence: sequence++,
+      payload
+    });
+    mono = vnextIncrementMonotonicNs(mono);
+  };
+  push("assignment.created", { assignmentId, stepId: input.stepId, stepAttempt: input.stepAttempt, agentId, status: "created" });
+  push("assignment.accepted", { assignmentId, status: "accepted" });
+  push("attempt.created", { attemptId, assignmentId, status: "created" });
+  push("assignment.dispatched", { assignmentId, capabilityHash: minted.hash, status: "dispatched" });
+  push("attempt.status_changed", { attemptId, status: "starting" });
+  if (input.enterRunning) {
+    push("step.status_changed", { stepId: input.stepId, status: "running", previousStatus: "preparing" });
+  }
+  for (const event of events) context.eventStore.appendEvent(event);
+  context.eventStore.insertCapability({
+    attemptId,
+    runId: run.runId,
+    assignmentId,
+    stepId: input.stepId,
+    stepAttempt: input.stepAttempt,
+    producerId: input.producerId ?? "driver-simulated",
+    capabilityHash: minted.hash,
+    state: "issued"
+  });
+  const next = foldStoredVnextRun(context, run);
+  persistVnextRunState(context, run.runId, next, events[events.length - 1].sequence);
+  const rawContextPacket = buildFormalContextPacket({
+    project: run.projectId,
+    targetRole: agentId,
+    task: {
+      taskId: run.runId,
+      stepId: input.stepId,
+      stepAttempt: input.stepAttempt,
+      objective: input.step.description ?? input.step.instructions ?? input.stepId,
+      allowedOutcomes: [...input.step.outcomes],
+      permissionCeiling: "edit"
+    },
+    acceptanceCriteria: input.step.requiredEvidence.map((ev) => ({
+      id: ev.key,
+      description: `Provide ${ev.kind} evidence for ${ev.key}`,
+      verificationKind: "witness",
+      required: true
+    })),
+    plan: {
+      planHash: input.plan.planHash?.stageId ?? "default",
+      activeStepIndex: input.step.index,
+      totalSteps: input.plan.order.length,
+      settledDecisions: []
+    }
+  });
+  const { packet: contextPacket } = pruneContextPacket(rawContextPacket);
+  const generatedPrompt = formatContextPacketForPrompt(contextPacket);
+  const member = {
+    run,
+    plan: input.plan,
+    step: input.step,
+    stepId: input.stepId,
+    stepAttempt: input.stepAttempt,
+    assignmentId,
+    attemptId,
+    agentId,
+    capabilityHash: minted.hash,
+    producerId: input.producerId ?? "driver-simulated",
+    request: {
+      runId: run.runId,
+      stepId: input.stepId,
+      stepAttempt: input.stepAttempt,
+      assignmentId,
+      attemptId,
+      agentId,
+      instanceNo: born + 1,
+      scopeEpoch: 1,
+      capability: minted.secret,
+      allowedOutcomes: input.step.outcomes,
+      signal: controller.signal,
+      prompt: input.step.instructions ? `${input.step.instructions}
+
+${generatedPrompt}` : generatedPrompt,
+      thinking: input.stepAttempt <= 1 ? "low" : "medium",
+      contextPacket
+    },
+    controller,
+    state: next
+  };
+  vnextPanelDispatchSeams.afterBirth?.(member);
+  return member;
+}
+function appendExecuting(context, dispatch) {
+  const run = requireRun(context, dispatch.run.runId);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  let sequence = context.eventStore.nextSequence(dispatch.run.runId);
+  let mono = vnextMonotonicNs();
+  const events = [
+    {
+      ...vnextEventBase(context, run, now, mono),
+      eventId: newVnextEventId(),
+      eventType: "assignment.executing",
+      sequence: sequence++,
+      payload: { assignmentId: dispatch.assignmentId, status: "executing" }
+    },
+    {
+      ...vnextEventBase(context, run, now, vnextIncrementMonotonicNs(mono)),
+      eventId: newVnextEventId(),
+      eventType: "attempt.status_changed",
+      sequence: sequence++,
+      payload: { attemptId: dispatch.attemptId, status: "executing" }
+    }
+  ];
+  for (const event of events) context.eventStore.appendEvent(event);
+  const next = foldStoredVnextRun(context, run);
+  persistVnextRunState(context, run.runId, next, events[events.length - 1].sequence);
+}
+function singletonPanel(step) {
+  return step.assignments.maximum === 1 && step.assignments.target === 1;
+}
+function unreconciledHandoff(state, stepId, attemptId) {
+  return {
+    state,
+    handoff: {
+      reason: "attempt_unreconciled",
+      stepId,
+      ...attemptId !== void 0 ? { attemptId } : {},
+      detail: "issued attempt is not held by this process"
+    }
+  };
+}
+function capabilityHashBound(stored, minted) {
+  const left = Buffer.from(stored);
+  const right = Buffer.from(minted);
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+function capabilityMatchesDispatch(capability, member, allowedStates, expectedProducerId) {
+  return Boolean(
+    capability && capabilityHashBound(capability.capabilityHash, member.capabilityHash) && capability.runId === member.run.runId && capability.stepId === member.stepId && capability.stepAttempt === member.stepAttempt && capability.assignmentId === member.assignmentId && capability.attemptId === member.attemptId && capability.producerId === (expectedProducerId ?? member.producerId ?? "driver-simulated") && allowedStates.includes(capability.state)
+  );
+}
+async function drivePanel(context, panel, producer) {
+  const runId = panel.run.runId;
+  const owned = /* @__PURE__ */ new Map();
+  const pending = /* @__PURE__ */ new Map();
+  let stopBirths = false;
+  let settlementFailed = false;
+  const register = (member) => {
+    registerVnextAttemptController(context.eventStore.path, runId, { attemptId: member.attemptId, controller: member.controller });
+    owned.set(member.attemptId, member);
+  };
+  const abortOwned = () => {
+    for (const member of owned.values()) member.controller.abort();
+  };
+  const launch = (member) => {
+    register(member);
+    const work = (async () => {
+      try {
+        vnextPanelDispatchSeams.beforeAppendExecuting?.(member);
+        const started = context.eventStore.transaction(() => {
+          if (vnextPanelDispatchSeams.failAppendExecuting?.(member)) {
+            throw runtimeError("run_events_illegal", runId, "appendExecuting failed");
+          }
+          const run = requireRun(context, runId);
+          const state = foldStoredVnextRun(context, run);
+          const capability = context.eventStore.capabilityByAttempt(member.attemptId);
+          const located = vnextFoldPanelAttempt(state.currentStep, member.attemptId);
+          if (state.cancelRequested || state.status === "cancelling" || !capabilityMatchesDispatch(capability, member, ["issued"], producer.id) || !located || located.assignmentId !== member.assignmentId || located.attempt.status !== "starting") {
+            return false;
+          }
+          appendExecuting(context, member);
+          return true;
+        });
+        if (!started) return { attemptId: member.attemptId, invoked: false, skipped: true };
+        const executingBound = () => {
+          const run = requireRun(context, runId);
+          const state = foldStoredVnextRun(context, run);
+          const capability = context.eventStore.capabilityByAttempt(member.attemptId);
+          const located = vnextFoldPanelAttempt(state.currentStep, member.attemptId);
+          if (state.cancelRequested || state.status === "cancelling" || !capabilityMatchesDispatch(capability, member, ["issued"], producer.id) || !located || located.assignmentId !== member.assignmentId || located.attempt.status !== "executing") {
+            return false;
+          }
+          return true;
+        };
+        if (!executingBound()) return { attemptId: member.attemptId, invoked: false, skipped: true };
+        vnextPanelDispatchSeams.beforeInvoke?.(member);
+        if (!executingBound()) return { attemptId: member.attemptId, invoked: false, skipped: true };
+        const produced = await invokeProducer(producer, member.request);
+        return { attemptId: member.attemptId, invoked: true, produced };
+      } catch (error) {
+        member.controller.abort();
+        return { attemptId: member.attemptId, invoked: false, appendFailed: true, error };
+      }
+    })();
+    pending.set(member.attemptId, work);
+  };
+  const tryBirth = () => {
+    if (stopBirths) return void 0;
+    return context.eventStore.transaction(() => {
+      const run = requireRun(context, runId);
+      const state = foldStoredVnextRun(context, run);
+      if (!birthAllowed(state, panel.step)) return void 0;
+      return birthMember(context, {
+        run,
+        plan: panel.plan,
+        step: panel.step,
+        stepId: panel.stepId,
+        stepAttempt: panel.stepAttempt,
+        producerId: producer.id
+      });
+    });
+  };
+  const settleInvoked = (member, produced) => {
+    if (produced.result?.effectUncertain) {
+      settlementFailed = true;
+      stopBirths = true;
+      return false;
+    }
+    try {
+      context.eventStore.transaction(() => {
+        if (vnextPanelDispatchSeams.failSettleMember?.(member)) {
+          throw runtimeError("run_events_illegal", runId, "member settlement write failed");
+        }
+        settleMember(context, member, produced.result, produced.error);
+      });
+      return true;
+    } catch (err) {
+      if (err instanceof Error && /costBasis/.test(err.message)) {
+        throw err;
+      }
+      settlementFailed = true;
+      stopBirths = true;
+      return false;
+    }
+  };
+  const drainPendingInvoked = async () => {
+    const rest = await Promise.allSettled([...pending.values()]);
+    pending.clear();
+    for (const result of rest) {
+      if (result.status !== "fulfilled") continue;
+      const item = result.value;
+      const sibling = owned.get(item.attemptId);
+      if (sibling && item.invoked) {
+        settleInvoked(sibling, item.produced);
+      }
+    }
+  };
+  try {
+    launch(panel.first);
+    while (true) {
+      while (!stopBirths && !settlementFailed) {
+        try {
+          const next = tryBirth();
+          if (!next) break;
+          launch(next);
+        } catch {
+          stopBirths = true;
+          abortOwned();
+          await drainPendingInvoked();
+          const state = foldStoredVnextRun(context, requireRun(context, runId));
+          return unreconciledHandoff(state, panel.stepId);
+        }
+      }
+      if (pending.size === 0) break;
+      const finished = await Promise.race(pending.values());
+      pending.delete(finished.attemptId);
+      const member = owned.get(finished.attemptId);
+      if (!member) continue;
+      if ("appendFailed" in finished && finished.appendFailed) {
+        stopBirths = true;
+        abortOwned();
+        const rest = await Promise.all([...pending.values()]);
+        pending.clear();
+        if (singletonPanel(panel.step)) {
+          context.eventStore.transaction(() => hardStopUnrecorded(context, member, "executing_unrecorded"));
+          throw finished.error;
+        }
+        for (const item of rest) {
+          const sibling = owned.get(item.attemptId);
+          if (sibling && item.invoked) {
+            settleInvoked(sibling, item.produced);
+          }
+        }
+        const state = foldStoredVnextRun(context, requireRun(context, runId));
+        return unreconciledHandoff(state, panel.stepId, member.attemptId);
+      }
+      if (!finished.invoked) {
+        stopBirths = true;
+        continue;
+      }
+      if (!settleInvoked(member, finished.produced)) {
+        abortOwned();
+        const rest = await Promise.all([...pending.values()]);
+        pending.clear();
+        for (const item of rest) {
+          const sibling = owned.get(item.attemptId);
+          if (sibling && item.invoked) {
+            settleInvoked(sibling, item.produced);
+          }
+        }
+        const state = foldStoredVnextRun(context, requireRun(context, runId));
+        return unreconciledHandoff(state, panel.stepId, member.attemptId);
+      }
+    }
+    const folded = foldStoredVnextRun(context, requireRun(context, runId));
+    const leftover = unreconciledPanelAttemptId(folded);
+    if (leftover || settlementFailed) {
+      return unreconciledHandoff(folded, panel.stepId, leftover);
+    }
+    const born = folded.currentStep?.panel.order.length ?? 0;
+    const allTerminal = Boolean(
+      folded.currentStep && born > 0 && folded.currentStep.panel.order.every((assignmentId) => folded.currentStep?.panel.assignments[assignmentId]?.status === "terminal") && vnextFoldPanelAttemptIds(folded.currentStep).every((attemptId) => vnextFoldPanelAttempt(folded.currentStep, attemptId)?.attempt.status === "terminal")
+    );
+    if (!allTerminal) {
+      return unreconciledHandoff(folded, panel.stepId, leftover);
+    }
+    if (born < panel.target && folded.status !== "cancelling" && !folded.cancelRequested) {
+      return unreconciledHandoff(folded, panel.stepId);
+    }
+    try {
+      return context.eventStore.transaction(() => joinPanel(context, panel));
+    } catch {
+      const state = foldStoredVnextRun(context, requireRun(context, runId));
+      return unreconciledHandoff(state, panel.stepId);
+    }
+  } catch (error) {
+    abortOwned();
+    await drainPendingInvoked();
+    throw error;
+  } finally {
+    for (const attemptId of owned.keys()) {
+      unregisterVnextAttemptController(context.eventStore.path, runId, attemptId);
+    }
+  }
+}
+function producerRoutingRecord(context, dispatch, result, now) {
+  const run = requireRun(context, dispatch.run.runId);
+  if (result.costBasis === void 0 || result.costBasis === null) {
+    throw runtimeError("settle_missing_cost_basis", run.runId, `attempt settlement rejected: missing required costBasis for attempt ${dispatch.attemptId}`);
+  }
+  if (result.costBasis !== "metered" && result.costBasis !== "unmetered" && result.costBasis !== "unknown") {
+    throw runtimeError("settle_invalid_cost_basis", run.runId, `attempt settlement rejected: invalid costBasis ${String(result.costBasis)}`);
+  }
+  if (result.costBasis === "metered" && (typeof result.costUsd !== "number" || !Number.isFinite(result.costUsd) || result.costUsd < 0)) {
+    throw runtimeError("settle_invalid_cost", run.runId, "attempt settlement rejected: metered costBasis requires non-negative finite costUsd");
+  }
+  const envelope = loadVnextRunPlanEnvelope(context.eventStore, run);
+  const rawHash = result.behavioralSha256 ?? behavioralConfigHash({
+    requestedModel: result.requestedModel ?? "simulated",
+    effectiveModel: result.effectiveModel ?? result.requestedModel ?? "simulated",
+    agentRole: dispatch.step.kind === "agent" || dispatch.step.kind === "moa" ? dispatch.step.agent : void 0,
+    toolPolicyVersion: envelope.revisions.toolPolicy
+  });
+  const record2 = {
+    schema: ROUTING_RECORD_V2_SCHEMA,
+    recordedAt: now,
+    project: run.projectId,
+    runId: run.runId,
+    stepId: dispatch.stepId,
+    assignmentId: dispatch.assignmentId,
+    attemptId: dispatch.attemptId,
+    harness: result.harness ?? (dispatch.producerId === "pi" ? "pi" : "driver-simulated"),
+    provider: result.provider ?? "simulated",
+    requestedModel: result.requestedModel ?? "simulated",
+    effectiveModel: result.effectiveModel ?? result.requestedModel ?? "simulated",
+    behavioralSha256: rawHash.startsWith("sha256:") ? rawHash : `sha256:${rawHash}`,
+    latencyMs: typeof result.latencyMs === "number" ? result.latencyMs : 0,
+    costBasis: result.costBasis,
+    costUsd: result.costUsd ?? null,
+    retries: Math.max(0, dispatch.stepAttempt - 1),
+    thinking: result.thinking ?? dispatch.request.thinking
+  };
+  for (const field of ["agentRole", "contextTokens", "tokensIn", "tokensOut", "cacheReadTokens", "cacheWriteTokens", "priceRef", "providerMetadata"]) {
+    if (result[field] !== void 0) record2[field] = result[field];
+  }
+  return parseRoutingRecordV2(record2);
+}
+function settleMember(context, dispatch, result, produceError) {
+  const run = requireRun(context, dispatch.run.runId);
+  const state = foldStoredVnextRun(context, run);
+  const capability = context.eventStore.capabilityByAttempt(dispatch.attemptId);
+  const located = vnextFoldPanelAttempt(state.currentStep, dispatch.attemptId);
+  if (!located || located.assignmentId !== dispatch.assignmentId || located.attempt.status !== "executing" || !capability || !capabilityMatchesDispatch(capability, dispatch, ["issued", "revoked"])) {
+    throw runtimeError("run_events_illegal", run.runId, "settle attempted for a non-current capability");
+  }
+  const cancelling = state.status === "cancelling" || capability.state === "revoked";
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  let sequence = context.eventStore.nextSequence(run.runId);
+  let mono = vnextMonotonicNs();
+  const events = [];
+  const push = (eventType, payload) => {
+    events.push({
+      ...vnextEventBase(context, run, now, mono),
+      eventId: newVnextEventId(),
+      eventType,
+      sequence: sequence++,
+      payload
+    });
+    mono = vnextIncrementMonotonicNs(mono);
+  };
+  push("attempt.status_changed", { attemptId: dispatch.attemptId, status: "settling" });
+  if (cancelling) {
+    push("routing.attempt.recorded", { routing: producerRoutingRecord(
+      context,
+      dispatch,
+      result ?? { outcome: "cancelled", costBasis: "unknown", costUsd: null },
+      now
+    ) });
+    push("assignment.result_recorded", { assignmentId: dispatch.assignmentId, resultClass: "cancelled", status: "result_recorded" });
+    push("attempt.status_changed", { attemptId: dispatch.attemptId, status: "terminal" });
+    push("assignment.terminal", { assignmentId: dispatch.assignmentId, outcome: "cancelled", status: "terminal" });
+  } else if (produceError) {
+    const envelope = loadVnextRunPlanEnvelope(context.eventStore, run);
+    const rawHash = result?.behavioralSha256 ?? behavioralConfigHash({
+      requestedModel: result?.requestedModel ?? "simulated",
+      effectiveModel: result?.effectiveModel ?? result?.requestedModel ?? "simulated",
+      agentRole: dispatch.step.kind === "agent" || dispatch.step.kind === "moa" ? dispatch.step.agent : void 0,
+      toolPolicyVersion: envelope.revisions.toolPolicy
+    });
+    const behavioralSha256 = rawHash.startsWith("sha256:") ? rawHash : `sha256:${rawHash}`;
+    const routingRecord = {
+      schema: ROUTING_RECORD_V2_SCHEMA,
+      recordedAt: now,
+      project: run.projectId,
+      runId: run.runId,
+      stepId: dispatch.stepId,
+      assignmentId: dispatch.assignmentId,
+      attemptId: dispatch.attemptId,
+      harness: result?.harness ?? (dispatch.producerId === "pi" ? "pi" : "driver-simulated"),
+      provider: result?.provider ?? "simulated",
+      requestedModel: result?.requestedModel ?? "simulated",
+      effectiveModel: result?.effectiveModel ?? result?.requestedModel ?? "simulated",
+      behavioralSha256,
+      latencyMs: typeof result?.latencyMs === "number" ? result.latencyMs : 0,
+      costBasis: "unknown",
+      costUsd: null,
+      retries: Math.max(0, dispatch.stepAttempt - 1)
+    };
+    push("routing.attempt.recorded", { routing: parseRoutingRecordV2(routingRecord) });
+    push("assignment.result_recorded", {
+      assignmentId: dispatch.assignmentId,
+      resultClass: "producer_rejected",
+      status: "result_recorded"
+    });
+    push("attempt.status_changed", { attemptId: dispatch.attemptId, status: "terminal" });
+    push("assignment.terminal", { assignmentId: dispatch.assignmentId, outcome: "failed", status: "terminal" });
+  } else {
+    if (!result) {
+      throw runtimeError("settle_missing_cost_basis", run.runId, `attempt settlement rejected: missing required costBasis for attempt ${dispatch.attemptId}`);
+    }
+    push("routing.attempt.recorded", { routing: producerRoutingRecord(context, dispatch, result, now) });
+    const outcome = typeof result.outcome === "string" ? result.outcome : void 0;
+    const known = outcome !== void 0 && dispatch.step.outcomes.includes(outcome);
+    if (!known) {
+      push("assignment.result_recorded", {
+        assignmentId: dispatch.assignmentId,
+        resultClass: "outcome_unknown",
+        status: "result_recorded"
+      });
+      push("attempt.status_changed", { attemptId: dispatch.attemptId, status: "terminal" });
+      push("assignment.terminal", { assignmentId: dispatch.assignmentId, outcome: "failed", status: "terminal" });
+    } else {
+      push("assignment.result_recorded", {
+        assignmentId: dispatch.assignmentId,
+        outcome,
+        resultClass: "outcome",
+        status: "result_recorded"
+      });
+      push("attempt.status_changed", { attemptId: dispatch.attemptId, status: "terminal" });
+      push("assignment.terminal", { assignmentId: dispatch.assignmentId, outcome, status: "terminal" });
+    }
+  }
+  context.eventStore.settleCapability(dispatch.attemptId, "settled");
+  for (const event of events) context.eventStore.appendEvent(event);
+  const next = foldStoredVnextRun(context, run);
+  persistVnextRunState(context, run.runId, next, events[events.length - 1].sequence);
+}
+function joinPanel(context, panel) {
+  const run = requireRun(context, panel.run.runId);
+  const state = foldStoredVnextRun(context, run);
+  const current = state.currentStep;
+  if (!current || current.stepId !== panel.stepId) {
+    throw runtimeError("run_events_illegal", run.runId, "join attempted without the prepared step");
+  }
+  const joined = vnextJoinAll(panel.step, current.panel);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  let sequence = context.eventStore.nextSequence(run.runId);
+  let mono = vnextMonotonicNs();
+  const events = [];
+  const push = (eventType, payload) => {
+    events.push({
+      ...vnextEventBase(context, run, now, mono),
+      eventId: newVnextEventId(),
+      eventType,
+      sequence: sequence++,
+      payload
+    });
+    mono = vnextIncrementMonotonicNs(mono);
+  };
+  const failRun = (reason) => {
+    push("step.status_changed", { stepId: panel.stepId, status: "failed", previousStatus: "running" });
+    push("run.status_changed", { status: "failed", reason, stepId: panel.stepId });
+    for (const event of events) context.eventStore.appendEvent(event);
+    const next2 = foldStoredVnextRun(context, run);
+    persistVnextRunState(context, run.runId, next2, events[events.length - 1].sequence);
+    context.eventStore.updateRunStatus(run.runId, "failed", now);
+    return { state: next2 };
+  };
+  const cancelRun = () => {
+    push("step.status_changed", { stepId: panel.stepId, status: "cancelled", previousStatus: "running" });
+    push("run.status_changed", { status: "cancelled", reason: "operator_cancel" });
+    for (const event of events) context.eventStore.appendEvent(event);
+    const next2 = foldStoredVnextRun(context, run);
+    persistVnextRunState(context, run.runId, next2, events[events.length - 1].sequence);
+    context.eventStore.updateRunStatus(run.runId, "cancelled", now);
+    return { state: next2 };
+  };
+  const members = [];
+  for (const assignmentId of current.panel.order) {
+    const assignment = current.panel.assignments[assignmentId];
+    const attemptId = assignment?.currentAttemptId;
+    const attempt = attemptId ? assignment?.attempts[attemptId] : void 0;
+    members.push({ resultClass: attempt?.resultClass, outcome: attempt?.outcome });
+  }
+  const rejected = members.some((member) => member.resultClass === "outcome_unknown" || member.resultClass === "producer_rejected");
+  const declared = members.filter((member) => member.resultClass === "outcome");
+  const declaredConflict = declared.length > 0 && declared.some((member) => member.outcome !== declared[0]?.outcome);
+  if (state.cancelRequested || state.status === "cancelling") {
+    if (rejected || declaredConflict) return failRun(rejected ? "outcome_unknown" : "join_conflict");
+    return cancelRun();
+  }
+  if (joined.tag === "rejected") return failRun("outcome_unknown");
+  if (joined.tag === "conflict") return failRun("join_conflict");
+  if (joined.tag === "cancelled") {
+    throw runtimeError("run_events_illegal", run.runId, "cancelled join requires cancellation authority");
+  }
+  if (joined.tag !== "outcome") {
+    throw runtimeError("run_events_illegal", run.runId, "join attempted before the panel is joinable");
+  }
+  const outcome = joined.outcome;
+  const selected = panel.step.transitions[outcome];
+  if (!selected) return failRun("outcome_unknown");
+  push("step.outcome_recorded", { stepId: panel.stepId, stepAttempt: panel.stepAttempt, outcome });
+  const stepStatus = outcome === "passed" ? "passed" : outcome === "cancelled" ? "cancelled" : "failed";
+  push("step.status_changed", { stepId: panel.stepId, status: stepStatus, previousStatus: "running" });
+  const budget = transitionBudgetFailure(panel.plan, state, panel.stepId, outcome);
+  if (budget) {
+    push("run.status_changed", { status: "failed", reason: budget, stepId: panel.stepId, outcome });
+    for (const event of events) context.eventStore.appendEvent(event);
+    const next2 = foldStoredVnextRun(context, run);
+    persistVnextRunState(context, run.runId, next2, events[events.length - 1].sequence);
+    context.eventStore.updateRunStatus(run.runId, "failed", now);
+    return { state: next2 };
+  }
+  if (selected.to === "step") {
+    push("step.transitioned", { fromStepId: panel.stepId, toStepId: selected.target, outcome });
+  } else {
+    push("step.transitioned", { fromStepId: panel.stepId, status: selected.terminalStatus, outcome });
+    push("run.status_changed", { status: selected.terminalStatus });
+  }
+  for (const event of events) context.eventStore.appendEvent(event);
+  const next = foldStoredVnextRun(context, run);
+  persistVnextRunState(context, run.runId, next, events[events.length - 1].sequence);
+  context.eventStore.updateRunStatus(run.runId, next.status, now);
+  return { state: next };
+}
+function failBudget(context, run, plan, state, reason, stepId) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const sequence = context.eventStore.nextSequence(run.runId);
+  const event = {
+    ...vnextEventBase(context, run, now, vnextMonotonicNs()),
+    eventId: newVnextEventId(),
+    eventType: "run.status_changed",
+    sequence,
+    payload: { status: "failed", reason, stepId }
+  };
+  context.eventStore.appendEvent(event);
+  const next = foldStoredVnextRun(context, run);
+  persistVnextRunState(context, run.runId, next, sequence);
+  context.eventStore.updateRunStatus(run.runId, "failed", now);
+  void state;
+  return { state: next };
+}
+function hardStopUnrecorded(context, dispatch, reason) {
+  const run = requireRun(context, dispatch.run.runId);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const sequence = context.eventStore.nextSequence(run.runId);
+  const event = {
+    ...vnextEventBase(context, run, now, vnextMonotonicNs()),
+    eventId: newVnextEventId(),
+    eventType: "run.status_changed",
+    sequence,
+    payload: { status: "failed", reason, stepId: dispatch.stepId }
+  };
+  context.eventStore.appendEvent(event);
+  context.eventStore.settleCapability(dispatch.attemptId, "revoked");
+  const next = foldStoredVnextRun(context, run);
+  persistVnextRunState(context, run.runId, next, sequence);
+  context.eventStore.updateRunStatus(run.runId, "failed", now);
+}
+function vnextTransitionBudgetFailure(plan, state, fromStepId, outcome) {
+  return transitionBudgetFailure(plan, state, fromStepId, outcome);
+}
+function transitionBudgetFailure(plan, state, fromStepId, outcome) {
+  const selected = plan.steps[fromStepId]?.transitions[outcome];
+  if (!selected) return "outcome_unknown";
+  const edgeKey = `${fromStepId}:${outcome}`;
+  const edgeUsed = (state.edgeTransitions[edgeKey] ?? 0) + 1;
+  if (selected.maxTransitions !== void 0 && edgeUsed > selected.maxTransitions) return "budget_edge";
+  if (state.transitionsUsed + 1 > plan.transitionBudget) return "budget_transitions";
+  if (selected.to === "step") {
+    const target = plan.steps[selected.target];
+    const used = state.stepAttempts[selected.target] ?? 0;
+    if (target && used >= target.maxAttempts) return "budget_step_attempts";
+  }
+  return void 0;
+}
+function unsupportedLimit(envelope) {
+  if (envelope.plan.limits.maxRunDurationMs !== void 0) {
+    return { reason: "limit_unsupported", field: "limits.maxRunDurationMs", detail: "duration budget enforcement is not available in this slice" };
+  }
+  if (envelope.plan.limits.maxAgentTimeMs !== void 0) {
+    return { reason: "limit_unsupported", field: "limits.maxAgentTimeMs", detail: "agent-time budget enforcement is not available in this slice" };
+  }
+  if (envelope.projectLimits.maxRunDurationMs !== void 0) {
+    return { reason: "limit_unsupported", field: "project.limits.maxRunDurationMs", detail: "duration budget enforcement is not available in this slice" };
+  }
+  if (envelope.projectLimits.maxAgentTimeMs !== void 0) {
+    return { reason: "limit_unsupported", field: "project.limits.maxAgentTimeMs", detail: "agent-time budget enforcement is not available in this slice" };
+  }
+  return void 0;
+}
+function unsupportedStep(plan, step) {
+  if (step.kind === "gate") throw runtimeError("run_plan_corrupt", plan.workflowId, `unsupportedStep called on gate without envelope; use unsupportedGateStep instead`);
+  if (step.kind !== "agent" && step.kind !== "moa" && step.kind !== "approval" && step.kind !== "wait") {
+    return { reason: "step_unsupported", field: "kind", detail: `step kind ${step.kind} is not executed in this slice` };
+  }
+  if (step.assignments.maxAttemptsPerAssignment > 2) {
+    return { reason: "step_unsupported", field: "assignments.maxAttemptsPerAssignment", detail: "only up to two physical attempts are supported in this slice" };
+  }
+  if (step.join.strategy !== "all" && step.join.strategy !== "all-settled") {
+    return { reason: "step_unsupported", field: "join.strategy", detail: "only join all or all-settled is supported" };
+  }
+  if (step.join.strategy === "all" && step.join.minimumPassed !== void 0) {
+    return { reason: "step_unsupported", field: "join.minimumPassed", detail: "minimumPassed requires join strategy all-settled" };
+  }
+  if (step.join.cancelRemaining) {
+    return { reason: "step_unsupported", field: "join.cancelRemaining", detail: "cancelRemaining is not executed in this slice" };
+  }
+  if (step.assignments.distinctBy.some((d) => d !== "provider")) {
+    return { reason: "step_unsupported", field: "assignments.distinctBy", detail: "only distinctBy provider is supported in this slice" };
+  }
+  if (step.assignments.maxWriteRepositories !== void 0 && step.assignments.maxWriteRepositories > 1) {
+    return { reason: "step_unsupported", field: "assignments.maxWriteRepositories", detail: "at most one write repository is supported in this slice" };
+  }
+  for (const evidence of step.requiredEvidence) {
+    if (!evidence || !["artifact", "assignment-result", "gate", "approval", "receipt"].includes(evidence.kind)) {
+      return { reason: "step_unsupported", field: "requiredEvidence", detail: `evidence kind '${evidence?.kind}' is not supported in this slice` };
+    }
+  }
+  if (step.timeoutMs !== void 0 && step.timeoutMs <= 0) {
+    return { reason: "step_unsupported", field: "timeoutMs", detail: "timeoutMs must be positive" };
+  }
+  if (step.safeSpeculation) return { reason: "step_unsupported", field: "safeSpeculation", detail: "speculation is not executed in this slice" };
+  if (step.tools) return { reason: "step_unsupported", field: "tools", detail: "tools are not executed in this slice" };
+  if (step.secrets.length > 0) return { reason: "step_unsupported", field: "secrets", detail: "secrets are not executed in this slice" };
+  for (const [repoId, access] of Object.entries(step.repositories)) {
+    if (access !== "read" && access !== "write" && access !== "none") {
+      return { reason: "step_unsupported", field: "repositories", detail: `invalid repository access '${access}' on ${repoId}` };
+    }
+  }
+  return void 0;
+}
+function unsupportedGateStep(plan, step, envelope, context) {
+  if (!step.gate) return { reason: "step_unsupported", field: "gate", detail: "gate step is missing gate id" };
+  if (envelope.gates.registry === null) {
+    return { reason: "step_unsupported", field: "gate", detail: `step ${step.id} refers to a gate but registry is null` };
+  }
+  const definition = envelope.gates.definitions[step.gate];
+  if (!definition) {
+    return { reason: "step_unsupported", field: "gate", detail: `gate definition ${step.gate} not found in registry` };
+  }
+  if (definition.kind === "reserved") {
+    return { reason: "gate_unsupported", field: "gate", detail: `gate ${step.gate} is reserved and cannot be executed` };
+  }
+  if (step.assignments.allowedAgents && step.assignments.allowedAgents.length > 0) {
+    return { reason: "step_unsupported", field: "assignments.allowedAgents", detail: "gate steps do not support allowedAgents" };
+  }
+  if (step.assignments.minimum !== 1 || step.assignments.target !== 1 || step.assignments.maximum !== 1) {
+    return { reason: "step_unsupported", field: "assignments", detail: "gate steps require exactly 1 agent assignment" };
+  }
+  if (step.assignments.maxParallel !== 1) {
+    return { reason: "step_unsupported", field: "assignments.maxParallel", detail: "gate steps require maxParallel of 1" };
+  }
+  if (step.assignments.maxAttemptsPerAssignment !== 1) {
+    return { reason: "step_unsupported", field: "assignments.maxAttemptsPerAssignment", detail: "gate steps require maxAttemptsPerAssignment of 1" };
+  }
+  if (step.assignments.distinctBy && step.assignments.distinctBy.length > 0) {
+    return { reason: "step_unsupported", field: "assignments.distinctBy", detail: "gate steps do not support distinctBy" };
+  }
+  if (step.assignments.maxWriteRepositories) {
+    return { reason: "step_unsupported", field: "assignments.maxWriteRepositories", detail: "gate steps do not support maxWriteRepositories" };
+  }
+  if (step.join.strategy !== "all") {
+    return { reason: "step_unsupported", field: "join", detail: `gate steps require join strategy 'all', not '${step.join.strategy}'` };
+  }
+  if (step.join.minimumPassed !== void 0) {
+    return { reason: "step_unsupported", field: "join", detail: "gate steps do not support minimumPassed" };
+  }
+  if (step.join.cancelRemaining) {
+    return { reason: "step_unsupported", field: "join", detail: "gate steps do not support cancelRemaining" };
+  }
+  for (const evidence of step.requiredEvidence) {
+    if (!evidence || !["gate", "artifact", "receipt", "assignment-result", "approval"].includes(evidence.kind)) {
+      return { reason: "step_unsupported", field: "requiredEvidence", detail: `gate steps do not support evidence kind '${evidence?.kind}'` };
+    }
+  }
+  if (step.safeSpeculation) {
+    return { reason: "step_unsupported", field: "safeSpeculation", detail: "gate steps do not support safeSpeculation" };
+  }
+  if (step.tools) {
+    return { reason: "step_unsupported", field: "tools", detail: "gate steps do not support tools" };
+  }
+  if (step.secrets && step.secrets.length > 0) {
+    return { reason: "step_unsupported", field: "secrets", detail: "gate steps do not support secrets" };
+  }
+  if (step.model) {
+    return { reason: "step_unsupported", field: "model", detail: "gate steps do not support model" };
+  }
+  if (plan.reproOracle?.stageId === step.id) {
+    return { reason: "step_unsupported", field: "reproOracle", detail: "gate steps cannot be repro oracle" };
+  }
+  if (plan.planHash?.stageId === step.id) {
+    return { reason: "step_unsupported", field: "planHash", detail: "gate steps cannot be plan hash oracle" };
+  }
+  if (step.timeoutMs !== void 0) {
+    if (definition.kind === "artifacts-exist") {
+      return { reason: "step_unsupported", field: "timeoutMs", detail: "artifacts-exist gates do not support timeoutMs" };
+    }
+    if (definition.kind === "command" && definition.timeoutMs !== void 0 && step.timeoutMs < definition.timeoutMs) {
+      return { reason: "step_unsupported", field: "timeoutMs", detail: "command step timeoutMs narrower than the registry timeout is refused" };
+    }
+  }
+  const repositories = step.repositories;
+  if (!repositories || Object.keys(repositories).length === 0) {
+    return { reason: "step_unsupported", field: "repositories", detail: "gate steps require repository declarations" };
+  }
+  if (definition.kind === "artifacts-exist") {
+    const controlAccess = repositories.control;
+    if (controlAccess !== "read" && controlAccess !== "write") {
+      return { reason: "step_unsupported", field: "repositories", detail: "artifacts-exist gates require control repository access as read or write" };
+    }
+    for (const [repoId, access] of Object.entries(repositories)) {
+      if (repoId !== "control" && access !== "none") {
+        return { reason: "step_unsupported", field: "repositories", detail: "artifacts-exist gates require other repositories to have access 'none'" };
+      }
+    }
+  } else if (definition.kind === "command") {
+    for (const [repoId, access] of Object.entries(repositories)) {
+      if (access !== "read" && access !== "write" && access !== "none") {
+        return { reason: "step_unsupported", field: "repositories", detail: `invalid repository access '${access}' on ${repoId}` };
+      }
+    }
+    const hasWrite = Object.values(repositories).some((access) => access === "write");
+    if (!hasWrite) {
+      return { reason: "step_unsupported", field: "repositories", detail: "command gates require at least one repository with write access" };
+    }
+  }
+  const expectPass = step.expect === "pass";
+  if (expectPass) {
+    if (!step.outcomes.includes("passed")) {
+      return { reason: "gate_outcome_undeclared", field: "outcomes", detail: "step expects pass but missing required outcome passed; spell it as 'passed'" };
+    }
+    if (!step.outcomes.includes("implementation-failure") && !step.outcomes.includes("failed")) {
+      return { reason: "gate_outcome_undeclared", field: "outcomes", detail: "step expects pass but missing required failure outcome; declare implementation-failure or failed" };
+    }
+  } else {
+    if (!step.outcomes.includes("repro-missing")) {
+      return { reason: "gate_outcome_undeclared", field: "outcomes", detail: "step expects fail but missing required outcome repro-missing; spell it as 'repro-missing'" };
+    }
+    if (!step.outcomes.includes("implementation-failure") && !step.outcomes.includes("failed")) {
+      return { reason: "gate_outcome_undeclared", field: "outcomes", detail: "step expects fail but missing required failure outcome; declare implementation-failure or failed" };
+    }
+  }
+  if (context && projectRuntimeKey(context.projectRoot) !== envelope.gates.controlRoot.projectKey) {
+    throw runtimeError("run_owner_mismatch", plan.workflowId, `gate control root does not match project`);
+  }
+  if (definition.kind === "artifacts-exist" && step.expect === "fail") {
+    return { reason: "step_unsupported", field: "expect", detail: "artifacts-exist gates cannot expect fail" };
+  }
+  return void 0;
+}
+function pinnedGatesForCompiledPlan(plan, bundle, projectRoot) {
+  const referenced = /* @__PURE__ */ new Set();
+  for (const step of Object.values(plan.steps)) {
+    if (step.kind === "gate") referenced.add(step.gate);
+  }
+  const definitions = /* @__PURE__ */ Object.create(null);
+  const registryValue = bundle.gateRegistry?.value;
+  const gatesObject = registryValue && typeof registryValue.gates === "object" && registryValue.gates && !Array.isArray(registryValue.gates) ? registryValue.gates : {};
+  for (const gateId of referenced) {
+    definitions[gateId] = parseGateDefinition(gatesObject[gateId], gateId, plan.workflowId);
+  }
+  return {
+    registry: referenced.size > 0 && bundle.gateRegistry ? { schema: "kxm.gate-registry.v1", hash: gateRegistryHash(bundle.gateRegistry.value) } : bundle.gateRegistry && referenced.size === 0 ? { schema: "kxm.gate-registry.v1", hash: gateRegistryHash(bundle.gateRegistry.value) } : null,
+    definitions,
+    controlRoot: { repositoryId: "control", projectKey: projectRuntimeKey(projectRoot) }
+  };
+}
+function gateRecoveryPreflight(context) {
+  const attempts = context.eventStore.gateAttemptsForProject(context.projectId);
+  const capabilities = context.eventStore.issuedOrRevokedCapabilities();
+  const seenAttempts = /* @__PURE__ */ new Set();
+  const blocking = [];
+  let owned = 0;
+  for (const row of attempts) {
+    seenAttempts.add(row.attemptId);
+    const classified = classifyRecoverableGateAttempt(context, row, context.eventStore.capabilityByAttempt(row.attemptId));
+    if (classified === "owned") owned += 1;
+    else if (classified === "blocking") blocking.push({ runId: row.runId, attemptId: row.attemptId });
+  }
+  for (const capability of capabilities) {
+    if (seenAttempts.has(capability.attemptId)) continue;
+    const row = context.eventStore.gateAttempt(capability.attemptId);
+    if (capability.producerId === "driver-simulated" || capability.producerId === "pi" || capability.producerId === "oneshot") {
+      if (row) {
+        throw runtimeError(
+          "gate_recovery_corrupt",
+          capability.attemptId,
+          "gate recovery preflight: capability producer contradicts gate attempt"
+        );
+      }
+      continue;
+    }
+    if (capability.producerId !== "kxm-gate") {
+      throw runtimeError(
+        "gate_recovery_corrupt",
+        capability.attemptId,
+        `gate recovery preflight: unknown capability producer ${capability.producerId}`
+      );
+    }
+    if (!row) {
+      throw runtimeError("gate_recovery_corrupt", capability.attemptId, "gate recovery preflight: missing gate_attempts row");
+    }
+    const classified = classifyRecoverableGateAttempt(context, row, capability);
+    if (classified === "owned") owned += 1;
+    else if (classified === "blocking") blocking.push({ runId: row.runId, attemptId: row.attemptId });
+  }
+  return { owned, blocking };
+}
+function classifyRecoverableGateAttempt(context, row, capability) {
+  if (row.producerId !== "kxm-gate") {
+    throw runtimeError(
+      "gate_recovery_corrupt",
+      row.attemptId,
+      "gate recovery preflight: capability producer contradicts gate attempt"
+    );
+  }
+  if (capability && capability.producerId !== "kxm-gate") {
+    throw runtimeError(
+      "gate_recovery_corrupt",
+      row.attemptId,
+      "gate recovery preflight: capability producer contradicts gate attempt"
+    );
+  }
+  if (capability && (row.runId !== capability.runId || row.assignmentId !== capability.assignmentId || row.stepId !== capability.stepId || row.stepAttempt !== capability.stepAttempt || row.attemptId !== capability.attemptId)) {
+    throw runtimeError("gate_recovery_corrupt", capability.attemptId, "gate recovery preflight: capability identity does not match gate attempt");
+  }
+  const run = context.eventStore.run(row.runId);
+  if (!run) {
+    throw runtimeError("gate_recovery_corrupt", row.runId, "gate recovery preflight: run does not exist");
+  }
+  if (run.projectId !== context.projectId || row.projectId !== context.projectId) {
+    throw runtimeError("gate_recovery_corrupt", row.runId, "gate recovery preflight: run project mismatch");
+  }
+  let state;
+  try {
+    state = foldStoredVnextRun(context, run);
+  } catch (error) {
+    throw runtimeError(
+      "gate_recovery_corrupt",
+      row.runId,
+      `gate recovery preflight: fold error: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+  const observation = context.eventStore.gateObservationForAttempt(row.attemptId);
+  const evidence = context.eventStore.gateEvidenceForAttempt(row.attemptId);
+  const events = context.eventStore.events(row.runId, 0, 1e6);
+  if (isExcludedTerminalProof(state, row, observation, evidence, events)) return "excluded";
+  if (isEvaluatedSettledProof(row, observation, evidence)) {
+    if (capability && (capability.state === "issued" || capability.state === "revoked") && state.currentStep?.attemptId === row.attemptId && state.currentStep.effectState === "settled") {
+      throw runtimeError(
+        "gate_recovery_corrupt",
+        row.runId,
+        "gate recovery preflight: capability remains issued or revoked after evaluated settlement"
+      );
+    }
+    return "excluded";
+  }
+  if (!capability || capability.producerId !== "kxm-gate" || capability.state !== "issued" && capability.state !== "revoked") {
+    throw runtimeError(
+      "gate_recovery_corrupt",
+      row.attemptId,
+      "gate recovery preflight: unfinished gate attempt is missing issued or revoked kxm-gate capability"
+    );
+  }
+  const current = state.currentStep;
+  const sameAttempt = current?.attemptId === row.attemptId && current.assignmentId === row.assignmentId && current.effectId === row.effectId && current.stepId === row.stepId;
+  const controller = vnextAttemptController(context.eventStore.path, row.runId, row.attemptId);
+  if (row.gateKind === "command") {
+    const hold = vnextGateHold(context.eventStore.path, row.runId);
+    const admittedToken = vnextAdmittedToken(context.eventStore.path, row.runId);
+    if (hold && hold.attemptId !== row.attemptId) {
+      throw runtimeError("gate_recovery_corrupt", row.attemptId, "gate recovery preflight: gate hold does not match the attempt");
+    }
+    if (hold && admittedToken !== void 0 && hold.token !== admittedToken) {
+      throw runtimeError("gate_recovery_corrupt", row.attemptId, "gate recovery preflight: gate hold token does not match admission");
+    }
+    if (hold?.state === "unsettled") return "blocking";
+    const ownedCommand = run.homeRuntimeId === context.homeRuntimeId && sameAttempt && hold?.state === "active" && hold.attemptId === row.attemptId && hold.token === admittedToken && controller?.attemptId === row.attemptId && current?.effectState !== "blocked_uncertain";
+    if (ownedCommand) return "owned";
+    return "blocking";
+  }
+  const ownedHere = run.homeRuntimeId === context.homeRuntimeId && sameAttempt && controller?.attemptId === row.attemptId && current?.effectState !== "blocked_uncertain";
+  if (ownedHere) return "owned";
+  return "blocking";
+}
+function gateRowIdentityMatches(row, other) {
+  return other.attemptId === row.attemptId && other.assignmentId === row.assignmentId && other.effectId === row.effectId && other.stepId === row.stepId && other.runId === row.runId;
+}
+function isEvaluatedSettledProof(row, observation, evidence) {
+  if (!evidence || !observation) return false;
+  if (!gateRowIdentityMatches(row, observation) || !gateRowIdentityMatches(row, evidence)) return false;
+  if (evidence.observationId !== observation.observationId) return false;
+  return observation.completeness === "complete";
+}
+function proofOnlySettledEvent(events, row) {
+  return events.find((event) => {
+    if (event.eventType !== "effect.settled" || event.runId !== row.runId) return false;
+    if (event.payload.attemptId !== row.attemptId || event.payload.assignmentId !== row.assignmentId || event.payload.effectId !== row.effectId || event.payload.stepId !== row.stepId) {
+      return false;
+    }
+    const refs = event.payload.evidenceRefs;
+    return !Array.isArray(refs) || refs.length === 0;
+  });
+}
+function isExcludedTerminalProof(state, row, observation, evidence, events) {
+  if (evidence) return false;
+  if (!observation) return false;
+  if (!gateRowIdentityMatches(row, observation)) return false;
+  if (observation.completeness === "incomplete") {
+    if (state.status === "failed" || state.status === "cancelled") return true;
+    const currentAttemptNumber = state.stepAttempts[row.stepId] ?? 0;
+    if (row.stepAttempt !== void 0 && currentAttemptNumber > row.stepAttempt) return true;
+    if (state.pendingStepId !== void 0 && (state.pendingStepId !== row.stepId || state.currentStep === void 0)) return true;
+    return false;
+  }
+  if (observation.completeness !== "no-start" && observation.completeness !== "complete") return false;
+  if (proofOnlySettledEvent(events, row)) {
+    return observation.completeness === "no-start" || observation.completeness === "complete";
+  }
+  const current = state.currentStep;
+  if (current) {
+    if (current.attemptId !== row.attemptId || current.assignmentId !== row.assignmentId || current.effectId !== row.effectId || current.stepId !== row.stepId || current.effectState !== "settled-proof") {
+      return false;
+    }
+    if (observation.completeness === "no-start" && current.observationCompleteness === "no-start") return true;
+    return observation.completeness === "complete" && current.observationCompleteness === "complete" && current.status === "cancelled";
+  }
+  if (observation.completeness === "no-start" && (state.status === "failed" || state.status === "cancelled")) return true;
+  return observation.completeness === "complete" && (state.status === "cancelled" || state.status === "failed");
+}
+function settlePreparedGate(context, prepared, observation) {
+  const run = requireRun(context, prepared.run.runId);
+  const folded = foldStoredVnextRun(context, run);
+  const current = folded.currentStep;
+  if (!current || current.stepId !== prepared.stepId || current.stepAttempt !== prepared.stepAttempt || current.assignmentId !== prepared.assignmentId || current.attemptId !== prepared.attemptId || current.effectId !== prepared.effectId) {
+    throw runtimeError("run_events_illegal", run.runId, "settlement identity does not match the prepared gate attempt");
+  }
+  const capability = context.eventStore.capabilityByAttempt(prepared.attemptId);
+  if (!capability || capability.runId !== run.runId || capability.attemptId !== prepared.attemptId || capability.assignmentId !== prepared.assignmentId || capability.stepId !== prepared.stepId || capability.stepAttempt !== prepared.stepAttempt || capability.producerId !== "kxm-gate" || capability.state !== "issued" && capability.state !== "revoked") {
+    throw runtimeError("run_events_illegal", run.runId, "prepared gate capability is not the issued or revoked attempt");
+  }
+  const cancelled = folded.status === "cancelling" || capability.state === "revoked";
+  if (observation.completeness !== "complete") {
+    throw runtimeError("gate_row_invalid", run.runId, "gate settlement requires a complete observation");
+  }
+  const settled = cancelled ? recordGateCancelObservedInTransaction(context, run, prepared.envelope, prepared.stepId, observation) : recordGateSettlementInTransaction(context, run, prepared.envelope, prepared.stepId, observation);
+  vnextGateDispatchSeams.afterObservationWrite?.(prepared);
+  return settled;
 }
 function requireRun(context, runId) {
   const run = context.eventStore.run(runId);
@@ -21485,8 +25497,11 @@ function recoverVnextRun(context, runId, request) {
   return context.eventStore.transaction(() => {
     const run = requireRun(context, runId);
     let state = foldStoredVnextRun(context, run);
-    if (state.status !== "blocked_uncertain" && state.currentStep?.effectState !== "blocked_uncertain") {
+    if (state.status !== "blocked_uncertain" && state.status !== "cancelling" && state.currentStep?.effectState !== "blocked_uncertain") {
       throw runtimeError("run_events_illegal", runId, `run ${runId} is not in blocked_uncertain status`);
+    }
+    if (state.status === "cancelling" && state.currentStep?.effectState === "blocked_uncertain") {
+      state = { ...state, status: "blocked_uncertain" };
     }
     const now = (/* @__PURE__ */ new Date()).toISOString();
     let sequence = context.eventStore.nextSequence(runId);
@@ -21571,16 +25586,330 @@ function recoverVnextRun(context, runId, request) {
   });
 }
 
+// plugins/kxm/src/vnext-oneshot-producer.ts
+function determineOutcome(text, allowedOutcomes) {
+  try {
+    const result = JSON.parse(text.trim());
+    if (result && typeof result === "object" && !Array.isArray(result)) {
+      const outcome = result.outcome;
+      if (typeof outcome === "string" && allowedOutcomes.includes(outcome)) return outcome;
+    }
+  } catch {
+  }
+  return "failed";
+}
+function createVnextOneShotProducer(options = {}) {
+  const defaultHarness = options.defaultHarness ?? "claude";
+  const running = /* @__PURE__ */ new Map();
+  let closed = false;
+  function resolveHarnessForRequest(request) {
+    if (request.harness) return request.harness;
+    if (options.resolveHarness) {
+      const resolved = options.resolveHarness(request.agentId, request.runId);
+      if (resolved) return resolved;
+    }
+    if (options.resolveModel) {
+      const resolved = options.resolveModel(request.agentId, request.runId);
+      if (resolved?.harness) return resolved.harness;
+    }
+    return defaultHarness;
+  }
+  function parseModelString(spec, harness) {
+    const trimmed = spec.trim();
+    if (trimmed.includes("/")) {
+      const idx = trimmed.indexOf("/");
+      return { provider: trimmed.slice(0, idx).toLowerCase(), model: trimmed.slice(idx + 1) };
+    }
+    const fallbackProvider = NATIVE_HARNESS_PROVIDERS[harness] ?? options.defaultProvider ?? "anthropic";
+    return { provider: fallbackProvider, model: trimmed };
+  }
+  function resolveModelForRequest(request, harness) {
+    if (request.model) {
+      const parsed2 = parseModelString(request.model, harness);
+      return {
+        provider: request.provider?.toLowerCase() ?? parsed2.provider,
+        model: parsed2.model,
+        thinking: request.thinking
+      };
+    }
+    if (options.resolveModel) {
+      const resolved = options.resolveModel(request.agentId, request.runId);
+      if (resolved && resolved.model) {
+        const parsed2 = parseModelString(resolved.model, harness);
+        return {
+          provider: resolved.provider?.toLowerCase() ?? parsed2.provider,
+          model: parsed2.model,
+          thinking: resolved.thinking
+        };
+      }
+    }
+    const defaultModel = options.defaultModel ?? (harness === "codex" ? "gpt-5.6-sol" : harness === "kimi" ? "kimi-for-coding" : harness === "agy" ? "gemini-3.8-flash-high" : "claude-3-7-sonnet");
+    const parsed = parseModelString(defaultModel, harness);
+    return { provider: parsed.provider, model: parsed.model, thinking: request.thinking };
+  }
+  async function checkAuth(harness, provider, model, env, signal) {
+    if (options.inventory) {
+      const entry = options.inventory.harnesses.find((h) => h.id === harness);
+      if (!entry || !entry.detected || entry.authenticated !== true) {
+        throw new Error(`${harness}_not_authenticated: ${harness} harness not authenticated in inventory`);
+      }
+    }
+    const probeFn = options.probeHarness ?? probeHarnessAssignmentAsync;
+    const probe = await probeFn({ harness, provider, model, env, signal, timeoutMs: 1e4 });
+    if (!probe.detected) {
+      throw new Error(`${harness}_not_authenticated: ${harness} harness not detected (${probe.issues.join(", ")})`);
+    }
+    if (probe.authenticated !== true) {
+      throw new Error(`${harness}_not_authenticated: ${harness} not authenticated (${probe.issues.join(", ")})`);
+    }
+    return probe;
+  }
+  async function executeRequest(request) {
+    const startTime = Date.now();
+    const harness = resolveHarnessForRequest(request);
+    const resolved = resolveModelForRequest(request, harness);
+    if (closed) throw new Error("oneshot_producer_closed");
+    const cancelled = () => ({
+      outcome: "cancelled",
+      costBasis: "unknown",
+      costUsd: null,
+      latencyMs: Math.max(0, Date.now() - startTime),
+      harness,
+      provider: resolved.provider,
+      requestedModel: resolved.model,
+      effectiveModel: "unknown",
+      agentRole: request.agentRole ?? request.agentId
+    });
+    if (request.signal.aborted) return cancelled();
+    const catalogEntry = (options.catalog ?? BUILTIN_HARNESSES).find((h) => h.id === harness);
+    if (!catalogEntry?.oneShot) throw new Error(`oneshot_harness_unsupported: ${harness}`);
+    const permissionArgs = oneShotReadOnlyArgs(harness);
+    if (!permissionArgs) throw new Error(`oneshot_harness_unsupported: ${harness} permission_profile_unaudited`);
+    const env = { ...options.env ?? process.env };
+    let auth;
+    try {
+      auth = await checkAuth(harness, resolved.provider, resolved.model, env, request.signal);
+    } catch (error) {
+      if (request.signal.aborted) return cancelled();
+      throw error;
+    }
+    if (request.signal.aborted) return cancelled();
+    const command = auth.command ?? catalogEntry.commands[0] ?? harness;
+    const oneShot = catalogEntry.oneShot;
+    let args;
+    if (harness === "claude") {
+      args = [
+        "-p",
+        "--model",
+        resolved.model,
+        ...resolved.thinking ? ["--effort", resolved.thinking] : [],
+        ...permissionArgs,
+        "--output-format",
+        "json"
+      ];
+    } else if (harness === "codex") {
+      args = [
+        "exec",
+        "-m",
+        resolved.model,
+        ...resolved.thinking ? ["-c", `model_reasoning_effort="${resolved.thinking}"`] : [],
+        ...permissionArgs,
+        "--json",
+        "-"
+      ];
+    } else if (harness === "grok") {
+      args = [
+        "--model",
+        resolved.model,
+        ...resolved.thinking ? ["--reasoning-effort", resolved.thinking] : [],
+        ...permissionArgs,
+        "--output-format",
+        "json"
+      ];
+    } else {
+      throw new Error(`oneshot_harness_unsupported: ${harness} permission_profile_unaudited`);
+    }
+    const taskPrompt = request.prompt ?? `Execute step ${request.stepId} (attempt ${request.stepAttempt}) for agent ${request.agentId}.`;
+    const promptMessage = `${taskPrompt}
+
+Return a final JSON object with an "outcome" field chosen from ${JSON.stringify(request.allowedOutcomes)} and a concise "summary". Do not wrap it in Markdown. If no allowed outcome is truthful, return {"outcome":"failed"}; never infer success from an incomplete task.`;
+    let input;
+    if (oneShot.promptVia === "stdin") {
+      input = promptMessage;
+    } else {
+      if (harness === "grok") args.push("--single");
+      args.push(promptMessage);
+    }
+    const spawnFn = options.spawnProcess ?? defaultSpawn;
+    const cwd = options.projectRoot ?? process.cwd();
+    const evidence = await beginOneShotEvidence(options.evidenceRoot ?? join9(vnextUserStateRoot(), "runtime", "oneshot-evidence"), {
+      runId: request.runId,
+      stepId: request.stepId,
+      attemptId: request.attemptId,
+      assignmentId: request.assignmentId,
+      harness,
+      provider: resolved.provider,
+      model: resolved.model,
+      cwd,
+      command,
+      args,
+      input
+    }, [request.capability, ...Object.entries(env).filter(([key]) => /TOKEN|KEY|SECRET|PASSWORD|COOKIE|AUTH/i.test(key)).map(([, value]) => value ?? "")]);
+    let procResult;
+    try {
+      procResult = request.signal.aborted ? { stdout: "", stderr: "", code: null, started: false, observedChildExit: false, error: new Error("process_aborted") } : await spawnFn(command, args, { cwd, env, input, timeoutMs: options.timeoutMs ?? 12e4, signal: request.signal });
+    } catch (error) {
+      procResult = { stdout: "", stderr: "", code: null, observedChildExit: false, error: error instanceof Error ? error : new Error("process_adapter_error") };
+    }
+    let parsed;
+    try {
+      parsed = oneShot.usageParser(procResult.stdout, procResult.stderr, resolved.model);
+    } catch {
+      parsed = { text: "", isError: true };
+    }
+    const aborted = request.signal.aborted || procResult.error?.message === "process_aborted";
+    const effectUncertain = procResult.terminationRequested === true || Boolean(procResult.signal) || procResult.error?.message === "process_exit_unobserved" || procResult.observedChildExit === false && procResult.started !== false;
+    const transportFailed = procResult.code !== 0 || Boolean(procResult.error) || effectUncertain;
+    const outcome = aborted ? "cancelled" : transportFailed || parsed.isError ? "failed" : determineOutcome(parsed.text, request.allowedOutcomes);
+    const providerMetadata = {
+      processStatus: aborted ? "aborted" : transportFailed ? "failed" : "completed",
+      executionEvidenceId: evidence.id
+    };
+    if (procResult.code !== null && Number.isFinite(procResult.code)) providerMetadata.processExitCode = procResult.code;
+    if (procResult.signal) providerMetadata.processSignal = procResult.signal;
+    if (procResult.observedChildExit !== void 0) providerMetadata.observedChildExit = procResult.observedChildExit;
+    if (procResult.started !== void 0) providerMetadata.processStarted = procResult.started;
+    if (procResult.terminationRequested !== void 0) providerMetadata.terminationRequested = procResult.terminationRequested;
+    if (procResult.error) {
+      const reason = procResult.error.message;
+      providerMetadata.processError = /^process_(aborted|timeout|output_limit|stdin_error|stdio_error|stdio_unclosed|exit_unobserved)$/.test(reason) ? reason : "process_error";
+    }
+    const latencyMs = Math.max(0, Date.now() - startTime);
+    const usage = parsed.usage;
+    const validCount = (value) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+    const boundedCount = (field, value) => {
+      if (validCount(value) && value <= 1e6) return value;
+      if (typeof value === "number" && Number.isFinite(value)) {
+        providerMetadata[`raw${field[0].toUpperCase()}${field.slice(1)}`] = value;
+      }
+      return null;
+    };
+    const tokensIn = boundedCount("tokensIn", usage?.tokensIn);
+    const tokensOut = boundedCount("tokensOut", usage?.tokensOut);
+    const cacheReadTokens = boundedCount("cacheReadTokens", usage?.cacheReadTokens);
+    const cacheWriteTokens = boundedCount("cacheWriteTokens", usage?.cacheWriteTokens);
+    const contextTokens = boundedCount("contextTokens", usage?.contextTokens);
+    if (typeof usage?.costUsd === "number" && Number.isFinite(usage.costUsd) && usage.costUsd >= 0) providerMetadata.providerReportedCostUsd = usage.costUsd;
+    let catalog;
+    try {
+      catalog = options.priceCatalog ? parsePriceCatalog(JSON.stringify(options.priceCatalog)) : loadPriceCatalog(options.projectRoot ?? process.cwd());
+    } catch {
+      providerMetadata.priceCatalogUnavailable = true;
+    }
+    if (catalog && catalog.date !== (/* @__PURE__ */ new Date()).toISOString().slice(0, 10)) {
+      providerMetadata.priceCatalogStale = true;
+      catalog = void 0;
+    }
+    const subscription = ["claude.ai", "ChatGPT", "antigravity-oauth"].includes(auth.authMethod ?? "");
+    const costBasis = subscription ? "unmetered" : "unknown";
+    const costUsd = null;
+    const priceRef = subscription ? `subscription:${harness}` : void 0;
+    if (auth.authMethod) providerMetadata.authMethod = auth.authMethod;
+    const priceRow = catalog ? findModelPrice(catalog, resolved.model, resolved.provider) : void 0;
+    const flatTier = priceRow?.tiers.length === 1 && priceRow.tiers[0]?.upToContextTokens == null ? priceRow.tiers[0] : void 0;
+    if (catalog && harness === "claude" && flatTier && validCount(usage?.tokensIn) && validCount(usage?.tokensOut) && validCount(usage?.cacheReadTokens) && validCount(usage?.cacheWriteTokens) && (usage.cacheReadTokens === 0 || flatTier.cacheReadPerMillion != null) && (usage.cacheWriteTokens === 0 || flatTier.cacheWritePerMillion != null)) {
+      const calculated = calculateModelCost(catalog, {
+        model: resolved.model,
+        provider: resolved.provider,
+        tokensIn: usage.tokensIn,
+        tokensOut: usage.tokensOut,
+        cacheReadTokens: usage.cacheReadTokens,
+        cacheWriteTokens: usage.cacheWriteTokens,
+        contextTokens
+      });
+      if (calculated && Number.isFinite(calculated.costUsd)) {
+        providerMetadata.listCostUsd = calculated.costUsd;
+        providerMetadata.listPriceRef = calculated.priceRef;
+        providerMetadata.listPriceSha256 = catalog.sha256;
+      }
+    }
+    const result = {
+      outcome,
+      costBasis,
+      costUsd,
+      tokensIn,
+      tokensOut,
+      cacheReadTokens,
+      cacheWriteTokens,
+      contextTokens,
+      latencyMs,
+      harness,
+      provider: resolved.provider,
+      requestedModel: resolved.model,
+      effectiveModel: parsed.effectiveModel ?? "unknown",
+      providerMetadata,
+      ...effectUncertain ? { effectUncertain: true } : {},
+      ...resolved.thinking !== void 0 ? { thinking: resolved.thinking } : {},
+      agentRole: request.agentRole ?? request.agentId,
+      ...priceRef !== void 0 ? { priceRef } : {}
+    };
+    try {
+      providerMetadata.executionEvidenceSha256 = await evidence.finish(procResult, result);
+    } catch {
+      providerMetadata.evidenceWriteFailed = true;
+      return { ...result, outcome: "failed", effectUncertain: true };
+    }
+    return result;
+  }
+  const producer = {
+    id: "oneshot",
+    produce(request) {
+      const controller = new AbortController();
+      const signal = AbortSignal.any([request.signal, controller.signal]);
+      const pending = Promise.resolve().then(() => executeRequest({ ...request, signal })).finally(() => {
+        running.delete(controller);
+      });
+      running.set(controller, pending);
+      return pending;
+    },
+    async close() {
+      closed = true;
+      const pending = [...running.values()];
+      for (const controller of running.keys()) controller.abort();
+      await Promise.allSettled(pending);
+    }
+  };
+  registerTrustedProducer(producer);
+  return producer;
+}
+
+// plugins/kxm/src/producers.ts
+var import_yaml4 = __toESM(require_dist(), 1);
+import { existsSync as existsSync7, readFileSync as readFileSync5, mkdirSync as mkdirSync3, writeFileSync as writeFileSync2, readdirSync as readdirSync4 } from "node:fs";
+import { join as join10 } from "node:path";
+var empty = () => ({ schema: "kxm.producers.v1", updatedAt: (/* @__PURE__ */ new Date()).toISOString(), promoted: [], demoted: [], enabled: [], disabled: [], roles: {} });
+function loadProducerPolicy(root) {
+  const path = join10(root, ".kxm", "producers.yaml");
+  if (!existsSync7(path)) return empty();
+  const value = (0, import_yaml4.parse)(readFileSync5(path, "utf8"));
+  if (value?.schema !== "kxm.producers.v1" || !Array.isArray(value.promoted) || !Array.isArray(value.demoted)) throw new Error("invalid .kxm/producers.yaml");
+  return { schema: "kxm.producers.v1", updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : (/* @__PURE__ */ new Date()).toISOString(), promoted: value.promoted.filter((x) => typeof x === "string"), demoted: value.demoted.filter((x) => typeof x === "string"), enabled: Array.isArray(value.enabled) ? value.enabled.filter((x) => typeof x === "string") : [], disabled: Array.isArray(value.disabled) ? value.disabled.filter((x) => typeof x === "string") : [], roles: value.roles && typeof value.roles === "object" ? Object.fromEntries(Object.entries(value.roles).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [k, v.filter((x) => typeof x === "string")])) : {} };
+}
+function isProducerAdmitted(root, modelId) {
+  const policy = loadProducerPolicy(root);
+  return policy.enabled.includes(modelId) && policy.promoted.includes(modelId) && !policy.disabled.includes(modelId) && !policy.demoted.includes(modelId);
+}
+
 // plugins/kxm/src/vnext-runtime-supervisor.ts
-var repoRoot = resolve5(fileURLToPath2(new URL("../../../", import.meta.url)));
+var repoRoot = resolve6(fileURLToPath2(new URL("../../../", import.meta.url)));
 function vnextSupervisorTokenFile(paths) {
-  return join6(paths.runtimeDir, "supervisor.token");
+  return join11(paths.runtimeDir, "supervisor.token");
 }
 function publishVnextSupervisorToken(paths, token) {
   const file = vnextSupervisorTokenFile(paths);
-  mkdirSync3(dirname5(file), { recursive: true, mode: 448 });
+  mkdirSync4(dirname5(file), { recursive: true, mode: 448 });
   const temp = `${file}.${process.pid}.tmp`;
-  writeFileSync2(temp, `${token}
+  writeFileSync3(temp, `${token}
 `, { encoding: "utf8", mode: 384 });
   try {
     chmodSync2(temp, 384);
@@ -21593,16 +25922,16 @@ function publishVnextSupervisorToken(paths, token) {
   }
 }
 function hashVnextSupervisorToken(token) {
-  return `sha256:${createHash7("sha256").update(`kxm-runtime-supervisor\0${token}`, "utf8").digest("hex")}`;
+  return `sha256:${createHash12("sha256").update(`kxm-runtime-supervisor\0${token}`, "utf8").digest("hex")}`;
 }
 function readVnextSupervisorToken(paths) {
   const file = vnextSupervisorTokenFile(paths);
-  const stat = lstatSync4(file, { throwIfNoEntry: false });
+  const stat = lstatSync5(file, { throwIfNoEntry: false });
   if (!stat) return void 0;
   if (stat.isSymbolicLink() || !stat.isFile()) {
     throw runtimeError("runtime_path_invalid", file, "supervisor token file must be a regular file, not a link");
   }
-  const token = readFileSync4(file, "utf8").trim();
+  const token = readFileSync6(file, "utf8").trim();
   return token.length >= 32 ? token : void 0;
 }
 function processAlive(pid) {
@@ -21616,34 +25945,34 @@ function processAlive(pid) {
 var HEARTBEAT_STALE_MS = 15e3;
 var SUPERVISOR_ERROR_MAX_AGE_MS = 3e4;
 function supervisorErrorFile(paths) {
-  return join6(paths.runtimeDir, "supervisor.error");
+  return join11(paths.runtimeDir, "supervisor.error");
 }
 function clearSupervisorError(paths) {
   const file = supervisorErrorFile(paths);
-  if (existsSync6(file)) rmSync(file, { force: true });
+  if (existsSync8(file)) rmSync(file, { force: true });
 }
 function recordSupervisorError(paths, message) {
   try {
-    mkdirSync3(paths.runtimeDir, { recursive: true, mode: 448 });
-    writeFileSync2(supervisorErrorFile(paths), `${message}
+    mkdirSync4(paths.runtimeDir, { recursive: true, mode: 448 });
+    writeFileSync3(supervisorErrorFile(paths), `${message}
 `, { encoding: "utf8", mode: 384 });
   } catch {
   }
 }
 function readRecentSupervisorError(paths) {
   const file = supervisorErrorFile(paths);
-  const stat = lstatSync4(file, { throwIfNoEntry: false });
+  const stat = lstatSync5(file, { throwIfNoEntry: false });
   if (!stat) return void 0;
   const ageMs = Date.now() - stat.mtimeMs;
   if (ageMs > SUPERVISOR_ERROR_MAX_AGE_MS) return void 0;
   try {
-    return readFileSync4(file, "utf8").trim();
+    return readFileSync6(file, "utf8").trim();
   } catch {
     return void 0;
   }
 }
 function vnextSupervisorStatus(paths) {
-  if (!existsSync6(paths.registryDb)) return { running: false };
+  if (!existsSync8(paths.registryDb)) return { running: false };
   const registry = new VnextRuntimeRegistry(paths.registryDb);
   try {
     const record2 = registry.supervisor();
@@ -21675,7 +26004,7 @@ async function probeSupervisor(port, expectedRuntimeId, token, timeoutMs = 750) 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const nonce = randomBytes2(16).toString("hex");
+    const nonce = randomBytes3(16).toString("hex");
     const response = await fetch(`http://127.0.0.1:${port}/healthz?nonce=${nonce}`, { signal: controller.signal });
     if (!response.ok) return false;
     const payload = await response.json();
@@ -21704,9 +26033,9 @@ async function ensureVnextSupervisor(options = {}) {
     throw runtimeError("runtime_supervisor_unreachable", paths.registryDb, `runtime supervisor pid ${status.pid} is registered as running but cannot be probed`);
   }
   clearSupervisorError(paths);
-  const scriptPath = join6(repoRoot, "scripts", "kxm-runtime-supervisor.mjs");
+  const scriptPath = join11(repoRoot, "scripts", "kxm-runtime-supervisor.mjs");
   const spawnImpl = options.spawnImpl ?? ((script, env) => {
-    const child = spawn(process.execPath, [script], {
+    const child = spawn3(process.execPath, [script], {
       detached: true,
       stdio: "ignore",
       env,
@@ -21781,17 +26110,17 @@ async function startVnextRuntimeSupervisor(options = {}) {
   }
 }
 async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now) {
-  mkdirSync3(paths.runtimeDir, { recursive: true, mode: 448 });
-  mkdirSync3(paths.projectsDir, { recursive: true, mode: 448 });
-  const token = randomBytes2(32).toString("hex");
+  mkdirSync4(paths.runtimeDir, { recursive: true, mode: 448 });
+  mkdirSync4(paths.projectsDir, { recursive: true, mode: 448 });
+  const token = randomBytes3(32).toString("hex");
   const tokenHash = hashVnextSupervisorToken(token);
   const registry = new VnextRuntimeRegistry(paths.registryDb);
-  const runtimeId = `rtm_${createHash7("sha256").update(`${paths.stateRoot}\0${process.pid}\0${now()}\0${randomBytes2(16).toString("hex")}`, "utf8").digest("hex").slice(0, 24)}`;
+  const runtimeId = `rtm_${createHash12("sha256").update(`${paths.stateRoot}\0${process.pid}\0${now()}\0${randomBytes3(16).toString("hex")}`, "utf8").digest("hex").slice(0, 24)}`;
   const requestedPort = requestedPortOption ?? 0;
   let activeRuntimeId = runtimeId;
   const contexts = /* @__PURE__ */ new Map();
   const contextFor = (projectRoot) => {
-    if (!isAbsolute3(projectRoot)) {
+    if (!isAbsolute4(projectRoot)) {
       throw runtimeError("runtime_request_invalid", "projectRoot", "projectRoot must be an absolute path");
     }
     const key = projectRuntimeKey(projectRoot);
@@ -21806,7 +26135,7 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
     const presented = header.startsWith("Bearer ") ? header.slice("Bearer ".length) : "";
     const presentedHash = presented.length > 0 ? Buffer.from(hashVnextSupervisorToken(presented), "utf8") : Buffer.alloc(0);
     const expectedHash = Buffer.from(tokenHash, "utf8");
-    if (presentedHash.length !== expectedHash.length || !timingSafeEqual(presentedHash, expectedHash)) {
+    if (presentedHash.length !== expectedHash.length || !timingSafeEqual2(presentedHash, expectedHash)) {
       throw runtimeError("runtime_auth_failed", request.url ?? "<request>", "missing or invalid supervisor token");
     }
   };
@@ -21858,7 +26187,7 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
           });
           return;
         }
-        const runMatch = /^\/v1\/runs\/([A-Za-z0-9_-]+)(?:\/(events|cancel|signal|wait))?$/.exec(url.pathname);
+        const runMatch = /^\/v1\/runs\/([A-Za-z0-9_-]+)(?:\/(events|cancel|signal|wait|drive))?$/.exec(url.pathname);
         if (runMatch) {
           const runId = runMatch[1];
           const sub = runMatch[2];
@@ -21868,9 +26197,93 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
             return;
           }
           const context = contextFor(projectRoot);
+          const bundle = loadVnextProject(projectRoot, {});
           if (request.method === "GET" && !sub) {
             const projected = rebuildVnextRunProjection(context, runId);
             sendJson(response, 200, { ok: true, run: projected });
+            return;
+          }
+          if (request.method === "POST" && sub === "drive") {
+            const body = await readJsonBody(request);
+            if (body.mode !== "simulated" && body.mode !== "live") {
+              sendJson(response, 400, { ok: false, error: "runtime_request_invalid", message: "drive mode must be simulated or live" });
+              return;
+            }
+            const run = context.eventStore.run(runId);
+            if (!run) throw runtimeError("run_unknown", runId, "run not found");
+            if (run.status === "created") {
+              pinVnextCompiledPlan(context, bundle, runId);
+              const plan = startVnextRun(context, runId, { allowLimits: true });
+              if (plan.handoff) {
+                sendJson(response, 409, { ok: false, error: "run_handoff_required", handoff: plan.handoff });
+                return;
+              }
+            }
+            const producer = body.mode === "live" ? createVnextOneShotProducer({
+              projectRoot,
+              defaultHarness: String(bundle.project.value.defaultHarness ?? "pi"),
+              resolveHarness: (agentId) => {
+                const agent = bundle.agents.get(agentId);
+                return typeof agent?.value.harness === "string" ? agent.value.harness : void 0;
+              },
+              resolveModel: (agentId) => {
+                const agent = bundle.agents.get(agentId);
+                const model = agent?.value.model;
+                if (!model || typeof model !== "object" || Array.isArray(model)) return void 0;
+                const value = model;
+                const provider = typeof value.provider === "string" ? value.provider : void 0;
+                const modelName = typeof value.model === "string" ? value.model : void 0;
+                if (!provider || !modelName || !isProducerAdmitted(projectRoot, `${provider}/${modelName}`)) {
+                  throw new Error("producer_route_not_admitted");
+                }
+                return { provider, model: modelName };
+              }
+            }) : createVnextSimulatedProducer(async () => ({ outcome: "passed" }));
+            try {
+              const result = await driveVnextRun(context, runId, producer, { allowLimits: true });
+              const recentEvents = context.eventStore.events(runId, Math.max(0, context.eventStore.nextSequence(runId) - 8), 8);
+              sendJson(response, 200, { ok: true, mode: body.mode, run: result.state, handoff: result.handoff, events: recentEvents });
+            } finally {
+              if ("close" in producer && typeof producer.close === "function") await producer.close();
+            }
+            return;
+          }
+          if (request.method === "POST" && sub === "dispatch") {
+            const body = await readJsonBody(request);
+            const run = context.eventStore.run(runId);
+            if (!run) throw runtimeError("run_unknown", runId, "run not found");
+            if (run.status === "created") {
+              pinVnextCompiledPlan(context, bundle, runId);
+              const plan = startVnextRun(context, runId, { allowLimits: true });
+              if (plan.handoff) {
+                sendJson(response, 409, { ok: false, error: "run_handoff_required", handoff: plan.handoff });
+                return;
+              }
+            }
+            const producer = createVnextOneShotProducer({
+              projectRoot,
+              defaultHarness: String(bundle.project.value.defaultHarness ?? "pi"),
+              resolveHarness: (agentId) => {
+                const agent = bundle.agents.get(agentId);
+                return typeof agent?.value.harness === "string" ? agent.value.harness : void 0;
+              },
+              resolveModel: (agentId) => {
+                const agent = bundle.agents.get(agentId);
+                const model = agent?.value.model;
+                if (!model || typeof model !== "object" || Array.isArray(model)) return void 0;
+                const value = model;
+                const provider = typeof value.provider === "string" ? value.provider : void 0;
+                const modelName = typeof value.model === "string" ? value.model : void 0;
+                if (!provider || !modelName || !isProducerAdmitted(projectRoot, `${provider}/${modelName}`)) return void 0;
+                return { provider, model: modelName };
+              }
+            });
+            try {
+              const result = await driveVnextRun(context, runId, producer, { allowLimits: true });
+              sendJson(response, 200, { ok: true, run: result.state, handoff: result.handoff });
+            } finally {
+              if ("close" in producer && typeof producer.close === "function") await producer.close();
+            }
             return;
           }
           if (request.method === "GET" && sub === "events") {
@@ -21893,9 +26306,10 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
             if (!run) throw runtimeError("run_unknown", runId, "run not found");
             const state = foldStoredVnextRun(context, run);
             let unblocked = false;
-            if (state.status === "blocked_uncertain" || state.currentStep?.effectState === "blocked_uncertain") {
+            if (state.status === "blocked_uncertain" || state.status === "cancelling" || state.currentStep?.effectState === "blocked_uncertain") {
+              const action = body.action === "cancel" || body.action === "fail" || body.action === "retry" || body.action === "unblock" ? body.action : "unblock";
               const rec = recoverVnextRun(context, runId, {
-                action: "unblock",
+                action,
                 reason: typeof body.summary === "string" ? body.summary : `signal_${body.signalKey ?? "callback"}`
               });
               unblocked = rec.unblocked;
@@ -22035,96 +26449,9 @@ async function vnextRuntimeRequest(handle, method, path, body) {
 }
 
 // plugins/kxm/src/vnext-pi-producer.ts
-import { spawn as spawn2 } from "node:child_process";
-import { join as join8 } from "node:path";
+import { spawn as spawn4 } from "node:child_process";
+import { join as join12 } from "node:path";
 import { StringDecoder } from "node:string_decoder";
-
-// plugins/kxm/src/prices.ts
-var import_yaml3 = __toESM(require_dist(), 1);
-import { existsSync as existsSync7, readFileSync as readFileSync5 } from "node:fs";
-import { join as join7 } from "node:path";
-function parsePriceCatalog(text) {
-  const parsed = (0, import_yaml3.parse)(text);
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("price catalog must be an object");
-  }
-  if (parsed.schema !== PRICES_SCHEMA) {
-    throw new Error(`price catalog schema must be ${PRICES_SCHEMA}`);
-  }
-  if (typeof parsed.date !== "string" || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(parsed.date)) {
-    throw new Error("price catalog date must be YYYY-MM-DD");
-  }
-  if (typeof parsed.sha256 !== "string" || !/^(?:sha256:)?[a-f0-9]{64}$/.test(parsed.sha256)) {
-    throw new Error("price catalog sha256 must be a 64-character hex digest");
-  }
-  if (!Array.isArray(parsed.models) || parsed.models.length === 0) {
-    throw new Error("price catalog models must be a non-empty array");
-  }
-  const models = parsed.models.map((item, index) => {
-    if (!item || typeof item !== "object" || Array.isArray(item)) {
-      throw new Error(`price catalog model at index ${index} must be an object`);
-    }
-    const m = item;
-    if (typeof m.id !== "string" || !m.id) {
-      throw new Error(`price catalog model at index ${index} must have a non-empty id`);
-    }
-    if (typeof m.provider !== "string" || !m.provider) {
-      throw new Error(`price catalog model at index ${index} must have a non-empty provider`);
-    }
-    if (typeof m.model !== "string" || !m.model) {
-      throw new Error(`price catalog model at index ${index} must have a non-empty model`);
-    }
-    const aliases = Array.isArray(m.aliases) ? m.aliases.filter((a) => typeof a === "string" && Boolean(a)) : void 0;
-    if (!Array.isArray(m.tiers) || m.tiers.length === 0) {
-      throw new Error(`price catalog model ${m.id} must have at least one tier`);
-    }
-    const tiers = m.tiers.map((tItem, tIndex) => {
-      if (!tItem || typeof tItem !== "object" || Array.isArray(tItem)) {
-        throw new Error(`tier at index ${tIndex} for model ${m.id} must be an object`);
-      }
-      const t = tItem;
-      const inputRate = typeof t.inputPerMillion === "number" ? t.inputPerMillion : typeof t.input === "number" ? t.input : void 0;
-      const outputRate = typeof t.outputPerMillion === "number" ? t.outputPerMillion : typeof t.output === "number" ? t.output : void 0;
-      if (inputRate === void 0 || inputRate < 0) {
-        throw new Error(`tier at index ${tIndex} for model ${m.id} must have a non-negative inputPerMillion`);
-      }
-      if (outputRate === void 0 || outputRate < 0) {
-        throw new Error(`tier at index ${tIndex} for model ${m.id} must have a non-negative outputPerMillion`);
-      }
-      return {
-        upToContextTokens: typeof t.upToContextTokens === "number" ? t.upToContextTokens : null,
-        inputPerMillion: inputRate,
-        outputPerMillion: outputRate,
-        cacheReadPerMillion: typeof t.cacheReadPerMillion === "number" ? t.cacheReadPerMillion : typeof t.cacheRead === "number" ? t.cacheRead : null,
-        cacheWritePerMillion: typeof t.cacheWritePerMillion === "number" ? t.cacheWritePerMillion : typeof t.cacheWrite === "number" ? t.cacheWrite : null
-      };
-    });
-    return {
-      id: m.id,
-      provider: m.provider,
-      model: m.model,
-      aliases,
-      tiers
-    };
-  });
-  return {
-    schema: PRICES_SCHEMA,
-    date: parsed.date,
-    sha256: parsed.sha256.replace(/^sha256:/, ""),
-    currency: typeof parsed.currency === "string" ? parsed.currency : "USD",
-    models
-  };
-}
-function loadPriceCatalog(rootOrPath) {
-  const candidatePath = existsSync7(join7(rootOrPath, ".kxm", "prices.yaml")) ? join7(rootOrPath, ".kxm", "prices.yaml") : existsSync7(join7(rootOrPath, "prices.yaml")) ? join7(rootOrPath, "prices.yaml") : existsSync7(rootOrPath) && !rootOrPath.endsWith("/") ? rootOrPath : void 0;
-  if (!candidatePath || !existsSync7(candidatePath)) {
-    return void 0;
-  }
-  const content = readFileSync5(candidatePath, "utf8");
-  return parsePriceCatalog(content);
-}
-
-// plugins/kxm/src/vnext-pi-producer.ts
 function formatPiSessionKey(params) {
   if (params.agentId === "coordinator") {
     return `coordinator:${params.runId}`;
@@ -22145,7 +26472,7 @@ function extractText(content) {
   }
   return "";
 }
-function determineOutcome(text, allowedOutcomes) {
+function determineOutcome2(text, allowedOutcomes) {
   const normalized = text.trim();
   const jsonMatch = /"outcome"\s*:\s*"([^"]+)"/.exec(normalized);
   if (jsonMatch && allowedOutcomes.includes(jsonMatch[1])) {
@@ -22290,7 +26617,7 @@ var PiSession = class {
       if (isAborted) {
         outcome = active.allowedOutcomes.includes("cancelled") ? "cancelled" : active.allowedOutcomes.includes("failed") ? "failed" : active.allowedOutcomes[0];
       } else {
-        outcome = determineOutcome(active.text, active.allowedOutcomes);
+        outcome = determineOutcome2(active.text, active.allowedOutcomes);
       }
       active.resolve({
         outcome,
@@ -22322,8 +26649,8 @@ var PiSession = class {
     }
     const id = `cmd_${++this.commandCounter}`;
     const payload = { ...command, id };
-    return new Promise((resolve7, reject) => {
-      this.pendingCommands.set(id, { resolve: resolve7, reject });
+    return new Promise((resolve8, reject) => {
+      this.pendingCommands.set(id, { resolve: resolve8, reject });
       try {
         this.process.stdin.write(JSON.stringify(payload) + "\n");
       } catch (err) {
@@ -22344,7 +26671,7 @@ var PiSession = class {
       return { outcome, text: "aborted", usage: {} };
     }
     this.status = "busy";
-    return new Promise((resolve7, reject) => {
+    return new Promise((resolve8, reject) => {
       let signalCleanup;
       if (signal) {
         const onAbort = () => {
@@ -22358,7 +26685,7 @@ var PiSession = class {
         signalCleanup = () => signal.removeEventListener("abort", onAbort);
       }
       this.activePrompt = {
-        resolve: resolve7,
+        resolve: resolve8,
         reject,
         allowedOutcomes,
         text: "",
@@ -22473,7 +26800,7 @@ function createVnextPiProducer(options = {}) {
     const args = ["--mode", "rpc", "--name", displayName];
     if (options.sessionDir) {
       const safeDirName = key.replace(/[^a-zA-Z0-9_-]/g, "_");
-      args.push("--session-dir", join8(options.sessionDir, request.runId, safeDirName));
+      args.push("--session-dir", join12(options.sessionDir, request.runId, safeDirName));
     }
     if (model) {
       args.push("--model", model);
@@ -22482,7 +26809,7 @@ function createVnextPiProducer(options = {}) {
     if (options.spawnProcess) {
       proc = options.spawnProcess(command, args, { env: options.env ?? process.env });
     } else {
-      const child = spawn2(command, args, {
+      const child = spawn4(command, args, {
         env: options.env ?? process.env,
         stdio: ["pipe", "pipe", "pipe"]
       });
@@ -22594,314 +26921,8 @@ function createVnextPiProducer(options = {}) {
   return producer;
 }
 
-// plugins/kxm/src/vnext-oneshot-producer.ts
-import { spawn as spawn3 } from "node:child_process";
-function determineOutcome2(text, allowedOutcomes) {
-  const normalized = text.trim();
-  const jsonMatch = /"outcome"\s*:\s*"([^"]+)"/.exec(normalized);
-  if (jsonMatch && allowedOutcomes.includes(jsonMatch[1])) {
-    return jsonMatch[1];
-  }
-  for (const outcome of allowedOutcomes) {
-    const regex = new RegExp(`\\b${outcome}\\b`, "i");
-    if (regex.test(normalized)) {
-      return outcome;
-    }
-  }
-  if (allowedOutcomes.includes("passed")) return "passed";
-  return allowedOutcomes[0] ?? "completed";
-}
-function defaultSpawn(command, args, options) {
-  return new Promise((resolve7) => {
-    let stdout = "";
-    let stderr = "";
-    let killed = false;
-    const child = spawn3(command, [...args], {
-      cwd: options.cwd,
-      env: options.env ?? process.env,
-      stdio: ["pipe", "pipe", "pipe"],
-      windowsHide: true
-    });
-    if (options.signal) {
-      if (options.signal.aborted) {
-        child.kill();
-        return resolve7({ stdout: "", stderr: "aborted", code: null, error: new Error("process_aborted") });
-      }
-      const onAbort = () => {
-        killed = true;
-        child.kill();
-      };
-      options.signal.addEventListener("abort", onAbort, { once: true });
-      child.on("close", () => options.signal?.removeEventListener("abort", onAbort));
-    }
-    if (options.timeoutMs && options.timeoutMs > 0) {
-      const timer = setTimeout(() => {
-        killed = true;
-        child.kill();
-      }, options.timeoutMs);
-      child.on("close", () => clearTimeout(timer));
-    }
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
-    });
-    child.on("error", (err) => {
-      resolve7({ stdout, stderr, code: null, error: err });
-    });
-    child.on("close", (code) => {
-      resolve7({
-        stdout,
-        stderr,
-        code,
-        ...killed ? { error: new Error("process_aborted") } : {}
-      });
-    });
-    if (options.input !== void 0) {
-      child.stdin.write(options.input);
-      child.stdin.end();
-    } else {
-      child.stdin.end();
-    }
-  });
-}
-function createVnextOneShotProducer(options = {}) {
-  const defaultHarness = options.defaultHarness ?? "claude";
-  function resolveHarnessForRequest(request) {
-    if (request.harness) return request.harness;
-    if (options.resolveHarness) {
-      const resolved = options.resolveHarness(request.agentId, request.runId);
-      if (resolved) return resolved;
-    }
-    if (options.resolveModel) {
-      const resolved = options.resolveModel(request.agentId, request.runId);
-      if (resolved?.harness) return resolved.harness;
-    }
-    return defaultHarness;
-  }
-  function parseModelString(spec, harness) {
-    const trimmed = spec.trim();
-    if (trimmed.includes("/")) {
-      const idx = trimmed.indexOf("/");
-      return { provider: trimmed.slice(0, idx).toLowerCase(), model: trimmed.slice(idx + 1) };
-    }
-    const fallbackProvider = NATIVE_HARNESS_PROVIDERS[harness] ?? options.defaultProvider ?? "anthropic";
-    return { provider: fallbackProvider, model: trimmed };
-  }
-  function resolveModelForRequest(request, harness) {
-    if (request.model) {
-      const parsed2 = parseModelString(request.model, harness);
-      return {
-        provider: request.provider?.toLowerCase() ?? parsed2.provider,
-        model: parsed2.model,
-        thinking: request.thinking
-      };
-    }
-    if (options.resolveModel) {
-      const resolved = options.resolveModel(request.agentId, request.runId);
-      if (resolved && resolved.model) {
-        const parsed2 = parseModelString(resolved.model, harness);
-        return {
-          provider: resolved.provider?.toLowerCase() ?? parsed2.provider,
-          model: parsed2.model,
-          thinking: resolved.thinking
-        };
-      }
-    }
-    const defaultModel = options.defaultModel ?? (harness === "codex" ? "gpt-5.6-sol" : "claude-3-7-sonnet");
-    const parsed = parseModelString(defaultModel, harness);
-    return { provider: parsed.provider, model: parsed.model, thinking: request.thinking };
-  }
-  function checkAuth(harness, provider, model) {
-    if (options.inventory) {
-      const entry = options.inventory.harnesses.find((h) => h.id === harness);
-      if (!entry || !entry.detected || entry.authenticated !== true) {
-        throw new Error(`${harness}_not_authenticated: ${harness} harness not authenticated in inventory`);
-      }
-    }
-    const probeFn = options.probeHarness ?? probeHarnessAssignment;
-    const probe = probeFn({
-      harness,
-      provider,
-      model,
-      env: options.env
-    });
-    if (!probe.detected) {
-      throw new Error(`${harness}_not_authenticated: ${harness} harness not detected (${probe.issues.join(", ")})`);
-    }
-    if (probe.authenticated !== true) {
-      throw new Error(`${harness}_not_authenticated: ${harness} not authenticated (${probe.issues.join(", ")})`);
-    }
-  }
-  const producer = {
-    id: "oneshot",
-    async produce(request) {
-      const startTime = Date.now();
-      const harness = resolveHarnessForRequest(request);
-      const resolved = resolveModelForRequest(request, harness);
-      checkAuth(harness, resolved.provider, resolved.model);
-      const catalogEntry = (options.catalog ?? BUILTIN_HARNESSES).find((h) => h.id === harness);
-      if (!catalogEntry || !catalogEntry.oneShot) {
-        const hint = harness === "gemini" ? " (Gemini CLI is deprecated; use agy for Google models)" : "";
-        throw new Error(`oneshot_harness_unsupported: ${harness}${hint}`);
-      }
-      const command = catalogEntry.commands[0] ?? harness;
-      const oneShot = catalogEntry.oneShot;
-      let args;
-      if (harness === "claude") {
-        args = [
-          "-p",
-          "--model",
-          resolved.model,
-          ...resolved.thinking ? ["--effort", resolved.thinking] : [],
-          "--output-format",
-          "json"
-        ];
-      } else if (harness === "codex") {
-        args = [
-          "exec",
-          "-m",
-          resolved.model,
-          ...resolved.thinking ? ["-c", `model_reasoning_effort="${resolved.thinking}"`] : [],
-          "--json",
-          "-"
-        ];
-      } else if (harness === "kimi") {
-        args = [
-          "--output-format",
-          "stream-json",
-          "-m",
-          resolved.model,
-          "-p"
-        ];
-      } else if (harness === "agy") {
-        args = [
-          "--output-format",
-          "json",
-          ...resolved.thinking ? ["--effort", resolved.thinking] : [],
-          "--model",
-          resolved.model,
-          "-p"
-        ];
-      } else {
-        args = [
-          ...oneShot.argv,
-          "--model",
-          resolved.model,
-          ...resolved.thinking ? ["--thinking", resolved.thinking] : []
-        ];
-      }
-      const promptMessage = request.prompt ?? `Execute step ${request.stepId} (attempt ${request.stepAttempt}) for agent ${request.agentId}. Allowed outcomes: ${request.allowedOutcomes.join(", ")}.`;
-      let input;
-      if (oneShot.promptVia === "stdin") {
-        input = promptMessage;
-      } else {
-        args.push(promptMessage);
-      }
-      if (request.signal?.aborted) {
-        const outcome2 = request.allowedOutcomes.includes("cancelled") ? "cancelled" : request.allowedOutcomes.includes("failed") ? "failed" : request.allowedOutcomes[0];
-        return {
-          outcome: outcome2,
-          costBasis: "unknown",
-          costUsd: null,
-          latencyMs: 0,
-          harness,
-          provider: resolved.provider,
-          requestedModel: resolved.model,
-          effectiveModel: resolved.model,
-          agentRole: request.agentRole ?? request.agentId
-        };
-      }
-      const spawnFn = options.spawnProcess ?? defaultSpawn;
-      const procResult = await spawnFn(command, args, {
-        cwd: options.projectRoot ?? process.cwd(),
-        env: options.env,
-        input,
-        timeoutMs: options.timeoutMs,
-        signal: request.signal
-      });
-      if (request.signal?.aborted || procResult.error?.message === "process_aborted") {
-        const outcome2 = request.allowedOutcomes.includes("cancelled") ? "cancelled" : request.allowedOutcomes.includes("failed") ? "failed" : request.allowedOutcomes[0];
-        return {
-          outcome: outcome2,
-          costBasis: "unknown",
-          costUsd: null,
-          latencyMs: Math.max(0, Date.now() - startTime),
-          harness,
-          provider: resolved.provider,
-          requestedModel: resolved.model,
-          effectiveModel: resolved.model,
-          agentRole: request.agentRole ?? request.agentId
-        };
-      }
-      const parsed = oneShot.usageParser(procResult.stdout, procResult.stderr);
-      let outcome;
-      if (parsed.isError) {
-        outcome = request.allowedOutcomes.includes("failed") ? "failed" : request.allowedOutcomes[0];
-      } else {
-        outcome = determineOutcome2(parsed.text || procResult.stdout, request.allowedOutcomes);
-      }
-      const latencyMs = Math.max(0, Date.now() - startTime);
-      const usage = parsed.usage;
-      const tokensIn = typeof usage?.tokensIn === "number" ? usage.tokensIn : null;
-      const tokensOut = typeof usage?.tokensOut === "number" ? usage.tokensOut : null;
-      const cacheReadTokens = typeof usage?.cacheReadTokens === "number" ? usage.cacheReadTokens : null;
-      const cacheWriteTokens = typeof usage?.cacheWriteTokens === "number" ? usage.cacheWriteTokens : null;
-      const contextTokens = typeof usage?.contextTokens === "number" ? usage.contextTokens : tokensIn;
-      const catalog = options.priceCatalog ?? loadPriceCatalog(options.projectRoot ?? process.cwd());
-      let costBasis = "unknown";
-      let costUsd = null;
-      let priceRef;
-      if (catalog) {
-        const calculated = calculateModelCost(catalog, {
-          model: resolved.model,
-          provider: resolved.provider,
-          tokensIn,
-          tokensOut,
-          cacheReadTokens,
-          cacheWriteTokens,
-          contextTokens
-        });
-        if (calculated) {
-          costBasis = "metered";
-          costUsd = calculated.costUsd;
-          priceRef = calculated.priceRef;
-        }
-      }
-      if (costBasis === "unknown" && (harness === "claude" || harness === "codex" || harness === "agy")) {
-        costBasis = "unmetered";
-        costUsd = null;
-        priceRef = `subscription:${harness}`;
-      }
-      return {
-        outcome,
-        costBasis,
-        costUsd,
-        tokensIn,
-        tokensOut,
-        cacheReadTokens,
-        cacheWriteTokens,
-        contextTokens,
-        latencyMs,
-        harness,
-        provider: resolved.provider,
-        requestedModel: resolved.model,
-        effectiveModel: resolved.model,
-        ...resolved.thinking !== void 0 ? { thinking: resolved.thinking } : {},
-        agentRole: request.agentRole ?? request.agentId,
-        ...priceRef !== void 0 ? { priceRef } : {}
-      };
-    },
-    async close() {
-    }
-  };
-  registerTrustedProducer(producer);
-  return producer;
-}
-
 // plugins/kxm/src/logger.ts
-import { appendFileSync, existsSync as existsSync8, mkdirSync as mkdirSync4, renameSync as renameSync2, statSync, unlinkSync as unlinkSync2 } from "node:fs";
+import { appendFileSync, existsSync as existsSync9, mkdirSync as mkdirSync5, renameSync as renameSync2, statSync as statSync3, unlinkSync as unlinkSync2 } from "node:fs";
 import { dirname as dirname6 } from "node:path";
 
 // plugins/kxm/src/redact.ts
@@ -22960,7 +26981,7 @@ function redactLogValue(val, key) {
 function rotateLogFiles(filePath, maxFiles) {
   for (let i = maxFiles; i >= 1; i--) {
     const current = `${filePath}.${i}`;
-    if (existsSync8(current)) {
+    if (existsSync9(current)) {
       if (i >= maxFiles) {
         try {
           unlinkSync2(current);
@@ -22974,7 +26995,7 @@ function rotateLogFiles(filePath, maxFiles) {
       }
     }
   }
-  if (existsSync8(filePath)) {
+  if (existsSync9(filePath)) {
     try {
       renameSync2(filePath, `${filePath}.1`);
     } catch {
@@ -22991,9 +27012,9 @@ function createLogger(options) {
   const shouldStdout = options.stdout ?? !isDaemon;
   const correlationDefaults = options.correlation ?? {};
   let currentSize = 0;
-  if (filePath && existsSync8(filePath)) {
+  if (filePath && existsSync9(filePath)) {
     try {
-      currentSize = statSync(filePath).size;
+      currentSize = statSync3(filePath).size;
     } catch {
       currentSize = 0;
     }
@@ -23029,7 +27050,7 @@ function createLogger(options) {
         currentSize = 0;
       }
       try {
-        mkdirSync4(dirname6(filePath), { recursive: true });
+        mkdirSync5(dirname6(filePath), { recursive: true });
         appendFileSync(filePath, line, { encoding: "utf8", mode: 384 });
         currentSize += lineBytes;
       } catch {
@@ -23071,9 +27092,9 @@ function createLogger(options) {
 }
 
 // plugins/kxm/src/improve.ts
-import { createHash as createHash8 } from "node:crypto";
-import { existsSync as existsSync9, mkdirSync as mkdirSync5, writeFileSync as writeFileSync3 } from "node:fs";
-import { join as join9, relative as relative3, resolve as resolve6 } from "node:path";
+import { createHash as createHash13 } from "node:crypto";
+import { existsSync as existsSync10, mkdirSync as mkdirSync6, writeFileSync as writeFileSync4 } from "node:fs";
+import { join as join13, relative as relative4, resolve as resolve7 } from "node:path";
 
 // plugins/kxm/src/protocol.ts
 var DEFAULT_MESSAGE_TTL_MS = 24 * 60 * 6e4;
@@ -23231,7 +27252,7 @@ function groupRoutingRecords(records, options = {}) {
     const isCandidate = recurrence >= minRecurrence && verifyPassRate >= minPassRate;
     const candidateKind = isCandidate ? classifyCandidateKind(group.stepId, group.agentRole) : void 0;
     const safeSlug = group.stepId.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 16) || "step";
-    const keyHash = createHash8("sha256").update(`${group.workflowHash}:${group.stepId}:${group.agentRole}:${group.promptHash}`).digest("hex").slice(0, 10);
+    const keyHash = createHash13("sha256").update(`${group.workflowHash}:${group.stepId}:${group.agentRole}:${group.promptHash}`).digest("hex").slice(0, 10);
     const candidateId = isCandidate && candidateKind ? `cand_${candidateKind.replace(/-/g, "_")}_${safeSlug}_${keyHash}` : void 0;
     rows.push({
       workflowHash: group.workflowHash,
@@ -23256,8 +27277,8 @@ function groupRoutingRecords(records, options = {}) {
   });
 }
 function buildImprovementReport(records, options = {}) {
-  const projectRoot = options.projectRoot ? resolve6(options.projectRoot) : process.cwd();
-  const candidatesDir = options.candidatesDir ? resolve6(options.candidatesDir) : join9(projectRoot, ".kxm", "candidates");
+  const projectRoot = options.projectRoot ? resolve7(options.projectRoot) : process.cwd();
+  const candidatesDir = options.candidatesDir ? resolve7(options.candidatesDir) : join13(projectRoot, ".kxm", "candidates");
   const groups = groupRoutingRecords(records, options);
   const candidates = [];
   for (const group of groups) {
@@ -23269,8 +27290,8 @@ function buildImprovementReport(records, options = {}) {
       group.workflowHash
     );
     const diffFileName = `${group.candidateId}.diff`;
-    const diffFilePath = join9(candidatesDir, diffFileName);
-    const relDiffPath = relative3(projectRoot, diffFilePath).replace(/\\/g, "/");
+    const diffFilePath = join13(candidatesDir, diffFileName);
+    const relDiffPath = relative4(projectRoot, diffFilePath).replace(/\\/g, "/");
     const candidate = {
       schema: CANDIDATE_SCHEMA,
       id: group.candidateId,
@@ -23291,12 +27312,12 @@ function buildImprovementReport(records, options = {}) {
       createdAt: nowIso()
     };
     if (!options.dryRun) {
-      if (!existsSync9(candidatesDir)) {
-        mkdirSync5(candidatesDir, { recursive: true });
+      if (!existsSync10(candidatesDir)) {
+        mkdirSync6(candidatesDir, { recursive: true });
       }
-      writeFileSync3(diffFilePath, diff, "utf8");
-      const jsonFilePath = join9(candidatesDir, `${group.candidateId}.json`);
-      writeFileSync3(jsonFilePath, JSON.stringify(candidate, null, 2) + "\n", "utf8");
+      writeFileSync4(diffFilePath, diff, "utf8");
+      const jsonFilePath = join13(candidatesDir, `${group.candidateId}.json`);
+      writeFileSync4(jsonFilePath, JSON.stringify(candidate, null, 2) + "\n", "utf8");
     }
     candidates.push(candidate);
   }
@@ -23311,10 +27332,10 @@ function buildImprovementReport(records, options = {}) {
 }
 function writeImprovementReport(improvementsDir, report, dryRun = false) {
   const stamp = report.createdAt.replace(/[:.]/g, "-");
-  const path = join9(improvementsDir, `${stamp}.json`);
+  const path = join13(improvementsDir, `${stamp}.json`);
   if (!dryRun) {
-    mkdirSync5(improvementsDir, { recursive: true });
-    writeFileSync3(path, `${JSON.stringify(report, null, 2)}
+    mkdirSync6(improvementsDir, { recursive: true });
+    writeFileSync4(path, `${JSON.stringify(report, null, 2)}
 `, { encoding: "utf8" });
   }
   return path;
@@ -23461,16 +27482,19 @@ export {
   newVnextEvidenceId,
   newVnextObservationId,
   newVnextRunId,
+  oneShotReadOnlyArgs,
   openDatabase,
   openVnextRuntimeContext,
   parseAgyOneShotUsage,
   parseClaudeOneShotUsage,
   parseCodexOneShotUsage,
   parseGenericOneShotUsage,
+  parseGrokOneShotUsage,
   parseKimiOneShotUsage,
   persistVnextRunState,
   planHarnessUpdate,
   probeHarnessAssignment,
+  probeHarnessAssignmentAsync,
   probeHarnesses,
   probeHarnessesForModel,
   projectRuntimeKey,

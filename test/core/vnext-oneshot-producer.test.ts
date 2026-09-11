@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import test from "node:test";
+import test, { before, after } from "node:test";
+import { isolateSessionEnvironment } from "../helpers/session-env.ts";
+let restoreSession: () => void;
+before(() => { restoreSession = isolateSessionEnvironment(); });
+after(() => { restoreSession(); });
 import { fileURLToPath } from "node:url";
 import { loadVnextProject } from "../../plugins/kxm/src/vnext-config.ts";
 import {
@@ -84,7 +88,7 @@ test("parseCodexOneShotUsage parses JSONL events and errors", () => {
   assert.equal(empty.errorMessage, "codex crashed");
 
   const jsonl = [
-    JSON.stringify({ type: "item.created", item: { type: "agent_message", text: "Code review complete. passed" } }),
+    JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "Code review complete. passed" } }),
     JSON.stringify({
       type: "turn.completed",
       usage: {
@@ -119,8 +123,8 @@ test("parseGenericOneShotUsage handles JSON and plain text", () => {
   assert.equal(parseGenericOneShotUsage("plain text", "").text, "plain text");
 });
 
-test("Claude one-shot producer dispatches with stdin and calculates metered / unmetered cost", async () => {
-  const fakeAuth = () => ({ detected: true, authenticated: true as const, issues: [] });
+test("Claude one-shot producer isolates stdin execution and separates reported estimates from billed cost", async () => {
+  const fakeAuth = () => ({ detected: true, authenticated: true as const, authMethod: "claude.ai", issues: [] });
   const catalog = loadPriceCatalog(repoRoot);
 
   let capturedCommand = "";
@@ -133,7 +137,7 @@ test("Claude one-shot producer dispatches with stdin and calculates metered / un
     capturedInput = options.input;
     return {
       stdout: JSON.stringify({
-        result: "Task completed successfully. passed",
+        result: '{"outcome":"passed","summary":"Task completed successfully."}',
         total_cost_usd: 0.0045,
         usage: {
           input_tokens: 1000,
@@ -176,6 +180,9 @@ test("Claude one-shot producer dispatches with stdin and calculates metered / un
     assert.ok(capturedArgs.includes("claude-3-7-sonnet"));
     assert.ok(capturedArgs.includes("--effort"));
     assert.ok(capturedArgs.includes("high"));
+    for (const flag of ["--safe-mode", "--strict-mcp-config", "--disable-slash-commands", "--no-session-persistence"]) assert.ok(capturedArgs.includes(flag));
+    assert.equal(capturedArgs[capturedArgs.indexOf("--tools") + 1], "Read,Glob,Grep");
+    assert.equal(capturedArgs[capturedArgs.indexOf("--mcp-config") + 1], '{"mcpServers":{}}');
     assert.ok(capturedArgs.includes("--output-format"));
     assert.ok(capturedArgs.includes("json"));
     assert.ok(capturedInput && capturedInput.includes("plan_step"));
@@ -189,15 +196,18 @@ test("Claude one-shot producer dispatches with stdin and calculates metered / un
     assert.equal(result.tokensOut, 200);
     assert.equal(result.cacheReadTokens, 100);
     assert.equal(result.cacheWriteTokens, 50);
-    assert.equal(result.costBasis, "metered");
-    assert.ok(typeof result.costUsd === "number" && result.costUsd > 0);
+    assert.equal(result.costBasis, "unmetered");
+    assert.equal(result.costUsd, null);
+    assert.equal(result.providerMetadata?.providerReportedCostUsd, 0.0045);
+    assert.equal(result.contextTokens, null);
+    assert.equal(result.effectiveModel, "unknown");
   } finally {
     await producer.close();
   }
 });
 
 test("Codex one-shot producer dispatches with JSONL output and unmetered subscription cost", async () => {
-  const fakeAuth = () => ({ detected: true, authenticated: true as const, issues: [] });
+  const fakeAuth = () => ({ detected: true, authenticated: true as const, authMethod: "ChatGPT", issues: [] });
 
   let capturedCommand = "";
   let capturedArgs: readonly string[] = [];
@@ -209,7 +219,7 @@ test("Codex one-shot producer dispatches with JSONL output and unmetered subscri
     capturedInput = options.input;
     return {
       stdout: [
-        JSON.stringify({ type: "item.created", item: { type: "agent_message", text: "Architecture verified. passed" } }),
+        JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: '{"outcome":"passed","summary":"Architecture verified."}' } }),
         JSON.stringify({
           type: "turn.completed",
           usage: {
@@ -263,6 +273,12 @@ test("Codex one-shot producer dispatches with JSONL output and unmetered subscri
     assert.ok(capturedArgs.includes("gpt-5.6-sol"));
     assert.ok(capturedArgs.includes("-c"));
     assert.ok(capturedArgs.includes('model_reasoning_effort="medium"'));
+    assert.equal(capturedArgs[capturedArgs.indexOf("--sandbox") + 1], "read-only");
+    assert.ok(capturedArgs.includes("--ignore-user-config"));
+    assert.ok(capturedArgs.includes('approval_policy="never"'));
+    assert.ok(!capturedArgs.includes("--full-auto"));
+    assert.ok(!capturedArgs.includes("--dangerously-bypass-approvals-and-sandbox"));
+    assert.ok(!capturedArgs.includes("--ignore-rules"));
     assert.ok(capturedArgs.includes("--json"));
     assert.ok(capturedArgs.includes("-"));
     assert.ok(capturedInput && capturedInput.includes("review_step"));
@@ -407,7 +423,8 @@ test("One-shot producer handles pre-aborted signal and abort during execution", 
   assert.equal(activeResult.outcome, "cancelled");
 });
 
-test("One-shot producer executes end-to-end inside vNext engine driver", async () => {
+for (const cacheReadTokens of [10, 1_000_001]) {
+test(`One-shot producer settles in engine with ${cacheReadTokens} cumulative cache-read tokens`, async () => {
   const root = mkdtempSync(join(tmpdir(), "kxm-oneshot-driver-"));
   const stateRoot = mkdtempSync(join(tmpdir(), "kxm-oneshot-driver-state-"));
   try {
@@ -445,9 +462,9 @@ gates:
       probeHarness: fakeAuth as any,
       spawnProcess: async () => ({
         stdout: JSON.stringify({
-          result: "Step passed successfully.",
+          result: '{"outcome":"passed"}',
           total_cost_usd: 0.002,
-          usage: { input_tokens: 300, output_tokens: 80, cache_read_input_tokens: 10, cache_creation_input_tokens: 5 },
+          usage: { input_tokens: 300, output_tokens: 80, cache_read_input_tokens: cacheReadTokens, cache_creation_input_tokens: 5 },
         }),
         stderr: "",
         code: 0,
@@ -468,6 +485,10 @@ gates:
       for (const ev of routingEvents) {
         const routing = (ev.payload as any).routing;
         assert.equal(routing.harness, "claude");
+        assert.equal(routing.cacheReadTokens, cacheReadTokens > 1_000_000 ? null : cacheReadTokens);
+        if (cacheReadTokens > 1_000_000) {
+          assert.equal(routing.providerMetadata.rawCacheReadTokens, cacheReadTokens);
+        }
       }
     } finally {
       await producer.close();
@@ -478,6 +499,7 @@ gates:
     rmSync(stateRoot, { recursive: true, force: true });
   }
 });
+}
 
 test("Codex artifacts: skills directory and AGENTS.md block are emitted and match check", () => {
   const result = emitCodexArtifacts(repoRoot);
@@ -525,7 +547,7 @@ test("One-shot producer handles resolveHarness, resolveModel, custom harness, ex
     },
     probeHarness: fakeAuth as any,
     spawnProcess: async (cmd, args, opts) => {
-      capturedInput = opts.input;
+      capturedInput = opts.input ?? args.at(-1);
       return {
         stdout: JSON.stringify({ result: '{"outcome": "passed"}' }),
         stderr: "",
@@ -552,12 +574,13 @@ test("One-shot producer handles resolveHarness, resolveModel, custom harness, ex
     assert.equal(res.provider, "xai");
     assert.equal(res.requestedModel, "grok-4.6");
     assert.equal(res.outcome, "passed");
-    assert.equal(capturedInput, "Custom prompt text");
+    assert.ok(capturedInput?.startsWith("Custom prompt text\n\nReturn a final JSON object"));
+    assert.ok(capturedInput?.includes('["passed","failed"]'));
   } finally {
     await producer.close();
   }
 
-  // Test promptVia === "arg" branch (like pi)
+  // Pi's RPC producer is separate; a generic one-shot cannot inherit its permissions.
   let capturedArgs: readonly string[] = [];
   const argProducer = createVnextOneShotProducer({
     defaultHarness: "pi",
@@ -571,7 +594,7 @@ test("One-shot producer handles resolveHarness, resolveModel, custom harness, ex
       };
     },
   });
-  await argProducer.produce({
+  await assert.rejects(argProducer.produce({
     runId: "run_arg_1",
     stepId: "s1",
     stepAttempt: 1,
@@ -582,8 +605,8 @@ test("One-shot producer handles resolveHarness, resolveModel, custom harness, ex
     allowedOutcomes: ["completed"],
     prompt: "Prompt in args",
     signal: new AbortController().signal,
-  });
-  assert.ok(capturedArgs.includes("Prompt in args"));
+  }), /permission_profile_unaudited/);
+  assert.deepEqual(capturedArgs, []);
   await argProducer.close();
 });
 
@@ -641,10 +664,10 @@ test("defaultSpawn handles standard process execution, stdin piping, and exit co
   assert.ok(res6.error);
 });
 
-test("One-shot producer defaultSpawn integration and option fallbacks", async () => {
+test("One-shot rejects unprofiled executables and preserves native option resolution", async () => {
   const fakeAuth = () => ({ detected: true, authenticated: true as const, issues: [] });
 
-  // Custom inventory pointing to node to test end-to-end defaultSpawn execution
+  // Authenticated custom inventory cannot authorize arbitrary executable permissions.
   const customInventory = {
     defaultHarness: "node_test" as any,
     harnesses: [
@@ -670,6 +693,7 @@ test("One-shot producer defaultSpawn integration and option fallbacks", async ()
         argv: [
           "-e",
           "process.stdout.write(JSON.stringify({ result: '{\\\"outcome\\\": \\\"passed\\\"}', usage: { input_tokens: 15, output_tokens: 25 } }))",
+          "--", // Node must treat the test harness flags as script arguments.
         ],
         promptVia: "stdin" as const,
         outputFormat: "json" as const,
@@ -686,7 +710,7 @@ test("One-shot producer defaultSpawn integration and option fallbacks", async ()
   });
 
   try {
-    const res = await producer.produce({
+    await assert.rejects(producer.produce({
       runId: "run_default_spawn_1",
       stepId: "step_ds",
       stepAttempt: 1,
@@ -697,12 +721,7 @@ test("One-shot producer defaultSpawn integration and option fallbacks", async ()
       allowedOutcomes: ["passed", "failed"],
       prompt: "test default spawn",
       signal: new AbortController().signal,
-    });
-
-    assert.equal(res.harness, "node_test");
-    assert.equal(res.outcome, "passed");
-    assert.equal(res.tokensIn, null);
-    assert.equal(res.tokensOut, null);
+    }), /permission_profile_unaudited/);
   } finally {
     await producer.close();
   }
@@ -827,7 +846,7 @@ test("parseAgyOneShotUsage parses Antigravity JSON payload, usage, and errors", 
   assert.equal(plainParsed.usage?.tokensIn, null);
 });
 
-test("Kimi one-shot producer dispatches with stream-json and marks tokens null / cost unknown", async () => {
+test("Kimi one-shot execution refuses unaudited permissions despite authentication", async () => {
   const fakeAuth = () => ({ detected: true, authenticated: true as const, issues: [] });
 
   let capturedArgs: readonly string[] = [];
@@ -848,7 +867,7 @@ test("Kimi one-shot producer dispatches with stream-json and marks tokens null /
   });
 
   try {
-    const res = await kimiProducer.produce({
+    await assert.rejects(kimiProducer.produce({
       runId: "run_kimi_1",
       stepId: "step_kimi",
       stepAttempt: 1,
@@ -860,27 +879,15 @@ test("Kimi one-shot producer dispatches with stream-json and marks tokens null /
       model: "kimi-k2",
       prompt: "Review Windows path portability",
       signal: new AbortController().signal,
-    });
-
-    assert.equal(res.harness, "kimi");
-    assert.equal(res.outcome, "passed");
-    assert.equal(res.tokensIn, null);
-    assert.equal(res.tokensOut, null);
-    assert.equal(res.costBasis, "unknown");
-    assert.equal(res.costUsd, null);
-
-    // Verify args sent to kimi CLI: -m kimi-k2 -p <prompt>
-    assert.ok(capturedArgs.includes("-m"));
-    assert.ok(capturedArgs.includes("kimi-k2"));
-    assert.ok(capturedArgs.includes("-p"));
-    assert.ok(capturedArgs.includes("Review Windows path portability"));
+    }), /permission_profile_unaudited/);
+    assert.deepEqual(capturedArgs, []);
   } finally {
     await kimiProducer.close();
   }
 });
 
-test("agy (Antigravity) one-shot producer dispatches with JSON and records tokens and subscription pricing", async () => {
-  const fakeAuth = () => ({ detected: true, authenticated: true as const, issues: [] });
+test("AGY subscription auth does not authorize an unaudited one-shot permission profile", async () => {
+  const fakeAuth = () => ({ detected: true, authenticated: true as const, authMethod: "antigravity-oauth", issues: [] });
 
   let capturedArgs: readonly string[] = [];
   const agyProducer = createVnextOneShotProducer({
@@ -907,7 +914,7 @@ test("agy (Antigravity) one-shot producer dispatches with JSON and records token
   });
 
   try {
-    const res = await agyProducer.produce({
+    await assert.rejects(agyProducer.produce({
       runId: "run_agy_1",
       stepId: "step_agy",
       stepAttempt: 1,
@@ -920,23 +927,8 @@ test("agy (Antigravity) one-shot producer dispatches with JSON and records token
       thinking: "medium",
       prompt: "Implement feature in repository",
       signal: new AbortController().signal,
-    });
-
-    assert.equal(res.harness, "agy");
-    assert.equal(res.outcome, "passed");
-    assert.equal(res.tokensIn, 50);
-    assert.equal(res.tokensOut, 25);
-    assert.equal(res.cacheReadTokens, 10);
-    assert.equal(res.costBasis, "unmetered");
-    assert.equal(res.priceRef, "subscription:agy");
-
-    // Verify args sent to agy CLI: --effort medium --model gemini-3.8-flash-high -p <prompt>
-    assert.ok(capturedArgs.includes("--effort"));
-    assert.ok(capturedArgs.includes("medium"));
-    assert.ok(capturedArgs.includes("--model"));
-    assert.ok(capturedArgs.includes("gemini-3.8-flash-high"));
-    assert.ok(capturedArgs.includes("-p"));
-    assert.ok(capturedArgs.includes("Implement feature in repository"));
+    }), /permission_profile_unaudited/);
+    assert.deepEqual(capturedArgs, []);
   } finally {
     await agyProducer.close();
   }
@@ -946,7 +938,7 @@ test("Gemini CLI is non-dispatchable and fails closed with clear message", async
   const fakeAuth = () => ({ detected: true, authenticated: true as const, issues: [] });
 
   const geminiProducer = createVnextOneShotProducer({
-    defaultHarness: "gemini",
+    defaultHarness: "legacy-gemini",
     probeHarness: fakeAuth as any,
     spawnProcess: async () => ({ stdout: "", stderr: "", code: 0 }),
   });
@@ -965,15 +957,15 @@ test("Gemini CLI is non-dispatchable and fails closed with clear message", async
         signal: new AbortController().signal,
       });
     },
-    /oneshot_harness_unsupported: gemini/,
+    /oneshot_harness_unsupported: legacy-gemini/,
   );
   await geminiProducer.close();
 });
 
 test("resolveDispatchStatus calculates dispatch availability and reason accurately", () => {
   const catalogEntryWithOneShot = {
-    id: "test_harness",
-    label: "Test",
+    id: "claude",
+    label: "Test fixture",
     default: false,
     mode: "either" as const,
     commands: ["test"],
@@ -988,8 +980,8 @@ test("resolveDispatchStatus calculates dispatch availability and reason accurate
   };
 
   const catalogEntryWithoutOneShot = {
-    id: "gemini",
-    label: "Gemini CLI",
+    id: "legacy-gemini",
+    label: "Legacy Gemini CLI",
     default: false,
     mode: "either" as const,
     commands: ["gemini"],
@@ -1002,10 +994,10 @@ test("resolveDispatchStatus calculates dispatch availability and reason accurate
   assert.equal(notDetected.status, "no");
   assert.equal(notDetected.reason, "not_detected");
 
-  // Deprecated / no headless mode
+  // No headless mode
   const noHeadless = resolveDispatchStatus(catalogEntryWithoutOneShot, true, true, []);
   assert.equal(noHeadless.status, "no");
-  assert.equal(noHeadless.reason, "deprecated_client");
+  assert.equal(noHeadless.reason, "no_headless_mode");
 
   // Not authenticated
   const unauthenticated = resolveDispatchStatus(catalogEntryWithOneShot, true, false, ["not_authenticated"]);
@@ -1046,7 +1038,7 @@ smokeTest("real Claude one-shot dispatch behind KXM_SMOKE", async () => {
   }
 });
 
-smokeTest("real Kimi one-shot dispatch behind KXM_SMOKE", async () => {
+test.skip("Kimi live one-shot deferred: permission profile unaudited", async () => {
   const producer = createVnextOneShotProducer({ defaultHarness: "kimi" });
   try {
     const controller = new AbortController();
@@ -1068,7 +1060,7 @@ smokeTest("real Kimi one-shot dispatch behind KXM_SMOKE", async () => {
   }
 });
 
-smokeTest("real agy one-shot dispatch behind KXM_SMOKE", async () => {
+test.skip("AGY live one-shot deferred: permission profile unaudited", async () => {
   const producer = createVnextOneShotProducer({ defaultHarness: "agy" });
   try {
     const controller = new AbortController();

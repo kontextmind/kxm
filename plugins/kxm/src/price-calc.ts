@@ -29,10 +29,7 @@ export function findModelPrice(catalog: PriceCatalog, model: string, provider?: 
   const normalizedProvider = provider?.trim().toLowerCase();
 
   for (const entry of catalog.models) {
-    if (normalizedProvider && entry.provider.toLowerCase() !== normalizedProvider) {
-      const matchesAlias = entry.aliases?.some((a) => a.toLowerCase() === normalizedModel);
-      if (!matchesAlias) continue;
-    }
+    if (normalizedProvider && entry.provider.toLowerCase() !== normalizedProvider) continue;
     if (entry.id.toLowerCase() === normalizedModel || entry.model.toLowerCase() === normalizedModel) {
       return entry;
     }
@@ -58,20 +55,21 @@ export function calculateModelCost(
   const row = findModelPrice(catalog, params.model, params.provider);
   if (!row || row.tiers.length === 0) return undefined;
 
-  const context = params.contextTokens ?? params.tokensIn ?? 0;
-  let selectedTier = row.tiers[0]!;
-  for (const tier of row.tiers) {
-    if (tier.upToContextTokens !== undefined && tier.upToContextTokens !== null && context > tier.upToContextTokens) {
-      continue;
-    }
-    selectedTier = tier;
-    break;
-  }
-
-  const tokensIn = params.tokensIn ?? 0;
-  const tokensOut = params.tokensOut ?? 0;
-  const cacheRead = params.cacheReadTokens ?? 0;
-  const cacheWrite = params.cacheWriteTokens ?? 0;
+  if (catalog.currency !== undefined && catalog.currency !== "USD") return undefined;
+  const validCount = (n: unknown): n is number => typeof n === "number" && Number.isSafeInteger(n) && n >= 0;
+  const tokensIn = params.tokensIn;
+  const tokensOut = params.tokensOut;
+  const cacheRead = params.cacheReadTokens;
+  const cacheWrite = params.cacheWriteTokens;
+  if (!validCount(tokensIn) || !validCount(tokensOut) || !validCount(cacheRead) || !validCount(cacheWrite)) return undefined;
+  // Cumulative usage is not context occupancy. Only an unbounded flat tier can
+  // be selected when the caller has no context measurement.
+  const context = params.contextTokens;
+  if (context != null && !validCount(context)) return undefined;
+  const selectedTier = context == null
+    ? (row.tiers.length === 1 && row.tiers[0]!.upToContextTokens == null ? row.tiers[0] : undefined)
+    : row.tiers.find((tier) => tier.upToContextTokens == null || context <= tier.upToContextTokens);
+  if (!selectedTier || (cacheRead > 0 && selectedTier.cacheReadPerMillion == null) || (cacheWrite > 0 && selectedTier.cacheWritePerMillion == null)) return undefined;
 
   const cost =
     (tokensIn / 1_000_000) * selectedTier.inputPerMillion +
@@ -79,6 +77,7 @@ export function calculateModelCost(
     (cacheRead / 1_000_000) * (selectedTier.cacheReadPerMillion ?? 0) +
     (cacheWrite / 1_000_000) * (selectedTier.cacheWritePerMillion ?? 0);
 
+  if (!Number.isFinite(cost) || cost < 0) return undefined;
   const priceRef = `${catalog.date}#${row.id}`;
   return {
     costUsd: Math.round(cost * 1_000_000) / 1_000_000,

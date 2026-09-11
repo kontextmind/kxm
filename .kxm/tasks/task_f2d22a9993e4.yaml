@@ -1,0 +1,14 @@
+schema: kxm.task.v1
+id: task_f2d22a9993e4
+title: Research and simplify agent/producer architecture and Pi restrictions
+objective: Document the distinction and overlap between Hub agents, producers,
+  roles, harnesses, and writers; map single-host, multi-host, and SSH execution;
+  measure complexity and efficiency; investigate why Pi is restricted to the
+  admitted Qwen writer route; evaluate whether restrictions should remain,
+  change, or be removed; propose tests, gates, migration/documentation updates,
+  and cost/quality benchmarks.
+acceptanceCriteria: []
+status: todo
+assignedWorkflow: default
+createdAt: 2026-09-10T14:52:07.386Z
+updatedAt: 2026-09-10T14:52:07.386Z

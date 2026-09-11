@@ -1,8 +1,14 @@
 # KXM Control Plane, 5-Layer Memory & Self-Improving Architecture: Review & Questionnaire
 
 **Document Version:** 1.0.0  
-**Status:** In Review / Interactive Questionnaire  
+**Status:** Closed design record (2026-09-10)
+
 **Scope:** TUI (`kxm dash`), Web Studio (Phase 10), Temporal Workflow Engine, 5-Layer Memory, Context Arbiter, Formal Packets, Structured Handoffs, Side-Effect Idempotency, Descriptive Branches, Documentation Templates, and Self-Improving Cycles.
+
+> This questionnaire is no longer an active plan. Its decisions and landed slices
+> are recorded in [`implementation-plan.md`](implementation-plan.md), which is
+> the sole execution tracker. Deferred work remains open only when it appears in
+> that file's **Still open** section and the applicable phase gate.
 
 ---
 
@@ -290,6 +296,10 @@ Following the `AGENTS.md` orchestration policy, all designs were evaluated indep
 ---
 
 ## 5. Optimized Multi-Phase Execution Roadmap
+
+The roadmap below records the design-time ordering that was reviewed and
+approved. It is historical: implementation status, phase boundaries, and
+remaining work are maintained only in `implementation-plan.md`.
 
 This roadmap restructures the implementation phases by strict contract dependency, failure blast radius, and developer cost impact, integrating all 15 operator decisions settled in Section 4.
 

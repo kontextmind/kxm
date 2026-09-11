@@ -5,7 +5,6 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadVnextProject, VnextConfigError, type VnextConfigOptions } from "./vnext-config.ts";
-
 const repoRoot = resolve(fileURLToPath(new URL("../../../", import.meta.url)));
 import {
   VnextRuntimeRegistry,
@@ -23,7 +22,9 @@ import {
   rebuildVnextRunProjection,
   type VnextRuntimeContext,
 } from "./vnext-runtime.ts";
-import { recoverVnextRun } from "./vnext-engine.ts";
+import { createVnextOneShotProducer } from "./vnext-oneshot-producer.ts";
+import { isProducerAdmitted } from "./producers.ts";
+import { createVnextSimulatedProducer, driveVnextRun, pinVnextCompiledPlan, recoverVnextRun, startVnextRun } from "./vnext-engine.ts";
 
 /* ------------------------------------------------------------------ *
  * Token management
@@ -394,7 +395,7 @@ async function startVnextRuntimeSupervisorInner(
           return;
         }
 
-        const runMatch = /^\/v1\/runs\/([A-Za-z0-9_-]+)(?:\/(events|cancel|signal|wait))?$/.exec(url.pathname);
+        const runMatch = /^\/v1\/runs\/([A-Za-z0-9_-]+)(?:\/(events|cancel|signal|wait|drive))?$/.exec(url.pathname);
         if (runMatch) {
           const runId = runMatch[1] as string;
           const sub = runMatch[2];
@@ -404,9 +405,101 @@ async function startVnextRuntimeSupervisorInner(
             return;
           }
           const context = contextFor(projectRoot);
+          const bundle = loadVnextProject(projectRoot, {});
           if (request.method === "GET" && !sub) {
             const projected = rebuildVnextRunProjection(context, runId);
             sendJson(response, 200, { ok: true, run: projected });
+            return;
+          }
+          if (request.method === "POST" && sub === "drive") {
+            const body = await readJsonBody(request);
+            if (body.mode !== "simulated" && body.mode !== "live") {
+              sendJson(response, 400, { ok: false, error: "runtime_request_invalid", message: "drive mode must be simulated or live" });
+              return;
+            }
+            const run = context.eventStore.run(runId);
+            if (!run) throw runtimeError("run_unknown", runId, "run not found");
+            if (run.status === "created") {
+              pinVnextCompiledPlan(context, bundle, runId);
+              const plan = startVnextRun(context, runId, { allowLimits: true });
+              if (plan.handoff) {
+                sendJson(response, 409, { ok: false, error: "run_handoff_required", handoff: plan.handoff });
+                return;
+              }
+            }
+            const producer = body.mode === "live"
+              ? createVnextOneShotProducer({
+                  projectRoot,
+                  defaultHarness: String(bundle.project.value.defaultHarness ?? "pi"),
+                  resolveHarness: (agentId) => {
+                    const agent = bundle.agents.get(agentId);
+                    return typeof agent?.value.harness === "string" ? agent.value.harness : undefined;
+                  },
+                  resolveModel: (agentId) => {
+                    const agent = bundle.agents.get(agentId);
+                    const model = agent?.value.model;
+                    if (!model || typeof model !== "object" || Array.isArray(model)) return undefined;
+                    const value = model as Record<string, unknown>;
+                    const provider = typeof value.provider === "string" ? value.provider : undefined;
+                    const modelName = typeof value.model === "string" ? value.model : undefined;
+                    if (!provider || !modelName || !isProducerAdmitted(projectRoot, `${provider}/${modelName}`)) {
+                      throw new Error("producer_route_not_admitted");
+                    }
+                    return { provider, model: modelName };
+                  },
+                })
+              : createVnextSimulatedProducer(async () => ({ outcome: "passed" }));
+            try {
+              const result = await driveVnextRun(context, runId, producer, { allowLimits: true });
+              const recentEvents = context.eventStore.events(runId, Math.max(0, context.eventStore.nextSequence(runId) - 8), 8);
+              sendJson(response, 200, { ok: true, mode: body.mode, run: result.state, handoff: result.handoff, events: recentEvents });
+            } finally {
+              if ("close" in producer && typeof producer.close === "function") await producer.close();
+            }
+            return;
+          }
+
+          if (request.method === "POST" && sub === "dispatch") {
+            // Runtime-owned dispatch endpoint that uses project roster to resolve admitted producers
+            const body = await readJsonBody(request);
+            const run = context.eventStore.run(runId);
+            if (!run) throw runtimeError("run_unknown", runId, "run not found");
+
+            if (run.status === "created") {
+              pinVnextCompiledPlan(context, bundle, runId);
+              const plan = startVnextRun(context, runId, { allowLimits: true });
+              if (plan.handoff) {
+                sendJson(response, 409, { ok: false, error: "run_handoff_required", handoff: plan.handoff });
+                return;
+              }
+            }
+
+            // Create a producer that uses the project roster to resolve admitted producers
+            const producer = createVnextOneShotProducer({
+              projectRoot,
+              defaultHarness: String(bundle.project.value.defaultHarness ?? "pi"),
+              resolveHarness: (agentId) => {
+                const agent = bundle.agents.get(agentId);
+                return typeof agent?.value.harness === "string" ? agent.value.harness : undefined;
+              },
+              resolveModel: (agentId) => {
+                const agent = bundle.agents.get(agentId);
+                const model = agent?.value.model;
+                if (!model || typeof model !== "object" || Array.isArray(model)) return undefined;
+                const value = model as Record<string, unknown>;
+                const provider = typeof value.provider === "string" ? value.provider : undefined;
+                const modelName = typeof value.model === "string" ? value.model : undefined;
+                if (!provider || !modelName || !isProducerAdmitted(projectRoot, `${provider}/${modelName}`)) return undefined;
+                return { provider, model: modelName };
+              },
+            });
+
+            try {
+              const result = await driveVnextRun(context, runId, producer, { allowLimits: true });
+              sendJson(response, 200, { ok: true, run: result.state, handoff: result.handoff });
+            } finally {
+              if ("close" in producer && typeof producer.close === "function") await producer.close();
+            }
             return;
           }
           if (request.method === "GET" && sub === "events") {
@@ -429,9 +522,10 @@ async function startVnextRuntimeSupervisorInner(
             if (!run) throw runtimeError("run_unknown", runId, "run not found");
             const state = foldStoredVnextRun(context, run);
             let unblocked = false;
-            if (state.status === "blocked_uncertain" || state.currentStep?.effectState === "blocked_uncertain") {
+            if (state.status === "blocked_uncertain" || state.status === "cancelling" || state.currentStep?.effectState === "blocked_uncertain") {
+              const action = body.action === "cancel" || body.action === "fail" || body.action === "retry" || body.action === "unblock" ? body.action : "unblock";
               const rec = recoverVnextRun(context, runId, {
-                action: "unblock",
+                action,
                 reason: typeof body.summary === "string" ? body.summary : `signal_${body.signalKey ?? "callback"}`,
               });
               unblocked = rec.unblocked;
