@@ -3,11 +3,17 @@ import {
   MAX_MESSAGE_TTL_MS,
   MIN_MESSAGE_TTL_MS,
   ProtocolError,
+  TERMINAL_RECEIPT_SCHEMA,
   newId,
   requireString,
+  validateTerminalReceipt,
   type ImprovementArea,
   type JournalCategory,
   type MessageRecord,
+  type TerminalReceipt,
+  type TerminalReceiptEvidence,
+  type TerminalReceiptMetrics,
+  type TerminalReceiptStatus,
   type WorkflowCheckpointStatus,
   type WorkflowEvidenceInput,
   type WorkflowEvidenceReference,
@@ -18,11 +24,16 @@ import {
 export type {
   ImprovementArea,
   JournalCategory,
+  TerminalReceipt,
+  TerminalReceiptEvidence,
+  TerminalReceiptMetrics,
+  TerminalReceiptStatus,
   WorkflowCheckpointStatus,
   WorkflowEvidenceInput,
   WorkflowEvidenceReference,
   WorkflowEvidenceReferenceInput,
 } from "./protocol.ts";
+export { TERMINAL_RECEIPT_SCHEMA, validateTerminalReceipt } from "./protocol.ts";
 
 export type WorkflowRunStatus = "running" | "waiting" | "completed" | "failed";
 export type WorkflowStageStatus = "pending" | "in_progress" | "waiting" | WorkflowCheckpointStatus;
@@ -153,6 +164,8 @@ export interface WorkflowStageDefinition {
   instructions: string;
   requiredEvidence: string[];
   maxAttempts: number;
+  /** Bounded in-place retry limit before audit escalation (default: 2). */
+  autoResumeLimit?: number;
   area?: ImprovementArea;
   evidencePolicies?: WorkflowEvidencePolicies;
   /** Typed outcome map (v0.5). Keys are outcome identities ("passed",
@@ -250,6 +263,13 @@ export interface WorkflowStageState extends WorkflowStageDefinition {
   startedAt?: string;
   completedAt?: string;
   updatedAt?: string;
+  receipt?: TerminalReceipt;
+  auditEscalation?: {
+    reason: string;
+    timestamp: string;
+    ruling?: string;
+    receipt?: TerminalReceipt;
+  };
 }
 
 export interface CapturedOracle {
@@ -1003,12 +1023,18 @@ export function parseWorkflowDefinitions(
         && (!Number.isInteger(stageMaxTransitions) || (stageMaxTransitions as number) < 1 || (stageMaxTransitions as number) > 100)) {
         throw new Error(`stage ${stageId} maxTransitions must be an integer between 1 and 100`);
       }
+      const autoResumeLimit = stage.autoResumeLimit;
+      if (autoResumeLimit !== undefined
+        && (!Number.isInteger(autoResumeLimit) || (autoResumeLimit as number) < 1 || (autoResumeLimit as number) > 20)) {
+        throw new Error(`stage ${stageId} autoResumeLimit must be an integer between 1 and 20`);
+      }
       return {
         id: stageId,
         label: requireString(stage.label ?? stageId, "stage.label", { max: 128 }),
         instructions: requireString(stage.instructions, "stage.instructions", { max: 4_000 }),
         requiredEvidence,
         maxAttempts: maxAttempts as number,
+        ...(autoResumeLimit !== undefined ? { autoResumeLimit: autoResumeLimit as number } : {}),
         ...(area ? { area } : {}),
         ...(evidencePolicies ? { evidencePolicies } : {}),
         ...(on ? { on } : {}),
@@ -1377,6 +1403,31 @@ export function checkpointRun(
       delete run.currentStage;
       return { retry: false, completed: false, run };
     }
+    if (stage.autoResumeLimit !== undefined && stage.attempts >= stage.autoResumeLimit) {
+      stage.status = "in_progress";
+      const reason = summary || `autoResumeLimit of ${stage.autoResumeLimit} reached on stage ${stage.id}`;
+      const receipt = validateTerminalReceipt({
+        schema: TERMINAL_RECEIPT_SCHEMA,
+        status: "audit_escalation",
+        seat: stage.id,
+        runId: run.id,
+        stageId: stage.id,
+        timestamp,
+        host: "pi",
+        model: "default",
+        escalationReason: reason,
+      });
+      const expiresAt = new Date(Date.parse(timestamp) + 24 * 60 * 60 * 1000).toISOString();
+      waitForWorkflowSignal(run, stage.id, "audit_escalation", reason, timestamp, expiresAt);
+      stage.receipt = receipt;
+      stage.auditEscalation = {
+        reason,
+        timestamp,
+        receipt,
+      };
+      return { retry: false, completed: false, run };
+    }
+    stage.status = status;
     // Declared failure outcomes create typed transitions (bounded); the
     // outcome identity defaults to the checkpoint status.
     const outcomeKey = outcome ?? status;
@@ -1546,3 +1597,96 @@ export function approveWorkflowDegradation(
   run.updatedAt = timestamp;
   return { run, approval, created: true };
 }
+
+export function escalateWorkflowStage(
+  run: WorkflowRun,
+  stageId: string,
+  reason: string,
+  timestamp: string,
+  options: {
+    seat?: string;
+    host?: string;
+    model?: string;
+    evidence?: TerminalReceiptEvidence;
+    metrics?: TerminalReceiptMetrics;
+  } = {},
+): { run: WorkflowRun; receipt: TerminalReceipt } {
+  if (run.status !== "running") throw new ProtocolError(409, `workflow is ${run.status}`, "workflow_terminal");
+  const stage = run.stages.find((s) => s.id === stageId);
+  if (!stage) throw new ProtocolError(404, `workflow stage not found: ${stageId}`, "workflow_stage_not_found");
+  if (stage.id !== run.currentStage || stage.status !== "in_progress") {
+    throw new ProtocolError(409, `stage ${stageId} is not currently active`, "workflow_stage_out_of_order");
+  }
+
+  const receipt: TerminalReceipt = validateTerminalReceipt({
+    schema: TERMINAL_RECEIPT_SCHEMA,
+    status: "audit_escalation",
+    seat: options.seat ?? stage.id,
+    runId: run.id,
+    stageId,
+    timestamp,
+    host: options.host ?? "pi",
+    model: options.model ?? "default",
+    escalationReason: reason,
+    ...(options.evidence ? { evidence: options.evidence } : {}),
+    ...(options.metrics ? { metrics: options.metrics } : {}),
+  });
+
+  const expiresAt = new Date(Date.parse(timestamp) + 24 * 60 * 60 * 1000).toISOString();
+  waitForWorkflowSignal(run, stageId, "audit_escalation", reason, timestamp, expiresAt);
+
+  stage.receipt = receipt;
+  stage.auditEscalation = {
+    reason,
+    timestamp,
+    receipt,
+  };
+
+  return { run, receipt };
+}
+
+export function resumeWorkflowFromRuling(
+  run: WorkflowRun,
+  ruling: string,
+  timestamp: string,
+  options: {
+    status?: WorkflowCheckpointStatus;
+    evidence?: WorkflowEvidenceInput;
+  } = {},
+): { retry: boolean; completed: boolean; run: WorkflowRun; stageId: string } {
+  if (run.status !== "waiting" || !run.waiting) {
+    throw new ProtocolError(409, `workflow is ${run.status}`, "workflow_not_waiting");
+  }
+  if (run.waiting.signalKey !== "audit_escalation") {
+    throw new ProtocolError(
+      409,
+      `workflow is waiting for signal '${run.waiting.signalKey}', not 'audit_escalation'`,
+      "workflow_signal_mismatch",
+    );
+  }
+
+  const stageId = run.waiting.stageId;
+  const stage = run.stages.find((s) => s.id === stageId);
+  if (!stage) throw new ProtocolError(404, `workflow stage not found: ${stageId}`, "workflow_stage_not_found");
+
+  const status = options.status ?? "passed";
+  const evidence = options.evidence ?? {};
+
+  if (stage.auditEscalation) {
+    stage.auditEscalation.ruling = ruling;
+    if (stage.auditEscalation.receipt) {
+      stage.auditEscalation.receipt.ruling = ruling;
+    }
+  }
+  stage.summary = `Resumed by operator ruling: ${ruling}`;
+
+  return resumeWorkflowFromSignal(
+    run,
+    "audit_escalation",
+    status,
+    `Resumed: ${ruling}`,
+    evidence,
+    timestamp,
+  );
+}
+

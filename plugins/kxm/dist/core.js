@@ -59,6 +59,61 @@ function parseBoundedInteger(value, field, fallback, min, max) {
   }
   return value;
 }
+var TERMINAL_RECEIPT_SCHEMA = "kxm.terminal-receipt.v1";
+var VALID_TERMINAL_STATUSES = /* @__PURE__ */ new Set(["accepted", "audit_escalation", "rejected", "error"]);
+function validateTerminalReceipt(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new ProtocolError(400, "terminal receipt must be an object", "invalid_terminal_receipt");
+  }
+  const record = value;
+  if (record.schema !== void 0 && record.schema !== TERMINAL_RECEIPT_SCHEMA) {
+    throw new ProtocolError(400, `terminal receipt schema must be ${TERMINAL_RECEIPT_SCHEMA}`, "invalid_terminal_receipt");
+  }
+  const status = record.status;
+  if (!status || !VALID_TERMINAL_STATUSES.has(status)) {
+    throw new ProtocolError(
+      400,
+      `terminal receipt status must be one of: ${Array.from(VALID_TERMINAL_STATUSES).join(", ")}`,
+      "invalid_terminal_receipt"
+    );
+  }
+  const seat = requireString(record.seat, "seat", { max: 64 });
+  const runId = requireString(record.runId, "runId", { max: 128 });
+  const stageId = requireString(record.stageId, "stageId", { max: 128 });
+  const timestamp = requireString(record.timestamp, "timestamp", { max: 64 });
+  const host = requireString(record.host, "host", { max: 64 });
+  const model = requireString(record.model, "model", { max: 128 });
+  let evidence;
+  if (record.evidence !== void 0) {
+    if (!record.evidence || typeof record.evidence !== "object" || Array.isArray(record.evidence)) {
+      throw new ProtocolError(400, "terminal receipt evidence must be an object", "invalid_terminal_receipt");
+    }
+    evidence = record.evidence;
+  }
+  let metrics;
+  if (record.metrics !== void 0) {
+    if (!record.metrics || typeof record.metrics !== "object" || Array.isArray(record.metrics)) {
+      throw new ProtocolError(400, "terminal receipt metrics must be an object", "invalid_terminal_receipt");
+    }
+    metrics = record.metrics;
+  }
+  const escalationReason = optionalString(record.escalationReason, "escalationReason", 1024);
+  const ruling = optionalString(record.ruling, "ruling", 2048);
+  return {
+    schema: TERMINAL_RECEIPT_SCHEMA,
+    status,
+    seat,
+    runId,
+    stageId,
+    timestamp,
+    host,
+    model,
+    ...evidence ? { evidence } : {},
+    ...metrics ? { metrics } : {},
+    ...escalationReason ? { escalationReason } : {},
+    ...ruling ? { ruling } : {}
+  };
+}
 
 // plugins/kxm/src/routing.ts
 import { createHash } from "node:crypto";
@@ -1957,6 +2012,7 @@ export {
   ROUTING_RECORD_SCHEMA,
   ROUTING_RECORD_V2_SCHEMA,
   ROUTING_REPORT_SCHEMA,
+  TERMINAL_RECEIPT_SCHEMA,
   WORKER_RESULT_SCHEMA,
   WORKER_SCHEMA,
   agentWorker,
@@ -1999,5 +2055,6 @@ export {
   rotateLogFiles,
   sessionTokenPath,
   timingSafeStringCompare,
+  validateTerminalReceipt,
   workerResult
 };

@@ -4,8 +4,13 @@ title: Consolidate Role Configuration Governance and Fail-Closed Roster Admissio
 objective: Establish single source of truth for agent roles across .kxm/roles/,
   .kxm/agents/, and .kxm/producers.yaml, enforcing strict schema validation and
   fail-closed admission rules for role rosters.
-acceptanceCriteria: []
-status: todo
+acceptanceCriteria:
+  - "Role seat host mapping decoupling via .kxm/role-hosts.yaml (schema: kxm.role-hosts.v1) with CLI --host override"
+  - "Strictly typed TerminalReceipt protocol schema (kxm.terminal-receipt.v1) and validation function"
+  - "Bounded stage retries with autoResumeLimit, generating audit_escalation receipts and waiting_for_signal on limit exhaustion"
+  - "kxm role resume <runId> [message] command to unpause and resolve audit-escalated runs with operator ruling"
+  - "kxm role hosts command to inspect and configure role seat host bindings"
+status: in_progress
 assignedWorkflow: default
 createdAt: 2026-09-11T09:24:28.499Z
-updatedAt: 2026-09-11T09:24:28.499Z
+updatedAt: 2026-09-11T13:10:00.000Z

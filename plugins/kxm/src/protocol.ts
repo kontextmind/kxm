@@ -170,3 +170,114 @@ export function parseBoundedInteger(
   }
   return value as number;
 }
+
+// ---------------------------------------------------------------------------
+// Terminal Receipt Protocol (kxm.terminal-receipt.v1)
+// ---------------------------------------------------------------------------
+
+export const TERMINAL_RECEIPT_SCHEMA = "kxm.terminal-receipt.v1" as const;
+
+export type TerminalReceiptStatus = "accepted" | "audit_escalation" | "rejected" | "error";
+
+export interface TerminalReceiptFinding {
+  rule: string;
+  severity: "info" | "warning" | "error";
+  message: string;
+}
+
+export interface TerminalReceiptEvidence {
+  verifiedFiles?: string[];
+  gitHash?: string;
+  testSummary?: { passed: number; failed: number; skipped: number };
+  findings?: TerminalReceiptFinding[];
+  [key: string]: unknown;
+}
+
+export interface TerminalReceiptMetrics {
+  durationMs?: number;
+  tokensIn?: number;
+  tokensOut?: number;
+  cacheReadTokens?: number;
+  costUsd?: number;
+  [key: string]: unknown;
+}
+
+export interface TerminalReceipt {
+  schema: typeof TERMINAL_RECEIPT_SCHEMA;
+  status: TerminalReceiptStatus;
+  seat: string;
+  runId: string;
+  stageId: string;
+  timestamp: string;
+  host: string;
+  model: string;
+  evidence?: TerminalReceiptEvidence;
+  metrics?: TerminalReceiptMetrics;
+  escalationReason?: string;
+  ruling?: string;
+}
+
+const VALID_TERMINAL_STATUSES = new Set<TerminalReceiptStatus>(["accepted", "audit_escalation", "rejected", "error"]);
+
+export function validateTerminalReceipt(value: unknown): TerminalReceipt {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new ProtocolError(400, "terminal receipt must be an object", "invalid_terminal_receipt");
+  }
+
+  const record = value as Record<string, unknown>;
+
+  if (record.schema !== undefined && record.schema !== TERMINAL_RECEIPT_SCHEMA) {
+    throw new ProtocolError(400, `terminal receipt schema must be ${TERMINAL_RECEIPT_SCHEMA}`, "invalid_terminal_receipt");
+  }
+
+  const status = record.status as TerminalReceiptStatus;
+  if (!status || !VALID_TERMINAL_STATUSES.has(status)) {
+    throw new ProtocolError(
+      400,
+      `terminal receipt status must be one of: ${Array.from(VALID_TERMINAL_STATUSES).join(", ")}`,
+      "invalid_terminal_receipt",
+    );
+  }
+
+  const seat = requireString(record.seat, "seat", { max: 64 });
+  const runId = requireString(record.runId, "runId", { max: 128 });
+  const stageId = requireString(record.stageId, "stageId", { max: 128 });
+  const timestamp = requireString(record.timestamp, "timestamp", { max: 64 });
+  const host = requireString(record.host, "host", { max: 64 });
+  const model = requireString(record.model, "model", { max: 128 });
+
+  let evidence: TerminalReceiptEvidence | undefined;
+  if (record.evidence !== undefined) {
+    if (!record.evidence || typeof record.evidence !== "object" || Array.isArray(record.evidence)) {
+      throw new ProtocolError(400, "terminal receipt evidence must be an object", "invalid_terminal_receipt");
+    }
+    evidence = record.evidence as TerminalReceiptEvidence;
+  }
+
+  let metrics: TerminalReceiptMetrics | undefined;
+  if (record.metrics !== undefined) {
+    if (!record.metrics || typeof record.metrics !== "object" || Array.isArray(record.metrics)) {
+      throw new ProtocolError(400, "terminal receipt metrics must be an object", "invalid_terminal_receipt");
+    }
+    metrics = record.metrics as TerminalReceiptMetrics;
+  }
+
+  const escalationReason = optionalString(record.escalationReason, "escalationReason", 1024);
+  const ruling = optionalString(record.ruling, "ruling", 2048);
+
+  return {
+    schema: TERMINAL_RECEIPT_SCHEMA,
+    status,
+    seat,
+    runId,
+    stageId,
+    timestamp,
+    host,
+    model,
+    ...(evidence ? { evidence } : {}),
+    ...(metrics ? { metrics } : {}),
+    ...(escalationReason ? { escalationReason } : {}),
+    ...(ruling ? { ruling } : {}),
+  };
+}
+

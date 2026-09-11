@@ -55,7 +55,7 @@ const SUBCOMMANDS: Record<string, string[]> = {
   goal: ["create", "list", "get"],
   task: ["create", "list", "get", "run", "sync"],
   studio: ["layout", "serve"],
-  role: ["list", "get", "add", "remove", "modify"],
+  role: ["list", "get", "add", "remove", "modify", "hosts", "set-host", "resume"],
 };
 
 export function generateShellCompletion(shell: SupportedShell): string {
