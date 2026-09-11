@@ -278,6 +278,12 @@ test("supervisor lifecycle: start, API, auth, runs, graceful stop", async () => 
     const cancel = await vnextRuntimeRequest(handle, "POST", `/v1/runs/${run.runId}/cancel?projectRoot=${encodeURIComponent(root)}`, {});
     assert.equal((cancel.run as { status: string }).status, "cancelled");
 
+    // Dead dispatch endpoint is braked and returns 404
+    await assert.rejects(
+      () => vnextRuntimeRequest(handle, "POST", `/v1/runs/${run.runId}/dispatch?projectRoot=${encodeURIComponent(root)}`, {}),
+      /not found|404/i,
+    );
+
     const list = await vnextRuntimeRequest(handle, "GET", `/v1/projects/prj_01JRUNTIMETEST0000000000/runs?projectRoot=${encodeURIComponent(root)}`);
     assert.equal((list.runs as unknown[]).length, 1);
 
