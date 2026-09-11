@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "kxm",
   "displayName": "KXM",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "Headless multi-agent orchestration, durable workflows, and a live operator dashboard for Pi and Claude Code",
   "author": {
     "name": "KontextMind",

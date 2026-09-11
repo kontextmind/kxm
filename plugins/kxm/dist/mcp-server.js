@@ -17036,7 +17036,7 @@ async function deliverInboxNotification(messageId, delivered, notify) {
 }
 
 // plugins/kxm/src/mcp-server.ts
-var VERSION = "0.7.1";
+var VERSION = "0.7.2";
 var inbox = /* @__PURE__ */ new Map();
 var notifiedInbox = /* @__PURE__ */ new Set();
 var meshClient;
