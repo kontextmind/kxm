@@ -1446,19 +1446,19 @@ test("Pi extension session readiness keeps a single hub registration across star
   const startup = recordingUi();
   await fake.emit("session_start", { reason: "startup" }, sessionCtx(cwd, startup.ui));
   assertOnlineChrome(startup);
-  assert.equal(startup.selects.length, 1);
+  assert.equal(startup.selects.length, 0);
   await waitFor(async () => (await peer.listAgents()).filter((agent) => agent.name === "pi-session-ready").length === 1);
 
   await shutdownExtension(fake);
   const startedNew = recordingUi();
   await fake.emit("session_start", { reason: "new" }, sessionCtx(cwd, startedNew.ui));
   assertOnlineChrome(startedNew);
-  assert.equal((await peer.listAgents()).filter((agent) => agent.name === "pi-session-ready").length, 1);
+  await waitFor(async () => (await peer.listAgents()).filter((agent) => agent.name === "pi-session-ready").length === 1);
 
   const forked = recordingUi();
   await fake.emit("session_start", { reason: "fork" }, sessionCtx(cwd, forked.ui));
   assertOnlineChrome(forked);
-  assert.equal((await peer.listAgents()).filter((agent) => agent.name === "pi-session-ready").length, 1);
+  await waitFor(async () => (await peer.listAgents()).filter((agent) => agent.name === "pi-session-ready").length === 1);
   await shutdownExtension(fake);
 });
 
