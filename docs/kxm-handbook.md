@@ -695,7 +695,7 @@ Claude MCP also exposes:
 Set exactly one of:
 
 ```text
-KXM_WEBHOOK_WORKFLOWS_FILE=.kxm/config/workflows/product.json
+KXM_WEBHOOK_WORKFLOWS_FILE=.kxm/workflows/default.yaml
 ```
 
 or:
@@ -712,7 +712,7 @@ required evidence, attempt limits, and optional peer policies.
 Validate before restart:
 
 ```powershell
-kxm gate validate --file .kxm/config/workflows/product.json
+kxm gate validate --file .kxm/workflows/default.yaml
 ```
 
 Secrets belong in environment variables named by `secretEnv` and
@@ -921,7 +921,7 @@ with content hashes. See `docs/skills.md` for the full lifecycle.
 
 ### Reference /fix workflow
 
-`.kxm/config/workflows/fix.json` implements the reference bug-fix flow:
+`.kxm/workflows/default.yaml` implements the reference bug-fix flow:
 read-only exploration, a tests-only reproduction draft, independent two-critic
 `repro-review` that captures the immutable oracle (a sibling API is invalid),
 plan review by independent critics, a human approval gate, bounded rework

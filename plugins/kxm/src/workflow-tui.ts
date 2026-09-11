@@ -95,7 +95,9 @@ export function loadActiveWorkflowProgress(
       const telemFile = telemetryPath(logsDir);
       if (existsSync(telemFile)) {
         const records = readRoutingRecords(telemFile);
-        let matching = records.filter((r) => r.routing.runId === runId);
+        const routingRunId = (routing: (typeof records)[number]["routing"]): string | undefined =>
+          "runId" in routing ? routing.runId : routing.workflowRunId;
+        let matching = records.filter((r) => routingRunId(r.routing) === runId);
         if (matching.length === 0) {
           const rawLines = readFileSync(telemFile, "utf8").split(/\r?\n/);
           for (const line of rawLines) {
@@ -103,7 +105,7 @@ export function loadActiveWorkflowProgress(
             try {
               const p = JSON.parse(line) as Record<string, unknown>;
               const rt = (p.routing || p) as any;
-              if (rt && (rt.runId === runId || p.runId === runId)) {
+              if (rt && (routingRunId(rt) === runId || p.runId === runId)) {
                 matching.push({ recordedAt: (p.timestamp as string) || new Date().toISOString(), routing: rt });
               }
             } catch {
@@ -121,22 +123,27 @@ export function loadActiveWorkflowProgress(
           for (const m of matching) {
             const rt = m.routing;
             if (typeof rt.costUsd === "number") totalSpend += rt.costUsd;
-            if (rt.tokens) {
-              totalIn += rt.tokens.input ?? 0;
-              totalOut += rt.tokens.output ?? 0;
-              totalCache += rt.tokens.cacheRead ?? 0;
-            }
-            if (typeof rt.latencyMs === "number") totalLatency += rt.latencyMs;
+            if ("tokensIn" in rt && typeof rt.tokensIn === "number") totalIn += rt.tokensIn;
+            else if ("tokens" in rt && rt.tokens && typeof (rt.tokens as { input?: unknown }).input === "number") totalIn += (rt.tokens as { input: number }).input;
+            if ("tokensOut" in rt && typeof rt.tokensOut === "number") totalOut += rt.tokensOut;
+            else if ("tokens" in rt && rt.tokens && typeof (rt.tokens as { output?: unknown }).output === "number") totalOut += (rt.tokens as { output: number }).output;
+            if ("cacheReadTokens" in rt && typeof rt.cacheReadTokens === "number") totalCache += rt.cacheReadTokens;
+            else if ("tokens" in rt && rt.tokens && typeof (rt.tokens as { cacheRead?: unknown }).cacheRead === "number") totalCache += (rt.tokens as { cacheRead: number }).cacheRead;
+            if ("latencyMs" in rt && typeof rt.latencyMs === "number") totalLatency += rt.latencyMs;
           }
+          const latestRecord = latest as unknown as Record<string, unknown>;
+          const latestMetadata = latestRecord.providerMetadata && typeof latestRecord.providerMetadata === "object"
+            ? latestRecord.providerMetadata as Record<string, unknown>
+            : undefined;
           metrics = {
             totalSpendUsd: totalSpend,
             inputTokens: totalIn,
             outputTokens: totalOut,
             cacheReadTokens: totalCache,
             latencyMs: totalLatency,
-            harness: latest.harness,
-            model: latest.model,
-            effort: latest.thinking,
+            harness: typeof latestRecord.harness === "string" ? latestRecord.harness : (typeof latestMetadata?.harness === "string" ? latestMetadata.harness : undefined),
+            model: typeof latestRecord.effectiveModel === "string" ? latestRecord.effectiveModel : (typeof latestRecord.model === "string" ? latestRecord.model : (typeof latestRecord.requestedModel === "string" ? latestRecord.requestedModel : undefined)),
+            effort: typeof latestRecord.thinking === "string" ? latestRecord.thinking : (typeof latestRecord.reasoningEffort === "string" ? latestRecord.reasoningEffort : undefined),
           };
         }
       }
@@ -181,7 +188,7 @@ export function formatStageStepper(stages: WorkflowProgressState["stages"], curr
 
   const parts = stages.map((s) => {
     let icon = "○"; // pending
-    if (s.status === "passed" || s.status === "completed") icon = "✔";
+    if (s.status === "passed") icon = "✔";
     else if (s.id === currentStage || s.status === "running") icon = "▶";
     else if (s.status === "waiting") icon = "⧗";
     else if (s.status === "failed") icon = "✖";

@@ -85,7 +85,7 @@ test("eligibility selection over an inventory returns only authenticated harness
   // Official CLI command probe authenticates kimi
   assert.equal(kimiStatus?.authenticated, true);
   // Gemini and deepseek report unknown
-  assert.equal(geminiStatus?.authenticated, null);
+  assert.equal(geminiStatus, undefined);
   assert.equal(deepseekStatus?.authenticated, null);
 
   // Eligibility returns only authenticated harnesses

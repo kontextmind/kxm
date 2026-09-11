@@ -163,7 +163,7 @@ Workflow session isolation is a context-routing and accidental-cross-run safety 
 
 | Path | Responsibility |
 |---|---|
-| `.kxm/config/` | Tracked workspace workflow and harness configuration |
+| `.kxm/` | Tracked workspace workflow and harness configuration |
 | `.kxm/logs/` | Ignored hub, worker, and Pi process logs |
 | `.kxm/assets/` | Intentional workflow inputs and outputs |
 | `.kxm/state/` | Ignored SQLite and restart-recovery state |

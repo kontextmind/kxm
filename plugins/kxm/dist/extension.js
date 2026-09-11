@@ -10520,7 +10520,8 @@ function loadActiveWorkflowProgress(repoRoot = process.cwd(), targetRunId) {
       const telemFile = telemetryPath(logsDir);
       if (existsSync6(telemFile)) {
         const records = readRoutingRecords(telemFile);
-        let matching = records.filter((r) => r.routing.runId === runId);
+        const routingRunId = (routing) => "runId" in routing ? routing.runId : routing.workflowRunId;
+        let matching = records.filter((r) => routingRunId(r.routing) === runId);
         if (matching.length === 0) {
           const rawLines = readFileSync8(telemFile, "utf8").split(/\r?\n/);
           for (const line of rawLines) {
@@ -10528,7 +10529,7 @@ function loadActiveWorkflowProgress(repoRoot = process.cwd(), targetRunId) {
             try {
               const p = JSON.parse(line);
               const rt = p.routing || p;
-              if (rt && (rt.runId === runId || p.runId === runId)) {
+              if (rt && (routingRunId(rt) === runId || p.runId === runId)) {
                 matching.push({ recordedAt: p.timestamp || (/* @__PURE__ */ new Date()).toISOString(), routing: rt });
               }
             } catch {
@@ -10545,22 +10546,25 @@ function loadActiveWorkflowProgress(repoRoot = process.cwd(), targetRunId) {
           for (const m of matching) {
             const rt = m.routing;
             if (typeof rt.costUsd === "number") totalSpend += rt.costUsd;
-            if (rt.tokens) {
-              totalIn += rt.tokens.input ?? 0;
-              totalOut += rt.tokens.output ?? 0;
-              totalCache += rt.tokens.cacheRead ?? 0;
-            }
-            if (typeof rt.latencyMs === "number") totalLatency += rt.latencyMs;
+            if ("tokensIn" in rt && typeof rt.tokensIn === "number") totalIn += rt.tokensIn;
+            else if ("tokens" in rt && rt.tokens && typeof rt.tokens.input === "number") totalIn += rt.tokens.input;
+            if ("tokensOut" in rt && typeof rt.tokensOut === "number") totalOut += rt.tokensOut;
+            else if ("tokens" in rt && rt.tokens && typeof rt.tokens.output === "number") totalOut += rt.tokens.output;
+            if ("cacheReadTokens" in rt && typeof rt.cacheReadTokens === "number") totalCache += rt.cacheReadTokens;
+            else if ("tokens" in rt && rt.tokens && typeof rt.tokens.cacheRead === "number") totalCache += rt.tokens.cacheRead;
+            if ("latencyMs" in rt && typeof rt.latencyMs === "number") totalLatency += rt.latencyMs;
           }
+          const latestRecord = latest;
+          const latestMetadata = latestRecord.providerMetadata && typeof latestRecord.providerMetadata === "object" ? latestRecord.providerMetadata : void 0;
           metrics = {
             totalSpendUsd: totalSpend,
             inputTokens: totalIn,
             outputTokens: totalOut,
             cacheReadTokens: totalCache,
             latencyMs: totalLatency,
-            harness: latest.harness,
-            model: latest.model,
-            effort: latest.thinking
+            harness: typeof latestRecord.harness === "string" ? latestRecord.harness : typeof latestMetadata?.harness === "string" ? latestMetadata.harness : void 0,
+            model: typeof latestRecord.effectiveModel === "string" ? latestRecord.effectiveModel : typeof latestRecord.model === "string" ? latestRecord.model : typeof latestRecord.requestedModel === "string" ? latestRecord.requestedModel : void 0,
+            effort: typeof latestRecord.thinking === "string" ? latestRecord.thinking : typeof latestRecord.reasoningEffort === "string" ? latestRecord.reasoningEffort : void 0
           };
         }
       }
@@ -10595,7 +10599,7 @@ function formatStageStepper(stages, currentStage) {
   }
   const parts = stages.map((s) => {
     let icon = "\u25CB";
-    if (s.status === "passed" || s.status === "completed") icon = "\u2714";
+    if (s.status === "passed") icon = "\u2714";
     else if (s.id === currentStage || s.status === "running") icon = "\u25B6";
     else if (s.status === "waiting") icon = "\u29D7";
     else if (s.status === "failed") icon = "\u2716";

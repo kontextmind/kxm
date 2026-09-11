@@ -10853,13 +10853,15 @@ var VNEXT_YAML_LIMITS = Object.freeze({
 // plugins/kxm/src/vnext-template.ts
 var import_yaml4 = __toESM(require_dist(), 1);
 
+// plugins/kxm/src/vnext-oneshot-process.ts
+var OUTPUT_LIMIT = 8 * 1024 * 1024;
+
 // plugins/kxm/src/vnext-harness.ts
 var NATIVE_HARNESS_PROVIDERS = Object.freeze({
   claude: "anthropic",
   codex: "openai",
   grok: "xai",
   agy: "google",
-  gemini: "google",
   kimi: "moonshot",
   deepseek: "deepseek"
 });
@@ -10877,7 +10879,10 @@ var PI_NATIVE_BRAKE_PROVIDERS = Object.freeze([
   "google",
   "deepseek"
 ]);
-function parseClaudeOneShotUsage(stdout, stderr) {
+function reportedModelId(value) {
+  return typeof value === "string" && /^[a-z0-9][a-z0-9._:/-]{0,199}$/i.test(value) ? value : void 0;
+}
+function parseClaudeOneShotUsage(stdout, stderr, requestedModel) {
   const trimmed = stdout.trim();
   if (!trimmed) {
     return {
@@ -10889,23 +10894,22 @@ function parseClaudeOneShotUsage(stdout, stderr) {
   try {
     const payload = JSON.parse(trimmed);
     const usage = payload.usage ?? {};
-    let modelUsageDetail;
-    if (payload.modelUsage && typeof payload.modelUsage === "object") {
-      const values = Object.values(payload.modelUsage);
-      if (values.length > 0 && values[0] && typeof values[0] === "object") {
-        modelUsageDetail = values[0];
-      }
-    }
-    const tokensIn = (typeof modelUsageDetail?.inputTokens === "number" ? modelUsageDetail.inputTokens : void 0) ?? (typeof usage.input_tokens === "number" ? usage.input_tokens : null);
-    const tokensOut = (typeof modelUsageDetail?.outputTokens === "number" ? modelUsageDetail.outputTokens : void 0) ?? (typeof usage.output_tokens === "number" ? usage.output_tokens : null);
-    const cacheReadTokens = (typeof modelUsageDetail?.cacheReadInputTokens === "number" ? modelUsageDetail.cacheReadInputTokens : void 0) ?? (typeof usage.cache_read_input_tokens === "number" ? usage.cache_read_input_tokens : null);
-    const cacheWriteTokens = (typeof modelUsageDetail?.cacheCreationInputTokens === "number" ? modelUsageDetail.cacheCreationInputTokens : void 0) ?? (typeof usage.cache_creation_input_tokens === "number" ? usage.cache_creation_input_tokens : null);
+    const entries = payload.modelUsage && typeof payload.modelUsage === "object" && !Array.isArray(payload.modelUsage) ? Object.entries(payload.modelUsage).filter(([, value]) => value && typeof value === "object") : [];
+    const matches = entries.filter(([model]) => model === requestedModel || requestedModel && (model.startsWith(`${requestedModel}-`) || model.startsWith(`claude-${requestedModel}-`)));
+    const selected = matches.length === 1 ? matches[0] : entries.length === 1 ? entries[0] : void 0;
+    const modelUsageDetail = selected?.[1];
+    const effectiveModel = reportedModelId(payload.model) ?? reportedModelId(selected?.[0]);
+    const tokensIn = (typeof usage.input_tokens === "number" ? usage.input_tokens : void 0) ?? (typeof modelUsageDetail?.inputTokens === "number" ? modelUsageDetail.inputTokens : null);
+    const tokensOut = (typeof usage.output_tokens === "number" ? usage.output_tokens : void 0) ?? (typeof modelUsageDetail?.outputTokens === "number" ? modelUsageDetail.outputTokens : null);
+    const cacheReadTokens = (typeof usage.cache_read_input_tokens === "number" ? usage.cache_read_input_tokens : void 0) ?? (typeof modelUsageDetail?.cacheReadInputTokens === "number" ? modelUsageDetail.cacheReadInputTokens : null);
+    const cacheWriteTokens = (typeof usage.cache_creation_input_tokens === "number" ? usage.cache_creation_input_tokens : void 0) ?? (typeof modelUsageDetail?.cacheCreationInputTokens === "number" ? modelUsageDetail.cacheCreationInputTokens : null);
     const costUsd = typeof payload.total_cost_usd === "number" ? payload.total_cost_usd : typeof modelUsageDetail?.costUSD === "number" ? modelUsageDetail.costUSD : null;
-    const isError = Boolean(payload.is_error || payload.error);
+    const isError = Boolean(payload.is_error || payload.error || ["error", "aborted", "failed", "max_tokens", "length"].includes(String(payload.stopReason ?? payload.stop_reason ?? "")));
     const text2 = typeof payload.result === "string" ? payload.result : typeof payload.text === "string" ? payload.text : "";
     const errorMessage = isError ? typeof payload.error === "string" ? payload.error : typeof payload.error?.message === "string" ? payload.error.message : text2 : void 0;
     return {
       text: text2,
+      effectiveModel,
       isError,
       errorMessage,
       usage: {
@@ -10913,16 +10917,21 @@ function parseClaudeOneShotUsage(stdout, stderr) {
         tokensOut,
         cacheReadTokens,
         cacheWriteTokens,
-        contextTokens: tokensIn,
+        contextTokens: null,
         costUsd
       }
     };
   } catch {
     return {
       text: trimmed,
+      isError: true,
+      errorMessage: "invalid Claude JSON response",
       usage: {}
     };
   }
+}
+function parseGrokOneShotUsage(stdout, stderr, requestedModel) {
+  return parseClaudeOneShotUsage(stdout, stderr, requestedModel);
 }
 function parseCodexOneShotUsage(stdout, stderr) {
   const lines = stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
@@ -10950,7 +10959,7 @@ function parseCodexOneShotUsage(stdout, stderr) {
       hasError = true;
       errorMessage = typeof ev.message === "string" ? ev.message : typeof ev.error?.message === "string" ? ev.error.message : "turn_failed";
     }
-    if (ev.item && typeof ev.item === "object" && ev.item.type === "agent_message") {
+    if (ev.type === "item.completed" && ev.item && typeof ev.item === "object" && ev.item.type === "agent_message") {
       const t = ev.item.text;
       if (typeof t === "string") messageTexts.push(t);
     }
@@ -10958,7 +10967,8 @@ function parseCodexOneShotUsage(stdout, stderr) {
       usage = ev.usage;
     }
   }
-  const text2 = messageTexts.join("\n").trim();
+  const text2 = (messageTexts.at(-1) ?? "").trim();
+  if (!events.some((event) => event.type === "turn.completed") || !text2) hasError = true;
   const tokensIn = typeof usage?.input_tokens === "number" ? usage.input_tokens : null;
   const tokensOut = typeof usage?.output_tokens === "number" ? usage.output_tokens : null;
   const cacheReadTokens = typeof usage?.cached_input_tokens === "number" ? usage.cached_input_tokens : null;
@@ -10972,7 +10982,7 @@ function parseCodexOneShotUsage(stdout, stderr) {
       tokensOut,
       cacheReadTokens,
       cacheWriteTokens,
-      contextTokens: tokensIn,
+      contextTokens: null,
       costUsd: null
     }
   };
@@ -10984,7 +10994,15 @@ function parseGenericOneShotUsage(stdout, _stderr) {
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       const rec = parsed;
       const text2 = typeof rec.result === "string" ? rec.result : typeof rec.text === "string" ? rec.text : typeof rec.response === "string" ? rec.response : trimmed;
-      return { text: text2, usage: {} };
+      const u = rec.usage && typeof rec.usage === "object" ? rec.usage : {};
+      return { text: text2, effectiveModel: reportedModelId(rec.model), isError: Boolean(rec.is_error || rec.error || rec.success === false), usage: {
+        tokensIn: typeof u.input_tokens === "number" ? u.input_tokens : null,
+        tokensOut: typeof u.output_tokens === "number" ? u.output_tokens : null,
+        cacheReadTokens: typeof u.cache_read_input_tokens === "number" ? u.cache_read_input_tokens : null,
+        cacheWriteTokens: typeof u.cache_creation_input_tokens === "number" ? u.cache_creation_input_tokens : null,
+        contextTokens: null,
+        costUsd: typeof rec.total_cost_usd === "number" ? rec.total_cost_usd : null
+      } };
     }
   } catch {
   }
@@ -11069,6 +11087,14 @@ function parseAgyOneShotUsage(stdout, _stderr) {
     }
   };
 }
+var READ_ONLY_ONESHOT_ARGS = Object.freeze({
+  claude: Object.freeze(["--tools", "Read,Glob,Grep", "--restricted", "--safe-mode", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--disable-slash-commands", "--no-session-persistence"]),
+  codex: Object.freeze(["--sandbox", "read-only", "--ignore-user-config", "-c", 'approval_policy="never"']),
+  grok: Object.freeze(["--sandbox", "read-only", "--permission-mode", "plan", "--tools", "Read,Glob,Grep", "--no-subagents", "--disable-web-search"])
+});
+function oneShotReadOnlyArgs(harness) {
+  return Object.hasOwn(READ_ONLY_ONESHOT_ARGS, harness) ? READ_ONLY_ONESHOT_ARGS[harness] : void 0;
+}
 var BUILTIN_HARNESSES = Object.freeze([
   {
     id: "pi",
@@ -11102,7 +11128,7 @@ var BUILTIN_HARNESSES = Object.freeze([
       extensions: ["plugin", "update", "kxm", "-y"]
     },
     oneShot: {
-      argv: ["-p", "--output-format", "json"],
+      argv: ["-p", ...oneShotReadOnlyArgs("claude"), "--output-format", "json"],
       promptVia: "stdin",
       outputFormat: "json",
       usageParser: parseClaudeOneShotUsage
@@ -11134,20 +11160,11 @@ var BUILTIN_HARNESSES = Object.freeze([
     authArgs: ["login", "status"],
     update: { self: ["update"] },
     oneShot: {
-      argv: ["exec", "--json", "-"],
+      argv: ["exec", ...oneShotReadOnlyArgs("codex"), "--json", "-"],
       promptVia: "stdin",
       outputFormat: "json",
       usageParser: parseCodexOneShotUsage
     }
-  },
-  {
-    id: "gemini",
-    label: "Gemini CLI",
-    default: false,
-    mode: "either",
-    commands: ["gemini"],
-    versionArgs: ["--version"],
-    update: { self: ["update"] }
   },
   {
     id: "deepseek",
@@ -11174,10 +11191,10 @@ var BUILTIN_HARNESSES = Object.freeze([
     authArgs: ["models"],
     update: { self: ["update"] },
     oneShot: {
-      argv: ["--output-format", "json"],
-      promptVia: "stdin",
+      argv: [...oneShotReadOnlyArgs("grok"), "--output-format", "json", "--single"],
+      promptVia: "arg",
       outputFormat: "json",
-      usageParser: parseClaudeOneShotUsage
+      usageParser: parseGrokOneShotUsage
     }
   },
   {

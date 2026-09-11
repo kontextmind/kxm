@@ -1,0 +1,47 @@
+schema: kxm.workflow.v1
+description: Canonical 4-stage KXM delivery workflow
+coordinator: coordinator
+limits:
+  maxTransitions: 8
+steps:
+  - id: implement
+    kind: agent
+    agent: implementer
+    maxAttempts: 3
+    on:
+      passed: review-arch
+      failed:
+        target: $terminal
+        terminalStatus: failed
+  - id: review-arch
+    kind: agent
+    agent: critic-arch
+    maxAttempts: 2
+    on:
+      passed: review-cli
+      failed:
+        target: implement
+        maxTransitions: 2
+  - id: review-cli
+    kind: agent
+    agent: critic-cli
+    maxAttempts: 2
+    on:
+      passed: verify
+      failed:
+        target: implement
+        maxTransitions: 2
+  - id: verify
+    kind: gate
+    gate: test
+    expect: pass
+    repositories:
+      control: write
+    maxAttempts: 2
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: implement
+        maxTransitions: 2

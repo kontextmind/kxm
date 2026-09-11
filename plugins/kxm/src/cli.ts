@@ -26,6 +26,8 @@ import { agentWorker, gateWorker, workerResult, type Worker, type WorkerOutcome 
 import { appendTelemetry, inferImprovementTarget, makeTelemetryEvent, readTelemetry, readRoutingRecords, telemetryPath } from "./telemetry.ts";
 import { behavioralConfigHash, compareRoutingRecords, groupByBehavior, generateRoutingReport, formatRoutingReport } from "./routing.ts";
 import { loadPriceCatalog, type PriceCatalog } from "./prices.ts";
+import { refreshModelInventory } from "./model-inventory.ts";
+import { listInventoryModels, listRoleBindings, loadProducerPolicy, setModelState, updateProducer } from "./producers.ts";
 import { createSession, loadNamedWorkers, rosterNames, sessionAssetDirs, workflowAssetDirs, writeSession } from "./session.ts";
 import { buildImprovementReport, formatImprovementReport, writeImprovementReport } from "./improve.ts";
 import { MESH_TUI_PANELS, runMeshTui, type MeshTuiPanel } from "./tui.ts";
@@ -988,6 +990,32 @@ async function cmdVnextRunStatus(runtime: Runtime, runId: string): Promise<numbe
   }
 }
 
+async function cmdVnextRunDrive(runtime: Runtime, runId: string, simulated: boolean): Promise<number> {
+  try {
+    const projectRoot = discoverVnextProjectRoot(runtime.cwd);
+    if (!projectRoot) {
+      print(runtime.io, runtime.json, { ok: false, command: "runs drive", error: "project_required" }, "kxm runs drive requires a vNext project (run kxm init first)");
+      return 1;
+    }
+    const mode = simulated ? "simulated" : "live";
+    if (runtime.dryRun) {
+      print(runtime.io, runtime.json, { ok: true, command: "runs drive", dryRun: true, runId, mode }, `drive plan: run ${runId} in ${mode} mode (no events written)`);
+      return 0;
+    }
+    const supervisor = await ensureVnextSupervisor({ env: runtime.env });
+    const result = await vnextRuntimeRequest(supervisor, "POST", `/v1/runs/${encodeURIComponent(runId)}/drive?projectRoot=${encodeURIComponent(projectRoot)}`, { mode });
+    print(runtime.io, runtime.json, { ok: true, command: "runs drive", run: result.run, handoff: result.handoff, events: result.events }, `run ${runId}: ${(result.run as { status?: string } | undefined)?.status ?? "driven"}`);
+    return 0;
+  } catch (error) {
+    if (error instanceof VnextConfigError) {
+      print(runtime.io, runtime.json, { ok: false, command: "runs drive", error: "run_drive_failed", issues: error.issues }, `run drive failed: ${error.message}`);
+      return 1;
+    }
+    print(runtime.io, runtime.json, { ok: false, command: "runs drive", error: "run_drive_io_failed" }, "run drive failed because a local operation did not complete");
+    return 1;
+  }
+}
+
 async function cmdVnextRunCancel(runtime: Runtime, runId: string): Promise<number> {
   try {
     const projectRoot = discoverVnextProjectRoot(runtime.cwd);
@@ -1155,6 +1183,66 @@ function applyKxmPackageUpdate(runtime: Runtime, notice: KxmUpdateNotice): { ok:
   } finally {
     rmSync(releaseDir, { recursive: true, force: true });
   }
+}
+
+async function selectProducerModel(runtime: Runtime, requested?: string): Promise<string | undefined> {
+  const models = listInventoryModels(runtime.dirs.workdir);
+  if (requested) return models.find((model) => model.toLowerCase() === requested.toLowerCase());
+  if (runtime.json || !process.stdin.isTTY || models.length === 0) return undefined;
+  runtime.io.stdout(models.slice(0, 100).map((model, index) => `${index + 1}. ${model}`).join("\n") + "\nSelect model number: ");
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
+  const answer = await new Promise<string>((resolve) => rl.once("line", resolve));
+  rl.close();
+  const index = Number.parseInt(answer.trim(), 10) - 1;
+  return Number.isInteger(index) && index >= 0 && index < models.length ? models[index] : undefined;
+}
+
+async function cmdProducerChange(runtime: Runtime, status: "promoted" | "demoted", requested?: string): Promise<number> {
+  const model = await selectProducerModel(runtime, requested);
+  if (!model) { print(runtime.io, runtime.json, { ok: false, command: `producers ${status}`, error: "model_selection_required" }, "select a model from the refreshed inventory"); return 2; }
+  if (runtime.dryRun) { print(runtime.io, runtime.json, { ok: true, command: `producers ${status}`, model, dryRun: true }, `would ${status} ${model}`); return 0; }
+  const policy = updateProducer(runtime.dirs.workdir, model, status);
+  print(runtime.io, runtime.json, { ok: true, command: `producers ${status}`, model, policy }, `${status} ${model}`);
+  return 0;
+}
+
+async function cmdModelsScreen(runtime: Runtime): Promise<number> {
+  const models = listInventoryModels(runtime.dirs.workdir);
+  if (runtime.json || !process.stdin.isTTY) { print(runtime.io, runtime.json, { ok: false, command: "models", error: "interactive_tty_required" }, "kxm models requires an interactive terminal"); return 2; }
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
+  const ask = (q: string) => new Promise<string>((resolve) => rl.question(q, resolve));
+  try {
+    while (true) {
+      const policy = loadProducerPolicy(runtime.dirs.workdir);
+      const roleBindings = listRoleBindings(runtime.dirs.workdir);
+      runtime.io.stdout(models.map((m, i) => `${i + 1}. ${m} [${policy.enabled.includes(m) ? "enabled" : policy.disabled.includes(m) ? "disabled" : "unset"}] [${policy.promoted.includes(m) ? "producer" : policy.demoted.includes(m) ? "demoted" : "not producer"}] roles:${Object.entries(roleBindings).filter(([, xs]) => xs.includes(m)).map(([r]) => r).join(",") || "-"}`).join("\n") + "\n");
+      const command = (await ask("[e]nable [d]isable [p]romote [x]demote [a]dd-role [r]emove-role [q]uit: ")).trim().toLowerCase();
+      if (command === "q" || command === "quit") return 0;
+      const index = Number.parseInt((await ask("model number: ")).trim(), 10) - 1;
+      if (!Number.isInteger(index) || !models[index]) continue;
+      const model = models[index];
+      if (command === "p" || command === "x") updateProducer(runtime.dirs.workdir, model, command === "p" ? "promoted" : "demoted");
+      else if (command === "e" || command === "d") setModelState(runtime.dirs.workdir, model, command === "e" ? "enabled" : "disabled");
+      else if (command === "a" || command === "r") setModelState(runtime.dirs.workdir, model, "enabled", (await ask("role: ")).trim(), command === "r");
+    }
+  } finally { rl.close(); }
+}
+
+async function cmdProducerList(runtime: Runtime): Promise<number> {
+  const policy = loadProducerPolicy(runtime.dirs.workdir);
+  print(runtime.io, runtime.json, { ok: true, command: "producers list", policy }, [...policy.promoted.map((x) => `promoted ${x}`), ...policy.demoted.map((x) => `demoted ${x}`)].join("\n") || "no producer decisions");
+  return 0;
+}
+
+async function cmdModelInventoryRefresh(runtime: Runtime): Promise<number> {
+  if (runtime.dryRun) {
+    print(runtime.io, runtime.json, { ok: true, command: "models inventory refresh", dryRun: true }, "would refresh .kxm/models/inventory.yaml");
+    return 0;
+  }
+  const inventory = await refreshModelInventory({ outputRoot: runtime.dirs.workdir, env: runtime.env });
+  const failed = Object.values(inventory.sources).some((source) => !source.ok);
+  print(runtime.io, runtime.json, { ok: !failed, command: "models inventory refresh", output: ".kxm/models/inventory.yaml", ...inventory }, `wrote ${inventory.models.length} models to .kxm/models/inventory.yaml`);
+  return failed ? 1 : 0;
 }
 
 async function cmdUpdate(runtime: Runtime, harness: string | undefined, options: {
@@ -2518,7 +2606,7 @@ async function cmdTaskRun(runtime: Runtime, taskId: string): Promise<number> {
       runtime.io.stderr(`Task ${taskId} not found\n`);
       return 1;
     }
-    const workflow = task.assignedWorkflow ?? "software-engineering/feature-implementation";
+    const workflow = task.assignedWorkflow ?? "default";
     const exitCode = await cmdVnextRun(runtime, workflow, [task.objective]);
     if (exitCode === 0) {
       updateTaskStatus(runtime.cwd, taskId, "in_progress");
@@ -2553,10 +2641,10 @@ async function cmdStudioLayout(runtime: Runtime, workflowPath?: string): Promise
     const projectRoot = discoverVnextProjectRoot(runtime.cwd) ?? runtime.cwd;
     let filePath = workflowPath;
     if (!filePath) {
-      filePath = resolve(projectRoot, ".kxm", "workflows", "feature-implementation.yaml");
+      filePath = resolve(projectRoot, ".kxm", "workflows", "default.yaml");
     }
     let yamlContent: string;
-    let workflowId = "software-engineering/feature-implementation";
+    let workflowId = "default";
     if (existsSync(filePath)) {
       yamlContent = readFileSync(filePath, "utf8");
     } else {
@@ -3511,7 +3599,7 @@ async function cmdWorkflowInspect(runtime: Runtime, action: "list" | "get", runI
   }
 }
 
-async function cmdSignal(runtime: Runtime, runId: string, signalKey: string, status: string, summary: string, evidenceArgs: string[], deliveryIdFlag?: string): Promise<number> {
+async function cmdSignal(runtime: Runtime, runId: string, signalKey: string, status: string, summary: string, evidenceArgs: string[], deliveryIdFlag?: string, recoveryAction?: string): Promise<number> {
   if (!runId || !signalKey || !status || !summary) {
     runtime.io.stderr(`Usage: ${CLI_NAME} gate signal <runId> <signalKey> <passed|warning|failed> <summary> [<required-key>=<evidence> ...]\n`);
     return 2;
@@ -3541,7 +3629,7 @@ async function cmdSignal(runtime: Runtime, runId: string, signalKey: string, sta
         supervisor,
         "POST",
         `/v1/runs/${encodeURIComponent(runId)}/signal?projectRoot=${encodeURIComponent(projectRoot)}`,
-        { signalKey, status, summary, evidence, deliveryId },
+        { signalKey, status, summary, evidence, deliveryId, ...(recoveryAction ? { action: recoveryAction } : {}) },
       );
       printWorker(runtime, worker, { ok: true, command: "signal", runId, signalKey, status, unblocked: posted.unblocked === true, deliveryId }, "posted signal to vNext run");
       return 0;
@@ -3912,6 +4000,12 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .action(async function runStatusAction(this: Command, runId: string) {
       result.code = await cmdVnextRunStatus(runtimeFrom(ctx, this), runId);
     });
+  addGlobalOptions(runCmd.command("drive").description("Drive a run with an explicit model-free simulation"))
+    .argument("<runId>", "Run id")
+    .option("--simulated", "Use the model-free simulation producer")
+    .action(async function runDriveAction(this: Command, runId: string, options: { simulated?: boolean }) {
+      result.code = await cmdVnextRunDrive(runtimeFrom(ctx, this), runId, options.simulated === true);
+    });
   addGlobalOptions(runCmd.command("cancel").description("Durably request cancellation of a run"))
     .argument("<runId>", "Run id")
     .action(async function runCancelAction(this: Command, runId: string) {
@@ -3921,6 +4015,21 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .action(async function runListAction(this: Command) {
       result.code = await cmdVnextRunList(runtimeFrom(ctx, this));
     });
+
+  const modelsCmd = addGlobalOptions(program.command("models").description("Manage model catalogs, roles, and producer state"));
+  modelsCmd.action(async function modelsScreenAction(this: Command) { result.code = await cmdModelsScreen(runtimeFrom(ctx, this)); });
+  modelsCmd.helpCommand("help", "Show models help");
+  addGlobalOptions(modelsCmd.command("inventory-refresh").alias("refresh").description("Refresh the YAML model inventory with standard and Nous/OpenRouter prices"))
+    .action(async function modelInventoryRefreshAction(this: Command) {
+      result.code = await cmdModelInventoryRefresh(runtimeFrom(ctx, this));
+    });
+
+  const producersCmd = addGlobalOptions(program.command("producers").description("Promote or demote verified producer models"));
+  producersCmd.helpCommand("help", "Show producers help");
+  addGlobalOptions(producersCmd.command("list").description("List producer decisions")).action(async function producersListAction(this: Command) { result.code = await cmdProducerList(runtimeFrom(ctx, this)); });
+  for (const status of ["promote", "demote"] as const) {
+    addGlobalOptions(producersCmd.command(status).description(`${status} a model from the inventory`)).option("--model <id>", "Exact model id; omit to choose interactively").action(async function producerChangeAction(this: Command, options: { model?: string }) { result.code = await cmdProducerChange(runtimeFrom(ctx, this), status === "promote" ? "promoted" : "demoted", options.model); });
+  }
 
   const harnessCmd = addGlobalOptions(program.command("harness").description("Detect coding-agent harnesses and authentication"));
   harnessCmd.helpCommand("help", "Show harness help");
@@ -4246,7 +4355,7 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .option("--description <text>", "Role description")
     .option("--skills <skills>", "Comma-separated skills list")
     .option("--harness <harness>", "Primary harness name (e.g. grok, claude, agy, pi)")
-    .option("--model <model>", "Primary model identifier (e.g. grok-4.6, fable, gemini-2.5-pro)")
+    .option("--model <model>", "Primary model identifier (e.g. grok-4.6, fable, gemini-3.8-flash-high)")
     .option("--scope <scope>", "Configuration scope: global or local (default: local)", "local")
     .option("--overwrite", "Overwrite existing role definition if present")
     .option("--pick [selection]", "Pick from available role templates (index or id)")
@@ -4298,8 +4407,9 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .argument("<summary>", "Callback summary")
     .argument("[evidence...]", "required-key=evidence pairs")
     .option("--delivery-id <id>", "Stable callback delivery ID")
-    .action(async function signalAction(this: Command, runId: string, signalKey: string, status: string, summary: string, evidence: string[], options: { deliveryId?: string }) {
-      result.code = await cmdSignal(runtimeFrom(ctx, this), runId, signalKey, status, summary, evidence ?? [], options.deliveryId);
+    .option("--recovery-action <action>", "vNext recovery action: retry, fail, cancel, unblock")
+    .action(async function signalAction(this: Command, runId: string, signalKey: string, status: string, summary: string, evidence: string[], options: { deliveryId?: string; recoveryAction?: string }) {
+      result.code = await cmdSignal(runtimeFrom(ctx, this), runId, signalKey, status, summary, evidence ?? [], options.deliveryId, options.recoveryAction);
     });
   const github = addGlobalOptions(gate.command("github").description("GitHub adapters"));
   github.helpCommand("help", "Show GitHub help");

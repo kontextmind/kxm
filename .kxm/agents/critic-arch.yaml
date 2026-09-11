@@ -1,0 +1,13 @@
+schema: kxm.agent.v1
+purpose: Architecture critic for the approved workflow change.
+harness: claude
+model:
+  provider: anthropic
+  model: fable
+tools:
+  preset: read-only
+defaultRepositoryAccess: read
+repositories:
+  control: read
+network: provider-only
+resultSchema: kxm.assignment-result.v1

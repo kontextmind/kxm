@@ -1,14 +1,24 @@
-import { spawn } from "node:child_process";
+import { join } from "node:path";
+import { beginOneShotEvidence } from "./vnext-oneshot-evidence.ts";
+import { vnextUserStateRoot } from "./vnext-bindings.ts";
+import { defaultSpawn, type VnextOneShotProcessResult, type VnextOneShotSpawn } from "./vnext-oneshot-process.ts";
+export { defaultSpawn, type VnextOneShotProcessResult, type VnextOneShotSpawn } from "./vnext-oneshot-process.ts";
 import {
   BUILTIN_HARNESSES,
   NATIVE_HARNESS_PROVIDERS,
-  probeHarnessAssignment,
+  probeHarnessAssignmentAsync,
+  oneShotReadOnlyArgs,
+  type HarnessAssignmentProbeOptions,
+  type HarnessStatus,
   type HarnessCatalogEntry,
   type HarnessInventory,
+  type OneShotParsedOutput,
 } from "./vnext-harness.ts";
 import {
   calculateModelCost,
+  findModelPrice,
   loadPriceCatalog,
+  parsePriceCatalog,
   type PriceCatalog,
 } from "./prices.ts";
 import {
@@ -18,27 +28,9 @@ import {
   type VnextProducerResult,
 } from "./vnext-engine.ts";
 
-export interface VnextOneShotProcessResult {
-  stdout: string;
-  stderr: string;
-  code: number | null;
-  error?: Error | undefined;
-}
-
-export type VnextOneShotSpawn = (
-  command: string,
-  args: readonly string[],
-  options: {
-    cwd?: string | undefined;
-    env?: NodeJS.ProcessEnv | undefined;
-    input?: string | undefined;
-    timeoutMs?: number | undefined;
-    signal?: AbortSignal | undefined;
-  },
-) => Promise<VnextOneShotProcessResult>;
-
 export interface VnextOneShotProducerOptions {
   projectRoot?: string | undefined;
+  evidenceRoot?: string | undefined;
   defaultHarness?: string | undefined;
   defaultModel?: string | undefined;
   defaultProvider?: string | undefined;
@@ -48,7 +40,7 @@ export interface VnextOneShotProducerOptions {
   env?: NodeJS.ProcessEnv | undefined;
   timeoutMs?: number | undefined;
   spawnProcess?: VnextOneShotSpawn | undefined;
-  probeHarness?: typeof probeHarnessAssignment | undefined;
+  probeHarness?: ((options: Omit<HarnessAssignmentProbeOptions, "runCommand"> & { signal?: AbortSignal | undefined }) => HarnessStatus | Promise<HarnessStatus>) | undefined;
   resolveHarness?: ((agentId: string, runId: string) => string | undefined) | undefined;
   resolveModel?: ((agentId: string, runId: string) => {
     harness?: string | undefined;
@@ -65,96 +57,20 @@ export interface VnextOneShotProducer extends VnextProducer {
 }
 
 function determineOutcome(text: string, allowedOutcomes: readonly string[]): string {
-  const normalized = text.trim();
-  const jsonMatch = /"outcome"\s*:\s*"([^"]+)"/.exec(normalized);
-  if (jsonMatch && allowedOutcomes.includes(jsonMatch[1]!)) {
-    return jsonMatch[1]!;
-  }
-  for (const outcome of allowedOutcomes) {
-    const regex = new RegExp(`\\b${outcome}\\b`, "i");
-    if (regex.test(normalized)) {
-      return outcome;
+  try {
+    const result: unknown = JSON.parse(text.trim());
+    if (result && typeof result === "object" && !Array.isArray(result)) {
+      const outcome = (result as Record<string, unknown>).outcome;
+      if (typeof outcome === "string" && allowedOutcomes.includes(outcome)) return outcome;
     }
-  }
-  if (allowedOutcomes.includes("passed")) return "passed";
-  return allowedOutcomes[0] ?? "completed";
-}
-
-export function defaultSpawn(
-  command: string,
-  args: readonly string[],
-  options: {
-    cwd?: string | undefined;
-    env?: NodeJS.ProcessEnv | undefined;
-    input?: string | undefined;
-    timeoutMs?: number | undefined;
-    signal?: AbortSignal | undefined;
-  },
-): Promise<VnextOneShotProcessResult> {
-  return new Promise((resolve) => {
-    let stdout = "";
-    let stderr = "";
-    let killed = false;
-
-    const child = spawn(command, [...args], {
-      cwd: options.cwd,
-      env: options.env ?? process.env,
-      stdio: ["pipe", "pipe", "pipe"],
-      windowsHide: true,
-    });
-
-    if (options.signal) {
-      if (options.signal.aborted) {
-        child.kill();
-        return resolve({ stdout: "", stderr: "aborted", code: null, error: new Error("process_aborted") });
-      }
-      const onAbort = () => {
-        killed = true;
-        child.kill();
-      };
-      options.signal.addEventListener("abort", onAbort, { once: true });
-      child.on("close", () => options.signal?.removeEventListener("abort", onAbort));
-    }
-
-    if (options.timeoutMs && options.timeoutMs > 0) {
-      const timer = setTimeout(() => {
-        killed = true;
-        child.kill();
-      }, options.timeoutMs);
-      child.on("close", () => clearTimeout(timer));
-    }
-
-    child.stdout.on("data", (chunk: Buffer | string) => {
-      stdout += chunk.toString();
-    });
-    child.stderr.on("data", (chunk: Buffer | string) => {
-      stderr += chunk.toString();
-    });
-
-    child.on("error", (err) => {
-      resolve({ stdout, stderr, code: null, error: err });
-    });
-
-    child.on("close", (code) => {
-      resolve({
-        stdout,
-        stderr,
-        code,
-        ...(killed ? { error: new Error("process_aborted") } : {}),
-      });
-    });
-
-    if (options.input !== undefined) {
-      child.stdin.write(options.input);
-      child.stdin.end();
-    } else {
-      child.stdin.end();
-    }
-  });
+  } catch { /* Prose, substring matches, and missing results cannot imply success. */ }
+  return "failed";
 }
 
 export function createVnextOneShotProducer(options: VnextOneShotProducerOptions = {}): VnextOneShotProducer {
   const defaultHarness = options.defaultHarness ?? "claude";
+  const running = new Map<AbortController, Promise<VnextProducerResult>>();
+  let closed = false;
 
   function resolveHarnessForRequest(request: VnextProducerRequest): string {
     if (request.harness) return request.harness;
@@ -202,12 +118,14 @@ export function createVnextOneShotProducer(options: VnextOneShotProducerOptions 
         };
       }
     }
-    const defaultModel = options.defaultModel ?? (harness === "codex" ? "gpt-5.6-sol" : "claude-3-7-sonnet");
+    const defaultModel = options.defaultModel ?? (
+      harness === "codex" ? "gpt-5.6-sol" : harness === "kimi" ? "kimi-for-coding" : harness === "agy" ? "gemini-3.8-flash-high" : "claude-3-7-sonnet"
+    );
     const parsed = parseModelString(defaultModel, harness);
     return { provider: parsed.provider, model: parsed.model, thinking: request.thinking };
   }
 
-  function checkAuth(harness: string, provider: string, model: string): void {
+  async function checkAuth(harness: string, provider: string, model: string, env: NodeJS.ProcessEnv, signal: AbortSignal): Promise<HarnessStatus> {
     if (options.inventory) {
       const entry = options.inventory.harnesses.find((h) => h.id === harness);
       if (!entry || !entry.detected || entry.authenticated !== true) {
@@ -215,13 +133,8 @@ export function createVnextOneShotProducer(options: VnextOneShotProducerOptions 
       }
     }
 
-    const probeFn = options.probeHarness ?? probeHarnessAssignment;
-    const probe = probeFn({
-      harness,
-      provider,
-      model,
-      env: options.env,
-    });
+    const probeFn = options.probeHarness ?? probeHarnessAssignmentAsync;
+    const probe = await probeFn({ harness, provider, model, env, signal, timeoutMs: 10_000 });
 
     if (!probe.detected) {
       throw new Error(`${harness}_not_authenticated: ${harness} harness not detected (${probe.issues.join(", ")})`);
@@ -229,26 +142,32 @@ export function createVnextOneShotProducer(options: VnextOneShotProducerOptions 
     if (probe.authenticated !== true) {
       throw new Error(`${harness}_not_authenticated: ${harness} not authenticated (${probe.issues.join(", ")})`);
     }
+    return probe;
   }
 
-  const producer: VnextOneShotProducer = {
-    id: "oneshot",
-
-    async produce(request: VnextProducerRequest): Promise<VnextProducerResult> {
+  async function executeRequest(request: VnextProducerRequest): Promise<VnextProducerResult> {
       const startTime = Date.now();
       const harness = resolveHarnessForRequest(request);
       const resolved = resolveModelForRequest(request, harness);
 
-      // Preflight fail-closed check
-      checkAuth(harness, resolved.provider, resolved.model);
-
+      if (closed) throw new Error("oneshot_producer_closed");
+      const cancelled = (): VnextProducerResult => ({ outcome: "cancelled", costBasis: "unknown", costUsd: null,
+        latencyMs: Math.max(0, Date.now() - startTime), harness, provider: resolved.provider,
+        requestedModel: resolved.model, effectiveModel: "unknown", agentRole: request.agentRole ?? request.agentId });
+      if (request.signal.aborted) return cancelled();
       const catalogEntry = (options.catalog ?? BUILTIN_HARNESSES).find((h) => h.id === harness);
-      if (!catalogEntry || !catalogEntry.oneShot) {
-        const hint = harness === "gemini" ? " (Gemini CLI is deprecated; use agy for Google models)" : "";
-        throw new Error(`oneshot_harness_unsupported: ${harness}${hint}`);
-      }
+      if (!catalogEntry?.oneShot) throw new Error(`oneshot_harness_unsupported: ${harness}`);
+      const permissionArgs = oneShotReadOnlyArgs(harness);
+      if (!permissionArgs) throw new Error(`oneshot_harness_unsupported: ${harness} permission_profile_unaudited`);
+      // Pin the environment for auth and execution; don't observe subscription
+      // auth under one environment and then spawn under changed API-key settings.
+      const env = { ...(options.env ?? process.env) };
+      let auth: HarnessStatus;
+      try { auth = await checkAuth(harness, resolved.provider, resolved.model, env, request.signal); }
+      catch (error) { if (request.signal.aborted) return cancelled(); throw error; }
+      if (request.signal.aborted) return cancelled();
 
-      const command = catalogEntry.commands[0] ?? harness;
+      const command = auth.command ?? catalogEntry.commands[0] ?? harness;
       const oneShot = catalogEntry.oneShot;
 
       let args: string[];
@@ -258,6 +177,7 @@ export function createVnextOneShotProducer(options: VnextOneShotProducerOptions 
           "--model",
           resolved.model,
           ...(resolved.thinking ? ["--effort", resolved.thinking] : []),
+          ...permissionArgs,
           "--output-format",
           "json",
         ];
@@ -267,134 +187,129 @@ export function createVnextOneShotProducer(options: VnextOneShotProducerOptions 
           "-m",
           resolved.model,
           ...(resolved.thinking ? ["-c", `model_reasoning_effort="${resolved.thinking}"`] : []),
+          ...permissionArgs,
           "--json",
           "-",
         ];
-      } else if (harness === "kimi") {
-        args = [
-          "--output-format",
-          "stream-json",
-          "-m",
-          resolved.model,
-          "-p",
-        ];
-      } else if (harness === "agy") {
-        args = [
-          "--output-format",
-          "json",
-          ...(resolved.thinking ? ["--effort", resolved.thinking] : []),
-          "--model",
-          resolved.model,
-          "-p",
-        ];
+      } else if (harness === "grok") {
+        args = ["--model", resolved.model,
+          ...(resolved.thinking ? ["--reasoning-effort", resolved.thinking] : []),
+          ...permissionArgs, "--output-format", "json"];
       } else {
-        args = [
-          ...oneShot.argv,
-          "--model",
-          resolved.model,
-          ...(resolved.thinking ? ["--thinking", resolved.thinking] : []),
-        ];
+        throw new Error(`oneshot_harness_unsupported: ${harness} permission_profile_unaudited`);
       }
 
-      const promptMessage = request.prompt
-        ?? `Execute step ${request.stepId} (attempt ${request.stepAttempt}) for agent ${request.agentId}. Allowed outcomes: ${request.allowedOutcomes.join(", ")}.`;
+      const taskPrompt = request.prompt
+        ?? `Execute step ${request.stepId} (attempt ${request.stepAttempt}) for agent ${request.agentId}.`;
+      const promptMessage = `${taskPrompt}\n\nReturn a final JSON object with an "outcome" field chosen from ${JSON.stringify(request.allowedOutcomes)} and a concise "summary". Do not wrap it in Markdown. If no allowed outcome is truthful, return {"outcome":"failed"}; never infer success from an incomplete task.`;
 
       let input: string | undefined;
       if (oneShot.promptVia === "stdin") {
         input = promptMessage;
       } else {
+        if (harness === "grok") args.push("--single");
         args.push(promptMessage);
       }
 
-      if (request.signal?.aborted) {
-        const outcome = request.allowedOutcomes.includes("cancelled")
-          ? "cancelled"
-          : (request.allowedOutcomes.includes("failed") ? "failed" : request.allowedOutcomes[0]!);
-        return {
-          outcome,
-          costBasis: "unknown",
-          costUsd: null,
-          latencyMs: 0,
-          harness,
-          provider: resolved.provider,
-          requestedModel: resolved.model,
-          effectiveModel: resolved.model,
-          agentRole: request.agentRole ?? request.agentId,
-        };
-      }
-
       const spawnFn = options.spawnProcess ?? defaultSpawn;
-      const procResult = await spawnFn(command, args, {
-        cwd: options.projectRoot ?? process.cwd(),
-        env: options.env,
-        input,
-        timeoutMs: options.timeoutMs,
-        signal: request.signal,
-      });
-
-      if (request.signal?.aborted || procResult.error?.message === "process_aborted") {
-        const outcome = request.allowedOutcomes.includes("cancelled")
-          ? "cancelled"
-          : (request.allowedOutcomes.includes("failed") ? "failed" : request.allowedOutcomes[0]!);
-        return {
-          outcome,
-          costBasis: "unknown",
-          costUsd: null,
-          latencyMs: Math.max(0, Date.now() - startTime),
-          harness,
-          provider: resolved.provider,
-          requestedModel: resolved.model,
-          effectiveModel: resolved.model,
-          agentRole: request.agentRole ?? request.agentId,
-        };
+      const cwd = options.projectRoot ?? process.cwd();
+      const evidence = await beginOneShotEvidence(options.evidenceRoot ?? join(vnextUserStateRoot(), "runtime", "oneshot-evidence"), {
+        runId: request.runId, stepId: request.stepId, attemptId: request.attemptId, assignmentId: request.assignmentId,
+        harness, provider: resolved.provider, model: resolved.model, cwd, command, args, input,
+      }, [request.capability, ...Object.entries(env).filter(([key]) => /TOKEN|KEY|SECRET|PASSWORD|COOKIE|AUTH/i.test(key)).map(([, value]) => value ?? "")]);
+      let procResult: VnextOneShotProcessResult;
+      try {
+        procResult = request.signal.aborted
+          ? { stdout: "", stderr: "", code: null, started: false, observedChildExit: false, error: new Error("process_aborted") }
+          : await spawnFn(command, args, { cwd, env, input, timeoutMs: options.timeoutMs ?? 120_000, signal: request.signal });
+      } catch (error) {
+        // A rejected adapter promise is not proof that no process/effect started.
+        procResult = { stdout: "", stderr: "", code: null, observedChildExit: false, error: error instanceof Error ? error : new Error("process_adapter_error") };
       }
 
-      const parsed = oneShot.usageParser(procResult.stdout, procResult.stderr);
-      let outcome: string;
-      if (parsed.isError) {
-        outcome = request.allowedOutcomes.includes("failed") ? "failed" : request.allowedOutcomes[0]!;
-      } else {
-        outcome = determineOutcome(parsed.text || procResult.stdout, request.allowedOutcomes);
+      // Parse available usage even when execution failed or was interrupted.
+      let parsed: OneShotParsedOutput;
+      try { parsed = oneShot.usageParser(procResult.stdout, procResult.stderr, resolved.model); }
+      catch { parsed = { text: "", isError: true }; }
+      const aborted = request.signal.aborted || procResult.error?.message === "process_aborted";
+      // Process groups are cleanup, not containment. A detached descendant or
+      // provider leader may outlive the client; interrupted effects need recovery.
+      const effectUncertain = procResult.terminationRequested === true || Boolean(procResult.signal)
+        || procResult.error?.message === "process_exit_unobserved"
+        || (procResult.observedChildExit === false && procResult.started !== false);
+      const transportFailed = procResult.code !== 0 || Boolean(procResult.error) || effectUncertain;
+      const outcome = aborted ? "cancelled" : transportFailed || parsed.isError ? "failed"
+        : determineOutcome(parsed.text, request.allowedOutcomes);
+      const providerMetadata: Record<string, string | number | boolean> = {
+        processStatus: aborted ? "aborted" : transportFailed ? "failed" : "completed",
+        executionEvidenceId: evidence.id,
+      };
+      if (procResult.code !== null && Number.isFinite(procResult.code)) providerMetadata.processExitCode = procResult.code;
+      if (procResult.signal) providerMetadata.processSignal = procResult.signal;
+      if (procResult.observedChildExit !== undefined) providerMetadata.observedChildExit = procResult.observedChildExit;
+      if (procResult.started !== undefined) providerMetadata.processStarted = procResult.started;
+      if (procResult.terminationRequested !== undefined) providerMetadata.terminationRequested = procResult.terminationRequested;
+      if (procResult.error) {
+        const reason = procResult.error.message;
+        providerMetadata.processError = /^process_(aborted|timeout|output_limit|stdin_error|stdio_error|stdio_unclosed|exit_unobserved)$/.test(reason) ? reason : "process_error";
       }
-
       const latencyMs = Math.max(0, Date.now() - startTime);
       const usage = parsed.usage;
-      const tokensIn = typeof usage?.tokensIn === "number" ? usage.tokensIn : null;
-      const tokensOut = typeof usage?.tokensOut === "number" ? usage.tokensOut : null;
-      const cacheReadTokens = typeof usage?.cacheReadTokens === "number" ? usage.cacheReadTokens : null;
-      const cacheWriteTokens = typeof usage?.cacheWriteTokens === "number" ? usage.cacheWriteTokens : null;
-      const contextTokens = typeof usage?.contextTokens === "number" ? usage.contextTokens : tokensIn;
+      const validCount = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+      const boundedCount = (field: string, value: unknown): number | null => {
+        if (validCount(value) && value <= 1_000_000) return value;
+        if (typeof value === "number" && Number.isFinite(value)) {
+          providerMetadata[`raw${field[0]!.toUpperCase()}${field.slice(1)}`] = value;
+        }
+        return null;
+      };
+      const tokensIn = boundedCount("tokensIn", usage?.tokensIn);
+      const tokensOut = boundedCount("tokensOut", usage?.tokensOut);
+      const cacheReadTokens = boundedCount("cacheReadTokens", usage?.cacheReadTokens);
+      const cacheWriteTokens = boundedCount("cacheWriteTokens", usage?.cacheWriteTokens);
+      const contextTokens = boundedCount("contextTokens", usage?.contextTokens);
+      if (typeof usage?.costUsd === "number" && Number.isFinite(usage.costUsd) && usage.costUsd >= 0) providerMetadata.providerReportedCostUsd = usage.costUsd;
 
-      // Price calculation: metered when price row exists, else unmetered for subscription with priceRef
-      const catalog = options.priceCatalog ?? loadPriceCatalog(options.projectRoot ?? process.cwd());
-      let costBasis: "metered" | "unmetered" | "unknown" = "unknown";
-      let costUsd: number | null = null;
-      let priceRef: string | undefined;
-
-      if (catalog) {
+      // List estimates and provider-reported amounts are not proof of a bill.
+      let catalog: PriceCatalog | undefined;
+      try {
+        catalog = options.priceCatalog ? parsePriceCatalog(JSON.stringify(options.priceCatalog))
+          : loadPriceCatalog(options.projectRoot ?? process.cwd());
+      } catch { providerMetadata.priceCatalogUnavailable = true; }
+      // Without a freshness-aware vendor feed, don't silently quote an older
+      // local snapshot. Even today's hash-verified snapshot is only an estimate.
+      if (catalog && catalog.date !== new Date().toISOString().slice(0, 10)) {
+        providerMetadata.priceCatalogStale = true;
+        catalog = undefined;
+      }
+      const subscription = ["claude.ai", "ChatGPT", "antigravity-oauth"].includes(auth.authMethod ?? "");
+      const costBasis = subscription ? "unmetered" as const : "unknown" as const;
+      const costUsd = null;
+      const priceRef = subscription ? `subscription:${harness}` : undefined;
+      if (auth.authMethod) providerMetadata.authMethod = auth.authMethod;
+      const priceRow = catalog ? findModelPrice(catalog, resolved.model, resolved.provider) : undefined;
+      const flatTier = priceRow?.tiers.length === 1 && priceRow.tiers[0]?.upToContextTokens == null ? priceRow.tiers[0] : undefined;
+      // Unknown context occupancy cannot select a context tier. Claude reports
+      // uncached input separately; other protocols need their own price semantics.
+      if (catalog && harness === "claude" && flatTier
+        && validCount(usage?.tokensIn) && validCount(usage?.tokensOut)
+        && validCount(usage?.cacheReadTokens) && validCount(usage?.cacheWriteTokens)
+        && (usage.cacheReadTokens === 0 || flatTier.cacheReadPerMillion != null)
+        && (usage.cacheWriteTokens === 0 || flatTier.cacheWritePerMillion != null)) {
         const calculated = calculateModelCost(catalog, {
-          model: resolved.model,
-          provider: resolved.provider,
-          tokensIn,
-          tokensOut,
-          cacheReadTokens,
-          cacheWriteTokens,
+          model: resolved.model, provider: resolved.provider,
+          tokensIn: usage.tokensIn, tokensOut: usage.tokensOut,
+          cacheReadTokens: usage.cacheReadTokens, cacheWriteTokens: usage.cacheWriteTokens,
           contextTokens,
         });
-        if (calculated) {
-          costBasis = "metered";
-          costUsd = calculated.costUsd;
-          priceRef = calculated.priceRef;
+        if (calculated && Number.isFinite(calculated.costUsd)) {
+          providerMetadata.listCostUsd = calculated.costUsd;
+          providerMetadata.listPriceRef = calculated.priceRef;
+          providerMetadata.listPriceSha256 = catalog.sha256;
         }
       }
 
-      if (costBasis === "unknown" && (harness === "claude" || harness === "codex" || harness === "agy")) {
-        costBasis = "unmetered";
-        costUsd = null;
-        priceRef = `subscription:${harness}`;
-      }
-
-      return {
+      const result: VnextProducerResult = {
         outcome,
         costBasis,
         costUsd,
@@ -407,15 +322,37 @@ export function createVnextOneShotProducer(options: VnextOneShotProducerOptions 
         harness,
         provider: resolved.provider,
         requestedModel: resolved.model,
-        effectiveModel: resolved.model,
+        effectiveModel: parsed.effectiveModel ?? "unknown",
+        providerMetadata,
+        ...(effectUncertain ? { effectUncertain: true as const } : {}),
         ...(resolved.thinking !== undefined ? { thinking: resolved.thinking } : {}),
         agentRole: request.agentRole ?? request.agentId,
         ...(priceRef !== undefined ? { priceRef } : {}),
       };
+      try { providerMetadata.executionEvidenceSha256 = await evidence.finish(procResult, result); }
+      catch {
+        providerMetadata.evidenceWriteFailed = true;
+        return { ...result, outcome: "failed", effectUncertain: true };
+      }
+      return result;
+  }
+
+  const producer: VnextOneShotProducer = {
+    id: "oneshot",
+    produce(request): Promise<VnextProducerResult> {
+      const controller = new AbortController();
+      const signal = AbortSignal.any([request.signal, controller.signal]);
+      const pending = Promise.resolve().then(() => executeRequest({ ...request, signal }))
+        .finally(() => { running.delete(controller); });
+      running.set(controller, pending);
+      return pending;
     },
 
     async close(): Promise<void> {
-      // One-shot producer holds no persistent process pools
+      closed = true;
+      const pending = [...running.values()];
+      for (const controller of running.keys()) controller.abort();
+      await Promise.allSettled(pending);
     },
   };
 

@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { win32 as win32Path } from "node:path";
+import { defaultSpawn } from "./vnext-oneshot-process.ts";
 
 export const DEFAULT_HARNESS = "pi";
 export type HarnessMode = "headless" | "either";
@@ -29,6 +30,7 @@ export interface OneShotParsedOutput {
   text: string;
   usage?: OneShotUsage | undefined;
   outcome?: string | undefined;
+  effectiveModel?: string | undefined;
   isError?: boolean | undefined;
   errorMessage?: string | undefined;
 }
@@ -37,7 +39,7 @@ export interface HarnessOneShotConfig {
   argv: readonly string[];
   promptVia: OneShotPromptVia;
   outputFormat: "json" | "text" | "stream-json" | "jsonl";
-  usageParser: (stdout: string, stderr: string) => OneShotParsedOutput;
+  usageParser: (stdout: string, stderr: string, requestedModel?: string) => OneShotParsedOutput;
 }
 
 export interface HarnessCatalogEntry {
@@ -77,6 +79,7 @@ export interface HarnessStatus {
   mode: HarnessMode;
   detected: boolean;
   authenticated: boolean | null;
+  authMethod?: "claude.ai" | "ChatGPT" | "api-key" | "antigravity-oauth" | undefined;
   dispatch?: HarnessDispatchStatus | undefined;
   command?: string;
   version?: string;
@@ -89,10 +92,10 @@ export interface HarnessInventory {
   harnesses: readonly HarnessStatus[];
 }
 
-const UNKNOWN_AUTH_HARNESSES = new Set(["gemini", "deepseek"]);
+const UNKNOWN_AUTH_HARNESSES = new Set(["deepseek"]);
 const GROK_LOGIN_LINE = "You are logged in with grok.com.";
 /** Tab-separated `id<TAB>label` rows from the committed `agy models` probe. */
-const AGY_MODEL_ROW = /^[a-z0-9][a-z0-9.+_-]*\t+\S/im;
+const AGY_MODEL_ROW = /^[a-z0-9]+(?:[._-][a-z0-9]+)+\s+\S/im;
 const CODEX_CHATGPT_LINE = "Logged in using ChatGPT";
 const CODEX_API_KEY_PREFIX = "Logged in using an API key";
 const CODEX_NEGATIVE_LINE = "Not logged in";
@@ -103,7 +106,6 @@ export const NATIVE_HARNESS_PROVIDERS: Readonly<Record<string, string>> = Object
   codex: "openai",
   grok: "xai",
   agy: "google",
-  gemini: "google",
   kimi: "moonshot",
   deepseek: "deepseek",
 });
@@ -147,7 +149,11 @@ export interface HarnessUpdateStep {
   detail?: string;
 }
 
-export function parseClaudeOneShotUsage(stdout: string, stderr: string): OneShotParsedOutput {
+function reportedModelId(value: unknown): string | undefined {
+  return typeof value === "string" && /^[a-z0-9][a-z0-9._:/-]{0,199}$/i.test(value) ? value : undefined;
+}
+
+export function parseClaudeOneShotUsage(stdout: string, stderr: string, requestedModel?: string): OneShotParsedOutput {
   const trimmed = stdout.trim();
   if (!trimmed) {
     return {
@@ -159,26 +165,28 @@ export function parseClaudeOneShotUsage(stdout: string, stderr: string): OneShot
   try {
     const payload = JSON.parse(trimmed) as Record<string, unknown>;
     const usage = (payload.usage as Record<string, unknown> | undefined) ?? {};
-    let modelUsageDetail: Record<string, unknown> | undefined;
-    if (payload.modelUsage && typeof payload.modelUsage === "object") {
-      const values = Object.values(payload.modelUsage as Record<string, unknown>);
-      if (values.length > 0 && values[0] && typeof values[0] === "object") {
-        modelUsageDetail = values[0] as Record<string, unknown>;
-      }
-    }
-    const tokensIn = (typeof modelUsageDetail?.inputTokens === "number" ? modelUsageDetail.inputTokens : undefined)
-      ?? (typeof usage.input_tokens === "number" ? usage.input_tokens : null);
-    const tokensOut = (typeof modelUsageDetail?.outputTokens === "number" ? modelUsageDetail.outputTokens : undefined)
-      ?? (typeof usage.output_tokens === "number" ? usage.output_tokens : null);
-    const cacheReadTokens = (typeof modelUsageDetail?.cacheReadInputTokens === "number" ? modelUsageDetail.cacheReadInputTokens : undefined)
-      ?? (typeof usage.cache_read_input_tokens === "number" ? usage.cache_read_input_tokens : null);
-    const cacheWriteTokens = (typeof modelUsageDetail?.cacheCreationInputTokens === "number" ? modelUsageDetail.cacheCreationInputTokens : undefined)
-      ?? (typeof usage.cache_creation_input_tokens === "number" ? usage.cache_creation_input_tokens : null);
+    const entries = payload.modelUsage && typeof payload.modelUsage === "object" && !Array.isArray(payload.modelUsage)
+      ? Object.entries(payload.modelUsage as Record<string, unknown>).filter(([, value]) => value && typeof value === "object") : [];
+    const matches = entries.filter(([model]) => model === requestedModel
+      || (requestedModel && (model.startsWith(`${requestedModel}-`) || model.startsWith(`claude-${requestedModel}-`))));
+    const selected = matches.length === 1 ? matches[0] : entries.length === 1 ? entries[0] : undefined;
+    const modelUsageDetail = selected?.[1] as Record<string, unknown> | undefined;
+    const effectiveModel = reportedModelId(payload.model) ?? reportedModelId(selected?.[0]);
+    // Top-level usage is the attempt total; an auxiliary model is not the task's model.
+    const tokensIn = (typeof usage.input_tokens === "number" ? usage.input_tokens : undefined)
+      ?? (typeof modelUsageDetail?.inputTokens === "number" ? modelUsageDetail.inputTokens : null);
+    const tokensOut = (typeof usage.output_tokens === "number" ? usage.output_tokens : undefined)
+      ?? (typeof modelUsageDetail?.outputTokens === "number" ? modelUsageDetail.outputTokens : null);
+    const cacheReadTokens = (typeof usage.cache_read_input_tokens === "number" ? usage.cache_read_input_tokens : undefined)
+      ?? (typeof modelUsageDetail?.cacheReadInputTokens === "number" ? modelUsageDetail.cacheReadInputTokens : null);
+    const cacheWriteTokens = (typeof usage.cache_creation_input_tokens === "number" ? usage.cache_creation_input_tokens : undefined)
+      ?? (typeof modelUsageDetail?.cacheCreationInputTokens === "number" ? modelUsageDetail.cacheCreationInputTokens : null);
     const costUsd = typeof payload.total_cost_usd === "number"
       ? payload.total_cost_usd
       : (typeof modelUsageDetail?.costUSD === "number" ? modelUsageDetail.costUSD : null);
 
-    const isError = Boolean(payload.is_error || payload.error);
+    const isError = Boolean(payload.is_error || payload.error
+      || ["error", "aborted", "failed", "max_tokens", "length"].includes(String(payload.stopReason ?? payload.stop_reason ?? "")));
     const text = typeof payload.result === "string" ? payload.result : (typeof payload.text === "string" ? payload.text : "");
     const errorMessage = isError
       ? (typeof payload.error === "string"
@@ -190,6 +198,7 @@ export function parseClaudeOneShotUsage(stdout: string, stderr: string): OneShot
 
     return {
       text,
+      effectiveModel,
       isError,
       errorMessage,
       usage: {
@@ -197,16 +206,23 @@ export function parseClaudeOneShotUsage(stdout: string, stderr: string): OneShot
         tokensOut,
         cacheReadTokens,
         cacheWriteTokens,
-        contextTokens: tokensIn,
+        contextTokens: null,
         costUsd,
       },
     };
   } catch {
     return {
       text: trimmed,
+      isError: true,
+      errorMessage: "invalid Claude JSON response",
       usage: {},
     };
   }
+}
+
+/** Grok's observed one-shot JSON uses the same usage/modelUsage envelope. */
+export function parseGrokOneShotUsage(stdout: string, stderr: string, requestedModel?: string): OneShotParsedOutput {
+  return parseClaudeOneShotUsage(stdout, stderr, requestedModel);
 }
 
 export function parseCodexOneShotUsage(stdout: string, stderr: string): OneShotParsedOutput {
@@ -242,7 +258,7 @@ export function parseCodexOneShotUsage(stdout: string, stderr: string): OneShotP
           ? ((ev.error as Record<string, unknown>).message as string)
           : "turn_failed");
     }
-    if (ev.item && typeof ev.item === "object" && (ev.item as Record<string, unknown>).type === "agent_message") {
+    if (ev.type === "item.completed" && ev.item && typeof ev.item === "object" && (ev.item as Record<string, unknown>).type === "agent_message") {
       const t = (ev.item as Record<string, unknown>).text;
       if (typeof t === "string") messageTexts.push(t);
     }
@@ -251,7 +267,8 @@ export function parseCodexOneShotUsage(stdout: string, stderr: string): OneShotP
     }
   }
 
-  const text = messageTexts.join("\n").trim();
+  const text = (messageTexts.at(-1) ?? "").trim();
+  if (!events.some((event) => event.type === "turn.completed") || !text) hasError = true;
   const tokensIn = typeof usage?.input_tokens === "number" ? usage.input_tokens : null;
   const tokensOut = typeof usage?.output_tokens === "number" ? usage.output_tokens : null;
   const cacheReadTokens = typeof usage?.cached_input_tokens === "number" ? usage.cached_input_tokens : null;
@@ -266,7 +283,7 @@ export function parseCodexOneShotUsage(stdout: string, stderr: string): OneShotP
       tokensOut,
       cacheReadTokens,
       cacheWriteTokens,
-      contextTokens: tokensIn,
+      contextTokens: null,
       costUsd: null,
     },
   };
@@ -283,7 +300,15 @@ export function parseGenericOneShotUsage(stdout: string, _stderr: string): OneSh
         : (typeof rec.text === "string"
           ? rec.text
           : (typeof rec.response === "string" ? rec.response : trimmed));
-      return { text, usage: {} };
+      const u = rec.usage && typeof rec.usage === "object" ? rec.usage as Record<string, unknown> : {};
+      return { text, effectiveModel: reportedModelId(rec.model), isError: Boolean(rec.is_error || rec.error || rec.success === false), usage: {
+        tokensIn: typeof u.input_tokens === "number" ? u.input_tokens : null,
+        tokensOut: typeof u.output_tokens === "number" ? u.output_tokens : null,
+        cacheReadTokens: typeof u.cache_read_input_tokens === "number" ? u.cache_read_input_tokens : null,
+        cacheWriteTokens: typeof u.cache_creation_input_tokens === "number" ? u.cache_creation_input_tokens : null,
+        contextTokens: null,
+        costUsd: typeof rec.total_cost_usd === "number" ? rec.total_cost_usd : null,
+      } };
     }
   } catch {
     // not json
@@ -385,6 +410,16 @@ export function parseAgyOneShotUsage(stdout: string, _stderr: string): OneShotPa
 }
 
 /** Built-in harnesses. Unknown ids fail closed. Model lists live in `.kxm/models/*.yaml`, not here. */
+const READ_ONLY_ONESHOT_ARGS = Object.freeze({
+  claude: Object.freeze(["--tools", "Read,Glob,Grep", "--restricted", "--safe-mode", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--disable-slash-commands", "--no-session-persistence"]),
+  codex: Object.freeze(["--sandbox", "read-only", "--ignore-user-config", "-c", 'approval_policy="never"']),
+  grok: Object.freeze(["--sandbox", "read-only", "--permission-mode", "plan", "--tools", "Read,Glob,Grep", "--no-subagents", "--disable-web-search"]),
+});
+
+export function oneShotReadOnlyArgs(harness: string): readonly string[] | undefined {
+  return Object.hasOwn(READ_ONLY_ONESHOT_ARGS, harness) ? READ_ONLY_ONESHOT_ARGS[harness as keyof typeof READ_ONLY_ONESHOT_ARGS] : undefined;
+}
+
 export const BUILTIN_HARNESSES: readonly HarnessCatalogEntry[] = Object.freeze([
   {
     id: "pi",
@@ -418,7 +453,7 @@ export const BUILTIN_HARNESSES: readonly HarnessCatalogEntry[] = Object.freeze([
       extensions: ["plugin", "update", "kxm", "-y"],
     },
     oneShot: {
-      argv: ["-p", "--output-format", "json"],
+      argv: ["-p", ...oneShotReadOnlyArgs("claude")!, "--output-format", "json"],
       promptVia: "stdin",
       outputFormat: "json",
       usageParser: parseClaudeOneShotUsage,
@@ -450,20 +485,11 @@ export const BUILTIN_HARNESSES: readonly HarnessCatalogEntry[] = Object.freeze([
     authArgs: ["login", "status"],
     update: { self: ["update"] },
     oneShot: {
-      argv: ["exec", "--json", "-"],
+      argv: ["exec", ...oneShotReadOnlyArgs("codex")!, "--json", "-"],
       promptVia: "stdin",
       outputFormat: "json",
       usageParser: parseCodexOneShotUsage,
     },
-  },
-  {
-    id: "gemini",
-    label: "Gemini CLI",
-    default: false,
-    mode: "either",
-    commands: ["gemini"],
-    versionArgs: ["--version"],
-    update: { self: ["update"] },
   },
   {
     id: "deepseek",
@@ -490,10 +516,10 @@ export const BUILTIN_HARNESSES: readonly HarnessCatalogEntry[] = Object.freeze([
     authArgs: ["models"],
     update: { self: ["update"] },
     oneShot: {
-      argv: ["--output-format", "json"],
-      promptVia: "stdin",
+      argv: [...oneShotReadOnlyArgs("grok")!, "--output-format", "json", "--single"],
+      promptVia: "arg",
       outputFormat: "json",
-      usageParser: parseClaudeOneShotUsage,
+      usageParser: parseGrokOneShotUsage,
     },
   },
   {
@@ -641,7 +667,7 @@ function isCodexApiKeyLine(line: string): boolean {
   return line === CODEX_API_KEY_PREFIX || line.startsWith(`${CODEX_API_KEY_PREFIX} - `);
 }
 
-function interpretAuth(id: string, result: HarnessCommandResult): { authenticated: boolean | null; issues: string[] } {
+function interpretAuth(id: string, result: HarnessCommandResult): Pick<HarnessStatus, "authenticated" | "authMethod"> & { issues: string[] } {
   const conflict = authConflictIssue(result);
   if (conflict) return { authenticated: null, issues: [conflict] };
   if (result.error) return { authenticated: null, issues: ["auth_probe_error"] };
@@ -650,7 +676,10 @@ function interpretAuth(id: string, result: HarnessCommandResult): { authenticate
   if (id === "claude") {
     const payload = parseJsonObject(result.stdout);
     if (payload && payload.loggedIn === false) return { authenticated: false, issues: ["not_authenticated"] };
-    if (commandSucceeded(result) && payload && payload.loggedIn === true) return { authenticated: true, issues: [] };
+    if (commandSucceeded(result) && payload && payload.loggedIn === true) return {
+      authenticated: true, issues: [],
+      ...(payload.authMethod === "claude.ai" || payload.authMethod === "api-key" ? { authMethod: payload.authMethod } : {}),
+    };
     return { authenticated: null, issues: ["auth_unparsed"] };
   }
   if (id === "codex") {
@@ -658,10 +687,10 @@ function interpretAuth(id: string, result: HarnessCommandResult): { authenticate
       return { authenticated: false, issues: ["not_authenticated"] };
     }
     if (commandSucceeded(result) && lines.some((line) => line === CODEX_CHATGPT_LINE)) {
-      return { authenticated: true, issues: [] };
+      return { authenticated: true, authMethod: "ChatGPT", issues: [] };
     }
     if (commandSucceeded(result) && lines.some((line) => isCodexApiKeyLine(line))) {
-      return { authenticated: true, issues: ["auth_api_key"] };
+      return { authenticated: true, authMethod: "api-key", issues: ["auth_api_key"] };
     }
     return { authenticated: null, issues: ["auth_unparsed"] };
   }
@@ -674,7 +703,7 @@ function interpretAuth(id: string, result: HarnessCommandResult): { authenticate
     if (!commandSucceeded(result) || !text.trim()) {
       return { authenticated: false, issues: ["not_authenticated"] };
     }
-    if (AGY_MODEL_ROW.test(text)) return { authenticated: true, issues: [] };
+    if (AGY_MODEL_ROW.test(text)) return { authenticated: true, authMethod: "antigravity-oauth", issues: [] };
     return { authenticated: null, issues: ["auth_unparsed"] };
   }
   if (id === "kimi") {
@@ -705,8 +734,11 @@ export function resolveDispatchStatus(
     return {
       status: "no",
       supported: false,
-      reason: entry.id === "gemini" ? "deprecated_client" : "no_headless_mode",
+      reason: "no_headless_mode",
     };
+  }
+  if (entry.id !== "pi" && !oneShotReadOnlyArgs(entry.id)) {
+    return { status: "no", supported: false, reason: "permission_profile_unaudited" };
   }
   if (authenticated === false) {
     return { status: "no", supported: false, reason: "not_authenticated" };
@@ -776,6 +808,7 @@ function probeEntry(
   const command = found?.command;
   const version = found?.version;
   let authenticated: boolean | null = null;
+  let authMethod: HarnessStatus["authMethod"];
   if (!detected) authenticated = false;
   else if (entry.id === "pi") {
     authenticated = null;
@@ -784,8 +817,11 @@ function probeEntry(
     authenticated = null;
     if (UNKNOWN_AUTH_HARNESSES.has(entry.id)) issues.push("auth_unknown");
   } else if (command) {
-    const parsed = interpretAuth(entry.id, runCommand(command, entry.authArgs, timeoutMs));
+    // Auth CLIs may initialize hooks/OAuth state and exceed the short binary-detection timeout.
+    // Keep detection bounded while allowing the documented auth probe to complete.
+    const parsed = interpretAuth(entry.id, runCommand(command, entry.authArgs, Math.max(timeoutMs, 10_000)));
     authenticated = parsed.authenticated;
+    authMethod = parsed.authMethod;
     issues.push(...parsed.issues);
   }
   if (command && isWindowsHarnessShim(command)) issues.push("windows_shim");
@@ -797,6 +833,7 @@ function probeEntry(
     mode: entry.mode,
     detected,
     authenticated,
+    ...(authMethod ? { authMethod } : {}),
     dispatch,
     ...(command ? { command } : {}),
     ...(version ? { version } : {}),
@@ -821,7 +858,7 @@ export function probeHarnesses(options: HarnessProbeOptions = {}): HarnessInvent
 
 export function eligibleHarnesses(inventory: HarnessInventory): readonly string[] {
   const eligible = inventory.harnesses
-    .filter((entry) => entry.detected && entry.authenticated === true)
+    .filter((entry) => entry !== undefined && entry.detected && entry.authenticated === true)
     .map((entry) => entry.id);
   if (eligible.length === 0) throw new Error("no_authenticated_harness");
   return eligible;
@@ -880,7 +917,7 @@ export function validateHarnessModelPair(
     return { valid: true };
   }
 
-  if (harnessId === "agy" || harnessId === "gemini") {
+  if (harnessId === "agy") {
     if (provider && provider !== "google") {
       return { valid: false, issue: "harness_unhosted_model", message: `harness ${harnessId} does not host provider ${provider}` };
     }
@@ -894,7 +931,7 @@ export function validateHarnessModelPair(
     if (provider && provider !== "moonshot") {
       return { valid: false, issue: "harness_unhosted_model", message: `harness kimi does not host provider ${provider}` };
     }
-    if (model && !/^(kimi|moonshot)-/i.test(model)) {
+    if (model && !/^(kimi|moonshot)(?:-|$)/i.test(model) && !/^kimi-for-coding(?:-|$)/i.test(model)) {
       return { valid: false, issue: "harness_unhosted_model", message: `harness kimi only hosts kimi/moonshot models, received ${model}` };
     }
     return { valid: true };
@@ -1075,6 +1112,55 @@ export function probeHarnessAssignment(options: HarnessAssignmentProbeOptions): 
   }
 
   return probeEntry(entry, runCommand, timeoutMs, platform);
+}
+
+export interface AsyncHarnessAssignmentProbeOptions extends Omit<HarnessAssignmentProbeOptions, "runCommand"> {
+  signal?: AbortSignal | undefined;
+  runCommand?: ((command: string, args: readonly string[], timeoutMs: number) => HarnessCommandResult | Promise<HarnessCommandResult>) | undefined;
+}
+
+class PendingHarnessCommand {
+  command: string;
+  args: readonly string[];
+  timeoutMs: number;
+  key: string;
+  constructor(command: string, args: readonly string[], timeoutMs: number, key: string) {
+    this.command = command;
+    this.args = [...args];
+    this.timeoutMs = timeoutMs;
+    this.key = key;
+  }
+}
+
+/**
+ * Execute the existing probe policy without blocking the Runtime event loop.
+ * Replay pure policy decisions from per-call command observations, yielding for
+ * every missing observation. This reuses the exact auth/model/brake parsers,
+ * deduplicates repeated detection, and never caches auth across assignments.
+ */
+export async function probeHarnessAssignmentAsync(options: AsyncHarnessAssignmentProbeOptions): Promise<HarnessStatus> {
+  const observed = new Map<string, HarnessCommandResult>();
+  const run = options.runCommand ?? (async (command, args, timeoutMs) => {
+    const result = await defaultSpawn(command, args, { env: options.env, timeoutMs, signal: options.signal });
+    const error = result.error?.message ?? (result.observedChildExit !== true ? "auth_probe_exit_unobserved" : undefined);
+    return { ok: result.code === 0 && !error, code: result.code, stdout: result.stdout, stderr: result.stderr,
+      ...(error ? { error } : {}) };
+  });
+  for (let commands = 0; commands <= 32; commands++) {
+    try {
+      return probeHarnessAssignment({ ...options, runCommand(command, args, timeoutMs) {
+        const key = JSON.stringify([command, args, timeoutMs]);
+        const result = observed.get(key);
+        if (result) return result;
+        throw new PendingHarnessCommand(command, args, timeoutMs, key);
+      } });
+    } catch (pending) {
+      if (!(pending instanceof PendingHarnessCommand)) throw pending;
+      if (commands === 32) throw new Error("auth_probe_command_limit");
+      observed.set(pending.key, await run(pending.command, pending.args, pending.timeoutMs));
+    }
+  }
+  throw new Error("auth_probe_command_limit");
 }
 
 export function probeHarnessesForModel(

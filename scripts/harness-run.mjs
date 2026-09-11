@@ -554,6 +554,7 @@ export function buildArgv(request, ctx = {}) {
       "--sandbox",
       "read-only",
       "--ignore-user-config",
+      "-c", 'approval_policy="never"',
       ...(schemaPath ? ["--output-schema", schemaPath] : []),
       "--json",
       "-",

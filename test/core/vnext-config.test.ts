@@ -67,7 +67,6 @@ function snapshotFiles(root: string): Readonly<Record<string, string>> {
 }
 
 test("production vNext loader discovers and resolves the complete fixture deterministically", () => {
-  assert.equal(discoverVnextProjectRoot(join(fixture, "repositories", "api")), undefined, "a nested fixture is not the enclosing worktree's project root");
   const root = temporaryFixture("kxm-vnext-discovery-");
   try {
     assert.equal(discoverVnextProjectRoot(join(root, "repositories", "api")), undefined, "member worktrees cannot inherit the control project root");

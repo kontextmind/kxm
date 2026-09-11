@@ -637,7 +637,7 @@ test("cancellation is cooperative, waits for settlement, and is visible across h
       });
       const ignoring = createVnextSimulatedProducer(async (request) => {
         signal = request.signal;
-        return deferred;
+        return { ...(await deferred), tokensIn: 42, tokensOut: 6, providerMetadata: { providerReportedCostUsd: 0.05 } };
       });
       const hanging = acceptVnextRun(context, bundle, { workflowId: "one-step", prompt: "ignore" });
       pinVnextCompiledPlan(context, bundle, hanging.run.runId);
@@ -651,6 +651,12 @@ test("cancellation is cooperative, waits for settlement, and is visible across h
       resume({ outcome: "passed" });
       const settled = await hangingDrive;
       assert.equal(settled.state.status, "cancelled");
+      const costs = context.eventStore.events(hanging.run.runId, 0, 200).filter((event) => event.eventType === "routing.attempt.recorded");
+      assert.equal(costs.length, 1, "cancellation must not erase an invoked producer's usage");
+      const routing = costs[0]!.payload.routing as JsonObject;
+      assert.equal(routing.tokensIn, 42);
+      assert.equal(routing.tokensOut, 6);
+      assert.equal((routing.providerMetadata as JsonObject).providerReportedCostUsd, 0.05);
     } finally {
       closeVnextRuntimeContext(other);
       closeVnextRuntimeContext(context);
@@ -2323,6 +2329,50 @@ test("U2a-2 appendExecuting failure with active sibling drains and does not mint
     removeTempDir(root, stateRoot);
   }
 });
+
+for (const cancelling of [false, true]) {
+test(`unobserved producer termination retains its capability and drains siblings (cancel=${cancelling})`, async () => {
+  const { root, stateRoot } = engineProject("kxm-unobserved-exit-");
+  try {
+    writePanelWorkflow(root, "unobserved-exit");
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "unobserved-exit", prompt: "termination witness" });
+      const runId = accepted.run.runId;
+      pinVnextCompiledPlan(context, bundle, runId);
+      const seen: string[] = [];
+      let bothReady!: () => void;
+      const ready = new Promise<void>((resolve) => { bothReady = resolve; });
+      const producer = createVnextSimulatedProducer(async (request) => {
+        const index = seen.length;
+        seen.push(request.attemptId);
+        if (seen.length === 2) bothReady();
+        await ready;
+        if (index === 0) {
+          if (cancelling) cancelVnextRun(context, runId);
+          return { outcome: "failed", effectUncertain: true };
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        return { outcome: "passed" };
+      });
+      const driven = await driveVnextRun(context, runId, producer);
+      assert.equal(driven.handoff?.reason, "attempt_unreconciled");
+      assert.equal(driven.state.status, cancelling ? "cancelling" : "running");
+      assert.equal(context.eventStore.capabilityByAttempt(seen[0]!)?.state, cancelling ? "revoked" : "issued");
+      assert.equal(context.eventStore.capabilityByAttempt(seen[1]!)?.state, "settled");
+      const events = context.eventStore.events(runId, 0, 1000);
+      const terminals = events.filter((event) => event.eventType === "assignment.terminal");
+      assert.equal(terminals.length, 1);
+      assert.equal(terminals[0]!.payload.outcome, cancelling ? "cancelled" : "passed");
+      assert.equal(events.filter((event) => event.eventType === "step.outcome_recorded").length, 0);
+      await driveVnextRun(context, runId, producer);
+      assert.equal(seen.length, 2, "uncertain work must not be replayed");
+      assert.equal(vnextAttemptControllers(context.eventStore.path, runId).length, 0);
+    } finally { closeVnextRuntimeContext(context); }
+  } finally { removeTempDir(root, stateRoot); }
+});
+}
 
 test("U2a-2 settlement write failure with active sibling retains uncertainty", async () => {
   const { root, stateRoot } = engineProject("kxm-engine-u2a2-settle-fail-");
