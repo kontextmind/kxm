@@ -7,14 +7,14 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-11"
-updated: "2026-09-11"
+updated: "2026-09-12"
 authority: "hypothesis"
 confidence: "uncertain"
 summary: "Proposed parent-to-child supervisory control plane with tool allowlists and mid-flight steer."
 tags: ["steering", "subagents"]
 related:
   - implementation-plan.md
-  - plan-role-configuration-governance.md
+  - history/plan-role-configuration-governance.md
 depends_on: []
 blocked_by: []
 details:
@@ -28,7 +28,7 @@ Status: Draft / Proposed
 Tracking: [`plans/implementation-plan.md`](implementation-plan.md)
 
 **Related plans:** [`implementation-plan.md`](implementation-plan.md) (execution tracker);
-[`plan-role-configuration-governance.md`](plan-role-configuration-governance.md)
+archived [`plan-role-configuration-governance.md`](history/plan-role-configuration-governance.md)
 (role seats, tool allowlists, typed receipts).
 
 ## 1. Objective

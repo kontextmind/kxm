@@ -7,14 +7,14 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-11"
-updated: "2026-09-11"
+updated: "2026-09-12"
 authority: "hypothesis"
 confidence: "uncertain"
 summary: "Proposed major/minor modes that load only named tools and context, plus pre-flight kxm explain."
 tags: ["modes", "context"]
 related:
   - implementation-plan.md
-  - plan-role-configuration-governance.md
+  - history/plan-role-configuration-governance.md
   - plan-token-reduction-rtk-ai.md
 depends_on: []
 blocked_by: []
@@ -29,7 +29,7 @@ Status: Draft / Proposed
 Tracking: [`plans/implementation-plan.md`](implementation-plan.md)
 
 **Related plans:** [`implementation-plan.md`](implementation-plan.md) (execution tracker);
-[`plan-role-configuration-governance.md`](plan-role-configuration-governance.md)
+archived [`plan-role-configuration-governance.md`](history/plan-role-configuration-governance.md)
 (role-seat tool scoping);
 [`plan-token-reduction-rtk-ai.md`](plan-token-reduction-rtk-ai.md)
 (shell-output compression).
