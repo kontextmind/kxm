@@ -7,7 +7,7 @@ project: "kxm"
 status: "approved"
 owner: "kxm"
 created: "2026-09-02"
-updated: "2026-09-11"
+updated: "2026-09-12"
 authority: "instruction"
 confidence: "verified"
 summary: "Sole active execution tracker for vNext phase gates, Tracking, and Still open work."
@@ -16,7 +16,6 @@ related:
   - research-agent-producer-architecture.md
   - plan-additional-providers-agy-kimi.md
   - plan-agent-communication-steering.md
-  - plan-role-configuration-governance.md
   - plan-ssh-remote-execution.md
   - plan-token-reduction-rtk-ai.md
   - plan-usage-cost-quota-tracking.md
@@ -24,6 +23,7 @@ related:
   - history/control-plane-memory-questionnaire.md
   - history/v05-context-os.md
   - history/plan-safety-security-process-integrity.md
+  - history/plan-role-configuration-governance.md
 depends_on: []
 blocked_by: []
 details:
@@ -49,7 +49,6 @@ not create work or alter a phase gate.
 
 - Drafts: [`plan-additional-providers-agy-kimi.md`](plan-additional-providers-agy-kimi.md),
   [`plan-agent-communication-steering.md`](plan-agent-communication-steering.md),
-  [`plan-role-configuration-governance.md`](plan-role-configuration-governance.md),
   [`plan-ssh-remote-execution.md`](plan-ssh-remote-execution.md),
   [`plan-token-reduction-rtk-ai.md`](plan-token-reduction-rtk-ai.md),
   [`plan-usage-cost-quota-tracking.md`](plan-usage-cost-quota-tracking.md),
@@ -61,7 +60,10 @@ not create work or alter a phase gate.
   [`v05-context-os.md`](history/v05-context-os.md)
   (superseded design record),
   [`plan-safety-security-process-integrity.md`](history/plan-safety-security-process-integrity.md)
-  (complete, Stages 1–6 via #188/#189)
+  (complete, Stages 1–6 via #188/#189),
+  [`plan-role-configuration-governance.md`](history/plan-role-configuration-governance.md)
+  (#192; Eddie archived despite `task_d3e634858295` still `in_progress` and no
+  committed `.kxm/role-hosts.yaml`)
 
 ### Decided
 
@@ -75,6 +77,13 @@ not create work or alter a phase gate.
   a phase gate, or keep a slice in an ambiguous in-review state. Deferred work
   must be listed here under **Still open** with an owner/trigger or remain
   historical.
+- **Role configuration governance archive (2026-09-12):** Eddie archived
+  [`plan-role-configuration-governance.md`](history/plan-role-configuration-governance.md)
+  after #192 (role hosts, TerminalReceipt, autoResumeLimit / audit
+  escalation, `kxm role resume` / `kxm role hosts`). A thin stub remains at
+  the old path. Archive stands even though `task_d3e634858295` is still
+  `in_progress` and `.kxm/role-hosts.yaml` is not committed on main. Do not
+  schedule work from the archived plan.
 - Product name is **KXM**. Do not present Mesh or pi-extensions as the product.
   Plugin, marketplace, and npm identity are `kxm` / `@kontextmind/kxm`.
 - **Future slices are not backwards-compatible.** Do not add upgrade shims or

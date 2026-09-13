@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-11"
-updated: "2026-09-11"
+updated: "2026-09-12"
 authority: "hypothesis"
 confidence: "uncertain"
 summary: "Proposed ssh_run tool with ControlMaster multiplexing and in-memory credential masking."
@@ -16,7 +16,7 @@ related:
   - implementation-plan.md
   - history/plan-safety-security-process-integrity.md
   - research-agent-producer-architecture.md
-  - plan-role-configuration-governance.md
+  - history/plan-role-configuration-governance.md
 depends_on:
   - history/plan-safety-security-process-integrity.md
 blocked_by: []
@@ -35,7 +35,7 @@ archived [`plan-safety-security-process-integrity.md`](history/plan-safety-secur
 (pinned SSH host keys);
 [`research-agent-producer-architecture.md`](research-agent-producer-architecture.md)
 (multi-host / SSH agents);
-[`plan-role-configuration-governance.md`](plan-role-configuration-governance.md)
+archived [`plan-role-configuration-governance.md`](history/plan-role-configuration-governance.md)
 (host axis).
 
 ## 1. Objective
