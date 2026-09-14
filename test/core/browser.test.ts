@@ -163,6 +163,17 @@ describe("KXM Browser & Steel Integration", () => {
       const cfgMock = resolveSteelConfig();
       assert.strictEqual(cfgMock.apiKey, "steel_mock_resolved_key");
 
+      // Test mock pass-cli where STEEL_API_KEY field is missing
+      process.env.PASS_CLI_OUTPUT_MOCK = JSON.stringify({
+        item: {
+          content: {
+            extra_fields: [{ name: "OTHER_KEY", content: { Text: "value" } }],
+          },
+        },
+      });
+      const cfgNoKey = resolveSteelConfig();
+      assert.strictEqual(cfgNoKey.apiKey, undefined);
+
       // Test mock pass-cli with invalid JSON
       process.env.PASS_CLI_OUTPUT_MOCK = "invalid-json";
       const cfgBadMock = resolveSteelConfig();
