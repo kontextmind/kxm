@@ -287,6 +287,10 @@ describe("KXM Browser & Steel Integration", () => {
     }, /Screenshot failed \(500\)/);
 
     // releaseSession returns false on network error rather than throwing
+    const badClient = new SteelClient({ apiUrl: "http://127.0.0.1:1", apiKey: "key" });
+    const releaseNetworkError = await badClient.releaseSession("network-error-id");
+    assert.strictEqual(releaseNetworkError, false);
+
     const releaseFailed = await client.releaseSession("any-id");
     assert.strictEqual(releaseFailed, false);
 
