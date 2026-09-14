@@ -2986,7 +2986,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve8.call(this, root, ref);
+      let _sch = resolve9.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a = root.localRefs) === null || _a === void 0 ? void 0 : _a[ref];
         const { schemaId } = this.opts;
@@ -3013,7 +3013,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve8(root, ref) {
+    function resolve9(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3838,7 +3838,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve8(baseURI, relativeURI, options) {
+    function resolve9(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const {
         parsed: baseParsed,
@@ -4200,7 +4200,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve: resolve8,
+      resolve: resolve9,
       resolveComponent,
       equal,
       serialize,
@@ -15139,7 +15139,7 @@ function defaultSpawn(command, args, options) {
   if (options.signal?.aborted) {
     return Promise.resolve({ stdout: "", stderr: "", code: null, started: false, observedChildExit: false, error: new Error("process_aborted") });
   }
-  return new Promise((resolve8) => {
+  return new Promise((resolve9) => {
     const stdout = [];
     const stderr = [];
     let outputBytes = 0;
@@ -15168,7 +15168,7 @@ function defaultSpawn(command, args, options) {
       child?.unref();
       const started = Boolean(child?.pid);
       if (started && !observedChildExit) error ??= new Error("process_exit_unobserved");
-      resolve8({ stdout: Buffer.concat(stdout).toString("utf8"), stderr: Buffer.concat(stderr).toString("utf8"), code, signal, started, observedChildExit, terminationRequested: stopping, ...error ? { error } : {} });
+      resolve9({ stdout: Buffer.concat(stdout).toString("utf8"), stderr: Buffer.concat(stderr).toString("utf8"), code, signal, started, observedChildExit, terminationRequested: stopping, ...error ? { error } : {} });
     };
     const kill = (requested) => {
       killProcessTree(child, requested);
@@ -16925,8 +16925,8 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
       const writable = Object.values(objectValue(step.repositories) ?? {}).filter((access) => access === "write").length;
       if (maxWriteRepositories > writable) issues.push(issue2("semantic", "write_repository_bound_invalid", file, `${stepId} maxWriteRepositories exceeds writable repository scope`));
     }
-    const join16 = objectValue(step.join);
-    const minimumPassed = join16 && typeof join16.minimumPassed === "number" ? join16.minimumPassed : void 0;
+    const join17 = objectValue(step.join);
+    const minimumPassed = join17 && typeof join17.minimumPassed === "number" ? join17.minimumPassed : void 0;
     if (minimumPassed !== void 0 && minimumPassed > maximum) issues.push(issue2("semantic", "join_impossible", file, `${stepId} minimumPassed exceeds assignment maximum`));
     const distinctBy = names(assignment?.distinctBy);
     if (distinctBy.length > 0) {
@@ -20454,7 +20454,7 @@ function compileStep(step, index, stepIndex, requirePlanHash, sink) {
   const maxAttempts = compileCountField(step.maxAttempts, 1, `${id}.maxAttempts`, id, sink);
   const timeoutMs = compileOptionalDuration(step.timeoutMs, `${id}.timeoutMs`, id, sink);
   const assignments = compileAssignments(step, id, agent, sink);
-  const join16 = compileJoin(step, id, sink);
+  const join17 = compileJoin(step, id, sink);
   const requiredEvidence = compileEvidence(step, id, sink);
   const transitions = compileTransitions(step, id, index, stepIndex, sink);
   const outcomes = Object.keys(transitions).sort(compareCodeUnits4);
@@ -20482,7 +20482,7 @@ function compileStep(step, index, stepIndex, requirePlanHash, sink) {
     transitions: orderedTransitions,
     requiresPlanHash: requirePlanHash.includes(id),
     assignments,
-    join: join16
+    join: join17
   };
   if (kind === "agent" || kind === "moa") {
     if (!agent) return void 0;
@@ -20532,15 +20532,15 @@ function compileAssignments(step, stepId, primaryAgentId, sink) {
   };
 }
 function compileJoin(step, stepId, sink) {
-  const join16 = objectValue2(step.join);
-  if (!join16) return { strategy: "all" };
-  const declared = stringValue2(join16.strategy);
+  const join17 = objectValue2(step.join);
+  if (!join17) return { strategy: "all" };
+  const declared = stringValue2(join17.strategy);
   const strategy = declared && JOIN_STRATEGIES.has(declared) ? declared : "all";
-  const minimumPassed = compileOptionalCount(join16.minimumPassed, `${stepId}.join.minimumPassed`, stepId, sink);
+  const minimumPassed = compileOptionalCount(join17.minimumPassed, `${stepId}.join.minimumPassed`, stepId, sink);
   const compiled = {
     strategy,
     ...minimumPassed !== void 0 ? { minimumPassed } : {},
-    ...typeof join16.cancelRemaining === "boolean" ? { cancelRemaining: join16.cancelRemaining } : {}
+    ...typeof join17.cancelRemaining === "boolean" ? { cancelRemaining: join17.cancelRemaining } : {}
   };
   return compiled;
 }
@@ -21835,12 +21835,12 @@ function enqueueVnextScheduledRun(storePath, runId, configRevision, bound, start
   if (owner.admitted.has(runId) || owner.queue.some((item) => item.runId === runId)) {
     return Promise.reject(runtimeError("run_busy", runId, `run ${runId} is already admitted or queued`));
   }
-  return new Promise((resolve8, reject) => {
+  return new Promise((resolve9, reject) => {
     owner.queue.push({
       runId,
       configRevision,
       bound,
-      start: (token) => start(token).then(resolve8, reject),
+      start: (token) => start(token).then(resolve9, reject),
       fail: (error) => reject(error)
     });
     pump(storePath, owner);
@@ -23013,6 +23013,17 @@ var INSECURE_SSH_HOST_KEY_PATTERNS = Object.freeze([
   /StrictHostKeyChecking=(accept-new|no|off)/i,
   /UserKnownHostsFile=\/dev\/null/i
 ]);
+function assertPinnedSshHostKeyPolicy(sshArgs) {
+  for (const arg of sshArgs) {
+    for (const pattern of INSECURE_SSH_HOST_KEY_PATTERNS) {
+      if (pattern.test(arg)) {
+        throw new Error(
+          `Insecure SSH host key policy rejected: "${arg}". KXM headless SSH requires pinned host keys with StrictHostKeyChecking=yes and BatchMode=yes.`
+        );
+      }
+    }
+  }
+}
 
 // plugins/kxm/src/vnext-engine-command.ts
 var MAX_DIRECT_TIMER_MS = 2147483647;
@@ -23100,8 +23111,8 @@ var CommandObserver = class {
     this.requestStop("error", "lost-close");
   }
   run() {
-    return new Promise((resolve8) => {
-      this.resolveOutcome = resolve8;
+    return new Promise((resolve9) => {
+      this.resolveOutcome = resolve9;
       try {
         this.start();
       } catch (error) {
@@ -26532,8 +26543,8 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
             }
             let releaseActive = () => {
             };
-            const activePromise = new Promise((resolve8) => {
-              releaseActive = resolve8;
+            const activePromise = new Promise((resolve9) => {
+              releaseActive = resolve9;
             });
             activeDrives.set(runId, activePromise);
             const cleanupActive = () => {
@@ -26989,8 +27000,8 @@ var PiSession = class {
     }
     const id = `cmd_${++this.commandCounter}`;
     const payload = { ...command, id };
-    return new Promise((resolve8, reject) => {
-      this.pendingCommands.set(id, { resolve: resolve8, reject });
+    return new Promise((resolve9, reject) => {
+      this.pendingCommands.set(id, { resolve: resolve9, reject });
       try {
         this.process.stdin.write(JSON.stringify(payload) + "\n");
       } catch (err) {
@@ -27011,7 +27022,7 @@ var PiSession = class {
       return { outcome, text: "aborted", usage: {} };
     }
     this.status = "busy";
-    return new Promise((resolve8, reject) => {
+    return new Promise((resolve9, reject) => {
       let signalCleanup;
       if (signal) {
         const onAbort = () => {
@@ -27025,7 +27036,7 @@ var PiSession = class {
         signalCleanup = () => signal.removeEventListener("abort", onAbort);
       }
       this.activePrompt = {
-        resolve: resolve8,
+        resolve: resolve9,
         reject,
         allowedOutcomes,
         text: "",
@@ -28418,17 +28429,407 @@ ${divider}
 `;
   return out;
 }
+
+// plugins/kxm/src/ssh-remote.ts
+import { spawnSync as spawnSync3 } from "node:child_process";
+import { existsSync as existsSync13, mkdirSync as mkdirSync7, readFileSync as readFileSync11, readdirSync as readdirSync5, rmSync as rmSync2, statSync as statSync4 } from "node:fs";
+import { homedir as homedir2 } from "node:os";
+import { join as join16, resolve as resolve8 } from "node:path";
+var MAX_SSH_OUTPUT_BYTES = 50 * 1024;
+var MAX_SSH_OUTPUT_LINES = 2e3;
+var DEFAULT_SOCKET_DIR = ".kxm/run/ssh-sockets";
+var DEFAULT_CONTROL_PERSIST = "10m";
+function truncateSshOutput(raw) {
+  let text = raw;
+  let truncated = false;
+  if (Buffer.byteLength(text, "utf-8") > MAX_SSH_OUTPUT_BYTES) {
+    const buf = Buffer.from(text, "utf-8");
+    text = buf.subarray(0, MAX_SSH_OUTPUT_BYTES).toString("utf-8");
+    truncated = true;
+  }
+  const lines = text.split("\n");
+  if (lines.length > MAX_SSH_OUTPUT_LINES) {
+    text = lines.slice(0, MAX_SSH_OUTPUT_LINES).join("\n");
+    truncated = true;
+  }
+  if (truncated) {
+    text += `
+
+[kxm: ssh output truncated to ${MAX_SSH_OUTPUT_BYTES / 1024}KB / ${MAX_SSH_OUTPUT_LINES} lines]`;
+  }
+  return { text, truncated };
+}
+function parseSshConfig(configPath) {
+  const targetPath = configPath ?? join16(homedir2(), ".ssh", "config");
+  if (!existsSync13(targetPath)) {
+    return [];
+  }
+  try {
+    const content = readFileSync11(targetPath, "utf-8");
+    const lines = content.split("\n");
+    const hosts = [];
+    let currentHosts = [];
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith("#")) continue;
+      const spaceIdx = line.search(/\s/);
+      if (spaceIdx === -1) continue;
+      const key = line.slice(0, spaceIdx).trim().toLowerCase();
+      const value = line.slice(spaceIdx + 1).trim();
+      if (key === "host") {
+        const aliases = value.split(/\s+/).filter((a) => a !== "*");
+        currentHosts = [];
+        for (const alias of aliases) {
+          const entry = { alias, identityFiles: [] };
+          currentHosts.push(entry);
+          hosts.push(entry);
+        }
+      } else if (currentHosts.length > 0) {
+        for (const currentHost of currentHosts) {
+          if (key === "hostname") {
+            currentHost.hostName = value;
+          } else if (key === "user") {
+            currentHost.user = value;
+          } else if (key === "port") {
+            const p = Number.parseInt(value, 10);
+            if (!Number.isNaN(p)) currentHost.port = p;
+          } else if (key === "proxyjump") {
+            currentHost.proxyJump = value;
+          } else if (key === "identityfile") {
+            currentHost.identityFiles = currentHost.identityFiles ?? [];
+            currentHost.identityFiles.push(value);
+          }
+        }
+      }
+    }
+    return hosts;
+  } catch {
+    return [];
+  }
+}
+function resolveSshHostG(host, execFn = spawnSync3) {
+  try {
+    const result = execFn("ssh", ["-G", host], { encoding: "utf-8" });
+    if (result.status !== 0 || !result.stdout) {
+      return { alias: host, hostName: host };
+    }
+    const lines = String(result.stdout).split("\n");
+    const info = { alias: host, identityFiles: [] };
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line) continue;
+      const spaceIdx = line.indexOf(" ");
+      if (spaceIdx === -1) continue;
+      const key = line.slice(0, spaceIdx).toLowerCase();
+      const value = line.slice(spaceIdx + 1).trim();
+      if (key === "hostname") {
+        info.hostName = value;
+      } else if (key === "user") {
+        info.user = value;
+      } else if (key === "port") {
+        const p = Number.parseInt(value, 10);
+        if (!Number.isNaN(p)) info.port = p;
+      } else if (key === "proxyjump") {
+        if (value && value !== "none") info.proxyJump = value;
+      } else if (key === "identityfile") {
+        info.identityFiles = info.identityFiles ?? [];
+        info.identityFiles.push(value);
+      }
+    }
+    return info;
+  } catch {
+    return { alias: host, hostName: host };
+  }
+}
+function ensureSocketDir(socketDir = DEFAULT_SOCKET_DIR) {
+  const resolved = resolve8(socketDir);
+  if (!existsSync13(resolved)) {
+    mkdirSync7(resolved, { recursive: true, mode: 448 });
+  }
+  return resolved;
+}
+function buildSshArgs(options) {
+  const socketDir = ensureSocketDir(options.socketDir ?? DEFAULT_SOCKET_DIR);
+  const controlPath = join16(socketDir, "%C");
+  const persist2 = options.controlPersist ?? DEFAULT_CONTROL_PERSIST;
+  const args = [
+    "-o",
+    `ControlMaster=auto`,
+    "-o",
+    `ControlPath=${controlPath}`,
+    "-o",
+    `ControlPersist=${persist2}`
+  ];
+  if (options.batchMode !== false) {
+    args.push("-o", "BatchMode=yes");
+  }
+  if (options.strictHostKey !== false) {
+    args.push("-o", "StrictHostKeyChecking=yes");
+  }
+  if (options.extraArgs) {
+    args.push(...options.extraArgs);
+  }
+  assertPinnedSshHostKeyPolicy(args);
+  args.push(options.host);
+  return args;
+}
+function checkControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawnSync3) {
+  const resolvedDir = ensureSocketDir(socketDir);
+  const controlPath = join16(resolvedDir, "%C");
+  try {
+    const result = execFn("ssh", ["-O", "check", "-o", `ControlPath=${controlPath}`, host], {
+      encoding: "utf-8"
+    });
+    return result.status === 0;
+  } catch {
+    return false;
+  }
+}
+function closeControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawnSync3) {
+  const resolvedDir = ensureSocketDir(socketDir);
+  const controlPath = join16(resolvedDir, "%C");
+  try {
+    const result = execFn("ssh", ["-O", "stop", "-o", `ControlPath=${controlPath}`, host], {
+      encoding: "utf-8"
+    });
+    return result.status === 0;
+  } catch {
+    return false;
+  }
+}
+function pruneSocketDir(socketDir = DEFAULT_SOCKET_DIR) {
+  const resolvedDir = ensureSocketDir(socketDir);
+  let removed = 0;
+  try {
+    const entries = readdirSync5(resolvedDir);
+    for (const entry of entries) {
+      const fullPath = join16(resolvedDir, entry);
+      try {
+        const stat = statSync4(fullPath);
+        if (stat.isSocket()) {
+          rmSync2(fullPath, { force: true });
+          removed++;
+        }
+      } catch {
+      }
+    }
+  } catch {
+  }
+  return removed;
+}
+function executeSshRun(params) {
+  const startTime = Date.now();
+  const execSyncFn = params.execFn ?? spawnSync3;
+  if (params.action === "info") {
+    if (params.host) {
+      const hostInfo = resolveSshHostG(params.host, execSyncFn);
+      return {
+        ok: true,
+        action: "info",
+        host: params.host,
+        resolvedHost: hostInfo.hostName ?? params.host,
+        user: hostInfo.user,
+        port: hostInfo.port,
+        hosts: [hostInfo],
+        durationMs: Date.now() - startTime
+      };
+    }
+    const discovered = parseSshConfig();
+    return {
+      ok: true,
+      action: "info",
+      hosts: discovered,
+      durationMs: Date.now() - startTime
+    };
+  }
+  if (!params.host) {
+    return {
+      ok: false,
+      action: params.action,
+      error: 'Parameter "host" is required for command and file actions.',
+      durationMs: Date.now() - startTime
+    };
+  }
+  const host = params.host;
+  const socketDir = params.socket_dir ?? DEFAULT_SOCKET_DIR;
+  const wasSocketActive = checkControlSocket(host, socketDir, execSyncFn);
+  if (params.action === "command") {
+    if (!params.command) {
+      return {
+        ok: false,
+        action: "command",
+        host,
+        error: 'Parameter "command" is required for command action.',
+        durationMs: Date.now() - startTime
+      };
+    }
+    try {
+      assertCommandSeatbelt(params.command);
+    } catch (err) {
+      return {
+        ok: false,
+        action: "command",
+        host,
+        error: err.message,
+        durationMs: Date.now() - startTime
+      };
+    }
+    let remoteCommand = params.command;
+    let inputStdin = void 0;
+    if (params.sudo) {
+      const sudoPwd = params.sudo_password ?? params.password;
+      if (sudoPwd) {
+        inputStdin = `${sudoPwd}
+`;
+        remoteCommand = `sudo -S -p '' -- sh -c ${JSON.stringify(params.command)}`;
+      } else {
+        remoteCommand = `sudo -- sh -c ${JSON.stringify(params.command)}`;
+      }
+    }
+    const useSshPass = Boolean(params.password);
+    const sshArgs = buildSshArgs({
+      host,
+      socketDir,
+      controlPersist: params.control_persist,
+      batchMode: !useSshPass,
+      strictHostKey: params.strict_host_key
+    });
+    sshArgs.push("--", remoteCommand);
+    const spawnEnv = { ...process.env };
+    let binary = "ssh";
+    let finalArgs = sshArgs;
+    if (useSshPass && params.password) {
+      binary = "sshpass";
+      finalArgs = ["-e", "ssh", ...sshArgs];
+      spawnEnv.SSHPASS = params.password;
+    }
+    try {
+      const result = execSyncFn(binary, finalArgs, {
+        encoding: "utf-8",
+        env: spawnEnv,
+        input: inputStdin,
+        timeout: params.timeout_ms ?? 12e4,
+        maxBuffer: 10 * 1024 * 1024
+      });
+      const stdoutRaw = String(result.stdout || "");
+      const stderrRaw = String(result.stderr || "");
+      const sanitizedStderr = stderrRaw.replace(/\[sudo\] password for [^:]+:\s*/gi, "");
+      const stdoutTrunc = truncateSshOutput(stdoutRaw);
+      const stderrTrunc = truncateSshOutput(sanitizedStderr);
+      return {
+        ok: result.status === 0,
+        action: "command",
+        host,
+        exitCode: result.status ?? 1,
+        stdout: stdoutTrunc.text,
+        stderr: stderrTrunc.text,
+        truncated: stdoutTrunc.truncated || stderrTrunc.truncated,
+        socketReused: wasSocketActive,
+        durationMs: Date.now() - startTime,
+        error: result.error ? result.error.message : void 0
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        action: "command",
+        host,
+        error: err.message,
+        durationMs: Date.now() - startTime
+      };
+    }
+  }
+  if (params.action === "file") {
+    if (!params.file_path) {
+      return {
+        ok: false,
+        action: "file",
+        host,
+        error: 'Parameter "file_path" is required for file action.',
+        durationMs: Date.now() - startTime
+      };
+    }
+    const filePath = params.file_path;
+    const op = params.file_op ?? "write";
+    if (op === "read") {
+      const readCmd = params.sudo ? `sudo cat ${JSON.stringify(filePath)}` : `cat ${JSON.stringify(filePath)}`;
+      return executeSshRun({
+        ...params,
+        action: "command",
+        command: readCmd
+      });
+    }
+    const content = params.file_content ?? "";
+    const redirectOp = op === "append" ? ">>" : ">";
+    const writeCmd = params.sudo ? `sudo tee ${op === "append" ? "-a " : ""}${JSON.stringify(filePath)} > /dev/null` : `cat ${redirectOp} ${JSON.stringify(filePath)}`;
+    const useSshPass = Boolean(params.password);
+    const sshArgs = buildSshArgs({
+      host,
+      socketDir,
+      controlPersist: params.control_persist,
+      batchMode: !useSshPass,
+      strictHostKey: params.strict_host_key
+    });
+    sshArgs.push("--", writeCmd);
+    const spawnEnv = { ...process.env };
+    let binary = "ssh";
+    let finalArgs = sshArgs;
+    if (useSshPass && params.password) {
+      binary = "sshpass";
+      finalArgs = ["-e", "ssh", ...sshArgs];
+      spawnEnv.SSHPASS = params.password;
+    }
+    try {
+      const result = execSyncFn(binary, finalArgs, {
+        encoding: "utf-8",
+        env: spawnEnv,
+        input: content,
+        timeout: params.timeout_ms ?? 6e4
+      });
+      return {
+        ok: result.status === 0,
+        action: "file",
+        host,
+        exitCode: result.status ?? 1,
+        stdout: String(result.stdout || ""),
+        stderr: String(result.stderr || ""),
+        fileProcessed: filePath,
+        bytesProcessed: Buffer.byteLength(content, "utf-8"),
+        socketReused: wasSocketActive,
+        durationMs: Date.now() - startTime,
+        error: result.error ? result.error.message : void 0
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        action: "file",
+        host,
+        error: err.message,
+        durationMs: Date.now() - startTime
+      };
+    }
+  }
+  return {
+    ok: false,
+    action: params.action,
+    error: `Unknown action: ${params.action}`,
+    durationMs: Date.now() - startTime
+  };
+}
 export {
   BUILTIN_HARNESSES,
   BUILTIN_HARNESS_IDS,
   CANDIDATE_SCHEMA,
+  DEFAULT_CONTROL_PERSIST,
   DEFAULT_HARNESS,
   DEFAULT_LOG_MAX_BYTES,
   DEFAULT_LOG_MAX_FILES,
   DEFAULT_MODES_CONFIG,
+  DEFAULT_SOCKET_DIR,
   IMPROVEMENT_REPORT_SCHEMA,
   IMPROVEMENT_REPORT_V1_SCHEMA,
   LOG_LEVEL_PRIORITY,
+  MAX_SSH_OUTPUT_BYTES,
+  MAX_SSH_OUTPUT_LINES,
   NATIVE_HARNESS_PROVIDERS,
   PI_ALLOWED_PROVIDERS,
   PI_NATIVE_BRAKE_PROVIDERS,
@@ -28448,13 +28849,16 @@ export {
   assertVnextConfigError,
   backupDatabaseFile,
   buildImprovementReport,
+  buildSshArgs,
   calculatePromptFootprint,
   cancelVnextRun,
+  checkControlSocket,
   checkIntegrity,
   checkMemoryRevisionDrift,
   checkedParent,
   checkpointWal,
   classifyCandidateKind,
+  closeControlSocket,
   closeVnextRuntimeContext,
   computeGateEvidenceOutcome,
   computeVnextMemoryRevision,
@@ -28467,10 +28871,12 @@ export {
   defaultSpawn,
   discoverProjectStores,
   eligibleHarnesses,
+  ensureSocketDir,
   ensureVnextSupervisor,
   ensureWalJournalMode,
   estimateTokens,
   evaluatePromotionPolicy,
+  executeSshRun,
   fileSha256,
   findWinNpmInnerExe,
   foldStoredVnextRun,
@@ -28509,6 +28915,7 @@ export {
   parseGenericOneShotUsage,
   parseGrokOneShotUsage,
   parseKimiOneShotUsage,
+  parseSshConfig,
   persistVnextRunState,
   planHarnessUpdate,
   probeHarnessAssignment,
@@ -28516,6 +28923,7 @@ export {
   probeHarnesses,
   probeHarnessesForModel,
   projectRuntimeKey,
+  pruneSocketDir,
   readVnextRunStatus,
   readVnextSupervisorToken,
   rebuildVnextRunProjection,
@@ -28524,6 +28932,7 @@ export {
   resolveActiveMode,
   resolveDispatchStatus,
   resolvePassCliApiKey,
+  resolveSshHostG,
   resolveSteelConfig,
   resolveViewportDimensions,
   restoreBackup,
@@ -28534,6 +28943,7 @@ export {
   sanitizeLogOutput,
   startVnextRuntimeSupervisor,
   tableColumns,
+  truncateSshOutput,
   userTables,
   validateHarnessModelPair,
   verifyExpectedTables,
