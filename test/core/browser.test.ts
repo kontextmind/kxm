@@ -4,6 +4,7 @@ import http from "node:http";
 import {
   SteelClient,
   resolveSteelConfig,
+  resolvePassCliApiKey,
   formatCDPEndpoint,
   sanitizeLogOutput,
   createAnnotationFeedback,
@@ -141,10 +142,50 @@ describe("KXM Browser & Steel Integration", () => {
       delete process.env.STEEL_UI_URL;
       process.env.USE_PASS_CLI = "true";
 
-      // With pass-cli enabled on this test runner, it should resolve or catch cleanly
-      const cfg = resolveSteelConfig();
-      assert.ok(cfg.apiUrl);
-      assert.ok(cfg.uiUrl);
+      // Test mock pass-cli resolution
+      process.env.PASS_CLI_OUTPUT_MOCK = JSON.stringify({
+        item: {
+          content: {
+            content: {
+              Custom: {
+                sections: [
+                  {
+                    section_fields: [
+                      { name: "STEEL_API_KEY", content: { Hidden: "steel_mock_resolved_key" } },
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+      const cfgMock = resolveSteelConfig();
+      assert.strictEqual(cfgMock.apiKey, "steel_mock_resolved_key");
+
+      // Test mock pass-cli with invalid JSON
+      process.env.PASS_CLI_OUTPUT_MOCK = "invalid-json";
+      const cfgBadMock = resolveSteelConfig();
+      assert.strictEqual(cfgBadMock.apiKey, undefined);
+
+      delete process.env.PASS_CLI_OUTPUT_MOCK;
+
+      // Test direct resolvePassCliApiKey with custom execFn
+      const directKey = resolvePassCliApiKey(() =>
+        JSON.stringify({
+          item: {
+            content: {
+              extra_fields: [{ name: "STEEL_API_KEY", content: { Hidden: "direct_custom_key" } }],
+            },
+          },
+        })
+      );
+      assert.strictEqual(directKey, "direct_custom_key");
+
+      const errorKey = resolvePassCliApiKey(() => {
+        throw new Error("exec failed");
+      });
+      assert.strictEqual(errorKey, undefined);
 
       process.env.STEEL_API_URL = "https://steel.env.local";
       process.env.STEEL_API_KEY = "steel_envkey123";

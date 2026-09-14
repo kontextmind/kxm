@@ -27742,14 +27742,25 @@ function resolveViewportDimensions(presetOrDims) {
   }
   return presetOrDims;
 }
-function resolvePassCliApiKey() {
+function resolvePassCliApiKey(execFn = (cmd) => execSync(cmd, { encoding: "utf8", stdio: ["pipe", "pipe", "ignore"], timeout: 5e3 })) {
   if (typeof process === "undefined" || process.env.USE_PASS_CLI === "false") {
     return void 0;
   }
+  if (process.env.PASS_CLI_OUTPUT_MOCK) {
+    try {
+      const parsed = JSON.parse(process.env.PASS_CLI_OUTPUT_MOCK);
+      const extraFields = parsed?.item?.content?.extra_fields || [];
+      const customSections = parsed?.item?.content?.content?.Custom?.sections || [];
+      const sectionFields = customSections.flatMap((s) => s.section_fields || []);
+      const allFields = [...extraFields, ...sectionFields];
+      return allFields.find((f) => f.name === "STEEL_API_KEY")?.content?.Hidden;
+    } catch {
+      return void 0;
+    }
+  }
   try {
-    const output = execSync(
-      'pass-cli item view --vault-name "AI Provider Keys" --item-title "Steel Browser (KontextMind DOKS)" --output json',
-      { encoding: "utf8", stdio: ["pipe", "pipe", "ignore"], timeout: 5e3 }
+    const output = execFn(
+      'pass-cli item view --vault-name "AI Provider Keys" --item-title "Steel Browser (KontextMind DOKS)" --output json'
     );
     const parsed = JSON.parse(output);
     const extraFields = parsed?.item?.content?.extra_fields || [];
@@ -28222,6 +28233,7 @@ export {
   redactLogValue,
   registerVnextRuntimeCloseHook,
   resolveDispatchStatus,
+  resolvePassCliApiKey,
   resolveSteelConfig,
   resolveViewportDimensions,
   restoreBackup,

@@ -139,14 +139,28 @@ export interface SteelConfig {
   timeoutMs?: number | undefined;
 }
 
-function resolvePassCliApiKey(): string | undefined {
+export function resolvePassCliApiKey(
+  execFn: (cmd: string) => string = (cmd) =>
+    execSync(cmd, { encoding: "utf8", stdio: ["pipe", "pipe", "ignore"], timeout: 5000 }),
+): string | undefined {
   if (typeof process === "undefined" || process.env.USE_PASS_CLI === "false") {
     return undefined;
   }
+  if (process.env.PASS_CLI_OUTPUT_MOCK) {
+    try {
+      const parsed = JSON.parse(process.env.PASS_CLI_OUTPUT_MOCK);
+      const extraFields = parsed?.item?.content?.extra_fields || [];
+      const customSections = parsed?.item?.content?.content?.Custom?.sections || [];
+      const sectionFields = customSections.flatMap((s: any) => s.section_fields || []);
+      const allFields = [...extraFields, ...sectionFields];
+      return allFields.find((f: any) => f.name === "STEEL_API_KEY")?.content?.Hidden;
+    } catch {
+      return undefined;
+    }
+  }
   try {
-    const output = execSync(
+    const output = execFn(
       'pass-cli item view --vault-name "AI Provider Keys" --item-title "Steel Browser (KontextMind DOKS)" --output json',
-      { encoding: "utf8", stdio: ["pipe", "pipe", "ignore"], timeout: 5000 }
     );
     const parsed = JSON.parse(output);
     const extraFields = parsed?.item?.content?.extra_fields || [];
