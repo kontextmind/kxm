@@ -139,6 +139,26 @@ export interface SteelConfig {
   timeoutMs?: number | undefined;
 }
 
+function resolvePassCliApiKey(): string | undefined {
+  if (typeof process === "undefined" || process.env.USE_PASS_CLI === "false") {
+    return undefined;
+  }
+  try {
+    const output = execSync(
+      'pass-cli item view --vault-name "AI Provider Keys" --item-title "Steel Browser (KontextMind DOKS)" --output json',
+      { encoding: "utf8", stdio: ["pipe", "pipe", "ignore"], timeout: 5000 }
+    );
+    const parsed = JSON.parse(output);
+    const extraFields = parsed?.item?.content?.extra_fields || [];
+    const customSections = parsed?.item?.content?.content?.Custom?.sections || [];
+    const sectionFields = customSections.flatMap((s: any) => s.section_fields || []);
+    const allFields = [...extraFields, ...sectionFields];
+    return allFields.find((f: any) => f.name === "STEEL_API_KEY")?.content?.Hidden;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Resolve Steel configuration from environment or pass-cli.
  * Does not write secrets to disk or logs.
@@ -149,28 +169,7 @@ export function resolveSteelConfig(overrides?: Partial<SteelConfig>): SteelConfi
     process.env.STEEL_API_URL ||
     "https://steel.kontextmind.com";
 
-  let apiKey = overrides?.apiKey || process.env.STEEL_API_KEY;
-
-  if (!apiKey && typeof process !== "undefined" && process.env.USE_PASS_CLI !== "false") {
-    try {
-      const output = execSync(
-        'pass-cli item view --vault-name "AI Provider Keys" --item-title "Steel Browser (KontextMind DOKS)" --output json',
-        { encoding: "utf8", stdio: ["pipe", "pipe", "ignore"], timeout: 5000 }
-      );
-      const parsed = JSON.parse(output);
-      const extraFields = parsed?.item?.content?.extra_fields || [];
-      const customSections = parsed?.item?.content?.content?.Custom?.sections || [];
-      const sectionFields = customSections.flatMap((s: any) => s.section_fields || []);
-      const allFields = [...extraFields, ...sectionFields];
-
-      const hiddenKey = allFields.find((f: any) => f.name === "STEEL_API_KEY")?.content?.Hidden;
-      if (hiddenKey) {
-        apiKey = hiddenKey;
-      }
-    } catch {
-      // pass-cli unavailable or item not found; continue with undefined apiKey
-    }
-  }
+  const apiKey = overrides?.apiKey || process.env.STEEL_API_KEY || resolvePassCliApiKey();
 
   const uiUrl =
     overrides?.uiUrl ||

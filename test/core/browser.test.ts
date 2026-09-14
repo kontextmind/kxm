@@ -251,6 +251,10 @@ describe("KXM Browser & Steel Integration", () => {
       client.requestHumanTakeover(cachedSession.id, "MFA on expired");
     }, /Cannot initiate takeover on session in state EXPIRED/);
 
+    // Test releaseSession on session not currently in activeSessions
+    const releaseUntracked = await client.releaseSession("untracked-session-999");
+    assert.strictEqual(releaseUntracked, true);
+
     const released = await client.releaseSession(session.id);
     assert.strictEqual(released, true);
 

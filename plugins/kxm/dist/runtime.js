@@ -27742,27 +27742,28 @@ function resolveViewportDimensions(presetOrDims) {
   }
   return presetOrDims;
 }
+function resolvePassCliApiKey() {
+  if (typeof process === "undefined" || process.env.USE_PASS_CLI === "false") {
+    return void 0;
+  }
+  try {
+    const output = execSync(
+      'pass-cli item view --vault-name "AI Provider Keys" --item-title "Steel Browser (KontextMind DOKS)" --output json',
+      { encoding: "utf8", stdio: ["pipe", "pipe", "ignore"], timeout: 5e3 }
+    );
+    const parsed = JSON.parse(output);
+    const extraFields = parsed?.item?.content?.extra_fields || [];
+    const customSections = parsed?.item?.content?.content?.Custom?.sections || [];
+    const sectionFields = customSections.flatMap((s) => s.section_fields || []);
+    const allFields = [...extraFields, ...sectionFields];
+    return allFields.find((f) => f.name === "STEEL_API_KEY")?.content?.Hidden;
+  } catch {
+    return void 0;
+  }
+}
 function resolveSteelConfig(overrides) {
   const apiUrl = overrides?.apiUrl || process.env.STEEL_API_URL || "https://steel.kontextmind.com";
-  let apiKey = overrides?.apiKey || process.env.STEEL_API_KEY;
-  if (!apiKey && typeof process !== "undefined" && process.env.USE_PASS_CLI !== "false") {
-    try {
-      const output = execSync(
-        'pass-cli item view --vault-name "AI Provider Keys" --item-title "Steel Browser (KontextMind DOKS)" --output json',
-        { encoding: "utf8", stdio: ["pipe", "pipe", "ignore"], timeout: 5e3 }
-      );
-      const parsed = JSON.parse(output);
-      const extraFields = parsed?.item?.content?.extra_fields || [];
-      const customSections = parsed?.item?.content?.content?.Custom?.sections || [];
-      const sectionFields = customSections.flatMap((s) => s.section_fields || []);
-      const allFields = [...extraFields, ...sectionFields];
-      const hiddenKey = allFields.find((f) => f.name === "STEEL_API_KEY")?.content?.Hidden;
-      if (hiddenKey) {
-        apiKey = hiddenKey;
-      }
-    } catch {
-    }
-  }
+  const apiKey = overrides?.apiKey || process.env.STEEL_API_KEY || resolvePassCliApiKey();
   const uiUrl = overrides?.uiUrl || (overrides?.apiUrl ? `${overrides.apiUrl.replace(/\/$/, "")}/ui` : void 0) || process.env.STEEL_UI_URL || `${apiUrl.replace(/\/$/, "")}/ui`;
   return {
     apiUrl: apiUrl.replace(/\/$/, ""),
