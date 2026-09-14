@@ -10,3 +10,4 @@ export * from "./improve.ts";
 export * from "./browser.ts";
 export * from "./modes.ts";
 export * from "./ssh-remote.ts";
+export * from "./subagent-control.ts";
