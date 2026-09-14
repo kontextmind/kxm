@@ -174,6 +174,7 @@ export function resolveSteelConfig(overrides?: Partial<SteelConfig>): SteelConfi
 
   const uiUrl =
     overrides?.uiUrl ||
+    (overrides?.apiUrl ? `${overrides.apiUrl.replace(/\/$/, "")}/ui` : undefined) ||
     process.env.STEEL_UI_URL ||
     `${apiUrl.replace(/\/$/, "")}/ui`;
 

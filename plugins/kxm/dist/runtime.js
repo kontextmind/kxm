@@ -27763,7 +27763,7 @@ function resolveSteelConfig(overrides) {
     } catch {
     }
   }
-  const uiUrl = overrides?.uiUrl || process.env.STEEL_UI_URL || `${apiUrl.replace(/\/$/, "")}/ui`;
+  const uiUrl = overrides?.uiUrl || (overrides?.apiUrl ? `${overrides.apiUrl.replace(/\/$/, "")}/ui` : void 0) || process.env.STEEL_UI_URL || `${apiUrl.replace(/\/$/, "")}/ui`;
   return {
     apiUrl: apiUrl.replace(/\/$/, ""),
     apiKey,

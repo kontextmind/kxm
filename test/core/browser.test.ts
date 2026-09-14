@@ -19,18 +19,29 @@ describe("KXM Browser & Steel Integration", () => {
   let serverPort: number;
 
   const mockSessions = new Map<string, any>();
+  let shouldFailNext = false;
+  let shouldReturn500 = false;
 
   beforeEach(async () => {
     mockSessions.clear();
+    shouldFailNext = false;
+    shouldReturn500 = false;
+
     server = http.createServer((req, res) => {
       const url = new URL(req.url || "/", `http://${req.headers.host}`);
+
+      if (shouldReturn500) {
+        res.writeHead(500, { "Content-Type": "text/plain" });
+        res.end("Internal Server Error");
+        return;
+      }
 
       if (req.method === "POST" && url.pathname === "/v1/sessions") {
         let body = "";
         req.on("data", (chunk) => (body += chunk));
         req.on("end", () => {
           const parsed = JSON.parse(body || "{}");
-          const id = `mock-session-${Date.now()}`;
+          const id = `mock-session-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
           const sessionData = {
             id,
             createdAt: new Date().toISOString(),
@@ -122,20 +133,34 @@ describe("KXM Browser & Steel Integration", () => {
     });
   });
 
-  it("resolves steel config with secure defaults and overrides", () => {
-    const config = resolveSteelConfig({
-      apiUrl: "https://steel.test.local",
-      apiKey: "steel_testkey12345",
-    });
+  it("resolves steel config with secure defaults, env vars, and pass-cli disable", () => {
+    const origEnv = { ...process.env };
+    try {
+      process.env.STEEL_API_URL = "https://steel.env.local";
+      process.env.STEEL_API_KEY = "steel_envkey123";
+      process.env.STEEL_UI_URL = "https://steel.env.local/custom-ui";
+      process.env.USE_PASS_CLI = "false";
 
-    assert.strictEqual(config.apiUrl, "https://steel.test.local");
-    assert.strictEqual(config.apiKey, "steel_testkey12345");
-    assert.strictEqual(config.uiUrl, "https://steel.test.local/ui");
-    assert.strictEqual(config.timeoutMs, 300000);
+      const configFromEnv = resolveSteelConfig();
+      assert.strictEqual(configFromEnv.apiUrl, "https://steel.env.local");
+      assert.strictEqual(configFromEnv.apiKey, "steel_envkey123");
+      assert.strictEqual(configFromEnv.uiUrl, "https://steel.env.local/custom-ui");
+
+      const configOverride = resolveSteelConfig({
+        apiUrl: "https://steel.test.local",
+        apiKey: "steel_testkey12345",
+      });
+      assert.strictEqual(configOverride.apiUrl, "https://steel.test.local");
+      assert.strictEqual(configOverride.apiKey, "steel_testkey12345");
+      assert.strictEqual(configOverride.uiUrl, "https://steel.test.local/ui");
+      assert.strictEqual(configOverride.timeoutMs, 300000);
+    } finally {
+      process.env = origEnv;
+    }
   });
 
-  it("formats remote CDP endpoint cleanly with session ID and auth", () => {
-    const config = {
+  it("formats remote CDP endpoint cleanly for both secure and insecure protocols", () => {
+    const configSecure = {
       apiUrl: "https://steel.kontextmind.com",
       apiKey: "steel_secret_key",
       uiUrl: "https://steel.kontextmind.com/ui",
@@ -145,44 +170,48 @@ describe("KXM Browser & Steel Integration", () => {
       websocketUrl: "ws://0.0.0.0:3000/",
     };
 
-    const cdpUrl = formatCDPEndpoint(session, config);
-    assert.ok(cdpUrl.startsWith("wss://steel.kontextmind.com/v1/devtools?"));
-    assert.ok(cdpUrl.includes("sessionId=sess_12345"));
-    assert.ok(cdpUrl.includes("apiKey=steel_secret_key"));
-  });
+    const cdpUrlSecure = formatCDPEndpoint(session, configSecure);
+    assert.ok(cdpUrlSecure.startsWith("wss://steel.kontextmind.com/v1/devtools?"));
+    assert.ok(cdpUrlSecure.includes("sessionId=sess_12345"));
+    assert.ok(cdpUrlSecure.includes("apiKey=steel_secret_key"));
 
-  it("sanitizes and redacts secrets in logs and diagnostic outputs", () => {
-    const rawUrl = "wss://steel.kontextmind.com/v1/devtools?sessionId=123&apiKey=steel_998877665544332211";
-    const sanitizedUrl = sanitizeLogOutput(rawUrl);
-    assert.strictEqual(sanitizedUrl, "wss://steel.kontextmind.com/v1/devtools?sessionId=123&apiKey=[REDACTED]");
-
-    const rawObj = {
-      sessionId: "123",
-      apiKey: "steel_secret123",
-      headers: {
-        "x-steel-api-key": "steel_secret123",
-      },
-      nested: {
-        token: "jwt.secret.here",
-        url: "https://example.com",
-      },
+    const configInsecure = {
+      apiUrl: "http://localhost:3000",
+      uiUrl: "http://localhost:3000/ui",
     };
-    const sanitizedObj = sanitizeLogOutput(rawObj) as any;
-    assert.strictEqual(sanitizedObj.apiKey, "[REDACTED]");
-    assert.strictEqual(sanitizedObj.headers["x-steel-api-key"], "[REDACTED]");
-    assert.strictEqual(sanitizedObj.nested.token, "[REDACTED]");
-    assert.strictEqual(sanitizedObj.nested.url, "https://example.com");
+    const cdpUrlInsecure = formatCDPEndpoint(session, configInsecure);
+    assert.ok(cdpUrlInsecure.startsWith("ws://localhost:3000/v1/devtools?"));
+    assert.ok(!cdpUrlInsecure.includes("apiKey="));
   });
 
-  it("manages session lifecycle (create, inspect, release)", async () => {
+  it("sanitizes and redacts secrets in primitive, array, and nested log structures", () => {
+    assert.strictEqual(sanitizeLogOutput(123), 123);
+    assert.strictEqual(sanitizeLogOutput(true), true);
+    assert.strictEqual(sanitizeLogOutput(null), null);
+
+    const rawUrl = "wss://steel.kontextmind.com/v1/devtools?sessionId=123&apiKey=steel_998877665544332211";
+    assert.strictEqual(sanitizeLogOutput(rawUrl), "wss://steel.kontextmind.com/v1/devtools?sessionId=123&apiKey=[REDACTED]");
+
+    const rawArray = ["normal", "apiKey=secret123", { password: "p1", public: "val" }];
+    const sanitizedArray = sanitizeLogOutput(rawArray) as any[];
+    assert.strictEqual(sanitizedArray[0], "normal");
+    assert.strictEqual(sanitizedArray[1], "apiKey=[REDACTED]");
+    assert.strictEqual(sanitizedArray[2].password, "[REDACTED]");
+    assert.strictEqual(sanitizedArray[2].public, "val");
+  });
+
+  it("manages session lifecycle with all options (proxy, dimensions, custom userAgent)", async () => {
     const client = new SteelClient({
       apiUrl: serverUrl,
       apiKey: "test_key",
       timeoutMs: 60000,
     });
 
+    assert.strictEqual(client.getConfig().apiKey, "test_key");
+
     const session = await client.createSession({
-      userAgent: "TestRunner/1.0",
+      userAgent: "CustomAgent/2.0",
+      proxy: "http://proxy.example.com:8080",
       dimensions: { width: 1280, height: 800 },
     });
 
@@ -194,7 +223,11 @@ describe("KXM Browser & Steel Integration", () => {
 
     const fetched = await client.getSession(session.id);
     assert.ok(fetched);
-    assert.strictEqual(fetched.id, session.id);
+    assert.strictEqual(fetched?.id, session.id);
+
+    // Test 404 on unknown session
+    const notFound = await client.getSession("unknown-id-404");
+    assert.strictEqual(notFound, null);
 
     const released = await client.releaseSession(session.id);
     assert.strictEqual(released, true);
@@ -203,38 +236,92 @@ describe("KXM Browser & Steel Integration", () => {
     assert.strictEqual(afterRelease?.status, "released");
   });
 
-  it("enforces human takeover protocol state transitions and exclusive ownership", async () => {
+  it("handles server failure branches gracefully", async () => {
+    const client = new SteelClient({
+      apiUrl: serverUrl,
+      apiKey: "test_key",
+    });
+
+    shouldReturn500 = true;
+
+    await assert.rejects(async () => {
+      await client.createSession();
+    }, /Failed to create Steel session \(500\)/);
+
+    await assert.rejects(async () => {
+      await client.getSession("any-id");
+    }, /Failed to fetch Steel session \(500\)/);
+
+    await assert.rejects(async () => {
+      await client.scrape("https://example.com");
+    }, /Scrape failed \(500\)/);
+
+    await assert.rejects(async () => {
+      await client.screenshot("https://example.com");
+    }, /Screenshot failed \(500\)/);
+
+    // releaseSession returns false on network error rather than throwing
+    const releaseFailed = await client.releaseSession("any-id");
+    assert.strictEqual(releaseFailed, false);
+
+    // checkOrphanedSessions returns empty array on error
+    const orphans = await client.checkOrphanedSessions();
+    assert.deepStrictEqual(orphans, []);
+  });
+
+  it("enforces human takeover protocol state transitions and error paths", async () => {
     const client = new SteelClient({
       apiUrl: serverUrl,
       apiKey: "test_key",
     });
 
     const session = await client.createSession();
-    assert.strictEqual(session.state, "AGENT_CONTROL");
-    assert.strictEqual(session.activeController, "agent");
 
-    // 1. Initiate human takeover for MFA
+    // 1. Invalid transitions on untracked / released sessions
+    assert.throws(() => {
+      client.requestHumanTakeover("non-existent-id", "test");
+    }, /not tracked/);
+
+    assert.throws(() => {
+      client.signalHumanComplete("non-existent-id");
+    }, /not tracked/);
+
+    assert.throws(() => {
+      client.confirmAuthenticationVerified("non-existent-id");
+    }, /not tracked/);
+
+    // 2. Transition to HUMAN_CONTROL
     const takeover = client.requestHumanTakeover(session.id, "MFA prompt encountered on dashboard login");
     assert.strictEqual(session.state, "HUMAN_CONTROL");
     assert.strictEqual(session.activeController, "human");
     assert.ok(takeover.takeoverUrl.includes(session.id));
-    assert.ok(takeover.instructions.includes("HUMAN TAKEOVER REQUIRED"));
 
-    // 2. Reject invalid transitions while human has control
+    // 3. Reject invalid state transitions
     assert.throws(() => {
       client.confirmAuthenticationVerified(session.id);
     }, /not in VERIFY_AUTHENTICATION state/);
 
-    // 3. Human completes action and signals completion
+    // 4. Transition to VERIFY_AUTHENTICATION
     const completion = client.signalHumanComplete(session.id);
     assert.strictEqual(completion.state, "VERIFY_AUTHENTICATION");
     assert.strictEqual(session.activeController, "agent");
 
-    // 4. Verify authenticated state before resuming agent automation
+    // 5. Cannot signalHumanComplete again when already verifying
+    assert.throws(() => {
+      client.signalHumanComplete(session.id);
+    }, /not in HUMAN_CONTROL state/);
+
+    // 6. Confirm verified and restore AGENT_CONTROL
     const verified = client.confirmAuthenticationVerified(session.id);
     assert.strictEqual(verified.state, "AGENT_CONTROL");
     assert.strictEqual(verified.activeController, "agent");
     assert.strictEqual(verified.takeoverReason, undefined);
+
+    // 7. Release session and confirm takeover cannot be initiated on released session
+    await client.releaseSession(session.id);
+    assert.throws(() => {
+      client.requestHumanTakeover(session.id, "test");
+    }, /not tracked/);
   });
 
   it("handles stateless scrape and screenshot", async () => {
@@ -247,7 +334,7 @@ describe("KXM Browser & Steel Integration", () => {
     assert.strictEqual(scrapeRes.metadata.title, "Test Title");
     assert.ok(scrapeRes.content.html.includes("Scraped: https://example.com"));
 
-    const shotRes = await client.screenshot("https://example.com");
+    const shotRes = await client.screenshot("https://example.com", true);
     assert.strictEqual(shotRes.url, "https://example.com");
     assert.ok(shotRes.base64);
   });
@@ -258,7 +345,6 @@ describe("KXM Browser & Steel Integration", () => {
       apiKey: "test_key",
     });
 
-    // Create a tracked session
     const session = await client.createSession();
 
     // Create an untracked session directly on mock server
@@ -268,9 +354,20 @@ describe("KXM Browser & Steel Integration", () => {
       duration: 700000,
     });
 
+    // Create an inactive tracked session
+    const inactiveTracked = await client.createSession();
+    inactiveTracked.lastActiveAt = Date.now() - 600000;
+
+    // Create a tracked session in HUMAN_CONTROL (must not be treated as orphan)
+    const humanSession = await client.createSession();
+    client.requestHumanTakeover(humanSession.id, "User login");
+    humanSession.lastActiveAt = Date.now() - 600000;
+
     const orphans = await client.checkOrphanedSessions(500000);
     assert.ok(orphans.includes("untracked-orphan-1"));
+    assert.ok(orphans.includes(inactiveTracked.id));
     assert.ok(!orphans.includes(session.id));
+    assert.ok(!orphans.includes(humanSession.id));
   });
 
   it("creates structured section annotation feedback and formats agent prompt", () => {
@@ -307,6 +404,17 @@ describe("KXM Browser & Steel Integration", () => {
     assert.ok(promptText.includes("Badge Overflow"));
     assert.ok(promptText.includes("x=10, y=20, w=150, h=40"));
     assert.ok(promptText.includes("- [ ] Add flex-wrap to header container"));
+
+    // Test prompt with minimal feedback
+    const minimalFeedback = createAnnotationFeedback({
+      url: "https://example.com",
+      overallSummary: "Clean review",
+      annotations: [],
+      requestedChanges: [],
+    });
+    const minimalPrompt = formatAnnotationFeedbackPrompt(minimalFeedback);
+    assert.ok(minimalPrompt.includes("https://example.com"));
+    assert.ok(minimalPrompt.includes("Clean review"));
   });
 
   it("resolves standard viewport presets for multi-device testing", () => {
@@ -314,6 +422,12 @@ describe("KXM Browser & Steel Integration", () => {
     assert.strictEqual(VIEWPORT_PRESETS["mobile"]?.height, 852);
     assert.strictEqual(VIEWPORT_PRESETS["tablet"]?.width, 820);
     assert.strictEqual(VIEWPORT_PRESETS["desktop"]?.width, 1920);
+
+    const resolvedDefault = resolveViewportDimensions();
+    assert.deepStrictEqual(resolvedDefault, { width: 1920, height: 1080 });
+
+    const resolvedUnknown = resolveViewportDimensions("non-existent-preset");
+    assert.deepStrictEqual(resolvedUnknown, { width: 1920, height: 1080 });
 
     const resolvedMobile = resolveViewportDimensions("mobile");
     assert.deepStrictEqual(resolvedMobile, { width: 393, height: 852 });
