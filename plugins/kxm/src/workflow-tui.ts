@@ -5,7 +5,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync } from "./sqlite.ts";
 import { repoConfigDirectory } from "./config.ts";
 import { readRoutingRecords, telemetryPath } from "./telemetry.ts";
 

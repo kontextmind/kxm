@@ -10,7 +10,7 @@ authority, admit new writers, or replace trusted `.kxm/roster.json` policy.
 | Feature Area | Skill | Commands Covered | Purpose |
 |---|---|---|---|
 | Core Routing | `kxm` | — | Select the right suite skill; state universal safety rules and portable CLI convention |
-| Project Setup | `kxm-project-setup` | `init`, `migrate`, `trust`, `config`, `completion` | Initialize, migrate, review permission changes, configure, and add shell completion |
+| Project Setup | `kxm-project-setup` | `init`, `migrate`, `trust`, `config`, `completion` | Initialize, migrate, review permission changes, configure, and install shell completion |
 | Harness & Auth | `kxm-harness-auth` | `harness`, `auth`, `update`, `runtime`, `agent` | Inspect authenticated harness capability and operate supported runtimes/workers |
 | Hub Operations | `kxm-hub-ops` | `hub`, `backup`, `restore` | Run and protect the local hub and its durable SQLite state |
 | Session Management | `kxm-session` | `session`, `dash`, `studio` | Resume/inspect operator work and use UI capabilities each harness supports |

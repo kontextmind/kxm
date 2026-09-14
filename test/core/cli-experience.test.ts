@@ -12,6 +12,14 @@ import {
   type KxmResolvedConfig,
 } from "../../plugins/kxm/src/config.ts";
 import { generateShellCompletion } from "../../plugins/kxm/src/autocomplete.ts";
+import {
+  completionRcTarget,
+  completionScriptPath,
+  detectShell,
+  installPathEntry,
+  installShellCompletion,
+  kxmBinDir,
+} from "../../plugins/kxm/src/completion-install.ts";
 import { suggestWorkflowAndRoles } from "../../plugins/kxm/src/suggest.ts";
 import {
   createGoal,
@@ -116,6 +124,173 @@ test("autocomplete: generates bash, zsh, and fish completion scripts", () => {
 
   const fish = generateShellCompletion("fish");
   assert.match(fish, /complete -c kxm/);
+});
+
+test("completion install: detects shell, writes script and rc stanza idempotently", () => {
+  const sandbox = createSandbox();
+  const home = join(sandbox.dir, "home");
+  const config = join(sandbox.dir, "config");
+  mkdirSync(home, { recursive: true });
+  mkdirSync(config, { recursive: true });
+  try {
+    // detection from $SHELL
+    assert.equal(detectShell({ SHELL: "/usr/bin/zsh" } as NodeJS.ProcessEnv), "zsh");
+    assert.equal(detectShell({ SHELL: "/bin/bash" } as NodeJS.ProcessEnv), "bash");
+    assert.equal(detectShell({ SHELL: "/usr/local/bin/fish" } as NodeJS.ProcessEnv), "fish");
+    assert.equal(detectShell({} as NodeJS.ProcessEnv), "unknown");
+
+    const env = { HOME: home, SHELL: "/bin/bash", KXM_USER_CONFIG_DIR: config } as NodeJS.ProcessEnv;
+
+    // dry-run plans without writing
+    const planned = installShellCompletion("auto", { env, homeDir: home, configDir: config, dryRun: true });
+    assert.equal(planned.ok, true);
+    assert.equal(planned.shell, "bash");
+    assert.equal(planned.alreadyInstalled, false);
+    assert.equal(existsSync(completionScriptPath("bash", { env, homeDir: home, configDir: config })), false);
+
+    // real install writes the script and appends one rc stanza
+    const first = installShellCompletion("auto", { env, homeDir: home, configDir: config });
+    assert.equal(first.ok, true);
+    assert.equal(first.rcModified, true);
+    const scriptPath = completionScriptPath("bash", { env, homeDir: home, configDir: config });
+    assert.equal(existsSync(scriptPath), true);
+    assert.equal(readFileSync(scriptPath, "utf8"), generateShellCompletion("bash"));
+    const rc = readFileSync(join(home, ".bashrc"), "utf8");
+    assert.match(rc, /# kxm completion/);
+    assert.match(rc, new RegExp(scriptPath.replaceAll("/", "\\/")));
+
+    // second install is idempotent: no duplicate stanza, script unchanged
+    const second = installShellCompletion("auto", { env, homeDir: home, configDir: config });
+    assert.equal(second.ok, true);
+    assert.equal(second.alreadyInstalled, true);
+    assert.equal(second.rcModified, false);
+    const rcAfter = readFileSync(join(home, ".bashrc"), "utf8");
+    assert.equal(rcAfter.match(/# kxm completion/g)?.length, 1);
+
+    // zsh uses .zshrc; fish writes only to the auto-loaded completions dir
+    const zshHome = join(sandbox.dir, "zsh-home");
+    mkdirSync(zshHome, { recursive: true });
+    const zsh = installShellCompletion("zsh", { env: { ...env, HOME: zshHome, SHELL: "/bin/zsh" }, homeDir: zshHome, configDir: config });
+    assert.equal(zsh.ok, true);
+    assert.ok(zsh.rcFile?.endsWith(".zshrc"));
+
+    const fishHome = join(sandbox.dir, "fish-home");
+    mkdirSync(fishHome, { recursive: true });
+    const fish = installShellCompletion("fish", { env: { ...env, HOME: fishHome, SHELL: "/usr/bin/fish" }, homeDir: fishHome, configDir: config });
+    assert.equal(fish.ok, true);
+    assert.equal(fish.rcFile, undefined);
+    assert.equal(existsSync(join(fishHome, ".config", "fish", "completions", "kxm.fish")), true);
+
+    // unknown shell fails closed with a reason
+    const unknown = installShellCompletion("auto", { env: { ...env, SHELL: "/bin/tcsh" }, homeDir: home, configDir: config });
+    assert.equal(unknown.ok, false);
+    assert.equal(unknown.reason, "shell_not_detected");
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
+test("completion install: PATH entry is added once and only when missing", () => {
+  const sandbox = createSandbox();
+  const home = join(sandbox.dir, "home");
+  const binDir = join(sandbox.dir, "bin");
+  mkdirSync(home, { recursive: true });
+  mkdirSync(binDir, { recursive: true });
+  writeFileSync(join(binDir, "kxm"), "#!/bin/sh\n", { mode: 0o755 });
+  try {
+    const env = { HOME: home, SHELL: "/bin/bash", PATH: "/usr/bin:/bin" } as NodeJS.ProcessEnv;
+
+    // bin dir discovery via explicit entry point
+    const found = kxmBinDir({ ...env, KXM_ENTRY: join(binDir, "kxm") });
+    assert.equal(found, binDir);
+
+    // already on PATH: nothing written
+    const onPathEnv = { ...env, PATH: `${binDir}:/usr/bin:/bin`, KXM_ENTRY: join(binDir, "kxm") } as NodeJS.ProcessEnv;
+    const noop = installPathEntry("bash", { env: onPathEnv, homeDir: home, binDir });
+    assert.equal(noop.ok, true);
+    assert.equal(noop.alreadyInstalled, true);
+    assert.equal(noop.rcModified, false);
+
+    // missing: appended once, idempotent on rerun
+    const first = installPathEntry("bash", { env, homeDir: home, binDir });
+    assert.equal(first.ok, true);
+    assert.equal(first.rcModified, true);
+    const rc = readFileSync(join(home, ".bashrc"), "utf8");
+    assert.match(rc, /# kxm path/);
+    assert.equal(rc.match(/# kxm path/g)?.length, 1);
+
+    const second = installPathEntry("bash", { env, homeDir: home, binDir });
+    assert.equal(second.alreadyInstalled, true);
+    assert.equal(second.rcModified, false);
+    assert.equal(readFileSync(join(home, ".bashrc"), "utf8").match(/# kxm path/g)?.length, 1);
+
+    // dry-run never writes
+    const otherHome = join(sandbox.dir, "home2");
+    mkdirSync(otherHome, { recursive: true });
+    const planned = installPathEntry("bash", { env, homeDir: otherHome, binDir, dryRun: true });
+    assert.equal(planned.ok, true);
+    assert.equal(existsSync(join(otherHome, ".bashrc")), false);
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
+test("cli completion install: executes cleanly with json and dry-run", async () => {
+  const sandbox = createSandbox();
+  const home = join(sandbox.dir, "home");
+  const config = join(sandbox.dir, "config");
+  const binDir = join(sandbox.dir, "bin");
+  for (const dir of [home, config, binDir]) mkdirSync(dir, { recursive: true });
+  writeFileSync(join(binDir, "kxm"), "#!/bin/sh\n", { mode: 0o755 });
+  try {
+    const env = {
+      HOME: home,
+      SHELL: "/bin/bash",
+      KXM_USER_CONFIG_DIR: config,
+      KXM_ENTRY: join(binDir, "kxm"),
+      PATH: "/usr/bin:/bin",
+    } as NodeJS.ProcessEnv;
+
+    // dry-run: plans, writes nothing
+    const planIo = capture();
+    assert.equal(await runCli(["completion", "install", "--dry-run"], env, planIo, sandbox.dir), 0);
+    assert.match(planIo.read().stdout, /planned/);
+    assert.equal(existsSync(join(home, ".bashrc")), false);
+
+    // real run: installs script, rc stanza, and PATH entry
+    const io = capture();
+    assert.equal(await runCli(["completion", "install"], env, io, sandbox.dir), 0);
+    assert.match(io.read().stdout, /completion: installed/);
+    assert.match(io.read().stdout, new RegExp(`PATH entry for ${binDir.replaceAll("/", "\\/")} added`));
+    assert.equal(existsSync(join(config, "completions", "kxm.bash")), true);
+
+    // rerun is idempotent
+    const againIo = capture();
+    assert.equal(await runCli(["completion", "install"], env, againIo, sandbox.dir), 0);
+    assert.match(againIo.read().stdout, /already installed/);
+
+    // json mode carries the structured report
+    const jsonIo = capture();
+    assert.equal(await runCli(["completion", "install", "--json"], env, jsonIo, sandbox.dir), 0);
+    const parsed = JSON.parse(jsonIo.read().stdout) as { ok: boolean; shell: string; path?: { binDir?: string } };
+    assert.equal(parsed.ok, true);
+    assert.equal(parsed.shell, "bash");
+    assert.equal(parsed.path?.binDir, binDir);
+
+    // explicit --shell zsh works and legacy generation still works
+    const zshIo = capture();
+    assert.equal(await runCli(["completion", "zsh"], env, zshIo, sandbox.dir), 0);
+    assert.match(zshIo.read().stdout, /#compdef kxm/);
+
+    // --no-path skips PATH handling
+    const noPathIo = capture();
+    const noPathEnv = { ...env, HOME: join(sandbox.dir, "home3") } as NodeJS.ProcessEnv;
+    mkdirSync(noPathEnv.HOME!, { recursive: true });
+    assert.equal(await runCli(["completion", "install", "--no-path"], noPathEnv, noPathIo, sandbox.dir), 0);
+    assert.doesNotMatch(noPathIo.read().stdout, /PATH entry/);
+  } finally {
+    sandbox.cleanup();
+  }
 });
 
 test("suggest: recommends workflow, area, roles, and skills based on prompt keywords", () => {

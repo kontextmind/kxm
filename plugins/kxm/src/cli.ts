@@ -3,7 +3,7 @@ import { createHash, createHmac, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync } from "./sqlite.ts";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { Command, CommanderError } from "commander";
@@ -65,6 +65,13 @@ import {
   type InstallProbe,
 } from "./kxm-install-kind.ts";
 import { VnextConfigError, discoverVnextProjectRoot, type VnextInitializationPlan } from "./vnext-config.ts";
+import {
+  GUIDE_WORKFLOWS,
+  parseGuideSelection,
+  planGuideSetup,
+  renderGuideSetupFiles,
+  writeGuideSetupFiles,
+} from "./init-guide-setup.ts";
 import { vnextUserStateRoot } from "./vnext-bindings.ts";
 import { initializeVnextProject } from "./vnext-init.ts";
 import { applyVnextMigration, planVnextMigration, verifyVnextMigration } from "./vnext-migrate.ts";
@@ -104,6 +111,7 @@ import {
   formatKxmConfig,
 } from "./config.ts";
 import { generateShellCompletion, type SupportedShell } from "./autocomplete.ts";
+import { completionRcTarget, completionScriptPath, detectShell, installPathEntry, installShellCompletion, kxmBinDir } from "./completion-install.ts";
 import { suggestWorkflowAndRoles } from "./suggest.ts";
 import {
   createGoal,
@@ -629,9 +637,13 @@ async function cmdVnextInit(runtime: Runtime, options: { name?: string; projectI
       return code;
     };
     if (initialized.action === "created") {
+      await maybeOfferCompletionInstall(runtime);
+      await maybeOfferGuideSetup(runtime);
       return finishInit(0, `initialized vNext project at ${initialized.projectRoot ?? runtime.cwd}`);
     }
     if (initialized.action === "joined") {
+      await maybeOfferCompletionInstall(runtime);
+      await maybeOfferGuideSetup(runtime);
       return finishInit(0, `joined vNext project at ${initialized.projectRoot ?? runtime.cwd}`);
     }
     if (initialized.action === "repaired") {
@@ -1743,17 +1755,30 @@ async function cmdStop(runtime: Runtime, waitMsFlag?: string): Promise<number> {
   const requested: string[] = [];
   const ignored: string[] = [];
   const records = new Map<string, { pid: number; startedAt: string; generation?: string }>();
+  const orphans: string[] = [];
   for (const file of pids) {
     try {
-      const record = JSON.parse(readFileSync(join(runtime.dirs.state, file), "utf8")) as { version?: number; pid?: number; role?: string; startedAt?: string; generation?: string; controlFile?: string };
+      const record = JSON.parse(readFileSync(join(runtime.dirs.state, file), "utf8")) as { version?: number; pid?: number; serverPid?: number; role?: string; startedAt?: string; generation?: string; controlFile?: string };
       const expectedControl = file === "hub.pid" ? "hub.stop" : file.startsWith("worker-") ? `${file.slice(0, -4)}.stop` : undefined;
       const expectedRole = file === "hub.pid" ? "hub" : file.startsWith("worker-") ? "worker" : undefined;
-      if (record.version !== 1 || !Number.isInteger(record.pid) || record.pid! <= 0 || !record.startedAt || !expectedControl || record.controlFile !== expectedControl || record.role !== expectedRole || !processExists(record.pid!)) { ignored.push(file); continue; }
-      writeFileSync(join(runtime.dirs.state, record.controlFile), `${JSON.stringify({ startedAt: record.startedAt, ...(record.generation ? { generation: record.generation } : {}), requestedAt: new Date().toISOString() })}\n`, { encoding: "utf8", mode: 0o600 });
+      if (record.version !== 1 || !Number.isInteger(record.pid) || record.pid! <= 0 || !record.startedAt || !expectedControl || record.controlFile !== expectedControl || record.role !== expectedRole) { ignored.push(file); continue; }
+      if (!processExists(record.pid!)) {
+        // Wrapper is dead. A recorded hub server child may still hold the
+        // port; stop it directly so `kxm hub stop` recovers orphaned hubs.
+        if (file === "hub.pid" && Number.isInteger(record.serverPid) && record.serverPid! > 0 && record.serverPid !== record.pid && processExists(record.serverPid!)) {
+          try { process.kill(record.serverPid!, "SIGTERM"); } catch { /* racing exit */ }
+          orphans.push(file);
+          records.set(file, { pid: record.pid!, startedAt: record.startedAt, ...(record.generation ? { generation: record.generation } : {}) });
+          continue;
+        }
+        ignored.push(file);
+        continue;
+      }
+      writeFileSync(join(runtime.dirs.state, record.controlFile!), `${JSON.stringify({ startedAt: record.startedAt, ...(record.generation ? { generation: record.generation } : {}), requestedAt: new Date().toISOString() })}\n`, { encoding: "utf8", mode: 0o600 });
       requested.push(file); records.set(file, { pid: record.pid!, startedAt: record.startedAt, ...(record.generation ? { generation: record.generation } : {}) });
     } catch { ignored.push(file); }
   }
-  if (requested.length === 0) { print(runtime.io, runtime.json, { ok: false, command: "stop", requested, ignored }, "no current managed processes found"); return 1; }
+  if (requested.length === 0 && orphans.length === 0) { print(runtime.io, runtime.json, { ok: false, command: "stop", requested, ignored }, "no current managed processes found"); return 1; }
   const waitMs = Math.min(30_000, Math.max(100, Number(waitMsFlag || 5_000)));
   const deadline = Date.now() + waitMs;
   const stopped = new Set<string>();
@@ -1767,8 +1792,28 @@ async function cmdStop(runtime: Runtime, waitMsFlag?: string): Promise<number> {
     if (stopped.size < requested.length) await (runtime.io.sleep ?? ((ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms))))(100);
   }
   const timedOut = requested.filter((file) => !stopped.has(file));
+  // Orphan cleanup: wait for the directly-signaled server children to exit,
+  // then remove their stale claims so the next start reclaims cleanly.
+  const deadlineOrphans = Date.now() + Math.min(10_000, waitMs);
+  for (const file of orphans) {
+    while (Date.now() <= deadlineOrphans) {
+      try {
+        const current = JSON.parse(readFileSync(join(runtime.dirs.state, file), "utf8")) as { pid?: number; serverPid?: number };
+        if (!Number.isInteger(current.serverPid) || !processExists(current.serverPid!)) break;
+      } catch { break; }
+      await (runtime.io.sleep ?? ((ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms))))(100);
+    }
+    try {
+      const current = JSON.parse(readFileSync(join(runtime.dirs.state, file), "utf8")) as { pid?: number; serverPid?: number };
+      if (Number.isInteger(current.serverPid) && processExists(current.serverPid!)) {
+        try { process.kill(current.serverPid!, "SIGKILL"); } catch { /* racing exit */ }
+      }
+      rmSync(join(runtime.dirs.state, file), { force: true });
+    } catch { /* claim already replaced or removed */ }
+    stopped.add(file);
+  }
   const ok = timedOut.length === 0;
-  print(runtime.io, runtime.json, { ok, command: "stop", requested, stopped: [...stopped], timedOut, ignored }, ok ? "managed processes stopped" : "stop request timed out");
+  print(runtime.io, runtime.json, { ok, command: "stop", requested, stopped: [...stopped], timedOut, ...(orphans.length ? { orphans } : {}), ignored }, ok ? "managed processes stopped" : "stop request timed out");
   return ok ? 0 : 1;
 }
 
@@ -2446,6 +2491,201 @@ async function cmdCompletion(runtime: Runtime, shell: string): Promise<number> {
     const message = error instanceof Error ? error.message : String(error);
     runtime.io.stderr(`completion generation failed: ${message}\n`);
     return 1;
+  }
+}
+
+async function cmdCompletionInstall(
+  runtime: Runtime,
+  options: { shell?: string; path?: boolean },
+): Promise<number> {
+  const installOptions = {
+    env: runtime.env,
+    configDir: runtime.env.KXM_USER_CONFIG_DIR,
+    platform: process.platform as NodeJS.Platform,
+    dryRun: runtime.dryRun,
+  };
+  const report = installShellCompletion(options.shell, installOptions);
+  const pathReport = options.path === false ? undefined : installPathEntry(options.shell, installOptions);
+  if (!report.ok) {
+    print(runtime.io, runtime.json, {
+      ok: false,
+      command: "completion install",
+      error: report.reason ?? "shell_not_detected",
+    }, "could not detect your shell; pass --shell bash, zsh, or fish");
+    return 1;
+  }
+  const shellNote = report.shell;
+  const applyNote = runtime.dryRun
+    ? "planned; rerun without --dry-run to apply"
+    : report.alreadyInstalled
+      ? "already installed"
+      : "installed; restart your shell or open a new terminal to activate";
+  const pathNote = pathReport
+    ? pathReport.ok
+      ? runtime.dryRun
+        ? `; PATH entry for ${pathReport.binDir} planned`
+        : pathReport.alreadyInstalled
+          ? "; kxm already on PATH"
+          : `; PATH entry for ${pathReport.binDir} added to ${pathReport.rcFile}`
+      : undefined
+    : undefined;
+  print(runtime.io, runtime.json, {
+    ok: true,
+    command: "completion install",
+    shell: shellNote,
+    scriptPath: report.scriptPath,
+    ...(report.rcFile ? { rcFile: report.rcFile } : {}),
+    rcModified: report.rcModified,
+    alreadyInstalled: report.alreadyInstalled,
+    ...(pathReport ? { path: pathReport } : {}),
+    dryRun: runtime.dryRun === true,
+  }, `kxm ${shellNote} completion: ${applyNote}${report.rcFile ? ` (rc: ${report.rcFile})` : ""}${pathNote ?? ""}`);
+  return 0;
+}
+
+async function maybeOfferCompletionInstall(runtime: Runtime): Promise<void> {
+  if (runtime.json || runtime.dryRun) return;
+  if (!process.stdin.isTTY || !process.stdout.isTTY) return;
+  if (runtime.env.KXM_SKIP_COMPLETION_PROMPT?.trim()) return;
+  const shell = detectShell(runtime.env, process.platform);
+  if (shell !== "bash" && shell !== "zsh" && shell !== "fish") return;
+  const binDir = kxmBinDir(runtime.env);
+  const pathNeeded = shell !== "fish" && binDir && !(runtime.env.PATH ?? "").split(":").includes(binDir);
+  if (!pathNeeded) {
+    // completion-only offer; skip when already wired
+    const scriptPath = completionScriptPath(shell, { env: runtime.env, configDir: runtime.env.KXM_USER_CONFIG_DIR });
+    const { rcFile } = completionRcTarget(shell, { env: runtime.env });
+    if (rcFile && existsSync(rcFile)) {
+      try {
+        if (readFileSync(rcFile, "utf8").includes(scriptPath)) return; // already wired
+      } catch {
+        // unreadable rc: still offer
+      }
+    }
+  }
+  const question = pathNeeded
+    ? `\nInstall ${shell} tab completion for kxm and add ${binDir} to PATH? [Y/n] `
+    : `\nInstall ${shell} tab completion for kxm? [y/N] `;
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  await new Promise<void>((resolvePrompt) => {
+    rl.question(question, (answer) => {
+      rl.close();
+      const trimmed = answer.trim().toLowerCase();
+      const accept = pathNeeded ? trimmed !== "n" && trimmed !== "no" : trimmed === "y" || trimmed === "yes";
+      if (accept) {
+        try {
+          const report = installShellCompletion(shell, {
+            env: runtime.env,
+            configDir: runtime.env.KXM_USER_CONFIG_DIR,
+            platform: process.platform,
+          });
+          if (report.ok) {
+            runtime.io.stdout(`completion installed for ${report.shell}`);
+          } else {
+            runtime.io.stdout(`completion install skipped: ${report.reason ?? "unknown"}\n`);
+            resolvePrompt();
+            return;
+          }
+        } catch {
+          runtime.io.stdout("completion install skipped: local filesystem operation did not complete\n");
+          resolvePrompt();
+          return;
+        }
+        if (pathNeeded && binDir) {
+          try {
+            const pathReport = installPathEntry(shell, {
+              env: runtime.env,
+              configDir: runtime.env.KXM_USER_CONFIG_DIR,
+              platform: process.platform,
+              binDir,
+            });
+            runtime.io.stdout(pathReport.ok && pathReport.rcModified
+              ? `; ${binDir} added to PATH in ${pathReport.rcFile}`
+              : "; kxm already on PATH");
+          } catch {
+            runtime.io.stdout("; PATH entry skipped: local filesystem operation did not complete");
+          }
+        }
+        runtime.io.stdout("; restart your shell or open a new terminal to activate\n");
+      } else {
+        runtime.io.stdout("skipped; run `kxm completion install` anytime\n");
+      }
+      resolvePrompt();
+    });
+  });
+}
+
+const GUIDE_SETUP_OPT_OUT_ENV = "KXM_SKIP_GUIDE_SETUP_PROMPT";
+
+async function askYesNo(question: string): Promise<boolean> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise<boolean>((resolvePrompt) => {
+    rl.question(question, (answer) => {
+      rl.close();
+      const trimmed = answer.trim().toLowerCase();
+      resolvePrompt(trimmed === "y" || trimmed === "yes");
+    });
+  });
+}
+
+async function askLine(question: string): Promise<string> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise<string>((resolvePrompt) => {
+    rl.question(question, (answer) => {
+      rl.close();
+      resolvePrompt(answer);
+    });
+  });
+}
+
+/**
+ * Post-init offer: install workflow-guide software-engineering workflows and
+ * their agent resources, filtered to authenticated harnesses. Writes only
+ * vNext project resources (.kxm/agents, .kxm/workflows); never legacy
+ * authority (.kxm/config, .kxm/roster.json).
+ */
+async function maybeOfferGuideSetup(runtime: Runtime): Promise<void> {
+  if (runtime.json || runtime.dryRun) return;
+  if (!process.stdin.isTTY || !process.stdout.isTTY) return;
+  if (runtime.env[GUIDE_SETUP_OPT_OUT_ENV]?.trim()) return;
+  let inventory;
+  try {
+    inventory = probeHarnesses({ env: runtime.env });
+  } catch {
+    return;
+  }
+  const authenticated = inventory.harnesses.filter((entry) => entry.detected && entry.authenticated === true);
+  if (authenticated.length === 0) {
+    runtime.io.stdout("no authenticated harnesses detected; skipping workflow-guide setup (see `kxm harness list`)\n");
+    return;
+  }
+  const harnessList = authenticated.map((entry) => entry.id).join(", ");
+  const accept = await askYesNo(`\nSet up workflow-guide agents and workflows for authenticated harnesses (${harnessList})? [y/N] `);
+  if (!accept) {
+    runtime.io.stdout(`skipped; set ${GUIDE_SETUP_OPT_OUT_ENV}=1 to suppress this offer, or re-run on a fresh project\n`);
+    return;
+  }
+  const lines = ["", "Workflow-guide software-engineering workflows (docs/workflow-guide.md):"];
+  GUIDE_WORKFLOWS.forEach((workflow, index) => {
+    lines.push(`  ${index + 1}) ${workflow.slug.padEnd(32)} ${workflow.summary}`);
+  });
+  runtime.io.stdout(`${lines.join("\n")}\n`);
+  const answer = await askLine("Install which workflows? (numbers or slugs, comma-separated, 'all', or 'none'): ");
+  const selected = parseGuideSelection(answer);
+  if (selected.length === 0) {
+    runtime.io.stdout("no workflows selected; nothing written\n");
+    return;
+  }
+  const plan = planGuideSetup({ inventory, selected });
+  const files = renderGuideSetupFiles(runtime.cwd, plan);
+  const report = writeGuideSetupFiles(files);
+  for (const file of report.written) runtime.io.stdout(`wrote ${file}\n`);
+  for (const file of report.existed) runtime.io.stdout(`kept existing ${file} (not overwritten)\n`);
+  for (const skip of plan.skipped) {
+    runtime.io.stdout(`skipped ${skip.workflow}/${skip.role}: ${skip.reason}\n`);
+  }
+  if (report.written.length > 0) {
+    runtime.io.stdout("inspect with `kxm workflow definitions`; guide candidates are dated research — verify before dispatch\n");
   }
 }
 
@@ -4876,9 +5116,24 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
       result.code = await cmdConfigList(runtimeFrom(ctx, this));
     });
 
-  addGlobalOptions(program.command("completion <shell>").description("Generate shell completion script (bash, zsh, fish)"))
-    .action(async function completionAction(this: Command, shell: string) {
+  const completionCmd = addGlobalOptions(program.command("completion [shell]").description("Generate shell completion script, or install it into the current shell")).action(async function completionAction(this: Command, shell?: string) {
+    if (shell && shell !== "install") {
       result.code = await cmdCompletion(runtimeFrom(ctx, this), shell);
+      return;
+    }
+    if (shell === "install") {
+      result.code = await cmdCompletionInstall(runtimeFrom(ctx, this), this.opts<{ shell?: string; path?: boolean }>());
+      return;
+    }
+    ctx.io.stderr("usage: kxm completion <bash|zsh|fish> | kxm completion install [--shell <shell>] [--no-path]\n");
+    result.code = 2;
+  });
+  completionCmd.helpCommand("help", "Show completion help");
+  addGlobalOptions(completionCmd.command("install").description("Install tab completion for the detected or given shell and ensure kxm is on PATH"))
+    .option("--shell <shell>", "Shell to install for (bash, zsh, fish; default: detect from $SHELL)")
+    .option("--no-path", "Only install completion; do not add a PATH entry")
+    .action(async function completionInstallAction(this: Command, options: { shell?: string; path?: boolean }) {
+      result.code = await cmdCompletionInstall(runtimeFrom(ctx, this), options);
     });
 
   addGlobalOptions(program.command("suggest <prompt...>").description("Recommend workflow, area, roles, and skills from a prompt or issue description"))

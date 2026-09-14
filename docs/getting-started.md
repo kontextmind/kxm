@@ -61,6 +61,27 @@ kxm init
 
 `kxm init` never copies the package repository's dogfood roster or workflows into a consumer workspace.
 
+When `kxm init` succeeds in an interactive terminal, it offers to install shell
+completion for the detected shell. Accepting writes the completion script
+under the user config directory, appends one idempotent stanza to the shell
+rc file, and, when the kxm bin directory is not already on `PATH`, adds a
+`PATH` export. Declining is safe: run `kxm completion install` later, or set
+`KXM_SKIP_COMPLETION_PROMPT=1` to suppress the offer. Non-interactive,
+`--json`, and `--dry-run` runs never prompt or write shell files.
+
+After the completion offer, an interactive `kxm init` also offers to set up
+workflow-guide agents and workflows for the harnesses you have installed and
+authenticated. Accepting lists the software-engineering workflows from
+[`workflow-guide.md`](workflow-guide.md); pick by number or slug (`all` works
+too). kxm resolves each role's first guide candidate whose harness is
+authenticated and writes only current vNext project resources —
+`.kxm/agents/<role>.yaml` (`kxm.agent.v1`) and `.kxm/workflows/<slug>.yaml`
+(`kxm.workflow.v1`). It never writes retired legacy authority (`.kxm/config`,
+`.kxm/roster.json`). Roles whose candidates have no authenticated harness are
+reported as skipped, not silently downgraded. Guide candidates are dated
+research — verify them before dispatch. Declining is safe: set
+`KXM_SKIP_GUIDE_SETUP_PROMPT=1` to suppress the offer.
+
 ## 3. Start the hub in another terminal
 
 `kxm hub start` is foreground. Keep that terminal running.

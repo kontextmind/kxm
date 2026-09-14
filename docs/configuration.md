@@ -74,6 +74,15 @@ rewrites it.
 
 The hub refuses a non-loopback bind without `KXM_AUTH_TOKEN`. Use a long random administrative token even when project tokens are configured, because administrative endpoints such as `/metrics` require it outside loopback.
 
+When `KXM_AUTH_TOKEN` is unset, `kxm hub start` resolves credentials from the
+persisted `kxm.hub-env.v1` file under the user state root
+(`~/.local/state/kxm/hub-env.json`; honors `KXM_STATE_HOME` and platform
+equivalents). A missing admin token is generated once, persisted with `0600`
+permissions, and reused across hub restarts so workers and dashboards on the
+same machine share one stable credential. Explicit `KXM_AUTH_TOKEN` or
+`KXM_PROJECT_TOKENS` environment values take precedence and are persisted for
+later restarts. Delete the file and restart to rotate the generated token.
+
 Project tokens are an authorization boundary. A project-specific token can register only in its mapped project and see only that project's agents and messages. The administrative token remains a fallback for projects without an explicit entry. For provenance-gated workflows, configure an explicit project token and give workers only that token; reserve a distinct administrative token for operations such as quorum degradation approval.
 
 PowerShell example:

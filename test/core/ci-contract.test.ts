@@ -5,6 +5,7 @@ import { parse } from "yaml";
 import { kxmReleaseAssetName } from "../../plugins/kxm/src/kxm-update.ts";
 
 const releaseText = readFileSync(".github/workflows/release.yml", "utf8");
+const autoReleaseText = readFileSync(".github/workflows/auto-release.yml", "utf8");
 const ciText = readFileSync(".github/workflows/ci.yml", "utf8");
 const smokeText = readFileSync(".github/workflows/smoke.yml", "utf8");
 const nightlyText = readFileSync(".github/workflows/nightly.yml", "utf8");
@@ -56,13 +57,14 @@ test("npm pack asset name in release.yml is kxmReleaseAssetName", () => {
   assert.doesNotMatch(releaseText, /--clobber/);
 });
 
-test("release workflow is tag-triggered, fail-closed drafts, and npm publish is unlatched with npm-publish environment", () => {
+test("release workflow is tag- and dispatch-triggered, fail-closed, and npm publish is unlatched", () => {
   const doc = parse(releaseText) as {
-    on?: { push?: { tags?: string[] } };
+    on?: { push?: { tags?: string[] }; workflow_dispatch?: { inputs?: { tag?: { required?: unknown } } } };
     permissions?: { contents?: string };
     jobs?: Record<string, { if?: unknown; permissions?: { contents?: string }; "runs-on"?: unknown; environment?: string }>;
   };
   assert.deepEqual(doc.on?.push?.tags, ["v*"]);
+  assert.equal(doc.on?.workflow_dispatch?.inputs?.tag?.required, true);
   assert.equal(doc.permissions?.contents, "read");
   assert.equal(doc.jobs?.release?.permissions?.contents, "write");
   assert.equal(doc.jobs?.release?.if, undefined);
@@ -73,6 +75,23 @@ test("release workflow is tag-triggered, fail-closed drafts, and npm publish is 
   assert.match(releaseText, /draft: false/);
   assert.match(releaseText, /npm-publish/);
   assert.match(releaseText, /scripts\/kxm-publish-npm\.mjs/);
+  assert.match(releaseText, /KXM_RELEASE_TAG/);
+  assert.match(releaseText, /path: \.kxm-release-tools/);
+  assert.match(releaseText, /registry\.npmjs\.org/);
+});
+
+test("auto-release dispatches one explicit release workflow per merged PR", () => {
+  const doc = parse(autoReleaseText) as {
+    on?: { pull_request?: { types?: string[]; branches?: string[] } };
+    permissions?: { contents?: string; actions?: string };
+  };
+  assert.deepEqual(doc.on?.pull_request?.types, ["closed"]);
+  assert.deepEqual(doc.on?.pull_request?.branches, ["main"]);
+  assert.equal(doc.permissions?.contents, "write");
+  assert.equal(doc.permissions?.actions, "write");
+  assert.match(autoReleaseText, /actions\/workflows\/release\.yml\/dispatches/);
+  assert.match(autoReleaseText, /Create or verify tag/);
+  assert.doesNotMatch(autoReleaseText, /gh (?:pr|release|api) /);
 });
 
 type CiJobs = Record<
