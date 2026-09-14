@@ -3834,7 +3834,7 @@ var require_fast_uri = __commonJS({
         normalizeString(uri, options);
       } else if (typeof uri === "object") {
         uri = /** @type {T} */
-        parse5(serialize(uri, options), options);
+        parse6(serialize(uri, options), options);
       }
       return uri;
     }
@@ -3874,8 +3874,8 @@ var require_fast_uri = __commonJS({
     function resolveComponent(base, relative5, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
-        base = parse5(serialize(base, options), options);
-        relative5 = parse5(serialize(relative5, options), options);
+        base = parse6(serialize(base, options), options);
+        relative5 = parse6(serialize(relative5, options), options);
       }
       options = options || {};
       if (!options.tolerant && relative5.scheme) {
@@ -4167,7 +4167,7 @@ var require_fast_uri = __commonJS({
       }
       return { parsed, malformedAuthorityOrPort, malformedPercentEncoding, malformedSchemeSpecific, malformedHost, malformedScheme };
     }
-    function parse5(uri, opts) {
+    function parse6(uri, opts) {
       return parseWithStatus(uri, opts).parsed;
     }
     function normalizeString(uri, opts) {
@@ -4204,7 +4204,7 @@ var require_fast_uri = __commonJS({
       resolveComponent,
       equal,
       serialize,
-      parse: parse5
+      parse: parse6
     };
     module.exports = fastUri;
     module.exports.default = fastUri;
@@ -14674,7 +14674,7 @@ var require_public_api = __commonJS({
       }
       return doc;
     }
-    function parse5(src, reviver, options) {
+    function parse6(src, reviver, options) {
       let _reviver = void 0;
       if (typeof reviver === "function") {
         _reviver = reviver;
@@ -14715,7 +14715,7 @@ var require_public_api = __commonJS({
         return value.toString(options);
       return new Document.Document(value, _replacer, options).toString(options);
     }
-    exports.parse = parse5;
+    exports.parse = parse6;
     exports.parseAllDocuments = parseAllDocuments;
     exports.parseDocument = parseDocument2;
     exports.stringify = stringify3;
@@ -16925,8 +16925,8 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
       const writable = Object.values(objectValue(step.repositories) ?? {}).filter((access) => access === "write").length;
       if (maxWriteRepositories > writable) issues.push(issue2("semantic", "write_repository_bound_invalid", file, `${stepId} maxWriteRepositories exceeds writable repository scope`));
     }
-    const join15 = objectValue(step.join);
-    const minimumPassed = join15 && typeof join15.minimumPassed === "number" ? join15.minimumPassed : void 0;
+    const join16 = objectValue(step.join);
+    const minimumPassed = join16 && typeof join16.minimumPassed === "number" ? join16.minimumPassed : void 0;
     if (minimumPassed !== void 0 && minimumPassed > maximum) issues.push(issue2("semantic", "join_impossible", file, `${stepId} minimumPassed exceeds assignment maximum`));
     const distinctBy = names(assignment?.distinctBy);
     if (distinctBy.length > 0) {
@@ -20454,7 +20454,7 @@ function compileStep(step, index, stepIndex, requirePlanHash, sink) {
   const maxAttempts = compileCountField(step.maxAttempts, 1, `${id}.maxAttempts`, id, sink);
   const timeoutMs = compileOptionalDuration(step.timeoutMs, `${id}.timeoutMs`, id, sink);
   const assignments = compileAssignments(step, id, agent, sink);
-  const join15 = compileJoin(step, id, sink);
+  const join16 = compileJoin(step, id, sink);
   const requiredEvidence = compileEvidence(step, id, sink);
   const transitions = compileTransitions(step, id, index, stepIndex, sink);
   const outcomes = Object.keys(transitions).sort(compareCodeUnits4);
@@ -20482,7 +20482,7 @@ function compileStep(step, index, stepIndex, requirePlanHash, sink) {
     transitions: orderedTransitions,
     requiresPlanHash: requirePlanHash.includes(id),
     assignments,
-    join: join15
+    join: join16
   };
   if (kind === "agent" || kind === "moa") {
     if (!agent) return void 0;
@@ -20532,15 +20532,15 @@ function compileAssignments(step, stepId, primaryAgentId, sink) {
   };
 }
 function compileJoin(step, stepId, sink) {
-  const join15 = objectValue2(step.join);
-  if (!join15) return { strategy: "all" };
-  const declared = stringValue2(join15.strategy);
+  const join16 = objectValue2(step.join);
+  if (!join16) return { strategy: "all" };
+  const declared = stringValue2(join16.strategy);
   const strategy = declared && JOIN_STRATEGIES.has(declared) ? declared : "all";
-  const minimumPassed = compileOptionalCount(join15.minimumPassed, `${stepId}.join.minimumPassed`, stepId, sink);
+  const minimumPassed = compileOptionalCount(join16.minimumPassed, `${stepId}.join.minimumPassed`, stepId, sink);
   const compiled = {
     strategy,
     ...minimumPassed !== void 0 ? { minimumPassed } : {},
-    ...typeof join15.cancelRemaining === "boolean" ? { cancelRemaining: join15.cancelRemaining } : {}
+    ...typeof join16.cancelRemaining === "boolean" ? { cancelRemaining: join16.cancelRemaining } : {}
   };
   return compiled;
 }
@@ -28173,6 +28173,251 @@ Instructions for Operator:
     return orphaned;
   }
 };
+
+// plugins/kxm/src/modes.ts
+var import_yaml6 = __toESM(require_dist(), 1);
+import { existsSync as existsSync12, readFileSync as readFileSync10 } from "node:fs";
+import { join as join15 } from "node:path";
+var DEFAULT_MODES_CONFIG = Object.freeze({
+  schema: "kxm.modes.v1",
+  majorModes: {
+    coder: {
+      description: "First-pass implementation, bug fixing, and test authoring",
+      baseTools: ["read", "edit", "write", "bash"],
+      contextFiles: ["AGENTS.md"],
+      thinkingLevel: "medium",
+      model: "grok/grok-4.6"
+    },
+    planner: {
+      description: "High-level architectural planning, scoping, and decomposition",
+      baseTools: ["read", "grep", "find"],
+      contextFiles: ["plans/implementation-plan.md"],
+      thinkingLevel: "high",
+      model: "claude/fable"
+    },
+    auditor: {
+      description: "Security, compliance, and code quality verification",
+      baseTools: ["read", "grep"],
+      contextFiles: ["SECURITY.md"],
+      thinkingLevel: "high",
+      model: "codex/gpt-5.6-sol"
+    },
+    browser: {
+      description: "Web application exploration, screenshotting, and UI testing",
+      baseTools: ["read", "bash"],
+      contextFiles: ["docs/browser-automation.md"],
+      thinkingLevel: "medium",
+      model: "grok/grok-4.6"
+    }
+  },
+  domains: {
+    git: {
+      description: "Git version control operations",
+      tools: ["git_status", "git_diff", "git_commit"],
+      promptSnippet: "Follow git branch conventions; never commit directly to main."
+    },
+    k8s: {
+      description: "Kubernetes cluster inspection and deployment",
+      tools: ["kubectl_get", "kubectl_describe"],
+      promptSnippet: "Target local dev cluster; verify namespaces before mutating."
+    },
+    database: {
+      description: "Database queries and schema verification",
+      tools: ["sqlite_query", "sqlite_schema"],
+      promptSnippet: "Database is SQLite at .kxm/state/kxm.db; use read-only queries."
+    },
+    browser: {
+      description: "Remote Steel browser sessions and visual testing",
+      tools: ["steel_session", "steel_scrape", "steel_screenshot"],
+      promptSnippet: "Use Steel on DOKS for browser automation; invoke takeover on MFA."
+    }
+  }
+});
+function estimateTokens(charCount) {
+  return Math.ceil(charCount / 3.8);
+}
+function loadModesConfig(projectRoot) {
+  if (!projectRoot) {
+    return DEFAULT_MODES_CONFIG;
+  }
+  const modesPath = join15(projectRoot, ".kxm", "modes.yaml");
+  if (!existsSync12(modesPath)) {
+    return DEFAULT_MODES_CONFIG;
+  }
+  try {
+    const raw = readFileSync10(modesPath, "utf8");
+    const parsed = (0, import_yaml6.parse)(raw);
+    if (parsed && parsed.schema === "kxm.modes.v1" && parsed.majorModes) {
+      return {
+        schema: "kxm.modes.v1",
+        majorModes: { ...DEFAULT_MODES_CONFIG.majorModes, ...parsed.majorModes },
+        domains: { ...DEFAULT_MODES_CONFIG.domains, ...parsed.domains }
+      };
+    }
+  } catch {
+  }
+  return DEFAULT_MODES_CONFIG;
+}
+function resolveActiveMode(config, majorModeName = "coder", domainNames = []) {
+  const major = config.majorModes[majorModeName] || config.majorModes["coder"] || DEFAULT_MODES_CONFIG.majorModes["coder"];
+  const tools = new Set(major.baseTools);
+  const contextFiles = new Set(major.contextFiles || []);
+  const promptSnippets = [];
+  const enabledDomains = [];
+  if (config.domains) {
+    for (const dName of domainNames) {
+      const d = config.domains[dName.toLowerCase().trim()];
+      if (d) {
+        enabledDomains.push(dName.toLowerCase().trim());
+        d.tools.forEach((t) => tools.add(t));
+        (d.contextFiles || []).forEach((f) => contextFiles.add(f));
+        if (d.promptSnippet) {
+          promptSnippets.push(d.promptSnippet);
+        }
+      }
+    }
+  }
+  return {
+    majorMode: majorModeName,
+    enabledDomains,
+    tools: Array.from(tools),
+    contextFiles: Array.from(contextFiles),
+    promptSnippets,
+    thinkingLevel: major.thinkingLevel,
+    model: major.model || "grok/grok-4.6"
+  };
+}
+function calculatePromptFootprint(resolved, projectRoot = process.cwd(), catalog) {
+  const breakdown = [];
+  const baseSystemPromptChars = 3200;
+  breakdown.push({
+    name: `Base System Prompt (${resolved.majorMode})`,
+    chars: baseSystemPromptChars,
+    estimatedTokens: estimateTokens(baseSystemPromptChars)
+  });
+  for (const relPath of resolved.contextFiles) {
+    const fullPath = join15(projectRoot, relPath);
+    let chars = 0;
+    if (existsSync12(fullPath)) {
+      try {
+        chars = readFileSync10(fullPath, "utf8").length;
+      } catch {
+        chars = 0;
+      }
+    }
+    if (chars === 0) {
+      chars = 1500;
+    }
+    breakdown.push({
+      name: `Context File: ${relPath}`,
+      chars,
+      estimatedTokens: estimateTokens(chars)
+    });
+  }
+  if (resolved.promptSnippets.length > 0) {
+    const snippetChars = resolved.promptSnippets.join("\n").length;
+    breakdown.push({
+      name: `Domain Prompts (${resolved.enabledDomains.join(", ")})`,
+      chars: snippetChars,
+      estimatedTokens: estimateTokens(snippetChars)
+    });
+  }
+  const toolSchemaChars = resolved.tools.length * 650;
+  breakdown.push({
+    name: `Tool Schemas (${resolved.tools.length} active tools)`,
+    chars: toolSchemaChars,
+    estimatedTokens: estimateTokens(toolSchemaChars)
+  });
+  const totalChars = breakdown.reduce((sum, item) => sum + item.chars, 0);
+  const totalTokens = breakdown.reduce((sum, item) => sum + item.estimatedTokens, 0);
+  const maxContextWindow = 2e5;
+  const contextWindowRatio = Math.round(totalTokens / maxContextWindow * 1e3) / 10;
+  const cat = catalog || loadPriceCatalog(projectRoot);
+  const rawModel = resolved.model || "grok/grok-4.6";
+  const [prov, mod] = rawModel.includes("/") ? rawModel.split("/", 2) : [void 0, rawModel];
+  const inputCost = cat ? calculateModelCost(cat, {
+    model: mod || rawModel,
+    ...prov !== void 0 ? { provider: prov } : {},
+    tokensIn: totalTokens,
+    tokensOut: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0
+  }) : void 0;
+  const cacheReadCost = cat ? calculateModelCost(cat, {
+    model: mod || rawModel,
+    ...prov !== void 0 ? { provider: prov } : {},
+    tokensIn: 0,
+    tokensOut: 0,
+    cacheReadTokens: totalTokens,
+    cacheWriteTokens: 0
+  }) : void 0;
+  const outputEstimateCost = cat ? calculateModelCost(cat, {
+    model: mod || rawModel,
+    ...prov !== void 0 ? { provider: prov } : {},
+    tokensIn: 0,
+    tokensOut: 1e3,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0
+  }) : void 0;
+  return {
+    majorMode: resolved.majorMode,
+    enabledDomains: resolved.enabledDomains,
+    model: resolved.model || "grok/grok-4.6",
+    breakdown,
+    totalChars,
+    totalTokens,
+    contextWindowRatio,
+    projectedCost: {
+      inputCostUsd: inputCost?.costUsd ?? null,
+      cacheReadCostUsd: cacheReadCost?.costUsd ?? null,
+      outputCostEstimateUsd: outputEstimateCost?.costUsd ?? null
+    }
+  };
+}
+function formatModesExplainReport(footprint) {
+  const divider = "\u2550".repeat(60);
+  const subDivider = "\u2500".repeat(60);
+  let out = `
+${divider}
+`;
+  out += `KXM PRE-FLIGHT CONTEXT EXPLAIN
+`;
+  out += `${divider}
+`;
+  out += `Major Mode:       ${footprint.majorMode}
+`;
+  out += `Enabled Domains:  ${footprint.enabledDomains.length > 0 ? footprint.enabledDomains.join(", ") : "(none)"}
+`;
+  out += `Target Model:     ${footprint.model}
+
+`;
+  out += `CONTEXT BREAKDOWN:
+`;
+  for (const item of footprint.breakdown) {
+    const padName = item.name.padEnd(38, " ");
+    const tokenStr = `${item.estimatedTokens.toLocaleString()} tokens`.padStart(16, " ");
+    out += `  \u2022 ${padName} ${tokenStr}
+`;
+  }
+  out += `${subDivider}
+`;
+  const totalPad = `TOTAL PROMPT FOOTPRINT:`.padEnd(38, " ");
+  const totalStr = `${footprint.totalTokens.toLocaleString()} tokens`.padStart(16, " ");
+  out += `  ${totalPad} ${totalStr} (${footprint.contextWindowRatio}% of 200k window)
+
+`;
+  out += `PROJECTED COSTS (per turn):
+`;
+  out += `  \u2022 Initial Turn Input Cost:   ${footprint.projectedCost.inputCostUsd !== null ? `$${footprint.projectedCost.inputCostUsd.toFixed(4)}` : "unmetered/unknown"}
+`;
+  out += `  \u2022 Subsequent Cache-Read Cost: ${footprint.projectedCost.cacheReadCostUsd !== null ? `$${footprint.projectedCost.cacheReadCostUsd.toFixed(4)} (approx 90% savings)` : "unmetered/unknown"}
+`;
+  out += `  \u2022 Output Estimate (1k tokens): ${footprint.projectedCost.outputCostEstimateUsd !== null ? `$${footprint.projectedCost.outputCostEstimateUsd.toFixed(4)}` : "unmetered/unknown"}
+`;
+  out += `${divider}
+`;
+  return out;
+}
 export {
   BUILTIN_HARNESSES,
   BUILTIN_HARNESS_IDS,
@@ -28180,6 +28425,7 @@ export {
   DEFAULT_HARNESS,
   DEFAULT_LOG_MAX_BYTES,
   DEFAULT_LOG_MAX_FILES,
+  DEFAULT_MODES_CONFIG,
   IMPROVEMENT_REPORT_SCHEMA,
   IMPROVEMENT_REPORT_V1_SCHEMA,
   LOG_LEVEL_PRIORITY,
@@ -28202,6 +28448,7 @@ export {
   assertVnextConfigError,
   backupDatabaseFile,
   buildImprovementReport,
+  calculatePromptFootprint,
   cancelVnextRun,
   checkIntegrity,
   checkMemoryRevisionDrift,
@@ -28222,6 +28469,7 @@ export {
   eligibleHarnesses,
   ensureVnextSupervisor,
   ensureWalJournalMode,
+  estimateTokens,
   evaluatePromotionPolicy,
   fileSha256,
   findWinNpmInnerExe,
@@ -28231,6 +28479,7 @@ export {
   formatHarnessInventory,
   formatHarnessUpdate,
   formatImprovementReport,
+  formatModesExplainReport,
   formatPiSessionDisplayName,
   formatPiSessionKey,
   gateRowContentHash,
@@ -28242,6 +28491,7 @@ export {
   isKnownHarnessId,
   isVnextRuntimeContextClosed,
   isWindowsHarnessShim,
+  loadModesConfig,
   newVnextAssignmentId,
   newVnextAttemptId,
   newVnextCommandId,
@@ -28271,6 +28521,7 @@ export {
   rebuildVnextRunProjection,
   redactLogValue,
   registerVnextRuntimeCloseHook,
+  resolveActiveMode,
   resolveDispatchStatus,
   resolvePassCliApiKey,
   resolveSteelConfig,

@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.kxm.dev/vnext/modes.schema.json",
+  "title": "KXM Modes Configuration",
+  "description": "Declarative major modes and domain modules for selective tool loading and context scoping",
+  "type": "object",
+  "required": ["schema", "majorModes"],
+  "properties": {
+    "schema": { "const": "kxm.modes.v1" },
+    "majorModes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["baseTools"],
+        "properties": {
+          "description": { "type": "string" },
+          "baseTools": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "contextFiles": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "thinkingLevel": {
+            "type": "string",
+            "enum": ["low", "medium", "high", "xhigh"]
+          },
+          "model": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "domains": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["tools"],
+        "properties": {
+          "description": { "type": "string" },
+          "tools": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "contextFiles": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "promptSnippet": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
