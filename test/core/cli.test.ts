@@ -47,6 +47,7 @@ test("kxm routes agent, session, workflow, and gate tooling", async () => {
   assert.match(help.read().stdout, /\bworkflow\b/);
   assert.match(help.read().stdout, /\bgate\b/);
   assert.match(help.read().stdout, /\brole\b/);
+  assert.match(help.read().stdout, /\bexplain\b/);
   const agentHelp = capture();
   assert.equal(await runCli(["agent", "help"], {}, agentHelp), 0);
   assert.match(agentHelp.read().stdout, /Usage: kxm agent/);
@@ -1448,4 +1449,19 @@ test("hub stop recovers an orphaned hub server whose wrapper died", async () => 
     try { orphan.kill("SIGKILL"); } catch { /* already exited */ }
     rmSync(cwd, { recursive: true, force: true });
   }
+});
+
+test("kxm explain inspects prompt context footprint and projected cost", async () => {
+  const io = capture();
+  assert.equal(await runCli(["explain", "--mode", "coder", "--domains", "git,database", "--model", "grok/grok-4.6"], {}, io), 0);
+  assert.match(io.read().stdout, /KXM PRE-FLIGHT CONTEXT EXPLAIN/);
+  assert.match(io.read().stdout, /Major Mode:\s+coder/);
+  assert.match(io.read().stdout, /git, database/);
+
+  const jsonIo = capture();
+  assert.equal(await runCli(["explain", "--mode", "planner", "--json"], {}, jsonIo), 0);
+  const parsed = JSON.parse(jsonIo.read().stdout) as { ok: boolean; command: string; majorMode: string };
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.command, "explain");
+  assert.equal(parsed.majorMode, "planner");
 });

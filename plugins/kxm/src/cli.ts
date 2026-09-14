@@ -114,6 +114,12 @@ import { generateShellCompletion, type SupportedShell } from "./autocomplete.ts"
 import { completionRcTarget, completionScriptPath, detectShell, installPathEntry, installShellCompletion, kxmBinDir } from "./completion-install.ts";
 import { suggestWorkflowAndRoles } from "./suggest.ts";
 import {
+  loadModesConfig,
+  resolveActiveMode,
+  calculatePromptFootprint,
+  formatModesExplainReport,
+} from "./modes.ts";
+import {
   createGoal,
   createTask,
   listGoals,
@@ -1259,6 +1265,28 @@ async function cmdModelInventoryRefresh(runtime: Runtime): Promise<number> {
   const failed = Object.values(inventory.sources).some((source) => !source.ok);
   print(runtime.io, runtime.json, { ok: !failed, command: "models inventory refresh", output: ".kxm/models/inventory.yaml", ...inventory }, `wrote ${inventory.models.length} models to .kxm/models/inventory.yaml`);
   return failed ? 1 : 0;
+}
+
+async function cmdExplain(
+  runtime: Runtime,
+  options: { mode?: string; domains?: string; model?: string },
+): Promise<number> {
+  const modesConfig = loadModesConfig(runtime.dirs.workdir);
+  const majorMode = options.mode || "coder";
+  const domains = options.domains
+    ? options.domains.split(",").map((s) => s.trim()).filter(Boolean)
+    : [];
+  const resolved = resolveActiveMode(modesConfig, majorMode, domains);
+  if (options.model) {
+    resolved.model = options.model;
+  }
+  const footprint = calculatePromptFootprint(resolved, runtime.dirs.workdir);
+  if (runtime.json) {
+    print(runtime.io, runtime.json, { ok: true, command: "explain", ...footprint }, "");
+  } else {
+    runtime.io.stdout(formatModesExplainReport(footprint) + "\n");
+  }
+  return 0;
 }
 
 async function cmdUpdate(runtime: Runtime, harness: string | undefined, options: {
@@ -5079,6 +5107,17 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .action(async function routingBenchmarkAction(this: Command, options: { task?: string; arms?: string; runs?: string }) {
       result.code = await cmdRoutingBenchmark(runtimeFrom(ctx, this), options);
     });
+
+  addGlobalOptions(
+    program
+      .command("explain")
+      .description("Pre-flight context footprint and token cost inspection for workflow modes")
+      .option("--mode <name>", "Major mode (coder, planner, auditor, browser)", "coder")
+      .option("--domains <list>", "Comma-separated domain modules (git, k8s, database, browser)")
+      .option("--model <id>", "Target model identifier (e.g. grok/grok-4.6, claude/fable)")
+  ).action(async function explainAction(this: Command, options: { mode?: string; domains?: string; model?: string }) {
+    result.code = await cmdExplain(runtimeFrom(ctx, this), options);
+  });
 
   const hub = addGlobalOptions(program.command("hub").description("Start, inspect, and stop the local KXM hub"));
   hub.helpCommand("help", "Show hub help");
