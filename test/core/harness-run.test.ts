@@ -1514,10 +1514,17 @@ function spawnPosixRecipe(script: string, positional: string[], extra: {
   });
 }
 
-function waitForFile(path: string, timeoutMs = 2000): void {
+function waitForFile(path: string, timeoutMs = 3000): void {
   const start = Date.now();
   const slot = new Int32Array(new SharedArrayBuffer(4));
-  while (!existsSync(path) && Date.now() - start < timeoutMs) {
+  while (Date.now() - start < timeoutMs) {
+    try {
+      if (existsSync(path) && readFileSync(path, "utf8").trim().length > 0) {
+        return;
+      }
+    } catch {
+      // transient read race
+    }
     Atomics.wait(slot, 0, 0, 50);
   }
 }
