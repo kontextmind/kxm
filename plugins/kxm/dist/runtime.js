@@ -28815,6 +28815,212 @@ function executeSshRun(params) {
     durationMs: Date.now() - startTime
   };
 }
+
+// plugins/kxm/src/subagent-control.ts
+import { randomUUID as randomUUID5 } from "node:crypto";
+var SUBAGENT_TYPES = Object.freeze([
+  "general",
+  "Explore",
+  "Plan",
+  "Reviewer",
+  "Auditor"
+]);
+var DEFAULT_SUBAGENT_MODELS = Object.freeze({
+  general: "grok/grok-4.6",
+  Explore: "openrouter/qwen/qwen3-coder-plus",
+  Plan: "claude/fable",
+  Reviewer: "openai/gpt-5.6-sol",
+  Auditor: "claude/fable"
+});
+function narrowSubagentTools(requestedTools, parentTools) {
+  if (!requestedTools || requestedTools.length === 0) {
+    return parentTools ? [...parentTools] : ["read", "grep", "find"];
+  }
+  if (!parentTools || parentTools.length === 0) {
+    return [...requestedTools];
+  }
+  const parentSet = new Set(parentTools);
+  const narrowed = [];
+  for (const tool of requestedTools) {
+    if (parentSet.has(tool)) {
+      narrowed.push(tool);
+    }
+  }
+  if (narrowed.length === 0 && requestedTools.length > 0) {
+    throw new Error(
+      `Cannot spawn subagent: requested tools [${requestedTools.join(", ")}] expand beyond parent capabilities.`
+    );
+  }
+  return narrowed;
+}
+var SubagentManager = class {
+  subagents = /* @__PURE__ */ new Map();
+  /**
+   * Spawns a new managed subagent with strict capability boundaries.
+   */
+  spawn(params) {
+    if (!params.prompt || !params.prompt.trim()) {
+      throw new Error('Subagent "prompt" is required.');
+    }
+    if (!params.description || !params.description.trim()) {
+      throw new Error('Subagent "description" is required.');
+    }
+    const type = params.type ?? "general";
+    const model = params.model ?? DEFAULT_SUBAGENT_MODELS[type] ?? "grok/grok-4.6";
+    const thinking = params.thinking ?? "low";
+    const allowedTools = narrowSubagentTools(params.allowed_tools, params.parent_tools);
+    const id = `ag_${randomUUID5().replaceAll("-", "").slice(0, 10)}`;
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const record2 = {
+      id,
+      description: params.description.trim(),
+      type,
+      model,
+      thinking,
+      allowedTools,
+      status: params.background === false ? "completed" : "running",
+      turnsMax: params.turns ?? 10,
+      turnsCompleted: 0,
+      prompt: params.prompt.trim(),
+      createdAt: now,
+      updatedAt: now,
+      steeringMessages: []
+    };
+    this.subagents.set(id, record2);
+    return record2;
+  }
+  /**
+   * Dispatches an action from the `agent_control` tool.
+   */
+  control(params) {
+    const action = params.action;
+    if (action === "info") {
+      const kind = params.kind ?? "active";
+      if (kind === "types") {
+        return {
+          ok: true,
+          action: "info",
+          types: SUBAGENT_TYPES
+        };
+      }
+      if (kind === "models") {
+        return {
+          ok: true,
+          action: "info",
+          result: JSON.stringify(DEFAULT_SUBAGENT_MODELS)
+        };
+      }
+      const active = Array.from(this.subagents.values()).map((ag) => ({
+        id: ag.id,
+        description: ag.description,
+        type: ag.type,
+        status: ag.status
+      }));
+      return {
+        ok: true,
+        action: "info",
+        activeAgents: active
+      };
+    }
+    if (!params.agent_id) {
+      return {
+        ok: false,
+        action,
+        error: 'Parameter "agent_id" is required for result, steer, and stop actions.'
+      };
+    }
+    const agent = this.subagents.get(params.agent_id);
+    if (!agent) {
+      return {
+        ok: false,
+        action,
+        agent_id: params.agent_id,
+        error: `Subagent "${params.agent_id}" not found.`
+      };
+    }
+    if (action === "result") {
+      return {
+        ok: true,
+        action: "result",
+        agent_id: agent.id,
+        status: agent.status,
+        result: agent.output ?? `[Subagent is currently ${agent.status}]`
+      };
+    }
+    if (action === "steer") {
+      if (!params.message || !params.message.trim()) {
+        return {
+          ok: false,
+          action: "steer",
+          agent_id: agent.id,
+          error: 'Parameter "message" is required for steer action.'
+        };
+      }
+      if (agent.status === "completed" || agent.status === "stopped" || agent.status === "failed") {
+        return {
+          ok: false,
+          action: "steer",
+          agent_id: agent.id,
+          error: `Cannot steer subagent "${agent.id}" because it is already ${agent.status}.`
+        };
+      }
+      agent.steeringMessages.push({
+        text: params.message.trim(),
+        injectedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        processed: false
+      });
+      agent.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+      return {
+        ok: true,
+        action: "steer",
+        agent_id: agent.id,
+        status: agent.status,
+        steered: true
+      };
+    }
+    if (action === "stop") {
+      agent.status = "stopped";
+      agent.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+      return {
+        ok: true,
+        action: "stop",
+        agent_id: agent.id,
+        status: "stopped",
+        stopped: true
+      };
+    }
+    return {
+      ok: false,
+      action,
+      error: `Unknown control action "${action}".`
+    };
+  }
+  /**
+   * Retrieves an agent record by ID.
+   */
+  get(agentId) {
+    return this.subagents.get(agentId);
+  }
+  /**
+   * Marks a subagent as completed with output.
+   */
+  complete(agentId, output) {
+    const agent = this.subagents.get(agentId);
+    if (agent) {
+      agent.status = "completed";
+      agent.output = output;
+      agent.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    }
+  }
+  /**
+   * Returns all active running subagents.
+   */
+  listActive() {
+    return Array.from(this.subagents.values()).filter(
+      (ag) => ag.status === "running" || ag.status === "pending" || ag.status === "blocked"
+    );
+  }
+};
 export {
   BUILTIN_HARNESSES,
   BUILTIN_HARNESS_IDS,
@@ -28825,6 +29031,7 @@ export {
   DEFAULT_LOG_MAX_FILES,
   DEFAULT_MODES_CONFIG,
   DEFAULT_SOCKET_DIR,
+  DEFAULT_SUBAGENT_MODELS,
   IMPROVEMENT_REPORT_SCHEMA,
   IMPROVEMENT_REPORT_V1_SCHEMA,
   LOG_LEVEL_PRIORITY,
@@ -28835,7 +29042,9 @@ export {
   PI_NATIVE_BRAKE_PROVIDERS,
   PiSession,
   SAFE_HARNESS_COMMAND_ID,
+  SUBAGENT_TYPES,
   SteelClient,
+  SubagentManager,
   VIEWPORT_PRESETS,
   VNEXT_ABSENT_MEMORY_REVISION,
   VNEXT_EVENT_STORE_SCHEMA_VERSION,
@@ -28898,6 +29107,7 @@ export {
   isVnextRuntimeContextClosed,
   isWindowsHarnessShim,
   loadModesConfig,
+  narrowSubagentTools,
   newVnextAssignmentId,
   newVnextAttemptId,
   newVnextCommandId,
