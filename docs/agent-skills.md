@@ -23,6 +23,20 @@ authority, admit new writers, or replace trusted `.kxm/roster.json` policy.
 | Routing & Improve | `kxm-routing-improve` | `routing`, `improve` | Inspect real route quality/cost and propose reviewed improvements |
 | Tasks & Goals | `kxm-tasks` | `suggest`, `goal`, `task` | Recommend workflows and manage goals/tasks with SCM/tracker boundaries |
 
+## Browser Automation Skills
+
+KXM includes dedicated skills for remote browser automation on self-hosted Steel (DOKS), exploratory navigation via `agent-browser`, testing with `Playwright`, and visual feedback. See [Browser Automation Guide](browser-automation.md) and [ADR-0002](adr/ADR-0002-browser-automation-steel-doks.md).
+
+| Feature Area | Skill | Purpose |
+|---|---|---|
+| Browser Sessions | `kxm-browser-session` | Start, attach, inspect, and release Steel sessions on DOKS |
+| Human Takeover | `kxm-browser-takeover` | Handoff protocol for MFA, login, CAPTCHA, and sensitive consent |
+| Credentials & Profiles | `kxm-browser-auth` | Retrieve credentials from `pass-cli` and manage authenticated profiles safely |
+| Exploration | `kxm-browser-explore` | Exploratory navigation, DOM inspection, and workflow mapping via `agent-browser` |
+| Reproduction & Verify | `kxm-browser-verify` | Reproduce UI bugs, gather evidence, and author durable Playwright tests |
+| Diagnostics & Recovery | `kxm-browser-diagnostics` | Investigate Steel connectivity, CDP errors, timeouts, and orphan cleanup |
+| Section Annotation | `kxm-browser-annotate` | Capture DOM sections, attach structured annotations, and feed changes to agents |
+
 ## Installation and Discovery
 
 ### For Pi Users

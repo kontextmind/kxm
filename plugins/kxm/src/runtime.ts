@@ -7,3 +7,4 @@ export * from "./vnext-harness.ts";
 export * from "./database.ts";
 export * from "./logger.ts";
 export * from "./improve.ts";
+export * from "./browser.ts";

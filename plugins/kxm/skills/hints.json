@@ -68,6 +68,36 @@
       "argumentHint": "[trailers|trust|gates|authz|webhooks]",
       "triggers": ["KM-Session", "trust mode", "secret gate", "RLS", "protocol"],
       "complete": ["trailers", "trust", "gates", "authz", "webhooks"]
+    },
+    {
+      "name": "kxm-browser-session",
+      "argumentHint": "[create|inspect|release|cdp]",
+      "triggers": ["browser session", "steel session", "remote browser", "launch browser", "cdp endpoint"],
+      "complete": ["create session", "inspect session", "release session", "format cdp"]
+    },
+    {
+      "name": "kxm-browser-takeover",
+      "argumentHint": "[request|signal|verify]",
+      "triggers": ["human takeover", "mfa login", "takeover url", "browser auth required", "resume browser"],
+      "complete": ["request takeover", "signal complete", "verify auth"]
+    },
+    {
+      "name": "kxm-browser-explore",
+      "argumentHint": "[open|snapshot|get|screenshot]",
+      "triggers": ["agent-browser", "explore web", "scrape page", "dom snapshot"],
+      "complete": ["agent-browser open", "agent-browser snapshot", "agent-browser get", "agent-browser screenshot"]
+    },
+    {
+      "name": "kxm-browser-verify",
+      "argumentHint": "[reproduce|test|assert|trace]",
+      "triggers": ["playwright test", "ui reproduction", "regression test", "e2e verify"],
+      "complete": ["playwright test", "reproduce issue", "save trace"]
+    },
+    {
+      "name": "kxm-browser-diagnostics",
+      "argumentHint": "[check|cleanup|recover]",
+      "triggers": ["browser diagnostics", "cdp failure", "session timeout", "orphaned browser"],
+      "complete": ["check health", "cleanup orphans", "recover session"]
     }
   ]
 }
