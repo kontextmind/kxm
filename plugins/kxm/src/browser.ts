@@ -33,9 +33,52 @@ export interface SteelSession {
   userAgent?: string | undefined;
 }
 
+export interface ViewportPreset {
+  name: string;
+  category: "mobile" | "tablet" | "desktop" | "laptop";
+  width: number;
+  height: number;
+  deviceScaleFactor?: number | undefined;
+  isMobile?: boolean | undefined;
+  hasTouch?: boolean | undefined;
+}
+
+export const VIEWPORT_PRESETS: Record<string, ViewportPreset> = Object.freeze({
+  "mobile-sm": { name: "Mobile Small (SE)", category: "mobile", width: 375, height: 667, isMobile: true, hasTouch: true },
+  "mobile": { name: "Mobile (iPhone 16 / 15 Pro)", category: "mobile", width: 393, height: 852, isMobile: true, hasTouch: true },
+  "mobile-lg": { name: "Mobile Large (Pro Max)", category: "mobile", width: 430, height: 932, isMobile: true, hasTouch: true },
+  "pixel": { name: "Google Pixel 8/9", category: "mobile", width: 412, height: 924, isMobile: true, hasTouch: true },
+  "galaxy": { name: "Samsung Galaxy S24", category: "mobile", width: 360, height: 780, isMobile: true, hasTouch: true },
+  "tablet": { name: "Tablet (iPad Air / Mini)", category: "tablet", width: 820, height: 1180, isMobile: true, hasTouch: true },
+  "tablet-lg": { name: "Tablet Large (iPad Pro 12.9)", category: "tablet", width: 1024, height: 1366, isMobile: true, hasTouch: true },
+  "laptop": { name: "Standard Laptop", category: "laptop", width: 1366, height: 768 },
+  "macbook-13": { name: "MacBook Air 13", category: "laptop", width: 1440, height: 900 },
+  "macbook-16": { name: "MacBook Pro 16", category: "laptop", width: 1728, height: 1117 },
+  "desktop": { name: "Desktop FHD (1080p)", category: "desktop", width: 1920, height: 1080 },
+  "desktop-2k": { name: "Desktop QHD (1440p)", category: "desktop", width: 2560, height: 1440 },
+  "desktop-4k": { name: "Desktop 4K UHD", category: "desktop", width: 3840, height: 2160 },
+});
+
+export function resolveViewportDimensions(
+  presetOrDims?: string | { width: number; height: number } | undefined
+): { width: number; height: number } {
+  if (!presetOrDims) {
+    return { width: 1920, height: 1080 };
+  }
+  if (typeof presetOrDims === "string") {
+    const matched = VIEWPORT_PRESETS[presetOrDims.toLowerCase()];
+    if (matched) {
+      return { width: matched.width, height: matched.height };
+    }
+    return { width: 1920, height: 1080 };
+  }
+  return presetOrDims;
+}
+
 export interface CreateSessionOptions {
   timeoutMs?: number | undefined;
   dimensions?: { width: number; height: number } | undefined;
+  viewportPreset?: string | undefined;
   userAgent?: string | undefined;
   proxy?: string | undefined;
 }
@@ -278,8 +321,9 @@ export class SteelClient {
     const body: Record<string, any> = {
       timeout: timeoutMs,
     };
-    if (options?.dimensions) {
-      body.dimensions = options.dimensions;
+    const dimensions = options?.dimensions || (options?.viewportPreset ? resolveViewportDimensions(options.viewportPreset) : undefined);
+    if (dimensions) {
+      body.dimensions = dimensions;
     }
     if (options?.userAgent) {
       body.userAgent = options.userAgent;

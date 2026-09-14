@@ -8,6 +8,8 @@ import {
   sanitizeLogOutput,
   createAnnotationFeedback,
   formatAnnotationFeedbackPrompt,
+  resolveViewportDimensions,
+  VIEWPORT_PRESETS,
   type SteelSession,
 } from "../../plugins/kxm/src/browser.ts";
 
@@ -305,5 +307,21 @@ describe("KXM Browser & Steel Integration", () => {
     assert.ok(promptText.includes("Badge Overflow"));
     assert.ok(promptText.includes("x=10, y=20, w=150, h=40"));
     assert.ok(promptText.includes("- [ ] Add flex-wrap to header container"));
+  });
+
+  it("resolves standard viewport presets for multi-device testing", () => {
+    assert.strictEqual(VIEWPORT_PRESETS["mobile"]?.width, 393);
+    assert.strictEqual(VIEWPORT_PRESETS["mobile"]?.height, 852);
+    assert.strictEqual(VIEWPORT_PRESETS["tablet"]?.width, 820);
+    assert.strictEqual(VIEWPORT_PRESETS["desktop"]?.width, 1920);
+
+    const resolvedMobile = resolveViewportDimensions("mobile");
+    assert.deepStrictEqual(resolvedMobile, { width: 393, height: 852 });
+
+    const resolvedDesktop = resolveViewportDimensions("desktop");
+    assert.deepStrictEqual(resolvedDesktop, { width: 1920, height: 1080 });
+
+    const custom = resolveViewportDimensions({ width: 800, height: 600 });
+    assert.deepStrictEqual(custom, { width: 800, height: 600 });
   });
 });
