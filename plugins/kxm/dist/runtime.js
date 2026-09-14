@@ -27750,6 +27750,429 @@ function evaluatePromotionPolicy(candidate, policy = "manual_pr", options) {
     reason: `Unknown promotion policy: ${String(policy)}`
   };
 }
+
+// plugins/kxm/src/browser.ts
+import { execSync } from "node:child_process";
+var VIEWPORT_PRESETS = Object.freeze({
+  "mobile-sm": { name: "Mobile Small (SE)", category: "mobile", width: 375, height: 667, isMobile: true, hasTouch: true },
+  "mobile": { name: "Mobile (iPhone 16 / 15 Pro)", category: "mobile", width: 393, height: 852, isMobile: true, hasTouch: true },
+  "mobile-lg": { name: "Mobile Large (Pro Max)", category: "mobile", width: 430, height: 932, isMobile: true, hasTouch: true },
+  "pixel": { name: "Google Pixel 8/9", category: "mobile", width: 412, height: 924, isMobile: true, hasTouch: true },
+  "galaxy": { name: "Samsung Galaxy S24", category: "mobile", width: 360, height: 780, isMobile: true, hasTouch: true },
+  "tablet": { name: "Tablet (iPad Air / Mini)", category: "tablet", width: 820, height: 1180, isMobile: true, hasTouch: true },
+  "tablet-lg": { name: "Tablet Large (iPad Pro 12.9)", category: "tablet", width: 1024, height: 1366, isMobile: true, hasTouch: true },
+  "laptop": { name: "Standard Laptop", category: "laptop", width: 1366, height: 768 },
+  "macbook-13": { name: "MacBook Air 13", category: "laptop", width: 1440, height: 900 },
+  "macbook-16": { name: "MacBook Pro 16", category: "laptop", width: 1728, height: 1117 },
+  "desktop": { name: "Desktop FHD (1080p)", category: "desktop", width: 1920, height: 1080 },
+  "desktop-2k": { name: "Desktop QHD (1440p)", category: "desktop", width: 2560, height: 1440 },
+  "desktop-4k": { name: "Desktop 4K UHD", category: "desktop", width: 3840, height: 2160 }
+});
+function resolveViewportDimensions(presetOrDims) {
+  if (!presetOrDims) {
+    return { width: 1920, height: 1080 };
+  }
+  if (typeof presetOrDims === "string") {
+    const matched = VIEWPORT_PRESETS[presetOrDims.toLowerCase()];
+    if (matched) {
+      return { width: matched.width, height: matched.height };
+    }
+    return { width: 1920, height: 1080 };
+  }
+  return presetOrDims;
+}
+function resolvePassCliApiKey(execFn = (cmd) => execSync(cmd, { encoding: "utf8", stdio: ["pipe", "pipe", "ignore"], timeout: 5e3 })) {
+  if (typeof process === "undefined" || process.env.USE_PASS_CLI === "false") {
+    return void 0;
+  }
+  if (process.env.PASS_CLI_OUTPUT_MOCK) {
+    try {
+      const parsed = JSON.parse(process.env.PASS_CLI_OUTPUT_MOCK);
+      const extraFields = parsed?.item?.content?.extra_fields || [];
+      const customSections = parsed?.item?.content?.content?.Custom?.sections || [];
+      const sectionFields = customSections.flatMap((s) => s.section_fields || []);
+      const allFields = [...extraFields, ...sectionFields];
+      return allFields.find((f) => f.name === "STEEL_API_KEY")?.content?.Hidden;
+    } catch {
+      return void 0;
+    }
+  }
+  try {
+    const output = execFn(
+      'pass-cli item view --vault-name "AI Provider Keys" --item-title "Steel Browser (KontextMind DOKS)" --output json'
+    );
+    const parsed = JSON.parse(output);
+    const extraFields = parsed?.item?.content?.extra_fields || [];
+    const customSections = parsed?.item?.content?.content?.Custom?.sections || [];
+    const sectionFields = customSections.flatMap((s) => s.section_fields || []);
+    const allFields = [...extraFields, ...sectionFields];
+    return allFields.find((f) => f.name === "STEEL_API_KEY")?.content?.Hidden;
+  } catch {
+    return void 0;
+  }
+}
+function resolveSteelConfig(overrides) {
+  const apiUrl = overrides?.apiUrl || process.env.STEEL_API_URL || "https://steel.kontextmind.com";
+  const apiKey = overrides?.apiKey || process.env.STEEL_API_KEY || resolvePassCliApiKey();
+  const uiUrl = overrides?.uiUrl || (overrides?.apiUrl ? `${overrides.apiUrl.replace(/\/$/, "")}/ui` : void 0) || process.env.STEEL_UI_URL || `${apiUrl.replace(/\/$/, "")}/ui`;
+  return {
+    apiUrl: apiUrl.replace(/\/$/, ""),
+    apiKey,
+    uiUrl,
+    timeoutMs: overrides?.timeoutMs || 3e5
+    // 5 minutes default
+  };
+}
+function formatCDPEndpoint(session, config) {
+  const baseApi = config.apiUrl;
+  const urlObj = new URL(baseApi);
+  const isSecure = urlObj.protocol === "https:";
+  const wsProtocol = isSecure ? "wss:" : "ws:";
+  const host = urlObj.host;
+  const searchParams = new URLSearchParams();
+  searchParams.set("sessionId", session.id);
+  if (config.apiKey) {
+    searchParams.set("apiKey", config.apiKey);
+  }
+  return `${wsProtocol}//${host}/v1/devtools?${searchParams.toString()}`;
+}
+function sanitizeLogOutput(input) {
+  if (typeof input === "string") {
+    return input.replace(/apiKey=[^&]+/g, "apiKey=[REDACTED]").replace(/steel_[a-f0-9]+/g, "steel_[REDACTED]");
+  }
+  if (Array.isArray(input)) {
+    return input.map(sanitizeLogOutput);
+  }
+  if (input !== null && typeof input === "object") {
+    const copy = {};
+    for (const [k, v] of Object.entries(input)) {
+      if (/key|secret|token|auth|password/i.test(k) && typeof v === "string") {
+        copy[k] = "[REDACTED]";
+      } else {
+        copy[k] = sanitizeLogOutput(v);
+      }
+    }
+    return copy;
+  }
+  return input;
+}
+function createAnnotationFeedback(feedback) {
+  return {
+    ...feedback,
+    capturedAt: feedback.capturedAt || (/* @__PURE__ */ new Date()).toISOString()
+  };
+}
+function formatAnnotationFeedbackPrompt(feedback) {
+  let output = `## Visual Feedback & Section Annotation
+
+`;
+  output += `- **Target URL**: ${feedback.url}
+`;
+  if (feedback.sessionId) {
+    output += `- **Session ID**: ${feedback.sessionId}
+`;
+  }
+  if (feedback.sectionSelector) {
+    output += `- **Section Target Selector**: \`${feedback.sectionSelector}\`
+`;
+  }
+  if (feedback.screenshotPath) {
+    output += `- **Screenshot Artifact**: \`${feedback.screenshotPath}\`
+`;
+  }
+  output += `- **Captured At**: ${feedback.capturedAt}
+
+`;
+  output += `### Summary
+${feedback.overallSummary}
+
+`;
+  if (feedback.annotations.length > 0) {
+    output += `### Annotated Elements & Notes
+
+`;
+    feedback.annotations.forEach((item, idx) => {
+      output += `${idx + 1}. **${item.label}**`;
+      if (item.severity) {
+        output += ` [${item.severity.toUpperCase()}]`;
+      }
+      output += `
+   - **Note**: ${item.note}
+`;
+      if (item.selector) {
+        output += `   - **Selector**: \`${item.selector}\`
+`;
+      }
+      if (item.boundingBox) {
+        output += `   - **Region (Box)**: x=${item.boundingBox.x}, y=${item.boundingBox.y}, w=${item.boundingBox.width}, h=${item.boundingBox.height}
+`;
+      }
+    });
+    output += `
+`;
+  }
+  if (feedback.requestedChanges.length > 0) {
+    output += `### Actionable Change List
+
+`;
+    feedback.requestedChanges.forEach((change, idx) => {
+      output += `- [ ] ${change}
+`;
+    });
+  }
+  return output;
+}
+var SteelClient = class {
+  config;
+  activeSessions = /* @__PURE__ */ new Map();
+  constructor(config) {
+    this.config = resolveSteelConfig(config);
+  }
+  getConfig() {
+    return { ...this.config };
+  }
+  headers() {
+    const h = {
+      "Content-Type": "application/json"
+    };
+    if (this.config.apiKey) {
+      h["x-steel-api-key"] = this.config.apiKey;
+    }
+    return h;
+  }
+  /**
+   * Launch a new Steel browser session on DOKS.
+   */
+  async createSession(options) {
+    const timeoutMs = options?.timeoutMs ?? this.config.timeoutMs ?? 3e5;
+    const body = {
+      timeout: timeoutMs
+    };
+    const dimensions = options?.dimensions || (options?.viewportPreset ? resolveViewportDimensions(options.viewportPreset) : void 0);
+    if (dimensions) {
+      body.dimensions = dimensions;
+    }
+    if (options?.userAgent) {
+      body.userAgent = options.userAgent;
+    }
+    if (options?.proxy) {
+      body.proxy = options.proxy;
+    }
+    const res = await fetch(`${this.config.apiUrl}/v1/sessions`, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Failed to create Steel session (${res.status}): ${errText}`);
+    }
+    const data = await res.json();
+    const session = {
+      id: data.id,
+      createdAt: data.createdAt || (/* @__PURE__ */ new Date()).toISOString(),
+      status: "live",
+      state: "AGENT_CONTROL",
+      websocketUrl: data.websocketUrl || "",
+      debugUrl: data.debugUrl || "",
+      debuggerUrl: data.debuggerUrl || "",
+      sessionViewerUrl: data.sessionViewerUrl || `${this.config.uiUrl}?sessionId=${data.id}`,
+      timeoutMs,
+      lastActiveAt: Date.now(),
+      activeController: "agent",
+      userAgent: data.userAgent
+    };
+    this.activeSessions.set(session.id, session);
+    return session;
+  }
+  /**
+   * Get details of an existing session.
+   */
+  async getSession(sessionId) {
+    const res = await fetch(`${this.config.apiUrl}/v1/sessions/${encodeURIComponent(sessionId)}`, {
+      method: "GET",
+      headers: this.headers()
+    });
+    if (res.status === 404) {
+      const cached = this.activeSessions.get(sessionId);
+      if (cached) {
+        cached.state = "EXPIRED";
+        cached.status = "released";
+        cached.activeController = "none";
+      }
+      return null;
+    }
+    if (!res.ok) {
+      throw new Error(`Failed to fetch Steel session (${res.status})`);
+    }
+    const data = await res.json();
+    const existing = this.activeSessions.get(sessionId);
+    const session = {
+      id: data.id,
+      createdAt: data.createdAt,
+      status: data.status,
+      state: existing?.state ?? (data.status === "live" ? "AGENT_CONTROL" : "RELEASED"),
+      websocketUrl: data.websocketUrl || existing?.websocketUrl || "",
+      debugUrl: data.debugUrl || existing?.debugUrl || "",
+      debuggerUrl: data.debuggerUrl || existing?.debuggerUrl || "",
+      sessionViewerUrl: existing?.sessionViewerUrl || `${this.config.uiUrl}?sessionId=${data.id}`,
+      timeoutMs: data.timeout || existing?.timeoutMs || 3e5,
+      lastActiveAt: Date.now(),
+      activeController: existing?.activeController ?? (data.status === "live" ? "agent" : "none"),
+      userAgent: data.userAgent
+    };
+    this.activeSessions.set(session.id, session);
+    return session;
+  }
+  /**
+   * Request human takeover for MFA, login, or consent.
+   * Pauses agent automation and sets state to HUMAN_CONTROL.
+   */
+  requestHumanTakeover(sessionId, reason) {
+    const session = this.activeSessions.get(sessionId);
+    if (!session) {
+      throw new Error(`Session ${sessionId} not tracked or already released`);
+    }
+    if (session.state === "RELEASED" || session.state === "EXPIRED" || session.state === "FAILED") {
+      throw new Error(`Cannot initiate takeover on session in state ${session.state}`);
+    }
+    session.state = "HUMAN_CONTROL";
+    session.activeController = "human";
+    session.takeoverReason = reason;
+    session.lastActiveAt = Date.now();
+    const takeoverUrl = `${this.config.uiUrl}?sessionId=${encodeURIComponent(sessionId)}`;
+    const instructions = `[HUMAN TAKEOVER REQUIRED]
+Reason: ${reason}
+Session ID: ${session.id}
+Takeover URL: ${takeoverUrl}
+
+Instructions for Operator:
+1. Open the URL above to access the session UI.
+2. Perform the required authentication / MFA / consent action.
+3. Return to the terminal and signal completion. Automation is paused until you confirm.`;
+    return {
+      session,
+      takeoverUrl,
+      instructions
+    };
+  }
+  /**
+   * Signal that human takeover is complete.
+   * Moves state to VERIFY_AUTHENTICATION before transitioning back to AGENT_CONTROL.
+   */
+  signalHumanComplete(sessionId) {
+    const session = this.activeSessions.get(sessionId);
+    if (!session) {
+      throw new Error(`Session ${sessionId} not tracked or already released`);
+    }
+    if (session.state !== "HUMAN_CONTROL") {
+      throw new Error(`Session ${sessionId} is not in HUMAN_CONTROL state (currently ${session.state})`);
+    }
+    session.state = "VERIFY_AUTHENTICATION";
+    session.activeController = "agent";
+    session.lastActiveAt = Date.now();
+    return {
+      session,
+      state: session.state
+    };
+  }
+  /**
+   * Confirm authentication verification passed and restore AGENT_CONTROL.
+   */
+  confirmAuthenticationVerified(sessionId) {
+    const session = this.activeSessions.get(sessionId);
+    if (!session) {
+      throw new Error(`Session ${sessionId} not tracked or already released`);
+    }
+    if (session.state !== "VERIFY_AUTHENTICATION") {
+      throw new Error(`Session ${sessionId} is not in VERIFY_AUTHENTICATION state (currently ${session.state})`);
+    }
+    session.state = "AGENT_CONTROL";
+    session.activeController = "agent";
+    session.takeoverReason = void 0;
+    session.lastActiveAt = Date.now();
+    return session;
+  }
+  /**
+   * Gracefully release a session.
+   */
+  async releaseSession(sessionId) {
+    try {
+      const res = await fetch(`${this.config.apiUrl}/v1/sessions/${encodeURIComponent(sessionId)}/release`, {
+        method: "POST",
+        headers: this.headers()
+      });
+      const session = this.activeSessions.get(sessionId);
+      if (session) {
+        session.status = "released";
+        session.state = "RELEASED";
+        session.activeController = "none";
+      }
+      this.activeSessions.delete(sessionId);
+      return res.ok;
+    } catch {
+      this.activeSessions.delete(sessionId);
+      return false;
+    }
+  }
+  /**
+   * Perform a direct stateless scrape without manual session management.
+   */
+  async scrape(url) {
+    const res = await fetch(`${this.config.apiUrl}/v1/scrape`, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({ url })
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`Scrape failed (${res.status}): ${err}`);
+    }
+    return res.json();
+  }
+  /**
+   * Perform a direct screenshot action.
+   */
+  async screenshot(url, fullPage = false) {
+    const res = await fetch(`${this.config.apiUrl}/v1/screenshot`, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({ url, fullPage })
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`Screenshot failed (${res.status}): ${err}`);
+    }
+    return res.json();
+  }
+  /**
+   * Detect and list orphaned or timed-out active sessions.
+   */
+  async checkOrphanedSessions(maxIdleMs = 6e5) {
+    const res = await fetch(`${this.config.apiUrl}/v1/sessions`, {
+      method: "GET",
+      headers: this.headers()
+    });
+    if (!res.ok) {
+      return [];
+    }
+    const data = await res.json();
+    const remoteSessions = data.sessions || [];
+    const now = Date.now();
+    const orphaned = [];
+    for (const rs of remoteSessions) {
+      if (rs.status === "live" || rs.status === "idle") {
+        const tracked = this.activeSessions.get(rs.id);
+        if (!tracked && rs.duration > maxIdleMs) {
+          orphaned.push(rs.id);
+        } else if (tracked && now - tracked.lastActiveAt > maxIdleMs && tracked.state !== "HUMAN_CONTROL") {
+          orphaned.push(rs.id);
+        }
+      }
+    }
+    return orphaned;
+  }
+};
 export {
   BUILTIN_HARNESSES,
   BUILTIN_HARNESS_IDS,
@@ -27765,6 +28188,8 @@ export {
   PI_NATIVE_BRAKE_PROVIDERS,
   PiSession,
   SAFE_HARNESS_COMMAND_ID,
+  SteelClient,
+  VIEWPORT_PRESETS,
   VNEXT_ABSENT_MEMORY_REVISION,
   VNEXT_EVENT_STORE_SCHEMA_VERSION,
   VNEXT_REGISTRY_SCHEMA_VERSION,
@@ -27786,6 +28211,7 @@ export {
   closeVnextRuntimeContext,
   computeGateEvidenceOutcome,
   computeVnextMemoryRevision,
+  createAnnotationFeedback,
   createBackup,
   createLogger,
   createVnextOneShotProducer,
@@ -27800,6 +28226,8 @@ export {
   fileSha256,
   findWinNpmInnerExe,
   foldStoredVnextRun,
+  formatAnnotationFeedbackPrompt,
+  formatCDPEndpoint,
   formatHarnessInventory,
   formatHarnessUpdate,
   formatImprovementReport,
@@ -27844,11 +28272,15 @@ export {
   redactLogValue,
   registerVnextRuntimeCloseHook,
   resolveDispatchStatus,
+  resolvePassCliApiKey,
+  resolveSteelConfig,
+  resolveViewportDimensions,
   restoreBackup,
   restoreDatabaseFile,
   rotateLogFiles,
   runHarnessUpdate,
   runtimeError,
+  sanitizeLogOutput,
   startVnextRuntimeSupervisor,
   tableColumns,
   userTables,

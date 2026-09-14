@@ -18,4 +18,5 @@ nul
 # Pix Agent
 .pi/
 .pi-lens/
+.cache/
 .kxm/assets/critic-reviews/

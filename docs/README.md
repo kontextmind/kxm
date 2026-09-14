@@ -9,6 +9,7 @@ This documentation is organized by task. Start with the guide that matches what 
 | [Configuration](configuration.md) | Users and operators | Understand every supported setting and default |
 | [Architecture](architecture.md) | Maintainers and integrators | Learn the component boundaries and message lifecycle |
 | [Agent Skills](agent-skills.md) | Users and integrators | Comprehensive skill suite covering all KXM commands with progressive disclosure |
+| [Browser automation](browser-automation.md) | Developers and operators | Self-hosted Steel on DOKS, agent-browser, Playwright, pass-cli, and human takeover |
 | [Skills](skills.md) | Operators and skill authors | Governed candidate lifecycle; also the [repository work delivery](skills/repo-work-delivery.md) skill |
 | [Operations](operations.md) | Hub operators | Run, monitor, secure, and recover the service |
 | [Troubleshooting](troubleshooting.md) | Everyone | Diagnose common installation and delivery failures |
