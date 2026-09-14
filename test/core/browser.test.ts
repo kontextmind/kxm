@@ -136,6 +136,16 @@ describe("KXM Browser & Steel Integration", () => {
   it("resolves steel config with secure defaults, env vars, and pass-cli disable", () => {
     const origEnv = { ...process.env };
     try {
+      delete process.env.STEEL_API_KEY;
+      delete process.env.STEEL_API_URL;
+      delete process.env.STEEL_UI_URL;
+      process.env.USE_PASS_CLI = "true";
+
+      // With pass-cli enabled on this test runner, it should resolve or catch cleanly
+      const cfg = resolveSteelConfig();
+      assert.ok(cfg.apiUrl);
+      assert.ok(cfg.uiUrl);
+
       process.env.STEEL_API_URL = "https://steel.env.local";
       process.env.STEEL_API_KEY = "steel_envkey123";
       process.env.STEEL_UI_URL = "https://steel.env.local/custom-ui";
@@ -228,6 +238,18 @@ describe("KXM Browser & Steel Integration", () => {
     // Test 404 on unknown session
     const notFound = await client.getSession("unknown-id-404");
     assert.strictEqual(notFound, null);
+
+    // Test 404 on a previously cached session that was removed from server
+    const cachedSession = await client.createSession();
+    mockSessions.delete(cachedSession.id);
+    const expiredFetched = await client.getSession(cachedSession.id);
+    assert.strictEqual(expiredFetched, null);
+    assert.strictEqual(cachedSession.state, "EXPIRED");
+
+    // Test takeover on expired session throws state error
+    assert.throws(() => {
+      client.requestHumanTakeover(cachedSession.id, "MFA on expired");
+    }, /Cannot initiate takeover on session in state EXPIRED/);
 
     const released = await client.releaseSession(session.id);
     assert.strictEqual(released, true);
