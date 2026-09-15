@@ -46217,6 +46217,41 @@ function resolveActiveMode(config, majorModeName = "coder", domainNames = []) {
     model: major.model || "grok/grok-4.6"
   };
 }
+var CATALOG_DATE_RE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
+function boundedCatalogDate(value) {
+  return typeof value === "string" && CATALOG_DATE_RE.test(value) ? value : void 0;
+}
+function catalogDateForStatus(loaded, injected, projectRoot) {
+  const fromLoaded = boundedCatalogDate(loaded.catalog?.date);
+  if (fromLoaded) return fromLoaded;
+  const fromInjected = boundedCatalogDate(injected?.date);
+  if (fromInjected) return fromInjected;
+  if (!loaded.stale) return void 0;
+  try {
+    return boundedCatalogDate(loadPriceCatalog(projectRoot)?.date);
+  } catch {
+    return void 0;
+  }
+}
+function describePriceCatalogStatus(loaded, catalogDate) {
+  if (loaded.stale) {
+    return {
+      catalogStatus: "stale",
+      catalogReason: catalogDate ? `price catalog stale (dated ${catalogDate})` : "price catalog stale"
+    };
+  }
+  if (loaded.unavailable) {
+    return { catalogStatus: "corrupt", catalogReason: "price catalog corrupt" };
+  }
+  if (!loaded.catalog) {
+    return { catalogStatus: "missing", catalogReason: "price catalog missing" };
+  }
+  return { catalogStatus: "verified", catalogReason: "price catalog verified" };
+}
+function formatExplainCost(value, footprint, suffix = "") {
+  if (value !== null) return `$${value.toFixed(4)}${suffix}`;
+  return footprint.catalogStatus === "verified" ? "unmetered/unknown" : footprint.catalogReason;
+}
 function calculatePromptFootprint(resolved, projectRoot = process.cwd(), catalog) {
   const breakdown = [];
   const baseSystemPromptChars = 3200;
@@ -46265,6 +46300,10 @@ function calculatePromptFootprint(resolved, projectRoot = process.cwd(), catalog
   const loaded = loadPriceCatalogForEstimate(
     catalog ? { priceCatalog: catalog } : { projectRoot }
   );
+  const catalogInfo = describePriceCatalogStatus(
+    loaded,
+    catalogDateForStatus(loaded, catalog, projectRoot)
+  );
   const cat = loaded.catalog;
   const rawModel = resolved.model || "grok/grok-4.6";
   const [prov, mod] = rawModel.includes("/") ? rawModel.split("/", 2) : [void 0, rawModel];
@@ -46304,7 +46343,9 @@ function calculatePromptFootprint(resolved, projectRoot = process.cwd(), catalog
       inputCostUsd: inputCost?.costUsd ?? null,
       cacheReadCostUsd: cacheReadCost?.costUsd ?? null,
       outputCostEstimateUsd: outputEstimateCost?.costUsd ?? null
-    }
+    },
+    catalogStatus: catalogInfo.catalogStatus,
+    catalogReason: catalogInfo.catalogReason
   };
 }
 function formatModesExplainReport(footprint) {
@@ -46322,6 +46363,8 @@ ${divider}
   out += `Enabled Domains:  ${footprint.enabledDomains.length > 0 ? footprint.enabledDomains.join(", ") : "(none)"}
 `;
   out += `Target Model:     ${footprint.model}
+`;
+  out += `Catalog status:   ${footprint.catalogReason}
 
 `;
   out += `CONTEXT BREAKDOWN:
@@ -46341,11 +46384,11 @@ ${divider}
 `;
   out += `PROJECTED COSTS (per turn):
 `;
-  out += `  \u2022 Initial Turn Input Cost:   ${footprint.projectedCost.inputCostUsd !== null ? `$${footprint.projectedCost.inputCostUsd.toFixed(4)}` : "unmetered/unknown"}
+  out += `  \u2022 Initial Turn Input Cost:   ${formatExplainCost(footprint.projectedCost.inputCostUsd, footprint)}
 `;
-  out += `  \u2022 Subsequent Cache-Read Cost: ${footprint.projectedCost.cacheReadCostUsd !== null ? `$${footprint.projectedCost.cacheReadCostUsd.toFixed(4)} (approx 90% savings)` : "unmetered/unknown"}
+  out += `  \u2022 Subsequent Cache-Read Cost: ${formatExplainCost(footprint.projectedCost.cacheReadCostUsd, footprint, " (approx 90% savings)")}
 `;
-  out += `  \u2022 Output Estimate (1k tokens): ${footprint.projectedCost.outputCostEstimateUsd !== null ? `$${footprint.projectedCost.outputCostEstimateUsd.toFixed(4)}` : "unmetered/unknown"}
+  out += `  \u2022 Output Estimate (1k tokens): ${formatExplainCost(footprint.projectedCost.outputCostEstimateUsd, footprint)}
 `;
   out += `${divider}
 `;
