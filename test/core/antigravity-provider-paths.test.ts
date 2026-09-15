@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -22,6 +23,7 @@ import {
   fetchAvailableModelsCatalog,
   fetchAvailableRuntimeModel,
   formatRequestDiagnostics,
+  isUsableRuntimeModelId,
   jsonOrTextError,
   loadCodeAssist,
   mergeAvailableModelsResults,
@@ -1690,5 +1692,389 @@ test("header deadline cancels an invalid body chunk and passthrough abort reason
   );
   ac.abort(new Error("caller-cancel"));
   await assert.rejects(pending, /caller-cancel|aborted/);
+});
+
+test("usage postJson retries parse failures and keeps assist/quota error legs honest", async () => {
+  let quotaHits = 0;
+  fetchOverride = async (url) => {
+    if (url.includes("retrieveUserQuotaSummary")) {
+      quotaHits += 1;
+      if (quotaHits === 1) return textResponse("not-json-503", 503);
+      if (quotaHits === 2) throw new Error("socket reset");
+      return jsonResponse(quotaSummary);
+    }
+    if (url.includes("loadCodeAssist")) {
+      return textResponse(JSON.stringify({ error: { message: "assist 400" } }), 400);
+    }
+    if (url.includes("fetchAvailableModels")) {
+      return jsonResponse({
+        models: {
+          "gemini-name-only": { modelName: "Name Only Model", apiProvider: "google" },
+          "gemini-label-only": { label: "Label Only" },
+        },
+      });
+    }
+    return undefined;
+  };
+  const usage = await fetchAccountUsage(apiKeyJson());
+  assert.ok(quotaHits >= 2);
+  assert.equal(usage.models.some((model) => model.displayName === "Name Only Model"), true);
+  assert.equal(usage.models.some((model) => model.displayName === "Label Only"), true);
+
+  fetchOverride = async (url) => {
+    if (url.includes("loadCodeAssist")) {
+      return jsonResponse({ currentTier: { id: "free-tier", name: "Free" }, projectId: "tier-only" });
+    }
+    if (url.includes("retrieveUserQuotaSummary")) {
+      return jsonResponse({
+        groups: [
+          {
+            displayName: "Hourly",
+            buckets: [
+              { displayName: "Hour", remainingFraction: 0.4, resetTime: new Date(Date.now() + 130 * 60 * 1000).toISOString() },
+              { remainingFraction: 0.1 },
+            ],
+          },
+        ],
+      });
+    }
+    return undefined;
+  };
+  const freeTier = await fetchAccountUsage(apiKeyJson("tier-only"));
+  assert.match(freeTier.planLabel ?? "", /Free/);
+  assert.match(formatUsageSummary(freeTier), /2h|1h|n\/a/);
+  assert.match(formatUsageSummary({ ...freeTier, groups: [], quotaSummaryError: "timeout talking to quota" }), /unavailable/);
+  assert.match(formatUsageSummary({ ...freeTier, groups: [], quotaSummaryError: "account missing license for quota" }), /paid subscription/);
+  assert.match(
+    formatModelsList({
+      ...freeTier,
+      models: [{ modelId: "same", displayName: "same", remainingFraction: undefined }],
+    }),
+    /same/,
+  );
+});
+
+test("prewarmConnection actually issues HEAD and swallows warm-up failures", async () => {
+  const previousTestContext = process.env.NODE_TEST_CONTEXT;
+  delete process.env.ANTIGRAVITY_NO_PREWARM;
+  delete process.env.NODE_TEST_CONTEXT;
+  try {
+    let seenMethod = "";
+    const warmed = new Promise<void>((resolve) => {
+      fetchOverride = async (url, init) => {
+        seenMethod = String(init?.method ?? "");
+        if (url.includes("daily-cloudcode-pa.googleapis.com")) {
+          resolve();
+          return textResponse("", 200);
+        }
+        return undefined;
+      };
+    });
+    prewarmConnection("https://daily-cloudcode-pa.googleapis.com");
+    await Promise.race([
+      warmed,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("prewarm success timeout")), 2000)),
+    ]);
+    assert.equal(seenMethod, "HEAD");
+
+    const failed = new Promise<void>((resolve) => {
+      fetchOverride = async () => {
+        resolve();
+        throw new Error("warm fail");
+      };
+    });
+    prewarmConnection("https://cloudcode-pa.googleapis.com");
+    await Promise.race([
+      failed,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("prewarm fail timeout")), 2000)),
+    ]);
+  } finally {
+    if (previousTestContext === undefined) delete process.env.NODE_TEST_CONTEXT;
+    else process.env.NODE_TEST_CONTEXT = previousTestContext;
+  }
+});
+
+test("client helpers cover remaining project, catalog, and runtime-match branches", async () => {
+  assert.equal(extractProjectId({ antigravityProjectId: "a1" }), "a1");
+  assert.equal(extractProjectId({ userDefinedCloudaicompanionProject: "u1" }), "u1");
+  assert.equal(extractProjectId({ projectIds: ["from-ids"] }), "from-ids");
+  assert.equal(extractProjectId({}), undefined);
+  assert.equal(jsonOrTextError('{"error":{}}'), '{"error":{}}');
+  assert.throws(() => parseApiKey(JSON.stringify({ token: "t" })), /Invalid Antigravity credentials/);
+  assert.equal(isUsableRuntimeModelId("MODEL_PLACEHOLDER_M1"), false);
+  assert.equal(isUsableRuntimeModelId("gemini-3.8-flash has space"), false);
+  assert.equal(isUsableRuntimeModelId("gemini-3.8-flash"), true);
+  delete process.env.ANTIGRAVITY_PROJECT_ID;
+  assert.match(resolveProjectId({ token: "t", email: "seed@example.com" }), /-/);
+
+  fetchOverride = async (url) => {
+    if (url.includes("fetchAvailableModels")) {
+      if (url.includes("sandbox")) throw new Error("sandbox down");
+      if (url.includes("daily-cloudcode-pa.googleapis.com")) {
+        return textResponse(JSON.stringify({ error: { message: "catalog 500" } }), 500);
+      }
+      return jsonResponse({
+        other: {
+          models: {
+            "gemini-3.8-flash-medium": { displayName: "Gemini 3.8 Flash (Medium)", model: "MODEL_PLACEHOLDER_M319" },
+            "claude-opus-4-6": { displayName: "Claude Opus 4.6", model: "MODEL_PLACEHOLDER_M26" },
+            "gpt-oss-120b-medium": { displayName: "GPT OSS 120B (Medium)" },
+            "gemini-3.1-pro-high": { displayName: "Gemini 3.1 Pro (High)" },
+          },
+        },
+      });
+    }
+    return undefined;
+  };
+  const medium = await fetchAvailableRuntimeModel("tok-match", "proj", "gemini-3.8-flash-medium");
+  assert.equal(medium?.id, "gemini-3.8-flash-medium");
+  const opus = await fetchAvailableRuntimeModel("tok-match-2", "proj", "claude-opus-4-6");
+  assert.equal(opus?.id, "claude-opus-4-6");
+  const oss = await fetchAvailableRuntimeModel("tok-match-3", "proj", "gpt-oss-120b");
+  assert.equal(oss?.id, "gpt-oss-120b-medium");
+  const pro = await fetchAvailableRuntimeModel("tok-match-4", "proj", "gemini-3.1-pro-high");
+  assert.equal(pro?.id, "gemini-3.1-pro-high");
+
+  fetchOverride = async (url) => {
+    if (url.includes("fetchAvailableModels")) return jsonResponse(["gemini-custom-flash"]);
+    return undefined;
+  };
+  const fromString = await fetchAvailableRuntimeModel("tok-string", "proj", "gemini-custom-flash");
+  assert.equal(fromString?.id, "gemini-custom-flash");
+
+  fetchOverride = async (url) => {
+    if (url.includes("loadCodeAssist")) throw new Error("assist boom");
+    if (url.includes("listCloudAICompanionProjects")) throw new Error("list boom");
+    return undefined;
+  };
+  assert.equal(await loadCodeAssist("tok-all-fail"), undefined);
+
+  fetchOverride = async (url) => {
+    if (url.includes("loadCodeAssist")) return jsonResponse({ currentTier: { name: "Free" } });
+    if (url.includes("listCloudAICompanionProjects")) {
+      if (url.includes("daily")) throw new Error("list daily down");
+      return jsonResponse({ projectIds: ["listed-after-error"] });
+    }
+    return undefined;
+  };
+  assert.equal(await loadCodeAssist("tok-list-retry"), "listed-after-error");
+
+  fetchOverride = async (url) => {
+    if (url.includes("fetchAvailableModels")) {
+      return jsonResponse({ models: { "gemini-3.6-flash-low": { displayName: "Gemini 3.6 Flash (Low)" } } });
+    }
+    return undefined;
+  };
+  for (let i = 0; i < 66; i++) {
+    await fetchAvailableRuntimeModel(`tok-evict-${i}`, "proj", "gemini-3.6-flash-low");
+  }
+  for (let i = 0; i < 34; i++) {
+    await loadCodeAssist(`tok-project-evict-${i}`);
+  }
+});
+
+test("oauth callback server rejects provider errors and token exchange failures", async () => {
+  async function waitForCallbackHost(): Promise<void> {
+    const started = Date.now();
+    while (Date.now() - started < 3000) {
+      try {
+        const probe = await originalFetch("http://127.0.0.1:51121/not-the-callback");
+        assert.equal(probe.status, 404);
+        return;
+      } catch {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+    }
+    throw new Error("callback host did not start");
+  }
+
+  let authUrl = "";
+  const deniedLogin = loginAntigravity({
+    onAuth(info) {
+      authUrl = info.url;
+    },
+  });
+  const deniedResult = assert.rejects(deniedLogin, /OAuth error|access_denied/);
+  await waitForCallbackHost();
+  const head = await originalFetch("http://127.0.0.1:51121/not-the-callback", { method: "HEAD" });
+  assert.equal(head.status, 404);
+  const state = new URL(authUrl).searchParams.get("state");
+  assert.ok(state);
+  const denied = await originalFetch(
+    `http://127.0.0.1:51121/oauth-callback?error=access_denied&state=${state}`,
+  );
+  assert.equal(denied.status, 400);
+  await deniedResult;
+
+  let missingUrl = "";
+  const missingLogin = loginAntigravity({
+    onAuth(info) {
+      missingUrl = info.url;
+    },
+  });
+  const missingResult = assert.rejects(missingLogin, /Missing code or state/);
+  await waitForCallbackHost();
+  const missingState = new URL(missingUrl).searchParams.get("state");
+  const missingCode = await originalFetch(
+    `http://127.0.0.1:51121/oauth-callback?state=${missingState}`,
+  );
+  assert.equal(missingCode.status, 400);
+  await missingResult;
+
+  const mismatchLogin = loginAntigravity({
+    onAuth() {},
+  });
+  const mismatchResult = assert.rejects(mismatchLogin, /state mismatch/i);
+  await waitForCallbackHost();
+  const mismatch = await originalFetch("http://127.0.0.1:51121/oauth-callback?code=abc&state=other");
+  assert.equal(mismatch.status, 400);
+  await mismatchResult;
+
+  fetchOverride = async (url) => {
+    if (url.startsWith(TOKEN_URL)) return textResponse("{}", 400);
+    return undefined;
+  };
+  let tokenUrl = "";
+  const tokenLogin = loginAntigravity({
+    onAuth(info) {
+      tokenUrl = info.url;
+    },
+  });
+  const tokenResult = assert.rejects(tokenLogin, /Token exchange failed/);
+  await waitForCallbackHost();
+  const tokenState = new URL(tokenUrl).searchParams.get("state");
+  const tokenCallback = await originalFetch(
+    `http://127.0.0.1:51121/oauth-callback?code=x&state=${tokenState}`,
+  );
+  assert.equal(tokenCallback.status, 200);
+  await tokenResult;
+
+  fetchOverride = async (url) => {
+    if (url.startsWith(TOKEN_URL)) return jsonResponse(tokenExchange);
+    if (url.includes("userinfo")) throw new Error("userinfo down");
+    if (url.includes("loadCodeAssist")) return jsonResponse({ projectId: "after-userinfo-fail" });
+    return undefined;
+  };
+  let recoveredUrl = "";
+  const recovered = loginAntigravity({
+    onAuth(info) {
+      recoveredUrl = info.url;
+    },
+  });
+  await waitForCallbackHost();
+  const recoveredState = new URL(recoveredUrl).searchParams.get("state");
+  const ok = await originalFetch(
+    `http://127.0.0.1:51121/oauth-callback?code=ok&state=${recoveredState}`,
+  );
+  assert.equal(ok.status, 200);
+  const creds = await recovered;
+  assert.equal(creds.projectId, "after-userinfo-fail");
+  assert.equal(creds.email, undefined);
+
+  fetchOverride = async (url) => {
+    if (url.startsWith(TOKEN_URL)) return textResponse("{}", 400);
+    return undefined;
+  };
+  await assert.rejects(
+    () => refreshAntigravityToken({ refresh: "1/0gK8abcdefghijklmnopqrstuvwxyzABCD", access: "x", expires: 1 }),
+    /token refresh failed/,
+  );
+
+  const blocker = createServer((_req, res) => {
+    res.writeHead(200);
+    res.end("busy");
+  });
+  await new Promise<void>((resolve, reject) => {
+    blocker.once("error", reject);
+    blocker.listen(51121, "127.0.0.1", resolve);
+  });
+  try {
+    await assert.rejects(
+      () =>
+        loginAntigravity({
+          onAuth() {},
+        }),
+      /Port 51121 is already in use/,
+    );
+  } finally {
+    await new Promise<void>((resolve) => blocker.close(() => resolve()));
+  }
+});
+
+test("stream and catalog helpers cover remaining request and grouping legs", async () => {
+  const model = geminiModel();
+  const sourceImage: Context = {
+    messages: [
+      {
+        role: "user",
+        timestamp: 1,
+        content: [
+          { type: "text", text: "see" },
+          { type: "image", source: { data: "abcd", mediaType: "image/webp" } },
+          { type: "image" },
+          "skip-me" as never,
+        ],
+      },
+      {
+        role: "assistant",
+        api: "other",
+        provider: "other",
+        model: "other",
+        stopReason: "stop",
+        timestamp: 2,
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+        content: [{ type: "thinking", thinking: "foreign" }],
+      },
+    ],
+  };
+  const turns = convertMessages(model, sourceImage, "gemini-3.8-flash-low");
+  assert.ok(turns.some((turn) => turn.parts.some((part) => "inlineData" in part)));
+
+  const request = buildRequest(model, { messages: [{ role: "user", timestamp: 1, content: "hi" }] }, "p", {}, "gemini-3.8-flash-low");
+  assert.ok(request.request.systemInstruction?.parts.length);
+  assert.ok((request.request.generationConfig?.maxOutputTokens ?? 0) > 0);
+  assert.equal(mapStopReason(undefined), "stop");
+  assert.match(friendlyAntigravityError(undefined, "plain"), /plain/);
+  assert.match(friendlyAntigravityError(429, "quota exceeded"), /Quota reached/);
+  assert.match(friendlyAntigravityError(418, "teapot"), /teapot/);
+
+  const tools = convertTools([
+    {
+      name: "root-ref",
+      description: "r",
+      parameters: { $ref: "#/allOf/9", allOf: [{ type: "string" }] },
+    },
+    {
+      name: "into-scalar",
+      description: "s",
+      parameters: { $ref: "#/type/nope", type: "string" },
+    },
+  ]);
+  assert.equal(tools, undefined);
+
+  const missingKey = await collectStream(streamAntigravity(model, { messages: [{ role: "user", timestamp: 1, content: "hi" }] }));
+  assert.equal(missingKey.message.stopReason, "error");
+
+  assert.equal(getMaxOutputTokens("gemini-3.8-flash"), 65536);
+  assert.equal(getMaxOutputTokens("x", "claude-unknown-9"), 64000);
+  assert.equal(getMaxOutputTokens("x", "gpt-oss-unknown"), 32768);
+  assert.equal(getMaxOutputTokens("x", "gemini-3.1-pro-custom"), 65535);
+  assert.deepEqual(getThinkingConfig("gemini-3-flash-agent", "medium"), { includeThoughts: true, thinkingBudget: 4_000 });
+  assert.deepEqual(getThinkingConfig("gemini-3.1-pro", undefined), { includeThoughts: false, thinkingBudget: 0 });
+  assert.equal(getThinkingConfig("gemini-pro-agent", "xhigh")?.thinkingBudget, 10_001);
+  assert.match(nowRequestId(), /^agent\//);
+
+  const grouped = buildAntigravityCatalog(
+    {
+      "gemini-9.3-flash-low": { displayName: "Gemini 9.3 Flash (Low)", supportsThinking: true },
+      "gemini-9.3-flash-agent": { displayName: "Gemini 9.3 Flash", supportsThinking: true },
+      "claude-haiku-9": { displayName: "Claude Haiku 9" },
+      "gemini-custom-other": { displayName: "Gemini Custom Other" },
+    },
+    getCurrentAntigravityCatalog(),
+  );
+  assert.ok(grouped.models.some((item) => item.id === "gemini-9.3-flash"));
+  assert.ok(grouped.models.some((item) => item.id === "claude-haiku-9"));
+  assert.ok(grouped.models.some((item) => item.id === "gemini-custom-other"));
 });
 
