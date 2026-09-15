@@ -1057,6 +1057,10 @@ test("streamAntigravity reports recorded HTTP errors and unknown-model discovery
 });
 
 test("header deadline, stall watchdog, prewarm, and remaining helpers", async () => {
+  // The product stall timer is unref'd; keep the event loop alive so later tests in
+  // this file still run when other concurrent files have already finished.
+  const keepAlive = setInterval(() => {}, 1000);
+  try {
   await assert.rejects(
     () =>
       fetchWithHeaderDeadline(
@@ -1144,6 +1148,9 @@ test("header deadline, stall watchdog, prewarm, and remaining helpers", async ()
   });
   assert.match(summary, /1h/);
   assert.match(summary, /1d/);
+  } finally {
+    clearInterval(keepAlive);
+  }
 });
 
 test("usage fetch keeps models when quota and assist endpoints fail closed", async () => {
