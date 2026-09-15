@@ -34,6 +34,10 @@ Version 0.4.3 prevents a second wrapper from replacing a live hub or worker clai
 
 The hub does not poll GitHub. Run `kxm gate github watch` with the same `runId`, `stageId`, and `signalKey`. A watcher timeout posts the exact signed `failed` signal, retains bounded check evidence, and exits `4`; it never invents `passed`.
 
+### CI jobs stay queued and never start
+
+Every CI job in `.github/workflows/ci.yml` runs on the `kontextmind-doks` label. If all jobs sit in `queued` with an online, idle runner, the runner lost that custom label (for example after re-registration — the default labels are only `self-hosted`, `Linux`/`Windows`, `X64`). Confirm with `gh api repos/kontextmind/kxm/actions/runners --jq '.runners[] | {name, labels: [.labels[].name]}'`; jobs cannot match on the default `doks` label alone. Re-add the label with `gh api repos/kontextmind/kxm/actions/runners/<id>/labels -X POST --input - <<< '{"labels":["kontextmind-doks"]}'` and jobs are picked up on the next evaluation; if not, push an empty commit to retrigger the run. The Windows runner (`kxm-win-local`) is paused by policy and must not be re-labeled to satisfy Linux jobs.
+
 ### The hub refuses to start
 
 **`KXM_PORT must be an integer between 0 and 65535`**
