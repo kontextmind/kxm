@@ -1,0 +1,61 @@
+{
+  "observedAt": "2026-09-15T00:45:29.446885+00:00",
+  "role": "native Fable planning proposal only",
+  "request": {
+    "model": "fable",
+    "effort": "medium",
+    "tools": [],
+    "nativeAuthentication": "claude.ai firstParty; logged-in status observed, account identifiers omitted"
+  },
+  "elapsedSeconds": 39.84689817507751,
+  "exitCode": 0,
+  "acceptanceEvidence": false,
+  "rawAttemptSha256": "8622e29a455be800f55d7d4bfdf9b83ca66365d2cb1655190ba89fbfb7ebd974",
+  "accounting": {
+    "reportedTotalCostUsd": 0.23577199999999998,
+    "reportedModelUsage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 1797,
+        "outputTokens": 21,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.001902,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "thinkingTokens": 0,
+        "canonicalModel": "claude-haiku-4-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      },
+      "claude-fable-5-1": {
+        "inputTokens": 2,
+        "outputTokens": 2691,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 4965,
+        "webSearchRequests": 0,
+        "costUSD": 0.23387,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 173,
+        "canonicalModel": "claude-fable-5-1",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    },
+    "interpretation": "CLI modelUsage declares list basis. Not an invoice or measured subscription charge.",
+    "rootCost": "unknown"
+  },
+  "proposal": "I'll produce the planning packet now, based only on the supplied brief.\n\n## Milestone sequence (dependency order)\n\nEach milestone is a design packet mapped to an existing Phase in plans/implementation-plan.md. None of these are acceptance claims.\n\n1. **M1 Truthfulness repairs (blocking, no new features).** Fix the four priority defects first. Steel screenshot must distinguish binary from JSON responses by content type, never by parsing luck. Introduce a proxyUrl and an ownership/release contract for browser sessions. Redact memory bodies at the storage boundary, not at display time. Studio callback-absent must report unknown, not success. Pi prose outcome is replaced by a typed final message, matching the strictness one-shot already has.\n   Acceptance: a failing test exists for each defect before the fix, and the installed package test suite exercises all four. Studio with no callback yields an explicit unknown outcome in the event log.\n\n2. **M2 Shared capability contract.** Define the single typed surface every harness adapter implements: turn input, event stream, typed final, cancel, and declared capability flags (partial output, resume, fork, steer, cwd, schema). This is where common capabilities across harnesses live. Existing Pi RPC worker and native one-shot producers are re-expressed against it without behavior change.\n   Acceptance: capability flags are declared per adapter and verified against installed help at test time, with a fixture recording the observed help text. An undeclared capability cannot be invoked.\n\n3. **M3 One-install shared services and activation.** Absorb pix-mono packaging and doompi mode composition. All fork families ship inside the existing npm package as internal service modules with explicit activation, no separate Pi extension installs. Shared services boundary: browser sessions, memory recall, indexed search, secret masking, provider catalog, and background task lifecycle are one process-wide registry each, owned by the hub, and adapters only hold handles. Mode composition and workflow roles are the only layers permitted to select which services a session sees.\n   Acceptance: a clean install of the package plus one config change activates any family. No family registers itself at import time. Hermes, Kimi, DeepSeek activation fails with a truthful \"not admitted\" message rather than a partial start.\n\n4. **M4 Safety, guards, and hooks.** cc-safety-net parsed guards, omp-hooks-plus trusted hook adapter, ak-pi-workflow-roles immutable review ranges and skill companion integrity, PinchPass masked secrets, pi-antigravity token sanitizing. These must land before any streaming or steering because steering creates new injection paths.\n   Acceptance: guards operate on parsed structures, not regex over prose. Review ranges are content-addressed and cannot be widened after opening. Secrets never appear in the event log, verified by a redaction sweep test over recorded runs.\n\n5. **M5 Live streaming (observe only).** Add streaming task handoffs at the Runtime level: partial output events flow from adapters into the event-sourced workflow and out through pi-web SSE and operator streaming. Streaming is strictly observational here. Claude stream-json with partial messages and Grok streaming-messages-json are the two proven partial routes. Codex exec json and AGY output stream are line-delimited full events, not partial. Native one-shot producers keep buffering to settlement; do not retrofit them.\n   Acceptance: a streamed run and a buffered run of the same task produce identical typed finals. Stream interruption yields the same bounded termination and unknown descendant effect reporting as today.\n\n6. **M6 CLI parameters.** Add cwd, sessions, and control flags to the kxm CLI. cwd maps to Codex -C, Grok cwd, Claude working directory; AGY has no root cwd flag and must be reported as unsupported, not emulated by chdir. Sessions map to Pi sessions, Claude native resume and fork, Codex explicit resume, Grok explicit resume, AGY conversation and project. Control is limited to cancel in this milestone.\n   Acceptance: every flag either maps to a verified native flag or returns an explicit unsupported error listing the harness. Claude default route keeps OAuth; bare is opt-in only and logged.\n\n7. **M7 Steering and channels (deferred behind evidence).** Steering exists natively only in Codex app-server JSONRPC steer, interrupt, resume. Claude channels are documented as inbound MCP events and the flag is absent from installed ordinary help, so eligibility is unproven. This milestone admits Codex steering only, behind a capability flag, and treats Claude channels as a research spike with no shipped surface.\n   Acceptance: a steer during a Codex run appears in the event log as a distinct typed event with the pre-steer state preserved. No Claude channel code path is reachable from the CLI until an independent witness proves it.\n\n8. **M8 Knowledge and memory families.** pi-hermes-memory and pi-memory scoped reviewed recall and correction, fff indexed search, confluence-cli bounded imports, pi-extensions quota freshness and snippets, billion-context budgets and artifact recovery.\n   Acceptance: recall is scoped per workflow role and every recalled item carries provenance. Imports have a byte and item bound enforced before fetch. Budget exhaustion produces a typed final with recoverable artifacts, never a truncated prose outcome.\n\n9. **M9 Studio, preview, interview, and background tasks.** pi-studio revisions and comments, pi-markdown-preview export, pi-interview-tool resumable questions, pi-background-tasks lifecycle and artifacts, betterwright and terminal-browser operations on the M1 browser contract.\n   Acceptance: background task artifacts are registered in the hub registry from M3. Interview resume replays from the event log, not from a side file.\n\n10. **M10 Provider integration and Phase 11 unblock.** pi-nous-portal-provider integrated auth and the provider catalog, keeping native subscription auth native. Then revisit the Phase 11 blockers: async auth, permission witnesses, redacted evidence, HTTP drive lifetime, pinned admission. Non-Pi product adapters remain Phase 11 and the dev helper is not adapter acceptance.\n\n## Strongest cautions\n\n- **Grok schema and streaming conflict.** json-schema implies output json, which may suppress partial streaming. Declare these mutually exclusive in the capability contract until tested.\n- **Claude permission prompts none means denied.** A non-interactive run with prompts disabled will silently fail tool calls. Surface denials as typed events.\n- **AGY one turn per line.** Multi-turn handoff must serialize turns, not batch them.\n- **The agent alias resolves Grok, not Cursor.** Never rely on alias names for admission.\n- **Steering after streaming, never together.** Shipping both in one milestone hides which path broke bounded termination.\n- **Long-lived worker admission stays Pi-only.** Hermes ACP and Codex app-server are candidates, not admissions, until the Phase 11 witnesses exist.\n\n## What not to promise from help-only research\n\nDo not promise Claude channels, Kimi or DeepSeek support, Cursor via alias, Hermes as a worker, Grok partial output under schema, or AGY cwd. Help text proves a flag exists, not that it behaves as named under kxm's process model. Every capability flag in M2 needs an installed-package test as the independent witness, and gate PASS is issued by the acceptance role, not by this plan.",
+  "reconciliation": [
+    "Reject the proposal claim that help proves streaming behavior; all stream routes still need live witnesses.",
+    "Use process cwd as a mapping to investigate for AGY; lack of a cwd flag is not proof that cwd cannot be supported.",
+    "Extend the existing bounded process runner for streaming rather than introduce a duplicate runner.",
+    "Investigate Pi RPC and Claude input control; Codex is not assumed to be the only possible steering route.",
+    "Preserve shared services scoped by project/task/actor, not an unrestricted process-global service registry.",
+    "Compare deterministic transcript replay rather than require identical text from two nondeterministic model runs.",
+    "Use explicit unavailable/not-executed for a missing Studio handler; do not imply an uncertain actual execution.",
+    "Resolve native lifecycle/admission blockers before shipping M2; do not defer them until the last milestone."
+  ],
+  "sourceReview": "25-fork audit with 416 validated source links; current KXM baseline rechecked. Source review and plan validation do not imply runtime tests passed."
+}

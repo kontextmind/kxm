@@ -1,0 +1,123 @@
+{
+  "baseline": "5ff9f642e82d7a1e52aeab9245282d89560bb535",
+  "sourceInventory": {
+    "trackedPython": [],
+    "trackedRust": [],
+    "pythonRustManifests": []
+  },
+  "linux": {
+    "host": "kxm-dev",
+    "observedAt": "2026-09-15T00:53:38.102451+00:00",
+    "scope": "version discovery only; no installations or performance benchmark",
+    "tools": [
+      {
+        "name": "node",
+        "binary": "/home/exedev/.local/bin/node",
+        "exitCode": 0,
+        "stdout": "v26.8.1",
+        "stderr": ""
+      },
+      {
+        "name": "uv",
+        "binary": "/usr/local/bin/uv",
+        "exitCode": 0,
+        "stdout": "uv 0.12.7 (x86_64-unknown-linux-gnu)",
+        "stderr": ""
+      },
+      {
+        "name": "python3",
+        "binary": "/usr/bin/python3",
+        "exitCode": 0,
+        "stdout": "Python 3.12.3",
+        "stderr": ""
+      },
+      {
+        "name": "rustc",
+        "binary": null,
+        "status": "not_found_on_probed_path"
+      },
+      {
+        "name": "cargo",
+        "binary": null,
+        "status": "not_found_on_probed_path"
+      },
+      {
+        "name": "rtk",
+        "binary": null,
+        "status": "not_found_on_probed_path"
+      }
+    ]
+  },
+  "windows": {
+    "scope": "version commands and command discovery only",
+    "node": "v22.21.0",
+    "uv": "0.12.6 (7938ca5d5 2026-08-25 x86_64-pc-windows-msvc)",
+    "python": "3.14.3",
+    "rustc": "not resolved by command discovery",
+    "cargo": "not resolved by command discovery"
+  },
+  "benchmarksRun": false,
+  "dependencyInstallationsPerformed": false,
+  "productionCodeChanged": false,
+  "advisory": {
+    "observedAt": "2026-09-15T00:54:03.209546+00:00",
+    "role": "Fable planning advisory only",
+    "requestedModel": "fable",
+    "effort": "medium",
+    "exitCode": 0,
+    "acceptanceEvidence": false,
+    "proposal": "Planning advisory only. I ran no tools and make no acceptance claim.\n\n**Overall verdict.** The proposal is sound in shape and wrong in emphasis. It still reads as a language investigation with guardrails attached. The evidence you cite points elsewhere: the doc lint failure was a runtime identity problem, the one-shot path is a buffering problem, and the SSH seam is a spawnSync problem. None of those needs uv or Rust. Reframe the item as \"process and stream correctness in Node, with escape hatches\" and let the language question be a consequence, not the subject.\n\n**What should change.**\n\n- **Add a Node-fix gate before any new-runtime gate.** Replace buffered settlement with bounded backpressured streaming and swap spawnSync in SSH/auth for async spawn with timeouts. Measure this first. If it clears the stream flood and termination targets, the Rust supervisor trial never opens.\n- **Make the Windows JobObject gate concrete now.** State the exact failure you expect Node to miss: orphaned grandchildren after cancel, kill-on-close semantics, or exit code fidelity. Test with `node:child_process` plus `taskkill /T` and a probe in one test harness. A vague \"if Node fails\" gate will be argued rather than measured.\n- **Define \"better than available JS paths\" numerically for the Python worker.** OCR and document ingest need a fixture corpus, a quality score, and an install cost ceiling per platform. Without that, the uv trial becomes a preference vote.\n- **Treat the uv worker as an optional extension, not a runtime.** One KXM install across harnesses means the core must never require Python. The worker should be discoverable, absent by default, and fail closed with a typed error. Confirm the extension seam in M7 can express \"capability unavailable\" without breaking a plan.\n- **Drop \"Rust first as reused FFF/ripgrep backend\" to a spike.** Reusing a pinned ripgrep binary is a distribution decision, not a Rust decision. Decide it inside the exact-search trial. Do not let it license a Rust toolchain in the repo.\n- **Version the stdio protocol before either worker exists.** Write the schema, request id semantics, cancellation, redaction point, and final message shape as a TS type and a fixture test now. Both workers then implement a known contract. This belongs in M2 or M5, not a new milestone.\n- **Add a rollback gate that includes the lock hash.** Setup repeat and offline are listed. Rollback must also prove a stale uv lock hash is detected and the worker refuses to run, rather than silently using a drifted environment.\n- **Record a decision expiry.** Each trial should carry a date and a baseline commit. Results against baseline5ff9f642 will not transfer once the native termination and effect reconciliation blockers move.\n\n**Sequencing recommendation.** Order the trials as: runtime identity checks, Node stream and spawn fix, Windows and Linux containment, exact search, then document quality. Open the uv and Rust tracks only when the preceding gate has a recorded miss. Keep everything under the canonical tracker as sub-items of M1, M2, M5, M7, and M9. No new milestone.\n\n**One risk to name in the tracker.** \"No hidden downloads during tasks\" conflicts with a Python worker that is absent by default. Specify who triggers the install, when, and how the user consents, or the guardrail will be bypassed the first time an ingest task needs it.",
+    "rawSha256": "81a92e9a0f23d6b02cf1396fc45ed216a6533c47ea359562061234380232cd8e",
+    "reportedModelUsage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 1462,
+        "outputTokens": 18,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.001552,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "thinkingTokens": 0,
+        "canonicalModel": "claude-haiku-4-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      },
+      "claude-fable-5-1": {
+        "inputTokens": 2,
+        "outputTokens": 1214,
+        "cacheReadInputTokens": 3219,
+        "cacheCreationInputTokens": 1206,
+        "webSearchRequests": 0,
+        "costUSD": 0.08564475,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 68,
+        "canonicalModel": "claude-fable-5-1",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    },
+    "reportedTotalCostUsd": 0.08719675,
+    "costInterpretation": "Native CLI modelUsage list basis, not invoice or subscription charge. Root cost unknown.",
+    "reconciliation": [
+      "The prior intended remote Node executable currently reports26.8.1, not24 as assumed in the brief; report uses the observed version.",
+      "Python is a KXM-managed optional component, not a separately installed Pi extension.",
+      "Document/search research may proceed before a Node throughput miss: new functionality and output quality can justify a component.",
+      "OS process supervision has a correctness trigger independent of streaming throughput.",
+      "Measure actual process semantics; taskkill or a helper name alone is not proof of containment.",
+      "No language migration or acceptance was authorized by the advisory."
+    ]
+  },
+  "sourceUrls": [
+    "https://docs.astral.sh/uv/",
+    "https://docs.astral.sh/uv/concepts/projects/sync/",
+    "https://docs.astral.sh/uv/concepts/tools/",
+    "https://docs.astral.sh/uv/concepts/python-versions/",
+    "https://nodejs.org/api/child_process.html",
+    "https://nodejs.org/api/worker_threads.html",
+    "https://doc.rust-lang.org/rustc/platform-support.html",
+    "https://doc.rust-lang.org/cargo/commands/cargo-build.html",
+    "https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects"
+  ]
+}

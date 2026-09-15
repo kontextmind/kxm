@@ -1,0 +1,41 @@
+{
+  "scope": "Source hashes and pinned citation file/line anchors; does not prove claim entailment, runtime behavior or gate acceptance",
+  "forks": 7,
+  "sourceFiles": 256,
+  "pinnedCitations": 185,
+  "reports": {
+    "ruflo.md": {
+      "words": 1924,
+      "citations": 25
+    },
+    "OpenViking.md": {
+      "words": 1491,
+      "citations": 25
+    },
+    "dsh-web.md": {
+      "words": 1555,
+      "citations": 25
+    },
+    "agenticmail.md": {
+      "words": 1604,
+      "citations": 26
+    },
+    "reactive-resume.md": {
+      "words": 1415,
+      "citations": 25
+    },
+    "yao.md": {
+      "words": 1540,
+      "citations": 25
+    },
+    "agentic-inbox.md": {
+      "words": 1536,
+      "citations": 24
+    },
+    "research-memory-studio-forks.md": {
+      "words": 3596,
+      "citations": 10
+    }
+  },
+  "errors": []
+}

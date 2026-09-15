@@ -1,0 +1,70 @@
+{
+  "kxmBaseline": "02aaed31fd6160a78378c677ab27d4119f039621",
+  "previousBaseline": "5ff9f642e82d7a1e52aeab9245282d89560bb535",
+  "observedAt": "2026-09-15T01:23:31.698688+00:00",
+  "scope": "Static source review and proposed memory/Studio/coordinator messaging architecture; not runtime acceptance",
+  "newForks": [
+    "ruflo",
+    "OpenViking",
+    "dsh-web",
+    "agenticmail",
+    "reactive-resume",
+    "yao",
+    "agentic-inbox"
+  ],
+  "totalReviewedForks": 36,
+  "planningAdvisory": {
+    "harness": "native Claude CLI",
+    "model": "fable",
+    "effort": "medium",
+    "exitCode": 0,
+    "text": "Planning advisory only. Nothing below is an acceptance claim, and no install, send, or engine admission is proposed.\n\n**Strongest missing contract: a single Wake Ledger.** Every proposal element that can cause work (SSE watermark replay, grouped wake, inbox ingress, Studio commands, SMS notification) currently implies its own scheduler. The forks show the failure modes: Ruflo dual-write with Promise.all, AgenticMail cache-before-DB swallowing errors, agentic-inbox saving SENT before the send runs. KXM should define one durable ledger keyed by the existing transactional command ID, with these rules:\n\n- Ingress persists an intent row with a dedupe key before any ack, wake, or provider call.\n- A wake is a projection of ledger rows, never an independent timer. Budgets and grouping are computed from the ledger, not from a second queue.\n- Provider outcomes are recorded as `sent`, `failed`, or `unknown`. Unknown after timeout goes to `pending-reconcile` and stays visible. No row may ever claim exactly-once without provider-native proof.\n- External content is stored as evidence with source linkage. It never mutates canonical memory or coordinator authority directly.\n\nWithout this, M2, M6, M8 and the inbox work will each grow a scheduler, and reconciling them later is harder than the original Phase11 gaps.\n\n**First vertical slice.** Do not start with email. Recommend M0 repair plus one internal-inbox path end to end:\n\n1. Fix the server no-handler false success, since every later assertion depends on honest failure signalling.\n2. One internal message from Studio to a coordinator, through the Wake Ledger, producing one sequenced run event, replayed to Studio via snapshot plus watermark.\n3. A negative test: duplicate ingress with the same dedupe key produces exactly one wake.\n\nThis slice exercises identity, streams, and Studio read models without touching any provider. It is also the smallest thing that can produce a real Phase11 witness later.\n\n**Avoiding premature inbox autonomy.** Keep the coordinator ID independent of model and session as proposed, but defer any standing outbound policy until the ledger exists and the memory body is redacted. Until then, every outbound action is exact content, recipient, and attachment bound, approved per item. SMS should stay notification-only for a full milestone after email draft works; both AgenticMail and agentic-inbox show SMS as the least reliable leg.\n\n**Fork guidance.** Borrow OpenViking's extraction stages and source-linked memory-impact UI as patterns only; its AGPL server should not enter the tree. Ruflo's projections are worth mirroring, its write path is not. Dsh-web's taskboard is a reasonable Studio read-model reference but its paired-remote full-control mode must not be copied.\n\n**Wording changes flagged.**\n\n- Rename \"durable grouped wake/budgets\" to \"Wake Ledger projections\" to prevent a second scheduler being built under the old name.\n- Replace \"unknownaftertimeout pendingreconcile\" with the explicit state list above so it reads as a contract, not a note.\n- Change \"external content evidence not authority\" to \"external content is evidence; only reviewed memory is authority\" so the review gate is named.\n- Move M0 repair into the same milestone as the first slice, since the no-handler bug invalidates any slice test run before it.\n\nOpen questions for the user: whether M3 identity should precede M2 streams given the coordinator-ID requirement, and whether Rust search stays out of scope until the ledger is measured under load.",
+    "usage": {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 1573,
+      "cache_read_input_tokens": 3219,
+      "output_tokens": 1352,
+      "output_tokens_details": {
+        "thinking_tokens": 168
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 1573,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 1352,
+          "cache_read_input_tokens": 3219,
+          "cache_creation_input_tokens": 1573,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 1573
+          },
+          "type": "message",
+          "model": null
+        }
+      ],
+      "speed": "standard"
+    },
+    "harnessReportedListEstimateUsd": 0.10166475000000001,
+    "actualSubscriptionCharge": "unknown",
+    "acceptanceEvidence": false
+  },
+  "advisoryReconciliation": [
+    "Use existing Runtime command/event storage for durable wake admission; do not create a competing scheduler or require a separate ledger implementation.",
+    "Begin with an internal inbox-to-run-to-Studio vertical slice after truthful Studio result and redaction repairs.",
+    "Provider accepted, delivered, failed and unknown are separate; do not reduce all positive outcomes to sent.",
+    "agentic-inbox has no SMS implementation; it is not evidence of an unreliable implemented SMS leg.",
+    "An internal no-model slice is not a Phase 11 native-harness admission witness.",
+    "Reviewed configuration and policy retain authority; reviewed memory is not the only authority source.",
+    "Minimum identity is a prerequisite to stream correlation; full M3 native steering need not precede M2."
+  ],
+  "rootUsageAndCost": "unknown"
+}

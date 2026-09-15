@@ -1,0 +1,90 @@
+{
+  "inventory": {
+    "observedAt": "2026-09-15T01:01:54.886Z",
+    "totalRepositories": 41,
+    "totalForks": 29,
+    "originalReviewedForks": 25,
+    "newForks": [
+      "archify",
+      "WeKnora",
+      "deepseek-harness",
+      "EverOS"
+    ],
+    "kxmBaseline": "5ff9f642e82d7a1e52aeab9245282d89560bb535",
+    "method": "Separate source reviews; no fork code execution or installations. Original25-fork artifacts retained unchanged."
+  },
+  "snapshots": [
+    {
+      "name": "kxm",
+      "repository": "kontextmind/kxm",
+      "sha": "5ff9f642e82d7a1e52aeab9245282d89560bb535"
+    },
+    {
+      "name": "archify",
+      "repository": "kontextmind/archify",
+      "sha": "851b279f3710c3ed6f152f4b044a504ca4eb207c",
+      "branch": "main",
+      "upstream": "tt-a1i/archify"
+    },
+    {
+      "name": "WeKnora",
+      "repository": "kontextmind/WeKnora",
+      "sha": "1ef38fdb8b19347b82d3a99f6f17d75ac09ad606",
+      "branch": "main",
+      "upstream": "Tencent/WeKnora"
+    },
+    {
+      "name": "deepseek-harness",
+      "repository": "kontextmind/deepseek-harness",
+      "sha": "c291e7961a515f6d7af9304e7fd1d257929aef26",
+      "branch": "master",
+      "upstream": "deepseek-ai/deepseek-harness"
+    },
+    {
+      "name": "EverOS",
+      "repository": "kontextmind/EverOS",
+      "sha": "5076683ab88d714390573d8f88ff3c470e51129a",
+      "branch": "main",
+      "upstream": "EverMind-AI/EverOS"
+    }
+  ],
+  "dsh": {
+    "linux": {
+      "host": "kxm-dev",
+      "observedAt": "2026-09-15T01:02:52.796126+00:00",
+      "scope": "executable discovery only; no launch or authentication probe",
+      "dsh": null,
+      "deepseek": null
+    },
+    "windows": "Neither dsh nor deepseek resolved by Get-Command; no launch or auth probe"
+  },
+  "validation": {
+    "complete": true,
+    "newReviews": 4,
+    "sourceLinks": 90,
+    "issues": [],
+    "reviews": [
+      {
+        "repository": "archify",
+        "forkCitations": 14,
+        "kxmCitations": 6
+      },
+      {
+        "repository": "WeKnora",
+        "forkCitations": 14,
+        "kxmCitations": 4
+      },
+      {
+        "repository": "deepseek-harness",
+        "forkCitations": 18,
+        "kxmCitations": 8
+      },
+      {
+        "repository": "EverOS",
+        "forkCitations": 15,
+        "kxmCitations": 11
+      }
+    ],
+    "scope": "Report coverage and fixed source paths/line ranges, not runtime tests or proof of every semantic claim"
+  }
+}

@@ -1,0 +1,145 @@
+{
+  "version": "codex-cli 0.153.4",
+  "experimentalIncluded": false,
+  "command": [
+    "codex",
+    "app-server",
+    "generate-json-schema",
+    "--out",
+    "<isolated-temporary-directory>"
+  ],
+  "interpretation": "Generated schema presence, not live protocol handshake or admission.",
+  "schemas": [
+    {
+      "path": "ClientRequest.json",
+      "sha256": "25bc001b5dfe3b35785597b8f9ad9e5aaf7e437331fa9921f041c9e0e03fc9f3",
+      "methodsPresent": [
+        "turn/steer",
+        "turn/start",
+        "turn/interrupt",
+        "thread/resume"
+      ]
+    },
+    {
+      "path": "ServerNotification.json",
+      "sha256": "b3e76cf11842f3e8b3270c05e000212b56eabafb0152fc38e8f920e2ef902991",
+      "methodsPresent": [
+        "turn/steer",
+        "turn/start",
+        "thread/resume",
+        "item/agentMessage/delta",
+        "turn/completed"
+      ]
+    },
+    {
+      "path": "v2/ThreadResumeParams.json",
+      "sha256": "8ac68582a81d60940b10b330be8546123f56bfe246b56f8a4f121da00f347cf2",
+      "required": [
+        "threadId"
+      ],
+      "properties": [
+        "approvalPolicy",
+        "approvalsReviewer",
+        "baseInstructions",
+        "config",
+        "cwd",
+        "developerInstructions",
+        "excludeTurns",
+        "model",
+        "modelProvider",
+        "personality",
+        "sandbox",
+        "serviceTier",
+        "threadId"
+      ]
+    },
+    {
+      "path": "v2/ThreadResumeResponse.json",
+      "sha256": "a553d6b1eb66111ca556e22138017ec54fd07c3257dbd2d5ad97ad7660786345",
+      "methodsPresent": [
+        "turn/steer",
+        "turn/start",
+        "thread/resume"
+      ]
+    },
+    {
+      "path": "v2/TurnInterruptParams.json",
+      "sha256": "6dff382dae73d1dbc58406ed045605f647e7a49660e2540fbd2c6c24d60c5f2b",
+      "required": [
+        "threadId",
+        "turnId"
+      ],
+      "properties": [
+        "threadId",
+        "turnId"
+      ]
+    },
+    {
+      "path": "v2/TurnInterruptResponse.json",
+      "sha256": "531de6be06fe979b5963f249bab82498a175e614bf65ac12fb2e849dfe60bcf1",
+      "methodsPresent": []
+    },
+    {
+      "path": "v2/TurnStartParams.json",
+      "sha256": "a3835e8c1e942e4b358e1a670939b89918b16c4d13105a579899892b7ade6dea",
+      "required": [
+        "input",
+        "threadId"
+      ],
+      "properties": [
+        "approvalPolicy",
+        "approvalsReviewer",
+        "clientUserMessageId",
+        "cwd",
+        "effort",
+        "input",
+        "model",
+        "outputSchema",
+        "personality",
+        "sandboxPolicy",
+        "serviceTier",
+        "serviceTierForTurn",
+        "summary",
+        "threadId",
+        "toolOutput",
+        "turnTrigger"
+      ]
+    },
+    {
+      "path": "v2/TurnStartResponse.json",
+      "sha256": "6fc49c3e5d0ce11a3a109ae194619b04d6e3ff98fa29bac683fdb754608958be",
+      "methodsPresent": [
+        "turn/steer",
+        "turn/start"
+      ]
+    },
+    {
+      "path": "v2/TurnStartedNotification.json",
+      "sha256": "d4b59fd396cadfc2377f60c9f9f4c9367dca95362baadf7817c74e1b9c910c4d",
+      "methodsPresent": [
+        "turn/steer",
+        "turn/start"
+      ]
+    },
+    {
+      "path": "v2/TurnSteerParams.json",
+      "sha256": "4a52eb76e7a717bb388484ccd7538737fca0df35481fc30a21e259f1bfe96e37",
+      "required": [
+        "expectedTurnId",
+        "input",
+        "threadId"
+      ],
+      "properties": [
+        "clientUserMessageId",
+        "expectedTurnId",
+        "input",
+        "threadId"
+      ]
+    },
+    {
+      "path": "v2/TurnSteerResponse.json",
+      "sha256": "866ba9a77c12b5d570c837d58f73bf40b24e50fa93404bdf792dd984d313b1aa",
+      "methodsPresent": []
+    }
+  ]
+}
