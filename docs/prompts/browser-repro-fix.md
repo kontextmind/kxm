@@ -1,3 +1,20 @@
+---
+schema: "kxm.doc.v1"
+id: "PROMPT-BROWSER-005"
+type: "prompt"
+title: "Reproducing a UI Bug and Producing a Playwright Regression Test"
+project: "kxm"
+status: "accepted"
+owner: "@operator"
+created: "2026-09-14"
+updated: "2026-09-15"
+authority: "instruction"
+confidence: "verified"
+summary: "Reproduce a UI defect on Steel, collect evidence, write a Playwright regression, and prove RED then GREEN."
+tags: ["browser", "playwright", "repro", "prompt"]
+related: ["docs/browser-automation.md", "docs/kb/how-to-connect-playwright-to-steel.md"]
+---
+
 # Task Template: Reproducing a UI Bug and Producing a Playwright Regression Test
 
 ## Purpose

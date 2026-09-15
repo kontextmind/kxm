@@ -1,3 +1,20 @@
+---
+schema: "kxm.doc.v1"
+id: "PROMPT-BROWSER-003"
+type: "prompt"
+title: "Requesting Human Authentication and Resuming Afterward"
+project: "kxm"
+status: "accepted"
+owner: "@operator"
+created: "2026-09-14"
+updated: "2026-09-15"
+authority: "instruction"
+confidence: "verified"
+summary: "Pause automation for MFA, OAuth, or CAPTCHA takeover, then resume after verified human success."
+tags: ["browser", "takeover", "mfa", "prompt"]
+related: ["docs/browser-automation.md", "docs/kb/how-to-take-over-session.md", "docs/kb/how-to-resume-after-mfa.md"]
+---
+
 # Task Template: Requesting Human Authentication and Resuming Afterward
 
 ## Purpose

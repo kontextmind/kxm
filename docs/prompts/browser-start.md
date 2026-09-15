@@ -1,3 +1,20 @@
+---
+schema: "kxm.doc.v1"
+id: "PROMPT-BROWSER-001"
+type: "prompt"
+title: "Starting Browser Work in a KXM Project"
+project: "kxm"
+status: "accepted"
+owner: "@operator"
+created: "2026-09-14"
+updated: "2026-09-15"
+authority: "instruction"
+confidence: "verified"
+summary: "Initialize a remote Steel browser session for a project task, verifying credentials, connectivity, and attachment endpoints before automation."
+tags: ["browser", "steel", "session", "prompt"]
+related: ["docs/browser-automation.md", "docs/kb/how-credentials-retrieved-safely.md"]
+---
+
 # Task Template: Starting Browser Work in a KXM Project
 
 ## Purpose

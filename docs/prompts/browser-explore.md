@@ -1,3 +1,20 @@
+---
+schema: "kxm.doc.v1"
+id: "PROMPT-BROWSER-002"
+type: "prompt"
+title: "Exploring an Application with an Authenticated Session"
+project: "kxm"
+status: "accepted"
+owner: "@operator"
+created: "2026-09-14"
+updated: "2026-09-15"
+authority: "instruction"
+confidence: "verified"
+summary: "Exploratory discovery, DOM mapping, and journey inspection via agent-browser attached to a remote Steel session."
+tags: ["browser", "explore", "agent-browser", "prompt"]
+related: ["docs/browser-automation.md", "docs/kb/how-to-connect-playwright-to-steel.md"]
+---
+
 # Task Template: Exploring an Application with an Authenticated Session
 
 ## Purpose
