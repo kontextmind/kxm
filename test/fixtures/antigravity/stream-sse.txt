@@ -1,0 +1,5 @@
+data: {"response":{"candidates":[{"content":{"parts":[{"text":"Hello"}]}}]}}
+data: {"response":{"candidates":[{"content":{"parts":[{"text":" world","thought":false}]}}]}}
+data: {"response":{"candidates":[{"content":{"parts":[{"thought":true,"text":"hmm"}]}}]}}
+data: {"response":{"candidates":[{"content":{"parts":[{"functionCall":{"name":"read","args":{"path":"a.ts"}}}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":100,"cachedContentTokenCount":40,"candidatesTokenCount":7,"thoughtsTokenCount":3,"totalTokenCount":110}}}
+data: [DONE]

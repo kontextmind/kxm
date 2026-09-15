@@ -1,0 +1,9 @@
+: keep-alive
+
+data:
+
+data: not-json
+
+data: [DONE]
+
+data: {"response":{"candidates":[{"content":{"parts":[]}}]}}

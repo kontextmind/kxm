@@ -182,6 +182,18 @@ test("coverage floors stay 91/80/92 for core and 93/80/93 for complete with no t
   assert.equal(pkg.scripts?.["publish-npm"], undefined);
 });
 
+test("coverage excludes stay file-scoped and never hide the antigravity provider tree", () => {
+  const coverageCore = pkg.scripts?.["test:coverage:core"] ?? "";
+  const coverageComplete = pkg.scripts?.["test:coverage:complete"] ?? "";
+  // Spawned entrypoints: covered by process/install tests, not line-counted here.
+  for (const script of [coverageCore, coverageComplete]) {
+    assert.match(script, /--test-coverage-exclude=plugins\/kxm\/src\/server\.ts/);
+    assert.match(script, /--test-coverage-exclude=plugins\/kxm\/src\/mcp-server\.ts/);
+    assert.match(script, /--test-coverage-exclude=plugins\/kxm\/src\/vnext-runtime-supervisor\.ts/);
+    assert.doesNotMatch(script, /providers\/antigravity\/\*\*/);
+  }
+});
+
 test("PR template asks for slice issue and verify, not a local plugin checkbox", () => {
   assert.match(template, /Slice issue: #N/);
   assert.match(template, /Which code change aged the plan \(or none\):/);

@@ -1,0 +1,24 @@
+{
+  "description": "Account quota",
+  "groups": [
+    {
+      "displayName": "Gemini",
+      "description": "Shared Gemini pool",
+      "buckets": [
+        {
+          "bucketId": "gemini-daily",
+          "displayName": "Daily",
+          "window": "DAY",
+          "resetTime": "2099-01-01T00:00:00.000Z",
+          "remainingFraction": 0.42
+        },
+        {
+          "bucketId": "gemini-spent",
+          "displayName": "Spent",
+          "resetTime": "2000-01-01T00:00:00.000Z",
+          "remainingFraction": 0
+        }
+      ]
+    }
+  ]
+}

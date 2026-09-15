@@ -199,13 +199,12 @@ When a Pi peer produces more than 32,000 characters, the extension returns a bou
 
 `KXM_AGENT_NAME` and `KXM_PROJECT` are required by `kxm agent worker`. Session isolation is opt-in for upgrade compatibility: pass `--session-isolation workflow` or set the environment variable to `workflow` after reviewing the fresh scoped-session behavior. Both the CLI and direct `scripts/kxm-worker.mjs` default to `off`, so existing shared `--continue` histories are not silently abandoned. The remaining agent settings are inherited by the spawned Pi RPC process. The worker resolves `.kxm` and explicit package paths inside `KXM_WORKDIR`, creates the standard directories, and passes absolute paths to Pi. When either resource-path variable is set, the worker disables discovery for that resource category and loads only the listed files or directories; setting just one category leaves discovery unchanged for the other. Missing paths and extension directories fail before the restart loop. A skill may be a `SKILL.md` file or a directory Pi scans for skills. Restart the worker after changing any resource or path.
 
-Use exact paths for release verification or an uninstalled worktree. Include every provider extension the selected models require because extension discovery is isolated:
+Use exact paths for release verification or an uninstalled worktree. The antigravity provider is bundled inside `plugins/kxm` (vendored from pi-antigravity, MIT) — do NOT also load a standalone pi-antigravity extension; the bundled registration warns fail-loud on the duplicate. Include every other provider extension the selected models require because extension discovery is isolated:
 
 ```powershell
 $separator = [IO.Path]::PathSeparator
 $env:KXM_WORKER_EXTENSION_PATHS = @(
   "plugins/kxm/src/extension.ts"
-  "$env:USERPROFILE/.pi/agent/npm/node_modules/pi-antigravity/src/index.ts"
 ) -join $separator
 $env:KXM_WORKER_SKILL_PATHS = "plugins/kxm/skills/kxm"
 $coordinatorTools = @(

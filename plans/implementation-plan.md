@@ -131,6 +131,11 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   promotion wait on the operator's `/login antigravity` and a live witness.
   The same subscription-provider pattern is the template for Claude
   (pi-claude-bridge, Agent SDK) and, pending a ToS determination, Codex.
+  Vendored into plugins/kxm at 0a1a1563
+  (task_vendor-antigravity-v2): providers-only subset with login continuity,
+  fail-loud double-registration warning, Google OAuth redaction patterns,
+  and fixture coverage without exclusions; operator removes the standalone
+  pi-antigravity extension after merge.
 
   Plugin, marketplace, and npm identity are `kxm` / `@kontextmind/kxm`.
 - **Future slices are not backwards-compatible.** Do not add upgrade shims or
