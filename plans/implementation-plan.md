@@ -136,6 +136,13 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   fail-loud double-registration warning, Google OAuth redaction patterns,
   and fixture coverage without exclusions; operator removes the standalone
   pi-antigravity extension after merge.
+  claude-bridge vendored into plugins/kxm
+  at 1e3031ab (task_vendor-claude-bridge): Claude subscription via the Agent
+  SDK with login-credential reuse, truthful double-registration warnings,
+  sanitized fixtures; roster admission stays experiment-only because a
+  claude-bridge writer would collide with the fable-claude arch critic
+  under vendor independence. Operator removes the standalone
+  pi-claude-bridge extension after merge.
 
   Plugin, marketplace, and npm identity are `kxm` / `@kontextmind/kxm`.
 - **Future slices are not backwards-compatible.** Do not add upgrade shims or

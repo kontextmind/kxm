@@ -25,7 +25,11 @@ await build({
   target: "node22",
   outdir: "plugins/kxm/dist",
   entryNames: "[name]",
-  external: ["@earendil-works/pi-coding-agent", "typebox"],
+  external: [
+    "@earendil-works/pi-coding-agent",
+    "typebox",
+    "@anthropic-ai/claude-agent-sdk",
+  ],
 });
 
 const shebang = "#!/usr/bin/env node\n";

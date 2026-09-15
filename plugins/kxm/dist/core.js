@@ -828,6 +828,7 @@ function workerResult(worker, payload) {
 // plugins/kxm/src/redact.ts
 var SECRET_PATTERNS = [
   /\bsk-[A-Za-z0-9_-]{8,}\b/g,
+  /\bsk-ant-[A-Za-z0-9_-]{8,}\b/g,
   /\bghp_[A-Za-z0-9_]{20,}\b/g,
   /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
   /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/gi,
@@ -835,9 +836,9 @@ var SECRET_PATTERNS = [
   /\bya29\.[A-Za-z0-9._~+/-]+=*/g,
   /\b1\/\/[A-Za-z0-9_-]+/g,
   /\b1\/[A-Za-z0-9_-]{20,}/g,
-  /("?(?:access_token|refresh_token|id_token)"?\s*[:=]\s*")[^"]*(")/gi,
+  /("?(?:access_token|refresh_token|id_token|sessionKey|session_key|claude_oauth_token|anthropicApiKey)"?\s*[:=]\s*")[^"]*(")/gi,
   /\bKXM_[A-Z0-9_]*(TOKEN|SECRET|KEY)[A-Z0-9_]*=\S+/gi,
-  /\b(GITHUB_TOKEN|GH_TOKEN|KXM_AUTH_TOKEN|KXM_WORKFLOW_SIGNAL_SECRET)=\S+/gi,
+  /\b(GITHUB_TOKEN|GH_TOKEN|KXM_AUTH_TOKEN|KXM_WORKFLOW_SIGNAL_SECRET|ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|CLAUDE_API_KEY)=\S+/gi,
   /\b[A-Fa-f0-9]{64}\b/g
 ];
 function redactSecrets(value) {
