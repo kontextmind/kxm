@@ -7,13 +7,14 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-11"
-updated: "2026-09-11"
+updated: "2026-09-15"
 authority: "hypothesis"
 confidence: "uncertain"
-summary: "Proposed rolling-window quota monitoring, cache-aware cost, and stage budget guardrails."
+summary: "Technical reference for account-scoped quota observations and extensions to existing usage, price and budget contracts."
 tags: ["cost", "quota"]
 related:
   - implementation-plan.md
+  - plan-unified-kxm-milestones.md
   - plan-additional-providers-agy-kimi.md
 depends_on: []
 blocked_by: []
@@ -27,13 +28,15 @@ Task Reference: `task_quota_cost_tracking`
 Status: Draft / Proposed  
 Tracking: [`plans/implementation-plan.md`](implementation-plan.md)
 
+**Design reference.** This document retains accounting and quota-observation contracts. The [implementation plan](implementation-plan.md) owns decisions, status, owners and phase gates; the [unified plan](plan-unified-kxm-milestones.md) supplies proposed M8 scope/order using M2 usage events and existing Runtime policy. This is not a second routing/budget authority or active backlog.
+
 **Related plans:** [`implementation-plan.md`](implementation-plan.md) (execution tracker);
 [`plan-additional-providers-agy-kimi.md`](plan-additional-providers-agy-kimi.md)
 (Antigravity / Kimi quota surfaces).
 
 ## 1. Objective
 
-Upgrade KXM's cost and telemetry systems from static $/1M token calculations to real-time, rolling-window rate-limit and quota-aware monitoring. Provide proactive failover before rate limits trigger HTTP 429 errors, distinguish cached vs. uncached token economics, and enforce per-stage and per-run budget guardrails.
+Extend KXM's existing usage records, cache-aware pricing and run budget guards with account-scoped quota observations. Keep reported usage, subscription quota, metered cost, equivalent list-cost estimates and unknown values distinct. Quota-informed routing remains subject to existing authenticated/model-capable eligibility and native-route policy; observations cannot guarantee avoidance of rate limits.
 
 ---
 
@@ -41,25 +44,20 @@ Upgrade KXM's cost and telemetry systems from static $/1M token calculations to 
 
 In KXM today:
 
-- Cost calculation in [`plugins/kxm/src/price-calc.ts`](../plugins/kxm/src/price-calc.ts) and [`prices.ts`](../plugins/kxm/src/prices.ts) computes financial cost using static price formulas:
-  $$\text{Cost} = (\text{tokensIn} \times P_{\text{in}}) + (\text{tokensOut} \times P_{\text{out}})$$
-- Model selection in [`plugins/kxm/src/routing.ts`](../plugins/kxm/src/routing.ts) prioritizes models based on historical quality and recorded run costs.
-- **The Gap:** In production AI engineering, agent halts rarely occur because an API balance hit zero. They happen because an agent hit a **rolling rate-limit window**:
-  - Anthropic: 5-hour rolling token windows, 7-day limits, per-model caps.
-  - OpenAI Codex: rolling 5-hour utilization fractions and weekly credit pools.
-  - Google Antigravity: shared project quota groups with daily/hourly resets.
-  - Moonshot Kimi: 5-hour Coding Plan request allowances.
-- When an orchestrator is blind to rolling quota utilization, it dispatches expensive tasks into nearly-exhausted quotas, triggering hard 429 failures midway through execution.
+- `plugins/kxm/src/routing.ts` already records input/output/cache usage and explicit cost basis. `prices.ts` and the dated, hash-bound `.kxm/prices.yaml` support cache-aware list pricing; the engine checks metered `limits.maxModelCost` before dispatch.
+- Accepted A1 verifies catalog hash/staleness on the one-shot estimate path. Broader price-accounting coverage remains open in the canonical tracker; do not reimplement the existing foundation.
+- **Remaining gap:** quota limits vary by account, plan, shared pool and provider version. Window names, units and reset semantics require observed source evidence; 5h/7d windows are examples rather than a universal API.
+- Fresh quota information can inform an eligible next assignment, but concurrent consumption and provider enforcement can still produce 429s. Missing or stale observations must not appear as unused allowance.
 
 ---
 
 ## 3. Reference Architecture from Evaluated Repositories
 
-### A. `@latentminds/pi-quotas` (`~/.pi/agent/npm/node_modules/@latentminds/pi-quotas`)
+### A. `@latentminds/pi-quotas` (historical reference package)
 
-- **Direct Quota Query Engine:** Polls provider subscription/usage endpoints directly using credentials stored in `~/.pi/agent/auth.json`.
-- **Supported Provider Quotas:** Anthropic, OpenAI Codex, GitHub Copilot, OpenRouter, Grok, Kimi Code, Google Antigravity, and Ollama Cloud.
-- **Window Metrics:** Captures rolling 5-hour and 7-day utilization percentages, remaining requests/tokens, and exact reset epoch timestamps.
+- **Query pattern:** Provider-specific subscription/usage readers can inform a KXM observation contract. Pi credential access in a reference is not authorization to centralize native harness credentials; source/version/license and endpoint eligibility must be verified before reuse.
+- **Provider coverage:** The reference considers several provider quota surfaces; actual supported accounts and fields must be observed, not inferred from a provider name.
+- **Window metrics:** Preserve provider-reported utilization, units and absolute reset timestamps, including unavailable values. Do not normalize every account into invented 5h/7d windows.
 - **Warning Escalation:** Proactively flags utilization pace (`green` $\to$ `amber` $\to$ `red` $\to$ `critical`).
 
 ### B. `pi-antigravity` ([github.com/kontextmind/pi-antigravity](https://github.com/kontextmind/pi-antigravity))
@@ -69,7 +67,7 @@ In KXM today:
 ### C. `pix-models` ([pix-mono/packages/pix-models](https://github.com/kontextmind/pix-mono/tree/main/packages/pix-models))
 
 - Tracks context window size, per-M-token rates, cache read discounts, and coding benchmark rankings.
-- Emphasizes that prompt caching yields 80–90% cost reductions on multi-turn conversations; tracking `cacheReadTokens` separately from `tokensIn` is necessary for accurate financial visibility.
+- Separating cache-read and cache-write usage is useful for accounting. Savings depend on actual rates, cache hits and provider semantics; no universal 80–90% discount applies.
 
 ---
 
@@ -77,52 +75,58 @@ In KXM today:
 
 ```mermaid
 flowchart TD
-    Task[Workflow Task Assignment] --> QuotaCheck[Check Provider Quota Headroom]
-    QuotaCheck -->|Utilization < 85%| Dispatch[Dispatch to Preferred Model]
-    QuotaCheck -->|Utilization >= 85% (Amber/Red)| Failover[Predictive Failover to Next Authenticated Model]
+    Task[Workflow Task Assignment] --> Eligibility[Existing route and role admission]
+    Eligibility --> QuotaCheck[Read account-scoped quota cache with freshness]
+    QuotaCheck --> Policy[Existing routing and budget policy]
+    Policy --> Dispatch[Admit eligible assignment or report explicit limit]
     Dispatch --> Run[Execute Model Turn]
     Run --> UsageCapture[Capture Detailed Usage: In/Out/CacheRead/CacheWrite]
     UsageCapture --> BudgetGuard{Budget Exceeded?}
     BudgetGuard -->|No| NextTurn[Continue Workflow]
-    BudgetGuard -->|Yes| Pause[Pause Stage & Escalate to Operator]
+    BudgetGuard -->|Yes| Pause[Existing typed budget outcome]
 ```
 
 ### 1. Unified Quota Monitor Module (`plugins/kxm/src/quotas.ts`)
 
-Create a native quota client that interfaces with `@latentminds/pi-quotas` and native provider endpoints:
+Candidate module/interface only: use supported native health/usage surfaces and reviewed provider readers behind one KXM install. Credential references remain owned by the authenticated native harness; discovery is not execution admission.
 
 ```typescript
 export interface ProviderQuotaStatus {
   provider: string;
-  status: "green" | "amber" | "red";
-  utilizationPercent: number; // e.g. 78.5%
-  windowType: "5h" | "7d" | "daily" | "monthly";
-  resetsInSeconds: number;
-  remainingTokensOrRequests?: number;
+  accountRef: string;       // Opaque identity, not a credential
+  poolRef: string;          // Shared pool or model-specific quota identity
+  source: string;
+  observedAt: string;
+  expiresAt: string;
+  state: "known" | "unknown" | "stale" | "error";
+  utilizationPercent: number | null;
+  windowId: string;         // Source-defined; do not assume 5h/7d
+  resetsAt: string | null;
+  remaining: { value: number; unit: "tokens" | "requests" | "credits" } | null;
 }
 
-export async function getProviderQuota(provider: string): Promise<ProviderQuotaStatus | null>;
+export async function getProviderQuota(provider: string, accountRef: string): Promise<ProviderQuotaStatus[]>;
 ```
 
 ### 2. Quota-Aware Predictive Routing in `plugins/kxm/src/routing.ts`
 
-Modify `selectBestModel` in `routing.ts`:
+Extend existing routing contracts rather than introducing a separate selector:
 
-- Before assigning a candidate model, query its provider's current quota headroom.
-- If `status === "red"` (utilization $\ge 85\%$) or projected turn tokens will exceed remaining allowance before reset, log a predictive warning and select the next highest-ranking authenticated model from an alternate provider.
-- Never trigger a 429 when an alternative eligible provider is authenticated and available.
+- Read an account-scoped cache with freshness, invalidation and bounded retry/backoff; do not query every assignment unconditionally.
+- A warning threshold is policy input, not an automatic grant to change provider/model. Any alternate arm must satisfy existing auth, model hosting, role, budget and independence rules. Native exhaustion cannot silently switch the same provider onto Pi's paid API.
+- Preserve quota exhaustion and explicit empty-eligible-set outcomes. Unknown estimates do not establish headroom, and proactive warning cannot guarantee that a concurrent request avoids 429.
 
 ### 3. Cache-Aware Cost Calculation
 
-Update `plugins/kxm/src/price-calc.ts` and `prices.ts`:
+Extend the existing price/catalog contracts only where a demonstrated gap remains. For per-million-token rates, a simplified single-tier estimate is:
 
-- Expand token pricing matrices to include `cacheReadPricePerM` and `cacheWritePricePerM`.
-- Formula:
-  $$\text{EffectiveCost} = (\text{tokensIn}_{\text{uncached}} \times P_{\text{in}}) + (\text{cacheReadTokens} \times P_{\text{cacheRead}}) + (\text{tokensOut} \times P_{\text{out}})$$
+$$\text{EstimatedCostUsd} = \frac{\text{tokensIn}_{\text{uncached}}P_{\text{in}} + \text{cacheReadTokens}P_{\text{cacheRead}} + \text{cacheWriteTokens}P_{\text{cacheWrite}} + \text{tokensOut}P_{\text{out}}}{10^6}$$
+
+Normalize each provider's token semantics without double counting; context tiers and additional charges may require more terms. Report missing prices as unknown and subscription usage separately from metered charges. List-price estimates are not invoices.
 
 ### 4. Stage & Run Budget Guardrails
 
-Add budget constraints to workflow YAML definitions:
+The existing run guard is `limits.maxModelCost`. A possible finer stage-budget shape is illustrated below, not an implemented or accepted schema; reconcile any extension with the existing workflow compiler and typed budget outcomes before use:
 
 ```yaml
 stages:
@@ -133,24 +137,19 @@ stages:
       actionOnExceed: "pause_and_escalate" # "pause_and_escalate" | "fail_closed"
 ```
 
-During execution, `vnext-engine.ts` aggregates cumulative token and dollar spend against the stage ceiling, automatically triggering an `audit_escalation` checkpoint if breached.
+Any selected stage-budget extension must reuse `vnext-engine.ts` accounting and recovery semantics. Do not assume that the sketch's `audit_escalation` checkpoint exists or introduce a separate pause authority. API budget rollover remains deferred by the canonical plan.
 
 ---
 
-## 5. Execution Stages and Milestones
+## 5. Delivery Mapping
 
-| Stage | Action | Target Files | Verification Gate |
-| :--- | :--- | :--- | :--- |
-| **Stage 1** | Implement `quotas.ts` reader module | `plugins/kxm/src/quotas.ts` | Unit tests verify quota parsing for Anthropic, Codex, Antigravity, Kimi |
-| **Stage 2** | Integrate quota check into `routing.ts` | [`plugins/kxm/src/routing.ts`](../plugins/kxm/src/routing.ts) | Routing test verifies automatic failover when preferred provider reports `red` |
-| **Stage 3** | Update cache token accounting in `price-calc.ts` | [`plugins/kxm/src/price-calc.ts`](../plugins/kxm/src/price-calc.ts) | Tests verify accurate discount calculations with cached tokens |
-| **Stage 4** | Enforce workflow budget limits in `vnext-engine.ts` | [`plugins/kxm/src/vnext-engine.ts`](../plugins/kxm/src/vnext-engine.ts) | Test confirms stage pause when simulated spend breaches threshold |
+M8 contains proposed quota/cache/credential contracts, using M2 usage events and existing price/routing/engine owners. The former stages are replaced by this mapping because cache usage and run-cost guards already exist. Only the implementation plan selects and tracks slices, owners, status and phase gates.
 
 ---
 
-## 6. Acceptance Criteria
+## 6. Design Invariants for the Owning Milestones
 
-- `kxm quotas` CLI command displays real-time 5h/7d quota usage and reset times across all logged-in providers.
-- When an active provider reaches 90% quota consumption, KXM dispatches new stages to the next eligible model without error.
-- Cost accounting in `just observe-cost` correctly credits prompt-caching discounts.
-- `npm run verify` passes completely.
+- Supported quota views identify account/pool, source, units, observation/reset time and freshness; unsupported, revoked and unknown states remain visible.
+- Account changes invalidate cached observations; stale data and provider failures exercise bounded backoff without crossing credential ownership boundaries.
+- Any failover uses the canonical eligible set and records exhaustion; no color or percentage threshold admits a route.
+- Cache-read/write accounting, tiered estimates and budget settlement preserve explicit cost basis and unknown amounts. These invariants do not pass an existing phase gate.

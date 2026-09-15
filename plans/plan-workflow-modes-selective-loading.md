@@ -7,13 +7,14 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-11"
-updated: "2026-09-12"
+updated: "2026-09-15"
 authority: "hypothesis"
 confidence: "uncertain"
-summary: "Proposed major/minor modes that load only named tools and context, plus pre-flight kxm explain."
+summary: "Technical reference for actual mode activation and selective loading over existing mode parsing and kxm explain."
 tags: ["modes", "context"]
 related:
   - implementation-plan.md
+  - plan-unified-kxm-milestones.md
   - history/plan-role-configuration-governance.md
   - plan-token-reduction-rtk-ai.md
 depends_on: []
@@ -28,6 +29,8 @@ Task Reference: `task_workflow_modes_explain`
 Status: Draft / Proposed  
 Tracking: [`plans/implementation-plan.md`](implementation-plan.md)
 
+**Design reference.** This document retains mode/domain composition and selective activation contracts. The [implementation plan](implementation-plan.md) owns decisions, status, owners and phase gates; the [unified plan](plan-unified-kxm-milestones.md) supplies proposed M1/M6 scope/order with M5 context accounting. Existing parser/explain code is a foundation, not evidence of host tool enforcement. This is not an independent backlog or permission authority.
+
 **Related plans:** [`implementation-plan.md`](implementation-plan.md) (execution tracker);
 archived [`plan-role-configuration-governance.md`](history/plan-role-configuration-governance.md)
 (role-seat tool scoping);
@@ -36,7 +39,7 @@ archived [`plan-role-configuration-governance.md`](history/plan-role-configurati
 
 ## 1. Objective
 
-Adopt an opinionated, config-driven session composition architecture inspired by `doompi`: introduce declarative Major and Minor modes (`.kxm/modes.yaml`), eliminate schema bloat by selectively loading only role-relevant tools and context, and implement a pre-flight `kxm explain` command to inspect prompt token costs before launching runs.
+Connect existing declarative major modes and domains (`.kxm/modes.yaml`) to actual host tool, skill and resource activation. Retain `doompi`'s explicit composition idea and improve existing `kxm explain` so its estimates and omissions describe the effective session. Selective loading must preserve mandatory policy and cannot expand inherited permissions.
 
 ---
 
@@ -44,11 +47,10 @@ Adopt an opinionated, config-driven session composition architecture inspired by
 
 In KXM today:
 
-- Agent setup often dumps the entire repository context (`AGENTS.md`, full guideline documents) and all registered tools/skills into every agent turn.
-- **The Problem of Context Bloat:**
-  1. **Cognitive Degradation:** Exposing dozens of MCP tool schemas and extensive guidelines causes instruction-following drift and increases tool-hallucination rates.
-  2. **Economic Waste:** A simple code-exploration task pays the token tax for database schemas, Kubernetes tools, and complex PR instructions on every single turn.
-  3. **No Pre-Flight Cost Visibility:** Operators have no mechanism to audit how much a workflow configuration will cost or how much context it will consume *before* initiating execution.
+- `plugins/kxm/src/modes.ts` and `schemas/vnext/modes.schema.json` already define major modes/domains and resolve tools, context files and prompt snippets. `kxm explain` is registered in `plugins/kxm/src/cli.ts`; the CLI implementation uses the current `cli/` module layout.
+- Existing context arbitration and packet assembly also provide bounded context mechanisms; the gap is not the complete absence of scoping or pre-flight inspection.
+- **Remaining gap:** metadata composition and explain output do not prove that each native host registers only the intended tools or loads only the selected bundles. M1/M6 must test actual activation and enforcement, while M5 accounts for evidence, omitted context and estimates.
+- Unnecessary context can increase token use and obscure instructions. Measure representative tasks rather than asserting a universal quality or cost improvement.
 
 ---
 
@@ -57,9 +59,9 @@ In KXM today:
 `doompi` addresses this exact problem with an Emacs-inspired configuration model:
 
 - **"Loads only the skills and tools you name."**
-- **Major Modes:** Define the fundamental operational role (e.g. `coder`, `planner`, `auditor`). The major mode determines the base prompt, tool primitives, and permission baseline.
+- **Major Modes:** Define the operational role (e.g. `coder`, `planner`, `auditor`), requested prompt and tool surface. In KXM, a mode can only narrow the inherited permission floor.
 - **Minor Modes / Domains:** Modular, stackable toolkits switched on only when required by the task (e.g. `git`, `docker`, `k8s`, `database`).
-- **Pre-Flight `--explain`:** Running `doompi --explain` inspects the configuration matrix and prints exact context token weights, registered schemas, and projected cost per model turn before launch.
+- **Pre-Flight inspection:** Explain-style output exposes selected context and schemas before launch. Exact provider token counts and cost require more evidence than configuration inspection; KXM must label estimates and their assumptions.
 
 ---
 
@@ -78,7 +80,8 @@ flowchart TD
     
     Config --> ModeSelection
     ModeSelection --> Filter[Filter Tools & Context Files]
-    Filter --> CleanContext[Streamlined Prompt Context]
+    Filter --> Policy[Intersect host capabilities and inherited policy]
+    Policy --> CleanContext[Effective Tools and Required Context]
     
     subgraph Explain["Pre-Flight Inspection"]
         CleanContext --> KxmExplain["kxm explain Command"]
@@ -90,10 +93,11 @@ flowchart TD
 
 ### 1. Declarative Mode Configuration (`.kxm/modes.yaml`)
 
-Define major roles and stackable domain modules:
+The existing `kxm.modes.v1` shape defines major roles and stackable domains. This illustrative configuration is not a guarantee that these tool names exist on every host; activation must map them to admitted host capabilities:
 
 ```yaml
 # .kxm/modes.yaml
+schema: kxm.modes.v1
 majorModes:
   coder:
     description: "First-pass implementation and bug fixing"
@@ -124,16 +128,16 @@ domains:
 
   database:
     tools: [sqlite_query, sqlite_schema]
-    promptSnippet: "Database is SQLite at .kxm/state/kxm.db; use read-only queries."
+    promptSnippet: "Use the configured project database through admitted read-only tools."
 ```
 
 ### 2. Selective Context Assembly (`plugins/kxm/src/context-packet.ts`)
 
-Refactor context assembly so that only tools and prompt sections explicitly included by the active major mode and enabled domains are loaded into the agent session. Omit all unused MCP schemas and guidelines.
+Connect existing mode resolution to host registration and context assembly so selected tools, skill bundles and resources match the effective session. Omit unused optional schemas/context, but retain mandatory instructions, policy and required evidence. `context-packet.ts` handles context; actual tool availability and native restrictions must also be enforced at the adapter boundary. Record unsupported selections and bundle revisions rather than silently pretending they loaded.
 
 ### 3. Pre-Flight `kxm explain` CLI Command
 
-Implement `kxm explain` to inspect prompt overhead and token costs:
+Extend existing `kxm explain` through its current CLI owner to describe effective activation, omitted/unsupported resources, estimator identity and price-catalog provenance. The following is an illustrative report shape, not captured output or a verified model price. Counts and costs are estimates; cache savings depend on actual hits and provider rates:
 
 ```bash
 $ kxm explain --mode coder --domains git,database
@@ -142,39 +146,34 @@ KXM PRE-FLIGHT CONTEXT EXPLAIN
 ============================================================
 Major Mode:      coder
 Enabled Domains: git, database
-Target Model:    anthropic/claude-sonnet-4.6
+Target Model:    <observed admitted model id>
 
-CONTEXT BREAKDOWN:
+ESTIMATED CONTEXT BREAKDOWN (named estimator required):
 - Base System Prompt:        850 tokens
 - Guidelines (AGENTS.md):   1,220 tokens
 - Domain Prompts:            310 tokens
 - Tool Schemas (6 tools):    940 tokens
 ------------------------------------------------------------
-TOTAL PROMPT FOOTPRINT:     3,320 tokens (1.6% of 200k window)
+ESTIMATED PROMPT FOOTPRINT: 3,320 tokens (illustrative)
 
-PROJECTED COSTS:
-- Input Turn Cost:          $0.0099
-- Cache Read Cost:          $0.0010 (90% savings on subsequent turns)
-- Output Turn Estimate:     $0.0150 (1,000 output tokens)
+PROJECTED COSTS (dated catalog and observed model required):
+- Input Turn Estimate:      <estimate or unknown>
+- Cache Read Estimate:      <conditional on provider/cache behavior>
+- Output Turn Estimate:     <estimate for stated output-token assumption>
 ============================================================
 ```
 
 ---
 
-## 5. Execution Stages and Milestones
+## 5. Delivery Mapping
 
-| Stage | Action | Target Files | Verification Gate |
-| :--- | :--- | :--- | :--- |
-| **Stage 1** | Implement `.kxm/modes.yaml` parser and schema | `plugins/kxm/src/modes.ts` | Unit tests validate YAML parsing and mode inheritance |
-| **Stage 2** | Integrate selective tool filtering in context assembly | [`plugins/kxm/src/context-packet.ts`](../plugins/kxm/src/context-packet.ts) | Test verifies unused tools are stripped from prompt |
-| **Stage 3** | Implement `kxm explain` CLI command | [`plugins/kxm/src/commands.ts`](../plugins/kxm/src/commands.ts) | Command prints formatted breakdown with accurate token counts |
-| **Stage 4** | Benchmark token reduction against baseline | Benchmark suite | Measure $\ge 40\%$ prompt token reduction on focused tasks |
+Parser/schema and CLI explain are existing foundations. M1 proposes actual cross-host activation; M6 narrows trusted workflow/tool contracts; M5 accounts for retrieved context and estimates. The former stage table is replaced by this mapping, and the earlier 40% reduction target remains an unmeasured hypothesis. Only the implementation plan selects and tracks slices, owners, status and gates.
 
 ---
 
-## 6. Acceptance Criteria
+## 6. Design Invariants for the Owning Milestones
 
-- Sessions execute with only the tools explicitly declared in their active modes.
-- `kxm explain` accurately calculates token counts and per-turn cost estimates.
-- Unused skills and MCP schemas do not appear in the model's system prompt.
-- `npm run verify` passes completely.
+- Effective tools are the intersection of selected modes, inherited policy and admitted host capabilities; fixtures inspect actual registration and execution, not only prompt text.
+- Explain output identifies estimators, price provenance, assumptions, unknown costs and omitted/unsupported resources.
+- Optional unused skills/schemas are absent while mandatory policy and required evidence remain; loaded bundles have stable identity and revisions.
+- Representative measurements compare token use and task outcomes without assuming a fixed reduction. These invariants do not pass a phase gate or authorize a new tool surface.

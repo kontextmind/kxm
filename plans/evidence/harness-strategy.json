@@ -1,0 +1,552 @@
+{
+  "scope": "Source review and package metadata; no runtime comparison, producer admission or gate acceptance",
+  "baseline": "5ff9f642e82d7a1e52aeab9245282d89560bb535",
+  "sources": [
+    {
+      "key": "P_API",
+      "repository": "earendil-works/pi",
+      "commit": "d981de1229ef899957bbe968bc8dcda02a21f477",
+      "path": "packages/coding-agent/docs/sdk.md",
+      "startLine": 1,
+      "endLine": 200,
+      "sha256": "3c575c006043769bdb85d01fdbd9e86468f45160deedc2519db3464387eaffbf",
+      "url": "https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/coding-agent/docs/sdk.md#L1-L200"
+    },
+    {
+      "key": "P_SDK",
+      "repository": "earendil-works/pi",
+      "commit": "d981de1229ef899957bbe968bc8dcda02a21f477",
+      "path": "packages/coding-agent/src/core/sdk.ts",
+      "startLine": 306,
+      "endLine": 410,
+      "sha256": "938f9f3d484544040e7a06e6f89a07adb72ab007ea660bcaf4a8c1846d20a021",
+      "url": "https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/coding-agent/src/core/sdk.ts#L306-L410"
+    },
+    {
+      "key": "P_LOOP",
+      "repository": "earendil-works/pi",
+      "commit": "d981de1229ef899957bbe968bc8dcda02a21f477",
+      "path": "packages/agent/src/agent-loop.ts",
+      "startLine": 156,
+      "endLine": 272,
+      "sha256": "1e16404a231912fbd7643d8317b15ec4cc6245ed8cedc37582a31d430a1cc6ac",
+      "url": "https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/agent/src/agent-loop.ts#L156-L272"
+    },
+    {
+      "key": "P_TOOLS",
+      "repository": "earendil-works/pi",
+      "commit": "d981de1229ef899957bbe968bc8dcda02a21f477",
+      "path": "packages/agent/src/agent-loop.ts",
+      "startLine": 375,
+      "endLine": 560,
+      "sha256": "1e16404a231912fbd7643d8317b15ec4cc6245ed8cedc37582a31d430a1cc6ac",
+      "url": "https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/agent/src/agent-loop.ts#L375-L560"
+    },
+    {
+      "key": "P_QUEUE",
+      "repository": "earendil-works/pi",
+      "commit": "d981de1229ef899957bbe968bc8dcda02a21f477",
+      "path": "packages/coding-agent/src/core/agent-session.ts",
+      "startLine": 1380,
+      "endLine": 1452,
+      "sha256": "23e4acac844638fb0ae60047130f8e1050e4c729c1b8e80d37e359ac9c0eef9a",
+      "url": "https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/coding-agent/src/core/agent-session.ts#L1380-L1452"
+    },
+    {
+      "key": "O_SDK",
+      "repository": "anomalyco/opencode",
+      "commit": "d44b52ca66b6bf69626c0384626d1a9cd9555977",
+      "path": "packages/sdk/src/promise.ts",
+      "startLine": 1,
+      "endLine": 69,
+      "sha256": "941577819b286c521d3ba6fd8b8c12a3934c79027189d35a76a4a5284d106024",
+      "url": "https://github.com/anomalyco/opencode/blob/d44b52ca66b6bf69626c0384626d1a9cd9555977/packages/sdk/src/promise.ts#L1-L69"
+    },
+    {
+      "key": "O_HOST",
+      "repository": "anomalyco/opencode",
+      "commit": "d44b52ca66b6bf69626c0384626d1a9cd9555977",
+      "path": "packages/sdk/src/internal/host.ts",
+      "startLine": 16,
+      "endLine": 64,
+      "sha256": "5c8b2bdf3548f03d306d37a0f839309d55a6c5041412e29f51c8ee114911ac06",
+      "url": "https://github.com/anomalyco/opencode/blob/d44b52ca66b6bf69626c0384626d1a9cd9555977/packages/sdk/src/internal/host.ts#L16-L64"
+    },
+    {
+      "key": "O_PACKAGE",
+      "repository": "anomalyco/opencode",
+      "commit": "d44b52ca66b6bf69626c0384626d1a9cd9555977",
+      "path": "packages/core/package.json",
+      "startLine": 101,
+      "endLine": 150,
+      "sha256": "216f3f5e06ad0e14804d8fac7c87c3cd55fe3018df719e1c1c9bd9e842e6f17a",
+      "url": "https://github.com/anomalyco/opencode/blob/d44b52ca66b6bf69626c0384626d1a9cd9555977/packages/core/package.json#L101-L150"
+    },
+    {
+      "key": "O_INBOX",
+      "repository": "anomalyco/opencode",
+      "commit": "d44b52ca66b6bf69626c0384626d1a9cd9555977",
+      "path": "packages/core/src/session/inbox.ts",
+      "startLine": 44,
+      "endLine": 201,
+      "sha256": "5ad37569652af0227a06835b0c1fa462ec5229c84324a37410877c56aeb847f8",
+      "url": "https://github.com/anomalyco/opencode/blob/d44b52ca66b6bf69626c0384626d1a9cd9555977/packages/core/src/session/inbox.ts#L44-L201"
+    },
+    {
+      "key": "O_COORD",
+      "repository": "anomalyco/opencode",
+      "commit": "d44b52ca66b6bf69626c0384626d1a9cd9555977",
+      "path": "packages/core/src/session/run-coordinator.ts",
+      "startLine": 1,
+      "endLine": 196,
+      "sha256": "20dc6417c597e6d5bc6f349e31ed5d3e88db4be31b548be1f35262e87fcc3c4b",
+      "url": "https://github.com/anomalyco/opencode/blob/d44b52ca66b6bf69626c0384626d1a9cd9555977/packages/core/src/session/run-coordinator.ts#L1-L196"
+    },
+    {
+      "key": "O_EXEC",
+      "repository": "anomalyco/opencode",
+      "commit": "d44b52ca66b6bf69626c0384626d1a9cd9555977",
+      "path": "packages/core/src/session/execution.ts",
+      "startLine": 18,
+      "endLine": 176,
+      "sha256": "4ba6247d0338e0c1c0453736fcebbbd831d5b83f58a8021d12c04e29428e11c0",
+      "url": "https://github.com/anomalyco/opencode/blob/d44b52ca66b6bf69626c0384626d1a9cd9555977/packages/core/src/session/execution.ts#L18-L176"
+    },
+    {
+      "key": "O_RESTART",
+      "repository": "anomalyco/opencode",
+      "commit": "d44b52ca66b6bf69626c0384626d1a9cd9555977",
+      "path": "packages/core/src/session/execution/restart.ts",
+      "startLine": 23,
+      "endLine": 98,
+      "sha256": "87d682e188af8511ec368a8c6caa68f05686fa901575f0da998f6d23c7bde23b",
+      "url": "https://github.com/anomalyco/opencode/blob/d44b52ca66b6bf69626c0384626d1a9cd9555977/packages/core/src/session/execution/restart.ts#L23-L98"
+    },
+    {
+      "key": "O_STEP",
+      "repository": "anomalyco/opencode",
+      "commit": "d44b52ca66b6bf69626c0384626d1a9cd9555977",
+      "path": "packages/core/src/session/runner/step.ts",
+      "startLine": 64,
+      "endLine": 215,
+      "sha256": "a45fdfd04026444976639083da8625e9d31ef933f9b92d2ab48af38d6a6a8f37",
+      "url": "https://github.com/anomalyco/opencode/blob/d44b52ca66b6bf69626c0384626d1a9cd9555977/packages/core/src/session/runner/step.ts#L64-L215"
+    },
+    {
+      "key": "O_BUS",
+      "repository": "anomalyco/opencode",
+      "commit": "d44b52ca66b6bf69626c0384626d1a9cd9555977",
+      "path": "packages/core/src/bus.ts",
+      "startLine": 148,
+      "endLine": 200,
+      "sha256": "1bf5e97b3c3618a79487d75adcfddc602d2068c7759d2018eb9ad7d08f4b57f9",
+      "url": "https://github.com/anomalyco/opencode/blob/d44b52ca66b6bf69626c0384626d1a9cd9555977/packages/core/src/bus.ts#L148-L200"
+    },
+    {
+      "key": "O_CHILD",
+      "repository": "anomalyco/opencode",
+      "commit": "d44b52ca66b6bf69626c0384626d1a9cd9555977",
+      "path": "packages/core/src/tool/plugin/subagent.ts",
+      "startLine": 73,
+      "endLine": 221,
+      "sha256": "7b8095e3a1573e06ef2d5eaa85e9f38cafb55b9898ceb32f582db66934422ce7",
+      "url": "https://github.com/anomalyco/opencode/blob/d44b52ca66b6bf69626c0384626d1a9cd9555977/packages/core/src/tool/plugin/subagent.ts#L73-L221"
+    },
+    {
+      "key": "O_JOB",
+      "repository": "anomalyco/opencode",
+      "commit": "d44b52ca66b6bf69626c0384626d1a9cd9555977",
+      "path": "packages/core/src/session/subagent-job.ts",
+      "startLine": 16,
+      "endLine": 58,
+      "sha256": "6566a826a3ab4a8adea4528e85bc25394d4622c747c8fcac6c80e23dff3a03db",
+      "url": "https://github.com/anomalyco/opencode/blob/d44b52ca66b6bf69626c0384626d1a9cd9555977/packages/core/src/session/subagent-job.ts#L16-L58"
+    },
+    {
+      "key": "D_ARCH",
+      "repository": "kontextmind/deepseek-harness",
+      "commit": "c291e7961a515f6d7af9304e7fd1d257929aef26",
+      "path": "docs/architecture.md",
+      "startLine": 9,
+      "endLine": 131,
+      "sha256": "5bccea88701324e87ddec0aaa1d09925e574dd6d9be4567d60bcdad2c65f018e",
+      "url": "https://github.com/kontextmind/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/docs/architecture.md#L9-L131"
+    },
+    {
+      "key": "D_INBOX",
+      "repository": "kontextmind/deepseek-harness",
+      "commit": "c291e7961a515f6d7af9304e7fd1d257929aef26",
+      "path": "packages/core/agent-loop/src/inbox.ts",
+      "startLine": 20,
+      "endLine": 125,
+      "sha256": "1f9c14cfd91baafa043cc5c82a89f60ab236ab5d0c31d6f708344e7b7efa5d21",
+      "url": "https://github.com/kontextmind/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/core/agent-loop/src/inbox.ts#L20-L125"
+    },
+    {
+      "key": "D_TOOLS",
+      "repository": "kontextmind/deepseek-harness",
+      "commit": "c291e7961a515f6d7af9304e7fd1d257929aef26",
+      "path": "packages/core/agent-loop/src/tool-calls.ts",
+      "startLine": 41,
+      "endLine": 170,
+      "sha256": "1f8984127d4245b6a08c1e4b0c8b9d8fa7ce30ffcf08184187f16dc1bf57ae6d",
+      "url": "https://github.com/kontextmind/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/core/agent-loop/src/tool-calls.ts#L41-L170"
+    },
+    {
+      "key": "D_CHILD",
+      "repository": "kontextmind/deepseek-harness",
+      "commit": "c291e7961a515f6d7af9304e7fd1d257929aef26",
+      "path": "packages/subagent/subagent/src/index.ts",
+      "startLine": 1,
+      "endLine": 27,
+      "sha256": "7597543b5f29b802545ecb559513efeb9fd1f8af66e90e8abc49d914943b1e36",
+      "url": "https://github.com/kontextmind/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/subagent/subagent/src/index.ts#L1-L27"
+    },
+    {
+      "key": "D_TYPES",
+      "repository": "kontextmind/deepseek-harness",
+      "commit": "c291e7961a515f6d7af9304e7fd1d257929aef26",
+      "path": "packages/subagent/subagent/src/types.ts",
+      "startLine": 31,
+      "endLine": 200,
+      "sha256": "9a1f755aece7d541bd84772a0d2894cba003614a442f8dcc1896f8384fb91bee",
+      "url": "https://github.com/kontextmind/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/subagent/subagent/src/types.ts#L31-L200"
+    },
+    {
+      "key": "D_CODEX",
+      "repository": "kontextmind/deepseek-harness",
+      "commit": "c291e7961a515f6d7af9304e7fd1d257929aef26",
+      "path": "packages/subagent/subagent-codex/src/index.ts",
+      "startLine": 1,
+      "endLine": 108,
+      "sha256": "3adc9ab888a503e7063fdda990596901ac05abe3759f95b1f52f72307824f957",
+      "url": "https://github.com/kontextmind/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/subagent/subagent-codex/src/index.ts#L1-L108"
+    },
+    {
+      "key": "D_CLAUDE",
+      "repository": "kontextmind/deepseek-harness",
+      "commit": "c291e7961a515f6d7af9304e7fd1d257929aef26",
+      "path": "packages/subagent/subagent-claude-code/src/index.ts",
+      "startLine": 1,
+      "endLine": 124,
+      "sha256": "153bf9029cca9f6c84430e9b9dbb805fa3293befb0d6fe68936a609cd7c075b0",
+      "url": "https://github.com/kontextmind/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/subagent/subagent-claude-code/src/index.ts#L1-L124"
+    },
+    {
+      "key": "D_SETTLE",
+      "repository": "kontextmind/deepseek-harness",
+      "commit": "c291e7961a515f6d7af9304e7fd1d257929aef26",
+      "path": "packages/subagent/subagent/src/run-settlement.ts",
+      "startLine": 29,
+      "endLine": 75,
+      "sha256": "f8bef231a9ba5efc89b5dacad3b7427b31ecaf39d8036b078bfd14639381b825",
+      "url": "https://github.com/kontextmind/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/subagent/subagent/src/run-settlement.ts#L29-L75"
+    },
+    {
+      "key": "D_WORKFLOW",
+      "repository": "kontextmind/deepseek-harness",
+      "commit": "c291e7961a515f6d7af9304e7fd1d257929aef26",
+      "path": "packages/workflow/workflow/README.md",
+      "startLine": 26,
+      "endLine": 131,
+      "sha256": "a27b1669231aec2c52268a09d471bce701ae0591d8c6eacdfbb7f4d4832c9da7",
+      "url": "https://github.com/kontextmind/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/workflow/workflow/README.md#L26-L131"
+    },
+    {
+      "key": "D_WORKER",
+      "repository": "kontextmind/deepseek-harness",
+      "commit": "c291e7961a515f6d7af9304e7fd1d257929aef26",
+      "path": "packages/workflow/workflow-worker-thread/README.md",
+      "startLine": 26,
+      "endLine": 110,
+      "sha256": "906ae6f9d0e8e4bd40cb015a6f19948a5446b475d45c49c31459d31fe2e77d77",
+      "url": "https://github.com/kontextmind/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/workflow/workflow-worker-thread/README.md#L26-L110"
+    },
+    {
+      "key": "D_HOST",
+      "repository": "kontextmind/deepseek-harness",
+      "commit": "c291e7961a515f6d7af9304e7fd1d257929aef26",
+      "path": "packages/workflow/workflow-worker-thread/src/host.ts",
+      "startLine": 175,
+      "endLine": 260,
+      "sha256": "5b42e74c46006661dfdd798fb8640a0e00e0a0131013aaa350045e98a2a37feb",
+      "url": "https://github.com/kontextmind/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/workflow/workflow-worker-thread/src/host.ts#L175-L260"
+    },
+    {
+      "key": "K_PACKAGE",
+      "repository": "kontextmind/kxm",
+      "commit": "5ff9f642e82d7a1e52aeab9245282d89560bb535",
+      "path": "package.json",
+      "startLine": 1,
+      "endLine": 128,
+      "sha256": "fe964551695e86e67fb2778443eb2657c0206179e9b333d981f5cf1ecb3f9137",
+      "url": "https://github.com/kontextmind/kxm/blob/5ff9f642e82d7a1e52aeab9245282d89560bb535/package.json#L1-L128"
+    },
+    {
+      "key": "K_ENGINE",
+      "repository": "kontextmind/kxm",
+      "commit": "5ff9f642e82d7a1e52aeab9245282d89560bb535",
+      "path": "plugins/kxm/src/vnext-engine.ts",
+      "startLine": 113,
+      "endLine": 165,
+      "sha256": "36432df99721624c14458c11df1955afdece21d0230cb485598ad656821aa4ed",
+      "url": "https://github.com/kontextmind/kxm/blob/5ff9f642e82d7a1e52aeab9245282d89560bb535/plugins/kxm/src/vnext-engine.ts#L113-L165"
+    },
+    {
+      "key": "K_FOLD",
+      "repository": "kontextmind/kxm",
+      "commit": "5ff9f642e82d7a1e52aeab9245282d89560bb535",
+      "path": "plugins/kxm/src/vnext-engine-fold.ts",
+      "startLine": 9,
+      "endLine": 123,
+      "sha256": "f01d4f317ce37bca424428b3f65a6ae9c625daa01b1cf8a6c8f7cf6230410953",
+      "url": "https://github.com/kontextmind/kxm/blob/5ff9f642e82d7a1e52aeab9245282d89560bb535/plugins/kxm/src/vnext-engine-fold.ts#L9-L123"
+    },
+    {
+      "key": "K_PROCESS",
+      "repository": "kontextmind/kxm",
+      "commit": "5ff9f642e82d7a1e52aeab9245282d89560bb535",
+      "path": "plugins/kxm/src/vnext-oneshot-process.ts",
+      "startLine": 24,
+      "endLine": 164,
+      "sha256": "8f732316ba3d0141f88f330ad4e03fafaf788351f33081c2bf8657e62fd80227",
+      "url": "https://github.com/kontextmind/kxm/blob/5ff9f642e82d7a1e52aeab9245282d89560bb535/plugins/kxm/src/vnext-oneshot-process.ts#L24-L164"
+    },
+    {
+      "key": "K_SUBAGENT",
+      "repository": "kontextmind/kxm",
+      "commit": "5ff9f642e82d7a1e52aeab9245282d89560bb535",
+      "path": "plugins/kxm/src/subagent-control.ts",
+      "startLine": 120,
+      "endLine": 275,
+      "sha256": "a25d46d32bae3e7658ae281be89484594250a8e3d76656239d9b5770ae384384",
+      "url": "https://github.com/kontextmind/kxm/blob/5ff9f642e82d7a1e52aeab9245282d89560bb535/plugins/kxm/src/subagent-control.ts#L120-L275"
+    }
+  ],
+  "registry": {
+    "observedAt": "2026-09-15T01:13:30.797743+00:00",
+    "packages": [
+      {
+        "package": "@opencode/sdk",
+        "status": 200,
+        "version": "2.0.3",
+        "gitHead": null,
+        "engines": null,
+        "url": "https://registry.npmjs.org/@opencode%2fsdk/latest"
+      },
+      {
+        "package": "@opencode-ai/sdk",
+        "status": 200,
+        "version": "1.18.31",
+        "gitHead": null,
+        "engines": null,
+        "url": "https://registry.npmjs.org/@opencode-ai%2fsdk/latest"
+      },
+      {
+        "package": "@opencode-ai/sdk-next",
+        "status": 404,
+        "url": "https://registry.npmjs.org/@opencode-ai%2fsdk-next/latest"
+      },
+      {
+        "package": "opencode-ai",
+        "status": 200,
+        "version": "1.18.31",
+        "gitHead": null,
+        "engines": null,
+        "url": "https://registry.npmjs.org/opencode-ai/latest"
+      },
+      {
+        "package": "@earendil-works/pi-coding-agent",
+        "status": 200,
+        "version": "0.85.1",
+        "gitHead": "d981de1229ef899957bbe968bc8dcda02a21f477",
+        "engines": {
+          "node": ">=22.19.0"
+        },
+        "url": "https://registry.npmjs.org/@earendil-works%2fpi-coding-agent/latest"
+      },
+      {
+        "package": "@deepseek-ai/dsh",
+        "status": 200,
+        "version": "0.1.5-rc.1",
+        "gitHead": null,
+        "engines": null,
+        "url": "https://registry.npmjs.org/@deepseek-ai%2fdsh/latest"
+      }
+    ],
+    "note": "Read-only registry metadata, no installation or runtime admission"
+  },
+  "openCodeVersionCorrection": {
+    "supersededDevCommit": "e03db9bc6908f75c9334d8aa997deeaac81c0298",
+    "authoritativeReleaseCommit": "d44b52ca66b6bf69626c0384626d1a9cd9555977",
+    "version": "2.0.3",
+    "corrections": [
+      "Published SDK exists.",
+      "Release interrupt acknowledges before settlement.",
+      "Release subagent lookup rejects missing or unrelated sessions.",
+      "Release inbox first-admission-wins checks session/type rather than full payload equivalence.",
+      "SDK defaults in-memory database and runs restart sweep."
+    ]
+  },
+  "planningAdvisory": {
+    "initial": "Fable native CLI, firstParty, planning-only; based partly on superseded OpenCode dev observations",
+    "disposition": "Final report uses released OpenCode 2.0.3 and does not rely on initial advisory claims about unavailable operations, missing-child fallback, or cleanup-on-interrupt acknowledgment. Exactly-once external effects and comparative savings remain unproved.",
+    "records": [
+      {
+        "artifact": "harness-strategy-advisory.json",
+        "observedAt": "2026-09-15T01:12:48.452385+00:00",
+        "role": "planning-advisory",
+        "acceptanceEvidence": false,
+        "exitCode": 0,
+        "result": "Advisory only. This is a planning recommendation, not acceptance and not a gate result. Phase 11 gates remain open.\n\n## Recommendation\n\nKeep the proposal's core. Own the workflow contracts and the operator experience. Do not adopt DSH, OpenCode, or Pi as a primary base. The reason is not fashion. It is that KXM already owns the parts that are hard to replace: the durable runtime, SQL state, step attempts, effect classification, and Hub. None of the three candidate bases owns those in a form KXM could inherit without rewriting them anyway.\n\nThe ownership boundary I recommend is this. KXM owns outcome truth, admission, durable inboxes, budgets, cleanup, and cross-host identity. Adapters own model calls, tool loops, and transport. Nothing an adapter emits is truth until the runtime commits it.\n\n## Strongest reasons to disagree\n\n- **DSH already has the contract shape you want.** Its subagent contract, capability validation, and settleRun semantics match your M1 and M2 goals almost exactly. Rewriting them as KXM contracts risks a worse copy. The honest counter is that DSH has no aggregate token budget, no restart checkpoint, and its worker thread is not a security boundary. Those are the exact gaps KXM cares about. Borrow the shapes, not the runtime.\n\n- **OpenCode's durable admission is the best in the set.** Message ID idempotency, rejected conflicting reuse, and cursor-based durable events are what M3 needs. But the task tool falls back to a new child on a missing task ID, which breaks recovery. And the v2 surface has operations that are unavailable at this revision. Adopting it wholesale would import the recovery bug alongside the good parts.\n\n- **Pi SDK might make RPC obsolete sooner than the proposal admits.** The SDK owns session, compaction, and resource loading and permits a KXM-owned child host. If RPC fails a resource or UX need, the SDK experiment will be the answer, and deferring it delays that knowledge. The counter is that the SDK shows no durable pre-consumption inbox, so it cannot replace M3 by itself.\n\n- **TS default plus optional Rust is a plan that never ships Rust.** Say when containment is required, not that it is optional. Otherwise the thread VM non-boundary becomes permanent.\n\n## Missing evidence\n\n- No measurement of the current one-shot path under output flood. Buffering a fixed stdout limit then settling is a policy, not evidence. You need a slow-reader test and a burst test before M2 can be scoped.\n- No cross-harness proof that steering lands. SubagentRegistry pushes an in-memory record. That is a claim, not a delivery receipt.\n- No comparison of Pi RPC and Pi SDK on the same model and workload. Without it the \"RPC first\" ordering is a preference.\n- No DSH continuability inventory for native backends. Some are one-shot with no start capabilities. If most are, M9 upgrade and recovery cannot lean on DSH at all.\n- No cost accounting for native provider routes. The rule against silent direct API billing is stated but not instrumented.\n\n## Experiment gates before committing a base\n\nEach gate is a pass or fail on evidence, not a milestone.\n\n1. **Crash after acceptance before ACK.** Restart the host. The input must be replayed exactly once from a durable inbox. Fails if it is lost or duplicated.\n2. **Slow reader and output flood.** Backpressure must hold without settling early or dropping a committed attempt stream.\n3. **Cancel descendants.** Cancelling a parent must terminate every child across hosts, with cleanup failure reported as failure, not swallowed.\n4. **Wrong cwd or session.** Capability validation must reject the run before any effect. A silent fallback to a new child fails the gate.\n5. **Reconnect without duplicate effects.** Effect classification plus reconcile before retry must prove no double write.\n6. **One install.** A fresh machine with a single install command runs a workflow. SDK runtime packaging is part of this gate.\n\nRun every gate against the current KXM runtime first. Then run the same gates on a bounded DSH wrapper and a bounded Pi SDK child host.\n\n## Answering the two questions\n\nDeeper DSH reuse would not save enough to be primary base. The savings are in contract shapes, which are cheap to port. The costs are Cordis, isolate realms, a worker model without checkpoints, and a preview CLI with Windows gaps. You would inherit the costs to get savings you can copy.\n\nTo decide without fashion, refuse to rank bases by feature lists. Rank them by gate results on your own workloads. Write the six gates down now, with a fail definition for each. A base earns a bigger role only when it passes a gate the current runtime fails. Speed claims wait for measurement.",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 2003,
+          "cache_read_input_tokens": 3219,
+          "output_tokens": 1805,
+          "output_tokens_details": {
+            "thinking_tokens": 197
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 2003,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 1805,
+              "cache_read_input_tokens": 3219,
+              "cache_creation_input_tokens": 2003,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 2003
+              },
+              "type": "message",
+              "model": null
+            }
+          ],
+          "speed": "standard"
+        },
+        "modelUsage": {
+          "claude-haiku-4-5-20251001": {
+            "inputTokens": 1966,
+            "outputTokens": 16,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0,
+            "webSearchRequests": 0,
+            "costUSD": 0.002046,
+            "contextWindow": 200000,
+            "maxOutputTokens": 32000,
+            "thinkingTokens": 0,
+            "canonicalModel": "claude-haiku-4-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          },
+          "claude-fable-5-1": {
+            "inputTokens": 2,
+            "outputTokens": 1805,
+            "cacheReadInputTokens": 3219,
+            "cacheCreationInputTokens": 2003,
+            "webSearchRequests": 0,
+            "costUSD": 0.13113475000000002,
+            "contextWindow": 1000000,
+            "maxOutputTokens": 64000,
+            "thinkingTokens": 197,
+            "canonicalModel": "claude-fable-5-1",
+            "provider": "firstParty",
+            "costBasis": "list"
+          }
+        },
+        "reportedTotal": 0.13318075000000001,
+        "costNote": "Model usage identifies list-cost estimates; not asserted to be actual incremental subscription billing. Root usage/cost unknown."
+      },
+      {
+        "artifact": "harness-strategy-advisory-final.json",
+        "observedAt": "2026-09-15T01:19:23.226274+00:00",
+        "role": "planning-advisory",
+        "acceptanceEvidence": false,
+        "exitCode": 0,
+        "result": "The revised recommendation is sound in direction. Its weakness is that it still lets the engine comparison decide too much before the KXM-owned contracts are written down.\n\n- **Restart semantics are the sharpest risk and get one line.** OpenCode restart is at-least-once, assumes the prior owner is dead, and can repeat external effects. That is not a host detail. It means the Runtime effect ledger must be authoritative over the engine's own recovery, and the engine must never be allowed to resume a job the Runtime has not reconciled. Say that explicitly as a contract, not as a caveat.\n\n- **First-admission-wins on session/type is the same problem from the other side.** The plan correctly says KXM needs its own strict command hash. It should also say that hash must be computed before the durable inbox sees the input, otherwise the inbox admits a duplicate the Runtime later rejects and the two stores disagree.\n\n- **Unbounded live pubsub deserves an M2 acceptance criterion, not a mention.** Paged replay-to-live with a Synced marker is good. The bounded-streams milestone should state what happens on backpressure: drop, block, or spill to the durable log.\n\n- **ToolCalled before execution fibers is an ordering hazard for evidence.** If the Runtime records evidence from bus events, it can record a tool call that never ran. Evidence should key off the started event from the durable execution claim, not off ToolCalled.\n\n- **The subagent distinction is right but the milestone that resolves it is missing.** One-shot versus continuable children and a runner without checkpoints or token budget are named as open, then M6 lists typed graph and budget without saying which engine surface backs continuation. That is the place where the comparison result actually lands.\n\n- **Fixture comparison in M9 is too late.** If the engine choice is deferred pending comparison, the fixture harness belongs before M6, because the graph and budget design will be shaped by whichever session model wins.\n\nWhat would move me toward OpenCode as primary base: its durable job recovery and execution claim survive a real crash test under the Runtime's reconciliation, and its restart can be gated so the Runtime decides resumption. What would move me toward DSH: the tool pool barrier proves enforceable across process restart, which neither Pi nor OpenCode currently offers.\n\nStrongest missing contract: a written ownership rule for external effects across crash. Who may retry, on what proof, and which store is the tiebreaker when engine state and Runtime ledger disagree.",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 1293,
+          "cache_read_input_tokens": 3219,
+          "output_tokens": 915,
+          "output_tokens_details": {
+            "thinking_tokens": 103
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 1293,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 915,
+              "cache_read_input_tokens": 3219,
+              "cache_creation_input_tokens": 1293,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 1293
+              },
+              "type": "message",
+              "model": null
+            }
+          ],
+          "speed": "standard"
+        },
+        "modelUsage": {
+          "claude-haiku-4-5-20251001": {
+            "inputTokens": 1546,
+            "outputTokens": 16,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0,
+            "webSearchRequests": 0,
+            "costUSD": 0.001626,
+            "contextWindow": 200000,
+            "maxOutputTokens": 32000,
+            "thinkingTokens": 0,
+            "canonicalModel": "claude-haiku-4-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          },
+          "claude-fable-5-1": {
+            "inputTokens": 2,
+            "outputTokens": 915,
+            "cacheReadInputTokens": 3219,
+            "cacheCreationInputTokens": 1293,
+            "webSearchRequests": 0,
+            "costUSD": 0.07243474999999999,
+            "contextWindow": 1000000,
+            "maxOutputTokens": 64000,
+            "thinkingTokens": 103,
+            "canonicalModel": "claude-fable-5-1",
+            "provider": "firstParty",
+            "costBasis": "list"
+          }
+        },
+        "reportedTotal": 0.07406075,
+        "costNote": "Model usage identifies list-cost estimates; not asserted to be actual incremental subscription billing. Root usage/cost unknown."
+      }
+    ],
+    "finalDisposition": [
+      "Released OpenCode source supersedes default-branch findings.",
+      "Recovery must be gated by KXM effect reconciliation.",
+      "Compare engine hosts during M1/M2/M3; repeat release proof in M9.",
+      "Tool intent and execution start are not external completion evidence.",
+      "No claim of exactly-once external effects or measured engine savings."
+    ]
+  }
+}

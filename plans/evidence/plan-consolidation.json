@@ -1,0 +1,281 @@
+{
+  "schema": "kxm.research.plan-consolidation.v1",
+  "observedAt": "2026-09-15T01:55:05.054894+00:00",
+  "scope": "Consolidation of fourteen planning documents; one proposed milestone scope catalog, canonical execution tracker unchanged in authority. No feature implementation/admission/release acceptance.",
+  "sourceBaseline": "02aaed31fd6160a78378c677ab27d4119f039621",
+  "preservedForkReviews": 36,
+  "documents": [
+    {
+      "path": "implementation-plan.md",
+      "beforeSha256": "9cd572d48d65288cf82ecbfff6558f5ec3dbc187238db1511ab79afa2eec1289",
+      "afterSha256": "9d6e1cb7171c816e6ea55be8f7721cecd00b3090f8c37027a3ffd3742ab34d8d"
+    },
+    {
+      "path": "plan-unified-kxm-milestones.md",
+      "beforeSha256": "ed79e78afce43a280dc5358d739cb69557a91ec2188314d7a54a7563f0bbfc4f",
+      "afterSha256": "51e1a1090df73b77dbe57a38fbe6aa0105cea51684ef8c3359301e99abe8a3e9"
+    },
+    {
+      "path": "research-agent-producer-architecture.md",
+      "beforeSha256": "0206c8966626c41a476a51911cdccfe6cb88b3546640a0e4b9897f5e9e573572",
+      "afterSha256": "47eaf44802778810b69ae8dfb1279699952257c048bd0648a7f69ab1cb1bb298"
+    },
+    {
+      "path": "research-additional-forks.md",
+      "beforeSha256": "0c60b2f1ef69b09d35dd6528e3646251e559660b3f9f64af09a0bde54798f664",
+      "afterSha256": "57d19fdc433fe615504b065b13e7431b3d2be4ea51d5a0f151f91dd6a95fdaf6"
+    },
+    {
+      "path": "research-harness-streaming-capabilities.md",
+      "beforeSha256": "13b9a72cf935c09f92630e95f70fc786a5ea97667c2fddad9637b0194f0fc6cf",
+      "afterSha256": "52bdf0fa1c0888c8487dde310ba64f7c7d509a9913b0d31f4c42c5e49b1229b0"
+    },
+    {
+      "path": "research-kxm-harness-strategy.md",
+      "beforeSha256": "f292588ed74117478f03e25ab3cbdee6d203aa46c0e3e341c6ee0cdd36e87dcc",
+      "afterSha256": "a6a8fefcc7f20a3800be1108000cc9a3ef84fcee21e968cac83f77730306cad8"
+    },
+    {
+      "path": "research-memory-studio-forks.md",
+      "beforeSha256": "83f0930e3e595684717ee00ea425ffcfa8b3171a7d46e4493ad7b1c620389f15",
+      "afterSha256": "e8e438d84312c8023da103e0df49c1ee01b7c29d368f2ccd94c6613e0d482b3b"
+    },
+    {
+      "path": "research-runtime-language-choices.md",
+      "beforeSha256": "fd182c8b34e324b288fc50eabc78c02ce81b0f7480de35a82d18beae989d4573",
+      "afterSha256": "e0caa17bb11dc3c61dab26c68e41bdb9a6c2d9278a2daa1d4ac74d5961e100a7"
+    },
+    {
+      "path": "plan-additional-providers-agy-kimi.md",
+      "beforeSha256": "68580e952be4d010c45a0ccc6f25d1dada449f13b7c3af0966f89da7cf2e2d83",
+      "afterSha256": "26cb66f515b7ecd5a4d92b8e74a78cfc93ac5ce0d66c5a822ad075a4f5f0d431"
+    },
+    {
+      "path": "plan-agent-communication-steering.md",
+      "beforeSha256": "63c2db5d6f36384a684aec01ac38abc0eef70c25369171191f149c274131dfc8",
+      "afterSha256": "05100368385f19f59231b5e4d84f54e05653c07e151ae0c4ab90eeecc5a3336c"
+    },
+    {
+      "path": "plan-ssh-remote-execution.md",
+      "beforeSha256": "224916771c0298c082dd2f23ee4913dea28436fc49ccbe583d6600c25d23db7f",
+      "afterSha256": "b72156d4cbdbf733486f95b73c39aeb2160f8d5f5772130c270bf90a47cf39ff"
+    },
+    {
+      "path": "plan-token-reduction-rtk-ai.md",
+      "beforeSha256": "a5351f66019cb7b47d476c9a997327ae62c7b0c2006aa004ec0a508eb64c8b31",
+      "afterSha256": "0b720d7c09379e2cc294f6add92ed40bac9bd7bfdd04942c8df7640f26ba9c1d"
+    },
+    {
+      "path": "plan-usage-cost-quota-tracking.md",
+      "beforeSha256": "b92cc89d7e7da4bc75ccc2dc6ad3ec67e8b018ddd4afe213f8a0191b181e030c",
+      "afterSha256": "d39eb88f5463261414f05bfbb5b1578e9c85773601b28f541026dd7bf0470417"
+    },
+    {
+      "path": "plan-workflow-modes-selective-loading.md",
+      "beforeSha256": "9dac79029f0a19db0dc3156ca8bbccd5af9bfc6ae77d8fe425016dae8c280fa3",
+      "afterSha256": "da8fd97f988cf4c481b66af17e6756bea5f21403c80a06e9dd33430343c6520e"
+    }
+  ],
+  "nativeReviews": [
+    {
+      "role": "fable",
+      "round": "initial full-packet review",
+      "startedAt": "2026-09-15T01:48:50.089220+00:00",
+      "promptSha256": "2aa607718f61bc58cb26f131d39e61f9ca258221dc9f7a092030e913e1f27517",
+      "reviewText": "## Recommendation\n\nCoherent, with corrections needed. The packet keeps authority where it belongs: the implementation plan is the only tracker, the unified plan owns proposed scope, and every research and thematic draft now defers to both. Accepted A1 work is preserved in all supporting reports, and no document claims a gate PASS or an engine admission. I found no dependency cycle. The M2 and M6 pairing is resolved by the explicit \"minimal wake policy first\" and \"M2 events only where used\" qualifiers. The six findings below are ownership and requirement gaps, not authority conflicts. The consolidation review record at `reviews/plan-consolidation.md` was not supplied, so its reconciliations are unverified here.\n\n## Findings\n\n- **Unassigned Phase 11 blocker that M2 live paths depend on.** `implementation-plan.md`, Phase 11 open item, records \"full HTTP drive lifetime decoupling design\" as still open. `plan-unified-kxm-milestones.md`, section M0, lists it only as \"stays open\", and section M2 requires \"useful progress must precede the final in each live admitted path\" without naming it. The streaming research requires task lifetime to be decoupled from any viewer or request. If the supervisor drive response is still bound to workflow and gate budgets, every live M2 witness inherits a blocker no packet owns. Minimum correction: in the M2 packet row of the implementation plan and the M2 scope of the unified plan, state that live admitted-path evidence depends on the drive lifetime decoupling design, owned by the Runtime maintainer under the existing Phase 11 item.\n\n- **Coordinator authority ceiling has two candidate owners.** `plan-unified-kxm-milestones.md`, \"Architecture and ownership\", defines a coordinator as \"a persistent role and authority ceiling\". Section M1 says \"bind persistent coordinator/channel identity to project and authority\", while section M6 is \"one Runtime policy and workflow authority\". The implementation plan M1 row repeats \"coordinator/capability identity\" and the M6 row \"existing Runtime policy plus identity\". A reader can build the ceiling in either place, and the M3 rule that a coordinator \"may be rebound only through explicit policy\" then has no clear policy owner. Minimum correction: one sentence in the unified M1 scope stating that M1 records the identity and its binding, M6 defines and enforces the authority ceiling, and M3 rebinding uses M6 policy.\n\n- **M3 start trigger omits the engine decision, and the comparison fixture lacks its safety constraint.** `implementation-plan.md`, packet table, M3 trigger is \"M1 exact bindings and M2 durable observations\". The same file's narrative and the unified plan's \"Next and later\" both require the Pi RPC, Pi SDK and OpenCode comparison \"before any dependent continuation choice\". Pi RPC steering and follow-up work in M3 is continuation-dependent, so the trigger and the narrative disagree. Separately, `research-kxm-harness-strategy.md`, section 3, states an OpenCode host is not eligible for effectful work until its startup recovery sweep is gated by KXM reconciliation, and must otherwise stay isolated and read-only. The unified decision gate row for engine choice does not carry that condition, yet the proposed fixture includes child assignment, artifacts and verification commands. Minimum correction: add the engine decision to the M3 trigger for Pi-continuation controls, leaving native Codex and Claude probes independent, and add to the unified decision gate row that the comparison runs in an isolated workspace with a separate engine session store and only read-only work until recovery gating is proven.\n\n- **Cross-cutting Windows test gate conflicts with paused Windows CI.** `implementation-plan.md`, \"Cross-cutting test gates\", requires \"Windows and Linux path/process tests\" for every phase. The same file's \"Windows resumption (deferred)\" item pauses the Windows Validate legs, and the unified M1 and M9 sections say planning tests does not restore them. As written, every selected slice must add Windows tests that cannot run under the accepted gate, which makes paused CI an accidental universal blocker or, if ignored, silent drift. The same item also says active work continues on \"local Mac\", while the runtime research warns against implying macOS support. Minimum correction: state in the cross-cutting gate that Windows tests are authored and run locally with results recorded as deferred until the resumption decision, and clarify that local Mac is a development host, not an advertised platform.\n\n- **L2 baseline wording risks a benchmark prerequisite and a threshold conflict.** `plan-unified-kxm-milestones.md`, section M2, says \"L2 measures the Node baseline first\" and later calls the local forwarding target \"an experiment, not a measured SLA\". `research-runtime-language-choices.md`, decision matrix row L2, says \"Retain TS if it meets M2's proposed target\", which reads as a retain-or-change criterion. Together these can delay the first live progress behind a measurement and turn an unmeasured target into an adoption trigger. Minimum correction: in the M2 scope, state that the L2 baseline is recorded alongside the first streaming slice, not before it, and that a missed target opens profiling of the Node path only. Language adoption still needs L5's reproduced containment requirement or L3/L4 workload evidence.\n\n- **Current-code framing and traceability metadata.** `plan-unified-kxm-milestones.md`, \"Outcome and authority\", says current code was checked at 02aaed31, and section M0 describes the `subagent-control.ts` maps and permissive Pi outcome inference as current facts. Both observations are cited only at 5ff9f642 in the harness strategy report. The A1 delta reorganised the cli module layout, so those files are unconfirmed at the new baseline even though they are probably unchanged. The same file's frontmatter `related` list has eight entries, while the implementation plan says the unified plan maps six research reports and six thematic designs. Minimum correction: mark the two M0 statements as 5ff9f642 observations to be reproduced under the M0 \"current source reproductions\" trigger, and add the five missing documents to `related`.\n\nNothing above changes an accepted decision, reopens A1, or requires implementation tests for this docs-only review. The blockers already recorded in the implementation plan remain the release and admission authority.",
+      "reportedUsage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 85625,
+        "cache_read_input_tokens": 3219,
+        "output_tokens": 11637,
+        "output_tokens_details": {
+          "thinking_tokens": 9511
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 85625,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "not_available",
+        "iterations": [
+          {
+            "input_tokens": 2,
+            "output_tokens": 11637,
+            "cache_read_input_tokens": 3219,
+            "cache_creation_input_tokens": 85625,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 85625
+            },
+            "type": "message",
+            "model": null
+          }
+        ],
+        "speed": "standard"
+      },
+      "cliReportedCostUsd": 2.35460275,
+      "accounting": "CLI-reported figure, if present, is not independently verified billed spend; native subscription/account cost and root effort are unknown",
+      "acceptanceEvidence": false
+    },
+    {
+      "role": "fable",
+      "round": "scoped correction review",
+      "startedAt": "2026-09-15T01:52:52.215411+00:00",
+      "promptSha256": "10ba3374c59902379c02818acc7d328b6f6a8bbe5800376ea011f8cdd72e315f",
+      "reviewText": "All six material concerns are resolved by the scoped corrections. No remaining inconsistency blocks the documentation review. This is a verification of the supplied text only, not commit acceptance or a Phase 11 PASS.\n\nDisposition check, per finding:\n\n- **HTTP drive lifetime.** The M2 scope now assigns the decoupling design to Runtime maintainers under the existing Phase 11 item. The Tracking M2 row repeats that ownership before dependent live drive paths. The M0 bullet still lists the item as open, which matches. Resolved.\n\n- **Coordinator authority ceiling.** The added M1 sentence gives M1 identity and policy binding, M6 the ceiling, and M3 rebinding the M6 policy. The architecture section's definition of a coordinator now has one enforcing owner. Resolved.\n\n- **M3 trigger and comparison safety.** The Tracking M3 row now separates engine-dependent controls from existing RPC and native probes. The unified \"Next and later\" section carries isolated workspaces, separate engine session stores and read-only work until recovery gating is proven. Resolved, since Tracking governs start triggers.\n\n- **Windows gate.** The rejected recommendation was mine, and the adopted interpretation is the better outcome. The paused legs are now explicit deferred evidence that blocks affected phase or release completion until resumption or an accepted requirement change. That removes the accidental universal blocker and the silent drift path without weakening the gate. The local Mac clarification is present. Resolved.\n\n- **L2 baseline.** M2 records the baseline alongside the first streaming slice, and both M2 and the L2 matrix row route a miss to Node profiling. L5 is tied to a reproduced containment requirement. Resolved.\n\n- **Current-code framing and metadata.** The two M0 statements are now rechecked at the baseline with pinned links. The frontmatter list has thirteen entries, matching six research reports, six thematic designs and the tracker. The provider design removes the universal installation path claim. Resolved.\n\nResidual items worth a small follow-up edit. None blocks this review:\n\n- **Stale update timestamp.** The unified plan still shows an updated date of 2026-09-14, while Tracking records A1 acceptance on 2026-09-15 and the plan states the baseline contains that accepted slice. The plan's own timestamp precedes the acceptance it cites. Set the updated date to today in the same edit as these corrections.\n\n- **Decision-gate row for engine choice.** The isolation and read-only conditions live in \"Next and later\" but not in the table row that names the decision. A reader using only the table misses the constraint. Add a short clause to that row.\n\n- **L5 and paused Windows checks.** The L5 matrix row compares Node cleanup with an OS helper on Windows and Linux, while Tracking states this review authorizes no local or hosted Windows runs. L5 opens only on a reproduced requirement, so there is no conflict today. The row should note that its Windows arm waits for resumption or an accepted decision.\n\n- **Unified M3 table row.** It lists only M1 bindings and M2 contracts, without the engine decision that Tracking now names. Tracking is authoritative for triggers, so this is a mirror gap, not a conflict.\n\nNothing in the corrections changes an accepted decision, reopens A1, weakens a canonical gate, or introduces a new commit-bound claim. The blockers recorded in the implementation plan remain the release and admission authority.",
+      "reportedUsage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 24121,
+        "cache_read_input_tokens": 3219,
+        "output_tokens": 3899,
+        "output_tokens_details": {
+          "thinking_tokens": 2746
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 24121,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "not_available",
+        "iterations": [
+          {
+            "input_tokens": 2,
+            "output_tokens": 3899,
+            "cache_read_input_tokens": 3219,
+            "cache_creation_input_tokens": 24121,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 24121
+            },
+            "type": "message",
+            "model": null
+          }
+        ],
+        "speed": "standard"
+      },
+      "cliReportedCostUsd": 0.69523875,
+      "accounting": "CLI-reported figure, if present, is not independently verified billed spend; native subscription/account cost and root effort are unknown",
+      "acceptanceEvidence": false
+    },
+    {
+      "role": "sol",
+      "round": "initial full-packet review",
+      "startedAt": "2026-09-15T01:48:50.615580+00:00",
+      "promptSha256": "2a0fe406f5b1a901a46504a148f6c70675e36dfcccc5429554ed571b319bfe63",
+      "reviewText": "Recommendation: **coherent, with minor corrections needed before treating this as the final consolidated planning packet.** Authority, sequencing, native-auth boundaries, optional-component treatment, accounting distinctions, and the Pi/OpenCode/DSH decision process are substantially consistent. No document claims an engine admission, completed M0–M9 packet, Phase 11 PASS, or release acceptance.\n\n1. **`plan-unified-kxm-milestones.md` — “Outcome and authority”**\n\n   “Current code was checked at `02aaed31` (accepted Phase 11 A1)” can imply that `02aaed31` itself received commit-bound acceptance. The tracker identifies acceptance at `915f5e53` and `96e8e0ac`, with `02aaed31` being the inspected current source. This weakens exact-commit honesty.\n\n   Minimum correction: say that `02aaed31` was checked and **contains/preserves the previously accepted A1 slice**, while naming the two accepted commits or linking to Tracking.\n\n2. **`implementation-plan.md` — “Cross-cutting test gates”**\n\n   “Every phase adds … Windows and Linux path/process tests” reads as a universal per-phase blocker, while Windows CI is explicitly paused and M9 scopes platform qualification to declared capabilities. It could accidentally block unrelated Linux-only documentation or service slices—or imply Windows evidence exists when it does not.\n\n   Minimum correction: qualify this as tests for **affected and currently declared platforms**, while retaining Windows resumption and any existing Windows product promise as explicit canonical blockers for releases that include Windows.\n\n3. **`plan-unified-kxm-milestones.md` — M1 “Exit evidence”**\n\n   “Test … real host activation/reload” is not explicitly limited to selected or advertised host surfaces. Read literally, it could require every native harness—and optional Pi integration—for basic CLI/MCP packaging, conflicting with “CLI/MCP-only imports must not require Pi” and M9’s declared-scope rule.\n\n   Minimum correction: change it to “real activation/reload for each selected or advertised host surface; verify CLI/MCP-only use without optional peers.”\n\n4. **`plan-unified-kxm-milestones.md` — M0 “Exit evidence”**\n\n   The unconditional Steel screenshot/create/release evidence can make optional browser repair appear necessary for the first inbox/Studio slice, despite the delivery-order rule that browser repair must not become a prerequisite for basic progress.\n\n   Minimum correction: prefix the Steel evidence with “for slices selecting the browser/Steel boundary,” or split M0 exit evidence by dependent capability.\n\n5. **`plan-additional-providers-agy-kimi.md` — §2 “Background and Architectural Gap”**\n\n   “In KXM’s current architecture” introduces exact AGY/Kimi command and path claims without stating their inspection baseline. Elsewhere, older source claims are carefully labeled as historical `5ff9f642` evidence, while current source is `02aaed31`.\n\n   Minimum correction: label these observations as inspected at `5ff9f642`, or explicitly state they were rechecked at `02aaed31`. Keep the claims unchanged if still valid.\n\nNo dependency cycle requires correction: M6’s minimal wake policy can precede M2, while M6 depends on M2 events only for later features that consume them. Account quota, reported usage, subscription allowance, list-price estimates, billed cost, and unknown cost are also kept appropriately distinct.",
+      "reportedUsage": {
+        "input_tokens": 65562,
+        "cached_input_tokens": 11136,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 1748,
+        "reasoning_output_tokens": 1034
+      },
+      "cliReportedCostUsd": null,
+      "accounting": "CLI-reported figure, if present, is not independently verified billed spend; native subscription/account cost and root effort are unknown",
+      "acceptanceEvidence": false
+    },
+    {
+      "role": "sol",
+      "round": "scoped correction review",
+      "startedAt": "2026-09-15T01:52:52.200343+00:00",
+      "promptSha256": "ed38c050182398849f039a757b7c3d38b0029ea98b7ac3cccf8142e0ccd809c3",
+      "reviewText": "The scoped corrections resolve all five material concerns from the initial review.\n\nThey now clearly distinguish inspected source from commit-bound A1 acceptance; scope M0 browser and M1 host evidence appropriately; align M1/M3/M6 identity and authority ownership; constrain the Phase 11 HTTP-lifetime dependency to affected live paths; and establish the current AGY/Kimi inspection baseline. The engine-comparison, language-experiment, Windows-gate, Pi-control, provider-catalog, and cross-document metadata clarifications are also internally consistent.\n\nNo remaining blocking documentation inconsistency is evident in the supplied corrected sections. Existing Windows, Phase 11, retirement/acceptance, native-witness, and release gates remain open execution blockers—not documentation contradictions.\n\nThis is a correction-review conclusion only: it does not claim commit acceptance, Phase 11 PASS, platform qualification, or release approval.",
+      "reportedUsage": {
+        "input_tokens": 28388,
+        "cached_input_tokens": 11136,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 455,
+        "reasoning_output_tokens": 276
+      },
+      "cliReportedCostUsd": null,
+      "accounting": "CLI-reported figure, if present, is not independently verified billed spend; native subscription/account cost and root effort are unknown",
+      "acceptanceEvidence": false
+    }
+  ],
+  "reviewScopeNote": "Initial native review supplied fourteen docs with relevant canonical excerpts; follow-up supplied corrected sections and disposition. Review record itself is a root-authored summary, not separately accepted.",
+  "dispositions": [
+    "Merged milestone addenda and retired six thematic stage trackers while preserving designs, experiments and pinned source links.",
+    "Established one first product slice and contract-level prerequisites; engine-dependent continuation follows early comparison; existing native/Pi probes independent.",
+    "Preserved one Runtime authority with M1 identity, M2 intake/observations, M6 policy/activation and M8 external transport ownership.",
+    "Scoped optional host/browser/component evidence without narrowing mandatory canonical requirements.",
+    "Rejected reviewer suggestion to resume Windows tests or weaken cross-cutting gates: added explicit Tracking interpretation preserving pause and deferred evidence; accepted resumption or requirement change needed for affected completion.",
+    "Current Pi/subagent claims rechecked and pinned at02aa; provider paths corrected; A1 acceptance distinguished from current inspected commit.",
+    "L2 measured alongside streaming; target miss opens Node profiling, not automatic language adoption.",
+    "Public npm0.7.0 prerequisite reconciled; source0.7.1 readiness and default GitHub updater remain separate."
+  ],
+  "releaseObservation": {
+    "observedAt": "2026-09-15T01:47:35.568310+00:00",
+    "npm": {
+      "version": "0.7.0",
+      "dist-tags": {
+        "latest": "0.7.0"
+      }
+    },
+    "github": [
+      {
+        "isDraft": true,
+        "isPrerelease": false,
+        "publishedAt": "0001-01-01T00:00:00Z",
+        "tagName": "main"
+      },
+      {
+        "isDraft": false,
+        "isPrerelease": false,
+        "publishedAt": "2026-09-11T09:20:42Z",
+        "tagName": "v0.7.0"
+      },
+      {
+        "isDraft": false,
+        "isPrerelease": false,
+        "publishedAt": "2026-09-08T19:10:47Z",
+        "tagName": "v0.6.0"
+      },
+      {
+        "isDraft": false,
+        "isPrerelease": false,
+        "publishedAt": "2026-09-01T22:22:37Z",
+        "tagName": "v0.5.1"
+      },
+      {
+        "isDraft": false,
+        "isPrerelease": false,
+        "publishedAt": "2026-08-26T17:51:12Z",
+        "tagName": "v0.4.3"
+      }
+    ],
+    "sourceBaseline": "02aaed31fd6160a78378c677ab27d4119f039621",
+    "sourceFindings": {
+      "kxm-update.ts": "npm registry check and install source implemented",
+      "kxm-update-config.ts": "default remains github, auto false"
+    },
+    "scope": "Read-only release existence and static updater inspection; not install or release acceptance"
+  },
+  "validation": {
+    "observedAt": "2026-09-15T01:55:05.458716+00:00",
+    "scope": "Document structure, local links/anchors, pin retention, fork coverage and preservation of canonical phase gates/A1/blockers; not runtime tests",
+    "documents": 14,
+    "localLinks": 157,
+    "pinnedSourceLinksRetained": 44,
+    "forks": 36,
+    "milestones": 10,
+    "canonicalPhaseBlocksUnchanged": true,
+    "beforeWords": 41848,
+    "afterWords": 43288,
+    "errors": []
+  },
+  "markdownlint": {
+    "exitCode": 0,
+    "stdout": "markdownlint-cli2 v0.23.2 (markdownlint v0.41.1)\nFinding: *.md *.md .kxm/**/*.md docs/**/*.md plans/**/*.md plugins/**/*.md .github/**/*.md !node_modules/** !plugins/**/node_modules/** !.kxm/logs/**\nLinting: 15 files\nSummary: 0 issues in 0 files\n",
+    "stderr": ""
+  },
+  "formalAcceptance": false,
+  "phaseGatesChanged": false
+}

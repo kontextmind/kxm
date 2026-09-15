@@ -7,13 +7,14 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-11"
-updated: "2026-09-12"
+updated: "2026-09-15"
 authority: "hypothesis"
 confidence: "uncertain"
-summary: "Proposed parent-to-child supervisory control plane with tool allowlists and mid-flight steer."
+summary: "Technical reference for Runtime-owned delegation, capability-specific steering receipts and narrowed tool surfaces."
 tags: ["steering", "subagents"]
 related:
   - implementation-plan.md
+  - plan-unified-kxm-milestones.md
   - history/plan-role-configuration-governance.md
 depends_on: []
 blocked_by: []
@@ -27,13 +28,15 @@ Task Reference: `task_agent_communication_steering`
 Status: Draft / Proposed  
 Tracking: [`plans/implementation-plan.md`](implementation-plan.md)
 
+**Design reference.** This document retains supervisory interaction and control-contract design. The [implementation plan](implementation-plan.md) owns decisions, status, owners and phase gates; the [unified plan](plan-unified-kxm-milestones.md) supplies proposed M3 scope/order, supported by M1/M2/M6/M7. This is not a second supervisor or active backlog. Historical task references do not admit a capability.
+
 **Related plans:** [`implementation-plan.md`](implementation-plan.md) (execution tracker);
 archived [`plan-role-configuration-governance.md`](history/plan-role-configuration-governance.md)
 (role seats, tool allowlists, typed receipts).
 
 ## 1. Objective
 
-Complement KXM's existing peer-to-peer messaging (`kxm peer`) with an in-process supervisory control plane inspired by `pix-subagent`: provide dual-tool subagent lifecycle management (`agent` and `agent_control`), enforce explicit work-splitting via `allowed_tools` allowlists, support real-time mid-flight steering, and manage agent activity leases in the live dashboard.
+Extend KXM's existing Runtime and peer commands with a coherent supervisory interaction inspired by `pix-subagent`: lifecycle and control operations, explicit work-splitting through narrowed tool permissions, capability-specific steering, and dashboard activity views. Proposed `agent` and `agent_control` names describe an interaction pattern, not a requirement for a second tool registry, scheduler or supervisor.
 
 ---
 
@@ -43,10 +46,8 @@ In KXM today:
 
 - The `kxm peer` subsystem ([`plugins/kxm/src/commands.ts`](../plugins/kxm/src/commands.ts)) handles peer-to-peer collaboration: `kxm peer send`, `kxm peer await`, `kxm peer reply`, `kxm peer fanout`.
 - This works well for independent, asynchronous peer agents collaborating across a shared hub.
-- **The Gap:** KXM lacks tight **parent-to-child supervisory delegation**:
-  1. **Unconstrained Tool Surface:** When an agent invokes a subagent, the child typically inherits the full tool environment. An exploratory research agent gets dangerous file-editing and bash capabilities, dramatically inflating context tokens and risking accidental edits.
-  2. **Lack of Mid-Flight Steering:** Once a child agent starts generating, the parent cannot inject course-correcting steering instructions without aborting or waiting for the entire turn to finish.
-  3. **No Centralized Agent Leases:** Child processes lack unified activity state leases (`working`, `blocked`, `idle`), making live TUI monitoring noisy with redundant notifications.
+- Existing Pi producer sessions are bound to run, agent, instance and scope epoch, with abort propagation. Peer/workflow commands already use attempt/session tokens and authenticated control paths.
+- **Remaining gaps:** actual tool restrictions must be demonstrated per host; M3 must bind native control to exact project/host/workspace/session/attempt identity and distinguish queued input from acknowledged active steering. M7 activity views must project existing Runtime state, not create another lease authority.
 
 ---
 
@@ -56,9 +57,9 @@ In KXM today:
 
 - **Dual-Tool Control Plane:**
   - `agent`: Spawns self-contained background workers with explicit prompt, model, thinking level, and tool allowlists.
-  - `agent_control`: Manages running agents with actions `info` (discover active IDs and types), `result` (poll output), `steer` (inject mid-flight guidance), and `stop` (immediate cancellation).
+  - `agent_control`: Illustrates `info`, `result`, `steer` and `stop`; KXM must separately verify native delivery and bounded cancellation rather than promise immediate effects.
 - **Explicit Work-Splitting via `allowed_tools[]`:**
-  - The parent strictly scopes child capabilities. Passing `allowed_tools: ["read", "grep", "find"]` constrains the child to read-only ops.
+  - The parent narrows child capabilities. `allowed_tools: ["read", "grep", "find"]` illustrates a read-oriented surface; native/OS enforcement and host tool-name mapping must prove the restriction.
   - The allowlist can only intersect and narrow, never expand.
 - **Activity Leases & Attention Management:**
   - Running background agents acquire an `agent-state` activity lease (`working`).
@@ -72,25 +73,29 @@ In KXM today:
 ```mermaid
 sequenceDiagram
     participant Parent as Parent Supervisor (Planner/Writer)
-    participant Engine as KXM Engine / Pi Runtime
+    participant Engine as Existing KXM Runtime
     participant Child as Subagent Worker (Explore/Auditor)
     participant Dash as KXM Dashboard / TUI
 
     Parent->>Engine: call agent({ prompt, allowed_tools: ["read","grep"], background: true })
-    Engine->>Child: Spawn isolated session with restricted toolset
-    Engine->>Dash: Acquire Activity Lease ("working")
+    Engine->>Child: Admit bound session with verified permission profile
+    Engine->>Dash: Project Runtime activity ("working")
     Engine-->>Parent: return { agent_id: "ag_48a1", status: "running" }
     
     Note over Child: Agent begins exploration...
     Parent->>Engine: call agent_control({ action: "steer", agent_id: "ag_48a1", message: "Focus on auth.ts" })
-    Engine->>Child: Inject steering message into active turn
+    Engine->>Child: Send supported native control for bound session and turn
+    Child-->>Engine: Native acknowledgement or unsupported / queued outcome
+    Engine-->>Parent: Record truthful control receipt
     
     Child->>Engine: Execution complete with structured findings
-    Engine->>Dash: Release Activity Lease
+    Engine->>Dash: Project settled Runtime activity
     Engine-->>Parent: Emit completion notification / deliver result
 ```
 
 ### 1. Dual-Tool Specification (`plugins/kxm/src/subagent-control.ts`)
+
+Illustrative interfaces and candidate module name only. Reuse existing Runtime command owners and generated registrations; extend their schemas rather than introducing a parallel dispatcher.
 
 #### Tool: `agent` (Spawn)
 
@@ -99,7 +104,7 @@ export interface AgentSpawnParams {
   prompt: string;           // Self-contained task description
   description: string;      // Short label for TUI status line
   type?: "general" | "Explore" | "Plan" | "Reviewer";
-  model?: string;           // e.g. "anthropic/claude-haiku-4.5" (defaults to parent or cheap tier)
+  model?: string;           // Resolved through existing role, native-route and admission policy
   thinking?: "off" | "minimal" | "low" | "medium" | "high";
   allowed_tools?: string[]; // Strict allowlist (e.g. ["read", "grep", "find"])
   turns?: number;           // Max turns ceiling
@@ -120,23 +125,25 @@ export interface AgentControlParams {
 }
 ```
 
+Both operations need authoritative actor/project/host/workspace/run/attempt/native-session binding, plus a turn or revision where relevant. A native transport write is not delivery. Receipts distinguish `accepted`, `queued`, `delivered`, `rejected` and `unsupported`; stale-turn or wrong-workspace requests fail explicitly.
+
 ### 2. Tool Surface Scoping & Sandbox Enforcement
 
 In `plugins/kxm/src/vnext-engine.ts`, when a child agent starts:
 
-- Filter the global tool registry against `params.allowed_tools`.
+- Intersect requested tools with the inherited permission floor, role policy and verified host capabilities; expose only admitted definitions.
 - Default presets:
-  - `Explore`: `["read", "grep", "find", "ls"]` (strictly read-only).
-  - `Plan`: `["read", "grep", "find"]` (strictly read-only).
+  - `Explore`: `["read", "grep", "find", "ls"]` (read-oriented intent, requiring host mapping and enforcement).
+  - `Plan`: `["read", "grep", "find"]` (same requirement).
   - `Fixer`: `["read", "edit", "write", "bash"]`.
-- The child tool definitions omit forbidden schemas completely, reducing prompt token overhead by 1,000–3,000 tokens per turn.
+- Omit forbidden schemas, but do not equate prompt omission with isolation of native tools, shell commands or descendants. Measure any token saving; no fixed 1,000–3,000 token improvement is established.
 
 ### 3. Dashboard Activity Lease Integration (`plugins/kxm/src/tui.ts`)
 
-- Maintain an active registry of child agent leases:
+- Project existing Runtime activity into the UI; this sketch is a read model, not a new lease registry:
 
   ```typescript
-  export interface AgentLease {
+  export interface AgentActivityView {
     agentId: string;
     description: string;
     model: string;
@@ -145,24 +152,18 @@ In `plugins/kxm/src/vnext-engine.ts`, when a child agent starts:
   }
   ```
 
-- Render a live tree widget in `kxm dash` showing all in-flight subagents, active tool executions, and elapsed time.
+- Join the view to authoritative run/attempt/session identities and cursor/revision data. Ownership, lease expiry and fencing remain in the existing Runtime. Render a live tree in `kxm dash` showing in-flight subagents, active tools and elapsed time.
 
 ---
 
-## 5. Execution Stages and Milestones
+## 5. Delivery Mapping
 
-| Stage | Action | Target Files | Verification Gate |
-| :--- | :--- | :--- | :--- |
-| **Stage 1** | Implement `agent` and `agent_control` tool schemas | `plugins/kxm/src/subagent-control.ts` | Schemas compile and pass typecheck |
-| **Stage 2** | Implement tool allowlist scoping logic | [`plugins/kxm/src/vnext-engine.ts`](../plugins/kxm/src/vnext-engine.ts) | Unit test confirms `allowed_tools` excludes forbidden tools from child prompt |
-| **Stage 3** | Implement mid-flight `steer` message delivery | `plugins/kxm/src/subagent-control.ts` | Test verifies child receives injected steering message before next turn |
-| **Stage 4** | Wire activity leases into `tui.ts` and `kxm dash` | [`plugins/kxm/src/tui.ts`](../plugins/kxm/src/tui.ts) | UI test confirms subagent status line updates during execution |
+M3 owns proposed exact-session controls after M2 observation contracts. M1/M6 cover real tool activation and restrictions; M7 projects activity into the dashboard. The former stage table is replaced by this mapping; only the implementation plan tracks selected slices, owners, status and phase gates.
 
 ---
 
-## 6. Acceptance Criteria
+## 6. Design Invariants for the Owning Milestones
 
-- A parent agent can launch an `Explore` subagent restricted to `["read", "grep"]` that cannot execute `bash` or `edit`.
-- Calling `agent_control({ action: "steer" })` redirects child execution mid-turn without killing the session.
-- Subagent status is visible in real-time on `kxm dash`.
-- `npm run verify` passes completely.
+- A restricted child cannot execute excluded effects through native tools or alternate shell paths; testing only its prompt is insufficient.
+- Active steering requires a native acknowledgement for the bound session/turn, including a witness during a running tool. Queued input is labeled queued; unsupported control fails explicitly.
+- Cancellation, reconnect, stale-turn rejection and activity views preserve Runtime identity and truthful settlement. These design invariants do not pass a phase gate or admit another long-lived worker.

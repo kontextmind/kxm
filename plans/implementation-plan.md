@@ -7,12 +7,18 @@ project: "kxm"
 status: "approved"
 owner: "kxm"
 created: "2026-09-02"
-updated: "2026-09-12"
+updated: "2026-09-15"
 authority: "instruction"
 confidence: "verified"
 summary: "Sole active execution tracker for vNext phase gates, Tracking, and Still open work."
 tags: ["vnext", "tracking"]
 related:
+  - research-memory-studio-forks.md
+  - research-kxm-harness-strategy.md
+  - plan-unified-kxm-milestones.md
+  - research-harness-streaming-capabilities.md
+  - research-runtime-language-choices.md
+  - research-additional-forks.md
   - research-agent-producer-architecture.md
   - plan-additional-providers-agy-kimi.md
   - plan-agent-communication-steering.md
@@ -44,16 +50,21 @@ It does not replace the phase gates below.
 
 ### Related plans
 
-This file remains the only execution tracker. Drafts and research below do
-not create work or alter a phase gate.
+This file remains the only execution tracker and the authority for accepted
+decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
-- Drafts: [`plan-additional-providers-agy-kimi.md`](plan-additional-providers-agy-kimi.md),
-  [`plan-agent-communication-steering.md`](plan-agent-communication-steering.md),
-  [`plan-ssh-remote-execution.md`](plan-ssh-remote-execution.md),
-  [`plan-token-reduction-rtk-ai.md`](plan-token-reduction-rtk-ai.md),
-  [`plan-usage-cost-quota-tracking.md`](plan-usage-cost-quota-tracking.md),
-  [`plan-workflow-modes-selective-loading.md`](plan-workflow-modes-selective-loading.md)
-- Open research: [`research-agent-producer-architecture.md`](research-agent-producer-architecture.md)
+- **Consolidated scope:** [M0–M9](plan-unified-kxm-milestones.md) is the single
+  proposed delivery catalog for all 36 fork reviews, including memory, Studio,
+  coordinator inboxes, engine comparisons and optional runtime experiments.
+  Its supporting-reference map links the six research reports and six thematic
+  designs. Read it for scope/order; record selected slices and actual status here.
+- **Research and thematic designs:** source findings, candidate contracts and
+  experiment matrices remain supporting evidence. Their old milestone/stage
+  tables do not create another backlog. The provider draft's AGY/Kimi-to-Pi
+  migration objective is superseded by the native-auth decisions below.
+- **Final consolidation review:** [review record](reviews/plan-consolidation.md)
+  records reconciled overlaps and remaining decision gates. It is document-review
+  evidence, not feature acceptance or a Phase 11 witness.
 - Archived / superseded (stubs remain at the old `plans/` paths):
   [`control-plane-memory-questionnaire.md`](history/control-plane-memory-questionnaire.md)
   (closed design record),
@@ -67,6 +78,29 @@ not create work or alter a phase gate.
 
 ### Decided
 
+- **Future coordinator inboxes and Studio (operator, 2026-09-14):** investigate
+  persistent primary/coordinator identities with internal inboxes, then optional
+  email and SMS bindings independent of model or native session. Messages enter
+  the existing Runtime's durable command/policy flow; inbox delivery, wake,
+  execution and outbound delivery are separate states. Build shared read models
+  and revision-safe editing for Studio; keep memory provenance and reviewed
+  activation. Transport setup, send authorization and external deployment are
+  future delivery work, not performed or accepted by the research.
+- **Runtime/setup investigation (operator, 2026-09-14):** assess uv-managed
+  Python and Rust where they improve the unified KXM setup or capabilities.
+  No migration is selected. Compare against the existing TS implementation,
+  preserving one KXM entry point, shared contracts and native authentication.
+  Optional runtime adoption needs component-specific evidence and distribution
+  tests; advertised language speed is not acceptance evidence.
+- **One KXM installation (operator, 2026-09-14):** integrate the useful fork
+  capabilities into `@kontextmind/kxm` shared services and thin host adapters,
+  without requiring separate Pi extension installations. Target equivalent
+  feature contracts through CLI/MCP/native integrations, with explicit host
+  limitations and KXM-managed optional runtime prerequisites. Preserve native
+  authentication, current permission/evidence contracts and phase boundaries.
+  Investigate structured streaming, workspace/session controls and inbound
+  channels; observed flags do not admit a harness. Deliver live progress before
+  live steering. M0–M9 scope and gates remain proposed in the linked packet.
 - **Plan source of truth (2026-09-10; archive 2026-09-11):**
   `plans/implementation-plan.md` is the only active execution tracker. The
   closed design record
@@ -254,11 +288,16 @@ not create work or alter a phase gate.
   Plugin validation; Classify changes is the fifth job. Local verification
   is `npm run verify` on macOS. No new paid macOS runner. Windows source and
   tests stay in tree. Windows resumption and release resumption are separate
-  deferred choices; each updates Tracking, tests, and settings together.
-- **Public npm first.** Do not run wiki compile/lint/ingest for this repo, and
-  do not treat `source: npm` as the default updater, until `@kontextmind/kxm`
-  is a public npm release. Until then: GitHub release tarballs + docs/Tracking.
-  Wiki stays compiled-from-hub (`kxm context wiki-compile`); no ingest CLI.
+  choices; each updates Tracking, tests, and settings together. The release latch
+  was subsequently removed and v0.7.0 published (see Still open); Windows
+  qualification remains paused. The September 5 release-pause text is historical.
+- **Public npm prerequisite satisfied (checked 2026-09-15 UTC):** npm `latest`
+  is `@kontextmind/kxm@0.7.0`; GitHub v0.7.0 is published. The prior wait for a
+  first public package is historical. Current 02aaed31 code supports npm update
+  checks/install, while host configuration still defaults to `github` with
+  `auto: false`; publication alone does not change that choice or qualify the
+  next release. Wiki remains compiled-from-hub (`kxm context wiki-compile`);
+  no ingest CLI. Follow-up owners/triggers remain in Still open.
 - **Routing and cost contract** lives in [`docs/vnext/routing.md`](../docs/vnext/routing.md).
   v1 is shipped parse-only; helper telemetry is a dev tool; v2, event-settle
   write, ranked report, and price catalog are planned. The 2026-09-04
@@ -611,8 +650,9 @@ not create work or alter a phase gate.
 - Harness catalog + `kxm harness list` + `kxm update`.
 - Phase 2 Runtime create/recover (PR #75) is in tree: supervisor, event store,
   projections, crash recovery. Runs stay `created` until Phase 3.
-- `kxm update --check` / `--kxm`: GitHub release tarball install (current), npm
-  source after the public package exists. `auto` only from per-user host-state
+- `kxm update --check` / `--kxm`: GitHub release tarball and npm source are
+  implemented; the public-package prerequisite is now satisfied. Default source
+  remains GitHub. `auto` only from per-user host-state
   `update.yaml`. Install-kind detection: only npm-global applies; source
   checkouts neither fetch nor nag; other kinds refuse and explain, including
   explicit `--kxm` when already current or the release check fails. GitHub
@@ -908,6 +948,43 @@ not create work or alter a phase gate.
 
 ### Still open
 
+- **Unified capability delivery (M0–M9; proposed, consolidated 2026-09-14):**
+  [The unified plan](plan-unified-kxm-milestones.md) owns proposed scope,
+  contract-level dependencies and exit-evidence design. This is the sole active
+  owner/trigger record. All ten packets remain proposed; selected slices must
+  acquire their own evidence here. No existing gate changes to PASS.
+
+  | Packet | Owner role | Start trigger / remaining outcome |
+  |---|---|---|
+  | M0 | Runtime maintainer | Current-source reproductions; repair Pi outcome, Studio/control truth, memory redaction and Steel contracts; preserve A1 and remaining lifecycle blockers |
+  | M1 | Package/adapter maintainer | Applicable result/permission boundary; coordinator/capability identity, L1 executable identity, actual mode activation and single-package setup |
+  | M2 | Harness/Runtime maintainer | No-model fixtures now; M0 truth/redaction, M1 bindings and M6 minimal inbox policy; durable progress/replay; own Phase 11 HTTP lifetime design before dependent live drive paths; retain native admission blockers |
+  | M3 | Harness/control maintainer | M1 exact bindings and M2 durable observations; engine-dependent controls after comparison decision, existing RPC/native probes independent; receipts, resume/steer/interrupt, channels and Phase 6 recovery |
+  | M4 | Browser maintainer | M0 browser lease/compatibility and M1 backend readiness; common actions, observations and preview |
+  | M5 | Context maintainer | Redaction and authorized scope; tiered recall, candidate impact, extraction/tombstone recovery; L3 search and L4 parser experiments |
+  | M6 | Workflow maintainer | Existing Runtime policy plus identity; minimal wake/pause first, then bundle/review/activation integrity, grouped wakes, graph/concurrency/budget and send-authorization contracts |
+  | M7 | Operator experience maintainer | M0 UI boundary and M2 snapshot/replay for thin Studio; other service contracts only for their panels; later revision-safe editing, exports and questions |
+  | M8 | Auth/integration maintainer | Capability readiness, secret handling and applicable authorization; native/provider setup, quota, Confluence, then external coordinator email/SMS transports |
+  | M9 | Release maintainer | Declare release capabilities/platforms; require their dependencies and all applicable canonical blockers/gates, actual tarball and exact-candidate acceptance |
+
+  First proposed product slice: minimal M0/M1/M6 contracts → internal coordinator
+  message through existing authorized Runtime/Pi route and M2 events → thin M7
+  Studio replay. Begin with deterministic fixtures; live dispatch retains its
+  existing authorization/admission requirements. Duplicate input cannot create
+  another task; pause blocks fresh dispatch and bridge resume. No external account
+  is needed. Read-only Studio does not wait for full editing or every service.
+
+  Runtime/adapter maintainers then compare current Pi RPC, supervised Pi SDK and
+  released OpenCode 2.0.3 on the bounded engine fixture before any dependent
+  continuation choice; M9 repeats the selected paths. DSH supplies candidate
+  contracts, not another scheduler. TS remains the default; L3/L4 research may
+  run independently of Node throughput, L5 requires a reproduced OS requirement,
+  and L6 qualifies a component before shipping. No new engine or language is
+  admitted. Optional email/SMS, channel previews, parsers and comparison engines
+  do not universally block release; scope selection cannot waive the blockers
+  below or silently change platform promises. Design decisions and experiment
+  details are linked once from the unified plan.
+
 - **One-shot lifecycle and settlement (Phase 11, release blocker):** Strict
   final JSON outcomes now reject nonzero/signaled/error/empty/prose results;
   pre-abort, bounded output/drain/reap, SIGTERM escalation, stdin errors, and
@@ -1010,12 +1087,26 @@ not create work or alter a phase gate.
   a reviewed change that updates Tracking, tests, and settings together. D3
   Windows-specific success remains unverified and deferred. Active work
   continues on Linux and local Mac.
-- **Release resumption (unlatched for 0.6.0):** Removed the `release` and `publish-npm`
-  job latches in `.github/workflows/release.yml`, configured `npm-publish` environment secret,
-  and added fail-closed verification via `scripts/kxm-publish-npm.mjs`. Draft release `v0.6.0`
-  minted on GitHub; publishing release will trigger npm publication. Independent of Windows resumption.
-- **After public npm:** wiki-compile this project from hub context; npm as
-  `kxm update` source. Not before.
+- **Platform-gate interpretation for consolidated planning:** the cross-cutting
+  test requirements remain unchanged. Paused Windows checks are deferred evidence,
+  never PASS; this review does not authorize local or hosted Windows test runs.
+  Selecting M9 scope cannot waive a required platform witness. Before claiming an
+  affected phase/release complete, the release maintainer must resolve resumption
+  or obtain an explicitly accepted change to the governing requirement. Unrelated
+  documentation review can proceed without claiming phase completion. Local Mac
+  describes a development host, not proof of advertised macOS support.
+- **Release resumption and next candidate:** the earlier 0.6.0 latch removal,
+  publishing environment and fail-closed publish script are historical completed
+  setup. Read-only checks on 2026-09-15 UTC find published GitHub v0.6.0/v0.7.0
+  and npm latest 0.7.0; `main` is a draft release. This does not accept current
+  source 0.7.1 or clear the one-shot/retirement blockers. Release maintainer owns
+  M9 scope and exact-candidate evidence; Windows resumption remains separate.
+- **Public-package follow-ups:** context maintainer may select a bounded
+  compiled-from-hub wiki slice now that publication exists; package maintainer
+  owns any explicitly selected default-updater change and installed-source
+  qualification under M1/M9. Current npm update support is implemented, default
+  remains GitHub, and no wiki operation or configuration change was performed by
+  this review. The old “not before public npm” trigger is satisfied.
 - Coverage only lists modules some test loaded; a future source file with zero
   imports from tests will not drag the number down. A test that imports every
   non-excluded module belongs before the next ratchet raise, not as a B1 add.
@@ -1425,6 +1516,18 @@ holds commit-bound acceptance with dual-critic PASS at 915f5e53 and its
 forward-port at 96e8e0ac. Remaining critic demands: live Claude write-refusal
 witness, full HTTP drive lifetime decoupling, and price-catalog estimates
 beyond the one-shot path. No Phase 11 gate PASS.
+
+**Proposed M2/M3 delivery packets (2026-09-14):** add incremental native event
+decoding, durable stream cursors, exact workspace/session binding, and separately
+admitted resume/steer/channel controls through the existing Runtime. Installed
+help and Codex schema export establish candidate interfaces only. Pi remains the
+only admitted long-lived worker. See the linked unified plan and harness research;
+all current lifecycle, permission, evidence and release blockers remain open.
+Proposed streaming acceptance covers bounded decoding, redaction before
+persistence, reconnect/deduplication, truthful terminal and usage settlement,
+and workspace-bound recovery. Live controls would additionally require native
+delivery and stale-turn/permission witnesses; queued input cannot be labeled
+active steer. These proposed criteria do not mark the existing gate passed.
 
 **Gate:** unsupported capabilities fail explicitly and no adapter weakens the
 common result, effect, secret, or recovery contracts. One-shot adapters must
