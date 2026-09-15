@@ -31,6 +31,7 @@ export interface PolicyDraftOptions {
   readonly ceilings: Readonly<Record<string, PolicyDraftCeiling>>;
   readonly nativePiBrakeProviders: readonly string[];
   readonly piAllowedProviders: readonly string[];
+  readonly piNativeVendorProviders?: Readonly<Record<string, string>>;
   readonly vendorAliases?: Readonly<Record<string, string>>;
 }
 

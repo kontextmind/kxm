@@ -18,3 +18,7 @@ export interface LoadedPolicy { readonly identity: PolicyIdentity; readonly poli
 export function loadTrustedRosterPolicy(): LoadedPolicy;
 export function resolveBoundPolicy(identity: PolicyIdentity): LoadedPolicy;
 export function canonicalVendor(value: string): string;
+export function validateRosterDocument(
+  policy: RosterPolicy,
+  readBlob: (source: string) => string | Uint8Array | null | undefined,
+): RosterPolicy;

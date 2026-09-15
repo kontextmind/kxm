@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { Ajv2020 } from "ajv/dist/2020.js";
-import { NATIVE_PI_BRAKE_PROVIDERS, PI_ALLOWED_PROVIDERS, ROUTES } from "../../scripts/harness-run.mjs";
+import { NATIVE_PI_BRAKE_PROVIDERS, PI_ALLOWED_PROVIDERS, PI_NATIVE_VENDOR_PROVIDERS, ROUTES } from "../../scripts/harness-run.mjs";
 import { KIND_ROLES, getRosterPolicy } from "../../scripts/assignment-run.mjs";
 import { withRosterPolicy } from "../helpers/roster-policy.ts";
 import { DEFAULT_ROLES } from "../../plugins/kxm/src/role.ts";
@@ -28,6 +28,7 @@ function options() {
     ceilings: ROUTES,
     nativePiBrakeProviders: NATIVE_PI_BRAKE_PROVIDERS,
     piAllowedProviders: PI_ALLOWED_PROVIDERS,
+    piNativeVendorProviders: PI_NATIVE_VENDOR_PROVIDERS,
     vendorAliases: { "x-ai": "xai", moonshotai: "moonshot", "google-ai": "google", qwen: "alibaba" },
   };
 }
@@ -320,6 +321,61 @@ test("admitted draft fixtures do not change live writer or critic selection", ()
   const live = JSON.parse(readFileSync(".kxm/roster.json", "utf8")) as { lineup: Record<string, string[]> };
   assert.deepEqual(live.lineup.writer, ["grok-native", "qwen-openrouter-pi"]);
   assert.equal(getRosterPolicy(withRosterPolicy()).lineup.writer?.includes("agy-native"), false);
+});
+
+test("validatePolicyDraft admits antigravity native-vendor Gemini routes and refuses mismatches", () => {
+  const admitted = validatePolicyDraft(currentDraft({
+    models: {
+      "gemini-antigravity-pi": model("gemini-antigravity-pi", {
+        harness: "pi",
+        model: "antigravity/gemini-3.8-flash",
+        vendor: "google",
+        status: "admitted",
+        permissions: ["read-only", "edit"],
+        origin: { source: "evidence.md", sha256: evidenceHash },
+      }),
+    },
+  }), options());
+  assert.equal(admitted.ok, true, admitted.ok ? "" : admitted.issues.map((issue) => `${issue.code}:${issue.message}`).join("\n"));
+
+  assert.ok(codes(validatePolicyDraft(currentDraft({
+    models: {
+      "gemini-antigravity-pi": model("gemini-antigravity-pi", {
+        harness: "pi",
+        model: "antigravity/gemini-3.8-flash",
+        vendor: "anthropic",
+        status: "admitted",
+        permissions: ["read-only"],
+        origin: { source: "evidence.md", sha256: evidenceHash },
+      }),
+    },
+  }), options())).includes("pi_native_vendor_forbidden"));
+
+  assert.ok(codes(validatePolicyDraft(currentDraft({
+    models: {
+      "gemini-antigravity-pi": model("gemini-antigravity-pi", {
+        harness: "pi",
+        model: "antigravity/google/gemini-3.8-flash",
+        vendor: "google",
+        status: "admitted",
+        permissions: ["read-only"],
+        origin: { source: "evidence.md", sha256: evidenceHash },
+      }),
+    },
+  }), options())).includes("unsupported_pi_model"));
+
+  assert.ok(codes(validatePolicyDraft(currentDraft({
+    models: {
+      "gemini-antigravity-pi": model("gemini-antigravity-pi", {
+        harness: "pi",
+        model: "antigravity/claude-sonnet-4-6",
+        vendor: "google",
+        status: "admitted",
+        permissions: ["read-only"],
+        origin: { source: "evidence.md", sha256: evidenceHash },
+      }),
+    },
+  }), options())).includes("unsupported_pi_model"));
 });
 
 test("policy-draft module ships as plain JS and does not import unshipped scripts", () => {

@@ -16,6 +16,8 @@ export const ERROR_CODES: readonly string[];
 export const EFFORT: readonly string[];
 export const NATIVE_PI_BRAKE_PROVIDERS: readonly string[];
 export const PI_ALLOWED_PROVIDERS: readonly string[];
+export const PI_NATIVE_VENDOR_PROVIDERS: Readonly<Record<string, string>>;
+export const PI_ANTIGRAVITY_MODEL_ID: RegExp;
 export const PI_NOUS_PORTAL_HY4: "nous-portal/tencent/hy4-preview";
 export const PI_ADMITTED_WRITER: "openrouter/qwen/qwen3-coder-plus";
 export const ROUTES: Record<string, {
@@ -27,7 +29,7 @@ export const ROUTES: Record<string, {
   auth: { args: readonly string[]; loginHint: string };
 }>;
 
-export function clampEffort(harness: string, effort?: string): { effort?: string; clamped?: string };
+export function clampEffort(harness: string, effort?: string, model?: string): { effort?: string; clamped?: string };
 export function parseJson(text: string): unknown;
 export function piProviderOf(model?: string): string | undefined;
 export function piModelId(model?: string): string | undefined;

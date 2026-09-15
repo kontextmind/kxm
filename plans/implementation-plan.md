@@ -119,6 +119,19 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   `in_progress` and `.kxm/role-hosts.yaml` is not committed on main. Do not
   schedule work from the archived plan.
 - Product name is **KXM**. Do not present Mesh or pi-extensions as the product.
+- **Antigravity routes through the pi-antigravity Pi-provider pattern
+  (2026-09-15, supersedes the 2026-09-11 review rejection):** Google
+  integration is the `antigravity` Pi provider (Google OAuth, direct Cloud
+  Code Assist API, dynamic catalog) via the pi-antigravity plugin — now being
+  vendored into plugins/kxm — never a shell-out to the agy CLI. The agy CLI
+  stays a harness catalog/helper entry, not the admission path. Pi's bundled
+  google/* key stays braked. Code admission (harness-run allowlist +
+  native-vendor carve-out + roster-policy segment rules) accepted at
+  d998b7c7 (task_antigravity-pi-provider); the roster.json route and writer
+  promotion wait on the operator's `/login antigravity` and a live witness.
+  The same subscription-provider pattern is the template for Claude
+  (pi-claude-bridge, Agent SDK) and, pending a ToS determination, Codex.
+
   Plugin, marketplace, and npm identity are `kxm` / `@kontextmind/kxm`.
 - **Future slices are not backwards-compatible.** Do not add upgrade shims or
   dual names. **Fix leftovers with brakes:** fail closed on old product names

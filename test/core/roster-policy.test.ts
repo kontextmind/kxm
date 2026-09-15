@@ -1,0 +1,166 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import test from "node:test";
+import { validateRosterDocument, type RosterPolicy } from "../../scripts/roster-policy.mjs";
+
+const qwenEvidence = "qwen origin fixture\n";
+const antigravityEvidence = "antigravity origin fixture\n";
+const sha = (value: string) => createHash("sha256").update(value).digest("hex");
+
+const blobs: Record<string, string> = {
+  "docs/qwen.md": qwenEvidence,
+  "docs/antigravity.md": antigravityEvidence,
+};
+
+function readBlob(source: string) {
+  if (!Object.hasOwn(blobs, source)) return undefined;
+  return blobs[source];
+}
+
+function nativeRoute(fields: Record<string, unknown> = {}) {
+  return {
+    harness: "grok" as const,
+    model: "grok-4.6",
+    vendor: "xai",
+    roles: ["writer"],
+    permissions: ["edit" as const],
+    status: "admitted" as const,
+    ...fields,
+  };
+}
+
+function basePolicy(overrides: {
+  routes?: Record<string, Record<string, unknown>>;
+  lineup?: Record<string, string[]>;
+  model_origins?: Record<string, unknown>;
+} = {}): RosterPolicy {
+  return {
+    schema: "kxm.developer-roster.v1",
+    routes: {
+      "grok-native": nativeRoute({}),
+      "qwen-openrouter-pi": {
+        harness: "pi",
+        model: "openrouter/qwen/qwen3-coder-plus",
+        vendor: "alibaba",
+        roles: ["writer"],
+        permissions: ["edit"],
+        status: "admitted",
+      },
+      "fable-claude": {
+        harness: "claude",
+        model: "fable",
+        vendor: "anthropic",
+        roles: ["planner", "reviewer-arch"],
+        permissions: ["read-only"],
+        status: "admitted",
+      },
+      "sol-codex": {
+        harness: "codex",
+        model: "gpt-5.6-sol",
+        vendor: "openai",
+        roles: ["reviewer-cli"],
+        permissions: ["read-only"],
+        status: "admitted",
+      },
+      ...overrides.routes,
+    },
+    lineup: {
+      writer: ["grok-native", "qwen-openrouter-pi"],
+      planner: ["fable-claude"],
+      "reviewer-arch": ["fable-claude"],
+      "reviewer-cli": ["sol-codex"],
+      ...overrides.lineup,
+    },
+    required_critics: {
+      "review-arch": "fable-claude",
+      "review-cli": "sol-codex",
+    },
+    model_origins: {
+      "openrouter/qwen/qwen3-coder-plus": {
+        vendor: "alibaba",
+        evidence: { source: "docs/qwen.md", sha256: sha(qwenEvidence) },
+      },
+      ...overrides.model_origins,
+    },
+  } as RosterPolicy;
+}
+
+function antigravityRoute(fields: Record<string, unknown> = {}) {
+  return {
+    harness: "pi",
+    model: "antigravity/gemini-3.8-flash",
+    vendor: "google",
+    roles: ["experiment"],
+    permissions: ["read-only", "edit"],
+    status: "admitted",
+    ...fields,
+  };
+}
+
+function antigravityOrigin(fields: Record<string, unknown> = {}) {
+  return {
+    vendor: "google",
+    evidence: { source: "docs/antigravity.md", sha256: sha(antigravityEvidence) },
+    ...fields,
+  };
+}
+
+function withAntigravity(routeFields: Record<string, unknown> = {}, originFields?: Record<string, unknown> | false) {
+  const route = antigravityRoute(routeFields);
+  const origins = originFields === false
+    ? {}
+    : { [String(route.model)]: antigravityOrigin(originFields ?? {}) };
+  return basePolicy({
+    routes: { "gemini-antigravity-pi": route },
+    model_origins: origins,
+  });
+}
+
+test("validateRosterDocument accepts a well-formed antigravity experiment route", () => {
+  const policy = validateRosterDocument(withAntigravity(), readBlob);
+  assert.equal(policy.routes["gemini-antigravity-pi"]?.model, "antigravity/gemini-3.8-flash");
+  assert.deepEqual(policy.routes["gemini-antigravity-pi"]?.roles, ["experiment"]);
+});
+
+test("validateRosterDocument refuses antigravity vendor mismatch, shape, origin, writer, and google prefix", () => {
+  assert.throws(
+    () => validateRosterDocument(withAntigravity({ vendor: "anthropic" }, { vendor: "anthropic" }), readBlob),
+    /native vendor cannot use Pi/,
+  );
+  assert.throws(
+    () => validateRosterDocument(withAntigravity({ model: "antigravity/google/gemini-3.8-flash" }), readBlob),
+    /unsupported Pi provider\/model/,
+  );
+  assert.throws(
+    () => validateRosterDocument(withAntigravity({}, false), readBlob),
+    /missing exact model origin/,
+  );
+  assert.throws(
+    () => validateRosterDocument(withAntigravity({
+      roles: ["writer"],
+      permissions: ["read-only", "edit"],
+    }), readBlob),
+    /Pi writer requires edit permission only/,
+  );
+  assert.throws(
+    () => validateRosterDocument(basePolicy({
+      routes: {
+        "google-prefix-pi": {
+          harness: "pi",
+          model: "openrouter/google/gemini-3.8-flash",
+          vendor: "google",
+          roles: ["experiment"],
+          permissions: ["read-only"],
+          status: "admitted",
+        },
+      },
+      model_origins: {
+        "openrouter/google/gemini-3.8-flash": {
+          vendor: "google",
+          evidence: { source: "docs/antigravity.md", sha256: sha(antigravityEvidence) },
+        },
+      },
+    }), readBlob),
+    /native vendor cannot use Pi/,
+  );
+});
