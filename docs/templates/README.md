@@ -40,7 +40,7 @@ This directory contains standardized Markdown documentation templates adapted fo
 
 ## Workflow Guide Integration Matrix
 
-The 12 templates map directly across the 7 Areas and 22 Workflows in [`docs/workflow-guide.md`](../workflow-guide.md):
+The 11 templates map directly across the 7 Areas and 22 Workflows in [`docs/workflow-guide.md`](../workflow-guide.md):
 
 ```mermaid
 flowchart TD

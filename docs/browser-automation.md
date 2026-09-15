@@ -7,7 +7,7 @@ project: "kxm"
 status: "accepted"
 owner: "@operator"
 created: "2026-09-14"
-updated: "2026-09-14"
+updated: "2026-09-15"
 authority: "instruction"
 confidence: "verified"
 summary: "Comprehensive guide to browser automation in KXM using self-hosted Steel on DOKS, agent-browser, Playwright, pass-cli, and human takeover."
@@ -114,3 +114,26 @@ When authentication challenges (MFA, CAPTCHA, SSO) are encountered:
 - **Session Timeouts**: Default 300s (5m), max 1800s (30m). Sessions terminate automatically on expiry.
 - **Orphan Sweeping**: Periodically sweep untracked sessions via `GET /v1/sessions` and release idle processes.
 - **Memory Protection**: Kubernetes mounts a 2Gi `emptyDir` memory volume at `/dev/shm` to prevent Chromium tab crashes without exhausting node memory.
+
+---
+
+## Knowledge base
+
+- [How are credentials retrieved without exposing them to the model?](kb/how-credentials-retrieved-safely.md)
+- [How do I capture a UI section and annotate changes for an agent?](kb/how-to-capture-and-annotate-section.md)
+- [How do I connect Playwright to the existing Steel session?](kb/how-to-connect-playwright-to-steel.md)
+- [How do I recover an expired session or remove an orphaned browser?](kb/how-to-recover-expired-session-or-orphan.md)
+- [How does an agent resume after MFA?](kb/how-to-resume-after-mfa.md)
+- [How do I take over a browser session to log in?](kb/how-to-take-over-session.md)
+- [Why did authentication disappear?](kb/why-authentication-disappeared.md)
+- [Why did automation open a different browser?](kb/why-automation-opened-different-browser.md)
+- [Why can I view a session but not control it?](kb/why-session-viewer-cannot-control.md)
+
+## Prompt templates
+
+- [Starting browser work](prompts/browser-start.md)
+- [Exploring an application](prompts/browser-explore.md)
+- [Requesting human takeover](prompts/browser-takeover.md)
+- [Diagnosing and recovering a failed session](prompts/browser-diagnose-recover.md)
+- [Reproducing a UI bug and writing a Playwright test](prompts/browser-repro-fix.md)
+- [Capturing UI section annotations](prompts/browser-annotate-feedback.md)

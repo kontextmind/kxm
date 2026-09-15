@@ -1,3 +1,20 @@
+---
+schema: "kxm.doc.v1"
+id: "PROMPT-BROWSER-006"
+type: "prompt"
+title: "Capturing UI Section Annotations and Sending Changes to Agent"
+project: "kxm"
+status: "accepted"
+owner: "@operator"
+created: "2026-09-14"
+updated: "2026-09-15"
+authority: "instruction"
+confidence: "verified"
+summary: "Turn annotated Steel UI-section feedback into source changes and recapture verified proof."
+tags: ["browser", "annotation", "feedback", "prompt"]
+related: ["docs/browser-automation.md", "docs/kb/how-to-capture-and-annotate-section.md"]
+---
+
 # Task Template: Capturing UI Section Annotations and Sending Changes to Agent
 
 ## Purpose

@@ -1,3 +1,20 @@
+---
+schema: "kxm.doc.v1"
+id: "PROMPT-BROWSER-004"
+type: "prompt"
+title: "Diagnosing and Recovering a Failed Browser Session"
+project: "kxm"
+status: "accepted"
+owner: "@operator"
+created: "2026-09-14"
+updated: "2026-09-15"
+authority: "instruction"
+confidence: "verified"
+summary: "Troubleshoot unresponsive Steel sessions, CDP attachment errors, auth loops, and orphaned browser containers."
+tags: ["browser", "diagnostics", "recovery", "prompt"]
+related: ["docs/browser-automation.md", "docs/kb/how-to-recover-expired-session-or-orphan.md"]
+---
+
 # Task Template: Diagnosing and Recovering a Failed Browser Session
 
 ## Purpose
