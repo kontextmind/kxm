@@ -48,6 +48,7 @@ import {
   getAntigravityRequestModelId,
   getCatalogRefreshIntervalMs,
   getCurrentAntigravityCatalog,
+  getCurrentAntigravityModels,
   getFallbackRuntimeModel,
   getMaxOutputTokens,
   getModelEnum,
@@ -134,6 +135,9 @@ const quotaSummary = JSON.parse(readFileSync(join(fixtureDir, "quota-summary.jso
 const streamBody = readFileSync(join(fixtureDir, "stream-sse.txt"), "utf8");
 const streamErrorBody = readFileSync(join(fixtureDir, "stream-error-sse.txt"), "utf8");
 const streamMaxTokensBody = readFileSync(join(fixtureDir, "stream-max-tokens-sse.txt"), "utf8");
+const streamEmptyBody = readFileSync(join(fixtureDir, "stream-empty-sse.txt"), "utf8");
+const streamErrorStopBody = readFileSync(join(fixtureDir, "stream-error-stop-sse.txt"), "utf8");
+const streamToolIdBody = readFileSync(join(fixtureDir, "stream-tool-id-sse.txt"), "utf8");
 
 const originalFetch = globalThis.fetch;
 type FetchOverride = (url: string, init?: RequestInit) => Promise<Response | undefined> | Response | undefined;
@@ -201,6 +205,10 @@ const ENV_KEYS = [
   "ANTIGRAVITY_NO_PREWARM",
   "ANTIGRAVITY_RUNTIME_MODEL",
   "ANTIGRAVITY_REFRESH_INTERVAL_MS",
+  "ANTIGRAVITY_DEBUG_DUMP",
+  "ANTIGRAVITY_USER_AGENT",
+  "ANTIGRAVITY_CALLBACK_HOST",
+  "NOAGY_USER_AGENT",
 ] as const;
 const savedEnv: Record<(typeof ENV_KEYS)[number], string | undefined> = {
   ANTIGRAVITY_PROJECT_ID: process.env.ANTIGRAVITY_PROJECT_ID,
@@ -211,6 +219,10 @@ const savedEnv: Record<(typeof ENV_KEYS)[number], string | undefined> = {
   ANTIGRAVITY_NO_PREWARM: process.env.ANTIGRAVITY_NO_PREWARM,
   ANTIGRAVITY_RUNTIME_MODEL: process.env.ANTIGRAVITY_RUNTIME_MODEL,
   ANTIGRAVITY_REFRESH_INTERVAL_MS: process.env.ANTIGRAVITY_REFRESH_INTERVAL_MS,
+  ANTIGRAVITY_DEBUG_DUMP: process.env.ANTIGRAVITY_DEBUG_DUMP,
+  ANTIGRAVITY_USER_AGENT: process.env.ANTIGRAVITY_USER_AGENT,
+  ANTIGRAVITY_CALLBACK_HOST: process.env.ANTIGRAVITY_CALLBACK_HOST,
+  NOAGY_USER_AGENT: process.env.NOAGY_USER_AGENT,
 };
 
 function restoreEnv(): void {
@@ -1171,3 +1183,512 @@ test("usage fetch keeps models when quota and assist endpoints fail closed", asy
   assert.equal(extractProjectId(undefined), undefined);
   assert.equal(extractProjectId({ projects: [{ nested: true }, "fallback-id"] }), "fallback-id");
 });
+
+test("catalog refresh falls back on abort, empty discovery, and unusable credentials", async () => {
+  assert.equal(hydrateAntigravityCatalog(undefined), 0);
+  assert.equal(hydrateAntigravityCatalog({ other: true }), 0);
+  assert.equal(
+    hydrateAntigravityCatalog({
+      [ANTIGRAVITY_PERSIST_KEY]: { catalog: { models: [], routing: {} }, checkedAt: 0, modelEnums: { a: 1 } },
+    }),
+    0,
+  );
+  registerDiscoveredModelEnums(undefined);
+  restoreDynamicModelEnums({ "": "skip", ok: "MODEL_OK" });
+  assert.equal(getModelEnum("ok"), "MODEL_OK");
+
+  fetchOverride = async () => jsonResponse({ models: {} });
+  const empty = await discoverAntigravityModels(apiKeyJson());
+  assert.deepEqual(empty.models, []);
+
+  const aborted = new AbortController();
+  aborted.abort();
+  const skipped = await refreshAntigravityModels({
+    allowNetwork: true,
+    signal: aborted.signal,
+    credential: { type: "oauth", access: "ya29.recorded-access", refresh: "r", expires: Date.now() + 60_000 },
+    stored: {},
+    async publish() {
+      return true;
+    },
+  });
+  assert.ok(skipped.length > 0);
+
+  const noKey = await refreshAntigravityModels({
+    allowNetwork: true,
+    signal: new AbortController().signal,
+    credential: { type: "api_key", key: "" },
+    stored: {},
+    async publish() {
+      return true;
+    },
+  });
+  assert.ok(noKey.length > 0);
+
+  const unknownCred = await refreshAntigravityModels({
+    allowNetwork: true,
+    signal: new AbortController().signal,
+    credential: { type: "unknown" as "api_key" },
+    stored: {},
+    async publish() {
+      return true;
+    },
+  });
+  assert.ok(unknownCred.length > 0);
+
+  process.env.ANTIGRAVITY_CATALOG_REFRESH_INTERVAL_MS = "-5";
+  assert.equal(getCatalogRefreshIntervalMs() > 0, true);
+
+  const midAbort = new AbortController();
+  fetchOverride = async () => {
+    midAbort.abort();
+    return jsonResponse(catalogRaw);
+  };
+  const afterAbort = await refreshAntigravityModels({
+    allowNetwork: true,
+    force: true,
+    signal: midAbort.signal,
+    credential: { type: "oauth", access: "ya29.recorded-access", refresh: "r", expires: Date.now() + 60_000, projectId: "proj-fixture" },
+    stored: {},
+    async publish() {
+      throw new Error("should not publish aborted discovery");
+    },
+  });
+  assert.ok(afterAbort.length > 0);
+
+  fetchOverride = async () => jsonResponse({ models: {} });
+  const emptyRefresh = await refreshAntigravityModels({
+    allowNetwork: true,
+    force: true,
+    signal: new AbortController().signal,
+    credential: { type: "api_key", key: apiKeyJson() },
+    stored: {},
+    async publish() {
+      throw new Error("should not publish empty discovery");
+    },
+  });
+  assert.ok(emptyRefresh.length > 0);
+});
+
+test("buildAntigravityCatalog covers internal ids, suffixes, and family templates", () => {
+  const fallback = getCurrentAntigravityCatalog();
+  assert.ok(getCurrentAntigravityModels().some((model) => model.id === "gemini-3.8-flash"));
+  assert.equal(
+    buildAntigravityCatalog(
+      { "chat_hidden": { displayName: "Hidden" }, "tab_complete": { displayName: "Tab" } },
+      fallback,
+    ).models.length,
+    fallback.models.length,
+  );
+  const catalog = buildAntigravityCatalog(
+    {
+      "gemini-9.1-flash-extra-low": { displayName: "Gemini 9.1 Flash (Extra Low)", supportsThinking: true, supportsImages: false },
+      "gemini-9.1-flash-extra-high": { displayName: "Gemini 9.1 Flash (Extra High)", supportsThinking: true, supportsImages: false },
+      "gemini-9.1-flash-thinking": { displayName: "Gemini 9.1 Flash (Thinking)", supportsThinking: true },
+      "gemini-9.1-flash-minimal": { displayName: "Gemini 9.1 Flash (Minimal)", supportsThinking: true },
+      "gemini-9.1-pro-high": { displayName: "Gemini 9.1 Pro (High)", supportsThinking: true, supportsImages: true },
+      "claude-opus-9-internal": { displayName: "Claude Opus 9", isInternal: true, supportsThinking: true },
+      "gpt-oss-9b": { label: "GPT OSS 9B", supportsThinking: false, supportsImages: false },
+      "gemini-9.2-flash": { modelName: "Gemini 9.2 Flash", supportsThinking: false },
+      "gemini-9.1-flash-agent": { displayName: "Gemini 9.1 Flash (High)", supportsThinking: true },
+    },
+    fallback,
+  );
+  assert.ok(catalog.models.some((model) => model.id === "gemini-9.1-flash"));
+  assert.ok(catalog.models.some((model) => model.id === "gemini-9.1-pro"));
+  assert.ok(catalog.models.some((model) => model.id === "gpt-oss-9b"));
+  assert.ok(catalog.models.some((model) => model.id === "gemini-9.2-flash"));
+  assert.equal(catalog.models.some((model) => model.id === "claude-opus-9-internal"), false);
+  const flash = catalog.models.find((model) => model.id === "gemini-9.1-flash");
+  assert.deepEqual(flash?.input, ["text"]);
+  assert.equal(getMaxOutputTokens("gemini-3.8-flash"), 65536);
+  assert.equal(getMaxOutputTokens("unknown", "gemini-custom"), 65536);
+  assert.equal(getAntigravityRequestModelId("missing-model", "high"), "missing-model");
+  assert.deepEqual(getThinkingConfig("gpt-oss-120b", "high"), { includeThoughts: true, thinkingBudget: 8192 });
+  assert.deepEqual(getThinkingConfig("gemini-3.5-flash", "off"), { includeThoughts: false, thinkingBudget: 0 });
+  assert.equal(getThinkingConfig("gemini-3.1-pro", "medium")?.thinkingBudget, 1_001);
+  assert.equal(getThinkingConfig("gemini-3.8-flash", "high")?.thinkingBudget, -1);
+  assert.equal(humanizePublicId("gpt-oss-1-2"), "GPT-OSS 1.2");
+});
+
+test("convertTools hits schema depth, cycles, pointers, and gpt-oss protocol branches", () => {
+  let deep: unknown = { type: "string" };
+  for (let i = 0; i < 70; i++) deep = { not: deep };
+  const skipped = convertTools([{ name: "deep", description: "d", parameters: deep }]);
+  assert.equal(skipped, undefined);
+
+  const circular: Record<string, unknown> = { type: "object", properties: {} };
+  circular.properties = circular;
+  const cycled = convertTools([{ name: "cycle-obj", description: "c", parameters: circular }]);
+  assert.equal(cycled, undefined);
+
+  const pointers = convertTools([
+    {
+      name: "pointers",
+      description: "p",
+      parameters: {
+        type: "object",
+        properties: {
+          nested: { $ref: "#/$defs/a~1b" },
+          fromArray: { $ref: "#/allOf/0" },
+        },
+        allOf: [{ type: "string" }],
+        $defs: { "a/b": { type: "string" } },
+      },
+    },
+    {
+      name: "bad-pointer",
+      description: "b",
+      parameters: {
+        type: "object",
+        properties: { badIndex: { $ref: "#/allOf/01" } },
+        allOf: [{ type: "string" }],
+      },
+    },
+    {
+      name: "map-scalar",
+      description: "m",
+      parameters: { type: "object", properties: "nope" },
+    },
+  ]);
+  assert.ok(pointers?.[0]?.functionDeclarations.some((decl) => decl.name === "pointers"));
+  assert.equal(pointers?.[0]?.functionDeclarations.some((decl) => decl.name === "bad-pointer"), false);
+
+  const gpt = geminiModel("gpt-oss-120b");
+  const cyclicArgs: Record<string, unknown> = { n: 1 };
+  cyclicArgs.self = cyclicArgs;
+  const context: Context = {
+    messages: [
+      { role: "user", timestamp: 1, content: [{ type: "image", data: "", mimeType: "image/png" }, { type: "text", text: "   " }] },
+      {
+        role: "assistant",
+        api: "antigravity-api",
+        provider: "antigravity",
+        model: gpt.id,
+        stopReason: "toolUse",
+        timestamp: 2,
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+        content: [
+          { type: "text", text: "   " },
+          { type: "thinking", thinking: "   " },
+          { type: "toolCall", id: "", name: "ok", arguments: cyclicArgs },
+        ],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "",
+        toolName: "ok",
+        isError: false,
+        timestamp: 3,
+        content: [{ type: "text", text: "out" }],
+      },
+    ],
+    tools: [{ name: "ok", description: "ok", parameters: { type: "object" } }],
+  };
+  const turns = convertMessages(gpt, context, "gpt-oss-120b-medium");
+  assert.ok(turns.some((turn) => turn.parts.some((part) => "functionCall" in part || "functionResponse" in part || "text" in part)));
+  const unsignedGemini: Context = {
+    messages: [
+      {
+        role: "assistant",
+        api: "antigravity-api",
+        provider: "antigravity",
+        model: "gemini-3.8-flash",
+        stopReason: "toolUse",
+        timestamp: 1,
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+        content: [{ type: "toolCall", id: "", name: "ok", arguments: { n: 1 } }],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "",
+        toolName: "ok",
+        isError: false,
+        timestamp: 2,
+        content: [{ type: "text", text: "saw" }],
+      },
+    ],
+  };
+  const dropped = convertMessages(geminiModel(), unsignedGemini, "gemini-flash");
+  assert.ok(
+    dropped.some((turn) => turn.parts.some((part) => "text" in part && String(part.text).includes("Observation"))),
+  );
+  const request = buildRequest(
+    gpt,
+    { messages: [{ role: "user", timestamp: 1, content: "hi" }], tools: context.tools ?? [] },
+    "proj-fixture",
+    { maxTokens: 99, toolChoice: "any", sessionId: "sess-1", reasoning: "medium" },
+    "gpt-oss-120b-medium",
+  );
+  assert.equal(request.request.sessionId, "sess-1");
+  assert.equal(request.request.toolConfig?.functionCallingConfig.mode, "ANY");
+  assert.ok((request.request.generationConfig?.maxOutputTokens ?? 0) <= 99);
+});
+
+test("streamAntigravity retries empty SSE, 503 endpoints, quota, and 404 dynamic ids", async () => {
+  const context: Context = { messages: [{ role: "user", timestamp: 1, content: "hi" }] };
+  let emptyCalls = 0;
+  fetchOverride = async (url) => {
+    if (url.includes("streamGenerateContent")) {
+      emptyCalls += 1;
+      if (emptyCalls === 1) return textResponse(streamEmptyBody, 200, "text/event-stream");
+      return textResponse(streamBody, 200, "text/event-stream");
+    }
+    return undefined;
+  };
+  const retried = await collectStream(streamAntigravity(geminiModel(), context, { apiKey: apiKeyJson() }));
+  assert.equal(retried.message.stopReason, "toolUse");
+  assert.ok(emptyCalls >= 2);
+
+  fetchOverride = async (url) => {
+    if (url.includes("streamGenerateContent") && url.includes("sandbox")) {
+      return textResponse(streamBody, 200, "text/event-stream");
+    }
+    if (url.includes("streamGenerateContent")) return textResponse("No capacity available", 503);
+    return undefined;
+  };
+  const viaFallbackEndpoint = await collectStream(streamAntigravity(geminiModel(), context, { apiKey: apiKeyJson() }));
+  assert.equal(viaFallbackEndpoint.message.stopReason, "toolUse");
+
+  fetchOverride = async (url) => {
+    if (url.includes("streamGenerateContent")) {
+      return textResponse("Individual quota reached. Resets in 1h", 429);
+    }
+    return undefined;
+  };
+  const quota = await collectStream(streamAntigravity(geminiModel(), context, { apiKey: apiKeyJson() }));
+  assert.equal(quota.message.stopReason, "error");
+  assert.match(quota.message.errorMessage ?? "", /Quota reached|API error/);
+
+  fetchOverride = async (url, init) => {
+    if (url.includes("fetchAvailableModels")) {
+      return jsonResponse({
+        models: {
+          "gemini-3.8-flash-preview-low": {
+            displayName: "Gemini 3.8 Flash (Low)",
+            model: "MODEL_PLACEHOLDER_M320",
+          },
+        },
+      });
+    }
+    if (url.includes("streamGenerateContent")) {
+      const body = String(init?.body ?? "");
+      if (body.includes("gemini-3.8-flash-preview-low")) {
+        return textResponse(streamBody, 200, "text/event-stream");
+      }
+      return textResponse("Requested entity was not found", 404);
+    }
+    return undefined;
+  };
+  const dynamic = await collectStream(streamAntigravity(geminiModel(), context, { apiKey: apiKeyJson() }));
+  assert.equal(dynamic.message.stopReason, "toolUse");
+
+  process.env.ANTIGRAVITY_RUNTIME_MODEL = "gemini-3.6-flash-low";
+  fetchOverride = async (url) => {
+    if (url.includes("streamGenerateContent")) return textResponse(streamBody, 200, "text/event-stream");
+    return undefined;
+  };
+  const pinned = await collectStream(
+    streamAntigravity({ ...geminiModel("gemini-custom-flash"), id: "gemini-custom-flash" }, context, {
+      apiKey: apiKeyJson(),
+    }),
+  );
+  assert.equal(pinned.message.stopReason, "toolUse");
+
+  process.env.ANTIGRAVITY_DEBUG_DUMP = "1";
+  fetchOverride = async (url) => {
+    if (url.includes("streamGenerateContent")) return textResponse("nope", 400);
+    return undefined;
+  };
+  const dumped = await collectStream(streamAntigravity(geminiModel(), context, { apiKey: apiKeyJson() }));
+  assert.equal(dumped.message.stopReason, "error");
+});
+
+test("streamResponse covers malformed chunks, error stop, tool ids, and unmetered usage", async () => {
+  const encoder = new TextEncoder();
+  const mixed = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue("not-bytes" as unknown as Uint8Array);
+      controller.enqueue(encoder.encode(streamErrorStopBody));
+      controller.close();
+    },
+  });
+  const output = {
+    role: "assistant" as const,
+    content: [],
+    api: "antigravity-api" as const,
+    provider: "antigravity",
+    model: "gemini-3.8-flash",
+    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    stopReason: "stop" as const,
+    timestamp: 0,
+  };
+  const errorStop = createAssistantMessageEventStream();
+  const collected = collectStream(errorStop);
+  await streamResponse(new Response(mixed), errorStop, output);
+  errorStop.end(output);
+  const seen = await collected;
+  assert.equal(output.stopReason, "error");
+  assert.ok(seen.events.some((event) => event.type === "text_delta" || event.type === "start"));
+
+  const unmetered = {
+    ...output,
+    content: [],
+    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    stopReason: "stop" as const,
+  };
+  const toolStream = createAssistantMessageEventStream();
+  await streamResponse(
+    new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode(streamToolIdBody));
+          controller.close();
+        },
+      }),
+    ),
+    toolStream,
+    unmetered,
+  );
+  toolStream.end(unmetered);
+  assert.equal(unmetered.stopReason, "toolUse");
+  assert.equal(unmetered.usage.cost.total, 0);
+
+  const context: Context = { messages: [{ role: "user", timestamp: 1, content: "hi" }] };
+  fetchOverride = async (url) => {
+    if (url.includes("streamGenerateContent")) return textResponse(streamErrorStopBody, 200, "text/event-stream");
+    return undefined;
+  };
+  const errored = await collectStream(streamAntigravity(geminiModel(), context, { apiKey: apiKeyJson() }));
+  assert.equal(errored.message.stopReason, "error");
+});
+
+test("client discovery matches labels, concurrent cache, and remaining URL guards", async () => {
+  process.env.ANTIGRAVITY_USER_AGENT = "";
+  process.env.NOAGY_USER_AGENT = "noagy-agent/1";
+  assert.equal(antigravityHeaders("tok")["User-Agent"], "noagy-agent/1");
+  assert.equal(resolveCallbackHost("::1"), "::1");
+  assert.throws(() => assertSafeApiBaseUrl("::::"), /Invalid ANTIGRAVITY_BASE_URL/);
+  assert.equal(assertSafeApiBaseUrl("https://googleapis.com/v1"), "https://googleapis.com/v1");
+  assert.equal(maskEmail(undefined), undefined);
+  assert.equal(maskEmail(""), undefined);
+
+  fetchOverride = async (url) => {
+    if (url.includes("fetchAvailableModels")) {
+      return jsonResponse({
+        models: {
+          "MODEL_PLACEHOLDER_M1": { displayName: "enum" },
+          "gemini-3.7-flash-low": { displayName: "Gemini 3.7 Flash (Low)", model: "MODEL_PLACEHOLDER_M300", modelExperiments: ["e1", 2] },
+        },
+        nested: [{ label: "gemini-3.7-flash-low" }],
+      });
+    }
+    return undefined;
+  };
+  const [a, b] = await Promise.all([
+    fetchAvailableRuntimeModel("tok-conc", "proj", "gemini-3.7-flash-low"),
+    fetchAvailableRuntimeModel("tok-conc", "proj", "gemini-3.7-flash-low"),
+  ]);
+  assert.equal(a?.id, "gemini-3.7-flash-low");
+  assert.equal(b?.id, "gemini-3.7-flash-low");
+  const byLabel = await fetchAvailableRuntimeModel("tok-conc-2", "proj", "gemini-3.7-flash-low");
+  assert.equal(byLabel?.id, "gemini-3.7-flash-low");
+
+  const envelope = antigravityRequestEnvelope("gemini-3.8-flash-low", true);
+  assert.equal(envelope.labels.used_claude, "true");
+  const traj = resolveSessionTrajectory({
+    messages: [{ role: "user", timestamp: 1, content: [{ type: "text", text: "seed-array" }] }],
+  });
+  assert.ok(traj.conversationId);
+  for (let i = 0; i < 66; i++) {
+    resolveSessionTrajectory({ messages: [{ role: "user", timestamp: i + 10, content: `seed-${i}` }] });
+  }
+
+  fetchOverride = async (url) => {
+    if (url.includes("loadCodeAssist")) {
+      return jsonResponse({
+        currentTier: { id: "free", name: "Free" },
+        paidTier: { id: "g1-pro-tier", name: "Google AI Pro", description: "paid" },
+        projectId: "tier-project",
+      });
+    }
+    if (url.includes("retrieveUserQuotaSummary")) {
+      return jsonResponse({
+        description: "pool",
+        groups: [
+          { displayName: "" },
+          {
+            displayName: "Pool",
+            buckets: [
+              { remainingFraction: -1, bucketId: "neg" },
+              { remainingFraction: 2, displayName: "Over" },
+              { remainingFraction: Number.NaN },
+            ],
+          },
+        ],
+      });
+    }
+    if (url.includes("fetchAvailableModels")) {
+      return jsonResponse({
+        models: {
+          "chat_hidden": { displayName: "Hidden" },
+          "gemini-3.8-flash-low": {
+            label: "Flash Low",
+            quotaInfo: { remainingFraction: 0.4, resetTime: new Date(Date.now() - 1000).toISOString() },
+            recommended: true,
+            supportsThinking: true,
+            supportsImages: true,
+            modelProvider: "google",
+          },
+          "tab_complete": { modelName: "Tab", isInternal: false },
+        },
+        defaultAgentModelId: "gemini-3.8-flash-low",
+      });
+    }
+    return undefined;
+  };
+  const usage = await fetchAccountUsage(apiKeyJson("tier-project"));
+  assert.match(usage.planLabel ?? "", /Google AI Pro/);
+  assert.match(formatUsageSummary(usage), /now|0%/);
+  assert.match(formatModelsList(usage, { all: true }), /tab_complete|Flash Low|recommended/);
+});
+
+test("header deadline cancels an invalid body chunk and passthrough abort reason", async () => {
+  await assert.rejects(async () => {
+    const response = await fetchWithHeaderDeadline(
+      "https://daily-cloudcode-pa.googleapis.com/invalid-chunk",
+      {},
+      undefined,
+      0,
+      5_000,
+      async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue("nope" as unknown as Uint8Array);
+            },
+          }),
+          { status: 200 },
+        ),
+    );
+    await response.arrayBuffer();
+  }, /invalid chunk/);
+
+  const ac = new AbortController();
+  const pending = fetchWithHeaderDeadline(
+    "https://daily-cloudcode-pa.googleapis.com/later-abort",
+    {},
+    ac.signal,
+    5_000,
+    5_000,
+    async (_url, init) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(init.signal?.reason ?? new Error("aborted"));
+        });
+      }),
+  );
+  ac.abort(new Error("caller-cancel"));
+  await assert.rejects(pending, /caller-cancel|aborted/);
+});
+

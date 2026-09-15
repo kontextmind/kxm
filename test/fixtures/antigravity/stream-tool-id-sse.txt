@@ -1,0 +1,2 @@
+data: {"response":{"candidates":[{"content":{"parts":[{"functionCall":{"id":"call/1","name":"read","args":{"path":"a.ts"}},"thoughtSignature":"YWJjZA=="}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":8,"candidatesTokenCount":3,"totalTokenCount":11}}}
+data: [DONE]
