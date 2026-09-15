@@ -551,7 +551,7 @@ export interface VnextRunCancelResult {
 export function cancelVnextRun(
   context: VnextRuntimeContext,
   runId: string,
-  options: { commandId?: string; now?: string; monotonicNs?: string } = {},
+  options: { commandId?: string; now?: string; monotonicNs?: string; reason?: string } = {},
 ): VnextRunCancelResult {
   const commandId = options.commandId ?? newVnextCommandId();
   const now = options.now ?? new Date().toISOString();
@@ -598,16 +598,17 @@ export function cancelVnextRun(
       return event;
     };
 
+    const cancelReason = options.reason ?? "operator_cancel";
     const activeAttempt = Boolean(folded.currentStep?.attemptId) || vnextFoldPanelAttemptIds(folded.currentStep).length > 0;
     push("run.cancel_requested", {
       actor: { kind: "runtime", id: context.homeRuntimeId },
-      reason: "operator_cancel",
+      reason: cancelReason,
     });
 
     let status: VnextRunStatus = "cancelled";
     if (folded.status === "running" && activeAttempt) {
       status = "cancelling";
-      push("run.status_changed", { status: "cancelling", reason: "operator_cancel" });
+      push("run.status_changed", { status: "cancelling", reason: cancelReason });
       const attemptIds = new Set(vnextFoldPanelAttemptIds(folded.currentStep));
       if (folded.currentStep?.attemptId) attemptIds.add(folded.currentStep.attemptId);
       for (const attemptId of attemptIds) {
@@ -620,7 +621,7 @@ export function cancelVnextRun(
         abortControllers.push(owned.controller);
       }
     } else if (folded.status === "blocked_uncertain") {
-      push("run.status_changed", { status: "cancelling", reason: "operator_cancel" });
+      push("run.status_changed", { status: "cancelling", reason: cancelReason });
       const attemptId = folded.currentStep?.attemptId;
       if (attemptId) {
         const capability = context.eventStore.capabilityByAttempt(attemptId);
@@ -632,13 +633,13 @@ export function cancelVnextRun(
       for (const owned of vnextAttemptControllers(context.eventStore.path, runId)) {
         abortControllers.push(owned.controller);
       }
-      push("run.status_changed", { status: "cancelled", reason: "operator_cancel" });
+      push("run.status_changed", { status: "cancelled", reason: cancelReason });
       status = "cancelled";
     } else if (folded.status === "running" && !activeAttempt) {
-      push("run.status_changed", { status: "cancelling", reason: "operator_cancel" });
-      push("run.status_changed", { status: "cancelled", reason: "operator_cancel" });
+      push("run.status_changed", { status: "cancelling", reason: cancelReason });
+      push("run.status_changed", { status: "cancelled", reason: cancelReason });
     } else {
-      push("run.status_changed", { status: "cancelled", reason: "operator_cancel" });
+      push("run.status_changed", { status: "cancelled", reason: cancelReason });
     }
 
     for (const event of events) context.eventStore.appendEvent(event);

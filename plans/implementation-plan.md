@@ -1059,8 +1059,15 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   missing / verified) in text and JSON. Note: this repo's own
   `.kxm/prices.yaml` (2026-09-08) is stale under the gate, so explain against
   this checkout reports unknown until a fresh snapshot exists. Still open for
-  the next slices: full HTTP drive lifetime decoupling design (only the
-  crash-class defects are fixed) and the Fable ~219s failure. Issue-127
+  the next slices: drive decoupling B2 durable
+  receipts, B3 run-duration budget, and B4 optional surfaces (B1 accepted
+  2026-09-15, task_p11-drive-decoupling, commit d590d27f, tree a107f3e2:
+  engine-owned drive sessions, driveId on 202, session-owned producer,
+  admission-atomic pin+start, bounded truthful shutdown via
+  cancelVnextRun(runtime_shutdown) + bounded KXM_RUNTIME_STOP_GRACE_MS,
+  fail-closed CLI drive output; three resolved critic rounds: orphaned
+  settled rejection, inert bare-running brake, CLI fabricated success,
+  unbounded grace knob) and the Fable ~219s failure. Issue-127
   retirement/acceptance contradictions are separate blockers; npm is not
   ready.
 - **Model inventory refresh command:** `kxm models refresh` writes the live
@@ -1541,8 +1548,10 @@ settlement, v2 bounded/redacted evidence, supervisor drive rejection handling)
 holds commit-bound acceptance with dual-critic PASS at 915f5e53 and its
 forward-port at 96e8e0ac; the live Claude write-refusal witness (model-reached
 proof plus refusal) holds acceptance at e3d8a64b; price-catalog integrity
-beyond the one-shot path holds acceptance at 17efb783. Remaining critic
-demands: full HTTP drive lifetime decoupling. No Phase 11 gate PASS.
+beyond the one-shot path holds acceptance at 17efb783; drive decoupling B1
+(engine-owned sessions, bounded truthful shutdown) holds acceptance at
+d590d27f, with B2 durable receipts, B3 run-duration budget, and B4 surfaces
+remaining. No Phase 11 gate PASS.
 
 **Proposed M2/M3 delivery packets (2026-09-14):** add incremental native event
 decoding, durable stream cursors, exact workspace/session binding, and separately
