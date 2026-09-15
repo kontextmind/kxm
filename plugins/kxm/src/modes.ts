@@ -8,7 +8,15 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
-import { calculateModelCost, type PriceCatalog, loadPriceCatalog } from "./prices.ts";
+import {
+  calculateModelCost,
+  loadPriceCatalog,
+  loadPriceCatalogForEstimate,
+  type PriceCatalog,
+  type PriceCatalogEstimateSource,
+} from "./prices.ts";
+
+export type PriceCatalogStatus = "verified" | "stale" | "corrupt" | "missing";
 
 export interface MajorMode {
   description?: string | undefined;
@@ -60,6 +68,8 @@ export interface PromptFootprint {
     cacheReadCostUsd: number | null;
     outputCostEstimateUsd: number | null;
   };
+  catalogStatus: PriceCatalogStatus;
+  catalogReason: string;
 }
 
 export const DEFAULT_MODES_CONFIG: ModesConfig = Object.freeze({
@@ -195,6 +205,59 @@ export function resolveActiveMode(
   };
 }
 
+const CATALOG_DATE_RE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
+
+function boundedCatalogDate(value: unknown): string | undefined {
+  return typeof value === "string" && CATALOG_DATE_RE.test(value) ? value : undefined;
+}
+
+function catalogDateForStatus(
+  loaded: PriceCatalogEstimateSource,
+  injected: PriceCatalog | undefined,
+  projectRoot: string,
+): string | undefined {
+  const fromLoaded = boundedCatalogDate(loaded.catalog?.date);
+  if (fromLoaded) return fromLoaded;
+  const fromInjected = boundedCatalogDate(injected?.date);
+  if (fromInjected) return fromInjected;
+  if (!loaded.stale) return undefined;
+  try {
+    return boundedCatalogDate(loadPriceCatalog(projectRoot)?.date);
+  } catch {
+    return undefined;
+  }
+}
+
+function describePriceCatalogStatus(
+  loaded: PriceCatalogEstimateSource,
+  catalogDate?: string,
+): { catalogStatus: PriceCatalogStatus; catalogReason: string } {
+  if (loaded.stale) {
+    return {
+      catalogStatus: "stale",
+      catalogReason: catalogDate
+        ? `price catalog stale (dated ${catalogDate})`
+        : "price catalog stale",
+    };
+  }
+  if (loaded.unavailable) {
+    return { catalogStatus: "corrupt", catalogReason: "price catalog corrupt" };
+  }
+  if (!loaded.catalog) {
+    return { catalogStatus: "missing", catalogReason: "price catalog missing" };
+  }
+  return { catalogStatus: "verified", catalogReason: "price catalog verified" };
+}
+
+function formatExplainCost(
+  value: number | null,
+  footprint: PromptFootprint,
+  suffix = "",
+): string {
+  if (value !== null) return `$${value.toFixed(4)}${suffix}`;
+  return footprint.catalogStatus === "verified" ? "unmetered/unknown" : footprint.catalogReason;
+}
+
 /**
  * Calculate the exact prompt token footprint and projected costs for a mode configuration.
  */
@@ -258,8 +321,15 @@ export function calculatePromptFootprint(
   const maxContextWindow = 200000;
   const contextWindowRatio = Math.round((totalTokens / maxContextWindow) * 1000) / 10;
 
-  // 5. Projected Costs
-  const cat = catalog || loadPriceCatalog(projectRoot);
+  // 5. Projected Costs — unverified or stale catalogs stay unknown.
+  const loaded = loadPriceCatalogForEstimate(
+    catalog ? { priceCatalog: catalog } : { projectRoot },
+  );
+  const catalogInfo = describePriceCatalogStatus(
+    loaded,
+    catalogDateForStatus(loaded, catalog, projectRoot),
+  );
+  const cat = loaded.catalog;
   const rawModel = resolved.model || "grok/grok-4.6";
   const [prov, mod] = rawModel.includes("/") ? rawModel.split("/", 2) : [undefined, rawModel];
 
@@ -309,6 +379,8 @@ export function calculatePromptFootprint(
       cacheReadCostUsd: cacheReadCost?.costUsd ?? null,
       outputCostEstimateUsd: outputEstimateCost?.costUsd ?? null,
     },
+    catalogStatus: catalogInfo.catalogStatus,
+    catalogReason: catalogInfo.catalogReason,
   };
 }
 
@@ -324,7 +396,8 @@ export function formatModesExplainReport(footprint: PromptFootprint): string {
   out += `${divider}\n`;
   out += `Major Mode:       ${footprint.majorMode}\n`;
   out += `Enabled Domains:  ${footprint.enabledDomains.length > 0 ? footprint.enabledDomains.join(", ") : "(none)"}\n`;
-  out += `Target Model:     ${footprint.model}\n\n`;
+  out += `Target Model:     ${footprint.model}\n`;
+  out += `Catalog status:   ${footprint.catalogReason}\n\n`;
 
   out += `CONTEXT BREAKDOWN:\n`;
   for (const item of footprint.breakdown) {
@@ -339,9 +412,9 @@ export function formatModesExplainReport(footprint: PromptFootprint): string {
   out += `  ${totalPad} ${totalStr} (${footprint.contextWindowRatio}% of 200k window)\n\n`;
 
   out += `PROJECTED COSTS (per turn):\n`;
-  out += `  • Initial Turn Input Cost:   ${footprint.projectedCost.inputCostUsd !== null ? `$${footprint.projectedCost.inputCostUsd.toFixed(4)}` : "unmetered/unknown"}\n`;
-  out += `  • Subsequent Cache-Read Cost: ${footprint.projectedCost.cacheReadCostUsd !== null ? `$${footprint.projectedCost.cacheReadCostUsd.toFixed(4)} (approx 90% savings)` : "unmetered/unknown"}\n`;
-  out += `  • Output Estimate (1k tokens): ${footprint.projectedCost.outputCostEstimateUsd !== null ? `$${footprint.projectedCost.outputCostEstimateUsd.toFixed(4)}` : "unmetered/unknown"}\n`;
+  out += `  • Initial Turn Input Cost:   ${formatExplainCost(footprint.projectedCost.inputCostUsd, footprint)}\n`;
+  out += `  • Subsequent Cache-Read Cost: ${formatExplainCost(footprint.projectedCost.cacheReadCostUsd, footprint, " (approx 90% savings)")}\n`;
+  out += `  • Output Estimate (1k tokens): ${formatExplainCost(footprint.projectedCost.outputCostEstimateUsd, footprint)}\n`;
   out += `${divider}\n`;
 
   return out;

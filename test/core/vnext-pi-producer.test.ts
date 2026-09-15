@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { stringify } from "yaml";
 import { loadVnextProject } from "../../plugins/kxm/src/vnext-config.ts";
 import {
   driveVnextRun,
@@ -22,7 +24,7 @@ import {
   PiSession,
   type PiRpcProcess,
 } from "../../plugins/kxm/src/vnext-pi-producer.ts";
-import { loadPriceCatalog } from "../../plugins/kxm/src/prices.ts";
+import { hashPriceCatalog, type PriceCatalog } from "../../plugins/kxm/src/prices.ts";
 import { admitDefaultWriterRoute, engineProject } from "../helpers/vnext-project.ts";
 import { removeTempDir } from "../helpers.ts";
 
@@ -96,6 +98,97 @@ function createMockPiProcess(
   });
 
   return { process: proc, sentLines };
+}
+
+const fakeAuth = () => ({ detected: true, authenticated: true as const, issues: [] });
+
+function settledUsageProcess() {
+  return createMockPiProcess((_cmd, emit) => {
+    emit({ type: "agent_start" });
+    emit({
+      type: "message_update",
+      usage: { input: 100_000, output: 10_000, cacheRead: 20_000, cacheWrite: 5_000, totalTokens: 135_000 },
+    });
+    emit({
+      type: "turn_end",
+      message: { role: "assistant", content: "Finished implementation. passed" },
+    });
+    emit({ type: "agent_end", willRetry: false });
+    emit({ type: "agent_settled" });
+  }).process;
+}
+
+function todayCatalog(models: PriceCatalog["models"]): PriceCatalog {
+  const body = {
+    schema: "kxm.prices.v1" as const,
+    date: new Date().toISOString().slice(0, 10),
+    currency: "USD" as const,
+    models,
+  };
+  return { ...body, sha256: hashPriceCatalog(body) };
+}
+
+const grokGlmCatalog = (): PriceCatalog => todayCatalog([
+  {
+    id: "xai/grok-4.6",
+    provider: "xai",
+    model: "grok-4.6",
+    tiers: [{
+      upToContextTokens: 131072,
+      inputPerMillion: 2.00,
+      outputPerMillion: 10.00,
+      cacheReadPerMillion: 0.50,
+      cacheWritePerMillion: 2.00,
+    }],
+  },
+  {
+    id: "zhipu/glm-4-plus",
+    provider: "zhipu",
+    model: "glm-4-plus",
+    tiers: [{
+      upToContextTokens: 128000,
+      inputPerMillion: 1.40,
+      outputPerMillion: 1.40,
+      cacheReadPerMillion: 0.14,
+      cacheWritePerMillion: 1.40,
+    }],
+  },
+]);
+
+async function produceWithCatalog(options: {
+  priceCatalog?: PriceCatalog | undefined;
+  projectRoot?: string | undefined;
+  model?: string | undefined;
+  provider?: string | undefined;
+}) {
+  let spawned = 0;
+  const producer = createVnextPiProducer({
+    probeHarness: fakeAuth as any,
+    priceCatalog: options.priceCatalog,
+    projectRoot: options.projectRoot,
+    spawnProcess: () => {
+      spawned++;
+      return settledUsageProcess();
+    },
+  });
+  try {
+    const result = await producer.produce({
+      runId: "run_01JHARNESS0001",
+      stepId: "implement",
+      stepAttempt: 1,
+      assignmentId: "asg_price",
+      attemptId: "att_price",
+      agentId: "implementer",
+      model: options.model ?? "xai/grok-4.6",
+      provider: options.provider ?? "xai",
+      capability: "secret",
+      allowedOutcomes: ["passed", "failed"],
+      signal: new AbortController().signal,
+    });
+    return { result, spawned };
+  } finally {
+    await producer.close();
+  }
 }
 
 test("formatPiSessionKey and formatPiSessionDisplayName follow vNext rules", () => {
@@ -357,35 +450,17 @@ test("Pi producer preflight fails closed when Pi or provider is unauthenticated"
   }
 });
 
-test("Pi producer captures usage events and calculates metered cost for catalog models (Grok and GLM)", async () => {
-  const fakeAuth = () => ({ detected: true, authenticated: true as const, issues: [] });
-  const priceCatalog = loadPriceCatalog(repoRoot);
-  assert.ok(priceCatalog, "price catalog must load from repo root");
-
+test("Pi producer captures usage and records list estimates without billing costUsd", async () => {
+  const priceCatalog = grokGlmCatalog();
   const producer = createVnextPiProducer({
     probeHarness: fakeAuth as any,
     priceCatalog,
-    spawnProcess: () => {
-      return createMockPiProcess((cmd, emit) => {
-        emit({ type: "agent_start" });
-        emit({
-          type: "message_update",
-          usage: { input: 100_000, output: 10_000, cacheRead: 20_000, cacheWrite: 5_000, totalTokens: 135_000 },
-        });
-        emit({
-          type: "turn_end",
-          message: { role: "assistant", content: "Finished implementation. passed" },
-        });
-        emit({ type: "agent_end", willRetry: false });
-        emit({ type: "agent_settled" });
-      }).process;
-    },
+    spawnProcess: () => settledUsageProcess(),
   });
 
   try {
     const controller = new AbortController();
 
-    // Test Grok catalog row
     const grokResult = await producer.produce({
       runId: "run_01JHARNESS0001",
       stepId: "implement",
@@ -404,16 +479,18 @@ test("Pi producer captures usage events and calculates metered cost for catalog 
     assert.equal(grokResult.harness, "pi");
     assert.equal(grokResult.provider, "xai");
     assert.equal(grokResult.requestedModel, "grok-4.6");
-    assert.equal(grokResult.costBasis, "metered");
+    assert.equal(grokResult.costBasis, "unknown");
     assert.equal(grokResult.tokensIn, 100_000);
     assert.equal(grokResult.tokensOut, 10_000);
     assert.equal(grokResult.cacheReadTokens, 20_000);
     assert.equal(grokResult.cacheWriteTokens, 5_000);
+    assert.equal(grokResult.costUsd, null);
+    assert.equal(grokResult.priceRef, undefined);
     // Cost: 100k/1M * 2.00 = 0.20; 10k/1M * 10.00 = 0.10; 20k/1M * 0.50 = 0.01; 5k/1M * 2.00 = 0.01 -> total = 0.32
-    assert.equal(grokResult.costUsd, 0.32);
-    assert.equal(grokResult.priceRef, `${priceCatalog.date}#xai/grok-4.6`);
+    assert.equal(grokResult.providerMetadata?.listCostUsd, 0.32);
+    assert.equal(grokResult.providerMetadata?.listPriceRef, `${priceCatalog.date}#xai/grok-4.6`);
+    assert.equal(grokResult.providerMetadata?.listPriceSha256, priceCatalog.sha256);
 
-    // Test GLM catalog row
     const glmResult = await producer.produce({
       runId: "run_01JHARNESS0001",
       stepId: "implement",
@@ -428,14 +505,15 @@ test("Pi producer captures usage events and calculates metered cost for catalog 
       signal: controller.signal,
     });
 
-    assert.equal(glmResult.costBasis, "metered");
+    assert.equal(glmResult.costBasis, "unknown");
     assert.equal(glmResult.provider, "zhipu");
     assert.equal(glmResult.requestedModel, "glm-4-plus");
+    assert.equal(glmResult.costUsd, null);
     // Cost: 100k/1M * 1.40 = 0.14; 10k/1M * 1.40 = 0.014; 20k/1M * 0.14 = 0.0028; 5k/1M * 1.40 = 0.007 -> total = 0.1638
-    assert.equal(glmResult.costUsd, 0.1638);
-    assert.equal(glmResult.priceRef, `${priceCatalog.date}#zhipu/glm-4-plus`);
+    assert.equal(glmResult.providerMetadata?.listCostUsd, 0.1638);
+    assert.equal(glmResult.providerMetadata?.listPriceRef, `${priceCatalog.date}#zhipu/glm-4-plus`);
+    assert.equal(glmResult.providerMetadata?.listPriceSha256, priceCatalog.sha256);
 
-    // Test uncataloged model -> costBasis: unknown
     const unknownResult = await producer.produce({
       runId: "run_01JHARNESS0001",
       stepId: "implement",
@@ -453,8 +531,73 @@ test("Pi producer captures usage events and calculates metered cost for catalog 
     assert.equal(unknownResult.costBasis, "unknown");
     assert.equal(unknownResult.costUsd, null);
     assert.equal(unknownResult.priceRef, undefined);
+    assert.equal(unknownResult.providerMetadata?.listCostUsd, undefined);
   } finally {
     await producer.close();
+  }
+});
+
+test("Pi producer corrupt-hash catalog never discards observed usage", async () => {
+  const good = grokGlmCatalog();
+  const { result, spawned } = await produceWithCatalog({
+    priceCatalog: { ...good, sha256: "0".repeat(64) },
+  });
+  assert.equal(spawned, 1);
+  assert.equal(result.outcome, "passed");
+  assert.equal(result.tokensIn, 100_000);
+  assert.equal(result.tokensOut, 10_000);
+  assert.equal(result.costBasis, "unknown");
+  assert.equal(result.costUsd, null);
+  assert.equal(result.providerMetadata?.priceCatalogUnavailable, true);
+  assert.equal(result.providerMetadata?.listCostUsd, undefined);
+});
+
+test("Pi producer stale catalog stays unknown and does not quote a list estimate", async () => {
+  const fresh = grokGlmCatalog();
+  const staleBody = { ...fresh, date: "2020-01-01" };
+  const stale = { ...staleBody, sha256: hashPriceCatalog(staleBody) };
+  const { result, spawned } = await produceWithCatalog({ priceCatalog: stale });
+  assert.equal(spawned, 1);
+  assert.equal(result.tokensIn, 100_000);
+  assert.equal(result.costBasis, "unknown");
+  assert.equal(result.costUsd, null);
+  assert.equal(result.providerMetadata?.priceCatalogStale, true);
+  assert.equal(result.providerMetadata?.listCostUsd, undefined);
+});
+
+test("Pi producer missing catalog settles usage as unknown", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "kxm-pi-missing-prices-"));
+  try {
+    const { result, spawned } = await produceWithCatalog({ projectRoot: dir });
+    assert.equal(spawned, 1);
+    assert.equal(result.tokensIn, 100_000);
+    assert.equal(result.costBasis, "unknown");
+    assert.equal(result.costUsd, null);
+    assert.equal(result.providerMetadata?.listCostUsd, undefined);
+    assert.equal(result.providerMetadata?.priceCatalogUnavailable, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Pi producer post-spend catalog failure preserves usage", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "kxm-pi-corrupt-prices-"));
+  try {
+    mkdirSync(join(dir, ".kxm"), { recursive: true });
+    const fresh = grokGlmCatalog();
+    writeFileSync(join(dir, ".kxm", "prices.yaml"), stringify({ ...fresh, sha256: "0".repeat(64) }), "utf8");
+    const { result, spawned } = await produceWithCatalog({ projectRoot: dir });
+    assert.equal(spawned, 1, "catalog integrity failure must not prevent settlement after spend");
+    assert.equal(result.outcome, "passed");
+    assert.equal(result.tokensIn, 100_000);
+    assert.equal(result.tokensOut, 10_000);
+    assert.equal(result.cacheReadTokens, 20_000);
+    assert.equal(result.costBasis, "unknown");
+    assert.equal(result.costUsd, null);
+    assert.equal(result.providerMetadata?.priceCatalogUnavailable, true);
+    assert.equal(result.providerMetadata?.listCostUsd, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 

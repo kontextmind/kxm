@@ -15,7 +15,7 @@ import {
 } from "./vnext-harness.ts";
 import {
   calculateModelCost,
-  loadPriceCatalog,
+  loadPriceCatalogForEstimate,
   type PriceCatalog,
 } from "./prices.ts";
 
@@ -566,12 +566,17 @@ export function createVnextPiProducer(options: VnextPiProducerOptions = {}): Vne
       const cacheWriteTokens = typeof usage?.cacheWrite === "number" ? usage.cacheWrite : null;
       const contextTokens = typeof usage?.contextUsage?.tokens === "number" ? usage.contextUsage.tokens : tokensIn;
 
-      // Price calculation
-      const catalog = options.priceCatalog ?? loadPriceCatalog(options.projectRoot ?? process.cwd());
-      let costBasis: "metered" | "unknown" = "unknown";
-      let costUsd: number | null = null;
-      let priceRef: string | undefined;
-
+      // Catalog errors must not discard observed usage or crash settlement.
+      const providerMetadata: Record<string, string | number | boolean> = {};
+      const loaded = loadPriceCatalogForEstimate({
+        priceCatalog: options.priceCatalog,
+        projectRoot: options.projectRoot,
+      });
+      if (loaded.unavailable) providerMetadata.priceCatalogUnavailable = true;
+      if (loaded.stale) providerMetadata.priceCatalogStale = true;
+      const catalog = loaded.catalog;
+      const costBasis = "unknown" as const;
+      const costUsd = null;
       if (catalog) {
         const calculated = calculateModelCost(catalog, {
           model: resolved.model,
@@ -582,10 +587,10 @@ export function createVnextPiProducer(options: VnextPiProducerOptions = {}): Vne
           cacheWriteTokens,
           contextTokens,
         });
-        if (calculated) {
-          costBasis = "metered";
-          costUsd = calculated.costUsd;
-          priceRef = calculated.priceRef;
+        if (calculated && Number.isFinite(calculated.costUsd)) {
+          providerMetadata.listCostUsd = calculated.costUsd;
+          providerMetadata.listPriceRef = calculated.priceRef;
+          providerMetadata.listPriceSha256 = catalog.sha256;
         }
       }
 
@@ -603,9 +608,9 @@ export function createVnextPiProducer(options: VnextPiProducerOptions = {}): Vne
         provider: resolved.provider,
         requestedModel: resolved.model,
         effectiveModel: resolved.model,
+        providerMetadata,
         ...(resolved.thinking !== undefined ? { thinking: resolved.thinking } : {}),
         agentRole: request.agentRole ?? request.agentId,
-        ...(priceRef !== undefined ? { priceRef } : {}),
       };
     },
 

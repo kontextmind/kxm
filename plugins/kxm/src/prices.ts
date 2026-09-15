@@ -135,3 +135,35 @@ export function loadPriceCatalog(rootOrPath: string): PriceCatalog | undefined {
   return parsePriceCatalog(content);
 }
 
+/** Result of a hash-verified, freshness-gated catalog load used for list estimates. */
+export interface PriceCatalogEstimateSource {
+  readonly catalog: PriceCatalog | undefined;
+  readonly unavailable: boolean;
+  readonly stale: boolean;
+}
+
+/**
+ * Load a price catalog the way one-shot settlement does: re-parse injected
+ * catalogs so the digest is checked, treat missing files as unknown, and drop
+ * any snapshot whose date is not today. Callers must not throw after spend.
+ */
+export function loadPriceCatalogForEstimate(options?: {
+  priceCatalog?: PriceCatalog | undefined;
+  projectRoot?: string | undefined;
+}): PriceCatalogEstimateSource {
+  let catalog: PriceCatalog | undefined;
+  try {
+    catalog = options?.priceCatalog
+      ? parsePriceCatalog(JSON.stringify(options.priceCatalog))
+      : loadPriceCatalog(options?.projectRoot ?? process.cwd());
+  } catch {
+    return { catalog: undefined, unavailable: true, stale: false };
+  }
+  // Without a freshness-aware vendor feed, don't silently quote an older
+  // local snapshot. Even today's hash-verified snapshot is only an estimate.
+  if (catalog && catalog.date !== new Date().toISOString().slice(0, 10)) {
+    return { catalog: undefined, unavailable: false, stale: true };
+  }
+  return { catalog, unavailable: false, stale: false };
+}
+
