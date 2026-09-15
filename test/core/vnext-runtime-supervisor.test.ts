@@ -3,7 +3,10 @@ import test from "node:test";
 import { removeTempDir } from "../helpers.ts";
 import { engineProject } from "../helpers/vnext-project.ts";
 import {
+  DEFAULT_RUNTIME_STOP_GRACE_MS,
+  MAX_RUNTIME_STOP_GRACE_MS,
   readVnextSupervisorToken,
+  runtimeStopGraceMs,
   startVnextRuntimeSupervisor,
   vnextRuntimeRequest,
 } from "../../plugins/kxm/src/vnext-runtime-supervisor.ts";
@@ -495,4 +498,22 @@ test("socket destroyed before 202 leaves no admission or full admission, never s
     if (supervisor) await supervisor.stop();
     removeTempDir(root, stateRoot);
   }
+});
+
+test("KXM_RUNTIME_STOP_GRACE_MS is bounded and fail-closed", () => {
+  assert.equal(DEFAULT_RUNTIME_STOP_GRACE_MS, 30_000);
+  assert.equal(MAX_RUNTIME_STOP_GRACE_MS, 600_000);
+
+  assert.equal(runtimeStopGraceMs({}), DEFAULT_RUNTIME_STOP_GRACE_MS);
+  assert.equal(runtimeStopGraceMs({ KXM_RUNTIME_STOP_GRACE_MS: undefined }), DEFAULT_RUNTIME_STOP_GRACE_MS);
+  assert.equal(runtimeStopGraceMs({ KXM_RUNTIME_STOP_GRACE_MS: "" }), DEFAULT_RUNTIME_STOP_GRACE_MS);
+
+  assert.equal(runtimeStopGraceMs({ KXM_RUNTIME_STOP_GRACE_MS: String(2 ** 31) }), DEFAULT_RUNTIME_STOP_GRACE_MS);
+  assert.equal(runtimeStopGraceMs({ KXM_RUNTIME_STOP_GRACE_MS: String(7 * 24 * 60 * 60_000) }), DEFAULT_RUNTIME_STOP_GRACE_MS);
+  assert.equal(runtimeStopGraceMs({ KXM_RUNTIME_STOP_GRACE_MS: "-1" }), DEFAULT_RUNTIME_STOP_GRACE_MS);
+  assert.equal(runtimeStopGraceMs({ KXM_RUNTIME_STOP_GRACE_MS: "nope" }), DEFAULT_RUNTIME_STOP_GRACE_MS);
+
+  assert.equal(runtimeStopGraceMs({ KXM_RUNTIME_STOP_GRACE_MS: "0" }), 0);
+  assert.equal(runtimeStopGraceMs({ KXM_RUNTIME_STOP_GRACE_MS: "120" }), 120);
+  assert.equal(runtimeStopGraceMs({ KXM_RUNTIME_STOP_GRACE_MS: String(MAX_RUNTIME_STOP_GRACE_MS) }), MAX_RUNTIME_STOP_GRACE_MS);
 });

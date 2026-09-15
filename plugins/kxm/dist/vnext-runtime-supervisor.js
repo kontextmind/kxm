@@ -26198,11 +26198,18 @@ function sendJson(response, status, payload) {
   response.end(body);
 }
 var DEFAULT_RUNTIME_STOP_GRACE_MS = 3e4;
+var MAX_RUNTIME_STOP_GRACE_MS = 6e5;
 function runtimeStopGraceMs(env = process.env) {
   const raw = env.KXM_RUNTIME_STOP_GRACE_MS;
-  if (raw === void 0 || raw === "") return DEFAULT_RUNTIME_STOP_GRACE_MS;
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed < 0) return DEFAULT_RUNTIME_STOP_GRACE_MS;
+  if (raw === void 0 || raw.trim() === "") return DEFAULT_RUNTIME_STOP_GRACE_MS;
+  const parsed = Number(raw.trim());
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 0 || parsed > MAX_RUNTIME_STOP_GRACE_MS) {
+    process.stderr.write(
+      `KXM_RUNTIME_STOP_GRACE_MS must be an integer between 0 and ${MAX_RUNTIME_STOP_GRACE_MS} ms (10 minutes); using default ${DEFAULT_RUNTIME_STOP_GRACE_MS}
+`
+    );
+    return DEFAULT_RUNTIME_STOP_GRACE_MS;
+  }
   return parsed;
 }
 async function waitForDriveSessions(settled, graceMs) {
@@ -26577,6 +26584,8 @@ async function vnextRuntimeRequest(handle, method, path, body) {
   return payload;
 }
 export {
+  DEFAULT_RUNTIME_STOP_GRACE_MS,
+  MAX_RUNTIME_STOP_GRACE_MS,
   ensureVnextSupervisor,
   hashVnextSupervisorToken,
   hashVnextTokenProof,

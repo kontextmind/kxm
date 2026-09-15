@@ -26682,11 +26682,18 @@ function sendJson(response, status, payload) {
   response.end(body);
 }
 var DEFAULT_RUNTIME_STOP_GRACE_MS = 3e4;
+var MAX_RUNTIME_STOP_GRACE_MS = 6e5;
 function runtimeStopGraceMs(env = process.env) {
   const raw = env.KXM_RUNTIME_STOP_GRACE_MS;
-  if (raw === void 0 || raw === "") return DEFAULT_RUNTIME_STOP_GRACE_MS;
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed < 0) return DEFAULT_RUNTIME_STOP_GRACE_MS;
+  if (raw === void 0 || raw.trim() === "") return DEFAULT_RUNTIME_STOP_GRACE_MS;
+  const parsed = Number(raw.trim());
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 0 || parsed > MAX_RUNTIME_STOP_GRACE_MS) {
+    process.stderr.write(
+      `KXM_RUNTIME_STOP_GRACE_MS must be an integer between 0 and ${MAX_RUNTIME_STOP_GRACE_MS} ms (10 minutes); using default ${DEFAULT_RUNTIME_STOP_GRACE_MS}
+`
+    );
+    return DEFAULT_RUNTIME_STOP_GRACE_MS;
+  }
   return parsed;
 }
 async function waitForDriveSessions(settled, graceMs) {
@@ -29346,11 +29353,13 @@ export {
   DEFAULT_LOG_MAX_BYTES,
   DEFAULT_LOG_MAX_FILES,
   DEFAULT_MODES_CONFIG,
+  DEFAULT_RUNTIME_STOP_GRACE_MS,
   DEFAULT_SOCKET_DIR,
   DEFAULT_SUBAGENT_MODELS,
   IMPROVEMENT_REPORT_SCHEMA,
   IMPROVEMENT_REPORT_V1_SCHEMA,
   LOG_LEVEL_PRIORITY,
+  MAX_RUNTIME_STOP_GRACE_MS,
   MAX_SSH_OUTPUT_BYTES,
   MAX_SSH_OUTPUT_LINES,
   NATIVE_HARNESS_PROVIDERS,

@@ -281,13 +281,25 @@ function sendJson(response: ServerResponse, status: number, payload: unknown): v
   response.end(body);
 }
 
-const DEFAULT_RUNTIME_STOP_GRACE_MS = 30_000;
+export const DEFAULT_RUNTIME_STOP_GRACE_MS = 30_000;
+/** Documented upper bound: 10 minutes, well under Node's 2^31-1 ms timer range. */
+export const MAX_RUNTIME_STOP_GRACE_MS = 600_000;
 
 export function runtimeStopGraceMs(env: NodeJS.ProcessEnv = process.env): number {
   const raw = env.KXM_RUNTIME_STOP_GRACE_MS;
-  if (raw === undefined || raw === "") return DEFAULT_RUNTIME_STOP_GRACE_MS;
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed < 0) return DEFAULT_RUNTIME_STOP_GRACE_MS;
+  if (raw === undefined || raw.trim() === "") return DEFAULT_RUNTIME_STOP_GRACE_MS;
+  const parsed = Number(raw.trim());
+  if (
+    !Number.isFinite(parsed)
+    || !Number.isInteger(parsed)
+    || parsed < 0
+    || parsed > MAX_RUNTIME_STOP_GRACE_MS
+  ) {
+    process.stderr.write(
+      `KXM_RUNTIME_STOP_GRACE_MS must be an integer between 0 and ${MAX_RUNTIME_STOP_GRACE_MS} ms (10 minutes); using default ${DEFAULT_RUNTIME_STOP_GRACE_MS}\n`,
+    );
+    return DEFAULT_RUNTIME_STOP_GRACE_MS;
+  }
   return parsed;
 }
 
