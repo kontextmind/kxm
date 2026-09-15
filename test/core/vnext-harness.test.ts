@@ -984,17 +984,39 @@ test("async default probe paths do not keep spawnSync on product call sites", ()
 
 test("async inventory probes yield to sibling timers instead of blocking spawnSync", { skip: process.platform === "win32", timeout: 5000 }, async () => {
   const dir = mkdtempSync(join(tmpdir(), "kxm-async-probe-"));
-  writeFileSync(join(dir, "claude"), '#!/bin/sh\nsleep 0.12\nif [ "$1" = "--version" ]; then echo "fixture-cli"; else echo \'{"loggedIn":false}\'; fi\n', { mode: 0o700 });
+  writeFileSync(
+    join(dir, "claude"),
+    `#!${process.execPath}\nsetTimeout(() => {\n  if (process.argv[2] === "--version") process.stdout.write("fixture-cli\\n");\n  else process.stdout.write('{"loggedIn":false}\\n');\n}, 120);\n`,
+    { mode: 0o700 },
+  );
   let progressed = false;
   const timer = setTimeout(() => { progressed = true; }, 20);
   try {
-    const inventory = await probeHarnessesAsync({ env: { ...process.env, PATH: `${dir}:${process.env.PATH ?? ""}` }, timeoutMs: 3000 });
+    const inventory = await probeHarnessesAsync({ env: { PATH: dir }, timeoutMs: 3000 });
     assert.equal(progressed, true, "auth/capability probes must not block the event loop");
+    assert.equal(status(inventory, "claude").detected, true);
     assert.equal(status(inventory, "claude").authenticated, false);
+    for (const id of BUILTIN_HARNESS_IDS) {
+      if (id === "claude") continue;
+      assert.equal(status(inventory, id).detected, false, `${id} must not be reachable from the isolated PATH`);
+    }
   } finally {
     clearTimeout(timer);
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("async inventory probe test does not inherit ambient PATH", () => {
+  const source = readFileSync(fileURLToPath(import.meta.url), "utf8");
+  const marker = "async inventory probes yield to sibling timers instead of blocking spawnSync";
+  const start = source.indexOf(marker);
+  assert.notEqual(start, -1);
+  const next = source.indexOf("\ntest(", start + marker.length);
+  const body = source.slice(start, next === -1 ? source.length : next);
+  assert.match(body, /env:\s*\{\s*PATH:\s*dir\s*[,}]/);
+  assert.doesNotMatch(body, /\.\.\.process\.env/);
+  assert.doesNotMatch(body, /process\.env\.PATH/);
+  assert.doesNotMatch(body, /process\.env\["PATH"\]/);
 });
 
 

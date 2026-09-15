@@ -6,6 +6,8 @@ import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { runCli as runCliImplementation, type CliIo } from "../../plugins/kxm/src/cli.ts";
+import { cmdVnextRunDrive, vnextDriveCliSeams } from "../../plugins/kxm/src/cli/vnext.ts";
+import type { Runtime } from "../../plugins/kxm/src/cli/types.ts";
 import { vnextLocalBindingFile } from "../../plugins/kxm/src/vnext-bindings.ts";
 import { initializeVnextProject } from "../../plugins/kxm/src/vnext-init.ts";
 import { stringify } from "yaml";
@@ -621,6 +623,85 @@ test("kxm run creates, lists, shows, and cancels a run offline with an auto-star
     await waitForSupervisorExit(env);
     rmWithRetry(cwd);
     rmWithRetry(stateRoot);
+  }
+});
+
+test("kxm runs drive requires driveId, poll, and accepted before printing success", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "kxm-run-drive-cli-"));
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-run-drive-cli-state-"));
+  try {
+    makeGitRoot(cwd);
+    initializeVnextProject(cwd, { projectId: "prj_01JDRIVECLi0000000000000", projectName: "Drive CLI" });
+    spawnSync("git", ["-C", cwd, "add", "-A"], { windowsHide: true });
+    spawnSync("git", ["-C", cwd, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "init"], { windowsHide: true });
+
+    const handle = { runtimeId: "rtm_drivecli", port: 9, token: "tok", started: true as const };
+    vnextDriveCliSeams.ensureSupervisor = async () => handle;
+    const accepted = {
+      ok: true,
+      status: "accepted",
+      runId: "run_drivecli",
+      driveId: "drv_0123456789abcdef01234567",
+      poll: "/v1/runs/run_drivecli",
+      mode: "simulated",
+    };
+
+    const driveRuntime = (json: boolean, io: CliIo): Runtime => ({
+      env: { ...process.env, KXM_STATE_HOME: stateRoot },
+      io,
+      cwd,
+      json,
+      dryRun: false,
+      dirs: {
+        workdir: cwd,
+        workspace: cwd,
+        config: join(cwd, ".kxm"),
+        logs: join(cwd, ".kxm", "logs"),
+        assets: join(cwd, ".kxm", "assets"),
+        state: stateRoot,
+      },
+      serverUrl: "http://127.0.0.1",
+      fetchImpl: fetch,
+    });
+
+    vnextDriveCliSeams.runtimeRequest = async () => accepted;
+    const jsonOk = capture();
+    assert.equal(await cmdVnextRunDrive(driveRuntime(true, jsonOk), "run_drivecli", true), 0);
+    const jsonPayload = JSON.parse(jsonOk.read().stdout) as { ok: boolean; driveId: string; poll: string; status: string };
+    assert.equal(jsonPayload.ok, true);
+    assert.equal(jsonPayload.driveId, accepted.driveId);
+    assert.equal(jsonPayload.poll, accepted.poll);
+    assert.equal(jsonPayload.status, "accepted");
+
+    const textOk = capture();
+    assert.equal(await cmdVnextRunDrive(driveRuntime(false, textOk), "run_drivecli", true), 0);
+    assert.match(textOk.read().stdout, /drive drv_0123456789abcdef01234567: accepted \(poll \/v1\/runs\/run_drivecli\)/);
+
+    const malformedBodies: Record<string, unknown>[] = [
+      { ...accepted, driveId: "" },
+      { ...accepted, driveId: 12 },
+      { ok: true, status: "accepted", poll: accepted.poll },
+      { ...accepted, poll: "" },
+      { ...accepted, poll: 7 },
+      { ...accepted, status: "driven" },
+      { ...accepted, status: undefined },
+    ];
+    for (const body of malformedBodies) {
+      vnextDriveCliSeams.runtimeRequest = async () => body;
+      const jsonBad = capture();
+      assert.equal(await cmdVnextRunDrive(driveRuntime(true, jsonBad), "run_drivecli", true), 1);
+      const jsonError = JSON.parse(jsonBad.read().stderr) as { ok: boolean; error: string };
+      assert.equal(jsonError.ok, false);
+      assert.equal(jsonError.error, "run_drive_io_failed");
+      const textBad = capture();
+      assert.equal(await cmdVnextRunDrive(driveRuntime(false, textBad), "run_drivecli", true), 1);
+      assert.match(textBad.read().stderr, /run drive failed because a local operation did not complete/);
+    }
+  } finally {
+    delete vnextDriveCliSeams.ensureSupervisor;
+    delete vnextDriveCliSeams.runtimeRequest;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(stateRoot, { recursive: true, force: true });
   }
 });
 

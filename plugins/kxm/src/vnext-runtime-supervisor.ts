@@ -24,7 +24,8 @@ import {
 } from "./vnext-runtime.ts";
 import { createVnextOneShotProducer } from "./vnext-oneshot-producer.ts";
 import { isProducerAdmitted } from "./producers.ts";
-import { VnextRunScheduler, createVnextSimulatedProducer, driveVnextRun, pinVnextCompiledPlan, recoverVnextRun, startVnextRun } from "./vnext-engine.ts";
+import { VnextRunScheduler, createVnextSimulatedProducer, recoverVnextRun } from "./vnext-engine.ts";
+import { vnextOpenDriveSessions } from "./vnext-runtime-owner.ts";
 
 /* ------------------------------------------------------------------ *
  * Token management
@@ -280,6 +281,44 @@ function sendJson(response: ServerResponse, status: number, payload: unknown): v
   response.end(body);
 }
 
+export const DEFAULT_RUNTIME_STOP_GRACE_MS = 30_000;
+/** Documented upper bound: 10 minutes, well under Node's 2^31-1 ms timer range. */
+export const MAX_RUNTIME_STOP_GRACE_MS = 600_000;
+
+export function runtimeStopGraceMs(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.KXM_RUNTIME_STOP_GRACE_MS;
+  if (raw === undefined || raw.trim() === "") return DEFAULT_RUNTIME_STOP_GRACE_MS;
+  const parsed = Number(raw.trim());
+  if (
+    !Number.isFinite(parsed)
+    || !Number.isInteger(parsed)
+    || parsed < 0
+    || parsed > MAX_RUNTIME_STOP_GRACE_MS
+  ) {
+    process.stderr.write(
+      `KXM_RUNTIME_STOP_GRACE_MS must be an integer between 0 and ${MAX_RUNTIME_STOP_GRACE_MS} ms (10 minutes); using default ${DEFAULT_RUNTIME_STOP_GRACE_MS}\n`,
+    );
+    return DEFAULT_RUNTIME_STOP_GRACE_MS;
+  }
+  return parsed;
+}
+
+async function waitForDriveSessions(settled: Promise<unknown>[], graceMs: number): Promise<void> {
+  if (settled.length === 0) return;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      Promise.allSettled(settled),
+      new Promise<void>((resolve) => {
+        timeout = setTimeout(resolve, graceMs);
+        timeout.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+  }
+}
+
 export interface VnextRuntimeSupervisor {
   server: Server;
   port: number;
@@ -322,7 +361,6 @@ async function startVnextRuntimeSupervisorInner(
   const runtimeId = `rtm_${createHash("sha256").update(`${paths.stateRoot}\0${process.pid}\0${now()}\0${randomBytes(16).toString("hex")}`, "utf8").digest("hex").slice(0, 24)}`;
   const requestedPort = requestedPortOption ?? 0;
   let activeRuntimeId = runtimeId;
-  const activeDrives = new Map<string, Promise<unknown>>();
 
   const contexts = new Map<string, VnextRuntimeContext>();
   const contextFor = (projectRoot: string): VnextRuntimeContext => {
@@ -420,32 +458,9 @@ async function startVnextRuntimeSupervisorInner(
             }
             const run = context.eventStore.run(runId);
             if (!run) throw runtimeError("run_unknown", runId, "run not found");
-            if (activeDrives.has(runId)) {
-              sendJson(response, 409, { ok: false, error: "run_busy", message: `run ${runId} is already executing` });
-              return;
-            }
-            if (run.status === "completed" || run.status === "failed" || run.status === "cancelled" || run.status === "cancelling") {
-              sendJson(response, 409, { ok: false, error: "run_busy", message: `run ${runId} is already ${run.status}` });
-              return;
-            }
-            let releaseActive = () => {};
-            const activePromise = new Promise<void>((resolve) => { releaseActive = resolve; });
-            activeDrives.set(runId, activePromise);
-            const cleanupActive = () => {
-              activeDrives.delete(runId);
-              releaseActive();
-            };
 
-            if (run.status === "created") {
-              pinVnextCompiledPlan(context, bundle, runId);
-              const plan = startVnextRun(context, runId, { allowLimits: true });
-              if (plan.handoff) {
-                cleanupActive();
-                sendJson(response, 409, { ok: false, error: "run_handoff_required", handoff: plan.handoff });
-                return;
-              }
-            }
-            const producer = body.mode === "live"
+            const delayMs = typeof body.delayMs === "number" && body.delayMs > 0 ? body.delayMs : 0;
+            const createProducer = () => body.mode === "live"
               ? createVnextOneShotProducer({
                   projectRoot,
                   defaultHarness: String(bundle.project.value.defaultHarness ?? "pi"),
@@ -466,56 +481,53 @@ async function startVnextRuntimeSupervisorInner(
                     return { provider, model: modelName };
                   },
                 })
-              : (() => {
-                  const delayMs = typeof body.delayMs === "number" && body.delayMs > 0 ? body.delayMs : 0;
-                  return createVnextSimulatedProducer(async () => {
-                    if (delayMs > 0) {
-                      await new Promise((r) => setTimeout(r, delayMs));
-                    }
-                    return { outcome: "passed" };
-                  });
-                })();
+              : createVnextSimulatedProducer(async () => {
+                  if (delayMs > 0) {
+                    await new Promise((r) => setTimeout(r, delayMs));
+                  }
+                  return { outcome: "passed" };
+                });
 
-            let drivePromise: Promise<unknown> | undefined;
+            let session: Awaited<ReturnType<VnextRunScheduler["openDriveSession"]>> | undefined;
             let earlyError: unknown;
             try {
               const scheduler = VnextRunScheduler.for(context, bundle);
-              drivePromise = scheduler.enqueue(runId, producer, { allowLimits: true, liveMode: body.mode === "live" });
-              drivePromise.catch((err) => { earlyError = err; });
+              const opening = scheduler.openDriveSession(runId, {
+                mode: body.mode,
+                allowLimits: true,
+                liveMode: body.mode === "live",
+                createProducer,
+              });
+              opening.catch((err) => { earlyError = err; });
+              session = await opening;
             } catch (err) {
               earlyError = err;
             }
 
-            // Yield microtask to catch synchronous duplicate queue check (e.g. run_busy)
-            await Promise.resolve();
-
             if (earlyError) {
-              cleanupActive();
               const errStr = String(earlyError);
+              if (errStr.includes("run_handoff_required")) {
+                const handoff = (earlyError as { handoff?: unknown }).handoff;
+                sendJson(response, 409, { ok: false, error: "run_handoff_required", ...(handoff !== undefined ? { handoff } : {}) });
+                return;
+              }
               if (errStr.includes("run_busy") || errStr.includes("scheduler_policy_conflict")) {
-                if ("close" in producer && typeof producer.close === "function") {
-                  try { await producer.close(); } catch { /* ignore */ }
-                }
                 sendJson(response, 409, { ok: false, error: "run_busy", message: `run ${runId} is already admitted or queued` });
                 return;
               }
               throw earlyError;
             }
 
-            void drivePromise!.finally(async () => {
-              cleanupActive();
-              if ("close" in producer && typeof producer.close === "function") {
-                try { await producer.close(); } catch { /* ignore */ }
-              }
-            }).catch(() => {
-              // Derived finally() re-rejects when the admitted drive or cleanup
-              // throws; void does not consume that. Keep the request 202.
+            void session!.settled.catch(() => {
+              // Post-202 drive failures stay on the session; keep the request 202.
             });
 
+            if (response.writableEnded) return;
             sendJson(response, 202, {
               ok: true,
               status: "accepted",
               runId,
+              driveId: session!.driveId,
               poll: `/v1/runs/${runId}`,
               mode: body.mode,
             });
@@ -657,9 +669,22 @@ async function startVnextRuntimeSupervisorInner(
     stopping = true;
     clearInterval(heartbeat);
     try { registry.markStopping(process.pid, now()); } catch { /* best effort */ }
-    if (activeDrives.size > 0) {
-      await Promise.allSettled([...activeDrives.values()]);
+    const openSessions = [...contexts.values()].flatMap((context) => (
+      vnextOpenDriveSessions(context.eventStore.path).map((session) => ({ context, session }))
+    ));
+    for (const { context, session } of openSessions) {
+      try {
+        cancelVnextRun(context, session.runId, { reason: "runtime_shutdown" });
+      } catch {
+        // Terminal or already cancelling runs still release on session settle.
+      }
+      try {
+        session.controller.abort();
+      } catch {
+        // Session abort is best-effort after cancel is recorded.
+      }
     }
+    await waitForDriveSessions(openSessions.map(({ session }) => session.settled), runtimeStopGraceMs());
     for (const context of contexts.values()) closeVnextRuntimeContext(context);
     contexts.clear();
     const closed = new Promise<void>((resolveStop) => server.close(() => resolveStop()));

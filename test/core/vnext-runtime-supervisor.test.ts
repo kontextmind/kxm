@@ -3,12 +3,17 @@ import test from "node:test";
 import { removeTempDir } from "../helpers.ts";
 import { engineProject } from "../helpers/vnext-project.ts";
 import {
+  DEFAULT_RUNTIME_STOP_GRACE_MS,
+  MAX_RUNTIME_STOP_GRACE_MS,
   readVnextSupervisorToken,
+  runtimeStopGraceMs,
   startVnextRuntimeSupervisor,
   vnextRuntimeRequest,
 } from "../../plugins/kxm/src/vnext-runtime-supervisor.ts";
 import { vnextRuntimePaths } from "../../plugins/kxm/src/vnext-runtime-store.ts";
-import { VnextRunScheduler } from "../../plugins/kxm/src/vnext-engine.ts";
+import { VnextRunScheduler, vnextPanelDispatchSeams } from "../../plugins/kxm/src/vnext-engine.ts";
+import { vnextAdmittedToken } from "../../plugins/kxm/src/vnext-runtime-owner.ts";
+import { closeVnextRuntimeContext, openVnextRuntimeContext } from "../../plugins/kxm/src/vnext-runtime.ts";
 
 test("supervisor /drive returns 202 with poll link and completes asynchronously", async () => {
   const { root, stateRoot } = engineProject("kxm-supervisor-drive-202-");
@@ -39,6 +44,8 @@ test("supervisor /drive returns 202 with poll link and completes asynchronously"
     assert.equal(driveBody.ok, true);
     assert.equal(driveBody.status, "accepted");
     assert.equal(driveBody.runId, runId);
+    assert.equal(typeof driveBody.driveId, "string");
+    assert.match(String(driveBody.driveId), /^drv_[a-f0-9]{24}$/);
     assert.equal(driveBody.poll, `/v1/runs/${runId}`);
     assert.equal(driveBody.mode, "simulated");
 
@@ -61,6 +68,11 @@ test("supervisor /drive returns 202 with poll link and completes asynchronously"
 test("supervisor /drive rejects duplicate concurrent drive with 409", async () => {
   const { root, stateRoot } = engineProject("kxm-supervisor-drive-409-");
   let supervisor: Awaited<ReturnType<typeof startVnextRuntimeSupervisor>> | undefined;
+  const unhandled: string[] = [];
+  const onUnhandled = (reason: unknown) => {
+    unhandled.push(String(reason));
+  };
+  process.on("unhandledRejection", onUnhandled);
   try {
     supervisor = await startVnextRuntimeSupervisor({ stateRoot });
     const token = readVnextSupervisorToken(vnextRuntimePaths({ stateRoot }))!;
@@ -94,7 +106,11 @@ test("supervisor /drive rejects duplicate concurrent drive with 409", async () =
     const errorBody = await errorRes.json() as Record<string, unknown>;
     assert.equal(errorBody.ok, false);
     assert.equal(errorBody.error, "run_busy");
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(unhandled.length, 0, `unhandledRejection: ${unhandled.join("; ")}`);
   } finally {
+    process.removeListener("unhandledRejection", onUnhandled);
     if (supervisor) await supervisor.stop();
     removeTempDir(root, stateRoot);
   }
@@ -103,19 +119,22 @@ test("supervisor /drive rejects duplicate concurrent drive with 409", async () =
 test("supervisor post-202 drive rejection is handled and cleanup still runs", async () => {
   const { root, stateRoot } = engineProject("kxm-supervisor-drive-reject-");
   let supervisor: Awaited<ReturnType<typeof startVnextRuntimeSupervisor>> | undefined;
-  const originalEnqueue = VnextRunScheduler.prototype.enqueue;
+  const originalOpen = VnextRunScheduler.prototype.openDriveSession;
   const unhandled: string[] = [];
   const onUnhandled = (reason: unknown) => {
     unhandled.push(String(reason));
   };
   process.on("unhandledRejection", onUnhandled);
   try {
-    VnextRunScheduler.prototype.enqueue = function () {
-      return new Promise((_, reject) => {
-        setImmediate(() => {
-          reject(new Error("run_events_illegal: drive made no progress"));
-        });
-      });
+    VnextRunScheduler.prototype.openDriveSession = async function () {
+      return {
+        driveId: "drv_testunhandledrejection00",
+        settled: new Promise((_, reject) => {
+          setImmediate(() => {
+            reject(new Error("run_events_illegal: drive made no progress"));
+          });
+        }),
+      };
     };
 
     supervisor = await startVnextRuntimeSupervisor({ stateRoot });
@@ -159,7 +178,7 @@ test("supervisor post-202 drive rejection is handled and cleanup still runs", as
     assert.equal(unhandled.length, 0, `unhandledRejection after stop: ${unhandled.join("; ")}`);
   } finally {
     process.removeListener("unhandledRejection", onUnhandled);
-    VnextRunScheduler.prototype.enqueue = originalEnqueue;
+    VnextRunScheduler.prototype.openDriveSession = originalOpen;
     if (supervisor) await supervisor.stop();
     removeTempDir(root, stateRoot);
   }
@@ -252,7 +271,6 @@ test("supervisor graceful shutdown waits for active drive", async () => {
     supervisor = undefined;
 
     // After shutdown, open context directly to verify run settled cleanly
-    const { openVnextRuntimeContext, closeVnextRuntimeContext } = await import("../../plugins/kxm/src/vnext-runtime.ts");
     const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: handle.runtimeId });
     try {
       const run = context.eventStore.run(runId);
@@ -264,4 +282,238 @@ test("supervisor graceful shutdown waits for active drive", async () => {
     if (supervisor) await supervisor.stop();
     removeTempDir(root, stateRoot);
   }
+});
+
+function resetSupervisorPanelSeams(): void {
+  vnextPanelDispatchSeams.afterBirth = undefined;
+  vnextPanelDispatchSeams.beforeAppendExecuting = undefined;
+  vnextPanelDispatchSeams.failAppendExecuting = undefined;
+  vnextPanelDispatchSeams.beforeInvoke = undefined;
+  vnextPanelDispatchSeams.failSettleMember = undefined;
+  vnextPanelDispatchSeams.skipDispatch = undefined;
+}
+
+test("post-202 engine throw leaves failed or attempt_unreconciled, never bare running", async () => {
+  const { root, stateRoot } = engineProject("kxm-supervisor-drive-throw-");
+  let supervisor: Awaited<ReturnType<typeof startVnextRuntimeSupervisor>> | undefined;
+  const unhandled: string[] = [];
+  const onUnhandled = (reason: unknown) => {
+    unhandled.push(String(reason));
+  };
+  process.on("unhandledRejection", onUnhandled);
+  resetSupervisorPanelSeams();
+  try {
+    vnextPanelDispatchSeams.skipDispatch = () => true;
+    supervisor = await startVnextRuntimeSupervisor({ stateRoot });
+    const token = readVnextSupervisorToken(vnextRuntimePaths({ stateRoot }))!;
+    const handle = { runtimeId: supervisor.runtimeId, port: supervisor.port, token, started: true };
+    const acceptance = await vnextRuntimeRequest(handle, "POST", "/v1/runs", {
+      projectRoot: root,
+      workflowId: "one-step",
+      prompt: "post-202 engine throw",
+    });
+    const runId = (acceptance.run as { runId: string }).runId;
+    const driveRes = await fetch(`http://127.0.0.1:${supervisor.port}/v1/runs/${runId}/drive?projectRoot=${encodeURIComponent(root)}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ mode: "simulated" }),
+    });
+    assert.equal(driveRes.status, 202);
+    const startTime = Date.now();
+    let status = "running";
+    let recorded = false;
+    while (Date.now() - startTime < 5000) {
+      const peek = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: handle.runtimeId });
+      try {
+        status = peek.eventStore.run(runId)?.status ?? "missing";
+        const events = peek.eventStore.events(runId, 0, 200);
+        recorded = events.some((event) =>
+          event.eventType === "run.cancel_requested"
+          || (event.eventType === "run.status_changed" && (event.payload.status === "failed" || event.payload.status === "cancelled"))
+        );
+        if (status !== "running") break;
+      } finally {
+        closeVnextRuntimeContext(peek);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    assert.notEqual(status, "running", "engine throw must not leave a bare running run");
+    assert.ok(status === "failed" || status === "cancelling" || status === "cancelled", `status=${status}`);
+    assert.equal(recorded, true, "post-202 failure must record failed or cancel through a fold-accepted path");
+    assert.equal(unhandled.length, 0, `unhandledRejection: ${unhandled.join("; ")}`);
+  } finally {
+    process.removeListener("unhandledRejection", onUnhandled);
+    resetSupervisorPanelSeams();
+    if (supervisor) await supervisor.stop();
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("shutdown with a slow simulated producer records cancel_requested runtime_shutdown within grace", async () => {
+  const { root, stateRoot } = engineProject("kxm-supervisor-drive-shutdown-cancel-");
+  let supervisor: Awaited<ReturnType<typeof startVnextRuntimeSupervisor>> | undefined;
+  try {
+    supervisor = await startVnextRuntimeSupervisor({ stateRoot });
+    const token = readVnextSupervisorToken(vnextRuntimePaths({ stateRoot }))!;
+    const handle = { runtimeId: supervisor.runtimeId, port: supervisor.port, token, started: true };
+    const acceptance = await vnextRuntimeRequest(handle, "POST", "/v1/runs", {
+      projectRoot: root,
+      workflowId: "one-step",
+      prompt: "shutdown cancel",
+    });
+    const runId = (acceptance.run as { runId: string }).runId;
+    const driveRes = await fetch(`http://127.0.0.1:${supervisor.port}/v1/runs/${runId}/drive?projectRoot=${encodeURIComponent(root)}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ mode: "simulated", delayMs: 1500 }),
+    });
+    assert.equal(driveRes.status, 202);
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < 1000) {
+      const peek = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: handle.runtimeId });
+      try {
+        if (peek.eventStore.run(runId)?.status === "running") break;
+      } finally {
+        closeVnextRuntimeContext(peek);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 15));
+    }
+    await supervisor.stop();
+    supervisor = undefined;
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: handle.runtimeId });
+    try {
+      const events = context.eventStore.events(runId, 0, 200);
+      const cancel = events.find((event) => event.eventType === "run.cancel_requested");
+      assert.equal(cancel?.payload.reason, "runtime_shutdown");
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    if (supervisor) await supervisor.stop();
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("abort-ignoring producer returns after grace with attempt unreconciled", async () => {
+  const { root, stateRoot } = engineProject("kxm-supervisor-drive-grace-unrec-");
+  let supervisor: Awaited<ReturnType<typeof startVnextRuntimeSupervisor>> | undefined;
+  const previousGrace = process.env.KXM_RUNTIME_STOP_GRACE_MS;
+  const unhandled: string[] = [];
+  const onUnhandled = (reason: unknown) => {
+    unhandled.push(String(reason));
+  };
+  process.on("unhandledRejection", onUnhandled);
+  process.env.KXM_RUNTIME_STOP_GRACE_MS = "120";
+  try {
+    supervisor = await startVnextRuntimeSupervisor({ stateRoot });
+    const token = readVnextSupervisorToken(vnextRuntimePaths({ stateRoot }))!;
+    const handle = { runtimeId: supervisor.runtimeId, port: supervisor.port, token, started: true };
+    const acceptance = await vnextRuntimeRequest(handle, "POST", "/v1/runs", {
+      projectRoot: root,
+      workflowId: "one-step",
+      prompt: "abort ignoring",
+    });
+    const runId = (acceptance.run as { runId: string }).runId;
+    const driveRes = await fetch(`http://127.0.0.1:${supervisor.port}/v1/runs/${runId}/drive?projectRoot=${encodeURIComponent(root)}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ mode: "simulated", delayMs: 4000 }),
+    });
+    assert.equal(driveRes.status, 202);
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < 1000) {
+      const peek = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: handle.runtimeId });
+      try {
+        if (peek.eventStore.run(runId)?.status === "running") break;
+      } finally {
+        closeVnextRuntimeContext(peek);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 15));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    const stopStarted = Date.now();
+    await supervisor.stop();
+    const stopMs = Date.now() - stopStarted;
+    supervisor = undefined;
+    assert.ok(stopMs < 1500, `stop waited ${stopMs}ms, expected grace expiry`);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: handle.runtimeId });
+    try {
+      const run = context.eventStore.run(runId);
+      assert.ok(run, "run must still exist");
+      assert.notEqual(run?.status, "completed");
+      assert.ok(run?.status === "cancelling" || run?.status === "running" || run?.status === "failed");
+      const events = context.eventStore.events(runId, 0, 200);
+      assert.equal(events.some((event) => event.eventType === "run.cancel_requested" && event.payload.reason === "runtime_shutdown"), true);
+      const terminalAttempt = events.some((event) => event.eventType === "attempt.status_changed" && event.payload.status === "terminal");
+      assert.equal(terminalAttempt, false, "grace expiry must not fabricate a terminal attempt");
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal(unhandled.length, 0, `unhandledRejection: ${unhandled.join("; ")}`);
+  } finally {
+    process.removeListener("unhandledRejection", onUnhandled);
+    if (previousGrace === undefined) delete process.env.KXM_RUNTIME_STOP_GRACE_MS;
+    else process.env.KXM_RUNTIME_STOP_GRACE_MS = previousGrace;
+    if (supervisor) await supervisor.stop();
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("socket destroyed before 202 leaves no admission or full admission, never started-unadmitted", async () => {
+  const { root, stateRoot } = engineProject("kxm-supervisor-drive-disconnect-");
+  let supervisor: Awaited<ReturnType<typeof startVnextRuntimeSupervisor>> | undefined;
+  try {
+    supervisor = await startVnextRuntimeSupervisor({ stateRoot });
+    const token = readVnextSupervisorToken(vnextRuntimePaths({ stateRoot }))!;
+    const handle = { runtimeId: supervisor.runtimeId, port: supervisor.port, token, started: true };
+    const acceptance = await vnextRuntimeRequest(handle, "POST", "/v1/runs", {
+      projectRoot: root,
+      workflowId: "one-step",
+      prompt: "pre-202 disconnect",
+    });
+    const runId = (acceptance.run as { runId: string }).runId;
+    const ac = new AbortController();
+    const pending = fetch(`http://127.0.0.1:${supervisor.port}/v1/runs/${runId}/drive?projectRoot=${encodeURIComponent(root)}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ mode: "simulated", delayMs: 300 }),
+      signal: ac.signal,
+    });
+    ac.abort();
+    await pending.catch(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: handle.runtimeId });
+    try {
+      const run = context.eventStore.run(runId);
+      const admitted = vnextAdmittedToken(context.eventStore.path, runId);
+      const status = run?.status ?? "missing";
+      if (status === "preparing" || status === "running") {
+        assert.ok(admitted, `started-unadmitted: status=${status} token=${String(admitted)}`);
+      }
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    if (supervisor) await supervisor.stop();
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("KXM_RUNTIME_STOP_GRACE_MS is bounded and fail-closed", () => {
+  assert.equal(DEFAULT_RUNTIME_STOP_GRACE_MS, 30_000);
+  assert.equal(MAX_RUNTIME_STOP_GRACE_MS, 600_000);
+
+  assert.equal(runtimeStopGraceMs({}), DEFAULT_RUNTIME_STOP_GRACE_MS);
+  assert.equal(runtimeStopGraceMs({ KXM_RUNTIME_STOP_GRACE_MS: undefined }), DEFAULT_RUNTIME_STOP_GRACE_MS);
+  assert.equal(runtimeStopGraceMs({ KXM_RUNTIME_STOP_GRACE_MS: "" }), DEFAULT_RUNTIME_STOP_GRACE_MS);
+
+  assert.equal(runtimeStopGraceMs({ KXM_RUNTIME_STOP_GRACE_MS: String(2 ** 31) }), DEFAULT_RUNTIME_STOP_GRACE_MS);
+  assert.equal(runtimeStopGraceMs({ KXM_RUNTIME_STOP_GRACE_MS: String(7 * 24 * 60 * 60_000) }), DEFAULT_RUNTIME_STOP_GRACE_MS);
+  assert.equal(runtimeStopGraceMs({ KXM_RUNTIME_STOP_GRACE_MS: "-1" }), DEFAULT_RUNTIME_STOP_GRACE_MS);
+  assert.equal(runtimeStopGraceMs({ KXM_RUNTIME_STOP_GRACE_MS: "nope" }), DEFAULT_RUNTIME_STOP_GRACE_MS);
+
+  assert.equal(runtimeStopGraceMs({ KXM_RUNTIME_STOP_GRACE_MS: "0" }), 0);
+  assert.equal(runtimeStopGraceMs({ KXM_RUNTIME_STOP_GRACE_MS: "120" }), 120);
+  assert.equal(runtimeStopGraceMs({ KXM_RUNTIME_STOP_GRACE_MS: String(MAX_RUNTIME_STOP_GRACE_MS) }), MAX_RUNTIME_STOP_GRACE_MS);
 });

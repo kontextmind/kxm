@@ -21877,6 +21877,32 @@ function vnextGateHold(storePath, runId) {
 function vnextAdmittedToken(storePath, runId) {
   return owners.get(storePath)?.admitted.get(runId)?.token;
 }
+function attachVnextDriveSession(storePath, runId, token, session) {
+  const owner = record(storePath);
+  const current = owner.admitted.get(runId);
+  if (!current || current.token !== token) {
+    throw runtimeError("run_events_illegal", runId, "drive session requires the exact admitted token");
+  }
+  if (current.driveSession) {
+    throw runtimeError("run_busy", runId, `run ${runId} already has a drive session`);
+  }
+  current.driveSession = session;
+}
+function clearVnextDriveSession(storePath, runId, token) {
+  const owner = owners.get(storePath);
+  const current = owner?.admitted.get(runId);
+  if (!current || current.token !== token) return;
+  delete current.driveSession;
+}
+function vnextOpenDriveSessions(storePath) {
+  const owner = owners.get(storePath);
+  if (!owner) return [];
+  const sessions = [];
+  for (const current of owner.admitted.values()) {
+    if (current.driveSession) sessions.push(current.driveSession);
+  }
+  return sessions;
+}
 function enqueueVnextScheduledRun(storePath, runId, configRevision, bound, start) {
   const owner = record(storePath);
   if (owner.admitted.has(runId) || owner.queue.some((item) => item.runId === runId)) {
@@ -22315,15 +22341,16 @@ function cancelVnextRun(context, runId, options = {}) {
       events.push(event);
       return event;
     };
+    const cancelReason = options.reason ?? "operator_cancel";
     const activeAttempt = Boolean(folded.currentStep?.attemptId) || vnextFoldPanelAttemptIds(folded.currentStep).length > 0;
     push("run.cancel_requested", {
       actor: { kind: "runtime", id: context.homeRuntimeId },
-      reason: "operator_cancel"
+      reason: cancelReason
     });
     let status = "cancelled";
     if (folded.status === "running" && activeAttempt) {
       status = "cancelling";
-      push("run.status_changed", { status: "cancelling", reason: "operator_cancel" });
+      push("run.status_changed", { status: "cancelling", reason: cancelReason });
       const attemptIds = new Set(vnextFoldPanelAttemptIds(folded.currentStep));
       if (folded.currentStep?.attemptId) attemptIds.add(folded.currentStep.attemptId);
       for (const attemptId of attemptIds) {
@@ -22336,7 +22363,7 @@ function cancelVnextRun(context, runId, options = {}) {
         abortControllers.push(owned.controller);
       }
     } else if (folded.status === "blocked_uncertain") {
-      push("run.status_changed", { status: "cancelling", reason: "operator_cancel" });
+      push("run.status_changed", { status: "cancelling", reason: cancelReason });
       const attemptId = folded.currentStep?.attemptId;
       if (attemptId) {
         const capability = context.eventStore.capabilityByAttempt(attemptId);
@@ -22348,13 +22375,13 @@ function cancelVnextRun(context, runId, options = {}) {
       for (const owned of vnextAttemptControllers(context.eventStore.path, runId)) {
         abortControllers.push(owned.controller);
       }
-      push("run.status_changed", { status: "cancelled", reason: "operator_cancel" });
+      push("run.status_changed", { status: "cancelled", reason: cancelReason });
       status = "cancelled";
     } else if (folded.status === "running" && !activeAttempt) {
-      push("run.status_changed", { status: "cancelling", reason: "operator_cancel" });
-      push("run.status_changed", { status: "cancelled", reason: "operator_cancel" });
+      push("run.status_changed", { status: "cancelling", reason: cancelReason });
+      push("run.status_changed", { status: "cancelled", reason: cancelReason });
     } else {
-      push("run.status_changed", { status: "cancelled", reason: "operator_cancel" });
+      push("run.status_changed", { status: "cancelled", reason: cancelReason });
     }
     for (const event of events) context.eventStore.appendEvent(event);
     const nextState = foldStoredVnextRun(context, run);
@@ -24271,12 +24298,77 @@ async function driveAdmitted(context, runId, producer, token, options = {}) {
   }
   return latest;
 }
+function newDriveId(runId, token, runtimeId, monotonicNs) {
+  return `drv_${createHash11("sha256").update(`${runId}\0${token}\0${runtimeId}\0${monotonicNs}`, "utf8").digest("hex").slice(0, 24)}`;
+}
+function inflightAttemptId(state) {
+  const leftover = unreconciledPanelAttemptId(state);
+  if (leftover) return leftover;
+  if (state.currentStep?.attemptId) {
+    const located = vnextFoldPanelAttempt(state.currentStep, state.currentStep.attemptId);
+    const status = located?.attempt.status;
+    if (status === "starting" || status === "executing" || status === "settling") return state.currentStep.attemptId;
+  }
+  return void 0;
+}
+function recordExecutingUnrecordedFailure(context, runId, attemptId, stepId) {
+  context.eventStore.transaction(() => {
+    const run = requireRun(context, runId);
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const sequence = context.eventStore.nextSequence(runId);
+    const event = {
+      ...vnextEventBase(context, run, now, vnextMonotonicNs()),
+      eventId: newVnextEventId(),
+      eventType: "run.status_changed",
+      sequence,
+      payload: { status: "failed", reason: "executing_unrecorded", stepId }
+    };
+    context.eventStore.appendEvent(event);
+    context.eventStore.settleCapability(attemptId, "revoked");
+    const next = foldStoredVnextRun(context, run);
+    persistVnextRunState(context, runId, next, sequence);
+    context.eventStore.updateRunStatus(runId, "failed", now);
+  });
+}
+function recordBareDriveFailure(context, runId) {
+  if (isVnextRuntimeContextClosed(context)) return;
+  try {
+    const run = context.eventStore.run(runId);
+    if (!run) return;
+    const state = foldStoredVnextRun(context, run);
+    if (isTerminalRunStatus(state.status) || state.status === "cancelling") return;
+    const inflight = inflightAttemptId(state);
+    if (inflight) {
+      const currentStep = state.currentStep;
+      const located = vnextFoldPanelAttempt(currentStep, inflight);
+      if (currentStep && currentStep.panel.order.length === 1 && located?.attempt.status === "starting") {
+        const plan = rehydrateVnextCompiledPlanFromStore(context.eventStore, run);
+        const step = plan.steps[currentStep.stepId];
+        if (step?.kind === "gate") return;
+        if (step && (step.kind === "agent" || step.kind === "moa") && step.assignments.maximum > 1) return;
+        recordExecutingUnrecordedFailure(context, runId, inflight, currentStep.stepId);
+      }
+      return;
+    }
+    cancelVnextRun(context, runId, { reason: "drive_error" });
+  } catch {
+  }
+}
+async function closeDriveProducer(producer) {
+  if (typeof producer.close !== "function") return;
+  try {
+    await producer.close();
+  } catch {
+  }
+}
 var VnextRunScheduler = class _VnextRunScheduler {
   context;
+  bundle;
   configRevision;
-  constructor(context, configRevision) {
+  constructor(context, bundle) {
     this.context = context;
-    this.configRevision = configRevision;
+    this.bundle = bundle;
+    this.configRevision = bundle.configRevision;
   }
   static for(context, bundle) {
     if (String(bundle.project.value.id) !== context.projectId) {
@@ -24284,7 +24376,7 @@ var VnextRunScheduler = class _VnextRunScheduler {
     }
     const limits = vnextProjectAdmissionLimits(bundle);
     bindVnextSchedulerPolicy(context.eventStore.path, limits.maxConcurrentRuns, bundle.configRevision);
-    return new _VnextRunScheduler(context, bundle.configRevision);
+    return new _VnextRunScheduler(context, bundle);
   }
   enqueue(runId, producer, options = {}) {
     requireTrustedProducer(producer);
@@ -24305,6 +24397,91 @@ var VnextRunScheduler = class _VnextRunScheduler {
     } catch (error) {
       return Promise.reject(error);
     }
+  }
+  openDriveSession(runId, options) {
+    const policy = vnextSchedulerPolicy(this.context.eventStore.path);
+    if (!policy || policy.configRevision !== this.configRevision) {
+      return Promise.reject(runtimeError("scheduler_policy_conflict", runId, "scheduler handle does not match the active policy"));
+    }
+    try {
+      const run = requireRun(this.context, runId);
+      if (isTerminalRunStatus(run.status) || run.status === "cancelling") {
+        return Promise.reject(runtimeError("run_busy", runId, `run ${runId} is already ${run.status}`));
+      }
+    } catch (error) {
+      return Promise.reject(error);
+    }
+    const limits = vnextProjectAdmissionLimits(this.bundle);
+    const driveOptions = {
+      liveMode: options.liveMode ?? options.mode === "live"
+    };
+    if (options.allowLimits !== void 0) driveOptions.allowLimits = options.allowLimits;
+    let opened = false;
+    const pending = {
+      resolve: (_value) => void 0,
+      reject: (_error) => void 0
+    };
+    const settled = new Promise((resolve9, reject) => {
+      pending.resolve = resolve9;
+      pending.reject = reject;
+    });
+    void settled.then(void 0, () => void 0);
+    return new Promise((resolveOpen, rejectOpen) => {
+      const queued = enqueueVnextScheduledRun(
+        this.context.eventStore.path,
+        runId,
+        this.configRevision,
+        limits.maxConcurrentRuns,
+        async (token) => {
+          let producer;
+          try {
+            producer = options.createProducer();
+            requireTrustedProducer(producer);
+            const current = requireRun(this.context, runId);
+            if (current.status === "created") {
+              pinVnextCompiledPlan(this.context, this.bundle, runId);
+            }
+            const started = startVnextRun(this.context, runId, driveOptions);
+            if (started.handoff) {
+              const error = runtimeError("run_handoff_required", runId, started.handoff.detail);
+              Object.assign(error, { handoff: started.handoff });
+              throw error;
+            }
+            const driveId = newDriveId(runId, token, this.context.homeRuntimeId, vnextMonotonicNs());
+            const session = {
+              driveId,
+              runId,
+              token,
+              homeRuntimeId: this.context.homeRuntimeId,
+              mode: options.mode,
+              openedAt: (/* @__PURE__ */ new Date()).toISOString(),
+              controller: new AbortController(),
+              settled
+            };
+            attachVnextDriveSession(this.context.eventStore.path, runId, token, session);
+            opened = true;
+            resolveOpen({ driveId, settled });
+            try {
+              const result = await driveAdmitted(this.context, runId, producer, token, driveOptions);
+              pending.resolve(result);
+              return result;
+            } catch (error) {
+              recordBareDriveFailure(this.context, runId);
+              pending.reject(error);
+              throw error;
+            }
+          } finally {
+            if (producer) await closeDriveProducer(producer);
+            clearVnextDriveSession(this.context.eventStore.path, runId, token);
+          }
+        }
+      );
+      void queued.then(void 0, (error) => {
+        if (!opened) {
+          rejectOpen(error);
+        }
+      });
+    });
   }
 };
 function invokeProducer(producer, request) {
@@ -24644,6 +24821,9 @@ function prepareDispatch(context, runId, producerId) {
   const run = requireRun(context, runId);
   const plan = rehydrateVnextCompiledPlanFromStore(context.eventStore, run);
   const state = foldStoredVnextRun(context, run);
+  if (vnextPanelDispatchSeams.skipDispatch?.()) {
+    return { kind: "return", state };
+  }
   if (state.status === "cancelling" && vnextAttemptControllers(context.eventStore.path, runId).length === 0) {
     return {
       kind: "return",
@@ -26501,6 +26681,36 @@ function sendJson(response, status, payload) {
   response.writeHead(status, { "content-type": "application/json", "content-length": Buffer.byteLength(body) });
   response.end(body);
 }
+var DEFAULT_RUNTIME_STOP_GRACE_MS = 3e4;
+var MAX_RUNTIME_STOP_GRACE_MS = 6e5;
+function runtimeStopGraceMs(env = process.env) {
+  const raw = env.KXM_RUNTIME_STOP_GRACE_MS;
+  if (raw === void 0 || raw.trim() === "") return DEFAULT_RUNTIME_STOP_GRACE_MS;
+  const parsed = Number(raw.trim());
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 0 || parsed > MAX_RUNTIME_STOP_GRACE_MS) {
+    process.stderr.write(
+      `KXM_RUNTIME_STOP_GRACE_MS must be an integer between 0 and ${MAX_RUNTIME_STOP_GRACE_MS} ms (10 minutes); using default ${DEFAULT_RUNTIME_STOP_GRACE_MS}
+`
+    );
+    return DEFAULT_RUNTIME_STOP_GRACE_MS;
+  }
+  return parsed;
+}
+async function waitForDriveSessions(settled, graceMs) {
+  if (settled.length === 0) return;
+  let timeout;
+  try {
+    await Promise.race([
+      Promise.allSettled(settled),
+      new Promise((resolve9) => {
+        timeout = setTimeout(resolve9, graceMs);
+        timeout.unref?.();
+      })
+    ]);
+  } finally {
+    if (timeout !== void 0) clearTimeout(timeout);
+  }
+}
 async function startVnextRuntimeSupervisor(options = {}) {
   const now = options.now ?? (() => (/* @__PURE__ */ new Date()).toISOString());
   const paths = vnextRuntimePaths(options.stateRoot !== void 0 ? { stateRoot: options.stateRoot } : {});
@@ -26522,7 +26732,6 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
   const runtimeId = `rtm_${createHash12("sha256").update(`${paths.stateRoot}\0${process.pid}\0${now()}\0${randomBytes3(16).toString("hex")}`, "utf8").digest("hex").slice(0, 24)}`;
   const requestedPort = requestedPortOption ?? 0;
   let activeRuntimeId = runtimeId;
-  const activeDrives = /* @__PURE__ */ new Map();
   const contexts = /* @__PURE__ */ new Map();
   const contextFor = (projectRoot) => {
     if (!isAbsolute4(projectRoot)) {
@@ -26616,34 +26825,8 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
             }
             const run = context.eventStore.run(runId);
             if (!run) throw runtimeError("run_unknown", runId, "run not found");
-            if (activeDrives.has(runId)) {
-              sendJson(response, 409, { ok: false, error: "run_busy", message: `run ${runId} is already executing` });
-              return;
-            }
-            if (run.status === "completed" || run.status === "failed" || run.status === "cancelled" || run.status === "cancelling") {
-              sendJson(response, 409, { ok: false, error: "run_busy", message: `run ${runId} is already ${run.status}` });
-              return;
-            }
-            let releaseActive = () => {
-            };
-            const activePromise = new Promise((resolve9) => {
-              releaseActive = resolve9;
-            });
-            activeDrives.set(runId, activePromise);
-            const cleanupActive = () => {
-              activeDrives.delete(runId);
-              releaseActive();
-            };
-            if (run.status === "created") {
-              pinVnextCompiledPlan(context, bundle, runId);
-              const plan = startVnextRun(context, runId, { allowLimits: true });
-              if (plan.handoff) {
-                cleanupActive();
-                sendJson(response, 409, { ok: false, error: "run_handoff_required", handoff: plan.handoff });
-                return;
-              }
-            }
-            const producer = body.mode === "live" ? createVnextOneShotProducer({
+            const delayMs = typeof body.delayMs === "number" && body.delayMs > 0 ? body.delayMs : 0;
+            const createProducer = () => body.mode === "live" ? createVnextOneShotProducer({
               projectRoot,
               defaultHarness: String(bundle.project.value.defaultHarness ?? "pi"),
               resolveHarness: (agentId) => {
@@ -26662,56 +26845,50 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
                 }
                 return { provider, model: modelName };
               }
-            }) : (() => {
-              const delayMs = typeof body.delayMs === "number" && body.delayMs > 0 ? body.delayMs : 0;
-              return createVnextSimulatedProducer(async () => {
-                if (delayMs > 0) {
-                  await new Promise((r) => setTimeout(r, delayMs));
-                }
-                return { outcome: "passed" };
-              });
-            })();
-            let drivePromise;
+            }) : createVnextSimulatedProducer(async () => {
+              if (delayMs > 0) {
+                await new Promise((r) => setTimeout(r, delayMs));
+              }
+              return { outcome: "passed" };
+            });
+            let session;
             let earlyError;
             try {
               const scheduler = VnextRunScheduler.for(context, bundle);
-              drivePromise = scheduler.enqueue(runId, producer, { allowLimits: true, liveMode: body.mode === "live" });
-              drivePromise.catch((err) => {
+              const opening = scheduler.openDriveSession(runId, {
+                mode: body.mode,
+                allowLimits: true,
+                liveMode: body.mode === "live",
+                createProducer
+              });
+              opening.catch((err) => {
                 earlyError = err;
               });
+              session = await opening;
             } catch (err) {
               earlyError = err;
             }
-            await Promise.resolve();
             if (earlyError) {
-              cleanupActive();
               const errStr = String(earlyError);
+              if (errStr.includes("run_handoff_required")) {
+                const handoff = earlyError.handoff;
+                sendJson(response, 409, { ok: false, error: "run_handoff_required", ...handoff !== void 0 ? { handoff } : {} });
+                return;
+              }
               if (errStr.includes("run_busy") || errStr.includes("scheduler_policy_conflict")) {
-                if ("close" in producer && typeof producer.close === "function") {
-                  try {
-                    await producer.close();
-                  } catch {
-                  }
-                }
                 sendJson(response, 409, { ok: false, error: "run_busy", message: `run ${runId} is already admitted or queued` });
                 return;
               }
               throw earlyError;
             }
-            void drivePromise.finally(async () => {
-              cleanupActive();
-              if ("close" in producer && typeof producer.close === "function") {
-                try {
-                  await producer.close();
-                } catch {
-                }
-              }
-            }).catch(() => {
+            void session.settled.catch(() => {
             });
+            if (response.writableEnded) return;
             sendJson(response, 202, {
               ok: true,
               status: "accepted",
               runId,
+              driveId: session.driveId,
               poll: `/v1/runs/${runId}`,
               mode: body.mode
             });
@@ -26842,9 +27019,18 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
       registry.markStopping(process.pid, now());
     } catch {
     }
-    if (activeDrives.size > 0) {
-      await Promise.allSettled([...activeDrives.values()]);
+    const openSessions = [...contexts.values()].flatMap((context) => vnextOpenDriveSessions(context.eventStore.path).map((session) => ({ context, session })));
+    for (const { context, session } of openSessions) {
+      try {
+        cancelVnextRun(context, session.runId, { reason: "runtime_shutdown" });
+      } catch {
+      }
+      try {
+        session.controller.abort();
+      } catch {
+      }
     }
+    await waitForDriveSessions(openSessions.map(({ session }) => session.settled), runtimeStopGraceMs());
     for (const context of contexts.values()) closeVnextRuntimeContext(context);
     contexts.clear();
     const closed = new Promise((resolveStop) => server.close(() => resolveStop()));
@@ -29167,11 +29353,13 @@ export {
   DEFAULT_LOG_MAX_BYTES,
   DEFAULT_LOG_MAX_FILES,
   DEFAULT_MODES_CONFIG,
+  DEFAULT_RUNTIME_STOP_GRACE_MS,
   DEFAULT_SOCKET_DIR,
   DEFAULT_SUBAGENT_MODELS,
   IMPROVEMENT_REPORT_SCHEMA,
   IMPROVEMENT_REPORT_V1_SCHEMA,
   LOG_LEVEL_PRIORITY,
+  MAX_RUNTIME_STOP_GRACE_MS,
   MAX_SSH_OUTPUT_BYTES,
   MAX_SSH_OUTPUT_LINES,
   NATIVE_HARNESS_PROVIDERS,
@@ -29289,6 +29477,7 @@ export {
   rotateLogFiles,
   runHarnessUpdate,
   runtimeError,
+  runtimeStopGraceMs,
   sanitizeLogOutput,
   startVnextRuntimeSupervisor,
   tableColumns,
