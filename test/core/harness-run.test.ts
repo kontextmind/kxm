@@ -21,6 +21,7 @@ import {
   NATIVE_PI_BRAKE_PROVIDERS,
   PI_ADMITTED_WRITER,
   PI_ALLOWED_PROVIDERS,
+  PI_NATIVE_VENDOR_PROVIDERS,
   PI_NOUS_PORTAL_HY4,
   REQUEST_SCHEMA,
   RESULT_SCHEMA,
@@ -267,9 +268,12 @@ test("preflight refuses role, mode, pair, and native-provider Pi routes before s
       }),
       /does not accept permission/,
     );
-    assert.deepEqual([...PI_ALLOWED_PROVIDERS], ["openrouter", "nous-portal"]);
+    assert.deepEqual([...PI_ALLOWED_PROVIDERS], ["openrouter", "nous-portal", "antigravity"]);
+    assert.deepEqual({ ...PI_NATIVE_VENDOR_PROVIDERS }, { antigravity: "google" });
     assert.equal(piProviderOf(PI_NOUS_PORTAL_HY4), "nous-portal");
     assert.equal(piModelId(PI_NOUS_PORTAL_HY4), "tencent/hy4-preview");
+    assert.equal(piProviderOf("antigravity/gemini-3.8-flash"), "antigravity");
+    assert.equal(piModelId("antigravity/gemini-3.8-flash"), "gemini-3.8-flash");
     assert.equal(PI_ADMITTED_WRITER, "openrouter/qwen/qwen3-coder-plus");
     assert.deepEqual(
       piAuthCheckArgs({
@@ -278,6 +282,83 @@ test("preflight refuses role, mode, pair, and native-provider Pi routes before s
       }),
       ["auth", "check", "--provider", "openrouter"],
     );
+    assert.deepEqual(
+      piAuthCheckArgs({
+        model: "antigravity/gemini-3.8-flash",
+        role: "experiment",
+      }),
+      ["auth", "check", "--provider", "antigravity"],
+    );
+    assert.deepEqual(
+      piAuthCheckArgs({
+        model: "antigravity/gemini-3.8-flash",
+        role: "writer",
+      }),
+      ["auth", "check", "--provider", "antigravity", "--model", "gemini-3.8-flash", "--json"],
+    );
+    preflightRequest({
+      schema: REQUEST_SCHEMA,
+      harness: "pi",
+      role: "experiment",
+      model: "antigravity/gemini-3.8-flash",
+      permission: "read-only",
+      prompt_file: prompt,
+    });
+    preflightRequest({
+      schema: REQUEST_SCHEMA,
+      harness: "pi",
+      role: "experiment",
+      model: "antigravity/gemini-3.8-flash",
+      permission: "edit",
+      prompt_file: prompt,
+    });
+    assert.throws(
+      () => preflightRequest({
+        schema: REQUEST_SCHEMA,
+        harness: "pi",
+        role: "experiment",
+        model: "antigravity/claude-sonnet-4-6",
+        permission: "read-only",
+        prompt_file: prompt,
+      }),
+      /Gemini kebab/,
+    );
+    assert.throws(
+      () => preflightRequest({
+        schema: REQUEST_SCHEMA,
+        harness: "pi",
+        role: "experiment",
+        model: "antigravity/google/gemini-3.8-flash",
+        permission: "read-only",
+        prompt_file: prompt,
+      }),
+      /Gemini kebab/,
+    );
+    assert.throws(
+      () => preflightRequest({
+        schema: REQUEST_SCHEMA,
+        harness: "pi",
+        role: "experiment",
+        model: "google/gemini-3.8-flash",
+        permission: "read-only",
+        prompt_file: prompt,
+      }),
+      /pi brake/,
+    );
+    assert.throws(
+      () => preflightRequest({
+        schema: REQUEST_SCHEMA,
+        harness: "pi",
+        role: "writer",
+        model: "antigravity/gemini-3.8-flash",
+        permission: "edit",
+        prompt_file: prompt,
+      }),
+      /pi writer/,
+    );
+    const agyEffort = clampEffort("pi", "xhigh", "antigravity/gemini-3.8-flash");
+    assert.equal(agyEffort.effort, "high");
+    assert.equal(agyEffort.clamped, "xhigh");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -419,6 +500,20 @@ test("auth parse: success, logout, and garbage fail closed", () => {
     () => parseAuth("pi", { stdout: "openrouter  ready\n", stderr: "", exitCode: 0 }, { provider: "nous-portal" }),
     /could not be determined/,
   );
+  const antigravity = parseAuth("pi", {
+    stdout: JSON.stringify({ provider: "antigravity", status: "ready" }),
+    stderr: "",
+    exitCode: 0,
+  }, { observedAt: "2026-09-15", provider: "antigravity" });
+  assert.deepEqual(antigravity, { loggedIn: true, method: "antigravity", observedAt: "2026-09-15" });
+  assert.throws(
+    () => parseAuth("pi", { stdout: "antigravity  not_ready\n", stderr: "", exitCode: 0 }, { provider: "antigravity" }),
+    /\/login antigravity/,
+  );
+  assert.throws(
+    () => parseAuth("pi", { stdout: "openrouter  ready\n", stderr: "", exitCode: 0 }, { provider: "antigravity" }),
+    /could not be determined/,
+  );
   const agy = parseAuth("agy", authFixture("agy") as { stdout: string; stderr: string; exitCode: number }, { observedAt: "2026-09-08" });
   assert.deepEqual(agy, { loggedIn: true, method: "antigravity-oauth", observedAt: "2026-09-08" });
   assert.throws(() => parseAuth("agy", { stdout: "Fetching available models...\n", stderr: "", exitCode: 0 }), /models list/);
@@ -541,6 +636,45 @@ test("pi JSONL sums every assistant message_end and keeps last text/model", () =
   assert.equal(fields.stopReason, "stop");
   assert.equal(fields.usageEvents?.length, 2);
   assert.equal(fields.sessionId, "sess-pi");
+});
+
+test("pi antigravity auth settles costBasis unmetered and clears costUsd", async () => {
+  const dir = tempDir();
+  try {
+    const prompt = promptFile(dir);
+    const stdout = [
+      piLine({ type: "session", id: "sess-antigravity" }),
+      piLine(piAssistantEnd({
+        model: "antigravity/gemini-3.8-flash",
+        content: [{ type: "text", text: "ok" }],
+        usage: {
+          input: 4,
+          output: 3,
+          cacheRead: 0,
+          cacheWrite: 0,
+          cost: { total: 1.25 },
+        },
+      })),
+    ].join("");
+    const { result } = await dispatch({
+      schema: REQUEST_SCHEMA,
+      harness: "pi",
+      role: "experiment",
+      model: "antigravity/gemini-3.8-flash",
+      permission: "read-only",
+      prompt_file: prompt,
+      output_dir: join(dir, "out"),
+    }, { stdout, exitCode: 0 }, piAuth("antigravity"));
+    assert.equal(result.ok, true);
+    assert.equal(result.costBasis, "unmetered");
+    assert.equal(result.costUsd, undefined);
+    assert.doesNotMatch(JSON.stringify(result), /"costUsd":0/);
+    assert.doesNotMatch(JSON.stringify(result), /"costBasis":"list"/);
+    assert.equal(result.tokensOut, 3);
+    assert.equal(result.effectiveModel, "antigravity/gemini-3.8-flash");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("pi aborted stopReason is a harness error even on exit 0", async () => {

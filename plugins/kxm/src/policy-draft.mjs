@@ -408,8 +408,23 @@ function validateModelSemantics(model, label, options, evidence, issues) {
   }
   if (model.harness === "pi") {
     const parts = typeof model.model === "string" ? model.model.split("/") : [];
-    if (parts.length < 3 || parts.some((part) => !part) || !options.piAllowedProviders.includes(parts[0])) {
+    const nativeVendors = isObject(options.piNativeVendorProviders) ? options.piNativeVendorProviders : {};
+    const provider = parts[0];
+    const owned = own(nativeVendors, provider) ? canonicalVendor(nativeVendors[provider], aliases) : "";
+    const minParts = owned ? 2 : 3;
+    const maxParts = owned ? 2 : Number.POSITIVE_INFINITY;
+    if (
+      parts.length < minParts
+      || parts.length > maxParts
+      || parts.some((part) => !part)
+      || !options.piAllowedProviders.includes(provider)
+      || (owned && !/^gemini-[a-z0-9.-]+$/.test(parts[1]))
+    ) {
       issues.push(issue("semantic", "unsupported_pi_model", label, "Pi model must use an allowlisted aggregator prefix"));
+    } else if (owned) {
+      if (owned !== vendor) {
+        issues.push(issue("semantic", "pi_native_vendor_forbidden", label, "native vendor cannot use Pi"));
+      }
     } else {
       const prefix = canonicalVendor(parts[1], aliases);
       if (options.nativePiBrakeProviders.includes(prefix) || options.nativePiBrakeProviders.includes(vendor)) {

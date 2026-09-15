@@ -72,8 +72,14 @@ export const NATIVE_PI_BRAKE_PROVIDERS = Object.freeze([
   "deepseek",
 ]);
 
-/** Verified Pi aggregator prefixes. Not a catalog and not a writer grant. */
-export const PI_ALLOWED_PROVIDERS = Object.freeze(["openrouter", "nous-portal"]);
+/** Verified Pi aggregator prefixes and native-vendor Pi providers. Not a catalog and not a writer grant. */
+export const PI_ALLOWED_PROVIDERS = Object.freeze(["openrouter", "nous-portal", "antigravity"]);
+
+/** Native-vendor Pi providers own one braked vendor. Aggregators are not listed here. */
+export const PI_NATIVE_VENDOR_PROVIDERS = Object.freeze({ antigravity: "google" });
+
+/** Gemini kebab ids for antigravity two-segment models (`antigravity/gemini-...`). */
+export const PI_ANTIGRAVITY_MODEL_ID = /^gemini-[a-z0-9.-]+$/;
 
 /** Exact helper model string after `@jayteelabs/pi-nous-portal-provider` is installed. */
 export const PI_NOUS_PORTAL_HY4 = "nous-portal/tencent/hy4-preview";
@@ -171,8 +177,19 @@ export const ROUTES = Object.freeze({
 
 const UNVERIFIED_HARNESSES = Object.freeze(["kimi", "gemini", "deepseek"]);
 
-export function clampEffort(harness, effort) {
-  const accepted = ROUTES[harness]?.efforts ?? [];
+function piNativeVendor(provider) {
+  return Object.hasOwn(PI_NATIVE_VENDOR_PROVIDERS, provider)
+    ? PI_NATIVE_VENDOR_PROVIDERS[provider]
+    : undefined;
+}
+
+const PI_NATIVE_VENDOR_EFFORTS = Object.freeze(["low", "medium", "high"]);
+
+export function clampEffort(harness, effort, model) {
+  const provider = typeof model === "string" ? piProviderOf(model) : undefined;
+  const accepted = provider && piNativeVendor(provider)
+    ? PI_NATIVE_VENDOR_EFFORTS
+    : (ROUTES[harness]?.efforts ?? []);
   if (!effort) return { effort: undefined, clamped: undefined };
   if (!EFFORT.includes(effort)) {
     throw failClosed(`unknown effort ${effort}; expected one of ${EFFORT.join(", ")}`);
@@ -220,6 +237,9 @@ function piLoginHint(provider) {
     return "pi install npm:@jayteelabs/pi-nous-portal-provider, then /login → subscription or API key → Nous Research Portal (or NOUS_API_KEY)";
   }
   if (provider === "openrouter") return "pi /login openrouter";
+  if (provider === "antigravity") {
+    return "pi /login antigravity (Google OAuth, localhost:51121, paste-URL fallback)";
+  }
   return ROUTES.pi.auth.loginHint;
 }
 
@@ -245,6 +265,7 @@ export function piModelId(model) {
 function piProviderLabel(provider) {
   if (provider === "nous-portal") return "Nous Portal";
   if (provider === "openrouter") return "OpenRouter";
+  if (provider === "antigravity") return "Antigravity";
   return "Pi provider";
 }
 
@@ -433,11 +454,13 @@ export function parseAuth(harness, stdio, options = {}) {
     const reportedFromJson = typeof payload?.provider === "string"
       ? payload.provider.trim().toLowerCase()
       : undefined;
-    const reportedFromText = /\bnous-portal\b/i.test(text)
-      ? "nous-portal"
-      : /\bopenrouter\b/i.test(text)
-        ? "openrouter"
-        : undefined;
+    const reportedFromText = /\bantigravity\b/i.test(text)
+      ? "antigravity"
+      : /\bnous-portal\b/i.test(text)
+        ? "nous-portal"
+        : /\bopenrouter\b/i.test(text)
+          ? "openrouter"
+          : undefined;
     const reported = reportedFromJson ?? reportedFromText ?? requested;
     const jsonStatus = typeof payload?.status === "string" ? payload.status : undefined;
     if (/not[_ ]ready/i.test(text) || (jsonStatus !== undefined && jsonStatus !== "ready")
@@ -452,7 +475,7 @@ export function parseAuth(harness, stdio, options = {}) {
     }
     if (!PI_ALLOWED_PROVIDERS.includes(reported)) {
       throw failClosed(
-        loginHint("pi", `pi helper allows only openrouter/* or nous-portal/*; ${reported} is not allowlisted.`, requested),
+        loginHint("pi", `pi helper allows only openrouter/*, nous-portal/*, or antigravity/*; ${reported} is not allowlisted.`, requested),
         "auth",
       );
     }
@@ -1510,13 +1533,20 @@ export function preflightRequest(request) {
   if (harness === "pi") {
     const provider = piProviderOf(request.model);
     if (!provider) {
-      throw failClosed("pi model must be provider/id (openrouter/* or nous-portal/* in this helper)");
+      throw failClosed("pi model must be provider/id (openrouter/*, nous-portal/*, or antigravity/* in this helper)");
     }
     if (NATIVE_PI_BRAKE_PROVIDERS.includes(provider)) {
       throw failClosed(`pi brake: ${provider} has a native harness; refusing Pi impersonation`);
     }
     if (!PI_ALLOWED_PROVIDERS.includes(provider)) {
-      throw failClosed(`pi helper allows only openrouter/* or nous-portal/*; ${provider} is not a native CLI and is not allowlisted`);
+      throw failClosed(`pi helper allows only openrouter/*, nous-portal/*, or antigravity/*; ${provider} is not a native CLI and is not allowlisted`);
+    }
+    if (piNativeVendor(provider)) {
+      const modelId = piModelId(request.model);
+      const parts = String(request.model).split("/");
+      if (parts.length !== 2 || parts.some((part) => !part) || !modelId || !PI_ANTIGRAVITY_MODEL_ID.test(modelId)) {
+        throw failClosed("pi antigravity models must be exactly two-segment Gemini kebab ids (antigravity/gemini-...)");
+      }
     }
     if (request.role === "writer" && (request.model !== PI_ADMITTED_WRITER || request.permission !== "edit")) {
       throw failClosed("pi writer refuses unsupported route; allows only authenticated openrouter/qwen/qwen3-coder-plus with edit permission; other models need reviewed route admission");
@@ -1602,7 +1632,7 @@ export async function runHarness(request, deps = {}) {
     : undefined;
   const cwd = request.cwd ?? process.cwd();
   const env = deps.env ?? process.env;
-  const { effort, clamped } = clampEffort(request.harness, request.effort);
+  const { effort, clamped } = clampEffort(request.harness, request.effort, request.model);
   const prepared = { ...request, effort };
   const outputDir = ensureOutputDir(
     request.output_dir ?? join(cwd, ".kxm", "logs", `harness-${now()}`),
@@ -1778,6 +1808,9 @@ export async function runHarness(request, deps = {}) {
     fields.costBasis = "unmetered";
     fields.costUsd = undefined;
   } else if (request.harness === "agy" && authStatus.method === "antigravity-oauth") {
+    fields.costBasis = "unmetered";
+    fields.costUsd = undefined;
+  } else if (request.harness === "pi" && authStatus.method === "antigravity") {
     fields.costBasis = "unmetered";
     fields.costUsd = undefined;
   } else if (fields.costUsd === undefined && fields.providerReportedCostUsd === undefined) {
