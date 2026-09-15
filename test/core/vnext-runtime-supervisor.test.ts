@@ -8,6 +8,7 @@ import {
   vnextRuntimeRequest,
 } from "../../plugins/kxm/src/vnext-runtime-supervisor.ts";
 import { vnextRuntimePaths } from "../../plugins/kxm/src/vnext-runtime-store.ts";
+import { VnextRunScheduler } from "../../plugins/kxm/src/vnext-engine.ts";
 
 test("supervisor /drive returns 202 with poll link and completes asynchronously", async () => {
   const { root, stateRoot } = engineProject("kxm-supervisor-drive-202-");
@@ -94,6 +95,131 @@ test("supervisor /drive rejects duplicate concurrent drive with 409", async () =
     assert.equal(errorBody.ok, false);
     assert.equal(errorBody.error, "run_busy");
   } finally {
+    if (supervisor) await supervisor.stop();
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("supervisor post-202 drive rejection is handled and cleanup still runs", async () => {
+  const { root, stateRoot } = engineProject("kxm-supervisor-drive-reject-");
+  let supervisor: Awaited<ReturnType<typeof startVnextRuntimeSupervisor>> | undefined;
+  const originalEnqueue = VnextRunScheduler.prototype.enqueue;
+  const unhandled: string[] = [];
+  const onUnhandled = (reason: unknown) => {
+    unhandled.push(String(reason));
+  };
+  process.on("unhandledRejection", onUnhandled);
+  try {
+    VnextRunScheduler.prototype.enqueue = function () {
+      return new Promise((_, reject) => {
+        setImmediate(() => {
+          reject(new Error("run_events_illegal: drive made no progress"));
+        });
+      });
+    };
+
+    supervisor = await startVnextRuntimeSupervisor({ stateRoot });
+    const token = readVnextSupervisorToken(vnextRuntimePaths({ stateRoot }))!;
+    const handle = { runtimeId: supervisor.runtimeId, port: supervisor.port, token, started: true };
+
+    const acceptance = await vnextRuntimeRequest(handle, "POST", "/v1/runs", {
+      projectRoot: root,
+      workflowId: "one-step",
+      prompt: "test post-202 rejection",
+    });
+    const runId = (acceptance.run as { runId: string }).runId;
+
+    const driveRes = await fetch(`http://127.0.0.1:${supervisor.port}/v1/runs/${runId}/drive?projectRoot=${encodeURIComponent(root)}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ mode: "simulated" }),
+    });
+    assert.equal(driveRes.status, 202);
+
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    assert.equal(unhandled.length, 0, `unhandledRejection: ${unhandled.join("; ")}`);
+
+    const secondRes = await fetch(`http://127.0.0.1:${supervisor.port}/v1/runs/${runId}/drive?projectRoot=${encodeURIComponent(root)}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ mode: "simulated" }),
+    });
+    if (secondRes.status === 409) {
+      const secondBody = await secondRes.json() as Record<string, unknown>;
+      assert.notEqual(secondBody.message, `run ${runId} is already executing`);
+    } else {
+      assert.equal(secondRes.status, 202);
+    }
+
+    await supervisor.stop();
+    supervisor = undefined;
+    assert.equal(unhandled.length, 0, `unhandledRejection after stop: ${unhandled.join("; ")}`);
+  } finally {
+    process.removeListener("unhandledRejection", onUnhandled);
+    VnextRunScheduler.prototype.enqueue = originalEnqueue;
+    if (supervisor) await supervisor.stop();
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("supervisor synchronous scheduler throw is handled without unhandledRejection and returns 409", async () => {
+  const { root, stateRoot } = engineProject("kxm-supervisor-drive-sync-throw-");
+  let supervisor: Awaited<ReturnType<typeof startVnextRuntimeSupervisor>> | undefined;
+  const originalFor = VnextRunScheduler.for;
+  const unhandled: string[] = [];
+  const onUnhandled = (reason: unknown) => {
+    unhandled.push(String(reason));
+  };
+  process.on("unhandledRejection", onUnhandled);
+  try {
+    VnextRunScheduler.for = () => {
+      throw new Error("scheduler_policy_conflict: queued or admitted work still uses the previous scheduler policy");
+    };
+
+    supervisor = await startVnextRuntimeSupervisor({ stateRoot });
+    const token = readVnextSupervisorToken(vnextRuntimePaths({ stateRoot }))!;
+    const handle = { runtimeId: supervisor.runtimeId, port: supervisor.port, token, started: true };
+
+    const acceptance = await vnextRuntimeRequest(handle, "POST", "/v1/runs", {
+      projectRoot: root,
+      workflowId: "one-step",
+      prompt: "test synchronous scheduler throw",
+    });
+    const runId = (acceptance.run as { runId: string }).runId;
+
+    const driveRes = await fetch(`http://127.0.0.1:${supervisor.port}/v1/runs/${runId}/drive?projectRoot=${encodeURIComponent(root)}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ mode: "simulated" }),
+    });
+    assert.equal(driveRes.status, 409);
+    const driveBody = await driveRes.json() as Record<string, unknown>;
+    assert.equal(driveBody.ok, false);
+    assert.equal(driveBody.error, "run_busy");
+    assert.equal(driveBody.message, `run ${runId} is already admitted or queued`);
+
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(unhandled.length, 0, `unhandledRejection: ${unhandled.join("; ")}`);
+
+    VnextRunScheduler.for = originalFor;
+    const secondRes = await fetch(`http://127.0.0.1:${supervisor.port}/v1/runs/${runId}/drive?projectRoot=${encodeURIComponent(root)}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ mode: "simulated" }),
+    });
+    assert.equal(secondRes.status, 202);
+    assert.equal(unhandled.length, 0, `unhandledRejection after 409 cleanup: ${unhandled.join("; ")}`);
+
+    await supervisor.stop();
+    supervisor = undefined;
+    assert.equal(unhandled.length, 0, `unhandledRejection after stop: ${unhandled.join("; ")}`);
+  } finally {
+    process.removeListener("unhandledRejection", onUnhandled);
+    VnextRunScheduler.for = originalFor;
     if (supervisor) await supervisor.stop();
     removeTempDir(root, stateRoot);
   }

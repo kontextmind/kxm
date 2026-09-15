@@ -19,8 +19,11 @@ import {
   isWindowsHarnessShim,
   planHarnessUpdate,
   probeHarnessAssignment,
+  probeHarnessAssignmentAsync,
   probeHarnesses,
+  probeHarnessesAsync,
   probeHarnessesForModel,
+  probeHarnessesForModelAsync,
   runHarnessUpdate,
   validateHarnessModelPair,
   type HarnessCommandResult,
@@ -900,6 +903,76 @@ test("probeHarnesses reports dispatch status with reasons across inventory", () 
   assert.match(formatted, /dispatch/);
   assert.match(formatted, /deepseek\s+no\s+no\s+no\s+no \(not_detected\)/);
   assert.match(formatted, /agy\s+no\s+yes\s+yes\s+yes/);
+});
+
+test("probeHarnessesAsync replays the same fail-closed policy without spawnSync", async () => {
+  const handlers = {
+    "pi --version": { ok: true, code: 0, stdout: "0.85.1\n", stderr: "" },
+    "claude --version": { ok: true, code: 0, stdout: "2.1.260\n", stderr: "" },
+    "claude auth status": { ok: false, code: 1, stdout: "", stderr: "error" },
+  };
+  const runCommand = runner(handlers);
+  const sync = probeHarnesses({ runCommand });
+  const asyncInventory = await probeHarnessesAsync({
+    runCommand: async (command, args, timeoutMs) => {
+      await new Promise((resolve) => setImmediate(resolve));
+      return runCommand(command, args, timeoutMs);
+    },
+  });
+  assert.deepEqual(asyncInventory, sync);
+  assert.notEqual(status(asyncInventory, "claude").authenticated, true);
+  assert.notEqual(status(asyncInventory, "pi").authenticated, true);
+  const assignment = await probeHarnessAssignmentAsync({
+    harness: "claude",
+    runCommand: async (command, args, timeoutMs) => runCommand(command, args, timeoutMs),
+  });
+  assert.notEqual(assignment.authenticated, true);
+  const forModel = await probeHarnessesForModelAsync({ provider: "anthropic", model: "fable" }, {
+    runCommand: async (command, args, timeoutMs) => runCommand(command, args, timeoutMs),
+  });
+  assert.equal(status(forModel, "claude").detected, true);
+});
+
+test("async default probe paths do not keep spawnSync on product call sites", () => {
+  const harness = readFileSync(resolve("plugins/kxm/src/vnext-harness.ts"), "utf8");
+  const cli = [
+    "plugins/kxm/src/cli.ts",
+    "plugins/kxm/src/cli/system.ts",
+    "plugins/kxm/src/cli/vnext.ts",
+    "plugins/kxm/src/cli/tasks.ts",
+  ].map((path) => readFileSync(resolve(path), "utf8")).join("\n");
+  const extension = readFileSync(resolve("plugins/kxm/src/extension.ts"), "utf8");
+  const session = readFileSync(resolve("plugins/kxm/src/session-work.ts"), "utf8");
+  const inventory = readFileSync(resolve("plugins/kxm/src/model-inventory.ts"), "utf8");
+  const piProducer = readFileSync(resolve("plugins/kxm/src/vnext-pi-producer.ts"), "utf8");
+  const asyncRunner = harness.slice(harness.indexOf("function defaultAsyncRunner"), harness.indexOf("function firstLine"));
+  assert.match(asyncRunner, /defaultSpawn/);
+  assert.doesNotMatch(asyncRunner, /spawnSync/);
+  assert.match(harness, /export async function probeHarnessesAsync/);
+  assert.match(cli, /probeHarnessesAsync/);
+  assert.doesNotMatch(cli, /probeHarnesses\(/);
+  assert.doesNotMatch(extension, /probeHarnesses\(|probeHarnessAssignment\(/);
+  assert.doesNotMatch(session, /probeHarnesses\(|probeHarnessAssignment\(/);
+  assert.doesNotMatch(inventory, /spawnSync/);
+  assert.match(inventory, /defaultSpawn/);
+  assert.match(piProducer, /probeHarnessAssignmentAsync/);
+  assert.doesNotMatch(piProducer, /\bprobeHarnessAssignment\b/);
+  assert.doesNotMatch(piProducer, /spawnSync/);
+});
+
+test("async inventory probes yield to sibling timers instead of blocking spawnSync", { skip: process.platform === "win32", timeout: 5000 }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), "kxm-async-probe-"));
+  writeFileSync(join(dir, "claude"), '#!/bin/sh\nsleep 0.12\nif [ "$1" = "--version" ]; then echo "fixture-cli"; else echo \'{"loggedIn":false}\'; fi\n', { mode: 0o700 });
+  let progressed = false;
+  const timer = setTimeout(() => { progressed = true; }, 20);
+  try {
+    const inventory = await probeHarnessesAsync({ env: { ...process.env, PATH: `${dir}:${process.env.PATH ?? ""}` }, timeoutMs: 3000 });
+    assert.equal(progressed, true, "auth/capability probes must not block the event loop");
+    assert.equal(status(inventory, "claude").authenticated, false);
+  } finally {
+    clearTimeout(timer);
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 

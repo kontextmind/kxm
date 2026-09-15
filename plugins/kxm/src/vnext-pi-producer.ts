@@ -8,8 +8,10 @@ import {
   type VnextProducerResult,
 } from "./vnext-engine.ts";
 import {
-  probeHarnessAssignment,
+  probeHarnessAssignmentAsync,
+  type HarnessAssignmentProbeOptions,
   type HarnessInventory,
+  type HarnessStatus,
 } from "./vnext-harness.ts";
 import {
   calculateModelCost,
@@ -386,7 +388,7 @@ export interface VnextPiProducerOptions {
   priceCatalog?: PriceCatalog | undefined;
   env?: NodeJS.ProcessEnv | undefined;
   spawnProcess?: ((command: string, args: readonly string[], options: Record<string, unknown>) => PiRpcProcess) | undefined;
-  probeHarness?: typeof probeHarnessAssignment | undefined;
+  probeHarness?: ((options: Omit<HarnessAssignmentProbeOptions, "runCommand"> & { signal?: AbortSignal | undefined }) => HarnessStatus | Promise<HarnessStatus>) | undefined;
   resolveModel?: ((agentId: string, runId: string) => { provider?: string | undefined; model?: string | undefined; thinking?: string | undefined } | undefined) | undefined;
   defaultModel?: string | undefined;
   defaultProvider?: string | undefined;
@@ -438,7 +440,7 @@ export function createVnextPiProducer(options: VnextPiProducerOptions = {}): Vne
     return { provider: parsed.provider, model: parsed.model };
   }
 
-  function checkPiAuth(provider: string, model: string): void {
+  async function checkPiAuth(provider: string, model: string, signal: AbortSignal): Promise<void> {
     if (options.inventory) {
       const piEntry = options.inventory.harnesses.find((h) => h.id === "pi");
       if (!piEntry || !piEntry.detected || piEntry.authenticated === false) {
@@ -446,12 +448,14 @@ export function createVnextPiProducer(options: VnextPiProducerOptions = {}): Vne
       }
     }
 
-    const probeFn = options.probeHarness ?? probeHarnessAssignment;
-    const probe = probeFn({
+    const probeFn = options.probeHarness ?? probeHarnessAssignmentAsync;
+    const probe = await probeFn({
       harness: "pi",
       provider,
       model,
       env: options.env,
+      signal,
+      timeoutMs: 10_000,
     });
 
     if (!probe.detected) {
@@ -538,8 +542,8 @@ export function createVnextPiProducer(options: VnextPiProducerOptions = {}): Vne
       const startTime = Date.now();
       const resolved = resolveModelForRequest(request);
 
-      // Preflight auth check - fails closed
-      checkPiAuth(resolved.provider, resolved.model);
+      // Preflight auth check - fails closed via the async bounded probe
+      await checkPiAuth(resolved.provider, resolved.model, request.signal);
 
       // Get or create session
       const session = await getOrCreateSession(request, resolved.model);

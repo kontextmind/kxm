@@ -15163,6 +15163,7 @@ function defaultSpawn(command, args, options) {
     let child;
     const finish = () => {
       if (finished) return;
+      if (stopping && !killSent) return;
       finished = true;
       for (const timer of [wallTimer, killTimer, drainTimer, reapTimer]) clearTimeout(timer);
       options.signal?.removeEventListener("abort", onAbort);
@@ -15172,7 +15173,18 @@ function defaultSpawn(command, args, options) {
       child?.unref();
       const started = Boolean(child?.pid);
       if (started && !observedChildExit) error ??= new Error("process_exit_unobserved");
-      resolve7({ stdout: Buffer.concat(stdout).toString("utf8"), stderr: Buffer.concat(stderr).toString("utf8"), code, signal, started, observedChildExit, terminationRequested: stopping, ...error ? { error } : {} });
+      const unverifiedDescendants = stopping || started && !observedChildExit;
+      resolve7({
+        stdout: Buffer.concat(stdout).toString("utf8"),
+        stderr: Buffer.concat(stderr).toString("utf8"),
+        code,
+        signal,
+        started,
+        observedChildExit,
+        terminationRequested: stopping,
+        ...unverifiedDescendants ? { unverifiedDescendants: true } : {},
+        ...error ? { error } : {}
+      });
     };
     const kill = (requested) => {
       killProcessTree(child, requested);
@@ -15203,7 +15215,7 @@ function defaultSpawn(command, args, options) {
         cwd: options.cwd,
         env: options.env ?? process.env,
         stdio: ["pipe", "pipe", "pipe"],
-        shell: false,
+        shell: options.shell === true,
         windowsHide: true,
         detached: process.platform !== "win32"
       });
@@ -15247,7 +15259,7 @@ function defaultSpawn(command, args, options) {
       closed = true;
       code = exitCode;
       signal = exitSignal;
-      if (!stopping || killSent) finish();
+      finish();
     });
     options.signal?.addEventListener("abort", onAbort, { once: true });
     if (options.signal?.aborted) onAbort();
@@ -15688,6 +15700,31 @@ function defaultRunner(env) {
     }
   };
 }
+function commandResultFromSpawn(result) {
+  const errno = result.error && "code" in result.error ? result.error.code : void 0;
+  const error = (typeof errno === "string" && errno ? errno : void 0) ?? result.error?.message ?? (result.observedChildExit !== true ? "auth_probe_exit_unobserved" : void 0);
+  return {
+    ok: result.code === 0 && !error,
+    code: result.code,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    ...error ? { error } : {}
+  };
+}
+function defaultAsyncRunner(env, signal) {
+  return async (command, args, timeoutMs) => {
+    try {
+      return commandResultFromSpawn(await defaultSpawn(command, args, {
+        env,
+        timeoutMs,
+        signal,
+        shell: harnessSpawnUsesShell(command)
+      }));
+    } catch (error) {
+      return { ok: false, code: null, stdout: "", stderr: "", error: error instanceof Error ? error.message : "spawn_failed" };
+    }
+  };
+}
 function firstLine(text) {
   const line = text.split(/\r?\n/).map((candidate) => candidate.trim()).find(Boolean);
   return line && line.length <= 200 ? line : void 0;
@@ -16103,34 +16140,30 @@ var PendingHarnessCommand = class {
     this.key = key;
   }
 };
-async function probeHarnessAssignmentAsync(options) {
+async function replayHarnessProbe(run, execute, limit) {
   const observed = /* @__PURE__ */ new Map();
-  const run = options.runCommand ?? (async (command, args, timeoutMs) => {
-    const result = await defaultSpawn(command, args, { env: options.env, timeoutMs, signal: options.signal });
-    const error = result.error?.message ?? (result.observedChildExit !== true ? "auth_probe_exit_unobserved" : void 0);
-    return {
-      ok: result.code === 0 && !error,
-      code: result.code,
-      stdout: result.stdout,
-      stderr: result.stderr,
-      ...error ? { error } : {}
-    };
-  });
-  for (let commands = 0; commands <= 32; commands++) {
+  for (let commands = 0; commands <= limit; commands++) {
     try {
-      return probeHarnessAssignment({ ...options, runCommand(command, args, timeoutMs) {
+      return execute((command, args, timeoutMs) => {
         const key = JSON.stringify([command, args, timeoutMs]);
         const result = observed.get(key);
         if (result) return result;
         throw new PendingHarnessCommand(command, args, timeoutMs, key);
-      } });
+      });
     } catch (pending) {
       if (!(pending instanceof PendingHarnessCommand)) throw pending;
-      if (commands === 32) throw new Error("auth_probe_command_limit");
+      if (commands === limit) throw new Error("auth_probe_command_limit");
       observed.set(pending.key, await run(pending.command, pending.args, pending.timeoutMs));
     }
   }
   throw new Error("auth_probe_command_limit");
+}
+async function probeHarnessAssignmentAsync(options) {
+  return replayHarnessProbe(
+    options.runCommand ?? defaultAsyncRunner(options.env ?? process.env, options.signal),
+    (runCommand) => probeHarnessAssignment({ ...options, runCommand }),
+    32
+  );
 }
 
 // plugins/kxm/src/vnext-config.ts
@@ -21904,9 +21937,28 @@ import { join as join11 } from "node:path";
 import { createHash as createHash6, randomUUID as randomUUID3 } from "node:crypto";
 import { lstat, mkdir, open, rename } from "node:fs/promises";
 import { join as join6 } from "node:path";
+var ONESHOT_EVIDENCE_SCHEMA = "kxm.oneshot-evidence.v2";
+var RETIRED_ONESHOT_EVIDENCE_SCHEMAS = /* @__PURE__ */ new Set(["kxm.oneshot-evidence.v1"]);
 var TEXT_LIMIT = 4 * 1024 * 1024;
+var ARGV_LIMIT = 64 * 1024;
 var RECORD_LIMIT = 16 * 1024 * 1024;
 var digest = (value) => `sha256:${createHash6("sha256").update(value).digest("hex")}`;
+function parseOneShotEvidenceRecord(bytes) {
+  let parsed;
+  try {
+    parsed = JSON.parse(bytes);
+  } catch {
+    throw new Error("oneshot_evidence_record_invalid");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("oneshot_evidence_record_invalid");
+  }
+  const schema = parsed.schema;
+  if (typeof schema !== "string") throw new Error("oneshot_evidence_record_invalid");
+  if (RETIRED_ONESHOT_EVIDENCE_SCHEMAS.has(schema)) throw new Error("oneshot_evidence_schema_retired");
+  if (schema !== ONESHOT_EVIDENCE_SCHEMA) throw new Error("oneshot_evidence_schema_unknown");
+  return parsed;
+}
 async function beginOneShotEvidence(root, intent, sensitive) {
   await mkdir(root, { recursive: true, mode: 448 });
   const stat = await lstat(root);
@@ -21920,11 +21972,11 @@ async function beginOneShotEvidence(root, intent, sensitive) {
   const redact = (value) => {
     let text = value;
     for (const secret of secrets) text = text.replaceAll(secret, "[REDACTED]");
-    return text.replace(/(\b(?:authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret)\b["']?\s*[:=]\s*["']?)(?:Bearer\s+)?[^\s"',;}]+/gi, "$1[REDACTED]");
+    return text.replace(/(\b(?:authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret)\b["']?\s*[:=]\s*["']?)(?:Bearer\s+)?[^\s"',;}]+/gi, "$1[REDACTED]").replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [REDACTED]");
   };
-  const bounded = (value) => {
+  const bounded = (value, max = TEXT_LIMIT) => {
     const bytes = Buffer.from(redact(value));
-    return { text: bytes.subarray(0, TEXT_LIMIT).toString("utf8"), truncated: bytes.length > TEXT_LIMIT, sha256: digest(value) };
+    return { text: bytes.subarray(0, max).toString("utf8"), truncated: bytes.length > max, sha256: digest(redact(value)) };
   };
   const write = async (name, value) => {
     const current = await lstat(dir);
@@ -21933,6 +21985,7 @@ async function beginOneShotEvidence(root, intent, sensitive) {
     }
     const bytes = JSON.stringify(value);
     if (Buffer.byteLength(bytes) > RECORD_LIMIT) throw new Error("oneshot_evidence_record_limit");
+    parseOneShotEvidenceRecord(bytes);
     const target = join6(dir, name);
     const partial = `${target}.partial`;
     const file = await open(partial, "wx", 384);
@@ -21954,7 +22007,7 @@ async function beginOneShotEvidence(root, intent, sensitive) {
     return digest(bytes);
   };
   await write("intent.json", {
-    schema: "kxm.oneshot-evidence.v1",
+    schema: ONESHOT_EVIDENCE_SCHEMA,
     id,
     recordedAt: (/* @__PURE__ */ new Date()).toISOString(),
     runId: intent.runId,
@@ -21965,9 +22018,10 @@ async function beginOneShotEvidence(root, intent, sensitive) {
     provider: intent.provider,
     requestedModel: intent.model,
     cwd: intent.cwd,
-    command: intent.command,
-    argv: bounded(JSON.stringify(intent.args)),
+    command: redact(intent.command),
+    argv: bounded(JSON.stringify(intent.args), ARGV_LIMIT),
     stdin: intent.input === void 0 ? null : bounded(intent.input),
+    env: null,
     acceptance: false
   });
   let finished = false;
@@ -21977,7 +22031,7 @@ async function beginOneShotEvidence(root, intent, sensitive) {
       if (finished) throw new Error("oneshot_evidence_already_finished");
       finished = true;
       return write("result.json", {
-        schema: "kxm.oneshot-evidence.v1",
+        schema: ONESHOT_EVIDENCE_SCHEMA,
         id,
         recordedAt: (/* @__PURE__ */ new Date()).toISOString(),
         stdout: bounded(result.stdout),
@@ -21987,6 +22041,7 @@ async function beginOneShotEvidence(root, intent, sensitive) {
         started: result.started ?? null,
         observedChildExit: result.observedChildExit ?? null,
         terminationRequested: result.terminationRequested ?? null,
+        unverifiedDescendants: result.unverifiedDescendants ?? null,
         error: result.error ? bounded(result.error.message) : null,
         observation: bounded(JSON.stringify(observation)),
         acceptance: false
@@ -25648,7 +25703,8 @@ Return a final JSON object with an "outcome" field chosen from ${JSON.stringify(
       parsed = { text: "", isError: true };
     }
     const aborted = request.signal.aborted || procResult.error?.message === "process_aborted";
-    const effectUncertain = procResult.terminationRequested === true || Boolean(procResult.signal) || procResult.error?.message === "process_exit_unobserved" || procResult.observedChildExit === false && procResult.started !== false;
+    const unverifiedDescendants = procResult.unverifiedDescendants === true || procResult.terminationRequested === true || procResult.error?.message === "process_exit_unobserved" || procResult.observedChildExit === false && procResult.started !== false;
+    const effectUncertain = unverifiedDescendants || Boolean(procResult.signal);
     const transportFailed = procResult.code !== 0 || Boolean(procResult.error) || effectUncertain;
     const outcome = aborted ? "cancelled" : transportFailed || parsed.isError ? "failed" : determineOutcome(parsed.text, request.allowedOutcomes);
     const providerMetadata = {
@@ -25660,6 +25716,7 @@ Return a final JSON object with an "outcome" field chosen from ${JSON.stringify(
     if (procResult.observedChildExit !== void 0) providerMetadata.observedChildExit = procResult.observedChildExit;
     if (procResult.started !== void 0) providerMetadata.processStarted = procResult.started;
     if (procResult.terminationRequested !== void 0) providerMetadata.terminationRequested = procResult.terminationRequested;
+    if (unverifiedDescendants) providerMetadata.descendantEffects = "unverified";
     if (procResult.error) {
       const reason = procResult.error.message;
       providerMetadata.processError = /^process_(aborted|timeout|output_limit|stdin_error|stdio_error|stdio_unclosed|exit_unobserved)$/.test(reason) ? reason : "process_error";
@@ -26140,7 +26197,6 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
               });
             } catch (err) {
               earlyError = err;
-              drivePromise = Promise.reject(err);
             }
             await Promise.resolve();
             if (earlyError) {
@@ -26166,6 +26222,7 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
                 } catch {
                 }
               }
+            }).catch(() => {
             });
             sendJson(response, 202, {
               ok: true,

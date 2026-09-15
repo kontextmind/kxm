@@ -252,9 +252,11 @@ export function createVnextOneShotProducer(options: VnextOneShotProducerOptions 
       const aborted = request.signal.aborted || procResult.error?.message === "process_aborted";
       // Process groups are cleanup, not containment. A detached descendant or
       // provider leader may outlive the client; interrupted effects need recovery.
-      const effectUncertain = procResult.terminationRequested === true || Boolean(procResult.signal)
+      const unverifiedDescendants = procResult.unverifiedDescendants === true
+        || procResult.terminationRequested === true
         || procResult.error?.message === "process_exit_unobserved"
         || (procResult.observedChildExit === false && procResult.started !== false);
+      const effectUncertain = unverifiedDescendants || Boolean(procResult.signal);
       const transportFailed = procResult.code !== 0 || Boolean(procResult.error) || effectUncertain;
       const outcome = aborted ? "cancelled" : transportFailed || parsed.isError ? "failed"
         : determineOutcome(parsed.text, request.allowedOutcomes);
@@ -267,6 +269,7 @@ export function createVnextOneShotProducer(options: VnextOneShotProducerOptions 
       if (procResult.observedChildExit !== undefined) providerMetadata.observedChildExit = procResult.observedChildExit;
       if (procResult.started !== undefined) providerMetadata.processStarted = procResult.started;
       if (procResult.terminationRequested !== undefined) providerMetadata.terminationRequested = procResult.terminationRequested;
+      if (unverifiedDescendants) providerMetadata.descendantEffects = "unverified";
       if (procResult.error) {
         const reason = procResult.error.message;
         providerMetadata.processError = /^process_(aborted|timeout|output_limit|stdin_error|stdio_error|stdio_unclosed|exit_unobserved)$/.test(reason) ? reason : "process_error";

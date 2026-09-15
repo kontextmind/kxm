@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
@@ -277,6 +278,51 @@ test("Pi producer keys agent sessions by run, agent, instance, and scopeEpoch", 
       "implementer@run_01JH#2.1",
       "implementer@run_01JH#1.2",
     ]);
+  } finally {
+    await producer.close();
+  }
+});
+
+test("Pi producer default auth path uses the async bounded probe without spawnSync", () => {
+  const source = readFileSync(resolve(repoRoot, "plugins/kxm/src/vnext-pi-producer.ts"), "utf8");
+  assert.match(source, /probeHarnessAssignmentAsync/);
+  assert.doesNotMatch(source, /\bprobeHarnessAssignment\b/);
+  assert.doesNotMatch(source, /spawnSync/);
+  assert.match(source, /timeoutMs:\s*10_000/);
+});
+
+test("Pi producer awaits the async assignment probe and still fails closed before spawn", async () => {
+  let spawned = 0;
+  let probeCalls = 0;
+  const delayedUnauth = async () => {
+    probeCalls++;
+    await new Promise((resolve) => setImmediate(resolve));
+    return { detected: true, authenticated: false as const, issues: ["not_authenticated"] };
+  };
+  const producer = createVnextPiProducer({
+    probeHarness: delayedUnauth as any,
+    spawnProcess: () => {
+      spawned++;
+      throw new Error("spawn should not be reached when async auth fails");
+    },
+  });
+  try {
+    await assert.rejects(
+      producer.produce({
+        runId: "run_async_probe",
+        stepId: "step-1",
+        stepAttempt: 1,
+        assignmentId: "asg_async",
+        attemptId: "att_async",
+        agentId: "implementer",
+        capability: "secret",
+        allowedOutcomes: ["passed"],
+        signal: new AbortController().signal,
+      }),
+      /pi_not_authenticated/,
+    );
+    assert.equal(probeCalls, 1);
+    assert.equal(spawned, 0);
   } finally {
     await producer.close();
   }

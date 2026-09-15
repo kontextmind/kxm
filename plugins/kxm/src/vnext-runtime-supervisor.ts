@@ -476,7 +476,7 @@ async function startVnextRuntimeSupervisorInner(
                   });
                 })();
 
-            let drivePromise: Promise<unknown>;
+            let drivePromise: Promise<unknown> | undefined;
             let earlyError: unknown;
             try {
               const scheduler = VnextRunScheduler.for(context, bundle);
@@ -484,7 +484,6 @@ async function startVnextRuntimeSupervisorInner(
               drivePromise.catch((err) => { earlyError = err; });
             } catch (err) {
               earlyError = err;
-              drivePromise = Promise.reject(err);
             }
 
             // Yield microtask to catch synchronous duplicate queue check (e.g. run_busy)
@@ -503,11 +502,14 @@ async function startVnextRuntimeSupervisorInner(
               throw earlyError;
             }
 
-            void drivePromise.finally(async () => {
+            void drivePromise!.finally(async () => {
               cleanupActive();
               if ("close" in producer && typeof producer.close === "function") {
                 try { await producer.close(); } catch { /* ignore */ }
               }
+            }).catch(() => {
+              // Derived finally() re-rejects when the admitted drive or cleanup
+              // throws; void does not consume that. Keep the request 202.
             });
 
             sendJson(response, 202, {

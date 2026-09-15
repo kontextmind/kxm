@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { probeHarnesses } from "../vnext-harness.ts";
+import { probeHarnessesAsync } from "../vnext-harness.ts";
 import { suggestWorkflowAndRoles } from "../suggest.ts";
 import {
   createGoal,
@@ -32,7 +32,7 @@ export async function cmdSuggest(runtime: Runtime, promptParts: string[]): Promi
       runtime.io.stderr("prompt must be non-empty\n");
       return 2;
     }
-    const inventory = probeHarnesses({ env: runtime.env });
+    const inventory = await probeHarnessesAsync({ env: runtime.env });
     const availableHarnesses = inventory.harnesses.map((h) => ({
       harness: h.id,
       auth: h.authenticated === true ? "authenticated" : "unauthenticated",
