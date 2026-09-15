@@ -35511,6 +35511,7 @@ function streamClaudeBridge(model, context, options, deps = {}) {
 
 // plugins/kxm/src/providers/claude-bridge/register.ts
 var CLAUDE_BRIDGE_DOUBLE_REGISTRATION_WARNING = "kxm: standalone pi-claude-bridge is still installed (AskClaude tool is present). Remove that extension and reload. KXM will not register provider id claude-bridge.";
+var CLAUDE_BRIDGE_ALREADY_REGISTERED_WARNING = "kxm: standalone pi-claude-bridge is still installed (AskClaude tool is present). KXM already registered provider id claude-bridge. Remove that extension and reload to avoid override or ambiguity.";
 var STANDALONE_CLAUDE_BRIDGE_TOOLS = Object.freeze(["AskClaude"]);
 var CLAUDE_BRIDGE_HOST_PROBE_METHODS = Object.freeze([
   "getAllTools",
@@ -35550,11 +35551,21 @@ function claudeBridgeStandaloneToolsPresent(pi) {
 function shouldSkipClaudeBridgeRegistration(pi) {
   return claudeBridgeStandaloneToolsPresent(pi);
 }
+function boundedRegistrationWarning(message) {
+  return message.slice(0, 400);
+}
+function claudeBridgeConflictWarning(registered) {
+  return boundedRegistrationWarning(
+    registered ? CLAUDE_BRIDGE_ALREADY_REGISTERED_WARNING : CLAUDE_BRIDGE_DOUBLE_REGISTRATION_WARNING
+  );
+}
 function claudeBridgeRegistrationNotice(report, pi) {
   const conflict = Boolean(report?.conflict) || (pi ? claudeBridgeStandaloneToolsPresent(pi) : false);
   if (!conflict) return void 0;
-  const warning = (report?.warning ?? CLAUDE_BRIDGE_DOUBLE_REGISTRATION_WARNING).slice(0, 400);
-  return { message: warning, type: "warning" };
+  return {
+    message: claudeBridgeConflictWarning(Boolean(report?.registered)),
+    type: "warning"
+  };
 }
 function registerClaudeBridgeProvider(pi) {
   if (shouldSkipClaudeBridgeRegistration(pi)) {

@@ -15,6 +15,9 @@ import { streamClaudeBridge } from "./provider.ts";
 export const CLAUDE_BRIDGE_DOUBLE_REGISTRATION_WARNING =
   "kxm: standalone pi-claude-bridge is still installed (AskClaude tool is present). Remove that extension and reload. KXM will not register provider id claude-bridge.";
 
+export const CLAUDE_BRIDGE_ALREADY_REGISTERED_WARNING =
+  "kxm: standalone pi-claude-bridge is still installed (AskClaude tool is present). KXM already registered provider id claude-bridge. Remove that extension and reload to avoid override or ambiguity.";
+
 /** Tools that only the standalone extension registers. */
 export const STANDALONE_CLAUDE_BRIDGE_TOOLS = Object.freeze(["AskClaude"]);
 
@@ -73,14 +76,28 @@ export function shouldSkipClaudeBridgeRegistration(pi: object): boolean {
   return claudeBridgeStandaloneToolsPresent(pi);
 }
 
+function boundedRegistrationWarning(message: string): string {
+  return message.slice(0, 400);
+}
+
+export function claudeBridgeConflictWarning(registered: boolean): string {
+  return boundedRegistrationWarning(
+    registered
+      ? CLAUDE_BRIDGE_ALREADY_REGISTERED_WARNING
+      : CLAUDE_BRIDGE_DOUBLE_REGISTRATION_WARNING,
+  );
+}
+
 export function claudeBridgeRegistrationNotice(
   report: ClaudeBridgeRegistration | undefined,
   pi?: object,
 ): { message: string; type: "warning" } | undefined {
   const conflict = Boolean(report?.conflict) || (pi ? claudeBridgeStandaloneToolsPresent(pi) : false);
   if (!conflict) return undefined;
-  const warning = (report?.warning ?? CLAUDE_BRIDGE_DOUBLE_REGISTRATION_WARNING).slice(0, 400);
-  return { message: warning, type: "warning" };
+  return {
+    message: claudeBridgeConflictWarning(Boolean(report?.registered)),
+    type: "warning",
+  };
 }
 
 export function registerClaudeBridgeProvider(pi: ExtensionAPI): ClaudeBridgeRegistration {

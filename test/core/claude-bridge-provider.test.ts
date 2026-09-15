@@ -21,8 +21,10 @@ import {
   resolveModel,
 } from "../../plugins/kxm/src/providers/claude-bridge/index.ts";
 import {
+  CLAUDE_BRIDGE_ALREADY_REGISTERED_WARNING,
   CLAUDE_BRIDGE_DOUBLE_REGISTRATION_WARNING,
   CLAUDE_BRIDGE_HOST_PROBE_METHODS,
+  claudeBridgeConflictWarning,
   claudeBridgeRegistrationNotice,
   claudeBridgeStandaloneToolsPresent,
   registerClaudeBridgeProvider,
@@ -247,10 +249,14 @@ test("double-registration is skipped when AskClaude is present on a real host pr
   assert.equal(result.registered, false);
   assert.equal(result.conflict, true);
   assert.equal(result.warning, CLAUDE_BRIDGE_DOUBLE_REGISTRATION_WARNING);
+  assert.equal(result.warning, claudeBridgeConflictWarning(false));
   assert.match(result.warning, /AskClaude tool is present/);
+  assert.match(result.warning, /will not register provider id claude-bridge/);
+  assert.doesNotMatch(result.warning, /already registered/);
   assert.equal(pi.providers.has("claude-bridge"), false);
   const notice = claudeBridgeRegistrationNotice(result);
   assert.equal(notice?.type, "warning");
+  assert.equal(notice?.message, CLAUDE_BRIDGE_DOUBLE_REGISTRATION_WARNING);
   assert.match(notice?.message ?? "", /standalone pi-claude-bridge/);
   assert.match(notice?.message ?? "", /AskClaude/);
   assert.ok((notice?.message.length ?? 0) <= 400);
@@ -260,7 +266,7 @@ test("double-registration is skipped when AskClaude is present on a real host pr
   assert.equal(extensionPi.providers.has("claude-bridge"), false);
 });
 
-test("standalone AskClaude tool skips registration and still warns after KXM registered", () => {
+test("standalone AskClaude on real host probes skips registration before KXM registers", () => {
   const standalone = fakePi({ standaloneTools: ["AskClaude"] });
   assert.equal(claudeBridgeStandaloneToolsPresent(standalone.api), true);
   assert.equal(shouldSkipClaudeBridgeRegistration(standalone.api), true);
@@ -268,19 +274,49 @@ test("standalone AskClaude tool skips registration and still warns after KXM reg
   assert.equal(skipped.registered, false);
   assert.equal(skipped.conflict, true);
   assert.equal(standalone.providers.has("claude-bridge"), false);
+  const notice = claudeBridgeRegistrationNotice(skipped, standalone.api);
+  assert.equal(notice?.message, CLAUDE_BRIDGE_DOUBLE_REGISTRATION_WARNING);
+  assert.match(notice?.message ?? "", /will not register/);
+  assert.doesNotMatch(notice?.message ?? "", /already registered/);
 
   const viaActive = fakePi({ standaloneTools: ["AskClaude"], probeVia: "getActiveTools" });
   assert.equal(claudeBridgeStandaloneToolsPresent(viaActive.api), true);
   const viaCommands = fakePi({ standaloneTools: ["AskClaude"], probeVia: "getCommands" });
   assert.equal(claudeBridgeStandaloneToolsPresent(viaCommands.api), true);
+});
 
+test("late AskClaude detection warns that KXM already registered", () => {
   const ours = fakePi();
   const registered = registerClaudeBridgeProvider(ours.api);
   assert.equal(registered.registered, true);
+  assert.equal(registered.conflict, false);
+  assert.equal(registered.warning, undefined);
+  assert.equal(ours.providers.has("claude-bridge"), true);
   const lateStandalone = fakePi({ standaloneTools: ["AskClaude"] });
   const notice = claudeBridgeRegistrationNotice(registered, lateStandalone.api);
   assert.equal(notice?.type, "warning");
+  assert.equal(notice?.message, CLAUDE_BRIDGE_ALREADY_REGISTERED_WARNING);
+  assert.equal(notice?.message, claudeBridgeConflictWarning(true));
   assert.match(notice?.message ?? "", /AskClaude tool is present/);
+  assert.match(notice?.message ?? "", /already registered provider id claude-bridge/);
+  assert.match(notice?.message ?? "", /override or ambiguity/);
+  assert.doesNotMatch(notice?.message ?? "", /will not register/);
+  assert.ok((notice?.message.length ?? 0) <= 400);
+});
+
+test("no standalone detection emits no registration warning", () => {
+  const clean = fakePi();
+  const registered = registerClaudeBridgeProvider(clean.api);
+  assert.equal(registered.registered, true);
+  assert.equal(registered.conflict, false);
+  assert.equal(claudeBridgeRegistrationNotice(registered), undefined);
+  assert.equal(claudeBridgeRegistrationNotice(registered, clean.api), undefined);
+  assert.equal(claudeBridgeRegistrationNotice(undefined), undefined);
+  assert.equal(claudeBridgeRegistrationNotice(undefined, clean.api), undefined);
+  const missingProvider = registerClaudeBridgeProvider({} as never);
+  assert.equal(missingProvider.registered, false);
+  assert.equal(missingProvider.conflict, false);
+  assert.equal(claudeBridgeRegistrationNotice(missingProvider), undefined);
 });
 
 test("host probes used by the fake exist on Pi ExtensionAPI types", () => {
