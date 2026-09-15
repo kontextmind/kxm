@@ -84,7 +84,10 @@ research — verify them before dispatch. Declining is safe: set
 
 ## 3. Start the hub in another terminal
 
-`kxm hub start` is foreground. Keep that terminal running.
+`kxm hub start` is foreground. Keep that terminal running. The Pi extension
+can also start the hub for you (`hub.autoStart: background`, the default in
+`kxm.config.v1`): on load it reuses a healthy bound hub or a live local claim
+and starts a detached wrapper only when none exists.
 
 PowerShell:
 

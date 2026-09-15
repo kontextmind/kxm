@@ -1,8 +1,8 @@
-import { basename } from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { HubClient } from "./client.ts";
+import { defaultProjectName } from "./project-name.ts";
 import { AGENT_COMMANDS_MAP, enforceToolPolicy, getMcpTools, reconcileInbox } from "./commands.ts";
 import { deliverInboxNotification } from "./inbox.ts";
 import type { HubEvent, MessageRecord } from "./protocol.ts";
@@ -88,7 +88,7 @@ async function ensureClient(): Promise<HubClient> {
       serverUrl: process.env.KXM_SERVER_URL?.trim() || "http://127.0.0.1:7331",
       name: process.env.KXM_AGENT_NAME?.trim() || `claude-${process.pid}`,
       purpose: process.env.KXM_AGENT_PURPOSE?.trim() || "Claude Code implementation and review agent",
-      project: process.env.KXM_PROJECT?.trim() || basename(projectDir),
+      project: defaultProjectName(projectDir, process.env),
       model: "claude-code",
       ...(authToken ? { authToken } : {}),
     });

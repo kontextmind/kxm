@@ -12,11 +12,12 @@
  * - System, update, and configuration (`kxm update`, `kxm config`, `kxm completion`, `kxm improve`)
  */
 
-import { basename, dirname, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command, CommanderError } from "commander";
 import { readInstalledKxmVersion } from "./kxm-update.ts";
 import { HubClient } from "./client.ts";
+import { defaultProjectName } from "./project-name.ts";
 import {
   AGENT_COMMANDS_MAP,
   enforceToolPolicy,
@@ -179,7 +180,7 @@ function addGlobalOptions(command: Command): Command {
 
 async function ensureCliClient(runtime: Runtime): Promise<HubClient> {
   const serverUrl = runtime.serverUrl;
-  const project = runtime.env.KXM_PROJECT?.trim() || basename(runtime.dirs.workspace || runtime.cwd);
+  const project = defaultProjectName(runtime.cwd, runtime.env);
   const name = runtime.env.KXM_AGENT_NAME?.trim() || `cli-${process.pid}`;
   const purpose = runtime.env.KXM_AGENT_PURPOSE?.trim() || "CLI agent client";
   const authToken = runtime.env.KXM_AUTH_TOKEN?.trim();

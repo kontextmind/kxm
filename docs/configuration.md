@@ -85,6 +85,22 @@ later restarts. Delete the file and restart to rotate the generated token.
 
 Project tokens are an authorization boundary. A project-specific token can register only in its mapped project and see only that project's agents and messages. The administrative token remains a fallback for projects without an explicit entry. For provenance-gated workflows, configure an explicit project token and give workers only that token; reserve a distinct administrative token for operations such as quorum degradation approval.
 
+### Hub auto-start (Pi extension)
+
+`hub.autoStart` in `kxm.config.v1` controls whether harness extensions start
+the hub themselves; the default is `background`. On every extension load, the
+Pi TUI first reuses a healthy bound hub (`kxm hub bind`), then a live local
+`hub.pid` claim, then a hub already answering on the configured
+`KXM_SERVER_URL` (for example one launched directly by a harness), and only
+starts a detached `kxm-hub.mjs` wrapper when none of them exists, logging
+wrapper output to `.kxm/logs/hub-autostart.log`. Set
+`hub.autoStart: off` to never start a hub from an extension. Auto-start
+resolves credentials before launch, so a first run generates the admin token
+and persists it under the user state root exactly as `kxm hub start` does;
+the extension then authenticates with the environment token, the auto-start
+token, or the persisted credential, in that order. A failed start notifies in
+the TUI and never blocks the session.
+
 PowerShell example:
 
 ```powershell
@@ -102,7 +118,7 @@ The four derived directories stay together when only `KXM_WORKSPACE_DIR` is set.
 |---|---|---|
 | `KXM_SERVER_URL` | `http://127.0.0.1:7331` | Hub base URL |
 | `KXM_AUTH_TOKEN` | None | Project token, or the shared administrative token |
-| `KXM_PROJECT` | Current directory name | Discovery and message namespace |
+| `KXM_PROJECT` | package.json `name`, else current directory name | Discovery and message namespace |
 | `KXM_AGENT_NAME` | Harness-derived name | Unique live identity within a project |
 | `KXM_AGENT_PURPOSE` | Harness default | Capability description shown to peers |
 
