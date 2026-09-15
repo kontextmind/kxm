@@ -65,6 +65,11 @@ test("supervisor /drive returns 202 with poll link and completes asynchronously"
 test("supervisor /drive rejects duplicate concurrent drive with 409", async () => {
   const { root, stateRoot } = engineProject("kxm-supervisor-drive-409-");
   let supervisor: Awaited<ReturnType<typeof startVnextRuntimeSupervisor>> | undefined;
+  const unhandled: string[] = [];
+  const onUnhandled = (reason: unknown) => {
+    unhandled.push(String(reason));
+  };
+  process.on("unhandledRejection", onUnhandled);
   try {
     supervisor = await startVnextRuntimeSupervisor({ stateRoot });
     const token = readVnextSupervisorToken(vnextRuntimePaths({ stateRoot }))!;
@@ -98,7 +103,11 @@ test("supervisor /drive rejects duplicate concurrent drive with 409", async () =
     const errorBody = await errorRes.json() as Record<string, unknown>;
     assert.equal(errorBody.ok, false);
     assert.equal(errorBody.error, "run_busy");
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(unhandled.length, 0, `unhandledRejection: ${unhandled.join("; ")}`);
   } finally {
+    process.removeListener("unhandledRejection", onUnhandled);
     if (supervisor) await supervisor.stop();
     removeTempDir(root, stateRoot);
   }
@@ -278,6 +287,7 @@ function resetSupervisorPanelSeams(): void {
   vnextPanelDispatchSeams.failAppendExecuting = undefined;
   vnextPanelDispatchSeams.beforeInvoke = undefined;
   vnextPanelDispatchSeams.failSettleMember = undefined;
+  vnextPanelDispatchSeams.skipDispatch = undefined;
 }
 
 test("post-202 engine throw leaves failed or attempt_unreconciled, never bare running", async () => {
@@ -290,7 +300,7 @@ test("post-202 engine throw leaves failed or attempt_unreconciled, never bare ru
   process.on("unhandledRejection", onUnhandled);
   resetSupervisorPanelSeams();
   try {
-    vnextPanelDispatchSeams.failAppendExecuting = () => true;
+    vnextPanelDispatchSeams.skipDispatch = () => true;
     supervisor = await startVnextRuntimeSupervisor({ stateRoot });
     const token = readVnextSupervisorToken(vnextRuntimePaths({ stateRoot }))!;
     const handle = { runtimeId: supervisor.runtimeId, port: supervisor.port, token, started: true };
@@ -308,12 +318,17 @@ test("post-202 engine throw leaves failed or attempt_unreconciled, never bare ru
     assert.equal(driveRes.status, 202);
     const startTime = Date.now();
     let status = "running";
+    let recorded = false;
     while (Date.now() - startTime < 5000) {
       const peek = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: handle.runtimeId });
       try {
         status = peek.eventStore.run(runId)?.status ?? "missing";
-        if (status === "failed" || status === "cancelled" || status === "completed") break;
-        if (status === "running" && !vnextAdmittedToken(peek.eventStore.path, runId)) break;
+        const events = peek.eventStore.events(runId, 0, 200);
+        recorded = events.some((event) =>
+          event.eventType === "run.cancel_requested"
+          || (event.eventType === "run.status_changed" && (event.payload.status === "failed" || event.payload.status === "cancelled"))
+        );
+        if (status !== "running") break;
       } finally {
         closeVnextRuntimeContext(peek);
       }
@@ -321,6 +336,7 @@ test("post-202 engine throw leaves failed or attempt_unreconciled, never bare ru
     }
     assert.notEqual(status, "running", "engine throw must not leave a bare running run");
     assert.ok(status === "failed" || status === "cancelling" || status === "cancelled", `status=${status}`);
+    assert.equal(recorded, true, "post-202 failure must record failed or cancel through a fold-accepted path");
     assert.equal(unhandled.length, 0, `unhandledRejection: ${unhandled.join("; ")}`);
   } finally {
     process.removeListener("unhandledRejection", onUnhandled);

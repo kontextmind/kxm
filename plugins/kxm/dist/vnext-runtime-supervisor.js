@@ -23827,29 +23827,46 @@ function inflightAttemptId(state) {
   }
   return void 0;
 }
+function recordExecutingUnrecordedFailure(context, runId, attemptId, stepId) {
+  context.eventStore.transaction(() => {
+    const run = requireRun(context, runId);
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const sequence = context.eventStore.nextSequence(runId);
+    const event = {
+      ...vnextEventBase(context, run, now, vnextMonotonicNs()),
+      eventId: newVnextEventId(),
+      eventType: "run.status_changed",
+      sequence,
+      payload: { status: "failed", reason: "executing_unrecorded", stepId }
+    };
+    context.eventStore.appendEvent(event);
+    context.eventStore.settleCapability(attemptId, "revoked");
+    const next = foldStoredVnextRun(context, run);
+    persistVnextRunState(context, runId, next, sequence);
+    context.eventStore.updateRunStatus(runId, "failed", now);
+  });
+}
 function recordBareDriveFailure(context, runId) {
   if (isVnextRuntimeContextClosed(context)) return;
   try {
-    context.eventStore.transaction(() => {
-      const run = context.eventStore.run(runId);
-      if (!run) return;
-      const state = foldStoredVnextRun(context, run);
-      if (isTerminalRunStatus(state.status) || state.status === "cancelling") return;
-      if (inflightAttemptId(state)) return;
-      const now = (/* @__PURE__ */ new Date()).toISOString();
-      const sequence = context.eventStore.nextSequence(runId);
-      const event = {
-        ...vnextEventBase(context, run, now, vnextMonotonicNs()),
-        eventId: newVnextEventId(),
-        eventType: "run.status_changed",
-        sequence,
-        payload: { status: "failed", reason: "drive_error" }
-      };
-      context.eventStore.appendEvent(event);
-      const next = foldStoredVnextRun(context, run);
-      persistVnextRunState(context, runId, next, sequence);
-      context.eventStore.updateRunStatus(runId, "failed", now);
-    });
+    const run = context.eventStore.run(runId);
+    if (!run) return;
+    const state = foldStoredVnextRun(context, run);
+    if (isTerminalRunStatus(state.status) || state.status === "cancelling") return;
+    const inflight = inflightAttemptId(state);
+    if (inflight) {
+      const currentStep = state.currentStep;
+      const located = vnextFoldPanelAttempt(currentStep, inflight);
+      if (currentStep && currentStep.panel.order.length === 1 && located?.attempt.status === "starting") {
+        const plan = rehydrateVnextCompiledPlanFromStore(context.eventStore, run);
+        const step = plan.steps[currentStep.stepId];
+        if (step?.kind === "gate") return;
+        if (step && (step.kind === "agent" || step.kind === "moa") && step.assignments.maximum > 1) return;
+        recordExecutingUnrecordedFailure(context, runId, inflight, currentStep.stepId);
+      }
+      return;
+    }
+    cancelVnextRun(context, runId, { reason: "drive_error" });
   } catch {
   }
 }
@@ -23924,6 +23941,7 @@ var VnextRunScheduler = class _VnextRunScheduler {
       pending.resolve = resolve7;
       pending.reject = reject;
     });
+    void settled.then(void 0, () => void 0);
     return new Promise((resolveOpen, rejectOpen) => {
       const queued = enqueueVnextScheduledRun(
         this.context.eventStore.path,
@@ -23976,7 +23994,6 @@ var VnextRunScheduler = class _VnextRunScheduler {
       );
       void queued.then(void 0, (error) => {
         if (!opened) {
-          pending.reject(error);
           rejectOpen(error);
         }
       });
@@ -24320,6 +24337,9 @@ function prepareDispatch(context, runId, producerId) {
   const run = requireRun(context, runId);
   const plan = rehydrateVnextCompiledPlanFromStore(context.eventStore, run);
   const state = foldStoredVnextRun(context, run);
+  if (vnextPanelDispatchSeams.skipDispatch?.()) {
+    return { kind: "return", state };
+  }
   if (state.status === "cancelling" && vnextAttemptControllers(context.eventStore.path, runId).length === 0) {
     return {
       kind: "return",

@@ -960,6 +960,134 @@ test("openDriveSession admits before pin, returns driveId, and closes the produc
   }
 });
 
+test("openDriveSession pre-open failures do not reject settled without a consumer", { timeout: 15_000 }, async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-drive-preopen-");
+  const unhandled: string[] = [];
+  const onUnhandled = (reason: unknown) => {
+    unhandled.push(String(reason));
+  };
+  process.on("unhandledRejection", onUnhandled);
+  const flush = async () => {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  };
+  try {
+    writeFileSync(join(root, ".kxm", "workflows", "limited.yaml"), `schema: kxm.workflow.v1
+coordinator: coordinator
+limits:
+  maxTransitions: 2
+  maxRunDurationMs: 1000
+steps:
+  - id: only
+    kind: agent
+    agent: implementer
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: $terminal
+        terminalStatus: failed
+`);
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const scheduler = VnextRunScheduler.for(context, bundle);
+      const held = holdProducer();
+      const busyRun = acceptVnextRun(context, bundle, { workflowId: "one-step", prompt: "busy" });
+      const first = await scheduler.openDriveSession(busyRun.run.runId, {
+        mode: "simulated",
+        createProducer: () => held.producer,
+      });
+      await assert.rejects(
+        () => scheduler.openDriveSession(busyRun.run.runId, {
+          mode: "simulated",
+          createProducer: () => createVnextSimulatedProducer(() => ({ outcome: "passed" })),
+        }),
+        /run_busy/,
+      );
+      await flush();
+      assert.equal(unhandled.length, 0, `run_busy unhandledRejection: ${unhandled.join("; ")}`);
+      held.release();
+      await first.settled;
+
+      const pinRun = acceptVnextRun(context, bundle, { workflowId: "one-step", prompt: "pin-fail" });
+      await assert.rejects(
+        () => scheduler.openDriveSession(pinRun.run.runId, {
+          mode: "simulated",
+          createProducer: () => {
+            throw new Error("createProducer failed before pin");
+          },
+        }),
+        /createProducer failed before pin/,
+      );
+      await flush();
+      assert.equal(unhandled.length, 0, `pin-failure unhandledRejection: ${unhandled.join("; ")}`);
+
+      const handoffRun = acceptVnextRun(context, bundle, { workflowId: "limited", prompt: "handoff" });
+      await assert.rejects(
+        () => scheduler.openDriveSession(handoffRun.run.runId, {
+          mode: "simulated",
+          createProducer: () => createVnextSimulatedProducer(() => ({ outcome: "passed" })),
+        }),
+        /run_handoff_required/,
+      );
+      await flush();
+      assert.equal(unhandled.length, 0, `handoff-throw unhandledRejection: ${unhandled.join("; ")}`);
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    process.removeListener("unhandledRejection", onUnhandled);
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("post-open no-progress throw records failed or cancelled, never bare running", { timeout: 15_000 }, async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-drive-noprogress-");
+  resetPanelSeams();
+  const unhandled: string[] = [];
+  const onUnhandled = (reason: unknown) => {
+    unhandled.push(String(reason));
+  };
+  process.on("unhandledRejection", onUnhandled);
+  try {
+    vnextPanelDispatchSeams.skipDispatch = () => true;
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "one-step", prompt: "no-progress" });
+      const scheduler = VnextRunScheduler.for(context, bundle);
+      const session = await scheduler.openDriveSession(accepted.run.runId, {
+        mode: "simulated",
+        createProducer: () => createVnextSimulatedProducer(() => ({ outcome: "passed" })),
+      });
+      await assert.rejects(() => session.settled, /drive made no progress/);
+      const run = context.eventStore.run(accepted.run.runId);
+      assert.notEqual(run?.status, "running", "no-progress must not leave a bare running run");
+      assert.ok(run?.status === "failed" || run?.status === "cancelled" || run?.status === "cancelling", `status=${run?.status}`);
+      const events = context.eventStore.events(accepted.run.runId, 0, 200);
+      assert.equal(
+        events.some((event) =>
+          event.eventType === "run.cancel_requested"
+          || (event.eventType === "run.status_changed" && (event.payload.status === "failed" || event.payload.status === "cancelled"))
+        ),
+        true,
+        "failure must be recorded through a fold-accepted path",
+      );
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      assert.equal(unhandled.length, 0, `unhandledRejection: ${unhandled.join("; ")}`);
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    process.removeListener("unhandledRejection", onUnhandled);
+    resetPanelSeams();
+    removeTempDir(root, stateRoot);
+  }
+});
+
 test("same-revision bound mutation is rejected while work is admitted or queued", async () => {
   const storePath = join(tmpdir(), `kxm-owner-bind-${Date.now()}-${Math.random().toString(16).slice(2)}`);
   const revision = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -1989,6 +2117,7 @@ function resetPanelSeams(): void {
   vnextPanelDispatchSeams.failAppendExecuting = undefined;
   vnextPanelDispatchSeams.beforeInvoke = undefined;
   vnextPanelDispatchSeams.failSettleMember = undefined;
+  vnextPanelDispatchSeams.skipDispatch = undefined;
 }
 
 test("U2a-2 panel target 2 maxParallel 2 settles both members then joins once", async () => {

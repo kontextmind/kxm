@@ -43,6 +43,11 @@ import { loadKxmUpdateConfig } from "../kxm-update-config.ts";
 import type { InstallKindReport, InstallProbe } from "../kxm-install-kind.ts";
 import { print, type CliIo, type CliSpawnResult, type Runtime } from "./types.ts";
 
+export const vnextDriveCliSeams: {
+  ensureSupervisor?: typeof ensureVnextSupervisor;
+  runtimeRequest?: typeof vnextRuntimeRequest;
+} = {};
+
 const repoRoot = resolve(fileURLToPath(new URL("../../../../", import.meta.url)));
 
 export function initPlanPayload(plan: VnextInitializationPlan): Record<string, unknown> {
@@ -505,15 +510,20 @@ export async function cmdVnextRunDrive(runtime: Runtime, runId: string, simulate
       print(runtime.io, runtime.json, { ok: true, command: "runs drive", dryRun: true, runId, mode }, `drive plan: run ${runId} in ${mode} mode (no events written)`);
       return 0;
     }
-    const supervisor = await ensureVnextSupervisor({ env: runtime.env });
-    const result = await vnextRuntimeRequest(supervisor, "POST", `/v1/runs/${encodeURIComponent(runId)}/drive?projectRoot=${encodeURIComponent(projectRoot)}`, { mode });
-    const driveId = typeof result.driveId === "string" ? result.driveId : "";
-    const poll = typeof result.poll === "string" ? result.poll : `/v1/runs/${runId}`;
+    const supervisor = await (vnextDriveCliSeams.ensureSupervisor ?? ensureVnextSupervisor)({ env: runtime.env });
+    const result = await (vnextDriveCliSeams.runtimeRequest ?? vnextRuntimeRequest)(supervisor, "POST", `/v1/runs/${encodeURIComponent(runId)}/drive?projectRoot=${encodeURIComponent(projectRoot)}`, { mode });
+    const driveId = result.driveId;
+    const poll = result.poll;
+    const status = result.status;
+    if (typeof driveId !== "string" || driveId.length === 0 || typeof poll !== "string" || poll.length === 0 || status !== "accepted") {
+      print(runtime.io, runtime.json, { ok: false, command: "runs drive", error: "run_drive_io_failed" }, "run drive failed because a local operation did not complete");
+      return 1;
+    }
     print(
       runtime.io,
       runtime.json,
-      { ok: true, command: "runs drive", runId, driveId, poll, mode, status: result.status },
-      `drive ${driveId || runId}: accepted (poll ${poll})`,
+      { ok: true, command: "runs drive", runId, driveId, poll, mode, status },
+      `drive ${driveId}: accepted (poll ${poll})`,
     );
     return 0;
   } catch (error) {
