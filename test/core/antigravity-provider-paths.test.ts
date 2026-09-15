@@ -2017,8 +2017,8 @@ test("stream and catalog helpers cover remaining request and grouping legs", asy
         timestamp: 1,
         content: [
           { type: "text", text: "see" },
-          { type: "image", source: { data: "abcd", mediaType: "image/webp" } } as never,
-          { type: "image" } as never,
+          { type: "image", data: "abcd", mimeType: "image/webp" },
+          { type: "image", data: "", mimeType: "image/png" },
           "skip-me" as never,
         ],
       },

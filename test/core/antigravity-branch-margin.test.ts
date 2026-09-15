@@ -139,8 +139,8 @@ test("stream helpers cover source images, default system prompt, and leftover er
         timestamp: 1,
         content: [
           { type: "text", text: "see" },
-          { type: "image", source: { data: "abcd", mediaType: "image/webp" } } as never,
-          { type: "image" } as never,
+          { type: "image", data: "abcd", mimeType: "image/webp" },
+          { type: "image", data: "", mimeType: "image/png" },
           "skip-me" as never,
         ],
       },
