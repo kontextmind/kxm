@@ -58,12 +58,20 @@ export interface HarnessCatalogEntry {
   oneShot?: HarnessOneShotConfig | undefined;
 }
 
+export type HarnessRunCommand = (command: string, args: readonly string[], timeoutMs: number) => HarnessCommandResult;
+export type HarnessRunCommandAsync = (command: string, args: readonly string[], timeoutMs: number) => HarnessCommandResult | Promise<HarnessCommandResult>;
+
 export interface HarnessProbeOptions {
   env?: NodeJS.ProcessEnv | undefined;
-  runCommand?: ((command: string, args: readonly string[], timeoutMs: number) => HarnessCommandResult) | undefined;
+  runCommand?: HarnessRunCommand | undefined;
   timeoutMs?: number | undefined;
   platform?: NodeJS.Platform | undefined;
   existsSync?: ((path: string) => boolean) | undefined;
+}
+
+export interface AsyncHarnessProbeOptions extends Omit<HarnessProbeOptions, "runCommand"> {
+  signal?: AbortSignal | undefined;
+  runCommand?: HarnessRunCommandAsync | undefined;
 }
 
 export interface HarnessDispatchStatus {
@@ -598,7 +606,7 @@ export function findWinNpmInnerExe(
   return undefined;
 }
 
-function defaultRunner(env: NodeJS.ProcessEnv): (command: string, args: readonly string[], timeoutMs: number) => HarnessCommandResult {
+function defaultRunner(env: NodeJS.ProcessEnv): HarnessRunCommand {
   return (command, args, timeoutMs) => {
     try {
       const result = spawnSync(command, [...args], {
@@ -618,6 +626,37 @@ function defaultRunner(env: NodeJS.ProcessEnv): (command: string, args: readonly
         stdout: result.stdout?.toString() ?? "",
         stderr: result.stderr?.toString() ?? "",
       };
+    } catch (error) {
+      return { ok: false, code: null, stdout: "", stderr: "", error: error instanceof Error ? error.message : "spawn_failed" };
+    }
+  };
+}
+
+function commandResultFromSpawn(result: Awaited<ReturnType<typeof defaultSpawn>>): HarnessCommandResult {
+  const errno = result.error && "code" in result.error
+    ? (result.error as NodeJS.ErrnoException).code
+    : undefined;
+  const error = (typeof errno === "string" && errno ? errno : undefined)
+    ?? result.error?.message
+    ?? (result.observedChildExit !== true ? "auth_probe_exit_unobserved" : undefined);
+  return {
+    ok: result.code === 0 && !error,
+    code: result.code,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    ...(error ? { error } : {}),
+  };
+}
+
+function defaultAsyncRunner(env: NodeJS.ProcessEnv, signal?: AbortSignal): HarnessRunCommandAsync {
+  return async (command, args, timeoutMs) => {
+    try {
+      return commandResultFromSpawn(await defaultSpawn(command, args, {
+        env,
+        timeoutMs,
+        signal,
+        shell: harnessSpawnUsesShell(command),
+      }));
     } catch (error) {
       return { ok: false, code: null, stdout: "", stderr: "", error: error instanceof Error ? error.message : "spawn_failed" };
     }
@@ -856,6 +895,18 @@ export function probeHarnesses(options: HarnessProbeOptions = {}): HarnessInvent
     defaultHarness: DEFAULT_HARNESS,
     harnesses: BUILTIN_HARNESSES.map((entry) => probeEntry(entry, runCommand, timeoutMs, platform, options)),
   };
+}
+
+/**
+ * Inventory probe that never uses spawnSync. Product CLI/hub/extension paths
+ * must await this so capability/auth checks cannot block the event loop.
+ */
+export async function probeHarnessesAsync(options: AsyncHarnessProbeOptions = {}): Promise<HarnessInventory> {
+  return replayHarnessProbe(
+    options.runCommand ?? defaultAsyncRunner(options.env ?? process.env, options.signal),
+    (runCommand) => probeHarnesses({ ...options, runCommand }),
+    256,
+  );
 }
 
 export function eligibleHarnesses(inventory: HarnessInventory): readonly string[] {
@@ -1118,7 +1169,7 @@ export function probeHarnessAssignment(options: HarnessAssignmentProbeOptions): 
 
 export interface AsyncHarnessAssignmentProbeOptions extends Omit<HarnessAssignmentProbeOptions, "runCommand"> {
   signal?: AbortSignal | undefined;
-  runCommand?: ((command: string, args: readonly string[], timeoutMs: number) => HarnessCommandResult | Promise<HarnessCommandResult>) | undefined;
+  runCommand?: HarnessRunCommandAsync | undefined;
 }
 
 class PendingHarnessCommand {
@@ -1134,6 +1185,29 @@ class PendingHarnessCommand {
   }
 }
 
+async function replayHarnessProbe<T>(
+  run: HarnessRunCommandAsync,
+  execute: (runCommand: HarnessRunCommand) => T,
+  limit: number,
+): Promise<T> {
+  const observed = new Map<string, HarnessCommandResult>();
+  for (let commands = 0; commands <= limit; commands++) {
+    try {
+      return execute((command, args, timeoutMs) => {
+        const key = JSON.stringify([command, args, timeoutMs]);
+        const result = observed.get(key);
+        if (result) return result;
+        throw new PendingHarnessCommand(command, args, timeoutMs, key);
+      });
+    } catch (pending) {
+      if (!(pending instanceof PendingHarnessCommand)) throw pending;
+      if (commands === limit) throw new Error("auth_probe_command_limit");
+      observed.set(pending.key, await run(pending.command, pending.args, pending.timeoutMs));
+    }
+  }
+  throw new Error("auth_probe_command_limit");
+}
+
 /**
  * Execute the existing probe policy without blocking the Runtime event loop.
  * Replay pure policy decisions from per-call command observations, yielding for
@@ -1141,28 +1215,11 @@ class PendingHarnessCommand {
  * deduplicates repeated detection, and never caches auth across assignments.
  */
 export async function probeHarnessAssignmentAsync(options: AsyncHarnessAssignmentProbeOptions): Promise<HarnessStatus> {
-  const observed = new Map<string, HarnessCommandResult>();
-  const run = options.runCommand ?? (async (command, args, timeoutMs) => {
-    const result = await defaultSpawn(command, args, { env: options.env, timeoutMs, signal: options.signal });
-    const error = result.error?.message ?? (result.observedChildExit !== true ? "auth_probe_exit_unobserved" : undefined);
-    return { ok: result.code === 0 && !error, code: result.code, stdout: result.stdout, stderr: result.stderr,
-      ...(error ? { error } : {}) };
-  });
-  for (let commands = 0; commands <= 32; commands++) {
-    try {
-      return probeHarnessAssignment({ ...options, runCommand(command, args, timeoutMs) {
-        const key = JSON.stringify([command, args, timeoutMs]);
-        const result = observed.get(key);
-        if (result) return result;
-        throw new PendingHarnessCommand(command, args, timeoutMs, key);
-      } });
-    } catch (pending) {
-      if (!(pending instanceof PendingHarnessCommand)) throw pending;
-      if (commands === 32) throw new Error("auth_probe_command_limit");
-      observed.set(pending.key, await run(pending.command, pending.args, pending.timeoutMs));
-    }
-  }
-  throw new Error("auth_probe_command_limit");
+  return replayHarnessProbe(
+    options.runCommand ?? defaultAsyncRunner(options.env ?? process.env, options.signal),
+    (runCommand) => probeHarnessAssignment({ ...options, runCommand }),
+    32,
+  );
 }
 
 export function probeHarnessesForModel(
@@ -1187,6 +1244,17 @@ export function probeHarnessesForModel(
       })
     ),
   };
+}
+
+export async function probeHarnessesForModelAsync(
+  modelSpec: HarnessModelSpec,
+  options: AsyncHarnessProbeOptions = {},
+): Promise<HarnessInventory> {
+  return replayHarnessProbe(
+    options.runCommand ?? defaultAsyncRunner(options.env ?? process.env, options.signal),
+    (runCommand) => probeHarnessesForModel(modelSpec, { ...options, runCommand }),
+    256,
+  );
 }
 
 function scopesFor(scope: HarnessUpdateScope, entry: HarnessCatalogEntry): Exclude<HarnessUpdateScope, "all">[] {

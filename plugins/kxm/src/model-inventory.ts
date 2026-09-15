@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { stringify } from "yaml";
+import { defaultSpawn } from "./vnext-oneshot-process.ts";
 
 export interface InventoryPrice {
   inputPerMillion: number | null;
@@ -95,10 +95,10 @@ export async function refreshModelInventory(options: { outputRoot: string; env?:
     if (item.fast === true) current.capabilities.speed = { fast: true, tiers: ["fast"], source };
     byId.set(key, current);
   };
-  const native = (command: string, args: string[], source: string) => {
-    const result = spawnSync(command, args, { encoding: "utf8", timeout: 20_000, shell: false });
-    const ok = result.status === 0;
-    sources[source] = { url: `${command} ${args.join(" ")}`, ok, ...(ok ? {} : { error: (result.stderr || "command failed").trim().slice(0, 240) }) };
+  const native = async (command: string, args: string[], source: string) => {
+    const result = await defaultSpawn(command, args, { env, timeoutMs: 20_000 });
+    const ok = result.code === 0 && !result.error;
+    sources[source] = { url: `${command} ${args.join(" ")}`, ok, ...(ok ? {} : { error: (result.stderr || result.error?.message || "command failed").trim().slice(0, 240) }) };
     if (!ok) return;
     for (const line of (result.stdout || "").split(/\r?\n/)) {
       const parts = line.trim().split(/\s+/);
@@ -109,9 +109,9 @@ export async function refreshModelInventory(options: { outputRoot: string; env?:
       }
     }
   };
-  native("pi", ["--list-models"], "pi");
-  native("grok", ["models"], "grok");
-  native("agy", ["models"], "agy");
+  await native("pi", ["--list-models"], "pi");
+  await native("grok", ["models"], "grok");
+  await native("agy", ["models"], "agy");
   const openrouter = await fetchModels(env.KXM_OPENROUTER_MODELS_URL?.trim() || OR_URL, env.OPENROUTER_API_KEY);
   const openrouterUrl = env.KXM_OPENROUTER_MODELS_URL?.trim() || OR_URL;
   sources.openrouter = { url: openrouterUrl, ok: !openrouter.error, ...(openrouter.error ? { error: openrouter.error } : {}) };

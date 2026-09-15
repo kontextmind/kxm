@@ -81,7 +81,7 @@ import { loadKxmUpdateConfig } from "../kxm-update-config.ts";
 import {
   formatHarnessUpdate,
   planHarnessUpdate,
-  probeHarnesses,
+  probeHarnessesAsync,
   runHarnessUpdate,
   type HarnessUpdateScope,
 } from "../vnext-harness.ts";
@@ -399,7 +399,7 @@ export async function cmdUpdate(runtime: Runtime, harness: string | undefined, o
     return kxmApply?.ok === false ? 1 : 0;
   }
   const scope: HarnessUpdateScope = options.self ? "self" : options.extensions ? "extensions" : options.models ? "models" : "all";
-  const inventory = probeHarnesses({ env: runtime.env });
+  const inventory = await probeHarnessesAsync({ env: runtime.env });
   const planned = planHarnessUpdate(inventory, { ...(harness ? { harness } : {}), scope });
   const steps = runHarnessUpdate(planned, { env: runtime.env, dryRun: runtime.dryRun });
   const failed = steps.some((step) => step.outcome === "failed") || kxmApply?.ok === false;
@@ -755,7 +755,7 @@ export async function maybeOfferGuideSetup(runtime: Runtime): Promise<void> {
   if (runtime.env[GUIDE_SETUP_OPT_OUT_ENV]?.trim()) return;
   let inventory;
   try {
-    inventory = probeHarnesses({ env: runtime.env });
+    inventory = await probeHarnessesAsync({ env: runtime.env });
   } catch {
     return;
   }

@@ -20814,7 +20814,157 @@ import { existsSync as existsSync3 } from "node:fs";
 import { win32 as win32Path } from "node:path";
 
 // plugins/kxm/src/vnext-oneshot-process.ts
+import { spawn } from "node:child_process";
 var OUTPUT_LIMIT = 8 * 1024 * 1024;
+var KILL_GRACE_MS = 250;
+var DRAIN_GRACE_MS = 500;
+var REAP_GRACE_MS = 1e3;
+function killProcessTree(child, signal = "SIGKILL") {
+  if (process.platform !== "win32" && child.pid) {
+    try {
+      process.kill(-child.pid, signal);
+      return;
+    } catch {
+    }
+  }
+  try {
+    child.kill(signal);
+  } catch {
+  }
+}
+function defaultSpawn(command, args, options) {
+  if (options.signal?.aborted) {
+    return Promise.resolve({ stdout: "", stderr: "", code: null, started: false, observedChildExit: false, error: new Error("process_aborted") });
+  }
+  return new Promise((resolve31) => {
+    const stdout = [];
+    const stderr = [];
+    let outputBytes = 0;
+    let outputChunks = 0;
+    let code = null;
+    let signal = null;
+    let observedChildExit = false;
+    let finished = false;
+    let stopping = false;
+    let closed = false;
+    let killSent = false;
+    let error;
+    let wallTimer;
+    let killTimer;
+    let drainTimer;
+    let reapTimer;
+    let child;
+    const finish = () => {
+      if (finished) return;
+      if (stopping && !killSent) return;
+      finished = true;
+      for (const timer of [wallTimer, killTimer, drainTimer, reapTimer]) clearTimeout(timer);
+      options.signal?.removeEventListener("abort", onAbort);
+      child?.stdin?.destroy();
+      child?.stdout?.destroy();
+      child?.stderr?.destroy();
+      child?.unref();
+      const started = Boolean(child?.pid);
+      if (started && !observedChildExit) error ??= new Error("process_exit_unobserved");
+      const unverifiedDescendants = stopping || started && !observedChildExit;
+      resolve31({
+        stdout: Buffer.concat(stdout).toString("utf8"),
+        stderr: Buffer.concat(stderr).toString("utf8"),
+        code,
+        signal,
+        started,
+        observedChildExit,
+        terminationRequested: stopping,
+        ...unverifiedDescendants ? { unverifiedDescendants: true } : {},
+        ...error ? { error } : {}
+      });
+    };
+    const kill = (requested) => {
+      killProcessTree(child, requested);
+    };
+    const stop = (reason) => {
+      if (finished) return;
+      error ??= new Error(reason);
+      if (stopping) return;
+      stopping = true;
+      clearTimeout(wallTimer);
+      kill("SIGTERM");
+      killTimer = setTimeout(() => {
+        kill("SIGKILL");
+        killSent = true;
+        if (closed) {
+          finish();
+          return;
+        }
+        reapTimer = setTimeout(() => {
+          if (!observedChildExit) error ??= new Error("process_exit_unobserved");
+          finish();
+        }, REAP_GRACE_MS);
+      }, KILL_GRACE_MS);
+    };
+    const onAbort = () => stop("process_aborted");
+    try {
+      child = spawn(command, [...args], {
+        cwd: options.cwd,
+        env: options.env ?? process.env,
+        stdio: ["pipe", "pipe", "pipe"],
+        shell: options.shell === true,
+        windowsHide: true,
+        detached: process.platform !== "win32"
+      });
+    } catch (cause) {
+      error = cause instanceof Error ? cause : new Error("process_spawn_failed");
+      finish();
+      return;
+    }
+    const collect = (target, chunk) => {
+      if (finished) return;
+      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      const remaining = Math.max(0, OUTPUT_LIMIT - outputBytes);
+      if (remaining && outputChunks < 16384) {
+        const kept = bytes.subarray(0, remaining);
+        target.push(kept);
+        outputBytes += kept.length;
+        outputChunks++;
+      }
+      if (bytes.length > remaining || outputChunks >= 16384) stop("process_output_limit");
+    };
+    child.stdout.on("data", (chunk) => collect(stdout, chunk));
+    child.stderr.on("data", (chunk) => collect(stderr, chunk));
+    child.stdin.on("error", () => stop("process_stdin_error"));
+    child.stdout.on("error", () => stop("process_stdio_error"));
+    child.stderr.on("error", () => stop("process_stdio_error"));
+    child.on("error", (cause) => {
+      error ??= cause;
+      if (!child.pid) finish();
+      else stop("process_error");
+    });
+    child.on("exit", (exitCode, exitSignal) => {
+      if (finished) return;
+      observedChildExit = true;
+      code = exitCode;
+      signal = exitSignal;
+      clearTimeout(wallTimer);
+      drainTimer = setTimeout(() => stop("process_stdio_unclosed"), DRAIN_GRACE_MS);
+    });
+    child.on("close", (exitCode, exitSignal) => {
+      if (finished) return;
+      closed = true;
+      code = exitCode;
+      signal = exitSignal;
+      finish();
+    });
+    options.signal?.addEventListener("abort", onAbort, { once: true });
+    if (options.signal?.aborted) onAbort();
+    const timeoutMs = options.timeoutMs ?? 12e4;
+    if (!stopping) wallTimer = setTimeout(() => stop("process_timeout"), timeoutMs > 0 && Number.isFinite(timeoutMs) ? timeoutMs : 12e4);
+    try {
+      child.stdin.end(options.input);
+    } catch {
+      stop("process_stdin_error");
+    }
+  });
+}
 
 // plugins/kxm/src/vnext-harness.ts
 var DEFAULT_HARNESS = "pi";
@@ -21243,6 +21393,31 @@ function defaultRunner(env) {
     }
   };
 }
+function commandResultFromSpawn(result) {
+  const errno = result.error && "code" in result.error ? result.error.code : void 0;
+  const error = (typeof errno === "string" && errno ? errno : void 0) ?? result.error?.message ?? (result.observedChildExit !== true ? "auth_probe_exit_unobserved" : void 0);
+  return {
+    ok: result.code === 0 && !error,
+    code: result.code,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    ...error ? { error } : {}
+  };
+}
+function defaultAsyncRunner(env, signal) {
+  return async (command, args, timeoutMs) => {
+    try {
+      return commandResultFromSpawn(await defaultSpawn(command, args, {
+        env,
+        timeoutMs,
+        signal,
+        shell: harnessSpawnUsesShell(command)
+      }));
+    } catch (error) {
+      return { ok: false, code: null, stdout: "", stderr: "", error: error instanceof Error ? error.message : "spawn_failed" };
+    }
+  };
+}
 function firstLine(text) {
   const line = text.split(/\r?\n/).map((candidate) => candidate.trim()).find(Boolean);
   return line && line.length <= 200 ? line : void 0;
@@ -21441,6 +21616,13 @@ function probeHarnesses(options = {}) {
     harnesses: BUILTIN_HARNESSES.map((entry) => probeEntry(entry, runCommand, timeoutMs, platform, options))
   };
 }
+async function probeHarnessesAsync(options = {}) {
+  return replayHarnessProbe(
+    options.runCommand ?? defaultAsyncRunner(options.env ?? process.env, options.signal),
+    (runCommand) => probeHarnesses({ ...options, runCommand }),
+    256
+  );
+}
 function validateHarnessModelPair(harnessId, modelSpec) {
   if (!isKnownHarnessId(harnessId)) {
     return { valid: false, issue: "harness_unknown", message: `unknown harness: ${harnessId}` };
@@ -21532,6 +21714,36 @@ function validateHarnessModelPair(harnessId, modelSpec) {
     return { valid: true };
   }
   return { valid: true };
+}
+var PendingHarnessCommand = class {
+  command;
+  args;
+  timeoutMs;
+  key;
+  constructor(command, args, timeoutMs, key) {
+    this.command = command;
+    this.args = [...args];
+    this.timeoutMs = timeoutMs;
+    this.key = key;
+  }
+};
+async function replayHarnessProbe(run, execute, limit) {
+  const observed = /* @__PURE__ */ new Map();
+  for (let commands = 0; commands <= limit; commands++) {
+    try {
+      return execute((command, args, timeoutMs) => {
+        const key = JSON.stringify([command, args, timeoutMs]);
+        const result = observed.get(key);
+        if (result) return result;
+        throw new PendingHarnessCommand(command, args, timeoutMs, key);
+      });
+    } catch (pending) {
+      if (!(pending instanceof PendingHarnessCommand)) throw pending;
+      if (commands === limit) throw new Error("auth_probe_command_limit");
+      observed.set(pending.key, await run(pending.command, pending.args, pending.timeoutMs));
+    }
+  }
+  throw new Error("auth_probe_command_limit");
 }
 function scopesFor(scope, entry) {
   if (scope === "self") return ["self"];
@@ -22928,7 +23140,7 @@ function planVnextInitialization(start = process.cwd(), options = {}) {
 }
 
 // plugins/kxm/src/vnext-runtime-supervisor.ts
-import { spawn } from "node:child_process";
+import { spawn as spawn2 } from "node:child_process";
 import { createHash as createHash11, createHmac, randomBytes as randomBytes2, timingSafeEqual as timingSafeEqual2 } from "node:crypto";
 import { chmodSync as chmodSync4, existsSync as existsSync10, lstatSync as lstatSync6, mkdirSync as mkdirSync7, readFileSync as readFileSync9, renameSync as renameSync2, rmSync as rmSync2, writeFileSync as writeFileSync7 } from "node:fs";
 import { dirname as dirname6, isAbsolute as isAbsolute4, join as join9, resolve as resolve7 } from "node:path";
@@ -24435,6 +24647,7 @@ var RUNTIME_EPOCH_NS = process.hrtime.bigint();
 
 // plugins/kxm/src/vnext-oneshot-evidence.ts
 var TEXT_LIMIT = 4 * 1024 * 1024;
+var ARGV_LIMIT = 64 * 1024;
 var RECORD_LIMIT = 16 * 1024 * 1024;
 
 // plugins/kxm/src/prices.ts
@@ -25408,7 +25621,7 @@ async function ensureVnextSupervisor(options = {}) {
   clearSupervisorError(paths);
   const scriptPath = join9(repoRoot, "scripts", "kxm-runtime-supervisor.mjs");
   const spawnImpl = options.spawnImpl ?? ((script, env) => {
-    const child = spawn(process.execPath, [script], {
+    const child = spawn2(process.execPath, [script], {
       detached: true,
       stdio: "ignore",
       env,
@@ -25458,7 +25671,7 @@ async function vnextRuntimeRequest(handle, method, path4, body) {
 }
 
 // plugins/kxm/src/cli/types.ts
-import { spawn as spawn2 } from "node:child_process";
+import { spawn as spawn3 } from "node:child_process";
 import { join as join12, resolve as resolve9 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 
@@ -25720,7 +25933,7 @@ async function probeHubHealth(url, fetchImpl, timeoutMs = HUB_HEALTH_PROBE_MS) {
 var repoRoot2 = resolve9(fileURLToPath3(new URL("../../../../", import.meta.url)));
 function spawnScript(scriptName, extraEnv = {}) {
   return new Promise((resolveExit) => {
-    const child = spawn2(process.execPath, [join12(repoRoot2, "scripts", scriptName)], {
+    const child = spawn3(process.execPath, [join12(repoRoot2, "scripts", scriptName)], {
       stdio: "inherit",
       env: { ...process.env, ...extraEnv }
     });
@@ -29361,7 +29574,6 @@ import { fileURLToPath as fileURLToPath4 } from "node:url";
 // plugins/kxm/src/model-inventory.ts
 var import_yaml11 = __toESM(require_dist(), 1);
 import { mkdirSync as mkdirSync15, writeFileSync as writeFileSync14 } from "node:fs";
-import { spawnSync as spawnSync4 } from "node:child_process";
 import { join as join19 } from "node:path";
 var OR_URL = "https://openrouter.ai/api/v1/models";
 var NOUS_URL = "https://inference-api.nousresearch.com/v1/models";
@@ -29422,10 +29634,10 @@ async function refreshModelInventory(options) {
     if (item.fast === true) current.capabilities.speed = { fast: true, tiers: ["fast"], source };
     byId.set(key, current);
   };
-  const native2 = (command, args, source) => {
-    const result = spawnSync4(command, args, { encoding: "utf8", timeout: 2e4, shell: false });
-    const ok = result.status === 0;
-    sources[source] = { url: `${command} ${args.join(" ")}`, ok, ...ok ? {} : { error: (result.stderr || "command failed").trim().slice(0, 240) } };
+  const native2 = async (command, args, source) => {
+    const result = await defaultSpawn(command, args, { env, timeoutMs: 2e4 });
+    const ok = result.code === 0 && !result.error;
+    sources[source] = { url: `${command} ${args.join(" ")}`, ok, ...ok ? {} : { error: (result.stderr || result.error?.message || "command failed").trim().slice(0, 240) } };
     if (!ok) return;
     for (const line of (result.stdout || "").split(/\r?\n/)) {
       const parts = line.trim().split(/\s+/);
@@ -29436,9 +29648,9 @@ async function refreshModelInventory(options) {
       }
     }
   };
-  native2("pi", ["--list-models"], "pi");
-  native2("grok", ["models"], "grok");
-  native2("agy", ["models"], "agy");
+  await native2("pi", ["--list-models"], "pi");
+  await native2("grok", ["models"], "grok");
+  await native2("agy", ["models"], "agy");
   const openrouter = await fetchModels(env.KXM_OPENROUTER_MODELS_URL?.trim() || OR_URL, env.OPENROUTER_API_KEY);
   const openrouterUrl = env.KXM_OPENROUTER_MODELS_URL?.trim() || OR_URL;
   sources.openrouter = { url: openrouterUrl, ok: !openrouter.error, ...openrouter.error ? { error: openrouter.error } : {} };
@@ -29478,7 +29690,7 @@ import {
 import { dirname as dirname13, isAbsolute as isAbsolute6, join as join21, relative as relative4, resolve as resolve18 } from "node:path";
 
 // plugins/kxm/src/vnext-permission.ts
-import { spawnSync as spawnSync5 } from "node:child_process";
+import { spawnSync as spawnSync4 } from "node:child_process";
 import { createHash as createHash12 } from "node:crypto";
 import { existsSync as existsSync18, mkdtempSync, mkdirSync as mkdirSync16, readFileSync as readFileSync18, rmSync as rmSync6, writeFileSync as writeFileSync15 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -29954,7 +30166,7 @@ function gitEnvironment2() {
   return Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.toUpperCase().startsWith("GIT_")));
 }
 function git(root, args) {
-  const result = spawnSync5("git", ["-C", root, ...args], {
+  const result = spawnSync4("git", ["-C", root, ...args], {
     encoding: "utf8",
     env: gitEnvironment2(),
     timeout: 15e3,
@@ -29972,7 +30184,7 @@ function git(root, args) {
   return result.stdout;
 }
 function gitBuffer(root, args) {
-  const result = spawnSync5("git", ["-C", root, ...args], {
+  const result = spawnSync4("git", ["-C", root, ...args], {
     env: gitEnvironment2(),
     timeout: 15e3,
     windowsHide: true,
@@ -30170,7 +30382,7 @@ function loadBaseProjectDeclarations(projectFile) {
   return members;
 }
 function initShadowGitRoot(directory) {
-  const result = spawnSync5("git", ["-c", "init.defaultBranch=main", "init", "--quiet", directory], {
+  const result = spawnSync4("git", ["-c", "init.defaultBranch=main", "init", "--quiet", directory], {
     encoding: "utf8",
     env: gitEnvironment2(),
     timeout: 1e4,
@@ -33392,7 +33604,7 @@ async function cmdVnextRunList(runtime) {
   }
 }
 async function cmdHarnessList(runtime) {
-  const inventory = probeHarnesses({ env: runtime.env });
+  const inventory = await probeHarnessesAsync({ env: runtime.env });
   print(runtime.io, runtime.json, { ok: true, command: "harness list", ...inventory }, formatHarnessInventory(inventory));
   return 0;
 }
@@ -33520,7 +33732,7 @@ async function cmdSuggest(runtime, promptParts) {
       runtime.io.stderr("prompt must be non-empty\n");
       return 2;
     }
-    const inventory = probeHarnesses({ env: runtime.env });
+    const inventory = await probeHarnessesAsync({ env: runtime.env });
     const availableHarnesses = inventory.harnesses.map((h) => ({
       harness: h.id,
       auth: h.authenticated === true ? "authenticated" : "unauthenticated"
@@ -43259,7 +43471,7 @@ var MAX_RENDER_WRITE_CHARS = 1024 * 1024;
 // plugins/kxm/src/tui.ts
 import { mkdirSync as mkdirSync22 } from "node:fs";
 import { join as join34, resolve as resolve24, dirname as dirname17 } from "node:path";
-import { spawnSync as spawnSync6 } from "node:child_process";
+import { spawnSync as spawnSync5 } from "node:child_process";
 
 // plugins/kxm/src/external-effects.ts
 function slugifyBranchPart(text, maxLength = 40) {
@@ -43656,16 +43868,16 @@ function applyMeshTuiKey(view, key, itemCount = 0) {
 function copyToClipboard(text) {
   try {
     if (process.platform === "darwin") {
-      const proc = spawnSync6("pbcopy", { input: text, encoding: "utf8", windowsHide: true });
+      const proc = spawnSync5("pbcopy", { input: text, encoding: "utf8", windowsHide: true });
       return proc.status === 0;
     }
     if (process.platform === "win32") {
-      const proc = spawnSync6("clip", { input: text, encoding: "utf8", windowsHide: true });
+      const proc = spawnSync5("clip", { input: text, encoding: "utf8", windowsHide: true });
       return proc.status === 0;
     }
-    const wl = spawnSync6("wl-copy", [text], { encoding: "utf8", windowsHide: true });
+    const wl = spawnSync5("wl-copy", [text], { encoding: "utf8", windowsHide: true });
     if (wl.status === 0) return true;
-    const xclip = spawnSync6("xclip", ["-selection", "clipboard"], { input: text, encoding: "utf8", windowsHide: true });
+    const xclip = spawnSync5("xclip", ["-selection", "clipboard"], { input: text, encoding: "utf8", windowsHide: true });
     return xclip.status === 0;
   } catch {
     return false;
@@ -43673,7 +43885,7 @@ function copyToClipboard(text) {
 }
 function spawnDegradeWorktree(repoRoot6, runId, options) {
   const runner = options?.execFn ?? ((cmd, args) => {
-    const res = spawnSync6(cmd, args, {
+    const res = spawnSync5(cmd, args, {
       cwd: repoRoot6,
       encoding: "utf8",
       windowsHide: true,
@@ -44458,7 +44670,7 @@ async function runMeshTui(input) {
 }
 
 // plugins/kxm/src/session-work.ts
-import { spawnSync as spawnSync7 } from "node:child_process";
+import { spawnSync as spawnSync6 } from "node:child_process";
 import { randomUUID as randomUUID13 } from "node:crypto";
 import { existsSync as existsSync26, mkdirSync as mkdirSync23, readFileSync as readFileSync26, renameSync as renameSync8, writeFileSync as writeFileSync21 } from "node:fs";
 import { join as join35 } from "node:path";
@@ -44516,10 +44728,10 @@ function formatShipLine(ship) {
 }
 function readGitShip(cwd) {
   try {
-    const dirty = spawnSync7("git", ["-C", cwd, "status", "--porcelain"], { encoding: "utf8", windowsHide: true });
+    const dirty = spawnSync6("git", ["-C", cwd, "status", "--porcelain"], { encoding: "utf8", windowsHide: true });
     if (dirty.status !== 0) return void 0;
     const isDirty = dirty.stdout.trim().length > 0;
-    const upstream = spawnSync7("git", ["-C", cwd, "rev-list", "--count", "@{u}..HEAD"], { encoding: "utf8", windowsHide: true });
+    const upstream = spawnSync6("git", ["-C", cwd, "rev-list", "--count", "@{u}..HEAD"], { encoding: "utf8", windowsHide: true });
     if (upstream.status === 0) {
       return {
         dirty: isDirty,
@@ -44527,9 +44739,9 @@ function readGitShip(cwd) {
       };
     }
     for (const baseRef of ["origin/HEAD", "main", "origin/main", "master", "origin/master"]) {
-      const mb = spawnSync7("git", ["-C", cwd, "merge-base", baseRef, "HEAD"], { encoding: "utf8", windowsHide: true });
+      const mb = spawnSync6("git", ["-C", cwd, "merge-base", baseRef, "HEAD"], { encoding: "utf8", windowsHide: true });
       if (mb.status === 0 && mb.stdout.trim()) {
-        const count = spawnSync7("git", ["-C", cwd, "rev-list", "--count", `${mb.stdout.trim()}..HEAD`], { encoding: "utf8", windowsHide: true });
+        const count = spawnSync6("git", ["-C", cwd, "rev-list", "--count", `${mb.stdout.trim()}..HEAD`], { encoding: "utf8", windowsHide: true });
         if (count.status === 0) {
           return {
             dirty: isDirty,
@@ -45602,7 +45814,7 @@ async function cmdSessionStart(runtime, options) {
 }
 
 // plugins/kxm/src/cli/system.ts
-import { spawnSync as spawnSync9 } from "node:child_process";
+import { spawnSync as spawnSync8 } from "node:child_process";
 import { createHash as createHash16 } from "node:crypto";
 import { existsSync as existsSync36, mkdtempSync as mkdtempSync2, readFileSync as readFileSync35, rmSync as rmSync12 } from "node:fs";
 import { tmpdir as tmpdir2 } from "node:os";
@@ -46126,7 +46338,7 @@ ${divider}
 }
 
 // plugins/kxm/src/ssh-remote.ts
-import { spawnSync as spawnSync8 } from "node:child_process";
+import { spawnSync as spawnSync7 } from "node:child_process";
 import { existsSync as existsSync33, mkdirSync as mkdirSync27, readFileSync as readFileSync33, readdirSync as readdirSync13, rmSync as rmSync11, statSync as statSync5 } from "node:fs";
 import { homedir as homedir7 } from "node:os";
 import { join as join42, resolve as resolve27 } from "node:path";
@@ -46202,7 +46414,7 @@ function parseSshConfig(configPath) {
     return [];
   }
 }
-function resolveSshHostG(host, execFn = spawnSync8) {
+function resolveSshHostG(host, execFn = spawnSync7) {
   try {
     const result = execFn("ssh", ["-G", host], { encoding: "utf-8" });
     if (result.status !== 0 || !result.stdout) {
@@ -46268,7 +46480,7 @@ function buildSshArgs(options) {
   args.push(options.host);
   return args;
 }
-function checkControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawnSync8) {
+function checkControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawnSync7) {
   const resolvedDir = ensureSocketDir(socketDir);
   const controlPath = join42(resolvedDir, "%C");
   try {
@@ -46280,7 +46492,7 @@ function checkControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawn
     return false;
   }
 }
-function closeControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawnSync8) {
+function closeControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawnSync7) {
   const resolvedDir = ensureSocketDir(socketDir);
   const controlPath = join42(resolvedDir, "%C");
   try {
@@ -46294,7 +46506,7 @@ function closeControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawn
 }
 function executeSshRun(params) {
   const startTime = Date.now();
-  const execSyncFn = params.execFn ?? spawnSync8;
+  const execSyncFn = params.execFn ?? spawnSync7;
   if (params.action === "info") {
     if (params.host) {
       const hostInfo = resolveSshHostG(params.host, execSyncFn);
@@ -47343,7 +47555,7 @@ function parseGuideSelection(input, catalog = GUIDE_WORKFLOWS) {
 var repoRoot4 = resolve29(fileURLToPath7(new URL("../../../../", import.meta.url)));
 function cliSpawn(runtime, command, args, extra) {
   if (runtime.io.spawnSync) return runtime.io.spawnSync(command, args);
-  const result = spawnSync9(command, [...args], {
+  const result = spawnSync8(command, [...args], {
     encoding: "utf8",
     windowsHide: true,
     shell: process.platform === "win32",
@@ -47612,7 +47824,7 @@ async function cmdUpdate(runtime, harness, options) {
     return kxmApply?.ok === false ? 1 : 0;
   }
   const scope = options.self ? "self" : options.extensions ? "extensions" : options.models ? "models" : "all";
-  const inventory = probeHarnesses({ env: runtime.env });
+  const inventory = await probeHarnessesAsync({ env: runtime.env });
   const planned = planHarnessUpdate(inventory, { ...harness ? { harness } : {}, scope });
   const steps = runHarnessUpdate(planned, { env: runtime.env, dryRun: runtime.dryRun });
   const failed = steps.some((step) => step.outcome === "failed") || kxmApply?.ok === false;
@@ -47928,7 +48140,7 @@ async function maybeOfferGuideSetup(runtime) {
   if (runtime.env[GUIDE_SETUP_OPT_OUT_ENV]?.trim()) return;
   let inventory;
   try {
-    inventory = probeHarnesses({ env: runtime.env });
+    inventory = await probeHarnessesAsync({ env: runtime.env });
   } catch {
     return;
   }

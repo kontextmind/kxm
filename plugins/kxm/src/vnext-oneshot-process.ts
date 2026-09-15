@@ -9,6 +9,11 @@ export interface VnextOneShotProcessResult {
   started?: boolean | undefined;
   /** Stop was requested; direct-child reaping cannot attest escaped descendants. */
   terminationRequested?: boolean | undefined;
+  /**
+   * Direct-child close/reap is not descendant death. Unobserved process-group
+   * members stay unverified: never success, never a forged descendant failure.
+   */
+  unverifiedDescendants?: boolean | undefined;
   error?: Error | undefined;
 }
 
@@ -18,6 +23,8 @@ export interface VnextOneShotSpawnOptions {
   input?: string | undefined;
   timeoutMs?: number | undefined;
   signal?: AbortSignal | undefined;
+  /** Only allowlisted Windows `.cmd` probes may set this; never a user string. */
+  shell?: boolean | undefined;
 }
 export type VnextOneShotSpawn = (command: string, args: readonly string[], options: VnextOneShotSpawnOptions) => Promise<VnextOneShotProcessResult>;
 
@@ -71,6 +78,9 @@ export function defaultSpawn(command: string, args: readonly string[], options: 
     let child: ReturnType<typeof spawn>;
     const finish = (): void => {
       if (finished) return;
+      // Direct-child close must not cancel SIGTERM → SIGKILL. Refuse to settle
+      // until the group kill has been sent, then reap on the existing timers.
+      if (stopping && !killSent) return;
       finished = true;
       for (const timer of [wallTimer, killTimer, drainTimer, reapTimer]) clearTimeout(timer);
       options.signal?.removeEventListener("abort", onAbort);
@@ -80,7 +90,18 @@ export function defaultSpawn(command: string, args: readonly string[], options: 
       child?.unref();
       const started = Boolean(child?.pid);
       if (started && !observedChildExit) error ??= new Error("process_exit_unobserved");
-      resolve({ stdout: Buffer.concat(stdout).toString("utf8"), stderr: Buffer.concat(stderr).toString("utf8"), code, signal, started, observedChildExit, terminationRequested: stopping, ...(error ? { error } : {}) });
+      const unverifiedDescendants = stopping || (started && !observedChildExit);
+      resolve({
+        stdout: Buffer.concat(stdout).toString("utf8"),
+        stderr: Buffer.concat(stderr).toString("utf8"),
+        code,
+        signal,
+        started,
+        observedChildExit,
+        terminationRequested: stopping,
+        ...(unverifiedDescendants ? { unverifiedDescendants: true } : {}),
+        ...(error ? { error } : {}),
+      });
     };
     const kill = (requested: NodeJS.Signals): void => {
       killProcessTree(child, requested);
@@ -108,7 +129,7 @@ export function defaultSpawn(command: string, args: readonly string[], options: 
         cwd: options.cwd,
         env: options.env ?? process.env,
         stdio: ["pipe", "pipe", "pipe"],
-        shell: false,
+        shell: options.shell === true,
         windowsHide: true,
         detached: process.platform !== "win32",
       });
@@ -153,8 +174,8 @@ export function defaultSpawn(command: string, args: readonly string[], options: 
       code = exitCode;
       signal = exitSignal;
       // The leader can exit and close its pipes while a descendant ignores TERM.
-      // Never cancel the pending group escalation just because close arrived.
-      if (!stopping || killSent) finish();
+      // finish() no-ops until SIGKILL when escalation is in flight.
+      finish();
     });
     options.signal?.addEventListener("abort", onAbort, { once: true });
     if (options.signal?.aborted) onAbort();

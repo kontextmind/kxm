@@ -25,7 +25,7 @@ import {
 import { vnextRuntimePaths } from "../vnext-runtime-store.ts";
 import {
   formatHarnessInventory,
-  probeHarnesses,
+  probeHarnessesAsync,
 } from "../vnext-harness.ts";
 import {
   fetchLatestKxmVersion,
@@ -580,7 +580,7 @@ export async function cmdVnextRunList(runtime: Runtime): Promise<number> {
 }
 
 export async function cmdHarnessList(runtime: Runtime): Promise<number> {
-  const inventory = probeHarnesses({ env: runtime.env });
+  const inventory = await probeHarnessesAsync({ env: runtime.env });
   print(runtime.io, runtime.json, { ok: true, command: "harness list", ...inventory }, formatHarnessInventory(inventory));
   return 0;
 }

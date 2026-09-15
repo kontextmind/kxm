@@ -10,6 +10,10 @@ after(() => { restoreSession(); });
 import { createVnextOneShotProducer, defaultSpawn, type VnextOneShotProcessResult } from "../../plugins/kxm/src/vnext-oneshot-producer.ts";
 import type { VnextProducerRequest } from "../../plugins/kxm/src/vnext-engine.ts";
 
+function parsePrintedPid(text: string): number {
+  return Number(text.replace(/\u001b\[[0-9;]*m/g, "").trim());
+}
+
 function request(overrides: Partial<VnextProducerRequest> = {}): VnextProducerRequest {
   return { runId: "run_safety", stepId: "review", stepAttempt: 1, assignmentId: "asg_safety", attemptId: "att_safety", agentId: "critic", capability: "test-only", allowedOutcomes: ["passed", "failed", "cancelled"], signal: new AbortController().signal, ...overrides };
 }
@@ -198,7 +202,7 @@ for (const detached of [false, true]) {
       const descendantCode = `process.on('SIGTERM', () => {}); setTimeout(() => require('fs').writeFileSync(${JSON.stringify(marker)}, 'late'), 1400); setTimeout(() => process.exit(), 4000);`;
       const parentCode = `const c = require('child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendantCode)}], {stdio:'ignore', detached:${detached}}); console.log(c.pid); process.on('SIGTERM', () => process.exit(0)); setTimeout(() => process.exit(99), 5000);`;
       const result = await defaultSpawn(process.execPath, ["-e", parentCode], { timeoutMs: 500 });
-      descendant = Number(result.stdout.trim());
+      descendant = parsePrintedPid(result.stdout);
       assert.ok(Number.isInteger(descendant) && descendant > 1);
       await new Promise((resolve) => setTimeout(resolve, 1500));
       if (!detached) assert.equal(existsSync(marker), false, "close must not clear group SIGKILL escalation");
@@ -245,6 +249,44 @@ test("unobserved termination is explicitly uncertain, never a settled failure to
   assert.equal(res.effectUncertain, true);
   assert.notEqual(res.outcome, "passed");
   assert.equal(res.tokensIn, 12);
+});
+
+test("unverified descendants are recorded without forged success, failure, or settled effects", async () => {
+  const res = await produce({
+    stdout: reply(),
+    stderr: "",
+    code: 0,
+    started: true,
+    observedChildExit: true,
+    terminationRequested: true,
+    unverifiedDescendants: true,
+  });
+  assert.equal(res.effectUncertain, true);
+  assert.notEqual(res.outcome, "passed");
+  assert.equal(res.providerMetadata?.descendantEffects, "unverified");
+  assert.equal(res.providerMetadata?.effectsSettled, undefined);
+  assert.equal(res.providerMetadata?.descendantFailed, undefined);
+  assert.equal(res.tokensIn, 12);
+});
+
+test("SIGTERM-to-SIGKILL escalation stays alive after the direct child closes", { skip: process.platform === "win32", timeout: 7000 }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), "kxm-escalation-close-"));
+  const marker = join(dir, "late-effect");
+  let descendant = 0;
+  try {
+    const descendantCode = `process.on('SIGTERM', () => {}); setTimeout(() => require('fs').writeFileSync(${JSON.stringify(marker)}, 'late'), 1400); setTimeout(() => process.exit(), 4000);`;
+    const parentCode = `const c = require('child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendantCode)}], {stdio:'ignore', detached:false}); console.log(c.pid); process.on('SIGTERM', () => process.exit(0)); setTimeout(() => process.exit(99), 5000);`;
+    const result = await defaultSpawn(process.execPath, ["-e", parentCode], { timeoutMs: 500 });
+    descendant = parsePrintedPid(result.stdout);
+    assert.ok(Number.isInteger(descendant) && descendant > 1);
+    assert.equal(result.terminationRequested, true);
+    assert.equal(result.unverifiedDescendants, true);
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    assert.equal(existsSync(marker), false, "direct-child close must not cancel group SIGKILL");
+  } finally {
+    if (descendant) { try { process.kill(descendant, "SIGKILL"); } catch { /* fixture already exited */ } }
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("closing a producer cancels and drains its active subprocesses", { timeout: 5000 }, async () => {
