@@ -929,8 +929,28 @@ not create work or alter a phase gate.
   and verify price-catalog integrity before estimates. Also decouple HTTP drive
   response lifetime from workflow/gate budgets without another scheduler. A prior
   Fable failure at about 219 seconds remains unexplained by elapsed time alone.
-  Full verify and commit-bound acceptance remain outstanding. Issue-127
-  retirement/acceptance contradictions are separate blockers; npm is not ready.
+  Slice A1 is accepted (2026-09-15): commit-bound acceptance at 915f5e53 on
+  095c1ad (task_p11-oneshot-hardening), forward-ported onto post-#206/#207/#208
+  main (5ff9f64) and re-accepted at 96e8e0ac (task_p11-a1-forward-port, tree
+  0391de95). Landed: async bounded auth/capability probes on all product
+  dispatch paths in the new cli/ module layout (sync runner remains only for
+  injected tests and `kxm update`); SIGTERM→SIGKILL escalation survives
+  direct-child close; unverified descendants settle conservatively (failed +
+  effectUncertain, descendantEffects=unverified); private process evidence is
+  bounded, redacted, owner-only, and versioned `kxm.oneshot-evidence.v2` with
+  fail-closed brakes on retired v1/unknown ids; unaudited permission profiles
+  refuse before spawn; the one-shot path verifies price-catalog hash and
+  staleness before list estimates; the supervisor's post-202 detached drive
+  chain can no longer orphan a rejection on either the async or sync branch
+  (unhandledRejection regressions pin both). Writers grok/grok-4.6; witnesses
+  `npm run verify` passed on both accepted trees; critics Fable (arch) and Sol
+  (cli) PASS both accepted trees after three resolved BLOCKs (evidence schema
+  versioning, async drive rejection, sync-throw orphan). Still open for the
+  next slices: live Claude write-refusal witness, full HTTP drive lifetime
+  decoupling design (only the crash-class defects are fixed), price-catalog
+  estimates beyond the one-shot path, and the Fable ~219s failure. Issue-127
+  retirement/acceptance contradictions are separate blockers; npm is not
+  ready.
 - **Model inventory refresh command:** `kxm models refresh` writes the live
   `.kxm/models/inventory.yaml` union from detected Pi/Grok/AGY catalogs and
   OpenRouter/Nous `/v1/models` feeds. OpenRouter rates are recorded as
@@ -1389,9 +1409,13 @@ rules retained. Product/catalog/helper/native-critic paths have regression
 coverage; a native Sol invocation exercised the helper flags successfully.
 This does not establish full customization isolation or exact-commit acceptance.
 One-shot outcome, usage, cancellation-accounting, and bounded process regressions
-now pass alongside isolated native Fable/Grok settlement witnesses. Both critics
-still require async auth, termination/evidence hardening, and permission witnesses;
-HTTP lifetime and pinned admission remain open in Tracking. No Phase 11 gate PASS.
+now pass alongside isolated native Fable/Grok settlement witnesses.
+Slice A1 (async probes, escalation-after-close, conservative descendant
+settlement, v2 bounded/redacted evidence, supervisor drive rejection handling)
+holds commit-bound acceptance with dual-critic PASS at 915f5e53 and its
+forward-port at 96e8e0ac. Remaining critic demands: live Claude write-refusal
+witness, full HTTP drive lifetime decoupling, and price-catalog estimates
+beyond the one-shot path. No Phase 11 gate PASS.
 
 **Gate:** unsupported capabilities fail explicitly and no adapter weakens the
 common result, effect, secret, or recovery contracts. One-shot adapters must
