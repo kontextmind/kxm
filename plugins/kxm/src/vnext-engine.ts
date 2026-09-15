@@ -33,7 +33,9 @@ import { gateRegistryHash } from "./vnext-gate-hash.ts";
 import {
   admitVnextRun,
   armVnextGateHold,
+  attachVnextDriveSession,
   bindVnextSchedulerPolicy,
+  clearVnextDriveSession,
   dropVnextGateStopHook,
   enqueueVnextScheduledRun,
   finishVnextOwnedGate,
@@ -47,6 +49,7 @@ import {
   vnextAttemptControllers,
   vnextGateHold,
   vnextSchedulerPolicy,
+  type VnextDriveSession,
 } from "./vnext-runtime-owner.ts";
 import {
   cancelVnextRun,
@@ -161,6 +164,7 @@ export interface VnextProducerResult {
 export interface VnextProducer {
   readonly id: "driver-simulated" | "pi" | "oneshot";
   produce(request: VnextProducerRequest): Promise<VnextProducerResult>;
+  close?(): Promise<void>;
 }
 
 export interface VnextRunHandoff {
@@ -412,13 +416,79 @@ function admitPinnedRun(context: VnextRuntimeContext, runId: string): string {
   );
 }
 
+export interface OpenVnextDriveSessionOptions {
+  mode: "simulated" | "live";
+  allowLimits?: boolean;
+  liveMode?: boolean;
+  createProducer: () => VnextProducer;
+}
+
+export interface VnextDriveSessionHandle {
+  driveId: string;
+  settled: Promise<VnextRunDriveResult>;
+}
+
+function newDriveId(runId: string, token: string, runtimeId: string, monotonicNs: string): string {
+  return `drv_${createHash("sha256").update(`${runId}\0${token}\0${runtimeId}\0${monotonicNs}`, "utf8").digest("hex").slice(0, 24)}`;
+}
+
+function inflightAttemptId(state: VnextRunState): string | undefined {
+  const leftover = unreconciledPanelAttemptId(state);
+  if (leftover) return leftover;
+  if (state.currentStep?.attemptId) {
+    const located = vnextFoldPanelAttempt(state.currentStep, state.currentStep.attemptId);
+    const status = located?.attempt.status;
+    if (status === "starting" || status === "executing" || status === "settling") return state.currentStep.attemptId;
+  }
+  return undefined;
+}
+
+function recordBareDriveFailure(context: VnextRuntimeContext, runId: string): void {
+  if (isVnextRuntimeContextClosed(context)) return;
+  try {
+    context.eventStore.transaction(() => {
+      const run = context.eventStore.run(runId);
+      if (!run) return;
+      const state = foldStoredVnextRun(context, run);
+      if (isTerminalRunStatus(state.status) || state.status === "cancelling") return;
+      if (inflightAttemptId(state)) return;
+      const now = new Date().toISOString();
+      const sequence = context.eventStore.nextSequence(runId);
+      const event: VnextRunEvent = {
+        ...vnextEventBase(context, run, now, vnextMonotonicNs()),
+        eventId: newVnextEventId(),
+        eventType: "run.status_changed",
+        sequence,
+        payload: { status: "failed", reason: "drive_error" },
+      };
+      context.eventStore.appendEvent(event);
+      const next = foldStoredVnextRun(context, run);
+      persistVnextRunState(context, runId, next, sequence);
+      context.eventStore.updateRunStatus(runId, "failed", now);
+    });
+  } catch {
+    // The original drive error governs; this is a best-effort bare-running brake.
+  }
+}
+
+async function closeDriveProducer(producer: VnextProducer): Promise<void> {
+  if (typeof producer.close !== "function") return;
+  try {
+    await producer.close();
+  } catch {
+    // Session ownership ends even if producer cleanup fails.
+  }
+}
+
 export class VnextRunScheduler {
   private readonly context: VnextRuntimeContext;
+  private readonly bundle: VnextProjectBundle;
   private readonly configRevision: string;
 
-  private constructor(context: VnextRuntimeContext, configRevision: string) {
+  private constructor(context: VnextRuntimeContext, bundle: VnextProjectBundle) {
     this.context = context;
-    this.configRevision = configRevision;
+    this.bundle = bundle;
+    this.configRevision = bundle.configRevision;
   }
 
   static for(context: VnextRuntimeContext, bundle: VnextProjectBundle): VnextRunScheduler {
@@ -427,7 +497,7 @@ export class VnextRunScheduler {
     }
     const limits = vnextProjectAdmissionLimits(bundle);
     bindVnextSchedulerPolicy(context.eventStore.path, limits.maxConcurrentRuns, bundle.configRevision);
-    return new VnextRunScheduler(context, bundle.configRevision);
+    return new VnextRunScheduler(context, bundle);
   }
 
   enqueue(
@@ -453,6 +523,94 @@ export class VnextRunScheduler {
     } catch (error) {
       return Promise.reject(error);
     }
+  }
+
+  openDriveSession(runId: string, options: OpenVnextDriveSessionOptions): Promise<VnextDriveSessionHandle> {
+    const policy = vnextSchedulerPolicy(this.context.eventStore.path);
+    if (!policy || policy.configRevision !== this.configRevision) {
+      return Promise.reject(runtimeError("scheduler_policy_conflict", runId, "scheduler handle does not match the active policy"));
+    }
+    try {
+      const run = requireRun(this.context, runId);
+      if (isTerminalRunStatus(run.status) || run.status === "cancelling") {
+        return Promise.reject(runtimeError("run_busy", runId, `run ${runId} is already ${run.status}`));
+      }
+    } catch (error) {
+      return Promise.reject(error);
+    }
+
+    const limits = vnextProjectAdmissionLimits(this.bundle);
+    const driveOptions: { allowLimits?: boolean; liveMode?: boolean } = {
+      liveMode: options.liveMode ?? options.mode === "live",
+    };
+    if (options.allowLimits !== undefined) driveOptions.allowLimits = options.allowLimits;
+    let opened = false;
+    const pending = {
+      resolve: (_value: VnextRunDriveResult) => undefined as void,
+      reject: (_error: unknown) => undefined as void,
+    };
+    const settled = new Promise<VnextRunDriveResult>((resolve, reject) => {
+      pending.resolve = resolve;
+      pending.reject = reject;
+    });
+
+    return new Promise<VnextDriveSessionHandle>((resolveOpen, rejectOpen) => {
+      const queued = enqueueVnextScheduledRun(
+        this.context.eventStore.path,
+        runId,
+        this.configRevision,
+        limits.maxConcurrentRuns,
+        async (token) => {
+          let producer: VnextProducer | undefined;
+          try {
+            producer = options.createProducer();
+            requireTrustedProducer(producer);
+            const current = requireRun(this.context, runId);
+            if (current.status === "created") {
+              pinVnextCompiledPlan(this.context, this.bundle, runId);
+            }
+            const started = startVnextRun(this.context, runId, driveOptions);
+            if (started.handoff) {
+              const error = runtimeError("run_handoff_required", runId, started.handoff.detail);
+              Object.assign(error, { handoff: started.handoff });
+              throw error;
+            }
+            const driveId = newDriveId(runId, token, this.context.homeRuntimeId, vnextMonotonicNs());
+            const session: VnextDriveSession = {
+              driveId,
+              runId,
+              token,
+              homeRuntimeId: this.context.homeRuntimeId,
+              mode: options.mode,
+              openedAt: new Date().toISOString(),
+              controller: new AbortController(),
+              settled,
+            };
+            attachVnextDriveSession(this.context.eventStore.path, runId, token, session);
+            opened = true;
+            resolveOpen({ driveId, settled });
+            try {
+              const result = await driveAdmitted(this.context, runId, producer, token, driveOptions);
+              pending.resolve(result);
+              return result;
+            } catch (error) {
+              recordBareDriveFailure(this.context, runId);
+              pending.reject(error);
+              throw error;
+            }
+          } finally {
+            if (producer) await closeDriveProducer(producer);
+            clearVnextDriveSession(this.context.eventStore.path, runId, token);
+          }
+        },
+      ) as Promise<VnextRunDriveResult>;
+      void queued.then(undefined, (error) => {
+        if (!opened) {
+          pending.reject(error);
+          rejectOpen(error);
+        }
+      });
+    });
   }
 }
 

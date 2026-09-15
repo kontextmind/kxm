@@ -19,10 +19,22 @@ interface GateHold {
   stop?: () => void;
 }
 
+export interface VnextDriveSession {
+  driveId: string;
+  runId: string;
+  token: string;
+  homeRuntimeId: string;
+  mode: "simulated" | "live";
+  openedAt: string;
+  controller: AbortController;
+  settled: Promise<unknown>;
+}
+
 interface AdmissionRecord {
   token: string;
   configRevision: string;
   gateHold?: GateHold;
+  driveSession?: VnextDriveSession;
 }
 
 interface QueueItem {
@@ -268,6 +280,44 @@ export function vnextGateHold(storePath: string, runId: string): VnextGateHoldVi
 
 export function vnextAdmittedToken(storePath: string, runId: string): string | undefined {
   return owners.get(storePath)?.admitted.get(runId)?.token;
+}
+
+export function attachVnextDriveSession(
+  storePath: string,
+  runId: string,
+  token: string,
+  session: VnextDriveSession,
+): void {
+  const owner = record(storePath);
+  const current = owner.admitted.get(runId);
+  if (!current || current.token !== token) {
+    throw runtimeError("run_events_illegal", runId, "drive session requires the exact admitted token");
+  }
+  if (current.driveSession) {
+    throw runtimeError("run_busy", runId, `run ${runId} already has a drive session`);
+  }
+  current.driveSession = session;
+}
+
+export function clearVnextDriveSession(storePath: string, runId: string, token: string): void {
+  const owner = owners.get(storePath);
+  const current = owner?.admitted.get(runId);
+  if (!current || current.token !== token) return;
+  delete current.driveSession;
+}
+
+export function vnextDriveSession(storePath: string, runId: string): VnextDriveSession | undefined {
+  return owners.get(storePath)?.admitted.get(runId)?.driveSession;
+}
+
+export function vnextOpenDriveSessions(storePath: string): VnextDriveSession[] {
+  const owner = owners.get(storePath);
+  if (!owner) return [];
+  const sessions: VnextDriveSession[] = [];
+  for (const current of owner.admitted.values()) {
+    if (current.driveSession) sessions.push(current.driveSession);
+  }
+  return sessions;
 }
 
 export function enqueueVnextScheduledRun(

@@ -39,6 +39,7 @@ import {
   vnextActiveScheduledRuns,
   vnextAttemptController,
   vnextAttemptControllers,
+  vnextDriveSession,
   vnextQueuedScheduledRuns,
 } from "../../plugins/kxm/src/vnext-runtime-owner.ts";
 import {
@@ -902,6 +903,59 @@ test("direct drive release wakes queued scheduler work without a third enqueue",
   } finally {
     heldA.release();
     heldB.release();
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("openDriveSession admits before pin, returns driveId, and closes the producer", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-drive-session-");
+  try {
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "one-step", prompt: "session" });
+      const scheduler = VnextRunScheduler.for(context, bundle);
+      let closed = false;
+      let sawAdmissionBeforePin = false;
+      let release: () => void = () => undefined;
+      const hold = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const inner = createVnextSimulatedProducer(async () => {
+        await hold;
+        return { outcome: "passed" };
+      });
+      const producer = {
+        id: inner.id,
+        produce: (request: Parameters<typeof inner.produce>[0]) => inner.produce(request),
+        close: async () => {
+          closed = true;
+        },
+      };
+      registerTrustedProducer(producer);
+      const session = await scheduler.openDriveSession(accepted.run.runId, {
+        mode: "simulated",
+        createProducer: () => {
+          sawAdmissionBeforePin = vnextActiveScheduledRuns(context.eventStore.path) > 0;
+          assert.equal(context.eventStore.run(accepted.run.runId)?.status, "created");
+          return producer;
+        },
+      });
+      assert.match(session.driveId, /^drv_[a-f0-9]{24}$/);
+      assert.equal(sawAdmissionBeforePin, true);
+      const during = vnextDriveSession(context.eventStore.path, accepted.run.runId);
+      assert.equal(during?.driveId, session.driveId);
+      release();
+      const result = await session.settled;
+      assert.equal(result.state.status, "completed");
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      assert.equal(closed, true);
+      assert.equal(vnextDriveSession(context.eventStore.path, accepted.run.runId), undefined);
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
     removeTempDir(root, stateRoot);
   }
 });

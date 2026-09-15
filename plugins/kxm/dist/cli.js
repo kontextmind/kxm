@@ -33546,7 +33546,14 @@ async function cmdVnextRunDrive(runtime, runId, simulated) {
     }
     const supervisor = await ensureVnextSupervisor({ env: runtime.env });
     const result = await vnextRuntimeRequest(supervisor, "POST", `/v1/runs/${encodeURIComponent(runId)}/drive?projectRoot=${encodeURIComponent(projectRoot)}`, { mode });
-    print(runtime.io, runtime.json, { ok: true, command: "runs drive", run: result.run, handoff: result.handoff, events: result.events }, `run ${runId}: ${result.run?.status ?? "driven"}`);
+    const driveId = typeof result.driveId === "string" ? result.driveId : "";
+    const poll = typeof result.poll === "string" ? result.poll : `/v1/runs/${runId}`;
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: true, command: "runs drive", runId, driveId, poll, mode, status: result.status },
+      `drive ${driveId || runId}: accepted (poll ${poll})`
+    );
     return 0;
   } catch (error) {
     if (error instanceof VnextConfigError) {
