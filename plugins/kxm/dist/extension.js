@@ -8646,6 +8646,9 @@ var SECRET_PATTERNS = [
   /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
   /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/gi,
   /\bBearer\s+[A-Za-z0-9._~+/=-]+\b/gi,
+  /\bya29\.[A-Za-z0-9._~+/-]+=*/g,
+  /\b1\/[A-Za-z0-9_-]{20,}/g,
+  /("?(?:access_token|refresh_token|id_token)"?\s*[:=]\s*")[^"]*(")/gi,
   /\bKXM_[A-Z0-9_]*(TOKEN|SECRET|KEY)[A-Z0-9_]*=\S+/gi,
   /\b(GITHUB_TOKEN|GH_TOKEN|KXM_AUTH_TOKEN|KXM_WORKFLOW_SIGNAL_SECRET)=\S+/gi,
   /\b[A-Fa-f0-9]{64}\b/g
@@ -9388,6 +9391,3032 @@ async function loadCatalog(path, deps) {
   }
 }
 
+// plugins/kxm/src/providers/antigravity/auth/oauth.ts
+import { createHash as createHash5, randomBytes } from "node:crypto";
+import { createServer } from "node:http";
+
+// plugins/kxm/src/providers/antigravity/client/client.ts
+import { createHash as createHash4 } from "node:crypto";
+
+// plugins/kxm/src/providers/antigravity/diagnostics/diagnostics.ts
+import { AsyncLocalStorage } from "node:async_hooks";
+
+// plugins/kxm/src/providers/antigravity/utils/util.ts
+import { createHash as createHash3 } from "node:crypto";
+
+// plugins/kxm/src/providers/antigravity/types/enums.ts
+var ThinkingEffort = {
+  Off: "off",
+  Minimal: "minimal",
+  Low: "low",
+  Medium: "medium",
+  High: "high",
+  Xhigh: "xhigh"
+};
+var ToolChoice = {
+  Auto: "auto",
+  None: "none",
+  Any: "any",
+  Required: "required"
+};
+var GeminiToolCallingMode = {
+  None: "NONE",
+  Any: "ANY",
+  Auto: "AUTO",
+  Validated: "VALIDATED"
+};
+var GeminiRole = {
+  User: "user",
+  Model: "model"
+};
+var AntigravityRequestType = {
+  Agent: "agent"
+};
+var AntigravityUserAgent = {
+  Antigravity: "antigravity"
+};
+var StopReason = {
+  Stop: "stop",
+  Length: "length",
+  ToolUse: "toolUse",
+  Error: "error"
+};
+
+// plugins/kxm/src/providers/antigravity/models/models.ts
+var PROVIDER_ID = "antigravity";
+var PROVIDER_NAME = "Antigravity";
+var ANTIGRAVITY_ROUTING = {
+  "claude-opus-4-6": {
+    routing: {
+      minimal: "claude-opus-4-6-thinking",
+      low: "claude-opus-4-6-thinking",
+      medium: "claude-opus-4-6-thinking",
+      high: "claude-opus-4-6-thinking"
+    },
+    defaultRequestId: "claude-opus-4-6-thinking"
+  },
+  // Live fetchAvailableModels exposes `claude-sonnet-4-6` (display: Thinking), not a separate *-thinking id.
+  "claude-sonnet-4-6": {
+    off: "claude-sonnet-4-6",
+    routing: {
+      minimal: "claude-sonnet-4-6",
+      low: "claude-sonnet-4-6",
+      medium: "claude-sonnet-4-6",
+      high: "claude-sonnet-4-6",
+      xhigh: "claude-sonnet-4-6"
+    },
+    defaultRequestId: "claude-sonnet-4-6"
+  },
+  "gemini-3.1-pro": {
+    // `gemini-3.1-pro-high` is advertised but currently 400s for agent streamGenerateContent;
+    // `gemini-pro-agent` is the working High runtime id (same display name in fetchAvailableModels).
+    off: "gemini-3.1-pro-low",
+    routing: {
+      minimal: "gemini-3.1-pro-low",
+      low: "gemini-3.1-pro-low",
+      medium: "gemini-3.1-pro-low",
+      high: "gemini-pro-agent",
+      xhigh: "gemini-pro-agent"
+    },
+    defaultRequestId: "gemini-3.1-pro-low"
+  },
+  "gemini-3.8-flash": {
+    off: "gemini-3.8-flash-low",
+    routing: {
+      minimal: "gemini-3.8-flash-low",
+      low: "gemini-3.8-flash-low",
+      medium: "gemini-3.8-flash-medium",
+      high: "gemini-3.8-flash-high",
+      xhigh: "gemini-3.8-flash-high"
+    },
+    defaultRequestId: "gemini-3.8-flash-low"
+  },
+  "gemini-3.7-flash": {
+    off: "gemini-3.7-flash-low",
+    routing: {
+      minimal: "gemini-3.7-flash-low",
+      low: "gemini-3.7-flash-low",
+      medium: "gemini-3.7-flash-medium",
+      high: "gemini-3.7-flash-high",
+      xhigh: "gemini-3.7-flash-high"
+    },
+    defaultRequestId: "gemini-3.7-flash-low"
+  },
+  "gemini-3.6-flash": {
+    // agy models: gemini-3.6-flash-low / -medium / -high
+    off: "gemini-3.6-flash-low",
+    routing: {
+      minimal: "gemini-3.6-flash-low",
+      low: "gemini-3.6-flash-low",
+      medium: "gemini-3.6-flash-medium",
+      high: "gemini-3.6-flash-high",
+      xhigh: "gemini-3.6-flash-high"
+    },
+    defaultRequestId: "gemini-3.6-flash-low"
+  },
+  "gemini-3.5-flash": {
+    off: "gemini-3.5-flash-extra-low",
+    routing: {
+      minimal: "gemini-3.5-flash-extra-low",
+      low: "gemini-3.5-flash-extra-low",
+      medium: "gemini-3.5-flash-low",
+      high: "gemini-3-flash-agent",
+      xhigh: "gemini-3-flash-agent"
+    },
+    defaultRequestId: "gemini-3.5-flash-extra-low"
+  },
+  "gpt-oss-120b": {
+    off: "gpt-oss-120b-medium",
+    routing: {
+      minimal: "gpt-oss-120b-medium",
+      low: "gpt-oss-120b-medium",
+      medium: "gpt-oss-120b-medium",
+      high: "gpt-oss-120b-medium"
+    },
+    defaultRequestId: "gpt-oss-120b-medium"
+  }
+};
+var RUNTIME_MAX_OUTPUT_TOKENS = {
+  "gemini-3.8-flash": 65536,
+  "gemini-3.8-flash-low": 65536,
+  "gemini-3.8-flash-medium": 65536,
+  "gemini-3.8-flash-high": 65536,
+  "gemini-3.7-flash": 65536,
+  "gemini-3.7-flash-tiered": 65536,
+  // Retain rollout-era IDs for compatibility with pinned runtime overrides.
+  "gemini-3.7-flash-low": 65536,
+  "gemini-3.7-flash-medium": 65536,
+  "gemini-3.7-flash-high": 65536,
+  "gemini-3.6-flash": 65536,
+  "gemini-3.6-flash-low": 65536,
+  "gemini-3.6-flash-medium": 65536,
+  "gemini-3.6-flash-high": 65536,
+  "gemini-3.5-flash": 65536,
+  "gemini-3.5-flash-extra-low": 65536,
+  "gemini-3.5-flash-low": 65536,
+  "gemini-3-flash-agent": 65536,
+  "gemini-3.1-pro": 65535,
+  "gemini-3.1-pro-low": 65535,
+  "gemini-3.1-pro-high": 65535,
+  "gemini-pro-agent": 65535,
+  "claude-opus-4-6": 64e3,
+  "claude-opus-4-6-thinking": 64e3,
+  "claude-sonnet-4-6": 64e3,
+  "gpt-oss-120b": 32768,
+  "gpt-oss-120b-medium": 32768
+};
+function getMaxOutputTokens(modelId, runtimeModel) {
+  if (runtimeModel && RUNTIME_MAX_OUTPUT_TOKENS[runtimeModel] !== void 0) {
+    return RUNTIME_MAX_OUTPUT_TOKENS[runtimeModel];
+  }
+  if (RUNTIME_MAX_OUTPUT_TOKENS[modelId] !== void 0) {
+    return RUNTIME_MAX_OUTPUT_TOKENS[modelId];
+  }
+  if (runtimeModel) {
+    if (runtimeModel.startsWith("claude-")) return 64e3;
+    if (runtimeModel.startsWith("gpt-oss-")) return 32768;
+    if (runtimeModel.startsWith("gemini-3.1-pro") || runtimeModel === "gemini-pro-agent")
+      return 65535;
+    if (runtimeModel.startsWith("gemini-")) return 65536;
+  }
+  return 8192;
+}
+var geminiFlashCost = { input: 0.1, output: 0.4, cacheRead: 0.025, cacheWrite: 0.1 };
+var geminiProCost = { input: 1.25, output: 5, cacheRead: 0.3125, cacheWrite: 1.25 };
+var claudeSonnetCost = { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 };
+var claudeOpusCost = { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 };
+var gptOssCost = { input: 0.6, output: 2.4, cacheRead: 0.15, cacheWrite: 0.6 };
+var thinkingLevelMaps = {
+  lowMediumHigh: {
+    off: null,
+    minimal: null,
+    low: "low",
+    medium: "medium",
+    high: "high",
+    xhigh: null,
+    max: null
+  },
+  lowHigh: {
+    off: null,
+    minimal: null,
+    low: "low",
+    medium: null,
+    high: "high",
+    xhigh: null,
+    max: null
+  },
+  thinking: {
+    off: null,
+    minimal: null,
+    low: null,
+    medium: null,
+    high: "high",
+    xhigh: null,
+    max: null
+  },
+  medium: {
+    off: null,
+    minimal: null,
+    low: null,
+    medium: "medium",
+    high: null,
+    xhigh: null,
+    max: null
+  }
+};
+var ANTIGRAVITY_MODELS = [
+  {
+    id: "gemini-3.8-flash",
+    name: "Gemini 3.8 Flash (Antigravity)",
+    reasoning: true,
+    thinkingLevelMap: thinkingLevelMaps.lowMediumHigh,
+    input: ["text", "image"],
+    cost: geminiFlashCost,
+    contextWindow: 1048576,
+    maxTokens: 65536
+  },
+  {
+    id: "gemini-3.7-flash",
+    name: "Gemini 3.7 Flash (Antigravity)",
+    reasoning: true,
+    thinkingLevelMap: thinkingLevelMaps.lowMediumHigh,
+    input: ["text", "image"],
+    cost: geminiFlashCost,
+    contextWindow: 1048576,
+    maxTokens: 65536
+  },
+  {
+    id: "gemini-3.6-flash",
+    name: "Gemini 3.6 Flash (Antigravity)",
+    reasoning: true,
+    thinkingLevelMap: thinkingLevelMaps.lowMediumHigh,
+    input: ["text", "image"],
+    cost: geminiFlashCost,
+    contextWindow: 1048576,
+    maxTokens: 65536
+  },
+  {
+    id: "claude-opus-4-6",
+    name: "Claude Opus 4.6 (Antigravity)",
+    reasoning: true,
+    thinkingLevelMap: thinkingLevelMaps.thinking,
+    input: ["text", "image"],
+    cost: claudeOpusCost,
+    contextWindow: 25e4,
+    maxTokens: 64e3
+  },
+  {
+    id: "claude-sonnet-4-6",
+    name: "Claude Sonnet 4.6 (Antigravity)",
+    reasoning: true,
+    thinkingLevelMap: thinkingLevelMaps.thinking,
+    input: ["text", "image"],
+    cost: claudeSonnetCost,
+    contextWindow: 2e5,
+    maxTokens: 64e3
+  },
+  {
+    id: "gemini-3.1-pro",
+    name: "Gemini 3.1 Pro (Antigravity)",
+    reasoning: true,
+    thinkingLevelMap: thinkingLevelMaps.lowHigh,
+    input: ["text", "image"],
+    cost: geminiProCost,
+    contextWindow: 1048576,
+    maxTokens: 65535
+  },
+  {
+    id: "gemini-3.5-flash",
+    name: "Gemini 3.5 Flash (Antigravity)",
+    reasoning: true,
+    thinkingLevelMap: thinkingLevelMaps.lowMediumHigh,
+    input: ["text", "image"],
+    cost: geminiFlashCost,
+    contextWindow: 1048576,
+    maxTokens: 65536
+  },
+  {
+    id: "gpt-oss-120b",
+    name: "GPT-OSS 120B (Antigravity)",
+    reasoning: true,
+    thinkingLevelMap: thinkingLevelMaps.medium,
+    input: ["text"],
+    cost: gptOssCost,
+    contextWindow: 131072,
+    maxTokens: 32768
+  }
+];
+var currentModels = ANTIGRAVITY_MODELS;
+var currentRouting = { ...ANTIGRAVITY_ROUTING };
+function getCurrentAntigravityRouting() {
+  return currentRouting;
+}
+function getCurrentAntigravityCatalog() {
+  return { models: currentModels, routing: currentRouting };
+}
+function applyAntigravityCatalog(catalog) {
+  currentModels = catalog.models;
+  currentRouting = catalog.routing;
+}
+function getAntigravityRequestModelId(modelId, effort) {
+  const r = currentRouting[modelId] ?? ANTIGRAVITY_ROUTING[modelId];
+  if (!r) return modelId;
+  if (effort === void 0 || effort === "off") {
+    return r.off ?? r.routing?.minimal ?? r.routing?.low ?? r.defaultRequestId ?? modelId;
+  }
+  const effortKey = effort;
+  if (effortKey === ThinkingEffort.Xhigh) {
+    return r.routing?.xhigh ?? r.routing?.high ?? r.routing?.low ?? r.routing?.minimal ?? r.off ?? r.defaultRequestId ?? modelId;
+  }
+  return r.routing?.[effortKey] ?? r.routing?.low ?? r.routing?.minimal ?? r.off ?? r.defaultRequestId ?? modelId;
+}
+function getFallbackRuntimeModel(runtimeModel, effort) {
+  if (runtimeModel.startsWith("gemini-3.8-flash-")) {
+    return runtimeModel.replace("gemini-3.8-flash-", "gemini-3.7-flash-");
+  }
+  if (runtimeModel === "gemini-3.8-flash") {
+    return "gemini-3.7-flash-low";
+  }
+  if (runtimeModel === "gemini-3.7-flash-tiered") {
+    return getAntigravityRequestModelId("gemini-3.6-flash", effort);
+  }
+  if (runtimeModel.startsWith("gemini-3.7-flash-")) {
+    return runtimeModel.replace("gemini-3.7-flash-", "gemini-3.6-flash-");
+  }
+  if (runtimeModel === "gemini-3.7-flash") {
+    return "gemini-3.6-flash-low";
+  }
+  return void 0;
+}
+var ANTIGRAVITY_MODEL_ENUM = {
+  // Gemini 3.8 Flash
+  "gemini-3.8-flash": "MODEL_PLACEHOLDER_M318",
+  "gemini-3.8-flash-high": "MODEL_PLACEHOLDER_M318",
+  "gemini-3.8-flash-medium": "MODEL_PLACEHOLDER_M319",
+  "gemini-3.8-flash-low": "MODEL_PLACEHOLDER_M320",
+  "gemini-3.8-flash-tiered": "MODEL_PLACEHOLDER_M322",
+  // Gemini 3.7 Flash
+  "gemini-3.7-flash": "MODEL_PLACEHOLDER_M298",
+  "gemini-3.7-flash-high": "MODEL_PLACEHOLDER_M298",
+  "gemini-3.7-flash-medium": "MODEL_PLACEHOLDER_M299",
+  "gemini-3.7-flash-low": "MODEL_PLACEHOLDER_M300",
+  "gemini-3.7-flash-tiered": "MODEL_PLACEHOLDER_M301",
+  // Gemini 3.6 Flash
+  "gemini-3.6-flash": "MODEL_PLACEHOLDER_M71",
+  "gemini-3.6-flash-high": "MODEL_PLACEHOLDER_M71",
+  "gemini-3.6-flash-medium": "MODEL_PLACEHOLDER_M72",
+  "gemini-3.6-flash-low": "MODEL_PLACEHOLDER_M73",
+  "gemini-3.6-flash-tiered": "MODEL_PLACEHOLDER_M196",
+  // Gemini 3.5 Flash
+  "gemini-3.5-flash": "MODEL_PLACEHOLDER_M20",
+  "gemini-3.5-flash-extra-low": "MODEL_PLACEHOLDER_M187",
+  "gemini-3.5-flash-low": "MODEL_PLACEHOLDER_M20",
+  "gemini-3-flash-agent": "MODEL_PLACEHOLDER_M84",
+  // Gemini 3.1 Pro
+  "gemini-3.1-pro": "MODEL_PLACEHOLDER_M36",
+  "gemini-3.1-pro-low": "MODEL_PLACEHOLDER_M36",
+  "gemini-3.1-pro-high": "MODEL_PLACEHOLDER_M37",
+  "gemini-pro-agent": "MODEL_PLACEHOLDER_M16",
+  // Claude
+  "claude-sonnet-4-6": "MODEL_PLACEHOLDER_M35",
+  "claude-opus-4-6": "MODEL_PLACEHOLDER_M26",
+  "claude-opus-4-6-thinking": "MODEL_PLACEHOLDER_M26",
+  // GPT-OSS
+  "gpt-oss-120b": "MODEL_OPENAI_GPT_OSS_120B_MEDIUM",
+  "gpt-oss-120b-medium": "MODEL_OPENAI_GPT_OSS_120B_MEDIUM"
+};
+var modelEnumCache = /* @__PURE__ */ new Map();
+function registerModelEnum(wireModelId, modelEnum) {
+  if (wireModelId && modelEnum) {
+    modelEnumCache.set(wireModelId, modelEnum);
+  }
+}
+function registerDiscoveredModelEnums(models) {
+  if (!models) return;
+  for (const [wireId, info] of Object.entries(models)) {
+    if (typeof info?.model === "string" && info.model) {
+      modelEnumCache.set(wireId, info.model);
+    }
+  }
+}
+function getModelEnum(wireModelId) {
+  const direct = modelEnumCache.get(wireModelId) || ANTIGRAVITY_MODEL_ENUM[wireModelId];
+  if (direct) return direct;
+  const routed = getAntigravityRequestModelId(wireModelId, void 0);
+  return modelEnumCache.get(routed) || ANTIGRAVITY_MODEL_ENUM[routed];
+}
+function snapshotDynamicModelEnums() {
+  return Object.fromEntries(modelEnumCache);
+}
+function restoreDynamicModelEnums(modelEnums) {
+  modelEnumCache.clear();
+  for (const [wireModelId, modelEnum] of Object.entries(modelEnums)) {
+    if (wireModelId && modelEnum) modelEnumCache.set(wireModelId, modelEnum);
+  }
+}
+function getThinkingConfig(modelId, effort) {
+  if (modelId.startsWith("claude-")) {
+    if (!effort || effort === "off") return { includeThoughts: false, thinkingBudget: 0 };
+    return { includeThoughts: true, thinkingBudget: 1024 };
+  }
+  if (modelId.startsWith("gpt-oss-")) {
+    if (!effort || effort === "off") return { includeThoughts: false, thinkingBudget: 0 };
+    return { includeThoughts: true, thinkingBudget: 8192 };
+  }
+  if (modelId.startsWith("gemini-3.5-flash") || modelId === "gemini-3-flash-agent") {
+    if (!effort || effort === "off") return { includeThoughts: false, thinkingBudget: 0 };
+    const thinkingBudget = effort === "high" || effort === "xhigh" ? 1e4 : effort === "medium" ? 4e3 : 1e3;
+    return { includeThoughts: true, thinkingBudget };
+  }
+  if (modelId.startsWith("gemini-3.1-pro") || modelId === "gemini-pro-agent") {
+    if (!effort || effort === "off") return { includeThoughts: false, thinkingBudget: 0 };
+    return {
+      includeThoughts: true,
+      thinkingBudget: effort === "high" || effort === "xhigh" ? 10001 : 1001
+    };
+  }
+  if (modelId.startsWith("gemini-")) {
+    if (!effort || effort === "off") return { includeThoughts: false, thinkingBudget: 0 };
+    const thinkingBudget = effort === "high" || effort === "xhigh" ? -1 : effort === "medium" ? 4e3 : 1e3;
+    return { includeThoughts: true, thinkingBudget };
+  }
+  return void 0;
+}
+
+// plugins/kxm/src/providers/antigravity/utils/util.ts
+function antigravityEnv(name) {
+  return process.env[`ANTIGRAVITY_${name}`] || process.env[`NOAGY_${name}`];
+}
+function isRecord2(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function asString(value) {
+  return typeof value === "string" && value ? value : void 0;
+}
+function sanitizeText(text) {
+  return String(text ?? "").replace(/[\uD800-\uDFFF]/g, "\uFFFD");
+}
+function escapeHtml(text) {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function stableUuid(seed) {
+  const bytes = createHash3("sha1").update(seed).digest().subarray(0, 16);
+  bytes[6] = bytes[6] & 15 | 80;
+  bytes[8] = bytes[8] & 63 | 128;
+  const hex = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+var sessionTrajectoryMap = /* @__PURE__ */ new Map();
+function resolveSessionTrajectory(context) {
+  const firstMsg = context?.messages?.[0];
+  if (!firstMsg) {
+    return { conversationId: crypto.randomUUID(), trajectoryId: crypto.randomUUID() };
+  }
+  const contentSeed = typeof firstMsg.content === "string" ? firstMsg.content.slice(0, 64) : Array.isArray(firstMsg.content) ? JSON.stringify(firstMsg.content[0] ?? "").slice(0, 64) : "";
+  const seed = `${firstMsg.role || "user"}:${firstMsg.timestamp || ""}:${contentSeed}`;
+  let entry = sessionTrajectoryMap.get(seed);
+  if (!entry) {
+    entry = {
+      conversationId: stableUuid(`antigravity:conv:${seed}`),
+      trajectoryId: stableUuid(`antigravity:traj:${seed}`)
+    };
+    sessionTrajectoryMap.set(seed, entry);
+    if (sessionTrajectoryMap.size > 64) {
+      const oldestKey = sessionTrajectoryMap.keys().next().value;
+      if (oldestKey !== void 0) sessionTrajectoryMap.delete(oldestKey);
+    }
+  }
+  return entry;
+}
+function antigravityRequestEnvelope(wireModelId, optionsOrIsClaude = false) {
+  const options = typeof optionsOrIsClaude === "boolean" ? { isClaude: optionsOrIsClaude } : optionsOrIsClaude;
+  const isClaude = Boolean(options.isClaude);
+  const isNonGemini = Boolean(options.isNonGemini || isClaude);
+  const step = Math.max(1, options.step ?? 1);
+  const lastStepIndex = options.lastStepIndex ?? String(Math.max(0, step - 1));
+  const requestIndex = options.requestIndex ?? options.userTurnIndex ?? Math.max(0, step - 1);
+  const agentId = options.conversationId || crypto.randomUUID();
+  const trajectoryId = options.trajectoryId || crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(8));
+  const sessionId = String(new DataView(bytes.buffer, bytes.byteOffset, 8).getBigInt64(0, true));
+  const claudeLabel = isClaude ? "true" : "false";
+  const nonGeminiLabel = isNonGemini ? "true" : "false";
+  const labels = {
+    last_step_index: lastStepIndex,
+    request_id: `${trajectoryId}-${requestIndex}`,
+    trajectory_id: trajectoryId,
+    used_claude: claudeLabel,
+    used_claude_conservative: claudeLabel,
+    used_non_gemini_model: nonGeminiLabel
+  };
+  const modelEnum = getModelEnum(wireModelId);
+  if (modelEnum) {
+    labels.model_enum = modelEnum;
+  }
+  return {
+    requestId: `agent/${agentId}/${Date.now()}/${trajectoryId}/${step}`,
+    sessionId,
+    labels
+  };
+}
+
+// plugins/kxm/src/providers/antigravity/utils/security.ts
+var LOOPBACK_HOSTS2 = /* @__PURE__ */ new Set(["127.0.0.1", "::1", "localhost"]);
+var ALLOWED_API_HOST_SUFFIXES = [".googleapis.com", ".sandbox.googleapis.com"];
+function resolveCallbackHost(raw = antigravityEnv("CALLBACK_HOST")) {
+  const host = (raw || "127.0.0.1").trim().toLowerCase();
+  if (!LOOPBACK_HOSTS2.has(host)) {
+    throw new Error(
+      `Unsafe ANTIGRAVITY_CALLBACK_HOST="${host}". Only loopback hosts are allowed: 127.0.0.1, ::1, localhost.`
+    );
+  }
+  return host === "localhost" ? "127.0.0.1" : host;
+}
+function assertSafeApiBaseUrl(raw) {
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error(`Invalid ANTIGRAVITY_BASE_URL: ${raw}`);
+  }
+  if (url.protocol !== "https:") {
+    throw new Error(`ANTIGRAVITY_BASE_URL must use https (got ${url.protocol})`);
+  }
+  if (url.username || url.password) {
+    throw new Error("ANTIGRAVITY_BASE_URL must not include credentials");
+  }
+  const host = url.hostname.toLowerCase();
+  const allowed = host === "googleapis.com" || ALLOWED_API_HOST_SUFFIXES.some((suffix) => host.endsWith(suffix));
+  if (!allowed) {
+    throw new Error(
+      `ANTIGRAVITY_BASE_URL host "${host}" is not allowed. Use a *.googleapis.com endpoint.`
+    );
+  }
+  const path = url.pathname.replace(/\/+$/, "");
+  return `${url.origin}${path === "/" ? "" : path}`;
+}
+function redactSecrets2(text) {
+  return text.replace(/\bya29\.[A-Za-z0-9._~+/-]+=*/g, "[redacted-access-token]").replace(/\b1\/[A-Za-z0-9_-]{20,}/g, "[redacted-refresh-token]").replace(/\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi, "Bearer [redacted]").replace(
+    /("?(?:access_token|refresh_token|id_token|token|client_secret|code_verifier|authorization)"?\s*[:=]\s*")[^"]*(")/gi,
+    "$1[redacted]$2"
+  ).replace(
+    /("?(?:access_token|refresh_token|id_token|token|client_secret|code_verifier|authorization)"?\s*[:=]\s*)[^\s&,}]+/gi,
+    "$1[redacted]"
+  );
+}
+function safeError(error) {
+  const raw = error instanceof Error ? error.message : String(error);
+  return redactSecrets2(raw);
+}
+
+// plugins/kxm/src/providers/antigravity/diagnostics/diagnostics.ts
+var storage = new AsyncLocalStorage();
+var lastSnapshot = {};
+function currentBag() {
+  return storage.getStore() ?? lastSnapshot;
+}
+async function runWithDiagnostics(fn) {
+  const bag = {};
+  return storage.run(bag, async () => {
+    try {
+      return await fn();
+    } finally {
+      lastSnapshot = { ...bag };
+    }
+  });
+}
+function getCurrentEndpoint() {
+  return currentBag().endpoint;
+}
+function getCurrentMatchedModelDebug() {
+  return currentBag().matchedModelDebug;
+}
+function getCurrentAvailableModels() {
+  return currentBag().availableModels;
+}
+function setLastStatus(status) {
+  currentBag().status = status;
+}
+function setLastEndpoint(endpoint) {
+  currentBag().endpoint = endpoint;
+}
+function setLastError(error) {
+  currentBag().error = error === void 0 ? void 0 : redactSecrets2(error).slice(0, 800);
+}
+function setLastProjectId(projectId) {
+  currentBag().projectId = projectId;
+}
+function setLastResolvedRuntimeModel(model) {
+  currentBag().resolvedRuntimeModel = model;
+}
+function setLastAvailableModels(models) {
+  currentBag().availableModels = models;
+}
+function setLastMatchedModelDebug(debug) {
+  currentBag().matchedModelDebug = debug === void 0 ? void 0 : redactSecrets2(debug).slice(0, 1200);
+}
+function setLastLatencyMs(ms) {
+  currentBag().latencyMs = ms;
+}
+function setLastToolSchemaWarnings(warnings) {
+  currentBag().toolSchemaWarnings = warnings === void 0 ? void 0 : redactSecrets2(warnings.join(" | ")).slice(0, 1200);
+}
+
+// plugins/kxm/src/providers/antigravity/utils/http.ts
+var PREWARM_TIMEOUT_MS = 5e3;
+async function antigravityFetch(input, init = {}) {
+  return fetch(input, init);
+}
+function prewarmConnection(url) {
+  if (antigravityEnv("NO_PREWARM") === "1") return;
+  if (process.env.NODE_TEST_CONTEXT) return;
+  void (async () => {
+    try {
+      const res = await antigravityFetch(url, {
+        method: "HEAD",
+        signal: AbortSignal.timeout(PREWARM_TIMEOUT_MS)
+      });
+      await res.arrayBuffer();
+    } catch {
+    }
+  })();
+}
+
+// plugins/kxm/src/providers/antigravity/client/client.ts
+var DEFAULT_ENDPOINT = "https://daily-cloudcode-pa.googleapis.com";
+var ENDPOINT_FALLBACKS = [
+  DEFAULT_ENDPOINT,
+  "https://daily-cloudcode-pa.sandbox.googleapis.com",
+  "https://cloudcode-pa.googleapis.com"
+];
+var PROJECT_CACHE_TTL_MS = 30 * 60 * 1e3;
+var projectCache = /* @__PURE__ */ new Map();
+var MODEL_CACHE_TTL_MS = 30 * 60 * 1e3;
+var modelCache = /* @__PURE__ */ new Map();
+var DISCOVERY_TIMEOUT_MS = 8e3;
+var inFlightModelLookups = /* @__PURE__ */ new Map();
+function stableProjectId(seed) {
+  const bytes = createHash4("sha1").update(`antigravity:${seed}`).digest().subarray(0, 16);
+  bytes[6] = bytes[6] & 15 | 80;
+  bytes[8] = bytes[8] & 63 | 128;
+  const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+function defaultProjectId(seed = "antigravity-default") {
+  return antigravityEnv("PROJECT_ID")?.trim() || stableProjectId(seed);
+}
+var DEFAULT_PROJECT_ID = defaultProjectId();
+function endpointCandidates() {
+  const explicit = antigravityEnv("BASE_URL")?.trim();
+  return explicit ? [assertSafeApiBaseUrl(explicit)] : ENDPOINT_FALLBACKS;
+}
+var DEFAULT_USER_AGENT = "antigravity/cli/1.1.23 (aidev_client; os_type=linux; arch=amd64; cl=974125021; auth_method=consumer)";
+function defaultUserAgent() {
+  return DEFAULT_USER_AGENT;
+}
+function antigravityHeaders(token) {
+  return {
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+    "User-Agent": antigravityEnv("USER_AGENT") || defaultUserAgent()
+  };
+}
+function jsonOrTextError(text) {
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed.error?.message) return parsed.error.message;
+  } catch {
+  }
+  return text;
+}
+function parseApiKey(apiKeyRaw) {
+  if (!apiKeyRaw) {
+    throw new Error("No Antigravity OAuth credentials. Run /login antigravity.");
+  }
+  try {
+    const parsed = JSON.parse(apiKeyRaw);
+    if (!parsed.token || !parsed.projectId) throw new Error("missing token or projectId");
+    return { token: parsed.token, projectId: parsed.projectId };
+  } catch (error) {
+    throw new Error(
+      `Invalid Antigravity credentials. Run /login antigravity. (${safeError(error)})`,
+      { cause: error }
+    );
+  }
+}
+function extractProjectId(data) {
+  if (!isRecord2(data)) return void 0;
+  const direct = data.antigravityProjectId ?? data.projectId ?? data.backendProjectId ?? data.userDefinedCloudaicompanionProject ?? data.cloudaicompanionProject ?? data.project;
+  const directId = asString(direct);
+  if (directId) return directId;
+  if (isRecord2(direct)) {
+    const nestedId = asString(direct.id);
+    if (nestedId) return nestedId;
+  }
+  for (const key of ["projects", "projectIds", "cloudaicompanionProjects"]) {
+    const value = data[key];
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const nested = extractProjectId(item);
+        if (nested) return nested;
+        const itemId = asString(item);
+        if (itemId) return itemId;
+      }
+    }
+  }
+  return void 0;
+}
+async function listCloudAICompanionProjects(token) {
+  for (const endpoint of endpointCandidates()) {
+    try {
+      const res = await antigravityFetch(`${endpoint}/v1internal:listCloudAICompanionProjects`, {
+        method: "POST",
+        headers: antigravityHeaders(token),
+        body: JSON.stringify({}),
+        signal: AbortSignal.timeout(DISCOVERY_TIMEOUT_MS)
+      });
+      setLastStatus(res.status);
+      setLastEndpoint(endpoint);
+      if (!res.ok) continue;
+      return extractProjectId(await res.json());
+    } catch (error) {
+      setLastError(safeError(error));
+    }
+  }
+  return void 0;
+}
+function collectModelLabels(value, out = []) {
+  if (!value || out.length > 50) return out;
+  if (typeof value === "string") {
+    if (/gemini|claude|gpt-oss/i.test(value)) out.push(value);
+    return out;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectModelLabels(item, out);
+    return out;
+  }
+  if (isRecord2(value)) {
+    for (const key of ["id", "name", "label", "displayName", "model", "modelId"]) {
+      collectModelLabels(value[key], out);
+    }
+    for (const nested of Object.values(value)) {
+      if (nested && typeof nested === "object") collectModelLabels(nested, out);
+    }
+  }
+  return out;
+}
+function summarizeModelCandidate(value) {
+  if (!isRecord2(value)) return String(value ?? "none");
+  const out = {};
+  for (const [key, raw] of Object.entries(value)) {
+    if (/token|auth|credential|secret|email/i.test(key)) continue;
+    if (raw === null || ["string", "number", "boolean"].includes(typeof raw)) out[key] = raw;
+    else if (Array.isArray(raw)) out[key] = `[array:${String(raw.length)}]`;
+    else if (isRecord2(raw)) {
+      out[key] = `{${Object.keys(raw).slice(0, 12).join(",")}}`;
+    }
+  }
+  return JSON.stringify(out).slice(0, 1200);
+}
+function isUsableRuntimeModelId(id) {
+  return /^(gemini-|claude-|gpt-oss-)/i.test(id) && !/\s/.test(id) && !/^MODEL_/i.test(id);
+}
+function buildModelMatchRegex(requestedId) {
+  const req = requestedId.toLowerCase();
+  if (req === "gemini-3.8-flash-low") return /gemini[- ]3\.8[- ]flash \(low\)/i;
+  if (req === "gemini-3.8-flash-medium") return /gemini[- ]3\.8[- ]flash \(medium\)/i;
+  if (req === "gemini-3.8-flash-high") return /gemini[- ]3\.8[- ]flash \(high\)/i;
+  if (req === "gemini-3.7-flash-low") return /gemini[- ]3\.7[- ]flash \(low\)/i;
+  if (req === "gemini-3.7-flash-medium") return /gemini[- ]3\.7[- ]flash \(medium\)/i;
+  if (req === "gemini-3.7-flash-high") return /gemini[- ]3\.7[- ]flash \(high\)/i;
+  if (req === "gemini-3.6-flash-low") return /gemini[- ]3\.6[- ]flash \(low\)/i;
+  if (req === "gemini-3.6-flash-medium") return /gemini[- ]3\.6[- ]flash \(medium\)/i;
+  if (req === "gemini-3.6-flash-high") return /gemini[- ]3\.6[- ]flash \(high\)/i;
+  if (req === "gemini-3.5-flash-extra-low") return /gemini[- ]3\.5[- ]flash \(low\)/i;
+  if (req === "gemini-3.5-flash-low" || req === "gemini-3.5-flash-medium")
+    return /gemini[- ]3\.5[- ]flash \(medium\)/i;
+  if (req === "gemini-3.5-flash-high" || req === "gemini-3-flash-agent")
+    return /gemini[- ]3\.5[- ]flash \(high\)/i;
+  if (req.includes("claude-opus-4-6")) return /claude.*opus.*4\.6/i;
+  if (req.includes("claude-sonnet-4-6")) return /claude.*sonnet.*4\.6/i;
+  if (req.includes("gpt-oss-120b")) return /gpt.*oss.*120b/i;
+  if (req === "gemini-3.1-pro-low") return /gemini[- ]3\.1[- ]pro \(low\)/i;
+  if (req === "gemini-3.1-pro-high" || req === "gemini-pro-agent")
+    return /gemini[- ]3\.1[- ]pro \(high\)/i;
+  const escaped = escapeRegExp(req).replace(/\\-/g, "[- ]");
+  return new RegExp(escaped, "i");
+}
+function dynamicModelFromInfo(modelId, info) {
+  if (!isRecord2(info)) return { id: modelId };
+  setLastMatchedModelDebug(summarizeModelCandidate({ modelId, ...info }));
+  const experiments = Array.isArray(info.modelExperiments) ? info.modelExperiments.filter((item) => typeof item === "string") : void 0;
+  const modelEnum = asString(info.model);
+  if (modelEnum) {
+    registerModelEnum(modelId, modelEnum);
+  }
+  return {
+    id: modelId,
+    experiments,
+    apiProvider: asString(info.apiProvider),
+    modelProvider: asString(info.modelProvider),
+    model: modelEnum
+  };
+}
+function findDynamicModel(value, requestedId) {
+  if (!value) return void 0;
+  if (isRecord2(value) && isRecord2(value.models)) {
+    const modelsMap = value.models;
+    if (isUsableRuntimeModelId(requestedId) && requestedId in modelsMap) {
+      return dynamicModelFromInfo(requestedId, modelsMap[requestedId]);
+    }
+    const targetRegex2 = buildModelMatchRegex(requestedId);
+    for (const [modelId, info] of Object.entries(modelsMap)) {
+      if (!isUsableRuntimeModelId(modelId)) continue;
+      if (targetRegex2.test(modelId)) return dynamicModelFromInfo(modelId, info);
+      if (isRecord2(info)) {
+        const label = info.label ?? info.displayName ?? info.name;
+        if (typeof label === "string" && targetRegex2.test(label)) {
+          return dynamicModelFromInfo(modelId, info);
+        }
+      }
+    }
+    return void 0;
+  }
+  const targetRegex = buildModelMatchRegex(requestedId);
+  if (typeof value === "string") {
+    return targetRegex.test(value) && isUsableRuntimeModelId(value) ? { id: value } : void 0;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findDynamicModel(item, requestedId);
+      if (found) return found;
+    }
+    return void 0;
+  }
+  if (isRecord2(value)) {
+    for (const nested of Object.values(value)) {
+      if (nested && typeof nested === "object") {
+        const found = findDynamicModel(nested, requestedId);
+        if (found) return found;
+      }
+    }
+  }
+  return void 0;
+}
+async function fetchAvailableRuntimeModelUncached(token, projectId, requestedRuntimeModel) {
+  const body = JSON.stringify({ project: projectId });
+  const endpoints = endpointCandidates();
+  let lastLabels = "";
+  for (const endpoint of endpoints) {
+    try {
+      const res = await antigravityFetch(`${endpoint}/v1internal:fetchAvailableModels`, {
+        method: "POST",
+        headers: antigravityHeaders(token),
+        body,
+        signal: AbortSignal.timeout(DISCOVERY_TIMEOUT_MS)
+      });
+      setLastStatus(res.status);
+      if (!res.ok) continue;
+      setLastEndpoint(endpoint);
+      const data = await res.json();
+      if (isRecord2(data) && isRecord2(data.models)) {
+        registerDiscoveredModelEnums(data.models);
+      }
+      const labels = [...new Set(collectModelLabels(data))].slice(0, 16);
+      if (labels.length) lastLabels = labels.join(",");
+      const found = findDynamicModel(data, requestedRuntimeModel);
+      if (found) {
+        if (lastLabels) setLastAvailableModels(lastLabels);
+        return found;
+      }
+    } catch (error) {
+      setLastError(safeError(error));
+    }
+  }
+  if (lastLabels) setLastAvailableModels(lastLabels);
+  return void 0;
+}
+async function fetchAvailableRuntimeModel(token, projectId, requestedRuntimeModel) {
+  const cacheKey = `${token}::${projectId}::${requestedRuntimeModel}`;
+  const cached = modelCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.result;
+  const inFlight = inFlightModelLookups.get(cacheKey);
+  if (inFlight) return inFlight;
+  const promise = fetchAvailableRuntimeModelUncached(token, projectId, requestedRuntimeModel).then(
+    (result2) => {
+      modelCache.set(cacheKey, { result: result2, expiresAt: Date.now() + MODEL_CACHE_TTL_MS });
+      return result2;
+    }
+  );
+  inFlightModelLookups.set(cacheKey, promise);
+  try {
+    return await promise;
+  } finally {
+    inFlightModelLookups.delete(cacheKey);
+    if (modelCache.size > 64) {
+      const now = Date.now();
+      for (const [key, entry] of modelCache) {
+        if (entry.expiresAt <= now) modelCache.delete(key);
+      }
+    }
+  }
+}
+async function fetchAvailableModelsFromEndpoint(endpoint, token, projectId, signal) {
+  try {
+    const res = await antigravityFetch(`${endpoint}/v1internal:fetchAvailableModels`, {
+      method: "POST",
+      headers: antigravityHeaders(token),
+      body: JSON.stringify({ project: projectId }),
+      signal: catalogSignal(signal)
+    });
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { raw: text };
+    }
+    if (!res.ok) {
+      const message = isRecord2(data) && isRecord2(data.error) && typeof data.error.message === "string" ? data.error.message : text;
+      setLastError(message);
+      return void 0;
+    }
+    return { endpoint, status: res.status, data };
+  } catch (error) {
+    setLastError(safeError(error));
+    return void 0;
+  }
+}
+function catalogSignal(signal) {
+  const timeout = AbortSignal.timeout(DISCOVERY_TIMEOUT_MS);
+  return signal ? AbortSignal.any([signal, timeout]) : timeout;
+}
+function mergeAvailableModelsResults(results) {
+  const mergedModels = {};
+  let defaultAgentModelId;
+  let defaultAgentModel;
+  let lastEndpoint = "";
+  let lastStatus = 0;
+  for (const result2 of results) {
+    if (!result2) continue;
+    setLastEndpoint(result2.endpoint);
+    setLastStatus(result2.status);
+    lastEndpoint = result2.endpoint;
+    lastStatus = result2.status;
+    const data = result2.data;
+    if (isRecord2(data) && isRecord2(data.models)) {
+      Object.assign(mergedModels, data.models);
+      registerDiscoveredModelEnums(data.models);
+    }
+    if (isRecord2(data) && typeof data.defaultAgentModelId === "string") {
+      defaultAgentModelId = data.defaultAgentModelId;
+    }
+    if (isRecord2(data) && typeof data.defaultAgentModel === "string") {
+      defaultAgentModel = data.defaultAgentModel;
+    }
+  }
+  if (!lastEndpoint) {
+    throw new Error(`/v1internal:fetchAvailableModels failed: no endpoint available`);
+  }
+  return {
+    endpoint: lastEndpoint,
+    status: lastStatus,
+    data: {
+      models: mergedModels,
+      defaultAgentModelId,
+      defaultAgentModel
+    }
+  };
+}
+async function fetchAvailableModelsCatalog(token, projectId, signal) {
+  const results = await Promise.all(
+    endpointCandidates().map(
+      (endpoint) => fetchAvailableModelsFromEndpoint(endpoint, token, projectId, signal)
+    )
+  );
+  return mergeAvailableModelsResults(results);
+}
+async function loadCodeAssistUncached(token) {
+  const body = JSON.stringify({
+    metadata: {
+      ideType: "ANTIGRAVITY"
+    }
+  });
+  for (const endpoint of endpointCandidates()) {
+    try {
+      const res = await antigravityFetch(`${endpoint}/v1internal:loadCodeAssist`, {
+        method: "POST",
+        headers: antigravityHeaders(token),
+        body,
+        signal: AbortSignal.timeout(DISCOVERY_TIMEOUT_MS)
+      });
+      setLastStatus(res.status);
+      setLastEndpoint(endpoint);
+      if (!res.ok) continue;
+      const project = extractProjectId(await res.json());
+      if (project) return project;
+      return await listCloudAICompanionProjects(token);
+    } catch (error) {
+      setLastError(safeError(error));
+    }
+  }
+  return void 0;
+}
+async function loadCodeAssist(token) {
+  const cached = projectCache.get(token);
+  if (cached && cached.expiresAt > Date.now()) {
+    projectCache.delete(token);
+    projectCache.set(token, cached);
+    return cached.projectId;
+  }
+  const projectId = await loadCodeAssistUncached(token);
+  projectCache.set(token, { projectId, expiresAt: Date.now() + PROJECT_CACHE_TTL_MS });
+  if (projectCache.size > 32) {
+    const oldestKey = projectCache.keys().next().value;
+    if (oldestKey !== void 0) projectCache.delete(oldestKey);
+  }
+  return projectId;
+}
+function resolveProjectId(opts) {
+  return antigravityEnv("PROJECT_ID")?.trim() || opts.warmedProject || opts.credentialProjectId || defaultProjectId(opts.email || "antigravity-default");
+}
+function formatRequestDiagnostics(extra) {
+  return `endpoint=${getCurrentEndpoint() || "unknown"}, project=${extra.projectId}, runtimeModel=${extra.runtimeModel}, matched=${getCurrentMatchedModelDebug() || "none"}, available=${getCurrentAvailableModels() || "unknown"}`;
+}
+
+// plugins/kxm/src/providers/antigravity/auth/oauth.ts
+var REDIRECT_URI = "http://localhost:51121/oauth-callback";
+var AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
+var TOKEN_URL = "https://oauth2.googleapis.com/token";
+var OAUTH_CALLBACK_TIMEOUT_MS = 5 * 60 * 1e3;
+var SCOPES = [
+  "https://www.googleapis.com/auth/aicode",
+  "https://www.googleapis.com/auth/cloud-platform",
+  "https://www.googleapis.com/auth/userinfo.email",
+  "https://www.googleapis.com/auth/userinfo.profile",
+  "https://www.googleapis.com/auth/cclog",
+  "https://www.googleapis.com/auth/experimentsandconfigs"
+];
+var CLIENT_ID = antigravityEnv("CLIENT_ID") || atob(
+  "MTA3MTAwNjA2MDU5MS10bWhzc2luMmgyMWxjcmUyMzV2dG9sb2poNGc0MDNlcC5hcHBzLmdvb2dsZXVzZXJjb250ZW50LmNvbQ=="
+);
+var CLIENT_SECRET = antigravityEnv("CLIENT_SECRET") || atob("R09DU1BYLUs1OEZXUjQ4NkxkTEoxbUxCOHNYQzR6NnFEQWY=");
+var CALLBACK_HOST = resolveCallbackHost();
+function oauthCallbackHeaders(contentType = "text/html; charset=utf-8") {
+  return {
+    "Content-Type": contentType,
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'",
+    "Referrer-Policy": "no-referrer"
+  };
+}
+function sanitizeOAuthProviderError(text) {
+  const redacted = redactSecrets2(text).trim();
+  try {
+    const parsed = JSON.parse(redacted);
+    const parts = [parsed.error, parsed.error_description].filter(
+      (part) => typeof part === "string" && part.length > 0
+    );
+    if (parts.length) return parts.join(": ").slice(0, 300);
+  } catch {
+  }
+  return redacted.slice(0, 300) || "unknown OAuth provider error";
+}
+function base64Url(buffer) {
+  return buffer.toString("base64url");
+}
+function generatePKCE() {
+  const verifier = base64Url(randomBytes(32));
+  const challenge = base64Url(createHash5("sha256").update(verifier).digest());
+  return { verifier, challenge };
+}
+function buildAuthorizationUrl(challenge, state) {
+  const authParams = new URLSearchParams({
+    client_id: CLIENT_ID,
+    response_type: "code",
+    redirect_uri: REDIRECT_URI,
+    scope: SCOPES.join(" "),
+    code_challenge: challenge,
+    code_challenge_method: "S256",
+    state,
+    access_type: "offline",
+    prompt: "consent"
+  });
+  return `${AUTH_URL}?${authParams.toString()}`;
+}
+async function getUserEmail(token) {
+  try {
+    const res = await fetch("https://www.googleapis.com/oauth2/v1/userinfo?alt=json", {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!res.ok) return void 0;
+    const data = await res.json();
+    return data.email;
+  } catch {
+    return void 0;
+  }
+}
+function closeServerGracefully(server) {
+  if ("closeAllConnections" in server && typeof server.closeAllConnections === "function") {
+    server.closeAllConnections();
+  }
+  server.close();
+}
+function startCallbackServer(expectedState) {
+  return new Promise((resolve5, reject) => {
+    let settled = false;
+    let timeout;
+    let resolveCode;
+    let rejectCode;
+    const codePromise = new Promise((res, rej) => {
+      resolveCode = res;
+      rejectCode = rej;
+    });
+    const finish = (fn) => {
+      if (settled) return;
+      settled = true;
+      if (timeout) clearTimeout(timeout);
+      fn();
+    };
+    const server = createServer((req, res) => {
+      if (req.method !== "GET" && req.method !== "HEAD") {
+        res.writeHead(405, oauthCallbackHeaders("text/plain; charset=utf-8"));
+        res.end("Method Not Allowed");
+        return;
+      }
+      const url = new URL(req.url || "", REDIRECT_URI);
+      if (url.pathname !== "/oauth-callback") {
+        res.writeHead(404, oauthCallbackHeaders());
+        res.end("Antigravity OAuth callback route not found.");
+        return;
+      }
+      const error = url.searchParams.get("error");
+      const code = url.searchParams.get("code");
+      const state = url.searchParams.get("state");
+      if (error) {
+        const safe = escapeHtml(error.slice(0, 200));
+        res.writeHead(400, oauthCallbackHeaders());
+        res.end(`Antigravity authentication failed: ${safe}`);
+        finish(() => rejectCode(new Error(`OAuth error: ${error.slice(0, 200)}`)));
+        return;
+      }
+      if (!code || !state) {
+        res.writeHead(400, oauthCallbackHeaders());
+        res.end("Antigravity authentication failed: missing code or state.");
+        finish(() => rejectCode(new Error("Missing code or state in OAuth callback")));
+        return;
+      }
+      if (state !== expectedState) {
+        res.writeHead(400, oauthCallbackHeaders());
+        res.end("Antigravity authentication failed: invalid state.");
+        finish(() => rejectCode(new Error("OAuth state mismatch")));
+        return;
+      }
+      res.writeHead(200, oauthCallbackHeaders());
+      res.end("Antigravity authentication complete. You can close this window and return to Pi.");
+      finish(() => resolveCode({ code, state }));
+    });
+    server.on("error", (err) => {
+      if (err.code === "EADDRINUSE") {
+        reject(
+          new Error(
+            "Port 51121 is already in use by another process. Please close the process using port 51121 and retry /login antigravity."
+          )
+        );
+      } else {
+        reject(err);
+      }
+    });
+    let closed = false;
+    const close = () => {
+      if (closed) return;
+      closed = true;
+      closeServerGracefully(server);
+    };
+    const cleanup = () => {
+      finish(() => rejectCode(new Error("OAuth callback cancelled")));
+      close();
+    };
+    server.listen(51121, CALLBACK_HOST, () => {
+      timeout = setTimeout(() => {
+        finish(() => rejectCode(new Error("OAuth callback timed out waiting for browser login")));
+        close();
+      }, OAUTH_CALLBACK_TIMEOUT_MS);
+      resolve5({ server, waitForCode: () => codePromise, cleanup });
+    });
+  });
+}
+function credentialProjectId(credentials) {
+  const projectId = credentials.projectId;
+  return typeof projectId === "string" ? projectId : void 0;
+}
+function credentialEmail(credentials) {
+  const email = credentials.email;
+  return typeof email === "string" ? email : void 0;
+}
+function parsePastedCallback(raw, expectedState) {
+  const text = (raw ?? "").trim();
+  if (!text) {
+    throw new Error(
+      "No callback pasted. Paste the full URL from your browser's address bar (http://localhost:51121/oauth-callback?\u2026)."
+    );
+  }
+  let url;
+  try {
+    url = new URL(text);
+  } catch {
+    const qs = text.startsWith("?") ? text.slice(1) : text;
+    url = new URL(`http://localhost:51121/oauth-callback?${qs}`);
+  }
+  const error = url.searchParams.get("error");
+  if (error) throw new Error(`OAuth error from browser: ${error.slice(0, 200)}`);
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+  if (!code || !state) {
+    throw new Error(
+      "Pasted text is missing 'code' or 'state'. Paste the FULL callback URL from your browser's address bar (http://localhost:51121/oauth-callback?\u2026)."
+    );
+  }
+  if (state !== expectedState) {
+    throw new Error(
+      "State mismatch: that callback is from a different sign-in. Re-run /login antigravity, sign in again, and paste the new URL."
+    );
+  }
+  return { code, state };
+}
+async function acquireAuthCode(expectedState, opts) {
+  const { waitForCode, callbacks } = opts;
+  const settle = new AbortController();
+  const candidates = [waitForCode()];
+  if (typeof callbacks.onPrompt === "function") {
+    const promptLoop = async () => {
+      let promptMessage = "Remote/headless machine (your browser can't reach localhost:51121)? After signing in, paste the full callback URL shown in your browser's address bar.";
+      while (true) {
+        if (callbacks.signal?.aborted || settle.signal.aborted) {
+          throw new Error("Login cancelled");
+        }
+        let text;
+        try {
+          text = await callbacks.onPrompt({
+            message: promptMessage,
+            placeholder: "http://localhost:51121/oauth-callback?state=\u2026&code=\u2026"
+          });
+        } catch (err) {
+          throw err instanceof Error ? err : new Error(String(err));
+        }
+        if (callbacks.signal?.aborted || settle.signal.aborted) {
+          throw new Error("Login cancelled");
+        }
+        try {
+          return parsePastedCallback(text, expectedState);
+        } catch (err) {
+          if (callbacks.signal?.aborted || settle.signal.aborted) {
+            throw new Error("Login cancelled", { cause: err });
+          }
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          promptMessage = `Invalid callback (${errorMessage}). Please paste the full URL:`;
+        }
+      }
+    };
+    candidates.push(promptLoop());
+  }
+  let removeAbortListener;
+  if (callbacks.signal) {
+    candidates.push(
+      new Promise((_resolve, reject) => {
+        const signal = callbacks.signal;
+        if (signal.aborted) return reject(new Error("Login cancelled"));
+        const onAbort = () => reject(new Error("Login cancelled"));
+        signal.addEventListener("abort", onAbort, { once: true });
+        removeAbortListener = () => signal.removeEventListener("abort", onAbort);
+      })
+    );
+  }
+  for (const candidate of candidates) {
+    candidate.catch(() => {
+    });
+  }
+  try {
+    return await Promise.race(candidates);
+  } finally {
+    settle.abort();
+    removeAbortListener?.();
+  }
+}
+async function loginAntigravity(callbacks) {
+  const { verifier, challenge } = generatePKCE();
+  const state = base64Url(randomBytes(32));
+  const { waitForCode, cleanup } = await startCallbackServer(state);
+  try {
+    callbacks.onAuth({
+      url: buildAuthorizationUrl(challenge, state),
+      instructions: "Complete Google sign-in. Pi captures the local callback automatically \u2014 or, on a remote/headless machine, paste the callback URL when prompted."
+    });
+    const { code, state: returnedState } = await acquireAuthCode(state, {
+      waitForCode,
+      callbacks
+    });
+    if (returnedState !== state) throw new Error("OAuth state mismatch");
+    const tokenResponse = await fetch(TOKEN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: CLIENT_ID,
+        client_secret: CLIENT_SECRET,
+        code,
+        grant_type: "authorization_code",
+        redirect_uri: REDIRECT_URI,
+        code_verifier: verifier
+      }).toString()
+    });
+    if (!tokenResponse.ok) {
+      throw new Error(
+        `Token exchange failed: ${sanitizeOAuthProviderError(await tokenResponse.text())}`
+      );
+    }
+    const tokenData = await tokenResponse.json();
+    if (!tokenData.refresh_token) {
+      throw new Error(
+        "No refresh token received. Re-run /login antigravity and allow offline access."
+      );
+    }
+    const [email, discoveredProject] = await Promise.all([
+      getUserEmail(tokenData.access_token),
+      loadCodeAssist(tokenData.access_token)
+    ]);
+    return {
+      refresh: tokenData.refresh_token,
+      access: tokenData.access_token,
+      expires: Date.now() + tokenData.expires_in * 1e3 - 5 * 60 * 1e3,
+      projectId: discoveredProject || defaultProjectId(email || "antigravity-default"),
+      email
+    };
+  } finally {
+    cleanup();
+  }
+}
+async function refreshAntigravityToken(credentials) {
+  const response = await fetch(TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: CLIENT_ID,
+      client_secret: CLIENT_SECRET,
+      refresh_token: credentials.refresh,
+      grant_type: "refresh_token"
+    }).toString()
+  });
+  if (!response.ok) {
+    throw new Error(
+      `Antigravity token refresh failed: ${sanitizeOAuthProviderError(await response.text())}`
+    );
+  }
+  const data = await response.json();
+  const existingProjectId = credentialProjectId(credentials);
+  const discoveredProject = existingProjectId ? void 0 : await loadCodeAssist(data.access_token);
+  const email = credentialEmail(credentials);
+  return {
+    ...credentials,
+    refresh: data.refresh_token || credentials.refresh,
+    access: data.access_token,
+    expires: Date.now() + data.expires_in * 1e3 - 5 * 60 * 1e3,
+    projectId: existingProjectId || discoveredProject || defaultProjectId(email || "antigravity-default")
+  };
+}
+function getApiKey(credentials) {
+  const email = credentialEmail(credentials);
+  return JSON.stringify({
+    token: credentials.access,
+    projectId: credentialProjectId(credentials) || defaultProjectId(email || "antigravity-default")
+  });
+}
+
+// plugins/kxm/src/providers/antigravity/models/grouping.ts
+var THINKING_SUFFIXES = [
+  { suffix: "extra-low", level: ThinkingEffort.Low },
+  { suffix: "extra-high", level: ThinkingEffort.Xhigh },
+  { suffix: "thinking", level: ThinkingEffort.High },
+  { suffix: "minimal", level: ThinkingEffort.Minimal },
+  { suffix: "medium", level: ThinkingEffort.Medium },
+  { suffix: "high", level: ThinkingEffort.High },
+  { suffix: "low", level: ThinkingEffort.Low }
+];
+var DISPLAY_LEVELS = [
+  { pattern: /\(\s*extra\s*low\s*\)/i, level: ThinkingEffort.Low },
+  { pattern: /\(\s*extra\s*high\s*\)/i, level: ThinkingEffort.Xhigh },
+  { pattern: /\(\s*thinking\s*\)/i, level: ThinkingEffort.High },
+  { pattern: /\(\s*minimal\s*\)/i, level: ThinkingEffort.Minimal },
+  { pattern: /\(\s*medium\s*\)/i, level: ThinkingEffort.Medium },
+  { pattern: /\(\s*high\s*\)/i, level: ThinkingEffort.High },
+  { pattern: /\(\s*low\s*\)/i, level: ThinkingEffort.Low }
+];
+var RUNTIME_ALIASES = {
+  "gemini-3-flash-agent": { publicId: "gemini-3.5-flash", level: ThinkingEffort.High },
+  "gemini-pro-agent": { publicId: "gemini-3.1-pro", level: ThinkingEffort.High }
+};
+var PI_LEVELS = [
+  ThinkingEffort.Off,
+  ThinkingEffort.Minimal,
+  ThinkingEffort.Low,
+  ThinkingEffort.Medium,
+  ThinkingEffort.High,
+  ThinkingEffort.Xhigh,
+  "max"
+];
+var ZERO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+function isSelectableRuntimeModelId(id) {
+  if (!/^(gemini-|claude-|gpt-oss-)/i.test(id) || /\s/.test(id) || /^MODEL_/i.test(id)) {
+    return false;
+  }
+  if (/^(chat_|tab_)/i.test(id)) return false;
+  if (/image/i.test(id)) return false;
+  return true;
+}
+function resolvedCatalog(discovered, current) {
+  if (discovered && discovered.models.length > 0) return discovered;
+  return current;
+}
+function buildAntigravityCatalog(rawModels, fallback) {
+  const groups = /* @__PURE__ */ new Map();
+  for (const [runtimeId, info] of Object.entries(rawModels)) {
+    if (!isSelectableRuntimeModelId(runtimeId)) continue;
+    if (info?.isInternal) continue;
+    const displayName = modelDisplayName(info);
+    if (runtimeId.endsWith("-tiered")) {
+      const baseId = runtimeId.slice(0, -"-tiered".length);
+      const group2 = ensureGroup(groups, baseId);
+      absorbMetadata(group2, info, displayName);
+      if (!group2.unsuffixed) group2.unsuffixed = runtimeId;
+      continue;
+    }
+    const alias = RUNTIME_ALIASES[runtimeId];
+    const suffix = alias ? void 0 : parseThinkingSuffix(runtimeId);
+    const publicId = alias?.publicId ?? suffix?.baseId ?? runtimeId;
+    const group = ensureGroup(groups, publicId);
+    absorbMetadata(group, info, displayName);
+    const level = alias?.level ?? levelFromDisplayName(displayName) ?? suffix?.level;
+    if (level) group.variants[level] = runtimeId;
+    else group.unsuffixed = runtimeId;
+  }
+  mergeAgentSingletons(groups);
+  if (groups.size === 0) return fallback;
+  const models = [];
+  const routing = {};
+  for (const group of groups.values()) {
+    const fallbackModel = fallback.models.find((model) => model.id === group.publicId);
+    const fallbackRouting = fallback.routing[group.publicId];
+    if (fallbackModel && fallbackRouting) {
+      models.push(fallbackModel);
+      routing[group.publicId] = fallbackRouting;
+      continue;
+    }
+    const synthesized = synthesizeModel(group, fallback.models);
+    models.push(synthesized.model);
+    routing[group.publicId] = synthesized.routing;
+  }
+  for (const fallbackModel of fallback.models) {
+    if (routing[fallbackModel.id]) continue;
+    const fallbackRouting = fallback.routing[fallbackModel.id];
+    if (!fallbackRouting) continue;
+    models.push(fallbackModel);
+    routing[fallbackModel.id] = fallbackRouting;
+  }
+  models.sort(comparePublicModels);
+  return { models, routing };
+}
+function ensureGroup(groups, publicId) {
+  const existing = groups.get(publicId);
+  if (existing) return existing;
+  const created = {
+    publicId,
+    variants: {},
+    displayNames: []
+  };
+  groups.set(publicId, created);
+  return created;
+}
+function absorbMetadata(group, info, displayName) {
+  if (displayName) group.displayNames.push(displayName);
+  if (info?.supportsThinking === true) group.supportsThinking = true;
+  else if (info?.supportsThinking === false && group.supportsThinking !== true) {
+    group.supportsThinking = false;
+  }
+  if (info?.supportsImages === true) group.supportsImages = true;
+  if (info?.supportsImages === false && group.supportsImages === void 0) {
+    group.supportsImages = false;
+  }
+}
+function mergeAgentSingletons(groups) {
+  for (const [publicId, group] of [...groups.entries()]) {
+    if (!publicId.endsWith("-agent")) continue;
+    if (Object.keys(group.variants).length > 0) continue;
+    const family = displayFamily(group.displayNames[0]);
+    if (!family) continue;
+    const target = [...groups.values()].find(
+      (candidate) => candidate.publicId !== publicId && candidate.displayNames.some((name) => displayFamily(name) === family)
+    );
+    if (!target || !group.unsuffixed) continue;
+    const level = levelFromDisplayName(group.displayNames[0]) ?? ThinkingEffort.High;
+    target.variants[level] = group.unsuffixed;
+    absorbMetadata(target, { supportsThinking: group.supportsThinking }, group.displayNames[0]);
+    groups.delete(publicId);
+  }
+}
+function parseThinkingSuffix(runtimeId) {
+  const lower = runtimeId.toLowerCase();
+  for (const { suffix, level } of THINKING_SUFFIXES) {
+    if (lower.endsWith(`-${suffix}`)) {
+      return { baseId: runtimeId.slice(0, -(suffix.length + 1)), level };
+    }
+  }
+  return void 0;
+}
+function levelFromDisplayName(displayName) {
+  if (!displayName) return void 0;
+  for (const { pattern, level } of DISPLAY_LEVELS) {
+    if (pattern.test(displayName)) return level;
+  }
+  return void 0;
+}
+function modelDisplayName(info) {
+  if (!info) return void 0;
+  if (typeof info.displayName === "string" && info.displayName) return info.displayName;
+  if (typeof info.label === "string" && info.label) return info.label;
+  if (typeof info.modelName === "string" && info.modelName) return info.modelName;
+  return void 0;
+}
+function displayFamily(displayName) {
+  if (!displayName) return void 0;
+  return displayName.replace(/\s*\((?:extra\s*low|extra\s*high|low|medium|high|minimal|thinking)\)\s*$/i, "").trim().toLowerCase();
+}
+function synthesizeModel(group, fallbackModels) {
+  const template = familyTemplate(group.publicId, fallbackModels);
+  const advertisedLevels = advertisedThinkingLevels(group);
+  const routing = routingFromVariants(group.publicId, group.variants, group.unsuffixed);
+  const supportsImages = group.supportsImages ?? template?.input.includes("image") ?? true;
+  const reasoning = advertisedLevels.size > 0 || group.supportsThinking === true || group.supportsThinking === void 0 && Boolean(template?.reasoning);
+  return {
+    model: {
+      id: group.publicId,
+      name: publicModelName(group),
+      reasoning,
+      ...reasoning ? { thinkingLevelMap: thinkingLevelMapFromLevels(advertisedLevels) } : {},
+      input: supportsImages ? ["text", "image"] : ["text"],
+      cost: template?.cost ?? ZERO_COST,
+      contextWindow: template?.contextWindow ?? 128e3,
+      maxTokens: template?.maxTokens ?? 8192
+    },
+    routing
+  };
+}
+function advertisedThinkingLevels(group) {
+  const levels = new Set(Object.keys(group.variants));
+  if (levels.size > 0) return levels;
+  if (group.supportsThinking === false) return levels;
+  if (group.supportsThinking === true || group.unsuffixed) {
+    levels.add(ThinkingEffort.High);
+  }
+  return levels;
+}
+function routingFromVariants(publicId, variants, unsuffixed) {
+  const defaultRequestId = variants[ThinkingEffort.Low] ?? variants[ThinkingEffort.Minimal] ?? variants[ThinkingEffort.Medium] ?? variants[ThinkingEffort.High] ?? unsuffixed ?? publicId;
+  const pick = (...keys) => {
+    for (const key of keys) {
+      const id = variants[key];
+      if (id) return id;
+    }
+    return unsuffixed ?? defaultRequestId;
+  };
+  return {
+    off: pick(
+      ThinkingEffort.Low,
+      ThinkingEffort.Minimal,
+      ThinkingEffort.Medium,
+      ThinkingEffort.High
+    ),
+    routing: {
+      minimal: pick(
+        ThinkingEffort.Minimal,
+        ThinkingEffort.Low,
+        ThinkingEffort.Medium,
+        ThinkingEffort.High
+      ),
+      low: pick(
+        ThinkingEffort.Low,
+        ThinkingEffort.Minimal,
+        ThinkingEffort.Medium,
+        ThinkingEffort.High
+      ),
+      medium: pick(
+        ThinkingEffort.Medium,
+        ThinkingEffort.Low,
+        ThinkingEffort.High,
+        ThinkingEffort.Minimal
+      ),
+      high: pick(
+        ThinkingEffort.High,
+        ThinkingEffort.Medium,
+        ThinkingEffort.Low,
+        ThinkingEffort.Minimal
+      ),
+      xhigh: pick(
+        ThinkingEffort.Xhigh,
+        ThinkingEffort.High,
+        ThinkingEffort.Medium,
+        ThinkingEffort.Low
+      )
+    },
+    defaultRequestId
+  };
+}
+function thinkingLevelMapFromLevels(levels) {
+  const map = {};
+  for (const level of PI_LEVELS) {
+    map[level] = levels.has(level) ? level : null;
+  }
+  if (levels.size === 0) map.high = "high";
+  return map;
+}
+function familyTemplate(publicId, fallbackModels) {
+  if (/^gemini-.*-flash/i.test(publicId)) {
+    return fallbackModels.find((model) => /^gemini-.*-flash/i.test(model.id));
+  }
+  if (/^gemini-.*-pro/i.test(publicId)) {
+    return fallbackModels.find((model) => /^gemini-.*-pro/i.test(model.id));
+  }
+  if (publicId.startsWith("claude-opus")) {
+    return fallbackModels.find((model) => model.id.startsWith("claude-opus"));
+  }
+  if (publicId.startsWith("claude-")) {
+    return fallbackModels.find((model) => model.id.startsWith("claude-sonnet")) ?? fallbackModels.find((model) => model.id.startsWith("claude-"));
+  }
+  if (publicId.startsWith("gpt-oss")) {
+    return fallbackModels.find((model) => model.id.startsWith("gpt-oss"));
+  }
+  if (publicId.startsWith("gemini-")) {
+    return fallbackModels.find((model) => model.id.startsWith("gemini-"));
+  }
+  return void 0;
+}
+function publicModelName(group) {
+  const family = group.displayNames.map((name) => displayFamily(name)).find(Boolean);
+  if (family) {
+    return `${titleCase(family)} (Antigravity)`;
+  }
+  return `${humanizePublicId(group.publicId)} (Antigravity)`;
+}
+function titleCase(value) {
+  return value.replace(/\b([a-z])/g, (char) => char.toUpperCase());
+}
+function humanizePublicId(id) {
+  const tokens = id.split("-");
+  const words = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (!token) continue;
+    const next = tokens[i + 1];
+    if (token === "gpt" && next === "oss") {
+      words.push("GPT-OSS");
+      i++;
+      continue;
+    }
+    if (/^\d+$/.test(token) && next && /^\d+$/.test(next)) {
+      words.push(`${token}.${next}`);
+      i++;
+      continue;
+    }
+    if (/^\d/.test(token)) {
+      words.push(token.toUpperCase());
+      continue;
+    }
+    words.push(token.charAt(0).toUpperCase() + token.slice(1));
+  }
+  return words.join(" ");
+}
+function parseGeminiVersion(id) {
+  const match = id.match(/^gemini-(\d+)(?:\.(\d+))?/i);
+  if (!match) return 0;
+  return Number(match[1]) * 1e3 + Number(match[2] || 0);
+}
+function comparePublicModels(a, b) {
+  const rankA = modelRank(a.id);
+  const rankB = modelRank(b.id);
+  if (rankA[0] !== rankB[0]) return rankA[0] - rankB[0];
+  if (rankA[1] !== rankB[1]) return rankA[1] - rankB[1];
+  return a.id.localeCompare(b.id);
+}
+function modelRank(id) {
+  const version = parseGeminiVersion(id);
+  if (/^gemini-.*flash/i.test(id) && !/pro/i.test(id)) return [0, -version];
+  if (id.startsWith("claude-opus")) return [1, 0];
+  if (id.startsWith("claude-sonnet")) return [2, 0];
+  if (id.startsWith("claude-")) return [3, 0];
+  if (/^gemini-.*pro/i.test(id)) return [4, -version];
+  if (id.startsWith("gemini-")) return [5, -version];
+  if (id.startsWith("gpt-oss")) return [6, 0];
+  return [7, 0];
+}
+
+// plugins/kxm/src/providers/antigravity/types/types.ts
+var ANTIGRAVITY_API = "antigravity-api";
+
+// plugins/kxm/src/providers/antigravity/models/discovery.ts
+var DEFAULT_CATALOG_REFRESH_INTERVAL_MS = 4 * 60 * 60 * 1e3;
+var ANTIGRAVITY_PERSIST_KEY = "pi-antigravity";
+function getCatalogRefreshIntervalMs() {
+  const envVal = antigravityEnv("CATALOG_REFRESH_INTERVAL_MS") ?? antigravityEnv("REFRESH_INTERVAL_MS");
+  if (envVal) {
+    const parsed = Number.parseInt(envVal, 10);
+    if (!Number.isNaN(parsed) && parsed >= 0) return parsed;
+  }
+  return DEFAULT_CATALOG_REFRESH_INTERVAL_MS;
+}
+var fallbackCatalog = () => ({
+  models: ANTIGRAVITY_MODELS,
+  routing: { ...ANTIGRAVITY_ROUTING }
+});
+function hydrateAntigravityCatalog(stored) {
+  if (!isRecord2(stored)) return 0;
+  const persisted = stored[ANTIGRAVITY_PERSIST_KEY];
+  if (!isRecord2(persisted)) return 0;
+  if (isStringMap(persisted.modelEnums)) restoreDynamicModelEnums(persisted.modelEnums);
+  if (isCatalog(persisted.catalog)) applyAntigravityCatalog(persisted.catalog);
+  return typeof persisted.checkedAt === "number" && persisted.checkedAt > 0 ? persisted.checkedAt : 0;
+}
+async function discoverAntigravityModels(apiKey, signal) {
+  const creds = parseApiKey(apiKey);
+  const available = await fetchAvailableModelsCatalog(creds.token, creds.projectId, signal);
+  const models = available.data.models;
+  if (!models || Object.keys(models).length === 0) {
+    return { models: [], routing: {} };
+  }
+  registerDiscoveredModelEnums(models);
+  return buildAntigravityCatalog(models, fallbackCatalog());
+}
+async function refreshAntigravityModels(context) {
+  const checkedAt = hydrateAntigravityCatalog(context.stored);
+  const current = getCurrentAntigravityCatalog();
+  if (!context.allowNetwork) return current.models;
+  const apiKey = apiKeyFromCredential(context.credential);
+  if (!apiKey || context.signal.aborted) return current.models;
+  const now = Date.now();
+  if (!context.force && checkedAt > 0 && now >= checkedAt && now - checkedAt < getCatalogRefreshIntervalMs()) {
+    return current.models;
+  }
+  try {
+    const discovered = await discoverAntigravityModels(apiKey, context.signal);
+    if (context.signal.aborted) return current.models;
+    const next = resolvedCatalog(discovered, current);
+    if (next.models.length > 0 && discovered.models.length > 0) {
+      applyAntigravityCatalog(next);
+      const refreshedAt = Date.now();
+      await context.publish({
+        persist: {
+          models: toStoredModels(next.models),
+          [ANTIGRAVITY_PERSIST_KEY]: {
+            catalog: next,
+            checkedAt: refreshedAt,
+            modelEnums: snapshotDynamicModelEnums()
+          }
+        }
+      });
+      return next.models;
+    }
+  } catch (error) {
+    if (context.force) throw error;
+  }
+  return getCurrentAntigravityCatalog().models;
+}
+function isCatalog(value) {
+  return isRecord2(value) && Array.isArray(value.models) && value.models.length > 0 && isRecord2(value.routing);
+}
+function isStringMap(value) {
+  return isRecord2(value) && Object.values(value).every((entry) => typeof entry === "string");
+}
+function apiKeyFromCredential(credential) {
+  if (!credential) return void 0;
+  if (credential.type === "api_key") {
+    return typeof credential.key === "string" && credential.key ? credential.key : void 0;
+  }
+  if (credential.type === "oauth" && typeof credential.access === "string") {
+    return getApiKey(credential);
+  }
+  return void 0;
+}
+function toStoredModels(models) {
+  return models.map((model) => ({
+    ...model,
+    api: ANTIGRAVITY_API,
+    provider: "antigravity",
+    baseUrl: DEFAULT_ENDPOINT
+  }));
+}
+
+// plugins/kxm/src/providers/antigravity/pi-compat.ts
+var AssistantMessageEventStream = class {
+  queue = [];
+  waiting = [];
+  done = false;
+  finalResultPromise;
+  resolveFinalResult;
+  constructor() {
+    this.finalResultPromise = new Promise((resolve5) => {
+      this.resolveFinalResult = resolve5;
+    });
+  }
+  push(event) {
+    if (this.done) return;
+    if (event.type === "done") {
+      this.done = true;
+      this.resolveFinalResult(event.message);
+    } else if (event.type === "error") {
+      this.done = true;
+      this.resolveFinalResult(event.error);
+    }
+    const waiter = this.waiting.shift();
+    if (waiter) waiter({ value: event, done: false });
+    else this.queue.push(event);
+  }
+  end(result2) {
+    this.done = true;
+    if (result2 !== void 0) this.resolveFinalResult(result2);
+    while (this.waiting.length > 0) {
+      this.waiting.shift()?.({ done: true });
+    }
+  }
+  async *[Symbol.asyncIterator]() {
+    while (true) {
+      if (this.queue.length > 0) {
+        yield this.queue.shift();
+      } else if (this.done) {
+        return;
+      } else {
+        const next = await new Promise((resolve5) => {
+          this.waiting.push(resolve5);
+        });
+        if (next.done) return;
+        if (next.value) yield next.value;
+      }
+    }
+  }
+  result() {
+    return this.finalResultPromise;
+  }
+};
+function createAssistantMessageEventStream() {
+  return new AssistantMessageEventStream();
+}
+function calculateCost(model, usage) {
+  const rates = model.cost;
+  if (!rates) {
+    usage.cost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
+    return usage.cost;
+  }
+  const inputTokens = usage.input + usage.cacheRead + usage.cacheWrite;
+  let applied = rates;
+  let matchedThreshold = -1;
+  for (const tier of rates.tiers ?? []) {
+    if (inputTokens > tier.inputTokensAbove && tier.inputTokensAbove > matchedThreshold) {
+      applied = tier;
+      matchedThreshold = tier.inputTokensAbove;
+    }
+  }
+  const longWrite = usage.cacheWrite1h ?? 0;
+  const shortWrite = usage.cacheWrite - longWrite;
+  usage.cost.input = applied.input / 1e6 * usage.input;
+  usage.cost.output = applied.output / 1e6 * usage.output;
+  usage.cost.cacheRead = applied.cacheRead / 1e6 * usage.cacheRead;
+  usage.cost.cacheWrite = (applied.cacheWrite * shortWrite + applied.input * 2 * longWrite) / 1e6;
+  usage.cost.total = usage.cost.input + usage.cost.output + usage.cost.cacheRead + usage.cost.cacheWrite;
+  return usage.cost;
+}
+
+// plugins/kxm/src/providers/antigravity/stream/stream.ts
+var ANTIGRAVITY_SYSTEM_INSTRUCTION = "You are Antigravity, a powerful agentic AI coding assistant designed by Google DeepMind. You are pair programming with a user to solve coding tasks. Be concise, practical, and tool-aware.";
+var ANTIGRAVITY_NO_PREAMBLE_INSTRUCTION = 'CRITICAL: NEVER output rule checks, formatting guidelines, constraint checklists (e.g. "No emdashes"), or your thinking/personality preambles in the final response. Output only the final response.';
+var toolCallCounter = 0;
+function sanitizeToolCallId(id, fallbackName) {
+  const cleaned = id.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const capped = cleaned.slice(0, 64);
+  return capped || `${fallbackName || "tool"}_${++toolCallCounter}`;
+}
+function toolCallIdNeeded(modelId, runtimeModel) {
+  return modelId.startsWith("claude-") || modelId.startsWith("gpt-oss-") || runtimeModel.startsWith("claude-") || runtimeModel.startsWith("gpt-oss-");
+}
+var base64SignaturePattern = /^[A-Za-z0-9+/]+={0,2}$/;
+function isValidThoughtSignature(signature) {
+  if (!signature || typeof signature !== "string" || signature.length === 0) return false;
+  if (signature.length % 4 !== 0) return false;
+  return base64SignaturePattern.test(signature);
+}
+function geminiRequiresThoughtSignature(runtimeModel) {
+  if (!runtimeModel.startsWith("gemini-")) return false;
+  const match = runtimeModel.match(/^gemini-(\d+)/);
+  if (match) {
+    const major = Number.parseInt(match[1], 10);
+    return major >= 3;
+  }
+  return true;
+}
+function parseImageData(raw, explicitMime) {
+  const match = raw.match(/^data:([^;]+);base64,(.+)$/s);
+  if (match) {
+    return {
+      mimeType: explicitMime || match[1] || "image/png",
+      data: match[2].trim()
+    };
+  }
+  return {
+    mimeType: explicitMime || "image/png",
+    data: raw.trim()
+  };
+}
+var SKILL_BLOCK_PATTERN = /<skill\b[^>]*>[\s\S]*?<\/skill\s*>/gi;
+function skillBlocks(content) {
+  const texts = typeof content === "string" ? [content] : Array.isArray(content) ? content.flatMap(
+    (item) => isRecord2(item) && item.type === "text" && typeof item.text === "string" ? [item.text] : []
+  ) : [];
+  return texts.flatMap((text) => text.match(SKILL_BLOCK_PATTERN) || []);
+}
+function withoutSkillBlocks(text) {
+  return text.replace(SKILL_BLOCK_PATTERN, "");
+}
+function asTextParts(content) {
+  const textPart = (text) => {
+    const userText = withoutSkillBlocks(text);
+    return userText.trim() ? [{ text: sanitizeText(userText) }] : [];
+  };
+  if (typeof content === "string") return textPart(content);
+  if (!Array.isArray(content)) return [];
+  return content.flatMap((item) => {
+    if (!isRecord2(item)) return [];
+    const block = item;
+    if (block.type === "text") return textPart(block.text);
+    if (block.type === "image") {
+      const rawData = block.data || block.source?.data;
+      if (!rawData) return [];
+      const explicitMime = block.mimeType || block.mediaType || block.source?.mediaType;
+      const { data, mimeType } = parseImageData(rawData, explicitMime);
+      return data ? [{ inlineData: { mimeType, data } }] : [];
+    }
+    return [];
+  });
+}
+function asImageParts(content) {
+  if (!Array.isArray(content)) return [];
+  return content.flatMap((item) => {
+    if (!isRecord2(item)) return [];
+    const block = item;
+    if (block.type === "image") {
+      const rawData = block.data || block.source?.data;
+      if (!rawData) return [];
+      const explicitMime = block.mimeType || block.mediaType || block.source?.mediaType;
+      const { data, mimeType } = parseImageData(rawData, explicitMime);
+      return data ? [{ inlineData: { mimeType, data } }] : [];
+    }
+    return [];
+  });
+}
+function appendTurn(contents, role, parts) {
+  if (!parts.length) return;
+  const last = contents[contents.length - 1];
+  if (last && last.role === role) {
+    last.parts.push(...parts);
+  } else {
+    contents.push({ role, parts });
+  }
+}
+function convertMessages(model, context, runtimeModel) {
+  const contents = [];
+  const requiresSig = geminiRequiresThoughtSignature(runtimeModel);
+  const droppedToolCallIds = /* @__PURE__ */ new Map();
+  for (const msg of context.messages) {
+    if (msg.role === "user") {
+      const parts = asTextParts(msg.content);
+      appendTurn(contents, GeminiRole.User, parts);
+    } else if (msg.role === "assistant") {
+      if (msg.stopReason === "error" || msg.stopReason === "aborted") {
+        continue;
+      }
+      const parts = [];
+      const isSameModel = msg.provider === PROVIDER_ID && msg.model === model.id;
+      const toolCalls = msg.content.filter((b) => b.type === "toolCall");
+      const firstCallHasSig = toolCalls.length > 0 && isValidThoughtSignature(toolCalls[0]?.thoughtSignature);
+      const allSigsValid = toolCalls.every(
+        (tc) => !tc.thoughtSignature || isValidThoughtSignature(tc.thoughtSignature)
+      );
+      const groupIsSigned = isSameModel && firstCallHasSig && allSigsValid;
+      for (const block of msg.content) {
+        if (block.type === "text") {
+          const textSig = isSameModel && isValidThoughtSignature(block.textSignature) ? block.textSignature : void 0;
+          if ((!block.text || block.text.trim() === "") && !textSig) {
+            continue;
+          }
+          parts.push({
+            text: sanitizeText(block.text),
+            ...textSig ? { thoughtSignature: textSig } : {}
+          });
+        } else if (block.type === "thinking" && String(block.thinking || "").trim()) {
+          if (!isSameModel) continue;
+          parts.push({
+            thought: true,
+            text: sanitizeText(block.thinking),
+            ...block.thinkingSignature ? { thoughtSignature: block.thinkingSignature } : {}
+          });
+        } else if (block.type === "toolCall") {
+          if (requiresSig && !groupIsSigned) {
+            const rawId = block.id || "";
+            const argsText = (() => {
+              try {
+                return JSON.stringify(block.arguments ?? {});
+              } catch {
+                return "{}";
+              }
+            })();
+            if (rawId) {
+              droppedToolCallIds.set(rawId, argsText);
+              droppedToolCallIds.set(sanitizeToolCallId(rawId, block.name), argsText);
+            } else {
+              droppedToolCallIds.set(`empty:${block.name}`, argsText);
+            }
+          } else {
+            parts.push({
+              functionCall: {
+                name: block.name,
+                args: block.arguments ?? {},
+                ...toolCallIdNeeded(model.id, runtimeModel) ? { id: sanitizeToolCallId(block.id || "", block.name) } : {}
+              },
+              ...block.thoughtSignature ? { thoughtSignature: block.thoughtSignature } : {}
+            });
+          }
+        }
+      }
+      appendTurn(contents, GeminiRole.Model, parts);
+    } else if (msg.role === "toolResult") {
+      const text = msg.content.filter((c) => c.type === "text").map((c) => sanitizeText(c.text)).join("\n");
+      const responseText = text || (msg.isError ? "Tool failed" : "");
+      const imageParts = asImageParts(msg.content);
+      const rawId = msg.toolCallId || "";
+      const sanitizedId = toolCallIdNeeded(model.id, runtimeModel) ? sanitizeToolCallId(rawId, msg.toolName) : rawId;
+      const droppedArgs = requiresSig ? droppedToolCallIds.get(rawId) ?? droppedToolCallIds.get(sanitizedId) ?? (rawId === "" ? droppedToolCallIds.get(`empty:${msg.toolName}`) : void 0) : void 0;
+      if (droppedArgs !== void 0) {
+        const label = droppedArgs === "{}" ? `\`${msg.toolName}\`` : `\`${msg.toolName}\` (${droppedArgs})`;
+        appendTurn(contents, GeminiRole.User, [
+          { text: sanitizeText(`[Observation from ${label}:
+${responseText}]`) },
+          ...imageParts
+        ]);
+      } else {
+        const part = {
+          functionResponse: {
+            name: msg.toolName,
+            response: msg.isError ? { error: responseText } : { output: responseText },
+            ...toolCallIdNeeded(model.id, runtimeModel) ? { id: sanitizeToolCallId(msg.toolCallId || "", msg.toolName) } : {}
+          }
+        };
+        appendTurn(contents, GeminiRole.User, [part, ...imageParts]);
+      }
+    }
+  }
+  const hasUserText = contents.some(
+    (turn) => turn.role === GeminiRole.User && turn.parts.some((part) => "text" in part && Boolean(part.text.trim()))
+  );
+  if (!hasUserText && contents.length > 0) {
+    const bridge = {
+      text: "Continue the active task using the available instructions and context."
+    };
+    const userTurn = contents.find((turn) => turn.role === GeminiRole.User);
+    if (userTurn) userTurn.parts.push(bridge);
+    else contents.unshift({ role: GeminiRole.User, parts: [bridge] });
+  }
+  return contents;
+}
+var MAX_SCHEMA_DEREFERENCE_DEPTH = 64;
+var MAX_SCHEMA_DEREFERENCE_NODES = 1e4;
+var SCHEMA_MAP_KEYWORDS = /* @__PURE__ */ new Set([
+  "properties",
+  "patternProperties",
+  "dependentSchemas",
+  "dependencies"
+]);
+var SCHEMA_VALUE_KEYWORDS = /* @__PURE__ */ new Set([
+  "additionalItems",
+  "additionalProperties",
+  "contains",
+  "contentSchema",
+  "else",
+  "if",
+  "items",
+  "not",
+  "propertyNames",
+  "then",
+  "unevaluatedItems",
+  "unevaluatedProperties"
+]);
+var SCHEMA_ARRAY_KEYWORDS = /* @__PURE__ */ new Set(["allOf", "anyOf", "oneOf", "prefixItems"]);
+function resolveLocalJsonPointer(ref, rootSchema) {
+  if (ref === "#") return rootSchema;
+  if (!ref.startsWith("#/")) return void 0;
+  let current = rootSchema;
+  for (const token of ref.slice(2).split("/")) {
+    const key = token.replace(/~1/g, "/").replace(/~0/g, "~");
+    if (Array.isArray(current)) {
+      if (!/^(0|[1-9]\d*)$/.test(key)) return void 0;
+      const index = Number(key);
+      if (!Number.isSafeInteger(index) || index >= current.length) return void 0;
+      current = current[index];
+      continue;
+    }
+    if (!current || typeof current !== "object") return void 0;
+    if (!Object.prototype.hasOwnProperty.call(current, key)) return void 0;
+    current = current[key];
+  }
+  return current;
+}
+function dereferenceSchemaMap(schemaMap, rootSchema, refStack, objectStack, state, path, depth) {
+  if (!isRecord2(schemaMap)) {
+    return dereferenceSchema(schemaMap, rootSchema, refStack, objectStack, state, path, depth);
+  }
+  const out = {};
+  const issues = [];
+  for (const [key, value] of Object.entries(schemaMap)) {
+    const result2 = dereferenceSchema(
+      value,
+      rootSchema,
+      refStack,
+      objectStack,
+      state,
+      `${path}.${key}`,
+      depth
+    );
+    out[key] = result2.schema;
+    issues.push(...result2.issues);
+  }
+  return { schema: out, issues };
+}
+function dereferenceSchema(schema, rootSchema = schema, refStack = /* @__PURE__ */ new Set(), objectStack = /* @__PURE__ */ new Set(), state = { nodes: 0 }, path = "$", depth = 0) {
+  if (depth > MAX_SCHEMA_DEREFERENCE_DEPTH) {
+    return {
+      schema: {},
+      issues: [
+        {
+          path,
+          ref: "(depth limit)",
+          reason: `schema expansion exceeded ${MAX_SCHEMA_DEREFERENCE_DEPTH} levels`
+        }
+      ]
+    };
+  }
+  state.nodes += 1;
+  if (state.nodes > MAX_SCHEMA_DEREFERENCE_NODES) {
+    return {
+      schema: {},
+      issues: [
+        {
+          path,
+          ref: "(node limit)",
+          reason: `schema expansion exceeded ${MAX_SCHEMA_DEREFERENCE_NODES} nodes`
+        }
+      ]
+    };
+  }
+  if (!schema || typeof schema !== "object") return { schema, issues: [] };
+  if (Array.isArray(schema)) {
+    const results = schema.map(
+      (item, index) => dereferenceSchema(
+        item,
+        rootSchema,
+        refStack,
+        objectStack,
+        state,
+        `${path}[${index}]`,
+        depth + 1
+      )
+    );
+    return {
+      schema: results.map((result2) => result2.schema),
+      issues: results.flatMap((result2) => result2.issues)
+    };
+  }
+  const s = schema;
+  if (objectStack.has(s)) {
+    return {
+      schema: {},
+      issues: [{ path, ref: "(object cycle)", reason: "circular schema object" }]
+    };
+  }
+  const nextObjectStack = new Set(objectStack);
+  nextObjectStack.add(s);
+  if (typeof s.$ref === "string") {
+    const ref = s.$ref;
+    if (refStack.has(ref)) {
+      return {
+        schema: {},
+        issues: [{ path, ref, reason: "circular local reference" }]
+      };
+    }
+    const target = resolveLocalJsonPointer(ref, rootSchema);
+    if (target === void 0) {
+      return {
+        schema: {},
+        issues: [{ path, ref, reason: "target is not present in the root schema" }]
+      };
+    }
+    const nextRefStack = new Set(refStack);
+    nextRefStack.add(ref);
+    const resolved = dereferenceSchema(
+      target,
+      rootSchema,
+      nextRefStack,
+      nextObjectStack,
+      state,
+      path,
+      depth + 1
+    );
+    const { $ref: _, ...siblings } = s;
+    const siblingResult = dereferenceSchema(
+      siblings,
+      rootSchema,
+      refStack,
+      nextObjectStack,
+      state,
+      path,
+      depth + 1
+    );
+    if (isRecord2(resolved.schema) && isRecord2(siblingResult.schema)) {
+      return {
+        schema: { ...resolved.schema, ...siblingResult.schema },
+        issues: [...resolved.issues, ...siblingResult.issues]
+      };
+    }
+    return {
+      schema: resolved.schema,
+      issues: [...resolved.issues, ...siblingResult.issues]
+    };
+  }
+  const out = {};
+  const issues = [];
+  for (const [key, value] of Object.entries(s)) {
+    if (key === "$defs" || key === "definitions") continue;
+    let result2;
+    if (SCHEMA_MAP_KEYWORDS.has(key)) {
+      result2 = dereferenceSchemaMap(
+        value,
+        rootSchema,
+        refStack,
+        nextObjectStack,
+        state,
+        `${path}.${key}`,
+        depth + 1
+      );
+    } else if (SCHEMA_VALUE_KEYWORDS.has(key) || SCHEMA_ARRAY_KEYWORDS.has(key)) {
+      result2 = dereferenceSchema(
+        value,
+        rootSchema,
+        refStack,
+        nextObjectStack,
+        state,
+        `${path}.${key}`,
+        depth + 1
+      );
+    }
+    if (result2) {
+      out[key] = result2.schema;
+      issues.push(...result2.issues);
+    } else {
+      out[key] = value;
+    }
+  }
+  return { schema: out, issues };
+}
+function ensureRootObjectSchema(schema) {
+  if (!isRecord2(schema)) {
+    return { type: "object", properties: {} };
+  }
+  if (!schema.type) {
+    return { ...schema, type: "object", properties: schema.properties || {} };
+  }
+  return schema;
+}
+var META_SCHEMA_KEYWORDS = /* @__PURE__ */ new Set([
+  "$schema",
+  "$id",
+  "$anchor",
+  "$dynamicAnchor",
+  "$vocabulary",
+  "$comment",
+  "$defs",
+  "definitions"
+]);
+function stripMetaSchemaMap(schemaMap) {
+  if (!isRecord2(schemaMap)) return stripMetaSchema(schemaMap);
+  return Object.fromEntries(
+    Object.entries(schemaMap).map(([key, value]) => [key, stripMetaSchema(value)])
+  );
+}
+function stripMetaSchema(schema) {
+  if (!schema || typeof schema !== "object") return schema;
+  if (Array.isArray(schema)) return schema.map(stripMetaSchema);
+  const out = {};
+  for (const [key, value] of Object.entries(schema)) {
+    if (META_SCHEMA_KEYWORDS.has(key)) continue;
+    if (SCHEMA_MAP_KEYWORDS.has(key)) {
+      out[key] = stripMetaSchemaMap(value);
+    } else if (SCHEMA_VALUE_KEYWORDS.has(key) || SCHEMA_ARRAY_KEYWORDS.has(key)) {
+      out[key] = stripMetaSchema(value);
+    } else {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+var CUSTOM_TOOL_SCHEMA_ALLOW = /* @__PURE__ */ new Set([
+  "type",
+  "description",
+  "properties",
+  "required",
+  "items",
+  "enum"
+]);
+function normalizeCustomToolType(value) {
+  if (typeof value === "string") return value;
+  if (!Array.isArray(value)) return void 0;
+  const entries = value;
+  const scalar = entries.find(
+    (entry) => typeof entry === "string" && entry !== "null"
+  );
+  return scalar;
+}
+function normalizeCustomToolSchema(schema) {
+  if (!schema || typeof schema !== "object") return schema;
+  if (Array.isArray(schema)) return schema.map(normalizeCustomToolSchema);
+  const out = {};
+  for (const [key, value] of Object.entries(schema)) {
+    if (!CUSTOM_TOOL_SCHEMA_ALLOW.has(key)) continue;
+    if (key === "type") {
+      const normalizedType = normalizeCustomToolType(value);
+      if (normalizedType !== void 0) out.type = normalizedType;
+      continue;
+    }
+    if (key === "properties" && value && typeof value === "object" && !Array.isArray(value)) {
+      const props = {};
+      for (const [propName, propSchema] of Object.entries(value)) {
+        props[propName] = normalizeCustomToolSchema(propSchema);
+      }
+      out.properties = props;
+      continue;
+    }
+    if (key === "enum" && Array.isArray(value) && !value.every((entry) => typeof entry === "string")) {
+      continue;
+    }
+    out[key] = normalizeCustomToolSchema(value);
+  }
+  return out;
+}
+function convertTools(tools, useLegacyParameters = false) {
+  if (!tools?.length) return void 0;
+  const warnings = [];
+  const functionDeclarations = tools.flatMap((tool) => {
+    const dereferenced = dereferenceSchema(tool.parameters);
+    if (dereferenced.issues.length > 0) {
+      const detail = dereferenced.issues.map((issue) => `${issue.path} (${issue.ref}: ${issue.reason})`).join(", ");
+      warnings.push(`Skipped tool '${tool.name}' due to unresolved schema reference: ${detail}`);
+      return [];
+    }
+    const rootObject = ensureRootObjectSchema(dereferenced.schema);
+    const schema = stripMetaSchema(rootObject);
+    return [
+      {
+        name: tool.name,
+        description: tool.description,
+        ...useLegacyParameters ? { parameters: normalizeCustomToolSchema(schema) } : { parametersJsonSchema: schema }
+      }
+    ];
+  });
+  setLastToolSchemaWarnings(warnings.length ? warnings : void 0);
+  if (!functionDeclarations.length) return void 0;
+  return [{ functionDeclarations }];
+}
+function mapToolChoiceMode(toolChoice) {
+  if (toolChoice === ToolChoice.None) return GeminiToolCallingMode.None;
+  if (toolChoice === ToolChoice.Any || toolChoice === ToolChoice.Required)
+    return GeminiToolCallingMode.Any;
+  return GeminiToolCallingMode.Auto;
+}
+function buildRequest(model, context, projectId, options, runtimeModel) {
+  const injectedSkills = context.messages.flatMap(
+    (msg) => msg.role === "user" ? skillBlocks(msg.content) : []
+  );
+  const systemParts = context.systemPrompt ? [{ text: sanitizeText(context.systemPrompt) }] : [{ text: ANTIGRAVITY_SYSTEM_INSTRUCTION }, { text: ANTIGRAVITY_NO_PREAMBLE_INSTRUCTION }];
+  systemParts.push(...injectedSkills.map((skill) => ({ text: sanitizeText(skill) })));
+  const contents = convertMessages(model, context, runtimeModel);
+  const hasUserText = contents.some(
+    (turn) => turn.role === GeminiRole.User && turn.parts.some((part) => "text" in part && Boolean(part.text.trim()))
+  );
+  if (!hasUserText && (injectedSkills.length > 0 || Boolean(context.systemPrompt))) {
+    contents.unshift({
+      role: GeminiRole.User,
+      parts: [{ text: "Apply the active system instructions." }]
+    });
+  }
+  const request = {
+    contents,
+    systemInstruction: {
+      role: GeminiRole.User,
+      parts: systemParts
+    }
+  };
+  const generationConfig = {};
+  if (options.temperature !== void 0) generationConfig.temperature = options.temperature;
+  const thinking = getThinkingConfig(runtimeModel, options.reasoning ?? "off");
+  if (thinking) generationConfig.thinkingConfig = thinking;
+  const maxAllowed = getMaxOutputTokens(model.id, runtimeModel);
+  if (options.maxTokens !== void 0) {
+    generationConfig.maxOutputTokens = Math.min(options.maxTokens, maxAllowed);
+  } else {
+    generationConfig.maxOutputTokens = Math.min(maxAllowed, model.maxTokens || maxAllowed);
+  }
+  if (Object.keys(generationConfig).length) request.generationConfig = generationConfig;
+  const isClaude = model.id.startsWith("claude-") || runtimeModel.startsWith("claude-");
+  const tools = convertTools(context.tools, isClaude || model.id.startsWith("gpt-oss-"));
+  if (tools) {
+    request.tools = tools;
+  }
+  if (options.toolChoice && options.toolChoice !== ToolChoice.Auto) {
+    request.toolConfig = {
+      functionCallingConfig: {
+        mode: mapToolChoiceMode(options.toolChoice)
+      }
+    };
+  }
+  const isNonGemini = isClaude || model.id.startsWith("gpt-oss-") || runtimeModel.startsWith("gpt-oss-") || !model.id.startsWith("gemini-") && !runtimeModel.startsWith("gemini-");
+  const step = Math.max(1, request.contents.length);
+  const lastStepIndex = String(Math.max(0, request.contents.length - 1));
+  const requestIndex = context.messages?.filter(
+    (m) => m.role === "assistant" && m.stopReason !== "error" && m.stopReason !== "aborted"
+  ).length ?? 0;
+  const { conversationId, trajectoryId } = resolveSessionTrajectory(context);
+  const envelope = antigravityRequestEnvelope(runtimeModel, {
+    isClaude,
+    isNonGemini,
+    step,
+    lastStepIndex,
+    requestIndex,
+    conversationId,
+    trajectoryId
+  });
+  request.sessionId = options.sessionId || envelope.sessionId;
+  request.labels = envelope.labels;
+  return {
+    project: projectId,
+    model: runtimeModel,
+    request,
+    requestType: AntigravityRequestType.Agent,
+    userAgent: AntigravityUserAgent.Antigravity,
+    requestId: envelope.requestId
+  };
+}
+function mapStopReason(reason) {
+  if (reason === "STOP") return StopReason.Stop;
+  if (reason === "MAX_TOKENS") return StopReason.Length;
+  return reason ? StopReason.Error : StopReason.Stop;
+}
+function friendlyAntigravityError(status, text) {
+  const msg = redactSecrets2(jsonOrTextError(text)).slice(0, 500);
+  if (status === 400) {
+    if (/API key not valid|API_KEY_INVALID/i.test(msg)) {
+      return "Antigravity login expired or credentials are invalid. Next: run /login antigravity, then retry.";
+    }
+    if (/Invalid JSON payload|Unknown name/i.test(msg)) {
+      return `Antigravity request format was rejected by the backend (${msg}). Next: switch to a simpler model or retry after updating the extension.`;
+    }
+    if (/Request contains an invalid argument/i.test(msg)) {
+      return `Antigravity rejected this request (${msg}). Next: retry once; if it keeps failing, switch models or re-login.`;
+    }
+    return `Bad request from Antigravity. Next: retry once, then run /login antigravity if it keeps failing. Backend said: ${msg}`;
+  }
+  if (status === 401) {
+    return "Antigravity authentication failed. Next: run /login antigravity, then retry.";
+  }
+  if (status === 403) {
+    if (/permission|forbidden|access/i.test(msg)) {
+      return "Antigravity access was denied for this account or project. Next: try another model, re-login, or use an account with access.";
+    }
+    return `Antigravity denied this request. Next: re-login or try another model. Backend said: ${msg}`;
+  }
+  if (status === 404) {
+    if (/Requested entity was not found/i.test(msg)) {
+      return "This model is not available right now. Next: switch to gemini-3.8-flash, gemini-3.7-flash, gemini-3.6-flash, gemini-3.5-flash, gemini-3.1-pro, or another working model.";
+    }
+    return `Antigravity could not find the requested resource. Next: retry or switch models. Backend said: ${msg}`;
+  }
+  if (status === 408) return "Antigravity timed out. Next: retry the same request.";
+  if (status === 409) {
+    return "Antigravity reported a conflict for this request. Next: retry once or start a new chat session.";
+  }
+  if (status === 429) {
+    const wait = msg.match(/Resets? in ([^.\n]+)/i)?.[1]?.trim();
+    if (/Individual quota reached/i.test(msg)) {
+      return `Quota reached. Please wait ${wait || "for reset"}. Next: switch models or try again after reset.`;
+    }
+    if (/quota/i.test(msg)) {
+      return `Quota reached.${wait ? ` Please wait ${wait}.` : ""} Next: switch models or retry later.`;
+    }
+    return `Rate limited by Antigravity. Next: wait a bit and retry.${wait ? ` Reset: ${wait}.` : ""}`;
+  }
+  if (status === 500) {
+    return "Antigravity had an internal server error. Next: retry in a moment or switch models.";
+  }
+  if (status === 502) return "Antigravity returned a bad gateway error. Next: retry in a moment.";
+  if (status === 503) {
+    if (/No capacity available/i.test(msg)) {
+      return "This model has no capacity right now. Next: retry later or switch to another model.";
+    }
+    return "Antigravity is temporarily unavailable. Next: retry in a moment or switch models.";
+  }
+  if (status === 504) return "Antigravity timed out upstream. Next: retry in a moment.";
+  return msg;
+}
+function createOutput(model) {
+  return {
+    role: "assistant",
+    content: [],
+    api: ANTIGRAVITY_API,
+    provider: PROVIDER_ID,
+    model: model.id,
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+    },
+    stopReason: "stop",
+    timestamp: Date.now()
+  };
+}
+function asToolCallArguments(args) {
+  return args ?? {};
+}
+var STREAM_HEADER_TIMEOUT_DEFAULT_MS = 18e4;
+var STREAM_STALL_TIMEOUT_DEFAULT_MS = 12e4;
+function envTimeoutMs(name, fallback) {
+  const raw = antigravityEnv(name);
+  if (!raw || !/^\d+$/.test(raw)) return fallback;
+  const value = Number(raw);
+  return Number.isSafeInteger(value) ? value : fallback;
+}
+function streamHeaderTimeoutMs() {
+  return envTimeoutMs("STREAM_HEADER_TIMEOUT_MS", STREAM_HEADER_TIMEOUT_DEFAULT_MS);
+}
+function streamStallTimeoutMs() {
+  return envTimeoutMs("STREAM_STALL_TIMEOUT_MS", STREAM_STALL_TIMEOUT_DEFAULT_MS);
+}
+function stallError(stallMs) {
+  return new Error(`stream stalled: no data for ${stallMs}ms`);
+}
+function guardResponseBody(response, controller, stallMs, cleanup) {
+  if (!response.body) {
+    cleanup();
+    return response;
+  }
+  const reader = response.body.getReader();
+  let timer;
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    if (timer) clearTimeout(timer);
+    cleanup();
+  };
+  const reset = () => {
+    if (stallMs <= 0) return;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => controller.abort(stallError(stallMs)), stallMs);
+    timer.unref?.();
+  };
+  let streamController;
+  const abortBody = () => {
+    streamController?.error(controller.signal.reason);
+    void reader.cancel(controller.signal.reason).catch(() => void 0);
+    finish();
+  };
+  controller.signal.addEventListener("abort", abortBody, { once: true });
+  reset();
+  const guarded = new ReadableStream({
+    start(controller2) {
+      streamController = controller2;
+    },
+    async pull(streamController2) {
+      try {
+        const chunk = await reader.read();
+        if (chunk.done) {
+          finish();
+          streamController2.close();
+          return;
+        }
+        if (!(chunk.value instanceof Uint8Array)) {
+          throw new Error("Response body yielded an invalid chunk");
+        }
+        reset();
+        streamController2.enqueue(chunk.value);
+      } catch (error) {
+        finish();
+        streamController2.error(error);
+      }
+    },
+    async cancel(reason) {
+      finish();
+      await reader.cancel(reason);
+    }
+  });
+  return new Response(guarded, response);
+}
+async function fetchWithHeaderDeadline(url, init, callerSignal, timeoutMs, stallMs = 0, fetchFn = antigravityFetch) {
+  if (timeoutMs <= 0 && stallMs <= 0) {
+    return fetchFn(url, { ...init, signal: callerSignal ?? init.signal });
+  }
+  const controller = new AbortController();
+  const forward = () => controller.abort(callerSignal?.reason);
+  const cleanup = () => callerSignal?.removeEventListener("abort", forward);
+  callerSignal?.addEventListener("abort", forward, { once: true });
+  if (callerSignal?.aborted) forward();
+  const timer = timeoutMs > 0 ? setTimeout(
+    () => controller.abort(new Error(`no response headers within ${timeoutMs}ms`)),
+    timeoutMs
+  ) : void 0;
+  let responseBodyGuarded = false;
+  try {
+    const response = await fetchFn(url, { ...init, signal: controller.signal });
+    responseBodyGuarded = Boolean(response.body);
+    return guardResponseBody(response, controller, stallMs, cleanup);
+  } finally {
+    if (timer) clearTimeout(timer);
+    if (!responseBodyGuarded) cleanup();
+  }
+}
+async function streamResponse(response, stream, output, model) {
+  if (!response.body) throw new Error("No response body");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let scanStart = 0;
+  let started = false;
+  let currentBlock = null;
+  let hasContent = false;
+  const blocks = output.content;
+  const blockIndex = () => blocks.length - 1;
+  const ensureStarted = () => {
+    if (!started) {
+      stream.push({ type: "start", partial: output });
+      started = true;
+    }
+  };
+  const finishCurrent = () => {
+    if (!currentBlock) return;
+    if (currentBlock.type === "text") {
+      stream.push({
+        type: "text_end",
+        contentIndex: blockIndex(),
+        content: currentBlock.text,
+        partial: output
+      });
+    } else {
+      stream.push({
+        type: "thinking_end",
+        contentIndex: blockIndex(),
+        content: currentBlock.thinking,
+        partial: output
+      });
+    }
+    currentBlock = null;
+  };
+  while (true) {
+    const result2 = await reader.read();
+    if (result2.done) break;
+    if (!(result2.value instanceof Uint8Array)) continue;
+    buffer += decoder.decode(result2.value, { stream: true });
+    let newlineIdx;
+    while ((newlineIdx = buffer.indexOf("\n", scanStart)) !== -1) {
+      const line = buffer.slice(scanStart, newlineIdx);
+      scanStart = newlineIdx + 1;
+      if (!line.startsWith("data:")) continue;
+      const json = line.slice(5).trim();
+      if (!json || json === "[DONE]") continue;
+      let chunk;
+      try {
+        chunk = JSON.parse(json);
+      } catch {
+        continue;
+      }
+      if (chunk.error) {
+        throw new Error(chunk.error.message || JSON.stringify(chunk.error));
+      }
+      const responseData = chunk.response || chunk;
+      const candidate = responseData.candidates?.[0];
+      for (const part of candidate?.content?.parts || []) {
+        if (part.text !== void 0) {
+          hasContent = true;
+          const isThinking = part.thought === true;
+          const type = isThinking ? "thinking" : "text";
+          if (!currentBlock || currentBlock.type !== type) {
+            finishCurrent();
+            currentBlock = isThinking ? { type: "thinking", thinking: "", thinkingSignature: void 0 } : { type: "text", text: "" };
+            blocks.push(currentBlock);
+            ensureStarted();
+            stream.push({
+              type: isThinking ? "thinking_start" : "text_start",
+              contentIndex: blockIndex(),
+              partial: output
+            });
+          }
+          if (isThinking && currentBlock.type === "thinking") {
+            currentBlock.thinking += part.text;
+            if (part.thoughtSignature) currentBlock.thinkingSignature = part.thoughtSignature;
+            stream.push({
+              type: "thinking_delta",
+              contentIndex: blockIndex(),
+              delta: part.text,
+              partial: output
+            });
+          } else if (!isThinking && currentBlock.type === "text") {
+            currentBlock.text += part.text;
+            if (part.thoughtSignature) currentBlock.textSignature = part.thoughtSignature;
+            stream.push({
+              type: "text_delta",
+              contentIndex: blockIndex(),
+              delta: part.text,
+              partial: output
+            });
+          }
+        }
+        if (part.functionCall) {
+          hasContent = true;
+          finishCurrent();
+          const rawId = part.functionCall.id || "";
+          const toolCall = {
+            type: "toolCall",
+            id: sanitizeToolCallId(rawId, part.functionCall.name),
+            name: part.functionCall.name || "",
+            arguments: asToolCallArguments(part.functionCall.args),
+            ...part.thoughtSignature ? { thoughtSignature: part.thoughtSignature } : {}
+          };
+          blocks.push(toolCall);
+          ensureStarted();
+          stream.push({ type: "toolcall_start", contentIndex: blockIndex(), partial: output });
+          stream.push({
+            type: "toolcall_delta",
+            contentIndex: blockIndex(),
+            delta: JSON.stringify(toolCall.arguments),
+            partial: output
+          });
+          stream.push({
+            type: "toolcall_end",
+            contentIndex: blockIndex(),
+            toolCall,
+            partial: output
+          });
+        }
+      }
+      if (candidate?.finishReason) {
+        output.rawStopReason = candidate.finishReason;
+        output.stopReason = blocks.some((b) => b.type === "toolCall") ? StopReason.ToolUse : mapStopReason(candidate.finishReason);
+      }
+      if (responseData.usageMetadata) {
+        const prompt = responseData.usageMetadata.promptTokenCount || 0;
+        const cacheRead = responseData.usageMetadata.cachedContentTokenCount || 0;
+        const thoughts = responseData.usageMetadata.thoughtsTokenCount || 0;
+        output.usage.input = prompt - cacheRead;
+        output.usage.output = (responseData.usageMetadata.candidatesTokenCount || 0) + thoughts;
+        output.usage.reasoning = thoughts;
+        output.usage.cacheRead = cacheRead;
+        output.usage.totalTokens = responseData.usageMetadata.totalTokenCount || 0;
+        if (model?.cost) {
+          calculateCost(model, output.usage);
+        } else {
+          output.usage.cost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
+        }
+      }
+    }
+    if (scanStart > 0) {
+      buffer = buffer.slice(scanStart);
+      scanStart = 0;
+    }
+  }
+  finishCurrent();
+  return hasContent;
+}
+function streamAntigravity(model, context, options) {
+  const stream = createAssistantMessageEventStream();
+  const opts = options ?? {};
+  void runWithDiagnostics(async () => {
+    const startTime = Date.now();
+    const output = createOutput(model);
+    try {
+      const creds = parseApiKey(opts.apiKey);
+      const warmedProject = creds.projectId ? null : await loadCodeAssist(creds.token);
+      const projectId = resolveProjectId({
+        token: creds.token,
+        warmedProject,
+        credentialProjectId: creds.projectId
+      });
+      setLastProjectId(projectId);
+      const effort = opts.reasoning ?? "off";
+      const isKnownModel = model.id in getCurrentAntigravityRouting();
+      const baseRuntimeModel = antigravityEnv("RUNTIME_MODEL")?.trim() || getAntigravityRequestModelId(model.id, effort);
+      let initialRuntimeModel = baseRuntimeModel;
+      if (!isKnownModel && !antigravityEnv("RUNTIME_MODEL")) {
+        const dynamic = await fetchAvailableRuntimeModel(creds.token, projectId, baseRuntimeModel);
+        if (dynamic?.id && /^(gemini-|claude-|gpt-oss-)/i.test(dynamic.id)) {
+          initialRuntimeModel = dynamic.id;
+        }
+      }
+      const runtimeCandidates = [initialRuntimeModel];
+      const fallback = getFallbackRuntimeModel(initialRuntimeModel, effort);
+      if (fallback && fallback !== initialRuntimeModel) {
+        runtimeCandidates.push(fallback);
+      }
+      const requestHeaders = antigravityHeaders(creds.token);
+      let response;
+      let lastText = "";
+      let received = false;
+      let runtimeModel = initialRuntimeModel;
+      for (let emptyAttempt = 0; emptyAttempt <= 2; emptyAttempt++) {
+        if (opts.signal?.aborted) throw new Error("Request was aborted");
+        if (emptyAttempt > 0) {
+          const delay = 500 * 2 ** (emptyAttempt - 1);
+          await new Promise((res) => setTimeout(res, delay));
+        }
+        for (let candIdx = 0; candIdx < runtimeCandidates.length; candIdx++) {
+          runtimeModel = runtimeCandidates[candIdx];
+          setLastResolvedRuntimeModel(runtimeModel);
+          const body = JSON.stringify(buildRequest(model, context, projectId, opts, runtimeModel));
+          for (const endpoint of endpointCandidates()) {
+            setLastEndpoint(endpoint);
+            response = await fetchWithHeaderDeadline(
+              `${endpoint}/v1internal:streamGenerateContent?alt=sse`,
+              {
+                method: "POST",
+                headers: requestHeaders,
+                body
+              },
+              opts.signal,
+              streamHeaderTimeoutMs(),
+              streamStallTimeoutMs()
+            );
+            setLastStatus(response.status);
+            if (response.ok) break;
+            lastText = await response.text();
+            if (response.status === 429 && /Individual quota reached/i.test(lastText)) break;
+            if (![403, 404, 429, 500, 502, 503, 504].includes(response.status)) break;
+          }
+          if (response?.ok) break;
+          if (response?.status === 404) {
+            if (candIdx + 1 < runtimeCandidates.length) {
+              continue;
+            }
+            if (isKnownModel && candIdx === runtimeCandidates.length - 1) {
+              const dynamic = await fetchAvailableRuntimeModel(
+                creds.token,
+                projectId,
+                baseRuntimeModel
+              );
+              if (dynamic?.id && !runtimeCandidates.includes(dynamic.id) && /^(gemini-|claude-|gpt-oss-)/i.test(dynamic.id)) {
+                runtimeCandidates.push(dynamic.id);
+                continue;
+              }
+            }
+          }
+          break;
+        }
+        if (!response || !response.ok) {
+          if (antigravityEnv("DEBUG_DUMP") === "1") {
+            try {
+              const body = JSON.stringify(
+                buildRequest(model, context, projectId, opts, runtimeModel)
+              );
+              let parsedBody = body;
+              try {
+                parsedBody = JSON.parse(body);
+              } catch {
+                parsedBody = body;
+              }
+              await (await import("node:fs/promises")).writeFile(
+                "/tmp/antigravity-last-request.json",
+                JSON.stringify(
+                  {
+                    status: response?.status,
+                    runtimeModel,
+                    lastText: lastText.slice(0, 4e3),
+                    body: parsedBody
+                  },
+                  null,
+                  2
+                )
+              );
+            } catch {
+            }
+          }
+          const friendly = friendlyAntigravityError(response?.status, lastText);
+          if (response?.status === 429 && /Quota reached\./i.test(friendly)) {
+            throw new Error(friendly);
+          }
+          throw new Error(
+            `Antigravity API error (${response?.status ?? "no response"}, ${formatRequestDiagnostics({ projectId, runtimeModel })}): ${friendly}`
+          );
+        }
+        output.content = [];
+        output.usage = {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+        };
+        output.stopReason = "stop";
+        received = await streamResponse(response, stream, output, model);
+        if (received) break;
+      }
+      if (!received) throw new Error("Antigravity API returned an empty response");
+      setLastLatencyMs(Date.now() - startTime);
+      if (output.stopReason === "error" || output.stopReason === "aborted") {
+        const errorDetail = output.rawStopReason ? `Provider stopped with: ${output.rawStopReason}` : "An unknown error occurred";
+        output.errorMessage = output.errorMessage || errorDetail;
+        setLastError(output.errorMessage);
+        stream.push({ type: "error", reason: output.stopReason, error: output });
+      } else if (output.stopReason === "pending") {
+        throw new Error("Antigravity API returned no stop reason");
+      } else {
+        stream.push({ type: "done", reason: output.stopReason, message: output });
+      }
+      stream.end();
+    } catch (error) {
+      setLastLatencyMs(Date.now() - startTime);
+      output.stopReason = opts.signal?.aborted ? "aborted" : "error";
+      output.errorMessage = safeError(error);
+      setLastError(output.errorMessage);
+      if (!getCurrentEndpoint() && endpointCandidates()[0]) {
+        setLastEndpoint(endpointCandidates()[0]);
+      }
+      stream.push({ type: "error", reason: output.stopReason, error: output });
+      stream.end();
+    }
+  });
+  return stream;
+}
+
+// plugins/kxm/src/providers/antigravity/register.ts
+var ANTIGRAVITY_DOUBLE_REGISTRATION_WARNING = "kxm: provider id antigravity is already registered by another extension (standalone pi-antigravity). Remove that extension and reload. KXM will not double-register.";
+function antigravityProviderRegistered(pi) {
+  const probe = pi;
+  const ids = [
+    ...probe.getRegisteredProviderIds?.() ?? [],
+    ...probe.modelRegistry?.getRegisteredProviderIds?.() ?? []
+  ];
+  if (ids.includes(PROVIDER_ID)) return true;
+  if (probe.modelRegistry?.getProvider?.(PROVIDER_ID)) return true;
+  return false;
+}
+function antigravityRegistrationNotice(report) {
+  if (!report?.conflict || !report.warning) return void 0;
+  return { message: report.warning.slice(0, 400), type: "warning" };
+}
+function registerAntigravityProvider(pi) {
+  if (antigravityProviderRegistered(pi)) {
+    return {
+      registered: false,
+      conflict: true,
+      warning: ANTIGRAVITY_DOUBLE_REGISTRATION_WARNING
+    };
+  }
+  if (typeof pi.registerProvider !== "function") {
+    return { registered: false, conflict: false };
+  }
+  const primaryEndpoint = endpointCandidates()[0];
+  if (primaryEndpoint) prewarmConnection(primaryEndpoint);
+  pi.registerProvider(PROVIDER_ID, {
+    name: PROVIDER_NAME,
+    baseUrl: DEFAULT_ENDPOINT,
+    api: ANTIGRAVITY_API,
+    models: getCurrentAntigravityCatalog().models,
+    refreshModels: refreshAntigravityModels,
+    oauth: {
+      name: PROVIDER_NAME,
+      login: loginAntigravity,
+      refreshToken: refreshAntigravityToken,
+      getApiKey
+    },
+    streamSimple: streamAntigravity
+  });
+  return { registered: true, conflict: false };
+}
+
 // plugins/kxm/src/diagnostics.ts
 var NEXT_ACTIONS = [
   "use_assigned_coordinator",
@@ -9501,13 +12530,13 @@ function diagnosticSummary(diagnostic) {
 }
 
 // plugins/kxm/src/recovery.ts
-import { createHash as createHash3 } from "node:crypto";
+import { createHash as createHash6 } from "node:crypto";
 import { lstatSync, readFileSync as readFileSync2, renameSync, rmSync } from "node:fs";
 import { join as join2 } from "node:path";
 function workerStateKey(project, agentName) {
   const safeProject = project.replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 24) || "project";
   const safeName = agentName.replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 32) || "agent";
-  const digest = createHash3("sha256").update(JSON.stringify({ project, agentName })).digest("hex").slice(0, 24);
+  const digest = createHash6("sha256").update(JSON.stringify({ project, agentName })).digest("hex").slice(0, 24);
   return `${safeProject}-${safeName}-${digest}`;
 }
 function legacyRecoveryEnvelopePath(stateDir, agentName) {
@@ -10784,6 +13813,7 @@ function assistantFailure(messages) {
 function piMeshExtension(pi) {
   let client;
   let nousReport;
+  let antigravityReport;
   let pending = [];
   let activatingInbound;
   let awaitingActivation;
@@ -11196,6 +14226,8 @@ function piMeshExtension(pi) {
   }
   pi.on("session_start", async (event, ctx) => {
     shuttingDown = false;
+    const antigravityNotice = antigravityRegistrationNotice(antigravityReport);
+    if (antigravityNotice) ctx.ui.notify(antigravityNotice.message, antigravityNotice.type);
     if (nousReport?.guidance.length) {
       for (const item of nousReport.guidance) {
         ctx.ui.notify(item.message, item.level);
@@ -11458,6 +14490,7 @@ function piMeshExtension(pi) {
       }
     }
   });
+  antigravityReport = registerAntigravityProvider(pi);
   return nousFactoryWork(pi, (report) => {
     nousReport = report;
   });

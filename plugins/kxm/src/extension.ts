@@ -5,6 +5,11 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { AGENT_COMMANDS, enforceToolPolicy } from "./commands.ts";
 import { HubClient, HubHttpError } from "./client.ts";
 import { nousFactoryWork, type NousRegistrationReport } from "./nous-pi.ts";
+import {
+  antigravityRegistrationNotice,
+  registerAntigravityProvider,
+  type AntigravityRegistration,
+} from "./providers/antigravity/register.ts";
 import { areaForTool, classifyFailure, diagnosticEvidence, diagnosticSummary, type Diagnostic } from "./diagnostics.ts";
 import {
   MAX_CONTENT_CHARS,
@@ -160,6 +165,7 @@ export function assistantFailure(messages: unknown[]): Diagnostic | undefined {
 export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> {
   let client: HubClient | undefined;
   let nousReport: NousRegistrationReport | undefined;
+  let antigravityReport: AntigravityRegistration | undefined;
   let pending: MessageRecord[] = [];
   let activatingInbound: MessageRecord | undefined;
   let awaitingActivation: MessageRecord | undefined;
@@ -640,6 +646,8 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
 
   pi.on("session_start", async (event: { reason?: string }, ctx) => {
     shuttingDown = false;
+    const antigravityNotice = antigravityRegistrationNotice(antigravityReport);
+    if (antigravityNotice) ctx.ui.notify(antigravityNotice.message, antigravityNotice.type);
     if (nousReport?.guidance.length) {
       for (const item of nousReport.guidance) {
         ctx.ui.notify(item.message, item.level);
@@ -924,6 +932,7 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
     },
   });
 
+  antigravityReport = registerAntigravityProvider(pi);
   return nousFactoryWork(pi, (report) => {
     nousReport = report;
   });
