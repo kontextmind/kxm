@@ -45,6 +45,14 @@ export interface KxmSyncTrackerConfig {
   };
 }
 
+export type KxmHubAutoStart = "off" | "background";
+
+export interface KxmHubConfig {
+  /** Pi extension hub startup: `background` starts a detached hub when no
+   * healthy bound hub or live local claim exists; `off` never starts one. */
+  autoStart: KxmHubAutoStart;
+}
+
 export type ImprovementPromotionPolicy = "manual_pr" | "critic_quorum" | "auto_threshold";
 
 export interface KxmImprovementConfig {
@@ -90,6 +98,7 @@ export interface KxmResolvedConfig {
   defaults: KxmProjectDefaults;
   dash: KxmDashConfig;
   sync: KxmSyncTrackerConfig;
+  hub: KxmHubConfig;
   improvement: KxmImprovementConfig;
   routing: KxmRoutingConfig;
   telemetry: KxmTelemetryConfig;
@@ -117,6 +126,9 @@ export const DEFAULT_KXM_CONFIG: Omit<KxmResolvedConfig, "loadedFrom"> = {
   },
   sync: {
     defaultTracker: "none",
+  },
+  hub: {
+    autoStart: "background",
   },
   improvement: {
     promotionPolicy: "manual_pr",
@@ -176,6 +188,13 @@ function deepMerge<T extends Record<string, unknown>>(target: T, source: Record<
   return result as T;
 }
 
+/** Unknown `hub.autoStart` values fail closed to the default so a config typo
+ * never silently changes hub startup behavior. */
+function normalizeHubConfig(raw: unknown): KxmHubConfig {
+  const autoStart = (raw as { autoStart?: unknown } | undefined)?.autoStart;
+  return { autoStart: autoStart === "off" || autoStart === "background" ? autoStart : DEFAULT_KXM_CONFIG.hub.autoStart };
+}
+
 export function loadKxmConfig(
   repoRoot = process.cwd(),
   options: { userConfigDir?: string } = {},
@@ -221,6 +240,7 @@ export function loadKxmConfig(
     defaults: (mergedAll.defaults as KxmProjectDefaults) ?? {},
     dash: (mergedAll.dash as KxmDashConfig) ?? {},
     sync: (mergedAll.sync as KxmSyncTrackerConfig) ?? {},
+    hub: normalizeHubConfig(mergedAll.hub),
     improvement: (mergedAll.improvement as KxmImprovementConfig) ?? DEFAULT_KXM_CONFIG.improvement,
     routing: (mergedAll.routing as KxmRoutingConfig) ?? DEFAULT_KXM_CONFIG.routing,
     telemetry: (mergedAll.telemetry as KxmTelemetryConfig) ?? DEFAULT_KXM_CONFIG.telemetry,

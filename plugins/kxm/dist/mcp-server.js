@@ -7187,9 +7187,6 @@ var require_dist = __commonJS({
   }
 });
 
-// plugins/kxm/src/mcp-server.ts
-import { basename } from "node:path";
-
 // node_modules/zod/v4/core/core.js
 var _a;
 // @__NO_SIDE_EFFECTS__
@@ -16169,10 +16166,24 @@ var HubClient = class {
   }
 };
 
+// plugins/kxm/src/project-name.ts
+import { readFileSync } from "node:fs";
+import { basename, join } from "node:path";
+function defaultProjectName(cwd, env = process.env) {
+  const fromEnv = env.KXM_PROJECT?.trim();
+  if (fromEnv) return fromEnv;
+  try {
+    const pkg = JSON.parse(readFileSync(join(cwd, "package.json"), "utf8"));
+    if (typeof pkg.name === "string" && pkg.name.trim().length > 0) return pkg.name.trim();
+  } catch {
+  }
+  return basename(cwd);
+}
+
 // plugins/kxm/src/commands.ts
-import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync as readFileSync2, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join as join2, resolve } from "node:path";
 function requiredString(value, name) {
   if (typeof value !== "string" || value.trim() === "") throw new Error(`${name} is required`);
   return value.trim();
@@ -16908,10 +16919,10 @@ function parseSessionToken(token) {
 }
 function resolveUserConfigDirectory(overrideDir) {
   if (overrideDir) return resolve(overrideDir);
-  return resolve(process.env.KXM_USER_CONFIG_DIR?.trim() || join(homedir(), ".config", "kxm"));
+  return resolve(process.env.KXM_USER_CONFIG_DIR?.trim() || join2(homedir(), ".config", "kxm"));
 }
 function sessionTokenPath(userConfigDir) {
-  return join(resolveUserConfigDirectory(userConfigDir), "session.token");
+  return join2(resolveUserConfigDirectory(userConfigDir), "session.token");
 }
 function matchToolPattern(pattern, toolName) {
   if (pattern === "*" || pattern === toolName) return true;
@@ -17007,7 +17018,7 @@ function enforceToolPolicy(commandName, env = process.env, options) {
   if (existsSync(tokenFile)) {
     let tokenRaw;
     try {
-      tokenRaw = readFileSync(tokenFile, "utf8").trim();
+      tokenRaw = readFileSync2(tokenFile, "utf8").trim();
     } catch {
       return { allowed: false, error: "session_token_invalid", detail: "Session token file on disk could not be read" };
     }
@@ -17109,7 +17120,7 @@ async function ensureClient() {
       serverUrl: process.env.KXM_SERVER_URL?.trim() || "http://127.0.0.1:7331",
       name: process.env.KXM_AGENT_NAME?.trim() || `claude-${process.pid}`,
       purpose: process.env.KXM_AGENT_PURPOSE?.trim() || "Claude Code implementation and review agent",
-      project: process.env.KXM_PROJECT?.trim() || basename(projectDir),
+      project: defaultProjectName(projectDir, process.env),
       model: "claude-code",
       ...authToken ? { authToken } : {}
     });

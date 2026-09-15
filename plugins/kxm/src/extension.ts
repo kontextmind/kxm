@@ -1,9 +1,13 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { AGENT_COMMANDS, enforceToolPolicy } from "./commands.ts";
 import { HubClient, HubHttpError } from "./client.ts";
+import { loadKxmConfig } from "./config.ts";
+import { ensureHubRunning, hubAutoStartMode } from "./hub-autostart.ts";
+import { readHubEnvRecord } from "./hub-env.ts";
+import { defaultProjectName } from "./project-name.ts";
 import { nousFactoryWork, type NousRegistrationReport } from "./nous-pi.ts";
 import {
   antigravityRegistrationNotice,
@@ -673,7 +677,7 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
     }
     currentPiSessionId = ctx.sessionManager?.getSessionId();
     const serverUrl = process.env.KXM_SERVER_URL ?? "http://127.0.0.1:7331";
-    const project = process.env.KXM_PROJECT ?? basename(ctx.cwd);
+    const project = defaultProjectName(ctx.cwd, process.env);
     const name = process.env.KXM_AGENT_NAME ?? pi.getSessionName() ?? `pi-${process.pid}`;
     agentName = name;
     projectName = project;
@@ -681,12 +685,42 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
     removeMatchingLegacyRecoveryContext();
     const purpose = process.env.KXM_AGENT_PURPOSE ?? "General-purpose coding agent";
     const model = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
+    let autoStartToken: string | undefined;
+    try {
+      const config = loadKxmConfig(ctx.cwd);
+      if (hubAutoStartMode(config) === "background") {
+        const ensured = await ensureHubRunning({ config, cwd: ctx.cwd });
+        if (ensured.status === "started") {
+          autoStartToken = ensured.authToken;
+          ctx.ui.notify(
+            `kxm hub started in the background (pid ${ensured.pid}); logs: ${ensured.logPath}`
+              + (ensured.authTokenSource === "generated" ? "; new admin token generated and persisted to user state" : ""),
+            "info",
+          );
+        } else if (ensured.status === "failed") {
+          ctx.ui.notify(`kxm hub auto-start failed: ${ensured.reason} (log: ${ensured.logPath})`, "warning");
+        }
+      }
+    } catch (error) {
+      ctx.ui.notify(`kxm hub auto-start failed: ${error instanceof Error ? error.message : String(error)}`, "warning");
+    }
+    // Authenticate with the explicit env token first, then the token resolved
+    // by auto-start, then the credential persisted for this machine's hubs.
+    const envAuthToken = process.env.KXM_AUTH_TOKEN?.trim();
+    let hubAuthToken = envAuthToken || autoStartToken;
+    if (!hubAuthToken) {
+      try {
+        hubAuthToken = readHubEnvRecord()?.authToken?.trim() || undefined;
+      } catch (error) {
+        ctx.ui.notify(`kxm could not read persisted hub credentials: ${error instanceof Error ? error.message : String(error)}`, "warning");
+      }
+    }
     client = new HubClient({
       serverUrl,
       name,
       purpose,
       project,
-      ...(process.env.KXM_AUTH_TOKEN ? { authToken: process.env.KXM_AUTH_TOKEN } : {}),
+      ...(hubAuthToken ? { authToken: hubAuthToken } : {}),
       ...(model ? { model } : {}),
     });
     notify = (message, type) => ctx.ui.notify(message, type);

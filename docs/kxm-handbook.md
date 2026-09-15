@@ -157,7 +157,11 @@ kxm init
 
 ### 2. Start the hub in another terminal
 
-`kxm hub start` is foreground. Keep that terminal running. Use a high-entropy
+`kxm hub start` is foreground. Keep that terminal running. (The Pi extension
+also starts the hub by default — `hub.autoStart: background` in
+`kxm.config.v1` — reusing a healthy bound hub or a live local claim and
+spawning a detached wrapper only when none exists; set `hub.autoStart: off`
+to disable. See Configuration.) Use a high-entropy
 administrative token for hub operations and a different project token for
 agents. Never pass either token on a command line.
 
@@ -314,7 +318,7 @@ network controls before allowing remote access.
 |---|---:|---|
 | `KXM_SERVER_URL` | `http://127.0.0.1:7331` | Hub URL |
 | `KXM_AUTH_TOKEN` | none | Project token for agents |
-| `KXM_PROJECT` | current directory name | Discovery/authentication namespace |
+| `KXM_PROJECT` | package.json `name`, else current directory name | Discovery/authentication namespace |
 | `KXM_AGENT_NAME` | harness-derived | Unique live name in the project |
 | `KXM_AGENT_PURPOSE` | general-purpose | Capability shown during peer discovery |
 

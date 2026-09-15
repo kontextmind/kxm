@@ -342,6 +342,24 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 ### Landed in this tree (unreleased)
 
+- **Hub background auto-start and package.json project naming (2026-09-15):**
+  Added `plugins/kxm/src/hub-autostart.ts`: on Pi extension load, `hub.autoStart`
+  in `kxm.config.v1` (default `background`; `off` disables; unknown values fail
+  closed to the default) reuses a healthy bound hub, a live local `hub.pid`
+  claim, or a hub already answering on the configured `KXM_SERVER_URL`, and
+  only then spawns the detached `kxm-hub.mjs` wrapper with
+  output appended to `.kxm/logs/hub-autostart.log`. Credentials resolve before
+  launch through the existing `hub-env.ts` flow, so a first start generates the
+  admin token and persists it `0600` under the user state root; a losing
+  double-start race reports `claim-alive` instead of an error. The extension
+  client now authenticates with the environment token, the auto-start token,
+  then the persisted credential. Added `plugins/kxm/src/project-name.ts`:
+  default project identity is `KXM_PROJECT`, then the workspace `package.json`
+  `name`, then the directory name (no upward walk), applied uniformly in the Pi
+  extension, CLI client, `kxm dash`, and the MCP server. Verified in
+  `test/core/hub-autostart.test.ts` and `test/core/project-name.test.ts`
+  (13 new tests); docs updated in `docs/configuration.md`,
+  `docs/kxm-handbook.md`, and `docs/getting-started.md`.
 - **Modular Role Configuration and Workflow CRUD Management (2026-09-08):**
   - Designed and implemented `kxm.role.v1` schema (`schemas/vnext/role.schema.json`) supporting modular per-role YAML files with descriptions, skills, tools permissions (allow/deny lists and presets), produced/consumed asset template contracts, harness/model rosters with fallback priority, and policy rules (`vendorIndependenceRequired`).
   - Added `plugins/kxm/src/role.ts` and `plugins/kxm/src/workflow-manager.ts` implementing global (`~/.config/kxm/roles/`, `~/.config/kxm/workflows/`) and local (`.kxm/roles/`, `.kxm/workflows/`) inheritance with local repo overrides and default role seeding (`writer`, `planner`, `critic-arch`, `critic-cli`, `verifier`) and workflow templates (`implement-and-verify`, `dual-critic-review`, `spec-and-plan`).

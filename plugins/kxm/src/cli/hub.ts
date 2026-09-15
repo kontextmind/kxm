@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { redactSecrets } from "../redact.ts";
+import { defaultProjectName } from "../project-name.ts";
 import { agentWorker, type Worker } from "../envelope.ts";
 import { MESH_TUI_PANELS, runMeshTui, type MeshTuiPanel } from "../tui.ts";
 import { formatSessionBriefText, loadSessionBriefAsync, type SessionHubStatus } from "../session-work.ts";
@@ -130,7 +131,7 @@ export async function cmdDash(runtime: Runtime, options: { screen?: string | und
     runtime.io.stderr("kxm dash does not support --json; use kxm hub view\n");
     return 2;
   }
-  const project = runtime.env.KXM_PROJECT?.trim() || basename(runtime.dirs.workdir) || "project";
+  const project = defaultProjectName(runtime.dirs.workdir, runtime.env) || "project";
   const authToken = runtime.env.KXM_AUTH_TOKEN?.trim();
   return await runMeshTui({
     serverUrl: runtime.serverUrl,
