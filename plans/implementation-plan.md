@@ -1513,8 +1513,9 @@ now pass alongside isolated native Fable/Grok settlement witnesses.
 Slice A1 (async probes, escalation-after-close, conservative descendant
 settlement, v2 bounded/redacted evidence, supervisor drive rejection handling)
 holds commit-bound acceptance with dual-critic PASS at 915f5e53 and its
-forward-port at 96e8e0ac. Remaining critic demands: live Claude write-refusal
-witness, full HTTP drive lifetime decoupling, and price-catalog estimates
+forward-port at 96e8e0ac; the live Claude write-refusal witness (model-reached
+proof plus refusal) holds acceptance at e3d8a64b. Remaining critic demands:
+full HTTP drive lifetime decoupling and price-catalog estimates
 beyond the one-shot path. No Phase 11 gate PASS.
 
 **Proposed M2/M3 delivery packets (2026-09-14):** add incremental native event
