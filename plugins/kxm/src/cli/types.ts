@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { findKxmRepoRoot } from "../repo-root.ts";
 import type { Command } from "commander";
 import { redactSecrets } from "../redact.ts";
 import { appendTelemetry, inferImprovementTarget, makeTelemetryEvent, telemetryPath } from "../telemetry.ts";
@@ -61,11 +61,9 @@ export interface Runtime extends CliContext, Required<Pick<GlobalOpts, "json" | 
   fetchImpl: typeof fetch;
 }
 
-const repoRoot = resolve(fileURLToPath(new URL("../../../../", import.meta.url)));
-
 export function spawnScript(scriptName: string, extraEnv: NodeJS.ProcessEnv = {}): Promise<number> {
   return new Promise((resolveExit) => {
-    const child = spawn(process.execPath, [join(repoRoot, "scripts", scriptName)], {
+    const child = spawn(process.execPath, [join(findKxmRepoRoot(import.meta.url), "scripts", scriptName)], {
       stdio: "inherit",
       env: { ...process.env, ...extraEnv },
     });

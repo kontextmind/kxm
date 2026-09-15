@@ -2,9 +2,8 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
-import { fileURLToPath } from "node:url";
 import { verifyArtifactExists } from "../artifacts-exist.ts";
 import { parseWorkflowDefinitions } from "../workflow.ts";
 import { redactSecrets } from "../redact.ts";
@@ -99,8 +98,8 @@ import {
   warnIgnoredProjectUpdateYaml,
   refreshKxmUpdateNotice,
 } from "./hub.ts";
+import { findKxmRepoRoot } from "../repo-root.ts";
 
-const repoRoot = resolve(fileURLToPath(new URL("../../../../", import.meta.url)));
 
 export function cliSpawn(runtime: Runtime, command: string, args: readonly string[], extra?: { timeout?: number }): CliSpawnResult {
   if (runtime.io.spawnSync) return runtime.io.spawnSync(command, args);
@@ -297,7 +296,7 @@ export async function cmdUpdate(runtime: Runtime, harness: string | undefined, o
   warnIgnoredProjectUpdateYaml(runtime);
   const probe = installProbeFrom(runtime);
   const classified = classifyInstallRoot(probe);
-  const current = readInstalledKxmVersion(repoRoot);
+  const current = readInstalledKxmVersion(findKxmRepoRoot(import.meta.url));
   let notice: KxmUpdateNotice;
   let kindReport = classified;
   if (classified.kind === "source") {

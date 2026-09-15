@@ -2,10 +2,9 @@ import { spawn } from "node:child_process";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { dirname, isAbsolute, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, isAbsolute, join } from "node:path";
+import { findKxmRepoRoot } from "./repo-root.ts";
 import { loadVnextProject, VnextConfigError, type VnextConfigOptions } from "./vnext-config.ts";
-const repoRoot = resolve(fileURLToPath(new URL("../../../", import.meta.url)));
 import {
   VnextRuntimeRegistry,
   projectRuntimeKey,
@@ -201,7 +200,7 @@ export async function ensureVnextSupervisor(
 
   // Auto-start: claim the singleton, spawn detached, wait for readiness.
   clearSupervisorError(paths);
-  const scriptPath = join(repoRoot, "scripts", "kxm-runtime-supervisor.mjs");
+  const scriptPath = join(findKxmRepoRoot(import.meta.url), "scripts", "kxm-runtime-supervisor.mjs");
   const spawnImpl = options.spawnImpl ?? ((script: string, env: NodeJS.ProcessEnv): number => {
     const child = spawn(process.execPath, [script], {
       detached: true,

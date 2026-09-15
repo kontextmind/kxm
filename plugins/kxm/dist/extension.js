@@ -14524,8 +14524,8 @@ var require_dist2 = __commonJS({
 
 // plugins/kxm/src/extension.ts
 import { spawnSync as spawnSync2 } from "node:child_process";
-import { existsSync as existsSync10, mkdirSync as mkdirSync9, readFileSync as readFileSync14, renameSync as renameSync5, rmSync as rmSync4, writeFileSync as writeFileSync7 } from "node:fs";
-import { dirname as dirname7, join as join14 } from "node:path";
+import { existsSync as existsSync11, mkdirSync as mkdirSync9, readFileSync as readFileSync14, renameSync as renameSync5, rmSync as rmSync4, writeFileSync as writeFileSync7 } from "node:fs";
+import { dirname as dirname7, join as join15 } from "node:path";
 
 // plugins/kxm/src/commands.ts
 import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
@@ -15923,8 +15923,7 @@ function loadKxmConfig(repoRoot = process.cwd(), options = {}) {
 // plugins/kxm/src/hub-autostart.ts
 import { spawn } from "node:child_process";
 import { closeSync, mkdirSync as mkdirSync5, openSync, readFileSync as readFileSync5 } from "node:fs";
-import { dirname as dirname5, join as join5, resolve as resolve5 } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join as join6, resolve as resolve5 } from "node:path";
 
 // plugins/kxm/src/hub-binding.ts
 import { existsSync as existsSync3, mkdirSync as mkdirSync3, readFileSync as readFileSync3, renameSync, rmSync, writeFileSync as writeFileSync3 } from "node:fs";
@@ -16172,6 +16171,25 @@ function resolveHubCredentials(options = {}) {
   };
 }
 
+// plugins/kxm/src/repo-root.ts
+import { existsSync as existsSync5 } from "node:fs";
+import { dirname as dirname5, join as join5 } from "node:path";
+import { fileURLToPath } from "node:url";
+var ROOT_MARKERS = ["scripts/kxm-hub.mjs", "scripts/kxm.mjs"];
+var MAX_WALK_DEPTH = 10;
+function findKxmRepoRoot(fromUrl = import.meta.url) {
+  let dir = dirname5(fileURLToPath(fromUrl));
+  for (let depth = 0; depth < MAX_WALK_DEPTH; depth += 1) {
+    if (ROOT_MARKERS.some((marker) => existsSync5(join5(dir, marker)))) return dir;
+    const parent = dirname5(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  throw new Error(
+    `kxm: cannot locate the KXM repo root from ${fileURLToPath(fromUrl)} (walked ${MAX_WALK_DEPTH} levels looking for ${ROOT_MARKERS[0]})`
+  );
+}
+
 // plugins/kxm/src/redact.ts
 var SECRET_PATTERNS = [
   /\bsk-[A-Za-z0-9_-]{8,}\b/g,
@@ -16215,7 +16233,7 @@ function defaultProcessExists(pid) {
 function readLiveHubClaim(stateDir, processExists2 = defaultProcessExists) {
   let parsed;
   try {
-    parsed = JSON.parse(readFileSync5(join5(stateDir, "hub.pid"), "utf8"));
+    parsed = JSON.parse(readFileSync5(join6(stateDir, "hub.pid"), "utf8"));
   } catch {
     return void 0;
   }
@@ -16230,7 +16248,7 @@ function readLiveHubClaim(stateDir, processExists2 = defaultProcessExists) {
   };
 }
 function defaultHubWrapperScriptPath(moduleUrl = import.meta.url) {
-  return resolve5(dirname5(fileURLToPath(moduleUrl)), "../../../scripts/kxm-hub.mjs");
+  return join6(findKxmRepoRoot(moduleUrl), "scripts", "kxm-hub.mjs");
 }
 function defaultHubSpawner(command, args, options) {
   const child = spawn(command, [...args], options);
@@ -16255,8 +16273,8 @@ async function ensureHubRunning(options) {
   }
   const workdir = resolve5(env.KXM_WORKDIR?.trim() || options.cwd);
   const workspaceDir = resolve5(workdir, env.KXM_WORKSPACE_DIR?.trim() || ".kxm");
-  const stateDir = resolve5(workdir, env.KXM_STATE_DIR?.trim() || join5(workspaceDir, "state"));
-  const logsDir = resolve5(workdir, env.KXM_LOGS_DIR?.trim() || join5(workspaceDir, "logs"));
+  const stateDir = resolve5(workdir, env.KXM_STATE_DIR?.trim() || join6(workspaceDir, "state"));
+  const logsDir = resolve5(workdir, env.KXM_LOGS_DIR?.trim() || join6(workspaceDir, "logs"));
   const processExists2 = options.processExists ?? defaultProcessExists;
   const live = readLiveHubClaim(stateDir, processExists2);
   if (live) return { status: "claim-alive", pid: live.pid };
@@ -16266,7 +16284,7 @@ async function ensureHubRunning(options) {
     if (health === "on") return { status: "url-healthy", url: serverUrl };
   }
   const credentials = resolveHubCredentials({ env });
-  const logPath = join5(logsDir, HUB_AUTOSTART_LOG_NAME);
+  const logPath = join6(logsDir, HUB_AUTOSTART_LOG_NAME);
   mkdirSync5(logsDir, { recursive: true });
   const logFd = openSync(logPath, "a");
   let child;
@@ -16315,12 +16333,12 @@ async function ensureHubRunning(options) {
 
 // plugins/kxm/src/project-name.ts
 import { readFileSync as readFileSync6 } from "node:fs";
-import { basename, join as join6 } from "node:path";
+import { basename, join as join7 } from "node:path";
 function defaultProjectName(cwd, env = process.env) {
   const fromEnv = env.KXM_PROJECT?.trim();
   if (fromEnv) return fromEnv;
   try {
-    const pkg = JSON.parse(readFileSync6(join6(cwd, "package.json"), "utf8"));
+    const pkg = JSON.parse(readFileSync6(join7(cwd, "package.json"), "utf8"));
     if (typeof pkg.name === "string" && pkg.name.trim().length > 0) return pkg.name.trim();
   } catch {
   }
@@ -20304,11 +20322,11 @@ function emptyUsage() {
 }
 
 // plugins/kxm/src/providers/claude-bridge/config.ts
-import { existsSync as existsSync5, readFileSync as readFileSync7 } from "node:fs";
+import { existsSync as existsSync6, readFileSync as readFileSync7 } from "node:fs";
 import { homedir as homedir5 } from "node:os";
-import { join as join7 } from "node:path";
+import { join as join8 } from "node:path";
 function tryParseJson(path) {
-  if (!existsSync5(path)) return {};
+  if (!existsSync6(path)) return {};
   try {
     return JSON.parse(readFileSync7(path, "utf-8"));
   } catch (error2) {
@@ -20317,10 +20335,10 @@ function tryParseJson(path) {
   }
 }
 function globalConfigPath(home = homedir5()) {
-  return join7(home, ".pi", "agent", "claude-bridge.json");
+  return join8(home, ".pi", "agent", "claude-bridge.json");
 }
 function projectConfigPath(cwd) {
-  return join7(cwd, ".pi", "claude-bridge.json");
+  return join8(cwd, ".pi", "claude-bridge.json");
 }
 function loadConfig(cwd, home = homedir5()) {
   const global = tryParseJson(globalConfigPath(home));
@@ -36210,7 +36228,7 @@ function diagnosticSummary(diagnostic) {
 // plugins/kxm/src/recovery.ts
 import { createHash as createHash6 } from "node:crypto";
 import { lstatSync, readFileSync as readFileSync8, renameSync as renameSync3, rmSync as rmSync3 } from "node:fs";
-import { join as join8 } from "node:path";
+import { join as join9 } from "node:path";
 function workerStateKey(project, agentName) {
   const safeProject = project.replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 24) || "project";
   const safeName = agentName.replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 32) || "agent";
@@ -36219,10 +36237,10 @@ function workerStateKey(project, agentName) {
 }
 function legacyRecoveryEnvelopePath(stateDir, agentName) {
   const safeName = agentName.replace(/[^A-Za-z0-9_.-]/g, "_");
-  return join8(stateDir, `worker-recovery-${safeName}.json`);
+  return join9(stateDir, `worker-recovery-${safeName}.json`);
 }
 function recoveryEnvelopePath(stateDir, agentName, project) {
-  return project ? join8(stateDir, `worker-recovery-${workerStateKey(project, agentName)}.json`) : legacyRecoveryEnvelopePath(stateDir, agentName);
+  return project ? join9(stateDir, `worker-recovery-${workerStateKey(project, agentName)}.json`) : legacyRecoveryEnvelopePath(stateDir, agentName);
 }
 var recoveryReasons = /* @__PURE__ */ new Set([
   "missing_tool_result",
@@ -36347,13 +36365,13 @@ async function consumeWorkerRecoveryEnvelope(client, stateDir, agentName, projec
 // plugins/kxm/src/session-work.ts
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync as existsSync8, mkdirSync as mkdirSync8, readFileSync as readFileSync12, renameSync as renameSync4, writeFileSync as writeFileSync6 } from "node:fs";
-import { join as join12 } from "node:path";
+import { existsSync as existsSync9, mkdirSync as mkdirSync8, readFileSync as readFileSync12, renameSync as renameSync4, writeFileSync as writeFileSync6 } from "node:fs";
+import { join as join13 } from "node:path";
 
 // plugins/kxm/src/local-snapshot.ts
-import { existsSync as existsSync6, readdirSync, readFileSync as readFileSync10 } from "node:fs";
+import { existsSync as existsSync7, readdirSync, readFileSync as readFileSync10 } from "node:fs";
 import { homedir as homedir6 } from "node:os";
-import { isAbsolute as isAbsolute3, join as join10, resolve as resolve6 } from "node:path";
+import { isAbsolute as isAbsolute3, join as join11, resolve as resolve6 } from "node:path";
 
 // plugins/kxm/src/sqlite.ts
 import { createRequire as createRequire2 } from "node:module";
@@ -36396,9 +36414,9 @@ var DatabaseSync = class {
 
 // plugins/kxm/src/telemetry.ts
 import { appendFileSync, mkdirSync as mkdirSync6, readFileSync as readFileSync9 } from "node:fs";
-import { dirname as dirname6, join as join9 } from "node:path";
+import { dirname as dirname6, join as join10 } from "node:path";
 function telemetryPath(logsDir) {
-  return join9(logsDir, "telemetry.jsonl");
+  return join10(logsDir, "telemetry.jsonl");
 }
 function readRoutingRecords(path) {
   const records = [];
@@ -36553,36 +36571,36 @@ function readOpenMessageMetadata(database) {
   return messages;
 }
 function resolveKxmSnapshotPaths(cwd, env = process.env) {
-  const stateDir = env.KXM_STATE_DIR?.trim() || join10(cwd, ".kxm", "state");
+  const stateDir = env.KXM_STATE_DIR?.trim() || join11(cwd, ".kxm", "state");
   const configured = env.KXM_DATA_PATH?.trim();
-  const dataPath = configured ? resolve6(cwd, configured) : join10(stateDir, "kxm.db");
+  const dataPath = configured ? resolve6(cwd, configured) : join11(stateDir, "kxm.db");
   return { dataPath, stateDir };
 }
 function resolveVnextStateRoot(stateDir, options) {
-  if (options?.vnextStateRoot && existsSync6(options.vnextStateRoot)) {
+  if (options?.vnextStateRoot && existsSync7(options.vnextStateRoot)) {
     return resolve6(options.vnextStateRoot);
   }
-  if (existsSync6(join10(stateDir, "runtime", "registry.db")) || existsSync6(join10(stateDir, "runtime", "projects"))) {
+  if (existsSync7(join11(stateDir, "runtime", "registry.db")) || existsSync7(join11(stateDir, "runtime", "projects"))) {
     return stateDir;
   }
   const env = options?.env ?? process.env;
   const explicit = env.KXM_STATE_HOME?.trim() || env.KXM_USER_STATE_DIR?.trim() || env.KXM_STATE_ROOT?.trim();
-  if (explicit && isAbsolute3(explicit) && existsSync6(resolve6(explicit))) {
+  if (explicit && isAbsolute3(explicit) && existsSync7(resolve6(explicit))) {
     return resolve6(explicit);
   }
   let base;
   if (process.platform === "win32") {
     const localAppData = env.LOCALAPPDATA?.trim();
-    base = localAppData && isAbsolute3(localAppData) ? localAppData : join10(homedir6(), "AppData", "Local");
+    base = localAppData && isAbsolute3(localAppData) ? localAppData : join11(homedir6(), "AppData", "Local");
     base = resolve6(base, "KXM");
   } else if (process.platform === "darwin") {
     base = resolve6(homedir6(), "Library", "Application Support", "KXM");
   } else {
     const xdgState = env.XDG_STATE_HOME?.trim();
-    base = xdgState && isAbsolute3(xdgState) ? xdgState : join10(homedir6(), ".local", "state");
+    base = xdgState && isAbsolute3(xdgState) ? xdgState : join11(homedir6(), ".local", "state");
     base = resolve6(base, "kxm");
   }
-  if (existsSync6(base)) return base;
+  if (existsSync7(base)) return base;
   return void 0;
 }
 function loadLocalMeshSnapshot(dataPath, stateDir, options) {
@@ -36593,7 +36611,7 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
   let legacyRuns = [];
   let legacyRunTotal = 0;
   let plans = [];
-  if (existsSync6(dataPath)) {
+  if (existsSync7(dataPath)) {
     hasLegacy = true;
     const database = new DatabaseSync(dataPath, { readOnly: true });
     try {
@@ -36613,11 +36631,11 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
   let vnextRunTotal = 0;
   const vnextStateRoot = resolveVnextStateRoot(stateDir, options);
   if (vnextStateRoot) {
-    const runtimeDir = join10(vnextStateRoot, "runtime");
-    const registryDbPath = join10(runtimeDir, "registry.db");
-    const projectsDir = join10(runtimeDir, "projects");
+    const runtimeDir = join11(vnextStateRoot, "runtime");
+    const registryDbPath = join11(runtimeDir, "registry.db");
+    const projectsDir = join11(runtimeDir, "projects");
     const projectKeys = /* @__PURE__ */ new Set();
-    if (existsSync6(registryDbPath)) {
+    if (existsSync7(registryDbPath)) {
       hasVnext = true;
       try {
         const regDb = new DatabaseSync(registryDbPath, { readOnly: true });
@@ -36633,7 +36651,7 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
       } catch {
       }
     }
-    if (existsSync6(projectsDir)) {
+    if (existsSync7(projectsDir)) {
       try {
         for (const entry of readdirSync(projectsDir, { withFileTypes: true })) {
           if (entry.isDirectory()) {
@@ -36644,8 +36662,8 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
       }
     }
     for (const key of projectKeys) {
-      const eventDbPath = join10(projectsDir, key, "run-events.db");
-      if (existsSync6(eventDbPath)) {
+      const eventDbPath = join11(projectsDir, key, "run-events.db");
+      if (existsSync7(eventDbPath)) {
         hasVnext = true;
         try {
           const eventDb = new DatabaseSync(eventDbPath, { readOnly: true });
@@ -36675,10 +36693,10 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
     }
   }
   const pids = [];
-  if (existsSync6(stateDir)) {
+  if (existsSync7(stateDir)) {
     for (const file of readdirSync(stateDir).filter((name) => name.endsWith(".pid"))) {
       try {
-        const record2 = JSON.parse(readFileSync10(join10(stateDir, file), "utf8"));
+        const record2 = JSON.parse(readFileSync10(join11(stateDir, file), "utf8"));
         pids.push({
           file,
           ...record2.role ? { role: record2.role } : {},
@@ -36717,8 +36735,8 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
   } else {
     source = "legacy";
   }
-  const telemetryFile = join10(stateDir, "telemetry.jsonl");
-  const spend = existsSync6(telemetryFile) ? readRoutingRecords(telemetryFile) : [];
+  const telemetryFile = join11(stateDir, "telemetry.jsonl");
+  const spend = existsSync7(telemetryFile) ? readRoutingRecords(telemetryFile) : [];
   return {
     source,
     agents: agents.sort((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name)),
@@ -36733,13 +36751,13 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
 }
 
 // plugins/kxm/src/kxm-update.ts
-import { existsSync as existsSync7, readFileSync as readFileSync11, writeFileSync as writeFileSync5, mkdirSync as mkdirSync7 } from "node:fs";
-import { join as join11 } from "node:path";
+import { existsSync as existsSync8, readFileSync as readFileSync11, writeFileSync as writeFileSync5, mkdirSync as mkdirSync7 } from "node:fs";
+import { join as join12 } from "node:path";
 var KXM_UPDATE_CACHE = "update-check.json";
 var CACHE_TTL_MS = 6 * 60 * 60 * 1e3;
 function readUpdateCache(stateDir, now = Date.now()) {
-  const path = join11(stateDir, KXM_UPDATE_CACHE);
-  if (!existsSync7(path)) return void 0;
+  const path = join12(stateDir, KXM_UPDATE_CACHE);
+  if (!existsSync8(path)) return void 0;
   try {
     const row = JSON.parse(readFileSync11(path, "utf8"));
     if (typeof row.checkedAt !== "number" || !row.notice || now - row.checkedAt > CACHE_TTL_MS) return void 0;
@@ -36907,9 +36925,9 @@ function buildSessionBrief(snapshot, current, hub, ship, updateLatest, cost, ses
   };
 }
 function readCachedSessionBrief(stateDir) {
-  const file = join12(stateDir, "session-brief.json");
+  const file = join13(stateDir, "session-brief.json");
   try {
-    if (!existsSync8(file)) return void 0;
+    if (!existsSync9(file)) return void 0;
     const raw = readFileSync12(file, "utf8");
     const parsed = JSON.parse(raw);
     if (parsed && parsed.schema === "kxm.session-brief.v1" && typeof parsed.generatedAt === "string") {
@@ -36926,7 +36944,7 @@ function readCachedSessionBrief(stateDir) {
 function writeCachedSessionBrief(stateDir, brief) {
   try {
     mkdirSync8(stateDir, { recursive: true, mode: 448 });
-    const file = join12(stateDir, "session-brief.json");
+    const file = join13(stateDir, "session-brief.json");
     const tmp = `${file}.tmp.${randomUUID().slice(0, 8)}`;
     writeFileSync6(tmp, JSON.stringify(brief, null, 2), { encoding: "utf8", mode: 384 });
     renameSync4(tmp, file);
@@ -36935,8 +36953,8 @@ function writeCachedSessionBrief(stateDir, brief) {
 }
 function estimateSessionCost(stateDir) {
   try {
-    const telemetryFile = join12(stateDir, "telemetry.jsonl");
-    if (!existsSync8(telemetryFile)) return void 0;
+    const telemetryFile = join13(stateDir, "telemetry.jsonl");
+    if (!existsSync9(telemetryFile)) return void 0;
     const records = readRoutingRecords(telemetryFile);
     if (records.length === 0) return void 0;
     let totalCost = 0;
@@ -37111,11 +37129,11 @@ function kxmSlashCompletions(prefix) {
 }
 
 // plugins/kxm/src/workflow-tui.ts
-import { existsSync as existsSync9, readFileSync as readFileSync13 } from "node:fs";
-import { join as join13 } from "node:path";
+import { existsSync as existsSync10, readFileSync as readFileSync13 } from "node:fs";
+import { join as join14 } from "node:path";
 function loadActiveWorkflowProgress(repoRoot = process.cwd(), targetRunId) {
-  const dbPath = join13(repoConfigDirectory(repoRoot), "state", "kxm.db");
-  if (!existsSync9(dbPath)) return void 0;
+  const dbPath = join14(repoConfigDirectory(repoRoot), "state", "kxm.db");
+  if (!existsSync10(dbPath)) return void 0;
   let db;
   try {
     db = new DatabaseSync(dbPath, { readOnly: true });
@@ -37150,9 +37168,9 @@ function loadActiveWorkflowProgress(repoRoot = process.cwd(), targetRunId) {
     }
     let metrics;
     try {
-      const logsDir = join13(repoConfigDirectory(repoRoot), "logs");
+      const logsDir = join14(repoConfigDirectory(repoRoot), "logs");
       const telemFile = telemetryPath(logsDir);
-      if (existsSync9(telemFile)) {
+      if (existsSync10(telemFile)) {
         const records = readRoutingRecords(telemFile);
         const routingRunId = (routing) => "runId" in routing ? routing.runId : routing.workflowRunId;
         let matching = records.filter((r) => routingRunId(r.routing) === runId);
@@ -37413,12 +37431,12 @@ function piMeshExtension(pi) {
   let currentSessionBinding = { kind: "default" };
   function recoveryContextPath() {
     if (!stateDir || !agentName || !projectName) return void 0;
-    return join14(stateDir, `worker-context-${workerStateKey(projectName, agentName)}.json`);
+    return join15(stateDir, `worker-context-${workerStateKey(projectName, agentName)}.json`);
   }
   function sessionRouteRequestPath() {
     const workerKey = process.env.KXM_WORKER_IDENTITY_KEY?.trim();
     if (!stateDir || !workerKey) return void 0;
-    return join14(stateDir, `worker-session-request-${workerKey}.json`);
+    return join15(stateDir, `worker-session-request-${workerKey}.json`);
   }
   function requestSessionRoute(message, target) {
     if (process.env.KXM_WORKER_SESSION_ISOLATION !== "workflow" || sameBinding(currentSessionBinding, target)) {
@@ -37453,7 +37471,7 @@ function piMeshExtension(pi) {
   }
   function removeMatchingLegacyRecoveryContext() {
     if (!stateDir || !agentName || !projectName) return;
-    const legacy = join14(stateDir, `worker-context-${agentName.replace(/[^A-Za-z0-9_.-]/g, "_")}.json`);
+    const legacy = join15(stateDir, `worker-context-${agentName.replace(/[^A-Za-z0-9_.-]/g, "_")}.json`);
     if (legacy === recoveryContextPath()) return;
     try {
       const candidate = JSON.parse(readFileSync14(legacy, "utf8"));
@@ -38063,8 +38081,8 @@ function piMeshExtension(pi) {
         const res = spawnSync2(kxmBin, ["memory", "brief"], { cwd, encoding: "utf8", windowsHide: true });
         let memText = res.status === 0 && res.stdout ? res.stdout.trim() : "";
         if (!memText) {
-          const script = join14(cwd, "scripts", "kxm.mjs");
-          if (existsSync10(script)) {
+          const script = join15(cwd, "scripts", "kxm.mjs");
+          if (existsSync11(script)) {
             const scriptRes = spawnSync2(process.execPath, [script, "memory", "brief"], { cwd, encoding: "utf8", windowsHide: true });
             if (scriptRes.status === 0 && scriptRes.stdout) memText = scriptRes.stdout.trim();
           }

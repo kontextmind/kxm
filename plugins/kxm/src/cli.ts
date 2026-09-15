@@ -16,6 +16,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command, CommanderError } from "commander";
 import { readInstalledKxmVersion } from "./kxm-update.ts";
+import { findKxmRepoRoot } from "./repo-root.ts";
 import { HubClient } from "./client.ts";
 import { defaultProjectName } from "./project-name.ts";
 import {
@@ -155,7 +156,6 @@ export type { CliIo, CliSpawnResult };
 export { hubContextPost };
 
 const CLI_NAME = "kxm";
-const repoRoot = resolve(fileURLToPath(new URL("../../../", import.meta.url)));
 
 const USAGE_ERROR_CODES = new Set([
   "commander.help",
@@ -321,7 +321,7 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
   const program = new Command(CLI_NAME);
   program
     .description("KontextMind local-first orchestration CLI")
-    .version(readInstalledKxmVersion(repoRoot), "-V, --version", "Print the installed kxm version")
+    .version(readInstalledKxmVersion(findKxmRepoRoot(import.meta.url)), "-V, --version", "Print the installed kxm version")
     .exitOverride()
     .configureOutput({
       writeOut: (text) => ctx.io.stdout(text),

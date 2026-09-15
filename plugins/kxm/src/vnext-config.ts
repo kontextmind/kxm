@@ -2,7 +2,6 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
 import { Ajv2020, type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
 import {
   RestrictedYamlError,
@@ -11,6 +10,7 @@ import {
   type VnextYamlLimits,
 } from "./restricted-yaml.mjs";
 import { resolveVnextTemplateBaseline } from "./vnext-template.ts";
+import { findKxmRepoRoot } from "./repo-root.ts";
 import { BUILTIN_HARNESS_IDS, DEFAULT_HARNESS, validateHarnessModelPair } from "./vnext-harness.ts";
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
@@ -86,8 +86,10 @@ export interface VnextInitializationPlan {
   configRevision?: string;
 }
 
-const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-const DEFAULT_SCHEMA_DIR = join(PACKAGE_ROOT, "schemas", "vnext");
+function defaultVnextSchemaDir(): string {
+  return join(findKxmRepoRoot(import.meta.url), "schemas", "vnext");
+}
+const DEFAULT_SCHEMA_DIR = defaultVnextSchemaDir();
 const RESOURCE_SCHEMA: Readonly<Record<VnextResourceKind, { identity: string; file: string }>> = Object.freeze({
   project: { identity: "kxm.project.v1", file: "project.schema.json" },
   repository: { identity: "kxm.repository.v1", file: "repository.schema.json" },

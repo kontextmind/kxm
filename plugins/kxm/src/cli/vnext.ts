@@ -1,9 +1,8 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
-import { fileURLToPath } from "node:url";
 import { createBackup, restoreBackup } from "../database.ts";
 import { refreshModelInventory } from "../model-inventory.ts";
 import { listInventoryModels, listRoleBindings, loadProducerPolicy, setModelState, updateProducer } from "../producers.ts";
@@ -47,8 +46,6 @@ export const vnextDriveCliSeams: {
   ensureSupervisor?: typeof ensureVnextSupervisor;
   runtimeRequest?: typeof vnextRuntimeRequest;
 } = {};
-
-const repoRoot = resolve(fileURLToPath(new URL("../../../../", import.meta.url)));
 
 export function initPlanPayload(plan: VnextInitializationPlan): Record<string, unknown> {
   return {
