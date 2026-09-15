@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { NATIVE_PI_BRAKE_PROVIDERS, PI_ALLOWED_PROVIDERS, ROUTES } from './harness-run.mjs';
+import { NATIVE_PI_BRAKE_PROVIDERS, PI_ALLOWED_PROVIDERS, PI_ANTIGRAVITY_MODEL_ID, PI_NATIVE_VENDOR_PROVIDERS, ROUTES } from './harness-run.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const POLICY = '.kxm/roster.json';
@@ -84,19 +84,20 @@ function workingBytes(source) {
   }
   return readFileSync(current);
 }
-function validate(bytes, commit) {
-  let policy;
-  try { policy = JSON.parse(bytes.toString('utf8')); } catch { refuse('invalid policy JSON'); }
+export function validateRosterDocument(policy, readBlob) {
   keys(policy, ['schema', 'routes', 'lineup', 'required_critics', 'model_origins'], 'policy');
   if (policy.schema !== 'kxm.developer-roster.v1') refuse('unsupported schema');
   record(policy.routes, 'routes'); record(policy.lineup, 'lineup'); record(policy.model_origins, 'model origins');
   if (!Object.keys(policy.routes).length) refuse('empty routes');
+  if (typeof readBlob !== 'function') refuse('origin evidence reader required');
   for (const [model, origin] of Object.entries(policy.model_origins)) {
     text(model, 'origin model'); keys(origin, ['vendor', 'evidence'], 'origin');
     text(origin.vendor, 'origin vendor');
     if (PI_ALLOWED_PROVIDERS.includes(canonical(origin.vendor.toLowerCase()))) refuse('origin/vendor must name the model vendor, not billing provider');
     keys(origin.evidence, ['source', 'sha256'], 'origin evidence'); digest(origin.evidence.sha256);
-    if (sha256(blobAt(commit, origin.evidence.source).bytes) !== origin.evidence.sha256) refuse('origin evidence hash mismatch');
+    sourcePath(origin.evidence.source);
+    const bytes = readBlob(origin.evidence.source);
+    if (bytes == null || sha256(bytes) !== origin.evidence.sha256) refuse('origin evidence hash mismatch');
   }
   for (const [id, route] of Object.entries(policy.routes)) {
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(id)) refuse('invalid route id');
@@ -108,10 +109,26 @@ function validate(bytes, commit) {
     if (!['admitted', 'retired'].includes(route.status)) refuse('unsupported status');
     if (route.harness === 'pi') {
       const parts = route.model.split('/');
-      if (parts.length < 3 || !PI_ALLOWED_PROVIDERS.includes(parts[0]) || parts.some(part => !part)) refuse('unsupported Pi provider/model');
-      const prefix = canonical(parts[1].toLowerCase());
+      const provider = parts[0];
+      const owned = Object.hasOwn(PI_NATIVE_VENDOR_PROVIDERS, provider)
+        ? canonical(PI_NATIVE_VENDOR_PROVIDERS[provider])
+        : '';
+      const minParts = owned ? 2 : 3;
+      const maxParts = owned ? 2 : Number.POSITIVE_INFINITY;
+      if (
+        parts.length < minParts
+        || parts.length > maxParts
+        || !PI_ALLOWED_PROVIDERS.includes(provider)
+        || parts.some(part => !part)
+        || (owned && !PI_ANTIGRAVITY_MODEL_ID.test(parts[1]))
+      ) refuse('unsupported Pi provider/model');
       const vendor = canonical(route.vendor.toLowerCase());
-      if (NATIVE_PI_BRAKE_PROVIDERS.includes(prefix) || NATIVE_PI_BRAKE_PROVIDERS.includes(vendor)) refuse('native vendor cannot use Pi');
+      if (owned) {
+        if (owned !== vendor) refuse('native vendor cannot use Pi');
+      } else {
+        const prefix = canonical(parts[1].toLowerCase());
+        if (NATIVE_PI_BRAKE_PROVIDERS.includes(prefix) || NATIVE_PI_BRAKE_PROVIDERS.includes(vendor)) refuse('native vendor cannot use Pi');
+      }
       if (!own(policy.model_origins, route.model)) refuse('missing exact model origin');
       const origin = policy.model_origins[route.model];
       if (canonical(origin.vendor.toLowerCase()) !== vendor || PI_ALLOWED_PROVIDERS.includes(vendor)) refuse('model origin/vendor mismatch');
@@ -139,6 +156,11 @@ function validate(bytes, commit) {
     if (route.status === 'admitted' && route.roles.includes('writer') && critics.includes(canonical(route.vendor.toLowerCase()))) refuse('writer and critics must have independent vendors');
   }
   return policy;
+}
+function validate(bytes, commit) {
+  let policy;
+  try { policy = JSON.parse(bytes.toString('utf8')); } catch { refuse('invalid policy JSON'); }
+  return validateRosterDocument(policy, source => blobAt(commit, source).bytes);
 }
 export function loadTrustedRosterPolicy() {
   const snapshot = control();
