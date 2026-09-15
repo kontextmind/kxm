@@ -1022,10 +1022,19 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   (unhandledRejection regressions pin both). Writers grok/grok-4.6; witnesses
   `npm run verify` passed on both accepted trees; critics Fable (arch) and Sol
   (cli) PASS both accepted trees after three resolved BLOCKs (evidence schema
-  versioning, async drive rejection, sync-throw orphan). Still open for the
-  next slices: live Claude write-refusal witness, full HTTP drive lifetime
-  decoupling design (only the crash-class defects are fixed), price-catalog
-  estimates beyond the one-shot path, and the Fable ~219s failure. Issue-127
+  versioning, async drive rejection, sync-throw orphan). The live Claude write-refusal witness is
+  also accepted (2026-09-15, task_p11-claude-write-refusal, commit e3d8a64b,
+  tree eebef0e8): a KXM_SMOKE-gated live witness proves a Claude read-only
+  one-shot reaches the model (processStatus completed, exit 0, tokensOut > 0 —
+  the first draft passed vacuously on pre-model CLI errors and was BLOCKed by
+  the arch critic) and still refuses a write in a temp sandbox; deterministic
+  pins cover the read-only argv profile (--permission-mode plan +
+  --permission-prompts none, per captured claude-help.txt), both weakening
+  modes, and forged-pass refusal. Root ran the live witness with real Claude
+  auth: 4/4 pass, live leg 7.6s. Still open for the next slices: full HTTP
+  drive lifetime decoupling design (only the crash-class defects are fixed),
+  price-catalog estimates beyond the one-shot path, and the Fable ~219s
+  failure. Issue-127
   retirement/acceptance contradictions are separate blockers; npm is not
   ready.
 - **Model inventory refresh command:** `kxm models refresh` writes the live
@@ -1504,8 +1513,9 @@ now pass alongside isolated native Fable/Grok settlement witnesses.
 Slice A1 (async probes, escalation-after-close, conservative descendant
 settlement, v2 bounded/redacted evidence, supervisor drive rejection handling)
 holds commit-bound acceptance with dual-critic PASS at 915f5e53 and its
-forward-port at 96e8e0ac. Remaining critic demands: live Claude write-refusal
-witness, full HTTP drive lifetime decoupling, and price-catalog estimates
+forward-port at 96e8e0ac; the live Claude write-refusal witness (model-reached
+proof plus refusal) holds acceptance at e3d8a64b. Remaining critic demands:
+full HTTP drive lifetime decoupling and price-catalog estimates
 beyond the one-shot path. No Phase 11 gate PASS.
 
 **Proposed M2/M3 delivery packets (2026-09-14):** add incremental native event

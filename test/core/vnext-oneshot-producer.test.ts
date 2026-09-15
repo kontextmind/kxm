@@ -180,8 +180,10 @@ test("Claude one-shot producer isolates stdin execution and separates reported e
     assert.ok(capturedArgs.includes("claude-3-7-sonnet"));
     assert.ok(capturedArgs.includes("--effort"));
     assert.ok(capturedArgs.includes("high"));
-    for (const flag of ["--safe-mode", "--strict-mcp-config", "--disable-slash-commands", "--no-session-persistence"]) assert.ok(capturedArgs.includes(flag));
+    for (const flag of ["--restricted", "--safe-mode", "--permission-mode", "--permission-prompts", "--strict-mcp-config", "--disable-slash-commands", "--no-session-persistence"]) assert.ok(capturedArgs.includes(flag));
     assert.equal(capturedArgs[capturedArgs.indexOf("--tools") + 1], "Read,Glob,Grep");
+    assert.equal(capturedArgs[capturedArgs.indexOf("--permission-mode") + 1], "plan");
+    assert.equal(capturedArgs[capturedArgs.indexOf("--permission-prompts") + 1], "none");
     assert.equal(capturedArgs[capturedArgs.indexOf("--mcp-config") + 1], '{"mcpServers":{}}');
     assert.ok(capturedArgs.includes("--output-format"));
     assert.ok(capturedArgs.includes("json"));

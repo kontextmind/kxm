@@ -22,6 +22,17 @@ test("Stage 1: oneShotReadOnlyArgs exposes pinned sandboxed flags for agy and ki
   const kimiArgs = oneShotReadOnlyArgs("kimi");
   assert.deepEqual(kimiArgs, ["--plan"]);
 
+  assert.deepEqual(oneShotReadOnlyArgs("claude"), [
+    "--tools", "Read,Glob,Grep",
+    "--restricted",
+    "--safe-mode",
+    "--permission-mode", "plan",
+    "--permission-prompts", "none",
+    "--strict-mcp-config",
+    "--mcp-config", '{"mcpServers":{}}',
+    "--disable-slash-commands",
+    "--no-session-persistence",
+  ]);
   assert.ok(oneShotReadOnlyArgs("claude")?.includes("--restricted"));
   assert.ok(oneShotReadOnlyArgs("codex")?.includes("read-only"));
   assert.ok(oneShotReadOnlyArgs("grok")?.includes("read-only"));
