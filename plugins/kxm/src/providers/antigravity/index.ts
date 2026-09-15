@@ -1,8 +1,12 @@
 export { PROVIDER_ID, PROVIDER_NAME, ANTIGRAVITY_MODELS, getCurrentAntigravityCatalog } from "./models/index.ts";
 export {
   ANTIGRAVITY_DOUBLE_REGISTRATION_WARNING,
+  STANDALONE_ANTIGRAVITY_COMMANDS,
   antigravityProviderRegistered,
+  antigravityRegistrationNotice,
+  antigravityStandaloneCommandsPresent,
   registerAntigravityProvider,
+  shouldSkipAntigravityRegistration,
   type AntigravityRegistration,
 } from "./register.ts";
 export {

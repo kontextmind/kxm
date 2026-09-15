@@ -399,6 +399,7 @@ export async function loginAntigravity(
 
 export async function refreshAntigravityToken(
   credentials: OAuthCredentials,
+  signal?: AbortSignal,
 ): Promise<AntigravityOAuthCredentials> {
   const response = await fetch(TOKEN_URL, {
     method: "POST",
@@ -409,6 +410,7 @@ export async function refreshAntigravityToken(
       refresh_token: credentials.refresh,
       grant_type: "refresh_token",
     }).toString(),
+    signal,
   });
   if (!response.ok) {
     throw new Error(

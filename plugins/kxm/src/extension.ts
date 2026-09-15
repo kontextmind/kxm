@@ -646,7 +646,7 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
 
   pi.on("session_start", async (event: { reason?: string }, ctx) => {
     shuttingDown = false;
-    const antigravityNotice = antigravityRegistrationNotice(antigravityReport);
+    const antigravityNotice = antigravityRegistrationNotice(antigravityReport, pi);
     if (antigravityNotice) ctx.ui.notify(antigravityNotice.message, antigravityNotice.type);
     if (nousReport?.guidance.length) {
       for (const item of nousReport.guidance) {

@@ -8647,6 +8647,7 @@ var SECRET_PATTERNS = [
   /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/gi,
   /\bBearer\s+[A-Za-z0-9._~+/=-]+\b/gi,
   /\bya29\.[A-Za-z0-9._~+/-]+=*/g,
+  /\b1\/\/[A-Za-z0-9_-]+/g,
   /\b1\/[A-Za-z0-9_-]{20,}/g,
   /("?(?:access_token|refresh_token|id_token)"?\s*[:=]\s*")[^"]*(")/gi,
   /\bKXM_[A-Z0-9_]*(TOKEN|SECRET|KEY)[A-Z0-9_]*=\S+/gi,
@@ -9959,7 +9960,7 @@ function assertSafeApiBaseUrl(raw) {
   return `${url.origin}${path === "/" ? "" : path}`;
 }
 function redactSecrets2(text) {
-  return text.replace(/\bya29\.[A-Za-z0-9._~+/-]+=*/g, "[redacted-access-token]").replace(/\b1\/[A-Za-z0-9_-]{20,}/g, "[redacted-refresh-token]").replace(/\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi, "Bearer [redacted]").replace(
+  return text.replace(/\bya29\.[A-Za-z0-9._~+/-]+=*/g, "[redacted-access-token]").replace(/\b1\/\/[A-Za-z0-9_-]+/g, "[redacted-refresh-token]").replace(/\b1\/[A-Za-z0-9_-]{20,}/g, "[redacted-refresh-token]").replace(/\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi, "Bearer [redacted]").replace(
     /("?(?:access_token|refresh_token|id_token|token|client_secret|code_verifier|authorization)"?\s*[:=]\s*")[^"]*(")/gi,
     "$1[redacted]$2"
   ).replace(
@@ -10759,7 +10760,7 @@ async function loginAntigravity(callbacks) {
     cleanup();
   }
 }
-async function refreshAntigravityToken(credentials) {
+async function refreshAntigravityToken(credentials, signal) {
   const response = await fetch(TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -10768,7 +10769,8 @@ async function refreshAntigravityToken(credentials) {
       client_secret: CLIENT_SECRET,
       refresh_token: credentials.refresh,
       grant_type: "refresh_token"
-    }).toString()
+    }).toString(),
+    signal
   });
   if (!response.ok) {
     throw new Error(
@@ -12372,23 +12374,51 @@ function streamAntigravity(model, context, options) {
 }
 
 // plugins/kxm/src/providers/antigravity/register.ts
-var ANTIGRAVITY_DOUBLE_REGISTRATION_WARNING = "kxm: provider id antigravity is already registered by another extension (standalone pi-antigravity). Remove that extension and reload. KXM will not double-register.";
-function antigravityProviderRegistered(pi) {
-  const probe = pi;
-  const ids = [
+var ANTIGRAVITY_DOUBLE_REGISTRATION_WARNING = "kxm: standalone pi-antigravity is still installed. Remove that extension and reload. KXM will not double-register provider id antigravity.";
+var STANDALONE_ANTIGRAVITY_COMMANDS = Object.freeze([
+  "antigravity.image",
+  "antigravity.models",
+  "antigravity.doctor",
+  "antigravity.usage",
+  "antigravity.refresh"
+]);
+function asProbe(pi) {
+  return pi;
+}
+function registeredProviderIds(probe) {
+  return [
     ...probe.getRegisteredProviderIds?.() ?? [],
     ...probe.modelRegistry?.getRegisteredProviderIds?.() ?? []
   ];
+}
+function antigravityStandaloneCommandsPresent(pi) {
+  const probe = asProbe(pi);
+  let names = [];
+  try {
+    names = (probe.getCommands?.() ?? []).map((command) => command.name).filter((name) => typeof name === "string");
+  } catch {
+    return false;
+  }
+  return STANDALONE_ANTIGRAVITY_COMMANDS.some((name) => names.includes(name));
+}
+function antigravityProviderRegistered(pi) {
+  const probe = asProbe(pi);
+  const ids = registeredProviderIds(probe);
   if (ids.includes(PROVIDER_ID)) return true;
   if (probe.modelRegistry?.getProvider?.(PROVIDER_ID)) return true;
   return false;
 }
-function antigravityRegistrationNotice(report) {
-  if (!report?.conflict || !report.warning) return void 0;
-  return { message: report.warning.slice(0, 400), type: "warning" };
+function shouldSkipAntigravityRegistration(pi) {
+  return antigravityProviderRegistered(pi) || antigravityStandaloneCommandsPresent(pi);
+}
+function antigravityRegistrationNotice(report, pi) {
+  const conflict = Boolean(report?.conflict) || (pi ? antigravityStandaloneCommandsPresent(pi) : false);
+  if (!conflict) return void 0;
+  const warning = (report?.warning ?? ANTIGRAVITY_DOUBLE_REGISTRATION_WARNING).slice(0, 400);
+  return { message: warning, type: "warning" };
 }
 function registerAntigravityProvider(pi) {
-  if (antigravityProviderRegistered(pi)) {
+  if (shouldSkipAntigravityRegistration(pi)) {
     return {
       registered: false,
       conflict: true,
@@ -12408,6 +12438,7 @@ function registerAntigravityProvider(pi) {
     refreshModels: refreshAntigravityModels,
     oauth: {
       name: PROVIDER_NAME,
+      isSubscription: true,
       login: loginAntigravity,
       refreshToken: refreshAntigravityToken,
       getApiKey
@@ -14226,7 +14257,7 @@ function piMeshExtension(pi) {
   }
   pi.on("session_start", async (event, ctx) => {
     shuttingDown = false;
-    const antigravityNotice = antigravityRegistrationNotice(antigravityReport);
+    const antigravityNotice = antigravityRegistrationNotice(antigravityReport, pi);
     if (antigravityNotice) ctx.ui.notify(antigravityNotice.message, antigravityNotice.type);
     if (nousReport?.guidance.length) {
       for (const item of nousReport.guidance) {

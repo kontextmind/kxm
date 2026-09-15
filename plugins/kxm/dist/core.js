@@ -833,6 +833,7 @@ var SECRET_PATTERNS = [
   /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/gi,
   /\bBearer\s+[A-Za-z0-9._~+/=-]+\b/gi,
   /\bya29\.[A-Za-z0-9._~+/-]+=*/g,
+  /\b1\/\/[A-Za-z0-9_-]+/g,
   /\b1\/[A-Za-z0-9_-]{20,}/g,
   /("?(?:access_token|refresh_token|id_token)"?\s*[:=]\s*")[^"]*(")/gi,
   /\bKXM_[A-Z0-9_]*(TOKEN|SECRET|KEY)[A-Z0-9_]*=\S+/gi,

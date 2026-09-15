@@ -14,5 +14,6 @@ streaming, dynamic model catalog with last-known-good cache and static
 fallback, thinking-variant mapping, and quota surfaces used by the model list.
 
 Not vendored here: image generation, `/antigravity.image`, and extra slash
-commands (`/antigravity.models`, `/antigravity.doctor`). No `@earendil-works/pi-ai`
-import.
+commands (`/antigravity.models`, `/antigravity.doctor`). `usage.ts` is a dead
+slash-command surface kept because quota parsing shares client types; it is not
+registered. No `@earendil-works/pi-ai` import.

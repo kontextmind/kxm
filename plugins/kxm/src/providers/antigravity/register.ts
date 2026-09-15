@@ -16,7 +16,16 @@ import { ANTIGRAVITY_API, streamAntigravity } from "./stream/index.ts";
 import { prewarmConnection } from "./utils/index.ts";
 
 export const ANTIGRAVITY_DOUBLE_REGISTRATION_WARNING =
-  "kxm: provider id antigravity is already registered by another extension (standalone pi-antigravity). Remove that extension and reload. KXM will not double-register.";
+  "kxm: standalone pi-antigravity is still installed. Remove that extension and reload. KXM will not double-register provider id antigravity.";
+
+/** Slash commands that only the standalone extension registers. */
+export const STANDALONE_ANTIGRAVITY_COMMANDS = Object.freeze([
+  "antigravity.image",
+  "antigravity.models",
+  "antigravity.doctor",
+  "antigravity.usage",
+  "antigravity.refresh",
+]);
 
 export type AntigravityRegistration = {
   registered: boolean;
@@ -26,32 +35,61 @@ export type AntigravityRegistration = {
 
 type ProviderProbe = {
   getRegisteredProviderIds?: () => readonly string[];
+  getCommands?: () => ReadonlyArray<{ name?: string }>;
   modelRegistry?: {
     getRegisteredProviderIds?: () => readonly string[];
     getProvider?: (id: string) => unknown;
   };
 };
 
-export function antigravityProviderRegistered(pi: ExtensionAPI): boolean {
-  const probe = pi as ExtensionAPI & ProviderProbe;
-  const ids = [
+function asProbe(pi: object): ProviderProbe {
+  return pi as ProviderProbe;
+}
+
+function registeredProviderIds(probe: ProviderProbe): string[] {
+  return [
     ...(probe.getRegisteredProviderIds?.() ?? []),
     ...(probe.modelRegistry?.getRegisteredProviderIds?.() ?? []),
   ];
+}
+
+export function antigravityStandaloneCommandsPresent(pi: object): boolean {
+  const probe = asProbe(pi);
+  let names: string[] = [];
+  try {
+    names = (probe.getCommands?.() ?? [])
+      .map((command) => command.name)
+      .filter((name): name is string => typeof name === "string");
+  } catch {
+    return false;
+  }
+  return STANDALONE_ANTIGRAVITY_COMMANDS.some((name) => names.includes(name));
+}
+
+export function antigravityProviderRegistered(pi: object): boolean {
+  const probe = asProbe(pi);
+  const ids = registeredProviderIds(probe);
   if (ids.includes(PROVIDER_ID)) return true;
   if (probe.modelRegistry?.getProvider?.(PROVIDER_ID)) return true;
   return false;
 }
 
+export function shouldSkipAntigravityRegistration(pi: object): boolean {
+  return antigravityProviderRegistered(pi) || antigravityStandaloneCommandsPresent(pi);
+}
+
 export function antigravityRegistrationNotice(
   report: AntigravityRegistration | undefined,
+  pi?: object,
 ): { message: string; type: "warning" } | undefined {
-  if (!report?.conflict || !report.warning) return undefined;
-  return { message: report.warning.slice(0, 400), type: "warning" };
+  const conflict = Boolean(report?.conflict) || (pi ? antigravityStandaloneCommandsPresent(pi) : false);
+  if (!conflict) return undefined;
+  const warning = (report?.warning ?? ANTIGRAVITY_DOUBLE_REGISTRATION_WARNING).slice(0, 400);
+  return { message: warning, type: "warning" };
 }
 
 export function registerAntigravityProvider(pi: ExtensionAPI): AntigravityRegistration {
-  if (antigravityProviderRegistered(pi)) {
+  if (shouldSkipAntigravityRegistration(pi)) {
     return {
       registered: false,
       conflict: true,
@@ -73,6 +111,7 @@ export function registerAntigravityProvider(pi: ExtensionAPI): AntigravityRegist
     refreshModels: refreshAntigravityModels,
     oauth: {
       name: PROVIDER_NAME,
+      isSubscription: true,
       login: loginAntigravity,
       refreshToken: refreshAntigravityToken,
       getApiKey,

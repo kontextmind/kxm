@@ -67,9 +67,10 @@ test("redacts tokens and long hex dumps", () => {
 });
 
 test("redacts Google OAuth access and refresh tokens", () => {
-  const text = 'Authorization: Bearer ya29.a0AfH6-googleapis access_token="ya29.secret" refresh=1/0gK8abcdefghijklmnopqrstuvwxyzABCD';
+  const text = 'Authorization: Bearer ya29.a0AfH6-googleapis access_token="ya29.secret" refresh=1/0gK8abcdefghijklmnopqrstuvwxyzABCD google=1//0eA7abcdefghijklmnopqrstuvwxyzABCD';
   const redacted = redactSecrets(text);
   assert.equal(looksLikeSecret(text), true);
   assert.doesNotMatch(redacted, /ya29\.[A-Za-z0-9]/);
   assert.doesNotMatch(redacted, /1\/0gK8abcdefghijklmnopqrstuvwxyzABCD/);
+  assert.doesNotMatch(redacted, /1\/\/0eA7abcdefghijklmnopqrstuvwxyzABCD/);
 });

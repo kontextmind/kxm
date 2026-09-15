@@ -26,7 +26,9 @@ import {
 import {
   ANTIGRAVITY_DOUBLE_REGISTRATION_WARNING,
   antigravityRegistrationNotice,
+  antigravityStandaloneCommandsPresent,
   registerAntigravityProvider,
+  shouldSkipAntigravityRegistration,
 } from "../../plugins/kxm/src/providers/antigravity/register.ts";
 import {
   createAssistantMessageEventStream,
@@ -43,7 +45,7 @@ const catalogRaw = JSON.parse(readFileSync(join(fixtureDir, "catalog.json"), "ut
 };
 const streamBody = readFileSync(join(fixtureDir, "stream-sse.txt"), "utf8");
 
-function fakePi(options: { alreadyRegistered?: boolean } = {}) {
+function fakePi(options: { alreadyRegistered?: boolean; standaloneCommands?: string[] } = {}) {
   const handlers = new Map<string, Array<(...args: unknown[]) => unknown>>();
   const providers = new Map<string, Record<string, unknown>>();
   const notices: Array<{ message: string; type?: string }> = [];
@@ -62,6 +64,9 @@ function fakePi(options: { alreadyRegistered?: boolean } = {}) {
     },
     getRegisteredProviderIds() {
       return [...providers.keys()];
+    },
+    getCommands() {
+      return (options.standaloneCommands ?? []).map((name) => ({ name, source: "extension" }));
     },
     registerProvider(name: string, config: Record<string, unknown>) {
       providers.set(name, config);
@@ -88,6 +93,7 @@ test("registration exposes the static catalog models under provider id antigravi
   assert.equal(config?.api, "antigravity-api");
   assert.equal(typeof config?.oauth, "object");
   assert.equal(typeof (config?.oauth as { login?: unknown })?.login, "function");
+  assert.equal((config?.oauth as { isSubscription?: boolean })?.isSubscription, true);
   const models = config?.models as Array<{ id: string }>;
   const ids = models.map((model) => model.id);
   for (const expected of ANTIGRAVITY_MODELS.map((model) => model.id)) {
@@ -189,17 +195,20 @@ test("streaming adapter converts a recorded SSE fixture into text, thinking, and
 test("Google OAuth token shapes are redacted from logs and evidence", () => {
   const access = "ya29.a0AfH6SMB-exampleAccessTokenValue_plusPadding==";
   const refresh = "1/0gK8abcdefghijklmnopqrstuvwxyzABCD";
+  const googleRefresh = "1//0eA7abcdefghijklmnopqrstuvwxyzABCD-google";
   const bearer = "Authorization: Bearer ya29.a0AfH6SMB-googleapisToken";
   const json = '{"access_token":"ya29.secret","refresh_token":"1/0gK8abcdefghijklmnopqrstuvwxyzABCD"}';
-  for (const sample of [access, refresh, bearer, json]) {
+  for (const sample of [access, refresh, googleRefresh, bearer, json]) {
     const redacted = redactSecrets(sample);
     assert.equal(looksLikeSecret(sample), true, sample);
     assert.doesNotMatch(redacted, /ya29\.[A-Za-z0-9]/);
     assert.doesNotMatch(redacted, /1\/0gK8/);
+    assert.doesNotMatch(redacted, /1\/\/0eA7/);
     assert.match(redacted, /\[redacted/);
   }
-  const local = redactAntigravitySecrets(`Bearer ${access} refresh=${refresh}`);
+  const local = redactAntigravitySecrets(`Bearer ${access} refresh=${refresh} google=${googleRefresh}`);
   assert.doesNotMatch(local, /ya29\.[A-Za-z0-9]/);
+  assert.doesNotMatch(local, /1\/\/0eA7/);
   assert.match(local, /\[redacted/);
 });
 
@@ -218,4 +227,22 @@ test("double-registration is skipped and warned at session start", () => {
   const extensionPi = fakePi({ alreadyRegistered: true });
   piMeshExtension(extensionPi.api);
   assert.equal(extensionPi.providers.get("antigravity")?.name, "standalone");
+});
+
+test("standalone slash commands skip registration and still warn after KXM registered", () => {
+  const standalone = fakePi({ standaloneCommands: ["antigravity.image", "antigravity.doctor"] });
+  assert.equal(antigravityStandaloneCommandsPresent(standalone.api), true);
+  assert.equal(shouldSkipAntigravityRegistration(standalone.api), true);
+  const skipped = registerAntigravityProvider(standalone.api);
+  assert.equal(skipped.registered, false);
+  assert.equal(skipped.conflict, true);
+  assert.equal(standalone.providers.has("antigravity"), false);
+
+  const ours = fakePi();
+  const registered = registerAntigravityProvider(ours.api);
+  assert.equal(registered.registered, true);
+  const lateStandalone = fakePi({ standaloneCommands: ["antigravity.models"] });
+  const notice = antigravityRegistrationNotice(registered, lateStandalone.api);
+  assert.equal(notice?.type, "warning");
+  assert.match(notice?.message ?? "", /standalone pi-antigravity/);
 });

@@ -45,6 +45,7 @@ export function assertSafeApiBaseUrl(raw: string): string {
 export function redactSecrets(text: string): string {
   return text
     .replace(/\bya29\.[A-Za-z0-9._~+/-]+=*/g, "[redacted-access-token]")
+    .replace(/\b1\/\/[A-Za-z0-9_-]+/g, "[redacted-refresh-token]")
     .replace(/\b1\/[A-Za-z0-9_-]{20,}/g, "[redacted-refresh-token]")
     .replace(/\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi, "Bearer [redacted]")
     .replace(
