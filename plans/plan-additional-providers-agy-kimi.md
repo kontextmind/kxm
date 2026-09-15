@@ -2,18 +2,19 @@
 schema: "kxm.doc.v1"
 id: "FEAT-PROVIDERS-AGY-KIMI"
 type: "feature"
-title: "Native Pi providers for AGY and Kimi"
+title: "AGY and Kimi integration research; Pi migration superseded"
 project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-11"
-updated: "2026-09-11"
+updated: "2026-09-15"
 authority: "hypothesis"
 confidence: "uncertain"
-summary: "Proposed native Pi providers for agy and kimi instead of one-shot CLI wrappers."
+summary: "Historical Pi-provider migration superseded by native harness ownership; retain streaming, quota and schema integration research."
 tags: ["agy", "kimi", "providers"]
 related:
   - implementation-plan.md
+  - plan-unified-kxm-milestones.md
   - plan-usage-cost-quota-tracking.md
   - research-agent-producer-architecture.md
 depends_on: []
@@ -22,11 +23,13 @@ details:
   delivery_status: "proposed"
 ---
 
-# Plan: Native Pi Providers for AGY and Kimi
+# Design Reference: AGY and Kimi Integration
 
 Task Reference: `task_providers_agy_kimi`  
-Status: Draft / Proposed  
+Status: Draft / Historical migration objective superseded
 Tracking: [`plans/implementation-plan.md`](implementation-plan.md)
+
+**Partially superseded design.** Replacing native AGY/Kimi routes with Pi providers is not the current architecture. The [implementation plan](implementation-plan.md) owns decisions, status, owners and phase gates; the [unified plan](plan-unified-kxm-milestones.md) supplies proposed M2/M3/M8 scope and order. Native authentication and admission decisions control. This document retains integration research, not an independent migration backlog or permission to admit providers.
 
 **Related plans:** [`implementation-plan.md`](implementation-plan.md) (execution tracker);
 [`plan-usage-cost-quota-tracking.md`](plan-usage-cost-quota-tracking.md)
@@ -36,103 +39,91 @@ Tracking: [`plans/implementation-plan.md`](implementation-plan.md)
 
 ## 1. Objective
 
-Transition Google Antigravity (`agy`) and Moonshot Kimi (`kimi`) from external one-shot CLI subprocess wrappers in [`plugins/kxm/src/vnext-harness.ts`](../plugins/kxm/src/vnext-harness.ts) into first-class, streaming-capable native Pi provider extensions. This eliminates process-spawn overhead, provides real-time token streaming, unifies credential management under `~/.pi/agent/auth.json`, and allows Gemini and Kimi models to operate as supervised long-lived Pi workers.
+Identify reusable streaming, schema handling, diagnostics and quota contracts while preserving native harness sessions and credentials. Google remains on authenticated `agy`; Kimi controls require separate installed-version, authentication and lifecycle evidence. Only Pi is currently admitted as a supervised long-lived RPC worker. Direct Pi-provider integration was an earlier alternative, not the selected route for replacing these native harnesses.
 
 ---
 
 ## 2. Background and Architectural Gap
 
-In KXM's current architecture:
+Rechecked in KXM `02aaed31` (`vnext-harness.ts`):
 
 - `vnext-harness.ts` defines `agy` as an external binary (`commands: ["agy"]`) executed via `agy --output-format json -p`. The output is parsed post-hoc via JSON/regex heuristics in `parseAgyOneShotUsage`.
-- `kimi` is similarly executed as an external one-shot CLI binary located under `~/.kimi-code/bin`.
+- The catalog resolves `kimi` as an external one-shot CLI and requests `--output-format stream-json -p`; a particular user installation path is not a universal product contract.
 - `AGENTS.md` and `implementation-plan.md` state that only Pi is a supervised long-lived RPC worker (`kxm agent worker` / `pi --mode rpc`), while `agy` is strictly one-shot headless.
 
 ### Deficiencies of the Current Setup
 
-1. **Cold-Start Latency:** Spawning standalone CLI processes on every turn adds 500ms–2000ms of process initialization overhead.
-2. **Missing Token Streaming & Cancellation:** Subprocess execution buffers output until exit. If a model enters a runaway generation or hallucinatory loop, KXM cannot stream intermediate tokens or abort the turn early.
-3. **Authentication Drift:** The `agy` and `kimi` CLIs maintain separate credential caches from Pi's native store (`~/.pi/agent/auth.json`), preventing unified health checks and credential audits.
-4. **Moonshot 15 KB Tool Schema Limit:** When calling Kimi models through generic interfaces, Moonshot's API rejects requests when total tool schemas exceed 15 KB, frequently breaking multi-tool agents.
+1. **Startup measurement:** Native process startup may contribute latency; no general 500–2000 ms penalty has been established for current KXM.
+2. **Buffered observation:** The current one-shot supervisor uses asynchronous `spawn`, supports abort and bounded termination, and retains accepted A1 settlement/evidence protections. Incremental native events and exact-session controls remain M2/M3 work; buffered output does not mean cancellation is absent.
+3. **Shared health, native credentials:** Separate native credential stores are intentional. Shared readiness should report detected, authenticated, protocol-verified and admitted states without copying subscription credentials into Pi.
+4. **Schema compatibility:** Deduplication and size accounting are useful candidates. Any Kimi schema-size limit must be verified against the exact provider route and version; 15 KB is not a universal KXM acceptance limit.
 
 ---
 
 ## 3. Reference Architecture from Evaluated Repositories
 
+These are historical reference patterns, not current model catalogs or adopted packages. Consult the pinned fork reviews before reuse; endpoint, license, model and credential assumptions require version-specific evidence.
+
 ### A. `pi-antigravity` (<https://github.com/kontextmind/pi-antigravity>)
 
 - **Direct Provider Registration:** Registers `antigravity` into Pi via `pi.registerProvider("antigravity", ...)`.
 - **In-Process OAuth 2.0 PKCE:** Authenticates directly with Google Cloud Code Assist / Antigravity endpoints using a loopback listener (`http://localhost:51121/oauth-callback`). Credentials and refresh tokens are stored in `~/.pi/agent/auth.json`.
-- **Native SSE Streaming:** Directly processes Server-Sent Events from Antigravity's inference API, delivering real-time tokens and enabling instant turn cancellation.
+- **SSE Streaming Pattern:** Direct provider event handling is relevant to decoder design; it does not establish native AGY control or instant cancellation guarantees.
 - **Quota & Diagnostics Commands:** Exposes `/antigravity.doctor` and `/antigravity.usage` to inspect Google's server-side shared quota groups, consumed percentages, and reset timestamps.
 
 ### B. `pi-provider-kimi-code` (npm: `pi-provider-kimi-code`)
 
-- **Direct Provider Registration:** Registers `kimi-coding` in Pi, supporting K3, K2.7 Code, and HighSpeed models.
-- **Shared Credential Sync:** Reuses and bidirectionally synchronizes OAuth tokens with `~/.kimi-code/credentials/kimi-code.json` while honoring fallback `KIMI_API_KEY`.
-- **Tool Schema Deduplication:** Automatically collapses repetitive JSON Schema `$defs` and `$ref` constructs to keep total tool definitions well under Moonshot's 15 KB ceiling.
+- **Direct Provider Registration:** A Pi registration pattern for `kimi-coding`; available model IDs must come from observed native/provider discovery.
+- **Credential Sync Pattern:** The reference's synchronization with Kimi credentials and API-key fallback is not authorization to copy credentials or alter native billing routes in KXM.
+- **Tool Schema Deduplication:** Deduplicating repeated JSON Schema definitions may reduce payload size; preserve semantics and verify actual route limits.
 - **Kimi Files API Integration:** Offloads large image payloads to the Kimi Files API (`ms://` URIs) instead of sending multi-megabyte base64 strings inline.
 
 ---
 
-## 4. Proposed Changes in KXM
+## 4. Retained Integration Design
 
 ```mermaid
 flowchart LR
-    subgraph Current["Current Subprocess Model"]
-        KXM1[KXM Harness Runner] -->|spawnSync agy -p| CLI1[agy CLI]
-        KXM1 -->|spawnSync kimi| CLI2[kimi-code CLI]
+    subgraph Native["Native harness ownership"]
+        KXM1[KXM Runtime and adapters] -->|Bounded async process| CLI1[agy CLI]
+        KXM1 -->|Separately verified native protocol| CLI2[kimi-code CLI]
         CLI1 --> GoogleAPI[Google Antigravity API]
         CLI2 --> MoonshotAPI[Moonshot API]
     end
 
-    subgraph Proposed["Proposed Native Provider Model"]
-        KXM2[KXM Engine] -->|In-Process / RPC| PiWorker[Pi Worker Core]
-        PiWorker -->|pi-antigravity| GoogleAPI
-        PiWorker -->|pi-provider-kimi-code| MoonshotAPI
-        PiWorker -->|Unified Auth| AuthStore["~/.pi/agent/auth.json"]
+    subgraph Shared["KXM shared contracts"]
+        KXM1 --> Events[Bounded events and truthful control receipts]
+        KXM1 --> Health[Readiness and account-scoped quota observations]
     end
 ```
 
-### 1. Package Dependency Declaration
+### 1. Distribution Boundary
 
-Update KXM's peer package configuration and installation manifests:
+Useful components belong behind one `@kontextmind/kxm` installation and thin adapters. Do not require separate Pi extension registration. Optional dependencies need explicit KXM-managed setup, license review and platform evidence under M1/M9.
 
-- Ensure `@tian.zuo/pi-antigravity` (or `pi-antigravity`) and `pi-provider-kimi-code` are registered in Pi's package registry (`~/.pi/agent/settings.json`).
+### 2. Harness Contracts (`plugins/kxm/src/vnext-harness.ts`)
 
-### 2. Update `plugins/kxm/src/vnext-harness.ts`
+Preserve native-provider boundaries and fail-closed eligibility. Presence of a provider package does not permit an allowlist expansion. Extend capability observations and event/control adapters only through M2/M3 and current Phase 11 admission, including workspace/session identity and cancellation settlement.
 
-- Update `NATIVE_HARNESS_PROVIDERS`:
-  - Retain `claude`, `codex`, `grok` as CLI harnesses where appropriate.
-  - Update `agy` and `kimi` entries to allow routing through `harness: "pi"` when the native provider packages are present.
-- Adjust `PI_ALLOWED_PROVIDERS` to include `antigravity` and `kimi-coding`.
-- Update `isKnownHarnessId` and validation rules so that models specified as `antigravity/<model-id>` or `kimi-coding/<model-id>` are recognized as native Pi models rather than unhosted external models.
+### 3. Inventory (`plugins/kxm/src/model-inventory.ts`)
 
-### 3. Update `plugins/kxm/src/model-inventory.ts`
-
-- Add native discovery for Antigravity models (`gemini-3.8-flash`, `gemini-3.8-pro`, `claude-fable-5-1`, etc.) and Kimi models (`k3`, `k2.7-code`) directly from Pi's registered provider inventory.
-- Map context window sizes, max output tokens, and reasoning capabilities reported by the native providers.
+Retain source/version/account provenance for observed model IDs, context capacity and capabilities. Unknown fields stay unknown; inventory discovery does not admit a route or establish a long-lived worker.
 
 ### 4. Update Diagnostics & Quota Reporting
 
-- Update `kxm harness list` to inspect Pi's auth state for `antigravity` and `kimi-coding` in addition to checking CLI binaries on `$PATH`.
+- Use each native harness's supported health surface. Account-scoped quota observations need freshness, invalidation and backoff under M8; do not substitute Pi authentication for native authentication.
 
 ---
 
-## 5. Execution Stages and Milestones
+## 5. Delivery Mapping
 
-| Stage | Action | Target Files | Verification Gate |
-| :--- | :--- | :--- | :--- |
-| **Stage 1** | Verify provider package installation in Pi runtime | `~/.pi/agent/settings.json`, `npm` packages | `pi list` reports `pi-antigravity` and `pi-provider-kimi-code` active |
-| **Stage 2** | Update `vnext-harness.ts` provider allowlists | [`plugins/kxm/src/vnext-harness.ts`](../plugins/kxm/src/vnext-harness.ts) | Unit tests in `test/core/harness.test.ts` pass |
-| **Stage 3** | Update model inventory & dispatch resolution | [`plugins/kxm/src/model-inventory.ts`](../plugins/kxm/src/model-inventory.ts) | Model resolution for `antigravity/gemini-3.8-flash` resolves to Pi harness |
-| **Stage 4** | End-to-end one-shot execution check | `scripts/harness-run.mjs` | Test one-shot completion returns streaming tokens with exit code 0 |
+The former package-install/allowlist/migration stages are superseded. Candidate decoder work belongs to unified M2, session/control evidence to M3, and native health/quota contracts to M8. The implementation plan alone records selected slices, owners, status and phase gates.
 
 ---
 
-## 6. Acceptance Criteria
+## 6. Design Invariants for the Owning Milestones
 
-- `kxm harness list` correctly identifies `antigravity` and `kimi-coding` as detected and authenticated.
-- A workflow step assigning `antigravity/gemini-3.8-flash` executes natively inside Pi without shelling out to `agy -p`.
-- Multi-tool agents assigned to `kimi-coding/k3` succeed without failing Moonshot's 15 KB schema ceiling.
-- `npm run verify` passes with 100% clean check, build, and test runs.
+- Native authentication and billing routes remain explicit; package discovery cannot admit execution.
+- Bounded streaming preserves terminal outcomes, cancellation, redaction and usage accounting.
+- Schema transformations retain tool semantics and are checked against an observed route/version.
+- Shared diagnostics distinguish unknown, unauthenticated and unsupported states. These invariants do not mark any existing phase gate passed.

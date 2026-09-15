@@ -7,19 +7,20 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-11"
-updated: "2026-09-11"
+updated: "2026-09-15"
 authority: "hypothesis"
 confidence: "uncertain"
 summary: "Open research on agent/producer/harness/writer boundaries; not an execution tracker."
 tags: ["research", "producers"]
 related:
+  - research-kxm-harness-strategy.md
   - implementation-plan.md
   - plan-additional-providers-agy-kimi.md
   - plan-ssh-remote-execution.md
 depends_on: []
 blocked_by: []
 details:
-  research_status: "planned"
+  research_status: "partial_source_review"
   task: "task_f2d22a9993e4"
 ---
 
@@ -30,11 +31,29 @@ Tracking: [`implementation-plan.md`](implementation-plan.md)
 
 **Related plans:** [`implementation-plan.md`](implementation-plan.md) (execution tracker);
 [`plan-additional-providers-agy-kimi.md`](plan-additional-providers-agy-kimi.md)
-(native Pi provider routes);
+(native harness and explicitly hosted provider routes);
 [`plan-ssh-remote-execution.md`](plan-ssh-remote-execution.md)
 (multi-host / SSH-connected agents).
 
 ## Objective
+
+The [harness strategy report](research-kxm-harness-strategy.md) supplies a pinned
+Pi/OpenCode/DSH comparison, workflow ownership diagrams, native-session and input
+receipt requirements, and proposed decision experiments. Its recommendation is
+to extend KXM's existing Runtime and compare embedded execution hosts before a
+deeper engine choice. Multi-host execution, comparative measurements and route
+admission evidence below remain open; this research is not fully accepted.
+
+The [unified plan](plan-unified-kxm-milestones.md) owns the single proposed
+M0–M9 scope and sequence. This document retains research questions and evidence
+criteria; [Tracking](implementation-plan.md) alone records decisions, execution
+status, accountable owners and phase-gate acceptance. The current baseline is
+`02aaed31`: accepted A1 async probes, escalation-after-close, conservative
+descendant settlement, v2 process evidence and supervisor rejection handling
+must not be reopened as untouched defects. Remaining admission witnesses stay
+open in Tracking. The linked harness comparison preserves its historical
+`5ff9f642` inspection and remains an early subsequent decision fixture, not a
+new first product slice or a release-only experiment.
 
 Document and simplify the relationship between Hub agents, workflow producers,
 roles, writers, harnesses, and gates. Determine whether Pi's current producer

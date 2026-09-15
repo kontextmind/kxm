@@ -1,0 +1,170 @@
+{
+  "observedAt": "2026-09-15T01:23:31.698688+00:00",
+  "kxmBaseline": "02aaed31fd6160a78378c677ab27d4119f039621",
+  "reviewedNewForks": 7,
+  "totalReviewedForks": 36,
+  "forks": [
+    {
+      "name": "ruflo",
+      "category": "Memory and coordinator workflows",
+      "relevance": "High",
+      "action": "Adapt patterns",
+      "priority": "P2",
+      "takeaway": "Scoped search, recovery/projection contracts and stable inbox addressing",
+      "caution": "Hybrid writes and optional guards need redesign; inbox reference is non-durable",
+      "repository": "kontextmind/ruflo",
+      "sha": "2602b642d92234c710ffbe96bfb33007d481ceab",
+      "upstream": "ruvnet/ruflo",
+      "sourceUrl": "https://github.com/kontextmind/ruflo/tree/2602b642d92234c710ffbe96bfb33007d481ceab",
+      "kxmComparisonSha": "02aaed31fd6160a78378c677ab27d4119f039621",
+      "milestones": [
+        "M1",
+        "M3",
+        "M5",
+        "M6",
+        "M7",
+        "M9"
+      ],
+      "reviewPath": "reviews/memory-studio-forks/ruflo.md"
+    },
+    {
+      "name": "OpenViking",
+      "category": "Memory and retrieval",
+      "relevance": "High",
+      "action": "Adapt patterns",
+      "priority": "P1",
+      "takeaway": "Tiered context, source-linked impact views and durable extraction stages",
+      "caution": "AGPL server; map scopes explicitly; no atomic cross-store proof",
+      "repository": "kontextmind/OpenViking",
+      "sha": "192b813e7e3106680a5534e2d4c9bcf6d2390abd",
+      "upstream": "volcengine/OpenViking",
+      "sourceUrl": "https://github.com/kontextmind/OpenViking/tree/192b813e7e3106680a5534e2d4c9bcf6d2390abd",
+      "kxmComparisonSha": "02aaed31fd6160a78378c677ab27d4119f039621",
+      "milestones": [
+        "M1",
+        "M5",
+        "M6",
+        "M7",
+        "M9"
+      ],
+      "reviewPath": "reviews/memory-studio-forks/OpenViking.md"
+    },
+    {
+      "name": "dsh-web",
+      "category": "Studio and harness management",
+      "relevance": "High",
+      "action": "Adapt patterns",
+      "priority": "P1",
+      "takeaway": "Taskboard views, exact continuation controls and governed capability workshop",
+      "caution": "DSH coupling; weak result correlation and full-control remote pairing",
+      "repository": "kontextmind/dsh-web",
+      "sha": "8f44fa4691efdfc4bf75b21b86722e8fb7419b9b",
+      "upstream": "zhu1090093659/dsh-web",
+      "sourceUrl": "https://github.com/kontextmind/dsh-web/tree/8f44fa4691efdfc4bf75b21b86722e8fb7419b9b",
+      "kxmComparisonSha": "02aaed31fd6160a78378c677ab27d4119f039621",
+      "milestones": [
+        "M0",
+        "M1",
+        "M2",
+        "M3",
+        "M6",
+        "M7",
+        "M9"
+      ],
+      "reviewPath": "reviews/memory-studio-forks/dsh-web.md"
+    },
+    {
+      "name": "agenticmail",
+      "category": "Coordinator email and SMS",
+      "relevance": "High",
+      "action": "Adapt patterns",
+      "priority": "P1",
+      "takeaway": "Stable agent inbox, selective wakes, thread context and transport adapters",
+      "caution": "Exact session mapping and durable outbox needed; SMS transport capabilities differ",
+      "repository": "kontextmind/agenticmail",
+      "sha": "a3e1cf0d09291ebfc22695ebe73affd9bf6e1871",
+      "upstream": "agenticmail/agenticmail",
+      "sourceUrl": "https://github.com/kontextmind/agenticmail/tree/a3e1cf0d09291ebfc22695ebe73affd9bf6e1871",
+      "kxmComparisonSha": "02aaed31fd6160a78378c677ab27d4119f039621",
+      "milestones": [
+        "M1",
+        "M3",
+        "M5",
+        "M6",
+        "M7",
+        "M8",
+        "M9"
+      ],
+      "reviewPath": "reviews/memory-studio-forks/agenticmail.md"
+    },
+    {
+      "name": "reactive-resume",
+      "category": "Studio editing and artifact UX",
+      "relevance": "Medium",
+      "action": "Adapt patterns",
+      "priority": "P2",
+      "takeaway": "Schema-based forms, draft state, preview and export boundaries",
+      "caution": "Editor patterns only; no agent runtime or workflow acceptance authority",
+      "repository": "kontextmind/reactive-resume",
+      "sha": "fd3494ccac6ef4c47d01614a8a5dcdea08df85eb",
+      "upstream": "reactive-resume/reactive-resume",
+      "sourceUrl": "https://github.com/kontextmind/reactive-resume/tree/fd3494ccac6ef4c47d01614a8a5dcdea08df85eb",
+      "kxmComparisonSha": "02aaed31fd6160a78378c677ab27d4119f039621",
+      "milestones": [
+        "M0",
+        "M1",
+        "M6",
+        "M7",
+        "M9"
+      ],
+      "reviewPath": "reviews/memory-studio-forks/reactive-resume.md"
+    },
+    {
+      "name": "yao",
+      "category": "Agent workflow service architecture",
+      "relevance": "High",
+      "action": "Adapt patterns",
+      "priority": "P2",
+      "takeaway": "Typed task lifecycle, scoped management APIs and streaming contracts",
+      "caution": "Modified license and external UI assets; retain KXM ownership",
+      "repository": "kontextmind/yao",
+      "sha": "5774ce8de5a4d832a1808d942f87c60de86c78e7",
+      "upstream": "YaoApp/yao",
+      "sourceUrl": "https://github.com/kontextmind/yao/tree/5774ce8de5a4d832a1808d942f87c60de86c78e7",
+      "kxmComparisonSha": "02aaed31fd6160a78378c677ab27d4119f039621",
+      "milestones": [
+        "M1",
+        "M2",
+        "M3",
+        "M6",
+        "M7",
+        "M9"
+      ],
+      "reviewPath": "reviews/memory-studio-forks/yao.md"
+    },
+    {
+      "name": "agentic-inbox",
+      "category": "Persistent inbox and web interaction",
+      "relevance": "High",
+      "action": "Adapt patterns",
+      "priority": "P1",
+      "takeaway": "Mailbox identity, thread UI and separate email agent processing",
+      "caution": "Replace best-effort wake and premature sent state; no SMS implementation",
+      "repository": "kontextmind/agentic-inbox",
+      "sha": "48039bb6785af34e592c2966f87cde2b255c4c80",
+      "upstream": "cloudflare/agentic-inbox",
+      "sourceUrl": "https://github.com/kontextmind/agentic-inbox/tree/48039bb6785af34e592c2966f87cde2b255c4c80",
+      "kxmComparisonSha": "02aaed31fd6160a78378c677ab27d4119f039621",
+      "milestones": [
+        "M2",
+        "M3",
+        "M5",
+        "M6",
+        "M7",
+        "M8",
+        "M9"
+      ],
+      "reviewPath": "reviews/memory-studio-forks/agentic-inbox.md"
+    }
+  ]
+}

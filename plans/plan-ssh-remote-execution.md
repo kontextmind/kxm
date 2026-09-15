@@ -7,13 +7,14 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-11"
-updated: "2026-09-12"
+updated: "2026-09-15"
 authority: "hypothesis"
 confidence: "uncertain"
-summary: "Proposed ssh_run tool with ControlMaster multiplexing and in-memory credential masking."
+summary: "Technical reference for existing SSH helpers and proposed remote recovery, workspace binding and credential contracts."
 tags: ["ssh", "remote"]
 related:
   - implementation-plan.md
+  - plan-unified-kxm-milestones.md
   - history/plan-safety-security-process-integrity.md
   - research-agent-producer-architecture.md
   - history/plan-role-configuration-governance.md
@@ -30,6 +31,8 @@ Task Reference: `task_ssh_remote_execution`
 Status: Draft / Proposed  
 Tracking: [`plans/implementation-plan.md`](implementation-plan.md)
 
+**Design reference.** This document retains remote transport and lifecycle design. The [implementation plan](implementation-plan.md) owns decisions, status, owners and phase gates, including Phase 6; the [unified plan](plan-unified-kxm-milestones.md) supplies proposed M2/M3 scope/order, with M8 credential and M9 platform work. Existing SSH helpers do not establish remote workflow recovery, and this document is not an independent backlog.
+
 **Related plans:** [`implementation-plan.md`](implementation-plan.md) (execution tracker);
 archived [`plan-safety-security-process-integrity.md`](history/plan-safety-security-process-integrity.md)
 (pinned SSH host keys);
@@ -40,7 +43,7 @@ archived [`plan-role-configuration-governance.md`](history/plan-role-configurati
 
 ## 1. Objective
 
-Enable secure, low-latency remote command execution, file synchronization, and remote worker orchestration over SSH inspired by `pix-ssh`: provide the `ssh_run` tool, reuse connections via OpenSSH `ControlMaster` multiplexing, support safe read-only `~/.ssh/config` discovery, and protect credentials using in-memory masking.
+Extend existing SSH helpers toward the canonical remote workflow contract: verified workspace transfer, versioned remote helper, event cursors, reattachment, scoped secret grants, cleanup and uncertain-effect recovery. Retain connection reuse and bounded receipts inspired by `pix-ssh`, using the existing Runtime as execution authority.
 
 ---
 
@@ -48,31 +51,31 @@ Enable secure, low-latency remote command execution, file synchronization, and r
 
 In KXM today:
 
-- Agent execution is strictly host-local.
-- Distributed verification, remote build environments (e.g. Linux test clusters, GPU nodes, high-memory compile servers), and cloud host management are not natively supported.
+- `plugins/kxm/src/ssh-remote.ts` and `plugins/kxm/src/cli/system.ts` already provide SSH discovery, command/file execution helpers, multiplexing and pinned-host-key checks, exposed through `kxm ssh`.
+- These helpers do not prove durable remote worker orchestration. Phase 6 still requires equivalent local/remote workflow contracts and connection-loss recovery.
 - **The Security & Performance Hazards of Ad-Hoc SSH:**
-  1. Spawning raw `ssh user@host command` on every turn incurs repetitive TCP, SSH handshake, and key exchange latency (500ms–2000ms per call).
-  2. Agents often attempt to read `~/.ssh/config` directly, exposing private server topologies and keys to the LLM context.
+  1. Repeated SSH handshakes can add latency; the former 500ms–2000ms estimate is unmeasured for this environment.
+  2. SSH config can expose topology and key-file paths. Discovery should return only necessary metadata and must not read private key contents.
   3. Hardcoding passwords or keys into command arguments exposes credentials in process tables (`ps aux`), shell histories, and session logs.
 
 ---
 
 ## 3. Reference Architecture: `pix-ssh` ([pix-mono/packages/pix-ssh](https://github.com/kontextmind/pix-mono/tree/main/packages/pix-ssh))
 
-`pix-ssh` provides a battle-tested architecture for AI agent SSH access:
+`pix-ssh` supplies reference patterns; reuse and platform behavior require pinned-source and installed-version checks:
 
 - **`ssh_run` Tool:**
-  - `action: "info"`: Read-only parse of `~/.ssh/config` (handling `Include`, `ProxyJump`, and wildcards) and resolves aliases via `ssh -G <host>` without opening network sockets or prompting for credentials.
+  - `action: "info"`: Separates config parsing from native `ssh -G` resolution. Native config evaluation must not be assumed side-effect-free; executable directives and effective configuration need a defined inspection boundary.
   - `action: "command"`: Executes commands through the remote host's configured shell.
   - `action: "file"`: Transfers files over the encrypted channel.
 - **OpenSSH ControlMaster Multiplexing:**
-  - Maintains persistent master sockets (`ControlMaster auto`, `ControlPersist 10m`), allowing subsequent calls to execute with near-zero latency.
+  - Maintains persistent master sockets (`ControlMaster auto`, `ControlPersist 10m`) to avoid repeated handshakes; remote command duration remains workload-dependent.
 - **Masked Credential Security:**
-  - SSH password authentication passes tokens via `sshpass -e` (environment variable, avoiding `ps` leaks).
+  - SSH password authentication can use `sshpass -e`, avoiding password argv fields; process environment access remains a separate exposure to control.
   - Remote `sudo` commands pipe passwords to `sudo -S -p ''` over stdin.
-  - Credentials remain strictly in-memory per session and are never written to disk or echoed in LLM responses.
+  - KXM must redact credentials before logs/prompts and keep scoped secret references. Dropping a JavaScript reference is not proof of memory zeroization.
 - **Approval Windows:**
-  - Operator approval grants a 15-minute lease per host for non-destructive operations, avoiding repetitive confirmation prompts.
+  - A host connection lease is distinct from permission. Any reusable approval must remain bound to actor, project, target and effect; connection reuse never authorizes arbitrary commands.
 
 ---
 
@@ -87,14 +90,14 @@ sequenceDiagram
     participant Remote as Remote Worker Host
 
     Agent->>SSHRun: action: "info"
-    SSHRun->>Config: Parse config aliases & ProxyJump (ssh -G)
-    Config-->>SSHRun: Return target parameters (no network connection)
+    SSHRun->>Config: Parse allowed config metadata
+    Config-->>SSHRun: Return bounded target parameters
     SSHRun-->>Agent: Target host discovery report
 
     Agent->>SSHRun: action: "command", host: "build-node", command: "cargo test"
     SSHRun->>Master: Check active socket
     alt Socket alive (ControlPersist)
-        Master->>Remote: Multiplexed command execution (0ms handshake)
+        Master->>Remote: Multiplexed command execution
     else Socket inactive
         SSHRun->>Remote: Authenticate & establish ControlPersist socket
     end
@@ -102,7 +105,9 @@ sequenceDiagram
     SSHRun-->>Agent: Structured execution receipt
 ```
 
-### 1. The `ssh_run` Tool Specification (`plugins/kxm/src/tools/ssh-run.ts`)
+### 1. Existing Helper Contract (`plugins/kxm/src/ssh-remote.ts`)
+
+The following is an abbreviated interface illustration, not a new `tools/ssh-run.ts` implementation target. Existing CLI handlers live in `plugins/kxm/src/cli/system.ts`.
 
 ```typescript
 export interface SshRunParams {
@@ -118,43 +123,38 @@ export interface SshRunParams {
 
 ### 2. Safe Config Discovery (`action: "info"`)
 
-- Inspect `~/.ssh/config` without opening network connections:
+- Keep literal config parsing separate from native resolution:
   - List host aliases and their configured `ProxyJump` routes.
-  - Run `ssh -G <host>` to resolve effective `HostName`, `User`, `Port`, and `IdentityFile`.
+  - Existing `ssh -G <host>` resolution yields effective fields, but inspection safety must cover config directives such as `Match exec` and must not be certified from the `-G` flag alone. Use fixtures to define supported resolution and refuse unsafe inspection cases.
 - Omit private keys, passphrase fields, and sensitive metadata from model output.
 
 ### 3. Connection Multiplexing Engine
 
-- Store control sockets in `.kxm/run/ssh-sockets/%C`.
+- Existing sockets use `.kxm/run/ssh-sockets/%C`; retain bounded lifecycle ownership and verify directory access and Windows support before treating that layout as portable.
 - Arguments for master connection:
 
   ```bash
-  ssh -o ControlMaster=auto -o ControlPath=.kxm/run/ssh-sockets/%C -o ControlPersist=10m -o BatchMode=yes
+  ssh -o ControlMaster=auto -o ControlPath=.kxm/run/ssh-sockets/%C -o ControlPersist=10m -o BatchMode=yes -o StrictHostKeyChecking=yes <host>
   ```
 
 ### 4. Credential Security & In-Memory Masking
 
-- If SSH key authentication fails, prompt the operator using a masked TUI dialog.
-- Pass the collected password via `SSHPASS` env variable to `sshpass -e`.
-- For `sudo: true`, collect the remote sudo password and pipe directly to `sudo -S -p ''` via stdin.
-- Drop passwords from memory when the session terminates.
+- A failed key login reports an explicit auth outcome. Password setup is an explicit scoped flow, not an automatic fallback or permission increase.
+- If password authentication is supported, avoid argv secrets, bound environment exposure, and redact before persistence; `sshpass` is an optional platform dependency.
+- `sudo` requires its own admitted effect and scoped secret handling; stdin transport does not supply authorization.
+- Release secret references and grants at session termination without claiming guaranteed memory erasure.
 
 ---
 
-## 5. Execution Stages and Milestones
+## 5. Delivery Mapping
 
-| Stage | Action | Target Files | Verification Gate |
-| :--- | :--- | :--- | :--- |
-| **Stage 1** | Implement `action: "info"` safe config parser | `plugins/kxm/src/tools/ssh-run.ts` | Unit tests verify host resolution without opening sockets |
-| **Stage 2** | Implement OpenSSH `ControlMaster` lifecycle | `plugins/kxm/src/tools/ssh-run.ts` | Test confirms second command executes over existing master socket |
-| **Stage 3** | Implement credential masking for SSH & sudo | `plugins/kxm/src/tools/ssh-run.ts` | Security test confirms passwords do not appear in child argv or logs |
-| **Stage 4** | Integrate with KXM role runner for remote worker offloading | [`plugins/kxm/src/vnext-engine.ts`](../plugins/kxm/src/vnext-engine.ts) | Test confirms remote stage execution completes with valid receipt |
+Parser, multiplexing and credential transport already have helper implementations. Their hardening and remote workflow integration belong to Phase 6, using M2 event/reconnect contracts and M3 exact-session controls, M8 secret setup and M9 platform evidence. The former stage table is replaced by this mapping; selected slices, owners and acceptance status remain exclusively in the implementation plan.
 
 ---
 
-## 6. Acceptance Criteria
+## 6. Design Invariants for the Owning Milestones
 
-- `ssh_run({ action: "info" })` allows agents to discover SSH hosts without reading private files directly.
-- Repeated commands against the same remote host execute in <100ms via `ControlMaster` socket reuse.
-- Passwords never appear in `ps`, disk logs, or prompt history.
-- `npm run verify` passes completely.
+- Discovery exposes necessary host metadata without reading private keys; native config evaluation has separately demonstrated restrictions.
+- Connection reuse is measured against cold-handshake overhead in a named environment; no blanket sub-100 ms command guarantee applies.
+- Credentials do not enter argv, logs or prompts; environment/stdin handling and platform dependencies are explicitly checked.
+- Remote workspace identity, reconnect cursors, cancellation and uncertain effects preserve Runtime contracts. Existing helper tests or successful commands alone do not pass Phase 6.
