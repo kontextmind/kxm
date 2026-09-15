@@ -182,7 +182,7 @@ test("coverage floors stay 91/80/92 for core and 93/80/93 for complete with no t
   assert.equal(pkg.scripts?.["publish-npm"], undefined);
 });
 
-test("coverage excludes stay file-scoped and never hide the antigravity provider tree", () => {
+test("coverage excludes stay file-scoped and never hide the antigravity or claude-bridge provider trees", () => {
   const coverageCore = pkg.scripts?.["test:coverage:core"] ?? "";
   const coverageComplete = pkg.scripts?.["test:coverage:complete"] ?? "";
   // Spawned entrypoints: covered by process/install tests, not line-counted here.
@@ -191,6 +191,7 @@ test("coverage excludes stay file-scoped and never hide the antigravity provider
     assert.match(script, /--test-coverage-exclude=plugins\/kxm\/src\/mcp-server\.ts/);
     assert.match(script, /--test-coverage-exclude=plugins\/kxm\/src\/vnext-runtime-supervisor\.ts/);
     assert.doesNotMatch(script, /providers\/antigravity\/\*\*/);
+    assert.doesNotMatch(script, /providers\/claude-bridge\/\*\*/);
   }
 });
 

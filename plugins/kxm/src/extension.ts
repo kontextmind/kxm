@@ -10,6 +10,11 @@ import {
   registerAntigravityProvider,
   type AntigravityRegistration,
 } from "./providers/antigravity/register.ts";
+import {
+  claudeBridgeRegistrationNotice,
+  registerClaudeBridgeProvider,
+  type ClaudeBridgeRegistration,
+} from "./providers/claude-bridge/register.ts";
 import { areaForTool, classifyFailure, diagnosticEvidence, diagnosticSummary, type Diagnostic } from "./diagnostics.ts";
 import {
   MAX_CONTENT_CHARS,
@@ -166,6 +171,7 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
   let client: HubClient | undefined;
   let nousReport: NousRegistrationReport | undefined;
   let antigravityReport: AntigravityRegistration | undefined;
+  let claudeBridgeReport: ClaudeBridgeRegistration | undefined;
   let pending: MessageRecord[] = [];
   let activatingInbound: MessageRecord | undefined;
   let awaitingActivation: MessageRecord | undefined;
@@ -648,6 +654,8 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
     shuttingDown = false;
     const antigravityNotice = antigravityRegistrationNotice(antigravityReport, pi);
     if (antigravityNotice) ctx.ui.notify(antigravityNotice.message, antigravityNotice.type);
+    const claudeBridgeNotice = claudeBridgeRegistrationNotice(claudeBridgeReport, pi);
+    if (claudeBridgeNotice) ctx.ui.notify(claudeBridgeNotice.message, claudeBridgeNotice.type);
     if (nousReport?.guidance.length) {
       for (const item of nousReport.guidance) {
         ctx.ui.notify(item.message, item.level);
@@ -933,6 +941,7 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
   });
 
   antigravityReport = registerAntigravityProvider(pi);
+  claudeBridgeReport = registerClaudeBridgeProvider(pi);
   return nousFactoryWork(pi, (report) => {
     nousReport = report;
   });

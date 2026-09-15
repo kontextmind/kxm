@@ -69,6 +69,12 @@
       "./plugins/kxm/skills"
     ]
   },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.2.141",
+    "@earendil-works/pi-tui": "0.85.1",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "yaml": "^2.9.0"
+  },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
     "typebox": "*"
@@ -120,9 +126,5 @@
     "LICENSE",
     "SECURITY.md"
   ],
-  "license": "MIT",
-  "dependencies": {
-    "@earendil-works/pi-tui": "0.85.1",
-    "yaml": "^2.9.0"
-  }
+  "license": "MIT"
 }
