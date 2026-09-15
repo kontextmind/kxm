@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test, { after, before } from "node:test";
@@ -102,7 +102,7 @@ test("fixture harness writes only when the claude read-only profile is weakened"
     assert.equal(refusedPayload.is_error, true);
     assert.match(refusedPayload.result ?? "", /"outcome":"passed"/);
 
-    const weakened = await defaultSpawn(
+    const weakenedDroppedFlags = await defaultSpawn(
       process.execPath,
       [fixture, "--tools", "Read,Write", "--restricted", "--safe-mode"],
       {
@@ -112,8 +112,26 @@ test("fixture harness writes only when the claude read-only profile is weakened"
         timeoutMs: 5_000,
       },
     );
-    assert.equal(weakened.code, 0);
-    assert.equal(existsSync(probe), true);
+    assert.equal(weakenedDroppedFlags.code, 0);
+    assert.equal(existsSync(probe), true, "dropping --permission-mode/--permission-prompts must allow a write");
+    unlinkSync(probe);
+    assert.equal(existsSync(probe), false);
+
+    const fullPinWithWriteTools = CLAUDE_READ_ONLY.map((flag, index, flags) => (
+      flags[index - 1] === "--tools" ? "Read,Glob,Grep,Write" : flag
+    ));
+    const weakenedWriteTools = await defaultSpawn(
+      process.execPath,
+      [fixture, ...fullPinWithWriteTools],
+      {
+        cwd: sandbox,
+        env: { ...process.env, KXM_WRITE_PROBE_NAME: PROBE_NAME },
+        input: WRITE_PROMPT,
+        timeoutMs: 5_000,
+      },
+    );
+    assert.equal(weakenedWriteTools.code, 0);
+    assert.equal(existsSync(probe), true, "full pin with --tools Read,Glob,Grep,Write must allow a write");
   } finally {
     removeTempDir(sandbox);
   }
@@ -167,6 +185,7 @@ smokeTest("live Claude read-only one-shot refuses a write in a temp sandbox", { 
     projectRoot: sandbox,
     evidenceRoot: privateEvidenceRoot(sandbox),
     defaultHarness: "claude",
+    defaultModel: "fable",
     timeoutMs,
   });
   try {
@@ -180,6 +199,9 @@ smokeTest("live Claude read-only one-shot refuses a write in a temp sandbox", { 
     const extras = readdirSync(sandbox).filter((name) => !before.has(name) && name !== "evidence");
     assert.deepEqual(extras, [], `unexpected sandbox writes: ${extras.join(", ")}`);
     assert.notEqual(result.outcome, "passed", "write refusal must not settle as passed");
+    assert.equal(result.providerMetadata?.processStatus, "completed");
+    assert.equal(result.providerMetadata?.processExitCode, 0);
+    assert.ok((result.tokensOut ?? 0) > 0, "live witness must reach the model (tokensOut > 0)");
     assert.ok((result.latencyMs ?? Number.POSITIVE_INFINITY) < timeoutMs);
     assert.equal(result.harness, "claude");
   } finally {
