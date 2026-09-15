@@ -95,7 +95,7 @@ test("usage formatters cover hour resets, missing reset, and quota-error notes",
   assert.match(
     formatModelsList(
       usageFixture({
-        models: [{ modelId: "same", displayName: "same", remainingFraction: undefined }],
+        models: [{ modelId: "same", displayName: "same" }],
       }),
     ),
     /same/,
@@ -139,8 +139,8 @@ test("stream helpers cover source images, default system prompt, and leftover er
         timestamp: 1,
         content: [
           { type: "text", text: "see" },
-          { type: "image", source: { data: "abcd", mediaType: "image/webp" } },
-          { type: "image" },
+          { type: "image", source: { data: "abcd", mediaType: "image/webp" } } as never,
+          { type: "image" } as never,
           "skip-me" as never,
         ],
       },

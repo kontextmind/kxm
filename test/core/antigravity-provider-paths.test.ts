@@ -1755,7 +1755,7 @@ test("usage postJson retries parse failures and keeps assist/quota error legs ho
   assert.match(
     formatModelsList({
       ...freeTier,
-      models: [{ modelId: "same", displayName: "same", remainingFraction: undefined }],
+      models: [{ modelId: "same", displayName: "same" }],
     }),
     /same/,
   );
@@ -2017,8 +2017,8 @@ test("stream and catalog helpers cover remaining request and grouping legs", asy
         timestamp: 1,
         content: [
           { type: "text", text: "see" },
-          { type: "image", source: { data: "abcd", mediaType: "image/webp" } },
-          { type: "image" },
+          { type: "image", source: { data: "abcd", mediaType: "image/webp" } } as never,
+          { type: "image" } as never,
           "skip-me" as never,
         ],
       },
