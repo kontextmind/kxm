@@ -8,7 +8,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
-import { calculateModelCost, type PriceCatalog, loadPriceCatalog } from "./prices.ts";
+import { calculateModelCost, type PriceCatalog, loadPriceCatalogForEstimate } from "./prices.ts";
 
 export interface MajorMode {
   description?: string | undefined;
@@ -258,8 +258,11 @@ export function calculatePromptFootprint(
   const maxContextWindow = 200000;
   const contextWindowRatio = Math.round((totalTokens / maxContextWindow) * 1000) / 10;
 
-  // 5. Projected Costs
-  const cat = catalog || loadPriceCatalog(projectRoot);
+  // 5. Projected Costs — unverified or stale catalogs stay unknown.
+  const loaded = loadPriceCatalogForEstimate(
+    catalog ? { priceCatalog: catalog } : { projectRoot },
+  );
+  const cat = loaded.catalog;
   const rawModel = resolved.model || "grok/grok-4.6";
   const [prov, mod] = rawModel.includes("/") ? rawModel.split("/", 2) : [undefined, rawModel];
 

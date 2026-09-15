@@ -22674,6 +22674,18 @@ function loadPriceCatalog(rootOrPath) {
   const content = readFileSync5(candidatePath, "utf8");
   return parsePriceCatalog(content);
 }
+function loadPriceCatalogForEstimate(options) {
+  let catalog;
+  try {
+    catalog = options?.priceCatalog ? parsePriceCatalog(JSON.stringify(options.priceCatalog)) : loadPriceCatalog(options?.projectRoot ?? process.cwd());
+  } catch {
+    return { catalog: void 0, unavailable: true, stale: false };
+  }
+  if (catalog && catalog.date !== (/* @__PURE__ */ new Date()).toISOString().slice(0, 10)) {
+    return { catalog: void 0, unavailable: false, stale: true };
+  }
+  return { catalog, unavailable: false, stale: false };
+}
 
 // plugins/kxm/src/vnext-engine.ts
 var import_yaml5 = __toESM(require_dist(), 1);
@@ -27286,10 +27298,16 @@ function createVnextPiProducer(options = {}) {
       const cacheReadTokens = typeof usage?.cacheRead === "number" ? usage.cacheRead : null;
       const cacheWriteTokens = typeof usage?.cacheWrite === "number" ? usage.cacheWrite : null;
       const contextTokens = typeof usage?.contextUsage?.tokens === "number" ? usage.contextUsage.tokens : tokensIn;
-      const catalog = options.priceCatalog ?? loadPriceCatalog(options.projectRoot ?? process.cwd());
-      let costBasis = "unknown";
-      let costUsd = null;
-      let priceRef;
+      const providerMetadata = {};
+      const loaded = loadPriceCatalogForEstimate({
+        priceCatalog: options.priceCatalog,
+        projectRoot: options.projectRoot
+      });
+      if (loaded.unavailable) providerMetadata.priceCatalogUnavailable = true;
+      if (loaded.stale) providerMetadata.priceCatalogStale = true;
+      const catalog = loaded.catalog;
+      const costBasis = "unknown";
+      const costUsd = null;
       if (catalog) {
         const calculated = calculateModelCost(catalog, {
           model: resolved.model,
@@ -27300,10 +27318,10 @@ function createVnextPiProducer(options = {}) {
           cacheWriteTokens,
           contextTokens
         });
-        if (calculated) {
-          costBasis = "metered";
-          costUsd = calculated.costUsd;
-          priceRef = calculated.priceRef;
+        if (calculated && Number.isFinite(calculated.costUsd)) {
+          providerMetadata.listCostUsd = calculated.costUsd;
+          providerMetadata.listPriceRef = calculated.priceRef;
+          providerMetadata.listPriceSha256 = catalog.sha256;
         }
       }
       return {
@@ -27320,9 +27338,9 @@ function createVnextPiProducer(options = {}) {
         provider: resolved.provider,
         requestedModel: resolved.model,
         effectiveModel: resolved.model,
+        providerMetadata,
         ...resolved.thinking !== void 0 ? { thinking: resolved.thinking } : {},
-        agentRole: request.agentRole ?? request.agentId,
-        ...priceRef !== void 0 ? { priceRef } : {}
+        agentRole: request.agentRole ?? request.agentId
       };
     },
     async closeRun(runId) {
@@ -28416,7 +28434,10 @@ function calculatePromptFootprint(resolved, projectRoot = process.cwd(), catalog
   const totalTokens = breakdown.reduce((sum, item) => sum + item.estimatedTokens, 0);
   const maxContextWindow = 2e5;
   const contextWindowRatio = Math.round(totalTokens / maxContextWindow * 1e3) / 10;
-  const cat = catalog || loadPriceCatalog(projectRoot);
+  const loaded = loadPriceCatalogForEstimate(
+    catalog ? { priceCatalog: catalog } : { projectRoot }
+  );
+  const cat = loaded.catalog;
   const rawModel = resolved.model || "grok/grok-4.6";
   const [prov, mod] = rawModel.includes("/") ? rawModel.split("/", 2) : [void 0, rawModel];
   const inputCost = cat ? calculateModelCost(cat, {

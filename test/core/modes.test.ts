@@ -3,6 +3,7 @@ import assert from "node:assert";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { stringify } from "yaml";
 import {
   DEFAULT_MODES_CONFIG,
   loadModesConfig,
@@ -12,6 +13,7 @@ import {
   estimateTokens,
   type ModesConfig,
 } from "../../plugins/kxm/src/modes.ts";
+import { hashPriceCatalog, type PriceCatalog } from "../../plugins/kxm/src/prices.ts";
 
 describe("KXM Declarative Workflow Modes and Explain", () => {
   it("loads default modes config when no file exists", () => {
@@ -95,11 +97,10 @@ domains:
     resolved.contextFiles = ["package.json", "non-existent-file.md", tempDir];
     resolved.model = "claude/fable";
 
-    const customCatalog = {
+    const customBody = {
       schema: "kxm.prices.v1" as const,
-      date: "2026-09-14",
+      date: new Date().toISOString().slice(0, 10),
       currency: "USD" as const,
-      sha256: "mock",
       models: [
         {
           id: "claude/fable",
@@ -115,6 +116,7 @@ domains:
         },
       ],
     };
+    const customCatalog: PriceCatalog = { ...customBody, sha256: hashPriceCatalog(customBody) };
 
     try {
       const footprint = calculatePromptFootprint(resolved, process.cwd(), customCatalog);
@@ -158,5 +160,51 @@ domains:
     const report = formatModesExplainReport(footprint);
     assert.ok(report.includes("(none)"));
     assert.ok(report.includes("unmetered/unknown"));
+  });
+
+  it("fails closed on corrupt-hash, stale, and missing catalogs", () => {
+    const resolved = resolveActiveMode(DEFAULT_MODES_CONFIG, "coder", []);
+    resolved.model = "claude/fable";
+    const body = {
+      schema: "kxm.prices.v1" as const,
+      date: new Date().toISOString().slice(0, 10),
+      currency: "USD" as const,
+      models: [
+        {
+          id: "claude/fable",
+          provider: "claude",
+          model: "fable",
+          tiers: [{ inputPerMillion: 3, outputPerMillion: 15, cacheReadPerMillion: 0.3 }],
+        },
+      ],
+    };
+    const hashed: PriceCatalog = { ...body, sha256: hashPriceCatalog(body) };
+
+    const corrupt = calculatePromptFootprint(resolved, process.cwd(), { ...hashed, sha256: "0".repeat(64) });
+    assert.strictEqual(corrupt.projectedCost.inputCostUsd, null);
+    assert.strictEqual(corrupt.projectedCost.cacheReadCostUsd, null);
+    assert.strictEqual(corrupt.projectedCost.outputCostEstimateUsd, null);
+    assert.ok(formatModesExplainReport(corrupt).includes("unmetered/unknown"));
+
+    const staleBody = { ...body, date: "2020-01-01" };
+    const staleCatalog: PriceCatalog = { ...staleBody, sha256: hashPriceCatalog(staleBody) };
+    const stale = calculatePromptFootprint(resolved, process.cwd(), staleCatalog);
+    assert.strictEqual(stale.projectedCost.inputCostUsd, null);
+    assert.strictEqual(stale.projectedCost.cacheReadCostUsd, null);
+    assert.strictEqual(stale.projectedCost.outputCostEstimateUsd, null);
+
+    const missing = calculatePromptFootprint(resolved, "/non/existent/root");
+    assert.strictEqual(missing.projectedCost.inputCostUsd, null);
+
+    const dir = mkdtempSync(join(tmpdir(), "kxm-explain-corrupt-"));
+    try {
+      mkdirSync(join(dir, ".kxm"), { recursive: true });
+      writeFileSync(join(dir, ".kxm", "prices.yaml"), stringify({ ...hashed, sha256: "0".repeat(64) }), "utf8");
+      const fromDisk = calculatePromptFootprint(resolved, dir);
+      assert.strictEqual(fromDisk.projectedCost.inputCostUsd, null);
+      assert.strictEqual(fromDisk.projectedCost.outputCostEstimateUsd, null);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

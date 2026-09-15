@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { stringify } from "yaml";
-import { calculateModelCost, findModelPrice, hashPriceCatalog, parsePriceCatalog, type PriceCatalog, type PriceTier } from "../../plugins/kxm/src/prices.ts";
+import { calculateModelCost, findModelPrice, hashPriceCatalog, loadPriceCatalogForEstimate, parsePriceCatalog, type PriceCatalog, type PriceTier } from "../../plugins/kxm/src/prices.ts";
 
 const tier = { upToContextTokens: null, inputPerMillion: 1, outputPerMillion: 2, cacheReadPerMillion: 0.1, cacheWritePerMillion: 0.2 };
 function catalog(tiers: readonly PriceTier[] = [tier]): PriceCatalog {
@@ -41,4 +44,51 @@ test("cost estimates never turn missing usage or context into free tokens or the
   assert.equal(calculateModelCost(bounded, complete), undefined);
   assert.equal(calculateModelCost(bounded, { ...complete, contextTokens: 101 }), undefined);
   assert.ok(calculateModelCost(bounded, { ...complete, contextTokens: 99 }));
+});
+
+test("list-estimate catalog loads verify digest, drop stale snapshots, and never throw", () => {
+  const todayBody = {
+    schema: "kxm.prices.v1" as const,
+    date: new Date().toISOString().slice(0, 10),
+    currency: "USD" as const,
+    models: catalog().models,
+  };
+  const today = { ...todayBody, sha256: hashPriceCatalog(todayBody) };
+  const ok = loadPriceCatalogForEstimate({ priceCatalog: today });
+  assert.equal(ok.unavailable, false);
+  assert.equal(ok.stale, false);
+  assert.equal(ok.catalog?.sha256, today.sha256);
+
+  const corrupt = loadPriceCatalogForEstimate({ priceCatalog: { ...today, sha256: "0".repeat(64) } });
+  assert.equal(corrupt.unavailable, true);
+  assert.equal(corrupt.stale, false);
+  assert.equal(corrupt.catalog, undefined);
+
+  const staleBody = { ...todayBody, date: "2020-01-01" };
+  const staleCatalog = { ...staleBody, sha256: hashPriceCatalog(staleBody) };
+  const stale = loadPriceCatalogForEstimate({ priceCatalog: staleCatalog });
+  assert.equal(stale.stale, true);
+  assert.equal(stale.unavailable, false);
+  assert.equal(stale.catalog, undefined);
+
+  const missingDir = mkdtempSync(join(tmpdir(), "kxm-prices-missing-"));
+  try {
+    const missing = loadPriceCatalogForEstimate({ projectRoot: missingDir });
+    assert.equal(missing.catalog, undefined);
+    assert.equal(missing.unavailable, false);
+    assert.equal(missing.stale, false);
+  } finally {
+    rmSync(missingDir, { recursive: true, force: true });
+  }
+
+  const corruptDir = mkdtempSync(join(tmpdir(), "kxm-prices-corrupt-"));
+  try {
+    mkdirSync(join(corruptDir, ".kxm"), { recursive: true });
+    writeFileSync(join(corruptDir, ".kxm", "prices.yaml"), stringify({ ...today, sha256: "0".repeat(64) }), "utf8");
+    const failed = loadPriceCatalogForEstimate({ projectRoot: corruptDir });
+    assert.equal(failed.unavailable, true);
+    assert.equal(failed.catalog, undefined);
+  } finally {
+    rmSync(corruptDir, { recursive: true, force: true });
+  }
 });

@@ -24813,6 +24813,18 @@ function loadPriceCatalog(rootOrPath) {
   const content = readFileSync7(candidatePath, "utf8");
   return parsePriceCatalog(content);
 }
+function loadPriceCatalogForEstimate(options) {
+  let catalog;
+  try {
+    catalog = options?.priceCatalog ? parsePriceCatalog(JSON.stringify(options.priceCatalog)) : loadPriceCatalog(options?.projectRoot ?? process.cwd());
+  } catch {
+    return { catalog: void 0, unavailable: true, stale: false };
+  }
+  if (catalog && catalog.date !== (/* @__PURE__ */ new Date()).toISOString().slice(0, 10)) {
+    return { catalog: void 0, unavailable: false, stale: true };
+  }
+  return { catalog, unavailable: false, stale: false };
+}
 
 // plugins/kxm/src/vnext-engine.ts
 var import_yaml5 = __toESM(require_dist(), 1);
@@ -46250,7 +46262,10 @@ function calculatePromptFootprint(resolved, projectRoot = process.cwd(), catalog
   const totalTokens = breakdown.reduce((sum, item) => sum + item.estimatedTokens, 0);
   const maxContextWindow = 2e5;
   const contextWindowRatio = Math.round(totalTokens / maxContextWindow * 1e3) / 10;
-  const cat = catalog || loadPriceCatalog(projectRoot);
+  const loaded = loadPriceCatalogForEstimate(
+    catalog ? { priceCatalog: catalog } : { projectRoot }
+  );
+  const cat = loaded.catalog;
   const rawModel = resolved.model || "grok/grok-4.6";
   const [prov, mod] = rawModel.includes("/") ? rawModel.split("/", 2) : [void 0, rawModel];
   const inputCost = cat ? calculateModelCost(cat, {
