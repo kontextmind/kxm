@@ -40,8 +40,11 @@ commands for RTK independently of `rtk.ts`.
 
 ## Notes
 
-- `pi-antigravity` and `@tian.zuo/pi-antigravity` are different Pi providers.
-  They do not replace the native `agy` harness used by the assignment runner.
+- The antigravity provider is bundled inside `plugins/kxm` (vendored from
+  pi-antigravity, MIT); remove any standalone pi-antigravity Pi extension to
+  avoid the double-registration warning. `pi-antigravity` and
+  `@tian.zuo/pi-antigravity` are different Pi providers. They do not replace
+  the native `agy` harness used by the assignment runner.
 - For KXM development loads, prefer the working tree:
   `pi --no-extensions -e ./plugins/kxm/src/extension.ts`. Add every required
   provider extension with another `-e`; otherwise Pi discovery is disabled.
