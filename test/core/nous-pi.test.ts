@@ -125,7 +125,9 @@ test("unknown token registers nothing, keeps hub tools, and reports an error", a
     const pi = fakePi();
     const returned = piMeshExtension(pi.api);
     assert.equal(returned, undefined);
-    assert.equal(pi.providers.size, 0);
+    assert.equal(pi.providers.has("antigravity"), true);
+    assert.equal(pi.providers.has(NOUS_DIRECT_ID), false);
+    assert.equal(pi.providers.has(NOUS_PROXY_ID), false);
     assert.ok([...pi.tools.keys()].some((name) => name.startsWith("kxm_")));
     const report = await registerNousProviders(pi.api, { env: { KXM_NOUS_PROVIDERS: "direct,weird" } });
     assert.equal(report.registeredProviders.length, 0);

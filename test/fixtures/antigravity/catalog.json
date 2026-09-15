@@ -1,0 +1,49 @@
+{
+  "models": {
+    "gemini-3.8-flash-low": {
+      "displayName": "Gemini 3.8 Flash (Low)",
+      "supportsThinking": true,
+      "supportsImages": true,
+      "model": "MODEL_PLACEHOLDER_M320"
+    },
+    "gemini-3.8-flash-medium": {
+      "displayName": "Gemini 3.8 Flash (Medium)",
+      "supportsThinking": true,
+      "supportsImages": true,
+      "model": "MODEL_PLACEHOLDER_M319"
+    },
+    "gemini-3.8-flash-high": {
+      "displayName": "Gemini 3.8 Flash (High)",
+      "supportsThinking": true,
+      "supportsImages": true,
+      "model": "MODEL_PLACEHOLDER_M318"
+    },
+    "gemini-3.7-flash-low": {
+      "displayName": "Gemini 3.7 Flash (Low)",
+      "supportsThinking": true,
+      "supportsImages": true,
+      "model": "MODEL_PLACEHOLDER_M300"
+    },
+    "claude-sonnet-4-6": {
+      "displayName": "Claude Sonnet 4.6 (Thinking)",
+      "supportsThinking": true,
+      "supportsImages": true,
+      "model": "MODEL_PLACEHOLDER_M35"
+    },
+    "gpt-oss-120b-medium": {
+      "displayName": "GPT-OSS 120B (Medium)",
+      "supportsThinking": true,
+      "supportsImages": false,
+      "model": "MODEL_OPENAI_GPT_OSS_120B_MEDIUM"
+    },
+    "chat_hidden": {
+      "displayName": "Hidden chat",
+      "isInternal": true
+    },
+    "gemini-3-pro-image": {
+      "displayName": "Gemini 3 Pro Image",
+      "supportsImages": true
+    }
+  },
+  "defaultAgentModelId": "gemini-3.8-flash-low"
+}

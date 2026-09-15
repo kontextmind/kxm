@@ -1,0 +1,2 @@
+data: not-json
+data: {"error":{"message":"recorded stream failure"}}
