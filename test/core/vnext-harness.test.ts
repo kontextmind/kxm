@@ -76,6 +76,28 @@ test("builtin catalog defaults to headless Pi and lists known harnesses", () => 
   assert.deepEqual([...BUILTIN_HARNESS_IDS], ["pi", "claude", "kimi", "codex", "deepseek", "grok", "agy"]);
 });
 
+test("Claude catalog pins documented read-only one-shot flags without write-capable tools", () => {
+  const entry = BUILTIN_HARNESSES.find((candidate) => candidate.id === "claude");
+  const readOnly = [
+    "--tools", "Read,Glob,Grep",
+    "--restricted",
+    "--safe-mode",
+    "--permission-mode", "plan",
+    "--permission-prompts", "none",
+    "--strict-mcp-config",
+    "--mcp-config", '{"mcpServers":{}}',
+    "--disable-slash-commands",
+    "--no-session-persistence",
+  ];
+  assert.deepEqual(entry?.oneShot?.argv, ["-p", ...readOnly, "--output-format", "json"]);
+  assert.equal(entry?.oneShot?.promptVia, "stdin");
+  const tools = readOnly[readOnly.indexOf("--tools") + 1];
+  assert.equal(tools, "Read,Glob,Grep");
+  assert.equal(/(?:^|,)(Write|Edit|MultiEdit|NotebookEdit|Bash|PowerShell|REPL)(?:,|$)/.test(tools ?? ""), false);
+  assert.equal(readOnly.includes("--dangerously-skip-permissions"), false);
+  assert.equal(readOnly.includes("--allowedTools"), false);
+});
+
 test("Codex catalog pins documented read-only noninteractive flags and keeps exec-policy rules", () => {
   const entry = BUILTIN_HARNESSES.find((candidate) => candidate.id === "codex");
   assert.deepEqual(entry?.oneShot?.argv, [
