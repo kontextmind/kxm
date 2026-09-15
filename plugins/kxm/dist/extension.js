@@ -35510,36 +35510,45 @@ function streamClaudeBridge(model, context, options, deps = {}) {
 }
 
 // plugins/kxm/src/providers/claude-bridge/register.ts
-var CLAUDE_BRIDGE_DOUBLE_REGISTRATION_WARNING = "kxm: standalone pi-claude-bridge is still installed. Remove that extension and reload. KXM will not double-register provider id claude-bridge.";
+var CLAUDE_BRIDGE_DOUBLE_REGISTRATION_WARNING = "kxm: standalone pi-claude-bridge is still installed (AskClaude tool is present). Remove that extension and reload. KXM will not register provider id claude-bridge.";
 var STANDALONE_CLAUDE_BRIDGE_TOOLS = Object.freeze(["AskClaude"]);
+var CLAUDE_BRIDGE_HOST_PROBE_METHODS = Object.freeze([
+  "getAllTools",
+  "getActiveTools",
+  "getCommands"
+]);
 function asProbe2(pi) {
   return pi;
 }
-function registeredProviderIds2(probe) {
-  return [
-    ...probe.getRegisteredProviderIds?.() ?? [],
-    ...probe.modelRegistry?.getRegisteredProviderIds?.() ?? []
-  ];
+function collectHostSignalNames(pi) {
+  const probe = asProbe2(pi);
+  const names = [];
+  try {
+    for (const tool of probe.getAllTools?.() ?? []) {
+      if (typeof tool.name === "string") names.push(tool.name);
+    }
+  } catch {
+  }
+  try {
+    for (const name of probe.getActiveTools?.() ?? []) {
+      if (typeof name === "string") names.push(name);
+    }
+  } catch {
+  }
+  try {
+    for (const command of probe.getCommands?.() ?? []) {
+      if (typeof command.name === "string") names.push(command.name);
+    }
+  } catch {
+  }
+  return names;
 }
 function claudeBridgeStandaloneToolsPresent(pi) {
-  const probe = asProbe2(pi);
-  let names = [];
-  try {
-    names = (probe.getTools?.() ?? []).map((tool) => tool.name).filter((name) => typeof name === "string");
-  } catch {
-    return false;
-  }
+  const names = collectHostSignalNames(pi);
   return STANDALONE_CLAUDE_BRIDGE_TOOLS.some((name) => names.includes(name));
 }
-function claudeBridgeProviderRegistered(pi) {
-  const probe = asProbe2(pi);
-  const ids = registeredProviderIds2(probe);
-  if (ids.includes(PROVIDER_ID2)) return true;
-  if (probe.modelRegistry?.getProvider?.(PROVIDER_ID2)) return true;
-  return false;
-}
 function shouldSkipClaudeBridgeRegistration(pi) {
-  return claudeBridgeProviderRegistered(pi) || claudeBridgeStandaloneToolsPresent(pi);
+  return claudeBridgeStandaloneToolsPresent(pi);
 }
 function claudeBridgeRegistrationNotice(report, pi) {
   const conflict = Boolean(report?.conflict) || (pi ? claudeBridgeStandaloneToolsPresent(pi) : false);
@@ -35561,7 +35570,6 @@ function registerClaudeBridgeProvider(pi) {
   pi.registerProvider(PROVIDER_ID2, {
     name: PROVIDER_NAME2,
     baseUrl: PROVIDER_ID2,
-    apiKey: "not-used",
     api: CLAUDE_BRIDGE_API,
     models: registeredClaudeBridgeModels(),
     streamSimple: streamClaudeBridge

@@ -5,7 +5,6 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
-  claudeBridgeProviderRegistered,
   claudeBridgeRegistrationNotice,
   claudeBridgeStandaloneToolsPresent,
   registerClaudeBridgeProvider,
@@ -97,20 +96,30 @@ test("register skips when registerProvider is missing and notices stay bounded",
   assert.equal(skipped.registered, false);
   assert.equal(skipped.conflict, false);
   assert.equal(claudeBridgeRegistrationNotice(undefined), undefined);
-  const viaRegistry = {
-    modelRegistry: {
-      getProvider(id: string) {
-        return id === "claude-bridge" ? { name: "via-registry" } : undefined;
-      },
-    },
-  };
-  assert.equal(claudeBridgeProviderRegistered(viaRegistry), true);
-  const throwingTools = {
-    getTools() {
+  const throwingAll = {
+    getAllTools() {
       throw new Error("no tools");
     },
+    getActiveTools() {
+      throw new Error("no active tools");
+    },
+    getCommands() {
+      throw new Error("no commands");
+    },
   };
-  assert.equal(claudeBridgeStandaloneToolsPresent(throwingTools), false);
+  assert.equal(claudeBridgeStandaloneToolsPresent(throwingAll), false);
+  const viaActiveOnly = {
+    getAllTools() {
+      throw new Error("no tools");
+    },
+    getActiveTools() {
+      return ["AskClaude"];
+    },
+    getCommands() {
+      throw new Error("no commands");
+    },
+  };
+  assert.equal(claudeBridgeStandaloneToolsPresent(viaActiveOnly), true);
 });
 
 test("unknown model ids default to 200K context", () => {

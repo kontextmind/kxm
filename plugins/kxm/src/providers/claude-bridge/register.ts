@@ -13,10 +13,17 @@ import {
 import { streamClaudeBridge } from "./provider.ts";
 
 export const CLAUDE_BRIDGE_DOUBLE_REGISTRATION_WARNING =
-  "kxm: standalone pi-claude-bridge is still installed. Remove that extension and reload. KXM will not double-register provider id claude-bridge.";
+  "kxm: standalone pi-claude-bridge is still installed (AskClaude tool is present). Remove that extension and reload. KXM will not register provider id claude-bridge.";
 
 /** Tools that only the standalone extension registers. */
 export const STANDALONE_CLAUDE_BRIDGE_TOOLS = Object.freeze(["AskClaude"]);
+
+/** Real ExtensionAPI probes that can observe the standalone AskClaude tool. */
+export const CLAUDE_BRIDGE_HOST_PROBE_METHODS = Object.freeze([
+  "getAllTools",
+  "getActiveTools",
+  "getCommands",
+] as const);
 
 export type ClaudeBridgeRegistration = {
   registered: boolean;
@@ -24,50 +31,46 @@ export type ClaudeBridgeRegistration = {
   warning?: string;
 };
 
-type ProviderProbe = {
-  getRegisteredProviderIds?: () => readonly string[];
-  getCommands?: () => ReadonlyArray<{ name?: string }>;
-  getTools?: () => ReadonlyArray<{ name?: string }>;
-  modelRegistry?: {
-    getRegisteredProviderIds?: () => readonly string[];
-    getProvider?: (id: string) => unknown;
-  };
-};
+type HostProbe = Pick<ExtensionAPI, (typeof CLAUDE_BRIDGE_HOST_PROBE_METHODS)[number]>;
 
-function asProbe(pi: object): ProviderProbe {
-  return pi as ProviderProbe;
+function asProbe(pi: object): Partial<HostProbe> {
+  return pi as Partial<HostProbe>;
 }
 
-function registeredProviderIds(probe: ProviderProbe): string[] {
-  return [
-    ...(probe.getRegisteredProviderIds?.() ?? []),
-    ...(probe.modelRegistry?.getRegisteredProviderIds?.() ?? []),
-  ];
+function collectHostSignalNames(pi: object): string[] {
+  const probe = asProbe(pi);
+  const names: string[] = [];
+  try {
+    for (const tool of probe.getAllTools?.() ?? []) {
+      if (typeof tool.name === "string") names.push(tool.name);
+    }
+  } catch {
+    /* getAllTools may throw before the runner is bound */
+  }
+  try {
+    for (const name of probe.getActiveTools?.() ?? []) {
+      if (typeof name === "string") names.push(name);
+    }
+  } catch {
+    /* getActiveTools may throw before the runner is bound */
+  }
+  try {
+    for (const command of probe.getCommands?.() ?? []) {
+      if (typeof command.name === "string") names.push(command.name);
+    }
+  } catch {
+    /* getCommands may throw before the session is ready */
+  }
+  return names;
 }
 
 export function claudeBridgeStandaloneToolsPresent(pi: object): boolean {
-  const probe = asProbe(pi);
-  let names: string[] = [];
-  try {
-    names = (probe.getTools?.() ?? [])
-      .map((tool) => tool.name)
-      .filter((name): name is string => typeof name === "string");
-  } catch {
-    return false;
-  }
+  const names = collectHostSignalNames(pi);
   return STANDALONE_CLAUDE_BRIDGE_TOOLS.some((name) => names.includes(name));
 }
 
-export function claudeBridgeProviderRegistered(pi: object): boolean {
-  const probe = asProbe(pi);
-  const ids = registeredProviderIds(probe);
-  if (ids.includes(PROVIDER_ID)) return true;
-  if (probe.modelRegistry?.getProvider?.(PROVIDER_ID)) return true;
-  return false;
-}
-
 export function shouldSkipClaudeBridgeRegistration(pi: object): boolean {
-  return claudeBridgeProviderRegistered(pi) || claudeBridgeStandaloneToolsPresent(pi);
+  return claudeBridgeStandaloneToolsPresent(pi);
 }
 
 export function claudeBridgeRegistrationNotice(
@@ -95,7 +98,6 @@ export function registerClaudeBridgeProvider(pi: ExtensionAPI): ClaudeBridgeRegi
   pi.registerProvider(PROVIDER_ID, {
     name: PROVIDER_NAME,
     baseUrl: PROVIDER_ID,
-    apiKey: "not-used",
     api: CLAUDE_BRIDGE_API,
     models: registeredClaudeBridgeModels(),
     streamSimple: streamClaudeBridge,

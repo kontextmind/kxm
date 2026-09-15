@@ -22,6 +22,7 @@ import {
 } from "../../plugins/kxm/src/providers/claude-bridge/index.ts";
 import {
   CLAUDE_BRIDGE_DOUBLE_REGISTRATION_WARNING,
+  CLAUDE_BRIDGE_HOST_PROBE_METHODS,
   claudeBridgeRegistrationNotice,
   claudeBridgeStandaloneToolsPresent,
   registerClaudeBridgeProvider,
@@ -62,10 +63,13 @@ function fixture(name: string) {
     .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
-function fakePi(options: { alreadyRegistered?: boolean; standaloneTools?: string[] } = {}) {
+type ClaudeBridgeHostProbe = Pick<ExtensionAPI, (typeof CLAUDE_BRIDGE_HOST_PROBE_METHODS)[number]>;
+
+function fakePi(options: { standaloneTools?: string[]; probeVia?: "getAllTools" | "getActiveTools" | "getCommands" } = {}) {
   const handlers = new Map<string, Array<(...args: unknown[]) => unknown>>();
   const providers = new Map<string, Record<string, unknown>>();
-  if (options.alreadyRegistered) providers.set("claude-bridge", { name: "standalone" });
+  const standalone = options.standaloneTools ?? [];
+  const probeVia = options.probeVia ?? "getAllTools";
   const api = {
     on(name: string, handler: (...args: unknown[]) => unknown) {
       const existing = handlers.get(name) ?? [];
@@ -78,19 +82,25 @@ function fakePi(options: { alreadyRegistered?: boolean; standaloneTools?: string
     getSessionName() {
       return "claude-bridge-test";
     },
-    getRegisteredProviderIds() {
-      return [...providers.keys()];
-    },
     getCommands() {
-      return [];
+      return probeVia === "getCommands" ? standalone.map((name) => ({ name })) : [];
     },
-    getTools() {
-      return (options.standaloneTools ?? []).map((name) => ({ name, source: "extension" }));
+    getAllTools() {
+      return probeVia === "getAllTools" ? standalone.map((name) => ({ name })) : [];
+    },
+    getActiveTools() {
+      return probeVia === "getActiveTools" ? [...standalone] : [];
     },
     registerProvider(name: string, config: Record<string, unknown>) {
       providers.set(name, config);
     },
   } as unknown as ExtensionAPI;
+  const probe: ClaudeBridgeHostProbe = {
+    getCommands: api.getCommands,
+    getAllTools: api.getAllTools,
+    getActiveTools: api.getActiveTools,
+  };
+  void probe;
   return {
     api,
     providers,
@@ -231,21 +241,23 @@ test("parallel tool fixture keeps every served call", async () => {
   assert.deepEqual(query.turnToolCallIds, calls.map((c) => c.id));
 });
 
-test("double-registration is skipped and warned at session start", async () => {
-  const pi = fakePi({ alreadyRegistered: true });
+test("double-registration is skipped when AskClaude is present on a real host probe", async () => {
+  const pi = fakePi({ standaloneTools: ["AskClaude"] });
   const result = registerClaudeBridgeProvider(pi.api);
   assert.equal(result.registered, false);
   assert.equal(result.conflict, true);
   assert.equal(result.warning, CLAUDE_BRIDGE_DOUBLE_REGISTRATION_WARNING);
-  assert.equal(pi.providers.get("claude-bridge")?.name, "standalone");
+  assert.match(result.warning, /AskClaude tool is present/);
+  assert.equal(pi.providers.has("claude-bridge"), false);
   const notice = claudeBridgeRegistrationNotice(result);
   assert.equal(notice?.type, "warning");
   assert.match(notice?.message ?? "", /standalone pi-claude-bridge/);
+  assert.match(notice?.message ?? "", /AskClaude/);
   assert.ok((notice?.message.length ?? 0) <= 400);
 
-  const extensionPi = fakePi({ alreadyRegistered: true });
+  const extensionPi = fakePi({ standaloneTools: ["AskClaude"] });
   piMeshExtension(extensionPi.api);
-  assert.equal(extensionPi.providers.get("claude-bridge")?.name, "standalone");
+  assert.equal(extensionPi.providers.has("claude-bridge"), false);
 });
 
 test("standalone AskClaude tool skips registration and still warns after KXM registered", () => {
@@ -257,13 +269,49 @@ test("standalone AskClaude tool skips registration and still warns after KXM reg
   assert.equal(skipped.conflict, true);
   assert.equal(standalone.providers.has("claude-bridge"), false);
 
+  const viaActive = fakePi({ standaloneTools: ["AskClaude"], probeVia: "getActiveTools" });
+  assert.equal(claudeBridgeStandaloneToolsPresent(viaActive.api), true);
+  const viaCommands = fakePi({ standaloneTools: ["AskClaude"], probeVia: "getCommands" });
+  assert.equal(claudeBridgeStandaloneToolsPresent(viaCommands.api), true);
+
   const ours = fakePi();
   const registered = registerClaudeBridgeProvider(ours.api);
   assert.equal(registered.registered, true);
   const lateStandalone = fakePi({ standaloneTools: ["AskClaude"] });
   const notice = claudeBridgeRegistrationNotice(registered, lateStandalone.api);
   assert.equal(notice?.type, "warning");
-  assert.match(notice?.message ?? "", /standalone pi-claude-bridge/);
+  assert.match(notice?.message ?? "", /AskClaude tool is present/);
+});
+
+test("host probes used by the fake exist on Pi ExtensionAPI types", () => {
+  const typesPath = fileURLToPath(
+    new URL("../../node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts", import.meta.url),
+  );
+  const types = readFileSync(typesPath, "utf8");
+  for (const method of CLAUDE_BRIDGE_HOST_PROBE_METHODS) {
+    assert.match(types, new RegExp(`\\b${method}\\(`));
+  }
+  assert.doesNotMatch(types, /\bgetTools\(/);
+  assert.doesNotMatch(types, /\bgetRegisteredProviderIds\(/);
+  const registerSrc = readFileSync(
+    fileURLToPath(new URL("../../plugins/kxm/src/providers/claude-bridge/register.ts", import.meta.url)),
+    "utf8",
+  );
+  assert.doesNotMatch(registerSrc, /\bgetTools\b/);
+  assert.doesNotMatch(registerSrc, /\bgetRegisteredProviderIds\b/);
+  assert.doesNotMatch(registerSrc, /\bmodelRegistry\b/);
+  type _ProbeExists = Pick<ExtensionAPI, (typeof CLAUDE_BRIDGE_HOST_PROBE_METHODS)[number]>;
+  const assigned: _ProbeExists = fakePi().api;
+  assert.equal(typeof assigned.getAllTools, "function");
+  assert.equal(typeof assigned.getActiveTools, "function");
+  assert.equal(typeof assigned.getCommands, "function");
+});
+
+test("claude-bridge fixtures do not retain raw thinking signatures", () => {
+  for (const name of ["text", "single-tool", "parallel-tools"]) {
+    const raw = readFileSync(join(fixtureDir, `${name}.jsonl`), "utf8");
+    assert.doesNotMatch(raw, /"signature":"[A-Za-z0-9+/=_-]{40,}"/);
+  }
 });
 
 test("Anthropic session and Keychain secret shapes are redacted", () => {

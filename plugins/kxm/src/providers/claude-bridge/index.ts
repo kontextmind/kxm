@@ -14,8 +14,8 @@ export {
 } from "./models.ts";
 export {
   CLAUDE_BRIDGE_DOUBLE_REGISTRATION_WARNING,
+  CLAUDE_BRIDGE_HOST_PROBE_METHODS,
   STANDALONE_CLAUDE_BRIDGE_TOOLS,
-  claudeBridgeProviderRegistered,
   claudeBridgeRegistrationNotice,
   claudeBridgeStandaloneToolsPresent,
   registerClaudeBridgeProvider,
