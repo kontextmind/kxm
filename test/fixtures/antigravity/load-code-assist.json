@@ -1,0 +1,12 @@
+{
+  "projectId": "antigravity-project-fixture",
+  "currentTier": {
+    "id": "free-tier",
+    "name": "Free",
+    "description": "Free quota"
+  },
+  "paidTier": {
+    "id": "g1-pro-tier",
+    "name": "Google AI Pro"
+  }
+}
