@@ -1031,10 +1031,18 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   pins cover the read-only argv profile (--permission-mode plan +
   --permission-prompts none, per captured claude-help.txt), both weakening
   modes, and forged-pass refusal. Root ran the live witness with real Claude
-  auth: 4/4 pass, live leg 7.6s. Still open for the next slices: full HTTP
-  drive lifetime decoupling design (only the crash-class defects are fixed),
-  price-catalog estimates beyond the one-shot path, and the Fable ~219s
-  failure. Issue-127
+  auth: 4/4 pass, live leg 7.6s. Price-catalog integrity beyond the
+  one-shot path is also accepted (2026-09-15, task_p11-price-integrity,
+  commit 17efb783, tree bb9ff78d): the Pi producer and `kxm explain` now
+  hash-verify and staleness-gate catalogs, record listPriceSha256 with list
+  estimates, keep costUsd null for list-only, preserve observed usage when a
+  catalog fails after spend (priceCatalogUnavailable), and explain surfaces
+  distinct bounded catalog-status reasons (stale-with-date / corrupt /
+  missing / verified) in text and JSON. Note: this repo's own
+  `.kxm/prices.yaml` (2026-09-08) is stale under the gate, so explain against
+  this checkout reports unknown until a fresh snapshot exists. Still open for
+  the next slices: full HTTP drive lifetime decoupling design (only the
+  crash-class defects are fixed) and the Fable ~219s failure. Issue-127
   retirement/acceptance contradictions are separate blockers; npm is not
   ready.
 - **Model inventory refresh command:** `kxm models refresh` writes the live
@@ -1514,9 +1522,9 @@ Slice A1 (async probes, escalation-after-close, conservative descendant
 settlement, v2 bounded/redacted evidence, supervisor drive rejection handling)
 holds commit-bound acceptance with dual-critic PASS at 915f5e53 and its
 forward-port at 96e8e0ac; the live Claude write-refusal witness (model-reached
-proof plus refusal) holds acceptance at e3d8a64b. Remaining critic demands:
-full HTTP drive lifetime decoupling and price-catalog estimates
-beyond the one-shot path. No Phase 11 gate PASS.
+proof plus refusal) holds acceptance at e3d8a64b; price-catalog integrity
+beyond the one-shot path holds acceptance at 17efb783. Remaining critic
+demands: full HTTP drive lifetime decoupling. No Phase 11 gate PASS.
 
 **Proposed M2/M3 delivery packets (2026-09-14):** add incremental native event
 decoding, durable stream cursors, exact workspace/session binding, and separately
