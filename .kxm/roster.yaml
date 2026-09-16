@@ -1,0 +1,58 @@
+schema: kxm.developer-roster.v1
+routes:
+  grok-native:
+    harness: grok
+    model: grok-4.6
+    vendor: xai
+    roles:
+    - writer
+    permissions:
+    - edit
+    status: admitted
+  qwen-openrouter-pi:
+    harness: pi
+    model: openrouter/qwen/qwen3-coder-plus
+    vendor: alibaba
+    roles:
+    - writer
+    permissions:
+    - edit
+    status: admitted
+  fable-claude:
+    harness: claude
+    model: fable
+    vendor: anthropic
+    roles:
+    - planner
+    - reviewer-arch
+    permissions:
+    - read-only
+    status: admitted
+  sol-codex:
+    harness: codex
+    model: gpt-5.6-sol
+    vendor: openai
+    roles:
+    - reviewer-cli
+    permissions:
+    - read-only
+    status: admitted
+lineup:
+  writer:
+  - grok-native
+  - qwen-openrouter-pi
+  planner:
+  - fable-claude
+  reviewer-arch:
+  - fable-claude
+  reviewer-cli:
+  - sol-codex
+required_critics:
+  review-arch: fable-claude
+  review-cli: sol-codex
+model_origins:
+  openrouter/qwen/qwen3-coder-plus:
+    vendor: alibaba
+    evidence:
+      source: docs/workflow-guide.md
+      sha256: 358d436dbf1b6f3904252afba167e643d33d597d16148ac1286b1c21b81448a4

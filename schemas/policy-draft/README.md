@@ -5,7 +5,7 @@ operator settings, live registry identities, or admission.
 
 - Live project models remain `kxm.model.v1` under `schemas/vnext/`.
 - Live CLI roles remain `kxm.role.v1`.
-- Runner admission remains `.kxm/roster.json` via the trusted control Git loader.
+- Runner admission remains `.kxm/roster.yaml` via the trusted control Git loader.
 - This directory is not discovered as a vNext project resource.
 
 Pure validation lives in `plugins/kxm/src/policy-draft.mjs`

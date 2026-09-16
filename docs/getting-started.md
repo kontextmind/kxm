@@ -77,7 +77,7 @@ too). kxm resolves each role's first guide candidate whose harness is
 authenticated and writes only current vNext project resources —
 `.kxm/agents/<role>.yaml` (`kxm.agent.v1`) and `.kxm/workflows/<slug>.yaml`
 (`kxm.workflow.v1`). It never writes retired legacy authority (`.kxm/config`,
-`.kxm/roster.json`). Roles whose candidates have no authenticated harness are
+retired `.kxm/roster.json`) or the trusted `.kxm/roster.yaml` policy. Roles whose candidates have no authenticated harness are
 reported as skipped, not silently downgraded. Guide candidates are dated
 research — verify them before dispatch. Declining is safe: set
 `KXM_SKIP_GUIDE_SETUP_PROMPT=1` to suppress the offer.

@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { parse } from "yaml";
 
 export const ADMITTED_ROSTER_POLICY = Object.freeze(
-  JSON.parse(readFileSync(join(process.cwd(), ".kxm/roster.json"), "utf8")),
+  parse(readFileSync(join(process.cwd(), ".kxm/roster.yaml"), "utf8")),
 );
 
 export function withRosterPolicy<T extends object>(deps: T = {} as T): T {

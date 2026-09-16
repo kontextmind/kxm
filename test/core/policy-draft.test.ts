@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
+import { parse } from "yaml";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { NATIVE_PI_BRAKE_PROVIDERS, PI_ALLOWED_PROVIDERS, PI_NATIVE_VENDOR_PROVIDERS, ROUTES } from "../../scripts/harness-run.mjs";
 import { KIND_ROLES, getRosterPolicy } from "../../scripts/assignment-run.mjs";
@@ -247,8 +248,8 @@ test("draft validator does not read Git, cwd files, or live roster evidence path
   assert.ok(codes(result).includes("origin_evidence_missing"));
 });
 
-test("active vNext schemas, examples, and roster.json remain the live formats", () => {
-  const roster = JSON.parse(readFileSync(".kxm/roster.json", "utf8")) as {
+test("active vNext schemas, examples, and roster.yaml remain the live formats", () => {
+  const roster = parse(readFileSync(".kxm/roster.yaml", "utf8")) as {
     schema: string;
     routes: Record<string, { status: string; harness: string; model: string }>;
     lineup: Record<string, string[]>;
@@ -318,7 +319,7 @@ test("admitted draft fixtures do not change live writer or critic selection", ()
     }),
   }, options());
   assert.equal(draft.ok, true, draft.ok ? "" : draft.issues.map((issue) => `${issue.code}:${issue.message}`).join("\n"));
-  const live = JSON.parse(readFileSync(".kxm/roster.json", "utf8")) as { lineup: Record<string, string[]> };
+  const live = parse(readFileSync(".kxm/roster.yaml", "utf8")) as { lineup: Record<string, string[]> };
   assert.deepEqual(live.lineup.writer, ["grok-native", "qwen-openrouter-pi"]);
   assert.equal(getRosterPolicy(withRosterPolicy()).lineup.writer?.includes("agy-native"), false);
 });
