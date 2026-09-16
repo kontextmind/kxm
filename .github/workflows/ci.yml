@@ -119,10 +119,22 @@ jobs:
         if: steps.modules.outputs.cache-hit != 'true'
         run: npm ci
 
-      # Every active leg runs coverage because `validate:ci` is the PR gate.
-      # Historical Windows coverage evidence remains in Tracking.
-      - name: Test with coverage, type-check, and inspect package
-        run: npm run validate:ci
+      # PRs run the lean gate (core suite, no coverage instrumentation, no
+      # pack). Pushes to main run the full validate:ci; nightly.yml keeps the
+      # complete-suite coverage floors. Historical Windows coverage evidence
+      # remains in Tracking.
+      - name: Test core suite, type-check, and inspect generated artifacts
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            npm run validate:pr
+          else
+            npm run validate:ci
+          fi
+      - name: Inspect package (main only)
+        if: github.event_name == 'push'
+        run: npm pack --dry-run
 
       - name: Verify generated runtime bundles are current
         run: npm run check:generated
