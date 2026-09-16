@@ -4,6 +4,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { hubEnvFile } from "../../plugins/kxm/src/hub-env.ts";
 
 function makeGitRoot(root: string): void {
   const initialized = spawnSync("git", ["-c", "init.defaultBranch=main", "init", "--quiet", root], { encoding: "utf8", windowsHide: true });
@@ -41,6 +42,8 @@ function runOperatorBin(command: string, args: string[], cwd: string) {
 }
 
 test("packed npm artifact runs the operator CLI and hub outside the repository", { timeout: 480_000 }, async () => {
+  const realHubEnvPath = hubEnvFile(process.env);
+  const realHubEnvBefore = existsSync(realHubEnvPath) ? readFileSync(realHubEnvPath, "utf8") : undefined;
   const repository = process.cwd();
   const root = mkdtempSync(join(tmpdir(), "pi-mesh-package-install-"));
   const packDirectory = join(root, "pack");
@@ -339,6 +342,9 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
       KXM_HOST: "127.0.0.1",
       KXM_PORT: "0",
       KXM_AUTH_TOKEN: "packed-consumer-test-token",
+      // Isolate user state so the wrapper never persists this fixture token
+      // into the developer's real hub-env.json.
+      KXM_STATE_HOME: packedState,
     });
     hub = spawn(process.execPath, [join(packageRoot, "scripts", "kxm-hub.mjs")], {
       cwd: runtime,
@@ -365,6 +371,11 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
       });
     });
     assert.equal((await fetch(`${url}/ready`)).status, 200);
+    assert.equal(
+      existsSync(realHubEnvPath) ? readFileSync(realHubEnvPath, "utf8") : undefined,
+      realHubEnvBefore,
+      "packed consumer must not write the developer's persisted hub env",
+    );
     const stateDirectory = join(runtime, ".kxm", "state");
     const record = JSON.parse(readFileSync(join(stateDirectory, "hub.pid"), "utf8")) as { startedAt: string };
     writeFileSync(join(stateDirectory, "hub.stop"), JSON.stringify({

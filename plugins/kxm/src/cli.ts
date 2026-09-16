@@ -18,6 +18,7 @@ import { Command, CommanderError } from "commander";
 import { readInstalledKxmVersion } from "./kxm-update.ts";
 import { findKxmRepoRoot } from "./repo-root.ts";
 import { HubClient } from "./client.ts";
+import { readHubEnvRecord } from "./hub-env.ts";
 import { defaultProjectName } from "./project-name.ts";
 import {
   AGENT_COMMANDS_MAP,
@@ -157,6 +158,16 @@ export { hubContextPost };
 
 const CLI_NAME = "kxm";
 
+/** Authenticate CLI hub clients: explicit KXM_AUTH_TOKEN first, then the
+ * persisted hub env record (project token for this project, then the admin
+ * token), matching the credential precedence `kxm hub start` prints. */
+function resolveCliAuthToken(runtime: Runtime, project: string): string | undefined {
+  const envToken = runtime.env.KXM_AUTH_TOKEN?.trim();
+  if (envToken) return envToken;
+  const record = readHubEnvRecord(runtime.env);
+  return record?.projectTokens?.[project]?.trim() || record?.authToken?.trim() || undefined;
+}
+
 const USAGE_ERROR_CODES = new Set([
   "commander.help",
   "commander.helpDisplayed",
@@ -183,12 +194,13 @@ async function ensureCliClient(runtime: Runtime): Promise<HubClient> {
   const project = defaultProjectName(runtime.cwd, runtime.env);
   const name = runtime.env.KXM_AGENT_NAME?.trim() || `cli-${process.pid}`;
   const purpose = runtime.env.KXM_AGENT_PURPOSE?.trim() || "CLI agent client";
-  const authToken = runtime.env.KXM_AUTH_TOKEN?.trim();
+  const authToken = resolveCliAuthToken(runtime, project);
   const client = new HubClient({
     serverUrl,
     name,
     project,
     purpose,
+    fetchImpl: runtime.fetchImpl,
     ...(authToken ? { authToken } : {}),
   });
   await client.start(() => {});

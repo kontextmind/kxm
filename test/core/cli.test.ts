@@ -1303,6 +1303,74 @@ test("release workflow retries reuse one explicit delivery identifier", () => {
   assert.match(launcher, /fanoutTimeoutMs = 120000/);
 });
 
+test("cli hub commands fall back to the persisted hub env project token", async () => {
+  const stateHome = mkdtempSync(join(tmpdir(), "kxm-cli-auth-project-"));
+  try {
+    writeFileSync(join(stateHome, "hub-env.json"), JSON.stringify({
+      schema: "kxm.hub-env.v1",
+      createdAt: "2026-09-16T00:00:00.000Z",
+      authToken: "persisted-admin-token",
+      projectTokens: { kxm: "persisted-project-token" },
+    }));
+    const io = capture();
+    const authorizations: string[] = [];
+    const code = await runCli(["peer", "inbox", "--json"], {
+      KXM_PROJECT: "kxm",
+      KXM_STATE_HOME: stateHome,
+      KXM_SERVER_URL: "http://127.0.0.1:7331",
+    }, {
+      ...io,
+      fetchImpl: async (input, init) => {
+        authorizations.push(new Headers(init?.headers).get("authorization") ?? "");
+        if (String(input).endsWith("/v1/agents/register")) {
+          return new Response(JSON.stringify({ agent: { id: "agent_1" }, agentKey: "key_1" }), { status: 201 });
+        }
+        return new Response("{}", { status: 200 });
+      },
+    });
+    const out = io.read();
+    assert.equal(code, 0, `${out.stderr}\n${out.stdout}`);
+    const seen = authorizations.filter(Boolean);
+    assert.ok(seen.length > 0, "expected at least one authenticated request");
+    assert.ok(seen.every((a) => a === "Bearer persisted-project-token"), seen.join(","));
+  } finally {
+    rmSync(stateHome, { recursive: true, force: true });
+  }
+});
+
+test("cli hub commands fall back to the persisted hub env admin token", async () => {
+  const stateHome = mkdtempSync(join(tmpdir(), "kxm-cli-auth-admin-"));
+  try {
+    writeFileSync(join(stateHome, "hub-env.json"), JSON.stringify({
+      schema: "kxm.hub-env.v1",
+      createdAt: "2026-09-16T00:00:00.000Z",
+      authToken: "persisted-admin-token",
+    }));
+    const io = capture();
+    const authorizations: string[] = [];
+    const code = await runCli(["peer", "inbox", "--json"], {
+      KXM_STATE_HOME: stateHome,
+      KXM_SERVER_URL: "http://127.0.0.1:7331",
+    }, {
+      ...io,
+      fetchImpl: async (input, init) => {
+        authorizations.push(new Headers(init?.headers).get("authorization") ?? "");
+        if (String(input).endsWith("/v1/agents/register")) {
+          return new Response(JSON.stringify({ agent: { id: "agent_1" }, agentKey: "key_1" }), { status: 201 });
+        }
+        return new Response("{}", { status: 200 });
+      },
+    });
+    const out = io.read();
+    assert.equal(code, 0, `${out.stderr}\n${out.stdout}`);
+    const seen = authorizations.filter(Boolean);
+    assert.ok(seen.length > 0, "expected at least one authenticated request");
+    assert.ok(seen.every((a) => a === "Bearer persisted-admin-token"), seen.join(","));
+  } finally {
+    rmSync(stateHome, { recursive: true, force: true });
+  }
+});
+
 test("workflow degradation approval is an explicit admin command", async () => {
   const io = capture();
   let requestedUrl = "";
