@@ -2984,7 +2984,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve2.call(this, root, ref);
+      let _sch = resolve3.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a3 = root.localRefs) === null || _a3 === void 0 ? void 0 : _a3[ref];
         const { schemaId } = this.opts;
@@ -3011,7 +3011,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve2(root, ref) {
+    function resolve3(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3836,7 +3836,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve2(baseURI, relativeURI, options) {
+    function resolve3(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const {
         parsed: baseParsed,
@@ -4198,7 +4198,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve: resolve2,
+      resolve: resolve3,
       resolveComponent,
       equal,
       serialize,
@@ -14505,7 +14505,7 @@ var Protocol = class {
           return;
         }
         const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-        await new Promise((resolve2) => setTimeout(resolve2, pollInterval));
+        await new Promise((resolve3) => setTimeout(resolve3, pollInterval));
         options?.signal?.throwIfAborted();
       }
     } catch (error2) {
@@ -14522,7 +14522,7 @@ var Protocol = class {
    */
   request(request, resultSchema, options) {
     const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-    return new Promise((resolve2, reject) => {
+    return new Promise((resolve3, reject) => {
       const earlyReject = (error2) => {
         reject(error2);
       };
@@ -14600,7 +14600,7 @@ var Protocol = class {
           if (!parseResult.success) {
             reject(parseResult.error);
           } else {
-            resolve2(parseResult.data);
+            resolve3(parseResult.data);
           }
         } catch (error2) {
           reject(error2);
@@ -14861,12 +14861,12 @@ var Protocol = class {
       }
     } catch {
     }
-    return new Promise((resolve2, reject) => {
+    return new Promise((resolve3, reject) => {
       if (signal.aborted) {
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
         return;
       }
-      const timeoutId = setTimeout(resolve2, interval);
+      const timeoutId = setTimeout(resolve3, interval);
       signal.addEventListener("abort", () => {
         clearTimeout(timeoutId);
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
@@ -15742,12 +15742,12 @@ var StdioServerTransport = class {
     this.onclose?.();
   }
   send(message) {
-    return new Promise((resolve2) => {
+    return new Promise((resolve3) => {
       const json = serializeMessage(message);
       if (this._stdout.write(json)) {
-        resolve2();
+        resolve3();
       } else {
-        this._stdout.once("drain", resolve2);
+        this._stdout.once("drain", resolve3);
       }
     });
   }
@@ -16022,7 +16022,7 @@ var HubClient = class {
       if (signal?.aborted) throw new MeshWaitError("aborted", messageId);
       const message = await this.getMessage(messageId);
       if (["replied", "cancelled", "expired", "error"].includes(message.status)) return message;
-      await new Promise((resolve2, reject) => {
+      await new Promise((resolve3, reject) => {
         const onAbort = () => {
           signal?.removeEventListener("abort", onAbort);
           clearTimeout(timer);
@@ -16030,7 +16030,7 @@ var HubClient = class {
         };
         const timer = setTimeout(() => {
           signal?.removeEventListener("abort", onAbort);
-          resolve2();
+          resolve3();
         }, Math.min(500, Math.max(1, deadline - Date.now())));
         signal?.addEventListener("abort", onAbort, { once: true });
         if (signal?.aborted) onAbort();
@@ -16085,7 +16085,7 @@ var HubClient = class {
       } catch (error2) {
         if (this.stopped || error2 instanceof Error && error2.name === "AbortError") return;
       }
-      if (!this.stopped) await new Promise((resolve2) => setTimeout(resolve2, this.options.reconnectMs));
+      if (!this.stopped) await new Promise((resolve3) => setTimeout(resolve3, this.options.reconnectMs));
     }
   }
   headers(includeIdentity = true) {
@@ -16166,14 +16166,88 @@ var HubClient = class {
   }
 };
 
+// plugins/kxm/src/hub-env.ts
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, isAbsolute, join, resolve } from "node:path";
+var HUB_ENV_SCHEMA = "kxm.hub-env.v1";
+var HubEnvError = class extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "HubEnvError";
+  }
+};
+function resolveUserStateRoot(env) {
+  const explicit = env.KXM_STATE_HOME?.trim();
+  if (explicit) {
+    if (!isAbsolute(explicit)) throw new HubEnvError("local_state_root_not_absolute");
+    return resolve(explicit);
+  }
+  if (process.platform === "win32") {
+    const localAppData = env.LOCALAPPDATA?.trim();
+    const base2 = localAppData && isAbsolute(localAppData) ? localAppData : join(homedir(), "AppData", "Local");
+    return resolve(base2, "KXM");
+  }
+  if (process.platform === "darwin") return resolve(homedir(), "Library", "Application Support", "KXM");
+  const xdgState = env.XDG_STATE_HOME?.trim();
+  const base = xdgState && isAbsolute(xdgState) ? xdgState : join(homedir(), ".local", "state");
+  return resolve(base, "kxm");
+}
+function hubEnvFile(env = process.env) {
+  return join(resolveUserStateRoot(env), "hub-env.json");
+}
+function readHubEnvRecord(env = process.env) {
+  const file = hubEnvFile(env);
+  if (!existsSync(file)) return void 0;
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(file, "utf8"));
+  } catch (error2) {
+    throw new HubEnvError(`hub env file is malformed at ${file}: ${error2 instanceof Error ? error2.message : String(error2)}`);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new HubEnvError(`hub env file is malformed at ${file}: expected a JSON object`);
+  }
+  const record2 = parsed;
+  if (record2.schema !== HUB_ENV_SCHEMA) {
+    throw new HubEnvError(`hub env file at ${file} has unsupported schema ${String(record2.schema)}`);
+  }
+  if (record2.authToken !== void 0 && (typeof record2.authToken !== "string" || record2.authToken.trim().length === 0)) {
+    throw new HubEnvError(`hub env file at ${file} has an invalid authToken`);
+  }
+  if (record2.projectTokens !== void 0) {
+    const tokens = record2.projectTokens;
+    if (!tokens || typeof tokens !== "object" || Array.isArray(tokens)) {
+      throw new HubEnvError(`hub env file at ${file} has invalid projectTokens`);
+    }
+    for (const [project, token] of Object.entries(tokens)) {
+      if (!project.trim() || typeof token !== "string" || !token.trim()) {
+        throw new HubEnvError(`hub env file at ${file} has an empty project name or token`);
+      }
+    }
+  }
+  return {
+    schema: HUB_ENV_SCHEMA,
+    createdAt: typeof record2.createdAt === "string" ? record2.createdAt : "",
+    ...record2.authToken !== void 0 ? { authToken: record2.authToken } : {},
+    ...record2.projectTokens !== void 0 ? { projectTokens: record2.projectTokens } : {}
+  };
+}
+function resolveClientHubAuthToken(env, project) {
+  const envToken = env.KXM_AUTH_TOKEN?.trim();
+  if (envToken) return envToken;
+  const record2 = readHubEnvRecord(env);
+  return record2?.projectTokens?.[project]?.trim() || record2?.authToken?.trim() || void 0;
+}
+
 // plugins/kxm/src/project-name.ts
-import { readFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { readFileSync as readFileSync2 } from "node:fs";
+import { basename, join as join2 } from "node:path";
 function defaultProjectName(cwd, env = process.env) {
   const fromEnv = env.KXM_PROJECT?.trim();
   if (fromEnv) return fromEnv;
   try {
-    const pkg = JSON.parse(readFileSync(join(cwd, "package.json"), "utf8"));
+    const pkg = JSON.parse(readFileSync2(join2(cwd, "package.json"), "utf8"));
     if (typeof pkg.name === "string" && pkg.name.trim().length > 0) return pkg.name.trim();
   } catch {
   }
@@ -16181,9 +16255,9 @@ function defaultProjectName(cwd, env = process.env) {
 }
 
 // plugins/kxm/src/commands.ts
-import { chmodSync, existsSync, mkdirSync, readFileSync as readFileSync2, unlinkSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join as join2, resolve } from "node:path";
+import { chmodSync, existsSync as existsSync2, mkdirSync as mkdirSync2, readFileSync as readFileSync3, unlinkSync, writeFileSync as writeFileSync2 } from "node:fs";
+import { homedir as homedir2 } from "node:os";
+import { dirname as dirname2, join as join3, resolve as resolve2 } from "node:path";
 function requiredString(value, name) {
   if (typeof value !== "string" || value.trim() === "") throw new Error(`${name} is required`);
   return value.trim();
@@ -16918,11 +16992,11 @@ function parseSessionToken(token) {
   return void 0;
 }
 function resolveUserConfigDirectory(overrideDir) {
-  if (overrideDir) return resolve(overrideDir);
-  return resolve(process.env.KXM_USER_CONFIG_DIR?.trim() || join2(homedir(), ".config", "kxm"));
+  if (overrideDir) return resolve2(overrideDir);
+  return resolve2(process.env.KXM_USER_CONFIG_DIR?.trim() || join3(homedir2(), ".config", "kxm"));
 }
 function sessionTokenPath(userConfigDir) {
-  return join2(resolveUserConfigDirectory(userConfigDir), "session.token");
+  return join3(resolveUserConfigDirectory(userConfigDir), "session.token");
 }
 function matchToolPattern(pattern, toolName) {
   if (pattern === "*" || pattern === toolName) return true;
@@ -17015,10 +17089,10 @@ function enforceToolPolicy(commandName, env = process.env, options) {
     return { allowed: true };
   }
   const tokenFile = sessionTokenPath(env.KXM_USER_CONFIG_DIR);
-  if (existsSync(tokenFile)) {
+  if (existsSync2(tokenFile)) {
     let tokenRaw;
     try {
-      tokenRaw = readFileSync2(tokenFile, "utf8").trim();
+      tokenRaw = readFileSync3(tokenFile, "utf8").trim();
     } catch {
       return { allowed: false, error: "session_token_invalid", detail: "Session token file on disk could not be read" };
     }
@@ -17071,9 +17145,6 @@ var mcp = new Server(
 function textResult(value) {
   return { content: [{ type: "text", text: JSON.stringify(value, null, 2) }] };
 }
-function optionalString2(value) {
-  return typeof value === "string" && value.trim() ? value.trim() : void 0;
-}
 function asRecord2(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
@@ -17115,12 +17186,13 @@ async function ensureClient() {
   if (starting) return starting;
   starting = (async () => {
     const projectDir = process.env.KXM_PROJECT_DIR || process.env.CLAUDE_PROJECT_DIR || process.cwd();
-    const authToken = optionalString2(process.env.KXM_AUTH_TOKEN);
+    const project = defaultProjectName(projectDir, process.env);
+    const authToken = resolveClientHubAuthToken(process.env, project);
     const candidate = new HubClient({
       serverUrl: process.env.KXM_SERVER_URL?.trim() || "http://127.0.0.1:7331",
       name: process.env.KXM_AGENT_NAME?.trim() || `claude-${process.pid}`,
       purpose: process.env.KXM_AGENT_PURPOSE?.trim() || "Claude Code implementation and review agent",
-      project: defaultProjectName(projectDir, process.env),
+      project,
       model: "claude-code",
       ...authToken ? { authToken } : {}
     });
