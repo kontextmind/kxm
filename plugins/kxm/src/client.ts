@@ -55,6 +55,8 @@ export interface HubClientOptions {
   heartbeatMs?: number;
   reconnectMs?: number;
   requestTimeoutMs?: number;
+  /** Injectable fetch for CLI/tests; defaults to global fetch. */
+  fetchImpl?: typeof fetch;
 }
 
 export interface SendOptions {
@@ -493,7 +495,7 @@ export class HubClient {
     while (!this.stopped && this.agent) {
       this.eventsAbort = new AbortController();
       try {
-        const response = await fetch(
+        const response = await (this.options.fetchImpl ?? fetch)(
           `${this.options.serverUrl.replace(/\/$/, "")}/v1/events?agentId=${encodeURIComponent(this.agent.id)}`,
           {
             headers: this.headers(),
@@ -578,7 +580,7 @@ export class HubClient {
     const signal = init.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal;
     let response: Response;
     try {
-      response = await fetch(`${this.options.serverUrl.replace(/\/$/, "")}${path}`, {
+      response = await (this.options.fetchImpl ?? fetch)(`${this.options.serverUrl.replace(/\/$/, "")}${path}`, {
         ...init,
         signal,
         headers: { ...this.headers(includeIdentity), ...(init.headers ?? {}) },

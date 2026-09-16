@@ -14834,7 +14834,7 @@ var HubClient = class {
     while (!this.stopped && this.agent) {
       this.eventsAbort = new AbortController();
       try {
-        const response = await fetch(
+        const response = await (this.options.fetchImpl ?? fetch)(
           `${this.options.serverUrl.replace(/\/$/, "")}/v1/events?agentId=${encodeURIComponent(this.agent.id)}`,
           {
             headers: this.headers(),
@@ -14911,7 +14911,7 @@ var HubClient = class {
     const signal = init.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal;
     let response;
     try {
-      response = await fetch(`${this.options.serverUrl.replace(/\/$/, "")}${path}`, {
+      response = await (this.options.fetchImpl ?? fetch)(`${this.options.serverUrl.replace(/\/$/, "")}${path}`, {
         ...init,
         signal,
         headers: { ...this.headers(includeIdentity), ...init.headers ?? {} }
