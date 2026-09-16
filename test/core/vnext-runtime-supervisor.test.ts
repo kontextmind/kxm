@@ -603,6 +603,24 @@ test("supervisor GET run returns a verified drive receipt after settle", async (
   const { root, stateRoot } = engineProject("kxm-supervisor-drive-receipt-get-");
   let supervisor: Awaited<ReturnType<typeof startVnextRuntimeSupervisor>> | undefined;
   try {
+    writeFileSync(join(root, ".kxm", "workflows", "one-step.yaml"), `schema: kxm.workflow.v1
+description: Single agent step used for scheduler admission tests.
+coordinator: coordinator
+limits:
+  maxTransitions: 2
+  maxRunDurationMs: 60000
+steps:
+  - id: only
+    kind: agent
+    agent: implementer
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: $terminal
+        terminalStatus: failed
+`);
     supervisor = await startVnextRuntimeSupervisor({ stateRoot });
     const token = readVnextSupervisorToken(vnextRuntimePaths({ stateRoot }))!;
     const handle = { runtimeId: supervisor.runtimeId, port: supervisor.port, token, started: true };
@@ -631,7 +649,12 @@ test("supervisor GET run returns a verified drive receipt after settle", async (
       driveId: string;
       mode: string;
       openedAt: string;
-      receipt: { driveId: string; logHash: string; settlement: { kind: string; status: string } };
+      receipt: {
+        driveId: string;
+        logHash: string;
+        settlement: { kind: string; status: string };
+        budget: { budgetMs: number; source: string; elapsedMs: number; overrun: boolean } | null;
+      };
       verified: boolean;
       divergence?: string;
     };
@@ -643,6 +666,12 @@ test("supervisor GET run returns a verified drive receipt after settle", async (
     assert.equal(drive.receipt.settlement.status, "completed");
     assert.equal(drive.verified, true);
     assert.equal(drive.divergence, undefined);
+    assert.ok(drive.receipt.budget);
+    assert.equal(drive.receipt.budget.budgetMs, 60_000);
+    assert.equal(drive.receipt.budget.source, "workflow");
+    assert.equal(typeof drive.receipt.budget.elapsedMs, "number");
+    assert.ok(drive.receipt.budget.elapsedMs >= 0);
+    assert.equal(drive.receipt.budget.overrun, false);
   } finally {
     if (supervisor) await supervisor.stop();
     removeTempDir(root, stateRoot);

@@ -767,6 +767,36 @@ test("kxm runs status prints a drive line and passes the receipt through JSON", 
     const textOk = capture();
     assert.equal(await cmdVnextRunStatus(driveRuntime(false, textOk), "run_statuscli"), 0);
     assert.match(textOk.read().stdout, /drive drv_0123456789abcdef01234567: completed \(receipt verified\)/);
+
+    const cancelledReasons = ["budget_run_duration", "operator_cancel", "runtime_shutdown"] as const;
+    for (const reason of cancelledReasons) {
+      const cancelledReceipt = {
+        schema: "kxm.drive-receipt.v1",
+        driveId: "drv_0123456789abcdef01234567",
+        runId: "run_statuscli",
+        settlement: { kind: "terminal", status: "cancelled", reason },
+        budget: reason === "budget_run_duration"
+          ? { budgetMs: 25, source: "workflow", elapsedMs: 40, overrun: true }
+          : null,
+      };
+      const cancelledBody = {
+        ok: true,
+        run: { ...body.run, status: "cancelled" },
+        drive: { ...body.drive, receipt: cancelledReceipt, verified: true },
+      };
+      vnextDriveCliSeams.runtimeRequest = async () => cancelledBody;
+      const jsonCancelled = capture();
+      assert.equal(await cmdVnextRunStatus(driveRuntime(true, jsonCancelled), "run_statuscli"), 0);
+      const jsonCancelledPayload = JSON.parse(jsonCancelled.read().stdout) as { ok: boolean; drive: { receipt: unknown } };
+      assert.equal(jsonCancelledPayload.ok, true);
+      assert.deepEqual(jsonCancelledPayload.drive.receipt, cancelledReceipt);
+      const textCancelled = capture();
+      assert.equal(await cmdVnextRunStatus(driveRuntime(false, textCancelled), "run_statuscli"), 0);
+      const cancelledText = textCancelled.read().stdout;
+      assert.match(cancelledText, new RegExp(`run run_statuscli: cancelled \\(${reason}\\)`));
+      assert.match(cancelledText, new RegExp(`drive drv_0123456789abcdef01234567: cancelled \\(${reason}\\)`));
+      assert.equal(cancelledText.includes("completed"), false, reason);
+    }
   } finally {
     delete vnextDriveCliSeams.ensureSupervisor;
     delete vnextDriveCliSeams.runtimeRequest;

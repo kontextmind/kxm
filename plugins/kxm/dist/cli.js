@@ -33642,6 +33642,9 @@ ${RUN_ENGINE_NOTICE}`);
     return 1;
   }
 }
+function formatCancelledStatus(reason) {
+  return reason.length > 0 ? `cancelled (${reason})` : "cancelled";
+}
 function formatDriveStatusLine(runStatus, drive) {
   if (!drive || typeof drive.driveId !== "string" || drive.driveId.length === 0) return void 0;
   const receipt = drive.receipt ?? null;
@@ -33659,10 +33662,19 @@ function formatDriveStatusLine(runStatus, drive) {
   if (kind === "handoff") {
     return drive.verified === true ? `drive ${drive.driveId}: handoff (receipt verified)` : `drive ${drive.driveId}: handoff`;
   }
+  if (receipt.settlement?.status === "cancelled") {
+    const label = formatCancelledStatus(reason);
+    return drive.verified === true ? `drive ${drive.driveId}: ${label} (receipt verified)` : `drive ${drive.driveId}: ${label}`;
+  }
   if (drive.verified === true) {
     return `drive ${drive.driveId}: completed (receipt verified)`;
   }
   return `drive ${drive.driveId}: completed`;
+}
+function formatRunStatusLine(run, drive) {
+  const reason = typeof drive?.receipt?.settlement?.reason === "string" ? drive.receipt.settlement.reason : "";
+  const statusLabel = run.status === "cancelled" ? formatCancelledStatus(reason) : run.status;
+  return `run ${run.runId}: ${statusLabel} (workflow ${run.workflowId}, updated ${run.updatedAt})`;
 }
 async function cmdVnextRunStatus(runtime, runId) {
   try {
@@ -33680,7 +33692,7 @@ async function cmdVnextRunStatus(runtime, runId) {
       runtime.io,
       runtime.json,
       { ok: true, command: "runs status", run, ...drive !== void 0 ? { drive } : {} },
-      `run ${run.runId}: ${run.status} (workflow ${run.workflowId}, updated ${run.updatedAt})${driveLine ? `
+      `${formatRunStatusLine(run, drive)}${driveLine ? `
 ${driveLine}` : ""}`
     );
     return 0;

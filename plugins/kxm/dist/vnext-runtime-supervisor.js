@@ -23454,7 +23454,7 @@ function recordGateNoStartInTransaction(context, run, envelope, stepId, observat
   const cancelled = observation.stopCause === "cancel";
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const seq = sequencer(context, run, now);
-  if (cancelled) ensureOperatorCancel(seq, ids.state, run);
+  const cancelReason = cancelled ? ensureOperatorCancel(seq, ids.state, run, context) : void 0;
   const observationId = newVnextObservationId();
   const observed = seq.push("effect.observed", {
     effect: { id: ids.effectId, policy: { class: ids.gateKind === "artifacts-exist" ? "read-only" : "unknown", sharedMutable: false } },
@@ -23486,7 +23486,7 @@ function recordGateNoStartInTransaction(context, run, envelope, stepId, observat
     seq.push("attempt.status_changed", { attemptId: ids.attemptId, status: "terminal" });
     seq.push("assignment.terminal", { assignmentId: ids.assignmentId, outcome: "cancelled", status: "terminal" });
     seq.push("step.status_changed", { stepId, status: "cancelled", previousStatus: "running" });
-    seq.push("run.status_changed", { status: "cancelled", reason: "operator_cancel", stepId });
+    seq.push("run.status_changed", { status: "cancelled", reason: cancelReason ?? "operator_cancel", stepId });
   } else {
     seq.push("assignment.result_recorded", { assignmentId: ids.assignmentId, resultClass: "producer_rejected", status: "result_recorded" });
     seq.push("attempt.status_changed", { attemptId: ids.attemptId, status: "terminal" });
@@ -23540,7 +23540,7 @@ function recordGateCancelObservedInTransaction(context, run, envelope, stepId, o
   }
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const seq = sequencer(context, run, now);
-  ensureOperatorCancel(seq, ids.state, run);
+  const cancelReason = ensureOperatorCancel(seq, ids.state, run, context);
   if (ids.gateKind === "artifacts-exist") {
     seq.push("assignment.executing", { assignmentId: ids.assignmentId, stepId, stepAttempt: ids.stepAttempt, attemptId: ids.attemptId, status: "executing" });
     seq.push("attempt.status_changed", { attemptId: ids.attemptId, assignmentId: ids.assignmentId, stepId, stepAttempt: ids.stepAttempt, status: "executing" });
@@ -23583,7 +23583,7 @@ function recordGateCancelObservedInTransaction(context, run, envelope, stepId, o
   seq.push("attempt.status_changed", { attemptId: ids.attemptId, status: "terminal" });
   seq.push("assignment.terminal", { assignmentId: ids.assignmentId, outcome: "cancelled", status: "terminal" });
   seq.push("step.status_changed", { stepId, status: "cancelled", previousStatus: "running" });
-  seq.push("run.status_changed", { status: "cancelled", reason: "operator_cancel", stepId });
+  seq.push("run.status_changed", { status: "cancelled", reason: cancelReason, stepId });
   for (const event of seq.events) context.eventStore.appendEvent(event);
   context.eventStore.insertGateObservation(observationRow);
   context.eventStore.settleCapability(ids.attemptId, "settled");
@@ -23668,8 +23668,8 @@ function requireIntent(context, run, envelope, stepId) {
     state: folded
   };
 }
-function ensureOperatorCancel(seq, state, run) {
-  if (state.status === "cancelling") return;
+function ensureOperatorCancel(seq, state, run, context) {
+  if (state.status === "cancelling") return cancelReasonFromLog(context, run.runId);
   if (state.status !== "running") {
     throw runtimeError("run_events_illegal", run.runId, "cancelled gate proof requires a running or cancelling run");
   }
@@ -23678,6 +23678,17 @@ function ensureOperatorCancel(seq, state, run) {
     reason: "operator_cancel"
   });
   seq.push("run.status_changed", { status: "cancelling", reason: "operator_cancel" });
+  return "operator_cancel";
+}
+function cancelReasonFromLog(context, runId) {
+  const events = context.eventStore.events(runId, 0, 1e6);
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event.eventType === "run.cancel_requested" && typeof event.payload.reason === "string") {
+      return event.payload.reason;
+    }
+  }
+  return "operator_cancel";
 }
 function sequencer(context, run, now) {
   let sequence = context.eventStore.nextSequence(run.runId);
@@ -25447,7 +25458,7 @@ function joinPanel(context, panel) {
   };
   const cancelRun = () => {
     push("step.status_changed", { stepId: panel.stepId, status: "cancelled", previousStatus: "running" });
-    push("run.status_changed", { status: "cancelled", reason: cancelReasonFromLog(context, run.runId) });
+    push("run.status_changed", { status: "cancelled", reason: cancelReasonFromLog2(context, run.runId) });
     for (const event of events) context.eventStore.appendEvent(event);
     const next2 = foldStoredVnextRun(context, run);
     persistVnextRunState(context, run.runId, next2, events[events.length - 1].sequence);
@@ -25609,7 +25620,7 @@ function driveReceiptBudget(context, runId, state, events, closedAt) {
     overrun
   };
 }
-function cancelReasonFromLog(context, runId) {
+function cancelReasonFromLog2(context, runId) {
   const events = context.eventStore.events(runId, 0, 1e6);
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];

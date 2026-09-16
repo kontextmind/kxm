@@ -763,6 +763,42 @@ test("S4 context close during execution suppresses late writes and does not stop
   });
 });
 
+test("run-duration budget overrun during a command gate keeps budget_run_duration", { timeout: 15_000 }, async () => {
+  await withS4({ argv: emptyScript(0) }, async ({ root, context }) => {
+    writeFileSync(join(root, ".kxm", "workflows", "gate-command-ready.yaml"), readFileSync(join(root, ".kxm", "workflows", "gate-command-ready.yaml"), "utf8").replace(
+      "  maxTransitions: 4\n",
+      "  maxTransitions: 4\n  maxRunDurationMs: 60000\n",
+    ));
+    const bundle = loadVnextProject(root);
+    const accepted = acceptVnextRun(context, bundle, { workflowId: "gate-command-ready", prompt: "gate-budget" });
+    pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+    vnextGateDispatchSeams.beforeCommandSettle = () => {
+      cancelVnextRun(context, accepted.run.runId, {
+        reason: "budget_run_duration",
+        budget: { budgetMs: 60_000, elapsedMs: 60_000, source: "workflow" },
+      });
+    };
+    const session = await VnextRunScheduler.for(context, bundle).openDriveSession(accepted.run.runId, {
+      mode: "simulated",
+      createProducer: producer,
+    });
+    const settled = await session.settled;
+    assert.equal(settled.state.status, "cancelled");
+    assert.equal(settled.state.terminalReason, "budget_run_duration");
+    const receipt = context.eventStore.driveReceipt(session.driveId);
+    assert.ok(receipt?.budget);
+    assert.equal(receipt!.budget!.overrun, true);
+    assert.equal(receipt!.budget!.budgetMs, 60_000);
+    assert.equal(receipt!.budget!.source, "workflow");
+    const cancel = context.eventStore.events(accepted.run.runId, 0, 400).find((event) => event.eventType === "run.cancel_requested");
+    assert.equal(cancel?.payload.reason, "budget_run_duration");
+    const terminal = context.eventStore.events(accepted.run.runId, 0, 400).find((event) => (
+      event.eventType === "run.status_changed" && event.payload.status === "cancelled"
+    ));
+    assert.equal(terminal?.payload.reason, "budget_run_duration");
+  });
+});
+
 test("S4 cancel after spawn is uncertain; complete observation with revoke is proof-only", async () => {
   await withS4({ argv: [NODE, "-e", "setInterval(() => {}, 1e9)"], timeoutMs: 3_600_000 }, async ({ context, bundle }) => {
     vnextCommandGateSeams.timing = { termGraceMs: 80, finalWaitMs: 80, lingerMs: 80 };

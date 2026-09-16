@@ -1783,6 +1783,28 @@ steps:
     ]),
     /run_events_illegal/,
   );
+  assert.throws(
+    () => foldVnextRunState(durationRun, durationPlan, [
+      ...durationRunning,
+      event(durationRun, 4, "run.cancel_requested", {
+        actor: { kind: "runtime", id: HOME },
+        reason: "budget_run_duration",
+        budget: { budgetMs: 50, elapsedMs: 100, source: "workflow" },
+      }),
+    ]),
+    /run_events_illegal/,
+  );
+  assert.throws(
+    () => foldVnextRunState(durationRun, durationPlan, [
+      ...durationRunning,
+      event(durationRun, 4, "run.cancel_requested", {
+        actor: { kind: "runtime", id: HOME },
+        reason: "budget_run_duration",
+        budget: { budgetMs: 100, elapsedMs: 100, source: "project" },
+      }),
+    ]),
+    /run_events_illegal/,
+  );
   const legalBudgetCancel = foldVnextRunState(durationRun, durationPlan, [
     ...durationRunning,
     event(durationRun, 4, "run.cancel_requested", {
