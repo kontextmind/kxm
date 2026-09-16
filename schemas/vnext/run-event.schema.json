@@ -91,6 +91,24 @@
       }
     },
     {
+      "if": {
+        "properties": {
+          "eventType": { "const": "run.cancel_requested" },
+          "payload": {
+            "type": "object",
+            "properties": { "reason": { "const": "budget_run_duration" } },
+            "required": ["reason"]
+          }
+        },
+        "required": ["eventType", "payload"]
+      },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["actor", "reason", "budget"] }
+        }
+      }
+    },
+    {
       "if": { "properties": { "eventType": { "const": "step.entered" } }, "required": ["eventType"] },
       "then": {
         "properties": {
@@ -290,6 +308,16 @@
   ],
   "additionalProperties": false,
   "$defs": {
+    "runDurationBudget": {
+      "type": "object",
+      "required": ["budgetMs", "elapsedMs", "source"],
+      "properties": {
+        "budgetMs": { "$ref": "common.schema.json#/$defs/durationMs" },
+        "elapsedMs": { "type": "integer", "minimum": 0 },
+        "source": { "enum": ["workflow", "project", "both"] }
+      },
+      "additionalProperties": false
+    },
     "repositorySnapshot": {
       "type": "object",
       "required": ["repositoryId", "baseCommit", "contentSnapshotHash"],
@@ -391,6 +419,7 @@
         "timing": { "$ref": "common.schema.json#/$defs/timing" },
         "usage": { "$ref": "common.schema.json#/$defs/usage" },
         "error": { "$ref": "common.schema.json#/$defs/errorSummary" },
+        "budget": { "$ref": "#/$defs/runDurationBudget" },
         "actor": { "$ref": "common.schema.json#/$defs/actor" },
         "resolvedBy": { "$ref": "common.schema.json#/$defs/actor" },
         "resolutionAction": {

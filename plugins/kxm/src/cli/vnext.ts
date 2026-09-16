@@ -484,6 +484,10 @@ interface VnextStatusDrive {
   divergence?: string;
 }
 
+function formatCancelledStatus(reason: string): string {
+  return reason.length > 0 ? `cancelled (${reason})` : "cancelled";
+}
+
 function formatDriveStatusLine(runStatus: string, drive: VnextStatusDrive | undefined): string | undefined {
   if (!drive || typeof drive.driveId !== "string" || drive.driveId.length === 0) return undefined;
   const receipt = drive.receipt ?? null;
@@ -503,10 +507,25 @@ function formatDriveStatusLine(runStatus: string, drive: VnextStatusDrive | unde
       ? `drive ${drive.driveId}: handoff (receipt verified)`
       : `drive ${drive.driveId}: handoff`;
   }
+  if (receipt.settlement?.status === "cancelled") {
+    const label = formatCancelledStatus(reason);
+    return drive.verified === true
+      ? `drive ${drive.driveId}: ${label} (receipt verified)`
+      : `drive ${drive.driveId}: ${label}`;
+  }
   if (drive.verified === true) {
     return `drive ${drive.driveId}: completed (receipt verified)`;
   }
   return `drive ${drive.driveId}: completed`;
+}
+
+function formatRunStatusLine(
+  run: { runId: string; status: string; workflowId: string; updatedAt: string },
+  drive: VnextStatusDrive | undefined,
+): string {
+  const reason = typeof drive?.receipt?.settlement?.reason === "string" ? drive.receipt.settlement.reason : "";
+  const statusLabel = run.status === "cancelled" ? formatCancelledStatus(reason) : run.status;
+  return `run ${run.runId}: ${statusLabel} (workflow ${run.workflowId}, updated ${run.updatedAt})`;
 }
 
 export async function cmdVnextRunStatus(runtime: Runtime, runId: string): Promise<number> {
@@ -525,7 +544,7 @@ export async function cmdVnextRunStatus(runtime: Runtime, runId: string): Promis
       runtime.io,
       runtime.json,
       { ok: true, command: "runs status", run, ...(drive !== undefined ? { drive } : {}) },
-      `run ${run.runId}: ${run.status} (workflow ${run.workflowId}, updated ${run.updatedAt})${driveLine ? `\n${driveLine}` : ""}`,
+      `${formatRunStatusLine(run, drive)}${driveLine ? `\n${driveLine}` : ""}`,
     );
     return 0;
   } catch (error) {

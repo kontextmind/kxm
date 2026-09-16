@@ -257,7 +257,7 @@ export function recordGateNoStartInTransaction(
   const cancelled = observation.stopCause === "cancel";
   const now = new Date().toISOString();
   const seq = sequencer(context, run, now);
-  if (cancelled) ensureOperatorCancel(seq, ids.state, run);
+  const cancelReason = cancelled ? ensureOperatorCancel(seq, ids.state, run, context) : undefined;
   const observationId = newVnextObservationId();
   const observed = seq.push("effect.observed", {
     effect: { id: ids.effectId, policy: { class: ids.gateKind === "artifacts-exist" ? "read-only" : "unknown", sharedMutable: false } },
@@ -289,7 +289,7 @@ export function recordGateNoStartInTransaction(
     seq.push("attempt.status_changed", { attemptId: ids.attemptId, status: "terminal" });
     seq.push("assignment.terminal", { assignmentId: ids.assignmentId, outcome: "cancelled", status: "terminal" });
     seq.push("step.status_changed", { stepId, status: "cancelled", previousStatus: "running" });
-    seq.push("run.status_changed", { status: "cancelled", reason: "operator_cancel", stepId });
+    seq.push("run.status_changed", { status: "cancelled", reason: cancelReason ?? "operator_cancel", stepId });
   } else {
     seq.push("assignment.result_recorded", { assignmentId: ids.assignmentId, resultClass: "producer_rejected", status: "result_recorded" });
     seq.push("attempt.status_changed", { attemptId: ids.attemptId, status: "terminal" });
@@ -385,7 +385,7 @@ export function recordGateCancelObservedInTransaction(
   }
   const now = new Date().toISOString();
   const seq = sequencer(context, run, now);
-  ensureOperatorCancel(seq, ids.state, run);
+  const cancelReason = ensureOperatorCancel(seq, ids.state, run, context);
   if (ids.gateKind === "artifacts-exist") {
     seq.push("assignment.executing", { assignmentId: ids.assignmentId, stepId, stepAttempt: ids.stepAttempt, attemptId: ids.attemptId, status: "executing" });
     seq.push("attempt.status_changed", { attemptId: ids.attemptId, assignmentId: ids.assignmentId, stepId, stepAttempt: ids.stepAttempt, status: "executing" });
@@ -428,7 +428,7 @@ export function recordGateCancelObservedInTransaction(
   seq.push("attempt.status_changed", { attemptId: ids.attemptId, status: "terminal" });
   seq.push("assignment.terminal", { assignmentId: ids.assignmentId, outcome: "cancelled", status: "terminal" });
   seq.push("step.status_changed", { stepId, status: "cancelled", previousStatus: "running" });
-  seq.push("run.status_changed", { status: "cancelled", reason: "operator_cancel", stepId });
+  seq.push("run.status_changed", { status: "cancelled", reason: cancelReason, stepId });
   for (const event of seq.events) context.eventStore.appendEvent(event);
   context.eventStore.insertGateObservation(observationRow);
   context.eventStore.settleCapability(ids.attemptId, "settled");
@@ -536,8 +536,9 @@ function ensureOperatorCancel(
   seq: ReturnType<typeof sequencer>,
   state: ReturnType<typeof foldStoredVnextRun>,
   run: VnextRunRecord,
-): void {
-  if (state.status === "cancelling") return;
+  context: VnextRuntimeContext,
+): string {
+  if (state.status === "cancelling") return cancelReasonFromLog(context, run.runId);
   if (state.status !== "running") {
     throw runtimeError("run_events_illegal", run.runId, "cancelled gate proof requires a running or cancelling run");
   }
@@ -546,6 +547,18 @@ function ensureOperatorCancel(
     reason: "operator_cancel",
   });
   seq.push("run.status_changed", { status: "cancelling", reason: "operator_cancel" });
+  return "operator_cancel";
+}
+
+function cancelReasonFromLog(context: VnextRuntimeContext, runId: string): string {
+  const events = context.eventStore.events(runId, 0, 1_000_000);
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]!;
+    if (event.eventType === "run.cancel_requested" && typeof event.payload.reason === "string") {
+      return event.payload.reason;
+    }
+  }
+  return "operator_cancel";
 }
 
 function sequencer(context: VnextRuntimeContext, run: VnextRunRecord, now: string) {

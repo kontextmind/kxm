@@ -464,6 +464,7 @@ export function foldStoredVnextRun(context: VnextRuntimeContext, run: VnextRunRe
         if (!step || step.kind !== "gate") return undefined;
         return envelope.gates.definitions[step.gate]?.kind;
       },
+      projectLimits: envelope.projectLimits,
     }
     : {});
   if (envelope) verifyVnextGateEvidence(context.eventStore, run, envelope, events, state);
@@ -551,7 +552,13 @@ export interface VnextRunCancelResult {
 export function cancelVnextRun(
   context: VnextRuntimeContext,
   runId: string,
-  options: { commandId?: string; now?: string; monotonicNs?: string; reason?: string } = {},
+  options: {
+    commandId?: string;
+    now?: string;
+    monotonicNs?: string;
+    reason?: string;
+    budget?: { budgetMs: number; elapsedMs: number; source: "workflow" | "project" | "both" };
+  } = {},
 ): VnextRunCancelResult {
   const commandId = options.commandId ?? newVnextCommandId();
   const now = options.now ?? new Date().toISOString();
@@ -600,10 +607,17 @@ export function cancelVnextRun(
 
     const cancelReason = options.reason ?? "operator_cancel";
     const activeAttempt = Boolean(folded.currentStep?.attemptId) || vnextFoldPanelAttemptIds(folded.currentStep).length > 0;
-    push("run.cancel_requested", {
+    const cancelPayload: Record<string, unknown> = {
       actor: { kind: "runtime", id: context.homeRuntimeId },
       reason: cancelReason,
-    });
+    };
+    if (cancelReason === "budget_run_duration") {
+      if (!options.budget) {
+        throw runtimeError("run_events_illegal", runId, "budget_run_duration requires a budget payload");
+      }
+      cancelPayload.budget = options.budget;
+    }
+    push("run.cancel_requested", cancelPayload);
 
     let status: VnextRunStatus = "cancelled";
     if (folded.status === "running" && activeAttempt) {

@@ -1096,9 +1096,25 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   replay without projection divergence (schema 3→4 creates drive_receipts
   with user_version stamped). Witness `npm run verify` green on 43d374b;
   critics Fable (arch) and Sol (cli) APPROVE after one resolved round
-  (poll-path throw on corrupt row; runs status help text). Still open for
-  the next slices: drive decoupling
-  B3 run-duration budget, and B4 optional surfaces (B1 accepted
+  (poll-path throw on corrupt row; runs status help text). Drive
+  decoupling B3 is accepted (2026-09-16, task_9076be56b581 slice B3, commits
+  5c972ea+b20a470+5602e5f on feat/p11-b3-run-duration-budget): the declared
+  `maxRunDurationMs` budget (min of workflow/project limits, no invented
+  default) is enforced via a log-derived clock (state.runningSince from the
+  first running status-change; restart/resume-safe deadline), cancelling
+  through the existing fold-legal path with reason `budget_run_duration`
+  (terminalReason preserved through gate settlement — no operator_cancel
+  overwrite; never `failed`, never fabricated); per-attempt unref'd timers
+  are bounded, re-arm on early fire, and clear with their controllers;
+  fold validates budgetMs/source/elapsedMs as run_events_illegal; receipts
+  carry `budget { budgetMs, source, elapsedMs, overrun }`. The drive route
+  now passes allowLimits:false (separate revertible commit b20a470) so
+  still-unsupported limits surface as a 409 handoff instead of being
+  silently ignored. Witness `npm run verify` green on 5602e5f; critics Fable
+  (arch) and Sol (cli) APPROVE after one resolved round (gate settlement
+  reason hardcode; CLI cancelled-reason rendering and wire-level budget
+  assertions). Still open for the next slice: drive decoupling
+  B4 optional surfaces (B1 accepted
   2026-09-15, task_p11-drive-decoupling, commit d590d27f, tree a107f3e2:
   engine-owned drive sessions, driveId on 202, session-owned producer,
   admission-atomic pin+start, bounded truthful shutdown via

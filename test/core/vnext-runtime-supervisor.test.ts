@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
 import { removeTempDir } from "../helpers.ts";
 import { engineProject } from "../helpers/vnext-project.ts";
@@ -395,6 +397,98 @@ test("shutdown with a slow simulated producer records cancel_requested runtime_s
   }
 });
 
+test("budget cancel and shutdown cancel racing yield one cancel_requested", async () => {
+  const { root, stateRoot } = engineProject("kxm-supervisor-drive-budget-race-");
+  let supervisor: Awaited<ReturnType<typeof startVnextRuntimeSupervisor>> | undefined;
+  try {
+    writeFileSync(join(root, ".kxm", "workflows", "tiny-duration.yaml"), `schema: kxm.workflow.v1
+coordinator: coordinator
+limits:
+  maxTransitions: 2
+  maxRunDurationMs: 30
+steps:
+  - id: only
+    kind: agent
+    agent: implementer
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: $terminal
+        terminalStatus: failed
+`);
+    supervisor = await startVnextRuntimeSupervisor({ stateRoot });
+    const token = readVnextSupervisorToken(vnextRuntimePaths({ stateRoot }))!;
+    const handle = { runtimeId: supervisor.runtimeId, port: supervisor.port, token, started: true };
+    const acceptance = await vnextRuntimeRequest(handle, "POST", "/v1/runs", {
+      projectRoot: root,
+      workflowId: "tiny-duration",
+      prompt: "budget race",
+    });
+    const runId = (acceptance.run as { runId: string }).runId;
+    const driveRes = await fetch(`http://127.0.0.1:${supervisor.port}/v1/runs/${runId}/drive?projectRoot=${encodeURIComponent(root)}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ mode: "simulated", delayMs: 2000 }),
+    });
+    assert.equal(driveRes.status, 202);
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < 1000) {
+      const peek = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: handle.runtimeId });
+      try {
+        if (peek.eventStore.run(runId)?.status === "running") break;
+      } finally {
+        closeVnextRuntimeContext(peek);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await supervisor.stop();
+    supervisor = undefined;
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: handle.runtimeId });
+    try {
+      const cancels = context.eventStore.events(runId, 0, 200).filter((event) => event.eventType === "run.cancel_requested");
+      assert.equal(cancels.length, 1);
+      assert.ok(cancels[0]!.payload.reason === "budget_run_duration" || cancels[0]!.payload.reason === "runtime_shutdown");
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    if (supervisor) await supervisor.stop();
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("supervisor /drive returns 409 for still-unsupported maxAgentTimeMs", async () => {
+  const { root, stateRoot } = engineProject("kxm-supervisor-drive-agent-time-");
+  let supervisor: Awaited<ReturnType<typeof startVnextRuntimeSupervisor>> | undefined;
+  try {
+    supervisor = await startVnextRuntimeSupervisor({ stateRoot });
+    const token = readVnextSupervisorToken(vnextRuntimePaths({ stateRoot }))!;
+    const handle = { runtimeId: supervisor.runtimeId, port: supervisor.port, token, started: true };
+    const acceptance = await vnextRuntimeRequest(handle, "POST", "/v1/runs", {
+      projectRoot: root,
+      workflowId: "default",
+      prompt: "unsupported agent time",
+    });
+    const runId = (acceptance.run as { runId: string }).runId;
+    const driveRes = await fetch(`http://127.0.0.1:${supervisor.port}/v1/runs/${runId}/drive?projectRoot=${encodeURIComponent(root)}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ mode: "simulated" }),
+    });
+    assert.equal(driveRes.status, 409);
+    const body = await driveRes.json() as { error?: string; handoff?: { reason?: string; field?: string } };
+    assert.equal(body.error, "run_handoff_required");
+    assert.equal(body.handoff?.reason, "limit_unsupported");
+    assert.equal(body.handoff?.field, "limits.maxAgentTimeMs");
+  } finally {
+    if (supervisor) await supervisor.stop();
+    removeTempDir(root, stateRoot);
+  }
+});
+
 test("abort-ignoring producer returns after grace with attempt unreconciled", async () => {
   const { root, stateRoot } = engineProject("kxm-supervisor-drive-grace-unrec-");
   let supervisor: Awaited<ReturnType<typeof startVnextRuntimeSupervisor>> | undefined;
@@ -509,6 +603,24 @@ test("supervisor GET run returns a verified drive receipt after settle", async (
   const { root, stateRoot } = engineProject("kxm-supervisor-drive-receipt-get-");
   let supervisor: Awaited<ReturnType<typeof startVnextRuntimeSupervisor>> | undefined;
   try {
+    writeFileSync(join(root, ".kxm", "workflows", "one-step.yaml"), `schema: kxm.workflow.v1
+description: Single agent step used for scheduler admission tests.
+coordinator: coordinator
+limits:
+  maxTransitions: 2
+  maxRunDurationMs: 60000
+steps:
+  - id: only
+    kind: agent
+    agent: implementer
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: $terminal
+        terminalStatus: failed
+`);
     supervisor = await startVnextRuntimeSupervisor({ stateRoot });
     const token = readVnextSupervisorToken(vnextRuntimePaths({ stateRoot }))!;
     const handle = { runtimeId: supervisor.runtimeId, port: supervisor.port, token, started: true };
@@ -537,7 +649,12 @@ test("supervisor GET run returns a verified drive receipt after settle", async (
       driveId: string;
       mode: string;
       openedAt: string;
-      receipt: { driveId: string; logHash: string; settlement: { kind: string; status: string } };
+      receipt: {
+        driveId: string;
+        logHash: string;
+        settlement: { kind: string; status: string };
+        budget: { budgetMs: number; source: string; elapsedMs: number; overrun: boolean } | null;
+      };
       verified: boolean;
       divergence?: string;
     };
@@ -549,6 +666,12 @@ test("supervisor GET run returns a verified drive receipt after settle", async (
     assert.equal(drive.receipt.settlement.status, "completed");
     assert.equal(drive.verified, true);
     assert.equal(drive.divergence, undefined);
+    assert.ok(drive.receipt.budget);
+    assert.equal(drive.receipt.budget.budgetMs, 60_000);
+    assert.equal(drive.receipt.budget.source, "workflow");
+    assert.equal(typeof drive.receipt.budget.elapsedMs, "number");
+    assert.ok(drive.receipt.budget.elapsedMs >= 0);
+    assert.equal(drive.receipt.budget.overrun, false);
   } finally {
     if (supervisor) await supervisor.stop();
     removeTempDir(root, stateRoot);
