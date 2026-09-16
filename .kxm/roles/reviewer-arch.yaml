@@ -1,0 +1,10 @@
+schema: kxm.role.v1
+id: reviewer-arch
+# fable is the required arch critic; glm-5.3 failover (admitted, review-unproven)
+roster:
+  - model: anthropic/fable
+    effort: medium
+    enabled: true
+  - model: zai-coding-cn/glm-5.3
+    effort: medium
+    enabled: true

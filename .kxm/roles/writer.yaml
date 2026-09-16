@@ -1,7 +1,21 @@
 schema: kxm.role.v1
 id: writer
+# Rotation priority = order. Primaries first; subscription/unmetered models
+# act as failover (verified edit probes 2026-09-16; see routes.yaml).
+# Effort default: medium for implementation (AGENTS.md). agy ids bake in the
+# effort tier, so those entries carry no effort field.
 roster:
   - model: xai/grok-4.6
+    effort: medium
     enabled: true
   - model: openrouter/qwen/qwen3-coder-plus
+    effort: medium
+    enabled: true
+  - model: zai-coding-cn/glm-5.3-flash
+    effort: medium
+    enabled: true
+  - model: qwen-token-plan/qwen3.8-flash
+    effort: medium
+    enabled: true
+  - model: google/gemini-3.8-flash-high
     enabled: true

@@ -1,0 +1,10 @@
+schema: kxm.role.v1
+id: planner
+# fable primary (proven planning); qwen3.8-max failover (admitted, planning-unproven)
+roster:
+  - model: anthropic/fable
+    effort: medium
+    enabled: true
+  - model: qwen-token-plan/qwen3.8-max
+    effort: medium
+    enabled: true

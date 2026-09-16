@@ -1,0 +1,10 @@
+schema: kxm.role.v1
+id: reviewer-cli
+# sol is the required cli critic; glm-5.3-flash failover (fast tier, review-unproven)
+roster:
+  - model: openai/gpt-5.6-sol
+    effort: low
+    enabled: true
+  - model: zai-coding-cn/glm-5.3-flash
+    effort: low
+    enabled: true
