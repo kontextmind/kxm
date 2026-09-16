@@ -460,6 +460,35 @@ steps:
   }
 });
 
+test("supervisor /drive returns 409 for still-unsupported maxAgentTimeMs", async () => {
+  const { root, stateRoot } = engineProject("kxm-supervisor-drive-agent-time-");
+  let supervisor: Awaited<ReturnType<typeof startVnextRuntimeSupervisor>> | undefined;
+  try {
+    supervisor = await startVnextRuntimeSupervisor({ stateRoot });
+    const token = readVnextSupervisorToken(vnextRuntimePaths({ stateRoot }))!;
+    const handle = { runtimeId: supervisor.runtimeId, port: supervisor.port, token, started: true };
+    const acceptance = await vnextRuntimeRequest(handle, "POST", "/v1/runs", {
+      projectRoot: root,
+      workflowId: "default",
+      prompt: "unsupported agent time",
+    });
+    const runId = (acceptance.run as { runId: string }).runId;
+    const driveRes = await fetch(`http://127.0.0.1:${supervisor.port}/v1/runs/${runId}/drive?projectRoot=${encodeURIComponent(root)}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ mode: "simulated" }),
+    });
+    assert.equal(driveRes.status, 409);
+    const body = await driveRes.json() as { error?: string; handoff?: { reason?: string; field?: string } };
+    assert.equal(body.error, "run_handoff_required");
+    assert.equal(body.handoff?.reason, "limit_unsupported");
+    assert.equal(body.handoff?.field, "limits.maxAgentTimeMs");
+  } finally {
+    if (supervisor) await supervisor.stop();
+    removeTempDir(root, stateRoot);
+  }
+});
+
 test("abort-ignoring producer returns after grace with attempt unreconciled", async () => {
   const { root, stateRoot } = engineProject("kxm-supervisor-drive-grace-unrec-");
   let supervisor: Awaited<ReturnType<typeof startVnextRuntimeSupervisor>> | undefined;

@@ -26848,7 +26848,7 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
               const scheduler = VnextRunScheduler.for(context, bundle);
               const opening = scheduler.openDriveSession(runId, {
                 mode: body.mode,
-                allowLimits: true,
+                allowLimits: false,
                 liveMode: body.mode === "live",
                 createProducer
               });
