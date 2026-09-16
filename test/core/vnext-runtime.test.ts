@@ -77,7 +77,7 @@ for (const kind of ["registry", "events"] as const) {
         const tables = database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as Array<{ name: string }>;
         assert.deepEqual(tables.map(({ name }) => name), kind === "registry"
           ? ["projects", "supervisor"]
-          : ["attempt_capabilities", "commands", "events", "gate_attempts", "gate_evidence", "gate_observations", "run_plans", "run_state", "runs"]);
+          : ["attempt_capabilities", "commands", "drive_receipts", "events", "gate_attempts", "gate_evidence", "gate_observations", "run_plans", "run_state", "runs"]);
       } finally {
         database.close();
       }

@@ -164,6 +164,7 @@
         "run.created",
         "run.status_changed",
         "run.cancel_requested",
+        "run.drive_opened",
         "step.entered",
         "step.status_changed",
         "step.outcome_recorded",

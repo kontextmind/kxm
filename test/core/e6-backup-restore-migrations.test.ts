@@ -346,7 +346,7 @@ test("kxm backup and restore round-trip preserves all stores and data with manif
     assert.equal(manifest.stores.length, 3);
     assert.ok(manifest.stores.some((s) => s.storeId === "hub-store" && s.schemaVersion === 3));
     assert.ok(manifest.stores.some((s) => s.storeId === "registry" && s.schemaVersion === 1));
-    assert.ok(manifest.stores.some((s) => s.storeId === "events:key_001" && s.schemaVersion === 3));
+    assert.ok(manifest.stores.some((s) => s.storeId === "events:key_001" && s.schemaVersion === VNEXT_EVENT_STORE_SCHEMA_VERSION));
 
     // Validate manifest against schema
     const schemaFile = JSON.parse(readFileSync("schemas/vnext/backup-manifest.schema.json", "utf8"));

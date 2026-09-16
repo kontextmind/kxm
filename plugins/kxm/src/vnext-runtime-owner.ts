@@ -26,6 +26,7 @@ export interface VnextDriveSession {
   homeRuntimeId: string;
   mode: "simulated" | "live";
   openedAt: string;
+  producerId: string;
   controller: AbortController;
   settled: Promise<unknown>;
 }

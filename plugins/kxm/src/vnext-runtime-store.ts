@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "./sqlite.ts";
-import { VnextConfigError, validateRunEvent, vnextCanonicalJson, type JsonValue, type VnextConfigIssue, type VnextConfigOptions } from "./vnext-config.ts";
+import { VnextConfigError, validateDriveReceipt, validateRunEvent, vnextCanonicalJson, type JsonValue, type VnextConfigIssue, type VnextConfigOptions } from "./vnext-config.ts";
 import { vnextUserStateRoot } from "./vnext-bindings.ts";
 
 /* ------------------------------------------------------------------ *
@@ -364,6 +364,66 @@ export interface VnextRunStateRow {
   state: string;
 }
 
+export interface VnextDriveReceiptHandoff {
+  reason: string;
+  field?: string;
+  stepId?: string;
+  detail: string;
+}
+
+export interface VnextDriveReceiptSettlement {
+  kind: "terminal" | "handoff" | "unsettled";
+  status: string;
+  reason: string;
+  handoff?: VnextDriveReceiptHandoff;
+  error?: { class: string; component: string; retryable: boolean };
+}
+
+export interface VnextDriveReceipt {
+  schema: typeof VNEXT_DRIVE_RECEIPT_SCHEMA;
+  driveId: string;
+  runId: string;
+  projectId: string;
+  homeRuntimeId: string;
+  mode: "simulated" | "live";
+  openedAt: string;
+  openedSequence: number;
+  closedAt: string;
+  lastSequence: number;
+  logHash: string;
+  settlement: VnextDriveReceiptSettlement;
+  budget: null;
+  producer: { id: string; closed: boolean };
+}
+
+/** sha256 over `eventId:sequence` for events 1..lastSequence, in sequence order. */
+export function hashVnextDriveLog(events: readonly { eventId: string; sequence: number }[]): string {
+  const body = events.map((event) => `${event.eventId}:${event.sequence}`).join("\n");
+  return `sha256:${createHash("sha256").update(body, "utf8").digest("hex")}`;
+}
+
+export function verifyVnextDriveReceipt(
+  receipt: VnextDriveReceipt,
+  events: readonly VnextRunEvent[],
+  foldedStatus: string,
+): { verified: boolean; divergence?: string } {
+  const reasons: string[] = [];
+  const last = events[events.length - 1];
+  const currentLast = last?.sequence ?? 0;
+  if (receipt.lastSequence !== currentLast) {
+    reasons.push(`lastSequence ${receipt.lastSequence} != log ${currentLast}`);
+  }
+  const prefix = events.filter((event) => event.sequence >= 1 && event.sequence <= receipt.lastSequence);
+  if (hashVnextDriveLog(prefix) !== receipt.logHash) {
+    reasons.push("logHash mismatch");
+  }
+  if (receipt.settlement.status !== foldedStatus) {
+    reasons.push(`settlement.status ${receipt.settlement.status} != folded ${foldedStatus}`);
+  }
+  if (reasons.length === 0) return { verified: true };
+  return { verified: false, divergence: reasons.join("; ") };
+}
+
 export interface VnextAttemptCapabilityRow {
   attemptId: string;
   runId: string;
@@ -472,7 +532,9 @@ export interface VnextCommandRecord {
   recordedAt: string;
 }
 
-export const VNEXT_EVENT_STORE_SCHEMA_VERSION = 3;
+export const VNEXT_EVENT_STORE_SCHEMA_VERSION = 4;
+export const VNEXT_DRIVE_RECEIPT_SCHEMA = "kxm.drive-receipt.v1";
+export const DRIVE_RECEIPT_MAX_BYTES = 8 * 1024;
 
 const EVENT_STORE_TABLES = {
   runs: ["run_id", "project_id", "home_runtime_id", "workflow_id", "prompt_sha256", "status", "config_revision", "memory_revision", "executor_policy_revision", "tool_policy_revision", "created_at", "updated_at"],
@@ -497,6 +559,7 @@ const EVENT_STORE_TABLES = {
     "evidence_id", "attempt_id", "observation_id", "run_id", "project_id", "home_runtime_id", "step_id", "step_attempt",
     "assignment_id", "effect_id", "evidence_key", "kind", "expect", "outcome", "settled_event_id", "content_hash",
   ],
+  drive_receipts: ["drive_id", "run_id", "project_id", "opened_sequence", "last_sequence", "closed_at", "schema", "receipt"],
 } as const;
 
 const EVENT_STORE_SCHEMA = `
@@ -639,7 +702,42 @@ CREATE TABLE gate_evidence (
 ) STRICT;
 CREATE UNIQUE INDEX gate_evidence_key ON gate_evidence(run_id, step_id, step_attempt, evidence_key) WHERE evidence_key IS NOT NULL;
 CREATE INDEX gate_evidence_run ON gate_evidence(run_id);
+CREATE TABLE drive_receipts (
+  drive_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  opened_sequence INTEGER NOT NULL,
+  last_sequence INTEGER NOT NULL,
+  closed_at TEXT NOT NULL,
+  schema TEXT NOT NULL,
+  receipt TEXT NOT NULL
+) STRICT;
+CREATE INDEX drive_receipts_run ON drive_receipts(run_id);
 `;
+
+const DRIVE_RECEIPTS_DDL = `
+CREATE TABLE IF NOT EXISTS drive_receipts (
+  drive_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  opened_sequence INTEGER NOT NULL,
+  last_sequence INTEGER NOT NULL,
+  closed_at TEXT NOT NULL,
+  schema TEXT NOT NULL,
+  receipt TEXT NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS drive_receipts_run ON drive_receipts(run_id);
+`;
+
+const EVENT_STORE_MIGRATIONS = [
+  {
+    fromVersion: 3,
+    toVersion: 4,
+    migrate(database: DatabaseSync): void {
+      database.exec(DRIVE_RECEIPTS_DDL);
+    },
+  },
+];
 
 export class VnextRunEventStore {
   readonly path: string;
@@ -651,6 +749,7 @@ export class VnextRunEventStore {
       schema: EVENT_STORE_SCHEMA,
       version: VNEXT_EVENT_STORE_SCHEMA_VERSION,
       tables: EVENT_STORE_TABLES,
+      migrations: EVENT_STORE_MIGRATIONS,
     });
   }
 
@@ -871,6 +970,43 @@ export class VnextRunEventStore {
     `).run(row.runId, row.lastSequence, row.state);
   }
 
+  insertDriveReceipt(receipt: VnextDriveReceipt): { inserted: boolean } {
+    validateDriveReceipt(receipt, "drive-receipt");
+    const canonical = vnextCanonicalJson(receipt as unknown as JsonValue);
+    if (Buffer.byteLength(canonical, "utf8") > DRIVE_RECEIPT_MAX_BYTES) {
+      throw runtimeError("drive_receipt_invalid", receipt.driveId, `drive receipt exceeds ${DRIVE_RECEIPT_MAX_BYTES} bytes`);
+    }
+    const result = this.database.prepare(`
+      INSERT INTO drive_receipts (drive_id, run_id, project_id, opened_sequence, last_sequence, closed_at, schema, receipt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(drive_id) DO NOTHING
+    `).run(
+      receipt.driveId,
+      receipt.runId,
+      receipt.projectId,
+      receipt.openedSequence,
+      receipt.lastSequence,
+      receipt.closedAt,
+      receipt.schema,
+      canonical,
+    );
+    return { inserted: Number(result.changes) === 1 };
+  }
+
+  driveReceipt(driveId: string): VnextDriveReceipt | undefined {
+    const row = this.database.prepare("SELECT receipt FROM drive_receipts WHERE drive_id = ?").get(driveId) as
+      | { receipt: string }
+      | undefined;
+    return row ? parseDriveReceipt(row.receipt) : undefined;
+  }
+
+  driveReceiptsForRun(runId: string, limit = 20): VnextDriveReceipt[] {
+    const rows = this.database.prepare(`
+      SELECT receipt FROM drive_receipts WHERE run_id = ? ORDER BY closed_at DESC, drive_id DESC LIMIT ?
+    `).all(runId, limit) as Array<{ receipt: string }>;
+    return rows.map((row) => parseDriveReceipt(row.receipt));
+  }
+
   insertCapability(row: VnextAttemptCapabilityRow): void {
     this.database.prepare(`
       INSERT INTO attempt_capabilities (attempt_id, run_id, assignment_id, step_id, step_attempt, producer_id, capability_hash, state)
@@ -1073,6 +1209,12 @@ export class VnextRunEventStore {
       throw gateRowInvalid(eventId, `referenced event is not ${allowed.join("|")} for this run`);
     }
   }
+}
+
+function parseDriveReceipt(raw: string): VnextDriveReceipt {
+  const parsed = JSON.parse(raw) as unknown;
+  validateDriveReceipt(parsed, "drive-receipt");
+  return parsed as VnextDriveReceipt;
 }
 
 function runFromRow(row: {

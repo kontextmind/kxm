@@ -278,6 +278,14 @@
           "payload": { "type": "object", "required": ["routing"] }
         }
       }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "run.drive_opened" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["driveId", "mode"] }
+        }
+      }
     }
   ],
   "additionalProperties": false,
@@ -394,6 +402,8 @@
           "maxItems": 64
         },
         "lease": { "$ref": "common.schema.json#/$defs/lease" },
+        "driveId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+        "mode": { "enum": ["simulated", "live"] },
         "candidateId": { "$ref": "common.schema.json#/$defs/opaqueId" },
         "counts": {
           "type": "object",

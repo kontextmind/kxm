@@ -43,12 +43,16 @@ import {
   vnextQueuedScheduledRuns,
 } from "../../plugins/kxm/src/vnext-runtime-owner.ts";
 import {
+  DRIVE_RECEIPT_MAX_BYTES,
+  VNEXT_DRIVE_RECEIPT_SCHEMA,
   VNEXT_EVENT_STORE_SCHEMA_VERSION,
   VNEXT_REGISTRY_SCHEMA_VERSION,
   VnextRunEventStore,
   VnextRuntimeRegistry,
+  hashVnextDriveLog,
   newVnextEventId,
   vnextRuntimePaths,
+  type VnextDriveReceipt,
   type VnextRunEvent,
   type VnextRunRecord,
 } from "../../plugins/kxm/src/vnext-runtime-store.ts";
@@ -56,6 +60,7 @@ import {
   acceptVnextRun,
   cancelVnextRun,
   closeVnextRuntimeContext,
+  foldStoredVnextRun,
   openVnextRuntimeContext,
   readVnextRunStatus,
   rebuildVnextRunProjection,
@@ -960,6 +965,205 @@ test("openDriveSession admits before pin, returns driveId, and closes the produc
   }
 });
 
+test("openDriveSession records run.drive_opened and a verified terminal receipt before settled", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-drive-receipt-");
+  try {
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "one-step", prompt: "receipt" });
+      const scheduler = VnextRunScheduler.for(context, bundle);
+      const session = await scheduler.openDriveSession(accepted.run.runId, {
+        mode: "simulated",
+        createProducer: () => createVnextSimulatedProducer(() => ({ outcome: "passed" })),
+      });
+      const result = await session.settled;
+      assert.equal(result.state.status, "completed");
+      const receiptAtSettle = context.eventStore.driveReceipt(session.driveId);
+      assert.ok(receiptAtSettle, "receipt must exist before settled resolves");
+      const events = context.eventStore.events(accepted.run.runId, 0, 1_000);
+      const opened = events.find((event) => event.eventType === "run.drive_opened");
+      assert.ok(opened, "run.drive_opened must be present");
+      assert.equal(opened!.payload.driveId, session.driveId);
+      assert.equal(opened!.payload.mode, "simulated");
+      const folded = foldStoredVnextRun(context, context.eventStore.run(accepted.run.runId)!);
+      assert.equal(folded.drive?.driveId, session.driveId);
+      assert.equal(folded.drive?.mode, "simulated");
+      assert.equal(folded.drive?.openedSequence, opened!.sequence);
+      assert.equal(receiptAtSettle!.schema, VNEXT_DRIVE_RECEIPT_SCHEMA);
+      assert.equal(receiptAtSettle!.settlement.kind, "terminal");
+      assert.equal(receiptAtSettle!.settlement.status, "completed");
+      assert.equal(receiptAtSettle!.budget, null);
+      assert.equal(receiptAtSettle!.lastSequence, events[events.length - 1]!.sequence);
+      assert.equal(receiptAtSettle!.logHash, hashVnextDriveLog(events));
+      assert.equal(receiptAtSettle!.producer.id, "driver-simulated");
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("openDriveSession handoff records receipt kind handoff while running", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-drive-handoff-receipt-");
+  try {
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "unsupported-gate", prompt: "handoff-receipt" });
+      const scheduler = VnextRunScheduler.for(context, bundle);
+      const session = await scheduler.openDriveSession(accepted.run.runId, {
+        mode: "simulated",
+        createProducer: () => createVnextSimulatedProducer(() => ({ outcome: "passed" })),
+      });
+      const result = await session.settled;
+      assert.equal(result.handoff?.reason, "step_unsupported");
+      assert.equal(result.state.status, "running");
+      const receipt = context.eventStore.driveReceipt(session.driveId);
+      assert.ok(receipt);
+      assert.equal(receipt!.settlement.kind, "handoff");
+      assert.equal(receipt!.settlement.status, "running");
+      assert.equal(receipt!.settlement.handoff?.reason, "step_unsupported");
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("producer throw records the brake status in the drive receipt", { timeout: 15_000 }, async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-drive-receipt-throw-");
+  resetPanelSeams();
+  try {
+    vnextPanelDispatchSeams.skipDispatch = () => true;
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "one-step", prompt: "receipt-throw" });
+      const scheduler = VnextRunScheduler.for(context, bundle);
+      const session = await scheduler.openDriveSession(accepted.run.runId, {
+        mode: "simulated",
+        createProducer: () => createVnextSimulatedProducer(() => ({ outcome: "passed" })),
+      });
+      await assert.rejects(() => session.settled, /drive made no progress/);
+      const receipt = context.eventStore.driveReceipt(session.driveId);
+      assert.ok(receipt);
+      const run = context.eventStore.run(accepted.run.runId)!;
+      assert.equal(receipt!.settlement.status, run.status);
+      assert.ok(receipt!.settlement.kind === "terminal" || receipt!.settlement.kind === "unsettled");
+      assert.ok(receipt!.settlement.error, "producer throw records an error summary");
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    resetPanelSeams();
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("insertDriveReceipt is insert-once and rejects oversized receipts without touching the log", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-drive-receipt-store-");
+  try {
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "one-step", prompt: "receipt-store" });
+      pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+      startVnextRun(context, accepted.run.runId);
+      const run = context.eventStore.run(accepted.run.runId)!;
+      const events = context.eventStore.events(accepted.run.runId, 0, 100);
+      const before = events.length;
+      const base: VnextDriveReceipt = {
+        schema: VNEXT_DRIVE_RECEIPT_SCHEMA,
+        driveId: "drv_0123456789abcdef01234567",
+        runId: run.runId,
+        projectId: run.projectId,
+        homeRuntimeId: run.homeRuntimeId,
+        mode: "simulated",
+        openedAt: run.createdAt,
+        openedSequence: 1,
+        closedAt: run.updatedAt,
+        lastSequence: events[events.length - 1]!.sequence,
+        logHash: hashVnextDriveLog(events),
+        settlement: { kind: "terminal", status: "running", reason: "first" },
+        budget: null,
+        producer: { id: "driver-simulated", closed: false },
+      };
+      assert.equal(context.eventStore.insertDriveReceipt(base).inserted, true);
+      assert.equal(context.eventStore.insertDriveReceipt({ ...base, settlement: { ...base.settlement, reason: "second" } }).inserted, false);
+      assert.equal(context.eventStore.driveReceipt(base.driveId)?.settlement.reason, "first");
+      const oversized: VnextDriveReceipt = {
+        ...base,
+        driveId: "drv_89abcdef0123456789abcdef",
+        settlement: {
+          kind: "handoff",
+          status: "running",
+          reason: "r".repeat(4000),
+          handoff: { reason: "step_unsupported", detail: "d".repeat(4000) },
+        },
+      };
+      assert.ok(Buffer.byteLength(canonicalJson(oversized as unknown as JsonValue), "utf8") > DRIVE_RECEIPT_MAX_BYTES);
+      assert.throws(() => context.eventStore.insertDriveReceipt(oversized), /drive_receipt_invalid/);
+      assert.equal(context.eventStore.events(accepted.run.runId, 0, 100).length, before);
+      assert.equal(context.eventStore.driveReceipt(oversized.driveId), undefined);
+      assert.throws(
+        () => context.eventStore.insertDriveReceipt({ ...base, driveId: "drv_fedcba9876543210fedcba98", schema: "kxm.drive-receipt.v0" as typeof VNEXT_DRIVE_RECEIPT_SCHEMA }),
+        /drive_receipt_invalid/,
+      );
+      assert.equal(context.eventStore.events(accepted.run.runId, 0, 100).length, before);
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("pre-B2 event stores migrate additively and old projections stay canonical", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-drive-receipt-replay-");
+  try {
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    let storePath: string;
+    let runId: string;
+    try {
+      const accepted = acceptVnextRun(context, bundle, { workflowId: "one-step", prompt: "pre-b2" });
+      pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+      const driven = await driveVnextRun(context, accepted.run.runId, outcomes(["passed"]));
+      assert.equal(driven.state.status, "completed");
+      assert.equal(driven.state.drive, undefined);
+      runId = accepted.run.runId;
+      storePath = context.eventStore.path;
+      const stored = context.eventStore.runState(runId)!;
+      closeVnextRuntimeContext(context);
+      const db = new DatabaseSync(storePath);
+      db.exec("DROP TABLE IF EXISTS drive_receipts");
+      db.exec("PRAGMA user_version = 3");
+      db.close();
+      assert.equal(userVersion(storePath), 3);
+      const reopened = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+      try {
+        assert.equal(userVersion(storePath), VNEXT_EVENT_STORE_SCHEMA_VERSION);
+        const folded = foldStoredVnextRun(reopened, reopened.eventStore.run(runId)!);
+        assert.equal(folded.status, "completed");
+        assert.equal(folded.drive, undefined);
+        assert.equal(reopened.eventStore.runState(runId)!.state, stored.state);
+        rebuildVnextRunProjection(reopened, runId);
+        assert.equal(reopened.eventStore.runState(runId)!.state, stored.state);
+      } finally {
+        closeVnextRuntimeContext(reopened);
+      }
+    } catch (error) {
+      try { closeVnextRuntimeContext(context); } catch { /* closed */ }
+      throw error;
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
 test("openDriveSession pre-open failures do not reject settled without a consumer", { timeout: 15_000 }, async () => {
   const { root, stateRoot } = engineProject("kxm-engine-drive-preopen-");
   const unhandled: string[] = [];
@@ -1273,7 +1477,7 @@ function processAlive(pid: number | undefined): boolean {
   }
 }
 
-test("store brakes: registry v1 stays valid; event store v3; v1/v2/v99/shape fail closed", () => {
+test("store brakes: registry v1 stays valid; event store v4; v1/v2/v99/shape fail closed", () => {
   const { root, stateRoot } = engineProject("kxm-engine-store-");
   try {
     const paths = vnextRuntimePaths({ stateRoot });
@@ -1297,13 +1501,13 @@ test("store brakes: registry v1 stays valid; event store v3; v1/v2/v99/shape fai
       PRAGMA user_version = 1;
     `);
     old.close();
-    assert.throws(() => new VnextRunEventStore(v1), /runtime_schema_outdated[\s\S]*older than 3[\s\S]*E6/);
+    assert.throws(() => new VnextRunEventStore(v1), /runtime_schema_outdated[\s\S]*older than 4[\s\S]*E6/);
 
     const v2 = join(stateRoot, "v2-events.db");
     const prior = new DatabaseSync(v2);
     prior.exec("PRAGMA user_version = 2");
     prior.close();
-    assert.throws(() => new VnextRunEventStore(v2), /runtime_schema_outdated[\s\S]*older than 3[\s\S]*no migration lane/);
+    assert.throws(() => new VnextRunEventStore(v2), /runtime_schema_outdated[\s\S]*older than 4[\s\S]*no migration lane/);
 
     const newer = join(stateRoot, "v99-events.db");
     const bump = new DatabaseSync(newer);
@@ -1383,6 +1587,20 @@ test("illegal folds fail closed", () => {
   assert.throws(() => foldVnextRunState(run, plan, running), /run_events_illegal/);
 
   assert.equal(foldVnextRunState(run, plan, foldPrefix(run, plan, "running")).status, "running");
+  const runningEvents = foldPrefix(run, plan, "running");
+  const driveOpened = foldVnextRunState(run, plan, [
+    ...runningEvents,
+    event(run, runningEvents.length + 1, "run.drive_opened", { driveId: "drv_0123456789abcdef01234567", mode: "simulated" }),
+  ]);
+  assert.equal(driveOpened.drive?.driveId, "drv_0123456789abcdef01234567");
+  const completedEvents = foldPrefix(oneStepRun, oneStep, "completed");
+  assert.throws(
+    () => foldVnextRunState(oneStepRun, oneStep, [
+      ...completedEvents,
+      event(oneStepRun, completedEvents.length + 1, "run.drive_opened", { driveId: "drv_0123456789abcdef01234567", mode: "simulated" }),
+    ]),
+    /run_events_illegal/,
+  );
   const executingState = foldVnextRunState(run, plan, foldPrefix(run, plan, "executing"));
   assert.equal(executingState.schema, "kxm.run-state.v2");
   assert.equal(FOLD_PANEL_BOUND, 1);
