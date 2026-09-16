@@ -685,9 +685,18 @@ test("handoffs: duration limits, unsupported steps, unreconciled attempts, and r
       pinVnextCompiledPlan(context, bundle, def.run.runId);
       const limited = startVnextRun(context, def.run.runId);
       assert.equal(limited.handoff?.reason, "limit_unsupported");
-      assert.equal(limited.handoff?.field, "limits.maxRunDurationMs");
+      assert.equal(limited.handoff?.field, "limits.maxAgentTimeMs");
       assert.equal(limited.state.status, "preparing");
       assert.equal(context.eventStore.events(def.run.runId, 0, 20).some((event) => event.payload.status === "running"), false);
+
+      writeDurationWorkflow(root, "duration-only", "  maxTransitions: 2\n  maxRunDurationMs: 1000");
+      const durationBundle = loadVnextProject(root);
+      const durationRun = acceptVnextRun(context, durationBundle, { workflowId: "duration-only", prompt: "duration" });
+      pinVnextCompiledPlan(context, durationBundle, durationRun.run.runId);
+      const startedDuration = startVnextRun(context, durationRun.run.runId);
+      assert.equal(startedDuration.handoff, undefined);
+      assert.equal(startedDuration.state.status, "running");
+      assert.ok(startedDuration.state.runningSince);
 
       const gated = acceptVnextRun(context, bundle, { workflowId: "unsupported-gate", prompt: "gate" });
       pinVnextCompiledPlan(context, bundle, gated.run.runId);
@@ -720,6 +729,162 @@ test("handoffs: duration limits, unsupported steps, unreconciled attempts, and r
     } catch (error) {
       try { closeVnextRuntimeContext(context); } catch { /* closed */ }
       throw error;
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("run-duration budget cancels a slow attempt without fabricating a passed outcome", { timeout: 15_000 }, async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-run-duration-slow-");
+  try {
+    writeDurationWorkflow(root, "tiny-duration", "  maxTransitions: 2\n  maxRunDurationMs: 25");
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const slow = acceptVnextRun(context, bundle, { workflowId: "tiny-duration", prompt: "slow" });
+      pinVnextCompiledPlan(context, bundle, slow.run.runId);
+      const slowDrive = await driveVnextRun(context, slow.run.runId, delayUntilAbort(400));
+      assert.equal(slowDrive.state.status, "cancelled");
+      assert.equal(slowDrive.state.terminalReason, "budget_run_duration");
+      const slowEvents = context.eventStore.events(slow.run.runId, 0, 400);
+      const slowCancel = slowEvents.find((event) => event.eventType === "run.cancel_requested");
+      assert.equal(slowCancel?.payload.reason, "budget_run_duration");
+      const slowBudget = slowCancel?.payload.budget as { budgetMs: number; elapsedMs: number; source: string };
+      assert.equal(slowBudget.budgetMs, 25);
+      assert.equal(slowBudget.source, "workflow");
+      assert.ok(slowBudget.elapsedMs >= 25);
+      assert.equal(
+        slowEvents.some((event) => event.eventType === "assignment.result_recorded" && event.payload.resultClass === "outcome"),
+        false,
+        "budget overrun must not fabricate a passed/failed terminal attempt",
+      );
+      const receiptRun = acceptVnextRun(context, bundle, { workflowId: "tiny-duration", prompt: "slow-receipt" });
+      const session = await VnextRunScheduler.for(context, bundle).openDriveSession(receiptRun.run.runId, {
+        mode: "simulated",
+        createProducer: () => delayUntilAbort(400),
+      });
+      const settled = await session.settled;
+      assert.equal(settled.state.status, "cancelled");
+      const receipt = context.eventStore.driveReceipt(session.driveId);
+      assert.ok(receipt?.budget);
+      assert.equal(receipt!.budget!.overrun, true);
+      assert.equal(receipt!.budget!.source, "workflow");
+      assert.equal(receipt!.budget!.budgetMs, 25);
+      assert.ok(receipt!.budget!.elapsedMs >= 25);
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("run-duration budget cancels at a step boundary and on resume before any new step", { timeout: 15_000 }, async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-run-duration-resume-");
+  try {
+    writeDurationWorkflow(root, "tiny-duration", "  maxTransitions: 4\n  maxRunDurationMs: 25");
+    writeTwoStepDurationWorkflow(root, "two-step-duration", 25);
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const boundary = acceptVnextRun(context, bundle, { workflowId: "two-step-duration", prompt: "boundary" });
+      pinVnextCompiledPlan(context, bundle, boundary.run.runId);
+      startVnextRun(context, boundary.run.runId);
+      const first = await stepVnextRun(context, boundary.run.runId, outcomes(["passed"]));
+      assert.equal(first.state.status, "running");
+      assert.equal(first.state.pendingStepId, "b");
+      assert.equal(first.state.currentStep, undefined);
+      const enteredBefore = context.eventStore.events(boundary.run.runId, 0, 400)
+        .filter((event) => event.eventType === "step.entered").length;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const afterBoundary = await driveVnextRun(context, boundary.run.runId, outcomes(["passed"]));
+      assert.equal(afterBoundary.state.status, "cancelled");
+      assert.equal(afterBoundary.state.terminalReason, "budget_run_duration");
+      const boundaryEvents = context.eventStore.events(boundary.run.runId, 0, 400);
+      assert.equal(boundaryEvents.filter((event) => event.eventType === "step.entered").length, enteredBefore);
+      const cancelSeq = boundaryEvents.find((event) => event.eventType === "run.cancel_requested")?.sequence ?? 0;
+      assert.equal(
+        boundaryEvents.some((event) => event.eventType === "attempt.status_changed" && event.payload.status === "terminal" && event.sequence > cancelSeq),
+        false,
+        "step-boundary overrun must not fabricate a terminal attempt",
+      );
+
+      const resume = acceptVnextRun(context, bundle, { workflowId: "tiny-duration", prompt: "resume" });
+      pinVnextCompiledPlan(context, bundle, resume.run.runId);
+      startVnextRun(context, resume.run.runId);
+      closeVnextRuntimeContext(context);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const reopened = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+      try {
+        const resumed = await driveVnextRun(reopened, resume.run.runId, outcomes(["passed"]));
+        assert.equal(resumed.state.status, "cancelled");
+        assert.equal(resumed.state.terminalReason, "budget_run_duration");
+        assert.equal(reopened.eventStore.events(resume.run.runId, 0, 200).some((event) => event.eventType === "step.entered"), false);
+      } finally {
+        closeVnextRuntimeContext(reopened);
+      }
+    } catch (error) {
+      try { closeVnextRuntimeContext(context); } catch { /* closed after resume */ }
+      throw error;
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("run-duration budget chooses min of project and workflow and fills receipt overrun false", { timeout: 15_000 }, async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-run-duration-source-");
+  try {
+    writeDurationWorkflow(root, "workflow-only", "  maxTransitions: 2\n  maxRunDurationMs: 25");
+    writeDurationWorkflow(root, "project-only", "  maxTransitions: 2");
+    writeDurationWorkflow(root, "both-budget", "  maxTransitions: 2\n  maxRunDurationMs: 80");
+    writeDurationWorkflow(root, "completes-inside", "  maxTransitions: 2\n  maxRunDurationMs: 5000");
+    writeFileSync(join(root, ".kxm", "project.yaml"), readFileSync(join(root, ".kxm", "project.yaml"), "utf8").replace(
+      "defaultHarness: pi\n",
+      "defaultHarness: pi\nlimits:\n  maxRunDurationMs: 40\n",
+    ));
+    const bundle = loadVnextProject(root);
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const workflow = acceptVnextRun(context, bundle, { workflowId: "workflow-only", prompt: "workflow" });
+      pinVnextCompiledPlan(context, bundle, workflow.run.runId);
+      const workflowDrive = await driveVnextRun(context, workflow.run.runId, delayUntilAbort(400));
+      assert.equal(workflowDrive.state.status, "cancelled");
+      const workflowBudget = context.eventStore.events(workflow.run.runId, 0, 200).find((event) => event.eventType === "run.cancel_requested")?.payload.budget as { budgetMs: number; source: string };
+      assert.equal(workflowBudget.source, "both");
+      assert.equal(workflowBudget.budgetMs, 25);
+
+      const project = acceptVnextRun(context, bundle, { workflowId: "project-only", prompt: "project" });
+      pinVnextCompiledPlan(context, bundle, project.run.runId);
+      const projectDrive = await driveVnextRun(context, project.run.runId, delayUntilAbort(400));
+      assert.equal(projectDrive.state.status, "cancelled");
+      const projectBudget = context.eventStore.events(project.run.runId, 0, 200).find((event) => event.eventType === "run.cancel_requested")?.payload.budget as { budgetMs: number; source: string };
+      assert.equal(projectBudget.source, "project");
+      assert.equal(projectBudget.budgetMs, 40);
+
+      const both = acceptVnextRun(context, bundle, { workflowId: "both-budget", prompt: "both" });
+      pinVnextCompiledPlan(context, bundle, both.run.runId);
+      const bothDrive = await driveVnextRun(context, both.run.runId, delayUntilAbort(400));
+      assert.equal(bothDrive.state.status, "cancelled");
+      const bothBudget = context.eventStore.events(both.run.runId, 0, 200).find((event) => event.eventType === "run.cancel_requested")?.payload.budget as { budgetMs: number; source: string };
+      assert.equal(bothBudget.source, "both");
+      assert.equal(bothBudget.budgetMs, 40);
+
+      const inside = acceptVnextRun(context, bundle, { workflowId: "completes-inside", prompt: "inside" });
+      const session = await VnextRunScheduler.for(context, bundle).openDriveSession(inside.run.runId, {
+        mode: "simulated",
+        createProducer: () => outcomes(["passed"]),
+      });
+      const insideResult = await session.settled;
+      assert.equal(insideResult.state.status, "completed");
+      const insideReceipt = context.eventStore.driveReceipt(session.driveId);
+      assert.ok(insideReceipt?.budget);
+      assert.equal(insideReceipt!.budget!.overrun, false);
+      assert.equal(insideReceipt!.budget!.source, "both");
+      assert.equal(insideReceipt!.budget!.budgetMs, 40);
+    } finally {
+      closeVnextRuntimeContext(context);
     }
   } finally {
     removeTempDir(root, stateRoot);
@@ -1187,7 +1352,7 @@ test("openDriveSession pre-open failures do not reject settled without a consume
 coordinator: coordinator
 limits:
   maxTransitions: 2
-  maxRunDurationMs: 1000
+  maxAgentTimeMs: 1000
 steps:
   - id: only
     kind: agent
@@ -1581,6 +1746,56 @@ test("illegal folds fail closed", () => {
     id: "one-step",
     value: parseRestrictedYaml(readFileSync(join(fixtureDir, "one-step.yaml"), "utf8"), "one-step.yaml"),
   });
+  const durationPlan = compileVnextWorkflow({
+    id: "duration",
+    value: parseRestrictedYaml(`schema: kxm.workflow.v1
+coordinator: coordinator
+limits:
+  maxTransitions: 2
+  maxRunDurationMs: 100
+steps:
+  - id: only
+    kind: agent
+    agent: implementer
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: $terminal
+        terminalStatus: failed
+`, "duration.yaml"),
+  });
+  const durationRun = { ...run, workflowId: "duration" };
+  const durationRunning = [
+    event(durationRun, 1, "run.created", { workflowId: "duration", status: "created", promptHash: durationRun.promptSha256, repositoryIds: [], executorIds: [] }),
+    event(durationRun, 2, "run.status_changed", { status: "preparing", runPlanHash: PLAN_HASH }),
+    event(durationRun, 3, "run.status_changed", { status: "running" }),
+  ];
+  assert.throws(
+    () => foldVnextRunState(durationRun, durationPlan, [
+      ...durationRunning,
+      event(durationRun, 4, "run.cancel_requested", {
+        actor: { kind: "runtime", id: HOME },
+        reason: "budget_run_duration",
+        budget: { budgetMs: 100, elapsedMs: 50, source: "workflow" },
+      }),
+    ]),
+    /run_events_illegal/,
+  );
+  const legalBudgetCancel = foldVnextRunState(durationRun, durationPlan, [
+    ...durationRunning,
+    event(durationRun, 4, "run.cancel_requested", {
+      actor: { kind: "runtime", id: HOME },
+      reason: "budget_run_duration",
+      budget: { budgetMs: 100, elapsedMs: 100, source: "workflow" },
+    }),
+    event(durationRun, 5, "run.status_changed", { status: "cancelling", reason: "budget_run_duration" }),
+    event(durationRun, 6, "run.status_changed", { status: "cancelled", reason: "budget_run_duration" }),
+  ]);
+  assert.equal(legalBudgetCancel.status, "cancelled");
+  assert.equal(legalBudgetCancel.terminalReason, "budget_run_duration");
+  assert.ok(legalBudgetCancel.runningSince);
   const oneStepRun = { ...run, workflowId: "one-step" };
   const running = [
     created,
@@ -2292,6 +2507,71 @@ test("owner map is exact per attempt, refuses duplicates, and cancel aborts one 
     removeTempDir(root, stateRoot);
   }
 });
+
+function writeDurationWorkflow(root: string, name: string, limitsBlock: string): void {
+  writeFileSync(join(root, ".kxm", "workflows", `${name}.yaml`), `schema: kxm.workflow.v1
+coordinator: coordinator
+limits:
+${limitsBlock}
+steps:
+  - id: only
+    kind: agent
+    agent: implementer
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: $terminal
+        terminalStatus: failed
+`);
+}
+
+function writeTwoStepDurationWorkflow(root: string, name: string, maxRunDurationMs: number): void {
+  writeFileSync(join(root, ".kxm", "workflows", `${name}.yaml`), `schema: kxm.workflow.v1
+coordinator: coordinator
+limits:
+  maxTransitions: 4
+  maxRunDurationMs: ${maxRunDurationMs}
+steps:
+  - id: a
+    kind: agent
+    agent: implementer
+    on:
+      passed: b
+      failed:
+        target: $terminal
+        terminalStatus: failed
+  - id: b
+    kind: agent
+    agent: implementer
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: $terminal
+        terminalStatus: failed
+`);
+}
+
+function delayUntilAbort(ms: number) {
+  return createVnextSimulatedProducer(async (request) => {
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => resolve(), ms);
+      const onAbort = () => {
+        clearTimeout(timer);
+        reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+      };
+      if (request.signal.aborted) {
+        onAbort();
+        return;
+      }
+      request.signal.addEventListener("abort", onAbort, { once: true });
+    });
+    return { outcome: "passed" };
+  });
+}
 
 function writePanelWorkflow(
   root: string,

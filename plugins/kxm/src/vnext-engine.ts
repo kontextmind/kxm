@@ -13,10 +13,12 @@ import {
 } from "./context-packet.ts";
 import { compileVnextWorkflow, type VnextCompiledPlan, type VnextCompiledStep } from "./vnext-engine-compile.ts";
 import {
+  effectiveRunDurationBudget,
   isTerminalRunStatus,
   vnextFoldPanelAttempt,
   vnextFoldPanelAttemptIds,
   vnextJoinAll,
+  type VnextRunDurationBudget,
   type VnextRunState,
 } from "./vnext-engine-fold.ts";
 import {
@@ -76,6 +78,7 @@ import {
   VNEXT_DRIVE_RECEIPT_SCHEMA,
   type VnextAttemptCapabilityRow,
   type VnextDriveReceipt,
+  type VnextDriveReceiptBudget,
   type VnextDriveReceiptHandoff,
   type VnextGateAttemptRow,
   type VnextGateEvidenceRow,
@@ -388,6 +391,8 @@ async function driveAdmitted(
   }
   let latest: VnextRunDriveResult = { state: foldStoredVnextRun(context, requireRun(context, runId)) };
   while (latest.state.status === "running") {
+    const overBudget = cancelRunDurationIfExceeded(context, runId);
+    if (overBudget) return overBudget;
     const before = context.eventStore.runState(runId)?.lastSequence;
     latest = await stepLocked(context, runId, producer, token);
     if (latest.handoff) return latest;
@@ -513,6 +518,7 @@ export function recordDriveReceipt(
     const last = events[events.length - 1]!;
     const openedSequence = opened?.openedSequence ?? openedEvent?.sequence;
     if (openedSequence === undefined) return;
+    const closedAt = new Date().toISOString();
     const receipt: VnextDriveReceipt = {
       schema: VNEXT_DRIVE_RECEIPT_SCHEMA,
       driveId: session.driveId,
@@ -522,7 +528,7 @@ export function recordDriveReceipt(
       mode: session.mode,
       openedAt: openedEvent?.occurredAt ?? session.openedAt,
       openedSequence,
-      closedAt: new Date().toISOString(),
+      closedAt,
       lastSequence: last.sequence,
       logHash: hashVnextDriveLog(events.filter((event) => event.sequence >= 1 && event.sequence <= last.sequence)),
       settlement: {
@@ -532,7 +538,7 @@ export function recordDriveReceipt(
         ...(closeInfo.kind === "handoff" && closeInfo.handoff ? { handoff: receiptHandoff(closeInfo.handoff) } : {}),
         ...(closeInfo.error !== undefined ? { error: closeInfo.error } : {}),
       },
-      budget: null,
+      budget: driveReceiptBudget(context, run.runId, state, events, closedAt),
       producer: { id: closeInfo.producerId, closed: closeInfo.producerClosed },
     };
     context.eventStore.insertDriveReceipt(receipt);
@@ -744,6 +750,8 @@ export class VnextRunScheduler {
             }
             const driveId = newDriveId(runId, token, this.context.homeRuntimeId, vnextMonotonicNs());
             const openedMeta = appendDriveOpened(this.context, runId, driveId, options.mode);
+            const startedState = foldStoredVnextRun(this.context, requireRun(this.context, runId));
+            const deadlineAt = driveDeadlineAt(this.context, runId, startedState);
             const session: VnextDriveSession = {
               driveId,
               runId,
@@ -754,6 +762,7 @@ export class VnextRunScheduler {
               producerId: producer.id,
               controller: new AbortController(),
               settled,
+              ...(deadlineAt !== undefined ? { deadlineAt } : {}),
             };
             attachVnextDriveSession(this.context.eventStore.path, runId, token, session);
             opened = true;
@@ -900,11 +909,13 @@ async function stepLocked(context: VnextRuntimeContext, runId: string, producer:
       throw runtimeError("run_events_illegal", prepared.run.runId, "prepared gate is not artifacts-exist");
     }
     registerVnextAttemptController(context.eventStore.path, runId, { attemptId: prepared.attemptId, controller: prepared.controller });
+    const clearBudget = armRunDurationBudgetTimer(context, runId);
     try {
       const observation = evaluateArtifactsGate(context, definition);
       vnextGateDispatchSeams.afterEvaluate?.(prepared);
       return context.eventStore.transaction(() => settlePreparedGate(context, prepared, observation));
     } finally {
+      clearBudget();
       unregisterVnextAttemptController(context.eventStore.path, runId, prepared.attemptId);
     }
   }
@@ -945,6 +956,7 @@ async function runPreparedCommandGate(
   });
   armVnextGateHold(storePath, prepared.run.runId, token, prepared.attemptId, () => observer.requestStop("cancel"));
   registerVnextAttemptController(storePath, prepared.run.runId, { attemptId: prepared.attemptId, controller: prepared.controller });
+  const clearBudget = armRunDurationBudgetTimer(context, prepared.run.runId);
   const unhookClose = registerVnextRuntimeCloseHook(context, () => {
     try {
       markVnextGateHoldUnsettled(storePath, prepared.run.runId, token, prepared.attemptId);
@@ -992,6 +1004,7 @@ async function runPreparedCommandGate(
     return commitCommandUncertainty(context, prepared, token, outcome.reason, outcome.observation);
   } finally {
     unhookClose();
+    clearBudget();
     unregisterVnextAttemptController(storePath, prepared.run.runId, prepared.attemptId);
   }
 }
@@ -1798,8 +1811,10 @@ async function drivePanel(
   let stopBirths = false;
   let settlementFailed = false;
 
+  const budgetClears = new Map<string, () => void>();
   const register = (member: PreparedDispatch): void => {
     registerVnextAttemptController(context.eventStore.path, runId, { attemptId: member.attemptId, controller: member.controller });
+    budgetClears.set(member.attemptId, armRunDurationBudgetTimer(context, runId));
     owned.set(member.attemptId, member);
   };
 
@@ -2006,6 +2021,7 @@ async function drivePanel(
     throw error;
   } finally {
     for (const attemptId of owned.keys()) {
+      budgetClears.get(attemptId)?.();
       unregisterVnextAttemptController(context.eventStore.path, runId, attemptId);
     }
   }
@@ -2194,7 +2210,7 @@ function joinPanel(context: VnextRuntimeContext, panel: PreparedPanel): VnextRun
 
   const cancelRun = (): VnextRunDriveResult => {
     push("step.status_changed", { stepId: panel.stepId, status: "cancelled", previousStatus: "running" });
-    push("run.status_changed", { status: "cancelled", reason: "operator_cancel" });
+    push("run.status_changed", { status: "cancelled", reason: cancelReasonFromLog(context, run.runId) });
     for (const event of events) context.eventStore.appendEvent(event);
     const next = foldStoredVnextRun(context, run);
     persistVnextRunState(context, run.runId, next, events[events.length - 1]!.sequence);
@@ -2316,15 +2332,145 @@ function transitionBudgetFailure(plan: VnextCompiledPlan, state: VnextRunState, 
   return undefined;
 }
 
-function unsupportedLimit(envelope: VnextRunPlanEnvelope): VnextRunHandoff | undefined {
-  if (envelope.plan.limits.maxRunDurationMs !== undefined) {
-    return { reason: "limit_unsupported", field: "limits.maxRunDurationMs", detail: "duration budget enforcement is not available in this slice" };
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
+
+function elapsedMsBetween(fromIso: string, toIso: string): number {
+  const from = Date.parse(fromIso);
+  const to = Date.parse(toIso);
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return 0;
+  return Math.max(0, Math.trunc(to - from));
+}
+
+function declaredRunDurationBudget(context: VnextRuntimeContext, runId: string): VnextRunDurationBudget | undefined {
+  const run = context.eventStore.run(runId);
+  if (!run) return undefined;
+  try {
+    const envelope = loadVnextRunPlanEnvelope(context.eventStore, run);
+    return effectiveRunDurationBudget(envelope.plan.limits, envelope.projectLimits);
+  } catch {
+    return undefined;
   }
+}
+
+function runDurationOverrunPayload(
+  context: VnextRuntimeContext,
+  runId: string,
+  nowIso = new Date().toISOString(),
+): { budgetMs: number; elapsedMs: number; source: VnextRunDurationBudget["source"] } | undefined {
+  const declared = declaredRunDurationBudget(context, runId);
+  if (!declared) return undefined;
+  const run = context.eventStore.run(runId);
+  if (!run) return undefined;
+  const state = foldStoredVnextRun(context, run);
+  if (!state.runningSince) return undefined;
+  if (isTerminalRunStatus(state.status) || state.status === "cancelling") return undefined;
+  const elapsedMs = elapsedMsBetween(state.runningSince, nowIso);
+  if (elapsedMs < declared.budgetMs) return undefined;
+  return { budgetMs: declared.budgetMs, elapsedMs, source: declared.source };
+}
+
+function cancelRunDurationIfExceeded(context: VnextRuntimeContext, runId: string): VnextRunDriveResult | undefined {
+  if (isVnextRuntimeContextClosed(context)) return undefined;
+  const payload = runDurationOverrunPayload(context, runId);
+  if (!payload) return undefined;
+  cancelVnextRun(context, runId, { reason: "budget_run_duration", budget: payload });
+  return { state: foldStoredVnextRun(context, requireRun(context, runId)) };
+}
+
+function driveDeadlineAt(context: VnextRuntimeContext, runId: string, state: VnextRunState): string | undefined {
+  const declared = declaredRunDurationBudget(context, runId);
+  if (!declared || !state.runningSince) return undefined;
+  const start = Date.parse(state.runningSince);
+  if (!Number.isFinite(start)) return undefined;
+  return new Date(start + declared.budgetMs).toISOString();
+}
+
+function driveReceiptBudget(
+  context: VnextRuntimeContext,
+  runId: string,
+  state: VnextRunState,
+  events: readonly VnextRunEvent[],
+  closedAt: string,
+): VnextDriveReceiptBudget | null {
+  const declared = declaredRunDurationBudget(context, runId);
+  if (!declared) return null;
+  const elapsedMs = state.runningSince ? elapsedMsBetween(state.runningSince, closedAt) : 0;
+  const overrun = events.some((event) => (
+    event.eventType === "run.cancel_requested" && event.payload.reason === "budget_run_duration"
+  ));
+  return {
+    budgetMs: declared.budgetMs,
+    source: declared.source,
+    elapsedMs,
+    overrun,
+  };
+}
+
+function cancelReasonFromLog(context: VnextRuntimeContext, runId: string): string {
+  const events = context.eventStore.events(runId, 0, 1_000_000);
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]!;
+    if (event.eventType === "run.cancel_requested" && typeof event.payload.reason === "string") {
+      return event.payload.reason;
+    }
+  }
+  return "operator_cancel";
+}
+
+function armRunDurationBudgetTimer(context: VnextRuntimeContext, runId: string): () => void {
+  const declared = declaredRunDurationBudget(context, runId);
+  if (!declared) return () => undefined;
+  const run = context.eventStore.run(runId);
+  if (!run) return () => undefined;
+  const state = foldStoredVnextRun(context, run);
+  if (!state.runningSince) return () => undefined;
+  const startMs = Date.parse(state.runningSince);
+  if (!Number.isFinite(startMs)) return () => undefined;
+  const deadlineMs = startMs + declared.budgetMs;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let cleared = false;
+  const fire = (): void => {
+    timer = undefined;
+    if (cleared || isVnextRuntimeContextClosed(context)) return;
+    const nowIso = new Date().toISOString();
+    const elapsedMs = elapsedMsBetween(state.runningSince!, nowIso);
+    if (elapsedMs < declared.budgetMs) {
+      arm(declared.budgetMs - elapsedMs);
+      return;
+    }
+    try {
+      cancelVnextRun(context, runId, {
+        reason: "budget_run_duration",
+        budget: { budgetMs: declared.budgetMs, elapsedMs, source: declared.source },
+      });
+    } catch {
+      // Already cancelling, terminal, or the store closed under us.
+    }
+  };
+  const arm = (remaining: number): void => {
+    if (cleared) return;
+    const delay = Math.min(Math.max(0, remaining), MAX_TIMER_DELAY_MS);
+    timer = setTimeout(fire, delay);
+    timer.unref();
+  };
+  const unhook = registerVnextRuntimeCloseHook(context, () => {
+    cleared = true;
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+  });
+  arm(deadlineMs - Date.now());
+  return () => {
+    if (cleared) return;
+    cleared = true;
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+    unhook();
+  };
+}
+
+function unsupportedLimit(envelope: VnextRunPlanEnvelope): VnextRunHandoff | undefined {
   if (envelope.plan.limits.maxAgentTimeMs !== undefined) {
     return { reason: "limit_unsupported", field: "limits.maxAgentTimeMs", detail: "agent-time budget enforcement is not available in this slice" };
-  }
-  if (envelope.projectLimits.maxRunDurationMs !== undefined) {
-    return { reason: "limit_unsupported", field: "project.limits.maxRunDurationMs", detail: "duration budget enforcement is not available in this slice" };
   }
   if (envelope.projectLimits.maxAgentTimeMs !== undefined) {
     return { reason: "limit_unsupported", field: "project.limits.maxAgentTimeMs", detail: "agent-time budget enforcement is not available in this slice" };

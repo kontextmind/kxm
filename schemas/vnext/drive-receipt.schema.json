@@ -32,7 +32,7 @@
     "lastSequence": { "type": "integer", "minimum": 1 },
     "logHash": { "$ref": "common.schema.json#/$defs/sha256" },
     "settlement": { "$ref": "#/$defs/settlement" },
-    "budget": { "type": "null" },
+    "budget": { "$ref": "#/$defs/budget" },
     "producer": {
       "type": "object",
       "required": ["id", "closed"],
@@ -61,6 +61,22 @@
           "if": { "properties": { "kind": { "const": "handoff" } }, "required": ["kind"] },
           "then": { "required": ["handoff"] },
           "else": { "not": { "required": ["handoff"] } }
+        }
+      ]
+    },
+    "budget": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["budgetMs", "source", "elapsedMs", "overrun"],
+          "properties": {
+            "budgetMs": { "$ref": "common.schema.json#/$defs/durationMs" },
+            "source": { "enum": ["workflow", "project", "both"] },
+            "elapsedMs": { "type": "integer", "minimum": 0 },
+            "overrun": { "type": "boolean" }
+          },
+          "additionalProperties": false
         }
       ]
     },

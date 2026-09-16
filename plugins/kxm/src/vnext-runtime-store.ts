@@ -392,8 +392,15 @@ export interface VnextDriveReceipt {
   lastSequence: number;
   logHash: string;
   settlement: VnextDriveReceiptSettlement;
-  budget: null;
+  budget: VnextDriveReceiptBudget | null;
   producer: { id: string; closed: boolean };
+}
+
+export interface VnextDriveReceiptBudget {
+  budgetMs: number;
+  source: "workflow" | "project" | "both";
+  elapsedMs: number;
+  overrun: boolean;
 }
 
 /** sha256 over `eventId:sequence` for events 1..lastSequence, in sequence order. */

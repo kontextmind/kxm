@@ -18962,6 +18962,16 @@ var ATTEMPT_EDGES = {
   executing: /* @__PURE__ */ new Set(["settling"]),
   settling: /* @__PURE__ */ new Set(["terminal"])
 };
+function effectiveRunDurationBudget(planLimits, projectLimits) {
+  const workflow = planLimits?.maxRunDurationMs;
+  const project = projectLimits?.maxRunDurationMs;
+  if (workflow === void 0 && project === void 0) return void 0;
+  if (workflow !== void 0 && project !== void 0) {
+    return { budgetMs: Math.min(workflow, project), source: "both" };
+  }
+  if (workflow !== void 0) return { budgetMs: workflow, source: "workflow" };
+  return { budgetMs: project, source: "project" };
+}
 function emptyPanel() {
   return { order: [], assignments: /* @__PURE__ */ Object.create(null) };
 }
@@ -19193,7 +19203,7 @@ function foldVnextRunState(run, plan, events, options = {}) {
         foldRunStatus(state, plan, event);
         break;
       case "run.cancel_requested":
-        foldCancelRequested(state, event);
+        foldCancelRequested(state, event, plan, options);
         break;
       case "run.drive_opened":
         foldDriveOpened(state, event);
@@ -19322,6 +19332,9 @@ function foldRunStatus(state, plan, event) {
   if ((status === "running" || status === "cancelling") && !plan) {
     throw runtimeError("run_plan_missing", state.runId, `status ${status} requires a pinned run plan`);
   }
+  if (status === "running" && state.runningSince === void 0) {
+    state.runningSince = event.occurredAt;
+  }
   if (TERMINAL_RUN.has(status)) {
     assertTerminalRunStatus(state, plan, status, event);
     if (typeof event.payload.reason === "string") state.terminalReason = event.payload.reason;
@@ -19420,9 +19433,35 @@ function foldDriveOpened(state, event) {
   }
   state.drive = { driveId, mode, openedSequence: event.sequence };
 }
-function foldCancelRequested(state, event) {
+function foldCancelRequested(state, event, plan, options) {
   if (state.cancelRequested || TERMINAL_RUN.has(state.status)) {
     throw runtimeError("run_events_illegal", state.runId, "duplicate run.cancel_requested is not legal");
+  }
+  if (event.payload.reason === "budget_run_duration") {
+    const budget = event.payload.budget;
+    if (!budget || typeof budget !== "object" || Array.isArray(budget)) {
+      throw runtimeError("run_events_illegal", state.runId, "budget_run_duration requires a budget payload");
+    }
+    const body = budget;
+    const budgetMs = body.budgetMs;
+    const elapsedMs = body.elapsedMs;
+    const source = body.source;
+    if (typeof budgetMs !== "number" || !Number.isInteger(budgetMs) || budgetMs < 0) {
+      throw runtimeError("run_events_illegal", state.runId, "budget_run_duration budgetMs is invalid");
+    }
+    if (typeof elapsedMs !== "number" || !Number.isInteger(elapsedMs) || elapsedMs < 0) {
+      throw runtimeError("run_events_illegal", state.runId, "budget_run_duration elapsedMs is invalid");
+    }
+    if (source !== "workflow" && source !== "project" && source !== "both") {
+      throw runtimeError("run_events_illegal", state.runId, "budget_run_duration source is invalid");
+    }
+    const expected = effectiveRunDurationBudget(plan?.limits, options.projectLimits);
+    if (!expected || expected.budgetMs !== budgetMs || expected.source !== source) {
+      throw runtimeError("run_events_illegal", state.runId, "budget_run_duration budgetMs does not match the plan");
+    }
+    if (elapsedMs < budgetMs) {
+      throw runtimeError("run_events_illegal", state.runId, "budget_run_duration elapsedMs is below budgetMs");
+    }
   }
   state.cancelRequested = true;
   if (event.commandId) state.cancelCommandId = event.commandId;
@@ -20069,7 +20108,8 @@ function freezeState(state) {
     cancelRequested: state.cancelRequested,
     ...state.terminalReason !== void 0 ? { terminalReason: state.terminalReason } : {},
     ...state.terminalReason !== void 0 && state.status === "failed" ? { failureReason: state.terminalReason } : {},
-    ...state.drive !== void 0 ? { drive: Object.freeze({ ...state.drive }) } : {}
+    ...state.drive !== void 0 ? { drive: Object.freeze({ ...state.drive }) } : {},
+    ...state.runningSince !== void 0 ? { runningSince: state.runningSince } : {}
   };
   return Object.freeze(frozen);
 }
@@ -21959,7 +21999,8 @@ function foldStoredVnextRun(context, run) {
       const step = envelope.plan.steps[stepId];
       if (!step || step.kind !== "gate") return void 0;
       return envelope.gates.definitions[step.gate]?.kind;
-    }
+    },
+    projectLimits: envelope.projectLimits
   } : {});
   if (envelope) verifyVnextGateEvidence(context.eventStore, run, envelope, events, state);
   assertStoredProjection(context, run);
@@ -22066,10 +22107,17 @@ function cancelVnextRun(context, runId, options = {}) {
     };
     const cancelReason = options.reason ?? "operator_cancel";
     const activeAttempt = Boolean(folded.currentStep?.attemptId) || vnextFoldPanelAttemptIds(folded.currentStep).length > 0;
-    push("run.cancel_requested", {
+    const cancelPayload = {
       actor: { kind: "runtime", id: context.homeRuntimeId },
       reason: cancelReason
-    });
+    };
+    if (cancelReason === "budget_run_duration") {
+      if (!options.budget) {
+        throw runtimeError("run_events_illegal", runId, "budget_run_duration requires a budget payload");
+      }
+      cancelPayload.budget = options.budget;
+    }
+    push("run.cancel_requested", cancelPayload);
     let status = "cancelled";
     if (folded.status === "running" && activeAttempt) {
       status = "cancelling";
@@ -23968,6 +24016,8 @@ async function driveAdmitted(context, runId, producer, token, options = {}) {
   }
   let latest = { state: foldStoredVnextRun(context, requireRun(context, runId)) };
   while (latest.state.status === "running") {
+    const overBudget = cancelRunDurationIfExceeded(context, runId);
+    if (overBudget) return overBudget;
     const before = context.eventStore.runState(runId)?.lastSequence;
     latest = await stepLocked(context, runId, producer, token);
     if (latest.handoff) return latest;
@@ -24027,6 +24077,7 @@ function recordDriveReceipt(context, session, closeInfo) {
     const last = events[events.length - 1];
     const openedSequence = opened?.openedSequence ?? openedEvent?.sequence;
     if (openedSequence === void 0) return;
+    const closedAt = (/* @__PURE__ */ new Date()).toISOString();
     const receipt = {
       schema: VNEXT_DRIVE_RECEIPT_SCHEMA,
       driveId: session.driveId,
@@ -24036,7 +24087,7 @@ function recordDriveReceipt(context, session, closeInfo) {
       mode: session.mode,
       openedAt: openedEvent?.occurredAt ?? session.openedAt,
       openedSequence,
-      closedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      closedAt,
       lastSequence: last.sequence,
       logHash: hashVnextDriveLog(events.filter((event) => event.sequence >= 1 && event.sequence <= last.sequence)),
       settlement: {
@@ -24046,7 +24097,7 @@ function recordDriveReceipt(context, session, closeInfo) {
         ...closeInfo.kind === "handoff" && closeInfo.handoff ? { handoff: receiptHandoff(closeInfo.handoff) } : {},
         ...closeInfo.error !== void 0 ? { error: closeInfo.error } : {}
       },
-      budget: null,
+      budget: driveReceiptBudget(context, run.runId, state, events, closedAt),
       producer: { id: closeInfo.producerId, closed: closeInfo.producerClosed }
     };
     context.eventStore.insertDriveReceipt(receipt);
@@ -24235,6 +24286,8 @@ var VnextRunScheduler = class _VnextRunScheduler {
             }
             const driveId = newDriveId(runId, token, this.context.homeRuntimeId, vnextMonotonicNs());
             const openedMeta = appendDriveOpened(this.context, runId, driveId, options.mode);
+            const startedState = foldStoredVnextRun(this.context, requireRun(this.context, runId));
+            const deadlineAt = driveDeadlineAt(this.context, runId, startedState);
             const session = {
               driveId,
               runId,
@@ -24244,7 +24297,8 @@ var VnextRunScheduler = class _VnextRunScheduler {
               openedAt: openedMeta.occurredAt,
               producerId: producer.id,
               controller: new AbortController(),
-              settled
+              settled,
+              ...deadlineAt !== void 0 ? { deadlineAt } : {}
             };
             attachVnextDriveSession(this.context.eventStore.path, runId, token, session);
             opened = true;
@@ -24323,11 +24377,13 @@ async function stepLocked(context, runId, producer, token) {
       throw runtimeError("run_events_illegal", prepared.run.runId, "prepared gate is not artifacts-exist");
     }
     registerVnextAttemptController(context.eventStore.path, runId, { attemptId: prepared.attemptId, controller: prepared.controller });
+    const clearBudget = armRunDurationBudgetTimer(context, runId);
     try {
       const observation = evaluateArtifactsGate(context, definition);
       vnextGateDispatchSeams.afterEvaluate?.(prepared);
       return context.eventStore.transaction(() => settlePreparedGate(context, prepared, observation));
     } finally {
+      clearBudget();
       unregisterVnextAttemptController(context.eventStore.path, runId, prepared.attemptId);
     }
   }
@@ -24358,6 +24414,7 @@ async function runPreparedCommandGate(context, prepared, definition, token) {
   });
   armVnextGateHold(storePath, prepared.run.runId, token, prepared.attemptId, () => observer.requestStop("cancel"));
   registerVnextAttemptController(storePath, prepared.run.runId, { attemptId: prepared.attemptId, controller: prepared.controller });
+  const clearBudget = armRunDurationBudgetTimer(context, prepared.run.runId);
   const unhookClose = registerVnextRuntimeCloseHook(context, () => {
     try {
       markVnextGateHoldUnsettled(storePath, prepared.run.runId, token, prepared.attemptId);
@@ -24398,6 +24455,7 @@ async function runPreparedCommandGate(context, prepared, definition, token) {
     return commitCommandUncertainty(context, prepared, token, outcome.reason, outcome.observation);
   } finally {
     unhookClose();
+    clearBudget();
     unregisterVnextAttemptController(storePath, prepared.run.runId, prepared.attemptId);
   }
 }
@@ -25023,8 +25081,10 @@ async function drivePanel(context, panel, producer) {
   const pending = /* @__PURE__ */ new Map();
   let stopBirths = false;
   let settlementFailed = false;
+  const budgetClears = /* @__PURE__ */ new Map();
   const register = (member) => {
     registerVnextAttemptController(context.eventStore.path, runId, { attemptId: member.attemptId, controller: member.controller });
+    budgetClears.set(member.attemptId, armRunDurationBudgetTimer(context, runId));
     owned.set(member.attemptId, member);
   };
   const abortOwned = () => {
@@ -25207,6 +25267,7 @@ async function drivePanel(context, panel, producer) {
     throw error;
   } finally {
     for (const attemptId of owned.keys()) {
+      budgetClears.get(attemptId)?.();
       unregisterVnextAttemptController(context.eventStore.path, runId, attemptId);
     }
   }
@@ -25386,7 +25447,7 @@ function joinPanel(context, panel) {
   };
   const cancelRun = () => {
     push("step.status_changed", { stepId: panel.stepId, status: "cancelled", previousStatus: "running" });
-    push("run.status_changed", { status: "cancelled", reason: "operator_cancel" });
+    push("run.status_changed", { status: "cancelled", reason: cancelReasonFromLog(context, run.runId) });
     for (const event of events) context.eventStore.appendEvent(event);
     const next2 = foldStoredVnextRun(context, run);
     persistVnextRunState(context, run.runId, next2, events[events.length - 1].sequence);
@@ -25493,15 +25554,123 @@ function transitionBudgetFailure(plan, state, fromStepId, outcome) {
   }
   return void 0;
 }
-function unsupportedLimit(envelope) {
-  if (envelope.plan.limits.maxRunDurationMs !== void 0) {
-    return { reason: "limit_unsupported", field: "limits.maxRunDurationMs", detail: "duration budget enforcement is not available in this slice" };
+var MAX_TIMER_DELAY_MS = 2147483647;
+function elapsedMsBetween(fromIso, toIso) {
+  const from = Date.parse(fromIso);
+  const to = Date.parse(toIso);
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return 0;
+  return Math.max(0, Math.trunc(to - from));
+}
+function declaredRunDurationBudget(context, runId) {
+  const run = context.eventStore.run(runId);
+  if (!run) return void 0;
+  try {
+    const envelope = loadVnextRunPlanEnvelope(context.eventStore, run);
+    return effectiveRunDurationBudget(envelope.plan.limits, envelope.projectLimits);
+  } catch {
+    return void 0;
   }
+}
+function runDurationOverrunPayload(context, runId, nowIso = (/* @__PURE__ */ new Date()).toISOString()) {
+  const declared = declaredRunDurationBudget(context, runId);
+  if (!declared) return void 0;
+  const run = context.eventStore.run(runId);
+  if (!run) return void 0;
+  const state = foldStoredVnextRun(context, run);
+  if (!state.runningSince) return void 0;
+  if (isTerminalRunStatus(state.status) || state.status === "cancelling") return void 0;
+  const elapsedMs = elapsedMsBetween(state.runningSince, nowIso);
+  if (elapsedMs < declared.budgetMs) return void 0;
+  return { budgetMs: declared.budgetMs, elapsedMs, source: declared.source };
+}
+function cancelRunDurationIfExceeded(context, runId) {
+  if (isVnextRuntimeContextClosed(context)) return void 0;
+  const payload = runDurationOverrunPayload(context, runId);
+  if (!payload) return void 0;
+  cancelVnextRun(context, runId, { reason: "budget_run_duration", budget: payload });
+  return { state: foldStoredVnextRun(context, requireRun(context, runId)) };
+}
+function driveDeadlineAt(context, runId, state) {
+  const declared = declaredRunDurationBudget(context, runId);
+  if (!declared || !state.runningSince) return void 0;
+  const start = Date.parse(state.runningSince);
+  if (!Number.isFinite(start)) return void 0;
+  return new Date(start + declared.budgetMs).toISOString();
+}
+function driveReceiptBudget(context, runId, state, events, closedAt) {
+  const declared = declaredRunDurationBudget(context, runId);
+  if (!declared) return null;
+  const elapsedMs = state.runningSince ? elapsedMsBetween(state.runningSince, closedAt) : 0;
+  const overrun = events.some((event) => event.eventType === "run.cancel_requested" && event.payload.reason === "budget_run_duration");
+  return {
+    budgetMs: declared.budgetMs,
+    source: declared.source,
+    elapsedMs,
+    overrun
+  };
+}
+function cancelReasonFromLog(context, runId) {
+  const events = context.eventStore.events(runId, 0, 1e6);
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event.eventType === "run.cancel_requested" && typeof event.payload.reason === "string") {
+      return event.payload.reason;
+    }
+  }
+  return "operator_cancel";
+}
+function armRunDurationBudgetTimer(context, runId) {
+  const declared = declaredRunDurationBudget(context, runId);
+  if (!declared) return () => void 0;
+  const run = context.eventStore.run(runId);
+  if (!run) return () => void 0;
+  const state = foldStoredVnextRun(context, run);
+  if (!state.runningSince) return () => void 0;
+  const startMs = Date.parse(state.runningSince);
+  if (!Number.isFinite(startMs)) return () => void 0;
+  const deadlineMs = startMs + declared.budgetMs;
+  let timer;
+  let cleared = false;
+  const fire = () => {
+    timer = void 0;
+    if (cleared || isVnextRuntimeContextClosed(context)) return;
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    const elapsedMs = elapsedMsBetween(state.runningSince, nowIso);
+    if (elapsedMs < declared.budgetMs) {
+      arm(declared.budgetMs - elapsedMs);
+      return;
+    }
+    try {
+      cancelVnextRun(context, runId, {
+        reason: "budget_run_duration",
+        budget: { budgetMs: declared.budgetMs, elapsedMs, source: declared.source }
+      });
+    } catch {
+    }
+  };
+  const arm = (remaining) => {
+    if (cleared) return;
+    const delay = Math.min(Math.max(0, remaining), MAX_TIMER_DELAY_MS);
+    timer = setTimeout(fire, delay);
+    timer.unref();
+  };
+  const unhook = registerVnextRuntimeCloseHook(context, () => {
+    cleared = true;
+    if (timer !== void 0) clearTimeout(timer);
+    timer = void 0;
+  });
+  arm(deadlineMs - Date.now());
+  return () => {
+    if (cleared) return;
+    cleared = true;
+    if (timer !== void 0) clearTimeout(timer);
+    timer = void 0;
+    unhook();
+  };
+}
+function unsupportedLimit(envelope) {
   if (envelope.plan.limits.maxAgentTimeMs !== void 0) {
     return { reason: "limit_unsupported", field: "limits.maxAgentTimeMs", detail: "agent-time budget enforcement is not available in this slice" };
-  }
-  if (envelope.projectLimits.maxRunDurationMs !== void 0) {
-    return { reason: "limit_unsupported", field: "project.limits.maxRunDurationMs", detail: "duration budget enforcement is not available in this slice" };
   }
   if (envelope.projectLimits.maxAgentTimeMs !== void 0) {
     return { reason: "limit_unsupported", field: "project.limits.maxAgentTimeMs", detail: "agent-time budget enforcement is not available in this slice" };

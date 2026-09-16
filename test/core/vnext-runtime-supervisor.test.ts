@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
 import { removeTempDir } from "../helpers.ts";
 import { engineProject } from "../helpers/vnext-project.ts";
@@ -386,6 +388,69 @@ test("shutdown with a slow simulated producer records cancel_requested runtime_s
       const events = context.eventStore.events(runId, 0, 200);
       const cancel = events.find((event) => event.eventType === "run.cancel_requested");
       assert.equal(cancel?.payload.reason, "runtime_shutdown");
+    } finally {
+      closeVnextRuntimeContext(context);
+    }
+  } finally {
+    if (supervisor) await supervisor.stop();
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("budget cancel and shutdown cancel racing yield one cancel_requested", async () => {
+  const { root, stateRoot } = engineProject("kxm-supervisor-drive-budget-race-");
+  let supervisor: Awaited<ReturnType<typeof startVnextRuntimeSupervisor>> | undefined;
+  try {
+    writeFileSync(join(root, ".kxm", "workflows", "tiny-duration.yaml"), `schema: kxm.workflow.v1
+coordinator: coordinator
+limits:
+  maxTransitions: 2
+  maxRunDurationMs: 30
+steps:
+  - id: only
+    kind: agent
+    agent: implementer
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: $terminal
+        terminalStatus: failed
+`);
+    supervisor = await startVnextRuntimeSupervisor({ stateRoot });
+    const token = readVnextSupervisorToken(vnextRuntimePaths({ stateRoot }))!;
+    const handle = { runtimeId: supervisor.runtimeId, port: supervisor.port, token, started: true };
+    const acceptance = await vnextRuntimeRequest(handle, "POST", "/v1/runs", {
+      projectRoot: root,
+      workflowId: "tiny-duration",
+      prompt: "budget race",
+    });
+    const runId = (acceptance.run as { runId: string }).runId;
+    const driveRes = await fetch(`http://127.0.0.1:${supervisor.port}/v1/runs/${runId}/drive?projectRoot=${encodeURIComponent(root)}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ mode: "simulated", delayMs: 2000 }),
+    });
+    assert.equal(driveRes.status, 202);
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < 1000) {
+      const peek = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: handle.runtimeId });
+      try {
+        if (peek.eventStore.run(runId)?.status === "running") break;
+      } finally {
+        closeVnextRuntimeContext(peek);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await supervisor.stop();
+    supervisor = undefined;
+    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: handle.runtimeId });
+    try {
+      const cancels = context.eventStore.events(runId, 0, 200).filter((event) => event.eventType === "run.cancel_requested");
+      assert.equal(cancels.length, 1);
+      assert.ok(cancels[0]!.payload.reason === "budget_run_duration" || cancels[0]!.payload.reason === "runtime_shutdown");
     } finally {
       closeVnextRuntimeContext(context);
     }

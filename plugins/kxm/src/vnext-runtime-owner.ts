@@ -29,6 +29,7 @@ export interface VnextDriveSession {
   producerId: string;
   controller: AbortController;
   settled: Promise<unknown>;
+  deadlineAt?: string;
 }
 
 interface AdmissionRecord {

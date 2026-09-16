@@ -62,6 +62,30 @@ export interface VnextFoldOptions {
     observationId: string,
   ) => { completeness: "complete" | "incomplete" | "no-start" } | undefined;
   readonly gateKind?: (stepId: string) => string | undefined;
+  readonly projectLimits?: {
+    readonly maxRunDurationMs?: number;
+  };
+}
+
+export type VnextRunDurationBudgetSource = "workflow" | "project" | "both";
+
+export interface VnextRunDurationBudget {
+  readonly budgetMs: number;
+  readonly source: VnextRunDurationBudgetSource;
+}
+
+export function effectiveRunDurationBudget(
+  planLimits: { readonly maxRunDurationMs?: number } | undefined,
+  projectLimits: { readonly maxRunDurationMs?: number } | undefined,
+): VnextRunDurationBudget | undefined {
+  const workflow = planLimits?.maxRunDurationMs;
+  const project = projectLimits?.maxRunDurationMs;
+  if (workflow === undefined && project === undefined) return undefined;
+  if (workflow !== undefined && project !== undefined) {
+    return { budgetMs: Math.min(workflow, project), source: "both" };
+  }
+  if (workflow !== undefined) return { budgetMs: workflow, source: "workflow" };
+  return { budgetMs: project!, source: "project" };
 }
 
 export interface VnextFoldAttemptState {
@@ -127,6 +151,7 @@ export interface VnextRunState {
   readonly terminalReason?: string | undefined;
   readonly failureReason?: string | undefined;
   readonly drive?: VnextRunDriveBinding | undefined;
+  readonly runningSince?: string | undefined;
 }
 
 interface MutableAttempt {
@@ -179,6 +204,7 @@ interface MutableState {
   cancelCommandId?: string | undefined;
   lastTerminalTransition?: VnextTerminalStatus | undefined;
   drive?: VnextRunDriveBinding | undefined;
+  runningSince?: string | undefined;
 }
 
 function emptyPanel(): MutablePanel {
@@ -468,7 +494,7 @@ export function foldVnextRunState(
         foldRunStatus(state, plan, event);
         break;
       case "run.cancel_requested":
-        foldCancelRequested(state, event);
+        foldCancelRequested(state, event, plan, options);
         break;
       case "run.drive_opened":
         foldDriveOpened(state, event);
@@ -606,6 +632,9 @@ function foldRunStatus(state: MutableState, plan: VnextCompiledPlan | undefined,
   if ((status === "running" || status === "cancelling") && !plan) {
     throw runtimeError("run_plan_missing", state.runId, `status ${status} requires a pinned run plan`);
   }
+  if (status === "running" && state.runningSince === undefined) {
+    state.runningSince = event.occurredAt;
+  }
   if (TERMINAL_RUN.has(status)) {
     assertTerminalRunStatus(state, plan, status, event);
     if (typeof event.payload.reason === "string") state.terminalReason = event.payload.reason;
@@ -717,9 +746,40 @@ function foldDriveOpened(state: MutableState, event: VnextRunEvent): void {
   state.drive = { driveId, mode, openedSequence: event.sequence };
 }
 
-function foldCancelRequested(state: MutableState, event: VnextRunEvent): void {
+function foldCancelRequested(
+  state: MutableState,
+  event: VnextRunEvent,
+  plan: VnextCompiledPlan | undefined,
+  options: VnextFoldOptions,
+): void {
   if (state.cancelRequested || TERMINAL_RUN.has(state.status)) {
     throw runtimeError("run_events_illegal", state.runId, "duplicate run.cancel_requested is not legal");
+  }
+  if (event.payload.reason === "budget_run_duration") {
+    const budget = event.payload.budget;
+    if (!budget || typeof budget !== "object" || Array.isArray(budget)) {
+      throw runtimeError("run_events_illegal", state.runId, "budget_run_duration requires a budget payload");
+    }
+    const body = budget as Record<string, unknown>;
+    const budgetMs = body.budgetMs;
+    const elapsedMs = body.elapsedMs;
+    const source = body.source;
+    if (typeof budgetMs !== "number" || !Number.isInteger(budgetMs) || budgetMs < 0) {
+      throw runtimeError("run_events_illegal", state.runId, "budget_run_duration budgetMs is invalid");
+    }
+    if (typeof elapsedMs !== "number" || !Number.isInteger(elapsedMs) || elapsedMs < 0) {
+      throw runtimeError("run_events_illegal", state.runId, "budget_run_duration elapsedMs is invalid");
+    }
+    if (source !== "workflow" && source !== "project" && source !== "both") {
+      throw runtimeError("run_events_illegal", state.runId, "budget_run_duration source is invalid");
+    }
+    const expected = effectiveRunDurationBudget(plan?.limits, options.projectLimits);
+    if (!expected || expected.budgetMs !== budgetMs || expected.source !== source) {
+      throw runtimeError("run_events_illegal", state.runId, "budget_run_duration budgetMs does not match the plan");
+    }
+    if (elapsedMs < budgetMs) {
+      throw runtimeError("run_events_illegal", state.runId, "budget_run_duration elapsedMs is below budgetMs");
+    }
   }
   state.cancelRequested = true;
   if (event.commandId) state.cancelCommandId = event.commandId;
@@ -1403,6 +1463,7 @@ function freezeState(state: MutableState): VnextRunState {
     ...(state.terminalReason !== undefined ? { terminalReason: state.terminalReason } : {}),
     ...(state.terminalReason !== undefined && state.status === "failed" ? { failureReason: state.terminalReason } : {}),
     ...(state.drive !== undefined ? { drive: Object.freeze({ ...state.drive }) } : {}),
+    ...(state.runningSince !== undefined ? { runningSince: state.runningSince } : {}),
   };
   return Object.freeze(frozen);
 }
