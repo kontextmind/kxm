@@ -107,6 +107,7 @@ import {
   cmdVnextRun,
   cmdVnextRunStatus,
   cmdVnextRunDrive,
+  cmdVnextRunReceipt,
   cmdVnextRunCancel,
   cmdVnextRunList,
   cmdHarnessList,
@@ -390,8 +391,19 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
   addGlobalOptions(runCmd.command("drive").description("Drive a run with an explicit model-free simulation"))
     .argument("<runId>", "Run id")
     .option("--simulated", "Use the model-free simulation producer")
-    .action(async function runDriveAction(this: Command, runId: string, options: { simulated?: boolean }) {
-      result.code = await cmdVnextRunDrive(runtimeFrom(ctx, this), runId, options.simulated === true);
+    .option("--wait", "Wait until a drive receipt is recorded")
+    .option("--timeout-ms <n>", "Wait timeout in milliseconds (default 60000)")
+    .action(async function runDriveAction(this: Command, runId: string, options: { simulated?: boolean; wait?: boolean; timeoutMs?: string }) {
+      result.code = await cmdVnextRunDrive(runtimeFrom(ctx, this), runId, options.simulated === true, {
+        wait: options.wait === true,
+        ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+      });
+    });
+  addGlobalOptions(runCmd.command("receipt").description("Print the newest drive receipt for a run"))
+    .argument("<runId>", "Run id")
+    .option("--all", "Print the capped receipt list for the run")
+    .action(async function runReceiptAction(this: Command, runId: string, options: { all?: boolean }) {
+      result.code = await cmdVnextRunReceipt(runtimeFrom(ctx, this), runId, { all: options.all === true });
     });
   addGlobalOptions(runCmd.command("cancel").description("Durably request cancellation of a run"))
     .argument("<runId>", "Run id")

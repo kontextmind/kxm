@@ -13,7 +13,7 @@ import {
   vnextRuntimeRequest,
 } from "../../plugins/kxm/src/vnext-runtime-supervisor.ts";
 import { DatabaseSync } from "node:sqlite";
-import { vnextRuntimePaths } from "../../plugins/kxm/src/vnext-runtime-store.ts";
+import { vnextRuntimePaths, type VnextDriveReceipt } from "../../plugins/kxm/src/vnext-runtime-store.ts";
 import { VnextRunScheduler, vnextPanelDispatchSeams } from "../../plugins/kxm/src/vnext-engine.ts";
 import { vnextAdmittedToken } from "../../plugins/kxm/src/vnext-runtime-owner.ts";
 import { closeVnextRuntimeContext, openVnextRuntimeContext } from "../../plugins/kxm/src/vnext-runtime.ts";
@@ -543,8 +543,10 @@ test("abort-ignoring producer returns after grace with attempt unreconciled", as
       assert.equal(terminalAttempt, false, "grace expiry must not fabricate a terminal attempt");
       const receipts = context.eventStore.driveReceiptsForRun(runId);
       assert.equal(receipts.length, 1);
-      assert.equal(receipts[0]!.settlement.kind, "unsettled");
-      assert.equal(receipts[0]!.settlement.reason, "runtime_shutdown_grace_expired");
+      const shutdownReceipt = receipts[0];
+      assert.ok(shutdownReceipt && "settlement" in shutdownReceipt);
+      assert.equal(shutdownReceipt.settlement.kind, "unsettled");
+      assert.equal(shutdownReceipt.settlement.reason, "runtime_shutdown_grace_expired");
     } finally {
       closeVnextRuntimeContext(context);
     }
@@ -777,6 +779,220 @@ test("supervisor GET reports receipt unreadable for a corrupt row without 500", 
     assert.equal(payload.drive.verified, false);
     assert.equal(payload.drive.receipt, null);
     assert.equal(payload.drive.divergence, "receipt unreadable");
+  } finally {
+    if (supervisor) await supervisor.stop();
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("supervisor GET /drive returns an open session summary then newest-first receipts capped at 20", async () => {
+  const { root, stateRoot } = engineProject("kxm-supervisor-drive-get-list-");
+  let supervisor: Awaited<ReturnType<typeof startVnextRuntimeSupervisor>> | undefined;
+  try {
+    supervisor = await startVnextRuntimeSupervisor({ stateRoot });
+    const token = readVnextSupervisorToken(vnextRuntimePaths({ stateRoot }))!;
+    const handle = { runtimeId: supervisor.runtimeId, port: supervisor.port, token, started: true };
+    const acceptance = await vnextRuntimeRequest(handle, "POST", "/v1/runs", {
+      projectRoot: root,
+      workflowId: "one-step",
+      prompt: "drive list",
+    });
+    const runId = (acceptance.run as { runId: string }).runId;
+    const driveRes = await fetch(`http://127.0.0.1:${supervisor.port}/v1/runs/${runId}/drive?projectRoot=${encodeURIComponent(root)}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ mode: "simulated", delayMs: 1500 }),
+    });
+    assert.equal(driveRes.status, 202);
+    const driveBody = await driveRes.json() as { driveId: string };
+    const openRes = await fetch(`http://127.0.0.1:${supervisor.port}/v1/runs/${runId}/drive?projectRoot=${encodeURIComponent(root)}`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    assert.equal(openRes.status, 200);
+    const openPayload = await openRes.json() as {
+      ok: boolean;
+      session: Record<string, unknown> | null;
+      receipts: unknown[];
+    };
+    assert.equal(openPayload.ok, true);
+    assert.ok(openPayload.session);
+    assert.equal(openPayload.session.driveId, driveBody.driveId);
+    assert.equal(openPayload.session.mode, "simulated");
+    assert.equal(typeof openPayload.session.openedAt, "string");
+    assert.ok("deadlineAt" in openPayload.session);
+    assert.equal("token" in openPayload.session, false);
+    assert.equal("controller" in openPayload.session, false);
+    assert.equal("settled" in openPayload.session, false);
+    assert.equal("producerId" in openPayload.session, false);
+    const startTime = Date.now();
+    while (Date.now() - startTime < 10_000) {
+      const statusRes = await vnextRuntimeRequest(handle, "GET", `/v1/runs/${runId}?projectRoot=${encodeURIComponent(root)}`);
+      if ((statusRes.run as { status: string }).status === "completed") break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    const peek = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: handle.runtimeId });
+    try {
+      const existing = peek.eventStore.driveReceiptsForRun(runId);
+      assert.equal(existing.length, 1);
+      const original = existing[0];
+      assert.ok(original && "settlement" in original);
+      const originMs = Date.parse(original.closedAt);
+      for (let i = 0; i < 20; i += 1) {
+        const clone: VnextDriveReceipt = {
+          ...original,
+          driveId: `drv_${String(i).padStart(24, "0")}`,
+          closedAt: new Date(originMs - (20 - i) * 1000).toISOString(),
+        };
+        assert.equal(peek.eventStore.insertDriveReceipt(clone).inserted, true);
+      }
+    } finally {
+      closeVnextRuntimeContext(peek);
+    }
+    const listed = await vnextRuntimeRequest(handle, "GET", `/v1/runs/${runId}/drive?projectRoot=${encodeURIComponent(root)}`);
+    assert.equal(listed.session, null);
+    const receipts = listed.receipts as Array<{ driveId: string }>;
+    assert.equal(receipts.length, 20);
+    assert.equal(receipts[0]?.driveId, driveBody.driveId);
+    assert.equal(receipts.some((row) => row.driveId === `drv_${String(0).padStart(24, "0")}`), false);
+    const unknown = await fetch(`http://127.0.0.1:${supervisor.port}/v1/runs/run_missing00000000000000/drive?projectRoot=${encodeURIComponent(root)}`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    assert.equal(unknown.status, 404);
+  } finally {
+    if (supervisor) await supervisor.stop();
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("supervisor GET /drive reports receipt divergence for a corrupt row without 500", async () => {
+  const { root, stateRoot } = engineProject("kxm-supervisor-drive-get-corrupt-");
+  let supervisor: Awaited<ReturnType<typeof startVnextRuntimeSupervisor>> | undefined;
+  try {
+    supervisor = await startVnextRuntimeSupervisor({ stateRoot });
+    const token = readVnextSupervisorToken(vnextRuntimePaths({ stateRoot }))!;
+    const handle = { runtimeId: supervisor.runtimeId, port: supervisor.port, token, started: true };
+    const acceptance = await vnextRuntimeRequest(handle, "POST", "/v1/runs", {
+      projectRoot: root,
+      workflowId: "one-step",
+      prompt: "drive get corrupt",
+    });
+    const runId = (acceptance.run as { runId: string }).runId;
+    const driveRes = await fetch(`http://127.0.0.1:${supervisor.port}/v1/runs/${runId}/drive?projectRoot=${encodeURIComponent(root)}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ mode: "simulated" }),
+    });
+    assert.equal(driveRes.status, 202);
+    const startTime = Date.now();
+    while (Date.now() - startTime < 10_000) {
+      const statusRes = await vnextRuntimeRequest(handle, "GET", `/v1/runs/${runId}?projectRoot=${encodeURIComponent(root)}`);
+      if ((statusRes.run as { status: string }).status === "completed") break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    const peek = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: handle.runtimeId });
+    let driveId: string;
+    try {
+      const receipts = peek.eventStore.driveReceiptsForRun(runId);
+      assert.equal(receipts.length, 1);
+      driveId = receipts[0]!.driveId;
+      const db = new DatabaseSync(peek.eventStore.path);
+      db.prepare("UPDATE drive_receipts SET receipt = ? WHERE drive_id = ?").run("this is not json {", driveId);
+      db.close();
+    } finally {
+      closeVnextRuntimeContext(peek);
+    }
+    const corruptRes = await fetch(`http://127.0.0.1:${supervisor.port}/v1/runs/${runId}/drive?projectRoot=${encodeURIComponent(root)}`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    assert.equal(corruptRes.status, 200);
+    const payload = await corruptRes.json() as {
+      ok: boolean;
+      receipts: Array<{ driveId: string; divergence?: string }>;
+    };
+    assert.equal(payload.ok, true);
+    assert.equal(payload.receipts.length, 1);
+    assert.equal(payload.receipts[0]?.driveId, driveId);
+    assert.equal(payload.receipts[0]?.divergence, "receipt unreadable");
+  } finally {
+    if (supervisor) await supervisor.stop();
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("supervisor GET /v1/drives/:id returns verified receipts and never 500 on tamper or missing", async () => {
+  const { root, stateRoot } = engineProject("kxm-supervisor-drive-by-id-");
+  let supervisor: Awaited<ReturnType<typeof startVnextRuntimeSupervisor>> | undefined;
+  try {
+    supervisor = await startVnextRuntimeSupervisor({ stateRoot });
+    const token = readVnextSupervisorToken(vnextRuntimePaths({ stateRoot }))!;
+    const handle = { runtimeId: supervisor.runtimeId, port: supervisor.port, token, started: true };
+    const missing = await fetch(`http://127.0.0.1:${supervisor.port}/v1/drives/drv_missing0000000000000000?projectRoot=${encodeURIComponent(root)}`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    assert.equal(missing.status, 404);
+    const missingBody = await missing.json() as { ok: boolean; error: string };
+    assert.equal(missingBody.ok, false);
+    assert.equal(missingBody.error, "drive_receipt_missing");
+    const noRoot = await fetch(`http://127.0.0.1:${supervisor.port}/v1/drives/drv_missing0000000000000000`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    assert.equal(noRoot.status, 400);
+    const acceptance = await vnextRuntimeRequest(handle, "POST", "/v1/runs", {
+      projectRoot: root,
+      workflowId: "one-step",
+      prompt: "drive by id",
+    });
+    const runId = (acceptance.run as { runId: string }).runId;
+    const driveRes = await fetch(`http://127.0.0.1:${supervisor.port}/v1/runs/${runId}/drive?projectRoot=${encodeURIComponent(root)}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ mode: "simulated" }),
+    });
+    assert.equal(driveRes.status, 202);
+    const driveBody = await driveRes.json() as { driveId: string };
+    const startTime = Date.now();
+    while (Date.now() - startTime < 10_000) {
+      const statusRes = await vnextRuntimeRequest(handle, "GET", `/v1/runs/${runId}?projectRoot=${encodeURIComponent(root)}`);
+      if ((statusRes.run as { status: string }).status === "completed") break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    const verified = await vnextRuntimeRequest(handle, "GET", `/v1/drives/${driveBody.driveId}?projectRoot=${encodeURIComponent(root)}`);
+    assert.equal(verified.ok, true);
+    assert.equal(verified.verified, true);
+    assert.equal(verified.divergence, undefined);
+    assert.equal((verified.receipt as { driveId: string }).driveId, driveBody.driveId);
+    const peek = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: handle.runtimeId });
+    try {
+      const db = new DatabaseSync(peek.eventStore.path);
+      const row = db.prepare("SELECT receipt FROM drive_receipts WHERE drive_id = ?").get(driveBody.driveId) as { receipt: string };
+      const parsed = JSON.parse(row.receipt) as { logHash: string };
+      parsed.logHash = "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+      db.prepare("UPDATE drive_receipts SET receipt = ? WHERE drive_id = ?").run(JSON.stringify(parsed), driveBody.driveId);
+      db.close();
+    } finally {
+      closeVnextRuntimeContext(peek);
+    }
+    const tampered = await vnextRuntimeRequest(handle, "GET", `/v1/drives/${driveBody.driveId}?projectRoot=${encodeURIComponent(root)}`);
+    assert.equal(tampered.ok, true);
+    assert.equal(tampered.verified, false);
+    assert.match(String(tampered.divergence), /logHash mismatch/);
+    const peekCorrupt = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: handle.runtimeId });
+    try {
+      const db = new DatabaseSync(peekCorrupt.eventStore.path);
+      db.prepare("UPDATE drive_receipts SET receipt = ? WHERE drive_id = ?").run("this is not json {", driveBody.driveId);
+      db.close();
+    } finally {
+      closeVnextRuntimeContext(peekCorrupt);
+    }
+    const corruptRes = await fetch(`http://127.0.0.1:${supervisor.port}/v1/drives/${driveBody.driveId}?projectRoot=${encodeURIComponent(root)}`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    assert.equal(corruptRes.status, 200);
+    const corrupt = await corruptRes.json() as { ok: boolean; receipt: unknown; verified: boolean; divergence?: string };
+    assert.equal(corrupt.ok, true);
+    assert.equal(corrupt.receipt, null);
+    assert.equal(corrupt.verified, false);
+    assert.equal(corrupt.divergence, "receipt unreadable");
   } finally {
     if (supervisor) await supervisor.stop();
     removeTempDir(root, stateRoot);

@@ -396,6 +396,10 @@ export interface VnextDriveReceipt {
   producer: { id: string; closed: boolean };
 }
 
+export type VnextDriveReceiptListItem =
+  | VnextDriveReceipt
+  | { readonly driveId: string; readonly divergence: string };
+
 export interface VnextDriveReceiptBudget {
   budgetMs: number;
   source: "workflow" | "project" | "both";
@@ -1014,11 +1018,17 @@ export class VnextRunEventStore {
     return row ? parseDriveReceipt(row.receipt) : undefined;
   }
 
-  driveReceiptsForRun(runId: string, limit = 20): VnextDriveReceipt[] {
+  driveReceiptsForRun(runId: string, limit = 20): VnextDriveReceiptListItem[] {
     const rows = this.database.prepare(`
-      SELECT receipt FROM drive_receipts WHERE run_id = ? ORDER BY closed_at DESC, drive_id DESC LIMIT ?
-    `).all(runId, limit) as Array<{ receipt: string }>;
-    return rows.map((row) => parseDriveReceipt(row.receipt));
+      SELECT drive_id, receipt FROM drive_receipts WHERE run_id = ? ORDER BY closed_at DESC, drive_id DESC LIMIT ?
+    `).all(runId, limit) as Array<{ drive_id: string; receipt: string }>;
+    return rows.map((row) => {
+      try {
+        return parseDriveReceipt(row.receipt);
+      } catch {
+        return { driveId: row.drive_id, divergence: "receipt unreadable" };
+      }
+    });
   }
 
   insertCapability(row: VnextAttemptCapabilityRow): void {
