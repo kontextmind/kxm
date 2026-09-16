@@ -1,9 +1,9 @@
 import { spawn } from "node:child_process";
 import { closeSync, mkdirSync, openSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, resolve } from "node:path";
 import { probeHubHealth, readHubBinding } from "./hub-binding.ts";
 import { resolveHubCredentials } from "./hub-env.ts";
+import { findKxmRepoRoot } from "./repo-root.ts";
 import { redactSecrets } from "./redact.ts";
 
 /** Background hub auto-start for harness extensions (Pi TUI, one-shot CLIs).
@@ -99,11 +99,11 @@ export function readLiveHubClaim(stateDir: string, processExists: (pid: number) 
   };
 }
 
-/** The hub wrapper script next to the checked-out KXM repo. The extension and
+/** The hub wrapper script at the KXM repo/package root. The extension and
  * the CLI both resolve the same path so auto-start launches the identical
  * supervision wrapper as `kxm hub start`. */
 export function defaultHubWrapperScriptPath(moduleUrl: string = import.meta.url): string {
-  return resolve(dirname(fileURLToPath(moduleUrl)), "../../../scripts/kxm-hub.mjs");
+  return join(findKxmRepoRoot(moduleUrl), "scripts", "kxm-hub.mjs");
 }
 
 function defaultHubSpawner(command: string, args: readonly string[], options: HubSpawnOptions): HubSpawned {

@@ -7368,10 +7368,10 @@ var require_dist = __commonJS({
 
 // plugins/kxm/src/hub.ts
 import { createHash as createHash4, createHmac } from "node:crypto";
-import { existsSync as existsSync4 } from "node:fs";
+import { existsSync as existsSync5 } from "node:fs";
 import { createServer } from "node:http";
 import { isIP } from "node:net";
-import { dirname as dirname4, join as join5, resolve as resolve6 } from "node:path";
+import { dirname as dirname5, join as join6, resolve as resolve6 } from "node:path";
 
 // plugins/kxm/src/protocol.ts
 import { randomUUID } from "node:crypto";
@@ -10917,7 +10917,7 @@ import { resolve as resolve5 } from "node:path";
 import {
   chmodSync,
   copyFileSync,
-  existsSync as existsSync3,
+  existsSync as existsSync4,
   lstatSync,
   mkdirSync as mkdirSync4,
   readdirSync as readdirSync3,
@@ -10925,7 +10925,7 @@ import {
   unlinkSync,
   writeFileSync as writeFileSync4
 } from "node:fs";
-import { basename as basename3, dirname as dirname3, join as join4, resolve as resolve4 } from "node:path";
+import { basename as basename3, dirname as dirname4, join as join5, resolve as resolve4 } from "node:path";
 
 // plugins/kxm/src/sqlite.ts
 import { createRequire } from "node:module";
@@ -10967,8 +10967,7 @@ var DatabaseSync = class {
 };
 
 // plugins/kxm/src/vnext-config.ts
-import { basename as basename2, dirname as dirname2, extname as extname2, isAbsolute, join as join3, relative, resolve as resolve3, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { basename as basename2, dirname as dirname3, extname as extname2, isAbsolute, join as join4, relative, resolve as resolve3, sep } from "node:path";
 
 // plugins/kxm/src/restricted-yaml.mjs
 var import_yaml3 = __toESM(require_dist(), 1);
@@ -10983,6 +10982,25 @@ var VNEXT_YAML_LIMITS = Object.freeze({
 
 // plugins/kxm/src/vnext-template.ts
 var import_yaml4 = __toESM(require_dist(), 1);
+
+// plugins/kxm/src/repo-root.ts
+import { existsSync as existsSync3 } from "node:fs";
+import { dirname as dirname2, join as join3 } from "node:path";
+import { fileURLToPath } from "node:url";
+var ROOT_MARKERS = ["scripts/kxm-hub.mjs", "scripts/kxm.mjs"];
+var MAX_WALK_DEPTH = 10;
+function findKxmRepoRoot(fromUrl = import.meta.url) {
+  let dir = dirname2(fileURLToPath(fromUrl));
+  for (let depth = 0; depth < MAX_WALK_DEPTH; depth += 1) {
+    if (ROOT_MARKERS.some((marker) => existsSync3(join3(dir, marker)))) return dir;
+    const parent = dirname2(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  throw new Error(
+    `kxm: cannot locate the KXM repo root from ${fileURLToPath(fromUrl)} (walked ${MAX_WALK_DEPTH} levels looking for ${ROOT_MARKERS[0]})`
+  );
+}
 
 // plugins/kxm/src/vnext-oneshot-process.ts
 var OUTPUT_LIMIT = 8 * 1024 * 1024;
@@ -11362,8 +11380,10 @@ var VnextConfigError = class extends Error {
     this.issues = sorted;
   }
 };
-var PACKAGE_ROOT = resolve3(dirname2(fileURLToPath(import.meta.url)), "../../..");
-var DEFAULT_SCHEMA_DIR = join3(PACKAGE_ROOT, "schemas", "vnext");
+function defaultVnextSchemaDir() {
+  return join4(findKxmRepoRoot(import.meta.url), "schemas", "vnext");
+}
+var DEFAULT_SCHEMA_DIR = defaultVnextSchemaDir();
 var RESOURCE_SCHEMA = Object.freeze({
   project: { identity: "kxm.project.v1", file: "project.schema.json" },
   repository: { identity: "kxm.repository.v1", file: "repository.schema.json" },
@@ -11386,8 +11406,8 @@ function databaseError(code, file, message) {
   return new VnextConfigError([issue]);
 }
 function checkedParent(path, description) {
-  const parent = dirname3(path);
-  if (!existsSync3(parent)) mkdirSync4(parent, { recursive: true, mode: 448 });
+  const parent = dirname4(path);
+  if (!existsSync4(parent)) mkdirSync4(parent, { recursive: true, mode: 448 });
   const stat = lstatSync(parent, { throwIfNoEntry: false });
   if (!stat || stat.isSymbolicLink() || !stat.isDirectory()) {
     throw databaseError("runtime_path_invalid", description, `${description} parent must be a regular directory, not a link`);
@@ -12331,7 +12351,7 @@ function createMeshHub(options = {}) {
   const webhookWorkflows2 = new Map((options.webhookWorkflows ?? []).map((workflow) => [workflow.id, workflow]));
   const logger = options.logger ?? (() => void 0);
   const assetsDir2 = options.assetsDir;
-  const hubRepoRoot = options.repoRoot ?? (options.dataPath && options.dataPath !== ":memory:" ? resolve6(dirname4(dirname4(options.dataPath))) : process.cwd());
+  const hubRepoRoot = options.repoRoot ?? (options.dataPath && options.dataPath !== ":memory:" ? resolve6(dirname5(dirname5(options.dataPath))) : process.cwd());
   const store = new MeshStore(options.dataPath);
   const agents = store.agents;
   const messages = store.messages;
@@ -12356,7 +12376,7 @@ function createMeshHub(options = {}) {
   const workflowRuns = store.workflowRuns;
   const journal = store.journal;
   const stateProvider = new NativeStateProvider(store);
-  const skillLifecycle = options.skillLifecycle ?? (options.skillsDir || existsSync4(join5(process.cwd(), ".kxm", "skills")) ? new SkillLifecycle(options.skillsDir ?? join5(process.cwd(), ".kxm", "skills")) : void 0);
+  const skillLifecycle = options.skillLifecycle ?? (options.skillsDir || existsSync5(join6(process.cwd(), ".kxm", "skills")) ? new SkillLifecycle(options.skillsDir ?? join6(process.cwd(), ".kxm", "skills")) : void 0);
   const streams = /* @__PURE__ */ new Map();
   const opsStreams = /* @__PURE__ */ new Set();
   const rateBuckets = /* @__PURE__ */ new Map();
@@ -14263,11 +14283,11 @@ data: ${JSON.stringify({ agent: publicAgent(current) })}
 
 // plugins/kxm/src/server.ts
 import { mkdirSync as mkdirSync6, readFileSync as readFileSync4 } from "node:fs";
-import { dirname as dirname6, join as join6, resolve as resolve7 } from "node:path";
+import { dirname as dirname7, join as join7, resolve as resolve7 } from "node:path";
 
 // plugins/kxm/src/logger.ts
-import { appendFileSync, existsSync as existsSync5, mkdirSync as mkdirSync5, renameSync as renameSync3, statSync as statSync2, unlinkSync as unlinkSync2 } from "node:fs";
-import { dirname as dirname5 } from "node:path";
+import { appendFileSync, existsSync as existsSync6, mkdirSync as mkdirSync5, renameSync as renameSync3, statSync as statSync2, unlinkSync as unlinkSync2 } from "node:fs";
+import { dirname as dirname6 } from "node:path";
 var LOG_LEVEL_PRIORITY = {
   debug: 10,
   info: 20,
@@ -14304,7 +14324,7 @@ function redactLogValue(val, key) {
 function rotateLogFiles(filePath, maxFiles) {
   for (let i = maxFiles; i >= 1; i--) {
     const current = `${filePath}.${i}`;
-    if (existsSync5(current)) {
+    if (existsSync6(current)) {
       if (i >= maxFiles) {
         try {
           unlinkSync2(current);
@@ -14318,7 +14338,7 @@ function rotateLogFiles(filePath, maxFiles) {
       }
     }
   }
-  if (existsSync5(filePath)) {
+  if (existsSync6(filePath)) {
     try {
       renameSync3(filePath, `${filePath}.1`);
     } catch {
@@ -14335,7 +14355,7 @@ function createLogger(options) {
   const shouldStdout = options.stdout ?? !isDaemon;
   const correlationDefaults = options.correlation ?? {};
   let currentSize = 0;
-  if (filePath && existsSync5(filePath)) {
+  if (filePath && existsSync6(filePath)) {
     try {
       currentSize = statSync2(filePath).size;
     } catch {
@@ -14373,7 +14393,7 @@ function createLogger(options) {
         currentSize = 0;
       }
       try {
-        mkdirSync5(dirname5(filePath), { recursive: true });
+        mkdirSync5(dirname6(filePath), { recursive: true });
         appendFileSync(filePath, line, { encoding: "utf8", mode: 384 });
         currentSize += lineBytes;
       } catch {
@@ -14419,13 +14439,13 @@ var host = process.env.KXM_HOST ?? "127.0.0.1";
 var port = Number.parseInt(process.env.KXM_PORT ?? String(DEFAULT_PORT), 10);
 var authToken = process.env.KXM_AUTH_TOKEN;
 var workspaceDir = resolve7(process.env.KXM_WORKSPACE_DIR?.trim() || ".kxm");
-var configDir = resolve7(process.env.KXM_CONFIG_DIR?.trim() || join6(workspaceDir, "config"));
-var logsDir = resolve7(process.env.KXM_LOGS_DIR?.trim() || join6(workspaceDir, "logs"));
-var assetsDir = resolve7(process.env.KXM_ASSETS_DIR?.trim() || join6(workspaceDir, "assets"));
-var stateDir = resolve7(process.env.KXM_STATE_DIR?.trim() || join6(workspaceDir, "state"));
+var configDir = resolve7(process.env.KXM_CONFIG_DIR?.trim() || join7(workspaceDir, "config"));
+var logsDir = resolve7(process.env.KXM_LOGS_DIR?.trim() || join7(workspaceDir, "logs"));
+var assetsDir = resolve7(process.env.KXM_ASSETS_DIR?.trim() || join7(workspaceDir, "assets"));
+var stateDir = resolve7(process.env.KXM_STATE_DIR?.trim() || join7(workspaceDir, "state"));
 var dataPathValue = process.env.KXM_DATA_PATH?.trim();
-var dataPath = dataPathValue === ":memory:" ? dataPathValue : resolve7(dataPathValue || join6(stateDir, "kxm.db"));
-var logPath = resolve7(process.env.KXM_LOG_PATH?.trim() || join6(logsDir, "kxm-hub.jsonl"));
+var dataPath = dataPathValue === ":memory:" ? dataPathValue : resolve7(dataPathValue || join7(stateDir, "kxm.db"));
+var logPath = resolve7(process.env.KXM_LOG_PATH?.trim() || join7(logsDir, "kxm-hub.jsonl"));
 var messageTtlMs = Number.parseInt(process.env.KXM_MESSAGE_TTL_MS ?? String(DEFAULT_MESSAGE_TTL_MS), 10);
 var messageRetentionMs = Number.parseInt(
   process.env.KXM_MESSAGE_RETENTION_MS ?? String(DEFAULT_MESSAGE_RETENTION_MS),
@@ -14436,7 +14456,7 @@ var rateLimitWindowMs = Number.parseInt(
   process.env.KXM_RATE_LIMIT_WINDOW_MS ?? String(DEFAULT_RATE_LIMIT_WINDOW_MS),
   10
 );
-for (const directory of [configDir, logsDir, assetsDir, stateDir, dirname6(logPath)]) {
+for (const directory of [configDir, logsDir, assetsDir, stateDir, dirname7(logPath)]) {
   mkdirSync6(directory, { recursive: true });
 }
 var structuredLog = createLogger({

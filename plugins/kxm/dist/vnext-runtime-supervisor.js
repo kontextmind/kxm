@@ -2987,7 +2987,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve7.call(this, root, ref);
+      let _sch = resolve6.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a = root.localRefs) === null || _a === void 0 ? void 0 : _a[ref];
         const { schemaId } = this.opts;
@@ -3014,7 +3014,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve7(root, ref) {
+    function resolve6(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3839,7 +3839,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve7(baseURI, relativeURI, options) {
+    function resolve6(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const {
         parsed: baseParsed,
@@ -4201,7 +4201,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve: resolve7,
+      resolve: resolve6,
       resolveComponent,
       equal,
       serialize,
@@ -14781,18 +14781,35 @@ var require_dist = __commonJS({
 // plugins/kxm/src/vnext-runtime-supervisor.ts
 import { spawn as spawn3 } from "node:child_process";
 import { createHash as createHash11, createHmac, randomBytes as randomBytes2, timingSafeEqual as timingSafeEqual2 } from "node:crypto";
-import { chmodSync as chmodSync2, existsSync as existsSync9, lstatSync as lstatSync5, mkdirSync as mkdirSync4, readFileSync as readFileSync8, renameSync, rmSync, writeFileSync as writeFileSync4 } from "node:fs";
+import { chmodSync as chmodSync2, existsSync as existsSync10, lstatSync as lstatSync5, mkdirSync as mkdirSync4, readFileSync as readFileSync8, renameSync, rmSync, writeFileSync as writeFileSync4 } from "node:fs";
 import { createServer } from "node:http";
-import { dirname as dirname5, isAbsolute as isAbsolute4, join as join12, resolve as resolve6 } from "node:path";
-import { fileURLToPath as fileURLToPath2 } from "node:url";
+import { dirname as dirname6, isAbsolute as isAbsolute4, join as join13 } from "node:path";
+
+// plugins/kxm/src/repo-root.ts
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+var ROOT_MARKERS = ["scripts/kxm-hub.mjs", "scripts/kxm.mjs"];
+var MAX_WALK_DEPTH = 10;
+function findKxmRepoRoot(fromUrl = import.meta.url) {
+  let dir = dirname(fileURLToPath(fromUrl));
+  for (let depth = 0; depth < MAX_WALK_DEPTH; depth += 1) {
+    if (ROOT_MARKERS.some((marker) => existsSync(join(dir, marker)))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  throw new Error(
+    `kxm: cannot locate the KXM repo root from ${fileURLToPath(fromUrl)} (walked ${MAX_WALK_DEPTH} levels looking for ${ROOT_MARKERS[0]})`
+  );
+}
 
 // plugins/kxm/src/vnext-config.ts
 var import__ = __toESM(require__(), 1);
 import { spawnSync as spawnSync2 } from "node:child_process";
 import { createHash as createHash2 } from "node:crypto";
-import { existsSync as existsSync2, lstatSync, readFileSync, readdirSync, realpathSync } from "node:fs";
-import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { existsSync as existsSync3, lstatSync, readFileSync, readdirSync, realpathSync } from "node:fs";
+import { basename, dirname as dirname2, extname, isAbsolute, join as join2, relative, resolve, sep } from "node:path";
 
 // plugins/kxm/src/restricted-yaml.mjs
 var import_yaml = __toESM(require_dist(), 1);
@@ -15120,7 +15137,7 @@ function resolveVnextTemplateBaseline(value) {
 
 // plugins/kxm/src/vnext-harness.ts
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync as existsSync2 } from "node:fs";
 import { win32 as win32Path } from "node:path";
 
 // plugins/kxm/src/vnext-oneshot-process.ts
@@ -15146,7 +15163,7 @@ function defaultSpawn(command, args, options) {
   if (options.signal?.aborted) {
     return Promise.resolve({ stdout: "", stderr: "", code: null, started: false, observedChildExit: false, error: new Error("process_aborted") });
   }
-  return new Promise((resolve7) => {
+  return new Promise((resolve6) => {
     const stdout = [];
     const stderr = [];
     let outputBytes = 0;
@@ -15177,7 +15194,7 @@ function defaultSpawn(command, args, options) {
       const started = Boolean(child?.pid);
       if (started && !observedChildExit) error ??= new Error("process_exit_unobserved");
       const unverifiedDescendants = stopping || started && !observedChildExit;
-      resolve7({
+      resolve6({
         stdout: Buffer.concat(stdout).toString("utf8"),
         stderr: Buffer.concat(stderr).toString("utf8"),
         code,
@@ -15669,7 +15686,7 @@ function findWinNpmInnerExe(cliId, options = {}) {
   if ((options.platform ?? process.platform) !== "win32") return void 0;
   const segments = WIN_NPM_INNER_EXE[cliId];
   if (!segments) return void 0;
-  const exists = options.existsSync ?? existsSync;
+  const exists = options.existsSync ?? existsSync2;
   const pathEnv = options.pathEnv ?? process.env.PATH ?? "";
   for (const dir of pathEnv.split(";").filter(Boolean)) {
     if (!exists(win32Path.join(dir, `${cliId}.cmd`))) continue;
@@ -16179,8 +16196,10 @@ var VnextConfigError = class extends Error {
     this.issues = sorted;
   }
 };
-var PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-var DEFAULT_SCHEMA_DIR = join(PACKAGE_ROOT, "schemas", "vnext");
+function defaultVnextSchemaDir() {
+  return join2(findKxmRepoRoot(import.meta.url), "schemas", "vnext");
+}
+var DEFAULT_SCHEMA_DIR = defaultVnextSchemaDir();
 var RESOURCE_SCHEMA = Object.freeze({
   project: { identity: "kxm.project.v1", file: "project.schema.json" },
   repository: { identity: "kxm.repository.v1", file: "repository.schema.json" },
@@ -16245,10 +16264,10 @@ var VnextSchemaRegistry = class {
   constructor(schemasDir = DEFAULT_SCHEMA_DIR) {
     this.schemasDir = resolve(schemasDir);
     this.ajv = new import__.Ajv2020({ allErrors: true, strict: true, strictRequired: false });
-    const common = readJsonObject(join(this.schemasDir, "common.schema.json"));
+    const common = readJsonObject(join2(this.schemasDir, "common.schema.json"));
     this.ajv.addSchema(common);
     for (const definition of Object.values(RESOURCE_SCHEMA)) {
-      this.ajv.addSchema(readJsonObject(join(this.schemasDir, definition.file)));
+      this.ajv.addSchema(readJsonObject(join2(this.schemasDir, definition.file)));
     }
     const localBindingsFile = "local-repository-bindings.schema.json";
     const templateProvenanceFile = "template-provenance.schema.json";
@@ -16258,14 +16277,14 @@ var VnextSchemaRegistry = class {
     const migrationReceiptFile = "migration-receipt.schema.json";
     const permissionDiffFile = "permission-diff.schema.json";
     const runEventFile = "run-event.schema.json";
-    this.ajv.addSchema(readJsonObject(join(this.schemasDir, localBindingsFile)));
-    this.ajv.addSchema(readJsonObject(join(this.schemasDir, templateProvenanceFile)));
-    this.ajv.addSchema(readJsonObject(join(this.schemasDir, initOperationFile)));
-    this.ajv.addSchema(readJsonObject(join(this.schemasDir, migrationPlanFile)));
-    this.ajv.addSchema(readJsonObject(join(this.schemasDir, migrationDecisionFile)));
-    this.ajv.addSchema(readJsonObject(join(this.schemasDir, migrationReceiptFile)));
-    this.ajv.addSchema(readJsonObject(join(this.schemasDir, permissionDiffFile)));
-    this.ajv.addSchema(readJsonObject(join(this.schemasDir, runEventFile)));
+    this.ajv.addSchema(readJsonObject(join2(this.schemasDir, localBindingsFile)));
+    this.ajv.addSchema(readJsonObject(join2(this.schemasDir, templateProvenanceFile)));
+    this.ajv.addSchema(readJsonObject(join2(this.schemasDir, initOperationFile)));
+    this.ajv.addSchema(readJsonObject(join2(this.schemasDir, migrationPlanFile)));
+    this.ajv.addSchema(readJsonObject(join2(this.schemasDir, migrationDecisionFile)));
+    this.ajv.addSchema(readJsonObject(join2(this.schemasDir, migrationReceiptFile)));
+    this.ajv.addSchema(readJsonObject(join2(this.schemasDir, permissionDiffFile)));
+    this.ajv.addSchema(readJsonObject(join2(this.schemasDir, runEventFile)));
     for (const [kind, definition] of Object.entries(RESOURCE_SCHEMA)) {
       const validator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${definition.file}`);
       if (!validator) throw new Error(`schema did not compile: ${definition.file}`);
@@ -16372,15 +16391,15 @@ function containedHostPath(root, candidate) {
 function portableBindingIssue(root, pathHint, repositoryId) {
   let current = root;
   for (const segment of pathHint === "." ? [] : pathHint.split("/")) {
-    current = join(current, segment);
-    if (!existsSync2(current)) break;
+    current = join2(current, segment);
+    if (!existsSync3(current)) break;
     const stat = lstatSync(current);
     if (stat.isSymbolicLink()) {
       return issue2("path", "repository_binding_path_link", ".kxm/project.yaml", `portable pathHint for ${repositoryId} traverses a symbolic link or junction`);
     }
   }
   const binding = resolve(root, ...pathHint.split("/"));
-  if (existsSync2(binding)) {
+  if (existsSync3(binding)) {
     const realRoot = canonicalHostPath(root);
     const realBinding = canonicalHostPath(binding);
     if (!containedHostPath(realRoot, realBinding)) {
@@ -16418,9 +16437,9 @@ function readResource(registry, root, file, logicalPath, kind, id, containmentRo
   }
   if (stat.isSymbolicLink()) fail2("path", "resource_symlink", label, "configuration resources must not be symbolic links");
   const boundary = resolve(containmentRoot);
-  let parent = dirname(file);
+  let parent = dirname2(file);
   while (parent !== boundary) {
-    if (parent === dirname(parent)) fail2("path", "resource_outside_project", label, "resource escapes the project root");
+    if (parent === dirname2(parent)) fail2("path", "resource_outside_project", label, "resource escapes the project root");
     let parentStat;
     try {
       parentStat = lstatSync(parent);
@@ -16428,7 +16447,7 @@ function readResource(registry, root, file, logicalPath, kind, id, containmentRo
       fail2("discovery", "resource_parent_missing", label, "resource parent does not exist");
     }
     if (parentStat.isSymbolicLink()) fail2("path", "resource_parent_symlink", label, "configuration resource parents must not be symbolic links");
-    parent = dirname(parent);
+    parent = dirname2(parent);
   }
   if (!stat.isFile()) fail2("path", "resource_not_file", label, "configuration resource must be a regular file");
   const value = parseRestrictedYaml2(readFileSync(file), label);
@@ -16437,22 +16456,22 @@ function readResource(registry, root, file, logicalPath, kind, id, containmentRo
   return { kind, ...id === void 0 ? {} : { id }, file, logicalPath, value };
 }
 function readTemplateProvenance(registry, root) {
-  const file = join(root, ".kxm", "template-provenance.yaml");
-  if (!existsSync2(file)) return void 0;
+  const file = join2(root, ".kxm", "template-provenance.yaml");
+  if (!existsSync3(file)) return void 0;
   const label = ".kxm/template-provenance.yaml";
   const stat = lstatSync(file);
   if (stat.isSymbolicLink() || !stat.isFile()) {
     fail2("path", "resource_not_file", label, "template provenance must be a regular file, not a link or directory");
   }
-  const configRoot = join(root, ".kxm");
-  let parent = dirname(file);
+  const configRoot = join2(root, ".kxm");
+  let parent = dirname2(file);
   while (parent !== root) {
     const parentStat = lstatSync(parent);
     if (parentStat.isSymbolicLink() || !parentStat.isDirectory()) {
       fail2("path", "resource_parent_symlink", label, "template provenance parents must be regular directories");
     }
     if (parent === configRoot) break;
-    parent = dirname(parent);
+    parent = dirname2(parent);
   }
   const value = parseRestrictedYaml2(readFileSync(file), label);
   const issues = registry.validateTemplateProvenance(value, label);
@@ -16485,7 +16504,7 @@ function readTemplateProvenance(registry, root) {
 }
 function listNamedResources(registry, root, directory, logicalDirectory, kind) {
   const resources = /* @__PURE__ */ new Map();
-  if (!existsSync2(directory)) return resources;
+  if (!existsSync3(directory)) return resources;
   const stat = lstatSync(directory);
   if (stat.isSymbolicLink() || !stat.isDirectory()) {
     fail2("path", "resource_directory_invalid", displayPath(root, directory), "resource directory must be a regular directory");
@@ -16494,27 +16513,27 @@ function listNamedResources(registry, root, directory, logicalDirectory, kind) {
   const entries = readdirSync(directory, { withFileTypes: true }).sort((left, right) => compareCodeUnits3(left.name, right.name));
   for (const entry of entries) {
     if (entry.isDirectory()) {
-      issues.push(issue2("path", "nested_resource_directory", displayPath(root, join(directory, entry.name)), "nested resource directories are not allowed"));
+      issues.push(issue2("path", "nested_resource_directory", displayPath(root, join2(directory, entry.name)), "nested resource directories are not allowed"));
       continue;
     }
     if (!entry.name.toLowerCase().endsWith(".yaml") && !entry.name.toLowerCase().endsWith(".yml")) continue;
     if (!entry.isFile() || extname(entry.name) !== ".yaml") {
-      issues.push(issue2("path", "resource_filename_invalid", displayPath(root, join(directory, entry.name)), "resource must be a regular file with the exact .yaml extension"));
+      issues.push(issue2("path", "resource_filename_invalid", displayPath(root, join2(directory, entry.name)), "resource must be a regular file with the exact .yaml extension"));
       continue;
     }
     const id = basename(entry.name, ".yaml");
     if (kind === "model" && id === "inventory") continue;
     if (!resourceIdentifier(id)) {
-      issues.push(issue2("path", "resource_id_invalid", displayPath(root, join(directory, entry.name)), `filename-derived identity ${id} is invalid or platform-reserved`));
+      issues.push(issue2("path", "resource_id_invalid", displayPath(root, join2(directory, entry.name)), `filename-derived identity ${id} is invalid or platform-reserved`));
       continue;
     }
     const collision = [...resources.keys()].find((candidate) => candidate.toLocaleLowerCase("en-US") === id.toLocaleLowerCase("en-US"));
     if (collision) {
-      issues.push(issue2("path", "resource_id_collision", displayPath(root, join(directory, entry.name)), `${id} case-folds to existing ${collision}`));
+      issues.push(issue2("path", "resource_id_collision", displayPath(root, join2(directory, entry.name)), `${id} case-folds to existing ${collision}`));
       continue;
     }
     try {
-      const resource = readResource(registry, root, join(directory, entry.name), `${logicalDirectory}/${id}.yaml`, kind, id);
+      const resource = readResource(registry, root, join2(directory, entry.name), `${logicalDirectory}/${id}.yaml`, kind, id);
       resources.set(id, resource);
     } catch (error) {
       if (error instanceof VnextConfigError) issues.push(...error.issues);
@@ -16806,8 +16825,8 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
       const writable = Object.values(objectValue(step.repositories) ?? {}).filter((access) => access === "write").length;
       if (maxWriteRepositories > writable) issues.push(issue2("semantic", "write_repository_bound_invalid", file, `${stepId} maxWriteRepositories exceeds writable repository scope`));
     }
-    const join13 = objectValue(step.join);
-    const minimumPassed = join13 && typeof join13.minimumPassed === "number" ? join13.minimumPassed : void 0;
+    const join14 = objectValue(step.join);
+    const minimumPassed = join14 && typeof join14.minimumPassed === "number" ? join14.minimumPassed : void 0;
     if (minimumPassed !== void 0 && minimumPassed > maximum) issues.push(issue2("semantic", "join_impossible", file, `${stepId} minimumPassed exceeds assignment maximum`));
     const distinctBy = names(assignment?.distinctBy);
     if (distinctBy.length > 0) {
@@ -17021,9 +17040,9 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
   if (!workflows.has(defaultWorkflow)) issues.push(issue2("reference", "default_workflow_unknown", project.logicalPath, `default workflow ${defaultWorkflow} does not exist`));
   for (const workflow of workflows.values()) validateWorkflow(workflow, agents, models, repositoryIds, gates, issues);
   if (projectRoot) {
-    const writerRolePath = join(projectRoot, ".kxm", "roles", "writer.yaml");
+    const writerRolePath = join2(projectRoot, ".kxm", "roles", "writer.yaml");
     const implementerAgent = agents.get("implementer") ?? agents.get("writer");
-    if (existsSync2(writerRolePath) && implementerAgent) {
+    if (existsSync3(writerRolePath) && implementerAgent) {
       try {
         const rawRole = parseRestrictedYaml2(readFileSync(writerRolePath, "utf8"));
         const roleObj = objectValue(rawRole);
@@ -17072,7 +17091,7 @@ function gitEnvironment() {
 }
 function discoverGitRoot(start = process.cwd()) {
   let current = resolve(start);
-  if (existsSync2(current) && !lstatSync(current).isDirectory()) current = dirname(current);
+  if (existsSync3(current) && !lstatSync(current).isDirectory()) current = dirname2(current);
   const result = spawnSync2("git", ["-C", current, "rev-parse", "--show-toplevel"], {
     encoding: "utf8",
     env: gitEnvironment(),
@@ -17081,7 +17100,7 @@ function discoverGitRoot(start = process.cwd()) {
   });
   if (result.status !== 0 || result.error || !result.stdout.trim()) return void 0;
   const root = resolve(result.stdout.trim());
-  return existsSync2(root) && lstatSync(root).isDirectory() ? root : void 0;
+  return existsSync3(root) && lstatSync(root).isDirectory() ? root : void 0;
 }
 function assertNoRegisteredGates(options) {
   if ("registeredGates" in options) {
@@ -17098,7 +17117,7 @@ function loadVnextProject(projectRoot, options = {}) {
     migrationReceipt = receiptCheck.receipt;
   }
   const registry = new VnextSchemaRegistry(options.schemasDir);
-  const project = readResource(registry, root, join(root, ".kxm", "project.yaml"), ".kxm/project.yaml", "project");
+  const project = readResource(registry, root, join2(root, ".kxm", "project.yaml"), ".kxm/project.yaml", "project");
   const earlyIssues = [];
   validatePortablePaths(project, earlyIssues);
   const templateProvenance = readTemplateProvenance(registry, root);
@@ -17120,16 +17139,16 @@ function loadVnextProject(projectRoot, options = {}) {
     }
   }
   if (earlyIssues.length > 0) throw new VnextConfigError(earlyIssues);
-  const agents = listNamedResources(registry, root, join(root, ".kxm", "agents"), ".kxm/agents", "agent");
-  const models = listNamedResources(registry, root, join(root, ".kxm", "models"), ".kxm/models", "model");
-  const workflows = listNamedResources(registry, root, join(root, ".kxm", "workflows"), ".kxm/workflows", "workflow");
-  const gatePath = join(root, ".kxm", "gates.yaml");
-  const gateRegistry = existsSync2(gatePath) ? readResource(registry, root, gatePath, ".kxm/gates.yaml", "gate-registry") : void 0;
+  const agents = listNamedResources(registry, root, join2(root, ".kxm", "agents"), ".kxm/agents", "agent");
+  const models = listNamedResources(registry, root, join2(root, ".kxm", "models"), ".kxm/models", "model");
+  const workflows = listNamedResources(registry, root, join2(root, ".kxm", "workflows"), ".kxm/workflows", "workflow");
+  const gatePath = join2(root, ".kxm", "gates.yaml");
+  const gateRegistry = existsSync3(gatePath) ? readResource(registry, root, gatePath, ".kxm/gates.yaml", "gate-registry") : void 0;
   const environments = [];
   const repositories = /* @__PURE__ */ new Map();
   const loadIssues = [];
-  const projectEnvironment = join(root, ".kxm", "project", "env.yaml");
-  if (existsSync2(projectEnvironment)) {
+  const projectEnvironment = join2(root, ".kxm", "project", "env.yaml");
+  if (existsSync3(projectEnvironment)) {
     try {
       environments.push(readResource(registry, root, projectEnvironment, ".kxm/project/env.yaml", "environment"));
     } catch (error) {
@@ -17171,7 +17190,7 @@ function loadVnextProject(projectRoot, options = {}) {
       if (required) loadIssues.push(issue2("discovery", "repository_binding_missing", ".kxm/project.yaml", `required repository ${repositoryId} has no portable pathHint or host-local binding`));
       continue;
     }
-    if (!existsSync2(binding)) {
+    if (!existsSync3(binding)) {
       if (required || hasLocalBinding) loadIssues.push(issue2("discovery", "repository_binding_unavailable", ".kxm/project.yaml", `${hasLocalBinding ? "explicit" : "required"} repository binding ${repositoryId} is unavailable`));
       continue;
     }
@@ -17194,9 +17213,9 @@ function loadVnextProject(projectRoot, options = {}) {
       continue;
     }
     seenBindings.set(foldedBinding, repositoryId);
-    const repositoryFile = join(binding, ".kxm", "repo", "repo.yaml");
+    const repositoryFile = join2(binding, ".kxm", "repo", "repo.yaml");
     let definitionValidated = false;
-    if (existsSync2(repositoryFile)) {
+    if (existsSync3(repositoryFile)) {
       try {
         const resource = readResource(registry, root, repositoryFile, `.kxm/repositories/${repositoryId}/repo.yaml`, "repository", repositoryId, binding);
         if (resource.value.repositoryId !== repositoryId) {
@@ -17212,8 +17231,8 @@ function loadVnextProject(projectRoot, options = {}) {
     } else if (required || hasLocalBinding) {
       loadIssues.push(issue2("discovery", "repository_definition_missing", `.kxm/repositories/${repositoryId}/repo.yaml`, `${hasLocalBinding ? "explicit" : "required"} repository ${repositoryId} has no repo.yaml`));
     }
-    const environmentFile = join(binding, ".kxm", "repo", "env.yaml");
-    if (existsSync2(environmentFile)) {
+    const environmentFile = join2(binding, ".kxm", "repo", "env.yaml");
+    if (existsSync3(environmentFile)) {
       if (!definitionValidated) {
         loadIssues.push(issue2("reference", "repository_environment_without_definition", `.kxm/repositories/${repositoryId}/env.yaml`, `repository ${repositoryId} environment requires a validated matching repo.yaml`));
       } else {
@@ -17250,14 +17269,14 @@ var LEGACY_CONFIG_FILES = [".kxm/config/agents.json", ".kxm/config/gates.json"];
 function legacyConfigFilesAt(root) {
   const files = [];
   for (const component of [".kxm", ".kxm/config"]) {
-    const absolute = join(root, ...component.split("/"));
-    if (existsSync2(absolute) && lstatSync(absolute).isSymbolicLink()) return [component];
+    const absolute = join2(root, ...component.split("/"));
+    if (existsSync3(absolute) && lstatSync(absolute).isSymbolicLink()) return [component];
   }
   for (const candidate of LEGACY_CONFIG_FILES) {
-    if (existsSync2(join(root, ...candidate.split("/")))) files.push(candidate);
+    if (existsSync3(join2(root, ...candidate.split("/")))) files.push(candidate);
   }
-  const workflowsDir = join(root, ".kxm", "config", "workflows");
-  if (existsSync2(workflowsDir)) {
+  const workflowsDir = join2(root, ".kxm", "config", "workflows");
+  if (existsSync3(workflowsDir)) {
     const stat = lstatSync(workflowsDir);
     if (stat.isSymbolicLink()) {
       files.push(".kxm/config/workflows");
@@ -17272,8 +17291,8 @@ function legacyConfigFilesAt(root) {
   return files;
 }
 function hashFileRecord(root, relativePath) {
-  const absolute = join(root, ...relativePath.split("/"));
-  if (!existsSync2(absolute)) return void 0;
+  const absolute = join2(root, ...relativePath.split("/"));
+  if (!existsSync3(absolute)) return void 0;
   const bytes = readFileSync(absolute);
   return {
     path: relativePath,
@@ -17286,9 +17305,9 @@ function migrationReceiptSelfHash(receipt) {
   return `sha256:${createHash2("sha256").update(vnextCanonicalJson(unsigned), "utf8").digest("hex")}`;
 }
 function readVnextMigrationReceipt(root, options = {}) {
-  const receiptPath = join(root, ...VNEXT_MIGRATION_RECEIPT_PATH.split("/"));
+  const receiptPath = join2(root, ...VNEXT_MIGRATION_RECEIPT_PATH.split("/"));
   const legacyFiles = legacyConfigFilesAt(root);
-  if (!existsSync2(receiptPath)) {
+  if (!existsSync3(receiptPath)) {
     return {
       issues: legacyFiles.map((file) => issue2("semantic", "legacy_vnext_conflict", file, "legacy and vNext configuration cannot coexist before an accepted migration receipt"))
     };
@@ -17334,8 +17353,8 @@ function readVnextMigrationReceipt(root, options = {}) {
 
 // plugins/kxm/src/vnext-runtime-store.ts
 import { createHash as createHash3, randomUUID } from "node:crypto";
-import { existsSync as existsSync4, lstatSync as lstatSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync3, realpathSync as realpathSync2, writeFileSync as writeFileSync2 } from "node:fs";
-import { dirname as dirname4, join as join4, resolve as resolve4 } from "node:path";
+import { existsSync as existsSync5, lstatSync as lstatSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync3, realpathSync as realpathSync2, writeFileSync as writeFileSync2 } from "node:fs";
+import { dirname as dirname5, join as join5, resolve as resolve4 } from "node:path";
 
 // plugins/kxm/src/vnext-bindings.ts
 import { homedir } from "node:os";
@@ -17380,7 +17399,7 @@ var DatabaseSync = class {
 };
 
 // plugins/kxm/src/vnext-bindings.ts
-import { dirname as dirname2, isAbsolute as isAbsolute2, join as join2, parse, relative as relative2, resolve as resolve2, sep as sep2 } from "node:path";
+import { dirname as dirname3, isAbsolute as isAbsolute2, join as join3, parse, relative as relative2, resolve as resolve2, sep as sep2 } from "node:path";
 var MAX_BINDING_RECORD_BYTES = 256 * 1024;
 var BINDING_LABEL = "Runtime-local repository bindings";
 function bindingIssue(phase, code, message) {
@@ -17400,12 +17419,12 @@ function vnextUserStateRoot(options = {}) {
   }
   if (platform === "win32") {
     const localAppData = env.LOCALAPPDATA?.trim();
-    const base2 = localAppData && isAbsolute2(localAppData) ? localAppData : join2(home, "AppData", "Local");
+    const base2 = localAppData && isAbsolute2(localAppData) ? localAppData : join3(home, "AppData", "Local");
     return resolve2(base2, "KXM");
   }
   if (platform === "darwin") return resolve2(home, "Library", "Application Support", "KXM");
   const xdgState = env.XDG_STATE_HOME?.trim();
-  const base = xdgState && isAbsolute2(xdgState) ? xdgState : join2(home, ".local", "state");
+  const base = xdgState && isAbsolute2(xdgState) ? xdgState : join3(home, ".local", "state");
   return resolve2(base, "kxm");
 }
 
@@ -17413,7 +17432,7 @@ function vnextUserStateRoot(options = {}) {
 import {
   chmodSync,
   copyFileSync,
-  existsSync as existsSync3,
+  existsSync as existsSync4,
   lstatSync as lstatSync2,
   mkdirSync,
   readdirSync as readdirSync2,
@@ -17421,14 +17440,14 @@ import {
   unlinkSync,
   writeFileSync
 } from "node:fs";
-import { basename as basename2, dirname as dirname3, join as join3, resolve as resolve3 } from "node:path";
+import { basename as basename2, dirname as dirname4, join as join4, resolve as resolve3 } from "node:path";
 function databaseError(code, file, message) {
   const issue3 = { phase: "semantic", code, file, message };
   return new VnextConfigError([issue3]);
 }
 function checkedParent(path, description) {
-  const parent = dirname3(path);
-  if (!existsSync3(parent)) mkdirSync(parent, { recursive: true, mode: 448 });
+  const parent = dirname4(path);
+  if (!existsSync4(parent)) mkdirSync(parent, { recursive: true, mode: 448 });
   const stat = lstatSync2(parent, { throwIfNoEntry: false });
   if (!stat || stat.isSymbolicLink() || !stat.isDirectory()) {
     throw databaseError("runtime_path_invalid", description, `${description} parent must be a regular directory, not a link`);
@@ -17582,12 +17601,12 @@ function withDatabaseTransaction(database, work, mode = "IMMEDIATE") {
 // plugins/kxm/src/vnext-runtime-store.ts
 function vnextRuntimePaths(options = {}) {
   const stateRoot = options.stateRoot ? resolve4(options.stateRoot) : vnextUserStateRoot({ ...options.env ? { env: options.env } : {}, ...options.homeDir ? { homeDir: options.homeDir } : {} });
-  const runtimeDir = join4(stateRoot, "runtime");
+  const runtimeDir = join5(stateRoot, "runtime");
   return {
     stateRoot,
     runtimeDir,
-    registryDb: join4(runtimeDir, "registry.db"),
-    projectsDir: join4(runtimeDir, "projects")
+    registryDb: join5(runtimeDir, "registry.db"),
+    projectsDir: join5(runtimeDir, "projects")
   };
 }
 function runtimeIssue(phase, code, file, message) {
@@ -18049,7 +18068,7 @@ var VnextRunEventStore = class {
   }
   readRunPrompts() {
     const sidecar = this.runPromptSidecarPath();
-    if (!existsSync4(sidecar)) return {};
+    if (!existsSync5(sidecar)) return {};
     try {
       const parsed = JSON.parse(readFileSync3(sidecar, "utf8"));
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
@@ -18772,8 +18791,8 @@ function capabilityFromRow(row) {
 
 // plugins/kxm/src/vnext-runtime.ts
 import { createHash as createHash5 } from "node:crypto";
-import { existsSync as existsSync5, readdirSync as readdirSync3, readFileSync as readFileSync4 } from "node:fs";
-import { join as join5 } from "node:path";
+import { existsSync as existsSync6, readdirSync as readdirSync3, readFileSync as readFileSync4 } from "node:fs";
+import { join as join6 } from "node:path";
 
 // plugins/kxm/src/vnext-engine-fold.ts
 var VNEXT_RUN_STATE_SCHEMA = "kxm.run-state.v2";
@@ -20072,7 +20091,7 @@ function compileStep(step, index, stepIndex, requirePlanHash, sink) {
   const maxAttempts = compileCountField(step.maxAttempts, 1, `${id}.maxAttempts`, id, sink);
   const timeoutMs = compileOptionalDuration(step.timeoutMs, `${id}.timeoutMs`, id, sink);
   const assignments = compileAssignments(step, id, agent, sink);
-  const join13 = compileJoin(step, id, sink);
+  const join14 = compileJoin(step, id, sink);
   const requiredEvidence = compileEvidence(step, id, sink);
   const transitions = compileTransitions(step, id, index, stepIndex, sink);
   const outcomes = Object.keys(transitions).sort(compareCodeUnits4);
@@ -20100,7 +20119,7 @@ function compileStep(step, index, stepIndex, requirePlanHash, sink) {
     transitions: orderedTransitions,
     requiresPlanHash: requirePlanHash.includes(id),
     assignments,
-    join: join13
+    join: join14
   };
   if (kind === "agent" || kind === "moa") {
     if (!agent) return void 0;
@@ -20150,15 +20169,15 @@ function compileAssignments(step, stepId, primaryAgentId, sink) {
   };
 }
 function compileJoin(step, stepId, sink) {
-  const join13 = objectValue2(step.join);
-  if (!join13) return { strategy: "all" };
-  const declared = stringValue2(join13.strategy);
+  const join14 = objectValue2(step.join);
+  if (!join14) return { strategy: "all" };
+  const declared = stringValue2(join14.strategy);
   const strategy = declared && JOIN_STRATEGIES.has(declared) ? declared : "all";
-  const minimumPassed = compileOptionalCount(join13.minimumPassed, `${stepId}.join.minimumPassed`, stepId, sink);
+  const minimumPassed = compileOptionalCount(join14.minimumPassed, `${stepId}.join.minimumPassed`, stepId, sink);
   const compiled = {
     strategy,
     ...minimumPassed !== void 0 ? { minimumPassed } : {},
-    ...typeof join13.cancelRemaining === "boolean" ? { cancelRemaining: join13.cancelRemaining } : {}
+    ...typeof join14.cancelRemaining === "boolean" ? { cancelRemaining: join14.cancelRemaining } : {}
   };
   return compiled;
 }
@@ -21479,12 +21498,12 @@ function enqueueVnextScheduledRun(storePath, runId, configRevision, bound, start
   if (owner.admitted.has(runId) || owner.queue.some((item) => item.runId === runId)) {
     return Promise.reject(runtimeError("run_busy", runId, `run ${runId} is already admitted or queued`));
   }
-  return new Promise((resolve7, reject) => {
+  return new Promise((resolve6, reject) => {
     owner.queue.push({
       runId,
       configRevision,
       bound,
-      start: (token) => start(token).then(resolve7, reject),
+      start: (token) => start(token).then(resolve6, reject),
       fail: (error) => reject(error)
     });
     pump(storePath, owner);
@@ -21545,11 +21564,11 @@ function vnextToolPolicyRevision(bundle) {
   return sha256Of(vnextCanonicalJson({ policies, gateRegistry: bundle.gateRegistry?.value ?? null }));
 }
 function collectMemoryFiles(dir, baseDir, ignoreSubdirs = /* @__PURE__ */ new Set()) {
-  if (!existsSync5(dir)) return [];
+  if (!existsSync6(dir)) return [];
   const entries = readdirSync3(dir, { withFileTypes: true });
   const results = [];
   for (const entry of entries) {
-    const fullPath = join5(dir, entry.name);
+    const fullPath = join6(dir, entry.name);
     if (entry.isDirectory()) {
       if (ignoreSubdirs.has(entry.name)) continue;
       results.push(...collectMemoryFiles(fullPath, baseDir, ignoreSubdirs));
@@ -21562,15 +21581,15 @@ function collectMemoryFiles(dir, baseDir, ignoreSubdirs = /* @__PURE__ */ new Se
 }
 function computeVnextMemoryRevision(bundle, options = {}) {
   const hash = createHash5("sha256");
-  const memoryDir = options.memoryDir ?? join5(bundle.projectRoot, ".kxm", "memory");
+  const memoryDir = options.memoryDir ?? join6(bundle.projectRoot, ".kxm", "memory");
   const memoryFiles = collectMemoryFiles(memoryDir, memoryDir, /* @__PURE__ */ new Set(["candidates"])).sort((left, right) => compareCodeUnits5(left.relPath, right.relPath));
   for (const file of memoryFiles) {
     hash.update(`memory:${file.relPath}\0`, "utf8");
     hash.update(readFileSync4(file.fullPath));
     hash.update("\0", "utf8");
   }
-  const skillsDir = options.skillsDir ?? join5(bundle.projectRoot, ".kxm", "skills");
-  const promotedSkillsDir = join5(skillsDir, "promoted");
+  const skillsDir = options.skillsDir ?? join6(bundle.projectRoot, ".kxm", "skills");
+  const promotedSkillsDir = join6(skillsDir, "promoted");
   const skillFiles = collectMemoryFiles(promotedSkillsDir, promotedSkillsDir).sort((left, right) => compareCodeUnits5(left.relPath, right.relPath));
   for (const file of skillFiles) {
     hash.update(`skill:${file.relPath}\0`, "utf8");
@@ -21646,7 +21665,7 @@ function openVnextRuntimeContext(projectRoot, options) {
       configRevision: bundle.configRevision,
       now: options.now ?? (/* @__PURE__ */ new Date()).toISOString()
     });
-    const eventStore = new VnextRunEventStore(join5(paths.projectsDir, registration.projectKey, "run-events.db"));
+    const eventStore = new VnextRunEventStore(join6(paths.projectsDir, registration.projectKey, "run-events.db"));
     registerVnextRuntimeHandle(eventStore.path);
     return {
       registry,
@@ -21961,12 +21980,12 @@ function cancelVnextRun(context, runId, options = {}) {
 }
 
 // plugins/kxm/src/vnext-oneshot-producer.ts
-import { join as join11 } from "node:path";
+import { join as join12 } from "node:path";
 
 // plugins/kxm/src/vnext-oneshot-evidence.ts
 import { createHash as createHash6, randomUUID as randomUUID3 } from "node:crypto";
 import { lstat, mkdir, open, rename } from "node:fs/promises";
-import { join as join6 } from "node:path";
+import { join as join7 } from "node:path";
 var ONESHOT_EVIDENCE_SCHEMA = "kxm.oneshot-evidence.v2";
 var RETIRED_ONESHOT_EVIDENCE_SCHEMAS = /* @__PURE__ */ new Set(["kxm.oneshot-evidence.v1"]);
 var TEXT_LIMIT = 4 * 1024 * 1024;
@@ -21996,7 +22015,7 @@ async function beginOneShotEvidence(root, intent, sensitive) {
     throw new Error("oneshot_evidence_root_not_private");
   }
   const id = `evd_${randomUUID3().replaceAll("-", "")}`;
-  const dir = join6(root, id);
+  const dir = join7(root, id);
   await mkdir(dir, { mode: 448 });
   const secrets = [...new Set(sensitive.filter((value) => value.length >= 8))].sort((a, b) => b.length - a.length);
   const redact = (value) => {
@@ -22016,7 +22035,7 @@ async function beginOneShotEvidence(root, intent, sensitive) {
     const bytes = JSON.stringify(value);
     if (Buffer.byteLength(bytes) > RECORD_LIMIT) throw new Error("oneshot_evidence_record_limit");
     parseOneShotEvidenceRecord(bytes);
-    const target = join6(dir, name);
+    const target = join7(dir, name);
     const partial = `${target}.partial`;
     const file = await open(partial, "wx", 384);
     try {
@@ -22083,8 +22102,8 @@ async function beginOneShotEvidence(root, intent, sensitive) {
 // plugins/kxm/src/prices.ts
 var import_yaml3 = __toESM(require_dist(), 1);
 import { createHash as createHash7 } from "node:crypto";
-import { existsSync as existsSync6, readFileSync as readFileSync5, statSync } from "node:fs";
-import { join as join7 } from "node:path";
+import { existsSync as existsSync7, readFileSync as readFileSync5, statSync } from "node:fs";
+import { join as join8 } from "node:path";
 
 // plugins/kxm/src/price-calc.ts
 var PRICES_SCHEMA = "kxm.prices.v1";
@@ -22236,8 +22255,8 @@ function parsePriceCatalog(text) {
   return catalog;
 }
 function loadPriceCatalog(rootOrPath) {
-  const candidatePath = existsSync6(join7(rootOrPath, ".kxm", "prices.yaml")) ? join7(rootOrPath, ".kxm", "prices.yaml") : existsSync6(join7(rootOrPath, "prices.yaml")) ? join7(rootOrPath, "prices.yaml") : existsSync6(rootOrPath) && statSync(rootOrPath).isFile() ? rootOrPath : void 0;
-  if (!candidatePath || !existsSync6(candidatePath)) {
+  const candidatePath = existsSync7(join8(rootOrPath, ".kxm", "prices.yaml")) ? join8(rootOrPath, ".kxm", "prices.yaml") : existsSync7(join8(rootOrPath, "prices.yaml")) ? join8(rootOrPath, "prices.yaml") : existsSync7(rootOrPath) && statSync(rootOrPath).isFile() ? rootOrPath : void 0;
+  if (!candidatePath || !existsSync7(candidatePath)) {
     return void 0;
   }
   const content = readFileSync5(candidatePath, "utf8");
@@ -22247,28 +22266,28 @@ function loadPriceCatalog(rootOrPath) {
 // plugins/kxm/src/vnext-engine.ts
 var import_yaml5 = __toESM(require_dist(), 1);
 import { createHash as createHash10, randomBytes, timingSafeEqual } from "node:crypto";
-import { existsSync as existsSync8, readFileSync as readFileSync7 } from "node:fs";
-import { join as join10 } from "node:path";
+import { existsSync as existsSync9, readFileSync as readFileSync7 } from "node:fs";
+import { join as join11 } from "node:path";
 
 // plugins/kxm/src/producers.ts
 var import_yaml4 = __toESM(require_dist(), 1);
-import { existsSync as existsSync7, readFileSync as readFileSync6, mkdirSync as mkdirSync3, writeFileSync as writeFileSync3, readdirSync as readdirSync4 } from "node:fs";
-import { join as join8 } from "node:path";
+import { existsSync as existsSync8, readFileSync as readFileSync6, mkdirSync as mkdirSync3, writeFileSync as writeFileSync3, readdirSync as readdirSync4 } from "node:fs";
+import { join as join9 } from "node:path";
 var empty = () => ({ schema: "kxm.producers.v1", updatedAt: (/* @__PURE__ */ new Date()).toISOString(), promoted: [], demoted: [], enabled: [], disabled: [], roles: {} });
 function loadProducerPolicy(root) {
-  const path = join8(root, ".kxm", "producers.yaml");
-  if (!existsSync7(path)) return empty();
+  const path = join9(root, ".kxm", "producers.yaml");
+  if (!existsSync8(path)) return empty();
   const value = (0, import_yaml4.parse)(readFileSync6(path, "utf8"));
   if (value?.schema !== "kxm.producers.v1" || !Array.isArray(value.promoted) || !Array.isArray(value.demoted)) throw new Error("invalid .kxm/producers.yaml");
   return { schema: "kxm.producers.v1", updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : (/* @__PURE__ */ new Date()).toISOString(), promoted: value.promoted.filter((x) => typeof x === "string"), demoted: value.demoted.filter((x) => typeof x === "string"), enabled: Array.isArray(value.enabled) ? value.enabled.filter((x) => typeof x === "string") : [], disabled: Array.isArray(value.disabled) ? value.disabled.filter((x) => typeof x === "string") : [], roles: value.roles && typeof value.roles === "object" ? Object.fromEntries(Object.entries(value.roles).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [k, v.filter((x) => typeof x === "string")])) : {} };
 }
 function listRoleBindings(root) {
-  const dir = join8(root, ".kxm", "roles");
+  const dir = join9(root, ".kxm", "roles");
   const result = {};
-  if (!existsSync7(dir)) return result;
+  if (!existsSync8(dir)) return result;
   for (const file of readdirSync4(dir).filter((name) => name.endsWith(".yaml"))) {
     const role = file.slice(0, -5);
-    const value = (0, import_yaml4.parse)(readFileSync6(join8(dir, file), "utf8"));
+    const value = (0, import_yaml4.parse)(readFileSync6(join9(dir, file), "utf8"));
     result[role] = (value.roster ?? []).map((entry) => entry.model).filter((model) => typeof model === "string");
   }
   return result;
@@ -22539,7 +22558,7 @@ function pruneContextPacket(packet, tokenBudget) {
 }
 
 // plugins/kxm/src/vnext-engine-artifacts.ts
-import { join as join9 } from "node:path";
+import { join as join10 } from "node:path";
 
 // plugins/kxm/src/artifacts-exist.ts
 import { lstatSync as lstatSync4, realpathSync as realpathSync3, statSync as statSync2 } from "node:fs";
@@ -22586,14 +22605,14 @@ function verifyArtifactExists(rootInput, pathInput) {
 // plugins/kxm/src/vnext-engine-artifacts.ts
 var vnextArtifactsGateSeams = {};
 function evaluateArtifactsGate(context, definition) {
-  const root = join9(context.projectRoot, ".kxm", "assets");
+  const root = join10(context.projectRoot, ".kxm", "assets");
   const startedAt = (/* @__PURE__ */ new Date()).toISOString();
   const startTime = process.hrtime.bigint();
   let checkedCount = 0;
   let failedCount = 0;
   for (const [index, path] of definition.paths.entries()) {
     checkedCount += 1;
-    const result = verifyArtifactExists(root, join9(root, path));
+    const result = verifyArtifactExists(root, join10(root, path));
     if (!result.ok) failedCount += 1;
     vnextArtifactsGateSeams.afterPathChecked?.({ path, index, checkedCount, failedCount });
   }
@@ -22738,8 +22757,8 @@ var CommandObserver = class {
     this.requestStop("error", "lost-close");
   }
   run() {
-    return new Promise((resolve7) => {
-      this.resolveOutcome = resolve7;
+    return new Promise((resolve6) => {
+      this.resolveOutcome = resolve6;
       try {
         this.start();
       } catch (error) {
@@ -23940,8 +23959,8 @@ var VnextRunScheduler = class _VnextRunScheduler {
       resolve: (_value) => void 0,
       reject: (_error) => void 0
     };
-    const settled = new Promise((resolve7, reject) => {
-      pending.resolve = resolve7;
+    const settled = new Promise((resolve6, reject) => {
+      pending.resolve = resolve6;
       pending.reject = reject;
     });
     void settled.then(void 0, () => void 0);
@@ -24276,8 +24295,8 @@ function unreconciledPanelAttemptId(state) {
 }
 function resolveProducerRoute(projectRoot, step, agentId) {
   let agentModel;
-  const agentFile = join10(projectRoot, ".kxm", "agents", `${agentId}.yaml`);
-  if (existsSync8(agentFile)) {
+  const agentFile = join11(projectRoot, ".kxm", "agents", `${agentId}.yaml`);
+  if (existsSync9(agentFile)) {
     try {
       const parsed = (0, import_yaml5.parse)(readFileSync7(agentFile, "utf8"));
       if (typeof parsed?.model === "string") {
@@ -25860,7 +25879,7 @@ Return a final JSON object with an "outcome" field chosen from ${JSON.stringify(
     }
     const spawnFn = options.spawnProcess ?? defaultSpawn;
     const cwd = options.projectRoot ?? process.cwd();
-    const evidence = await beginOneShotEvidence(options.evidenceRoot ?? join11(vnextUserStateRoot(), "runtime", "oneshot-evidence"), {
+    const evidence = await beginOneShotEvidence(options.evidenceRoot ?? join12(vnextUserStateRoot(), "runtime", "oneshot-evidence"), {
       runId: request.runId,
       stepId: request.stepId,
       attemptId: request.attemptId,
@@ -26004,13 +26023,12 @@ Return a final JSON object with an "outcome" field chosen from ${JSON.stringify(
 }
 
 // plugins/kxm/src/vnext-runtime-supervisor.ts
-var repoRoot = resolve6(fileURLToPath2(new URL("../../../", import.meta.url)));
 function vnextSupervisorTokenFile(paths) {
-  return join12(paths.runtimeDir, "supervisor.token");
+  return join13(paths.runtimeDir, "supervisor.token");
 }
 function publishVnextSupervisorToken(paths, token) {
   const file = vnextSupervisorTokenFile(paths);
-  mkdirSync4(dirname5(file), { recursive: true, mode: 448 });
+  mkdirSync4(dirname6(file), { recursive: true, mode: 448 });
   const temp = `${file}.${process.pid}.tmp`;
   writeFileSync4(temp, `${token}
 `, { encoding: "utf8", mode: 384 });
@@ -26048,11 +26066,11 @@ function processAlive(pid) {
 var HEARTBEAT_STALE_MS = 15e3;
 var SUPERVISOR_ERROR_MAX_AGE_MS = 3e4;
 function supervisorErrorFile(paths) {
-  return join12(paths.runtimeDir, "supervisor.error");
+  return join13(paths.runtimeDir, "supervisor.error");
 }
 function clearSupervisorError(paths) {
   const file = supervisorErrorFile(paths);
-  if (existsSync9(file)) rmSync(file, { force: true });
+  if (existsSync10(file)) rmSync(file, { force: true });
 }
 function recordSupervisorError(paths, message) {
   try {
@@ -26075,7 +26093,7 @@ function readRecentSupervisorError(paths) {
   }
 }
 function vnextSupervisorStatus(paths) {
-  if (!existsSync9(paths.registryDb)) return { running: false };
+  if (!existsSync10(paths.registryDb)) return { running: false };
   const registry = new VnextRuntimeRegistry(paths.registryDb);
   try {
     const record2 = registry.supervisor();
@@ -26136,7 +26154,7 @@ async function ensureVnextSupervisor(options = {}) {
     throw runtimeError("runtime_supervisor_unreachable", paths.registryDb, `runtime supervisor pid ${status.pid} is registered as running but cannot be probed`);
   }
   clearSupervisorError(paths);
-  const scriptPath = join12(repoRoot, "scripts", "kxm-runtime-supervisor.mjs");
+  const scriptPath = join13(findKxmRepoRoot(import.meta.url), "scripts", "kxm-runtime-supervisor.mjs");
   const spawnImpl = options.spawnImpl ?? ((script, env) => {
     const child = spawn3(process.execPath, [script], {
       detached: true,
@@ -26221,8 +26239,8 @@ async function waitForDriveSessions(settled, graceMs) {
   try {
     await Promise.race([
       Promise.allSettled(settled),
-      new Promise((resolve7) => {
-        timeout = setTimeout(resolve7, graceMs);
+      new Promise((resolve6) => {
+        timeout = setTimeout(resolve6, graceMs);
         timeout.unref?.();
       })
     ]);
