@@ -10,6 +10,13 @@ promoted:
   # queued — pending OpenRouter auth; not in any role rotation yet.
   - openrouter/qwen/qwen3.8-flash # 1M ctx, thinking; $0.15/M in, $0.47/M out
   - openrouter/z-ai/glm-5.3-flash # 1.31M ctx, thinking; $0.09/M in, $0.30/M out
+  # Qualified 2026-09-16 via live probes on the native z.ai coding plan
+  # (provider zai-coding-cn, subscription/unmetered): smoke + repo-shaped edit
+  # probe + vision probe (screenshot color read) all passed. glm-5.3-highspeed
+  # and glm-5v-turbo NOT admitted: plan returns 429 1311 (not in subscription).
+  # glm-4.6v verified for vision but not admitted (superseded by 5.3-flash).
+  - zai-coding-cn/glm-5.3 # 1M ctx, thinking; coding-plan subscription
+  - zai-coding-cn/glm-5.3-flash # 1M ctx, thinking, vision; coding-plan subscription
 demoted: []
 enabled:
   - anthropic/fable
@@ -18,6 +25,8 @@ enabled:
   - openrouter/qwen/qwen3-coder-plus
   - openrouter/qwen/qwen3.8-flash
   - openrouter/z-ai/glm-5.3-flash
+  - zai-coding-cn/glm-5.3
+  - zai-coding-cn/glm-5.3-flash
 disabled: []
 roles:
   implementer:
