@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-11"
-updated: "2026-09-15"
+updated: "2026-09-16"
 authority: "hypothesis"
 confidence: "uncertain"
 summary: "Technical reference for existing SSH helpers and proposed remote recovery, workspace binding and credential contracts."
@@ -18,6 +18,7 @@ related:
   - history/plan-safety-security-process-integrity.md
   - research-agent-producer-architecture.md
   - history/plan-role-configuration-governance.md
+  - research-harness-streaming-capabilities.md
 depends_on:
   - history/plan-safety-security-process-integrity.md
 blocked_by: []
@@ -39,7 +40,9 @@ archived [`plan-safety-security-process-integrity.md`](history/plan-safety-secur
 [`research-agent-producer-architecture.md`](research-agent-producer-architecture.md)
 (multi-host / SSH agents);
 archived [`plan-role-configuration-governance.md`](history/plan-role-configuration-governance.md)
-(host axis).
+(host axis);
+[`research-harness-streaming-capabilities.md`](research-harness-streaming-capabilities.md)
+(native harness streaming and remote sessions).
 
 ## 1. Objective
 
