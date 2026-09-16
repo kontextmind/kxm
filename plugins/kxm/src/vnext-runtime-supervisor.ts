@@ -633,8 +633,7 @@ async function startVnextRuntimeSupervisorInner(
             sendJson(response, 200, { ok: true, receipt, verified: false, divergence: "run missing" });
             return;
           }
-          const projected = rebuildVnextRunProjection(context, runId);
-          const state = foldStoredVnextRun(context, projected);
+          const state = foldStoredVnextRun(context, stored);
           const events = context.eventStore.events(runId, 0, 1_000_000);
           const checked = verifyVnextDriveReceipt(receipt, events, state.status, { runId, driveId });
           sendJson(response, 200, {

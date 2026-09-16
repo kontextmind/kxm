@@ -391,8 +391,8 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
   addGlobalOptions(runCmd.command("drive").description("Drive a run with an explicit model-free simulation"))
     .argument("<runId>", "Run id")
     .option("--simulated", "Use the model-free simulation producer")
-    .option("--wait", "Wait until a drive receipt is recorded")
-    .option("--timeout-ms <n>", "Wait timeout in milliseconds (default 60000)")
+    .option("--wait", "Wait until a drive receipt is recorded; exits 0 only for a VERIFIED COMPLETED settlement")
+    .option("--timeout-ms <n>", "Wait timeout in milliseconds (default 60000, max 600000)")
     .action(async function runDriveAction(this: Command, runId: string, options: { simulated?: boolean; wait?: boolean; timeoutMs?: string }) {
       result.code = await cmdVnextRunDrive(runtimeFrom(ctx, this), runId, options.simulated === true, {
         wait: options.wait === true,

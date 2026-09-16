@@ -961,6 +961,24 @@ test("supervisor GET /v1/drives/:id returns verified receipts and never 500 on t
     assert.equal(verified.verified, true);
     assert.equal(verified.divergence, undefined);
     assert.equal((verified.receipt as { driveId: string }).driveId, driveBody.driveId);
+    const peekReadOnly = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: handle.runtimeId });
+    try {
+      const db = new DatabaseSync(peekReadOnly.eventStore.path);
+      db.prepare("DELETE FROM run_state WHERE run_id = ?").run(runId);
+      const runBefore = db.prepare("SELECT status, updated_at FROM runs WHERE run_id = ?").get(runId) as { status: string; updated_at: string };
+      db.close();
+      const afterDelete = await vnextRuntimeRequest(handle, "GET", `/v1/drives/${driveBody.driveId}?projectRoot=${encodeURIComponent(root)}`);
+      assert.equal(afterDelete.ok, true);
+      assert.equal(afterDelete.verified, true);
+      const dbAfter = new DatabaseSync(peekReadOnly.eventStore.path);
+      const stateAfter = dbAfter.prepare("SELECT run_id FROM run_state WHERE run_id = ?").get(runId);
+      const runAfter = dbAfter.prepare("SELECT status, updated_at FROM runs WHERE run_id = ?").get(runId) as { status: string; updated_at: string };
+      dbAfter.close();
+      assert.equal(stateAfter, undefined, "GET /v1/drives must not persist run_state");
+      assert.deepEqual(runAfter, runBefore, "GET /v1/drives must not update runs");
+    } finally {
+      closeVnextRuntimeContext(peekReadOnly);
+    }
     const peek = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: handle.runtimeId });
     try {
       const db = new DatabaseSync(peek.eventStore.path);
