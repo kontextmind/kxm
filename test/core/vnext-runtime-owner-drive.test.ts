@@ -17,11 +17,11 @@ import {
   type VnextDriveSession,
 } from "../../plugins/kxm/src/vnext-runtime-owner.ts";
 import {
-  isProducerAdmitted,
+  isRouteAdmitted,
   listInventoryModels,
   listRoleBindings,
-  loadProducerPolicy,
-} from "../../plugins/kxm/src/producers.ts";
+  loadRoutePolicy,
+} from "../../plugins/kxm/src/routes.ts";
 import { removeTempDir } from "../helpers.ts";
 
 function session(runId: string, token: string, driveId: string): VnextDriveSession {
@@ -93,8 +93,8 @@ test("runtime handle counts and producer inventory helpers stay fail-closed", ()
   try {
     assert.deepEqual(listRoleBindings(root), {});
     assert.deepEqual(listInventoryModels(root), []);
-    assert.equal(isProducerAdmitted(root, "missing"), false);
-    assert.equal(loadProducerPolicy(root).schema, "kxm.producers.v1");
+    assert.equal(isRouteAdmitted(root, "missing"), false);
+    assert.equal(loadRoutePolicy(root).schema, "kxm.routes.v2");
     mkdirSync(join(root, ".kxm", "roles"), { recursive: true });
     mkdirSync(join(root, ".kxm", "models"), { recursive: true });
     writeFileSync(join(root, ".kxm", "roles", "writer.yaml"), "schema: kxm.role.v1\nid: writer\nroster:\n  - model: grok-4.6\n", "utf8");

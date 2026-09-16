@@ -2,7 +2,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
-import { isProducerAdmitted, listRoleBindings } from "./producers.ts";
+import { isRouteAdmitted, listRoleBindings } from "./routes.ts";
 import {
   buildFormalContextPacket,
   buildHandoffManifest,
@@ -1317,7 +1317,7 @@ function resolveProducerRoute(
     };
   }
 
-  if (!isProducerAdmitted(projectRoot, selector)) {
+  if (!isRouteAdmitted(projectRoot, selector)) {
     return {
       error: {
         reason: "step_unsupported",

@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { createBackup, restoreBackup } from "../database.ts";
 import { refreshModelInventory } from "../model-inventory.ts";
-import { listInventoryModels, listRoleBindings, loadProducerPolicy, setModelState, updateProducer } from "../producers.ts";
+import { listInventoryModels, listRoleBindings, loadRoutePolicy, setRouteState, updateRouteState } from "../routes.ts";
 import {
   VnextConfigError,
   discoverVnextProjectRoot,
@@ -723,7 +723,7 @@ export async function cmdHarnessList(runtime: Runtime): Promise<number> {
   return 0;
 }
 
-export async function selectProducerModel(runtime: Runtime, requested?: string | undefined): Promise<string | undefined> {
+export async function selectInventoryModel(runtime: Runtime, requested?: string | undefined): Promise<string | undefined> {
   const models = listInventoryModels(runtime.dirs.workdir);
   if (requested) return models.find((model) => model.toLowerCase() === requested.toLowerCase());
   if (runtime.json || !process.stdin.isTTY || models.length === 0) return undefined;
@@ -735,12 +735,12 @@ export async function selectProducerModel(runtime: Runtime, requested?: string |
   return Number.isInteger(index) && index >= 0 && index < models.length ? models[index] : undefined;
 }
 
-export async function cmdProducerChange(runtime: Runtime, status: "promoted" | "demoted", requested?: string | undefined): Promise<number> {
-  const model = await selectProducerModel(runtime, requested);
-  if (!model) { print(runtime.io, runtime.json, { ok: false, command: `producers ${status}`, error: "model_selection_required" }, "select a model from the refreshed inventory"); return 2; }
-  if (runtime.dryRun) { print(runtime.io, runtime.json, { ok: true, command: `producers ${status}`, model, dryRun: true }, `would ${status} ${model}`); return 0; }
-  const policy = updateProducer(runtime.dirs.workdir, model, status);
-  print(runtime.io, runtime.json, { ok: true, command: `producers ${status}`, model, policy }, `${status} ${model}`);
+export async function cmdRouteChange(runtime: Runtime, status: "admitted" | "disabled", requested?: string | undefined): Promise<number> {
+  const model = await selectInventoryModel(runtime, requested);
+  if (!model) { print(runtime.io, runtime.json, { ok: false, command: `routes ${status}`, error: "model_selection_required" }, "select a model from the refreshed inventory"); return 2; }
+  if (runtime.dryRun) { print(runtime.io, runtime.json, { ok: true, command: `routes ${status}`, model, dryRun: true }, `would ${status === "admitted" ? "admit" : "disable"} ${model}`); return 0; }
+  const policy = updateRouteState(runtime.dirs.workdir, model, status);
+  print(runtime.io, runtime.json, { ok: true, command: `routes ${status}`, model, policy }, `${status} ${model}`);
   return 0;
 }
 
@@ -751,24 +751,23 @@ export async function cmdModelsScreen(runtime: Runtime): Promise<number> {
   const ask = (q: string) => new Promise<string>((resolve) => rl.question(q, resolve));
   try {
     while (true) {
-      const policy = loadProducerPolicy(runtime.dirs.workdir);
+      const policy = loadRoutePolicy(runtime.dirs.workdir);
       const roleBindings = listRoleBindings(runtime.dirs.workdir);
-      runtime.io.stdout(models.map((m, i) => `${i + 1}. ${m} [${policy.enabled.includes(m) ? "enabled" : policy.disabled.includes(m) ? "disabled" : "unset"}] [${policy.promoted.includes(m) ? "producer" : policy.demoted.includes(m) ? "demoted" : "not producer"}] roles:${Object.entries(roleBindings).filter(([, xs]) => xs.includes(m)).map(([r]) => r).join(",") || "-"}`).join("\n") + "\n");
-      const command = (await ask("[e]nable [d]isable [p]romote [x]demote [a]dd-role [r]emove-role [q]uit: ")).trim().toLowerCase();
+      runtime.io.stdout(models.map((m, i) => `${i + 1}. ${m} [${policy.admitted.includes(m) ? "admitted" : policy.disabled.includes(m) ? "disabled" : "unset"}] roles:${Object.entries(roleBindings).filter(([, xs]) => xs.includes(m)).map(([r]) => r).join(",") || "-"}`).join("\n") + "\n");
+      const command = (await ask("[a]dmit [d]isable [r]ole-add [x]ole-remove [q]uit: ")).trim().toLowerCase();
       if (command === "q" || command === "quit") return 0;
       const index = Number.parseInt((await ask("model number: ")).trim(), 10) - 1;
       if (!Number.isInteger(index) || !models[index]) continue;
       const model = models[index];
-      if (command === "p" || command === "x") updateProducer(runtime.dirs.workdir, model, command === "p" ? "promoted" : "demoted");
-      else if (command === "e" || command === "d") setModelState(runtime.dirs.workdir, model, command === "e" ? "enabled" : "disabled");
-      else if (command === "a" || command === "r") setModelState(runtime.dirs.workdir, model, "enabled", (await ask("role: ")).trim(), command === "r");
+      if (command === "a" || command === "d") setRouteState(runtime.dirs.workdir, model, command === "a" ? "admitted" : "disabled");
+      else if (command === "r" || command === "x") setRouteState(runtime.dirs.workdir, model, "admitted", (await ask("role: ")).trim(), command === "x");
     }
   } finally { rl.close(); }
 }
 
-export async function cmdProducerList(runtime: Runtime): Promise<number> {
-  const policy = loadProducerPolicy(runtime.dirs.workdir);
-  print(runtime.io, runtime.json, { ok: true, command: "producers list", policy }, [...policy.promoted.map((x) => `promoted ${x}`), ...policy.demoted.map((x) => `demoted ${x}`)].join("\n") || "no producer decisions");
+export async function cmdRouteList(runtime: Runtime): Promise<number> {
+  const policy = loadRoutePolicy(runtime.dirs.workdir);
+  print(runtime.io, runtime.json, { ok: true, command: "routes list", policy }, [...policy.admitted.map((x) => `admitted ${x}`), ...policy.disabled.map((x) => `disabled ${x}`)].join("\n") || "no route decisions");
   return 0;
 }
 

@@ -23,7 +23,7 @@ import {
   type VnextRuntimeContext,
 } from "./vnext-runtime.ts";
 import { createVnextOneShotProducer } from "./vnext-oneshot-producer.ts";
-import { isProducerAdmitted } from "./producers.ts";
+import { isRouteAdmitted } from "./routes.ts";
 import { VnextRunScheduler, createVnextSimulatedProducer, recordDriveReceipt, recoverVnextRun, vnextDrivePollProjection } from "./vnext-engine.ts";
 import { vnextDriveSession, vnextOpenDriveSessions } from "./vnext-runtime-owner.ts";
 
@@ -487,7 +487,7 @@ async function startVnextRuntimeSupervisorInner(
                     const value = model as Record<string, unknown>;
                     const provider = typeof value.provider === "string" ? value.provider : undefined;
                     const modelName = typeof value.model === "string" ? value.model : undefined;
-                    if (!provider || !modelName || !isProducerAdmitted(projectRoot, `${provider}/${modelName}`)) {
+                    if (!provider || !modelName || !isRouteAdmitted(projectRoot, `${provider}/${modelName}`)) {
                       throw new Error("producer_route_not_admitted");
                     }
                     return { provider, model: modelName };
