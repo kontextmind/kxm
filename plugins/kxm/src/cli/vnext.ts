@@ -557,7 +557,32 @@ export async function cmdVnextRunStatus(runtime: Runtime, runId: string): Promis
   }
 }
 
-export async function cmdVnextRunDrive(runtime: Runtime, runId: string, simulated: boolean): Promise<number> {
+const DEFAULT_DRIVE_WAIT_MS = 60_000;
+const MAX_DRIVE_WAIT_MS = 600_000;
+
+function parseDriveWaitTimeoutMs(raw: number | string | undefined): number | undefined {
+  if (raw === undefined) return DEFAULT_DRIVE_WAIT_MS;
+  const value = typeof raw === "number" ? raw : Number(typeof raw === "string" ? raw.trim() : raw);
+  if (!Number.isInteger(value) || value < 1 || value > MAX_DRIVE_WAIT_MS) return undefined;
+  return value;
+}
+
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function driveWaitCompleted(drive: VnextStatusDrive | undefined): boolean {
+  return drive?.verified === true
+    && drive.receipt?.settlement?.kind === "terminal"
+    && drive.receipt.settlement.status === "completed";
+}
+
+export async function cmdVnextRunDrive(
+  runtime: Runtime,
+  runId: string,
+  simulated: boolean,
+  options: { wait?: boolean; timeoutMs?: number | string } = {},
+): Promise<number> {
   try {
     const projectRoot = discoverVnextProjectRoot(runtime.cwd);
     if (!projectRoot) {
@@ -569,8 +594,19 @@ export async function cmdVnextRunDrive(runtime: Runtime, runId: string, simulate
       print(runtime.io, runtime.json, { ok: true, command: "runs drive", dryRun: true, runId, mode }, `drive plan: run ${runId} in ${mode} mode (no events written)`);
       return 0;
     }
+    const timeoutMs = options.wait === true ? parseDriveWaitTimeoutMs(options.timeoutMs) : DEFAULT_DRIVE_WAIT_MS;
+    if (options.wait === true && timeoutMs === undefined) {
+      print(
+        runtime.io,
+        runtime.json,
+        { ok: false, command: "runs drive", error: "run_drive_timeout_invalid" },
+        `run drive --wait --timeout-ms must be an integer between 1 and ${MAX_DRIVE_WAIT_MS}`,
+      );
+      return 1;
+    }
     const supervisor = await (vnextDriveCliSeams.ensureSupervisor ?? ensureVnextSupervisor)({ env: runtime.env });
-    const result = await (vnextDriveCliSeams.runtimeRequest ?? vnextRuntimeRequest)(supervisor, "POST", `/v1/runs/${encodeURIComponent(runId)}/drive?projectRoot=${encodeURIComponent(projectRoot)}`, { mode });
+    const request = vnextDriveCliSeams.runtimeRequest ?? vnextRuntimeRequest;
+    const result = await request(supervisor, "POST", `/v1/runs/${encodeURIComponent(runId)}/drive?projectRoot=${encodeURIComponent(projectRoot)}`, { mode });
     const driveId = result.driveId;
     const poll = result.poll;
     const status = result.status;
@@ -578,13 +614,39 @@ export async function cmdVnextRunDrive(runtime: Runtime, runId: string, simulate
       print(runtime.io, runtime.json, { ok: false, command: "runs drive", error: "run_drive_io_failed" }, "run drive failed because a local operation did not complete");
       return 1;
     }
-    print(
-      runtime.io,
-      runtime.json,
-      { ok: true, command: "runs drive", runId, driveId, poll, mode, status },
-      `drive ${driveId}: accepted (poll ${poll})`,
-    );
-    return 0;
+
+    if (options.wait !== true) {
+      print(
+        runtime.io,
+        runtime.json,
+        { ok: true, command: "runs drive", runId, driveId, poll, mode, status },
+        `drive ${driveId}: accepted (poll ${poll})`,
+      );
+      return 0;
+    }
+
+    const deadline = Date.now() + timeoutMs!;
+    let interval = 25;
+    while (true) {
+      const stateResult = await request(supervisor, "GET", `/v1/runs/${encodeURIComponent(runId)}?projectRoot=${encodeURIComponent(projectRoot)}`);
+      const drive = stateResult.drive as VnextStatusDrive | undefined;
+      if (drive?.receipt) {
+        print(
+          runtime.io,
+          runtime.json,
+          { ok: driveWaitCompleted(drive), command: "runs drive", receipt: drive.receipt, verified: drive.verified === true },
+          JSON.stringify(drive.receipt, null, 2),
+        );
+        return driveWaitCompleted(drive) ? 0 : 1;
+      }
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+      await sleepMs(Math.min(interval, remaining));
+      interval = Math.min(Math.floor(interval * 1.5), 250);
+    }
+
+    print(runtime.io, runtime.json, { ok: false, command: "runs drive", error: "timeout" }, "drive wait timed out");
+    return 1;
   } catch (error) {
     if (error instanceof VnextConfigError) {
       print(runtime.io, runtime.json, { ok: false, command: "runs drive", error: "run_drive_failed", issues: error.issues }, `run drive failed: ${error.message}`);
@@ -769,6 +831,48 @@ export async function cmdVnextRuntime(runtime: Runtime, action: string): Promise
       return 1;
     }
     print(runtime.io, runtime.json, { ok: false, command: "runtime", error: "runtime_io_failed" }, "runtime failed because a local operation did not complete");
+    return 1;
+  }
+}
+
+export async function cmdVnextRunReceipt(runtime: Runtime, runId: string, options: { all?: boolean } = {}): Promise<number> {
+  try {
+    const projectRoot = discoverVnextProjectRoot(runtime.cwd);
+    if (!projectRoot) {
+      print(runtime.io, runtime.json, { ok: false, command: "runs receipt", error: "project_required" }, "kxm runs receipt requires a vNext project (run kxm init first)");
+      return 1;
+    }
+    const supervisor = await (vnextDriveCliSeams.ensureSupervisor ?? ensureVnextSupervisor)({ env: runtime.env });
+    const result = await (vnextDriveCliSeams.runtimeRequest ?? vnextRuntimeRequest)(
+      supervisor,
+      "GET",
+      `/v1/runs/${encodeURIComponent(runId)}/drive?projectRoot=${encodeURIComponent(projectRoot)}`,
+    );
+    if (!Array.isArray(result.receipts)) {
+      print(runtime.io, runtime.json, { ok: false, command: "runs receipt", error: "run_receipt_io_failed" }, "run receipt failed because a local operation did not complete");
+      return 1;
+    }
+    const receipts = result.receipts as unknown[];
+    if (receipts.length === 0) {
+      print(runtime.io, runtime.json, { ok: false, command: "runs receipt", error: "no_receipts" }, `run ${runId} has no drive receipts`);
+      return 1;
+    }
+    if (options.all === true) {
+      print(runtime.io, runtime.json, { ok: true, command: "runs receipt", receipts }, JSON.stringify(receipts, null, 2));
+      return 0;
+    }
+    const latest = receipts[0];
+    const settlement = latest && typeof latest === "object" && "settlement" in latest
+      ? (latest as { settlement: unknown }).settlement
+      : latest;
+    print(runtime.io, runtime.json, { ok: true, command: "runs receipt", receipt: latest }, JSON.stringify(settlement, null, 2));
+    return 0;
+  } catch (error) {
+    if (error instanceof VnextConfigError) {
+      print(runtime.io, runtime.json, { ok: false, command: "runs receipt", error: "run_receipt_failed", issues: error.issues }, `run receipt failed: ${error.message}`);
+      return 1;
+    }
+    print(runtime.io, runtime.json, { ok: false, command: "runs receipt", error: "run_receipt_io_failed" }, "run receipt failed because a local operation did not complete");
     return 1;
   }
 }

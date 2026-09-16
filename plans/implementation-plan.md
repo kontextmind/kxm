@@ -1113,8 +1113,26 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   silently ignored. Witness `npm run verify` green on 5602e5f; critics Fable
   (arch) and Sol (cli) APPROVE after one resolved round (gate settlement
   reason hardcode; CLI cancelled-reason rendering and wire-level budget
-  assertions). Still open for the next slice: drive decoupling
-  B4 optional surfaces (B1 accepted
+  assertions). Drive decoupling B4 is accepted (2026-09-16,
+  task_9076be56b581 slice B4, commits ef690af+fea8760 on
+  feat/p11-b4-drive-surfaces): read-only surfaces over B2/B3 records —
+  GET /v1/runs/:id/drive (session summary without token/controller, receipts
+  newest-first capped at 20), GET /v1/drives/:driveId (receipt + verified +
+  divergence, 404 drive_receipt_missing, corrupt rows reported not 500, fold
+  of the stored run with no persistProjection write), `kxm runs receipt
+  [--all]`, and `kxm runs drive --wait` (client-side poll, exit 0 only for
+  verified completed settlement, timeout bounded to 600000 ms). Writer
+  grok/grok-4.6 (one agy gemini-3.1-pro-high attempt abandoned as partial
+  cost-only, findings transferred); witness `npm run verify` green on
+  fea8760; critics Fable (arch) and Sol (cli) APPROVE after one resolved
+  round (write-on-GET via rebuildVnextRunProjection; CLI help/skill/runCli-
+  boundary gaps). B2/B3/B4 each carry their own evidence;
+  task_9076be56b581 slices are all accepted. Follow-up: GET /v1/runs/:id
+  retains the pre-existing B2 write-on-GET pattern (rebuildVnextRunProjection
+  → persistProjection) — same class as the B4 finding, ticketed separately.
+  The Phase 11 gate itself does not PASS here: Issue-127
+  retirement/acceptance contradictions, npm readiness, and the unexplained
+  Fable ~219s failure remain separate blockers (B1 accepted
   2026-09-15, task_p11-drive-decoupling, commit d590d27f, tree a107f3e2:
   engine-owned drive sessions, driveId on 202, session-owned producer,
   admission-atomic pin+start, bounded truthful shutdown via

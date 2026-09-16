@@ -18764,9 +18764,15 @@ var VnextRunEventStore = class {
   }
   driveReceiptsForRun(runId, limit = 20) {
     const rows = this.database.prepare(`
-      SELECT receipt FROM drive_receipts WHERE run_id = ? ORDER BY closed_at DESC, drive_id DESC LIMIT ?
+      SELECT drive_id, receipt FROM drive_receipts WHERE run_id = ? ORDER BY closed_at DESC, drive_id DESC LIMIT ?
     `).all(runId, limit);
-    return rows.map((row) => parseDriveReceipt(row.receipt));
+    return rows.map((row) => {
+      try {
+        return parseDriveReceipt(row.receipt);
+      } catch {
+        return { driveId: row.drive_id, divergence: "receipt unreadable" };
+      }
+    });
   }
   insertCapability(row) {
     this.database.prepare(`
@@ -22102,6 +22108,9 @@ function clearVnextDriveSession(storePath, runId, token) {
   const current = owner?.admitted.get(runId);
   if (!current || current.token !== token) return;
   delete current.driveSession;
+}
+function vnextDriveSession(storePath, runId) {
+  return owners.get(storePath)?.admitted.get(runId)?.driveSession;
 }
 function vnextOpenDriveSessions(storePath) {
   const owner = owners.get(storePath);
@@ -27388,6 +27397,20 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
             sendJson(response, 200, { ok: true, events });
             return;
           }
+          if (request.method === "GET" && sub === "drive") {
+            const run = context.eventStore.run(runId);
+            if (!run) throw runtimeError("run_unknown", runId, "run not found");
+            const activeSession = vnextDriveSession(context.eventStore.path, runId);
+            const session = activeSession ? {
+              driveId: activeSession.driveId,
+              mode: activeSession.mode,
+              openedAt: activeSession.openedAt,
+              deadlineAt: activeSession.deadlineAt ?? null
+            } : null;
+            const receipts = context.eventStore.driveReceiptsForRun(runId, 20);
+            sendJson(response, 200, { ok: true, session, receipts });
+            return;
+          }
           if (request.method === "POST" && sub === "cancel") {
             const body = await readJsonBody(request);
             const result = cancelVnextRun(context, runId, {
@@ -27420,6 +27443,43 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
             sendJson(response, 200, { ok: true, runId, stageId: body.stageId, signalKey: body.signalKey, waiting: true });
             return;
           }
+        }
+        const driveMatch = /^\/v1\/drives\/([A-Za-z0-9_-]+)$/.exec(url.pathname);
+        if (request.method === "GET" && driveMatch) {
+          const driveId = driveMatch[1];
+          const projectRoot = url.searchParams.get("projectRoot") ?? "";
+          if (!projectRoot) {
+            sendJson(response, 400, { ok: false, error: "runtime_request_invalid", message: "projectRoot query parameter is required" });
+            return;
+          }
+          const context = contextFor(projectRoot);
+          let receipt;
+          try {
+            receipt = context.eventStore.driveReceipt(driveId);
+          } catch {
+            sendJson(response, 200, { ok: true, receipt: null, verified: false, divergence: "receipt unreadable" });
+            return;
+          }
+          if (!receipt) {
+            sendJson(response, 404, { ok: false, error: "drive_receipt_missing", message: "receipt not found" });
+            return;
+          }
+          const runId = receipt.runId;
+          const stored = context.eventStore.run(runId);
+          if (!stored) {
+            sendJson(response, 200, { ok: true, receipt, verified: false, divergence: "run missing" });
+            return;
+          }
+          const state = foldStoredVnextRun(context, stored);
+          const events = context.eventStore.events(runId, 0, 1e6);
+          const checked = verifyVnextDriveReceipt(receipt, events, state.status, { runId, driveId });
+          sendJson(response, 200, {
+            ok: true,
+            receipt,
+            verified: checked.verified,
+            ...checked.divergence !== void 0 ? { divergence: checked.divergence } : {}
+          });
+          return;
         }
         const projectRunsMatch = /^\/v1\/projects\/(prj_[A-Za-z0-9_-]+)\/runs$/.exec(url.pathname);
         if (request.method === "GET" && projectRunsMatch) {

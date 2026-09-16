@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { runCli as runCliImplementation, type CliIo } from "../../plugins/kxm/src/cli.ts";
-import { cmdVnextRunDrive, cmdVnextRunStatus, vnextDriveCliSeams } from "../../plugins/kxm/src/cli/vnext.ts";
+import { cmdVnextRunStatus, vnextDriveCliSeams } from "../../plugins/kxm/src/cli/vnext.ts";
 import type { Runtime } from "../../plugins/kxm/src/cli/types.ts";
 import { vnextLocalBindingFile } from "../../plugins/kxm/src/vnext-bindings.ts";
 import { initializeVnextProject } from "../../plugins/kxm/src/vnext-init.ts";
@@ -637,6 +637,7 @@ test("kxm runs drive requires driveId, poll, and accepted before printing succes
 
     const handle = { runtimeId: "rtm_drivecli", port: 9, token: "tok", started: true as const };
     vnextDriveCliSeams.ensureSupervisor = async () => handle;
+    const env = { KXM_STATE_HOME: stateRoot };
     const accepted = {
       ok: true,
       status: "accepted",
@@ -646,27 +647,15 @@ test("kxm runs drive requires driveId, poll, and accepted before printing succes
       mode: "simulated",
     };
 
-    const driveRuntime = (json: boolean, io: CliIo): Runtime => ({
-      env: { ...process.env, KXM_STATE_HOME: stateRoot },
-      io,
-      cwd,
-      json,
-      dryRun: false,
-      dirs: {
-        workdir: cwd,
-        workspace: cwd,
-        config: join(cwd, ".kxm"),
-        logs: join(cwd, ".kxm", "logs"),
-        assets: join(cwd, ".kxm", "assets"),
-        state: stateRoot,
-      },
-      serverUrl: "http://127.0.0.1",
-      fetchImpl: fetch,
-    });
+    const help = capture();
+    assert.equal(await runCli(["runs", "drive", "--help"], env, help, cwd), 0);
+    assert.match(help.read().stdout, /--simulated/);
+    assert.match(help.read().stdout, /exits 0 only for a\s+VERIFIED COMPLETED settlement/);
+    assert.match(help.read().stdout, /max 600000/);
 
     vnextDriveCliSeams.runtimeRequest = async () => accepted;
     const jsonOk = capture();
-    assert.equal(await cmdVnextRunDrive(driveRuntime(true, jsonOk), "run_drivecli", true), 0);
+    assert.equal(await runCli(["runs", "drive", "run_drivecli", "--simulated", "--json"], env, jsonOk, cwd), 0);
     const jsonPayload = JSON.parse(jsonOk.read().stdout) as { ok: boolean; driveId: string; poll: string; status: string };
     assert.equal(jsonPayload.ok, true);
     assert.equal(jsonPayload.driveId, accepted.driveId);
@@ -674,7 +663,7 @@ test("kxm runs drive requires driveId, poll, and accepted before printing succes
     assert.equal(jsonPayload.status, "accepted");
 
     const textOk = capture();
-    assert.equal(await cmdVnextRunDrive(driveRuntime(false, textOk), "run_drivecli", true), 0);
+    assert.equal(await runCli(["runs", "drive", "run_drivecli", "--simulated"], env, textOk, cwd), 0);
     assert.match(textOk.read().stdout, /drive drv_0123456789abcdef01234567: accepted \(poll \/v1\/runs\/run_drivecli\)/);
 
     const malformedBodies: Record<string, unknown>[] = [
@@ -689,12 +678,12 @@ test("kxm runs drive requires driveId, poll, and accepted before printing succes
     for (const body of malformedBodies) {
       vnextDriveCliSeams.runtimeRequest = async () => body;
       const jsonBad = capture();
-      assert.equal(await cmdVnextRunDrive(driveRuntime(true, jsonBad), "run_drivecli", true), 1);
+      assert.equal(await runCli(["runs", "drive", "run_drivecli", "--simulated", "--json"], env, jsonBad, cwd), 1);
       const jsonError = JSON.parse(jsonBad.read().stderr) as { ok: boolean; error: string };
       assert.equal(jsonError.ok, false);
       assert.equal(jsonError.error, "run_drive_io_failed");
       const textBad = capture();
-      assert.equal(await cmdVnextRunDrive(driveRuntime(false, textBad), "run_drivecli", true), 1);
+      assert.equal(await runCli(["runs", "drive", "run_drivecli", "--simulated"], env, textBad, cwd), 1);
       assert.match(textBad.read().stderr, /run drive failed because a local operation did not complete/);
     }
   } finally {
@@ -797,6 +786,139 @@ test("kxm runs status prints a drive line and passes the receipt through JSON", 
       assert.match(cancelledText, new RegExp(`drive drv_0123456789abcdef01234567: cancelled \\(${reason}\\)`));
       assert.equal(cancelledText.includes("completed"), false, reason);
     }
+  } finally {
+    delete vnextDriveCliSeams.ensureSupervisor;
+    delete vnextDriveCliSeams.runtimeRequest;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(stateRoot, { recursive: true, force: true });
+  }
+});
+
+test("kxm runs receipt prints the newest settlement and lists with --all", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "kxm-run-receipt-cli-"));
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-run-receipt-cli-state-"));
+  try {
+    makeGitRoot(cwd);
+    initializeVnextProject(cwd, { projectId: "prj_01JRECEIPTCLI00000000000", projectName: "Receipt CLI" });
+    spawnSync("git", ["-C", cwd, "add", "-A"], { windowsHide: true });
+    spawnSync("git", ["-C", cwd, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "init"], { windowsHide: true });
+
+    const handle = { runtimeId: "rtm_receiptcli", port: 9, token: "tok", started: true as const };
+    vnextDriveCliSeams.ensureSupervisor = async () => handle;
+    const env = { KXM_STATE_HOME: stateRoot };
+    const newest = {
+      driveId: "drv_bbbbbbbbbbbbbbbbbbbbbbbb",
+      settlement: { kind: "terminal", status: "completed", reason: "" },
+    };
+    const older = {
+      driveId: "drv_aaaaaaaaaaaaaaaaaaaaaaaa",
+      settlement: { kind: "unsettled", status: "running", reason: "runtime_shutdown_grace_expired" },
+    };
+
+    const help = capture();
+    assert.equal(await runCli(["runs", "receipt", "--help"], env, help, cwd), 0);
+    assert.match(help.read().stdout, /--all/);
+
+    vnextDriveCliSeams.runtimeRequest = async () => ({ ok: true, session: null, receipts: [newest, older] });
+    const jsonOk = capture();
+    assert.equal(await runCli(["runs", "receipt", "run_receiptcli", "--json"], env, jsonOk, cwd), 0);
+    const jsonPayload = JSON.parse(jsonOk.read().stdout) as { ok: boolean; receipt: { driveId: string } };
+    assert.equal(jsonPayload.ok, true);
+    assert.equal(jsonPayload.receipt.driveId, newest.driveId);
+    const textOk = capture();
+    assert.equal(await runCli(["runs", "receipt", "run_receiptcli"], env, textOk, cwd), 0);
+    assert.match(textOk.read().stdout, /"kind":"terminal"/);
+    assert.match(textOk.read().stdout, /"status":"completed"/);
+
+    const jsonAll = capture();
+    assert.equal(await runCli(["runs", "receipt", "run_receiptcli", "--all", "--json"], env, jsonAll, cwd), 0);
+    const allPayload = JSON.parse(jsonAll.read().stdout) as { receipts: Array<{ driveId: string }> };
+    assert.equal(allPayload.receipts.length, 2);
+    assert.equal(allPayload.receipts[0]?.driveId, newest.driveId);
+    assert.equal(allPayload.receipts[1]?.driveId, older.driveId);
+
+    vnextDriveCliSeams.runtimeRequest = async () => ({ ok: true, session: null, receipts: [] });
+    const jsonNone = capture();
+    assert.equal(await runCli(["runs", "receipt", "run_receiptcli", "--json"], env, jsonNone, cwd), 1);
+    const nonePayload = JSON.parse(jsonNone.read().stderr) as { ok: boolean; error: string };
+    assert.equal(nonePayload.ok, false);
+    assert.equal(nonePayload.error, "no_receipts");
+    const textNone = capture();
+    assert.equal(await runCli(["runs", "receipt", "run_receiptcli"], env, textNone, cwd), 1);
+    assert.match(textNone.read().stderr, /has no drive receipts/);
+  } finally {
+    delete vnextDriveCliSeams.ensureSupervisor;
+    delete vnextDriveCliSeams.runtimeRequest;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(stateRoot, { recursive: true, force: true });
+  }
+});
+
+test("kxm runs drive --wait exits 0 only for a verified completed receipt", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "kxm-run-drive-wait-cli-"));
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-run-drive-wait-cli-state-"));
+  try {
+    makeGitRoot(cwd);
+    initializeVnextProject(cwd, { projectId: "prj_01JDRIVEWAITCLI000000000", projectName: "Drive Wait CLI" });
+    spawnSync("git", ["-C", cwd, "add", "-A"], { windowsHide: true });
+    spawnSync("git", ["-C", cwd, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "init"], { windowsHide: true });
+
+    const handle = { runtimeId: "rtm_drivewaitcli", port: 9, token: "tok", started: true as const };
+    vnextDriveCliSeams.ensureSupervisor = async () => handle;
+    const env = { KXM_STATE_HOME: stateRoot };
+    const accepted = {
+      ok: true,
+      status: "accepted",
+      runId: "run_drivewaitcli",
+      driveId: "drv_0123456789abcdef01234567",
+      poll: "/v1/runs/run_drivewaitcli",
+      mode: "simulated",
+    };
+    const completedReceipt = {
+      driveId: accepted.driveId,
+      settlement: { kind: "terminal", status: "completed", reason: "" },
+    };
+    const cancelledReceipt = {
+      driveId: accepted.driveId,
+      settlement: { kind: "terminal", status: "cancelled", reason: "operator_cancel" },
+    };
+
+    vnextDriveCliSeams.runtimeRequest = async (_supervisor, method) => {
+      if (method === "POST") return accepted;
+      return { ok: true, run: { runId: accepted.runId, status: "completed" }, drive: { receipt: completedReceipt, verified: true } };
+    };
+    const jsonOk = capture();
+    assert.equal(await runCli(["runs", "drive", "run_drivewaitcli", "--simulated", "--wait", "--timeout-ms", "200", "--json"], env, jsonOk, cwd), 0);
+    const jsonPayload = JSON.parse(jsonOk.read().stdout) as { ok: boolean; receipt: { driveId: string }; verified: boolean };
+    assert.equal(jsonPayload.ok, true);
+    assert.equal(jsonPayload.verified, true);
+    assert.equal(jsonPayload.receipt.driveId, accepted.driveId);
+
+    vnextDriveCliSeams.runtimeRequest = async (_supervisor, method) => {
+      if (method === "POST") return accepted;
+      return { ok: true, run: { runId: accepted.runId, status: "cancelled" }, drive: { receipt: cancelledReceipt, verified: true } };
+    };
+    const jsonCancelled = capture();
+    assert.equal(await runCli(["runs", "drive", "run_drivewaitcli", "--simulated", "--wait", "--timeout-ms", "200", "--json"], env, jsonCancelled, cwd), 1);
+    const cancelledPayload = JSON.parse(jsonCancelled.read().stderr) as { ok: boolean; receipt: { settlement: { status: string } } };
+    assert.equal(cancelledPayload.ok, false);
+    assert.equal(cancelledPayload.receipt.settlement.status, "cancelled");
+
+    vnextDriveCliSeams.runtimeRequest = async (_supervisor, method) => {
+      if (method === "POST") return accepted;
+      return { ok: true, run: { runId: accepted.runId, status: "running" } };
+    };
+    const jsonTimeout = capture();
+    assert.equal(await runCli(["runs", "drive", "run_drivewaitcli", "--simulated", "--wait", "--timeout-ms", "40", "--json"], env, jsonTimeout, cwd), 1);
+    const timeoutPayload = JSON.parse(jsonTimeout.read().stderr) as { ok: boolean; error: string };
+    assert.equal(timeoutPayload.ok, false);
+    assert.equal(timeoutPayload.error, "timeout");
+
+    const jsonInvalid = capture();
+    assert.equal(await runCli(["runs", "drive", "run_drivewaitcli", "--simulated", "--wait", "--timeout-ms", "0", "--json"], env, jsonInvalid, cwd), 1);
+    const invalidPayload = JSON.parse(jsonInvalid.read().stderr) as { ok: boolean; error: string };
+    assert.equal(invalidPayload.ok, false);
+    assert.equal(invalidPayload.error, "run_drive_timeout_invalid");
   } finally {
     delete vnextDriveCliSeams.ensureSupervisor;
     delete vnextDriveCliSeams.runtimeRequest;

@@ -9,6 +9,7 @@ import {
   VnextRuntimeRegistry,
   projectRuntimeKey,
   runtimeError,
+  verifyVnextDriveReceipt,
   vnextRuntimePaths,
   type VnextRuntimePaths,
 } from "./vnext-runtime-store.ts";
@@ -24,7 +25,7 @@ import {
 import { createVnextOneShotProducer } from "./vnext-oneshot-producer.ts";
 import { isProducerAdmitted } from "./producers.ts";
 import { VnextRunScheduler, createVnextSimulatedProducer, recordDriveReceipt, recoverVnextRun, vnextDrivePollProjection } from "./vnext-engine.ts";
-import { vnextOpenDriveSessions } from "./vnext-runtime-owner.ts";
+import { vnextDriveSession, vnextOpenDriveSessions } from "./vnext-runtime-owner.ts";
 
 /* ------------------------------------------------------------------ *
  * Token management
@@ -551,6 +552,24 @@ async function startVnextRuntimeSupervisorInner(
             sendJson(response, 200, { ok: true, events });
             return;
           }
+
+          if (request.method === "GET" && sub === "drive") {
+            const run = context.eventStore.run(runId);
+            if (!run) throw runtimeError("run_unknown", runId, "run not found");
+
+            const activeSession = vnextDriveSession(context.eventStore.path, runId);
+            const session = activeSession
+              ? {
+                  driveId: activeSession.driveId,
+                  mode: activeSession.mode,
+                  openedAt: activeSession.openedAt,
+                  deadlineAt: activeSession.deadlineAt ?? null,
+                }
+              : null;
+            const receipts = context.eventStore.driveReceiptsForRun(runId, 20);
+            sendJson(response, 200, { ok: true, session, receipts });
+            return;
+          }
           if (request.method === "POST" && sub === "cancel") {
             const body = await readJsonBody(request);
             const result = cancelVnextRun(context, runId, {
@@ -583,6 +602,47 @@ async function startVnextRuntimeSupervisorInner(
             sendJson(response, 200, { ok: true, runId, stageId: body.stageId, signalKey: body.signalKey, waiting: true });
             return;
           }
+        }
+
+        const driveMatch = /^\/v1\/drives\/([A-Za-z0-9_-]+)$/.exec(url.pathname);
+        if (request.method === "GET" && driveMatch) {
+          const driveId = driveMatch[1] as string;
+          const projectRoot = url.searchParams.get("projectRoot") ?? "";
+          if (!projectRoot) {
+            sendJson(response, 400, { ok: false, error: "runtime_request_invalid", message: "projectRoot query parameter is required" });
+            return;
+          }
+          const context = contextFor(projectRoot);
+
+          let receipt;
+          try {
+            receipt = context.eventStore.driveReceipt(driveId);
+          } catch {
+            sendJson(response, 200, { ok: true, receipt: null, verified: false, divergence: "receipt unreadable" });
+            return;
+          }
+
+          if (!receipt) {
+            sendJson(response, 404, { ok: false, error: "drive_receipt_missing", message: "receipt not found" });
+            return;
+          }
+
+          const runId = receipt.runId;
+          const stored = context.eventStore.run(runId);
+          if (!stored) {
+            sendJson(response, 200, { ok: true, receipt, verified: false, divergence: "run missing" });
+            return;
+          }
+          const state = foldStoredVnextRun(context, stored);
+          const events = context.eventStore.events(runId, 0, 1_000_000);
+          const checked = verifyVnextDriveReceipt(receipt, events, state.status, { runId, driveId });
+          sendJson(response, 200, {
+            ok: true,
+            receipt,
+            verified: checked.verified,
+            ...(checked.divergence !== undefined ? { divergence: checked.divergence } : {}),
+          });
+          return;
         }
 
         const projectRunsMatch = /^\/v1\/projects\/(prj_[A-Za-z0-9_-]+)\/runs$/.exec(url.pathname);
