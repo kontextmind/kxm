@@ -17,6 +17,16 @@ promoted:
   # glm-4.6v verified for vision but not admitted (superseded by 5.3-flash).
   - zai-coding-cn/glm-5.3 # 1M ctx, thinking; coding-plan subscription
   - zai-coding-cn/glm-5.3-flash # 1M ctx, thinking, vision; coding-plan subscription
+  # Qualified 2026-09-16 via live probes (smoke; subscription/unmetered):
+  # agy = Antigravity CLI (google sub, Gemini kebab ids bake in the effort tier;
+  # harness default is flash-high). qwen-token-plan edit probe passed on
+  # qwen3.8-flash. deepseek-v4.1-flash and glm-5.x on qwen-token-plan are
+  # third-party models hosted by that plan.
+  - google/gemini-3.8-flash-medium # agy harness, 1M ctx
+  - google/gemini-3.8-flash-high # agy harness, 1M ctx; oneshot default for agy
+  - qwen-token-plan/qwen3.8-flash # 1M ctx, thinking, vision; edit probe passed
+  - qwen-token-plan/qwen3.8-max # 1M ctx, thinking, vision
+  - qwen-token-plan/deepseek-v4.1-flash # 1M ctx, thinking, vision
 demoted: []
 enabled:
   - anthropic/fable
@@ -27,6 +37,11 @@ enabled:
   - openrouter/z-ai/glm-5.3-flash
   - zai-coding-cn/glm-5.3
   - zai-coding-cn/glm-5.3-flash
+  - google/gemini-3.8-flash-medium
+  - google/gemini-3.8-flash-high
+  - qwen-token-plan/qwen3.8-flash
+  - qwen-token-plan/qwen3.8-max
+  - qwen-token-plan/deepseek-v4.1-flash
 disabled: []
 roles:
   implementer:
