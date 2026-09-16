@@ -74,7 +74,7 @@ pull request (five CI jobs: 2 Linux validate, classify, docs, plugin)
 
 **Runner loop invariants:**
 
-- **Roles and rotation:** The runner strictly maps assignments to authenticated roster roles (`AGENTS.md` and `.kxm/roster.json`):
+- **Roles and rotation:** The runner strictly maps assignments to authenticated roster roles (`AGENTS.md` and `.kxm/roster.yaml`):
   - **Implement / write code (`writer`):** **Grok** (`grok --model grok-4.6`, headless). Currently admitted native writer on this runner. Failover follows attempts-and-relief: after an empty or failed attempt, immediately fail over to the next eligible authenticated writer in the roster (**Qwen** `openrouter/qwen/qwen3-coder-plus` via Pi).
   - **Plan (`planner`):** **Claude Fable** (`claude --model fable`), read-only architecture and permissions planning.
   - **Review architecture (`reviewer-arch`):** **Claude Fable** (`claude --model fable`), designated architecture and permissions critic.

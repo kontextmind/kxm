@@ -1,13 +1,15 @@
 /** Unwired developer policy foundation. No dispatch or acceptance authority. */
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { lstatSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import YAML from 'yaml';
 import { NATIVE_PI_BRAKE_PROVIDERS, PI_ALLOWED_PROVIDERS, PI_ANTIGRAVITY_MODEL_ID, PI_NATIVE_VENDOR_PROVIDERS, ROUTES } from './harness-run.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const POLICY = '.kxm/roster.json';
+const POLICY = '.kxm/roster.yaml';
+const RETIRED_POLICY = '.kxm/roster.json';
 const TRUSTED = 'refs/remotes/origin/main';
 const ROLES = ['writer', 'planner', 'reviewer-arch', 'reviewer-cli', 'experiment'];
 const ALIASES = Object.freeze({ 'x-ai': 'xai', moonshotai: 'moonshot', 'google-ai': 'google', qwen: 'alibaba' });
@@ -54,6 +56,7 @@ function frozen(value) {
   return value;
 }
 function control() {
+  if (existsSync(path.join(ROOT, RETIRED_POLICY))) refuse(`retired ${RETIRED_POLICY} present; use ${POLICY}`);
   if (realpathSync(gitText('rev-parse', '--show-toplevel')) !== realpathSync(ROOT)) refuse('module is outside its control repository');
   const head = gitText('rev-parse', '--verify', 'HEAD^{commit}');
   const trusted = gitText('rev-parse', '--verify', `${TRUSTED}^{commit}`);
@@ -159,7 +162,8 @@ export function validateRosterDocument(policy, readBlob) {
 }
 function validate(bytes, commit) {
   let policy;
-  try { policy = JSON.parse(bytes.toString('utf8')); } catch { refuse('invalid policy JSON'); }
+  try { policy = YAML.parse(bytes.toString('utf8')); } catch { refuse('invalid policy YAML'); }
+  if (policy === undefined || policy === null || typeof policy !== 'object' || Array.isArray(policy)) refuse('invalid policy YAML');
   return validateRosterDocument(policy, source => blobAt(commit, source).bytes);
 }
 export function loadTrustedRosterPolicy() {

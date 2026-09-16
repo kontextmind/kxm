@@ -10,7 +10,8 @@
  * This module writes only current vNext project resources:
  *   - `.kxm/agents/<role-slug>.yaml`   (kxm.agent.v1)
  *   - `.kxm/workflows/<slug>.yaml`     (kxm.workflow.v1)
- * It never writes retired legacy authority (`.kxm/config`, `.kxm/roster.json`)
+ * It never writes retired legacy authority (`.kxm/config`, retired
+ * `.kxm/roster.json`) or the trusted `.kxm/roster.yaml` policy
  * and does not use the kxm.role.v1 subsystem.
  */
 

@@ -16,7 +16,7 @@ policy.
 ## 1. Overview and role rotation
 
 Developer orchestration on this runner uses a role-based rotation backed by
-trusted policy in [`.kxm/roster.json`](../.kxm/roster.json). Roles, harnesses,
+trusted policy in [`.kxm/roster.yaml`](../.kxm/roster.yaml). Roles, harnesses,
 and models are admitted with strict permission and vendor boundaries:
 
 | Role | Admitted route | Vendor | Permission | Purpose |
@@ -36,7 +36,7 @@ and models are admitted with strict permission and vendor boundaries:
   exceed the admitted ceiling (e.g. attempting to give edit permissions to a
   read-only reviewer).
 - **Trusted roster policy:** Dispatch (`assign` / `run`) and accept load
-  `.kxm/roster.json` through the trusted control Git loader
+  `.kxm/roster.yaml` through the trusted control Git loader
   (`loadTrustedRosterPolicy`). Loader errors, missing/empty policy, and
   malformed policy fail closed with `route_invalid`. There is no raw working-tree
   JSON fallback and no null-policy acceptance. Tests may inject an explicit
@@ -96,7 +96,7 @@ node scripts/assignment-run.mjs run --manifest /absolute/path/to/manifest.json
 ```
 
 - Manifest validation asserts worktree cleanliness and validates the route
-  against `.kxm/roster.json`.
+  against `.kxm/roster.yaml`.
 - Headless execution dispatches to the native harness (or OpenRouter via Pi for
   admitted relief).
 - Successful runs write `completion.json`, candidate snapshot metadata, and
@@ -219,7 +219,7 @@ The runner fails closed with bounded error codes defined in `RUNNER_CODES`:
 
 | Code | Trigger condition | Remedy |
 |---|---|---|
-| `route_invalid` | Harness/model not admitted in lineup for the requested role, permission exceeds route ceiling, or trusted roster policy cannot be loaded/validated. | Use a trusted clean control checkout; do not dispatch from a dirty implementation branch. Check `.kxm/roster.json` lineup and permissions for the role. |
+| `route_invalid` | Harness/model not admitted in lineup for the requested role, permission exceeds route ceiling, or trusted roster policy cannot be loaded/validated. | Use a trusted clean control checkout; do not dispatch from a dirty implementation branch. Check `.kxm/roster.yaml` lineup and permissions for the role. |
 | `critic_invalid` | Missing required critic role, duplicate roles, wrong model, or vendor collision between writer and critics. | Ensure independent critics (Fable + Sol) from distinct providers. |
 | `critic_block` | An unresolved `BLOCK` verdict exists for the target tree. | Rework the changes, address findings, and pass review with a `rework_of` link. |
 | `commit_tree_mismatch` | Git commit tree does not equal the witnessed tree. | Commit the exact candidate tree verified by the witness before running accept. |

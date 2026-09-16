@@ -8,7 +8,7 @@ description: Select the right suite skill; state universal safety rules and port
 This skill routes to the appropriate specialized skill for each KXM command category. Use this skill to determine which specific skill handles the command you need.
 
 These bundled skills document the current CLI. They do not switch runtime YAML
-authority, admit writers, or replace `.kxm/roster.json` trusted policy.
+authority, admit writers, or replace `.kxm/roster.yaml` trusted policy.
 
 ## Command Routing Guide
 

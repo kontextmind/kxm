@@ -1,111 +1,116 @@
 schema: kxm.prices.v1
-date: "2026-09-08"
-sha256: 949aac1795e626204a093b7a70a398412c6128e241adf012652ca7abe79018ae
+date: "2026-09-16"
+sha256: 44fa88b13d8640d2aec6be0263972e359258d97e813f29d6da7f08fbe8d28e5b
 currency: USD
 models:
-  - id: anthropic/claude-3-7-sonnet
+  - id: anthropic/fable
     provider: anthropic
-    model: claude-3-7-sonnet
+    model: fable
     aliases:
-      - fable
-      - claude-3-7-sonnet-latest
+      - claude-fable-5
+      - claude-fable-5.1
     tiers:
-      - upToContextTokens: 200000
-        inputPerMillion: 3.00
-        outputPerMillion: 15.00
-        cacheReadPerMillion: 0.30
-        cacheWritePerMillion: 3.75
-
-  - id: anthropic/claude-3-5-sonnet
-    provider: anthropic
-    model: claude-3-5-sonnet
-    aliases:
-      - claude-3-5-sonnet-latest
-    tiers:
-      - upToContextTokens: 200000
-        inputPerMillion: 3.00
-        outputPerMillion: 15.00
-        cacheReadPerMillion: 0.30
-        cacheWritePerMillion: 3.75
-
+      - inputPerMillion: 10
+        outputPerMillion: 50
+        cacheReadPerMillion: 0.25
+        cacheWritePerMillion: 12.5
   - id: openai/gpt-5.6-sol
     provider: openai
     model: gpt-5.6-sol
-    aliases:
-      - gpt-5.6-sol
-      - gpt-4o
     tiers:
-      - upToContextTokens: 128000
-        inputPerMillion: 2.50
-        outputPerMillion: 10.00
-        cacheReadPerMillion: 1.25
-        cacheWritePerMillion: 2.50
-
-  - id: openai/o3-mini
-    provider: openai
-    model: o3-mini
-    tiers:
-      - upToContextTokens: 200000
-        inputPerMillion: 1.10
-        outputPerMillion: 4.40
-        cacheReadPerMillion: 0.55
-        cacheWritePerMillion: 1.10
-
+      - inputPerMillion: 2
+        outputPerMillion: 10
+        cacheReadPerMillion: 0.2
+        cacheWritePerMillion: 2.5
   - id: xai/grok-4.6
     provider: xai
     model: grok-4.6
     aliases:
-      - grok-4.6
+      - x-ai/grok-4.6
     tiers:
-      - upToContextTokens: 131072
-        inputPerMillion: 2.00
-        outputPerMillion: 10.00
-        cacheReadPerMillion: 0.50
-        cacheWritePerMillion: 2.00
-
-  - id: xai/grok-2
-    provider: xai
-    model: grok-2
+      - inputPerMillion: 2
+        outputPerMillion: 6
+        cacheReadPerMillion: 0.5
+        cacheWritePerMillion: null
+  - id: openrouter/qwen/qwen3-coder-plus
+    provider: openrouter
+    model: qwen/qwen3-coder-plus
     tiers:
-      - upToContextTokens: 131072
-        inputPerMillion: 2.00
-        outputPerMillion: 10.00
-        cacheReadPerMillion: 0.50
-        cacheWritePerMillion: 2.00
-
-  - id: zhipu/glm-4-plus
-    provider: zhipu
-    model: glm-4-plus
+      - inputPerMillion: 0.65
+        outputPerMillion: 3.25
+        cacheReadPerMillion: 0.13
+        cacheWritePerMillion: 0.8125
+  - id: openrouter/qwen/qwen3.8-flash
+    provider: openrouter
+    model: qwen/qwen3.8-flash
+    tiers:
+      - &a3
+        inputPerMillion: 0.15
+        outputPerMillion: 0.47
+        cacheReadPerMillion: 0.016
+        cacheWritePerMillion: 0.2
+  - id: openrouter/z-ai/glm-5.3-flash
+    provider: openrouter
+    model: z-ai/glm-5.3-flash
+    tiers:
+      - &a1
+        inputPerMillion: 0.09
+        outputPerMillion: 0.3
+        cacheReadPerMillion: 0.018
+        cacheWritePerMillion: null
+  - id: zai-coding-cn/glm-5.3
+    provider: zai-coding-cn
+    model: glm-5.3
     aliases:
-      - glm-4
+      - z-ai/glm-5.3
     tiers:
-      - upToContextTokens: 128000
-        inputPerMillion: 1.40
-        outputPerMillion: 1.40
-        cacheReadPerMillion: 0.14
-        cacheWritePerMillion: 1.40
-
-  - id: moonshot/kimi-k1.5
-    provider: moonshot
-    model: kimi-k1.5
+      - inputPerMillion: 1.4
+        outputPerMillion: 4.4
+        cacheReadPerMillion: 0.26
+        cacheWritePerMillion: null
+  - id: zai-coding-cn/glm-5.3-flash
+    provider: zai-coding-cn
+    model: glm-5.3-flash
     aliases:
-      - moonshot-v1-128k
+      - z-ai/glm-5.3-flash
     tiers:
-      - upToContextTokens: 128000
-        inputPerMillion: 1.00
-        outputPerMillion: 2.00
-        cacheReadPerMillion: 0.20
-        cacheWritePerMillion: 1.00
-
-  - id: alibaba/qwen3-coder-plus
-    provider: alibaba
-    model: qwen3-coder-plus
+      - *a1
+  - id: google/gemini-3.8-flash-medium
+    provider: google
+    model: gemini-3.8-flash-medium
+    tiers:
+      - &a2
+        inputPerMillion: 0.75
+        outputPerMillion: 3.75
+        cacheReadPerMillion: 0.075
+        cacheWritePerMillion: 0.041666667
+  - id: google/gemini-3.8-flash-high
+    provider: google
+    model: gemini-3.8-flash-high
+    tiers:
+      - *a2
+  - id: qwen-token-plan/qwen3.8-flash
+    provider: qwen-token-plan
+    model: qwen3.8-flash
+    tiers:
+      - *a3
+  - id: qwen-token-plan/qwen3.8-max
+    provider: qwen-token-plan
+    model: qwen3.8-max
     aliases:
-      - openrouter/qwen/qwen3-coder-plus
-      - qwen/qwen3-coder-plus
+      - qwen3.8-max-0902
     tiers:
-      - upToContextTokens: 131072
-        inputPerMillion: 1.00
-        outputPerMillion: 3.00
-        cacheReadPerMillion: 0.20
-        cacheWritePerMillion: 1.00
+      - inputPerMillion: 2
+        outputPerMillion: 6
+        cacheReadPerMillion: 0.25
+        cacheWritePerMillion: 2.5
+  - id: qwen-token-plan/deepseek-v4.1-flash
+    provider: qwen-token-plan
+    model: deepseek-v4.1-flash
+    aliases:
+      - deepseek/deepseek-v4.1-flash
+    tiers:
+      - inputPerMillion: 0.15
+        outputPerMillion: 0.6
+        cacheReadPerMillion: 0.003
+        cacheWritePerMillion: null

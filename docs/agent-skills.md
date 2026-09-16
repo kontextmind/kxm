@@ -3,7 +3,7 @@
 This document describes the bundled KXM Agent Skills suite: focused skills
 that cover current KXM top-level command groups. The suite documents the
 existing CLI. It does **not** land unified YAML role/project/workflow
-authority, admit new writers, or replace trusted `.kxm/roster.json` policy.
+authority, admit new writers, or replace trusted `.kxm/roster.yaml` policy.
 
 ## Feature-to-Skill Matrix
 
