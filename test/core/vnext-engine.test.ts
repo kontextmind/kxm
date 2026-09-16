@@ -10,7 +10,7 @@ import { removeTempDir } from "../helpers.ts";
 import { engineProject } from "../helpers/vnext-project.ts";
 import { loadVnextProject, parseRestrictedYaml, validateRunEvent } from "../../plugins/kxm/src/vnext-config.ts";
 import { compileVnextWorkflow } from "../../plugins/kxm/src/vnext-engine-compile.ts";
-import { setModelState, updateProducer } from "../../plugins/kxm/src/producers.ts";
+import { setRouteState, updateRouteState } from "../../plugins/kxm/src/routes.ts";
 import { FOLD_PANEL_BOUND, foldVnextRunState, vnextJoinAll } from "../../plugins/kxm/src/vnext-engine-fold.ts";
 import {
   hashVnextRunPlanEnvelope,
@@ -3583,7 +3583,7 @@ test("admission: demoted selector returns handoff before birth", async () => {
   const { root, stateRoot } = engineProject("kxm-engine-adm-demoted-");
   try {
     // implementer has model xai/grok-4.6 in engineProject; explicitly demote it
-    updateProducer(root, "xai/grok-4.6", "demoted");
+    updateRouteState(root, "xai/grok-4.6", "disabled");
 
     const bundle = loadVnextProject(root);
     const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
@@ -3617,8 +3617,8 @@ test("admission: role roster excludes model returns handoff before birth", async
   const { root, stateRoot } = engineProject("kxm-engine-adm-roster-");
   try {
     // Promote and enable model in producer policy
-    setModelState(root, "xai/grok-4.6", "enabled");
-    updateProducer(root, "xai/grok-4.6", "promoted");
+    setRouteState(root, "xai/grok-4.6", "admitted");
+    updateRouteState(root, "xai/grok-4.6", "admitted");
     // But write writer role roster without xai/grok-4.6
     mkdirSync(join(root, ".kxm", "roles"), { recursive: true });
     writeFileSync(join(root, ".kxm", "roles", "writer.yaml"), `schema: kxm.role.v1
@@ -3660,8 +3660,8 @@ test("admission: admitted route records producerId oneshot in capability row", a
   const { root, stateRoot } = engineProject("kxm-engine-adm-cap-oneshot-");
   try {
     // Ensure xai/grok-4.6 is enabled, promoted, and in writer roster
-    setModelState(root, "xai/grok-4.6", "enabled", "writer");
-    updateProducer(root, "xai/grok-4.6", "promoted");
+    setRouteState(root, "xai/grok-4.6", "admitted", "writer");
+    updateRouteState(root, "xai/grok-4.6", "admitted");
 
     const bundle = loadVnextProject(root);
     const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });

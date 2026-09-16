@@ -111,9 +111,9 @@ import {
   cmdVnextRunCancel,
   cmdVnextRunList,
   cmdHarnessList,
-  cmdProducerChange,
+  cmdRouteChange,
   cmdModelsScreen,
-  cmdProducerList,
+  cmdRouteList,
   cmdModelInventoryRefresh,
   cmdVnextRuntime,
 } from "./cli/vnext.ts";
@@ -415,7 +415,7 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
       result.code = await cmdVnextRunList(runtimeFrom(ctx, this));
     });
 
-  const modelsCmd = addGlobalOptions(program.command("models").description("Manage model catalogs, roles, and producer state"));
+  const modelsCmd = addGlobalOptions(program.command("models").description("Manage model catalogs, roles, and route state"));
   modelsCmd.action(async function modelsScreenAction(this: Command) { result.code = await cmdModelsScreen(runtimeFrom(ctx, this)); });
   modelsCmd.helpCommand("help", "Show models help");
   addGlobalOptions(modelsCmd.command("inventory-refresh").alias("refresh").description("Refresh the YAML model inventory with standard and Nous/OpenRouter prices"))
@@ -423,11 +423,11 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
       result.code = await cmdModelInventoryRefresh(runtimeFrom(ctx, this));
     });
 
-  const producersCmd = addGlobalOptions(program.command("producers").description("Promote or demote verified producer models"));
-  producersCmd.helpCommand("help", "Show producers help");
-  addGlobalOptions(producersCmd.command("list").description("List producer decisions")).action(async function producersListAction(this: Command) { result.code = await cmdProducerList(runtimeFrom(ctx, this)); });
-  for (const status of ["promote", "demote"] as const) {
-    addGlobalOptions(producersCmd.command(status).description(`${status} a model from the inventory`)).option("--model <id>", "Exact model id; omit to choose interactively").action(async function producerChangeAction(this: Command, options: { model?: string }) { result.code = await cmdProducerChange(runtimeFrom(ctx, this), status === "promote" ? "promoted" : "demoted", options.model); });
+  const routesCmd = addGlobalOptions(program.command("routes").description("Admit or disable verified model routes"));
+  routesCmd.helpCommand("help", "Show routes help");
+  addGlobalOptions(routesCmd.command("list").description("List route decisions")).action(async function routesListAction(this: Command) { result.code = await cmdRouteList(runtimeFrom(ctx, this)); });
+  for (const status of ["admit", "disable"] as const) {
+    addGlobalOptions(routesCmd.command(status).description(`${status === "admit" ? "Admit" : "Disable"} a model route from the inventory`)).option("--model <id>", "Exact model id; omit to choose interactively").action(async function routeChangeAction(this: Command, options: { model?: string }) { result.code = await cmdRouteChange(runtimeFrom(ctx, this), status === "admit" ? "admitted" : "disabled", options.model); });
   }
 
   const harnessCmd = addGlobalOptions(program.command("harness").description("Detect coding-agent harnesses and authentication"));

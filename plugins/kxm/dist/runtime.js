@@ -22945,17 +22945,19 @@ import { createHash as createHash11, randomBytes as randomBytes2, timingSafeEqua
 import { existsSync as existsSync9, readFileSync as readFileSync7 } from "node:fs";
 import { join as join11 } from "node:path";
 
-// plugins/kxm/src/producers.ts
+// plugins/kxm/src/routes.ts
 var import_yaml4 = __toESM(require_dist(), 1);
 import { existsSync as existsSync8, readFileSync as readFileSync6, mkdirSync as mkdirSync3, writeFileSync as writeFileSync3, readdirSync as readdirSync4 } from "node:fs";
 import { join as join9 } from "node:path";
-var empty = () => ({ schema: "kxm.producers.v1", updatedAt: (/* @__PURE__ */ new Date()).toISOString(), promoted: [], demoted: [], enabled: [], disabled: [], roles: {} });
-function loadProducerPolicy(root) {
-  const path = join9(root, ".kxm", "producers.yaml");
+var RETIRED_POLICY = ".kxm/producers.yaml";
+var empty = () => ({ schema: "kxm.routes.v2", updatedAt: (/* @__PURE__ */ new Date()).toISOString(), admitted: [], disabled: [], roles: {} });
+function loadRoutePolicy(root) {
+  if (existsSync8(join9(root, RETIRED_POLICY))) throw new Error(`retired ${RETIRED_POLICY} present; use .kxm/routes.yaml (kxm.routes.v2)`);
+  const path = join9(root, ".kxm", "routes.yaml");
   if (!existsSync8(path)) return empty();
   const value = (0, import_yaml4.parse)(readFileSync6(path, "utf8"));
-  if (value?.schema !== "kxm.producers.v1" || !Array.isArray(value.promoted) || !Array.isArray(value.demoted)) throw new Error("invalid .kxm/producers.yaml");
-  return { schema: "kxm.producers.v1", updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : (/* @__PURE__ */ new Date()).toISOString(), promoted: value.promoted.filter((x) => typeof x === "string"), demoted: value.demoted.filter((x) => typeof x === "string"), enabled: Array.isArray(value.enabled) ? value.enabled.filter((x) => typeof x === "string") : [], disabled: Array.isArray(value.disabled) ? value.disabled.filter((x) => typeof x === "string") : [], roles: value.roles && typeof value.roles === "object" ? Object.fromEntries(Object.entries(value.roles).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [k, v.filter((x) => typeof x === "string")])) : {} };
+  if (value?.schema !== "kxm.routes.v2" || !Array.isArray(value.admitted)) throw new Error("invalid .kxm/routes.yaml");
+  return { schema: "kxm.routes.v2", updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : (/* @__PURE__ */ new Date()).toISOString(), admitted: value.admitted.filter((x) => typeof x === "string"), disabled: Array.isArray(value.disabled) ? value.disabled.filter((x) => typeof x === "string") : [], roles: value.roles && typeof value.roles === "object" ? Object.fromEntries(Object.entries(value.roles).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [k, v.filter((x) => typeof x === "string")])) : {} };
 }
 function listRoleBindings(root) {
   const dir = join9(root, ".kxm", "roles");
@@ -22968,9 +22970,9 @@ function listRoleBindings(root) {
   }
   return result;
 }
-function isProducerAdmitted(root, modelId) {
-  const policy = loadProducerPolicy(root);
-  return policy.enabled.includes(modelId) && policy.promoted.includes(modelId) && !policy.disabled.includes(modelId) && !policy.demoted.includes(modelId);
+function isRouteAdmitted(root, modelId) {
+  const policy = loadRoutePolicy(root);
+  return policy.admitted.includes(modelId) && !policy.disabled.includes(modelId);
 }
 
 // plugins/kxm/src/context-packet.ts
@@ -25164,7 +25166,7 @@ function resolveProducerRoute(projectRoot, step, agentId) {
       }
     };
   }
-  if (!isProducerAdmitted(projectRoot, selector)) {
+  if (!isRouteAdmitted(projectRoot, selector)) {
     return {
       error: {
         reason: "step_unsupported",
@@ -27337,7 +27339,7 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
                 const value = model;
                 const provider = typeof value.provider === "string" ? value.provider : void 0;
                 const modelName = typeof value.model === "string" ? value.model : void 0;
-                if (!provider || !modelName || !isProducerAdmitted(projectRoot, `${provider}/${modelName}`)) {
+                if (!provider || !modelName || !isRouteAdmitted(projectRoot, `${provider}/${modelName}`)) {
                   throw new Error("producer_route_not_admitted");
                 }
                 return { provider, model: modelName };

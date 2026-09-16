@@ -24951,33 +24951,29 @@ function loadPriceCatalogForEstimate(options) {
 // plugins/kxm/src/vnext-engine.ts
 var import_yaml5 = __toESM(require_dist(), 1);
 
-// plugins/kxm/src/producers.ts
+// plugins/kxm/src/routes.ts
 var import_yaml4 = __toESM(require_dist(), 1);
 import { existsSync as existsSync11, readFileSync as readFileSync10, mkdirSync as mkdirSync7, writeFileSync as writeFileSync7, readdirSync as readdirSync3 } from "node:fs";
 import { join as join11 } from "node:path";
-var empty = () => ({ schema: "kxm.producers.v1", updatedAt: (/* @__PURE__ */ new Date()).toISOString(), promoted: [], demoted: [], enabled: [], disabled: [], roles: {} });
-function loadProducerPolicy(root) {
-  const path4 = join11(root, ".kxm", "producers.yaml");
+var RETIRED_POLICY = ".kxm/producers.yaml";
+var empty = () => ({ schema: "kxm.routes.v2", updatedAt: (/* @__PURE__ */ new Date()).toISOString(), admitted: [], disabled: [], roles: {} });
+function loadRoutePolicy(root) {
+  if (existsSync11(join11(root, RETIRED_POLICY))) throw new Error(`retired ${RETIRED_POLICY} present; use .kxm/routes.yaml (kxm.routes.v2)`);
+  const path4 = join11(root, ".kxm", "routes.yaml");
   if (!existsSync11(path4)) return empty();
   const value = (0, import_yaml4.parse)(readFileSync10(path4, "utf8"));
-  if (value?.schema !== "kxm.producers.v1" || !Array.isArray(value.promoted) || !Array.isArray(value.demoted)) throw new Error("invalid .kxm/producers.yaml");
-  return { schema: "kxm.producers.v1", updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : (/* @__PURE__ */ new Date()).toISOString(), promoted: value.promoted.filter((x2) => typeof x2 === "string"), demoted: value.demoted.filter((x2) => typeof x2 === "string"), enabled: Array.isArray(value.enabled) ? value.enabled.filter((x2) => typeof x2 === "string") : [], disabled: Array.isArray(value.disabled) ? value.disabled.filter((x2) => typeof x2 === "string") : [], roles: value.roles && typeof value.roles === "object" ? Object.fromEntries(Object.entries(value.roles).filter(([, v2]) => Array.isArray(v2)).map(([k, v2]) => [k, v2.filter((x2) => typeof x2 === "string")])) : {} };
+  if (value?.schema !== "kxm.routes.v2" || !Array.isArray(value.admitted)) throw new Error("invalid .kxm/routes.yaml");
+  return { schema: "kxm.routes.v2", updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : (/* @__PURE__ */ new Date()).toISOString(), admitted: value.admitted.filter((x2) => typeof x2 === "string"), disabled: Array.isArray(value.disabled) ? value.disabled.filter((x2) => typeof x2 === "string") : [], roles: value.roles && typeof value.roles === "object" ? Object.fromEntries(Object.entries(value.roles).filter(([, v2]) => Array.isArray(v2)).map(([k, v2]) => [k, v2.filter((x2) => typeof x2 === "string")])) : {} };
 }
-function updateProducer(root, model, status) {
-  const policy = loadProducerPolicy(root);
-  policy.promoted = policy.promoted.filter((x2) => x2 !== model);
-  policy.demoted = policy.demoted.filter((x2) => x2 !== model);
-  policy[status].push(model);
-  policy.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-  mkdirSync7(join11(root, ".kxm"), { recursive: true });
-  writeFileSync7(join11(root, ".kxm", "producers.yaml"), (0, import_yaml4.stringify)(policy), "utf8");
-  return policy;
+function updateRouteState(root, model, state) {
+  return setRouteState(root, model, state);
 }
-function setModelState(root, model, state, role, removeRole2 = false) {
-  const policy = loadProducerPolicy(root);
-  policy.enabled = policy.enabled.filter((x2) => x2 !== model);
+function setRouteState(root, model, state, role, removeRole2 = false) {
+  const policy = loadRoutePolicy(root);
+  policy.admitted = policy.admitted.filter((x2) => x2 !== model);
   policy.disabled = policy.disabled.filter((x2) => x2 !== model);
-  policy[state].push(model);
+  if (state === "admitted") policy.admitted.push(model);
+  else policy.disabled.push(model);
   if (role) {
     if (!/^[a-z][a-z0-9_-]{0,63}$/i.test(role)) throw new Error("invalid role id");
     const rolePath = join11(root, ".kxm", "roles", `${role}.yaml`);
@@ -24999,7 +24995,7 @@ function setModelState(root, model, state, role, removeRole2 = false) {
   }
   policy.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
   mkdirSync7(join11(root, ".kxm"), { recursive: true });
-  writeFileSync7(join11(root, ".kxm", "producers.yaml"), (0, import_yaml4.stringify)(policy), "utf8");
+  writeFileSync7(join11(root, ".kxm", "routes.yaml"), (0, import_yaml4.stringify)(policy), "utf8");
   return policy;
 }
 function listRoleBindings(root) {
@@ -33853,7 +33849,7 @@ async function cmdHarnessList(runtime) {
   print(runtime.io, runtime.json, { ok: true, command: "harness list", ...inventory }, formatHarnessInventory(inventory));
   return 0;
 }
-async function selectProducerModel(runtime, requested) {
+async function selectInventoryModel(runtime, requested) {
   const models = listInventoryModels(runtime.dirs.workdir);
   if (requested) return models.find((model) => model.toLowerCase() === requested.toLowerCase());
   if (runtime.json || !process.stdin.isTTY || models.length === 0) return void 0;
@@ -33864,18 +33860,18 @@ async function selectProducerModel(runtime, requested) {
   const index = Number.parseInt(answer.trim(), 10) - 1;
   return Number.isInteger(index) && index >= 0 && index < models.length ? models[index] : void 0;
 }
-async function cmdProducerChange(runtime, status, requested) {
-  const model = await selectProducerModel(runtime, requested);
+async function cmdRouteChange(runtime, status, requested) {
+  const model = await selectInventoryModel(runtime, requested);
   if (!model) {
-    print(runtime.io, runtime.json, { ok: false, command: `producers ${status}`, error: "model_selection_required" }, "select a model from the refreshed inventory");
+    print(runtime.io, runtime.json, { ok: false, command: `routes ${status}`, error: "model_selection_required" }, "select a model from the refreshed inventory");
     return 2;
   }
   if (runtime.dryRun) {
-    print(runtime.io, runtime.json, { ok: true, command: `producers ${status}`, model, dryRun: true }, `would ${status} ${model}`);
+    print(runtime.io, runtime.json, { ok: true, command: `routes ${status}`, model, dryRun: true }, `would ${status === "admitted" ? "admit" : "disable"} ${model}`);
     return 0;
   }
-  const policy = updateProducer(runtime.dirs.workdir, model, status);
-  print(runtime.io, runtime.json, { ok: true, command: `producers ${status}`, model, policy }, `${status} ${model}`);
+  const policy = updateRouteState(runtime.dirs.workdir, model, status);
+  print(runtime.io, runtime.json, { ok: true, command: `routes ${status}`, model, policy }, `${status} ${model}`);
   return 0;
 }
 async function cmdModelsScreen(runtime) {
@@ -33888,25 +33884,24 @@ async function cmdModelsScreen(runtime) {
   const ask = (q2) => new Promise((resolve31) => rl.question(q2, resolve31));
   try {
     while (true) {
-      const policy = loadProducerPolicy(runtime.dirs.workdir);
+      const policy = loadRoutePolicy(runtime.dirs.workdir);
       const roleBindings = listRoleBindings(runtime.dirs.workdir);
-      runtime.io.stdout(models.map((m2, i) => `${i + 1}. ${m2} [${policy.enabled.includes(m2) ? "enabled" : policy.disabled.includes(m2) ? "disabled" : "unset"}] [${policy.promoted.includes(m2) ? "producer" : policy.demoted.includes(m2) ? "demoted" : "not producer"}] roles:${Object.entries(roleBindings).filter(([, xs]) => xs.includes(m2)).map(([r]) => r).join(",") || "-"}`).join("\n") + "\n");
-      const command = (await ask("[e]nable [d]isable [p]romote [x]demote [a]dd-role [r]emove-role [q]uit: ")).trim().toLowerCase();
+      runtime.io.stdout(models.map((m2, i) => `${i + 1}. ${m2} [${policy.admitted.includes(m2) ? "admitted" : policy.disabled.includes(m2) ? "disabled" : "unset"}] roles:${Object.entries(roleBindings).filter(([, xs]) => xs.includes(m2)).map(([r]) => r).join(",") || "-"}`).join("\n") + "\n");
+      const command = (await ask("[a]dmit [d]isable [r]ole-add [x]ole-remove [q]uit: ")).trim().toLowerCase();
       if (command === "q" || command === "quit") return 0;
       const index = Number.parseInt((await ask("model number: ")).trim(), 10) - 1;
       if (!Number.isInteger(index) || !models[index]) continue;
       const model = models[index];
-      if (command === "p" || command === "x") updateProducer(runtime.dirs.workdir, model, command === "p" ? "promoted" : "demoted");
-      else if (command === "e" || command === "d") setModelState(runtime.dirs.workdir, model, command === "e" ? "enabled" : "disabled");
-      else if (command === "a" || command === "r") setModelState(runtime.dirs.workdir, model, "enabled", (await ask("role: ")).trim(), command === "r");
+      if (command === "a" || command === "d") setRouteState(runtime.dirs.workdir, model, command === "a" ? "admitted" : "disabled");
+      else if (command === "r" || command === "x") setRouteState(runtime.dirs.workdir, model, "admitted", (await ask("role: ")).trim(), command === "x");
     }
   } finally {
     rl.close();
   }
 }
-async function cmdProducerList(runtime) {
-  const policy = loadProducerPolicy(runtime.dirs.workdir);
-  print(runtime.io, runtime.json, { ok: true, command: "producers list", policy }, [...policy.promoted.map((x2) => `promoted ${x2}`), ...policy.demoted.map((x2) => `demoted ${x2}`)].join("\n") || "no producer decisions");
+async function cmdRouteList(runtime) {
+  const policy = loadRoutePolicy(runtime.dirs.workdir);
+  print(runtime.io, runtime.json, { ok: true, command: "routes list", policy }, [...policy.admitted.map((x2) => `admitted ${x2}`), ...policy.disabled.map((x2) => `disabled ${x2}`)].join("\n") || "no route decisions");
   return 0;
 }
 async function cmdModelInventoryRefresh(runtime) {
@@ -48797,7 +48792,7 @@ function createProgram(ctx, result) {
   addGlobalOptions(runCmd.command("list").description("List recent runs for the current project")).action(async function runListAction() {
     result.code = await cmdVnextRunList(runtimeFrom(ctx, this));
   });
-  const modelsCmd = addGlobalOptions(program2.command("models").description("Manage model catalogs, roles, and producer state"));
+  const modelsCmd = addGlobalOptions(program2.command("models").description("Manage model catalogs, roles, and route state"));
   modelsCmd.action(async function modelsScreenAction() {
     result.code = await cmdModelsScreen(runtimeFrom(ctx, this));
   });
@@ -48805,14 +48800,14 @@ function createProgram(ctx, result) {
   addGlobalOptions(modelsCmd.command("inventory-refresh").alias("refresh").description("Refresh the YAML model inventory with standard and Nous/OpenRouter prices")).action(async function modelInventoryRefreshAction() {
     result.code = await cmdModelInventoryRefresh(runtimeFrom(ctx, this));
   });
-  const producersCmd = addGlobalOptions(program2.command("producers").description("Promote or demote verified producer models"));
-  producersCmd.helpCommand("help", "Show producers help");
-  addGlobalOptions(producersCmd.command("list").description("List producer decisions")).action(async function producersListAction() {
-    result.code = await cmdProducerList(runtimeFrom(ctx, this));
+  const routesCmd = addGlobalOptions(program2.command("routes").description("Admit or disable verified model routes"));
+  routesCmd.helpCommand("help", "Show routes help");
+  addGlobalOptions(routesCmd.command("list").description("List route decisions")).action(async function routesListAction() {
+    result.code = await cmdRouteList(runtimeFrom(ctx, this));
   });
-  for (const status of ["promote", "demote"]) {
-    addGlobalOptions(producersCmd.command(status).description(`${status} a model from the inventory`)).option("--model <id>", "Exact model id; omit to choose interactively").action(async function producerChangeAction(options) {
-      result.code = await cmdProducerChange(runtimeFrom(ctx, this), status === "promote" ? "promoted" : "demoted", options.model);
+  for (const status of ["admit", "disable"]) {
+    addGlobalOptions(routesCmd.command(status).description(`${status === "admit" ? "Admit" : "Disable"} a model route from the inventory`)).option("--model <id>", "Exact model id; omit to choose interactively").action(async function routeChangeAction(options) {
+      result.code = await cmdRouteChange(runtimeFrom(ctx, this), status === "admit" ? "admitted" : "disabled", options.model);
     });
   }
   const harnessCmd = addGlobalOptions(program2.command("harness").description("Detect coding-agent harnesses and authentication"));
