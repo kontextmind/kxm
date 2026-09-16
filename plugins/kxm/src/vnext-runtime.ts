@@ -524,6 +524,20 @@ export function rebuildVnextRunProjection(context: VnextRuntimeContext, runId: s
   return persistProjection(context, stored, state, last.occurredAt);
 }
 
+/** Read-only projection: folds the event log over the stored record without
+ * persisting. GET paths must not write (no run_state upsert, no status
+ * update, no run_projection_divergent throw) — the event log stays the sole
+ * source of truth and the folded status is returned as-is. */
+export function projectVnextRunReadOnly(context: VnextRuntimeContext, runId: string): VnextRunRecord {
+  const stored = context.eventStore.run(runId);
+  if (!stored) throw runtimeError("run_unknown", runId, "run does not exist in this event store");
+  const state = foldStoredVnextRun(context, stored);
+  const events = context.eventStore.events(runId, 0, 1_000_000);
+  if (events.length === 0) throw runtimeError("run_events_corrupt", runId, "run has no events");
+  const last = events[events.length - 1]!;
+  return { ...stored, status: state.status, updatedAt: last.occurredAt };
+}
+
 export function persistVnextRunState(context: VnextRuntimeContext, runId: string, state: VnextRunState, lastSequence: number): void {
   const stored = context.eventStore.runState(runId);
   if (stored) {

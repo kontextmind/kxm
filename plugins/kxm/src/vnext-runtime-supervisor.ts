@@ -19,7 +19,7 @@ import {
   closeVnextRuntimeContext,
   foldStoredVnextRun,
   openVnextRuntimeContext,
-  rebuildVnextRunProjection,
+  projectVnextRunReadOnly,
   type VnextRuntimeContext,
 } from "./vnext-runtime.ts";
 import { createVnextOneShotProducer } from "./vnext-oneshot-producer.ts";
@@ -456,7 +456,7 @@ async function startVnextRuntimeSupervisorInner(
           const context = contextFor(projectRoot);
           const bundle = loadVnextProject(projectRoot, {});
           if (request.method === "GET" && !sub) {
-            const projected = rebuildVnextRunProjection(context, runId);
+            const projected = projectVnextRunReadOnly(context, runId);
             const folded = foldStoredVnextRun(context, projected);
             const drive = vnextDrivePollProjection(context, runId, folded);
             sendJson(response, 200, { ok: true, run: projected, ...(drive !== undefined ? { drive } : {}) });
