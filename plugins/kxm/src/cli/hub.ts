@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 import { join, resolve } from "node:path";
 import { redactSecrets } from "../redact.ts";
 import { defaultProjectName } from "../project-name.ts";
+import { resolveClientHubAuthToken } from "../hub-env.ts";
 import { agentWorker, type Worker } from "../envelope.ts";
 import { MESH_TUI_PANELS, runMeshTui, type MeshTuiPanel } from "../tui.ts";
 import { formatSessionBriefText, loadSessionBriefAsync, type SessionHubStatus } from "../session-work.ts";
@@ -132,7 +133,7 @@ export async function cmdDash(runtime: Runtime, options: { screen?: string | und
     return 2;
   }
   const project = defaultProjectName(runtime.dirs.workdir, runtime.env) || "project";
-  const authToken = runtime.env.KXM_AUTH_TOKEN?.trim();
+  const authToken = resolveClientHubAuthToken(runtime.env, project);
   return await runMeshTui({
     serverUrl: runtime.serverUrl,
     dataPath,

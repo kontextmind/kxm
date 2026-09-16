@@ -191,3 +191,18 @@ export function resolveHubCredentials(options: ResolveHubCredentialsOptions = {}
     written: needsPersist === true,
   };
 }
+
+/** Read-only token for one-shot hub clients (CLI, MCP server, dashboards).
+ *
+ * Precedence: explicit KXM_AUTH_TOKEN, then the persisted project token for
+ * the resolved project, then the persisted admin token. Never generates or
+ * writes; a malformed persisted record fails closed with HubEnvError. This
+ * matches the credential precedence `kxm hub start` announces, so a hub
+ * started fresh (generated token persisted) accepts authenticated client
+ * commands without the operator exporting the token. */
+export function resolveClientHubAuthToken(env: NodeJS.ProcessEnv, project: string): string | undefined {
+  const envToken = env.KXM_AUTH_TOKEN?.trim();
+  if (envToken) return envToken;
+  const record = readHubEnvRecord(env);
+  return record?.projectTokens?.[project]?.trim() || record?.authToken?.trim() || undefined;
+}

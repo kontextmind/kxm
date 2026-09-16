@@ -19657,6 +19657,12 @@ function readHubEnvRecord(env = process.env) {
     ...record.projectTokens !== void 0 ? { projectTokens: record.projectTokens } : {}
   };
 }
+function resolveClientHubAuthToken(env, project) {
+  const envToken = env.KXM_AUTH_TOKEN?.trim();
+  if (envToken) return envToken;
+  const record = readHubEnvRecord(env);
+  return record?.projectTokens?.[project]?.trim() || record?.authToken?.trim() || void 0;
+}
 
 // plugins/kxm/src/project-name.ts
 import { readFileSync as readFileSync3 } from "node:fs";
@@ -45480,7 +45486,7 @@ async function cmdDash(runtime, options = {}) {
     return 2;
   }
   const project = defaultProjectName(runtime.dirs.workdir, runtime.env) || "project";
-  const authToken = runtime.env.KXM_AUTH_TOKEN?.trim();
+  const authToken = resolveClientHubAuthToken(runtime.env, project);
   return await runMeshTui({
     serverUrl: runtime.serverUrl,
     dataPath,
@@ -48456,12 +48462,6 @@ async function cmdRoutingBenchmark(runtime, options) {
 
 // plugins/kxm/src/cli.ts
 var CLI_NAME2 = "kxm";
-function resolveCliAuthToken(runtime, project) {
-  const envToken = runtime.env.KXM_AUTH_TOKEN?.trim();
-  if (envToken) return envToken;
-  const record = readHubEnvRecord(runtime.env);
-  return record?.projectTokens?.[project]?.trim() || record?.authToken?.trim() || void 0;
-}
 var USAGE_ERROR_CODES = /* @__PURE__ */ new Set([
   "commander.help",
   "commander.helpDisplayed",
@@ -48483,7 +48483,7 @@ async function ensureCliClient(runtime) {
   const project = defaultProjectName(runtime.cwd, runtime.env);
   const name = runtime.env.KXM_AGENT_NAME?.trim() || `cli-${process.pid}`;
   const purpose = runtime.env.KXM_AGENT_PURPOSE?.trim() || "CLI agent client";
-  const authToken = resolveCliAuthToken(runtime, project);
+  const authToken = resolveClientHubAuthToken(runtime.env, project);
   const client = new HubClient({
     serverUrl,
     name,

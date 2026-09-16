@@ -2,6 +2,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { HubClient } from "./client.ts";
+import { resolveClientHubAuthToken } from "./hub-env.ts";
 import { defaultProjectName } from "./project-name.ts";
 import { AGENT_COMMANDS_MAP, enforceToolPolicy, getMcpTools, reconcileInbox } from "./commands.ts";
 import { deliverInboxNotification } from "./inbox.ts";
@@ -32,10 +33,6 @@ const mcp = new Server(
 
 function textResult(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -83,12 +80,13 @@ async function ensureClient(): Promise<HubClient> {
   if (starting) return starting;
   starting = (async () => {
     const projectDir = process.env.KXM_PROJECT_DIR || process.env.CLAUDE_PROJECT_DIR || process.cwd();
-    const authToken = optionalString(process.env.KXM_AUTH_TOKEN);
+    const project = defaultProjectName(projectDir, process.env);
+    const authToken = resolveClientHubAuthToken(process.env, project);
     const candidate = new HubClient({
       serverUrl: process.env.KXM_SERVER_URL?.trim() || "http://127.0.0.1:7331",
       name: process.env.KXM_AGENT_NAME?.trim() || `claude-${process.pid}`,
       purpose: process.env.KXM_AGENT_PURPOSE?.trim() || "Claude Code implementation and review agent",
-      project: defaultProjectName(projectDir, process.env),
+      project,
       model: "claude-code",
       ...(authToken ? { authToken } : {}),
     });

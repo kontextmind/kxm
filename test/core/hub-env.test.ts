@@ -10,6 +10,7 @@ import {
   generateHubAuthToken,
   hubEnvFile,
   readHubEnvRecord,
+  resolveClientHubAuthToken,
   resolveHubCredentials,
   writeHubEnvRecord,
 } from "../../plugins/kxm/src/hub-env.ts";
@@ -101,8 +102,42 @@ test("resolveHubCredentials generates once, persists, and reuses across restarts
   }
 });
 
-test("generateHubAuthToken produces long unique url-safe tokens", () => {
-  const seen = new Set<string>();
+test("resolveClientHubAuthToken prefers env, then project token, then admin token", () => {
+  const { env, root } = stateEnv();
+  try {
+    assert.equal(resolveClientHubAuthToken(env, "demo"), undefined);
+
+    writeHubEnvRecord({
+      schema: HUB_ENV_SCHEMA,
+      createdAt: "2026-09-16T00:00:00.000Z",
+      authToken: "admin-token",
+      projectTokens: { demo: "demo-token", other: "other-token" },
+    }, env);
+
+    // Project token wins over the admin token for its own project.
+    assert.equal(resolveClientHubAuthToken(env, "demo"), "demo-token");
+    // Unknown projects fall back to the admin token.
+    assert.equal(resolveClientHubAuthToken(env, "unknown"), "admin-token");
+    // Explicit env token wins over everything and never touches the file.
+    const before = readFileSync(hubEnvFile(env), "utf8");
+    assert.equal(resolveClientHubAuthToken({ ...env, KXM_AUTH_TOKEN: " env-token " }, "demo"), "env-token");
+    assert.equal(readFileSync(hubEnvFile(env), "utf8"), before, "read-only resolution must not rewrite the record");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("resolveClientHubAuthToken fails closed on a malformed persisted record", () => {
+  const { env, root } = stateEnv();
+  try {
+    writeFileSync(hubEnvFile(env), "{not json");
+    assert.throws(() => resolveClientHubAuthToken(env, "demo"), HubEnvError);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("generateHubAuthToken produces long unique url-safe tokens", () => {  const seen = new Set<string>();
   for (let i = 0; i < 16; i += 1) {
     const token = generateHubAuthToken();
     assert.match(token, /^kxm_admin_[A-Za-z0-9_-]{20,}$/);
