@@ -511,7 +511,8 @@ export function recordDriveReceipt(
       ? events.find((event) => event.sequence === opened.openedSequence && event.eventType === "run.drive_opened")
       : events.find((event) => event.eventType === "run.drive_opened" && event.payload.driveId === session.driveId);
     const last = events[events.length - 1]!;
-    const openedSequence = opened?.openedSequence ?? openedEvent?.sequence ?? last.sequence;
+    const openedSequence = opened?.openedSequence ?? openedEvent?.sequence;
+    if (openedSequence === undefined) return;
     const receipt: VnextDriveReceipt = {
       schema: VNEXT_DRIVE_RECEIPT_SCHEMA,
       driveId: session.driveId,
@@ -548,19 +549,32 @@ export function vnextDrivePollProjection(
   if (!state.drive) return undefined;
   const events = context.eventStore.events(runId, 0, 1_000_000);
   const openedEvent = events.find((event) => event.sequence === state.drive!.openedSequence);
-  const receipt = context.eventStore.driveReceipt(state.drive.driveId) ?? null;
+  let receipt: VnextDriveReceipt | null = null;
+  let unreadable = false;
+  try {
+    receipt = context.eventStore.driveReceipt(state.drive.driveId) ?? null;
+  } catch {
+    unreadable = true;
+  }
   const projection: VnextDrivePollProjection = {
     driveId: state.drive.driveId,
     mode: state.drive.mode,
     openedAt: openedEvent?.occurredAt ?? "",
-    receipt,
+    receipt: unreadable ? null : receipt,
     verified: false,
   };
+  if (unreadable) {
+    projection.divergence = "receipt unreadable";
+    return projection;
+  }
   if (!receipt) {
     projection.divergence = "no receipt";
     return projection;
   }
-  const checked = verifyVnextDriveReceipt(receipt, events, state.status);
+  const checked = verifyVnextDriveReceipt(receipt, events, state.status, {
+    runId,
+    driveId: state.drive.driveId,
+  });
   projection.verified = checked.verified;
   if (checked.divergence !== undefined) projection.divergence = checked.divergence;
   return projection;

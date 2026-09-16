@@ -606,6 +606,60 @@ test("supervisor GET reports verified false for a tampered logHash without 500",
   }
 });
 
+test("supervisor GET reports receipt unreadable for a corrupt row without 500", async () => {
+  const { root, stateRoot } = engineProject("kxm-supervisor-drive-receipt-corrupt-");
+  let supervisor: Awaited<ReturnType<typeof startVnextRuntimeSupervisor>> | undefined;
+  try {
+    supervisor = await startVnextRuntimeSupervisor({ stateRoot });
+    const token = readVnextSupervisorToken(vnextRuntimePaths({ stateRoot }))!;
+    const handle = { runtimeId: supervisor.runtimeId, port: supervisor.port, token, started: true };
+    const acceptance = await vnextRuntimeRequest(handle, "POST", "/v1/runs", {
+      projectRoot: root,
+      workflowId: "one-step",
+      prompt: "corrupt receipt",
+    });
+    const runId = (acceptance.run as { runId: string }).runId;
+    const driveRes = await fetch(`http://127.0.0.1:${supervisor.port}/v1/runs/${runId}/drive?projectRoot=${encodeURIComponent(root)}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ mode: "simulated" }),
+    });
+    assert.equal(driveRes.status, 202);
+    const startTime = Date.now();
+    while (Date.now() - startTime < 10_000) {
+      const statusRes = await vnextRuntimeRequest(handle, "GET", `/v1/runs/${runId}?projectRoot=${encodeURIComponent(root)}`);
+      if ((statusRes.run as { status: string }).status === "completed") break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    const peek = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: handle.runtimeId });
+    try {
+      const receipts = peek.eventStore.driveReceiptsForRun(runId);
+      assert.equal(receipts.length, 1);
+      const driveId = receipts[0]!.driveId;
+      const db = new DatabaseSync(peek.eventStore.path);
+      db.prepare("UPDATE drive_receipts SET receipt = ? WHERE drive_id = ?").run("this is not json {", driveId);
+      db.close();
+    } finally {
+      closeVnextRuntimeContext(peek);
+    }
+    const corruptRes = await fetch(`http://127.0.0.1:${supervisor.port}/v1/runs/${runId}?projectRoot=${encodeURIComponent(root)}`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    assert.equal(corruptRes.status, 200);
+    const payload = await corruptRes.json() as {
+      ok: boolean;
+      drive: { verified: boolean; divergence?: string; receipt: unknown };
+    };
+    assert.equal(payload.ok, true);
+    assert.equal(payload.drive.verified, false);
+    assert.equal(payload.drive.receipt, null);
+    assert.equal(payload.drive.divergence, "receipt unreadable");
+  } finally {
+    if (supervisor) await supervisor.stop();
+    removeTempDir(root, stateRoot);
+  }
+});
+
 test("KXM_RUNTIME_STOP_GRACE_MS is bounded and fail-closed", () => {
   assert.equal(DEFAULT_RUNTIME_STOP_GRACE_MS, 30_000);
   assert.equal(MAX_RUNTIME_STOP_GRACE_MS, 600_000);

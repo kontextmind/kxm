@@ -48680,7 +48680,7 @@ function createProgram(ctx, result) {
   }));
   const runCmd = addGlobalOptions(program2.command("runs").description("Inspect vNext runs"));
   runCmd.helpCommand("help", "Show runs help");
-  addGlobalOptions(runCmd.command("status").description("Show the projected status of a run")).argument("<runId>", "Run id").action(async function runStatusAction(runId) {
+  addGlobalOptions(runCmd.command("status").description("Show the projected status of a run, including durable drive receipt state (open / receipt verified / unsettled / orphaned)")).argument("<runId>", "Run id").action(async function runStatusAction(runId) {
     result.code = await cmdVnextRunStatus(runtimeFrom(ctx, this), runId);
   });
   addGlobalOptions(runCmd.command("drive").description("Drive a run with an explicit model-free simulation")).argument("<runId>", "Run id").option("--simulated", "Use the model-free simulation producer").action(async function runDriveAction(runId, options) {

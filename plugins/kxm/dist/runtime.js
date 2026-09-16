@@ -18289,8 +18289,14 @@ function hashVnextDriveLog(events) {
   const body = events.map((event) => `${event.eventId}:${event.sequence}`).join("\n");
   return `sha256:${createHash4("sha256").update(body, "utf8").digest("hex")}`;
 }
-function verifyVnextDriveReceipt(receipt, events, foldedStatus) {
+function verifyVnextDriveReceipt(receipt, events, foldedStatus, binding) {
   const reasons = [];
+  if (receipt.runId !== binding.runId) {
+    reasons.push(`runId ${receipt.runId} != binding ${binding.runId}`);
+  }
+  if (receipt.driveId !== binding.driveId) {
+    reasons.push(`driveId ${receipt.driveId} != binding ${binding.driveId}`);
+  }
   const last = events[events.length - 1];
   const currentLast = last?.sequence ?? 0;
   if (receipt.lastSequence !== currentLast) {
@@ -24505,7 +24511,8 @@ function recordDriveReceipt(context, session, closeInfo) {
     const opened = state.drive;
     const openedEvent = opened ? events.find((event) => event.sequence === opened.openedSequence && event.eventType === "run.drive_opened") : events.find((event) => event.eventType === "run.drive_opened" && event.payload.driveId === session.driveId);
     const last = events[events.length - 1];
-    const openedSequence = opened?.openedSequence ?? openedEvent?.sequence ?? last.sequence;
+    const openedSequence = opened?.openedSequence ?? openedEvent?.sequence;
+    if (openedSequence === void 0) return;
     const receipt = {
       schema: VNEXT_DRIVE_RECEIPT_SCHEMA,
       driveId: session.driveId,
@@ -24536,19 +24543,32 @@ function vnextDrivePollProjection(context, runId, state) {
   if (!state.drive) return void 0;
   const events = context.eventStore.events(runId, 0, 1e6);
   const openedEvent = events.find((event) => event.sequence === state.drive.openedSequence);
-  const receipt = context.eventStore.driveReceipt(state.drive.driveId) ?? null;
+  let receipt = null;
+  let unreadable = false;
+  try {
+    receipt = context.eventStore.driveReceipt(state.drive.driveId) ?? null;
+  } catch {
+    unreadable = true;
+  }
   const projection = {
     driveId: state.drive.driveId,
     mode: state.drive.mode,
     openedAt: openedEvent?.occurredAt ?? "",
-    receipt,
+    receipt: unreadable ? null : receipt,
     verified: false
   };
+  if (unreadable) {
+    projection.divergence = "receipt unreadable";
+    return projection;
+  }
   if (!receipt) {
     projection.divergence = "no receipt";
     return projection;
   }
-  const checked = verifyVnextDriveReceipt(receipt, events, state.status);
+  const checked = verifyVnextDriveReceipt(receipt, events, state.status, {
+    runId,
+    driveId: state.drive.driveId
+  });
   projection.verified = checked.verified;
   if (checked.divergence !== void 0) projection.divergence = checked.divergence;
   return projection;
@@ -26984,6 +27004,19 @@ async function waitForDriveSessions(settled, graceMs) {
     if (timeout !== void 0) clearTimeout(timeout);
   }
 }
+async function driveSessionStillPending(settled) {
+  let pending = true;
+  void settled.then(
+    () => {
+      pending = false;
+    },
+    () => {
+      pending = false;
+    }
+  );
+  await Promise.resolve();
+  return pending;
+}
 async function startVnextRuntimeSupervisor(options = {}) {
   const now = options.now ?? (() => (/* @__PURE__ */ new Date()).toISOString());
   const paths = vnextRuntimePaths(options.stateRoot !== void 0 ? { stateRoot: options.stateRoot } : {});
@@ -27307,6 +27340,7 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
     }
     await waitForDriveSessions(openSessions.map(({ session }) => session.settled), runtimeStopGraceMs());
     for (const { context, session } of openSessions) {
+      if (!await driveSessionStillPending(session.settled)) continue;
       recordDriveReceipt(context, session, {
         kind: "unsettled",
         reason: "runtime_shutdown_grace_expired",

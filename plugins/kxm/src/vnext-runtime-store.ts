@@ -406,8 +406,15 @@ export function verifyVnextDriveReceipt(
   receipt: VnextDriveReceipt,
   events: readonly VnextRunEvent[],
   foldedStatus: string,
+  binding: { runId: string; driveId: string },
 ): { verified: boolean; divergence?: string } {
   const reasons: string[] = [];
+  if (receipt.runId !== binding.runId) {
+    reasons.push(`runId ${receipt.runId} != binding ${binding.runId}`);
+  }
+  if (receipt.driveId !== binding.driveId) {
+    reasons.push(`driveId ${receipt.driveId} != binding ${binding.driveId}`);
+  }
   const last = events[events.length - 1];
   const currentLast = last?.sequence ?? 0;
   if (receipt.lastSequence !== currentLast) {

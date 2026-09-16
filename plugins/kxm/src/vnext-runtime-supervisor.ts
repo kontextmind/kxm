@@ -318,6 +318,16 @@ async function waitForDriveSessions(settled: Promise<unknown>[], graceMs: number
   }
 }
 
+async function driveSessionStillPending(settled: Promise<unknown>): Promise<boolean> {
+  let pending = true;
+  void settled.then(
+    () => { pending = false; },
+    () => { pending = false; },
+  );
+  await Promise.resolve();
+  return pending;
+}
+
 export interface VnextRuntimeSupervisor {
   server: Server;
   port: number;
@@ -687,6 +697,7 @@ async function startVnextRuntimeSupervisorInner(
     }
     await waitForDriveSessions(openSessions.map(({ session }) => session.settled), runtimeStopGraceMs());
     for (const { context, session } of openSessions) {
+      if (!(await driveSessionStillPending(session.settled))) continue;
       recordDriveReceipt(context, session, {
         kind: "unsettled",
         reason: "runtime_shutdown_grace_expired",

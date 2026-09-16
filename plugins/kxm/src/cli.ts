@@ -382,7 +382,7 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     }));
   const runCmd = addGlobalOptions(program.command("runs").description("Inspect vNext runs"));
   runCmd.helpCommand("help", "Show runs help");
-  addGlobalOptions(runCmd.command("status").description("Show the projected status of a run"))
+  addGlobalOptions(runCmd.command("status").description("Show the projected status of a run, including durable drive receipt state (open / receipt verified / unsettled / orphaned)"))
     .argument("<runId>", "Run id")
     .action(async function runStatusAction(this: Command, runId: string) {
       result.code = await cmdVnextRunStatus(runtimeFrom(ctx, this), runId);

@@ -51,6 +51,7 @@ import {
   VnextRuntimeRegistry,
   hashVnextDriveLog,
   newVnextEventId,
+  verifyVnextDriveReceipt,
   vnextRuntimePaths,
   type VnextDriveReceipt,
   type VnextRunEvent,
@@ -1094,6 +1095,12 @@ test("insertDriveReceipt is insert-once and rejects oversized receipts without t
       assert.equal(context.eventStore.insertDriveReceipt(base).inserted, true);
       assert.equal(context.eventStore.insertDriveReceipt({ ...base, settlement: { ...base.settlement, reason: "second" } }).inserted, false);
       assert.equal(context.eventStore.driveReceipt(base.driveId)?.settlement.reason, "first");
+      const matched = verifyVnextDriveReceipt(base, events, "running", { runId: run.runId, driveId: base.driveId });
+      assert.equal(matched.verified, true);
+      const swapped = verifyVnextDriveReceipt(base, events, "running", { runId: "run_swapped", driveId: "drv_swapped0000000000000000" });
+      assert.equal(swapped.verified, false);
+      assert.match(String(swapped.divergence), /runId/);
+      assert.match(String(swapped.divergence), /driveId/);
       const oversized: VnextDriveReceipt = {
         ...base,
         driveId: "drv_89abcdef0123456789abcdef",
