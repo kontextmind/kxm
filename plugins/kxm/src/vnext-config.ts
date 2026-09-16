@@ -166,6 +166,7 @@ export class VnextSchemaRegistry {
   readonly migrationReceiptValidator: ValidateFunction;
   readonly permissionDiffValidator: ValidateFunction;
   readonly runEventValidator: ValidateFunction;
+  readonly driveReceiptValidator: ValidateFunction;
 
   constructor(schemasDir = DEFAULT_SCHEMA_DIR) {
     this.schemasDir = resolve(schemasDir);
@@ -183,6 +184,7 @@ export class VnextSchemaRegistry {
     const migrationReceiptFile = "migration-receipt.schema.json";
     const permissionDiffFile = "permission-diff.schema.json";
     const runEventFile = "run-event.schema.json";
+    const driveReceiptFile = "drive-receipt.schema.json";
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, localBindingsFile)));
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, templateProvenanceFile)));
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, initOperationFile)));
@@ -191,6 +193,7 @@ export class VnextSchemaRegistry {
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, migrationReceiptFile)));
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, permissionDiffFile)));
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, runEventFile)));
+    this.ajv.addSchema(readJsonObject(join(this.schemasDir, driveReceiptFile)));
     for (const [kind, definition] of Object.entries(RESOURCE_SCHEMA) as [VnextResourceKind, { identity: string; file: string }][]) {
       const validator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${definition.file}`);
       if (!validator) throw new Error(`schema did not compile: ${definition.file}`);
@@ -204,6 +207,7 @@ export class VnextSchemaRegistry {
     const migrationReceiptValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${migrationReceiptFile}`);
     const permissionDiffValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${permissionDiffFile}`);
     const runEventValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${runEventFile}`);
+    const driveReceiptValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${driveReceiptFile}`);
     if (!localBindingsValidator) throw new Error(`schema did not compile: ${localBindingsFile}`);
     if (!templateProvenanceValidator) throw new Error(`schema did not compile: ${templateProvenanceFile}`);
     if (!initOperationValidator) throw new Error(`schema did not compile: ${initOperationFile}`);
@@ -212,6 +216,7 @@ export class VnextSchemaRegistry {
     if (!migrationReceiptValidator) throw new Error(`schema did not compile: ${migrationReceiptFile}`);
     if (!permissionDiffValidator) throw new Error(`schema did not compile: ${permissionDiffFile}`);
     if (!runEventValidator) throw new Error(`schema did not compile: ${runEventFile}`);
+    if (!driveReceiptValidator) throw new Error(`schema did not compile: ${driveReceiptFile}`);
     this.localBindingsValidator = localBindingsValidator;
     this.templateProvenanceValidator = templateProvenanceValidator;
     this.initOperationValidator = initOperationValidator;
@@ -220,6 +225,7 @@ export class VnextSchemaRegistry {
     this.migrationReceiptValidator = migrationReceiptValidator;
     this.permissionDiffValidator = permissionDiffValidator;
     this.runEventValidator = runEventValidator;
+    this.driveReceiptValidator = driveReceiptValidator;
   }
 
   validate(kind: VnextResourceKind, value: JsonObject, file: string): VnextConfigIssue[] {
@@ -261,6 +267,10 @@ export class VnextSchemaRegistry {
     return this.validateAuxiliary(value, file, "kxm.permission-diff.v1", this.permissionDiffValidator);
   }
 
+  validateDriveReceipt(value: JsonObject, file: string): VnextConfigIssue[] {
+    return this.validateAuxiliary(value, file, "kxm.drive-receipt.v1", this.driveReceiptValidator);
+  }
+
   private validateAuxiliary(value: JsonObject, file: string, identity: string, validator: ValidateFunction): VnextConfigIssue[] {
     if (value.schema !== identity) {
       return [issue("schema", "schema_identity_mismatch", file, `expected ${identity}, received ${String(value.schema)}`)];
@@ -281,6 +291,27 @@ export function validateRunEvent(value: unknown, file: string): void {
       "run_event_invalid",
       file,
       registry.ajv.errorsText(registry.runEventValidator.errors, { separator: "; " }),
+    )]);
+  }
+}
+
+/** Validate a drive receipt against `kxm.drive-receipt.v1`. Throws `drive_receipt_invalid`. */
+export function validateDriveReceipt(value: unknown, file: string): void {
+  const registry = (cachedRunEventRegistry ??= new VnextSchemaRegistry());
+  if (!value || typeof value !== "object" || Array.isArray(value) || (value as JsonObject).schema !== "kxm.drive-receipt.v1") {
+    throw new VnextConfigError([issue(
+      "schema",
+      "drive_receipt_invalid",
+      file,
+      "expected kxm.drive-receipt.v1",
+    )]);
+  }
+  if (!registry.driveReceiptValidator(value)) {
+    throw new VnextConfigError([issue(
+      "schema",
+      "drive_receipt_invalid",
+      file,
+      registry.ajv.errorsText(registry.driveReceiptValidator.errors, { separator: "; " }),
     )]);
   }
 }

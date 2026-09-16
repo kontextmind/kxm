@@ -16431,6 +16431,7 @@ var VnextSchemaRegistry = class {
   migrationReceiptValidator;
   permissionDiffValidator;
   runEventValidator;
+  driveReceiptValidator;
   constructor(schemasDir = DEFAULT_SCHEMA_DIR) {
     this.schemasDir = resolve(schemasDir);
     this.ajv = new import__.Ajv2020({ allErrors: true, strict: true, strictRequired: false });
@@ -16447,6 +16448,7 @@ var VnextSchemaRegistry = class {
     const migrationReceiptFile = "migration-receipt.schema.json";
     const permissionDiffFile = "permission-diff.schema.json";
     const runEventFile = "run-event.schema.json";
+    const driveReceiptFile = "drive-receipt.schema.json";
     this.ajv.addSchema(readJsonObject(join2(this.schemasDir, localBindingsFile)));
     this.ajv.addSchema(readJsonObject(join2(this.schemasDir, templateProvenanceFile)));
     this.ajv.addSchema(readJsonObject(join2(this.schemasDir, initOperationFile)));
@@ -16455,6 +16457,7 @@ var VnextSchemaRegistry = class {
     this.ajv.addSchema(readJsonObject(join2(this.schemasDir, migrationReceiptFile)));
     this.ajv.addSchema(readJsonObject(join2(this.schemasDir, permissionDiffFile)));
     this.ajv.addSchema(readJsonObject(join2(this.schemasDir, runEventFile)));
+    this.ajv.addSchema(readJsonObject(join2(this.schemasDir, driveReceiptFile)));
     for (const [kind, definition] of Object.entries(RESOURCE_SCHEMA)) {
       const validator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${definition.file}`);
       if (!validator) throw new Error(`schema did not compile: ${definition.file}`);
@@ -16468,6 +16471,7 @@ var VnextSchemaRegistry = class {
     const migrationReceiptValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${migrationReceiptFile}`);
     const permissionDiffValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${permissionDiffFile}`);
     const runEventValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${runEventFile}`);
+    const driveReceiptValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${driveReceiptFile}`);
     if (!localBindingsValidator) throw new Error(`schema did not compile: ${localBindingsFile}`);
     if (!templateProvenanceValidator) throw new Error(`schema did not compile: ${templateProvenanceFile}`);
     if (!initOperationValidator) throw new Error(`schema did not compile: ${initOperationFile}`);
@@ -16476,6 +16480,7 @@ var VnextSchemaRegistry = class {
     if (!migrationReceiptValidator) throw new Error(`schema did not compile: ${migrationReceiptFile}`);
     if (!permissionDiffValidator) throw new Error(`schema did not compile: ${permissionDiffFile}`);
     if (!runEventValidator) throw new Error(`schema did not compile: ${runEventFile}`);
+    if (!driveReceiptValidator) throw new Error(`schema did not compile: ${driveReceiptFile}`);
     this.localBindingsValidator = localBindingsValidator;
     this.templateProvenanceValidator = templateProvenanceValidator;
     this.initOperationValidator = initOperationValidator;
@@ -16484,6 +16489,7 @@ var VnextSchemaRegistry = class {
     this.migrationReceiptValidator = migrationReceiptValidator;
     this.permissionDiffValidator = permissionDiffValidator;
     this.runEventValidator = runEventValidator;
+    this.driveReceiptValidator = driveReceiptValidator;
   }
   validate(kind, value, file) {
     const definition = RESOURCE_SCHEMA[kind];
@@ -16516,6 +16522,9 @@ var VnextSchemaRegistry = class {
   validatePermissionDiff(value, file) {
     return this.validateAuxiliary(value, file, "kxm.permission-diff.v1", this.permissionDiffValidator);
   }
+  validateDriveReceipt(value, file) {
+    return this.validateAuxiliary(value, file, "kxm.drive-receipt.v1", this.driveReceiptValidator);
+  }
   validateAuxiliary(value, file, identity, validator) {
     if (value.schema !== identity) {
       return [issue2("schema", "schema_identity_mismatch", file, `expected ${identity}, received ${String(value.schema)}`)];
@@ -16533,6 +16542,25 @@ function validateRunEvent(value, file) {
       "run_event_invalid",
       file,
       registry.ajv.errorsText(registry.runEventValidator.errors, { separator: "; " })
+    )]);
+  }
+}
+function validateDriveReceipt(value, file) {
+  const registry = cachedRunEventRegistry ??= new VnextSchemaRegistry();
+  if (!value || typeof value !== "object" || Array.isArray(value) || value.schema !== "kxm.drive-receipt.v1") {
+    throw new VnextConfigError([issue2(
+      "schema",
+      "drive_receipt_invalid",
+      file,
+      "expected kxm.drive-receipt.v1"
+    )]);
+  }
+  if (!registry.driveReceiptValidator(value)) {
+    throw new VnextConfigError([issue2(
+      "schema",
+      "drive_receipt_invalid",
+      file,
+      registry.ajv.errorsText(registry.driveReceiptValidator.errors, { separator: "; " })
     )]);
   }
 }
@@ -17923,7 +17951,7 @@ function discoverProjectStores(projectRoot, options = {}) {
         stores.push({
           storeId: `events:${key}`,
           sourcePath: join4(eventsDir, entry.name),
-          maxSupportedVersion: 3
+          maxSupportedVersion: 4
         });
       }
     }
@@ -18013,6 +18041,8 @@ function restoreBackup(manifestPathOrDir, options = {}) {
     let maxSupported = 3;
     if (store.storeId === "registry" || store.storeId === "binding-store") {
       maxSupported = 1;
+    } else if (store.storeId.startsWith("events:")) {
+      maxSupported = 4;
     }
     let targetPath = store.sourcePath;
     if (options.projectRoot && manifest.projectRoot && targetPath.startsWith(manifest.projectRoot)) {
@@ -18255,7 +18285,36 @@ var VnextRuntimeRegistry = class {
 };
 var VNEXT_RUN_EVENT_SCHEMA = "kxm.run-event.v1";
 var VNEXT_ABSENT_MEMORY_REVISION = "ctxrev_absent";
-var VNEXT_EVENT_STORE_SCHEMA_VERSION = 3;
+function hashVnextDriveLog(events) {
+  const body = events.map((event) => `${event.eventId}:${event.sequence}`).join("\n");
+  return `sha256:${createHash4("sha256").update(body, "utf8").digest("hex")}`;
+}
+function verifyVnextDriveReceipt(receipt, events, foldedStatus, binding) {
+  const reasons = [];
+  if (receipt.runId !== binding.runId) {
+    reasons.push(`runId ${receipt.runId} != binding ${binding.runId}`);
+  }
+  if (receipt.driveId !== binding.driveId) {
+    reasons.push(`driveId ${receipt.driveId} != binding ${binding.driveId}`);
+  }
+  const last = events[events.length - 1];
+  const currentLast = last?.sequence ?? 0;
+  if (receipt.lastSequence !== currentLast) {
+    reasons.push(`lastSequence ${receipt.lastSequence} != log ${currentLast}`);
+  }
+  const prefix = events.filter((event) => event.sequence >= 1 && event.sequence <= receipt.lastSequence);
+  if (hashVnextDriveLog(prefix) !== receipt.logHash) {
+    reasons.push("logHash mismatch");
+  }
+  if (receipt.settlement.status !== foldedStatus) {
+    reasons.push(`settlement.status ${receipt.settlement.status} != folded ${foldedStatus}`);
+  }
+  if (reasons.length === 0) return { verified: true };
+  return { verified: false, divergence: reasons.join("; ") };
+}
+var VNEXT_EVENT_STORE_SCHEMA_VERSION = 4;
+var VNEXT_DRIVE_RECEIPT_SCHEMA = "kxm.drive-receipt.v1";
+var DRIVE_RECEIPT_MAX_BYTES = 8 * 1024;
 var EVENT_STORE_TABLES = {
   runs: ["run_id", "project_id", "home_runtime_id", "workflow_id", "prompt_sha256", "status", "config_revision", "memory_revision", "executor_policy_revision", "tool_policy_revision", "created_at", "updated_at"],
   events: ["project_id", "run_id", "sequence", "event_id", "event_type", "command_id", "occurred_at", "recorded_at", "monotonic_ns", "config_revision", "memory_revision", "executor_policy_revision", "tool_policy_revision", "payload", "schema", "home_runtime_id"],
@@ -18334,7 +18393,8 @@ var EVENT_STORE_TABLES = {
     "outcome",
     "settled_event_id",
     "content_hash"
-  ]
+  ],
+  drive_receipts: ["drive_id", "run_id", "project_id", "opened_sequence", "last_sequence", "closed_at", "schema", "receipt"]
 };
 var EVENT_STORE_SCHEMA = `
 CREATE TABLE runs (
@@ -18476,7 +18536,40 @@ CREATE TABLE gate_evidence (
 ) STRICT;
 CREATE UNIQUE INDEX gate_evidence_key ON gate_evidence(run_id, step_id, step_attempt, evidence_key) WHERE evidence_key IS NOT NULL;
 CREATE INDEX gate_evidence_run ON gate_evidence(run_id);
+CREATE TABLE drive_receipts (
+  drive_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  opened_sequence INTEGER NOT NULL,
+  last_sequence INTEGER NOT NULL,
+  closed_at TEXT NOT NULL,
+  schema TEXT NOT NULL,
+  receipt TEXT NOT NULL
+) STRICT;
+CREATE INDEX drive_receipts_run ON drive_receipts(run_id);
 `;
+var DRIVE_RECEIPTS_DDL = `
+CREATE TABLE IF NOT EXISTS drive_receipts (
+  drive_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  opened_sequence INTEGER NOT NULL,
+  last_sequence INTEGER NOT NULL,
+  closed_at TEXT NOT NULL,
+  schema TEXT NOT NULL,
+  receipt TEXT NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS drive_receipts_run ON drive_receipts(run_id);
+`;
+var EVENT_STORE_MIGRATIONS = [
+  {
+    fromVersion: 3,
+    toVersion: 4,
+    migrate(database) {
+      database.exec(DRIVE_RECEIPTS_DDL);
+    }
+  }
+];
 var VnextRunEventStore = class {
   path;
   database;
@@ -18485,7 +18578,8 @@ var VnextRunEventStore = class {
     this.database = openDatabase(this.path, "run event store", {
       schema: EVENT_STORE_SCHEMA,
       version: VNEXT_EVENT_STORE_SCHEMA_VERSION,
-      tables: EVENT_STORE_TABLES
+      tables: EVENT_STORE_TABLES,
+      migrations: EVENT_STORE_MIGRATIONS
     });
   }
   close() {
@@ -18641,6 +18735,38 @@ var VnextRunEventStore = class {
       INSERT INTO run_state (run_id, last_sequence, state) VALUES (?, ?, ?)
       ON CONFLICT(run_id) DO UPDATE SET last_sequence = excluded.last_sequence, state = excluded.state
     `).run(row.runId, row.lastSequence, row.state);
+  }
+  insertDriveReceipt(receipt) {
+    validateDriveReceipt(receipt, "drive-receipt");
+    const canonical = vnextCanonicalJson(receipt);
+    if (Buffer.byteLength(canonical, "utf8") > DRIVE_RECEIPT_MAX_BYTES) {
+      throw runtimeError("drive_receipt_invalid", receipt.driveId, `drive receipt exceeds ${DRIVE_RECEIPT_MAX_BYTES} bytes`);
+    }
+    const result = this.database.prepare(`
+      INSERT INTO drive_receipts (drive_id, run_id, project_id, opened_sequence, last_sequence, closed_at, schema, receipt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(drive_id) DO NOTHING
+    `).run(
+      receipt.driveId,
+      receipt.runId,
+      receipt.projectId,
+      receipt.openedSequence,
+      receipt.lastSequence,
+      receipt.closedAt,
+      receipt.schema,
+      canonical
+    );
+    return { inserted: Number(result.changes) === 1 };
+  }
+  driveReceipt(driveId) {
+    const row = this.database.prepare("SELECT receipt FROM drive_receipts WHERE drive_id = ?").get(driveId);
+    return row ? parseDriveReceipt(row.receipt) : void 0;
+  }
+  driveReceiptsForRun(runId, limit = 20) {
+    const rows = this.database.prepare(`
+      SELECT receipt FROM drive_receipts WHERE run_id = ? ORDER BY closed_at DESC, drive_id DESC LIMIT ?
+    `).all(runId, limit);
+    return rows.map((row) => parseDriveReceipt(row.receipt));
   }
   insertCapability(row) {
     this.database.prepare(`
@@ -18876,6 +19002,11 @@ var VnextRunEventStore = class {
     }
   }
 };
+function parseDriveReceipt(raw) {
+  const parsed = JSON.parse(raw);
+  validateDriveReceipt(parsed, "drive-receipt");
+  return parsed;
+}
 function runFromRow(row) {
   if (typeof row.memory_revision !== "string" || row.memory_revision.length === 0) {
     throw runtimeError("runtime_schema_shape_invalid", row.run_id, "memory_revision is required");
@@ -19499,6 +19630,9 @@ function foldVnextRunState(run, plan, events, options = {}) {
       case "run.cancel_requested":
         foldCancelRequested(state, event);
         break;
+      case "run.drive_opened":
+        foldDriveOpened(state, event);
+        break;
       case "step.entered":
         foldStepEntered(state, plan, event);
         break;
@@ -19709,6 +19843,17 @@ function isProvenFailure(state, plan) {
   const step = plan.steps[stepId];
   const used = state.stepAttempts[stepId] ?? 0;
   return Boolean(step && used >= step.maxAttempts);
+}
+function foldDriveOpened(state, event) {
+  if (state.status !== "running" && state.status !== "blocked_uncertain") {
+    throw runtimeError("run_events_illegal", state.runId, "run.drive_opened is only legal while running or blocked_uncertain");
+  }
+  const driveId = stringPayload(event, "driveId");
+  const mode = stringPayload(event, "mode");
+  if (mode !== "simulated" && mode !== "live") {
+    throw runtimeError("run_events_illegal", state.runId, "run.drive_opened mode must be simulated or live");
+  }
+  state.drive = { driveId, mode, openedSequence: event.sequence };
 }
 function foldCancelRequested(state, event) {
   if (state.cancelRequested || TERMINAL_RUN.has(state.status)) {
@@ -20358,7 +20503,8 @@ function freezeState(state) {
     transitionsUsed: state.transitionsUsed,
     cancelRequested: state.cancelRequested,
     ...state.terminalReason !== void 0 ? { terminalReason: state.terminalReason } : {},
-    ...state.terminalReason !== void 0 && state.status === "failed" ? { failureReason: state.terminalReason } : {}
+    ...state.terminalReason !== void 0 && state.status === "failed" ? { failureReason: state.terminalReason } : {},
+    ...state.drive !== void 0 ? { drive: Object.freeze({ ...state.drive }) } : {}
   };
   return Object.freeze(frozen);
 }
@@ -24323,6 +24469,110 @@ async function driveAdmitted(context, runId, producer, token, options = {}) {
 function newDriveId(runId, token, runtimeId, monotonicNs) {
   return `drv_${createHash11("sha256").update(`${runId}\0${token}\0${runtimeId}\0${monotonicNs}`, "utf8").digest("hex").slice(0, 24)}`;
 }
+function driveErrorSummary(error) {
+  const raw = error instanceof VnextConfigError ? error.issues[0]?.code : void 0;
+  const className = raw && /^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$/.test(raw) ? raw : "drive-failure";
+  return { class: className, component: "vnext-engine", retryable: false };
+}
+function receiptHandoff(handoff) {
+  return {
+    reason: handoff.reason,
+    detail: handoff.detail,
+    ...handoff.field !== void 0 ? { field: handoff.field } : {},
+    ...handoff.stepId !== void 0 ? { stepId: handoff.stepId } : {}
+  };
+}
+function appendDriveOpened(context, runId, driveId, mode) {
+  return context.eventStore.transaction(() => {
+    const run = requireRun(context, runId);
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const sequence = context.eventStore.nextSequence(runId);
+    const event = {
+      ...vnextEventBase(context, run, now, vnextMonotonicNs()),
+      eventId: newVnextEventId(),
+      eventType: "run.drive_opened",
+      sequence,
+      payload: { driveId, mode }
+    };
+    context.eventStore.appendEvent(event);
+    const next = foldStoredVnextRun(context, run);
+    persistVnextRunState(context, runId, next, sequence);
+    return { sequence, occurredAt: now };
+  });
+}
+function recordDriveReceipt(context, session, closeInfo) {
+  if (isVnextRuntimeContextClosed(context)) return;
+  try {
+    const run = context.eventStore.run(session.runId);
+    if (!run) return;
+    const state = foldStoredVnextRun(context, run);
+    const events = context.eventStore.events(session.runId, 0, 1e6);
+    if (events.length === 0) return;
+    const opened = state.drive;
+    const openedEvent = opened ? events.find((event) => event.sequence === opened.openedSequence && event.eventType === "run.drive_opened") : events.find((event) => event.eventType === "run.drive_opened" && event.payload.driveId === session.driveId);
+    const last = events[events.length - 1];
+    const openedSequence = opened?.openedSequence ?? openedEvent?.sequence;
+    if (openedSequence === void 0) return;
+    const receipt = {
+      schema: VNEXT_DRIVE_RECEIPT_SCHEMA,
+      driveId: session.driveId,
+      runId: session.runId,
+      projectId: run.projectId,
+      homeRuntimeId: session.homeRuntimeId,
+      mode: session.mode,
+      openedAt: openedEvent?.occurredAt ?? session.openedAt,
+      openedSequence,
+      closedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      lastSequence: last.sequence,
+      logHash: hashVnextDriveLog(events.filter((event) => event.sequence >= 1 && event.sequence <= last.sequence)),
+      settlement: {
+        kind: closeInfo.kind,
+        status: state.status,
+        reason: closeInfo.reason ?? state.terminalReason ?? "",
+        ...closeInfo.kind === "handoff" && closeInfo.handoff ? { handoff: receiptHandoff(closeInfo.handoff) } : {},
+        ...closeInfo.error !== void 0 ? { error: closeInfo.error } : {}
+      },
+      budget: null,
+      producer: { id: closeInfo.producerId, closed: closeInfo.producerClosed }
+    };
+    context.eventStore.insertDriveReceipt(receipt);
+  } catch {
+  }
+}
+function vnextDrivePollProjection(context, runId, state) {
+  if (!state.drive) return void 0;
+  const events = context.eventStore.events(runId, 0, 1e6);
+  const openedEvent = events.find((event) => event.sequence === state.drive.openedSequence);
+  let receipt = null;
+  let unreadable = false;
+  try {
+    receipt = context.eventStore.driveReceipt(state.drive.driveId) ?? null;
+  } catch {
+    unreadable = true;
+  }
+  const projection = {
+    driveId: state.drive.driveId,
+    mode: state.drive.mode,
+    openedAt: openedEvent?.occurredAt ?? "",
+    receipt: unreadable ? null : receipt,
+    verified: false
+  };
+  if (unreadable) {
+    projection.divergence = "receipt unreadable";
+    return projection;
+  }
+  if (!receipt) {
+    projection.divergence = "no receipt";
+    return projection;
+  }
+  const checked = verifyVnextDriveReceipt(receipt, events, state.status, {
+    runId,
+    driveId: state.drive.driveId
+  });
+  projection.verified = checked.verified;
+  if (checked.divergence !== void 0) projection.divergence = checked.divergence;
+  return projection;
+}
 function inflightAttemptId(state) {
   const leftover = unreconciledPanelAttemptId(state);
   if (leftover) return leftover;
@@ -24470,13 +24720,15 @@ var VnextRunScheduler = class _VnextRunScheduler {
               throw error;
             }
             const driveId = newDriveId(runId, token, this.context.homeRuntimeId, vnextMonotonicNs());
+            const openedMeta = appendDriveOpened(this.context, runId, driveId, options.mode);
             const session = {
               driveId,
               runId,
               token,
               homeRuntimeId: this.context.homeRuntimeId,
               mode: options.mode,
-              openedAt: (/* @__PURE__ */ new Date()).toISOString(),
+              openedAt: openedMeta.occurredAt,
+              producerId: producer.id,
               controller: new AbortController(),
               settled
             };
@@ -24485,10 +24737,30 @@ var VnextRunScheduler = class _VnextRunScheduler {
             resolveOpen({ driveId, settled });
             try {
               const result = await driveAdmitted(this.context, runId, producer, token, driveOptions);
+              const kind = result.handoff ? "handoff" : isTerminalRunStatus(result.state.status) ? "terminal" : "unsettled";
+              recordDriveReceipt(this.context, session, {
+                kind,
+                ...result.state.terminalReason !== void 0 ? { reason: result.state.terminalReason } : result.handoff ? { reason: result.handoff.reason } : {},
+                ...result.handoff ? { handoff: result.handoff } : {},
+                producerId: producer.id,
+                producerClosed: false
+              });
               pending.resolve(result);
               return result;
             } catch (error) {
               recordBareDriveFailure(this.context, runId);
+              let foldedStatus;
+              try {
+                foldedStatus = foldStoredVnextRun(this.context, requireRun(this.context, runId)).status;
+              } catch {
+                foldedStatus = void 0;
+              }
+              recordDriveReceipt(this.context, session, {
+                kind: foldedStatus !== void 0 && isTerminalRunStatus(foldedStatus) ? "terminal" : "unsettled",
+                error: driveErrorSummary(error),
+                producerId: producer.id,
+                producerClosed: false
+              });
               pending.reject(error);
               throw error;
             }
@@ -26732,6 +27004,19 @@ async function waitForDriveSessions(settled, graceMs) {
     if (timeout !== void 0) clearTimeout(timeout);
   }
 }
+async function driveSessionStillPending(settled) {
+  let pending = true;
+  void settled.then(
+    () => {
+      pending = false;
+    },
+    () => {
+      pending = false;
+    }
+  );
+  await Promise.resolve();
+  return pending;
+}
 async function startVnextRuntimeSupervisor(options = {}) {
   const now = options.now ?? (() => (/* @__PURE__ */ new Date()).toISOString());
   const paths = vnextRuntimePaths(options.stateRoot !== void 0 ? { stateRoot: options.stateRoot } : {});
@@ -26835,7 +27120,9 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
           const bundle = loadVnextProject(projectRoot, {});
           if (request.method === "GET" && !sub) {
             const projected = rebuildVnextRunProjection(context, runId);
-            sendJson(response, 200, { ok: true, run: projected });
+            const folded = foldStoredVnextRun(context, projected);
+            const drive = vnextDrivePollProjection(context, runId, folded);
+            sendJson(response, 200, { ok: true, run: projected, ...drive !== void 0 ? { drive } : {} });
             return;
           }
           if (request.method === "POST" && sub === "drive") {
@@ -27052,6 +27339,15 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
       }
     }
     await waitForDriveSessions(openSessions.map(({ session }) => session.settled), runtimeStopGraceMs());
+    for (const { context, session } of openSessions) {
+      if (!await driveSessionStillPending(session.settled)) continue;
+      recordDriveReceipt(context, session, {
+        kind: "unsettled",
+        reason: "runtime_shutdown_grace_expired",
+        producerId: session.producerId,
+        producerClosed: false
+      });
+    }
     for (const context of contexts.values()) closeVnextRuntimeContext(context);
     contexts.clear();
     const closed = new Promise((resolveStop) => server.close(() => resolveStop()));
@@ -29382,6 +29678,7 @@ export {
   DEFAULT_RUNTIME_STOP_GRACE_MS,
   DEFAULT_SOCKET_DIR,
   DEFAULT_SUBAGENT_MODELS,
+  DRIVE_RECEIPT_MAX_BYTES,
   IMPROVEMENT_REPORT_SCHEMA,
   IMPROVEMENT_REPORT_V1_SCHEMA,
   LOG_LEVEL_PRIORITY,
@@ -29398,6 +29695,7 @@ export {
   SubagentManager,
   VIEWPORT_PRESETS,
   VNEXT_ABSENT_MEMORY_REVISION,
+  VNEXT_DRIVE_RECEIPT_SCHEMA,
   VNEXT_EVENT_STORE_SCHEMA_VERSION,
   VNEXT_REGISTRY_SCHEMA_VERSION,
   VNEXT_RUN_EVENT_SCHEMA,
@@ -29452,6 +29750,7 @@ export {
   groupRoutingRecords,
   harnessCommandCandidates,
   harnessSpawnUsesShell,
+  hashVnextDriveLog,
   hashVnextSupervisorToken,
   hashVnextTokenProof,
   isKnownHarnessId,
@@ -29511,6 +29810,7 @@ export {
   userTables,
   validateHarnessModelPair,
   verifyExpectedTables,
+  verifyVnextDriveReceipt,
   vnextDeclaredExecutorIds,
   vnextDeclaredRepositoryIds,
   vnextEventBase,

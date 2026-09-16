@@ -420,7 +420,7 @@ export function discoverProjectStores(projectRoot: string, options: { hubDataPat
         stores.push({
           storeId: `events:${key}`,
           sourcePath: join(eventsDir, entry.name),
-          maxSupportedVersion: 3,
+          maxSupportedVersion: 4,
         });
       }
     }
@@ -537,6 +537,8 @@ export function restoreBackup(
     let maxSupported = 3;
     if (store.storeId === "registry" || store.storeId === "binding-store") {
       maxSupported = 1;
+    } else if (store.storeId.startsWith("events:")) {
+      maxSupported = 4;
     }
 
     let targetPath = store.sourcePath;

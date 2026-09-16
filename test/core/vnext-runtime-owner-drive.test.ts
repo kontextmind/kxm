@@ -32,6 +32,7 @@ function session(runId: string, token: string, driveId: string): VnextDriveSessi
     homeRuntimeId: "rtm_owner_drive",
     mode: "simulated",
     openedAt: new Date().toISOString(),
+    producerId: "driver-simulated",
     controller: new AbortController(),
     settled: Promise.resolve(),
   };

@@ -23,7 +23,7 @@ import {
 } from "./vnext-runtime.ts";
 import { createVnextOneShotProducer } from "./vnext-oneshot-producer.ts";
 import { isProducerAdmitted } from "./producers.ts";
-import { VnextRunScheduler, createVnextSimulatedProducer, recoverVnextRun } from "./vnext-engine.ts";
+import { VnextRunScheduler, createVnextSimulatedProducer, recordDriveReceipt, recoverVnextRun, vnextDrivePollProjection } from "./vnext-engine.ts";
 import { vnextOpenDriveSessions } from "./vnext-runtime-owner.ts";
 
 /* ------------------------------------------------------------------ *
@@ -318,6 +318,16 @@ async function waitForDriveSessions(settled: Promise<unknown>[], graceMs: number
   }
 }
 
+async function driveSessionStillPending(settled: Promise<unknown>): Promise<boolean> {
+  let pending = true;
+  void settled.then(
+    () => { pending = false; },
+    () => { pending = false; },
+  );
+  await Promise.resolve();
+  return pending;
+}
+
 export interface VnextRuntimeSupervisor {
   server: Server;
   port: number;
@@ -446,7 +456,9 @@ async function startVnextRuntimeSupervisorInner(
           const bundle = loadVnextProject(projectRoot, {});
           if (request.method === "GET" && !sub) {
             const projected = rebuildVnextRunProjection(context, runId);
-            sendJson(response, 200, { ok: true, run: projected });
+            const folded = foldStoredVnextRun(context, projected);
+            const drive = vnextDrivePollProjection(context, runId, folded);
+            sendJson(response, 200, { ok: true, run: projected, ...(drive !== undefined ? { drive } : {}) });
             return;
           }
           if (request.method === "POST" && sub === "drive") {
@@ -684,6 +696,15 @@ async function startVnextRuntimeSupervisorInner(
       }
     }
     await waitForDriveSessions(openSessions.map(({ session }) => session.settled), runtimeStopGraceMs());
+    for (const { context, session } of openSessions) {
+      if (!(await driveSessionStillPending(session.settled))) continue;
+      recordDriveReceipt(context, session, {
+        kind: "unsettled",
+        reason: "runtime_shutdown_grace_expired",
+        producerId: session.producerId,
+        producerClosed: false,
+      });
+    }
     for (const context of contexts.values()) closeVnextRuntimeContext(context);
     contexts.clear();
     const closed = new Promise<void>((resolveStop) => server.close(() => resolveStop()));

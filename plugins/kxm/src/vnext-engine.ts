@@ -66,12 +66,17 @@ import {
   type VnextRuntimeContext,
 } from "./vnext-runtime.ts";
 import {
+  hashVnextDriveLog,
   newVnextAssignmentId,
   newVnextAttemptId,
   newVnextEventId,
   projectRuntimeKey,
   runtimeError,
+  verifyVnextDriveReceipt,
+  VNEXT_DRIVE_RECEIPT_SCHEMA,
   type VnextAttemptCapabilityRow,
+  type VnextDriveReceipt,
+  type VnextDriveReceiptHandoff,
   type VnextGateAttemptRow,
   type VnextGateEvidenceRow,
   type VnextGateObservationRow,
@@ -79,7 +84,7 @@ import {
   type VnextRunRecord,
   type VnextRunStatus,
 } from "./vnext-runtime-store.ts";
-import { vnextCanonicalJson, type JsonValue, type VnextProjectBundle } from "./vnext-config.ts";
+import { VnextConfigError, vnextCanonicalJson, type JsonValue, type VnextProjectBundle } from "./vnext-config.ts";
 import { evaluateArtifactsGate } from "./vnext-engine-artifacts.ts";
 import { createCommandObserver } from "./vnext-engine-command.ts";
 import {
@@ -432,6 +437,149 @@ function newDriveId(runId: string, token: string, runtimeId: string, monotonicNs
   return `drv_${createHash("sha256").update(`${runId}\0${token}\0${runtimeId}\0${monotonicNs}`, "utf8").digest("hex").slice(0, 24)}`;
 }
 
+export interface VnextDrivePollProjection {
+  driveId: string;
+  mode: "simulated" | "live";
+  openedAt: string;
+  receipt: VnextDriveReceipt | null;
+  verified: boolean;
+  divergence?: string;
+}
+
+export interface VnextDriveReceiptCloseInfo {
+  kind: "terminal" | "handoff" | "unsettled";
+  reason?: string;
+  handoff?: VnextRunHandoff;
+  error?: { class: string; component: string; retryable: boolean };
+  producerId: string;
+  producerClosed: boolean;
+}
+
+function driveErrorSummary(error: unknown): { class: string; component: string; retryable: boolean } {
+  const raw = error instanceof VnextConfigError ? error.issues[0]?.code : undefined;
+  const className = raw && /^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$/.test(raw) ? raw : "drive-failure";
+  return { class: className, component: "vnext-engine", retryable: false };
+}
+
+function receiptHandoff(handoff: VnextRunHandoff): VnextDriveReceiptHandoff {
+  return {
+    reason: handoff.reason,
+    detail: handoff.detail,
+    ...(handoff.field !== undefined ? { field: handoff.field } : {}),
+    ...(handoff.stepId !== undefined ? { stepId: handoff.stepId } : {}),
+  };
+}
+
+function appendDriveOpened(
+  context: VnextRuntimeContext,
+  runId: string,
+  driveId: string,
+  mode: "simulated" | "live",
+): { sequence: number; occurredAt: string } {
+  return context.eventStore.transaction(() => {
+    const run = requireRun(context, runId);
+    const now = new Date().toISOString();
+    const sequence = context.eventStore.nextSequence(runId);
+    const event: VnextRunEvent = {
+      ...vnextEventBase(context, run, now, vnextMonotonicNs()),
+      eventId: newVnextEventId(),
+      eventType: "run.drive_opened",
+      sequence,
+      payload: { driveId, mode },
+    };
+    context.eventStore.appendEvent(event);
+    const next = foldStoredVnextRun(context, run);
+    persistVnextRunState(context, runId, next, sequence);
+    return { sequence, occurredAt: now };
+  });
+}
+
+export function recordDriveReceipt(
+  context: VnextRuntimeContext,
+  session: VnextDriveSession,
+  closeInfo: VnextDriveReceiptCloseInfo,
+): void {
+  if (isVnextRuntimeContextClosed(context)) return;
+  try {
+    const run = context.eventStore.run(session.runId);
+    if (!run) return;
+    const state = foldStoredVnextRun(context, run);
+    const events = context.eventStore.events(session.runId, 0, 1_000_000);
+    if (events.length === 0) return;
+    const opened = state.drive;
+    const openedEvent = opened
+      ? events.find((event) => event.sequence === opened.openedSequence && event.eventType === "run.drive_opened")
+      : events.find((event) => event.eventType === "run.drive_opened" && event.payload.driveId === session.driveId);
+    const last = events[events.length - 1]!;
+    const openedSequence = opened?.openedSequence ?? openedEvent?.sequence;
+    if (openedSequence === undefined) return;
+    const receipt: VnextDriveReceipt = {
+      schema: VNEXT_DRIVE_RECEIPT_SCHEMA,
+      driveId: session.driveId,
+      runId: session.runId,
+      projectId: run.projectId,
+      homeRuntimeId: session.homeRuntimeId,
+      mode: session.mode,
+      openedAt: openedEvent?.occurredAt ?? session.openedAt,
+      openedSequence,
+      closedAt: new Date().toISOString(),
+      lastSequence: last.sequence,
+      logHash: hashVnextDriveLog(events.filter((event) => event.sequence >= 1 && event.sequence <= last.sequence)),
+      settlement: {
+        kind: closeInfo.kind,
+        status: state.status,
+        reason: closeInfo.reason ?? state.terminalReason ?? "",
+        ...(closeInfo.kind === "handoff" && closeInfo.handoff ? { handoff: receiptHandoff(closeInfo.handoff) } : {}),
+        ...(closeInfo.error !== undefined ? { error: closeInfo.error } : {}),
+      },
+      budget: null,
+      producer: { id: closeInfo.producerId, closed: closeInfo.producerClosed },
+    };
+    context.eventStore.insertDriveReceipt(receipt);
+  } catch {
+    // The drive result governs; a missing receipt is visible on poll.
+  }
+}
+
+export function vnextDrivePollProjection(
+  context: VnextRuntimeContext,
+  runId: string,
+  state: VnextRunState,
+): VnextDrivePollProjection | undefined {
+  if (!state.drive) return undefined;
+  const events = context.eventStore.events(runId, 0, 1_000_000);
+  const openedEvent = events.find((event) => event.sequence === state.drive!.openedSequence);
+  let receipt: VnextDriveReceipt | null = null;
+  let unreadable = false;
+  try {
+    receipt = context.eventStore.driveReceipt(state.drive.driveId) ?? null;
+  } catch {
+    unreadable = true;
+  }
+  const projection: VnextDrivePollProjection = {
+    driveId: state.drive.driveId,
+    mode: state.drive.mode,
+    openedAt: openedEvent?.occurredAt ?? "",
+    receipt: unreadable ? null : receipt,
+    verified: false,
+  };
+  if (unreadable) {
+    projection.divergence = "receipt unreadable";
+    return projection;
+  }
+  if (!receipt) {
+    projection.divergence = "no receipt";
+    return projection;
+  }
+  const checked = verifyVnextDriveReceipt(receipt, events, state.status, {
+    runId,
+    driveId: state.drive.driveId,
+  });
+  projection.verified = checked.verified;
+  if (checked.divergence !== undefined) projection.divergence = checked.divergence;
+  return projection;
+}
+
 function inflightAttemptId(state: VnextRunState): string | undefined {
   const leftover = unreconciledPanelAttemptId(state);
   if (leftover) return leftover;
@@ -595,13 +743,15 @@ export class VnextRunScheduler {
               throw error;
             }
             const driveId = newDriveId(runId, token, this.context.homeRuntimeId, vnextMonotonicNs());
+            const openedMeta = appendDriveOpened(this.context, runId, driveId, options.mode);
             const session: VnextDriveSession = {
               driveId,
               runId,
               token,
               homeRuntimeId: this.context.homeRuntimeId,
               mode: options.mode,
-              openedAt: new Date().toISOString(),
+              openedAt: openedMeta.occurredAt,
+              producerId: producer.id,
               controller: new AbortController(),
               settled,
             };
@@ -610,10 +760,30 @@ export class VnextRunScheduler {
             resolveOpen({ driveId, settled });
             try {
               const result = await driveAdmitted(this.context, runId, producer, token, driveOptions);
+              const kind = result.handoff ? "handoff" : isTerminalRunStatus(result.state.status) ? "terminal" : "unsettled";
+              recordDriveReceipt(this.context, session, {
+                kind,
+                ...(result.state.terminalReason !== undefined ? { reason: result.state.terminalReason } : result.handoff ? { reason: result.handoff.reason } : {}),
+                ...(result.handoff ? { handoff: result.handoff } : {}),
+                producerId: producer.id,
+                producerClosed: false,
+              });
               pending.resolve(result);
               return result;
             } catch (error) {
               recordBareDriveFailure(this.context, runId);
+              let foldedStatus: string | undefined;
+              try {
+                foldedStatus = foldStoredVnextRun(this.context, requireRun(this.context, runId)).status;
+              } catch {
+                foldedStatus = undefined;
+              }
+              recordDriveReceipt(this.context, session, {
+                kind: foldedStatus !== undefined && isTerminalRunStatus(foldedStatus as VnextRunStatus) ? "terminal" : "unsettled",
+                error: driveErrorSummary(error),
+                producerId: producer.id,
+                producerClosed: false,
+              });
               pending.reject(error);
               throw error;
             }

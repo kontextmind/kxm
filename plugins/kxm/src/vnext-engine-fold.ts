@@ -107,6 +107,12 @@ export interface VnextRunCurrentStep {
   readonly evidenceRefs?: readonly { id: string; kind: string; hash: string; status: string }[] | undefined;
 }
 
+export interface VnextRunDriveBinding {
+  readonly driveId: string;
+  readonly mode: "simulated" | "live";
+  readonly openedSequence: number;
+}
+
 export interface VnextRunState {
   readonly schema: typeof VNEXT_RUN_STATE_SCHEMA;
   readonly runId: string;
@@ -120,6 +126,7 @@ export interface VnextRunState {
   readonly cancelRequested: boolean;
   readonly terminalReason?: string | undefined;
   readonly failureReason?: string | undefined;
+  readonly drive?: VnextRunDriveBinding | undefined;
 }
 
 interface MutableAttempt {
@@ -171,6 +178,7 @@ interface MutableState {
   awaitingTransition: boolean;
   cancelCommandId?: string | undefined;
   lastTerminalTransition?: VnextTerminalStatus | undefined;
+  drive?: VnextRunDriveBinding | undefined;
 }
 
 function emptyPanel(): MutablePanel {
@@ -462,6 +470,9 @@ export function foldVnextRunState(
       case "run.cancel_requested":
         foldCancelRequested(state, event);
         break;
+      case "run.drive_opened":
+        foldDriveOpened(state, event);
+        break;
       case "step.entered":
         foldStepEntered(state, plan!, event);
         break;
@@ -692,6 +703,18 @@ function isProvenFailure(state: MutableState, plan: VnextCompiledPlan | undefine
   const step = plan.steps[stepId];
   const used = state.stepAttempts[stepId] ?? 0;
   return Boolean(step && used >= step.maxAttempts);
+}
+
+function foldDriveOpened(state: MutableState, event: VnextRunEvent): void {
+  if (state.status !== "running" && state.status !== "blocked_uncertain") {
+    throw runtimeError("run_events_illegal", state.runId, "run.drive_opened is only legal while running or blocked_uncertain");
+  }
+  const driveId = stringPayload(event, "driveId");
+  const mode = stringPayload(event, "mode");
+  if (mode !== "simulated" && mode !== "live") {
+    throw runtimeError("run_events_illegal", state.runId, "run.drive_opened mode must be simulated or live");
+  }
+  state.drive = { driveId, mode, openedSequence: event.sequence };
 }
 
 function foldCancelRequested(state: MutableState, event: VnextRunEvent): void {
@@ -1379,6 +1402,7 @@ function freezeState(state: MutableState): VnextRunState {
     cancelRequested: state.cancelRequested,
     ...(state.terminalReason !== undefined ? { terminalReason: state.terminalReason } : {}),
     ...(state.terminalReason !== undefined && state.status === "failed" ? { failureReason: state.terminalReason } : {}),
+    ...(state.drive !== undefined ? { drive: Object.freeze({ ...state.drive }) } : {}),
   };
   return Object.freeze(frozen);
 }

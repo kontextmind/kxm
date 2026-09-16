@@ -1083,9 +1083,22 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   distinct bounded catalog-status reasons (stale-with-date / corrupt /
   missing / verified) in text and JSON. Note: this repo's own
   `.kxm/prices.yaml` (2026-09-08) is stale under the gate, so explain against
-  this checkout reports unknown until a fresh snapshot exists. Still open for
-  the next slices: drive decoupling B2 durable
-  receipts, B3 run-duration budget, and B4 optional surfaces (B1 accepted
+  this checkout reports unknown until a fresh snapshot exists. Drive
+  decoupling B2 is accepted (2026-09-16, task_9076be56b581 slice B2, commits
+  3ba990c+43d374b on feat/p11-b2-drive-receipts): `run.drive_opened` binds
+  the driveId inside the log (fold-legal only while running/
+  blocked_uncertain; run-state stays kxm.run-state.v2 additive);
+  `kxm.drive-receipt.v1` records settlement (terminal/handoff/unsettled,
+  folded status only, logHash over eventId:sequence, 8 KiB bound, no
+  prompts/producer output/evidence bodies) insert-once by driveId with
+  shutdown grace-expiry writing `unsettled`; the poll path reports corrupt
+  receipts as `verified:false` divergence instead of throwing; pre-B2 stores
+  replay without projection divergence (schema 3→4 creates drive_receipts
+  with user_version stamped). Witness `npm run verify` green on 43d374b;
+  critics Fable (arch) and Sol (cli) APPROVE after one resolved round
+  (poll-path throw on corrupt row; runs status help text). Still open for
+  the next slices: drive decoupling
+  B3 run-duration budget, and B4 optional surfaces (B1 accepted
   2026-09-15, task_p11-drive-decoupling, commit d590d27f, tree a107f3e2:
   engine-owned drive sessions, driveId on 202, session-owned producer,
   admission-atomic pin+start, bounded truthful shutdown via

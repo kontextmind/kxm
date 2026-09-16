@@ -473,6 +473,42 @@ export async function cmdVnextRun(runtime: Runtime, workflow: string | undefined
   }
 }
 
+interface VnextStatusDrive {
+  driveId?: string;
+  mode?: string;
+  openedAt?: string;
+  receipt?: {
+    settlement?: { kind?: string; status?: string; reason?: string };
+  } | null;
+  verified?: boolean;
+  divergence?: string;
+}
+
+function formatDriveStatusLine(runStatus: string, drive: VnextStatusDrive | undefined): string | undefined {
+  if (!drive || typeof drive.driveId !== "string" || drive.driveId.length === 0) return undefined;
+  const receipt = drive.receipt ?? null;
+  if (receipt === null) {
+    if (runStatus === "running" || runStatus === "blocked_uncertain") {
+      return `drive ${drive.driveId}: open`;
+    }
+    return `drive ${drive.driveId}: no receipt (orphaned)`;
+  }
+  const kind = receipt.settlement?.kind;
+  const reason = typeof receipt.settlement?.reason === "string" ? receipt.settlement.reason : "";
+  if (kind === "unsettled") {
+    return `drive ${drive.driveId}: unsettled ${reason}`.trimEnd();
+  }
+  if (kind === "handoff") {
+    return drive.verified === true
+      ? `drive ${drive.driveId}: handoff (receipt verified)`
+      : `drive ${drive.driveId}: handoff`;
+  }
+  if (drive.verified === true) {
+    return `drive ${drive.driveId}: completed (receipt verified)`;
+  }
+  return `drive ${drive.driveId}: completed`;
+}
+
 export async function cmdVnextRunStatus(runtime: Runtime, runId: string): Promise<number> {
   try {
     const projectRoot = discoverVnextProjectRoot(runtime.cwd);
@@ -480,10 +516,17 @@ export async function cmdVnextRunStatus(runtime: Runtime, runId: string): Promis
       print(runtime.io, runtime.json, { ok: false, command: "runs status", error: "project_required" }, "kxm runs status requires a vNext project (run kxm init first)");
       return 1;
     }
-    const supervisor = await ensureVnextSupervisor({ env: runtime.env });
-    const result = await vnextRuntimeRequest(supervisor, "GET", `/v1/runs/${encodeURIComponent(runId)}?projectRoot=${encodeURIComponent(projectRoot)}`);
+    const supervisor = await (vnextDriveCliSeams.ensureSupervisor ?? ensureVnextSupervisor)({ env: runtime.env });
+    const result = await (vnextDriveCliSeams.runtimeRequest ?? vnextRuntimeRequest)(supervisor, "GET", `/v1/runs/${encodeURIComponent(runId)}?projectRoot=${encodeURIComponent(projectRoot)}`);
     const run = result.run as { runId: string; status: string; workflowId: string; configRevision: string; updatedAt: string };
-    print(runtime.io, runtime.json, { ok: true, command: "runs status", run }, `run ${run.runId}: ${run.status} (workflow ${run.workflowId}, updated ${run.updatedAt})`);
+    const drive = result.drive as VnextStatusDrive | undefined;
+    const driveLine = formatDriveStatusLine(run.status, drive);
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: true, command: "runs status", run, ...(drive !== undefined ? { drive } : {}) },
+      `run ${run.runId}: ${run.status} (workflow ${run.workflowId}, updated ${run.updatedAt})${driveLine ? `\n${driveLine}` : ""}`,
+    );
     return 0;
   } catch (error) {
     if (error instanceof VnextConfigError) {

@@ -22050,6 +22050,7 @@ var VnextSchemaRegistry = class {
   migrationReceiptValidator;
   permissionDiffValidator;
   runEventValidator;
+  driveReceiptValidator;
   constructor(schemasDir = DEFAULT_SCHEMA_DIR) {
     this.schemasDir = resolve3(schemasDir);
     this.ajv = new import__.Ajv2020({ allErrors: true, strict: true, strictRequired: false });
@@ -22066,6 +22067,7 @@ var VnextSchemaRegistry = class {
     const migrationReceiptFile = "migration-receipt.schema.json";
     const permissionDiffFile = "permission-diff.schema.json";
     const runEventFile = "run-event.schema.json";
+    const driveReceiptFile = "drive-receipt.schema.json";
     this.ajv.addSchema(readJsonObject(join6(this.schemasDir, localBindingsFile)));
     this.ajv.addSchema(readJsonObject(join6(this.schemasDir, templateProvenanceFile)));
     this.ajv.addSchema(readJsonObject(join6(this.schemasDir, initOperationFile)));
@@ -22074,6 +22076,7 @@ var VnextSchemaRegistry = class {
     this.ajv.addSchema(readJsonObject(join6(this.schemasDir, migrationReceiptFile)));
     this.ajv.addSchema(readJsonObject(join6(this.schemasDir, permissionDiffFile)));
     this.ajv.addSchema(readJsonObject(join6(this.schemasDir, runEventFile)));
+    this.ajv.addSchema(readJsonObject(join6(this.schemasDir, driveReceiptFile)));
     for (const [kind, definition] of Object.entries(RESOURCE_SCHEMA)) {
       const validator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${definition.file}`);
       if (!validator) throw new Error(`schema did not compile: ${definition.file}`);
@@ -22087,6 +22090,7 @@ var VnextSchemaRegistry = class {
     const migrationReceiptValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${migrationReceiptFile}`);
     const permissionDiffValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${permissionDiffFile}`);
     const runEventValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${runEventFile}`);
+    const driveReceiptValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${driveReceiptFile}`);
     if (!localBindingsValidator) throw new Error(`schema did not compile: ${localBindingsFile}`);
     if (!templateProvenanceValidator) throw new Error(`schema did not compile: ${templateProvenanceFile}`);
     if (!initOperationValidator) throw new Error(`schema did not compile: ${initOperationFile}`);
@@ -22095,6 +22099,7 @@ var VnextSchemaRegistry = class {
     if (!migrationReceiptValidator) throw new Error(`schema did not compile: ${migrationReceiptFile}`);
     if (!permissionDiffValidator) throw new Error(`schema did not compile: ${permissionDiffFile}`);
     if (!runEventValidator) throw new Error(`schema did not compile: ${runEventFile}`);
+    if (!driveReceiptValidator) throw new Error(`schema did not compile: ${driveReceiptFile}`);
     this.localBindingsValidator = localBindingsValidator;
     this.templateProvenanceValidator = templateProvenanceValidator;
     this.initOperationValidator = initOperationValidator;
@@ -22103,6 +22108,7 @@ var VnextSchemaRegistry = class {
     this.migrationReceiptValidator = migrationReceiptValidator;
     this.permissionDiffValidator = permissionDiffValidator;
     this.runEventValidator = runEventValidator;
+    this.driveReceiptValidator = driveReceiptValidator;
   }
   validate(kind, value, file) {
     const definition = RESOURCE_SCHEMA[kind];
@@ -22134,6 +22140,9 @@ var VnextSchemaRegistry = class {
   }
   validatePermissionDiff(value, file) {
     return this.validateAuxiliary(value, file, "kxm.permission-diff.v1", this.permissionDiffValidator);
+  }
+  validateDriveReceipt(value, file) {
+    return this.validateAuxiliary(value, file, "kxm.drive-receipt.v1", this.driveReceiptValidator);
   }
   validateAuxiliary(value, file, identity, validator) {
     if (value.schema !== identity) {
@@ -23918,7 +23927,7 @@ function discoverProjectStores(projectRoot, options = {}) {
         stores.push({
           storeId: `events:${key}`,
           sourcePath: join8(eventsDir, entry.name),
-          maxSupportedVersion: 3
+          maxSupportedVersion: 4
         });
       }
     }
@@ -24008,6 +24017,8 @@ function restoreBackup(manifestPathOrDir, options = {}) {
     let maxSupported = 3;
     if (store.storeId === "registry" || store.storeId === "binding-store") {
       maxSupported = 1;
+    } else if (store.storeId.startsWith("events:")) {
+      maxSupported = 4;
     }
     let targetPath = store.sourcePath;
     if (options.projectRoot && manifest.projectRoot && targetPath.startsWith(manifest.projectRoot)) {
@@ -24248,6 +24259,7 @@ var VnextRuntimeRegistry = class {
     } : void 0;
   }
 };
+var DRIVE_RECEIPT_MAX_BYTES = 8 * 1024;
 
 // plugins/kxm/src/vnext-engine-compile.ts
 var VNEXT_COMPILED_WORKFLOW_SCHEMA = "kxm.compiled-workflow.v1";
@@ -33630,6 +33642,28 @@ ${RUN_ENGINE_NOTICE}`);
     return 1;
   }
 }
+function formatDriveStatusLine(runStatus, drive) {
+  if (!drive || typeof drive.driveId !== "string" || drive.driveId.length === 0) return void 0;
+  const receipt = drive.receipt ?? null;
+  if (receipt === null) {
+    if (runStatus === "running" || runStatus === "blocked_uncertain") {
+      return `drive ${drive.driveId}: open`;
+    }
+    return `drive ${drive.driveId}: no receipt (orphaned)`;
+  }
+  const kind = receipt.settlement?.kind;
+  const reason = typeof receipt.settlement?.reason === "string" ? receipt.settlement.reason : "";
+  if (kind === "unsettled") {
+    return `drive ${drive.driveId}: unsettled ${reason}`.trimEnd();
+  }
+  if (kind === "handoff") {
+    return drive.verified === true ? `drive ${drive.driveId}: handoff (receipt verified)` : `drive ${drive.driveId}: handoff`;
+  }
+  if (drive.verified === true) {
+    return `drive ${drive.driveId}: completed (receipt verified)`;
+  }
+  return `drive ${drive.driveId}: completed`;
+}
 async function cmdVnextRunStatus(runtime, runId) {
   try {
     const projectRoot = discoverVnextProjectRoot(runtime.cwd);
@@ -33637,10 +33671,18 @@ async function cmdVnextRunStatus(runtime, runId) {
       print(runtime.io, runtime.json, { ok: false, command: "runs status", error: "project_required" }, "kxm runs status requires a vNext project (run kxm init first)");
       return 1;
     }
-    const supervisor = await ensureVnextSupervisor({ env: runtime.env });
-    const result = await vnextRuntimeRequest(supervisor, "GET", `/v1/runs/${encodeURIComponent(runId)}?projectRoot=${encodeURIComponent(projectRoot)}`);
+    const supervisor = await (vnextDriveCliSeams.ensureSupervisor ?? ensureVnextSupervisor)({ env: runtime.env });
+    const result = await (vnextDriveCliSeams.runtimeRequest ?? vnextRuntimeRequest)(supervisor, "GET", `/v1/runs/${encodeURIComponent(runId)}?projectRoot=${encodeURIComponent(projectRoot)}`);
     const run = result.run;
-    print(runtime.io, runtime.json, { ok: true, command: "runs status", run }, `run ${run.runId}: ${run.status} (workflow ${run.workflowId}, updated ${run.updatedAt})`);
+    const drive = result.drive;
+    const driveLine = formatDriveStatusLine(run.status, drive);
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: true, command: "runs status", run, ...drive !== void 0 ? { drive } : {} },
+      `run ${run.runId}: ${run.status} (workflow ${run.workflowId}, updated ${run.updatedAt})${driveLine ? `
+${driveLine}` : ""}`
+    );
     return 0;
   } catch (error) {
     if (error instanceof VnextConfigError) {
@@ -48638,7 +48680,7 @@ function createProgram(ctx, result) {
   }));
   const runCmd = addGlobalOptions(program2.command("runs").description("Inspect vNext runs"));
   runCmd.helpCommand("help", "Show runs help");
-  addGlobalOptions(runCmd.command("status").description("Show the projected status of a run")).argument("<runId>", "Run id").action(async function runStatusAction(runId) {
+  addGlobalOptions(runCmd.command("status").description("Show the projected status of a run, including durable drive receipt state (open / receipt verified / unsettled / orphaned)")).argument("<runId>", "Run id").action(async function runStatusAction(runId) {
     result.code = await cmdVnextRunStatus(runtimeFrom(ctx, this), runId);
   });
   addGlobalOptions(runCmd.command("drive").description("Drive a run with an explicit model-free simulation")).argument("<runId>", "Run id").option("--simulated", "Use the model-free simulation producer").action(async function runDriveAction(runId, options) {

@@ -357,11 +357,11 @@ test("G1 store brake refuses v2 files and missing gate tables", () => {
     const db = new DatabaseSync(outdated);
     db.exec("PRAGMA user_version = 2");
     db.close();
-    assert.throws(() => new VnextRunEventStore(outdated), /runtime_schema_outdated[\s\S]*older than 3[\s\S]*no migration lane/);
+    assert.throws(() => new VnextRunEventStore(outdated), /runtime_schema_outdated[\s\S]*older than 4[\s\S]*no migration lane/);
 
     const shaped = join(directory, "v3.db");
     const store = new VnextRunEventStore(shaped);
-    assert.equal(VNEXT_EVENT_STORE_SCHEMA_VERSION, 3);
+    assert.equal(VNEXT_EVENT_STORE_SCHEMA_VERSION, 4);
     store.close();
     sql(shaped, (database) => database.exec("DROP TABLE gate_attempts"));
     assert.throws(() => new VnextRunEventStore(shaped), /runtime_schema_shape_invalid[\s\S]*gate_attempts/);
