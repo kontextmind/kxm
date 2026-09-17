@@ -179,7 +179,7 @@ export function loadTrustedRosterPolicy() {
   const snapshot = control();
   const { blob, bytes } = blobAt(snapshot.head, POLICY);
   if (!workingBytes(POLICY).equals(bytes)) refuse('working policy differs from committed bytes');
-  const policy = validate(bytes, snapshot.head, trusted);
+  const policy = validate(bytes, snapshot.head, snapshot.trusted);
   unchanged(snapshot);
   return frozen({ identity: { commit: snapshot.head, blob, sha256: sha256(bytes) }, policy });
 }
