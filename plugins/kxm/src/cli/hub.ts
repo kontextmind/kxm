@@ -22,7 +22,7 @@ import {
   classifyInstallRoot,
   type InstallProbe,
 } from "../kxm-install-kind.ts";
-import { vnextUserStateRoot } from "../vnext-bindings.ts";
+import { kxmUserStateRoot } from "../bindings.ts";
 import {
   fetchLatestKxmVersion,
   kxmReleaseAssetName,
@@ -88,7 +88,7 @@ import { homedir } from "node:os";
 export function warnIgnoredProjectUpdateYaml(runtime: Runtime): void {
   const projectFile = join(runtime.dirs.workspace, "update.yaml");
   if (!existsSync(projectFile)) return;
-  const userFile = join(vnextUserStateRoot({ env: runtime.env }), "update.yaml");
+  const userFile = join(kxmUserStateRoot({ env: runtime.env }), "update.yaml");
   runtime.io.stderr(`kxm: ignoring .kxm/update.yaml in ${runtime.dirs.workdir}; update settings are read only from ${userFile}\n`);
 }
 
@@ -162,7 +162,7 @@ export async function cmdHub(runtime: Runtime): Promise<number> {
         config = loadKxmUpdateConfig(runtime.env);
       } catch (error) {
         if (error instanceof KxmUpdateConfigError) {
-          const yamlPath = join(vnextUserStateRoot({ env: runtime.env }), "update.yaml");
+          const yamlPath = join(kxmUserStateRoot({ env: runtime.env }), "update.yaml");
           runtime.io.stderr(`kxm: ${error.message}; update check skipped; fix or remove ${yamlPath}\n`);
         } else {
           throw error;

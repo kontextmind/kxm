@@ -2,7 +2,30 @@
 
 KXM uses environment variables for the hub and Pi extension. The Claude Code plugin maps its settings to the same client values.
 
-## vNext local project settings
+## Personalization and workflow settings (`kxm.config.v1`)
+
+`kxm config list|get|set` reads one merged view of three layers, in this order:
+
+1. built-in defaults in `plugins/kxm/src/config.ts`;
+2. user scope at `~/.config/kxm/config.yaml` (override the directory with
+   `KXM_USER_CONFIG_DIR`);
+3. project scope at `<repo>/.kxm/config.yaml`.
+
+`kxm config set <key> <value> --scope user|project` writes exactly one of those
+files, defaulting to project scope. `kxm config list --json` reports which file
+supplied what under `loadedFrom`; an empty `loadedFrom` means nothing is stored
+yet and every value shown is a built-in default. A stored value is not trusted
+because it is in the file: an unknown `hub.autoStart` fails closed to the
+default, and an unset `defaults.harness` means Pi rather than the first harness
+in the catalog.
+
+Project identity and repository bindings are separate, Git-tracked files under
+`.kxm/` (`project.yaml`, `roster.yaml`, `routes.yaml`, `gates.yaml`, `prices.yaml`,
+`roles/`, `workflows/`). They are configuration reviewed in a PR, not personal
+settings, and no panel or editor grants writer admission by editing them. See
+[Terminal components](tui-components.md) for the surface that renders them.
+
+## KXM local project settings
 
 Root `kxm init` discovers the control Git worktree and does not use legacy
 `KXM_*` workspace overrides. A cloned multi-repository project can bind a
@@ -245,21 +268,21 @@ The tool allowlist is a capability boundary inside Pi, not a prompt suggestion â
 
 ## Operator CLI
 
-The current hub command groups are `agent`, `session`, `workflow`, `gate`, `hub`, `dash`, `improve`, `context`, and `skills`; the root `init` command is the first configuration-only vNext slice. The CLI is an operator **client**: the hub's durable state, the protocol and schema types, and reviewed Git configuration define behaviour; where the CLI diverges from them, the CLI is the defect.
+The current hub command groups are `agent`, `session`, `workflow`, `gate`, `hub`, `dash`, `improve`, `context`, and `skills`; the root `init` command is the first configuration-only KXM slice. The CLI is an operator **client**: the hub's durable state, the protocol and schema types, and reviewed Git configuration define behaviour; where the CLI diverges from them, the CLI is the defect.
 
 | Command | Purpose |
 |---|---|
-| `kxm init` | Atomically create a provenance-tracked minimal vNext project, validate it without rewriting, resume a pinned interrupted create/repair, apply conflict-free non-authority template updates, or join an existing clone with repeatable `--repository <id=absolute-path>` member bindings stored outside Git. `--dry-run` performs no writes. Provenance-free/ambiguous repair and permission-expanding changes remain planning-only. These configuration slices do **not** activate a vNext Runtime. `kxm init` is project-only; bind a running hub with `kxm hub bind <url>` |
+| `kxm init` | Atomically create a provenance-tracked minimal KXM project, validate it without rewriting, resume a pinned interrupted create/repair, apply conflict-free non-authority template updates, or join an existing clone with repeatable `--repository <id=absolute-path>` member bindings stored outside Git. `--dry-run` performs no writes. Provenance-free/ambiguous repair and permission-expanding changes remain planning-only. These configuration slices do **not** activate a KXM Runtime. `kxm init` is project-only; bind a running hub with `kxm hub bind <url>` |
 | `kxm migrate plan` | Convert legacy `.kxm/config` JSON (agents, gates, workflow definitions) into a deterministic, secret-free `kxm.migration-plan.v1` report: source/target hashes, decision-requiring ambiguities (terminal status, transition budgets, evidence-policy strengthening, secret drops, narrowed ceilings, foreign producers), hashed unmapped fields, and explicit identity renames. Performs no writes, locks, or staging |
 | `kxm migrate apply [--decisions <file>]` | Install a reviewed migration: re-checks the decision binding against current sources, validates the complete target bundle, refuses to overwrite existing paths, installs durably, and writes a self-hashed `kxm.migration-receipt.v1` that keeps legacy inputs read-only. Re-applying is an idempotent no-op. `--dry-run` performs no writes |
 | `kxm migrate verify` | Re-check the migration receipt against current legacy sources and the target bundle (self-hash, source hashes, configuration revision, resource bytes). Performs no writes |
 | `kxm trust diff [--base <rev>]` | Print the structured `kxm.permission-diff.v1` report between a base Git revision (default `HEAD`, materialized into a temporary shadow with a sanitized environment) and the working tree: every authority-bearing field change classified as expansion, narrowing, or neutral with per-field hashes. Performs no project writes |
 | `kxm trust check [--base <rev>]` | Exit non-zero when any expansion exists, so an authority-bearing change cannot merge without a reviewed Git change. Formatting/description-only changes never require review |
-| `kxm run <workflow> [prompt]` | Auto-start the vNext Runtime supervisor if needed, then create an immutable run offline: pins `homeRuntimeId` plus config/executor/tool policy revisions and stores only the prompt hash. `--dry-run` prints the plan without creating anything |
+| `kxm run <workflow> [prompt]` | Auto-start the KXM Runtime supervisor if needed, then create an immutable run offline: pins `homeRuntimeId` plus config/executor/tool policy revisions and stores only the prompt hash. `--dry-run` prints the plan without creating anything |
 | `kxm runs status <runId>` | Show the projected status of a run from its event sequence |
 | `kxm runs cancel <runId>` | Durably request cancellation (ordered `run.cancel_requested` then `run.status_changed` events; idempotent, terminal runs are no-ops). `--dry-run` writes nothing |
 | `kxm runs list` | List recent runs for the current project |
-| `kxm runtime start \| status \| stop` | Manage the detached vNext Runtime supervisor: auto-start with liveness probe, token-authenticated 127.0.0.1 API, crash recovery with a stable logical runtime identity |
+| `kxm runtime start \| status \| stop` | Manage the detached KXM Runtime supervisor: auto-start with liveness probe, token-authenticated 127.0.0.1 API, crash recovery with a stable logical runtime identity |
 | `kxm agent worker` | Start a long-lived Pi worker. Use `--session-isolation workflow` to enable per-workflow Pi contexts; the upgrade-compatible default is `off`. Does not read a workspace `agents.json`; pass `--model`, `--tools`, and related flags explicitly |
 | `kxm session start --id <id> (--mix a,b \| --workflow <definitionId>)` | Write a `kxm.session.v1` manifest under `.kxm/assets/sessions/<id>/` and create asset directories. **Does not start any process.** `--workflow` records the whole roster, not the definition's participants |
 | `kxm session brief [--status]` | Read-only local hub snapshot of recent tasks (workflow runs) and plans (journal). `--status` prints the status line for harness chrome. No message bodies. Does not start a hub |

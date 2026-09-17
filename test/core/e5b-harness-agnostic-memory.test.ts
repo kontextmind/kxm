@@ -20,9 +20,9 @@ import {
   type MemoryRecord,
   type MemoryScope,
 } from "../../plugins/kxm/src/memory.ts";
-import { computeVnextMemoryRevision } from "../../plugins/kxm/src/vnext-runtime.ts";
-import { loadVnextProject } from "../../plugins/kxm/src/vnext-config.ts";
-import { committedProject } from "../helpers/vnext-project.ts";
+import { computeKxmMemoryRevision } from "../../plugins/kxm/src/runtime-service.ts";
+import { loadKxmProject } from "../../plugins/kxm/src/project-config.ts";
+import { committedProject } from "../helpers/project.ts";
 import { removeTempDir } from "../helpers.ts";
 
 const repoRoot = resolve(process.cwd());
@@ -331,11 +331,11 @@ test("E5b: gate - brief returns the exact same facts from CLI, Pi extension, and
   }
 });
 
-test("E5b: computeVnextMemoryRevision pins revision from authored memory and ignores candidates", () => {
+test("E5b: computeKxmMemoryRevision pins revision from authored memory and ignores candidates", () => {
   const { root, stateRoot } = committedProject("kxm-e5b-memrev-");
   try {
-    const bundle = loadVnextProject(root);
-    const baseRevision = computeVnextMemoryRevision(bundle);
+    const bundle = loadKxmProject(root);
+    const baseRevision = computeKxmMemoryRevision(bundle);
 
     const memDir = join(root, ".kxm", "memory");
     mkdirSync(memDir, { recursive: true });
@@ -354,13 +354,13 @@ test("E5b: computeVnextMemoryRevision pins revision from authored memory and ign
       evidenceRefs: [],
     };
     writeFileSync(join(memDir, "fact.md"), formatMemoryRecord(fact));
-    const revisionWithFact = computeVnextMemoryRevision(bundle);
+    const revisionWithFact = computeKxmMemoryRevision(bundle);
     assert.notEqual(revisionWithFact, baseRevision);
     assert.match(revisionWithFact, /^ctxrev_[a-f0-9]{64}$/);
 
     // Adding candidate note does NOT change the pinned revision
     createMemoryNote(root, "Unreviewed candidate fact");
-    const revisionWithCandidate = computeVnextMemoryRevision(bundle);
+    const revisionWithCandidate = computeKxmMemoryRevision(bundle);
     assert.equal(revisionWithCandidate, revisionWithFact, "candidates must not affect memoryRevision");
   } finally {
     removeTempDir(root, stateRoot);

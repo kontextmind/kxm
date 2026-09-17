@@ -95,7 +95,7 @@ human visual review remain distinct. Treat interactive HTML as active content,
 apply KXM artifact isolation/resource policy, and keep browser sandbox disabling
 out of defaults. Reuse KXM's bounded process supervision for renderer/browser
 invocations instead of copying synchronous helper calls into the hub hot path.
-[KXM process limits](https://github.com/kontextmind/kxm/blob/5ff9f642e82d7a1e52aeab9245282d89560bb535/plugins/kxm/src/vnext-oneshot-process.ts#L25-L50).
+[KXM process limits](https://github.com/kontextmind/kxm/blob/5ff9f642e82d7a1e52aeab9245282d89560bb535/plugins/kxm/src/oneshot-process.ts#L25-L50).
 
 ### 4. Package complete skills with minimal host adapters — M1/M6/M9
 

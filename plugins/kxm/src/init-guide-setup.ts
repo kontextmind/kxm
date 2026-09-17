@@ -7,7 +7,7 @@
  * first candidate whose harness is installed AND authenticated wins. No
  * candidate is admitted without an authenticated harness (fail closed).
  *
- * This module writes only current vNext project resources:
+ * This module writes only current KXM project resources:
  *   - `.kxm/agents/<role-slug>.yaml`   (kxm.agent.v1)
  *   - `.kxm/workflows/<slug>.yaml`     (kxm.workflow.v1)
  * It never writes retired legacy authority (`.kxm/config`, retired
@@ -18,7 +18,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { stringify } from "yaml";
-import { NATIVE_HARNESS_PROVIDERS, type HarnessInventory } from "./vnext-harness.ts";
+import { NATIVE_HARNESS_PROVIDERS, type HarnessInventory } from "./harness.ts";
 
 export interface GuideCandidate {
   readonly vendor: string;
@@ -482,7 +482,7 @@ function workflowDocument(workflow: GuideWorkflow): Record<string, unknown> {
 }
 
 /**
- * Render the planned vNext resource files (`.kxm/agents/*.yaml`,
+ * Render the planned KXM resource files (`.kxm/agents/*.yaml`,
  * `.kxm/workflows/*.yaml`). Pure: no disk access.
  */
 export function renderGuideSetupFiles(projectRoot: string, plan: GuideSetupPlan): GuideSetupFile[] {

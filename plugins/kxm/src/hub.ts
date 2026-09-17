@@ -2166,7 +2166,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         const current = requireAgent(request, agentId);
         requireProjectAuth(request, current.project);
         const presenceOnly = url.searchParams.get("presenceOnly") === "true";
-        if (presenceOnly && current.model !== "kxm-tui") {
+        if (presenceOnly && current.model !== "tui") {
           throw new ProtocolError(403, "presence-only streams are reserved for metadata observers", "presence_stream_forbidden");
         }
         response.writeHead(200, {

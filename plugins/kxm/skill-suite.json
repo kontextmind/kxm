@@ -56,7 +56,7 @@
       "name": "kxm-runs",
       "path": "./skills/kxm-runs",
       "ownedCommands": ["run", "runs"],
-      "intent": "Create and inspect local vNext runs while preserving current execution-status boundaries"
+      "intent": "Create and inspect local KXM runs while preserving current execution-status boundaries"
     },
     {
       "name": "kxm-context-memory",

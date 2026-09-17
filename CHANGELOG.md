@@ -4,11 +4,34 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ## Unreleased
 
+### Added
+
+- **Terminal component kit package:** `@kontextmind/tui` (`packages/core/tui`, also
+  exposed as the `@kontextmind/kxm/tui` export) ships the reusable Pi-renderer-based
+  terminal components in the package layer shape (`src/{types,tui,services,adapters,exports}`,
+  `tests/{unit,helpers}`), enforced by `test/core/package-layers.test.ts`.
+- **Per-package workspace tooling:** nx + Bun workspace wiring (`nx.json`,
+  `bunfig.toml`, `packages/*/project.json`, `scripts/build-package.mjs`) with
+  `npm run build:packages|test:packages|check:packages`. Bun is installer and task
+  runner only; tests, the hub, and the CLI remain on Node.
+
+### Changed
+
+- **Naming sweep:** the retired `vnext` naming is gone from file and folder names,
+  symbols, constants, schema `$id` segments, and error codes (`vnext_*` is now
+  `initialization_failed`, `initialization_io_failed`, `wait_failed`); package and
+  folder names dropped the `kxm-` prefix. `docs/vnext/` is `docs/contracts/`,
+  `examples/vnext/` is `examples/project/`. Dated evidence under `plans/` and
+  `.kxm/logs/` keeps its original wording.
+- **Read-only run projection:** `GET /v1/runs/:id` folds the event log without
+  persisting a projection write, so a read cannot mutate run state or surface a
+  false `run_projection_divergent`.
+
 ## 0.7.0 - 2026-09-11
 
 ### Added
 
-- **vNext Architecture Engine and Multi-Phase Isolation (Phases 0–4):**
+- **KXM Architecture Engine and Multi-Phase Isolation (Phases 0–4):**
   - **Dead Route Brake (Phase 0):** Fails closed and asserts 404 on obsolete `/dispatch`
     endpoint in supervisor API to eliminate legacy unmonitored dispatch routes.
   - **Objective Propagation (Phase 1):** Propagates accepted run objectives into the producer
@@ -20,7 +43,7 @@ All notable user-facing changes are documented here. The project follows [Semant
     resolution (`step.model -> agent.model -> refuse`), enforcing model admission policies and role
     roster alignment before birth.
   - **Asynchronous Scheduler & Graceful Lifecycle (Phase 4):** Asynchronous `/drive` execution via
-    `VnextRunScheduler` returning `202 Accepted` with `/v1/runs/:id` poll endpoints, duplicate run
+    `KxmRunScheduler` returning `202 Accepted` with `/v1/runs/:id` poll endpoints, duplicate run
     rejection (`409 Conflict`), and supervisor graceful shutdown that awaits active drives.
 - **Oneshot Harness Isolation, Pricing Safety & Async Probes:**
   - Standardized one-shot harness execution across Anthropic Claude, OpenAI Codex, Kimi, and Google AGY
@@ -48,7 +71,7 @@ All notable user-facing changes are documented here. The project follows [Semant
   baseline metrics, declared outcome, measure, and proposed diff patch. Skills carry
   standard YAML frontmatter (`name`, `description`). `skills promote` emits a unified diff
   patch (`.patch`) instead of moving a directory. Added `improve.yaml` workflow in
-  `examples/vnext/.kxm/workflows/` completing on the driver. Un-gitignored retrospective exports.
+  `examples/project/.kxm/workflows/` completing on the driver. Un-gitignored retrospective exports.
 - **Database backup, restore, and migrations (E6, issue #102):** Unified SQLite
   lifecycle via `openDatabase` with fail-closed schema checks, WAL journal mode with
   retry loop, busy timeout, and transaction helper with a nesting guard. Stepwise
@@ -71,7 +94,7 @@ All notable user-facing changes are documented here. The project follows [Semant
   creation. Reorganized tests into `test/core/` (PR gate) and `test/simulations/`
   (heavy simulations) with parallel `--test-concurrency=4` and scheduled nightly
   coverage.
-- Agent-only vNext run loop (`vnext-engine.ts`): pins a D1 compiled plan in an
+- Agent-only KXM run loop (`engine.ts`): pins a D1 compiled plan in an
   immutable hashed envelope, folds schema-valid `kxm.run-event.v1` events with
   a run_state projection, and drives a model-free simulated producer under
   transition/step budgets. Public drive, step, and scheduler share one
@@ -84,10 +107,10 @@ All notable user-facing changes are documented here. The project follows [Semant
   refused (E6). Gate dispatch stays S3/S4. Evaluated gate settlement applies
   transition-budget failure, and complete/no-start observation facts are
   closed on both insert and replay.
-- Pure vNext workflow compile (`vnext-engine-compile.ts`) turns a validated
+- Pure KXM workflow compile (`engine-compile.ts`) turns a validated
   `kxm.workflow.v1` into a frozen JSON plan. Compile is not execution; D3/D4
   remain open.
-- Routing contract doc (`docs/vnext/routing.md`) and synchronization status
+- Routing contract doc (`docs/contracts/routing.md`) and synchronization status
   (schema-tested; Phase 8 implementation).
 - Tag-triggered `release.yml` packs `kxm-<v>.tgz`, creates or reuses only a
   **draft** GitHub release, and fails unless the REST asset digest equals the
@@ -99,7 +122,7 @@ All notable user-facing changes are documented here. The project follows [Semant
   `--ignore-scripts` install, the job runs that package's `install.cjs` so
   the native binary is present.
 - Session brief `AGENTS.md` / `CLAUDE.md` and Tracking in
-  `docs/vnext/implementation-plan.md` (roles, provider-native harness routing,
+  `docs/contracts/implementation-plan.md` (roles, provider-native harness routing,
   cost/insights, plan hygiene).
 - Hub-local session chrome: `kxm session brief [--status]`, Pi TUI picker and
   status line on new/fork sessions, `/kxm` (`status`/`hub`/`help`), skill

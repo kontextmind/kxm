@@ -1,0 +1,28 @@
+{
+  "name": "tui",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "library",
+  "sourceRoot": "packages/core/tui/src",
+  "tags": ["scope:core", "type:terminal", "layer:ui"],
+  "targets": {
+    "build": {
+      "command": "npm run build",
+      "options": { "cwd": "packages/core/tui" },
+      "outputs": ["{projectRoot}/dist"],
+      "cache": true
+    },
+    "test": {
+      "command": "npm run test",
+      "options": { "cwd": "packages/core/tui" },
+      "dependsOn": ["typecheck"]
+    },
+    "test:coverage": {
+      "command": "npm run test:coverage",
+      "options": { "cwd": "packages/core/tui" }
+    },
+    "typecheck": {
+      "command": "npm run typecheck",
+      "options": { "cwd": "packages/core/tui" }
+    }
+  }
+}

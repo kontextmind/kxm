@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.kxm.dev/template-provenance.schema.json",
+  "title": "KXM managed-template provenance v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "templateId", "templateRevision", "inputs", "files"],
+  "properties": {
+    "schema": { "const": "kxm.template-provenance.v1" },
+    "templateId": { "const": "builtin-minimal" },
+    "templateRevision": { "$ref": "common.schema.json#/$defs/sha256" },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectId", "projectName"],
+      "properties": {
+        "projectId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+        "projectName": { "type": "string", "minLength": 1, "maxLength": 120, "pattern": "^[^\\u0000\\r\\n]+$" }
+      }
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256", "authoritySha256", "bytes"],
+        "properties": {
+          "path": { "$ref": "common.schema.json#/$defs/relativePath" },
+          "sha256": { "$ref": "common.schema.json#/$defs/sha256" },
+          "authoritySha256": { "$ref": "common.schema.json#/$defs/sha256" },
+          "bytes": { "type": "integer", "minimum": 1, "maximum": 262144 }
+        }
+      }
+    }
+  }
+}

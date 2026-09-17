@@ -12,9 +12,9 @@ import { KIND_ROLES, getRosterPolicy } from "../../scripts/assignment-run.mjs";
 import { withRosterPolicy } from "../helpers/roster-policy.ts";
 import { DEFAULT_ROLES } from "../../plugins/kxm/src/role.ts";
 import {
-  VnextSchemaRegistry,
+  KxmSchemaRegistry,
   parseRestrictedYaml,
-} from "../../plugins/kxm/src/vnext-config.ts";
+} from "../../plugins/kxm/src/project-config.ts";
 import {
   POLICY_DRAFT_MODEL_SCHEMA,
   POLICY_DRAFT_ROLE_SCHEMA,
@@ -248,7 +248,7 @@ test("draft validator does not read Git, cwd files, or live roster evidence path
   assert.ok(codes(result).includes("origin_evidence_missing"));
 });
 
-test("active vNext schemas, examples, and roster.yaml remain the live formats", () => {
+test("active KXM schemas, examples, and roster.yaml remain the live formats", () => {
   const roster = parse(readFileSync(".kxm/roster.yaml", "utf8")) as {
     schema: string;
     routes: Record<string, { status: string; harness: string; model: string }>;
@@ -264,13 +264,13 @@ test("active vNext schemas, examples, and roster.yaml remain the live formats", 
   assert.equal(roster.routes["fable-claude"]?.model, "fable");
   assert.equal(roster.routes["sol-codex"]?.model, "gpt-5.6-sol");
 
-  const primary = parseRestrictedYaml(readFileSync("examples/vnext/.kxm/models/primary.yaml"), "primary.yaml");
+  const primary = parseRestrictedYaml(readFileSync("examples/project/.kxm/models/primary.yaml"), "primary.yaml");
   assert.equal(primary.schema, "kxm.model.v1");
   assert.equal("harness" in primary, false);
   assert.equal("vendor" in primary, false);
 
-  const registry = new VnextSchemaRegistry();
-  assert.match(registry.schemasDir.replaceAll("\\", "/"), /\/schemas\/vnext$/);
+  const registry = new KxmSchemaRegistry();
+  assert.match(registry.schemasDir.replaceAll("\\", "/"), /\/schemas$/);
   const mismatch = registry.validate("model", {
     schema: "kxm.model.v2",
     provider: "xai",
@@ -278,8 +278,8 @@ test("active vNext schemas, examples, and roster.yaml remain the live formats", 
   }, "draft-as-live.yaml");
   assert.ok(mismatch.some((issue) => issue.code === "schema_identity_mismatch"));
 
-  for (const name of readdirSync(join("examples", "vnext", ".kxm", "models"))) {
-    const value = parseRestrictedYaml(readFileSync(join("examples", "vnext", ".kxm", "models", name)), name);
+  for (const name of readdirSync(join("examples", "project", ".kxm", "models"))) {
+    const value = parseRestrictedYaml(readFileSync(join("examples", "project", ".kxm", "models", name)), name);
     assert.equal(value.schema, "kxm.model.v1");
   }
 
@@ -397,18 +397,18 @@ test("policy-draft module ships as plain JS and does not import unshipped script
   assert.equal(ran.status, 0, `${ran.stderr}\n${ran.stdout}`);
 });
 
-test("policy-draft directory is not an active vNext schema or example tree", () => {
+test("policy-draft directory is not an active KXM schema or example tree", () => {
   const draftFiles = readdirSync("schemas/policy-draft");
   assert.ok(draftFiles.includes("model.v2.schema.json"));
   assert.ok(draftFiles.includes("role.v2.schema.json"));
-  const vnext = readdirSync("schemas/vnext");
-  assert.ok(vnext.includes("model.schema.json"));
-  assert.ok(vnext.includes("role.schema.json"));
-  const liveModel = JSON.parse(readFileSync("schemas/vnext/model.schema.json", "utf8")) as { properties: { schema: { const: string } } };
-  const liveRole = JSON.parse(readFileSync("schemas/vnext/role.schema.json", "utf8")) as { properties: { schema: { const: string } } };
+  const kxm = readdirSync("schemas");
+  assert.ok(kxm.includes("model.schema.json"));
+  assert.ok(kxm.includes("role.schema.json"));
+  const liveModel = JSON.parse(readFileSync("schemas/model.schema.json", "utf8")) as { properties: { schema: { const: string } } };
+  const liveRole = JSON.parse(readFileSync("schemas/role.schema.json", "utf8")) as { properties: { schema: { const: string } } };
   assert.equal(liveModel.properties.schema.const, "kxm.model.v1");
   assert.equal(liveRole.properties.schema.const, "kxm.role.v1");
-  const examples = readdirSync(join("examples", "vnext", ".kxm", "models"));
+  const examples = readdirSync(join("examples", "project", ".kxm", "models"));
   assert.ok(examples.every((name) => name.endsWith(".yaml")));
 });
 

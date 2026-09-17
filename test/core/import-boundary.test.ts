@@ -5,7 +5,7 @@ import { basename, dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
 import { redactSecrets } from "../../plugins/kxm/src/core.ts";
-import { vnextRuntimePaths } from "../../plugins/kxm/src/runtime.ts";
+import { kxmRuntimePaths } from "../../plugins/kxm/src/runtime.ts";
 import { API } from "typescript/unstable/sync";
 import type { Node } from "typescript/unstable/ast";
 import * as is from "typescript/unstable/ast/is";
@@ -35,15 +35,16 @@ const LIBRARY_BARRELS = [
   resolve(SRC_ROOT, "client.ts"),
 ];
 const NAMED_FAMILY_SEEDS = [
-  resolve(SRC_ROOT, "vnext-harness.ts"),
+  resolve(SRC_ROOT, "harness.ts"),
   resolve(SRC_ROOT, "routing.ts"),
   resolve(SRC_ROOT, "envelope.ts"),
   resolve(SRC_ROOT, "redact.ts"),
 ];
 const BANNED_SURFACE = new Set(["hub.ts", "store.ts", "workflow.ts"]);
 const PI_PREFIXES = ["commander", "@earendil-works/pi-tui", "@earendil-works/pi-coding-agent"];
-const EXPORT_KEYS = ["./core", "./runtime", "./client", "./extension", "./mcp", "./package.json"];
+const EXPORT_KEYS = ["./core", "./runtime", "./client", "./tui", "./extension", "./mcp", "./package.json"];
 const LIBRARY_BUNDLES = [
+  "packages/core/tui/dist/index.js",
   "plugins/kxm/dist/core.js",
   "plugins/kxm/dist/runtime.js",
   "plugins/kxm/dist/client.js",
@@ -54,6 +55,7 @@ const PACKED_LIBRARY_PATHS = [
   "plugins/kxm/dist/runtime.js",
   "plugins/kxm/dist/client.js",
   "plugins/kxm/dist/extension.js",
+  "packages/core/tui/src/exports/index.ts",
   "plugins/kxm/src/core.ts",
   "plugins/kxm/src/runtime.ts",
   "plugins/kxm/src/restricted-yaml.mjs",
@@ -253,7 +255,7 @@ function walkClosure(
 }
 
 function libraryEntries(graph: Map<string, ModuleEdge[]>): string[] {
-  const family = [...graph.keys()].filter((file) => basename(file).startsWith("vnext-runtime"));
+  const family = [...graph.keys()].filter((file) => basename(file).startsWith("kxm-runtime"));
   return [...new Set([...LIBRARY_BARRELS, ...family, ...NAMED_FAMILY_SEEDS])];
 }
 
@@ -266,7 +268,7 @@ test("boundary parser collects every edge kind it relies on", () => {
   const telemetryEdges = graph.get(resolve(SRC_ROOT, "telemetry.ts")) ?? [];
   assert.ok(telemetryEdges.some((e) => e.kind === "import-type" && e.specifier === "./routing.ts"));
   const { files, edges } = walkClosure(LIBRARY_BARRELS, graph, false);
-  assert.ok(files.has(resolve(SRC_ROOT, "vnext-harness.ts")));
+  assert.ok(files.has(resolve(SRC_ROOT, "harness.ts")));
   assert.ok(files.has(resolve(SRC_ROOT, "restricted-yaml.mjs")));
   assert.ok(graph.has(resolve(SRC_ROOT, "restricted-yaml.mjs")));
   assert.ok(graph.has(resolve(SRC_ROOT, "policy-draft.mjs")));
@@ -367,6 +369,7 @@ test("package seams export compiled dist targets without a bare root or types co
     "./core": "./plugins/kxm/dist/core.js",
     "./runtime": "./plugins/kxm/dist/runtime.js",
     "./client": "./plugins/kxm/dist/client.js",
+    "./tui": "./packages/core/tui/dist/index.js",
     "./extension": "./plugins/kxm/dist/extension.js",
     "./mcp": "./plugins/kxm/dist/mcp-server.js",
     "./package.json": "./package.json",
@@ -394,7 +397,7 @@ test("packed artifact includes the four library bundles and two barrel sources",
 
 test("library bundles are ESM files without a shebang", () => {
   assert.equal(typeof redactSecrets, "function");
-  assert.equal(typeof vnextRuntimePaths, "function");
+  assert.equal(typeof kxmRuntimePaths, "function");
   for (const artifact of LIBRARY_BUNDLES) {
     const text = readFileSync(artifact, "utf8");
     assert.equal(text.startsWith("#!/usr/bin/env node"), false, `${artifact} must not be an executable shebang bundle`);

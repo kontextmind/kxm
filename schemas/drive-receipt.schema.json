@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.kxm.dev/drive-receipt.schema.json",
+  "title": "KXM drive session receipt",
+  "type": "object",
+  "required": [
+    "schema",
+    "driveId",
+    "runId",
+    "projectId",
+    "homeRuntimeId",
+    "mode",
+    "openedAt",
+    "openedSequence",
+    "closedAt",
+    "lastSequence",
+    "logHash",
+    "settlement",
+    "budget",
+    "producer"
+  ],
+  "properties": {
+    "schema": { "const": "kxm.drive-receipt.v1" },
+    "driveId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "runId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "projectId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "homeRuntimeId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "mode": { "enum": ["simulated", "live"] },
+    "openedAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "openedSequence": { "type": "integer", "minimum": 1 },
+    "closedAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "lastSequence": { "type": "integer", "minimum": 1 },
+    "logHash": { "$ref": "common.schema.json#/$defs/sha256" },
+    "settlement": { "$ref": "#/$defs/settlement" },
+    "budget": { "$ref": "#/$defs/budget" },
+    "producer": {
+      "type": "object",
+      "required": ["id", "closed"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/identifier" },
+        "closed": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "settlement": {
+      "type": "object",
+      "required": ["kind", "status", "reason"],
+      "properties": {
+        "kind": { "enum": ["terminal", "handoff", "unsettled"] },
+        "status": { "$ref": "common.schema.json#/$defs/lifecycleStatus" },
+        "reason": { "type": "string", "maxLength": 4000 },
+        "handoff": { "$ref": "#/$defs/handoff" },
+        "error": { "$ref": "common.schema.json#/$defs/errorSummary" }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "handoff" } }, "required": ["kind"] },
+          "then": { "required": ["handoff"] },
+          "else": { "not": { "required": ["handoff"] } }
+        }
+      ]
+    },
+    "budget": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["budgetMs", "source", "elapsedMs", "overrun"],
+          "properties": {
+            "budgetMs": { "$ref": "common.schema.json#/$defs/durationMs" },
+            "source": { "enum": ["workflow", "project", "both"] },
+            "elapsedMs": { "type": "integer", "minimum": 0 },
+            "overrun": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "handoff": {
+      "type": "object",
+      "required": ["reason", "detail"],
+      "properties": {
+        "reason": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "field": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "stepId": { "$ref": "common.schema.json#/$defs/identifier" },
+        "detail": { "type": "string", "minLength": 1, "maxLength": 4000 }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -6,8 +6,8 @@
 
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import { randomUUID } from "node:crypto";
-import type { VnextCompiledPlan, VnextCompiledStep } from "./vnext-engine-compile.ts";
-import type { VnextRunState } from "./vnext-engine-fold.ts";
+import type { KxmCompiledPlan, KxmCompiledStep } from "./engine-compile.ts";
+import type { KxmRunState } from "./engine-fold.ts";
 
 export const STUDIO_LAYOUT_SCHEMA = "kxm.studio-layout.v1" as const;
 
@@ -76,8 +76,8 @@ export interface StudioLayoutPayload {
  * without requiring any manual layout coordinates in the YAML workflow file.
  */
 export function generateStudioLayout(
-  plan: VnextCompiledPlan,
-  state?: VnextRunState | undefined,
+  plan: KxmCompiledPlan,
+  state?: KxmRunState | undefined,
 ): StudioLayoutPayload {
   const generatedAt = new Date().toISOString();
   const stepIds = Object.keys(plan.steps);
@@ -287,8 +287,8 @@ export interface StudioServerOptions {
   host?: string | undefined;
   projectRoot?: string | undefined;
   sessionToken?: string | undefined;
-  planProvider?: (() => VnextCompiledPlan | undefined) | undefined;
-  stateProvider?: (() => VnextRunState | undefined) | undefined;
+  planProvider?: (() => KxmCompiledPlan | undefined) | undefined;
+  stateProvider?: (() => KxmRunState | undefined) | undefined;
   onMutation?: ((command: string, args: Record<string, unknown>) => Promise<{ ok: boolean; result?: unknown; error?: string }> | { ok: boolean; result?: unknown; error?: string }) | undefined;
 }
 

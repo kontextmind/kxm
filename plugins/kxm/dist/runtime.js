@@ -14777,12 +14777,12 @@ var require_dist = __commonJS({
   }
 });
 
-// plugins/kxm/src/vnext-runtime.ts
+// plugins/kxm/src/runtime-service.ts
 import { createHash as createHash6 } from "node:crypto";
 import { existsSync as existsSync6, readdirSync as readdirSync3, readFileSync as readFileSync4 } from "node:fs";
 import { join as join6 } from "node:path";
 
-// plugins/kxm/src/vnext-config.ts
+// plugins/kxm/src/project-config.ts
 var import__ = __toESM(require__(), 1);
 import { spawnSync as spawnSync2 } from "node:child_process";
 import { createHash as createHash2 } from "node:crypto";
@@ -14791,7 +14791,7 @@ import { basename, dirname as dirname2, extname, isAbsolute, join as join2, rela
 
 // plugins/kxm/src/restricted-yaml.mjs
 var import_yaml = __toESM(require_dist(), 1);
-var VNEXT_YAML_LIMITS = Object.freeze({
+var KXM_YAML_LIMITS = Object.freeze({
   maxDocumentBytes: 256 * 1024,
   maxDepth: 32,
   maxScalarBytes: 64 * 1024,
@@ -14862,7 +14862,7 @@ function assertJsonValue(value, label, path = "$", seen = /* @__PURE__ */ new Se
   }
   seen.delete(value);
 }
-function parseRestrictedYaml(input, label = "<yaml>", limits = VNEXT_YAML_LIMITS) {
+function parseRestrictedYaml(input, label = "<yaml>", limits = KXM_YAML_LIMITS) {
   const byteLength = typeof input === "string" ? Buffer.byteLength(input, "utf8") : input.byteLength;
   if (byteLength > limits.maxDocumentBytes) {
     fail("parse", "document_too_large", label, `document exceeds ${limits.maxDocumentBytes} bytes`);
@@ -14914,13 +14914,13 @@ function parseRestrictedYaml(input, label = "<yaml>", limits = VNEXT_YAML_LIMITS
   return value;
 }
 
-// plugins/kxm/src/vnext-template.ts
+// plugins/kxm/src/template.ts
 var import_yaml2 = __toESM(require_dist(), 1);
 import { createHash } from "node:crypto";
-var VNEXT_TEMPLATE_ID = "builtin-minimal";
-var VNEXT_TEMPLATE_PROVENANCE_PATH = ".kxm/template-provenance.yaml";
-var CURRENT_VNEXT_TEMPLATE_VARIANT = "v4-registry";
-var SUPPORTED_VNEXT_TEMPLATE_VARIANTS = ["v1", "v2", "v3-policy", "v4-registry"];
+var KXM_TEMPLATE_ID = "builtin-minimal";
+var KXM_TEMPLATE_PROVENANCE_PATH = ".kxm/template-provenance.yaml";
+var CURRENT_KXM_TEMPLATE_VARIANT = "v4-registry";
+var SUPPORTED_KXM_TEMPLATE_VARIANTS = ["v1", "v2", "v3-policy", "v4-registry"];
 function compareCodeUnits2(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
@@ -14931,7 +14931,7 @@ function canonicalJson(value) {
   if (Array.isArray(value)) return `[${value.map((candidate) => canonicalJson(candidate)).join(",")}]`;
   return `{${Object.keys(value).sort(compareCodeUnits2).map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
 }
-function vnextContentSha256(input) {
+function kxmContentSha256(input) {
   return `sha256:${createHash("sha256").update(input).digest("hex")}`;
 }
 function authorityProjection(value) {
@@ -14942,8 +14942,8 @@ function authorityProjection(value) {
   if (projected.schema === "kxm.workflow.v1") delete projected.description;
   return projected;
 }
-function vnextAuthoritySha256(value) {
-  return vnextContentSha256(canonicalJson(authorityProjection(value)));
+function kxmAuthoritySha256(value) {
+  return kxmContentSha256(canonicalJson(authorityProjection(value)));
 }
 function coreTemplate(projectId, projectName, variant) {
   const files = /* @__PURE__ */ new Map([
@@ -15059,14 +15059,14 @@ function coreTemplate(projectId, projectName, variant) {
   return files;
 }
 function provenanceRevision(files) {
-  return vnextContentSha256(canonicalJson(files.map((file) => ({
+  return kxmContentSha256(canonicalJson(files.map((file) => ({
     path: file.path,
     sha256: file.sha256,
     authoritySha256: file.authoritySha256,
     bytes: file.bytes
   }))));
 }
-function renderVnextTemplate(projectId, projectName, variant = CURRENT_VNEXT_TEMPLATE_VARIANT) {
+function renderKxmTemplate(projectId, projectName, variant = CURRENT_KXM_TEMPLATE_VARIANT) {
   const values = coreTemplate(projectId, projectName, variant);
   const coreFiles = /* @__PURE__ */ new Map();
   const records = [...values.entries()].map(([path, value]) => {
@@ -15074,22 +15074,22 @@ function renderVnextTemplate(projectId, projectName, variant = CURRENT_VNEXT_TEM
     coreFiles.set(path, bytes);
     return {
       path,
-      sha256: vnextContentSha256(bytes),
-      authoritySha256: vnextAuthoritySha256(value),
+      sha256: kxmContentSha256(bytes),
+      authoritySha256: kxmAuthoritySha256(value),
       bytes: bytes.byteLength
     };
   }).sort((left, right) => compareCodeUnits2(left.path, right.path));
   const templateRevision = provenanceRevision(records);
   const provenance = {
     schema: "kxm.template-provenance.v1",
-    templateId: VNEXT_TEMPLATE_ID,
+    templateId: KXM_TEMPLATE_ID,
     templateRevision,
     inputs: { projectId, projectName },
     files: records
   };
   const fileEntries = [...coreFiles.entries()];
   fileEntries.push([
-    VNEXT_TEMPLATE_PROVENANCE_PATH,
+    KXM_TEMPLATE_PROVENANCE_PATH,
     Buffer.from((0, import_yaml2.stringify)(provenance, { lineWidth: 0 }), "utf8")
   ]);
   fileEntries.sort(([left], [right]) => compareCodeUnits2(left, right));
@@ -15097,15 +15097,15 @@ function renderVnextTemplate(projectId, projectName, variant = CURRENT_VNEXT_TEM
   return { projectId, projectName, templateRevision, provenance, files, values };
 }
 function validatedTemplateProvenance(value) {
-  if (value.schema !== "kxm.template-provenance.v1" || value.templateId !== VNEXT_TEMPLATE_ID) return void 0;
+  if (value.schema !== "kxm.template-provenance.v1" || value.templateId !== KXM_TEMPLATE_ID) return void 0;
   const candidate = value;
   return provenanceRevision(candidate.files) === candidate.templateRevision ? candidate : void 0;
 }
-function resolveVnextTemplateBaseline(value) {
+function resolveKxmTemplateBaseline(value) {
   const candidate = validatedTemplateProvenance(value);
   if (!candidate) return void 0;
-  for (const variant of SUPPORTED_VNEXT_TEMPLATE_VARIANTS) {
-    const known = renderVnextTemplate(candidate.inputs.projectId, candidate.inputs.projectName, variant).provenance;
+  for (const variant of SUPPORTED_KXM_TEMPLATE_VARIANTS) {
+    const known = renderKxmTemplate(candidate.inputs.projectId, candidate.inputs.projectName, variant).provenance;
     if (known.templateRevision === candidate.templateRevision && canonicalJson(known) === canonicalJson(candidate)) {
       return candidate;
     }
@@ -15132,12 +15132,12 @@ function findKxmRepoRoot(fromUrl = import.meta.url) {
   );
 }
 
-// plugins/kxm/src/vnext-harness.ts
+// plugins/kxm/src/harness.ts
 import { spawnSync } from "node:child_process";
 import { existsSync as existsSync2 } from "node:fs";
 import { win32 as win32Path } from "node:path";
 
-// plugins/kxm/src/vnext-oneshot-process.ts
+// plugins/kxm/src/oneshot-process.ts
 import { spawn } from "node:child_process";
 var OUTPUT_LIMIT = 8 * 1024 * 1024;
 var KILL_GRACE_MS = 250;
@@ -15290,7 +15290,7 @@ function defaultSpawn(command, args, options) {
   });
 }
 
-// plugins/kxm/src/vnext-harness.ts
+// plugins/kxm/src/harness.ts
 var DEFAULT_HARNESS = "pi";
 var UNKNOWN_AUTH_HARNESSES = /* @__PURE__ */ new Set(["deepseek"]);
 var GROK_LOGIN_LINE = "You are logged in with grok.com.";
@@ -16356,20 +16356,20 @@ function formatHarnessUpdate(steps) {
   }).join("\n");
 }
 
-// plugins/kxm/src/vnext-config.ts
-var VnextConfigError = class extends Error {
+// plugins/kxm/src/project-config.ts
+var KxmConfigError = class extends Error {
   issues;
   constructor(issues) {
     const sorted = sortIssues2(issues);
     super(sorted.map((issue3) => `${issue3.file}: ${issue3.code}: ${issue3.message}`).join("\n"));
-    this.name = "VnextConfigError";
+    this.name = "KxmConfigError";
     this.issues = sorted;
   }
 };
-function defaultVnextSchemaDir() {
-  return join2(findKxmRepoRoot(import.meta.url), "schemas", "vnext");
+function defaultKxmSchemaDir() {
+  return join2(findKxmRepoRoot(import.meta.url), "schemas");
 }
-var DEFAULT_SCHEMA_DIR = defaultVnextSchemaDir();
+var DEFAULT_SCHEMA_DIR = defaultKxmSchemaDir();
 var RESOURCE_SCHEMA = Object.freeze({
   project: { identity: "kxm.project.v1", file: "project.schema.json" },
   repository: { identity: "kxm.repository.v1", file: "repository.schema.json" },
@@ -16401,16 +16401,16 @@ function issue2(phase, code, file, message) {
   return { phase, code, file, message };
 }
 function fail2(phase, code, file, message) {
-  throw new VnextConfigError([issue2(phase, code, file, message)]);
+  throw new KxmConfigError([issue2(phase, code, file, message)]);
 }
 function isJsonObject2(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
-function parseRestrictedYaml2(input, label = "<yaml>", limits = VNEXT_YAML_LIMITS) {
+function parseRestrictedYaml2(input, label = "<yaml>", limits = KXM_YAML_LIMITS) {
   try {
     return parseRestrictedYaml(input, label, limits);
   } catch (error) {
-    if (error instanceof RestrictedYamlError) throw new VnextConfigError(error.issues);
+    if (error instanceof RestrictedYamlError) throw new KxmConfigError(error.issues);
     throw error;
   }
 }
@@ -16419,7 +16419,7 @@ function readJsonObject(file) {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`${file} is not a JSON object`);
   return parsed;
 }
-var VnextSchemaRegistry = class {
+var KxmSchemaRegistry = class {
   schemasDir;
   ajv;
   validators = /* @__PURE__ */ new Map();
@@ -16459,19 +16459,19 @@ var VnextSchemaRegistry = class {
     this.ajv.addSchema(readJsonObject(join2(this.schemasDir, runEventFile)));
     this.ajv.addSchema(readJsonObject(join2(this.schemasDir, driveReceiptFile)));
     for (const [kind, definition] of Object.entries(RESOURCE_SCHEMA)) {
-      const validator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${definition.file}`);
+      const validator = this.ajv.getSchema(`https://schemas.kxm.dev/${definition.file}`);
       if (!validator) throw new Error(`schema did not compile: ${definition.file}`);
       this.validators.set(kind, validator);
     }
-    const localBindingsValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${localBindingsFile}`);
-    const templateProvenanceValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${templateProvenanceFile}`);
-    const initOperationValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${initOperationFile}`);
-    const migrationPlanValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${migrationPlanFile}`);
-    const migrationDecisionValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${migrationDecisionFile}`);
-    const migrationReceiptValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${migrationReceiptFile}`);
-    const permissionDiffValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${permissionDiffFile}`);
-    const runEventValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${runEventFile}`);
-    const driveReceiptValidator = this.ajv.getSchema(`https://schemas.kxm.dev/vnext/${driveReceiptFile}`);
+    const localBindingsValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${localBindingsFile}`);
+    const templateProvenanceValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${templateProvenanceFile}`);
+    const initOperationValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${initOperationFile}`);
+    const migrationPlanValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${migrationPlanFile}`);
+    const migrationDecisionValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${migrationDecisionFile}`);
+    const migrationReceiptValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${migrationReceiptFile}`);
+    const permissionDiffValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${permissionDiffFile}`);
+    const runEventValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${runEventFile}`);
+    const driveReceiptValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${driveReceiptFile}`);
     if (!localBindingsValidator) throw new Error(`schema did not compile: ${localBindingsFile}`);
     if (!templateProvenanceValidator) throw new Error(`schema did not compile: ${templateProvenanceFile}`);
     if (!initOperationValidator) throw new Error(`schema did not compile: ${initOperationFile}`);
@@ -16497,7 +16497,7 @@ var VnextSchemaRegistry = class {
       return [issue2("schema", "schema_identity_mismatch", file, `expected ${definition.identity}, received ${String(value.schema)}`)];
     }
     const validator = this.validators.get(kind);
-    if (!validator) throw new Error(`missing vNext validator for ${kind}`);
+    if (!validator) throw new Error(`missing KXM validator for ${kind}`);
     if (validator(value)) return [];
     return (validator.errors ?? []).map((error) => schemaIssue(file, error));
   }
@@ -16535,9 +16535,9 @@ var VnextSchemaRegistry = class {
 };
 var cachedRunEventRegistry;
 function validateRunEvent(value, file) {
-  const registry = cachedRunEventRegistry ??= new VnextSchemaRegistry();
+  const registry = cachedRunEventRegistry ??= new KxmSchemaRegistry();
   if (!registry.runEventValidator(value)) {
-    throw new VnextConfigError([issue2(
+    throw new KxmConfigError([issue2(
       "schema",
       "run_event_invalid",
       file,
@@ -16546,9 +16546,9 @@ function validateRunEvent(value, file) {
   }
 }
 function validateDriveReceipt(value, file) {
-  const registry = cachedRunEventRegistry ??= new VnextSchemaRegistry();
+  const registry = cachedRunEventRegistry ??= new KxmSchemaRegistry();
   if (!value || typeof value !== "object" || Array.isArray(value) || value.schema !== "kxm.drive-receipt.v1") {
-    throw new VnextConfigError([issue2(
+    throw new KxmConfigError([issue2(
       "schema",
       "drive_receipt_invalid",
       file,
@@ -16556,7 +16556,7 @@ function validateDriveReceipt(value, file) {
     )]);
   }
   if (!registry.driveReceiptValidator(value)) {
-    throw new VnextConfigError([issue2(
+    throw new KxmConfigError([issue2(
       "schema",
       "drive_receipt_invalid",
       file,
@@ -16606,7 +16606,7 @@ function portableBindingIssue(root, pathHint, repositoryId) {
   }
   return void 0;
 }
-function vnextPortablePath(path) {
+function kxmPortablePath(path) {
   return portablePath(path);
 }
 function portablePath(path) {
@@ -16615,11 +16615,11 @@ function portablePath(path) {
   const segments = path.split("/");
   return segments.every((segment) => segment.length > 0 && segment !== "." && segment !== ".." && !WINDOWS_RESERVED.test((segment.split(".")[0] ?? segment).replace(/[ .]+$/g, "")) && !segment.endsWith(".") && !segment.endsWith(" ") && !segment.includes(":"));
 }
-function vnextResourceIdentifier(id) {
+function kxmResourceIdentifier(id) {
   return id.length <= 64 && IDENTIFIER.test(id) && !WINDOWS_RESERVED.test(id);
 }
 function resourceIdentifier(id) {
-  return vnextResourceIdentifier(id);
+  return kxmResourceIdentifier(id);
 }
 function displayPath(root, file) {
   const candidate = relative(root, file).replaceAll("\\", "/");
@@ -16650,7 +16650,7 @@ function readResource(registry, root, file, logicalPath, kind, id, containmentRo
   if (!stat.isFile()) fail2("path", "resource_not_file", label, "configuration resource must be a regular file");
   const value = parseRestrictedYaml2(readFileSync(file), label);
   const issues = registry.validate(kind, value, label);
-  if (issues.length > 0) throw new VnextConfigError(issues);
+  if (issues.length > 0) throw new KxmConfigError(issues);
   return { kind, ...id === void 0 ? {} : { id }, file, logicalPath, value };
 }
 function readTemplateProvenance(registry, root) {
@@ -16673,8 +16673,8 @@ function readTemplateProvenance(registry, root) {
   }
   const value = parseRestrictedYaml2(readFileSync(file), label);
   const issues = registry.validateTemplateProvenance(value, label);
-  if (issues.length > 0) throw new VnextConfigError(issues);
-  if (!resolveVnextTemplateBaseline(value)) {
+  if (issues.length > 0) throw new KxmConfigError(issues);
+  if (!resolveKxmTemplateBaseline(value)) {
     fail2("semantic", "template_provenance_revision_invalid", label, "template provenance does not exactly match a supported built-in baseline");
   }
   const files = Array.isArray(value.files) ? value.files : [];
@@ -16734,11 +16734,11 @@ function listNamedResources(registry, root, directory, logicalDirectory, kind) {
       const resource = readResource(registry, root, join2(directory, entry.name), `${logicalDirectory}/${id}.yaml`, kind, id);
       resources.set(id, resource);
     } catch (error) {
-      if (error instanceof VnextConfigError) issues.push(...error.issues);
+      if (error instanceof KxmConfigError) issues.push(...error.issues);
       else throw error;
     }
   }
-  if (issues.length > 0) throw new VnextConfigError(issues);
+  if (issues.length > 0) throw new KxmConfigError(issues);
   return resources;
 }
 function valuesOf(object, field) {
@@ -17258,7 +17258,7 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
           }
         }
       } catch (error) {
-        if (error instanceof VnextConfigError) {
+        if (error instanceof KxmConfigError) {
           issues.push(...error.issues);
         }
       }
@@ -17266,13 +17266,13 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
   }
   return sortIssues2(issues);
 }
-function vnextCanonicalJson(value) {
+function kxmCanonicalJson(value) {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map((candidate) => vnextCanonicalJson(candidate)).join(",")}]`;
-  return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${vnextCanonicalJson(value[key])}`).join(",")}}`;
+  if (Array.isArray(value)) return `[${value.map((candidate) => kxmCanonicalJson(candidate)).join(",")}]`;
+  return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${kxmCanonicalJson(value[key])}`).join(",")}}`;
 }
 function canonicalize(value) {
-  return vnextCanonicalJson(value);
+  return kxmCanonicalJson(value);
 }
 function bundleRevision(resources) {
   const hash = createHash2("sha256");
@@ -17302,19 +17302,19 @@ function discoverGitRoot(start = process.cwd()) {
 }
 function assertNoRegisteredGates(options) {
   if ("registeredGates" in options) {
-    throw new VnextConfigError([issue2("semantic", "registered_gates_removed", ".kxm/gates.yaml", "registeredGates was removed; declare gates in .kxm/gates.yaml")]);
+    throw new KxmConfigError([issue2("semantic", "registered_gates_removed", ".kxm/gates.yaml", "registeredGates was removed; declare gates in .kxm/gates.yaml")]);
   }
 }
-function loadVnextProject(projectRoot, options = {}) {
+function loadKxmProject(projectRoot, options = {}) {
   assertNoRegisteredGates(options);
   const root = resolve(projectRoot);
   let migrationReceipt;
   if (legacyConfigFilesAt(root).length > 0 && options.allowUnreceiptedLegacyConfig !== true) {
-    const receiptCheck = readVnextMigrationReceipt(root, options);
-    if (receiptCheck.issues.length > 0) throw new VnextConfigError(receiptCheck.issues);
+    const receiptCheck = readKxmMigrationReceipt(root, options);
+    if (receiptCheck.issues.length > 0) throw new KxmConfigError(receiptCheck.issues);
     migrationReceipt = receiptCheck.receipt;
   }
-  const registry = new VnextSchemaRegistry(options.schemasDir);
+  const registry = new KxmSchemaRegistry(options.schemasDir);
   const project = readResource(registry, root, join2(root, ".kxm", "project.yaml"), ".kxm/project.yaml", "project");
   const earlyIssues = [];
   validatePortablePaths(project, earlyIssues);
@@ -17326,7 +17326,7 @@ function loadVnextProject(projectRoot, options = {}) {
     }
   }
   if (migrationReceipt && stringValue(migrationReceipt.projectId) !== stringValue(project.value.id)) {
-    earlyIssues.push(issue2("semantic", "migration_project_mismatch", VNEXT_MIGRATION_RECEIPT_PATH, "migration receipt belongs to a different project identity"));
+    earlyIssues.push(issue2("semantic", "migration_project_mismatch", KXM_MIGRATION_RECEIPT_PATH, "migration receipt belongs to a different project identity"));
   }
   const declaredRepositoryIds = new Set(valuesOf(project.value, "repositories").map((candidate) => stringValue(objectValue(candidate)?.id)).filter((candidate) => candidate !== void 0));
   for (const repositoryId of Object.keys(options.repositoryBindings ?? {}).sort(compareCodeUnits3)) {
@@ -17336,7 +17336,7 @@ function loadVnextProject(projectRoot, options = {}) {
       earlyIssues.push(issue2("reference", "repository_binding_unknown", ".kxm/project.yaml", `host-local binding references unknown repository ${repositoryId}`));
     }
   }
-  if (earlyIssues.length > 0) throw new VnextConfigError(earlyIssues);
+  if (earlyIssues.length > 0) throw new KxmConfigError(earlyIssues);
   const agents = listNamedResources(registry, root, join2(root, ".kxm", "agents"), ".kxm/agents", "agent");
   const models = listNamedResources(registry, root, join2(root, ".kxm", "models"), ".kxm/models", "model");
   const workflows = listNamedResources(registry, root, join2(root, ".kxm", "workflows"), ".kxm/workflows", "workflow");
@@ -17350,7 +17350,7 @@ function loadVnextProject(projectRoot, options = {}) {
     try {
       environments.push(readResource(registry, root, projectEnvironment, ".kxm/project/env.yaml", "environment"));
     } catch (error) {
-      if (error instanceof VnextConfigError) loadIssues.push(...error.issues);
+      if (error instanceof KxmConfigError) loadIssues.push(...error.issues);
       else throw error;
     }
   }
@@ -17423,7 +17423,7 @@ function loadVnextProject(projectRoot, options = {}) {
           definitionValidated = repositories.get(repositoryId) === resource;
         }
       } catch (error) {
-        if (error instanceof VnextConfigError) loadIssues.push(...error.issues);
+        if (error instanceof KxmConfigError) loadIssues.push(...error.issues);
         else throw error;
       }
     } else if (required || hasLocalBinding) {
@@ -17437,15 +17437,15 @@ function loadVnextProject(projectRoot, options = {}) {
         try {
           environments.push(readResource(registry, root, environmentFile, `.kxm/repositories/${repositoryId}/env.yaml`, "environment", void 0, binding));
         } catch (error) {
-          if (error instanceof VnextConfigError) loadIssues.push(...error.issues);
+          if (error instanceof KxmConfigError) loadIssues.push(...error.issues);
           else throw error;
         }
       }
     }
   }
-  if (loadIssues.length > 0) throw new VnextConfigError(loadIssues);
+  if (loadIssues.length > 0) throw new KxmConfigError(loadIssues);
   const issues = validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry, root);
-  if (issues.length > 0) throw new VnextConfigError(issues);
+  if (issues.length > 0) throw new KxmConfigError(issues);
   const resources = [project, ...repositories.values(), ...agents.values(), ...models.values(), ...workflows.values(), ...environments, ...gateRegistry ? [gateRegistry] : []].sort((left, right) => compareCodeUnits3(left.logicalPath, right.logicalPath));
   return {
     projectRoot: root,
@@ -17462,7 +17462,7 @@ function loadVnextProject(projectRoot, options = {}) {
     configRevision: bundleRevision(resources)
   };
 }
-var VNEXT_MIGRATION_RECEIPT_PATH = ".kxm/migration-receipt.yaml";
+var KXM_MIGRATION_RECEIPT_PATH = ".kxm/migration-receipt.yaml";
 var LEGACY_CONFIG_FILES = [".kxm/config/agents.json", ".kxm/config/gates.json"];
 function legacyConfigFilesAt(root) {
   const files = [];
@@ -17500,32 +17500,32 @@ function hashFileRecord(root, relativePath) {
 }
 function migrationReceiptSelfHash(receipt) {
   const { receiptSha256: _ignored, ...unsigned } = receipt;
-  return `sha256:${createHash2("sha256").update(vnextCanonicalJson(unsigned), "utf8").digest("hex")}`;
+  return `sha256:${createHash2("sha256").update(kxmCanonicalJson(unsigned), "utf8").digest("hex")}`;
 }
-function readVnextMigrationReceipt(root, options = {}) {
-  const receiptPath = join2(root, ...VNEXT_MIGRATION_RECEIPT_PATH.split("/"));
+function readKxmMigrationReceipt(root, options = {}) {
+  const receiptPath = join2(root, ...KXM_MIGRATION_RECEIPT_PATH.split("/"));
   const legacyFiles = legacyConfigFilesAt(root);
   if (!existsSync3(receiptPath)) {
     return {
-      issues: legacyFiles.map((file) => issue2("semantic", "legacy_vnext_conflict", file, "legacy and vNext configuration cannot coexist before an accepted migration receipt"))
+      issues: legacyFiles.map((file) => issue2("semantic", "legacy_kxm_conflict", file, "legacy and KXM configuration cannot coexist before an accepted migration receipt"))
     };
   }
   const receiptStat = lstatSync(receiptPath);
   if (receiptStat.isSymbolicLink() || !receiptStat.isFile()) {
-    return { issues: [issue2("path", "migration_receipt_invalid", VNEXT_MIGRATION_RECEIPT_PATH, "migration receipt must be a regular file, not a link")] };
+    return { issues: [issue2("path", "migration_receipt_invalid", KXM_MIGRATION_RECEIPT_PATH, "migration receipt must be a regular file, not a link")] };
   }
   let receipt;
   try {
-    receipt = parseRestrictedYaml2(readFileSync(receiptPath), VNEXT_MIGRATION_RECEIPT_PATH);
+    receipt = parseRestrictedYaml2(readFileSync(receiptPath), KXM_MIGRATION_RECEIPT_PATH);
   } catch (error) {
-    if (error instanceof VnextConfigError) return { issues: [...error.issues] };
+    if (error instanceof KxmConfigError) return { issues: [...error.issues] };
     throw error;
   }
-  const registry = new VnextSchemaRegistry(options.schemasDir);
-  const schemaIssues = registry.validateMigrationReceipt(receipt, VNEXT_MIGRATION_RECEIPT_PATH);
+  const registry = new KxmSchemaRegistry(options.schemasDir);
+  const schemaIssues = registry.validateMigrationReceipt(receipt, KXM_MIGRATION_RECEIPT_PATH);
   if (schemaIssues.length > 0) return { issues: schemaIssues };
   if (receipt.receiptSha256 !== migrationReceiptSelfHash(receipt)) {
-    return { issues: [issue2("semantic", "migration_receipt_hash_mismatch", VNEXT_MIGRATION_RECEIPT_PATH, "receipt self-hash does not match its content")] };
+    return { issues: [issue2("semantic", "migration_receipt_hash_mismatch", KXM_MIGRATION_RECEIPT_PATH, "receipt self-hash does not match its content")] };
   }
   const sources = (Array.isArray(receipt.sources) ? receipt.sources : []).map((candidate) => candidate && typeof candidate === "object" && !Array.isArray(candidate) ? candidate.path : void 0).filter((candidate) => typeof candidate === "string").sort(compareCodeUnits3);
   const issues = [];
@@ -17549,12 +17549,12 @@ function readVnextMigrationReceipt(root, options = {}) {
   return issues.length > 0 ? { issues } : { receipt, issues: [] };
 }
 
-// plugins/kxm/src/vnext-runtime-store.ts
+// plugins/kxm/src/runtime-store.ts
 import { createHash as createHash4, randomUUID } from "node:crypto";
 import { existsSync as existsSync5, lstatSync as lstatSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync3, realpathSync as realpathSync2, writeFileSync as writeFileSync2 } from "node:fs";
 import { dirname as dirname5, join as join5, resolve as resolve4 } from "node:path";
 
-// plugins/kxm/src/vnext-bindings.ts
+// plugins/kxm/src/bindings.ts
 import { homedir } from "node:os";
 
 // plugins/kxm/src/sqlite.ts
@@ -17596,7 +17596,7 @@ var DatabaseSync = class {
   }
 };
 
-// plugins/kxm/src/vnext-bindings.ts
+// plugins/kxm/src/bindings.ts
 import { dirname as dirname3, isAbsolute as isAbsolute2, join as join3, parse, relative as relative2, resolve as resolve2, sep as sep2 } from "node:path";
 var MAX_BINDING_RECORD_BYTES = 256 * 1024;
 var BINDING_LABEL = "Runtime-local repository bindings";
@@ -17604,9 +17604,9 @@ function bindingIssue(phase, code, message) {
   return { phase, code, file: BINDING_LABEL, message };
 }
 function bindingError(phase, code, message) {
-  throw new VnextConfigError([bindingIssue(phase, code, message)]);
+  throw new KxmConfigError([bindingIssue(phase, code, message)]);
 }
-function vnextUserStateRoot(options = {}) {
+function kxmUserStateRoot(options = {}) {
   const env = options.env ?? process.env;
   const platform = options.platform ?? process.platform;
   const home = options.homeDir ?? homedir();
@@ -17642,7 +17642,7 @@ import {
 import { basename as basename2, dirname as dirname4, join as join4, resolve as resolve3 } from "node:path";
 function databaseError(code, file, message) {
   const issue3 = { phase: "semantic", code, file, message };
-  return new VnextConfigError([issue3]);
+  return new KxmConfigError([issue3]);
 }
 function checkedParent(path, description) {
   const parent = dirname4(path);
@@ -18065,9 +18065,9 @@ function restoreBackup(manifestPathOrDir, options = {}) {
   };
 }
 
-// plugins/kxm/src/vnext-runtime-store.ts
-function vnextRuntimePaths(options = {}) {
-  const stateRoot = options.stateRoot ? resolve4(options.stateRoot) : vnextUserStateRoot({ ...options.env ? { env: options.env } : {}, ...options.homeDir ? { homeDir: options.homeDir } : {} });
+// plugins/kxm/src/runtime-store.ts
+function kxmRuntimePaths(options = {}) {
+  const stateRoot = options.stateRoot ? resolve4(options.stateRoot) : kxmUserStateRoot({ ...options.env ? { env: options.env } : {}, ...options.homeDir ? { homeDir: options.homeDir } : {} });
   const runtimeDir = join5(stateRoot, "runtime");
   return {
     stateRoot,
@@ -18080,7 +18080,7 @@ function runtimeIssue(phase, code, file, message) {
   return { phase, code, file, message };
 }
 function runtimeError(code, file, message) {
-  return new VnextConfigError([runtimeIssue("semantic", code, file, message)]);
+  return new KxmConfigError([runtimeIssue("semantic", code, file, message)]);
 }
 function projectRuntimeKey(projectRoot) {
   let canonical;
@@ -18092,7 +18092,7 @@ function projectRuntimeKey(projectRoot) {
   const folded = process.platform === "win32" ? canonical.toLocaleLowerCase("en-US") : canonical;
   return createHash4("sha256").update(folded, "utf8").digest("hex").slice(0, 24);
 }
-var VNEXT_REGISTRY_SCHEMA_VERSION = 1;
+var KXM_REGISTRY_SCHEMA_VERSION = 1;
 var REGISTRY_TABLES = {
   supervisor: ["singleton_id", "runtime_id", "pid", "port", "token_hash", "started_at", "heartbeat_at", "state"],
   projects: ["project_id", "project_root", "project_key", "home_runtime_id", "config_revision", "registered_at"]
@@ -18117,14 +18117,14 @@ CREATE TABLE projects (
   registered_at TEXT NOT NULL
 ) STRICT;
 `;
-var VnextRuntimeRegistry = class {
+var KxmRuntimeRegistry = class {
   path;
   database;
   constructor(path) {
     this.path = resolve4(path);
     this.database = openDatabase(this.path, "runtime registry", {
       schema: REGISTRY_SCHEMA,
-      version: VNEXT_REGISTRY_SCHEMA_VERSION,
+      version: KXM_REGISTRY_SCHEMA_VERSION,
       tables: REGISTRY_TABLES
     });
   }
@@ -18283,13 +18283,13 @@ var VnextRuntimeRegistry = class {
     } : void 0;
   }
 };
-var VNEXT_RUN_EVENT_SCHEMA = "kxm.run-event.v1";
-var VNEXT_ABSENT_MEMORY_REVISION = "ctxrev_absent";
-function hashVnextDriveLog(events) {
+var KXM_RUN_EVENT_SCHEMA = "kxm.run-event.v1";
+var KXM_ABSENT_MEMORY_REVISION = "ctxrev_absent";
+function hashKxmDriveLog(events) {
   const body = events.map((event) => `${event.eventId}:${event.sequence}`).join("\n");
   return `sha256:${createHash4("sha256").update(body, "utf8").digest("hex")}`;
 }
-function verifyVnextDriveReceipt(receipt, events, foldedStatus, binding) {
+function verifyKxmDriveReceipt(receipt, events, foldedStatus, binding) {
   const reasons = [];
   if (receipt.runId !== binding.runId) {
     reasons.push(`runId ${receipt.runId} != binding ${binding.runId}`);
@@ -18303,7 +18303,7 @@ function verifyVnextDriveReceipt(receipt, events, foldedStatus, binding) {
     reasons.push(`lastSequence ${receipt.lastSequence} != log ${currentLast}`);
   }
   const prefix = events.filter((event) => event.sequence >= 1 && event.sequence <= receipt.lastSequence);
-  if (hashVnextDriveLog(prefix) !== receipt.logHash) {
+  if (hashKxmDriveLog(prefix) !== receipt.logHash) {
     reasons.push("logHash mismatch");
   }
   if (receipt.settlement.status !== foldedStatus) {
@@ -18312,8 +18312,8 @@ function verifyVnextDriveReceipt(receipt, events, foldedStatus, binding) {
   if (reasons.length === 0) return { verified: true };
   return { verified: false, divergence: reasons.join("; ") };
 }
-var VNEXT_EVENT_STORE_SCHEMA_VERSION = 4;
-var VNEXT_DRIVE_RECEIPT_SCHEMA = "kxm.drive-receipt.v1";
+var KXM_EVENT_STORE_SCHEMA_VERSION = 4;
+var KXM_DRIVE_RECEIPT_SCHEMA = "kxm.drive-receipt.v1";
 var DRIVE_RECEIPT_MAX_BYTES = 8 * 1024;
 var EVENT_STORE_TABLES = {
   runs: ["run_id", "project_id", "home_runtime_id", "workflow_id", "prompt_sha256", "status", "config_revision", "memory_revision", "executor_policy_revision", "tool_policy_revision", "created_at", "updated_at"],
@@ -18570,14 +18570,14 @@ var EVENT_STORE_MIGRATIONS = [
     }
   }
 ];
-var VnextRunEventStore = class {
+var KxmRunEventStore = class {
   path;
   database;
   constructor(path) {
     this.path = resolve4(path);
     this.database = openDatabase(this.path, "run event store", {
       schema: EVENT_STORE_SCHEMA,
-      version: VNEXT_EVENT_STORE_SCHEMA_VERSION,
+      version: KXM_EVENT_STORE_SCHEMA_VERSION,
       tables: EVENT_STORE_TABLES,
       migrations: EVENT_STORE_MIGRATIONS
     });
@@ -18738,7 +18738,7 @@ var VnextRunEventStore = class {
   }
   insertDriveReceipt(receipt) {
     validateDriveReceipt(receipt, "drive-receipt");
-    const canonical = vnextCanonicalJson(receipt);
+    const canonical = kxmCanonicalJson(receipt);
     if (Buffer.byteLength(canonical, "utf8") > DRIVE_RECEIPT_MAX_BYTES) {
       throw runtimeError("drive_receipt_invalid", receipt.driveId, `drive receipt exceeds ${DRIVE_RECEIPT_MAX_BYTES} bytes`);
     }
@@ -19032,28 +19032,28 @@ function runFromRow(row) {
     updatedAt: row.updated_at
   };
 }
-function newVnextRunId() {
+function newKxmRunId() {
   return `run_${randomUUID().replaceAll("-", "")}`;
 }
-function newVnextEventId() {
+function newKxmEventId() {
   return `evt_${randomUUID().replaceAll("-", "")}`;
 }
-function newVnextCommandId() {
+function newKxmCommandId() {
   return `cmd_${randomUUID().replaceAll("-", "")}`;
 }
-function newVnextAssignmentId() {
+function newKxmAssignmentId() {
   return `asg_${randomUUID().replaceAll("-", "")}`;
 }
-function newVnextAttemptId() {
+function newKxmAttemptId() {
   return `att_${randomUUID().replaceAll("-", "")}`;
 }
-function newVnextEffectId() {
+function newKxmEffectId() {
   return `eff_${randomUUID().replaceAll("-", "")}`;
 }
-function newVnextObservationId() {
+function newKxmObservationId() {
   return `obs_${randomUUID().replaceAll("-", "")}`;
 }
-function newVnextEvidenceId() {
+function newKxmEvidenceId() {
   return `gev_${randomUUID().replaceAll("-", "")}`;
 }
 var SHA256 = /^sha256:[a-f0-9]{64}$/;
@@ -19135,7 +19135,7 @@ function gateRowContentHash(table, row) {
   const copy = { ...row };
   delete copy.contentHash;
   void table;
-  return `sha256:${createHash4("sha256").update(vnextCanonicalJson(copy), "utf8").digest("hex")}`;
+  return `sha256:${createHash4("sha256").update(kxmCanonicalJson(copy), "utf8").digest("hex")}`;
 }
 function assertClosedGateObservation(kind, row, id = "observation") {
   if (row.completeness === "incomplete") return;
@@ -19364,8 +19364,8 @@ function capabilityFromRow(row) {
   } : void 0;
 }
 
-// plugins/kxm/src/vnext-engine-fold.ts
-var VNEXT_RUN_STATE_SCHEMA = "kxm.run-state.v2";
+// plugins/kxm/src/engine-fold.ts
+var KXM_RUN_STATE_SCHEMA = "kxm.run-state.v2";
 var FOLD_PANEL_BOUND = 1;
 var RUN_STATUSES = /* @__PURE__ */ new Set(["created", "preparing", "running", "waiting", "blocked_uncertain", "cancelling", "cancelled", "completed", "failed"]);
 var TERMINAL_RUN = /* @__PURE__ */ new Set(["cancelled", "completed", "failed"]);
@@ -19431,7 +19431,7 @@ function panelAttempt(current) {
   const attemptId = assignment?.currentAttemptId;
   return attemptId ? assignment.attempts[attemptId] : void 0;
 }
-function vnextFoldPanelAttempt(step, attemptId) {
+function kxmFoldPanelAttempt(step, attemptId) {
   if (!step) return void 0;
   for (const assignmentId of step.panel.order) {
     const assignment = step.panel.assignments[assignmentId];
@@ -19529,7 +19529,7 @@ function expectedStatusForDeclaredOutcome(step, outcome) {
   if (outcome === "cancelled") return "cancelled";
   return "failed";
 }
-function vnextJoinAll(step, panel) {
+function kxmJoinAll(step, panel) {
   if (panel.order.length < step.assignments.minimum) return { tag: "unsatisfied" };
   const members = [];
   for (const assignmentId of panel.order) {
@@ -19585,7 +19585,7 @@ function putAssignment(current, assignmentId, assignment) {
     }
   };
 }
-function vnextFoldPanelAttemptIds(step) {
+function kxmFoldPanelAttemptIds(step) {
   if (!step) return [];
   const ids = [];
   for (const assignmentId of step.panel.order) {
@@ -19595,12 +19595,12 @@ function vnextFoldPanelAttemptIds(step) {
   }
   return ids;
 }
-function foldVnextRunState(run, plan, events, options = {}) {
+function foldKxmRunState(run, plan, events, options = {}) {
   if (events.length === 0) {
     throw runtimeError("run_events_illegal", run.runId, "run has no events");
   }
   const state = {
-    schema: VNEXT_RUN_STATE_SCHEMA,
+    schema: KXM_RUN_STATE_SCHEMA,
     runId: run.runId,
     status: "created",
     stepAttempts: /* @__PURE__ */ Object.create(null),
@@ -19837,7 +19837,7 @@ function isProvenFailure(state, plan) {
     if (stepTerminal && settled) {
       const step2 = plan?.steps[current.stepId];
       if (step2 && current.status === "failed") {
-        const joined = vnextJoinAll(step2, current.panel);
+        const joined = kxmJoinAll(step2, current.panel);
         if (joined.tag === "rejected" || joined.tag === "conflict") return true;
       }
       if (plan && current.outcome) {
@@ -19960,7 +19960,7 @@ function foldStepStatus(state, plan, event) {
     }
     const step = plan ? requireStep(plan, current.stepId, state.runId) : void 0;
     if (step) {
-      const joined = vnextJoinAll(step, current.panel);
+      const joined = kxmJoinAll(step, current.panel);
       if (joined.tag === "outcome") {
         const expectedStatus = expectedStatusForDeclaredOutcome(step, joined.outcome);
         const selected = step.transitions[joined.outcome];
@@ -20020,7 +20020,7 @@ function foldOutcome(state, plan, event) {
     throw runtimeError("run_events_illegal", state.runId, "step.outcome_recorded cannot overwrite a recorded outcome");
   }
   const step = requireStep(plan, stepId, state.runId);
-  const joined = vnextJoinAll(step, current.panel);
+  const joined = kxmJoinAll(step, current.panel);
   if (joined.tag !== "outcome" || joined.outcome !== outcome) {
     throw runtimeError("run_events_illegal", state.runId, "step.outcome_recorded does not match the recorded assignment outcome");
   }
@@ -20048,7 +20048,7 @@ function foldTransitioned(state, plan, event) {
     throw runtimeError("run_events_illegal", state.runId, "step.transitioned requires every panel assignment and issued attempt to be terminal");
   }
   const step = requireStep(plan, fromStepId, state.runId);
-  const joined = vnextJoinAll(step, current.panel);
+  const joined = kxmJoinAll(step, current.panel);
   if (joined.tag !== "outcome" || joined.outcome !== outcome) {
     throw runtimeError("run_events_illegal", state.runId, "step.transitioned requires a matching joined declared outcome");
   }
@@ -20263,7 +20263,7 @@ function foldAttemptCreated(state, event) {
 function foldAttemptStatus(state, plan, event) {
   requireActiveStep(state, "attempt.status_changed");
   const current = state.currentStep;
-  if (vnextFoldPanelAttemptIds(current).length === 0) {
+  if (kxmFoldPanelAttemptIds(current).length === 0) {
     throw runtimeError("run_events_illegal", state.runId, "attempt.status_changed has no active attempt");
   }
   const attemptId = stringPayload(event, "attemptId");
@@ -20537,7 +20537,7 @@ function freezeCurrentStep(current) {
 }
 function freezeState(state) {
   const frozen = {
-    schema: VNEXT_RUN_STATE_SCHEMA,
+    schema: KXM_RUN_STATE_SCHEMA,
     runId: state.runId,
     status: state.status,
     ...state.runPlanHash !== void 0 ? { runPlanHash: state.runPlanHash } : {},
@@ -20565,11 +20565,11 @@ function isTerminalRunStatus(status) {
   return TERMINAL_RUN.has(status);
 }
 
-// plugins/kxm/src/vnext-engine-plan.ts
+// plugins/kxm/src/engine-plan.ts
 import { createHash as createHash5 } from "node:crypto";
 
-// plugins/kxm/src/vnext-engine-compile.ts
-var VNEXT_COMPILED_WORKFLOW_SCHEMA = "kxm.compiled-workflow.v1";
+// plugins/kxm/src/engine-compile.ts
+var KXM_COMPILED_WORKFLOW_SCHEMA = "kxm.compiled-workflow.v1";
 var WORKFLOW_SCHEMA = "kxm.workflow.v1";
 var STEP_ID_PATTERN = /^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$/;
 var SUPPORTED_STEP_KINDS = /* @__PURE__ */ new Set(["agent", "moa", "gate", "approval", "wait"]);
@@ -20579,16 +20579,16 @@ var EVIDENCE_KINDS = /* @__PURE__ */ new Set(["assignment-result", "gate", "rece
 var REPOSITORY_ACCESS = /* @__PURE__ */ new Set(["none", "read", "write"]);
 var DISTINCT_BY = /* @__PURE__ */ new Set(["provider", "model", "profile"]);
 var BANNED_RUNTIME_HINT = "not yet supported";
-var VnextEngineCompileError = class extends Error {
+var KxmEngineCompileError = class extends Error {
   issues;
   constructor(issues) {
     const sorted = sortIssues3(issues);
     super(sorted.map((issue3) => `${issue3.workflowId}: ${issue3.code}: ${issue3.message}`).join("\n"));
-    this.name = "VnextEngineCompileError";
+    this.name = "KxmEngineCompileError";
     this.issues = sorted;
   }
 };
-function compileVnextWorkflow(input) {
+function compileKxmWorkflow(input) {
   const sink = { workflowId: input.id, issues: [] };
   const value = input.value;
   if (value.schema !== WORKFLOW_SCHEMA) {
@@ -20634,16 +20634,16 @@ function compileVnextWorkflow(input) {
       pushIssue(sink, { code: "plan_hash_stage_unknown", message: `requirePlanHash references unknown stage ${stageId}` });
     }
   }
-  if (sink.issues.length > 0) throw new VnextEngineCompileError(sink.issues);
+  if (sink.issues.length > 0) throw new KxmEngineCompileError(sink.issues);
   const order = compiledSteps.map((step) => step.id);
   const steps = /* @__PURE__ */ Object.create(null);
   for (const step of compiledSteps) steps[step.id] = step;
   const entryStepId = order[0];
-  if (!entryStepId) throw new VnextEngineCompileError(sink.issues);
+  if (!entryStepId) throw new KxmEngineCompileError(sink.issues);
   const coordinator = stringValue2(value.coordinator) ?? "coordinator";
   const transitionBudget = limits.maxTransitions ?? order.length;
   const plan = {
-    schema: VNEXT_COMPILED_WORKFLOW_SCHEMA,
+    schema: KXM_COMPILED_WORKFLOW_SCHEMA,
     workflowId: input.id,
     ...input.logicalPath !== void 0 ? { sourcePath: input.logicalPath } : {},
     coordinator,
@@ -21071,8 +21071,8 @@ function pushIssue(sink, issue3) {
   sink.issues.push({ workflowId: sink.workflowId, ...issue3 });
 }
 
-// plugins/kxm/src/vnext-engine-plan.ts
-var VNEXT_RUN_PLAN_SCHEMA = "kxm.run-plan.v2";
+// plugins/kxm/src/engine-plan.ts
+var KXM_RUN_PLAN_SCHEMA = "kxm.run-plan.v2";
 var SUPPORTED_KINDS = /* @__PURE__ */ new Set(["agent", "moa", "gate", "approval", "wait"]);
 var TERMINAL = /* @__PURE__ */ new Set(["completed", "failed", "cancelled"]);
 var JOIN_STRATEGIES2 = /* @__PURE__ */ new Set(["all", "all-settled", "quorum", "first-success"]);
@@ -21112,13 +21112,13 @@ var JOIN_REQUIRED = ["strategy"];
 var JOIN_OPTIONAL = ["minimumPassed", "cancelRemaining"];
 var EVIDENCE_REQUIRED = ["key", "kind", "minimum", "reusableAcrossAttempts"];
 var EVIDENCE_OPTIONAL = ["producerPolicy"];
-function vnextSha256(input) {
+function kxmSha256(input) {
   return `sha256:${createHash5("sha256").update(input, "utf8").digest("hex")}`;
 }
-function hashVnextRunPlanEnvelope(envelope) {
-  return vnextSha256(vnextCanonicalJson(envelope));
+function hashKxmRunPlanEnvelope(envelope) {
+  return kxmSha256(kxmCanonicalJson(envelope));
 }
-function freezeVnextCompiledPlan(plan) {
+function freezeKxmCompiledPlan(plan) {
   const steps = /* @__PURE__ */ Object.create(null);
   for (const id of plan.order) {
     const step = plan.steps[id];
@@ -21156,7 +21156,7 @@ function freezeStep(step) {
     join: { ...step.join }
   });
 }
-function parseVnextRunPlanEnvelope(raw, run, expectedHash) {
+function parseKxmRunPlanEnvelope(raw, run, expectedHash) {
   let parsed;
   try {
     parsed = JSON.parse(raw);
@@ -21164,16 +21164,16 @@ function parseVnextRunPlanEnvelope(raw, run, expectedHash) {
     throw runtimeError("run_plan_corrupt", run.runId, "run plan envelope is not JSON");
   }
   const envelope = parseEnvelope(parsed, run);
-  const hash = hashVnextRunPlanEnvelope(envelope);
+  const hash = hashKxmRunPlanEnvelope(envelope);
   if (hash !== expectedHash) {
     throw runtimeError("run_plan_corrupt", run.runId, "run plan envelope hash does not match");
   }
   return envelope;
 }
-function rehydrateVnextCompiledPlanFromStore(store, run) {
+function rehydrateKxmCompiledPlanFromStore(store, run) {
   return loadPinnedEnvelope(store, run).plan;
 }
-function loadVnextRunPlanEnvelope(store, run) {
+function loadKxmRunPlanEnvelope(store, run) {
   return loadPinnedEnvelope(store, run);
 }
 function loadPinnedEnvelope(store, run) {
@@ -21185,12 +21185,12 @@ function loadPinnedEnvelope(store, run) {
   if (typeof eventHash !== "string" || eventHash !== row.runPlanHash) {
     throw runtimeError("run_plan_corrupt", run.runId, "pinned runPlanHash does not match the plan row");
   }
-  return parseVnextRunPlanEnvelope(row.envelope, run, row.runPlanHash);
+  return parseKxmRunPlanEnvelope(row.envelope, run, row.runPlanHash);
 }
 function parseEnvelope(parsed, run) {
   const value = asObject(parsed, run.runId, "run plan envelope");
   assertExactKeys(value, ENVELOPE_REQUIRED, [], run.runId, "run plan envelope");
-  if (value.schema !== VNEXT_RUN_PLAN_SCHEMA) {
+  if (value.schema !== KXM_RUN_PLAN_SCHEMA) {
     throw runtimeError("run_plan_corrupt", run.runId, "schema is not kxm.run-plan.v2");
   }
   const runId = asString(value.runId, run.runId, "runId");
@@ -21218,9 +21218,9 @@ function parseEnvelope(parsed, run) {
     ...limitsValue.maxRunDurationMs !== void 0 ? { maxRunDurationMs: asDuration(limitsValue.maxRunDurationMs, run.runId, "projectLimits.maxRunDurationMs") } : {},
     ...limitsValue.maxAgentTimeMs !== void 0 ? { maxAgentTimeMs: asDuration(limitsValue.maxAgentTimeMs, run.runId, "projectLimits.maxAgentTimeMs") } : {}
   };
-  const plan = freezeVnextCompiledPlan(parseCompiledPlan(value.plan, run.runId));
+  const plan = freezeKxmCompiledPlan(parseCompiledPlan(value.plan, run.runId));
   return {
-    schema: VNEXT_RUN_PLAN_SCHEMA,
+    schema: KXM_RUN_PLAN_SCHEMA,
     runId,
     projectId,
     homeRuntimeId,
@@ -21328,7 +21328,7 @@ function parseGateDefinition(raw, gateId, runId) {
       throw runtimeError("run_plan_corrupt", runId, `gates.definitions.${gateId}.paths are not unique`);
     }
     for (const path of paths) {
-      if (path === "." || !vnextPortablePath(path) || path.startsWith("/") || path.includes("\\")) {
+      if (path === "." || !kxmPortablePath(path) || path.startsWith("/") || path.includes("\\")) {
         throw runtimeError("run_plan_corrupt", runId, `gates.definitions.${gateId} path is not a portable relative path`);
       }
     }
@@ -21354,7 +21354,7 @@ function freezeGates(gates) {
 function parseCompiledPlan(raw, runId) {
   const value = asObject(raw, runId, "compiled plan");
   assertExactKeys(value, PLAN_REQUIRED, PLAN_OPTIONAL, runId, "compiled plan");
-  if (value.schema !== VNEXT_COMPILED_WORKFLOW_SCHEMA) {
+  if (value.schema !== KXM_COMPILED_WORKFLOW_SCHEMA) {
     throw runtimeError("run_plan_corrupt", runId, "compiled plan schema is not kxm.compiled-workflow.v1");
   }
   const order = asStringArray(value.order, runId, "order");
@@ -21385,7 +21385,7 @@ function parseCompiledPlan(raw, runId) {
     if (!steps[stageId]) throw runtimeError("run_plan_corrupt", runId, `requirePlanHash references unknown step ${stageId}`);
   }
   const plan = {
-    schema: VNEXT_COMPILED_WORKFLOW_SCHEMA,
+    schema: KXM_COMPILED_WORKFLOW_SCHEMA,
     workflowId: asString(value.workflowId, runId, "workflowId"),
     ...value.sourcePath !== void 0 ? { sourcePath: asStringAllowEmpty(value.sourcePath, runId, "sourcePath") } : {},
     coordinator: asString(value.coordinator, runId, "coordinator"),
@@ -21669,16 +21669,16 @@ function deepFreeze2(value) {
   return Object.freeze(value);
 }
 
-// plugins/kxm/src/vnext-gate-hash.ts
+// plugins/kxm/src/gate-hash.ts
 function gateDefinitionHash(id, definition) {
-  return vnextSha256(vnextCanonicalJson({ id, ...definition }));
+  return kxmSha256(kxmCanonicalJson({ id, ...definition }));
 }
 function gateRegistryHash(registryValue) {
-  return vnextSha256(vnextCanonicalJson(registryValue));
+  return kxmSha256(kxmCanonicalJson(registryValue));
 }
 
-// plugins/kxm/src/vnext-engine-evidence.ts
-function verifyVnextGateEvidence(store, run, envelope, events, state) {
+// plugins/kxm/src/engine-evidence.ts
+function verifyKxmGateEvidence(store, run, envelope, events, state) {
   const attempts = store.gateAttemptsForRun(run.runId);
   const observations = store.gateObservationsForRun(run.runId);
   const evidence = store.gateEvidenceForRun(run.runId);
@@ -21844,7 +21844,7 @@ function verifyVnextGateEvidence(store, run, envelope, events, state) {
       throw runtimeError("gate_evidence_unexpected", run.runId, "non-settled attempt has evidence");
     }
   }
-  void vnextCanonicalJson;
+  void kxmCanonicalJson;
 }
 function lastEffectByAttempt(events) {
   const last = /* @__PURE__ */ new Map();
@@ -21905,7 +21905,7 @@ function stringField(event, field) {
   return value;
 }
 
-// plugins/kxm/src/vnext-runtime-owner.ts
+// plugins/kxm/src/runtime-owner.ts
 import { randomUUID as randomUUID2 } from "node:crypto";
 var owners = /* @__PURE__ */ new Map();
 function record(storePath) {
@@ -21933,16 +21933,16 @@ function clearImplicitIfIdle(owner) {
     delete owner.implicit;
   }
 }
-function registerVnextRuntimeHandle(storePath) {
+function registerKxmRuntimeHandle(storePath) {
   record(storePath).handles += 1;
 }
-function unregisterVnextRuntimeHandle(storePath) {
+function unregisterKxmRuntimeHandle(storePath) {
   const owner = owners.get(storePath);
   if (!owner) return;
   owner.handles = Math.max(0, owner.handles - 1);
   maybeDelete(storePath, owner);
 }
-function registerVnextAttemptController(storePath, runId, attempt) {
+function registerKxmAttemptController(storePath, runId, attempt) {
   const owner = record(storePath);
   let runAttempts = owner.attempts.get(runId);
   if (!runAttempts) {
@@ -21954,15 +21954,15 @@ function registerVnextAttemptController(storePath, runId, attempt) {
   }
   runAttempts.set(attempt.attemptId, attempt);
 }
-function vnextAttemptController(storePath, runId, attemptId) {
+function kxmAttemptController(storePath, runId, attemptId) {
   return owners.get(storePath)?.attempts.get(runId)?.get(attemptId);
 }
-function vnextAttemptControllers(storePath, runId) {
+function kxmAttemptControllers(storePath, runId) {
   const runAttempts = owners.get(storePath)?.attempts.get(runId);
   if (!runAttempts) return [];
   return [...runAttempts.values()];
 }
-function unregisterVnextAttemptController(storePath, runId, attemptId) {
+function unregisterKxmAttemptController(storePath, runId, attemptId) {
   const owner = owners.get(storePath);
   if (!owner) return;
   const runAttempts = owner.attempts.get(runId);
@@ -21972,7 +21972,7 @@ function unregisterVnextAttemptController(storePath, runId, attemptId) {
   if (runAttempts.size === 0) owner.attempts.delete(runId);
   maybeDelete(storePath, owner);
 }
-function bindVnextSchedulerPolicy(storePath, bound, configRevision) {
+function bindKxmSchedulerPolicy(storePath, bound, configRevision) {
   const owner = record(storePath);
   const current = activePolicy(owner);
   if (current && (current.configRevision !== configRevision || current.bound !== bound)) {
@@ -21983,10 +21983,10 @@ function bindVnextSchedulerPolicy(storePath, bound, configRevision) {
   owner.scheduler = { bound, configRevision };
   delete owner.implicit;
 }
-function vnextSchedulerPolicy(storePath) {
+function kxmSchedulerPolicy(storePath) {
   return owners.get(storePath)?.scheduler;
 }
-function admitVnextRun(storePath, runId, envelopeRevision, envelopeBound) {
+function admitKxmRun(storePath, runId, envelopeRevision, envelopeBound) {
   const owner = record(storePath);
   if (owner.admitted.has(runId)) {
     throw runtimeError("run_busy", runId, `run ${runId} is already admitted`);
@@ -22013,7 +22013,7 @@ function admitVnextRun(storePath, runId, envelopeRevision, envelopeBound) {
   owner.admitted.set(runId, { token, configRevision: envelopeRevision });
   return token;
 }
-function releaseVnextRun(storePath, runId, token) {
+function releaseKxmRun(storePath, runId, token) {
   const owner = owners.get(storePath);
   if (!owner) return;
   const current = owner.admitted.get(runId);
@@ -22024,7 +22024,7 @@ function releaseVnextRun(storePath, runId, token) {
   clearImplicitIfIdle(owner);
   maybeDelete(storePath, owner);
 }
-function armVnextGateHold(storePath, runId, token, attemptId, stop) {
+function armKxmGateHold(storePath, runId, token, attemptId, stop) {
   const owner = record(storePath);
   const current = owner.admitted.get(runId);
   if (!current || current.token !== token) {
@@ -22035,7 +22035,7 @@ function armVnextGateHold(storePath, runId, token, attemptId, stop) {
   }
   current.gateHold = { attemptId, token, state: "active", stop };
 }
-function markVnextGateHoldUnsettled(storePath, runId, token, attemptId) {
+function markKxmGateHoldUnsettled(storePath, runId, token, attemptId) {
   const owner = owners.get(storePath);
   const current = owner?.admitted.get(runId);
   if (!current || current.token !== token) {
@@ -22047,7 +22047,7 @@ function markVnextGateHoldUnsettled(storePath, runId, token, attemptId) {
   }
   hold.state = "unsettled";
 }
-function finishVnextOwnedGate(storePath, runId, token, attemptId) {
+function finishKxmOwnedGate(storePath, runId, token, attemptId) {
   const owner = owners.get(storePath);
   const current = owner?.admitted.get(runId);
   if (!current || current.token !== token) {
@@ -22062,12 +22062,12 @@ function finishVnextOwnedGate(storePath, runId, token, attemptId) {
   }
   delete current.gateHold;
 }
-function dropVnextGateStopHook(storePath, runId, attemptId) {
+function dropKxmGateStopHook(storePath, runId, attemptId) {
   const hold = owners.get(storePath)?.admitted.get(runId)?.gateHold;
   if (!hold || hold.attemptId !== attemptId) return;
   delete hold.stop;
 }
-function resolveVnextGateHold(storePath, runId, attemptId) {
+function resolveKxmGateHold(storePath, runId, attemptId) {
   const owner = owners.get(storePath);
   if (!owner) return;
   const current = owner.admitted.get(runId);
@@ -22084,15 +22084,15 @@ function resolveVnextGateHold(storePath, runId, attemptId) {
   clearImplicitIfIdle(owner);
   maybeDelete(storePath, owner);
 }
-function vnextGateHold(storePath, runId) {
+function kxmGateHold(storePath, runId) {
   const hold = owners.get(storePath)?.admitted.get(runId)?.gateHold;
   if (!hold) return void 0;
   return { attemptId: hold.attemptId, token: hold.token, state: hold.state };
 }
-function vnextAdmittedToken(storePath, runId) {
+function kxmAdmittedToken(storePath, runId) {
   return owners.get(storePath)?.admitted.get(runId)?.token;
 }
-function attachVnextDriveSession(storePath, runId, token, session) {
+function attachKxmDriveSession(storePath, runId, token, session) {
   const owner = record(storePath);
   const current = owner.admitted.get(runId);
   if (!current || current.token !== token) {
@@ -22103,16 +22103,16 @@ function attachVnextDriveSession(storePath, runId, token, session) {
   }
   current.driveSession = session;
 }
-function clearVnextDriveSession(storePath, runId, token) {
+function clearKxmDriveSession(storePath, runId, token) {
   const owner = owners.get(storePath);
   const current = owner?.admitted.get(runId);
   if (!current || current.token !== token) return;
   delete current.driveSession;
 }
-function vnextDriveSession(storePath, runId) {
+function kxmDriveSession(storePath, runId) {
   return owners.get(storePath)?.admitted.get(runId)?.driveSession;
 }
-function vnextOpenDriveSessions(storePath) {
+function kxmOpenDriveSessions(storePath) {
   const owner = owners.get(storePath);
   if (!owner) return [];
   const sessions = [];
@@ -22121,7 +22121,7 @@ function vnextOpenDriveSessions(storePath) {
   }
   return sessions;
 }
-function enqueueVnextScheduledRun(storePath, runId, configRevision, bound, start) {
+function enqueueKxmScheduledRun(storePath, runId, configRevision, bound, start) {
   const owner = record(storePath);
   if (owner.admitted.has(runId) || owner.queue.some((item) => item.runId === runId)) {
     return Promise.reject(runtimeError("run_busy", runId, `run ${runId} is already admitted or queued`));
@@ -22144,18 +22144,18 @@ function pump(storePath, owner) {
     if (!next) break;
     let token;
     try {
-      token = admitVnextRun(storePath, next.runId, next.configRevision, next.bound);
+      token = admitKxmRun(storePath, next.runId, next.configRevision, next.bound);
     } catch (error) {
       next.fail(error);
       continue;
     }
     void next.start(token).finally(() => {
-      releaseVnextRun(storePath, next.runId, token);
+      releaseKxmRun(storePath, next.runId, token);
     });
   }
 }
 
-// plugins/kxm/src/vnext-runtime.ts
+// plugins/kxm/src/runtime-service.ts
 function compareCodeUnits5(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
@@ -22165,7 +22165,7 @@ function sha256Of(input) {
 function objectValue3(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value : void 0;
 }
-function vnextExecutorPolicyRevision(bundle) {
+function kxmExecutorPolicyRevision(bundle) {
   const executors = /* @__PURE__ */ new Set();
   const defaultExecutor = bundle.project.value.defaultExecutor;
   if (typeof defaultExecutor === "string") executors.add(defaultExecutor);
@@ -22173,9 +22173,9 @@ function vnextExecutorPolicyRevision(bundle) {
     const executor = agent.value.executor;
     if (typeof executor === "string") executors.add(executor);
   }
-  return sha256Of(vnextCanonicalJson([...executors].sort()));
+  return sha256Of(kxmCanonicalJson([...executors].sort()));
 }
-function vnextToolPolicyRevision(bundle) {
+function kxmToolPolicyRevision(bundle) {
   const policies = [];
   for (const agent of [...bundle.agents.values()].sort((left, right) => String(left.id).localeCompare(String(right.id)))) {
     policies.push({ agent: agent.id ?? "unknown", tools: objectValue3(agent.value.tools) ?? null });
@@ -22189,7 +22189,7 @@ function vnextToolPolicyRevision(bundle) {
       }
     }
   }
-  return sha256Of(vnextCanonicalJson({ policies, gateRegistry: bundle.gateRegistry?.value ?? null }));
+  return sha256Of(kxmCanonicalJson({ policies, gateRegistry: bundle.gateRegistry?.value ?? null }));
 }
 function collectMemoryFiles(dir, baseDir, ignoreSubdirs = /* @__PURE__ */ new Set()) {
   if (!existsSync6(dir)) return [];
@@ -22207,7 +22207,7 @@ function collectMemoryFiles(dir, baseDir, ignoreSubdirs = /* @__PURE__ */ new Se
   }
   return results;
 }
-function computeVnextMemoryRevision(bundle, options = {}) {
+function computeKxmMemoryRevision(bundle, options = {}) {
   const hash = createHash6("sha256");
   const memoryDir = options.memoryDir ?? join6(bundle.projectRoot, ".kxm", "memory");
   const memoryFiles = collectMemoryFiles(memoryDir, memoryDir, /* @__PURE__ */ new Set(["candidates"])).sort((left, right) => compareCodeUnits5(left.relPath, right.relPath));
@@ -22228,38 +22228,38 @@ function computeVnextMemoryRevision(bundle, options = {}) {
     const currentItems = options.promotedState.filter((item) => !item.status || item.status === "current").slice().sort((left, right) => compareCodeUnits5(left.id, right.id));
     for (const item of currentItems) {
       hash.update(`state:${item.id}\0`, "utf8");
-      hash.update(vnextCanonicalJson(item), "utf8");
+      hash.update(kxmCanonicalJson(item), "utf8");
       hash.update("\0", "utf8");
     }
   }
   return `ctxrev_${hash.digest("hex")}`;
 }
 function checkMemoryRevisionDrift(pinnedRevision, bundle, options) {
-  const currentRevision = computeVnextMemoryRevision(bundle, options);
+  const currentRevision = computeKxmMemoryRevision(bundle, options);
   return {
     drifted: currentRevision !== pinnedRevision,
     currentRevision,
     pinnedRevision
   };
 }
-function vnextPolicyRevisions(bundle, options) {
+function kxmPolicyRevisions(bundle, options) {
   return {
     configRevision: bundle.configRevision,
-    memoryRevision: computeVnextMemoryRevision(bundle, options),
-    executorPolicyRevision: vnextExecutorPolicyRevision(bundle),
-    toolPolicyRevision: vnextToolPolicyRevision(bundle)
+    memoryRevision: computeKxmMemoryRevision(bundle, options),
+    executorPolicyRevision: kxmExecutorPolicyRevision(bundle),
+    toolPolicyRevision: kxmToolPolicyRevision(bundle)
   };
 }
-function vnextDeclaredRepositoryIds(bundle) {
+function kxmDeclaredRepositoryIds(bundle) {
   return [...bundle.repositories.keys()].sort();
 }
-function vnextDeclaredExecutorIds(bundle) {
+function kxmDeclaredExecutorIds(bundle) {
   return [...new Set([
     typeof bundle.project.value.defaultExecutor === "string" ? bundle.project.value.defaultExecutor : void 0,
     ...[...bundle.agents.values()].map((agent) => agent.value.executor).filter((value) => typeof value === "string")
   ].filter((value) => value !== void 0))].sort();
 }
-function vnextProjectAdmissionLimits(bundle) {
+function kxmProjectAdmissionLimits(bundle) {
   const limits = objectValue3(bundle.project.value.limits);
   const maxConcurrentRuns = typeof limits?.maxConcurrentRuns === "number" && Number.isInteger(limits.maxConcurrentRuns) && limits.maxConcurrentRuns >= 1 ? limits.maxConcurrentRuns : 1;
   return {
@@ -22270,10 +22270,10 @@ function vnextProjectAdmissionLimits(bundle) {
 }
 var closedRuntimeContexts = /* @__PURE__ */ new WeakSet();
 var runtimeCloseHooks = /* @__PURE__ */ new WeakMap();
-function isVnextRuntimeContextClosed(context) {
+function isKxmRuntimeContextClosed(context) {
   return closedRuntimeContexts.has(context);
 }
-function registerVnextRuntimeCloseHook(context, hook) {
+function registerKxmRuntimeCloseHook(context, hook) {
   if (closedRuntimeContexts.has(context)) {
     hook();
     return () => void 0;
@@ -22288,11 +22288,11 @@ function registerVnextRuntimeCloseHook(context, hook) {
     hooks.delete(hook);
   };
 }
-function openVnextRuntimeContext(projectRoot, options) {
-  const paths = vnextRuntimePaths(options.stateRoot !== void 0 ? { stateRoot: options.stateRoot } : {});
-  const registry = new VnextRuntimeRegistry(paths.registryDb);
+function openKxmRuntimeContext(projectRoot, options) {
+  const paths = kxmRuntimePaths(options.stateRoot !== void 0 ? { stateRoot: options.stateRoot } : {});
+  const registry = new KxmRuntimeRegistry(paths.registryDb);
   try {
-    const bundle = loadVnextProject(projectRoot, options);
+    const bundle = loadKxmProject(projectRoot, options);
     const projectId = String(bundle.project.value.id);
     const registration = registry.registerProject({
       projectId,
@@ -22301,8 +22301,8 @@ function openVnextRuntimeContext(projectRoot, options) {
       configRevision: bundle.configRevision,
       now: options.now ?? (/* @__PURE__ */ new Date()).toISOString()
     });
-    const eventStore = new VnextRunEventStore(join6(paths.projectsDir, registration.projectKey, "run-events.db"));
-    registerVnextRuntimeHandle(eventStore.path);
+    const eventStore = new KxmRunEventStore(join6(paths.projectsDir, registration.projectKey, "run-events.db"));
+    registerKxmRuntimeHandle(eventStore.path);
     return {
       registry,
       projectRoot: bundle.projectRoot,
@@ -22315,7 +22315,7 @@ function openVnextRuntimeContext(projectRoot, options) {
     throw error;
   }
 }
-function closeVnextRuntimeContext(context) {
+function closeKxmRuntimeContext(context) {
   if (closedRuntimeContexts.has(context)) return;
   closedRuntimeContexts.add(context);
   const hooks = runtimeCloseHooks.get(context);
@@ -22328,20 +22328,20 @@ function closeVnextRuntimeContext(context) {
       }
     }
   }
-  unregisterVnextRuntimeHandle(context.eventStore.path);
+  unregisterKxmRuntimeHandle(context.eventStore.path);
   context.eventStore.close();
   context.registry.close();
 }
 var RUNTIME_EPOCH_NS = process.hrtime.bigint();
-function vnextMonotonicNs() {
+function kxmMonotonicNs() {
   return (process.hrtime.bigint() - RUNTIME_EPOCH_NS).toString();
 }
-function vnextIncrementMonotonicNs(value) {
+function kxmIncrementMonotonicNs(value) {
   return (BigInt(value) + 1n).toString();
 }
-function vnextEventBase(context, run, now, monotonicNs, commandId) {
+function kxmEventBase(context, run, now, monotonicNs, commandId) {
   return {
-    schema: VNEXT_RUN_EVENT_SCHEMA,
+    schema: KXM_RUN_EVENT_SCHEMA,
     projectId: context.projectId,
     runId: run.runId,
     homeRuntimeId: run.homeRuntimeId,
@@ -22355,15 +22355,15 @@ function vnextEventBase(context, run, now, monotonicNs, commandId) {
     ...commandId !== void 0 ? { commandId } : {}
   };
 }
-function acceptVnextRun(context, bundle, request, options = {}) {
-  const commandId = request.commandId ?? newVnextCommandId();
+function acceptKxmRun(context, bundle, request, options = {}) {
+  const commandId = request.commandId ?? newKxmCommandId();
   const now = options.now ?? (/* @__PURE__ */ new Date()).toISOString();
-  const monotonicNs = options.monotonicNs ?? vnextMonotonicNs();
+  const monotonicNs = options.monotonicNs ?? kxmMonotonicNs();
   const workflow = bundle.workflows.get(request.workflowId);
   if (!workflow) {
     throw runtimeError("run_workflow_unknown", ".kxm/workflows", `workflow ${request.workflowId} does not exist in this project`);
   }
-  const revisions = vnextPolicyRevisions(bundle, options);
+  const revisions = kxmPolicyRevisions(bundle, options);
   const memoryRevision = options.memoryRevision ?? revisions.memoryRevision;
   const promptSha256 = `sha256:${createHash6("sha256").update(request.prompt, "utf8").digest("hex")}`;
   return context.eventStore.transaction(() => {
@@ -22381,17 +22381,17 @@ function acceptVnextRun(context, bundle, request, options = {}) {
       if (events.length === 0) throw runtimeError("run_command_corrupt", commandId, "idempotent command references a run with no creation event");
       return { accepted: true, idempotent: true, run: run2, event: events[0] };
     }
-    const runId = newVnextRunId();
+    const runId = newKxmRunId();
     const payload = {
       workflowId: request.workflowId,
       status: "created",
       promptHash: promptSha256,
-      repositoryIds: vnextDeclaredRepositoryIds(bundle),
-      executorIds: vnextDeclaredExecutorIds(bundle)
+      repositoryIds: kxmDeclaredRepositoryIds(bundle),
+      executorIds: kxmDeclaredExecutorIds(bundle)
     };
     const event = {
-      schema: VNEXT_RUN_EVENT_SCHEMA,
-      eventId: newVnextEventId(),
+      schema: KXM_RUN_EVENT_SCHEMA,
+      eventId: newKxmEventId(),
       eventType: "run.created",
       projectId: context.projectId,
       runId,
@@ -22434,14 +22434,14 @@ function acceptVnextRun(context, bundle, request, options = {}) {
     return { accepted: true, idempotent: false, run, event };
   });
 }
-function foldStoredVnextRun(context, run) {
+function foldStoredKxmRun(context, run) {
   const events = context.eventStore.events(run.runId, 0, 1e6);
   const planRow = context.eventStore.runPlan(run.runId);
   if (!planRow && events.some((event) => event.eventType.startsWith("step.") || event.eventType.startsWith("effect.") || event.payload.status === "preparing" || event.payload.status === "running" || event.payload.status === "cancelling")) {
     throw runtimeError("run_plan_missing", run.runId, "run reached preparing or later without a pinned plan");
   }
-  const envelope = planRow ? loadVnextRunPlanEnvelope(context.eventStore, run) : void 0;
-  const state = foldVnextRunState(run, envelope?.plan, events, envelope ? {
+  const envelope = planRow ? loadKxmRunPlanEnvelope(context.eventStore, run) : void 0;
+  const state = foldKxmRunState(run, envelope?.plan, events, envelope ? {
     observationLookup: (attemptId, observationId) => {
       const row = context.eventStore.gateObservationForAttempt(attemptId);
       if (!row || row.observationId !== observationId) return void 0;
@@ -22454,7 +22454,7 @@ function foldStoredVnextRun(context, run) {
     },
     projectLimits: envelope.projectLimits
   } : {});
-  if (envelope) verifyVnextGateEvidence(context.eventStore, run, envelope, events, state);
+  if (envelope) verifyKxmGateEvidence(context.eventStore, run, envelope, events, state);
   assertStoredProjection(context, run);
   return state;
 }
@@ -22470,15 +22470,15 @@ function assertStoredProjection(context, run) {
   const stored = context.eventStore.runState(run.runId);
   if (!stored) return;
   const schema = storedProjectionSchema(stored.state);
-  if (schema !== VNEXT_RUN_STATE_SCHEMA) {
+  if (schema !== KXM_RUN_STATE_SCHEMA) {
     throw runtimeError("run_projection_divergent", run.runId, "stored run_state does not match the folded projection");
   }
 }
-function readVnextRunStatus(context, run) {
-  return foldStoredVnextRun(context, run).status;
+function readKxmRunStatus(context, run) {
+  return foldStoredKxmRun(context, run).status;
 }
 function persistProjection(context, run, state, now) {
-  const canonical = vnextCanonicalJson(state);
+  const canonical = kxmCanonicalJson(state);
   const stored = context.eventStore.runState(run.runId);
   if (stored && stored.state !== canonical) {
     throw runtimeError("run_projection_divergent", run.runId, "stored run_state does not match the folded projection");
@@ -22494,42 +22494,42 @@ function persistProjection(context, run, state, now) {
   if (run.status !== state.status) context.eventStore.updateRunStatus(run.runId, state.status, now);
   return updated;
 }
-function rebuildVnextRunProjection(context, runId) {
+function rebuildKxmRunProjection(context, runId) {
   const stored = context.eventStore.run(runId);
   if (!stored) throw runtimeError("run_unknown", runId, "run does not exist in this event store");
-  const state = foldStoredVnextRun(context, stored);
+  const state = foldStoredKxmRun(context, stored);
   const events = context.eventStore.events(runId, 0, 1e6);
   if (events.length === 0) throw runtimeError("run_events_corrupt", runId, "run has no events");
   const last = events[events.length - 1];
   return persistProjection(context, stored, state, last.occurredAt);
 }
-function projectVnextRunReadOnly(context, runId) {
+function projectKxmRunReadOnly(context, runId) {
   const stored = context.eventStore.run(runId);
   if (!stored) throw runtimeError("run_unknown", runId, "run does not exist in this event store");
-  const state = foldStoredVnextRun(context, stored);
+  const state = foldStoredKxmRun(context, stored);
   const events = context.eventStore.events(runId, 0, 1e6);
   if (events.length === 0) throw runtimeError("run_events_corrupt", runId, "run has no events");
   const last = events[events.length - 1];
   return { ...stored, status: state.status, updatedAt: last.occurredAt };
 }
-function persistVnextRunState(context, runId, state, lastSequence) {
+function persistKxmRunState(context, runId, state, lastSequence) {
   const stored = context.eventStore.runState(runId);
   if (stored) {
     const schema = storedProjectionSchema(stored.state);
-    if (schema !== VNEXT_RUN_STATE_SCHEMA) {
+    if (schema !== KXM_RUN_STATE_SCHEMA) {
       throw runtimeError("run_projection_divergent", runId, "stored run_state does not match the folded projection");
     }
   }
   context.eventStore.upsertRunState({
     runId,
     lastSequence,
-    state: vnextCanonicalJson(state)
+    state: kxmCanonicalJson(state)
   });
 }
-function cancelVnextRun(context, runId, options = {}) {
-  const commandId = options.commandId ?? newVnextCommandId();
+function cancelKxmRun(context, runId, options = {}) {
+  const commandId = options.commandId ?? newKxmCommandId();
   const now = options.now ?? (/* @__PURE__ */ new Date()).toISOString();
-  const monotonicNs = options.monotonicNs ?? vnextMonotonicNs();
+  const monotonicNs = options.monotonicNs ?? kxmMonotonicNs();
   const abortControllers = [];
   const result = context.eventStore.transaction(() => {
     const prior = context.eventStore.command(commandId);
@@ -22543,7 +22543,7 @@ function cancelVnextRun(context, runId, options = {}) {
     }
     const run = context.eventStore.run(runId);
     if (!run) throw runtimeError("run_unknown", runId, "run does not exist in this event store");
-    const folded = foldStoredVnextRun(context, run);
+    const folded = foldStoredKxmRun(context, run);
     if (isTerminalRunStatus(folded.status) || folded.status === "cancelling") {
       context.eventStore.insertCommand({
         commandId,
@@ -22559,18 +22559,18 @@ function cancelVnextRun(context, runId, options = {}) {
     let nextMono = monotonicNs;
     const push = (eventType, payload) => {
       const event = {
-        ...vnextEventBase(context, run, now, nextMono, commandId),
-        eventId: newVnextEventId(),
+        ...kxmEventBase(context, run, now, nextMono, commandId),
+        eventId: newKxmEventId(),
         eventType,
         sequence: sequence++,
         payload
       };
-      nextMono = vnextIncrementMonotonicNs(nextMono);
+      nextMono = kxmIncrementMonotonicNs(nextMono);
       events.push(event);
       return event;
     };
     const cancelReason = options.reason ?? "operator_cancel";
-    const activeAttempt = Boolean(folded.currentStep?.attemptId) || vnextFoldPanelAttemptIds(folded.currentStep).length > 0;
+    const activeAttempt = Boolean(folded.currentStep?.attemptId) || kxmFoldPanelAttemptIds(folded.currentStep).length > 0;
     const cancelPayload = {
       actor: { kind: "runtime", id: context.homeRuntimeId },
       reason: cancelReason
@@ -22586,7 +22586,7 @@ function cancelVnextRun(context, runId, options = {}) {
     if (folded.status === "running" && activeAttempt) {
       status = "cancelling";
       push("run.status_changed", { status: "cancelling", reason: cancelReason });
-      const attemptIds = new Set(vnextFoldPanelAttemptIds(folded.currentStep));
+      const attemptIds = new Set(kxmFoldPanelAttemptIds(folded.currentStep));
       if (folded.currentStep?.attemptId) attemptIds.add(folded.currentStep.attemptId);
       for (const attemptId of attemptIds) {
         const capability = context.eventStore.capabilityByAttempt(attemptId);
@@ -22594,7 +22594,7 @@ function cancelVnextRun(context, runId, options = {}) {
           context.eventStore.settleCapability(attemptId, "revoked");
         }
       }
-      for (const owned of vnextAttemptControllers(context.eventStore.path, runId)) {
+      for (const owned of kxmAttemptControllers(context.eventStore.path, runId)) {
         abortControllers.push(owned.controller);
       }
     } else if (folded.status === "blocked_uncertain") {
@@ -22605,9 +22605,9 @@ function cancelVnextRun(context, runId, options = {}) {
         if (capability && (capability.state === "issued" || capability.state === "revoked")) {
           context.eventStore.settleCapability(attemptId, "revoked");
         }
-        resolveVnextGateHold(context.eventStore.path, runId, attemptId);
+        resolveKxmGateHold(context.eventStore.path, runId, attemptId);
       }
-      for (const owned of vnextAttemptControllers(context.eventStore.path, runId)) {
+      for (const owned of kxmAttemptControllers(context.eventStore.path, runId)) {
         abortControllers.push(owned.controller);
       }
       push("run.status_changed", { status: "cancelled", reason: cancelReason });
@@ -22619,8 +22619,8 @@ function cancelVnextRun(context, runId, options = {}) {
       push("run.status_changed", { status: "cancelled", reason: cancelReason });
     }
     for (const event of events) context.eventStore.appendEvent(event);
-    const nextState = foldStoredVnextRun(context, run);
-    persistVnextRunState(context, runId, nextState, events[events.length - 1].sequence);
+    const nextState = foldStoredKxmRun(context, run);
+    persistKxmRunState(context, runId, nextState, events[events.length - 1].sequence);
     context.eventStore.updateRunStatus(runId, status, now);
     context.eventStore.insertCommand({
       commandId,
@@ -22634,28 +22634,28 @@ function cancelVnextRun(context, runId, options = {}) {
   for (const controller of abortControllers) controller.abort();
   return result;
 }
-function vnextRunRevisionDrift(run, bundle) {
+function kxmRunRevisionDrift(run, bundle) {
   return {
     configDrift: run.configRevision !== bundle.configRevision,
     currentRevision: bundle.configRevision,
     pinnedRevision: run.configRevision
   };
 }
-function assertVnextConfigError(error) {
-  if (!(error instanceof VnextConfigError)) throw error;
+function assertKxmConfigError(error) {
+  if (!(error instanceof KxmConfigError)) throw error;
 }
 
-// plugins/kxm/src/vnext-runtime-supervisor.ts
+// plugins/kxm/src/runtime-supervisor.ts
 import { spawn as spawn3 } from "node:child_process";
 import { createHash as createHash12, createHmac, randomBytes as randomBytes3, timingSafeEqual as timingSafeEqual2 } from "node:crypto";
 import { chmodSync as chmodSync2, existsSync as existsSync10, lstatSync as lstatSync5, mkdirSync as mkdirSync4, readFileSync as readFileSync8, renameSync, rmSync, writeFileSync as writeFileSync4 } from "node:fs";
 import { createServer } from "node:http";
 import { dirname as dirname6, isAbsolute as isAbsolute4, join as join13 } from "node:path";
 
-// plugins/kxm/src/vnext-oneshot-producer.ts
+// plugins/kxm/src/oneshot-producer.ts
 import { join as join12 } from "node:path";
 
-// plugins/kxm/src/vnext-oneshot-evidence.ts
+// plugins/kxm/src/oneshot-evidence.ts
 import { createHash as createHash7, randomUUID as randomUUID3 } from "node:crypto";
 import { lstat, mkdir, open, rename } from "node:fs/promises";
 import { join as join7 } from "node:path";
@@ -22948,7 +22948,7 @@ function loadPriceCatalogForEstimate(options) {
   return { catalog, unavailable: false, stale: false };
 }
 
-// plugins/kxm/src/vnext-engine.ts
+// plugins/kxm/src/engine.ts
 var import_yaml5 = __toESM(require_dist(), 1);
 import { createHash as createHash11, randomBytes as randomBytes2, timingSafeEqual } from "node:crypto";
 import { existsSync as existsSync9, readFileSync as readFileSync7 } from "node:fs";
@@ -23244,7 +23244,7 @@ function pruneContextPacket(packet, tokenBudget) {
   };
 }
 
-// plugins/kxm/src/vnext-engine-artifacts.ts
+// plugins/kxm/src/engine-artifacts.ts
 import { join as join10 } from "node:path";
 
 // plugins/kxm/src/artifacts-exist.ts
@@ -23289,8 +23289,8 @@ function verifyArtifactExists(rootInput, pathInput) {
   }
 }
 
-// plugins/kxm/src/vnext-engine-artifacts.ts
-var vnextArtifactsGateSeams = {};
+// plugins/kxm/src/engine-artifacts.ts
+var kxmArtifactsGateSeams = {};
 function evaluateArtifactsGate(context, definition) {
   const root = join10(context.projectRoot, ".kxm", "assets");
   const startedAt = (/* @__PURE__ */ new Date()).toISOString();
@@ -23301,7 +23301,7 @@ function evaluateArtifactsGate(context, definition) {
     checkedCount += 1;
     const result = verifyArtifactExists(root, join10(root, path));
     if (!result.ok) failedCount += 1;
-    vnextArtifactsGateSeams.afterPathChecked?.({ path, index, checkedCount, failedCount });
+    kxmArtifactsGateSeams.afterPathChecked?.({ path, index, checkedCount, failedCount });
   }
   const elapsedNs = process.hrtime.bigint() - startTime;
   const finishedAt = (/* @__PURE__ */ new Date()).toISOString();
@@ -23330,7 +23330,7 @@ function evaluateArtifactsGate(context, definition) {
   };
 }
 
-// plugins/kxm/src/vnext-engine-command.ts
+// plugins/kxm/src/engine-command.ts
 import { spawn as spawn2 } from "node:child_process";
 import { createHash as createHash9 } from "node:crypto";
 
@@ -23369,12 +23369,12 @@ function assertPinnedSshHostKeyPolicy(sshArgs) {
   }
 }
 
-// plugins/kxm/src/vnext-engine-command.ts
+// plugins/kxm/src/engine-command.ts
 var MAX_DIRECT_TIMER_MS = 2147483647;
 var COMMAND_TERM_GRACE_MS = 2e3;
 var COMMAND_FINAL_WAIT_MS = 2e3;
 var COMMAND_LINGER_MS = 2e3;
-var vnextCommandGateSeams = {};
+var kxmCommandGateSeams = {};
 var POST_SPAWN_CHILD_ERROR_CLASS = "stream-error";
 function createCommandObserver(input) {
   return new CommandObserver(input);
@@ -23431,7 +23431,7 @@ var CommandObserver = class {
     this.cwd = input.cwd;
     this.signal = input.signal;
     this.onSpawned = input.onSpawned;
-    const timing = vnextCommandGateSeams.timing;
+    const timing = kxmCommandGateSeams.timing;
     this.termGraceMs = clampTimer(timing?.termGraceMs ?? COMMAND_TERM_GRACE_MS);
     this.finalWaitMs = clampTimer(timing?.finalWaitMs ?? COMMAND_FINAL_WAIT_MS);
     this.lingerMs = clampTimer(timing?.lingerMs ?? COMMAND_LINGER_MS);
@@ -23443,7 +23443,7 @@ var CommandObserver = class {
     if (this.stopCause === "none") {
       this.stopCause = cause;
       if (errorClass && this.errorClass === null) this.errorClass = errorClass;
-      vnextCommandGateSeams.afterStopRequested?.(cause);
+      kxmCommandGateSeams.afterStopRequested?.(cause);
       this.clearTimer("linger");
       this.beginSignalSequence();
       return;
@@ -23474,7 +23474,7 @@ var CommandObserver = class {
       return;
     }
     try {
-      vnextCommandGateSeams.beforeSpawn?.(this.definition);
+      kxmCommandGateSeams.beforeSpawn?.(this.definition);
     } catch {
       this.finishNoStart("validation");
       return;
@@ -23584,9 +23584,9 @@ var CommandObserver = class {
       this.clearTimer("timeout");
       child.stdout?.destroy();
       child.stderr?.destroy();
-      dropVnextCommandStopCapability(this);
+      dropKxmCommandStopCapability(this);
       try {
-        vnextCommandGateSeams.afterChildClose?.();
+        kxmCommandGateSeams.afterChildClose?.();
       } catch {
       }
       this.handoff();
@@ -23607,7 +23607,7 @@ var CommandObserver = class {
       this.requestStop("error", "recording-error");
     }
     try {
-      vnextCommandGateSeams.afterSpawned?.(this.observedPid);
+      kxmCommandGateSeams.afterSpawned?.(this.observedPid);
     } catch {
       this.requestStop("error", "recording-error");
     }
@@ -23774,7 +23774,7 @@ var CommandObserver = class {
     this.clearTimer("final");
     this.clearTimer("linger");
     this.child?.unref();
-    dropVnextCommandStopCapability(this);
+    dropKxmCommandStopCapability(this);
     this.resolveOutcome?.(outcome);
   }
   clearTimer(name) {
@@ -23783,7 +23783,7 @@ var CommandObserver = class {
     this[`${name}Timer`] = void 0;
   }
 };
-function dropVnextCommandStopCapability(observer) {
+function dropKxmCommandStopCapability(observer) {
   observer.requestStop = () => void 0;
 }
 function isCompleteNormal(observation) {
@@ -23799,20 +23799,20 @@ function schedule(ms, fn) {
   return setTimeout(fn, clampTimer(ms));
 }
 
-// plugins/kxm/src/vnext-engine-gate-records.ts
+// plugins/kxm/src/engine-gate-records.ts
 function recordGateIntentInTransaction(context, run, envelope, stepId) {
   const step = requireGateStep(envelope, stepId, run.runId);
   const definition = envelope.gates.definitions[step.gate];
   if (!definition || definition.kind === "reserved") {
     throw runtimeError("gate_row_invalid", run.runId, "reserved gates cannot record intent in this slice");
   }
-  const folded = foldStoredVnextRun(context, run);
+  const folded = foldStoredKxmRun(context, run);
   const used = folded.stepAttempts[stepId] ?? 0;
   const stepAttempt = used + 1;
-  const assignmentId = newVnextAssignmentId();
-  const attemptId = newVnextAttemptId();
-  const effectId = newVnextEffectId();
-  const minted = mintVnextCapabilitySecret();
+  const assignmentId = newKxmAssignmentId();
+  const attemptId = newKxmAttemptId();
+  const effectId = newKxmEffectId();
+  const minted = mintKxmCapabilitySecret();
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const seq = sequencer(context, run, now);
   seq.push("step.entered", { stepId, stepAttempt, status: "pending" });
@@ -23902,7 +23902,7 @@ function recordGateSettlementInTransaction(context, run, envelope, stepId, obser
     });
   }
   seq.push("attempt.status_changed", { attemptId: ids.attemptId, assignmentId: ids.assignmentId, stepId, stepAttempt: ids.stepAttempt, status: "settling" });
-  const observationId = newVnextObservationId();
+  const observationId = newKxmObservationId();
   const observed = seq.push("effect.observed", {
     effect: { id: ids.effectId, policy: { class: ids.gateKind === "artifacts-exist" ? "read-only" : "unknown", sharedMutable: false } },
     stepId,
@@ -23913,7 +23913,7 @@ function recordGateSettlementInTransaction(context, run, envelope, stepId, obser
   });
   const observationRow = buildObservation(ids, observation, observationId, observed.eventId);
   patchReceipt(observed, observationRow);
-  const evidenceId = newVnextEvidenceId();
+  const evidenceId = newKxmEvidenceId();
   const evidenceDraft = {
     evidenceId,
     attemptId: ids.attemptId,
@@ -23961,7 +23961,7 @@ function recordGateNoStartInTransaction(context, run, envelope, stepId, observat
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const seq = sequencer(context, run, now);
   const cancelReason = cancelled ? ensureOperatorCancel(seq, ids.state, run, context) : void 0;
-  const observationId = newVnextObservationId();
+  const observationId = newKxmObservationId();
   const observed = seq.push("effect.observed", {
     effect: { id: ids.effectId, policy: { class: ids.gateKind === "artifacts-exist" ? "read-only" : "unknown", sharedMutable: false } },
     stepId,
@@ -24019,7 +24019,7 @@ function recordGateUncertainInTransaction(context, run, envelope, stepId, reason
   }
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const seq = sequencer(context, run, now);
-  const observationId = newVnextObservationId();
+  const observationId = newKxmObservationId();
   const blocked = seq.push("effect.blocked_uncertain", {
     effect: { id: ids.effectId, policy: { class: ids.gateKind === "artifacts-exist" ? "read-only" : "unknown", sharedMutable: false } },
     stepId,
@@ -24059,7 +24059,7 @@ function recordGateCancelObservedInTransaction(context, run, envelope, stepId, o
     });
   }
   seq.push("attempt.status_changed", { attemptId: ids.attemptId, assignmentId: ids.assignmentId, stepId, stepAttempt: ids.stepAttempt, status: "settling" });
-  const observationId = newVnextObservationId();
+  const observationId = newKxmObservationId();
   const policyClass = ids.gateKind === "artifacts-exist" ? "read-only" : "unknown";
   const observed = seq.push("effect.observed", {
     effect: { id: ids.effectId, policy: { class: policyClass, sharedMutable: false } },
@@ -24107,7 +24107,7 @@ function appendEvaluatedTail(seq, envelope, ids, stepId, outcome) {
     seq.push("run.status_changed", { status: "failed", reason: "outcome_unknown", stepId, outcome });
     return;
   }
-  const budget = vnextTransitionBudgetFailure(envelope.plan, ids.state, stepId, outcome);
+  const budget = kxmTransitionBudgetFailure(envelope.plan, ids.state, stepId, outcome);
   if (budget) {
     seq.push("run.status_changed", { status: "failed", reason: budget, stepId, outcome });
     return;
@@ -24160,7 +24160,7 @@ function requireGateStep(envelope, stepId, runId) {
 }
 function requireIntent(context, run, envelope, stepId) {
   const step = requireGateStep(envelope, stepId, run.runId);
-  const folded = foldStoredVnextRun(context, run);
+  const folded = foldStoredKxmRun(context, run);
   const attemptId = folded.currentStep?.attemptId;
   if (!attemptId || folded.currentStep?.stepId !== stepId) {
     throw runtimeError("run_events_illegal", run.runId, "gate intent has not been recorded");
@@ -24198,27 +24198,27 @@ function cancelReasonFromLog(context, runId) {
 }
 function sequencer(context, run, now) {
   let sequence = context.eventStore.nextSequence(run.runId);
-  let mono = vnextMonotonicNs();
+  let mono = kxmMonotonicNs();
   const events = [];
   return {
     events,
     push(eventType, payload) {
       const event = {
-        ...vnextEventBase(context, run, now, mono),
-        eventId: newVnextEventId(),
+        ...kxmEventBase(context, run, now, mono),
+        eventId: newKxmEventId(),
         eventType,
         sequence: sequence++,
         payload
       };
-      mono = vnextIncrementMonotonicNs(mono);
+      mono = kxmIncrementMonotonicNs(mono);
       events.push(event);
       return event;
     }
   };
 }
 function persist(context, run, now, lastSequence) {
-  const next = foldStoredVnextRun(context, run);
-  persistVnextRunState(context, run.runId, next, lastSequence);
+  const next = foldStoredKxmRun(context, run);
+  persistKxmRunState(context, run.runId, next, lastSequence);
   context.eventStore.updateRunStatus(run.runId, next.status, now);
   return { state: next, run: { ...run, status: next.status, updatedAt: now } };
 }
@@ -24382,10 +24382,10 @@ function parseRoutingRecordV2(value) {
   return record2;
 }
 
-// plugins/kxm/src/vnext-engine.ts
+// plugins/kxm/src/engine.ts
 var trustedProducers = /* @__PURE__ */ new WeakSet();
 var CAPABILITY_PREFIX = "kxm-attempt-capability\0";
-function createVnextSimulatedProducer(script) {
+function createKxmSimulatedProducer(script) {
   const producer = Object.freeze({
     id: "driver-simulated",
     async produce(request) {
@@ -24421,14 +24421,14 @@ function requireTrustedProducer(producer) {
 function hashCapabilitySecret(secret) {
   return `sha256:${createHash11("sha256").update(`${CAPABILITY_PREFIX}${secret}`, "utf8").digest("hex")}`;
 }
-function mintVnextCapabilitySecret() {
+function mintKxmCapabilitySecret() {
   const secret = `kxmcap_${randomBytes2(32).toString("base64url")}`;
   return { secret, hash: hashCapabilitySecret(secret) };
 }
 function mintCapabilitySecret() {
-  return mintVnextCapabilitySecret();
+  return mintKxmCapabilitySecret();
 }
-function pinVnextCompiledPlan(context, bundle, runId, options) {
+function pinKxmCompiledPlan(context, bundle, runId, options) {
   return context.eventStore.transaction(() => {
     const run = requireRun(context, runId);
     if (run.projectId !== context.projectId || run.homeRuntimeId !== context.homeRuntimeId) {
@@ -24439,17 +24439,17 @@ function pinVnextCompiledPlan(context, bundle, runId, options) {
     }
     const workflow = bundle.workflows.get(run.workflowId);
     if (!workflow) throw runtimeError("run_workflow_unknown", run.workflowId, `workflow ${run.workflowId} does not exist in this project`);
-    const revisions = vnextPolicyRevisions(bundle, options);
+    const revisions = kxmPolicyRevisions(bundle, options);
     if (revisions.configRevision !== run.configRevision || revisions.executorPolicyRevision !== run.executorPolicyRevision || revisions.toolPolicyRevision !== run.toolPolicyRevision || revisions.memoryRevision !== run.memoryRevision) {
       throw runtimeError("run_revision_drift", runId, "bundle revisions do not match the accepted run");
     }
-    const compiled = freezeVnextCompiledPlan(compileVnextWorkflow({
+    const compiled = freezeKxmCompiledPlan(compileKxmWorkflow({
       id: run.workflowId,
       value: workflow.value,
       ...workflow.logicalPath !== void 0 ? { logicalPath: workflow.logicalPath } : {}
     }));
     const envelope = {
-      schema: VNEXT_RUN_PLAN_SCHEMA,
+      schema: KXM_RUN_PLAN_SCHEMA,
       runId: run.runId,
       projectId: run.projectId,
       homeRuntimeId: run.homeRuntimeId,
@@ -24460,11 +24460,11 @@ function pinVnextCompiledPlan(context, bundle, runId, options) {
         toolPolicy: run.toolPolicyRevision,
         memory: run.memoryRevision
       },
-      projectLimits: vnextProjectAdmissionLimits(bundle),
+      projectLimits: kxmProjectAdmissionLimits(bundle),
       plan: compiled,
       gates: pinnedGatesForCompiledPlan(compiled, bundle, context.projectRoot)
     };
-    const runPlanHash = hashVnextRunPlanEnvelope(envelope);
+    const runPlanHash = hashKxmRunPlanEnvelope(envelope);
     const existing = context.eventStore.runPlan(runId);
     if (existing) {
       if (existing.runPlanHash !== runPlanHash) {
@@ -24478,8 +24478,8 @@ function pinVnextCompiledPlan(context, bundle, runId, options) {
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const sequence = context.eventStore.nextSequence(runId);
     const event = {
-      ...vnextEventBase(context, run, now, vnextMonotonicNs()),
-      eventId: newVnextEventId(),
+      ...kxmEventBase(context, run, now, kxmMonotonicNs()),
+      eventId: newKxmEventId(),
       eventType: "run.status_changed",
       sequence,
       payload: { status: "preparing", runPlanHash }
@@ -24487,22 +24487,22 @@ function pinVnextCompiledPlan(context, bundle, runId, options) {
     context.eventStore.insertRunPlan({
       runId,
       runPlanHash,
-      envelope: vnextCanonicalJson(envelope),
+      envelope: kxmCanonicalJson(envelope),
       pinnedSequence: sequence
     });
     context.eventStore.appendEvent(event);
-    const state = foldStoredVnextRun(context, run);
-    persistVnextRunState(context, runId, state, sequence);
+    const state = foldStoredKxmRun(context, run);
+    persistKxmRunState(context, runId, state, sequence);
     context.eventStore.updateRunStatus(runId, "preparing", now);
     return { plan: compiled, runPlanHash, idempotent: false, event };
   });
 }
-function startVnextRun(context, runId, options = {}) {
+function startKxmRun(context, runId, options = {}) {
   return context.eventStore.transaction(() => {
     const run = requireRun(context, runId);
-    const envelope = loadVnextRunPlanEnvelope(context.eventStore, run);
+    const envelope = loadKxmRunPlanEnvelope(context.eventStore, run);
     const unsupported = options.allowLimits ? void 0 : unsupportedLimit(envelope);
-    const state = foldStoredVnextRun(context, run);
+    const state = foldStoredKxmRun(context, run);
     if (unsupported) {
       return { state, handoff: unsupported };
     }
@@ -24512,15 +24512,15 @@ function startVnextRun(context, runId, options = {}) {
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const sequence = context.eventStore.nextSequence(runId);
     const event = {
-      ...vnextEventBase(context, run, now, vnextMonotonicNs()),
-      eventId: newVnextEventId(),
+      ...kxmEventBase(context, run, now, kxmMonotonicNs()),
+      eventId: newKxmEventId(),
       eventType: "run.status_changed",
       sequence,
       payload: { status: "running" }
     };
     context.eventStore.appendEvent(event);
-    const next = foldStoredVnextRun(context, run);
-    persistVnextRunState(context, runId, next, sequence);
+    const next = foldStoredKxmRun(context, run);
+    persistKxmRunState(context, runId, next, sequence);
     context.eventStore.updateRunStatus(runId, "running", now);
     return { state: next };
   });
@@ -24528,10 +24528,10 @@ function startVnextRun(context, runId, options = {}) {
 async function driveAdmitted(context, runId, producer, token, options = {}) {
   const run = requireRun(context, runId);
   if (run.status === "preparing") {
-    const started = startVnextRun(context, runId, options);
+    const started = startKxmRun(context, runId, options);
     if (started.handoff || isTerminalRunStatus(started.state.status)) return started;
   }
-  let latest = { state: foldStoredVnextRun(context, requireRun(context, runId)) };
+  let latest = { state: foldStoredKxmRun(context, requireRun(context, runId)) };
   while (latest.state.status === "running") {
     const overBudget = cancelRunDurationIfExceeded(context, runId);
     if (overBudget) return overBudget;
@@ -24551,9 +24551,9 @@ function newDriveId(runId, token, runtimeId, monotonicNs) {
   return `drv_${createHash11("sha256").update(`${runId}\0${token}\0${runtimeId}\0${monotonicNs}`, "utf8").digest("hex").slice(0, 24)}`;
 }
 function driveErrorSummary(error) {
-  const raw = error instanceof VnextConfigError ? error.issues[0]?.code : void 0;
+  const raw = error instanceof KxmConfigError ? error.issues[0]?.code : void 0;
   const className = raw && /^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$/.test(raw) ? raw : "drive-failure";
-  return { class: className, component: "vnext-engine", retryable: false };
+  return { class: className, component: "engine", retryable: false };
 }
 function receiptHandoff(handoff) {
   return {
@@ -24569,24 +24569,24 @@ function appendDriveOpened(context, runId, driveId, mode) {
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const sequence = context.eventStore.nextSequence(runId);
     const event = {
-      ...vnextEventBase(context, run, now, vnextMonotonicNs()),
-      eventId: newVnextEventId(),
+      ...kxmEventBase(context, run, now, kxmMonotonicNs()),
+      eventId: newKxmEventId(),
       eventType: "run.drive_opened",
       sequence,
       payload: { driveId, mode }
     };
     context.eventStore.appendEvent(event);
-    const next = foldStoredVnextRun(context, run);
-    persistVnextRunState(context, runId, next, sequence);
+    const next = foldStoredKxmRun(context, run);
+    persistKxmRunState(context, runId, next, sequence);
     return { sequence, occurredAt: now };
   });
 }
 function recordDriveReceipt(context, session, closeInfo) {
-  if (isVnextRuntimeContextClosed(context)) return;
+  if (isKxmRuntimeContextClosed(context)) return;
   try {
     const run = context.eventStore.run(session.runId);
     if (!run) return;
-    const state = foldStoredVnextRun(context, run);
+    const state = foldStoredKxmRun(context, run);
     const events = context.eventStore.events(session.runId, 0, 1e6);
     if (events.length === 0) return;
     const opened = state.drive;
@@ -24596,7 +24596,7 @@ function recordDriveReceipt(context, session, closeInfo) {
     if (openedSequence === void 0) return;
     const closedAt = (/* @__PURE__ */ new Date()).toISOString();
     const receipt = {
-      schema: VNEXT_DRIVE_RECEIPT_SCHEMA,
+      schema: KXM_DRIVE_RECEIPT_SCHEMA,
       driveId: session.driveId,
       runId: session.runId,
       projectId: run.projectId,
@@ -24606,7 +24606,7 @@ function recordDriveReceipt(context, session, closeInfo) {
       openedSequence,
       closedAt,
       lastSequence: last.sequence,
-      logHash: hashVnextDriveLog(events.filter((event) => event.sequence >= 1 && event.sequence <= last.sequence)),
+      logHash: hashKxmDriveLog(events.filter((event) => event.sequence >= 1 && event.sequence <= last.sequence)),
       settlement: {
         kind: closeInfo.kind,
         status: state.status,
@@ -24621,7 +24621,7 @@ function recordDriveReceipt(context, session, closeInfo) {
   } catch {
   }
 }
-function vnextDrivePollProjection(context, runId, state) {
+function kxmDrivePollProjection(context, runId, state) {
   if (!state.drive) return void 0;
   const events = context.eventStore.events(runId, 0, 1e6);
   const openedEvent = events.find((event) => event.sequence === state.drive.openedSequence);
@@ -24647,7 +24647,7 @@ function vnextDrivePollProjection(context, runId, state) {
     projection.divergence = "no receipt";
     return projection;
   }
-  const checked = verifyVnextDriveReceipt(receipt, events, state.status, {
+  const checked = verifyKxmDriveReceipt(receipt, events, state.status, {
     runId,
     driveId: state.drive.driveId
   });
@@ -24659,7 +24659,7 @@ function inflightAttemptId(state) {
   const leftover = unreconciledPanelAttemptId(state);
   if (leftover) return leftover;
   if (state.currentStep?.attemptId) {
-    const located = vnextFoldPanelAttempt(state.currentStep, state.currentStep.attemptId);
+    const located = kxmFoldPanelAttempt(state.currentStep, state.currentStep.attemptId);
     const status = located?.attempt.status;
     if (status === "starting" || status === "executing" || status === "settling") return state.currentStep.attemptId;
   }
@@ -24671,32 +24671,32 @@ function recordExecutingUnrecordedFailure(context, runId, attemptId, stepId) {
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const sequence = context.eventStore.nextSequence(runId);
     const event = {
-      ...vnextEventBase(context, run, now, vnextMonotonicNs()),
-      eventId: newVnextEventId(),
+      ...kxmEventBase(context, run, now, kxmMonotonicNs()),
+      eventId: newKxmEventId(),
       eventType: "run.status_changed",
       sequence,
       payload: { status: "failed", reason: "executing_unrecorded", stepId }
     };
     context.eventStore.appendEvent(event);
     context.eventStore.settleCapability(attemptId, "revoked");
-    const next = foldStoredVnextRun(context, run);
-    persistVnextRunState(context, runId, next, sequence);
+    const next = foldStoredKxmRun(context, run);
+    persistKxmRunState(context, runId, next, sequence);
     context.eventStore.updateRunStatus(runId, "failed", now);
   });
 }
 function recordBareDriveFailure(context, runId) {
-  if (isVnextRuntimeContextClosed(context)) return;
+  if (isKxmRuntimeContextClosed(context)) return;
   try {
     const run = context.eventStore.run(runId);
     if (!run) return;
-    const state = foldStoredVnextRun(context, run);
+    const state = foldStoredKxmRun(context, run);
     if (isTerminalRunStatus(state.status) || state.status === "cancelling") return;
     const inflight = inflightAttemptId(state);
     if (inflight) {
       const currentStep = state.currentStep;
-      const located = vnextFoldPanelAttempt(currentStep, inflight);
+      const located = kxmFoldPanelAttempt(currentStep, inflight);
       if (currentStep && currentStep.panel.order.length === 1 && located?.attempt.status === "starting") {
-        const plan = rehydrateVnextCompiledPlanFromStore(context.eventStore, run);
+        const plan = rehydrateKxmCompiledPlanFromStore(context.eventStore, run);
         const step = plan.steps[currentStep.stepId];
         if (step?.kind === "gate") return;
         if (step && (step.kind === "agent" || step.kind === "moa") && step.assignments.maximum > 1) return;
@@ -24704,7 +24704,7 @@ function recordBareDriveFailure(context, runId) {
       }
       return;
     }
-    cancelVnextRun(context, runId, { reason: "drive_error" });
+    cancelKxmRun(context, runId, { reason: "drive_error" });
   } catch {
   }
 }
@@ -24715,7 +24715,7 @@ async function closeDriveProducer(producer) {
   } catch {
   }
 }
-var VnextRunScheduler = class _VnextRunScheduler {
+var KxmRunScheduler = class _KxmRunScheduler {
   context;
   bundle;
   configRevision;
@@ -24728,20 +24728,20 @@ var VnextRunScheduler = class _VnextRunScheduler {
     if (String(bundle.project.value.id) !== context.projectId) {
       throw runtimeError("run_owner_mismatch", context.projectId, "scheduler bundle project does not match the runtime context");
     }
-    const limits = vnextProjectAdmissionLimits(bundle);
-    bindVnextSchedulerPolicy(context.eventStore.path, limits.maxConcurrentRuns, bundle.configRevision);
-    return new _VnextRunScheduler(context, bundle);
+    const limits = kxmProjectAdmissionLimits(bundle);
+    bindKxmSchedulerPolicy(context.eventStore.path, limits.maxConcurrentRuns, bundle.configRevision);
+    return new _KxmRunScheduler(context, bundle);
   }
   enqueue(runId, producer, options = {}) {
     requireTrustedProducer(producer);
-    const policy = vnextSchedulerPolicy(this.context.eventStore.path);
+    const policy = kxmSchedulerPolicy(this.context.eventStore.path);
     if (!policy || policy.configRevision !== this.configRevision) {
       return Promise.reject(runtimeError("scheduler_policy_conflict", runId, "scheduler handle does not match the active policy"));
     }
     try {
       const run = requireRun(this.context, runId);
-      const envelope = loadVnextRunPlanEnvelope(this.context.eventStore, run);
-      return enqueueVnextScheduledRun(
+      const envelope = loadKxmRunPlanEnvelope(this.context.eventStore, run);
+      return enqueueKxmScheduledRun(
         this.context.eventStore.path,
         runId,
         envelope.revisions.config,
@@ -24753,7 +24753,7 @@ var VnextRunScheduler = class _VnextRunScheduler {
     }
   }
   openDriveSession(runId, options) {
-    const policy = vnextSchedulerPolicy(this.context.eventStore.path);
+    const policy = kxmSchedulerPolicy(this.context.eventStore.path);
     if (!policy || policy.configRevision !== this.configRevision) {
       return Promise.reject(runtimeError("scheduler_policy_conflict", runId, "scheduler handle does not match the active policy"));
     }
@@ -24765,7 +24765,7 @@ var VnextRunScheduler = class _VnextRunScheduler {
     } catch (error) {
       return Promise.reject(error);
     }
-    const limits = vnextProjectAdmissionLimits(this.bundle);
+    const limits = kxmProjectAdmissionLimits(this.bundle);
     const driveOptions = {
       liveMode: options.liveMode ?? options.mode === "live"
     };
@@ -24781,7 +24781,7 @@ var VnextRunScheduler = class _VnextRunScheduler {
     });
     void settled.then(void 0, () => void 0);
     return new Promise((resolveOpen, rejectOpen) => {
-      const queued = enqueueVnextScheduledRun(
+      const queued = enqueueKxmScheduledRun(
         this.context.eventStore.path,
         runId,
         this.configRevision,
@@ -24793,17 +24793,17 @@ var VnextRunScheduler = class _VnextRunScheduler {
             requireTrustedProducer(producer);
             const current = requireRun(this.context, runId);
             if (current.status === "created") {
-              pinVnextCompiledPlan(this.context, this.bundle, runId);
+              pinKxmCompiledPlan(this.context, this.bundle, runId);
             }
-            const started = startVnextRun(this.context, runId, driveOptions);
+            const started = startKxmRun(this.context, runId, driveOptions);
             if (started.handoff) {
               const error = runtimeError("run_handoff_required", runId, started.handoff.detail);
               Object.assign(error, { handoff: started.handoff });
               throw error;
             }
-            const driveId = newDriveId(runId, token, this.context.homeRuntimeId, vnextMonotonicNs());
+            const driveId = newDriveId(runId, token, this.context.homeRuntimeId, kxmMonotonicNs());
             const openedMeta = appendDriveOpened(this.context, runId, driveId, options.mode);
-            const startedState = foldStoredVnextRun(this.context, requireRun(this.context, runId));
+            const startedState = foldStoredKxmRun(this.context, requireRun(this.context, runId));
             const deadlineAt = driveDeadlineAt(this.context, runId, startedState);
             const session = {
               driveId,
@@ -24817,7 +24817,7 @@ var VnextRunScheduler = class _VnextRunScheduler {
               settled,
               ...deadlineAt !== void 0 ? { deadlineAt } : {}
             };
-            attachVnextDriveSession(this.context.eventStore.path, runId, token, session);
+            attachKxmDriveSession(this.context.eventStore.path, runId, token, session);
             opened = true;
             resolveOpen({ driveId, settled });
             try {
@@ -24836,7 +24836,7 @@ var VnextRunScheduler = class _VnextRunScheduler {
               recordBareDriveFailure(this.context, runId);
               let foldedStatus;
               try {
-                foldedStatus = foldStoredVnextRun(this.context, requireRun(this.context, runId)).status;
+                foldedStatus = foldStoredKxmRun(this.context, requireRun(this.context, runId)).status;
               } catch {
                 foldedStatus = void 0;
               }
@@ -24851,7 +24851,7 @@ var VnextRunScheduler = class _VnextRunScheduler {
             }
           } finally {
             if (producer) await closeDriveProducer(producer);
-            clearVnextDriveSession(this.context.eventStore.path, runId, token);
+            clearKxmDriveSession(this.context.eventStore.path, runId, token);
           }
         }
       );
@@ -24875,7 +24875,7 @@ function invokeProducer(producer, request) {
     () => ({ error: true })
   );
 }
-var vnextGateDispatchSeams = {};
+var kxmGateDispatchSeams = {};
 async function stepLocked(context, runId, producer, token) {
   const prepared = context.eventStore.transaction(() => prepareDispatch(context, runId, producer.id));
   if (prepared.kind === "return") {
@@ -24893,15 +24893,15 @@ async function stepLocked(context, runId, producer, token) {
     if (!definition || definition.kind !== "artifacts-exist") {
       throw runtimeError("run_events_illegal", prepared.run.runId, "prepared gate is not artifacts-exist");
     }
-    registerVnextAttemptController(context.eventStore.path, runId, { attemptId: prepared.attemptId, controller: prepared.controller });
+    registerKxmAttemptController(context.eventStore.path, runId, { attemptId: prepared.attemptId, controller: prepared.controller });
     const clearBudget = armRunDurationBudgetTimer(context, runId);
     try {
       const observation = evaluateArtifactsGate(context, definition);
-      vnextGateDispatchSeams.afterEvaluate?.(prepared);
+      kxmGateDispatchSeams.afterEvaluate?.(prepared);
       return context.eventStore.transaction(() => settlePreparedGate(context, prepared, observation));
     } finally {
       clearBudget();
-      unregisterVnextAttemptController(context.eventStore.path, runId, prepared.attemptId);
+      unregisterKxmAttemptController(context.eventStore.path, runId, prepared.attemptId);
     }
   }
   return drivePanel(context, prepared.panel, producer);
@@ -24914,39 +24914,39 @@ async function runPreparedCommandGate(context, prepared, definition, token) {
     cwd: context.projectRoot,
     signal: prepared.controller.signal,
     onSpawned: () => {
-      if (isVnextRuntimeContextClosed(context)) return;
+      if (isKxmRuntimeContextClosed(context)) return;
       try {
         context.eventStore.transaction(() => {
           recordGateSpawnedInTransaction(context, prepared.run, prepared.envelope, prepared.stepId);
-          vnextGateDispatchSeams.afterSpawnRecord?.(prepared);
+          kxmGateDispatchSeams.afterSpawnRecord?.(prepared);
         });
       } catch (error) {
         try {
-          markVnextGateHoldUnsettled(storePath, prepared.run.runId, token, prepared.attemptId);
+          markKxmGateHoldUnsettled(storePath, prepared.run.runId, token, prepared.attemptId);
         } catch {
         }
         throw error;
       }
     }
   });
-  armVnextGateHold(storePath, prepared.run.runId, token, prepared.attemptId, () => observer.requestStop("cancel"));
-  registerVnextAttemptController(storePath, prepared.run.runId, { attemptId: prepared.attemptId, controller: prepared.controller });
+  armKxmGateHold(storePath, prepared.run.runId, token, prepared.attemptId, () => observer.requestStop("cancel"));
+  registerKxmAttemptController(storePath, prepared.run.runId, { attemptId: prepared.attemptId, controller: prepared.controller });
   const clearBudget = armRunDurationBudgetTimer(context, prepared.run.runId);
-  const unhookClose = registerVnextRuntimeCloseHook(context, () => {
+  const unhookClose = registerKxmRuntimeCloseHook(context, () => {
     try {
-      markVnextGateHoldUnsettled(storePath, prepared.run.runId, token, prepared.attemptId);
+      markKxmGateHoldUnsettled(storePath, prepared.run.runId, token, prepared.attemptId);
     } catch {
     }
-    dropVnextGateStopHook(storePath, prepared.run.runId, prepared.attemptId);
+    dropKxmGateStopHook(storePath, prepared.run.runId, prepared.attemptId);
     observer.beginBoundedCleanup();
   });
   try {
-    vnextGateDispatchSeams.beforeCommandSpawn?.(prepared);
+    kxmGateDispatchSeams.beforeCommandSpawn?.(prepared);
     const outcome = await observer.run();
-    dropVnextGateStopHook(storePath, prepared.run.runId, prepared.attemptId);
-    if (isVnextRuntimeContextClosed(context)) {
+    dropKxmGateStopHook(storePath, prepared.run.runId, prepared.attemptId);
+    if (isKxmRuntimeContextClosed(context)) {
       try {
-        markVnextGateHoldUnsettled(storePath, prepared.run.runId, token, prepared.attemptId);
+        markKxmGateHoldUnsettled(storePath, prepared.run.runId, token, prepared.attemptId);
       } catch {
       }
       return closedCommandHandoff(context, prepared, outcome.kind === "uncertain" ? outcome.reason : "lost-close");
@@ -24956,13 +24956,13 @@ async function runPreparedCommandGate(context, prepared, definition, token) {
     }
     if (outcome.kind === "complete") {
       try {
-        vnextGateDispatchSeams.beforeCommandSettle?.(prepared);
+        kxmGateDispatchSeams.beforeCommandSettle?.(prepared);
       } catch (error) {
         return recoverCommandRecordingFailure(context, prepared, token, outcome.observation, error);
       }
-      if (isVnextRuntimeContextClosed(context)) {
+      if (isKxmRuntimeContextClosed(context)) {
         try {
-          markVnextGateHoldUnsettled(storePath, prepared.run.runId, token, prepared.attemptId);
+          markKxmGateHoldUnsettled(storePath, prepared.run.runId, token, prepared.attemptId);
         } catch {
         }
         return closedCommandHandoff(context, prepared, "lost-close");
@@ -24973,13 +24973,13 @@ async function runPreparedCommandGate(context, prepared, definition, token) {
   } finally {
     unhookClose();
     clearBudget();
-    unregisterVnextAttemptController(storePath, prepared.run.runId, prepared.attemptId);
+    unregisterKxmAttemptController(storePath, prepared.run.runId, prepared.attemptId);
   }
 }
 function closedCommandHandoff(context, prepared, reason) {
   let state;
   try {
-    state = foldStoredVnextRun(context, requireRun(context, prepared.run.runId));
+    state = foldStoredKxmRun(context, requireRun(context, prepared.run.runId));
   } catch {
     state = prepared.state;
   }
@@ -25001,12 +25001,12 @@ function commitOwnedCommandSettlement(context, prepared, token, write, observati
     return recoverCommandRecordingFailure(context, prepared, token, observation, error);
   }
   try {
-    vnextGateDispatchSeams.afterSettlementCommit?.(prepared);
+    kxmGateDispatchSeams.afterSettlementCommit?.(prepared);
   } catch (error) {
     return retainCommittedCommandProof(context, prepared, token, error);
   }
   try {
-    finishVnextOwnedGate(context.eventStore.path, prepared.run.runId, token, prepared.attemptId);
+    finishKxmOwnedGate(context.eventStore.path, prepared.run.runId, token, prepared.attemptId);
   } catch (error) {
     return retainCommittedCommandProof(context, prepared, token, error);
   }
@@ -25020,7 +25020,7 @@ function retainCommittedCommandProof(context, prepared, token, error) {
   throw error;
 }
 function finishOwnedGateAfterCommittedTerminalProof(context, prepared, token) {
-  if (isVnextRuntimeContextClosed(context)) return;
+  if (isKxmRuntimeContextClosed(context)) return;
   const run = context.eventStore.run(prepared.run.runId);
   if (!run || run.projectId !== context.projectId || run.homeRuntimeId !== context.homeRuntimeId) return;
   const row = context.eventStore.gateAttempt(prepared.attemptId);
@@ -25039,7 +25039,7 @@ function finishOwnedGateAfterCommittedTerminalProof(context, prepared, token) {
   const events = context.eventStore.events(prepared.run.runId, 0, 1e6);
   let state;
   try {
-    state = foldStoredVnextRun(context, run);
+    state = foldStoredKxmRun(context, run);
   } catch {
     return;
   }
@@ -25049,16 +25049,16 @@ function finishOwnedGateAfterCommittedTerminalProof(context, prepared, token) {
   }
   const terminalProof = isEvaluatedSettledProof(row, observation, evidence) || isExcludedTerminalProof(state, row, observation, evidence, events);
   if (!terminalProof) return;
-  const hold = vnextGateHold(context.eventStore.path, prepared.run.runId);
-  const admittedToken = vnextAdmittedToken(context.eventStore.path, prepared.run.runId);
+  const hold = kxmGateHold(context.eventStore.path, prepared.run.runId);
+  const admittedToken = kxmAdmittedToken(context.eventStore.path, prepared.run.runId);
   if (!hold || hold.state !== "active" || hold.attemptId !== prepared.attemptId || hold.token !== token || admittedToken !== token) {
     return;
   }
-  finishVnextOwnedGate(context.eventStore.path, prepared.run.runId, token, prepared.attemptId);
+  finishKxmOwnedGate(context.eventStore.path, prepared.run.runId, token, prepared.attemptId);
 }
 function recoverCommandRecordingFailure(context, prepared, token, observation, error) {
-  markVnextGateHoldUnsettled(context.eventStore.path, prepared.run.runId, token, prepared.attemptId);
-  if (isVnextRuntimeContextClosed(context)) {
+  markKxmGateHoldUnsettled(context.eventStore.path, prepared.run.runId, token, prepared.attemptId);
+  if (isKxmRuntimeContextClosed(context)) {
     throw error;
   }
   const existing = context.eventStore.gateObservationForAttempt(prepared.attemptId);
@@ -25069,7 +25069,7 @@ function recoverCommandRecordingFailure(context, prepared, token, observation, e
       `command observation recording failed after committed proof: ${error instanceof Error ? error.message : String(error)}`
     );
   }
-  const folded = foldStoredVnextRun(context, requireRun(context, prepared.run.runId));
+  const folded = foldStoredKxmRun(context, requireRun(context, prepared.run.runId));
   if (folded.currentStep?.attemptId === prepared.attemptId && folded.currentStep.observationId) {
     throw runtimeError(
       "run_events_illegal",
@@ -25087,10 +25087,10 @@ function recoverCommandRecordingFailure(context, prepared, token, observation, e
 }
 function commitCommandUncertainty(context, prepared, token, reason, observation, priorError) {
   try {
-    markVnextGateHoldUnsettled(context.eventStore.path, prepared.run.runId, token, prepared.attemptId);
+    markKxmGateHoldUnsettled(context.eventStore.path, prepared.run.runId, token, prepared.attemptId);
   } catch {
   }
-  if (isVnextRuntimeContextClosed(context)) {
+  if (isKxmRuntimeContextClosed(context)) {
     if (priorError) throw priorError;
     return closedCommandHandoff(context, prepared, reason);
   }
@@ -25106,7 +25106,7 @@ function commitCommandUncertainty(context, prepared, token, reason, observation,
   try {
     const written = context.eventStore.transaction(() => {
       const result = recordGateUncertainInTransaction(context, prepared.run, prepared.envelope, prepared.stepId, reason, incomplete);
-      vnextGateDispatchSeams.afterUncertaintyWrite?.(prepared);
+      kxmGateDispatchSeams.afterUncertaintyWrite?.(prepared);
       return result;
     });
     return {
@@ -25123,7 +25123,7 @@ function commitCommandUncertainty(context, prepared, token, reason, observation,
     throw error;
   }
 }
-var vnextPanelDispatchSeams = {};
+var kxmPanelDispatchSeams = {};
 function unreconciledPanelAttemptId(state) {
   const current = state.currentStep;
   if (!current) return void 0;
@@ -25202,12 +25202,12 @@ function resolveProducerRoute(projectRoot, step, agentId) {
 }
 function prepareDispatch(context, runId, producerId) {
   const run = requireRun(context, runId);
-  const plan = rehydrateVnextCompiledPlanFromStore(context.eventStore, run);
-  const state = foldStoredVnextRun(context, run);
-  if (vnextPanelDispatchSeams.skipDispatch?.()) {
+  const plan = rehydrateKxmCompiledPlanFromStore(context.eventStore, run);
+  const state = foldStoredKxmRun(context, run);
+  if (kxmPanelDispatchSeams.skipDispatch?.()) {
     return { kind: "return", state };
   }
-  if (state.status === "cancelling" && vnextAttemptControllers(context.eventStore.path, runId).length === 0) {
+  if (state.status === "cancelling" && kxmAttemptControllers(context.eventStore.path, runId).length === 0) {
     return {
       kind: "return",
       state,
@@ -25286,7 +25286,7 @@ function prepareDispatch(context, runId, producerId) {
     return { kind: "return", ...failBudget(context, run, plan, state, "budget_unmetered_attempts", stepId) };
   }
   if (step.kind === "gate") {
-    const envelope = loadVnextRunPlanEnvelope(context.eventStore, run);
+    const envelope = loadKxmRunPlanEnvelope(context.eventStore, run);
     const unsupported2 = unsupportedGateStep(plan, step, envelope, context);
     if (unsupported2) return { kind: "return", state, handoff: { ...unsupported2, stepId } };
     const definition = envelope.gates.definitions[step.gate];
@@ -25345,23 +25345,23 @@ function prepareDispatch(context, runId, producerId) {
   const stepAttempt = used + 1;
   const now = (/* @__PURE__ */ new Date()).toISOString();
   let sequence = context.eventStore.nextSequence(runId);
-  let mono = vnextMonotonicNs();
+  let mono = kxmMonotonicNs();
   const events = [];
   const push = (eventType, payload) => {
     events.push({
-      ...vnextEventBase(context, run, now, mono),
-      eventId: newVnextEventId(),
+      ...kxmEventBase(context, run, now, mono),
+      eventId: newKxmEventId(),
       eventType,
       sequence: sequence++,
       payload
     });
-    mono = vnextIncrementMonotonicNs(mono);
+    mono = kxmIncrementMonotonicNs(mono);
   };
   push("step.entered", { stepId, stepAttempt, status: "pending" });
   push("step.status_changed", { stepId, status: "preparing", previousStatus: "pending" });
   for (const event of events) context.eventStore.appendEvent(event);
-  const entered = foldStoredVnextRun(context, run);
-  persistVnextRunState(context, runId, entered, events[events.length - 1].sequence);
+  const entered = foldStoredKxmRun(context, run);
+  persistKxmRunState(context, runId, entered, events[events.length - 1].sequence);
   const first = birthMember(context, {
     run,
     plan,
@@ -25414,7 +25414,7 @@ function birthAllowed(state, step) {
 }
 function birthMember(context, input) {
   const run = requireRun(context, input.run.runId);
-  const folded = foldStoredVnextRun(context, run);
+  const folded = foldStoredKxmRun(context, run);
   if (!birthAllowed(folded, input.step)) {
     throw runtimeError("run_events_illegal", run.runId, "member birth is not legal");
   }
@@ -25437,23 +25437,23 @@ function birthMember(context, input) {
       resolvedRoute = routeResult;
     }
   }
-  const assignmentId = newVnextAssignmentId();
-  const attemptId = newVnextAttemptId();
+  const assignmentId = newKxmAssignmentId();
+  const attemptId = newKxmAttemptId();
   const minted = mintCapabilitySecret();
   const controller = new AbortController();
   const now = (/* @__PURE__ */ new Date()).toISOString();
   let sequence = context.eventStore.nextSequence(run.runId);
-  let mono = vnextMonotonicNs();
+  let mono = kxmMonotonicNs();
   const events = [];
   const push = (eventType, payload) => {
     events.push({
-      ...vnextEventBase(context, run, now, mono),
-      eventId: newVnextEventId(),
+      ...kxmEventBase(context, run, now, mono),
+      eventId: newKxmEventId(),
       eventType,
       sequence: sequence++,
       payload
     });
-    mono = vnextIncrementMonotonicNs(mono);
+    mono = kxmIncrementMonotonicNs(mono);
   };
   push("assignment.created", { assignmentId, stepId: input.stepId, stepAttempt: input.stepAttempt, agentId, status: "created" });
   push("assignment.accepted", { assignmentId, status: "accepted" });
@@ -25479,8 +25479,8 @@ function birthMember(context, input) {
     capabilityHash: minted.hash,
     state: "issued"
   });
-  const next = foldStoredVnextRun(context, run);
-  persistVnextRunState(context, run.runId, next, events[events.length - 1].sequence);
+  const next = foldStoredKxmRun(context, run);
+  persistKxmRunState(context, run.runId, next, events[events.length - 1].sequence);
   const rawContextPacket = buildFormalContextPacket({
     project: run.projectId,
     targetRole: agentId,
@@ -25540,33 +25540,33 @@ ${generatedPrompt}` : generatedPrompt,
     controller,
     state: next
   };
-  vnextPanelDispatchSeams.afterBirth?.(member);
+  kxmPanelDispatchSeams.afterBirth?.(member);
   return member;
 }
 function appendExecuting(context, dispatch) {
   const run = requireRun(context, dispatch.run.runId);
   const now = (/* @__PURE__ */ new Date()).toISOString();
   let sequence = context.eventStore.nextSequence(dispatch.run.runId);
-  let mono = vnextMonotonicNs();
+  let mono = kxmMonotonicNs();
   const events = [
     {
-      ...vnextEventBase(context, run, now, mono),
-      eventId: newVnextEventId(),
+      ...kxmEventBase(context, run, now, mono),
+      eventId: newKxmEventId(),
       eventType: "assignment.executing",
       sequence: sequence++,
       payload: { assignmentId: dispatch.assignmentId, status: "executing" }
     },
     {
-      ...vnextEventBase(context, run, now, vnextIncrementMonotonicNs(mono)),
-      eventId: newVnextEventId(),
+      ...kxmEventBase(context, run, now, kxmIncrementMonotonicNs(mono)),
+      eventId: newKxmEventId(),
       eventType: "attempt.status_changed",
       sequence: sequence++,
       payload: { attemptId: dispatch.attemptId, status: "executing" }
     }
   ];
   for (const event of events) context.eventStore.appendEvent(event);
-  const next = foldStoredVnextRun(context, run);
-  persistVnextRunState(context, run.runId, next, events[events.length - 1].sequence);
+  const next = foldStoredKxmRun(context, run);
+  persistKxmRunState(context, run.runId, next, events[events.length - 1].sequence);
 }
 function singletonPanel(step) {
   return step.assignments.maximum === 1 && step.assignments.target === 1;
@@ -25600,7 +25600,7 @@ async function drivePanel(context, panel, producer) {
   let settlementFailed = false;
   const budgetClears = /* @__PURE__ */ new Map();
   const register = (member) => {
-    registerVnextAttemptController(context.eventStore.path, runId, { attemptId: member.attemptId, controller: member.controller });
+    registerKxmAttemptController(context.eventStore.path, runId, { attemptId: member.attemptId, controller: member.controller });
     budgetClears.set(member.attemptId, armRunDurationBudgetTimer(context, runId));
     owned.set(member.attemptId, member);
   };
@@ -25611,15 +25611,15 @@ async function drivePanel(context, panel, producer) {
     register(member);
     const work = (async () => {
       try {
-        vnextPanelDispatchSeams.beforeAppendExecuting?.(member);
+        kxmPanelDispatchSeams.beforeAppendExecuting?.(member);
         const started = context.eventStore.transaction(() => {
-          if (vnextPanelDispatchSeams.failAppendExecuting?.(member)) {
+          if (kxmPanelDispatchSeams.failAppendExecuting?.(member)) {
             throw runtimeError("run_events_illegal", runId, "appendExecuting failed");
           }
           const run = requireRun(context, runId);
-          const state = foldStoredVnextRun(context, run);
+          const state = foldStoredKxmRun(context, run);
           const capability = context.eventStore.capabilityByAttempt(member.attemptId);
-          const located = vnextFoldPanelAttempt(state.currentStep, member.attemptId);
+          const located = kxmFoldPanelAttempt(state.currentStep, member.attemptId);
           if (state.cancelRequested || state.status === "cancelling" || !capabilityMatchesDispatch(capability, member, ["issued"], producer.id) || !located || located.assignmentId !== member.assignmentId || located.attempt.status !== "starting") {
             return false;
           }
@@ -25629,16 +25629,16 @@ async function drivePanel(context, panel, producer) {
         if (!started) return { attemptId: member.attemptId, invoked: false, skipped: true };
         const executingBound = () => {
           const run = requireRun(context, runId);
-          const state = foldStoredVnextRun(context, run);
+          const state = foldStoredKxmRun(context, run);
           const capability = context.eventStore.capabilityByAttempt(member.attemptId);
-          const located = vnextFoldPanelAttempt(state.currentStep, member.attemptId);
+          const located = kxmFoldPanelAttempt(state.currentStep, member.attemptId);
           if (state.cancelRequested || state.status === "cancelling" || !capabilityMatchesDispatch(capability, member, ["issued"], producer.id) || !located || located.assignmentId !== member.assignmentId || located.attempt.status !== "executing") {
             return false;
           }
           return true;
         };
         if (!executingBound()) return { attemptId: member.attemptId, invoked: false, skipped: true };
-        vnextPanelDispatchSeams.beforeInvoke?.(member);
+        kxmPanelDispatchSeams.beforeInvoke?.(member);
         if (!executingBound()) return { attemptId: member.attemptId, invoked: false, skipped: true };
         const produced = await invokeProducer(producer, member.request);
         return { attemptId: member.attemptId, invoked: true, produced };
@@ -25653,7 +25653,7 @@ async function drivePanel(context, panel, producer) {
     if (stopBirths) return void 0;
     return context.eventStore.transaction(() => {
       const run = requireRun(context, runId);
-      const state = foldStoredVnextRun(context, run);
+      const state = foldStoredKxmRun(context, run);
       if (!birthAllowed(state, panel.step)) return void 0;
       return birthMember(context, {
         run,
@@ -25673,7 +25673,7 @@ async function drivePanel(context, panel, producer) {
     }
     try {
       context.eventStore.transaction(() => {
-        if (vnextPanelDispatchSeams.failSettleMember?.(member)) {
+        if (kxmPanelDispatchSeams.failSettleMember?.(member)) {
           throw runtimeError("run_events_illegal", runId, "member settlement write failed");
         }
         settleMember(context, member, produced.result, produced.error);
@@ -25712,7 +25712,7 @@ async function drivePanel(context, panel, producer) {
           stopBirths = true;
           abortOwned();
           await drainPendingInvoked();
-          const state = foldStoredVnextRun(context, requireRun(context, runId));
+          const state = foldStoredKxmRun(context, requireRun(context, runId));
           return unreconciledHandoff(state, panel.stepId);
         }
       }
@@ -25736,7 +25736,7 @@ async function drivePanel(context, panel, producer) {
             settleInvoked(sibling, item.produced);
           }
         }
-        const state = foldStoredVnextRun(context, requireRun(context, runId));
+        const state = foldStoredKxmRun(context, requireRun(context, runId));
         return unreconciledHandoff(state, panel.stepId, member.attemptId);
       }
       if (!finished.invoked) {
@@ -25753,18 +25753,18 @@ async function drivePanel(context, panel, producer) {
             settleInvoked(sibling, item.produced);
           }
         }
-        const state = foldStoredVnextRun(context, requireRun(context, runId));
+        const state = foldStoredKxmRun(context, requireRun(context, runId));
         return unreconciledHandoff(state, panel.stepId, member.attemptId);
       }
     }
-    const folded = foldStoredVnextRun(context, requireRun(context, runId));
+    const folded = foldStoredKxmRun(context, requireRun(context, runId));
     const leftover = unreconciledPanelAttemptId(folded);
     if (leftover || settlementFailed) {
       return unreconciledHandoff(folded, panel.stepId, leftover);
     }
     const born = folded.currentStep?.panel.order.length ?? 0;
     const allTerminal = Boolean(
-      folded.currentStep && born > 0 && folded.currentStep.panel.order.every((assignmentId) => folded.currentStep?.panel.assignments[assignmentId]?.status === "terminal") && vnextFoldPanelAttemptIds(folded.currentStep).every((attemptId) => vnextFoldPanelAttempt(folded.currentStep, attemptId)?.attempt.status === "terminal")
+      folded.currentStep && born > 0 && folded.currentStep.panel.order.every((assignmentId) => folded.currentStep?.panel.assignments[assignmentId]?.status === "terminal") && kxmFoldPanelAttemptIds(folded.currentStep).every((attemptId) => kxmFoldPanelAttempt(folded.currentStep, attemptId)?.attempt.status === "terminal")
     );
     if (!allTerminal) {
       return unreconciledHandoff(folded, panel.stepId, leftover);
@@ -25775,7 +25775,7 @@ async function drivePanel(context, panel, producer) {
     try {
       return context.eventStore.transaction(() => joinPanel(context, panel));
     } catch {
-      const state = foldStoredVnextRun(context, requireRun(context, runId));
+      const state = foldStoredKxmRun(context, requireRun(context, runId));
       return unreconciledHandoff(state, panel.stepId);
     }
   } catch (error) {
@@ -25785,7 +25785,7 @@ async function drivePanel(context, panel, producer) {
   } finally {
     for (const attemptId of owned.keys()) {
       budgetClears.get(attemptId)?.();
-      unregisterVnextAttemptController(context.eventStore.path, runId, attemptId);
+      unregisterKxmAttemptController(context.eventStore.path, runId, attemptId);
     }
   }
 }
@@ -25800,7 +25800,7 @@ function producerRoutingRecord(context, dispatch, result, now) {
   if (result.costBasis === "metered" && (typeof result.costUsd !== "number" || !Number.isFinite(result.costUsd) || result.costUsd < 0)) {
     throw runtimeError("settle_invalid_cost", run.runId, "attempt settlement rejected: metered costBasis requires non-negative finite costUsd");
   }
-  const envelope = loadVnextRunPlanEnvelope(context.eventStore, run);
+  const envelope = loadKxmRunPlanEnvelope(context.eventStore, run);
   const rawHash = result.behavioralSha256 ?? behavioralConfigHash({
     requestedModel: result.requestedModel ?? "simulated",
     effectiveModel: result.effectiveModel ?? result.requestedModel ?? "simulated",
@@ -25833,26 +25833,26 @@ function producerRoutingRecord(context, dispatch, result, now) {
 }
 function settleMember(context, dispatch, result, produceError) {
   const run = requireRun(context, dispatch.run.runId);
-  const state = foldStoredVnextRun(context, run);
+  const state = foldStoredKxmRun(context, run);
   const capability = context.eventStore.capabilityByAttempt(dispatch.attemptId);
-  const located = vnextFoldPanelAttempt(state.currentStep, dispatch.attemptId);
+  const located = kxmFoldPanelAttempt(state.currentStep, dispatch.attemptId);
   if (!located || located.assignmentId !== dispatch.assignmentId || located.attempt.status !== "executing" || !capability || !capabilityMatchesDispatch(capability, dispatch, ["issued", "revoked"])) {
     throw runtimeError("run_events_illegal", run.runId, "settle attempted for a non-current capability");
   }
   const cancelling = state.status === "cancelling" || capability.state === "revoked";
   const now = (/* @__PURE__ */ new Date()).toISOString();
   let sequence = context.eventStore.nextSequence(run.runId);
-  let mono = vnextMonotonicNs();
+  let mono = kxmMonotonicNs();
   const events = [];
   const push = (eventType, payload) => {
     events.push({
-      ...vnextEventBase(context, run, now, mono),
-      eventId: newVnextEventId(),
+      ...kxmEventBase(context, run, now, mono),
+      eventId: newKxmEventId(),
       eventType,
       sequence: sequence++,
       payload
     });
-    mono = vnextIncrementMonotonicNs(mono);
+    mono = kxmIncrementMonotonicNs(mono);
   };
   push("attempt.status_changed", { attemptId: dispatch.attemptId, status: "settling" });
   if (cancelling) {
@@ -25866,7 +25866,7 @@ function settleMember(context, dispatch, result, produceError) {
     push("attempt.status_changed", { attemptId: dispatch.attemptId, status: "terminal" });
     push("assignment.terminal", { assignmentId: dispatch.assignmentId, outcome: "cancelled", status: "terminal" });
   } else if (produceError) {
-    const envelope = loadVnextRunPlanEnvelope(context.eventStore, run);
+    const envelope = loadKxmRunPlanEnvelope(context.eventStore, run);
     const rawHash = result?.behavioralSha256 ?? behavioralConfigHash({
       requestedModel: result?.requestedModel ?? "simulated",
       effectiveModel: result?.effectiveModel ?? result?.requestedModel ?? "simulated",
@@ -25928,37 +25928,37 @@ function settleMember(context, dispatch, result, produceError) {
   }
   context.eventStore.settleCapability(dispatch.attemptId, "settled");
   for (const event of events) context.eventStore.appendEvent(event);
-  const next = foldStoredVnextRun(context, run);
-  persistVnextRunState(context, run.runId, next, events[events.length - 1].sequence);
+  const next = foldStoredKxmRun(context, run);
+  persistKxmRunState(context, run.runId, next, events[events.length - 1].sequence);
 }
 function joinPanel(context, panel) {
   const run = requireRun(context, panel.run.runId);
-  const state = foldStoredVnextRun(context, run);
+  const state = foldStoredKxmRun(context, run);
   const current = state.currentStep;
   if (!current || current.stepId !== panel.stepId) {
     throw runtimeError("run_events_illegal", run.runId, "join attempted without the prepared step");
   }
-  const joined = vnextJoinAll(panel.step, current.panel);
+  const joined = kxmJoinAll(panel.step, current.panel);
   const now = (/* @__PURE__ */ new Date()).toISOString();
   let sequence = context.eventStore.nextSequence(run.runId);
-  let mono = vnextMonotonicNs();
+  let mono = kxmMonotonicNs();
   const events = [];
   const push = (eventType, payload) => {
     events.push({
-      ...vnextEventBase(context, run, now, mono),
-      eventId: newVnextEventId(),
+      ...kxmEventBase(context, run, now, mono),
+      eventId: newKxmEventId(),
       eventType,
       sequence: sequence++,
       payload
     });
-    mono = vnextIncrementMonotonicNs(mono);
+    mono = kxmIncrementMonotonicNs(mono);
   };
   const failRun = (reason) => {
     push("step.status_changed", { stepId: panel.stepId, status: "failed", previousStatus: "running" });
     push("run.status_changed", { status: "failed", reason, stepId: panel.stepId });
     for (const event of events) context.eventStore.appendEvent(event);
-    const next2 = foldStoredVnextRun(context, run);
-    persistVnextRunState(context, run.runId, next2, events[events.length - 1].sequence);
+    const next2 = foldStoredKxmRun(context, run);
+    persistKxmRunState(context, run.runId, next2, events[events.length - 1].sequence);
     context.eventStore.updateRunStatus(run.runId, "failed", now);
     return { state: next2 };
   };
@@ -25966,8 +25966,8 @@ function joinPanel(context, panel) {
     push("step.status_changed", { stepId: panel.stepId, status: "cancelled", previousStatus: "running" });
     push("run.status_changed", { status: "cancelled", reason: cancelReasonFromLog2(context, run.runId) });
     for (const event of events) context.eventStore.appendEvent(event);
-    const next2 = foldStoredVnextRun(context, run);
-    persistVnextRunState(context, run.runId, next2, events[events.length - 1].sequence);
+    const next2 = foldStoredKxmRun(context, run);
+    persistKxmRunState(context, run.runId, next2, events[events.length - 1].sequence);
     context.eventStore.updateRunStatus(run.runId, "cancelled", now);
     return { state: next2 };
   };
@@ -26003,8 +26003,8 @@ function joinPanel(context, panel) {
   if (budget) {
     push("run.status_changed", { status: "failed", reason: budget, stepId: panel.stepId, outcome });
     for (const event of events) context.eventStore.appendEvent(event);
-    const next2 = foldStoredVnextRun(context, run);
-    persistVnextRunState(context, run.runId, next2, events[events.length - 1].sequence);
+    const next2 = foldStoredKxmRun(context, run);
+    persistKxmRunState(context, run.runId, next2, events[events.length - 1].sequence);
     context.eventStore.updateRunStatus(run.runId, "failed", now);
     return { state: next2 };
   }
@@ -26015,8 +26015,8 @@ function joinPanel(context, panel) {
     push("run.status_changed", { status: selected.terminalStatus });
   }
   for (const event of events) context.eventStore.appendEvent(event);
-  const next = foldStoredVnextRun(context, run);
-  persistVnextRunState(context, run.runId, next, events[events.length - 1].sequence);
+  const next = foldStoredKxmRun(context, run);
+  persistKxmRunState(context, run.runId, next, events[events.length - 1].sequence);
   context.eventStore.updateRunStatus(run.runId, next.status, now);
   return { state: next };
 }
@@ -26024,15 +26024,15 @@ function failBudget(context, run, plan, state, reason, stepId) {
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const sequence = context.eventStore.nextSequence(run.runId);
   const event = {
-    ...vnextEventBase(context, run, now, vnextMonotonicNs()),
-    eventId: newVnextEventId(),
+    ...kxmEventBase(context, run, now, kxmMonotonicNs()),
+    eventId: newKxmEventId(),
     eventType: "run.status_changed",
     sequence,
     payload: { status: "failed", reason, stepId }
   };
   context.eventStore.appendEvent(event);
-  const next = foldStoredVnextRun(context, run);
-  persistVnextRunState(context, run.runId, next, sequence);
+  const next = foldStoredKxmRun(context, run);
+  persistKxmRunState(context, run.runId, next, sequence);
   context.eventStore.updateRunStatus(run.runId, "failed", now);
   void state;
   return { state: next };
@@ -26042,19 +26042,19 @@ function hardStopUnrecorded(context, dispatch, reason) {
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const sequence = context.eventStore.nextSequence(run.runId);
   const event = {
-    ...vnextEventBase(context, run, now, vnextMonotonicNs()),
-    eventId: newVnextEventId(),
+    ...kxmEventBase(context, run, now, kxmMonotonicNs()),
+    eventId: newKxmEventId(),
     eventType: "run.status_changed",
     sequence,
     payload: { status: "failed", reason, stepId: dispatch.stepId }
   };
   context.eventStore.appendEvent(event);
   context.eventStore.settleCapability(dispatch.attemptId, "revoked");
-  const next = foldStoredVnextRun(context, run);
-  persistVnextRunState(context, run.runId, next, sequence);
+  const next = foldStoredKxmRun(context, run);
+  persistKxmRunState(context, run.runId, next, sequence);
   context.eventStore.updateRunStatus(run.runId, "failed", now);
 }
-function vnextTransitionBudgetFailure(plan, state, fromStepId, outcome) {
+function kxmTransitionBudgetFailure(plan, state, fromStepId, outcome) {
   return transitionBudgetFailure(plan, state, fromStepId, outcome);
 }
 function transitionBudgetFailure(plan, state, fromStepId, outcome) {
@@ -26082,7 +26082,7 @@ function declaredRunDurationBudget(context, runId) {
   const run = context.eventStore.run(runId);
   if (!run) return void 0;
   try {
-    const envelope = loadVnextRunPlanEnvelope(context.eventStore, run);
+    const envelope = loadKxmRunPlanEnvelope(context.eventStore, run);
     return effectiveRunDurationBudget(envelope.plan.limits, envelope.projectLimits);
   } catch {
     return void 0;
@@ -26093,7 +26093,7 @@ function runDurationOverrunPayload(context, runId, nowIso2 = (/* @__PURE__ */ ne
   if (!declared) return void 0;
   const run = context.eventStore.run(runId);
   if (!run) return void 0;
-  const state = foldStoredVnextRun(context, run);
+  const state = foldStoredKxmRun(context, run);
   if (!state.runningSince) return void 0;
   if (isTerminalRunStatus(state.status) || state.status === "cancelling") return void 0;
   const elapsedMs = elapsedMsBetween(state.runningSince, nowIso2);
@@ -26101,11 +26101,11 @@ function runDurationOverrunPayload(context, runId, nowIso2 = (/* @__PURE__ */ ne
   return { budgetMs: declared.budgetMs, elapsedMs, source: declared.source };
 }
 function cancelRunDurationIfExceeded(context, runId) {
-  if (isVnextRuntimeContextClosed(context)) return void 0;
+  if (isKxmRuntimeContextClosed(context)) return void 0;
   const payload = runDurationOverrunPayload(context, runId);
   if (!payload) return void 0;
-  cancelVnextRun(context, runId, { reason: "budget_run_duration", budget: payload });
-  return { state: foldStoredVnextRun(context, requireRun(context, runId)) };
+  cancelKxmRun(context, runId, { reason: "budget_run_duration", budget: payload });
+  return { state: foldStoredKxmRun(context, requireRun(context, runId)) };
 }
 function driveDeadlineAt(context, runId, state) {
   const declared = declaredRunDurationBudget(context, runId);
@@ -26141,7 +26141,7 @@ function armRunDurationBudgetTimer(context, runId) {
   if (!declared) return () => void 0;
   const run = context.eventStore.run(runId);
   if (!run) return () => void 0;
-  const state = foldStoredVnextRun(context, run);
+  const state = foldStoredKxmRun(context, run);
   if (!state.runningSince) return () => void 0;
   const startMs = Date.parse(state.runningSince);
   if (!Number.isFinite(startMs)) return () => void 0;
@@ -26150,7 +26150,7 @@ function armRunDurationBudgetTimer(context, runId) {
   let cleared = false;
   const fire = () => {
     timer = void 0;
-    if (cleared || isVnextRuntimeContextClosed(context)) return;
+    if (cleared || isKxmRuntimeContextClosed(context)) return;
     const nowIso2 = (/* @__PURE__ */ new Date()).toISOString();
     const elapsedMs = elapsedMsBetween(state.runningSince, nowIso2);
     if (elapsedMs < declared.budgetMs) {
@@ -26158,7 +26158,7 @@ function armRunDurationBudgetTimer(context, runId) {
       return;
     }
     try {
-      cancelVnextRun(context, runId, {
+      cancelKxmRun(context, runId, {
         reason: "budget_run_duration",
         budget: { budgetMs: declared.budgetMs, elapsedMs, source: declared.source }
       });
@@ -26171,7 +26171,7 @@ function armRunDurationBudgetTimer(context, runId) {
     timer = setTimeout(fire, delay);
     timer.unref();
   };
-  const unhook = registerVnextRuntimeCloseHook(context, () => {
+  const unhook = registerKxmRuntimeCloseHook(context, () => {
     cleared = true;
     if (timer !== void 0) clearTimeout(timer);
     timer = void 0;
@@ -26446,7 +26446,7 @@ function classifyRecoverableGateAttempt(context, row, capability) {
   }
   let state;
   try {
-    state = foldStoredVnextRun(context, run);
+    state = foldStoredKxmRun(context, run);
   } catch (error) {
     throw runtimeError(
       "gate_recovery_corrupt",
@@ -26477,10 +26477,10 @@ function classifyRecoverableGateAttempt(context, row, capability) {
   }
   const current = state.currentStep;
   const sameAttempt = current?.attemptId === row.attemptId && current.assignmentId === row.assignmentId && current.effectId === row.effectId && current.stepId === row.stepId;
-  const controller = vnextAttemptController(context.eventStore.path, row.runId, row.attemptId);
+  const controller = kxmAttemptController(context.eventStore.path, row.runId, row.attemptId);
   if (row.gateKind === "command") {
-    const hold = vnextGateHold(context.eventStore.path, row.runId);
-    const admittedToken = vnextAdmittedToken(context.eventStore.path, row.runId);
+    const hold = kxmGateHold(context.eventStore.path, row.runId);
+    const admittedToken = kxmAdmittedToken(context.eventStore.path, row.runId);
     if (hold && hold.attemptId !== row.attemptId) {
       throw runtimeError("gate_recovery_corrupt", row.attemptId, "gate recovery preflight: gate hold does not match the attempt");
     }
@@ -26543,7 +26543,7 @@ function isExcludedTerminalProof(state, row, observation, evidence, events) {
 }
 function settlePreparedGate(context, prepared, observation) {
   const run = requireRun(context, prepared.run.runId);
-  const folded = foldStoredVnextRun(context, run);
+  const folded = foldStoredKxmRun(context, run);
   const current = folded.currentStep;
   if (!current || current.stepId !== prepared.stepId || current.stepAttempt !== prepared.stepAttempt || current.assignmentId !== prepared.assignmentId || current.attemptId !== prepared.attemptId || current.effectId !== prepared.effectId) {
     throw runtimeError("run_events_illegal", run.runId, "settlement identity does not match the prepared gate attempt");
@@ -26557,7 +26557,7 @@ function settlePreparedGate(context, prepared, observation) {
     throw runtimeError("gate_row_invalid", run.runId, "gate settlement requires a complete observation");
   }
   const settled = cancelled ? recordGateCancelObservedInTransaction(context, run, prepared.envelope, prepared.stepId, observation) : recordGateSettlementInTransaction(context, run, prepared.envelope, prepared.stepId, observation);
-  vnextGateDispatchSeams.afterObservationWrite?.(prepared);
+  kxmGateDispatchSeams.afterObservationWrite?.(prepared);
   return settled;
 }
 function requireRun(context, runId) {
@@ -26568,10 +26568,10 @@ function requireRun(context, runId) {
   }
   return run;
 }
-function recoverVnextRun(context, runId, request) {
+function recoverKxmRun(context, runId, request) {
   return context.eventStore.transaction(() => {
     const run = requireRun(context, runId);
-    let state = foldStoredVnextRun(context, run);
+    let state = foldStoredKxmRun(context, run);
     if (state.status !== "blocked_uncertain" && state.status !== "cancelling" && state.currentStep?.effectState !== "blocked_uncertain") {
       throw runtimeError("run_events_illegal", runId, `run ${runId} is not in blocked_uncertain status`);
     }
@@ -26580,17 +26580,17 @@ function recoverVnextRun(context, runId, request) {
     }
     const now = (/* @__PURE__ */ new Date()).toISOString();
     let sequence = context.eventStore.nextSequence(runId);
-    let mono = vnextMonotonicNs();
+    let mono = kxmMonotonicNs();
     const events = [];
     const push = (eventType, payload) => {
       events.push({
-        ...vnextEventBase(context, run, now, mono, request.commandId),
-        eventId: newVnextEventId(),
+        ...kxmEventBase(context, run, now, mono, request.commandId),
+        eventId: newKxmEventId(),
         eventType,
         sequence: sequence++,
         payload
       });
-      mono = vnextIncrementMonotonicNs(mono);
+      mono = kxmIncrementMonotonicNs(mono);
     };
     if (state.status === "running" && state.currentStep?.effectState === "blocked_uncertain") {
       push("run.status_changed", {
@@ -26600,13 +26600,13 @@ function recoverVnextRun(context, runId, request) {
       });
       for (const ev of events) context.eventStore.appendEvent(ev);
       events.length = 0;
-      state = foldStoredVnextRun(context, run);
+      state = foldStoredKxmRun(context, run);
       context.eventStore.updateRunStatus(runId, "blocked_uncertain", now);
     }
     const attemptId = state.currentStep?.attemptId;
     if (attemptId) {
-      resolveVnextGateHold(context.eventStore.path, runId, attemptId);
-      unregisterVnextAttemptController(context.eventStore.path, runId, attemptId);
+      resolveKxmGateHold(context.eventStore.path, runId, attemptId);
+      unregisterKxmAttemptController(context.eventStore.path, runId, attemptId);
       const cap = context.eventStore.capabilityByAttempt(attemptId);
       if (cap && cap.state !== "settled") {
         context.eventStore.settleCapability(attemptId, "settled");
@@ -26619,8 +26619,8 @@ function recoverVnextRun(context, runId, request) {
         reason: request.reason ?? "operator_retry"
       });
       for (const ev of events) context.eventStore.appendEvent(ev);
-      const nextState = foldStoredVnextRun(context, run);
-      persistVnextRunState(context, runId, nextState, events[events.length - 1].sequence);
+      const nextState = foldStoredKxmRun(context, run);
+      persistKxmRunState(context, runId, nextState, events[events.length - 1].sequence);
       context.eventStore.updateRunStatus(runId, "running", now);
       return { state: nextState, unblocked: true };
     }
@@ -26631,8 +26631,8 @@ function recoverVnextRun(context, runId, request) {
         reason: request.reason ?? "operator_fail"
       });
       for (const ev of events) context.eventStore.appendEvent(ev);
-      const nextState = foldStoredVnextRun(context, run);
-      persistVnextRunState(context, runId, nextState, events[events.length - 1].sequence);
+      const nextState = foldStoredKxmRun(context, run);
+      persistKxmRunState(context, runId, nextState, events[events.length - 1].sequence);
       context.eventStore.updateRunStatus(runId, "failed", now);
       return { state: nextState, unblocked: true };
     }
@@ -26652,8 +26652,8 @@ function recoverVnextRun(context, runId, request) {
         reason: request.reason ?? "operator_cancel"
       });
       for (const ev of events) context.eventStore.appendEvent(ev);
-      const nextState = foldStoredVnextRun(context, run);
-      persistVnextRunState(context, runId, nextState, events[events.length - 1].sequence);
+      const nextState = foldStoredKxmRun(context, run);
+      persistKxmRunState(context, runId, nextState, events[events.length - 1].sequence);
       context.eventStore.updateRunStatus(runId, "cancelled", now);
       return { state: nextState, unblocked: true };
     }
@@ -26661,7 +26661,7 @@ function recoverVnextRun(context, runId, request) {
   });
 }
 
-// plugins/kxm/src/vnext-oneshot-producer.ts
+// plugins/kxm/src/oneshot-producer.ts
 function determineOutcome(text, allowedOutcomes) {
   try {
     const result = JSON.parse(text.trim());
@@ -26673,7 +26673,7 @@ function determineOutcome(text, allowedOutcomes) {
   }
   return "failed";
 }
-function createVnextOneShotProducer(options = {}) {
+function createKxmOneShotProducer(options = {}) {
   const defaultHarness = options.defaultHarness ?? "claude";
   const running = /* @__PURE__ */ new Map();
   let closed = false;
@@ -26835,7 +26835,7 @@ Return a final JSON object with an "outcome" field chosen from ${JSON.stringify(
     }
     const spawnFn = options.spawnProcess ?? defaultSpawn;
     const cwd = options.projectRoot ?? process.cwd();
-    const evidence = await beginOneShotEvidence(options.evidenceRoot ?? join12(vnextUserStateRoot(), "runtime", "oneshot-evidence"), {
+    const evidence = await beginOneShotEvidence(options.evidenceRoot ?? join12(kxmUserStateRoot(), "runtime", "oneshot-evidence"), {
       runId: request.runId,
       stepId: request.stepId,
       attemptId: request.attemptId,
@@ -26978,12 +26978,12 @@ Return a final JSON object with an "outcome" field chosen from ${JSON.stringify(
   return producer;
 }
 
-// plugins/kxm/src/vnext-runtime-supervisor.ts
-function vnextSupervisorTokenFile(paths) {
+// plugins/kxm/src/runtime-supervisor.ts
+function kxmSupervisorTokenFile(paths) {
   return join13(paths.runtimeDir, "supervisor.token");
 }
-function publishVnextSupervisorToken(paths, token) {
-  const file = vnextSupervisorTokenFile(paths);
+function publishKxmSupervisorToken(paths, token) {
+  const file = kxmSupervisorTokenFile(paths);
   mkdirSync4(dirname6(file), { recursive: true, mode: 448 });
   const temp = `${file}.${process.pid}.tmp`;
   writeFileSync4(temp, `${token}
@@ -26998,11 +26998,11 @@ function publishVnextSupervisorToken(paths, token) {
   } catch {
   }
 }
-function hashVnextSupervisorToken(token) {
+function hashKxmSupervisorToken(token) {
   return `sha256:${createHash12("sha256").update(`kxm-runtime-supervisor\0${token}`, "utf8").digest("hex")}`;
 }
-function readVnextSupervisorToken(paths) {
-  const file = vnextSupervisorTokenFile(paths);
+function readKxmSupervisorToken(paths) {
+  const file = kxmSupervisorTokenFile(paths);
   const stat = lstatSync5(file, { throwIfNoEntry: false });
   if (!stat) return void 0;
   if (stat.isSymbolicLink() || !stat.isFile()) {
@@ -27048,9 +27048,9 @@ function readRecentSupervisorError(paths) {
     return void 0;
   }
 }
-function vnextSupervisorStatus(paths) {
+function kxmSupervisorStatus(paths) {
   if (!existsSync10(paths.registryDb)) return { running: false };
-  const registry = new VnextRuntimeRegistry(paths.registryDb);
+  const registry = new KxmRuntimeRegistry(paths.registryDb);
   try {
     const record2 = registry.supervisor();
     if (!record2) return { running: false };
@@ -27085,7 +27085,7 @@ async function probeSupervisor(port, expectedRuntimeId, token, timeoutMs = 750) 
     const response = await fetch(`http://127.0.0.1:${port}/healthz?nonce=${nonce}`, { signal: controller.signal });
     if (!response.ok) return false;
     const payload = await response.json();
-    const expectedProof = hashVnextTokenProof(token, nonce);
+    const expectedProof = hashKxmTokenProof(token, nonce);
     return payload.runtimeId === expectedRuntimeId && payload.tokenProof === expectedProof;
   } catch {
     return false;
@@ -27093,15 +27093,15 @@ async function probeSupervisor(port, expectedRuntimeId, token, timeoutMs = 750) 
     clearTimeout(timeout);
   }
 }
-function hashVnextTokenProof(token, nonce) {
+function hashKxmTokenProof(token, nonce) {
   return createHmac("sha256", token).update(`kxm-runtime-token-proof\0${nonce}`, "utf8").digest("hex");
 }
-async function ensureVnextSupervisor(options = {}) {
-  const paths = vnextRuntimePaths(options.stateRoot !== void 0 ? { stateRoot: options.stateRoot } : { ...options.env ? { env: options.env } : {} });
-  const status = vnextSupervisorStatus(paths);
+async function ensureKxmSupervisor(options = {}) {
+  const paths = kxmRuntimePaths(options.stateRoot !== void 0 ? { stateRoot: options.stateRoot } : { ...options.env ? { env: options.env } : {} });
+  const status = kxmSupervisorStatus(paths);
   if (status.running && status.port) {
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      const token = readVnextSupervisorToken(paths);
+      const token = readKxmSupervisorToken(paths);
       if (token && await probeSupervisorWithRetry(status.port, status.runtimeId, token)) {
         return { runtimeId: status.runtimeId, port: status.port, token, started: false };
       }
@@ -27129,9 +27129,9 @@ async function ensureVnextSupervisor(options = {}) {
   const deadline = Date.now() + 1e4;
   while (Date.now() < deadline) {
     await new Promise((resolveWait) => setTimeout(resolveWait, 100));
-    const next = vnextSupervisorStatus(paths);
+    const next = kxmSupervisorStatus(paths);
     if (next.running && next.port) {
-      const token = readVnextSupervisorToken(paths);
+      const token = readKxmSupervisorToken(paths);
       if (token && await probeSupervisor(next.port, next.runtimeId, token)) {
         return { runtimeId: next.runtimeId, port: next.port, token, started: true };
       }
@@ -27165,7 +27165,7 @@ async function readJsonBody(request, limit = 64 * 1024) {
     }
     return parsed;
   } catch (error) {
-    if (error instanceof VnextConfigError) throw error;
+    if (error instanceof KxmConfigError) throw error;
     throw runtimeError("runtime_request_invalid", request.url ?? "<request>", "request body is not valid JSON");
   }
 }
@@ -27217,24 +27217,24 @@ async function driveSessionStillPending(settled) {
   await Promise.resolve();
   return pending;
 }
-async function startVnextRuntimeSupervisor(options = {}) {
+async function startKxmRuntimeSupervisor(options = {}) {
   const now = options.now ?? (() => (/* @__PURE__ */ new Date()).toISOString());
-  const paths = vnextRuntimePaths(options.stateRoot !== void 0 ? { stateRoot: options.stateRoot } : {});
+  const paths = kxmRuntimePaths(options.stateRoot !== void 0 ? { stateRoot: options.stateRoot } : {});
   try {
-    return await startVnextRuntimeSupervisorInner(paths, options.port, now);
+    return await startKxmRuntimeSupervisorInner(paths, options.port, now);
   } catch (error) {
-    if (!(error instanceof VnextConfigError && error.issues.some((issue3) => issue3.code === "runtime_supervisor_conflict"))) {
+    if (!(error instanceof KxmConfigError && error.issues.some((issue3) => issue3.code === "runtime_supervisor_conflict"))) {
       recordSupervisorError(paths, error.message);
     }
     throw error;
   }
 }
-async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now) {
+async function startKxmRuntimeSupervisorInner(paths, requestedPortOption, now) {
   mkdirSync4(paths.runtimeDir, { recursive: true, mode: 448 });
   mkdirSync4(paths.projectsDir, { recursive: true, mode: 448 });
   const token = randomBytes3(32).toString("hex");
-  const tokenHash = hashVnextSupervisorToken(token);
-  const registry = new VnextRuntimeRegistry(paths.registryDb);
+  const tokenHash = hashKxmSupervisorToken(token);
+  const registry = new KxmRuntimeRegistry(paths.registryDb);
   const runtimeId = `rtm_${createHash12("sha256").update(`${paths.stateRoot}\0${process.pid}\0${now()}\0${randomBytes3(16).toString("hex")}`, "utf8").digest("hex").slice(0, 24)}`;
   const requestedPort = requestedPortOption ?? 0;
   let activeRuntimeId = runtimeId;
@@ -27246,14 +27246,14 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
     const key = projectRuntimeKey(projectRoot);
     const existing = contexts.get(key);
     if (existing) return existing;
-    const context = openVnextRuntimeContext(projectRoot, { homeRuntimeId: activeRuntimeId, stateRoot: paths.stateRoot });
+    const context = openKxmRuntimeContext(projectRoot, { homeRuntimeId: activeRuntimeId, stateRoot: paths.stateRoot });
     contexts.set(key, context);
     return context;
   };
   const requireAuth = (request) => {
     const header = request.headers.authorization ?? "";
     const presented = header.startsWith("Bearer ") ? header.slice("Bearer ".length) : "";
-    const presentedHash = presented.length > 0 ? Buffer.from(hashVnextSupervisorToken(presented), "utf8") : Buffer.alloc(0);
+    const presentedHash = presented.length > 0 ? Buffer.from(hashKxmSupervisorToken(presented), "utf8") : Buffer.alloc(0);
     const expectedHash = Buffer.from(tokenHash, "utf8");
     if (presentedHash.length !== expectedHash.length || !timingSafeEqual2(presentedHash, expectedHash)) {
       throw runtimeError("runtime_auth_failed", request.url ?? "<request>", "missing or invalid supervisor token");
@@ -27271,7 +27271,7 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
             state: "running",
             // Proof of token knowledge: an impostor that merely binds the
             // stale port cannot answer the keyed challenge.
-            tokenProof: nonce.length > 0 ? hashVnextTokenProof(token, nonce) : void 0
+            tokenProof: nonce.length > 0 ? hashKxmTokenProof(token, nonce) : void 0
           });
           return;
         }
@@ -27293,8 +27293,8 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
             return;
           }
           const context = contextFor(projectRoot);
-          const bundle = loadVnextProject(projectRoot, {});
-          const acceptance = acceptVnextRun(context, bundle, {
+          const bundle = loadKxmProject(projectRoot, {});
+          const acceptance = acceptKxmRun(context, bundle, {
             ...typeof body.commandId === "string" && body.commandId.length > 0 ? { commandId: body.commandId } : {},
             workflowId,
             prompt
@@ -27317,11 +27317,11 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
             return;
           }
           const context = contextFor(projectRoot);
-          const bundle = loadVnextProject(projectRoot, {});
+          const bundle = loadKxmProject(projectRoot, {});
           if (request.method === "GET" && !sub) {
-            const projected = projectVnextRunReadOnly(context, runId);
-            const folded = foldStoredVnextRun(context, projected);
-            const drive = vnextDrivePollProjection(context, runId, folded);
+            const projected = projectKxmRunReadOnly(context, runId);
+            const folded = foldStoredKxmRun(context, projected);
+            const drive = kxmDrivePollProjection(context, runId, folded);
             sendJson(response, 200, { ok: true, run: projected, ...drive !== void 0 ? { drive } : {} });
             return;
           }
@@ -27334,7 +27334,7 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
             const run = context.eventStore.run(runId);
             if (!run) throw runtimeError("run_unknown", runId, "run not found");
             const delayMs = typeof body.delayMs === "number" && body.delayMs > 0 ? body.delayMs : 0;
-            const createProducer = () => body.mode === "live" ? createVnextOneShotProducer({
+            const createProducer = () => body.mode === "live" ? createKxmOneShotProducer({
               projectRoot,
               defaultHarness: String(bundle.project.value.defaultHarness ?? "pi"),
               resolveHarness: (agentId) => {
@@ -27353,7 +27353,7 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
                 }
                 return { provider, model: modelName };
               }
-            }) : createVnextSimulatedProducer(async () => {
+            }) : createKxmSimulatedProducer(async () => {
               if (delayMs > 0) {
                 await new Promise((r) => setTimeout(r, delayMs));
               }
@@ -27362,7 +27362,7 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
             let session;
             let earlyError;
             try {
-              const scheduler = VnextRunScheduler.for(context, bundle);
+              const scheduler = KxmRunScheduler.for(context, bundle);
               const opening = scheduler.openDriveSession(runId, {
                 mode: body.mode,
                 allowLimits: false,
@@ -27411,7 +27411,7 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
           if (request.method === "GET" && sub === "drive") {
             const run = context.eventStore.run(runId);
             if (!run) throw runtimeError("run_unknown", runId, "run not found");
-            const activeSession = vnextDriveSession(context.eventStore.path, runId);
+            const activeSession = kxmDriveSession(context.eventStore.path, runId);
             const session = activeSession ? {
               driveId: activeSession.driveId,
               mode: activeSession.mode,
@@ -27424,7 +27424,7 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
           }
           if (request.method === "POST" && sub === "cancel") {
             const body = await readJsonBody(request);
-            const result = cancelVnextRun(context, runId, {
+            const result = cancelKxmRun(context, runId, {
               ...typeof body.commandId === "string" && body.commandId.length > 0 ? { commandId: body.commandId } : {}
             });
             sendJson(response, 200, { ok: true, idempotent: result.idempotent, run: result.run, events: result.events });
@@ -27434,11 +27434,11 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
             const body = await readJsonBody(request);
             const run = context.eventStore.run(runId);
             if (!run) throw runtimeError("run_unknown", runId, "run not found");
-            const state = foldStoredVnextRun(context, run);
+            const state = foldStoredKxmRun(context, run);
             let unblocked = false;
             if (state.status === "blocked_uncertain" || state.status === "cancelling" || state.currentStep?.effectState === "blocked_uncertain") {
               const action = body.action === "cancel" || body.action === "fail" || body.action === "retry" || body.action === "unblock" ? body.action : "unblock";
-              const rec = recoverVnextRun(context, runId, {
+              const rec = recoverKxmRun(context, runId, {
                 action,
                 reason: typeof body.summary === "string" ? body.summary : `signal_${body.signalKey ?? "callback"}`
               });
@@ -27481,9 +27481,9 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
             sendJson(response, 200, { ok: true, receipt, verified: false, divergence: "run missing" });
             return;
           }
-          const state = foldStoredVnextRun(context, stored);
+          const state = foldStoredKxmRun(context, stored);
           const events = context.eventStore.events(runId, 0, 1e6);
-          const checked = verifyVnextDriveReceipt(receipt, events, state.status, { runId, driveId });
+          const checked = verifyKxmDriveReceipt(receipt, events, state.status, { runId, driveId });
           sendJson(response, 200, {
             ok: true,
             receipt,
@@ -27511,7 +27511,7 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
         }
         sendJson(response, 404, { ok: false, error: "runtime_not_found" });
       } catch (error) {
-        if (error instanceof VnextConfigError) {
+        if (error instanceof KxmConfigError) {
           const code = error.issues[0]?.code ?? "runtime_error";
           const status = code === "runtime_auth_failed" ? 401 : code === "run_unknown" ? 404 : 400;
           sendJson(response, status, { ok: false, error: code, issues: error.issues });
@@ -27552,7 +27552,7 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
     }
   }
   try {
-    publishVnextSupervisorToken(paths, token);
+    publishKxmSupervisorToken(paths, token);
     clearSupervisorError(paths);
   } catch (error) {
     registry.close();
@@ -27578,10 +27578,10 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
       registry.markStopping(process.pid, now());
     } catch {
     }
-    const openSessions = [...contexts.values()].flatMap((context) => vnextOpenDriveSessions(context.eventStore.path).map((session) => ({ context, session })));
+    const openSessions = [...contexts.values()].flatMap((context) => kxmOpenDriveSessions(context.eventStore.path).map((session) => ({ context, session })));
     for (const { context, session } of openSessions) {
       try {
-        cancelVnextRun(context, session.runId, { reason: "runtime_shutdown" });
+        cancelKxmRun(context, session.runId, { reason: "runtime_shutdown" });
       } catch {
       }
       try {
@@ -27599,7 +27599,7 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
         producerClosed: false
       });
     }
-    for (const context of contexts.values()) closeVnextRuntimeContext(context);
+    for (const context of contexts.values()) closeKxmRuntimeContext(context);
     contexts.clear();
     const closed = new Promise((resolveStop) => server.close(() => resolveStop()));
     server.closeIdleConnections?.();
@@ -27618,7 +27618,7 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
   });
   return { server, port, runtimeId: activeRuntimeId, stop };
 }
-async function vnextRuntimeRequest(handle, method, path, body) {
+async function kxmRuntimeRequest(handle, method, path, body) {
   const response = await fetch(`http://127.0.0.1:${handle.port}${path}`, {
     method,
     headers: {
@@ -27636,7 +27636,7 @@ async function vnextRuntimeRequest(handle, method, path, body) {
   return payload;
 }
 
-// plugins/kxm/src/vnext-pi-producer.ts
+// plugins/kxm/src/pi-producer.ts
 import { spawn as spawn4 } from "node:child_process";
 import { join as join14 } from "node:path";
 import { StringDecoder } from "node:string_decoder";
@@ -27911,7 +27911,7 @@ var PiSession = class {
     }
   }
 };
-function createVnextPiProducer(options = {}) {
+function createKxmPiProducer(options = {}) {
   const sessions = /* @__PURE__ */ new Map();
   const defaultModel = options.defaultModel ?? "xai/grok-4.6";
   const defaultProvider = options.defaultProvider ?? "xai";
@@ -29932,6 +29932,13 @@ export {
   DRIVE_RECEIPT_MAX_BYTES,
   IMPROVEMENT_REPORT_SCHEMA,
   IMPROVEMENT_REPORT_V1_SCHEMA,
+  KXM_ABSENT_MEMORY_REVISION,
+  KXM_DRIVE_RECEIPT_SCHEMA,
+  KXM_EVENT_STORE_SCHEMA_VERSION,
+  KXM_REGISTRY_SCHEMA_VERSION,
+  KXM_RUN_EVENT_SCHEMA,
+  KxmRunEventStore,
+  KxmRuntimeRegistry,
   LOG_LEVEL_PRIORITY,
   MAX_RUNTIME_STOP_GRACE_MS,
   MAX_SSH_OUTPUT_BYTES,
@@ -29945,22 +29952,15 @@ export {
   SteelClient,
   SubagentManager,
   VIEWPORT_PRESETS,
-  VNEXT_ABSENT_MEMORY_REVISION,
-  VNEXT_DRIVE_RECEIPT_SCHEMA,
-  VNEXT_EVENT_STORE_SCHEMA_VERSION,
-  VNEXT_REGISTRY_SCHEMA_VERSION,
-  VNEXT_RUN_EVENT_SCHEMA,
-  VnextRunEventStore,
-  VnextRuntimeRegistry,
   WIN_NPM_INNER_EXE,
-  acceptVnextRun,
+  acceptKxmRun,
   assertClosedGateObservation,
-  assertVnextConfigError,
+  assertKxmConfigError,
   backupDatabaseFile,
   buildImprovementReport,
   buildSshArgs,
   calculatePromptFootprint,
-  cancelVnextRun,
+  cancelKxmRun,
   checkControlSocket,
   checkIntegrity,
   checkMemoryRevisionDrift,
@@ -29968,27 +29968,27 @@ export {
   checkpointWal,
   classifyCandidateKind,
   closeControlSocket,
-  closeVnextRuntimeContext,
+  closeKxmRuntimeContext,
   computeGateEvidenceOutcome,
-  computeVnextMemoryRevision,
+  computeKxmMemoryRevision,
   createAnnotationFeedback,
   createBackup,
+  createKxmOneShotProducer,
+  createKxmPiProducer,
   createLogger,
-  createVnextOneShotProducer,
-  createVnextPiProducer,
   databaseError,
   defaultSpawn,
   discoverProjectStores,
   eligibleHarnesses,
+  ensureKxmSupervisor,
   ensureSocketDir,
-  ensureVnextSupervisor,
   ensureWalJournalMode,
   estimateTokens,
   evaluatePromotionPolicy,
   executeSshRun,
   fileSha256,
   findWinNpmInnerExe,
-  foldStoredVnextRun,
+  foldStoredKxmRun,
   formatAnnotationFeedbackPrompt,
   formatCDPEndpoint,
   formatHarnessInventory,
@@ -30001,25 +30001,39 @@ export {
   groupRoutingRecords,
   harnessCommandCandidates,
   harnessSpawnUsesShell,
-  hashVnextDriveLog,
-  hashVnextSupervisorToken,
-  hashVnextTokenProof,
+  hashKxmDriveLog,
+  hashKxmSupervisorToken,
+  hashKxmTokenProof,
   isKnownHarnessId,
-  isVnextRuntimeContextClosed,
+  isKxmRuntimeContextClosed,
   isWindowsHarnessShim,
+  kxmDeclaredExecutorIds,
+  kxmDeclaredRepositoryIds,
+  kxmEventBase,
+  kxmExecutorPolicyRevision,
+  kxmIncrementMonotonicNs,
+  kxmMonotonicNs,
+  kxmPolicyRevisions,
+  kxmProjectAdmissionLimits,
+  kxmRunRevisionDrift,
+  kxmRuntimePaths,
+  kxmRuntimeRequest,
+  kxmSupervisorStatus,
+  kxmSupervisorTokenFile,
+  kxmToolPolicyRevision,
   loadModesConfig,
   narrowSubagentTools,
-  newVnextAssignmentId,
-  newVnextAttemptId,
-  newVnextCommandId,
-  newVnextEffectId,
-  newVnextEventId,
-  newVnextEvidenceId,
-  newVnextObservationId,
-  newVnextRunId,
+  newKxmAssignmentId,
+  newKxmAttemptId,
+  newKxmCommandId,
+  newKxmEffectId,
+  newKxmEventId,
+  newKxmEvidenceId,
+  newKxmObservationId,
+  newKxmRunId,
   oneShotReadOnlyArgs,
   openDatabase,
-  openVnextRuntimeContext,
+  openKxmRuntimeContext,
   parseAgyOneShotUsage,
   parseClaudeOneShotUsage,
   parseCodexOneShotUsage,
@@ -30027,7 +30041,7 @@ export {
   parseGrokOneShotUsage,
   parseKimiOneShotUsage,
   parseSshConfig,
-  persistVnextRunState,
+  persistKxmRunState,
   planHarnessUpdate,
   probeHarnessAssignment,
   probeHarnessAssignmentAsync,
@@ -30035,14 +30049,14 @@ export {
   probeHarnessesAsync,
   probeHarnessesForModel,
   probeHarnessesForModelAsync,
+  projectKxmRunReadOnly,
   projectRuntimeKey,
-  projectVnextRunReadOnly,
   pruneSocketDir,
-  readVnextRunStatus,
-  readVnextSupervisorToken,
-  rebuildVnextRunProjection,
+  readKxmRunStatus,
+  readKxmSupervisorToken,
+  rebuildKxmRunProjection,
   redactLogValue,
-  registerVnextRuntimeCloseHook,
+  registerKxmRuntimeCloseHook,
   resolveActiveMode,
   resolveDispatchStatus,
   resolvePassCliApiKey,
@@ -30056,27 +30070,13 @@ export {
   runtimeError,
   runtimeStopGraceMs,
   sanitizeLogOutput,
-  startVnextRuntimeSupervisor,
+  startKxmRuntimeSupervisor,
   tableColumns,
   truncateSshOutput,
   userTables,
   validateHarnessModelPair,
   verifyExpectedTables,
-  verifyVnextDriveReceipt,
-  vnextDeclaredExecutorIds,
-  vnextDeclaredRepositoryIds,
-  vnextEventBase,
-  vnextExecutorPolicyRevision,
-  vnextIncrementMonotonicNs,
-  vnextMonotonicNs,
-  vnextPolicyRevisions,
-  vnextProjectAdmissionLimits,
-  vnextRunRevisionDrift,
-  vnextRuntimePaths,
-  vnextRuntimeRequest,
-  vnextSupervisorStatus,
-  vnextSupervisorTokenFile,
-  vnextToolPolicyRevision,
+  verifyKxmDriveReceipt,
   withDatabaseTransaction,
   writeImprovementReport
 };

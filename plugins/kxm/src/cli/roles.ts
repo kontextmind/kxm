@@ -17,8 +17,8 @@ import {
   resolveRoleSeat,
   type KxmRoleDefinition,
 } from "../role.ts";
-import { discoverVnextProjectRoot } from "../vnext-config.ts";
-import { ensureVnextSupervisor, vnextRuntimeRequest } from "../vnext-runtime-supervisor.ts";
+import { discoverKxmProjectRoot } from "../project-config.ts";
+import { ensureKxmSupervisor, kxmRuntimeRequest } from "../runtime-supervisor.ts";
 import { resumeWorkflowFromRuling, type WorkflowRun } from "../workflow.ts";
 import { print, type CliIo, type Runtime } from "./types.ts";
 
@@ -517,16 +517,16 @@ export async function cmdRoleResume(
 
   const effectiveRuling = ruling?.trim() || "operator_ruling: waived and resumed";
 
-  // Check if it's a vNext run
-  const projectRoot = discoverVnextProjectRoot(runtime.cwd);
+  // Check if it's a KXM run
+  const projectRoot = discoverKxmProjectRoot(runtime.cwd);
   if (projectRoot && /^run_[a-f0-9]{32}$/i.test(runId)) {
     if (runtime.dryRun) {
-      print(runtime.io, runtime.json, { ok: true, command: "role resume", runId, ruling: effectiveRuling }, `would resume vNext run ${runId}`);
+      print(runtime.io, runtime.json, { ok: true, command: "role resume", runId, ruling: effectiveRuling }, `would resume KXM run ${runId}`);
       return 0;
     }
     try {
-      const supervisor = await ensureVnextSupervisor({ env: runtime.env });
-      const posted = await vnextRuntimeRequest(
+      const supervisor = await ensureKxmSupervisor({ env: runtime.env });
+      const posted = await kxmRuntimeRequest(
         supervisor,
         "POST",
         `/v1/runs/${encodeURIComponent(runId)}/signal?projectRoot=${encodeURIComponent(projectRoot)}`,
@@ -541,12 +541,12 @@ export async function cmdRoleResume(
         runtime.io,
         runtime.json,
         { ok: true, command: "role resume", runId, ruling: effectiveRuling, unblocked: posted.unblocked === true },
-        `Resumed vNext run ${runId} with ruling: ${effectiveRuling}\n`,
+        `Resumed KXM run ${runId} with ruling: ${effectiveRuling}\n`,
       );
       return 0;
     } catch (error) {
       const msg = error instanceof Error ? error.message : "resume_failed";
-      print(runtime.io, runtime.json, { ok: false, command: "role resume", error: "resume_failed", detail: msg }, `resume vNext run failed: ${msg}\n`);
+      print(runtime.io, runtime.json, { ok: false, command: "role resume", error: "resume_failed", detail: msg }, `resume KXM run failed: ${msg}\n`);
       return 1;
     }
   }

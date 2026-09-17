@@ -1,0 +1,17 @@
+# Bun workspace configuration.
+#
+# Install: `bun install` links the `packages/*` workspaces into node_modules so
+# `@kontextmind/kxm-tui` resolves by name. Tests still run under Node, because
+# the hub, the CLI, and Pi's extension host are Node runtimes; `bun test` would
+# silently test a runtime that ships nowhere.
+#
+# Tasks: `bun run <script>` and `bun x nx <target>` are convenient local entry
+# points, but nothing in the build depends on Bun: the nx targets in
+# `packages/*/project.json` shell out to `npm run`, so CI installs with `npm ci`
+# and runs on Node alone (the runners have no Bun on PATH).
+
+[install]
+exact = true
+
+[test]
+root = "./packages"

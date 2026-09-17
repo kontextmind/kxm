@@ -36576,9 +36576,9 @@ function resolveKxmSnapshotPaths(cwd, env = process.env) {
   const dataPath = configured ? resolve6(cwd, configured) : join11(stateDir, "kxm.db");
   return { dataPath, stateDir };
 }
-function resolveVnextStateRoot(stateDir, options) {
-  if (options?.vnextStateRoot && existsSync7(options.vnextStateRoot)) {
-    return resolve6(options.vnextStateRoot);
+function resolveKxmStateRoot(stateDir, options) {
+  if (options?.kxmStateRoot && existsSync7(options.kxmStateRoot)) {
+    return resolve6(options.kxmStateRoot);
   }
   if (existsSync7(join11(stateDir, "runtime", "registry.db")) || existsSync7(join11(stateDir, "runtime", "projects"))) {
     return stateDir;
@@ -36626,17 +36626,17 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
       database.close();
     }
   }
-  let hasVnext = false;
-  const vnextRuns = [];
-  let vnextRunTotal = 0;
-  const vnextStateRoot = resolveVnextStateRoot(stateDir, options);
-  if (vnextStateRoot) {
-    const runtimeDir = join11(vnextStateRoot, "runtime");
+  let hasKxm = false;
+  const kxmRuns = [];
+  let kxmRunTotal = 0;
+  const kxmStateRoot = resolveKxmStateRoot(stateDir, options);
+  if (kxmStateRoot) {
+    const runtimeDir = join11(kxmStateRoot, "runtime");
     const registryDbPath = join11(runtimeDir, "registry.db");
     const projectsDir = join11(runtimeDir, "projects");
     const projectKeys = /* @__PURE__ */ new Set();
     if (existsSync7(registryDbPath)) {
-      hasVnext = true;
+      hasKxm = true;
       try {
         const regDb = new DatabaseSync(registryDbPath, { readOnly: true });
         try {
@@ -36664,7 +36664,7 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
     for (const key of projectKeys) {
       const eventDbPath = join11(projectsDir, key, "run-events.db");
       if (existsSync7(eventDbPath)) {
-        hasVnext = true;
+        hasKxm = true;
         try {
           const eventDb = new DatabaseSync(eventDbPath, { readOnly: true });
           try {
@@ -36674,9 +36674,9 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
               FROM runs ORDER BY created_at DESC, run_id DESC LIMIT 8
             `).all();
             const countRow = eventDb.prepare("SELECT COUNT(*) AS total FROM runs").get();
-            vnextRunTotal += Number(countRow?.total ?? runRows.length);
+            kxmRunTotal += Number(countRow?.total ?? runRows.length);
             for (const r of runRows) {
-              vnextRuns.push({
+              kxmRuns.push({
                 id: r.run_id,
                 status: r.status,
                 definitionId: r.workflow_id,
@@ -36710,7 +36710,7 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
   }
   const combinedRuns = [
     ...legacyRuns.map((run) => summarizeMeshRun(run)),
-    ...vnextRuns
+    ...kxmRuns
   ];
   const seenIds = /* @__PURE__ */ new Set();
   const uniqueRuns = [];
@@ -36726,12 +36726,12 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
     return bt - at;
   });
   const runs = uniqueRuns.slice(0, 16);
-  const runTotal = legacyRunTotal + vnextRunTotal;
+  const runTotal = legacyRunTotal + kxmRunTotal;
   let source;
-  if (hasLegacy && hasVnext) {
+  if (hasLegacy && hasKxm) {
     source = "both";
-  } else if (hasVnext) {
-    source = "vnext";
+  } else if (hasKxm) {
+    source = "runtime";
   } else {
     source = "legacy";
   }

@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.kxm.dev/context-candidate.schema.json",
+  "title": "KXM evidence-linked improvement candidate",
+  "type": "object",
+  "required": [
+    "schema",
+    "id",
+    "projectId",
+    "sourceRunId",
+    "type",
+    "scope",
+    "summary",
+    "authority",
+    "confidence",
+    "status",
+    "activation",
+    "evidenceRefs",
+    "createdAt"
+  ],
+  "properties": {
+    "schema": { "const": "kxm.context-candidate.v1" },
+    "id": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "projectId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "sourceRunId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "sourceConfigRevision": { "$ref": "common.schema.json#/$defs/sha256" },
+    "sourceMemoryRevision": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "type": { "enum": ["knowledge", "skill", "workflow", "agent", "model", "environment", "template", "temporal-state"] },
+    "scope": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["project", "repository"] },
+        "repositoryId": { "$ref": "common.schema.json#/$defs/identifier" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "repository" } }, "required": ["kind"] },
+          "then": { "required": ["repositoryId"] },
+          "else": { "not": { "required": ["repositoryId"] } }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "authority": { "const": "evidence" },
+    "confidence": { "enum": ["verified", "probable", "uncertain"] },
+    "status": { "enum": ["proposed", "evaluating", "review-required", "promoted", "rejected", "quarantined"] },
+    "activation": { "const": "review-required" },
+    "targetPath": { "$ref": "common.schema.json#/$defs/relativePath" },
+    "proposedChange": { "$ref": "common.schema.json#/$defs/artifactRef" },
+    "evidenceRefs": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/evidenceRef" },
+      "minItems": 1,
+      "maxItems": 64
+    },
+    "evaluation": {
+      "type": "object",
+      "properties": {
+        "status": { "enum": ["not-started", "running", "passed", "failed", "quarantined"] },
+        "metric": { "$ref": "common.schema.json#/$defs/identifier" },
+        "expectedDirection": { "enum": ["increase", "decrease", "maintain"] },
+        "evidenceRefs": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/evidenceRef" },
+          "maxItems": 64
+        }
+      },
+      "additionalProperties": false
+    },
+    "createdAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "updatedAt": { "$ref": "common.schema.json#/$defs/timestamp" }
+  },
+  "additionalProperties": false
+}

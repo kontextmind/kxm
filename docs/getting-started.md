@@ -74,7 +74,7 @@ workflow-guide agents and workflows for the harnesses you have installed and
 authenticated. Accepting lists the software-engineering workflows from
 [`workflow-guide.md`](workflow-guide.md); pick by number or slug (`all` works
 too). kxm resolves each role's first guide candidate whose harness is
-authenticated and writes only current vNext project resources —
+authenticated and writes only current KXM project resources —
 `.kxm/agents/<role>.yaml` (`kxm.agent.v1`) and `.kxm/workflows/<slug>.yaml`
 (`kxm.workflow.v1`). It never writes retired legacy authority (`.kxm/config`,
 retired `.kxm/roster.json`) or the trusted `.kxm/roster.yaml` policy. Roles whose candidates have no authenticated harness are

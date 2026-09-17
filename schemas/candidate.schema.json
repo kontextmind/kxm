@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.kxm.dev/candidate.schema.json",
+  "title": "KXM coded-repeat improvement candidate",
+  "type": "object",
+  "required": [
+    "schema",
+    "id",
+    "kind",
+    "summary",
+    "evidenceRefs",
+    "baselineMetrics",
+    "declaredOutcome",
+    "measure",
+    "proposedDiffPath",
+    "status",
+    "createdAt"
+  ],
+  "properties": {
+    "schema": {
+      "const": "kxm.candidate.v1"
+    },
+    "id": {
+      "$ref": "common.schema.json#/$defs/opaqueId"
+    },
+    "kind": {
+      "enum": [
+        "gate",
+        "skill",
+        "workflow-step"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "evidenceRefs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      },
+      "minItems": 1,
+      "maxItems": 64
+    },
+    "baselineMetrics": {
+      "type": "object",
+      "required": [
+        "recurrence",
+        "meanCost",
+        "meanLatency",
+        "verifyPassRate",
+        "rework"
+      ],
+      "properties": {
+        "recurrence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "meanCost": {
+          "type": "number",
+          "minimum": 0
+        },
+        "meanLatency": {
+          "type": "number",
+          "minimum": 0
+        },
+        "verifyPassRate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "rework": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "declaredOutcome": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "measure": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "proposedDiffPath": {
+      "$ref": "common.schema.json#/$defs/relativePath"
+    },
+    "status": {
+      "enum": [
+        "proposed",
+        "evaluating",
+        "review-required",
+        "promoted",
+        "rejected"
+      ]
+    },
+    "createdAt": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    }
+  },
+  "additionalProperties": false
+}

@@ -129,7 +129,7 @@ restated three times (AGENTS.md, Decided, Still open) and is drifting.
 a chore, not a plan item.
 
 Proposed: move the routing and cost text into one normative
-`docs/vnext/routing.md` with phase tags. Leave one bullet each in Decided
+`docs/contracts/routing.md` with phase tags. Leave one bullet each in Decided
 pointing there. Delete the duplicates. AGENTS.md keeps the short operator
 rules. Fold plan edits into the code commit that justified them, as the rule
 already says.
@@ -180,7 +180,7 @@ twenty tests named for fail-closed; the strong-form dist checker.
 | # | Finding | Severity | Fix |
 |---|---|---|---|
 | H1 | `kxm init --hub existing\|new` writes nothing and starts nothing. | blocker | `--hub existing <url>` persists the URL into Runtime-local bindings and probes `/health`. Brake `--hub new` with "run `kxm hub start`" until the hub can detach. |
-| H2 | Two config worlds, one documented. `kxm init` writes `project.yaml`, `repo/repo.yaml`, two agents, `workflows/default.yaml`, provenance. Zero mentions outside `docs/vnext`. Getting-started teaches `kxm mesh init`, which writes the unrelated legacy tree. | blocker | Getting-started uses `kxm init`. Add a "what init writes" table to `docs/configuration.md`. |
+| H2 | Two config worlds, one documented. `kxm init` writes `project.yaml`, `repo/repo.yaml`, two agents, `workflows/default.yaml`, provenance. Zero mentions outside `docs/contracts`. Getting-started teaches `kxm mesh init`, which writes the unrelated legacy tree. | blocker | Getting-started uses `kxm init`. Add a "what init writes" table to `docs/configuration.md`. |
 | H3 | Second `kxm hub start` dies with a raw Node stack trace saying "pi-mesh hub is already managed". | major | Catch at the call site; one-line KXM message pointing at `kxm hub stop`; exit 1. |
 | H4 | `kxm hub start` is foreground and nothing says so. | major | One sentence in getting-started. |
 | H5 | `kxm hub start` awaits the update check (up to 2.5 s) and exits 2 without starting the hub if `.kxm/update.yaml` is malformed. | major | Cache plus background refresh on this path; malformed config is a warning here. |
@@ -448,7 +448,7 @@ before Phase 7.
 
 ## 12. Proposed plan edits (verbatim)
 
-Apply to `docs/vnext/implementation-plan.md`. Grok applies; tests verify.
+Apply to `docs/contracts/implementation-plan.md`. Grok applies; tests verify.
 
 **Decided, add after "Hub local is MVP":**
 
@@ -504,7 +504,7 @@ repository identity".
 > through `completed` and `failed`, cancellation, crash recovery mid-step.
 >
 > **Gate:** a model-free test driver completes and recovers
-> `examples/vnext/.kxm/workflows/default.yaml` without illegal transitions or
+> `examples/project/.kxm/workflows/default.yaml` without illegal transitions or
 > evidence reuse. Producers are driver-simulated. Caller-authored replies are
 > rejected. Pi/CLI executions do not satisfy this gate.
 >

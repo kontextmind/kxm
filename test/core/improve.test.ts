@@ -31,17 +31,17 @@ import {
   readFederatedTelemetry,
 } from "../../plugins/kxm/src/telemetry.ts";
 import type { CliIo } from "../../plugins/kxm/src/cli.ts";
-import { loadVnextProject } from "../../plugins/kxm/src/vnext-config.ts";
+import { loadKxmProject } from "../../plugins/kxm/src/project-config.ts";
 import {
-  createVnextSimulatedProducer,
-  driveVnextRun,
-  pinVnextCompiledPlan,
-} from "../../plugins/kxm/src/vnext-engine.ts";
+  createKxmSimulatedProducer,
+  driveKxmRun,
+  pinKxmCompiledPlan,
+} from "../../plugins/kxm/src/engine.ts";
 import {
-  acceptVnextRun,
-  closeVnextRuntimeContext,
-  openVnextRuntimeContext,
-} from "../../plugins/kxm/src/vnext-runtime.ts";
+  acceptKxmRun,
+  closeKxmRuntimeContext,
+  openKxmRuntimeContext,
+} from "../../plugins/kxm/src/runtime-service.ts";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const HOME = "rtm_01JDRIVER0000000000000000";
@@ -188,14 +188,14 @@ test("buildImprovementReport emits valid kxm.candidate.v1 files and diffs", () =
     assert.equal(report.recordsCount, 4);
     assert.equal(report.candidates.length, 2);
 
-    // Validate candidates against schemas/vnext/candidate.schema.json
+    // Validate candidates against schemas/candidate.schema.json
     const ajv = new Ajv2020({ allErrors: true, strict: false });
     const commonSchema = JSON.parse(
-      readFileSync(resolve(repoRoot, "schemas/vnext/common.schema.json"), "utf8"),
+      readFileSync(resolve(repoRoot, "schemas/common.schema.json"), "utf8"),
     );
     ajv.addSchema(commonSchema);
     const schemaContent = JSON.parse(
-      readFileSync(resolve(repoRoot, "schemas/vnext/candidate.schema.json"), "utf8"),
+      readFileSync(resolve(repoRoot, "schemas/candidate.schema.json"), "utf8"),
     );
     const validateCandidate = ajv.compile(schemaContent);
 
@@ -348,11 +348,11 @@ test("skills frontmatter handling and patch emission on promotion", () => {
   }
 });
 
-test("improve.yaml workflow completes on the vNext driver", async () => {
+test("improve.yaml workflow completes on the KXM driver", async () => {
   const root = mkdtempSync(join(tmpdir(), "kxm-improve-workflow-"));
   const stateRoot = mkdtempSync(join(tmpdir(), "kxm-improve-workflow-state-"));
   try {
-    cpSync(join(repoRoot, "examples/vnext"), root, { recursive: true });
+    cpSync(join(repoRoot, "examples/project"), root, { recursive: true });
     makeGitRoot(root);
     makeGitRoot(join(root, "repositories", "api"));
     makeGitRoot(join(root, "repositories", "web"));
@@ -382,22 +382,22 @@ gates:
       { windowsHide: true },
     );
 
-    const bundle = loadVnextProject(root);
-    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    const bundle = loadKxmProject(root);
+    const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
     try {
-      const accepted = acceptVnextRun(context, bundle, {
+      const accepted = acceptKxmRun(context, bundle, {
         workflowId: "improve",
         prompt: "Propose improvements from telemetry routing records",
       });
-      pinVnextCompiledPlan(context, bundle, accepted.run.runId);
+      pinKxmCompiledPlan(context, bundle, accepted.run.runId);
 
       const visitedSteps: string[] = [];
-      const producer = createVnextSimulatedProducer(async (req) => {
+      const producer = createKxmSimulatedProducer(async (req) => {
         visitedSteps.push(req.stepId);
         return { outcome: "passed" };
       });
 
-      const result = await driveVnextRun(context, accepted.run.runId, producer, { allowLimits: true });
+      const result = await driveKxmRun(context, accepted.run.runId, producer, { allowLimits: true });
       assert.equal(result.state.status, "completed");
       assert.equal(result.handoff, undefined);
 
@@ -412,7 +412,7 @@ gates:
       );
       assert.equal(events.some((e) => e.eventType === "effect.settled" && e.payload.outcome === "passed"), true);
     } finally {
-      closeVnextRuntimeContext(context);
+      closeKxmRuntimeContext(context);
     }
   } finally {
     rmSync(root, { recursive: true, force: true });

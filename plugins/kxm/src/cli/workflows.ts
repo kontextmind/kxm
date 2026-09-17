@@ -19,8 +19,8 @@ import {
   type WorkflowJournalEntry,
   type WorkflowRun,
 } from "../workflow.ts";
-import { discoverVnextProjectRoot } from "../vnext-config.ts";
-import { ensureVnextSupervisor, vnextRuntimeRequest } from "../vnext-runtime-supervisor.ts";
+import { discoverKxmProjectRoot } from "../project-config.ts";
+import { ensureKxmSupervisor, kxmRuntimeRequest } from "../runtime-supervisor.ts";
 import type { WorkerOutcome } from "../envelope.ts";
 import {
   print,
@@ -517,26 +517,26 @@ export async function cmdSignal(runtime: Runtime, runId: string, signalKey: stri
     return 2;
   }
   const worker = gateOf(runtime, "signal");
-  const projectRoot = discoverVnextProjectRoot(runtime.cwd);
+  const projectRoot = discoverKxmProjectRoot(runtime.cwd);
   if (projectRoot && /^run_[a-f0-9]{32}$/i.test(runId)) {
     if (runtime.dryRun) {
-      printWorker(runtime, worker, { ok: true, command: "signal", runId, signalKey, status, summary, evidence }, "would post signal to vNext run");
+      printWorker(runtime, worker, { ok: true, command: "signal", runId, signalKey, status, summary, evidence }, "would post signal to KXM run");
       return 0;
     }
     const deliveryId = String(deliveryIdFlag || `cli-signal:${randomUUID()}`);
     try {
-      const supervisor = await ensureVnextSupervisor({ env: runtime.env });
-      const posted = await vnextRuntimeRequest(
+      const supervisor = await ensureKxmSupervisor({ env: runtime.env });
+      const posted = await kxmRuntimeRequest(
         supervisor,
         "POST",
         `/v1/runs/${encodeURIComponent(runId)}/signal?projectRoot=${encodeURIComponent(projectRoot)}`,
         { signalKey, status, summary, evidence, deliveryId, ...(recoveryAction ? { action: recoveryAction } : {}) },
       );
-      printWorker(runtime, worker, { ok: true, command: "signal", runId, signalKey, status, unblocked: posted.unblocked === true, deliveryId }, "posted signal to vNext run");
+      printWorker(runtime, worker, { ok: true, command: "signal", runId, signalKey, status, unblocked: posted.unblocked === true, deliveryId }, "posted signal to KXM run");
       return 0;
     } catch (error) {
       const msg = error instanceof Error ? error.message : "signal_failed";
-      printWorker(runtime, worker, { ok: false, command: "signal", error: "signal_failed", detail: msg, deliveryId }, "signal to vNext run failed");
+      printWorker(runtime, worker, { ok: false, command: "signal", error: "signal_failed", detail: msg, deliveryId }, "signal to KXM run failed");
       return 1;
     }
   }

@@ -1,7 +1,7 @@
 import { isAlias, isCollection, isMap, isScalar, parseDocument, visit } from "yaml";
 
-/** Restricted JSON-compatible YAML limits used by vNext configuration. */
-export const VNEXT_YAML_LIMITS = Object.freeze({
+/** Restricted JSON-compatible YAML limits used by KXM configuration. */
+export const KXM_YAML_LIMITS = Object.freeze({
   maxDocumentBytes: 256 * 1024,
   maxDepth: 32,
   maxScalarBytes: 64 * 1024,
@@ -85,11 +85,11 @@ function assertJsonValue(value, label, path = "$", seen = new Set()) {
   seen.delete(value);
 }
 
-/** Parse the restricted, JSON-compatible YAML profile used by all vNext configuration. */
+/** Parse the restricted, JSON-compatible YAML profile used by all KXM configuration. */
 export function parseRestrictedYaml(
   input,
   label = "<yaml>",
-  limits = VNEXT_YAML_LIMITS,
+  limits = KXM_YAML_LIMITS,
 ) {
   const byteLength = typeof input === "string" ? Buffer.byteLength(input, "utf8") : input.byteLength;
   if (byteLength > limits.maxDocumentBytes) {

@@ -1,8 +1,9 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { build } from "esbuild";
 
+
 await build({
-  entryPoints: ["plugins/kxm/src/cli.ts", "plugins/kxm/src/server.ts", "plugins/kxm/src/vnext-runtime-supervisor.ts"],
+  entryPoints: ["plugins/kxm/src/cli.ts", "plugins/kxm/src/server.ts", "plugins/kxm/src/runtime-supervisor.ts"],
   bundle: true,
   platform: "node",
   format: "esm",
@@ -39,7 +40,7 @@ const createRequire = "import { createRequire as __kxmCreateRequire } from 'node
 for (const bundlePath of [
   "plugins/kxm/dist/cli.js",
   "plugins/kxm/dist/server.js",
-  "plugins/kxm/dist/vnext-runtime-supervisor.js",
+  "plugins/kxm/dist/runtime-supervisor.js",
 ]) {
   const bundled = readFileSync(bundlePath, "utf8");
   if (!bundled.startsWith(shebang)) throw new Error(`runtime bundle is missing its executable shebang: ${bundlePath}`);

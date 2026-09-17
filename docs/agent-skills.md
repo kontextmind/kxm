@@ -17,7 +17,7 @@ authority, admit new writers, or replace trusted `.kxm/roster.yaml` policy.
 | Peer Communication | `kxm-peer` | `peer` | Discover, send, poll/await, cancel, fan out, inbox, and reply safely |
 | Workflow Management | `kxm-workflow` | `workflow`, `gate` | Operate webhook workflows, waits/signals, evidence checkpoints, provenance |
 | Definitions | `kxm-definitions` | `role` | Manage role YAML through configuration commands; role edits do not grant trusted writer admission |
-| Run Management | `kxm-runs` | `run`, `runs` | Create and inspect local vNext runs while preserving execution boundaries |
+| Run Management | `kxm-runs` | `run`, `runs` | Create and inspect local KXM runs while preserving execution boundaries |
 | Context & Memory | `kxm-context-memory` | `context`, `memory` | Query role-aware context and manage Git-authored memory proposals |
 | Skill Lifecycle | `kxm-skill-lifecycle` | `skills` | Govern candidate/evaluate/promote/reject/verify lifecycle |
 | Routing & Improve | `kxm-routing-improve` | `routing`, `improve` | Inspect real route quality/cost and propose reviewed improvements |

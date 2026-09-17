@@ -18,7 +18,7 @@ import {
 } from "../../plugins/kxm/src/tui.ts";
 
 async function runCli(argv: string[], env: NodeJS.ProcessEnv, io: CliIo, cwd = process.cwd()): Promise<number> {
-  const isolatedState = mkdtempSync(join(tmpdir(), "kxm-tui-state-"));
+  const isolatedState = mkdtempSync(join(tmpdir(), "tui-state-"));
   try {
     return await runCliImplementation(argv, { KXM_STATE_HOME: isolatedState, ...env }, io, cwd);
   } finally {
@@ -50,15 +50,15 @@ test("kxm dash dry-run does not open SSE", async () => {
 });
 
 test("non-TTY dashboard prefers the authenticated metadata-only ops snapshot", async () => {
-  const root = mkdtempSync(join(tmpdir(), "kxm-tui-ops-"));
+  const root = mkdtempSync(join(tmpdir(), "tui-ops-"));
   const requested: string[] = [];
   let output = "";
   const agent = {
     id: "agt_tui",
-    name: "kxm-tui-test",
+    name: "tui-test",
     purpose: "Read-only mesh observer TUI",
     project: "test-project",
-    model: "kxm-tui",
+    model: "tui",
     connectedAt: "2026-08-27T13:59:00.000Z",
     lastSeenAt: "2026-08-27T13:59:00.000Z",
     online: true,
@@ -119,7 +119,7 @@ test("non-TTY dashboard prefers the authenticated metadata-only ops snapshot", a
 });
 
 test("dashboard falls back to the legacy presence stream when ops auth is unavailable", async () => {
-  const root = mkdtempSync(join(tmpdir(), "kxm-tui-legacy-"));
+  const root = mkdtempSync(join(tmpdir(), "tui-legacy-"));
   const agent = {
     id: "agt_legacy",
     name: "legacy-worker",
@@ -130,7 +130,7 @@ test("dashboard falls back to the legacy presence stream when ops auth is unavai
     lastSeenAt: "2026-08-27T13:59:00.000Z",
     online: true,
   };
-  const observer = { ...agent, id: "agt_observer", name: "kxm-tui-test", model: "kxm-tui" };
+  const observer = { ...agent, id: "agt_observer", name: "tui-test", model: "tui" };
   let registered = false;
   let unregistered = false;
   let output = "";
@@ -164,14 +164,14 @@ test("dashboard falls back to the legacy presence stream when ops auth is unavai
     assert.equal(registered, true);
     assert.equal(unregistered, true);
     assert.match(output, /legacy-worker/);
-    assert.doesNotMatch(output, /kxm-tui-test/);
+    assert.doesNotMatch(output, /tui-test/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
 
 test("interactive dashboard registers a legacy observer when ops access is lost mid-session", async () => {
-  const root = mkdtempSync(join(tmpdir(), "kxm-tui-transition-"));
+  const root = mkdtempSync(join(tmpdir(), "tui-transition-"));
   const abort = new AbortController();
   const encoder = new TextEncoder();
   let opsEventCalls = 0;
@@ -187,7 +187,7 @@ test("interactive dashboard registers a legacy observer when ops access is lost 
     lastSeenAt: "2026-08-27T13:59:00.000Z",
     online: true,
   };
-  const observer = { ...agent, id: "agt_transition_observer", name: "kxm-tui-transition", model: "kxm-tui" };
+  const observer = { ...agent, id: "agt_transition_observer", name: "tui-transition", model: "tui" };
   const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith("/health")) return new Response(JSON.stringify({ ok: true, agents: 1 }));
@@ -308,10 +308,10 @@ test("renderMeshTui omits message bodies, hides observer identities, and shows a
     onlineCount: 2,
     agents: [...snapshot.agents, {
       id: "agt_observer",
-      name: "kxm-tui-123",
+      name: "tui-123",
       purpose: "Read-only mesh observer TUI",
       project: "payk12",
-      model: "kxm-tui",
+      model: "tui",
       connectedAt: "2026-08-27T13:59:59.000Z",
       lastSeenAt: "2026-08-27T13:59:59.000Z",
       online: true,
@@ -322,7 +322,7 @@ test("renderMeshTui omits message bodies, hides observer identities, and shows a
   assert.match(frame, /live/);
   assert.doesNotMatch(frame, /secret body|password/i);
   assert.doesNotMatch(frame, /msg content/);
-  assert.doesNotMatch(frame, /kxm-tui-123/, "the observer must not pollute agent rows or counts");
+  assert.doesNotMatch(frame, /tui-123/, "the observer must not pollute agent rows or counts");
   assert.match(frame, /1\/1 online/);
   assert.doesNotMatch(frame, /\u001b\[/, "non-TTY snapshot must not contain ANSI controls");
 });
@@ -373,7 +373,7 @@ test("interactive dashboard uses the shared key reducer", () => {
 });
 
 test("SQLite snapshot projects message metadata without retaining bodies", () => {
-  const root = mkdtempSync(join(tmpdir(), "kxm-tui-privacy-"));
+  const root = mkdtempSync(join(tmpdir(), "tui-privacy-"));
   const dataPath = join(root, "kxm.db");
   const stateDir = join(root, "state");
   const database = new DatabaseSync(dataPath);

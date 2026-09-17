@@ -88,7 +88,7 @@ test("renderWorkflowWidgetLines renders complete stepper, role, model, and token
 });
 
 test("loadActiveWorkflowProgress returns undefined when state DB is absent", () => {
-  const emptyDir = mkdtempSync(join(tmpdir(), "kxm-tui-absent-"));
+  const emptyDir = mkdtempSync(join(tmpdir(), "tui-absent-"));
   try {
     assert.equal(loadActiveWorkflowProgress(emptyDir), undefined);
   } finally {
@@ -97,7 +97,7 @@ test("loadActiveWorkflowProgress returns undefined when state DB is absent", () 
 });
 
 test("loadActiveWorkflowProgress loads active run from DB and aggregates telemetry spend", () => {
-  const testDir = mkdtempSync(join(tmpdir(), "kxm-tui-live-"));
+  const testDir = mkdtempSync(join(tmpdir(), "tui-live-"));
   try {
     const kxmDir = join(testDir, ".kxm");
     const stateDir = join(kxmDir, "state");

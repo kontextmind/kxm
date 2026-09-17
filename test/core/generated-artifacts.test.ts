@@ -135,7 +135,7 @@ test("host generated artifact list is manifest-backed and includes owned mirrors
     "plugins/kxm/dist/cli.js",
     "plugins/kxm/dist/server.js",
     "plugins/kxm/dist/mcp-server.js",
-    "plugins/kxm/dist/vnext-runtime-supervisor.js",
+    "plugins/kxm/dist/runtime-supervisor.js",
     "plugins/kxm/dist/core.js",
     "plugins/kxm/dist/runtime.js",
     "plugins/kxm/dist/client.js",

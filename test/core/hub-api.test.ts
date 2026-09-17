@@ -530,7 +530,7 @@ test("legacy TUI fallback receives presence-only SSE and never queued message bo
     name: "presence-observer",
     purpose: "metadata observer",
     project: "test-project",
-    model: "kxm-tui",
+    model: "tui",
   });
   assert.equal(observerRegistration.response.status, 201);
   const observer = observerRegistration.identity!;

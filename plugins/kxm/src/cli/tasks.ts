@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { probeHarnessesAsync } from "../vnext-harness.ts";
+import { probeHarnessesAsync } from "../harness.ts";
 import { suggestWorkflowAndRoles } from "../suggest.ts";
 import {
   createGoal,
@@ -14,8 +14,8 @@ import {
   type TaskStatus,
   type TrackerType,
 } from "../task-manager.ts";
-import { discoverVnextProjectRoot } from "../vnext-config.ts";
-import { compileVnextWorkflow } from "../vnext-engine-compile.ts";
+import { discoverKxmProjectRoot } from "../project-config.ts";
+import { compileKxmWorkflow } from "../engine-compile.ts";
 import {
   createStudioServer,
   DEFAULT_STUDIO_PORT,
@@ -23,7 +23,7 @@ import {
 } from "../studio-layout.ts";
 import { readSessionTokenFromDisk } from "../commands.ts";
 import { print, type Runtime } from "./types.ts";
-import { cmdVnextRun } from "./vnext.ts";
+import { cmdKxmRun } from "./project.ts";
 
 export async function cmdSuggest(runtime: Runtime, promptParts: string[]): Promise<number> {
   try {
@@ -187,7 +187,7 @@ export async function cmdTaskRun(runtime: Runtime, taskId: string): Promise<numb
       return 1;
     }
     const workflow = task.assignedWorkflow ?? "default";
-    const exitCode = await cmdVnextRun(runtime, workflow, [task.objective]);
+    const exitCode = await cmdKxmRun(runtime, workflow, [task.objective]);
     if (exitCode === 0) {
       updateTaskStatus(runtime.cwd, taskId, "in_progress");
     }
@@ -218,7 +218,7 @@ export async function cmdTaskSync(runtime: Runtime, taskId: string): Promise<num
 
 export async function cmdStudioLayout(runtime: Runtime, workflowPath?: string | undefined): Promise<number> {
   try {
-    const projectRoot = discoverVnextProjectRoot(runtime.cwd) ?? runtime.cwd;
+    const projectRoot = discoverKxmProjectRoot(runtime.cwd) ?? runtime.cwd;
     let filePath = workflowPath;
     if (!filePath) {
       filePath = resolve(projectRoot, ".kxm", "workflows", "default.yaml");
@@ -267,7 +267,7 @@ steps:
 `;
     }
     const parsedYaml = parseYaml(yamlContent) as any;
-    const plan = compileVnextWorkflow({ id: workflowId, value: parsedYaml });
+    const plan = compileKxmWorkflow({ id: workflowId, value: parsedYaml });
     const layout = generateStudioLayout(plan);
     print(runtime.io, runtime.json, { ok: true, command: "studio layout", layout }, JSON.stringify(layout, null, 2));
     return 0;
@@ -317,7 +317,7 @@ export async function cmdStudioServe(
             const raw = readFileSync(targetPath, "utf8");
             const parsed = parseYaml(raw) as any;
             const wfId = basename(targetPath).replace(/\.(yaml|yml)$/, "");
-            return compileVnextWorkflow({ id: wfId, value: parsed });
+            return compileKxmWorkflow({ id: wfId, value: parsed });
           }
         } catch {
           // fallback

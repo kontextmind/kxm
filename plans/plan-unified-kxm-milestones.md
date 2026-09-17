@@ -178,7 +178,7 @@ ideas. Voice and managed mail-server deployment remain later research.
   Require scoped authentication/origin checks and safe rendering. Current
   `subagent-control.ts` maps are unintegrated sketches; do not expose their
   record-only steer/stop or premature spawn completion as working controls.
-  Rechecked at 02aaed31: [Pi outcome inference](https://github.com/kontextmind/kxm/blob/02aaed31fd6160a78378c677ab27d4119f039621/plugins/kxm/src/vnext-pi-producer.ts#L85-L98)
+  Rechecked at 02aaed31: [Pi outcome inference](https://github.com/kontextmind/kxm/blob/02aaed31fd6160a78378c677ab27d4119f039621/plugins/kxm/src/pi-producer.ts#L85-L98)
   and [standalone subagent records](https://github.com/kontextmind/kxm/blob/02aaed31fd6160a78378c677ab27d4119f039621/plugins/kxm/src/subagent-control.ts#L120-L161).
 - Redact memory body, summary, source/evidence references, tokens, URLs, native
   stderr and streamed fragments **before persistence**. Define migration or

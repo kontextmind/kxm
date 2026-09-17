@@ -158,8 +158,8 @@ The relevant memory and Studio code was not changed by that slice:
   limit. The older hub also has authenticated operations snapshots and live
   SSE. Integrate these deliberately; do not assume that the operations SSE is
   already a complete, durable vNext run stream.
-  [Run acceptance](https://github.com/kontextmind/kxm/blob/02aaed31fd6160a78378c677ab27d4119f039621/plugins/kxm/src/vnext-runtime.ts#L354-L440),
-  [event paging](https://github.com/kontextmind/kxm/blob/02aaed31fd6160a78378c677ab27d4119f039621/plugins/kxm/src/vnext-runtime-supervisor.ts#L525-L537),
+  [Run acceptance](https://github.com/kontextmind/kxm/blob/02aaed31fd6160a78378c677ab27d4119f039621/plugins/kxm/src/runtime-service.ts#L354-L440),
+  [event paging](https://github.com/kontextmind/kxm/blob/02aaed31fd6160a78378c677ab27d4119f039621/plugins/kxm/src/runtime-supervisor.ts#L525-L537),
   [operations SSE](https://github.com/kontextmind/kxm/blob/02aaed31fd6160a78378c677ab27d4119f039621/plugins/kxm/src/hub.ts#L1395-L1427).
 
 ## Target architecture
@@ -362,7 +362,7 @@ Communication needs its own reviewed outbox/receipt schema. KXM's current gate
 effect verifier specifically validates gate attempt/evidence rows; do not insert
 mail events into that namespace or interpret it as a generic send service.
 Preserve the same uncertainty discipline and Runtime ownership.
-[Gate evidence contract](https://github.com/kontextmind/kxm/blob/02aaed31fd6160a78378c677ab27d4119f039621/plugins/kxm/src/vnext-engine-evidence.ts#L35-L84).
+[Gate evidence contract](https://github.com/kontextmind/kxm/blob/02aaed31fd6160a78378c677ab27d4119f039621/plugins/kxm/src/engine-evidence.ts#L35-L84).
 
 ### Scope boundary
 

@@ -17,7 +17,7 @@ in `--evidence-refs`. Caller-authored text never satisfies peer quorum.
 | `kxm workflow checkpoint [runId] [stageId] [status] [summary]` | Record a stage result | `--run-id`, `--stage-id`, `--status passed\|warning\|failed`, `--summary`, `--evidence`, `--evidence-refs` |
 | `kxm workflow record [runId] [category] [area] [summary]` | Journal plan/decision/contradiction/error/lesson | `--category`, `--area`, `--severity`, `--details`, `--evidence` |
 | `kxm workflow wait [runId] [stageId] [signalKey] [summary]` | Wait for a signed callback | `--signal-key`, `--timeout-ms`, `--evidence`, `--evidence-refs` |
-| `kxm workflow signal <runId> <signalKey> <status> <summary>` | Resume a wait or vNext run | `[evidence...]`, `--delivery-id` |
+| `kxm workflow signal <runId> <signalKey> <status> <summary>` | Resume a wait or KXM run | `[evidence...]`, `--delivery-id` |
 | `kxm workflow start [definitionId]` | POST a signed workflow-start webhook | `--payload`, `--delivery-id`, `--event` |
 | `kxm workflow export <runId>` | Export a proposed retrospective | `--input`, `--out-dir` |
 | `kxm workflow definitions` | List definitions | `--scope all\|global\|local` |

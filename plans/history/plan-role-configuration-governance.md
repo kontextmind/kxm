@@ -168,7 +168,7 @@ export interface TerminalReceipt {
 }
 ```
 
-### 3. Bounded Retries with In-Place Escalation (`plugins/kxm/src/vnext-engine.ts`)
+### 3. Bounded Retries with In-Place Escalation (`plugins/kxm/src/engine.ts`)
 
 - Add `autoResumeLimit` (configurable in workflow, default 2) to stage execution loops.
 - When an agent generates a malformed or failing result, re-invoke within the same session context with the specific gate error message.
@@ -187,7 +187,7 @@ export interface TerminalReceipt {
 | :--- | :--- | :--- | :--- |
 | **Stage 1** | Implement `RoleSeatDefinition` and host configuration parser | [`plugins/kxm/src/role.ts`](../../plugins/kxm/src/role.ts) | Unit tests verify seat resolution and `--host` override precedence |
 | **Stage 2** | Implement `TerminalReceipt` schema and validation | [`plugins/kxm/src/protocol.ts`](../../plugins/kxm/src/protocol.ts) | Schemas validate against sample pass and escalation payloads |
-| **Stage 3** | Implement `autoResumeLimit` loop in workflow runner | [`plugins/kxm/src/vnext-engine.ts`](../../plugins/kxm/src/vnext-engine.ts) | Test verifies run halts at 2 retries and transitions to `audit_escalation` |
+| **Stage 3** | Implement `autoResumeLimit` loop in workflow runner | [`plugins/kxm/src/engine.ts`](../../plugins/kxm/src/engine.ts) | Test verifies run halts at 2 retries and transitions to `audit_escalation` |
 | **Stage 4** | Implement `kxm role resume <runId> [message]` command | [`plugins/kxm/src/commands.ts`](../../plugins/kxm/src/commands.ts) | Test confirms run reopens and continues to completion after ruling |
 
 ---

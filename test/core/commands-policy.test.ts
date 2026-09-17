@@ -23,7 +23,7 @@ import {
   timingSafeStringCompare,
 } from "../../plugins/kxm/src/commands.ts";
 import { runCli as runCliImplementation, type CliIo } from "../../plugins/kxm/src/cli.ts";
-import { initializeVnextProject } from "../../plugins/kxm/src/vnext-init.ts";
+import { initializeKxmProject } from "../../plugins/kxm/src/init.ts";
 
 function capture() {
   let stdout = "";
@@ -320,11 +320,11 @@ test("kxm router skill scopes tool_policy_denied to agent-command and MCP/extens
   );
 });
 
-test("kxm workflow wait and signal support dry-run binding for vNext runs", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "kxm-vnext-test-"));
+test("kxm workflow wait and signal support dry-run binding for KXM runs", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "kxm-test-"));
   try {
     spawnSync("git", ["-c", "init.defaultBranch=main", "init", "--quiet", dir], { encoding: "utf8", windowsHide: true });
-    initializeVnextProject(dir, { projectId: "prj_01JRUNTEST000000000000", projectName: "Test vNext" });
+    initializeKxmProject(dir, { projectId: "prj_01JRUNTEST000000000000", projectName: "Test KXM" });
     const fakeRunId = "run_0123456789abcdef0123456789abcdef";
     const waitRes = await runCli([
       "workflow", "wait",
@@ -348,7 +348,7 @@ test("kxm workflow wait and signal support dry-run binding for vNext runs", asyn
       "--json",
     ], {}, undefined, dir);
     assert.equal(signalRes.exit, 0);
-    assert.match(signalRes.stdout, /would post signal to vNext run/);
+    assert.match(signalRes.stdout, /would post signal to KXM run/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

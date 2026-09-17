@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.kxm.dev/environment.schema.json",
+  "title": "KXM portable environment overrides",
+  "type": "object",
+  "required": ["schema"],
+  "properties": {
+    "schema": { "const": "kxm.environment.v1" },
+    "values": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Z_][A-Z0-9_]*$",
+        "maxLength": 128,
+        "not": {
+          "pattern": "(?:SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE_KEY|API_KEY|CREDENTIAL|DATABASE_URL|CONNECTION_STRING)"
+        }
+      },
+      "additionalProperties": {
+        "oneOf": [
+          { "type": "string", "maxLength": 4096 },
+          { "type": "number" },
+          { "type": "boolean" }
+        ]
+      },
+      "maxProperties": 256
+    },
+    "secrets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "ref"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Z_][A-Z0-9_]*$",
+            "maxLength": 128
+          },
+          "ref": { "$ref": "common.schema.json#/$defs/identifier" },
+          "required": { "type": "boolean", "default": true }
+        },
+        "additionalProperties": false
+      },
+      "maxItems": 128
+    },
+    "path": {
+      "type": "object",
+      "properties": {
+        "prepend": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/relativePath" },
+          "uniqueItems": true,
+          "maxItems": 32
+        },
+        "append": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/relativePath" },
+          "uniqueItems": true,
+          "maxItems": 32
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
