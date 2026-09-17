@@ -38,6 +38,10 @@ All notable user-facing changes are documented here. The project follows [Semant
   happens to share the product's version is left alone, and a workspace package
   with no lock entry fails loudly instead of releasing half-bumped.
 
+- **`kxm hub start` no longer generates and persists an admin token when it is
+  about to refuse** because another hub already owns the claim. A refused start
+  used to leave behind credentials the running hub never issued.
+
 ## 0.7.0 - 2026-09-11
 
 ### Added
