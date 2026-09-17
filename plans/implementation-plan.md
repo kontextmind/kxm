@@ -358,6 +358,29 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 ### Landed in this tree (unreleased)
 
+- **Release version surfaces include workspace packages (2026-09-17):** landing
+  `packages/core/tui` in #242 made the release pipeline fail on every merged PR.
+  `scripts/check-versions.mjs` (the gate) already scanned `packages/**` and so
+  demanded a surface that `scripts/kxm-bump-version.mjs` (the writer) never
+  touched: the Release job bumped the tag version into the root/plugin surfaces,
+  then its own `validate:ci` step tripped over
+  `packages/core/tui must share the repository version — '0.7.1' !== '0.7.41'`.
+  Both scripts now take their package list from one module,
+  `scripts/package-surfaces.mjs`, so a checker and a writer cannot disagree about
+  what a package is. The lockfile is patched **by key** (root, `packages[""]`,
+  each workspace entry) instead of by searching for the old version string: a
+  third-party dependency that happens to carry the same version as the product
+  used to be rewritten into a phantom artifact, poisoning `npm ci`.
+  A workspace package with no lock entry now fails loudly instead of releasing
+  half-bumped. Evidence: `test/core/version-surfaces.test.ts` (5 tests — 3 of them
+  fail on the pre-fix bumper, verified by running the new file against main's
+  script); a bump of a full copy of this tree to 0.7.43 reports "all package
+  surfaces use version 0.7.43 (9 checked)", passes the exact `package-layers`
+  assertion CI failed on, changes only the root and workspace lock `version`
+  fields with an unchanged key set, and `npm ci --dry-run` still resolves.
+  `npm run verify` green. Releases v0.7.41/v0.7.42 are not re-cut here — no tag
+  or registry operation was performed.
+
 - **Stash reconciliation: the read-only GET projection survives the naming
   sweep (2026-09-17):** the restructure above sat in an index partially
   populated by a `git stash pop` of pre-rename WIP, and five paths conflicted:
@@ -1345,10 +1368,16 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   describes a development host, not proof of advertised macOS support.
 - **Release resumption and next candidate:** the earlier 0.6.0 latch removal,
   publishing environment and fail-closed publish script are historical completed
-  setup. Read-only checks on 2026-09-15 UTC find published GitHub v0.6.0/v0.7.0
-  and npm latest 0.7.0; `main` is a draft release. This does not accept current
-  source 0.7.1 or clear the one-shot/retirement blockers. Release maintainer owns
-  M9 scope and exact-candidate evidence; Windows resumption remains separate.
+  setup. Read-only checks on 2026-09-17 UTC find GitHub latest release **v0.7.40**
+  and **npm latest 0.7.40**, with repository version 0.7.1 unreleased. Tags
+  **v0.7.41 and v0.7.42 exist with no GitHub release**: the Release job's
+  "Sync version surfaces from tag" step did not know about the new workspace
+  package, so its own gate failed (see Landed: release version surfaces). The
+  release maintainer owns whether to re-dispatch Release for those tags or let
+  the next merged PR cut the following one; deleting a tag is an operator call.
+  None of this accepts current source 0.7.1 or clears the one-shot/retirement
+  blockers. Release maintainer owns M9 scope and exact-candidate evidence;
+  Windows resumption remains separate.
 - **Public-package follow-ups:** context maintainer may select a bounded
   compiled-from-hub wiki slice now that publication exists; package maintainer
   owns any explicitly selected default-updater change and installed-source

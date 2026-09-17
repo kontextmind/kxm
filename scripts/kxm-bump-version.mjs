@@ -9,14 +9,22 @@
  *   node scripts/kxm-bump-version.mjs minor               # bump minor
  *   node scripts/kxm-bump-version.mjs major               # bump major
  *
- * Surfaces updated (must stay in sync with scripts/check-versions.mjs):
+ * Surfaces updated (must stay in sync with scripts/check-versions.mjs — both
+ * take their package list from scripts/package-surfaces.mjs):
  *   1. package.json                          .version
  *   2. package-lock.json                     .version + .packages[""].version
+ *      + .packages[<workspace path>].version
  *   3. plugins/kxm/package.json              .version
  *   4. plugins/kxm/.claude-plugin/plugin.json .version
  *   5. .claude-plugin/marketplace.json       .plugins[name=kxm].version
  *   6. plugins/kxm/src/mcp-server.ts         const VERSION = "..."
  *   7. plugins/kxm/dist/mcp-server.js        const VERSION = "..." (rebuilt)
+ *   8. each workspace manifest scanned under packages/ —
+ *      packages/<name>/package.json and packages/<tier>/<name>/package.json
+ *
+ * The lockfile is patched by key, never by searching for the old version string:
+ * a third-party dependency that happens to carry the same version as the
+ * product must not be rewritten into a phantom artifact.
  *
  * After running this script, run `npm run build` to rebuild dist bundles.
  */
@@ -24,6 +32,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { workspaceManifestPaths } from "./package-surfaces.mjs";
 
 const SEMVER_RE = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+([0-9A-Za-z.-]+))?$/;
 
@@ -79,6 +88,43 @@ function patchSourceVersion(filePath, newVersion) {
   writeFileSync(filePath, patched, "utf8");
 }
 
+/**
+ * Patch the lockfile structurally: the root entry and each workspace package
+ * entry, by key. Everything else — including an unrelated dependency whose
+ * version string equals ours — is left byte-for-byte alone.
+ */
+function patchLockVersions(root, newVersion) {
+  const file = resolve(root, "package-lock.json");
+  const raw = readFileSync(file, "utf8");
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`package-lock.json is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const touched = [];
+  if (typeof data.version === "string") {
+    data.version = newVersion;
+    touched.push("version");
+  }
+  if (data.packages?.[""]) {
+    data.packages[""].version = newVersion;
+    touched.push('packages[""]');
+  }
+  for (const rel of workspaceManifestPaths(root)) {
+    const entry = data.packages?.[rel];
+    if (!entry) {
+      throw new Error(`package-lock.json has no entry for workspace package ${rel}; run npm install to resync the lock`);
+    }
+    entry.version = newVersion;
+    touched.push(`packages[${rel}]`);
+  }
+  if (touched.length === 0) throw new Error("no version fields found to patch in package-lock.json");
+  const trailingNewline = raw.endsWith("\n") ? "\n" : "";
+  writeFileSync(file, `${JSON.stringify(data, null, 2)}${trailingNewline}`, "utf8");
+  return touched;
+}
+
 export function applyVersionBump(root, newVersion) {
   if (!parseSemver(newVersion)) {
     throw new Error(`invalid semver: ${newVersion}`);
@@ -88,17 +134,21 @@ export function applyVersionBump(root, newVersion) {
   const pkgPath = resolve(root, "package.json");
   const oldVersion = JSON.parse(readFileSync(pkgPath, "utf8")).version;
 
-  // JSON surfaces (targeted patch preserves formatting)
+  // JSON manifests (targeted patch preserves formatting). Workspace packages are
+  // scanned, not hard-coded: a new package must not be releasable-then-forgotten.
   const jsonFiles = [
     "package.json",
-    "package-lock.json",
     "plugins/kxm/package.json",
     "plugins/kxm/.claude-plugin/plugin.json",
     ".claude-plugin/marketplace.json",
+    ...workspaceManifestPaths(root).map((rel) => `${rel}/package.json`),
   ];
   for (const rel of jsonFiles) {
     patchJsonVersion(resolve(root, rel), oldVersion, newVersion);
   }
+
+  // Lockfile by key, after the manifests so a missing workspace entry fails loudly.
+  patchLockVersions(root, newVersion);
 
   // TypeScript source
   patchSourceVersion(resolve(root, "plugins/kxm/src/mcp-server.ts"), newVersion);

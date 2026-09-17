@@ -27,6 +27,17 @@ All notable user-facing changes are documented here. The project follows [Semant
   persisting a projection write, so a read cannot mutate run state or surface a
   false `run_projection_divergent`.
 
+### Fixed
+
+- **Release version surfaces cover workspace packages:** a merged PR no longer
+  breaks the release pipeline. `scripts/kxm-bump-version.mjs` now writes the
+  version into every package manifest under `packages/`, using the same package
+  scan that `scripts/check-versions.mjs` enforces (both import
+  `scripts/package-surfaces.mjs`), and patches `package-lock.json` by key rather
+  than by searching for the old version string — a third-party dependency that
+  happens to share the product's version is left alone, and a workspace package
+  with no lock entry fails loudly instead of releasing half-bumped.
+
 ## 0.7.0 - 2026-09-11
 
 ### Added
