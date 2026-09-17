@@ -381,6 +381,22 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   `npm run verify` green. Releases v0.7.41/v0.7.42 are not re-cut here — no tag
   or registry operation was performed.
 
+- **A refused `kxm hub start` no longer mints credentials (2026-09-17):**
+  `resolveCredentials()` ran at module load, so on a machine whose
+  `hub-env.json` held no `authToken` the wrapper generated and persisted a fresh
+  admin token and *only then* refused with "KXM hub is already managed by PID
+  <n>" — leaving a token no running hub trusts. Observed against the operator's
+  hub, up since 2026-09-10; `hub view` and `peer list` kept working, so no live
+  breakage resulted, but the ordering was wrong. The wrapper now reads the claim
+  first (`liveHubClaimPid()`, read-only) and refuses before any credential is
+  generated or persisted. The atomic `claimPidFile()` loop keeps sole authority
+  over malformed, stale and dead claims — this is a pre-flight, not a second
+  liveness policy. `test/core/hub-env.test.ts` pins it: a well-formed claim on a
+  live pid must exit nonzero, print "already managed by PID", leave the claim
+  file alone, write no `hub-env.json`, and never log "newly generated
+  KXM_AUTH_TOKEN". That test fails against the pre-fix script, verified by
+  running it with the fix reverted.
+
 - **Stash reconciliation: the read-only GET projection survives the naming
   sweep (2026-09-17):** the restructure above sat in an index partially
   populated by a `git stash pop` of pre-rename WIP, and five paths conflicted:
@@ -1143,17 +1159,6 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   (the runners have none); installing Bun on the runners is a separate change
   that carries its own CI evidence. Windows automation stays paused, not deprecated. No
   phase gate changes until a slice carries its own witness.
-
-- **Hub start mints an admin token before the already-managed check (owner:
-  hub/runtime maintainer; trigger: next touch of `scripts/kxm-hub.mjs`):**
-  `resolveCredentials()` runs at module load, so `kxm hub start` on a machine
-  whose `hub-env.json` holds no `authToken` persists a freshly generated admin
-  token and only *then* refuses with "KXM hub is already managed by PID <n>".
-  A refused start can therefore leave a token the live hub never issued. Observed
-  2026-09-17 with a hub running since 2026-09-10; `hub view` and `peer list`
-  still worked, so no live breakage was seen. Fix is ordering — refuse a
-  conflicting start before persisting credentials — in a change with its own
-  test, not smuggled into a behaviour-neutral rename.
 
 - **Unified capability delivery (M0–M9; proposed, consolidated 2026-09-14):**
   [The unified plan](plan-unified-kxm-milestones.md) owns proposed scope,

@@ -39,6 +39,29 @@ function processExists(pid) {
   }
 }
 
+/**
+ * Live hub claim, if any. Read-only: returns the pid of a well-formed
+ * `hub.pid` claim whose wrapper is still alive, otherwise null.
+ *
+ * Claims that are missing, malformed, dead, or stale return null so the
+ * atomic `claimPidFile()` below keeps sole authority over those cases — it is
+ * the real single-instance guard and fails closed on them. This exists only so
+ * a start that is certainly going to be refused can refuse *before* it
+ * persists credentials.
+ */
+function liveHubClaimPid() {
+  let existing;
+  try {
+    existing = JSON.parse(readFileSync(pidPath, "utf8"));
+  } catch {
+    return null;
+  }
+  if (existing?.version === 1 && existing.role === "hub" && Number.isInteger(existing.pid) && processExists(existing.pid)) {
+    return existing.pid;
+  }
+  return null;
+}
+
 function parseHubEnvFile() {
   const file = join(resolveUserStateRoot(), "hub-env.json");
   let raw;
@@ -121,6 +144,19 @@ function resolveCredentials() {
   }
   return { authToken, authTokenSource, projectTokens, projectTokensSource, file };
 }
+
+// Pre-flight: refuse a start that a live hub already owns before
+// resolveCredentials() can generate and persist an admin token that the
+// running hub never issued. `kxm hub start` used to mint the credential at
+// module load and only then report "already managed by PID <n>", leaving a
+// hub-env.json whose token no process trusts.
+try {
+  const livePid = liveHubClaimPid();
+  if (livePid) {
+    process.stderr.write(`kxm hub: KXM hub is already managed by PID ${livePid}. Run kxm hub stop before starting another hub.\n`);
+    process.exit(1);
+  }
+} catch { /* the atomic claim below still guards startup */ }
 
 let credentials;
 try {

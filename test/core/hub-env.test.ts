@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -144,6 +144,44 @@ test("generateHubAuthToken produces long unique url-safe tokens", () => {  const
     seen.add(token);
   }
   assert.equal(seen.size, 16);
+});
+
+/** A start that a live hub already owns must refuse before it writes credentials. */
+test("kxm-hub wrapper refuses a live-hub conflict without minting an admin token", { timeout: 60_000 }, async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "kxm-hub-wrap-clash-"));
+  const userState = mkdtempSync(join(tmpdir(), "kxm-hub-wrap-clash-state-"));
+  const stateDir = join(workdir, ".kxm", "state");
+  mkdirSync(stateDir, { recursive: true });
+  // A well-formed claim whose pid is alive (this test runner): the exact shape
+  // `claimPidFile()` refuses on.
+  const claim = { version: 1, pid: process.pid, role: "hub", startedAt: new Date().toISOString(), controlFile: "hub.stop" };
+  const envFile = join(userState, "hub-env.json");
+  try {
+    writeFileSync(join(stateDir, "hub.pid"), `${JSON.stringify(claim)}\n`, "utf8");
+    const proc = spawn(process.execPath, ["scripts/kxm-hub.mjs"], {
+      cwd: process.cwd(),
+      env: { ...process.env, KXM_WORKDIR: workdir, KXM_STATE_HOME: userState, KXM_PORT: "0" },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let out = "";
+    let err = "";
+    proc.stdout!.setEncoding("utf8").on("data", (chunk: string) => { out += chunk; });
+    proc.stderr!.setEncoding("utf8").on("data", (chunk: string) => { err += chunk; });
+    const code = await new Promise<number | null>((resolveExit) => proc.once("exit", resolveExit));
+
+    assert.notEqual(code, 0, "a refused start exits nonzero");
+    assert.match(err, /already managed by PID/);
+    assert.doesNotMatch(out + err, /newly generated KXM_AUTH_TOKEN/, "must not mint a token for a hub it will not start");
+    assert.equal(existsSync(envFile), false, "a refused start must not persist hub credentials");
+    assert.deepEqual(
+      JSON.parse(readFileSync(join(stateDir, "hub.pid"), "utf8")).pid,
+      process.pid,
+      "the live claim is left untouched",
+    );
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+    rmSync(userState, { recursive: true, force: true });
+  }
 });
 
 /** End-to-end wrapper run: generated token is injected, persisted, and reused. */
