@@ -381,7 +381,16 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   `@types/node@26.4.1` with no matching resolution, so every `npm ci` leg failed
   with EUSAGE before a single test ran. Aligned that devDependency to the root
   `26.5.1` (hoists, no nested typings copy) and regenerated the lock; `npm ci
-  --dry-run` is now in sync. No assignment, witness record, or
+  --dry-run` is now in sync. CI also caught a hard dependency the local Mac
+  could not see: `packages/core/tui/project.json` ran its targets through
+  `bun run`, and the DOKS runners have no Bun — both Validate legs died in
+  `build:packages` with `/bin/sh: 1: bun: not found` before a single test
+  executed. The four targets now call `npm run` (Bun stays an optional local
+  entry point, documented in `bunfig.toml`), which keeps the decided rule
+  intact: CI installs with `npm ci` and builds on Node alone. `npm run
+  test:packages` passes offline-equivalent (31 tui tests, typecheck+build gate),
+  and `packages/core/tui/dist/index.js` rebuilds byte-identical after `rm -rf`.
+  No assignment, witness record, or
   acceptance is minted here: this is a merge resolution in the working tree.
 
 - **Naming sweep: no `kxm-` package prefix, no `vnext` anywhere (2026-09-17):** Dropped the
@@ -1102,9 +1111,9 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   Remaining work, slice by slice, not in one sweep: move the flat
   `plugins/kxm/src/*.ts` tree into `packages/<tier>/<name>` in the decided layer
   shape as each slice is picked up (`packages/core/tui` is the only package
-  migrated so far), and qualify `bun install`/`bun run` on CI legs in a separate
-  change that carries its own CI evidence — Node 22.19.0/24 remain the supported
-  host runtime until then. Windows automation stays paused, not deprecated. No
+  migrated so far). CI legs stay npm + Node 22.19.0/24 and must not require Bun
+  (the runners have none); installing Bun on the runners is a separate change
+  that carries its own CI evidence. Windows automation stays paused, not deprecated. No
   phase gate changes until a slice carries its own witness.
 
 - **Unified capability delivery (M0–M9; proposed, consolidated 2026-09-14):**

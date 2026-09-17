@@ -6,22 +6,22 @@
   "tags": ["scope:core", "type:terminal", "layer:ui"],
   "targets": {
     "build": {
-      "command": "bun run build",
+      "command": "npm run build",
       "options": { "cwd": "packages/core/tui" },
       "outputs": ["{projectRoot}/dist"],
       "cache": true
     },
     "test": {
-      "command": "bun run test",
+      "command": "npm run test",
       "options": { "cwd": "packages/core/tui" },
       "dependsOn": ["typecheck"]
     },
     "test:coverage": {
-      "command": "bun run test:coverage",
+      "command": "npm run test:coverage",
       "options": { "cwd": "packages/core/tui" }
     },
     "typecheck": {
-      "command": "bun run typecheck",
+      "command": "npm run typecheck",
       "options": { "cwd": "packages/core/tui" }
     }
   }
