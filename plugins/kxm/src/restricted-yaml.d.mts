@@ -1,7 +1,7 @@
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 export type JsonObject = { [key: string]: JsonValue };
 
-export interface VnextYamlLimits {
+export interface KxmYamlLimits {
   maxDocumentBytes: number;
   maxDepth: number;
   maxScalarBytes: number;
@@ -10,7 +10,7 @@ export interface VnextYamlLimits {
   maxKeys: number;
 }
 
-export const VNEXT_YAML_LIMITS: Readonly<VnextYamlLimits>;
+export const KXM_YAML_LIMITS: Readonly<KxmYamlLimits>;
 
 export interface RestrictedYamlIssue {
   phase: "parse";
@@ -27,5 +27,5 @@ export class RestrictedYamlError extends Error {
 export function parseRestrictedYaml(
   input: string | Uint8Array,
   label?: string,
-  limits?: Readonly<VnextYamlLimits>,
+  limits?: Readonly<KxmYamlLimits>,
 ): JsonObject;

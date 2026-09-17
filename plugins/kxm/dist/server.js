@@ -10966,12 +10966,12 @@ var DatabaseSync = class {
   }
 };
 
-// plugins/kxm/src/vnext-config.ts
+// plugins/kxm/src/project-config.ts
 import { basename as basename2, dirname as dirname3, extname as extname2, isAbsolute, join as join4, relative, resolve as resolve3, sep } from "node:path";
 
 // plugins/kxm/src/restricted-yaml.mjs
 var import_yaml3 = __toESM(require_dist(), 1);
-var VNEXT_YAML_LIMITS = Object.freeze({
+var KXM_YAML_LIMITS = Object.freeze({
   maxDocumentBytes: 256 * 1024,
   maxDepth: 32,
   maxScalarBytes: 64 * 1024,
@@ -10980,7 +10980,7 @@ var VNEXT_YAML_LIMITS = Object.freeze({
   maxKeys: 8192
 });
 
-// plugins/kxm/src/vnext-template.ts
+// plugins/kxm/src/template.ts
 var import_yaml4 = __toESM(require_dist(), 1);
 
 // plugins/kxm/src/repo-root.ts
@@ -11002,10 +11002,10 @@ function findKxmRepoRoot(fromUrl = import.meta.url) {
   );
 }
 
-// plugins/kxm/src/vnext-oneshot-process.ts
+// plugins/kxm/src/oneshot-process.ts
 var OUTPUT_LIMIT = 8 * 1024 * 1024;
 
-// plugins/kxm/src/vnext-harness.ts
+// plugins/kxm/src/harness.ts
 var NATIVE_HARNESS_PROVIDERS = Object.freeze({
   claude: "anthropic",
   codex: "openai",
@@ -11370,20 +11370,20 @@ var WIN_NPM_INNER_EXE = Object.freeze({
   claude: Object.freeze(["node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe"])
 });
 
-// plugins/kxm/src/vnext-config.ts
-var VnextConfigError = class extends Error {
+// plugins/kxm/src/project-config.ts
+var KxmConfigError = class extends Error {
   issues;
   constructor(issues) {
     const sorted = sortIssues(issues);
     super(sorted.map((issue) => `${issue.file}: ${issue.code}: ${issue.message}`).join("\n"));
-    this.name = "VnextConfigError";
+    this.name = "KxmConfigError";
     this.issues = sorted;
   }
 };
-function defaultVnextSchemaDir() {
-  return join4(findKxmRepoRoot(import.meta.url), "schemas", "vnext");
+function defaultKxmSchemaDir() {
+  return join4(findKxmRepoRoot(import.meta.url), "schemas");
 }
-var DEFAULT_SCHEMA_DIR = defaultVnextSchemaDir();
+var DEFAULT_SCHEMA_DIR = defaultKxmSchemaDir();
 var RESOURCE_SCHEMA = Object.freeze({
   project: { identity: "kxm.project.v1", file: "project.schema.json" },
   repository: { identity: "kxm.repository.v1", file: "repository.schema.json" },
@@ -11403,7 +11403,7 @@ function sortIssues(issues) {
 // plugins/kxm/src/database.ts
 function databaseError(code, file, message) {
   const issue = { phase: "semantic", code, file, message };
-  return new VnextConfigError([issue]);
+  return new KxmConfigError([issue]);
 }
 function checkedParent(path, description) {
   const parent = dirname4(path);
@@ -13957,7 +13957,7 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
         const current = requireAgent(request, agentId);
         requireProjectAuth(request, current.project);
         const presenceOnly = url.searchParams.get("presenceOnly") === "true";
-        if (presenceOnly && current.model !== "kxm-tui") {
+        if (presenceOnly && current.model !== "tui") {
           throw new ProtocolError(403, "presence-only streams are reserved for metadata observers", "presence_stream_forbidden");
         }
         response.writeHead(200, {

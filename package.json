@@ -32,14 +32,14 @@
     "example": "node --disable-warning=ExperimentalWarning --experimental-strip-types examples/roundtrip.ts",
     "build:mcp": "esbuild plugins/kxm/src/mcp-server.ts --bundle --platform=node --format=esm --target=node22 --alias:@modelcontextprotocol/sdk/server/index.js=./node_modules/@modelcontextprotocol/sdk/dist/esm/server/index.js --alias:@modelcontextprotocol/sdk/server/stdio.js=./node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js --alias:@modelcontextprotocol/sdk/types.js=./node_modules/@modelcontextprotocol/sdk/dist/esm/types.js --outfile=plugins/kxm/dist/mcp-server.js --banner:js=\"#!/usr/bin/env node\"",
     "build:runtime": "node scripts/build-runtime.mjs",
-    "build": "npm run build:mcp && npm run build:runtime",
+    "build": "npm run build:mcp && npm run build:runtime && npm run build:packages",
     "check:generated": "npm run build && node scripts/check-generated.mjs",
     "test:core": "npm run build && node --disable-warning=ExperimentalWarning --experimental-strip-types --test --test-concurrency=4 test/core/*.test.ts",
     "test:simulations": "npm run build && node --disable-warning=ExperimentalWarning --experimental-strip-types --test --test-concurrency=4 test/simulations/*.test.ts",
     "test:complete": "npm run build && node --disable-warning=ExperimentalWarning --experimental-strip-types --test --test-concurrency=4 test/core/*.test.ts test/simulations/*.test.ts",
-    "test": "npm run test:core",
-    "test:coverage:core": "npm run build && node --disable-warning=ExperimentalWarning --experimental-strip-types --test --test-concurrency=4 --experimental-test-coverage --test-coverage-lines=91 --test-coverage-branches=80 --test-coverage-functions=92 --test-coverage-include=plugins/kxm/src/**/*.ts --test-coverage-exclude=plugins/kxm/src/server.ts --test-coverage-exclude=plugins/kxm/src/mcp-server.ts --test-coverage-exclude=plugins/kxm/src/vnext-runtime-supervisor.ts test/core/*.test.ts",
-    "test:coverage:complete": "npm run build && node --disable-warning=ExperimentalWarning --experimental-strip-types --test --test-concurrency=4 --experimental-test-coverage --test-coverage-lines=93 --test-coverage-branches=80 --test-coverage-functions=93 --test-coverage-include=plugins/kxm/src/**/*.ts --test-coverage-exclude=plugins/kxm/src/server.ts --test-coverage-exclude=plugins/kxm/src/mcp-server.ts --test-coverage-exclude=plugins/kxm/src/vnext-runtime-supervisor.ts test/core/*.test.ts test/simulations/*.test.ts",
+    "test": "npm run build && node --disable-warning=ExperimentalWarning --experimental-strip-types --test --test-concurrency=4 test/core/*.test.ts packages/core/*/tests/unit/*.test.ts",
+    "test:coverage:core": "npm run build && node --disable-warning=ExperimentalWarning --experimental-strip-types --test --test-concurrency=4 --experimental-test-coverage --test-coverage-lines=91 --test-coverage-branches=80 --test-coverage-functions=92 --test-coverage-include=plugins/kxm/src/**/*.ts --test-coverage-exclude=plugins/kxm/src/server.ts --test-coverage-exclude=plugins/kxm/src/mcp-server.ts --test-coverage-exclude=plugins/kxm/src/runtime-supervisor.ts --test-coverage-include=packages/core/*/src/**/*.ts test/core/*.test.ts packages/core/*/tests/unit/*.test.ts",
+    "test:coverage:complete": "npm run build && node --disable-warning=ExperimentalWarning --experimental-strip-types --test --test-concurrency=4 --experimental-test-coverage --test-coverage-lines=93 --test-coverage-branches=80 --test-coverage-functions=93 --test-coverage-include=plugins/kxm/src/**/*.ts --test-coverage-exclude=plugins/kxm/src/server.ts --test-coverage-exclude=plugins/kxm/src/mcp-server.ts --test-coverage-exclude=plugins/kxm/src/runtime-supervisor.ts --test-coverage-include=packages/core/*/src/**/*.ts test/core/*.test.ts test/simulations/*.test.ts packages/core/*/tests/unit/*.test.ts",
     "test:coverage": "npm run test:coverage:core",
     "typecheck": "tsc --noEmit",
     "lint:docs": "markdownlint-cli2",
@@ -49,7 +49,10 @@
     "validate:claude": "claude plugin validate . --strict && claude plugin validate plugins/kxm --strict",
     "validate:ci": "npm run test:coverage && npm run check && npm pack --dry-run",
     "validate:pr": "npm run test:core && npm run check && npm run check:generated",
-    "validate": "npm run validate:ci && npm run validate:claude"
+    "validate": "npm run validate:ci && npm run validate:claude",
+    "test:packages": "npx nx run-many -t test --output-style=static",
+    "check:packages": "npx nx run-many -t build,test:coverage,typecheck --output-style=static",
+    "build:packages": "npx nx run-many -t build --output-style=stream"
   },
   "bin": {
     "kxm": "./scripts/kxm.mjs"
@@ -60,7 +63,8 @@
     "./client": "./plugins/kxm/dist/client.js",
     "./extension": "./plugins/kxm/dist/extension.js",
     "./mcp": "./plugins/kxm/dist/mcp-server.js",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./tui": "./packages/core/tui/dist/index.js"
   },
   "pi": {
     "extensions": [
@@ -96,6 +100,7 @@
     "commander": "15.0.0",
     "esbuild": "0.28.2",
     "markdownlint-cli2": "0.23.2",
+    "nx": "23.2.1",
     "tsx": "^4.23.13",
     "typebox": "1.3.30",
     "typescript": "7.0.2"
@@ -116,6 +121,8 @@
     "plugins/kxm/package.json",
     "plugins/kxm/README.md",
     "plugins/kxm/dist",
+    "packages/core/tui/dist",
+    "packages/core/tui/src",
     "plugins/kxm/skills",
     "plugins/kxm/src",
     "scripts",
@@ -127,5 +134,8 @@
     "LICENSE",
     "SECURITY.md"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "workspaces": [
+    "packages/core/*"
+  ]
 }

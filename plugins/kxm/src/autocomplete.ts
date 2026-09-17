@@ -131,15 +131,15 @@ _kxm() {
 
   local -a commands
   commands=(
-    'init:Create or validate a vNext project'
+    'init:Create or validate a KXM project'
     'migrate:Plan, apply, and verify legacy configuration migration'
     'backup:Create a verified SQLite backup manifest'
     'restore:Restore SQLite stores from a backup manifest'
-    'run:Create a vNext workflow run'
-    'runs:Inspect vNext runs'
+    'run:Create a KXM workflow run'
+    'runs:Inspect KXM runs'
     'harness:Detect coding-agent harnesses and auth'
     'update:Update kxm, harness CLIs, and model catalogs'
-    'runtime:Manage the vNext Runtime supervisor'
+    'runtime:Manage the KXM Runtime supervisor'
     'trust:Permission-diff trust review'
     'agent:Run and supervise agents'
     'session:Create manifests and brief recent hub work'

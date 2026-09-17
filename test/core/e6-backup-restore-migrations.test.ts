@@ -25,11 +25,11 @@ import {
   type StoredAgent,
 } from "../../plugins/kxm/src/store.ts";
 import {
-  VnextRuntimeRegistry,
-  VnextRunEventStore,
-  VNEXT_REGISTRY_SCHEMA_VERSION,
-  VNEXT_EVENT_STORE_SCHEMA_VERSION,
-} from "../../plugins/kxm/src/vnext-runtime-store.ts";
+  KxmRuntimeRegistry,
+  KxmRunEventStore,
+  KXM_REGISTRY_SCHEMA_VERSION,
+  KXM_EVENT_STORE_SCHEMA_VERSION,
+} from "../../plugins/kxm/src/runtime-store.ts";
 import { Ajv2020 } from "ajv/dist/2020.js";
 
 function setupTestEnv() {
@@ -298,7 +298,7 @@ test("kxm backup and restore round-trip preserves all stores and data with manif
 
     // 2. Seed runtime registry
     const registryPath = join(runtimeDir, "registry.db");
-    const registry = new VnextRuntimeRegistry(registryPath);
+    const registry = new KxmRuntimeRegistry(registryPath);
     registry.claimSupervisor({
       runtimeId: "rt_test_1",
       pid: process.pid,
@@ -316,7 +316,7 @@ test("kxm backup and restore round-trip preserves all stores and data with manif
 
     // 3. Seed event store
     const eventStorePath = join(eventsDir, "key_001.db");
-    const eventStore = new VnextRunEventStore(eventStorePath);
+    const eventStore = new KxmRunEventStore(eventStorePath);
     eventStore.transaction(() => {
       eventStore.insertRun({
         runId: "run_test_01",
@@ -346,11 +346,11 @@ test("kxm backup and restore round-trip preserves all stores and data with manif
     assert.equal(manifest.stores.length, 3);
     assert.ok(manifest.stores.some((s) => s.storeId === "hub-store" && s.schemaVersion === 3));
     assert.ok(manifest.stores.some((s) => s.storeId === "registry" && s.schemaVersion === 1));
-    assert.ok(manifest.stores.some((s) => s.storeId === "events:key_001" && s.schemaVersion === VNEXT_EVENT_STORE_SCHEMA_VERSION));
+    assert.ok(manifest.stores.some((s) => s.storeId === "events:key_001" && s.schemaVersion === KXM_EVENT_STORE_SCHEMA_VERSION));
 
     // Validate manifest against schema
-    const schemaFile = JSON.parse(readFileSync("schemas/vnext/backup-manifest.schema.json", "utf8"));
-    const commonSchema = JSON.parse(readFileSync("schemas/vnext/common.schema.json", "utf8"));
+    const schemaFile = JSON.parse(readFileSync("schemas/backup-manifest.schema.json", "utf8"));
+    const commonSchema = JSON.parse(readFileSync("schemas/common.schema.json", "utf8"));
     const ajv = new Ajv2020({ allErrors: true });
     ajv.addSchema(commonSchema);
     const validate = ajv.compile(schemaFile);
@@ -382,13 +382,13 @@ test("kxm backup and restore round-trip preserves all stores and data with manif
     restoredHub.close();
 
     // Verify registry
-    const restoredReg = new VnextRuntimeRegistry(registryPath);
+    const restoredReg = new KxmRuntimeRegistry(registryPath);
     assert.equal(restoredReg.supervisor()?.runtimeId, "rt_test_1");
     assert.equal(restoredReg.project("prj_001")?.projectId, "prj_001");
     restoredReg.close();
 
     // Verify event store
-    const restoredEvents = new VnextRunEventStore(eventStorePath);
+    const restoredEvents = new KxmRunEventStore(eventStorePath);
     const run = restoredEvents.run("run_test_01");
     assert.ok(run);
     assert.equal(run.projectId, "prj_001");

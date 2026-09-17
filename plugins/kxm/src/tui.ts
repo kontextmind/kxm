@@ -19,6 +19,7 @@ import { mkdirSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { spawnSync } from "node:child_process";
 import type { AgentRecord } from "./protocol.ts";
+import { createKxmTuiAnsiTheme, type KxmTuiTheme } from "@kontextmind/tui";
 import { slugifyBranchPart } from "./external-effects.ts";
 import {
   loadLocalMeshSnapshot,
@@ -295,33 +296,18 @@ function stageMark(status: string, theme: MeshTuiTheme): string {
   return theme.dim("[ ]");
 }
 
-type MeshTuiStyle = (text: string) => string;
-
-interface MeshTuiTheme {
-  accent: MeshTuiStyle;
-  dim: MeshTuiStyle;
-  error: MeshTuiStyle;
-  success: MeshTuiStyle;
-  warning: MeshTuiStyle;
-  headerBg: MeshTuiStyle;
-  panelBg: MeshTuiStyle;
-}
+/**
+ * The dashboard palette lives in `tui/theme.ts` so a config surface and the
+ * live screens cannot drift to different meanings for the same colour.
+ */
+type MeshTuiTheme = Pick<KxmTuiTheme, "accent" | "dim" | "error" | "success" | "warning" | "headerBg" | "panelBg">;
 
 function meshTuiTheme(color: boolean): MeshTuiTheme {
-  const ansi = (code: string): MeshTuiStyle => color ? (text) => `\u001b[${code}m${text}\u001b[0m` : (text) => text;
-  return {
-    accent: ansi("1;36"),
-    dim: ansi("2"),
-    error: ansi("1;31"),
-    success: ansi("1;32"),
-    warning: ansi("1;33"),
-    headerBg: ansi("1;97;44"),
-    panelBg: ansi("48;5;236"),
-  };
+  return createKxmTuiAnsiTheme(color);
 }
 
 function visibleAgents(snapshot: MeshTuiSnapshot): AgentRecord[] {
-  return snapshot.agents.filter((agent) => agent.model !== "kxm-tui");
+  return snapshot.agents.filter((agent) => agent.model !== "tui");
 }
 
 function panelMetric(snapshot: MeshTuiSnapshot, panel: MeshTuiPanel): string {
@@ -820,7 +806,7 @@ export async function runMeshTui(input: {
   let identity: { id: string; key: string } | undefined;
   let useOpsStream = true;
   let interactive: { tui: TUI; dashboard: KxmDashboard } | undefined;
-  const name = `kxm-tui-${process.pid}`;
+  const name = `tui-${process.pid}`;
   const view = defaultMeshTuiView(input.screen);
 
   const paint = (snapshot: MeshTuiSnapshot) => {
@@ -927,7 +913,7 @@ export async function runMeshTui(input: {
         name,
         purpose: "Read-only mesh observer TUI",
         project: input.project,
-        model: "kxm-tui",
+        model: "tui",
       }),
     });
     if (!registration.ok) throw new Error(`observer registration failed with HTTP ${registration.status}`);

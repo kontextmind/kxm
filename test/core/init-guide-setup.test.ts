@@ -11,8 +11,8 @@ import {
   resolveCandidate,
   writeGuideSetupFiles,
 } from "../../plugins/kxm/src/init-guide-setup.ts";
-import type { HarnessInventory, HarnessStatus } from "../../plugins/kxm/src/vnext-harness.ts";
-import { loadVnextProject } from "../../plugins/kxm/src/vnext-config.ts";
+import type { HarnessInventory, HarnessStatus } from "../../plugins/kxm/src/harness.ts";
+import { loadKxmProject } from "../../plugins/kxm/src/project-config.ts";
 import { parse } from "yaml";
 
 function harnessStatus(id: string, authenticated: boolean | null, detected = true): HarnessStatus {
@@ -79,7 +79,7 @@ test("planGuideSetup skips workflows with uncovered stages and reports reasons",
   assert.equal(plan.agents.get("concurrency-flakiness-detective")?.model, "claude-opus-5");
 });
 
-test("rendered files load as a valid vNext project bundle", () => {
+test("rendered files load as a valid KXM project bundle", () => {
   const root = mkdtempSync(join(tmpdir(), "kxm-guide-setup-"));
   try {
     const kxm = join(root, ".kxm");
@@ -149,7 +149,7 @@ test("rendered files load as a valid vNext project bundle", () => {
     assert.equal(report.existed.length, 0);
     assert.equal(report.written.length, files.length);
 
-    const bundle = loadVnextProject(root);
+    const bundle = loadKxmProject(root);
     assert.equal(bundle.agents.has("lead-systems-planner"), true);
     const lead = bundle.agents.get("lead-systems-planner")?.value as { model?: { provider?: string; model?: string } };
     assert.equal(lead.model?.provider, "anthropic");

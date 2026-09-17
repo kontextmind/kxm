@@ -12,7 +12,7 @@ import {
 } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "./sqlite.ts";
-import { VnextConfigError, type VnextConfigIssue } from "./vnext-config.ts";
+import { KxmConfigError, type KxmConfigIssue } from "./project-config.ts";
 
 export interface DatabaseMigrationStep {
   fromVersion: number;
@@ -61,9 +61,9 @@ export interface RestoreResult {
   restoredStores: RestoreStoreRecord[];
 }
 
-export function databaseError(code: string, file: string, message: string): VnextConfigError {
-  const issue: VnextConfigIssue = { phase: "semantic", code, file, message };
-  return new VnextConfigError([issue]);
+export function databaseError(code: string, file: string, message: string): KxmConfigError {
+  const issue: KxmConfigIssue = { phase: "semantic", code, file, message };
+  return new KxmConfigError([issue]);
 }
 
 export function checkedParent(path: string, description: string): void {

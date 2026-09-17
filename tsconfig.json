@@ -11,7 +11,16 @@
     "exactOptionalPropertyTypes": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
-    "types": ["node"]
+    "types": ["node"],
+    "paths": {
+      "@kontextmind/tui": ["./packages/core/tui/src/exports/index.ts"]
+    }
   },
-  "include": ["plugins/kxm/src/**/*.ts", "test/**/*.ts", "examples/**/*.ts"]
+  "include": [
+    "plugins/kxm/src/**/*.ts",
+    "packages/core/*/src/**/*.ts",
+    "packages/core/*/tests/**/*.ts",
+    "test/**/*.ts",
+    "examples/**/*.ts"
+  ]
 }

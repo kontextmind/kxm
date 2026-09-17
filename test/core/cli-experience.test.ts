@@ -521,7 +521,7 @@ test("cli commands: completion, config, suggest, goal, task, and studio layout e
     // 6. Studio layout
     const studioIo = capture();
     assert.equal(
-      await runCli(["studio", "layout", "examples/vnext/.kxm/workflows/default.yaml"], {}, studioIo, sandbox.dir),
+      await runCli(["studio", "layout", "examples/project/.kxm/workflows/default.yaml"], {}, studioIo, sandbox.dir),
       0,
     );
     assert.match(studioIo.read().stdout, /workflowId/);

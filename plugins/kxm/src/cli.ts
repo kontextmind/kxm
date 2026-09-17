@@ -7,7 +7,7 @@
  * - Role & workflow governance (`kxm role`, `kxm workflow`, `kxm gate`, `kxm signal`)
  * - Task & goal management (`kxm goal`, `kxm task`, `kxm suggest`, `kxm studio`)
  * - Knowledge, skills, and memory (`kxm context`, `kxm skills`, `kxm memory`)
- * - vNext runtime & initialization (`kxm init`, `kxm migrate`, `kxm trust`, `kxm run`, `kxm harness`)
+ * - KXM runtime & initialization (`kxm init`, `kxm migrate`, `kxm trust`, `kxm run`, `kxm harness`)
  * - Hub, workers, and dashboard (`kxm hub`, `kxm worker`, `kxm dash`, `kxm session`, `kxm auth`)
  * - System, update, and configuration (`kxm update`, `kxm config`, `kxm completion`, `kxm improve`)
  */
@@ -24,8 +24,8 @@ import {
   AGENT_COMMANDS_MAP,
   enforceToolPolicy,
 } from "./commands.ts";
-import { discoverVnextProjectRoot } from "./vnext-config.ts";
-import { ensureVnextSupervisor, vnextRuntimeRequest } from "./vnext-runtime-supervisor.ts";
+import { discoverKxmProjectRoot } from "./project-config.ts";
+import { ensureKxmSupervisor, kxmRuntimeRequest } from "./runtime-supervisor.ts";
 
 // Submodule imports
 import {
@@ -97,27 +97,27 @@ import {
 } from "./cli/context-skills.ts";
 
 import {
-  cmdVnextInit,
-  cmdVnextMigratePlan,
-  cmdVnextMigrateApply,
-  cmdVnextMigrateVerify,
+  cmdKxmInit,
+  cmdKxmMigratePlan,
+  cmdKxmMigrateApply,
+  cmdKxmMigrateVerify,
   cmdBackup,
   cmdRestore,
-  cmdVnextTrust,
-  cmdVnextRun,
-  cmdVnextRunStatus,
-  cmdVnextRunDrive,
-  cmdVnextRunReceipt,
-  cmdVnextRunCancel,
-  cmdVnextRunList,
+  cmdKxmTrust,
+  cmdKxmRun,
+  cmdKxmRunStatus,
+  cmdKxmRunDrive,
+  cmdKxmRunReceipt,
+  cmdKxmRunCancel,
+  cmdKxmRunList,
   cmdHarnessList,
   cmdRouteChange,
   cmdModelsScreen,
   cmdRouteList,
   cmdRouteCount,
   cmdModelInventoryRefresh,
-  cmdVnextRuntime,
-} from "./cli/vnext.ts";
+  cmdKxmRuntime,
+} from "./cli/project.ts";
 
 import {
   cmdStatus,
@@ -260,28 +260,28 @@ async function dispatchAgentCliCommand(
     }
   }
 
-  // Handle vNext run binding for workflow wait
+  // Handle KXM run binding for workflow wait
   if (toolName === "kxm_workflow_wait") {
     const runId = typeof args.runId === "string" ? args.runId : undefined;
-    const projectRoot = discoverVnextProjectRoot(runtime.cwd);
+    const projectRoot = discoverKxmProjectRoot(runtime.cwd);
     if (runId && projectRoot && /^run_[a-f0-9]{32}$/i.test(runId)) {
       if (runtime.dryRun) {
-        print(runtime.io, runtime.json, { ok: true, command: "workflow wait", runId, dryRun: true }, `would wait for signal on vNext run ${runId}`);
+        print(runtime.io, runtime.json, { ok: true, command: "workflow wait", runId, dryRun: true }, `would wait for signal on KXM run ${runId}`);
         return 0;
       }
       try {
-        const supervisor = await ensureVnextSupervisor({ env: runtime.env });
-        const result = await vnextRuntimeRequest(
+        const supervisor = await ensureKxmSupervisor({ env: runtime.env });
+        const result = await kxmRuntimeRequest(
           supervisor,
           "POST",
           `/v1/runs/${encodeURIComponent(runId)}/wait?projectRoot=${encodeURIComponent(projectRoot)}`,
           args,
         );
-        print(runtime.io, runtime.json, result, `waiting for signal on vNext run ${runId}`);
+        print(runtime.io, runtime.json, result, `waiting for signal on KXM run ${runId}`);
         return 0;
       } catch (error) {
-        const msg = error instanceof Error ? error.message : "vnext_wait_failed";
-        print(runtime.io, runtime.json, { ok: false, error: "vnext_wait_failed", detail: msg }, `vNext wait failed: ${msg}`);
+        const msg = error instanceof Error ? error.message : "wait_failed";
+        print(runtime.io, runtime.json, { ok: false, error: "wait_failed", detail: msg }, `KXM wait failed: ${msg}`);
         return 1;
       }
     }
@@ -334,14 +334,14 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .helpCommand("help", "Show help");
   addGlobalOptions(program);
 
-  program.command("init").description("Create, validate, or plan migration of a vNext project")
+  program.command("init").description("Create, validate, or plan migration of a KXM project")
     .option("--json", "Print machine-readable JSON")
     .option("--dry-run", "Plan without making changes")
     .option("--name <name>", "Project display name for a new project")
     .option("--project-id <id>", "Stable project ID for controlled provisioning")
     .option("--repository <id=absolute-path>", "Bind a member repository outside Git configuration", (value, previous: string[]) => [...previous, value], [])
     .action(async function initAction(this: Command, options: { name?: string; projectId?: string; repository?: string[] }) {
-      result.code = await cmdVnextInit(runtimeFrom(ctx, this), options, {
+      result.code = await cmdKxmInit(runtimeFrom(ctx, this), options, {
         maybeOfferCompletionInstall,
         maybeOfferGuideSetup,
       });
@@ -349,20 +349,20 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
 
   const migrate = addGlobalOptions(program.command("migrate").description("Plan, apply, and verify legacy JSON configuration migration"));
   migrate.helpCommand("help", "Show migrate help");
-  addGlobalOptions(migrate.command("plan").description("Compute the deterministic legacy-to-vNext migration plan without writes"))
+  addGlobalOptions(migrate.command("plan").description("Compute the deterministic legacy-to-KXM migration plan without writes"))
     .action(async function migratePlanAction(this: Command) {
-      result.code = await cmdVnextMigratePlan(runtimeFrom(ctx, this));
+      result.code = await cmdKxmMigratePlan(runtimeFrom(ctx, this));
     });
   addGlobalOptions(migrate.command("apply").description("Install a reviewed migration with a hash-linked receipt"))
     .option("--decisions <file>", "Reviewed kxm.migration-decision.v1 YAML file")
     .option("--project-id <id>", "Stable project ID for controlled provisioning")
     .option("--name <name>", "Project display name")
     .action(async function migrateApplyAction(this: Command, options: { decisions?: string; projectId?: string; name?: string }) {
-      result.code = await cmdVnextMigrateApply(runtimeFrom(ctx, this), options);
+      result.code = await cmdKxmMigrateApply(runtimeFrom(ctx, this), options);
     });
   addGlobalOptions(migrate.command("verify").description("Verify a migration receipt against current sources and target bundle"))
     .action(async function migrateVerifyAction(this: Command) {
-      result.code = await cmdVnextMigrateVerify(runtimeFrom(ctx, this));
+      result.code = await cmdKxmMigrateVerify(runtimeFrom(ctx, this));
     });
 
   addGlobalOptions(program.command("backup").description("Create a verified SQLite backup of all stores with a hashed manifest"))
@@ -376,18 +376,18 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
       result.code = await cmdRestore(runtimeFrom(ctx, this), manifest);
     });
 
-  addGlobalOptions(program.command("run").description("Create a vNext run (offline-first; no steps execute until the run engine lands)")
+  addGlobalOptions(program.command("run").description("Create a KXM run (offline-first; no steps execute until the run engine lands)")
     .argument("[workflow]", "Workflow id to run")
     .argument("[prompt...]", "Run prompt (hashed, never stored raw)")
     .action(async function runAction(this: Command, workflow: string | undefined, promptParts: string[]) {
-      result.code = await cmdVnextRun(runtimeFrom(ctx, this), workflow, promptParts);
+      result.code = await cmdKxmRun(runtimeFrom(ctx, this), workflow, promptParts);
     }));
-  const runCmd = addGlobalOptions(program.command("runs").description("Inspect vNext runs"));
+  const runCmd = addGlobalOptions(program.command("runs").description("Inspect KXM runs"));
   runCmd.helpCommand("help", "Show runs help");
   addGlobalOptions(runCmd.command("status").description("Show the projected status of a run, including durable drive receipt state (open / receipt verified / unsettled / orphaned)"))
     .argument("<runId>", "Run id")
     .action(async function runStatusAction(this: Command, runId: string) {
-      result.code = await cmdVnextRunStatus(runtimeFrom(ctx, this), runId);
+      result.code = await cmdKxmRunStatus(runtimeFrom(ctx, this), runId);
     });
   addGlobalOptions(runCmd.command("drive").description("Drive a run with an explicit model-free simulation"))
     .argument("<runId>", "Run id")
@@ -395,7 +395,7 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .option("--wait", "Wait until a drive receipt is recorded; exits 0 only for a VERIFIED COMPLETED settlement")
     .option("--timeout-ms <n>", "Wait timeout in milliseconds (default 60000, max 600000)")
     .action(async function runDriveAction(this: Command, runId: string, options: { simulated?: boolean; wait?: boolean; timeoutMs?: string }) {
-      result.code = await cmdVnextRunDrive(runtimeFrom(ctx, this), runId, options.simulated === true, {
+      result.code = await cmdKxmRunDrive(runtimeFrom(ctx, this), runId, options.simulated === true, {
         wait: options.wait === true,
         ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
       });
@@ -404,16 +404,16 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .argument("<runId>", "Run id")
     .option("--all", "Print the capped receipt list for the run")
     .action(async function runReceiptAction(this: Command, runId: string, options: { all?: boolean }) {
-      result.code = await cmdVnextRunReceipt(runtimeFrom(ctx, this), runId, { all: options.all === true });
+      result.code = await cmdKxmRunReceipt(runtimeFrom(ctx, this), runId, { all: options.all === true });
     });
   addGlobalOptions(runCmd.command("cancel").description("Durably request cancellation of a run"))
     .argument("<runId>", "Run id")
     .action(async function runCancelAction(this: Command, runId: string) {
-      result.code = await cmdVnextRunCancel(runtimeFrom(ctx, this), runId);
+      result.code = await cmdKxmRunCancel(runtimeFrom(ctx, this), runId);
     });
   addGlobalOptions(runCmd.command("list").description("List recent runs for the current project"))
     .action(async function runListAction(this: Command) {
-      result.code = await cmdVnextRunList(runtimeFrom(ctx, this));
+      result.code = await cmdKxmRunList(runtimeFrom(ctx, this));
     });
 
   const modelsCmd = addGlobalOptions(program.command("models").description("Manage model catalogs, roles, and route state"));
@@ -462,32 +462,32 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
       result.code = await cmdUpdate(runtimeFrom(ctx, this), harness, options);
     });
 
-  const runtimeCmd = addGlobalOptions(program.command("runtime").description("Manage the vNext Runtime supervisor"));
+  const runtimeCmd = addGlobalOptions(program.command("runtime").description("Manage the KXM Runtime supervisor"));
   runtimeCmd.helpCommand("help", "Show runtime help");
   addGlobalOptions(runtimeCmd.command("start").description("Start the Runtime supervisor if not running"))
     .action(async function runtimeStartAction(this: Command) {
-      result.code = await cmdVnextRuntime(runtimeFrom(ctx, this), "start");
+      result.code = await cmdKxmRuntime(runtimeFrom(ctx, this), "start");
     });
   addGlobalOptions(runtimeCmd.command("status").description("Show Runtime supervisor liveness"))
     .action(async function runtimeStatusAction(this: Command) {
-      result.code = await cmdVnextRuntime(runtimeFrom(ctx, this), "status");
+      result.code = await cmdKxmRuntime(runtimeFrom(ctx, this), "status");
     });
   addGlobalOptions(runtimeCmd.command("stop").description("Gracefully stop the Runtime supervisor"))
     .action(async function runtimeStopAction(this: Command) {
-      result.code = await cmdVnextRuntime(runtimeFrom(ctx, this), "stop");
+      result.code = await cmdKxmRuntime(runtimeFrom(ctx, this), "stop");
     });
 
-  const trust = addGlobalOptions(program.command("trust").description("Permission-diff trust review for vNext configuration"));
+  const trust = addGlobalOptions(program.command("trust").description("Permission-diff trust review for KXM configuration"));
   trust.helpCommand("help", "Show trust help");
   addGlobalOptions(trust.command("diff").description("Show the structured permission diff against a base Git revision"))
     .option("--base <revision>", "Base Git revision (default: HEAD)")
     .action(async function trustDiffAction(this: Command, options: { base?: string }) {
-      result.code = await cmdVnextTrust(runtimeFrom(ctx, this), false, options);
+      result.code = await cmdKxmTrust(runtimeFrom(ctx, this), false, options);
     });
   addGlobalOptions(trust.command("check").description("Exit non-zero when the working tree expands permissions against the base revision"))
     .option("--base <revision>", "Base Git revision (default: HEAD)")
     .action(async function trustCheckAction(this: Command, options: { base?: string }) {
-      result.code = await cmdVnextTrust(runtimeFrom(ctx, this), true, options);
+      result.code = await cmdKxmTrust(runtimeFrom(ctx, this), true, options);
     });
 
   const agent = addGlobalOptions(program.command("agent").description("Run and supervise agents"));
@@ -686,7 +686,7 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
       };
       result.code = await dispatchAgentCliCommand(runtimeFrom(ctx, this), "kxm_workflow_wait", options);
     });
-  addGlobalOptions(workflow.command("signal").description("Post a signed workflow callback or unblock a vNext run"))
+  addGlobalOptions(workflow.command("signal").description("Post a signed workflow callback or unblock a KXM run"))
     .argument("<runId>", "Workflow run ID")
     .argument("<signalKey>", "Wait signal key")
     .argument("<status>", "passed, warning, or failed")
@@ -824,7 +824,7 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .argument("<summary>", "Callback summary")
     .argument("[evidence...]", "required-key=evidence pairs")
     .option("--delivery-id <id>", "Stable callback delivery ID")
-    .option("--recovery-action <action>", "vNext recovery action: retry, fail, cancel, unblock")
+    .option("--recovery-action <action>", "KXM recovery action: retry, fail, cancel, unblock")
     .action(async function signalAction(this: Command, runId: string, signalKey: string, status: string, summary: string, evidence: string[], options: { deliveryId?: string; recoveryAction?: string }) {
       result.code = await cmdSignal(runtimeFrom(ctx, this), runId, signalKey, status, summary, evidence ?? [], options.deliveryId, options.recoveryAction);
     });

@@ -1,0 +1,50 @@
+{
+  "$schema": "./node_modules/nx/schemas/nx-schema.json",
+  "namedInputs": {
+    "default": ["{projectRoot}/**/*", "sharedGlobals"],
+    "sharedGlobals": [
+      "{workspaceRoot}/tsconfig.json",
+      "{workspaceRoot}/package.json",
+      "{workspaceRoot}/bunfig.toml"
+    ],
+    "production": [
+      "default",
+      "!{projectRoot}/**/*.test.ts",
+      "!{projectRoot}/tests/**"
+    ]
+  },
+  "targetDefaults": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["production", "^production"],
+      "outputs": ["{projectRoot}/dist"],
+      "cache": true
+    },
+    "typecheck": {
+      "dependsOn": ["^build"],
+      "inputs": ["default", "^production"],
+      "cache": true
+    },
+    "test": {
+      "dependsOn": ["build"],
+      "inputs": ["default", "^production"],
+      "cache": true
+    },
+    "test:coverage": {
+      "dependsOn": ["build"],
+      "inputs": ["default", "^production"],
+      "cache": false
+    }
+  },
+  "release": {
+    "version": {
+      "generatorOptions": {
+        "currentVersionResolver": "git-tag"
+      },
+      "projects": [],
+      "changelog": { "projectChangelogs": false }
+    }
+  },
+  "defaultBase": "main",
+  "neverConnectToCloud": true
+}

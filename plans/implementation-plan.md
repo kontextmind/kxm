@@ -2,16 +2,16 @@
 schema: "kxm.doc.v1"
 id: "PLAN-IMPLEMENTATION"
 type: "architecture"
-title: "KXM vNext implementation plan"
+title: "KXM implementation plan"
 project: "kxm"
 status: "approved"
 owner: "kxm"
 created: "2026-09-02"
-updated: "2026-09-15"
+updated: "2026-09-17"
 authority: "instruction"
 confidence: "verified"
-summary: "Sole active execution tracker for vNext phase gates, Tracking, and Still open work."
-tags: ["vnext", "tracking"]
+summary: "Sole active execution tracker for KXM phase gates, Tracking, and Still open work."
+tags: ["runtime", "tracking"]
 related:
   - research-memory-studio-forks.md
   - research-kxm-harness-strategy.md
@@ -37,7 +37,7 @@ details:
   baseline_commit: "6157933"
 ---
 
-# KXM vNext implementation plan
+# KXM implementation plan
 
 This plan is ordered by contract dependency. A later phase MUST NOT weaken an
 earlier phase's authority, recovery, isolation, or synchronization invariants.
@@ -323,7 +323,7 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   `auto: false`; publication alone does not change that choice or qualify the
   next release. Wiki remains compiled-from-hub (`kxm context wiki-compile`);
   no ingest CLI. Follow-up owners/triggers remain in Still open.
-- **Routing and cost contract** lives in [`docs/vnext/routing.md`](../docs/vnext/routing.md).
+- **Routing and cost contract** lives in [`docs/contracts/routing.md`](../docs/contracts/routing.md).
   v1 is shipped parse-only; helper telemetry is a dev tool; v2, event-settle
   write, ranked report, and price catalog are planned. The 2026-09-04
   [work plan](history/2026-09-04-work-plan.md) and
@@ -339,8 +339,100 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 - **Workflow taxonomy (operator, 2026-09-07; path 2026-09-08):** [`docs/workflow-guide.md`](../docs/workflow-guide.md) is organized Area -> Workflow -> Stage -> Assigned role across seven areas (`software-engineering`, `design-experience`, `media-production`, `data-analytics`, `research-strategy`, `business-operations`, `security-reliability`) and 22 workflows with declared kebab-case documentation slugs. The taxonomy is route-agnostic for native harness subscriptions and API-key Pi providers. Slugs are documentation identity only: no runtime config, role admission, schema field, CLI behavior, or alias lane. Inherited candidate lists are dated research requiring live verification before dispatch, not certified prices or an eligibility grant. Model/harness, platform, modality, tools, and personal/work context are routing attributes, not area trees; area grouping never pools unrelated role quality into one global model ranking. Fable and Sol critics remain required for the developer runner. No phase gate changes.
 - **Developer roster U1a foundation & U1b live binding (2026-09-07, 2026-09-08):** An unwired synchronous helper loader reads a committed, clean policy only from a control checkout at or behind the fixed trusted main ref. It pins commit/blob/raw SHA256, validates source-bound model origins and code-owned role/permission/vendor ceilings, and replays historical policy from Git objects. Pi provider validation follows the accepted helper’s shared provider ceiling, without adding a production Nous route. U1b completes live dispatch validation, dynamic critic resolution, and acceptance binding in `scripts/assignment-run.mjs`, enforcing lineup admission and permissions for all roles, as well as strict vendor independence between writer and critics and pairwise among critics. Stored manifest binding validation fails closed on unadmitted routes. Config validity is not live harness/model capability or auth evidence: dispatch brakes remain in force. This is developer orchestration policy for the issue 127 runner and does not pass a product Phase 4 gate.
 - **Planning home and workflow guide (operator, 2026-09-08):** `.kxm/` is the KXM tool's own workspace (state, logs, workflow outputs). Project planning documents live in `plans/` at the repo root. `docs/workflow-guide.md` is the route-agnostic Area → Workflow → Stage → Role taxonomy for native harness subscriptions and API-key Pi providers.
+- **Package layout convention (operator, 2026-09-17):** KXM packages follow the reviewed `doompi`
+  package shape — `src/{types,tui,services,adapters,exports}` (plus `commands`, `web`, `styles`
+  where a package has them) with `tests/{unit,contract,integration,helpers}` and per-package
+  `README.md`, `CHANGELOG.md`, `LICENSE`, `package.json`, `tsconfig.json`, and a build config.
+  Layer rules are binding: `types/` imports nothing outside itself; `tui/` may import only
+  `@earendil-works/pi-tui`; `services/` owns I/O and policy and never renders; `adapters/` is the
+  only host binding; `exports/` is the public surface and anything unexported may be reshaped.
+  The first package built this way is the terminal kit (`packages/core/tui`,
+  `@kontextmind/tui`, also published on the product as `@kontextmind/kxm/tui`); the existing
+  flat `plugins/kxm/src/*.ts` tree migrates toward it slice by slice, not in one sweep. The
+  convention is a gate, not prose: `test/core/package-layers.test.ts` refuses wrong-direction
+  layer imports, a missing per-package manifest/config/docs/license, and a consumer that reaches
+  into a package by path. No phase gate changes. **Bun** runs tasks here (`bun run`, `bun x nx`)
+  and `bun install` links the workspace; the installer and CI legs stay `npm ci` on Node
+  22.19.0/24 until a separate change carries its own CI evidence, because Pi loads this
+  extension under Node and `npm pack` is the release path.
 
 ### Landed in this tree (unreleased)
+
+- **Stash reconciliation: the read-only GET projection survives the naming
+  sweep (2026-09-17):** the restructure above sat in an index partially
+  populated by a `git stash pop` of pre-rename WIP, and five paths conflicted:
+  `package.json`, `plugins/kxm/src/runtime-service.ts`,
+  `plugins/kxm/src/runtime-supervisor.ts`, and their generated `dist`. Each was
+  resolved toward KXM naming while keeping main's newer behaviour. The
+  read-only projection becomes `projectKxmRunReadOnly` in `runtime-service.ts`,
+  and `GET /v1/runs/:id` in the supervisor calls it instead of
+  `rebuildKxmRunProjection`, so the B4-class write-on-GET pattern stays closed in
+  the renamed tree; `rebuildKxmRunProjection` remains the explicit rebuild used
+  off the GET path. `package.json` keeps both the lean `validate:pr` gate and the
+  workspace scripts (`test:packages`, `check:packages`, `build:packages`, which
+  `build` now invokes through nx). The last rename straggler —
+  `test/core/runtime-supervisor.test.ts`, whose read-only-GET test still called
+  the pre-rename supervisor helpers — now uses the KXM names. Witness: `npm run
+  verify` green on the merged tree (1209 tests, 1203 pass, 0 fail, 6 skipped),
+  plus `npm run check` (tsc, docs lint, version parity) and `check:generated`;
+  `dist` was regenerated by `npm run build`, never hand-merged. This closes the
+  B4 follow-up noted under Phase 11. No assignment, witness record, or
+  acceptance is minted here: this is a merge resolution in the working tree.
+
+- **Naming sweep: no `kxm-` package prefix, no `vnext` anywhere (2026-09-17):** Dropped the
+  `kxm-` prefix from package names and folders (`@kontextmind/kxm-tui` → `@kontextmind/tui`,
+  `packages/core/tui` → `packages/core/tui`, private plugin `kxm-claude-plugin` →
+  `claude-plugin`) and removed `vnext` from file names, folder names, symbols, constants, and
+  serialized values. Files lost the prefix (`project-config.ts` → `project-config.ts`,
+  `runtime-service.ts` → `runtime-service.ts`, `runtime-supervisor.ts` →
+  `runtime-supervisor.ts`, `vnext-engine-*.ts` → `engine-*.ts`, `cli/vnext.ts` →
+  `cli/project.ts`, `schemas/` flattened into `schemas/`, `examples/vnext` →
+  `examples/project`, `test/fixtures/vnext-*` and `test/core/vnext-*` likewise); `docs/contracts/` is
+  now `docs/contracts/`. Symbols followed: `Vnext*` → `Kxm*`, `VNEXT_*` → `KXM_*`, `vnextFoo` →
+  `kxmFoo`, schema `$id` lost its `/vnext` segment, the session-work snapshot discriminant is
+  `"legacy" | "runtime" | "both"`, and the `vnext_*` error codes are now
+  `initialization_failed`, `initialization_io_failed`, and `wait_failed`. Values that were already
+  schema identities or hashes are unchanged (`kxm.run-plan.v1`, receipt and provenance paths), so
+  no stored record is reinterpreted. Dated records keep their original wording:
+  `plans/history/`, `plans/reviews/`, `plans/research-*`, and `plans/evidence/` are not rewritten,
+  and neither is `.kxm/logs/` evidence. `npm run check` (tsc, docs lint, version parity across 9
+  surfaces) and `test/core/package-layers.test.ts` pass; the full suite is 1189/1199 with four
+  failures that are environmental or load-dependent, not this change: the docs brake scans the
+  stale nested checkout `.claude/worktrees/a2a-host-communication-7efe50` (22 other stale
+  worktrees were pruned), the packed-consumer smoke needs `npm_execpath` (passes under
+  `npm test`), and two `concurrent first-open` database races pass in isolation. No phase gate
+  changed and no behaviour was added; this is naming, packaging, and documentation.
+
+- **Reusable terminal component kit and workspace (2026-09-17):** Added the
+  `packages/core/tui` workspace package in the layer shape above
+  (`@kontextmind/tui`, also exposed as `@kontextmind/kxm/tui`, Pi's renderer
+  kept external so the repository does not ship two copies of the same TUI) and
+  wired the root as an Nx workspace (`nx.json`, root `workspaces`,
+  `bunfig.toml`, per-package `project.json`, `scripts/build-package.mjs`), so a
+  package builds, tests, and caches on its own while `npm run verify` stays the
+  single commit gate. It carries a
+  declarative surface contract (`kxm.tui-contract.v1`: sections, fields,
+  selectable choices with `ready|available|blocked` status, owner actions, steps,
+  progress, output tail, `updatedAt`), bounded validation that refuses an
+  oversized or malformed published surface instead of drawing part of it, a pure
+  input decoder, a pure panel reducer that emits effects and never writes, a
+  contribution registry that routes every write to the owning module and
+  re-reads it, a pure string renderer, a Pi `Component` adapter, a standalone
+  terminal adapter, and a `ctx.ui.custom` adapter. There is no local echo: a
+  rejected value returns as the old value plus the owner's reason, and a blocked
+  choice (for example a model whose provider is not logged in) is never sent.
+  `kxm dash` now takes its palette from the kit instead of owning a private one,
+  so a colour cannot mean two things across surfaces. Documented in
+  [`docs/tui-components.md`](../docs/tui-components.md); verified in
+  `packages/core/tui/tests/unit/{surface,panel,services,components}.test.ts`
+  with `tests/helpers/tui-surface.ts`, the layout gate in
+  `test/core/package-layers.test.ts` (mutation-checked), version parity for the
+  new package and its lock entry in `scripts/check-versions.mjs`, and the new
+  export seam in `test/core/import-boundary.test.ts`. Documented in
+  [`docs/packages.md`](../docs/packages.md). This is a component library, not a
+  configuration editor: no `kxm` verb writes roster, routes, gates, roles, or
+  workflow YAML through it yet, writer admission is unchanged, and the
+  `kxm.config.v1` surface plus its editor command are the next slice.
 
 - **Hub background auto-start and package.json project naming (2026-09-15):**
   Added `plugins/kxm/src/hub-autostart.ts`: on Pi extension load, `hub.autoStart`
@@ -361,7 +453,7 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   (13 new tests); docs updated in `docs/configuration.md`,
   `docs/kxm-handbook.md`, and `docs/getting-started.md`.
 - **Modular Role Configuration and Workflow CRUD Management (2026-09-08):**
-  - Designed and implemented `kxm.role.v1` schema (`schemas/vnext/role.schema.json`) supporting modular per-role YAML files with descriptions, skills, tools permissions (allow/deny lists and presets), produced/consumed asset template contracts, harness/model rosters with fallback priority, and policy rules (`vendorIndependenceRequired`).
+  - Designed and implemented `kxm.role.v1` schema (`schemas/role.schema.json`) supporting modular per-role YAML files with descriptions, skills, tools permissions (allow/deny lists and presets), produced/consumed asset template contracts, harness/model rosters with fallback priority, and policy rules (`vendorIndependenceRequired`).
   - Added `plugins/kxm/src/role.ts` and `plugins/kxm/src/workflow-manager.ts` implementing global (`~/.config/kxm/roles/`, `~/.config/kxm/workflows/`) and local (`.kxm/roles/`, `.kxm/workflows/`) inheritance with local repo overrides and default role seeding (`writer`, `planner`, `critic-arch`, `critic-cli`, `verifier`) and workflow templates (`implement-and-verify`, `dual-critic-review`, `spec-and-plan`).
   - Added CLI commands `kxm role list`, `kxm role get <roleId>`, `kxm role add [roleId]`, `kxm role remove [roleId]`, `kxm role modify [roleId]`, `kxm workflow definitions`, `kxm workflow add [workflowId]`, `kxm workflow remove [workflowId]`, `kxm workflow modify [workflowId]`.
   - Added interactive and flag-driven pick lists (`--pick`) for adding, removing, and modifying global and local configurations.
@@ -380,7 +472,7 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   claim the Phase 4 live Pi adapter gate.
 - **Control plane, 5-layer memory, and external idempotency (2026-09-08):**
   - **Memory Arbiter & `_shared` scope:** Updated `plugins/kxm/src/context.ts` to allow `_shared` defaults alongside project identifiers without tripping `context_isolation_violation`; updated `plugins/kxm/src/arbiter.ts` to rank project-specific knowledge ahead of shared defaults; added `memoryRecordToContextItem()` and connected `.kxm/memory/` into `plugins/kxm/src/hub.ts:projectContextPool()`. Verified in `test/core/arbiter.test.ts`.
-  - **Formal Context Packet & Structured Handoffs:** Added schemas `schemas/vnext/context-packet.schema.json` (`kxm.context-packet.v2`) and `schemas/vnext/handoff-manifest.schema.json` (`kxm.handoff-manifest.v1`). Added builder and clean markdown prompt formatting in `plugins/kxm/src/context-packet.ts`. Integrated formal packets and antecedent handoffs directly into `plugins/kxm/src/vnext-engine.ts:birthMember`. Verified in `test/core/context-packet.test.ts`.
+  - **Formal Context Packet & Structured Handoffs:** Added schemas `schemas/context-packet.schema.json` (`kxm.context-packet.v2`) and `schemas/handoff-manifest.schema.json` (`kxm.handoff-manifest.v1`). Added builder and clean markdown prompt formatting in `plugins/kxm/src/context-packet.ts`. Integrated formal packets and antecedent handoffs directly into `plugins/kxm/src/engine.ts:birthMember`. Verified in `test/core/context-packet.test.ts`.
   - **External Side-Effect Idempotency & Branch Determinism:** Implemented `plugins/kxm/src/external-effects.ts` with deterministic branch generation (`kxm/run-<id>`), preflight Check-And-Set (CAS) leasing (`claimEffect`), commit/abort lifecycle, and SQLite `external_effects` receipts store via Node 22 native `DatabaseSync` (`node:sqlite`). Verified in `test/core/external-effects.test.ts`.
   - **Interactive TUI Access Control (`kxm dash`):** Extended `plugins/kxm/src/tui.ts` with interactive Blessed/Blessings control actions (`a` approve, `r` reject, `d` degrade, `s` signal, `c` cancel) dispatching authenticated callbacks to hub endpoints `/v1/runs/:id/signal` and `/cancel`. Verified in `test/core/tui.test.ts`.
   - **Web Studio Layout Engine & Embedded Server (Decision D14 & Q8, Phase 6):** Created `plugins/kxm/src/studio-layout.ts` providing form/stepper stage derivation, ELK/React Flow DAG node/edge positioning, and Temporal activity Gantt swimlanes without manual YAML coordinates; exposed via `kxm studio layout <workflowPath>` and embedded HTTP server `kxm studio serve` on `http://localhost:4242` with strict audit parity (SessionToken authentication, 1:1 CLI command mapping on `/api/mutate`). Verified in `test/core/studio-layout.test.ts`.
@@ -388,7 +480,7 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   - **Self-Improving & Recommendation Telemetry:** Clustered 152 historical attempts from `.kxm/logs/telemetry.jsonl` ($26.58 spend, 24.11M tokens), validating native Grok 4.6 low-thinking ($0.17/attempt, 84% pass rate) vs medium-thinking ($0.60/attempt, 86.7% pass rate) with 72% cost savings and 4.5x speedup; Pi wrapper suffered 100% rework. Implemented `plugins/kxm/src/improve.ts` clustering by `(workflowId, stepId, role, intent)` for automated gate promotion and dynamic effort stepping. Verified in `test/core/improve.test.ts`.
   - **Optimized Execution Roadmap:** Re-ordered implementation into 6 dependency-stratified phases in [`plans/history/control-plane-memory-questionnaire.md`](history/control-plane-memory-questionnaire.md): Phase 1 Security & Config Foundation $\rightarrow$ Phase 2 Context Substrate & 5-Layer Memory $\rightarrow$ Phase 3 Execution Determinism & Side-Effects $\rightarrow$ Phase 4 Operator Control & CLI Tools $\rightarrow$ Phase 5 Spend Protection & Self-Improvement $\rightarrow$ Phase 6 Web Studio & DAG Visualization.
 - **B3 three failing rule tests and auth probes (issue #84):** Three failing-first
-  loop rule tests in `test/core/vnext-loop-rules.test.ts` (unhosted harness/model
+  loop rule tests in `test/core/loop-rules.test.ts` (unhosted harness/model
   pair rejected with `harness_unhosted_model`; pure inventory eligibility fails
   closed on empty/unknown; `verify_must_precede_ready` enforced in workflow
   validation). Official CLI auth probe for Kimi (`kimi provider list` non-mutating
@@ -401,7 +493,7 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   a shared `openDatabase` helper enforcing WAL journal mode with retry, `busy_timeout`
   (5000ms), `synchronous = NORMAL`, `foreign_keys = ON`, `BEGIN IMMEDIATE` serialization,
   and fail-closed `user_version` inspection across all SQLite stores (`MeshStore`,
-  `VnextRuntimeRegistry`, `VnextRunEventStore`). Implemented `withDatabaseTransaction`
+  `KxmRuntimeRegistry`, `KxmRunEventStore`). Implemented `withDatabaseTransaction`
   featuring an active-transaction nesting guard. Implemented stepwise legacy migrations
   (v1 -> v2, v2 -> v3) replacing the unconditional version stamp, ensuring a v2 fixture
   migrates to v3 or is refused without ever being silently relabelled. Implemented
@@ -436,7 +528,7 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   `apiKey`, `password`), secrets in summary and provenance sourceRef are redacted
   at parse, `scope` field (`agent | project | run | operator`) is validated on the
   record, and dead shallow `lineageOf` is deleted. Memory revision is computed at
-  run creation (`computeVnextMemoryRevision`) from the SHA-256 hash of the
+  run creation (`computeKxmMemoryRevision`) from the SHA-256 hash of the
   Git-authored set (`.kxm/memory` excluding `candidates`; `.kxm/skills/promoted`)
   plus the promoted-state snapshot and written to `run.memoryRevision` and
   `event.memoryRevision` with canonical prefix `ctxrev_`. Optimized test coverage
@@ -459,13 +551,13 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   owns the Google model route.
   Exported harness definitions in `plugins/kxm/src/runtime.ts` and verified with
   mock spawn tests, fake dispatch, auth refusal, and comprehensive inventory
-  dispatch reporting (`test/vnext-harness.test.ts`, `test/vnext-oneshot-producer.test.ts`).
+  dispatch reporting (`test/harness.test.ts`, `test/oneshot-producer.test.ts`).
 - **E4b one-shot adapter: Claude and Codex (issue #94):** Implemented generic
-  one-shot CLI producer in `plugins/kxm/src/vnext-oneshot-producer.ts` driving
+  one-shot CLI producer in `plugins/kxm/src/oneshot-producer.ts` driving
   planner, reviewer, and other roles through Claude, Codex, and catalog-configured
   CLIs. Extended `HarnessCatalogEntry` with `oneShot` config and added usage parsers
   (`parseClaudeOneShotUsage`, `parseCodexOneShotUsage`, `parseGenericOneShotUsage`)
-  in `plugins/kxm/src/vnext-harness.ts`. Enforces fail-closed auth preflight
+  in `plugins/kxm/src/harness.ts`. Enforces fail-closed auth preflight
   (`<harness>_not_authenticated`), prompt delivery via stdin or arguments, process
   cancellation via AbortSignal and usage parsing. The initial implementation's
   catalog-as-bill and absent-catalog-as-subscription classifications were wrong:
@@ -476,7 +568,7 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   `AGENTS.md` block (`scripts/emit-codex-artifacts.mjs`) so Codex discovers KXM
   commands, protected by `scripts/check-generated.mjs`. Exported in
   `plugins/kxm/src/runtime.ts` and verified with mock spawn tests, auth failure,
-  and end-to-end vNext engine drive (`test/vnext-oneshot-producer.test.ts`).
+  and end-to-end KXM engine drive (`test/oneshot-producer.test.ts`).
 - **Codex launch-flag repair (2026-09-10, Phase 11 partial slice):** Audited
   official CLI, noninteractive, approval/security, and config references against
   installed Codex 0.153.4. Product/catalog/helper launches explicitly request
@@ -489,8 +581,8 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   is now present. These are private bootstrap artifacts, not exact-commit
   acceptance, effective Codex model identity, or proof of MCP/plugin isolation.
 - **E4 Pi dispatch (issue #93):** Implemented Pi RPC producer in
-  `plugins/kxm/src/vnext-pi-producer.ts` running implementer (and other agent
-  roles) through the vNext engine driver over Pi RPC protocol (`--mode rpc`).
+  `plugins/kxm/src/pi-producer.ts` running implementer (and other agent
+  roles) through the KXM engine driver over Pi RPC protocol (`--mode rpc`).
   Maintains per-run coordinator sessions (`coordinator:${runId}`) and keys
   agent sessions by `{runId, agentId, instance, scopeEpoch}`
   (`${agentId}@${shortRun}#${instance}.${scopeEpoch}`). Enforces fail-closed
@@ -502,8 +594,8 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   GLM catalog rows, setting `costBasis: metered` or `unknown`). Propagates
   abort signals to Pi RPC abort commands and cancellation outcomes. Exported in
   `plugins/kxm/src/runtime.ts` and verified with comprehensive mock RPC tests,
-  fail-closed auth, and end-to-end vNext engine drive
-  (`test/vnext-pi-producer.test.ts`).
+  fail-closed auth, and end-to-end KXM engine drive
+  (`test/pi-producer.test.ts`).
 - **D6 agent CLI surface (issue #92):** Centralized 19 agent commands in
   `plugins/kxm/src/commands.ts` as the single source of truth for parameter
   schemas, command metadata, and execution over `HubClient`; eliminated
@@ -514,16 +606,16 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   enforced tool policy via engine-issued `KXM_ATTEMPT_TOKEN` and session-issued
   `KXM_SESSION_TOKEN`, failing closed on denied commands with
   `tool_policy_denied`; strictly capped `peer await` at 60s in both parameter
-  schema and execution; bound `workflow wait` and `signal` to vNext runs and
+  schema and execution; bound `workflow wait` and `signal` to KXM runs and
   supervisor; added drift assertions across CLI, MCP, and Pi surfaces
   (`test/commands-drift.test.ts`), policy tests (`test/commands-policy.test.ts`),
   and rewrote `plugins/kxm/skills/kxm/SKILL.md` to teach CLI commands with zero
   `mesh_` and zero MCP-only instructions.
 - **D5 routing records v2 and price catalog (issue #91):** defined
   `kxm.routing-record.v2` contract in `plugins/kxm/src/routing.ts` and updated
-  schemas `schemas/vnext/common.schema.json` and
-  `schemas/vnext/run-event.schema.json`; created price catalog schema
-  `schemas/vnext/prices.schema.json` (`kxm.prices.v1`) and price catalog loader/calculator
+  schemas `schemas/common.schema.json` and
+  `schemas/run-event.schema.json`; created price catalog schema
+  `schemas/prices.schema.json` (`kxm.prices.v1`) and price catalog loader/calculator
   `plugins/kxm/src/prices.ts`; added dated, hashed price catalog
   `.kxm/prices.yaml` (Claude, Codex, Grok, GLM, Kimi, Qwen); engine settlement
   requires `costBasis` and records `routing.attempt.recorded` event on every member
@@ -636,14 +728,14 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   roster/routing planning is next after this slice is accepted; it is not
   implemented here and does not pass a product Phase 4 gate.
 - **Phase 3 engine & model-free driver complete (implemented, unreleased):**
-  D4 `blocked_uncertain` recovery after S4 command execution (`recoverVnextRun`
+  D4 `blocked_uncertain` recovery after S4 command execution (`recoverKxmRun`
   supporting `retry`, `fail`, `cancel`, `unblock`), gate hold resolution, and
   incomplete attempt exclusion in `gateRecoveryPreflight`. Step admission
   expanded for declared workflow kinds (`agent`, `moa`, `approval`, `wait`, `gate`),
   `all-settled` join evaluation with `minimumPassed`, `distinctBy: [provider]`,
   `maxAttemptsPerAssignment <= 2`, repository write declarations, and evidence
-  types. The model-free driver in `test/vnext-driver.test.ts` completes and
-  recovers `examples/vnext/.kxm/workflows/default.yaml` (plan → implement → verify → ready → completed;
+  types. The model-free driver in `test/driver.test.ts` completes and
+  recovers `examples/project/.kxm/workflows/default.yaml` (plan → implement → verify → ready → completed;
   rework loop; gate uncertainty recovery via retry, fail, cancel) and `fix.yaml`
   (all 13 stages; approval pass/rejection rework; two-producer MOA `all-settled` joins;
   critics rework back-edge to plan; approval rework back-edge to plan; command gates;
@@ -855,7 +947,7 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   base/candidate manifests; tests do not freeze that delta against HEAD.
   Boundary tests witness value imports, type-only exports, inline
   `import type`, transitive external edges, and fail closed on a missing
-  local AST. Family seeds include `vnext-runtime*` plus harness, routing,
+  local AST. Family seeds include `kxm-runtime*` plus harness, routing,
   envelope, and redact. The packed install still runs the CLI, hub, and the
   three library subpaths.
 - `release.yml` on `v*` tags asserts the tag equals `package.json` version
@@ -934,7 +1026,7 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   Not a general Windows cure; no extra permanent npm gate.
   Windows legs are paused as of 2026-09-05; the four-leg statement above is
   historical. The pre-ack shutdown fixture fix remains landed.
-- **D1 engine compile (pure):** `vnext-engine-compile.ts` compiles a validated
+- **D1 engine compile (pure):** `engine-compile.ts` compiles a validated
   `kxm.workflow.v1` into a deep-frozen, JSON-serializable plan keyed by step id
   with typed transitions, per-edge and global transition budgets, step
   `maxAttempts`, resolved assignment bounds and join on every step kind (never
@@ -942,7 +1034,7 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   evidence declarations, oracles, and plan-hash requirements. Both
   `default.yaml` and `fix.yaml` compile. `kind: workflow` is reserved and
   rejected at compile. No execution, no I/O, no events.
-- **D2 engine run loop (agent-only, model-free; unreleased):** `vnext-engine.ts`
+- **D2 engine run loop (agent-only, model-free; unreleased):** `engine.ts`
   pins the D1 compiled plan in an immutable content-addressed `run_plans`
   envelope and advances `created → preparing → running →
   completed|failed|cancelled` with a driver-simulated producer only. The fold
@@ -972,25 +1064,43 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 - **KXM Agent Skills Suite plus trusted-policy brakes (candidate, not YAML cutover):** One authored suite under `plugins/kxm/skills/` with generated `.agents/skills` mirror and `plugins/kxm/skill-suite.json`. Skills document current CLI verbs only; they do not claim runtime YAML authority or new writer admission. `emit-codex-artifacts` / `check-generated` require a valid manifest, refuse path/symlink escape, copy owned skills recursively, and preserve unrelated `.agents/skills` entries. **Prerequisite repair:** `getRosterPolicy` no longer reads raw working-tree `.kxm/roster.json` after a trusted-loader error; missing, empty, or malformed policy is `route_invalid`. Acceptance no longer catch-to-nulls policy; required critic specs come from loaded policy, not a null-policy default. Unified YAML role/project/workflow authority remains open.
 
-- **Unified YAML foundation (parser + passive draft validation only):** Shared restricted parser `plugins/kxm/src/restricted-yaml.mjs` (with `.d.mts`) preserves public `parseRestrictedYaml` behavior through a `vnext-config` `VnextConfigError` wrapper. Passive `schemas/policy-draft` (`kxm.model.v2` / `kxm.role.v2`) and pure `validatePolicyDraft` accept explicit draft documents, evidence bytes, and code-owned ceilings. This is not live YAML policy cutover, not `.kxm/roster.json` removal, not global-role migration, not mandatory bindings, not runtime admission, and not new writer admission. Draft routes labeled admitted in tests are not activated. Phase 4/11 product gates are not claimed.
+- **Unified YAML foundation (parser + passive draft validation only):** Shared restricted parser `plugins/kxm/src/restricted-yaml.mjs` (with `.d.mts`) preserves public `parseRestrictedYaml` behavior through a `kxm-config` `KxmConfigError` wrapper. Passive `schemas/policy-draft` (`kxm.model.v2` / `kxm.role.v2`) and pure `validatePolicyDraft` accept explicit draft documents, evidence bytes, and code-owned ceilings. This is not live YAML policy cutover, not `.kxm/roster.json` removal, not global-role migration, not mandatory bindings, not runtime admission, and not new writer admission. Draft routes labeled admitted in tests are not activated. Phase 4/11 product gates are not claimed.
 
 - **Nous opt-in Pi providers:** opt-in `nous/*` (direct API) and `nous-proxy/*` (Hermes subscription proxy) via `KXM_NOUS_PROVIDERS`, with fail-closed catalog/price boundary, bounded factory-time discovery, and env-only direct auth (`NOUS_API_KEY`). No router, no writer admission. Public `/v1/models` catalog fields are observed (`context_length`, `top_provider.max_completion_tokens`, `architecture.input_modalities`, `supported_parameters`, per-token `pricing` plus `overrides`); convert once to USD/M and never apply `original` or a blanket discount. Matching dated pins supply rates/capacity when live pricing is incomplete. Context tiers emit a labeled componentwise upper bound without a Pi `cost.tiers` schedule. **Verified 2026-09-07:** tests verified one streamed tool call plus usage on `qwen/qwen3-coder-plus` for the direct API and an OAuth-backed Hermes proxy, with exact model auth. Other models, automatic auth refresh, exact quota, and extra charges remain unverified. Routing v2 and persisted catalog deferrals remain.
 
 - **E3: routing report, logger, metrics (issue #96):** `kxm routing report` groups attempts by `(harness, model, thinking, role)`, reporting attempts, verifyPassRate, reworkRate (back-edge re-entries only: transitions > 0), p50 and p95 latency (linear interpolation), medianContextTokens, meteredCostUsd, costPerAcceptedUsd, and separate counts for unmetered, unknown, and quotaExhausted. Quality-first sorting (verifyPassRate desc, reworkRate asc) then cost per accepted attempt; routes with unknown cost are flagged (`*`) and never ranked cheapest. Equivalent list cost column supported via `--equivalent-list-cost` / `--list-prices`. Unified `logger.ts` with structured JSONL formatting, level priority filtering, child loggers, size-capped file rotation, redaction on write (secrets and sensitive keys), and daemonized stdout suppression. Prometheus metrics renamed to `kxm_*`, exported orphaned `kxm_context_requests_total`, added `kxm_attempt_latency_seconds_total` and `kxm_metered_cost_usd_total`. Zero `pi_mesh_*` or `pi_kxm_*` metric names remain.
 
-- **SQLite sidecar symlink TOCTOU race (issue #115):** Replaced two-call `existsSync` + `lstatSync` checks on SQLite database files and `-wal`/`-shm` sidecars in `plugins/kxm/src/vnext-runtime-store.ts` and supervisor token/error files in `plugins/kxm/src/vnext-runtime-supervisor.ts` with atomic `lstatSync(..., { throwIfNoEntry: false })`. Closes TOCTOU race where SQLite deletes ephemeral sidecars on connection close, crashing with `ENOENT` during concurrent status reads. Verified symlink rejections on main database, sidecars, and token files.
+- **SQLite sidecar symlink TOCTOU race (issue #115):** Replaced two-call `existsSync` + `lstatSync` checks on SQLite database files and `-wal`/`-shm` sidecars in `plugins/kxm/src/runtime-store.ts` and supervisor token/error files in `plugins/kxm/src/runtime-supervisor.ts` with atomic `lstatSync(..., { throwIfNoEntry: false })`. Closes TOCTOU race where SQLite deletes ephemeral sidecars on connection close, crashing with `ENOENT` during concurrent status reads. Verified symlink rejections on main database, sidecars, and token files.
 
-- **E1: session brief contract (issue #98):** Schema `kxm.session-brief.v1` (`schemas/vnext/session-brief.schema.json`) with `schema`, `generatedAt`, `staleSeconds`, `source`, `hub` (state + evidence kind), `stats`, `tasks`, `plans`, `statusLine`, `widgetLines`, optional `cost`, and optional `sessionToken`. One renderer `renderStatusLine` capped at 80 columns with `…` truncation; three callers (`kxm session brief --status`, Pi status slot, and `/kxm status`) produce identical status lines. Hub probe with 300 ms abort to `unknown` returns in under 1 s on blackholed URLs. Cached at `.kxm/state/session-brief.json` with 5 s TTL. Git ship counts against merge base (`origin/HEAD`, `main`, `master`) when no upstream is configured (renders `2 local` on fresh branch). Second status key retired; repaints on `turn_end`. Claude plugin `statusLine` command and `SessionStart` command hook. `kxm session brief --token` issues interactive session token with `operator` preset.
+- **E1: session brief contract (issue #98):** Schema `kxm.session-brief.v1` (`schemas/session-brief.schema.json`) with `schema`, `generatedAt`, `staleSeconds`, `source`, `hub` (state + evidence kind), `stats`, `tasks`, `plans`, `statusLine`, `widgetLines`, optional `cost`, and optional `sessionToken`. One renderer `renderStatusLine` capped at 80 columns with `…` truncation; three callers (`kxm session brief --status`, Pi status slot, and `/kxm status`) produce identical status lines. Hub probe with 300 ms abort to `unknown` returns in under 1 s on blackholed URLs. Cached at `.kxm/state/session-brief.json` with 5 s TTL. Git ship counts against merge base (`origin/HEAD`, `main`, `master`) when no upstream is configured (renders `2 local` on fresh branch). Second status key retired; repaints on `turn_end`. Claude plugin `statusLine` command and `SessionStart` command hook. `kxm session brief --token` issues interactive session token with `operator` preset.
 
-- **E2: dash and brief read vNext runs, messaging cursor (issue #99):** Union reader in `local-snapshot.ts` over legacy SQLite (`kxm.db`) and vNext registry (`registry.db`) + per-project event stores (`run-events.db`) with `PRAGMA busy_timeout = 5000` on read handles. Determines `source: "both" | "vnext" | "legacy"` and merges deduplicated runs and counts. Spend tab in TUI (`MESH_TUI_PANELS` key 7 and `kxm dash --screen spend`) populated from `telemetry.jsonl` routing records via `readRoutingRecords`. In legacy store: `consumer_cursors` and `agent_sequences` tables, `UNIQUE(from, idempotency_key)` partial index, monotonic per-agent `seq`, ack advances cursor (`POST /v1/messages/:id/ack`), reconnect resumes from cursor (`seq > cursor`), query-on-demand replaces boot-time full table scan, and separate run vs message retention sweeps. Gates verified: vNext runs appear in snapshot and brief counts; reconnect after 5 messages redelivers only unacked ones; hub boots without loading message table.
+- **E2: dash and brief read KXM runs, messaging cursor (issue #99):** Union reader in `local-snapshot.ts` over legacy SQLite (`kxm.db`) and KXM registry (`registry.db`) + per-project event stores (`run-events.db`) with `PRAGMA busy_timeout = 5000` on read handles. Determines `source: "both" | "runtime" | "legacy"` and merges deduplicated runs and counts. Spend tab in TUI (`MESH_TUI_PANELS` key 7 and `kxm dash --screen spend`) populated from `telemetry.jsonl` routing records via `readRoutingRecords`. In legacy store: `consumer_cursors` and `agent_sequences` tables, `UNIQUE(from, idempotency_key)` partial index, monotonic per-agent `seq`, ack advances cursor (`POST /v1/messages/:id/ack`), reconnect resumes from cursor (`seq > cursor`), query-on-demand replaces boot-time full table scan, and separate run vs message retention sweeps. Gates verified: KXM runs appear in snapshot and brief counts; reconnect after 5 messages redelivers only unacked ones; hub boots without loading message table.
 
 - **E6: backup, restore, migrations (issue #102):** Unified SQLite lifecycle via `openDatabase` with fail-closed schema checks, WAL journal mode with retry loop, busy timeout, and transaction helper with nesting guard. Stepwise legacy migrations for `MeshStore` (v1 -> v2, v2 -> v3) replace unconditional version stamping. Added `kxm backup [--out <dir>]` and `kxm restore <manifest>` utilizing SQLite's backup API (`VACUUM INTO`), WAL checkpoint, PRAGMA integrity checks, and hashed manifest generation (`kxm.backup-manifest.v1`).
 
-- **E8: improvement report and candidates (issue #97):** `kxm improve report` reads routing records and emits candidates grouped by `(workflowHash, step, agentRole, promptHash)`. Rows carry recurrence, mean cost, mean latency, verify-pass rate, and rework; high recurrence with high pass rate emits coded-repeat candidates. Single candidate format `kxm.candidate.v1` in tracked `.kxm/candidates/`: `kind` (`gate`, `skill`, `workflow-step`), `evidenceRefs`, `baselineMetrics`, `declaredOutcome`, `measure`, `proposedDiffPath`. Skill candidates carry standard YAML frontmatter (`name`, `description`). `skills promote` emits a unified diff patch (`.patch`) instead of moving a directory. Workflow `examples/vnext/.kxm/workflows/improve.yaml` runs and completes on the vNext driver. Retrospective exports are un-gitignored.
+- **E8: improvement report and candidates (issue #97):** `kxm improve report` reads routing records and emits candidates grouped by `(workflowHash, step, agentRole, promptHash)`. Rows carry recurrence, mean cost, mean latency, verify-pass rate, and rework; high recurrence with high pass rate emits coded-repeat candidates. Single candidate format `kxm.candidate.v1` in tracked `.kxm/candidates/`: `kind` (`gate`, `skill`, `workflow-step`), `evidenceRefs`, `baselineMetrics`, `declaredOutcome`, `measure`, `proposedDiffPath`. Skill candidates carry standard YAML frontmatter (`name`, `description`). `skills promote` emits a unified diff patch (`.patch`) instead of moving a directory. Workflow `examples/project/.kxm/workflows/improve.yaml` runs and completes on the KXM driver. Retrospective exports are un-gitignored.
 
-- **B3: three failing rule tests and auth probes (issue #84):** Three failing-first loop rule tests in `test/core/vnext-loop-rules.test.ts` (unhosted harness/model pair rejected with `harness_unhosted_model`; pure inventory eligibility fails closed on empty/unknown; `verify_must_precede_ready` enforced in workflow validation). Official CLI auth probe for Kimi (`kimi provider list` non-mutating stdout parser without `--json`); `gemini` and `deepseek` remain `unknown` (`null`) without secret leakage; `kxm harness list` reports status for pi, claude, codex, kimi.
+- **B3: three failing rule tests and auth probes (issue #84):** Three failing-first loop rule tests in `test/core/loop-rules.test.ts` (unhosted harness/model pair rejected with `harness_unhosted_model`; pure inventory eligibility fails closed on empty/unknown; `verify_must_precede_ready` enforced in workflow validation). Official CLI auth probe for Kimi (`kimi provider list` non-mutating stdout parser without `--json`); `gemini` and `deepseek` remain `unknown` (`null`) without secret leakage; `kxm harness list` reports status for pi, claude, codex, kimi.
 
 ### Still open
+
+- **Package restructure and Bun toolchain (owner: build/runtime maintainer):**
+  the layout questions this bullet used to hold are now answered by the tree,
+  not by preference: Bun is installer and task runner only (`bunfig.toml` states
+  tests stay on Node because "`bun test` would silently test a runtime that
+  ships nowhere"), `node --test` + `--experimental-strip-types` and its coverage
+  floors remain the suite, esbuild still produces the bundles that
+  `scripts/check-generated.mjs` and CI re-verify, nx drives per-package
+  `build`/`test`/`typecheck` through `packages/*/project.json`, and the published
+  artifact stays one `@kontextmind/kxm` tarball (`npm pack`, Pi loads
+  `plugins/kxm/src/extension.ts`) with `packages/core/*` as internal workspaces.
+  Remaining work, slice by slice, not in one sweep: move the flat
+  `plugins/kxm/src/*.ts` tree into `packages/<tier>/<name>` in the decided layer
+  shape as each slice is picked up (`packages/core/tui` is the only package
+  migrated so far), and qualify `bun install`/`bun run` on CI legs in a separate
+  change that carries its own CI evidence — Node 22.19.0/24 remain the supported
+  host runtime until then. Windows automation stays paused, not deprecated. No
+  phase gate changes until a slice carries its own witness.
 
 - **Unified capability delivery (M0–M9; proposed, consolidated 2026-09-14):**
   [The unified plan](plan-unified-kxm-milestones.md) owns proposed scope,
@@ -1126,18 +1236,20 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   grok/grok-4.6 (one agy gemini-3.1-pro-high attempt abandoned as partial
   cost-only, findings transferred); witness `npm run verify` green on
   fea8760; critics Fable (arch) and Sol (cli) APPROVE after one resolved
-  round (write-on-GET via rebuildVnextRunProjection; CLI help/skill/runCli-
+  round (write-on-GET via rebuildKxmRunProjection; CLI help/skill/runCli-
   boundary gaps). B2/B3/B4 each carry their own evidence;
   task_9076be56b581 slices are all accepted. Follow-up: GET /v1/runs/:id
-  retains the pre-existing B2 write-on-GET pattern (rebuildVnextRunProjection
-  → persistProjection) — same class as the B4 finding, ticketed separately.
+  retains the pre-existing B2 write-on-GET pattern (rebuildKxmRunProjection
+  → persistProjection) — same class as the B4 finding, ticketed separately;
+  closed 2026-09-17 by the read-only projection (see Landed: stash
+  reconciliation).
   The Phase 11 gate itself does not PASS here: Issue-127
   retirement/acceptance contradictions, npm readiness, and the unexplained
   Fable ~219s failure remain separate blockers (B1 accepted
   2026-09-15, task_p11-drive-decoupling, commit d590d27f, tree a107f3e2:
   engine-owned drive sessions, driveId on 202, session-owned producer,
   admission-atomic pin+start, bounded truthful shutdown via
-  cancelVnextRun(runtime_shutdown) + bounded KXM_RUNTIME_STOP_GRACE_MS,
+  cancelKxmRun(runtime_shutdown) + bounded KXM_RUNTIME_STOP_GRACE_MS,
   fail-closed CLI drive output; three resolved critic rounds: orphaned
   settled rejection, inert bare-running brake, CLI fabricated success,
   unbounded grace knob) and the Fable ~219s failure. Issue-127
@@ -1157,7 +1269,7 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   authenticated (fail closed — no candidate is admitted on detection alone).
   Native-vendor candidates never fall back to OpenRouter when their native
   harness is unavailable (no silent cross-billing). Non-native vendors route
-  via the Pi OpenRouter provider. The setup writes only current vNext project
+  via the Pi OpenRouter provider. The setup writes only current KXM project
   resources: `.kxm/agents/<role>.yaml` (`kxm.agent.v1`) and
   `.kxm/workflows/<slug>.yaml` (`kxm.workflow.v1`). It never writes retired
   legacy authority (`.kxm/config`, `.kxm/roster.json`) and does not use the
@@ -1168,7 +1280,7 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   `plugins/kxm/src/init-guide-setup.ts`.
 - **Legacy configuration retirement and harness discovery (2026-09-10):** Retired
   tracked legacy `.kxm/config` agent/workflow authority and `.kxm/roster.json`
-  in favor of the initialized vNext project resources. `kxm init --dry-run`
+  in favor of the initialized KXM project resources. `kxm init --dry-run`
   reports `ready` with no legacy inputs, and `workflow definitions` resolves
   the local `default.yaml`. Native discovery verified AGY (14 models), Claude
   (authenticated), Grok (2 models), Codex (authenticated), and Pi exact
@@ -1177,7 +1289,7 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   command; Pi global inventory remains intentionally unknown without exact
   provider/model context. These are explicit coverage limits, not fabricated
   three-model claims. Harness parser tests pass 22/22.
-- **Local vNext dispatch (implemented, not accepted):** Authenticated Runtime
+- **Local KXM dispatch (implemented, not accepted):** Authenticated Runtime
   `POST /v1/runs/:runId/drive` and `kxm runs drive` now exist; created runs pin
   their compiled plan before starting. Explicit simulation is not live evidence.
   Current writer must prove authoritative pinned agent/role/policy resolution
@@ -1270,7 +1382,7 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   must fail closed when a required gate is skipped.
 - v1 `kxm routing report` sums missing cost as zero and sorts by run count;
   not a ranking source until the v2 record and separated cost populations
-  land (see [routing.md](../docs/vnext/routing.md)).
+  land (see [routing.md](../docs/contracts/routing.md)).
 - Kind-level MOA defaults (target 3, minimum 2, maximum 3, all-settled with
   minimumPassed 2, provider-distinct) are declared as a Phase 7 target in
   lifecycles.md; today loader and compiler resolve omitted bounds to one
@@ -1330,7 +1442,7 @@ authority projection is unchanged; provenance-free files, overlapping edits,
 template deletions, and authority changes remain non-mutating plans. Bounded
 legacy JSON conversion is implemented: `kxm migrate plan|apply|verify`
 converts `agents.json`, `gates.json`, and workflow-definition JSON into
-validated vNext resources with explicit operator decisions for terminal
+validated KXM resources with explicit operator decisions for terminal
 status, transition budgets, evidence-policy strengthening, secret-reference
 drops, narrowed permission ceilings, and identity mapping, then installs
 atomically with a hash-linked `kxm.migration-receipt.v1` that keeps legacy
@@ -1452,14 +1564,14 @@ approval. The repair changes Phase 2 storage only; this exception does not
 satisfy, advance, or weaken the Phase 3 gate, D3 S2–S4, or issue #89.
 
 **Phase 3 engine recovery and model-free driver (implemented, unreleased):** D4
-`blocked_uncertain` recovery after S4 command execution (`recoverVnextRun`
+`blocked_uncertain` recovery after S4 command execution (`recoverKxmRun`
 supporting `retry`, `fail`, `cancel`, `unblock`), gate hold resolution, and
 incomplete attempt exclusion in `gateRecoveryPreflight`. Step admission
 expanded for declared workflow kinds (`agent`, `moa`, `approval`, `wait`, `gate`),
 `all-settled` join evaluation with `minimumPassed`, `distinctBy: [provider]`,
 `maxAttemptsPerAssignment <= 2`, repository write declarations, and evidence
-types. The model-free driver in `test/vnext-driver.test.ts` completes and
-recovers `examples/vnext/.kxm/workflows/default.yaml` (plan → implement → verify → ready → completed;
+types. The model-free driver in `test/driver.test.ts` completes and
+recovers `examples/project/.kxm/workflows/default.yaml` (plan → implement → verify → ready → completed;
 rework loop; gate uncertainty recovery via retry, fail, cancel) and `fix.yaml`
 (all 13 stages; approval pass/rejection rework; two-producer MOA `all-settled` joins;
 critics rework back-edge to plan; approval rework back-edge to plan; command gates;
@@ -1467,7 +1579,7 @@ wait signal step) without illegal transitions or evidence reuse. Caller-authored
 replies fail closed. Fulfills the Phase 3 Gate sentence. Live Pi execution remains Phase 4.
 
 **Gate:** a model-free test driver completes and recovers
-`examples/vnext/.kxm/workflows/default.yaml` (plan → implement → verify → ready)
+`examples/project/.kxm/workflows/default.yaml` (plan → implement → verify → ready)
 and `fix.yaml` (approval, two-producer join, rework) without illegal transitions
 or evidence reuse. Joins use driver-simulated identities. Caller-authored
 replies are rejected. Out of gate: live models, provider-distinctness,
@@ -1490,7 +1602,7 @@ plus provenance on the discovery report; assignment-time provider/model
 admission remains Phase 4 work.
 
 **Harness/model assignment validation & Pi probe (implemented, unreleased):**
-Unhosted harness/model pair rejection at assignment and exact-context Pi auth probing (`validateHarnessModelPair`, `probeHarnessAssignment`, `probeHarnessesForModel` in `vnext-harness.ts`) enforce provider hosting boundaries, reject native-provider Pi impersonation, and probe exact requested provider/model credentials via `pi auth check`.
+Unhosted harness/model pair rejection at assignment and exact-context Pi auth probing (`validateHarnessModelPair`, `probeHarnessAssignment`, `probeHarnessesForModel` in `harness.ts`) enforce provider hosting boundaries, reject native-provider Pi impersonation, and probe exact requested provider/model credentials via `pi auth check`.
 
 **Routing records v2 and price catalog (implemented via D5 / issue #91, unreleased):**
 `routing.attempt.recorded` events carry `kxm.routing-record.v2` (harness, provider, model, tokens, latency, cost basis, cost USD); missing `costBasis` fails closed at attempt settlement; run plan enforces metered `limits.maxModelCost` cap before dispatch (`budget_model_cost`); dated and hashed price catalog `.kxm/prices.yaml` (`kxm.prices.v1`).
@@ -1513,7 +1625,7 @@ visible local status (`kxm dash`). `fix.yaml` is not required to run live.
 ## Phase 5: multi-repository local release
 
 Ship the local Runtime track publicly beside, not on top of, the legacy hub
-engine. Explicit `kxm init`/migration receipts activate vNext resources per
+engine. Explicit `kxm init`/migration receipts activate KXM resources per
 project; existing hub runs, `kxm hub …`, and the `kxm_*` tools remain on their current contracts.
 
 Implement worktrees, dirty snapshots, one-writer leases, multi-repository
@@ -1560,10 +1672,10 @@ quorum or hiding dissent. This is the first live multi-critic `/fix`. Until then
 two-producer joins are exercised only by the Phase 3 driver. Earlier phases fail
 closed on missing producers rather than degrade them.
 
-## Phase 8: multi-project hub vNext
+## Phase 8: multi-project hub KXM
 
 Begin the hub compatibility release and cutover described in
-[Migration](../docs/vnext/migration.md). Implement project/runtime enrollment, immutable
+[Migration](../docs/contracts/migration.md). Implement project/runtime enrollment, immutable
 configuration snapshots, run
 requests, sync-safe event ingestion, project stores, capability scheduling,
 shared-action leases, offline reconciliation, and aggregate TUI read models.

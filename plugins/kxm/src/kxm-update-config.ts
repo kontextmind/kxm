@@ -6,10 +6,10 @@ import {
   KxmUpdateConfigError,
   type KxmUpdateConfig,
 } from "./kxm-update.ts";
-import { vnextUserStateRoot } from "./vnext-bindings.ts";
+import { kxmUserStateRoot } from "./bindings.ts";
 
 export function loadKxmUpdateConfig(env: NodeJS.ProcessEnv = process.env): KxmUpdateConfig {
-  const path = join(vnextUserStateRoot({ env }), "update.yaml");
+  const path = join(kxmUserStateRoot({ env }), "update.yaml");
   if (!existsSync(path)) return { schema: KXM_UPDATE_SCHEMA, auto: false, source: "github" };
   let parsed: unknown;
   try {

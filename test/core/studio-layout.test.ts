@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import test from "node:test";
 import { parse } from "yaml";
-import { compileVnextWorkflow } from "../../plugins/kxm/src/vnext-engine-compile.ts";
+import { compileKxmWorkflow } from "../../plugins/kxm/src/engine-compile.ts";
 import { generateStudioLayout, STUDIO_LAYOUT_SCHEMA, createStudioServer } from "../../plugins/kxm/src/studio-layout.ts";
 
 test("generateStudioLayout compiles plan into Decision D14 DAG, stepper, and Temporal swimlanes", () => {
@@ -45,7 +45,7 @@ steps:
 `;
 
   const parsed = parse(yamlContent) as any;
-  const plan = compileVnextWorkflow({ id: "test-workflow", value: parsed });
+  const plan = compileKxmWorkflow({ id: "test-workflow", value: parsed });
   const layout = generateStudioLayout(plan);
 
   assert.equal(layout.schema, STUDIO_LAYOUT_SCHEMA);
@@ -116,7 +116,7 @@ steps:
 `;
 
   const parsed = parse(yamlContent) as any;
-  const plan = compileVnextWorkflow({ id: "multi-kind", value: parsed });
+  const plan = compileKxmWorkflow({ id: "multi-kind", value: parsed });
   const mockState = {
     currentStep: { stepId: "gate-approve", status: "running" as const, stepAttempt: 1 },
     stepAttempts: { review: 1 },
@@ -181,7 +181,7 @@ steps:
         target: $terminal
         terminalStatus: failed
 `;
-  const plan = compileVnextWorkflow({ id: "server-plan", value: parse(yamlContent) as any });
+  const plan = compileKxmWorkflow({ id: "server-plan", value: parse(yamlContent) as any });
 
   // 1. Without plan
   const serverWithoutPlan = createStudioServer({ port: 0 });

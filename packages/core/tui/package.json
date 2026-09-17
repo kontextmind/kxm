@@ -1,0 +1,31 @@
+{
+  "name": "@kontextmind/tui",
+  "version": "0.7.1",
+  "private": true,
+  "description": "Reusable KXM terminal components: declarative surfaces, one renderer, one input model",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "main": "./src/exports/index.ts",
+  "types": "./src/exports/index.ts",
+  "exports": {
+    ".": "./src/exports/index.ts",
+    "./types": "./src/types/surface.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "node ../../../scripts/build-package.mjs packages/core/tui",
+    "test": "node --disable-warning=ExperimentalWarning --experimental-strip-types --test --test-concurrency=4 tests/unit/*.test.ts",
+    "test:coverage": "node --disable-warning=ExperimentalWarning --experimental-strip-types --test --experimental-test-coverage --test-coverage-lines=90 --test-coverage-branches=80 --test-coverage-functions=90 --test-coverage-include=src/**/*.ts tests/unit/*.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@earendil-works/pi-tui": "0.85.1"
+  },
+  "devDependencies": {
+    "@types/node": "26.4.1",
+    "typescript": "7.0.2"
+  }
+}

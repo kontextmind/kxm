@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.kxm.dev/session-brief.schema.json",
+  "title": "KXM session brief",
+  "type": "object",
+  "required": [
+    "schema",
+    "generatedAt",
+    "staleSeconds",
+    "source",
+    "hub",
+    "stats",
+    "tasks",
+    "plans",
+    "statusLine",
+    "widgetLines"
+  ],
+  "properties": {
+    "schema": {
+      "const": "kxm.session-brief.v1"
+    },
+    "generatedAt": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    },
+    "staleSeconds": {
+      "type": "number",
+      "minimum": 0
+    },
+    "source": {
+      "type": "string",
+      "enum": ["legacy", "runtime", "both"]
+    },
+    "hub": {
+      "type": "object",
+      "required": ["state", "evidence"],
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": ["on", "off", "unknown"]
+        },
+        "evidence": {
+          "type": "string",
+          "enum": ["probed", "bound", "cached", "unconfigured", "process", "timeout"]
+        },
+        "online": {
+          "type": "boolean"
+        },
+        "url": {
+          "type": "string"
+        }
+      }
+    },
+    "cost": {
+      "type": "string"
+    },
+    "sessionToken": {
+      "type": "string"
+    },
+    "stats": {
+      "type": "object",
+      "required": ["activeTasks", "waitingTasks", "planCount", "inbox", "runTotal"],
+      "properties": {
+        "activeTasks": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "waitingTasks": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "planCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "inbox": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "runTotal": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "latestPlan": {
+          "type": "string"
+        }
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "id", "runId", "label", "detail", "prompt"],
+        "properties": {
+          "kind": {
+            "const": "task"
+          },
+          "id": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "plans": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "id", "runId", "label", "detail", "prompt"],
+        "properties": {
+          "kind": {
+            "const": "plan"
+          },
+          "id": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "statusLine": {
+      "type": "string",
+      "maxLength": 80
+    },
+    "widgetLines": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

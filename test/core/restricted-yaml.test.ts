@@ -4,10 +4,10 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
-import { VnextConfigError, parseRestrictedYaml as parseViaVnext } from "../../plugins/kxm/src/vnext-config.ts";
+import { KxmConfigError, parseRestrictedYaml as parseViaKxm } from "../../plugins/kxm/src/project-config.ts";
 import {
   RestrictedYamlError,
-  VNEXT_YAML_LIMITS,
+  KXM_YAML_LIMITS,
   parseRestrictedYaml as parseDirect,
 } from "../../plugins/kxm/src/restricted-yaml.mjs";
 
@@ -15,14 +15,14 @@ function capture(run: () => unknown): { ok: true; value: unknown } | { ok: false
   try {
     return { ok: true, value: run() };
   } catch (error) {
-    assert.ok(error instanceof RestrictedYamlError || error instanceof VnextConfigError);
+    assert.ok(error instanceof RestrictedYamlError || error instanceof KxmConfigError);
     return { ok: false, name: error.name, issues: [...error.issues] };
   }
 }
 
-function parity(input: string | Uint8Array, label: string, limits?: typeof VNEXT_YAML_LIMITS) {
+function parity(input: string | Uint8Array, label: string, limits?: typeof KXM_YAML_LIMITS) {
   const direct = capture(() => (limits ? parseDirect(input, label, limits) : parseDirect(input, label)));
-  const wrapped = capture(() => (limits ? parseViaVnext(input, label, limits) : parseViaVnext(input, label)));
+  const wrapped = capture(() => (limits ? parseViaKxm(input, label, limits) : parseViaKxm(input, label)));
   assert.equal(direct.ok, wrapped.ok, label);
   if (direct.ok && wrapped.ok) {
     assert.deepEqual(direct.value, wrapped.value);
@@ -32,12 +32,12 @@ function parity(input: string | Uint8Array, label: string, limits?: typeof VNEXT
   assert.equal(wrapped.ok, false);
   if (!direct.ok && !wrapped.ok) {
     assert.equal(direct.name, "RestrictedYamlError");
-    assert.equal(wrapped.name, "VnextConfigError");
+    assert.equal(wrapped.name, "KxmConfigError");
     assert.deepEqual(direct.issues, wrapped.issues);
   }
 }
 
-test("direct restricted YAML parser and vnext-config wrapper share success and structured failure", () => {
+test("direct restricted YAML parser and project-config wrapper share success and structured failure", () => {
   parity("a: 1\nb: two\n", "map");
   parity("nested:\n  list:\n    - 1\n    - true\n", "nested");
   parity(Buffer.from("plain: value\n", "utf8"), "bytes");
@@ -56,7 +56,7 @@ test("direct restricted YAML parser and vnext-config wrapper share success and s
   parity("1: value\n", "key");
   parity(new Uint8Array([0xff, 0xfe]), "utf8");
   parity(`value: ${"x".repeat(70_000)}\n`, "scalar-limit");
-  parity("a: 1\n", "tiny-document", { ...VNEXT_YAML_LIMITS, maxDocumentBytes: 1 });
+  parity("a: 1\n", "tiny-document", { ...KXM_YAML_LIMITS, maxDocumentBytes: 1 });
 });
 
 test("restricted YAML parser rejects aliases, tags, duplicates, multi-docs, and size without relaxing limits", () => {

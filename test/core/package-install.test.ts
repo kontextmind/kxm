@@ -95,7 +95,7 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
       "const runtime = await import('@kontextmind/kxm/runtime');",
       "const client = await import('@kontextmind/kxm/client');",
       "if (typeof core.redactSecrets !== 'function') throw new Error('missing redactSecrets');",
-      "if (typeof runtime.vnextRuntimePaths !== 'function') throw new Error('missing vnextRuntimePaths');",
+      "if (typeof runtime.kxmRuntimePaths !== 'function') throw new Error('missing kxmRuntimePaths');",
       "if (typeof client.HubClient !== 'function') throw new Error('missing HubClient');",
       "const { existsSync } = await import('node:fs');",
       "const { fileURLToPath } = await import('node:url');",
@@ -119,11 +119,11 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
     assert.match(unknownMesh.stderr, /kxm mesh was removed/);
     assert.equal(unknownMesh.stdout, "");
 
-    const vnextProject = join(consumer, "vnext-project");
+    const kxmProject = join(consumer, "kxm-project");
     const packedState = join(consumer, "kxm-state");
-    mkdirSync(vnextProject);
-    makeGitRoot(vnextProject);
-    const vnextInit = spawnSync(process.execPath, [
+    mkdirSync(kxmProject);
+    makeGitRoot(kxmProject);
+    const kxmInit = spawnSync(process.execPath, [
       join(packageRoot, "scripts", "kxm.mjs"),
       "init",
       "--json",
@@ -131,24 +131,24 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
       "Packed Project",
       "--project-id",
       "prj_01JPACKEDPROJECT00000000000",
-    ], { cwd: vnextProject, encoding: "utf8", env: { ...process.env, KXM_STATE_HOME: packedState } });
-    assert.equal(vnextInit.status, 0, `${vnextInit.stderr}\n${vnextInit.stdout}`);
-    const vnextPayload = JSON.parse(vnextInit.stdout) as { action: string; configRevision: string };
-    assert.equal(vnextPayload.action, "created");
-    assert.match(vnextPayload.configRevision, /^sha256:[a-f0-9]{64}$/);
-    const packedProjectFile = join(vnextProject, ".kxm", "project.yaml");
+    ], { cwd: kxmProject, encoding: "utf8", env: { ...process.env, KXM_STATE_HOME: packedState } });
+    assert.equal(kxmInit.status, 0, `${kxmInit.stderr}\n${kxmInit.stdout}`);
+    const kxmPayload = JSON.parse(kxmInit.stdout) as { action: string; configRevision: string };
+    assert.equal(kxmPayload.action, "created");
+    assert.match(kxmPayload.configRevision, /^sha256:[a-f0-9]{64}$/);
+    const packedProjectFile = join(kxmProject, ".kxm", "project.yaml");
     assert.equal(existsSync(packedProjectFile), true);
-    assert.equal(existsSync(join(vnextProject, ".kxm", "template-provenance.yaml")), true);
-    assert.equal(existsSync(join(packageRoot, "schemas", "vnext", "project.schema.json")), true);
-    assert.equal(existsSync(join(packageRoot, "schemas", "vnext", "template-provenance.schema.json")), true);
-    assert.equal(existsSync(join(packageRoot, "schemas", "vnext", "init-operation.schema.json")), true);
-    assert.equal(existsSync(join(packageRoot, "schemas", "vnext", "migration-plan.schema.json")), true);
-    assert.equal(existsSync(join(packageRoot, "schemas", "vnext", "migration-decision.schema.json")), true);
-    assert.equal(existsSync(join(packageRoot, "schemas", "vnext", "migration-receipt.schema.json")), true);
+    assert.equal(existsSync(join(kxmProject, ".kxm", "template-provenance.yaml")), true);
+    assert.equal(existsSync(join(packageRoot, "schemas", "project.schema.json")), true);
+    assert.equal(existsSync(join(packageRoot, "schemas", "template-provenance.schema.json")), true);
+    assert.equal(existsSync(join(packageRoot, "schemas", "init-operation.schema.json")), true);
+    assert.equal(existsSync(join(packageRoot, "schemas", "migration-plan.schema.json")), true);
+    assert.equal(existsSync(join(packageRoot, "schemas", "migration-decision.schema.json")), true);
+    assert.equal(existsSync(join(packageRoot, "schemas", "migration-receipt.schema.json")), true);
 
     const unsupportedWorkspace = spawnSync(process.execPath, [
-      join(packageRoot, "scripts", "kxm.mjs"), "--workspace", join(vnextProject, "wrong"), "init", "--json",
-    ], { cwd: vnextProject, encoding: "utf8" });
+      join(packageRoot, "scripts", "kxm.mjs"), "--workspace", join(kxmProject, "wrong"), "init", "--json",
+    ], { cwd: kxmProject, encoding: "utf8" });
     assert.equal(unsupportedWorkspace.status, 2, `${unsupportedWorkspace.stderr}\n${unsupportedWorkspace.stdout}`);
     assert.match(unsupportedWorkspace.stderr, /workspace_option_unsupported/);
 
@@ -156,12 +156,12 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
     writeFileSync(packedProjectFile, packedProjectYaml.replace("pathHint: .", "pathHint: COM¹"));
     const invalidPortablePath = spawnSync(process.execPath, [
       join(packageRoot, "scripts", "kxm.mjs"), "init", "--json",
-    ], { cwd: vnextProject, encoding: "utf8" });
+    ], { cwd: kxmProject, encoding: "utf8" });
     assert.equal(invalidPortablePath.status, 1, `${invalidPortablePath.stderr}\n${invalidPortablePath.stdout}`);
     assert.match(invalidPortablePath.stderr, /schema_pattern/);
     writeFileSync(packedProjectFile, packedProjectYaml);
 
-    const invalidDryRun = join(consumer, "invalid-vnext-project");
+    const invalidDryRun = join(consumer, "invalid-kxm-project");
     mkdirSync(invalidDryRun);
     makeGitRoot(invalidDryRun);
     const invalidProvisioning = spawnSync(process.execPath, [
@@ -189,7 +189,7 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
     const joinEnvironment = { ...process.env, KXM_STATE_HOME: packedState };
     const packedJoin = spawnSync(process.execPath, [
       join(packageRoot, "scripts", "kxm.mjs"), "init", "--json", "--repository", `api=${packedMember}`,
-    ], { cwd: vnextProject, encoding: "utf8", env: joinEnvironment });
+    ], { cwd: kxmProject, encoding: "utf8", env: joinEnvironment });
     assert.equal(packedJoin.status, 0, `${packedJoin.stderr}\n${packedJoin.stdout}`);
     const packedJoinPayload = JSON.parse(packedJoin.stdout) as { action: string; localBindingFile: string };
     assert.equal(packedJoinPayload.action, "joined");
@@ -200,7 +200,7 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
     assert.equal(readFileSync(packedProjectFile, "utf8"), joinProjectYaml);
     const packedJoinRepeated = spawnSync(process.execPath, [
       join(packageRoot, "scripts", "kxm.mjs"), "init", "--json",
-    ], { cwd: vnextProject, encoding: "utf8", env: joinEnvironment });
+    ], { cwd: kxmProject, encoding: "utf8", env: joinEnvironment });
     assert.equal(packedJoinRepeated.status, 0, `${packedJoinRepeated.stderr}\n${packedJoinRepeated.stdout}`);
     assert.match(packedJoinRepeated.stdout, /"action":"validated"/);
 
@@ -255,7 +255,7 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
     assert.match(migrateVerify.stdout, /"ok":true/);
 
     // Packed consumer: trust diff/check against HEAD on the migrated project.
-    // Commit the migrated tree first so HEAD is a loadable vNext base, then
+    // Commit the migrated tree first so HEAD is a loadable KXM base, then
     // expand a permission and observe the check fail until committed.
     spawnSync("git", ["-C", legacyConsumer, "add", "-A"], { windowsHide: true });
     const migratedCommit = spawnSync("git", ["-C", legacyConsumer, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "migrated"], { windowsHide: true });
@@ -280,9 +280,9 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
     ], { cwd: legacyConsumer, encoding: "utf8", env: joinEnvironment });
     assert.equal(trustCommitted.status, 0, `${trustCommitted.stderr}\n${trustCommitted.stdout}`);
     assert.match(trustCommitted.stdout, /"requiresReview":false/);
-    assert.equal(existsSync(join(packageRoot, "schemas", "vnext", "permission-diff.schema.json")), true);
+    assert.equal(existsSync(join(packageRoot, "schemas", "permission-diff.schema.json")), true);
 
-    // Packed consumer: vNext run lifecycle with an auto-started supervisor.
+    // Packed consumer: KXM run lifecycle with an auto-started supervisor.
     const packedRun = spawnSync(process.execPath, [
       join(packageRoot, "scripts", "kxm.mjs"), "run", "fix", "--json", "smoke the runtime",
     ], { cwd: legacyConsumer, encoding: "utf8", env: joinEnvironment, timeout: 120_000 });
@@ -305,7 +305,7 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
       join(packageRoot, "scripts", "kxm.mjs"), "runtime", "stop", "--json",
     ], { cwd: legacyConsumer, encoding: "utf8", env: joinEnvironment, timeout: 60_000 });
     assert.equal(packedStop.status, 0, `${packedStop.stderr}\n${packedStop.stdout}`);
-    assert.equal(existsSync(join(packageRoot, "plugins", "kxm", "dist", "vnext-runtime-supervisor.js")), true);
+    assert.equal(existsSync(join(packageRoot, "plugins", "kxm", "dist", "runtime-supervisor.js")), true);
 
     const globalInstall = runNpm([
       "install",

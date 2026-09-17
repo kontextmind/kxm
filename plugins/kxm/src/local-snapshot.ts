@@ -45,7 +45,7 @@ export interface MeshTuiPlan {
 export type MeshTuiOpenMessage = Pick<MessageRecord, "id" | "status" | "fromName" | "toName" | "delivery" | "createdAt" | "correlationId">;
 
 export interface LocalMeshSnapshot {
-  source?: "legacy" | "vnext" | "both" | undefined;
+  source?: "legacy" | "runtime" | "both" | undefined;
   agents: AgentRecord[];
   openMessages: MeshTuiOpenMessage[];
   openMessageTotal: number;
@@ -205,12 +205,12 @@ export function resolveKxmSnapshotPaths(cwd: string, env: NodeJS.ProcessEnv = pr
   return { dataPath, stateDir };
 }
 
-function resolveVnextStateRoot(
+function resolveKxmStateRoot(
   stateDir: string,
-  options?: { env?: NodeJS.ProcessEnv; vnextStateRoot?: string },
+  options?: { env?: NodeJS.ProcessEnv; kxmStateRoot?: string },
 ): string | undefined {
-  if (options?.vnextStateRoot && existsSync(options.vnextStateRoot)) {
-    return resolve(options.vnextStateRoot);
+  if (options?.kxmStateRoot && existsSync(options.kxmStateRoot)) {
+    return resolve(options.kxmStateRoot);
   }
   if (existsSync(join(stateDir, "runtime", "registry.db")) || existsSync(join(stateDir, "runtime", "projects"))) {
     return stateDir;
@@ -239,7 +239,7 @@ function resolveVnextStateRoot(
 export function loadLocalMeshSnapshot(
   dataPath: string,
   stateDir: string,
-  options?: { env?: NodeJS.ProcessEnv; projectRoot?: string; vnextStateRoot?: string },
+  options?: { env?: NodeJS.ProcessEnv; projectRoot?: string; kxmStateRoot?: string },
 ): LocalMeshSnapshot {
   let hasLegacy = false;
   let agents: AgentRecord[] = [];
@@ -264,20 +264,20 @@ export function loadLocalMeshSnapshot(
     }
   }
 
-  // vNext discovery
-  let hasVnext = false;
-  const vnextRuns: MeshTuiRun[] = [];
-  let vnextRunTotal = 0;
-  const vnextStateRoot = resolveVnextStateRoot(stateDir, options);
-  if (vnextStateRoot) {
-    const runtimeDir = join(vnextStateRoot, "runtime");
+  // KXM discovery
+  let hasKxm = false;
+  const kxmRuns: MeshTuiRun[] = [];
+  let kxmRunTotal = 0;
+  const kxmStateRoot = resolveKxmStateRoot(stateDir, options);
+  if (kxmStateRoot) {
+    const runtimeDir = join(kxmStateRoot, "runtime");
     const registryDbPath = join(runtimeDir, "registry.db");
     const projectsDir = join(runtimeDir, "projects");
 
     const projectKeys = new Set<string>();
 
     if (existsSync(registryDbPath)) {
-      hasVnext = true;
+      hasKxm = true;
       try {
         const regDb = new DatabaseSync(registryDbPath, { readOnly: true });
         try {
@@ -305,7 +305,7 @@ export function loadLocalMeshSnapshot(
     for (const key of projectKeys) {
       const eventDbPath = join(projectsDir, key, "run-events.db");
       if (existsSync(eventDbPath)) {
-        hasVnext = true;
+        hasKxm = true;
         try {
           const eventDb = new DatabaseSync(eventDbPath, { readOnly: true });
           try {
@@ -322,9 +322,9 @@ export function loadLocalMeshSnapshot(
               updated_at: string;
             }>;
             const countRow = eventDb.prepare("SELECT COUNT(*) AS total FROM runs").get() as { total: number } | undefined;
-            vnextRunTotal += Number(countRow?.total ?? runRows.length);
+            kxmRunTotal += Number(countRow?.total ?? runRows.length);
             for (const r of runRows) {
-              vnextRuns.push({
+              kxmRuns.push({
                 id: r.run_id,
                 status: r.status,
                 definitionId: r.workflow_id,
@@ -360,7 +360,7 @@ export function loadLocalMeshSnapshot(
   // Combine runs
   const combinedRuns = [
     ...legacyRuns.map((run) => summarizeMeshRun(run)),
-    ...vnextRuns,
+    ...kxmRuns,
   ];
   const seenIds = new Set<string>();
   const uniqueRuns: MeshTuiRun[] = [];
@@ -376,14 +376,14 @@ export function loadLocalMeshSnapshot(
     return bt - at;
   });
   const runs = uniqueRuns.slice(0, 16);
-  const runTotal = legacyRunTotal + vnextRunTotal;
+  const runTotal = legacyRunTotal + kxmRunTotal;
 
   // Source determination
-  let source: "legacy" | "vnext" | "both";
-  if (hasLegacy && hasVnext) {
+  let source: "legacy" | "runtime" | "both";
+  if (hasLegacy && hasKxm) {
     source = "both";
-  } else if (hasVnext) {
-    source = "vnext";
+  } else if (hasKxm) {
+    source = "runtime";
   } else {
     source = "legacy";
   }

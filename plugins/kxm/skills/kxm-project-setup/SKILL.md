@@ -12,8 +12,8 @@ invent `force`, domain-trust, or extra migrate verbs.
 
 | Command | Purpose | Options / arguments |
 |---|---|---|
-| `kxm init` | Create, validate, or plan migration of a vNext project | `--json`, `--dry-run`, `--name`, `--project-id`, `--repository <id=absolute-path>` |
-| `kxm migrate plan` | Compute the legacy-to-vNext plan without writes | `--json` |
+| `kxm init` | Create, validate, or plan migration of a KXM project | `--json`, `--dry-run`, `--name`, `--project-id`, `--repository <id=absolute-path>` |
+| `kxm migrate plan` | Compute the legacy-to-KXM plan without writes | `--json` |
 | `kxm migrate apply` | Install a reviewed migration with a hash-linked receipt | `--decisions <file>`, `--project-id`, `--name` |
 | `kxm migrate verify` | Verify a migration receipt | `--json` |
 | `kxm trust diff` | Structured permission diff against a Git revision | `--base <revision>` |

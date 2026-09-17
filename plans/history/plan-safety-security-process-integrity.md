@@ -46,7 +46,7 @@ Address critical security, safety, process integrity, and governance gaps identi
 
 During the critical review of KXM against the reference repositories, eight high-impact gaps were identified:
 
-1. **Critic Read-Only Sandbox Gap:** In [`plugins/kxm/src/vnext-harness.ts`](../../plugins/kxm/src/vnext-harness.ts), `READ_ONLY_ONESHOT_ARGS` defines sandboxed flags for `claude`, `codex`, and `grok`, but omits `agy` and `kimi`. When an audit or critic role is dispatched through `agy` or `kimi`, the critic runs without `--mode plan`, `--sandbox`, or `--plan`, leaving it with unintended write and mutation permissions.
+1. **Critic Read-Only Sandbox Gap:** In [`plugins/kxm/src/harness.ts`](../../plugins/kxm/src/harness.ts), `READ_ONLY_ONESHOT_ARGS` defines sandboxed flags for `claude`, `codex`, and `grok`, but omits `agy` and `kimi`. When an audit or critic role is dispatched through `agy` or `kimi`, the critic runs without `--mode plan`, `--sandbox`, or `--plan`, leaving it with unintended write and mutation permissions.
 2. **Missing Destructive Command Seatbelts:** Autonomous coding agents (the writer role) can inadvertently wipe unstaged progress or corrupt repository state by executing destructive commands (`rm -rf`, `git reset --hard`, `git clean`) during hallucinated recovery loops.
 3. **Orphaned Zombie Processes:** When subagents, test runners, or compilation jobs time out or are cancelled, standard process signaling (`kill(pid)`) terminates only the parent shell, leaking subshells, test workers, and background daemons.
 4. **Implementer Authority Drift:** Three separate configuration files declare who the implementer is (`.kxm/agents/implementer.yaml`, `.kxm/producers.yaml`, and `.kxm/roles/writer.yaml`), creating conflicting sources of truth.
@@ -94,7 +94,7 @@ flowchart TD
     Security --> Process --> Integrity
 ```
 
-### 1. Close Critic Read-Only Sandboxing in `vnext-harness.ts`
+### 1. Close Critic Read-Only Sandboxing in `harness.ts`
 
 Extend `READ_ONLY_ONESHOT_ARGS` to include explicit sandboxing arguments for `agy` and `kimi`:
 
@@ -110,7 +110,7 @@ const READ_ONLY_ONESHOT_ARGS = Object.freeze({
 
 Add a deterministic unit test asserting that dispatching any critic or auditor role to `agy` or `kimi` without these read-only arguments fails closed.
 
-### 2. Implement Literal Command Seatbelts in `vnext-engine.ts`
+### 2. Implement Literal Command Seatbelts in `engine.ts`
 
 In KXM's tool execution layer, enforce a literal blocklist on destructive commands:
 
@@ -133,7 +133,7 @@ export function assertCommandSeatbelt(command: string): void {
 }
 ```
 
-### 3. POSIX Process-Group Termination in `vnext-oneshot-process.ts`
+### 3. POSIX Process-Group Termination in `oneshot-process.ts`
 
 When spawning shell commands, child processes, or test suites, set `detached: true` on POSIX systems:
 
@@ -160,7 +160,7 @@ export function killProcessTree(child: ChildProcess, signal: NodeJS.Signals = "S
 
 - Establish `.kxm/agents/*.yaml` as the **sole authority** for agent identity, harness, and model.
 - Treat `.kxm/producers.yaml` strictly as an execution history ledger.
-- In `plugins/kxm/src/vnext-config.ts`, add a startup validator that fails closed (`role_roster_conflicts_with_agent`) if `.kxm/roles/writer.yaml` conflicts with `.kxm/agents/implementer.yaml`.
+- In `plugins/kxm/src/project-config.ts`, add a startup validator that fails closed (`role_roster_conflicts_with_agent`) if `.kxm/roles/writer.yaml` conflicts with `.kxm/agents/implementer.yaml`.
 
 ### 5. Producer-Kind Steer Semantics
 
@@ -197,10 +197,10 @@ In KXM's remote SSH transport:
 
 | Stage | Action | Target Files | Verification Gate |
 | :--- | :--- | :--- | :--- |
-| **Stage 1** | Extend `READ_ONLY_ONESHOT_ARGS` for `agy` and `kimi` | [`plugins/kxm/src/vnext-harness.ts`](../../plugins/kxm/src/vnext-harness.ts) | Unit tests verify critic dispatch adds sandboxed flags |
-| **Stage 2** | Implement command seatbelts | [`plugins/kxm/src/vnext-engine.ts`](../../plugins/kxm/src/vnext-engine.ts) | Test verifies `rm -rf` and `git reset --hard` throw seatbelt error |
-| **Stage 3** | Implement process-group tree termination | [`plugins/kxm/src/vnext-oneshot-process.ts`](../../plugins/kxm/src/vnext-oneshot-process.ts) | Test verifies timed-out test command terminates all child subshells |
-| **Stage 4** | Implement authority validation brake | [`plugins/kxm/src/vnext-config.ts`](../../plugins/kxm/src/vnext-config.ts) | Startup test fails closed on conflicting writer configurations |
+| **Stage 1** | Extend `READ_ONLY_ONESHOT_ARGS` for `agy` and `kimi` | [`plugins/kxm/src/harness.ts`](../../plugins/kxm/src/harness.ts) | Unit tests verify critic dispatch adds sandboxed flags |
+| **Stage 2** | Implement command seatbelts | [`plugins/kxm/src/engine.ts`](../../plugins/kxm/src/engine.ts) | Test verifies `rm -rf` and `git reset --hard` throw seatbelt error |
+| **Stage 3** | Implement process-group tree termination | [`plugins/kxm/src/oneshot-process.ts`](../../plugins/kxm/src/oneshot-process.ts) | Test verifies timed-out test command terminates all child subshells |
+| **Stage 4** | Implement authority validation brake | [`plugins/kxm/src/project-config.ts`](../../plugins/kxm/src/project-config.ts) | Startup test fails closed on conflicting writer configurations |
 | **Stage 5** | Enforce RTK gate/critic bypass | Shell runner / `rtk.ts` | Test confirms verification gate output is never proxied through `rtk` |
 | **Stage 6** | Pinned SSH host key enforcement | `plugins/kxm/src/tools/ssh-run.ts` | Test verifies rejection of unpinned host keys |
 

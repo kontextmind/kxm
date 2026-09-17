@@ -45,7 +45,7 @@ The \`kxm\` CLI is the unified agent surface for peer collaboration and workflow
 | \`kxm workflow checkpoint [runId] [stageId] [status] [summary]\` | Record stage result with verified evidence | \`--run-id\`, \`--stage-id\`, \`--status <passed\\|warning\\|failed>\`, \`--summary\`, \`--evidence <json>\`, \`--evidence-refs <json>\` |
 | \`kxm workflow record [runId] [category] [area] [summary]\` | Record plans, decisions, contradictions, errors, lessons | \`--run-id\`, \`--category <plan\\|decision\\|contradiction\\|error\\|lesson>\`, \`--area\`, \`--severity <info\\|warning\\|error>\`, \`--details\`, \`--evidence <items...>\` |
 | \`kxm workflow wait [runId] [stageId] [signalKey] [summary]\` | Pause stage until an external signed signal arrives | \`--run-id\`, \`--stage-id\`, \`--signal-key\`, \`--summary\`, \`--evidence <json>\`, \`--evidence-refs <json>\`, \`--timeout-ms\` |
-| \`kxm workflow signal <runId> <signalKey> <status> <summary>\` | Resume or unblock a waiting stage or vNext run | \`[evidence...]\`, \`--delivery-id\` |
+| \`kxm workflow signal <runId> <signalKey> <status> <summary>\` | Resume or unblock a waiting stage or KXM run | \`[evidence...]\`, \`--delivery-id\` |
 | \`kxm workflow list\` | List local workflow runs | \`--json\` |
 | \`kxm workflow get <runId>\` | Get stages and journal for a run | \`--json\` |
 

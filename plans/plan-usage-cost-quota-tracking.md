@@ -137,7 +137,7 @@ stages:
       actionOnExceed: "pause_and_escalate" # "pause_and_escalate" | "fail_closed"
 ```
 
-Any selected stage-budget extension must reuse `vnext-engine.ts` accounting and recovery semantics. Do not assume that the sketch's `audit_escalation` checkpoint exists or introduce a separate pause authority. API budget rollover remains deferred by the canonical plan.
+Any selected stage-budget extension must reuse `engine.ts` accounting and recovery semantics. Do not assume that the sketch's `audit_escalation` checkpoint exists or introduce a separate pause authority. API budget rollover remains deferred by the canonical plan.
 
 ---
 

@@ -419,7 +419,7 @@ Plans and Tasks tabs.
 | Level | Source of truth | Lifecycle | Rule |
 |---|---|---|---|
 | Plan | `implementation-plan.md` in Git | Edited only when a gate passes or a phase is split or reordered | Phases, gates, one Landed line per phase. No backlog, no diary. |
-| Decision | `docs/vnext/decisions.md`, dated, numbered | Append-only; supersede, never edit | Six lines max each. Replaces Decided. |
+| Decision | `docs/contracts/decisions.md`, dated, numbered | Append-only; supersede, never edit | Six lines max each. Replaces Decided. |
 | Phase | GitHub milestone named by its gate | Closed when the gate test is green on `main` | Gives "what is left" for free. |
 | Slice | GitHub issue labelled `slice` plus `phase:N` | One issue, one PR, "Closes #N" | One to three days; body is scope, gate delta, checklist. |
 

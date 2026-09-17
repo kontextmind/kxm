@@ -349,17 +349,17 @@ bottleneck or lifecycle capability gap and retain this packet's common contracts
 Code references below describe this plan's fixed historical baseline. Apply the
 current A1 delta above and the unified plan's scope before selecting work:
 
-- [`vnext-oneshot-process.ts`](../plugins/kxm/src/vnext-oneshot-process.ts)
+- [`oneshot-process.ts`](../plugins/kxm/src/oneshot-process.ts)
   currently returns collected stdout/stderr at settlement, with an 8 MiB combined
   limit, and ends stdin after the initial input. Extend its bounded lifecycle
   for incremental observation; duplex input needs an explicit separate contract.
-- [`vnext-oneshot-producer.ts`](../plugins/kxm/src/vnext-oneshot-producer.ts)
+- [`oneshot-producer.ts`](../plugins/kxm/src/oneshot-producer.ts)
   currently parses the collected output and already rejects prose outcomes.
   Keep strict final validation while emitting intermediate observations.
-- [`vnext-harness.ts`](../plugins/kxm/src/vnext-harness.ts) has catalog, auth and
+- [`harness.ts`](../plugins/kxm/src/harness.ts) has catalog, auth and
   final usage parsing. Extend the existing owner with versioned capabilities and
   separate stream codecs; do not create a conflicting inventory.
-- [`vnext-pi-producer.ts`](../plugins/kxm/src/vnext-pi-producer.ts) has a live RPC
+- [`pi-producer.ts`](../plugins/kxm/src/pi-producer.ts) has a live RPC
   session but permissive outcome inference. Bring its final-result handling into
   agreement with the one-shot contract before comparing adapters.
 - [`subagent-control.ts`](../plugins/kxm/src/subagent-control.ts) and the

@@ -87,7 +87,7 @@ flowchart LR
 
 ### 1. Candidate Integration Boundary
 
-Use a verified shell-tool output boundary in a host adapter or shared context service. `plugins/kxm/src/vnext-oneshot-process.ts` supervises native harness processes; it is not a generic hook for their internal shell tools. Its native JSONL/protocol streams must remain intact for M2 decoding. The previous regex-based command-string rewriter is withdrawn: it neither established shell semantics nor selected a filtering RTK command.
+Use a verified shell-tool output boundary in a host adapter or shared context service. `plugins/kxm/src/oneshot-process.ts` supervises native harness processes; it is not a generic hook for their internal shell tools. Its native JSONL/protocol streams must remain intact for M2 decoding. The previous regex-based command-string rewriter is withdrawn: it neither established shell semantics nor selected a filtering RTK command.
 
 For an admitted experiment, preserve command identity, stdout/stderr distinction, original exit status and bounded evidence references. A reduced view records the filter/version and any truncation or omissions. Optional filter absence or failure cannot hide a command failure or trigger dependency installation. M1/M5 select the concrete component and host boundary; this reference does not add another runtime wrapper.
 

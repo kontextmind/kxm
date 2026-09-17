@@ -129,7 +129,7 @@ Both operations need authoritative actor/project/host/workspace/run/attempt/nati
 
 ### 2. Tool Surface Scoping & Sandbox Enforcement
 
-In `plugins/kxm/src/vnext-engine.ts`, when a child agent starts:
+In `plugins/kxm/src/engine.ts`, when a child agent starts:
 
 - Intersect requested tools with the inherited permission floor, role policy and verified host capabilities; expose only admitted definitions.
 - Default presets:

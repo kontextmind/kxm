@@ -3,16 +3,16 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { oneShotReadOnlyArgs } from "../../plugins/kxm/src/vnext-harness.ts";
+import { oneShotReadOnlyArgs } from "../../plugins/kxm/src/harness.ts";
 import {
   assertCommandSeatbelt,
   DESTRUCTIVE_COMMAND_PATTERNS,
   isRtkBypassRequired,
   assertPinnedSshHostKeyPolicy,
 } from "../../plugins/kxm/src/safety-integrity.ts";
-import { killProcessTree } from "../../plugins/kxm/src/vnext-oneshot-process.ts";
-import { loadVnextProject, VnextConfigError } from "../../plugins/kxm/src/vnext-config.ts";
-import { initializeVnextProject } from "../../plugins/kxm/src/vnext-init.ts";
+import { killProcessTree } from "../../plugins/kxm/src/oneshot-process.ts";
+import { loadKxmProject, KxmConfigError } from "../../plugins/kxm/src/project-config.ts";
+import { initializeKxmProject } from "../../plugins/kxm/src/init.ts";
 import { makeGitRoot } from "../helpers/git-root.ts";
 
 test("Stage 1: oneShotReadOnlyArgs exposes pinned sandboxed flags for agy and kimi", () => {
@@ -118,11 +118,11 @@ test("Stage 3: killProcessTree invokes negative PGID termination on POSIX", () =
   }
 });
 
-test("Stage 4: loadVnextProject fails closed if .kxm/roles/writer.yaml conflicts with .kxm/agents/implementer.yaml", () => {
+test("Stage 4: loadKxmProject fails closed if .kxm/roles/writer.yaml conflicts with .kxm/agents/implementer.yaml", () => {
   const dir = mkdtempSync(join(tmpdir(), "kxm-authority-test-"));
   try {
     makeGitRoot(dir);
-    initializeVnextProject(dir, { projectId: "prj_01JAUTHORITY0000000000000000" });
+    initializeKxmProject(dir, { projectId: "prj_01JAUTHORITY0000000000000000" });
 
     // Explicitly set implementer agent model to xai/grok-4.6
     writeFileSync(
@@ -156,9 +156,9 @@ roster:
     );
 
     assert.throws(
-      () => loadVnextProject(dir),
+      () => loadKxmProject(dir),
       (err: unknown) => {
-        assert(err instanceof VnextConfigError);
+        assert(err instanceof KxmConfigError);
         const issue = err.issues.find((i) => i.code === "role_roster_conflicts_with_agent");
         assert(issue, "Expected role_roster_conflicts_with_agent issue code");
         assert.equal(issue.file, ".kxm/roles/writer.yaml");
@@ -179,7 +179,7 @@ roster:
 `,
     );
 
-    const bundle = loadVnextProject(dir);
+    const bundle = loadKxmProject(dir);
     assert.ok(bundle.project);
   } finally {
     rmSync(dir, { recursive: true, force: true });

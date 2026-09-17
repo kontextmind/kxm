@@ -45,9 +45,9 @@ Identify reusable streaming, schema handling, diagnostics and quota contracts wh
 
 ## 2. Background and Architectural Gap
 
-Rechecked in KXM `02aaed31` (`vnext-harness.ts`):
+Rechecked in KXM `02aaed31` (`harness.ts`):
 
-- `vnext-harness.ts` defines `agy` as an external binary (`commands: ["agy"]`) executed via `agy --output-format json -p`. The output is parsed post-hoc via JSON/regex heuristics in `parseAgyOneShotUsage`.
+- `harness.ts` defines `agy` as an external binary (`commands: ["agy"]`) executed via `agy --output-format json -p`. The output is parsed post-hoc via JSON/regex heuristics in `parseAgyOneShotUsage`.
 - The catalog resolves `kimi` as an external one-shot CLI and requests `--output-format stream-json -p`; a particular user installation path is not a universal product contract.
 - `AGENTS.md` and `implementation-plan.md` state that only Pi is a supervised long-lived RPC worker (`kxm agent worker` / `pi --mode rpc`), while `agy` is strictly one-shot headless.
 
@@ -101,7 +101,7 @@ flowchart LR
 
 Useful components belong behind one `@kontextmind/kxm` installation and thin adapters. Do not require separate Pi extension registration. Optional dependencies need explicit KXM-managed setup, license review and platform evidence under M1/M9.
 
-### 2. Harness Contracts (`plugins/kxm/src/vnext-harness.ts`)
+### 2. Harness Contracts (`plugins/kxm/src/harness.ts`)
 
 Preserve native-provider boundaries and fail-closed eligibility. Presence of a provider package does not permit an allowlist expansion. Extend capability observations and event/control adapters only through M2/M3 and current Phase 11 admission, including workspace/session identity and cancellation settlement.
 

@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { stringify } from "yaml";
-import { defaultSpawn } from "./vnext-oneshot-process.ts";
+import { defaultSpawn } from "./oneshot-process.ts";
 
 export interface InventoryPrice {
   inputPerMillion: number | null;

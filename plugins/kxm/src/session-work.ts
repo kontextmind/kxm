@@ -53,7 +53,7 @@ export interface SessionBrief {
   schema: "kxm.session-brief.v1";
   generatedAt: string;
   staleSeconds: number;
-  source: "legacy" | "vnext" | "both";
+  source: "legacy" | "runtime" | "both";
   hub: SessionHubStatus;
   stats: SessionWorkStats;
   tasks: SessionWorkItem[];
@@ -257,14 +257,14 @@ export function formatSessionWidget(
 }
 
 export function buildSessionBrief(
-  snapshot: Pick<LocalMeshSnapshot, "runs" | "plans" | "openMessageTotal" | "runTotal"> & { source?: "legacy" | "vnext" | "both" | undefined },
+  snapshot: Pick<LocalMeshSnapshot, "runs" | "plans" | "openMessageTotal" | "runTotal"> & { source?: "legacy" | "runtime" | "both" | undefined },
   current?: SessionWorkItem,
   hub?: SessionHubStatus,
   ship?: SessionShipStatus,
   updateLatest?: string,
   cost?: string,
   sessionToken?: string,
-  source?: "legacy" | "vnext" | "both" | undefined,
+  source?: "legacy" | "runtime" | "both" | undefined,
   staleSeconds = DEFAULT_SESSION_BRIEF_STALE_SECONDS,
 ): SessionBrief {
   const resolvedSource = source ?? snapshot.source ?? "legacy";

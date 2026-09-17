@@ -70,7 +70,7 @@ flowchart TB
 | Component | Responsibility | Public Interface / Contract | Owned State / Tables | Team / Role Owner |
 
 |---|---|---|---|---|
-| Workflow Engine | DAG scheduling & loop transitions | `VnextEngine.drive()` | `run_events`, `workflow_runs` | Engine Lead |
+| Workflow Engine | DAG scheduling & loop transitions | `KxmEngine.drive()` | `run_events`, `workflow_runs` | Engine Lead |
 
 | Context Arbiter | Token budgeting & context compilation | `arbitrate()` | In-memory pool + Git memory | Memory Lead |
 | External Effects Ledger | CAS leasing & idempotency | `ExternalEffectsLedger` | `external_effects` | Platform Lead |

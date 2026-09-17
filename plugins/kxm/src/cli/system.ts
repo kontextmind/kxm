@@ -83,8 +83,8 @@ import {
   probeHarnessesAsync,
   runHarnessUpdate,
   type HarnessUpdateScope,
-} from "../vnext-harness.ts";
-import { vnextUserStateRoot } from "../vnext-bindings.ts";
+} from "../harness.ts";
+import { kxmUserStateRoot } from "../bindings.ts";
 import {
   print,
   printWorker,

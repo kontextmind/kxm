@@ -13,15 +13,15 @@ import { createMeshHub } from "../../plugins/kxm/src/hub.ts";
 import { SkillLifecycle, skillContentSha256 } from "../../plugins/kxm/src/skills.ts";
 import { MeshStore } from "../../plugins/kxm/src/store.ts";
 import { NativeStateProvider } from "../../plugins/kxm/src/state.ts";
-import { loadVnextProject } from "../../plugins/kxm/src/vnext-config.ts";
+import { loadKxmProject } from "../../plugins/kxm/src/project-config.ts";
 import {
-  acceptVnextRun,
-  closeVnextRuntimeContext,
-  computeVnextMemoryRevision,
-  openVnextRuntimeContext,
-} from "../../plugins/kxm/src/vnext-runtime.ts";
-import { newVnextCommandId } from "../../plugins/kxm/src/vnext-runtime-store.ts";
-import { committedProject } from "../helpers/vnext-project.ts";
+  acceptKxmRun,
+  closeKxmRuntimeContext,
+  computeKxmMemoryRevision,
+  openKxmRuntimeContext,
+} from "../../plugins/kxm/src/runtime-service.ts";
+import { newKxmCommandId } from "../../plugins/kxm/src/runtime-store.ts";
+import { committedProject } from "../helpers/project.ts";
 import { removeTempDir } from "../helpers.ts";
 
 test("Rule 1: promotion requires configured admin token with no loopback bypass and records real caller", async () => {
@@ -342,15 +342,15 @@ test("Rule 3: no record carries a control-plane field, redact at parse, and scop
 test("Memory revision is computed at run creation from Git-authored set + promoted-state snapshot and pinned", () => {
   const { root, stateRoot } = committedProject("kxm-e5-memrev-");
   try {
-    const bundle = loadVnextProject(root);
-    const baselineRevision = computeVnextMemoryRevision(bundle);
+    const bundle = loadKxmProject(root);
+    const baselineRevision = computeKxmMemoryRevision(bundle);
     assert.match(baselineRevision, /^ctxrev_[a-f0-9]{64}$/);
 
     // 1. Adding Git-authored memory file changes the memory revision
     const memoryDir = join(root, ".kxm", "memory");
     mkdirSync(memoryDir, { recursive: true });
     writeFileSync(join(memoryDir, "guidelines.md"), "# Guidelines\nAlways verify before commit.");
-    const revWithMemory = computeVnextMemoryRevision(bundle);
+    const revWithMemory = computeKxmMemoryRevision(bundle);
     assert.notEqual(revWithMemory, baselineRevision);
     assert.match(revWithMemory, /^ctxrev_[a-f0-9]{64}$/);
 
@@ -358,7 +358,7 @@ test("Memory revision is computed at run creation from Git-authored set + promot
     const candidatesDir = join(memoryDir, "candidates");
     mkdirSync(candidatesDir, { recursive: true });
     writeFileSync(join(candidatesDir, "draft.md"), "# Draft candidate\nUnreviewed idea.");
-    const revWithCandidate = computeVnextMemoryRevision(bundle);
+    const revWithCandidate = computeKxmMemoryRevision(bundle);
     assert.equal(revWithCandidate, revWithMemory, "memory candidates must be excluded from revision");
 
     // 3. Adding promoted skills changes the memory revision
@@ -367,7 +367,7 @@ test("Memory revision is computed at run creation from Git-authored set + promot
     mkdirSync(promotedSkillDir, { recursive: true });
     writeFileSync(join(promotedSkillDir, "SKILL.md"), "export const a = 1;");
     writeFileSync(join(promotedSkillDir, "metadata.json"), JSON.stringify({ name: "skill-1", contentSha256: "abc" }));
-    const revWithSkill = computeVnextMemoryRevision(bundle);
+    const revWithSkill = computeKxmMemoryRevision(bundle);
     assert.notEqual(revWithSkill, revWithMemory, "promoted skill must change memory revision");
 
     // 4. Promoted-state snapshot changes the memory revision
@@ -393,17 +393,17 @@ test("Memory revision is computed at run creation from Git-authored set + promot
       stateKey: "feature.draft",
       status: "proposed",
     });
-    const revWithState = computeVnextMemoryRevision(bundle, { promotedState: [currentStateItem, proposedStateItem] });
+    const revWithState = computeKxmMemoryRevision(bundle, { promotedState: [currentStateItem, proposedStateItem] });
     assert.notEqual(revWithState, revWithSkill);
     // Proposed state items must not affect the revision
-    const revWithOnlyCurrent = computeVnextMemoryRevision(bundle, { promotedState: [currentStateItem] });
+    const revWithOnlyCurrent = computeKxmMemoryRevision(bundle, { promotedState: [currentStateItem] });
     assert.equal(revWithState, revWithOnlyCurrent, "proposed items in promotedState snapshot must be ignored");
 
-    // 5. acceptVnextRun pins the computed revision
-    const context = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: "rtm_01JTEST000000000000000000" });
+    // 5. acceptKxmRun pins the computed revision
+    const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: "rtm_01JTEST000000000000000000" });
     try {
-      const commandId = newVnextCommandId();
-      const acceptance = acceptVnextRun(context, bundle, {
+      const commandId = newKxmCommandId();
+      const acceptance = acceptKxmRun(context, bundle, {
         commandId,
         workflowId: "default",
         prompt: "test run creation memory revision",
@@ -414,7 +414,7 @@ test("Memory revision is computed at run creation from Git-authored set + promot
       assert.equal(acceptance.event.memoryRevision, revWithOnlyCurrent);
 
       // Idempotent retry returns the exact same pinned revision
-      const retry = acceptVnextRun(context, bundle, {
+      const retry = acceptKxmRun(context, bundle, {
         commandId,
         workflowId: "default",
         prompt: "test run creation memory revision",
@@ -422,7 +422,7 @@ test("Memory revision is computed at run creation from Git-authored set + promot
       assert.equal(retry.idempotent, true);
       assert.equal(retry.run.memoryRevision, revWithOnlyCurrent);
     } finally {
-      closeVnextRuntimeContext(context);
+      closeKxmRuntimeContext(context);
     }
   } finally {
     removeTempDir(root, stateRoot);

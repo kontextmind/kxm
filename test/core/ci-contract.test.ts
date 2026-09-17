@@ -189,7 +189,7 @@ test("coverage excludes stay file-scoped and never hide the antigravity or claud
   for (const script of [coverageCore, coverageComplete]) {
     assert.match(script, /--test-coverage-exclude=plugins\/kxm\/src\/server\.ts/);
     assert.match(script, /--test-coverage-exclude=plugins\/kxm\/src\/mcp-server\.ts/);
-    assert.match(script, /--test-coverage-exclude=plugins\/kxm\/src\/vnext-runtime-supervisor\.ts/);
+    assert.match(script, /--test-coverage-exclude=plugins\/kxm\/src\/runtime-supervisor\.ts/);
     assert.doesNotMatch(script, /providers\/antigravity\/\*\*/);
     assert.doesNotMatch(script, /providers\/claude-bridge\/\*\*/);
   }

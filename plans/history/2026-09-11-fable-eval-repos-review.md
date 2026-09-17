@@ -2,8 +2,8 @@
 
 Role: Claude Fable, architecture/permissions critic. Input: `/tmp/kxm-eval-repos/`
 (doompi, pix-mono, ak-pi-workflow-roles, omp-hooks-plus, pi-antigravity) read
-against `plugins/kxm/src/vnext-harness.ts`, `vnext-oneshot-producer.ts`,
-`vnext-engine.ts`, `routing.ts`, `vnext-permission.ts`, `extension.ts`, `.kxm/`,
+against `plugins/kxm/src/harness.ts`, `oneshot-producer.ts`,
+`engine.ts`, `routing.ts`, `permission.ts`, `extension.ts`, `.kxm/`,
 and `plans/implementation-plan.md` Tracking. This is a proposal. The current
 writer applies any accepted slice with tests; nothing here is a plan edit yet.
 
@@ -43,7 +43,7 @@ sanitized `/doctor`.
   embedded OAuth client belongs to another product; `cloud-platform` scope is
   far wider than KXM needs. **Reject as a route.**
 - The catalog-grouping pattern is already mirrored in KXM
-  (`gemini-3.8-flash-high` default in `vnext-oneshot-producer.ts`), so no gain.
+  (`gemini-3.8-flash-high` default in `oneshot-producer.ts`), so no gain.
 - The *quota* pattern is valuable but agy has no `usage` subcommand
   (verified via `agy --help`), so KXM cannot read Antigravity quota without
   agy's tokens. The observable signal for agy is the 429 body in one-shot
@@ -87,7 +87,7 @@ run, `quotaExhaustedAttempts` in the report.
   `kxm models refresh` with `source` and fetch status, prices still `unknown`
   unless the vendor row matches.
 - The 100-attempt unmetered ceiling is a magic number in the engine, not a
-  YAML limit. `vnext-permission.ts` already models `budget` as an authority
+  YAML limit. `permission.ts` already models `budget` as an authority
   field; the number should live there so a permission expansion is visible.
 - Subscription attempts are not free — they consume a window. KXM records
   them as `unmetered` and then has no notion of "how much window is left".
@@ -128,7 +128,7 @@ escape the plugin root.
   PASS/FAIL) are freeform `content`; `just accept` relies on separate PASS
   records. Typed verdict envelopes would close that seam.
 - Tool presets (`tools.preset: workspace-writer`) are tracked as authority in
-  `vnext-permission.ts`, but I found no `tool_call` interception in
+  `permission.ts`, but I found no `tool_call` interception in
   `extension.ts` (hooks present: `session_start`, `message_start`,
   `agent_end`, `tool_result`, `agent_settled`, `session_shutdown`,
   `turn_end`). For the Pi worker, the preset is declarative, not enforced.

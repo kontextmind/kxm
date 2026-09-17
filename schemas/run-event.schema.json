@@ -1,0 +1,500 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.kxm.dev/run-event.schema.json",
+  "title": "KXM local run event",
+  "type": "object",
+  "required": [
+    "schema",
+    "eventId",
+    "eventType",
+    "projectId",
+    "runId",
+    "homeRuntimeId",
+    "sequence",
+    "occurredAt",
+    "recordedAt",
+    "monotonicNs",
+    "configRevision",
+    "memoryRevision",
+    "executorPolicyRevision",
+    "toolPolicyRevision",
+    "payload"
+  ],
+  "properties": {
+    "schema": { "const": "kxm.run-event.v1" },
+    "eventId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "eventType": { "$ref": "common.schema.json#/$defs/runEventType" },
+    "projectId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "runId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "homeRuntimeId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "commandId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "occurredAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "recordedAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "monotonicNs": { "$ref": "common.schema.json#/$defs/monotonicNs" },
+    "configRevision": { "$ref": "common.schema.json#/$defs/sha256" },
+    "memoryRevision": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "executorPolicyRevision": { "$ref": "common.schema.json#/$defs/sha256" },
+    "toolPolicyRevision": { "$ref": "common.schema.json#/$defs/sha256" },
+    "payload": { "$ref": "#/$defs/payload" },
+    "protectedPayload": {
+      "type": "object",
+      "required": ["id", "classification", "hash"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/opaqueId" },
+        "classification": { "enum": ["project", "sensitive", "secret"] },
+        "hash": { "$ref": "common.schema.json#/$defs/sha256" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "eventType": { "const": "run.created" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "required": ["workflowId", "status", "promptHash", "repositoryIds", "executorIds"]
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "run.status_changed" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["status"] }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "eventType": { "const": "run.status_changed" },
+          "payload": { "type": "object", "properties": { "status": { "const": "preparing" } }, "required": ["status"] }
+        },
+        "required": ["eventType", "payload"]
+      },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["status", "runPlanHash"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "run.cancel_requested" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["actor", "reason"] }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "eventType": { "const": "run.cancel_requested" },
+          "payload": {
+            "type": "object",
+            "properties": { "reason": { "const": "budget_run_duration" } },
+            "required": ["reason"]
+          }
+        },
+        "required": ["eventType", "payload"]
+      },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["actor", "reason", "budget"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "step.entered" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["stepId", "stepAttempt", "status"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "step.status_changed" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["stepId", "status", "previousStatus"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "step.outcome_recorded" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["stepId", "stepAttempt", "outcome"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "step.transitioned" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["fromStepId", "outcome"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "assignment.created" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["assignmentId", "stepId", "stepAttempt", "status"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "enum": ["assignment.accepted", "assignment.executing"] } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["assignmentId", "status"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "assignment.dispatched" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["assignmentId", "capabilityHash", "status"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "assignment.result_recorded" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "required": ["assignmentId", "resultClass"],
+            "allOf": [
+              {
+                "if": { "properties": { "resultClass": { "const": "outcome" } }, "required": ["resultClass"] },
+                "then": { "required": ["outcome"] }
+              },
+              {
+                "if": {
+                  "properties": { "resultClass": { "enum": ["outcome_unknown", "producer_rejected", "cancelled"] } },
+                  "required": ["resultClass"]
+                },
+                "then": { "not": { "required": ["outcome"] } }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "assignment.terminal" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["assignmentId", "outcome", "status"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "attempt.created" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["attemptId", "assignmentId", "status"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "attempt.status_changed" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["attemptId", "status"] }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "eventType": {
+            "enum": [
+              "effect.intent_recorded",
+              "effect.dispatched",
+              "effect.observed",
+              "effect.receipt_recorded",
+              "effect.settled",
+              "effect.blocked_uncertain",
+              "effect.uncertainty_resolved"
+            ]
+          }
+        },
+        "required": ["eventType"]
+      },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["effect"] }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "eventType": { "enum": ["effect.intent_recorded", "effect.dispatched"] },
+          "payload": {
+            "type": "object",
+            "properties": {
+              "effect": {
+                "type": "object",
+                "properties": {
+                  "policy": {
+                    "type": "object",
+                    "properties": { "sharedMutable": { "const": true } },
+                    "required": ["sharedMutable"]
+                  }
+                },
+                "required": ["policy"]
+              }
+            },
+            "required": ["effect"]
+          }
+        },
+        "required": ["eventType", "payload"]
+      },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["lease"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "effect.uncertainty_resolved" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["effect", "resolvedBy", "resolutionAction", "reason", "suppliedRefs"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "approval.recorded" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["actor", "outcome", "suppliedRefs"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "enum": ["lease.acquired", "lease.released", "lease.lost"] } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["lease"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "routing.attempt.recorded" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["routing"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "run.drive_opened" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["driveId", "mode"] }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "runDurationBudget": {
+      "type": "object",
+      "required": ["budgetMs", "elapsedMs", "source"],
+      "properties": {
+        "budgetMs": { "$ref": "common.schema.json#/$defs/durationMs" },
+        "elapsedMs": { "type": "integer", "minimum": 0 },
+        "source": { "enum": ["workflow", "project", "both"] }
+      },
+      "additionalProperties": false
+    },
+    "repositorySnapshot": {
+      "type": "object",
+      "required": ["repositoryId", "baseCommit", "contentSnapshotHash"],
+      "properties": {
+        "repositoryId": { "$ref": "common.schema.json#/$defs/identifier" },
+        "baseCommit": { "$ref": "common.schema.json#/$defs/gitCommit" },
+        "contentSnapshotHash": { "$ref": "common.schema.json#/$defs/sha256" },
+        "sourceState": { "enum": ["clean", "dirty-snapshot"] }
+      },
+      "additionalProperties": false
+    },
+    "effect": {
+      "type": "object",
+      "required": ["id", "policy"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/opaqueId" },
+        "policy": { "$ref": "common.schema.json#/$defs/effectPolicy" },
+        "idempotencyKeyHash": { "$ref": "common.schema.json#/$defs/sha256" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "policy": {
+                "type": "object",
+                "properties": { "class": { "const": "external-idempotent" } },
+                "required": ["class"]
+              }
+            },
+            "required": ["policy"]
+          },
+          "then": { "required": ["idempotencyKeyHash"] }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "workflowId": { "$ref": "common.schema.json#/$defs/identifier" },
+        "displayTitle": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "prompt": { "type": "string", "maxLength": 64000 },
+        "promptHash": { "$ref": "common.schema.json#/$defs/sha256" },
+        "runPlanHash": { "$ref": "common.schema.json#/$defs/sha256" },
+        "capabilityHash": { "$ref": "common.schema.json#/$defs/sha256" },
+        "resultClass": { "enum": ["outcome", "outcome_unknown", "producer_rejected", "cancelled"] },
+        "status": { "$ref": "common.schema.json#/$defs/lifecycleStatus" },
+        "previousStatus": { "$ref": "common.schema.json#/$defs/lifecycleStatus" },
+        "outcome": { "$ref": "common.schema.json#/$defs/identifier" },
+        "summary": { "type": "string", "maxLength": 32000 },
+        "reason": { "type": "string", "maxLength": 4000 },
+        "resolution": { "type": "string", "maxLength": 4000 },
+        "stepId": { "$ref": "common.schema.json#/$defs/identifier" },
+        "stepAttempt": { "type": "integer", "minimum": 1 },
+        "fromStepId": { "$ref": "common.schema.json#/$defs/identifier" },
+        "toStepId": { "$ref": "common.schema.json#/$defs/identifier" },
+        "assignmentId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+        "attemptId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+        "agentId": { "$ref": "common.schema.json#/$defs/identifier" },
+        "instanceNo": { "type": "integer", "minimum": 1, "maximum": 64 },
+        "scopeEpoch": { "type": "integer", "minimum": 1 },
+        "executor": { "$ref": "common.schema.json#/$defs/executorResolution" },
+        "executorIds": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/identifier" },
+          "minItems": 0,
+          "maxItems": 16
+        },
+        "executors": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/executorResolution" },
+          "minItems": 1,
+          "maxItems": 16
+        },
+        "repositoryIds": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/identifier" },
+          "minItems": 0,
+          "maxItems": 64
+        },
+        "model": { "$ref": "common.schema.json#/$defs/modelResolution" },
+        "repositories": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/repositorySnapshot" },
+          "maxItems": 64
+        },
+        "effect": { "$ref": "#/$defs/effect" },
+        "receipt": { "$ref": "common.schema.json#/$defs/receipt" },
+        "evidenceRefs": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/evidenceRef" },
+          "maxItems": 64
+        },
+        "artifacts": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/artifactRef" },
+          "maxItems": 64
+        },
+        "timing": { "$ref": "common.schema.json#/$defs/timing" },
+        "usage": { "$ref": "common.schema.json#/$defs/usage" },
+        "error": { "$ref": "common.schema.json#/$defs/errorSummary" },
+        "budget": { "$ref": "#/$defs/runDurationBudget" },
+        "actor": { "$ref": "common.schema.json#/$defs/actor" },
+        "resolvedBy": { "$ref": "common.schema.json#/$defs/actor" },
+        "resolutionAction": {
+          "enum": ["mark-completed", "confirm-absent-and-retry", "compensate-and-retry", "mark-failed", "cancel"]
+        },
+        "suppliedRefs": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/evidenceRef" },
+          "maxItems": 64
+        },
+        "lease": { "$ref": "common.schema.json#/$defs/lease" },
+        "driveId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+        "mode": { "enum": ["simulated", "live"] },
+        "candidateId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+        "counts": {
+          "type": "object",
+          "propertyNames": { "$ref": "common.schema.json#/$defs/identifier" },
+          "additionalProperties": { "type": "integer", "minimum": 0 },
+          "maxProperties": 32
+        },
+        "routing": { "$ref": "#/$defs/routingRecordV2" }
+      },
+      "additionalProperties": false
+    },
+    "routingRecordV2": {
+      "type": "object",
+      "required": [
+        "schema",
+        "recordedAt",
+        "project",
+        "runId",
+        "stepId",
+        "assignmentId",
+        "attemptId",
+        "harness",
+        "provider",
+        "requestedModel",
+        "effectiveModel",
+        "behavioralSha256",
+        "latencyMs",
+        "costBasis",
+        "retries"
+      ],
+      "properties": {
+        "schema": { "const": "kxm.routing-record.v2" },
+        "recordedAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+        "project": { "type": "string" },
+        "runId": { "type": "string" },
+        "stepId": { "type": "string" },
+        "assignmentId": { "type": "string" },
+        "attemptId": { "type": "string" },
+        "harness": { "type": "string" },
+        "provider": { "type": "string" },
+        "requestedModel": { "type": "string" },
+        "effectiveModel": { "type": "string" },
+        "thinking": { "type": "string" },
+        "agentRole": { "type": "string" },
+        "behavioralSha256": { "$ref": "common.schema.json#/$defs/sha256" },
+        "contextTokens": { "type": ["integer", "null"], "minimum": 0 },
+        "tokensIn": { "type": ["integer", "null"], "minimum": 0 },
+        "tokensOut": { "type": ["integer", "null"], "minimum": 0 },
+        "cacheReadTokens": { "type": ["integer", "null"], "minimum": 0 },
+        "cacheWriteTokens": { "type": ["integer", "null"], "minimum": 0 },
+        "latencyMs": { "type": "number", "minimum": 0 },
+        "costBasis": { "enum": ["metered", "unmetered", "unknown"] },
+        "costUsd": { "type": ["number", "null"], "minimum": 0 },
+        "priceRef": { "type": ["string", "null"] },
+        "verifierOutcome": { "enum": ["passed", "warning", "failed"] },
+        "finalOutcome": { "type": "string" },
+        "retries": { "type": "integer", "minimum": 0 },
+        "transitions": { "type": "integer", "minimum": 0 },
+        "humanInterventions": { "type": "integer", "minimum": 0 },
+        "providerMetadata": { "type": "object" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

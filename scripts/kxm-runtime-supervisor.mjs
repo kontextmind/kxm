@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// KXM vNext Runtime supervisor entry point. Detached child of `kxm runtime start`.
-import { startVnextRuntimeSupervisor } from "../plugins/kxm/dist/vnext-runtime-supervisor.js";
+// KXM Runtime supervisor entry point. Detached child of `kxm runtime start`.
+import { startKxmRuntimeSupervisor } from "../plugins/kxm/dist/runtime-supervisor.js";
 
-const supervisor = await startVnextRuntimeSupervisor({});
+const supervisor = await startKxmRuntimeSupervisor({});
 process.stdout.write(`kxm-runtime-supervisor ready runtimeId=${supervisor.runtimeId} port=${supervisor.port}\n`);
 

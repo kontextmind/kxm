@@ -1,0 +1,234 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.kxm.dev/sync-event.schema.json",
+  "title": "KXM sync-safe run event",
+  "type": "object",
+  "required": [
+    "schema",
+    "sourceEventId",
+    "eventType",
+    "projectId",
+    "runId",
+    "homeRuntimeId",
+    "sequence",
+    "occurredAt",
+    "configRevision",
+    "memoryRevision",
+    "executorPolicyRevision",
+    "toolPolicyRevision",
+    "syncPolicyRevision",
+    "redaction",
+    "payload"
+  ],
+  "properties": {
+    "schema": { "const": "kxm.sync-event.v1" },
+    "sourceEventId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "eventType": { "$ref": "common.schema.json#/$defs/runEventType" },
+    "projectId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "runId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "homeRuntimeId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "occurredAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "configRevision": { "$ref": "common.schema.json#/$defs/sha256" },
+    "memoryRevision": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "executorPolicyRevision": { "$ref": "common.schema.json#/$defs/sha256" },
+    "toolPolicyRevision": { "$ref": "common.schema.json#/$defs/sha256" },
+    "syncPolicyRevision": { "$ref": "common.schema.json#/$defs/sha256" },
+    "redaction": {
+      "type": "object",
+      "required": ["version", "fieldsOmitted", "valuesReplaced"],
+      "properties": {
+        "version": { "$ref": "common.schema.json#/$defs/identifier" },
+        "fieldsOmitted": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "uniqueItems": true,
+          "maxItems": 128
+        },
+        "valuesReplaced": { "type": "integer", "minimum": 0, "maximum": 100000 }
+      },
+      "additionalProperties": false
+    },
+    "payload": { "$ref": "#/$defs/payload" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "eventType": {
+            "enum": [
+              "effect.intent_recorded",
+              "effect.dispatched",
+              "effect.observed",
+              "effect.receipt_recorded",
+              "effect.settled",
+              "effect.blocked_uncertain",
+              "effect.uncertainty_resolved"
+            ]
+          }
+        },
+        "required": ["eventType"]
+      },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["effect"] }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "eventType": { "enum": ["effect.intent_recorded", "effect.dispatched"] },
+          "payload": {
+            "type": "object",
+            "properties": {
+              "effect": {
+                "type": "object",
+                "properties": {
+                  "policy": {
+                    "type": "object",
+                    "properties": { "sharedMutable": { "const": true } },
+                    "required": ["sharedMutable"]
+                  }
+                },
+                "required": ["policy"]
+              }
+            },
+            "required": ["effect"]
+          }
+        },
+        "required": ["eventType", "payload"]
+      },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["lease"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "effect.uncertainty_resolved" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["effect", "resolvedBy", "resolutionAction", "reason", "suppliedRefs"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "enum": ["lease.acquired", "lease.released", "lease.lost"] } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["lease"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "approval.recorded" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["actor", "outcome", "suppliedRefs"] }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "safeReceipt": {
+      "type": "object",
+      "required": ["provider", "kind", "id"],
+      "properties": {
+        "provider": { "$ref": "common.schema.json#/$defs/identifier" },
+        "kind": { "$ref": "common.schema.json#/$defs/identifier" },
+        "id": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "hash": { "$ref": "common.schema.json#/$defs/sha256" },
+        "observedAt": { "$ref": "common.schema.json#/$defs/timestamp" }
+      },
+      "additionalProperties": false
+    },
+    "candidateSummary": {
+      "type": "object",
+      "required": ["id", "type", "summary", "confidence", "status"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/opaqueId" },
+        "type": { "enum": ["knowledge", "skill", "workflow", "agent", "model", "environment", "template", "temporal-state"] },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "confidence": { "enum": ["verified", "probable", "uncertain"] },
+        "status": { "enum": ["proposed", "evaluating", "review-required", "promoted", "rejected", "quarantined"] }
+      },
+      "additionalProperties": false
+    },
+    "payload": {
+      "type": "object",
+      "minProperties": 1,
+      "properties": {
+        "workflowId": { "$ref": "common.schema.json#/$defs/identifier" },
+        "displayTitle": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "promptHash": { "$ref": "common.schema.json#/$defs/sha256" },
+        "status": { "$ref": "common.schema.json#/$defs/lifecycleStatus" },
+        "previousStatus": { "$ref": "common.schema.json#/$defs/lifecycleStatus" },
+        "outcome": { "$ref": "common.schema.json#/$defs/identifier" },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "stepId": { "$ref": "common.schema.json#/$defs/identifier" },
+        "stepAttempt": { "type": "integer", "minimum": 1 },
+        "fromStepId": { "$ref": "common.schema.json#/$defs/identifier" },
+        "toStepId": { "$ref": "common.schema.json#/$defs/identifier" },
+        "assignmentId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+        "attemptId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+        "agentId": { "$ref": "common.schema.json#/$defs/identifier" },
+        "instanceNo": { "type": "integer", "minimum": 1, "maximum": 64 },
+        "scopeEpoch": { "type": "integer", "minimum": 1 },
+        "executor": { "$ref": "common.schema.json#/$defs/executorResolution" },
+        "model": { "$ref": "common.schema.json#/$defs/modelResolution" },
+        "timing": { "$ref": "common.schema.json#/$defs/timing" },
+        "usage": { "$ref": "common.schema.json#/$defs/usage" },
+        "fileChanges": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/fileChanges" },
+          "maxItems": 64
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/evidenceRef" },
+          "maxItems": 64
+        },
+        "artifacts": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/artifactRef" },
+          "maxItems": 64
+        },
+        "receipts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/safeReceipt" },
+          "maxItems": 64
+        },
+        "environment": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/environmentResolution" },
+          "maxItems": 256
+        },
+        "error": { "$ref": "common.schema.json#/$defs/errorSummary" },
+        "effect": { "$ref": "run-event.schema.json#/$defs/effect" },
+        "lease": { "$ref": "common.schema.json#/$defs/lease" },
+        "actor": { "$ref": "common.schema.json#/$defs/actor" },
+        "resolvedBy": { "$ref": "common.schema.json#/$defs/actor" },
+        "resolutionAction": {
+          "enum": ["mark-completed", "confirm-absent-and-retry", "compensate-and-retry", "mark-failed", "cancel"]
+        },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "suppliedRefs": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/evidenceRef" },
+          "maxItems": 64
+        },
+        "candidate": { "$ref": "#/$defs/candidateSummary" },
+        "counts": {
+          "type": "object",
+          "propertyNames": { "$ref": "common.schema.json#/$defs/identifier" },
+          "additionalProperties": { "type": "integer", "minimum": 0 },
+          "maxProperties": 32
+        },
+        "degraded": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

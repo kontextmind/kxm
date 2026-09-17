@@ -47,7 +47,7 @@ During this design and implementation cycle, the following core architecture sli
    - Verified in `test/core/arbiter.test.ts`.
 
 2. **Slice B: Formal Context Packets & Structured Handoffs:**
-   - Created JSON schemas `schemas/vnext/context-packet.schema.json` (`kxm.context-packet.v2`) and `schemas/vnext/handoff-manifest.schema.json` (`kxm.handoff-manifest.v1`).
+   - Created JSON schemas `schemas/context-packet.schema.json` (`kxm.context-packet.v2`) and `schemas/handoff-manifest.schema.json` (`kxm.handoff-manifest.v1`).
    - Implemented packet assembly, token budgeting, and clean markdown prompt formatting in `plugins/kxm/src/context-packet.ts`.
    - Bound context packet generation and antecedent handoff injection directly into `vnext-engine.ts:birthMember`.
    - Verified in `test/core/context-packet.test.ts`.

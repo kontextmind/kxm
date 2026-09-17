@@ -47,7 +47,7 @@ Connect existing declarative major modes and domains (`.kxm/modes.yaml`) to actu
 
 In KXM today:
 
-- `plugins/kxm/src/modes.ts` and `schemas/vnext/modes.schema.json` already define major modes/domains and resolve tools, context files and prompt snippets. `kxm explain` is registered in `plugins/kxm/src/cli.ts`; the CLI implementation uses the current `cli/` module layout.
+- `plugins/kxm/src/modes.ts` and `schemas/modes.schema.json` already define major modes/domains and resolve tools, context files and prompt snippets. `kxm explain` is registered in `plugins/kxm/src/cli.ts`; the CLI implementation uses the current `cli/` module layout.
 - Existing context arbitration and packet assembly also provide bounded context mechanisms; the gap is not the complete absence of scoping or pre-flight inspection.
 - **Remaining gap:** metadata composition and explain output do not prove that each native host registers only the intended tools or loads only the selected bundles. M1/M6 must test actual activation and enforcement, while M5 accounts for evidence, omitted context and estimates.
 - Unnecessary context can increase token use and obscure instructions. Measure representative tasks rather than asserting a universal quality or cost improvement.

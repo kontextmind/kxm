@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { canonicalHostPath, sameHostPath } from "./vnext-bindings.ts";
+import { canonicalHostPath, sameHostPath } from "./bindings.ts";
 
 export interface InstallProbe {
   moduleDir: string;

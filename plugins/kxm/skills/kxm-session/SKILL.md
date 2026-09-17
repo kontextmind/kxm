@@ -15,7 +15,7 @@ MVP is a **local hub** on this machine. Work is agents and workflows. Do not con
 | **Hub local (MVP)** | `kxm hub bind <url>` | Bind this host to a running loopback hub; session brief + status line |
 | **SSH / HTTPS remote** | After MVP | Fail closed. Not available |
 
-In-harness Pi can attach to a local hub. Local Runtime workflow insights (`kxm dash` from the vNext event store) are after MVP.
+In-harness Pi can attach to a local hub. Local Runtime workflow insights (`kxm dash` from the KXM event store) are after MVP.
 
 ## First run (hub local)
 
