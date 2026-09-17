@@ -5,7 +5,7 @@ objective: Extend execution to remote machines via OpenSSH ControlMaster
   multiplexing, ssh_run tool, and host key pinning with in-memory credential
   masking.
 acceptanceCriteria: []
-status: todo
+status: done
 assignedWorkflow: default
 createdAt: 2026-09-11T09:24:45.808Z
-updatedAt: 2026-09-11T09:24:45.808Z
+updatedAt: 2026-09-17T02:21:56.362Z

@@ -5,7 +5,7 @@ objective: Introduce declarative Major/Minor workflow modes (.kxm/modes.yaml),
   kxm explain pre-flight prompt cost audits, and selective tool loading to
   optimize role prompt budgets.
 acceptanceCriteria: []
-status: todo
+status: done
 assignedWorkflow: default
 createdAt: 2026-09-11T09:24:37.939Z
-updatedAt: 2026-09-11T09:24:37.939Z
+updatedAt: 2026-09-17T02:21:56.363Z

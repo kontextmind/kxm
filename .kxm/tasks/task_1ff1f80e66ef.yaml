@@ -5,7 +5,7 @@ objective: Extend kxm peer protocol with delivery semantics (steer vs followUp),
   defining safe queueing for interactive workers and fail-closed behavior on
   one-shots.
 acceptanceCriteria: []
-status: todo
+status: done
 assignedWorkflow: default
 createdAt: 2026-09-11T09:24:43.273Z
-updatedAt: 2026-09-11T09:24:43.273Z
+updatedAt: 2026-09-17T02:21:56.356Z

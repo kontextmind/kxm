@@ -97,9 +97,11 @@ export function validateRosterDocument(policy, readBlob) {
     text(model, 'origin model'); keys(origin, ['vendor', 'evidence'], 'origin');
     text(origin.vendor, 'origin vendor');
     if (PI_ALLOWED_PROVIDERS.includes(canonical(origin.vendor.toLowerCase()))) refuse('origin/vendor must name the model vendor, not billing provider');
-    keys(origin.evidence, ['source', 'sha256'], 'origin evidence'); digest(origin.evidence.sha256);
+    const evidenceKeys = origin.evidence.commit === undefined ? ['source', 'sha256'] : ['source', 'commit', 'sha256'];
+    keys(origin.evidence, evidenceKeys, 'origin evidence'); digest(origin.evidence.sha256);
     sourcePath(origin.evidence.source);
-    const bytes = readBlob(origin.evidence.source);
+    if (origin.evidence.commit !== undefined) objectId(origin.evidence.commit, 'origin evidence commit');
+    const bytes = readBlob(origin.evidence.source, origin.evidence.commit);
     if (bytes == null || sha256(bytes) !== origin.evidence.sha256) refuse('origin evidence hash mismatch');
   }
   for (const [id, route] of Object.entries(policy.routes)) {
@@ -160,17 +162,24 @@ export function validateRosterDocument(policy, readBlob) {
   }
   return policy;
 }
-function validate(bytes, commit) {
+function validate(bytes, commit, trusted) {
   let policy;
   try { policy = YAML.parse(bytes.toString('utf8')); } catch { refuse('invalid policy YAML'); }
   if (policy === undefined || policy === null || typeof policy !== 'object' || Array.isArray(policy)) refuse('invalid policy YAML');
-  return validateRosterDocument(policy, source => blobAt(commit, source).bytes);
+  const readBlob = (source, pinnedCommit) => {
+    if (pinnedCommit === undefined) return blobAt(commit, source).bytes;
+    // A pinned evidence commit decouples the digest from later edits to the
+    // evidence file; the pinned commit itself must be part of trusted history.
+    git('merge-base', '--is-ancestor', pinnedCommit, trusted);
+    return blobAt(pinnedCommit, source).bytes;
+  };
+  return validateRosterDocument(policy, readBlob);
 }
 export function loadTrustedRosterPolicy() {
   const snapshot = control();
   const { blob, bytes } = blobAt(snapshot.head, POLICY);
   if (!workingBytes(POLICY).equals(bytes)) refuse('working policy differs from committed bytes');
-  const policy = validate(bytes, snapshot.head);
+  const policy = validate(bytes, snapshot.head, trusted);
   unchanged(snapshot);
   return frozen({ identity: { commit: snapshot.head, blob, sha256: sha256(bytes) }, policy });
 }
@@ -181,7 +190,7 @@ export function resolveBoundPolicy(identity) {
   git('merge-base', '--is-ancestor', identity.commit, snapshot.trusted);
   const { blob, bytes } = blobAt(identity.commit, POLICY);
   if (blob !== identity.blob || sha256(bytes) !== identity.sha256) refuse('bound identity mismatch');
-  const policy = validate(bytes, identity.commit);
+  const policy = validate(bytes, identity.commit, snapshot.trusted);
   unchanged(snapshot);
   return frozen({ identity: { ...identity }, policy });
 }
