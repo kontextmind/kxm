@@ -1,25 +1,9 @@
 import { readFile } from "node:fs/promises";
-import { readdirSync, existsSync } from "node:fs";
-import { join, sep } from "node:path";
+import { join } from "node:path";
+import { workspaceManifestPaths } from "./package-surfaces.mjs";
 
 async function json(path) {
   return JSON.parse(await readFile(path, "utf8"));
-}
-
-/** Every workspace package under `packages/`, one or two levels deep. */
-function workspaceManifests() {
-  const found = [];
-  const scan = (dir) => {
-    if (!existsSync(dir)) return;
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      if (!entry.isDirectory() || entry.name === "node_modules") continue;
-      const path = join(dir, entry.name);
-      if (existsSync(join(path, "package.json"))) found.push(path);
-      else scan(path);
-    }
-  };
-  scan("packages");
-  return found.sort();
 }
 
 const root = await json("package.json");
@@ -41,9 +25,11 @@ const versions = new Map([
   ["MCP server", mcpVersion],
 ]);
 
-for (const dir of workspaceManifests()) {
-  const manifest = await json(join(dir, "package.json"));
-  const relativePath = dir.split(sep).join("/");
+// Which directories count as packages is shared with scripts/kxm-bump-version.mjs
+// on purpose: the gate and the release writer must not disagree. Paths come
+// back POSIX-style, which is also how package-lock.json keys its `packages` map.
+for (const relativePath of workspaceManifestPaths(".")) {
+  const manifest = await json(join(relativePath, "package.json"));
   versions.set(`${manifest.name} package`, manifest.version);
   versions.set(`${manifest.name} lock entry`, lock.packages?.[relativePath]?.version);
 }
