@@ -30,17 +30,17 @@ test("routes count reports admitted and disabled totals", async () => {
       "schema: kxm.routes.v2\nupdatedAt: '2026-09-16T00:00:00.000Z'\nadmitted:\n  - anthropic/fable\n  - xai/grok-4.6\n  - openai/gpt-5.6-sol\ndisabled:\n  - openrouter/test-disabled\n",
       "utf8",
     );
-    const io = capture();
+    const { io, read } = capture();
     const code = await runCli(["routes", "count", "--json"], { KXM_STATE_HOME: join(root, ".kxm", "state") }, io, root);
-    assert.equal(code, 0, io.read().stderr);
-    const payload = JSON.parse(io.read().stdout.trim().split("\n").filter((l) => l.startsWith("{"))[0]!) as {
+    assert.equal(code, 0, read().stderr);
+    const payload = JSON.parse(read().stdout.trim().split("\n").filter((l) => l.startsWith("{"))[0]!) as {
       ok: boolean; command: string; admitted: number; disabled: number;
     };
     assert.equal(payload.ok, true);
     assert.equal(payload.command, "routes count");
     assert.equal(payload.admitted, 3);
     assert.equal(payload.disabled, 1);
-    assert.match(io.read().stdout, /3 admitted \/ 1 disabled/);
+    assert.match(read().stdout, /3 admitted \/ 1 disabled/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
