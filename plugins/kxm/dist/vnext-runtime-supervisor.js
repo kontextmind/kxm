@@ -22031,31 +22031,14 @@ function assertStoredProjection(context, run) {
     throw runtimeError("run_projection_divergent", run.runId, "stored run_state does not match the folded projection");
   }
 }
-function persistProjection(context, run, state, now) {
-  const canonical = vnextCanonicalJson(state);
-  const stored = context.eventStore.runState(run.runId);
-  if (stored && stored.state !== canonical) {
-    throw runtimeError("run_projection_divergent", run.runId, "stored run_state does not match the folded projection");
-  }
-  if (!stored) {
-    context.eventStore.upsertRunState({
-      runId: run.runId,
-      lastSequence: context.eventStore.nextSequence(run.runId) - 1,
-      state: canonical
-    });
-  }
-  const updated = { ...run, status: state.status, updatedAt: now };
-  if (run.status !== state.status) context.eventStore.updateRunStatus(run.runId, state.status, now);
-  return updated;
-}
-function rebuildVnextRunProjection(context, runId) {
+function projectVnextRunReadOnly(context, runId) {
   const stored = context.eventStore.run(runId);
   if (!stored) throw runtimeError("run_unknown", runId, "run does not exist in this event store");
   const state = foldStoredVnextRun(context, stored);
   const events = context.eventStore.events(runId, 0, 1e6);
   if (events.length === 0) throw runtimeError("run_events_corrupt", runId, "run has no events");
   const last = events[events.length - 1];
-  return persistProjection(context, stored, state, last.occurredAt);
+  return { ...stored, status: state.status, updatedAt: last.occurredAt };
 }
 function persistVnextRunState(context, runId, state, lastSequence) {
   const stored = context.eventStore.runState(runId);
@@ -26824,7 +26807,7 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
           const context = contextFor(projectRoot);
           const bundle = loadVnextProject(projectRoot, {});
           if (request.method === "GET" && !sub) {
-            const projected = rebuildVnextRunProjection(context, runId);
+            const projected = projectVnextRunReadOnly(context, runId);
             const folded = foldStoredVnextRun(context, projected);
             const drive = vnextDrivePollProjection(context, runId, folded);
             sendJson(response, 200, { ok: true, run: projected, ...drive !== void 0 ? { drive } : {} });

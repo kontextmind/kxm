@@ -22503,6 +22503,15 @@ function rebuildVnextRunProjection(context, runId) {
   const last = events[events.length - 1];
   return persistProjection(context, stored, state, last.occurredAt);
 }
+function projectVnextRunReadOnly(context, runId) {
+  const stored = context.eventStore.run(runId);
+  if (!stored) throw runtimeError("run_unknown", runId, "run does not exist in this event store");
+  const state = foldStoredVnextRun(context, stored);
+  const events = context.eventStore.events(runId, 0, 1e6);
+  if (events.length === 0) throw runtimeError("run_events_corrupt", runId, "run has no events");
+  const last = events[events.length - 1];
+  return { ...stored, status: state.status, updatedAt: last.occurredAt };
+}
 function persistVnextRunState(context, runId, state, lastSequence) {
   const stored = context.eventStore.runState(runId);
   if (stored) {
@@ -27310,7 +27319,7 @@ async function startVnextRuntimeSupervisorInner(paths, requestedPortOption, now)
           const context = contextFor(projectRoot);
           const bundle = loadVnextProject(projectRoot, {});
           if (request.method === "GET" && !sub) {
-            const projected = rebuildVnextRunProjection(context, runId);
+            const projected = projectVnextRunReadOnly(context, runId);
             const folded = foldStoredVnextRun(context, projected);
             const drive = vnextDrivePollProjection(context, runId, folded);
             sendJson(response, 200, { ok: true, run: projected, ...drive !== void 0 ? { drive } : {} });
@@ -30027,6 +30036,7 @@ export {
   probeHarnessesForModel,
   probeHarnessesForModelAsync,
   projectRuntimeKey,
+  projectVnextRunReadOnly,
   pruneSocketDir,
   readVnextRunStatus,
   readVnextSupervisorToken,

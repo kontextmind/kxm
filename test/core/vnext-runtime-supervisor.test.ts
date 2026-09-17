@@ -1017,6 +1017,87 @@ test("supervisor GET /v1/drives/:id returns verified receipts and never 500 on t
   }
 });
 
+test("supervisor GET run is read-only: no run_state persistence, no runs update, no divergence 400", async () => {
+  const { root, stateRoot } = engineProject("kxm-supervisor-run-get-readonly-");
+  let supervisor: Awaited<ReturnType<typeof startVnextRuntimeSupervisor>> | undefined;
+  try {
+    supervisor = await startVnextRuntimeSupervisor({ stateRoot });
+    const token = readVnextSupervisorToken(vnextRuntimePaths({ stateRoot }))!;
+    const handle = { runtimeId: supervisor.runtimeId, port: supervisor.port, token, started: true };
+    const acceptance = await vnextRuntimeRequest(handle, "POST", "/v1/runs", {
+      projectRoot: root,
+      workflowId: "one-step",
+      prompt: "read-only get",
+    });
+    const runId = (acceptance.run as { runId: string }).runId;
+    const driveRes = await fetch(`http://127.0.0.1:${supervisor.port}/v1/runs/${runId}/drive?projectRoot=${encodeURIComponent(root)}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ mode: "simulated" }),
+    });
+    assert.equal(driveRes.status, 202);
+    const startTime = Date.now();
+    while (Date.now() - startTime < 10_000) {
+      const statusRes = await vnextRuntimeRequest(handle, "GET", `/v1/runs/${runId}?projectRoot=${encodeURIComponent(root)}`);
+      if ((statusRes.run as { status: string }).status === "completed") break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+
+    // Missing run_state: GET must return the folded truth without recreating
+    // the projection row or touching the runs row.
+    const peek = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: handle.runtimeId });
+    let runBefore: { status: string; updated_at: string };
+    try {
+      const db = new DatabaseSync(peek.eventStore.path);
+      db.prepare("DELETE FROM run_state WHERE run_id = ?").run(runId);
+      runBefore = db.prepare("SELECT status, updated_at FROM runs WHERE run_id = ?").get(runId) as { status: string; updated_at: string };
+      db.close();
+    } finally {
+      closeVnextRuntimeContext(peek);
+    }
+    const afterDelete = await vnextRuntimeRequest(handle, "GET", `/v1/runs/${runId}?projectRoot=${encodeURIComponent(root)}`);
+    assert.equal(afterDelete.ok, true);
+    assert.equal((afterDelete.run as { status: string }).status, "completed");
+    const peekAfterDelete = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: handle.runtimeId });
+    try {
+      const db = new DatabaseSync(peekAfterDelete.eventStore.path);
+      const stateAfter = db.prepare("SELECT run_id FROM run_state WHERE run_id = ?").get(runId);
+      const runAfter = db.prepare("SELECT status, updated_at FROM runs WHERE run_id = ?").get(runId) as { status: string; updated_at: string };
+      db.close();
+      assert.equal(stateAfter, undefined, "GET /v1/runs must not persist run_state");
+      assert.deepEqual(runAfter, runBefore, "GET /v1/runs must not update runs");
+    } finally {
+      closeVnextRuntimeContext(peekAfterDelete);
+    }
+
+    // Divergent-content run_state (same schema): GET returns the folded truth
+    // with 200 instead of a 400 run_projection_divergent, and writes nothing.
+    const peekDivergent = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: handle.runtimeId });
+    try {
+      const db = new DatabaseSync(peekDivergent.eventStore.path);
+      db.prepare("INSERT INTO run_state (run_id, last_sequence, state) VALUES (?, ?, ?)").run(runId, 1, JSON.stringify({ schema: "kxm.run-state.v2", status: "created" }));
+      db.close();
+    } finally {
+      closeVnextRuntimeContext(peekDivergent);
+    }
+    const divergent = await vnextRuntimeRequest(handle, "GET", `/v1/runs/${runId}?projectRoot=${encodeURIComponent(root)}`);
+    assert.equal(divergent.ok, true);
+    assert.equal((divergent.run as { status: string }).status, "completed");
+    const peekDivergentAfter = openVnextRuntimeContext(root, { stateRoot, homeRuntimeId: handle.runtimeId });
+    try {
+      const db = new DatabaseSync(peekDivergentAfter.eventStore.path);
+      const divergentState = db.prepare("SELECT state FROM run_state WHERE run_id = ?").get(runId) as { state: string };
+      db.close();
+      assert.equal(divergentState.state, JSON.stringify({ schema: "kxm.run-state.v2", status: "created" }), "GET must not rewrite run_state");
+    } finally {
+      closeVnextRuntimeContext(peekDivergentAfter);
+    }
+  } finally {
+    if (supervisor) await supervisor.stop();
+    removeTempDir(root, stateRoot);
+  }
+});
+
 test("KXM_RUNTIME_STOP_GRACE_MS is bounded and fail-closed", () => {
   assert.equal(DEFAULT_RUNTIME_STOP_GRACE_MS, 30_000);
   assert.equal(MAX_RUNTIME_STOP_GRACE_MS, 600_000);
