@@ -1160,6 +1160,20 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   that carries its own CI evidence. Windows automation stays paused, not deprecated. No
   phase gate changes until a slice carries its own witness.
 
+- **Run-duration budget test is wall-clock fragile under load (owner: engine
+  maintainer; trigger: next touch of the Phase 11 B3 budget tests):**
+  `test/core/engine.test.ts:836` asserts a *simulated* producer "completes
+  inside" a declared `maxRunDurationMs: 5000`. Under `npm test`
+  (`--test-concurrency=4`) on a busy laptop it settled `cancelled` instead of
+  `completed` — observed 2026-09-17 in a local `npm run verify` on
+  `fix/hub-start-token-before-claim`; the same test passes in isolation in 4.0s
+  and the tree was otherwise green (1208 pass, 0 other failures). The budget is
+  enforced against real elapsed time, so the assertion competes with every other
+  worker instead of using the log-derived clock the B3 design already leans on.
+  Fix is determinism — inject the clock or pre-date the run's first `running`
+  event — not a bigger magic number. Until then, a single red here is a load
+  artifact to re-run, never a reason to relax a budget bound.
+
 - **Unified capability delivery (M0–M9; proposed, consolidated 2026-09-14):**
   [The unified plan](plan-unified-kxm-milestones.md) owns proposed scope,
   contract-level dependencies and exit-evidence design. This is the sole active
