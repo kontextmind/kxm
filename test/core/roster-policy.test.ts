@@ -164,3 +164,34 @@ test("validateRosterDocument refuses antigravity vendor mismatch, shape, origin,
     /native vendor cannot use Pi/,
   );
 });
+
+test("model origin evidence may pin a source commit and receives it from the reader", () => {
+  const pinnedCommit = "a".repeat(40);
+  const policy = basePolicy({
+    model_origins: {
+      "openrouter/qwen/qwen3-coder-plus": {
+        vendor: "alibaba",
+        evidence: { source: "docs/qwen.md", commit: pinnedCommit, sha256: sha(qwenEvidence) },
+      },
+    },
+  });
+  const seen: Array<{ source: string; commit?: string | undefined }> = [];
+  const result = validateRosterDocument(policy, (source: string, commit?: string) => {
+    seen.push({ source, commit });
+    return qwenEvidence;
+  });
+  assert.equal(result.schema, "kxm.developer-roster.v1");
+  assert.deepEqual(seen, [{ source: "docs/qwen.md", commit: pinnedCommit }]);
+});
+
+test("model origin evidence refuses a malformed pinned commit", () => {
+  const policy = basePolicy({
+    model_origins: {
+      "openrouter/qwen/qwen3-coder-plus": {
+        vendor: "alibaba",
+        evidence: { source: "docs/qwen.md", commit: "not-a-commit", sha256: sha(qwenEvidence) },
+      },
+    },
+  });
+  assert.throws(() => validateRosterDocument(policy, () => qwenEvidence), /invalid origin evidence commit/);
+});

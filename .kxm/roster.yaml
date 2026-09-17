@@ -55,4 +55,5 @@ model_origins:
     vendor: alibaba
     evidence:
       source: docs/workflow-guide.md
+      commit: 69341ca200c31b98b5ba2371437398f0ce501089
       sha256: 358d436dbf1b6f3904252afba167e643d33d597d16148ac1286b1c21b81448a4
