@@ -33904,6 +33904,12 @@ async function cmdRouteList(runtime) {
   print(runtime.io, runtime.json, { ok: true, command: "routes list", policy }, [...policy.admitted.map((x2) => `admitted ${x2}`), ...policy.disabled.map((x2) => `disabled ${x2}`)].join("\n") || "no route decisions");
   return 0;
 }
+async function cmdRouteCount(runtime) {
+  const policy = loadRoutePolicy(runtime.dirs.workdir);
+  const summary = `${policy.admitted.length} admitted / ${policy.disabled.length} disabled`;
+  print(runtime.io, runtime.json, { ok: true, command: "routes count", admitted: policy.admitted.length, disabled: policy.disabled.length, summary }, summary);
+  return 0;
+}
 async function cmdModelInventoryRefresh(runtime) {
   if (runtime.dryRun) {
     print(runtime.io, runtime.json, { ok: true, command: "models inventory refresh", dryRun: true }, "would refresh .kxm/models/inventory.yaml");
@@ -48805,6 +48811,9 @@ function createProgram(ctx, result) {
   addGlobalOptions(routesCmd.command("list").description("List route decisions")).action(async function routesListAction() {
     result.code = await cmdRouteList(runtimeFrom(ctx, this));
   });
+  addGlobalOptions(routesCmd.command("count").description("Count admitted and disabled routes")).action(async function routesCountAction() {
+    result.code = await cmdRouteCount(runtimeFrom(ctx, this));
+  });
   for (const status of ["admit", "disable"]) {
     addGlobalOptions(routesCmd.command(status).description(`${status === "admit" ? "Admit" : "Disable"} a model route from the inventory`)).option("--model <id>", "Exact model id; omit to choose interactively").action(async function routeChangeAction(options) {
       result.code = await cmdRouteChange(runtimeFrom(ctx, this), status === "admit" ? "admitted" : "disabled", options.model);
@@ -49196,8 +49205,10 @@ function removedMeshInvocation(argv) {
   return { invoked, json };
 }
 async function runCli(argv, env = process.env, io = { stdout: (text) => process.stdout.write(text), stderr: (text) => process.stderr.write(text) }, cwd = process.cwd()) {
-  const originalStdout = io.stdout;
-  const originalStderr = io.stderr;
+  const nested = io.io;
+  const sink = nested && typeof nested.stdout === "function" && typeof nested.stderr === "function" ? nested : io;
+  const originalStdout = sink.stdout;
+  const originalStderr = sink.stderr;
   io = { ...io, stdout: (text) => originalStdout(redactConfiguredValues(text, env)), stderr: (text) => originalStderr(redactConfiguredValues(text, env)) };
   const mesh = removedMeshInvocation(argv);
   if (mesh.invoked) {

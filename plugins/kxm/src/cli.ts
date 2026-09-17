@@ -114,6 +114,7 @@ import {
   cmdRouteChange,
   cmdModelsScreen,
   cmdRouteList,
+  cmdRouteCount,
   cmdModelInventoryRefresh,
   cmdVnextRuntime,
 } from "./cli/vnext.ts";
@@ -426,6 +427,7 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
   const routesCmd = addGlobalOptions(program.command("routes").description("Admit or disable verified model routes"));
   routesCmd.helpCommand("help", "Show routes help");
   addGlobalOptions(routesCmd.command("list").description("List route decisions")).action(async function routesListAction(this: Command) { result.code = await cmdRouteList(runtimeFrom(ctx, this)); });
+  addGlobalOptions(routesCmd.command("count").description("Count admitted and disabled routes")).action(async function routesCountAction(this: Command) { result.code = await cmdRouteCount(runtimeFrom(ctx, this)); });
   for (const status of ["admit", "disable"] as const) {
     addGlobalOptions(routesCmd.command(status).description(`${status === "admit" ? "Admit" : "Disable"} a model route from the inventory`)).option("--model <id>", "Exact model id; omit to choose interactively").action(async function routeChangeAction(this: Command, options: { model?: string }) { result.code = await cmdRouteChange(runtimeFrom(ctx, this), status === "admit" ? "admitted" : "disabled", options.model); });
   }
@@ -1210,8 +1212,10 @@ export async function runCli(
   io: CliIo = { stdout: (text) => process.stdout.write(text), stderr: (text) => process.stderr.write(text) },
   cwd = process.cwd(),
 ): Promise<number> {
-  const originalStdout = io.stdout;
-  const originalStderr = io.stderr;
+  const nested = (io as { io?: CliIo }).io;
+  const sink = nested && typeof nested.stdout === "function" && typeof nested.stderr === "function" ? nested : io;
+  const originalStdout = sink.stdout;
+  const originalStderr = sink.stderr;
   io = { ...io, stdout: (text) => originalStdout(redactConfiguredValues(text, env)), stderr: (text) => originalStderr(redactConfiguredValues(text, env)) };
   const mesh = removedMeshInvocation(argv);
   if (mesh.invoked) {

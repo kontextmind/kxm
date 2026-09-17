@@ -771,6 +771,13 @@ export async function cmdRouteList(runtime: Runtime): Promise<number> {
   return 0;
 }
 
+export async function cmdRouteCount(runtime: Runtime): Promise<number> {
+  const policy = loadRoutePolicy(runtime.dirs.workdir);
+  const summary = `${policy.admitted.length} admitted / ${policy.disabled.length} disabled`;
+  print(runtime.io, runtime.json, { ok: true, command: "routes count", admitted: policy.admitted.length, disabled: policy.disabled.length, summary }, summary);
+  return 0;
+}
+
 export async function cmdModelInventoryRefresh(runtime: Runtime): Promise<number> {
   if (runtime.dryRun) {
     print(runtime.io, runtime.json, { ok: true, command: "models inventory refresh", dryRun: true }, "would refresh .kxm/models/inventory.yaml");
