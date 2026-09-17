@@ -392,6 +392,11 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   and `packages/core/tui/dist/index.js` rebuilds byte-identical after `rm -rf`.
   No assignment, witness record, or
   acceptance is minted here: this is a merge resolution in the working tree.
+  Live smoke on the renamed tree against the operator's already-running hub (the
+  pre-rename `.kxm/state/kxm.db` + `registry.db`, hub up since 2026-09-10):
+  `kxm --version` → 0.7.1, `kxm hub view --json` → `ok:true` health and
+  `ready.storage: "sqlite"`, `kxm peer list --json` → an online agent. No stored
+  record was reinterpreted and no migration was needed.
 
 - **Naming sweep: no `kxm-` package prefix, no `vnext` anywhere (2026-09-17):** Dropped the
   `kxm-` prefix from package names and folders (`@kontextmind/kxm-tui` → `@kontextmind/tui`,
@@ -1115,6 +1120,17 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   (the runners have none); installing Bun on the runners is a separate change
   that carries its own CI evidence. Windows automation stays paused, not deprecated. No
   phase gate changes until a slice carries its own witness.
+
+- **Hub start mints an admin token before the already-managed check (owner:
+  hub/runtime maintainer; trigger: next touch of `scripts/kxm-hub.mjs`):**
+  `resolveCredentials()` runs at module load, so `kxm hub start` on a machine
+  whose `hub-env.json` holds no `authToken` persists a freshly generated admin
+  token and only *then* refuses with "KXM hub is already managed by PID <n>".
+  A refused start can therefore leave a token the live hub never issued. Observed
+  2026-09-17 with a hub running since 2026-09-10; `hub view` and `peer list`
+  still worked, so no live breakage was seen. Fix is ordering — refuse a
+  conflicting start before persisting credentials — in a change with its own
+  test, not smuggled into a behaviour-neutral rename.
 
 - **Unified capability delivery (M0–M9; proposed, consolidated 2026-09-14):**
   [The unified plan](plan-unified-kxm-milestones.md) owns proposed scope,
