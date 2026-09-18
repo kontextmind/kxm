@@ -1,3 +1,20 @@
+---
+schema: "kxm.doc.v1"
+id: "KB-HUB-003"
+type: "kb"
+title: "Q&A: Hub on a public host — multiple users and projects?"
+project: "kxm"
+status: "draft"
+owner: "@operator"
+created: "2026-09-17"
+updated: "2026-09-18"
+authority: "instruction"
+confidence: "reviewed"
+summary: "One hub is one process and one SQLite database behind a TLS proxy; it is not multi-tenant and must never be exposed directly to the public internet."
+tags: ["hub", "deployment", "security"]
+related: ["docs/operations.md", "docs/kb/qa-authentik-authentication.md", "docs/kb/qa-what-the-hub-stores.md"]
+---
+
 # Q&A: Hub on a public host — multiple users and projects?
 
 > Researched by `claude --model fable` (planner, read-only) · 2026-09-17 · task_40b9d5015537 · root review: pending

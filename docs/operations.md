@@ -18,7 +18,7 @@ kxm hub start
 ```
 
 These operator commands assume the packed release CLI installation from
-[Getting started](getting-started.md#install-the-operator-command). From a
+[Getting started](getting-started.md#1-install). From a
 source clone, use `npm run hub` instead.
 
 When `KXM_AUTH_TOKEN` is not set, `kxm hub start` loads the persisted hub
@@ -227,3 +227,11 @@ place from v0.4 databases.
 - **Rollback**: schema downgrades are not supported (a newer database refuses
   to open on an older runtime). Restore a database backup taken before the
   upgrade instead.
+
+## Hub Q&A / knowledge base
+
+- [What is all stored on the hub?](kb/qa-what-the-hub-stores.md)
+- [Storage engine — SQLite vs DuckDB](kb/qa-sqlite-vs-duckdb.md)
+- [Hub on a public host — multiple users and projects?](kb/qa-hub-on-a-public-host.md)
+- [Authentik (OIDC) for user/role/agent authentication](kb/qa-authentik-authentication.md)
+- [Extension install → kxm CLI bootstrap + hub auto-connect](kb/qa-extension-install-and-hub-bootstrap.md)
