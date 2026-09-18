@@ -234,6 +234,18 @@ export interface KxmRuntimeContext {
   projectId: string;
   homeRuntimeId: string;
   eventStore: KxmRunEventStore;
+  /**
+   * Optional clock for **run-duration budget accounting only**. Budgets are
+   * measured from the log's `runningSince`; this answers "what time is it now"
+   * at the far end of that subtraction so engine tests can exercise a budget
+   * boundary without racing a loaded event loop.
+   *
+   * It is honoured only when `KXM_DETERMINISTIC_TEST_CLOCK=1` is set (see
+   * `budgetNowIso` in `engine.ts`), it is never consulted for event timestamps,
+   * and the Runtime supervisor does not pass one — so no production path can
+   * freeze a budget by supplying a stale clock.
+   */
+  readonly budgetClock?: () => string;
 }
 
 const closedRuntimeContexts = new WeakSet<KxmRuntimeContext>();
@@ -267,7 +279,12 @@ export function registerKxmRuntimeCloseHook(context: KxmRuntimeContext, hook: ()
  */
 export function openKxmRuntimeContext(
   projectRoot: string,
-  options: KxmConfigOptions & { stateRoot?: string; now?: string; homeRuntimeId: string },
+  options: KxmConfigOptions & {
+    stateRoot?: string;
+    now?: string;
+    homeRuntimeId: string;
+    budgetClock?: () => string;
+  },
 ): KxmRuntimeContext {
   const paths = kxmRuntimePaths(options.stateRoot !== undefined ? { stateRoot: options.stateRoot } : {});
   const registry = new KxmRuntimeRegistry(paths.registryDb);
@@ -289,6 +306,7 @@ export function openKxmRuntimeContext(
       projectId: registration.projectId,
       homeRuntimeId: registration.homeRuntimeId,
       eventStore,
+      ...(options.budgetClock ? { budgetClock: options.budgetClock } : {}),
     };
   } catch (error) {
     registry.close();

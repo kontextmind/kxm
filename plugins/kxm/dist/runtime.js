@@ -22308,7 +22308,8 @@ function openKxmRuntimeContext(projectRoot, options) {
       projectRoot: bundle.projectRoot,
       projectId: registration.projectId,
       homeRuntimeId: registration.homeRuntimeId,
-      eventStore
+      eventStore,
+      ...options.budgetClock ? { budgetClock: options.budgetClock } : {}
     };
   } catch (error) {
     registry.close();
@@ -26088,7 +26089,11 @@ function declaredRunDurationBudget(context, runId) {
     return void 0;
   }
 }
-function runDurationOverrunPayload(context, runId, nowIso2 = (/* @__PURE__ */ new Date()).toISOString()) {
+function budgetNowIso(context) {
+  if (process.env.KXM_DETERMINISTIC_TEST_CLOCK === "1" && context.budgetClock) return context.budgetClock();
+  return (/* @__PURE__ */ new Date()).toISOString();
+}
+function runDurationOverrunPayload(context, runId, nowIso2 = budgetNowIso(context)) {
   const declared = declaredRunDurationBudget(context, runId);
   if (!declared) return void 0;
   const run = context.eventStore.run(runId);
@@ -26151,7 +26156,7 @@ function armRunDurationBudgetTimer(context, runId) {
   const fire = () => {
     timer = void 0;
     if (cleared || isKxmRuntimeContextClosed(context)) return;
-    const nowIso2 = (/* @__PURE__ */ new Date()).toISOString();
+    const nowIso2 = budgetNowIso(context);
     const elapsedMs = elapsedMsBetween(state.runningSince, nowIso2);
     if (elapsedMs < declared.budgetMs) {
       arm(declared.budgetMs - elapsedMs);

@@ -2352,10 +2352,25 @@ function declaredRunDurationBudget(context: KxmRuntimeContext, runId: string): K
   }
 }
 
+/**
+ * "Now" for run-duration budget accounting.
+ *
+ * Budgets are always measured from the log-derived `runningSince`; this only
+ * supplies the other side of that subtraction. An injected `budgetClock` is
+ * honoured only under `KXM_DETERMINISTIC_TEST_CLOCK=1`, so deterministic engine
+ * tests can pin a budget boundary while no production path — including the
+ * supervisor, which never passes a clock — can postpone a cancellation by
+ * feeding the engine a stale time.
+ */
+function budgetNowIso(context: KxmRuntimeContext): string {
+  if (process.env.KXM_DETERMINISTIC_TEST_CLOCK === "1" && context.budgetClock) return context.budgetClock();
+  return new Date().toISOString();
+}
+
 function runDurationOverrunPayload(
   context: KxmRuntimeContext,
   runId: string,
-  nowIso = new Date().toISOString(),
+  nowIso = budgetNowIso(context),
 ): { budgetMs: number; elapsedMs: number; source: KxmRunDurationBudget["source"] } | undefined {
   const declared = declaredRunDurationBudget(context, runId);
   if (!declared) return undefined;
@@ -2432,7 +2447,7 @@ function armRunDurationBudgetTimer(context: KxmRuntimeContext, runId: string): (
   const fire = (): void => {
     timer = undefined;
     if (cleared || isKxmRuntimeContextClosed(context)) return;
-    const nowIso = new Date().toISOString();
+    const nowIso = budgetNowIso(context);
     const elapsedMs = elapsedMsBetween(state.runningSince!, nowIso);
     if (elapsedMs < declared.budgetMs) {
       arm(declared.budgetMs - elapsedMs);
