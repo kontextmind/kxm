@@ -1,3 +1,20 @@
+---
+schema: "kxm.doc.v1"
+id: "KB-HUB-005"
+type: "kb"
+title: "Q&A: What is all stored on the hub?"
+project: "kxm"
+status: "draft"
+owner: "@operator"
+created: "2026-09-17"
+updated: "2026-09-18"
+authority: "instruction"
+confidence: "reviewed"
+summary: "The hub persists agent records, message bodies, workflow runs, journal/evidence, context items, runtime events, and raw tokens in user-state hub-env.json."
+tags: ["hub", "storage", "privacy"]
+related: ["docs/operations.md", "docs/kb/qa-sqlite-vs-duckdb.md"]
+---
+
 # Q&A: What is all stored on the hub?
 
 > Researched by `codex gpt-5.6-sol` (reviewer-cli, read-only) · 2026-09-17 · task_85bd0119c40a · root review: pending

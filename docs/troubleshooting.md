@@ -115,7 +115,7 @@ CLI matches source.
 `pi install git:github.com/kontextmind/kxm@main` installs the Pi extension
 and Agent Skill, not a global operator command. Install the versioned `.tgz`
 release asset through the authenticated `gh release download` flow in
-[Getting started](getting-started.md#install-the-operator-command), or run
+[Getting started](getting-started.md#1-install), or run
 `node scripts/kxm.mjs` from a clone after `npm ci`. `npx kxm` and a
 global `git+https` npm install are not supported installation paths.
 

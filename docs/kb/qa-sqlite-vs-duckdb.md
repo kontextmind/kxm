@@ -1,3 +1,20 @@
+---
+schema: "kxm.doc.v1"
+id: "KB-HUB-004"
+type: "kb"
+title: "Q&A: Storage engine — SQLite vs DuckDB"
+project: "kxm"
+status: "draft"
+owner: "@operator"
+created: "2026-09-17"
+updated: "2026-09-18"
+authority: "instruction"
+confidence: "reviewed"
+summary: "The hub already uses SQLite; there is no DuckDB in this repository, and DuckDB should not become the hub's primary store."
+tags: ["hub", "sqlite", "storage"]
+related: ["docs/operations.md", "docs/kb/qa-what-the-hub-stores.md"]
+---
+
 # Q&A: Storage engine — SQLite vs DuckDB
 
 > Answered by root from direct repo evidence · 2026-09-17 · task_279246b4dddb
