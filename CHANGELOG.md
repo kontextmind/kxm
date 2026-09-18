@@ -41,6 +41,18 @@ All notable user-facing changes are documented here. The project follows [Semant
 - **`kxm hub start` no longer generates and persists an admin token when it is
   about to refuse** because another hub already owns the claim. A refused start
   used to leave behind credentials the running hub never issued.
+- **Runtime intake contract fixes (released in 0.7.46, found in review):**
+  a lost intake insert race accepted different content under an already-used
+  idempotency key; resume drained only one page, so held intent beyond 500
+  messages was stranded; pause, ingress and admission were not atomic, which could
+  strand a message as `held_paused` in an unpaused project; a coordinator rebind
+  could widen a tool ceiling by lifting a denial, changing the preset, or dropping
+  the tool policy; relabelling a stored message's classification on a duplicate is
+  now refused; coordinators now record the real loaded configuration revision
+  instead of a hash of project path and runtime id; dispatch order is Runtime
+  arrival order, so a backdated timestamp cannot jump the queue; persisted records
+  are cross-checked against every duplicated column on read; and the intake schema
+  no longer admits contradictory states.
 
 ## 0.7.0 - 2026-09-11
 

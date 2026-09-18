@@ -234,6 +234,8 @@ export interface KxmRuntimeContext {
   projectId: string;
   homeRuntimeId: string;
   eventStore: KxmRunEventStore;
+  /** Deterministic revision of the loaded project configuration (`sha256:...`). */
+  readonly configRevision: string;
   /**
    * Optional clock for **run-duration budget accounting only**. Budgets are
    * measured from the log's `runningSince`; this answers "what time is it now"
@@ -306,6 +308,7 @@ export function openKxmRuntimeContext(
       projectId: registration.projectId,
       homeRuntimeId: registration.homeRuntimeId,
       eventStore,
+      configRevision: bundle.configRevision,
       ...(options.budgetClock ? { budgetClock: options.budgetClock } : {}),
     };
   } catch (error) {
