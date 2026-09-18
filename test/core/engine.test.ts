@@ -871,22 +871,158 @@ test("run-duration budget chooses min of project and workflow and fills receipt 
       assert.equal(bothBudget.source, "both");
       assert.equal(bothBudget.budgetMs, 40);
 
-      const inside = acceptKxmRun(context, bundle, { workflowId: "completes-inside", prompt: "inside" });
-      const session = await KxmRunScheduler.for(context, bundle).openDriveSession(inside.run.runId, {
-        mode: "simulated",
-        createProducer: () => outcomes(["passed"]),
+      // "Completes inside budget" must not race the wall clock. The effective
+      // budget here is min(project 40, workflow 5000) = 40ms, so on a loaded
+      // event loop this run used to settle `cancelled` and fail the suite for no
+      // product reason. The determinism seam freezes budget *accounting* only —
+      // the recorded budget still comes from config and the log-derived start.
+      const determinism = process.env.KXM_DETERMINISTIC_TEST_CLOCK;
+      process.env.KXM_DETERMINISTIC_TEST_CLOCK = "1";
+      const frozenElapsedMs = Date.now() + 5;
+      // The producer deliberately stalls 250ms past the 40ms budget. With the
+      // real clock that is a cancellation — which is exactly how this case used
+      // to fail under `npm test` load. With the seam it is a completed run, so
+      // the assertion measures the budget rule, not scheduling luck.
+      const stalling = createKxmSimulatedProducer(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        return { outcome: "passed" };
       });
-      const insideResult = await session.settled;
-      assert.equal(insideResult.state.status, "completed");
-      const insideReceipt = context.eventStore.driveReceipt(session.driveId);
-      assert.ok(insideReceipt?.budget);
-      assert.equal(insideReceipt!.budget!.overrun, false);
-      assert.equal(insideReceipt!.budget!.source, "both");
-      assert.equal(insideReceipt!.budget!.budgetMs, 40);
+      const insideContext = openKxmRuntimeContext(root, {
+        stateRoot,
+        homeRuntimeId: HOME,
+        budgetClock: () => new Date(frozenElapsedMs).toISOString(),
+      });
+      try {
+        const inside = acceptKxmRun(insideContext, bundle, { workflowId: "completes-inside", prompt: "inside" });
+        const session = await KxmRunScheduler.for(insideContext, bundle).openDriveSession(inside.run.runId, {
+          mode: "simulated",
+          createProducer: () => stalling,
+        });
+        const insideResult = await session.settled;
+        assert.equal(insideResult.state.status, "completed");
+        const insideReceipt = insideContext.eventStore.driveReceipt(session.driveId);
+        assert.ok(insideReceipt?.budget);
+        assert.equal(insideReceipt!.budget!.overrun, false);
+        assert.equal(insideReceipt!.budget!.source, "both");
+        assert.equal(insideReceipt!.budget!.budgetMs, 40);
+      } finally {
+        closeKxmRuntimeContext(insideContext);
+        if (determinism === undefined) delete process.env.KXM_DETERMINISTIC_TEST_CLOCK;
+        else process.env.KXM_DETERMINISTIC_TEST_CLOCK = determinism;
+      }
     } finally {
       closeKxmRuntimeContext(context);
     }
   } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("run-duration budget trips on the declared clock, with no scheduling luck", { timeout: 20_000 }, async () => {
+  // A counter clock advances 25ms per read. The drive loop checks the budget
+  // once per iteration, so cancellation lands on the second read whatever the
+  // machine is doing: the boundary is proven arithmetic, not a sleep race.
+  const { root, stateRoot } = engineProject("kxm-engine-budget-clock-");
+  const determinism = process.env.KXM_DETERMINISTIC_TEST_CLOCK;
+  try {
+    writeTwoStepDurationWorkflow(root, "two-step-clock", 1000);
+    writeFileSync(join(root, ".kxm", "project.yaml"), readFileSync(join(root, ".kxm", "project.yaml"), "utf8").replace(
+      "defaultHarness: pi\n",
+      "defaultHarness: pi\nlimits:\n  maxRunDurationMs: 40\n",
+    ));
+    process.env.KXM_DETERMINISTIC_TEST_CLOCK = "1";
+    let clockSteps = 0;
+    let anchorMs = Number.NaN;
+    let runId = "";
+    const bundle = loadKxmProject(root);
+    const context = openKxmRuntimeContext(root, {
+      stateRoot,
+      homeRuntimeId: HOME,
+      // Anchored on the log's own `runningSince` — the same value the fold uses
+      // — so the fake budget is exact instead of drifting by however long
+      // accept+start took in real time. Each read advances 25ms against a 40ms
+      // budget: read one passes, read two trips.
+      budgetClock: () => {
+        if (!Number.isFinite(anchorMs)) {
+          const running = context.eventStore.events(runId, 0, 200)
+            .find((event) => event.eventType === "run.status_changed" && event.payload.status === "running");
+          if (!running) return new Date().toISOString();
+          anchorMs = Date.parse(running.occurredAt);
+        }
+        clockSteps += 1;
+        return new Date(anchorMs + clockSteps * 25).toISOString();
+      },
+    });
+    try {
+      const accepted = acceptKxmRun(context, bundle, { workflowId: "two-step-clock", prompt: "clock" });
+      runId = accepted.run.runId;
+      const session = await KxmRunScheduler.for(context, bundle).openDriveSession(runId, {
+        mode: "simulated",
+        createProducer: () => outcomes(["passed", "passed"]),
+      });
+      const driven = await session.settled;
+
+      assert.ok(clockSteps >= 2, `the drive loop must consult the budget clock, saw ${String(clockSteps)} reads`);
+
+      assert.equal(driven.state.status, "cancelled");
+      assert.equal(driven.state.terminalReason, "budget_run_duration");
+      // The cancellation's own accounting is clock-derived and therefore exact;
+      // the receipt's elapsedMs stays a real-log measurement and is asserted as
+      // present, not as a number this test may not influence.
+      const cancelEvent = context.eventStore.events(accepted.run.runId, 0, 200)
+        .find((event) => event.eventType === "run.cancel_requested");
+      assert.ok(cancelEvent, "the budget cancellation is recorded in the log");
+      const requested = cancelEvent!.payload as { reason?: string; budget?: { budgetMs?: number; elapsedMs?: number; source?: string } };
+      assert.equal(requested.reason, "budget_run_duration");
+      assert.equal(requested.budget?.budgetMs, 40);
+      assert.equal(requested.budget?.source, "both");
+      assert.ok(
+        (requested.budget?.elapsedMs ?? 0) >= 40,
+        `the declared clock must have passed the budget, saw ${String(requested.budget?.elapsedMs)}`,
+      );
+      const receipt = context.eventStore.driveReceipt(session.driveId);
+      assert.ok(receipt?.budget, "a budget cancellation records its budget in the receipt");
+      assert.equal(receipt!.budget!.budgetMs, 40);
+      assert.equal(receipt!.budget!.source, "both");
+      assert.equal(receipt!.budget!.overrun, true);
+    } finally {
+      closeKxmRuntimeContext(context);
+    }
+  } finally {
+    if (determinism === undefined) delete process.env.KXM_DETERMINISTIC_TEST_CLOCK;
+    else process.env.KXM_DETERMINISTIC_TEST_CLOCK = determinism;
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("an injected budget clock is ignored unless the determinism seam is armed", { timeout: 30_000 }, async () => {
+  // Fail-closed pin for the seam above: with KXM_DETERMINISTIC_TEST_CLOCK unset,
+  // a frozen clock must not postpone a real budget. The 25ms budget versus a
+  // 400ms producer is won by the budget on any machine.
+  const { root, stateRoot } = engineProject("kxm-engine-budget-seam-brake-");
+  const determinism = process.env.KXM_DETERMINISTIC_TEST_CLOCK;
+  try {
+    delete process.env.KXM_DETERMINISTIC_TEST_CLOCK;
+    writeDurationWorkflow(root, "frozen-clock", "  maxTransitions: 2\n  maxRunDurationMs: 25");
+    const bundle = loadKxmProject(root);
+    const frozen = new Date().toISOString();
+    const context = openKxmRuntimeContext(root, {
+      stateRoot,
+      homeRuntimeId: HOME,
+      budgetClock: () => frozen,
+    });
+    try {
+      const accepted = acceptKxmRun(context, bundle, { workflowId: "frozen-clock", prompt: "brake" });
+      pinKxmCompiledPlan(context, bundle, accepted.run.runId);
+      const driven = await driveKxmRun(context, accepted.run.runId, delayUntilAbort(400));
+      assert.equal(driven.state.status, "cancelled");
+      assert.equal(driven.state.terminalReason, "budget_run_duration");
+    } finally {
+      closeKxmRuntimeContext(context);
+    }
+  } finally {
+    if (determinism === undefined) delete process.env.KXM_DETERMINISTIC_TEST_CLOCK;
+    else process.env.KXM_DETERMINISTIC_TEST_CLOCK = determinism;
     removeTempDir(root, stateRoot);
   }
 });

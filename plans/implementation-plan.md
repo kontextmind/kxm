@@ -358,6 +358,31 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 ### Landed in this tree (unreleased)
 
+- **Run-duration budgets are testable without racing the machine (2026-09-17):**
+  the still-open note filed in #245 is fixed. `test/core/engine.test.ts`'s
+  "completes inside budget" case asserts the *minimum* of project 40 and workflow
+  5000, i.e. a **40 ms** budget, so its simulated producer had to settle inside a
+  40 ms wall-clock window; on a loaded `npm test` it settled `cancelled` and went
+  red for no product reason (observed 2026-09-17; passes in isolation in 4.0 s).
+  The correction is the seam the B3 design implied: budgets still measure from the
+  log-derived `runningSince`, and only the other side of that subtraction — "what
+  time is it now" — became injectable through `openKxmRuntimeContext({ budgetClock })`. It is honoured **only** with `KXM_DETERMINISTIC_TEST_CLOCK=1`, is never
+  consulted for event timestamps, and the supervisor passes no clock, so no
+  production path can postpone a cancellation by feeding the engine a stale time.
+  Three assertions now pin the behaviour with no sleeps racing each other:
+  (1) the completes-inside case deliberately stalls 250 ms past its 40 ms budget
+  and still settles `completed` with `overrun: false` — the original flake's exact
+  failure mode, now reproducible on demand and red against the pre-fix engine;
+  (2) a log-anchored counter clock advancing 25 ms per read trips the boundary on
+  the second read: `cancelled`, `terminalReason: budget_run_duration`, a
+  `run.cancel_requested` payload carrying `budget { budgetMs: 40, source: "both",
+  elapsedMs >= 40 }`, and a receipt with `overrun: true`;
+  (3) a brake case: with the seam unarmed, an injected frozen clock cannot save a
+  run from a real 25 ms budget. Witness: `npm run verify` green — 1217 tests,
+  1211 pass, 0 fail, 6 skipped — with `plugins/kxm/dist` rebuilt so
+  `check:generated` is current. No budget bound, default or production behaviour
+  changed; the plan's own instruction held — determinism, not a bigger number.
+
 - **Release version surfaces include workspace packages (2026-09-17):** landing
   `packages/core/tui` in #242 made the release pipeline fail on every merged PR.
   `scripts/check-versions.mjs` (the gate) already scanned `packages/**` and so
@@ -1159,20 +1184,6 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   (the runners have none); installing Bun on the runners is a separate change
   that carries its own CI evidence. Windows automation stays paused, not deprecated. No
   phase gate changes until a slice carries its own witness.
-
-- **Run-duration budget test is wall-clock fragile under load (owner: engine
-  maintainer; trigger: next touch of the Phase 11 B3 budget tests):**
-  `test/core/engine.test.ts:836` asserts a *simulated* producer "completes
-  inside" a declared `maxRunDurationMs: 5000`. Under `npm test`
-  (`--test-concurrency=4`) on a busy laptop it settled `cancelled` instead of
-  `completed` — observed 2026-09-17 in a local `npm run verify` on
-  `fix/hub-start-token-before-claim`; the same test passes in isolation in 4.0s
-  and the tree was otherwise green (1208 pass, 0 other failures). The budget is
-  enforced against real elapsed time, so the assertion competes with every other
-  worker instead of using the log-derived clock the B3 design already leans on.
-  Fix is determinism — inject the clock or pre-date the run's first `running`
-  event — not a bigger magic number. Until then, a single red here is a load
-  artifact to re-run, never a reason to relax a budget bound.
 
 - **Unified capability delivery (M0–M9; proposed, consolidated 2026-09-14):**
   [The unified plan](plan-unified-kxm-milestones.md) owns proposed scope,
