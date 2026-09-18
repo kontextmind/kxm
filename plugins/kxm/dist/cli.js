@@ -22051,6 +22051,8 @@ var KxmSchemaRegistry = class {
   permissionDiffValidator;
   runEventValidator;
   driveReceiptValidator;
+  coordinatorValidator;
+  intakeMessageValidator;
   constructor(schemasDir = DEFAULT_SCHEMA_DIR) {
     this.schemasDir = resolve3(schemasDir);
     this.ajv = new import__.Ajv2020({ allErrors: true, strict: true, strictRequired: false });
@@ -22068,6 +22070,8 @@ var KxmSchemaRegistry = class {
     const permissionDiffFile = "permission-diff.schema.json";
     const runEventFile = "run-event.schema.json";
     const driveReceiptFile = "drive-receipt.schema.json";
+    const coordinatorFile = "coordinator.schema.json";
+    const intakeMessageFile = "intake-message.schema.json";
     this.ajv.addSchema(readJsonObject(join6(this.schemasDir, localBindingsFile)));
     this.ajv.addSchema(readJsonObject(join6(this.schemasDir, templateProvenanceFile)));
     this.ajv.addSchema(readJsonObject(join6(this.schemasDir, initOperationFile)));
@@ -22077,6 +22081,8 @@ var KxmSchemaRegistry = class {
     this.ajv.addSchema(readJsonObject(join6(this.schemasDir, permissionDiffFile)));
     this.ajv.addSchema(readJsonObject(join6(this.schemasDir, runEventFile)));
     this.ajv.addSchema(readJsonObject(join6(this.schemasDir, driveReceiptFile)));
+    this.ajv.addSchema(readJsonObject(join6(this.schemasDir, coordinatorFile)));
+    this.ajv.addSchema(readJsonObject(join6(this.schemasDir, intakeMessageFile)));
     for (const [kind, definition] of Object.entries(RESOURCE_SCHEMA)) {
       const validator = this.ajv.getSchema(`https://schemas.kxm.dev/${definition.file}`);
       if (!validator) throw new Error(`schema did not compile: ${definition.file}`);
@@ -22091,6 +22097,8 @@ var KxmSchemaRegistry = class {
     const permissionDiffValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${permissionDiffFile}`);
     const runEventValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${runEventFile}`);
     const driveReceiptValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${driveReceiptFile}`);
+    const coordinatorValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${coordinatorFile}`);
+    const intakeMessageValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${intakeMessageFile}`);
     if (!localBindingsValidator) throw new Error(`schema did not compile: ${localBindingsFile}`);
     if (!templateProvenanceValidator) throw new Error(`schema did not compile: ${templateProvenanceFile}`);
     if (!initOperationValidator) throw new Error(`schema did not compile: ${initOperationFile}`);
@@ -22100,6 +22108,8 @@ var KxmSchemaRegistry = class {
     if (!permissionDiffValidator) throw new Error(`schema did not compile: ${permissionDiffFile}`);
     if (!runEventValidator) throw new Error(`schema did not compile: ${runEventFile}`);
     if (!driveReceiptValidator) throw new Error(`schema did not compile: ${driveReceiptFile}`);
+    if (!coordinatorValidator) throw new Error(`schema did not compile: ${coordinatorFile}`);
+    if (!intakeMessageValidator) throw new Error(`schema did not compile: ${intakeMessageFile}`);
     this.localBindingsValidator = localBindingsValidator;
     this.templateProvenanceValidator = templateProvenanceValidator;
     this.initOperationValidator = initOperationValidator;
@@ -22109,6 +22119,8 @@ var KxmSchemaRegistry = class {
     this.permissionDiffValidator = permissionDiffValidator;
     this.runEventValidator = runEventValidator;
     this.driveReceiptValidator = driveReceiptValidator;
+    this.coordinatorValidator = coordinatorValidator;
+    this.intakeMessageValidator = intakeMessageValidator;
   }
   validate(kind, value, file) {
     const definition = RESOURCE_SCHEMA[kind];
@@ -24018,7 +24030,7 @@ function restoreBackup(manifestPathOrDir, options = {}) {
     if (store.storeId === "registry" || store.storeId === "binding-store") {
       maxSupported = 1;
     } else if (store.storeId.startsWith("events:")) {
-      maxSupported = 4;
+      maxSupported = 5;
     }
     let targetPath = store.sourcePath;
     if (options.projectRoot && manifest.projectRoot && targetPath.startsWith(manifest.projectRoot)) {
@@ -24260,6 +24272,111 @@ var KxmRuntimeRegistry = class {
   }
 };
 var DRIVE_RECEIPT_MAX_BYTES = 8 * 1024;
+var EVENT_STORE_TABLES = {
+  runs: ["run_id", "project_id", "home_runtime_id", "workflow_id", "prompt_sha256", "status", "config_revision", "memory_revision", "executor_policy_revision", "tool_policy_revision", "created_at", "updated_at"],
+  events: ["project_id", "run_id", "sequence", "event_id", "event_type", "command_id", "occurred_at", "recorded_at", "monotonic_ns", "config_revision", "memory_revision", "executor_policy_revision", "tool_policy_revision", "payload", "schema", "home_runtime_id"],
+  commands: ["command_id", "run_id", "kind", "result", "recorded_at"],
+  run_plans: ["run_id", "run_plan_hash", "envelope", "pinned_sequence"],
+  run_state: ["run_id", "last_sequence", "state"],
+  attempt_capabilities: ["attempt_id", "run_id", "assignment_id", "step_id", "step_attempt", "producer_id", "capability_hash", "state"],
+  gate_attempts: [
+    "attempt_id",
+    "run_id",
+    "project_id",
+    "home_runtime_id",
+    "step_id",
+    "step_attempt",
+    "assignment_id",
+    "effect_id",
+    "gate_id",
+    "gate_kind",
+    "expect",
+    "gate_definition_hash",
+    "registry_hash",
+    "run_plan_hash",
+    "control_project_key",
+    "producer_id",
+    "intent_event_id",
+    "content_hash"
+  ],
+  gate_observations: [
+    "observation_id",
+    "attempt_id",
+    "run_id",
+    "project_id",
+    "home_runtime_id",
+    "step_id",
+    "step_attempt",
+    "assignment_id",
+    "effect_id",
+    "completeness",
+    "spawned",
+    "pid",
+    "exit_code",
+    "signal",
+    "exit_observed",
+    "close_observed",
+    "stop_cause",
+    "signals_attempted",
+    "error_class",
+    "stdout_sha256",
+    "stdout_bytes",
+    "stdout_complete",
+    "stderr_sha256",
+    "stderr_bytes",
+    "stderr_complete",
+    "checked_count",
+    "failed_count",
+    "elapsed_ms",
+    "started_at",
+    "finished_at",
+    "recorded_event_id",
+    "content_hash"
+  ],
+  gate_evidence: [
+    "evidence_id",
+    "attempt_id",
+    "observation_id",
+    "run_id",
+    "project_id",
+    "home_runtime_id",
+    "step_id",
+    "step_attempt",
+    "assignment_id",
+    "effect_id",
+    "evidence_key",
+    "kind",
+    "expect",
+    "outcome",
+    "settled_event_id",
+    "content_hash"
+  ],
+  drive_receipts: ["drive_id", "run_id", "project_id", "opened_sequence", "last_sequence", "closed_at", "schema", "receipt"],
+  coordinators: [
+    "coordinator_id",
+    "project_id",
+    "role",
+    "channel",
+    "ceiling_hash",
+    "config_revision",
+    "bound_at",
+    "schema",
+    "record"
+  ],
+  intake_messages: [
+    "message_id",
+    "project_id",
+    "coordinator_id",
+    "idempotency_key",
+    "content_hash",
+    "received_at",
+    "dispatch_state",
+    "schema",
+    "record"
+  ],
+  project_controls: ["project_id", "paused", "reason", "updated_at", "actor", "schema", "record"]
+};
+var KXM_EVENT_STORE_TABLE_NAMES = Object.keys(EVENT_STORE_TABLES).sort();
 
 // plugins/kxm/src/engine-compile.ts
 var KXM_COMPILED_WORKFLOW_SCHEMA = "kxm.compiled-workflow.v1";

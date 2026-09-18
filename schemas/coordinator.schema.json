@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.kxm.dev/coordinator.schema.json",
+  "title": "KXM project coordinator identity",
+  "description": "A persistent, project-scoped coordinator: an authority ceiling bound to a role and channel, not an always-running model. Rebinding a stable coordinator requires explicit policy and may never widen its ceiling.",
+  "type": "object",
+  "required": [
+    "schema",
+    "coordinatorId",
+    "projectId",
+    "role",
+    "channel",
+    "authority",
+    "boundAt",
+    "boundBy",
+    "configRevision",
+    "ceilingHash"
+  ],
+  "properties": {
+    "schema": { "const": "kxm.coordinator.v1" },
+    "coordinatorId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "projectId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "role": { "$ref": "common.schema.json#/$defs/identifier" },
+    "channel": { "$ref": "common.schema.json#/$defs/identifier" },
+    "authority": {
+      "type": "object",
+      "required": ["repositoryAccess", "effects"],
+      "properties": {
+        "repositoryAccess": { "$ref": "common.schema.json#/$defs/repositoryAccess" },
+        "effects": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/identifier" },
+          "uniqueItems": true,
+          "maxItems": 64
+        },
+        "tools": { "$ref": "common.schema.json#/$defs/toolPolicy" }
+      },
+      "additionalProperties": false
+    },
+    "boundAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "boundBy": { "$ref": "common.schema.json#/$defs/actor" },
+    "rebindOf": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "rebindReason": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "configRevision": { "$ref": "common.schema.json#/$defs/sha256" },
+    "ceilingHash": { "$ref": "common.schema.json#/$defs/sha256" }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": { "properties": { "rebindOf": {} }, "required": ["rebindOf"] },
+      "then": { "required": ["rebindReason"] }
+    }
+  ]
+}

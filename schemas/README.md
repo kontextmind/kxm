@@ -19,6 +19,8 @@ Runtime-local records, and JSON events/results for the planned KXM contract.
 | `migration-receipt.schema.json` | `kxm.migration-receipt.v1` |
 | `permission-diff.schema.json` | `kxm.permission-diff.v1` |
 | `run-event.schema.json` | `kxm.run-event.v1` |
+| `coordinator.schema.json` | `kxm.coordinator.v1` |
+| `intake-message.schema.json` | `kxm.intake-message.v1` |
 | `sync-event.schema.json` | `kxm.sync-event.v1` |
 | `assignment-result.schema.json` | `kxm.assignment-result.v1` |
 | `delivery-manifest.schema.json` | `kxm.delivery-manifest.v1` |

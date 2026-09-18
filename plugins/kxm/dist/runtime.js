@@ -16432,6 +16432,8 @@ var KxmSchemaRegistry = class {
   permissionDiffValidator;
   runEventValidator;
   driveReceiptValidator;
+  coordinatorValidator;
+  intakeMessageValidator;
   constructor(schemasDir = DEFAULT_SCHEMA_DIR) {
     this.schemasDir = resolve(schemasDir);
     this.ajv = new import__.Ajv2020({ allErrors: true, strict: true, strictRequired: false });
@@ -16449,6 +16451,8 @@ var KxmSchemaRegistry = class {
     const permissionDiffFile = "permission-diff.schema.json";
     const runEventFile = "run-event.schema.json";
     const driveReceiptFile = "drive-receipt.schema.json";
+    const coordinatorFile = "coordinator.schema.json";
+    const intakeMessageFile = "intake-message.schema.json";
     this.ajv.addSchema(readJsonObject(join2(this.schemasDir, localBindingsFile)));
     this.ajv.addSchema(readJsonObject(join2(this.schemasDir, templateProvenanceFile)));
     this.ajv.addSchema(readJsonObject(join2(this.schemasDir, initOperationFile)));
@@ -16458,6 +16462,8 @@ var KxmSchemaRegistry = class {
     this.ajv.addSchema(readJsonObject(join2(this.schemasDir, permissionDiffFile)));
     this.ajv.addSchema(readJsonObject(join2(this.schemasDir, runEventFile)));
     this.ajv.addSchema(readJsonObject(join2(this.schemasDir, driveReceiptFile)));
+    this.ajv.addSchema(readJsonObject(join2(this.schemasDir, coordinatorFile)));
+    this.ajv.addSchema(readJsonObject(join2(this.schemasDir, intakeMessageFile)));
     for (const [kind, definition] of Object.entries(RESOURCE_SCHEMA)) {
       const validator = this.ajv.getSchema(`https://schemas.kxm.dev/${definition.file}`);
       if (!validator) throw new Error(`schema did not compile: ${definition.file}`);
@@ -16472,6 +16478,8 @@ var KxmSchemaRegistry = class {
     const permissionDiffValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${permissionDiffFile}`);
     const runEventValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${runEventFile}`);
     const driveReceiptValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${driveReceiptFile}`);
+    const coordinatorValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${coordinatorFile}`);
+    const intakeMessageValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${intakeMessageFile}`);
     if (!localBindingsValidator) throw new Error(`schema did not compile: ${localBindingsFile}`);
     if (!templateProvenanceValidator) throw new Error(`schema did not compile: ${templateProvenanceFile}`);
     if (!initOperationValidator) throw new Error(`schema did not compile: ${initOperationFile}`);
@@ -16481,6 +16489,8 @@ var KxmSchemaRegistry = class {
     if (!permissionDiffValidator) throw new Error(`schema did not compile: ${permissionDiffFile}`);
     if (!runEventValidator) throw new Error(`schema did not compile: ${runEventFile}`);
     if (!driveReceiptValidator) throw new Error(`schema did not compile: ${driveReceiptFile}`);
+    if (!coordinatorValidator) throw new Error(`schema did not compile: ${coordinatorFile}`);
+    if (!intakeMessageValidator) throw new Error(`schema did not compile: ${intakeMessageFile}`);
     this.localBindingsValidator = localBindingsValidator;
     this.templateProvenanceValidator = templateProvenanceValidator;
     this.initOperationValidator = initOperationValidator;
@@ -16490,6 +16500,8 @@ var KxmSchemaRegistry = class {
     this.permissionDiffValidator = permissionDiffValidator;
     this.runEventValidator = runEventValidator;
     this.driveReceiptValidator = driveReceiptValidator;
+    this.coordinatorValidator = coordinatorValidator;
+    this.intakeMessageValidator = intakeMessageValidator;
   }
   validate(kind, value, file) {
     const definition = RESOURCE_SCHEMA[kind];
@@ -16561,6 +16573,34 @@ function validateDriveReceipt(value, file) {
       "drive_receipt_invalid",
       file,
       registry.ajv.errorsText(registry.driveReceiptValidator.errors, { separator: "; " })
+    )]);
+  }
+}
+function validateCoordinator(value, file) {
+  const registry = cachedRunEventRegistry ??= new KxmSchemaRegistry();
+  if (!value || typeof value !== "object" || Array.isArray(value) || value.schema !== "kxm.coordinator.v1") {
+    throw new KxmConfigError([issue2("schema", "coordinator_invalid", file, "expected kxm.coordinator.v1")]);
+  }
+  if (!registry.coordinatorValidator(value)) {
+    throw new KxmConfigError([issue2(
+      "schema",
+      "coordinator_invalid",
+      file,
+      registry.ajv.errorsText(registry.coordinatorValidator.errors, { separator: "; " })
+    )]);
+  }
+}
+function validateIntakeMessage(value, file) {
+  const registry = cachedRunEventRegistry ??= new KxmSchemaRegistry();
+  if (!value || typeof value !== "object" || Array.isArray(value) || value.schema !== "kxm.intake-message.v1") {
+    throw new KxmConfigError([issue2("schema", "intake_message_invalid", file, "expected kxm.intake-message.v1")]);
+  }
+  if (!registry.intakeMessageValidator(value)) {
+    throw new KxmConfigError([issue2(
+      "schema",
+      "intake_message_invalid",
+      file,
+      registry.ajv.errorsText(registry.intakeMessageValidator.errors, { separator: "; " })
     )]);
   }
 }
@@ -18042,7 +18082,7 @@ function restoreBackup(manifestPathOrDir, options = {}) {
     if (store.storeId === "registry" || store.storeId === "binding-store") {
       maxSupported = 1;
     } else if (store.storeId.startsWith("events:")) {
-      maxSupported = 4;
+      maxSupported = 5;
     }
     let targetPath = store.sourcePath;
     if (options.projectRoot && manifest.projectRoot && targetPath.startsWith(manifest.projectRoot)) {
@@ -18312,7 +18352,7 @@ function verifyKxmDriveReceipt(receipt, events, foldedStatus, binding) {
   if (reasons.length === 0) return { verified: true };
   return { verified: false, divergence: reasons.join("; ") };
 }
-var KXM_EVENT_STORE_SCHEMA_VERSION = 4;
+var KXM_EVENT_STORE_SCHEMA_VERSION = 5;
 var KXM_DRIVE_RECEIPT_SCHEMA = "kxm.drive-receipt.v1";
 var DRIVE_RECEIPT_MAX_BYTES = 8 * 1024;
 var EVENT_STORE_TABLES = {
@@ -18394,8 +18434,32 @@ var EVENT_STORE_TABLES = {
     "settled_event_id",
     "content_hash"
   ],
-  drive_receipts: ["drive_id", "run_id", "project_id", "opened_sequence", "last_sequence", "closed_at", "schema", "receipt"]
+  drive_receipts: ["drive_id", "run_id", "project_id", "opened_sequence", "last_sequence", "closed_at", "schema", "receipt"],
+  coordinators: [
+    "coordinator_id",
+    "project_id",
+    "role",
+    "channel",
+    "ceiling_hash",
+    "config_revision",
+    "bound_at",
+    "schema",
+    "record"
+  ],
+  intake_messages: [
+    "message_id",
+    "project_id",
+    "coordinator_id",
+    "idempotency_key",
+    "content_hash",
+    "received_at",
+    "dispatch_state",
+    "schema",
+    "record"
+  ],
+  project_controls: ["project_id", "paused", "reason", "updated_at", "actor", "schema", "record"]
 };
+var KXM_EVENT_STORE_TABLE_NAMES = Object.keys(EVENT_STORE_TABLES).sort();
 var EVENT_STORE_SCHEMA = `
 CREATE TABLE runs (
   run_id TEXT PRIMARY KEY,
@@ -18547,6 +18611,76 @@ CREATE TABLE drive_receipts (
   receipt TEXT NOT NULL
 ) STRICT;
 CREATE INDEX drive_receipts_run ON drive_receipts(run_id);
+CREATE TABLE coordinators (
+  coordinator_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  role TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  ceiling_hash TEXT NOT NULL,
+  config_revision TEXT NOT NULL,
+  bound_at TEXT NOT NULL,
+  schema TEXT NOT NULL,
+  record TEXT NOT NULL
+) STRICT;
+CREATE UNIQUE INDEX coordinators_slot ON coordinators(project_id, role, channel);
+CREATE TABLE intake_messages (
+  message_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  coordinator_id TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  received_at TEXT NOT NULL,
+  dispatch_state TEXT NOT NULL CHECK (dispatch_state IN ('ready','held_paused','admitted','refused')),
+  schema TEXT NOT NULL,
+  record TEXT NOT NULL
+) STRICT;
+CREATE UNIQUE INDEX intake_idempotency ON intake_messages(project_id, coordinator_id, idempotency_key);
+CREATE INDEX intake_dispatch ON intake_messages(project_id, dispatch_state, received_at, message_id);
+CREATE TABLE project_controls (
+  project_id TEXT PRIMARY KEY,
+  paused INTEGER NOT NULL CHECK (paused IN (0, 1)),
+  reason TEXT,
+  updated_at TEXT NOT NULL,
+  actor TEXT NOT NULL,
+  schema TEXT NOT NULL,
+  record TEXT NOT NULL
+) STRICT;
+`;
+var COORDINATOR_INTAKE_DDL = `
+CREATE TABLE IF NOT EXISTS coordinators (
+  coordinator_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  role TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  ceiling_hash TEXT NOT NULL,
+  config_revision TEXT NOT NULL,
+  bound_at TEXT NOT NULL,
+  schema TEXT NOT NULL,
+  record TEXT NOT NULL
+) STRICT;
+CREATE UNIQUE INDEX IF NOT EXISTS coordinators_slot ON coordinators(project_id, role, channel);
+CREATE TABLE IF NOT EXISTS intake_messages (
+  message_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  coordinator_id TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  received_at TEXT NOT NULL,
+  dispatch_state TEXT NOT NULL CHECK (dispatch_state IN ('ready','held_paused','admitted','refused')),
+  schema TEXT NOT NULL,
+  record TEXT NOT NULL
+) STRICT;
+CREATE UNIQUE INDEX IF NOT EXISTS intake_idempotency ON intake_messages(project_id, coordinator_id, idempotency_key);
+CREATE INDEX IF NOT EXISTS intake_dispatch ON intake_messages(project_id, dispatch_state, received_at, message_id);
+CREATE TABLE IF NOT EXISTS project_controls (
+  project_id TEXT PRIMARY KEY,
+  paused INTEGER NOT NULL CHECK (paused IN (0, 1)),
+  reason TEXT,
+  updated_at TEXT NOT NULL,
+  actor TEXT NOT NULL,
+  schema TEXT NOT NULL,
+  record TEXT NOT NULL
+) STRICT;
 `;
 var DRIVE_RECEIPTS_DDL = `
 CREATE TABLE IF NOT EXISTS drive_receipts (
@@ -18567,6 +18701,13 @@ var EVENT_STORE_MIGRATIONS = [
     toVersion: 4,
     migrate(database) {
       database.exec(DRIVE_RECEIPTS_DDL);
+    }
+  },
+  {
+    fromVersion: 4,
+    toVersion: 5,
+    migrate(database) {
+      database.exec(COORDINATOR_INTAKE_DDL);
     }
   }
 ];
@@ -18773,6 +18914,134 @@ var KxmRunEventStore = class {
         return { driveId: row.drive_id, divergence: "receipt unreadable" };
       }
     });
+  }
+  /** Insert a coordinator unless the (project, role, channel) slot is taken. */
+  insertCoordinatorIfAbsent(row) {
+    const result = this.database.prepare(`
+      INSERT OR IGNORE INTO coordinators
+        (coordinator_id, project_id, role, channel, ceiling_hash, config_revision, bound_at, schema, record)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      row.coordinatorId,
+      row.projectId,
+      row.role,
+      row.channel,
+      row.ceilingHash,
+      row.configRevision,
+      row.boundAt,
+      "kxm.coordinator.v1",
+      row.record
+    );
+    return Number(result.changes) === 1;
+  }
+  coordinatorById(coordinatorId) {
+    const row = this.database.prepare("SELECT * FROM coordinators WHERE coordinator_id = ?").get(coordinatorId);
+    return row ? coordinatorFromRow(row) : void 0;
+  }
+  coordinatorInSlot(projectId, role, channel) {
+    const row = this.database.prepare(`
+      SELECT * FROM coordinators WHERE project_id = ? AND role = ? AND channel = ?
+    `).get(projectId, role, channel);
+    return row ? coordinatorFromRow(row) : void 0;
+  }
+  /**
+   * Replace the coordinator holding a (project, role, channel) slot, guarded by
+   * the identity that is currently there. A rebind therefore cannot clobber a
+   * record that changed underneath it, and cannot leave two live identities for
+   * one slot.
+   */
+  replaceCoordinatorInSlot(expectedCoordinatorId, row) {
+    const result = this.database.prepare(`
+      UPDATE coordinators
+      SET coordinator_id = ?, ceiling_hash = ?, config_revision = ?, bound_at = ?, schema = ?, record = ?
+      WHERE project_id = ? AND role = ? AND channel = ? AND coordinator_id = ?
+    `).run(
+      row.coordinatorId,
+      row.ceilingHash,
+      row.configRevision,
+      row.boundAt,
+      "kxm.coordinator.v1",
+      row.record,
+      row.projectId,
+      row.role,
+      row.channel,
+      expectedCoordinatorId
+    );
+    return Number(result.changes) === 1;
+  }
+  /** Insert an intake message unless its idempotency slot is taken. */
+  insertIntakeMessageIfAbsent(row) {
+    const result = this.database.prepare(`
+      INSERT OR IGNORE INTO intake_messages
+        (message_id, project_id, coordinator_id, idempotency_key, content_hash, received_at, dispatch_state, schema, record)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      row.messageId,
+      row.projectId,
+      row.coordinatorId,
+      row.idempotencyKey,
+      row.contentHash,
+      row.receivedAt,
+      row.dispatchState,
+      "kxm.intake-message.v1",
+      row.record
+    );
+    return Number(result.changes) === 1;
+  }
+  intakeMessage(messageId) {
+    const row = this.database.prepare("SELECT * FROM intake_messages WHERE message_id = ?").get(messageId);
+    return row ? intakeFromRow(row) : void 0;
+  }
+  intakeBySlot(projectId, coordinatorId, idempotencyKey) {
+    const row = this.database.prepare(`
+      SELECT * FROM intake_messages WHERE project_id = ? AND coordinator_id = ? AND idempotency_key = ?
+    `).get(projectId, coordinatorId, idempotencyKey);
+    return row ? intakeFromRow(row) : void 0;
+  }
+  /** Intake rows in the given dispatch states, oldest first (stable, replay-safe order). */
+  intakeInStates(projectId, states, limit = 100) {
+    if (states.length === 0) return [];
+    const placeholders = states.map(() => "?").join(", ");
+    const rows = this.database.prepare(`
+      SELECT * FROM intake_messages
+      WHERE project_id = ? AND dispatch_state IN (${placeholders})
+      ORDER BY received_at ASC, message_id ASC
+      LIMIT ?
+    `).all(projectId, ...states, limit);
+    return rows.map(intakeFromRow);
+  }
+  /** Rewrite one intake row's dispatch state and record. Returns false when it raced away. */
+  updateIntakeDispatch(messageId, expectState, next) {
+    const result = this.database.prepare(`
+      UPDATE intake_messages SET dispatch_state = ?, record = ?, schema = ?
+      WHERE message_id = ? AND dispatch_state = ?
+    `).run(next.state, next.record, "kxm.intake-message.v1", messageId, expectState);
+    return Number(result.changes) === 1;
+  }
+  projectControl(projectId) {
+    const row = this.database.prepare("SELECT * FROM project_controls WHERE project_id = ?").get(projectId);
+    return row ? controlFromRow(row) : void 0;
+  }
+  putProjectControl(row) {
+    this.database.prepare(`
+      INSERT INTO project_controls (project_id, paused, reason, updated_at, actor, schema, record)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(project_id) DO UPDATE SET
+        paused = excluded.paused,
+        reason = excluded.reason,
+        updated_at = excluded.updated_at,
+        actor = excluded.actor,
+        schema = excluded.schema,
+        record = excluded.record
+    `).run(
+      row.projectId,
+      row.paused ? 1 : 0,
+      row.reason ?? null,
+      row.updatedAt,
+      row.actor,
+      "kxm.project-control.v1",
+      row.record
+    );
   }
   insertCapability(row) {
     this.database.prepare(`
@@ -19008,6 +19277,62 @@ var KxmRunEventStore = class {
     }
   }
 };
+function coordinatorFromRow(row) {
+  const parsed = JSON.parse(row.record);
+  validateCoordinator(parsed, row.coordinator_id);
+  if (parsed.coordinatorId !== row.coordinator_id || parsed.ceilingHash !== row.ceiling_hash || parsed.configRevision !== row.config_revision || parsed.boundAt !== row.bound_at) {
+    throw runtimeError("coordinator_record_divergent", row.coordinator_id, "coordinator columns do not match the persisted record");
+  }
+  return {
+    coordinatorId: row.coordinator_id,
+    projectId: row.project_id,
+    role: row.role,
+    channel: row.channel,
+    ceilingHash: row.ceiling_hash,
+    configRevision: row.config_revision,
+    boundAt: row.bound_at,
+    record: row.record
+  };
+}
+function intakeFromRow(row) {
+  const parsed = JSON.parse(row.record);
+  validateIntakeMessage(parsed, row.message_id);
+  if (parsed.messageId !== row.message_id || parsed.contentHash !== row.content_hash || parsed.receivedAt !== row.received_at || parsed.dispatch?.state !== row.dispatch_state) {
+    throw runtimeError("intake_record_divergent", row.message_id, "intake columns do not match the persisted record");
+  }
+  return {
+    messageId: row.message_id,
+    projectId: row.project_id,
+    coordinatorId: row.coordinator_id,
+    idempotencyKey: row.idempotency_key,
+    contentHash: row.content_hash,
+    receivedAt: row.received_at,
+    dispatchState: row.dispatch_state,
+    record: row.record
+  };
+}
+function controlFromRow(row) {
+  const paused = row.paused === 1;
+  const expected = kxmCanonicalJson({
+    schema: "kxm.project-control.v1",
+    projectId: row.project_id,
+    paused,
+    ...row.reason !== null ? { reason: row.reason } : {},
+    updatedAt: row.updated_at,
+    actor: row.actor
+  });
+  if (row.record !== expected) {
+    throw runtimeError("project_control_divergent", row.project_id, "project control record does not match its columns");
+  }
+  return {
+    projectId: row.project_id,
+    paused,
+    ...row.reason !== null ? { reason: row.reason } : {},
+    updatedAt: row.updated_at,
+    actor: row.actor,
+    record: row.record
+  };
+}
 function parseDriveReceipt(raw) {
   const parsed = JSON.parse(raw);
   validateDriveReceipt(parsed, "drive-receipt");
@@ -29940,6 +30265,7 @@ export {
   KXM_ABSENT_MEMORY_REVISION,
   KXM_DRIVE_RECEIPT_SCHEMA,
   KXM_EVENT_STORE_SCHEMA_VERSION,
+  KXM_EVENT_STORE_TABLE_NAMES,
   KXM_REGISTRY_SCHEMA_VERSION,
   KXM_RUN_EVENT_SCHEMA,
   KxmRunEventStore,

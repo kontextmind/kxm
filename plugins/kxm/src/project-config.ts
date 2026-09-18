@@ -167,6 +167,8 @@ export class KxmSchemaRegistry {
   readonly permissionDiffValidator: ValidateFunction;
   readonly runEventValidator: ValidateFunction;
   readonly driveReceiptValidator: ValidateFunction;
+  readonly coordinatorValidator: ValidateFunction;
+  readonly intakeMessageValidator: ValidateFunction;
 
   constructor(schemasDir = DEFAULT_SCHEMA_DIR) {
     this.schemasDir = resolve(schemasDir);
@@ -185,6 +187,8 @@ export class KxmSchemaRegistry {
     const permissionDiffFile = "permission-diff.schema.json";
     const runEventFile = "run-event.schema.json";
     const driveReceiptFile = "drive-receipt.schema.json";
+    const coordinatorFile = "coordinator.schema.json";
+    const intakeMessageFile = "intake-message.schema.json";
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, localBindingsFile)));
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, templateProvenanceFile)));
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, initOperationFile)));
@@ -194,6 +198,8 @@ export class KxmSchemaRegistry {
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, permissionDiffFile)));
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, runEventFile)));
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, driveReceiptFile)));
+    this.ajv.addSchema(readJsonObject(join(this.schemasDir, coordinatorFile)));
+    this.ajv.addSchema(readJsonObject(join(this.schemasDir, intakeMessageFile)));
     for (const [kind, definition] of Object.entries(RESOURCE_SCHEMA) as [KxmResourceKind, { identity: string; file: string }][]) {
       const validator = this.ajv.getSchema(`https://schemas.kxm.dev/${definition.file}`);
       if (!validator) throw new Error(`schema did not compile: ${definition.file}`);
@@ -208,6 +214,8 @@ export class KxmSchemaRegistry {
     const permissionDiffValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${permissionDiffFile}`);
     const runEventValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${runEventFile}`);
     const driveReceiptValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${driveReceiptFile}`);
+    const coordinatorValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${coordinatorFile}`);
+    const intakeMessageValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${intakeMessageFile}`);
     if (!localBindingsValidator) throw new Error(`schema did not compile: ${localBindingsFile}`);
     if (!templateProvenanceValidator) throw new Error(`schema did not compile: ${templateProvenanceFile}`);
     if (!initOperationValidator) throw new Error(`schema did not compile: ${initOperationFile}`);
@@ -217,6 +225,8 @@ export class KxmSchemaRegistry {
     if (!permissionDiffValidator) throw new Error(`schema did not compile: ${permissionDiffFile}`);
     if (!runEventValidator) throw new Error(`schema did not compile: ${runEventFile}`);
     if (!driveReceiptValidator) throw new Error(`schema did not compile: ${driveReceiptFile}`);
+    if (!coordinatorValidator) throw new Error(`schema did not compile: ${coordinatorFile}`);
+    if (!intakeMessageValidator) throw new Error(`schema did not compile: ${intakeMessageFile}`);
     this.localBindingsValidator = localBindingsValidator;
     this.templateProvenanceValidator = templateProvenanceValidator;
     this.initOperationValidator = initOperationValidator;
@@ -226,6 +236,8 @@ export class KxmSchemaRegistry {
     this.permissionDiffValidator = permissionDiffValidator;
     this.runEventValidator = runEventValidator;
     this.driveReceiptValidator = driveReceiptValidator;
+    this.coordinatorValidator = coordinatorValidator;
+    this.intakeMessageValidator = intakeMessageValidator;
   }
 
   validate(kind: KxmResourceKind, value: JsonObject, file: string): KxmConfigIssue[] {
@@ -312,6 +324,38 @@ export function validateDriveReceipt(value: unknown, file: string): void {
       "drive_receipt_invalid",
       file,
       registry.ajv.errorsText(registry.driveReceiptValidator.errors, { separator: "; " }),
+    )]);
+  }
+}
+
+/** Validate a coordinator identity against `kxm.coordinator.v1`. Throws `coordinator_invalid`. */
+export function validateCoordinator(value: unknown, file: string): void {
+  const registry = (cachedRunEventRegistry ??= new KxmSchemaRegistry());
+  if (!value || typeof value !== "object" || Array.isArray(value) || (value as JsonObject).schema !== "kxm.coordinator.v1") {
+    throw new KxmConfigError([issue("schema", "coordinator_invalid", file, "expected kxm.coordinator.v1")]);
+  }
+  if (!registry.coordinatorValidator(value)) {
+    throw new KxmConfigError([issue(
+      "schema",
+      "coordinator_invalid",
+      file,
+      registry.ajv.errorsText(registry.coordinatorValidator.errors, { separator: "; " }),
+    )]);
+  }
+}
+
+/** Validate an intake message against `kxm.intake-message.v1`. Throws `intake_message_invalid`. */
+export function validateIntakeMessage(value: unknown, file: string): void {
+  const registry = (cachedRunEventRegistry ??= new KxmSchemaRegistry());
+  if (!value || typeof value !== "object" || Array.isArray(value) || (value as JsonObject).schema !== "kxm.intake-message.v1") {
+    throw new KxmConfigError([issue("schema", "intake_message_invalid", file, "expected kxm.intake-message.v1")]);
+  }
+  if (!registry.intakeMessageValidator(value)) {
+    throw new KxmConfigError([issue(
+      "schema",
+      "intake_message_invalid",
+      file,
+      registry.ajv.errorsText(registry.intakeMessageValidator.errors, { separator: "; " }),
     )]);
   }
 }
