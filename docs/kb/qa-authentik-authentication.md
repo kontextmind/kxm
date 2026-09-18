@@ -1,3 +1,20 @@
+---
+schema: "kxm.doc.v1"
+id: "KB-HUB-001"
+type: "kb"
+title: "Q&A: Authentik (OIDC) for user/role/agent authentication"
+project: "kxm"
+status: "draft"
+owner: "@operator"
+created: "2026-09-17"
+updated: "2026-09-18"
+authority: "instruction"
+confidence: "reviewed"
+summary: "Yes, but not by swapping the hub's checks for OIDC — the safest hook is a token broker that exchanges Authentik identity for the kxm tokens the hub already understands."
+tags: ["hub", "authentik", "oidc", "auth"]
+related: ["docs/operations.md", "docs/kb/qa-hub-on-a-public-host.md"]
+---
+
 # Q&A: Authentik (OIDC) for user/role/agent authentication
 
 > Researched by `claude --model fable` (planner, read-only) · 2026-09-17 · task_c0bb05339e15 · root review: pending
