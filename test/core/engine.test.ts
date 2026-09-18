@@ -1785,7 +1785,7 @@ function processAlive(pid: number | undefined): boolean {
   }
 }
 
-test("store brakes: registry v1 stays valid; event store v4; v1/v2/v99/shape fail closed", () => {
+test(`store brakes: registry v1 stays valid; event store v${KXM_EVENT_STORE_SCHEMA_VERSION}; v1/v2/v99/shape fail closed`, () => {
   const { root, stateRoot } = engineProject("kxm-engine-store-");
   try {
     const paths = kxmRuntimePaths({ stateRoot });
@@ -1809,13 +1809,16 @@ test("store brakes: registry v1 stays valid; event store v4; v1/v2/v99/shape fai
       PRAGMA user_version = 1;
     `);
     old.close();
-    assert.throws(() => new KxmRunEventStore(v1), /runtime_schema_outdated[\s\S]*older than 4[\s\S]*E6/);
+    // Spelled from the constant, not a literal: the brake must still say
+    // "fail closed" after a reviewed version bump instead of going red on
+    // wording.
+    assert.throws(() => new KxmRunEventStore(v1), new RegExp(`runtime_schema_outdated[\\s\\S]*older than ${KXM_EVENT_STORE_SCHEMA_VERSION}[\\s\\S]*E6`));
 
     const v2 = join(stateRoot, "v2-events.db");
     const prior = new DatabaseSync(v2);
     prior.exec("PRAGMA user_version = 2");
     prior.close();
-    assert.throws(() => new KxmRunEventStore(v2), /runtime_schema_outdated[\s\S]*older than 4[\s\S]*no migration lane/);
+    assert.throws(() => new KxmRunEventStore(v2), new RegExp(`runtime_schema_outdated[\\s\\S]*older than ${KXM_EVENT_STORE_SCHEMA_VERSION}[\\s\\S]*no migration lane`));
 
     const newer = join(stateRoot, "v99-events.db");
     const bump = new DatabaseSync(newer);

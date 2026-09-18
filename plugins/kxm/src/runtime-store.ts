@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "./sqlite.ts";
-import { KxmConfigError, validateDriveReceipt, validateRunEvent, kxmCanonicalJson, type JsonValue, type KxmConfigIssue, type KxmConfigOptions } from "./project-config.ts";
+import { KxmConfigError, validateCoordinator, validateDriveReceipt, validateIntakeMessage, validateRunEvent, kxmCanonicalJson, type JsonValue, type KxmConfigIssue, type KxmConfigOptions } from "./project-config.ts";
 import { kxmUserStateRoot } from "./bindings.ts";
 
 /* ------------------------------------------------------------------ *
@@ -550,7 +550,7 @@ export interface KxmCommandRecord {
   recordedAt: string;
 }
 
-export const KXM_EVENT_STORE_SCHEMA_VERSION = 4;
+export const KXM_EVENT_STORE_SCHEMA_VERSION = 5;
 export const KXM_DRIVE_RECEIPT_SCHEMA = "kxm.drive-receipt.v1";
 export const DRIVE_RECEIPT_MAX_BYTES = 8 * 1024;
 
@@ -578,7 +578,22 @@ const EVENT_STORE_TABLES = {
     "assignment_id", "effect_id", "evidence_key", "kind", "expect", "outcome", "settled_event_id", "content_hash",
   ],
   drive_receipts: ["drive_id", "run_id", "project_id", "opened_sequence", "last_sequence", "closed_at", "schema", "receipt"],
+  coordinators: [
+    "coordinator_id", "project_id", "role", "channel", "ceiling_hash", "config_revision", "bound_at", "schema", "record",
+  ],
+  intake_messages: [
+    "message_id", "project_id", "coordinator_id", "idempotency_key", "content_hash", "received_at", "dispatch_state",
+    "schema", "record",
+  ],
+  project_controls: ["project_id", "paused", "reason", "updated_at", "actor", "schema", "record"],
 } as const;
+
+/**
+ * The authoritative table set of a run event store, sorted. Tests assert against
+ * this instead of a hand-copied list, so adding a table cannot silently leave a
+ * stale expectation behind.
+ */
+export const KXM_EVENT_STORE_TABLE_NAMES: string[] = Object.keys(EVENT_STORE_TABLES).sort();
 
 const EVENT_STORE_SCHEMA = `
 CREATE TABLE runs (
@@ -731,6 +746,77 @@ CREATE TABLE drive_receipts (
   receipt TEXT NOT NULL
 ) STRICT;
 CREATE INDEX drive_receipts_run ON drive_receipts(run_id);
+CREATE TABLE coordinators (
+  coordinator_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  role TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  ceiling_hash TEXT NOT NULL,
+  config_revision TEXT NOT NULL,
+  bound_at TEXT NOT NULL,
+  schema TEXT NOT NULL,
+  record TEXT NOT NULL
+) STRICT;
+CREATE UNIQUE INDEX coordinators_slot ON coordinators(project_id, role, channel);
+CREATE TABLE intake_messages (
+  message_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  coordinator_id TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  received_at TEXT NOT NULL,
+  dispatch_state TEXT NOT NULL CHECK (dispatch_state IN ('ready','held_paused','admitted','refused')),
+  schema TEXT NOT NULL,
+  record TEXT NOT NULL
+) STRICT;
+CREATE UNIQUE INDEX intake_idempotency ON intake_messages(project_id, coordinator_id, idempotency_key);
+CREATE INDEX intake_dispatch ON intake_messages(project_id, dispatch_state, received_at, message_id);
+CREATE TABLE project_controls (
+  project_id TEXT PRIMARY KEY,
+  paused INTEGER NOT NULL CHECK (paused IN (0, 1)),
+  reason TEXT,
+  updated_at TEXT NOT NULL,
+  actor TEXT NOT NULL,
+  schema TEXT NOT NULL,
+  record TEXT NOT NULL
+) STRICT;
+`;
+
+const COORDINATOR_INTAKE_DDL = `
+CREATE TABLE IF NOT EXISTS coordinators (
+  coordinator_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  role TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  ceiling_hash TEXT NOT NULL,
+  config_revision TEXT NOT NULL,
+  bound_at TEXT NOT NULL,
+  schema TEXT NOT NULL,
+  record TEXT NOT NULL
+) STRICT;
+CREATE UNIQUE INDEX IF NOT EXISTS coordinators_slot ON coordinators(project_id, role, channel);
+CREATE TABLE IF NOT EXISTS intake_messages (
+  message_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  coordinator_id TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  received_at TEXT NOT NULL,
+  dispatch_state TEXT NOT NULL CHECK (dispatch_state IN ('ready','held_paused','admitted','refused')),
+  schema TEXT NOT NULL,
+  record TEXT NOT NULL
+) STRICT;
+CREATE UNIQUE INDEX IF NOT EXISTS intake_idempotency ON intake_messages(project_id, coordinator_id, idempotency_key);
+CREATE INDEX IF NOT EXISTS intake_dispatch ON intake_messages(project_id, dispatch_state, received_at, message_id);
+CREATE TABLE IF NOT EXISTS project_controls (
+  project_id TEXT PRIMARY KEY,
+  paused INTEGER NOT NULL CHECK (paused IN (0, 1)),
+  reason TEXT,
+  updated_at TEXT NOT NULL,
+  actor TEXT NOT NULL,
+  schema TEXT NOT NULL,
+  record TEXT NOT NULL
+) STRICT;
 `;
 
 const DRIVE_RECEIPTS_DDL = `
@@ -755,7 +841,48 @@ const EVENT_STORE_MIGRATIONS = [
       database.exec(DRIVE_RECEIPTS_DDL);
     },
   },
+  {
+    fromVersion: 4,
+    toVersion: 5,
+    migrate(database: DatabaseSync): void {
+      database.exec(COORDINATOR_INTAKE_DDL);
+    },
+  },
 ];
+
+/** One persisted coordinator identity (`kxm.coordinator.v1`). */
+export interface KxmCoordinatorRow {
+  coordinatorId: string;
+  projectId: string;
+  role: string;
+  channel: string;
+  ceilingHash: string;
+  configRevision: string;
+  boundAt: string;
+  record: string;
+}
+
+/** One persisted intake message (`kxm.intake-message.v1`). */
+export interface KxmIntakeMessageRow {
+  messageId: string;
+  projectId: string;
+  coordinatorId: string;
+  idempotencyKey: string;
+  contentHash: string;
+  receivedAt: string;
+  dispatchState: "ready" | "held_paused" | "admitted" | "refused";
+  record: string;
+}
+
+/** The project's intake control: paused or running, with who said so. */
+export interface KxmProjectControlRow {
+  projectId: string;
+  paused: boolean;
+  reason?: string;
+  updatedAt: string;
+  actor: string;
+  record: string;
+}
 
 export class KxmRunEventStore {
   readonly path: string;
@@ -1031,6 +1158,158 @@ export class KxmRunEventStore {
     });
   }
 
+  /** Insert a coordinator unless the (project, role, channel) slot is taken. */
+  insertCoordinatorIfAbsent(row: KxmCoordinatorRow): boolean {
+    const result = this.database.prepare(`
+      INSERT OR IGNORE INTO coordinators
+        (coordinator_id, project_id, role, channel, ceiling_hash, config_revision, bound_at, schema, record)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      row.coordinatorId,
+      row.projectId,
+      row.role,
+      row.channel,
+      row.ceilingHash,
+      row.configRevision,
+      row.boundAt,
+      "kxm.coordinator.v1",
+      row.record,
+    );
+    return Number(result.changes) === 1;
+  }
+
+  coordinatorById(coordinatorId: string): KxmCoordinatorRow | undefined {
+    const row = this.database.prepare("SELECT * FROM coordinators WHERE coordinator_id = ?").get(coordinatorId) as
+      | CoordinatorSqlRow
+      | undefined;
+    return row ? coordinatorFromRow(row) : undefined;
+  }
+
+  coordinatorInSlot(projectId: string, role: string, channel: string): KxmCoordinatorRow | undefined {
+    const row = this.database.prepare(`
+      SELECT * FROM coordinators WHERE project_id = ? AND role = ? AND channel = ?
+    `).get(projectId, role, channel) as CoordinatorSqlRow | undefined;
+    return row ? coordinatorFromRow(row) : undefined;
+  }
+
+  /**
+   * Replace the coordinator holding a (project, role, channel) slot, guarded by
+   * the identity that is currently there. A rebind therefore cannot clobber a
+   * record that changed underneath it, and cannot leave two live identities for
+   * one slot.
+   */
+  replaceCoordinatorInSlot(
+    expectedCoordinatorId: string,
+    row: KxmCoordinatorRow,
+  ): boolean {
+    const result = this.database.prepare(`
+      UPDATE coordinators
+      SET coordinator_id = ?, ceiling_hash = ?, config_revision = ?, bound_at = ?, schema = ?, record = ?
+      WHERE project_id = ? AND role = ? AND channel = ? AND coordinator_id = ?
+    `).run(
+      row.coordinatorId,
+      row.ceilingHash,
+      row.configRevision,
+      row.boundAt,
+      "kxm.coordinator.v1",
+      row.record,
+      row.projectId,
+      row.role,
+      row.channel,
+      expectedCoordinatorId,
+    );
+    return Number(result.changes) === 1;
+  }
+
+  /** Insert an intake message unless its idempotency slot is taken. */
+  insertIntakeMessageIfAbsent(row: KxmIntakeMessageRow): boolean {
+    const result = this.database.prepare(`
+      INSERT OR IGNORE INTO intake_messages
+        (message_id, project_id, coordinator_id, idempotency_key, content_hash, received_at, dispatch_state, schema, record)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      row.messageId,
+      row.projectId,
+      row.coordinatorId,
+      row.idempotencyKey,
+      row.contentHash,
+      row.receivedAt,
+      row.dispatchState,
+      "kxm.intake-message.v1",
+      row.record,
+    );
+    return Number(result.changes) === 1;
+  }
+
+  intakeMessage(messageId: string): KxmIntakeMessageRow | undefined {
+    const row = this.database.prepare("SELECT * FROM intake_messages WHERE message_id = ?").get(messageId) as
+      | IntakeSqlRow
+      | undefined;
+    return row ? intakeFromRow(row) : undefined;
+  }
+
+  intakeBySlot(projectId: string, coordinatorId: string, idempotencyKey: string): KxmIntakeMessageRow | undefined {
+    const row = this.database.prepare(`
+      SELECT * FROM intake_messages WHERE project_id = ? AND coordinator_id = ? AND idempotency_key = ?
+    `).get(projectId, coordinatorId, idempotencyKey) as IntakeSqlRow | undefined;
+    return row ? intakeFromRow(row) : undefined;
+  }
+
+  /** Intake rows in the given dispatch states, oldest first (stable, replay-safe order). */
+  intakeInStates(projectId: string, states: readonly KxmIntakeMessageRow["dispatchState"][], limit = 100): KxmIntakeMessageRow[] {
+    if (states.length === 0) return [];
+    const placeholders = states.map(() => "?").join(", ");
+    const rows = this.database.prepare(`
+      SELECT * FROM intake_messages
+      WHERE project_id = ? AND dispatch_state IN (${placeholders})
+      ORDER BY received_at ASC, message_id ASC
+      LIMIT ?
+    `).all(projectId, ...states, limit) as unknown as IntakeSqlRow[];
+    return rows.map(intakeFromRow);
+  }
+
+  /** Rewrite one intake row's dispatch state and record. Returns false when it raced away. */
+  updateIntakeDispatch(
+    messageId: string,
+    expectState: KxmIntakeMessageRow["dispatchState"],
+    next: { state: KxmIntakeMessageRow["dispatchState"]; record: string },
+  ): boolean {
+    const result = this.database.prepare(`
+      UPDATE intake_messages SET dispatch_state = ?, record = ?, schema = ?
+      WHERE message_id = ? AND dispatch_state = ?
+    `).run(next.state, next.record, "kxm.intake-message.v1", messageId, expectState);
+    return Number(result.changes) === 1;
+  }
+
+  projectControl(projectId: string): KxmProjectControlRow | undefined {
+    const row = this.database.prepare("SELECT * FROM project_controls WHERE project_id = ?").get(projectId) as
+      | ControlSqlRow
+      | undefined;
+    return row ? controlFromRow(row) : undefined;
+  }
+
+  putProjectControl(row: KxmProjectControlRow): void {
+    this.database.prepare(`
+      INSERT INTO project_controls (project_id, paused, reason, updated_at, actor, schema, record)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(project_id) DO UPDATE SET
+        paused = excluded.paused,
+        reason = excluded.reason,
+        updated_at = excluded.updated_at,
+        actor = excluded.actor,
+        schema = excluded.schema,
+        record = excluded.record
+    `).run(
+      row.projectId,
+      row.paused ? 1 : 0,
+      row.reason ?? null,
+      row.updatedAt,
+      row.actor,
+      "kxm.project-control.v1",
+      row.record,
+    );
+  }
+
   insertCapability(row: KxmAttemptCapabilityRow): void {
     this.database.prepare(`
       INSERT INTO attempt_capabilities (attempt_id, run_id, assignment_id, step_id, step_attempt, producer_id, capability_hash, state)
@@ -1233,6 +1512,115 @@ export class KxmRunEventStore {
       throw gateRowInvalid(eventId, `referenced event is not ${allowed.join("|")} for this run`);
     }
   }
+}
+
+interface CoordinatorSqlRow {
+  coordinator_id: string;
+  project_id: string;
+  role: string;
+  channel: string;
+  ceiling_hash: string;
+  config_revision: string;
+  bound_at: string;
+  schema: string;
+  record: string;
+}
+
+interface IntakeSqlRow {
+  message_id: string;
+  project_id: string;
+  coordinator_id: string;
+  idempotency_key: string;
+  content_hash: string;
+  received_at: string;
+  dispatch_state: KxmIntakeMessageRow["dispatchState"];
+  schema: string;
+  record: string;
+}
+
+interface ControlSqlRow {
+  project_id: string;
+  paused: number;
+  reason: string | null;
+  updated_at: string;
+  actor: string;
+  schema: string;
+  record: string;
+}
+
+/**
+ * Read a persisted coordinator. The record is revalidated against
+ * `kxm.coordinator.v1` and cross-checked against its own columns, so a store
+ * whose index and payload disagree fails closed instead of trusting either.
+ */
+function coordinatorFromRow(row: CoordinatorSqlRow): KxmCoordinatorRow {
+  const parsed = JSON.parse(row.record) as { coordinatorId?: string; ceilingHash?: string; configRevision?: string; boundAt?: string };
+  validateCoordinator(parsed, row.coordinator_id);
+  if (
+    parsed.coordinatorId !== row.coordinator_id
+    || parsed.ceilingHash !== row.ceiling_hash
+    || parsed.configRevision !== row.config_revision
+    || parsed.boundAt !== row.bound_at
+  ) {
+    throw runtimeError("coordinator_record_divergent", row.coordinator_id, "coordinator columns do not match the persisted record");
+  }
+  return {
+    coordinatorId: row.coordinator_id,
+    projectId: row.project_id,
+    role: row.role,
+    channel: row.channel,
+    ceilingHash: row.ceiling_hash,
+    configRevision: row.config_revision,
+    boundAt: row.bound_at,
+    record: row.record,
+  };
+}
+
+function intakeFromRow(row: IntakeSqlRow): KxmIntakeMessageRow {
+  const parsed = JSON.parse(row.record) as { messageId?: string; contentHash?: string; receivedAt?: string; dispatch?: { state?: string } };
+  validateIntakeMessage(parsed, row.message_id);
+  if (
+    parsed.messageId !== row.message_id
+    || parsed.contentHash !== row.content_hash
+    || parsed.receivedAt !== row.received_at
+    || parsed.dispatch?.state !== row.dispatch_state
+  ) {
+    throw runtimeError("intake_record_divergent", row.message_id, "intake columns do not match the persisted record");
+  }
+  return {
+    messageId: row.message_id,
+    projectId: row.project_id,
+    coordinatorId: row.coordinator_id,
+    idempotencyKey: row.idempotency_key,
+    contentHash: row.content_hash,
+    receivedAt: row.received_at,
+    dispatchState: row.dispatch_state,
+    record: row.record,
+  };
+}
+
+/** The control record is its columns; a stored payload that disagrees is drift. */
+function controlFromRow(row: ControlSqlRow): KxmProjectControlRow {
+  const paused = row.paused === 1;
+  const expected = kxmCanonicalJson({
+    schema: "kxm.project-control.v1",
+    projectId: row.project_id,
+    paused,
+    ...(row.reason !== null ? { reason: row.reason } : {}),
+    updatedAt: row.updated_at,
+    actor: row.actor,
+  } as JsonValue);
+  if (row.record !== expected) {
+    throw runtimeError("project_control_divergent", row.project_id, "project control record does not match its columns");
+  }
+  return {
+    projectId: row.project_id,
+    paused,
+    ...(row.reason !== null ? { reason: row.reason } : {}),
+    updatedAt: row.updated_at,
+    actor: row.actor,
+    record: row.record,
+  };
 }
 
 function parseDriveReceipt(raw: string): KxmDriveReceipt {

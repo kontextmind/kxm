@@ -358,6 +358,35 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 ### Landed in this tree (unreleased)
 
+- **Runtime intake contract: coordinator identity, idempotent ingress and the
+  pause rule (unified plan M1 + M6, the durable half of M2; 2026-09-18):** the
+  first slice of the proposed M0/M1/M6 product path, at the contract layer only.
+  `plugins/kxm/src/intake.ts` owns the policy; the Runtime store remains the only
+  writer. New schemas `kxm.coordinator.v1` and `kxm.intake-message.v1`
+  (`schemas/`, both wired into `KxmSchemaRegistry` and revalidated on read);
+  event-store schema **4 → 5** adds `coordinators`, `intake_messages` and
+  `project_controls` with a stepwise migration, and the backup/restore ceiling in
+  `database.ts` moved with it. Rules now enforced by code and tests:
+  a (project, role, channel) slot binds **create-once** and re-binding the same
+  ceiling returns the same identity instead of minting a second one; a different
+  ceiling requires explicit policy and may **never widen** repository access,
+  effects or tools; duplicate ingress (same idempotency key, same content) cannot
+  create another message or another task, while the same key with altered content
+  is refused (`intake_payload_conflict`); admission is idempotent per run and a
+  second run for one message fails (`intake_second_admission`); a paused project
+  blocks fresh dispatch and *holds* intent that arrives during the pause instead
+  of dropping it, releasing it in received order on resume; and a
+  `secret`-classified payload is never persisted — only its hash, so intake cannot
+  become a secret store. `test/core/intake.test.ts` (7 tests) covers each of
+  those, including durability across a close/reopen of the store.
+  **What this is not:** no CLI, MCP, HTTP or Studio surface exists for any of it,
+  which is deliberate — an unintegrated control is unavailable, never a
+  success-shaped stub, and no CHANGELOG entry is warranted until something can
+  be called. No dispatch through the authorized Pi route yet (that is the M2 step
+  that consumes a `ready` row), no external account, no live model call. No
+  acceptance is minted: this is contract code with deterministic fixtures, not a
+  witnessed product outcome.
+
 - **Run-duration budgets are testable without racing the machine (2026-09-17):**
   the still-open note filed in #245 is fixed. `test/core/engine.test.ts`'s
   "completes inside budget" case asserts the *minimum* of project 40 and workflow
@@ -1185,6 +1214,22 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   that carries its own CI evidence. Windows automation stays paused, not deprecated. No
   phase gate changes until a slice carries its own witness.
 
+- **Remaining timing-dependent assertions in the core suite (owner: engine
+  maintainer; trigger: next touch of scheduler or supervisor transport tests):**
+  with the budget seam landed, the same flake class still exists elsewhere. Two
+  cases went red in one heavily loaded local run (three suites overlapped) and
+  passed in isolation: `admission bound 2 rejects duplicates, direct bypass, and a
+  fourth run until a slot opens` (19.6 s under load, 4.6 s alone) and
+  `supervisor API misuse: relative roots, oversized and non-object bodies, unknown
+  paths`. A third, `packed npm artifact runs the operator CLI and hub outside the
+  repository`, is not a race: it needs `npm_execpath`, so it only passes when
+  launched through `npm test` — which is how CI runs it. Fix direction is the one
+  proven for budgets: drive the boundary from an injectable clock or a real
+  barrier (queue depth, slot accounting), never from an elapsed-time guess, and
+  never by widening a bound. Until then a lone red in these names is a load
+  artifact to re-run through `npm test`, not a product failure — but say so in the
+  PR instead of silently re-rolling.
+
 - **Unified capability delivery (M0–M9; proposed, consolidated 2026-09-14):**
   [The unified plan](plan-unified-kxm-milestones.md) owns proposed scope,
   contract-level dependencies and exit-evidence design. This is the sole active
@@ -1194,12 +1239,12 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   | Packet | Owner role | Start trigger / remaining outcome |
   |---|---|---|
   | M0 | Runtime maintainer | Current-source reproductions; repair Pi outcome, Studio/control truth, memory redaction and Steel contracts; preserve A1 and remaining lifecycle blockers |
-  | M1 | Package/adapter maintainer | Applicable result/permission boundary; coordinator/capability identity, L1 executable identity, actual mode activation and single-package setup |
+  | M1 | Package/adapter maintainer | Applicable result/permission boundary; coordinator/capability identity, L1 executable identity, actual mode activation and single-package setup. Coordinator identity + intake contract layer is in the tree (see Landed); no adapter surface yet |
   | M2 | Harness/Runtime maintainer | No-model fixtures now; M0 truth/redaction, M1 bindings and M6 minimal inbox policy; durable progress/replay; own Phase 11 HTTP lifetime design before dependent live drive paths; retain native admission blockers |
   | M3 | Harness/control maintainer | M1 exact bindings and M2 durable observations; engine-dependent controls after comparison decision, existing RPC/native probes independent; receipts, resume/steer/interrupt, channels and Phase 6 recovery |
   | M4 | Browser maintainer | M0 browser lease/compatibility and M1 backend readiness; common actions, observations and preview |
   | M5 | Context maintainer | Redaction and authorized scope; tiered recall, candidate impact, extraction/tombstone recovery; L3 search and L4 parser experiments |
-  | M6 | Workflow maintainer | Existing Runtime policy plus identity; minimal wake/pause first, then bundle/review/activation integrity, grouped wakes, graph/concurrency/budget and send-authorization contracts |
+  | M6 | Workflow maintainer | Existing Runtime policy plus identity; minimal wake/pause first (the pause/hold/release rule is in the tree — see Landed), then bundle/review/activation integrity, grouped wakes, graph/concurrency/budget and send-authorization contracts |
   | M7 | Operator experience maintainer | M0 UI boundary and M2 snapshot/replay for thin Studio; other service contracts only for their panels; later revision-safe editing, exports and questions |
   | M8 | Auth/integration maintainer | Capability readiness, secret handling and applicable authorization; native/provider setup, quota, Confluence, then external coordinator email/SMS transports |
   | M9 | Release maintainer | Declare release capabilities/platforms; require their dependencies and all applicable canonical blockers/gates, actual tarball and exact-candidate acceptance |

@@ -11,6 +11,7 @@ import {
   KxmRunEventStore,
   KxmRuntimeRegistry,
   KXM_EVENT_STORE_SCHEMA_VERSION,
+  KXM_EVENT_STORE_TABLE_NAMES,
   KXM_REGISTRY_SCHEMA_VERSION,
   newKxmCommandId,
   projectRuntimeKey,
@@ -77,7 +78,7 @@ for (const kind of ["registry", "events"] as const) {
         const tables = database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as Array<{ name: string }>;
         assert.deepEqual(tables.map(({ name }) => name), kind === "registry"
           ? ["projects", "supervisor"]
-          : ["attempt_capabilities", "commands", "drive_receipts", "events", "gate_attempts", "gate_evidence", "gate_observations", "run_plans", "run_state", "runs"]);
+          : [...KXM_EVENT_STORE_TABLE_NAMES]);
       } finally {
         database.close();
       }
