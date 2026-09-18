@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { DatabaseSync } from "node:sqlite";
+import { loadKxmProject } from "../../plugins/kxm/src/project-config.ts";
 import { removeTempDir } from "../helpers.ts";
 import { engineProject } from "../helpers/project.ts";
 import { closeKxmRuntimeContext, openKxmRuntimeContext } from "../../plugins/kxm/src/runtime-service.ts";
@@ -14,6 +16,7 @@ import {
   listKxmDispatchableIntake,
   resolveKxmCoordinator,
   setKxmProjectPause,
+  type KxmCoordinatorAuthority,
   type KxmIntakeMessage,
 } from "../../plugins/kxm/src/intake.ts";
 
@@ -151,7 +154,7 @@ test("duplicate ingress yields one message and one admitted task; altered payloa
   }
 });
 
-test("pause holds dispatch intent durably and resume releases it in received order", () => {
+test("pause holds dispatch intent durably and resume releases it in arrival order", () => {
   const { root, stateRoot, context } = intakeContext("kxm-intake-pause-");
   try {
     const { coordinator } = bound(context);
@@ -171,7 +174,8 @@ test("pause holds dispatch intent durably and resume releases it in received ord
       source: { kind: "operator", id: "root" },
       now: "2026-09-18T00:00:03.000Z",
     });
-    // Written out of order on purpose: release must follow received_at, not key order.
+    // Written out of order on purpose: the Runtime owns ordering, so a caller
+    // cannot jump the queue with a backdated `now`.
     const middle = acceptKxmIntakeMessage(context, {
       coordinatorId: coordinator.coordinatorId,
       idempotencyKey: "second",
@@ -206,9 +210,147 @@ test("pause holds dispatch intent durably and resume releases it in received ord
     assert.deepEqual(releasedKeys, ["fourth"], "only intent that arrived during the pause transitions on resume");
     assert.deepEqual(
       listKxmDispatchableIntake(context).map((message) => message.idempotencyKey),
-      ["first", "second", "third", "fourth"],
+      ["first", "third", "second", "fourth"],
+      "release follows Runtime arrival order, not a caller-supplied timestamp",
     );
+    assert.equal(middle.message.idempotencyKey, "second");
+    assert.equal(middle.message.dispatch.state, "ready");
     assert.equal(third.message.classification, "project");
+  } finally {
+    closeIntakeContext(context);
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("resume drains more held intent than one page and leaves none behind", () => {
+  // Astra's finding: a single capped page stranded the 501st message behind a
+  // claim that resume releases held intent.
+  const { root, stateRoot, context } = intakeContext("kxm-intake-drain-");
+  try {
+    const { coordinator } = bound(context);
+    setKxmProjectPause(context, { paused: true, actor: OPERATOR, reason: "flood" });
+    const total = 601;
+    for (let index = 0; index < total; index += 1) {
+      acceptKxmIntakeMessage(context, {
+        coordinatorId: coordinator.coordinatorId,
+        idempotencyKey: `job-${String(index)}`,
+        content: `payload ${index}`,
+        source: { kind: "schedule", id: "cron" },
+      });
+    }
+    const resumed = setKxmProjectPause(context, { paused: false, actor: OPERATOR });
+    assert.equal(resumed.released.length, total, `every held row must release, saw ${String(resumed.released.length)}`);
+    assert.equal(context.eventStore.intakeInStates(context.projectId, ["held_paused"], 5).length, 0, "nothing stays stranded after resume");
+    assert.equal(listKxmDispatchableIntake(context, total + 10).length, total);
+  } finally {
+    closeIntakeContext(context);
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("a tool ceiling may only narrow: preset changes, lifted denials and dropped policy are refusals", () => {
+  const { root, stateRoot, context } = intakeContext("kxm-intake-tools-");
+  try {
+    const base = {
+      repositoryAccess: "read" as const,
+      effects: ["dispatch"],
+      tools: { preset: "read-only", allow: ["read", "search"], deny: ["write", "shell"] },
+    };
+    bindKxmCoordinator(context, { role: "gated", authority: base, actor: OPERATOR });
+    const rebind = (authority: KxmCoordinatorAuthority) => bindKxmCoordinator(context, {
+      role: "gated",
+      authority,
+      actor: OPERATOR,
+      rebind: { approvedBy: OPERATOR, reason: "reviewed narrowing" },
+    });
+
+    assert.throws(() => rebind({ ...base, tools: { preset: "workspace-writer", allow: ["read", "search"], deny: ["write", "shell"] } }), /coordinator_rebind_changes_preset/);
+    assert.throws(() => rebind({ ...base, tools: { preset: "read-only", allow: ["read", "search"], deny: ["write"] } }), /coordinator_rebind_removes_denials/);
+    assert.throws(() => rebind({ repositoryAccess: "read", effects: ["dispatch"] }), /coordinator_rebind_widens_tools/);
+    assert.throws(() => rebind({ ...base, tools: { preset: "read-only", allow: ["read", "search", "write"], deny: ["write", "shell"] } }), /coordinator_rebind_widens_tools/);
+
+    // Genuine narrowing still works: fewer allowances, more denials.
+    const narrowed = rebind({ ...base, tools: { preset: "read-only", allow: ["read"], deny: ["write", "shell", "network"] } });
+    assert.equal(narrowed.created, true);
+    assert.deepEqual(narrowed.coordinator.authority.tools?.allow, ["read"]);
+    assert.deepEqual(narrowed.coordinator.authority.tools?.deny, ["network", "shell", "write"]);
+  } finally {
+    closeIntakeContext(context);
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("equivalent ceilings hash alike and carry the real configuration revision", () => {
+  const { root, stateRoot, context } = intakeContext("kxm-intake-canonical-");
+  try {
+    const bundle = loadKxmProject(root);
+    const first = bindKxmCoordinator(context, {
+      role: "ordered",
+      authority: { repositoryAccess: "none", effects: ["write-file", "dispatch"], tools: { preset: "read-only", allow: ["b", "a"], deny: ["z"] } },
+      actor: OPERATOR,
+    });
+    const again = bindKxmCoordinator(context, {
+      role: "ordered",
+      authority: { repositoryAccess: "none", effects: ["dispatch", "write-file"], tools: { preset: "read-only", allow: ["a", "b"], deny: ["z"] } },
+      actor: OPERATOR,
+    });
+    assert.equal(again.created, false, "reordering or repeating set members is not a ceiling change");
+    assert.equal(again.coordinator.coordinatorId, first.coordinator.coordinatorId);
+    assert.equal(again.coordinator.ceilingHash, first.coordinator.ceilingHash);
+    assert.deepEqual(again.coordinator.authority.effects, ["dispatch", "write-file"]);
+
+    // The revision is the loaded configuration's, not a hash of where the project
+    // happens to live.
+    assert.match(first.coordinator.configRevision, /^sha256:[a-f0-9]{64}$/);
+    assert.equal(first.coordinator.configRevision, bundle.configRevision);
+  } finally {
+    closeIntakeContext(context);
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("a duplicate may not be re-labelled, and a persisted record that disagrees fails closed", () => {
+  const { root, stateRoot, context } = intakeContext("kxm-intake-integrity-");
+  try {
+    const { coordinator } = bound(context);
+    const base = {
+      coordinatorId: coordinator.coordinatorId,
+      idempotencyKey: "label-swap",
+      content: "top secret",
+      source: { kind: "adapter" as const, id: "pi" },
+    };
+    acceptKxmIntakeMessage(context, { ...base, classification: "project" });
+    assert.throws(
+      () => acceptKxmIntakeMessage(context, { ...base, classification: "secret" }),
+      /intake_classification_conflict/,
+      "a retry may not relabel a stored plaintext row as secret, or launder a withheld row",
+    );
+
+    // Corrupt the persisted payload while leaving its index columns intact.
+    const row = context.eventStore.intakeBySlot(context.projectId, coordinator.coordinatorId, "label-swap");
+    assert.ok(row);
+    const tampered = (JSON.parse(row!.record) as KxmIntakeMessage & { idempotencyKey?: string });
+    tampered.idempotencyKey = "rewritten-offline";
+    const database = new DatabaseSync(context.eventStore.path);
+    try {
+      database.prepare("UPDATE intake_messages SET record = ? WHERE message_id = ?").run(JSON.stringify(tampered), row!.messageId);
+    } finally {
+      database.close();
+    }
+    assert.throws(() => context.eventStore.intakeMessage(row!.messageId), /intake_record_divergent/);
+
+    // Known limit, stated as an assertion rather than prose: a rewrite that touches
+    // only non-indexed payload (the content body) is NOT detected, because the
+    // record carries no digest column. Ticketed in Tracking as the v6 follow-up.
+    const bodyOnly = (JSON.parse(row!.record) as KxmIntakeMessage & { content?: string });
+    bodyOnly.content = "silently replaced";
+    const clean = new DatabaseSync(context.eventStore.path);
+    try {
+      clean.prepare("UPDATE intake_messages SET record = ? WHERE message_id = ?").run(JSON.stringify(bodyOnly), row!.messageId);
+    } finally {
+      clean.close();
+    }
+    assert.doesNotThrow(() => context.eventStore.intakeMessage(row!.messageId), "payload-only tampering is still readable: no record digest exists yet");
   } finally {
     closeIntakeContext(context);
     removeTempDir(root, stateRoot);

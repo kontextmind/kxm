@@ -387,6 +387,38 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   acceptance is minted: this is contract code with deterministic fixtures, not a
   witnessed product outcome.
 
+- **Intake contract hardened after an independent Codex/astra review (#248 →
+  follow-up; 2026-09-18):** [the review record](reviews/intake-contract-astra.md)
+  returned **BLOCK** with five blocking findings, and every one was real. The
+  claims made above for #248 were partly false as shipped in **v0.7.46** and are
+  corrected here rather than quietly rewritten.
+  Fixed in this change: (a) a lost insert race returned the winner as a
+  `duplicate` **without comparing content hashes**, so altered content was
+  accepted under a used key — both paths now share `requireSamePayload`; (b)
+  ingress, admission and control-write-plus-release are each a single
+  `eventStore.transaction`, closing the pause/resume/ingress interleavings that
+  could strand held intent; (c) resume drained only one 500-row page — the 501st
+  held message stayed `held_paused` forever, now a paged drain pinned by a
+  601-message test; (d) the tool ceiling **could** widen under a valid rebind (lift
+  a `deny` entry, change `preset`, drop `tools`) — preset must now be identical,
+  `tools` may not appear or vanish, no denial may be lifted, and four refusals are
+  pinned; (e) a create-race loser now returns the winner instead of throwing, and
+  `effects`/`allow`/`deny` are stored as sorted deduplicated sets so an equivalent
+  ceiling no longer masquerades as a rebind; (f) relabelling a stored row's
+  classification on a duplicate is refused (`intake_classification_conflict`);
+  (g) `KxmRuntimeContext` carries the **real** loaded `configRevision`, replacing
+  the invented hash of project root and runtime id; (h) read-time drift checks now
+  compare every duplicated column plus the `schema` column; (i) dispatch order is
+  Runtime arrival order (`rowid`), so a backdated `now` cannot jump the queue;
+  (j) the intake schema now couples `contentOmittedReason` to `secret`
+  bidirectionally and restricts `runId` to admitted records.
+  Wording corrected: withheld `secret` content is a **storage decision under a
+  caller-supplied classifier**, not secret detection, so "intake cannot become a
+  secret store" is replaced by what the code actually guarantees; "in received
+  order" became "in arrival order", and "may never widen tools" is now true.
+  Test count 7 → 11; the payload-only-tampering limit is asserted as a known gap
+  instead of being described away.
+
 - **Run-duration budgets are testable without racing the machine (2026-09-17):**
   the still-open note filed in #245 is fixed. `test/core/engine.test.ts`'s
   "completes inside budget" case asserts the *minimum* of project 40 and workflow
@@ -1229,6 +1261,27 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   never by widening a bound. Until then a lone red in these names is a load
   artifact to re-run through `npm test`, not a product failure — but say so in the
   PR instead of silently re-rolling.
+
+- **Intake contract follow-ups from the astra review (owner: workflow/runtime
+  maintainer; trigger: the M2 dispatch consumer, or any touch of event-store
+  schema):** the review's deeper structural findings are real but need their own
+  reviewed slices because v0.7.46 already shipped event-store schema 5.
+  (1) **Coordinator history:** a rebind replaces the active row, so `rebindOf`
+  cannot resolve, in-flight messages can reference a vanished identity, and
+  intermediate ceilings/reasons are erased — keep immutable versions plus an
+  active-slot pointer (schema v6). (2) **Record digest:** records carry no digest
+  column, so payload-only offline tampering is undetected; the intake test asserts
+  this gap today. (3) **Populated v4 → v5 migration fixture** proving row
+  preservation and fresh/migrated equivalence, and a shared (cycle-free) constant
+  so the `database.ts` restore ceiling cannot drift from the store version. (4) A
+  **two-process barrier test** for concurrent ingress, binding and admission: the
+  current proofs are transactional-by-construction plus sequential races. (5) The
+  **byte bound must also hold on read**, which needs
+  `MAX_INTAKE_CONTENT_BYTES` shared with the store rather than duplicated. (6)
+  **Classification is caller-asserted**; enforcing it for untrusted adapters is a
+  separate design, not a keyword change. (7) `transaction(...)` is **not
+  reentrant** (`runtime_transaction_nested`): the M2 consumer must call these
+  entry points at the top level or fold them into its own transaction on purpose.
 
 - **Unified capability delivery (M0–M9; proposed, consolidated 2026-09-14):**
   [The unified plan](plan-unified-kxm-milestones.md) owns proposed scope,

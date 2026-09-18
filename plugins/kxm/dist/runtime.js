@@ -18998,14 +18998,14 @@ var KxmRunEventStore = class {
     `).get(projectId, coordinatorId, idempotencyKey);
     return row ? intakeFromRow(row) : void 0;
   }
-  /** Intake rows in the given dispatch states, oldest first (stable, replay-safe order). */
+  /** Intake rows in the given dispatch states, in arrival order (replay-safe). */
   intakeInStates(projectId, states, limit = 100) {
     if (states.length === 0) return [];
     const placeholders = states.map(() => "?").join(", ");
     const rows = this.database.prepare(`
       SELECT * FROM intake_messages
       WHERE project_id = ? AND dispatch_state IN (${placeholders})
-      ORDER BY received_at ASC, message_id ASC
+      ORDER BY rowid ASC
       LIMIT ?
     `).all(projectId, ...states, limit);
     return rows.map(intakeFromRow);
@@ -19279,8 +19279,11 @@ var KxmRunEventStore = class {
 };
 function coordinatorFromRow(row) {
   const parsed = JSON.parse(row.record);
+  if (row.schema !== "kxm.coordinator.v1") {
+    throw runtimeError("coordinator_record_divergent", row.coordinator_id, `unexpected coordinator schema ${row.schema}`);
+  }
   validateCoordinator(parsed, row.coordinator_id);
-  if (parsed.coordinatorId !== row.coordinator_id || parsed.ceilingHash !== row.ceiling_hash || parsed.configRevision !== row.config_revision || parsed.boundAt !== row.bound_at) {
+  if (parsed.coordinatorId !== row.coordinator_id || parsed.projectId !== row.project_id || parsed.role !== row.role || parsed.channel !== row.channel || parsed.ceilingHash !== row.ceiling_hash || parsed.configRevision !== row.config_revision || parsed.boundAt !== row.bound_at) {
     throw runtimeError("coordinator_record_divergent", row.coordinator_id, "coordinator columns do not match the persisted record");
   }
   return {
@@ -19296,8 +19299,11 @@ function coordinatorFromRow(row) {
 }
 function intakeFromRow(row) {
   const parsed = JSON.parse(row.record);
+  if (row.schema !== "kxm.intake-message.v1") {
+    throw runtimeError("intake_record_divergent", row.message_id, `unexpected intake schema ${row.schema}`);
+  }
   validateIntakeMessage(parsed, row.message_id);
-  if (parsed.messageId !== row.message_id || parsed.contentHash !== row.content_hash || parsed.receivedAt !== row.received_at || parsed.dispatch?.state !== row.dispatch_state) {
+  if (parsed.messageId !== row.message_id || parsed.projectId !== row.project_id || parsed.coordinatorId !== row.coordinator_id || parsed.idempotencyKey !== row.idempotency_key || parsed.contentHash !== row.content_hash || parsed.receivedAt !== row.received_at || parsed.dispatch?.state !== row.dispatch_state) {
     throw runtimeError("intake_record_divergent", row.message_id, "intake columns do not match the persisted record");
   }
   return {
@@ -22634,6 +22640,7 @@ function openKxmRuntimeContext(projectRoot, options) {
       projectId: registration.projectId,
       homeRuntimeId: registration.homeRuntimeId,
       eventStore,
+      configRevision: bundle.configRevision,
       ...options.budgetClock ? { budgetClock: options.budgetClock } : {}
     };
   } catch (error) {

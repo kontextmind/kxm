@@ -169,6 +169,13 @@ export function bindKxmCoordinator(
       record: kxmCanonicalJson(record as unknown as JsonValue),
     });
     if (!replaced) {
+      // Another process got the same policy through. Return its identity when it
+      // reached the ceiling we asked for; anything else is a real conflict.
+      const winner = context.eventStore.coordinatorInSlot(context.projectId, role, channel);
+      const record2 = winner ? (JSON.parse(winner.record) as KxmCoordinatorRecord) : undefined;
+      if (record2 && record2.ceilingHash === ceilingHash) {
+        return { coordinator: record2, created: false };
+      }
       throw runtimeError("coordinator_write_lost", existing.coordinatorId, "the coordinator slot changed underneath this rebind");
     }
     return { coordinator: record, created: true };
@@ -186,11 +193,10 @@ export function bindKxmCoordinator(
     authority,
     boundAt: now,
     boundBy: actor,
-    configRevision: contextConfigRevision(context),
+    configRevision: context.configRevision,
     ceilingHash,
   };
-  persistCoordinator(context, record);
-  return { coordinator: record, created: true };
+  return { ...persistCoordinator(context, record), created: true };
 }
 
 /** Resolve a coordinator by id; unknown identity fails closed. */
@@ -239,65 +245,92 @@ export function acceptKxmIntakeMessage(
   const bytes = Buffer.byteLength(input.content, "utf8");
   const contentHash = `sha256:${createHash("sha256").update(input.content, "utf8").digest("hex")}`;
 
-  const existingRow = context.eventStore.intakeBySlot(context.projectId, coordinator.coordinatorId, key);
-  if (existingRow) {
-    const existing = JSON.parse(existingRow.record) as KxmIntakeMessage;
-    if (existing.contentHash !== contentHash) {
+  // One transaction covers the slot probe, the pause read and the write, so a
+  // concurrent resume cannot strand this row in an unpaused project and a racing
+  // writer with different content cannot be mistaken for a duplicate.
+  return context.eventStore.transaction(() => {
+    const existingRow = context.eventStore.intakeBySlot(context.projectId, coordinator.coordinatorId, key);
+    if (existingRow) {
+      return { message: requireSamePayload(existingRow, contentHash, classification, key), duplicate: true };
+    }
+
+    if (bytes > MAX_INTAKE_CONTENT_BYTES) {
       throw runtimeError(
-        "intake_payload_conflict",
-        existing.messageId,
-        `idempotency key ${key} was already used with different content`,
+        "intake_content_too_large",
+        coordinator.coordinatorId,
+        `intake content is ${bytes} bytes; the limit is ${MAX_INTAKE_CONTENT_BYTES}`,
       );
     }
-    return { message: existing, duplicate: true };
-  }
 
-  if (bytes > MAX_INTAKE_CONTENT_BYTES) {
+    // Only secrets are withheld, and that guarantee is about *this layer's* storage
+    // decision: classification is supplied by the caller, so an untrusted adapter
+    // can still label a credential "project" and have it persisted here. Widening
+    // this to detection is a separate, reviewed slice.
+    const persistContent = classification !== "secret";
+    const paused = isKxmProjectPaused(context);
+    const message: KxmIntakeMessage = {
+      schema: "kxm.intake-message.v1",
+      messageId: newId("msg"),
+      projectId: context.projectId,
+      coordinatorId: coordinator.coordinatorId,
+      receivedAt: now,
+      source: { kind: sourceKind, id: sourceId },
+      idempotencyKey: key,
+      contentHash,
+      ...(persistContent ? { content: input.content } : { contentOmittedReason: "secret-classified" as const }),
+      classification,
+      dispatch: paused
+        ? { state: "held_paused", reason: "project_paused", updatedAt: now }
+        : { state: "ready" },
+    };
+    validateIntakeMessage(message, message.messageId);
+
+    const inserted = context.eventStore.insertIntakeMessageIfAbsent({
+      messageId: message.messageId,
+      projectId: message.projectId,
+      coordinatorId: message.coordinatorId,
+      idempotencyKey: message.idempotencyKey,
+      contentHash: message.contentHash,
+      receivedAt: message.receivedAt,
+      dispatchState: message.dispatch.state,
+      record: kxmCanonicalJson(message as unknown as JsonValue),
+    });
+    if (!inserted) {
+      // Lost the race for the slot. The winner is only a duplicate if it carried
+      // the same content; anything else is the same conflict we refuse serially.
+      const winner = context.eventStore.intakeBySlot(context.projectId, coordinator.coordinatorId, key);
+      if (!winner) throw runtimeError("intake_write_lost", coordinator.coordinatorId, "intake write lost its slot and left no record");
+      return { message: requireSamePayload(winner, contentHash, classification, key), duplicate: true };
+    }
+    return { message, duplicate: false };
+  });
+}
+
+function requireSamePayload(
+  row: { record: string },
+  contentHash: string,
+  classification: KxmIntakeClassification,
+  key: string,
+): KxmIntakeMessage {
+  const message = JSON.parse(row.record) as KxmIntakeMessage;
+  if (message.contentHash !== contentHash) {
     throw runtimeError(
-      "intake_content_too_large",
-      coordinator.coordinatorId,
-      `intake content is ${bytes} bytes; the limit is ${MAX_INTAKE_CONTENT_BYTES}`,
+      "intake_payload_conflict",
+      message.messageId,
+      `idempotency key ${key} was already used with different content`,
     );
   }
-
-  // Only secrets are withheld. Everything else is the project's own bounded,
-  // owner-only store; omitting project content would just lose the work.
-  const persistContent = classification !== "secret";
-  const paused = isKxmProjectPaused(context);
-  const message: KxmIntakeMessage = {
-    schema: "kxm.intake-message.v1",
-    messageId: newId("msg"),
-    projectId: context.projectId,
-    coordinatorId: coordinator.coordinatorId,
-    receivedAt: now,
-    source: { kind: sourceKind, id: sourceId },
-    idempotencyKey: key,
-    contentHash,
-    ...(persistContent ? { content: input.content } : { contentOmittedReason: "secret-classified" as const }),
-    classification,
-    dispatch: paused
-      ? { state: "held_paused", reason: "project_paused", updatedAt: now }
-      : { state: "ready" },
-  };
-  validateIntakeMessage(message, message.messageId);
-
-  const inserted = context.eventStore.insertIntakeMessageIfAbsent({
-    messageId: message.messageId,
-    projectId: message.projectId,
-    coordinatorId: message.coordinatorId,
-    idempotencyKey: message.idempotencyKey,
-    contentHash: message.contentHash,
-    receivedAt: message.receivedAt,
-    dispatchState: message.dispatch.state,
-    record: kxmCanonicalJson(message as unknown as JsonValue),
-  });
-  if (!inserted) {
-    // Lost the race against an identical key: report the winner as the duplicate.
-    const winner = context.eventStore.intakeBySlot(context.projectId, coordinator.coordinatorId, key);
-    if (!winner) throw runtimeError("intake_write_lost", coordinator.coordinatorId, "intake write lost its slot and left no record");
-    return { message: JSON.parse(winner.record) as KxmIntakeMessage, duplicate: true };
+  // Re-labelling the same payload is not a no-op: a retry marked `secret` must not
+  // quietly hand back a stored plaintext record, and a retry marked `project` must
+  // not launder a row that was withheld.
+  if (message.classification !== classification) {
+    throw runtimeError(
+      "intake_classification_conflict",
+      message.messageId,
+      `idempotency key ${key} was already recorded as ${message.classification}, not ${classification}`,
+    );
   }
-  return { message, duplicate: false };
+  return message;
 }
 
 /** Pending intake that may be dispatched, oldest first. Empty while paused. */
@@ -322,29 +355,33 @@ export function admitKxmIntakeRun(
   const runId = requireText(input.runId, "runId", 144);
   if (!COORDINATOR_ID_RE.test(runId)) throw runtimeError("intake_run_id_invalid", id, "runId is not a well-formed opaque id");
   const now = requireTimestamp(input.now ?? new Date().toISOString(), "now");
-  if (isKxmProjectPaused(context)) {
-    throw runtimeError("intake_paused", id, "the project is paused; no fresh dispatch may be admitted");
-  }
-  const row = context.eventStore.intakeMessage(id);
-  if (!row) throw runtimeError("intake_message_unknown", id, "no such intake message in this project");
-  const message = JSON.parse(row.record) as KxmIntakeMessage;
-  if (message.dispatch.state === "admitted") {
-    if (message.dispatch.runId === runId) return message;
-    throw runtimeError("intake_second_admission", id, `message already admitted as ${message.dispatch.runId}`);
-  }
-  if (message.dispatch.state !== "ready") {
-    throw runtimeError("intake_not_dispatchable", id, `intake state ${message.dispatch.state} cannot be admitted`);
-  }
-  const next: KxmIntakeMessage = { ...message, dispatch: { state: "admitted", runId, updatedAt: now } };
-  validateIntakeMessage(next, next.messageId);
-  const updated = context.eventStore.updateIntakeDispatch(id, "ready", { state: "admitted", record: kxmCanonicalJson(next as unknown as JsonValue) });
-  if (!updated) {
-    const racer = context.eventStore.intakeMessage(id);
-    const current = racer ? (JSON.parse(racer.record) as KxmIntakeMessage) : undefined;
-    if (current?.dispatch.state === "admitted" && current.dispatch.runId === runId) return current;
-    throw runtimeError("intake_dispatch_race", id, "the intake record changed underneath this admission");
-  }
-  return next;
+  // The pause read, the state read and the guarded transition commit together, so
+  // a pause cannot slip in between "not paused" and "admitted".
+  return context.eventStore.transaction(() => {
+    if (isKxmProjectPaused(context)) {
+      throw runtimeError("intake_paused", id, "the project is paused; no fresh dispatch may be admitted");
+    }
+    const row = context.eventStore.intakeMessage(id);
+    if (!row) throw runtimeError("intake_message_unknown", id, "no such intake message in this project");
+    const message = JSON.parse(row.record) as KxmIntakeMessage;
+    if (message.dispatch.state === "admitted") {
+      if (message.dispatch.runId === runId) return message;
+      throw runtimeError("intake_second_admission", id, `message already admitted as ${message.dispatch.runId}`);
+    }
+    if (message.dispatch.state !== "ready") {
+      throw runtimeError("intake_not_dispatchable", id, `intake state ${message.dispatch.state} cannot be admitted`);
+    }
+    const next: KxmIntakeMessage = { ...message, dispatch: { state: "admitted", runId, updatedAt: now } };
+    validateIntakeMessage(next, next.messageId);
+    const updated = context.eventStore.updateIntakeDispatch(id, "ready", { state: "admitted", record: kxmCanonicalJson(next as unknown as JsonValue) });
+    if (!updated) {
+      const racer = context.eventStore.intakeMessage(id);
+      const current = racer ? (JSON.parse(racer.record) as KxmIntakeMessage) : undefined;
+      if (current?.dispatch.state === "admitted" && current.dispatch.runId === runId) return current;
+      throw runtimeError("intake_dispatch_race", id, "the intake record changed underneath this admission");
+    }
+    return next;
+  });
 }
 
 /**
@@ -378,9 +415,13 @@ export function setKxmProjectPause(
     actor: record.actor,
     record: kxmCanonicalJson(record as unknown as JsonValue),
   };
-  context.eventStore.putProjectControl(control);
-  const released = input.paused ? [] : releaseHeldIntake(context, now);
-  return { control, released };
+  // Control write and the held-intent release are one transaction: a crash leaves
+  // either a paused project with held rows, or a resumed project with none.
+  return context.eventStore.transaction(() => {
+    context.eventStore.putProjectControl(control);
+    const released = input.paused ? [] : releaseHeldIntake(context, now);
+    return { control, released };
+  });
 }
 
 /** Whether fresh dispatch is currently blocked for this project. */
@@ -389,20 +430,27 @@ export function isKxmProjectPaused(context: KxmRuntimeContext): boolean {
 }
 
 function releaseHeldIntake(context: KxmRuntimeContext, now: string): KxmIntakeMessage[] {
-  const held = context.eventStore.intakeInStates(context.projectId, ["held_paused"], 500);
   const released: KxmIntakeMessage[] = [];
-  for (const row of held) {
-    const message = JSON.parse(row.record) as KxmIntakeMessage;
-    const next: KxmIntakeMessage = { ...message, dispatch: { state: "ready", updatedAt: now } };
-    validateIntakeMessage(next, next.messageId);
-    if (context.eventStore.updateIntakeDispatch(row.messageId, "held_paused", { state: "ready", record: kxmCanonicalJson(next as unknown as JsonValue) })) {
-      released.push(next);
+  // Drain every held row. A paging loop, not a single capped page: stranding the
+  // 501st message behind a "resume releases held intent" claim is a lie of omission.
+  for (let page = 0; page < 1000; page += 1) {
+    const held = context.eventStore.intakeInStates(context.projectId, ["held_paused"], 500);
+    if (held.length === 0) break;
+    for (const row of held) {
+      const message = JSON.parse(row.record) as KxmIntakeMessage;
+      const next: KxmIntakeMessage = { ...message, dispatch: { state: "ready", updatedAt: now } };
+      validateIntakeMessage(next, next.messageId);
+      if (context.eventStore.updateIntakeDispatch(row.messageId, "held_paused", { state: "ready", record: kxmCanonicalJson(next as unknown as JsonValue) })) {
+        released.push(next);
+      }
     }
+    const stillHeld = context.eventStore.intakeInStates(context.projectId, ["held_paused"], 1).length;
+    if (stillHeld === 0) break;
   }
   return released;
 }
 
-function persistCoordinator(context: KxmRuntimeContext, record: KxmCoordinatorRecord): void {
+function persistCoordinator(context: KxmRuntimeContext, record: KxmCoordinatorRecord): { coordinator: KxmCoordinatorRecord } {
   validateCoordinator(record, record.coordinatorId);
   const inserted = context.eventStore.insertCoordinatorIfAbsent({
     coordinatorId: record.coordinatorId,
@@ -414,9 +462,14 @@ function persistCoordinator(context: KxmRuntimeContext, record: KxmCoordinatorRe
     boundAt: record.boundAt,
     record: kxmCanonicalJson(record as unknown as JsonValue),
   });
-  if (!inserted) {
-    throw runtimeError("coordinator_write_lost", record.coordinatorId, "the coordinator slot was claimed underneath this bind");
-  }
+  if (inserted) return { coordinator: record };
+  // Lost the race for an empty slot: binding is create-once, so the winner is the
+  // answer whenever it reached the same ceiling. Only a different ceiling is a
+  // conflict worth reporting.
+  const winner = context.eventStore.coordinatorInSlot(record.projectId, record.role, record.channel);
+  const won = winner ? (JSON.parse(winner.record) as KxmCoordinatorRecord) : undefined;
+  if (won && won.ceilingHash === record.ceilingHash) return { coordinator: won };
+  throw runtimeError("coordinator_write_lost", record.coordinatorId, "the coordinator slot was claimed by a different ceiling");
 }
 
 function assertCeilingNotWidened(
@@ -432,10 +485,28 @@ function assertCeilingNotWidened(
   if (added.length > 0) {
     throw runtimeError("coordinator_rebind_widens_effects", coordinatorId, `a rebind may not add effects: ${added.join(", ")}`);
   }
-  const allowedBefore = new Set(previous.tools?.allow ?? []);
-  const newlyAllowed = (next.tools?.allow ?? []).filter((tool) => !allowedBefore.has(tool));
-  if (newlyAllowed.length > 0) {
-    throw runtimeError("coordinator_rebind_widens_tools", coordinatorId, `a rebind may not allow new tools: ${newlyAllowed.join(", ")}`);
+  // Tool ceilings are only narrowing-safe if every restriction is checked. An
+  // omitted list or a changed preset can select a broader default, so those moves
+  // are refused outright until their semantics are defined here.
+  if ((previous.tools === undefined) !== (next.tools === undefined)) {
+    throw runtimeError("coordinator_rebind_widens_tools", coordinatorId, "a rebind may not add or remove the tool policy");
+  }
+  if (previous.tools && next.tools) {
+    const previousTools = previous.tools;
+    const nextTools = next.tools;
+    if (previousTools.preset !== nextTools.preset) {
+      throw runtimeError("coordinator_rebind_changes_preset", coordinatorId, "a rebind may not change the tool preset; its default is not defined here");
+    }
+    const allowedBefore = new Set(previousTools.allow ?? []);
+    const newlyAllowed = (nextTools.allow ?? []).filter((tool) => !allowedBefore.has(tool));
+    if (newlyAllowed.length > 0) {
+      throw runtimeError("coordinator_rebind_widens_tools", coordinatorId, `a rebind may not allow new tools: ${newlyAllowed.join(", ")}`);
+    }
+    const deniedBefore = new Set(previousTools.deny ?? []);
+    const undenied = [...deniedBefore].filter((tool) => !(nextTools.deny ?? []).includes(tool));
+    if (undenied.length > 0) {
+      throw runtimeError("coordinator_rebind_removes_denials", coordinatorId, `a rebind may not lift denials: ${undenied.join(", ")}`);
+    }
   }
 }
 
@@ -459,14 +530,33 @@ function validateAuthority(authority: KxmCoordinatorAuthority): KxmCoordinatorAu
   const tools = authority.tools;
   if (tools !== undefined) {
     const lists = [tools.allow ?? [], tools.deny ?? []];
-    for (const list of lists) for (const tool of list) requireIdentifier(tool, "tools");
+    for (const list of lists) {
+      for (const tool of list) requireIdentifier(tool, "tools");
+      if (new Set(list).size !== list.length) {
+        throw runtimeError("coordinator_authority_invalid", "tools", "tool lists must not repeat");
+      }
+    }
     if (tools.preset !== undefined) requireIdentifier(tools.preset, "tools.preset");
   }
+  // Sets are stored canonically: order and repeats carry no authority, and leaving
+  // them as supplied would let an equivalent ceiling masquerade as a rebind.
   return {
     repositoryAccess: authority.repositoryAccess,
-    effects,
-    ...(tools !== undefined ? { tools } : {}),
+    effects: canonicalSet(effects),
+    ...(tools !== undefined
+      ? {
+          tools: {
+            ...(tools.preset !== undefined ? { preset: tools.preset } : {}),
+            ...(tools.allow !== undefined ? { allow: canonicalSet(tools.allow) } : {}),
+            ...(tools.deny !== undefined ? { deny: canonicalSet(tools.deny) } : {}),
+          },
+        }
+      : {}),
   };
+}
+
+function canonicalSet(values: readonly string[]): string[] {
+  return [...new Set(values)].sort();
 }
 
 function validateActor<T extends { kind: KxmCoordinatorRecord["boundBy"]["kind"]; id: string }>(actor: T, field: string): T {
@@ -504,18 +594,6 @@ function requireTimestamp(value: string, field: string): string {
     throw runtimeError("intake_field_invalid", field, `${field} is not a real timestamp`);
   }
   return value;
-}
-
-function contextConfigRevision(context: KxmRuntimeContext): string {
-  const revision = (context as { configRevision?: string }).configRevision;
-  if (typeof revision === "string" && /^sha256:[a-f0-9]{64}$/.test(revision)) return revision;
-  // The context does not carry one: fingerprint its own identity inputs instead of
-  // inventing a revision, so drift across a reopen is still detectable.
-  return `sha256:${createHash("sha256").update(stableStringify({
-    projectId: context.projectId,
-    projectRoot: context.projectRoot,
-    homeRuntimeId: context.homeRuntimeId,
-  }), "utf8").digest("hex")}`;
 }
 
 function stableStringify(value: unknown): string {

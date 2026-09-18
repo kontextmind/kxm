@@ -1255,14 +1255,14 @@ export class KxmRunEventStore {
     return row ? intakeFromRow(row) : undefined;
   }
 
-  /** Intake rows in the given dispatch states, oldest first (stable, replay-safe order). */
+  /** Intake rows in the given dispatch states, in arrival order (replay-safe). */
   intakeInStates(projectId: string, states: readonly KxmIntakeMessageRow["dispatchState"][], limit = 100): KxmIntakeMessageRow[] {
     if (states.length === 0) return [];
     const placeholders = states.map(() => "?").join(", ");
     const rows = this.database.prepare(`
       SELECT * FROM intake_messages
       WHERE project_id = ? AND dispatch_state IN (${placeholders})
-      ORDER BY received_at ASC, message_id ASC
+      ORDER BY rowid ASC
       LIMIT ?
     `).all(projectId, ...states, limit) as unknown as IntakeSqlRow[];
     return rows.map(intakeFromRow);
@@ -1554,10 +1554,19 @@ interface ControlSqlRow {
  * whose index and payload disagree fails closed instead of trusting either.
  */
 function coordinatorFromRow(row: CoordinatorSqlRow): KxmCoordinatorRow {
-  const parsed = JSON.parse(row.record) as { coordinatorId?: string; ceilingHash?: string; configRevision?: string; boundAt?: string };
+  const parsed = JSON.parse(row.record) as {
+    coordinatorId?: string; projectId?: string; role?: string; channel?: string;
+    ceilingHash?: string; configRevision?: string; boundAt?: string;
+  };
+  if (row.schema !== "kxm.coordinator.v1") {
+    throw runtimeError("coordinator_record_divergent", row.coordinator_id, `unexpected coordinator schema ${row.schema}`);
+  }
   validateCoordinator(parsed, row.coordinator_id);
   if (
     parsed.coordinatorId !== row.coordinator_id
+    || parsed.projectId !== row.project_id
+    || parsed.role !== row.role
+    || parsed.channel !== row.channel
     || parsed.ceilingHash !== row.ceiling_hash
     || parsed.configRevision !== row.config_revision
     || parsed.boundAt !== row.bound_at
@@ -1577,10 +1586,19 @@ function coordinatorFromRow(row: CoordinatorSqlRow): KxmCoordinatorRow {
 }
 
 function intakeFromRow(row: IntakeSqlRow): KxmIntakeMessageRow {
-  const parsed = JSON.parse(row.record) as { messageId?: string; contentHash?: string; receivedAt?: string; dispatch?: { state?: string } };
+  const parsed = JSON.parse(row.record) as {
+    messageId?: string; projectId?: string; coordinatorId?: string; idempotencyKey?: string;
+    contentHash?: string; receivedAt?: string; dispatch?: { state?: string };
+  };
+  if (row.schema !== "kxm.intake-message.v1") {
+    throw runtimeError("intake_record_divergent", row.message_id, `unexpected intake schema ${row.schema}`);
+  }
   validateIntakeMessage(parsed, row.message_id);
   if (
     parsed.messageId !== row.message_id
+    || parsed.projectId !== row.project_id
+    || parsed.coordinatorId !== row.coordinator_id
+    || parsed.idempotencyKey !== row.idempotency_key
     || parsed.contentHash !== row.content_hash
     || parsed.receivedAt !== row.received_at
     || parsed.dispatch?.state !== row.dispatch_state
