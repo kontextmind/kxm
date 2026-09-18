@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.kxm.dev/intake-message.schema.json",
+  "title": "KXM internal intake message",
+  "description": "One durable internal message at the Runtime intake boundary. Receipts stay separate facts: received, persisted, and dispatch-intent are different states, and content classified secret is never persisted — only its hash.",
+  "type": "object",
+  "required": [
+    "schema",
+    "messageId",
+    "projectId",
+    "coordinatorId",
+    "receivedAt",
+    "source",
+    "idempotencyKey",
+    "contentHash",
+    "classification",
+    "dispatch"
+  ],
+  "properties": {
+    "schema": { "const": "kxm.intake-message.v1" },
+    "messageId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "projectId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "coordinatorId": { "$ref": "common.schema.json#/$defs/opaqueId" },
+    "receivedAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "source": {
+      "type": "object",
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": { "enum": ["adapter", "hub", "operator", "peer", "schedule"] },
+        "id": { "type": "string", "minLength": 1, "maxLength": 200 }
+      },
+      "additionalProperties": false
+    },
+    "idempotencyKey": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "contentHash": { "$ref": "common.schema.json#/$defs/sha256" },
+    "content": { "type": "string", "minLength": 1, "maxLength": 16384 },
+    "contentOmittedReason": { "const": "secret-classified" },
+    "classification": { "enum": ["public", "project", "sensitive", "secret"] },
+    "dispatch": { "$ref": "#/$defs/dispatch" }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": { "properties": { "classification": { "enum": ["public", "project", "sensitive"] } }, "required": ["classification"] },
+      "then": { "required": ["content"] },
+      "else": { "not": { "required": ["content"] } }
+    }
+  ],
+  "$defs": {
+    "dispatch": {
+      "type": "object",
+      "required": ["state"],
+      "properties": {
+        "state": { "enum": ["ready", "held_paused", "admitted", "refused"] },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "updatedAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+        "runId": { "$ref": "common.schema.json#/$defs/opaqueId" }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": { "properties": { "state": { "const": "admitted" } }, "required": ["state"] },
+          "then": { "required": ["runId", "updatedAt"] }
+        },
+        {
+          "if": { "properties": { "state": { "enum": ["held_paused", "refused"] } }, "required": ["state"] },
+          "then": { "required": ["reason"] }
+        }
+      ]
+    }
+  }
+}

@@ -538,7 +538,10 @@ export function restoreBackup(
     if (store.storeId === "registry" || store.storeId === "binding-store") {
       maxSupported = 1;
     } else if (store.storeId.startsWith("events:")) {
-      maxSupported = 4;
+      // Must track KXM_EVENT_STORE_SCHEMA_VERSION in runtime-store.ts. The pin is
+      // the e6 backup/restore round-trip test: bump one without the other and it
+      // refuses its own fresh backup.
+      maxSupported = 5;
     }
 
     let targetPath = store.sourcePath;
