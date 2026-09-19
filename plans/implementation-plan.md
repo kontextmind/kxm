@@ -365,26 +365,50 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   and the CHANGELOG. None of them was in `justfile`: PR #179 deleted the recipes and
   inverted the covering test into `doesNotMatch(just, /assignment-run\.mjs/)` with
   no doc sweep and no Tracking decision recorded, so for eight days the documented
-  entry point was a broken command and the brake enforced the wrong shape. Restored
-  verbatim (same seven recipes, same argument order as `assignment-run.mjs`'s own
-  `CLI_USAGE`) plus `just docker-install-smoke`, which
-  `scripts/docker-install-smoke.mjs` had been advertising in its header.
-  **What is now actually gated:** the file-wide brake was the mistake, because the
-  real rule is per recipe — the transport recipes (`impl`, `impl-bg`, `plan`,
-  `review-arch`, `review-cli`, `dispatch`) must never reach `assignment-run.mjs`, so
-  they cannot mint assignment, witness or acceptance proof, while the assignment
-  recipes live in their own section and do nothing else. A parity test extracts every
-  `just <verb>` referenced in inline code and fenced blocks across those documents and
-  fails closed listing the documents that name a recipe the justfile does not ship
-  (verified by renaming `observe-cost` and watching it report five sources), one test
-  pins each recipe's flags against the runner CLI, and one proves the smoke script's
-  advertised recipe exists. `just assign relative/manifest.json` fails closed with
-  `manifest_invalid`, not a shell error: the runner requires absolute paths, so no
-  recipe interpolates a user string as shell source.
+  entry point was a broken command and the brake enforced the wrong shape. Restored:
+  **headers and bodies verbatim** from `bce478a^`, same argument order as
+  `assignment-run.mjs`'s own `CLI_USAGE` (the comments and section order are new), plus
+  `just docker-install-smoke`, which `scripts/docker-install-smoke.mjs` had been
+  advertising in its header since it landed. #179's own plan text shows an unfinished
+  retirement discussion, so the honest description is that this **resolves
+  contradictory retirement and workflow records** rather than proving no retirement
+  was ever contemplated — no still-applicable decision requires these entry points to
+  stay absent, and the Decided entry above names them.
+  **What is gated now:**
+  - *Per recipe, not per file.* The file-wide brake was the mistake. Transport recipes
+    (`impl`, `impl-bg`, `plan`, `review-arch`, `review-cli`, `dispatch`) may not
+    reference `assignment-run.mjs` **or forward to a proof recipe**, so they cannot
+    mint assignment, witness or acceptance proof directly or indirectly; full
+    call-graph analysis is not claimed. Each assignment recipe is pinned to its exact
+    command, flags **and declared arity** — header parameters must match the positions
+    the body reads in both directions — and where the `just` binary exists a real
+    invocation proves it refuses a short argument list.
+  - *Docs-to-justfile parity.* `just <verb>` in **command form** (inline code, or a
+    fenced line with an optional `#`) must exist as a recipe; stray whitespace and
+    `a|b|c` alternations are handled, `~~~` fences too, and a glob alternative like `review-*` is skipped because it names a family rather than a recipe. Prose, headings and captured
+    `just --list` output are **not** parsed, which is the limit of the convention:
+    naming a recipe only in prose is not gated, and a backticked adverbial phrase —
+    the words "just in case" inside code spans — would ask for a recipe called `in`. Load-bearing, verified by renaming
+    `observe-cost` (fails, naming the five documents that promise it) and by a test
+    that feeds the scanner the positive and negative shapes above.
+  - *No auto-loaded `.env`.* `set dotenv-load` is **removed**, after review found it
+    let a gitignored `.env` in whatever directory `just` happened to run in set
+    `NODE_OPTIONS`, whose value the interpreter executes *before any script body* —
+    ahead of the runner's identity, tree, roster and critic validation and ahead of
+    `shell: false` on every spawn it goes on to make, on the two recipes that mint
+    proof. Gated twice: a textual brake on `set dotenv-load`/`set dotenv-path`, and a
+    real-`just` probe that a working-directory `.env` does not reach the environment
+    while `--dotenv --dotenv-path` **does** — the positive control is what makes the
+    negative result mean anything. Dotenv is opt-in per invocation now, noted where
+    the setting used to be.
+  - The smoke recipe is pinned to the command it advertises, not merely to its name.
   **Not done here:** `observe --record-dir` is a real `assignment-run.mjs` subcommand
-  with no documented recipe, so none was invented; the runner still has no
-  `--json`-shaped machine output for `accept`, and no gate proves the justfile and
-  `docs/contracts/routing.md` agree about *argument order*, only about the flags.
+  with no documented recipe, so none was invented; `accept` writes JSON by default but
+  has no `--json` **flag**, and its optional `--observed-pr`/`--observed-ci` still
+  require the direct script call, as `docs/contracts/routing.md` already says; nothing
+  pins *argument order* between the justfile and that document, only verbs, flags and
+  arity; and inherited-environment hardening past dotenv (what a witness hands to a
+  harness) is its own trust decision.
 
 - **Runtime intake contract: coordinator identity, idempotent ingress and the
   pause rule (unified plan M1 + M6, the durable half of M2; 2026-09-18):** the

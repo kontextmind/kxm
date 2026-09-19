@@ -4,11 +4,20 @@
 # Role routing comes from AGENTS.md; CLI mechanics from .claude/harness-cli.md.
 # Conventions here follow the SSSF factory justfile in payk12-win.
 
-set dotenv-load
 set positional-arguments
 # Recipes are sh syntax. On Windows that is Git Bash's sh; plain -c (not just's
 # default -cu) because Git's /etc/bash.bashrc trips over `set -u`.
 set windows-shell := ["sh", "-c"]
+# `set dotenv-load` is deliberately NOT enabled, and was removed after review.
+# It read a `.env` from whatever directory `just` happened to run in — and `.env` is
+# gitignored, so nothing in the reviewed tree bounded what it contained. One of the
+# variables it would set is `NODE_OPTIONS`, whose value runs *before* any script
+# body: `NODE_OPTIONS=--import=data:text/javascript,…` took over a `witness` or
+# `accept` run at interpreter start, ahead of the runner's own identity, tree and
+# roster validation, and ahead of `spawnSync(..., shell: false)`. These recipes mint
+# proof, so an unreviewed working-directory file must not be able to execute in
+# them. If a task genuinely needs a dotenv file, pass it explicitly:
+# `just --dotenv --dotenv-path /abs/path/.env assign …`.
 
 run := "node scripts/harness-run.mjs"
 briefs := env_var_or_default("KXM_BRIEF_DIR", ".kxm/briefs")
@@ -102,7 +111,9 @@ check-generated:
 # The normal dev entry: a closed kxm.assignment.v1 manifest plus the current
 # plan. These recipes mint assignment, witness and acceptance proof; the
 # impl/plan/review-* recipes above are transport only and never do. Every path
-# is absolute — the runner refuses a relative one, so no quoting is needed.
+# is absolute because the runner refuses a relative one; that is a validation
+# rule, not what makes the quoting safe — `set positional-arguments` plus `"$1"`
+# is what keeps a user path out of shell source.
 
 # dispatch a bound assignment: just assign /abs/manifest.json
 assign MANIFEST:

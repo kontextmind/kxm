@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { delimiter, join, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import test from "node:test";
 import { nativeCriticLaunch } from "../../scripts/native-critic.mjs";
 import {
@@ -1430,14 +1431,75 @@ test("just transport recipes use evidence-informed effort defaults and never min
   assert.doesNotMatch(just, /Normal assignment workflow/);
   // The boundary is per-recipe, not file-wide: `impl|plan|review-*` are harness
   // transport and must never reach the runner that mints assignment, witness or
-  // acceptance proof. The assignment recipes themselves live in their own
-  // section and are covered by the documented-recipe parity gate below.
+  // acceptance proof — directly or by forwarding to a recipe that does.
   for (const name of ["impl", "impl-bg", "plan", "review-arch", "review-cli", "dispatch"]) {
+    const body = recipeLines(name).join("\n");
+    assert.doesNotMatch(body, /assignment-run\.mjs/, `transport recipe ${name} must not mint assignment proof`);
     assert.doesNotMatch(
-      recipeLines(name).join("\n"),
-      /assignment-run\.mjs/,
-      `transport recipe ${name} must not mint assignment proof`,
+      body,
+      new RegExp(`just (${Object.keys(ASSIGNMENT_RECIPES).join("|")})\\b`),
+      `transport recipe ${name} must not forward into a proof recipe`,
     );
+  }
+  // Keep the alternation honest: it is built from the same table the parity and
+  // invocation gates use, so a new proof recipe cannot be added and left unguarded.
+  assert.ok(Object.keys(ASSIGNMENT_RECIPES).includes("assign"));
+  assert.ok(Object.keys(ASSIGNMENT_RECIPES).includes("change-report"));
+});
+
+test("the justfile does not auto-load an unreviewed .env into proof-producing recipes", () => {
+  // `set dotenv-load` read a `.env` from whatever directory `just` ran in. `.env`
+  // is gitignored, so nothing in the reviewed tree bounded its contents, and one of
+  // the variables it could set is `NODE_OPTIONS`, whose value the interpreter runs
+  // *before* any script body — i.e. before the runner's identity, tree, roster and
+  // critic validation, and before `shell: false` on any spawn. These recipes mint
+  // proof, so the setting must stay off; dotenv is opt-in per invocation instead.
+  const just = readFileSync(resolve("justfile"), "utf8");
+  assert.doesNotMatch(just, /^\s*set\s+dotenv-load\s*$/m, "dotenv auto-loading is back");
+  assert.doesNotMatch(just, /^\s*set\s+dotenv-path\b/m, "a fixed dotenv path is auto-configured");
+  assert.match(just, /--dotenv-path/, "the removal note must tell an operator how to opt in");
+});
+
+test("real just does not load a working-directory .env into these recipes", (t) => {
+  // The textual brake above is not proof about the interpreter. This runs `just`
+  // itself against the real justfile from a directory holding an ignored `.env`,
+  // and — crucially — also runs the same fixture *with* the explicit opt-in, so a
+  // probe that cannot fire can never pass the negative assertion.
+  if (spawnSync("just", ["--version"], { encoding: "utf8" }).status !== 0) {
+    t.skip("just binary not installed");
+    return;
+  }
+  const dir = mkdtempSync(join(tmpdir(), "kxm-dotenv-probe-"));
+  try {
+    writeFileSync(join(dir, ".env"), [
+      "NODE_OPTIONS=--import=data:text/javascript,globalThis.__kxmProbe%3D1",
+      "KXM_DOTENV_PROBE=visible",
+      "",
+    ].join("\n"));
+    const probe = join(dir, "probe.mjs");
+    writeFileSync(probe, 'process.stdout.write([process.env.NODE_OPTIONS ?? "unset", '
+      + 'process.env.KXM_DOTENV_PROBE ?? "absent"].join("|"));\n');
+    // Remove the two variables under test rather than blanking them: an empty
+    // string is a value, and the probe reports "unset" only for a real absence.
+    const cleanEnv = { ...process.env } as Record<string, string>;
+    delete cleanEnv.NODE_OPTIONS;
+    delete cleanEnv.KXM_DOTENV_PROBE;
+    const run = (extra: string[]) => spawnSync("just", [
+      ...extra,
+      "--working-directory", dir,
+      "--justfile", resolve("justfile"),
+      "--command", process.execPath, probe,
+    ], { encoding: "utf8", env: cleanEnv });
+
+    const automatic = run([]);
+    assert.equal(automatic.stdout, "unset|absent",
+      `an ignored .env must not reach the interpreter: ${automatic.stdout} ${automatic.stderr}`);
+
+    const optedIn = run(["--dotenv-path", join(dir, ".env")]);
+    assert.match(optedIn.stdout, /^--import=data:text\/javascript,.*\|visible$/,
+      `the probe cannot fire, so the negative result proved nothing: ${optedIn.stdout} ${optedIn.stderr}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -1452,66 +1514,163 @@ const DOCUMENTED_RECIPE_SOURCES = [
   "CHANGELOG.md",
 ];
 
+/**
+ * Recipe name -> its declared parameters, in order.
+ *
+ * This is the arity gate: the invocation test below compares the *body*, and a body
+ * can keep working while its header drifts (an `accept` that declares four
+ * parameters while reading `$5` passes any text comparison of the command line).
+ */
+const ASSIGNMENT_RECIPES: Record<string, { params: string[]; invocation: string }> = {
+  assign: { params: ["MANIFEST"], invocation: 'run --manifest "$1"' },
+  witness: { params: ["RECORD"], invocation: 'witness --record-dir "$1"' },
+  "plan-current": {
+    params: ["TASK", "PLAN", "SHA", "COMMIT", "GENERATION"],
+    invocation: 'plan-current --task-dir "$1" --plan "$2" --sha256 "$3" --base-commit "$4" --expected-generation "$5"',
+  },
+  attribute: {
+    params: ["TASK", "RECORD", "CLASS", "EXPLANATION"],
+    invocation: 'attribute --task-dir "$1" --record-dir "$2" --class "$3" --explanation-file "$4"',
+  },
+  "observe-cost": { params: ["TASK", "INPUT"], invocation: 'observe-cost --task-dir "$1" --input "$2"' },
+  accept: {
+    params: ["TASK", "COMMIT", "WRITER", "ARCH", "CLI"],
+    invocation: 'accept --task-dir "$1" --commit "$2" --record-dir "$3" --critic "$4" --critic "$5"',
+  },
+  "change-report": { params: ["TASK"], invocation: 'change-report --task-dir "$1"' },
+};
+
+function justfileRecipeLines(): string[] {
+  return readFileSync(resolve("justfile"), "utf8").split("\n");
+}
+
+/** Recipe header for `name`, or undefined. */
+function recipeHeader(name: string): string | undefined {
+  return justfileRecipeLines().find((line) => new RegExp(`^${name}(?:\\s[^\\n]*)?\\s*:\\s*$`).test(line));
+}
+
 function justfileRecipeNames(): Set<string> {
   const names = new Set<string>();
-  for (const line of readFileSync(resolve("justfile"), "utf8").split("\n")) {
+  for (const line of justfileRecipeLines()) {
     const match = line.match(/^([a-z][a-z0-9-]*(?:\s+[^\n]+)?)\s*:\s*$/);
     if (match?.[1]) names.add(match[1].split(/\s+/)[0] ?? "");
   }
   return names;
 }
 
-/** `verb` -> the documents that tell an operator to run `just verb`. */
-function documentedJustVerbs(): Map<string, string[]> {
-  const found = new Map<string, Set<string>>();
-  const add = (verb: string, doc: string): void => {
-    if (!found.has(verb)) found.set(verb, new Set<string>());
-    found.get(verb)?.add(doc);
+/**
+ * Verbs a *markdown document* tells an operator to run.
+ *
+ * Command form, deliberately narrow: inline code, or a fenced block line with an
+ * optional `#` (the docs use `#` for the "under the hood" form), starting `just
+ * <verb>` with any amount of whitespace, and `a|b|c` alternations counted per
+ * alternative. Prose, headings and captured `just --list` output are **not**
+ * parsed — an unbacked sentence saying "just one of them" cannot reach this, and a
+ * document that names a recipe in prose instead of in command form is not gated.
+ */
+export function documentedJustVerbsIn(text: string): string[] {
+  const verbs = new Set<string>();
+  const addList = (rest: string): void => {
+    // `just impl|plan|review-arch` — the first token of each alternative is a verb;
+    // anything after it on the same reference is an argument, not a recipe. A
+    // glob alternative (`review-*`) names a family rather than a recipe, so it is
+    // skipped: it cannot be resolved here, and demanding `review-` would be noise.
+    for (const alt of rest.split("|")) {
+      const token = alt.trim().split(/\s+/)[0] ?? "";
+      if (token.includes("*")) continue;
+      const verb = token.match(/^([a-z][a-z0-9-]*)$/)?.[1];
+      if (verb) verbs.add(verb);
+    }
   };
+  for (const match of text.matchAll(/`\s*just\s+([^`\n]+)`/g)) addList(match[1] ?? "");
+  const fences = text.split(/(?:```|~~~)/);
+  for (let i = 1; i < fences.length; i += 2) {
+    for (const line of (fences[i] ?? "").split("\n")) {
+      const match = line.match(/^\s*(?:#[\s]*)?just\s+([^\s`][^\n]*)$/);
+      if (match?.[1]) addList(match[1]);
+    }
+  }
+  return [...verbs].sort();
+}
+
+/** `verb` -> the documents that tell an operator to run `just verb`. */
+function documentedRecipeReferences(): Map<string, string[]> {
+  const found = new Map<string, Set<string>>();
   for (const doc of DOCUMENTED_RECIPE_SOURCES) {
-    const text = readFileSync(resolve(doc), "utf8");
-    // Inline code: `just assign`, `just impl|plan|...`.
-    for (const match of text.matchAll(/`just ([a-z][a-z0-9-]*)/g)) add(match[1] ?? "", doc);
-    // Fenced command blocks, including the commented "under the hood" form.
-    const blocks = text.split("```");
-    for (let i = 1; i < blocks.length; i += 2) {
-      for (const line of (blocks[i] ?? "").split("\n")) {
-        const match = line.match(/^\s*(?:#\s*)?just ([a-z][a-z0-9-]*)/);
-        if (match?.[1]) add(match[1], doc);
-      }
+    for (const verb of documentedJustVerbsIn(readFileSync(resolve(doc), "utf8"))) {
+      if (!found.has(verb)) found.set(verb, new Set<string>());
+      found.get(verb)?.add(doc);
     }
   }
   return new Map([...found].map(([verb, docs]) => [verb, [...docs].sort()]));
 }
 
+test("the doc scanner catches the forms this repository writes, and nothing else", () => {
+  // Positive: the shapes the docs actually use.
+  assert.deepEqual(documentedJustVerbsIn("see `just assign /abs/manifest.json`"), ["assign"]);
+  assert.deepEqual(documentedJustVerbsIn("`just impl|plan|review-arch|review-cli`"),
+    ["impl", "plan", "review-arch", "review-cli"]);
+  assert.deepEqual(documentedJustVerbsIn("```\n# just witness /abs/record\n```"), ["witness"]);
+  assert.deepEqual(documentedJustVerbsIn("~~~\njust change-report /abs/task\n~~~"), ["change-report"]);
+  assert.deepEqual(documentedJustVerbsIn("`just  accept  /abs/task`"), ["accept"], "stray whitespace");
+  // Negative: adverbial prose and captured listings must not invent recipes.
+  assert.deepEqual(documentedJustVerbsIn("that is just one of them, just in case"), []);
+  assert.deepEqual(documentedJustVerbsIn("\n    just one of them\n"), [], "indented prose is not a command");
+  assert.deepEqual(documentedJustVerbsIn("a heading saying just missing here"), []);
+  assert.deepEqual(documentedJustVerbsIn("| just missing | in a table, bare |"), []);
+  // A backticked adverbial phrase *is* read as a command — that is the price of the
+  // convention, and why the failure message names the document. A glob alternative
+  // is not a recipe name and must not invent one.
+  assert.deepEqual(documentedJustVerbsIn("`just in case`"), ["in"]);
+  assert.deepEqual(documentedJustVerbsIn("`just impl|plan|review-*`"), ["impl", "plan"],
+    "a `family` alternative cannot be gated as a recipe and must not demand one");
+});
+
 test("every documented just recipe exists in the justfile", () => {
   const recipes = justfileRecipeNames();
   const missing: string[] = [];
-  for (const [verb, docs] of documentedJustVerbs()) {
+  for (const [verb, docs] of documentedRecipeReferences()) {
     if (!recipes.has(verb)) missing.push(`just ${verb} <- ${docs.join(", ")}`);
   }
   // Docs that name a recipe the justfile does not ship are a broken entry point,
   // not a style nit: the assignment runner is the normal dev path.
-  assert.deepEqual(missing, [], `undocumented just recipes:\n${missing.join("\n")}`);
+  assert.deepEqual(missing, [], `documented recipes missing from the justfile:\n${missing.join("\n")}`);
 });
 
 test("assignment runner recipes forward the runner subcommands the docs name", () => {
-  const expected: Record<string, string> = {
-    assign: 'run --manifest "$1"',
-    witness: 'witness --record-dir "$1"',
-    "plan-current": 'plan-current --task-dir "$1" --plan "$2" --sha256 "$3" --base-commit "$4" --expected-generation "$5"',
-    attribute: 'attribute --task-dir "$1" --record-dir "$2" --class "$3" --explanation-file "$4"',
-    "observe-cost": 'observe-cost --task-dir "$1" --input "$2"',
-    accept: 'accept --task-dir "$1" --commit "$2" --record-dir "$3" --critic "$4" --critic "$5"',
-    "change-report": 'change-report --task-dir "$1"',
-  };
-  for (const [recipe, invocation] of Object.entries(expected)) {
+  for (const [recipe, spec] of Object.entries(ASSIGNMENT_RECIPES)) {
     const body = recipeLines(recipe).join("\n").trim();
-    assert.equal(body, `@node scripts/assignment-run.mjs ${invocation}`.replace(/^@/, ""), `just ${recipe} drifted from the runner CLI`);
+    assert.equal(body, `node scripts/assignment-run.mjs ${spec.invocation}`, `just ${recipe} drifted from the runner CLI`);
+
+    // Arity, from the header: the declared parameters must be exactly what the body
+    // reads, or the recipe accepts arguments it ignores and rejects ones it needs.
+    const header = recipeHeader(recipe) ?? "";
+    const declared = header.replace(/:\s*$/, "").split(/\s+/).slice(1);
+    assert.deepEqual(declared, spec.params, `just ${recipe} parameter list drifted`);
+    const used = [...body.matchAll(/\$(\d+)/g)].map((m) => Number(m[1]));
+    const maxUsed = Math.max(...used);
+    assert.ok(maxUsed <= declared.length,
+      `just ${recipe} reads $${String(maxUsed)} but declares ${String(declared.length)} parameter(s)`);
+    for (let position = 1; position <= declared.length; position += 1) {
+      assert.ok(used.includes(position), `just ${recipe} declares ${declared[position - 1]} and never uses it`);
+    }
   }
 });
 
-test("the container install smoke names a recipe that exists", () => {
+test("real just enforces the documented arity of each assignment recipe", (t) => {
+  if (spawnSync("just", ["--version"], { encoding: "utf8" }).status !== 0) {
+    t.skip("just binary not installed");
+    return;
+  }
+  for (const [recipe, spec] of Object.entries(ASSIGNMENT_RECIPES)) {
+    const tooFew = spawnSync("just", [recipe, ...Array.from({ length: spec.params.length - 1 }, (_unused, i) => `/abs/${String(i)}`)],
+      { encoding: "utf8", cwd: resolve(".") });
+    assert.notEqual(tooFew.status, 0, `just ${recipe} accepted fewer than ${String(spec.params.length)} arguments`);
+    assert.match(`${tooFew.stderr}${tooFew.stdout}`, /argument/i, `unexpected refusal for just ${recipe}`);
+  }
+});
+
+test("the container install smoke recipe exists and runs the script it advertises", () => {
   const script = readFileSync(resolve("scripts/docker-install-smoke.mjs"), "utf8");
   const match = script.match(/Usage: just ([a-z][a-z0-9-]*)/);
   assert.ok(match?.[1], "the smoke script no longer documents a just recipe");
@@ -1519,6 +1678,10 @@ test("the container install smoke names a recipe that exists", () => {
     justfileRecipeNames().has(match[1]),
     `just ${match[1]} is documented by scripts/docker-install-smoke.mjs but not shipped`,
   );
+  // Naming a recipe is not the same as shipping its behaviour.
+  assert.deepEqual(recipeLines(match[1]).map((line) => line.replace(/^@/, "")),
+    ["node scripts/docker-install-smoke.mjs"],
+    `just ${match[1]} no longer runs the smoke script`);
 });
 
 test("preflight requires routing fields, types, and Pi edit pair ceilings before spawn", async () => {
