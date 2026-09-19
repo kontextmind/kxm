@@ -17820,20 +17820,36 @@ var TRANSACTION_BUSY_BACKOFF_MS = 1e3;
 function monotonicNowMs() {
   return Number(process.hrtime.bigint() / 1000000n);
 }
-var transactionBackoffUntilMs = /* @__PURE__ */ new WeakMap();
-var CONTENTION_PATTERNS = /\bSQLITE_BUSY\b|\bSQLITE_LOCKED\b|database is locked|database table is locked/i;
+var transactionThrottles = /* @__PURE__ */ new WeakMap();
+function finiteNow(clock, label) {
+  const now = clock();
+  if (typeof now !== "number" || !Number.isFinite(now)) {
+    throw databaseError(
+      "runtime_transaction_clock_invalid",
+      "transaction",
+      `${label} must return a finite monotonic number; got ${String(now)}`
+    );
+  }
+  return now;
+}
+var CONTENTION_PRIMARY_CODES = [5, 6, 15];
+var CONTENTION_MESSAGES = /^(?:database is locked|database table is locked|locking protocol|SQLITE_BUSY|SQLITE_LOCKED|SQLITE_PROTOCOL)(?:$|[\s.:])/i;
 function isTransactionContention(error) {
-  const message = error instanceof Error ? error.message : String(error);
-  return CONTENTION_PATTERNS.test(message);
+  const carrier = error;
+  const codes = [carrier?.errcode, carrier?.errCode, carrier?.code];
+  const numeric = codes.find((value) => typeof value === "number" && Number.isInteger(value));
+  if (numeric !== void 0) return CONTENTION_PRIMARY_CODES.includes(numeric & 255);
+  return CONTENTION_MESSAGES.test(error instanceof Error ? error.message : String(error));
 }
 function withDatabaseTransaction(database, work, mode = "IMMEDIATE", clock = monotonicNowMs) {
   if (activeTransactions.has(database)) {
     throw databaseError("runtime_transaction_nested", "transaction", "nested transactions are not allowed");
   }
   if (mode !== "DEFERRED") {
-    const blockedUntil = transactionBackoffUntilMs.get(database);
-    if (blockedUntil !== void 0) {
-      const remaining = blockedUntil - clock();
+    const deadlines = transactionThrottles.get(database);
+    const until = deadlines?.get(clock);
+    if (until !== void 0) {
+      const remaining = until - finiteNow(clock, "the transaction clock");
       if (remaining > 0) {
         throw databaseError(
           "runtime_transaction_busy",
@@ -17841,22 +17857,25 @@ function withDatabaseTransaction(database, work, mode = "IMMEDIATE", clock = mon
           `a previous BEGIN was blocked on this database; retry deferred ${String(remaining)}ms`
         );
       }
-      transactionBackoffUntilMs.delete(database);
+      deadlines?.delete(clock);
     }
   }
   try {
     database.exec(`BEGIN ${mode}`);
   } catch (error) {
     if (!isTransactionContention(error)) throw error;
-    transactionBackoffUntilMs.set(database, clock() + TRANSACTION_BUSY_BACKOFF_MS);
+    const now = finiteNow(clock, "the transaction clock");
+    const deadlines = transactionThrottles.get(database) ?? /* @__PURE__ */ new Map();
+    deadlines.set(clock, now + TRANSACTION_BUSY_BACKOFF_MS);
+    transactionThrottles.set(database, deadlines);
     throw databaseError(
       "runtime_transaction_busy",
       "transaction",
-      `BEGIN ${mode} blocked by another writer: ${error instanceof Error ? error.message : String(error)}`
+      `BEGIN ${mode} blocked by another transaction: ${error instanceof Error ? error.message : String(error)}`
     );
   }
   activeTransactions.add(database);
-  if (mode !== "DEFERRED") transactionBackoffUntilMs.delete(database);
+  if (mode !== "DEFERRED") transactionThrottles.get(database)?.delete(clock);
   try {
     const result = work();
     database.exec("COMMIT");

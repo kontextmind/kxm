@@ -253,22 +253,69 @@ function monotonicNowMs(): number {
   return Number(process.hrtime.bigint() / 1_000_000n);
 }
 
-const transactionBackoffUntilMs = new WeakMap<DatabaseSync, number>();
+/**
+ * Pending throttle per connection, **keyed by the clock that armed it**.
+ *
+ * The nesting is the fix, not tidiness. A deadline is a number from *some* clock,
+ * and the injectable `clock` exists only so a test can step the window; comparing
+ * a deadline armed by one clock against a reading taken from another is how an
+ * injected "one hour from now" throttles a production caller that never passed a
+ * clock at all — and how that same caller could clear a deadline it never armed.
+ * Each clock domain therefore gets its own deadline and can only read, expire or
+ * replace its own.
+ */
+const transactionThrottles = new WeakMap<DatabaseSync, Map<MonotonicClock, number>>();
+
+/** A clock reading this helper can reason about. Anything else fails closed. */
+function finiteNow(clock: MonotonicClock, label: string): number {
+  const now = clock();
+  if (typeof now !== "number" || !Number.isFinite(now)) {
+    throw databaseError(
+      "runtime_transaction_clock_invalid",
+      "transaction",
+      `${label} must return a finite monotonic number; got ${String(now)}`,
+    );
+  }
+  return now;
+}
 
 /**
  * Is this `BEGIN` failure contention for the write lock, as opposed to a
  * programming or environment error?
  *
- * Only contention may be retried, and only contention earns the backoff window.
+ * Only contention may be retried, and only contention earns the throttle window.
  * Anything else — "cannot start a transaction within a transaction", a closed
  * connection, a miscompiled statement — must surface unchanged, or a permanent
  * bug looks like a transient one and the caller retries forever.
+ *
+ * SQLite's **numeric result code decides** where one exists, because it is stable
+ * across versions while message text is not: the primary code is `code & 0xff`, so
+ * extended forms land on their primaries — `SQLITE_BUSY_RECOVERY` (261) and
+ * `SQLITE_BUSY_SNAPSHOT` (517) on `SQLITE_BUSY` (5), `SQLITE_LOCKED_SHAREDCACHE`
+ * (262) on `SQLITE_LOCKED` (6). `SQLITE_PROTOCOL` (15) is included deliberately:
+ * SQLite raises it when repeated attempts to start a transaction under WAL exhaust
+ * the retry count, which is a lock-acquisition retry condition, not a broken
+ * database.
+ *
+ * Message matching is the fallback for a runtime whose errors carry no numeric
+ * code (`sqlite.ts` also runs extensions on Bun), and it applies **only** when no
+ * code is present — otherwise a wrapper whose text merely quotes an older
+ * "database is locked" would be mislabelled as contention.
+ *
+ * Deliberately **not** contention: `SQLITE_FULL` / "database or disk is full",
+ * "unable to open database file", and WAL shared-memory I/O failures. Those stay
+ * broken until something outside this connection changes.
  */
-const CONTENTION_PATTERNS = /\bSQLITE_BUSY\b|\bSQLITE_LOCKED\b|database is locked|database table is locked/i;
+const CONTENTION_PRIMARY_CODES: readonly number[] = [5, 6, 15];
+const CONTENTION_MESSAGES =
+  /^(?:database is locked|database table is locked|locking protocol|SQLITE_BUSY|SQLITE_LOCKED|SQLITE_PROTOCOL)(?:$|[\s.:])/i;
 
 export function isTransactionContention(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return CONTENTION_PATTERNS.test(message);
+  const carrier = error as { errcode?: unknown; errCode?: unknown; code?: unknown } | undefined;
+  const codes = [carrier?.errcode, carrier?.errCode, carrier?.code];
+  const numeric = codes.find((value): value is number => typeof value === "number" && Number.isInteger(value));
+  if (numeric !== undefined) return CONTENTION_PRIMARY_CODES.includes(numeric & 0xff);
+  return CONTENTION_MESSAGES.test(error instanceof Error ? error.message : String(error));
 }
 
 export function withDatabaseTransaction<T>(
@@ -283,9 +330,10 @@ export function withDatabaseTransaction<T>(
   // A DEFERRED BEGIN takes no write lock and cannot lose the race, so throttling
   // it would deny legitimate work for no protective reason.
   if (mode !== "DEFERRED") {
-    const blockedUntil = transactionBackoffUntilMs.get(database);
-    if (blockedUntil !== undefined) {
-      const remaining = blockedUntil - clock();
+    const deadlines = transactionThrottles.get(database);
+    const until = deadlines?.get(clock);
+    if (until !== undefined) {
+      const remaining = until - finiteNow(clock, "the transaction clock");
       if (remaining > 0) {
         throw databaseError(
           "runtime_transaction_busy",
@@ -293,7 +341,7 @@ export function withDatabaseTransaction<T>(
           `a previous BEGIN was blocked on this database; retry deferred ${String(remaining)}ms`,
         );
       }
-      transactionBackoffUntilMs.delete(database);
+      deadlines?.delete(clock);
     }
   }
   // Claim the marker only once BEGIN has succeeded. If BEGIN throws — another
@@ -305,28 +353,31 @@ export function withDatabaseTransaction<T>(
     database.exec(`BEGIN ${mode}`);
   } catch (error) {
     if (!isTransactionContention(error)) throw error;
-    transactionBackoffUntilMs.set(database, clock() + TRANSACTION_BUSY_BACKOFF_MS);
+    const now = finiteNow(clock, "the transaction clock");
+    const deadlines = transactionThrottles.get(database) ?? new Map<MonotonicClock, number>();
+    deadlines.set(clock, now + TRANSACTION_BUSY_BACKOFF_MS);
+    transactionThrottles.set(database, deadlines);
     throw databaseError(
       "runtime_transaction_busy",
       "transaction",
-      `BEGIN ${mode} blocked by another writer: ${error instanceof Error ? error.message : String(error)}`,
+      `BEGIN ${mode} blocked by another transaction: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
   activeTransactions.add(database);
   // A successful write-mode BEGIN means this connection is holding the slot, so any
   // earlier contention is over. A DEFERRED success proves nothing about the write
   // lock and must not clear a throttle that another caller's contention armed.
-  if (mode !== "DEFERRED") transactionBackoffUntilMs.delete(database);
+  if (mode !== "DEFERRED") transactionThrottles.get(database)?.delete(clock);
   try {
     const result = work();
     database.exec("COMMIT");
     return result;
   } catch (error) {
     // A failed ROLLBACK usually means the connection is gone. Clearing the marker
-    // is still the right bookkeeping, but it does **not** prove SQLite left the
-    // transaction — a connection that survives a failed rollback can stay
-    // dirty. Pre-existing, and deliberately not papered over here: the caller
-    // receives the original error, and the store treats the handle as suspect.
+    // is bookkeeping, not proof: it does **not** show SQLite exited the
+    // transaction, and nothing here invalidates a handle whose rollback failed.
+    // Pre-existing, named rather than papered over — the caller receives the
+    // original error.
     try { database.exec("ROLLBACK"); } catch { /* ignore rollback error if connection dead */ }
     throw error;
   } finally {

@@ -526,7 +526,7 @@ test("a busy database fails the transaction, throttles monotonically, and recove
     // First attempt pays the real busy timeout and is reported as contention.
     const blocked = captureError(attemptPause);
     assert.equal(errorCodeOf(blocked.error), "runtime_transaction_busy");
-    assert.match((blocked.error as Error).message, /blocked by another writer/);
+    assert.match((blocked.error as Error).message, /blocked by another transaction/);
 
     // A retry inside the window refuses fast, and says how long it is refusing
     // for. The bound is the assertion: an unbounded or wall-clock deadline is the
@@ -634,14 +634,67 @@ test("the throttle is bounded by monotonic time, not by the wall clock", () => {
         assert.ok(backward > 0 && backward <= TRANSACTION_BUSY_BACKOFF_MS,
           `the default deadline must not be the wall clock: ${String(backward)}ms`);
         Date.now = () => realNow() + 3_600_000;
-        assert.match(String(captureError(() => withDatabaseTransaction(wall, () => 3)).error), /retry deferred/,
-          "a forward clock step must not end the throttle early");
+        const forward = deferredMsOf(captureError(() => withDatabaseTransaction(wall, () => 3)).error);
+        assert.ok(forward > 0 && forward <= TRANSACTION_BUSY_BACKOFF_MS,
+          `a forward clock step must not end the throttle early: ${String(forward)}ms`);
       } finally {
         Date.now = realNow;
       }
     } finally {
       wall.close();
     }
+  } finally {
+    holder.close();
+    probe.close();
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("a throttle armed by one clock cannot contaminate another, nor be cleared by it", () => {
+  // The injectable clock exists for tests, so the hazard it introduces has to be
+  // gated: the first version kept one deadline per connection and subtracted
+  // whichever clock the next call supplied. A valid monotonic clock that merely sat
+  // an hour ahead therefore throttled an unrelated production-shaped caller for an
+  // hour, and `() => NaN` let calls through with no deadline at all.
+  const { root, stateRoot } = engineProject("kxm-intake-txn-domains-");
+  const file = join(stateRoot, "domains-probe.db");
+  const holder = new KxmDatabaseSync(file);
+  const probe = new KxmDatabaseSync(file);
+  let fakeMs = 5_000;
+  const fakeClock = () => fakeMs;
+  const attemptWith = (clock: (() => number) | undefined, label: number) =>
+    String(captureError(() =>
+      clock === undefined
+        ? withDatabaseTransaction(probe, () => label)
+        : withDatabaseTransaction(probe, () => label, "IMMEDIATE", clock)).error);
+  try {
+    probe.exec("CREATE TABLE probe (id INTEGER PRIMARY KEY)");
+    holder.exec("BEGIN IMMEDIATE");
+    holder.exec("INSERT INTO probe (id) VALUES (1)");
+
+    assert.match(attemptWith(fakeClock, 1), /runtime_transaction_busy/, "the fake domain arms its own deadline");
+    // A caller with no clock at all must neither inherit nor clear that deadline.
+    const inherited = attemptWith(undefined, 2);
+    assert.match(inherited, /runtime_transaction_busy/);
+    assert.match(inherited, /blocked by another transaction/, "the default domain must reach BEGIN, not a borrowed refusal");
+    assert.match(attemptWith(fakeClock, 3), /retry deferred/, "and the foreign deadline must still be intact afterwards");
+
+    // The default domain armed its own on attempt 2, so a second default call is
+    // refused inside a bounded window.
+    const deferred = deferredMsOf(captureError(() => withDatabaseTransaction(probe, () => 4)).error);
+    assert.ok(deferred > 0 && deferred <= TRANSACTION_BUSY_BACKOFF_MS,
+      `the default window is bounded: ${String(deferred)}ms`);
+
+    // A clock that cannot produce a number fails closed instead of meaning "no
+    // deadline", and cannot unlock the domain that is genuinely throttled.
+    assert.match(attemptWith(() => Number.NaN, 5), /runtime_transaction_clock_invalid/);
+    assert.match(attemptWith(undefined, 6), /retry deferred/, "an unusable clock must not clear another domain's throttle");
+
+    // Expiry is per domain too: stepping the fake clock cannot release the default
+    // caller that is still inside its own window.
+    fakeMs += TRANSACTION_BUSY_BACKOFF_MS + 1;
+    assert.match(attemptWith(undefined, 7), /retry deferred/);
+    assert.doesNotMatch(attemptWith(fakeClock, 8), /retry deferred/);
   } finally {
     holder.close();
     probe.close();
@@ -706,6 +759,38 @@ test("a BEGIN failure that is not contention is neither relabelled nor throttled
   } finally {
     database.close();
   }
+});
+
+test("contention is decided by SQLite's result code, not by whoever quoted a message", () => {
+  // Real Node SQLite errors carry `errcode`; the primary code is `code & 0xff`, so
+  // the extended forms land on their primaries. Message text is the fallback for a
+  // runtime that gives no code, and it must not fire on an error that has one.
+  const sqliteError = (errcode: number, errstr: string) =>
+    Object.assign(new Error(errstr), { code: "ERR_SQLITE_ERROR", errcode, errstr });
+
+  assert.equal(isTransactionContention(sqliteError(5, "database is locked")), true, "SQLITE_BUSY");
+  assert.equal(isTransactionContention(sqliteError(261, "database is locked (recovery)")), true, "SQLITE_BUSY_RECOVERY");
+  assert.equal(isTransactionContention(sqliteError(517, "database is locked (snapshot)")), true, "SQLITE_BUSY_SNAPSHOT");
+  assert.equal(isTransactionContention(sqliteError(6, "database table is locked")), true, "SQLITE_LOCKED");
+  assert.equal(isTransactionContention(sqliteError(262, "database schema is locked: main")), true, "SQLITE_LOCKED_SHAREDCACHE");
+  assert.equal(isTransactionContention(sqliteError(15, "locking protocol")), true, "SQLITE_PROTOCOL is a retry condition under WAL");
+
+  assert.equal(isTransactionContention(sqliteError(13, "database or disk is full")), false, "SQLITE_FULL is not contention");
+  assert.equal(isTransactionContention(sqliteError(14, "unable to open database file")), false, "SQLITE_CANTOPEN is not contention");
+  assert.equal(isTransactionContention(sqliteError(8, "attempt to write a readonly database")), false, "SQLITE_READONLY is not contention");
+  assert.equal(isTransactionContention(sqliteError(1, "no such table: coordinators")), false);
+  // The false positive that message-only matching cannot avoid: a permanent error
+  // whose text merely quotes an older busy one.
+  assert.equal(isTransactionContention(sqliteError(1, "wrapped: 'database is locked' was the underlying cause")), false);
+
+  // No numeric code at all (another runtime, or a plain Error): text decides.
+  assert.equal(isTransactionContention(new Error("database is locked")), true);
+  assert.equal(isTransactionContention(new Error("database table is locked: coordinators")), true);
+  assert.equal(isTransactionContention(new Error("locking protocol")), true);
+  assert.equal(isTransactionContention(new Error("nested transactions are not allowed")), false);
+  assert.equal(isTransactionContention(new Error("something mentioned database is locked in passing")), false,
+    "anchored matching only: quoting a busy message inside other text is not evidence");
+  assert.equal(isTransactionContention(undefined), false);
 });
 
 test("a transaction that fails at COMMIT still leaves the connection usable", () => {

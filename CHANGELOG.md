@@ -67,14 +67,20 @@ All notable user-facing changes are documented here. The project follows [Semant
   `BEGIN` that gave up on a busy writer left every later transaction failing with a
   misleading "nested transactions are not allowed". The marker is now claimed only
   after a successful `BEGIN`, genuine lock contention surfaces as
-  `runtime_transaction_busy`, and any other `BEGIN` failure keeps its own error
-  instead of looking retryable. A contended connection then refuses further
-  write-mode `BEGIN`s for one monotonic second (`TRANSACTION_BUSY_BACKOFF_MS`), so
-  retries **inside that window** fail fast rather than paying the 5-second busy
-  timeout once per attempt; a retry after the window can pay it again. The window is
-  measured with `process.hrtime`, so a system clock change can neither extend it nor
-  end it early, and it is per connection — another connection to the same database
-  is not held back.
+  `runtime_transaction_busy` — decided by SQLite's **numeric result code** where one
+  exists (`SQLITE_BUSY`, `SQLITE_LOCKED` and their extended forms, plus
+  `SQLITE_PROTOCOL`), falling back to anchored message text only when an error carries
+  no code — and any other `BEGIN` failure keeps its own error instead of looking
+  retryable. A contended connection then refuses further write-mode `BEGIN`s for one
+  second (`TRANSACTION_BUSY_BACKOFF_MS`), so retries **inside that window** fail fast
+  rather than paying the 5-second busy timeout once per attempt; a retry after the
+  window can pay it again. The window is measured with `process.hrtime` and belongs to
+  the clock that armed it, so neither a system clock change nor an injected test clock
+  can extend, shorten or clear another caller's throttle, and a clock that returns a
+  non-finite number fails closed (`runtime_transaction_clock_invalid`). `DEFERRED`
+  transactions are exempt: they take no write lock. The throttle is per connection
+  object in this process — it is not cross-process, and it does not leak to another
+  connection to the same database.
 
 ## 0.7.0 - 2026-09-11
 

@@ -496,6 +496,37 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   watching the matching test go red: page cap restored, default clock switched to
   `Date.now()`, contention classification removed, clear-on-write-success made
   unconditional, and `ceilingsMatch` reverted on each read-back separately.
+  **Fourth pass: STILL BLOCKED once more, on one point — and the point was that my
+  round-3 fix reintroduced round-3's defect one layer up.** The throttle kept **one
+  absolute deadline per connection** and subtracted whichever clock the next call
+  supplied, so a valid injected clock sitting an hour ahead throttled a
+  default-clock caller for an hour, and `() => Number.NaN` reached `BEGIN` with no
+  deadline at all. Throttle state is now keyed by connection **and** clock — a
+  deadline can only be read, expired or replaced by the clock that armed it — and a
+  non-finite reading throws `runtime_transaction_clock_invalid` instead of silently
+  meaning "no throttle". That is the shape the injectable seam needed before it could
+  stay. The same pass settled the classification question properly: contention is
+  decided by SQLite's **numeric result code** (`code & 0xff` over 5 / 6 / 15, so
+  `SQLITE_BUSY_RECOVERY`, `SQLITE_BUSY_SNAPSHOT` and `SQLITE_LOCKED_SHAREDCACHE` land
+  on their primaries), with anchored message text used **only** when no code is
+  present, because a wrapper that merely quotes "database is locked" is not evidence.
+  `SQLITE_PROTOCOL` counts as contention **by decision** — SQLite raises it after
+  exhausting WAL transaction-start retries — and `SQLITE_FULL`, `SQLITE_CANTOPEN` and
+  read-only writes do not. Accepting the raw rethrow changes an error *shape*, not an
+  outcome: a non-contention `BEGIN` failure reaches the supervisor as a plain `Error`
+  (500 / `runtime_internal` rather than 400 with a code) and the CLI's existing
+  `run_io_failed` fallback, which is the point — a permanent failure must not wear a
+  retryable label. Two claims from my own round-3 text were also wrong and are
+  corrected here: the forced-write coverage is one lost **insert** and one lost
+  **rebind** (not "the current-format winner and the legacy-hash winner"), and
+  `replaceCoordinatorInSlot` installs the winner through the real method first so the
+  end state is the raced one rather than a fabricated boolean. Tests 20 → **22**,
+  mutation-checked again: ignoring clock identity, dropping the finite-clock guard and
+  dropping code-based classification each turn exactly one test red. What the fourth
+  pass *confirmed* instead of changing: no disagreement-driven loop in the drain (the
+  store rejects a divergent row before returning the page, proven with a corrupted
+  state/record pair and `intake_record_divergent`), and both forced-write fixtures
+  survive being run through the real SQL.
 
 - **Run-duration budgets are testable without racing the machine (2026-09-17):**
   the still-open note filed in #245 is fixed. `test/core/engine.test.ts`'s
@@ -1376,6 +1407,19 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   pre-condition, not a correctness hole. Bounding it must not move batches outside
   the transaction, which would reopen the pause race; design the bound together with
   the durable sequence in item 8.
+  (10) **Contention mapping proven live:** the code → meaning mapping in
+  `isTransactionContention` is taken from the documented SQLite result codes and the
+  predicate is unit-tested against them, but no real `SQLITE_PROTOCOL`, shared-cache
+  `SQLITE_LOCKED` or `SQLITE_BUSY_RECOVERY` has been observed on this stack — this
+  repository opens one writer per database, so those paths do not arise in normal
+  operation. Trigger: the first multi-process hub writer, or a Node/SQLite version
+  bump that changes `node:sqlite` error fields. Related and still unfixed: a failed
+  `ROLLBACK` is swallowed, and clearing the in-transaction marker does not prove
+  SQLite left the transaction, so a handle whose rollback failed is not invalidated
+  anywhere; a `MonotonicClock` argument on a public helper is also a seam a future
+  test could misuse to sit outside the throttle — it cannot win a contested write
+  lock, and the domain keying keeps it from contaminating another caller, but it is
+  not a capability boundary.
 
 - **Unified capability delivery (M0–M9; proposed, consolidated 2026-09-14):**
   [The unified plan](plan-unified-kxm-milestones.md) owns proposed scope,

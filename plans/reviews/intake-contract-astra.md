@@ -175,7 +175,7 @@ had been overstated, which is the point of asking the same critic twice.
 | Finding | Severity | What was actually wrong | Then |
 |---|---|---|---|
 | 1. The backoff could deny transactions for hours | MED | The deadline was `Date.now() + 1000`. A clock step backwards kept a long-gone write lock refusing transactions until wall time caught up; a step forward ended the throttle early. The check also ran before the mode was considered, so a `DEFERRED` transaction — which takes no write lock — was refused for another caller's contention | Monotonic deadline from `process.hrtime.bigint()`, injectable so a test can step it instead of sleeping through it. The test steps `Date.now` by ±1 h against the **default** clock and requires the refusal to stay inside the window both ways; `DEFERRED` is exempt from the throttle, and a `DEFERRED` success does not clear one. Verified to fail when the default clock becomes `Date.now()` again, and when either mode rule is removed |
-| 2. Every `BEGIN` error was classified as contention | MED | The catch installed the backoff and threw `runtime_transaction_busy` for anything, including `cannot start a transaction within a transaction` and a closed connection — turning a programming bug into a retryable-looking condition and discarding the original error | `isTransactionContention()` gates it: only `SQLITE_BUSY`/`SQLITE_LOCKED`/`database is locked`/`database table is locked` get wrapped and throttled; anything else is rethrown unchanged. Test proves both halves, including that no backoff is installed for a non-contention failure |
+| 2. Every `BEGIN` error was classified as contention | MED | The catch installed the backoff and threw `runtime_transaction_busy` for anything, including `cannot start a transaction within a transaction` and a closed connection — turning a programming bug into a retryable-looking condition and discarding the original error | `isTransactionContention()` gates it. It decides on SQLite's **numeric result code** where one exists (`code & 0xff` in `SQLITE_BUSY` 5, `SQLITE_LOCKED` 6, `SQLITE_PROTOCOL` 15 — so `SQLITE_BUSY_RECOVERY`, `SQLITE_BUSY_SNAPSHOT` and `SQLITE_LOCKED_SHAREDCACHE` land on their primaries), and falls back to anchored message text only when there is no code, because a wrapper that merely quotes "database is locked" is not evidence of contention. `SQLITE_FULL`, `SQLITE_CANTOPEN` and read-only writes are not contention and rethrow unchanged |
 | 3. Legacy equivalence held on the initial lookup but not on the race read-back | MED | `bindKxmCoordinator` recomputed the fingerprint over the stored authority; `persistCoordinator` and the rebind read-back compared persisted hashes only, so the same legacy row was idempotent on one path and `coordinator_write_lost` on the other | One `ceilingsMatch(stored, ceilingHash)` used by all three paths. New test forces a losing insert against a legacy-hash winner and expects the winner, not a conflict |
 | 4. Drain completeness was fixed, but resume cost is unbounded | CONCERN | One `IMMEDIATE` transaction parses, validates, rewrites and **retains** every held row. Measured here: 150k rows of 64-byte payloads = 4.54 s synchronous and ~95 MiB heap; 500k maximum-size payloads ≈ 7.6 GiB retained. The write lock makes it finite, so this is throughput and memory, not correctness | Kept as-is deliberately, and recorded as an M2 pre-condition with these numbers ("Still open" item 9). The loop's cost is now named in the code where it is paid |
 | 5. The record still overstated what its tests prove | LOW | Round 2's table claimed the new test proved both legacy equivalence **and** the create-race flag; it proved neither — it inserted the row before binding, so it exercised the initial lookup, and it never lost an insert | Corrected below, and the forced losing-insert test now exists |
@@ -186,9 +186,9 @@ had been overstated, which is the point of asking the same critic twice.
 |---|---|---|
 | "drains more held intent than one page" | passed with the old 1,000-page cap restored; it crossed one page, not the cap | 1,002 held rows with a forced one-row page: 1,003 pages, and the assertion is that nothing is left held. Verified to fail when the page cap is put back |
 | "a stall rolls the resume back" | not tested at all | forced `updateIntakeDispatch` refusal: expects `intake_drain_stalled`, then asserts the project is **still paused** and the row is still held, then that a real resume drains it |
-| `created: false` on the race path | the sequential assertions never lose an insert, so they passed with the fix reverted | forced losing insert, twice: current-format winner and legacy-hash winner |
+| `created: false` on the race path | the sequential assertions never lose an insert, so they passed with the fix reverted | Two forced losing writes against a legacy-fingerprint winner: one lost **insert** (`insertCoordinatorIfAbsent`) and one lost **rebind replace** (`replaceCoordinatorInSlot`, which installs the winner through the real method first, so the end state is the raced one and only the boolean is the loss). Deleting either fixture patch flips `created` to `true` |
 | ceiling normalisation | the reordered-ceiling test passed with normalisation removed from `kxmCeilingHash`, because binding already normalises its inputs | `kxmCeilingHash` is now compared directly over reordered, repeated and genuinely different sets, plus the binder's own refusal of repeated members |
-| busy/backoff | the old test waited out its own deadline, so it passed whether or not a successful `BEGIN` cleared the backoff; and it never tried a non-contention error, another connection, or a failed `COMMIT` | Four tests now: the real contention path (pays the timeout once, refuses fast inside the window, recovers), the deadline's clock (stepped, both directions, on the default clock), mode scoping (`DEFERRED` runs and does not clear), and classification plus recovery after a failed `COMMIT`. Each was mutation-checked against the fix it claims |
+| busy/backoff | the old test waited out its own deadline, so it passed whether or not a successful `BEGIN` cleared the backoff; and it never tried a non-contention error, another connection, or a failed `COMMIT` | Five tests now: the real contention path (pays the timeout once, refuses fast inside the window, recovers), the deadline's clock (stepped in both directions on the default clock, with a numeric bound each way), clock-domain isolation, mode scoping (`DEFERRED` runs and does not clear), and classification plus recovery after a failed `COMMIT`. Each was mutation-checked against the fix it claims |
 | "one admitted task" | admitted one `runId` record; no task exists at this layer | renamed to "one admission record", with the M2 consumer named as the thing that would create a task |
 | "reordering or repeating" | only reordering was tested | repeats are tested, against the fingerprint and against the binder's refusal |
 
@@ -209,6 +209,38 @@ had been overstated, which is the point of asking the same critic twice.
   backoff on any successful `BEGIN` also let a `DEFERRED` read clear a throttle
   armed by write contention. That is now mode-scoped, which is also what makes the
   assertion distinguishable.
+
+## Fourth pass — the critic reviewed the closure of the third pass
+
+Verdict: **STILL BLOCKED**, on one point, and it was right: my fix for round 3's
+clock finding reintroduced the same class of defect one layer up.
+
+| Finding | Sev | What was wrong | Disposition |
+|---|---|---|---|
+| 2. Deadlines shared a connection key but not a clock domain | MED | The injectable `clock` stored an absolute number in a per-connection slot and the next call subtracted **whichever** clock it was given. A valid monotonic clock an hour ahead therefore throttled a default-clock caller for an hour (`retry deferred 3601000ms`), and `() => NaN` reached `BEGIN` with no deadline at all. The seam the critic had itself asked for was the hazard | **Fixed**: throttle state is keyed by connection **and** clock, so a deadline can only be read, expired or replaced by the clock that armed it; a non-finite reading throws `runtime_transaction_clock_invalid` instead of meaning "no deadline". Two tests: one steps each domain and asserts neither borrows the other's refusal nor clears it; the other proves a bad clock fails closed and leaves the good domain throttled |
+| 3. Classification predicate | CONCERN | Message-only matching had no stability guarantee, missed `SQLITE_LOCKED_SHAREDCACHE` (`database schema is locked: main`, errcode 262) and `SQLITE_BUSY_RECOVERY`, and said "contention" for any wrapper that quoted a busy message | **Fixed by result code**, as above. The explicit `SQLITE_PROTOCOL` decision the critic asked for: **counted as contention**, because SQLite raises it after exhausting retries to start a WAL transaction. Verifying those codes against a *live* `SQLITE_PROTOCOL`/shared-cache condition stays a follow-up (Still open item 10) — the predicate is proven here, the mapping is proven against the documented codes |
+| 4. Raw non-contention errors change output shape | CONCERN | A `BEGIN` failure that is not contention now reaches `runtime-supervisor.ts` as a plain `Error` → 500/`runtime_internal` instead of 400 with a code; `cli/project.ts` falls back to `run_io_failed` | **Accepted as correct.** A permanent failure must not be reported as a retryable busy condition; `engine.ts` guards `.issues` and reports `retryable: false`, and `hub.ts` already maps both shapes to `internal_error`. No caller dereferences `.issues` blindly. Recorded so the next reader of this contract knows the mapping changed on purpose |
+| 5. Rebind read-back policy | CONCERN | Returning the winner with `created: false` is honest about *creation* but says nothing about whether this caller's approval and reason were persisted; the comment said "same policy" | **Fixed the wording** to "same ceiling". The distinction is recorded rather than patched: `created` reports whether this call inserted a row, never whether an approval was recorded — immutable rebind history is deferred item 1 (schema v6). The critic re-ran both race fixtures through the real losing SQL and they held |
+| 8. Claims still exceeded evidence | LOW | "forced losing insert, twice" (it is one insert and one rebind), "Four tests now" (five), "the store treats the handle as suspect" (no such behaviour exists), and a forward-step assertion that only matched text while the Tracking said it bounded the window | All four corrected, in the code comment, in this record, in Tracking — and the forward assertion now bounds numerically, so the claim is the weaker of the two |
+
+## What the fourth pass confirmed rather than changed
+
+- **No disagreement-driven loop in the drain.** It corrupted the dispatch-column vs
+  record relationship in memory, called resume, and got `intake_record_divergent`
+  with the project still paused: the store rejects the divergent row *before*
+  returning the page, so a stale row cannot spin the loop.
+- **The two forced-write fixtures are not self-fulfilling.** It replaced the
+  hardcoded `false` returns with the real attempted insert/update after installing
+  the winner; both tests still passed, and deleting the patches flips `created` to
+  `true`.
+- **Bounded resume, immutable history, record digests, durable arrival sequence and
+  two-process barriers** stay deferred to the schema-v6 / M2 slices, as accepted in
+  round 3.
+- Its own limit, stated rather than discovered later: 18 of the 20 intake tests could
+  not run in the read-only sandbox (temp-dir writes returned `EPERM`), so it re-ran
+  14 test bodies with the fixture construction replaced in memory. That covers the
+  policy logic, not the store constructors, migrations or restart persistence —
+  which is what `npm run verify` and the container smoke on the PR are for.
 
 ## Reproducing these reviews
 

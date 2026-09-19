@@ -207,8 +207,8 @@ export function bindKxmCoordinator(
       record: kxmCanonicalJson(record as unknown as JsonValue),
     });
     if (!replaced) {
-      // Another process got the same policy through. Return its identity when it
-      // reached the ceiling we asked for; anything else is a real conflict.
+      // Another process reached the same ceiling first. Return its identity when it
+      // is the ceiling we asked for; anything else is a real conflict.
       const winner = context.eventStore.coordinatorInSlot(context.projectId, role, channel);
       const record2 = winner ? (JSON.parse(winner.record) as KxmCoordinatorRecord) : undefined;
       if (record2 && ceilingsMatch(record2, ceilingHash)) {
