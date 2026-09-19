@@ -97,3 +97,44 @@ verify:
 # the PR gate
 check-generated:
     npm run check:generated
+
+# ── assignment runner ───────────────────────────────────────────────────────
+# The normal dev entry: a closed kxm.assignment.v1 manifest plus the current
+# plan. These recipes mint assignment, witness and acceptance proof; the
+# impl/plan/review-* recipes above are transport only and never do. Every path
+# is absolute — the runner refuses a relative one, so no quoting is needed.
+
+# dispatch a bound assignment: just assign /abs/manifest.json
+assign MANIFEST:
+    @node scripts/assignment-run.mjs run --manifest "$1"
+
+# run the fixed verification witness for an existing assignment: just witness /abs/record-dir
+witness RECORD:
+    @node scripts/assignment-run.mjs witness --record-dir "$1"
+
+# stamp or advance the current-plan pointer with a generation check
+plan-current TASK PLAN SHA COMMIT GENERATION:
+    @node scripts/assignment-run.mjs plan-current --task-dir "$1" --plan "$2" --sha256 "$3" --base-commit "$4" --expected-generation "$5"
+
+# attach a private attribution note (never proof): just attribute /abs/task /abs/record <class> /abs/note.txt
+attribute TASK RECORD CLASS EXPLANATION:
+    @node scripts/assignment-run.mjs attribute --task-dir "$1" --record-dir "$2" --class "$3" --explanation-file "$4"
+
+# import one historical cost observation as cost-only, no native proof
+observe-cost TASK INPUT:
+    @node scripts/assignment-run.mjs observe-cost --task-dir "$1" --input "$2"
+
+# bind an exact witnessed commit with both critic PASS records
+accept TASK COMMIT WRITER ARCH CLI:
+    @node scripts/assignment-run.mjs accept --task-dir "$1" --commit "$2" --record-dir "$3" --critic "$4" --critic "$5"
+
+# report attempts, rework, costs and retained verification history
+change-report TASK:
+    @node scripts/assignment-run.mjs change-report --task-dir "$1"
+
+# ── release hygiene ─────────────────────────────────────────────────────────
+# Clean-container install smoke of the packed tarball: fresh pi + fresh hub +
+# first-run flow. Needs a running docker daemon, a pass-cli session, and the
+# local pi models store; secrets stay inside a mode-600 temp env file.
+docker-install-smoke:
+    @node scripts/docker-install-smoke.mjs

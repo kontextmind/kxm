@@ -1420,7 +1420,7 @@ test("justfile no longer ships an impl-pi Grok fallback", () => {
   assert.doesNotMatch(just, /xai\/grok-4\.6/);
 });
 
-test("just transport recipes use evidence-informed effort defaults without retired assignment transport", () => {
+test("just transport recipes use evidence-informed effort defaults and never mint assignment proof", () => {
   const just = readFileSync(resolve("justfile"), "utf8");
   assert.match(just, /role:"writer",harness:"grok",model:"grok-4\.6",effort:"medium"/);
   assert.match(just, /role:"planner",harness:"claude",model:"fable",effort:"medium"/);
@@ -1428,7 +1428,97 @@ test("just transport recipes use evidence-informed effort defaults without retir
   assert.match(just, /role:"reviewer-cli",harness:"codex",model:"gpt-5\.6-sol",effort:"low"/);
   assert.doesNotMatch(just, /effort:"high"/);
   assert.doesNotMatch(just, /Normal assignment workflow/);
-  assert.doesNotMatch(just, /assignment-run\.mjs/);
+  // The boundary is per-recipe, not file-wide: `impl|plan|review-*` are harness
+  // transport and must never reach the runner that mints assignment, witness or
+  // acceptance proof. The assignment recipes themselves live in their own
+  // section and are covered by the documented-recipe parity gate below.
+  for (const name of ["impl", "impl-bg", "plan", "review-arch", "review-cli", "dispatch"]) {
+    assert.doesNotMatch(
+      recipeLines(name).join("\n"),
+      /assignment-run\.mjs/,
+      `transport recipe ${name} must not mint assignment proof`,
+    );
+  }
+});
+
+const DOCUMENTED_RECIPE_SOURCES = [
+  "AGENTS.md",
+  ".claude/harness-cli.md",
+  "docs/assignment-runner.md",
+  "docs/contracts/routing.md",
+  "docs/troubleshooting.md",
+  "docs/workflow-guide.md",
+  "plans/implementation-plan.md",
+  "CHANGELOG.md",
+];
+
+function justfileRecipeNames(): Set<string> {
+  const names = new Set<string>();
+  for (const line of readFileSync(resolve("justfile"), "utf8").split("\n")) {
+    const match = line.match(/^([a-z][a-z0-9-]*(?:\s+[^\n]+)?)\s*:\s*$/);
+    if (match?.[1]) names.add(match[1].split(/\s+/)[0] ?? "");
+  }
+  return names;
+}
+
+/** `verb` -> the documents that tell an operator to run `just verb`. */
+function documentedJustVerbs(): Map<string, string[]> {
+  const found = new Map<string, Set<string>>();
+  const add = (verb: string, doc: string): void => {
+    if (!found.has(verb)) found.set(verb, new Set<string>());
+    found.get(verb)?.add(doc);
+  };
+  for (const doc of DOCUMENTED_RECIPE_SOURCES) {
+    const text = readFileSync(resolve(doc), "utf8");
+    // Inline code: `just assign`, `just impl|plan|...`.
+    for (const match of text.matchAll(/`just ([a-z][a-z0-9-]*)/g)) add(match[1] ?? "", doc);
+    // Fenced command blocks, including the commented "under the hood" form.
+    const blocks = text.split("```");
+    for (let i = 1; i < blocks.length; i += 2) {
+      for (const line of (blocks[i] ?? "").split("\n")) {
+        const match = line.match(/^\s*(?:#\s*)?just ([a-z][a-z0-9-]*)/);
+        if (match?.[1]) add(match[1], doc);
+      }
+    }
+  }
+  return new Map([...found].map(([verb, docs]) => [verb, [...docs].sort()]));
+}
+
+test("every documented just recipe exists in the justfile", () => {
+  const recipes = justfileRecipeNames();
+  const missing: string[] = [];
+  for (const [verb, docs] of documentedJustVerbs()) {
+    if (!recipes.has(verb)) missing.push(`just ${verb} <- ${docs.join(", ")}`);
+  }
+  // Docs that name a recipe the justfile does not ship are a broken entry point,
+  // not a style nit: the assignment runner is the normal dev path.
+  assert.deepEqual(missing, [], `undocumented just recipes:\n${missing.join("\n")}`);
+});
+
+test("assignment runner recipes forward the runner subcommands the docs name", () => {
+  const expected: Record<string, string> = {
+    assign: 'run --manifest "$1"',
+    witness: 'witness --record-dir "$1"',
+    "plan-current": 'plan-current --task-dir "$1" --plan "$2" --sha256 "$3" --base-commit "$4" --expected-generation "$5"',
+    attribute: 'attribute --task-dir "$1" --record-dir "$2" --class "$3" --explanation-file "$4"',
+    "observe-cost": 'observe-cost --task-dir "$1" --input "$2"',
+    accept: 'accept --task-dir "$1" --commit "$2" --record-dir "$3" --critic "$4" --critic "$5"',
+    "change-report": 'change-report --task-dir "$1"',
+  };
+  for (const [recipe, invocation] of Object.entries(expected)) {
+    const body = recipeLines(recipe).join("\n").trim();
+    assert.equal(body, `@node scripts/assignment-run.mjs ${invocation}`.replace(/^@/, ""), `just ${recipe} drifted from the runner CLI`);
+  }
+});
+
+test("the container install smoke names a recipe that exists", () => {
+  const script = readFileSync(resolve("scripts/docker-install-smoke.mjs"), "utf8");
+  const match = script.match(/Usage: just ([a-z][a-z0-9-]*)/);
+  assert.ok(match?.[1], "the smoke script no longer documents a just recipe");
+  assert.ok(
+    justfileRecipeNames().has(match[1]),
+    `just ${match[1]} is documented by scripts/docker-install-smoke.mjs but not shipped`,
+  );
 });
 
 test("preflight requires routing fields, types, and Pi edit pair ceilings before spawn", async () => {

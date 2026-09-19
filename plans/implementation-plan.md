@@ -358,6 +358,34 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 ### Landed in this tree (unreleased)
 
+- **The documented `just` entry points existed only in the docs (2026-09-19):**
+  `just assign|witness|accept|attribute|observe-cost|change-report|plan-current`
+  are named as the normal developer entry by `AGENTS.md`, the Decided entry above,
+  `docs/assignment-runner.md`, `docs/contracts/routing.md`, `.claude/harness-cli.md`
+  and the CHANGELOG. None of them was in `justfile`: PR #179 deleted the recipes and
+  inverted the covering test into `doesNotMatch(just, /assignment-run\.mjs/)` with
+  no doc sweep and no Tracking decision recorded, so for eight days the documented
+  entry point was a broken command and the brake enforced the wrong shape. Restored
+  verbatim (same seven recipes, same argument order as `assignment-run.mjs`'s own
+  `CLI_USAGE`) plus `just docker-install-smoke`, which
+  `scripts/docker-install-smoke.mjs` had been advertising in its header.
+  **What is now actually gated:** the file-wide brake was the mistake, because the
+  real rule is per recipe — the transport recipes (`impl`, `impl-bg`, `plan`,
+  `review-arch`, `review-cli`, `dispatch`) must never reach `assignment-run.mjs`, so
+  they cannot mint assignment, witness or acceptance proof, while the assignment
+  recipes live in their own section and do nothing else. A parity test extracts every
+  `just <verb>` referenced in inline code and fenced blocks across those documents and
+  fails closed listing the documents that name a recipe the justfile does not ship
+  (verified by renaming `observe-cost` and watching it report five sources), one test
+  pins each recipe's flags against the runner CLI, and one proves the smoke script's
+  advertised recipe exists. `just assign relative/manifest.json` fails closed with
+  `manifest_invalid`, not a shell error: the runner requires absolute paths, so no
+  recipe interpolates a user string as shell source.
+  **Not done here:** `observe --record-dir` is a real `assignment-run.mjs` subcommand
+  with no documented recipe, so none was invented; the runner still has no
+  `--json`-shaped machine output for `accept`, and no gate proves the justfile and
+  `docs/contracts/routing.md` agree about *argument order*, only about the flags.
+
 - **Runtime intake contract: coordinator identity, idempotent ingress and the
   pause rule (unified plan M1 + M6, the durable half of M2; 2026-09-18):** the
   first slice of the proposed M0/M1/M6 product path, at the contract layer only.
