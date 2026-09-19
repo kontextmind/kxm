@@ -17662,7 +17662,8 @@ function finiteNow(clock, label) {
   return now;
 }
 var CONTENTION_PRIMARY_CODES = [5, 6, 15];
-var CONTENTION_SYMBOLIC_NAMES = /^SQLITE_(?:BUSY|LOCKED|PROTOCOL)(?:_[A-Z]+)?$/;
+var CONTENTION_SYMBOLIC_NAMES = /^SQLITE_(?:BUSY|LOCKED|PROTOCOL)(?:_[A-Z0-9]+)?$/;
+var SQLITE_RESULT_NAMES = /^SQLITE_[A-Z][A-Z0-9_]*$/;
 var CONTENTION_MESSAGES = /^(?:database is locked|database table is locked|locking protocol|SQLITE_BUSY|SQLITE_LOCKED|SQLITE_PROTOCOL)(?:$|[\s.:])/i;
 function isTransactionContention(error) {
   const carrier = error;
@@ -17670,7 +17671,9 @@ function isTransactionContention(error) {
     if (typeof value === "number" && Number.isInteger(value)) return CONTENTION_PRIMARY_CODES.includes(value & 255);
   }
   for (const value of [carrier?.code, carrier?.name]) {
-    if (typeof value === "string" && CONTENTION_SYMBOLIC_NAMES.test(value)) return true;
+    if (typeof value === "string" && SQLITE_RESULT_NAMES.test(value)) {
+      return CONTENTION_SYMBOLIC_NAMES.test(value);
+    }
   }
   return CONTENTION_MESSAGES.test(error instanceof Error ? error.message : String(error));
 }

@@ -529,20 +529,18 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   corrected here: the forced-write coverage is one lost **insert** and one lost
   **rebind** (not "the current-format winner and the legacy-hash winner"), and
   `replaceCoordinatorInSlot` installs the winner through the real method first so the
-  end state is the raced one rather than a fabricated boolean. Tests 20 → **22**, seven
+  end state is the raced one rather than a fabricated boolean. Tests 20 → **23**, eight
   of them transaction-focused, each mutation-checked: ignoring clock identity, dropping
   the finite-clock guard, dropping code-based classification, dropping `errno`, and
   letting message text override a number each turn exactly one test red. What is **not**
   gated: throttle-state retention. The inner map is weak in the clock, so a caller that
   builds a fresh closure per attempt cannot grow it — but that was demonstrated on an
   instrumented copy, not asserted here, and no production caller passes a clock.
-  What the fourth and fifth passes *confirmed* instead of changing, **by their own
-  executed probes rather than by committed tests**: no disagreement-driven loop in the
-  drain (a corrupted dispatch column against its record raises `intake_record_divergent`
-  with the project still paused — the committed tests cover divergent-row rejection on
-  direct read and resume rollback after a forced refusal, which is not the same
-  assertion), and both forced-write fixtures still pass when the canned `false` is
-  replaced by the real losing SQL.
+  What the fourth and fifth passes probed, which the sixth pass then **committed**
+  rather than left as reviewer evidence: a divergent row — index column flipped to
+  `held_paused` while its record says `ready` — raises `intake_record_divergent` during
+  resume with the project still paused afterwards, and both forced-write fixtures now
+  obtain their `false` from the real guarded SQL rather than from an authored return.
 
 - **Run-duration budgets are testable without racing the machine (2026-09-17):**
   the still-open note filed in #245 is fixed. `test/core/engine.test.ts`'s
@@ -1425,9 +1423,13 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   the durable sequence in item 8.
   (10) **Contention mapping, the part still unobserved:** `isTransactionContention`
   now reads Node's `errcode`, `bun:sqlite`'s `errno`, and a symbolic `SQLITE_*` name
-  before falling back to anchored text, and the shared-cache case has been reproduced
-  **live on Bun 1.3.14** (`errno: 262`, `code: "SQLITE_LOCKED_SHAREDCACHE"`, message
-  `"database schema is locked: shared"`). What has *not* been observed on this stack is
+  before falling back to anchored text, and a SQLite **result name** decides in both
+  directions now: `SQLITE_FULL` carrying a "database is locked" message is not
+  contention, which the sixth pass found was still true when only *contention* names
+  were recognised and permanent ones fell through to the text. The shared-cache case has
+  been reproduced **live on both runtimes** (Node `errcode: 262` / Bun `errno: 262`,
+  `code: "SQLITE_LOCKED_SHAREDCACHE"`) by two connections sharing one attached
+  database, with a schema change in between. What has *not* been observed on this stack is
   a real `SQLITE_PROTOCOL` or `SQLITE_BUSY_RECOVERY`: this repository opens one writer
   per database, so those paths do not arise in normal operation. Trigger: the first
   multi-process hub writer, or a Node/Bun/SQLite version bump that changes those error

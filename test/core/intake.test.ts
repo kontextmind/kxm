@@ -308,6 +308,51 @@ test("a drain that cannot progress rolls the whole resume back", () => {
   }
 });
 
+test("a held row whose state column contradicts its record fails resume closed", () => {
+  // The drain makes progress by moving state and record together, so a row whose
+  // columns disagree is the case that could look like endless progress. The store
+  // validates every row it selects, so the throw lands before the page is returned
+  // and the resume rolls its own control write back.
+  const { root, stateRoot, context } = intakeContext("kxm-intake-divergent-");
+  try {
+    const { coordinator } = bound(context);
+    // Accepted while unpaused, so the record legitimately says `ready`; the forged
+    // half is the index column, which is what puts the row in the drain's selection.
+    const stored = acceptKxmIntakeMessage(context, {
+      coordinatorId: coordinator.coordinatorId,
+      idempotencyKey: "job-divergent",
+      content: "state column lies",
+      source: { kind: "schedule", id: "cron" },
+    });
+    setKxmProjectPause(context, { paused: true, actor: OPERATOR, reason: "hold" });
+    const tamper = new DatabaseSync(context.eventStore.path);
+    try {
+      tamper.prepare("UPDATE intake_messages SET dispatch_state = 'held_paused' WHERE message_id = ?")
+        .run(stored.message.messageId);
+    } finally {
+      tamper.close();
+    }
+
+    assert.throws(
+      () => setKxmProjectPause(context, { paused: false, actor: OPERATOR }),
+      /intake_record_divergent/,
+      "a contradictory row must stop the drain, not spin it",
+    );
+    assert.equal(isKxmProjectPaused(context), true, "a failed resume must roll its own control write back");
+    const reader = new DatabaseSync(context.eventStore.path);
+    try {
+      const raw = reader.prepare("SELECT dispatch_state AS s FROM intake_messages WHERE message_id = ?")
+        .get(stored.message.messageId) as { s: string };
+      assert.equal(raw.s, "held_paused", "a failed resume must not rewrite a row it could not validate");
+    } finally {
+      reader.close();
+    }
+  } finally {
+    closeIntakeContext(context);
+    removeTempDir(root, stateRoot);
+  }
+});
+
 test("a tool ceiling may only narrow: preset changes, lifted denials and dropped policy are refusals", () => {
   const { root, stateRoot, context } = intakeContext("kxm-intake-tools-");
   try {
@@ -660,7 +705,9 @@ test("a throttle armed by one clock cannot contaminate another, nor be cleared b
   const file = join(stateRoot, "domains-probe.db");
   const holder = new KxmDatabaseSync(file);
   const probe = new KxmDatabaseSync(file);
-  let fakeMs = 5_000;
+  // An origin an hour away from the default clock, because that is the exact case
+  // round 4 found: a *valid* monotonic clock, simply in another domain.
+  let fakeMs = Number(process.hrtime.bigint() / 1_000_000n) + 3_600_000;
   const fakeClock = () => fakeMs;
   const attemptWith = (clock: (() => number) | undefined, label: number) =>
     String(captureError(() =>
@@ -679,6 +726,15 @@ test("a throttle armed by one clock cannot contaminate another, nor be cleared b
     assert.match(inherited, /blocked by another transaction/, "the default domain must reach BEGIN, not a borrowed refusal");
     assert.match(attemptWith(fakeClock, 3), /retry deferred/, "and the foreign deadline must still be intact afterwards");
 
+    // Two distinct functions that read the *same* numbers are still two domains,
+    // because the key is identity and not value: neither may borrow the other's
+    // deadline, and arming one does not arm the other.
+    const twinA = () => fakeMs;
+    const twinB = () => fakeMs;
+    assert.match(attemptWith(twinA, 31), /runtime_transaction_busy/, "twin A arms on its own contention");
+    assert.match(attemptWith(twinB, 32), /runtime_transaction_busy/, "twin B must arm its own, not inherit A's");
+    assert.match(attemptWith(twinA, 33), /retry deferred/, "twin A is inside its own window");
+
     // The default domain armed its own on attempt 2, so a second default call is
     // refused inside a bounded window.
     const deferred = deferredMsOf(captureError(() => withDatabaseTransaction(probe, () => 4)).error);
@@ -689,6 +745,14 @@ test("a throttle armed by one clock cannot contaminate another, nor be cleared b
     // deadline", and cannot unlock the domain that is genuinely throttled.
     assert.match(attemptWith(() => Number.NaN, 5), /runtime_transaction_clock_invalid/);
     assert.match(attemptWith(undefined, 6), /retry deferred/, "an unusable clock must not clear another domain's throttle");
+    // The guard runs where throttle state is read or armed. With no entry pending, a
+    // broken clock is simply never consulted — the scope the code comment claims.
+    const quiet = new KxmDatabaseSync(join(stateRoot, "quiet.db"));
+    try {
+      assert.equal(withDatabaseTransaction(quiet, () => "ran", "IMMEDIATE", () => Number.NaN), "ran");
+    } finally {
+      quiet.close();
+    }
 
     // Expiry is per domain too: stepping the fake clock cannot release the default
     // caller that is still inside its own window, and the released domain must
@@ -772,6 +836,9 @@ test("contention is decided by SQLite's result code, not by whoever quoted a mes
 
   assert.equal(isTransactionContention(sqliteError(5, "database is locked")), true, "SQLITE_BUSY");
   assert.equal(isTransactionContention(sqliteError(261, "database is locked (recovery)")), true, "SQLITE_BUSY_RECOVERY");
+  // 517 exercises the extended-to-primary arithmetic only. Its real meaning is
+  // upgrading an already-open read transaction, so this assertion is not evidence
+  // that a fresh `BEGIN IMMEDIATE` can produce it.
   assert.equal(isTransactionContention(sqliteError(517, "database is locked (snapshot)")), true, "SQLITE_BUSY_SNAPSHOT");
   assert.equal(isTransactionContention(sqliteError(6, "database table is locked")), true, "SQLITE_LOCKED");
   assert.equal(isTransactionContention(sqliteError(262, "database schema is locked: main")), true, "SQLITE_LOCKED_SHAREDCACHE");
@@ -802,6 +869,20 @@ test("contention is decided by SQLite's result code, not by whoever quoted a mes
     { code: "SQLITE_FULL", errno: 13 })), false, "a numeric code must not be argued out of by text");
   assert.equal(isTransactionContention(Object.assign(new Error("attempt to write a readonly database"),
     { code: "SQLITE_READONLY", errno: 8 })), false);
+
+  // A result **name** decides with or without a number: the round-6 probe found that
+  // a permanent symbolic name fell through to the text fallback, so `SQLITE_FULL`
+  // quoting "database is locked" was still called contention.
+  assert.equal(isTransactionContention(Object.assign(new Error("database is locked"),
+    { code: "SQLITE_FULL" })), false, "a symbolic permanent code must not lose to message text");
+  assert.equal(isTransactionContention(Object.assign(new Error("database is locked"),
+    { name: "SQLITE_CANTOPEN" })), false);
+  assert.equal(isTransactionContention(Object.assign(new Error("whatever the message says"),
+    { code: "SQLITE_PROTOCOL" })), true, "and a symbolic contention name does not need a number");
+  // Node's own error kind is not a SQLite result name, so it stays silent and the
+  // message gets its turn.
+  assert.equal(isTransactionContention(Object.assign(new Error("database is locked"),
+    { code: "ERR_SQLITE_ERROR" })), true);
 
   // No numeric or symbolic code at all (a plain Error): text decides.
   assert.equal(isTransactionContention(new Error("database is locked")), true);
@@ -871,11 +952,11 @@ test("a lost create race against a legacy-format coordinator stays idempotent", 
     let loser = false;
     context.eventStore.insertCoordinatorIfAbsent = (row) => {
       if (!loser) {
-        // This call "loses": the slot is taken by the legacy row written by the
-        // still-running 0.7.46 process.
+        // Install the winner the way a competing process would, then run **this**
+        // call's insert for real and hand back whatever SQLite says. The `false` is
+        // not authored here; `INSERT OR IGNORE` against a taken slot produces it.
         loser = true;
         realInsert(legacyRow);
-        return false;
       }
       return realInsert(row);
     };
@@ -944,12 +1025,11 @@ test("a lost rebind write against a legacy-format winner stays idempotent", () =
       "the fixture must really be a pre-normalisation fingerprint");
     try {
       store.replaceCoordinatorInSlot = (expectedId, row) => {
-        // Simulate losing the write: another process installs the legacy
-        // equivalent in this exact moment, so the slot ends up holding its row and
-        // our own update reports that it did not land. The end state is what a real
-        // race would produce; the `false` is the lost write.
+        // A competing process installs the legacy equivalent in this exact moment, so
+        // our own guarded update — run for real against a slot that no longer holds
+        // the row it expected — is what reports the loss.
         realReplace(expectedId, legacyRow);
-        return false;
+        return realReplace(expectedId, row);
       };
       const rebound = bindKxmCoordinator(context, {
         role: "rebound",

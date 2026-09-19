@@ -72,17 +72,19 @@ All notable user-facing changes are documented here. The project follows [Semant
   their primaries, so `SQLITE_BUSY_RECOVERY`, `SQLITE_BUSY_SNAPSHOT` and
   `SQLITE_LOCKED_SHAREDCACHE` all count), then a symbolic `SQLITE_BUSY*` /
   `SQLITE_LOCKED*` / `SQLITE_PROTOCOL*` name, with anchored message text used only
-  when an error carries neither — and a numeric code always wins over the text, so a
-  permanent error quoting "database is locked" is not mistaken for contention. Any
-  other `BEGIN` failure keeps its own error instead of looking retryable. A contended connection then refuses further write-mode `BEGIN`s for one
+  when an error carries neither. A code **or** a SQLite result name wins over the text
+  in both directions, so a permanent error — `SQLITE_FULL`, `SQLITE_CANTOPEN` — quoting
+  "database is locked" is not mistaken for contention, and `bun:sqlite`'s symbolic
+  `code` is read as the result name it is while Node's own `ERR_SQLITE_ERROR` is not.
+  Any other `BEGIN` failure keeps its own error instead of looking retryable. A contended connection then refuses further write-mode `BEGIN`s for one
   second (`TRANSACTION_BUSY_BACKOFF_MS`), so retries **inside that window** fail fast
   rather than paying the 5-second busy timeout once per attempt; a retry after the
   window can pay it again. The window is measured with `process.hrtime` and belongs to
   the clock that armed it, so neither a system clock change nor an injected test clock
   can extend, shorten or clear another caller's throttle, and a clock that returns a
   non-finite number is refused rather than trusted (`runtime_transaction_clock_invalid`)
-  wherever throttle state is read or armed — an uncontended transaction never
-  consults the clock, so this guards the seam, not every `BEGIN`. `DEFERRED`
+  wherever throttle state is read or armed — a transaction with no pending deadline
+  never consults the clock, so this guards the seam, not every `BEGIN`. `DEFERRED`
   transactions are exempt: they take no write lock. The throttle is per connection
   object in this process — it is not cross-process, and it does not leak to another
   connection to the same database.

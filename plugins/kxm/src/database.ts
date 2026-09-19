@@ -262,9 +262,12 @@ function monotonicNowMs(): number {
  * injected "one hour from now" throttles a production caller that never passed a
  * clock at all — and how that same caller could clear a deadline it never armed.
  * Each clock domain therefore gets its own deadline and can only read, expire or
- * replace its own. The inner map is **weak in the clock**, so a caller that builds a
- * fresh closure per attempt cannot grow this state: entries disappear with the clock
- * that made them, which is also why no size bound is needed.
+ * replace its own. The inner map is **weak in the clock**: it keeps no otherwise
+ * unreachable clock function alive, so an attempt that builds a fresh closure per
+ * call leaves nothing behind once that closure is collected. A clock that *is*
+ * retained keeps its entry until it expires or is replaced — collection is neither
+ * immediate nor size-bounded, and no committed test measures any of this, because no
+ * production caller passes a clock.
  */
 const transactionThrottles = new WeakMap<DatabaseSync, WeakMap<MonotonicClock, number>>();
 
@@ -272,11 +275,11 @@ const transactionThrottles = new WeakMap<DatabaseSync, WeakMap<MonotonicClock, n
  * A clock reading this helper can reason about.
  *
  * Scope, stated honestly: this validates the reading **when throttle state is read
- * or armed**. An uncontended transaction never consults the clock at all, so a
- * broken injected clock on a database with no contention runs its `work()`
- * untouched. Production cannot reach it — the default is `hrtime`, which is finite —
- * and it exists so the injectable seam cannot turn into a silent bypass of the
- * throttle.
+ * or armed**. A transaction that finds no throttle entry — an uncontended one on a
+ * connection with no pending deadline — never calls the clock at all, so a broken
+ * injected clock in that position runs its `work()` untouched. Production cannot
+ * reach the guard at all: the default is `hrtime`, which is finite. It exists so the
+ * injectable seam cannot become a silent bypass of the throttle.
  */
 function finiteNow(clock: MonotonicClock, label: string): number {
   const now = clock();
@@ -324,22 +327,31 @@ function finiteNow(clock: MonotonicClock, label: string): number {
 /** Node: `errcode`. Bun: `errno`. Both spell the extended code as a number. */
 const CONTENTION_PRIMARY_CODES: readonly number[] = [5, 6, 15];
 /** `bun:sqlite` puts the symbolic name in `code`; Node puts its own kind there. */
-const CONTENTION_SYMBOLIC_NAMES = /^SQLITE_(?:BUSY|LOCKED|PROTOCOL)(?:_[A-Z]+)?$/;
+const CONTENTION_SYMBOLIC_NAMES = /^SQLITE_(?:BUSY|LOCKED|PROTOCOL)(?:_[A-Z0-9]+)?$/;
+/** Any SQLite result name. If one is present it decides, so text cannot argue. */
+const SQLITE_RESULT_NAMES = /^SQLITE_[A-Z][A-Z0-9_]*$/;
 const CONTENTION_MESSAGES =
   /^(?:database is locked|database table is locked|locking protocol|SQLITE_BUSY|SQLITE_LOCKED|SQLITE_PROTOCOL)(?:$|[\s.:])/i;
 
 export function isTransactionContention(error: unknown): boolean {
   const carrier = error as { errcode?: unknown; errCode?: unknown; errno?: unknown; code?: unknown; name?: unknown }
     | undefined;
-  // A numeric code always wins, and wins **over the message**: `errno` is what
-  // `bun:sqlite` exposes for the extended result code, while its `code` field holds
-  // the symbolic name. Node spells the number `errcode` and keeps `code` for its own
-  // `ERR_SQLITE_ERROR`, which must never be read as a SQLite result code.
+  // A numeric code wins first, then a symbolic result name, and both win **over the
+  // message**: `errno` is what `bun:sqlite` exposes for the extended result code while
+  // its `code` field holds the symbolic name, and Node spells the number `errcode`.
+  // Text is consulted only when the error carries neither, so no wrapper quoting an
+  // older "database is locked" can outvote a code on either runtime.
   for (const value of [carrier?.errcode, carrier?.errCode, carrier?.errno]) {
     if (typeof value === "number" && Number.isInteger(value)) return CONTENTION_PRIMARY_CODES.includes(value & 0xff);
   }
   for (const value of [carrier?.code, carrier?.name]) {
-    if (typeof value === "string" && CONTENTION_SYMBOLIC_NAMES.test(value)) return true;
+    // A result **name** is as authoritative as a number, and in both directions:
+    // `SQLITE_FULL` wearing a "database is locked" message is not contention. Node
+    // spells its own error kind `ERR_SQLITE_ERROR`, which is deliberately not a
+    // SQLite result name and so never reaches a verdict here.
+    if (typeof value === "string" && SQLITE_RESULT_NAMES.test(value)) {
+      return CONTENTION_SYMBOLIC_NAMES.test(value);
+    }
   }
   return CONTENTION_MESSAGES.test(error instanceof Error ? error.message : String(error));
 }

@@ -10,7 +10,7 @@ created: "2026-09-18"
 updated: "2026-09-19"
 authority: "hypothesis"
 confidence: "uncertain"
-summary: "Five passes of an independent critic on the M1+M6 intake contract: BLOCK, then STILL BLOCKED four times — on the fix, on the closure of the fix, on the injectable seam that closure introduced, and on bun:sqlite's error shape. Every finding reproduced; each pass also corrected the previous pass's overstated claims. Critic opinion, not assignment, witness or acceptance proof."
+summary: "Six passes of an independent critic on the M1+M6 intake contract: BLOCK, then STILL BLOCKED four times — on the fix, on the closure of the fix, on the injectable seam that closure introduced, and on bun:sqlite's error shape — then CLOSED on the sixth pass. Every finding reproduced; each pass also corrected the previous pass's overstated claims. Critic opinion, not assignment, witness or acceptance proof."
 tags: ["review", "runtime", "intake", "harnesses"]
 related:
   - ../implementation-plan.md
@@ -24,10 +24,10 @@ details:
 
 # Codex gpt-6-astra review of the Runtime intake contract (#248)
 
-Five passes so far: **BLOCK** on the contract, **STILL BLOCKED** on the fix, **STILL
-BLOCKED** on the closure of that fix, **STILL BLOCKED** on the closure of *that* (the
-injectable seam my own round-3 fix introduced), and **STILL BLOCKED** on a runtime this
-repository also ships on. Each pass reviewed the previous pass's claims as well as the
+Six passes: **BLOCK** on the contract, **STILL BLOCKED** on the fix, **STILL BLOCKED** on
+the closure of that fix, **STILL BLOCKED** on the closure of *that* (the injectable seam
+my own round-3 fix introduced), **STILL BLOCKED** on a runtime this repository also ships
+on, and **CLOSED** on the closure of that. Each pass reviewed the previous pass's claims as well as the
 code, and each one was right; the tables below are ordered by round, and a later row
 supersedes an earlier **Fixed**.
 
@@ -177,7 +177,7 @@ had been overstated, which is the point of asking the same critic twice.
 | Finding | Severity | What was actually wrong | Then |
 |---|---|---|---|
 | 1. The backoff could deny transactions for hours | MED | The deadline was `Date.now() + 1000`. A clock step backwards kept a long-gone write lock refusing transactions until wall time caught up; a step forward ended the throttle early. The check also ran before the mode was considered, so a `DEFERRED` transaction — which takes no write lock — was refused for another caller's contention | Monotonic deadline from `process.hrtime.bigint()`, injectable so a test can step it instead of sleeping through it. The test steps `Date.now` by ±1 h against the **default** clock and requires the refusal to stay inside the window both ways; `DEFERRED` is exempt from the throttle, and a `DEFERRED` success does not clear one. Verified to fail when the default clock becomes `Date.now()` again, and when either mode rule is removed |
-| 2. Every `BEGIN` error was classified as contention | MED | The catch installed the backoff and threw `runtime_transaction_busy` for anything, including `cannot start a transaction within a transaction` and a closed connection — turning a programming bug into a retryable-looking condition and discarding the original error | `isTransactionContention()` gates it. It decides on SQLite's **numeric result code** where one exists (`code & 0xff` in `SQLITE_BUSY` 5, `SQLITE_LOCKED` 6, `SQLITE_PROTOCOL` 15 — so `SQLITE_BUSY_RECOVERY`, `SQLITE_BUSY_SNAPSHOT` and `SQLITE_LOCKED_SHAREDCACHE` land on their primaries), and falls back to anchored message text only when there is no code, because a wrapper that merely quotes "database is locked" is not evidence of contention. `SQLITE_FULL`, `SQLITE_CANTOPEN` and read-only writes are not contention and rethrow unchanged |
+| 2. Every `BEGIN` error was classified as contention | MED | The catch installed the backoff and threw `runtime_transaction_busy` for anything, including `cannot start a transaction within a transaction` and a closed connection — turning a programming bug into a retryable-looking condition and discarding the original error | `isTransactionContention()` gates it. It decides on SQLite's **numeric result code** where one exists (`code & 0xff` in `SQLITE_BUSY` 5, `SQLITE_LOCKED` 6, `SQLITE_PROTOCOL` 15 — so `SQLITE_BUSY_RECOVERY`, `SQLITE_BUSY_SNAPSHOT` and `SQLITE_LOCKED_SHAREDCACHE` land on their primaries), and falls back to anchored message text only when there is no numeric **or symbolic** result code, because a wrapper that merely quotes "database is locked" is not evidence of contention. `SQLITE_FULL`, `SQLITE_CANTOPEN` and read-only writes are not contention and rethrow unchanged |
 | 3. Legacy equivalence held on the initial lookup but not on the race read-back | MED | `bindKxmCoordinator` recomputed the fingerprint over the stored authority; `persistCoordinator` and the rebind read-back compared persisted hashes only, so the same legacy row was idempotent on one path and `coordinator_write_lost` on the other | One `ceilingsMatch(stored, ceilingHash)` used by all three paths. New test forces a losing insert against a legacy-hash winner and expects the winner, not a conflict |
 | 4. Drain completeness was fixed, but resume cost is unbounded | CONCERN | One `IMMEDIATE` transaction parses, validates, rewrites and **retains** every held row. Measured here: 150k rows of 64-byte payloads = 4.54 s synchronous and ~95 MiB heap; 500k maximum-size payloads ≈ 7.6 GiB retained. The write lock makes it finite, so this is throughput and memory, not correctness | Kept as-is deliberately, and recorded as an M2 pre-condition with these numbers ("Still open" item 9). The loop's cost is now named in the code where it is paid |
 | 5. The record still overstated what its tests prove | LOW | Round 2's table claimed the new test proved both legacy equivalence **and** the create-race flag; it proved neither — it inserted the row before binding, so it exercised the initial lookup, and it never lost an insert | Corrected below, and the forced losing-insert test now exists |
@@ -257,7 +257,7 @@ gave `errno: 262`, `code: "SQLITE_LOCKED_SHAREDCACHE"`, message
 | Finding | Sev | Disposition |
 |---|---|---|
 | Bun's numeric code ignored | MED, blocking | **Fixed.** `errcode` → `errCode` → `errno`, then a symbolic `SQLITE_BUSY*` / `SQLITE_LOCKED*` / `SQLITE_PROTOCOL*` name, then anchored text only when neither exists — and a numeric code wins over the text in **both** directions, so `errno: 13` (`SQLITE_FULL`) wearing a "database is locked" message is not contention. The classifier test carries the exact Bun-shaped triple, a symbolic-name-only case, and the contradiction. Mutation-checked: dropping `errno` and message-only classification each turn it red |
-| Retention grows per distinct clock identity | LOW, nonblocking | **Fixed as far as design goes**: the inner map is `WeakMap<MonotonicClock, number>`, so entries die with the clock that made them and a caller building a fresh closure per attempt cannot accumulate them. Stated rather than gated: the growth was shown on an instrumented copy, no committed assertion measures it, and no production caller passes a clock |
+| Retention grows per distinct clock identity | LOW, nonblocking | **Fixed as far as design goes**: the inner map is `WeakMap<MonotonicClock, number>`: it keeps no otherwise-unreachable clock function alive, so a caller building a fresh closure per attempt leaves nothing behind once that closure is collected. A *retained* clock retains its entry; collection is neither immediate nor size-bounded, and nothing measures GC here — what is asserted is that distinct closures with identical readings get independent deadlines. Stated rather than gated: the growth was shown on an instrumented copy, no committed assertion measures it, and no production caller passes a clock |
 | Invalid-clock scope overstated | LOW | **Claim narrowed** in the code comment, CHANGELOG and Tracking, as above |
 | Descriptions exceeding assertions | LOW | Fixed: domain coverage is **one** test (the record said two) and the transaction-focused count is **seven** (it said "four", then "five"); `doesNotMatch(/retry deferred/)` became `match(/blocked by another transaction/)` so a released domain must actually reach `BEGIN`; "keyed by connection and clock" is stated as *function identity*; and the fourth pass's drain and losing-write confirmations are now labelled **reviewer probes**, not committed integration coverage |
 | `SQLITE_PROTOCOL` and `SQLITE_LOCKED` decisions | CONCERN | **Accepted, with the critic's own boundary evidence**: a same-connection active reader made a *statement* fail with code 6 inside `work()`, which stayed untranslated and unthrottled because only the `BEGIN` catch classifies. That boundary is why including `LOCKED` is safe here |
@@ -267,6 +267,35 @@ ran under the read-only sandbox and 19 stopped at temp-directory creation, so th
 reviewer re-derived those bodies in memory and probed both runtimes directly. That is
 not verification of store constructors, migrations, restart persistence or the
 configured busy timeout — `npm run verify` and the container install smoke are.
+
+## Sixth pass — verdict: CLOSED
+
+Round 5's fix held on both runtimes, and the critic's strongest evidence was executed,
+not read: a genuine shared-cache `BEGIN` failure was reproduced on **Node 24.15.0**
+(`errcode: 262`, `code: "ERR_SQLITE_ERROR"`) and **Bun 1.3.14** (`errno: 262`,
+`code: "SQLITE_LOCKED_SHAREDCACHE"`) using two connections on one attached, shared-cache
+database with a schema change between them; both classified as contention, both armed the
+throttle, and a genuine `SQLITE_READONLY` (8) via `PRAGMA query_only=ON` stayed permanent
+and unthrottled on both. It also reproduced an active-reader `SQLITE_LOCKED` (6) raised
+by a *statement* inside `work()`, which correctly stayed untranslated.
+
+Four nonblocking corrections came out of it, all landed:
+
+| Point | What it found | Then |
+|---|---|---|
+| Q2 | A permanent **symbolic** name with no number fell through to the text fallback, so `SQLITE_FULL` quoting "database is locked" was still called contention — and the blanket claim in three documents was therefore too broad | A SQLite result *name* now decides in both directions, exactly as a number does; Node's `ERR_SQLITE_ERROR` is explicitly not a result name. Assertions added for symbolic-permanent, symbolic-contention-without-a-number, and the code/name precedence; mutation-checked against the old fall-through |
+| Q1 retention | "cannot accumulate entries" overstated a `WeakMap`: a retained clock keeps its entry, and collection is neither immediate nor size-bounded | Claim rewritten in code, CHANGELOG, Tracking and this record. What *is* now asserted is the behaviour that matters: two distinct closures with identical readings get independent deadlines |
+| Q1 scope | "an uncontended transaction never consults the clock" was wrong in the case where an entry was already pending — the preflight still reads the clock | Reworded to "a transaction with no pending deadline", and asserted directly: a `NaN` clock on a quiet connection runs `work()` untouched |
+| Q4/Q5 committed coverage | Several round-5 confirmations were reviewer probes, not tests: the divergent-row resume, and both forced-write fixtures returning an authored `false` | **Committed.** A forged index column (`held_paused` against a record that says `ready`) now has a test asserting `intake_record_divergent` with the project still paused and the row untouched; both race fixtures obtain their `false` from the real guarded SQL, so the boolean is SQLite's verdict rather than mine |
+| Q4 wording | "only when there is no code" survived in one round-3 row; the printed Bun reproduction was not runnable as written (`SQL` undefined, no shared-cache attachment) | Both fixed here — the runnable form is quoted above, and the count is now 23 intake tests, eight of them transaction-focused |
+
+What it declined to treat as blockers, and so what stays deferred: immutable coordinator
+history, record digests, populated migration coverage and a shared version constant,
+two-process barriers, read-side byte bounds, untrusted classification enforcement,
+transaction composition, the durable arrival sequence, bounded atomic resume, and the
+live witnesses for `SQLITE_PROTOCOL` / `SQLITE_BUSY_RECOVERY` — with failed-rollback
+handle invalidation and the public clock seam recorded as named limits, not solved
+problems.
 
 ## Reproducing these reviews
 
@@ -288,11 +317,18 @@ with `command not found: rtk` inside the sandbox before Codex fell back to direc
 The fourth and fifth passes ran measurements rather than only reading, including a
 Bun 1.3.14 reproduction of shared-cache contention to check the classifier's shape:
 
-```bash
-bun -e 'const a=new SQL.Database("/tmp/x.db"); const b=new SQL.Database("/tmp/x.db");
-  a.run("BEGIN IMMEDIATE"); try { b.run("BEGIN IMMEDIATE"); } catch (e)
-  { console.log(e.code, e.errno, e.message); }'
-# SQLITE_LOCKED_SHAREDCACHE 262 database schema is locked: main
+The runnable form is the one the sixth pass actually used — `bun:sqlite` with two
+connections on **one attached, shared-cache** database, and a schema change between
+them, because a plain second handle to a file does not produce it:
+
+```js
+// bun: a named shared-cache db, attached from two connections
+const a = new SQL("db:/kxm_shared?mode=rwc&cache=shared");
+const b = new SQL("db:/kxm_shared?cache=shared");
+a.run("BEGIN IMMEDIATE"); a.run("CREATE TABLE t (x)");
+try { b.run("BEGIN IMMEDIATE"); } catch (e) { console.log(e.code, e.errno, e.message); }
+// SQLITE_LOCKED_SHAREDCACHE 262 database schema is locked: main
+// node:sqlite on the same shape reports errcode: 262, code: "ERR_SQLITE_ERROR"
 ```
 
 The third pass also ran measurements rather than only reading: it reproduced the
