@@ -376,32 +376,36 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   stay absent, and the Decided entry above names them.
   **What is gated now:**
   - *Per recipe, not per file; normalized text plus the interpreter's own parse.* The
-    file-wide brake in #179 was the wrong shape: the real rule is that transport recipes
-    must not mint assignment, witness or acceptance proof. Four review rounds then showed
-    that rule escaping a text gate seven different ways — `just  assign`,
-    `just -- assign`, a `\` continuation, repointing `run :=`,
-    `set allow-duplicate-variables` with a second binding, a duplicate `verify: # comment`
-    header, `EXTRA:` / `extra_recipe:` names a lowercase-hyphen parser never saw,
-    an `alias` pointing at a proof recipe, a continued `mod`, and four spellings that hid
-    a verb or a path from a `just <verb>` pattern — options between the word and the verb,
-    a nested `--command` shell line, a verb built from two variables at runtime, and a
-    script path split by string concatenation. The mutations live in the test file's
-    comments, because writing them in command form in this document would make the parity
-    scanner ask for recipes named after shells. What closes them is not a bigger regex:
-    the file is
-    **normalized first** (continuations folded, comments stripped), the recipe-name set
-    must **equal** a pinned list so no name shape slips through, duplicate headers and
-    duplicate `run` bindings are refused, `set allow-duplicate*`, `import`/`mod` (any
-    spelling, including `import?`) and `alias` are refused, and non-proof bodies may not
-    contain the forbidden substrings or a `just … <verb>` pair at any distance. The same
-    rules then run against **`just --dump`**, which is the interpreter's own view rather
-    than a guess about it, skipped with a visible reason where the binary is absent.
+    file-wide brake in #179 was the wrong shape: the rule is that transport recipes must
+    not mint assignment, witness or acceptance proof. Five review rounds then showed that
+    rule escaping a text gate eleven ways: `just  assign`; `just -- assign`; a
+    `\`-continuation; repointing `run :=`; `set allow-duplicate-variables` with a second
+    binding; a duplicate header with a trailing comment; `EXTRA:` and `extra_recipe:` names
+    a lowercase-hyphen parser never saw; an `alias`; a continued `mod`; a verb hidden
+    between `just` and options at any distance; and a script path split by concatenation.
+    A sixth round added three more, and one of its own findings was worse than any of
+    mine: **the commit that introduced the normalization gate deleted both dotenv tests**
+    while claiming, in its own commit message and in these documents, that they were the
+    fix. They are restored, and the dotenv brake now lives *inside* the shared gate so the
+    `--dump` pass enforces it too — `set dotenv-load` appears verbatim in dump output, and
+    a source-only brake would have waved it through.
+    What closes the rest is not a bigger regex. The file is **normalized** (continuations
+    folded, comments stripped) and then gated twice — once on normalized text, once on
+    **`just --dump`**, the interpreter's own rendering, skipped with a visible reason where
+    the binary is absent. The recipe inventory accepts quiet (`@name:`) and dependency-list
+    (`name: (dep)`) headers, because a dependency *is* a call and an unrecognized header hid
+    both the recipe and its body; the name set must **equal** a pinned list; duplicate
+    headers and duplicate `run :=` bindings are refused; `set allow-duplicate*`,
+    `import`/`mod` in any spelling and `alias` are refused; and the forbidden-substring and
+    `just … <verb>` checks run against the **raw** body, because stripping comments first is
+    what let `@echo "\" #" ; …` hide an executable suffix behind a quote the stripper
+    believed it had closed.
     **What that is not**: a proof about execution. A body can still assemble a command at
-    runtime from a variable, a base64 blob, or `sh -c` over data, and any co-author who
-    edits this file can already do anything the file can do. The gate's job is accidental
-    drift and ordinary indirection — keeping "the docs say X, the code does Y" impossible
-    to merge quietly — not adversarial sandboxing, which is a Phase 11 problem and lives
-    in `plugins/kxm/src/sandbox.ts`, not in a justfile.
+    runtime from variables or a decoder, and anyone who can edit this file can already do
+    anything the file can do. The gate's job is drift and ordinary indirection — keeping
+    "the docs say X, the code does Y" from merging quietly — not adversarial sandboxing,
+    which is a Phase 11 concern living in `plugins/kxm/src/sandbox.ts`. Each of the eleven
+    escapes above is now a mutation that turns the gate red, verified by running them.
   - *Docs-to-justfile parity.* `just <verb>` in **command form** — inline code, or a
     fenced line with an optional `#` — must exist as a recipe. The scan is token-level:
     leading interpreter options and their path-like values are skipped
