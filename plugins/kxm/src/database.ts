@@ -213,6 +213,21 @@ export function openDatabase(file: string, description: string, spec: DatabaseSc
 
 const activeTransactions = new WeakSet<DatabaseSync>();
 
+/**
+ * How long a connection refuses to retry a blocked `BEGIN`.
+ *
+ * SQLite's busy timeout is per connection, so a `BEGIN` against a locked database
+ * waits the full timeout before failing. Callers that recover from a lost write
+ * open several transactions in a row; without this window each of them pays the
+ * timeout, and a suite run showed that turning one 4-second test into 17 minutes.
+ * The old code got that speed by accident — it left the connection permanently
+ * marked as in-transaction after a failed `BEGIN`, which is the defect fixed
+ * below — so the backoff replaces the fast-fail without re-introducing the poison.
+ */
+export const TRANSACTION_BUSY_BACKOFF_MS = 1_000;
+
+const transactionBackoffUntil = new WeakMap<DatabaseSync, number>();
+
 export function withDatabaseTransaction<T>(
   database: DatabaseSync,
   work: () => T,
@@ -221,8 +236,31 @@ export function withDatabaseTransaction<T>(
   if (activeTransactions.has(database)) {
     throw databaseError("runtime_transaction_nested", "transaction", "nested transactions are not allowed");
   }
+  const blockedUntil = transactionBackoffUntil.get(database) ?? 0;
+  if (Date.now() < blockedUntil) {
+    throw databaseError(
+      "runtime_transaction_busy",
+      "transaction",
+      `a previous BEGIN was blocked on this database; retry deferred ${String(blockedUntil - Date.now())}ms`,
+    );
+  }
+  // Claim the marker only once BEGIN has succeeded. If BEGIN throws — another
+  // writer held the database past the busy timeout — a connection that never
+  // entered a transaction must not be left permanently marked as inside one,
+  // which would fail every later transaction on it with a misleading
+  // "nested" error. `finally` cannot cover this: it only runs after the try.
+  try {
+    database.exec(`BEGIN ${mode}`);
+  } catch (error) {
+    transactionBackoffUntil.set(database, Date.now() + TRANSACTION_BUSY_BACKOFF_MS);
+    throw databaseError(
+      "runtime_transaction_busy",
+      "transaction",
+      `BEGIN ${mode} failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
   activeTransactions.add(database);
-  database.exec(`BEGIN ${mode}`);
+  transactionBackoffUntil.delete(database);
   try {
     const result = work();
     database.exec("COMMIT");

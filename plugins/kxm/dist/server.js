@@ -11537,12 +11537,32 @@ function openDatabase(file, description, spec) {
   }
 }
 var activeTransactions = /* @__PURE__ */ new WeakSet();
+var TRANSACTION_BUSY_BACKOFF_MS = 1e3;
+var transactionBackoffUntil = /* @__PURE__ */ new WeakMap();
 function withDatabaseTransaction(database, work, mode = "IMMEDIATE") {
   if (activeTransactions.has(database)) {
     throw databaseError("runtime_transaction_nested", "transaction", "nested transactions are not allowed");
   }
+  const blockedUntil = transactionBackoffUntil.get(database) ?? 0;
+  if (Date.now() < blockedUntil) {
+    throw databaseError(
+      "runtime_transaction_busy",
+      "transaction",
+      `a previous BEGIN was blocked on this database; retry deferred ${String(blockedUntil - Date.now())}ms`
+    );
+  }
+  try {
+    database.exec(`BEGIN ${mode}`);
+  } catch (error) {
+    transactionBackoffUntil.set(database, Date.now() + TRANSACTION_BUSY_BACKOFF_MS);
+    throw databaseError(
+      "runtime_transaction_busy",
+      "transaction",
+      `BEGIN ${mode} failed: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
   activeTransactions.add(database);
-  database.exec(`BEGIN ${mode}`);
+  transactionBackoffUntil.delete(database);
   try {
     const result = work();
     database.exec("COMMIT");

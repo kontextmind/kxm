@@ -418,6 +418,37 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   order" became "in arrival order", and "may never widen tools" is now true.
   Test count 7 → 11; the payload-only-tampering limit is asserted as a known gap
   instead of being described away.
+  **Second pass, same critic, same command:** verdict **STILL BLOCKED**, and again
+  correct on every point. Closed in the same follow-up: the drain loop was capped at
+  1,000 pages (now uncapped, throwing `intake_drain_stalled` inside the resume
+  transaction so a stuck drain rolls back rather than half-resuming); emptying or
+  omitting a populated `allow` list widened the ceiling because
+  `commands.ts` applies no allowlist restriction to an empty list (now refused,
+  after verifying that claim in the code rather than trusting the review); the
+  create-race loser reported `created: true`; and records written by 0.7.46 hashed
+  their authority as supplied, so an unsorted `effects` list would have demanded a
+  policy rebind from every one of them after upgrade (fingerprints are now
+  computed over the normalised authority, and the legacy row still matches).
+  It also surfaced a **HIGH pre-existing defect in `database.ts`** that the new
+  transactions exposed: `activeTransactions` was claimed before `BEGIN` and `BEGIN`
+  sat outside the `try/finally`, so a `BEGIN` that failed on a busy database left
+  the connection permanently marked as in-transaction and every later call failed
+  with a misleading `runtime_transaction_nested`. Fixed (claim only after a
+  successful `BEGIN`; surface `runtime_transaction_busy`) with a regression test
+  that holds the write lock from a second connection and then proves the same
+  connection still works.
+  Claim narrowed, not defended: `rowid` gives arrival order **within a store
+  instance** only. It is not a durable sequence — this repository takes backups
+  with `VACUUM INTO`, and a vacuum may renumber implicit rowids — so an explicit
+  immutable arrival sequence joins the schema-v6 follow-ups. Tests 11 → 13.
+  Un-poisoning the transaction helper first cost more than it fixed: with the naive
+  version, main's 818 s core suite became a run where one engine recovery test alone
+  took 1024 s and nothing finished inside 40 minutes — SQLite's 5 s busy timeout is
+  per connection and those recovery paths open several transactions in a row.
+  `TRANSACTION_BUSY_BACKOFF_MS` refuses retries for 1 s after a blocked `BEGIN` and
+  clears on success, so the defect stays fixed while the suite came back to
+  **442 s**; the intake test asserts the blocked call, the fast refusal and the
+  recovery. The old speed had come from the bug, not from design.
 
 - **Run-duration budgets are testable without racing the machine (2026-09-17):**
   the still-open note filed in #245 is fixed. `test/core/engine.test.ts`'s
@@ -1282,6 +1313,10 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   separate design, not a keyword change. (7) `transaction(...)` is **not
   reentrant** (`runtime_transaction_nested`): the M2 consumer must call these
   entry points at the top level or fold them into its own transaction on purpose.
+  (8) **Durable arrival sequence:** dispatch order currently uses SQLite
+  `rowid`, which a `VACUUM` (and therefore a restore taken with `VACUUM INTO`) may
+  renumber. Persist an immutable per-project sequence and preserve it through
+  restore, or state arrival ordering as an same-store property only.
 
 - **Unified capability delivery (M0–M9; proposed, consolidated 2026-09-14):**
   [The unified plan](plan-unified-kxm-milestones.md) owns proposed scope,

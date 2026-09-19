@@ -53,6 +53,20 @@ All notable user-facing changes are documented here. The project follows [Semant
   arrival order, so a backdated timestamp cannot jump the queue; persisted records
   are cross-checked against every duplicated column on read; and the intake schema
   no longer admits contradictory states.
+- **A coordinator rebind could widen a tool ceiling by clearing its allow list.**
+  An absent or empty allow list imposes no restriction, so dropping a populated one
+  is now refused (`coordinator_rebind_clears_allowlist`). Resume drains held intent
+  to exhaustion instead of stopping at a page cap, and fails loudly rather than
+  half-resuming. Coordinator fingerprints are computed over the normalised
+  authority, so identities bound by 0.7.46 with unordered effect lists no longer
+  require a policy rebind after upgrade.
+- **A failed `BEGIN` poisoned the database connection.** The transaction marker was
+  claimed before `BEGIN` and the statement sat outside the `try/finally`, so a
+  `BEGIN` that gave up on a busy writer left every later transaction failing with a
+  misleading "nested transactions are not allowed". The marker is now claimed only
+  after a successful `BEGIN`, the failure surfaces as `runtime_transaction_busy`,
+  and retries back off for one second (`TRANSACTION_BUSY_BACKOFF_MS`) instead of
+  paying the 5-second busy timeout once per attempt.
 
 ## 0.7.0 - 2026-09-11
 

@@ -64,6 +64,10 @@ these holes until the follow-up.
 
 ## Findings and disposition
 
+These are first-pass dispositions. The second-pass section below supersedes any
+row marked **Fixed** that later proved partial — read them in that order rather
+than treating this table as the current state.
+
 | # | Sev | Finding | Disposition |
 |---|---|---|---|
 | 1 | CONCERN | `database.ts` restore ceiling is still a literal (`5`); round-trip catches an undershoot but not an over-permissive ceiling, and there is no populated v4 fixture | **Partly.** Comment now names the constant it tracks and the e6 pin. Sharing it without an import cycle, plus a populated v4 migration fixture, is ticketed |
@@ -103,7 +107,59 @@ configuration revisions (now they are).
 - Rebind still replaces the active row; identity history is not retained.
 - Classification remains caller-asserted.
 
-## Reproducing this review
+## Second pass — the same critic reviewed the fix
+
+The follow-up run was asked, per finding, whether the fix closed it. Verdict:
+**STILL BLOCKED** — and again it was right on every point.
+
+| Finding | Second-pass verdict | Then |
+|---|---|---|
+| #1 hash compare on the race path | CLOSED | test covers the sequential path only; concurrency is by construction |
+| #2 transactional pause/ingress/admission | CLOSED — "the atomicity claim is now **true**, independently of #3" because `BEGIN IMMEDIATE` takes the single writer slot before the reads | confirmed; tests remain sequential |
+| #3 paged drain | PARTIAL — my loop stopped after 1,000 pages, so 500,001 held rows could still strand | **Fixed:** uncapped loop that throws `intake_drain_stalled` on no progress, inside the resume transaction, so a stuck drain rolls the resume back instead of half-resuming |
+| #4 tool widening | PARTIAL — `allow: ["read"]` → `allow: []` (or omitted) still passed, and `commands.ts` applies **no** allowlist restriction to an empty/absent list | **Fixed:** verified the claim in `commands.ts` before acting on it, then refused `coordinator_rebind_clears_allowlist`; both the emptied and the omitted case are tested |
+| #5 create-race + set order | PARTIAL — the loser returned `created: true`, and records written by 0.7.46 with unsorted `effects` demanded a policy rebind after upgrade | **Fixed:** the flag now comes from the insert itself, and `kxmCeilingHash` normalises, so a legacy fingerprint still matches an equivalent bind (new test proves both halves) |
+
+New findings it raised, and where they went:
+
+1. **HIGH — `withDatabaseTransaction` poisoned the connection.** `activeTransactions`
+   was claimed *before* `BEGIN`, and `BEGIN` sat outside the `try/finally`, so a
+   `BEGIN` that threw on a busy database left the connection permanently marked as
+   in-transaction and every later call failed with a misleading
+   `runtime_transaction_nested`. Pre-existing, but my new transactions exposed it.
+   **Fixed** in `database.ts` (claim after `BEGIN`, wrap `BEGIN` and surface
+   `runtime_transaction_busy`), with a regression test that holds the write lock
+   from a second connection and then proves the same connection still works.
+   **The first version of that fix was worse than the bug for throughput:** measured
+   on this suite, main's `database.ts` ran 1199 tests in **818 s**; with the
+   unpoison-but-no-backoff version a single U2a-2 recovery test took **1024 s** and
+   the run never finished in 40 minutes, because SQLite's 5 s busy timeout is
+   per-connection and recovery paths open several transactions in a row. The
+   committed version adds `TRANSACTION_BUSY_BACKOFF_MS` (1 s): the first blocked
+   `BEGIN` pays the timeout once, immediate retries refuse fast with
+   `retry deferred`, and a successful `BEGIN` clears the window. Same test now
+   asserts all three, and the full suite came back to **442 s**. So the finding is
+   closed without trading correctness for a 2× slowdown, and the earlier
+   fast-fail came from the defect rather than from design.
+2. MEDIUM — legacy hash drift: fixed as above.
+3. MEDIUM — false `created: true`: fixed as above.
+4. MEDIUM — **`rowid` is not a durable arrival sequence**: correct, and it bites
+   this repository specifically because backups use `VACUUM INTO`, and implicit
+   rowids may be renumbered by a vacuum. Kept as same-store ordering, with the
+   claim narrowed in code and Tracking; an explicit immutable arrival sequence is
+   added to the schema-v6 follow-up list.
+5. MEDIUM — **"closure claims exceed the implementation"**, including that this
+   record's own table mislabeled deferred finding 10 (coordinator history) as the
+   fifth blocker when the fifth was the create-race/normalisation pair. Accepted:
+   the dispositions above replace that table's "Fixed" wording, and the Tracking
+   entry now states what is true, what is by-construction, and what is still open.
+
+Its one judgement I would qualify: it scored the payload-only `doesNotThrow`
+assertion as "records a known weakness, not an integrity guarantee". Agreed — which
+is why it is written as `assert.doesNotThrow` with the reason inline rather than as
+a passing guarantee.
+
+## Reproducing these reviews
 
 ```bash
 codex login status                       # must report ChatGPT auth
@@ -114,4 +170,8 @@ codex exec -s read-only -m gpt-6-astra \
 ```
 
 `codex exec review --base <BRANCH>` cannot carry a custom prompt, so the targeted
-brief is passed to plain `codex exec` with the read-only sandbox instead.
+brief is passed to plain `codex exec` with the read-only sandbox instead. The
+second pass used the same form with the fix-diff brief; note that the operator's
+`~/.codex/rules` wrapper (`rtk proxy …`) failed a few early commands with
+`command not found: rtk` inside the sandbox before Codex fell back to direct
+`nl`/`rg`/`sed` reads — worth knowing if a future run looks mysteriously stalled.

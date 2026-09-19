@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
-import { loadKxmProject } from "../../plugins/kxm/src/project-config.ts";
+import { loadKxmProject, kxmCanonicalJson, type JsonValue } from "../../plugins/kxm/src/project-config.ts";
 import { removeTempDir } from "../helpers.ts";
 import { engineProject } from "../helpers/project.ts";
 import { closeKxmRuntimeContext, openKxmRuntimeContext } from "../../plugins/kxm/src/runtime-service.ts";
+import { TRANSACTION_BUSY_BACKOFF_MS } from "../../plugins/kxm/src/database.ts";
 import type { KxmRuntimeContext } from "../../plugins/kxm/src/runtime-service.ts";
 import {
   MAX_INTAKE_CONTENT_BYTES,
@@ -268,6 +270,13 @@ test("a tool ceiling may only narrow: preset changes, lifted denials and dropped
     assert.throws(() => rebind({ ...base, tools: { preset: "read-only", allow: ["read", "search"], deny: ["write"] } }), /coordinator_rebind_removes_denials/);
     assert.throws(() => rebind({ repositoryAccess: "read", effects: ["dispatch"] }), /coordinator_rebind_widens_tools/);
     assert.throws(() => rebind({ ...base, tools: { preset: "read-only", allow: ["read", "search", "write"], deny: ["write", "shell"] } }), /coordinator_rebind_widens_tools/);
+    // An absent or empty allow list imposes no restriction (`commands.ts` gates
+    // only on a non-empty list), so dropping one is a widening, not a cleanup.
+    assert.throws(() => rebind({ ...base, tools: { preset: "read-only", allow: [], deny: ["write", "shell"] } }), /coordinator_rebind_clears_allowlist/);
+    assert.throws(
+      () => rebind({ repositoryAccess: "read", effects: ["dispatch"], tools: { preset: "read-only", deny: ["write", "shell"] } }),
+      /coordinator_rebind_clears_allowlist/,
+    );
 
     // Genuine narrowing still works: fewer allowances, more denials.
     const narrowed = rebind({ ...base, tools: { preset: "read-only", allow: ["read"], deny: ["write", "shell", "network"] } });
@@ -351,6 +360,94 @@ test("a duplicate may not be re-labelled, and a persisted record that disagrees 
       clean.close();
     }
     assert.doesNotThrow(() => context.eventStore.intakeMessage(row!.messageId), "payload-only tampering is still readable: no record digest exists yet");
+  } finally {
+    closeIntakeContext(context);
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("a coordinator written before set canonicalisation still matches an equivalent bind", () => {
+  // Rows created by the released 0.7.46 code hashed the authority as supplied, so
+  // an unsorted `effects` list carries a fingerprint the canonicaliser will not
+  // reproduce. Upgrading must not force every one of them through a policy rebind.
+  const { root, stateRoot, context } = intakeContext("kxm-intake-legacy-hash-");
+  const legacyEffects = ["zeta", "alpha"];
+  const legacyHash = `sha256:${createHash("sha256")
+    .update(kxmCanonicalJson({ repositoryAccess: "none", effects: legacyEffects } as unknown as JsonValue), "utf8")
+    .digest("hex")}`;
+  try {
+    const legacy = {
+      schema: "kxm.coordinator.v1",
+      coordinatorId: "crd_legacy0000000000000000000000",
+      projectId: context.projectId,
+      role: "legacy",
+      channel: "primary",
+      authority: { repositoryAccess: "none", effects: legacyEffects },
+      boundAt: "2026-09-17T00:00:00.000Z",
+      boundBy: { kind: "human", id: "root" },
+      configRevision: legacyHash,
+      ceilingHash: legacyHash,
+    };
+    context.eventStore.insertCoordinatorIfAbsent({
+      coordinatorId: legacy.coordinatorId,
+      projectId: legacy.projectId,
+      role: legacy.role,
+      channel: legacy.channel,
+      ceilingHash: legacy.ceilingHash,
+      configRevision: legacy.configRevision,
+      boundAt: legacy.boundAt,
+      record: kxmCanonicalJson(legacy as unknown as JsonValue),
+    });
+
+    assert.notEqual(legacyHash, kxmCeilingHash({ repositoryAccess: "none", effects: legacyEffects }),
+      "the legacy fingerprint really does differ from the canonical one");
+    const rebound = bindKxmCoordinator(context, {
+      role: "legacy",
+      authority: { repositoryAccess: "none", effects: legacyEffects },
+      actor: OPERATOR,
+    });
+    assert.equal(rebound.created, false, "an equivalent authority must not demand a policy rebind after upgrade");
+    assert.equal(rebound.coordinator.coordinatorId, legacy.coordinatorId);
+  } finally {
+    closeIntakeContext(context);
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("a busy database fails the transaction, backs off, and recovers", async () => {
+  // `activeTransactions` used to be claimed before BEGIN, so BEGIN sitting outside
+  // the try/finally left the connection permanently marked as in-transaction: every
+  // later transaction failed with a misleading "nested transactions are not
+  // allowed". The fix must not turn that into a 5-second stall per attempt either,
+  // hence the bounded backoff asserted below.
+  const { root, stateRoot, context } = intakeContext("kxm-intake-txn-busy-");
+  const other = new DatabaseSync(context.eventStore.path);
+  let firstFailureMs = 0;
+  try {
+    other.exec("BEGIN IMMEDIATE");
+    other.prepare("INSERT INTO project_controls (project_id, paused, reason, updated_at, actor, schema, record) VALUES (?, 1, 'lock', '2026-09-18T00:00:00.000Z', 'human:other', 'kxm.project-control.v1', '{}')")
+      .run(context.projectId);
+    const startedAt = Date.now();
+    assert.throws(() => context.eventStore.transaction(() => setKxmProjectPause(context, { paused: true, actor: OPERATOR })), /runtime_transaction_busy/);
+    firstFailureMs = Date.now() - startedAt;
+
+    // Still holding the lock: the next attempt must refuse fast, not pay the busy
+    // timeout again.
+    const retryStartedAt = Date.now();
+    assert.throws(() => context.eventStore.transaction(() => setKxmProjectPause(context, { paused: true, actor: OPERATOR })), /retry deferred/);
+    const retryMs = Date.now() - retryStartedAt;
+    assert.ok(retryMs < 500, `the backoff must fail fast instead of re-waiting the busy timeout: ${String(retryMs)}ms vs first ${String(firstFailureMs)}ms`);
+  } finally {
+    try { other.exec("ROLLBACK"); } catch { /* lock released by close */ }
+    other.close();
+  }
+  try {
+    // Once the backoff window passes, the same connection works again: the marker
+    // was never left set by the failed BEGIN.
+    await new Promise((resolve) => setTimeout(resolve, TRANSACTION_BUSY_BACKOFF_MS + 150));
+    const paused = setKxmProjectPause(context, { paused: true, actor: OPERATOR, reason: "after busy" });
+    assert.equal(paused.control.paused, true);
+    assert.equal(isKxmProjectPaused(context), true);
   } finally {
     closeIntakeContext(context);
     removeTempDir(root, stateRoot);

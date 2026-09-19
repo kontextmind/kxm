@@ -96,9 +96,36 @@ const IDENTIFIER_RE = /^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$/;
 const COORDINATOR_ID_RE = /^[a-z][a-z0-9]{1,15}_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$/;
 const ACTOR_ID_RE = /^.{1,200}$/;
 
-/** Canonical SHA-256 over the authority ceiling — the coordinator's fingerprint. */
+/**
+ * Canonical SHA-256 over the authority ceiling — the coordinator's fingerprint.
+ *
+ * Sets are normalised before hashing, so order and repeats never change a
+ * fingerprint. That also lets a record written before normalisation existed still
+ * match an equivalent request instead of demanding a rebind for no reason.
+ */
 export function kxmCeilingHash(authority: KxmCoordinatorAuthority): string {
-  return `sha256:${createHash("sha256").update(stableStringify(authority), "utf8").digest("hex")}`;
+  return `sha256:${createHash("sha256").update(stableStringify(normalizeAuthority(authority)), "utf8").digest("hex")}`;
+}
+
+function normalizeAuthority(authority: KxmCoordinatorAuthority): KxmCoordinatorAuthority {
+  const tools = authority.tools;
+  return {
+    repositoryAccess: authority.repositoryAccess,
+    effects: canonicalSet(authority.effects ?? []),
+    ...(tools !== undefined
+      ? {
+          tools: {
+            ...(tools.preset !== undefined ? { preset: tools.preset } : {}),
+            ...(tools.allow !== undefined ? { allow: canonicalSet(tools.allow) } : {}),
+            ...(tools.deny !== undefined ? { deny: canonicalSet(tools.deny) } : {}),
+          },
+        }
+      : {}),
+  };
+}
+
+function canonicalSet(values: readonly string[]): string[] {
+  return [...new Set(values)].sort();
 }
 
 /**
@@ -131,7 +158,7 @@ export function bindKxmCoordinator(
 
   if (existing) {
     const current = JSON.parse(existing.record) as KxmCoordinatorRecord;
-    if (current.ceilingHash === ceilingHash) {
+    if (current.ceilingHash === ceilingHash || kxmCeilingHash(current.authority) === ceilingHash) {
       return { coordinator: current, created: false };
     }
     if (!input.rebind) {
@@ -196,7 +223,7 @@ export function bindKxmCoordinator(
     configRevision: context.configRevision,
     ceilingHash,
   };
-  return { ...persistCoordinator(context, record), created: true };
+  return persistCoordinator(context, record);
 }
 
 /** Resolve a coordinator by id; unknown identity fails closed. */
@@ -433,24 +460,28 @@ function releaseHeldIntake(context: KxmRuntimeContext, now: string): KxmIntakeMe
   const released: KxmIntakeMessage[] = [];
   // Drain every held row. A paging loop, not a single capped page: stranding the
   // 501st message behind a "resume releases held intent" claim is a lie of omission.
-  for (let page = 0; page < 1000; page += 1) {
+  for (;;) {
     const held = context.eventStore.intakeInStates(context.projectId, ["held_paused"], 500);
-    if (held.length === 0) break;
+    if (held.length === 0) return released;
+    let progressed = false;
     for (const row of held) {
       const message = JSON.parse(row.record) as KxmIntakeMessage;
       const next: KxmIntakeMessage = { ...message, dispatch: { state: "ready", updatedAt: now } };
       validateIntakeMessage(next, next.messageId);
       if (context.eventStore.updateIntakeDispatch(row.messageId, "held_paused", { state: "ready", record: kxmCanonicalJson(next as unknown as JsonValue) })) {
         released.push(next);
+        progressed = true;
       }
     }
-    const stillHeld = context.eventStore.intakeInStates(context.projectId, ["held_paused"], 1).length;
-    if (stillHeld === 0) break;
+    if (!progressed) {
+      // Cannot move anything: fail loudly inside the caller's transaction, which
+      // rolls the resume back, rather than half-resuming and leaving rows held.
+      throw runtimeError("intake_drain_stalled", context.projectId, `held intake did not drain; ${String(held.length)} row(s) still held`);
+    }
   }
-  return released;
 }
 
-function persistCoordinator(context: KxmRuntimeContext, record: KxmCoordinatorRecord): { coordinator: KxmCoordinatorRecord } {
+function persistCoordinator(context: KxmRuntimeContext, record: KxmCoordinatorRecord): { coordinator: KxmCoordinatorRecord; created: boolean } {
   validateCoordinator(record, record.coordinatorId);
   const inserted = context.eventStore.insertCoordinatorIfAbsent({
     coordinatorId: record.coordinatorId,
@@ -462,13 +493,13 @@ function persistCoordinator(context: KxmRuntimeContext, record: KxmCoordinatorRe
     boundAt: record.boundAt,
     record: kxmCanonicalJson(record as unknown as JsonValue),
   });
-  if (inserted) return { coordinator: record };
+  if (inserted) return { coordinator: record, created: true };
   // Lost the race for an empty slot: binding is create-once, so the winner is the
   // answer whenever it reached the same ceiling. Only a different ceiling is a
-  // conflict worth reporting.
+  // conflict worth reporting. The loser must not report that it created anything.
   const winner = context.eventStore.coordinatorInSlot(record.projectId, record.role, record.channel);
   const won = winner ? (JSON.parse(winner.record) as KxmCoordinatorRecord) : undefined;
-  if (won && won.ceilingHash === record.ceilingHash) return { coordinator: won };
+  if (won && won.ceilingHash === record.ceilingHash) return { coordinator: won, created: false };
   throw runtimeError("coordinator_write_lost", record.coordinatorId, "the coordinator slot was claimed by a different ceiling");
 }
 
@@ -501,6 +532,12 @@ function assertCeilingNotWidened(
     const newlyAllowed = (nextTools.allow ?? []).filter((tool) => !allowedBefore.has(tool));
     if (newlyAllowed.length > 0) {
       throw runtimeError("coordinator_rebind_widens_tools", coordinatorId, `a rebind may not allow new tools: ${newlyAllowed.join(", ")}`);
+    }
+    // Tool evaluation applies no allowlist restriction when the list is empty or
+    // absent (`commands.ts` gates only on a non-empty allow list), so dropping a
+    // populated list is a widening even though every entry it named is gone.
+    if (allowedBefore.size > 0 && (nextTools.allow ?? []).length === 0) {
+      throw runtimeError("coordinator_rebind_clears_allowlist", coordinatorId, "a rebind may not drop or empty a populated allow list; an absent allow list imposes no restriction");
     }
     const deniedBefore = new Set(previousTools.deny ?? []);
     const undenied = [...deniedBefore].filter((tool) => !(nextTools.deny ?? []).includes(tool));
@@ -540,24 +577,9 @@ function validateAuthority(authority: KxmCoordinatorAuthority): KxmCoordinatorAu
   }
   // Sets are stored canonically: order and repeats carry no authority, and leaving
   // them as supplied would let an equivalent ceiling masquerade as a rebind.
-  return {
-    repositoryAccess: authority.repositoryAccess,
-    effects: canonicalSet(effects),
-    ...(tools !== undefined
-      ? {
-          tools: {
-            ...(tools.preset !== undefined ? { preset: tools.preset } : {}),
-            ...(tools.allow !== undefined ? { allow: canonicalSet(tools.allow) } : {}),
-            ...(tools.deny !== undefined ? { deny: canonicalSet(tools.deny) } : {}),
-          },
-        }
-      : {}),
-  };
+  return normalizeAuthority(authority);
 }
 
-function canonicalSet(values: readonly string[]): string[] {
-  return [...new Set(values)].sort();
-}
 
 function validateActor<T extends { kind: KxmCoordinatorRecord["boundBy"]["kind"]; id: string }>(actor: T, field: string): T {
   const kinds: string[] = ["human", "runtime", "hub", "agent", "adapter"];

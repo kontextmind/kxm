@@ -1255,7 +1255,14 @@ export class KxmRunEventStore {
     return row ? intakeFromRow(row) : undefined;
   }
 
-  /** Intake rows in the given dispatch states, in arrival order (replay-safe). */
+  /**
+   * Intake rows in the given dispatch states, in arrival order (replay-safe).
+   *
+   * `rowid` gives same-store arrival order, which is what queue priority needs
+   * here. It is **not** a durable sequence: this repository backs stores up with
+   * `VACUUM INTO`, and a vacuum may renumber implicit rowids. An explicit
+   * immutable arrival sequence is tracked in the plan's schema-v6 follow-ups.
+   */
   intakeInStates(projectId: string, states: readonly KxmIntakeMessageRow["dispatchState"][], limit = 100): KxmIntakeMessageRow[] {
     if (states.length === 0) return [];
     const placeholders = states.map(() => "?").join(", ");

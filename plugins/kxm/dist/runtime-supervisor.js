@@ -17645,12 +17645,32 @@ function openDatabase(file, description, spec) {
   }
 }
 var activeTransactions = /* @__PURE__ */ new WeakSet();
+var TRANSACTION_BUSY_BACKOFF_MS = 1e3;
+var transactionBackoffUntil = /* @__PURE__ */ new WeakMap();
 function withDatabaseTransaction(database, work, mode = "IMMEDIATE") {
   if (activeTransactions.has(database)) {
     throw databaseError("runtime_transaction_nested", "transaction", "nested transactions are not allowed");
   }
+  const blockedUntil = transactionBackoffUntil.get(database) ?? 0;
+  if (Date.now() < blockedUntil) {
+    throw databaseError(
+      "runtime_transaction_busy",
+      "transaction",
+      `a previous BEGIN was blocked on this database; retry deferred ${String(blockedUntil - Date.now())}ms`
+    );
+  }
+  try {
+    database.exec(`BEGIN ${mode}`);
+  } catch (error) {
+    transactionBackoffUntil.set(database, Date.now() + TRANSACTION_BUSY_BACKOFF_MS);
+    throw databaseError(
+      "runtime_transaction_busy",
+      "transaction",
+      `BEGIN ${mode} failed: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
   activeTransactions.add(database);
-  database.exec(`BEGIN ${mode}`);
+  transactionBackoffUntil.delete(database);
   try {
     const result = work();
     database.exec("COMMIT");
@@ -18558,7 +18578,14 @@ var KxmRunEventStore = class {
     `).get(projectId, coordinatorId, idempotencyKey);
     return row ? intakeFromRow(row) : void 0;
   }
-  /** Intake rows in the given dispatch states, in arrival order (replay-safe). */
+  /**
+   * Intake rows in the given dispatch states, in arrival order (replay-safe).
+   *
+   * `rowid` gives same-store arrival order, which is what queue priority needs
+   * here. It is **not** a durable sequence: this repository backs stores up with
+   * `VACUUM INTO`, and a vacuum may renumber implicit rowids. An explicit
+   * immutable arrival sequence is tracked in the plan's schema-v6 follow-ups.
+   */
   intakeInStates(projectId, states, limit = 100) {
     if (states.length === 0) return [];
     const placeholders = states.map(() => "?").join(", ");
