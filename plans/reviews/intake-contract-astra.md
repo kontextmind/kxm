@@ -10,7 +10,7 @@ created: "2026-09-18"
 updated: "2026-09-19"
 authority: "hypothesis"
 confidence: "uncertain"
-summary: "Three passes of an independent critic on the M1+M6 intake contract: BLOCK on the contract, STILL BLOCKED on the fix, STILL BLOCKED on the closure of that fix. Every finding reproduced; each pass also corrected the previous pass's overstated claims. Critic opinion, not assignment, witness or acceptance proof."
+summary: "Five passes of an independent critic on the M1+M6 intake contract: BLOCK, then STILL BLOCKED four times — on the fix, on the closure of the fix, on the injectable seam that closure introduced, and on bun:sqlite's error shape. Every finding reproduced; each pass also corrected the previous pass's overstated claims. Critic opinion, not assignment, witness or acceptance proof."
 tags: ["review", "runtime", "intake", "harnesses"]
 related:
   - ../implementation-plan.md
@@ -24,10 +24,12 @@ details:
 
 # Codex gpt-6-astra review of the Runtime intake contract (#248)
 
-Three passes so far: **BLOCK** on the contract, **STILL BLOCKED** on the fix, and
-**STILL BLOCKED** on the closure of that fix. Each pass reviewed the previous
-pass's claims as well as the code, and each one was right; the tables below are
-ordered by round, and a later row supersedes an earlier **Fixed**.
+Five passes so far: **BLOCK** on the contract, **STILL BLOCKED** on the fix, **STILL
+BLOCKED** on the closure of that fix, **STILL BLOCKED** on the closure of *that* (the
+injectable seam my own round-3 fix introduced), and **STILL BLOCKED** on a runtime this
+repository also ships on. Each pass reviewed the previous pass's claims as well as the
+code, and each one was right; the tables below are ordered by round, and a later row
+supersedes an earlier **Fixed**.
 
 ## Transport and admission status — read this first
 
@@ -188,7 +190,7 @@ had been overstated, which is the point of asking the same critic twice.
 | "a stall rolls the resume back" | not tested at all | forced `updateIntakeDispatch` refusal: expects `intake_drain_stalled`, then asserts the project is **still paused** and the row is still held, then that a real resume drains it |
 | `created: false` on the race path | the sequential assertions never lose an insert, so they passed with the fix reverted | Two forced losing writes against a legacy-fingerprint winner: one lost **insert** (`insertCoordinatorIfAbsent`) and one lost **rebind replace** (`replaceCoordinatorInSlot`, which installs the winner through the real method first, so the end state is the raced one and only the boolean is the loss). Deleting either fixture patch flips `created` to `true` |
 | ceiling normalisation | the reordered-ceiling test passed with normalisation removed from `kxmCeilingHash`, because binding already normalises its inputs | `kxmCeilingHash` is now compared directly over reordered, repeated and genuinely different sets, plus the binder's own refusal of repeated members |
-| busy/backoff | the old test waited out its own deadline, so it passed whether or not a successful `BEGIN` cleared the backoff; and it never tried a non-contention error, another connection, or a failed `COMMIT` | Five tests now: the real contention path (pays the timeout once, refuses fast inside the window, recovers), the deadline's clock (stepped in both directions on the default clock, with a numeric bound each way), clock-domain isolation, mode scoping (`DEFERRED` runs and does not clear), and classification plus recovery after a failed `COMMIT`. Each was mutation-checked against the fix it claims |
+| busy/backoff | the old test waited out its own deadline, so it passed whether or not a successful `BEGIN` cleared the backoff; and it never tried a non-contention error, another connection, or a failed `COMMIT` | Seven transaction-focused tests now (the fifth pass corrected "Four", then "Five"): the real contention path (pays the timeout once, refuses fast inside the window, recovers), the deadline's clock (stepped in both directions on the default clock, with a numeric bound each way), clock-domain isolation, mode scoping (`DEFERRED` runs and does not clear), classification on both runtimes, and recovery after a failed `COMMIT`. Each was mutation-checked against the fix it claims |
 | "one admitted task" | admitted one `runId` record; no task exists at this layer | renamed to "one admission record", with the M2 consumer named as the thing that would create a task |
 | "reordering or repeating" | only reordering was tested | repeats are tested, against the fingerprint and against the binder's refusal |
 
@@ -217,8 +219,8 @@ clock finding reintroduced the same class of defect one layer up.
 
 | Finding | Sev | What was wrong | Disposition |
 |---|---|---|---|
-| 2. Deadlines shared a connection key but not a clock domain | MED | The injectable `clock` stored an absolute number in a per-connection slot and the next call subtracted **whichever** clock it was given. A valid monotonic clock an hour ahead therefore throttled a default-clock caller for an hour (`retry deferred 3601000ms`), and `() => NaN` reached `BEGIN` with no deadline at all. The seam the critic had itself asked for was the hazard | **Fixed**: throttle state is keyed by connection **and** clock, so a deadline can only be read, expired or replaced by the clock that armed it; a non-finite reading throws `runtime_transaction_clock_invalid` instead of meaning "no deadline". Two tests: one steps each domain and asserts neither borrows the other's refusal nor clears it; the other proves a bad clock fails closed and leaves the good domain throttled |
-| 3. Classification predicate | CONCERN | Message-only matching had no stability guarantee, missed `SQLITE_LOCKED_SHAREDCACHE` (`database schema is locked: main`, errcode 262) and `SQLITE_BUSY_RECOVERY`, and said "contention" for any wrapper that quoted a busy message | **Fixed by result code**, as above. The explicit `SQLITE_PROTOCOL` decision the critic asked for: **counted as contention**, because SQLite raises it after exhausting retries to start a WAL transaction. Verifying those codes against a *live* `SQLITE_PROTOCOL`/shared-cache condition stays a follow-up (Still open item 10) — the predicate is proven here, the mapping is proven against the documented codes |
+| 2. Deadlines shared a connection key but not a clock domain | MED | The injectable `clock` stored an absolute number in a per-connection slot and the next call subtracted **whichever** clock it was given. A valid monotonic clock an hour ahead therefore throttled a default-clock caller for an hour (`retry deferred 3601000ms`), and `() => NaN` reached `BEGIN` with no deadline at all. The seam the critic had itself asked for was the hazard | **Fixed**: throttle state is keyed by connection **and** clock, so a deadline can only be read, expired or replaced by the clock that armed it; a non-finite reading throws `runtime_transaction_clock_invalid` instead of meaning "no deadline" — at the points where throttle state is read or armed, which is the honest scope the fifth pass asked for: an uncontended `BEGIN` never consults the clock, so this guards the seam rather than every transaction. One test steps both domains and asserts neither borrows the other's refusal nor clears it, including that a bad clock leaves the good domain throttled |
+| 3. Classification predicate | CONCERN | Message-only matching had no stability guarantee, missed `SQLITE_LOCKED_SHAREDCACHE` (`database schema is locked: main`, errcode 262) and `SQLITE_BUSY_RECOVERY`, and said "contention" for any wrapper that quoted a busy message | **Fixed by result code** — and then caught again in the fifth pass for being **Node-only**: it read `errcode` and ignored `bun:sqlite`'s `errno`, so on the runtime Pi hosts extensions in, a real shared-cache `BEGIN` failure classified as permanent and armed nothing. Order is now `errcode`/`errCode`/`errno`, then a symbolic `SQLITE_*` name, then anchored text, with the number beating the message in both directions. The `SQLITE_PROTOCOL` decision the critic asked for: **counted as contention**, because SQLite raises it after exhausting retries to start a WAL transaction. What remains open (item 10) is now narrower: shared-cache contention has been reproduced live on Bun, and what this stack has never raised is `SQLITE_PROTOCOL` and `SQLITE_BUSY_RECOVERY` |
 | 4. Raw non-contention errors change output shape | CONCERN | A `BEGIN` failure that is not contention now reaches `runtime-supervisor.ts` as a plain `Error` → 500/`runtime_internal` instead of 400 with a code; `cli/project.ts` falls back to `run_io_failed` | **Accepted as correct.** A permanent failure must not be reported as a retryable busy condition; `engine.ts` guards `.issues` and reports `retryable: false`, and `hub.ts` already maps both shapes to `internal_error`. No caller dereferences `.issues` blindly. Recorded so the next reader of this contract knows the mapping changed on purpose |
 | 5. Rebind read-back policy | CONCERN | Returning the winner with `created: false` is honest about *creation* but says nothing about whether this caller's approval and reason were persisted; the comment said "same policy" | **Fixed the wording** to "same ceiling". The distinction is recorded rather than patched: `created` reports whether this call inserted a row, never whether an approval was recorded — immutable rebind history is deferred item 1 (schema v6). The critic re-ran both race fixtures through the real losing SQL and they held |
 | 8. Claims still exceeded evidence | LOW | "forced losing insert, twice" (it is one insert and one rebind), "Four tests now" (five), "the store treats the handle as suspect" (no such behaviour exists), and a forward-step assertion that only matched text while the Tracking said it bounded the window | All four corrected, in the code comment, in this record, in Tracking — and the forward assertion now bounds numerically, so the claim is the weaker of the two |
@@ -242,6 +244,30 @@ clock finding reintroduced the same class of defect one layer up.
   policy logic, not the store constructors, migrations or restart persistence —
   which is what `npm run verify` and the container smoke on the PR are for.
 
+## Fifth pass — the closure of the fourth, on a runtime this repository also ships on
+
+Verdict: **STILL BLOCKED**. Not another recursion of the clock-domain pattern this
+time — a portability hole. The classifier read Node's `errcode` and ignored
+`bun:sqlite`'s `errno`, so in the runtime Pi actually hosts extensions in, the
+reviewer's reproduction (Bun 1.3.14, two connections on one attached database)
+gave `errno: 262`, `code: "SQLITE_LOCKED_SHAREDCACHE"`, message
+`"database schema is locked: shared"`, and `isTransactionContention` answered
+**false**: the raw error propagated and no throttle armed.
+
+| Finding | Sev | Disposition |
+|---|---|---|
+| Bun's numeric code ignored | MED, blocking | **Fixed.** `errcode` → `errCode` → `errno`, then a symbolic `SQLITE_BUSY*` / `SQLITE_LOCKED*` / `SQLITE_PROTOCOL*` name, then anchored text only when neither exists — and a numeric code wins over the text in **both** directions, so `errno: 13` (`SQLITE_FULL`) wearing a "database is locked" message is not contention. The classifier test carries the exact Bun-shaped triple, a symbolic-name-only case, and the contradiction. Mutation-checked: dropping `errno` and message-only classification each turn it red |
+| Retention grows per distinct clock identity | LOW, nonblocking | **Fixed as far as design goes**: the inner map is `WeakMap<MonotonicClock, number>`, so entries die with the clock that made them and a caller building a fresh closure per attempt cannot accumulate them. Stated rather than gated: the growth was shown on an instrumented copy, no committed assertion measures it, and no production caller passes a clock |
+| Invalid-clock scope overstated | LOW | **Claim narrowed** in the code comment, CHANGELOG and Tracking, as above |
+| Descriptions exceeding assertions | LOW | Fixed: domain coverage is **one** test (the record said two) and the transaction-focused count is **seven** (it said "four", then "five"); `doesNotMatch(/retry deferred/)` became `match(/blocked by another transaction/)` so a released domain must actually reach `BEGIN`; "keyed by connection and clock" is stated as *function identity*; and the fourth pass's drain and losing-write confirmations are now labelled **reviewer probes**, not committed integration coverage |
+| `SQLITE_PROTOCOL` and `SQLITE_LOCKED` decisions | CONCERN | **Accepted, with the critic's own boundary evidence**: a same-connection active reader made a *statement* fail with code 6 inside `work()`, which stayed untranslated and unthrottled because only the `BEGIN` catch classifies. That boundary is why including `LOCKED` is safe here |
+
+Its stated limits, recorded so nobody over-reads this: 3 of 22 committed intake tests
+ran under the read-only sandbox and 19 stopped at temp-directory creation, so the
+reviewer re-derived those bodies in memory and probed both runtimes directly. That is
+not verification of store constructors, migrations, restart persistence or the
+configured busy timeout — `npm run verify` and the container install smoke are.
+
 ## Reproducing these reviews
 
 ```bash
@@ -258,6 +284,16 @@ second and third passes used the same form with a fix-diff brief; note that the
 operator's `~/.codex/rules` wrapper (`rtk proxy …`) failed a few early commands
 with `command not found: rtk` inside the sandbox before Codex fell back to direct
 `nl`/`rg`/`sed` reads — worth knowing if a future run looks mysteriously stalled.
+
+The fourth and fifth passes ran measurements rather than only reading, including a
+Bun 1.3.14 reproduction of shared-cache contention to check the classifier's shape:
+
+```bash
+bun -e 'const a=new SQL.Database("/tmp/x.db"); const b=new SQL.Database("/tmp/x.db");
+  a.run("BEGIN IMMEDIATE"); try { b.run("BEGIN IMMEDIATE"); } catch (e)
+  { console.log(e.code, e.errno, e.message); }'
+# SQLITE_LOCKED_SHAREDCACHE 262 database schema is locked: main
+```
 
 The third pass also ran measurements rather than only reading: it reproduced the
 backoff against a wall-clock step, forced a losing insert against a legacy-hash

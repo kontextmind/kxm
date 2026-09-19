@@ -67,17 +67,22 @@ All notable user-facing changes are documented here. The project follows [Semant
   `BEGIN` that gave up on a busy writer left every later transaction failing with a
   misleading "nested transactions are not allowed". The marker is now claimed only
   after a successful `BEGIN`, genuine lock contention surfaces as
-  `runtime_transaction_busy` — decided by SQLite's **numeric result code** where one
-  exists (`SQLITE_BUSY`, `SQLITE_LOCKED` and their extended forms, plus
-  `SQLITE_PROTOCOL`), falling back to anchored message text only when an error carries
-  no code — and any other `BEGIN` failure keeps its own error instead of looking
-  retryable. A contended connection then refuses further write-mode `BEGIN`s for one
+  `runtime_transaction_busy` — decided by SQLite's **result code**, on both runtimes
+  this ships on: Node's `errcode` and `bun:sqlite`'s `errno` (extended codes land on
+  their primaries, so `SQLITE_BUSY_RECOVERY`, `SQLITE_BUSY_SNAPSHOT` and
+  `SQLITE_LOCKED_SHAREDCACHE` all count), then a symbolic `SQLITE_BUSY*` /
+  `SQLITE_LOCKED*` / `SQLITE_PROTOCOL*` name, with anchored message text used only
+  when an error carries neither — and a numeric code always wins over the text, so a
+  permanent error quoting "database is locked" is not mistaken for contention. Any
+  other `BEGIN` failure keeps its own error instead of looking retryable. A contended connection then refuses further write-mode `BEGIN`s for one
   second (`TRANSACTION_BUSY_BACKOFF_MS`), so retries **inside that window** fail fast
   rather than paying the 5-second busy timeout once per attempt; a retry after the
   window can pay it again. The window is measured with `process.hrtime` and belongs to
   the clock that armed it, so neither a system clock change nor an injected test clock
   can extend, shorten or clear another caller's throttle, and a clock that returns a
-  non-finite number fails closed (`runtime_transaction_clock_invalid`). `DEFERRED`
+  non-finite number is refused rather than trusted (`runtime_transaction_clock_invalid`)
+  wherever throttle state is read or armed — an uncontended transaction never
+  consults the clock, so this guards the seam, not every `BEGIN`. `DEFERRED`
   transactions are exempt: they take no write lock. The throttle is per connection
   object in this process — it is not cross-process, and it does not leak to another
   connection to the same database.

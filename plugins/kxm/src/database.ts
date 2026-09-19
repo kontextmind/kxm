@@ -262,11 +262,22 @@ function monotonicNowMs(): number {
  * injected "one hour from now" throttles a production caller that never passed a
  * clock at all — and how that same caller could clear a deadline it never armed.
  * Each clock domain therefore gets its own deadline and can only read, expire or
- * replace its own.
+ * replace its own. The inner map is **weak in the clock**, so a caller that builds a
+ * fresh closure per attempt cannot grow this state: entries disappear with the clock
+ * that made them, which is also why no size bound is needed.
  */
-const transactionThrottles = new WeakMap<DatabaseSync, Map<MonotonicClock, number>>();
+const transactionThrottles = new WeakMap<DatabaseSync, WeakMap<MonotonicClock, number>>();
 
-/** A clock reading this helper can reason about. Anything else fails closed. */
+/**
+ * A clock reading this helper can reason about.
+ *
+ * Scope, stated honestly: this validates the reading **when throttle state is read
+ * or armed**. An uncontended transaction never consults the clock at all, so a
+ * broken injected clock on a database with no contention runs its `work()`
+ * untouched. Production cannot reach it — the default is `hrtime`, which is finite —
+ * and it exists so the injectable seam cannot turn into a silent bypass of the
+ * throttle.
+ */
 function finiteNow(clock: MonotonicClock, label: string): number {
   const now = clock();
   if (typeof now !== "number" || !Number.isFinite(now)) {
@@ -297,24 +308,39 @@ function finiteNow(clock: MonotonicClock, label: string): number {
  * the retry count, which is a lock-acquisition retry condition, not a broken
  * database.
  *
- * Message matching is the fallback for a runtime whose errors carry no numeric
- * code (`sqlite.ts` also runs extensions on Bun), and it applies **only** when no
- * code is present — otherwise a wrapper whose text merely quotes an older
- * "database is locked" would be mislabelled as contention.
+ * Where both runtimes expose one, **the number wins over the text**: Node spells it
+ * `errcode`, `bun:sqlite` spells it `errno` (verified on Bun 1.3.14, where a shared-
+ * cache `BEGIN` arrives as `errno: 262`, `code: "SQLITE_LOCKED_SHAREDCACHE"`,
+ * message "database schema is locked: shared"). A symbolic `code`/`name` of the form
+ * `SQLITE_BUSY*`/`SQLITE_LOCKED*`/`SQLITE_PROTOCOL*` is accepted next, and bare
+ * message matching is the last resort — applied only when neither exists, so a
+ * wrapper that merely quotes "database is locked" alongside a permanent code is not
+ * mistaken for contention.
  *
  * Deliberately **not** contention: `SQLITE_FULL` / "database or disk is full",
  * "unable to open database file", and WAL shared-memory I/O failures. Those stay
  * broken until something outside this connection changes.
  */
+/** Node: `errcode`. Bun: `errno`. Both spell the extended code as a number. */
 const CONTENTION_PRIMARY_CODES: readonly number[] = [5, 6, 15];
+/** `bun:sqlite` puts the symbolic name in `code`; Node puts its own kind there. */
+const CONTENTION_SYMBOLIC_NAMES = /^SQLITE_(?:BUSY|LOCKED|PROTOCOL)(?:_[A-Z]+)?$/;
 const CONTENTION_MESSAGES =
   /^(?:database is locked|database table is locked|locking protocol|SQLITE_BUSY|SQLITE_LOCKED|SQLITE_PROTOCOL)(?:$|[\s.:])/i;
 
 export function isTransactionContention(error: unknown): boolean {
-  const carrier = error as { errcode?: unknown; errCode?: unknown; code?: unknown } | undefined;
-  const codes = [carrier?.errcode, carrier?.errCode, carrier?.code];
-  const numeric = codes.find((value): value is number => typeof value === "number" && Number.isInteger(value));
-  if (numeric !== undefined) return CONTENTION_PRIMARY_CODES.includes(numeric & 0xff);
+  const carrier = error as { errcode?: unknown; errCode?: unknown; errno?: unknown; code?: unknown; name?: unknown }
+    | undefined;
+  // A numeric code always wins, and wins **over the message**: `errno` is what
+  // `bun:sqlite` exposes for the extended result code, while its `code` field holds
+  // the symbolic name. Node spells the number `errcode` and keeps `code` for its own
+  // `ERR_SQLITE_ERROR`, which must never be read as a SQLite result code.
+  for (const value of [carrier?.errcode, carrier?.errCode, carrier?.errno]) {
+    if (typeof value === "number" && Number.isInteger(value)) return CONTENTION_PRIMARY_CODES.includes(value & 0xff);
+  }
+  for (const value of [carrier?.code, carrier?.name]) {
+    if (typeof value === "string" && CONTENTION_SYMBOLIC_NAMES.test(value)) return true;
+  }
   return CONTENTION_MESSAGES.test(error instanceof Error ? error.message : String(error));
 }
 
@@ -354,9 +380,12 @@ export function withDatabaseTransaction<T>(
   } catch (error) {
     if (!isTransactionContention(error)) throw error;
     const now = finiteNow(clock, "the transaction clock");
-    const deadlines = transactionThrottles.get(database) ?? new Map<MonotonicClock, number>();
+    let deadlines = transactionThrottles.get(database);
+    if (deadlines === undefined) {
+      deadlines = new WeakMap<MonotonicClock, number>();
+      transactionThrottles.set(database, deadlines);
+    }
     deadlines.set(clock, now + TRANSACTION_BUSY_BACKOFF_MS);
-    transactionThrottles.set(database, deadlines);
     throw databaseError(
       "runtime_transaction_busy",
       "transaction",

@@ -504,15 +504,24 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   deadline at all. Throttle state is now keyed by connection **and** clock — a
   deadline can only be read, expired or replaced by the clock that armed it — and a
   non-finite reading throws `runtime_transaction_clock_invalid` instead of silently
-  meaning "no throttle". That is the shape the injectable seam needed before it could
-  stay. The same pass settled the classification question properly: contention is
-  decided by SQLite's **numeric result code** (`code & 0xff` over 5 / 6 / 15, so
-  `SQLITE_BUSY_RECOVERY`, `SQLITE_BUSY_SNAPSHOT` and `SQLITE_LOCKED_SHAREDCACHE` land
-  on their primaries), with anchored message text used **only** when no code is
-  present, because a wrapper that merely quotes "database is locked" is not evidence.
+  meaning "no throttle" — at the points where throttle state is read or armed, which
+  is the honest scope: an uncontended `BEGIN` never consults the clock, so this guards
+  the seam rather than every transaction. That is the shape the injectable seam needed
+  before it could stay. The classification question was settled properly and then found
+  to be **Node-only**, which the fifth pass caught: contention is decided by SQLite's
+  result code (`code & 0xff` over 5 / 6 / 15) read from Node's `errcode` **and**
+  `bun:sqlite`'s `errno` (`SQLITE_BUSY_RECOVERY`, `SQLITE_BUSY_SNAPSHOT` and
+  `SQLITE_LOCKED_SHAREDCACHE` land on their primaries), then from a symbolic
+  `SQLITE_BUSY*` / `SQLITE_LOCKED*` / `SQLITE_PROTOCOL*` name, with anchored message
+  text used **only** when neither exists — and the number wins over the text in both
+  directions, so a permanent `SQLITE_FULL` quoting "database is locked" is not
+  contention. `bun:sqlite` is not hypothetical here: `sqlite.ts` exists precisely
+  because extensions run inside Pi's Bun, and a Node-only reading silently lost the
+  extended codes on that runtime.
   `SQLITE_PROTOCOL` counts as contention **by decision** — SQLite raises it after
   exhausting WAL transaction-start retries — and `SQLITE_FULL`, `SQLITE_CANTOPEN` and
-  read-only writes do not. Accepting the raw rethrow changes an error *shape*, not an
+  read-only writes do not; the reviewer's own same-connection probe confirmed the
+  boundary holds where a *statement* (not `BEGIN`) fails with code 6. Accepting the raw rethrow changes an error *shape*, not an
   outcome: a non-contention `BEGIN` failure reaches the supervisor as a plain `Error`
   (500 / `runtime_internal` rather than 400 with a code) and the CLI's existing
   `run_io_failed` fallback, which is the point — a permanent failure must not wear a
@@ -520,13 +529,20 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   corrected here: the forced-write coverage is one lost **insert** and one lost
   **rebind** (not "the current-format winner and the legacy-hash winner"), and
   `replaceCoordinatorInSlot` installs the winner through the real method first so the
-  end state is the raced one rather than a fabricated boolean. Tests 20 → **22**,
-  mutation-checked again: ignoring clock identity, dropping the finite-clock guard and
-  dropping code-based classification each turn exactly one test red. What the fourth
-  pass *confirmed* instead of changing: no disagreement-driven loop in the drain (the
-  store rejects a divergent row before returning the page, proven with a corrupted
-  state/record pair and `intake_record_divergent`), and both forced-write fixtures
-  survive being run through the real SQL.
+  end state is the raced one rather than a fabricated boolean. Tests 20 → **22**, seven
+  of them transaction-focused, each mutation-checked: ignoring clock identity, dropping
+  the finite-clock guard, dropping code-based classification, dropping `errno`, and
+  letting message text override a number each turn exactly one test red. What is **not**
+  gated: throttle-state retention. The inner map is weak in the clock, so a caller that
+  builds a fresh closure per attempt cannot grow it — but that was demonstrated on an
+  instrumented copy, not asserted here, and no production caller passes a clock.
+  What the fourth and fifth passes *confirmed* instead of changing, **by their own
+  executed probes rather than by committed tests**: no disagreement-driven loop in the
+  drain (a corrupted dispatch column against its record raises `intake_record_divergent`
+  with the project still paused — the committed tests cover divergent-row rejection on
+  direct read and resume rollback after a forced refusal, which is not the same
+  assertion), and both forced-write fixtures still pass when the canned `false` is
+  replaced by the real losing SQL.
 
 - **Run-duration budgets are testable without racing the machine (2026-09-17):**
   the still-open note filed in #245 is fixed. `test/core/engine.test.ts`'s
@@ -1407,19 +1423,20 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   pre-condition, not a correctness hole. Bounding it must not move batches outside
   the transaction, which would reopen the pause race; design the bound together with
   the durable sequence in item 8.
-  (10) **Contention mapping proven live:** the code → meaning mapping in
-  `isTransactionContention` is taken from the documented SQLite result codes and the
-  predicate is unit-tested against them, but no real `SQLITE_PROTOCOL`, shared-cache
-  `SQLITE_LOCKED` or `SQLITE_BUSY_RECOVERY` has been observed on this stack — this
-  repository opens one writer per database, so those paths do not arise in normal
-  operation. Trigger: the first multi-process hub writer, or a Node/SQLite version
-  bump that changes `node:sqlite` error fields. Related and still unfixed: a failed
-  `ROLLBACK` is swallowed, and clearing the in-transaction marker does not prove
-  SQLite left the transaction, so a handle whose rollback failed is not invalidated
-  anywhere; a `MonotonicClock` argument on a public helper is also a seam a future
-  test could misuse to sit outside the throttle — it cannot win a contested write
-  lock, and the domain keying keeps it from contaminating another caller, but it is
-  not a capability boundary.
+  (10) **Contention mapping, the part still unobserved:** `isTransactionContention`
+  now reads Node's `errcode`, `bun:sqlite`'s `errno`, and a symbolic `SQLITE_*` name
+  before falling back to anchored text, and the shared-cache case has been reproduced
+  **live on Bun 1.3.14** (`errno: 262`, `code: "SQLITE_LOCKED_SHAREDCACHE"`, message
+  `"database schema is locked: shared"`). What has *not* been observed on this stack is
+  a real `SQLITE_PROTOCOL` or `SQLITE_BUSY_RECOVERY`: this repository opens one writer
+  per database, so those paths do not arise in normal operation. Trigger: the first
+  multi-process hub writer, or a Node/Bun/SQLite version bump that changes those error
+  fields. Two related limits, named rather than assumed away: a failed `ROLLBACK` is
+  swallowed and clearing the in-transaction marker does not prove SQLite left the
+  transaction, so a handle whose rollback failed is not invalidated anywhere; and a
+  `MonotonicClock` argument on a public helper is a seam a future test could use to sit
+  outside the throttle — it cannot win a contested write lock, and per-domain keying
+  keeps it from contaminating another caller, but it is not a capability boundary.
 
 - **Unified capability delivery (M0–M9; proposed, consolidated 2026-09-14):**
   [The unified plan](plan-unified-kxm-milestones.md) owns proposed scope,

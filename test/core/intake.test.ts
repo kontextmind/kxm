@@ -691,10 +691,12 @@ test("a throttle armed by one clock cannot contaminate another, nor be cleared b
     assert.match(attemptWith(undefined, 6), /retry deferred/, "an unusable clock must not clear another domain's throttle");
 
     // Expiry is per domain too: stepping the fake clock cannot release the default
-    // caller that is still inside its own window.
+    // caller that is still inside its own window, and the released domain must
+    // actually reach BEGIN rather than failing some other way.
     fakeMs += TRANSACTION_BUSY_BACKOFF_MS + 1;
     assert.match(attemptWith(undefined, 7), /retry deferred/);
-    assert.doesNotMatch(attemptWith(fakeClock, 8), /retry deferred/);
+    assert.match(attemptWith(fakeClock, 8), /blocked by another transaction/,
+      "an expired domain must reach BEGIN, not merely avoid the deferred message");
   } finally {
     holder.close();
     probe.close();
@@ -783,7 +785,25 @@ test("contention is decided by SQLite's result code, not by whoever quoted a mes
   // whose text merely quotes an older busy one.
   assert.equal(isTransactionContention(sqliteError(1, "wrapped: 'database is locked' was the underlying cause")), false);
 
-  // No numeric code at all (another runtime, or a plain Error): text decides.
+  // `bun:sqlite` spells the same number `errno` and puts the symbolic name in
+  // `code`; a classifier that only reads Node's spelling loses both. Reproduced on
+  // Bun 1.3.14 as `errno: 262`, `code: "SQLITE_LOCKED_SHAREDCACHE"`, message
+  // "database schema is locked: shared".
+  assert.equal(isTransactionContention(Object.assign(new Error("database schema is locked: shared"),
+    { code: "SQLITE_LOCKED_SHAREDCACHE", errno: 262 })), true, "bun:sqlite extended code");
+  assert.equal(isTransactionContention(Object.assign(new Error("database is locked"),
+    { code: "SQLITE_BUSY", errno: 5 })), true, "bun:sqlite primary code");
+  assert.equal(isTransactionContention(Object.assign(new Error("locked"),
+    { code: "SQLITE_BUSY_RECOVERY" })), true, "symbolic name with no number");
+  // Where a number exists it wins over the text, in both directions: a permanent
+  // code carrying a busy-sounding message is not contention, and this is the case
+  // that anchored message matching alone would get wrong.
+  assert.equal(isTransactionContention(Object.assign(new Error("database is locked"),
+    { code: "SQLITE_FULL", errno: 13 })), false, "a numeric code must not be argued out of by text");
+  assert.equal(isTransactionContention(Object.assign(new Error("attempt to write a readonly database"),
+    { code: "SQLITE_READONLY", errno: 8 })), false);
+
+  // No numeric or symbolic code at all (a plain Error): text decides.
   assert.equal(isTransactionContention(new Error("database is locked")), true);
   assert.equal(isTransactionContention(new Error("database table is locked: coordinators")), true);
   assert.equal(isTransactionContention(new Error("locking protocol")), true);

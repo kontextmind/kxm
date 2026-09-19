@@ -17662,12 +17662,16 @@ function finiteNow(clock, label) {
   return now;
 }
 var CONTENTION_PRIMARY_CODES = [5, 6, 15];
+var CONTENTION_SYMBOLIC_NAMES = /^SQLITE_(?:BUSY|LOCKED|PROTOCOL)(?:_[A-Z]+)?$/;
 var CONTENTION_MESSAGES = /^(?:database is locked|database table is locked|locking protocol|SQLITE_BUSY|SQLITE_LOCKED|SQLITE_PROTOCOL)(?:$|[\s.:])/i;
 function isTransactionContention(error) {
   const carrier = error;
-  const codes = [carrier?.errcode, carrier?.errCode, carrier?.code];
-  const numeric = codes.find((value) => typeof value === "number" && Number.isInteger(value));
-  if (numeric !== void 0) return CONTENTION_PRIMARY_CODES.includes(numeric & 255);
+  for (const value of [carrier?.errcode, carrier?.errCode, carrier?.errno]) {
+    if (typeof value === "number" && Number.isInteger(value)) return CONTENTION_PRIMARY_CODES.includes(value & 255);
+  }
+  for (const value of [carrier?.code, carrier?.name]) {
+    if (typeof value === "string" && CONTENTION_SYMBOLIC_NAMES.test(value)) return true;
+  }
   return CONTENTION_MESSAGES.test(error instanceof Error ? error.message : String(error));
 }
 function withDatabaseTransaction(database, work, mode = "IMMEDIATE", clock = monotonicNowMs) {
@@ -17694,9 +17698,12 @@ function withDatabaseTransaction(database, work, mode = "IMMEDIATE", clock = mon
   } catch (error) {
     if (!isTransactionContention(error)) throw error;
     const now = finiteNow(clock, "the transaction clock");
-    const deadlines = transactionThrottles.get(database) ?? /* @__PURE__ */ new Map();
+    let deadlines = transactionThrottles.get(database);
+    if (deadlines === void 0) {
+      deadlines = /* @__PURE__ */ new WeakMap();
+      transactionThrottles.set(database, deadlines);
+    }
     deadlines.set(clock, now + TRANSACTION_BUSY_BACKOFF_MS);
-    transactionThrottles.set(database, deadlines);
     throw databaseError(
       "runtime_transaction_busy",
       "transaction",
