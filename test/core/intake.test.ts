@@ -749,11 +749,42 @@ test("a throttle armed by one clock cannot contaminate another, nor be cleared b
     // deadline", and cannot unlock the domain that is genuinely throttled.
     assert.match(attemptWith(() => Number.NaN, 5), /runtime_transaction_clock_invalid/);
     assert.match(attemptWith(undefined, 6), /retry deferred/, "an unusable clock must not clear another domain's throttle");
-    // The guard runs where throttle state is read or armed. With no entry pending, a
-    // broken clock is simply never consulted — the scope the code comment claims.
+    // The guard runs where throttle state is read or armed, and nowhere else. Counting
+    // the reads is the only way to say that: a discarded extra read, or a read on the
+    // success path, would otherwise be invisible while still being a claim untested.
     const quiet = new KxmDatabaseSync(join(stateRoot, "quiet.db"));
     try {
-      assert.equal(withDatabaseTransaction(quiet, () => "ran", "IMMEDIATE", () => Number.NaN), "ran");
+      assert.equal(withDatabaseTransaction(quiet, () => "ran", "IMMEDIATE", () => Number.NaN), "ran",
+        "an uncontended transaction with no pending entry must not consult a broken clock");
+      let reads = 0;
+      const counting = () => { reads += 1; return Number(process.hrtime.bigint() / 1_000_000n); };
+      assert.equal(withDatabaseTransaction(quiet, () => "ran again", "IMMEDIATE", counting), "ran again");
+      assert.equal(reads, 0, `a clean success must read the clock zero times, saw ${String(reads)}`);
+      assert.equal(withDatabaseTransaction(quiet, () => "deferred", "DEFERRED", counting), "deferred",
+        "DEFERRED skips the deadline check entirely");
+      assert.equal(reads, 0, `a DEFERRED transaction must read the clock zero times, saw ${String(reads)}`);
+
+      // The exact read budget on the contention path: one read to arm, one to refuse.
+      // Anything more is a read the documents do not claim, and a discarded read is the
+      // kind of drift that made the previous two wordings wrong.
+      const busy = new KxmDatabaseSync(join(stateRoot, "counted-busy.db"));
+      const locker = new KxmDatabaseSync(join(stateRoot, "counted-busy.db"));
+      try {
+        busy.exec("CREATE TABLE counted (id INTEGER PRIMARY KEY)");
+        locker.exec("BEGIN IMMEDIATE");
+        locker.exec("INSERT INTO counted (id) VALUES (1)");
+        let counted = 0;
+        const countingClock = () => { counted += 1; return Number(process.hrtime.bigint() / 1_000_000n); };
+        const arm = () => captureError(() => withDatabaseTransaction(busy, () => "x", "IMMEDIATE", countingClock));
+        assert.match(String(arm().error), /blocked by another transaction/);
+        assert.equal(counted, 1, `arming must read the clock exactly once, saw ${String(counted)}`);
+        assert.match(String(arm().error), /retry deferred/);
+        assert.equal(counted, 2, `refusing must read the clock exactly once, saw ${String(counted)}`);
+      } finally {
+        try { locker.exec("ROLLBACK"); } catch { /* closed below */ }
+        busy.close();
+        locker.close();
+      }
     } finally {
       quiet.close();
     }
@@ -904,6 +935,18 @@ test("contention is decided by SQLite's result code, not by whoever quoted a mes
     { errno: 5, code: "SQLITE_FULL" })), true, "a number beats a permanent name");
   assert.equal(isTransactionContention(Object.assign(new Error("text says nothing useful"),
     { errno: 13, code: "SQLITE_BUSY" })), false, "and beats a contention name the other way");
+
+  // The last two directions a field-order mutant survives: which *string* field wins,
+  // and whether a zero is a decision or an absence. `SQLITE_OK` is 0, so treating it as
+  // "no code here" and falling through to the message would call a success a lock.
+  assert.equal(isTransactionContention(Object.assign(new Error("text says nothing useful"),
+    { code: "SQLITE_FULL", name: "SQLITE_BUSY" })), false, "`code` is consulted before `name`");
+  assert.equal(isTransactionContention(Object.assign(new Error("text says nothing useful"),
+    { code: "SQLITE_BUSY", name: "SQLITE_FULL" })), true, "and the first matching name decides");
+  assert.equal(isTransactionContention(Object.assign(new Error("database is locked"),
+    { errcode: 0 })), false, "SQLITE_OK is a result, not an absent code");
+  assert.equal(isTransactionContention(Object.assign(new Error("database is locked"),
+    { errcode: 0, code: "SQLITE_FULL" })), false, "a zero number still beats the text");
 
   // No numeric or symbolic code at all (a plain Error): text decides.
   assert.equal(isTransactionContention(new Error("database is locked")), true);

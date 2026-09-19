@@ -219,9 +219,8 @@ clock finding reintroduced the same class of defect one layer up.
 
 | Finding | Sev | What was wrong | Disposition |
 |---|---|---|---|
-| 2. Deadlines shared a connection key but not a clock domain | MED | The injectable `clock` stored an absolute number in a per-connection slot and the next call subtracted **whichever** clock it was given. A valid monotonic clock an hour ahead therefore throttled a default-clock caller for an hour (`retry deferred 3601000ms`), and `() => NaN` reached `BEGIN` with no deadline at all. The seam the critic had itself asked for was the hazard | **Fixed**: throttle state is keyed by connection **and** clock, so a deadline can only be read, expired or replaced by the clock that armed it; a non-finite reading throws `runtime_transaction_clock_invalid` instead of meaning "no deadline" — at the points where throttle state is read or armed, which is the honest scope the fifth pass asked for: an uncontended `BEGIN` never consults the clock, so this guards the seam rather than every transaction. One test steps both domains and asserts neither borrows the other's refusal nor clears it, including that a bad clock leaves the good domain throttled |
+| 2. Deadlines shared a connection key but not a clock domain | MED | The injectable `clock` stored an absolute number in a per-connection slot and the next call subtracted **whichever** clock it was given. A valid monotonic clock an hour ahead therefore throttled a default-clock caller for an hour (`retry deferred 3601000ms`), and `() => NaN` reached `BEGIN` with no deadline at all. The seam the critic had itself asked for was the hazard | **Fixed**: throttle state is keyed by connection **and** clock, so a deadline can only be read, expired or replaced by the clock that armed it; a non-finite reading throws `runtime_transaction_clock_invalid` instead of meaning "no deadline". The scope sentence took three attempts — see the eighth and ninth passes — and is now a counted read budget rather than a clause. One test steps both domains and asserts neither borrows the other's refusal nor clears it, including that a bad clock leaves the good domain throttled |
 | 3. Classification predicate | CONCERN | Message-only matching had no stability guarantee, missed `SQLITE_LOCKED_SHAREDCACHE` (`database schema is locked: main`, errcode 262) and `SQLITE_BUSY_RECOVERY`, and said "contention" for any wrapper that quoted a busy message | **Fixed by result code** — and then caught again in the fifth pass for being **Node-only**: it read `errcode` and ignored `bun:sqlite`'s `errno`, so on the runtime Pi hosts extensions in, a real shared-cache `BEGIN` failure classified as permanent and armed nothing. Order is now `errcode`/`errCode`/`errno`, then a symbolic `SQLITE_*` name, then anchored text, with the number beating the message in both directions. The `SQLITE_PROTOCOL` decision the critic asked for: **counted as contention**, because SQLite raises it after exhausting retries to start a WAL transaction. What remains open (item 10) is now narrower: shared-cache contention has been reproduced live on Bun, and what this stack has never raised is `SQLITE_PROTOCOL` and `SQLITE_BUSY_RECOVERY` |
-| 4. Raw non-contention errors change output shape | CONCERN | A `BEGIN` failure that is not contention now reaches `runtime-supervisor.ts` as a plain `Error` → 500/`runtime_internal` instead of 400 with a code; `cli/project.ts` falls back to `run_io_failed` | **Accepted as correct.** A permanent failure must not be reported as a retryable busy condition; `engine.ts` guards `.issues` and reports `retryable: false`, and `hub.ts` already maps both shapes to `internal_error`. No caller dereferences `.issues` blindly. Recorded so the next reader of this contract knows the mapping changed on purpose |
 | 5. Rebind read-back policy | CONCERN | Returning the winner with `created: false` is honest about *creation* but says nothing about whether this caller's approval and reason were persisted; the comment said "same policy" | **Fixed the wording** to "same ceiling". The distinction is recorded rather than patched: `created` reports whether this call inserted a row, never whether an approval was recorded — immutable rebind history is deferred item 1 (schema v6). The critic re-ran both race fixtures through the real losing SQL and they held |
 | 8. Claims still exceeded evidence | LOW | "forced losing insert, twice" (it is one insert and one rebind), "Four tests now" (five), "the store treats the handle as suspect" (no such behaviour exists), and a forward-step assertion that only matched text while the Tracking said it bounded the window | All four corrected, in the code comment, in this record, in Tracking — and the forward assertion now bounds numerically, so the claim is the weaker of the two |
 
@@ -337,6 +336,23 @@ duplication, spend or success-misreport route. Its own limit, restated: 20 of th
 intake tests cannot create temp directories in the read-only sandbox, so the committed
 suite is not what it executed.
 
+## Ninth pass — the read budget, and two reproductions that had to import things
+
+Verdict: **STILL BLOCKED on claims**, and the four surviving mutations it listed are all
+the same kind: a sentence about how often the clock is read, with nothing counting.
+
+| Its point | Then |
+|---|---|
+| "counting-clock assertions are absent" — a discarded read on the success path, a second read when arming, and a `name`-before-`code` swap all survived | Asserted by counting now: a clean success and a `DEFERRED` transaction read the clock **zero** times; arming a fresh deadline reads it **exactly once**; the next refusal reads it **exactly once**. Field order is pinned in both directions (`code` before `name`, and the first match decides), and `SQLITE_OK` (0) is pinned as a *decision* rather than an absent code — ignoring zero would fall through to the message and call a success a lock. All four of its surviving mutations were re-run locally and each now fails |
+| the printed reproductions were not independently runnable | Both blocks now import their own constructor and attach the shared-cache database, on each runtime |
+| the clock-scope sentence was still too broad, third time | Fixed as above — and the fix is a count, not a clause, because three rounds of wording did not converge |
+
+What it confirmed rather than contested: no wrong precedence verdict for an *unmodified*
+Node or Bun error out of `exec("BEGIN …")`, and no reachable authority, pause,
+duplication, spend or success route. The remaining blocks in this slice have all been
+about evidence, which is the right thing to be picky about in a contract whose whole job
+is refusing things.
+
 ## Reproducing these reviews
 
 ```bash
@@ -362,7 +378,8 @@ The runnable form is the one round 7 produced — two in-memory connections that
 not raise it. Run on Node 24.15.0 and Bun 1.3.14:
 
 ```js
-// node:sqlite — connection A
+// node:sqlite — self-contained; run with `node --experimental-strip-types file.mts`
+import { DatabaseSync } from "node:sqlite";
 const a = new DatabaseSync(":memory:");
 a.exec("ATTACH DATABASE 'file:shared_probe?mode=memory&cache=shared' AS shared");
 a.exec("BEGIN IMMEDIATE");
