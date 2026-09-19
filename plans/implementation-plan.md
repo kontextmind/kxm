@@ -377,15 +377,23 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   **What is gated now:**
   - *Per recipe, not per file.* The file-wide brake was the mistake. Transport recipes
     (`impl`, `impl-bg`, `plan`, `review-arch`, `review-cli`, `dispatch`) may not
-    reference `assignment-run.mjs` **or forward to a proof recipe**, so they cannot
-    mint assignment, witness or acceptance proof directly or indirectly; full
-    call-graph analysis is not claimed. Each assignment recipe is pinned to its exact
+    reference `assignment-run.mjs` or forward to a proof recipe, so they cannot mint
+    assignment, witness or acceptance proof. A second review round showed what
+    "may not" had to mean to be true: a text-only forwarding check escaped on
+    `just  assign` (double space), `just -- assign`, a `\` continuation, and by
+    repointing the `{{run}}` variable at the runner, so the transport surface is now
+    **pinned** — `run :=` and `dispatch`'s body are asserted exactly, alongside the
+    whitespace- and `--`-tolerant reference check — and each of those four mutations
+    turns the gate red. General call-graph analysis is still not claimed. Each assignment recipe is pinned to its exact
     command, flags **and declared arity** — header parameters must match the positions
     the body reads in both directions — and where the `just` binary exists a real
     invocation proves it refuses a short argument list.
   - *Docs-to-justfile parity.* `just <verb>` in **command form** (inline code, or a
     fenced line with an optional `#`) must exist as a recipe; stray whitespace and
-    `a|b|c` alternations are handled, `~~~` fences too, and a glob alternative like `review-*` is skipped because it names a family rather than a recipe. Prose, headings and captured
+    `a|b|c` alternations are handled, `~~~` fences too, leading interpreter options are
+    skipped so `just --dotenv-path /abs/.env assign …` names `assign`, a shell pipe is
+    not read as an alternation (`just assign /abs/task | cat` is one recipe), and a glob
+    alternative like `review-*` is skipped because it names a family, not a recipe. Prose, headings and captured
     `just --list` output are **not** parsed, which is the limit of the convention:
     naming a recipe only in prose is not gated, and a backticked adverbial phrase —
     the words "just in case" inside code spans — would ask for a recipe called `in`. Load-bearing, verified by renaming

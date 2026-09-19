@@ -14,10 +14,12 @@ set windows-shell := ["sh", "-c"]
 # variables it would set is `NODE_OPTIONS`, whose value runs *before* any script
 # body: `NODE_OPTIONS=--import=data:text/javascript,…` took over a `witness` or
 # `accept` run at interpreter start, ahead of the runner's own identity, tree and
-# roster validation, and ahead of `spawnSync(..., shell: false)`. These recipes mint
+# roster validation, and ahead of the `shell: false` on the spawns that follow (auth
+# probes synchronously, harness execution asynchronously). These recipes mint
 # proof, so an unreviewed working-directory file must not be able to execute in
 # them. If a task genuinely needs a dotenv file, pass it explicitly:
-# `just --dotenv --dotenv-path /abs/path/.env assign …`.
+# `just --dotenv-path /abs/path/.env assign …` (`--dotenv` is not a separate
+# flag in the installed 1.58; the path option both selects and locates the file).
 
 run := "node scripts/harness-run.mjs"
 briefs := env_var_or_default("KXM_BRIEF_DIR", ".kxm/briefs")
