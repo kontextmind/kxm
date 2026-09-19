@@ -505,8 +505,9 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   deadline can only be read, expired or replaced by the clock that armed it — and a
   non-finite reading throws `runtime_transaction_clock_invalid` instead of silently
   meaning "no throttle" — at the points where throttle state is read or armed, which
-  is the honest scope: an uncontended `BEGIN` never consults the clock, so this guards
-  the seam rather than every transaction. That is the shape the injectable seam needed
+  is the honest scope: a `BEGIN` with no pending deadline never consults the clock (and
+  with a deadline pending it does, which is why the wording says "no pending deadline"),
+  so this guards the seam rather than every transaction. That is the shape the injectable seam needed
   before it could stay. The classification question was settled properly and then found
   to be **Node-only**, which the fifth pass caught: contention is decided by SQLite's
   result code (`code & 0xff` over 5 / 6 / 15) read from Node's `errcode` **and**
@@ -529,13 +530,21 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   corrected here: the forced-write coverage is one lost **insert** and one lost
   **rebind** (not "the current-format winner and the legacy-hash winner"), and
   `replaceCoordinatorInSlot` installs the winner through the real method first so the
-  end state is the raced one rather than a fabricated boolean. Tests 20 → **23**, eight
-  of them transaction-focused, each mutation-checked: ignoring clock identity, dropping
-  the finite-clock guard, dropping code-based classification, dropping `errno`, and
-  letting message text override a number each turn exactly one test red. What is **not**
-  gated: throttle-state retention. The inner map is weak in the clock, so a caller that
-  builds a fresh closure per attempt cannot grow it — but that was demonstrated on an
-  instrumented copy, not asserted here, and no production caller passes a clock.
+  end state is the raced one rather than a fabricated boolean. Tests 20 → **23**, seven of them
+  transaction- and throttle-focused (busy contention, monotonic bound, clock domains, mode scoping,
+  non-contention errors, result-code classification, failed `COMMIT`), each mutation-checked: ignoring clock identity, dropping
+  the finite-clock guard, dropping code-based classification, dropping `errno` while a
+  symbolic name is still read, putting the symbolic name **ahead** of the number, and
+  letting message text override a code each turn exactly one test red — the two
+  ordering mutations are caught by disagreeing fixtures (`errno: 5` with
+  `code: "SQLITE_FULL"`, and the reverse), because agreeing examples prove nothing
+  about precedence. What is **not**
+  gated: throttle-state retention. The inner map is weak in the clock, so it keeps no
+  otherwise-unreachable clock alive and a fresh closure per attempt leaves nothing behind
+  once collected — a *retained* clock still holds its entry, collection is neither
+  immediate nor size-bounded, and nothing measures garbage collection here. What is
+  asserted instead is the behaviour that matters: distinct closures with identical
+  readings reach `BEGIN` independently and refuse independently.
   What the fourth and fifth passes probed, which the sixth pass then **committed**
   rather than left as reviewer evidence: a divergent row — index column flipped to
   `held_paused` while its record says `ready` — raises `intake_record_divergent` during

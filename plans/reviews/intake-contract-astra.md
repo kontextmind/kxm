@@ -286,8 +286,9 @@ Four nonblocking corrections came out of it, all landed:
 | Q2 | A permanent **symbolic** name with no number fell through to the text fallback, so `SQLITE_FULL` quoting "database is locked" was still called contention — and the blanket claim in three documents was therefore too broad | A SQLite result *name* now decides in both directions, exactly as a number does; Node's `ERR_SQLITE_ERROR` is explicitly not a result name. Assertions added for symbolic-permanent, symbolic-contention-without-a-number, and the code/name precedence; mutation-checked against the old fall-through |
 | Q1 retention | "cannot accumulate entries" overstated a `WeakMap`: a retained clock keeps its entry, and collection is neither immediate nor size-bounded | Claim rewritten in code, CHANGELOG, Tracking and this record. What *is* now asserted is the behaviour that matters: two distinct closures with identical readings get independent deadlines |
 | Q1 scope | "an uncontended transaction never consults the clock" was wrong in the case where an entry was already pending — the preflight still reads the clock | Reworded to "a transaction with no pending deadline", and asserted directly: a `NaN` clock on a quiet connection runs `work()` untouched |
-| Q4/Q5 committed coverage | Several round-5 confirmations were reviewer probes, not tests: the divergent-row resume, and both forced-write fixtures returning an authored `false` | **Committed.** A forged index column (`held_paused` against a record that says `ready`) now has a test asserting `intake_record_divergent` with the project still paused and the row untouched; both race fixtures obtain their `false` from the real guarded SQL, so the boolean is SQLite's verdict rather than mine |
-| Q4 wording | "only when there is no code" survived in one round-3 row; the printed Bun reproduction was not runnable as written (`SQL` undefined, no shared-cache attachment) | Both fixed here — the runnable form is quoted above, and the count is now 23 intake tests, eight of them transaction-focused |
+| The committed-coverage row itself, and this record's claim that the wording had been rewritten in Tracking | LOW | The row listed reviewer probes as if they were tests, and two Tracking sentences still carried the pre-correction wording, so "claim rewritten in Tracking" was false. "Claimed committed, now actually committed": the divergent-row resume and both real-losing-SQL fixtures are tests, the Tracking sentences were rewritten (round 7 caught that the first two attempts had not landed), and the Bun reproduction was replaced with a form that runs |
+| Original Q4/Q5 committed coverage | Several round-5 confirmations were reviewer probes, not tests: the divergent-row resume, and both forced-write fixtures returning an authored `false` | **Committed.** A forged index column (`held_paused` against a record that says `ready`) now has a test asserting `intake_record_divergent` with the project still paused and the row untouched; both race fixtures obtain their `false` from the real guarded SQL, so the boolean is SQLite's verdict rather than mine |
+| Q4 wording | "only when there is no code" survived in one round-3 row; the printed Bun reproduction was not runnable as written (`SQL` undefined, no shared-cache attachment) | Both fixed here — the runnable form is quoted above, and the count is now 23 intake tests, seven of them transaction- and throttle-focused |
 
 What it declined to treat as blockers, and so what stays deferred: immutable coordinator
 history, record digests, populated migration coverage and a shared version constant,
@@ -296,6 +297,23 @@ transaction composition, the durable arrival sequence, bounded atomic resume, an
 live witnesses for `SQLITE_PROTOCOL` / `SQLITE_BUSY_RECOVERY` — with failed-rollback
 handle invalidation and the public clock seam recorded as named limits, not solved
 problems.
+
+## Seventh pass — the corrections to the corrections
+
+Verdict: **STILL BLOCKED**, and correctly so: it reviewed my *closure claims* rather
+than only the code, and found three of them untrue.
+
+| Point | What it caught | Then |
+|---|---|---|
+| Twin clocks | `runtime_transaction_busy` is the label for fresh contention **and** a borrowed deadline, so the twin block proved nothing; a mutant that merged clock identities **by value** passed it | Each twin's first attempt must now reach `BEGIN` (`blocked by another transaction`) and each must then be refused in its own window. Re-run as a mutation: value-keyed clock merging now fails |
+| Tracking | Two sentences still carried the pre-correction wording ("cannot grow it", "an uncontended `BEGIN` never consults the clock"), which made this record's claim that the wording was rewritten in Tracking **false** | Both rewritten to what the code does; the assertion named in their place is the twin case, not a garbage-collection measurement |
+| Bun reproduction | The snippet this record printed still did not run (`SQL` undefined, no attachment) — the same failure mode as round 6's, in the sentence written to fix it | Replaced with the two-connections-attach-one-named-shared-cache form, with the observed numbers for both runtimes |
+| Precedence | The classifier test survived deleting `errno` **and** putting the symbolic name ahead of the number: every fixture had them agreeing, so nothing pinned the order | Two disagreeing fixtures added (`errno: 5` against `code: "SQLITE_LOCKED_SHAREDCACHE"`, and `code: "SQLITE_BUSY"` against `errno: 13`), plus `errcode` vs `errno` disagreement. Mutation-checked: dropping `errno`, and reordering symbolic ahead of numeric, each now turns the test red |
+
+Its other conclusion, recorded because it is the point of the whole exercise: no
+authority, pause, duplication, success-reporting or spend defect was found in any
+runtime path — the blocks since round 3 have been about what this repository *claims*
+and what its gates *enforce*, which is the same failure class in a smaller hat.
 
 ## Reproducing these reviews
 
@@ -317,19 +335,27 @@ with `command not found: rtk` inside the sandbox before Codex fell back to direc
 The fourth and fifth passes ran measurements rather than only reading, including a
 Bun 1.3.14 reproduction of shared-cache contention to check the classifier's shape:
 
-The runnable form is the one the sixth pass actually used — `bun:sqlite` with two
-connections on **one attached, shared-cache** database, and a schema change between
-them, because a plain second handle to a file does not produce it:
+The runnable form is the one round 7 produced — two in-memory connections that
+**attach the same named shared-cache database**, because a second handle to a file does
+not raise it. Run on Node 24.15.0 and Bun 1.3.14:
 
 ```js
-// bun: a named shared-cache db, attached from two connections
-const a = new SQL("db:/kxm_shared?mode=rwc&cache=shared");
-const b = new SQL("db:/kxm_shared?cache=shared");
-a.run("BEGIN IMMEDIATE"); a.run("CREATE TABLE t (x)");
-try { b.run("BEGIN IMMEDIATE"); } catch (e) { console.log(e.code, e.errno, e.message); }
-// SQLITE_LOCKED_SHAREDCACHE 262 database schema is locked: main
-// node:sqlite on the same shape reports errcode: 262, code: "ERR_SQLITE_ERROR"
+// node:sqlite — connection A
+const a = new DatabaseSync(":memory:");
+a.exec("ATTACH DATABASE 'file:shared_probe?mode=memory&cache=shared' AS shared");
+a.exec("BEGIN IMMEDIATE");
+a.exec("CREATE TABLE shared.t (x)");
+// connection B, same process
+const b = new DatabaseSync(":memory:");
+b.exec("ATTACH DATABASE 'file:shared_probe?mode=memory&cache=shared' AS shared");
+try { b.exec("BEGIN IMMEDIATE"); } catch (e) { console.log(e.errcode, e.code, e.message); }
+// node: 262 ERR_SQLITE_ERROR   |   bun: 262 SQLITE_LOCKED_SHAREDCACHE
+// both: "database schema is locked: shared"
 ```
+
+`bun:sqlite` takes the same shape with `new SQL(":memory:")` and
+`db.run("ATTACH DATABASE 'file:shared_probe?mode=memory&cache=shared' AS shared")`.
+Both numbers and both names are what the classifier now consumes.
 
 The third pass also ran measurements rather than only reading: it reproduced the
 backoff against a wall-clock step, forced a losing insert against a legacy-hash

@@ -731,9 +731,13 @@ test("a throttle armed by one clock cannot contaminate another, nor be cleared b
     // deadline, and arming one does not arm the other.
     const twinA = () => fakeMs;
     const twinB = () => fakeMs;
-    assert.match(attemptWith(twinA, 31), /runtime_transaction_busy/, "twin A arms on its own contention");
-    assert.match(attemptWith(twinB, 32), /runtime_transaction_busy/, "twin B must arm its own, not inherit A's");
-    assert.match(attemptWith(twinA, 33), /retry deferred/, "twin A is inside its own window");
+    // "busy" is not enough: a borrowed deadline reports the same label as fresh
+    // contention. Each twin's first attempt must actually reach BEGIN, and each must
+    // then be refused inside its own window.
+    assert.match(attemptWith(twinA, 31), /blocked by another transaction/, "twin A reaches BEGIN");
+    assert.match(attemptWith(twinB, 32), /blocked by another transaction/, "twin B reaches BEGIN independently");
+    assert.match(attemptWith(twinA, 33), /retry deferred/, "twin A is refused inside its own window");
+    assert.match(attemptWith(twinB, 34), /retry deferred/, "twin B is refused inside its own window too");
 
     // The default domain armed its own on attempt 2, so a second default call is
     // refused inside a bounded window.
@@ -883,6 +887,16 @@ test("contention is decided by SQLite's result code, not by whoever quoted a mes
   // message gets its turn.
   assert.equal(isTransactionContention(Object.assign(new Error("database is locked"),
     { code: "ERR_SQLITE_ERROR" })), true);
+
+  // **Precedence**, not just recognition: agreeing examples prove nothing about the
+  // order, so these disagree on purpose. Delete the `errno` lookup and the first one
+  // flips; move the symbolic name ahead of the number and the second one flips.
+  assert.equal(isTransactionContention(Object.assign(new Error("whatever the text says"),
+    { code: "SQLITE_LOCKED_SHAREDCACHE", errno: 5 })), true, "bun's number beats its own name");
+  assert.equal(isTransactionContention(Object.assign(new Error("whatever the text says"),
+    { code: "SQLITE_BUSY", errno: 13 })), false, "a permanent number beats a busy name");
+  assert.equal(isTransactionContention(Object.assign(new Error("database is locked"),
+    { errcode: 13, errno: 5 })), false, "the first number found decides; `errno` must not override it");
 
   // No numeric or symbolic code at all (a plain Error): text decides.
   assert.equal(isTransactionContention(new Error("database is locked")), true);
