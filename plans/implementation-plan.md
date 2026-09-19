@@ -375,22 +375,33 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   was ever contemplated — no still-applicable decision requires these entry points to
   stay absent, and the Decided entry above names them.
   **What is gated now:**
-  - *Per recipe, not per file, and pinned rather than pattern-matched.* The file-wide
-    brake was the mistake: the real rule is that transport recipes may not mint
-    assignment, witness or acceptance proof. A text-only forwarding check was then
-    demonstrated to escape four ways — `just  assign` (double space), `just -- assign`,
-    a `\` continuation inside `impl-bg`, and repointing `run :=` at the runner — and a
-    fifth class defeated the parser outright: `set allow-duplicate-recipes` with a second
-    `dispatch`, or `set allow-duplicate-variables` with a second `run :=`, because the
-    last declaration wins while the gate read the first. The surface is now closed on
-    both sides: `run :=` and `dispatch`'s body are asserted exactly, every non-proof
-    recipe is scanned for forwarding with continuations folded, duplicate recipe headers
-    and duplicate `run` bindings are refused, any `set allow-duplicate*` and any
-    `import`/`mod` (including `import?`, which still executes) are refused, and the
-    recipe name set must equal a pinned list — adding a recipe is a deliberate edit to
-    this gate, not something that slips past it. All five mutations turn it red; a
-    general call-graph analysis is still not claimed, and an extra recipe that only
-    echoes is not proof forgery, it is the gate's boundary moving in the open.
+  - *Per recipe, not per file; normalized text plus the interpreter's own parse.* The
+    file-wide brake in #179 was the wrong shape: the real rule is that transport recipes
+    must not mint assignment, witness or acceptance proof. Four review rounds then showed
+    that rule escaping a text gate seven different ways — `just  assign`,
+    `just -- assign`, a `\` continuation, repointing `run :=`,
+    `set allow-duplicate-variables` with a second binding, a duplicate `verify: # comment`
+    header, `EXTRA:` / `extra_recipe:` names a lowercase-hyphen parser never saw,
+    an `alias` pointing at a proof recipe, a continued `mod`, and four spellings that hid
+    a verb or a path from a `just <verb>` pattern — options between the word and the verb,
+    a nested `--command` shell line, a verb built from two variables at runtime, and a
+    script path split by string concatenation. The mutations live in the test file's
+    comments, because writing them in command form in this document would make the parity
+    scanner ask for recipes named after shells. What closes them is not a bigger regex:
+    the file is
+    **normalized first** (continuations folded, comments stripped), the recipe-name set
+    must **equal** a pinned list so no name shape slips through, duplicate headers and
+    duplicate `run` bindings are refused, `set allow-duplicate*`, `import`/`mod` (any
+    spelling, including `import?`) and `alias` are refused, and non-proof bodies may not
+    contain the forbidden substrings or a `just … <verb>` pair at any distance. The same
+    rules then run against **`just --dump`**, which is the interpreter's own view rather
+    than a guess about it, skipped with a visible reason where the binary is absent.
+    **What that is not**: a proof about execution. A body can still assemble a command at
+    runtime from a variable, a base64 blob, or `sh -c` over data, and any co-author who
+    edits this file can already do anything the file can do. The gate's job is accidental
+    drift and ordinary indirection — keeping "the docs say X, the code does Y" impossible
+    to merge quietly — not adversarial sandboxing, which is a Phase 11 problem and lives
+    in `plugins/kxm/src/sandbox.ts`, not in a justfile.
   - *Docs-to-justfile parity.* `just <verb>` in **command form** — inline code, or a
     fenced line with an optional `#` — must exist as a recipe. The scan is token-level:
     leading interpreter options and their path-like values are skipped
@@ -419,7 +430,10 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
     control is what the first version of this probe lacked: only the probe script wrote
     the marker, so the witness arm could not have detected a preload at all.
     Opt-in is `just --dotenv-path /abs/.env assign …`; `--dotenv` is not a separate flag
-    in the installed 1.58, and the earlier note here published a command that exits 2.
+    in the installed 1.58, and the earlier note here published a command that exits 2. An
+    explicit opt-in **executes what it points at** — including `--dotenv-path
+    /dev/stdin`, which a reviewer used to run a preload through the real `witness` recipe.
+    That is the point of "explicit": the gate is about a file nobody chose.
     Explicitly **out of scope**, because it is an operator trust decision rather than a
     gate: an inherited `NODE_OPTIONS`, `PATH`, `KXM_*` or `JUST_DOTENV_COMMAND` in the
     parent environment, and whatever a reviewed helper script chooses to do.

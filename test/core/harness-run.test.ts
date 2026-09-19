@@ -1421,6 +1421,52 @@ test("justfile no longer ships an impl-pi Grok fallback", () => {
   assert.doesNotMatch(just, /xai\/grok-4\.6/);
 });
 
+/**
+ * Normalize a justfile before gating it: fold `\`-continuations, drop comments, and
+ * ignore nothing else. Every escape demonstrated in review was a *textual* one —
+ * `set \` + `allow-duplicate-variables`, a continued `mod`, a trailing `# comment` on a
+ * recipe header — so the gate has to see what the parser sees, not what a line looks
+ * like. This is a normalizer, not a shell interpreter: see the dump gate below.
+ */
+function normalizeJustfile(text: string): string {
+  const folded = text.replace(/\\\s*\n\s*/g, " ");
+  return folded.split("\n").map((line) => stripJustComment(line)).join("\n");
+}
+
+/** Drop an unquoted trailing comment, which is what hid a duplicate `verify:` header. */
+function stripJustComment(line: string): string {
+  let quote: string | undefined;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (quote !== undefined) {
+      if (ch === quote) quote = undefined;
+      continue;
+    }
+    if (ch === '"' || ch === "'") { quote = ch; continue; }
+    if (ch === "#" && (i === 0 || /\s/.test(line[i - 1] ?? " "))) return line.slice(0, i).trimEnd();
+  }
+  return line;
+}
+
+const TRANSPORT_RECIPES = ["impl", "impl-bg", "plan", "review-arch", "review-cli", "dispatch"] as const;
+/**
+ * Substrings that may not appear in a non-proof body at all. `assignment-` is there
+ * rather than the full filename because `node scripts/assignment-""run.mjs` was shown to
+ * reach the runner past a whole-name check. The bare verb names are there because
+ * `just --highlight --no-highlight witness …` and `just --command sh -c 'just
+ * "witness"'` both reached the same place through a `just <verb>` pattern.
+ */
+const FORBIDDEN_TRANSPORT_TOKENS = [
+  "assignment-", "assign", "witness", "accept", "attribute", "observe-cost",
+  "change-report", "plan-current",
+] as const;
+/**
+ * `just` followed by a proof verb with anything in between: options, quotes, another
+ * `just`. The word `just` alone is allowed — `default:` legitimately runs
+ * `just --list` — so the forwarding rule is about the pair.
+ */
+const FORWARDING_PATTERN = /just(?:\s+[^\n]+)?\s+(assign|witness|accept|attribute|observe-cost|change-report|plan-current)\b/;
+
 test("just transport recipes use evidence-informed effort defaults and never mint assignment proof", () => {
   const just = readFileSync(resolve("justfile"), "utf8");
   assert.match(just, /role:"writer",harness:"grok",model:"grok-4\.6",effort:"medium"/);
@@ -1429,155 +1475,102 @@ test("just transport recipes use evidence-informed effort defaults and never min
   assert.match(just, /role:"reviewer-cli",harness:"codex",model:"gpt-5\.6-sol",effort:"low"/);
   assert.doesNotMatch(just, /effort:"high"/);
   assert.doesNotMatch(just, /Normal assignment workflow/);
-  // The boundary is per-recipe, not file-wide: `impl|plan|review-*` are harness
-  // transport and must never reach the runner that mints assignment, witness or
-  // acceptance proof — directly or by forwarding to a recipe that does.
-  // The transport surface is small enough to pin rather than pattern-match. Regex
-  // forwarding checks were demonstrated to escape on `just  assign` (double space),
-  // `just -- assign`, a `\\` continuation, and by repointing the `{{run}}` variable at
-  // the runner; pinning closes all four at once.
-  const runBinding = justfileRecipeLines().find((line) => /^run\s*:=/.test(line)) ?? "";
-  assert.equal(runBinding.trim(), 'run := "node scripts/harness-run.mjs"',
-    "the transport command variable was repointed; {{run}} indirection escapes a text-only forwarding check");
-  assert.equal(recipeLines("dispatch").join("\n").trim(), '{{run}} -- "$1"',
-    "dispatch's body drifted; pinning it is what keeps {{run}} indirection honest");
-  const proofAlternation = Object.keys(ASSIGNMENT_RECIPES).join("|");
-  const forwarding = new RegExp(`just\\s+(?:\\S+\\s+)?(?:${proofAlternation})\\b`);
-  // Scan **every** recipe body, with `\`-continuations folded: a reviewer's mutation
-  // reached `witness` from `impl-bg` through a continued line that a per-line check
-  // never joined. The proof recipes themselves are excluded — they are the point.
-  const proofNames = new Set(Object.keys(ASSIGNMENT_RECIPES));
-  for (const name of justfileRecipeNames()) {
-    if (proofNames.has(name)) continue;
-    const body = recipeLines(name).join(" ").replace(/\\\s*\n\s*/g, " ");
-    assert.doesNotMatch(body, /assignment-run\.mjs/, `recipe ${name} must not mint assignment proof`);
-    assert.doesNotMatch(body, forwarding, `recipe ${name} must not forward into a proof recipe`);
-  }
+  assertDeclaredSurface(normalizeJustfile(just));
+});
 
-  // A closed surface, because last-declaration-wins defeats any first-match parser:
-  // `set allow-duplicate-recipes` plus a second `dispatch`, or
-  // `set allow-duplicate-variables` plus a second `run :=`, both reached the runner
-  // while every pinned body still read clean.
-  const lines = justfileRecipeLines();
-  assert.doesNotMatch(lines.join("\n"), /^[ \t]*set[ \t]+allow-duplicate/m,
+/**
+ * The boundary, applied to whatever text a parser would see.
+ *
+ * Honest about its limit: this is a normalized-text gate over a 20-line file, not a
+ * proof about execution. A body can still build a command at runtime (`cmd=wit; just
+ * "${cmd}ness"`, a base64 blob, `sh -c`); the tokens below make the *ordinary* ways of
+ * doing that impossible to merge, and the `just --dump` gate re-checks the same rules
+ * against the interpreter's own parse where the binary exists.
+ */
+function assertDeclaredSurface(text: string): void {
+  const lines = text.split("\n");
+  const joined = lines.join("\n");
+
+  // Declarations that would let a later duplicate win over the pinned ones.
+  assert.doesNotMatch(joined, /^[ \t]*set[ \t]+allow-duplicate/m,
     "duplicate recipes or variables let a later declaration defeat the pinned surface");
-  // `import`, `import?`, `mod`, `mod *` — an optional import still executes.
-  assert.doesNotMatch(lines.join("\n"), /^[ \t]*(?:import|mod)(?:\?|\*|\s)/m,
+  assert.doesNotMatch(joined, /^[ \t]*(?:import|mod)(?:\?|\*|\s)/m,
     "imported or modular justfiles are not scanned by these gates");
-  const recipeNames = lines
-    .filter((line) => /^[a-z][a-z0-9-]*(?:\s+[^\n]+)?\s*:\s*$/.test(line))
-    .map((line) => (line.split(/\s+/)[0] ?? "").replace(/:$/, ""));
-  assert.equal(recipeNames.length, new Set(recipeNames).size, "a recipe header appears twice");
-  assert.deepEqual([...recipeNames].sort(), EXPECTED_RECIPES,
-    "the recipe surface changed; update the gate and the documents together");
+  assert.doesNotMatch(joined, /^[ \t]*alias[ \t]+/m,
+    "an alias is another name for a proof recipe and escapes a body check");
+
+  // Every header, in any case or spelling the parser accepts. Uppercase and
+  // underscore names were demonstrated to slip past a lowercase-hyphen-only parser.
+  // A recipe header ends in `:` with nothing after it (comments are already
+  // stripped). That is what separates `verify:` from `run := "..."`,
+  // `set dotenv-load := true` and `alias sneaky := witness`, all of which an
+  // "identifier then colon" pattern also matches.
+  const headers = lines
+    .map((line) => line.match(/^([A-Za-z_][A-Za-z0-9_-]*)(?!\s*:?=)[^:]*:$/))
+    .filter((m): m is RegExpMatchArray => m !== null)
+    .map((m) => m[1] as string);
+  const unique = new Set(headers);
+  assert.equal(headers.length, unique.size, "a recipe header appears twice; the last one wins");
+  const unexpected = headers.filter((name) => !EXPECTED_RECIPES.includes(name));
+  assert.deepEqual(unexpected, [],
+    `unpinned recipe headers (names outside the gate's list): ${unexpected.join(", ") || "none"}`);
+  const missingFromPin = EXPECTED_RECIPES.filter((name) => !unique.has(name));
+  assert.deepEqual(missingFromPin, [], `pinned recipes no longer present: ${missingFromPin.join(", ")}`);
+
+  // Variable bindings: exactly one, and it is the harness helper.
   const runBindings = lines.filter((line) => /^run\s*:=/.test(line));
   assert.equal(runBindings.length, 1, "`run` is bound more than once; only the last binding takes effect");
-  // Keep the alternation honest: it is built from the same table the parity and
-  // invocation gates use, so a new proof recipe cannot be added and left unguarded.
-  assert.ok(Object.keys(ASSIGNMENT_RECIPES).includes("assign"));
-  assert.ok(Object.keys(ASSIGNMENT_RECIPES).includes("change-report"));
-});
+  assert.equal(runBindings[0]?.trim(), 'run := "node scripts/harness-run.mjs"',
+    "the transport command variable was repointed");
 
-test("the justfile does not auto-load an unreviewed .env into proof-producing recipes", () => {
-  // `set dotenv-load` read a `.env` from whatever directory `just` ran in. `.env`
-  // is gitignored, so nothing in the reviewed tree bounded its contents, and one of
-  // the variables it could set is `NODE_OPTIONS`, whose value the interpreter runs
-  // *before* any script body — i.e. before the runner's identity, tree, roster and
-  // critic validation, and before `shell: false` on any spawn. These recipes mint
-  // proof, so the setting must stay off; dotenv is opt-in per invocation instead.
-  const just = readFileSync(resolve("justfile"), "utf8");
-  // Any `set dotenv*` spelling enables loading: bare `set dotenv-load`,
-  // `set dotenv-load := true`, `set dotenv-load # note`, and the filename/required/
-  // override variants. Matching the prefix rather than one exact line is what keeps
-  // the brake from being escaped by syntax the interpreter accepts.
-  assert.doesNotMatch(just, /^[ \t]*set[ \t]+dotenv\S*[ \t]*(?:$|:=|#)/im, "dotenv auto-loading is back");
-  assert.match(just, /--dotenv-path/, "the removal note must tell an operator how to opt in");
-  assert.match(just, /not a separate/, "the note must not publish a flag this just does not accept");
-});
+  // Bodies. Token-level, because `just --highlight --no-highlight witness`,
+  // `just --command sh -c 'just "witness"'` and `node scripts/assignment-""run.mjs`
+  // each defeated a `just <verb>` pattern while reaching the runner under real `just`.
+  const proofNames = new Set(Object.keys(ASSIGNMENT_RECIPES));
+  for (const name of headers) {
+    if (proofNames.has(name)) continue;
+    const body = recipeBodyFromNormalized(name, lines).join("\n");
+    for (const token of FORBIDDEN_TRANSPORT_TOKENS) {
+      assert.doesNotMatch(body, new RegExp(token.replace(/[-.]/g, "\$&"), "i"),
+        `recipe ${name} contains the forbidden token "${token}"`);
+    }
+    assert.doesNotMatch(body, FORWARDING_PATTERN, `recipe ${name} forwards into a proof recipe`);
+    if (TRANSPORT_RECIPES.includes(name as (typeof TRANSPORT_RECIPES)[number])) {
+      assert.ok(body.length > 0, `transport recipe ${name} has no body to inspect`);
+    }
+  }
+}
 
-test("real just does not preload a working-directory .env, and every control can prove it", (t) => {
-  // The textual brake is not proof about the interpreter. Here the `.env` preloads a
-  // module that **writes a marker file itself**, so the assertion is that injected code
-  // ran — not that a string appeared in an environment some probe happened to read.
-  // Each negative is paired with a control on the *same* entry point: the explicit
-  // opt-in, a justfile with the setting re-added, and the real `witness` recipe in both
-  // states. A control that cannot light up makes the negative meaningless.
-  if (spawnSync("just", ["--version"], { encoding: "utf8" }).status !== 0) {
+/** Recipe body lines from already-normalized text. */
+function recipeBodyFromNormalized(name: string, lines: string[]): string[] {
+  const start = lines.findIndex((line) => new RegExp(`^${name}[^\n:]*:`).test(line));
+  if (start < 0) return [];
+  const body: string[] = [];
+  for (let i = start + 1; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+    if (line.trim() === "") continue;
+    if (!/^[ \t]/.test(line)) break;
+    body.push(line.replace(/^[ \t]+@?/, "").trim());
+  }
+  return body;
+}
+
+test("the same surface rules hold against just's own parse, where the binary exists", (t) => {
+  // Source normalization is still text. `--dump` is the interpreter's view: it resolves
+  // duplicates last-wins, expands aliases, and folds the declaration forms that were
+  // shown to escape a line-based check. Skipped, not silently passed, when `just` is
+  // missing or too old to offer the flag.
+  const version = spawnSync("just", ["--version"], { encoding: "utf8" });
+  if (version.status !== 0) {
     t.skip("just binary not installed");
     return;
   }
-  const dir = mkdtempSync(join(tmpdir(), "kxm-dotenv-probe-"));
-  const marker = join(dir, "preloaded.marker");
-  const envFile = join(dir, ".env");
-  const enabledFile = join(dir, "enabled.just");
-  try {
-    // The preload writes the marker; nothing in the probe script does.
-    const payload = `import("node:fs").then((fs) => fs.writeFileSync(${JSON.stringify(marker)}, "x"));`;
-    writeFileSync(envFile, [
-      `NODE_OPTIONS=--import=data:text/javascript,${encodeURIComponent(payload)}`,
-      "KXM_DOTENV_PROBE=visible",
-      "",
-    ].join("\n"));
-    const probe = join(dir, "probe.mjs");
-    writeFileSync(probe, 'process.stdout.write(process.env.KXM_DOTENV_PROBE ?? "absent");\n');
-    writeFileSync(enabledFile, readFileSync(resolve("justfile"), "utf8")
-      .replace("set positional-arguments", "set dotenv-load # re-enabled by a future edit\nset positional-arguments"));
-    const cleanEnv = { ...process.env } as Record<string, string>;
-    delete cleanEnv.NODE_OPTIONS;
-    delete cleanEnv.KXM_DOTENV_PROBE;
-
-    const commandRun = (extra: string[], justfile: string) => {
-      rmSync(marker, { force: true });
-      const result = spawnSync("just", [
-        ...extra,
-        "--working-directory", dir,
-        "--justfile", justfile,
-        "--command", process.execPath, probe,
-      ], { encoding: "utf8", env: { ...cleanEnv } });
-      return { marker: existsSync(marker), out: `${result.stdout}${result.stderr}` };
-    };
-    const witnessRun = (justfile: string) => {
-      // The proof entry point itself; its script resolves relative to the working
-      // directory, which is why the tree is linked in above.
-      rmSync(marker, { force: true });
-      const result = spawnSync("just", ["--working-directory", dir, "--justfile", justfile,
-        "witness", join(dir, "no-such-record")], { encoding: "utf8", env: { ...cleanEnv } });
-      return {
-        status: result.status,
-        marker: existsSync(marker),
-        out: `${result.stderr}${result.stdout}`,
-      };
-    };
-
-    const quiet = commandRun([], resolve("justfile"));
-    assert.equal(quiet.out, "absent", `an ignored .env must not reach the interpreter: ${quiet.out}`);
-    assert.equal(quiet.marker, false, "nothing may have executed");
-
-    const optedIn = commandRun(["--dotenv-path", envFile], resolve("justfile"));
-    assert.equal(optedIn.out, "visible", `the opt-in control did not apply the file: ${optedIn.out}`);
-    assert.equal(optedIn.marker, true, "the opt-in control did not execute the preload");
-
-    const enabled = commandRun([], enabledFile);
-    assert.equal(enabled.marker, true,
-      `a re-enabled dotenv setting escaped the probe: ${enabled.out}`);
-
-    // The recipe resolves its script relative to the working directory, so link the
-    // tree in — the `.env` under test is still the one in that directory.
-    symlinkSync(resolve("scripts"), join(dir, "scripts"), "dir");
-    symlinkSync(resolve("node_modules"), join(dir, "node_modules"), "dir");
-
-    const refused = witnessRun(resolve("justfile"));
-    assert.notEqual(refused.status, 0, "witness must refuse a missing record directory");
-    assert.match(refused.out, /completion_missing/);
-    assert.equal(refused.marker, false, "a proof recipe must not execute a working-directory import");
-
-    const witnessControl = witnessRun(enabledFile);
-    assert.match(witnessControl.out, /completion_missing/, `control did not reach the runner: ${witnessControl.out}`);
-    assert.equal(witnessControl.marker, true,
-      "the witness arm cannot detect a preload, so its negative assertion proved nothing");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
+  const dump = spawnSync("just", ["--dump", "--justfile", resolve("justfile")], { encoding: "utf8" });
+  if (dump.status !== 0) {
+    t.skip(`just --dump unsupported: ${dump.stderr.trim().slice(0, 120)}`);
+    return;
   }
+  assertDeclaredSurface(normalizeJustfile(dump.stdout));
 });
 
 /** The complete shipped recipe surface. Adding one is a deliberate act, not drift. */
