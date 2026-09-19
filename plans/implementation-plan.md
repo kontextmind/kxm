@@ -505,10 +505,11 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   deadline can only be read, expired or replaced by the clock that armed it — and a
   non-finite reading throws `runtime_transaction_clock_invalid` instead of silently
   meaning "no throttle" — at the points where throttle state is read or armed, which
-  is the honest scope: a `BEGIN` with no pending deadline never consults the clock (and
-  with a deadline pending it does, which is why the wording says "no pending deadline"),
-  so this guards the seam rather than every transaction. That is the shape the injectable seam needed
-  before it could stay. The classification question was settled properly and then found
+  is the honest scope: the clock is read in two places — to check a pending deadline and
+  to arm a fresh one — so the only transaction that never consults it is a **successful
+  `BEGIN` with no pending deadline**, which is the qualification round 8 asked for after
+  two earlier wordings of mine were still not precise enough. That is the shape the
+  injectable seam needed before it could stay. The classification question was settled properly and then found
   to be **Node-only**, which the fifth pass caught: contention is decided by SQLite's
   result code (`code & 0xff` over 5 / 6 / 15) read from Node's `errcode` **and**
   `bun:sqlite`'s `errno` (`SQLITE_BUSY_RECOVERY`, `SQLITE_BUSY_SNAPSHOT` and
@@ -535,10 +536,12 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   non-contention errors, result-code classification, failed `COMMIT`), each mutation-checked: ignoring clock identity, dropping
   the finite-clock guard, dropping code-based classification, dropping `errno` while a
   symbolic name is still read, putting the symbolic name **ahead** of the number, and
-  letting message text override a code each turn exactly one test red — the two
-  ordering mutations are caught by disagreeing fixtures (`errno: 5` with
-  `code: "SQLITE_FULL"`, and the reverse), because agreeing examples prove nothing
-  about precedence. What is **not**
+  letting message text override a code, and a permanent name vetoing a contention
+  number, each turn exactly one test red. Precedence is pinned in **both** directions by
+  disagreeing fixtures — `errno: 5` with `code: "SQLITE_FULL"` must be contention,
+  `errno: 13` with `code: "SQLITE_BUSY"` must not be, and `errcode: 13` with `errno: 5`
+  settles which number wins — because examples that merely agree prove nothing about
+  order. What is **not**
   gated: throttle-state retention. The inner map is weak in the clock, so it keeps no
   otherwise-unreachable clock alive and a fresh closure per attempt leaves nothing behind
   once collected — a *retained* clock still holds its entry, collection is neither

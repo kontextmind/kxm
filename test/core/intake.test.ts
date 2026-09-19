@@ -897,6 +897,13 @@ test("contention is decided by SQLite's result code, not by whoever quoted a mes
     { code: "SQLITE_BUSY", errno: 13 })), false, "a permanent number beats a busy name");
   assert.equal(isTransactionContention(Object.assign(new Error("database is locked"),
     { errcode: 13, errno: 5 })), false, "the first number found decides; `errno` must not override it");
+  // The direction the two agreeing fixtures above cannot test: a permanent *name*
+  // must not veto a contention *number*. A mutant that checks `SQLITE_FULL` before the
+  // numbers and returns false survives every agreeing example.
+  assert.equal(isTransactionContention(Object.assign(new Error("text says nothing useful"),
+    { errno: 5, code: "SQLITE_FULL" })), true, "a number beats a permanent name");
+  assert.equal(isTransactionContention(Object.assign(new Error("text says nothing useful"),
+    { errno: 13, code: "SQLITE_BUSY" })), false, "and beats a contention name the other way");
 
   // No numeric or symbolic code at all (a plain Error): text decides.
   assert.equal(isTransactionContention(new Error("database is locked")), true);

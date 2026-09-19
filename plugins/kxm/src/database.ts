@@ -274,12 +274,13 @@ const transactionThrottles = new WeakMap<DatabaseSync, WeakMap<MonotonicClock, n
 /**
  * A clock reading this helper can reason about.
  *
- * Scope, stated honestly: this validates the reading **when throttle state is read
- * or armed**. A transaction that finds no throttle entry — an uncontended one on a
- * connection with no pending deadline — never calls the clock at all, so a broken
- * injected clock in that position runs its `work()` untouched. Production cannot
- * reach the guard at all: the default is `hrtime`, which is finite. It exists so the
- * injectable seam cannot become a silent bypass of the throttle.
+ * Scope, stated precisely. The clock is consulted in **two** places: to read a pending
+ * deadline, and to arm a fresh one. So the only transaction that never calls it is a
+ * **successful `BEGIN` with no pending deadline** — an uncontended one on a quiet
+ * connection, which runs its `work()` untouched even if the injected clock is broken.
+ * Freshly contended transactions *do* reach the guard, because arming needs a reading.
+ * Production cannot reach the failure at all: the default is `hrtime`, which is finite.
+ * The guard exists so the injectable seam cannot become a silent bypass.
  */
 function finiteNow(clock: MonotonicClock, label: string): number {
   const now = clock();

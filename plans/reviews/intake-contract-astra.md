@@ -285,7 +285,7 @@ Four nonblocking corrections came out of it, all landed:
 |---|---|---|
 | Q2 | A permanent **symbolic** name with no number fell through to the text fallback, so `SQLITE_FULL` quoting "database is locked" was still called contention — and the blanket claim in three documents was therefore too broad | A SQLite result *name* now decides in both directions, exactly as a number does; Node's `ERR_SQLITE_ERROR` is explicitly not a result name. Assertions added for symbolic-permanent, symbolic-contention-without-a-number, and the code/name precedence; mutation-checked against the old fall-through |
 | Q1 retention | "cannot accumulate entries" overstated a `WeakMap`: a retained clock keeps its entry, and collection is neither immediate nor size-bounded | Claim rewritten in code, CHANGELOG, Tracking and this record. What *is* now asserted is the behaviour that matters: two distinct closures with identical readings get independent deadlines |
-| Q1 scope | "an uncontended transaction never consults the clock" was wrong in the case where an entry was already pending — the preflight still reads the clock | Reworded to "a transaction with no pending deadline", and asserted directly: a `NaN` clock on a quiet connection runs `work()` untouched |
+| Q1 scope | "an uncontended transaction never consults the clock" was wrong in the case where an entry was already pending — the preflight still reads the clock | Reworded, then re-reworded after round 8: the clock is consulted **twice**, to check a pending deadline and to arm a fresh one, so the only transaction that never reads it is a **successful `BEGIN` with no pending deadline**. Asserted directly: a `NaN` clock on a quiet connection runs `work()` untouched, while fresh contention on an untouched connection yields exactly one read and `runtime_transaction_clock_invalid` |
 | The committed-coverage row itself, and this record's claim that the wording had been rewritten in Tracking | LOW | The row listed reviewer probes as if they were tests, and two Tracking sentences still carried the pre-correction wording, so "claim rewritten in Tracking" was false. "Claimed committed, now actually committed": the divergent-row resume and both real-losing-SQL fixtures are tests, the Tracking sentences were rewritten (round 7 caught that the first two attempts had not landed), and the Bun reproduction was replaced with a form that runs |
 | Original Q4/Q5 committed coverage | Several round-5 confirmations were reviewer probes, not tests: the divergent-row resume, and both forced-write fixtures returning an authored `false` | **Committed.** A forged index column (`held_paused` against a record that says `ready`) now has a test asserting `intake_record_divergent` with the project still paused and the row untouched; both race fixtures obtain their `false` from the real guarded SQL, so the boolean is SQLite's verdict rather than mine |
 | Q4 wording | "only when there is no code" survived in one round-3 row; the printed Bun reproduction was not runnable as written (`SQL` undefined, no shared-cache attachment) | Both fixed here — the runnable form is quoted above, and the count is now 23 intake tests, seven of them transaction- and throttle-focused |
@@ -314,6 +314,28 @@ Its other conclusion, recorded because it is the point of the whole exercise: no
 authority, pause, duplication, success-reporting or spend defect was found in any
 runtime path — the blocks since round 3 have been about what this repository *claims*
 and what its gates *enforce*, which is the same failure class in a smaller hat.
+
+## Eighth pass — the corrections to the corrections, again
+
+Verdict: **STILL BLOCKED** on three claims, with the substance accepted: the twin-clock
+assertions are load-bearing and both requested precedence mutations die. It also
+corrected me on its own suggestion — attaching a file-backed database did **not** raise
+shared-cache contention; two in-memory connections attaching one named
+`file:…?mode=memory&cache=shared` database did.
+
+| Point | What was still wrong | Then |
+|---|---|---|
+| Precedence, second direction | `errno: 5` paired with `SQLITE_LOCKED_SHAREDCACHE` — both contention, so the "number beats name" label proved nothing; a mutant consulting `SQLITE_FULL` before the numbers survived the whole test | Fixtures that disagree in **both** directions: `errno: 5` with `code: "SQLITE_FULL"` must be contention, `errno: 13` with `code: "SQLITE_BUSY"` must not, `errcode: 13` with `errno: 5` settles which number wins. Re-running the critic's veto mutant now fails |
+| Clock scope, third wording | "no pending deadline" still omitted that **arming** a fresh deadline reads the clock too, so freshly contended transactions do reach the guard | Stated as the implementation does: consulted to read a pending deadline and to arm one; the only transaction that never consults it is a **successful `BEGIN` with no pending deadline** — in code, CHANGELOG and Tracking |
+| The printed Bun logger | `console.log(e.errcode, …)` prints `undefined` on Bun, in the very snippet added to replace a non-runnable one | Split into two runnable blocks with each runtime's own field and observed output |
+| A fixture named in prose | Tracking claimed a `code: "SQLITE_FULL"` pairing that the test did not contain | Rewritten to name the fixtures that exist |
+
+Confirmed accurate by the pass rather than merely asserted: the retention wording against
+the `WeakMap`, the twin assertions as behavioural independence, the test count (23, seven
+transaction- and throttle-focused, names listed), and no new authority, pause,
+duplication, spend or success-misreport route. Its own limit, restated: 20 of the 23
+intake tests cannot create temp directories in the read-only sandbox, so the committed
+suite is not what it executed.
 
 ## Reproducing these reviews
 
@@ -349,9 +371,17 @@ a.exec("CREATE TABLE shared.t (x)");
 const b = new DatabaseSync(":memory:");
 b.exec("ATTACH DATABASE 'file:shared_probe?mode=memory&cache=shared' AS shared");
 try { b.exec("BEGIN IMMEDIATE"); } catch (e) { console.log(e.errcode, e.code, e.message); }
-// node: 262 ERR_SQLITE_ERROR   |   bun: 262 SQLITE_LOCKED_SHAREDCACHE
-// both: "database schema is locked: shared"
+// Node 24.15.0: 262 ERR_SQLITE_ERROR  "database schema is locked: shared"
 ```
+
+```js
+// bun:sqlite — same shape; the number lives in `errno`, and `errcode` is undefined
+try { b.run("BEGIN IMMEDIATE"); } catch (e) { console.log(e.errno, e.code, e.message); }
+// Bun 1.3.14: 262 SQLITE_LOCKED_SHAREDCACHE  "database schema is locked: shared"
+```
+
+Round 8 caught this record printing the Bun half with `e.errcode`, which yields
+`undefined` — the defect in miniature, inside the sentence written to fix it.
 
 `bun:sqlite` takes the same shape with `new SQL(":memory:")` and
 `db.run("ATTACH DATABASE 'file:shared_probe?mode=memory&cache=shared' AS shared")`.
