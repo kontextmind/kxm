@@ -17646,31 +17646,46 @@ function openDatabase(file, description, spec) {
 }
 var activeTransactions = /* @__PURE__ */ new WeakSet();
 var TRANSACTION_BUSY_BACKOFF_MS = 1e3;
-var transactionBackoffUntil = /* @__PURE__ */ new WeakMap();
-function withDatabaseTransaction(database, work, mode = "IMMEDIATE") {
+function monotonicNowMs() {
+  return Number(process.hrtime.bigint() / 1000000n);
+}
+var transactionBackoffUntilMs = /* @__PURE__ */ new WeakMap();
+var CONTENTION_PATTERNS = /\bSQLITE_BUSY\b|\bSQLITE_LOCKED\b|database is locked|database table is locked/i;
+function isTransactionContention(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  return CONTENTION_PATTERNS.test(message);
+}
+function withDatabaseTransaction(database, work, mode = "IMMEDIATE", clock = monotonicNowMs) {
   if (activeTransactions.has(database)) {
     throw databaseError("runtime_transaction_nested", "transaction", "nested transactions are not allowed");
   }
-  const blockedUntil = transactionBackoffUntil.get(database) ?? 0;
-  if (Date.now() < blockedUntil) {
-    throw databaseError(
-      "runtime_transaction_busy",
-      "transaction",
-      `a previous BEGIN was blocked on this database; retry deferred ${String(blockedUntil - Date.now())}ms`
-    );
+  if (mode !== "DEFERRED") {
+    const blockedUntil = transactionBackoffUntilMs.get(database);
+    if (blockedUntil !== void 0) {
+      const remaining = blockedUntil - clock();
+      if (remaining > 0) {
+        throw databaseError(
+          "runtime_transaction_busy",
+          "transaction",
+          `a previous BEGIN was blocked on this database; retry deferred ${String(remaining)}ms`
+        );
+      }
+      transactionBackoffUntilMs.delete(database);
+    }
   }
   try {
     database.exec(`BEGIN ${mode}`);
   } catch (error) {
-    transactionBackoffUntil.set(database, Date.now() + TRANSACTION_BUSY_BACKOFF_MS);
+    if (!isTransactionContention(error)) throw error;
+    transactionBackoffUntilMs.set(database, clock() + TRANSACTION_BUSY_BACKOFF_MS);
     throw databaseError(
       "runtime_transaction_busy",
       "transaction",
-      `BEGIN ${mode} failed: ${error instanceof Error ? error.message : String(error)}`
+      `BEGIN ${mode} blocked by another writer: ${error instanceof Error ? error.message : String(error)}`
     );
   }
   activeTransactions.add(database);
-  transactionBackoffUntil.delete(database);
+  if (mode !== "DEFERRED") transactionBackoffUntilMs.delete(database);
   try {
     const result = work();
     database.exec("COMMIT");

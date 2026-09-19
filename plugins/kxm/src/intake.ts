@@ -96,15 +96,26 @@ const IDENTIFIER_RE = /^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$/;
 const COORDINATOR_ID_RE = /^[a-z][a-z0-9]{1,15}_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$/;
 const ACTOR_ID_RE = /^.{1,200}$/;
 
-/**
- * Canonical SHA-256 over the authority ceiling — the coordinator's fingerprint.
- *
- * Sets are normalised before hashing, so order and repeats never change a
- * fingerprint. That also lets a record written before normalisation existed still
- * match an equivalent request instead of demanding a rebind for no reason.
- */
+/** Canonical SHA-256 over the authority ceiling — the coordinator's fingerprint. */
 export function kxmCeilingHash(authority: KxmCoordinatorAuthority): string {
   return `sha256:${createHash("sha256").update(stableStringify(normalizeAuthority(authority)), "utf8").digest("hex")}`;
+}
+
+/**
+ * Does an already-stored coordinator express this ceiling?
+ *
+ * A row written before set normalisation existed carries a fingerprint that
+ * `kxmCeilingHash` no longer reproduces, so comparing the stored hash alone is
+ * not enough: recompute over the authority it kept. Every path that asks this
+ * question — the initial slot lookup and **both** lost-write read-backs — must
+ * go through here, or an upgrade makes the same row equivalent on lookup and a
+ * `coordinator_write_lost` conflict on the race path.
+ *
+ * A legacy row is returned as stored, so its `ceilingHash` is historical: a
+ * caller must not assume every persisted hash uses today's algorithm.
+ */
+function ceilingsMatch(stored: KxmCoordinatorRecord, ceilingHash: string): boolean {
+  return stored.ceilingHash === ceilingHash || kxmCeilingHash(stored.authority) === ceilingHash;
 }
 
 function normalizeAuthority(authority: KxmCoordinatorAuthority): KxmCoordinatorAuthority {
@@ -158,7 +169,7 @@ export function bindKxmCoordinator(
 
   if (existing) {
     const current = JSON.parse(existing.record) as KxmCoordinatorRecord;
-    if (current.ceilingHash === ceilingHash || kxmCeilingHash(current.authority) === ceilingHash) {
+    if (ceilingsMatch(current, ceilingHash)) {
       return { coordinator: current, created: false };
     }
     if (!input.rebind) {
@@ -200,7 +211,7 @@ export function bindKxmCoordinator(
       // reached the ceiling we asked for; anything else is a real conflict.
       const winner = context.eventStore.coordinatorInSlot(context.projectId, role, channel);
       const record2 = winner ? (JSON.parse(winner.record) as KxmCoordinatorRecord) : undefined;
-      if (record2 && record2.ceilingHash === ceilingHash) {
+      if (record2 && ceilingsMatch(record2, ceilingHash)) {
         return { coordinator: record2, created: false };
       }
       throw runtimeError("coordinator_write_lost", existing.coordinatorId, "the coordinator slot changed underneath this rebind");
@@ -456,12 +467,25 @@ export function isKxmProjectPaused(context: KxmRuntimeContext): boolean {
   return context.eventStore.projectControl(context.projectId)?.paused === true;
 }
 
+/** How many held rows one drain page reads. Bounds a page, not the whole drain. */
+const INTAKE_DRAIN_PAGE_ROWS = 500;
+
 function releaseHeldIntake(context: KxmRuntimeContext, now: string): KxmIntakeMessage[] {
   const released: KxmIntakeMessage[] = [];
   // Drain every held row. A paging loop, not a single capped page: stranding the
   // 501st message behind a "resume releases held intent" claim is a lie of omission.
+  //
+  // What is still true after that fix: the loop holds one write transaction and
+  // retains every released message, so total work and memory grow with the held
+  // backlog even though each read is bounded. Measured on an in-memory store: 150k
+  // held rows with 64-byte payloads took 4.5 s synchronously and ~95 MiB of heap;
+  // 500k maximum-size payloads would retain ~7.6 GiB before any database overhead,
+  // and an allocation failure will not reliably arrive as `intake_drain_stalled`.
+  // Resume is finite because the write lock keeps ingress out of the loop, so this
+  // is a throughput and memory limit, not a correctness hole. Bounding it is a
+  // pre-condition of M2 sustained traffic, not of this contract — see "Still open".
   for (;;) {
-    const held = context.eventStore.intakeInStates(context.projectId, ["held_paused"], 500);
+    const held = context.eventStore.intakeInStates(context.projectId, ["held_paused"], INTAKE_DRAIN_PAGE_ROWS);
     if (held.length === 0) return released;
     let progressed = false;
     for (const row of held) {
@@ -499,7 +523,7 @@ function persistCoordinator(context: KxmRuntimeContext, record: KxmCoordinatorRe
   // conflict worth reporting. The loser must not report that it created anything.
   const winner = context.eventStore.coordinatorInSlot(record.projectId, record.role, record.channel);
   const won = winner ? (JSON.parse(winner.record) as KxmCoordinatorRecord) : undefined;
-  if (won && won.ceilingHash === record.ceilingHash) return { coordinator: won, created: false };
+  if (won && ceilingsMatch(won, record.ceilingHash)) return { coordinator: won, created: false };
   throw runtimeError("coordinator_write_lost", record.coordinatorId, "the coordinator slot was claimed by a different ceiling");
 }
 

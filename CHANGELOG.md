@@ -59,14 +59,22 @@ All notable user-facing changes are documented here. The project follows [Semant
   to exhaustion instead of stopping at a page cap, and fails loudly rather than
   half-resuming. Coordinator fingerprints are computed over the normalised
   authority, so identities bound by 0.7.46 with unordered effect lists no longer
-  require a policy rebind after upgrade.
+  require a policy rebind after upgrade — and the equivalence test is shared, so a
+  row written by 0.7.46 is not a `coordinator_write_lost` conflict just because it
+  was found by losing an insert race instead of reading the slot.
 - **A failed `BEGIN` poisoned the database connection.** The transaction marker was
   claimed before `BEGIN` and the statement sat outside the `try/finally`, so a
   `BEGIN` that gave up on a busy writer left every later transaction failing with a
   misleading "nested transactions are not allowed". The marker is now claimed only
-  after a successful `BEGIN`, the failure surfaces as `runtime_transaction_busy`,
-  and retries back off for one second (`TRANSACTION_BUSY_BACKOFF_MS`) instead of
-  paying the 5-second busy timeout once per attempt.
+  after a successful `BEGIN`, genuine lock contention surfaces as
+  `runtime_transaction_busy`, and any other `BEGIN` failure keeps its own error
+  instead of looking retryable. A contended connection then refuses further
+  write-mode `BEGIN`s for one monotonic second (`TRANSACTION_BUSY_BACKOFF_MS`), so
+  retries **inside that window** fail fast rather than paying the 5-second busy
+  timeout once per attempt; a retry after the window can pay it again. The window is
+  measured with `process.hrtime`, so a system clock change can neither extend it nor
+  end it early, and it is per connection — another connection to the same database
+  is not held back.
 
 ## 0.7.0 - 2026-09-11
 

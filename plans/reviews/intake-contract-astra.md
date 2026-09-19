@@ -7,10 +7,10 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-18"
-updated: "2026-09-18"
+updated: "2026-09-19"
 authority: "hypothesis"
 confidence: "uncertain"
-summary: "Independent one-shot critic review of the M1+M6 intake contract; verdict BLOCK with five blocking findings, all reproduced or fixed. Critic opinion, not assignment, witness or acceptance proof."
+summary: "Three passes of an independent critic on the M1+M6 intake contract: BLOCK on the contract, STILL BLOCKED on the fix, STILL BLOCKED on the closure of that fix. Every finding reproduced; each pass also corrected the previous pass's overstated claims. Critic opinion, not assignment, witness or acceptance proof."
 tags: ["review", "runtime", "intake", "harnesses"]
 related:
   - ../implementation-plan.md
@@ -23,6 +23,11 @@ details:
 ---
 
 # Codex gpt-6-astra review of the Runtime intake contract (#248)
+
+Three passes so far: **BLOCK** on the contract, **STILL BLOCKED** on the fix, and
+**STILL BLOCKED** on the closure of that fix. Each pass reviewed the previous
+pass's claims as well as the code, and each one was right; the tables below are
+ordered by round, and a later row supersedes an earlier **Fixed**.
 
 ## Transport and admission status — read this first
 
@@ -64,9 +69,9 @@ these holes until the follow-up.
 
 ## Findings and disposition
 
-These are first-pass dispositions. The second-pass section below supersedes any
-row marked **Fixed** that later proved partial — read them in that order rather
-than treating this table as the current state.
+These are first-pass dispositions. The second- and third-pass sections below
+supersede any row marked **Fixed** that later proved partial — read them in that
+order rather than treating this table as the current state.
 
 | # | Sev | Finding | Disposition |
 |---|---|---|---|
@@ -118,7 +123,7 @@ The follow-up run was asked, per finding, whether the fix closed it. Verdict:
 | #2 transactional pause/ingress/admission | CLOSED — "the atomicity claim is now **true**, independently of #3" because `BEGIN IMMEDIATE` takes the single writer slot before the reads | confirmed; tests remain sequential |
 | #3 paged drain | PARTIAL — my loop stopped after 1,000 pages, so 500,001 held rows could still strand | **Fixed:** uncapped loop that throws `intake_drain_stalled` on no progress, inside the resume transaction, so a stuck drain rolls the resume back instead of half-resuming |
 | #4 tool widening | PARTIAL — `allow: ["read"]` → `allow: []` (or omitted) still passed, and `commands.ts` applies **no** allowlist restriction to an empty/absent list | **Fixed:** verified the claim in `commands.ts` before acting on it, then refused `coordinator_rebind_clears_allowlist`; both the emptied and the omitted case are tested |
-| #5 create-race + set order | PARTIAL — the loser returned `created: true`, and records written by 0.7.46 with unsorted `effects` demanded a policy rebind after upgrade | **Fixed:** the flag now comes from the insert itself, and `kxmCeilingHash` normalises, so a legacy fingerprint still matches an equivalent bind (new test proves both halves) |
+| #5 create-race + set order | PARTIAL — the loser returned `created: true`, and records written by 0.7.46 with unsorted `effects` demanded a policy rebind after upgrade | **Partly fixed:** the flag now comes from the insert itself, and `kxmCeilingHash` normalises. The claim in this row that a new test "proves both halves" was **false** — the test inserted the row before binding, so it exercised the initial lookup and never lost an insert, and it still passed with the create-race fix reverted. Corrected by the third pass, which also found the legacy comparison missing from both read-back paths |
 
 New findings it raised, and where they went:
 
@@ -153,11 +158,57 @@ New findings it raised, and where they went:
    fifth blocker when the fifth was the create-race/normalisation pair. Accepted:
    the dispositions above replace that table's "Fixed" wording, and the Tracking
    entry now states what is true, what is by-construction, and what is still open.
+   **Partly undone anyway** — the third pass caught this row's own successor
+   claiming a test "proves both halves" when it proved neither. See below.
 
 Its one judgement I would qualify: it scored the payload-only `doesNotThrow`
 assertion as "records a known weakness, not an integrity guarantee". Agreed — which
 is why it is written as `assert.doesNotThrow` with the reason inline rather than as
 a passing guarantee.
+
+## Third pass — the critic reviewed the closure of its own second pass
+
+Verdict: **STILL BLOCKED**, five findings, all reproduced against this working
+tree and all accepted. It also volunteered that two of its own round-2 dispositions
+had been overstated, which is the point of asking the same critic twice.
+
+| Finding | Severity | What was actually wrong | Then |
+|---|---|---|---|
+| 1. The backoff could deny transactions for hours | MED | The deadline was `Date.now() + 1000`. A clock step backwards kept a long-gone write lock refusing transactions until wall time caught up; a step forward ended the throttle early. The check also ran before the mode was considered, so a `DEFERRED` transaction — which takes no write lock — was refused for another caller's contention | Monotonic deadline from `process.hrtime.bigint()`, injectable so a test can step it instead of sleeping through it. The test steps `Date.now` by ±1 h against the **default** clock and requires the refusal to stay inside the window both ways; `DEFERRED` is exempt from the throttle, and a `DEFERRED` success does not clear one. Verified to fail when the default clock becomes `Date.now()` again, and when either mode rule is removed |
+| 2. Every `BEGIN` error was classified as contention | MED | The catch installed the backoff and threw `runtime_transaction_busy` for anything, including `cannot start a transaction within a transaction` and a closed connection — turning a programming bug into a retryable-looking condition and discarding the original error | `isTransactionContention()` gates it: only `SQLITE_BUSY`/`SQLITE_LOCKED`/`database is locked`/`database table is locked` get wrapped and throttled; anything else is rethrown unchanged. Test proves both halves, including that no backoff is installed for a non-contention failure |
+| 3. Legacy equivalence held on the initial lookup but not on the race read-back | MED | `bindKxmCoordinator` recomputed the fingerprint over the stored authority; `persistCoordinator` and the rebind read-back compared persisted hashes only, so the same legacy row was idempotent on one path and `coordinator_write_lost` on the other | One `ceilingsMatch(stored, ceilingHash)` used by all three paths. New test forces a losing insert against a legacy-hash winner and expects the winner, not a conflict |
+| 4. Drain completeness was fixed, but resume cost is unbounded | CONCERN | One `IMMEDIATE` transaction parses, validates, rewrites and **retains** every held row. Measured here: 150k rows of 64-byte payloads = 4.54 s synchronous and ~95 MiB heap; 500k maximum-size payloads ≈ 7.6 GiB retained. The write lock makes it finite, so this is throughput and memory, not correctness | Kept as-is deliberately, and recorded as an M2 pre-condition with these numbers ("Still open" item 9). The loop's cost is now named in the code where it is paid |
+| 5. The record still overstated what its tests prove | LOW | Round 2's table claimed the new test proved both legacy equivalence **and** the create-race flag; it proved neither — it inserted the row before binding, so it exercised the initial lookup, and it never lost an insert | Corrected below, and the forced losing-insert test now exists |
+
+## Tests the third pass found decorative, and what replaced them
+
+| Claim | Problem | Now |
+|---|---|---|
+| "drains more held intent than one page" | passed with the old 1,000-page cap restored; it crossed one page, not the cap | 1,002 held rows with a forced one-row page: 1,003 pages, and the assertion is that nothing is left held. Verified to fail when the page cap is put back |
+| "a stall rolls the resume back" | not tested at all | forced `updateIntakeDispatch` refusal: expects `intake_drain_stalled`, then asserts the project is **still paused** and the row is still held, then that a real resume drains it |
+| `created: false` on the race path | the sequential assertions never lose an insert, so they passed with the fix reverted | forced losing insert, twice: current-format winner and legacy-hash winner |
+| ceiling normalisation | the reordered-ceiling test passed with normalisation removed from `kxmCeilingHash`, because binding already normalises its inputs | `kxmCeilingHash` is now compared directly over reordered, repeated and genuinely different sets, plus the binder's own refusal of repeated members |
+| busy/backoff | the old test waited out its own deadline, so it passed whether or not a successful `BEGIN` cleared the backoff; and it never tried a non-contention error, another connection, or a failed `COMMIT` | Four tests now: the real contention path (pays the timeout once, refuses fast inside the window, recovers), the deadline's clock (stepped, both directions, on the default clock), mode scoping (`DEFERRED` runs and does not clear), and classification plus recovery after a failed `COMMIT`. Each was mutation-checked against the fix it claims |
+| "one admitted task" | admitted one `runId` record; no task exists at this layer | renamed to "one admission record", with the M2 consumer named as the thing that would create a task |
+| "reordering or repeating" | only reordering was tested | repeats are tested, against the fingerprint and against the binder's refusal |
+
+## What the third pass accepted without change
+
+- No allowlist bypass in the transitions it probed: policy presence, preset
+  identity, added allow entries, disappearing allow lists and lifted denials are
+  each refused, and `isToolAllowed` does not consult `preset` as an allow list.
+- No new path that widens authority, bypasses a committed pause, or admits one
+  message to two runs.
+- Deferring immutable coordinator history, record digests and a durable arrival
+  sequence to schema v6 — the same list this record has been building.
+- Its own note that a cleared marker after a failed `ROLLBACK` does not prove
+  SQLite exited the transaction. Pre-existing; now stated in the code comment
+  rather than assumed away, and a deferred-foreign-key test proves the connection
+  is still usable and the failed write is not half-applied.
+- One thing it found that round 2's own fix had made redundant: clearing the
+  backoff on any successful `BEGIN` also let a `DEFERRED` read clear a throttle
+  armed by write contention. That is now mode-scoped, which is also what makes the
+  assertion distinguishable.
 
 ## Reproducing these reviews
 
@@ -171,7 +222,12 @@ codex exec -s read-only -m gpt-6-astra \
 
 `codex exec review --base <BRANCH>` cannot carry a custom prompt, so the targeted
 brief is passed to plain `codex exec` with the read-only sandbox instead. The
-second pass used the same form with the fix-diff brief; note that the operator's
-`~/.codex/rules` wrapper (`rtk proxy …`) failed a few early commands with
-`command not found: rtk` inside the sandbox before Codex fell back to direct
+second and third passes used the same form with a fix-diff brief; note that the
+operator's `~/.codex/rules` wrapper (`rtk proxy …`) failed a few early commands
+with `command not found: rtk` inside the sandbox before Codex fell back to direct
 `nl`/`rg`/`sed` reads — worth knowing if a future run looks mysteriously stalled.
+
+The third pass also ran measurements rather than only reading: it reproduced the
+backoff against a wall-clock step, forced a losing insert against a legacy-hash
+winner, forced a 1,003-page drain, and timed the drain at 150k rows. Ask for that
+explicitly in the brief, or a review of a diff becomes a read of a diff.

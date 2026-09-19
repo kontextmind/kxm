@@ -214,35 +214,87 @@ export function openDatabase(file: string, description: string, spec: DatabaseSc
 const activeTransactions = new WeakSet<DatabaseSync>();
 
 /**
- * How long a connection refuses to retry a blocked `BEGIN`.
+ * How long a connection refuses to retry a `BEGIN` that lost the write race.
  *
- * SQLite's busy timeout is per connection, so a `BEGIN` against a locked database
- * waits the full timeout before failing. Callers that recover from a lost write
- * open several transactions in a row; without this window each of them pays the
- * timeout, and a suite run showed that turning one 4-second test into 17 minutes.
- * The old code got that speed by accident — it left the connection permanently
- * marked as in-transaction after a failed `BEGIN`, which is the defect fixed
- * below — so the backoff replaces the fast-fail without re-introducing the poison.
+ * SQLite's busy timeout is per connection, so a `BEGIN` against a locked
+ * database waits the full timeout before failing. Callers that recover from a
+ * lost write open several transactions in a row; without this window each of
+ * them pays the timeout, and a suite run showed that turning one 4-second test
+ * into 17 minutes. The old code got that speed by accident — it left the
+ * connection permanently marked as in-transaction after a failed `BEGIN`, which
+ * is the defect fixed below — so the backoff replaces the fast-fail without
+ * re-introducing the poison.
+ *
+ * Two limits, both deliberate:
+ * - It is a **throttle, not a queue**. A caller whose lock cleared 1 ms later is
+ *   still refused for the rest of the window; the refusal is explicit
+ *   (`runtime_transaction_busy`, message says `retry deferred`) and bounded by
+ *   this constant. A retry after the window may pay the busy timeout again.
+ * - It is **per connection object, in this process**. It is not a cross-process
+ *   backoff and does not leak to another connection to the same file.
  */
 export const TRANSACTION_BUSY_BACKOFF_MS = 1_000;
 
-const transactionBackoffUntil = new WeakMap<DatabaseSync, number>();
+/**
+ * Monotonic elapsed time, deliberately not `Date.now()`.
+ *
+ * A wall-clock step backwards would otherwise keep a long-gone write lock
+ * refusing transactions until real time caught up, and a step forward would end
+ * the throttle early. `hrtime.bigint()` is relative to an arbitrary past origin
+ * and never moves backwards, so the window is bounded by
+ * {@link TRANSACTION_BUSY_BACKOFF_MS} no matter what the system clock does.
+ *
+ * Injectable: production callers never pass it, and a test drives it directly so
+ * the window is stepped rather than raced or slept through.
+ */
+export type MonotonicClock = () => number;
+
+function monotonicNowMs(): number {
+  return Number(process.hrtime.bigint() / 1_000_000n);
+}
+
+const transactionBackoffUntilMs = new WeakMap<DatabaseSync, number>();
+
+/**
+ * Is this `BEGIN` failure contention for the write lock, as opposed to a
+ * programming or environment error?
+ *
+ * Only contention may be retried, and only contention earns the backoff window.
+ * Anything else — "cannot start a transaction within a transaction", a closed
+ * connection, a miscompiled statement — must surface unchanged, or a permanent
+ * bug looks like a transient one and the caller retries forever.
+ */
+const CONTENTION_PATTERNS = /\bSQLITE_BUSY\b|\bSQLITE_LOCKED\b|database is locked|database table is locked/i;
+
+export function isTransactionContention(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return CONTENTION_PATTERNS.test(message);
+}
 
 export function withDatabaseTransaction<T>(
   database: DatabaseSync,
   work: () => T,
   mode: "IMMEDIATE" | "DEFERRED" | "EXCLUSIVE" = "IMMEDIATE",
+  clock: MonotonicClock = monotonicNowMs,
 ): T {
   if (activeTransactions.has(database)) {
     throw databaseError("runtime_transaction_nested", "transaction", "nested transactions are not allowed");
   }
-  const blockedUntil = transactionBackoffUntil.get(database) ?? 0;
-  if (Date.now() < blockedUntil) {
-    throw databaseError(
-      "runtime_transaction_busy",
-      "transaction",
-      `a previous BEGIN was blocked on this database; retry deferred ${String(blockedUntil - Date.now())}ms`,
-    );
+  // A DEFERRED BEGIN takes no write lock and cannot lose the race, so throttling
+  // it would deny legitimate work for no protective reason.
+  if (mode !== "DEFERRED") {
+    const blockedUntil = transactionBackoffUntilMs.get(database);
+    if (blockedUntil !== undefined) {
+      const remaining = blockedUntil - clock();
+      if (remaining > 0) {
+        throw databaseError(
+          "runtime_transaction_busy",
+          "transaction",
+          `a previous BEGIN was blocked on this database; retry deferred ${String(remaining)}ms`,
+        );
+      }
+      transactionBackoffUntilMs.delete(database);
+    }
   }
   // Claim the marker only once BEGIN has succeeded. If BEGIN throws — another
   // writer held the database past the busy timeout — a connection that never
@@ -252,20 +304,29 @@ export function withDatabaseTransaction<T>(
   try {
     database.exec(`BEGIN ${mode}`);
   } catch (error) {
-    transactionBackoffUntil.set(database, Date.now() + TRANSACTION_BUSY_BACKOFF_MS);
+    if (!isTransactionContention(error)) throw error;
+    transactionBackoffUntilMs.set(database, clock() + TRANSACTION_BUSY_BACKOFF_MS);
     throw databaseError(
       "runtime_transaction_busy",
       "transaction",
-      `BEGIN ${mode} failed: ${error instanceof Error ? error.message : String(error)}`,
+      `BEGIN ${mode} blocked by another writer: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
   activeTransactions.add(database);
-  transactionBackoffUntil.delete(database);
+  // A successful write-mode BEGIN means this connection is holding the slot, so any
+  // earlier contention is over. A DEFERRED success proves nothing about the write
+  // lock and must not clear a throttle that another caller's contention armed.
+  if (mode !== "DEFERRED") transactionBackoffUntilMs.delete(database);
   try {
     const result = work();
     database.exec("COMMIT");
     return result;
   } catch (error) {
+    // A failed ROLLBACK usually means the connection is gone. Clearing the marker
+    // is still the right bookkeeping, but it does **not** prove SQLite left the
+    // transaction — a connection that survives a failed rollback can stay
+    // dirty. Pre-existing, and deliberately not papered over here: the caller
+    // receives the original error, and the store treats the handle as suspect.
     try { database.exec("ROLLBACK"); } catch { /* ignore rollback error if connection dead */ }
     throw error;
   } finally {

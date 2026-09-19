@@ -449,6 +449,53 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   clears on success, so the defect stays fixed while the suite came back to
   **442 s**; the intake test asserts the blocked call, the fast refusal and the
   recovery. The old speed had come from the bug, not from design.
+  **Third pass, same critic, same command: STILL BLOCKED again**, five findings,
+  every one reproduced against the tree, and two of them were defects in the
+  round-2 *fix* rather than in the original contract:
+  (a) the backoff deadline was `Date.now() + 1000`, so a clock step backwards kept
+  a long-gone write lock refusing transactions for hours and a step forward ended
+  the throttle early — the deadline is now monotonic (`process.hrtime`), injectable
+  for tests so the window is **stepped rather than slept through** (a test that waits
+  out its own deadline proves nothing about how the deadline is measured, which is
+  how round 2's busy test passed with the clear-on-success removed). The new test
+  steps `Date.now` by −1 h and +1 h against the **default** clock and requires the
+  refusal to stay inside the window both ways; verified to fail when the default
+  clock is changed back to `Date.now()`;
+  (b) *every* `BEGIN` failure was wrapped as `runtime_transaction_busy`, which
+  turned `cannot start a transaction within a transaction`, a closed connection and
+  any other hard error into something a caller would retry forever, and installed
+  the throttle for a failure that had nothing to do with contention —
+  `isTransactionContention()` now gates the wrap and everything else rethrows
+  unchanged; the throttle also stopped ignoring `mode`, because a `DEFERRED` BEGIN
+  takes no write lock, and a `DEFERRED` success no longer clears a throttle that
+  write contention armed;
+  (c) legacy ceiling equivalence was answered two different ways in the same file:
+  the slot lookup recomputed the fingerprint over the stored authority, the two
+  lost-write read-backs compared persisted hashes only, so the same 0.7.46 row was
+  idempotent on one path and `coordinator_write_lost` on the other — one
+  `ceilingsMatch()` now answers it, with a forced losing insert against a
+  legacy-hash winner in the tests;
+  (d) resume drains are complete and atomic but **not bounded**: one write
+  transaction parses, validates, rewrites and retains every held row, measured here
+  at 150k rows / 4.54 s / ~95 MiB, and ~7.6 GiB retained at 500k maximum-size
+  payloads. The write lock makes it finite, so this is a throughput and memory
+  limit rather than a correctness hole, and bounding it is recorded as an M2
+  pre-condition (Still open item 9) instead of being quietly truncated — that is
+  the exact truncation round 2 rejected;
+  (e) this record again claimed more than its tests proved. Four of the round-2
+  tests were load-bearing for the wrong claim: the 601-row drain passed with the
+  1,000-page cap put back, the sequential `created: false` assertions never lost an
+  insert, the reordered-ceiling test passed with normalisation removed from
+  `kxmCeilingHash` because binding normalises its inputs first, and the busy test
+  waited out its own deadline so it passed whether or not success cleared the
+  backoff. Each is replaced by one that fails when its fix is reverted (verified by
+  reverting each of the five and watching the matching test go red), plus named
+  claims that were prose before: "one admitted task" is one admission record, no
+  task exists at this layer, and "reordering or repeating" now tests repeats.
+  Tests 13 → **20**. Each of the five closures was checked by reverting it and
+  watching the matching test go red: page cap restored, default clock switched to
+  `Date.now()`, contention classification removed, clear-on-write-success made
+  unconditional, and `ceilingsMatch` reverted on each read-back separately.
 
 - **Run-duration budgets are testable without racing the machine (2026-09-17):**
   the still-open note filed in #245 is fixed. `test/core/engine.test.ts`'s
@@ -1316,7 +1363,19 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   (8) **Durable arrival sequence:** dispatch order currently uses SQLite
   `rowid`, which a `VACUUM` (and therefore a restore taken with `VACUUM INTO`) may
   renumber. Persist an immutable per-project sequence and preserve it through
-  restore, or state arrival ordering as an same-store property only.
+  restore, or state arrival ordering as an same-store property only. The third pass
+  also measured the read itself: `EXPLAIN QUERY PLAN` shows the dispatch index
+  serving the state filter and then `USE TEMP B-TREE FOR ORDER BY`, so the sort is
+  per query as well as per store — the same index scan that a durable sequence
+  should remove.
+  (9) **Bounded resume:** a resume releases every held row inside one write
+  transaction and retains all of them, so work and memory grow with the backlog
+  (150k rows of 64-byte payloads: 4.54 s synchronous, ~95 MiB heap; 500k
+  maximum-size payloads would retain ~7.6 GiB). It is finite and atomic — the write
+  lock keeps ingress out of the loop — so this is an M2 sustained-traffic
+  pre-condition, not a correctness hole. Bounding it must not move batches outside
+  the transaction, which would reopen the pause race; design the bound together with
+  the durable sequence in item 8.
 
 - **Unified capability delivery (M0–M9; proposed, consolidated 2026-09-14):**
   [The unified plan](plan-unified-kxm-milestones.md) owns proposed scope,
