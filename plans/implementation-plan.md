@@ -375,40 +375,54 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   was ever contemplated — no still-applicable decision requires these entry points to
   stay absent, and the Decided entry above names them.
   **What is gated now:**
-  - *Per recipe, not per file.* The file-wide brake was the mistake. Transport recipes
-    (`impl`, `impl-bg`, `plan`, `review-arch`, `review-cli`, `dispatch`) may not
-    reference `assignment-run.mjs` or forward to a proof recipe, so they cannot mint
-    assignment, witness or acceptance proof. A second review round showed what
-    "may not" had to mean to be true: a text-only forwarding check escaped on
-    `just  assign` (double space), `just -- assign`, a `\` continuation, and by
-    repointing the `{{run}}` variable at the runner, so the transport surface is now
-    **pinned** — `run :=` and `dispatch`'s body are asserted exactly, alongside the
-    whitespace- and `--`-tolerant reference check — and each of those four mutations
-    turns the gate red. General call-graph analysis is still not claimed. Each assignment recipe is pinned to its exact
-    command, flags **and declared arity** — header parameters must match the positions
-    the body reads in both directions — and where the `just` binary exists a real
-    invocation proves it refuses a short argument list.
-  - *Docs-to-justfile parity.* `just <verb>` in **command form** (inline code, or a
-    fenced line with an optional `#`) must exist as a recipe; stray whitespace and
-    `a|b|c` alternations are handled, `~~~` fences too, leading interpreter options are
-    skipped so `just --dotenv-path /abs/.env assign …` names `assign`, a shell pipe is
-    not read as an alternation (`just assign /abs/task | cat` is one recipe), and a glob
-    alternative like `review-*` is skipped because it names a family, not a recipe. Prose, headings and captured
-    `just --list` output are **not** parsed, which is the limit of the convention:
-    naming a recipe only in prose is not gated, and a backticked adverbial phrase —
-    the words "just in case" inside code spans — would ask for a recipe called `in`. Load-bearing, verified by renaming
-    `observe-cost` (fails, naming the five documents that promise it) and by a test
-    that feeds the scanner the positive and negative shapes above.
-  - *No auto-loaded `.env`.* `set dotenv-load` is **removed**, after review found it
-    let a gitignored `.env` in whatever directory `just` happened to run in set
-    `NODE_OPTIONS`, whose value the interpreter executes *before any script body* —
-    ahead of the runner's identity, tree, roster and critic validation and ahead of
-    `shell: false` on every spawn it goes on to make, on the two recipes that mint
-    proof. Gated twice: a textual brake on `set dotenv-load`/`set dotenv-path`, and a
-    real-`just` probe that a working-directory `.env` does not reach the environment
-    while `--dotenv --dotenv-path` **does** — the positive control is what makes the
-    negative result mean anything. Dotenv is opt-in per invocation now, noted where
-    the setting used to be.
+  - *Per recipe, not per file, and pinned rather than pattern-matched.* The file-wide
+    brake was the mistake: the real rule is that transport recipes may not mint
+    assignment, witness or acceptance proof. A text-only forwarding check was then
+    demonstrated to escape four ways — `just  assign` (double space), `just -- assign`,
+    a `\` continuation inside `impl-bg`, and repointing `run :=` at the runner — and a
+    fifth class defeated the parser outright: `set allow-duplicate-recipes` with a second
+    `dispatch`, or `set allow-duplicate-variables` with a second `run :=`, because the
+    last declaration wins while the gate read the first. The surface is now closed on
+    both sides: `run :=` and `dispatch`'s body are asserted exactly, every non-proof
+    recipe is scanned for forwarding with continuations folded, duplicate recipe headers
+    and duplicate `run` bindings are refused, any `set allow-duplicate*` and any
+    `import`/`mod` (including `import?`, which still executes) are refused, and the
+    recipe name set must equal a pinned list — adding a recipe is a deliberate edit to
+    this gate, not something that slips past it. All five mutations turn it red; a
+    general call-graph analysis is still not claimed, and an extra recipe that only
+    echoes is not proof forgery, it is the gate's boundary moving in the open.
+  - *Docs-to-justfile parity.* `just <verb>` in **command form** — inline code, or a
+    fenced line with an optional `#` — must exist as a recipe. The scan is token-level:
+    leading interpreter options and their path-like values are skipped
+    (`just --quiet witness …` and `just --dotenv-path /abs/.env witness …` both name
+    `witness`), alternations are read per token so `just impl|plan brief.md` keeps
+    `plan`, a glob alternative (`review-*`) is skipped rather than demanding a recipe
+    called `review-`, and a pipeline further along the line is not an alternation. Prose,
+    headings and captured `just --list` output are not parsed: a document that names a
+    recipe only in prose is not gated, and a backticked adverbial phrase — "just in
+    case" inside code spans — would ask for a recipe called `in`. Both edges are
+    deliberate and both are fixture-tested, as are the accepted shapes above.
+  - *No auto-loaded `.env`.* `set dotenv-load` is **removed**, after review found it let
+    a gitignored `.env` in whatever directory `just` ran in set `NODE_OPTIONS`, whose
+    value the interpreter executes *before any script body* — ahead of the runner's
+    identity, tree, roster and critic validation, and ahead of the `shell: false` on the
+    spawns that follow (auth probes synchronously, harness execution asynchronously).
+    Gated twice. The textual brake rejects **any** `set dotenv*` spelling — bare,
+    `:= true`, with a trailing comment, and the filename/required/override variants —
+    while still allowing a comment that merely mentions the removed setting. The
+    real-`just` probe no longer reads an environment string: the preload module **writes
+    a marker file itself**, so the assertion is that injected code ran, and every
+    negative is paired with a control on the same entry point — explicit
+    `--dotenv-path` applies and executes; a justfile with the setting re-added executes;
+    and the real `witness` recipe is run **both ways**, refusing a missing record
+    directory without a marker and *with* a marker once dotenv is re-enabled. That last
+    control is what the first version of this probe lacked: only the probe script wrote
+    the marker, so the witness arm could not have detected a preload at all.
+    Opt-in is `just --dotenv-path /abs/.env assign …`; `--dotenv` is not a separate flag
+    in the installed 1.58, and the earlier note here published a command that exits 2.
+    Explicitly **out of scope**, because it is an operator trust decision rather than a
+    gate: an inherited `NODE_OPTIONS`, `PATH`, `KXM_*` or `JUST_DOTENV_COMMAND` in the
+    parent environment, and whatever a reviewed helper script chooses to do.
   - The smoke recipe is pinned to the command it advertises, not merely to its name.
   **Not done here:** `observe --record-dir` is a real `assignment-run.mjs` subcommand
   with no documented recipe, so none was invented; `accept` writes JSON by default but
